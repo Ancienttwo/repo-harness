@@ -62,6 +62,44 @@ describe("Workflow helper scripts", () => {
     }
   });
 
+  test("new-sprint should create a Draft plan only", () => {
+    const cwd = tmpWorkspace("helper-new-sprint");
+    try {
+      mkdirSync(join(cwd, "plans"), { recursive: true });
+      mkdirSync(join(cwd, ".claude/templates"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/contracts"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/reviews"), { recursive: true });
+      mkdirSync(join(cwd, "tasks"), { recursive: true });
+      copyHelpers(cwd);
+
+      copyFileSync(
+        join(TEMPLATE_DIR, "plan.template.md"),
+        join(cwd, ".claude/templates/plan.template.md")
+      );
+      writeFileSync(
+        join(cwd, "tasks/todo.md"),
+        "# Task Execution Checklist (Primary)\n\n> **Source Plan**: (none)\n> **Status**: Idle\n"
+      );
+
+      const res = run("bash", ["scripts/new-sprint.sh", "--slug", "draft-only", "--title", "Draft Only"], cwd);
+      expect(res.status).toBe(0);
+      expect(res.stdout).toContain("Created draft plan:");
+      expect(res.stdout).toContain("Approve the plan before generating sprint artifacts");
+
+      const plans = readdirSync(join(cwd, "plans")).filter((name) => /^plan-\d{8}-\d{4}-draft-only\.md$/.test(name));
+      expect(plans.length).toBe(1);
+      const plan = readFileSync(join(cwd, "plans", plans[0]), "utf-8");
+      expect(plan).toContain("> **Status**: Draft");
+      expect(existsSync(join(cwd, "tasks/contracts/draft-only.contract.md"))).toBe(false);
+      expect(existsSync(join(cwd, "tasks/reviews/draft-only.review.md"))).toBe(false);
+      const todo = readFileSync(join(cwd, "tasks/todo.md"), "utf-8");
+      expect(todo).toContain("**Status**: Idle");
+      expect(todo).not.toContain("**Status**: Executing");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   test("plan-to-todo should archive previous todo and set plan to Executing", () => {
     const cwd = tmpWorkspace("helper-plan-to-todo");
     try {
@@ -455,6 +493,111 @@ describe("Workflow helper scripts", () => {
       const res = run("bash", ["scripts/verify-contract.sh", "--contract", "task.contract.md", "--strict"], cwd);
       expect(res.status).toBe(0);
       expect(readFileSync(join(cwd, "task.contract.md"), "utf-8")).toContain("> **Status**: Fulfilled");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("verify-sprint should write passing structured checks for the active sprint", () => {
+    const cwd = tmpWorkspace("helper-verify-sprint-pass");
+    try {
+      mkdirSync(join(cwd, ".ai/hooks/lib"), { recursive: true });
+      mkdirSync(join(cwd, "plans"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/contracts"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/reviews"), { recursive: true });
+      mkdirSync(join(cwd, "docs"), { recursive: true });
+      copyHelpers(cwd);
+      copyFileSync(
+        join(ROOT, "assets/hooks/lib/workflow-state.sh"),
+        join(cwd, ".ai/hooks/lib/workflow-state.sh")
+      );
+
+      writeFileSync(join(cwd, "docs/spec.md"), "# Product Spec\n");
+      writeFileSync(
+        join(cwd, "plans/plan-20260304-1600-demo.md"),
+        "# Plan: demo\n\n> **Status**: Executing\n"
+      );
+      writeFileSync(
+        join(cwd, "tasks/contracts/demo.contract.md"),
+        [
+          "# Sprint Contract: demo",
+          "",
+          "> **Status**: Active",
+          "",
+          "```yaml",
+          "exit_criteria:",
+          "  files_exist:",
+          "    - docs/spec.md",
+          "```",
+          "",
+        ].join("\n")
+      );
+      writeFileSync(
+        join(cwd, "tasks/reviews/demo.review.md"),
+        "# Sprint Review: demo\n\n> **Recommendation**: pass\n"
+      );
+
+      const res = run("bash", ["scripts/verify-sprint.sh"], cwd);
+      expect(res.status).toBe(0);
+      expect(res.stdout).toContain("Sprint verification passed");
+      const checks = JSON.parse(readFileSync(join(cwd, ".ai/harness/checks/latest.json"), "utf-8"));
+      expect(checks.status).toBe("pass");
+      expect(checks.source).toBe("verify-sprint");
+      expect(checks.command).toBe("bash scripts/verify-sprint.sh");
+      expect(checks.exit_code).toBe(0);
+      expect(checks.contract.file).toBe("tasks/contracts/demo.contract.md");
+      expect(checks.contract.status).toBe("pass");
+      expect(checks.review.file).toBe("tasks/reviews/demo.review.md");
+      expect(checks.review.status).toBe("pass");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("verify-sprint should write failing structured checks before exiting", () => {
+    const cwd = tmpWorkspace("helper-verify-sprint-fail");
+    try {
+      mkdirSync(join(cwd, ".ai/hooks/lib"), { recursive: true });
+      mkdirSync(join(cwd, "plans"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/contracts"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/reviews"), { recursive: true });
+      copyHelpers(cwd);
+      copyFileSync(
+        join(ROOT, "assets/hooks/lib/workflow-state.sh"),
+        join(cwd, ".ai/hooks/lib/workflow-state.sh")
+      );
+
+      writeFileSync(
+        join(cwd, "plans/plan-20260304-1610-demo.md"),
+        "# Plan: demo\n\n> **Status**: Executing\n"
+      );
+      writeFileSync(
+        join(cwd, "tasks/contracts/demo.contract.md"),
+        [
+          "# Sprint Contract: demo",
+          "",
+          "> **Status**: Active",
+          "",
+          "```yaml",
+          "exit_criteria:",
+          "  files_exist:",
+          "    - docs/missing.md",
+          "```",
+          "",
+        ].join("\n")
+      );
+      writeFileSync(
+        join(cwd, "tasks/reviews/demo.review.md"),
+        "# Sprint Review: demo\n\n> **Recommendation**: pass\n"
+      );
+
+      const res = run("bash", ["scripts/verify-sprint.sh"], cwd);
+      expect(res.status).toBe(1);
+      const checks = JSON.parse(readFileSync(join(cwd, ".ai/harness/checks/latest.json"), "utf-8"));
+      expect(checks.status).toBe("fail");
+      expect(checks.source).toBe("verify-sprint");
+      expect(checks.contract.file).toBe("tasks/contracts/demo.contract.md");
+      expect(checks.contract.status).toBe("fail");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

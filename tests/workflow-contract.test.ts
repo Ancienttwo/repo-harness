@@ -11,6 +11,7 @@ import {
 } from "fs";
 import { tmpdir } from "os";
 import { join, relative } from "path";
+import { spawnSync } from "child_process";
 import { inspectRepo } from "../scripts/inspect-project-state";
 import { migrate } from "../scripts/migrate-workflow-docs";
 import { loadWorkflowContract } from "../scripts/workflow-contract";
@@ -61,8 +62,33 @@ describe("workflow contract manifest", () => {
     expect(contract.helpers.scripts).toContain("prepare-codex-handoff.sh");
     expect(contract.helpers.scripts).toContain("codex-handoff-resume.sh");
     expect(contract.artifacts.requiredFiles).toContain(".ai/harness/workflow-contract.json");
-    expect(contract.artifacts.requiredFiles).toContain(".ai/harness/handoff/resume.md");
-    expect(contract.artifacts.requiredFiles).toContain(".ai/harness/context-budget/latest.json");
+    expect(contract.artifacts.requiredFiles).not.toContain(".ai/harness/handoff/resume.md");
+    expect(contract.artifacts.requiredFiles).not.toContain(".ai/harness/context-budget/latest.json");
+    expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/handoff/resume.md");
+    expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/context-budget/latest.json");
+    expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/checks/latest.json");
+  });
+
+  test("runtime harness artifacts should be ignored local state, not tracked deliverables", () => {
+    const contract = loadWorkflowContract(join(ROOT, "assets/workflow-contract.v1.json"));
+    const runtimeFiles = contract.artifacts.runtimeFiles ?? [];
+    expect(runtimeFiles).toContain(".ai/harness/checks/latest.json");
+
+    for (const file of runtimeFiles.filter((name) => name !== ".ai/harness/runs/.gitkeep")) {
+      const tracked = spawnSync("git", ["ls-files", "--error-unmatch", file], {
+        cwd: ROOT,
+        encoding: "utf-8",
+      });
+      if (existsSync(join(ROOT, file))) {
+        expect(tracked.status).not.toBe(0);
+      } else {
+        expect(existsSync(join(ROOT, file))).toBe(false);
+      }
+    }
+
+    const gitignore = readFileSync(join(ROOT, ".gitignore"), "utf-8");
+    expect(gitignore).toContain(".ai/harness/checks/latest.json");
+    expect(gitignore).toContain(".ai/harness/handoff/current.md");
   });
 });
 

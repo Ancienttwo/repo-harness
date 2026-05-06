@@ -99,8 +99,10 @@ describe("Bootstrap Script Contracts", () => {
     expect(content).toContain("settings.template.json");
     expect(contract.helpers.scripts).toContain("switch-plan.sh");
     expect(contract.artifacts.requiredFiles).toContain(".ai/harness/workflow-contract.json");
-    expect(contract.artifacts.requiredFiles).toContain(".ai/harness/handoff/resume.md");
-    expect(contract.artifacts.requiredFiles).toContain(".ai/harness/context-budget/latest.json");
+    expect(contract.artifacts.requiredFiles).not.toContain(".ai/harness/handoff/resume.md");
+    expect(contract.artifacts.requiredFiles).not.toContain(".ai/harness/context-budget/latest.json");
+    expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/handoff/resume.md");
+    expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/context-budget/latest.json");
     expect(contract.artifacts.requiredFiles).toContain("docs/reference-configs/external-tooling.md");
     expect(sharedLib).not.toContain(".skill-factory-state.json");
     expect(sharedLib).not.toContain(".memory-context.json");

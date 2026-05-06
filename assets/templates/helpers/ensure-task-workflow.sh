@@ -472,7 +472,6 @@ POLICY_EOF
     "docs/spec.md",
     "tasks/todo.md",
     "tasks/lessons.md",
-    "tasks/research.md",
     ".ai/harness/policy.json"
   ],
   "discoverable_contexts": [

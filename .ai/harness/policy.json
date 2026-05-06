@@ -66,6 +66,22 @@
     "recovery": "hybrid",
     "state": "file-backed"
   },
+  "external_tooling": {
+    "routing": {
+      "complex": "gstack",
+      "simple": "waza",
+      "knowledge": "gbrain"
+    },
+    "hosts": [
+      "claude-code",
+      "codex"
+    ],
+    "mode": "guidance-only",
+    "detection": "init-migrate",
+    "gbrain": {
+      "mcp": "candidate-disabled"
+    }
+  },
   "enforcement": {
     "worktree_guard": "warn-by-default",
     "verification_gate": "contract-and-review",

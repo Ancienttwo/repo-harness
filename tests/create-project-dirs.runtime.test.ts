@@ -65,6 +65,9 @@ describe("create-project-dirs runtime smoke", () => {
       expect(existsSync(join(cwd, ".claude/hooks/run-hook.sh"))).toBe(true);
       expect(existsSync(join(cwd, ".claude/hooks/finalize-handoff.sh"))).toBe(true);
       expect(existsSync(join(cwd, ".claude/hooks/session-start-context.sh"))).toBe(true);
+      expect(existsSync(join(cwd, ".claude/hooks/hook-input.sh"))).toBe(false);
+      expect(existsSync(join(cwd, ".claude/hooks/lib/workflow-state.sh"))).toBe(false);
+      expect(existsSync(join(cwd, ".claude/hooks/lib/session-state.sh"))).toBe(false);
       expect(existsSync(join(cwd, ".claude/hooks/lib/skill-factory.sh"))).toBe(false);
       expect(existsSync(join(cwd, ".claude/hooks/lib/memory-state.sh"))).toBe(false);
       expect(existsSync(join(cwd, ".claude/hooks/memory-intake.sh"))).toBe(false);
@@ -88,9 +91,13 @@ describe("create-project-dirs runtime smoke", () => {
       expect(workflowContract.helpers.scripts).toContain("check-agent-tooling.sh");
       expect(workflowContract.helpers.scripts).toContain("check-task-workflow.sh");
       expect(workflowContract.helpers.scripts).toContain("context-budget.ts");
-      expect(workflowContract.artifacts.requiredFiles).toContain(".ai/harness/context-budget/latest.json");
-      expect(workflowContract.artifacts.requiredFiles).toContain(".ai/harness/handoff/resume.md");
+      expect(workflowContract.artifacts.requiredFiles).not.toContain(".ai/harness/context-budget/latest.json");
+      expect(workflowContract.artifacts.requiredFiles).not.toContain(".ai/harness/handoff/resume.md");
+      expect(workflowContract.artifacts.runtimeFiles).toContain(".ai/harness/context-budget/latest.json");
+      expect(workflowContract.artifacts.runtimeFiles).toContain(".ai/harness/handoff/resume.md");
       expect(workflowContract.artifacts.requiredFiles).toContain("docs/reference-configs/external-tooling.md");
+      const contextMap = JSON.parse(readFileSync(join(cwd, ".ai/context/context-map.json"), "utf-8"));
+      expect(contextMap.root_context_files).not.toContain("tasks/research.md");
       const policy = JSON.parse(readFileSync(join(cwd, ".ai/harness/policy.json"), "utf-8"));
       expect(policy.external_tooling.routing).toEqual({
         complex: "gstack",

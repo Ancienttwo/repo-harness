@@ -31,11 +31,10 @@ function installHooks(cwd: string): string {
     const src = join(ASSETS_HOOKS_DIR, f.name);
     if (f.isDirectory()) {
       cpSync(src, join(aiHooksDir, f.name), { recursive: true });
-      cpSync(src, join(hooksDir, f.name), { recursive: true });
+      continue;
     } else {
       copyFileSync(src, join(aiHooksDir, f.name));
       if (f.name === "hook-input.sh") {
-        copyFileSync(src, join(hooksDir, f.name));
         continue;
       }
 
@@ -69,6 +68,25 @@ function installHooks(cwd: string): string {
     expect(res.status).toBe(0);
   }
   return hooksDir;
+}
+
+function writeValidSprintChecks(cwd: string) {
+  writeFileSync(
+    join(cwd, ".ai/harness/checks/latest.json"),
+    JSON.stringify(
+      {
+        status: "pass",
+        source: "verify-sprint",
+        command: "bash scripts/verify-sprint.sh",
+        exit_code: 0,
+        generated_at: "2026-03-04T14:10:00+0000",
+        contract: { file: "tasks/contracts/demo.contract.md", status: "pass", exit_code: 0 },
+        review: { file: "tasks/reviews/demo.review.md", status: "pass" },
+      },
+      null,
+      2
+    ) + "\n"
+  );
 }
 
 function run(cmd: string, args: string[], cwd: string) {
@@ -313,11 +331,12 @@ describe("Hook runtime behavior", () => {
     }
   });
 
-  test("session-start-context injects only generated Codex resume packets", () => {
+  test("session-start-context injects only active generated Codex resume packets", () => {
     const cwd = tmpWorkspace("session-start-context");
     try {
       installHooks(cwd);
       mkdirSync(join(cwd, ".ai/harness/handoff"), { recursive: true });
+      mkdirSync(join(cwd, ".ai/harness/context-budget"), { recursive: true });
 
       writeFileSync(join(cwd, ".ai/harness/handoff/resume.md"), "# Codex Resume Packet\n\n> **Reason**: bootstrap\n");
       const bootstrapRes = runHook("session-start-context.sh", cwd);
@@ -330,6 +349,8 @@ describe("Hook runtime behavior", () => {
           "# Codex Resume Packet",
           "<!-- generated-by: project-initializer codex-handoff-resume v1 -->",
           "",
+          "> **Reason**: acceptance-complete",
+          "",
           "## Resume Prompt",
           "",
           "You are starting a fresh Codex session.",
@@ -338,6 +359,12 @@ describe("Hook runtime behavior", () => {
           "- AGENTS.md",
         ].join("\n")
       );
+
+      const staleRes = runHook("session-start-context.sh", cwd);
+      expect(staleRes.status).toBe(0);
+      expect(staleRes.stdout.trim()).toBe("");
+
+      writeFileSync(join(cwd, ".ai/harness/context-budget/latest.json"), JSON.stringify({ zone: "red" }) + "\n");
 
       const res = runHook("session-start-context.sh", cwd);
       expect(res.status).toBe(0);
@@ -401,12 +428,16 @@ describe("Hook runtime behavior", () => {
     }
   });
 
-  test("installHooks copies nested lib helpers", () => {
+  test("installHooks keeps Claude hooks as shims and .ai as implementation", () => {
     const cwd = tmpWorkspace("hook-lib-copy");
     try {
       const hooksDir = installHooks(cwd);
-      expect(existsSync(join(hooksDir, "lib", "workflow-state.sh"))).toBe(true);
-      expect(existsSync(join(hooksDir, "lib", "session-state.sh"))).toBe(true);
+      expect(existsSync(join(cwd, ".ai/hooks/lib/workflow-state.sh"))).toBe(true);
+      expect(existsSync(join(cwd, ".ai/hooks/lib/session-state.sh"))).toBe(true);
+      expect(existsSync(join(cwd, ".ai/hooks/hook-input.sh"))).toBe(true);
+      expect(existsSync(join(hooksDir, "lib", "workflow-state.sh"))).toBe(false);
+      expect(existsSync(join(hooksDir, "lib", "session-state.sh"))).toBe(false);
+      expect(existsSync(join(hooksDir, "hook-input.sh"))).toBe(false);
       expect(existsSync(join(hooksDir, "lib", "skill-factory.sh"))).toBe(false);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
@@ -681,7 +712,7 @@ describe("Hook runtime behavior", () => {
         join(cwd, "tasks/reviews/demo.review.md"),
         "# Sprint Review: demo\n\n> **Recommendation**: pass\n"
       );
-      writeFileSync(join(cwd, ".ai/harness/checks/latest.json"), "{}\n");
+      writeValidSprintChecks(cwd);
       writeFileSync(
         join(cwd, "scripts/verify-contract.sh"),
         "#!/bin/bash\nset -euo pipefail\necho \"[verify] ok\"\n"
@@ -696,6 +727,81 @@ describe("Hook runtime behavior", () => {
       expect(res.stdout).toContain("[verify] ok");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("prompt-guard: blocks done intent when structured checks are empty, failing, or stale", () => {
+    for (const [name, checks] of [
+      ["empty", "{}\n"],
+      [
+        "fail",
+        JSON.stringify(
+          {
+            status: "fail",
+            source: "verify-sprint",
+            exit_code: 1,
+            contract: { file: "tasks/contracts/demo.contract.md" },
+            review: { file: "tasks/reviews/demo.review.md" },
+          },
+          null,
+          2
+        ) + "\n",
+      ],
+      [
+        "stale",
+        JSON.stringify(
+          {
+            status: "pass",
+            source: "verify-sprint",
+            exit_code: 0,
+            contract: { file: "tasks/contracts/old.contract.md" },
+            review: { file: "tasks/reviews/demo.review.md" },
+          },
+          null,
+          2
+        ) + "\n",
+      ],
+    ] as const) {
+      const cwd = tmpWorkspace(`prompt-guard-checks-${name}`);
+      try {
+        initGitRepo(cwd);
+        installHooks(cwd);
+        mkdirSync(join(cwd, "plans"), { recursive: true });
+        mkdirSync(join(cwd, "tasks"), { recursive: true });
+        mkdirSync(join(cwd, "tasks/contracts"), { recursive: true });
+        mkdirSync(join(cwd, "tasks/reviews"), { recursive: true });
+        mkdirSync(join(cwd, ".ai/harness/checks"), { recursive: true });
+        mkdirSync(join(cwd, "scripts"), { recursive: true });
+
+        writeFileSync(
+          join(cwd, "plans/plan-20260304-1410-demo.md"),
+          "# Plan: demo\n\n> **Status**: Approved\n"
+        );
+        writeFileSync(
+          join(cwd, "tasks/todo.md"),
+          "# Task Execution Checklist (Primary)\n\n> **Source Plan**: plans/plan-20260304-1410-demo.md\n"
+        );
+        writeFileSync(join(cwd, "tasks/contracts/demo.contract.md"), "# contract\n");
+        writeFileSync(
+          join(cwd, "tasks/reviews/demo.review.md"),
+          "# Sprint Review: demo\n\n> **Recommendation**: pass\n"
+        );
+        writeFileSync(join(cwd, ".ai/harness/checks/latest.json"), checks);
+        writeFileSync(
+          join(cwd, "scripts/verify-contract.sh"),
+          "#!/bin/bash\nset -euo pipefail\necho \"[verify] ok\"\n"
+        );
+        expect(run("chmod", ["+x", "scripts/verify-contract.sh"], cwd).status).toBe(0);
+
+        const res = runHook("prompt-guard.sh", cwd, {
+          stdin: JSON.stringify({ user_message: "done" }),
+        });
+
+        expect(res.status).toBe(1);
+        expect(res.stdout).toContain("[EvidenceGuard]");
+      } finally {
+        rmSync(cwd, { recursive: true, force: true });
+      }
     }
   });
 

@@ -1,6 +1,7 @@
 #!/bin/bash
 # Atomic Commit Hook — PostToolUse on Bash
 # Commits a minimal checkpoint after successful validation commands.
+# Deprecated: not enabled by the shared settings template; kept for legacy manual use.
 
 set -eo pipefail
 

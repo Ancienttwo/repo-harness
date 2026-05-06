@@ -214,6 +214,16 @@ if [ "$done_intent" -eq 1 ]; then
       "quality_gate"
     exit 1
   fi
+
+  if ! checks_error="$(workflow_checks_pass "$checks_file" "$contract_file" "$review_file")"; then
+    echo "[EvidenceGuard] $checks_error"
+    hook_structured_error \
+      "EvidenceGuard" \
+      "$checks_error" \
+      "Run bash scripts/verify-sprint.sh so .ai/harness/checks/latest.json records a passing current sprint verification." \
+      "quality_gate"
+    exit 1
+  fi
 fi
 
 if is_spa_day_intent; then

@@ -57,12 +57,8 @@ install_hook_assets() {
     find "$ASSETS_HOOKS_DIR" -mindepth 1 -maxdepth 1 \( -type f -name '*.sh' -o -type d -name 'lib' \) | while read -r asset; do
       if [[ -d "$asset" ]]; then
         cp -R "$asset" .ai/hooks/
-        cp -R "$asset" .claude/hooks/
       else
         cp "$asset" .ai/hooks/
-        if [[ "$(basename "$asset")" == "hook-input.sh" ]]; then
-          cp "$asset" .claude/hooks/
-        fi
       fi
     done
 

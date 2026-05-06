@@ -182,6 +182,9 @@ describe("Migration script contract", () => {
       expect(existsSync(join(repo, ".claude/hooks/run-hook.sh"))).toBe(true);
       expect(existsSync(join(repo, ".claude/hooks/finalize-handoff.sh"))).toBe(true);
       expect(existsSync(join(repo, ".claude/hooks/session-start-context.sh"))).toBe(true);
+      expect(existsSync(join(repo, ".claude/hooks/hook-input.sh"))).toBe(false);
+      expect(existsSync(join(repo, ".claude/hooks/lib/workflow-state.sh"))).toBe(false);
+      expect(existsSync(join(repo, ".claude/hooks/lib/session-state.sh"))).toBe(false);
       expect(existsSync(join(repo, "tasks/research.md"))).toBe(true);
       expect(existsSync(join(repo, "tasks/todo.md"))).toBe(true);
       expect(existsSync(join(repo, "tasks/lessons.md"))).toBe(true);
@@ -240,6 +243,8 @@ describe("Migration script contract", () => {
       expect(workflowContract.helpers.scripts).toContain("check-context-files.sh");
       expect(workflowContract.helpers.scripts).toContain("maintenance-triage.sh");
       expect(workflowContract.helpers.scripts).toContain("context-budget.ts");
+      expect(workflowContract.artifacts.requiredFiles).not.toContain(".ai/harness/checks/latest.json");
+      expect(workflowContract.artifacts.runtimeFiles).toContain(".ai/harness/checks/latest.json");
 
       const pkg = JSON.parse(readFileSync(join(repo, "package.json"), "utf-8"));
       expect(pkg.scripts["check:context-files"]).toBe("bash scripts/check-context-files.sh");
@@ -268,6 +273,9 @@ describe("Migration script contract", () => {
       writeFileSync(join(repo, "scripts/skill-factory-check.sh"), "#!/bin/bash\necho check\n");
       writeFileSync(join(repo, ".ai/hooks/lib/skill-factory.sh"), "#!/bin/bash\necho legacy\n");
       writeFileSync(join(repo, ".ai/hooks/memory-intake.sh"), "#!/bin/bash\necho legacy\n");
+      writeFileSync(join(repo, ".claude/hooks/hook-input.sh"), "#!/bin/bash\necho legacy\n");
+      writeFileSync(join(repo, ".claude/hooks/lib/workflow-state.sh"), "#!/bin/bash\necho legacy\n");
+      writeFileSync(join(repo, ".claude/hooks/lib/session-state.sh"), "#!/bin/bash\necho legacy\n");
       writeFileSync(join(repo, ".claude/hooks/lib/skill-factory.sh"), "#!/bin/bash\necho legacy\n");
       writeFileSync(join(repo, ".claude/hooks/memory-intake.sh"), "#!/bin/bash\necho legacy\n");
       writeFileSync(join(repo, ".claude/skill-factory/registry.json"), "{}\n");
@@ -304,6 +312,9 @@ describe("Migration script contract", () => {
       expect(existsSync(join(repo, "scripts/skill-factory-check.sh"))).toBe(false);
       expect(existsSync(join(repo, ".ai/hooks/lib/skill-factory.sh"))).toBe(false);
       expect(existsSync(join(repo, ".ai/hooks/memory-intake.sh"))).toBe(false);
+      expect(existsSync(join(repo, ".claude/hooks/hook-input.sh"))).toBe(false);
+      expect(existsSync(join(repo, ".claude/hooks/lib/workflow-state.sh"))).toBe(false);
+      expect(existsSync(join(repo, ".claude/hooks/lib/session-state.sh"))).toBe(false);
       expect(existsSync(join(repo, ".claude/hooks/lib/skill-factory.sh"))).toBe(false);
       expect(existsSync(join(repo, ".claude/hooks/memory-intake.sh"))).toBe(false);
       expect(existsSync(join(repo, ".claude/skill-factory"))).toBe(false);

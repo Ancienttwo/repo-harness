@@ -91,3 +91,18 @@
 - Whether `ensure-task-workflow.sh` should auto-install a fallback runtime contract manifest when run in a partially migrated repo.
 - Whether future template assembly should expose a first-class “skill/tooling repo” preset instead of relying on hand-authored root routing docs.
 - Whether future work should unify `.ai/hooks/` and `assets/hooks/` through generation or parity tests instead of manual sync.
+
+## 2026-05-06 Harness v2 Implementation Notes
+
+### What Changed
+- Runtime harness state is now local/ignored state, not a tracked product deliverable. The tracked source of truth stays in `assets/workflow-contract.v1.json`, `.ai/harness/workflow-contract.json`, `.ai/harness/policy.json`, `.ai/context/context-map.json`, and `.ai/hooks/`.
+- `tasks/research.md` remains the durable sidecar research store, but it is no longer root always-read context. The default root budget now covers routing, spec, todo, lessons, and policy; deep research is pulled on demand.
+- `.claude/hooks/` is a shim surface only. Hook implementations and libraries live under `.ai/hooks/`; migration removes stale `.claude/hooks/hook-input.sh` and `.claude/hooks/lib`.
+- `new-sprint.sh` creates a Draft plan and stops. `plan-to-todo.sh` remains the only path that turns an Approved plan into todo/contract execution state.
+- `verify-sprint.sh` is the sprint-level evidence writer. `prompt-guard` done intent accepts only current-sprint checks with `status: pass`, `source: verify-sprint`, and matching contract/review paths.
+- `SessionStart` resume injection now requires an active signal: orange/red context budget, executing plan/todo, blocker/dirty handoff, or a context-pressure resume reason. Bootstrap, idle, and acceptance-complete resume packets stay silent.
+
+### Why This Fits The Harness Direction
+- The harness should preserve context, enforce boundaries, recover state, and verify completion. It should not expand root context or invent duplicate runtime state surfaces.
+- Codex auto-compact is treated as an unreliable fallback. The durable recovery path is explicit filesystem handoff plus fresh-session bootstrap.
+- Claude can still use hook-triggered automation through `.claude/settings.json`; Codex uses scripts and AGENTS rules until repo-local Codex hooks exist.

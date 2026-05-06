@@ -7,7 +7,7 @@ import { spawnSync } from "child_process";
 const ROOT = join(import.meta.dir, "..");
 
 describe("Hook recursive copy", () => {
-  test("migrate-project-template copies nested hook libraries into target repos", () => {
+  test("migrate-project-template keeps nested hook libraries under .ai only", () => {
     const repo = mkdtempSync(join(tmpdir(), "hook-recursive-migrate-"));
 
     try {
@@ -20,8 +20,11 @@ describe("Hook recursive copy", () => {
       });
       expect(res.status).toBe(0);
 
-      expect(existsSync(join(repo, ".claude/hooks/lib/workflow-state.sh"))).toBe(true);
-      expect(existsSync(join(repo, ".claude/hooks/lib/session-state.sh"))).toBe(true);
+      expect(existsSync(join(repo, ".ai/hooks/lib/workflow-state.sh"))).toBe(true);
+      expect(existsSync(join(repo, ".ai/hooks/lib/session-state.sh"))).toBe(true);
+      expect(existsSync(join(repo, ".claude/hooks/lib/workflow-state.sh"))).toBe(false);
+      expect(existsSync(join(repo, ".claude/hooks/lib/session-state.sh"))).toBe(false);
+      expect(existsSync(join(repo, ".claude/hooks/hook-input.sh"))).toBe(false);
       expect(existsSync(join(repo, ".claude/hooks/lib/memory-state.sh"))).toBe(false);
       expect(existsSync(join(repo, ".claude/hooks/lib/skill-factory.sh"))).toBe(false);
     } finally {

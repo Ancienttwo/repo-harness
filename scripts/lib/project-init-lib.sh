@@ -35,7 +35,10 @@ PI_DEFAULT_RUNTIME_ENTRIES=$(cat <<'EOF_RUNTIME'
 .claude/*.bak
 .claude/*.bak.*
 .claude/*.backup-*
+.ai/harness/checks/latest.json
 .ai/harness/events.jsonl
+.ai/harness/failures/latest.jsonl
+.ai/harness/handoff/current.md
 .ai/harness/handoff/resume.md
 .ai/harness/context-budget/latest.json
 .ai/harness/runs/
@@ -807,7 +810,6 @@ EOF_DISCOVERABLE
     "docs/spec.md",
     "tasks/todo.md",
     "tasks/lessons.md",
-    "tasks/research.md",
     ".ai/harness/policy.json"
   ],
   "discoverable_contexts": [

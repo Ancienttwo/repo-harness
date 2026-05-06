@@ -1,5 +1,6 @@
 {
-  "$comment": "Skill lifecycle hooks configuration. Scripts run during skill operations.",
+  "$comment": "Deprecated zero-overhead lifecycle extension point. Default scripts arrays stay empty and this is not part of the Codex/Claude harness runtime path.",
+  "status": "deprecated-zero-overhead",
   "events": {
     "pre-init": {
       "type": "sync",

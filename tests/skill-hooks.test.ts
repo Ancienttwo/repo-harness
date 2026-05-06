@@ -21,6 +21,7 @@ describe("skill-hooks.json Structure", () => {
   test("has events object", () => {
     expect(config.events).toBeDefined();
     expect(typeof config.events).toBe("object");
+    expect(config.status).toBe("deprecated-zero-overhead");
   });
 
   test("all expected events are defined", () => {

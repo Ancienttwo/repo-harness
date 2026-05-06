@@ -78,16 +78,18 @@
       "tasks/research.md",
       "docs/PROGRESS.md",
       ".ai/context/context-map.json",
+      ".ai/harness/policy.json",
+      ".ai/harness/workflow-contract.json",
+      "docs/reference-configs/external-tooling.md"
+    ],
+    "runtimeFiles": [
       ".ai/harness/checks/latest.json",
       ".ai/harness/events.jsonl",
       ".ai/harness/failures/latest.jsonl",
       ".ai/harness/handoff/current.md",
       ".ai/harness/handoff/resume.md",
       ".ai/harness/context-budget/latest.json",
-      ".ai/harness/policy.json",
-      ".ai/harness/runs/.gitkeep",
-      ".ai/harness/workflow-contract.json",
-      "docs/reference-configs/external-tooling.md"
+      ".ai/harness/runs/.gitkeep"
     ]
   },
   "documents": {

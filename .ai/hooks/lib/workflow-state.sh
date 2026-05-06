@@ -646,6 +646,69 @@ workflow_review_recommends_pass() {
   grep -Eq '^> \*\*Recommendation\*\*:[[:space:]]*pass[[:space:]]*$' "$review_file"
 }
 
+workflow_checks_pass() {
+  local checks_file="${1:-}"
+  local contract_file="${2:-}"
+  local review_file="${3:-}"
+  local status source exit_code check_contract check_review
+
+  if [[ -z "$checks_file" || ! -s "$checks_file" ]]; then
+    echo "Structured checks file is missing or empty: ${checks_file:-"(none)"}"
+    return 1
+  fi
+
+  if command -v jq >/dev/null 2>&1; then
+    status="$(jq -r '.status // empty' "$checks_file" 2>/dev/null || true)"
+    source="$(jq -r '.source // empty' "$checks_file" 2>/dev/null || true)"
+    exit_code="$(jq -r '.exit_code // empty' "$checks_file" 2>/dev/null || true)"
+    check_contract="$(jq -r '.contract.file // .contract // empty' "$checks_file" 2>/dev/null || true)"
+    check_review="$(jq -r '.review.file // .review // empty' "$checks_file" 2>/dev/null || true)"
+
+    if [[ "$status" != "pass" ]]; then
+      echo "Structured checks are not passing in $checks_file (status=${status:-missing})."
+      return 1
+    fi
+    if [[ "$source" != "verify-sprint" ]]; then
+      echo "Structured checks must come from verify-sprint, got ${source:-missing}."
+      return 1
+    fi
+    if [[ "$exit_code" != "0" ]]; then
+      echo "Structured checks did not record a zero verify-sprint exit code (exit_code=${exit_code:-missing})."
+      return 1
+    fi
+    if [[ -n "$contract_file" && "$check_contract" != "$contract_file" ]]; then
+      echo "Structured checks are stale for contract ${check_contract:-missing}; expected $contract_file."
+      return 1
+    fi
+    if [[ -n "$review_file" && "$check_review" != "$review_file" ]]; then
+      echo "Structured checks are stale for review ${check_review:-missing}; expected $review_file."
+      return 1
+    fi
+    return 0
+  fi
+
+  if ! grep -Eq '"status"[[:space:]]*:[[:space:]]*"pass"' "$checks_file"; then
+    echo "Structured checks are not passing in $checks_file."
+    return 1
+  fi
+  if ! grep -Eq '"source"[[:space:]]*:[[:space:]]*"verify-sprint"' "$checks_file"; then
+    echo "Structured checks must come from verify-sprint."
+    return 1
+  fi
+  if ! grep -Eq '"exit_code"[[:space:]]*:[[:space:]]*0' "$checks_file"; then
+    echo "Structured checks did not record a zero verify-sprint exit code."
+    return 1
+  fi
+  if [[ -n "$contract_file" ]] && ! grep -Fq "\"file\":\"$contract_file\"" "$checks_file" && ! grep -Fq "\"file\": \"$contract_file\"" "$checks_file"; then
+    echo "Structured checks do not reference current contract $contract_file."
+    return 1
+  fi
+  if [[ -n "$review_file" ]] && ! grep -Fq "\"file\":\"$review_file\"" "$checks_file" && ! grep -Fq "\"file\": \"$review_file\"" "$checks_file"; then
+    echo "Structured checks do not reference current review $review_file."
+    return 1
+  fi
+}
+
 workflow_contract_allows_path() {
   local contract_file="$1"
   local file_path="$2"

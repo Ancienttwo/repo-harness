@@ -245,6 +245,8 @@ scripts/skill-factory-create.sh
 .ai/hooks/lib/skill-factory.sh
 .ai/hooks/memory-intake.sh
 .ai/hooks/skill-factory-session-end.sh
+.claude/hooks/hook-input.sh
+.claude/hooks/lib
 .claude/hooks/lib/memory-state.sh
 .claude/hooks/lib/skill-factory.sh
 .claude/hooks/memory-intake.sh
@@ -628,19 +630,7 @@ migrate_hooks() {
     fi
   done < <(find "$HOOK_ASSETS_DIR" -type f -name '*.sh' | sort)
 
-  if [[ -d "$HOOK_ASSETS_DIR/lib" ]]; then
-    run_or_echo "mkdir -p \"$project_hooks_dir/lib\""
-    run_or_echo "cp -R \"$HOOK_ASSETS_DIR/lib\"/. \"$project_hooks_dir/lib/\""
-  fi
-
   cleanup_removed_workflow_assets "$repo"
-
-  if [[ -f "$HOOK_ASSETS_DIR/hook-input.sh" ]]; then
-    run_or_echo "cp \"$HOOK_ASSETS_DIR/hook-input.sh\" \"$project_hooks_dir/hook-input.sh\""
-    if [[ "$MODE" == "apply" ]]; then
-      chmod +x "$project_hooks_dir/hook-input.sh" 2>/dev/null || true
-    fi
-  fi
 
   while IFS= read -r hook; do
     local hook_name shim_path

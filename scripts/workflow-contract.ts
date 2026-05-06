@@ -16,6 +16,7 @@ export type WorkflowContract = {
     runtimeManifest: string;
     requiredDirectories: string[];
     requiredFiles: string[];
+    runtimeFiles?: string[];
   };
   documents: {
     spec: string;

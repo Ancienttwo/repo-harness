@@ -42,24 +42,5 @@ latest_plan="$(find plans -maxdepth 1 -type f -name "plan-*-$(printf '%s' "$slug
 
 [[ -n "$latest_plan" ]] || { echo "Unable to resolve created plan" >&2; exit 1; }
 
-mkdir -p tasks/contracts tasks/reviews .ai/harness/checks .ai/harness/handoff
-timestamp="$(date '+%Y-%m-%d %H:%M')"
-
-sed \
-  -e "s/{{TASK_SLUG}}/${slug}/g" \
-  -e "s|{{PLAN_FILE}}|${latest_plan}|g" \
-  -e "s/{{OWNER}}/${USER:-AI Agent}/g" \
-  -e "s/{{TIMESTAMP}}/${timestamp}/g" \
-  .claude/templates/contract.template.md > "tasks/contracts/${slug}.contract.md"
-
-sed \
-  -e "s/{{TASK_SLUG}}/${slug}/g" \
-  -e "s|{{PLAN_FILE}}|${latest_plan}|g" \
-  -e "s|{{CONTRACT_FILE}}|tasks/contracts/${slug}.contract.md|g" \
-  -e "s|{{CHECKS_FILE}}|.ai/harness/checks/latest.json|g" \
-  -e "s/{{TIMESTAMP}}/${timestamp}/g" \
-  .claude/templates/review.template.md > "tasks/reviews/${slug}.review.md"
-
-echo "{}" > .ai/harness/checks/latest.json
-bash scripts/plan-to-todo.sh --plan "$latest_plan"
-echo "Created sprint artifacts for ${slug}"
+echo "Created draft plan: ${latest_plan}"
+echo "Approve the plan before generating sprint artifacts with: bash scripts/plan-to-todo.sh --plan ${latest_plan}"

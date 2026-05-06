@@ -1,6 +1,7 @@
 #!/bin/bash
 # Atomic Pending Marker — PostToolUse on Edit|Write
 # Marks repo state as pending for atomic checkpoint commit.
+# Deprecated: not enabled by the shared settings template; kept for legacy manual use.
 
 set -u
 
