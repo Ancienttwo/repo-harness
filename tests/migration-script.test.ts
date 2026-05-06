@@ -233,6 +233,8 @@ describe("Migration script contract", () => {
       });
       expect(policy.external_tooling.hosts).toEqual(["claude-code", "codex"]);
       expect(policy.external_tooling.mode).toBe("guidance-only");
+      expect(policy.external_tooling.waza.primary_host).toBe("codex");
+      expect(policy.external_tooling.waza.sync_mode).toBe("stage-upstream-then-copy-to-codex");
       expect(policy.external_tooling.gbrain.mcp).toBe("candidate-disabled");
       expect(policy.context_budget.status_file).toBe(".ai/harness/context-budget/latest.json");
       expect(policy.handoff_resume.resume_packet_file).toBe(".ai/harness/handoff/resume.md");
@@ -360,6 +362,8 @@ describe("Migration script contract", () => {
       });
       expect(policy.external_tooling.hosts).toEqual(["codex"]);
       expect(policy.external_tooling.mode).toBe("strict-local");
+      expect(policy.external_tooling.waza.primary_host).toBe("codex");
+      expect(policy.external_tooling.waza.staging_cache_path).toBe("~/.agents/skills");
       expect(policy.external_tooling.gbrain.mcp).toBe("configured");
     } finally {
       rmSync(repo, { recursive: true, force: true });

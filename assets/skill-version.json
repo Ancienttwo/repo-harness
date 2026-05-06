@@ -1,6 +1,6 @@
 {
-  "version": "3.3.0",
-  "templateVersion": "3.3.0",
+  "version": "3.4.0",
+  "templateVersion": "3.4.0",
   "compatibility": {
     "minClaudeCodeVersion": "1.0.0",
     "minBunVersion": "1.0.0"
@@ -37,6 +37,10 @@
     {
       "version": "3.3.0",
       "description": "Removed legacy Skill Factory and auto-memory surfaces, and added guidance-only external tooling detection plus migration defaults"
+    },
+    {
+      "version": "3.4.0",
+      "description": "Added Codex-first Waza harness detection, update drift reporting, and verified Codex runtime sync guidance"
     }
   ],
   "generatedProjectStamp": {

@@ -2,6 +2,19 @@
 
 All notable changes to this skill are documented here.
 
+## [3.4.0] - 2026-05-06
+
+### Added
+
+- Added Codex-first Waza policy metadata to the harness contract and generated repo policy defaults.
+- Added host-aware Waza detection for real Claude/Codex skill paths, per-skill versions, symlink targets, staging drift, and upstream stale status.
+- Added tests covering Claude staging symlinks, Codex independent runtime copies, read-only update checks, and Codex stale drift reporting.
+
+### Changed
+
+- Changed Waza `--check-updates` handling to compare upstream `tw93/Waza` raw `SKILL.md` hashes without running mutating `npx skills check`.
+- Documented the Waza stage -> copy into Codex -> `cmp` verification workflow for generated and self-hosted harnesses.
+
 ## [3.3.0] - 2026-04-19
 
 ### Changed

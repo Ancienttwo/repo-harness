@@ -106,3 +106,14 @@
 - The harness should preserve context, enforce boundaries, recover state, and verify completion. It should not expand root context or invent duplicate runtime state surfaces.
 - Codex auto-compact is treated as an unreliable fallback. The durable recovery path is explicit filesystem handoff plus fresh-session bootstrap.
 - Claude can still use hook-triggered automation through `.claude/settings.json`; Codex uses scripts and AGENTS rules until repo-local Codex hooks exist.
+
+## 2026-05-06 Codex-first Waza Integration Notes
+
+### What Changed
+- Waza is now explicit Codex-first external tooling policy: `~/.codex/skills` is the Codex runtime source, while `~/.agents/skills` is only skills CLI staging/cache.
+- The detector checks real host skill paths, symlink targets, per-skill versions, staging drift, and upstream stale status for the fixed Waza set: `check`, `design`, `health`, `hunt`, `learn`, `read`, `think`, `write`.
+- `--check-updates` no longer shells out to `npx skills check`; it fetches upstream `tw93/Waza` raw `SKILL.md` files and compares hashes without mutating local skills.
+
+### Validation Notes
+- The local Codex Waza copies were synced from `~/.agents/skills` and verified with `cmp`.
+- Fake HOME tests cover Claude symlinks to staging, Codex independent copies, source-lock divergence, and Codex stale drift reporting.

@@ -6,6 +6,11 @@ Generated repos route external tooling by task shape:
 - `Waza` for short implementation loops, debugging, read/write, and lightweight checks
 - `gbrain` for knowledge capture, repo sync, and handoff retrieval
 
+Waza is Codex-first in this contract. `~/.codex/skills` is the Codex runtime
+source, while `~/.agents/skills` is only the skills CLI staging/cache path used
+to receive upstream `tw93/Waza` updates before syncing verified copies into
+Codex.
+
 ## Detect Safely
 
 Use `bash scripts/check-agent-tooling.sh` for a read-only advisory report.
@@ -19,9 +24,14 @@ Supported flags:
 The detector intentionally avoids side-effecting commands. It does not run:
 
 - `gstack setup`
+- `npx skills check`
 - `npx skills update`
 - `gbrain serve`
 - `gbrain sync`
+
+With `--check-updates`, Waza update checks fetch upstream GitHub raw
+`SKILL.md` files and compare versions/hashes against each host path. Network
+failures are reported as `unknown`; the detector never updates skills.
 
 ## Install
 
@@ -57,6 +67,18 @@ npx -y skills add tw93/Waza -g -a claude-code -s check design health hunt learn 
 
 Replace `claude-code` with `codex` when installing for Codex only.
 
+After installing or updating through the skills CLI, verify Codex has its own
+runtime copy:
+
+```bash
+for d in check design health hunt learn read think write; do
+  cp ~/.agents/skills/$d/SKILL.md ~/.codex/skills/$d/SKILL.md
+done
+for d in check design health hunt learn read think write; do
+  cmp -s ~/.agents/skills/$d/SKILL.md ~/.codex/skills/$d/SKILL.md
+done
+```
+
 ### gbrain
 
 ```bash
@@ -82,8 +104,13 @@ cd ~/.claude/skills/gstack && git pull && ./setup --host codex
 ### Waza
 
 ```bash
-npx -y skills check
 npx -y skills update
+for d in check design health hunt learn read think write; do
+  cp ~/.agents/skills/$d/SKILL.md ~/.codex/skills/$d/SKILL.md
+done
+for d in check design health hunt learn read think write; do
+  cmp -s ~/.agents/skills/$d/SKILL.md ~/.codex/skills/$d/SKILL.md
+done
 ```
 
 ### gbrain

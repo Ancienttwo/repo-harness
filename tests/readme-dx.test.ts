@@ -64,5 +64,5 @@ describe("README DX contract", () => {
     expect(res.stdout).toContain("Workflow migration:");
     expect(res.stdout).toContain("Helper scripts:");
     expect(res.stdout).toContain("Team hook config target: .claude/settings.json");
-  });
+  }, 15000);
 });

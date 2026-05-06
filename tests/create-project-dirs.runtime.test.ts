@@ -106,6 +106,9 @@ describe("create-project-dirs runtime smoke", () => {
       });
       expect(policy.external_tooling.hosts).toEqual(["claude-code", "codex"]);
       expect(policy.external_tooling.mode).toBe("guidance-only");
+      expect(policy.external_tooling.waza.primary_host).toBe("codex");
+      expect(policy.external_tooling.waza.managed_skills).toEqual(["check", "design", "health", "hunt", "learn", "read", "think", "write"]);
+      expect(policy.external_tooling.waza.codex_primary_path).toBe("~/.codex/skills");
       expect(policy.external_tooling.gbrain.mcp).toBe("candidate-disabled");
       expect(policy.context_budget.zones).toEqual({ yellow: 0.55, orange: 0.7, red: 0.8 });
       expect(policy.handoff_resume.auto_start_new_session).toBe(false);

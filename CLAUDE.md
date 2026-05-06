@@ -23,6 +23,7 @@ This repository dogfoods the `project-initializer` workflow. Treat it as a Bun +
 - Keep this file concise; route detailed policy into `docs/reference-configs/`.
 - Treat `.ai/hooks/` as the shared automation layer and `.claude/settings.json` as the Claude adapter.
 - Route complex planning/review/QA/release/browser-first work to `gstack`, short implementation/debug/read-write checks to `Waza`, and knowledge sync/handoff retrieval to `gbrain`.
+- Treat Waza as Codex-first: `~/.codex/skills` is the Codex runtime source; `~/.agents/skills` is skills CLI staging/cache only. Update by staging upstream Waza, copying the eight managed `SKILL.md` files into Codex, and verifying with `cmp`.
 - Use `docs/reference-configs/external-tooling.md` plus `bash scripts/check-agent-tooling.sh --host both --check-updates` for advisory install/update guidance.
 - When changing bootstrap or migration behavior, update the matching tests in `tests/`.
 - Prefer additive migration behavior over destructive replacement.

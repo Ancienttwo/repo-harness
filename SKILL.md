@@ -136,6 +136,7 @@ Migration defaults:
 - distill repeated corrections into `tasks/lessons.md`
 - merge missing `external_tooling` defaults into `.ai/harness/policy.json` without overwriting explicit user values
 - keep gstack/Waza/gbrain detection advisory-only; do not auto-install, auto-upgrade, auto-sync, or auto-enable MCP
+- treat Waza as Codex-first: `~/.codex/skills` is the Codex runtime source, `~/.agents/skills` is only skills CLI staging/cache, and updates require stage -> copy to Codex -> `cmp` verification
 
 ## Repo-Local Contract
 

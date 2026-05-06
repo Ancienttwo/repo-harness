@@ -576,6 +576,7 @@ pi_external_tooling_defaults_summary() {
 - Hosts: claude-code, codex
 - Mode: guidance-only
 - Detection: init-migrate
+- Waza: Codex-first, managed skills check/design/health/hunt/learn/read/think/write, stage upstream in ~/.agents/skills, sync verified copies into ~/.codex/skills
 - gbrain MCP: candidate-disabled
 - Auto-actions: never install, upgrade, serve, sync, or enable MCP automatically
 EOF_EXTERNAL_TOOLING_DEFAULTS
@@ -735,6 +736,16 @@ pi_write_harness_policy() {
     "hosts": $(pi_external_tooling_hosts_json),
     "mode": "guidance-only",
     "detection": "init-migrate",
+    "waza": {
+      "source_repo": "tw93/Waza",
+      "source_url": "https://github.com/tw93/Waza.git",
+      "managed_skills": ["check", "design", "health", "hunt", "learn", "read", "think", "write"],
+      "primary_host": "codex",
+      "codex_primary_path": "~/.codex/skills",
+      "staging_cache_path": "~/.agents/skills",
+      "sync_mode": "stage-upstream-then-copy-to-codex",
+      "host_drift_policy": "report-per-host-version-staging-and-upstream-drift"
+    },
     "gbrain": {
       "mcp": "$(pi_external_tooling_gbrain_mcp)"
     }

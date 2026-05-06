@@ -448,6 +448,16 @@ RESUME_EOF
     ],
     "mode": "guidance-only",
     "detection": "init-migrate",
+    "waza": {
+      "source_repo": "tw93/Waza",
+      "source_url": "https://github.com/tw93/Waza.git",
+      "managed_skills": ["check", "design", "health", "hunt", "learn", "read", "think", "write"],
+      "primary_host": "codex",
+      "codex_primary_path": "~/.codex/skills",
+      "staging_cache_path": "~/.agents/skills",
+      "sync_mode": "stage-upstream-then-copy-to-codex",
+      "host_drift_policy": "report-per-host-version-staging-and-upstream-drift"
+    },
     "gbrain": {
       "mcp": "candidate-disabled"
     }

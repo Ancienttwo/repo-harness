@@ -9,6 +9,17 @@ export type WorkflowContract = {
     agents: string[];
     repoLocalFirst: boolean;
   };
+  externalTooling?: {
+    waza?: {
+      sourceRepo: string;
+      managedSkills: string[];
+      primaryHost: string;
+      codexPrimaryPath: string;
+      stagingCachePath: string;
+      syncMode: string;
+      hostDriftPolicy: string;
+    };
+  };
   helpers: {
     scripts: string[];
   };

@@ -16,7 +16,7 @@
 - `plans/archive/`: archived plans and outcomes
 - `tasks/archive/`: archived todo snapshots
 - `docs/reference-configs/harness-overview.md`: orchestration playbook
-- `docs/reference-configs/external-tooling.md`: gstack/Waza/gbrain routing and advisory install/update commands
+- `docs/reference-configs/external-tooling.md`: gstack/Waza/gbrain routing, Codex-first Waza sync, and advisory install/update commands
 - `docs/reference-configs/sprint-contracts.md`: contract rules
 - `docs/reference-configs/evaluator-rubric.md`: review thresholds
 - `docs/reference-configs/handoff-protocol.md`: handoff expectations

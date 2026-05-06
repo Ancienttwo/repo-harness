@@ -5,6 +5,17 @@
     "agents": ["claude", "codex"],
     "repoLocalFirst": true
   },
+  "externalTooling": {
+    "waza": {
+      "sourceRepo": "tw93/Waza",
+      "managedSkills": ["check", "design", "health", "hunt", "learn", "read", "think", "write"],
+      "primaryHost": "codex",
+      "codexPrimaryPath": "~/.codex/skills",
+      "stagingCachePath": "~/.agents/skills",
+      "syncMode": "stage-upstream-then-copy-to-codex",
+      "hostDriftPolicy": "report-per-host-version-staging-and-upstream-drift"
+    }
+  },
   "helpers": {
     "scripts": [
       "new-spec.sh",

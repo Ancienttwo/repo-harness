@@ -78,7 +78,7 @@ Most common guards:
 - Plan source of truth: `plans/`
 - Milestone log only: `docs/PROGRESS.md`
 
-## Current Model (3.3.0)
+## Current Model (3.4.0)
 
 - Question flow uses **12 grouped decision points** with harness defaults inferred first.
 - Plan menu is tiered:
@@ -102,10 +102,11 @@ Most common guards:
   - `.ai/harness/policy.json`
 - Generated and migrated repos default `external_tooling` to:
   - `complex -> gstack`
-  - `simple -> Waza`
+  - `simple -> Waza` with Codex-first runtime copies in `~/.codex/skills`
   - `knowledge -> gbrain`
 - External tooling stays advisory-only:
   - `bash scripts/check-agent-tooling.sh --host both --check-updates`
+  - Waza update checks compare upstream `tw93/Waza` `SKILL.md` hashes without running `npx skills check`
   - no automatic global install, upgrade, daemon, sync, or MCP enablement
 - Manual distillation stays repo-local:
   - repeated corrections -> `tasks/lessons.md`
