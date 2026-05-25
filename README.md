@@ -14,6 +14,25 @@ This repository now dogfoods its own tasks-first contract. It is both:
 This is the fastest path for an AI tooling owner evaluating whether the workflow is
 safe to adopt in a real repo.
 
+### Install or refresh the local skill
+
+```bash
+git clone https://github.com/Ancienttwo/agentic-dev.git ~/.claude/skills/agentic-dev
+cd ~/.claude/skills/agentic-dev
+bash scripts/sync-codex-installed-copies.sh
+```
+
+Local path model:
+
+- Source repo: `~/.claude/skills/agentic-dev`
+- Legacy source alias: `~/.claude/skills/project-initializer`
+- Codex discoverable skill: `~/.codex/skills/agentic-dev`
+- Codex legacy fallback bundles: `~/.codex/skills/agentic-dev-skill`, `~/.codex/skills/project-initializer`
+
+Only `~/.codex/skills/agentic-dev` should contain `SKILL.md` and
+`assets/skill-commands/`; the legacy Codex directories exist only so older
+generated repos can still resolve upstream assets.
+
 ### Minimum prerequisites
 
 - Git working tree
@@ -23,9 +42,21 @@ safe to adopt in a real repo.
 
 ### Start here
 
+For an existing repo:
+
 ```bash
 bash scripts/migrate-project-template.sh --repo . --dry-run
 ```
+
+Apply only after the dry-run report looks correct:
+
+```bash
+bash scripts/migrate-project-template.sh --repo . --apply
+```
+
+For a new project or module, use the `agentic-dev-scaffold` command skill. For
+an existing repo, use `agentic-dev-init`; it installs or refreshes the harness
+without creating an application stack.
 
 ### Success looks like this
 
@@ -136,6 +167,12 @@ skill and `agentic-dev-*` command facades. Legacy compatibility directories
 `~/.codex/skills/agentic-dev-skill` and `~/.codex/skills/project-initializer`
 are runtime fallback bundles only; they must not contain `SKILL.md` files or
 `assets/skill-commands/`.
+
+After editing this source repo, refresh the local Codex runtime copy with:
+
+```bash
+bash scripts/sync-codex-installed-copies.sh
+```
 
 ## Maintainer Reference
 
