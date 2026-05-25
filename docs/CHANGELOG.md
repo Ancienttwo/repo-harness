@@ -4,6 +4,12 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+## [5.0.2] - 2026-05-25
+
+### Fixed
+
+- Excluded ignored repo-local runtime state from Codex installed-copy sync outputs.
+
 ## [5.0.1] - 2026-05-25
 
 ### Added
