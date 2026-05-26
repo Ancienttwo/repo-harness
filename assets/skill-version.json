@@ -1,6 +1,6 @@
 {
-  "version": "5.1.0",
-  "templateVersion": "5.1.0",
+  "version": "5.1.1",
+  "templateVersion": "5.1.1",
   "skillName": "agentic-dev",
   "contractId": "tasks-first-harness-v1",
   "legacyAliases": [
@@ -83,6 +83,10 @@
     {
       "version": "5.1.0",
       "description": "Adds filesystem-owned Evidence Contract gates for approved plans and hardens Waza tooling integrity checks across managed skill directories and shared rules"
+    },
+    {
+      "version": "5.1.1",
+      "description": "Refreshes stale reference and architecture docs for the current agentic-dev command, hook, migration, eval, plugin, and minimal-documentation contracts"
     }
   ],
   "generatedProjectStamp": {

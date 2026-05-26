@@ -58,3 +58,7 @@
 - [x] Hardened Waza tooling checks to compare whole skill directories and shared `rules/` files, not only `SKILL.md`
 - [x] Added filesystem-owned Evidence Contract fields and guards for approved plan execution
 - [x] Bumped release metadata to 5.1.0 for package, skill manifest, README, stamp, and changelog
+- [x] Refreshed stale `references/` docs for the current `agentic-dev` hook, migration, eval, plugin, and minimal-doc contracts
+- [x] Verified reference drift scan and repo workflow checks for the doc refresh
+- [x] Removed empty optional doc placeholders and refreshed command inventory docs for the current 13-command surface
+- [x] Bumped release metadata to 5.1.1 for package, skill manifest, README, stamp, and changelog

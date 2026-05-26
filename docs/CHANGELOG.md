@@ -4,6 +4,14 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+## [5.1.1] - 2026-05-26
+
+### Fixed
+
+- Refreshed stale `references/` docs for the current `agentic-dev` hook, migration, eval, plugin, and minimal-documentation contracts.
+- Updated public-surface spec and architecture docs to reflect the full 13-command `agentic-dev-*` facade inventory.
+- Removed empty optional doc placeholders so generated/self-hosted docs match the `minimal-agentic` profile.
+
 ## [5.1.0] - 2026-05-26
 
 ### Added

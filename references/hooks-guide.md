@@ -1,6 +1,6 @@
 # Hooks Configuration Guide
 
-Use this guide for **Q8: Configure Hooks** details.
+Use this guide for repo-local hook configuration details.
 
 ## Project Hook Source of Truth
 
@@ -9,9 +9,9 @@ Use this guide for **Q8: Configure Hooks** details.
 - Shared hook implementation: `.ai/hooks/`.
 - Team-configurable Claude adapter: `.claude/settings.json` (committable).
 - Personal overrides only: `.claude/settings.local.json` (optional).
-- Claude compatibility shims: `.claude/hooks/`.
+- Claude adapter: `.claude/settings.json` dispatches into `.ai/hooks/run-hook.sh`.
 
-Use `.ai/hooks/` as the shared implementation layer. Use hooks as Claude-specific accelerators, not as the only source of workflow enforcement.
+Use `.ai/hooks/` as the shared implementation layer. Use hooks as advisory accelerators, not as the only source of workflow enforcement.
 
 ## Hook Presets
 
@@ -44,21 +44,29 @@ Use `.ai/hooks/` as the shared implementation layer. Use hooks as Claude-specifi
 
 | Asset File | Target Path |
 |---|---|
-| `assets/hooks/hook-input.sh` | `.ai/hooks/hook-input.sh` and `.claude/hooks/hook-input.sh` |
-| `assets/hooks/run-hook.sh` | `.ai/hooks/run-hook.sh` (main) and `.claude/hooks/run-hook.sh` (shim) |
-| `assets/hooks/*.sh` | `.ai/hooks/*.sh` (main) and `.claude/hooks/*.sh` (compatibility shims) |
-| `assets/hooks/lib/` | `.ai/hooks/lib/` (main) and `.claude/hooks/lib/` (compatibility copy) |
+| `assets/hooks/hook-input.sh` | `.ai/hooks/hook-input.sh` |
+| `assets/hooks/run-hook.sh` | `.ai/hooks/run-hook.sh` |
+| `assets/hooks/*.sh` | `.ai/hooks/*.sh` |
+| `assets/hooks/lib/` | `.ai/hooks/lib/` |
 | `assets/hooks/settings.template.json` | `.claude/settings.json` |
 
-Optional hook assets:
+Bundled hook assets include:
 - `assets/hooks/tdd-guard-hook.sh`
 - `assets/hooks/pre-code-change.sh`
 - `assets/hooks/anti-simplification.sh`
 - `assets/hooks/post-bash.sh`
 - `assets/hooks/context-pressure-hook.sh`
 - `assets/hooks/changelog-guard.sh`
+- `assets/hooks/session-start-context.sh`
+- `assets/hooks/finalize-handoff.sh`
+- `assets/hooks/worktree-guard.sh`
 - `assets/hooks/atomic-pending.sh`
 - `assets/hooks/atomic-commit.sh`
+- `assets/hooks/trace-event.sh`
+
+Generated `.claude/hooks/` shims are legacy artifacts. Current migration removes
+known generated shims and preserves only user-authored `.claude/hooks/custom-*.sh`
+files.
 
 ## Customization Notes
 

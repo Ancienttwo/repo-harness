@@ -19,8 +19,9 @@ generates for downstream repos.
   shared hooks, and verification helpers are present and internally consistent.
 - Command surface:
   expose action-style `agentic-dev-*` command skill facades for planning,
-  review, autoplan, init, scaffold, migrate, upgrade, repair, and check without
-  duplicating the workflow engine.
+  review, autoplan, init, scaffold, migrate, upgrade, capability configuration,
+  architecture maintenance, handoff rollover, deploy readiness, repair, and
+  check without duplicating the workflow engine.
 - Quality bar:
   self-migration is idempotent, critical parity surfaces stay aligned, and the
   required verification commands pass in this repo.

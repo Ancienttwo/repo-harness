@@ -16,6 +16,10 @@ They expose user-facing verbs without duplicating the engine:
 - `agentic-dev-scaffold`
 - `agentic-dev-migrate`
 - `agentic-dev-upgrade`
+- `agentic-dev-capability`
+- `agentic-dev-architecture`
+- `agentic-dev-handoff`
+- `agentic-dev-deploy`
 - `agentic-dev-repair`
 - `agentic-dev-check`
 
@@ -47,8 +51,9 @@ implementation steps. It preserves the invariant that `hooks-init`, `docs-init`,
 and `create-project-dirs` are internal steps, not public commands.
 
 At 10x commands, the first failure would be duplicate policy across command
-files. The smallest coherent guard is the existing manifest plus tests that
-assert command count, mutability defaults, and public docs.
+files. The smallest coherent guard is the manifest plus tests and architecture
+docs that assert command inventory, mutability defaults, and public boundaries
+from the same action-style surface.
 
 ## Optimization Backlog
 

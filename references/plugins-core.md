@@ -312,19 +312,34 @@ From [kepano/obsidian-skills](https://github.com/kepano/obsidian-skills):
   "hooks": {
     "UserPromptSubmit": [
       {
-        "command": "echo '\u001b[1;33m🛡️ Quality guard active...\u001b[0m'"
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '\u001b[1;33m🛡️ Quality guard active...\u001b[0m'"
+          }
+        ]
       }
     ],
     "PreToolUse": [
       {
         "matcher": "Edit|Write",
-        "command": "echo '\u001b[0;34m📝 Code modification detected\u001b[0m'"
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '\u001b[0;34m📝 Code modification detected\u001b[0m'"
+          }
+        ]
       }
     ],
     "PostToolUse": [
       {
         "matcher": "Bash\\(.*test.*\\)",
-        "command": "echo '\u001b[0;32m✅ Tests completed\u001b[0m'"
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '\u001b[0;32m✅ Tests completed\u001b[0m'"
+          }
+        ]
       }
     ]
   }
@@ -338,7 +353,12 @@ From [kepano/obsidian-skills](https://github.com/kepano/obsidian-skills):
   "hooks": {
     "UserPromptSubmit": [
       {
-        "command": "echo '\u001b[1;33m🛡️ Quality guard active...\u001b[0m'"
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '\u001b[1;33m🛡️ Quality guard active...\u001b[0m'"
+          }
+        ]
       }
     ]
   }
@@ -353,7 +373,12 @@ From [kepano/obsidian-skills](https://github.com/kepano/obsidian-skills):
   "hooks": {
     "UserPromptSubmit": [
       {
-        "command": "bash .claude/hooks/anti-simplification.sh"
+        "hooks": [
+          {
+            "type": "command",
+            "command": "repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_REPO_ROOT=\"$repo\" bash \"$repo/.ai/hooks/run-hook.sh\" anti-simplification.sh"
+          }
+        ]
       }
     ]
   }
@@ -367,7 +392,12 @@ From [kepano/obsidian-skills](https://github.com/kepano/obsidian-skills):
     "PostToolUse": [
       {
         "matcher": "Write\\(.*\\.tsx?\\)",
-        "command": "npx tsc --noEmit 2>&1 | head -20"
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npx tsc --noEmit 2>&1 | head -20"
+          }
+        ]
       }
     ]
   }
@@ -381,7 +411,12 @@ From [kepano/obsidian-skills](https://github.com/kepano/obsidian-skills):
     "PostToolUse": [
       {
         "matcher": "Write\\(.*\\.(ts|tsx|js|jsx|json)\\)",
-        "command": "bunx biome check --write \"$CLAUDE_FILE_PATH\" 2>&1 | head -10"
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bunx biome check --write \"$CLAUDE_FILE_PATH\" 2>&1 | head -10"
+          }
+        ]
       }
     ]
   }
@@ -395,7 +430,12 @@ From [kepano/obsidian-skills](https://github.com/kepano/obsidian-skills):
     "PostToolUse": [
       {
         "matcher": "Write\\(.*\\.(ts|tsx|js|jsx)\\)",
-        "command": "bunx biome ci \"$CLAUDE_FILE_PATH\" 2>&1 | head -20"
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bunx biome ci \"$CLAUDE_FILE_PATH\" 2>&1 | head -20"
+          }
+        ]
       }
     ]
   }
@@ -410,7 +450,8 @@ From [kepano/obsidian-skills](https://github.com/kepano/obsidian-skills):
 
 ```bash
 # Run the setup script
-~/.claude/skills/project-initializer/scripts/setup-plugins.sh
+AGENTIC_DEV_ROOT="${AGENTIC_DEV_ROOT:-$HOME/Projects/agentic-dev}"
+bash "$AGENTIC_DEV_ROOT/scripts/setup-plugins.sh"
 ```
 
 This default flow also adds marketplace `obra/superpowers-marketplace` and enables `superpowers@superpowers-marketplace`.
@@ -570,17 +611,32 @@ For compatibility with plugin gating, keep an allow-list in `~/.claude/settings.
     "PreToolUse": [
       {
         "matcher": "Edit|Write",
-        "command": "bash ~/.claude/hooks/worktree-guard.sh"
+        "hooks": [
+          {
+            "type": "command",
+            "command": "repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_REPO_ROOT=\"$repo\" bash \"$repo/.ai/hooks/run-hook.sh\" worktree-guard.sh"
+          }
+        ]
       }
     ],
     "PostToolUse": [
       {
         "matcher": "Edit|Write",
-        "command": "bash ~/.claude/hooks/atomic-pending.sh"
+        "hooks": [
+          {
+            "type": "command",
+            "command": "repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_REPO_ROOT=\"$repo\" bash \"$repo/.ai/hooks/run-hook.sh\" atomic-pending.sh"
+          }
+        ]
       },
       {
         "matcher": "Bash",
-        "command": "bash ~/.claude/hooks/atomic-commit.sh \"$TOOL_OUTPUT\" \"$EXIT_CODE\" \"$TOOL_INPUT\""
+        "hooks": [
+          {
+            "type": "command",
+            "command": "repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_REPO_ROOT=\"$repo\" bash \"$repo/.ai/hooks/run-hook.sh\" atomic-commit.sh"
+          }
+        ]
       }
     ]
   }

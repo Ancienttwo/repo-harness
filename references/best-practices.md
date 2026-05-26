@@ -254,11 +254,18 @@ jobs:
 
 ### Required Files
 - `README.md` - Project overview, quick start
-- `CLAUDE.md` - AI development guide
-- `docs/brief.md` - Product brief
-- `docs/tech-stack.md` - Tech stack decisions
-- `docs/PROGRESS.md` - Milestone log
-- `docs/CHANGELOG.md` - Version history
+- `AGENTS.md` / `CLAUDE.md` - concise agent routing contract for Codex and Claude
+- `docs/spec.md` - stable product intent
+- `docs/architecture/index.md` - architecture status and module pointers
+- `tasks/todo.md` - active execution checklist
+- `tasks/lessons.md` - correction-derived rules
+- `tasks/research.md` - deep repo findings and hidden contracts
+- `docs/CHANGELOG.md` - version history when release history is relevant
+
+Optional docs such as `docs/brief.md`, `docs/tech-stack.md`, and `docs/decisions.md`
+should be created only from concrete repo evidence or explicit user request.
+`docs/PROGRESS.md` is a legacy migration input, not a required generated surface;
+durable progress belongs under `tasks/workstreams/`.
 
 ### Code Comments
 - Comment "WHY", not "WHAT"

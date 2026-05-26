@@ -1,6 +1,6 @@
 {
   "name": "agentic-dev",
-  "version": "5.1.0",
+  "version": "5.1.1",
   "description": "Installs, migrates, audits, and repairs repo-local agentic development harnesses",
   "repository": {
     "type": "git",

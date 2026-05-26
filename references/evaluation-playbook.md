@@ -1,6 +1,7 @@
 # Evaluation Playbook
 
-Use this guide when iterating on `project-initializer` with the local benchmark runner or an upstream `skill-creator` workflow.
+Use this guide when iterating on `agentic-dev` with the local benchmark runner.
+`project-initializer` and `agentic-dev-skill` remain legacy aliases only.
 
 ## When to run evals
 
@@ -42,7 +43,7 @@ The runner:
 Drive iterations from a sibling workspace directory:
 
 ```text
-project-initializer-workspace/
+agentic-dev-workspace/
   iteration-1/
     eval-new-project/
       with_skill/
@@ -60,7 +61,7 @@ Use descriptive eval directory names instead of only numeric ids.
 
 For each eval, compare:
 
-- `with_skill`: current `project-initializer`
+- `with_skill`: current `agentic-dev`
 - `without_skill`: no skill, or an older snapshot when doing improvement comparisons
 
 Capture enough output to judge:
@@ -79,7 +80,7 @@ Good dimensions for this skill:
 - Did the skill trigger at the right time?
 - Did it select the correct workflow path: initialize, migrate, audit, or repair?
 - Did it preserve a tasks-first repo contract?
-- Did it correctly treat `docs/PROGRESS.md` as milestone-only?
+- Did it correctly treat `docs/PROGRESS.md` as legacy migration input, with durable progress under `tasks/workstreams/`?
 - Did it update templates, scripts, and tests together when the task required implementation?
 
 ## When to run migration audit
