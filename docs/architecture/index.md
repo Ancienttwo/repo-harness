@@ -4,8 +4,32 @@
 
 ## Current Snapshot
 
-- Latest snapshot: (none yet)
-- Latest diagram: [agentic-dev architecture](diagrams/project-initializer-architecture.html) (2026-05-20; legacy diagram filename)
+- Latest snapshot: [agentic-dev plugin review](snapshots/2026-05-25-agentic-dev-plugin-review.md) (2026-05-25)
+- Latest diagram: [agentic-dev plugin architecture](diagrams/agentic-dev-plugin-architecture.html) (2026-05-25)
+
+## System Boundary
+
+`agentic-dev` is a repo-local workflow harness skill. It is not a product
+runtime, agent gateway, database service, or MCP server. Its job is to inspect a
+target repository, install or refresh a file-backed workflow contract, route
+public command skills, and verify that the generated repo-local surfaces remain
+consistent.
+
+Authoritative surfaces:
+
+- Public router: `SKILL.md`, `README.md`, `AGENTS.md`, `CLAUDE.md`.
+- Public command facades: `assets/skill-commands/*/SKILL.md` plus `assets/skill-commands/manifest.json`.
+- Engine: `scripts/inspect-project-state.ts`, `scripts/migrate-project-template.sh`, `scripts/migrate-workflow-docs.ts`, `scripts/create-project-dirs.sh`, `scripts/lib/project-init-lib.sh`.
+- Contract assets: `assets/workflow-contract.v1.json`, `.ai/harness/workflow-contract.json`, `.ai/harness/policy.json`, `.ai/context/context-map.json`, `.ai/context/capabilities.json`.
+- Runtime harness: `assets/hooks/`, `.ai/hooks/`, `.claude/settings.json`, and ignored `.ai/harness/*` runtime state.
+- Verification: `tests/`, `evals/`, `scripts/check-task-workflow.sh`, `scripts/check-task-sync.sh`, `scripts/check-agent-tooling.sh`, `scripts/check-brain-manifest.sh`.
+
+Out of scope:
+
+- Product application scaffolds after their first generated skeleton.
+- `_ref/` external reference checkouts and `_ops/` private operations state.
+- Installing, upgrading, or enabling external tools such as Waza, gstack, gbrain, or MCP servers.
+- Vendoring external skill bodies such as `diagram-design`.
 
 ## Umbrella Hierarchy
 
@@ -24,6 +48,13 @@ Project
 - Local `AGENTS.md` / `CLAUDE.md` contract blocks own agent-facing context projection.
 - `tasks/workstreams/<domain>/<capability>/` owns durable multi-session progress.
 - `tasks/todo.md` owns only the current session slice.
+
+## Domains
+
+- [Public Surface](domains/public-surface.md): root router, README, root agent docs, and action command facades.
+- [Workflow Engine](domains/workflow-engine.md): inspection, migration, template install, contract assets, and policy/context generation.
+- [Runtime Harness](domains/runtime-harness.md): generated hook implementation, adapter settings, handoff, and runtime event state.
+- [Verification](domains/verification.md): unit tests, smoke checks, eval fixtures, readiness checks, and advisory tooling probes.
 
 ## Architecture Drift Flow
 
@@ -44,3 +75,10 @@ Project
 - `docs/architecture/index.md` keeps only pending request links.
 
 ## Pending Requests
+
+- (none)
+
+## Review Backlog
+
+- Treat repo-local `.codex/` as local/untracked state unless a documented Codex repo-local contract is verified. If Codex needs a repo-local adapter, keep the implementation boundary under `.ai/`; reserve `~/.codex` for global Codex runtime state.
+- Consider adding `bun scripts/capability-resolver.ts validate --format text` to the strict workflow gate after the architecture registry has been used through one more real slice.

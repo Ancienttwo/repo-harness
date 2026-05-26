@@ -66,3 +66,4 @@ work, or shared contracts, report the P1/P2/P3 evidence explicitly.
 - Do not use gstack plan review for routine local edits where `/think` or direct execution is enough.
 - Hooks may emit advisory Waza `/check` and `/health` route hints on prompt submit, but must not block, mutate files, or auto-run skills based on semantic intent.
 - Keep `office-hours` for product-demand shaping; use `plan-eng-review` when engineering execution needs to be locked.
+- Treat subagent and parallel-agent execution as a main-agent decision based on task breadth, context impact, raw-log volume, and callable tools. Do not ask the user for spawn confirmation; if no runner is callable or spawning is not worth the context cost, complete the same P1/P2/P3 trace in the main thread and persist evidence-backed conclusions in `tasks/research.md`.

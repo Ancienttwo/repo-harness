@@ -40,6 +40,29 @@ common_excludes=(
   --exclude='node_modules/'
   --exclude='.DS_Store'
   --exclude='evals/benchmark.md'
+  --exclude='.codex/'
+  --exclude='.claude/settings.local.json'
+  --exclude='.claude/.atomic_pending'
+  --exclude='.claude/.session-id'
+  --exclude='.claude/.trace.jsonl'
+  --exclude='.claude/.tool-call-count'
+  --exclude='.claude/.session-handoff.md'
+  --exclude='.claude/.task-state.json'
+  --exclude='.claude/.task-handoff.md'
+  --exclude='.claude/.context-pressure/'
+  --exclude='.claude/*.tmp'
+  --exclude='.claude/*.bak'
+  --exclude='.claude/*.bak.*'
+  --exclude='.claude/*.backup-*'
+  --exclude='.ai/harness/checks/latest.json'
+  --exclude='.ai/harness/events.jsonl'
+  --exclude='.ai/harness/failures/latest.jsonl'
+  --exclude='.ai/harness/handoff/current.md'
+  --exclude='.ai/harness/handoff/resume.md'
+  --exclude='.ai/harness/context-budget/latest.json'
+  --exclude='.ai/harness/architecture/events.jsonl'
+  --exclude='.ai/harness/worktrees/'
+  --exclude='.ai/harness/runs/'
 )
 
 sync_copy() {
@@ -120,7 +143,9 @@ for legacy_name in agentic-dev-skill project-initializer; do
 
   # Legacy dirs are runtime fallback bundles, not discoverable Codex skills.
   # Keep scripts/assets for old resolver paths, but remove every skill facade.
-  find "$legacy_dest" -name SKILL.md -type f -delete
+  # -H handles existing legacy symlinks such as
+  # ~/.codex/skills/project-initializer -> ~/.claude/skills/project-initializer.
+  find -H "$legacy_dest" -name SKILL.md -type f -delete
   rm -rf "$legacy_dest/assets/skill-commands"
 
   echo "[sync-installed] legacy runtime fallback bundle: $legacy_dest"

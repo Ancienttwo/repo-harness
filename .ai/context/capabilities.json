@@ -1,4 +1,145 @@
 {
   "version": 1,
-  "capabilities": []
+  "capabilities": [
+    {
+      "id": "public-surface-root-router",
+      "domain": "public-surface",
+      "name": "root-router",
+      "prefixes": [
+        "SKILL.md",
+        "README.md",
+        "AGENTS.md",
+        "CLAUDE.md",
+        "docs/spec.md"
+      ],
+      "contract_files": {
+        "agents": "AGENTS.md",
+        "claude": "CLAUDE.md"
+      },
+      "architecture_module": "docs/architecture/modules/public-surface/root-router.md",
+      "workstream_dir": "tasks/workstreams/public-surface/root-router",
+      "lsp_profile": "typescript-lsp",
+      "verification_hints": [
+        "bun scripts/inspect-project-state.ts --repo . --format text",
+        "bash scripts/migrate-project-template.sh --repo . --dry-run"
+      ]
+    },
+    {
+      "id": "public-surface-action-commands",
+      "domain": "public-surface",
+      "name": "action-commands",
+      "prefixes": [
+        "assets/skill-commands"
+      ],
+      "contract_files": {
+        "agents": "AGENTS.md",
+        "claude": "CLAUDE.md"
+      },
+      "architecture_module": "docs/architecture/modules/public-surface/action-commands.md",
+      "workstream_dir": "tasks/workstreams/public-surface/action-commands",
+      "lsp_profile": "typescript-lsp",
+      "verification_hints": [
+        "bun test tests/action-command-skills.test.ts",
+        "bun run benchmark:skills --dry-run"
+      ]
+    },
+    {
+      "id": "workflow-engine-inspection-migration",
+      "domain": "workflow-engine",
+      "name": "inspection-migration",
+      "prefixes": [
+        "scripts/inspect-project-state.ts",
+        "scripts/migrate-project-template.sh",
+        "scripts/migrate-workflow-docs.ts",
+        "scripts/create-project-dirs.sh",
+        "scripts/init-project.sh",
+        "scripts/lib"
+      ],
+      "contract_files": {
+        "agents": "AGENTS.md",
+        "claude": "CLAUDE.md"
+      },
+      "architecture_module": "docs/architecture/modules/workflow-engine/inspection-migration.md",
+      "workstream_dir": "tasks/workstreams/workflow-engine/inspection-migration",
+      "lsp_profile": "typescript-lsp",
+      "verification_hints": [
+        "bun test tests/migration-script.test.ts tests/create-project-dirs.runtime.test.ts tests/workflow-contract.test.ts",
+        "bash scripts/migrate-project-template.sh --repo . --dry-run"
+      ]
+    },
+    {
+      "id": "workflow-engine-contract-assets",
+      "domain": "workflow-engine",
+      "name": "contract-assets",
+      "prefixes": [
+        "assets/workflow-contract.v1.json",
+        ".ai/harness/workflow-contract.json",
+        ".ai/harness/policy.json",
+        ".ai/context/context-map.json",
+        ".ai/context/capabilities.json",
+        "assets/templates",
+        "assets/reference-configs",
+        "docs/reference-configs"
+      ],
+      "contract_files": {
+        "agents": "AGENTS.md",
+        "claude": "CLAUDE.md"
+      },
+      "architecture_module": "docs/architecture/modules/workflow-engine/contract-assets.md",
+      "workstream_dir": "tasks/workstreams/workflow-engine/contract-assets",
+      "lsp_profile": "typescript-lsp",
+      "verification_hints": [
+        "bun test tests/workflow-contract.test.ts tests/scaffold-parity.test.ts",
+        "bun scripts/capability-resolver.ts validate --format text"
+      ]
+    },
+    {
+      "id": "runtime-harness-hook-adapters",
+      "domain": "runtime-harness",
+      "name": "hook-adapters",
+      "prefixes": [
+        "assets/hooks",
+        ".ai/hooks",
+        ".claude/settings.json",
+        "scripts/run-skill-hook.ts"
+      ],
+      "contract_files": {
+        "agents": "AGENTS.md",
+        "claude": "CLAUDE.md"
+      },
+      "architecture_module": "docs/architecture/modules/runtime-harness/hook-adapters.md",
+      "workstream_dir": "tasks/workstreams/runtime-harness/hook-adapters",
+      "lsp_profile": "typescript-lsp",
+      "verification_hints": [
+        "bun test tests/hook-runtime.test.ts tests/hook-contracts.test.ts tests/workflow-contract.test.ts",
+        "bash scripts/check-task-workflow.sh --strict"
+      ]
+    },
+    {
+      "id": "verification-evals-checks",
+      "domain": "verification",
+      "name": "evals-checks",
+      "prefixes": [
+        "tests",
+        "evals",
+        "scripts/run-skill-evals.ts",
+        "scripts/check-task-workflow.sh",
+        "scripts/check-task-sync.sh",
+        "scripts/check-agent-tooling.sh",
+        "scripts/check-brain-manifest.sh"
+      ],
+      "contract_files": {
+        "agents": "AGENTS.md",
+        "claude": "CLAUDE.md"
+      },
+      "architecture_module": "docs/architecture/modules/verification/evals-checks.md",
+      "workstream_dir": "tasks/workstreams/verification/evals-checks",
+      "lsp_profile": "typescript-lsp",
+      "verification_hints": [
+        "bun test",
+        "bash scripts/check-task-sync.sh",
+        "bash scripts/check-task-workflow.sh --strict"
+      ]
+    }
+  ]
 }

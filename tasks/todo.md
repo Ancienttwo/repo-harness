@@ -51,3 +51,7 @@
 - [x] Added `agentic-dev-capability` for selected capability boundaries without a full init/migrate/upgrade pass
 - [x] Added `agentic-dev-architecture`, `agentic-dev-handoff`, and `agentic-dev-deploy` as focused command facades
 - [x] Migrated the git-backed source repo to `/Users/chris/Projects/agentic-dev` as the only editable source of truth and rebuilt Claude/Codex runtime paths as source-backed aliases
+- [x] Fixed Codex installed-copy sync for symlinked legacy `project-initializer` fallback paths
+- [x] Bumped release metadata to 5.0.1 for package, skill-version manifest, README, stamp, and changelog
+- [x] Bumped release metadata to 5.0.2 after excluding ignored runtime state from installed-copy sync outputs
+- [x] Made subagent/parallel research delegation a main-agent context-impact decision with a main-thread fallback path

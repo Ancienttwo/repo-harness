@@ -16,9 +16,10 @@
 - If no active plan exists, run `bash scripts/new-sprint.sh --slug <slug> --title <title>`.
 - Re-plan when execution drifts.
 
-### 4. Subagent Strategy
-- Offload independent research tracks.
-- Keep one ownership boundary per subagent.
+### 4. Research Delegation Strategy
+- The main agent decides whether to spawn based on task breadth, context impact, raw-log volume, and callable runner availability.
+- Keep one ownership boundary per spawned sidecar.
+- Do not ask the user for spawn confirmation. If no sidecar runner is callable or spawning is not worth the context cost, perform the same bounded research trace in the main thread and persist conclusions to `tasks/research.md`.
 - Recovery profile: `{{RECOVERY_PROFILE}}`.
 - State profile: `{{STATE_PROFILE}}`.
 

@@ -118,11 +118,11 @@
       "project_path": "icloud/brain/agentic-dev/*",
       "manifest_file": ".ai/harness/brain-manifest.json",
       "drift_check": "scripts/check-brain-manifest.sh",
+      "rule": "external knowledge stores long-lived explanations, runbooks, and patterns only; repo-local contracts, hooks, scripts, checks, and evidence remain authoritative",
       "legacy_paths": [
         "icloud/brain/agentic-dev-skill/*",
         "icloud/brain/project-initializer/*"
-      ],
-      "rule": "external knowledge stores long-lived explanations, runbooks, and patterns only; repo-local contracts, hooks, scripts, checks, and evidence remain authoritative"
+      ]
     }
   },
   "context_budget": {
@@ -157,9 +157,12 @@
     "output_file": "tasks/research.md",
     "preferred_runners": [
       "subagent",
-      "codex exec --json"
+      "codex exec --json",
+      "main-thread trace"
     ],
-    "main_thread_policy": "consume conclusions and evidence paths, not raw logs"
+    "spawn_decision": "main agent decides from task breadth, context impact, raw-log volume, and callable runner availability; do not ask the user for spawn confirmation",
+    "fallback_runner": "main-thread trace",
+    "main_thread_policy": "if spawning is not worthwhile or no sidecar runner is callable, perform bounded research in the main thread; consume conclusions and evidence paths, not raw logs"
   },
   "documentation": {
     "profile": "minimal-agentic",

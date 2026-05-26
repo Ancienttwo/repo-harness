@@ -243,6 +243,15 @@ describe("create-project-dirs runtime smoke", () => {
       expect(policy.context_budget.zones).toEqual({ yellow: 0.55, orange: 0.7, red: 0.8 });
       expect(policy.handoff_resume.auto_start_new_session).toBe(false);
       expect(policy.sidecar_research.output_file).toBe("tasks/research.md");
+      expect(policy.sidecar_research.preferred_runners).toEqual([
+        "subagent",
+        "codex exec --json",
+        "main-thread trace",
+      ]);
+      expect(policy.sidecar_research.spawn_decision).toContain("context impact");
+      expect(policy.sidecar_research.spawn_decision).toContain("do not ask the user");
+      expect(policy.sidecar_research.fallback_runner).toBe("main-thread trace");
+      expect(policy.sidecar_research.main_thread_policy).toContain("if spawning is not worthwhile");
       expect(policy.documentation.reference_configs).toContain("global-working-rules.md");
       expect(policy.upgrade.strategy_version).toBe(1);
       expect(policy.upgrade.cleanup.remove_only_ownership).toBe("known_generated");

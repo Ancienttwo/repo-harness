@@ -1,6 +1,6 @@
 {
-  "version": "5.0.0",
-  "templateVersion": "5.0.0",
+  "version": "5.0.2",
+  "templateVersion": "5.0.2",
   "skillName": "agentic-dev",
   "contractId": "tasks-first-harness-v1",
   "legacyAliases": [
@@ -71,6 +71,14 @@
     {
       "version": "5.0.0",
       "description": "Renamed the public skill surface to agentic-dev, added action-style command facades, externalized optional long docs to the default brain, and kept reusable-workflow packaging behind advisory hooks plus user-approved autoplan"
+    },
+    {
+      "version": "5.0.1",
+      "description": "Adds the plugin architecture context map, ignores repo-local runtime trace state, and fixes installed-copy sync through symlinked legacy fallback paths"
+    },
+    {
+      "version": "5.0.2",
+      "description": "Excludes ignored repo-local runtime state from installed-copy sync outputs"
     }
   ],
   "generatedProjectStamp": {

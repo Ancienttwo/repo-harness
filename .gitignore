@@ -23,6 +23,7 @@ bun.lockb
 .claude/settings.local.json
 .claude/.atomic_pending
 .claude/.session-id
+.claude/.trace.jsonl
 .claude/.tool-call-count
 .claude/.session-handoff.md
 .claude/.task-state.json
@@ -41,6 +42,7 @@ bun.lockb
 .ai/harness/architecture/events.jsonl
 .ai/harness/worktrees/
 .ai/harness/runs/
+.codex/
 .claude/.active-plan
 .claude/.plan-state/
 # END: claude-runtime-temp
@@ -57,3 +59,4 @@ _ops/
 # OS metadata
 # External references
 # Operations
+# Local operations state

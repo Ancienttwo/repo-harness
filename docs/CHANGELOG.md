@@ -4,6 +4,27 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Made broad research delegation a main-agent spawn decision based on context impact and callable runners, with bounded main-thread fallback when spawning is not useful or available.
+
+## [5.0.2] - 2026-05-25
+
+### Fixed
+
+- Excluded ignored repo-local runtime state from Codex installed-copy sync outputs.
+
+## [5.0.1] - 2026-05-25
+
+### Added
+
+- Added the agentic-dev plugin architecture map, domain/module docs, and capability-indexed local context contracts for Claude and Codex.
+
+### Fixed
+
+- Fixed Codex installed-copy sync for symlinked legacy `project-initializer` fallback paths.
+- Removed tracked Claude trace state from the release surface and ignored repo-local Codex/runtime logs.
+
 ## [5.0.0] - 2026-05-25
 
 ### Fixed
