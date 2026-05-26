@@ -345,6 +345,14 @@ describe("Migration script contract", () => {
       expect(policy.worktree_strategy.start_script).toBe("scripts/contract-worktree.sh start --plan <plan-file>");
       expect(policy.worktree_strategy.finish_script).toBe("scripts/contract-worktree.sh finish");
       expect(policy.worktree_strategy.validation_route).toBe("waza:check");
+      expect(policy.sidecar_research.preferred_runners).toEqual([
+        "subagent",
+        "codex exec --json",
+        "main-thread trace",
+      ]);
+      expect(policy.sidecar_research.spawn_decision).toContain("callable runner availability");
+      expect(policy.sidecar_research.spawn_decision).toContain("do not ask the user");
+      expect(policy.sidecar_research.fallback_runner).toBe("main-thread trace");
       expect(policy.sidecar_research.main_thread_policy).toContain("consume conclusions");
       expect(policy.upgrade.strategy_version).toBe(1);
       expect(policy.upgrade.cleanup.remove_only_ownership).toBe("known_generated");

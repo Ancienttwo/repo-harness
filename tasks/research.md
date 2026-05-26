@@ -261,3 +261,15 @@
 - Keep generated version stamps using `project-initializer@{version}+template@{templateVersion}` for this compatibility window so already-installed repos do not fail version checks.
 - Keep internal engine wording as `tasks-first harness` and contract ID `tasks-first-harness-v1`.
 - Generated repos can now resolve the upstream skill with `AGENTIC_DEV_ROOT`, then legacy `AGENTIC_DEV_SKILL_ROOT` / `PROJECT_INITIALIZER_ROOT`, then installed path candidates under `~/.codex/skills/agentic-dev`, `~/.codex/skills/agentic-dev-skill`, `~/.codex/skills/project-initializer`, `~/.claude/skills/agentic-dev`, `~/.claude/skills/agentic-dev-skill`, `~/.claude/skills/project-initializer`, `~/.agents/skills/agentic-dev`, `~/.agents/skills/agentic-dev-skill`, and `~/.agents/skills/project-initializer`.
+
+## 2026-05-26 Context-Impact Research Delegation Notes
+
+### What Changed
+- Subagent and parallel-agent execution is now modeled as a main-agent decision based on task breadth, context impact, raw-log volume, and callable runner availability.
+- `.ai/harness/policy.json` and generated policy writers now prefer `subagent`, `codex exec --json`, then a `main-thread trace` fallback for broad research/log scans.
+- Codex handoff resume instructions now tell the next session to choose subagents, parallel sidecars, sidecar `codex exec --json`, or bounded main-thread research from context impact and callable tools without asking the user for spawn confirmation.
+- Generated Claude/Codex orchestration partials now describe research delegation instead of unconditional subagent offload.
+
+### What to Preserve
+- Do not make correctness depend on Spawn/subagent availability. The main agent must be able to complete P1/P2/P3 research in-thread when tooling blocks delegation or spawning is not worth the context cost.
+- Keep sidecar outputs concise and evidence-backed: conclusions and file/artifact paths belong in `tasks/research.md`; raw logs belong in harness evidence or local scratch surfaces.

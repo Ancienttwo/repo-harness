@@ -1285,8 +1285,10 @@ pi_write_harness_policy() {
   "sidecar_research": {
     "default": true,
     "output_file": "tasks/research.md",
-    "preferred_runners": ["subagent", "codex exec --json"],
-    "main_thread_policy": "consume conclusions and evidence paths, not raw logs"
+    "preferred_runners": ["subagent", "codex exec --json", "main-thread trace"],
+    "spawn_decision": "main agent decides from task breadth, context impact, raw-log volume, and callable runner availability; do not ask the user for spawn confirmation",
+    "fallback_runner": "main-thread trace",
+    "main_thread_policy": "if spawning is not worthwhile or no sidecar runner is callable, perform bounded research in the main thread; consume conclusions and evidence paths, not raw logs"
   },
   "documentation": {
     "profile": "$(pi_documentation_profile)",

@@ -51,3 +51,4 @@
 - [x] Fixed Codex installed-copy sync for symlinked legacy `project-initializer` fallback paths
 - [x] Bumped release metadata to 5.0.1 for package, skill-version manifest, README, stamp, and changelog
 - [x] Bumped release metadata to 5.0.2 after excluding ignored runtime state from installed-copy sync outputs
+- [x] Made subagent/parallel research delegation a main-agent context-impact decision with a main-thread fallback path

@@ -49,6 +49,8 @@ describe("AGENTS Target Assembly", () => {
     expect(output).toContain("single source of truth for the current active plan");
     expect(output).toContain("new-spec.sh");
     expect(output).toContain("new-sprint.sh");
+    expect(output).toContain("The main agent decides whether to spawn based on task breadth");
+    expect(output).toContain("Do not ask the user for spawn confirmation");
     expect(output).toContain("bash scripts/check-task-sync.sh");
     expect(output).toContain("bash scripts/check-task-workflow.sh --strict");
     expect(output).toContain("bash scripts/verify-contract.sh --contract <active-plan-contract> --strict");

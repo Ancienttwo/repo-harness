@@ -163,7 +163,7 @@ Conditional first reads:
 
 Execution rules:
 - Treat filesystem artifacts as the source of truth.
-- Use subagents or sidecar \`codex exec --json\` for broad research/log scans.
+- Decide in the main agent whether to use subagents, parallel sidecars, sidecar \`codex exec --json\`, or a bounded main-thread trace for broad research/log scans based on context impact and callable tools; do not ask the user for spawn confirmation.
 - Keep deep research conclusions in \`${research_file}\`, not only in chat.
 - Do not run \`/compact\` as the primary recovery path.
 - Preserve the current dirty worktree and do not touch unrelated untracked files.
