@@ -72,3 +72,5 @@
 - [x] Added opt-in default-brain document sync through `scripts/sync-brain-docs.sh`, manifest `repo-to-brain` entries, and PostEdit hook integration
 - [x] Bumped release metadata to 5.2.0 for package, skill manifest, README, stamp, and changelog
 - [x] Fixed `GO` approval prompts bypassing the plan gate after Waza `/think` or Codex Plan output
+- [x] Corrected exact approval prompts so Waza `/think` After Approval can run `capture-plan.sh --status Approved --execute` before implementation gates enforce active task artifacts
+- [x] Added a plan-start bridge so explicit Waza `/think` / Codex Plan prompts create a Draft `plans/` artifact before approval

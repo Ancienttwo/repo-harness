@@ -337,7 +337,7 @@
 - Root `AGENTS.md` / `CLAUDE.md`, generated partials, `agentic-development-flow.md`, and `agentic-dev-plan` now direct planning modes to capture decision-complete plans before implementation.
 
 ### What to Preserve
-- Hooks should remain gates and advisory route emitters; they should not infer semantic planning intent and mutate files on prompt submit.
+- Hooks may start a minimal Draft plan workflow for explicit Waza `/think` / Codex Plan intent, but they must not infer or rewrite the final assistant plan body from transcript text.
 - Planning capture may write `plans/` and `.claude/.active-plan`, but `tasks/todo.md`, `tasks/contracts/`, `tasks/reviews/`, and worktrees should still wait for explicit implementation approval.
 - `capture-plan.sh --execute` is the approved fast path only when the user has already approved implementation; otherwise leave the captured plan in `Draft`.
 
@@ -346,7 +346,21 @@
 - Reproduced the missed trigger with `PROMPT='GO' bash .ai/hooks/prompt-guard.sh`: before the fix it exited 0 with no `PlanStatusGuard`, while `PROMPT='开始实现'` and `PROMPT='执行'` both blocked on the missing active plan.
 - Root cause: `prompt-guard.sh:is_implement_intent` recognized explicit implementation words but not terse approval prompts such as `GO`, so a common post-Think approval did not enter the plan gate.
 - Fix boundary: recognize exact short execution approvals (`GO`, `go ahead`, `approved`, `proceed`, `ship it`, and selected Chinese approval phrases) as implement intent, but keep unrelated phrases such as `go over the docs first` non-blocking.
-- Preserve the passive plan-capture invariant: the hook still must not mutate `plans/`; it should block unsafe execution and point the agent to `scripts/capture-plan.sh --status Approved --execute` or `scripts/ensure-task-workflow.sh` when no captured planning output exists.
+- Preserve the passive plan-capture invariant: the hook may create the initial Draft plan workflow on explicit plan-start intent, but final plan content still comes from the agent via `scripts/capture-plan.sh --status Approved --execute`, and execution artifacts still come from `plan-to-todo.sh`.
+
+### 2026-05-27 Approval Capture Bridge Correction
+
+- Reproduced the current failure with `GO` after Waza `/think`: `UserPromptSubmit` runs before the assistant can execute the `/think` skill's `After Approval` instructions, so a hard `PlanStatusGuard` on exact approval prevents `scripts/capture-plan.sh --status Approved --execute` from ever running.
+- Root cause: the previous guard fix correctly detected terse approval, but overcorrected by treating exact approval as an implementation attempt instead of a handoff point where the agent must first capture/project the approved plan.
+- Fix boundary: exact approval prompts (`GO`, `approved`, `可以干`, `直接改`, `整`, etc.) now emit a non-blocking `PlanCaptureGate` / `PlanExecutionGate` advisory so the assistant can run `capture-plan.sh` or `plan-to-todo.sh`; explicit implementation prompts such as `开始实现` remain hard-blocked when no active plan exists.
+- Preserve the invariant that hooks do not parse assistant transcript text or write final plan content on prompt submit. The model/skill owns the exact plan body; scripts own artifact generation once invoked.
+
+### 2026-05-27 Plan Start Bridge Correction
+
+- User correction: the lifecycle should begin when Waza `/think` / Codex Plan starts, not only when the user approves implementation. Approval is a middle transition in an already file-backed planning workflow.
+- Fix boundary: `prompt-guard.sh` now detects explicit planning starts (`/think`, `$think`, `plan this`, `出方案`, `怎么设计`, `写计划`, etc.) and, when no active plan exists, runs `scripts/ensure-task-workflow.sh --slug <derived> --title <derived>` to create a Draft `plans/plan-*.md` artifact immediately.
+- Guardrail: bug-hunt language (`bug`, `报错`, `修复`, `崩溃`, etc.) suppresses the plan-start bridge so debugging prompts do not create planning artifacts by accident.
+- The hook still does not generate contracts/reviews/todo/worktrees on plan start; those remain approval/execution artifacts created by `capture-plan.sh --status Approved --execute` or `plan-to-todo.sh`.
 
 ## 2026-05-27 Default Brain Document Sync Notes
 

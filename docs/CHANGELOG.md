@@ -4,6 +4,13 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+## [5.2.2] - 2026-05-27
+
+### Fixed
+
+- Started a Draft `plans/` artifact as soon as explicit Codex Plan mode or Waza `/think` planning begins, so plan lifecycle state exists before approval and execution gates run.
+- Let terse approval prompts such as `GO` and `可以干` reach the approved-plan capture/projection path instead of being blocked before the agent can run `capture-plan.sh` or `plan-to-todo.sh`.
+
 ## [5.2.1] - 2026-05-27
 
 ### Fixed

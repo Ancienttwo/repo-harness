@@ -1,6 +1,6 @@
 {
-  "version": "5.2.1",
-  "templateVersion": "5.2.1",
+  "version": "5.2.2",
+  "templateVersion": "5.2.2",
   "skillName": "agentic-dev",
   "contractId": "tasks-first-harness-v1",
   "legacyAliases": [
@@ -99,6 +99,10 @@
     {
       "version": "5.2.1",
       "description": "Fixes terse GO approval prompts so post-plan execution cannot bypass the plans workflow gate"
+    },
+    {
+      "version": "5.2.2",
+      "description": "Starts a Draft plan workflow when explicit Waza think or Codex Plan prompts begin, while preserving approval-time execution gates"
     }
   ],
   "generatedProjectStamp": {

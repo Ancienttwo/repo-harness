@@ -12,7 +12,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/lib/workflow-state.sh"
 
 is_execution_approval_intent() {
-  echo "$PROMPT_TEXT" | grep -qEi "^[[:space:][:punct:]]*(go|go ahead|proceed|approved|approve|ship it|let'?s go|继续执行|批准执行|批准|开干|走起)[[:space:][:punct:]]*$"
+  echo "$PROMPT_TEXT" | grep -qEi "^[[:space:][:punct:]]*(go|go ahead|proceed|approved|approve|ship it|let'?s go|继续执行|批准执行|批准|可以干|直接改|整|整吧|开干|干吧|做吧|走起)[[:space:][:punct:]]*$"
 }
 
 is_implement_intent() {
@@ -29,6 +29,54 @@ is_spa_day_intent() {
 
 is_plan_creation_intent() {
   echo "$PROMPT_TEXT" | grep -qEi "(new plan|create plan|write plan|draft plan|新建计划|创建计划|写计划|制定计划|补计划)"
+}
+
+is_think_plan_start_intent() {
+  if echo "$PROMPT_TEXT" | grep -qEi "(fix|patch|bug|error|crash|broken|regression|报错|崩溃|修复|不工作|跑不通|为什么.*错)"; then
+    return 1
+  fi
+  echo "$PROMPT_TEXT" | grep -qEi '(/think|[$]think|\[[$]think\]|plan this|plan it|how should i|how should we|出方案|给方案|怎么设计|用什么方案|制定计划|写计划|新建计划|创建计划)'
+}
+
+derive_plan_start_title() {
+  local title="$PROMPT_TEXT"
+  title="$(printf '%s' "$title" | tr '\r\n' '  ' | sed -E 's/[[:space:]]+/ /g; s/^[[:space:][:punct:]]+//; s/[[:space:]]+$//')"
+  title="$(printf '%s' "$title" | sed -E 's/\[[$]think\]\([^)]*\)/think/g; s/[$]think/think/g; s#/think#think#g')"
+  if [[ -z "$title" ]]; then
+    title="Planning Session"
+  fi
+  printf '%s' "$title" | cut -c 1-96
+}
+
+derive_plan_start_slug() {
+  local title slug
+  title="$(derive_plan_start_title)"
+  slug="$(printf '%s' "$title" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g')"
+  if [[ -z "$slug" || "$slug" = "think" || "$slug" = "plan" ]]; then
+    slug="think-plan-$(date +%H%M%S)"
+  fi
+  printf '%s' "$slug" | cut -c 1-64 | sed -E 's/-+$//'
+}
+
+maybe_start_plan_workflow() {
+  is_think_plan_start_intent || return 0
+
+  local active_plan slug title
+  active_plan="$(get_active_plan || true)"
+  if [[ -n "$active_plan" && -f "$active_plan" ]]; then
+    echo "[PlanStartGate] Think/plan intent detected. Active plan already exists: $active_plan"
+    return 0
+  fi
+
+  if [[ ! -x "scripts/ensure-task-workflow.sh" ]]; then
+    echo "[PlanStartGate] Think/plan intent detected, but scripts/ensure-task-workflow.sh is missing. Continue with planning and capture manually."
+    return 0
+  fi
+
+  slug="$(derive_plan_start_slug)"
+  title="$(derive_plan_start_title)"
+  echo "[PlanStartGate] Think/plan intent detected. Starting file-backed Draft plan workflow."
+  bash "scripts/ensure-task-workflow.sh" --slug "$slug" --title "$title"
 }
 
 plan_evidence_contract_error() {
@@ -104,12 +152,17 @@ if is_implement_intent; then
   implement_intent=1
 fi
 
+execution_approval_intent=0
+if is_execution_approval_intent; then
+  execution_approval_intent=1
+fi
+
 done_intent=0
 if is_done_intent; then
   done_intent=1
 fi
 
-if is_plan_creation_intent; then
+if is_plan_creation_intent || is_think_plan_start_intent; then
   if ! has_research_for_new_plan; then
     latest_plan="$(get_latest_plan || true)"
     if [[ -n "$latest_plan" ]]; then
@@ -125,6 +178,10 @@ if is_plan_creation_intent; then
       echo "  首次创建计划：建议先写 tasks/research.md，但不阻塞。"
     fi
   fi
+fi
+
+if [ "$implement_intent" -eq 0 ] && [ "$done_intent" -eq 0 ]; then
+  maybe_start_plan_workflow
 fi
 
 if [ "$implement_intent" -eq 0 ]; then
@@ -159,6 +216,14 @@ if [ "$implement_intent" -eq 1 ]; then
 
   active_plan="$(get_active_plan || true)"
   if [ -z "$active_plan" ] || [ ! -f "$active_plan" ]; then
+    if [ "$execution_approval_intent" -eq 1 ]; then
+      echo "[PlanCaptureGate] Approval detected before an active plan artifact exists."
+      echo "[PlanCaptureGate] Let the agent run the approved-plan capture path now:"
+      echo "  git status --short --branch -uall"
+      echo "  printf '%s\n' '<approved plan body>' | bash scripts/capture-plan.sh --slug <slug> --title <title> --status Approved --source waza-think --route planning --execute"
+      exit 0
+    fi
+
     echo "[PlanStatusGuard] No active plan found in plans/. Capture the approved planning output with: bash scripts/capture-plan.sh --slug <slug> --title <title> --status Approved --execute"
     echo "[PlanStatusGuard] If there is no captured planning output yet, run: bash scripts/ensure-task-workflow.sh --slug <slug> --title <title>"
     hook_structured_error \
@@ -171,6 +236,13 @@ if [ "$implement_intent" -eq 1 ]; then
 
   plan_status="$(get_plan_status "$active_plan")"
   if [ "$plan_status" = "Draft" ] || [ "$plan_status" = "Annotating" ]; then
+    if [ "$execution_approval_intent" -eq 1 ]; then
+      echo "[PlanCaptureGate] Approval detected for $plan_status plan: $active_plan"
+      echo "[PlanCaptureGate] Recapture the exact approved plan body with --status Approved --execute, or mark this plan Approved and run:"
+      echo "  bash scripts/plan-to-todo.sh --plan $active_plan"
+      exit 0
+    fi
+
     echo "[PlanStatusGuard] Plan status is '$plan_status' in $active_plan. Complete annotation cycle first."
     hook_structured_error \
       "PlanStatusGuard" \
@@ -190,6 +262,17 @@ if [ "$implement_intent" -eq 1 ]; then
         "Fill ## Evidence Contract with state/progress path, verification evidence, evaluator rubric, stop condition, and rollback surface before implementation." \
         "quality_gate"
       exit 1
+    fi
+
+    if [ "$plan_status" = "Approved" ] && [ "$execution_approval_intent" -eq 1 ]; then
+      contract_file="$(workflow_active_contract || true)"
+      todo_source="$(get_todo_source_plan || true)"
+      if [ -z "$contract_file" ] || [ ! -f "$contract_file" ] || [ "$todo_source" != "$active_plan" ]; then
+        echo "[PlanExecutionGate] Approval detected for approved plan: $active_plan"
+        echo "[PlanExecutionGate] Project the approved plan before implementation:"
+        echo "  bash scripts/plan-to-todo.sh --plan $active_plan"
+        exit 0
+      fi
     fi
 
     contract_file="$(workflow_active_contract || true)"
