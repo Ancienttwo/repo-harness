@@ -931,7 +931,7 @@ describe("Hook runtime behavior", () => {
       mkdirSync(join(cwd, "docs"), { recursive: true });
       writeFileSync(join(cwd, "docs/spec.md"), "# Product Spec\n");
 
-      for (const prompt of ["GO", "可以干"]) {
+      for (const prompt of ["GO", "go ahead with it", "please proceed", "可以干", "可以干了"]) {
         const res = runHook("prompt-guard.sh", cwd, {
           stdin: JSON.stringify({ user_message: prompt }),
         });
@@ -962,15 +962,17 @@ describe("Hook runtime behavior", () => {
         ["# Plan: demo", "", "> **Status**: Approved", "", planEvidenceContract(), ""].join("\n")
       );
 
-      const res = runHook("prompt-guard.sh", cwd, {
-        stdin: JSON.stringify({ user_message: "GO" }),
-      });
+      for (const prompt of ["GO", "go ahead with it", "可以干了"]) {
+        const res = runHook("prompt-guard.sh", cwd, {
+          stdin: JSON.stringify({ user_message: prompt }),
+        });
 
-      expect(res.status).toBe(0);
-      expect(res.stdout).toContain("[PlanExecutionGate]");
-      expect(res.stdout).toContain("plan-to-todo.sh --plan plans/plan-20260304-1400-demo.md");
-      expect(res.stdout).not.toContain("[ContractGuard]");
-      expect(res.stdout).not.toContain("[TodoGuard]");
+        expect(res.status).toBe(0);
+        expect(res.stdout).toContain("[PlanExecutionGate]");
+        expect(res.stdout).toContain("plan-to-todo.sh --plan plans/plan-20260304-1400-demo.md");
+        expect(res.stdout).not.toContain("[ContractGuard]");
+        expect(res.stdout).not.toContain("[TodoGuard]");
+      }
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -990,6 +992,26 @@ describe("Hook runtime behavior", () => {
 
       expect(res.status).toBe(0);
       expect(res.stdout).not.toContain("[PlanStatusGuard]");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("prompt-guard: keeps broad bug-fix wording out of approval capture", () => {
+    const cwd = tmpWorkspace("prompt-guard-go-ahead-bug-fix");
+    try {
+      initGitRepo(cwd);
+      installHooks(cwd);
+      mkdirSync(join(cwd, "docs"), { recursive: true });
+      writeFileSync(join(cwd, "docs/spec.md"), "# Product Spec\n");
+
+      const res = runHook("prompt-guard.sh", cwd, {
+        stdin: JSON.stringify({ user_message: "go ahead with the bug fix" }),
+      });
+
+      expect(res.status).toBe(1);
+      expect(res.stdout).toContain("[PlanStatusGuard]");
+      expect(res.stdout).not.toContain("[PlanCaptureGate]");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

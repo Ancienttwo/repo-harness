@@ -362,6 +362,13 @@
 - Guardrail: bug-hunt language (`bug`, `报错`, `修复`, `崩溃`, etc.) suppresses the plan-start bridge so debugging prompts do not create planning artifacts by accident.
 - The hook still does not generate contracts/reviews/todo/worktrees on plan start; those remain approval/execution artifacts created by `capture-plan.sh --status Approved --execute` or `plan-to-todo.sh`.
 
+### 2026-05-27 Approval Intent Variant Correction
+
+- Reproduced the residual gap after 5.2.2 with a temporary generated workspace: `GO` and `可以干` reached `PlanCaptureGate`, but `go ahead with it` hard-blocked under `PlanStatusGuard` and `可以干了` exited 0 without any capture/projection guidance.
+- Root cause: `prompt-guard.sh:is_execution_approval_intent` was intentionally anchored to whole approval utterances, but its alternation only listed bare tokens such as `go ahead` and `可以干`; natural suffix variants therefore diverged between hard-blocking and silent no-op paths.
+- Fix boundary: expand only anchored approval variants (`go ahead with it`, polite `proceed`, `可以干了`, etc.) in `.ai/hooks/prompt-guard.sh` and the `assets/hooks/` mirror, while preserving broad bug/fix implementation wording as a hard `PlanStatusGuard` path instead of an approval capture shortcut.
+- Regression coverage now exercises both no-active-plan capture and approved-plan projection for natural approval variants, plus a negative case for `go ahead with the bug fix`.
+
 ## 2026-05-27 Default Brain Document Sync Notes
 
 ### What Changed

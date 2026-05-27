@@ -1,6 +1,6 @@
 {
-  "version": "5.2.2",
-  "templateVersion": "5.2.2",
+  "version": "5.2.3",
+  "templateVersion": "5.2.3",
   "skillName": "agentic-dev",
   "contractId": "tasks-first-harness-v1",
   "legacyAliases": [
@@ -103,6 +103,10 @@
     {
       "version": "5.2.2",
       "description": "Starts a Draft plan workflow when explicit Waza think or Codex Plan prompts begin, while preserving approval-time execution gates"
+    },
+    {
+      "version": "5.2.3",
+      "description": "Expands anchored approval intent variants so natural post-plan approval wording reaches capture and projection gates without broadening bug-fix implementation wording"
     }
   ],
   "generatedProjectStamp": {

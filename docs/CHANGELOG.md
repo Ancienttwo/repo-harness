@@ -4,6 +4,12 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+## [5.2.3] - 2026-05-27
+
+### Fixed
+
+- Expanded anchored approval intent variants such as `go ahead with it`, `please proceed`, and `可以干了` so post-plan approvals reach `PlanCaptureGate` / `PlanExecutionGate` without treating broad bug-fix wording as approval capture.
+
 ## [5.2.2] - 2026-05-27
 
 ### Fixed

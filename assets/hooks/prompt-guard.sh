@@ -12,7 +12,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/lib/workflow-state.sh"
 
 is_execution_approval_intent() {
-  echo "$PROMPT_TEXT" | grep -qEi "^[[:space:][:punct:]]*(go|go ahead|proceed|approved|approve|ship it|let'?s go|继续执行|批准执行|批准|可以干|直接改|整|整吧|开干|干吧|做吧|走起)[[:space:][:punct:]]*$"
+  echo "$PROMPT_TEXT" | grep -qEi "^[[:space:][:punct:]]*(please[[:space:][:punct:]]+)?(go ahead([[:space:]]+(with[[:space:]]+(it|this|that)|please))?|go|proceed([[:space:]]+(with[[:space:]]+(it|this|that)|please))?|approved|approve([[:space:]]+(it|this|that))?|ship it|let'?s go|继续执行|批准执行|批准|可以干(了|吧)?|可以(开始|执行)(了|吧)?|直接改(了|吧)?|整|整吧|开干|干吧|做吧|走起)([[:space:][:punct:]]+please)?[[:space:][:punct:]]*$"
 }
 
 is_implement_intent() {
