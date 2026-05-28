@@ -317,6 +317,76 @@ describe("Workflow helper scripts", () => {
     }
   });
 
+  test("capture-plan execute transfers active markers to the linked worktree", () => {
+    const cwd = tmpWorkspace("helper-capture-worktree-transfer");
+    const worktreePath = `${cwd}-wt-transfer-markers`;
+    try {
+      mkdirSync(join(cwd, "plans"), { recursive: true });
+      mkdirSync(join(cwd, "tasks"), { recursive: true });
+      copyHelpers(cwd);
+      writeFileSync(
+        join(cwd, ".ai/harness/policy.json"),
+        JSON.stringify(
+          {
+            worktree_strategy: {
+              auto_for_contract_tasks: true,
+              branch_prefix: "codex/",
+              base_branch: "main",
+            },
+          },
+          null,
+          2
+        ) + "\n"
+      );
+      initGitRepo(cwd);
+      commitAll(cwd, "init workflow");
+      writeFileSync(
+        join(cwd, "approved.md"),
+        [
+          "## Approved design summary",
+          "- Building: worktree marker transfer",
+          "- Verification: helper tests",
+          "",
+          "## Task Breakdown",
+          "- [ ] Transfer markers",
+        ].join("\n")
+      );
+
+      const res = run("bash", [
+        "scripts/capture-plan.sh",
+        "--slug",
+        "transfer-markers",
+        "--title",
+        "Transfer Markers",
+        "--status",
+        "Approved",
+        "--execute",
+        "--body-file",
+        "approved.md",
+      ], cwd);
+
+      expect(res.status).toBe(0);
+      expect(res.stdout).toContain("[ContractWorktree] Created worktree");
+      expect(existsSync(worktreePath)).toBe(true);
+      expect(existsSync(join(cwd, ".ai/harness/active-plan"))).toBe(false);
+      expect(existsSync(join(cwd, ".claude/.active-plan"))).toBe(false);
+      expect(existsSync(join(cwd, ".ai/harness/active-worktree"))).toBe(false);
+
+      const linkedPlans = readdirSync(join(worktreePath, "plans")).filter((name) =>
+        /^plan-\d{8}-\d{4}-transfer-markers\.md$/.test(name)
+      );
+      expect(linkedPlans).toHaveLength(1);
+      expect(existsSync(join(cwd, "plans", linkedPlans[0]))).toBe(false);
+      expect(readFileSync(join(worktreePath, ".ai/harness/active-plan"), "utf-8")).toBe(`plans/${linkedPlans[0]}`);
+      expect(readFileSync(join(worktreePath, ".claude/.active-plan"), "utf-8")).toBe(`plans/${linkedPlans[0]}`);
+      expect(readFileSync(join(worktreePath, ".ai/harness/active-worktree"), "utf-8").trim()).toBe(realpathSync(worktreePath));
+    } finally {
+      run("git", ["worktree", "remove", "--force", worktreePath], cwd);
+      rmSync(worktreePath, { recursive: true, force: true });
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   test("sync-brain-docs mirrors opted-in repo docs and checks drift", () => {
     const cwd = tmpWorkspace("helper-sync-brain-docs");
     try {

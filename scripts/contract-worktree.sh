@@ -48,6 +48,10 @@ normalize_slug() {
   printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g'
 }
 
+ACTIVE_PLAN_MARKER=".ai/harness/active-plan"
+LEGACY_ACTIVE_PLAN_MARKER=".claude/.active-plan"
+ACTIVE_WORKTREE_MARKER=".ai/harness/active-worktree"
+
 derive_slug_from_plan() {
   local plan_file="$1"
   local plan_base slug
@@ -118,6 +122,26 @@ remove_copied_untracked_source_plan() {
     && cmp -s "$plan_file" "$worktree_path/$plan_file"; then
     rm -f "$plan_file"
     echo "[ContractWorktree] Moved untracked source plan into contract worktree: $plan_file"
+  fi
+}
+
+marker_points_to_plan() {
+  local marker_file="$1"
+  local plan_file="$2"
+  local marker_plan
+
+  [[ -f "$marker_file" ]] || return 1
+  marker_plan="$(cat "$marker_file" 2>/dev/null | xargs)"
+  [[ "$marker_plan" == "$plan_file" || "$marker_plan" == "./$plan_file" ]]
+}
+
+clear_primary_markers_for_transferred_plan() {
+  local plan_file="$1"
+
+  if marker_points_to_plan "$ACTIVE_PLAN_MARKER" "$plan_file" \
+    || marker_points_to_plan "$LEGACY_ACTIVE_PLAN_MARKER" "$plan_file"; then
+    rm -f "$ACTIVE_PLAN_MARKER" "$LEGACY_ACTIVE_PLAN_MARKER" "$ACTIVE_WORKTREE_MARKER"
+    echo "[ContractWorktree] Cleared primary active markers for transferred plan: $plan_file"
   fi
 }
 
@@ -194,6 +218,7 @@ start_worktree() {
 
   copy_plan_into_worktree "$plan_file" "$worktree_path"
   remove_copied_untracked_source_plan "$plan_file" "$worktree_path"
+  clear_primary_markers_for_transferred_plan "$plan_file"
 
   mkdir -p "$worktree_path/.ai/harness/worktrees"
   (

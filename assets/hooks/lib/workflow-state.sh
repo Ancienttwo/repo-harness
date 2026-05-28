@@ -181,22 +181,57 @@ ACTIVE_PLAN_MARKER=".ai/harness/active-plan"
 LEGACY_ACTIVE_PLAN_MARKER=".claude/.active-plan"
 ACTIVE_WORKTREE_MARKER=".ai/harness/active-worktree"
 
+# Records why get_active_plan returned empty. Empty string means the marker
+# state was clean. Possible values:
+#   "deleted" - marker exists but points at a plan file that no longer exists
+#   "foreign" - active-worktree marker is owned by a different worktree
+# Hooks can inspect this to differentiate "no marker at all" (hard error,
+# user has not started a plan) from "marker is stale" (advisory + self-heal,
+# the marker rotted underneath the user).
+ACTIVE_PLAN_MARKER_STALE_REASON=""
+
 read_active_plan_marker() {
   local marker_file="$1"
   local marker_plan
 
   if [[ -f "$marker_file" ]]; then
     marker_plan="$(cat "$marker_file" 2>/dev/null | xargs)"
-    if [[ -n "$marker_plan" && -f "$marker_plan" ]]; then
-      printf '%s' "$marker_plan"
-      return 0
+    if [[ -n "$marker_plan" ]]; then
+      if [[ -f "$marker_plan" ]]; then
+        printf '%s' "$marker_plan"
+        return 0
+      fi
+      ACTIVE_PLAN_MARKER_STALE_REASON="deleted"
     fi
   fi
 
   return 1
 }
 
+active_plan_marker_matches_cwd() {
+  local owner current
+
+  [[ -f "$ACTIVE_WORKTREE_MARKER" ]] || return 0
+  owner="$(cat "$ACTIVE_WORKTREE_MARKER" 2>/dev/null | head -n 1 | xargs)"
+  [[ -n "$owner" ]] || return 0
+
+  current="$(pwd -P 2>/dev/null)"
+  [[ -n "$current" ]] || return 0
+
+  if [[ "$owner" != "$current" ]]; then
+    ACTIVE_PLAN_MARKER_STALE_REASON="foreign"
+    return 1
+  fi
+  return 0
+}
+
 get_active_plan() {
+  ACTIVE_PLAN_MARKER_STALE_REASON=""
+
+  if ! active_plan_marker_matches_cwd; then
+    return 1
+  fi
+
   read_active_plan_marker "$ACTIVE_PLAN_MARKER" \
     || read_active_plan_marker "$LEGACY_ACTIVE_PLAN_MARKER"
 }

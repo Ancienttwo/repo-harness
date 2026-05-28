@@ -1366,6 +1366,172 @@ describe("Hook runtime behavior", () => {
     }
   });
 
+  test("prompt-guard: treats diagnostic questions mentioning execution as questions", () => {
+    const cwd = tmpWorkspace("prompt-guard-diagnostic-execute");
+    try {
+      initGitRepo(cwd);
+      installHooks(cwd);
+      mkdirSync(join(cwd, "docs"), { recursive: true });
+      mkdirSync(join(cwd, "plans"), { recursive: true });
+      writeFileSync(join(cwd, "docs/spec.md"), "# Product Spec\n");
+      writeActivePlan(cwd, "plans/plan-20260529-0006-missing.md");
+
+      for (const prompt of ["为什么 hook 没开 wt 去执行？", "为什么 hook 没开 worktree？"]) {
+        const res = runHook("prompt-guard.sh", cwd, {
+          stdin: JSON.stringify({ user_message: prompt }),
+        });
+
+        expect(res.status).toBe(0);
+        expect(res.stdout).not.toContain("[PlanStatusGuard]");
+        expect(res.stdout).not.toContain('"guard":"PlanStatusGuard"');
+      }
+
+      rmSync(join(cwd, ".ai/harness/active-plan"), { force: true });
+      rmSync(join(cwd, ".claude/.active-plan"), { force: true });
+      rmSync(join(cwd, ".ai/harness/active-worktree"), { force: true });
+      const executeRes = runHook("prompt-guard.sh", cwd, {
+        stdin: JSON.stringify({ user_message: "开始执行" }),
+      });
+      expect(executeRes.status).toBe(2);
+      expect(executeRes.stdout).toContain("[PlanStatusGuard]");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("prompt-guard: treats stale active-plan marker as advisory and self-heals", () => {
+    const cwd = tmpWorkspace("prompt-guard-stale-marker");
+    try {
+      initGitRepo(cwd);
+      installHooks(cwd);
+      mkdirSync(join(cwd, "docs"), { recursive: true });
+      mkdirSync(join(cwd, "plans"), { recursive: true });
+      writeFileSync(join(cwd, "docs/spec.md"), "# Product Spec\n");
+      // Marker points at a plan file that no longer exists (stale).
+      writeActivePlan(cwd, "plans/plan-20260529-0006-deleted.md");
+
+      const res = runHook("prompt-guard.sh", cwd, {
+        stdin: JSON.stringify({ user_message: "开始实现" }),
+      });
+
+      // Stale marker must NOT hard-block. Hook should emit an advisory and
+      // self-heal the marker so the next prompt is not blocked again.
+      expect(res.status).toBe(0);
+      expect(res.stdout).toContain("[PlanStatusGuard]");
+      expect(res.stdout).toMatch(/stale|self-heal|cleared/i);
+      expect(res.stdout).not.toContain("No active plan found in plans/");
+      expect(existsSync(join(cwd, ".ai/harness/active-plan"))).toBe(false);
+      expect(existsSync(join(cwd, ".claude/.active-plan"))).toBe(false);
+      expect(existsSync(join(cwd, ".ai/harness/active-worktree"))).toBe(false);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("prompt-guard: ignores active-plan marker owned by a different worktree", () => {
+    const cwd = tmpWorkspace("prompt-guard-cross-worktree");
+    try {
+      initGitRepo(cwd);
+      installHooks(cwd);
+      mkdirSync(join(cwd, "docs"), { recursive: true });
+      mkdirSync(join(cwd, "plans"), { recursive: true });
+      mkdirSync(join(cwd, ".ai/harness"), { recursive: true });
+      mkdirSync(join(cwd, ".claude"), { recursive: true });
+      writeFileSync(join(cwd, "docs/spec.md"), "# Product Spec\n");
+      // Plan/contract/notes intentionally not provisioned here. The key signal
+      // is the marker pointing at /tmp/other-owner instead of cwd. The hook
+      // must treat that as foreign and refuse to hard-block this worktree.
+      const planPath = "plans/plan-20260304-1400-cross-worktree.md";
+      writeFileSync(join(cwd, ".ai/harness/active-plan"), planPath);
+      writeFileSync(join(cwd, ".claude/.active-plan"), planPath);
+      writeFileSync(join(cwd, ".ai/harness/active-worktree"), "/tmp/some-other-worktree-owner\n");
+
+      const res = runHook("prompt-guard.sh", cwd, {
+        stdin: JSON.stringify({ user_message: "开始实现" }),
+      });
+
+      // Cross-worktree marker must self-heal: hook emits advisory, clears the
+      // foreign markers, and exits cleanly so the next prompt is not blocked.
+      expect(res.status).toBe(0);
+      expect(res.stdout).toContain("[PlanStatusGuard]");
+      expect(res.stdout).toMatch(/different worktree|other worktree|foreign|not owned|stale|self-heal|cleared/i);
+      expect(res.stdout).not.toContain("No active plan found in plans/");
+      // The foreign marker should be wiped so subsequent prompts start fresh.
+      expect(existsSync(join(cwd, ".ai/harness/active-plan"))).toBe(false);
+      expect(existsSync(join(cwd, ".claude/.active-plan"))).toBe(false);
+      expect(existsSync(join(cwd, ".ai/harness/active-worktree"))).toBe(false);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("prompt-guard: stale marker does not block embedded approved plan capture", () => {
+    const cwd = tmpWorkspace("prompt-guard-stale-marker-embedded");
+    try {
+      initGitRepo(cwd);
+      installHooks(cwd);
+      installPlanWorkflowHelpers(cwd);
+      mkdirSync(join(cwd, "docs"), { recursive: true });
+      mkdirSync(join(cwd, "plans"), { recursive: true });
+      writeFileSync(join(cwd, "docs/spec.md"), "# Product Spec\n");
+      // Dirty marker before the user pastes an explicit approved plan body.
+      writeActivePlan(cwd, "plans/plan-20260529-0006-deleted.md");
+
+      const body = [
+        "PLEASE IMPLEMENT THIS PLAN:",
+        "# Plan: explicit-capture",
+        "",
+        "> **Status**: Approved",
+        "",
+        planEvidenceContract(),
+        "",
+      ].join("\n");
+      const res = runHook("prompt-guard.sh", cwd, {
+        stdin: JSON.stringify({ user_message: body }),
+      });
+
+      // Stale marker must not preempt the embedded approved-plan capture.
+      expect(res.stdout).toContain("[PlanCaptureGate]");
+      expect(res.stdout).not.toMatch(/\[PlanStatusGuard\] No active plan found/);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("prompt-guard: treats discussion-style implementation questions as questions", () => {
+    const cwd = tmpWorkspace("prompt-guard-discussion-implement");
+    try {
+      initGitRepo(cwd);
+      installHooks(cwd);
+      mkdirSync(join(cwd, "docs"), { recursive: true });
+      writeFileSync(join(cwd, "docs/spec.md"), "# Product Spec\n");
+      // No marker at all - only the implement_intent path is under test.
+      // Each prompt is a question form that happens to contain
+      // 实现/执行/implement/execute tokens. is_diagnostic_question_intent
+      // must recognize them as questions and not as imperative implement
+      // requests, regardless of marker state.
+      const discussionPrompts = [
+        "怎么实现这个功能？",
+        "如何实现这个 plan？",
+        "为什么这个方案的执行流程会被拦？",
+        "how should we implement the plan?",
+      ];
+
+      for (const prompt of discussionPrompts) {
+        const res = runHook("prompt-guard.sh", cwd, {
+          stdin: JSON.stringify({ user_message: prompt }),
+        });
+
+        // Pure discussion questions must not trigger PlanStatusGuard hard-block,
+        // even though they contain "实现/执行/implement/execute" tokens.
+        expect(res.status).toBe(0);
+        expect(res.stdout).not.toContain("[PlanStatusGuard] No active plan found");
+      }
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   test("prompt-guard: lets terse approval reach approved-plan capture when no active plan exists", () => {
     const cwd = tmpWorkspace("prompt-guard-approval-capture");
     try {

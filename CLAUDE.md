@@ -57,26 +57,26 @@ bash scripts/migrate-project-template.sh --repo . --dry-run
 <!-- BEGIN ARCHITECTURE CONTRACT -->
 ## Architecture Contract
 
-- Functional block: `assets/hooks`
+- Functional block: `.ai/hooks`
 - Capability ID: `runtime-harness-hook-adapters`
-- Matched prefix: `assets/hooks`
+- Matched prefix: `.ai/hooks`
 - Architecture domain: `runtime-harness`
 - Architecture capability: `hook-adapters`
 - Architecture module: `docs/architecture/modules/runtime-harness/hook-adapters.md`
-- Last architecture event: 2026-05-28T23:36:38+0800
-- Last changed path: `assets/hooks/prompt-guard.sh`
+- Last architecture event: 2026-05-29T00:42:38+0800
+- Last changed path: `.ai/hooks/lib/workflow-state.sh`
 - Severity: high
 - Change type: workflow-surface
 - Module responsibility: Keep this block aligned with the local boundary described by surrounding human-owned context.
-- Entrypoints: `assets/hooks`
+- Entrypoints: `.ai/hooks`
 - Allowed dependencies: Follow root `AGENTS.md` / `CLAUDE.md` and this local contract.
 - Forbidden dependencies: Do not cross sibling app/service/package boundaries without an architecture snapshot or explicit plan.
-- Runtime path: `assets/hooks`
+- Runtime path: `.ai/hooks`
 - LSP/tooling profile: `typescript-lsp`
 - Verification: Use root required checks plus local commands recorded in this capability contract.
 - Latest snapshot: `(none yet)`
 - Latest diagram: `(none yet)`
-- Pending architecture request: `docs/architecture/requests/20260528-233638-assets-hooks-assets-hooks-prompt-guard-sh.md`
+- Pending architecture request: `docs/architecture/requests/20260529-004238-ai-hooks-ai-hooks-lib-workflow-state-sh.md`
 
 ## Active Workstreams
 

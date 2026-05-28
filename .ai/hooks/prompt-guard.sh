@@ -19,6 +19,9 @@ is_implement_intent() {
   if is_trigger_question_prompt; then
     return 1
   fi
+  if is_diagnostic_question_intent; then
+    return 1
+  fi
   echo "$PROMPT_INTENT_TEXT" | grep -qEi "(implement|execute|build it|do it|go ahead|proceed|ship it|实现|执行|开始写|动手|开干)" || is_execution_approval_intent || is_embedded_approved_plan_intent || is_plan_shaped_markdown_intent
 }
 
@@ -82,6 +85,43 @@ is_trigger_question_prompt() {
   local first
   first="$(prompt_first_nonblank_line)"
   printf '%s\n' "$first" | grep -qEi '(会不会触发|会触发吗|能触发吗|可以触发吗|does this trigger|would this trigger|will this trigger|比如.*触发|例如.*触发)'
+}
+
+is_diagnostic_question_intent() {
+  is_execution_approval_intent && return 1
+  is_embedded_approved_plan_intent && return 1
+  is_plan_shaped_markdown_intent && return 1
+
+  if printf '%s\n' "$PROMPT_INTENT_TEXT" | grep -qEi "(怎么实现|如何实现|为什么.*(实现|执行|implement|execute)|why.*(implement|execute)|how.*implement|the way .*implement|implement.*interesting|执行流程.*(被拦|拦截|中断|为什么|怎么))"; then
+    return 0
+  fi
+
+  printf '%s\n' "$PROMPT_INTENT_TEXT" | grep -qEi "(hook|hooks|worktree|wt|PlanStatusGuard|执行路径|没开|中断|被拦|拦截|root cause|debug|排查|查查|定位)" || return 1
+  printf '%s\n' "$PROMPT_INTENT_TEXT" | grep -qEi "(为什么|为啥|怎么回事|怎么.*(没|不|会|被)|why|what.*root cause|root cause|排查|查查|定位|debug|诊断|中断|被拦|拦截|执行路径|没开)"
+}
+
+active_plan_marker_problem() {
+  local marker_file marker_plan owner current
+
+  current="$(pwd -P)"
+  if [[ -f "$ACTIVE_WORKTREE_MARKER" ]]; then
+    owner="$(cat "$ACTIVE_WORKTREE_MARKER" 2>/dev/null | xargs)"
+    if [[ -n "$owner" && "$owner" != "$current" ]]; then
+      printf 'active plan marker belongs to a different worktree: %s' "$owner"
+      return 0
+    fi
+  fi
+
+  for marker_file in "$ACTIVE_PLAN_MARKER" "$LEGACY_ACTIVE_PLAN_MARKER"; do
+    [[ -f "$marker_file" ]] || continue
+    marker_plan="$(cat "$marker_file" 2>/dev/null | xargs)"
+    if [[ -n "$marker_plan" && ! -f "$marker_plan" ]]; then
+      printf 'stale active plan marker points to missing plan: %s' "$marker_plan"
+      return 0
+    fi
+  done
+
+  return 1
 }
 
 is_plan_shaped_markdown_intent() {
@@ -416,6 +456,13 @@ if [ "$implement_intent" -eq 1 ]; then
 
   active_plan="$(get_active_plan || true)"
   if [ -z "$active_plan" ] || [ ! -f "$active_plan" ]; then
+    marker_problem="$(active_plan_marker_problem || true)"
+    if [[ -n "$marker_problem" ]]; then
+      clear_active_plan
+      echo "[PlanStatusGuard] Advisory: ${marker_problem}; cleared stale active markers. Capture or switch to an approved plan before editing implementation files."
+      exit 0
+    fi
+
     if [ "$execution_approval_intent" -eq 1 ]; then
       echo "[PlanCaptureGate] Approval detected before an active plan artifact exists."
       echo "[PlanCaptureGate] Let the agent run the approved-plan capture path now:"
@@ -604,7 +651,7 @@ if echo "$PROMPT_TEXT" | grep -qEi "(fix|patch|bug|修复|修bug|修 bug|改bug)
   echo "[TDD] Bug-fix intent detected. Reproduce with a failing test first."
   echo "  检测到修复请求：先写失败测试复现问题，再重写实现。"
 fi
-if echo "$PROMPT_TEXT" | grep -qEi "(new feature|feature|implement|build|新功能|实现|开发功能|执行)"; then
+if ! is_diagnostic_question_intent && echo "$PROMPT_TEXT" | grep -qEi "(new feature|feature|implement|build|新功能|实现|开发功能|执行)"; then
   echo "[BDD] Feature intent detected. Define Given-When-Then acceptance scenarios first."
   echo "  检测到新功能请求：先定义 Given-When-Then 验收场景。"
 fi

@@ -653,3 +653,26 @@
 ### Verification
 - Regression tests cover a long plan-style prompt with literal `Completed`, a short `completionToken` substring, and a short Chinese `完成后验证...` task instruction.
 - `verify-contract --read-only` tests cover both strict pass and strict fail without rewriting the contract `Status` header.
+
+## 2026-05-29 Prompt Diagnostic Intent and Worktree Ownership Transfer
+
+### Symptom
+- Diagnostic prompts such as `为什么 hook 没开 wt 去执行？` were routed through `prompt-guard.sh:is_implement_intent` because the Chinese `执行` token was matched anywhere in the prompt.
+- Stale or foreign active-plan markers turned ordinary implementation prompts into repeated hard blocks, even when the selected plan file was missing from the current worktree or owned by another linked worktree.
+- When an approved captured plan projected through `capture-plan.sh --execute`, `plan-to-todo.sh` started a linked contract worktree and moved the untracked plan there, but the primary worktree kept `.ai/harness/active-plan`, `.claude/.active-plan`, and `.ai/harness/active-worktree` pointing at the moved or missing primary-side plan path.
+
+### Root Cause
+- `is_implement_intent` had an execution keyword gate but no diagnostic-question exclusion for hook/worktree/root-cause wording.
+- `prompt-guard.sh` relied on `get_active_plan`, which intentionally returns empty when markers are stale, but it did not distinguish "no workflow exists" from "marker exists and is invalid/foreign".
+- `contract-worktree.sh start --plan <plan>` copied the plan into the linked worktree and removed untracked primary copies, but did not transfer active marker ownership away from the primary worktree.
+
+### Fix
+- `prompt-guard.sh` now treats hook/worktree/root-cause/debug questions as diagnostic intent unless they are explicit approval, embedded approved-plan prompts, or plan-shaped Markdown.
+- `prompt-guard.sh` now downgrades stale or foreign active-plan markers to advisory output, clears the invalid primary markers, and leaves true no-plan implementation prompts hard-blocked.
+- `workflow-state.sh` now records whether the active marker is deleted or owned by a different worktree, so shared consumers can distinguish absent workflow state from rotten marker state.
+- `contract-worktree.sh` now clears primary active markers when either primary active-plan marker points to the plan being transferred; the linked worktree still writes its own active markers through `plan-to-todo.sh`.
+- Mirrors updated: `.ai/hooks/`, `assets/hooks/`, `scripts/contract-worktree.sh`, and `assets/templates/helpers/contract-worktree.sh`.
+- Adjacent verification drift was fixed in generated-project tests: CodeGraph policy assertions now expect `primary_host=both` and `required-for-agent-code-navigation`, matching `scripts/lib/project-init-lib.sh`.
+
+### Verification
+- `bun test` covers diagnostic execution questions, stale/foreign marker self-heal, capture/worktree marker transfer, generated CodeGraph policy expectations, and migration idempotence.

@@ -104,3 +104,4 @@ Project
 - [ ] 2026-05-28T23:36:37+0800 [high] `.ai/hooks/prompt-guard.sh` -> [20260528-233637-ai-hooks-ai-hooks-prompt-guard-sh](requests/20260528-233637-ai-hooks-ai-hooks-prompt-guard-sh.md)
 - [ ] 2026-05-28T23:36:38+0800 [high] `assets/hooks/prompt-guard.sh` -> [20260528-233638-assets-hooks-assets-hooks-prompt-guard-sh](requests/20260528-233638-assets-hooks-assets-hooks-prompt-guard-sh.md)
 - [ ] 2026-05-29T00:03:22+0800 [medium] `package.json` -> [20260529-000322-root-package-json](requests/20260529-000322-root-package-json.md)
+- [ ] 2026-05-29T00:42:38+0800 [high] `.ai/hooks/lib/workflow-state.sh` -> [20260529-004238-ai-hooks-ai-hooks-lib-workflow-state-sh](requests/20260529-004238-ai-hooks-ai-hooks-lib-workflow-state-sh.md)
