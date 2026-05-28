@@ -53,6 +53,18 @@ is_done_intent() {
   echo "$PROMPT_INTENT_TEXT" | grep -qE "(^|[[:space:][:punct:]，。！？!])(任务完成了?|完成(了|啦|吧)?|已完成|本轮完成|这刀完成|收尾完成|结束吧|结束任务|可以收工|收工(了|吧)?|宣布完成|工作完成)([[:space:][:punct:]，。！？!]|$)"
 }
 
+derive_done_outcome() {
+  if echo "$PROMPT_INTENT_TEXT" | grep -qEi "(abandon(ed)?|drop( it)?|放弃|不做了|算了|作废|不要了|废弃)"; then
+    printf '%s' "Abandoned"
+    return 0
+  fi
+  if echo "$PROMPT_INTENT_TEXT" | grep -qEi "(supersed(ed|e)|replaced by|被.*取代|被.*替代|改用新方案|换方案)"; then
+    printf '%s' "Superseded"
+    return 0
+  fi
+  printf '%s' "Completed"
+}
+
 is_spa_day_intent() {
   echo "$PROMPT_INTENT_TEXT" | grep -qEi "(spa day|audit rules|consolidate|cleanup rules|规则清理|规则审计|合并规则|瘦身)"
 }
@@ -636,6 +648,43 @@ if [ "$done_intent" -eq 1 ]; then
       "quality_gate"
     exit 2
   fi
+
+  remaining_todos=0
+  if [ -f tasks/todo.md ]; then
+    remaining_todos="$(awk '/^- \[ \]/{c++} END{print c+0}' tasks/todo.md)"
+  fi
+  if [ "${remaining_todos:-0}" -gt 0 ]; then
+    echo "[ArchiveGuard] Done intent detected but tasks/todo.md still has $remaining_todos unchecked item(s). Refusing to auto-archive."
+    hook_structured_error \
+      "ArchiveGuard" \
+      "Done intent with $remaining_todos unchecked todo item(s)." \
+      "Finish the remaining items or archive manually with: bash scripts/archive-workflow.sh --plan $active_plan --outcome <Completed|Abandoned|Superseded>." \
+      "state_violation"
+    exit 1
+  fi
+
+  if [ ! -x scripts/archive-workflow.sh ]; then
+    echo "[AutoArchive] scripts/archive-workflow.sh is missing or not executable. Skipping auto-archive."
+    hook_structured_error \
+      "AutoArchive" \
+      "scripts/archive-workflow.sh is missing or not executable." \
+      "Install the workflow helper before relying on auto-archive." \
+      "missing_artifact"
+    exit 1
+  fi
+
+  outcome="$(derive_done_outcome)"
+  echo "[AutoArchive] All quality gates passed. Archiving $active_plan as outcome=$outcome"
+  if ! archive_output="$(bash scripts/archive-workflow.sh --plan "$active_plan" --outcome "$outcome" 2>&1)"; then
+    printf '%s\n' "$archive_output"
+    hook_structured_error \
+      "AutoArchive" \
+      "Automatic archive failed for $active_plan." \
+      "Run bash scripts/archive-workflow.sh --plan $active_plan --outcome $outcome and resolve the error." \
+      "contract_failure"
+    exit 1
+  fi
+  printf '%s\n' "$archive_output"
 fi
 
 if is_spa_day_intent; then

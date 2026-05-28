@@ -1831,6 +1831,11 @@ describe("Hook runtime behavior", () => {
         "#!/bin/bash\nset -euo pipefail\necho \"[verify] ok\"\n"
       );
       expect(run("chmod", ["+x", "scripts/verify-contract.sh"], cwd).status).toBe(0);
+      writeFileSync(
+        join(cwd, "scripts/archive-workflow.sh"),
+        "#!/bin/bash\nset -euo pipefail\necho \"[archive] mocked $*\"\n"
+      );
+      expect(run("chmod", ["+x", "scripts/archive-workflow.sh"], cwd).status).toBe(0);
 
       const res = runHook("prompt-guard.sh", cwd, {
         stdin: JSON.stringify({ user_message: "任务完成了，结束吧" }),
@@ -1838,6 +1843,8 @@ describe("Hook runtime behavior", () => {
 
       expect(res.status).toBe(0);
       expect(res.stdout).toContain("[verify] ok");
+      expect(res.stdout).toContain("[AutoArchive] All quality gates passed");
+      expect(res.stdout).toContain("[archive] mocked");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
