@@ -66,6 +66,16 @@ function runProcess(command: string, args: string[], cwd: string, env?: NodeJS.P
   };
 }
 
+function isNpxCacheSource(sourceRoot: string): boolean {
+  return /[\\/]_npx[\\/]/.test(sourceRoot);
+}
+
+function initCommandEnv(sourceRoot: string, env?: NodeJS.ProcessEnv): NodeJS.ProcessEnv | undefined {
+  if (!isNpxCacheSource(sourceRoot)) return env;
+  if (env?.AGENTIC_DEV_LINK_INSTALLED_COPIES !== undefined) return env;
+  return { ...(env ?? {}), AGENTIC_DEV_LINK_INSTALLED_COPIES: "0" };
+}
+
 function withStepName(step: InitStep, name: string, detail?: string): InitStep {
   return { ...step, step: name, detail: detail ?? step.detail };
 }
@@ -209,6 +219,7 @@ function installExternalSkills(sourceRoot: string, target: InstallTargetSpec, en
 export function runInit(opts: InitCommandOptions = {}): InitCommandResult {
   const sourceRoot = resolve(opts.sourceRoot ?? REPO_ROOT);
   const repoRoot = resolve(opts.repo ?? process.cwd());
+  const commandEnv = initCommandEnv(sourceRoot, opts.env);
   const apply = opts.apply !== false;
   const verify = opts.verify !== false;
   const syncSkill = opts.syncSkill !== false;
@@ -218,7 +229,7 @@ export function runInit(opts: InitCommandOptions = {}): InitCommandResult {
   const steps: InitStep[] = [];
 
   if (syncSkill && apply) {
-    const step = runProcess("bash", [join(sourceRoot, "scripts", "sync-codex-installed-copies.sh")], sourceRoot, opts.env);
+    const step = runProcess("bash", [join(sourceRoot, "scripts", "sync-codex-installed-copies.sh")], sourceRoot, commandEnv);
     steps.push(withStepName(step, "sync agentic-dev skills", `target=${target}`));
   } else {
     steps.push({
@@ -229,7 +240,7 @@ export function runInit(opts: InitCommandOptions = {}): InitCommandResult {
   }
 
   if (hostAdapters && apply) {
-    const installed = withProcessEnv(opts.env, () => runInstall({ target, location: "global" }));
+    const installed = withProcessEnv(commandEnv, () => runInstall({ target, location: "global" }));
     steps.push({
       step: "install host adapters",
       status: installed.exitCode === 0 ? "ok" : "failed",
@@ -247,7 +258,7 @@ export function runInit(opts: InitCommandOptions = {}): InitCommandResult {
     process.execPath,
     [join(sourceRoot, "scripts", "inspect-project-state.ts"), "--repo", repoRoot, "--format", "text"],
     sourceRoot,
-    opts.env,
+    commandEnv,
   );
   steps.push(withStepName(inspect, "inspect repo", repoRoot));
 
@@ -260,12 +271,12 @@ export function runInit(opts: InitCommandOptions = {}): InitCommandResult {
       apply ? "--apply" : "--dry-run",
     ],
     sourceRoot,
-    opts.env,
+    commandEnv,
   );
   steps.push(withStepName(migrate, apply ? "apply repo harness" : "plan repo harness", repoRoot));
 
   if (externalSkills && apply && migrate.status === "ok") {
-    steps.push(...installExternalSkills(sourceRoot, target, opts.env));
+    steps.push(...installExternalSkills(sourceRoot, target, commandEnv));
   } else {
     steps.push({
       step: "external skills",
@@ -279,7 +290,7 @@ export function runInit(opts: InitCommandOptions = {}): InitCommandResult {
   }
 
   if (apply && verify) {
-    const verifyStep = runProcess("bash", ["scripts/check-task-workflow.sh", "--strict"], repoRoot, opts.env);
+    const verifyStep = runProcess("bash", ["scripts/check-task-workflow.sh", "--strict"], repoRoot, commandEnv);
     steps.push(withStepName(verifyStep, "verify repo harness", "scripts/check-task-workflow.sh --strict"));
   } else {
     steps.push({ step: "verify repo harness", status: "skipped" });

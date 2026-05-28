@@ -430,10 +430,9 @@ if [ "$implement_intent" -eq 1 ]; then
 
     if [ "$plan_status" = "Approved" ] && [ "$execution_approval_intent" -eq 1 ]; then
       contract_file="$(workflow_active_contract || true)"
-      todo_source="$(get_todo_source_plan || true)"
-      if [ -z "$contract_file" ] || [ ! -f "$contract_file" ] || [ "$todo_source" != "$active_plan" ]; then
+      if [ -z "$contract_file" ] || [ ! -f "$contract_file" ]; then
         echo "[PlanExecutionGate] Approval detected for approved plan: $active_plan"
-        echo "[PlanExecutionGate] Project the approved plan before implementation:"
+        echo "[PlanExecutionGate] Create the sprint contract/review/notes before implementation:"
         echo "  bash scripts/plan-to-todo.sh --plan $active_plan"
         exit 0
       fi
@@ -445,21 +444,8 @@ if [ "$implement_intent" -eq 1 ]; then
       hook_structured_error \
         "ContractGuard" \
         "Implementation requested without an active sprint contract." \
-        "Run bash scripts/new-sprint.sh --slug <slug> --title <title> or create tasks/contracts/<slug>.contract.md first." \
+        "Run bash scripts/plan-to-todo.sh --plan $active_plan to create the contract/review/notes scaffold before implementation." \
         "missing_artifact"
-      exit 1
-    fi
-
-    todo_source="$(get_todo_source_plan || true)"
-    if [ "$todo_source" != "$active_plan" ]; then
-      echo "[TodoGuard] Active plan is '$plan_status' in $active_plan but tasks/todo.md is not synchronized."
-      echo "[TodoGuard] Run: bash scripts/plan-to-todo.sh --plan $active_plan"
-      echo "[TodoGuard] Or if switching between plans: bash scripts/switch-plan.sh --plan $active_plan"
-      hook_structured_error \
-        "TodoGuard" \
-        "tasks/todo.md is not synchronized with $active_plan." \
-        "Run bash scripts/plan-to-todo.sh --plan $active_plan or bash scripts/switch-plan.sh --plan $active_plan" \
-        "state_violation"
       exit 1
     fi
   fi
@@ -529,7 +515,7 @@ if [ "$done_intent" -eq 1 ]; then
     hook_structured_error \
       "ReviewGuard" \
       "Done intent detected without a sprint review artifact." \
-      "Create tasks/reviews/<slug>.review.md and record an evaluator recommendation before marking work done." \
+      "Run Waza /check after verification and record its evaluator recommendation in tasks/reviews/<slug>.review.md before marking work done." \
       "quality_gate"
     exit 1
   fi
@@ -539,7 +525,7 @@ if [ "$done_intent" -eq 1 ]; then
     hook_structured_error \
       "ReviewGuard" \
       "Sprint review is missing a passing recommendation." \
-      "Update the review with fresh evidence and a pass recommendation before marking work done." \
+      "Run Waza /check with fresh verification evidence and record a pass recommendation before marking work done." \
       "quality_gate"
     exit 1
   fi

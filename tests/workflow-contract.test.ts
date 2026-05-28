@@ -122,6 +122,7 @@ describe("workflow contract manifest", () => {
     expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/checks/latest.json");
     expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/architecture/events.jsonl");
     expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/active-plan");
+    expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/active-worktree");
     expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/worktrees/");
     expect(contract.artifacts.runtimeFiles).not.toContain(".ai/harness/workstreams/events.jsonl");
     expect(contract.migrations.upgrade?.strategyVersion).toBe(1);
@@ -188,6 +189,7 @@ describe("workflow contract manifest", () => {
     const runtimeFiles = contract.artifacts.runtimeFiles ?? [];
     expect(runtimeFiles).toContain(".ai/harness/checks/latest.json");
     expect(runtimeFiles).toContain(".ai/harness/active-plan");
+    expect(runtimeFiles).toContain(".ai/harness/active-worktree");
     const placeholderBackedRuntime = new Set([".ai/harness/runs/.gitkeep", ".ai/harness/worktrees/"]);
 
     for (const file of runtimeFiles.filter((name) => !placeholderBackedRuntime.has(name))) {
@@ -295,8 +297,9 @@ describe("state inspection and legacy doc migration", () => {
       expect(existsSync(join(repo, "docs/plan.md.migrated.bak"))).toBe(true);
 
       const todo = readFileSync(join(repo, "tasks/todo.md"), "utf-8");
-      expect(todo).toContain("**Source Plan**: (none)");
-      expect(todo).toContain("No active execution checklist");
+      expect(todo).toContain("# Deferred Goal Ledger");
+      expect(todo).toContain("**Status**: Backlog");
+      expect(todo).toContain("Revisit Trigger");
 
       const research = readFileSync(join(repo, "tasks/research.md"), "utf-8");
       expect(research).toContain("Legacy Progress Import");
@@ -322,9 +325,9 @@ describe("state inspection and legacy doc migration", () => {
       expect(existsSync(join(repo, "tasks/archive/legacy-tasks-todo.md"))).toBe(true);
 
       const todo = readFileSync(join(repo, "tasks/todo.md"), "utf-8");
-      expect(todo).toContain("**Source Plan**: (none)");
-      expect(todo).toContain("Legacy Imported Task Checklist");
-      expect(todo).toContain("existing task");
+      expect(todo).toContain("# Deferred Goal Ledger");
+      expect(todo).toContain("Review archived legacy checklist");
+      expect(todo).not.toContain("existing task");
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }

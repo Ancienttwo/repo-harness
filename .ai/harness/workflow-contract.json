@@ -228,6 +228,7 @@
       ".ai/harness/context-budget/latest.json",
       ".ai/harness/architecture/events.jsonl",
       ".ai/harness/active-plan",
+      ".ai/harness/active-worktree",
       ".ai/harness/worktrees/",
       ".ai/harness/runs/.gitkeep"
     ]
@@ -235,7 +236,7 @@
   "documents": {
     "spec": "docs/spec.md",
     "planDirectory": "plans",
-    "taskChecklist": "tasks/todo.md",
+    "deferredGoalLedger": "tasks/todo.md",
     "researchNotes": "tasks/research.md",
     "implementationNotesDirectory": "tasks/notes",
     "lessonsLog": "tasks/lessons.md"

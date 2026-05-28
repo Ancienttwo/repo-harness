@@ -163,7 +163,7 @@ Migration defaults:
 - archive uncertain legacy content instead of guessing
 - remove repo-local Skill Factory and auto-memory surfaces when present
 - archive legacy `docs/PROGRESS.md` content; do not regenerate it as a default workflow surface
-- keep `tasks/todo.md` limited to the active execution checklist
+- keep `tasks/todo.md` limited to deferred medium/long-term goals, including the tradeoff and revisit trigger
 - move hidden contracts and deep findings into `tasks/research.md`
 - distill repeated corrections into `tasks/lessons.md`
 - merge missing `external_tooling` defaults into `.ai/harness/policy.json` without overwriting explicit user values
@@ -176,8 +176,8 @@ Migration defaults:
 Preserve these semantics:
 
 - `plans/` is the timestamped plan catalog; `.ai/harness/active-plan` selects the active plan, with `.claude/.active-plan` as a legacy fallback during transition
-- `plans/plan-*.md` must carry a workflow inventory before implementation: active plan, contract, review, notes, todo projection, checks, run snapshots, scope owner, switching rule, and worktree isolation path
-- `tasks/todo.md` is the active execution checklist
+- `plans/plan-*.md` must carry a workflow inventory before implementation: active plan, owning worktree, contract, review, notes, deferred ledger, checks, run snapshots, scope owner, switching rule, and worktree isolation path
+- `tasks/todo.md` is the deferred-goal ledger; active execution stays in the plan's `## Task Breakdown`
 - `tasks/lessons.md` stores correction-derived rules
 - `tasks/research.md` stores deep repo findings and hidden contracts
 - `tasks/contracts/` and `tasks/reviews/` are completion gates

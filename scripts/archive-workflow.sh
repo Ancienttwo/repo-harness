@@ -151,18 +151,24 @@ if [[ -f "$notes_file" ]]; then
 fi
 
 cat > tasks/todo.md <<'TODO_EOF'
-# Task Execution Checklist (Primary)
+# Deferred Goal Ledger
 
-> **Source Plan**: (none)
-> **Status**: Idle
-> Generate the next execution checklist from an approved plan with:
->   bash scripts/plan-to-todo.sh --plan plans/plan-YYYYMMDD-HHMM-slug.md
+> **Status**: Backlog
+> **Updated**: (archive-workflow)
+> **Scope**: Medium/long-term goals deferred from active plan execution
 
-## Execution
-- [ ] No active execution checklist
+Current plan tasks live in the active plan's `## Task Breakdown`.
+Do not duplicate that execution checklist here. Record only work intentionally deferred beyond this slice, with the tradeoff and revisit trigger.
+
+## Deferred Goals
+
+| Goal | Why Deferred | Tradeoff | Revisit Trigger |
+|------|--------------|----------|-----------------|
+| (none) | Archived workflow did not leave a deferred medium/long-term goal. | Keep the next slice clean. | Add a row when a real follow-up is postponed. |
 TODO_EOF
 
 # Clear active-plan markers if they pointed to the archived plan
+cleared_active=0
 for marker_file in ".ai/harness/active-plan" ".claude/.active-plan"; do
   if [[ ! -f "$marker_file" ]]; then
     continue
@@ -170,9 +176,13 @@ for marker_file in ".ai/harness/active-plan" ".claude/.active-plan"; do
   marker_value="$(cat "$marker_file" 2>/dev/null | xargs)"
   if [[ "$marker_value" == "$plan_file" || "$marker_value" == "./$plan_file" ]]; then
     rm -f "$marker_file"
+    cleared_active=1
     echo "Cleared $marker_file (archived plan was active)"
   fi
 done
+if [[ "$cleared_active" -eq 1 ]]; then
+  rm -f ".ai/harness/active-worktree"
+fi
 
 # Clean up saved plan state backups
 plan_key="$(basename "$plan_file" .md)"

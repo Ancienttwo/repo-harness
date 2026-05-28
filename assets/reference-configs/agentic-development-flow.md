@@ -59,14 +59,14 @@ work, or shared contracts, report the P1/P2/P3 evidence explicitly.
 3. Use the selected skill or mode to produce either an approved plan, a root cause, or a review verdict.
 4. When Codex Plan mode, Waza `/think`, or `agentic-dev-plan` produces a decision-complete plan, capture it into `plans/` with `scripts/capture-plan.sh --slug <slug> --title <title>` and the plan text on stdin.
 5. Approved plans must include `## Evidence Contract` with state/progress path, verification evidence, evaluator rubric, stop condition, and rollback surface before execution. `capture-plan.sh` supplies this contract for captured planning output.
-6. Convert approved plans to execution with `scripts/plan-to-todo.sh --plan <plan>`; if approval is already explicit, use `scripts/capture-plan.sh --status Approved --execute ...`. Contract-level plans are projected into a linked `codex/<slug>` worktree when the policy enables it.
-7. After substantive changes, run project checks and record evidence in `tasks/`. For contract worktrees, run Waza `/check` before `scripts/contract-worktree.sh finish`.
+6. Convert approved plans to execution scaffolding with `scripts/plan-to-todo.sh --plan <plan>`; if approval is already explicit, use `scripts/capture-plan.sh --status Approved --execute ...`. The plan's own `## Task Breakdown` remains the execution checklist; `tasks/todo.md` remains a deferred-goal ledger. Contract-level plans are projected into a linked `codex/<slug>` worktree when the policy enables it.
+7. After substantive changes, run project checks and record evidence in `tasks/`. For contract worktrees, run Waza `/check`, fill the review artifact from that verdict, then run `scripts/contract-worktree.sh finish`.
 
 ## Passive Plan Capture
 
 - Codex Plan mode and Waza `/think` do not need the user to remember `new-sprint` or `plan-to-todo`.
-- The agent should capture decision-complete planning output with `scripts/capture-plan.sh`; the script sets `.ai/harness/active-plan`, mirrors `.claude/.active-plan`, and writes a timestamped `plans/plan-*.md` artifact.
-- Planning capture is allowed before implementation. Contract, review, todo, and worktree artifacts are generated only after explicit implementation approval.
+- The agent should capture decision-complete planning output with `scripts/capture-plan.sh`; the script sets `.ai/harness/active-plan`, writes `.ai/harness/active-worktree`, mirrors `.claude/.active-plan`, and writes a timestamped `plans/plan-*.md` artifact.
+- Planning capture is allowed before implementation. Contract, review, notes, and worktree artifacts are generated only after explicit implementation approval; `tasks/todo.md` is not a duplicate of plan tasks.
 
 ## Boundaries
 

@@ -372,7 +372,7 @@ function renderContractBlock(args: Args): string {
     "## Current Session Projection",
     "",
     `- Durable progress lives under \`${workstreamDir}\`.`,
-    "- `tasks/todo.md` is the current session slice projected from the active workstream.",
+    "- `tasks/todo.md` is the deferred-goal ledger; current execution slices stay in the active plan's `## Task Breakdown`.",
     "<!-- END ARCHITECTURE CONTRACT -->",
     "",
   ].join("\n");

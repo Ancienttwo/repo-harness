@@ -16,6 +16,7 @@
 
 ## Verification Evidence
 
+- Waza `/check` run:
 - Commands run:
 - Manual checks:
 - Supporting artifacts:

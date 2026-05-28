@@ -1,14 +1,29 @@
 {
-  "name": "agentic-dev",
+  "name": "agentic-harness",
   "version": "5.2.3",
   "description": "Installs, migrates, audits, and repairs repo-local agentic development harnesses",
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/Ancienttwo/agentic-dev.git"
   },
   "type": "module",
+  "files": [
+    "agents/",
+    "assets/",
+    "docs/reference-configs/",
+    "scripts/",
+    "src/",
+    "AGENTS.md",
+    "CLAUDE.md",
+    "SKILL.md",
+    "README.md"
+  ],
   "bin": {
     "agentic-dev": "src/cli/index.ts"
+  },
+  "engines": {
+    "bun": ">=1.0.0"
   },
   "scripts": {
     "benchmark:skills": "bun scripts/run-skill-evals.ts",
@@ -26,7 +41,6 @@
     "@colbymchenry/codegraph": "^0.9.6",
     "@types/bun": "latest"
   },
-  "private": true,
   "dependencies": {
     "commander": "^14.0.3"
   }

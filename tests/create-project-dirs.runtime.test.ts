@@ -162,6 +162,7 @@ describe("create-project-dirs runtime smoke", () => {
       expect(workflowContract.artifacts.runtimeFiles).toContain(".ai/harness/handoff/resume.md");
       expect(workflowContract.artifacts.runtimeFiles).toContain(".ai/harness/architecture/events.jsonl");
       expect(workflowContract.artifacts.runtimeFiles).toContain(".ai/harness/active-plan");
+      expect(workflowContract.artifacts.runtimeFiles).toContain(".ai/harness/active-worktree");
       expect(workflowContract.artifacts.runtimeFiles).not.toContain(".ai/harness/workstreams/events.jsonl");
       expect(workflowContract.artifacts.requiredFiles).toContain("docs/architecture/index.md");
       expect(workflowContract.artifacts.requiredFiles).toContain(".ai/context/capabilities.json");

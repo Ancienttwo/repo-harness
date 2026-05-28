@@ -3,10 +3,11 @@
   "active_plan": {
     "marker_file": ".ai/harness/active-plan",
     "legacy_marker_file": ".claude/.active-plan",
+    "active_worktree_marker_file": ".ai/harness/active-worktree",
     "directory": "plans",
     "archive_directory": "plans/archive",
     "glob": "plan-*.md",
-    "source_of_truth": "host-neutral explicit marker, legacy Claude marker fallback, or latest non-archived compatibility fallback"
+    "source_of_truth": "per-worktree explicit marker with active-worktree owner; legacy Claude marker fallback only"
   },
   "tasks": {
     "todo_file": "tasks/todo.md",

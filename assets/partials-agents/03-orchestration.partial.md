@@ -6,7 +6,7 @@
 
 ### 2. Annotation Cycle
 - Keep active plans in `plans/plan-*.md` and iterate with inline notes.
-- Treat `.ai/harness/active-plan` as authoritative when present; `.claude/.active-plan` is a legacy fallback during transition; latest non-archived plan file is a compatibility fallback.
+- Treat `.ai/harness/active-plan` as authoritative for this worktree when present; `.ai/harness/active-worktree` records the owning worktree; `.claude/.active-plan` is a legacy fallback during transition.
 - Resolve annotations before implementation.
 
 ### 3. Plan Node Default
@@ -33,7 +33,7 @@
 ### 6b. Contract Verification
 - Use task contracts in `tasks/contracts/` as completion gates.
 - Use implementation notes in `tasks/notes/` for task-local decisions that should not automatically become memory.
-- Validate exit criteria and review recommendation before any done/completed response.
+- Validate exit criteria and the Waza `/check` review recommendation before any done/completed response.
 
 ### 7. Balanced Elegance
 - Redesign hacky non-trivial fixes before shipping.

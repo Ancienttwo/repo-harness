@@ -20,7 +20,7 @@
 - Context map: `.ai/context/context-map.json`.
 - Lessons contract: `tasks/lessons.md`.
 - Plan directory: `plans/` (timestamped plans).
-- Active plan rule: `.ai/harness/active-plan` when present, `.claude/.active-plan` legacy fallback during transition, otherwise latest non-archived `plans/plan-*.md` as compatibility fallback.
+- Active plan rule: `.ai/harness/active-plan` for this worktree when present, `.ai/harness/active-worktree` as owner marker, and `.claude/.active-plan` legacy fallback during transition. Do not infer active execution from the latest plan.
 - Plan archive: `plans/archive/`.
 - Todo archive: `tasks/archive/`.
 - Shared automation layer: `.ai/hooks/`.

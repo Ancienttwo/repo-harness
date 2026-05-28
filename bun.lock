@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "agentic-dev",
+      "name": "agentic-harness",
       "dependencies": {
         "commander": "^14.0.3",
       },

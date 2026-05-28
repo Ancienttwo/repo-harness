@@ -418,6 +418,17 @@
 - Keep CodeGraph, gstack, gbrain, provider setup, and daemon enablement outside automatic init; `agentic-dev init` owns Waza/diagram-design and host adapter setup only.
 - Keep sidecar outputs concise and evidence-backed: conclusions and file/artifact paths belong in `tasks/research.md`; raw logs belong in harness evidence or local scratch surfaces.
 
+## 2026-05-28 NPM Package Name Notes
+
+### What Changed
+- The npm package name is `agentic-harness`, while the installed bin command remains `agentic-dev`.
+- `npx -y agentic-harness init` is the intended one-shot command for existing repos once the package is published.
+- Because `npx` runs packages from an npm `_npx` cache directory, `agentic-dev init` forces `AGENTIC_DEV_LINK_INSTALLED_COPIES=0` for those sources so Codex/Claude skill roots receive copies instead of symlinks to temporary cache paths.
+
+### What to Preserve
+- Do not use a personal npm scope for the public package name.
+- Keep `agentic-dev` as the command name and repo/product display name even though the npm package name is `agentic-harness`.
+
 ## 2026-05-27 CodeGraph vs Understand Anything Research Notes
 
 ### Sources Checked

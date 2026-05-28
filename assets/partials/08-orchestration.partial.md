@@ -6,7 +6,7 @@
 
 ### 2. Annotation Cycle
 - Iterate plan updates directly in `plans/plan-*.md` via inline notes.
-- Treat `.ai/harness/active-plan` as authoritative when present; `.claude/.active-plan` is a legacy fallback during transition; latest non-archived `plans/plan-*.md` is a compatibility fallback only.
+- Treat `.ai/harness/active-plan` as authoritative for this worktree when present; `.ai/harness/active-worktree` records the owning worktree; `.claude/.active-plan` is a legacy fallback during transition.
 - Switch between concurrent plans with `bash scripts/switch-plan.sh --plan <plan-file>`.
 - Fill the plan/contract workflow inventory before implementation.
 - Do not implement while plan status is `Draft` or `Annotating`.
@@ -16,7 +16,7 @@
 - If no stable product truth exists, run `bash scripts/new-spec.sh`.
 - When Codex Plan mode or Waza `/think` reaches a decision-complete plan, capture it with `bash scripts/capture-plan.sh --slug <slug> --title <title>` and the plan text on stdin.
 - If no captured active plan exists, run `bash scripts/new-sprint.sh --slug <slug> --title <title>`.
-- When the user approves implementation, run `bash scripts/plan-to-todo.sh --plan <active-plan>` or capture the approved plan with `--status Approved --execute`.
+- When the user approves implementation, run `bash scripts/plan-to-todo.sh --plan <active-plan>` or capture the approved plan with `--status Approved --execute`; this creates contract/review/notes scaffolding and leaves plan tasks in `## Task Breakdown`.
 - Re-plan when execution drifts.
 
 ### 4. Research Delegation Strategy
@@ -35,7 +35,7 @@
 ### 6b. Contract Verification
 - Define per-sprint contract files in `tasks/contracts/`.
 - Verify contract exit criteria before claiming completion.
-- Require a matching evaluator review before any done/completed response.
+- Require Waza `/check` to produce the matching evaluator review before any done/completed response.
 - Use `scripts/verify-contract.sh --contract tasks/contracts/{slug}.contract.md --strict`.
 
 ### 7. Balanced Elegance

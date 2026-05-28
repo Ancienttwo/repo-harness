@@ -32,7 +32,7 @@ When a hook blocks work:
 Common guards:
 
 - `PlanStatusGuard`: no active approved plan, or active plan is in the wrong state.
-- `TodoGuard`: `tasks/todo.md` is stale relative to the active plan.
+- `ContractGuard`: the approved plan has not been projected into contract/review/notes scaffolding.
 - `ContractGuard`: completion was claimed without passing contract verification.
 - `WorktreeGuard`: writes were attempted from the wrong worktree.
 

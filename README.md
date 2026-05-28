@@ -19,13 +19,17 @@ safe to adopt in a real repo.
 ### Install or refresh the local runtime
 
 ```bash
-git clone https://github.com/Ancienttwo/agentic-dev.git ~/Projects/agentic-dev
-cd ~/Projects/agentic-dev
-agentic-dev init
+npx -y agentic-harness init
 ```
 
-When the `agentic-dev` bin is not on `PATH` yet, run the same command from the
-checkout with `bun src/cli/index.ts init`.
+The npm package name is `agentic-harness`; its installed command is still
+`agentic-dev`. When working from a source checkout instead of npm, run:
+
+```bash
+git clone https://github.com/Ancienttwo/agentic-dev.git ~/Projects/agentic-dev
+cd ~/Projects/agentic-dev
+bun src/cli/index.ts init
+```
 
 Local path model:
 
@@ -54,13 +58,13 @@ The retired `project-initializer` directories under `~/.codex/skills` and
 For an existing repo, run from the repo root:
 
 ```bash
-agentic-dev init --dry-run
+npx -y agentic-harness init --dry-run
 ```
 
 Apply only after the dry-run report looks correct:
 
 ```bash
-agentic-dev init
+npx -y agentic-harness init
 ```
 
 For a new project or module, use the `agentic-dev-scaffold` command skill. For
@@ -110,7 +114,7 @@ fields are `guard`, `reason`, `fix`, `failure_class`, and `run_id`.
 Most common guards:
 
 - `PlanStatusGuard`: no active plan, or the plan is not ready to execute
-- `TodoGuard`: active plan changed but `tasks/todo.md` was not synchronized
+- `ContractGuard`: approved execution has not yet produced the contract/review/notes scaffold
 - `ContractGuard`: completion was claimed before the task contract passed
 - `WorktreeGuard`: writes were attempted in the primary worktree while linked worktrees are enforced
 

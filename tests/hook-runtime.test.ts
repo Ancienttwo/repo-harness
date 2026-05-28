@@ -8,6 +8,7 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from "fs";
@@ -30,7 +31,7 @@ const THINK_SKILL_BODY = [
 ].join("\n");
 
 function tmpWorkspace(prefix: string): string {
-  return mkdtempSync(join(tmpdir(), `${prefix}-`));
+  return realpathSync(mkdtempSync(join(tmpdir(), `${prefix}-`)));
 }
 
 function installHooks(cwd: string): string {
@@ -71,6 +72,14 @@ function writeValidSprintChecks(cwd: string) {
       2
     ) + "\n"
   );
+}
+
+function writeActivePlan(cwd: string, planPath: string) {
+  mkdirSync(join(cwd, ".ai/harness"), { recursive: true });
+  mkdirSync(join(cwd, ".claude"), { recursive: true });
+  writeFileSync(join(cwd, ".ai/harness/active-plan"), planPath);
+  writeFileSync(join(cwd, ".claude/.active-plan"), planPath);
+  writeFileSync(join(cwd, ".ai/harness/active-worktree"), `${realpathSync(cwd)}\n`);
 }
 
 function planEvidenceContract(): string {
@@ -494,7 +503,7 @@ describe("Hook runtime behavior", () => {
       expect(agents).toContain("Active Workstreams");
       expect(agents).toContain("`tasks/workstreams/apps-web/account/account-rebuild.md`");
       expect(agents).toContain("current_slice: todo-03");
-      expect(agents).toContain("tasks/todo.md` is the current session slice");
+      expect(agents).toContain("tasks/todo.md` is the deferred-goal ledger");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -892,6 +901,7 @@ describe("Hook runtime behavior", () => {
         join(cwd, "plans/plan-20260304-1300-demo.md"),
         "# Plan: demo\n\n> **Status**: Draft\n"
       );
+      writeActivePlan(cwd, "plans/plan-20260304-1300-demo.md");
 
       expect(run("git", ["add", "."], cwd).status).toBe(0);
       expect(run("git", ["commit", "-m", "seed plan"], cwd).status).toBe(0);
@@ -921,6 +931,7 @@ describe("Hook runtime behavior", () => {
         join(cwd, "plans/plan-20260304-1310-demo.md"),
         "# Plan: demo\n\n> **Status**: Approved\n"
       );
+      writeActivePlan(cwd, "plans/plan-20260304-1310-demo.md");
 
       expect(run("git", ["add", "."], cwd).status).toBe(0);
       expect(run("git", ["commit", "-m", "seed approved plan"], cwd).status).toBe(0);
@@ -1001,8 +1012,8 @@ describe("Hook runtime behavior", () => {
       expect(plan).toContain("# Plan: 我要开发新功能：做一个设置页");
       expect(plan).toContain("> **Status**: Draft");
       const todo = readFileSync(join(cwd, "tasks/todo.md"), "utf-8");
-      expect(todo).toContain("> **Source Plan**: (none)");
-      expect(todo).toContain("> **Status**: Idle");
+      expect(todo).toContain("# Deferred Goal Ledger");
+      expect(todo).toContain("> **Status**: Backlog");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -1165,17 +1176,20 @@ describe("Hook runtime behavior", () => {
       expect(res.status).toBe(0);
       expect(res.stdout).toContain("[PlanCaptureGate] Embedded approved plan detected");
       expect(res.stdout).toContain("Captured plan:");
-      expect(res.stdout).toContain("Updated tasks/todo.md");
+      expect(res.stdout).toContain("Prepared sprint artifacts");
       const plans = readdirSync(join(cwd, "plans")).filter((name) =>
         /^plan-\d{8}-\d{4}-hook-capture-repair\.md$/.test(name)
       );
       expect(plans).toHaveLength(1);
       expect(readFileSync(join(cwd, ".ai/harness/active-plan"), "utf-8")).toBe(`plans/${plans[0]}`);
       expect(readFileSync(join(cwd, ".claude/.active-plan"), "utf-8")).toBe(`plans/${plans[0]}`);
+      expect(readFileSync(join(cwd, ".ai/harness/active-worktree"), "utf-8").trim()).toBe(cwd);
       const todo = readFileSync(join(cwd, "tasks/todo.md"), "utf-8");
-      expect(todo).toContain(`> **Source Plan**: plans/${plans[0]}`);
-      expect(todo).toContain("> **Status**: Executing");
-      expect(todo).toContain("- [ ] Capture approved prompt plan");
+      expect(todo).toContain("# Deferred Goal Ledger");
+      expect(todo).toContain("> **Status**: Backlog");
+      expect(todo).not.toContain("- [ ] Capture approved prompt plan");
+      const plan = readFileSync(join(cwd, "plans", plans[0]), "utf-8");
+      expect(plan).toContain("- [ ] Capture approved prompt plan");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -1217,14 +1231,17 @@ describe("Hook runtime behavior", () => {
       expect(res.status).toBe(0);
       expect(res.stdout).toContain("[PlanCaptureGate] Embedded approved plan detected");
       expect(res.stdout).toContain("Captured plan:");
-      expect(res.stdout).toContain("Updated tasks/todo.md");
+      expect(res.stdout).toContain("Prepared sprint artifacts");
       const plans = readdirSync(join(cwd, "plans")).filter((name) =>
         /^plan-\d{8}-\d{4}-enterprise-brain-semantic-index-plan\.md$/.test(name)
       );
       expect(plans).toHaveLength(1);
       const todo = readFileSync(join(cwd, "tasks/todo.md"), "utf-8");
-      expect(todo).toContain("- [ ] Projection excludes Markdown body");
-      expect(todo).toContain("- [ ] Agent search filters unauthorized domains");
+      expect(todo).toContain("# Deferred Goal Ledger");
+      expect(todo).not.toContain("- [ ] Projection excludes Markdown body");
+      const plan = readFileSync(join(cwd, "plans", plans[0]), "utf-8");
+      expect(plan).toContain("- [ ] Projection excludes Markdown body");
+      expect(plan).toContain("- [ ] Agent search filters unauthorized domains");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -1325,7 +1342,7 @@ describe("Hook runtime behavior", () => {
       mkdirSync(join(cwd, ".ai/harness"), { recursive: true });
       writeFileSync(join(cwd, "docs/spec.md"), "# Product Spec\n");
       const planPath = "plans/plan-20260304-1400-demo.md";
-      writeFileSync(join(cwd, ".ai/harness/active-plan"), planPath);
+      writeActivePlan(cwd, planPath);
       writeFileSync(
         join(cwd, planPath),
         ["# Plan: demo", "", "> **Status**: Approved", "", planEvidenceContract(), ""].join("\n")
@@ -1397,6 +1414,7 @@ describe("Hook runtime behavior", () => {
         join(cwd, "plans/plan-20260304-1400-demo.md"),
         "# Plan: demo\n\n> **Status**: Approved\n"
       );
+      writeActivePlan(cwd, "plans/plan-20260304-1400-demo.md");
 
       const res = runHook("prompt-guard.sh", cwd, {
         stdin: JSON.stringify({ user_message: "mark done now" }),
@@ -1426,6 +1444,7 @@ describe("Hook runtime behavior", () => {
         join(cwd, "plans/plan-20260304-1410-demo.md"),
         ["# Plan: demo", "", "> **Status**: Approved", "", planEvidenceContract(), ""].join("\n")
       );
+      writeActivePlan(cwd, "plans/plan-20260304-1410-demo.md");
       writeFileSync(
         join(cwd, "tasks/todo.md"),
         "# Task Execution Checklist (Primary)\n\n> **Source Plan**: plans/plan-20260304-1410-demo.md\n"
@@ -1467,6 +1486,7 @@ describe("Hook runtime behavior", () => {
         join(cwd, "plans/plan-20260304-1415-demo.md"),
         "# Plan: demo\n\n> **Status**: Approved\n"
       );
+      writeActivePlan(cwd, "plans/plan-20260304-1415-demo.md");
       writeFileSync(
         join(cwd, "tasks/todo.md"),
         "# Task Execution Checklist (Primary)\n\n> **Source Plan**: plans/plan-20260304-1415-demo.md\n"
@@ -1537,6 +1557,7 @@ describe("Hook runtime behavior", () => {
           join(cwd, "plans/plan-20260304-1410-demo.md"),
           ["# Plan: demo", "", "> **Status**: Approved", "", planEvidenceContract(), ""].join("\n")
         );
+        writeActivePlan(cwd, "plans/plan-20260304-1410-demo.md");
         writeFileSync(
           join(cwd, "tasks/todo.md"),
           "# Task Execution Checklist (Primary)\n\n> **Source Plan**: plans/plan-20260304-1410-demo.md\n"
@@ -1579,6 +1600,7 @@ describe("Hook runtime behavior", () => {
         join(cwd, "plans/plan-20260304-1420-demo.md"),
         ["# Plan: demo", "", "> **Status**: Approved", "", planEvidenceContract(), ""].join("\n")
       );
+      writeActivePlan(cwd, "plans/plan-20260304-1420-demo.md");
       writeFileSync(
         join(cwd, "tasks/todo.md"),
         "# Task Execution Checklist (Primary)\n\n> **Source Plan**: plans/plan-20260304-1420-demo.md\n"
@@ -1724,6 +1746,7 @@ describe("Hook runtime behavior", () => {
         join(cwd, "plans/plan-20260304-1410-demo.md"),
         "# Plan: demo\n\n> **Status**: Executing\n"
       );
+      writeActivePlan(cwd, "plans/plan-20260304-1410-demo.md");
 
       const handoffRes = runHook("post-edit-guard.sh", cwd, {
         stdin: JSON.stringify({ tool_input: { file_path: "tasks/todo.md" } }),
@@ -1812,6 +1835,7 @@ describe("Hook runtime behavior", () => {
         join(cwd, "plans/plan-20260304-1410-demo.md"),
         "# Plan: demo\n\n> **Status**: Executing\n"
       );
+      writeActivePlan(cwd, "plans/plan-20260304-1410-demo.md");
 
       const res = runHook("post-edit-guard.sh", cwd, {
         stdin: JSON.stringify({ tool_input: { file_path: "tasks/todo.md" } }),
@@ -1844,6 +1868,7 @@ describe("Hook runtime behavior", () => {
         join(cwd, "plans/plan-20260304-1600-demo.md"),
         "# Plan: demo\n\n> **Status**: Executing\n"
       );
+      writeActivePlan(cwd, "plans/plan-20260304-1600-demo.md");
       writeFileSync(
         join(cwd, "tasks/contracts/demo.contract.md"),
         [

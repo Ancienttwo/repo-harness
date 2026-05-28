@@ -5,8 +5,8 @@ This repo uses a shared long-running harness. The durable workflow lives in repo
 ## Roles
 
 - **Planner** updates `docs/spec.md`, researches constraints, and writes or approves `plans/plan-*.md`.
-- **Generator** implements only against the active sprint contract, keeps `tasks/todo.md` synchronized, and records task-local implementation judgments in `tasks/notes/<slug>.notes.md`.
-- **Evaluator** writes `tasks/reviews/<slug>.review.md` and scores the current sprint using fresh evidence from `.ai/harness/checks/latest.json` and `.ai/harness/runs/*.json`.
+- **Generator** implements only against the active sprint contract and the plan's `## Task Breakdown`, leaving `tasks/todo.md` as a deferred-goal ledger, and records task-local implementation judgments in `tasks/notes/<slug>.notes.md`.
+- **Evaluator** runs Waza `/check`, then writes `tasks/reviews/<slug>.review.md` using fresh evidence from `.ai/harness/checks/latest.json` and `.ai/harness/runs/*.json`.
 
 ## State Flow
 
@@ -33,7 +33,7 @@ This repo uses a shared long-running harness. The durable workflow lives in repo
 - Exploration and planning are allowed before a contract exists.
 - Before implementation, the plan and contract should both expose a concrete workflow inventory so the agent does not rediscover or guess active artifacts.
 - Implementation should prefer `docs/spec.md`, an approved plan, and an active sprint contract.
-- Claiming completion should include contract verification evidence, a run snapshot, implementation notes, and a passing review artifact.
+- Claiming completion should include contract verification evidence, a run snapshot, implementation notes, and a passing Waza `/check` review artifact.
 - Stopping a session should refresh `.ai/harness/handoff/current.md` for easier resume.
 - Use `docs/reference-configs/agentic-development-flow.md` for skill routing and `docs/reference-configs/external-tooling.md` for install/update commands.
 - Use `docs/reference-configs/global-working-rules.md` as the user-level Claude/Codex rule template; keep repo-local workflow contracts in repo files.

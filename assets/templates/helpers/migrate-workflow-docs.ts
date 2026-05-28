@@ -65,25 +65,26 @@ function appendIfMissing(target: string, marker: string, block: string, mode: Mo
 }
 
 function hasCanonicalTodoHeader(content: string): boolean {
-  return /^\> \*\*Source Plan\*\*:/m.test(content);
+  return /^# Deferred Goal Ledger\s*$/m.test(content) && /^\> \*\*Status\*\*:\s*Backlog\s*$/m.test(content);
 }
 
-function writeCanonicalTodo(target: string, mode: Mode, executionItems?: string[]) {
+function writeCanonicalTodo(target: string, mode: Mode) {
   if (existsSync(target)) return;
-  const taskLines =
-    executionItems && executionItems.length > 0
-      ? executionItems
-      : ["- [ ] No active execution checklist"];
   const content = [
-    "# Task Execution Checklist (Primary)",
+    "# Deferred Goal Ledger",
     "",
-    "> **Source Plan**: (none)",
-    "> **Status**: Idle",
-    "> Generate the next execution checklist from an approved plan with:",
-    ">   bash scripts/plan-to-todo.sh --plan plans/plan-YYYYMMDD-HHMM-slug.md",
+    "> **Status**: Backlog",
+    "> **Updated**: (migration)",
+    "> **Scope**: Medium/long-term goals deferred from active plan execution",
     "",
-    "## Execution",
-    ...taskLines,
+    "Current plan tasks live in the active plan's `## Task Breakdown`.",
+    "Do not duplicate that execution checklist here. Record only work intentionally deferred beyond this slice, with the tradeoff and revisit trigger.",
+    "",
+    "## Deferred Goals",
+    "",
+    "| Goal | Why Deferred | Tradeoff | Revisit Trigger |",
+    "|------|--------------|----------|-----------------|",
+    "| (none) | No deferred medium/long-term goal recorded yet. | Keep migrated workflow state bounded. | Add a row when a real follow-up is postponed. |",
   ].join("\n");
   if (mode === "apply") {
     ensureDir(dirname(target), mode);
@@ -98,26 +99,20 @@ function normalizeLegacyTodo(target: string, archivePath: string, mode: Mode) {
   if (hasCanonicalTodoHeader(existing)) return false;
 
   const content = [
-    "# Task Execution Checklist (Primary)",
+    "# Deferred Goal Ledger",
     "",
-    "> **Source Plan**: (none)",
-    "> **Status**: Idle",
-    "> Generate the next execution checklist from an approved plan with:",
-    ">   bash scripts/plan-to-todo.sh --plan plans/plan-YYYYMMDD-HHMM-slug.md",
+    "> **Status**: Backlog",
+    "> **Updated**: (migration)",
+    "> **Scope**: Medium/long-term goals deferred from active plan execution",
     "",
-    "## Execution",
-    "- [ ] Review imported legacy checklist below",
+    "Current plan tasks live in the active plan's `## Task Breakdown`.",
+    "Do not duplicate that execution checklist here. Record only work intentionally deferred beyond this slice, with the tradeoff and revisit trigger.",
     "",
-    "## Legacy Imported Task Checklist",
+    "## Deferred Goals",
     "",
-    "<!-- project-initializer: legacy-tasks-todo-import -->",
-    "",
-    existing.trimEnd(),
-    "",
-    "## Review Section",
-    "- Verification evidence:",
-    "- Behavior diff notes:",
-    "- Risks / follow-ups:",
+    "| Goal | Why Deferred | Tradeoff | Revisit Trigger |",
+    "|------|--------------|----------|-----------------|",
+    "| Review archived legacy checklist | Legacy tasks/todo.md contained execution checklist content before migration. | Preserve user-authored task text in tasks/archive instead of guessing which items still matter. | Open the archive and promote real follow-up work into a new plan or a deferred-goal row. |",
   ].join("\n");
 
   if (mode === "apply") {
@@ -196,7 +191,7 @@ export function migrate(repo: string, mode: Mode): MigrationSummary {
       source: "tasks/todo.md",
       target: "tasks/todo.md",
       action: "rewrite",
-      note: "Normalized legacy task checklist format to the canonical tasks-first header while preserving the prior content.",
+      note: "Archived legacy task checklist content and normalized tasks/todo.md to the deferred-goal ledger.",
     });
   }
   writeCanonicalResearch(tasksResearch, mode);
@@ -247,8 +242,8 @@ export function migrate(repo: string, mode: Mode): MigrationSummary {
       target: "tasks/todo.md",
       action: hadCanonicalTodo ? "skip" : "rewrite",
       note: hadCanonicalTodo
-        ? "Archived the legacy todo without rewriting the existing canonical checklist."
-        : "Created the lean canonical execution checklist and archived the legacy todo for manual plan triage.",
+        ? "Archived the legacy todo without rewriting the existing deferred-goal ledger."
+        : "Created the deferred-goal ledger and archived the legacy todo for manual plan triage.",
     });
     summary.manual_followups.push(
       "Review tasks/archive/legacy-docs-TODO.md and promote any still-relevant work into a new plan instead of rehydrating it into tasks/todo.md."

@@ -1,6 +1,6 @@
 ### Plan Annotation Protocol
 
-Use `tasks/research.md` for deep codebase understanding, `docs/spec.md` for stable intent, `plans/` for timestamped execution plans, and `tasks/todo.md` for the active sprint checklist.
+Use `tasks/research.md` for deep codebase understanding, `docs/spec.md` for stable intent, `plans/` for timestamped execution plans, and `tasks/todo.md` for deferred medium/long-term goals with tradeoffs and revisit triggers.
 
 ```yaml
 PLAN_LOOP:
@@ -8,12 +8,12 @@ PLAN_LOOP:
   RECOVERY: {{RECOVERY_PROFILE}}
   STATE: {{STATE_PROFILE}}
   CONTEXT: {{CONTEXT_PROFILE}}
-  PHASES: research -> spec -> plan -> contract -> todo -> implement -> verify -> review -> handoff
+  PHASES: research -> spec -> plan -> contract -> implement -> verify -> check -> review -> handoff
   RESEARCH_FILE: tasks/research.md
   SPEC_FILE: docs/spec.md
   PLAN_DIR: plans/
   PLAN_ARCHIVE: plans/archive/
-  ACTIVE_PLAN_RULE: .ai/harness/active-plan marker if present, legacy .claude/.active-plan fallback during transition, otherwise latest timestamped file in plans/
+  ACTIVE_PLAN_RULE: .ai/harness/active-plan marker is scoped to this worktree; .ai/harness/active-worktree records the owner; legacy .claude/.active-plan is fallback only
   PLAN_SWITCH: scripts/switch-plan.sh --plan <plan-file> | --list
   PRIMARY_FILE: tasks/todo.md
   TODO_ARCHIVE: tasks/archive/
@@ -30,7 +30,7 @@ PLAN_LOOP:
   ANNOTATION_GUARD: do not implement until plan Status is "Approved"
   CONTRACT_GUARD: do not mark done until contract exit criteria pass and review recommends pass
   EXECUTION_CONTEXT: contract-level work starts in a linked codex/<slug> worktree when policy enables it; primary worktree warning by default; enforce via .claude/.require-worktree
-  CONTRACT_WORKTREE_FINISH: run Waza /check, then scripts/contract-worktree.sh finish
+  CONTRACT_WORKTREE_FINISH: run Waza /check, fill the review artifact from that verdict, then scripts/contract-worktree.sh finish
   COMMIT_POLICY: explicit commits after green checks; no automatic checkpoint hook
 ```
 
@@ -51,8 +51,8 @@ PLAN_LOOP:
 Core rules (canonical source: see Workflow Orchestration section below):
 - `docs/spec.md` is product truth; `plans/` is execution truth.
 - `tasks/contracts/`, `tasks/reviews/`, and `tasks/notes/` are done gates; hooks are accelerators only.
-- Treat `.ai/harness/active-plan` as authoritative when present; `.claude/.active-plan` is a legacy fallback during transition; latest non-archived `plans/plan-*.md` is a compatibility fallback.
-- Require plan/contract workflow inventory before implementation: active plan, contract, review, notes, todo, checks, runs, scope owner, switching rule, and worktree path.
+- Treat `.ai/harness/active-plan` as authoritative only for its owning worktree; `.ai/harness/active-worktree` records that owner; `.claude/.active-plan` is a legacy fallback during transition.
+- Require plan/contract workflow inventory before implementation: active plan, owning worktree, contract, review, notes, deferred ledger, checks, runs, scope owner, switching rule, and worktree path.
 - Mark done only with verification evidence.
 - Durable progress lives in `tasks/workstreams/`; release history belongs in `docs/CHANGELOG.md`.
 

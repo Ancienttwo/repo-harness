@@ -208,7 +208,7 @@ Describe the exact outcome this task must deliver.
 ## Workflow Inventory
 
 - Source plan: `{{PLAN_FILE}}`
-- Todo projection: `tasks/todo.md`
+- Deferred-goal ledger: `tasks/todo.md`
 - Review file: `tasks/reviews/{{TASK_SLUG}}.review.md`
 - Notes file: `tasks/notes/{{TASK_SLUG}}.notes.md`
 - Checks file: `.ai/harness/checks/latest.json`
@@ -477,12 +477,14 @@ parent_run_id="${HOOK_RUN_ID:-${CLAUDE_RUN_ID:-${CODEX_RUN_ID:-run-${timestamp}}
 capability_id="$(extract_capability_id "$plan_file")"
 capability_id="${capability_id:-root}"
 
-if [[ -f "tasks/todo.md" ]] && grep -q '[^[:space:]]' tasks/todo.md; then
+if [[ -f "tasks/todo.md" ]] \
+  && grep -q '[^[:space:]]' tasks/todo.md \
+  && ! grep -Eq '^> \*\*Status\*\*:[[:space:]]*Backlog[[:space:]]*$' tasks/todo.md; then
   archive_file="$(unique_archive_path "tasks/archive/todo-${timestamp}-${slug}.md")"
   {
     echo "> **Archived**: $(date '+%Y-%m-%d %H:%M')"
     echo "> **Related Plan**: ${plan_file}"
-    echo "> **Outcome**: Superseded"
+    echo "> **Outcome**: Converted to deferred-goal ledger"
     echo "> **Source Plan**: ${previous_source_plan:-"(none)"}"
     echo "> **Parent Run ID**: ${parent_run_id}"
     echo
@@ -490,39 +492,40 @@ if [[ -f "tasks/todo.md" ]] && grep -q '[^[:space:]]' tasks/todo.md; then
   } > "$archive_file"
 fi
 
-tasks_tmp="$(mktemp)"
-awk '
-  BEGIN { in_section = 0 }
-  /^## Task Breakdown/ { in_section = 1; next }
-  in_section && /^## / { exit }
-  in_section { print }
-' "$plan_file" > "$tasks_tmp"
-
-if ! grep -Eq '^- \[[ xX]\]' "$tasks_tmp"; then
-  cat > "$tasks_tmp" <<'DEFAULT_TASKS_EOF'
-- [ ] Confirm task breakdown details
-- [ ] Implement approved plan incrementally
-DEFAULT_TASKS_EOF
+if [[ ! -f "tasks/todo.md" ]] || ! grep -Eq '^> \*\*Status\*\*:[[:space:]]*Backlog[[:space:]]*$' tasks/todo.md; then
+  {
+    echo "# Deferred Goal Ledger"
+    echo
+    echo "> **Status**: Backlog"
+    echo "> **Updated**: ${timestamp_human}"
+    echo "> **Scope**: Medium/long-term goals deferred from active plan execution"
+    echo
+    echo "Current plan tasks live in \`${plan_file}\` under \`## Task Breakdown\`."
+    echo "Do not duplicate that execution checklist here. Record only work intentionally deferred beyond this slice, with the tradeoff and revisit trigger."
+    echo
+    echo "## Deferred Goals"
+    echo
+    echo "| Goal | Why Deferred | Tradeoff | Revisit Trigger |"
+    echo "|------|--------------|----------|-----------------|"
+    echo "| (none) | No deferred medium/long-term goal recorded for this projection. | Keep this sprint bounded. | Add a row when a real follow-up is postponed. |"
+  } > tasks/todo.md
+else
+  todo_tmp="$(mktemp)"
+  awk -v timestamp_human="$timestamp_human" -v plan_file="$plan_file" '
+    /^\> \*\*Updated\*\*:/ {
+      print "> **Updated**: " timestamp_human
+      next
+    }
+    /^Current plan tasks live in `/ {
+      print "Current plan tasks live in `" plan_file "` under `## Task Breakdown`."
+      next
+    }
+    { print }
+  ' tasks/todo.md > "$todo_tmp"
+  mv "$todo_tmp" tasks/todo.md
 fi
 
-{
-  echo "# Task Execution Checklist (Primary)"
-  echo
-  echo "> **Source Plan**: ${plan_file}"
-  echo "> **Status**: Executing"
-  echo "> **Generated**: ${timestamp_human}"
-  echo "> **Source Plan Slug**: ${slug}"
-  echo "> **Review File**: ${review_file}"
-  echo "> **Notes File**: ${notes_file}"
-  echo "> **Capability ID**: ${capability_id}"
-  echo "> **Parent Run ID**: ${parent_run_id}"
-  echo "> **Supersedes**: ${previous_source_plan:-"(none)"}"
-  echo
-  echo "## Execution"
-  cat "$tasks_tmp"
-} > tasks/todo.md
-
-workflow_sync_task_state_from_todo "tasks/todo.md" ".claude/.task-state.json" "$plan_file"
+rm -f .claude/.task-state.json
 
 if [[ -f ".claude/templates/review.template.md" ]]; then
   :
@@ -547,6 +550,7 @@ else
 
 ## Verification Evidence
 
+- Waza /check run:
 - Commands run:
 - Manual checks:
 - Supporting artifacts:
@@ -600,7 +604,15 @@ if [[ ! -f ".ai/harness/checks/latest.json" ]]; then
   echo "{}" > .ai/harness/checks/latest.json
 fi
 
-rm -f "$tasks_tmp"
 set_plan_status "$plan_file" "Executing"
+if declare -F set_active_plan >/dev/null 2>&1; then
+  set_active_plan "$plan_file"
+else
+  mkdir -p .ai/harness .claude
+  printf '%s' "$plan_file" > .ai/harness/active-plan
+  printf '%s' "$plan_file" > .claude/.active-plan
+  pwd -P > .ai/harness/active-worktree
+fi
 
-echo "Updated tasks/todo.md from $plan_file"
+echo "Prepared sprint artifacts from $plan_file"
+echo "Left tasks/todo.md as deferred-goal ledger; execute the plan's own ## Task Breakdown."

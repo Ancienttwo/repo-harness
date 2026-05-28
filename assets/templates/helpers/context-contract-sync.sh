@@ -456,7 +456,7 @@ ${active_workstreams}
 ## Current Session Projection
 
 - Durable progress lives under \`${workstream_dir}\`.
-- \`tasks/todo.md\` is the current session slice projected from the active workstream.
+- \`tasks/todo.md\` is the deferred-goal ledger; current execution slices stay in the active plan's \`## Task Breakdown\`.
 <!-- END ARCHITECTURE CONTRACT -->
 EOF_BLOCK
 

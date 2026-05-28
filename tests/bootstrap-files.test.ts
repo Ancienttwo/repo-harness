@@ -54,6 +54,9 @@ describe("Bootstrap Script Contracts", () => {
 
   test("repo package should expose workflow verification scripts", () => {
     const pkg = JSON.parse(read("package.json"));
+    expect(pkg.name).toBe("agentic-harness");
+    expect(pkg.private).toBeUndefined();
+    expect(pkg.bin["agentic-dev"]).toBe("src/cli/index.ts");
     expect(pkg.scripts["check:brain-manifest"]).toBe("bash scripts/check-brain-manifest.sh");
     expect(pkg.scripts["check:task-sync"]).toBe("bash scripts/check-task-sync.sh");
     expect(pkg.scripts["check:deploy-sql"]).toBe("bash scripts/check-deploy-sql-order.sh");
@@ -149,6 +152,7 @@ describe("Bootstrap Script Contracts", () => {
     expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/handoff/resume.md");
     expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/context-budget/latest.json");
     expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/active-plan");
+    expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/active-worktree");
     expect(contract.artifacts.requiredFiles).toContain("docs/reference-configs/agentic-development-flow.md");
     expect(contract.artifacts.requiredFiles).toContain("docs/architecture/index.md");
     expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/architecture/events.jsonl");
@@ -167,7 +171,7 @@ describe("Bootstrap Script Contracts", () => {
     expect(contract.artifacts.requiredDirectories).toContain("tasks/contracts");
     expect(contract.artifacts.requiredDirectories).toContain("tasks/reviews");
     expect(contract.artifacts.requiredDirectories).toContain("tasks/notes");
-    expect(content).toContain("**Source Plan**: (none)");
+    expect(content).toContain("# Deferred Goal Ledger");
     expect(content).not.toContain("PROJECT_SETTINGS_EOF");
     expect(content).not.toContain("\"$TOOL_INPUT\"");
     expect(content).not.toContain("\"$PROMPT\"");
@@ -243,7 +247,7 @@ describe("Bootstrap Script Contracts", () => {
     expect(contract.artifacts.requiredDirectories).toContain("tasks/contracts");
     expect(contract.artifacts.requiredDirectories).toContain("tasks/reviews");
     expect(contract.artifacts.requiredDirectories).toContain("tasks/notes");
-    expect(content).toContain("**Source Plan**: (none)");
+    expect(content).toContain("# Deferred Goal Ledger");
     expect(content).not.toContain(".*/");
     expect(content).toContain("ensure_runtime_gitignore_block");
     expect(content).toContain("install_hook_settings_template");

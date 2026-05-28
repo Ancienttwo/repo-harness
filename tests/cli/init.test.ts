@@ -21,7 +21,7 @@ function setupFakeSource(root: string): void {
   mkdirSync(join(root, "scripts"), { recursive: true });
   makeExecutable(
     join(root, "scripts", "sync-codex-installed-copies.sh"),
-    "#!/bin/bash\nset -euo pipefail\necho sync\n",
+    "#!/bin/bash\nset -euo pipefail\necho \"sync link=${AGENTIC_DEV_LINK_INSTALLED_COPIES:-unset}\"\n",
   );
   writeFileSync(
     join(root, "scripts", "inspect-project-state.ts"),
@@ -157,6 +157,32 @@ describe("init command", () => {
       expect(result.steps.find((step) => step.step === "install host adapters")?.detail).toBe("dry-run");
       expect(existsSync(join(home, ".codex", "hooks.json"))).toBe(false);
       expect(existsSync(join(repo, ".ai", "harness", "workflow-contract.json"))).toBe(false);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test("npx cache sources force copy-based installed skill sync", () => {
+    const tmp = join(tmpdir(), `agentic-dev-init-npx-${Date.now()}`);
+    const source = join(tmp, "_npx", "abc123", "node_modules", "agentic-harness");
+    const repo = join(tmp, "repo");
+    try {
+      mkdirSync(source, { recursive: true });
+      mkdirSync(repo, { recursive: true });
+      setupFakeSource(source);
+
+      const result = runInit({
+        repo,
+        sourceRoot: source,
+        hostAdapters: false,
+        externalSkills: false,
+        verify: false,
+      });
+
+      expect(result.exitCode).toBe(0);
+      expect(result.steps.find((step) => step.step === "sync agentic-dev skills")?.stdout).toContain(
+        "sync link=0",
+      );
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

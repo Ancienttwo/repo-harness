@@ -276,6 +276,10 @@ clean_matching_untracked_target_files() {
   done < <(git -C "$target_worktree" ls-files --others --exclude-standard)
 }
 
+clean_local_runtime_markers() {
+  rm -f .ai/harness/active-plan .ai/harness/active-worktree .claude/.active-plan
+}
+
 finish_worktree() {
   local merge_back=1
   local target_branch
@@ -341,6 +345,7 @@ finish_worktree() {
   [[ -n "$review_file" && -f "$review_file" ]] || { echo "contract-worktree: no active sprint review found" >&2; exit 1; }
 
   bash "scripts/verify-sprint.sh"
+  clean_local_runtime_markers
   check_scope_against_contract "$contract_file"
 
   if ! git diff --quiet || ! git diff --cached --quiet || [[ -n "$(git ls-files --others --exclude-standard)" ]]; then

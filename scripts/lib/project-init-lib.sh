@@ -51,6 +51,7 @@ PI_DEFAULT_RUNTIME_ENTRIES=$(cat <<'EOF_RUNTIME'
 .ai/harness/context-budget/latest.json
 .ai/harness/architecture/events.jsonl
 .ai/harness/active-plan
+.ai/harness/active-worktree
 .ai/harness/worktrees/
 .ai/harness/runs/
 .codex/*
@@ -151,11 +152,11 @@ Complete this inventory before implementation. If any line is unknown, keep the 
 - Sprint contract: `tasks/contracts/{{SLUG}}.contract.md`
 - Sprint review: `tasks/reviews/{{SLUG}}.review.md`
 - Implementation notes: `tasks/notes/{{SLUG}}.notes.md`
-- Todo projection: `tasks/todo.md`
+- Deferred-goal ledger: `tasks/todo.md`
 - Current checks: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope authority: `tasks/contracts/{{SLUG}}.contract.md` `allowed_paths`
-- Concurrency rule: `.ai/harness/active-plan` selects the active plan when present; `.claude/.active-plan` is a legacy fallback during transition. Use `scripts/switch-plan.sh --plan {{PLAN_FILE}}` when multiple plans exist.
+- Concurrency rule: `.ai/harness/active-plan` selects the active plan for this worktree when present; `.ai/harness/active-worktree` records the owning worktree; `.claude/.active-plan` is a legacy fallback during transition. If another worktree already owns active work, open or switch to the matching worktree instead of serializing unrelated plans.
 - Execution isolation: approved contract-level work projects through `scripts/plan-to-todo.sh --plan {{PLAN_FILE}}` and may start `scripts/contract-worktree.sh start --plan {{PLAN_FILE}}`.
 
 ## Approach
@@ -182,7 +183,7 @@ Complete this inventory before implementation. If any line is unknown, keep the 
 - Implementation notes file: `tasks/notes/{{SLUG}}.notes.md`
 - Template: `.claude/templates/contract.template.md`
 - Verification command: `bash scripts/verify-contract.sh --contract tasks/contracts/{{SLUG}}.contract.md --strict`
-- Active plan rule: `.ai/harness/active-plan` is authoritative when present; `.claude/.active-plan` is a legacy fallback during transition; latest non-archived `plans/plan-*.md` is a compatibility fallback only.
+- Active plan rule: `.ai/harness/active-plan` is authoritative for this worktree when present; `.ai/harness/active-worktree` records the owning worktree; `.claude/.active-plan` is a legacy fallback during transition. Do not infer active execution from the latest non-archived plan.
 
 ## Handoff
 
@@ -227,7 +228,7 @@ Describe the exact outcome this task must deliver.
 ## Workflow Inventory
 
 - Source plan: `{{PLAN_FILE}}`
-- Todo projection: `tasks/todo.md`
+- Deferred-goal ledger: `tasks/todo.md`
 - Review file: `tasks/reviews/{{TASK_SLUG}}.review.md`
 - Notes file: `tasks/notes/{{TASK_SLUG}}.notes.md`
 - Checks file: `.ai/harness/checks/latest.json`
@@ -290,6 +291,7 @@ PI_TEMPLATE_REVIEW=$(cat <<'EOF_TEMPLATE_REVIEW'
 
 ## Verification Evidence
 
+- Waza /check run:
 - Commands run:
 - Manual checks:
 - Supporting artifacts:
@@ -1240,7 +1242,8 @@ pi_write_harness_policy() {
     "directory": "plans",
     "archive_directory": "plans/archive",
     "glob": "plan-*.md",
-    "source_of_truth": "host-neutral explicit marker, legacy Claude marker fallback, or latest non-archived compatibility fallback"
+    "active_worktree_marker_file": ".ai/harness/active-worktree",
+    "source_of_truth": "per-worktree explicit marker with active-worktree owner; legacy Claude marker fallback only"
   },
   "tasks": {
     "todo_file": "tasks/todo.md",
@@ -1306,7 +1309,7 @@ pi_write_harness_policy() {
     "scope": "capability",
     "projection": "local-contract-active-pointer-and-current-slice",
     "todo_projection": "tasks/todo.md",
-    "rule": "durable multi-session progress lives under tasks/workstreams/<domain>/<capability>; local contracts only project pointers"
+    "rule": "durable multi-session progress lives under tasks/workstreams/<domain>/<capability>; current plan execution lives in the plan Task Breakdown; tasks/todo.md records deferred goals only"
   },
   "information_lifecycle": {
     "notes": {
@@ -1620,7 +1623,7 @@ This is the root routing contract for Claude Code and Codex.
 ## Root Workflow Contract
 
 - Keep sibling `CLAUDE.md` and `AGENTS.md` files aligned. Claude Code consumes `CLAUDE.md`; Codex consumes `AGENTS.md`.
-- Treat `docs/spec.md` as stable product truth and `tasks/todo.md` as the current execution checklist.
+- Treat `docs/spec.md` as stable product truth and `tasks/todo.md` as the deferred-goal ledger; current execution stays in the active plan's `## Task Breakdown`.
 - Treat `tasks/lessons.md`, `tasks/research.md`, and `.ai/harness/policy.json` as durable workflow context.
 - Use `.ai/context/context-map.json` and `.ai/context/capabilities.json` to discover functional-block contracts.
 - Do not infer local `CLAUDE.md` or `AGENTS.md` files from broad physical layouts such as `apps/*`, `packages/*`, or `services/*`.

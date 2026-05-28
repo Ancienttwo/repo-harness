@@ -93,11 +93,11 @@ Complete this inventory before implementation. If any line is unknown, keep the 
 - Sprint contract: `tasks/contracts/{{SLUG}}.contract.md`
 - Sprint review: `tasks/reviews/{{SLUG}}.review.md`
 - Implementation notes: `tasks/notes/{{SLUG}}.notes.md`
-- Todo projection: `tasks/todo.md`
+- Deferred-goal ledger: `tasks/todo.md`
 - Current checks: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope authority: `tasks/contracts/{{SLUG}}.contract.md` `allowed_paths`
-- Concurrency rule: `.ai/harness/active-plan` selects the active plan when present; `.claude/.active-plan` is a legacy fallback during transition. Use `scripts/switch-plan.sh --plan {{PLAN_FILE}}` when multiple plans exist.
+- Concurrency rule: `.ai/harness/active-plan` selects the active plan for this worktree when present; `.ai/harness/active-worktree` records the owning worktree; `.claude/.active-plan` is a legacy fallback during transition. If another worktree already owns active work, open or switch to the matching worktree instead of serializing unrelated plans.
 - Execution isolation: approved contract-level work projects through `scripts/plan-to-todo.sh --plan {{PLAN_FILE}}` and may start `scripts/contract-worktree.sh start --plan {{PLAN_FILE}}`.
 
 ## Approach
@@ -124,7 +124,7 @@ Complete this inventory before implementation. If any line is unknown, keep the 
 - Implementation notes file: `tasks/notes/{{SLUG}}.notes.md`
 - Template: `.claude/templates/contract.template.md`
 - Verification command: `bash scripts/verify-contract.sh --contract tasks/contracts/{{SLUG}}.contract.md --strict`
-- Active plan rule: `.ai/harness/active-plan` is authoritative when present; `.claude/.active-plan` is a legacy fallback during transition; latest non-archived `plans/plan-*.md` is a compatibility fallback only.
+- Active plan rule: `.ai/harness/active-plan` is authoritative for this worktree when present; `.ai/harness/active-worktree` records the owning worktree; `.claude/.active-plan` is a legacy fallback during transition. Do not infer active execution from the latest non-archived plan.
 
 ## Handoff
 

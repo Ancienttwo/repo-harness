@@ -105,6 +105,7 @@ if (Array.isArray(value)) {
 
 ACTIVE_PLAN_MARKER=".ai/harness/active-plan"
 LEGACY_ACTIVE_PLAN_MARKER=".claude/.active-plan"
+ACTIVE_WORKTREE_MARKER=".ai/harness/active-worktree"
 
 read_active_plan_marker() {
   local marker_file="$1"
@@ -123,16 +124,7 @@ read_active_plan_marker() {
 
 get_active_plan() {
   read_active_plan_marker "$ACTIVE_PLAN_MARKER" \
-    || read_active_plan_marker "$LEGACY_ACTIVE_PLAN_MARKER" \
-    || {
-  local latest
-  latest="$(find plans -maxdepth 1 -type f -name 'plan-*.md' 2>/dev/null | sort | tail -1)"
-  if [[ -n "$latest" ]]; then
-    printf '%s' "$latest"
-    return 0
-  fi
-  return 1
-    }
+    || read_active_plan_marker "$LEGACY_ACTIVE_PLAN_MARKER"
 }
 
 extract_status() {
@@ -198,6 +190,37 @@ todo_source_plan() {
     return 1
   fi
   awk -F': ' '/^\> \*\*Source Plan\*\*:/ {print $2; exit}' "${todo_file:-tasks/todo.md}" | xargs
+}
+
+todo_is_deferred_ledger() {
+  local file="${1:-${todo_file:-tasks/todo.md}}"
+  [[ -f "$file" ]] || return 1
+  grep -Eq '^# Deferred Goal Ledger[[:space:]]*$' "$file" \
+    && grep -Eq '^> \*\*Status\*\*:[[:space:]]*Backlog[[:space:]]*$' "$file"
+}
+
+todo_deferred_ledger_error() {
+  local file="${1:-${todo_file:-tasks/todo.md}}"
+  local missing=0
+
+  grep -Eq '^# Deferred Goal Ledger[[:space:]]*$' "$file" || {
+    echo "missing '# Deferred Goal Ledger' heading"
+    missing=1
+  }
+  grep -Eq '^> \*\*Status\*\*:[[:space:]]*Backlog[[:space:]]*$' "$file" || {
+    echo "missing Backlog status"
+    missing=1
+  }
+  grep -Eq '^## Deferred Goals[[:space:]]*$' "$file" || {
+    echo "missing ## Deferred Goals section"
+    missing=1
+  }
+  grep -Eq '\|[[:space:]]*Goal[[:space:]]*\|[[:space:]]*Why Deferred[[:space:]]*\|[[:space:]]*Tradeoff[[:space:]]*\|[[:space:]]*Revisit Trigger[[:space:]]*\|' "$file" || {
+    echo "missing deferred-goal table with Tradeoff and Revisit Trigger"
+    missing=1
+  }
+
+  [[ "$missing" -eq 0 ]]
 }
 
 derive_slug() {
@@ -363,21 +386,33 @@ fi
 
 todo_source="$(todo_source_plan || true)"
 if [[ -f "$todo_file" ]]; then
-  if [[ -z "$todo_source" ]]; then
-    if grep -q '[^[:space:]]' "$todo_file"; then
-      report_issue "Legacy ${todo_file} detected; expected a '> **Source Plan**:' header."
+  if grep -q '[^[:space:]]' "$todo_file"; then
+    if ! todo_is_deferred_ledger "$todo_file"; then
+      report_issue "Legacy ${todo_file} detected; expected a deferred-goal ledger, not an active execution checklist."
+    elif ! ledger_error="$(todo_deferred_ledger_error "$todo_file")"; then
+      report_issue "${todo_file} deferred ledger is incomplete: ${ledger_error//$'\n'/; }"
     fi
-  elif [[ "$todo_source" != "(none)" && ! -f "$todo_source" ]]; then
-    report_issue "${todo_file} points to a missing source plan: $todo_source"
   fi
 fi
 
 active_plan="$(get_active_plan || true)"
 if [[ -z "$active_plan" ]]; then
-  if [[ "$todo_source" != "" && "$todo_source" != "(none)" ]]; then
-    report_issue "tasks/todo.md points to $todo_source but no active plan exists in plans/."
+  if [[ -f "$ACTIVE_WORKTREE_MARKER" ]]; then
+    report_issue "$ACTIVE_WORKTREE_MARKER exists but no active plan marker resolves to a plan."
   fi
 else
+  if [[ ! -f "$ACTIVE_WORKTREE_MARKER" ]]; then
+    report_issue "Active plan marker exists but $ACTIVE_WORKTREE_MARKER is missing."
+  else
+    current_worktree="$(pwd -P)"
+    marked_worktree="$(cat "$ACTIVE_WORKTREE_MARKER" 2>/dev/null | xargs || true)"
+    if [[ -z "$marked_worktree" ]]; then
+      report_issue "$ACTIVE_WORKTREE_MARKER is empty."
+    elif [[ "$marked_worktree" != "$current_worktree" ]]; then
+      report_issue "$ACTIVE_WORKTREE_MARKER points to $marked_worktree, expected $current_worktree."
+    fi
+  fi
+
   plan_status="$(extract_status "$active_plan")"
   if [[ -z "$plan_status" ]]; then
     report_issue "Active plan is missing a '**Status**' line: $active_plan"
@@ -393,12 +428,6 @@ else
       report_issue "Active $plan_status plan is missing its task contract: $contract_file"
     elif ! grep -Eq '^> \*\*Capability ID\*\*: .+' "$contract_file"; then
       report_issue "Active task contract is missing a capability binding: $contract_file"
-    fi
-  fi
-
-  if [[ "$plan_status" == "Executing" ]]; then
-    if [[ "$todo_source" != "$active_plan" ]]; then
-      report_issue "Executing plan is $active_plan but ${todo_file} is sourced from ${todo_source:-missing header}."
     fi
   fi
 fi

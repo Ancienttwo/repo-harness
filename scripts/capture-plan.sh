@@ -22,12 +22,14 @@ normalize_slug() {
 
 ACTIVE_PLAN_MARKER=".ai/harness/active-plan"
 LEGACY_ACTIVE_PLAN_MARKER=".claude/.active-plan"
+ACTIVE_WORKTREE_MARKER=".ai/harness/active-worktree"
 
 write_active_plan_marker() {
   local plan_file="$1"
-  mkdir -p "$(dirname "$ACTIVE_PLAN_MARKER")" "$(dirname "$LEGACY_ACTIVE_PLAN_MARKER")"
+  mkdir -p "$(dirname "$ACTIVE_PLAN_MARKER")" "$(dirname "$LEGACY_ACTIVE_PLAN_MARKER")" "$(dirname "$ACTIVE_WORKTREE_MARKER")"
   printf '%s' "$plan_file" > "$ACTIVE_PLAN_MARKER"
   printf '%s' "$plan_file" > "$LEGACY_ACTIVE_PLAN_MARKER"
+  pwd -P > "$ACTIVE_WORKTREE_MARKER"
 }
 
 extract_task_breakdown() {
@@ -193,11 +195,11 @@ Complete this inventory before implementation. If any line is unknown, keep the 
 - Sprint contract: \`tasks/contracts/${slug}.contract.md\`
 - Sprint review: \`tasks/reviews/${slug}.review.md\`
 - Implementation notes: \`tasks/notes/${slug}.notes.md\`
-- Todo projection: \`tasks/todo.md\`
+- Deferred-goal ledger: \`tasks/todo.md\`
 - Current checks: \`.ai/harness/checks/latest.json\`
 - Run snapshots: \`.ai/harness/runs/\`
 - Scope authority: \`tasks/contracts/${slug}.contract.md\` \`allowed_paths\`
-- Concurrency rule: \`.ai/harness/active-plan\` selects the active plan when present; \`.claude/.active-plan\` is a legacy fallback during transition. Use \`scripts/switch-plan.sh --plan ${plan_file}\` when multiple plans exist.
+- Concurrency rule: \`.ai/harness/active-plan\` selects the active plan for this worktree when present; \`.ai/harness/active-worktree\` records the owning worktree; \`.claude/.active-plan\` is a legacy fallback during transition. If another worktree already owns active work, open or switch to the matching worktree instead of serializing unrelated plans.
 - Execution isolation: approved contract-level work projects through \`scripts/plan-to-todo.sh --plan ${plan_file}\` and may start \`scripts/contract-worktree.sh start --plan ${plan_file}\`.
 
 ## Approach
@@ -232,7 +234,7 @@ See captured planning output.
 - Implementation notes file: \`tasks/notes/${slug}.notes.md\`
 - Template: \`.claude/templates/contract.template.md\`
 - Verification command: \`bash scripts/verify-contract.sh --contract tasks/contracts/${slug}.contract.md --strict\`
-- Active plan rule: this captured plan is written to \`.ai/harness/active-plan\` and mirrored to \`.claude/.active-plan\` unless --no-active is used; latest non-archived \`plans/plan-*.md\` is a compatibility fallback only.
+- Active plan rule: this captured plan is written to \`.ai/harness/active-plan\`, the owning worktree is written to \`.ai/harness/active-worktree\`, and the plan is mirrored to \`.claude/.active-plan\` unless --no-active is used. Do not infer active execution from the latest non-archived plan.
 
 ## Handoff
 
@@ -241,7 +243,7 @@ See captured planning output.
 
 ## Evidence Contract
 
-- **State/progress path**: \`tasks/todo.md\`, \`tasks/contracts/${slug}.contract.md\`, \`tasks/reviews/${slug}.review.md\`, and \`tasks/notes/${slug}.notes.md\`
+- **State/progress path**: \`${plan_file}\` task breakdown, \`tasks/todo.md\` deferred-goal ledger, \`tasks/contracts/${slug}.contract.md\`, \`tasks/reviews/${slug}.review.md\`, and \`tasks/notes/${slug}.notes.md\`
 - **Verification evidence**: \`.ai/harness/checks/latest.json\`, \`.ai/harness/runs/\`, and the commands named in the captured planning output
 - **Evaluator rubric**: \`tasks/reviews/${slug}.review.md\` must record a passing Waza /check style recommendation
 - **Stop condition**: all task breakdown items are complete, sprint verification passes, and the review recommends pass

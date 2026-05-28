@@ -116,7 +116,7 @@ export function inspectRepo(repo: string): InspectionResult {
   ];
 
   const runtimeManifest = join(repo, contract.artifacts.runtimeManifest);
-  const todoFile = join(repo, contract.documents.taskChecklist);
+  const todoFile = join(repo, contract.documents.deferredGoalLedger ?? contract.documents.taskChecklist ?? "tasks/todo.md");
   const policyFile = join(repo, ".ai", "harness", "policy.json");
   const generatedClaudeHookPaths = [
     ".claude/hooks/run-hook.sh",
@@ -155,7 +155,13 @@ export function inspectRepo(repo: string): InspectionResult {
   if (existsSync(join(repo, "docs", "PROGRESS.md"))) {
     driftSignals.push("legacy-docs-progress");
   }
-  if (existsSync(todoFile) && !fileHasContent(todoFile, /^\> \*\*Source Plan\*\*:/m)) {
+  if (
+    existsSync(todoFile) &&
+    (
+      !fileHasContent(todoFile, /^# Deferred Goal Ledger\s*$/m) ||
+      !fileHasContent(todoFile, /^\> \*\*Status\*\*:\s*Backlog\s*$/m)
+    )
+  ) {
     driftSignals.push("legacy-task-checklist-format");
   }
   if (hasAnyPath(repo, generatedClaudeHookPaths)) {

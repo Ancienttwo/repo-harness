@@ -4,8 +4,8 @@ Sprint contracts are the repo-local agreement between planner, generator, and ev
 
 ## Inventory First
 
-- Every execution-ready `plans/plan-*.md` should name the active plan, expected contract, review, notes file, `tasks/todo.md`, `.ai/harness/checks/latest.json`, `.ai/harness/runs/`, scope authority, plan switching rule, and worktree isolation path.
-- Every `tasks/contracts/*.contract.md` should repeat the source plan, todo projection, review, notes, checks, run snapshots, scope gate, and completion gate.
+- Every execution-ready `plans/plan-*.md` should name the active plan, owning worktree, expected contract, review, notes file, deferred-goal ledger, `.ai/harness/checks/latest.json`, `.ai/harness/runs/`, scope authority, plan switching rule, and worktree isolation path.
+- Every `tasks/contracts/*.contract.md` should repeat the source plan, deferred-goal ledger, review, notes, checks, run snapshots, scope gate, and completion gate.
 - If the inventory is incomplete, keep the plan in Draft or revise the contract before editing implementation files.
 
 ## Required Sections
@@ -28,7 +28,7 @@ Sprint contracts are the repo-local agreement between planner, generator, and ev
 ## Review Coupling
 
 - A contract is not truly done until the matching review file records a passing recommendation.
-- `tasks/reviews/<slug>.review.md` should cite the contract, implementation notes, checks file, run snapshot, and any manual observations.
+- `tasks/reviews/<slug>.review.md` should be filled from Waza `/check` after verification and cite the contract, implementation notes, checks file, run snapshot, and any manual observations.
 - `tasks/notes/<slug>.notes.md` captures task-local decisions and should be archived or promoted deliberately, not left as hidden long-term memory.
 
 ## Worktree Lifecycle

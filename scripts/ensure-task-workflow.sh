@@ -34,16 +34,7 @@ read_active_plan_marker() {
 
 get_active_plan() {
   read_active_plan_marker "$ACTIVE_PLAN_MARKER" \
-    || read_active_plan_marker "$LEGACY_ACTIVE_PLAN_MARKER" \
-    || {
-  local latest
-  latest="$(find plans -maxdepth 1 -type f -name 'plan-*.md' 2>/dev/null | sort | tail -1)"
-  if [[ -n "$latest" ]]; then
-    printf '%s' "$latest"
-    return 0
-  fi
-  return 1
-    }
+    || read_active_plan_marker "$LEGACY_ACTIVE_PLAN_MARKER"
 }
 
 ensure_templates() {
@@ -139,11 +130,11 @@ Complete this inventory before implementation. If any line is unknown, keep the 
 - Sprint contract: `tasks/contracts/{{SLUG}}.contract.md`
 - Sprint review: `tasks/reviews/{{SLUG}}.review.md`
 - Implementation notes: `tasks/notes/{{SLUG}}.notes.md`
-- Todo projection: `tasks/todo.md`
+- Deferred-goal ledger: `tasks/todo.md`
 - Current checks: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope authority: `tasks/contracts/{{SLUG}}.contract.md` `allowed_paths`
-- Concurrency rule: `.ai/harness/active-plan` selects the active plan when present; `.claude/.active-plan` is a legacy fallback during transition. Use `scripts/switch-plan.sh --plan {{PLAN_FILE}}` when multiple plans exist.
+- Concurrency rule: `.ai/harness/active-plan` selects the active plan for this worktree when present; `.ai/harness/active-worktree` records the owning worktree; `.claude/.active-plan` is a legacy fallback during transition. If another worktree already owns active work, open or switch to the matching worktree instead of serializing unrelated plans.
 - Execution isolation: approved contract-level work projects through `scripts/plan-to-todo.sh --plan {{PLAN_FILE}}` and may start `scripts/contract-worktree.sh start --plan {{PLAN_FILE}}`.
 
 ## Approach
@@ -170,7 +161,7 @@ Complete this inventory before implementation. If any line is unknown, keep the 
 - Implementation notes file: `tasks/notes/{{SLUG}}.notes.md`
 - Template: `.claude/templates/contract.template.md`
 - Verification command: `bash scripts/verify-contract.sh --contract tasks/contracts/{{SLUG}}.contract.md --strict`
-- Active plan rule: `.ai/harness/active-plan` is authoritative when present; `.claude/.active-plan` is a legacy fallback during transition; latest non-archived `plans/plan-*.md` is a compatibility fallback only.
+- Active plan rule: `.ai/harness/active-plan` is authoritative for this worktree when present; `.ai/harness/active-worktree` records the owning worktree; `.claude/.active-plan` is a legacy fallback during transition. Do not infer active execution from the latest non-archived plan.
 
 ## Handoff
 
@@ -217,7 +208,7 @@ Describe the exact outcome this task must deliver.
 ## Workflow Inventory
 
 - Source plan: `{{PLAN_FILE}}`
-- Todo projection: `tasks/todo.md`
+- Deferred-goal ledger: `tasks/todo.md`
 - Review file: `tasks/reviews/{{TASK_SLUG}}.review.md`
 - Notes file: `tasks/notes/{{TASK_SLUG}}.notes.md`
 - Checks file: `.ai/harness/checks/latest.json`
@@ -279,6 +270,13 @@ CONTRACT_TEMPLATE_EOF
 > **Checks File**: {{CHECKS_FILE}}
 > **Last Updated**: {{TIMESTAMP}}
 > **Recommendation**: fail
+
+## Verification Evidence
+
+- Waza /check run:
+- Commands run:
+- Manual checks:
+- Supporting artifacts:
 
 ## Scorecard
 
@@ -351,15 +349,20 @@ ensure_idle_todo() {
   mkdir -p tasks
   if [[ ! -f "tasks/todo.md" ]]; then
     cat > tasks/todo.md <<'TODO_EOF'
-# Task Execution Checklist (Primary)
+# Deferred Goal Ledger
 
-> **Source Plan**: (none)
-> **Status**: Idle
-> Generate the next execution checklist from an approved plan with:
->   bash scripts/plan-to-todo.sh --plan plans/plan-YYYYMMDD-HHMM-slug.md
+> **Status**: Backlog
+> **Updated**: (ensure-task-workflow)
+> **Scope**: Medium/long-term goals deferred from active plan execution
 
-## Execution
-- [ ] No active execution checklist
+Current plan tasks live in the active plan's `## Task Breakdown`.
+Do not duplicate that execution checklist here. Record only work intentionally deferred beyond this slice, with the tradeoff and revisit trigger.
+
+## Deferred Goals
+
+| Goal | Why Deferred | Tradeoff | Revisit Trigger |
+|------|--------------|----------|-----------------|
+| (none) | No deferred medium/long-term goal recorded yet. | Keep the current slice bounded. | Add a row when a real follow-up is postponed. |
 TODO_EOF
   fi
 }
@@ -531,7 +534,8 @@ ARCHITECTURE_INDEX_EOF
     "directory": "plans",
     "archive_directory": "plans/archive",
     "glob": "plan-*.md",
-    "source_of_truth": "host-neutral explicit marker, legacy Claude marker fallback, or latest non-archived compatibility fallback"
+    "active_worktree_marker_file": ".ai/harness/active-worktree",
+    "source_of_truth": "per-worktree explicit marker with active-worktree owner; legacy Claude marker fallback only"
   },
   "tasks": {
     "todo_file": "tasks/todo.md",
@@ -596,7 +600,7 @@ ARCHITECTURE_INDEX_EOF
     "scope": "capability",
     "projection": "local-contract-active-pointer-and-current-slice",
     "todo_projection": "tasks/todo.md",
-    "rule": "durable multi-session progress lives under tasks/workstreams/<domain>/<capability>; local contracts only project pointers"
+    "rule": "durable multi-session progress lives under tasks/workstreams/<domain>/<capability>; current plan execution lives in the plan Task Breakdown; tasks/todo.md records deferred goals only"
   },
   "information_lifecycle": {
     "notes": {

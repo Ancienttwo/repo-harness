@@ -261,6 +261,7 @@ migrate_active_plan_marker() {
   local repo="$1"
   local new_marker="$repo/.ai/harness/active-plan"
   local legacy_marker="$repo/.claude/.active-plan"
+  local worktree_marker="$repo/.ai/harness/active-worktree"
   local new_value=""
   local legacy_value=""
 
@@ -279,12 +280,15 @@ migrate_active_plan_marker() {
   if [[ -n "$new_value" ]]; then
     mkdir -p "$(dirname "$legacy_marker")"
     printf '%s' "$new_value" > "$legacy_marker"
+    mkdir -p "$(dirname "$worktree_marker")"
+    (cd "$repo" && pwd -P) > "$worktree_marker"
     return 0
   fi
 
   if [[ -n "$legacy_value" ]]; then
     mkdir -p "$(dirname "$new_marker")"
     printf '%s' "$legacy_value" > "$new_marker"
+    (cd "$repo" && pwd -P) > "$worktree_marker"
   fi
 }
 
@@ -395,42 +399,38 @@ EOF_SPEC
 
   if [[ ! -f "$todo_file" ]]; then
     cat > "$todo_file" <<'TODO_EOF'
-# Task Execution Checklist (Primary)
+# Deferred Goal Ledger
 
-> **Source Plan**: (none)
-> **Status**: Idle
-> Generate the next execution checklist from an approved plan with:
->   bash scripts/plan-to-todo.sh --plan plans/plan-YYYYMMDD-HHMM-slug.md
+> **Status**: Backlog
+> **Updated**: (migration)
+> **Scope**: Medium/long-term goals deferred from active plan execution
 
-## Execution
-- [ ] No active execution checklist
+Current plan tasks live in the active plan's `## Task Breakdown`.
+Do not duplicate that execution checklist here. Record only work intentionally deferred beyond this slice, with the tradeoff and revisit trigger.
+
+## Deferred Goals
+
+| Goal | Why Deferred | Tradeoff | Revisit Trigger |
+|------|--------------|----------|-----------------|
+| (none) | No deferred medium/long-term goal recorded yet. | Keep migrated workflow state bounded. | Add a row when a real follow-up is postponed. |
 TODO_EOF
-  elif grep -Eq '^## (Review Section|Last Completed Work)$' "$todo_file"; then
-    local source_plan status execution_lines
+  elif ! grep -Eq '^> \*\*Status\*\*:[[:space:]]*Backlog[[:space:]]*$' "$todo_file"; then
     backup_if_exists "$todo_file"
-    source_plan="$(awk -F': ' '/^\> \*\*Source Plan\*\*:/ {print $2; exit}' "$todo_file" | xargs)"
-    status="$(awk -F': ' '/^\> \*\*Status\*\*:/ {print $2; exit}' "$todo_file" | xargs)"
-    execution_lines="$(
-      awk '
-        BEGIN { in_section = 0 }
-        /^## Execution$/ { in_section = 1; next }
-        in_section && /^## / { exit }
-        in_section { print }
-      ' "$todo_file" | sed '/^[[:space:]]*$/d'
-    )"
-    if [[ -z "$execution_lines" ]]; then
-      execution_lines="- [ ] No active execution checklist"
-    fi
-    cat > "$todo_file" <<TODO_EOF
-# Task Execution Checklist (Primary)
+    cat > "$todo_file" <<'TODO_EOF'
+# Deferred Goal Ledger
 
-> **Source Plan**: ${source_plan:-"(none)"}
-> **Status**: ${status:-Idle}
-> Generate the next execution checklist from an approved plan with:
->   bash scripts/plan-to-todo.sh --plan plans/plan-YYYYMMDD-HHMM-slug.md
+> **Status**: Backlog
+> **Updated**: (migration)
+> **Scope**: Medium/long-term goals deferred from active plan execution
 
-## Execution
-${execution_lines}
+Current plan tasks live in the active plan's `## Task Breakdown`.
+Do not duplicate that execution checklist here. Record only work intentionally deferred beyond this slice, with the tradeoff and revisit trigger.
+
+## Deferred Goals
+
+| Goal | Why Deferred | Tradeoff | Revisit Trigger |
+|------|--------------|----------|-----------------|
+| Review archived legacy checklist | Legacy tasks/todo.md contained execution checklist content before migration. | Preserve user-authored task text in tasks/archive instead of guessing which items still matter. | Open the archive and promote real follow-up work into a new plan or a deferred-goal row. |
 TODO_EOF
   fi
 

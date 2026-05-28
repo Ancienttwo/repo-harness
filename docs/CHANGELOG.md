@@ -12,6 +12,8 @@ All notable changes to this skill are documented here.
 
 - Retired `project-initializer` as a Codex/Claude installed skill path and upstream resolver fallback; installed-copy sync now removes those directories instead of maintaining them.
 - Switched generated footer stamps to `agentic-dev@...` while keeping `.claude/.skill-version` semantic version fields stable.
+- Prepared npm publishing under the unscoped `agentic-harness` package name while keeping the installed command name `agentic-dev`.
+- Forced copy-based installed-skill sync when `agentic-dev init` runs from an npm `_npx` cache source, avoiding symlinks to temporary npx cache directories.
 
 ### Fixed
 

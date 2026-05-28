@@ -112,6 +112,12 @@ if [[ "$FILE_PATH" != "tasks/todo.md" ]] || [[ ! -f "tasks/todo.md" ]]; then
   exit 0
 fi
 
+if grep -Eq '^> \*\*Status\*\*:[[:space:]]*Backlog[[:space:]]*$' tasks/todo.md; then
+  rm -f "$(workflow_task_state_file)" ".claude/.task-handoff.md"
+  echo "[TaskHandoff] Deferred-goal ledger updated; active execution remains in the plan Task Breakdown."
+  exit 0
+fi
+
 mkdir -p .claude
 
 STATE_FILE="$(workflow_task_state_file)"

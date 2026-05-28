@@ -4,6 +4,7 @@ import {
   mkdtempSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from "fs";
@@ -416,6 +417,7 @@ describe("Migration script contract", () => {
       expect(workflowContract.artifacts.requiredFiles).not.toContain(".ai/harness/checks/latest.json");
       expect(workflowContract.artifacts.runtimeFiles).toContain(".ai/harness/checks/latest.json");
       expect(workflowContract.artifacts.runtimeFiles).toContain(".ai/harness/active-plan");
+      expect(workflowContract.artifacts.runtimeFiles).toContain(".ai/harness/active-worktree");
       expect(workflowContract.artifacts.runtimeFiles).not.toContain(".ai/harness/workstreams/events.jsonl");
 
       const pkg = JSON.parse(readFileSync(join(repo, "package.json"), "utf-8"));
@@ -429,6 +431,7 @@ describe("Migration script contract", () => {
       const gitignore = readFileSync(join(repo, ".gitignore"), "utf-8");
       expect(gitignore).toContain("# BEGIN: claude-runtime-temp (managed by project-initializer)");
       expect(gitignore).toContain(".ai/harness/active-plan");
+      expect(gitignore).toContain(".ai/harness/active-worktree");
       expect(gitignore).toContain(".claude/.active-plan");
       expect(gitignore).toContain(".claude/.trace.jsonl");
       expect(gitignore).toContain(".codex/*");
@@ -662,9 +665,9 @@ describe("Migration script contract", () => {
       expect(existsSync(join(repo, "tasks/archive/legacy-docs-TODO.md"))).toBe(true);
 
       const todo = readFileSync(join(repo, "tasks/todo.md"), "utf-8");
-      expect(todo).toContain("**Source Plan**: (none)");
-      expect(todo).toContain("Review imported legacy checklist below");
-      expect(todo).not.toContain("Legacy Imported Task Checklist");
+      expect(todo).toContain("# Deferred Goal Ledger");
+      expect(todo).toContain("**Status**: Backlog");
+      expect(todo).toContain("Review archived legacy checklist");
       expect(todo).not.toContain("existing task");
       expect(todo).not.toContain("docs task");
 
@@ -703,6 +706,7 @@ describe("Migration script contract", () => {
       expect(gitignore).toContain("# BEGIN: claude-runtime-temp (managed by project-initializer)");
       expect(gitignore).toContain(".claude/.task-state.json");
       expect(gitignore).toContain(".ai/harness/active-plan");
+      expect(gitignore).toContain(".ai/harness/active-worktree");
       expect(gitignore).toContain(".claude/.active-plan");
       expect(gitignore).toContain(".claude/.trace.jsonl");
       expect(gitignore).toContain(".codex/*");
@@ -717,7 +721,7 @@ describe("Migration script contract", () => {
   }, 15000);
 
   test("should migrate legacy active-plan marker to the host-neutral marker", () => {
-    const repo = mkdtempSync(join(tmpdir(), "migration-active-marker-"));
+    const repo = realpathSync(mkdtempSync(join(tmpdir(), "migration-active-marker-")));
     try {
       mkdirSync(join(repo, ".claude"), { recursive: true });
       mkdirSync(join(repo, "plans"), { recursive: true });
@@ -733,6 +737,7 @@ describe("Migration script contract", () => {
 
       expect(res.status).toBe(0);
       expect(readFileSync(join(repo, ".ai/harness/active-plan"), "utf-8")).toBe("plans/plan-20260327-2200-alpha.md");
+      expect(readFileSync(join(repo, ".ai/harness/active-worktree"), "utf-8").trim()).toBe(repo);
       expect(readFileSync(join(repo, ".claude/.active-plan"), "utf-8")).toBe("plans/plan-20260327-2200-alpha.md");
     } finally {
       rmSync(repo, { recursive: true, force: true });
