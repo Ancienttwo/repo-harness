@@ -527,6 +527,13 @@
 - Fix boundary: expand only anchored approval variants (`go ahead with it`, polite `proceed`, `可以干了`, etc.) in `.ai/hooks/prompt-guard.sh` and the `assets/hooks/` mirror, while preserving broad bug/fix implementation wording as a hard `PlanStatusGuard` path instead of an approval capture shortcut.
 - Regression coverage now exercises both no-active-plan capture and approved-plan projection for natural approval variants, plus a negative case for `go ahead with the bug fix`.
 
+### 2026-05-29 Claude Plan Review Intent Boundary
+
+- Reproduced the user habit where Claude produces the first plan and Codex is asked to refine/review it: a prompt starting with `你来完善一下Claude这个方案` can include pasted plan metadata such as `/think`, `Done`, `execute`, `ExitPlanMode`, and `我想加一个功能`.
+- Root cause: `prompt-guard.sh` stripped XML context blocks but did not recognize the first-line plan-review/refinement wrapper, so full-body keyword scans treated copied plan content as new-feature, implementation, or done intent and routed to `ResearchGate`, `PlanStatusGuard`, or `ContractGuard`.
+- Fix boundary: first-line plan refinement/review intent now suppresses implementation, done, plan-creation, and plain-feature plan-start classification. Direct execution prompts such as `开始实现` still hard-block without an approved active plan.
+- Regression coverage: `tests/hook-runtime.test.ts` pins Claude plan refinement/review prompts with pasted execution metadata as non-blocking planning review while preserving the neighboring implementation and approval guards.
+
 ## 2026-05-27 Default Brain Document Sync Notes
 
 ### What Changed

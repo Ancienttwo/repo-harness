@@ -1594,6 +1594,54 @@ describe("Hook runtime behavior", () => {
     }
   });
 
+  test("prompt-guard: treats Claude plan refinement as planning review despite pasted execution metadata", () => {
+    const cwd = tmpWorkspace("prompt-guard-claude-plan-review");
+    try {
+      initGitRepo(cwd);
+      installHooks(cwd);
+      installPlanWorkflowHelpers(cwd);
+      mkdirSync(join(cwd, "docs"), { recursive: true });
+      mkdirSync(join(cwd, "plans"), { recursive: true });
+      writeFileSync(join(cwd, "docs/spec.md"), "# Product Spec\n");
+      writeFileSync(
+        join(cwd, "plans/plan-20260529-0105-existing.md"),
+        "# Plan: existing\n\n> **Status**: Draft\n"
+      );
+
+      const prompts = [
+        [
+          "你来完善一下Claude这个方案：",
+          "",
+          "/think 现在的hook我记得是在完成一个任务的时候，推荐下一个相关连的任务（下一刀）。",
+          "我想加一个功能就是，当任务基本开发完成，则推荐使用 /check 进行 checkout 提交合并到main，并清理掉分支。",
+          "ExitPlanMode",
+        ].join("\n"),
+        [
+          "你来review一下Claude这个plan：",
+          "",
+          "我来分析这个需求。",
+          "- Done",
+          "- execute the implementation",
+          "ExitPlanMode",
+        ].join("\n"),
+      ];
+
+      for (const prompt of prompts) {
+        const res = runHook("prompt-guard.sh", cwd, {
+          stdin: JSON.stringify({ user_message: prompt }),
+        });
+
+        expect(res.status).toBe(0);
+        expect(res.stdout).not.toContain("[ResearchGate]");
+        expect(res.stdout).not.toContain("[PlanStatusGuard]");
+        expect(res.stdout).not.toContain("[ContractGuard]");
+        expect(existsSync(join(cwd, ".ai/harness/active-plan"))).toBe(false);
+      }
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   test("prompt-guard: lets terse approval reach approved-plan capture when no active plan exists", () => {
     const cwd = tmpWorkspace("prompt-guard-approval-capture");
     try {

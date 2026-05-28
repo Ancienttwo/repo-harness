@@ -19,6 +19,9 @@ is_implement_intent() {
   if is_trigger_question_prompt; then
     return 1
   fi
+  if is_plan_refinement_intent; then
+    return 1
+  fi
   if is_diagnostic_question_intent; then
     return 1
   fi
@@ -26,6 +29,10 @@ is_implement_intent() {
 }
 
 is_done_intent() {
+  if is_plan_refinement_intent; then
+    return 1
+  fi
+
   # Long markdown / plan-shaped prompts often contain literal "Completed" / "Done"
   # tokens as state-enum values (e.g. `[BrainPromote] pass/Completed-only`). Those
   # are *not* a user declaration that the work is done. To avoid false positives:
@@ -70,6 +77,7 @@ is_spa_day_intent() {
 }
 
 is_plan_creation_intent() {
+  is_plan_refinement_intent && return 1
   echo "$PROMPT_INTENT_TEXT" | grep -qEi "(new plan|create plan|write plan|draft plan|新建计划|创建计划|写计划|制定计划|补计划)"
 }
 
@@ -79,6 +87,7 @@ is_bug_or_hunt_intent() {
 
 is_plain_feature_plan_start_intent() {
   is_trigger_question_prompt && return 1
+  is_plan_refinement_intent && return 1
   is_bug_or_hunt_intent && return 1
   is_execution_approval_intent && return 1
 
@@ -97,6 +106,15 @@ is_trigger_question_prompt() {
   local first
   first="$(prompt_first_nonblank_line)"
   printf '%s\n' "$first" | grep -qEi '(会不会触发|会触发吗|能触发吗|可以触发吗|does this trigger|would this trigger|will this trigger|比如.*触发|例如.*触发)'
+}
+
+is_plan_refinement_intent() {
+  local first
+  first="$(prompt_first_nonblank_line)"
+
+  printf '%s\n' "$first" | grep -qEi "(implement|execute|开始实现|开始执行|批准执行|直接改|动手|开干|可以干)" && return 1
+
+  printf '%s\n' "$first" | grep -qEi "((review|critique|refine|improve|polish|完善|优化|调整|修改|补充|评审|审一下|看一下|看看|评价|帮我看|帮我审).*(plan|方案|计划|设计|claude|codex)|((plan|方案|计划|设计|claude).*(review|critique|refine|improve|polish|完善|优化|调整|修改|补充|评审|审一下|看一下|看看|评价|帮我看|帮我审)))"
 }
 
 is_diagnostic_question_intent() {
@@ -147,6 +165,9 @@ is_plan_shaped_markdown_intent() {
 }
 
 is_think_plan_start_intent() {
+  if is_plan_refinement_intent; then
+    return 1
+  fi
   if is_bug_or_hunt_intent; then
     return 1
   fi
