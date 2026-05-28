@@ -7,10 +7,11 @@ import { checkConsistency } from "../scripts/check-skill-version";
 const REPO_ROOT = join(import.meta.dir, "..");
 
 describe("Skill Version Consistency", () => {
-  test("package.json and skill-version.json have same version", () => {
+  test("package release version is independent from workflow skill-version", () => {
     const pkg = JSON.parse(readFileSync(join(REPO_ROOT, "package.json"), "utf-8"));
     const sv = JSON.parse(readFileSync(join(REPO_ROOT, "assets", "skill-version.json"), "utf-8"));
-    expect(pkg.version).toBe(sv.version);
+    expect(pkg.version).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(pkg.version).not.toBe(sv.version);
   });
 
   test("SKILL.md frontmatter follows the new skill-creator contract", () => {

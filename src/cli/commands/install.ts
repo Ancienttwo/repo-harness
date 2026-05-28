@@ -34,7 +34,7 @@ function resolveTargets(spec: InstallTargetSpec) {
   const t = getTarget(spec);
   if (!t) {
     throw new Error(
-      `agentic-dev install: unknown --target "${spec}" (known: ${listTargetIds().join(', ')}, both)`,
+      `repo-harness install: unknown --target "${spec}" (known: ${listTargetIds().join(', ')}, both)`,
     );
   }
   return [t];

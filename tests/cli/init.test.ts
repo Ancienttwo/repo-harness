@@ -164,7 +164,7 @@ describe("init command", () => {
 
   test("npx cache sources force copy-based installed skill sync", () => {
     const tmp = join(tmpdir(), `agentic-dev-init-npx-${Date.now()}`);
-    const source = join(tmp, "_npx", "abc123", "node_modules", "agentic-harness");
+    const source = join(tmp, "_npx", "abc123", "node_modules", "repo-harness");
     const repo = join(tmp, "repo");
     try {
       mkdirSync(source, { recursive: true });

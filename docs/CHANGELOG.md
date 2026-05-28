@@ -12,7 +12,9 @@ All notable changes to this skill are documented here.
 
 - Retired `project-initializer` as a Codex/Claude installed skill path and upstream resolver fallback; installed-copy sync now removes those directories instead of maintaining them.
 - Switched generated footer stamps to `agentic-dev@...` while keeping `.claude/.skill-version` semantic version fields stable.
-- Prepared npm publishing under the unscoped `agentic-harness` package name while keeping the installed command name `agentic-dev`.
+- Prepared npm publishing under the unscoped `repo-harness` package name, made `repo-harness` the primary installed command, and kept `agentic-dev` as a compatibility alias.
+- Split the npm/CLI package release line (`0.1.x`) from the generated workflow compatibility line (`5.2.3`).
+- Updated GitHub repository metadata and source checkout docs for the `Ancienttwo/repo-harness` rename.
 - Forced copy-based installed-skill sync when `agentic-dev init` runs from an npm `_npx` cache source, avoiding symlinks to temporary npx cache directories.
 
 ### Fixed

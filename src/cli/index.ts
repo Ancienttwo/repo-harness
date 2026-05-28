@@ -27,9 +27,9 @@ const VALID_LOCATIONS: readonly Location[] = ['global', 'local'];
 export function buildProgram(): Command {
   const program = new Command();
   program
-    .name('agentic-dev')
+    .name('repo-harness')
     .description('Repo-local agentic development harness CLI')
-    .version('0.0.0-phase1c')
+    .version('0.1.1')
     .exitOverride();
 
   program
@@ -55,7 +55,7 @@ export function buildProgram(): Command {
     }) => {
       if (!VALID_TARGETS.includes(rawOpts.target as InstallTargetSpec)) {
         console.error(
-          `agentic-dev init: invalid --target "${rawOpts.target}" (expected: ${VALID_TARGETS.join(', ')})`,
+          `repo-harness init: invalid --target "${rawOpts.target}" (expected: ${VALID_TARGETS.join(', ')})`,
         );
         process.exit(2);
       }
@@ -84,13 +84,13 @@ export function buildProgram(): Command {
     .action((rawOpts: { target: string; location: string }) => {
       if (!VALID_TARGETS.includes(rawOpts.target as InstallTargetSpec)) {
         console.error(
-          `agentic-dev install: invalid --target "${rawOpts.target}" (expected: ${VALID_TARGETS.join(', ')})`,
+          `repo-harness install: invalid --target "${rawOpts.target}" (expected: ${VALID_TARGETS.join(', ')})`,
         );
         process.exit(2);
       }
       if (!VALID_LOCATIONS.includes(rawOpts.location as Location)) {
         console.error(
-          `agentic-dev install: invalid --location "${rawOpts.location}" (expected: ${VALID_LOCATIONS.join(', ')})`,
+          `repo-harness install: invalid --location "${rawOpts.location}" (expected: ${VALID_LOCATIONS.join(', ')})`,
         );
         process.exit(2);
       }

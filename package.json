@@ -1,11 +1,11 @@
 {
-  "name": "agentic-harness",
-  "version": "5.2.3",
+  "name": "repo-harness",
+  "version": "0.1.1",
   "description": "Installs, migrates, audits, and repairs repo-local agentic development harnesses",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Ancienttwo/agentic-dev.git"
+    "url": "git+https://github.com/Ancienttwo/repo-harness.git"
   },
   "type": "module",
   "files": [
@@ -20,6 +20,7 @@
     "README.md"
   ],
   "bin": {
+    "repo-harness": "src/cli/index.ts",
     "agentic-dev": "src/cli/index.ts"
   },
   "engines": {

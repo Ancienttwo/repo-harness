@@ -64,13 +64,9 @@ export function checkConsistency(repoRoot: string = REPO_ROOT): ConsistencyResul
   const sv = JSON.parse(readFileSync(svPath, "utf-8"));
   const skillVersionJsonVersion = sv.version as string;
 
-  // Source repos keep package.json.version and skill-version.json in lockstep.
-  // Generated projects use package.json.version as product metadata.
-  if (svPath === localSvPath && packageJsonVersion !== skillVersionJsonVersion) {
-    errors.push(
-      `package.json (${packageJsonVersion}) != skill-version.json (${skillVersionJsonVersion})`
-    );
-  } else if (packageJsonVersion !== null) {
+  // package.json.version is product release metadata. skill-version.json is the
+  // generated workflow/template compatibility line.
+  if (packageJsonVersion !== null) {
     warnings.push(
       `package.json.version (${packageJsonVersion}) is treated as product release metadata; workflow parity uses upstream agentic-dev skill-version.json only`
     );

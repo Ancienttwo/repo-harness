@@ -1,14 +1,14 @@
-# agentic-dev
+# repo-harness
 
-Repo-local agentic development harness skill for Claude/Codex workflows.
-Formerly `agentic-dev-skill` and `project-initializer`; `agentic-dev-skill`
-remains a compatibility alias, while `project-initializer` install paths are
-retired and removed by installed-copy sync.
-Repository: `https://github.com/Ancienttwo/agentic-dev`
+Repo-local agentic development harness CLI and skill runtime for Claude/Codex
+workflows. Formerly `agentic-dev-skill` and `project-initializer`;
+`agentic-dev-skill` remains a compatibility alias, while `project-initializer`
+install paths are retired and removed by installed-copy sync.
+Repository: `https://github.com/Ancienttwo/repo-harness`
 
 This repository now dogfoods its own tasks-first contract. It is both:
 
-- the source repo for the `agentic-dev` skill
+- the source repo for the `repo-harness` CLI and `agentic-dev` skill runtime
 - a self-hosted example of the repo-local workflow it generates for other projects
 
 ## First 5 Minutes
@@ -19,26 +19,27 @@ safe to adopt in a real repo.
 ### Install or refresh the local runtime
 
 ```bash
-npx -y agentic-harness init
+npx -y repo-harness init
 ```
 
-The npm package name is `agentic-harness`; its installed command is still
-`agentic-dev`. When working from a source checkout instead of npm, run:
+The npm package name and primary installed command are `repo-harness`.
+`agentic-dev` remains a compatibility command alias. When working from a source
+checkout instead of npm, run:
 
 ```bash
-git clone https://github.com/Ancienttwo/agentic-dev.git ~/Projects/agentic-dev
-cd ~/Projects/agentic-dev
+git clone https://github.com/Ancienttwo/repo-harness.git ~/Projects/repo-harness
+cd ~/Projects/repo-harness
 bun src/cli/index.ts init
 ```
 
 Local path model:
 
-- Source repo: `~/Projects/agentic-dev`
+- Source repo: `~/Projects/repo-harness`
 - Claude skill aliases: `~/.claude/skills/agentic-dev`, `~/.claude/skills/agentic-dev-skill`
 - Codex discoverable skill alias: `~/.codex/skills/agentic-dev`
 - Codex compatibility fallback alias: `~/.codex/skills/agentic-dev-skill`
 
-The `~/Projects/agentic-dev` repo is the only editable source of truth. Local
+The `~/Projects/repo-harness` repo is the only editable source of truth. Local
 Claude/Codex paths are symlink-backed runtime entrypoints. Only
 `~/.codex/skills/agentic-dev` should expose `SKILL.md` and
 `assets/skill-commands/`; compatibility directories exist only so renamed
@@ -58,13 +59,13 @@ The retired `project-initializer` directories under `~/.codex/skills` and
 For an existing repo, run from the repo root:
 
 ```bash
-npx -y agentic-harness init --dry-run
+npx -y repo-harness init --dry-run
 ```
 
 Apply only after the dry-run report looks correct:
 
 ```bash
-npx -y agentic-harness init
+npx -y repo-harness init
 ```
 
 For a new project or module, use the `agentic-dev-scaffold` command skill. For
