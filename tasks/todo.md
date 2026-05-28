@@ -78,3 +78,15 @@
 - [x] Added a plan-start bridge so explicit Waza `/think` / Codex Plan prompts create a Draft `plans/` artifact before approval
 - [x] Extended anchored approval intent variants so natural approval phrasing reaches plan capture/projection without broadening bug-fix implementation wording
 - [x] Bumped release metadata to 5.2.3 for the approval intent variant fix
+- [x] Stripped injected skill/context blocks before prompt intent classification so expanded Waza skill bodies cannot mask `$think` plan-start intent
+- [x] Allowed explicit `$think` / plan-start prompts to create an independent Draft plan even when an older Draft plan exists
+- [x] Captured `PLEASE IMPLEMENT THIS PLAN:` prompts as Approved plans and projected them through `plan-to-todo.sh` before implementation gates continue
+- [x] Captured pure plan-shaped Markdown prompts as Approved plans while leaving trigger-question examples read-only
+- [x] Fixed hook dispatcher cwd handling so repo-relative plan capture runs inside `HOOK_REPO_ROOT`
+- [x] Routed plain new-feature prompts to Draft `plans/` creation without projecting `tasks/todo.md`
+- [x] Added root `CLAUDE.md` / `AGENTS.md` generation for init/migrate paths even when no functional blocks are selected
+- [x] Kept functional-block context generation explicit while pruning `_ref/`, `_ops/`, and `.worktrees/` from legacy context discovery
+- [x] Added context-file scan regression coverage so ignored external references cannot poison prompt safety checks
+- [x] Applied autoresearch-style workflow inventory to `plans/plan-*.md` and `tasks/contracts/*.contract.md` generation
+- [x] Preserved approval, review, and worktree gates while replacing latest-plan-first wording with explicit active-marker semantics
+- [x] Verified plan/contract inventory generation with helper, scaffold, assembly, and output parity tests

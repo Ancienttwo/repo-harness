@@ -51,7 +51,8 @@ PLAN_LOOP:
 Core rules (canonical source: see Workflow Orchestration section below):
 - `docs/spec.md` is product truth; `plans/` is execution truth.
 - `tasks/contracts/`, `tasks/reviews/`, and `tasks/notes/` are done gates; hooks are accelerators only.
-- Treat the latest non-archived `plans/plan-*.md` as the active plan.
+- Treat `.claude/.active-plan` as authoritative when present; latest non-archived `plans/plan-*.md` is a compatibility fallback.
+- Require plan/contract workflow inventory before implementation: active plan, contract, review, notes, todo, checks, runs, scope owner, switching rule, and worktree path.
 - Mark done only with verification evidence.
 - Durable progress lives in `tasks/workstreams/`; release history belongs in `docs/CHANGELOG.md`.
 

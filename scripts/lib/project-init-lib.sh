@@ -128,8 +128,33 @@ PI_TEMPLATE_PLAN=$(cat <<'EOF_TEMPLATE_PLAN'
 > **Status**: Draft
 > **Created**: {{TIMESTAMP}}
 > **Slug**: {{SLUG}}
+> **Spec**: `docs/spec.md`
 > **Research**: See `tasks/research.md`
+> **Sprint Contract**: `tasks/contracts/{{SLUG}}.contract.md`
+> **Sprint Review**: `tasks/reviews/{{SLUG}}.review.md`
 > **Implementation Notes**: `tasks/notes/{{SLUG}}.notes.md`
+
+## Agentic Routing
+- Selected route:
+- Routing reason:
+- Due diligence:
+  - P1 map:
+  - P2 trace:
+  - P3 decision rationale:
+
+## Workflow Inventory
+Complete this inventory before implementation. If any line is unknown, keep the plan in Draft and fill it before projection.
+
+- Active plan: `{{PLAN_FILE}}`
+- Sprint contract: `tasks/contracts/{{SLUG}}.contract.md`
+- Sprint review: `tasks/reviews/{{SLUG}}.review.md`
+- Implementation notes: `tasks/notes/{{SLUG}}.notes.md`
+- Todo projection: `tasks/todo.md`
+- Current checks: `.ai/harness/checks/latest.json`
+- Run snapshots: `.ai/harness/runs/`
+- Scope authority: `tasks/contracts/{{SLUG}}.contract.md` `allowed_paths`
+- Concurrency rule: `.claude/.active-plan` selects the active plan when present; use `scripts/switch-plan.sh --plan {{PLAN_FILE}}` when multiple plans exist.
+- Execution isolation: approved contract-level work projects through `scripts/plan-to-todo.sh --plan {{PLAN_FILE}}` and may start `scripts/contract-worktree.sh start --plan {{PLAN_FILE}}`.
 
 ## Approach
 ### Strategy
@@ -151,10 +176,16 @@ PI_TEMPLATE_PLAN=$(cat <<'EOF_TEMPLATE_PLAN'
 
 ## Task Contracts
 - Contract file: `tasks/contracts/{{SLUG}}.contract.md`
+- Review file: `tasks/reviews/{{SLUG}}.review.md`
 - Implementation notes file: `tasks/notes/{{SLUG}}.notes.md`
 - Template: `.claude/templates/contract.template.md`
 - Verification command: `bash scripts/verify-contract.sh --contract tasks/contracts/{{SLUG}}.contract.md --strict`
-- Active plan rule: the latest non-archived `plans/plan-*.md` file is the current plan
+- Active plan rule: `.claude/.active-plan` is authoritative when present; latest non-archived `plans/plan-*.md` is a compatibility fallback only.
+
+## Handoff
+
+- Checks file: `.ai/harness/checks/latest.json`
+- Session handoff: `.ai/harness/handoff/current.md`
 
 ## Evidence Contract
 
@@ -190,6 +221,17 @@ Describe the exact outcome this task must deliver.
 
 - In scope:
 - Out of scope:
+
+## Workflow Inventory
+
+- Source plan: `{{PLAN_FILE}}`
+- Todo projection: `tasks/todo.md`
+- Review file: `tasks/reviews/{{TASK_SLUG}}.review.md`
+- Notes file: `tasks/notes/{{TASK_SLUG}}.notes.md`
+- Checks file: `.ai/harness/checks/latest.json`
+- Run snapshots: `.ai/harness/runs/`
+- Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
+- Completion gate: `scripts/verify-sprint.sh` must see this contract pass and the review recommend pass.
 
 ## Allowed Paths
 
@@ -909,7 +951,7 @@ pi_legacy_context_block_candidates() {
   fi
 
   find "$target_dir" \
-    \( -path "$target_dir/.git" -o -path "$target_dir/node_modules" -o -path "$target_dir/.ai" -o -path "$target_dir/.claude" \) -prune -o \
+    \( -path "$target_dir/.git" -o -path "$target_dir/node_modules" -o -path "$target_dir/.ai" -o -path "$target_dir/.claude" -o -path "$target_dir/_ref" -o -path "$target_dir/_ops" -o -path "$target_dir/.worktrees" \) -prune -o \
     \( -type f \( -name 'CLAUDE.md' -o -name 'AGENTS.md' \) \) -print 2>/dev/null | while IFS= read -r context_file; do
       local context_dir
       local rel_dir
@@ -1195,7 +1237,7 @@ pi_write_harness_policy() {
     "directory": "plans",
     "archive_directory": "plans/archive",
     "glob": "plan-*.md",
-    "source_of_truth": "latest non-archived plan or explicit marker"
+    "source_of_truth": "explicit marker or latest non-archived compatibility fallback"
   },
   "tasks": {
     "todo_file": "tasks/todo.md",
@@ -1566,6 +1608,54 @@ ${discoverable_entries}
 EOF_CONTEXT
 }
 
+pi_root_context_content() {
+  cat <<'EOF_ROOT_CONTEXT'
+# Repo Agent Context
+
+This is the root routing contract for Claude Code and Codex.
+
+## Root Workflow Contract
+
+- Keep sibling `CLAUDE.md` and `AGENTS.md` files aligned. Claude Code consumes `CLAUDE.md`; Codex consumes `AGENTS.md`.
+- Treat `docs/spec.md` as stable product truth and `tasks/todo.md` as the current execution checklist.
+- Treat `tasks/lessons.md`, `tasks/research.md`, and `.ai/harness/policy.json` as durable workflow context.
+- Use `.ai/context/context-map.json` and `.ai/context/capabilities.json` to discover functional-block contracts.
+- Do not infer local `CLAUDE.md` or `AGENTS.md` files from broad physical layouts such as `apps/*`, `packages/*`, or `services/*`.
+- Put capability-specific ownership, entrypoints, and verification commands in explicitly selected functional-block contracts.
+- Keep root context concise; route deep implementation detail into plans, task notes, research, workstreams, or architecture docs.
+- Treat `_ref/` as ignored external reference material and `_ops/` as ignored local operations state.
+- Prefer repo-local workflow artifacts over tool-specific chat memory.
+EOF_ROOT_CONTEXT
+}
+
+pi_install_root_context_files() {
+  local target_dir="$1"
+  local mode="${2:-apply}"
+
+  if [[ "$mode" != "apply" ]]; then
+    echo "[dry-run] install root CLAUDE.md/AGENTS.md files in $target_dir"
+    return 0
+  fi
+
+  if [[ -f "$target_dir/AGENTS.md" && ! -f "$target_dir/CLAUDE.md" ]]; then
+    cp "$target_dir/AGENTS.md" "$target_dir/CLAUDE.md"
+    return 0
+  fi
+
+  if [[ -f "$target_dir/CLAUDE.md" && ! -f "$target_dir/AGENTS.md" ]]; then
+    cp "$target_dir/CLAUDE.md" "$target_dir/AGENTS.md"
+    return 0
+  fi
+
+  if [[ ! -f "$target_dir/CLAUDE.md" ]]; then
+    pi_root_context_content > "$target_dir/CLAUDE.md"
+  fi
+
+  if [[ ! -f "$target_dir/AGENTS.md" ]]; then
+    pi_root_context_content > "$target_dir/AGENTS.md"
+  fi
+}
+
 pi_install_directory_context_files() {
   local target_dir="$1"
   local mode="${2:-apply}"
@@ -1685,10 +1775,11 @@ pi_ensure_harness_state_surface() {
 ARCHITECTURE_INDEX_EOF
   fi
 
-	  pi_write_capability_registry "$target_dir" "$mode"
-	  pi_write_harness_policy "$target_dir" "$mode"
-	  pi_write_brain_manifest "$target_dir" "$mode"
-	  pi_write_context_map "$target_dir" "$mode"
+  pi_write_capability_registry "$target_dir" "$mode"
+  pi_write_harness_policy "$target_dir" "$mode"
+  pi_write_brain_manifest "$target_dir" "$mode"
+  pi_write_context_map "$target_dir" "$mode"
+  pi_install_root_context_files "$target_dir" "$mode"
   pi_install_directory_context_files "$target_dir" "$mode"
 }
 

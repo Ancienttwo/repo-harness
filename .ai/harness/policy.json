@@ -5,7 +5,7 @@
     "directory": "plans",
     "archive_directory": "plans/archive",
     "glob": "plan-*.md",
-    "source_of_truth": "latest non-archived plan or explicit marker"
+    "source_of_truth": "explicit marker or latest non-archived compatibility fallback"
   },
   "tasks": {
     "todo_file": "tasks/todo.md",

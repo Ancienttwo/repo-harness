@@ -58,6 +58,14 @@ describe("create-project-dirs runtime smoke", () => {
       expect(existsSync(join(cwd, "docs/spec.md"))).toBe(true);
       expect(existsSync(join(cwd, "tasks/reviews"))).toBe(true);
       expect(existsSync(join(cwd, "tasks/workstreams/.gitkeep"))).toBe(true);
+      expect(existsSync(join(cwd, "CLAUDE.md"))).toBe(true);
+      expect(existsSync(join(cwd, "AGENTS.md"))).toBe(true);
+      expect(readFileSync(join(cwd, "CLAUDE.md"), "utf-8")).toBe(
+        readFileSync(join(cwd, "AGENTS.md"), "utf-8")
+      );
+      expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain("Repo Agent Context");
+      expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain("tasks/todo.md");
+      expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain(".ai/context/context-map.json");
       expect(existsSync(join(cwd, ".ai/context/context-map.json"))).toBe(true);
       expect(existsSync(join(cwd, ".ai/context/capabilities.json"))).toBe(true);
       expect(existsSync(join(cwd, ".ai/harness/checks/latest.json"))).toBe(true);
@@ -379,6 +387,42 @@ describe("create-project-dirs runtime smoke", () => {
     }
   });
 
+  test("should ignore external reference context files during capability discovery", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ignored-reference-context-"));
+    const libPath = join(ROOT, "scripts/lib/project-init-lib.sh");
+
+    try {
+      mkdirSync(join(cwd, "_ref/gbrain"), { recursive: true });
+      mkdirSync(join(cwd, "_ops/scratch"), { recursive: true });
+      mkdirSync(join(cwd, ".worktrees/codex/old"), { recursive: true });
+      writeFileSync(join(cwd, "_ref/gbrain/AGENTS.md"), "# External Reference\n");
+      writeFileSync(join(cwd, "_ops/scratch/CLAUDE.md"), "# Local Operations\n");
+      writeFileSync(join(cwd, ".worktrees/codex/old/AGENTS.md"), "# Old Worktree\n");
+
+      const res = spawnSync(
+        "bash",
+        [
+          "-lc",
+          [
+            `source '${libPath}'`,
+            "PROJECT_INITIALIZER_PLAN_TYPE=K",
+            'pi_ensure_harness_state_surface "$PWD" apply',
+          ].join("\n"),
+        ],
+        { cwd, encoding: "utf-8" }
+      );
+
+      expect(res.status).toBe(0);
+      expect(existsSync(join(cwd, "CLAUDE.md"))).toBe(true);
+      expect(existsSync(join(cwd, "AGENTS.md"))).toBe(true);
+      expect(existsSync(join(cwd, "_ref/gbrain/CLAUDE.md"))).toBe(false);
+      const capabilities = JSON.parse(readFileSync(join(cwd, ".ai/context/capabilities.json"), "utf-8"));
+      expect(capabilities.capabilities).toEqual([]);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   test("should not infer agent context files from physical apps packages services layout", () => {
     const cwd = mkdtempSync(join(tmpdir(), "no-implicit-agent-context-"));
     const libPath = join(ROOT, "scripts/lib/project-init-lib.sh");
@@ -402,6 +446,12 @@ describe("create-project-dirs runtime smoke", () => {
       );
 
       expect(res.status).toBe(0);
+      expect(existsSync(join(cwd, "CLAUDE.md"))).toBe(true);
+      expect(existsSync(join(cwd, "AGENTS.md"))).toBe(true);
+      expect(readFileSync(join(cwd, "CLAUDE.md"), "utf-8")).toBe(
+        readFileSync(join(cwd, "AGENTS.md"), "utf-8")
+      );
+      expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain("Repo Agent Context");
       expect(existsSync(join(cwd, "apps/web/CLAUDE.md"))).toBe(false);
       expect(existsSync(join(cwd, "apps/web/AGENTS.md"))).toBe(false);
       expect(existsSync(join(cwd, "packages/ui/CLAUDE.md"))).toBe(false);
@@ -433,6 +483,8 @@ describe("create-project-dirs runtime smoke", () => {
       expect(existsSync(join(cwd, "apps"))).toBe(false);
       expect(existsSync(join(cwd, "packages"))).toBe(false);
       expect(existsSync(join(cwd, "services"))).toBe(false);
+      expect(existsSync(join(cwd, "CLAUDE.md"))).toBe(true);
+      expect(existsSync(join(cwd, "AGENTS.md"))).toBe(true);
       expect(existsSync(join(cwd, ".ai/context/context-map.json"))).toBe(true);
       expect(existsSync(join(cwd, ".ai/harness/policy.json"))).toBe(true);
       expect(existsSync(join(cwd, ".ai/harness/context-budget/latest.json"))).toBe(true);

@@ -16,30 +16,72 @@ is_execution_approval_intent() {
 }
 
 is_implement_intent() {
-  echo "$PROMPT_TEXT" | grep -qEi "(implement|execute|build it|do it|go ahead|proceed|ship it|实现|执行|开始写|动手|开干)" || is_execution_approval_intent
+  if is_trigger_question_prompt; then
+    return 1
+  fi
+  echo "$PROMPT_INTENT_TEXT" | grep -qEi "(implement|execute|build it|do it|go ahead|proceed|ship it|实现|执行|开始写|动手|开干)" || is_execution_approval_intent || is_embedded_approved_plan_intent || is_plan_shaped_markdown_intent
 }
 
 is_done_intent() {
-  echo "$PROMPT_TEXT" | grep -qEi "(done|complete|completed|finished|mark done|完成|结束|收工)"
+  echo "$PROMPT_INTENT_TEXT" | grep -qEi "(done|complete|completed|finished|mark done|完成|结束|收工)"
 }
 
 is_spa_day_intent() {
-  echo "$PROMPT_TEXT" | grep -qEi "(spa day|audit rules|consolidate|cleanup rules|规则清理|规则审计|合并规则|瘦身)"
+  echo "$PROMPT_INTENT_TEXT" | grep -qEi "(spa day|audit rules|consolidate|cleanup rules|规则清理|规则审计|合并规则|瘦身)"
 }
 
 is_plan_creation_intent() {
-  echo "$PROMPT_TEXT" | grep -qEi "(new plan|create plan|write plan|draft plan|新建计划|创建计划|写计划|制定计划|补计划)"
+  echo "$PROMPT_INTENT_TEXT" | grep -qEi "(new plan|create plan|write plan|draft plan|新建计划|创建计划|写计划|制定计划|补计划)"
+}
+
+is_bug_or_hunt_intent() {
+  echo "$PROMPT_INTENT_TEXT" | grep -qEi "(fix|patch|bug|error|crash|broken|regression|报错|崩溃|修复|不工作|跑不通|为什么.*错|排查|查查|定位问题|debug)"
+}
+
+is_plain_feature_plan_start_intent() {
+  is_trigger_question_prompt && return 1
+  is_bug_or_hunt_intent && return 1
+  is_execution_approval_intent && return 1
+
+  echo "$PROMPT_INTENT_TEXT" | grep -qEi "(new feature|feature request|add (a )?(new )?feature|build (a|an|the)[[:space:]].*(page|screen|feature|component|module|tool|dashboard|api|endpoint|flow|app)|create (a|an|the)[[:space:]].*(page|screen|feature|component|module|tool|dashboard|api|endpoint|flow|app)|开发新功能|开发.*功能|新增功能|新功能|加.*功能|做(一个|个).*(页|页面|功能|模块|工具|组件|接口|应用|系统|面板|流程)|搭(一个|个).*(页|页面|功能|模块|工具|组件|接口|应用|系统|面板|流程)|写(一个|个).*(页|页面|功能|模块|工具|组件|接口|脚本|应用|系统|面板|流程))"
+}
+
+is_embedded_approved_plan_intent() {
+  printf '%s\n' "$PROMPT_INTENT_TEXT" | grep -qEi '^[[:space:]]*(please[[:space:]]+)?implement[[:space:]]+this[[:space:]]+plan[[:space:]]*:'
+}
+
+prompt_first_nonblank_line() {
+  printf '%s\n' "$PROMPT_INTENT_TEXT" | awk 'NF { print; exit }'
+}
+
+is_trigger_question_prompt() {
+  local first
+  first="$(prompt_first_nonblank_line)"
+  printf '%s\n' "$first" | grep -qEi '(会不会触发|会触发吗|能触发吗|可以触发吗|does this trigger|would this trigger|will this trigger|比如.*触发|例如.*触发)'
+}
+
+is_plan_shaped_markdown_intent() {
+  local first
+  is_trigger_question_prompt && return 1
+
+  first="$(prompt_first_nonblank_line)"
+  printf '%s\n' "$first" | grep -qE '^#[[:space:]]+' || return 1
+  printf '%s\n' "$PROMPT_INTENT_TEXT" | grep -qEi '^##[[:space:]]+Summary[[:space:]]*$' || return 1
+  printf '%s\n' "$PROMPT_INTENT_TEXT" | grep -qEi '(^##[[:space:]]+(Key Changes|Tests|Assumptions)[[:space:]]*$|P1[[:space:]]|P2[[:space:]]|P3[[:space:]])'
 }
 
 is_think_plan_start_intent() {
-  if echo "$PROMPT_TEXT" | grep -qEi "(fix|patch|bug|error|crash|broken|regression|报错|崩溃|修复|不工作|跑不通|为什么.*错)"; then
+  if is_bug_or_hunt_intent; then
     return 1
   fi
-  echo "$PROMPT_TEXT" | grep -qEi '(/think|[$]think|\[[$]think\]|plan this|plan it|how should i|how should we|出方案|给方案|怎么设计|用什么方案|制定计划|写计划|新建计划|创建计划)'
+  if echo "$PROMPT_INTENT_TEXT" | grep -qEi '^[[:space:][:punct:]]*(/think|[$]think|\[[$]think\])'; then
+    return 0
+  fi
+  echo "$PROMPT_INTENT_TEXT" | grep -qEi '(plan this|plan it|how should i|how should we|出方案|给方案|怎么设计|用什么方案|制定计划|写计划|新建计划|创建计划)' || is_plain_feature_plan_start_intent
 }
 
 derive_plan_start_title() {
-  local title="$PROMPT_TEXT"
+  local title="$PROMPT_INTENT_TEXT"
   title="$(printf '%s' "$title" | tr '\r\n' '  ' | sed -E 's/[[:space:]]+/ /g; s/^[[:space:][:punct:]]+//; s/[[:space:]]+$//')"
   title="$(printf '%s' "$title" | sed -E 's/\[[$]think\]\([^)]*\)/think/g; s/[$]think/think/g; s#/think#think#g')"
   if [[ -z "$title" ]]; then
@@ -51,32 +93,34 @@ derive_plan_start_title() {
 derive_plan_start_slug() {
   local title slug
   title="$(derive_plan_start_title)"
-  slug="$(printf '%s' "$title" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g')"
+  slug="$(normalize_plan_slug "$title")"
   if [[ -z "$slug" || "$slug" = "think" || "$slug" = "plan" ]]; then
-    slug="think-plan-$(date +%H%M%S)"
+    if is_plain_feature_plan_start_intent; then
+      slug="feature-plan-$(date +%H%M%S)"
+    else
+      slug="think-plan-$(date +%H%M%S)"
+    fi
   fi
   printf '%s' "$slug" | cut -c 1-64 | sed -E 's/-+$//'
 }
 
+normalize_plan_slug() {
+  printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g'
+}
+
 maybe_start_plan_workflow() {
   is_think_plan_start_intent || return 0
-
-  local active_plan slug title
-  active_plan="$(get_active_plan || true)"
-  if [[ -n "$active_plan" && -f "$active_plan" ]]; then
-    echo "[PlanStartGate] Think/plan intent detected. Active plan already exists: $active_plan"
-    return 0
-  fi
 
   if [[ ! -x "scripts/ensure-task-workflow.sh" ]]; then
     echo "[PlanStartGate] Think/plan intent detected, but scripts/ensure-task-workflow.sh is missing. Continue with planning and capture manually."
     return 0
   fi
 
+  local slug title
   slug="$(derive_plan_start_slug)"
   title="$(derive_plan_start_title)"
-  echo "[PlanStartGate] Think/plan intent detected. Starting file-backed Draft plan workflow."
-  bash "scripts/ensure-task-workflow.sh" --slug "$slug" --title "$title"
+  echo "[PlanStartGate] Think/plan intent detected. Starting independent file-backed Draft plan workflow."
+  bash "scripts/ensure-task-workflow.sh" --new-plan --slug "$slug" --title "$title"
 }
 
 plan_evidence_contract_error() {
@@ -116,8 +160,100 @@ plan_evidence_contract_error() {
   [[ "$missing" -eq 0 ]]
 }
 
+extract_embedded_approved_plan_body() {
+  if ! is_embedded_approved_plan_intent && is_plan_shaped_markdown_intent; then
+    printf '%s\n' "$PROMPT_INTENT_TEXT"
+    return 0
+  fi
+
+  printf '%s\n' "$PROMPT_INTENT_TEXT" | awk '
+    BEGIN { found = 0 }
+    !found {
+      line = $0
+      lower = tolower(line)
+      if (lower ~ /^[[:space:]]*(please[[:space:]]+)?implement[[:space:]]+this[[:space:]]+plan[[:space:]]*:/) {
+        found = 1
+        colon = index(line, ":")
+        rest = substr(line, colon + 1)
+        sub(/^[[:space:]]+/, "", rest)
+        if (length(rest) > 0) {
+          print rest
+        }
+        next
+      }
+    }
+    found { print }
+  '
+}
+
+derive_embedded_approved_plan_title() {
+  local body="$1"
+  local title
+  title="$(printf '%s\n' "$body" | awk '
+    /^#[[:space:]]*Plan:[[:space:]]*/ {
+      sub(/^#[[:space:]]*Plan:[[:space:]]*/, "")
+      print
+      exit
+    }
+    /^#[[:space:]]+/ {
+      sub(/^#[[:space:]]+/, "")
+      print
+      exit
+    }
+  ' | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//' | head -1)"
+  if [[ -z "$title" ]]; then
+    title="Approved Plan"
+  fi
+  printf '%s' "$title" | cut -c 1-96
+}
+
+maybe_capture_embedded_approved_plan() {
+  is_embedded_approved_plan_intent || is_plan_shaped_markdown_intent || return 0
+
+  if [[ ! -x "scripts/capture-plan.sh" ]]; then
+    echo "[PlanCaptureGate] Embedded approved plan detected, but scripts/capture-plan.sh is missing."
+    hook_structured_error \
+      "PlanCaptureGate" \
+      "Embedded approved plan detected but scripts/capture-plan.sh is missing." \
+      "Install workflow helpers before executing an embedded approved plan." \
+      "missing_artifact"
+    exit 1
+  fi
+
+  local body title slug capture_output
+  body="$(extract_embedded_approved_plan_body)"
+  if [[ -z "$(printf '%s' "$body" | tr -d '[:space:]')" ]]; then
+    echo "[PlanCaptureGate] Embedded approved plan marker has no plan body."
+    hook_structured_error \
+      "PlanCaptureGate" \
+      "PLEASE IMPLEMENT THIS PLAN was provided without a plan body." \
+      "Paste the approved plan body after the marker so scripts/capture-plan.sh can store and project it." \
+      "missing_artifact"
+    exit 1
+  fi
+
+  title="$(derive_embedded_approved_plan_title "$body")"
+  slug="$(normalize_plan_slug "$title")"
+  if [[ -z "$slug" ]]; then
+    slug="approved-plan-$(date +%H%M%S)"
+  fi
+
+  echo "[PlanCaptureGate] Embedded approved plan detected. Capturing and projecting before implementation."
+  if ! capture_output="$(printf '%s\n' "$body" | bash "scripts/capture-plan.sh" --slug "$slug" --title "$title" --status Approved --source user-approved-plan --route planning --execute 2>&1)"; then
+    printf '%s\n' "$capture_output"
+    hook_structured_error \
+      "PlanCaptureGate" \
+      "Embedded approved plan capture failed." \
+      "Fix the capture-plan.sh or plan-to-todo.sh error before editing implementation files." \
+      "state_violation"
+    exit 1
+  fi
+  printf '%s\n' "$capture_output"
+  exit 0
+}
+
 is_agentic_packaging_intent() {
-  echo "$PROMPT_TEXT" | grep -qEi "(repeated workflow|reusable workflow|workflow packaging|package into (a )?skill|make this (a )?skill|subagent or automation|skill or automation|skill/subagent/automation|重复(手工)?工作|重复工作流|做成[[:space:]]*(skill|subagent|automation)|包装成(skill|subagent|automation|技能|自动化)|抽象成(skill|subagent|automation|技能|自动化)|沉淀成(工作流|skill|技能|自动化)|做成[[:space:]]*(hook|钩子).*触发|触发用户授权.*(plan|计划|方案))"
+  echo "$PROMPT_INTENT_TEXT" | grep -qEi "(repeated workflow|reusable workflow|workflow packaging|package into (a )?skill|make this (a )?skill|subagent or automation|skill or automation|skill/subagent/automation|重复(手工)?工作|重复工作流|做成[[:space:]]*(skill|subagent|automation)|包装成(skill|subagent|automation|技能|自动化)|抽象成(skill|subagent|automation|技能|自动化)|沉淀成(工作流|skill|技能|自动化)|做成[[:space:]]*(hook|钩子).*触发|触发用户授权.*(plan|计划|方案))"
 }
 
 emit_agentic_packaging_hint() {
@@ -132,17 +268,43 @@ emit_waza_route_hint() {
     return
   fi
 
-  if echo "$PROMPT_TEXT" | grep -qEi "(agent|agents|codex|claude|hook|hooks|workflow|tooling|config|AGENTS\\.md|CLAUDE\\.md|健康度|健康检查|配置检查|配置|钩子|工作流|技能配置|AI coding|agent instructions)"; then
+  if echo "$PROMPT_INTENT_TEXT" | grep -qEi "(agent|agents|codex|claude|hook|hooks|workflow|tooling|config|AGENTS\\.md|CLAUDE\\.md|健康度|健康检查|配置检查|配置|钩子|工作流|技能配置|AI coding|agent instructions)"; then
     echo "[WazaRoute] Agent workflow/tooling intent detected. Default route: Waza /health."
     return
   fi
 
-  if echo "$PROMPT_TEXT" | grep -qEi "(review|check|pre-merge|before merge|release|publish|push|验收|检查|提交|发布|推送|合并前)"; then
+  if echo "$PROMPT_INTENT_TEXT" | grep -qEi "(review|check|pre-merge|before merge|release|publish|push|验收|检查|提交|发布|推送|合并前)"; then
     echo "[WazaRoute] Review/release intent detected. Default route: Waza /check."
   fi
 }
 
+strip_prompt_context_blocks() {
+  awk '
+    /^[[:space:]]*<(skill|environment_context|INSTRUCTIONS|system|developer|app-context|collaboration_mode|apps_instructions|skills_instructions|plugins_instructions)[^>]*>[[:space:]]*$/ {
+      skip = 1
+      next
+    }
+    /^[[:space:]]*<\/(skill|environment_context|INSTRUCTIONS|system|developer|app-context|collaboration_mode|apps_instructions|skills_instructions|plugins_instructions)>[[:space:]]*$/ {
+      skip = 0
+      next
+    }
+    skip { next }
+    { print }
+  '
+}
+
+prompt_intent_text() {
+  local stripped
+  stripped="$(printf '%s\n' "$PROMPT_TEXT" | strip_prompt_context_blocks | sed -E '/^[[:space:]]*$/d')"
+  if [[ -n "$(printf '%s' "$stripped" | tr -d '[:space:]')" ]]; then
+    printf '%s' "$stripped"
+  else
+    printf '%s' "$PROMPT_TEXT"
+  fi
+}
+
 PROMPT_TEXT="$(hook_get_prompt "${1:-}")"
+PROMPT_INTENT_TEXT="$(prompt_intent_text)"
 
 emit_agentic_packaging_hint
 emit_waza_route_hint
@@ -213,6 +375,8 @@ if [ "$implement_intent" -eq 1 ]; then
       "missing_artifact"
     exit 1
   fi
+
+  maybe_capture_embedded_approved_plan
 
   active_plan="$(get_active_plan || true)"
   if [ -z "$active_plan" ] || [ ! -f "$active_plan" ]; then

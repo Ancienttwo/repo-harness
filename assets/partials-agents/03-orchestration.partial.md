@@ -6,7 +6,7 @@
 
 ### 2. Annotation Cycle
 - Keep active plans in `plans/plan-*.md` and iterate with inline notes.
-- Treat the latest non-archived plan file as the active plan.
+- Treat `.claude/.active-plan` as authoritative when present; latest non-archived plan file is a compatibility fallback.
 - Resolve annotations before implementation.
 
 ### 3. Plan Node Default

@@ -56,7 +56,7 @@ if [[ -f "$config_file" ]]; then
 fi
 
 find "$repo" \
-  \( -path "$repo/.git" -o -path "$repo/node_modules" -o -path "$repo/.ai" -o -path "$repo/.claude" \) -prune -o \
+  \( -path "$repo/.git" -o -path "$repo/node_modules" -o -path "$repo/.ai" -o -path "$repo/.claude" -o -path "$repo/_ref" -o -path "$repo/_ops" -o -path "$repo/.worktrees" \) -prune -o \
   \( -type f \( -name 'CLAUDE.md' -o -name 'AGENTS.md' \) \) -print 2>/dev/null | while IFS= read -r context_file; do
     context_dir="$(dirname "$context_file")"
     rel_dir="${context_dir#$repo/}"

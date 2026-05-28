@@ -1,0 +1,80 @@
+{
+  "skill_name": "agentic-dev",
+  "objective": "Improve the agentic-dev plans-to-contracts workflow by making plan/contract state inventory explicit before execution without weakening approval, scope, or verification gates.",
+  "target_skill_path": "/Users/ancienttwo/Projects/agentic-dev/SKILL.md",
+  "session_dir": "/Users/ancienttwo/Projects/agentic-dev/autoresearch-agentic-dev-20260528-120347",
+  "status": "complete",
+  "current_experiment": 1,
+  "baseline_score": 70.0,
+  "best_score": 100.0,
+  "runs_per_experiment": 4,
+  "budget_cap": 2,
+  "created_at": "2026-05-28T04:03:47.199761+00:00",
+  "experiments": [
+    {
+      "id": 0,
+      "score": 14,
+      "max_score": 20,
+      "pass_rate": 70.0,
+      "status": "baseline",
+      "description": "original plans-to-contracts workflow surfaces",
+      "change_summary": "No mutation. Baseline measurement of existing plan, contract, capture, projection, and hook surfaces.",
+      "reasoning": "The current workflow preserves approval and isolation, but generated artifacts do not force a concrete state inventory before execution and do not consolidate workflow verification evidence.",
+      "result_notes": "Useful baseline: 14/20. Strong gates already exist; the pressure point is missing explicit inventory and representative verification on the files agents actually read before implementation.",
+      "failing_patterns": "Agents can rely on generic plan prose and contract placeholders instead of naming active plan, contract, review, notes, todo, checks, allowed paths, and workflow checks before editing.",
+      "recorded_at": "2026-05-28T04:04:04.978660+00:00"
+    },
+    {
+      "id": 1,
+      "score": 20,
+      "max_score": 20,
+      "pass_rate": 100.0,
+      "status": "keep",
+      "description": "add workflow inventory to plan and contract surfaces",
+      "change_summary": "Added explicit workflow inventory to generated plans, captured plans, contracts, fallback templates, planning facade, docs, and assembly guidance; retained approval and contract gates.",
+      "reasoning": "The article/autoresearch lesson is to make the target function representative and keep useful instructions near the action point. The smallest coherent change is to place inventory and verification ownership in plans/contracts, not to remove gates or add a new abstraction.",
+      "result_notes": "Targeted regression passed: bun test tests/helper-scripts.test.ts tests/scaffold-parity.test.ts tests/output-parity.test.ts tests/agents-assembly.test.ts. One line-budget failure appeared on the first run and was fixed by compressing AGENTS wording.",
+      "failing_patterns": "No remaining scored failures for this mutation.",
+      "recorded_at": "2026-05-28T04:11:02.351259+00:00"
+    }
+  ],
+  "eval_breakdown": [
+    {
+      "name": "inventory_first",
+      "question": "Does the workflow require a concrete plan/contract inventory before implementation?",
+      "pass_count": 4,
+      "total": 8
+    },
+    {
+      "name": "approval_boundary",
+      "question": "Does the workflow preserve Draft to Approved to Executing gates?",
+      "pass_count": 8,
+      "total": 8
+    },
+    {
+      "name": "artifact_linkage",
+      "question": "Are plans, contracts, reviews, notes, todos, and checks linked by stable paths?",
+      "pass_count": 8,
+      "total": 8
+    },
+    {
+      "name": "representative_verification",
+      "question": "Does verification measure the real workflow rather than only a generic code check?",
+      "pass_count": 6,
+      "total": 8
+    },
+    {
+      "name": "concurrency_isolation",
+      "question": "Does the workflow avoid one stale Draft plan globally blocking unrelated planning or execution?",
+      "pass_count": 8,
+      "total": 8
+    }
+  ],
+  "test_prompts": [
+    "A user asks to plan a workflow change while an older Draft plan already exists.",
+    "A user pastes an approved plan and asks to implement it immediately.",
+    "An agent is about to edit files under an active tasks/contracts/*.contract.md scope.",
+    "A session resumes with plans/, tasks/todo.md, tasks/contracts/, review, notes, and checks files present."
+  ],
+  "updated_at": "2026-05-28T04:11:02.351259+00:00"
+}

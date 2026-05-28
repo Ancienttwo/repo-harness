@@ -25,8 +25,8 @@ RULES:
   - Research first for unfamiliar areas and persist findings in tasks/research.md
   - Keep stable product intent in docs/spec.md
   - Plan with trade-offs in plans/plan-{timestamp}-{slug}.md
-  - Treat the latest non-archived plans/plan-*.md file as the active plan, or .claude/.active-plan if explicitly set
-  - Switch between concurrent plans: bash scripts/switch-plan.sh --plan <plan-file>
+  - Treat .claude/.active-plan as authoritative when present; latest non-archived plans/plan-*.md is a compatibility fallback
+  - Switch between concurrent plans with bash scripts/switch-plan.sh --plan <plan-file>; fill workflow inventory before implementation: active plan, contract, review, notes, todo, checks, runs, scope owner, switching rule, and worktree path
   - Process annotation notes before implementing
   - Extract approved plan tasks into tasks/todo.md
   - Define task contracts in tasks/contracts/{slug}.contract.md
@@ -55,7 +55,7 @@ RULES:
 {{/IF}}
 
 ACTIVE_PLAN:
-  - plans/ is the single source of truth for the current active plan
+  - .claude/.active-plan selects the current active plan when present; plans/ is the timestamped catalog and compatibility fallback
 
 STATUS:
   ENUM: [Draft, Annotating, Approved, Executing, Archived]

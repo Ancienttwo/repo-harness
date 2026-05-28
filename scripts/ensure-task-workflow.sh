@@ -6,7 +6,7 @@ cd "$SCRIPT_DIR/.."
 
 usage() {
   cat <<'USAGE_EOF'
-Usage: scripts/ensure-task-workflow.sh [--slug <slug>] [--title <title>]
+Usage: scripts/ensure-task-workflow.sh [--new-plan] [--slug <slug>] [--title <title>]
 USAGE_EOF
 }
 
@@ -104,8 +104,33 @@ RESEARCH_TEMPLATE_EOF
 > **Status**: Draft
 > **Created**: {{TIMESTAMP}}
 > **Slug**: {{SLUG}}
+> **Spec**: `docs/spec.md`
 > **Research**: See `tasks/research.md`
+> **Sprint Contract**: `tasks/contracts/{{SLUG}}.contract.md`
+> **Sprint Review**: `tasks/reviews/{{SLUG}}.review.md`
 > **Implementation Notes**: `tasks/notes/{{SLUG}}.notes.md`
+
+## Agentic Routing
+- Selected route:
+- Routing reason:
+- Due diligence:
+  - P1 map:
+  - P2 trace:
+  - P3 decision rationale:
+
+## Workflow Inventory
+Complete this inventory before implementation. If any line is unknown, keep the plan in Draft and fill it before projection.
+
+- Active plan: `{{PLAN_FILE}}`
+- Sprint contract: `tasks/contracts/{{SLUG}}.contract.md`
+- Sprint review: `tasks/reviews/{{SLUG}}.review.md`
+- Implementation notes: `tasks/notes/{{SLUG}}.notes.md`
+- Todo projection: `tasks/todo.md`
+- Current checks: `.ai/harness/checks/latest.json`
+- Run snapshots: `.ai/harness/runs/`
+- Scope authority: `tasks/contracts/{{SLUG}}.contract.md` `allowed_paths`
+- Concurrency rule: `.claude/.active-plan` selects the active plan when present; use `scripts/switch-plan.sh --plan {{PLAN_FILE}}` when multiple plans exist.
+- Execution isolation: approved contract-level work projects through `scripts/plan-to-todo.sh --plan {{PLAN_FILE}}` and may start `scripts/contract-worktree.sh start --plan {{PLAN_FILE}}`.
 
 ## Approach
 ### Strategy
@@ -127,9 +152,16 @@ RESEARCH_TEMPLATE_EOF
 
 ## Task Contracts
 - Contract file: `tasks/contracts/{{SLUG}}.contract.md`
+- Review file: `tasks/reviews/{{SLUG}}.review.md`
 - Implementation notes file: `tasks/notes/{{SLUG}}.notes.md`
 - Template: `.claude/templates/contract.template.md`
 - Verification command: `bash scripts/verify-contract.sh --contract tasks/contracts/{{SLUG}}.contract.md --strict`
+- Active plan rule: `.claude/.active-plan` is authoritative when present; latest non-archived `plans/plan-*.md` is a compatibility fallback only.
+
+## Handoff
+
+- Checks file: `.ai/harness/checks/latest.json`
+- Session handoff: `.ai/harness/handoff/current.md`
 
 ## Evidence Contract
 
@@ -167,6 +199,17 @@ Describe the exact outcome this task must deliver.
 
 - In scope:
 - Out of scope:
+
+## Workflow Inventory
+
+- Source plan: `{{PLAN_FILE}}`
+- Todo projection: `tasks/todo.md`
+- Review file: `tasks/reviews/{{TASK_SLUG}}.review.md`
+- Notes file: `tasks/notes/{{TASK_SLUG}}.notes.md`
+- Checks file: `.ai/harness/checks/latest.json`
+- Run snapshots: `.ai/harness/runs/`
+- Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
+- Completion gate: `scripts/verify-sprint.sh` must see this contract pass and the review recommend pass.
 
 ## Allowed Paths
 
@@ -473,7 +516,7 @@ ARCHITECTURE_INDEX_EOF
     "directory": "plans",
     "archive_directory": "plans/archive",
     "glob": "plan-*.md",
-    "source_of_truth": "latest non-archived plan or explicit marker"
+    "source_of_truth": "explicit marker or latest non-archived compatibility fallback"
   },
   "tasks": {
     "todo_file": "tasks/todo.md",
@@ -818,9 +861,14 @@ CONTEXT_EOF
 
 slug=""
 title=""
+new_plan=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --new-plan)
+      new_plan=1
+      shift
+      ;;
     --slug)
       [[ -n "${2:-}" ]] || { echo "Error: --slug requires a value" >&2; usage; exit 1; }
       slug="$2"
@@ -848,7 +896,7 @@ ensure_auxiliary_files
 ensure_idle_todo
 
 active_plan="$(get_active_plan || true)"
-if [[ -n "$active_plan" ]]; then
+if [[ -n "$active_plan" && "$new_plan" -eq 0 ]]; then
   echo "Workflow ready. Active plan: $active_plan"
   exit 0
 fi
@@ -860,6 +908,10 @@ if [[ ! -f "docs/spec.md" ]]; then
 fi
 
 if [[ -z "$slug" ]]; then
+  if [[ "$new_plan" -eq 1 ]]; then
+    echo "--new-plan requires --slug" >&2
+    exit 1
+  fi
   echo "Workflow ready. No active plan present."
   echo "Create one with: bash scripts/ensure-task-workflow.sh --slug <slug> --title <title>"
   exit 0

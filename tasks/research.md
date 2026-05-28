@@ -98,6 +98,78 @@
 - Whether future template assembly should expose a first-class “skill/tooling repo” preset instead of relying on hand-authored root routing docs.
 - Whether future work should unify `.ai/hooks/` and `assets/hooks/` through generation or parity tests instead of manual sync.
 
+## 2026-05-27 Prompt Intent Context Strip Notes
+
+### What Changed
+- `prompt-guard.sh` now separates the raw hook prompt from the user-intent text used by intent greps.
+- The intent text strips injected XML-style context blocks such as `<skill>...</skill>` before plan, Waza route, implementation, and done-intent checks run.
+- Explicit Waza `/think` / `$think` at the start of the user prompt still starts a Draft plan workflow; explanatory mentions of `$think` in the middle of a non-planning prompt do not.
+- Explicit planning prompts now call `scripts/ensure-task-workflow.sh --new-plan`, so an older Draft/latest plan cannot globally occupy future Waza think planning.
+- `PLEASE IMPLEMENT THIS PLAN:` prompts are treated as an embedded approved plan body: `prompt-guard.sh` captures them with `scripts/capture-plan.sh --status Approved --execute` before implementation continues.
+- Pure plan-shaped Markdown prompts also count as approved-plan bodies when the first nonblank line is an H1 and the body contains `## Summary` plus decision/execution sections such as `## Key Changes`, `## Tests`, `## Assumptions`, or P1/P2/P3 evidence.
+- Trigger-question examples such as “会触发吗” / “does this trigger” are explicitly excluded even if the quoted example contains implementation wording.
+
+### Why
+- Expanded skill bodies can contain words such as `fix`, `bug`, `error`, `implement`, and `approved`. Running intent greps over that entire payload can bypass the `$think` plan-start bridge or misclassify a planning prompt as implementation.
+- `get_active_plan` intentionally falls back to the latest non-archived plan for compatibility, but that fallback is not enough to decide that a new explicit planning task belongs to the old Draft. Worktree-first execution needs independent plan artifacts.
+- Astrozi-style broad keyword matching is useful for TDD/BDD hints but too noisy for reliable plan capture; plan-shaped Markdown capture narrows the acceptance surface without requiring a magic prefix.
+- The hook boundary stays conservative: it may create a Draft `plans/` artifact for explicit planning intent, and Approved projection still goes through `capture-plan.sh --status Approved --execute` / `plan-to-todo.sh` rather than editing implementation files directly.
+
+### Verification
+- `bun test tests/hook-runtime.test.ts` covers expanded `<skill>` context, explanatory `$think` mentions, old-Draft plan-start independence, embedded approved-plan capture, pure plan-shaped Markdown capture, and trigger-question examples.
+- `bun test tests/helper-scripts.test.ts` covers `ensure-task-workflow.sh --new-plan`.
+
+## 2026-05-27 Hook Root Dispatch Notes
+
+### Finding
+- `.codex/hooks.json` correctly dispatches `UserPromptSubmit` to `.ai/hooks/run-hook.sh prompt-guard.sh`, and the installed Codex skill copies match the source `assets/hooks/prompt-guard.sh`.
+- The runtime boundary was still cwd-sensitive: `run-hook.sh` exported `HOOK_REPO_ROOT` but did not `cd` into it before executing the selected hook.
+- `prompt-guard.sh` calls repo helpers by relative path, for example `scripts/capture-plan.sh`; if the host invokes the hook from a different cwd, plan capture can run against the wrong repo state.
+- A plain new-feature request such as “我要开发新功能：做一个设置页” only reaches the BDD advisory branch. It is not a structured approved-plan body, so it does not call `capture-plan.sh` by itself.
+
+### Decision
+- Keep structured approved-plan capture conservative: `PLEASE IMPLEMENT THIS PLAN:` and plan-shaped Markdown can project through `capture-plan.sh --status Approved --execute`.
+- Fix the hard runtime bug at the dispatcher boundary by making `run-hook.sh` enter `HOOK_REPO_ROOT` before running hook scripts.
+- Treat natural “开发新功能” prompts as a separate product-policy decision: they can start a Draft plan in a future slice, but they should not be silently promoted to Approved execution without a concrete plan body.
+
+### Verification
+- `tests/hook-runtime.test.ts` now covers `run-hook.sh` executing from `HOOK_REPO_ROOT` even when the caller cwd differs.
+- Manual hook repro showed structured plan capture works after dispatcher root correction; plain feature prose remains advisory-only by design.
+
+## 2026-05-28 Plain Feature Prompt Plan-Start Notes
+
+### What Changed
+- Plain new-feature prompts now route to `PlanStartGate` and create an independent Draft `plans/plan-*.md` artifact.
+- This applies to feature-building language such as “我要开发新功能：做一个设置页” while preserving bug-hunt and direct execution guards.
+- Plain feature plan-start stops at Draft. It may ensure the idle `tasks/todo.md` workflow surface exists, but it does not set a source plan, switch status to Executing, call `capture-plan.sh --status Approved --execute`, or start contract worktrees.
+- Chinese-only feature prompts can normalize to an empty ASCII slug, so the fallback slug is `feature-plan-HHMMSS` instead of the older `think-plan-HHMMSS`.
+
+### Why
+- The previous structured capture fix handled approved plan bodies, but ordinary “start developing a new feature” prompts still only emitted BDD guidance and did not create a file-backed plan.
+- Draft plan creation is the smallest safe automation boundary: it records intent in `plans/` without treating a vague feature request as approval to execute.
+
+### Verification
+- `tests/hook-runtime.test.ts` covers plain new-feature prompt -> Draft plan with idle `tasks/todo.md`, not execution projection.
+- Existing bug-hunt, missing-plan implementation, embedded approved-plan, and plan-shaped Markdown tests keep the neighboring boundaries guarded.
+
+## 2026-05-28 Plans/Contracts Autoresearch Inventory Notes
+
+### What Changed
+- Added `## Workflow Inventory` to source and runtime plan templates, captured-plan output, contract templates, and fallback heredocs in `new-plan.sh`, `capture-plan.sh`, `plan-to-todo.sh`, `ensure-task-workflow.sh`, and `project-init-lib.sh`.
+- The inventory names active plan, sprint contract, review, implementation notes, `tasks/todo.md`, checks, run snapshots, `allowed_paths` scope authority, `switch-plan.sh`, and contract worktree execution.
+- Replaced latest-plan-first wording with `.claude/.active-plan` as authoritative when present; latest non-archived `plans/plan-*.md` remains a compatibility fallback.
+- Updated `agentic-dev-plan`, root `SKILL.md`, reference configs, and assembly partials so planning instructions match generated artifacts.
+- Recorded the experiment in `autoresearch-agentic-dev-20260528-120347/`: baseline 14/20, kept candidate 20/20.
+
+### Why
+- The Browserbase Autobrowse article's reusable lesson is not "remove gates for automation"; it is "make the reusable skill artifact carry the shortest reliable path and the state the next agent should not rediscover."
+- The analogous pressure point in this repo is that plans and contracts had strong gates but did not put the state inventory directly before implementation.
+- The smallest coherent change is to add inventory to plan/contract surfaces and keep approval/review/worktree boundaries intact.
+
+### Verification
+- `bun test tests/helper-scripts.test.ts tests/scaffold-parity.test.ts tests/output-parity.test.ts tests/agents-assembly.test.ts`
+- First targeted run exposed an AGENTS line-budget regression at 263/260 lines; partial wording was compressed and the second targeted run passed 68 tests.
+
 ## 2026-05-06 Harness v2 Implementation Notes
 
 ### What Changed

@@ -20,7 +20,7 @@
 - Context map: `.ai/context/context-map.json`.
 - Lessons contract: `tasks/lessons.md`.
 - Plan directory: `plans/` (timestamped plans).
-- Active plan rule: latest non-archived `plans/plan-*.md` file.
+- Active plan rule: `.claude/.active-plan` when present, otherwise latest non-archived `plans/plan-*.md` as compatibility fallback.
 - Plan archive: `plans/archive/`.
 - Todo archive: `tasks/archive/`.
 - Shared automation layer: `.ai/hooks/`.

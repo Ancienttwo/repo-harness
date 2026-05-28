@@ -176,6 +176,20 @@ cat > "$plan_file" <<PLAN_EOF
   - P2 trace: See captured planning output below.
   - P3 decision rationale: See captured planning output below.
 
+## Workflow Inventory
+Complete this inventory before implementation. If any line is unknown, keep the plan in Draft and fill it before projection.
+
+- Active plan: \`${plan_file}\`
+- Sprint contract: \`tasks/contracts/${slug}.contract.md\`
+- Sprint review: \`tasks/reviews/${slug}.review.md\`
+- Implementation notes: \`tasks/notes/${slug}.notes.md\`
+- Todo projection: \`tasks/todo.md\`
+- Current checks: \`.ai/harness/checks/latest.json\`
+- Run snapshots: \`.ai/harness/runs/\`
+- Scope authority: \`tasks/contracts/${slug}.contract.md\` \`allowed_paths\`
+- Concurrency rule: \`.claude/.active-plan\` selects the active plan when present; use \`scripts/switch-plan.sh --plan ${plan_file}\` when multiple plans exist.
+- Execution isolation: approved contract-level work projects through \`scripts/plan-to-todo.sh --plan ${plan_file}\` and may start \`scripts/contract-worktree.sh start --plan ${plan_file}\`.
+
 ## Approach
 ### Strategy
 Use the captured planning output below as the execution source of truth.
@@ -208,7 +222,7 @@ See captured planning output.
 - Implementation notes file: \`tasks/notes/${slug}.notes.md\`
 - Template: \`.claude/templates/contract.template.md\`
 - Verification command: \`bash scripts/verify-contract.sh --contract tasks/contracts/${slug}.contract.md --strict\`
-- Active plan rule: this captured plan is written to \`.claude/.active-plan\` unless --no-active is used
+- Active plan rule: this captured plan is written to \`.claude/.active-plan\` unless --no-active is used; latest non-archived \`plans/plan-*.md\` is a compatibility fallback only.
 
 ## Handoff
 

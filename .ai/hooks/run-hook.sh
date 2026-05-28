@@ -21,5 +21,6 @@ if [[ ! -f "$HOOK_PATH" ]]; then
 fi
 
 export HOOK_REPO_ROOT="$REPO_ROOT"
+cd "$REPO_ROOT"
 
 exec bash "$HOOK_PATH" "$@"

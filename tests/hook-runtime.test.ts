@@ -17,6 +17,17 @@ import { spawnSync } from "child_process";
 
 const ROOT = join(import.meta.dir, "..");
 const ASSETS_HOOKS_DIR = join(ROOT, "assets/hooks");
+const THINK_SKILL_BODY = [
+  "---",
+  "name: think",
+  "description: Not for bug fixes or small edits.",
+  "---",
+  "",
+  "# Think",
+  "Turn a rough idea into an approved implementation plan.",
+  "Use lightweight mode when the user wants to fix something.",
+  "Do not route error/bug context into evaluation mode.",
+].join("\n");
 
 function tmpWorkspace(prefix: string): string {
   return mkdtempSync(join(tmpdir(), `${prefix}-`));
@@ -119,10 +130,10 @@ function installArchitectureHelpers(cwd: string) {
 
 function installPlanWorkflowHelpers(cwd: string) {
   mkdirSync(join(cwd, "scripts"), { recursive: true });
-  for (const fileName of ["ensure-task-workflow.sh", "new-plan.sh"]) {
+  for (const fileName of ["ensure-task-workflow.sh", "new-plan.sh", "capture-plan.sh", "plan-to-todo.sh"]) {
     copyFileSync(join(ROOT, "assets/templates/helpers", fileName), join(cwd, "scripts", fileName));
   }
-  expect(run("chmod", ["+x", "scripts/ensure-task-workflow.sh", "scripts/new-plan.sh"], cwd).status).toBe(0);
+  expect(run("chmod", ["+x", "scripts/ensure-task-workflow.sh", "scripts/new-plan.sh", "scripts/capture-plan.sh", "scripts/plan-to-todo.sh"], cwd).status).toBe(0);
 }
 
 function gitCommitCount(cwd: string): number {
@@ -157,6 +168,38 @@ describe("Hook runtime behavior", () => {
       expect(reviewRes.status).toBe(0);
       expect(reviewRes.stdout).toContain("[WazaRoute] Review/release intent detected");
       expect(reviewRes.stdout).toContain("Waza /check");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("run-hook dispatches from HOOK_REPO_ROOT even when caller cwd differs", () => {
+    const cwd = tmpWorkspace("run-hook-root-cwd");
+    try {
+      const hooksDir = installHooks(cwd);
+      writeFileSync(
+        join(hooksDir, "cwd-probe.sh"),
+        [
+          "#!/bin/bash",
+          "set -euo pipefail",
+          "printf 'pwd=%s\\n' \"$(pwd)\"",
+          "printf 'root=%s\\n' \"${HOOK_REPO_ROOT:-}\"",
+        ].join("\n")
+      );
+      expect(run("chmod", ["+x", ".ai/hooks/cwd-probe.sh"], cwd).status).toBe(0);
+
+      const res = spawnSync("bash", [join(hooksDir, "run-hook.sh"), "cwd-probe.sh"], {
+        cwd: ROOT,
+        encoding: "utf-8",
+        env: {
+          ...process.env,
+          HOOK_REPO_ROOT: cwd,
+        },
+      });
+
+      expect(res.status).toBe(0);
+      expect(res.stdout).toContain(`pwd=${cwd}`);
+      expect(res.stdout).toContain(`root=${cwd}`);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -861,6 +904,101 @@ describe("Hook runtime behavior", () => {
     }
   });
 
+  test("prompt-guard: starts a Draft plan workflow for plain new-feature requests", () => {
+    const cwd = tmpWorkspace("prompt-guard-feature-plan-start");
+    try {
+      initGitRepo(cwd);
+      installHooks(cwd);
+      installPlanWorkflowHelpers(cwd);
+
+      const res = runHook("prompt-guard.sh", cwd, {
+        stdin: JSON.stringify({ user_message: "我要开发新功能：做一个设置页" }),
+      });
+
+      expect(res.status).toBe(0);
+      expect(res.stdout).toContain("[PlanStartGate]");
+      expect(res.stdout).toContain("Created plan:");
+      expect(res.stdout).toContain("[BDD] Feature intent detected");
+      const plans = readdirSync(join(cwd, "plans")).filter((name) =>
+        /^plan-\d{8}-\d{4}-feature-plan-\d{6}\.md$/.test(name)
+      );
+      expect(plans).toHaveLength(1);
+      const plan = readFileSync(join(cwd, "plans", plans[0]), "utf-8");
+      expect(plan).toContain("# Plan: 我要开发新功能：做一个设置页");
+      expect(plan).toContain("> **Status**: Draft");
+      const todo = readFileSync(join(cwd, "tasks/todo.md"), "utf-8");
+      expect(todo).toContain("> **Source Plan**: (none)");
+      expect(todo).toContain("> **Status**: Idle");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("prompt-guard: starts a Draft plan workflow when Waza think prompt includes expanded skill context", () => {
+    const cwd = tmpWorkspace("prompt-guard-plan-start-expanded-skill");
+    try {
+      initGitRepo(cwd);
+      installHooks(cwd);
+      installPlanWorkflowHelpers(cwd);
+
+      const res = runHook("prompt-guard.sh", cwd, {
+        stdin: JSON.stringify({
+          user_message: [
+            "plan this hook capture flow with [$think](/Users/ancienttwo/.agents/skills/think/SKILL.md)",
+            "",
+            "<skill>",
+            THINK_SKILL_BODY,
+            "</skill>",
+          ].join("\n"),
+        }),
+      });
+
+      expect(res.status).toBe(0);
+      expect(res.stdout).toContain("[PlanStartGate]");
+      expect(res.stdout).toContain("Created plan:");
+      const plans = readdirSync(join(cwd, "plans")).filter((name) =>
+        /^plan-\d{8}-\d{4}-plan-this-hook-capture-flow-with-think\.md$/.test(name)
+      );
+      expect(plans).toHaveLength(1);
+      expect(readFileSync(join(cwd, "plans", plans[0]), "utf-8")).toContain("> **Status**: Draft");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("prompt-guard: starts a new Draft plan even when an older Draft plan exists", () => {
+    const cwd = tmpWorkspace("prompt-guard-plan-start-existing-draft");
+    try {
+      initGitRepo(cwd);
+      installHooks(cwd);
+      installPlanWorkflowHelpers(cwd);
+      mkdirSync(join(cwd, "plans"), { recursive: true });
+      mkdirSync(join(cwd, "tasks"), { recursive: true });
+      writeFileSync(
+        join(cwd, "plans/plan-20260304-0900-old-draft.md"),
+        "# Plan: old draft\n\n> **Status**: Draft\n"
+      );
+      expect(run("touch", ["-t", "202001010000", "plans/plan-20260304-0900-old-draft.md"], cwd).status).toBe(0);
+      writeFileSync(join(cwd, "tasks/research.md"), "# Research\n\nFresh enough for a new planning slice.\n");
+
+      const res = runHook("prompt-guard.sh", cwd, {
+        stdin: JSON.stringify({ user_message: "plan this independent hook capture repair with $think" }),
+      });
+
+      expect(res.status).toBe(0);
+      expect(res.stdout).toContain("[PlanStartGate]");
+      expect(res.stdout).toContain("Starting independent file-backed Draft plan workflow");
+      expect(res.stdout).not.toContain("Active plan already exists");
+      const plans = readdirSync(join(cwd, "plans")).filter((name) =>
+        /^plan-\d{8}-\d{4}-plan-this-independent-hook-capture-repair-with-think\.md$/.test(name)
+      );
+      expect(plans).toHaveLength(1);
+      expect(readFileSync(join(cwd, "plans", plans[0]), "utf-8")).toContain("> **Status**: Draft");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   test("prompt-guard: does not start plan workflow for bug-hunt language", () => {
     const cwd = tmpWorkspace("prompt-guard-plan-start-bug");
     try {
@@ -870,6 +1008,27 @@ describe("Hook runtime behavior", () => {
 
       const res = runHook("prompt-guard.sh", cwd, {
         stdin: JSON.stringify({ user_message: "plan this bug fix after reading the error" }),
+      });
+
+      expect(res.status).toBe(0);
+      expect(res.stdout).not.toContain("[PlanStartGate]");
+      expect(existsSync(join(cwd, "plans"))).toBe(false);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("prompt-guard: does not start plan workflow for explanatory mentions of Waza think", () => {
+    const cwd = tmpWorkspace("prompt-guard-plan-start-think-mention");
+    try {
+      initGitRepo(cwd);
+      installHooks(cwd);
+      installPlanWorkflowHelpers(cwd);
+
+      const res = runHook("prompt-guard.sh", cwd, {
+        stdin: JSON.stringify({
+          user_message: "我一直在开发都有使用 plan 或 [$think](/Users/ancienttwo/.agents/skills/think/SKILL.md)，脚本应该自动激活吗",
+        }),
       });
 
       expect(res.status).toBe(0);
@@ -897,6 +1056,141 @@ describe("Hook runtime behavior", () => {
 
       expect(res.status).toBe(0);
       expect(res.stdout).not.toContain("[Memory]");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("prompt-guard: captures embedded approved plan and projects todo before implementation", () => {
+    const cwd = tmpWorkspace("prompt-guard-embedded-approved-plan");
+    try {
+      initGitRepo(cwd);
+      installHooks(cwd);
+      installPlanWorkflowHelpers(cwd);
+      mkdirSync(join(cwd, "docs"), { recursive: true });
+      mkdirSync(join(cwd, "plans"), { recursive: true });
+      writeFileSync(join(cwd, "docs/spec.md"), "# Product Spec\n");
+      writeFileSync(
+        join(cwd, "plans/plan-20260304-0900-stale-draft.md"),
+        "# Plan: stale draft\n\n> **Status**: Draft\n"
+      );
+
+      const res = runHook("prompt-guard.sh", cwd, {
+        stdin: JSON.stringify({
+          user_message: [
+            "PLEASE IMPLEMENT THIS PLAN:",
+            "# Plan: Hook Capture Repair",
+            "",
+            "## Task Breakdown",
+            "- [ ] Capture approved prompt plan",
+            "- [ ] Project todo before implementation",
+          ].join("\n"),
+        }),
+      });
+
+      expect(res.status).toBe(0);
+      expect(res.stdout).toContain("[PlanCaptureGate] Embedded approved plan detected");
+      expect(res.stdout).toContain("Captured plan:");
+      expect(res.stdout).toContain("Updated tasks/todo.md");
+      const plans = readdirSync(join(cwd, "plans")).filter((name) =>
+        /^plan-\d{8}-\d{4}-hook-capture-repair\.md$/.test(name)
+      );
+      expect(plans).toHaveLength(1);
+      expect(readFileSync(join(cwd, ".claude/.active-plan"), "utf-8")).toBe(`plans/${plans[0]}`);
+      const todo = readFileSync(join(cwd, "tasks/todo.md"), "utf-8");
+      expect(todo).toContain(`> **Source Plan**: plans/${plans[0]}`);
+      expect(todo).toContain("> **Status**: Executing");
+      expect(todo).toContain("- [ ] Capture approved prompt plan");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("prompt-guard: captures pure plan-shaped markdown without implementation prefix", () => {
+    const cwd = tmpWorkspace("prompt-guard-plan-shaped-markdown");
+    try {
+      initGitRepo(cwd);
+      installHooks(cwd);
+      installPlanWorkflowHelpers(cwd);
+      mkdirSync(join(cwd, "docs"), { recursive: true });
+      writeFileSync(join(cwd, "docs/spec.md"), "# Product Spec\n");
+
+      const res = runHook("prompt-guard.sh", cwd, {
+        stdin: JSON.stringify({
+          user_message: [
+            "# Enterprise Brain Semantic Index Plan",
+            "",
+            "## Summary",
+            "",
+            "P1 map: keep Postgres as the fact layer.",
+            "P2 path: publish queues semantic projection.",
+            "P3 decision: gbrain stays a rebuildable working layer.",
+            "",
+            "## Key Changes",
+            "",
+            "- Add semantic index projection state.",
+            "- Add agent search gateway.",
+            "",
+            "## Tests",
+            "",
+            "- [ ] Projection excludes Markdown body",
+            "- [ ] Agent search filters unauthorized domains",
+          ].join("\n"),
+        }),
+      });
+
+      expect(res.status).toBe(0);
+      expect(res.stdout).toContain("[PlanCaptureGate] Embedded approved plan detected");
+      expect(res.stdout).toContain("Captured plan:");
+      expect(res.stdout).toContain("Updated tasks/todo.md");
+      const plans = readdirSync(join(cwd, "plans")).filter((name) =>
+        /^plan-\d{8}-\d{4}-enterprise-brain-semantic-index-plan\.md$/.test(name)
+      );
+      expect(plans).toHaveLength(1);
+      const todo = readFileSync(join(cwd, "tasks/todo.md"), "utf-8");
+      expect(todo).toContain("- [ ] Projection excludes Markdown body");
+      expect(todo).toContain("- [ ] Agent search filters unauthorized domains");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("prompt-guard: treats trigger questions with plan examples as questions, not approval", () => {
+    const cwd = tmpWorkspace("prompt-guard-plan-example-question");
+    try {
+      initGitRepo(cwd);
+      installHooks(cwd);
+      installPlanWorkflowHelpers(cwd);
+      mkdirSync(join(cwd, "docs"), { recursive: true });
+      writeFileSync(join(cwd, "docs/spec.md"), "# Product Spec\n");
+
+      const res = runHook("prompt-guard.sh", cwd, {
+        stdin: JSON.stringify({
+          user_message: [
+            "比如我贴已生成的方案，例如这样，会触发吗：",
+            "# Enterprise Brain Semantic Index Plan",
+            "",
+            "## Summary",
+            "",
+            "P1 map: keep Postgres as the fact layer.",
+            "P2 path: publish queues semantic projection.",
+            "P3 decision: execute through a rebuildable working layer.",
+            "",
+            "## Key Changes",
+            "",
+            "- Add semantic index projection state.",
+            "",
+            "## Tests",
+            "",
+            "- [ ] Projection excludes Markdown body",
+          ].join("\n"),
+        }),
+      });
+
+      expect(res.status).toBe(0);
+      expect(res.stdout).not.toContain("[PlanCaptureGate]");
+      expect(existsSync(join(cwd, "plans"))).toBe(false);
+      expect(existsSync(join(cwd, "tasks/todo.md"))).toBe(false);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

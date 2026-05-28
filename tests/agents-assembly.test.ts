@@ -46,7 +46,7 @@ describe("AGENTS Target Assembly", () => {
     expect(output).toContain("Agentic skill routing");
     expect(output).toContain("gstack `plan-eng-review`");
     expect(output).toContain("Waza `/think`, `/hunt`, `/check`");
-    expect(output).toContain("single source of truth for the current active plan");
+    expect(output).toContain(".claude/.active-plan selects the current active plan");
     expect(output).toContain("new-spec.sh");
     expect(output).toContain("new-sprint.sh");
     expect(output).toContain("The main agent decides whether to spawn based on task breadth");

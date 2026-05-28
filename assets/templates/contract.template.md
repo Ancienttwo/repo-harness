@@ -17,6 +17,17 @@ Describe the exact outcome this task must deliver.
 - In scope:
 - Out of scope:
 
+## Workflow Inventory
+
+- Source plan: `{{PLAN_FILE}}`
+- Todo projection: `tasks/todo.md`
+- Review file: `tasks/reviews/{{TASK_SLUG}}.review.md`
+- Notes file: `tasks/notes/{{TASK_SLUG}}.notes.md`
+- Checks file: `.ai/harness/checks/latest.json`
+- Run snapshots: `.ai/harness/runs/`
+- Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
+- Completion gate: `scripts/verify-sprint.sh` must see this contract pass and the review recommend pass.
+
 ## Allowed Paths
 
 ```yaml

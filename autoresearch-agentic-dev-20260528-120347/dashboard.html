@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Autoresearch Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --bg: #f7f8fc;
+      --card: #ffffff;
+      --ink: #1f2937;
+      --muted: #6b7280;
+      --line: #dde3f0;
+      --blue: #90b4ff;
+      --green: #9ad8b1;
+      --red: #f3a6a6;
+      --amber: #f3d18c;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: linear-gradient(180deg, #fbfcff 0%, var(--bg) 100%);
+      color: var(--ink);
+    }
+    main {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 32px 20px 48px;
+    }
+    h1, h2, h3, p { margin: 0; }
+    .header {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .header-copy {
+      display: grid;
+      gap: 8px;
+    }
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(144, 180, 255, 0.16);
+      color: #24428e;
+      font-weight: 600;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 18px;
+      box-shadow: 0 18px 40px rgba(54, 76, 122, 0.08);
+    }
+    .kicker {
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    .metric {
+      font-size: 28px;
+      font-weight: 700;
+    }
+    .subtle {
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.5fr) minmax(320px, 1fr);
+      gap: 20px;
+    }
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      padding: 20px;
+      box-shadow: 0 18px 40px rgba(54, 76, 122, 0.08);
+    }
+    .panel h2 {
+      margin-bottom: 14px;
+      font-size: 18px;
+    }
+    canvas {
+      width: 100% !important;
+      height: 320px !important;
+    }
+    .experiment-bars {
+      display: grid;
+      gap: 10px;
+    }
+    .bar-row {
+      display: grid;
+      gap: 6px;
+    }
+    .bar-meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 13px;
+    }
+    .bar-track {
+      width: 100%;
+      height: 10px;
+      background: #eef2fb;
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    .bar-fill {
+      height: 100%;
+      border-radius: 999px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 16px;
+      font-size: 14px;
+    }
+    th, td {
+      padding: 12px 10px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .eval-list {
+      display: grid;
+      gap: 12px;
+    }
+    .eval-card {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 14px;
+      background: #fcfdff;
+    }
+    .eval-title {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 8px;
+      font-weight: 600;
+    }
+    .tiny {
+      font-size: 12px;
+      color: var(--muted);
+    }
+    @media (max-width: 900px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="header">
+      <div class="header-copy">
+        <h1 id="title">Autoresearch</h1>
+        <p class="subtle" id="objective">Loading objective...</p>
+      </div>
+      <div class="status-pill" id="status-pill">Loading status...</div>
+    </section>
+
+    <section class="grid">
+      <div class="card">
+        <div class="kicker">Baseline</div>
+        <div class="metric" id="baseline-score">-</div>
+        <div class="subtle">First measured pass rate</div>
+      </div>
+      <div class="card">
+        <div class="kicker">Best</div>
+        <div class="metric" id="best-score">-</div>
+        <div class="subtle">Highest pass rate so far</div>
+      </div>
+      <div class="card">
+        <div class="kicker">Experiments</div>
+        <div class="metric" id="experiment-count">0</div>
+        <div class="subtle" id="keep-discard">0 keep / 0 discard</div>
+      </div>
+      <div class="card">
+        <div class="kicker">Current</div>
+        <div class="metric" id="current-experiment">-</div>
+        <div class="subtle">Latest recorded experiment</div>
+      </div>
+    </section>
+
+    <section class="layout">
+      <div class="panel">
+        <h2>Score Progression</h2>
+        <canvas id="score-chart"></canvas>
+        <table>
+          <thead>
+            <tr>
+              <th>Experiment</th>
+              <th>Score</th>
+              <th>Pass rate</th>
+              <th>Status</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody id="results-body"></tbody>
+        </table>
+      </div>
+      <div class="panel">
+        <h2>Experiment Status</h2>
+        <div class="experiment-bars" id="experiment-bars"></div>
+        <h2 style="margin-top: 24px;">Eval Breakdown</h2>
+        <div class="eval-list" id="eval-breakdown"></div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    let chart;
+
+    function statusColor(status) {
+      if (status === "keep") return "var(--green)";
+      if (status === "discard") return "var(--red)";
+      if (status === "baseline") return "var(--blue)";
+      return "var(--amber)";
+    }
+
+    function formatPercent(value) {
+      if (value === null || value === undefined) return "-";
+      return `${Number(value).toFixed(1)}%`;
+    }
+
+    function renderChart(experiments) {
+      const labels = experiments.map((item) => `#${item.id}`);
+      const data = experiments.map((item) => item.pass_rate);
+      const colors = experiments.map((item) => statusColor(item.status));
+      const ctx = document.getElementById("score-chart");
+      if (chart) chart.destroy();
+      chart = new Chart(ctx, {
+        type: "line",
+        data: {
+          labels,
+          datasets: [{
+            label: "Pass rate",
+            data,
+            borderColor: "#6f8fda",
+            backgroundColor: "rgba(144, 180, 255, 0.18)",
+            pointBackgroundColor: colors,
+            pointRadius: 5,
+            fill: true,
+            tension: 0.25
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => `${ctx.parsed.y.toFixed(1)}%`
+              }
+            }
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              suggestedMax: 100,
+              ticks: {
+                callback: (value) => `${value}%`
+              }
+            }
+          }
+        }
+      });
+    }
+
+    function renderTable(experiments) {
+      const body = document.getElementById("results-body");
+      body.innerHTML = "";
+      for (const item of experiments) {
+        const row = document.createElement("tr");
+        row.innerHTML = `
+          <td>#${item.id}</td>
+          <td>${item.score}/${item.max_score}</td>
+          <td>${formatPercent(item.pass_rate)}</td>
+          <td>${item.status}</td>
+          <td>${item.description}</td>
+        `;
+        body.appendChild(row);
+      }
+    }
+
+    function renderBars(experiments) {
+      const root = document.getElementById("experiment-bars");
+      root.innerHTML = "";
+      for (const item of experiments) {
+        const row = document.createElement("div");
+        row.className = "bar-row";
+        row.innerHTML = `
+          <div class="bar-meta">
+            <span>#${item.id} · ${item.status}</span>
+            <span>${formatPercent(item.pass_rate)}</span>
+          </div>
+          <div class="bar-track">
+            <div class="bar-fill" style="width:${item.pass_rate}%; background:${statusColor(item.status)};"></div>
+          </div>
+          <div class="tiny">${item.description}</div>
+        `;
+        root.appendChild(row);
+      }
+    }
+
+    function renderEvals(evals) {
+      const root = document.getElementById("eval-breakdown");
+      root.innerHTML = "";
+      for (const item of evals) {
+        const percent = item.total ? (item.pass_count / item.total) * 100 : 0;
+        const card = document.createElement("div");
+        card.className = "eval-card";
+        card.innerHTML = `
+          <div class="eval-title">
+            <span>${item.name}</span>
+            <span>${item.pass_count}/${item.total}</span>
+          </div>
+          <div class="bar-track">
+            <div class="bar-fill" style="width:${percent}%; background:var(--blue);"></div>
+          </div>
+          <div class="tiny" style="margin-top:8px;">${formatPercent(percent)} pass rate</div>
+        `;
+        root.appendChild(card);
+      }
+    }
+
+    function renderSummary(data) {
+      document.getElementById("title").textContent = data.skill_name || "Autoresearch";
+      document.getElementById("objective").textContent = data.objective || "No objective recorded.";
+      document.getElementById("status-pill").textContent = `Status: ${data.status || "unknown"}`;
+      document.getElementById("baseline-score").textContent = formatPercent(data.baseline_score);
+      document.getElementById("best-score").textContent = formatPercent(data.best_score);
+      document.getElementById("experiment-count").textContent = String(data.experiments.length);
+      const keepCount = data.experiments.filter((item) => item.status === "keep").length;
+      const discardCount = data.experiments.filter((item) => item.status === "discard").length;
+      document.getElementById("keep-discard").textContent = `${keepCount} keep / ${discardCount} discard`;
+      document.getElementById("current-experiment").textContent =
+        data.current_experiment === null || data.current_experiment === undefined
+          ? "-"
+          : `#${data.current_experiment}`;
+    }
+
+    async function refresh() {
+      const response = await fetch(`results.json?ts=${Date.now()}`, { cache: "no-store" });
+      const data = await response.json();
+      renderSummary(data);
+      renderChart(data.experiments);
+      renderTable(data.experiments);
+      renderBars(data.experiments);
+      renderEvals(data.eval_breakdown || []);
+    }
+
+    refresh().catch((error) => {
+      document.getElementById("status-pill").textContent = `Dashboard error: ${error.message}`;
+    });
+    setInterval(() => refresh().catch(() => {}), 10000);
+  </script>
+</body>
+</html>

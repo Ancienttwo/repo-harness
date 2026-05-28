@@ -2,6 +2,12 @@
 
 Sprint contracts are the repo-local agreement between planner, generator, and evaluator.
 
+## Inventory First
+
+- Every execution-ready `plans/plan-*.md` should name the active plan, expected contract, review, notes file, `tasks/todo.md`, `.ai/harness/checks/latest.json`, `.ai/harness/runs/`, scope authority, plan switching rule, and worktree isolation path.
+- Every `tasks/contracts/*.contract.md` should repeat the source plan, todo projection, review, notes, checks, run snapshots, scope gate, and completion gate.
+- If the inventory is incomplete, keep the plan in Draft or revise the contract before editing implementation files.
+
 ## Required Sections
 
 - Goal

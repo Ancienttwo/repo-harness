@@ -15,7 +15,7 @@ fi
 issues=0
 files="$(
   find . \
-    \( -path './.git' -o -path './node_modules' \) -prune -o \
+    \( -path './.git' -o -path './node_modules' -o -path './_ref' -o -path './_ops' -o -path './.worktrees' \) -prune -o \
     -type f \( -name 'AGENTS.md' -o -name 'CLAUDE.md' \) -print \
     | sort
 )"

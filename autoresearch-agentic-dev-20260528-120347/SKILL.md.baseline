@@ -175,12 +175,10 @@ Migration defaults:
 Preserve these semantics:
 
 - `plans/` is the active plan source of truth
-- `plans/plan-*.md` must carry a workflow inventory before implementation: active plan, contract, review, notes, todo projection, checks, run snapshots, scope owner, switching rule, and worktree isolation path
 - `tasks/todo.md` is the active execution checklist
 - `tasks/lessons.md` stores correction-derived rules
 - `tasks/research.md` stores deep repo findings and hidden contracts
 - `tasks/contracts/` and `tasks/reviews/` are completion gates
-- `tasks/contracts/*.contract.md` must repeat the workflow inventory and make `allowed_paths` the edit-scope authority
 - `tasks/workstreams/` stores durable capability progress
 - `docs/CHANGELOG.md` stores release history
 - `.ai/hooks/` is the shared hook source of truth

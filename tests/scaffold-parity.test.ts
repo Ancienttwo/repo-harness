@@ -78,6 +78,8 @@ describe("create-project-dirs scaffold parity", () => {
         "./.claude/templates/spec.template.md",
         "./.codex/hooks.json",
         "./.gitignore",
+        "./AGENTS.md",
+        "./CLAUDE.md",
         "./deploy/README.md",
         "./deploy/env/.gitkeep",
         "./deploy/release-checklists/.gitkeep",
@@ -157,11 +159,20 @@ describe("create-project-dirs scaffold parity", () => {
       expect(gitignore).not.toContain("_ops/secrets/");
       expect(gitignore).not.toContain("!_ops/env/.env.example");
 
+      const agents = readFileSync(join(cwd, "AGENTS.md"), "utf-8");
+      expect(agents).toContain("Repo Agent Context");
+      expect(agents).toBe(readFileSync(join(cwd, "CLAUDE.md"), "utf-8"));
+
       const template = readFileSync(join(cwd, ".claude/templates/plan.template.md"), "utf-8");
       expect(template).toContain("## Agentic Routing");
-      expect(template).toContain("Active plan rule: the latest non-archived `plans/plan-*.md` file is the current plan");
+      expect(template).toContain("## Workflow Inventory");
+      expect(template).toContain("Active plan rule: `.claude/.active-plan` is authoritative when present");
       expect(template).toContain("## Evidence Contract");
       expect(template).toContain("**State/progress path**");
+
+      const contractTemplate = readFileSync(join(cwd, ".claude/templates/contract.template.md"), "utf-8");
+      expect(contractTemplate).toContain("## Workflow Inventory");
+      expect(contractTemplate).toContain("Completion gate: `scripts/verify-sprint.sh` must see this contract pass");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

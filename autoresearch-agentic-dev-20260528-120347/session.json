@@ -1,0 +1,52 @@
+{
+  "skill_name": "agentic-dev",
+  "objective": "Improve the agentic-dev plans-to-contracts workflow by making plan/contract state inventory explicit before execution without weakening approval, scope, or verification gates.",
+  "target_skill_path": "/Users/ancienttwo/Projects/agentic-dev/SKILL.md",
+  "session_dir": "/Users/ancienttwo/Projects/agentic-dev/autoresearch-agentic-dev-20260528-120347",
+  "baseline_copy": "/Users/ancienttwo/Projects/agentic-dev/autoresearch-agentic-dev-20260528-120347/SKILL.md.baseline",
+  "runs_per_experiment": 4,
+  "budget_cap": 2,
+  "test_prompts": [
+    "A user asks to plan a workflow change while an older Draft plan already exists.",
+    "A user pastes an approved plan and asks to implement it immediately.",
+    "An agent is about to edit files under an active tasks/contracts/*.contract.md scope.",
+    "A session resumes with plans/, tasks/todo.md, tasks/contracts/, review, notes, and checks files present."
+  ],
+  "evals": [
+    {
+      "name": "inventory_first",
+      "question": "Does the workflow require a concrete plan/contract inventory before implementation?",
+      "pass": "The plan or contract surface names active plan, contract, review, notes, todo, checks, and allowed path ownership before edits.",
+      "fail": "The workflow can move from planning to edits without a concrete inventory of these artifacts."
+    },
+    {
+      "name": "approval_boundary",
+      "question": "Does the workflow preserve Draft to Approved to Executing gates?",
+      "pass": "Draft planning remains non-executing, approval is required before projection, and direct implementation is blocked without an approved plan.",
+      "fail": "The workflow removes or bypasses the approval gate to satisfy automated runs."
+    },
+    {
+      "name": "artifact_linkage",
+      "question": "Are plans, contracts, reviews, notes, todos, and checks linked by stable paths?",
+      "pass": "Generated artifacts cross-reference the matching plan, contract, review, notes, tasks/todo.md, and checks/runs evidence paths.",
+      "fail": "Generated artifacts leave these paths implicit or only partially linked."
+    },
+    {
+      "name": "representative_verification",
+      "question": "Does verification measure the real workflow rather than only a generic code check?",
+      "pass": "The workflow names contract verification, task workflow checks, review recommendation, and run/check evidence as acceptance surfaces.",
+      "fail": "The workflow relies only on generic unit/typecheck commands or placeholders."
+    },
+    {
+      "name": "concurrency_isolation",
+      "question": "Does the workflow avoid one stale Draft plan globally blocking unrelated planning or execution?",
+      "pass": "It supports independent Draft plans, explicit active markers or switching, and contract worktree isolation for execution.",
+      "fail": "It treats latest Draft as a global blocker without an explicit escape or isolation path."
+    }
+  ],
+  "status": "complete",
+  "created_at": "2026-05-28T04:03:47.199484+00:00",
+  "last_experiment": 1,
+  "best_score": 100.0,
+  "updated_at": "2026-05-28T04:11:02.351259+00:00"
+}

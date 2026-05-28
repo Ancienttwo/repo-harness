@@ -8,7 +8,7 @@
 
 ### Load On Demand
 - `tasks/research.md`: deep codebase analysis and hidden contracts
-- `plans/plan-*.md`: active timestamped plans, with the latest non-archived file treated as current
+- `plans/plan-*.md`: timestamped plan catalog; use `.claude/.active-plan` when present and latest non-archived only as compatibility fallback
 - `tasks/contracts/`: active sprint done definitions
 - `tasks/reviews/`: evaluator verdicts
 - `tasks/notes/`: task-local implementation decisions and tradeoffs
