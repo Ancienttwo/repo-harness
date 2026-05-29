@@ -62,23 +62,24 @@ budget_file=".ai/harness/context-budget/latest.json"
 
 mkdir -p "$global_dir"
 
-python3 - "$global_file" "$repo" "$reason" "$repo_handoff" "$resume_file" "$budget_file" <<'PY_EOF'
+repo_key="$(printf '%s' "$repo" | shasum | awk '{print substr($1, 1, 12)}')"
+
+python3 - "$global_file" "$repo" "$repo_key" "$reason" "$repo_handoff" "$resume_file" "$budget_file" <<'PY_EOF'
 from __future__ import annotations
 
-import hashlib
 import sys
 from datetime import datetime
 from pathlib import Path
 
 global_file = Path(sys.argv[1])
 repo = Path(sys.argv[2])
-reason = sys.argv[3]
-repo_handoff = Path(sys.argv[4])
-resume_file = Path(sys.argv[5])
-budget_file = Path(sys.argv[6])
+repo_key = sys.argv[3]
+reason = sys.argv[4]
+repo_handoff = Path(sys.argv[5])
+resume_file = Path(sys.argv[6])
+budget_file = Path(sys.argv[7])
 
 global_file.parent.mkdir(parents=True, exist_ok=True)
-repo_key = hashlib.sha1(str(repo).encode("utf-8")).hexdigest()[:12]
 start = f"<!-- repo:{repo_key} start -->"
 end = f"<!-- repo:{repo_key} end -->"
 
