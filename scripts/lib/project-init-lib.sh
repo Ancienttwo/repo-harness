@@ -51,6 +51,7 @@ PI_DEFAULT_RUNTIME_ENTRIES=$(cat <<'EOF_RUNTIME'
 .ai/harness/handoff/resume.md
 .ai/harness/context-budget/latest.json
 .ai/harness/capability-context/
+.ai/harness/planning/
 .ai/harness/architecture/events.jsonl
 .ai/harness/active-plan
 .ai/harness/active-worktree
@@ -1417,6 +1418,10 @@ pi_write_harness_policy() {
     "sources": ["codex-plan-mode", "waza-think", "repo-harness-plan"],
     "rule": "Codex Plan mode and Waza think planning should capture decision-complete plans into plans/plan-*.md; implementation approval then projects the active approved plan through scripts/plan-to-todo.sh"
   },
+  "planning": {
+    "pending_orchestration_file": ".ai/harness/planning/pending.json",
+    "source_of_truth": "transient host planning bridge only; plans/ and .ai/harness/active-plan remain authoritative"
+  },
   "sidecar_research": {
     "default": true,
     "output_file": "tasks/research.md",
@@ -1770,7 +1775,7 @@ pi_ensure_harness_state_surface() {
   local mode="${2:-apply}"
 
   if [[ "$mode" != "apply" ]]; then
-    echo "[dry-run] ensure harness policy/context/events/runs/worktrees in $target_dir"
+    echo "[dry-run] ensure harness policy/context/events/runs/worktrees/planning in $target_dir"
     return 0
   fi
 
@@ -1782,6 +1787,7 @@ pi_ensure_harness_state_surface() {
     "$target_dir/.ai/harness/handoff" \
     "$target_dir/.ai/harness/context-budget" \
     "$target_dir/.ai/harness/failures" \
+    "$target_dir/.ai/harness/planning" \
     "$target_dir/.ai/harness/architecture" \
     "$target_dir/.ai/harness/worktrees" \
     "$target_dir/docs/architecture/domains" \

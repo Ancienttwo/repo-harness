@@ -4,11 +4,18 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR/.."
 
+_WF_LIB=".ai/hooks/lib/workflow-state.sh"
+if [[ -f "$_WF_LIB" ]]; then
+  # shellcheck source=/dev/null
+  . "$_WF_LIB"
+fi
+
 usage() {
   cat <<'USAGE_EOF'
 Usage:
   scripts/capture-plan.sh --slug <slug> [--title <title>] [--status Draft|Approved]
                           [--source <codex-plan|waza-think|repo-harness-plan>]
+                          [--orchestration-kind <kind>] [--source-ref <ref>]
                           [--route <route>] [--body-file <file>] [--execute]
 
 Reads a finished planning note from stdin or --body-file and stores it as a
@@ -64,6 +71,8 @@ title=""
 status="Draft"
 source_name="codex-plan-or-waza-think"
 route="planning"
+orchestration_kind="host-plan"
+source_ref=""
 body_file=""
 execute=0
 set_active=1
@@ -88,6 +97,16 @@ while [[ $# -gt 0 ]]; do
     --source)
       [[ -n "${2:-}" ]] || { echo "Error: --source requires a value" >&2; usage; exit 1; }
       source_name="$2"
+      shift 2
+      ;;
+    --orchestration-kind)
+      [[ -n "${2:-}" ]] || { echo "Error: --orchestration-kind requires a value" >&2; usage; exit 1; }
+      orchestration_kind="$2"
+      shift 2
+      ;;
+    --source-ref)
+      [[ -n "${2:-}" ]] || { echo "Error: --source-ref requires a value" >&2; usage; exit 1; }
+      source_ref="$2"
       shift 2
       ;;
     --route)
@@ -174,6 +193,8 @@ cat > "$plan_file" <<PLAN_EOF
 > **Created**: ${timestamp}
 > **Slug**: ${slug}
 > **Planning Source**: ${source_name}
+> **Orchestration Kind**: ${orchestration_kind}
+> **Source Ref**: ${source_ref:-"(none)"}
 > **Spec**: \`docs/spec.md\`
 > **Research**: See \`tasks/research.md\`
 > **Sprint Contract**: \`tasks/contracts/${slug}.contract.md\`
@@ -183,6 +204,7 @@ cat > "$plan_file" <<PLAN_EOF
 ## Agentic Routing
 - Selected route: ${route}
 - Routing reason: Captured from ${source_name} planning output.
+- Source ref: ${source_ref:-"(none)"}
 - Due diligence:
   - P1 map: See captured planning output below.
   - P2 trace: See captured planning output below.
@@ -262,6 +284,12 @@ PLAN_EOF
 
 if [[ "$set_active" -eq 1 ]]; then
   write_active_plan_marker "$plan_file"
+fi
+
+if declare -F workflow_clear_pending_orchestration >/dev/null 2>&1; then
+  workflow_clear_pending_orchestration
+else
+  rm -f .ai/harness/planning/pending.json
 fi
 
 echo "Captured plan: $plan_file"

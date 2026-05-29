@@ -702,6 +702,52 @@
 ### Verification
 - `bun test` covers diagnostic execution questions, stale/foreign marker self-heal, capture/worktree marker transfer, generated CodeGraph policy expectations, and migration idempotence.
 
+## 2026-05-30 Review/Check Prompt Guard Boundary
+
+### Symptom
+- Codex `UserPromptSubmit` blocked a review/check prompt with `PlanStatusGuard` even though the prompt only asked to prepare or run evaluator evidence, for example `验收开始：基于 active plan 执行 checklist，告诉对方模型验收什么。`
+- The observed session came from Codex Plan mode: a Draft `plans/plan-*.md` existed, but no active-plan marker selected it yet, so the user's follow-up question lost planning state before the hook classified the prompt.
+- The Codex Hooks summary also showed raw `{"guard":"PlanStatusGuard",...}` telemetry because the dispatcher mirrored failing hook stdout into stderr.
+
+### Root Cause
+- `prompt-guard.sh:is_implement_intent` treated any `execute` / `执行` token as implementation intent before separating review/check/release routing, so "执行 checklist" and "执行 Waza /check" entered the implementation gate and hit the missing active-plan block.
+- `run-hook.sh` captured Codex failure status after the `if` compound command instead of in an `else` branch, so failing hooks returned success in direct repro; on failure it also mirrored structured telemetry JSON to stderr.
+
+### Fix Boundary
+- Review/check/release prompts now route through a dedicated advisory intent unless they contain explicit coding verbs such as `implement`, `实现`, `开始写`, `动手`, or `开干`.
+- Direct implementation approvals and bug-fix implementation prompts still enter the plan gate.
+- Codex non-`SessionStart` hook failures now preserve the real exit status and filter structured telemetry JSON from user-facing stderr while keeping direct hook stdout telemetry unchanged for trace consumers.
+
+## 2026-05-30 ResearchGate UserPrompt Boundary
+
+### Symptom
+- A discussion prompt after Codex Plan state loss was hard-blocked by `ResearchGate` because `tasks/research.md` was older than the latest Draft plan.
+- The hook fired before the agent could explain the stale Plan-mode state or decide whether fresh research was actually needed.
+- When `tasks/research.md` was fresh, the same discussion shape could still trigger hook-driven Draft plan creation because `is_think_plan_start_intent` matched planning words before excluding diagnostic questions.
+
+### Fix Boundary
+- `ResearchGate` is now advisory on `UserPromptSubmit`: stale research prevents hook-driven automatic Draft plan creation, but it no longer exits 2 or emits structured block telemetry.
+- Diagnostic continuation prompts now short-circuit plan creation/refinement/start classifiers, so "继续讨论 / 为什么 / hook / plan 怎么设计" stays conversational instead of mutating `plans/`.
+- Implementation and done paths still keep their hard gates; the relaxed boundary only applies to semantic plan-start detection before any tool mutation.
+
+## 2026-05-30 Pending Plan Orchestration Capture Boundary
+
+### Map
+- Runtime path remains `UserPromptSubmit -> .ai/hooks/run-hook.sh -> .ai/hooks/prompt-guard.sh`; host planning UIs are transient and repo authority remains `plans/plan-*.md` plus `.ai/harness/active-plan`.
+- New transient bridge is `.ai/harness/planning/pending.json`, configured by `.ai/harness/policy.json` `planning.pending_orchestration_file` and mirrored in generated assets.
+- `PlanDiscussionGate` is advisory only. `PlanCaptureGate` is non-blocking capture guidance only when a fresh pending marker exists and no active repo plan is selected.
+
+### Trace
+- A `$think` / plan-start prompt creates a Draft plan through `scripts/ensure-task-workflow.sh --new-plan` and records pending orchestration metadata: host, kind, prompt slug, optional Draft plan path, and source ref.
+- Follow-up discussion prompts with plan/workflow/hook context and refinement/question language do not start another Draft plan and do not enter implementation gates.
+- Explicit implementation prompts with a fresh pending marker return `PlanCaptureGate` and instruct the main agent to run `scripts/capture-plan.sh`; stale pending markers fall back to the original hard `PlanStatusGuard`.
+- `scripts/capture-plan.sh` and `scripts/plan-to-todo.sh` clear the pending marker after successful capture/projection.
+
+### Decision
+- The pending marker is intentionally not an active-plan substitute. It only represents "host/thread planning is still being discussed or needs capture."
+- Bug-fix implementation prompts still use the hard plan gate, even if stale planning context exists, because a pending design discussion is not evidence that a bug-fix plan was approved.
+- `SessionStart` injects pending capture context so Codex resume/compact does not force the user to remember that the plan body still needs to be captured.
+
 ## 2026-05-29 Contract Worktree Done/Archive Split
 
 ### Symptom

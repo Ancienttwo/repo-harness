@@ -154,6 +154,47 @@ ${pending_lines}
 EOF_CONTEXT
 }
 
+pending_plan_capture_context() {
+  local active_plan summary draft_path prompt_slug kind source_ref capture_source source_arg
+
+  workflow_pending_orchestration_is_fresh || return 1
+  active_plan="$(get_active_plan || true)"
+  [[ -z "$active_plan" || ! -f "$active_plan" ]] || return 1
+
+  summary="$(workflow_pending_orchestration_summary)"
+  draft_path="$(workflow_pending_orchestration_field draft_plan_path 2>/dev/null || true)"
+  prompt_slug="$(workflow_pending_orchestration_field prompt_slug 2>/dev/null || true)"
+  kind="$(workflow_pending_orchestration_field kind 2>/dev/null || true)"
+  source_ref="$(workflow_pending_orchestration_field source_ref 2>/dev/null || true)"
+  capture_source="${kind:-host-plan}"
+  source_arg=""
+  if [[ -n "$source_ref" ]]; then
+    source_arg=" --source-ref <source-ref>"
+  fi
+
+  cat <<EOF_CONTEXT
+# Pending Plan Capture
+
+A host/thread planning discussion is pending capture and no active repo plan is selected.
+
+- State: ${summary}
+- Draft plan: ${draft_path:-"(none captured yet)"}
+- Rule: continue discussion freely, but do not edit implementation files until the final plan body is captured into \`plans/\`.
+
+Capture the decision-complete plan body:
+
+\`\`\`bash
+printf '%s\n' '<decision-complete plan body>' | bash scripts/capture-plan.sh --slug ${prompt_slug:-<slug>} --title <title> --status Draft --source ${capture_source} --orchestration-kind ${capture_source} --route planning${source_arg}
+\`\`\`
+
+If the user has already approved implementation:
+
+\`\`\`bash
+printf '%s\n' '<approved plan body>' | bash scripts/capture-plan.sh --slug ${prompt_slug:-<slug>} --title <title> --status Approved --source ${capture_source} --orchestration-kind ${capture_source} --route planning --execute${source_arg}
+\`\`\`
+EOF_CONTEXT
+}
+
 context=""
 if resume_current_for_handoff; then
   if context_budget_active \
@@ -175,17 +216,21 @@ if [[ -n "$pending_context" ]]; then
   fi
 fi
 
-# Cross-review availability note for Codex. On the Codex host the hook dispatcher
-# swallows prompt-guard's success stdout, so the per-moment [CrossReview] nudges
-# emitted there never surface; deliver a one-time availability note here instead.
-# On the Claude host prompt-guard handles the contextual nudges, so skip it.
-if [[ "${HOOK_HOST:-}" == "codex" ]]; then
-  cross_review_note="[CrossReview] For an independent cross-model second opinion (a different training distribution has non-overlapping blind spots), run /claude-review on a diff before merging, on a hard bug, or after writing a spec or tests. The agent decides when it is worth it."
+pending_capture_context="$(pending_plan_capture_context || true)"
+if [[ -n "$pending_capture_context" ]]; then
   if [[ -n "$context" ]]; then
-    context="${context}"$'\n'"${cross_review_note}"
+    context="${context}"$'\n'"${pending_capture_context}"
   else
-    context="$cross_review_note"
+    context="$pending_capture_context"
   fi
+fi
+
+# Cross-review availability for Codex. The dispatcher swallows prompt-guard's
+# success stdout on Codex, so attach a short reminder only when SessionStart is
+# already injecting actionable context.
+if [[ "${HOOK_HOST:-}" == "codex" && -n "$context" ]]; then
+  cross_review_note="[CrossReview] High-risk diff/spec/test/debug only: run /claude-review when a second model view is worth the tokens."
+  context="${context}"$'\n'"${cross_review_note}"
 fi
 
 [[ -n "$context" ]] || exit 0

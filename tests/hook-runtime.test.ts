@@ -178,6 +178,19 @@ describe("Hook runtime behavior", () => {
       expect(reviewRes.status).toBe(0);
       expect(reviewRes.stdout).toContain("[WazaRoute] Review/release intent detected");
       expect(reviewRes.stdout).toContain("Waza /check");
+
+      for (const prompt of [
+        "验收开始：基于 active plan 执行 checklist，告诉对方模型验收什么。",
+        "请执行 Waza /check 验收当前改动。",
+      ]) {
+        const reviewExecuteRes = runHook("prompt-guard.sh", cwd, {
+          stdin: JSON.stringify({ prompt }),
+        });
+        expect(reviewExecuteRes.status).toBe(0);
+        expect(reviewExecuteRes.stdout).toContain("[WazaRoute] Review/release intent detected");
+        expect(reviewExecuteRes.stdout).not.toContain("[PlanStatusGuard]");
+        expect(reviewExecuteRes.stdout).not.toContain("[BDD] Feature intent detected");
+      }
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -939,13 +952,20 @@ describe("Hook runtime behavior", () => {
       expect(staleRes.status).toBe(0);
       expect(staleRes.stdout.trim()).toBe("");
 
+      const idleCodexRes = runHook("session-start-context.sh", cwd, { env: { HOOK_HOST: "codex" } });
+      expect(idleCodexRes.status).toBe(0);
+      expect(idleCodexRes.stdout.trim()).toBe("");
+
       writeFileSync(join(cwd, ".ai/harness/context-budget/latest.json"), JSON.stringify({ zone: "red" }) + "\n");
 
-      const res = runHook("session-start-context.sh", cwd);
+      const res = runHook("session-start-context.sh", cwd, { env: { HOOK_HOST: "codex" } });
       expect(res.status).toBe(0);
       expect(res.stdout).toContain("SessionStart");
       expect(res.stdout).toContain("additionalContext");
       expect(res.stdout).toContain("fresh Codex session");
+      expect(res.stdout).toContain("[CrossReview]");
+      expect(res.stdout).toContain("/claude-review");
+      expect(res.stdout).toContain("worth the tokens");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -1011,6 +1031,49 @@ describe("Hook runtime behavior", () => {
       expect(res.stdout).toContain("Capability Context Queue");
       expect(res.stdout).toContain("repo-harness capability-context sync --pending --apply");
       expect(res.stdout).toContain("apps-web");
+      expect(res.stdout).not.toContain("[CrossReview]");
+
+      const codexRes = runHook("session-start-context.sh", cwd, { env: { HOOK_HOST: "codex" } });
+      expect(codexRes.status).toBe(0);
+      expect(codexRes.stdout).toContain("Capability Context Queue");
+      expect(codexRes.stdout).toContain("[CrossReview]");
+      expect(codexRes.stdout).toContain("/claude-review");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("session-start-context injects pending plan capture reminder without a resume packet", () => {
+    const cwd = tmpWorkspace("session-start-pending-plan-capture");
+    try {
+      installHooks(cwd);
+      mkdirSync(join(cwd, ".ai/harness/planning"), { recursive: true });
+      writeFileSync(
+        join(cwd, ".ai/harness/planning/pending.json"),
+        JSON.stringify(
+          {
+            version: 1,
+            kind: "dynamic-workflow",
+            host: "codex",
+            prompt_slug: "dynamic-workflow-plan",
+            draft_plan_path: "plans/plan-20260530-0016-dynamic-workflow-plan.md",
+            source_ref: "dynamic workflow plan discussion",
+            expected_artifact: "plans/plan-*.md",
+            cwd,
+            created_at: "2026-05-30T00:16:00+0800",
+          },
+          null,
+          2
+        ) + "\n"
+      );
+
+      const res = runHook("session-start-context.sh", cwd);
+
+      expect(res.status).toBe(0);
+      expect(res.stdout).toContain("Pending Plan Capture");
+      expect(res.stdout).toContain("dynamic-workflow");
+      expect(res.stdout).toContain("capture-plan.sh");
+      expect(res.stdout).toContain("do not edit implementation files");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -1057,6 +1120,43 @@ describe("Hook runtime behavior", () => {
       expect(res.status).toBe(0);
       expect(res.stdout).toBe("");
       expect(res.stderr).toBe("");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("run-hook preserves Codex failure status without surfacing telemetry JSON", () => {
+    const cwd = tmpWorkspace("run-hook-codex-failure");
+    try {
+      installHooks(cwd);
+      mkdirSync(join(cwd, "docs"), { recursive: true });
+      writeFileSync(join(cwd, "docs/spec.md"), "# Product Spec\n");
+
+      const blockRes = spawnSync("bash", [join(cwd, ".ai/hooks/run-hook.sh"), "prompt-guard.sh"], {
+        cwd,
+        input: JSON.stringify({ prompt: "开始执行" }),
+        encoding: "utf-8",
+        env: { ...process.env, HOOK_HOST: "codex", HOOK_REPO_ROOT: cwd },
+      });
+
+      expect(blockRes.status).toBe(2);
+      expect(blockRes.stdout).toBe("");
+      expect(blockRes.stderr).toContain("[PlanStatusGuard]");
+      expect(blockRes.stderr).not.toContain('{"guard":');
+      expect(blockRes.stderr).not.toContain('"guard":"PlanStatusGuard"');
+
+      const reviewRes = spawnSync("bash", [join(cwd, ".ai/hooks/run-hook.sh"), "prompt-guard.sh"], {
+        cwd,
+        input: JSON.stringify({
+          prompt: "验收开始：基于 active plan 执行 checklist，告诉对方模型验收什么。",
+        }),
+        encoding: "utf-8",
+        env: { ...process.env, HOOK_HOST: "codex", HOOK_REPO_ROOT: cwd },
+      });
+
+      expect(reviewRes.status).toBe(0);
+      expect(reviewRes.stdout).toBe("");
+      expect(reviewRes.stderr).toBe("");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -1286,6 +1386,68 @@ describe("Hook runtime behavior", () => {
     }
   });
 
+  test("prompt-guard: stale research does not block discussion or auto-create a plan", () => {
+    const cwd = tmpWorkspace("prompt-guard-research-advisory");
+    try {
+      initGitRepo(cwd);
+      installHooks(cwd);
+      installPlanWorkflowHelpers(cwd);
+      mkdirSync(join(cwd, "tasks"), { recursive: true });
+      mkdirSync(join(cwd, "plans"), { recursive: true });
+      writeFileSync(join(cwd, "tasks/research.md"), "# Research\n\nOlder finding.\n");
+      writeFileSync(
+        join(cwd, "plans/plan-20260530-0016-existing.md"),
+        "# Plan: existing\n\n> **Status**: Draft\n"
+      );
+      const oldTime = new Date("2026-05-30T00:00:00Z");
+      const newTime = new Date("2026-05-30T00:16:00Z");
+      utimesSync(join(cwd, "tasks/research.md"), oldTime, oldTime);
+      utimesSync(join(cwd, "plans/plan-20260530-0016-existing.md"), newTime, newTime);
+
+      const beforePlans = readdirSync(join(cwd, "plans"));
+      const res = runHook("prompt-guard.sh", cwd, {
+        stdin: JSON.stringify({
+          user_message: "plan this hook interruption recovery flow with $think",
+        }),
+      });
+      const afterPlans = readdirSync(join(cwd, "plans"));
+
+      expect(res.status).toBe(0);
+      expect(res.stdout).toContain("[ResearchGate] Advisory");
+      expect(res.stdout).toContain("[PlanStartGate] Skipping automatic Draft plan workflow");
+      expect(res.stdout).not.toContain('"guard":"ResearchGate"');
+      expect(afterPlans).toEqual(beforePlans);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("prompt-guard: continuation diagnostics do not start plan workflow", () => {
+    const cwd = tmpWorkspace("prompt-guard-diagnostic-discussion");
+    try {
+      initGitRepo(cwd);
+      installHooks(cwd);
+      installPlanWorkflowHelpers(cwd);
+      mkdirSync(join(cwd, "tasks"), { recursive: true });
+      writeFileSync(join(cwd, "tasks/research.md"), "# Research\n\nFresh finding.\n");
+
+      const res = runHook("prompt-guard.sh", cwd, {
+        stdin: JSON.stringify({
+          user_message:
+            "中断了，继续讨论：Codex Plan 状态丢了以后，hook 为什么以为到了下一步？这个 plan 逻辑怎么设计？",
+        }),
+      });
+
+      expect(res.status).toBe(0);
+      expect(res.stdout).toContain("[WazaRoute] Agent workflow/tooling intent detected");
+      expect(res.stdout).not.toContain("[ResearchGate]");
+      expect(res.stdout).not.toContain("[PlanStartGate]");
+      expect(existsSync(join(cwd, "plans"))).toBe(false);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   test("prompt-guard: starts a Draft plan workflow when Waza think planning begins", () => {
     const cwd = tmpWorkspace("prompt-guard-plan-start");
     try {
@@ -1305,6 +1467,68 @@ describe("Hook runtime behavior", () => {
       );
       expect(plans).toHaveLength(1);
       expect(readFileSync(join(cwd, "plans", plans[0]), "utf-8")).toContain("> **Status**: Draft");
+      const pending = JSON.parse(readFileSync(join(cwd, ".ai/harness/planning/pending.json"), "utf-8"));
+      expect(pending.kind).toBe("waza-think");
+      expect(pending.prompt_slug).toBe("plan-this-hook-capture-flow-with-think");
+      expect(pending.draft_plan_path).toBe(`plans/${plans[0]}`);
+      expect(pending.expected_artifact).toBe("plans/plan-*.md");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("prompt-guard: keeps multi-turn pending plan discussion out of implementation gates", () => {
+    const cwd = tmpWorkspace("prompt-guard-pending-plan-discussion");
+    try {
+      initGitRepo(cwd);
+      installHooks(cwd);
+      installPlanWorkflowHelpers(cwd);
+
+      const start = runHook("prompt-guard.sh", cwd, {
+        stdin: JSON.stringify({ user_message: "plan this hook capture flow with $think" }),
+      });
+      expect(start.status).toBe(0);
+      const beforePlans = readdirSync(join(cwd, "plans")).filter((name) => name.startsWith("plan-"));
+
+      const res = runHook("prompt-guard.sh", cwd, {
+        stdin: JSON.stringify({
+          user_message:
+            "同意，要解决用户可能需要多轮讨论才能落实plan的情况，否则一追问就被hook判死型。这里的处理不能过于机械",
+        }),
+      });
+      const afterPlans = readdirSync(join(cwd, "plans")).filter((name) => name.startsWith("plan-"));
+
+      expect(res.status).toBe(0);
+      expect(res.stdout).toContain("[PlanDiscussionGate]");
+      expect(res.stdout).toContain("continuing discussion, not implementation");
+      expect(res.stdout).not.toContain("[PlanStartGate]");
+      expect(res.stdout).not.toContain("[PlanStatusGuard]");
+      expect(afterPlans).toEqual(beforePlans);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("prompt-guard: explicit execution with fresh pending plan asks for capture instead of hard-blocking", () => {
+    const cwd = tmpWorkspace("prompt-guard-pending-plan-execute");
+    try {
+      initGitRepo(cwd);
+      installHooks(cwd);
+      installPlanWorkflowHelpers(cwd);
+
+      const start = runHook("prompt-guard.sh", cwd, {
+        stdin: JSON.stringify({ user_message: "plan this hook capture flow with $think" }),
+      });
+      expect(start.status).toBe(0);
+
+      const res = runHook("prompt-guard.sh", cwd, {
+        stdin: JSON.stringify({ user_message: "开始实现" }),
+      });
+
+      expect(res.status).toBe(0);
+      expect(res.stdout).toContain("[PlanCaptureGate] Implementation requested while a pending plan/orchestration discussion has not been captured.");
+      expect(res.stdout).toContain("capture-plan.sh");
+      expect(res.stdout).not.toContain('"guard":"PlanStatusGuard"');
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -1625,6 +1849,72 @@ describe("Hook runtime behavior", () => {
       expect(res.stdout).toContain("No active plan found in plans/");
       expect(res.stdout).toContain("capture-plan.sh");
       expect(res.stdout).toContain("ensure-task-workflow.sh");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("prompt-guard: stale pending plan marker does not bypass missing active-plan guard", () => {
+    const cwd = tmpWorkspace("prompt-guard-stale-pending-plan");
+    try {
+      initGitRepo(cwd);
+      installHooks(cwd);
+      mkdirSync(join(cwd, "docs"), { recursive: true });
+      mkdirSync(join(cwd, ".ai/harness/planning"), { recursive: true });
+      writeFileSync(join(cwd, "docs/spec.md"), "# Product Spec\n");
+      writeFileSync(
+        join(cwd, ".ai/harness/planning/pending.json"),
+        JSON.stringify(
+          {
+            version: 1,
+            kind: "codex-plan",
+            host: "codex",
+            prompt_slug: "old-plan",
+            draft_plan_path: "",
+            source_ref: "old",
+            expected_artifact: "plans/plan-*.md",
+            cwd,
+            created_at: "2026-01-01T00:00:00+0000",
+          },
+          null,
+          2
+        ) + "\n"
+      );
+      const oldTime = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000);
+      utimesSync(join(cwd, ".ai/harness/planning/pending.json"), oldTime, oldTime);
+
+      const res = runHook("prompt-guard.sh", cwd, {
+        stdin: JSON.stringify({ user_message: "开始实现" }),
+      });
+
+      expect(res.status).toBe(2);
+      expect(res.stdout).toContain("[PlanStatusGuard]");
+      expect(res.stdout).not.toContain("[PlanCaptureGate] Implementation requested while a pending plan");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("prompt-guard: bug-fix execution wording stays on hard plan gate even with pending plan marker", () => {
+    const cwd = tmpWorkspace("prompt-guard-pending-bug-fix");
+    try {
+      initGitRepo(cwd);
+      installHooks(cwd);
+      mkdirSync(join(cwd, "docs"), { recursive: true });
+      mkdirSync(join(cwd, ".ai/harness/planning"), { recursive: true });
+      writeFileSync(join(cwd, "docs/spec.md"), "# Product Spec\n");
+      writeFileSync(
+        join(cwd, ".ai/harness/planning/pending.json"),
+        JSON.stringify({ version: 1, kind: "codex-plan", host: "codex", prompt_slug: "pending", expected_artifact: "plans/plan-*.md" }) + "\n"
+      );
+
+      const res = runHook("prompt-guard.sh", cwd, {
+        stdin: JSON.stringify({ user_message: "go ahead with the bug fix" }),
+      });
+
+      expect(res.status).toBe(2);
+      expect(res.stdout).toContain("[PlanStatusGuard]");
+      expect(res.stdout).not.toContain("[PlanCaptureGate] Implementation requested while a pending plan");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

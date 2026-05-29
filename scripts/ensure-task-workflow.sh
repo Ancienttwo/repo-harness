@@ -368,7 +368,7 @@ TODO_EOF
 }
 
 ensure_auxiliary_files() {
-  mkdir -p plans plans/archive tasks/archive tasks/contracts tasks/reviews tasks/notes tasks/workstreams docs/architecture/domains docs/architecture/modules docs/architecture/requests docs/architecture/snapshots docs/architecture/diagrams scripts .ai/context .ai/harness/checks .ai/harness/handoff .ai/harness/context-budget .ai/harness/failures .ai/harness/architecture .ai/harness/worktrees .ai/harness/runs
+  mkdir -p plans plans/archive tasks/archive tasks/contracts tasks/reviews tasks/notes tasks/workstreams docs/architecture/domains docs/architecture/modules docs/architecture/requests docs/architecture/snapshots docs/architecture/diagrams scripts .ai/context .ai/harness/checks .ai/harness/handoff .ai/harness/context-budget .ai/harness/failures .ai/harness/planning .ai/harness/architecture .ai/harness/worktrees .ai/harness/runs
 
   if [[ ! -f "docs/spec.md" ]]; then
     cat > docs/spec.md <<'SPEC_EOF'
@@ -661,6 +661,10 @@ ARCHITECTURE_INDEX_EOF
     "script": "scripts/capture-plan.sh",
     "sources": ["codex-plan-mode", "waza-think", "repo-harness-plan"],
     "rule": "Codex Plan mode and Waza think planning should capture decision-complete plans into plans/plan-*.md; implementation approval then projects the active approved plan through scripts/plan-to-todo.sh"
+  },
+  "planning": {
+    "pending_orchestration_file": ".ai/harness/planning/pending.json",
+    "source_of_truth": "transient host planning bridge only; plans/ and .ai/harness/active-plan remain authoritative"
   },
   "sidecar_research": {
     "default": true,

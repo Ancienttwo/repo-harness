@@ -29,9 +29,10 @@ Plan: `~/.claude/plans/vibe-coding-claude-code-codex-shimmying-balloon.md`.
   dispatcher swallows a hook's success stdout (only surfaces on failure), so the
   `[CrossReview]` lines `prompt-guard.sh` emits never reach Codex. Claude gets the
   per-moment nudges via `prompt-guard.sh` (review/release branch → `codex-review`,
-  bug-fix branch → debug hint); Codex gets a one-time availability note via
-  `session-start-context.sh` (the only hook that runs normally on Codex), gated to
-  `HOOK_HOST=codex` → `claude-review`. Advisory only; the agent decides.
+  bug-fix branch → debug hint); Codex gets a short availability note via
+  `session-start-context.sh` only when SessionStart is already injecting actionable
+  context, gated to `HOOK_HOST=codex` → `claude-review`. Advisory only; the agent
+  decides, and idle session starts stay quiet.
 - **Review scope includes dirty worktrees.** The cross-review gate must inspect the
   current reviewable diff, not only `base...HEAD`: committed branch diff, staged
   changes, unstaged tracked changes, and untracked files are all in scope. A peer

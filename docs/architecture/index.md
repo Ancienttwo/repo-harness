@@ -7,6 +7,7 @@
 - Latest snapshot: [repo-harness plugin review](snapshots/2026-05-25-repo-harness-plugin-review.md) (2026-05-25)
 - Latest semantic diagram: [repo-harness plugin review Mermaid](snapshots/2026-05-25-repo-harness-plugin-review.md#semantic-diagram) (2026-05-25)
 - Latest human diagram: [repo-harness plugin architecture](diagrams/agentic-dev-plugin-architecture.html) (2026-05-25)
+- Runtime hook adapter semantic diagram: [hook adapter workflow Mermaid](modules/runtime-harness/hook-adapters.md#semantic-diagram) (2026-05-30)
 
 ## System Boundary
 

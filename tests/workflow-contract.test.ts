@@ -110,6 +110,7 @@ describe("workflow contract manifest", () => {
     expect(contract.artifacts.requiredDirectories).toContain("docs/architecture/domains");
     expect(contract.artifacts.requiredDirectories).toContain("docs/architecture/modules");
     expect(contract.artifacts.requiredDirectories).toContain(".ai/harness/worktrees");
+    expect(contract.artifacts.requiredDirectories).toContain(".ai/harness/planning");
     expect(contract.artifacts.requiredDirectories).toContain("deploy/scripts");
     expect(contract.artifacts.requiredDirectories).toContain("deploy/submissions");
     expect(contract.artifacts.requiredDirectories).toContain("deploy/sql");
@@ -121,6 +122,7 @@ describe("workflow contract manifest", () => {
     expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/handoff/resume.md");
     expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/context-budget/latest.json");
     expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/capability-context/");
+    expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/planning/");
     expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/checks/latest.json");
     expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/architecture/events.jsonl");
     expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/active-plan");
@@ -192,7 +194,8 @@ describe("workflow contract manifest", () => {
     expect(runtimeFiles).toContain(".ai/harness/checks/latest.json");
     expect(runtimeFiles).toContain(".ai/harness/active-plan");
     expect(runtimeFiles).toContain(".ai/harness/active-worktree");
-    const placeholderBackedRuntime = new Set([".ai/harness/runs/.gitkeep", ".ai/harness/worktrees/"]);
+    expect(runtimeFiles).toContain(".ai/harness/planning/");
+    const placeholderBackedRuntime = new Set([".ai/harness/runs/.gitkeep", ".ai/harness/worktrees/", ".ai/harness/planning/"]);
 
     for (const file of runtimeFiles.filter((name) => !placeholderBackedRuntime.has(name))) {
       const tracked = spawnSync("git", ["ls-files", "--error-unmatch", file], {
@@ -209,6 +212,7 @@ describe("workflow contract manifest", () => {
     const gitignore = readFileSync(join(ROOT, ".gitignore"), "utf-8");
     expect(gitignore).toContain(".ai/harness/checks/latest.json");
     expect(gitignore).toContain(".ai/harness/handoff/current.md");
+    expect(gitignore).toContain(".ai/harness/planning/");
     expect(gitignore).toContain(".ai/harness/worktrees/");
   });
 });

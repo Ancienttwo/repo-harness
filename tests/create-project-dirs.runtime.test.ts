@@ -79,6 +79,7 @@ describe("create-project-dirs runtime smoke", () => {
       expect(existsSync(join(cwd, ".ai/harness/handoff/current.md"))).toBe(true);
       expect(existsSync(join(cwd, ".ai/harness/handoff/resume.md"))).toBe(true);
       expect(existsSync(join(cwd, ".ai/harness/context-budget/latest.json"))).toBe(true);
+      expect(existsSync(join(cwd, ".ai/harness/planning"))).toBe(true);
       expect(existsSync(join(cwd, ".ai/harness/runs/.gitkeep"))).toBe(true);
       expect(existsSync(join(cwd, ".ai/harness/worktrees/.gitkeep"))).toBe(true);
       expect(existsSync(join(cwd, "scripts/new-spec.sh"))).toBe(true);
@@ -155,6 +156,7 @@ describe("create-project-dirs runtime smoke", () => {
       expect(workflowContract.artifacts.requiredFiles).not.toContain(".codex/hooks.json");
       expect(workflowContract.artifacts.runtimeFiles).toContain(".ai/harness/context-budget/latest.json");
       expect(workflowContract.artifacts.runtimeFiles).toContain(".ai/harness/handoff/resume.md");
+      expect(workflowContract.artifacts.runtimeFiles).toContain(".ai/harness/planning/");
       expect(workflowContract.artifacts.runtimeFiles).toContain(".ai/harness/architecture/events.jsonl");
       expect(workflowContract.artifacts.runtimeFiles).toContain(".ai/harness/active-plan");
       expect(workflowContract.artifacts.runtimeFiles).toContain(".ai/harness/active-worktree");
@@ -174,6 +176,7 @@ describe("create-project-dirs runtime smoke", () => {
       expect(workflowContract.artifacts.requiredDirectories).toContain("tasks/notes");
       expect(workflowContract.artifacts.requiredDirectories).toContain("tasks/workstreams");
       expect(workflowContract.artifacts.requiredDirectories).toContain(".ai/harness/worktrees");
+      expect(workflowContract.artifacts.requiredDirectories).toContain(".ai/harness/planning");
       expect(workflowContract.artifacts.requiredDirectories).toContain("docs/architecture/domains");
       expect(workflowContract.artifacts.requiredDirectories).toContain("docs/architecture/modules");
       expect(workflowContract.agenticDevelopment.routing.complexEngineeringPlan).toBe("gstack:plan-eng-review");
@@ -265,6 +268,8 @@ describe("create-project-dirs runtime smoke", () => {
       expect(policy.worktree_strategy.validation_route).toBe("waza:check");
       expect(policy.context_budget.zones).toEqual({ yellow: 0.55, orange: 0.7, red: 0.8 });
       expect(policy.handoff_resume.auto_start_new_session).toBe(false);
+      expect(policy.planning.pending_orchestration_file).toBe(".ai/harness/planning/pending.json");
+      expect(policy.planning.source_of_truth).toContain("transient host planning bridge");
       expect(policy.sidecar_research.output_file).toBe("tasks/research.md");
       expect(policy.sidecar_research.preferred_runners).toEqual([
         "subagent",

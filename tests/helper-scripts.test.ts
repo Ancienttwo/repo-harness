@@ -238,7 +238,9 @@ describe("Workflow helper scripts", () => {
     const cwd = tmpWorkspace("helper-capture-plan");
     try {
       mkdirSync(join(cwd, "plans"), { recursive: true });
+      mkdirSync(join(cwd, ".ai/harness/planning"), { recursive: true });
       copyHelpers(cwd);
+      writeFileSync(join(cwd, ".ai/harness/planning/pending.json"), JSON.stringify({ version: 1, kind: "waza-think", prompt_slug: "passive-plan" }) + "\n");
       writeFileSync(
         join(cwd, "captured.md"),
         [
@@ -260,6 +262,10 @@ describe("Workflow helper scripts", () => {
         "Passive Plan",
         "--source",
         "waza-think",
+        "--orchestration-kind",
+        "waza-think",
+        "--source-ref",
+        "thread://plan-discussion",
         "--route",
         "waza:think",
         "--body-file",
@@ -275,7 +281,10 @@ describe("Workflow helper scripts", () => {
       const plan = readFileSync(planPath, "utf-8");
       expect(plan).toContain("> **Status**: Draft");
       expect(plan).toContain("> **Planning Source**: waza-think");
+      expect(plan).toContain("> **Orchestration Kind**: waza-think");
+      expect(plan).toContain("> **Source Ref**: thread://plan-discussion");
       expect(plan).toContain("- Selected route: waza:think");
+      expect(plan).toContain("- Source ref: thread://plan-discussion");
       expect(plan).toContain("## Workflow Inventory");
       expect(plan).toContain("- Active plan: `plans/");
       expect(plan).toContain("scripts/contract-worktree.sh start --plan");
@@ -286,6 +295,7 @@ describe("Workflow helper scripts", () => {
       expect(readFileSync(join(cwd, ".ai/harness/active-plan"), "utf-8")).toBe(`plans/${plans[0]}`);
       expect(readFileSync(join(cwd, ".claude/.active-plan"), "utf-8")).toBe(`plans/${plans[0]}`);
       expect(readFileSync(join(cwd, ".ai/harness/active-worktree"), "utf-8").trim()).toBe(cwd);
+      expect(existsSync(join(cwd, ".ai/harness/planning/pending.json"))).toBe(false);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -535,7 +545,9 @@ describe("Workflow helper scripts", () => {
     try {
       mkdirSync(join(cwd, "plans"), { recursive: true });
       mkdirSync(join(cwd, "tasks/archive"), { recursive: true });
+      mkdirSync(join(cwd, ".ai/harness/planning"), { recursive: true });
       copyHelpers(cwd);
+      writeFileSync(join(cwd, ".ai/harness/planning/pending.json"), JSON.stringify({ version: 1, kind: "codex-plan", prompt_slug: "demo" }) + "\n");
 
       const planFile = join(cwd, "plans/plan-20260304-1400-demo.md");
       writeFileSync(
@@ -578,6 +590,7 @@ describe("Workflow helper scripts", () => {
 
       const updatedPlan = readFileSync(planFile, "utf-8");
       expect(updatedPlan).toContain("**Status**: Executing");
+      expect(existsSync(join(cwd, ".ai/harness/planning/pending.json"))).toBe(false);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

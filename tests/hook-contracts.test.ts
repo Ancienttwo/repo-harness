@@ -102,6 +102,8 @@ describe("Hook contracts", () => {
     expect(script).toContain("ResearchGuard");
     expect(script).toContain("AnnotationGuard");
     expect(script).toContain("PlanStatusGuard");
+    expect(script).toContain("PlanDiscussionGate");
+    expect(script).toContain("workflow_write_pending_orchestration");
     expect(script).toContain("ContractGuard");
     expect(script).toContain("ResearchGate");
     expect(script).toContain("done");
@@ -118,11 +120,14 @@ describe("Hook contracts", () => {
     expect(script).not.toContain("📎");
   });
 
-  test("session-start should deliver the Codex-host cross-review availability note", () => {
+  test("session-start should gate the Codex-host cross-review availability note", () => {
     const script = read("assets/hooks/session-start-context.sh");
     expect(script).toContain("[CrossReview]");
+    expect(script).toContain("Pending Plan Capture");
+    expect(script).toContain("workflow_pending_orchestration_is_fresh");
     expect(script).toContain("claude-review");
-    expect(script).toContain('"${HOOK_HOST:-}" == "codex"');
+    expect(script).toContain('"${HOOK_HOST:-}" == "codex" && -n "$context"');
+    expect(script).toContain("worth the tokens");
   });
 
   test("post-edit guard should retain doc-drift coverage for apps/*/src/** and wrangler*.toml", () => {

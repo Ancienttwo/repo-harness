@@ -157,6 +157,7 @@ describe("Bootstrap Script Contracts", () => {
     expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/handoff/resume.md");
     expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/context-budget/latest.json");
     expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/capability-context/");
+    expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/planning/");
     expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/active-plan");
     expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/active-worktree");
     expect(contract.artifacts.requiredFiles).toContain("docs/reference-configs/agentic-development-flow.md");
@@ -229,6 +230,7 @@ describe("Bootstrap Script Contracts", () => {
     expect(contract.artifacts.requiredDirectories).toContain("tasks/notes");
     expect(contract.artifacts.requiredDirectories).toContain("tasks/workstreams");
     expect(contract.artifacts.requiredDirectories).toContain(".ai/harness/worktrees");
+    expect(contract.artifacts.requiredDirectories).toContain(".ai/harness/planning");
     expect(contract.agenticDevelopment.routing.postImplementationReview).toBe("waza:check");
     expect(contract.externalTooling.codexAutomationProfile.routes.architectureDiagram).toBe("diagram-design");
     expect(content).not.toContain("pi_install_skill_factory");

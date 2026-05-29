@@ -166,6 +166,10 @@
     ],
     "rule": "Codex Plan mode and Waza think planning should capture decision-complete plans into plans/plan-*.md; implementation approval then projects the active approved plan through scripts/plan-to-todo.sh"
   },
+  "planning": {
+    "pending_orchestration_file": ".ai/harness/planning/pending.json",
+    "source_of_truth": "transient host planning bridge only; plans/ and .ai/harness/active-plan remain authoritative"
+  },
   "sidecar_research": {
     "default": true,
     "output_file": "tasks/research.md",

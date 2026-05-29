@@ -19,10 +19,16 @@ is_implement_intent() {
   if is_trigger_question_prompt; then
     return 1
   fi
+  if is_plan_discussion_continuation_intent; then
+    return 1
+  fi
   if is_plan_refinement_intent; then
     return 1
   fi
   if is_diagnostic_question_intent; then
+    return 1
+  fi
+  if is_review_release_advisory_intent; then
     return 1
   fi
   echo "$PROMPT_INTENT_TEXT" | grep -qEi "(implement|execute|build it|do it|go ahead|proceed|ship it|实现|执行|开始写|动手|开干)" || is_execution_approval_intent || is_embedded_approved_plan_intent || is_plan_shaped_markdown_intent
@@ -77,7 +83,9 @@ is_spa_day_intent() {
 }
 
 is_plan_creation_intent() {
+  is_plan_discussion_continuation_intent && return 1
   is_plan_refinement_intent && return 1
+  is_diagnostic_question_intent && return 1
   echo "$PROMPT_INTENT_TEXT" | grep -qEi "(new plan|create plan|write plan|draft plan|新建计划|创建计划|写计划|制定计划|补计划)"
 }
 
@@ -87,11 +95,30 @@ is_bug_or_hunt_intent() {
 
 is_plain_feature_plan_start_intent() {
   is_trigger_question_prompt && return 1
+  is_plan_discussion_continuation_intent && return 1
   is_plan_refinement_intent && return 1
+  is_diagnostic_question_intent && return 1
   is_bug_or_hunt_intent && return 1
   is_execution_approval_intent && return 1
 
   echo "$PROMPT_INTENT_TEXT" | grep -qEi "(new feature|feature request|add (a )?(new )?feature|build (a|an|the)[[:space:]].*(page|screen|feature|component|module|tool|dashboard|api|endpoint|flow|app)|create (a|an|the)[[:space:]].*(page|screen|feature|component|module|tool|dashboard|api|endpoint|flow|app)|开发新功能|开发.*功能|新增功能|新功能|加.*功能|做(一个|个).*(页|页面|功能|模块|工具|组件|接口|应用|系统|面板|流程)|搭(一个|个).*(页|页面|功能|模块|工具|组件|接口|应用|系统|面板|流程)|写(一个|个).*(页|页面|功能|模块|工具|组件|接口|脚本|应用|系统|面板|流程))"
+}
+
+is_review_release_intent() {
+  echo "$PROMPT_INTENT_TEXT" | grep -qEi "(review|check|pre-merge|before merge|release|publish|push|验收|检查|提交|发布|推送|合并前)"
+}
+
+is_review_release_advisory_intent() {
+  is_review_release_intent || return 1
+  is_embedded_approved_plan_intent && return 1
+  is_plan_shaped_markdown_intent && return 1
+  is_execution_approval_intent && return 1
+
+  # Review/check prompts often say "execute /check" or "执行 checklist". Those
+  # route to evaluator evidence, not implementation. Keep explicit coding verbs
+  # on the implementation gate.
+  echo "$PROMPT_INTENT_TEXT" | grep -qEi "(implement|build it|do it|实现|开始写|动手|开干)" && return 1
+  return 0
 }
 
 is_embedded_approved_plan_intent() {
@@ -115,6 +142,23 @@ is_plan_refinement_intent() {
   printf '%s\n' "$first" | grep -qEi "(implement|execute|开始实现|开始执行|批准执行|直接改|动手|开干|可以干)" && return 1
 
   printf '%s\n' "$first" | grep -qEi "((review|critique|refine|improve|polish|完善|优化|调整|修改|补充|评审|审一下|看一下|看看|评价|帮我看|帮我审).*(plan|方案|计划|设计|claude|codex)|((plan|方案|计划|设计|claude).*(review|critique|refine|improve|polish|完善|优化|调整|修改|补充|评审|审一下|看一下|看看|评价|帮我看|帮我审)))"
+}
+
+is_explicit_execution_start_line() {
+  local first
+  first="$(prompt_first_nonblank_line)"
+  printf '%s\n' "$first" | grep -qEi "^[[:space:][:punct:]]*(please[[:space:]]+)?(implement[[:space:]]+(this|the)|execute[[:space:]]+(this|the)|start[[:space:]]+(implementation|executing|coding)|go ahead|proceed|ship it|开始(实现|执行|落实|写)|执行计划|落实计划|批准执行|批准|直接(改|做|实现|执行|落地)|动手|开干|可以(开始|执行|干)|可以干|干吧|做吧)([[:space:][:punct:]]|$)"
+}
+
+is_plan_discussion_continuation_intent() {
+  workflow_pending_orchestration_is_fresh || return 1
+  is_execution_approval_intent && return 1
+  is_embedded_approved_plan_intent && return 1
+  is_plan_shaped_markdown_intent && return 1
+  is_explicit_execution_start_line && return 1
+
+  printf '%s\n' "$PROMPT_INTENT_TEXT" | grep -qEi "(plan|方案|计划|workflow|hook|hooks|codex[[:space:]-]*plan|claude[[:space:]-]*plan|dynamic[[:space:]-]*workflow|orchestrat|active[[:space:]-]*plan|active[[:space:]-]*marker|PlanStatusGuard|PlanCaptureGate|PlanStartGate|capture|落实plan|执行门禁)" || return 1
+  printf '%s\n' "$PROMPT_INTENT_TEXT" | grep -qEi "(继续讨论|讨论|追问|疑问|补充|调整|完善|优化|评审|review|refine|怎么|如何|为什么|为啥|不要.*机械|不能.*机械|过于机械|多轮|中断|状态|边界|弱点|补充|改一下|修一下|不合理|有风险|我觉得|是否|是不是|能不能|应该|设计)"
 }
 
 is_diagnostic_question_intent() {
@@ -165,7 +209,13 @@ is_plan_shaped_markdown_intent() {
 }
 
 is_think_plan_start_intent() {
+  if is_plan_discussion_continuation_intent; then
+    return 1
+  fi
   if is_plan_refinement_intent; then
+    return 1
+  fi
+  if is_diagnostic_question_intent; then
     return 1
   fi
   if is_bug_or_hunt_intent; then
@@ -213,11 +263,71 @@ maybe_start_plan_workflow() {
     return 0
   fi
 
-  local slug title
+  local slug title before_latest after_latest draft_plan kind source_ref start_output
   slug="$(derive_plan_start_slug)"
   title="$(derive_plan_start_title)"
+  before_latest="$(get_latest_plan || true)"
+  kind="$(derive_pending_orchestration_kind)"
+  source_ref="$title"
   echo "[PlanStartGate] Think/plan intent detected. Starting independent file-backed Draft plan workflow."
-  bash "scripts/ensure-task-workflow.sh" --new-plan --slug "$slug" --title "$title"
+  if ! start_output="$(bash "scripts/ensure-task-workflow.sh" --new-plan --slug "$slug" --title "$title" 2>&1)"; then
+    printf '%s\n' "$start_output"
+    return 0
+  fi
+  printf '%s\n' "$start_output"
+  after_latest="$(get_latest_plan || true)"
+  draft_plan=""
+  if [[ -n "$after_latest" && "$after_latest" != "$before_latest" ]]; then
+    draft_plan="$after_latest"
+  fi
+  workflow_write_pending_orchestration "$kind" "${HOOK_HOST:-unknown}" "$slug" "$draft_plan" "$source_ref" "plans/plan-*.md"
+}
+
+derive_pending_orchestration_kind() {
+  if printf '%s\n' "$PROMPT_INTENT_TEXT" | grep -qEi '(/think|[$]think|\[[$]think\]|waza[[:space:]/-]*think)'; then
+    printf 'waza-think'
+    return 0
+  fi
+  if printf '%s\n' "$PROMPT_INTENT_TEXT" | grep -qEi 'dynamic[[:space:]-]*workflow|workflow'; then
+    printf 'dynamic-workflow'
+    return 0
+  fi
+  if printf '%s\n' "$PROMPT_INTENT_TEXT" | grep -qEi 'codex[[:space:]-]*plan'; then
+    printf 'codex-plan'
+    return 0
+  fi
+  printf 'repo-harness-plan'
+}
+
+emit_pending_orchestration_discussion() {
+  local active_plan kind source_ref source_arg
+  workflow_pending_orchestration_is_fresh || return 0
+  active_plan="$(get_active_plan || true)"
+  [[ -z "$active_plan" || ! -f "$active_plan" ]] || return 0
+  is_plan_discussion_continuation_intent || return 0
+  kind="$(workflow_pending_orchestration_field kind 2>/dev/null || true)"
+  source_ref="$(workflow_pending_orchestration_field source_ref 2>/dev/null || true)"
+  source_arg=""
+  [[ -n "$source_ref" ]] && source_arg=" --source-ref <source-ref>"
+
+  echo "[PlanDiscussionGate] Pending plan/orchestration discussion is still open; continuing discussion, not implementation."
+  echo "[PlanDiscussionGate] $(workflow_pending_orchestration_summary)"
+  echo "[PlanDiscussionGate] When the decision is complete, capture the final plan body before editing implementation files:"
+  echo "  printf '%s\n' '<decision-complete plan body>' | bash scripts/capture-plan.sh --slug <slug> --title <title> --status Draft --source ${kind:-host-plan} --orchestration-kind ${kind:-host-plan} --route planning${source_arg}"
+}
+
+emit_pending_orchestration_capture_gate() {
+  local kind source_ref source_arg
+  workflow_pending_orchestration_is_fresh || return 1
+  kind="$(workflow_pending_orchestration_field kind 2>/dev/null || true)"
+  source_ref="$(workflow_pending_orchestration_field source_ref 2>/dev/null || true)"
+  source_arg=""
+  [[ -n "$source_ref" ]] && source_arg=" --source-ref <source-ref>"
+  echo "[PlanCaptureGate] Implementation requested while a pending plan/orchestration discussion has not been captured."
+  echo "[PlanCaptureGate] $(workflow_pending_orchestration_summary)"
+  echo "[PlanCaptureGate] Capture the final plan body first; if implementation is already approved, use --status Approved --execute:"
+  echo "  printf '%s\n' '<approved plan body>' | bash scripts/capture-plan.sh --slug <slug> --title <title> --status Approved --source ${kind:-host-plan} --orchestration-kind ${kind:-host-plan} --route planning --execute${source_arg}"
+  return 0
 }
 
 plan_evidence_contract_error() {
@@ -381,7 +491,7 @@ emit_waza_route_hint() {
     return
   fi
 
-  if echo "$PROMPT_INTENT_TEXT" | grep -qEi "(review|check|pre-merge|before merge|release|publish|push|验收|检查|提交|发布|推送|合并前)"; then
+  if is_review_release_intent; then
     echo "[WazaRoute] Review/release intent detected. Default route: Waza /check."
     emit_cross_review_hint merge
   fi
@@ -441,6 +551,7 @@ PROMPT_INTENT_TEXT="$(prompt_intent_text)"
 emit_agentic_packaging_hint
 emit_waza_route_hint
 emit_codegraph_route_hint
+emit_pending_orchestration_discussion
 
 implement_intent=0
 if is_implement_intent; then
@@ -457,17 +568,19 @@ if is_done_intent; then
   done_intent=1
 fi
 
+plan_start_intent=0
 if is_plan_creation_intent || is_think_plan_start_intent; then
+  plan_start_intent=1
+fi
+
+plan_research_ready=1
+if [ "$plan_start_intent" -eq 1 ]; then
   if ! has_research_for_new_plan; then
     latest_plan="$(get_latest_plan || true)"
     if [[ -n "$latest_plan" ]]; then
-      echo "[ResearchGate] tasks/research.md must exist and be newer than $latest_plan before creating a new plan."
-      hook_structured_error \
-        "ResearchGate" \
-        "Research is missing or older than the latest plan ($latest_plan)." \
-        "Update tasks/research.md with fresh findings before drafting a new plan." \
-        "missing_artifact"
-      exit 2
+      plan_research_ready=0
+      echo "[ResearchGate] Advisory: tasks/research.md is missing or older than $latest_plan; skipping automatic Draft plan creation."
+      echo "[ResearchGate] Update tasks/research.md with fresh findings before creating the next plan."
     else
       echo "[ResearchGate] WARNING: tasks/research.md does not exist yet. Consider creating it with current findings before drafting the plan."
       echo "  首次创建计划：建议先写 tasks/research.md，但不阻塞。"
@@ -476,7 +589,11 @@ if is_plan_creation_intent || is_think_plan_start_intent; then
 fi
 
 if [ "$implement_intent" -eq 0 ] && [ "$done_intent" -eq 0 ]; then
-  maybe_start_plan_workflow
+  if [ "$plan_start_intent" -eq 1 ] && [ "$plan_research_ready" -eq 0 ]; then
+    echo "[PlanStartGate] Skipping automatic Draft plan workflow until research is refreshed."
+  else
+    maybe_start_plan_workflow
+  fi
 fi
 
 if [ "$implement_intent" -eq 0 ]; then
@@ -517,6 +634,10 @@ if [ "$implement_intent" -eq 1 ]; then
     if [[ -n "$marker_problem" ]]; then
       clear_active_plan
       echo "[PlanStatusGuard] Advisory: ${marker_problem}; cleared stale active markers. Capture or switch to an approved plan before editing implementation files."
+      exit 0
+    fi
+
+    if ! is_bug_or_hunt_intent && emit_pending_orchestration_capture_gate; then
       exit 0
     fi
 
@@ -759,7 +880,7 @@ if echo "$PROMPT_TEXT" | grep -qEi "(fix|patch|bug|修复|修bug|修 bug|改bug)
   echo "  检测到修复请求：先写失败测试复现问题，再重写实现。"
   emit_cross_review_hint debug
 fi
-if ! is_diagnostic_question_intent && echo "$PROMPT_TEXT" | grep -qEi "(new feature|feature|implement|build|新功能|实现|开发功能|执行)"; then
+if ! is_diagnostic_question_intent && ! is_review_release_advisory_intent && echo "$PROMPT_TEXT" | grep -qEi "(new feature|feature|implement|build|新功能|实现|开发功能|执行)"; then
   echo "[BDD] Feature intent detected. Define Given-When-Then acceptance scenarios first."
   echo "  检测到新功能请求：先定义 Given-When-Then 验收场景。"
 fi

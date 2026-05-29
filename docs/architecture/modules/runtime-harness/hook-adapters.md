@@ -46,6 +46,151 @@ Error paths:
 - Worktree guard warns by default and blocks only when marker policy is enabled.
 - Runtime write failures should produce structured warnings or failure logs without corrupting the repo contract.
 
+## Semantic Diagram
+
+### Complete Hook Workflow
+
+```mermaid
+flowchart TD
+  subgraph Install["Adapter Install / Migration"]
+    Init["repo-harness init/install"] --> Targets["installer targets: codex.ts / claude.ts"]
+    Targets --> Managed["managed-entries.ts: buildManagedHooks()"]
+    Managed --> Registry["route-registry.ts: ROUTES"]
+    Managed --> CodexCfg["~/.codex/hooks.json user-level"]
+    Managed --> ClaudeCfg["~/.claude/settings.json or .claude/settings.json"]
+    CodexCfg --> Trust["Codex Settings trust hash"]
+  end
+
+  subgraph Host["Host Event"]
+    ClaudeCfg --> Event["Claude/Codex hook event"]
+    Trust --> Event
+    Event --> Match{"event + matcher"}
+    Match --> Cmd["HOOK_HOST=host repo-harness-hook EVENT --route ROUTE_ID<br/>fallback: repo-harness hook"]
+  end
+
+  subgraph Dispatch["Runtime Dispatch"]
+    Cmd --> Entry{"minimal bin available?"}
+    Entry -->|yes| HookEntry["src/cli/hook-entry.ts"]
+    Entry -->|fallback| FullCli["src/cli/commands/hook.ts"]
+    HookEntry --> Runtime["src/cli/hook/runtime.ts: runHook()"]
+    FullCli --> Runtime
+    Runtime --> Git{"inside git repo?"}
+    Git -->|no| Exit0A["exit 0 silently"]
+    Git -->|yes| OptIn{".ai/harness/workflow-contract.json exists?"}
+    OptIn -->|no| Exit0B["exit 0 non-opt-in"]
+    OptIn -->|yes| Route{"getRoute(event, route)"}
+    Route -->|unknown| Exit2["exit 2 unknown route"]
+    Route -->|ok| Spawn["spawn bash .ai/hooks/SCRIPT<br/>set HOOK_REPO_ROOT"]
+    Spawn --> Quiet{"HOOK_HOST=codex and event != SessionStart?"}
+    Quiet -->|yes| QuietStdout["stdout piped/emptied on success<br/>failure stdout moved to stderr"]
+    Quiet -->|no| Inherit["stdio inherited"]
+  end
+
+  subgraph Routes["Public Route Registry"]
+    Route --> SS["SessionStart.default"]
+    SS --> SSC["session-start-context.sh"]
+
+    Route --> PreEdit["PreToolUse.edit<br/>matcher: Edit|Write"]
+    PreEdit --> Worktree["worktree-guard.sh"]
+    Worktree --> PreGuard["pre-edit-guard.sh"]
+
+    Route --> PostEdit["PostToolUse.edit<br/>matcher: Edit|Write"]
+    PostEdit --> PostGuard["post-edit-guard.sh"]
+
+    Route --> PostBashRoute["PostToolUse.bash<br/>matcher: Bash"]
+    PostBashRoute --> PostBash["post-bash.sh"]
+
+    Route --> Always["PostToolUse.always<br/>all tools"]
+    Always --> Trace["trace-event.sh"]
+    Trace --> Pressure["context-pressure-hook.sh"]
+
+    Route --> Prompt["UserPromptSubmit.default"]
+    Prompt --> PromptGuard["prompt-guard.sh"]
+
+    Route --> Stop["Stop.default"]
+    Stop --> Finalize["finalize-handoff.sh"]
+  end
+
+  subgraph Shared["Shared Hook Libraries"]
+    Input["hook-input.sh<br/>stdin/env/argv parser"]
+    Workflow["lib/workflow-state.sh<br/>active plan, pending plan, todo, contract, handoff, events"]
+    Session["lib/session-state.sh<br/>session key/counters"]
+  end
+
+  SSC -. uses .-> Input
+  SSC -. uses .-> Workflow
+  PreGuard -. uses .-> Input
+  PreGuard -. uses .-> Workflow
+  PostGuard -. uses .-> Input
+  PostGuard -. uses .-> Workflow
+  PostBash -. uses .-> Input
+  PostBash -. uses .-> Workflow
+  Trace -. uses .-> Input
+  Trace -. uses .-> Session
+  Trace -. uses .-> Workflow
+  Pressure -. uses .-> Input
+  Pressure -. uses .-> Session
+  Pressure -. uses .-> Workflow
+  PromptGuard -. uses .-> Input
+  PromptGuard -. uses .-> Workflow
+  Finalize -. uses .-> Workflow
+
+  subgraph Effects["Side Effects / Outputs"]
+    SSC --> AddCtx["SessionStart additionalContext JSON"]
+    PreGuard --> Block["guards: _ref, _ops, deploy, scope, plan transition, test/spec-first"]
+    PostGuard --> Verify["verify-contract --quiet -> .ai/harness/checks/latest.json"]
+    PostGuard --> Drift["architecture-drift.sh -> docs/architecture/requests + events.jsonl"]
+    Drift --> ContextSync["context-contract-sync or capability-context request"]
+    PostGuard --> Handoff[".claude/.task-handoff.md + .ai/harness/handoff/current.md"]
+    PostBash --> Checks["Bash result/check evidence"]
+    Trace --> TraceLog[".claude/.trace.jsonl"]
+    Pressure --> Budget["context-budget + handoff on orange/red"]
+    PromptGuard --> PlanGate["plan start/capture/execution/done/archive gates"]
+    PromptGuard --> Hints["Waza / CodeGraph / CrossReview / TDD / BDD hints"]
+    Finalize --> StopHandoff["workflow_write_handoff(session-stop)"]
+  end
+
+  subgraph Compat["Legacy / Template Compatibility"]
+    Templates["assets/hooks/*.template.json"] --> RunHook[".ai/hooks/run-hook.sh"]
+    RunHook --> Spawn
+  end
+```
+
+### User-Level Adapter Ownership
+
+```mermaid
+flowchart TD
+  CLI["this repo CLI:<br/>repo-harness install --target both --location global"]
+  CLI --> CodexTarget["src/cli/installer/targets/codex.ts"]
+  CLI --> ClaudeTarget["src/cli/installer/targets/claude.ts"]
+
+  CodexTarget --> ManagedCodex["managed-entries.ts<br/>buildManagedHooks('codex')"]
+  ClaudeTarget --> ManagedClaude["managed-entries.ts<br/>buildManagedHooks('claude')"]
+
+  ManagedCodex --> CodexHooks["~/.codex/hooks.json"]
+  ManagedClaude --> ClaudeSettings["~/.claude/settings.json"]
+
+  CodexHooks --> CodexCmd["HOOK_HOST=codex repo-harness-hook ...<br/>fallback: repo-harness hook ..."]
+  ClaudeSettings --> ClaudeCmd["HOOK_HOST=claude repo-harness-hook ...<br/>fallback: repo-harness hook ..."]
+
+  CodexCmd --> Runtime["src/cli/hook/runtime.ts"]
+  ClaudeCmd --> Runtime
+
+  Runtime --> OptIn["target repo opt-in:<br/>.ai/harness/workflow-contract.json"]
+  OptIn --> Routes["src/cli/hook/route-registry.ts"]
+  Routes --> RepoHooks["target repo .ai/hooks/*.sh"]
+
+  subgraph Ownership["Ownership Boundaries"]
+    ConfigOwner["config owner:<br/>this repo CLI installer"]
+    RouteOwner["public route owner:<br/>this repo route registry/runtime"]
+    ExecutionOwner["execution owner:<br/>current target repo .ai/hooks + .ai/harness"]
+  end
+
+  CLI -.-> ConfigOwner
+  Routes -.-> RouteOwner
+  RepoHooks -.-> ExecutionOwner
+```
+
 ## P3 Decision
 
 The shared `.ai/hooks` layer exists to avoid maintaining separate Claude and

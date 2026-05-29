@@ -94,6 +94,10 @@ workflow_resume_packet_file() {
   workflow_repo_relative_path "$(workflow_policy_get '.handoff_resume.resume_packet_file' '.ai/harness/handoff/resume.md')" '.ai/harness/handoff/resume.md' '.ai/harness/'
 }
 
+workflow_pending_orchestration_file() {
+  workflow_repo_relative_path "$(workflow_policy_get '.planning.pending_orchestration_file' '.ai/harness/planning/pending.json')" '.ai/harness/planning/pending.json' '.ai/harness/'
+}
+
 workflow_ensure_harness_surface() {
   mkdir -p \
     "tasks/notes" \
@@ -104,6 +108,7 @@ workflow_ensure_harness_surface() {
     "$(dirname "$(workflow_context_budget_status_file)")" \
     "$(dirname "$(workflow_resume_packet_file)")" \
     "$(dirname "$(workflow_failure_log_file)")" \
+    "$(dirname "$(workflow_pending_orchestration_file)")" \
     "$(workflow_runs_dir)"
 
   [[ -f "$(workflow_checks_file)" ]] || printf "{}\n" > "$(workflow_checks_file)"
@@ -678,6 +683,111 @@ workflow_read_file_mtime() {
   fi
 
   stat -c '%Y' "$file"
+}
+
+workflow_pending_orchestration_field() {
+  local field="$1"
+  local pending_file value
+  pending_file="$(workflow_pending_orchestration_file)"
+  [[ -f "$pending_file" ]] || return 1
+
+  if command -v jq >/dev/null 2>&1; then
+    value="$(jq -r ".$field // empty" "$pending_file" 2>/dev/null || true)"
+  else
+    value="$(
+      awk -v field="$field" '
+        $0 ~ "\"" field "\"" {
+          line = $0
+          sub(/^[^:]*:[[:space:]]*/, "", line)
+          sub(/[[:space:]]*,?[[:space:]]*$/, "", line)
+          gsub(/^"/, "", line)
+          gsub(/"$/, "", line)
+          print line
+          exit
+        }
+      ' "$pending_file"
+    )"
+  fi
+
+  [[ -n "$value" && "$value" != "null" ]] || return 1
+  printf '%s' "$value"
+}
+
+workflow_write_pending_orchestration() {
+  local kind="${1:-host-plan}"
+  local host="${2:-${HOOK_HOST:-unknown}}"
+  local prompt_slug="${3:-planning}"
+  local draft_plan_path="${4:-}"
+  local source_ref="${5:-}"
+  local expected_artifact="${6:-plan}"
+  local pending_file timestamp cwd
+
+  pending_file="$(workflow_pending_orchestration_file)"
+  timestamp="$(date '+%Y-%m-%dT%H:%M:%S%z')"
+  cwd="$(pwd -P 2>/dev/null || pwd)"
+  mkdir -p "$(dirname "$pending_file")"
+
+  cat > "$pending_file" <<EOF_PENDING_ORCHESTRATION
+{
+  "version": 1,
+  "kind": "$(workflow_json_escape "$kind")",
+  "host": "$(workflow_json_escape "$host")",
+  "prompt_slug": "$(workflow_json_escape "$prompt_slug")",
+  "draft_plan_path": "$(workflow_json_escape "$draft_plan_path")",
+  "source_ref": "$(workflow_json_escape "$source_ref")",
+  "expected_artifact": "$(workflow_json_escape "$expected_artifact")",
+  "cwd": "$(workflow_json_escape "$cwd")",
+  "created_at": "$(workflow_json_escape "$timestamp")"
+}
+EOF_PENDING_ORCHESTRATION
+}
+
+workflow_clear_pending_orchestration() {
+  rm -f "$(workflow_pending_orchestration_file)"
+}
+
+workflow_pending_orchestration_is_fresh() {
+  local max_age="${1:-259200}"
+  local pending_file mtime now age draft_path status
+  pending_file="$(workflow_pending_orchestration_file)"
+  [[ -s "$pending_file" ]] || return 1
+
+  mtime="$(workflow_read_file_mtime "$pending_file" 2>/dev/null || true)"
+  now="$(date +%s)"
+  if [[ -n "$mtime" ]]; then
+    age=$((now - mtime))
+    [[ "$age" -le "$max_age" ]] && return 0
+  fi
+
+  draft_path="$(workflow_pending_orchestration_field draft_plan_path 2>/dev/null || true)"
+  if [[ -n "$draft_path" && -f "$draft_path" ]]; then
+    status="$(get_plan_status "$draft_path" | tr '[:upper:]' '[:lower:]')"
+    case "$status" in
+      draft|annotating|"")
+        [[ -n "$mtime" ]] && [[ "$((now - mtime))" -le 604800 ]] && return 0
+        ;;
+    esac
+  fi
+
+  return 1
+}
+
+workflow_pending_orchestration_summary() {
+  local kind host prompt_slug draft_path source_ref expected_artifact cwd
+
+  kind="$(workflow_pending_orchestration_field kind 2>/dev/null || true)"
+  host="$(workflow_pending_orchestration_field host 2>/dev/null || true)"
+  prompt_slug="$(workflow_pending_orchestration_field prompt_slug 2>/dev/null || true)"
+  draft_path="$(workflow_pending_orchestration_field draft_plan_path 2>/dev/null || true)"
+  source_ref="$(workflow_pending_orchestration_field source_ref 2>/dev/null || true)"
+  expected_artifact="$(workflow_pending_orchestration_field expected_artifact 2>/dev/null || true)"
+  cwd="$(workflow_pending_orchestration_field cwd 2>/dev/null || true)"
+
+  printf 'kind=%s host=%s expected=%s slug=%s' "${kind:-unknown}" "${host:-unknown}" "${expected_artifact:-plan}" "${prompt_slug:-planning}"
+  [[ -n "$draft_path" ]] && printf ' draft=%s' "$draft_path"
+  [[ -n "$source_ref" ]] && printf ' source_ref=%s' "$source_ref"
+  [[ -n "$cwd" ]] && printf ' cwd=%s' "$cwd"
+  printf '\n'
 }
 
 has_research_for_new_plan() {

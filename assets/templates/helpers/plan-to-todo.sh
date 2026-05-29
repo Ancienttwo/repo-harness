@@ -614,5 +614,11 @@ else
   pwd -P > .ai/harness/active-worktree
 fi
 
+if declare -F workflow_clear_pending_orchestration >/dev/null 2>&1; then
+  workflow_clear_pending_orchestration
+else
+  rm -f .ai/harness/planning/pending.json
+fi
+
 echo "Prepared sprint artifacts from $plan_file"
 echo "Left tasks/todo.md as deferred-goal ledger; execute the plan's own ## Task Breakdown."

@@ -79,6 +79,7 @@ describe("Migration script contract", () => {
     expect(script).toContain(".ai/harness/events.jsonl");
     expect(script).toContain(".ai/harness/handoff/current.md");
     expect(script).toContain(".ai/harness/context-budget");
+    expect(sharedLib).toContain(".ai/harness/planning/");
     expect(script).toContain(".ai/harness/workflow-contract.json");
     expect(workflowContract).toContain("new-spec.sh");
     expect(workflowContract).toContain("new-sprint.sh");
@@ -207,6 +208,7 @@ describe("Migration script contract", () => {
       expect(existsSync(join(repo, ".ai/harness/handoff/current.md"))).toBe(true);
       expect(existsSync(join(repo, ".ai/harness/handoff/resume.md"))).toBe(true);
       expect(existsSync(join(repo, ".ai/harness/context-budget/latest.json"))).toBe(true);
+      expect(existsSync(join(repo, ".ai/harness/planning"))).toBe(true);
       expect(existsSync(join(repo, ".ai/harness/workflow-contract.json"))).toBe(true);
       expect(existsSync(join(repo, ".ai/harness/brain-manifest.json"))).toBe(true);
       expect(existsSync(join(repo, ".ai/harness/runs/.gitkeep"))).toBe(true);
@@ -340,6 +342,7 @@ describe("Migration script contract", () => {
       });
       expect(policy.context_budget.status_file).toBe(".ai/harness/context-budget/latest.json");
       expect(policy.handoff_resume.resume_packet_file).toBe(".ai/harness/handoff/resume.md");
+      expect(policy.planning.pending_orchestration_file).toBe(".ai/harness/planning/pending.json");
       expect(policy.tasks.notes_dir).toBe("tasks/notes");
       expect(policy.tasks.workstreams_dir).toBe("tasks/workstreams");
       expect(policy.reference_material.dir).toBe("_ref");
@@ -394,6 +397,7 @@ describe("Migration script contract", () => {
       expect(workflowContract.helpers.scripts).toContain("workstream-sync.sh");
       expect(workflowContract.artifacts.requiredFiles).toContain("scripts/contract-worktree.sh");
       expect(workflowContract.artifacts.requiredDirectories).toContain(".ai/harness/worktrees");
+      expect(workflowContract.artifacts.requiredDirectories).toContain(".ai/harness/planning");
       expect(workflowContract.artifacts.requiredDirectories).toContain("deploy/sql");
       expect(workflowContract.artifacts.requiredFiles).toContain(".ai/context/capabilities.json");
       expect(workflowContract.artifacts.requiredFiles).toContain(".ai/harness/brain-manifest.json");
@@ -411,6 +415,7 @@ describe("Migration script contract", () => {
       expect(workflowContract.artifacts.runtimeFiles).toContain(".ai/harness/checks/latest.json");
       expect(workflowContract.artifacts.runtimeFiles).toContain(".ai/harness/active-plan");
       expect(workflowContract.artifacts.runtimeFiles).toContain(".ai/harness/active-worktree");
+      expect(workflowContract.artifacts.runtimeFiles).toContain(".ai/harness/planning/");
       expect(workflowContract.artifacts.runtimeFiles).not.toContain(".ai/harness/workstreams/events.jsonl");
 
       const pkg = JSON.parse(readFileSync(join(repo, "package.json"), "utf-8"));
@@ -425,6 +430,7 @@ describe("Migration script contract", () => {
       expect(gitignore).toContain("# BEGIN: claude-runtime-temp (managed by project-initializer)");
       expect(gitignore).toContain(".ai/harness/active-plan");
       expect(gitignore).toContain(".ai/harness/active-worktree");
+      expect(gitignore).toContain(".ai/harness/planning/");
       expect(gitignore).toContain(".claude/.active-plan");
       expect(gitignore).toContain(".claude/.trace.jsonl");
       expect(gitignore).toContain(".codex/*");
@@ -699,6 +705,7 @@ describe("Migration script contract", () => {
       expect(gitignore).toContain(".claude/.task-state.json");
       expect(gitignore).toContain(".ai/harness/active-plan");
       expect(gitignore).toContain(".ai/harness/active-worktree");
+      expect(gitignore).toContain(".ai/harness/planning/");
       expect(gitignore).toContain(".claude/.active-plan");
       expect(gitignore).toContain(".claude/.trace.jsonl");
       expect(gitignore).toContain(".codex/*");

@@ -25,16 +25,21 @@ cd "$REPO_ROOT"
 
 if [[ "${HOOK_HOST:-}" == "codex" && "$HOOK_NAME" != "session-start-context.sh" ]]; then
   tmp_stdout="$(mktemp)"
-  if bash "$HOOK_PATH" "$@" >"$tmp_stdout"; then
-    rm -f "$tmp_stdout"
+  tmp_stderr="$(mktemp)"
+  if bash "$HOOK_PATH" "$@" >"$tmp_stdout" 2>"$tmp_stderr"; then
+    rm -f "$tmp_stdout" "$tmp_stderr"
     exit 0
+  else
+    hook_status=$?
+    if [[ -s "$tmp_stderr" ]]; then
+      cat "$tmp_stderr" >&2
+    fi
+    if [[ -s "$tmp_stdout" ]]; then
+      grep -v '^{"guard":' "$tmp_stdout" >&2 || true
+    fi
+    rm -f "$tmp_stdout" "$tmp_stderr"
+    exit "$hook_status"
   fi
-  hook_status=$?
-  if [[ -s "$tmp_stdout" ]]; then
-    cat "$tmp_stdout" >&2
-  fi
-  rm -f "$tmp_stdout"
-  exit "$hook_status"
 fi
 
 exec bash "$HOOK_PATH" "$@"
