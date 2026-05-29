@@ -11,9 +11,9 @@
 
 Start with the shortest truth path:
 
-1. `~/.claude/settings.json` and `~/.codex/hooks.json` wire host events into `repo-harness hook`.
-2. `repo-harness hook` checks whether the current repo is opted in through `.ai/harness/workflow-contract.json`.
-3. `.ai/hooks/run-hook.sh` resolves the repo root and dispatches the selected hook.
+1. `~/.claude/settings.json` and `~/.codex/hooks.json` wire host events into `repo-harness-hook`, with `repo-harness hook` as the compatibility fallback.
+2. `repo-harness-hook` checks whether the current repo is opted in through `.ai/harness/workflow-contract.json`.
+3. The route registry selects the ordered `.ai/hooks/*` scripts for that event and route.
 4. `.ai/hooks/*` is the shared implementation layer and the default place to edit.
 
 If you are asking "which hook file should I edit?", default to `.ai/hooks/`.

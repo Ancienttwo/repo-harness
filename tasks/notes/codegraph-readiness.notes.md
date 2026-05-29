@@ -64,3 +64,11 @@ The initial captured plan picked the right product shape, but it missed three ex
 - Added `codegraph-readiness` to `agentic-dev doctor`; it calls the existing `check-agent-tooling.sh` detector through `checkCodegraph()` and maps `present` to ok, `warning` / `partial` to warn, and `missing` to fail.
 - Kept the host adapter boundary intact: `agentic-dev install --target codex|claude|both` remains host-only, and this slice still does not write MCP config by default.
 - Added CLI and integration coverage for the read-only path, shell adapter parity, and doctor non-mutation.
+
+## 2026-05-29 Claude Tool Search Pin
+
+- Claude Code's current MCP Tool Search default can defer CodeGraph schemas even when the server, index, and permissions are configured; `allowedTools` is permission, not eager schema loading.
+- `repo-harness tools configure codegraph --target claude --location global` now sets `mcpServers.codegraph.alwaysLoad = true` in `~/.claude.json` after first-time CodeGraph install.
+- Because upstream `codegraph install --target claude` rewrites `~/.claude.json` without preserving `alwaysLoad`, repo-harness skips that install when the Claude global MCP entry is already present and only repairs the always-load pin plus allowed-tools entry.
+- Chosen tradeoff: pin only the CodeGraph server so structural code-navigation tools stay directly visible while other high-cardinality MCP/plugin tools can remain deferred.
+- The detector now reports Claude CodeGraph MCP as `deferred` when the server entry exists without `alwaysLoad=true`; doctor surfaces that as a warning with the same configure command as remediation.

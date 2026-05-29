@@ -101,7 +101,7 @@ before applying anything.
 - `~/.codex/hooks.json` is the user-level Codex adapter that dispatches into the same runner.
 - Repo-local `.claude/settings.json` and `.codex/hooks.json` hook adapters are legacy project-level config and should be retired during migration.
 - Codex must mark `~/.codex/hooks.json` as trusted in Codex Settings before those hooks run.
-- Debug in this order: user-level adapter config -> `repo-harness hook` -> `.ai/hooks/run-hook.sh` -> `.ai/hooks/*`.
+- Debug in this order: user-level adapter config -> `repo-harness-hook` (or fallback `repo-harness hook`) -> route registry -> `.ai/hooks/*`.
 
 ## Hook Failure Playbook
 

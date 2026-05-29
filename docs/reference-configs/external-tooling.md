@@ -30,6 +30,11 @@ Codex for an independent review) and `claude-review` only into `~/.codex/skills`
 `gstack-claude` skills are a more featureful superset; the harness skills are the
 zero-dependency baseline that always ships with `init`.
 
+The review scope is the current reviewable diff, not just committed branch
+history: branch diff against the default base, staged changes, unstaged tracked
+changes, and untracked files are all in scope. A timeout or missing peer CLI is
+reported as unavailable review evidence, not as a pass.
+
 The Codex automation profile is a runtime reference, not a vendored copy. It
 requires Waza `health`, Waza `check`, and the standalone `diagram-design` skill
 to exist under `~/.codex/skills`; the skill bodies stay owned by their original

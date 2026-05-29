@@ -1,7 +1,7 @@
 # Architecture Module: runtime-harness/hook-adapters
 
 > **Capability ID**: `runtime-harness-hook-adapters`
-> **Matched Prefixes**: `assets/hooks`, `.ai/hooks`, `src/cli/installer`, `src/cli/hook`, `scripts/run-skill-hook.ts`
+> **Matched Prefixes**: `assets/hooks`, `.ai/hooks`, `src/cli/installer`, `src/cli/hook`, `src/cli/hook-entry.ts`, `scripts/run-skill-hook.ts`
 > **Local Contracts**: `AGENTS.md`, `CLAUDE.md`
 
 ## P1 Map
@@ -14,7 +14,8 @@ Authoritative split:
 - `assets/hooks/`: installable shared hook source.
 - `.ai/hooks/`: self-host runtime hook implementation.
 - `src/cli/installer/targets/*`: user-level adapter writers for `~/.claude/settings.json` and `~/.codex/hooks.json`.
-- `src/cli/hook/*`: runtime bridge that checks repo opt-in and dispatches into `.ai/hooks/run-hook.sh`.
+- `src/cli/hook/*`: public route registry and compatibility runtime bridge.
+- `src/cli/hook-entry.ts`: minimal hook-only entrypoint that checks repo opt-in and dispatches ordered `.ai/hooks/*` scripts without loading the full CLI.
 - Repo-local `.claude/settings.json` and `.codex/hooks.json`: retired legacy project-level adapters cleaned by migration.
 - Repo-local `.codex/*`: ignored Codex runtime residue.
 - Codex Settings trust state: user-controlled runtime approval required before Codex executes `~/.codex/hooks.json`.
@@ -26,9 +27,9 @@ files. It is not a product deliverable.
 ## P2 Trace
 
 Concrete route: Claude or Codex `PreToolUse` for edit/write -> host adapter
-runs `repo-harness hook` from user-level config -> CLI checks the current repo's
-`.ai/harness/workflow-contract.json` opt-in marker -> dispatcher runs
-`.ai/hooks/run-hook.sh` -> invokes `worktree-guard.sh` and `pre-edit-guard.sh`
+runs `repo-harness-hook` from user-level config -> hook entry checks the current repo's
+`.ai/harness/workflow-contract.json` opt-in marker -> route registry selects
+the ordered scripts -> invokes `worktree-guard.sh` and `pre-edit-guard.sh`
 -> guards inspect policy, active plan state, protected paths, and task workflow
 expectations -> warning or block is returned to the agent.
 After adapter configuration, Codex still requires the user to trust
@@ -52,9 +53,10 @@ Codex hook implementations. The invariant is single implementation, adapter-only
 host config. The adapter now lives at user level so new repos only opt in by
 carrying repo-local workflow contract files and hook implementation.
 
-At 10x hook events, the first failure would be duplicated host-specific
-implementation logic. The invariant is that host adapters point at `.ai/hooks`
-instead of creating separate per-host implementation trees.
+At 10x hook events, the first failure is cold-loading the full CLI on every
+hook event. The invariant is that host adapters point at the minimal
+hook-only entrypoint and then `.ai/hooks`, instead of creating separate
+per-host implementation trees or loading non-hook command modules.
 
 ## Optimization Backlog
 

@@ -32,7 +32,8 @@ describe("README DX contract", () => {
     expect(firstFive).toContain("Host hook config target:");
     expect(firstFive).toContain("Host hook adapters are user-level:");
     expect(hookAuthority).toContain(".ai/hooks/");
-    expect(hookAuthority).toContain(".ai/hooks/run-hook.sh");
+    expect(hookAuthority).toContain("repo-harness-hook");
+    expect(hookAuthority).toContain("route registry");
     expect(maintainer).toContain("bun scripts/assemble-template.ts --plan C --name \"MyProject\"");
   });
 

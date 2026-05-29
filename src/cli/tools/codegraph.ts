@@ -4,6 +4,9 @@ import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 
 const CLAUDE_CODEGRAPH_ALLOWED_TOOLS_PATTERN = "mcp__codegraph__*";
+const CLAUDE_CODEGRAPH_SERVER_NAME = "codegraph";
+const CODEGRAPH_SCOPED_MCP_ARGS = ["serve", "--mcp", "--path", "."] as const;
+const CODEGRAPH_SCOPED_MCP_TOML_ARGS = `[${CODEGRAPH_SCOPED_MCP_ARGS.map((arg) => JSON.stringify(arg)).join(", ")}]`;
 
 export type CodegraphSource = "local" | "global" | "missing";
 export type CodegraphStatus = "present" | "warning" | "partial" | "missing";
@@ -213,6 +216,11 @@ function configureTargets(target: CodegraphHostTarget): Array<"codex" | "claude"
   return target === "both" ? ["codex", "claude"] : [target];
 }
 
+function isMcpHostConfigured(raw: Record<string, unknown>, target: "codex" | "claude"): boolean {
+  const hosts = (raw as { mcp_hosts?: Record<string, { status?: string }> }).mcp_hosts ?? {};
+  return hosts[target]?.status === "configured";
+}
+
 function appendSkippedAction(actions: CodegraphAction[], action: string, command: string[], reason: string): void {
   actions.push({
     action,
@@ -227,13 +235,301 @@ function claudeSettingsPath(env?: NodeJS.ProcessEnv): string | null {
   return home ? join(home, ".claude", "settings.json") : null;
 }
 
+function claudeRootConfigPath(env?: NodeJS.ProcessEnv): string | null {
+  const home = env?.HOME ?? process.env.HOME ?? process.env.USERPROFILE;
+  return home ? join(home, ".claude.json") : null;
+}
+
+function codexConfigPath(env?: NodeJS.ProcessEnv): string | null {
+  const home = env?.HOME ?? process.env.HOME ?? process.env.USERPROFILE;
+  return home ? join(home, ".codex", "config.toml") : null;
+}
+
+function codegraphArgsAreScoped(args: unknown): boolean {
+  return Array.isArray(args) &&
+    args.length === CODEGRAPH_SCOPED_MCP_ARGS.length &&
+    args.every((arg, index) => arg === CODEGRAPH_SCOPED_MCP_ARGS[index]);
+}
+
+function configureCodexProjectPath(actions: CodegraphAction[], env?: NodeJS.ProcessEnv): void {
+  const path = codexConfigPath(env);
+  const command = ["codex-config", "scope-codegraph-mcp", path ?? "<HOME>/.codex/config.toml"];
+
+  if (!path) {
+    actions.push({
+      action: "codex-project-path",
+      status: "skipped",
+      command,
+      stderr: "HOME environment variable not set; cannot locate ~/.codex/config.toml.",
+    });
+    return;
+  }
+
+  let raw: string;
+  try {
+    raw = readFileSync(path, "utf8");
+  } catch (_error) {
+    actions.push({
+      action: "codex-project-path",
+      status: "skipped",
+      command,
+      stderr: `${path} not found; CodeGraph did not create a Codex MCP config.`,
+    });
+    return;
+  }
+
+  const sectionMatch = raw.match(/(^\[mcp_servers\.codegraph\]\n)([\s\S]*?)(?=^\[|(?![\s\S]))/m);
+  if (!sectionMatch) {
+    actions.push({
+      action: "codex-project-path",
+      status: "skipped",
+      command,
+      stderr: "Codex CodeGraph MCP server entry was not found; run codegraph install first.",
+    });
+    return;
+  }
+
+  const [section, header, body] = sectionMatch;
+  const desiredArgsLine = `args = ${CODEGRAPH_SCOPED_MCP_TOML_ARGS}`;
+  const argsLine = body.match(/^args\s*=\s*(.+)$/m)?.[1]?.trim();
+  if (argsLine === CODEGRAPH_SCOPED_MCP_TOML_ARGS) {
+    actions.push({
+      action: "codex-project-path",
+      status: "unchanged",
+      command,
+    });
+    return;
+  }
+
+  let nextBody: string;
+  if (/^args\s*=/m.test(body)) {
+    nextBody = body.replace(/^args\s*=.*$/m, desiredArgsLine);
+  } else if (/^command\s*=/m.test(body)) {
+    nextBody = body.replace(/^(command\s*=.*)$/m, `$1\n${desiredArgsLine}`);
+  } else {
+    nextBody = `${desiredArgsLine}\n${body}`;
+  }
+
+  const next = raw.replace(section, `${header}${nextBody}`);
+  try {
+    writeFileSync(path, next);
+  } catch (error) {
+    actions.push({
+      action: "codex-project-path",
+      status: "failed",
+      command,
+      stderr: `Failed to write ${path}: ${String((error as Error).message ?? error)}`,
+    });
+    return;
+  }
+
+  actions.push({
+    action: "codex-project-path",
+    status: "changed",
+    command,
+  });
+}
+
+function configureClaudeProjectPath(
+  actions: CodegraphAction[],
+  repoRoot: string,
+  location: CodegraphConfigureLocation,
+  env?: NodeJS.ProcessEnv,
+): void {
+  const path = claudeRootConfigPath(env);
+  const command = ["claude-root-config", "scope-codegraph-mcp", path ?? "<HOME>/.claude.json"];
+
+  if (!path) {
+    actions.push({
+      action: "claude-project-path",
+      status: "skipped",
+      command,
+      stderr: "HOME environment variable not set; cannot locate ~/.claude.json.",
+    });
+    return;
+  }
+
+  let raw: string;
+  try {
+    raw = readFileSync(path, "utf8");
+  } catch (_error) {
+    actions.push({
+      action: "claude-project-path",
+      status: "skipped",
+      command,
+      stderr: `${path} not found; CodeGraph did not create a Claude root MCP config.`,
+    });
+    return;
+  }
+
+  let parsed: any;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    actions.push({
+      action: "claude-project-path",
+      status: "failed",
+      command,
+      stderr: `Failed to parse ${path} as JSON: ${String((error as Error).message ?? error)}`,
+    });
+    return;
+  }
+
+  const mcpServers =
+    location === "global"
+      ? parsed?.mcpServers
+      : parsed?.projects?.[repoRoot]?.mcpServers;
+  const server = mcpServers?.[CLAUDE_CODEGRAPH_SERVER_NAME];
+  if (!server || typeof server !== "object" || Array.isArray(server)) {
+    actions.push({
+      action: "claude-project-path",
+      status: "skipped",
+      command,
+      stderr: `Claude ${location} CodeGraph MCP server entry was not found; run codegraph install first.`,
+    });
+    return;
+  }
+
+  if (codegraphArgsAreScoped(server.args)) {
+    actions.push({
+      action: "claude-project-path",
+      status: "unchanged",
+      command,
+    });
+    return;
+  }
+
+  server.args = [...CODEGRAPH_SCOPED_MCP_ARGS];
+  const trailingNewline = raw.endsWith("\n") ? "\n" : "";
+  const serialized = `${JSON.stringify(parsed, null, 2)}${trailingNewline}`;
+  try {
+    writeFileSync(path, serialized);
+  } catch (error) {
+    actions.push({
+      action: "claude-project-path",
+      status: "failed",
+      command,
+      stderr: `Failed to write ${path}: ${String((error as Error).message ?? error)}`,
+    });
+    return;
+  }
+
+  actions.push({
+    action: "claude-project-path",
+    status: "changed",
+    command,
+  });
+}
+
+function configureClaudeAlwaysLoad(
+  actions: CodegraphAction[],
+  repoRoot: string,
+  location: CodegraphConfigureLocation,
+  env?: NodeJS.ProcessEnv,
+): void {
+  const path = claudeRootConfigPath(env);
+  const command = ["claude-root-config", "set-codegraph-always-load", path ?? "<HOME>/.claude.json"];
+
+  if (!path) {
+    actions.push({
+      action: "claude-always-load",
+      status: "skipped",
+      command,
+      stderr: "HOME environment variable not set; cannot locate ~/.claude.json.",
+    });
+    return;
+  }
+
+  let raw: string;
+  try {
+    raw = readFileSync(path, "utf8");
+  } catch (_error) {
+    actions.push({
+      action: "claude-always-load",
+      status: "skipped",
+      command,
+      stderr: `${path} not found; CodeGraph did not create a Claude root MCP config.`,
+    });
+    return;
+  }
+
+  let parsed: any;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    actions.push({
+      action: "claude-always-load",
+      status: "failed",
+      command,
+      stderr: `Failed to parse ${path} as JSON: ${String((error as Error).message ?? error)}`,
+    });
+    return;
+  }
+
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    actions.push({
+      action: "claude-always-load",
+      status: "failed",
+      command,
+      stderr: `${path} is not a JSON object; refusing to mutate.`,
+    });
+    return;
+  }
+
+  const mcpServers =
+    location === "global"
+      ? parsed.mcpServers
+      : parsed.projects?.[repoRoot]?.mcpServers;
+  const server = mcpServers?.[CLAUDE_CODEGRAPH_SERVER_NAME];
+  if (!server || typeof server !== "object" || Array.isArray(server)) {
+    actions.push({
+      action: "claude-always-load",
+      status: "skipped",
+      command,
+      stderr: `Claude ${location} CodeGraph MCP server entry was not found; run codegraph install first.`,
+    });
+    return;
+  }
+
+  if (server.alwaysLoad === true) {
+    actions.push({
+      action: "claude-always-load",
+      status: "unchanged",
+      command,
+    });
+    return;
+  }
+
+  server.alwaysLoad = true;
+  const trailingNewline = raw.endsWith("\n") ? "\n" : "";
+  const serialized = `${JSON.stringify(parsed, null, 2)}${trailingNewline}`;
+
+  try {
+    writeFileSync(path, serialized);
+  } catch (error) {
+    actions.push({
+      action: "claude-always-load",
+      status: "failed",
+      command,
+      stderr: `Failed to write ${path}: ${String((error as Error).message ?? error)}`,
+    });
+    return;
+  }
+
+  actions.push({
+    action: "claude-always-load",
+    status: "changed",
+    command,
+  });
+}
+
 function configureClaudeAllowedTools(actions: CodegraphAction[], env?: NodeJS.ProcessEnv): void {
   // Hosts claude_settings_path is shown only as a path token; the pattern itself
   // travels via writeFile, not via the command echo. This keeps host-agnostic
   // invariants intact for consumers that grep CLI stdout for concrete tool
   // call syntax such as codegraph_context(...).
   const path = claudeSettingsPath(env);
-  const command = ["claude-settings", "register-eager-load", path ?? "<HOME>/.claude/settings.json"];
+  const command = ["claude-settings", "register-allowed-tools", path ?? "<HOME>/.claude/settings.json"];
 
   if (!path) {
     actions.push({
@@ -351,9 +647,19 @@ export function configureCodegraph(opts: CodegraphConfigureOptions): CodegraphCo
       continue;
     }
 
-    appendAction(actions, actionName, command, run(binPath, command.slice(1), opts.repoRoot, opts.env));
+    if (target === "claude" && opts.location === "global" && isMcpHostConfigured(initial.raw, target)) {
+      appendSkippedAction(actions, actionName, command, "Claude CodeGraph MCP is already configured.");
+    } else {
+      appendAction(actions, actionName, command, run(binPath, command.slice(1), opts.repoRoot, opts.env));
+    }
+
+    if (target === "codex") {
+      configureCodexProjectPath(actions, opts.env);
+    }
 
     if (target === "claude") {
+      configureClaudeProjectPath(actions, opts.repoRoot, opts.location, opts.env);
+      configureClaudeAlwaysLoad(actions, opts.repoRoot, opts.location, opts.env);
       configureClaudeAllowedTools(actions, opts.env);
     }
   }

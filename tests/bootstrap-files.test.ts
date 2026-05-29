@@ -59,7 +59,7 @@ describe("Bootstrap Script Contracts", () => {
     expect(pkg.version).toBe("0.1.1");
     expect(pkg.private).toBeUndefined();
     expect(pkg.bin["repo-harness"]).toBe("src/cli/index.ts");
-    expect(pkg.bin["repo-harness"]).toBe("src/cli/index.ts");
+    expect(pkg.bin["repo-harness-hook"]).toBe("src/cli/hook-entry.ts");
     expect(pkg.scripts["check:brain-manifest"]).toBe("bash scripts/check-brain-manifest.sh");
     expect(pkg.scripts["check:task-sync"]).toBe("bash scripts/check-task-sync.sh");
     expect(pkg.scripts["check:deploy-sql"]).toBe("bash scripts/check-deploy-sql-order.sh");
@@ -280,6 +280,28 @@ describe("Bootstrap Script Contracts", () => {
     // them as blocking and surfaces stderr to the model (exit 1 is reported as
     // "non-blocking status code: No stderr output").
     expect(content).toContain("exit 2");
+  });
+
+  test("cross-review skills should include dirty working tree scope", () => {
+    const claudeReview = read("assets/skills/claude-review/SKILL.md");
+    const codexReview = read("assets/skills/codex-review/SKILL.md");
+
+    expect(claudeReview).toContain("BRANCH_DIFF=$(git diff");
+    expect(claudeReview).toContain("STAGED_DIFF=$(git diff --cached");
+    expect(claudeReview).toContain("UNSTAGED_DIFF=$(git diff");
+    expect(claudeReview).toContain("git ls-files --others --exclude-standard -z");
+    expect(claudeReview).toContain("git diff --no-index -- /dev/null");
+    expect(claudeReview).toContain("BASE=origin/main");
+    expect(claudeReview).toContain("else BASE=HEAD");
+    expect(claudeReview).toContain("Review the combined branch, staged, unstaged, and untracked changes");
+
+    expect(codexReview).toContain("committed branch diff");
+    expect(codexReview).toContain("git diff --cached");
+    expect(codexReview).toContain("unstaged tracked changes");
+    expect(codexReview).toContain("git ls-files --others --exclude-standard");
+    expect(codexReview).toContain("git diff --no-index -- /dev/null <file>");
+    expect(codexReview).toContain("BASE=origin/main");
+    expect(codexReview).toContain("else BASE=HEAD");
   });
 
   test("hook template should reference existing local hook scripts", () => {

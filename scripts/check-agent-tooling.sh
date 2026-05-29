@@ -129,12 +129,7 @@ function fileIsExecutable(filePath) {
 
 function detectTimeoutBin() {
   if (timeoutBin !== undefined) return timeoutBin;
-  const result = spawnSync("bash", ["-lc", "command -v timeout"], {
-    cwd: REPO_ROOT,
-    encoding: "utf8",
-    timeout: 500,
-  });
-  timeoutBin = result.status === 0 ? result.stdout.trim() : "";
+  timeoutBin = resolvePathCommand("timeout") || "";
   return timeoutBin;
 }
 
@@ -876,14 +871,20 @@ function detectGbrainMcp(host) {
 }
 
 function detectGbrain() {
-  const versionResult = run("gbrain", ["--version"], { timeoutMs: 1000 });
+  const gbrainBin = resolvePathCommand("gbrain");
+  let versionResult = gbrainBin
+    ? run(gbrainBin, ["--version"], { timeoutMs: 1000 })
+    : { ok: false, stdout: "", timed_out: false };
+  if (!versionResult.ok && versionResult.timed_out) {
+    versionResult = run(gbrainBin, ["--version"], { timeoutMs: 1000 });
+  }
   const present = versionResult.ok;
   const version = present ? versionResult.stdout.trim().replace(/^gbrain\s+/i, "") : null;
-  const doctorResult = present ? run("gbrain", ["doctor", "--json"], { timeoutMs: 1500 }) : null;
+  const doctorResult = present ? run(gbrainBin, ["doctor", "--json"], { timeoutMs: 1500 }) : null;
   const doctorJson = doctorResult?.ok ? parseJson(doctorResult.stdout) : null;
-  const checkUpdateResult = present && checkUpdates ? run("gbrain", ["check-update", "--json"], { timeoutMs: 1500 }) : null;
+  const checkUpdateResult = present && checkUpdates ? run(gbrainBin, ["check-update", "--json"], { timeoutMs: 1500 }) : null;
   const checkUpdateJson = checkUpdateResult?.ok ? parseJson(checkUpdateResult.stdout) : null;
-  const integrationsResult = present ? run("gbrain", ["integrations", "list", "--json"], { timeoutMs: 1500 }) : null;
+  const integrationsResult = present ? run(gbrainBin, ["integrations", "list", "--json"], { timeoutMs: 1500 }) : null;
   const integrationsJson = integrationsResult?.ok ? parseJson(integrationsResult.stdout) : null;
   const integrationsAvailable = integrationsJson
     ? Object.values(integrationsJson).reduce((count, value) => count + (Array.isArray(value) ? value.length : 0), 0)
@@ -950,15 +951,41 @@ function detectGbrain() {
 function detectCodeGraphMcp(host) {
   const meta = HOSTS[host];
   const content = readText(meta.configPath);
+  function claudeEntryResult(entry, source) {
+    if (!entry || typeof entry !== "object") return null;
+    if (entry.alwaysLoad === true) {
+      return {
+        status: "configured",
+        always_load: true,
+        tool_search: "always-load",
+        reason: `${source} contains a codegraph MCP server entry with alwaysLoad=true.`,
+      };
+    }
+    return {
+      status: "deferred",
+      always_load: false,
+      tool_search: "deferred",
+      reason: `${source} contains a codegraph MCP server entry, but alwaysLoad is not true; Claude Code MCP Tool Search may defer CodeGraph tools.`,
+    };
+  }
+  function claudeTextFallback(source, sourcePath) {
+    return {
+      status: "deferred",
+      always_load: false,
+      tool_search: "unknown",
+      reason: `${source} contains a codegraph MCP server entry at ${sourcePath}, but alwaysLoad could not be verified.`,
+    };
+  }
+
   if (!content) {
     if (host === "claude") {
       const claudeRootConfig = path.join(HOME, ".claude.json");
+      const rootJson = readJson(claudeRootConfig);
+      const rootEntry = claudeEntryResult(rootJson?.mcpServers?.codegraph, `Claude root config at ${claudeRootConfig}`);
+      if (rootEntry) return rootEntry;
       const rootContent = readText(claudeRootConfig);
       if (/codegraph/i.test(rootContent)) {
-        return {
-          status: "configured",
-          reason: `Claude root config contains a codegraph MCP server entry at ${claudeRootConfig}.`,
-        };
+        return claudeTextFallback("Claude root config", claudeRootConfig);
       }
     }
 
@@ -983,21 +1010,19 @@ function detectCodeGraphMcp(host) {
   }
 
   const settingsJson = readJson(meta.configPath);
-  if (settingsJson?.mcpServers?.codegraph || /"mcpServers"\s*:\s*{[\s\S]*"codegraph"/i.test(content)) {
-    return {
-      status: "configured",
-      reason: "Claude settings contain a codegraph MCP server entry.",
-    };
+  const settingsEntry = claudeEntryResult(settingsJson?.mcpServers?.codegraph, `Claude settings at ${meta.configPath}`);
+  if (settingsEntry) return settingsEntry;
+  if (/"mcpServers"\s*:\s*{[\s\S]*"codegraph"/i.test(content)) {
+    return claudeTextFallback("Claude settings", meta.configPath);
   }
 
   const claudeRootConfig = path.join(HOME, ".claude.json");
   const rootJson = readJson(claudeRootConfig);
+  const rootEntry = claudeEntryResult(rootJson?.mcpServers?.codegraph, `Claude root config at ${claudeRootConfig}`);
+  if (rootEntry) return rootEntry;
   const rootContent = readText(claudeRootConfig);
-  if (rootJson?.mcpServers?.codegraph || /"mcpServers"\s*:\s*{[\s\S]*"codegraph"/i.test(rootContent)) {
-    return {
-      status: "configured",
-      reason: `Claude root config contains a codegraph MCP server entry at ${claudeRootConfig}.`,
-    };
+  if (/"mcpServers"\s*:\s*{[\s\S]*"codegraph"/i.test(rootContent)) {
+    return claudeTextFallback("Claude root config", claudeRootConfig);
   }
 
   return {
@@ -1093,7 +1118,12 @@ function resolveCodeGraphBinary() {
 function codeGraphVersion(binPath) {
   if (!binPath) return null;
   const result = run(binPath, ["--version"], { timeoutMs: 1000 });
-  return result.ok ? result.stdout.trim() || null : null;
+  if (result.ok) return result.stdout.trim() || null;
+  if (result.timed_out) {
+    const retry = run(binPath, ["--version"], { timeoutMs: 1000 });
+    if (retry.ok) return retry.stdout.trim() || null;
+  }
+  return null;
 }
 
 function detectCodeGraph() {
@@ -1148,7 +1178,7 @@ function detectCodeGraph() {
       : localDependencyMissing
         ? "CodeGraph global fallback is present, but this repo declares a local dev dependency that is not installed."
       : !selectedMcpConfigured
-        ? "CodeGraph CLI is present, but one or more selected host MCP configs are missing."
+        ? "CodeGraph CLI is present, but one or more selected host MCP configs are missing or deferred."
         : projectIndexStatus === "not-initialized"
           ? "CodeGraph CLI and MCP are present, but this repo has not been indexed."
           : projectIndexStatus === "unavailable"
@@ -1329,7 +1359,8 @@ function printText(result) {
   }
   for (const host of SELECTED_HOSTS) {
     const entry = codegraph.mcp_hosts[host];
-    console.log(`  - ${entry.label} MCP: ${entry.status}`);
+    const suffix = entry.tool_search ? ` (${entry.tool_search})` : "";
+    console.log(`  - ${entry.label} MCP: ${entry.status}${suffix}`);
   }
   console.log(`  - Project index: ${codegraph.project_index.status}`);
   console.log(`  - Updates: ${codegraph.update_status} (${codegraph.update_reason})`);

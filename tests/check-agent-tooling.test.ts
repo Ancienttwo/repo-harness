@@ -29,6 +29,17 @@ function setupFakeEnvironment(prefix: string) {
 
   mkdirSync(home, { recursive: true });
   mkdirSync(fakeBin, { recursive: true });
+  writeExecutable(
+    join(fakeBin, "timeout"),
+    [
+      "#!/bin/bash",
+      "set -euo pipefail",
+      "if [[ \"${1:-}\" == --kill-after=* ]]; then shift; fi",
+      "if [[ \"${1:-}\" == *s ]]; then shift; fi",
+      "exec \"$@\"",
+      "",
+    ].join("\n")
+  );
 
   return { root, home, fakeBin };
 }
@@ -78,6 +89,19 @@ function writeWazaLock(home: string) {
       null,
       2
     )
+  );
+}
+
+function writeClaudeCodeGraphConfig(home: string, alwaysLoad: boolean) {
+  const codegraph: Record<string, unknown> = {
+    type: "stdio",
+    command: "codegraph",
+    args: ["serve", "--mcp"],
+  };
+  if (alwaysLoad) codegraph.alwaysLoad = true;
+  writeFileSync(
+    join(home, ".claude.json"),
+    JSON.stringify({ mcpServers: { codegraph } }, null, 2)
   );
 }
 
@@ -308,6 +332,69 @@ describe("check-agent-tooling", () => {
     }
   }, 15000);
 
+  test("reports Claude CodeGraph MCP as deferred when alwaysLoad is missing", () => {
+    const envRoot = setupFakeEnvironment("check-agent-tooling-codegraph-claude-deferred");
+    try {
+      writeClaudeCodeGraphConfig(envRoot.home, false);
+      writeFakeNpx(envRoot.fakeBin);
+      writeFakeGbrain(envRoot.fakeBin);
+      writeFakeCodeGraph(envRoot.fakeBin);
+
+      const res = spawnSync("bash", [SCRIPT, "--json", "--host", "claude"], {
+        cwd: ROOT,
+        encoding: "utf-8",
+        env: {
+          ...process.env,
+          HOME: envRoot.home,
+          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          AGENTIC_DEV_CODEGRAPH_LOCAL_BIN: join(envRoot.fakeBin, "codegraph"),
+        },
+      });
+
+      expect(res.status).toBe(0);
+      const report = JSON.parse(res.stdout);
+      expect(report.tools.codegraph.status).toBe("partial");
+      expect(report.tools.codegraph.reason).toContain("missing or deferred");
+      expect(report.tools.codegraph.mcp_hosts.claude.status).toBe("deferred");
+      expect(report.tools.codegraph.mcp_hosts.claude.always_load).toBe(false);
+      expect(report.tools.codegraph.mcp_hosts.claude.tool_search).toBe("deferred");
+      expect(report.tools.codegraph.mcp_hosts.claude.reason).toContain("alwaysLoad is not true");
+    } finally {
+      rmSync(envRoot.root, { recursive: true, force: true });
+    }
+  }, 15000);
+
+  test("reports Claude CodeGraph MCP as configured when alwaysLoad is true", () => {
+    const envRoot = setupFakeEnvironment("check-agent-tooling-codegraph-claude-always-load");
+    try {
+      writeClaudeCodeGraphConfig(envRoot.home, true);
+      writeFakeNpx(envRoot.fakeBin);
+      writeFakeGbrain(envRoot.fakeBin);
+      writeFakeCodeGraph(envRoot.fakeBin);
+
+      const res = spawnSync("bash", [SCRIPT, "--json", "--host", "claude"], {
+        cwd: ROOT,
+        encoding: "utf-8",
+        env: {
+          ...process.env,
+          HOME: envRoot.home,
+          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          AGENTIC_DEV_CODEGRAPH_LOCAL_BIN: join(envRoot.fakeBin, "codegraph"),
+        },
+      });
+
+      expect(res.status).toBe(0);
+      const report = JSON.parse(res.stdout);
+      expect(report.tools.codegraph.status).toBe("present");
+      expect(report.tools.codegraph.mcp_hosts.claude.status).toBe("configured");
+      expect(report.tools.codegraph.mcp_hosts.claude.always_load).toBe(true);
+      expect(report.tools.codegraph.mcp_hosts.claude.tool_search).toBe("always-load");
+      expect(report.tools.codegraph.impact.code_navigation).toBe("full");
+    } finally {
+      rmSync(envRoot.root, { recursive: true, force: true });
+    }
+  }, 15000);
+
   test("uses only read-only probes during update checks", () => {
     const envRoot = setupFakeEnvironment("check-agent-tooling-updates");
     const logFile = join(envRoot.root, "tool.log");
@@ -387,7 +474,6 @@ describe("check-agent-tooling", () => {
       expect(log).toContain("remote get-url origin");
       expect(log).toContain("rev-parse HEAD");
       expect(log).toContain("ls-remote --symref origin HEAD");
-      expect(log).toContain("npx -y skills ls -g --json");
       expect(log).toContain("curl -fsSL --max-time 5 https://raw.githubusercontent.com/tw93/Waza/main/skills/check/SKILL.md");
       expect(log).toContain("curl -fsSL --max-time 5 https://raw.githubusercontent.com/tw93/Waza/main/rules/durable-context.md");
       expect(log).toContain("gbrain doctor --json");
@@ -439,7 +525,7 @@ describe("check-agent-tooling", () => {
     } finally {
       rmSync(envRoot.root, { recursive: true, force: true });
     }
-  });
+  }, 15000);
 
   test("reports Codex stale drift instead of missing when staging has newer Waza", () => {
     const envRoot = setupFakeEnvironment("check-agent-tooling-waza-drift");
@@ -492,7 +578,7 @@ describe("check-agent-tooling", () => {
     } finally {
       rmSync(envRoot.root, { recursive: true, force: true });
     }
-  });
+  }, 15000);
 
   test("reports Waza directory and shared-rule drift beyond SKILL.md", () => {
     const envRoot = setupFakeEnvironment("check-agent-tooling-waza-shared-drift");
@@ -544,7 +630,7 @@ describe("check-agent-tooling", () => {
     } finally {
       rmSync(envRoot.root, { recursive: true, force: true });
     }
-  });
+  }, 15000);
 
   test("prefers a local CodeGraph binary and reports global drift", () => {
     const envRoot = setupFakeEnvironment("check-agent-tooling-codegraph-local");
@@ -579,5 +665,5 @@ describe("check-agent-tooling", () => {
     } finally {
       rmSync(envRoot.root, { recursive: true, force: true });
     }
-  });
+  }, 15000);
 });

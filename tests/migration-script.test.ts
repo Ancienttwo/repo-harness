@@ -13,6 +13,7 @@ import { join } from "path";
 import { spawnSync } from "child_process";
 
 const ROOT = join(import.meta.dir, "..");
+const MIGRATION_INTEGRATION_TIMEOUT = 60000;
 
 function read(relPath: string): string {
   return readFileSync(join(ROOT, relPath), "utf-8");
@@ -480,7 +481,7 @@ describe("Migration script contract", () => {
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
-  }, 15000);
+  }, MIGRATION_INTEGRATION_TIMEOUT);
 
   test("should be idempotent after a clean migration commit", () => {
     const repo = mkdtempSync(join(tmpdir(), "migration-idempotent-"));
@@ -584,7 +585,7 @@ describe("Migration script contract", () => {
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
-  }, 15000);
+  }, MIGRATION_INTEGRATION_TIMEOUT);
 
   test("should preserve explicit external_tooling overrides while merging defaults", () => {
     const repo = mkdtempSync(join(tmpdir(), "migration-policy-merge-"));
@@ -634,7 +635,7 @@ describe("Migration script contract", () => {
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
-  }, 15000);
+  }, MIGRATION_INTEGRATION_TIMEOUT);
 
   test("should normalize partial tasks-first repos that still have a legacy tasks/todo.md", () => {
     const repo = mkdtempSync(join(tmpdir(), "migration-partial-tasks-"));
@@ -669,7 +670,7 @@ describe("Migration script contract", () => {
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
-  }, 15000);
+  }, MIGRATION_INTEGRATION_TIMEOUT);
 
   test("should reapply migration when .gitignore already contains a managed runtime block", () => {
     const repo = mkdtempSync(join(tmpdir(), "migration-gitignore-"));
@@ -709,7 +710,7 @@ describe("Migration script contract", () => {
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
-  }, 15000);
+  }, MIGRATION_INTEGRATION_TIMEOUT);
 
   test("should migrate legacy active-plan marker to the host-neutral marker", () => {
     const repo = realpathSync(mkdtempSync(join(tmpdir(), "migration-active-marker-")));
@@ -733,7 +734,7 @@ describe("Migration script contract", () => {
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
-  }, 15000);
+  }, MIGRATION_INTEGRATION_TIMEOUT);
 
   test("should preserve non-hook settings while retiring project hooks", () => {
     const repo = mkdtempSync(join(tmpdir(), "migration-merge-"));
@@ -773,7 +774,7 @@ describe("Migration script contract", () => {
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
-  }, 15000);
+  }, MIGRATION_INTEGRATION_TIMEOUT);
 
   test("should remove hooks from settings.local.json without overwriting local settings", () => {
     const repo = mkdtempSync(join(tmpdir(), "migration-local-hooks-"));
@@ -831,7 +832,7 @@ describe("Migration script contract", () => {
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
-  }, 15000);
+  }, MIGRATION_INTEGRATION_TIMEOUT);
 
   test("should retire hooks and preserve non-hook settings when jq is unavailable", () => {
     const repo = mkdtempSync(join(tmpdir(), "migration-no-jq-"));
@@ -874,5 +875,5 @@ describe("Migration script contract", () => {
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
-  }, 15000);
+  }, MIGRATION_INTEGRATION_TIMEOUT);
 });

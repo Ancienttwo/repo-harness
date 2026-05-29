@@ -31,7 +31,29 @@ function writeFakeCodeGraph(fakeBin: string, logFile: string) {
       "case \"${1:-}\" in",
       "  \"--version\") echo '0.9.6' ;;",
       "  \"status\") echo 'CodeGraph Status'; echo 'Index is up to date' ;;",
-      "  \"install\") echo 'installed' ;;",
+      "  \"install\")",
+      "    if [[ \" $* \" == *\" --target codex \"* ]]; then",
+      "      mkdir -p \"$HOME/.codex\"",
+      "      cat > \"$HOME/.codex/config.toml\" <<'TOML'",
+      "[mcp_servers.codegraph]",
+      "command = \"codegraph\"",
+      "args = [\"serve\", \"--mcp\"]",
+      "TOML",
+      "    fi",
+      "    if [[ \" $* \" == *\" --target claude \"* && ! -f \"$HOME/.claude.json\" ]]; then",
+      "      cat > \"$HOME/.claude.json\" <<'JSON'",
+      "{",
+      "  \"mcpServers\": {",
+      "    \"codegraph\": {",
+      "      \"type\": \"stdio\",",
+      "      \"command\": \"codegraph\",",
+      "      \"args\": [\"serve\", \"--mcp\"]",
+      "    }",
+      "  }",
+      "}",
+      "JSON",
+      "    fi",
+      "    echo 'installed' ;;",
       "  *) exit 1 ;;",
       "esac",
       "",
@@ -74,12 +96,14 @@ type RunConfigureOptions = {
   // step has something to mutate. Pass "missing" to skip seeding entirely and
   // exercise the "no Claude Code installed" branch.
   seedClaudeSettings?: Record<string, unknown> | "missing" | null;
+  seedClaudeRootConfig?: Record<string, unknown> | null;
 };
 
 function runConfigure(target: string, options: RunConfigureOptions = {}) {
   const envRoot = setupFakeEnvironment(`repo-harness-tools-configure-${target}`);
   const logFile = join(envRoot.root, "tool.log");
   const claudeSettingsPath = join(envRoot.home, ".claude", "settings.json");
+  const claudeRootConfigPath = join(envRoot.home, ".claude.json");
   try {
     mkdirSync(join(envRoot.home, ".codex"), { recursive: true });
     writeFileSync(join(envRoot.home, ".codex", "config.toml"), "# no codegraph yet\n");
@@ -88,6 +112,9 @@ function runConfigure(target: string, options: RunConfigureOptions = {}) {
     if (seed !== "missing") {
       mkdirSync(dirname(claudeSettingsPath), { recursive: true });
       writeFileSync(claudeSettingsPath, `${JSON.stringify(seed ?? {}, null, 2)}\n`);
+    }
+    if (options.seedClaudeRootConfig) {
+      writeFileSync(claudeRootConfigPath, `${JSON.stringify(options.seedClaudeRootConfig, null, 2)}\n`);
     }
 
     writeFakeCodeGraph(envRoot.fakeBin, logFile);
@@ -107,12 +134,24 @@ function runConfigure(target: string, options: RunConfigureOptions = {}) {
 
     const log = readFileSync(logFile, "utf-8");
     let claudeSettingsAfter: any = null;
+    let claudeRootConfigAfter: any = null;
+    let codexConfigAfter = "";
     try {
       claudeSettingsAfter = JSON.parse(readFileSync(claudeSettingsPath, "utf-8"));
     } catch (_error) {
       claudeSettingsAfter = null;
     }
-    return { res, log, claudeSettingsAfter };
+    try {
+      claudeRootConfigAfter = JSON.parse(readFileSync(claudeRootConfigPath, "utf-8"));
+    } catch (_error) {
+      claudeRootConfigAfter = null;
+    }
+    try {
+      codexConfigAfter = readFileSync(join(envRoot.home, ".codex", "config.toml"), "utf-8");
+    } catch (_error) {
+      codexConfigAfter = "";
+    }
+    return { res, log, claudeSettingsAfter, claudeRootConfigAfter, codexConfigAfter };
   } finally {
     rmSync(envRoot.root, { recursive: true, force: true });
   }
@@ -120,31 +159,69 @@ function runConfigure(target: string, options: RunConfigureOptions = {}) {
 
 describe("tools configure codegraph", () => {
   test("configures Codex through the CodeGraph target adapter", () => {
-    const { res, log } = runConfigure("codex");
+    const { res, log, codexConfigAfter } = runConfigure("codex");
     expect(res.status).toBe(0);
     const result = JSON.parse(res.stdout);
     expect(result.target).toBe("codex");
     expect(result.location).toBe("global");
-    expect(result.actions.map((entry: { action: string }) => entry.action)).toEqual(["configure-codex"]);
+    expect(result.actions.map((entry: { action: string }) => entry.action)).toEqual([
+      "configure-codex",
+      "codex-project-path",
+    ]);
     expect(log).toContain("codegraph install --target codex --location global --yes");
+    expect(codexConfigAfter).toContain('args = ["serve", "--mcp", "--path", "."]');
   }, 15000);
 
   test("configures Claude and registers codegraph for eager schema load", () => {
-    const { res, log, claudeSettingsAfter } = runConfigure("claude");
+    const { res, log, claudeSettingsAfter, claudeRootConfigAfter } = runConfigure("claude");
     expect(res.status).toBe(0);
     const result = JSON.parse(res.stdout);
     expect(result.target).toBe("claude");
     expect(result.actions.map((entry: { action: string }) => entry.action)).toEqual([
       "configure-claude",
+      "claude-project-path",
+      "claude-always-load",
       "claude-allowed-tools",
     ]);
     expect(log).toContain("codegraph install --target claude --location global --yes");
 
+    const alwaysLoad = (result.actions as Array<{ action: string; status: string }>).find(
+      (entry) => entry.action === "claude-always-load",
+    );
     const allowedTools = (result.actions as Array<{ action: string; status: string }>).find(
       (entry) => entry.action === "claude-allowed-tools",
     );
+    expect(alwaysLoad?.status).toBe("changed");
     expect(allowedTools?.status).toBe("changed");
+    expect(claudeRootConfigAfter?.mcpServers?.codegraph?.args).toEqual(["serve", "--mcp", "--path", "."]);
+    expect(claudeRootConfigAfter?.mcpServers?.codegraph?.alwaysLoad).toBe(true);
     expect(claudeSettingsAfter?.allowedTools).toContain("mcp__codegraph__*");
+  }, 15000);
+
+  test("claude-always-load is idempotent when CodeGraph is already pinned", () => {
+    const { res, claudeRootConfigAfter } = runConfigure("claude", {
+      seedClaudeRootConfig: {
+        mcpServers: {
+          codegraph: {
+            type: "stdio",
+          command: "codegraph",
+          args: ["serve", "--mcp", "--path", "."],
+          alwaysLoad: true,
+        },
+      },
+      },
+    });
+    expect(res.status).toBe(0);
+    const result = JSON.parse(res.stdout);
+    const alwaysLoad = (result.actions as Array<{ action: string; status: string }>).find(
+      (entry) => entry.action === "claude-always-load",
+    );
+    const projectPath = (result.actions as Array<{ action: string; status: string }>).find(
+      (entry) => entry.action === "claude-project-path",
+    );
+    expect(projectPath?.status).toBe("unchanged");
+    expect(alwaysLoad?.status).toBe("unchanged");
+    expect(claudeRootConfigAfter?.mcpServers?.codegraph?.alwaysLoad).toBe(true);
   }, 15000);
 
   test("claude-allowed-tools is idempotent when the wildcard is already present", () => {
@@ -179,7 +256,10 @@ describe("tools configure codegraph", () => {
     expect(result.target).toBe("both");
     expect(result.actions.map((entry: { action: string }) => entry.action)).toEqual([
       "configure-codex",
+      "codex-project-path",
       "configure-claude",
+      "claude-project-path",
+      "claude-always-load",
       "claude-allowed-tools",
     ]);
     expect(log).toContain("codegraph install --target codex --location global --yes");

@@ -208,12 +208,15 @@ describe('doctor command (Phase 1C)', () => {
       expect(codegraph).toBeDefined();
       expect(codegraph.status).toBe('warn');
       expect(codegraph.detail).toContain('source=global');
+      expect(codegraph.detail).toContain('claude-mcp=deferred');
       expect(codegraph.detail).toContain('remediation=bun install');
       const codexMcp = report.checks.find((entry: { id: string }) => entry.id === 'codex-codegraph-mcp');
       const claudeMcp = report.checks.find((entry: { id: string }) => entry.id === 'claude-codegraph-mcp');
       const index = report.checks.find((entry: { id: string }) => entry.id === 'codegraph-index');
       expect(codexMcp.status).toBe('ok');
-      expect(claudeMcp.status).toBe('ok');
+      expect(claudeMcp.status).toBe('warn');
+      expect(claudeMcp.detail).toContain('alwaysLoad is not true');
+      expect(claudeMcp.detail).toContain('repo-harness tools configure codegraph --target claude --location global');
       expect(index.status).toBe('ok');
 
       const log = fs.readFileSync(logFile, 'utf-8');

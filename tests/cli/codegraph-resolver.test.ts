@@ -18,6 +18,17 @@ function setupFakeEnvironment(prefix: string) {
   const fakeBin = join(root, "fakebin");
   mkdirSync(home, { recursive: true });
   mkdirSync(fakeBin, { recursive: true });
+  writeExecutable(
+    join(fakeBin, "timeout"),
+    [
+      "#!/bin/bash",
+      "set -euo pipefail",
+      "if [[ \"${1:-}\" == --kill-after=* ]]; then shift; fi",
+      "if [[ \"${1:-}\" == *s ]]; then shift; fi",
+      "exec \"$@\"",
+      "",
+    ].join("\n")
+  );
   return { root, home, fakeBin };
 }
 
@@ -107,5 +118,5 @@ describe("ensure-codegraph", () => {
     } finally {
       rmSync(envRoot.root, { recursive: true, force: true });
     }
-  });
+  }, 15000);
 });

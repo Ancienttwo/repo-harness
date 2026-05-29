@@ -16,8 +16,24 @@ Codex.
 
 `repo-harness init` is allowed to bootstrap the workflow-owned runtime skills in
 one pass: Waza (`check`, `design`, `health`, `hunt`, `learn`, `read`, `think`,
-`write`) plus `diagram-design` for Codex and/or Claude. It must not silently
-install unrelated toolchains.
+`write`) plus `diagram-design` for Codex and/or Claude, plus the bundled
+cross-review skills `codex-review` (Claude host) and `claude-review` (Codex host).
+It must not silently install unrelated toolchains.
+
+The cross-review skills are **harness-owned and self-contained** — their source
+lives in `assets/skills/<skill>/` and they wrap the peer CLI (`codex exec` /
+`claude -p`) in a read-only sandbox with no gstack dependency, so installing them
+is a workflow-owned runtime concern, not an unrelated toolchain. They install
+host-aware: `codex-review` only into `~/.claude/skills` (a Claude session asking
+Codex for an independent review) and `claude-review` only into `~/.codex/skills`
+(a Codex session asking Claude). When gstack is present, its `/codex` and
+`gstack-claude` skills are a more featureful superset; the harness skills are the
+zero-dependency baseline that always ships with `init`.
+
+The review scope is the current reviewable diff, not just committed branch
+history: branch diff against the default base, staged changes, unstaged tracked
+changes, and untracked files are all in scope. A timeout or missing peer CLI is
+reported as unavailable review evidence, not as a pass.
 
 The Codex automation profile is a runtime reference, not a vendored copy. It
 requires Waza `health`, Waza `check`, and the standalone `diagram-design` skill

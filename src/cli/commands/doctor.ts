@@ -160,7 +160,7 @@ function codegraphRemediation(result: CodegraphCheckResult): string | null {
   if (result.resolution.globalFallbackUsed) {
     return String(raw.install_command ?? 'bun install');
   }
-  if (raw.mcp_hosts?.codex?.status !== 'configured' || raw.mcp_hosts?.claude?.status === 'missing') {
+  if (raw.mcp_hosts?.codex?.status !== 'configured' || raw.mcp_hosts?.claude?.status !== 'configured') {
     return String(raw.mcp_install_command ?? 'repo-harness tools configure codegraph --target both --location global');
   }
   if (raw.project_index?.status === 'not-initialized') {

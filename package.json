@@ -20,7 +20,8 @@
     "README.md"
   ],
   "bin": {
-    "repo-harness": "src/cli/index.ts"
+    "repo-harness": "src/cli/index.ts",
+    "repo-harness-hook": "src/cli/hook-entry.ts"
   },
   "engines": {
     "bun": ">=1.0.0"
