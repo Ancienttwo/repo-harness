@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-05-31T20:25:44+0800 -->
+<!-- updated_at: 2026-05-31T20:35:59+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-05-31T20:25:44+0800
+> **Updated At**: 2026-05-31T20:35:59+0800
 > **Source Branch**: main
-> **Source Commit**: 8eb6c72
+> **Source Commit**: eea5eb2
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: release-0.1.3-changelog-complete
+> **Reason**: release-0.1.3-readme-architecture
 > **Derived From**: active-plan, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -50,21 +50,13 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 12 changed/untracked path(s)
+- Summary: 4 changed/untracked path(s)
 
 ```
  M README.md
- M assets/templates/helpers/check-deploy-sql-order.sh
- M assets/templates/helpers/refresh-current-status.sh
+ M README.zh-CN.md
  M docs/CHANGELOG.md
- M package.json
- M scripts/check-deploy-sql-order.sh
- M src/cli/commands/status.ts
- M src/cli/index.ts
- M tasks/current.md
- M tests/bootstrap-files.test.ts
- M tests/helper-scripts.test.ts
- M tests/hook-runtime.test.ts
+ M docs/reference-configs/hook-operations.md
 ```
 
 ## Source Artifacts

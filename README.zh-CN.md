@@ -40,6 +40,15 @@ repo-local hooks，然后验证这些 workflow surfaces 仍然一致。
    repo 是否存在 `.ai/harness/workflow-contract.json`；没有 opt in 就静默退出，有 opt in
    才进入当前仓库的 `.ai/hooks/*`。
 
+对 `UserPromptSubmit` 来说，公开 adapter contract 仍然是
+`repo-harness-hook UserPromptSubmit --route default`。CLI route registry 会把这个
+route dispatch 到 `.ai/hooks/prompt-guard.sh`。Shell hook 继续负责 host JSON 解析、
+workflow 文件读取、plan capture 副作用、quality gate 渲染，以及 host-safe
+stdout/stderr。Prompt intent 和 workflow state 的决策交给
+`repo-harness-hook prompt-guard-decide` 背后的 TypeScript decision engine；它从显式
+decision table 里返回一个 action enum。这样 host 配置不变，但最容易出错的
+classifier/state-machine 层不再散落在 shell 条件分支里。
+
 核心不变量：持久事实在仓库里，不在聊天窗口里。Hooks 只是加速器和 guardrail；
 真正的 authority 是 plan、contract、review、checks 和 handoff 这些文件。
 
@@ -103,9 +112,10 @@ npx -y repo-harness init
 ```
 
 npm package release line 是 `0.1.x`；生成的 workflow compatibility model line
-单独以 `5.x` 追踪。`repo-harness@0.1.2` 发布的是改名后的 CLI、Claude/Codex
-user-level hook adapter bootstrap、Waza runtime skill sync、`diagram-design` sync，
-以及 maintainer 发布 npm 前使用的 release gate。
+单独以 `5.x` 追踪。`repo-harness@0.1.3` 发布的是改名后的 CLI、Claude/Codex
+user-level hook adapter bootstrap、AI-native scaffold overlays、typed prompt-guard
+decision engine、Waza runtime skill sync、`diagram-design` sync，以及 maintainer
+发布 npm 前使用的 release gate。
 
 如果从源码 checkout 工作：
 
@@ -180,6 +190,23 @@ bun test
 - Codex 必须在 Settings 里信任 `~/.codex/hooks.json`，hooks 才会执行。
 - 调试顺序：user-level adapter config -> `repo-harness-hook` 或 fallback `repo-harness hook` -> route registry -> `.ai/hooks/*`。
 
+Prompt guard 多一个内部步骤：
+
+```mermaid
+flowchart LR
+  Host["Claude/Codex UserPromptSubmit"] --> Adapter["user-level adapter"]
+  Adapter --> CLI["repo-harness-hook UserPromptSubmit --route default"]
+  CLI --> Route["route registry"]
+  Route --> Shell[".ai/hooks/prompt-guard.sh"]
+  Shell --> Decision["repo-harness-hook prompt-guard-decide<br/>TypeScript decision table"]
+  Decision --> Action["single action enum"]
+  Action --> Shell
+  Shell --> HostOutput["host-safe allow, advice, block, or done gate output"]
+```
+
+Shell 层仍然拥有文件系统 authority 和副作用。TypeScript 只拥有 classifier 加
+`intent x plan state` decision table。
+
 ## Hook Failure Playbook
 
 hook block 工作时，先看 terminal 里的结构化输出。核心字段是
@@ -208,7 +235,7 @@ hook block 工作时，先看 terminal 里的结构化输出。核心字段是
 
 ## 当前 Release
 
-- npm package：`repo-harness@0.1.2`
+- npm package：`repo-harness@0.1.3`
 - Generated workflow compatibility：`5.2.3`
 - GitHub repository：`Ancienttwo/repo-harness`
 - Release history：[`docs/CHANGELOG.md`](docs/CHANGELOG.md)

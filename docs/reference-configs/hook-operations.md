@@ -16,6 +16,15 @@ Start with the shortest truth path:
 3. The route registry selects the ordered `.ai/hooks/*` scripts for that event and route.
 4. `.ai/hooks/*` is the shared implementation layer and the default place to edit.
 
+`UserPromptSubmit.default` keeps that same public route, but prompt-guard has a
+split implementation:
+
+1. `repo-harness-hook UserPromptSubmit --route default` dispatches to `.ai/hooks/prompt-guard.sh`.
+2. `prompt-guard.sh` parses host prompt JSON, reads workflow files, performs capture side effects, runs quality gates, and renders host-safe stdout/stderr.
+3. For intent plus workflow-state routing, `prompt-guard.sh` calls `repo-harness-hook prompt-guard-decide`.
+4. The TypeScript decision engine classifies prompt facts, reads state facts from environment variables, and returns one action enum from the explicit decision table.
+5. `prompt-guard.sh` renders that action as allow, advice, block, capture guidance, execution guidance, or done-gate output.
+
 If you are asking "which hook file should I edit?", default to `.ai/hooks/`.
 After installing or refreshing `~/.codex/hooks.json`, open Codex Settings and
 mark the user-level hook config as trusted; otherwise Codex will not execute it.

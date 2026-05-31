@@ -45,6 +45,16 @@ The design has three layers:
    the current repo's `.ai/hooks/*` scripts only when
    `.ai/harness/workflow-contract.json` exists.
 
+For `UserPromptSubmit`, the public adapter contract stays
+`repo-harness-hook UserPromptSubmit --route default`. The CLI route registry
+dispatches that route to `.ai/hooks/prompt-guard.sh`. The shell hook remains the
+repo-local adapter for host JSON parsing, workflow file reads, capture side
+effects, quality gate rendering, and host-safe stdout/stderr. The prompt intent
+and workflow-state decision is handled by the TypeScript decision engine behind
+`repo-harness-hook prompt-guard-decide`, which returns one action enum from an
+explicit decision table. That split keeps host configuration stable while moving
+the brittle classifier/state-machine layer out of shell conditionals.
+
 The core invariant is that durable truth lives in the repo, not in a chat
 thread. Hooks are accelerators and guardrails; the authority remains the
 file-backed plan, contract, review, checks, and handoff artifacts.
@@ -194,6 +204,23 @@ before applying anything.
 - Repo-local `.claude/settings.json` and `.codex/hooks.json` hook adapters are legacy project-level config and should be retired during migration.
 - Codex must mark `~/.codex/hooks.json` as trusted in Codex Settings before those hooks run.
 - Debug in this order: user-level adapter config -> `repo-harness-hook` (or fallback `repo-harness hook`) -> route registry -> `.ai/hooks/*`.
+
+Prompt guard has one extra internal step:
+
+```mermaid
+flowchart LR
+  Host["Claude/Codex UserPromptSubmit"] --> Adapter["user-level adapter"]
+  Adapter --> CLI["repo-harness-hook UserPromptSubmit --route default"]
+  CLI --> Route["route registry"]
+  Route --> Shell[".ai/hooks/prompt-guard.sh"]
+  Shell --> Decision["repo-harness-hook prompt-guard-decide<br/>TypeScript decision table"]
+  Decision --> Action["single action enum"]
+  Action --> Shell
+  Shell --> HostOutput["host-safe allow, advice, block, or done gate output"]
+```
+
+The shell layer still owns filesystem authority and side effects. TypeScript owns
+only the classifier plus `intent x plan state` decision table.
 
 ## Hook Failure Playbook
 
