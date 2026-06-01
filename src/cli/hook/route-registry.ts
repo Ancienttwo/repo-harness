@@ -43,7 +43,7 @@ export const ROUTES: readonly Route[] = Object.freeze([
   Object.freeze({
     event: 'SessionStart' as const,
     routeId: 'default' as const,
-    scripts: Object.freeze(['session-start-context.sh']),
+    scripts: Object.freeze(['session-start-context.sh', 'security-sentinel.sh']),
   }),
   Object.freeze({
     event: 'PreToolUse' as const,

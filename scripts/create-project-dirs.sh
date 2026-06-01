@@ -94,6 +94,7 @@ mkdir -p .ai/harness/checks
 mkdir -p .ai/harness/handoff
 mkdir -p .ai/harness/context-budget
 mkdir -p .ai/harness/failures
+mkdir -p .ai/harness/security
 mkdir -p .ai/harness/runs
 mkdir -p deploy/env
 mkdir -p deploy/scripts
@@ -222,6 +223,7 @@ DOCS_SPEC_EOF
 # - .ai/harness/handoff/resume.md
 # - .ai/harness/context-budget/latest.json
 # - .ai/harness/failures/latest.jsonl
+# - .ai/harness/security/.gitkeep
 # - .ai/harness/worktrees/.gitkeep
 # - .ai/harness/runs/.gitkeep
 pi_ensure_harness_state_surface "$PWD" "apply"

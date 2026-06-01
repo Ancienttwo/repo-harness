@@ -2,7 +2,7 @@
 /**
  * repo-harness CLI entry — Phase 1B.
  *
- * Wires commander.js to install, hook, status, doctor, migrate, and tools
+ * Wires commander.js to install, hook, status, doctor, migrate, security, and tools
  * command bodies. Keeps the Phase 1A `SUBCOMMANDS` / `Subcommand` exports
  * importable by Phase 1A tests so the scaffold contract survives the rewrite.
  */
@@ -17,6 +17,7 @@ import { formatMigratePlan, runMigrate } from './commands/migrate';
 import { buildToolsCommand } from './commands/tools';
 import { buildBrainCommand } from './commands/brain';
 import { buildCapabilityContextCommand } from './commands/capability-context';
+import { formatSecurityScan, runSecurityScan } from './commands/security';
 import { runPromptGuardDecisionFromEnv } from './commands/prompt-guard-decision';
 import type { Location } from './installer/types';
 import type { HookEvent, RouteId } from './hook/route-registry';
@@ -28,6 +29,7 @@ export const SUBCOMMANDS = [
   'status',
   'doctor',
   'migrate',
+  'security',
   'tools',
   'brain',
   'capability-context',
@@ -184,6 +186,21 @@ export function buildProgram(): Command {
       const plan = runMigrate({ apply: rawOpts.apply === true });
       console.log(formatMigratePlan(plan, rawOpts.json === true));
       process.exit(0);
+    });
+
+  const security = program
+    .command('security')
+    .description('Read-only security checks for local hook and editor task configs');
+  security
+    .command('scan')
+    .description('Scan Claude/Codex hook configs and VS Code folder-open tasks')
+    .option('--json', 'Output JSON instead of human-readable text')
+    .option('--strict', 'Exit non-zero when high-risk or failed findings are present')
+    .action((rawOpts: { json?: boolean; strict?: boolean }) => {
+      const report = runSecurityScan();
+      console.log(formatSecurityScan(report, rawOpts.json === true));
+      const strictFailure = report.findings.some((finding) => finding.severity === 'high' || finding.severity === 'fail');
+      process.exit(rawOpts.strict === true && strictFailure ? 1 : 0);
     });
 
   program.addCommand(buildToolsCommand());

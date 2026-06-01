@@ -105,6 +105,7 @@ describe('doctor command (Phase 1C)', () => {
       expect(ids).toContain('codex-codegraph-mcp');
       expect(ids).toContain('claude-codegraph-mcp');
       expect(ids).toContain('codegraph-index');
+      expect(ids).toContain('security-config');
     });
   }, DOCTOR_CHECK_TIMEOUT_MS);
 
@@ -171,6 +172,18 @@ describe('doctor command (Phase 1C)', () => {
       const parsed = JSON.parse(json);
       expect(Array.isArray(parsed.checks)).toBe(true);
       expect(parsed.summary).toBeDefined();
+    });
+  }, DOCTOR_CHECK_TIMEOUT_MS);
+
+  test('security-config reports fail when hook JSON is invalid', () => {
+    withTempHome((home) => {
+      const hooksPath = path.join(home, '.codex/hooks.json');
+      fs.mkdirSync(path.dirname(hooksPath), { recursive: true });
+      fs.writeFileSync(hooksPath, '{ not json');
+      const r = runDoctor();
+      const security = r.checks.find((c) => c.id === 'security-config')!;
+      expect(security.status).toBe('fail');
+      expect(security.detail).toContain('invalid-json');
     });
   }, DOCTOR_CHECK_TIMEOUT_MS);
 

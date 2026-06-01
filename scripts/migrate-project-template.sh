@@ -10,7 +10,8 @@
 #   .ai/harness/events.jsonl, .ai/harness/architecture/events.jsonl,
 #   .ai/harness/handoff/current.md,
 #   .ai/harness/handoff/resume.md, .ai/harness/context-budget/latest.json,
-#   .ai/harness/failures/latest.jsonl, .ai/harness/worktrees/.gitkeep, .ai/harness/runs/.gitkeep
+#   .ai/harness/failures/latest.jsonl, .ai/harness/security/.gitkeep,
+#   .ai/harness/worktrees/.gitkeep, .ai/harness/runs/.gitkeep
 #
 # Usage:
 #   bash scripts/migrate-project-template.sh --repo /path/to/repo --dry-run
@@ -356,7 +357,7 @@ create_task_files_if_missing() {
   todo_file="$repo/tasks/todo.md"
 
   if [[ "$MODE" != "apply" ]]; then
-    echo "[dry-run] ensure docs/spec.md, tasks/*, workstreams, reviews, notes, .ai/context/{capabilities.json,context-map.json}, and .ai/harness/{checks/latest.json,policy.json,brain-manifest.json,events.jsonl,architecture/events.jsonl,handoff/current.md,handoff/resume.md,context-budget/latest.json,failures/latest.jsonl,worktrees/.gitkeep,runs/.gitkeep} exist with current workflow guidance"
+    echo "[dry-run] ensure docs/spec.md, tasks/*, workstreams, reviews, notes, .ai/context/{capabilities.json,context-map.json}, and .ai/harness/{checks/latest.json,policy.json,brain-manifest.json,events.jsonl,architecture/events.jsonl,handoff/current.md,handoff/resume.md,context-budget/latest.json,failures/latest.jsonl,security/.gitkeep,worktrees/.gitkeep,runs/.gitkeep} exist with current workflow guidance"
     return
   fi
 

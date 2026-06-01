@@ -16,6 +16,7 @@ Authoritative split:
 - `src/cli/installer/targets/*`: user-level adapter writers for `~/.claude/settings.json` and `~/.codex/hooks.json`.
 - `src/cli/hook/*`: public route registry and compatibility runtime bridge.
 - `src/cli/hook-entry.ts`: minimal hook-only entrypoint that checks repo opt-in and dispatches ordered `.ai/hooks/*` scripts without loading the full CLI.
+- `src/cli/commands/security.ts`: read-only security scan for user-level hook config and VS Code folder-open task injection surfaces.
 - Repo-local `.claude/settings.json` and `.codex/hooks.json`: retired legacy project-level adapters cleaned by migration.
 - Repo-local `.codex/*`: ignored Codex runtime residue.
 - Codex Settings trust state: user-controlled runtime approval required before Codex executes `~/.codex/hooks.json`.
@@ -39,6 +40,12 @@ Post-edit route: edit/write -> `post-edit-guard.sh` -> architecture-sensitive
 paths call `architecture-drift.sh` -> capability resolver binds the changed file
 to a capability -> pending request is written under `docs/architecture/requests`
 and an event is appended under `.ai/harness/architecture/events.jsonl`.
+
+Session-start security route: `SessionStart.default` runs
+`session-start-context.sh` and then `security-sentinel.sh` under the same
+adapter entry. The runtime aggregates SessionStart stdout from ordered scripts
+into one `additionalContext` JSON payload, so adding the sentinel does not
+create a new Codex trust entry or emit invalid multiple JSON documents.
 
 Error paths:
 
@@ -90,6 +97,7 @@ flowchart TD
   subgraph Routes["Public Route Registry"]
     Route --> SS["SessionStart.default"]
     SS --> SSC["session-start-context.sh"]
+    SSC --> SecuritySentinel["security-sentinel.sh<br/>changed-only config scan"]
 
     Route --> PreEdit["PreToolUse.edit<br/>matcher: Edit|Write"]
     PreEdit --> Worktree["worktree-guard.sh"]
@@ -139,6 +147,7 @@ flowchart TD
 
   subgraph Effects["Side Effects / Outputs"]
     SSC --> AddCtx["SessionStart additionalContext JSON"]
+    SecuritySentinel --> SecurityCtx["security scan -> .ai/harness/security/latest.json<br/>optional SessionStart reminder"]
     PreGuard --> Block["guards: _ref, _ops, deploy, scope, plan transition, test/spec-first"]
     PostGuard --> Verify["verify-contract --quiet -> .ai/harness/checks/latest.json"]
     PostGuard --> Drift["architecture-drift.sh -> docs/architecture/requests + events.jsonl"]

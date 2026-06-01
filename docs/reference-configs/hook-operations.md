@@ -36,6 +36,19 @@ stdout stays quiet for ordinary successful hooks, but valid Stop decision JSON
 is forwarded so Codex can honor a one-shot planning completeness block; success
 stderr such as handoff refresh noise remains suppressed.
 
+`SessionStart.default` runs `session-start-context.sh` and
+`security-sentinel.sh` under the same adapter entry. The dispatcher aggregates
+their SessionStart context into one JSON payload. The security sentinel is
+changed-only and advisory: it scans only `~/.claude/settings.json`,
+`~/.codex/hooks.json`, current repo `.vscode/tasks.json`, and legacy repo-local
+hook adapter files, then writes `.ai/harness/security/latest.json`.
+
+Use this command for an explicit read-only audit:
+
+```bash
+repo-harness security scan --json
+```
+
 ## Hook Failure Playbook
 
 When a hook blocks work:

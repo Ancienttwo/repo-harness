@@ -42,6 +42,8 @@ bun.lockb
 .ai/harness/handoff/resume.md
 .ai/harness/context-budget/latest.json
 .ai/harness/capability-context/
+.ai/harness/security/*
+!.ai/harness/security/.gitkeep
 .ai/harness/planning/*
 !.ai/harness/planning/.gitkeep
 .ai/harness/architecture/events.jsonl

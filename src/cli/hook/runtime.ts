@@ -44,6 +44,28 @@ function looksLikeHookDecisionJson(output: Buffer | string | null | undefined): 
   }
 }
 
+function extractSessionStartContext(output: Buffer | string | null | undefined): string | null {
+  if (!output) return null;
+  const text = output.toString().trim();
+  if (!text) return null;
+  if (!text.startsWith('{')) return text;
+  try {
+    const parsed = JSON.parse(text) as {
+      hookSpecificOutput?: { hookEventName?: unknown; additionalContext?: unknown };
+    };
+    const specific = parsed.hookSpecificOutput;
+    if (
+      specific?.hookEventName === 'SessionStart' &&
+      typeof specific.additionalContext === 'string'
+    ) {
+      return specific.additionalContext;
+    }
+  } catch {
+    return text;
+  }
+  return text;
+}
+
 export function resolveRepoRoot(cwd: string): string | null {
   try {
     const out = execFileSync('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], {
@@ -82,6 +104,8 @@ export function runHook(opts: RunHookOptions): RunHookResult {
   }
 
   const hooksDir = opts.hooksDir ?? path.join(repoRoot, '.ai/hooks');
+  const sessionStartCollectStdout = opts.event === 'SessionStart' && opts.stdio === undefined;
+  const sessionStartContexts: string[] = [];
   const codexStopDecisionStdout =
     process.env.HOOK_HOST === 'codex' &&
     opts.event === 'Stop' &&
@@ -91,7 +115,9 @@ export function runHook(opts: RunHookOptions): RunHookResult {
     opts.event !== 'SessionStart' &&
     !codexStopDecisionStdout &&
     opts.stdio === undefined;
-  const stdio: StdioOptions = codexStopDecisionStdout
+  const stdio: StdioOptions = sessionStartCollectStdout
+    ? ['inherit', 'pipe', 'inherit']
+    : codexStopDecisionStdout
     ? ['inherit', 'pipe', 'pipe']
     : codexQuietStdout
     ? ['inherit', 'pipe', 'inherit']
@@ -140,6 +166,11 @@ export function runHook(opts: RunHookOptions): RunHookResult {
       process.stdout.write(child.stdout);
     }
 
+    if (sessionStartCollectStdout && child.status === 0) {
+      const context = extractSessionStartContext(child.stdout);
+      if (context) sessionStartContexts.push(context);
+    }
+
     if (codexStopDecisionStdout && child.status !== 0 && child.stderr) {
       process.stderr.write(child.stderr);
     }
@@ -161,6 +192,15 @@ export function runHook(opts: RunHookOptions): RunHookResult {
         failedScript: script,
       };
     }
+  }
+
+  if (sessionStartCollectStdout && sessionStartContexts.length > 0) {
+    process.stdout.write(`${JSON.stringify({
+      hookSpecificOutput: {
+        hookEventName: 'SessionStart',
+        additionalContext: sessionStartContexts.join('\n'),
+      },
+    })}\n`);
   }
 
   return { exitCode: 0, reason: 'ok', repoRoot, scriptsRun };

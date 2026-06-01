@@ -200,7 +200,12 @@ describe("workflow contract manifest", () => {
     expect(runtimeFiles).toContain(".ai/harness/active-plan");
     expect(runtimeFiles).toContain(".ai/harness/active-worktree");
     expect(runtimeFiles).toContain(".ai/harness/planning/");
-    const placeholderBackedRuntime = new Set([".ai/harness/runs/.gitkeep", ".ai/harness/worktrees/", ".ai/harness/planning/"]);
+    const placeholderBackedRuntime = new Set([
+      ".ai/harness/runs/.gitkeep",
+      ".ai/harness/security/.gitkeep",
+      ".ai/harness/worktrees/",
+      ".ai/harness/planning/",
+    ]);
 
     for (const file of runtimeFiles.filter((name) => !placeholderBackedRuntime.has(name))) {
       const tracked = spawnSync("git", ["ls-files", "--error-unmatch", file], {

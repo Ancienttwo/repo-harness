@@ -28,7 +28,7 @@ describe('route registry (Phase 1B Z design)', () => {
   });
 
   test('getRoute returns the expected ordered scripts for each route', () => {
-    expect(getRoute('SessionStart', 'default')?.scripts).toEqual(['session-start-context.sh']);
+    expect(getRoute('SessionStart', 'default')?.scripts).toEqual(['session-start-context.sh', 'security-sentinel.sh']);
     expect(getRoute('PreToolUse', 'edit')?.scripts).toEqual(['worktree-guard.sh', 'pre-edit-guard.sh']);
     expect(getRoute('PostToolUse', 'edit')?.scripts).toEqual(['post-edit-guard.sh']);
     expect(getRoute('PostToolUse', 'bash')?.scripts).toEqual(['post-bash.sh']);
@@ -56,6 +56,7 @@ describe('route registry (Phase 1B Z design)', () => {
   test('every route script name is in the known hook set (catches typos)', () => {
     const KNOWN = new Set([
       'session-start-context.sh',
+      'security-sentinel.sh',
       'worktree-guard.sh',
       'pre-edit-guard.sh',
       'post-edit-guard.sh',

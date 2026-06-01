@@ -53,6 +53,8 @@ PI_DEFAULT_RUNTIME_ENTRIES=$(cat <<'EOF_RUNTIME'
 .ai/harness/handoff/resume.md
 .ai/harness/context-budget/latest.json
 .ai/harness/capability-context/
+.ai/harness/security/*
+!.ai/harness/security/.gitkeep
 .ai/harness/planning/*
 !.ai/harness/planning/.gitkeep
 .ai/harness/architecture/events.jsonl
@@ -1844,6 +1846,7 @@ pi_ensure_harness_state_surface() {
     "$target_dir/.ai/harness/handoff" \
     "$target_dir/.ai/harness/context-budget" \
     "$target_dir/.ai/harness/failures" \
+    "$target_dir/.ai/harness/security" \
     "$target_dir/.ai/harness/planning" \
     "$target_dir/.ai/harness/architecture" \
     "$target_dir/.ai/harness/worktrees" \
@@ -1863,6 +1866,7 @@ pi_ensure_harness_state_surface() {
   [[ -f "$target_dir/.ai/harness/architecture/events.jsonl" ]] || : > "$target_dir/.ai/harness/architecture/events.jsonl"
   [[ -f "$target_dir/.ai/harness/architecture/.gitkeep" ]] || : > "$target_dir/.ai/harness/architecture/.gitkeep"
   [[ -f "$target_dir/.ai/harness/failures/latest.jsonl" ]] || : > "$target_dir/.ai/harness/failures/latest.jsonl"
+  [[ -f "$target_dir/.ai/harness/security/.gitkeep" ]] || : > "$target_dir/.ai/harness/security/.gitkeep"
   [[ -f "$target_dir/.ai/harness/planning/.gitkeep" ]] || : > "$target_dir/.ai/harness/planning/.gitkeep"
   [[ -f "$target_dir/.ai/harness/worktrees/.gitkeep" ]] || : > "$target_dir/.ai/harness/worktrees/.gitkeep"
   [[ -f "$target_dir/.ai/harness/runs/.gitkeep" ]] || : > "$target_dir/.ai/harness/runs/.gitkeep"

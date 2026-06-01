@@ -135,6 +135,15 @@ describe("Hook contracts", () => {
     expect(script).toContain("worth the tokens");
   });
 
+  test("security sentinel should stay changed-only and advisory", () => {
+    const script = read("assets/hooks/security-sentinel.sh");
+    expect(script).toContain("security scan --json");
+    expect(script).toContain("state.sha256");
+    expect(script).toContain(".ai/harness/security");
+    expect(script).toContain("[SecurityConfig]");
+    expect(script).not.toContain("--strict");
+  });
+
   test("stop orchestrator should own Stop JSON control and handoff refresh", () => {
     const script = read("assets/hooks/stop-orchestrator.sh");
     expect(script).toContain("PlanCompletenessGate");

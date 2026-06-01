@@ -13,6 +13,7 @@ import { spawnSync } from 'child_process';
 import { ALL_TARGETS } from '../installer/targets/registry';
 import { checkCodegraph, type CodegraphCheckResult } from '../tools/codegraph';
 import { CLI_VERSION } from './status';
+import { runSecurityScan, type SecurityScanReport } from './security';
 
 const TRUST_STATE_LINE = /^\[hooks\.state\."[^"]+\/\.codex\/hooks\.json:/;
 
@@ -261,9 +262,34 @@ function checkCodegraphIndex(probe: CodegraphProbe): DoctorCheckResult {
   };
 }
 
+function checkSecurityConfig(report: SecurityScanReport): DoctorCheckResult {
+  const id = 'security-config';
+  const describe = 'Local hook and VS Code automatic task security scan';
+  if (report.status === 'ok') {
+    return {
+      id,
+      describe,
+      status: 'ok',
+      detail: `scanned ${report.scannedFiles.length} files; no findings`,
+    };
+  }
+
+  const high = report.findings.filter((finding) => finding.severity === 'high').length;
+  const fail = report.findings.filter((finding) => finding.severity === 'fail').length;
+  const warn = report.findings.filter((finding) => finding.severity === 'warn').length;
+  const first = report.findings[0];
+  return {
+    id,
+    describe,
+    status: report.status === 'fail' ? 'fail' : 'warn',
+    detail: `${report.findings.length} finding(s): ${high} high, ${warn} warn, ${fail} fail; first=${first.ruleId} at ${first.filePath}`,
+  };
+}
+
 export function runDoctor(cwd: string = process.cwd()): DoctorReport {
   const checks: DoctorCheckResult[] = [];
   const codegraphProbe = probeCodegraph(cwd);
+  const securityReport = runSecurityScan({ cwd });
   checks.push(checkPath());
   checks.push(checkVersion());
   for (const target of ALL_TARGETS) {
@@ -276,6 +302,7 @@ export function runDoctor(cwd: string = process.cwd()): DoctorReport {
   checks.push(checkCodegraphMcpHost(codegraphProbe, 'codex'));
   checks.push(checkCodegraphMcpHost(codegraphProbe, 'claude'));
   checks.push(checkCodegraphIndex(codegraphProbe));
+  checks.push(checkSecurityConfig(securityReport));
   for (const plugin of REGISTERED_CHECKS) {
     const r = plugin.run();
     checks.push({ id: plugin.id, describe: plugin.describe, ...r });
