@@ -83,18 +83,18 @@ describe("Hook contracts", () => {
     expect(script).not.toContain("/compact");
   });
 
-  test("prompt-guard should cover Chinese bug/feature keywords and avoid emoji", () => {
+  test("prompt-guard should cover Chinese bug/feature keywords and route hints without emoji", () => {
     const script = read("assets/hooks/prompt-guard.sh");
     expect(script).toContain("emit_waza_route_hint");
     expect(script).toContain("[WazaRoute]");
     expect(script).toContain("Waza /check");
     expect(script).toContain("Waza /health");
+    expect(script).toContain("Waza /think");
     expect(script).toContain("emit_agentic_packaging_hint");
     expect(script).toContain("[AgenticDevRoute]");
     expect(script).toContain("repo-harness-autoplan after user authorization");
     expect(script).toContain("hook will not plan or create assets");
     expect(script).not.toContain("Waza /hunt");
-    expect(script).not.toContain("Waza /think");
     expect(script).not.toContain("Waza /learn");
     expect(script).toContain("修复");
     expect(script).toContain("修bug");

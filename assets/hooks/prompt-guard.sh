@@ -663,6 +663,11 @@ emit_waza_route_hint() {
     return
   fi
 
+  if is_think_plan_start_intent; then
+    echo "[WazaRoute] Planning intent detected. Default route: Waza /think."
+    return
+  fi
+
   if echo "$PROMPT_INTENT_TEXT" | grep -qEi "(agent|agents|codex|claude|hook|hooks|workflow|tooling|config|AGENTS\\.md|CLAUDE\\.md|健康度|健康检查|配置检查|配置|钩子|工作流|技能配置|AI coding|agent instructions)"; then
     echo "[WazaRoute] Agent workflow/tooling intent detected. Default route: Waza /health."
     return

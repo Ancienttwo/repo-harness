@@ -135,6 +135,6 @@ if should_run_plan_completeness_gate "$stop_hook_active" "$last_assistant_messag
     summary="$(workflow_pending_orchestration_summary)"
     emit_stop_block_json "[PlanCompletenessGate] A first planning answer was produced while pending orchestration is still open: ${summary}
 
-Before stopping, run one self-review pass on the plan. Do not implement. Check for missing goal/success criteria, constraints, P1 component map, P2 traced path, P3 decision rationale, fragile assumption, rejected alternative, tests, rollback/failure handling, and no placeholders. If the plan is already complete, say so explicitly and keep the revision concise. Then stop and wait for user approval."
+Before stopping, run one self-review pass on the plan. Do not implement. Check for missing goal/success criteria, scope/non-scope, constraints, P1 component map, P2 traced path, P3 decision rationale, fragile assumption, rejected alternative, public API/config/file-interface changes, external dependency/API key requirements, tests, rollback/failure handling, phase independence, and no placeholders. If the plan is already complete, say so explicitly and keep the revision concise. Then stop and wait for user approval."
   fi
 fi

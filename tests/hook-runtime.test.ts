@@ -1776,6 +1776,8 @@ describe("Hook runtime behavior", () => {
       expect(decision.decision).toBe("block");
       expect(decision.reason).toContain("[PlanCompletenessGate]");
       expect(decision.reason).toContain("Do not implement");
+      expect(decision.reason).toContain("external dependency/API key requirements");
+      expect(decision.reason).toContain("phase independence");
       expect(existsSync(join(cwd, ".ai/harness/handoff/current.md"))).toBe(true);
       expect(existsSync(join(cwd, ".ai/harness/planning/plan-completeness.json"))).toBe(true);
 
@@ -1929,6 +1931,34 @@ describe("Hook runtime behavior", () => {
       const pending = JSON.parse(readFileSync(join(cwd, ".ai/harness/planning/pending.json"), "utf-8"));
       expect(pending.kind).toBe("waza-think");
       expect(pending.prompt_slug).toMatch(/^think-plan-\d{6}$/);
+      expect(pending.prompt_slug).not.toContain("users-ancienttwo");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("prompt-guard: routes explicit Waza think planning before generic workflow health", () => {
+    const cwd = tmpWorkspace("prompt-guard-think-before-health");
+    try {
+      initGitRepo(cwd);
+      installHooks(cwd);
+      installPlanWorkflowHelpers(cwd);
+
+      const res = runHook("prompt-guard.sh", cwd, {
+        stdin: JSON.stringify({
+          user_message:
+            "[$think](/Users/ancienttwo/.agents/skills/think/SKILL.md) 你看一下怎么加入到目前的hook workflow之中",
+        }),
+      });
+
+      expect(res.status).toBe(0);
+      expect(res.stdout).toContain("[WazaRoute] Planning intent detected. Default route: Waza /think.");
+      expect(res.stdout).not.toContain("Default route: Waza /health");
+      expect(res.stdout).toContain("[PlanStartGate]");
+      expect(res.stdout).not.toContain("[PlanStatusGuard]");
+      const pending = JSON.parse(readFileSync(join(cwd, ".ai/harness/planning/pending.json"), "utf-8"));
+      expect(pending.kind).toBe("waza-think");
+      expect(pending.prompt_slug).toBe("think-hook-workflow");
       expect(pending.prompt_slug).not.toContain("users-ancienttwo");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
