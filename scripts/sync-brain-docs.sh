@@ -246,9 +246,32 @@ for (const entry of selected) {
     continue;
   }
 
-  const sourceContent = fs.readFileSync(entry.sourceFile, "utf8");
+  let sourceContent;
+  try {
+    sourceContent = fs.readFileSync(entry.sourceFile, "utf8");
+  } catch (error) {
+    const code = error && error.code ? ` (${error.code})` : "";
+    issue(`Entry ${entry.id} source file is unreadable: ${entry.sourcePath}${code}`);
+    continue;
+  }
+
   const targetExists = fs.existsSync(entry.targetPath);
-  const targetContent = targetExists ? fs.readFileSync(entry.targetPath, "utf8") : null;
+  let targetContent = null;
+  if (targetExists) {
+    try {
+      targetContent = fs.readFileSync(entry.targetPath, "utf8");
+    } catch (error) {
+      const code = error && error.code ? ` (${error.code})` : "";
+      const message = `Entry ${entry.id} brain file is unreadable: ${entry.brainPath}${code}`;
+      if (modeCheck && !requireVault) {
+        warn(`${message}; skipped sync drift check`);
+        skipped += 1;
+        continue;
+      }
+      issue(message);
+      continue;
+    }
+  }
 
   if (modeCheck) {
     if (!targetExists) {

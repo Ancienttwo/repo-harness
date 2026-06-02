@@ -6,6 +6,16 @@ import { spawnSync } from "child_process";
 
 const ROOT = join(import.meta.dir, "..");
 
+function childEnvWithoutNpmLifecycle(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  for (const key of Object.keys(env)) {
+    if (key === "INIT_CWD" || key.startsWith("npm_")) {
+      delete env[key];
+    }
+  }
+  return env;
+}
+
 describe("Hook recursive copy", () => {
   test("migrate-project-template keeps nested hook libraries under .ai only", () => {
     const repo = mkdtempSync(join(tmpdir(), "hook-recursive-migrate-"));
@@ -16,9 +26,20 @@ describe("Hook recursive copy", () => {
 
       const res = spawnSync("bash", [join(ROOT, "scripts/migrate-project-template.sh"), "--repo", repo, "--apply"], {
         cwd: ROOT,
+        env: childEnvWithoutNpmLifecycle(),
         encoding: "utf-8",
       });
-      expect(res.status).toBe(0);
+      if (res.status !== 0) {
+        throw new Error(
+          [
+            `migrate-project-template exited ${res.status}`,
+            "--- stdout ---",
+            res.stdout,
+            "--- stderr ---",
+            res.stderr,
+          ].join("\n")
+        );
+      }
 
       expect(existsSync(join(repo, ".ai/hooks/lib/workflow-state.sh"))).toBe(true);
       expect(existsSync(join(repo, ".ai/hooks/lib/session-state.sh"))).toBe(true);
