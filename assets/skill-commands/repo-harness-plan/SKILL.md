@@ -17,6 +17,12 @@ Use this command when the user wants a decision-complete plan for repo-harness w
 5. Produce one recommended plan and name the next action command: `repo-harness-init`, `repo-harness-scaffold`, `repo-harness-migrate`, `repo-harness-upgrade`, `repo-harness-repair`, or `repo-harness-check`.
 6. When the plan is decision-complete, capture it with `scripts/capture-plan.sh --slug <slug> --title <title>` so the repo has a file-backed `plans/plan-*.md` artifact.
 
+## Failure Modes
+
+- If the inspector cannot classify the repo, keep the plan in Draft and list the missing files.
+- If implementation approval is absent, do not run `plan-to-todo.sh`.
+- If the requested command surface is ambiguous, pick one public command and name why the alternatives are out of scope.
+
 ## Boundaries
 
 - Does not edit implementation files or run `plan-to-todo.sh` by default.

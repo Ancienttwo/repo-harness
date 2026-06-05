@@ -194,6 +194,11 @@ describe("run-skill-evals execution", () => {
       expect(existsSync(report.manifestPath)).toBe(true);
 
       const summary = readFileSync(summaryPath, "utf-8");
+      expect(summary).toContain("## Quality Metrics");
+      expect(summary).toContain("| full_test_count | 4 |");
+      expect(summary).toContain("| dry_run_count | 0 |");
+      expect(summary).toContain("| dry_run_ratio | 0.0% |");
+      expect(summary).toContain("effectiveness_authority | authoritative");
       expect(summary).toContain("## claude / with_skill");
       expect(summary).toContain("## codex / without_skill");
       expect(summary).toContain("repair-agents-task-sync");
@@ -336,6 +341,62 @@ describe("run-skill-evals execution", () => {
       const rendered = buildBenchmarkSummary(report, ROOT);
       expect(rendered).toContain("failed");
       expect(rendered).toContain("repair-agents-task-sync");
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("marks all-dry-run benchmark summaries as non-authoritative", () => {
+    const tempDir = tempPath("benchmark-dry-run");
+    const stubDir = join(tempDir, "bin");
+    mkdirSync(stubDir, { recursive: true });
+    const summaryPath = join(tempDir, "benchmark.md");
+    const workspaceRoot = join(tempDir, "workspace");
+    const configPath = join(tempDir, "benchmark.config.json");
+    const evalsPath = join(tempDir, "evals.json");
+    const stubs = createStubCommands(stubDir);
+
+    writeEvalManifest(evalsPath);
+
+    writeFileSync(
+      configPath,
+      JSON.stringify(
+        {
+          workspaceRoot,
+          summaryPath,
+          agents: {
+            claude: { command: stubs.claude, args: [] },
+            codex: { command: stubs.codex, args: [] },
+          },
+          profiles: {
+            with_skill: { skillPath: ROOT },
+            without_skill: {},
+          },
+        },
+        null,
+        2
+      ) + "\n",
+      "utf-8"
+    );
+
+    try {
+      const report = runSkillEvals({
+        repoRoot: ROOT,
+        configPath,
+        evalsPath,
+        agent: "codex",
+        profile: "with_skill",
+        evalFilters: ["repair-agents-task-sync"],
+        dryRun: true,
+        now: new Date("2026-03-06T01:02:03Z"),
+      });
+
+      const rendered = buildBenchmarkSummary(report, ROOT);
+      expect(rendered).toContain("| full_test_count | 0 |");
+      expect(rendered).toContain("| dry_run_count | 1 |");
+      expect(rendered).toContain("| dry_run_ratio | 100.0% |");
+      expect(rendered).toContain("effectiveness_authority | non_authoritative");
+      expect(rendered).toContain("dry_run_ratio is above 30%");
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }

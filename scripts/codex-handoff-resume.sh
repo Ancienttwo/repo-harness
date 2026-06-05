@@ -84,7 +84,7 @@ safe_repo_file() {
   esac
 }
 
-latest_plan() {
+active_plan() {
   for marker_file in ".ai/harness/active-plan" ".claude/.active-plan"; do
     if [[ ! -f "$marker_file" ]]; then
       continue
@@ -96,8 +96,6 @@ latest_plan() {
       return 0
     fi
   done
-
-  find plans -maxdepth 1 -type f -name 'plan-*.md' 2>/dev/null | sort | tail -1
 }
 
 plan_slug_from_path() {
@@ -208,7 +206,7 @@ checks_file="$(safe_repo_file "$(policy_get '.harness.checks_file' '.ai/harness/
 budget_file="$(safe_repo_file "$(policy_get '.context_budget.status_file' '.ai/harness/context-budget/latest.json')" '.ai/harness/context-budget/latest.json' '.ai/harness/')"
 research_file="$(safe_repo_file "$(policy_get '.tasks.research_file' 'tasks/research.md')" 'tasks/research.md' 'tasks/')"
 todo_file="$(safe_repo_file "$(policy_get '.tasks.todo_file' 'tasks/todo.md')" 'tasks/todo.md' 'tasks/')"
-plan_file="$(latest_plan || true)"
+plan_file="$(active_plan || true)"
 contract_file="$(derive_contract "$plan_file" || true)"
 notes_file="$(derive_notes "$plan_file" || true)"
 global_handoff="$(latest_global_handoff || true)"

@@ -16,6 +16,16 @@ Use this command when a repo already has a current harness surface but needs the
 4. Apply only manifest-owned actions through the migration engine.
 5. Verify runtime manifest parity and workflow gates.
 
+## CHECKPOINTS
+
+- CHECKPOINT: before applying upgrade actions, confirm the target repo and installed runtime copy are not being conflated.
+
+## Failure Modes
+
+- If the inspector reports legacy docs, route to `repo-harness-migrate`.
+- If `upgrade_plan` is empty, report no-op readiness instead of touching files.
+- If the target is an installed Codex copy, verify source and installed paths separately before mutation.
+
 ## Boundaries
 
 - Delete only `known_generated` surfaces listed by the contract.

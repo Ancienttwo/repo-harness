@@ -36,6 +36,16 @@ or existing command extension:
 5. Prefer extending an existing skill, command, subagent, or automation before
    creating a new one.
 
+## CHECKPOINTS
+
+- CHECKPOINT: stop only when live repo drift changes product intent, safety boundaries, or ship mode.
+
+## Failure Modes
+
+- If inspection cannot classify the repo, stop before mutation and report the missing state.
+- If either self-review finds a blocking issue, revise once before execution.
+- If `/check`, external acceptance, or `verify-sprint` fails, do not call `repo-harness-ship`.
+
 ## Boundaries
 
 - Mutates repo files by default only after the user explicitly invokes `repo-harness-autoplan`.

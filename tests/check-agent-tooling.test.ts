@@ -144,14 +144,17 @@ function writeFakeGbrain(fakeBin: string, logFile?: string) {
       "#!/bin/bash",
       "set -euo pipefail",
       logFile ? `echo "gbrain $*" >> "${logFile}"` : "",
-      "case \"$1 ${2:-}\" in",
-      "  \"--version \")",
+      "case \"$*\" in",
+      "  \"--version\")",
       "    echo 'gbrain 0.12.0'",
+      "    ;;",
+      "  \"doctor --json --fast\")",
+      "    echo '{\"status\":\"warnings\",\"health_score\":90,\"checks\":[{\"name\":\"connection\",\"status\":\"warn\",\"message\":\"fast mode skipped DB checks\"}]}'",
       "    ;;",
       "  \"doctor --json\")",
       "    echo '{\"status\":\"warnings\",\"health_score\":90}'",
       "    ;;",
-      "  \"integrations list\")",
+      "  \"integrations list --json\")",
       "    echo '{\"local\":[\"repo-sync\"]}'",
       "    ;;",
       "  \"check-update --json\")",
@@ -476,7 +479,7 @@ describe("check-agent-tooling", () => {
       expect(log).toContain("ls-remote --symref origin HEAD");
       expect(log).toContain("curl -fsSL --max-time 5 https://raw.githubusercontent.com/tw93/Waza/main/skills/check/SKILL.md");
       expect(log).toContain("curl -fsSL --max-time 5 https://raw.githubusercontent.com/tw93/Waza/main/rules/durable-context.md");
-      expect(log).toContain("gbrain doctor --json");
+      expect(log).toContain("gbrain doctor --json --fast");
       expect(log).toContain("gbrain check-update --json");
       expect(log).toContain("gbrain integrations list --json");
       expect(log).toContain("codegraph --version");

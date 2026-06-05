@@ -20,6 +20,12 @@ wants to add selected capability boundaries without refreshing the full harness.
    - `bun scripts/capability-resolver.ts validate --repo <repo> --format text`
    - `bun scripts/capability-resolver.ts match --repo <repo> --path <path> --format json`
 
+## Failure Modes
+
+- If the prefix is ambiguous or too broad, stop and require explicit narrower prefixes.
+- If the repo lacks the harness, route to `repo-harness-init`.
+- If the change would refresh unrelated helpers, stop and keep capability work targeted.
+
 ## Boundaries
 
 - Does not run `scripts/migrate-project-template.sh --apply`.

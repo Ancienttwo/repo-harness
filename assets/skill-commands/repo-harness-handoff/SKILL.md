@@ -22,6 +22,12 @@ handoff surface without running a full check or repair pass.
    - `.ai/harness/handoff/resume.md`
 6. Report the exact next step from the handoff packet.
 
+## Failure Modes
+
+- If there is no active plan, the resume packet must report `(none)` for plan, contract, and notes.
+- If `resume.md` is older than `current.md`, regenerate with `prepare-codex-handoff.sh`.
+- If the user asks for readiness, route to `repo-harness-check` instead of expanding this command.
+
 ## Boundaries
 
 - Does not run `/check`.

@@ -6,6 +6,18 @@ Workspace root: `/Users/chris/.claude/skills/repo-harness-skill-workspace`
 
 Generated: 2026-05-24T19:02:47.223Z
 
+## Quality Metrics
+
+| Metric | Value |
+| --- | ---: |
+| full_test_count | 0 |
+| dry_run_count | 60 |
+| dry_run_ratio | 100.0% |
+| grader_pass_rate | n/a (0/0) |
+| effectiveness_authority | non_authoritative |
+
+Effectiveness evidence is non-authoritative because this historical benchmark is an all dry-run sample.
+
 ## Command Matrix
 
 | Agent | Profile | Command |

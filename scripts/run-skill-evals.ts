@@ -118,6 +118,16 @@ export interface IterationReport {
   records: RunMetadata[];
 }
 
+export interface BenchmarkQualityMetrics {
+  fullTestCount: number;
+  dryRunCount: number;
+  dryRunRatio: number;
+  graderPassed: number;
+  graderTotal: number;
+  graderPassRate: number | null;
+  effectivenessAuthority: "authoritative" | "non_authoritative";
+}
+
 interface CommandSpec {
   command: string;
   args: string[];
@@ -267,6 +277,32 @@ function selectedAgents(input: RunSkillEvalsOptions["agent"] = "all"): AgentName
 function selectedProfiles(input: RunSkillEvalsOptions["profile"] = "all"): ProfileName[] {
   if (!input || input === "all") return ["with_skill", "without_skill"];
   return [input];
+}
+
+export function computeBenchmarkQualityMetrics(records: RunMetadata[]): BenchmarkQualityMetrics {
+  const total = records.length;
+  const dryRunCount = records.filter((record) => record.dryRun).length;
+  const fullTestCount = total - dryRunCount;
+  const graderTotal = records.reduce((sum, record) => sum + record.graderSummary.total, 0);
+  const graderFailed = records.reduce((sum, record) => sum + record.graderSummary.failed, 0);
+  const graderPassed = graderTotal - graderFailed;
+  const dryRunRatio = total === 0 ? 0 : dryRunCount / total;
+  const graderPassRate = graderTotal === 0 ? null : graderPassed / graderTotal;
+
+  return {
+    fullTestCount,
+    dryRunCount,
+    dryRunRatio,
+    graderPassed,
+    graderTotal,
+    graderPassRate,
+    effectivenessAuthority: dryRunRatio > 0.3 ? "non_authoritative" : "authoritative",
+  };
+}
+
+function formatRatio(value: number | null): string {
+  if (value === null) return "n/a";
+  return `${(value * 100).toFixed(1)}%`;
 }
 
 function copyPathIntoWorkspace(sourcePath: string, destinationRoot: string): void {
@@ -783,6 +819,7 @@ function runSingleEval(params: {
 
 export function buildBenchmarkSummary(report: IterationReport, repoRoot: string): string {
   const commandRows = new Map<string, string>();
+  const metrics = computeBenchmarkQualityMetrics(report.records);
   for (const record of report.records) {
     const key = `${record.agent}:${record.profile}`;
     if (!commandRows.has(key)) {
@@ -801,6 +838,20 @@ export function buildBenchmarkSummary(report: IterationReport, repoRoot: string)
     `Workspace root: \`${report.workspaceRoot}\``,
     "",
     `Generated: ${report.generatedAt}`,
+    "",
+    "## Quality Metrics",
+    "",
+    "| Metric | Value |",
+    "| --- | ---: |",
+    `| full_test_count | ${metrics.fullTestCount} |`,
+    `| dry_run_count | ${metrics.dryRunCount} |`,
+    `| dry_run_ratio | ${formatRatio(metrics.dryRunRatio)} |`,
+    `| grader_pass_rate | ${formatRatio(metrics.graderPassRate)} (${metrics.graderPassed}/${metrics.graderTotal}) |`,
+    `| effectiveness_authority | ${metrics.effectivenessAuthority} |`,
+    "",
+    metrics.effectivenessAuthority === "non_authoritative"
+      ? "Effectiveness evidence is non-authoritative because dry_run_ratio is above 30%."
+      : "Effectiveness evidence is authoritative for this benchmark run.",
     "",
     "## Command Matrix",
     "",

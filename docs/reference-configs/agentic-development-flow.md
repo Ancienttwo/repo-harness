@@ -35,7 +35,7 @@ migrating, repairing, or verifying this repo-local harness:
 | Prepare or resume handoff | `repo-harness-handoff` | Refreshes Codex handoff packets without running full checks |
 | Check deploy and ops config | `repo-harness-deploy` | Read-only deploy/_ops readiness check without publishing |
 | Fix broken current harness behavior | `repo-harness-repair` | Task sync, hook routing, handoff, context, policy, or helper drift |
-| Verify readiness | `repo-harness-check` | Workflow gates, task sync, inspector, and migration dry-run |
+| Verify readiness | `repo-harness-check` | Workflow gates, task sync, inspector, migration dry-run, and readiness yellow flags |
 
 `hooks-init`, `docs-init`, and `create-project-dirs` are not public commands.
 They are implementation steps behind `init`, `scaffold`, `migrate`, and

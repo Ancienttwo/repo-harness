@@ -25,6 +25,12 @@ type, then use profile values such as `runtime-console`, `product-copilot`, or
 transport, assistant-ui or CopilotKit surfaces, contracts, observability, and
 MCP/HTTP sidecar boundaries.
 
+## Failure Modes
+
+- If the target already contains an app or repo workflow, route to `repo-harness-init`, `repo-harness-migrate`, or `repo-harness-upgrade`.
+- If no A-K plan fits, use Plan K and record the explicit stack choices.
+- If the overlay would make product authority unclear, leave `ai_native_profile` as `none`.
+
 ## Boundaries
 
 - Do not use this command for an existing repo that only needs hooks, docs, or harness files.

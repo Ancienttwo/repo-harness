@@ -27,6 +27,12 @@ architecture documentation, drift-request, or diagram pass.
    - `bun scripts/capability-resolver.ts validate --repo <repo> --format text`
    - `bash scripts/check-task-workflow.sh --strict` when repo workflow surfaces changed
 
+## Failure Modes
+
+- If no pending architecture request exists, report `no-change` and do not invent one.
+- If capability resolution is ambiguous, stop at the matching paths and ask for a narrower scope.
+- If diagram rendering fails, keep the Mermaid Markdown source and report the render failure.
+
 ## Boundaries
 
 - Does not run `scripts/migrate-project-template.sh --apply`.

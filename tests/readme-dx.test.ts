@@ -4,6 +4,22 @@ import { spawnSync } from "child_process";
 import { join } from "path";
 
 const ROOT = join(import.meta.dir, "..");
+const RUNTIME_SCAN_FILES = [
+  "SKILL.md",
+  "README.md",
+  "README.zh-CN.md",
+  "docs/reference-configs/external-tooling.md",
+];
+const RUNTIME_RED_FLAGS = [
+  /在 Claude Code/,
+  /Claude Code skill/,
+  /Claude Code 用户/,
+  /Cursor only/,
+  /Codex 中/,
+  /^\[!\[Claude Code/,
+  /~\/\.claude\/skills\/[a-z]/,
+  /\/plugin install\b/,
+];
 
 function read(relPath: string): string {
   return readFileSync(join(ROOT, relPath), "utf-8");
@@ -13,6 +29,15 @@ function section(doc: string, heading: string): string {
   const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const match = doc.match(new RegExp(`## ${escaped}\\n([\\s\\S]*?)(?:\\n## |$)`));
   return match?.[1] ?? "";
+}
+
+function isAllowedRuntimeReference(file: string, line: string): boolean {
+  if (/Claude skill aliases/.test(line)) return true;
+  if (/project-initializer/.test(line)) return true;
+  if (file === "docs/reference-configs/external-tooling.md" && /~\/\.claude\/skills\/gstack/.test(line)) {
+    return true;
+  }
+  return false;
 }
 
 describe("README DX contract", () => {
@@ -72,4 +97,19 @@ describe("README DX contract", () => {
     expect(res.stdout).toContain("Host hook config target: user-level ~/.claude/settings.json and ~/.codex/hooks.json");
     expect(res.stdout).toContain("Host hook adapters are user-level:");
   }, 15000);
+
+  test("runtime red-flag scan uses an explicit allowlist for install examples and legacy aliases", () => {
+    const hits: string[] = [];
+
+    for (const file of RUNTIME_SCAN_FILES) {
+      read(file).split("\n").forEach((line, index) => {
+        const redFlag = RUNTIME_RED_FLAGS.some((pattern) => pattern.test(line));
+        if (redFlag && !isAllowedRuntimeReference(file, line)) {
+          hits.push(`${file}:${index + 1}:${line}`);
+        }
+      });
+    }
+
+    expect(hits).toEqual([]);
+  });
 });

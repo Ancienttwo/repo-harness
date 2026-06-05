@@ -15,6 +15,12 @@ Use this command when a plan exists and the user wants a review before implement
 3. Select review dimensions from the plan and repo type: `product`, `eng`, `design`, and `devex`.
 4. Report blocking issues first, then the minimal plan edits needed to clear them.
 
+## Failure Modes
+
+- If no plan exists, route to `repo-harness-plan` instead of reviewing guesses.
+- If the plan lacks scope, tests, or rollback, mark the review blocked.
+- If implementation has already started, review the diff through `repo-harness-check` or Waza `/check`.
+
 ## Boundaries
 
 - Does not edit files or implement the plan by default.

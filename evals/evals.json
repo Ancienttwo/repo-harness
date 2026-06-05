@@ -591,6 +591,89 @@
         "Keeps hooks as advisory guards over repo-local plans, tasks, contracts, checks, and handoff artifacts.",
         "Does not silently run a full autoresearch mutation loop from PostEdit or Prompt hooks."
       ]
+    },
+    {
+      "id": 21,
+      "slug": "handoff-no-active-plan-resume",
+      "prompt": "The repo has no active plan but still has old plan files. Refresh the Codex handoff and make sure the resume packet does not point a fresh session at old work.",
+      "expected_output": "Routes to repo-harness-handoff, runs prepare-codex-handoff or codex-handoff-resume, and reports that plan, contract, and notes are none when there is no active marker.",
+      "files": [
+        "assets/skill-commands/repo-harness-handoff/SKILL.md"
+      ],
+      "graders": {
+        "files_exist": [
+          "final-response.md"
+        ],
+        "files_contain": [
+          { "path": "final-response.md", "pattern": "repo-harness-handoff" },
+          { "path": "final-response.md", "pattern": "prepare-codex-handoff|codex-handoff-resume" },
+          { "path": "final-response.md", "pattern": "no active plan|\\(none\\)" }
+        ]
+      },
+      "anti_graders": {
+        "files_not_contain": [
+          { "path": "final-response.md", "pattern": "latest historical plan|tail -1" }
+        ]
+      },
+      "expectations": [
+        "Does not infer active work from the newest plan file.",
+        "Keeps current user input above handoff recovery artifacts.",
+        "Reports the exact next step from current.md."
+      ]
+    },
+    {
+      "id": 22,
+      "slug": "route-init-vs-scaffold-contrast",
+      "prompt": "Decide whether this request should use repo-harness-init or repo-harness-scaffold: I have an existing repo and only want hooks, docs/spec.md, tasks, plans, .ai/context, and .ai/harness added.",
+      "expected_output": "Routes to repo-harness-init, names scaffold as the new-project path only, and avoids creating a Vite or other app scaffold.",
+      "files": [
+        "evals/fixtures/new-project-empty"
+      ],
+      "graders": {
+        "files_exist": [
+          "final-response.md"
+        ],
+        "files_contain": [
+          { "path": "final-response.md", "pattern": "repo-harness-init" },
+          { "path": "final-response.md", "pattern": "existing repo" },
+          { "path": "final-response.md", "pattern": "repo-harness-scaffold" }
+        ]
+      },
+      "anti_graders": {
+        "files_not_contain": [
+          { "path": "final-response.md", "pattern": "create new Vite|new app scaffold" }
+        ]
+      },
+      "expectations": [
+        "Keeps existing-repo adoption separate from app scaffolding.",
+        "Names scaffold only as the out-of-scope route.",
+        "Uses inspector or migration engine before applying changes."
+      ]
+    },
+    {
+      "id": 23,
+      "slug": "workflow-check-yellow-readiness",
+      "prompt": "Check release readiness. The workflow gates pass, but Waza has Codex staging drift and gbrain reports a warning. Give the verdict without silently treating those as pass or hard fail.",
+      "expected_output": "Routes to repo-harness-check, keeps required workflow gates as hard pass/fail, reports Waza drift and gbrain warning as yellow flags, and treats missing CodeGraph or Codex health/check/mermaid as hard failures.",
+      "files": [
+        "assets/skill-commands/repo-harness-check/SKILL.md"
+      ],
+      "graders": {
+        "files_exist": [
+          "final-response.md"
+        ],
+        "files_contain": [
+          { "path": "final-response.md", "pattern": "repo-harness-check" },
+          { "path": "final-response.md", "pattern": "yellow|warning" },
+          { "path": "final-response.md", "pattern": "Waza|gbrain" },
+          { "path": "final-response.md", "pattern": "CodeGraph|health|check|mermaid" }
+        ]
+      },
+      "expectations": [
+        "Separates hard workflow gates from advisory readiness.",
+        "Does not fail only because Waza staging drift or gbrain warning is present.",
+        "Does not claim clean readiness without listing yellow flags."
+      ]
     }
   ]
 }

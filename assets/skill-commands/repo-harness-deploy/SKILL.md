@@ -25,6 +25,12 @@ configuration check for the repo-local harness.
    - `bash scripts/check-deploy-sql-order.sh`
 6. Report readiness gaps as concrete missing or misplaced files, not as an app deployment attempt.
 
+## Failure Modes
+
+- If `_ops/` contains required private state, report the path class without printing values.
+- If deploy SQL order fails, stop at `check-deploy-sql-order.sh`.
+- If the user asks to publish or deploy, route to the project release/deploy process instead of this read-only check.
+
 ## Boundaries
 
 - Read-only by default.

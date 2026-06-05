@@ -18,7 +18,17 @@ Use this command when the user asks whether the harness, migration, or release s
    - `bash scripts/check-task-workflow.sh --strict`
    - `bun scripts/inspect-project-state.ts --repo . --format text`
    - `bash scripts/migrate-project-template.sh --repo . --dry-run`
-3. Summarize pass/fail evidence and the next blocking command if any.
+3. Run advisory readiness when available:
+   - `bash scripts/check-agent-tooling.sh --host both --json`
+4. Treat missing CodeGraph or missing Codex `health`/`check`/`mermaid` as hard failures.
+5. Treat Waza staging drift and gbrain warnings as yellow readiness flags; report the fix or acceptance reason without failing the repo gate.
+6. Summarize pass/fail evidence, yellow flags, and the next blocking command if any.
+
+## Failure Modes
+
+- If any required workflow gate fails, report the first blocking command and stop the readiness claim.
+- If advisory tooling times out, report advisory evidence as unavailable instead of passing it.
+- If eval evidence is all dry-run, mark it non-authoritative for skill effectiveness.
 
 ## Boundaries
 

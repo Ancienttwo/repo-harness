@@ -263,6 +263,51 @@ derive_contract_path() {
   fi
 }
 
+file_mtime() {
+  local file="$1"
+  stat -f '%m' "$file" 2>/dev/null || stat -c '%Y' "$file" 2>/dev/null || printf '0'
+}
+
+handoff_declares_no_active_plan() {
+  local file="$1"
+  [[ -f "$file" ]] || return 1
+  grep -Eiq '(No active plan|Active Plan:[[:space:]]*\(none\)|Plan:[[:space:]]*\(none\))' "$file"
+}
+
+resume_references_plan() {
+  local file="$1"
+  [[ -f "$file" ]] || return 1
+  grep -Eiq '^[[:space:]]*-[[:space:]]*(Active plan|Plan):[[:space:]]+`?plans/' "$file"
+}
+
+check_handoff_resume_pair() {
+  local handoff_file="$1"
+  local resume_file="$2"
+  local handoff_mtime resume_mtime
+
+  [[ -f "$handoff_file" || -f "$resume_file" ]] || return 0
+
+  if [[ -f "$handoff_file" && ! -f "$resume_file" ]]; then
+    report_issue "Handoff current exists but resume packet is missing: $resume_file"
+    return 0
+  fi
+
+  if [[ ! -f "$handoff_file" && -f "$resume_file" ]]; then
+    report_issue "Resume packet exists but handoff current is missing: $handoff_file"
+    return 0
+  fi
+
+  handoff_mtime="$(file_mtime "$handoff_file")"
+  resume_mtime="$(file_mtime "$resume_file")"
+  if [[ "$resume_mtime" =~ ^[0-9]+$ && "$handoff_mtime" =~ ^[0-9]+$ && "$resume_mtime" -lt "$handoff_mtime" ]]; then
+    report_issue "Resume packet is older than handoff current: $resume_file < $handoff_file"
+  fi
+
+  if handoff_declares_no_active_plan "$handoff_file" && resume_references_plan "$resume_file"; then
+    report_issue "Handoff current declares no active plan but resume packet references a historical plan: $resume_file"
+  fi
+}
+
 check_required_file() {
   local path="$1"
   if [[ ! -f "$path" ]]; then
@@ -303,6 +348,8 @@ notes_dir="$(policy_get '.tasks.notes_dir' 'tasks/notes')"
 workstreams_dir="$(policy_get '.tasks.workstreams_dir' 'tasks/workstreams')"
 runs_dir="$(policy_get '.harness.runs_dir' '.ai/harness/runs')"
 context_map_file="$(policy_get '.context.map_file' '.ai/context/context-map.json')"
+handoff_file="$(policy_get '.harness.handoff_file' '.ai/harness/handoff/current.md')"
+resume_file="$(policy_get '.handoff_resume.resume_packet_file' '.ai/harness/handoff/resume.md')"
 upgrade_strategy_version=""
 if [[ -f "$policy_file" ]] && command -v jq >/dev/null 2>&1; then
   upgrade_strategy_version="$(policy_get '.upgrade.strategy_version' '')"
@@ -433,6 +480,8 @@ if [[ -f "$current_status_file" ]]; then
     report_issue "${current_status_file} must remain a read model, not a checklist."
   fi
 fi
+
+check_handoff_resume_pair "$handoff_file" "$resume_file"
 
 active_plan="$(get_active_plan || true)"
 if [[ -z "$active_plan" ]]; then

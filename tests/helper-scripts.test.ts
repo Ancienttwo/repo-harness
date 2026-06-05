@@ -2130,6 +2130,39 @@ describe("Workflow helper scripts", () => {
     }
   });
 
+  test("codex-handoff-resume should not restore historical plans without an active marker", () => {
+    const cwd = tmpWorkspace("helper-codex-resume-no-active-plan");
+    try {
+      copyHelpers(cwd);
+      mkdirSync(join(cwd, ".ai/harness/handoff"), { recursive: true });
+      mkdirSync(join(cwd, ".ai/harness/checks"), { recursive: true });
+      mkdirSync(join(cwd, ".ai/harness/context-budget"), { recursive: true });
+      mkdirSync(join(cwd, "plans"), { recursive: true });
+      mkdirSync(join(cwd, "tasks"), { recursive: true });
+      writeFileSync(join(cwd, "plans/plan-20260602-0034-old-work.md"), "# Plan: Old Work\n");
+      writeFileSync(join(cwd, ".ai/harness/handoff/current.md"), "# Harness Handoff\n\nNo active plan.\n");
+      writeFileSync(join(cwd, ".ai/harness/checks/latest.json"), "{}\n");
+      writeFileSync(join(cwd, ".ai/harness/context-budget/latest.json"), "{}\n");
+      writeFileSync(join(cwd, "tasks/todo.md"), "# Deferred Goal Ledger\n");
+      writeFileSync(join(cwd, "tasks/research.md"), "# Research\n");
+
+      const res = run(
+        "bash",
+        ["scripts/codex-handoff-resume.sh", "--cwd", cwd, "--reason", "no-active"],
+        cwd,
+        { CODEX_HOME: join(cwd, ".codex") }
+      );
+
+      expect(res.status).toBe(0);
+      const resume = readFileSync(join(cwd, ".ai/harness/handoff/resume.md"), "utf-8");
+      expect(resume).toContain("Active plan: (none)");
+      expect(resume).toContain("Plan: (none)");
+      expect(resume).not.toContain("plans/plan-20260602-0034-old-work.md");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   test("codex-handoff-resume should reject policy paths outside the repo", () => {
     const cwd = tmpWorkspace("helper-codex-resume-safe-path");
     const outsideName = `${cwd.split("/").pop()}-resume.md`;
@@ -2391,6 +2424,33 @@ describe("Workflow helper scripts", () => {
       const res = run("bash", ["scripts/check-task-workflow.sh", "--strict"], cwd);
       expect(res.status).toBe(1);
       expect(res.stdout).toContain("Legacy tasks/todo.md detected");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("check-task-workflow should fail strict mode when no-active handoff has a historical resume plan", () => {
+    const cwd = tmpWorkspace("helper-check-workflow-handoff-resume");
+    try {
+      copyHelpers(cwd);
+      expect(
+        run("bash", ["scripts/ensure-task-workflow.sh", "--slug", "handoff-check", "--title", "Handoff Check"], cwd)
+          .status
+      ).toBe(0);
+
+      rmSync(join(cwd, ".ai/harness/active-plan"), { force: true });
+      rmSync(join(cwd, ".claude/.active-plan"), { force: true });
+      rmSync(join(cwd, ".ai/harness/active-worktree"), { force: true });
+      writeFileSync(join(cwd, ".ai/harness/handoff/current.md"), "# Harness Handoff\n\nNo active plan.\n");
+      writeFileSync(
+        join(cwd, ".ai/harness/handoff/resume.md"),
+        "# Codex Resume Packet\n\n## Source Artifacts\n\n- Plan: plans/plan-20260602-0034-old-work.md\n"
+      );
+
+      const res = run("bash", ["scripts/check-task-workflow.sh", "--strict"], cwd);
+
+      expect(res.status).toBe(1);
+      expect(res.stdout).toContain("resume packet references a historical plan");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

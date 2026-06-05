@@ -16,6 +16,12 @@ Use this command when the repo has a harness but a specific workflow surface is 
 4. Apply the smallest targeted fix.
 5. Re-run the failing check and the relevant workflow gate.
 
+## Failure Modes
+
+- If the repo lacks a current harness, route to `repo-harness-init` or `repo-harness-migrate`.
+- If the broken path is release readiness, route to `repo-harness-check`.
+- If the failure cannot be reproduced, report the missing evidence and stop before editing.
+
 ## Boundaries
 
 - Do not use repair to migrate a legacy repo; route legacy contract drift to `repo-harness-migrate`.

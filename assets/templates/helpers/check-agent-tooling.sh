@@ -880,8 +880,14 @@ function detectGbrain() {
   }
   const present = versionResult.ok;
   const version = present ? versionResult.stdout.trim().replace(/^gbrain\s+/i, "") : null;
-  const doctorResult = present ? run(gbrainBin, ["doctor", "--json"], { timeoutMs: 1500 }) : null;
-  const doctorJson = doctorResult?.ok ? parseJson(doctorResult.stdout) : null;
+  let doctorCommand = ["doctor", "--json", "--fast"];
+  let doctorResult = present ? run(gbrainBin, doctorCommand, { timeoutMs: 1500 }) : null;
+  let doctorJson = doctorResult?.ok ? parseJson(doctorResult.stdout) : null;
+  if (present && !doctorJson) {
+    doctorCommand = ["doctor", "--json"];
+    doctorResult = run(gbrainBin, doctorCommand, { timeoutMs: 1500 });
+    doctorJson = doctorResult?.ok ? parseJson(doctorResult.stdout) : null;
+  }
   const checkUpdateResult = present && checkUpdates ? run(gbrainBin, ["check-update", "--json"], { timeoutMs: 1500 }) : null;
   const checkUpdateJson = checkUpdateResult?.ok ? parseJson(checkUpdateResult.stdout) : null;
   const integrationsResult = present ? run(gbrainBin, ["integrations", "list", "--json"], { timeoutMs: 1500 }) : null;
@@ -920,6 +926,7 @@ function detectGbrain() {
         : "gbrain CLI is present, but doctor output could not be parsed.",
     cli_present: present,
     version,
+    doctor_command: present ? `gbrain ${doctorCommand.join(" ")}` : null,
     doctor: doctorJson,
     update_status: updateStatus,
     update_reason: checkUpdateJson?.error

@@ -36,7 +36,7 @@ repo="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$repo"
 
 if [[ -f "scripts/prepare-handoff.sh" ]]; then
-  bash scripts/prepare-handoff.sh "$reason"
+  REPO_HARNESS_SKIP_RESUME_REFRESH=1 bash scripts/prepare-handoff.sh "$reason"
 fi
 
 if command -v bun >/dev/null 2>&1 && [[ -f "scripts/context-budget.ts" ]]; then

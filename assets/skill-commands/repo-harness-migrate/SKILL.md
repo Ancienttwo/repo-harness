@@ -16,6 +16,16 @@ Use this command when inspection finds legacy workflow docs or stale harness art
 4. Apply through `bash scripts/migrate-project-template.sh --repo <repo> --apply`.
 5. Verify task workflow, migration report, and archived legacy content.
 
+## CHECKPOINTS
+
+- CHECKPOINT: before applying migration, confirm the dry-run only removes `known_generated` files and preserves user-authored legacy content.
+
+## Failure Modes
+
+- If the inspector reports `mode: initialize`, route to `repo-harness-init`.
+- If the inspector reports `mode: audit` with no drift, route to `repo-harness-check` or `repo-harness-upgrade`.
+- If legacy docs contain uncertain user content, archive first and do not delete directly.
+
 ## Boundaries
 
 - Preserve or archive user-authored content; never delete uncertain legacy docs directly.

@@ -18,6 +18,12 @@ Use this command for an existing repository that needs the repo-local agentic wo
 6. Bootstrap the expected host runtime dependencies in the same pass: Waza (`think`, `hunt`, `check`, `health`) and the bundled cross-review skills when source copies are available.
 7. Verify with `bash scripts/check-task-workflow.sh --strict` inside the target repo when the helper exists.
 
+## Failure Modes
+
+- If the repo has legacy workflow docs, route to `repo-harness-migrate`.
+- If the user asks for a new product skeleton, route to `repo-harness-scaffold`.
+- If global runtime setup fails, report the exact target and rerun the focused install command.
+
 ## Boundaries
 
 - Does not create a new application stack.

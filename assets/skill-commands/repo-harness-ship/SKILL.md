@@ -16,6 +16,16 @@ Use this command when implementation is complete and the user wants the harness 
 4. For maintainer-only local closeout, run `bash scripts/ship-worktrees.sh --local-merge`; this preserves the older `finish` -> fast-forward `main` -> `cleanup` path.
 5. After a PR has merged and local `main` contains the branch, run `bash scripts/ship-worktrees.sh --cleanup-merged` to remove only proven-merged local worktrees and branches. If the branch is merged but the linked worktree is dirty, pick/apply/commit useful changes first; use `--discard-scaffold-only` only when the dirty paths are generated plan/contract/review/notes scaffold.
 
+## CHECKPOINTS
+
+- CHECKPOINT: before push, PR creation, local merge, or cleanup, verify review, external acceptance, and `verify-sprint` evidence are present and passing.
+
+## Failure Modes
+
+- If the target worktree is dirty with unrelated files, stop and report the dirty paths.
+- If a PR already exists, reuse it instead of creating a duplicate.
+- If cleanup finds a dirty merged worktree, preserve useful changes or use `--discard-scaffold-only` only for generated scaffold files.
+
 ## Boundaries
 
 - Default mode creates PRs; it does not fast-forward `main`, merge PRs, publish releases, or tag versions.

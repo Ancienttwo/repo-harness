@@ -25,6 +25,17 @@ function readCommand(name: string): string {
   return readFileSync(join(COMMAND_ROOT, name, "SKILL.md"), "utf-8");
 }
 
+const RUNTIME_RED_FLAGS = [
+  /在 Claude Code/,
+  /Claude Code skill/,
+  /Claude Code 用户/,
+  /Cursor only/,
+  /Codex 中/,
+  /^\[!\[Claude Code/,
+  /~\/\.claude\/skills\/[a-z]/,
+  /\/plugin install\b/,
+];
+
 describe("repo-harness action command skills", () => {
   test("manifest exposes exactly the public action command surface", () => {
     const manifest = JSON.parse(readFileSync(join(COMMAND_ROOT, "manifest.json"), "utf-8"));
@@ -49,6 +60,37 @@ describe("repo-harness action command skills", () => {
       expect(frontmatter).toContain("when_to_use:");
       expect(body).toContain("## Protocol");
       expect(body).toContain("## Boundaries");
+    }
+  });
+
+  test("each command satisfies Darwin static quality gates", () => {
+    const checkpointCommands = new Set([
+      "repo-harness-autoplan",
+      "repo-harness-ship",
+      "repo-harness-migrate",
+      "repo-harness-upgrade",
+    ]);
+
+    for (const command of COMMANDS) {
+      const body = readCommand(command);
+      const frontmatter = body.match(/^---\n([\s\S]*?)\n---/)?.[1] ?? "";
+      const description = frontmatter.match(/^description:\s*(.+)$/m)?.[1] ?? "";
+      const whenToUse = frontmatter.match(/^when_to_use:\s*(.+)$/m)?.[1] ?? "";
+      const flagged = body
+        .split("\n")
+        .filter((line) => RUNTIME_RED_FLAGS.some((pattern) => pattern.test(line)));
+
+      expect(description.length).toBeGreaterThan(40);
+      expect(description.length).toBeLessThanOrEqual(1024);
+      expect(whenToUse.split(",").length).toBeGreaterThanOrEqual(3);
+      expect(body).toContain("## Failure Modes");
+      expect(body).toMatch(/If .+(route|report|stop|verify|regenerate|archive|preserve)/);
+      expect(body).toMatch(/## Boundaries[\s\S]*(Does not|Do not|Never|Preserve|Delete only)/);
+      expect(flagged).toEqual([]);
+
+      if (checkpointCommands.has(command)) {
+        expect(body).toContain("CHECKPOINT");
+      }
     }
   });
 
