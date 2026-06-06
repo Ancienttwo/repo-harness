@@ -70,6 +70,13 @@ Read the result fields:
 
 ### Step 2. Choose one path
 
+If the request maps to a public command facade, name that route before running
+checks or edits, then read the matching
+`assets/skill-commands/<repo-harness-command>/SKILL.md` and follow that
+facade's protocol. For example, pre-merge or release readiness requests route
+to `repo-harness-check`, while broken task sync, hook routing, handoff, context,
+policy, or helper surfaces route to `repo-harness-repair`.
+
 1. **Scaffold**
    - use only when creating a new project, app, or module skeleton
    - route to `repo-harness-scaffold`

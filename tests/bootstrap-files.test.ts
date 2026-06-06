@@ -56,11 +56,14 @@ describe("Bootstrap Script Contracts", () => {
 
   test("repo package should expose workflow verification scripts", () => {
     const pkg = JSON.parse(read("package.json"));
+    const cliEntry = read("src/cli/index.ts");
     expect(pkg.name).toBe("repo-harness");
     expect(pkg.version).toBe("0.2.4");
     expect(pkg.private).toBeUndefined();
     expect(pkg.bin["repo-harness"]).toBe("src/cli/index.ts");
     expect(pkg.bin["repo-harness-hook"]).toBe("src/cli/hook-entry.ts");
+    expect(cliEntry).toContain("CLI_VERSION");
+    expect(cliEntry).not.toMatch(/\\.version\\(['\"][0-9]+\\.[0-9]+\\.[0-9]+['\"]\\)/);
     expect(pkg.scripts["check:brain-manifest"]).toBe("bash scripts/check-brain-manifest.sh");
     expect(pkg.scripts["check:task-sync"]).toBe("bash scripts/check-task-sync.sh");
     expect(pkg.scripts["check:deploy-sql"]).toBe("bash scripts/check-deploy-sql-order.sh");

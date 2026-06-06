@@ -189,6 +189,17 @@ describe("repo-harness action command skills", () => {
     expect(deploy).toContain("_ops/");
   });
 
+  test("check command reports skill eval authority instead of accepting dry-run evidence", () => {
+    const check = readCommand("repo-harness-check");
+
+    expect(check).toContain("full_test_count > 0");
+    expect(check).toContain("dry_run_ratio <= 30%");
+    expect(check).toContain("graders reported");
+    expect(check).toContain("non-authoritative: dry-run-heavy or all-dry-run evidence");
+    expect(check).toContain("unavailable: no current eval evidence");
+    expect(check).toContain("Does not claim skill-effectiveness authority from dry-run benchmark output");
+  });
+
   test("public docs name the command surface and keep internal steps private", () => {
     const skill = readFileSync(join(ROOT, "SKILL.md"), "utf-8");
     const readme = readFileSync(join(ROOT, "README.md"), "utf-8");

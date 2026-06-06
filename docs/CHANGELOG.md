@@ -6,12 +6,33 @@ All notable changes to this skill are documented here.
 
 ## [0.2.4] - 2026-06-07
 
+### Added
+
+- Added shell fallback routing for copied prompt hooks when the TypeScript
+  decision engine is unavailable, preserving PlanCaptureGate guidance instead
+  of failing closed on installed hook copies.
+- Added workflow readiness checks for stale handoff/resume plan references and
+  action-command skill quality gates.
+- Added benchmark quality metrics so release evidence distinguishes
+  authoritative non-dry-run skill evals from dry-run smoke output.
+
 ### Fixed
 
 - Treated plan/workflow consultation prompts as advisory text instead of
   sending them into `PlanStatusGuard`, so questions that mention `new plan`,
   `方案`, hooks, or workflow routing no longer create plan files or block with
   "No active plan found" unless they explicitly start execution.
+
+### Changed
+
+- Updated the self-host CodeGraph development dependency to `0.9.9` and made
+  gbrain readiness probe `doctor --json --fast` before falling back to the full
+  doctor command.
+- Updated maintainer release docs and README verification guidance to require
+  non-dry-run skill eval evidence when claiming skill effectiveness.
+- Refreshed the ignored Codex resume packet inside the npm release gate before
+  strict workflow validation, so release tests that update handoff runtime state
+  cannot leave the gate failing its own stale-resume invariant.
 
 ### Removed
 

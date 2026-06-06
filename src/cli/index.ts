@@ -10,7 +10,7 @@ import { Command } from 'commander';
 import { runInstall, type InstallTargetSpec } from './commands/install';
 import { runInit, runInteractiveInit, type InitBrainMode } from './commands/init';
 import { runHook } from './commands/hook';
-import { formatStatus, runStatus } from './commands/status';
+import { CLI_VERSION, formatStatus, runStatus } from './commands/status';
 import { formatDoctor, runDoctor } from './commands/doctor';
 import { formatMigratePlan, runMigrate } from './commands/migrate';
 import { buildToolsCommand } from './commands/tools';
@@ -45,7 +45,7 @@ export function buildProgram(): Command {
   program
     .name('repo-harness')
     .description('Repo-local agentic development harness CLI')
-    .version('0.2.4')
+    .version(CLI_VERSION)
     .exitOverride();
 
   program

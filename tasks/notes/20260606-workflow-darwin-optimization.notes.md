@@ -38,6 +38,8 @@
 - gbrain yellow closeout: updated `scripts/check-agent-tooling.sh` to probe `gbrain doctor --json --fast` first; current result is parseable `status = warnings`, `health_score = 95`, with only the fast-mode DB connection warning accepted in `deploy/release-checklists/260606-repo-harness-workflow-darwin-readiness.md`.
 - Readiness targeted tests: `bun test tests/check-agent-tooling.test.ts tests/helper-scripts.test.ts` -> 64 pass, 0 fail.
 - Readiness workflow gates after handoff refresh: `bash scripts/check-task-sync.sh`, `bash scripts/check-task-workflow.sh --strict`, `bun scripts/inspect-project-state.ts --repo . --format text`, `bash scripts/check-deploy-sql-order.sh`, `bash scripts/migrate-project-template.sh --repo . --dry-run`, and `git diff --check` all passed.
+- Skill eval authority closeout: `bun run benchmark:skills -- --agent codex --profile with_skill --eval route-workflow-check --iteration darwin-fulltest-route-fix` -> 1 full test, 0 dry-run records, 4/4 graders; `evals/benchmark.md` now reports `effectiveness_authority = authoritative`.
+- Eval authority contract promotion: release filings, verification architecture, README verification, and `repo-harness-check` now distinguish full-test authoritative evidence from dry-run smoke and missing eval evidence; `bun test tests/action-command-skills.test.ts tests/readme-dx.test.ts tests/evals-contract.test.ts` -> 24 pass, 0 fail.
 
 ## Promotion Candidates
 

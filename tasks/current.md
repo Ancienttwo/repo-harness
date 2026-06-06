@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-06-04T15:08:22+0800 -->
+<!-- updated_at: 2026-06-06T02:45:18+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Idle
-> **Updated At**: 2026-06-04T15:08:22+0800
+> **Updated At**: 2026-06-06T02:45:18+0800
 > **Source Branch**: main
-> **Source Commit**: e492da9
+> **Source Commit**: 26195ac
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: prompt-guard-fallback
+> **Reason**: ensure-task-workflow
 > **Derived From**: active-plan, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -45,13 +45,10 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 4 changed/untracked path(s)
+- Summary: clean
 
 ```
- M .ai/hooks/prompt-guard.sh
- M assets/hooks/prompt-guard.sh
- M tasks/current.md
- M tests/hook-runtime.test.ts
+(none)
 ```
 
 ## Source Artifacts

@@ -45,6 +45,19 @@ This repository now dogfoods its own tasks-first contract. It is both:
   an explicit agent-run workflow, not by an always-on hook.
 - **Hook parity is stricter.** Self-host `.ai/hooks/` and installable
   `assets/hooks/` now match without maintainer-only hook exceptions.
+- **Copied hook fallback.** Installed prompt hooks now keep PlanCaptureGate
+  guidance working even when the copied runtime cannot reach the TypeScript
+  decision engine.
+- **Darwin readiness gates.** Workflow checks now catch stale handoff/resume
+  plan references, and public action-command skills have static quality gates
+  for failure modes, boundaries, and high-risk checkpoints.
+- **Authoritative eval evidence.** Benchmark reports now include
+  `full_test_count`, `dry_run_ratio`, `grader_pass_rate`, and
+  `effectiveness_authority`, so dry-run smoke output cannot be mistaken for
+  release-grade skill effectiveness proof.
+- **Tooling freshness.** The self-host CodeGraph dev dependency is refreshed to
+  `0.9.9`, and gbrain readiness probes try `doctor --json --fast` before the
+  full doctor path.
 
 ## What repo-harness Does
 
@@ -173,9 +186,11 @@ skill aliases, and repo-local verification surfaces from the current npm package
 The npm package release line is now `0.2.x`; generated workflow compatibility is
 tracked separately as the `5.x` model line. The `0.2.4` package keeps first-run
 global bootstrap (`repo-harness init`) separate from repo-local refresh
-(`repo-harness update`), tightens hook parity, retires the self-host
-autoresearch advisory hook, and prevents consultative plan/workflow prompts from
-being mistaken for execution.
+(`repo-harness update`), preserves the typed global bootstrap and read-only
+config security sentinel, tightens hook parity, retires the self-host
+autoresearch advisory hook, prevents consultative plan/workflow prompts from
+being mistaken for execution, and adds copied-hook fallback, readiness checks,
+and skill-eval authority reporting.
 These sit on top of the renamed `repo-harness` CLI, user-level hook
 adapter bootstrap, AI-native scaffold overlays, the typed prompt-guard decision
 engine, plan-stem task artifact naming, `REPO_HARNESS_*` runtime aliases, Waza
@@ -455,6 +470,9 @@ bun scripts/assemble-template.ts --target agents --plan C --name "MyProject"
 bun run benchmark:skills --dry-run
 ```
 
+Dry-run benchmark output is a wiring smoke only. Release or readiness evidence
+needs a non-dry-run eval with grader output.
+
 ### Run one eval across both Claude and Codex
 
 ```bash
@@ -509,5 +527,5 @@ bash scripts/check-task-workflow.sh --strict
 bun scripts/inspect-project-state.ts --repo . --format text
 bash scripts/migrate-project-template.sh --repo . --dry-run
 bash scripts/check-agent-tooling.sh --host both --check-updates
-bun run benchmark:skills --dry-run
+bun run benchmark:skills --eval route-workflow-check
 ```

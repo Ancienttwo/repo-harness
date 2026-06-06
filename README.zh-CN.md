@@ -32,6 +32,16 @@ repo-local workflow 的自托管样例。
   由 agent 显式运行实验流程，而不是靠常驻 hook 提示。
 - **Hook parity 更严格。** 自托管 `.ai/hooks/` 和可安装的 `assets/hooks/` 现在必须完全一致，
   不再保留 maintainer-only hook exception。
+- **复制版 hook fallback。** 已安装的 prompt hook 即使找不到 TypeScript decision
+  engine，也会保留 PlanCaptureGate guidance，而不是直接报 engine unavailable。
+- **Darwin readiness gates。** Workflow checks 现在会抓 stale handoff/resume plan
+  references；公共 action-command skills 也增加 failure modes、boundaries 和高风险
+  checkpoint 的静态质量门。
+- **权威 eval evidence。** Benchmark report 现在输出 `full_test_count`、
+  `dry_run_ratio`、`grader_pass_rate` 和 `effectiveness_authority`，避免把 dry-run
+  smoke 当成 release-grade skill effectiveness 证明。
+- **Tooling freshness。** self-host CodeGraph dev dependency 刷到 `0.9.9`，gbrain
+  readiness 会先尝试 `doctor --json --fast`，再 fallback 到完整 doctor。
 
 ## 产品做什么
 
@@ -151,8 +161,13 @@ repo-local verification surfaces。
 
 npm package release line 现在是 `0.2.x`；生成的 workflow compatibility model line
 单独以 `5.x` 追踪。`repo-harness@0.2.4` 继续把首次全局引导（`repo-harness init`）
-和 repo-local 刷新（`repo-harness update`）拆开，同时收紧 hook parity，退休自托管
-autoresearch advisory hook，并避免计划/工作流咨询 prompt 被误判成执行请求。
+和 repo-local 刷新（`repo-harness update`）拆开，保留 typed global bootstrap 与只读
+配置安全哨兵，同时收紧 hook parity，退休自托管 autoresearch advisory hook，避免
+计划/工作流咨询 prompt 被误判成执行请求，并增加复制版 hook fallback、readiness checks
+和 skill-eval authority reporting。
+这些能力叠加在改名后的 CLI、user-level hook adapter bootstrap、AI-native scaffold overlays、
+typed prompt-guard decision engine、plan-stem task artifact 命名、`REPO_HARNESS_*`
+runtime aliases、Waza runtime skill sync，以及 maintainer 发布 npm 前使用的 release gate 之上。
 
 只有维护者需要在编辑 package 源码时使用 source checkout：
 
@@ -346,7 +361,7 @@ bash scripts/check-task-workflow.sh --strict
 bun scripts/inspect-project-state.ts --repo . --format text
 bash scripts/migrate-project-template.sh --repo . --dry-run
 bash scripts/check-agent-tooling.sh --host both --check-updates
-bun run benchmark:skills --dry-run
+bun run benchmark:skills --eval route-workflow-check
 ```
 
 ## Key Files

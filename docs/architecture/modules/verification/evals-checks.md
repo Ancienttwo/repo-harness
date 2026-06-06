@@ -18,7 +18,13 @@ Authoritative checks:
 - `bash scripts/sync-brain-docs.sh --check` for opted-in default-brain mirrors.
 - `bun scripts/inspect-project-state.ts --repo . --format text`
 - `bash scripts/migrate-project-template.sh --repo . --dry-run`
-- `bun run benchmark:skills --dry-run` for eval-harness smoke.
+- non-dry-run `bun run benchmark:skills --eval <slug>` runs when release or
+  readiness evidence depends on skill effectiveness.
+
+Non-authoritative smoke:
+
+- `bun run benchmark:skills --dry-run` only proves eval harness wiring. It is not
+  skill-effectiveness evidence for release/readiness claims.
 
 ## P2 Trace
 
@@ -28,13 +34,17 @@ strict readiness -> inspects repo state -> dry-runs self-migration -> reports
 whether release or merge readiness is blocked.
 
 Inputs are current git state, tracked files, ignored runtime paths, required
-CodeGraph readiness, and advisory tooling state. Outputs are command exit codes
-and concise readiness evidence.
+CodeGraph readiness, advisory tooling state, and skill eval metrics when a
+release/readiness claim uses skill-effectiveness evidence. Outputs are command
+exit codes, `full_test_count`, `dry_run_ratio`, `grader_pass_rate`,
+`effectiveness_authority`, and concise readiness evidence.
 
 Error paths:
 
 - `check-task-sync.sh` fails when substantive repo changes lack `tasks/` synchronization.
 - `check-task-workflow.sh --strict` fails for missing contract files, legacy docs, missing JSON runtime, broken deploy SQL order, or brain manifest drift.
+- Skill eval evidence is non-authoritative when it is missing or dry-run-heavy;
+  release filings must record the missing evidence or the repair command.
 - External tooling update checks may be skipped or timed out; CodeGraph host/index readiness is required for agent code navigation, while version freshness and other external tooling remain advisory unless the user explicitly asks for tooling maintenance.
 
 ## P3 Decision

@@ -83,6 +83,31 @@ describe("README DX contract", () => {
     expect(hookOps).toContain("generated");
   });
 
+  test("release and verification docs require authoritative skill eval evidence", () => {
+    const readme = read("README.md");
+    const verification = section(readme, "Verification");
+    const releaseDoc = read("docs/reference-configs/release-deploy.md");
+    const releaseAsset = read("assets/reference-configs/release-deploy.md");
+    const evalArchitecture = read("docs/architecture/modules/verification/evals-checks.md");
+
+    expect(releaseAsset).toBe(releaseDoc);
+    expect(releaseDoc).toContain("full_test_count");
+    expect(releaseDoc).toContain("dry_run_ratio");
+    expect(releaseDoc).toContain("grader_pass_rate");
+    expect(releaseDoc).toContain("effectiveness_authority");
+    expect(releaseDoc).toContain("missing eval evidence");
+    expect(releaseDoc).toMatch(/non-authoritative\s+skill eval evidence/);
+
+    expect(evalArchitecture).toContain("non-dry-run `bun run benchmark:skills --eval <slug>`");
+    expect(evalArchitecture).toContain("Non-authoritative smoke");
+    expect(evalArchitecture).toMatch(/not\s+skill-effectiveness evidence/);
+    expect(evalArchitecture).toContain("full_test_count");
+    expect(evalArchitecture).toContain("effectiveness_authority");
+
+    expect(verification).toContain("bun run benchmark:skills --eval route-workflow-check");
+    expect(verification).not.toContain("bun run benchmark:skills --dry-run");
+  });
+
   test("dry-run keeps the migration report onboarding signals", () => {
     const res = spawnSync("bash", ["scripts/migrate-project-template.sh", "--repo", ".", "--dry-run"], {
       cwd: ROOT,
