@@ -27,14 +27,14 @@
 #   hook <event-script>.sh [args...]
 #     Direct invoke shim (for testing, debugging).
 #
-# Hooks registered (matches repo-harness's existing .codex/hooks.json):
+# Hooks registered:
 #   SessionStart     → session-start-context.sh
 #   PreToolUse       → worktree-guard.sh + pre-edit-guard.sh (matcher: Edit|Write)
-#   PostToolUse      → post-edit-guard.sh + autoresearch-advisory.sh (matcher: Edit|Write)
+#   PostToolUse      → post-edit-guard.sh (matcher: Edit|Write)
 #                    → post-bash.sh (matcher: Bash)
 #                    → trace-event.sh (no matcher, all tools)
 #                    → context-pressure-hook.sh (no matcher, all tools)
-#   UserPromptSubmit → prompt-guard.sh + autoresearch-advisory.sh
+#   UserPromptSubmit → prompt-guard.sh
 #   Stop             → stop-orchestrator.sh
 
 set -euo pipefail
@@ -72,8 +72,7 @@ build_hooks_json() {
   ],
   "PostToolUse": [
     { "matcher": "Edit|Write", "hooks": [
-        { "type": "command", "command": "bash ${SHIM_PATH} post-edit-guard.sh" },
-        { "type": "command", "command": "bash ${SHIM_PATH} autoresearch-advisory.sh" }
+        { "type": "command", "command": "bash ${SHIM_PATH} post-edit-guard.sh" }
     ]},
     { "matcher": "Bash", "hooks": [
         { "type": "command", "command": "bash ${SHIM_PATH} post-bash.sh" }
@@ -87,8 +86,7 @@ build_hooks_json() {
   ],
   "UserPromptSubmit": [
     { "hooks": [
-        { "type": "command", "command": "bash ${SHIM_PATH} prompt-guard.sh" },
-        { "type": "command", "command": "bash ${SHIM_PATH} autoresearch-advisory.sh" }
+        { "type": "command", "command": "bash ${SHIM_PATH} prompt-guard.sh" }
     ]}
   ],
   "Stop": [

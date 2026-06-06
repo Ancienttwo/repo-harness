@@ -44,20 +44,15 @@ describe("workflow contract manifest", () => {
 
   test("hook asset files should stay in parity with self-hosted .ai/hooks", () => {
     const assetFiles = collectFiles(join(ROOT, "assets/hooks")).filter((file) => !["./settings.template.json", "./codex.hooks.template.json"].includes(file));
-    const devOnlyRuntimeHooks = new Set(["./autoresearch-advisory.sh"]);
     const allRuntimeFiles = collectFiles(join(ROOT, ".ai/hooks"));
-    const runtimeFiles = allRuntimeFiles.filter((file) => !devOnlyRuntimeHooks.has(file));
 
-    expect(runtimeFiles).toEqual(assetFiles);
+    expect(allRuntimeFiles).toEqual(assetFiles);
 
-    for (const relPath of runtimeFiles) {
+    for (const relPath of allRuntimeFiles) {
       const assetContent = readFileSync(join(ROOT, "assets/hooks", relPath.slice(2)), "utf-8");
       const runtimeContent = readFileSync(join(ROOT, ".ai/hooks", relPath.slice(2)), "utf-8");
       expect(runtimeContent).toBe(assetContent);
     }
-
-    expect(allRuntimeFiles).toContain("./autoresearch-advisory.sh");
-    expect(assetFiles).not.toContain("./autoresearch-advisory.sh");
   });
 
   test("helper inventory should come from the workflow contract", () => {

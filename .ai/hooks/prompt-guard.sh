@@ -39,6 +39,9 @@ is_implement_intent() {
   if is_next_slice_or_status_advisory_intent; then
     return 1
   fi
+  if is_plan_consultation_intent; then
+    return 1
+  fi
   if is_plan_discussion_continuation_intent; then
     return 1
   fi
@@ -109,6 +112,7 @@ is_plan_creation_intent() {
   is_plan_discussion_continuation_intent && return 1
   is_plan_refinement_intent && return 1
   is_diagnostic_question_intent && return 1
+  is_plan_consultation_intent && return 1
   echo "$PROMPT_INTENT_TEXT" | grep -qEi "(new plan|create plan|write plan|draft plan|新建计划|创建计划|写计划|制定计划|补计划)"
 }
 
@@ -121,6 +125,7 @@ is_plain_feature_plan_start_intent() {
   is_plan_discussion_continuation_intent && return 1
   is_plan_refinement_intent && return 1
   is_diagnostic_question_intent && return 1
+  is_plan_consultation_intent && return 1
   is_bug_or_hunt_intent && return 1
   is_execution_approval_intent && return 1
 
@@ -308,6 +313,16 @@ is_plan_discussion_continuation_intent() {
   printf '%s\n' "$PROMPT_INTENT_TEXT" | grep -qEi "(继续讨论|讨论|追问|疑问|补充|调整|完善|优化|评审|review|refine|怎么|如何|为什么|为啥|不要.*机械|不能.*机械|过于机械|多轮|中断|状态|边界|弱点|补充|改一下|修一下|不合理|有风险|我觉得|是否|是不是|能不能|应该|设计)"
 }
 
+is_plan_consultation_intent() {
+  is_execution_approval_intent && return 1
+  is_embedded_approved_plan_intent && return 1
+  is_plan_shaped_markdown_intent && return 1
+  is_explicit_execution_start_line && return 1
+
+  printf '%s\n' "$PROMPT_INTENT_TEXT" | grep -qEi "(plan|方案|计划|workflow|hook|hooks|codex[[:space:]-]*plan|claude[[:space:]-]*plan|active[[:space:]-]*plan|PlanStatusGuard|PlanCaptureGate|PlanStartGate|执行门禁|new[[:space:]]+plan|create[[:space:]]+(a[[:space:]]+)?(new[[:space:]]+)?plan|write[[:space:]]+plan|draft[[:space:]]+plan|新建计划|创建计划|写计划|制定计划|补计划)" || return 1
+  printf '%s\n' "$PROMPT_INTENT_TEXT" | grep -qEi "(为什么|为啥|怎么回事|怎么.*(看|理解|处理|判断|选|选择|创建)|如何.*(看|理解|处理|判断|选|选择|创建)|是否|是不是|能不能|可不可以|该不该|应该|哪个|哪种|哪条|选择哪个|咨询|讨论|追问|疑问|问一下|会不会|会触发吗|被拦|拦截|why|how[[:space:]]+(do|should|can|would|could)|should[[:space:]]+(i|we)|would|could|can[[:space:]]+(i|we)|which|what[[:space:]]+if|is[[:space:]]+it|question|consult|discuss)"
+}
+
 is_diagnostic_question_intent() {
   is_execution_approval_intent && return 1
   is_embedded_approved_plan_intent && return 1
@@ -370,6 +385,9 @@ is_think_plan_start_intent() {
   fi
   if echo "$PROMPT_INTENT_TEXT" | grep -qEi '^[[:space:][:punct:]]*(/think|[$]think|\[[$]think\])'; then
     return 0
+  fi
+  if is_plan_consultation_intent; then
+    return 1
   fi
   echo "$PROMPT_INTENT_TEXT" | grep -qEi '(plan this|plan it|how should i|how should we|出方案|给方案|怎么设计|用什么方案|制定计划|写计划|新建计划|创建计划)' || is_plain_feature_plan_start_intent
 }
@@ -1501,7 +1519,7 @@ if echo "$PROMPT_TEXT" | grep -qEi "(fix|patch|bug|修复|修bug|修 bug|改bug)
   echo "  检测到修复请求：先写失败测试复现问题，再重写实现。"
   emit_cross_review_hint debug
 fi
-if ! is_diagnostic_question_intent && ! is_review_release_advisory_intent && ! is_passive_worktree_status_intent && ! is_next_slice_or_status_advisory_intent && ! is_retrospective_completion_report_intent && echo "$PROMPT_TEXT" | grep -qEi "(new feature|feature|implement|build|新功能|实现|开发功能|执行)"; then
+if ! is_diagnostic_question_intent && ! is_plan_consultation_intent && ! is_review_release_advisory_intent && ! is_passive_worktree_status_intent && ! is_next_slice_or_status_advisory_intent && ! is_retrospective_completion_report_intent && echo "$PROMPT_TEXT" | grep -qEi "(new feature|feature|implement|build|新功能|实现|开发功能|执行)"; then
   echo "[BDD] Feature intent detected. Define Given-When-Then acceptance scenarios first."
   echo "  检测到新功能请求：先定义 Given-When-Then 验收场景。"
 fi

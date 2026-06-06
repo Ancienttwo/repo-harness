@@ -326,7 +326,7 @@ Guards habituales:
 
 ## Release actual
 
-- npm package: `repo-harness@0.2.1`
+- npm package: `repo-harness@0.2.4`
 - Generated workflow compatibility: `5.2.3`
 - GitHub repository: `Ancienttwo/repo-harness`
 - Release history: [`docs/CHANGELOG.md`](docs/CHANGELOG.md)

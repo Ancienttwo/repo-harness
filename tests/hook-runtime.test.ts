@@ -473,47 +473,6 @@ describe("Hook runtime behavior", () => {
     }
   });
 
-  test("self-host autoresearch-advisory: routes optimization intent without background mutation", () => {
-    const cwd = tmpWorkspace("autoresearch-advisory");
-    try {
-      installHooks(cwd);
-      copyFileSync(
-        join(ROOT, ".ai/hooks/autoresearch-advisory.sh"),
-        join(cwd, ".ai/hooks/autoresearch-advisory.sh")
-      );
-      const sessionDir = join(cwd, "autoresearch", "autoresearch-demo-20260528-010203");
-      mkdirSync(sessionDir, { recursive: true });
-      writeFileSync(
-        join(sessionDir, "session.json"),
-        JSON.stringify({ status: "running", target_skill_path: join(cwd, "SKILL.md") }, null, 2) + "\n"
-      );
-      writeFileSync(
-        join(sessionDir, "results.tsv"),
-        "experiment\tscore\tmax_score\tpass_rate\tstatus\tdescription\n0\t12\t25\t48.0%\tbaseline\toriginal\n"
-      );
-
-      const promptRes = runHook("autoresearch-advisory.sh", cwd, {
-        stdin: JSON.stringify({ prompt: "请跑 autoresearch 优化 SKILL.md 的 hook workflow" }),
-      });
-      expect(promptRes.status).toBe(0);
-      expect(promptRes.stdout).toContain("[AutoresearchAdvisory]");
-      expect(promptRes.stdout).toContain("agent-run loop");
-      expect(promptRes.stdout).toContain("baseline -> candidate copy -> binary evals -> record_experiment -> promote only winners");
-      expect(promptRes.stdout).toContain("hooks must not mutate SKILL.md");
-      expect(promptRes.stdout).toContain("autoresearch/autoresearch-demo-20260528-010203/session.json");
-      expect(promptRes.stdout).toContain("0\t12\t25\t48.0%\tbaseline\toriginal");
-
-      const candidateRes = runHook("autoresearch-advisory.sh", cwd, {
-        stdin: JSON.stringify({ file_path: "autoresearch/autoresearch-demo-20260528-010203/candidates/exp-2/SKILL.md" }),
-      });
-      expect(candidateRes.status).toBe(0);
-      expect(candidateRes.stdout).toContain("candidate SKILL.md edited");
-      expect(candidateRes.stdout).toContain("record the experiment");
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  });
-
   test("worktree-guard: warning by default, block when marker exists", () => {
     const cwd = tmpWorkspace("worktree-guard");
     try {
@@ -1716,6 +1675,37 @@ describe("Hook runtime behavior", () => {
     }
   });
 
+  test("prompt-guard: treats plan creation questions as consultation, not plan workflow", () => {
+    const cwd = tmpWorkspace("prompt-guard-plan-consultation");
+    try {
+      initGitRepo(cwd);
+      installHooks(cwd);
+      installPlanWorkflowHelpers(cwd);
+      mkdirSync(join(cwd, "tasks"), { recursive: true });
+      writeFileSync(join(cwd, "tasks/research.md"), "# Research\n\nFresh finding.\n");
+
+      for (const prompt of [
+        "怎么创建一个 new plan？",
+        "why does create a new plan trigger Hook?",
+        "这是咨询性问题，你Hook拦什么",
+      ]) {
+        const beforePlans = existsSync(join(cwd, "plans")) ? readdirSync(join(cwd, "plans")) : [];
+        const res = runHook("prompt-guard.sh", cwd, {
+          stdin: JSON.stringify({ user_message: prompt }),
+        });
+        const afterPlans = existsSync(join(cwd, "plans")) ? readdirSync(join(cwd, "plans")) : [];
+
+        expect(res.status).toBe(0);
+        expect(res.stdout).not.toContain("[PlanStartGate]");
+        expect(res.stdout).not.toContain("[PlanStatusGuard]");
+        expect(res.stdout).not.toContain('"guard":"PlanStatusGuard"');
+        expect(afterPlans).toEqual(beforePlans);
+      }
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   test("prompt-guard: starts a Draft plan workflow when Waza think planning begins", () => {
     const cwd = tmpWorkspace("prompt-guard-plan-start");
     try {
@@ -2549,6 +2539,65 @@ describe("Hook runtime behavior", () => {
         expect(res.status).toBe(0);
         expect(res.stdout).not.toContain("[PlanStatusGuard] No active plan found");
       }
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("prompt-guard: treats plan consultation prompts as advisory", () => {
+    const cwd = tmpWorkspace("prompt-guard-plan-consultation-status");
+    try {
+      initGitRepo(cwd);
+      installHooks(cwd);
+      installPlanWorkflowHelpers(cwd);
+      mkdirSync(join(cwd, "docs"), { recursive: true });
+      writeFileSync(join(cwd, "docs/spec.md"), "# Product Spec\n");
+
+      const planFiles = () =>
+        existsSync(join(cwd, "plans"))
+          ? readdirSync(join(cwd, "plans")).filter((name) => name.startsWith("plan-"))
+          : [];
+
+      const consultationPrompts = [
+        "我应该创建计划还是继续咨询？",
+        "Should I create a new plan or keep discussing the hook behavior?",
+        [
+          "Think 应该选择哪个方案：",
+          "DOM/SVG 精修 vs 真 Three.js 重写——没分清之前我不动手。先把现有渲染器读透,这样无论走哪条我都能给出精确范围。",
+          "",
+          "Graph renderer 下一刀",
+          "Read",
+          "GraphCanvas.tsx",
+          "渲染器读透了。关键判断已成形:这个 GraphCanvas 在数学上已经是真 3D。",
+          "",
+          "Ran a command, read a file",
+          "图谱 CSS 也读透了,F-11/F-12 确认是外科手术级改动。现在把我答应\"由你拍\"的渲染器分路收掉。",
+        ].join("\n"),
+      ];
+
+      for (const prompt of consultationPrompts) {
+        const beforePlans = planFiles();
+        const res = runHook("prompt-guard.sh", cwd, {
+          stdin: JSON.stringify({ user_message: prompt }),
+          env: { HOOK_HOST: "codex" },
+        });
+        const afterPlans = planFiles();
+
+        expect(res.status).toBe(0);
+        expect(res.stdout).not.toContain("[PlanStatusGuard] No active plan found");
+        expect(res.stdout).not.toContain('"guard":"PlanStatusGuard"');
+        expect(res.stdout).not.toContain("[PlanStartGate]");
+        expect(res.stdout).not.toContain("[BDD] Feature intent detected");
+        expect(afterPlans).toEqual(beforePlans);
+      }
+
+      const explicitExecution = runHook("prompt-guard.sh", cwd, {
+        stdin: JSON.stringify({ user_message: "开始实现" }),
+        env: { HOOK_HOST: "codex" },
+      });
+
+      expect(explicitExecution.status).toBe(2);
+      expect(explicitExecution.stdout).toContain("[PlanStatusGuard] No active plan found");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

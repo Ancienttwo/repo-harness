@@ -197,6 +197,8 @@ Root cause: `src/cli/hook/route-registry.ts` treated `autoresearch-advisory.sh` 
 
 Decision: public `repo-harness hook` routes may reference only scripts that exist in `assets/hooks`. Keep self-host autoresearch advisory directly testable, but do not route downstream repos through a dev-only script. Regression guard lives in `tests/cli/route-registry.test.ts` and asserts every route script is installable from `assets/hooks`.
 
+Superseded 2026-06-07: `autoresearch-advisory.sh` is fully retired from runtime hooks, including self-host `.ai/hooks` and user-level `~/.codex` / `~/.claude` adapters. `scripts/repo-harness.sh install` must not re-register it.
+
 ### Contract surface (Codex add-ons, must hold)
 
 1. **Route id is public contract; script name is not** — Phase 2 sealed hooks 重命名 script 不影响 adapter

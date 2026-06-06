@@ -15,7 +15,7 @@ import { isManagedEntry, type HooksByEvent } from '../installer/managed-entries'
 import { readJsonOrEmpty } from '../installer/shared';
 import type { Location } from '../installer/types';
 
-export const CLI_VERSION = '0.2.3';
+export const CLI_VERSION = '0.2.4';
 
 const OPT_IN_MARKER = '.ai/harness/workflow-contract.json';
 

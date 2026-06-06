@@ -318,6 +318,20 @@
 ### Verification Surface
 - Autoresearch session: baseline 12/25 -> final 25/25, one kept candidate, no discarded candidates.
 - The hook workflow regression is now represented in `evals/evals.json` rather than only in chat or the local session log.
+
+## 2026-06-07 Autoresearch Hook Retirement
+
+### Symptom
+- User-level `~/.codex/hooks.json` and `~/.claude/settings.json` still registered `autoresearch-advisory.sh` on `PostToolUse Edit|Write` and `UserPromptSubmit`.
+- `scripts/repo-harness.sh install` would reintroduce those entries even though public `assets/hooks` and route registry had already stopped shipping the hook.
+
+### Fix
+- Removed `autoresearch-advisory.sh` from self-host `.ai/hooks`.
+- Removed autoresearch registration from `scripts/repo-harness.sh` and from the current user-level Codex/Claude hook configs.
+- Tightened self-host hook parity so `.ai/hooks` must match `assets/hooks` without a dev-only autoresearch exception.
+
+### Verification Surface
+- `rg -n "autoresearch-advisory" .ai/hooks assets/hooks scripts/repo-harness.sh tests/workflow-contract.test.ts tests/hook-runtime.test.ts ~/.codex/hooks.json ~/.claude/settings.json`
 - `tests/hook-runtime.test.ts` covers prompt intent detection, session readback, and candidate edit reminders.
 
 ## 2026-05-06 Harness v2 Implementation Notes
@@ -889,3 +903,18 @@
 ### Preserve
 - New generated `.gitignore` runtime blocks and Codex resume packets write `repo-harness` markers.
 - Keep dual-read support for old generated markers such as `managed by project-initializer` and `generated-by: project-initializer` until downstream repos have migrated.
+
+## 2026-06-06 Prompt Guard Plan Consultation False Positive
+
+### Symptom
+- Consultation/status prompts that mentioned `new plan` / `创建计划` / `方案` plus implementation words such as `动手` could reach `PlanStatusGuard` and block with `No active plan found in plans/.`
+- A representative false positive was a long Codex/Think status report beginning with `Think 应该选择哪个方案` and saying `没分清之前我不动手`; the negated execution word was still enough for the broad implementation classifier.
+
+### Fix
+- `.ai/hooks/prompt-guard.sh` and `assets/hooks/prompt-guard.sh` now share `is_plan_consultation_intent`, which requires both a plan/hook term and consultation/question wording, and excludes explicit execution starts.
+- Plan consultation now short-circuits implementation, plan creation, plain feature plan-start, Waza think plan-start, and BDD injection paths.
+
+### Verification
+- `bun test tests/hook-runtime.test.ts -t "prompt-guard"`
+- `bun test tests/cli/prompt-guard-decision.test.ts`
+- Manual temp-repo UserPromptSubmit repro of the long Think/Graph renderer prompt exits `0` without `PlanStatusGuard`.

@@ -333,19 +333,16 @@ or `.claude/.trace.jsonl` evidence.
 
 Hooks are accelerators and guards. They do not replace `plans/`, `tasks/`,
 contracts, reviews, policy, checks, or handoff artifacts. Heavy workflows such as
-autoresearch must not silently run as background hook mutations. A hook may detect
-optimization intent, point to an existing `autoresearch-*/session.json`, or remind
-the agent to record an experiment; the agent still owns baseline measurement,
-candidate staging, scoring, and winner promotion.
-Keep local autoresearch run products under ignored `autoresearch/` when they
-must remain in the workspace.
-`autoresearch-advisory.sh` is a self-host maintainer hook for this repo, not a
-default installable user hook.
+autoresearch must not silently run as background hook mutations. The retired
+`autoresearch-advisory.sh` hook is not part of `.ai/hooks`, user-level adapters,
+or installable hook templates. If autoresearch evidence is needed, the agent
+runs it explicitly and keeps local run products under ignored `autoresearch/`
+when they must remain in the workspace.
 
 Verify hook workflow changes with hook-specific evidence:
 
 - default hook asset parity between `assets/hooks/` and `.ai/hooks/`, with
-  explicit exclusions only for self-host maintainer hooks
+  no self-host-only hook exclusions
 - `bun test tests/hook-runtime.test.ts tests/workflow-contract.test.ts`
 - `bash scripts/check-task-sync.sh`
 - `bash scripts/check-task-workflow.sh --strict`

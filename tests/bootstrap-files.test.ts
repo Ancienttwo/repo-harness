@@ -57,7 +57,7 @@ describe("Bootstrap Script Contracts", () => {
   test("repo package should expose workflow verification scripts", () => {
     const pkg = JSON.parse(read("package.json"));
     expect(pkg.name).toBe("repo-harness");
-    expect(pkg.version).toBe("0.2.3");
+    expect(pkg.version).toBe("0.2.4");
     expect(pkg.private).toBeUndefined();
     expect(pkg.bin["repo-harness"]).toBe("src/cli/index.ts");
     expect(pkg.bin["repo-harness-hook"]).toBe("src/cli/hook-entry.ts");

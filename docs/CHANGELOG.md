@@ -4,6 +4,22 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-06-07
+
+### Fixed
+
+- Treated plan/workflow consultation prompts as advisory text instead of
+  sending them into `PlanStatusGuard`, so questions that mention `new plan`,
+  `方案`, hooks, or workflow routing no longer create plan files or block with
+  "No active plan found" unless they explicitly start execution.
+
+### Removed
+
+- Retired the self-host-only `autoresearch-advisory.sh` hook from `.ai/hooks`,
+  the generated hook adapter installer, and hook parity exceptions. Autoresearch
+  now stays an explicit agent-run workflow instead of a user-level background
+  hook route.
+
 ## [0.2.3] - 2026-06-05
 
 ### Changed

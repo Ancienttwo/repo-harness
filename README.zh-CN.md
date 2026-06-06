@@ -23,31 +23,15 @@ repo-local workflow 的自托管样例。
   做渐进式上下文加载：一份小而稳定的 root context（约 12KB），加上只在改到对应文件时才加载的
   capability 块。agent 读一份 1KB 的 capability 合约或查索引，而不是花上千 token 重新摸清结构。
 
-## 0.2.3 新特性
+## 0.2.4 新特性
 
-- **更安全的全局初始化默认值。** `repo-harness init` 不再调用旧 Claude plugin setup
-  脚本，也没有 Superpowers marketplace installer 路径。
-- **全局初始化命令（`repo-harness init`）。** 一条命令安装全局 `repo-harness` CLI、
-  刷新 repo-harness skill aliases、安装 Codex/Claude user-level hook adapters、
-  配置 Waza（`think`、`hunt`、`check`、`health`）和 Mermaid、持久化 brain root，并配置
-  CodeGraph MCP。运行
-  `npx -y repo-harness init`，不需要 clone 源码仓库。
-- **仓库刷新命令（`repo-harness update`）。** 已有仓库的安装/刷新入口独立成命令，继续复用
-  原 repo-local harness migration 路径，同时让 `init` 专注于全局 runtime setup。
-- **CodeGraph index 自愈。** prompt hook 检测到结构化代码导航意图、且仓库还没有 `.codegraph`
-  index 时，会先用 repo-local 或 PATH 上的 CodeGraph binary 初始化 index，再发路由提示。这个动作仍是
-  advisory：不安装依赖、不跑重 readiness probe，CodeGraph 不可用时也不阻塞 prompt。
-- **安全哨兵（`repo-harness security scan` + `security-sentinel.sh`）。** 对高价值配置注入面做只读检查
-  （`~/.claude/settings.json`、`~/.codex/hooks.json`、仓库本地 `.vscode/tasks.json`，以及 legacy 项目级
-  `.claude`/`.codex` adapter）。它标记危险命令模式——远程 shell 管道、base64 解码执行、`osascript`、
-  `launchctl`/`crontab` 持久化、netcat、内联解释器执行——以及未托管 hook 和自动运行的 `folderOpen`
-  任务，且绝不改写任何配置。`SessionStart` 哨兵对这组文件做指纹，只在指纹变化时才重扫，不制造
-  session-start 噪音。按需审计：`repo-harness security scan --json`。
-- **Claude/Codex draft-plan 生命周期。** Plan mode 显式分两段：Draft 与 Approved。hooks 识别建 plan 的
-  意图并追踪 pending orchestration；stop 门（`stop-orchestrator.sh`）要求会话在 plan 未定时结束前先做
-  一次自审。用 `scripts/capture-plan.sh --slug <slug> --title <title> --status Draft` 落草稿，审批后改
-  Approved 并用 `--execute` 或 `scripts/plan-to-todo.sh --plan <plan>` 投射到执行。plans/ 成为文件级
-  事实来源。
+- **计划咨询保持 advisory。** 提到 plans、workflow、hooks、`new plan` 或 `方案` 的问题和状态报告，
+  不再因为包含执行相关词就进入 `PlanStatusGuard` 或创建 plan 文件；只有明确开始执行时才触发执行门。
+- **Autoresearch 不再是后台 hook。** 自托管专用的 `autoresearch-advisory.sh` route 已从
+  `.ai/hooks`、生成的 hook installer 和 user-level adapters 里退休。需要 autoresearch 证据时，
+  由 agent 显式运行实验流程，而不是靠常驻 hook 提示。
+- **Hook parity 更严格。** 自托管 `.ai/hooks/` 和可安装的 `assets/hooks/` 现在必须完全一致，
+  不再保留 maintainer-only hook exception。
 
 ## 产品做什么
 
@@ -166,13 +150,9 @@ npx -y repo-harness update
 repo-local verification surfaces。
 
 npm package release line 现在是 `0.2.x`；生成的 workflow compatibility model line
-单独以 `5.x` 追踪。`repo-harness@0.2.3` 把首次全局引导（`repo-harness init`）
-和 repo-local 刷新（`repo-harness update`）拆开，同时用 typed CLI/hook/dependency
-bootstrap 替换旧全局 plugin installer 路径，保留只读配置安全哨兵（`repo-harness security scan`）、
-显式 Claude/Codex draft-plan 生命周期，并新增 prompt hook 的非阻塞 CodeGraph index 初始化。
-这些能力叠加在改名后的 CLI、user-level hook adapter bootstrap、AI-native scaffold overlays、
-typed prompt-guard decision engine、plan-stem task artifact 命名、`REPO_HARNESS_*`
-runtime aliases、Waza runtime skill sync，以及 maintainer 发布 npm 前使用的 release gate 之上。
+单独以 `5.x` 追踪。`repo-harness@0.2.4` 继续把首次全局引导（`repo-harness init`）
+和 repo-local 刷新（`repo-harness update`）拆开，同时收紧 hook parity，退休自托管
+autoresearch advisory hook，并避免计划/工作流咨询 prompt 被误判成执行请求。
 
 只有维护者需要在编辑 package 源码时使用 source checkout：
 
@@ -302,7 +282,7 @@ hook block 工作时，先看 terminal 里的结构化输出。核心字段是
 
 ## 当前 Release
 
-- npm package：`repo-harness@0.2.3`
+- npm package：`repo-harness@0.2.4`
 - Generated workflow compatibility：`5.2.3`
 - GitHub repository：`Ancienttwo/repo-harness`
 - Release history：[`docs/CHANGELOG.md`](docs/CHANGELOG.md)

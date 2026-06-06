@@ -67,12 +67,12 @@ Bundled hook assets include:
 - `assets/hooks/atomic-commit.sh`
 - `assets/hooks/trace-event.sh`
 
-Maintainer-only self-host hooks:
+Retired hooks:
 
-- `.ai/hooks/autoresearch-advisory.sh` routes this repo's local skill
-  optimization work to the agent-owned autoresearch loop. It is not copied from
-  `assets/hooks/`, is not referenced by the default adapter templates, and is
-  not installed into user projects.
+- `autoresearch-advisory.sh` is retired. It must not exist in `.ai/hooks`, be
+  referenced by default adapter templates, or be installed into user-level
+  Codex/Claude hook configs. Run autoresearch explicitly when evidence is
+  needed.
 
 Generated `.claude/hooks/` shims are legacy artifacts. Current migration removes
 known generated shims and preserves only user-authored `.claude/hooks/custom-*.sh`
