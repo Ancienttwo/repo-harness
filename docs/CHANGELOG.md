@@ -4,8 +4,14 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-11
+
 ### Added
 
+- Added the sprint program layer: `tasks/sprints/`, sprint templates,
+  `scripts/sprint-backlog.sh`, the `repo-harness-sprint` command facade, active
+  sprint markers, current-status projection, session-start projection, workflow
+  validation, and generated-repo parity copies.
 - Added `src/cli/hook/prompt-intents.ts`: every prompt-text intent classifier
   now lives in TypeScript with real Unicode semantics, fixing
   locale-dependent Chinese misclassification (UTF-8 continuation bytes
@@ -23,6 +29,10 @@ All notable changes to this skill are documented here.
 
 ### Changed
 
+- Hook runtime resolution is now central-first: user-level adapters dispatch
+  into `repo-harness-hook`, central packaged hooks are the default runtime, and
+  repo policy can pin self-host development back to the repo copy without
+  changing downstream user adapters.
 - Prompt-layer plan/spec/contract gates became advisory routing; hard
   enforcement moved to the PreToolUse edit layer where it keys off path +
   plan state instead of natural-language guessing. Done-claim gates keep

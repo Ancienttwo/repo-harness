@@ -190,7 +190,7 @@ de ce workflow.
 npx -y repo-harness init
 ```
 
-La release line du package npm est désormais `0.2.x` ; la generated workflow
+La release line du package npm est désormais `0.3.x` ; la generated workflow
 compatibility model line est suivie séparément en `5.x`. `repo-harness init`
 sert au bootstrap global et `repo-harness update` sert au rafraîchissement
 repo-local. `repo-harness init` configure le CLI, les hook adapters de niveau
@@ -329,7 +329,7 @@ Guards courants :
 
 ## Release actuelle
 
-- npm package : `repo-harness@0.2.4`
+- npm package : `repo-harness@0.3.0`
 - Generated workflow compatibility : `5.2.3`
 - GitHub repository : `Ancienttwo/repo-harness`
 - Release history : [`docs/CHANGELOG.md`](docs/CHANGELOG.md)

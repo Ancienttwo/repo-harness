@@ -34,30 +34,28 @@ This repository now dogfoods its own tasks-first contract. It is both:
   read a 1KB capability contract or query the index instead of spending thousands of
   tokens rediscovering structure.
 
-## What's New in 0.2.4
+## What's New in 0.3.0
 
-- **Plan consultation stays advisory.** Questions and status reports that mention
-  plans, workflows, hooks, `new plan`, or `方案` no longer fall into
-  `PlanStatusGuard` or create plan files unless they explicitly start execution.
-- **Autoresearch is no longer a background hook.** The self-host-only
-  `autoresearch-advisory.sh` route is retired from `.ai/hooks`, generated hook
-  installers, and user-level adapters. Autoresearch evidence is now gathered by
-  an explicit agent-run workflow, not by an always-on hook.
-- **Hook parity is stricter.** Self-host `.ai/hooks/` and installable
-  `assets/hooks/` now match without maintainer-only hook exceptions.
-- **Copied hook fallback.** Installed prompt hooks now keep PlanCaptureGate
-  guidance working even when the copied runtime cannot reach the TypeScript
-  decision engine.
-- **Darwin readiness gates.** Workflow checks now catch stale handoff/resume
-  plan references, and public action-command skills have static quality gates
-  for failure modes, boundaries, and high-risk checkpoints.
-- **Authoritative eval evidence.** Benchmark reports now include
-  `full_test_count`, `dry_run_ratio`, `grader_pass_rate`, and
-  `effectiveness_authority`, so dry-run smoke output cannot be mistaken for
-  release-grade skill effectiveness proof.
-- **Tooling freshness.** The self-host CodeGraph dev dependency is refreshed to
-  `0.9.9`, and gbrain readiness probes try `doctor --json --fast` before the
-  full doctor path.
+- **Sprint program layer.** `repo-harness-sprint`, `tasks/sprints/`, sprint
+  templates, active sprint markers, and `scripts/sprint-backlog.sh` now capture
+  program-level PRDs and ordered backlogs without turning `tasks/todo.md` into
+  an active execution checklist.
+- **Central-first hook runtime.** User-level Claude/Codex adapters dispatch into
+  `repo-harness-hook`; central packaged hooks are the default runtime, while
+  this self-host repo can still pin `"hook_source": "repo"` for live hook
+  development.
+- **Prompt decisions moved to TypeScript.** Prompt-text intent classification is
+  Unicode-aware in `src/cli/hook/prompt-intents.ts`, the shell hook receives one
+  verdict JSON line, and prompt-layer plan/spec/contract gates are advisory.
+- **Edit-layer enforcement.** Implementation writes are enforced at
+  `pre-edit-guard.sh`, where the guard can key off path, active plan state, and
+  repo files instead of natural-language guesses.
+- **Cheaper always-on hooks.** `trace-event.sh` and `context-pressure-hook.sh`
+  are merged into `post-tool-observer.sh`: one dispatch, one stdin parse, one
+  trace file, and sampled context-budget probes.
+- **Legacy surface cleanup.** The retired `repo-harness-skill`,
+  `project-initializer`, `PROJECT_INITIALIZER_*` fallbacks, duplicate shell
+  classifier table, orphan version checker, and split observer hooks are gone.
 
 ## What repo-harness Does
 
@@ -87,9 +85,10 @@ The design has three layers:
    `.ai/harness/`, helper scripts, and `.ai/hooks/`.
 3. **Host adapters**: user-level `~/.claude/settings.json` and
    `~/.codex/hooks.json` route Claude/Codex events into `repo-harness-hook`.
-   The hook entrypoint exits silently for non-opt-in repos and dispatches into
-   the current repo's `.ai/hooks/*` scripts only when
-   `.ai/harness/workflow-contract.json` exists.
+   The hook entrypoint exits silently for non-opt-in repos. For opted-in repos,
+   it resolves hooks central-first through the packaged install or
+   `~/.repo-harness/hooks/`, with repo policy able to pin self-host development
+   back to `.ai/hooks/*`.
 
 For `UserPromptSubmit`, the public adapter contract stays
 `repo-harness-hook UserPromptSubmit --route default`. The CLI route registry
@@ -116,13 +115,20 @@ file-backed plan, contract, review, checks, and handoff artifacts.
 ## Task Workflow: Plan to Closeout
 
 The diagram below assumes the harness is already installed in the repo. It shows
-the normal task lifecycle: plan, project into a sprint contract, check out the
+the normal lifecycle from a program sprint backlog down to one contract task:
+draft or select the task, project it into execution files, check out the
 contract worktree when policy requires it, implement under hooks, verify, review,
-and close out.
+complete the sprint task when applicable, and close out.
 
 ```mermaid
 flowchart TD
-  UserTask["User task or planning prompt"] --> Discovery["Due diligence<br/>P1 map, P2 trace, P3 decision"]
+  Program["Program goal or release theme"] --> Sprint{"Sprint layer needed?"}
+  Sprint -->|yes| SprintDoc["Sprint PRD + backlog<br/>tasks/sprints/*.sprint.md"]
+  SprintDoc --> NextTask["Select next sprint task<br/>sprint-backlog.sh next"]
+  Sprint -->|no| UserTask["User task or planning prompt"]
+  NextTask --> UserTask
+
+  UserTask --> Discovery["Due diligence<br/>P1 map, P2 trace, P3 decision"]
   Discovery --> PlanDraft["Draft plan<br/>plans/plan-*.md"]
   PlanDraft --> PlanReview{"Plan ready for execution?"}
   PlanReview -->|no| Refine["Refine plan, scope, evidence contract"]
@@ -131,6 +137,7 @@ flowchart TD
 
   Approve --> Project["Project plan into execution<br/>capture-plan.sh --execute<br/>or plan-to-todo.sh --plan"]
   Project --> Active["Active markers<br/>.ai/harness/active-plan<br/>.ai/harness/active-worktree"]
+  Project --> SprintActive["Sprint projection<br/>active-sprint marker<br/>tasks/current.md"]
   Project --> Contract["Sprint contract<br/>tasks/contracts/YYYYMMDD-HHMM-task-slug.contract.md"]
   Project --> ReviewFile["Review file<br/>tasks/reviews/YYYYMMDD-HHMM-task-slug.review.md"]
   Project --> Notes["Task notes<br/>tasks/notes/YYYYMMDD-HHMM-task-slug.notes.md"]
@@ -154,7 +161,10 @@ flowchart TD
   External --> DoneGate{"Contract, checks, review, and acceptance pass?"}
   DoneGate -->|no| Repair["Repair failing evidence or implementation"]
   Repair --> Implement
-  DoneGate -->|yes| Closeout["Closeout<br/>scripts/contract-worktree.sh finish"]
+  DoneGate -->|yes| SprintComplete{"Sprint task active?"}
+  SprintComplete -->|yes| MarkSprint["Mark backlog item complete<br/>sprint-backlog.sh complete-task"]
+  SprintComplete -->|no| Closeout["Closeout<br/>scripts/contract-worktree.sh finish"]
+  MarkSprint --> Closeout
 
   Closeout --> Commit["Commit contract branch"]
   Commit --> Merge["Fast-forward target branch"]
@@ -191,14 +201,13 @@ npx -y repo-harness update
 repository to install or refresh workflow files, hook assets, host adapters,
 skill aliases, and repo-local verification surfaces from the current npm package.
 
-The npm package release line is now `0.2.x`; generated workflow compatibility is
-tracked separately as the `5.x` model line. The `0.2.4` package keeps first-run
+The npm package release line is now `0.3.x`; generated workflow compatibility is
+tracked separately as the `5.x` model line. The `0.3.0` package keeps first-run
 global bootstrap (`repo-harness init`) separate from repo-local refresh
-(`repo-harness update`), preserves the typed global bootstrap and read-only
-config security sentinel, tightens hook parity, retires the self-host
-autoresearch advisory hook, prevents consultative plan/workflow prompts from
-being mistaken for execution, and adds copied-hook fallback, readiness checks,
-and skill-eval authority reporting.
+(`repo-harness update`), adds the sprint program layer, moves hook execution to
+central-first runtime resolution, moves prompt decisions into TypeScript,
+enforces implementation writes at the edit boundary, and merges always-on hook
+observers into one cheaper path.
 These sit on top of the renamed `repo-harness` CLI, user-level hook
 adapter bootstrap, AI-native scaffold overlays, the typed prompt-guard decision
 engine, plan-stem task artifact naming, `REPO_HARNESS_*` runtime aliases, Waza
@@ -282,11 +291,18 @@ before applying anything.
 - Debug in this order: user-level adapter config -> `repo-harness-hook` (or fallback `repo-harness hook`) -> route registry -> `.ai/hooks/*`.
 - If `repo-harness-hook` reports `.ai/hooks` drift, refresh the repo-local copy with `repo-harness update --repo <root>`.
 
-`SessionStart` runs two ordered scripts before work begins:
+`SessionStart` resolves hooks central-first, then runs two ordered scripts before
+work begins:
 
 ```mermaid
 flowchart LR
-  SessionStart["Claude/Codex SessionStart"] --> Ctx["session-start-context.sh<br/>resume + handoff context"]
+  SessionStart["Claude/Codex SessionStart"] --> Adapter["user-level adapter"]
+  Adapter --> Entry["repo-harness-hook SessionStart --route default"]
+  Entry --> Source{"hook source"}
+  Source -->|central default| Central["packaged hooks<br/>or ~/.repo-harness/hooks"]
+  Source -->|repo policy pin| Repo["repo .ai/hooks<br/>self-host development"]
+  Central --> Ctx["session-start-context.sh<br/>resume + sprint + handoff context"]
+  Repo --> Ctx
   Ctx --> Sec["security-sentinel.sh<br/>read-only config scan, fingerprint-gated"]
   Sec --> SSOut["SessionStart additionalContext<br/>prior-session state + SecurityConfig findings"]
 ```
@@ -342,7 +358,7 @@ Most common guards:
 
 ## Current Release
 
-- npm package: `repo-harness@0.2.4`
+- npm package: `repo-harness@0.3.0`
 - Generated workflow compatibility: `5.2.3`
 - GitHub repository: `Ancienttwo/repo-harness`
 - Release history: [`docs/CHANGELOG.md`](docs/CHANGELOG.md)

@@ -23,25 +23,25 @@ repo-local workflow 的自托管样例。
   做渐进式上下文加载：一份小而稳定的 root context（约 12KB），加上只在改到对应文件时才加载的
   capability 块。agent 读一份 1KB 的 capability 合约或查索引，而不是花上千 token 重新摸清结构。
 
-## 0.2.4 新特性
+## 0.3.0 新特性
 
-- **计划咨询保持 advisory。** 提到 plans、workflow、hooks、`new plan` 或 `方案` 的问题和状态报告，
-  不再因为包含执行相关词就进入 `PlanStatusGuard` 或创建 plan 文件；只有明确开始执行时才触发执行门。
-- **Autoresearch 不再是后台 hook。** 自托管专用的 `autoresearch-advisory.sh` route 已从
-  `.ai/hooks`、生成的 hook installer 和 user-level adapters 里退休。需要 autoresearch 证据时，
-  由 agent 显式运行实验流程，而不是靠常驻 hook 提示。
-- **Hook parity 更严格。** 自托管 `.ai/hooks/` 和可安装的 `assets/hooks/` 现在必须完全一致，
-  不再保留 maintainer-only hook exception。
-- **复制版 hook fallback。** 已安装的 prompt hook 即使找不到 TypeScript decision
-  engine，也会保留 PlanCaptureGate guidance，而不是直接报 engine unavailable。
-- **Darwin readiness gates。** Workflow checks 现在会抓 stale handoff/resume plan
-  references；公共 action-command skills 也增加 failure modes、boundaries 和高风险
-  checkpoint 的静态质量门。
-- **权威 eval evidence。** Benchmark report 现在输出 `full_test_count`、
-  `dry_run_ratio`、`grader_pass_rate` 和 `effectiveness_authority`，避免把 dry-run
-  smoke 当成 release-grade skill effectiveness 证明。
-- **Tooling freshness。** self-host CodeGraph dev dependency 刷到 `0.9.9`，gbrain
-  readiness 会先尝试 `doctor --json --fast`，再 fallback 到完整 doctor。
+- **Sprint program layer。** `repo-harness-sprint`、`tasks/sprints/`、sprint
+  template、active sprint marker 和 `scripts/sprint-backlog.sh` 现在承接 program
+  PRD 与有序 backlog，不再把 `tasks/todo.md` 当成活跃执行 checklist。
+- **Central-first hook runtime。** User-level Claude/Codex adapters 进入
+  `repo-harness-hook`；默认跑 central packaged hooks，本仓库自托管开发时仍可通过
+  `"hook_source": "repo"` 钉回 repo 内 `.ai/hooks`。
+- **Prompt decision 进入 TypeScript。** Prompt-text intent classifier 在
+  `src/cli/hook/prompt-intents.ts` 里处理 Unicode，shell hook 只接收一行 verdict
+  JSON，prompt 层的 plan/spec/contract gate 退为 advisory。
+- **Edit-layer enforcement。** 真正的实现写入由 `pre-edit-guard.sh` 拦截，依据路径、
+  active plan state 和仓库文件判断，不再靠自然语言猜测。
+- **Always-on hooks 更轻。** `trace-event.sh` 与 `context-pressure-hook.sh` 合并为
+  `post-tool-observer.sh`：一次 dispatch、一次 stdin parse、一份 trace 文件，并抽样跑
+  context-budget probes。
+- **Legacy surface 清理。** 已退休的 `repo-harness-skill`、`project-initializer`、
+  `PROJECT_INITIALIZER_*` fallbacks、重复 shell classifier table、孤立 version checker
+  和拆分 observer hooks 都已移除。
 
 ## 产品做什么
 
@@ -69,8 +69,9 @@ repo-local hooks，然后验证这些 workflow surfaces 仍然一致。
    `.ai/hooks/`。
 3. **Host adapter 层**：user-level `~/.claude/settings.json` 和 `~/.codex/hooks.json`
    把 Claude/Codex events 路由到 `repo-harness-hook`。hook entrypoint 会先检查当前
-   repo 是否存在 `.ai/harness/workflow-contract.json`；没有 opt in 就静默退出，有 opt in
-   才进入当前仓库的 `.ai/hooks/*`。
+   repo 是否存在 `.ai/harness/workflow-contract.json`；没有 opt in 就静默退出。有 opt in
+   时按 central-first 解析 packaged install 或 `~/.repo-harness/hooks/`，repo policy
+   也可以把自托管开发钉回 `.ai/hooks/*`。
 
 对 `UserPromptSubmit` 来说，公开 adapter contract 仍然是
 `repo-harness-hook UserPromptSubmit --route default`。CLI route registry 会把这个
@@ -86,13 +87,20 @@ classifier/state-machine 层不再散落在 shell 条件分支里。
 
 ## 任务 Workflow：从 Plan 到 Closeout
 
-下面这张图假设目标仓库已经安装 harness。它展示的是单个任务的正常闭环：
-先形成 plan，再投射到 sprint contract，需要时 checkout 隔离 worktree，在 hooks 保护下实现，
-然后验证、review、external acceptance，最后 closeout。
+下面这张图假设目标仓库已经安装 harness。它展示的是从 program sprint backlog
+到单个 contract task 的正常闭环：先选择或形成任务，再投射到执行文件，需要时
+checkout 隔离 worktree，在 hooks 保护下实现，然后验证、review、external acceptance，
+必要时标记 sprint task 完成，最后 closeout。
 
 ```mermaid
 flowchart TD
-  UserTask["用户任务或 planning prompt"] --> Discovery["前置调查<br/>P1 map, P2 trace, P3 decision"]
+  Program["Program goal 或 release theme"] --> Sprint{"需要 sprint layer?"}
+  Sprint -->|是| SprintDoc["Sprint PRD + backlog<br/>tasks/sprints/*.sprint.md"]
+  SprintDoc --> NextTask["选择下一个 sprint task<br/>sprint-backlog.sh next"]
+  Sprint -->|否| UserTask["用户任务或 planning prompt"]
+  NextTask --> UserTask
+
+  UserTask --> Discovery["前置调查<br/>P1 map, P2 trace, P3 decision"]
   Discovery --> PlanDraft["Draft plan<br/>plans/plan-*.md"]
   PlanDraft --> PlanReview{"Plan 是否可执行?"}
   PlanReview -->|否| Refine["收敛 scope 和 evidence contract"]
@@ -101,6 +109,7 @@ flowchart TD
 
   Approve --> Project["投射到执行面<br/>capture-plan.sh --execute<br/>或 plan-to-todo.sh --plan"]
   Project --> Active["Active markers<br/>.ai/harness/active-plan<br/>.ai/harness/active-worktree"]
+  Project --> SprintActive["Sprint projection<br/>active-sprint marker<br/>tasks/current.md"]
   Project --> Contract["Sprint contract<br/>tasks/contracts/YYYYMMDD-HHMM-task-slug.contract.md"]
   Project --> ReviewFile["Review file<br/>tasks/reviews/YYYYMMDD-HHMM-task-slug.review.md"]
   Project --> Notes["Task notes<br/>tasks/notes/YYYYMMDD-HHMM-task-slug.notes.md"]
@@ -124,7 +133,10 @@ flowchart TD
   External --> DoneGate{"Contract、checks、review、acceptance 是否通过?"}
   DoneGate -->|否| Repair["修复失败 evidence 或实现"]
   Repair --> Implement
-  DoneGate -->|是| Closeout["Closeout<br/>scripts/contract-worktree.sh finish"]
+  DoneGate -->|是| SprintComplete{"存在 active sprint task?"}
+  SprintComplete -->|是| MarkSprint["标记 backlog item 完成<br/>sprint-backlog.sh complete-task"]
+  SprintComplete -->|否| Closeout["Closeout<br/>scripts/contract-worktree.sh finish"]
+  MarkSprint --> Closeout
 
   Closeout --> Commit["提交 contract branch"]
   Commit --> Merge["Fast-forward target branch"]
@@ -159,12 +171,11 @@ npx -y repo-harness update
 安装或刷新 workflow files、hook assets、host adapters、skill aliases 和
 repo-local verification surfaces。
 
-npm package release line 现在是 `0.2.x`；生成的 workflow compatibility model line
-单独以 `5.x` 追踪。`repo-harness@0.2.4` 继续把首次全局引导（`repo-harness init`）
-和 repo-local 刷新（`repo-harness update`）拆开，保留 typed global bootstrap 与只读
-配置安全哨兵，同时收紧 hook parity，退休自托管 autoresearch advisory hook，避免
-计划/工作流咨询 prompt 被误判成执行请求，并增加复制版 hook fallback、readiness checks
-和 skill-eval authority reporting。
+npm package release line 现在是 `0.3.x`；生成的 workflow compatibility model line
+单独以 `5.x` 追踪。`repo-harness@0.3.0` 继续把首次全局引导（`repo-harness init`）
+和 repo-local 刷新（`repo-harness update`）拆开，新增 sprint program layer，把 hook
+执行切到 central-first runtime resolution，把 prompt decision 移进 TypeScript，在
+edit boundary 执行实现写入门，并把 always-on hook observers 合并为更轻的一条路径。
 这些能力叠加在改名后的 CLI、user-level hook adapter bootstrap、AI-native scaffold overlays、
 typed prompt-guard decision engine、plan-stem task artifact 命名、`REPO_HARNESS_*`
 runtime aliases、Waza runtime skill sync，以及 maintainer 发布 npm 前使用的 release gate 之上。
@@ -242,11 +253,17 @@ bun test
 - Codex 必须在 Settings 里信任 `~/.codex/hooks.json`，hooks 才会执行。
 - 调试顺序：user-level adapter config -> `repo-harness-hook` 或 fallback `repo-harness hook` -> route registry -> `.ai/hooks/*`。
 
-`SessionStart` 在开工前按顺序跑两个脚本：
+`SessionStart` 先按 central-first 解析 hook source，再按顺序跑两个脚本：
 
 ```mermaid
 flowchart LR
-  SessionStart["Claude/Codex SessionStart"] --> Ctx["session-start-context.sh<br/>恢复 + handoff 上下文"]
+  SessionStart["Claude/Codex SessionStart"] --> Adapter["user-level adapter"]
+  Adapter --> Entry["repo-harness-hook SessionStart --route default"]
+  Entry --> Source{"hook source"}
+  Source -->|central default| Central["packaged hooks<br/>或 ~/.repo-harness/hooks"]
+  Source -->|repo policy pin| Repo["repo .ai/hooks<br/>self-host development"]
+  Central --> Ctx["session-start-context.sh<br/>恢复 + sprint + handoff 上下文"]
+  Repo --> Ctx
   Ctx --> Sec["security-sentinel.sh<br/>只读配置扫描，按指纹门控"]
   Sec --> SSOut["SessionStart additionalContext<br/>上次会话状态 + SecurityConfig 发现项"]
 ```
@@ -297,7 +314,7 @@ hook block 工作时，先看 terminal 里的结构化输出。核心字段是
 
 ## 当前 Release
 
-- npm package：`repo-harness@0.2.4`
+- npm package：`repo-harness@0.3.0`
 - Generated workflow compatibility：`5.2.3`
 - GitHub repository：`Ancienttwo/repo-harness`
 - Release history：[`docs/CHANGELOG.md`](docs/CHANGELOG.md)

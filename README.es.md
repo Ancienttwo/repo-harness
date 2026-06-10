@@ -186,7 +186,7 @@ adoptar este workflow.
 npx -y repo-harness init
 ```
 
-La npm package release line es ahora `0.2.x`; el workflow compatibility model line
+La npm package release line es ahora `0.3.x`; el workflow compatibility model line
 generado se rastrea por separado como `5.x`. `repo-harness init` es el bootstrap
 global y `repo-harness update` es el refresco repo-local. `repo-harness init`
 configura el CLI, los hook adapters de nivel usuario, Waza, Mermaid, el brain
@@ -325,7 +325,7 @@ Guards habituales:
 
 ## Release actual
 
-- npm package: `repo-harness@0.2.4`
+- npm package: `repo-harness@0.3.0`
 - Generated workflow compatibility: `5.2.3`
 - GitHub repository: `Ancienttwo/repo-harness`
 - Release history: [`docs/CHANGELOG.md`](docs/CHANGELOG.md)
