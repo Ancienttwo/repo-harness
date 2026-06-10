@@ -95,11 +95,19 @@ For `UserPromptSubmit`, the public adapter contract stays
 `repo-harness-hook UserPromptSubmit --route default`. The CLI route registry
 dispatches that route to `.ai/hooks/prompt-guard.sh`. The shell hook remains the
 repo-local adapter for host JSON parsing, workflow file reads, capture side
-effects, quality gate rendering, and host-safe stdout/stderr. The prompt intent
-and workflow-state decision is handled by the TypeScript decision engine behind
-`repo-harness-hook prompt-guard-decide`, which returns one action enum from an
-explicit decision table. That split keeps host configuration stable while moving
-the brittle classifier/state-machine layer out of shell conditionals.
+effects, and host-safe stdout/stderr. It pipes the prompt text into
+`repo-harness-hook prompt-guard-decide`, where every prompt-text intent
+classifier (Unicode-aware, `src/cli/hook/prompt-intents.ts`) and the
+`intent x plan state` decision table live; the engine returns one verdict JSON
+line with the action, the classified intent facts, and derived strings. The
+shell keeps no duplicate classifier or fallback decision table — when the
+engine is unreachable the prompt layer degrades to a one-shot advisory.
+
+Prompt-layer plan/spec/contract gates are advisory routing. Hard enforcement
+lives at the edit boundary: `pre-edit-guard.sh` blocks implementation edits
+unless the active plan is Approved/Executing (policy
+`.guards.edit_plan_gate`: enforce | advice | off). Done-claim gates keep
+blocking because they verify file-backed completion evidence, not language.
 
 The core invariant is that durable truth lives in the repo, not in a chat
 thread. Hooks are accelerators and guardrails; the authority remains the
@@ -298,15 +306,15 @@ flowchart LR
   Adapter --> CLI["repo-harness-hook UserPromptSubmit --route default"]
   CLI --> Route["route registry"]
   Route --> Shell[".ai/hooks/prompt-guard.sh"]
-  Shell --> Decision["repo-harness-hook prompt-guard-decide<br/>TypeScript decision table"]
-  Decision --> Action["single action enum"]
-  Action --> Shell
+  Shell -->|"stdin {prompt}"| Decision["repo-harness-hook prompt-guard-decide<br/>TypeScript classifiers + decision table"]
+  Decision -->|"verdict JSON<br/>action + intent facts + derived"| Shell
   Shell --> RouteHint["Waza route hint<br/>explicit think/planning matched first → /think"]
-  Shell --> HostOutput["host-safe allow, advice, block, or done gate output"]
+  Shell --> HostOutput["host-safe advice, done gate, or capture output"]
 ```
 
-The shell layer still owns filesystem authority and side effects. TypeScript owns
-only the classifier plus `intent x plan state` decision table.
+The shell layer owns filesystem authority and side effects. TypeScript owns all
+prompt-text classification plus the `intent x plan state` decision table.
+Plan-state blocks render at the PreToolUse edit layer, not here.
 
 ## Hook Failure Playbook
 
@@ -319,7 +327,7 @@ fields are `guard`, `reason`, `fix`, `failure_class`, and `run_id`.
 
 Most common guards:
 
-- `PlanStatusGuard`: no active plan, or the plan is not ready to execute
+- `PlanStatusGuard` (edit layer): an implementation edit was attempted with no active plan, or the plan is not ready to execute; the prompt layer emits the same guard name as advisory guidance
 - `ContractGuard`: approved execution has not yet produced the contract/review/notes scaffold
 - `ContractGuard`: completion was claimed before the task contract passed
 - `WorktreeGuard`: writes were attempted in the primary worktree while linked worktrees are enforced

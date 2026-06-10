@@ -4,6 +4,51 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Added `src/cli/hook/prompt-intents.ts`: every prompt-text intent classifier
+  now lives in TypeScript with real Unicode semantics, fixing
+  locale-dependent Chinese misclassification (UTF-8 continuation bytes
+  matching `[[:punct:]]` under `LC_ALL=C` grep, e.g. "实现会在这个 worktree
+  里完成。" misread as a done declaration on GNU grep).
+- Added an edit-layer plan gate to `pre-edit-guard.sh`: implementation edits
+  (paths outside plans/tasks/docs/deploy/harness/markdown surfaces) block
+  unless the active plan is Approved/Executing and `docs/spec.md` exists.
+  Modes `enforce` (default) | `advice` | `off` via policy
+  `.guards.edit_plan_gate` or `REPO_HARNESS_EDIT_PLAN_GATE`.
+- Added the `prompt-guard-decide` prompt protocol: the shell hook pipes
+  `{"prompt": ...}` on stdin and receives one verdict JSON line (action,
+  intent facts, derived strings). Legacy copied hooks that send env facts
+  still receive the bare action enum.
+
+### Changed
+
+- Prompt-layer plan/spec/contract gates became advisory routing; hard
+  enforcement moved to the PreToolUse edit layer where it keys off path +
+  plan state instead of natural-language guessing. Done-claim gates keep
+  blocking because they verify file-backed completion evidence.
+- Merged the PostToolUse always-route observers (`trace-event.sh` +
+  `context-pressure-hook.sh`) into one `post-tool-observer.sh`: one dispatch,
+  one stdin parse, and one library load per tool call. `.claude/.trace.jsonl`
+  is now the single tool-trace record (handoff "Commands Run" reads it
+  directly), and context-budget bun probes are sampled every 5th call. The
+  route tuple (PostToolUse, always) is unchanged; a workflow-contract
+  upgrade entry prunes the retired split hooks from migrated repos.
+- Unified `run-hook.sh`'s two Codex stdout-filter branches into one
+  parameterized path.
+
+### Removed
+
+- Removed the duplicated shell fallback decision table from
+  `prompt-guard.sh` (the 0.2.4 copied-hook fallback). Without a reachable
+  TypeScript engine the prompt layer now degrades to a one-shot advisory and
+  defers enforcement to the edit layer.
+- Removed the orphan `scripts/check-versions.ts` and its test, and the
+  hidden `prompt-guard-decision` CLI alias (use `prompt-guard-decide`).
+- Retired the `project-initializer` legacy name, `PROJECT_INITIALIZER_*`
+  environment fallbacks, and the `repo-harness-skill` compatibility alias;
+  installed-copy sync now deletes both retired skill directories.
+
 ## [0.2.4] - 2026-06-07
 
 ### Added

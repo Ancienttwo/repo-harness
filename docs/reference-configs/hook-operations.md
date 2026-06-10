@@ -14,7 +14,9 @@ Start with the shortest truth path:
 The installed CLI carries the route registry; migration copies `.ai/hooks/*` into each opted-in repo. Missing advisory scripts warn and skip, but required guard routes still fail closed. Refresh stale repos with `repo-harness update --repo <root>`.
 Generated host adapter commands carry a 30 second timeout; long-running work belongs in explicit CLI commands, not hook foreground execution.
 
-`UserPromptSubmit.default` dispatches to `.ai/hooks/prompt-guard.sh`, which parses host prompt JSON, reads workflow files, performs capture side effects, runs quality gates, and calls `repo-harness-hook prompt-guard-decide` for the TypeScript intent/state decision table before rendering host-safe output.
+`UserPromptSubmit.default` dispatches to `.ai/hooks/prompt-guard.sh`. The shell layer parses host prompt JSON, reads workflow files, performs capture side effects, and renders host-safe output; it pipes `{"prompt": ...}` into `repo-harness-hook prompt-guard-decide`, which owns every prompt-text intent classifier (Unicode-aware, in `src/cli/hook/prompt-intents.ts`) plus the intent x state decision table and returns one verdict JSON line (action, intent facts, derived strings). If the engine is unreachable or predates the protocol, the prompt layer degrades to a one-shot advisory instead of guessing; there is no shell fallback decision table.
+
+Prompt-layer plan/spec/contract gates are advisory routing only. Hard enforcement lives in `PreToolUse.edit`: `pre-edit-guard.sh` blocks implementation edits (paths outside plans/tasks/docs/deploy/harness/markdown surfaces) unless the active plan is Approved/Executing and `docs/spec.md` exists. Modes `enforce` (default) | `advice` | `off` via policy `.guards.edit_plan_gate` or `REPO_HARNESS_EDIT_PLAN_GATE`. Done-claim gates in the prompt layer keep blocking because they verify file-backed completion evidence, not language.
 
 If you are asking "which hook file should I edit?", default to `.ai/hooks/`.
 After installing or refreshing `~/.codex/hooks.json`, open Codex Settings and mark the user-level hook config as trusted; otherwise Codex will not execute it.
@@ -29,6 +31,8 @@ Use this command for an explicit read-only audit:
 ```bash
 repo-harness security scan --json
 ```
+
+`PostToolUse.always` runs one merged observer, `post-tool-observer.sh` (JSONL trace + context-pressure monitoring); the trace file `.claude/.trace.jsonl` is the single tool-trace record and context-budget probes are sampled every 5th call.
 
 `PostToolUse.edit` runs a downstream sync chain after local edit reminders: architecture drift record, context contract sync, capability-context queueing, repo-to-brain mirror sync, and active contract verification. These stages remain advisory. A failed downstream stage must emit one `[SyncChain] WARN: ...` line and let the edit hook exit 0 so local editing is not blocked by maintenance drift.
 
@@ -47,7 +51,7 @@ When a hook blocks work:
 
 Common guards:
 
-- `PlanStatusGuard`: no active approved plan, or active plan is in the wrong state.
+- `PlanStatusGuard` (edit layer): implementation edit attempted with no active approved plan, or the plan is in the wrong state; the prompt layer emits the same guard name as advisory guidance only.
 - `ContractGuard`: the approved plan has not been projected into contract/review/notes scaffolding.
 - `ContractGuard`: completion was claimed without passing contract verification.
 - `WorktreeGuard`: writes were attempted from the wrong worktree.
