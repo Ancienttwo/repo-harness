@@ -339,8 +339,9 @@ describe("Bootstrap Script Contracts", () => {
     expect(codexHooks).not.toContain("autoresearch-advisory.sh");
     expect(settings).toContain("stop-orchestrator.sh");
     expect(settings).toContain("post-bash.sh");
-    expect(settings).toContain("trace-event.sh");
-    expect(settings).toContain("context-pressure-hook.sh");
+    expect(settings).toContain("post-tool-observer.sh");
+    expect(settings).not.toContain("trace-event.sh");
+    expect(settings).not.toContain("context-pressure-hook.sh");
     expect(settings).toContain("session-start-context.sh");
     expect(settings).not.toContain("memory-intake.sh");
     expect(settings).not.toContain("skill-factory-session-end.sh");

@@ -110,8 +110,7 @@ flowchart TD
     PostBashRoute --> PostBash["post-bash.sh"]
 
     Route --> Always["PostToolUse.always<br/>all tools"]
-    Always --> Trace["trace-event.sh"]
-    Trace --> Pressure["context-pressure-hook.sh"]
+    Always --> Observer["post-tool-observer.sh<br/>trace + context pressure"]
 
     Route --> Prompt["UserPromptSubmit.default"]
     Prompt --> PromptGuard["prompt-guard.sh"]

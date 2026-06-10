@@ -412,7 +412,7 @@ describe("Hook runtime behavior", () => {
       const usedCwd = tmpWorkspace("codegraph-route-used");
       try {
         installHooks(usedCwd);
-        const trace = runHook("trace-event.sh", usedCwd, {
+        const trace = runHook("post-tool-observer.sh", usedCwd, {
           stdin: JSON.stringify({
             hook_event_name: "PostToolUse",
             tool_name: "mcp__codegraph__codegraph_context",
@@ -442,7 +442,7 @@ describe("Hook runtime behavior", () => {
     try {
       installHooks(cwd);
 
-      const res = runHook("trace-event.sh", cwd, {
+      const res = runHook("post-tool-observer.sh", cwd, {
         stdin: JSON.stringify({
           hook_event_name: "PostToolUse",
           tool_name: "Read",
@@ -901,18 +901,18 @@ describe("Hook runtime behavior", () => {
       installHooks(cwd);
       mkdirSync(join(cwd, ".claude/.context-pressure"), { recursive: true });
 
-      const s1a = runHook("context-pressure-hook.sh", cwd, {
+      const s1a = runHook("post-tool-observer.sh", cwd, {
         env: { CLAUDE_SESSION_ID: "session-a" },
       });
       expect(s1a.status).toBe(0);
 
-      const s1b = runHook("context-pressure-hook.sh", cwd, {
+      const s1b = runHook("post-tool-observer.sh", cwd, {
         env: { CLAUDE_SESSION_ID: "session-a" },
       });
       expect(s1b.status).toBe(0);
       expect(readFileSync(join(cwd, ".claude/.tool-call-count"), "utf-8").trim()).toBe("2");
 
-      const s2 = runHook("context-pressure-hook.sh", cwd, {
+      const s2 = runHook("post-tool-observer.sh", cwd, {
         env: { CLAUDE_SESSION_ID: "session-b" },
       });
       expect(s2.status).toBe(0);
@@ -920,7 +920,7 @@ describe("Hook runtime behavior", () => {
 
       writeFileSync(join(cwd, ".claude/.context-pressure/warnsession_.count"), "29\n");
 
-      const warn1 = runHook("context-pressure-hook.sh", cwd, {
+      const warn1 = runHook("post-tool-observer.sh", cwd, {
         env: { CLAUDE_SESSION_ID: "warnsession" },
       });
       expect(warn1.status).toBe(0);
@@ -928,7 +928,7 @@ describe("Hook runtime behavior", () => {
       expect(warn1.stdout).toContain("Persist research/todo/handoff");
       expect(warn1.stdout).not.toContain("/compact");
 
-      const warn2 = runHook("context-pressure-hook.sh", cwd, {
+      const warn2 = runHook("post-tool-observer.sh", cwd, {
         env: { CLAUDE_SESSION_ID: "warnsession" },
       });
       expect(warn2.status).toBe(0);
@@ -954,14 +954,14 @@ describe("Hook runtime behavior", () => {
 
       appendFileSync(join(cwd, "plans/plan-20260304-1200-test.md"), "- [NOTE]: codex annotation\n");
 
-      const applyPatchRes = runHook("context-pressure-hook.sh", cwd, {
+      const applyPatchRes = runHook("post-tool-observer.sh", cwd, {
         stdin: JSON.stringify({ tool_name: "apply_patch" }),
       });
       expect(applyPatchRes.status).toBe(0);
       expect(applyPatchRes.stdout).toContain("[AnnotationGuard]");
       expect(applyPatchRes.stdout).toContain("plans/plan-20260304-1200-test.md");
 
-      const bashRes = runHook("context-pressure-hook.sh", cwd, {
+      const bashRes = runHook("post-tool-observer.sh", cwd, {
         stdin: JSON.stringify({ tool_name: "Bash" }),
       });
       expect(bashRes.status).toBe(0);
@@ -981,7 +981,7 @@ describe("Hook runtime behavior", () => {
       // SCRIPT_DIR fallback, cd there, and write trace state inside the workspace.
       const res = spawnSync(
         "bash",
-        [join(workspace, ".ai/hooks/trace-event.sh")],
+        [join(workspace, ".ai/hooks/post-tool-observer.sh")],
         {
           cwd: tmpdir(),
           input: "",
@@ -3706,7 +3706,7 @@ describe("Hook runtime behavior", () => {
       initGitRepo(cwd);
       installHooks(cwd);
 
-      const res = runHook("trace-event.sh", cwd, {
+      const res = runHook("post-tool-observer.sh", cwd, {
         stdin: JSON.stringify({
           hook_event_name: "PostToolUse",
           tool_name: "Edit",

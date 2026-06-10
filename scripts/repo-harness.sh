@@ -40,8 +40,7 @@
 #   PreToolUse       → worktree-guard.sh + pre-edit-guard.sh (matcher: Edit|Write)
 #   PostToolUse      → post-edit-guard.sh (matcher: Edit|Write)
 #                    → post-bash.sh (matcher: Bash)
-#                    → trace-event.sh (no matcher, all tools)
-#                    → context-pressure-hook.sh (no matcher, all tools)
+#                    → post-tool-observer.sh (no matcher, all tools)
 #   UserPromptSubmit → prompt-guard.sh
 #   Stop             → stop-orchestrator.sh
 
@@ -143,10 +142,7 @@ build_hooks_json() {
         { "type": "command", "command": "bash ${SHIM_PATH} post-bash.sh", "timeout": 30 }
     ]},
     { "hooks": [
-        { "type": "command", "command": "bash ${SHIM_PATH} trace-event.sh", "timeout": 30 }
-    ]},
-    { "hooks": [
-        { "type": "command", "command": "bash ${SHIM_PATH} context-pressure-hook.sh", "timeout": 30 }
+        { "type": "command", "command": "bash ${SHIM_PATH} post-tool-observer.sh", "timeout": 30 }
     ]}
   ],
   "UserPromptSubmit": [

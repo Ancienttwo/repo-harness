@@ -32,12 +32,7 @@
       },
       {
         "hooks": [
-          { "type": "command", "command": "repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_REPO_ROOT=\"$repo\" bash \"$repo/.ai/hooks/run-hook.sh\" trace-event.sh", "timeout": 30 }
-        ]
-      },
-      {
-        "hooks": [
-          { "type": "command", "command": "repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_REPO_ROOT=\"$repo\" bash \"$repo/.ai/hooks/run-hook.sh\" context-pressure-hook.sh", "timeout": 30 }
+          { "type": "command", "command": "repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_REPO_ROOT=\"$repo\" bash \"$repo/.ai/hooks/run-hook.sh\" post-tool-observer.sh", "timeout": 30 }
         ]
       }
     ],

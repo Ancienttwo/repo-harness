@@ -66,7 +66,7 @@ export const ROUTES: readonly Route[] = Object.freeze([
   Object.freeze({
     event: 'PostToolUse' as const,
     routeId: 'always' as const,
-    scripts: Object.freeze(['trace-event.sh', 'context-pressure-hook.sh']),
+    scripts: Object.freeze(['post-tool-observer.sh']),
   }),
   Object.freeze({
     event: 'UserPromptSubmit' as const,

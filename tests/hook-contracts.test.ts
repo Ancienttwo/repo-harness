@@ -60,13 +60,14 @@ describe("Hook contracts", () => {
     expect(script).toContain("hook_structured_error");
   });
 
-  test("context-pressure should use stable session-id file and one-time flags", () => {
-    const script = read("assets/hooks/context-pressure-hook.sh");
+  test("post-tool observer should keep context pressure with stable session-id file, one-time flags, and sampled budget probes", () => {
+    const script = read("assets/hooks/post-tool-observer.sh");
     expect(script).toContain(".claude/.session-id");
     expect(script).toContain("WARN_FILE");
     expect(script).toContain("RED_FILE");
     expect(script).toContain(".tool-call-count");
     expect(script).toContain("scripts/context-budget.ts");
+    expect(script).toContain("BUDGET_SAMPLE_EVERY");
     expect(script).toContain("prepare-codex-handoff.sh");
     expect(script).toContain("fresh-session resume packet");
     expect(script).not.toContain("/compact");
@@ -216,14 +217,16 @@ describe("Hook contracts", () => {
     expect(codexHooks).toContain("post-edit-guard.sh");
     expect(settings).not.toContain("autoresearch-advisory.sh");
     expect(codexHooks).not.toContain("autoresearch-advisory.sh");
-    expect(settings).toContain("trace-event.sh");
-    expect(codexHooks).toContain("trace-event.sh");
+    expect(settings).toContain("post-tool-observer.sh");
+    expect(codexHooks).toContain("post-tool-observer.sh");
+    expect(settings).not.toContain("trace-event.sh");
+    expect(codexHooks).not.toContain("trace-event.sh");
     expect(settings).toContain("stop-orchestrator.sh");
     expect(codexHooks).toContain("stop-orchestrator.sh");
     expect(settings).toContain("post-bash.sh");
     expect(codexHooks).toContain("post-bash.sh");
-    expect(settings).toContain("context-pressure-hook.sh");
-    expect(codexHooks).toContain("context-pressure-hook.sh");
+    expect(settings).not.toContain("context-pressure-hook.sh");
+    expect(codexHooks).not.toContain("context-pressure-hook.sh");
     expect(settings).not.toContain("memory-intake.sh");
     expect(codexHooks).not.toContain("memory-intake.sh");
     expect(settings).not.toContain("skill-factory-session-end.sh");
@@ -238,12 +241,15 @@ describe("Hook contracts", () => {
     expect(codexHooks).not.toContain('"$PROMPT"');
   });
 
-  test("trace hook should record structured JSONL events", () => {
-    const script = read("assets/hooks/trace-event.sh");
-    expect(script).toContain(".trace.jsonl");
+  test("post-tool observer should record structured JSONL trace events once per call", () => {
+    const script = read("assets/hooks/post-tool-observer.sh");
+    expect(script).toContain("workflow_trace_file");
     expect(script).toContain('"event_type"');
     expect(script).toContain('"run_id"');
     expect(script).toContain("session_state_resolve_key");
+    expect(script).not.toContain("workflow_append_event");
+    expect(existsSync(join(ROOT, "assets/hooks/trace-event.sh"))).toBe(false);
+    expect(existsSync(join(ROOT, "assets/hooks/context-pressure-hook.sh"))).toBe(false);
   });
 
   test("post-bash should keep Bash output evidence additive and advisory-only", () => {

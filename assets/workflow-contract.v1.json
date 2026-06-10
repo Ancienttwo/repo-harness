@@ -419,6 +419,18 @@
           "summary": "Remove generated Claude hook shims after .ai/hooks becomes the shared hook implementation layer."
         },
         {
+          "id": "split-post-tool-observer-hooks",
+          "signal": "stale-split-post-tool-hooks",
+          "action": "remove",
+          "risk": "low",
+          "ownership": "known_generated",
+          "paths": [
+            ".ai/hooks/trace-event.sh",
+            ".ai/hooks/context-pressure-hook.sh"
+          ],
+          "summary": "Remove the split PostToolUse observer hooks replaced by the merged post-tool-observer.sh."
+        },
+        {
           "id": "custom-claude-hooks-preserve",
           "signal": "custom-claude-hooks",
           "action": "preserve",

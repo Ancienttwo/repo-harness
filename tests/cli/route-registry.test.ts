@@ -32,7 +32,7 @@ describe('route registry (Phase 1B Z design)', () => {
     expect(getRoute('PreToolUse', 'edit')?.scripts).toEqual(['worktree-guard.sh', 'pre-edit-guard.sh']);
     expect(getRoute('PostToolUse', 'edit')?.scripts).toEqual(['post-edit-guard.sh']);
     expect(getRoute('PostToolUse', 'bash')?.scripts).toEqual(['post-bash.sh']);
-    expect(getRoute('PostToolUse', 'always')?.scripts).toEqual(['trace-event.sh', 'context-pressure-hook.sh']);
+    expect(getRoute('PostToolUse', 'always')?.scripts).toEqual(['post-tool-observer.sh']);
     expect(getRoute('UserPromptSubmit', 'default')?.scripts).toEqual(['prompt-guard.sh']);
     expect(getRoute('Stop', 'default')?.scripts).toEqual(['stop-orchestrator.sh']);
   });
@@ -61,8 +61,7 @@ describe('route registry (Phase 1B Z design)', () => {
       'pre-edit-guard.sh',
       'post-edit-guard.sh',
       'post-bash.sh',
-      'trace-event.sh',
-      'context-pressure-hook.sh',
+      'post-tool-observer.sh',
       'prompt-guard.sh',
       'stop-orchestrator.sh',
     ]);

@@ -129,7 +129,7 @@ describe("create-project-dirs runtime smoke", () => {
       expect(existsSync(join(cwd, ".claude/skill-factory/rubric.template.json"))).toBe(false);
       expect(existsSync(join(cwd, ".claude/skill-factory/registry.json"))).toBe(false);
 
-      expect(existsSync(join(cwd, ".ai/hooks/trace-event.sh"))).toBe(true);
+      expect(existsSync(join(cwd, ".ai/hooks/post-tool-observer.sh"))).toBe(true);
       expect(existsSync(join(cwd, ".ai/hooks/session-start-context.sh"))).toBe(true);
       expect(existsSync(join(cwd, ".ai/hooks/post-edit-guard.sh"))).toBe(true);
 

@@ -82,6 +82,10 @@ workflow_events_file() {
   workflow_repo_relative_path "$(workflow_policy_get '.harness.events_file' '.ai/harness/events.jsonl')" '.ai/harness/events.jsonl' '.ai/harness/'
 }
 
+workflow_trace_file() {
+  printf '%s' ".claude/.trace.jsonl"
+}
+
 workflow_runs_dir() {
   workflow_repo_relative_path "$(workflow_policy_get '.harness.runs_dir' '.ai/harness/runs')" '.ai/harness/runs' '.ai/harness/'
 }
@@ -1480,7 +1484,7 @@ workflow_write_handoff() {
   local reason="${1:-session-stop}"
   local handoff_file active_plan active_contract active_review active_notes checks_file next_task changed_files diff_stat spec_file source_plan parent_run_id supersedes
   local next_action next_stage next_command next_message
-  local budget_file resume_file events_file recent_commands blockers decisions goal
+  local budget_file resume_file trace_file recent_commands blockers decisions goal
   local changed_count untracked_count
 
   workflow_ensure_harness_surface
@@ -1488,7 +1492,6 @@ workflow_write_handoff() {
   checks_file="$(workflow_checks_file)"
   budget_file="$(workflow_context_budget_status_file)"
   resume_file="$(workflow_resume_packet_file)"
-  events_file="$(workflow_events_file)"
   spec_file="docs/spec.md"
   active_plan="$(get_active_plan || true)"
   active_contract="$(workflow_active_contract || true)"
@@ -1543,10 +1546,10 @@ workflow_write_handoff() {
     diff_stat="git repository not detected"
   fi
 
-  if [[ -f "$events_file" ]]; then
+  trace_file="$(workflow_trace_file)"
+  if [[ -f "$trace_file" ]]; then
     recent_commands="$(
-      { grep '"event_type":"tool_trace"' "$events_file" 2>/dev/null || true; } \
-        | tail -5 \
+      tail -5 "$trace_file" 2>/dev/null \
         | sed -E 's/^/- /'
     )"
   fi
