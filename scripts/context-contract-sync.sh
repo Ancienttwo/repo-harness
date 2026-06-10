@@ -199,6 +199,20 @@ replace_contract_block() {
   local source_file="$1"
   local output_file="$2"
   local block_file="$3"
+  local marker_state begins ends disorder
+
+  # Refuse to rewrite when markers are unbalanced: a missing END would swallow
+  # everything after BEGIN, and duplicate markers would duplicate the block.
+  marker_state="$(awk '
+    /^<!-- BEGIN ARCHITECTURE CONTRACT -->[[:space:]]*$/ { begins++; if (ends > 0) disorder = 1 }
+    /^<!-- END ARCHITECTURE CONTRACT -->[[:space:]]*$/   { ends++; if (begins == 0) disorder = 1 }
+    END { printf "%d %d %d", begins, ends, disorder }
+  ' "$source_file")"
+  read -r begins ends disorder <<< "$marker_state"
+  if ! { [[ "$begins" -eq 0 && "$ends" -eq 0 ]] || [[ "$begins" -eq 1 && "$ends" -eq 1 && "$disorder" -eq 0 ]]; }; then
+    echo "[ContextContractSync] ERROR: unbalanced ARCHITECTURE CONTRACT markers in $source_file (begin=$begins end=$ends); refusing to rewrite. Repair the markers manually, then re-run sync." >&2
+    return 1
+  fi
 
   awk -v block_file="$block_file" '
     BEGIN {
@@ -209,13 +223,13 @@ replace_contract_block() {
       in_block = 0
       replaced = 0
     }
-    /^<!-- BEGIN ARCHITECTURE CONTRACT -->$/ {
+    /^<!-- BEGIN ARCHITECTURE CONTRACT -->[[:space:]]*$/ {
       printf "%s", block
       in_block = 1
       replaced = 1
       next
     }
-    /^<!-- END ARCHITECTURE CONTRACT -->$/ {
+    /^<!-- END ARCHITECTURE CONTRACT -->[[:space:]]*$/ {
       in_block = 0
       next
     }
@@ -483,7 +497,13 @@ BASE_EOF
 fi
 
 updated_file="$(mktemp)"
-replace_contract_block "$base_file" "$updated_file" "$block_tmp"
+if ! replace_contract_block "$base_file" "$updated_file" "$block_tmp"; then
+  rm -f "$updated_file" "$block_tmp"
+  if [[ "$base_file" == /tmp/* || "$base_file" == "${TMPDIR:-/tmp}"* ]]; then
+    rm -f "$base_file"
+  fi
+  exit 1
+fi
 
 cp "$updated_file" "$contract_agents"
 cp "$updated_file" "$contract_claude"

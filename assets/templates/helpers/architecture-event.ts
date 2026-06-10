@@ -383,8 +383,25 @@ function renderContractBlock(args: Args): string {
 }
 
 function replaceContractBlock(source: string, block: string): string {
-  const pattern = /^<!-- BEGIN ARCHITECTURE CONTRACT -->\n[\s\S]*?^<!-- END ARCHITECTURE CONTRACT -->\n?/m;
-  if (pattern.test(source)) return source.replace(pattern, block);
+  // Refuse to rewrite when markers are unbalanced: a lazy regex over a file
+  // with a missing END or duplicate BEGIN would silently duplicate the block
+  // or pair the wrong markers. Mirrors the guard in context-contract-sync.sh.
+  const begins = source.match(/^<!-- BEGIN ARCHITECTURE CONTRACT -->[ \t]*$/gm)?.length ?? 0;
+  const ends = source.match(/^<!-- END ARCHITECTURE CONTRACT -->[ \t]*$/gm)?.length ?? 0;
+  const balanced =
+    (begins === 0 && ends === 0) ||
+    (begins === 1 &&
+      ends === 1 &&
+      source.search(/^<!-- BEGIN ARCHITECTURE CONTRACT -->[ \t]*$/m) <
+        source.search(/^<!-- END ARCHITECTURE CONTRACT -->[ \t]*$/m));
+  if (!balanced) {
+    throw new Error(
+      `unbalanced ARCHITECTURE CONTRACT markers (begin=${begins} end=${ends}); refusing to rewrite. Repair the markers manually, then re-run sync.`,
+    );
+  }
+
+  const pattern = /^<!-- BEGIN ARCHITECTURE CONTRACT -->[ \t]*\n[\s\S]*?^<!-- END ARCHITECTURE CONTRACT -->[ \t]*\n?/m;
+  if (pattern.test(source)) return source.replace(pattern, () => block);
   if (!source) return block;
   return `${source.endsWith("\n") ? source : `${source}\n`}\n${block}`;
 }

@@ -24,6 +24,14 @@
 #   status
 #     Report install state per host + opt-in marker detection in CWD.
 #
+#   trust [repo-path]      (default: current repo)
+#     Add the repo's PRIMARY root to ~/.repo-harness/trusted-repos. The shim
+#     refuses to execute .ai/hooks/ from untrusted repos; linked worktrees
+#     inherit trust from their primary repo.
+#
+#   untrust [repo-path]    Remove a repo from the trust file.
+#   trust-list             Print trusted repo roots.
+#
 #   hook <event-script>.sh [args...]
 #     Direct invoke shim (for testing, debugging).
 #
@@ -39,8 +47,9 @@
 
 set -euo pipefail
 
-AGENTIC_DIR="${HOME}/.repo-harness"
+AGENTIC_DIR="${REPO_HARNESS_HOME:-${HOME}/.repo-harness}"
 SHIM_PATH="${AGENTIC_DIR}/hook-shim.sh"
+TRUST_FILE="${AGENTIC_DIR}/trusted-repos"
 SHIM_SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SHIM_SRC="${SHIM_SRC_DIR}/hook-shim.sh"
 CODEX_HOOKS="${HOME}/.codex/hooks.json"
@@ -55,6 +64,59 @@ require_jq() {
     echo "[repo-harness] ERROR: jq is required (install: brew install jq)" >&2
     exit 1
   }
+}
+
+# Resolve the PRIMARY repo root for a path (parent of the common git dir), so
+# trust entries cover the main checkout and every linked worktree uniformly.
+resolve_primary_root() {
+  local path="${1:-.}" toplevel common_dir
+  toplevel=$(git -C "$path" rev-parse --show-toplevel 2>/dev/null) || return 1
+  common_dir=$(git -C "$toplevel" rev-parse --git-common-dir 2>/dev/null) || return 1
+  case "$common_dir" in
+    /*) ;;
+    *) common_dir="$toplevel/$common_dir" ;;
+  esac
+  (cd "$(dirname "$common_dir")" 2>/dev/null && pwd -P)
+}
+
+trust_repo() {
+  local root
+  root=$(resolve_primary_root "${1:-.}") || {
+    echo "[repo-harness] not a git repo: ${1:-.}" >&2; return 1
+  }
+  mkdir -p "$AGENTIC_DIR"
+  touch "$TRUST_FILE"
+  if grep -Fxq "$root" "$TRUST_FILE"; then
+    echo "[repo-harness] already trusted: $root"
+  else
+    printf '%s\n' "$root" >> "$TRUST_FILE"
+    echo "[repo-harness] trusted: $root"
+  fi
+}
+
+cmd_trust() {
+  trust_repo "${1:-.}"
+}
+
+cmd_untrust() {
+  local root
+  root=$(resolve_primary_root "${1:-.}") || {
+    echo "[repo-harness] not a git repo: ${1:-.}" >&2; return 1
+  }
+  [ -f "$TRUST_FILE" ] || { echo "[repo-harness] trust file empty; nothing to remove"; return 0; }
+  local tmp
+  tmp=$(mktemp) || { echo "[repo-harness] mktemp failed" >&2; return 1; }
+  grep -Fxv "$root" "$TRUST_FILE" > "$tmp" || true
+  mv "$tmp" "$TRUST_FILE"
+  echo "[repo-harness] untrusted: $root"
+}
+
+cmd_trust_list() {
+  if [ -s "$TRUST_FILE" ]; then
+    cat "$TRUST_FILE"
+  else
+    echo "[repo-harness] no trusted repos yet (trust file: $TRUST_FILE)"
+  fi
 }
 
 # Print the hooks JSON structure (host-agnostic; same shape for Codex + Claude).
@@ -177,6 +239,10 @@ cmd_install() {
   require_jq
   install_shim
 
+  # Auto-trust the checkout we are installing from: running install is an
+  # explicit act of trust in this copy of repo-harness.
+  trust_repo "$SHIM_SRC_DIR" || true
+
   case "$target" in
     codex|both) merge_hooks_into "$CODEX_HOOKS" ;;
   esac
@@ -273,6 +339,12 @@ cmd_migrate() {
     echo "  SKIP: $proj_claude (does not exist; no Claude project-level hooks to migrate)"
   fi
 
+  if [ "$dry_run" = "1" ]; then
+    echo "  WOULD: trust $repo in $TRUST_FILE"
+  else
+    trust_repo "$repo" || true
+  fi
+
   cat <<EOF
 
 [repo-harness] Migration of $repo complete (dry-run=$dry_run).
@@ -321,9 +393,17 @@ cmd_status() {
   if repo=$(git rev-parse --show-toplevel 2>/dev/null); then
     echo "  Repo: $repo"
     if [ -f "$repo/.ai/harness/workflow-contract.json" ]; then
-      echo "  Opt-in marker: PRESENT (hooks will fire)"
+      echo "  Opt-in marker: PRESENT"
     else
       echo "  Opt-in marker: ABSENT (hooks will exit 0 silently)"
+    fi
+    local primary_root
+    if primary_root=$(resolve_primary_root "$repo"); then
+      if [ -f "$TRUST_FILE" ] && grep -Fxq "$primary_root" "$TRUST_FILE"; then
+        echo "  Trust: TRUSTED ($primary_root)"
+      else
+        echo "  Trust: NOT TRUSTED — hooks will exit 0; run '$0 trust $primary_root'"
+      fi
     fi
     if [ -f "$repo/.codex/hooks.json" ]; then
       echo "  WARNING: $repo/.codex/hooks.json still exists (run migrate to clean up)"
@@ -351,7 +431,8 @@ cmd_hook() {
 }
 
 usage() {
-  sed -n '3,32p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  # Print the header comment block (skip shebang) up to the first non-comment line.
+  awk 'NR < 2 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "${BASH_SOURCE[0]}"
 }
 
 main() {
@@ -362,6 +443,9 @@ main() {
     uninstall) cmd_uninstall "$@" ;;
     migrate)   cmd_migrate "$@" ;;
     status)    cmd_status "$@" ;;
+    trust)     cmd_trust "$@" ;;
+    untrust)   cmd_untrust "$@" ;;
+    trust-list) cmd_trust_list "$@" ;;
     hook)      cmd_hook "$@" ;;
     -h|--help|help|"") usage ;;
     *)
