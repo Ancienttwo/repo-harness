@@ -19,6 +19,7 @@ import { buildCapabilityContextCommand } from './commands/capability-context';
 import { formatSecurityScan, runSecurityScan } from './commands/security';
 import { runGlobalRuntimeSetup } from './commands/global-runtime';
 import { runPromptGuardDecideCli } from './commands/prompt-guard-decision';
+import { formatContractRunResult, runContractRun } from './commands/contract-run';
 import type { Location } from './installer/types';
 import type { HookEvent, RouteId } from './hook/route-registry';
 
@@ -34,6 +35,7 @@ export const SUBCOMMANDS = [
   'tools',
   'brain',
   'capability-context',
+  'contract-run',
 ] as const;
 export type Subcommand = (typeof SUBCOMMANDS)[number];
 
@@ -251,6 +253,33 @@ export function buildProgram(): Command {
   program.addCommand(buildToolsCommand());
   program.addCommand(buildBrainCommand());
   program.addCommand(buildCapabilityContextCommand());
+  program
+    .command('contract-run')
+    .description('Run a contract task package through worker and verifier child runners')
+    .option('--repo <path>', 'Target repository path (defaults to cwd)')
+    .option('--contract <path>', 'Contract file path, relative to repo')
+    .option('--review <path>', 'Review file path, relative to repo')
+    .requiredOption('--runner <path>', 'Child runner executable; invoked as: <runner> <worker|verifier> <package.json>')
+    .option('--package-dir <path>', 'Directory for generated worker/verifier task packages')
+    .option('--json', 'Output JSON instead of human-readable text')
+    .action((rawOpts: {
+      repo?: string;
+      contract?: string;
+      review?: string;
+      runner: string;
+      packageDir?: string;
+      json?: boolean;
+    }) => {
+      const result = runContractRun({
+        repo: rawOpts.repo,
+        contract: rawOpts.contract,
+        review: rawOpts.review,
+        runner: rawOpts.runner,
+        packageDir: rawOpts.packageDir,
+      });
+      console.log(formatContractRunResult(result, rawOpts.json === true));
+      process.exit(result.exitCode);
+    });
   program
     .command('prompt-guard-decide', { hidden: true })
     .description('Internal prompt-guard intent/state decision engine')

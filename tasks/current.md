@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-06-12T05:19:18+0800 -->
+<!-- updated_at: 2026-06-12T05:27:15+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-06-12T05:19:18+0800
-> **Source Branch**: codex/loop-engine-04-contract-kappa-fields
-> **Source Commit**: bae5b5d
+> **Updated At**: 2026-06-12T05:27:15+0800
+> **Source Branch**: codex/loop-engine-05-contract-run-pilot
+> **Source Commit**: 479bbd5
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -53,27 +53,17 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 18 changed/untracked path(s)
+- Summary: 8 changed/untracked path(s)
 
 ```
- M .ai/hooks/lib/workflow-state.sh
- M .claude/templates/contract.template.md
- M assets/hooks/lib/workflow-state.sh
- M assets/reference-configs/sprint-contracts.md
- M assets/templates/contract.template.md
- M assets/templates/helpers/ensure-task-workflow.sh
- M assets/templates/helpers/plan-to-todo.sh
- M docs/reference-configs/sprint-contracts.md
- M scripts/ensure-task-workflow.sh
- M scripts/lib/project-init-lib.sh
- M scripts/plan-to-todo.sh
- M tests/helper-scripts.test.ts
- M tests/scaffold-parity.test.ts
-?? plans/archive/plan-20260612-0457-loop-engine-04-contract-kappa-fields.md
-?? tasks/archive/notes-20260612-0519-loop-engine-04-contract-kappa-fields.md
-?? tasks/archive/todo-20260612-0519-loop-engine-04-contract-kappa-fields.md
-?? tasks/contracts/20260612-0457-loop-engine-04-contract-kappa-fields.contract.md
-?? tasks/reviews/20260612-0457-loop-engine-04-contract-kappa-fields.review.md
+ M src/cli/index.ts
+?? plans/archive/plan-20260612-0519-loop-engine-05-contract-run-pilot.md
+?? src/cli/commands/contract-run.ts
+?? tasks/archive/notes-20260612-0527-loop-engine-05-contract-run-pilot.md
+?? tasks/archive/todo-20260612-0527-loop-engine-05-contract-run-pilot.md
+?? tasks/contracts/20260612-0519-loop-engine-05-contract-run-pilot.contract.md
+?? tasks/reviews/20260612-0519-loop-engine-05-contract-run-pilot.review.md
+?? tests/unit/loop-engine-05-contract-run-pilot.test.ts
 ```
 
 ## Source Artifacts
