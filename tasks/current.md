@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-06-12T05:27:15+0800 -->
+<!-- updated_at: 2026-06-12T05:38:13+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-06-12T05:27:15+0800
-> **Source Branch**: codex/loop-engine-05-contract-run-pilot
-> **Source Commit**: 479bbd5
+> **Updated At**: 2026-06-12T05:38:13+0800
+> **Source Branch**: codex/loop-engine-06-heartbeat-v0
+> **Source Commit**: 2ff05b6
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -31,8 +31,6 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- /Users/chris/Projects/agentic-dev-wt-arch-doc-loop-01-queue-engine-triage: plans/plan-20260612-0453-arch-doc-loop-03-productize-assets.md
-- /Users/chris/Projects/agentic-dev-wt-arch-doc-loop-01-queue-engine-triage: active-worktree owner -> /Users/chris/Projects/agentic-dev-wt-arch-doc-loop-01-queue-engine-triage
 - /Users/chris/Projects/agentic-dev-wt-hook-runtime-drift-policy: plans/plan-20260610-1113-hook-runtime-drift-policy.md
 - /Users/chris/Projects/agentic-dev-wt-hook-runtime-drift-policy: active-worktree owner -> /Users/chris/Projects/agentic-dev-wt-hook-runtime-drift-policy
 - /Users/chris/Projects/agentic-dev-wt-wt-continuation-for-architecture-doc-loop: plans/plan-20260612-0314-wt-continuation-for-architecture-doc-loop.md
@@ -53,17 +51,20 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 8 changed/untracked path(s)
+- Summary: 11 changed/untracked path(s)
 
 ```
- M src/cli/index.ts
-?? plans/archive/plan-20260612-0519-loop-engine-05-contract-run-pilot.md
-?? src/cli/commands/contract-run.ts
-?? tasks/archive/notes-20260612-0527-loop-engine-05-contract-run-pilot.md
-?? tasks/archive/todo-20260612-0527-loop-engine-05-contract-run-pilot.md
-?? tasks/contracts/20260612-0519-loop-engine-05-contract-run-pilot.contract.md
-?? tasks/reviews/20260612-0519-loop-engine-05-contract-run-pilot.review.md
-?? tests/unit/loop-engine-05-contract-run-pilot.test.ts
+ M .gitignore
+ M assets/templates/helpers/maintenance-triage.sh
+ M scripts/maintenance-triage.sh
+?? assets/reference-configs/heartbeat.md
+?? docs/reference-configs/heartbeat.md
+?? plans/archive/plan-20260612-0528-loop-engine-06-heartbeat-v0.md
+?? tasks/archive/notes-20260612-0538-loop-engine-06-heartbeat-v0.md
+?? tasks/archive/todo-20260612-0538-loop-engine-06-heartbeat-v0.md
+?? tasks/contracts/20260612-0528-loop-engine-06-heartbeat-v0.contract.md
+?? tasks/reviews/20260612-0528-loop-engine-06-heartbeat-v0.review.md
+?? tests/unit/loop-engine-06-heartbeat-v0.test.ts
 ```
 
 ## Source Artifacts
