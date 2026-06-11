@@ -26,10 +26,26 @@ The word "sprint" historically named a single execution slice in this harness. W
 
 - Goal
 - Scope and non-goals
+- Delegation fields (`budget`, `permission_scope`, `roles`)
 - Allowed paths
 - Exit criteria
 - Verification commands
 - Risks and rollback point
+
+## Delegation Fields (κ)
+
+- `budget` is an optional upper-bound hint for child-agent execution. Supported
+  keys are `tokens`, `tool_calls`, and `wall_time_minutes`; `null` means the
+  runner should inherit repo or caller defaults.
+- `permission_scope` describes the child-agent authority envelope. The default
+  `filesystem: allowed_paths` means the contract's `allowed_paths` remain the
+  hard edit scope; `network: none` and `approvals: owner` are conservative
+  defaults until a later runner explicitly widens them.
+- `roles` names the intended separation of responsibility. The default parent
+  role is `narrate_only`, the worker role is `implement_within_contract`, and
+  the verifier role is `verify_exit_criteria`. Verifier rubrics must not exceed
+  or replace the contract exit criteria.
+- These fields are metadata for future delegation. `verify-contract.sh` remains backward compatible and continues to gate on the `exit_criteria` YAML block, so contracts without `delegation` still verify.
 
 ## Status Rules
 

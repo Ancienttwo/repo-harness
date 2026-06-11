@@ -17,6 +17,28 @@ Describe the exact outcome this task must deliver.
 - In scope:
 - Out of scope:
 
+## Delegation Fields (κ)
+
+These fields are optional delegation defaults for `contract-run` and child
+agent calls. They do not loosen `allowed_paths`, exit criteria, or local
+approval policy; omitted values inherit repo policy defaults.
+
+```yaml
+delegation:
+  budget:
+    tokens: null
+    tool_calls: null
+    wall_time_minutes: null
+  permission_scope:
+    filesystem: allowed_paths
+    network: none
+    approvals: owner
+  roles:
+    parent: narrate_only
+    worker: implement_within_contract
+    verifier: verify_exit_criteria
+```
+
 ## Workflow Inventory
 
 - Source plan: `{{PLAN_FILE}}`

@@ -972,10 +972,29 @@ contract_references_path() {
 
   yaml_block="$(
     awk '
-      BEGIN { in_block = 0; printed = 0 }
-      /^```yaml[[:space:]]*$/ && printed == 0 { in_block = 1; next }
-      /^```[[:space:]]*$/ && in_block == 1 { printed = 1; in_block = 0; exit }
-      in_block == 1 { print }
+      BEGIN { in_block = 0; block = ""; has_allowed = 0 }
+      /^```yaml[[:space:]]*$/ {
+        in_block = 1
+        block = ""
+        has_allowed = 0
+        next
+      }
+      /^```[[:space:]]*$/ && in_block == 1 {
+        if (has_allowed == 1) {
+          printf "%s", block
+          exit
+        }
+        in_block = 0
+        block = ""
+        has_allowed = 0
+        next
+      }
+      in_block == 1 {
+        if ($0 ~ /^[[:space:]]*allowed_paths:[[:space:]]*$/) {
+          has_allowed = 1
+        }
+        block = block $0 ORS
+      }
     ' "$contract_file"
   )"
 
@@ -1444,10 +1463,29 @@ workflow_contract_allows_path() {
 
   yaml_block="$(
     awk '
-      BEGIN { in_block = 0; printed = 0 }
-      /^```yaml[[:space:]]*$/ && printed == 0 { in_block = 1; next }
-      /^```[[:space:]]*$/ && in_block == 1 { printed = 1; in_block = 0; exit }
-      in_block == 1 { print }
+      BEGIN { in_block = 0; block = ""; has_allowed = 0 }
+      /^```yaml[[:space:]]*$/ {
+        in_block = 1
+        block = ""
+        has_allowed = 0
+        next
+      }
+      /^```[[:space:]]*$/ && in_block == 1 {
+        if (has_allowed == 1) {
+          printf "%s", block
+          exit
+        }
+        in_block = 0
+        block = ""
+        has_allowed = 0
+        next
+      }
+      in_block == 1 {
+        if ($0 ~ /^[[:space:]]*allowed_paths:[[:space:]]*$/) {
+          has_allowed = 1
+        }
+        block = block $0 ORS
+      }
     ' "$contract_file"
   )"
 

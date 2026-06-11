@@ -773,8 +773,13 @@ describe("Workflow helper scripts", () => {
       expect(todo).toContain("Revisit Trigger");
       expect(todo).not.toContain("- [ ] Step one");
       expect(existsSync(join(cwd, "tasks/contracts/20260304-1400-demo.contract.md"))).toBe(true);
-      expect(readFileSync(join(cwd, "tasks/contracts/20260304-1400-demo.contract.md"), "utf-8")).toContain("## Workflow Inventory");
-      expect(readFileSync(join(cwd, "tasks/contracts/20260304-1400-demo.contract.md"), "utf-8")).toContain("Scope gate: edit only paths listed under `allowed_paths`");
+      const generatedContract = readFileSync(join(cwd, "tasks/contracts/20260304-1400-demo.contract.md"), "utf-8");
+      expect(generatedContract).toContain("## Delegation Fields (κ)");
+      expect(generatedContract).toContain("budget:");
+      expect(generatedContract).toContain("permission_scope:");
+      expect(generatedContract).toContain("roles:");
+      expect(generatedContract).toContain("## Workflow Inventory");
+      expect(generatedContract).toContain("Scope gate: edit only paths listed under `allowed_paths`");
       expect(existsSync(join(cwd, "tasks/notes/20260304-1400-demo.notes.md"))).toBe(true);
       expect(readFileSync(join(cwd, "tasks/notes/20260304-1400-demo.notes.md"), "utf-8")).toContain("## Design Decisions");
       expect(readFileSync(join(cwd, "tasks/reviews/20260304-1400-demo.review.md"), "utf-8")).toContain("tasks/notes/20260304-1400-demo.notes.md");
@@ -2040,6 +2045,60 @@ describe("Workflow helper scripts", () => {
           "allowed_paths:",
           "  - src/",
           "  - tests/",
+          "```",
+          "",
+          "## Exit Criteria",
+          "",
+          "```yaml",
+          "exit_criteria:",
+          "  files_exist:",
+          "    - src/index.ts",
+          "  commands_succeed:",
+          "    - test -f src/index.ts",
+          "```",
+          "",
+        ].join("\n")
+      );
+
+      const res = run("bash", ["scripts/verify-contract.sh", "--contract", "task.contract.md", "--strict"], cwd);
+      expect(res.status).toBe(0);
+      expect(readFileSync(join(cwd, "task.contract.md"), "utf-8")).toContain("> **Status**: Fulfilled");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("verify-contract should accept optional delegation metadata before exit criteria", () => {
+    const cwd = tmpWorkspace("helper-verify-contract-delegation");
+    try {
+      mkdirSync(join(cwd, "scripts"), { recursive: true });
+      mkdirSync(join(cwd, "src"), { recursive: true });
+      copyHelpers(cwd);
+
+      writeFileSync(join(cwd, "src/index.ts"), "export const value = 1;\n");
+      writeFileSync(
+        join(cwd, "task.contract.md"),
+        [
+          "# Task Contract: delegation",
+          "",
+          "> **Status**: Pending",
+          "",
+          "## Delegation Fields (κ)",
+          "",
+          "```yaml",
+          "delegation:",
+          "  budget:",
+          "    tokens: 12000",
+          "    tool_calls: 40",
+          "    wall_time_minutes: 30",
+          "  permission_scope:",
+          "    filesystem: allowed_paths",
+          "    network: none",
+          "    approvals: owner",
+          "  roles:",
+          "    parent: narrate_only",
+          "    worker: implement_within_contract",
+          "    verifier: verify_exit_criteria",
           "```",
           "",
           "## Exit Criteria",

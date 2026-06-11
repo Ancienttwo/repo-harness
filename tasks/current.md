@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-06-12T04:57:22+0800 -->
+<!-- updated_at: 2026-06-12T05:19:18+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-06-12T04:57:22+0800
-> **Source Branch**: codex/loop-engine-03-shadow-injection
-> **Source Commit**: 68f47de
+> **Updated At**: 2026-06-12T05:19:18+0800
+> **Source Branch**: codex/loop-engine-04-contract-kappa-fields
+> **Source Commit**: bae5b5d
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -53,19 +53,27 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 10 changed/untracked path(s)
+- Summary: 18 changed/untracked path(s)
 
 ```
- M .ai/hooks/prompt-guard.sh
- M assets/hooks/prompt-guard.sh
- M tests/hook-runtime.test.ts
-?? plans/archive/plan-20260612-0435-loop-engine-03-shadow-injection.md
-?? scripts/loop-engine-shadow-report.ts
-?? tasks/archive/notes-20260612-0457-loop-engine-03-shadow-injection.md
-?? tasks/archive/todo-20260612-0457-loop-engine-03-shadow-injection.md
-?? tasks/contracts/20260612-0435-loop-engine-03-shadow-injection.contract.md
-?? tasks/reviews/20260612-0435-loop-engine-03-shadow-injection.review.md
-?? tests/loop-engine-shadow-report.test.ts
+ M .ai/hooks/lib/workflow-state.sh
+ M .claude/templates/contract.template.md
+ M assets/hooks/lib/workflow-state.sh
+ M assets/reference-configs/sprint-contracts.md
+ M assets/templates/contract.template.md
+ M assets/templates/helpers/ensure-task-workflow.sh
+ M assets/templates/helpers/plan-to-todo.sh
+ M docs/reference-configs/sprint-contracts.md
+ M scripts/ensure-task-workflow.sh
+ M scripts/lib/project-init-lib.sh
+ M scripts/plan-to-todo.sh
+ M tests/helper-scripts.test.ts
+ M tests/scaffold-parity.test.ts
+?? plans/archive/plan-20260612-0457-loop-engine-04-contract-kappa-fields.md
+?? tasks/archive/notes-20260612-0519-loop-engine-04-contract-kappa-fields.md
+?? tasks/archive/todo-20260612-0519-loop-engine-04-contract-kappa-fields.md
+?? tasks/contracts/20260612-0457-loop-engine-04-contract-kappa-fields.contract.md
+?? tasks/reviews/20260612-0457-loop-engine-04-contract-kappa-fields.review.md
 ```
 
 ## Source Artifacts

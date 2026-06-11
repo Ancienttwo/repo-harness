@@ -174,6 +174,9 @@ describe("create-project-dirs scaffold parity", () => {
       expect(template).toContain("**State/progress path**");
 
       const contractTemplate = readFileSync(join(cwd, ".claude/templates/contract.template.md"), "utf-8");
+      expect(contractTemplate).toContain("## Delegation Fields (κ)");
+      expect(contractTemplate).toContain("permission_scope:");
+      expect(contractTemplate).toContain("verify_exit_criteria");
       expect(contractTemplate).toContain("## Workflow Inventory");
       expect(contractTemplate).toContain("Completion gate: `scripts/verify-sprint.sh` must see this contract pass");
 
