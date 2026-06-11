@@ -393,6 +393,133 @@ pg_fact() {
   [[ "${!var:-0}" == "1" ]]
 }
 
+json_string_or_null() {
+  local value="${1:-}"
+  if [[ -n "$value" ]]; then
+    printf '"%s"' "$(hook_json_escape "$value")"
+  else
+    printf 'null'
+  fi
+}
+
+loop_engine_shadow_g1_go() {
+  local summary_file=".ai/harness/runs/loop-engine-02-routing-ab-eval.json"
+  local route_report_file=".ai/harness/runs/route-nl-vs-ts-report.json"
+
+  [[ "${LOOP_ENGINE_SHADOW_DISABLE:-}" != "1" ]] || return 1
+
+  if [[ -f "$summary_file" ]]; then
+    if command -v jq >/dev/null 2>&1; then
+      jq -e '
+        .protocol == "loop-engine-02-routing-ab-eval/summary/v1"
+        and .codex.report.go_no_go == "go"
+        and (
+          .claude.status == "skipped_by_owner_override"
+          or .claude.report.go_no_go == "go"
+          or .claude.graderStatus == "passed"
+        )
+      ' "$summary_file" >/dev/null 2>&1
+      return $?
+    fi
+    if command -v bun >/dev/null 2>&1; then
+      LOOP_ENGINE_G1_REPORT="$summary_file" bun -e '
+        const fs = require("fs");
+        const report = JSON.parse(fs.readFileSync(process.env.LOOP_ENGINE_G1_REPORT, "utf8"));
+        const ok = report.protocol === "loop-engine-02-routing-ab-eval/summary/v1"
+          && report.codex?.report?.go_no_go === "go"
+          && (
+            report.claude?.status === "skipped_by_owner_override"
+            || report.claude?.report?.go_no_go === "go"
+            || report.claude?.graderStatus === "passed"
+          );
+        process.exit(ok ? 0 : 1);
+      ' >/dev/null 2>&1
+      return $?
+    fi
+  fi
+
+  if [[ -f "$route_report_file" ]]; then
+    if command -v jq >/dev/null 2>&1; then
+      jq -e '.protocol == "route-nl-vs-ts/report/v1" and .go_no_go.recommendation == "go"' "$route_report_file" >/dev/null 2>&1
+      return $?
+    fi
+    if command -v bun >/dev/null 2>&1; then
+      LOOP_ENGINE_G1_REPORT="$route_report_file" bun -e '
+        const fs = require("fs");
+        const report = JSON.parse(fs.readFileSync(process.env.LOOP_ENGINE_G1_REPORT, "utf8"));
+        process.exit(report.protocol === "route-nl-vs-ts/report/v1" && report.go_no_go?.recommendation === "go" ? 0 : 1);
+      ' >/dev/null 2>&1
+      return $?
+    fi
+  fi
+
+  return 1
+}
+
+loop_engine_shadow_snapshot_json() {
+  local marker_problem_json="none"
+  local active_plan_json contract_json
+
+  case "$prompt_guard_plan_state" in
+    stale_marker) marker_problem_json="deleted" ;;
+    foreign_worktree) marker_problem_json="foreign_worktree" ;;
+  esac
+
+  active_plan_json="$(json_string_or_null "${active_plan:-}")"
+  contract_json="$(json_string_or_null "${contract_file:-}")"
+
+  printf '{"protocol":1,"kind":"repo-harness-state-snapshot","states":{"spec":"%s","plan":"%s","pending":"%s","worktree":"%s","contract":"%s","contract_path":"%s","evidence":"%s"},"paths":{"active_plan":%s,"contract":%s},"marker":{"problem":"%s"}}' \
+    "$(hook_json_escape "$prompt_guard_spec_state")" \
+    "$(hook_json_escape "$prompt_guard_plan_state")" \
+    "$(hook_json_escape "$prompt_guard_pending_state")" \
+    "$(hook_json_escape "$prompt_guard_worktree_state")" \
+    "$(hook_json_escape "$prompt_guard_contract_state")" \
+    "$(hook_json_escape "$prompt_guard_contract_path_state")" \
+    "$(hook_json_escape "$prompt_guard_evidence_state")" \
+    "$active_plan_json" \
+    "$contract_json" \
+    "$(hook_json_escape "$marker_problem_json")"
+}
+
+append_loop_engine_shadow_trace() {
+  local snapshot_json="$1"
+  local nl_intent="${LOOP_ENGINE_SHADOW_NL_INTENT:-$PG_INTENT}"
+  local nl_action="${LOOP_ENGINE_SHADOW_NL_ACTION:-$PG_ACTION}"
+  local nl_source="${LOOP_ENGINE_SHADOW_NL_SOURCE:-nl_decision_table_shadow_projection}"
+  local divergence="false"
+  local trace_file
+
+  if [[ "$nl_intent" != "$PG_INTENT" || "$nl_action" != "$PG_ACTION" ]]; then
+    divergence="true"
+  fi
+
+  mkdir -p .claude
+  trace_file="$(workflow_trace_file)"
+
+  printf '{"ts":"%s","event_type":"UserPromptSubmit","hook":"prompt-guard","loop_engine_shadow":{"protocol":"loop-engine-shadow/v1","enabled":true,"g1":"go","authoritative":"ts_verdict","state_snapshot":%s,"nl_decision_table":"docs/reference-configs/loop-engine-nl-decision-table.md","ts_verdict":{"intent":"%s","action":"%s"},"nl_decision":{"intent":"%s","action":"%s","source":"%s"},"divergence":%s,"timebox":{"max_prompt_count":100,"max_days":14}}}\n' \
+    "$(hook_json_escape "$(date '+%Y-%m-%dT%H:%M:%S%z')")" \
+    "$snapshot_json" \
+    "$(hook_json_escape "$PG_INTENT")" \
+    "$(hook_json_escape "$PG_ACTION")" \
+    "$(hook_json_escape "$nl_intent")" \
+    "$(hook_json_escape "$nl_action")" \
+    "$(hook_json_escape "$nl_source")" \
+    "$divergence" \
+    >> "$trace_file"
+}
+
+emit_loop_engine_shadow_context() {
+  local snapshot_json
+
+  loop_engine_shadow_g1_go || return 0
+  snapshot_json="$(loop_engine_shadow_snapshot_json)"
+  append_loop_engine_shadow_trace "$snapshot_json"
+
+  echo "[LoopEngineShadow] TS verdict remains authoritative; shadow route only records divergence evidence."
+  echo "[LoopEngineShadow] state_snapshot=$snapshot_json"
+  echo "[LoopEngineShadow] nl_decision_table=docs/reference-configs/loop-engine-nl-decision-table.md timebox=14d_or_100_prompts trace=.claude/.trace.jsonl"
+}
+
 # --- Side effects and hints (driven by engine facts) ---
 
 emit_pending_orchestration_discussion() {
@@ -878,6 +1005,7 @@ if [[ "$PG_ENGINE_STATE" != "ok" ]]; then
   exit 0
 fi
 
+emit_loop_engine_shadow_context
 emit_agentic_packaging_hint
 emit_waza_route_hint
 emit_codegraph_route_hint

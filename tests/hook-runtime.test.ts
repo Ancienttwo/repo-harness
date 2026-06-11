@@ -116,6 +116,29 @@ function externalAcceptanceAdvice(reviewer = "Codex", source = "codex-review"): 
   ].join("\n");
 }
 
+function writeLoopEngineG1GoSummary(cwd: string) {
+  mkdirSync(join(cwd, ".ai/harness/runs"), { recursive: true });
+  writeFileSync(
+    join(cwd, ".ai/harness/runs/loop-engine-02-routing-ab-eval.json"),
+    JSON.stringify(
+      {
+        protocol: "loop-engine-02-routing-ab-eval/summary/v1",
+        codex: {
+          report: {
+            go_no_go: "go",
+          },
+        },
+        claude: {
+          status: "skipped_by_owner_override",
+          graderStatus: "skipped",
+        },
+      },
+      null,
+      2
+    ) + "\n"
+  );
+}
+
 function run(cmd: string, args: string[], cwd: string) {
   return spawnSync(cmd, args, { cwd, encoding: "utf-8" });
 }
@@ -364,6 +387,72 @@ describe("Hook runtime behavior", () => {
       });
       expect(neutral.status).toBe(0);
       expect(neutral.stdout).not.toContain("[CrossReview]");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("prompt-guard: shadow injection records dual-route divergence without changing the TS verdict", () => {
+    const cwd = tmpWorkspace("loop-engine-shadow");
+    try {
+      installHooks(cwd);
+      mkdirSync(join(cwd, "docs"), { recursive: true });
+      writeFileSync(join(cwd, "docs/spec.md"), "# Product Spec\n");
+      writeLoopEngineG1GoSummary(cwd);
+
+      const res = runHook("prompt-guard.sh", cwd, {
+        stdin: JSON.stringify({ prompt: "只是问个问题" }),
+      });
+
+      expect(res.status).toBe(0);
+      expect(res.stdout).toContain("[LoopEngineShadow] TS verdict remains authoritative");
+      expect(res.stdout).toContain("state_snapshot=");
+      expect(res.stdout).toContain("docs/reference-configs/loop-engine-nl-decision-table.md");
+      expect(res.stdout).not.toContain("[PlanStatusGuard]");
+
+      const trace = readFileSync(join(cwd, ".claude/.trace.jsonl"), "utf-8")
+        .trim()
+        .split(/\r?\n/)
+        .map((line) => JSON.parse(line));
+      const event = trace.find((entry) => entry.loop_engine_shadow);
+      expect(event.loop_engine_shadow.enabled).toBe(true);
+      expect(event.loop_engine_shadow.g1).toBe("go");
+      expect(event.loop_engine_shadow.authoritative).toBe("ts_verdict");
+      expect(event.loop_engine_shadow.state_snapshot.states.spec).toBe("present");
+      expect(event.loop_engine_shadow.ts_verdict.action).toBe("allow");
+      expect(event.loop_engine_shadow.nl_decision.action).toBe("allow");
+      expect(event.loop_engine_shadow.divergence).toBe(false);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("prompt-guard: shadow trace exposes divergence when the NL shadow route differs", () => {
+    const cwd = tmpWorkspace("loop-engine-shadow-divergence");
+    try {
+      installHooks(cwd);
+      mkdirSync(join(cwd, "docs"), { recursive: true });
+      writeFileSync(join(cwd, "docs/spec.md"), "# Product Spec\n");
+      writeLoopEngineG1GoSummary(cwd);
+
+      const res = runHook("prompt-guard.sh", cwd, {
+        stdin: JSON.stringify({ prompt: "只是问个问题" }),
+        env: {
+          LOOP_ENGINE_SHADOW_NL_ACTION: "done_gate",
+          LOOP_ENGINE_SHADOW_NL_SOURCE: "unit-test",
+        },
+      });
+
+      expect(res.status).toBe(0);
+      const event = readFileSync(join(cwd, ".claude/.trace.jsonl"), "utf-8")
+        .trim()
+        .split(/\r?\n/)
+        .map((line) => JSON.parse(line))
+        .find((entry) => entry.loop_engine_shadow);
+      expect(event.loop_engine_shadow.ts_verdict.action).toBe("allow");
+      expect(event.loop_engine_shadow.nl_decision.action).toBe("done_gate");
+      expect(event.loop_engine_shadow.nl_decision.source).toBe("unit-test");
+      expect(event.loop_engine_shadow.divergence).toBe(true);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
