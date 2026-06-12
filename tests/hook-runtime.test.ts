@@ -695,6 +695,55 @@ describe("Hook runtime behavior", () => {
     }
   });
 
+  test("first-principles guard: reports overengineering advisories without blocking", () => {
+    const cwd = tmpWorkspace("first-principles-guard");
+    try {
+      installHooks(cwd);
+      initGitRepo(cwd);
+
+      const noDiff = runHook("first-principles-guard.sh", cwd, { args: ["tracked.txt"] });
+      expect(noDiff.status).toBe(0);
+      expect(noDiff.stdout).toBe("");
+
+      writeFileSync(
+        join(cwd, "tracked.txt"),
+        [
+          "base",
+          "import leftPad from 'left-pad';",
+          "interface DemoAdapter {}",
+          "// legacy shim branch",
+          "if (a) {}",
+          "} else if (b) {}",
+          "switch (mode) {",
+          "case 'x': break;",
+          "}",
+          "const settings = process.env.NEW_SETTING;",
+          "const config = { featureFlag: true };",
+        ].join("\n") + "\n"
+      );
+
+      const direct = runHook("first-principles-guard.sh", cwd, { args: ["tracked.txt"] });
+      expect(direct.status).toBe(0);
+      expect(direct.stdout).toContain("[FirstPrinciples] Compatibility debt additions detected");
+      expect(direct.stdout).toContain("[FirstPrinciples] Branch-heavy additions detected");
+      expect(direct.stdout).toContain("[FirstPrinciples] Abstraction-heavy additions detected");
+      expect(direct.stdout).toContain("[FirstPrinciples] Dependency-surface additions detected");
+      expect(direct.stdout).toContain("trust-boundary validation");
+
+      const wrapper = runHook("anti-simplification.sh", cwd, { args: ["tracked.txt"] });
+      expect(wrapper.status).toBe(0);
+      expect(wrapper.stdout).toContain("[FirstPrinciples]");
+
+      const postEdit = runHook("post-edit-guard.sh", cwd, {
+        stdin: JSON.stringify({ tool_input: { file_path: "tracked.txt" } }),
+      });
+      expect(postEdit.status).toBe(0);
+      expect(postEdit.stdout).toContain("[FirstPrinciples]");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   test("post-edit-guard: reports sync-chain warnings without blocking when drift helpers fail", () => {
     const cwd = tmpWorkspace("post-edit-sync-chain-warning");
     try {

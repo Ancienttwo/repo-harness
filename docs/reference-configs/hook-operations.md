@@ -36,7 +36,17 @@ repo-harness security scan --json
 
 `PostToolUse.always` runs one merged observer, `post-tool-observer.sh` (JSONL trace + lightweight advisories); the trace file `.claude/.trace.jsonl` is the single tool-trace record.
 
-`PostToolUse.edit` runs a downstream sync chain after local edit reminders: architecture drift record, context contract sync, capability-context queueing, repo-to-brain mirror sync, and active contract verification. These stages remain advisory. A failed downstream stage must emit one `[SyncChain] WARN: ...` line and let the edit hook exit 0 so local editing is not blocked by maintenance drift.
+`PostToolUse.edit` runs local edit reminders, the FirstPrinciples
+anti-overengineering advisory, then the downstream sync chain: architecture
+drift record, context contract sync, capability-context queueing, repo-to-brain
+mirror sync, and active contract verification. These stages remain advisory. A
+failed downstream stage must emit one `[SyncChain] WARN: ...` line and let the
+edit hook exit 0 so local editing is not blocked by maintenance drift. The
+FirstPrinciples advisory reviews only the current file diff and asks whether new
+dependencies, compatibility branches, abstractions, config surfaces, or
+branch-heavy logic truly need to exist; it must not override trust-boundary
+validation, data-loss prevention, security, accessibility, or explicit
+user-requested behavior.
 
 `.ai/harness/scripts/sync-brain-docs.sh --changed <path>` is hot-path optimized: the PostEdit hook starts it only when the changed repo path appears in the brain manifest. The script still owns authoritative JSON parsing and containment checks. Source files that resolve outside the repo, or brain targets that resolve outside the configured brain root through symlinks, are rejected.
 

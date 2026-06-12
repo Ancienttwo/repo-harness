@@ -221,10 +221,18 @@ describe("Hook contracts", () => {
   });
 
 
-  test("anti-simplification should parse file path via shared hook input", () => {
-    const script = read("assets/hooks/anti-simplification.sh");
+  test("first-principles guard should parse file path and keep anti-overengineering advisory semantics", () => {
+    const script = read("assets/hooks/first-principles-guard.sh");
+    const wrapper = read("assets/hooks/anti-simplification.sh");
+    const postEdit = read("assets/hooks/post-edit-guard.sh");
+
     expect(script).toContain("hook-input.sh");
     expect(script).toContain("hook_get_file_path");
+    expect(script).toContain("[FirstPrinciples]");
+    expect(script).toContain("must this exist");
+    expect(script).toContain("trust-boundary validation");
+    expect(wrapper).toContain("first-principles-guard.sh");
+    expect(postEdit).toContain("first-principles-guard.sh");
   });
 
   test("settings template should not inject TOOL_INPUT/PROMPT argv blobs", () => {
