@@ -223,10 +223,19 @@ export function runHook(opts: RunHookOptions): RunHookResult {
     }
 
     scriptsRun.push(script);
+    const childEnv = {
+      ...process.env,
+      HOOK_REPO_ROOT: repoRoot,
+      REPO_HARNESS_ROUTE_EVENT: opts.event,
+      REPO_HARNESS_ROUTE_ID: opts.routeId,
+      ...(opts.event === 'SessionStart' && script === 'session-start-context.sh'
+        ? { REPO_HARNESS_SESSION_START_SECURITY: '1' }
+        : {}),
+    };
     const child = spawnSync('bash', [scriptPath, ...(opts.args ?? [])], {
       cwd: repoRoot,
       stdio,
-      env: { ...process.env, HOOK_REPO_ROOT: repoRoot },
+      env: childEnv,
     });
 
     if (child.error) {

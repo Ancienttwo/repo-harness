@@ -291,8 +291,9 @@ before applying anything.
 - Debug in this order: user-level adapter config -> `repo-harness-hook` (or fallback `repo-harness hook`) -> route registry -> `.ai/hooks/*`.
 - If `repo-harness-hook` reports `.ai/hooks` drift, refresh the repo-local copy with `repo-harness update --repo <root>`.
 
-`SessionStart` resolves hooks central-first, then runs two ordered scripts before
-work begins:
+`SessionStart` resolves hooks central-first, then runs one dispatch before work
+begins; that script appends the fingerprint-gated security scan context
+internally:
 
 ```mermaid
 flowchart LR
@@ -303,7 +304,7 @@ flowchart LR
   Source -->|repo policy pin| Repo["repo .ai/hooks<br/>self-host development"]
   Central --> Ctx["session-start-context.sh<br/>resume + sprint + handoff context"]
   Repo --> Ctx
-  Ctx --> Sec["security-sentinel.sh<br/>read-only config scan, fingerprint-gated"]
+  Ctx --> Sec["internal security sentinel phase<br/>read-only config scan, fingerprint-gated"]
   Sec --> SSOut["SessionStart additionalContext<br/>prior-session state + SecurityConfig findings"]
 ```
 

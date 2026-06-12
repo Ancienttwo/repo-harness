@@ -314,6 +314,45 @@ If the current user message mentions `# Files mentioned by the user`, `pasted-te
 EOF_CONTEXT
 }
 
+session_start_extract_additional_context() {
+  local output="$1"
+  local js
+
+  [[ -n "$output" ]] || return 1
+
+  if [[ "$output" != \{* ]]; then
+    printf '%s' "$output"
+    return 0
+  fi
+
+  if command -v jq >/dev/null 2>&1; then
+    printf '%s' "$output" | jq -r '.hookSpecificOutput.additionalContext // empty' 2>/dev/null
+    return 0
+  fi
+
+  js='
+const input = process.env.SESSION_START_CHILD_OUTPUT ?? "";
+try {
+  const parsed = JSON.parse(input);
+  const context = parsed?.hookSpecificOutput?.additionalContext;
+  if (typeof context === "string") process.stdout.write(context);
+} catch {}
+'
+  if command -v node >/dev/null 2>&1; then
+    SESSION_START_CHILD_OUTPUT="$output" node -e "$js"
+  elif command -v bun >/dev/null 2>&1; then
+    SESSION_START_CHILD_OUTPUT="$output" bun -e "$js"
+  fi
+}
+
+security_sentinel_context() {
+  local output
+
+  [[ -x "$SCRIPT_DIR/security-sentinel.sh" ]] || return 1
+  output="$(bash "$SCRIPT_DIR/security-sentinel.sh" 2>/dev/null || true)"
+  session_start_extract_additional_context "$output"
+}
+
 context=""
 if resume_current_for_handoff; then
   if context_budget_active \
@@ -359,6 +398,18 @@ if [[ -n "$sprint_context" ]]; then
     context="${context}"$'\n'"${sprint_context}"
   else
     context="$sprint_context"
+  fi
+fi
+
+security_context=""
+if [[ "${REPO_HARNESS_SESSION_START_SECURITY:-}" == "1" ]]; then
+  security_context="$(security_sentinel_context || true)"
+  if [[ -n "$security_context" ]]; then
+    if [[ -n "$context" ]]; then
+      context="${context}"$'\n'"${security_context}"
+    else
+      context="$security_context"
+    fi
   fi
 fi
 

@@ -24,7 +24,7 @@ Repo-local `.claude/settings.json` and `.codex/hooks.json` hook adapters are leg
 
 `Stop.default` routes through `stop-orchestrator.sh`. On Codex, dispatcher stdout stays quiet for ordinary successful hooks, but valid Stop decision JSON is forwarded so Codex can honor a one-shot planning completeness block; success stderr such as handoff refresh noise remains suppressed.
 
-`SessionStart.default` runs `session-start-context.sh` and `security-sentinel.sh` under one adapter entry and aggregates their context into one JSON payload. The security sentinel is changed-only and advisory; stale repo-local copies emit one drift reminder instead of blocking the host session.
+`SessionStart.default` dispatches one script, `session-start-context.sh`. That script internally runs the changed-only advisory security sentinel and aggregates its context into the same SessionStart JSON payload. The standalone `security-sentinel.sh` remains available for manual smoke/debug, but it is no longer a separate route-dispatched hook.
 
 Use this command for an explicit read-only audit:
 

@@ -130,8 +130,7 @@ build_hooks_json() {
 {
   "SessionStart": [
     { "hooks": [
-        { "type": "command", "command": "bash ${SHIM_PATH} session-start-context.sh", "timeout": 30 },
-        { "type": "command", "command": "bash ${SHIM_PATH} security-sentinel.sh", "timeout": 30 }
+        { "type": "command", "command": "bash ${SHIM_PATH} session-start-context.sh", "timeout": 30 }
     ]}
   ],
   "PreToolUse": [

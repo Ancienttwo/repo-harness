@@ -35,6 +35,9 @@ if [[ ! -f "$HOOK_PATH" ]]; then
 fi
 
 export HOOK_REPO_ROOT="$REPO_ROOT"
+if [[ "$HOOK_NAME" == "session-start-context.sh" ]]; then
+  export REPO_HARNESS_SESSION_START_SECURITY="${REPO_HARNESS_SESSION_START_SECURITY:-1}"
+fi
 cd "$REPO_ROOT"
 
 # Codex swallows hook stdout differently from Claude: success stdout is

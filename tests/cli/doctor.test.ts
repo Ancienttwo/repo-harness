@@ -150,7 +150,7 @@ describe('doctor command (Phase 1C)', () => {
       const hooks = r.checks.find((c) => c.id === 'repo-hook-scripts')!;
       expect(hooks.status).toBe('warn');
       expect(hooks.detail).toContain('source=repo-pin');
-      expect(hooks.detail).toContain('security-sentinel.sh');
+      expect(hooks.detail).toContain('session-start-context.sh');
       expect(hooks.detail).toContain(`repo-harness update --repo ${repoRoot}`);
     });
   }, DOCTOR_CHECK_TIMEOUT_MS);

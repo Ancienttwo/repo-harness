@@ -14,6 +14,11 @@ describe('route registry (Phase 1B Z design)', () => {
     expect(ROUTES.length).toBe(7);
   });
 
+  test('route-dispatched hook script count stays within the loop-engine diet budget', () => {
+    const scriptDispatches = ROUTES.reduce((total, route) => total + route.scripts.length, 0);
+    expect(scriptDispatches).toBeLessThanOrEqual(8);
+  });
+
   test('PostToolUse has 3 matcher-disjoint routes (Edit|Write / Bash / undefined)', () => {
     const postRoutes = listRoutesForEvent('PostToolUse');
     expect(postRoutes.length).toBe(3);
@@ -28,7 +33,7 @@ describe('route registry (Phase 1B Z design)', () => {
   });
 
   test('getRoute returns the expected ordered scripts for each route', () => {
-    expect(getRoute('SessionStart', 'default')?.scripts).toEqual(['session-start-context.sh', 'security-sentinel.sh']);
+    expect(getRoute('SessionStart', 'default')?.scripts).toEqual(['session-start-context.sh']);
     expect(getRoute('PreToolUse', 'edit')?.scripts).toEqual(['worktree-guard.sh', 'pre-edit-guard.sh']);
     expect(getRoute('PostToolUse', 'edit')?.scripts).toEqual(['post-edit-guard.sh']);
     expect(getRoute('PostToolUse', 'bash')?.scripts).toEqual(['post-bash.sh']);
@@ -56,7 +61,6 @@ describe('route registry (Phase 1B Z design)', () => {
   test('every route script name is in the known hook set (catches typos)', () => {
     const KNOWN = new Set([
       'session-start-context.sh',
-      'security-sentinel.sh',
       'worktree-guard.sh',
       'pre-edit-guard.sh',
       'post-edit-guard.sh',

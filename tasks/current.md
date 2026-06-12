@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-06-12T11:46:24+0800 -->
+<!-- updated_at: 2026-06-12T12:08:04+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-06-12T11:46:24+0800
-> **Source Branch**: codex/loop-engine-07-cutover-delete-classifier
-> **Source Commit**: 47d3b34
+> **Updated At**: 2026-06-12T12:08:04+0800
+> **Source Branch**: codex/loop-engine-08-hook-diet-stretch
+> **Source Commit**: f701e83
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -51,36 +51,33 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 27 changed/untracked path(s)
+- Summary: 24 changed/untracked path(s)
 
 ```
-A  .ai/hooks/lib/prompt-guard-runtime.sh
-M  .ai/hooks/prompt-guard.sh
+M  .ai/hooks/run-hook.sh
+M  .ai/hooks/session-start-context.sh
 M  README.md
-M  README.zh-CN.md
-A  assets/hooks/lib/prompt-guard-runtime.sh
-M  assets/hooks/prompt-guard.sh
+M  assets/hooks/codex.hooks.template.json
+M  assets/hooks/run-hook.sh
+M  assets/hooks/session-start-context.sh
+M  assets/hooks/settings.template.json
 M  assets/reference-configs/hook-operations.md
 M  docs/reference-configs/hook-operations.md
-AD plans/plan-20260612-0539-loop-engine-07-cutover-delete-classifier.md
-M  src/cli/commands/prompt-guard-decision.ts
-M  src/cli/hook/prompt-guard-decision.ts
-R  src/cli/hook/prompt-intents.ts -> src/cli/hook/prompt-triggers.ts
-A  tasks/contracts/20260612-0539-loop-engine-07-cutover-delete-classifier.contract.md
-M  tasks/lessons.md
-AD tasks/notes/20260612-0539-loop-engine-07-cutover-delete-classifier.notes.md
-A  tasks/reviews/20260612-0539-loop-engine-07-cutover-delete-classifier.review.md
+AD plans/plan-20260612-1146-loop-engine-08-hook-diet-stretch.md
+M  scripts/repo-harness.sh
+M  src/cli/hook/route-registry.ts
+M  src/cli/hook/runtime.ts
+A  tasks/contracts/20260612-1146-loop-engine-08-hook-diet-stretch.contract.md
+AD tasks/notes/20260612-1146-loop-engine-08-hook-diet-stretch.notes.md
+A  tasks/reviews/20260612-1146-loop-engine-08-hook-diet-stretch.review.md
 MM tasks/todo.md
-M  tests/bootstrap-files.test.ts
-M  tests/cli/prompt-guard-decision.test.ts
-R  tests/cli/prompt-intents.test.ts -> tests/cli/prompt-triggers.test.ts
-M  tests/hook-contracts.test.ts
-M  tests/hook-runtime.test.ts
-M  tests/scaffold-parity.test.ts
-A  tests/unit/loop-engine-07-cutover-delete-classifier.test.ts
-?? plans/archive/plan-20260612-0539-loop-engine-07-cutover-delete-classifier.md
-?? tasks/archive/notes-20260612-1146-loop-engine-07-cutover-delete-classifier.md
-?? tasks/archive/todo-20260612-1146-loop-engine-07-cutover-delete-classifier.md
+M  tests/cli/doctor.test.ts
+M  tests/cli/hook.test.ts
+M  tests/cli/route-registry.test.ts
+A  tests/unit/loop-engine-08-hook-diet-stretch.test.ts
+?? plans/archive/plan-20260612-1146-loop-engine-08-hook-diet-stretch.md
+?? tasks/archive/notes-20260612-1208-loop-engine-08-hook-diet-stretch.md
+?? tasks/archive/todo-20260612-1208-loop-engine-08-hook-diet-stretch.md
 ```
 
 ## Source Artifacts

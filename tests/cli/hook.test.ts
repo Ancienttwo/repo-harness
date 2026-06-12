@@ -157,7 +157,7 @@ describe('hook command (Phase 1B)', () => {
       expect(result.exitCode).toBe(0);
       expect(result.reason).toBe('ok');
       expect(result.scriptsRun).toEqual([]);
-      expect(result.skippedScripts).toEqual(['session-start-context.sh', 'security-sentinel.sh']);
+      expect(result.skippedScripts).toEqual(['session-start-context.sh']);
       expect(result.failedScript).toBeUndefined();
     });
   });
@@ -209,7 +209,7 @@ describe('hook command (Phase 1B)', () => {
     );
   });
 
-  test('opt-in + advisory route partial missing → later script still runs', () => {
+  test('opt-in + advisory route missing → skips the SessionStart script', () => {
     withTempRepo(
       {
         optIn: true,
@@ -226,7 +226,7 @@ describe('hook command (Phase 1B)', () => {
         });
         expect(result.exitCode).toBe(0);
         expect(result.reason).toBe('ok');
-        expect(result.scriptsRun).toEqual(['security-sentinel.sh']);
+        expect(result.scriptsRun).toEqual([]);
         expect(result.skippedScripts).toEqual(['session-start-context.sh']);
       },
     );
@@ -330,13 +330,11 @@ describe('hook command (Phase 1B)', () => {
     }
   });
 
-  test('SessionStart CLI smoke reports one drift line when an advisory script is missing', () => {
+  test('SessionStart CLI smoke reports one drift line when the advisory route script is missing', () => {
     withTempRepo(
       {
         optIn: true,
-        scripts: {
-          'session-start-context.sh': '#!/bin/bash\necho ctx-ok\n',
-        },
+        scripts: {},
       },
       (repoRoot) => {
         const res = spawnSync(
@@ -347,11 +345,10 @@ describe('hook command (Phase 1B)', () => {
         expect(res.status).toBe(0);
         const parsed = JSON.parse(res.stdout);
         const context = parsed.hookSpecificOutput.additionalContext;
-        expect(context).toContain('ctx-ok');
-        expect(context).toContain('hooks drift (source=repo-pin): missing security-sentinel.sh');
+        expect(context).toContain('hooks drift (source=repo-pin): missing session-start-context.sh');
         expect(context.split('\n').filter((line: string) => line.includes('hooks drift')).length).toBe(1);
         expect(res.stderr).toContain('skipping missing script');
-        expect(res.stderr).toContain('security-sentinel.sh');
+        expect(res.stderr).toContain('session-start-context.sh');
       },
     );
   });
