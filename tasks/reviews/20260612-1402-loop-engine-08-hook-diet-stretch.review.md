@@ -1,9 +1,9 @@
 # Sprint Review: loop-engine-08-hook-diet-stretch
 
 > **Status**: Complete
-> **Plan**: plans/plan-20260612-1402-loop-engine-08-hook-diet-stretch.md
+> **Plan**: plans/archive/plan-20260612-1402-loop-engine-08-hook-diet-stretch.md
 > **Contract**: tasks/contracts/20260612-1402-loop-engine-08-hook-diet-stretch.contract.md
-> **Notes File**: tasks/notes/20260612-1402-loop-engine-08-hook-diet-stretch.notes.md
+> **Notes File**: tasks/archive/notes-20260612-1409-loop-engine-08-hook-diet-stretch.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Last Updated**: 2026-06-12 14:05
 > **Recommendation**: pass
@@ -29,7 +29,7 @@
   - `scripts/hook-dispatch-diet-report.ts`
   - `tests/hook-dispatch-diet-report.test.ts`
   - `.ai/harness/runs/loop-engine-08-hook-diet-report.json`
-- Implementation notes reviewed: `tasks/notes/20260612-1402-loop-engine-08-hook-diet-stretch.notes.md`
+- Implementation notes reviewed: `tasks/archive/notes-20260612-1409-loop-engine-08-hook-diet-stretch.md`
 - Run snapshot: `.ai/harness/runs/loop-engine-08-hook-diet-report.json`
 
 ## External Acceptance Advice

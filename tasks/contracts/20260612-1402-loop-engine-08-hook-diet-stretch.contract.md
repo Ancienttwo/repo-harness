@@ -1,12 +1,12 @@
 # Sprint Contract: loop-engine-08-hook-diet-stretch
 
 > **Status**: Fulfilled
-> **Plan**: plans/plan-20260612-1402-loop-engine-08-hook-diet-stretch.md
+> **Plan**: plans/archive/plan-20260612-1402-loop-engine-08-hook-diet-stretch.md
 > **Owner**: chris
 > **Capability ID**: root
 > **Last Updated**: 2026-06-12 14:05
 > **Review File**: `tasks/reviews/20260612-1402-loop-engine-08-hook-diet-stretch.review.md`
-> **Notes File**: `tasks/notes/20260612-1402-loop-engine-08-hook-diet-stretch.notes.md`
+> **Notes File**: `tasks/archive/notes-20260612-1409-loop-engine-08-hook-diet-stretch.md`
 
 ## Goal
 
@@ -19,10 +19,10 @@ Close the stretch hook diet row by recording the current hook dispatch topology 
 
 ## Workflow Inventory
 
-- Source plan: `plans/plan-20260612-1402-loop-engine-08-hook-diet-stretch.md`
+- Source plan: `plans/archive/plan-20260612-1402-loop-engine-08-hook-diet-stretch.md`
 - Deferred-goal ledger: `tasks/todo.md`
 - Review file: `tasks/reviews/20260612-1402-loop-engine-08-hook-diet-stretch.review.md`
-- Notes file: `tasks/notes/20260612-1402-loop-engine-08-hook-diet-stretch.notes.md`
+- Notes file: `tasks/archive/notes-20260612-1409-loop-engine-08-hook-diet-stretch.md`
 - Checks file: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
@@ -39,7 +39,7 @@ allowed_paths:
   - tasks/todo.md
   - tasks/contracts/20260612-1402-loop-engine-08-hook-diet-stretch.contract.md
   - tasks/reviews/20260612-1402-loop-engine-08-hook-diet-stretch.review.md
-  - tasks/notes/20260612-1402-loop-engine-08-hook-diet-stretch.notes.md
+  - tasks/archive/notes-20260612-1409-loop-engine-08-hook-diet-stretch.md
   - .ai/context/capabilities.json
   - tests/hook-dispatch-diet-report.test.ts
 ```
@@ -72,7 +72,7 @@ exit_criteria:
   artifacts_exist:
     - .ai/harness/checks/latest.json
     - .ai/harness/runs/loop-engine-08-hook-diet-report.json
-    - tasks/notes/20260612-1402-loop-engine-08-hook-diet-stretch.notes.md
+    - tasks/archive/notes-20260612-1409-loop-engine-08-hook-diet-stretch.md
   tests_pass:
     - path: tests/hook-dispatch-diet-report.test.ts
   commands_succeed:

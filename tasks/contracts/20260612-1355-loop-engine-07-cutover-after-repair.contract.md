@@ -1,12 +1,12 @@
 # Sprint Contract: loop-engine-07-cutover-after-repair
 
 > **Status**: Fulfilled
-> **Plan**: plans/plan-20260612-1355-loop-engine-07-cutover-after-repair.md
+> **Plan**: plans/archive/plan-20260612-1355-loop-engine-07-cutover-after-repair.md
 > **Owner**: chris
 > **Capability ID**: root
 > **Last Updated**: 2026-06-12 13:58
 > **Review File**: `tasks/reviews/20260612-1355-loop-engine-07-cutover-after-repair.review.md`
-> **Notes File**: `tasks/notes/20260612-1355-loop-engine-07-cutover-after-repair.notes.md`
+> **Notes File**: `tasks/archive/notes-20260612-1401-loop-engine-07-cutover-after-repair.md`
 
 ## Goal
 
@@ -19,10 +19,10 @@ Add a machine-readable G2 cutover gate for Track A. Because row 3's second G1 is
 
 ## Workflow Inventory
 
-- Source plan: `plans/plan-20260612-1355-loop-engine-07-cutover-after-repair.md`
+- Source plan: `plans/archive/plan-20260612-1355-loop-engine-07-cutover-after-repair.md`
 - Deferred-goal ledger: `tasks/todo.md`
 - Review file: `tasks/reviews/20260612-1355-loop-engine-07-cutover-after-repair.review.md`
-- Notes file: `tasks/notes/20260612-1355-loop-engine-07-cutover-after-repair.notes.md`
+- Notes file: `tasks/archive/notes-20260612-1401-loop-engine-07-cutover-after-repair.md`
 - Checks file: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
@@ -40,7 +40,7 @@ allowed_paths:
   - tasks/todo.md
   - tasks/contracts/20260612-1355-loop-engine-07-cutover-after-repair.contract.md
   - tasks/reviews/20260612-1355-loop-engine-07-cutover-after-repair.review.md
-  - tasks/notes/20260612-1355-loop-engine-07-cutover-after-repair.notes.md
+  - tasks/archive/notes-20260612-1401-loop-engine-07-cutover-after-repair.md
   - .ai/context/capabilities.json
   - tests/loop-engine-cutover-gate.test.ts
 ```
@@ -76,7 +76,7 @@ exit_criteria:
   artifacts_exist:
     - .ai/harness/checks/latest.json
     - .ai/harness/runs/loop-engine-07-cutover-gate.json
-    - tasks/notes/20260612-1355-loop-engine-07-cutover-after-repair.notes.md
+    - tasks/archive/notes-20260612-1401-loop-engine-07-cutover-after-repair.md
   tests_pass:
     - path: tests/loop-engine-cutover-gate.test.ts
   commands_succeed:

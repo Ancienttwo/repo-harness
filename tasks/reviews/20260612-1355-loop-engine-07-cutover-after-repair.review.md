@@ -1,9 +1,9 @@
 # Sprint Review: loop-engine-07-cutover-after-repair
 
 > **Status**: Complete
-> **Plan**: plans/plan-20260612-1355-loop-engine-07-cutover-after-repair.md
+> **Plan**: plans/archive/plan-20260612-1355-loop-engine-07-cutover-after-repair.md
 > **Contract**: tasks/contracts/20260612-1355-loop-engine-07-cutover-after-repair.contract.md
-> **Notes File**: tasks/notes/20260612-1355-loop-engine-07-cutover-after-repair.notes.md
+> **Notes File**: tasks/archive/notes-20260612-1401-loop-engine-07-cutover-after-repair.md
 > **Checks File**: .ai/harness/checks/latest.json
 > **Last Updated**: 2026-06-12 14:00
 > **Recommendation**: pass
@@ -32,7 +32,7 @@
   - `tests/loop-engine-cutover-gate.test.ts`
   - `docs/reference-configs/loop-engine-cutover-gate.md`
   - `.ai/harness/runs/loop-engine-07-cutover-gate.json`
-- Implementation notes reviewed: `tasks/notes/20260612-1355-loop-engine-07-cutover-after-repair.notes.md`
+- Implementation notes reviewed: `tasks/archive/notes-20260612-1401-loop-engine-07-cutover-after-repair.md`
 - Run snapshot: `.ai/harness/runs/loop-engine-07-cutover-gate.json`
 
 ## External Acceptance Advice
