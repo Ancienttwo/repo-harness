@@ -11,6 +11,12 @@
 - Where to apply next time:
 
 ## Entries
+- Date: 2026-06-12
+- Triggered by correction: loop-engine row7 continued after the owner overrode the G2 shadow gate even though the summary still said `prompt_count=1`, `timebox.complete=false`, and `recommendation=continue_shadow`
+- Mistake pattern: treating an owner instruction to continue as if the underlying gate evidence had passed
+- Prevention rule: record owner overrides separately from gate passes; keep the failed gate evidence and residual risk visible in the contract/review instead of rewriting the gate as satisfied
+- Where to apply next time: sprint contracts, `tasks/reviews/*.review.md`, loop-engine G2/G3 gates, and any Claude-validation skip
+
 - Date: 2026-06-10
 - Triggered by correction: hook tests flaked at bun's 5s default per-test timeout during parallel sessions; the prior workaround was rerunning with `--timeout 20000`
 - Mistake pattern: blaming prompt-guard.sh source size for slow startup without profiling; measured bash parse is ~12ms and the TS engine spawn ~35ms, while the real cost is hundreds of small fork/execs per invocation (~0.25s warm, >2s under load) multiplied by 4-6 hook invocations per test

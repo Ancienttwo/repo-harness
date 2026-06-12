@@ -16,14 +16,14 @@ import {
   shouldEmitBddFeatureAdvice,
   shouldEmitTddBugFixAdvice,
   stripPromptContextBlocks,
-} from '../../src/cli/hook/prompt-intents';
+} from '../../src/cli/hook/prompt-triggers';
 import { runPromptGuardVerdictFromPrompt } from '../../src/cli/commands/prompt-guard-decision';
 
 function ctx(prompt: string, pendingFresh = false) {
   return buildPromptIntentContext(prompt, pendingFresh);
 }
 
-describe('prompt intent classifiers', () => {
+describe('prompt trigger facts', () => {
   test('execution approvals match whole-line variants in both languages', () => {
     for (const p of ['同意，执行吧', 'go ahead', 'approved', '开干', '继续执行']) {
       expect(isExecutionApprovalIntent(ctx(p))).toBe(true);

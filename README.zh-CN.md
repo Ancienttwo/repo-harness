@@ -31,8 +31,8 @@ repo-local workflow 的自托管样例。
 - **Central-first hook runtime。** User-level Claude/Codex adapters 进入
   `repo-harness-hook`；默认跑 central packaged hooks，本仓库自托管开发时仍可通过
   `"hook_source": "repo"` 钉回 repo 内 `.ai/hooks`。
-- **Prompt decision 进入 TypeScript。** Prompt-text intent classifier 在
-  `src/cli/hook/prompt-intents.ts` 里处理 Unicode，shell hook 只接收一行 verdict
+- **Prompt decision 进入 TypeScript。** Prompt-text trigger facts 在
+  `src/cli/hook/prompt-triggers.ts` 里处理 Unicode，shell hook 只接收一行 verdict
   JSON，prompt 层的 plan/spec/contract gate 退为 advisory。
 - **Edit-layer enforcement。** 真正的实现写入由 `pre-edit-guard.sh` 拦截，依据路径、
   active plan state 和仓库文件判断，不再靠自然语言猜测。

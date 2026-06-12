@@ -149,70 +149,6 @@ function decideApprovedPlanAction(
   return 'allow';
 }
 
-export const PROMPT_GUARD_EXECUTION_TABLE: Readonly<
-  Record<
-    PromptGuardPlanState,
-    Record<PromptGuardExecutionIntent, (state: PromptGuardState) => PromptGuardAction>
-  >
-> = Object.freeze({
-  none: Object.freeze({
-    embedded_approved_plan: (state) =>
-      decideNoActivePlanAction('embedded_approved_plan', state),
-    bug_fix_execution: (state) => decideNoActivePlanAction('bug_fix_execution', state),
-    plan_execution_projection: (state) =>
-      decideNoActivePlanAction('plan_execution_projection', state),
-    general_execution: (state) => decideNoActivePlanAction('general_execution', state),
-  }),
-  stale_marker: Object.freeze({
-    embedded_approved_plan: () => 'stale_active_plan_advice',
-    bug_fix_execution: () => 'stale_active_plan_advice',
-    plan_execution_projection: () => 'stale_active_plan_advice',
-    general_execution: () => 'stale_active_plan_advice',
-  }),
-  foreign_worktree: Object.freeze({
-    embedded_approved_plan: () => 'stale_active_plan_advice',
-    bug_fix_execution: () => 'stale_active_plan_advice',
-    plan_execution_projection: () => 'stale_active_plan_advice',
-    general_execution: () => 'stale_active_plan_advice',
-  }),
-  draft: Object.freeze({
-    embedded_approved_plan: () => decideDraftPlanAction('embedded_approved_plan'),
-    bug_fix_execution: () => decideDraftPlanAction('bug_fix_execution'),
-    plan_execution_projection: () =>
-      decideDraftPlanAction('plan_execution_projection'),
-    general_execution: () => decideDraftPlanAction('general_execution'),
-  }),
-  annotating: Object.freeze({
-    embedded_approved_plan: () => decideDraftPlanAction('embedded_approved_plan'),
-    bug_fix_execution: () => decideDraftPlanAction('bug_fix_execution'),
-    plan_execution_projection: () =>
-      decideDraftPlanAction('plan_execution_projection'),
-    general_execution: () => decideDraftPlanAction('general_execution'),
-  }),
-  approved: Object.freeze({
-    embedded_approved_plan: (state) =>
-      decideApprovedPlanAction('embedded_approved_plan', state),
-    bug_fix_execution: (state) => decideApprovedPlanAction('bug_fix_execution', state),
-    plan_execution_projection: (state) =>
-      decideApprovedPlanAction('plan_execution_projection', state),
-    general_execution: (state) => decideApprovedPlanAction('general_execution', state),
-  }),
-  executing: Object.freeze({
-    embedded_approved_plan: (state) =>
-      decideApprovedPlanAction('embedded_approved_plan', state),
-    bug_fix_execution: (state) => decideApprovedPlanAction('bug_fix_execution', state),
-    plan_execution_projection: (state) =>
-      decideApprovedPlanAction('plan_execution_projection', state),
-    general_execution: (state) => decideApprovedPlanAction('general_execution', state),
-  }),
-  unknown: Object.freeze({
-    embedded_approved_plan: () => 'allow',
-    bug_fix_execution: () => 'allow',
-    plan_execution_projection: () => 'allow',
-    general_execution: () => 'allow',
-  }),
-});
-
 function decideDoneAction(state: PromptGuardState): PromptGuardAction {
   if (
     state.plan === 'none' ||
@@ -234,5 +170,20 @@ export function decidePromptGuardAction(
   if (intent === 'done') return decideDoneAction(state);
   if (!isExecutionIntent(intent)) return 'allow';
   if (state.spec === 'missing') return 'spec_block';
-  return PROMPT_GUARD_EXECUTION_TABLE[state.plan][intent](state);
+
+  switch (state.plan) {
+    case 'none':
+      return decideNoActivePlanAction(intent, state);
+    case 'stale_marker':
+    case 'foreign_worktree':
+      return 'stale_active_plan_advice';
+    case 'draft':
+    case 'annotating':
+      return decideDraftPlanAction(intent);
+    case 'approved':
+    case 'executing':
+      return decideApprovedPlanAction(intent, state);
+    case 'unknown':
+      return 'allow';
+  }
 }

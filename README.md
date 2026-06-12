@@ -44,8 +44,8 @@ This repository now dogfoods its own tasks-first contract. It is both:
   `repo-harness-hook`; central packaged hooks are the default runtime, while
   this self-host repo can still pin `"hook_source": "repo"` for live hook
   development.
-- **Prompt decisions moved to TypeScript.** Prompt-text intent classification is
-  Unicode-aware in `src/cli/hook/prompt-intents.ts`, the shell hook receives one
+- **Prompt decisions moved to TypeScript.** Prompt-text trigger facts are
+  Unicode-aware in `src/cli/hook/prompt-triggers.ts`, the shell hook receives one
   verdict JSON line, and prompt-layer plan/spec/contract gates are advisory.
 - **Edit-layer enforcement.** Implementation writes are enforced at
   `pre-edit-guard.sh`, where the guard can key off path, active plan state, and
@@ -95,10 +95,10 @@ For `UserPromptSubmit`, the public adapter contract stays
 dispatches that route to `.ai/hooks/prompt-guard.sh`. The shell hook remains the
 repo-local adapter for host JSON parsing, workflow file reads, capture side
 effects, and host-safe stdout/stderr. It pipes the prompt text into
-`repo-harness-hook prompt-guard-decide`, where every prompt-text intent
-classifier (Unicode-aware, `src/cli/hook/prompt-intents.ts`) and the
-`intent x plan state` decision table live; the engine returns one verdict JSON
-line with the action, the classified intent facts, and derived strings. The
+`repo-harness-hook prompt-guard-decide`, where Unicode-aware explicit trigger
+facts live in `src/cli/hook/prompt-triggers.ts` and action routing is branch
+logic in `src/cli/hook/prompt-guard-decision.ts`; the engine returns one
+verdict JSON line with the action, trigger facts, and derived strings. The
 shell keeps no duplicate classifier or fallback decision table — when the
 engine is unreachable the prompt layer degrades to a one-shot advisory.
 
@@ -320,15 +320,15 @@ flowchart LR
   Adapter --> CLI["repo-harness-hook UserPromptSubmit --route default"]
   CLI --> Route["route registry"]
   Route --> Shell[".ai/hooks/prompt-guard.sh"]
-  Shell -->|"stdin {prompt}"| Decision["repo-harness-hook prompt-guard-decide<br/>TypeScript classifiers + decision table"]
-  Decision -->|"verdict JSON<br/>action + intent facts + derived"| Shell
+  Shell -->|"stdin {prompt}"| Decision["repo-harness-hook prompt-guard-decide<br/>explicit trigger facts + action routing"]
+  Decision -->|"verdict JSON<br/>action + trigger facts + derived"| Shell
   Shell --> RouteHint["Waza route hint<br/>explicit think/planning matched first → /think"]
   Shell --> HostOutput["host-safe advice, done gate, or capture output"]
 ```
 
-The shell layer owns filesystem authority and side effects. TypeScript owns all
-prompt-text classification plus the `intent x plan state` decision table.
-Plan-state blocks render at the PreToolUse edit layer, not here.
+The shell layer owns filesystem authority and side effects. TypeScript owns
+explicit prompt trigger extraction plus deterministic action routing. Plan-state
+blocks render at the PreToolUse edit layer, not here.
 
 ## Hook Failure Playbook
 

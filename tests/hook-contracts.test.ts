@@ -74,7 +74,10 @@ describe("Hook contracts", () => {
   });
 
   test("prompt-guard shell layer keeps route hints, gates, and rendering without emoji", () => {
-    const script = read("assets/hooks/prompt-guard.sh");
+    const entrypoint = read("assets/hooks/prompt-guard.sh");
+    const script = `${entrypoint}\n${read("assets/hooks/lib/prompt-guard-runtime.sh")}`;
+    expect(entrypoint.split("\n").length).toBeLessThanOrEqual(300);
+    expect(entrypoint).toContain("lib/prompt-guard-runtime.sh");
     expect(script).toContain("emit_waza_route_hint");
     expect(script).toContain("[WazaRoute]");
     expect(script).toContain("Waza /check");
@@ -107,23 +110,23 @@ describe("Hook contracts", () => {
     expect(script).not.toContain("📋");
     expect(script).not.toContain("🧠");
     expect(script).not.toContain("📎");
-    // The shell layer no longer owns intent regexes or a fallback decision
-    // table; classification lives in the TypeScript engine.
+    // The shell entrypoint no longer owns prompt trigger rules or a fallback
+    // decision table; trigger facts live in the TypeScript engine.
     expect(script).not.toContain("is_implement_intent");
     expect(script).not.toContain("prompt_guard_decide_fallback");
   });
 
-  test("prompt intent classifier owns Chinese bug/feature keywords with Unicode semantics", () => {
-    const intents = read("src/cli/hook/prompt-intents.ts");
-    expect(intents).toContain("修复");
-    expect(intents).toContain("修bug");
-    expect(intents).toContain("新功能");
-    expect(intents).toContain("实现");
-    expect(intents).toContain("执行");
-    expect(intents).toContain("收工");
-    expect(intents).toContain("完成");
-    expect(intents).toContain("下一刀");
-    expect(intents).toContain("\\p{P}");
+  test("prompt trigger facts own Chinese explicit keywords with Unicode semantics", () => {
+    const triggers = read("src/cli/hook/prompt-triggers.ts");
+    expect(triggers).toContain("修复");
+    expect(triggers).toContain("修bug");
+    expect(triggers).toContain("新功能");
+    expect(triggers).toContain("实现");
+    expect(triggers).toContain("执行");
+    expect(triggers).toContain("收工");
+    expect(triggers).toContain("完成");
+    expect(triggers).toContain("下一刀");
+    expect(triggers).toContain("\\p{P}");
   });
 
   test("session-start should gate the Codex-host cross-review availability note", () => {

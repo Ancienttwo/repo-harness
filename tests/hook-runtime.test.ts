@@ -3695,6 +3695,8 @@ describe("Hook runtime behavior", () => {
           "> **Status**: Pending",
           "",
           "```yaml",
+          "allowed_paths:",
+          "  - src/demo.ts",
           "exit_criteria:",
           "  files_exist:",
           "    - src/demo.ts",

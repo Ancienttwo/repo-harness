@@ -280,7 +280,7 @@ describe("Bootstrap Script Contracts", () => {
   });
 
   test("prompt-guard should monitor tasks-first files", () => {
-    const content = read("assets/hooks/prompt-guard.sh");
+    const content = `${read("assets/hooks/prompt-guard.sh")}\n${read("assets/hooks/lib/prompt-guard-runtime.sh")}`;
     const workflowState = read("assets/hooks/lib/workflow-state.sh");
 
     expect(content).toContain("tasks/todo.md");

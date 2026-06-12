@@ -5,7 +5,6 @@ import {
   classifyPromptGuardIntent,
   decidePromptGuardAction,
   PROMPT_GUARD_EXECUTION_INTENTS,
-  PROMPT_GUARD_EXECUTION_TABLE,
   PROMPT_GUARD_PLAN_STATES,
   type PromptGuardIntentFacts,
   type PromptGuardState,
@@ -44,15 +43,15 @@ function state(overrides: Partial<PromptGuardState>): PromptGuardState {
 }
 
 describe('prompt-guard decision engine', () => {
-  test('execution table covers every execution intent and plan state', () => {
-    expect(Object.keys(PROMPT_GUARD_EXECUTION_TABLE)).toEqual([
-      ...PROMPT_GUARD_PLAN_STATES,
+  test('explicit execution intents and plan states stay enumerated', () => {
+    expect(PROMPT_GUARD_EXECUTION_INTENTS).toEqual([
+      'embedded_approved_plan',
+      'bug_fix_execution',
+      'plan_execution_projection',
+      'general_execution',
     ]);
-    for (const planState of PROMPT_GUARD_PLAN_STATES) {
-      expect(Object.keys(PROMPT_GUARD_EXECUTION_TABLE[planState])).toEqual([
-        ...PROMPT_GUARD_EXECUTION_INTENTS,
-      ]);
-    }
+    expect(PROMPT_GUARD_PLAN_STATES).toContain('approved');
+    expect(PROMPT_GUARD_PLAN_STATES).toContain('executing');
   });
 
   test('classifies explicit plan projection separately from generic execution', () => {

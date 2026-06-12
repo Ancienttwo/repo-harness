@@ -56,6 +56,7 @@ describe("create-project-dirs scaffold parity", () => {
         "./.ai/hooks/anti-simplification.sh",
         "./.ai/hooks/changelog-guard.sh",
         "./.ai/hooks/hook-input.sh",
+        "./.ai/hooks/lib/prompt-guard-runtime.sh",
         "./.ai/hooks/lib/session-state.sh",
         "./.ai/hooks/lib/workflow-state.sh",
         "./.ai/hooks/post-bash.sh",

@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-06-12T05:38:13+0800 -->
+<!-- updated_at: 2026-06-12T11:46:24+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-06-12T05:38:13+0800
-> **Source Branch**: codex/loop-engine-06-heartbeat-v0
-> **Source Commit**: 2ff05b6
+> **Updated At**: 2026-06-12T11:46:24+0800
+> **Source Branch**: codex/loop-engine-07-cutover-delete-classifier
+> **Source Commit**: 47d3b34
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -51,20 +51,36 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 11 changed/untracked path(s)
+- Summary: 27 changed/untracked path(s)
 
 ```
- M .gitignore
- M assets/templates/helpers/maintenance-triage.sh
- M scripts/maintenance-triage.sh
-?? assets/reference-configs/heartbeat.md
-?? docs/reference-configs/heartbeat.md
-?? plans/archive/plan-20260612-0528-loop-engine-06-heartbeat-v0.md
-?? tasks/archive/notes-20260612-0538-loop-engine-06-heartbeat-v0.md
-?? tasks/archive/todo-20260612-0538-loop-engine-06-heartbeat-v0.md
-?? tasks/contracts/20260612-0528-loop-engine-06-heartbeat-v0.contract.md
-?? tasks/reviews/20260612-0528-loop-engine-06-heartbeat-v0.review.md
-?? tests/unit/loop-engine-06-heartbeat-v0.test.ts
+A  .ai/hooks/lib/prompt-guard-runtime.sh
+M  .ai/hooks/prompt-guard.sh
+M  README.md
+M  README.zh-CN.md
+A  assets/hooks/lib/prompt-guard-runtime.sh
+M  assets/hooks/prompt-guard.sh
+M  assets/reference-configs/hook-operations.md
+M  docs/reference-configs/hook-operations.md
+AD plans/plan-20260612-0539-loop-engine-07-cutover-delete-classifier.md
+M  src/cli/commands/prompt-guard-decision.ts
+M  src/cli/hook/prompt-guard-decision.ts
+R  src/cli/hook/prompt-intents.ts -> src/cli/hook/prompt-triggers.ts
+A  tasks/contracts/20260612-0539-loop-engine-07-cutover-delete-classifier.contract.md
+M  tasks/lessons.md
+AD tasks/notes/20260612-0539-loop-engine-07-cutover-delete-classifier.notes.md
+A  tasks/reviews/20260612-0539-loop-engine-07-cutover-delete-classifier.review.md
+MM tasks/todo.md
+M  tests/bootstrap-files.test.ts
+M  tests/cli/prompt-guard-decision.test.ts
+R  tests/cli/prompt-intents.test.ts -> tests/cli/prompt-triggers.test.ts
+M  tests/hook-contracts.test.ts
+M  tests/hook-runtime.test.ts
+M  tests/scaffold-parity.test.ts
+A  tests/unit/loop-engine-07-cutover-delete-classifier.test.ts
+?? plans/archive/plan-20260612-0539-loop-engine-07-cutover-delete-classifier.md
+?? tasks/archive/notes-20260612-1146-loop-engine-07-cutover-delete-classifier.md
+?? tasks/archive/todo-20260612-1146-loop-engine-07-cutover-delete-classifier.md
 ```
 
 ## Source Artifacts

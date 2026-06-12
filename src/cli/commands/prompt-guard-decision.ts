@@ -41,7 +41,7 @@ import {
   shouldEmitBddFeatureAdvice,
   shouldEmitTddBugFixAdvice,
   type PromptIntentContext,
-} from '../hook/prompt-intents';
+} from '../hook/prompt-triggers';
 
 function envBool(name: string): boolean {
   return process.env[name] === '1' || process.env[name] === 'true';
@@ -151,10 +151,10 @@ function classifyFromContext(ctx: PromptIntentContext): PromptGuardIntentFacts {
 }
 
 /**
- * Full prompt-based decision: classify intents from the prompt text, combine
+ * Full prompt-based decision: derive explicit trigger facts from prompt text, combine
  * with the workflow state from PROMPT_GUARD_*_STATE env vars, and return the
  * verdict the shell layer renders. The shell keeps filesystem authority and
- * side effects; this owns every prompt-text classifier.
+ * side effects; this owns deterministic prompt trigger extraction.
  */
 export function runPromptGuardVerdictFromPrompt(prompt: string): PromptGuardVerdict {
   const state = readStateFromEnv();
