@@ -5,7 +5,7 @@
 > **Contract**: tasks/contracts/20260612-0350-loop-engine-02-routing-ab-eval.contract.md
 > **Notes File**: tasks/notes/20260612-0350-loop-engine-02-routing-ab-eval.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-06-12 04:26
+> **Last Updated**: 2026-06-12 12:13
 > **Recommendation**: pass
 
 ## Mode Evidence
@@ -16,7 +16,7 @@
 
 ## Verification Evidence
 
-- Waza `/check` run: not run yet.
+- Waza `/check` run: skipped in this Goal per owner instruction to skip Claude verification; not recorded as passed.
 - Commands run:
   - `bun test --timeout 20000 tests/route-nl-vs-ts-eval.test.ts tests/evals-contract.test.ts tests/run-skill-evals.test.ts`
   - `bun run benchmark:skills -- --eval route-nl-vs-ts --agent codex --profile with_skill --iteration route-nl-vs-ts-codex`
