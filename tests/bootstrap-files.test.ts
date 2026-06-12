@@ -362,6 +362,7 @@ describe("Bootstrap Script Contracts", () => {
     expect(codexHooks).toContain(".ai/hooks/run-hook.sh");
     expect(settings).toContain("worktree-guard.sh");
     expect(settings).toContain("pre-edit-guard.sh");
+    expect(settings).toContain("subagent-return-channel-guard.sh");
     expect(settings).toContain("post-edit-guard.sh");
     expect(settings).toContain("prompt-guard.sh");
     expect(settings).not.toContain("autoresearch-advisory.sh");

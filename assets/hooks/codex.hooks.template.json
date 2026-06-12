@@ -15,6 +15,12 @@
           { "type": "command", "command": "repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_HOST=codex HOOK_REPO_ROOT=\"$repo\" bash \"$repo/.ai/hooks/run-hook.sh\" worktree-guard.sh", "timeout": 30 },
           { "type": "command", "command": "repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_HOST=codex HOOK_REPO_ROOT=\"$repo\" bash \"$repo/.ai/hooks/run-hook.sh\" pre-edit-guard.sh", "timeout": 30 }
         ]
+      },
+      {
+        "matcher": "Task|Agent|SendUserMessage",
+        "hooks": [
+          { "type": "command", "command": "repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_HOST=codex HOOK_REPO_ROOT=\"$repo\" bash \"$repo/.ai/hooks/run-hook.sh\" subagent-return-channel-guard.sh", "timeout": 30 }
+        ]
       }
     ],
     "PostToolUse": [

@@ -9,9 +9,9 @@ import {
 } from '../../src/cli/hook/route-registry';
 
 describe('route registry (Phase 1B Z design)', () => {
-  test('ROUTES is frozen and has exactly 7 routes', () => {
+  test('ROUTES is frozen and has exactly 8 routes', () => {
     expect(Object.isFrozen(ROUTES)).toBe(true);
-    expect(ROUTES.length).toBe(7);
+    expect(ROUTES.length).toBe(8);
   });
 
   test('PostToolUse has 3 matcher-disjoint routes (Edit|Write / Bash / undefined)', () => {
@@ -20,16 +20,19 @@ describe('route registry (Phase 1B Z design)', () => {
     expect(postRoutes.map((r) => r.matcher)).toEqual(['Edit|Write', 'Bash', undefined]);
   });
 
-  test('PreToolUse has 1 route gated by Edit|Write matcher (no PostToolUse cross-fire)', () => {
+  test('PreToolUse has edit and subagent routes with matcher isolation', () => {
     const preRoutes = listRoutesForEvent('PreToolUse');
-    expect(preRoutes.length).toBe(1);
+    expect(preRoutes.length).toBe(2);
     expect(preRoutes[0].matcher).toBe('Edit|Write');
     expect(preRoutes[0].routeId).toBe('edit');
+    expect(preRoutes[1].matcher).toBe('Task|Agent|SendUserMessage');
+    expect(preRoutes[1].routeId).toBe('subagent');
   });
 
   test('getRoute returns the expected ordered scripts for each route', () => {
     expect(getRoute('SessionStart', 'default')?.scripts).toEqual(['session-start-context.sh', 'security-sentinel.sh']);
     expect(getRoute('PreToolUse', 'edit')?.scripts).toEqual(['worktree-guard.sh', 'pre-edit-guard.sh']);
+    expect(getRoute('PreToolUse', 'subagent')?.scripts).toEqual(['subagent-return-channel-guard.sh']);
     expect(getRoute('PostToolUse', 'edit')?.scripts).toEqual(['post-edit-guard.sh']);
     expect(getRoute('PostToolUse', 'bash')?.scripts).toEqual(['post-bash.sh']);
     expect(getRoute('PostToolUse', 'always')?.scripts).toEqual(['post-tool-observer.sh']);
@@ -41,6 +44,7 @@ describe('route registry (Phase 1B Z design)', () => {
     expect(getRoute('Stop', 'edit')).toBeUndefined();
     expect(getRoute('SessionStart', 'bash')).toBeUndefined();
     expect(getRoute('PreToolUse', 'always')).toBeUndefined();
+    expect(getRoute('PostToolUse', 'subagent')).toBeUndefined();
   });
 
   test('allEvents returns the 5 supported events in canonical order', () => {
@@ -59,6 +63,7 @@ describe('route registry (Phase 1B Z design)', () => {
       'security-sentinel.sh',
       'worktree-guard.sh',
       'pre-edit-guard.sh',
+      'subagent-return-channel-guard.sh',
       'post-edit-guard.sh',
       'post-bash.sh',
       'post-tool-observer.sh',

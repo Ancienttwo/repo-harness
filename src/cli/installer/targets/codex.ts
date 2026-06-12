@@ -1,7 +1,7 @@
 /**
  * Codex CLI hook-runtime target.
  *
- * Writes 7 managed adapter entries to ~/.codex/hooks.json (Phase 0 verified
+ * Writes 8 managed adapter entries to ~/.codex/hooks.json (Phase 0 verified
  * Codex 0.130.0+ supports user-level hooks at this path; trust prompt fires
  * once per new (command, key) tuple, byte-identical re-runs hash-skip).
  *

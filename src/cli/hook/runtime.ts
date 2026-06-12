@@ -145,6 +145,7 @@ export function resolveHooksDir(
 function isSoftMissingRoute(event: HookEvent, routeId: RouteId): boolean {
   return (
     (event === 'SessionStart' && routeId === 'default') ||
+    (event === 'PreToolUse' && routeId === 'subagent') ||
     (event === 'Stop' && routeId === 'default') ||
     (event === 'PostToolUse' && routeId === 'always')
   );

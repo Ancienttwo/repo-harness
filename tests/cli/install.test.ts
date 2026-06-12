@@ -26,7 +26,7 @@ describe('install command (Phase 1B)', () => {
     });
   });
 
-  test('codex --location global creates ~/.codex/hooks.json with 7 matcher-grouped entries', () => {
+  test('codex --location global creates ~/.codex/hooks.json with 8 matcher-grouped entries', () => {
     withTempHome((home) => {
       const result = runInstall({ target: 'codex', location: 'global' });
       expect(result.exitCode).toBe(0);
@@ -38,7 +38,7 @@ describe('install command (Phase 1B)', () => {
       const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
       const entries = data.hooks;
       const total = Object.values(entries as Record<string, unknown[]>).flat().length;
-      expect(total).toBe(7);
+      expect(total).toBe(8);
 
       // PostToolUse must have 3 matcher-disjoint entries
       expect((entries.PostToolUse as { matcher?: string }[]).map((e) => e.matcher)).toEqual([
@@ -46,8 +46,11 @@ describe('install command (Phase 1B)', () => {
         'Bash',
         undefined,
       ]);
-      // PreToolUse must have 1 entry with Edit|Write matcher
-      expect((entries.PreToolUse as { matcher?: string }[])[0].matcher).toBe('Edit|Write');
+      // PreToolUse must have isolated edit and subagent entries
+      expect((entries.PreToolUse as { matcher?: string }[]).map((e) => e.matcher)).toEqual([
+        'Edit|Write',
+        'Task|Agent|SendUserMessage',
+      ]);
       // SessionStart / Stop / UserPromptSubmit must have 1 matcher-less entry each
       expect(entries.SessionStart.length).toBe(1);
       expect(entries.Stop.length).toBe(1);
@@ -120,7 +123,7 @@ describe('install command (Phase 1B)', () => {
         fs.readFileSync(path.join(home, '.claude/settings.json'), 'utf-8'),
       );
       const total = Object.values(data.hooks as Record<string, unknown[]>).flat().length;
-      expect(total).toBe(7);
+      expect(total).toBe(8);
       for (const entries of Object.values(data.hooks) as { hooks: { command: string; timeout?: number }[] }[][]) {
         for (const entry of entries) {
           expect(entry.hooks[0].command).toContain('HOOK_HOST=claude');
@@ -145,10 +148,11 @@ describe('install command (Phase 1B)', () => {
       runInstall({ target: 'claude', location: 'global' });
       const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
       const pre = data.hooks.PreToolUse as { hooks: { command: string }[] }[];
-      // 1 sibling + 1 managed
-      expect(pre.length).toBe(2);
+      // 1 sibling + 2 managed
+      expect(pre.length).toBe(3);
       expect(pre[0].hooks[0].command).toBe('rtk hook claude');
       expect(pre[1].hooks[0].command).toContain('repo-harness hook PreToolUse');
+      expect(pre[2].hooks[0].command).toContain('repo-harness hook PreToolUse');
     });
   });
 

@@ -77,6 +77,19 @@ describe("Hook contracts", () => {
     expect(script).not.toContain("/compact");
   });
 
+  test("subagent return-channel guard should cover spawn prompts and subagent SendUserMessage", () => {
+    const script = read("assets/hooks/subagent-return-channel-guard.sh");
+    expect(script).toContain("Task|Agent|SendUserMessage");
+    expect(script).toContain("hook-input.sh");
+    expect(script).toContain("[repo-harness:return-channel]");
+    expect(script).toContain("updatedInput");
+    expect(script).toContain("permissionDecision: \"deny\"");
+    expect(script).toContain(".agent_id");
+    expect(script).toContain("/subagents/agent-");
+    expect(script).not.toContain("claude-opus");
+    expect(script).not.toContain("model");
+  });
+
   test("prompt-guard shell layer keeps route hints, gates, and rendering without emoji", () => {
     const script = read("assets/hooks/prompt-guard.sh");
     expect(script).toContain("emit_waza_route_hint");
@@ -228,6 +241,10 @@ describe("Hook contracts", () => {
     expect(codexHooks).toContain("session-start-context.sh");
     expect(settings).toContain("pre-edit-guard.sh");
     expect(codexHooks).toContain("pre-edit-guard.sh");
+    expect(settings).toContain("subagent-return-channel-guard.sh");
+    expect(codexHooks).toContain("subagent-return-channel-guard.sh");
+    expect(settings).toContain("Task|Agent|SendUserMessage");
+    expect(codexHooks).toContain("Task|Agent|SendUserMessage");
     expect(settings).toContain("post-edit-guard.sh");
     expect(codexHooks).toContain("post-edit-guard.sh");
     expect(settings).not.toContain("autoresearch-advisory.sh");

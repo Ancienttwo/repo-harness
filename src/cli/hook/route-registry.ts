@@ -25,7 +25,7 @@ export type HookEvent =
   | 'Stop';
 
 /** Stable route id within an event. Public contract — never rename without coordinated adapter migration. */
-export type RouteId = 'default' | 'edit' | 'bash' | 'always';
+export type RouteId = 'default' | 'edit' | 'subagent' | 'bash' | 'always';
 
 export interface Route {
   readonly event: HookEvent;
@@ -50,6 +50,12 @@ export const ROUTES: readonly Route[] = Object.freeze([
     routeId: 'edit' as const,
     matcher: 'Edit|Write',
     scripts: Object.freeze(['worktree-guard.sh', 'pre-edit-guard.sh']),
+  }),
+  Object.freeze({
+    event: 'PreToolUse' as const,
+    routeId: 'subagent' as const,
+    matcher: 'Task|Agent|SendUserMessage',
+    scripts: Object.freeze(['subagent-return-channel-guard.sh']),
   }),
   Object.freeze({
     event: 'PostToolUse' as const,

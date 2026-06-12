@@ -11,6 +11,12 @@
 - Where to apply next time:
 
 ## Entries
+- Date: 2026-06-13
+- Triggered by correction: Claude Explore subagents delivered 13k/17k reports through `SendUserMessage`, while the parent Agent tool result received only a short transition/final text and looked empty/truncated
+- Mistake pattern: treating a user-visible subagent message as equivalent to the subagent's returned final text
+- Prevention rule: spawned subagent reports must return through final text; add the return-channel contract at `Task|Agent` spawn time and deny subagent-scoped `SendUserMessage` delivery attempts before they bypass the caller
+- Where to apply next time: `src/cli/hook/route-registry.ts`, `assets/hooks/subagent-return-channel-guard.sh`, `.ai/hooks/subagent-return-channel-guard.sh`, and any future agent/delegation adapter that exposes an out-of-band user-message tool
+
 - Date: 2026-06-12
 - Triggered by correction: a freshly captured Approved program-level plan (architecture-doc-truth-loop) grabbed `.ai/harness/active-plan` in the shared primary tree; a concurrent session's verification-blocker cleanup saw "Approved active plan without task contract", projected it to todo, and archived plan+todo within minutes
 - Mistake pattern: letting a program-layer artifact (sprint-shaped plan that never gets its own contract) occupy the active-plan slot, which the harness reserves for contract-backed execution plans; concurrent sessions then legitimately reconcile it away

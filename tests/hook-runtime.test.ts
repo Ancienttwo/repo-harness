@@ -602,6 +602,71 @@ describe("Hook runtime behavior", () => {
     }
   });
 
+  test("subagent-return-channel-guard: appends spawn contract and blocks subagent SendUserMessage", () => {
+    const cwd = tmpWorkspace("subagent-return-channel-guard");
+    try {
+      installHooks(cwd);
+
+      const spawnRes = runHook("subagent-return-channel-guard.sh", cwd, {
+        stdin: JSON.stringify({
+          hook_event_name: "PreToolUse",
+          tool_name: "Task",
+          tool_input: {
+            description: "Explore repo",
+            prompt: "Write the report.",
+          },
+        }),
+      });
+      expect(spawnRes.status).toBe(0);
+      const spawnOutput = JSON.parse(spawnRes.stdout);
+      expect(spawnOutput.hookSpecificOutput.permissionDecision).toBe("allow");
+      expect(spawnOutput.hookSpecificOutput.updatedInput.prompt).toContain("[repo-harness:return-channel]");
+      expect(spawnOutput.hookSpecificOutput.updatedInput.prompt).toContain("final text");
+      expect(spawnOutput.hookSpecificOutput.updatedInput.description).toBe("Explore repo");
+
+      const idempotentRes = runHook("subagent-return-channel-guard.sh", cwd, {
+        stdin: JSON.stringify({
+          hook_event_name: "PreToolUse",
+          tool_name: "Agent",
+          tool_input: {
+            prompt: `${spawnOutput.hookSpecificOutput.updatedInput.prompt}`,
+          },
+        }),
+      });
+      expect(idempotentRes.status).toBe(0);
+      expect(idempotentRes.stdout).toBe("");
+
+      const subagentSendRes = runHook("subagent-return-channel-guard.sh", cwd, {
+        stdin: JSON.stringify({
+          hook_event_name: "PreToolUse",
+          tool_name: "SendUserMessage",
+          agent_id: "agent-a76667329ee54b65a",
+          tool_input: {
+            message: "## Full report",
+          },
+        }),
+      });
+      expect(subagentSendRes.status).toBe(0);
+      const denyOutput = JSON.parse(subagentSendRes.stdout);
+      expect(denyOutput.hookSpecificOutput.permissionDecision).toBe("deny");
+      expect(denyOutput.hookSpecificOutput.permissionDecisionReason).toContain("does not reach the caller Agent tool result");
+
+      const mainLoopSendRes = runHook("subagent-return-channel-guard.sh", cwd, {
+        stdin: JSON.stringify({
+          hook_event_name: "PreToolUse",
+          tool_name: "SendUserMessage",
+          tool_input: {
+            message: "Main loop delivery",
+          },
+        }),
+      });
+      expect(mainLoopSendRes.status).toBe(0);
+      expect(mainLoopSendRes.stdout).toBe("");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
 
   test("post-edit-guard: detects apps/*/src direct files and wrangler variants", () => {
     const cwd = tmpWorkspace("doc-drift");

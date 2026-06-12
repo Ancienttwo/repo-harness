@@ -1,7 +1,7 @@
 /**
  * Claude Code hook-runtime target.
  *
- * Writes 7 managed adapter entries under the `hooks` field of either
+ * Writes 8 managed adapter entries under the `hooks` field of either
  * ~/.claude/settings.json (--location global) or .claude/settings.json
  * (--location local, project-scoped). Phase 0 verified Claude auto-reloads
  * settings.json via ConfigChange seconds after a write, no restart needed.

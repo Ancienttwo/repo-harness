@@ -248,6 +248,22 @@ describe('hook command (Phase 1B)', () => {
     });
   });
 
+  test('opt-in + missing subagent guard script on PreToolUse.subagent → soft-skips, exits 0', () => {
+    withTempRepo({ optIn: true }, (repoRoot) => {
+      const result = runHook({
+        event: 'PreToolUse',
+        routeId: 'subagent',
+        cwd: repoRoot,
+        stdio: 'ignore',
+      });
+      expect(result.exitCode).toBe(0);
+      expect(result.reason).toBe('ok');
+      expect(result.scriptsRun).toEqual([]);
+      expect(result.skippedScripts).toEqual(['subagent-return-channel-guard.sh']);
+      expect(result.failedScript).toBeUndefined();
+    });
+  });
+
   test('PostToolUse.always missing observer emits sync hint instead of hard error', () => {
     withTempRepo({ optIn: true }, (repoRoot) => {
       const res = spawnSync(

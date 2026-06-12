@@ -36,6 +36,14 @@ expectations -> warning or block is returned to the agent.
 After adapter configuration, Codex still requires the user to trust
 `~/.codex/hooks.json` in Codex Settings before that route executes.
 
+Subagent return route: Claude `PreToolUse` for `Task|Agent|SendUserMessage`
+uses the `subagent` route and runs `subagent-return-channel-guard.sh`. For
+spawns, the guard appends a return-channel contract to the prompt through
+`updatedInput`. For spawned subagent `SendUserMessage` calls, the guard denies
+delivery because subagent final text is the only payload returned to the caller.
+Missing copies of this route are soft-skipped so older repo-pinned hook runtimes
+do not break subagent creation before a hook refresh.
+
 Post-edit route: edit/write -> `post-edit-guard.sh` -> architecture-sensitive
 paths call `architecture-queue.sh` -> capability resolver binds the changed file
 to a capability -> pending request is written under `docs/architecture/requests`
@@ -103,6 +111,9 @@ flowchart TD
     PreEdit --> Worktree["worktree-guard.sh"]
     Worktree --> PreGuard["pre-edit-guard.sh"]
 
+    Route --> PreSubagent["PreToolUse.subagent<br/>matcher: Task|Agent|SendUserMessage"]
+    PreSubagent --> SubagentGuard["subagent-return-channel-guard.sh<br/>final-text return-channel guard"]
+
     Route --> PostEdit["PostToolUse.edit<br/>matcher: Edit|Write"]
     PostEdit --> PostGuard["post-edit-guard.sh"]
 
@@ -129,6 +140,7 @@ flowchart TD
   SSC -. uses .-> Workflow
   PreGuard -. uses .-> Input
   PreGuard -. uses .-> Workflow
+  SubagentGuard -. uses .-> Input
   PostGuard -. uses .-> Input
   PostGuard -. uses .-> Workflow
   PostBash -. uses .-> Input
@@ -145,6 +157,7 @@ flowchart TD
     SSC --> AddCtx["SessionStart additionalContext JSON"]
     SecuritySentinel --> SecurityCtx["security scan -> .ai/harness/security/latest.json<br/>optional SessionStart reminder"]
     PreGuard --> Block["guards: _ref, _ops, deploy, scope, plan transition, test/spec-first"]
+    SubagentGuard --> ReturnChannel["Task/Agent prompt contract<br/>subagent SendUserMessage deny"]
     PostGuard --> Verify["verify-contract --quiet -> .ai/harness/checks/latest.json"]
     PostGuard --> Drift["architecture-queue.sh -> docs/architecture/requests + events.jsonl"]
     Drift --> ContextSync["context-contract-sync or capability-context request"]
