@@ -55,7 +55,7 @@ export function buildProgram(): Command {
     .option('--no-cli', 'Skip installing the repo-harness CLI globally')
     .option('--no-sync-skill', 'Skip refreshing repo-harness skill aliases under host skill roots')
     .option('--no-hooks', 'Skip global hook adapter installation')
-    .option('--no-external-skills', 'Skip Waza and Mermaid skill bootstrap')
+    .option('--no-external-skills', 'Skip Waza, Mermaid, and cross-review (codex-review/claude-review) skill bootstrap')
     .option('--no-codegraph', 'Skip CodeGraph CLI/MCP configuration')
     .option('--brain-root <path>', 'Brain vault root to persist for repo-harness brain commands')
     .option('--json', 'Output JSON instead of human-readable text')

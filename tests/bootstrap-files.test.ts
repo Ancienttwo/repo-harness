@@ -342,6 +342,8 @@ describe("Bootstrap Script Contracts", () => {
     expect(claudeReview).toContain("BASE=origin/main");
     expect(claudeReview).toContain("else BASE=HEAD");
     expect(claudeReview).toContain("Review the combined branch, staged, unstaged, and untracked changes");
+    expect(claudeReview).toContain("run_with_optional_timeout claude -p");
+    expect(claudeReview).not.toContain("${TO:+$TO 330}");
 
     expect(codexReview).toContain("committed branch diff");
     expect(codexReview).toContain("git diff --cached");
@@ -350,6 +352,8 @@ describe("Bootstrap Script Contracts", () => {
     expect(codexReview).toContain("git diff --no-index -- /dev/null <file>");
     expect(codexReview).toContain("BASE=origin/main");
     expect(codexReview).toContain("else BASE=HEAD");
+    expect(codexReview).toContain("run_with_optional_timeout codex exec");
+    expect(codexReview).not.toContain("${TO:+$TO 330}");
   });
 
   test("hook template should reference existing local hook scripts", () => {

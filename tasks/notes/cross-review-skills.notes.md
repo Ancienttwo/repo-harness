@@ -47,6 +47,18 @@ Plan: `~/.claude/plans/vibe-coding-claude-code-codex-shimmying-balloon.md`.
   classifier with minimal new surface. The edit-driven script adds a new route script,
   assets↔.ai parity, and a new hook body — tracked as a follow-up, not shipped here.
 
+## 2026-06-13 repair note
+
+- **Root cause repaired.** Codex could see the repo-local `claude-review` source
+  through session context, but the `repo-harness init` global runtime path did not
+  install the host-aware cross-review skill into `~/.codex/skills`. The update path
+  already did; init now calls the same `syncCrossReviewSkills` helper so
+  `claude-review` is present for Codex and `codex-review` remains Claude-only.
+- **Shell portability repaired.** Both cross-review skills now call peer CLIs through
+  `run_with_optional_timeout` instead of `${TO:+$TO 330}`. The old expansion was
+  safe in bash but fails under zsh by treating `"/path/to/gtimeout 330"` as one
+  command name; the helper passes timeout and command as separate argv entries.
+
 ## Verification
 
 - `bun test tests/cli/init.test.ts tests/hook-runtime.test.ts tests/hook-contracts.test.ts`

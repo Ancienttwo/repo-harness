@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "fs";
 import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
 import { configureBrainRoot, defaultBrainRootChoice, expandHomePath } from "./brain-root";
+import { syncCrossReviewSkills } from "./init";
 import { runInstall, type InstallTargetSpec } from "./install";
 import { configureCodegraph } from "../tools/codegraph";
 
@@ -261,9 +262,11 @@ export function runGlobalRuntimeSetup(opts: GlobalRuntimeOptions = {}): GlobalRu
   if (opts.externalSkills !== false) {
     steps.push(installWazaSkills(sourceRoot, target, env));
     steps.push(installMermaidSkill(sourceRoot, target, env));
+    steps.push(...syncCrossReviewSkills(sourceRoot, target, env));
   } else {
     steps.push({ step: "configure Waza skills", status: "skipped", detail: "disabled" });
     steps.push({ step: "configure Mermaid skill", status: "skipped", detail: "disabled" });
+    steps.push({ step: "cross-review skills", status: "skipped", detail: "disabled" });
   }
 
   steps.push(configureBrain(opts.brainRoot, env));

@@ -15,7 +15,11 @@ function writeExecutable(filePath: string, content: string): void {
 
 function setupFakeSource(root: string): void {
   mkdirSync(join(root, 'scripts'), { recursive: true });
+  mkdirSync(join(root, 'assets', 'skills', 'codex-review'), { recursive: true });
+  mkdirSync(join(root, 'assets', 'skills', 'claude-review'), { recursive: true });
   writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'repo-harness', version: '9.9.9' }, null, 2));
+  writeFileSync(join(root, 'assets', 'skills', 'codex-review', 'SKILL.md'), 'codex-review\n');
+  writeFileSync(join(root, 'assets', 'skills', 'claude-review', 'SKILL.md'), 'claude-review\n');
   writeExecutable(
     join(root, 'scripts', 'sync-codex-installed-copies.sh'),
     '#!/bin/bash\nset -euo pipefail\necho "sync runtime link=${AGENTIC_DEV_LINK_INSTALLED_COPIES:-unset}"\n',
@@ -103,6 +107,8 @@ describe('init command global runtime bootstrap', () => {
       expect(readFileSync(npxLog, 'utf-8')).toContain(
         '-y skills add BfdCampos/dotfiles -g -a codex -s mermaid -y',
       );
+      expect(existsSync(join(home, '.codex', 'skills', 'claude-review', 'SKILL.md'))).toBe(true);
+      expect(existsSync(join(home, '.claude', 'skills', 'codex-review', 'SKILL.md'))).toBe(false);
       expect(readFileSync(npxLog, 'utf-8')).not.toContain('feature-dev');
       expect(JSON.parse(readFileSync(join(home, '.repo-harness', 'config.json'), 'utf-8')).brainRoot).toBe(
         join(home, 'Documents', 'brain'),
