@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-06-12T12:03:01+0800 -->
+<!-- updated_at: 2026-06-12T12:38:42+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-06-12T12:03:01+0800
-> **Source Branch**: codex/loop-engine-03-no-go-router-schema-repair
-> **Source Commit**: 840b690
+> **Updated At**: 2026-06-12T12:38:42+0800
+> **Source Branch**: codex/loop-engine-04-contract-kappa-fields-clean
+> **Source Commit**: a0fc84c
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -33,8 +33,6 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 - /Users/chris/Projects/agentic-dev-wt-hook-runtime-drift-policy: plans/plan-20260610-1113-hook-runtime-drift-policy.md
 - /Users/chris/Projects/agentic-dev-wt-hook-runtime-drift-policy: active-worktree owner -> /Users/chris/Projects/agentic-dev-wt-hook-runtime-drift-policy
-- /Users/chris/Projects/agentic-dev-wt-loop-engine-02-routing-ab-eval: plans/plan-20260612-1146-loop-engine-08-hook-diet-stretch.md
-- /Users/chris/Projects/agentic-dev-wt-loop-engine-02-routing-ab-eval: active-worktree owner -> /Users/chris/Projects/agentic-dev-wt-loop-engine-02-routing-ab-eval
 - /Users/chris/Projects/agentic-dev-wt-wt-continuation-for-architecture-doc-loop: plans/plan-20260612-0314-wt-continuation-for-architecture-doc-loop.md
 - /Users/chris/Projects/agentic-dev-wt-wt-continuation-for-architecture-doc-loop: active-worktree owner -> /Users/chris/Projects/agentic-dev-wt-wt-continuation-for-architecture-doc-loop
 ## Active Sprint
@@ -53,19 +51,25 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 10 changed/untracked path(s)
+- Summary: 16 changed/untracked path(s)
 
 ```
- M docs/reference-configs/loop-engine-nl-decision-table.md
- M evals/benchmark.md
- M evals/evals.json
- M scripts/route-nl-vs-ts-eval.ts
- M tests/route-nl-vs-ts-eval.test.ts
-?? plans/archive/plan-20260612-1151-loop-engine-03-no-go-router-schema-repair.md
-?? tasks/archive/notes-20260612-1203-loop-engine-03-no-go-router-schema-repair.md
-?? tasks/archive/todo-20260612-1203-loop-engine-03-no-go-router-schema-repair.md
-?? tasks/contracts/20260612-1151-loop-engine-03-no-go-router-schema-repair.contract.md
-?? tasks/reviews/20260612-1151-loop-engine-03-no-go-router-schema-repair.review.md
+ M .claude/templates/contract.template.md
+ M assets/reference-configs/sprint-contracts.md
+ M assets/templates/contract.template.md
+ M assets/templates/helpers/ensure-task-workflow.sh
+ M assets/templates/helpers/plan-to-todo.sh
+ M docs/reference-configs/sprint-contracts.md
+ M scripts/ensure-task-workflow.sh
+ M scripts/lib/project-init-lib.sh
+ M scripts/plan-to-todo.sh
+ M tests/helper-scripts.test.ts
+ M tests/scaffold-parity.test.ts
+?? plans/archive/plan-20260612-1224-loop-engine-04-contract-kappa-fields.md
+?? tasks/archive/notes-20260612-1238-loop-engine-04-contract-kappa-fields.md
+?? tasks/archive/todo-20260612-1238-loop-engine-04-contract-kappa-fields.md
+?? tasks/contracts/20260612-1224-loop-engine-04-contract-kappa-fields.contract.md
+?? tasks/reviews/20260612-1224-loop-engine-04-contract-kappa-fields.review.md
 ```
 
 ## Source Artifacts

@@ -176,6 +176,9 @@ describe("create-project-dirs scaffold parity", () => {
       const contractTemplate = readFileSync(join(cwd, ".claude/templates/contract.template.md"), "utf-8");
       expect(contractTemplate).toContain("## Workflow Inventory");
       expect(contractTemplate).toContain("Completion gate: `scripts/verify-sprint.sh` must see this contract pass");
+      expect(contractTemplate).toContain("## Delegation Contract");
+      expect(contractTemplate).toContain("permission_scope:");
+      expect(contractTemplate).toContain("roles:");
 
       const runtimeConsole = readFileSync(
         join(ROOT, "assets/project-structures/ai-native-runtime-console.txt"),

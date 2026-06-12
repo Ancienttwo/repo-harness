@@ -27,9 +27,20 @@ The word "sprint" historically named a single execution slice in this harness. W
 - Goal
 - Scope and non-goals
 - Allowed paths
+- Delegation contract
 - Exit criteria
 - Verification commands
 - Risks and rollback point
+
+## Delegation Contract Fields
+
+New contracts include a `## Delegation Contract` YAML block between allowed paths and exit criteria. This block is the forward-compatible contract-kappa surface for future delegated execution; it is metadata unless a runner such as `contract-run` consumes it.
+
+- `budget`: optional limits for `tokens`, `tool_calls`, and `wall_time_minutes`. `null` means no additional limit beyond the current session and command timeout defaults.
+- `permission_scope`: the execution permission model. The default `mode: inherit_allowed_paths` means worker edits are limited by the contract `allowed_paths`; `writable_paths: []` means no narrower override; `network: inherited` means no new network permission is granted by the contract itself.
+- `roles`: named responsibilities for `parent`, `worker`, and `verifier`. The default parent narrates and gates, worker implements the contract, and verifier reviews only against the contract exit criteria.
+
+Existing contracts without this block remain valid. `scripts/verify-contract.sh` continues to evaluate only the `exit_criteria` YAML block, so adding delegation metadata must not make old or new contracts fail verification.
 
 ## Status Rules
 

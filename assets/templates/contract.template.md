@@ -43,6 +43,24 @@ allowed_paths:
   - tests/
 ```
 
+## Delegation Contract
+
+```yaml
+delegation:
+  budget:
+    tokens: null
+    tool_calls: null
+    wall_time_minutes: null
+  permission_scope:
+    mode: inherit_allowed_paths
+    writable_paths: []
+    network: inherited
+  roles:
+    parent: narrate_and_gatekeep
+    worker: implement_contract
+    verifier: review_exit_criteria
+```
+
 ## Exit Criteria (Machine Verifiable)
 
 ```yaml
