@@ -50,19 +50,15 @@ In an adopted repo, the surface area is intentionally small:
 | `tasks/contracts/`, `tasks/reviews/`, and `.ai/harness/checks/` | Scope, verification, and review evidence for proving the work is done. |
 | `.ai/harness/handoff/` and `tasks/current.md` | Session journal and resumable status, derived from workflow artifacts instead of chat memory. |
 
-## What's New in 0.5.2
+## What's New in 0.5.3
 
-- **Quieter tooling advisories.** SessionStart update checks now use a weekly
-  timestamp cache by default, so Waza and CodeGraph advisories stay useful
-  without firing on every new agent session.
-- **Reviewed local safety hooks.** `repo-harness security scan` separates
-  active findings from reviewed exceptions, using exact command matches for
-  user-level warning-only hooks while keeping high-risk commands blocking.
-- **Cleaner setup checks.** `repo-harness setup check --check-updates` now
-  treats gbrain fast-mode DB skips as accepted readiness and keeps real gbrain
-  warnings visible.
-- **More resilient cross-review.** The bundled `claude-review` skill can recover
-  empty-stdout print-mode results from Claude Code session transcripts.
+- **Pinned runtime updates.** `repo-harness update --version <version>` now
+  installs the requested `repo-harness@<version>` package instead of being
+  intercepted by the top-level CLI version shortcut.
+- **Version shortcut preserved.** `repo-harness --version` and
+  `repo-harness -V` still print the CLI version when used at the top level.
+- **Patch-only surface.** No hook route, setup check, security scan, or workflow
+  contract behavior changes beyond the update command option fix.
 
 ## What repo-harness Does
 
@@ -459,8 +455,8 @@ Most common guards:
 
 ## Current Release
 
-- npm package: `repo-harness@0.5.2`
-- Generated workflow stamp: `repo-harness@0.5.2+template@0.5.2`
+- npm package: `repo-harness@0.5.3`
+- Generated workflow stamp: `repo-harness@0.5.3+template@0.5.3`
 - GitHub repository: `Ancienttwo/repo-harness`
 - Release history: [`docs/CHANGELOG.md`](docs/CHANGELOG.md)
 

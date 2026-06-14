@@ -56,12 +56,11 @@ En un repositorio adoptado, la superficie se mantiene pequeña:
 | `tasks/contracts/`, `tasks/reviews/` y `.ai/harness/checks/` | Scope, verificación y evidencia de review para probar que el trabajo terminó. |
 | `.ai/harness/handoff/` y `tasks/current.md` | Session journal y estado resumible, derivados de workflow artifacts en vez de chat memory. |
 
-## Novedades en 0.5.2
+## Novedades en 0.5.3
 
-- **Tooling advisories más silenciosos.** Los update checks de SessionStart usan por defecto un timestamp cache semanal, para que los avisos de Waza y CodeGraph no aparezcan en cada sesión.
-- **Safety hooks locales revisados.** `repo-harness security scan` separa active findings y reviewed exceptions; los hooks user-level warning-only necesitan exact command match, y los comandos de alto riesgo siguen activos.
-- **Setup checks más limpios.** `repo-harness setup check --check-updates` trata el skip de DB de gbrain fast-mode como readiness aceptado, pero mantiene visibles los warnings reales de gbrain.
-- **Cross-review más resistente.** El skill bundled `claude-review` puede recuperar resultados print-mode con stdout vacío desde los transcripts de sesión de Claude Code.
+- **Runtime updates con versión fija.** `repo-harness update --version <version>` ahora instala el package `repo-harness@<version>` solicitado, en vez de ser interceptado por el shortcut global de versión de la CLI.
+- **Version shortcut preservado.** `repo-harness --version` y `repo-harness -V` siguen mostrando la versión de la CLI cuando se usan en el nivel superior.
+- **Patch-only surface.** No cambian hook routes, setup checks, security scan ni workflow contracts, salvo el fix del option del comando update.
 
 ## Qué hace el producto
 
@@ -378,8 +377,8 @@ Guards habituales:
 
 ## Release actual
 
-- npm package: `repo-harness@0.5.2`
-- Generated workflow stamp: `repo-harness@0.5.2+template@0.5.2`
+- npm package: `repo-harness@0.5.3`
+- Generated workflow stamp: `repo-harness@0.5.3+template@0.5.3`
 - GitHub repository: `Ancienttwo/repo-harness`
 - Release history: [`docs/CHANGELOG.md`](docs/CHANGELOG.md)
 

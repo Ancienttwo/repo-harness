@@ -56,12 +56,11 @@ Dans un dépôt adopté, la surface à comprendre reste volontairement réduite 
 | `tasks/contracts/`, `tasks/reviews/` et `.ai/harness/checks/` | Scope, vérification et preuves de review pour démontrer que le travail est terminé. |
 | `.ai/harness/handoff/` et `tasks/current.md` | Session journal et état resumable dérivés des workflow artifacts plutôt que de la chat memory. |
 
-## Nouveautés de la 0.5.2
+## Nouveautés de la 0.5.3
 
-- **Tooling advisories plus calmes.** Les checks update de SessionStart utilisent désormais un cache timestamp d'une semaine par défaut, afin que les advisories Waza et CodeGraph restent utiles sans apparaître à chaque session.
-- **Safety hooks locaux reviewés.** `repo-harness security scan` sépare les active findings des reviewed exceptions, avec exact command match pour les hooks user-level warning-only ; les commandes à haut risque restent actives.
-- **Setup checks plus propres.** `repo-harness setup check --check-updates` traite le skip DB de gbrain fast-mode comme un état readiness accepté, tout en gardant les vrais warnings gbrain visibles.
-- **Cross-review plus robuste.** Le skill bundled `claude-review` peut récupérer les résultats print-mode à stdout vide depuis les transcripts de session Claude Code.
+- **Runtime updates épinglés.** `repo-harness update --version <version>` installe maintenant le package `repo-harness@<version>` demandé au lieu d'être intercepté par le raccourci global de version de la CLI.
+- **Version shortcut préservé.** `repo-harness --version` et `repo-harness -V` continuent d'afficher la version CLI lorsqu'ils sont utilisés au niveau supérieur.
+- **Patch-only surface.** Aucun changement de hook route, setup check, security scan ou workflow contract au-delà du fix de l'option du command update.
 
 ## Ce que fait le produit
 
@@ -382,8 +381,8 @@ Guards courants :
 
 ## Release actuelle
 
-- npm package : `repo-harness@0.5.2`
-- Generated workflow stamp : `repo-harness@0.5.2+template@0.5.2`
+- npm package : `repo-harness@0.5.3`
+- Generated workflow stamp : `repo-harness@0.5.3+template@0.5.3`
 - GitHub repository : `Ancienttwo/repo-harness`
 - Release history : [`docs/CHANGELOG.md`](docs/CHANGELOG.md)
 

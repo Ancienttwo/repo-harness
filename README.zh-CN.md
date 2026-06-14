@@ -43,17 +43,14 @@ handoff、检查结果和 review evidence 写回项目文件，让下一个 agen
 | `tasks/contracts/`、`tasks/reviews/`、`.ai/harness/checks/` | 证明完成所需的 scope、verification 和 review evidence。 |
 | `.ai/harness/handoff/` 和 `tasks/current.md` | session journal 与可恢复状态，从 workflow artifacts 派生，而不是依赖聊天记忆。 |
 
-## 0.5.2 新特性
+## 0.5.3 新特性
 
-- **更安静的 tooling advisory。** SessionStart update check 默认使用一周
-  timestamp cache，Waza 和 CodeGraph advisory 不会每个新 session 都触发。
-- **可审阅的本地 safety hooks。** `repo-harness security scan` 会把 active
-  findings 与 reviewed exceptions 分开；user-level warning-only hooks 必须 exact
-  command match，高风险命令仍然保持 active。
-- **更干净的 setup check。** `repo-harness setup check --check-updates` 会把
-  gbrain fast-mode DB skip 当成已接受的 readiness 状态，同时保留真实 gbrain warning。
-- **更稳的 cross-review。** bundled `claude-review` skill 可以从 Claude Code
-  session transcript 恢复 print-mode 空 stdout 的最终输出。
+- **可 pin 的 runtime update。** `repo-harness update --version <version>` 现在会
+  安装指定的 `repo-harness@<version>` package，不再被顶层 CLI version shortcut 抢占。
+- **保留 version shortcut。** `repo-harness --version` 和 `repo-harness -V` 在顶层使用时
+  仍然输出 CLI version。
+- **Patch-only surface。** 除 update command option 修复外，hook route、setup check、
+  security scan 和 workflow contract 行为不变。
 
 ## 产品做什么
 
@@ -413,8 +410,8 @@ hook block 工作时，先看 terminal 里的结构化输出。核心字段是
 
 ## 当前 Release
 
-- npm package：`repo-harness@0.5.2`
-- Generated workflow stamp：`repo-harness@0.5.2+template@0.5.2`
+- npm package：`repo-harness@0.5.3`
+- Generated workflow stamp：`repo-harness@0.5.3+template@0.5.3`
 - GitHub repository：`Ancienttwo/repo-harness`
 - Release history：[`docs/CHANGELOG.md`](docs/CHANGELOG.md)
 

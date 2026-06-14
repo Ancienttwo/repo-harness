@@ -1,6 +1,6 @@
 {
-  "version": "0.5.2",
-  "templateVersion": "0.5.2",
+  "version": "0.5.3",
+  "templateVersion": "0.5.3",
   "skillName": "repo-harness",
   "contractId": "tasks-first-harness-v1",
   "retiredAliases": [
@@ -135,6 +135,10 @@
     {
       "version": "0.5.2",
       "description": "Adds weekly tooling-update advisory caching, reviewed security exceptions, gbrain fast-doctor warning handling, and Claude review transcript recovery"
+    },
+    {
+      "version": "0.5.3",
+      "description": "Fixes repo-harness update --version so the update command can install a pinned package version without being intercepted by the top-level CLI version flag"
     }
   ],
   "generatedProjectStamp": {

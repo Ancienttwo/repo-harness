@@ -4,6 +4,21 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-06-15
+
+### Fixed
+
+- Fixed `repo-harness update --version <version>` so the update subcommand can
+  install an explicit `repo-harness@<version>` package. The top-level
+  `repo-harness --version` / `repo-harness -V` shortcut still prints the CLI
+  version, but it no longer intercepts the update command's package-version
+  option.
+
+### Release Notes
+
+- Prepared the `repo-harness@0.5.3` patch line for npm publish, registry
+  readback, clean-room `npx` smoke, Git tag, and GitHub release creation.
+
 ## [0.5.2] - 2026-06-15
 
 ### Added
