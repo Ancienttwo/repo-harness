@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-06-15T04:41:20+0800 -->
+<!-- updated_at: 2026-06-15T05:08:35+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Idle
-> **Updated At**: 2026-06-15T04:41:20+0800
+> **Updated At**: 2026-06-15T05:08:35+0800
 > **Source Branch**: main
-> **Source Commit**: e36e22b
+> **Source Commit**: 321d01c
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: repo-harness 0.5.2 release prep
+> **Reason**: repo-harness 0.5.2 release evidence
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -51,35 +51,10 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 26 changed/untracked path(s)
+- Summary: 1 changed/untracked path(s)
 
 ```
- M .ai/hooks/session-start-context.sh
- M .claude/.skill-version
- M README.es.md
- M README.fr.md
- M README.ja.md
- M README.md
- M README.zh-CN.md
- M assets/hooks/session-start-context.sh
- M assets/skill-version.json
- M assets/skills/claude-review/SKILL.md
- M assets/templates/helpers/check-agent-tooling.sh
- M bun.lock
- M docs/CHANGELOG.md
- M package.json
- M scripts/check-agent-tooling.sh
- M src/cli/commands/doctor.ts
- M src/cli/commands/security.ts
- M tasks/current.md
- M tests/bootstrap-files.test.ts
- M tests/check-agent-tooling.test.ts
- M tests/cli/doctor.test.ts
- M tests/cli/security.test.ts
- M tests/hook-contracts.test.ts
- M tests/hook-runtime.test.ts
- M tests/readme-dx.test.ts
-?? deploy/release-checklists/260615-repo-harness-0.5.2.md
+ M deploy/release-checklists/260615-repo-harness-0.5.2.md
 ```
 
 ## Source Artifacts
