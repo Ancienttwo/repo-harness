@@ -546,10 +546,27 @@ Source-owned command facades live in `assets/skill-commands/`. They keep host
 skill discovery compatible while the CLI and hooks own execution:
 
 - Planning and review: `repo-harness-plan`, `repo-harness-review`, `repo-harness-autoplan`
-- Product planning layer: `repo-harness-prd` (upper-layer PRDs in `plans/prds/`, evidence-marked unknowns, sprint-consumable sections)
+- Product planning layer: `repo-harness-prd` (activates `$geju`, then uses Claude-first `claude -p --model opus` drafting with Codex fallback to write upper-layer PRDs in `plans/prds/`)
 - Sprint program layer: `repo-harness-sprint` (ordered sprint backlogs in `plans/sprints/`, each row expanded with `$think` before the contract flow)
+- Goal session layer: `repo-harness-goal` / `repo-harness:goal` (prepares Codex/Claude `/goal` prompts from detailed PRD or Sprint artifacts and asks for those docs when missing)
 - Repo workflow actions: `repo-harness-ship`, `repo-harness-init`, `repo-harness-migrate`, `repo-harness-upgrade`, `repo-harness-capability`, `repo-harness-architecture`, `repo-harness-handoff`, `repo-harness-deploy`, `repo-harness-repair`, `repo-harness-check`
 - Branch project creation command: `repo-harness-scaffold`
+
+The planning chain is intentionally layered:
+
+```text
+idea -> repo-harness-prd -> repo-harness-sprint from-prd -> repo-harness-goal
+```
+
+Use `repo-harness-prd` when the source is still a product idea; it first runs a
+`$geju` direction pass, then asks Claude via `claude -p --model opus` to draft the PRD, with
+Codex only as fallback. Use
+`repo-harness-sprint from-prd <plans/prds/*.prd.md>` to turn an approved PRD into
+an ordered Sprint backlog with machine-checkable acceptance lines. Use
+`repo-harness-goal` only after a detailed PRD or Sprint artifact exists; it
+prepares a bounded Codex/Claude `/goal` prompt and keeps the PRD/Sprint as the
+source of truth. If that document is missing, the goal command must ask for it
+instead of starting implementation from chat context.
 
 `repo-harness adopt` is for an existing repo; `repo-harness-scaffold` creates a
 new project or module scaffold as a side command. `hooks-init`, `docs-init`, and

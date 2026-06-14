@@ -432,8 +432,27 @@ préservent la découverte par skills, tandis que l'exécution appartient au CLI
 aux hooks :
 
 - Planning / review : `repo-harness-plan`, `repo-harness-review`, `repo-harness-autoplan`
+- Product planning layer : `repo-harness-prd` (active `$geju`, puis rédige en Claude-first avec `claude -p --model opus` ; Codex ne sert que de fallback)
+- Sprint program layer : `repo-harness-sprint` (transforme un PRD en backlog ordonné dans `plans/sprints/`)
+- Goal session layer : `repo-harness-goal` / `repo-harness:goal` (prépare des prompts `/goal` Codex/Claude depuis un PRD ou Sprint détaillé ; si le document manque, il le demande d'abord)
 - Repo workflow actions : `repo-harness-ship`, `repo-harness-init`, `repo-harness-migrate`, `repo-harness-upgrade`, `repo-harness-capability`, `repo-harness-architecture`, `repo-harness-handoff`, `repo-harness-deploy`, `repo-harness-repair`, `repo-harness-check`
 - Branch project creation : `repo-harness-scaffold`
+
+La chaîne de planning est volontairement découpée en couches :
+
+```text
+idea -> repo-harness-prd -> repo-harness-sprint from-prd -> repo-harness-goal
+```
+
+Utilisez `repo-harness-prd` quand la source est encore une idée produit : il
+lance d'abord un direction pass `$geju`, puis demande à Claude via `claude -p --model opus`
+de rédiger le PRD, avec Codex seulement en fallback. Utilisez
+`repo-harness-sprint from-prd <plans/prds/*.prd.md>` pour transformer
+un PRD approuvé en Sprint backlog ordonné avec des lignes d'acceptance
+vérifiables par machine. Utilisez `repo-harness-goal` seulement lorsqu'un PRD ou
+Sprint détaillé existe déjà ; il prépare un prompt `/goal` borné pour
+Codex/Claude et garde le PRD/Sprint comme source of truth. Si ce document manque,
+le goal command doit le demander avant de lancer une implémentation depuis le chat.
 
 `repo-harness adopt` sert aux dépôts existants ; `repo-harness-scaffold` sert de
 branch command pour créer un nouveau projet ou module. `hooks-init`, `docs-init` et

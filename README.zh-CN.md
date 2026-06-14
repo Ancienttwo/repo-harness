@@ -449,8 +449,24 @@ Co-authored-by: codex <codex@openai.com>
 兼容性，真正执行由 CLI 和 hooks 负责：
 
 - Planning / review：`repo-harness-plan`、`repo-harness-review`、`repo-harness-autoplan`
+- Product planning layer：`repo-harness-prd`（先激活 `$geju` 做格局判断，再优先用 Claude `claude -p --model opus` 起草 PRD；Codex 只做 fallback）
+- Sprint program layer：`repo-harness-sprint`（把 PRD 拆成 `plans/sprints/` 里的有序 backlog）
+- Goal session layer：`repo-harness-goal` / `repo-harness:goal`（从详细 PRD 或 Sprint 文档准备 Codex/Claude `/goal` prompt；缺文档时先要求补文档）
 - Repo workflow actions：`repo-harness-ship`、`repo-harness-init`、`repo-harness-migrate`、`repo-harness-upgrade`、`repo-harness-capability`、`repo-harness-architecture`、`repo-harness-handoff`、`repo-harness-deploy`、`repo-harness-repair`、`repo-harness-check`
 - 支线项目创建 command：`repo-harness-scaffold`
+
+规划链路按层推进：
+
+```text
+idea -> repo-harness-prd -> repo-harness-sprint from-prd -> repo-harness-goal
+```
+
+`repo-harness-prd` 处理产品想法：先跑 `$geju` direction pass，再用 Claude `claude -p --model opus`
+起草 PRD，Codex 只在 Claude 不可用或失败时 fallback。`repo-harness-sprint from-prd <plans/prds/*.prd.md>`
+把已批准 PRD 拆成带 machine-checkable acceptance 的 Sprint backlog；
+`repo-harness-goal` 只在已有详细 PRD 或 Sprint artifact 后使用，用它生成有边界的
+Codex/Claude `/goal` prompt，并把 PRD/Sprint 保持为 source of truth。缺少这份文档时，
+goal command 必须先要求补文档，而不是从聊天上下文直接开工。
 
 `repo-harness adopt` 用于已有仓库；`repo-harness-scaffold` 作为支线 command 创建新项目或模块。
 `hooks-init`、`docs-init` 和 `create-project-dirs` 是内部步骤，不是公共 commands。

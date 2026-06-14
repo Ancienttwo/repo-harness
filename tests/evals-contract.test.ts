@@ -60,6 +60,7 @@ describe("Skill eval assets", () => {
       "repo-harness-check",
       "repo-harness-prd",
       "repo-harness-sprint",
+      "repo-harness-goal",
     ]) {
       expect(combined).toContain(command);
     }

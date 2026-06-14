@@ -106,8 +106,8 @@
       "name": "repo-harness-prd",
       "class": "product-planning",
       "mutatesRepoByDefault": true,
-      "engine": "prd template plus evidence rules and task-workflow checks",
-      "summary": "Generates an AI-implementation-friendly PRD from a product idea into plans/prds/."
+      "engine": "$geju direction pass, Claude-first claude -p --model opus drafting, PRD template, evidence rules, and task-workflow checks",
+      "summary": "Generates an AI-implementation-friendly PRD from a product idea into plans/prds/ after a geju framing pass, using Claude first and Codex only as fallback."
     },
     {
       "name": "repo-harness-sprint",
@@ -115,6 +115,13 @@
       "mutatesRepoByDefault": true,
       "engine": "sprint-backlog helper plus $think expansion, capture-plan, and contract worktree flow",
       "summary": "Plans a long-task sprint backlog from an upper-layer PRD and expands each row with $think before the task-contract flow."
+    },
+    {
+      "name": "repo-harness-goal",
+      "class": "goal-session",
+      "mutatesRepoByDefault": false,
+      "engine": "Codex or Claude native /goal plus repo-harness PRD/Sprint contract",
+      "summary": "Prepares a bounded host-native /goal prompt from detailed PRD or Sprint artifacts and requires those documents before continuation."
     }
   ],
   "nonPublicInternalSteps": [

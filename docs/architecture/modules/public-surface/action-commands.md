@@ -25,6 +25,9 @@ scripts, hooks, and contract files:
 - `repo-harness-deploy`
 - `repo-harness-repair`
 - `repo-harness-check`
+- `repo-harness-prd`
+- `repo-harness-sprint`
+- `repo-harness-goal`
 
 The manifest at `assets/skill-commands/manifest.json` is the compatibility
 facade catalog. The root `SKILL.md` remains the router over the same engine.
@@ -44,8 +47,9 @@ instead of mutating the repo.
 
 Command shape is prose plus exact commands. Ownership crosses from public
 command docs into repo-local scripts only when the command protocol calls the
-engine. Planning/review are non-mutating by default; autoplan/ship/init/scaffold/
-migrate/upgrade/repair are mutating by design after explicit command invocation.
+engine. Planning/review/goal are non-mutating by default; autoplan/ship/init/
+scaffold/migrate/upgrade/repair are mutating by design after explicit command
+invocation.
 
 Error paths:
 

@@ -21,6 +21,7 @@ const COMMANDS = [
   "repo-harness-check",
   "repo-harness-prd",
   "repo-harness-sprint",
+  "repo-harness-goal",
 ];
 
 function readCommand(name: string): string {
@@ -221,9 +222,16 @@ describe("repo-harness action command skills", () => {
     const prd = readCommand("repo-harness-prd");
 
     expect(prd).toContain("plans/prds/");
+    expect(prd).toContain("Activate `$geju`");
+    expect(prd).toContain("compact geju framing");
+    expect(prd).toContain("claude -p --model opus");
+    expect(prd).toContain("Prefer Claude");
+    expect(prd).toContain("Use Codex fallback only");
     expect(prd).toContain("[UNKNOWN]");
     expect(prd).toContain("[UNVERIFIED]");
     expect(prd).toContain("Does not create or approve a Sprint backlog");
+    expect(prd).toContain("Does not skip the `$geju` direction pass");
+    expect(prd).toContain("Does not make Codex the primary PRD author");
     expect(prd).toContain("bash scripts/check-task-workflow.sh --strict");
   });
 
@@ -235,5 +243,18 @@ describe("repo-harness action command skills", () => {
     expect(sprint).toContain("> **Source PRD**");
     expect(sprint).toContain("must be machine-checkable");
     expect(sprint).toContain("must still run `$think` before code edits");
+  });
+
+  test("goal command requires detailed PRD or Sprint context before native goal continuation", () => {
+    const goal = readCommand("repo-harness-goal");
+
+    expect(goal).toContain("repo-harness:goal");
+    expect(goal).toContain("/goal");
+    expect(goal).toContain("Codex or Claude");
+    expect(goal).toContain("plans/prds/*.prd.md");
+    expect(goal).toContain("plans/sprints/*.sprint.md");
+    expect(goal).toContain("If no detailed PRD/Sprint artifact is attached or named");
+    expect(goal).toContain("Does not create, approve, or execute a Goal session without detailed PRD/Sprint context");
+    expect(goal).toContain("Preserve host-native `/goal` ownership");
   });
 });

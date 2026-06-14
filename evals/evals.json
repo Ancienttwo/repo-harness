@@ -1105,7 +1105,7 @@
       "id": 26,
       "slug": "generate-prd-from-idea",
       "prompt": "Use repo-harness-prd to generate a PRD from this product idea: notification preferences for a small SaaS app. Keep it compact, save it under plans/prds/, and summarize only the AI Quick-Read Card in the final response.",
-      "expected_output": "Routes to repo-harness-prd, writes a compact PRD under plans/prds/ with an AI Quick-Read Card, evidence-marked unknowns, acceptance scenarios, module behavior, data model, performance targets, and a developer handoff. The final response gives the Quick-Read Card and file path only.",
+      "expected_output": "Routes to repo-harness-prd, activates $geju for a direction pass, uses Claude-first claude -p --model opus drafting with Codex only as fallback, and writes a compact PRD under plans/prds/ with an AI Quick-Read Card, evidence-marked unknowns, acceptance scenarios, module behavior, data model, performance targets, and a developer handoff. The final response gives the Quick-Read Card, geju thesis, drafting path, and file path only.",
       "files": [
         "evals/fixtures/prd-from-idea"
       ],
@@ -1117,6 +1117,14 @@
           {
             "path": "final-response.md",
             "pattern": "repo-harness-prd"
+          },
+          {
+            "path": "final-response.md",
+            "pattern": "geju|格局|thesis"
+          },
+          {
+            "path": "final-response.md",
+            "pattern": "Claude|claude -p|opus|Codex fallback"
           },
           {
             "path": "final-response.md",
@@ -1142,6 +1150,8 @@
       },
       "expectations": [
         "Routes the request to repo-harness-prd instead of repo-harness-sprint.",
+        "Runs a geju direction pass before PRD drafting.",
+        "Uses Claude-first claude -p --model opus drafting and keeps Codex as fallback only.",
         "Writes the PRD under plans/prds/ and does not create a sprint backlog.",
         "Keeps competitor or SaaS vendor claims out unless explicitly verified.",
         "Includes Quick-Read Card, acceptance scenarios, and developer handoff."
@@ -1192,6 +1202,57 @@
         "Keeps the PRD in plans/prds/ and places the backlog in plans/sprints/.",
         "Backlog acceptance lines are machine-checkable and traceable to PRD scenarios.",
         "Does not use tasks/todos.md as an execution backlog."
+      ]
+    },
+    {
+      "id": 28,
+      "slug": "goal-from-prd-or-sprint",
+      "prompt": "Use repo-harness:goal to prepare a Codex or Claude /goal session for plans/prds/20260101-0000-sample-feature.prd.md. Require the detailed PRD or Sprint document as source of truth, produce the bounded /goal prompt, and do not start implementation if the source document is missing.",
+      "expected_output": "Routes to repo-harness-goal / repo-harness:goal, requires a detailed PRD or Sprint artifact before native /goal continuation, prepares a bounded Codex/Claude /goal prompt with source of truth, scope, non-goals, acceptance checks, stop condition, and repo-harness workflow gates, and stops to request the PRD/Sprint document when missing.",
+      "files": [
+        "evals/fixtures/prd-to-sprint"
+      ],
+      "graders": {
+        "files_exist": [
+          "final-response.md",
+          "plans/prds/20260101-0000-sample-feature.prd.md"
+        ],
+        "files_contain": [
+          {
+            "path": "final-response.md",
+            "pattern": "repo-harness-goal|repo-harness:goal"
+          },
+          {
+            "path": "final-response.md",
+            "pattern": "/goal"
+          },
+          {
+            "path": "final-response.md",
+            "pattern": "PRD|Sprint|plans/prds/20260101-0000-sample-feature\\.prd\\.md"
+          },
+          {
+            "path": "final-response.md",
+            "pattern": "acceptance|Acceptance|验收"
+          },
+          {
+            "path": "final-response.md",
+            "pattern": "stop condition|Stop condition|停止条件"
+          }
+        ]
+      },
+      "anti_graders": {
+        "files_not_contain": [
+          {
+            "path": "final-response.md",
+            "pattern": "started implementation|implemented|已实现"
+          }
+        ]
+      },
+      "expectations": [
+        "Routes the request to repo-harness-goal instead of repo-harness-autoplan.",
+        "Requires a detailed PRD or Sprint artifact as the goal source of truth.",
+        "Produces a host-native /goal prompt with bounded scope, non-goals, acceptance checks, and stop condition.",
+        "Does not start implementation when the source PRD/Sprint document is missing."
       ]
     }
   ]

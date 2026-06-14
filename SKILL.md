@@ -144,6 +144,7 @@ contract files:
 - `repo-harness-check`: run verification gates and report release or pre-merge readiness
 - `repo-harness-prd`: generate an upper-layer PRD in `plans/prds/`
 - `repo-harness-sprint`: plan a sprint backlog in `plans/sprints/` from a PRD or source spec, then expand each row with `$think` before the task-contract flow
+- `repo-harness-goal` / `repo-harness:goal`: prepare a Codex/Claude `/goal` prompt from detailed PRD or Sprint artifacts; request those documents before starting when missing
 
 Internal steps such as `hooks-init`, `docs-init`, and `create-project-dirs` are
 not public commands. They stay behind `init`, `scaffold`, `migrate`, and

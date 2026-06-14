@@ -36,8 +36,9 @@ migrating, repairing, or verifying this repo-local harness:
 | Check deploy and ops config | `repo-harness-deploy` | Read-only deploy/_ops readiness check without publishing |
 | Fix broken current harness behavior | `repo-harness-repair` | Task sync, hook routing, handoff, context, policy, or helper drift |
 | Verify readiness | `repo-harness-check` | Workflow gates, task sync, inspector, migration dry-run, and readiness yellow flags |
-| Generate an upper-layer PRD | `repo-harness-prd` | Product direction in `plans/prds/*.prd.md`; evidence-marked unknowns and sprint-consumable sections |
+| Generate an upper-layer PRD | `repo-harness-prd` | `$geju` direction pass, Claude-first `claude -p --model opus` drafting, Codex fallback only when needed, PRD in `plans/prds/*.prd.md` |
 | Plan and run a program-level sprint | `repo-harness-sprint` | Upper-layer PRD in `plans/prds/`, sprint backlog in `plans/sprints/`; each row expands through `$think` before plan -> contract -> worktree |
+| Prepare a bounded native goal session | `repo-harness-goal` / `repo-harness:goal` | Codex/Claude `/goal` prompt from detailed PRD or Sprint artifacts; stops to request those documents when missing |
 
 `hooks-init`, `docs-init`, and `create-project-dirs` are not public commands.
 They are implementation steps behind `init`, `scaffold`, `migrate`, and
