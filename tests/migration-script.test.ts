@@ -7,6 +7,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  utimesSync,
   writeFileSync,
 } from "fs";
 import { tmpdir } from "os";
@@ -214,6 +215,46 @@ describe("Migration script contract", () => {
       expect(res.status).toBe(0);
       expect(existsSync(marker)).toBe(false);
       expect(existsSync(join(repo, ".ai", "harness", "workflow-contract.json"))).toBe(true);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }, MIGRATION_INTEGRATION_TIMEOUT);
+
+  test("apply mode refreshes Codex handoff before strict workflow verification", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "migration-handoff-refresh-"));
+    const repo = join(tmp, "repo");
+    const home = join(tmp, "home");
+    const codexHome = join(tmp, "codex-home");
+    try {
+      mkdirSync(join(repo, "docs"), { recursive: true });
+      mkdirSync(join(repo, ".ai", "harness", "handoff"), { recursive: true });
+      writeFileSync(join(repo, "package.json"), JSON.stringify({ name: "demo", scripts: {} }, null, 2));
+      writeFileSync(join(repo, ".ai", "harness", "handoff", "current.md"), "# Harness Handoff\n\nnewer\n");
+      writeFileSync(join(repo, ".ai", "harness", "handoff", "resume.md"), "# Codex Resume Packet\n\nolder\n");
+      utimesSync(
+        join(repo, ".ai", "harness", "handoff", "resume.md"),
+        new Date("2026-01-01T00:00:00Z"),
+        new Date("2026-01-01T00:00:00Z"),
+      );
+      utimesSync(
+        join(repo, ".ai", "harness", "handoff", "current.md"),
+        new Date("2026-01-02T00:00:00Z"),
+        new Date("2026-01-02T00:00:00Z"),
+      );
+
+      const res = spawnSync(
+        "bash",
+        ["scripts/migrate-project-template.sh", "--repo", repo, "--apply"],
+        {
+          cwd: ROOT,
+          encoding: "utf-8",
+          env: { ...process.env, HOME: home, CODEX_HOME: codexHome },
+        },
+      );
+
+      expect(res.status).toBe(0);
+      expect(res.stdout).toContain("Refreshed Codex handoff before workflow verify");
+      expect(res.stdout).toContain("[workflow] OK");
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
@@ -565,6 +606,12 @@ describe("Migration script contract", () => {
       expect(gitignore).toContain("_ops/");
       expect(gitignore).not.toContain("_ops/secrets/");
       expect(gitignore).not.toContain("!_ops/env/.env.example");
+      expect(gitignore).toContain("# repo-harness generated helper wrappers");
+      expect(gitignore).toContain("scripts/check-task-workflow.sh");
+      expect(gitignore).toContain("scripts/prepare-codex-handoff.sh");
+      expect(gitignore).toContain("scripts/repo-harness/");
+      expect(gitignore).not.toContain("tasks/notes");
+      expect(gitignore).not.toContain("docs/researches");
       expect(res.stdout).toContain("--- External Tooling ---");
       expect(res.stdout).toContain("External Tooling Report");
       expect(res.stdout).toContain("Host hook adapters are user-level:");
@@ -572,6 +619,53 @@ describe("Migration script contract", () => {
       rmSync(repo, { recursive: true, force: true });
     }
   }, 30000);
+
+  test("should ignore and untrack generated helper wrappers while preserving app-owned scripts", () => {
+    const repo = mkdtempSync(join(tmpdir(), "migration-helper-ignore-"));
+    try {
+      mkdirSync(join(repo, "scripts"), { recursive: true });
+      writeFileSync(join(repo, "package.json"), JSON.stringify({ name: "demo", scripts: {} }, null, 2));
+      writeFileSync(join(repo, "scripts/check-task-workflow.sh"), "#!/bin/bash\nexit 0\n");
+      writeFileSync(
+        join(repo, "scripts/prepare-codex-handoff.sh"),
+        "#!/bin/bash\n# repo-harness generated Codex handoff helper\nexit 0\n"
+      );
+
+      expect(spawnSync("git", ["init", "-q"], { cwd: repo }).status).toBe(0);
+      expect(
+        spawnSync("git", ["add", "package.json", "scripts/check-task-workflow.sh", "scripts/prepare-codex-handoff.sh"], {
+          cwd: repo,
+        }).status
+      ).toBe(0);
+
+      const res = spawnSync(
+        "bash",
+        ["scripts/migrate-project-template.sh", "--repo", repo, "--apply"],
+        { cwd: ROOT, encoding: "utf-8" }
+      );
+
+      expect(res.status).toBe(0);
+      expect(existsSync(join(repo, "scripts/check-task-workflow.sh"))).toBe(true);
+      expect(existsSync(join(repo, "scripts/prepare-codex-handoff.sh"))).toBe(true);
+      expect(
+        spawnSync("git", ["ls-files", "--error-unmatch", "scripts/check-task-workflow.sh"], { cwd: repo }).status
+      ).toBe(0);
+      expect(
+        spawnSync("git", ["ls-files", "--error-unmatch", "scripts/prepare-codex-handoff.sh"], { cwd: repo }).status
+      ).not.toBe(0);
+      expect(spawnSync("git", ["check-ignore", "scripts/prepare-codex-handoff.sh"], { cwd: repo }).status).toBe(0);
+
+      const gitignore = readFileSync(join(repo, ".gitignore"), "utf-8");
+      expect(gitignore).toContain("scripts/prepare-codex-handoff.sh");
+      expect(gitignore).toContain("scripts/repo-harness/");
+      expect(gitignore).not.toContain("tasks/notes");
+      expect(gitignore).not.toContain("docs/researches");
+      expect(res.stdout).toContain("Preserved tracked app-owned script: scripts/check-task-workflow.sh");
+      expect(res.stdout).toContain("Untracked generated helper wrapper: scripts/prepare-codex-handoff.sh");
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  }, MIGRATION_INTEGRATION_TIMEOUT);
 
   test("should replace managed reference docs with stubs while preserving custom docs", () => {
     const repo = mkdtempSync(join(tmpdir(), "migration-reference-stubs-"));

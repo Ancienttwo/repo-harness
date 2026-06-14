@@ -356,12 +356,64 @@ cleanup_removed_workflow_assets() {
 }
 
 ensure_runtime_gitignore_block() {
-  local file_path="$1"
+  local repo="$1"
+  local file_path="$2"
   local extra_entries=""
+  local helper_entries=""
   if pi_should_enable_factor_factory "$(pi_plan_type)"; then
     extra_entries="$(pi_factor_factory_gitignore_entries)"
   fi
+  if ! is_self_host_source_repo "$repo" && ! pi_repo_pins_helper_source "$repo"; then
+    helper_entries="$(pi_helper_wrapper_gitignore_entries "$WORKFLOW_CONTRACT_ASSET")"
+    if [[ -n "$helper_entries" ]]; then
+      if [[ -n "$extra_entries" ]]; then
+        extra_entries="${extra_entries}"$'\n'"${helper_entries}"
+      else
+        extra_entries="$helper_entries"
+      fi
+    fi
+  fi
   pi_ensure_gitignore_block "$file_path" "" "$extra_entries" "$MODE"
+}
+
+generated_helper_wrapper_paths() {
+  local helper_name
+  while IFS= read -r helper_name; do
+    [[ -z "$helper_name" ]] && continue
+    printf '%s\n' "$helper_name"
+    printf '%s\n' "scripts/repo-harness/${helper_name#scripts/}"
+  done < <(pi_helper_wrapper_paths "$WORKFLOW_CONTRACT_ASSET")
+}
+
+untrack_generated_helper_wrappers() {
+  local repo="$1"
+  local rel_path
+
+  if is_self_host_source_repo "$repo" || pi_repo_pins_helper_source "$repo"; then
+    return 0
+  fi
+
+  if [[ "$MODE" != "apply" ]]; then
+    echo "[dry-run] untrack repo-harness generated helper wrappers from git index when tracked"
+    return 0
+  fi
+
+  if ! git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    return 0
+  fi
+
+  while IFS= read -r rel_path; do
+    [[ -z "$rel_path" ]] && continue
+    if ! git -C "$repo" ls-files --error-unmatch -- "$rel_path" >/dev/null 2>&1; then
+      continue
+    fi
+    if [[ "$rel_path" == scripts/repo-harness/* ]] || is_generated_root_helper "$repo" "$rel_path"; then
+      git -C "$repo" rm --cached --force --quiet -- "$rel_path"
+      log "Untracked generated helper wrapper: $rel_path"
+    else
+      log "Preserved tracked app-owned script: $rel_path"
+    fi
+  done < <(generated_helper_wrapper_paths)
 }
 
 migrate_active_plan_marker() {
@@ -989,15 +1041,18 @@ migrate_workflow() {
   ensure_gitignore_entry "$repo_gitignore" "!.env.example"
   ensure_gitignore_entry "$repo_gitignore" "# OS metadata"
   ensure_gitignore_entry "$repo_gitignore" ".DS_Store"
-  ensure_runtime_gitignore_block "$repo_gitignore"
+  ensure_runtime_gitignore_block "$repo" "$repo_gitignore"
+  untrack_generated_helper_wrappers "$repo"
 
 }
 
 verify_migration_contract() {
   local repo="$1"
   local check_script="$repo/scripts/check-task-workflow.sh"
+  local handoff_script="$repo/scripts/prepare-codex-handoff.sh"
 
   if [[ "$MODE" != "apply" ]]; then
+    echo "[dry-run] refresh Codex handoff before workflow verify"
     echo "[dry-run] verify migrated workflow with repo-harness run check-task-workflow --strict"
     return 0
   fi
@@ -1005,6 +1060,11 @@ verify_migration_contract() {
   if [[ ! -f "$check_script" ]]; then
     log "Missing workflow check script after migration: $check_script"
     return 1
+  fi
+
+  if [[ -f "$handoff_script" ]]; then
+    (cd "$repo" && REPO_HARNESS_SOURCE_ROOT="$SKILL_ROOT" bash "scripts/prepare-codex-handoff.sh" --reason "repo-harness-migration-verify" >/dev/null)
+    log "Refreshed Codex handoff before workflow verify"
   fi
 
   (cd "$repo" && REPO_HARNESS_SOURCE_ROOT="$SKILL_ROOT" bash "scripts/check-task-workflow.sh" --strict)

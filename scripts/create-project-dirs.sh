@@ -23,8 +23,17 @@ ASSETS_WORKFLOW_CONTRACT="$SCRIPT_DIR/../assets/workflow-contract.v1.json"
 
 write_runtime_gitignore_block() {
   local extra_entries=""
+  local helper_entries=""
   if pi_should_enable_factor_factory "$(pi_plan_type)"; then
     extra_entries="$(pi_factor_factory_gitignore_entries)"
+  fi
+  helper_entries="$(pi_helper_wrapper_gitignore_entries "$ASSETS_WORKFLOW_CONTRACT")"
+  if [[ -n "$helper_entries" ]]; then
+    if [[ -n "$extra_entries" ]]; then
+      extra_entries="${extra_entries}"$'\n'"${helper_entries}"
+    else
+      extra_entries="$helper_entries"
+    fi
   fi
   pi_ensure_gitignore_block ".gitignore" "$PI_DEFAULT_GITIGNORE_CONTENT" "$extra_entries" "apply"
 }

@@ -698,6 +698,29 @@ pi_default_runtime_block() {
   printf '%s\n%s\n%s\n' "$PI_RUNTIME_BLOCK_BEGIN" "$runtime_entries" "$PI_RUNTIME_BLOCK_END"
 }
 
+pi_helper_wrapper_paths() {
+  local workflow_contract="$1"
+  local helper_names
+  local helper_name
+
+  helper_names="$(pi_workflow_contract_query_lines "$workflow_contract" "helpers.scripts" | xargs)"
+  for helper_name in $helper_names; do
+    printf 'scripts/%s\n' "$helper_name"
+  done
+}
+
+pi_helper_wrapper_gitignore_entries() {
+  local workflow_contract="$1"
+  local paths
+
+  paths="$(pi_helper_wrapper_paths "$workflow_contract")"
+  [[ -n "$paths" ]] || return 0
+
+  printf '%s\n' "# repo-harness generated helper wrappers"
+  printf '%s\n' "$paths"
+  printf '%s\n' "scripts/repo-harness/"
+}
+
 pi_is_runtime_block_begin() {
   local line="$1"
   [[ "$line" == "$PI_RUNTIME_BLOCK_BEGIN" || "$line" == "$PI_RUNTIME_BLOCK_BEGIN_LEGACY" ]]

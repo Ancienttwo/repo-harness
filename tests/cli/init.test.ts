@@ -164,6 +164,73 @@ describe("init command", () => {
     }
   });
 
+  test("runInit refreshes Codex handoff before outer workflow verification", () => {
+    const tmp = join(tmpdir(), `repo-harness-init-handoff-${Date.now()}`);
+    const source = join(tmp, "source");
+    const repo = join(tmp, "repo");
+    const previousCwd = process.cwd();
+    try {
+      mkdirSync(source, { recursive: true });
+      mkdirSync(repo, { recursive: true });
+      setupFakeSource(source);
+      makeExecutable(
+        join(source, "scripts", "migrate-project-template.sh"),
+        [
+          "#!/bin/bash",
+          "set -euo pipefail",
+          "repo=''",
+          "while [[ $# -gt 0 ]]; do",
+          "  case \"$1\" in",
+          "    --repo) repo=\"$2\"; shift 2 ;;",
+          "    --apply|--dry-run) shift ;;",
+          "    *) shift ;;",
+          "  esac",
+          "done",
+          "mkdir -p \"$repo/scripts\" \"$repo/.ai/harness/handoff\"",
+          "cat > \"$repo/scripts/prepare-codex-handoff.sh\" <<'EOF'",
+          "#!/bin/bash",
+          "set -euo pipefail",
+          "mkdir -p .ai/harness/handoff",
+          "printf 'refreshed\\n' > .ai/harness/handoff/refresh-marker",
+          "printf '# Harness Handoff\\n' > .ai/harness/handoff/current.md",
+          "printf '# Codex Resume Packet\\n' > .ai/harness/handoff/resume.md",
+          "EOF",
+          "chmod +x \"$repo/scripts/prepare-codex-handoff.sh\"",
+          "cat > \"$repo/scripts/check-task-workflow.sh\" <<'EOF'",
+          "#!/bin/bash",
+          "set -euo pipefail",
+          "if [[ ! -f .ai/harness/handoff/refresh-marker ]]; then",
+          "  echo '[workflow] Resume packet is older than handoff current' >&2",
+          "  exit 1",
+          "fi",
+          "echo '[workflow] OK'",
+          "EOF",
+          "chmod +x \"$repo/scripts/check-task-workflow.sh\"",
+          "echo migrate \"$repo\"",
+          "",
+        ].join("\n"),
+      );
+      expect(spawnSync("git", ["init", "-q"], { cwd: repo }).status).toBe(0);
+      process.chdir(repo);
+
+      const result = runInit({
+        sourceRoot: source,
+        syncSkill: false,
+        hostAdapters: false,
+        externalSkills: false,
+        codegraph: false,
+      });
+
+      expect(result.exitCode).toBe(0);
+      expect(result.steps.find((step) => step.step === "refresh handoff packet")?.status).toBe("ok");
+      expect(result.steps.find((step) => step.step === "verify repo harness")?.status).toBe("ok");
+      expect(readFileSync(join(repo, ".ai", "harness", "handoff", "refresh-marker"), "utf-8")).toContain("refreshed");
+    } finally {
+      process.chdir(previousCwd);
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   test("runInit can bootstrap core Waza, Mermaid, and cross-review skills for Claude and Codex", () => {
     const tmp = join(tmpdir(), `repo-harness-init-skills-${Date.now()}`);
     const source = join(tmp, "source");

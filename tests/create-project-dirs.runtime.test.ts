@@ -85,6 +85,12 @@ describe("create-project-dirs runtime smoke", () => {
       const gitignore = readFileSync(join(cwd, ".gitignore"), "utf-8");
       expect(gitignore).toContain("tasks/.current.md.tmp.*");
       expect(gitignore).toContain(".claude/.plan-state/");
+      expect(gitignore).toContain("# repo-harness generated helper wrappers");
+      expect(gitignore).toContain("scripts/check-task-workflow.sh");
+      expect(gitignore).toContain("scripts/prepare-codex-handoff.sh");
+      expect(gitignore).toContain("scripts/repo-harness/");
+      expect(gitignore).not.toContain("tasks/notes");
+      expect(gitignore).not.toContain("docs/researches");
       expect(existsSync(join(cwd, ".ai/context/context-map.json"))).toBe(true);
       expect(existsSync(join(cwd, ".ai/context/capabilities.json"))).toBe(true);
       expect(existsSync(join(cwd, ".ai/harness/checks/latest.json"))).toBe(true);
