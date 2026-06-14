@@ -56,12 +56,12 @@ En un repositorio adoptado, la superficie se mantiene pequeña:
 | `tasks/contracts/`, `tasks/reviews/` y `.ai/harness/checks/` | Scope, verificación y evidencia de review para probar que el trabajo terminó. |
 | `.ai/harness/handoff/` y `tasks/current.md` | Session journal y estado resumible, derivados de workflow artifacts en vez de chat memory. |
 
-## Novedades en 0.5.1
+## Novedades en 0.5.2
 
-- **Límite de comandos limpio.** `repo-harness update` solo refresca la superficie user-level CLI/runtime; `repo-harness adopt` es responsable del install, refresh y migration del workflow repo-local.
-- **Package-dispatched helper runtime.** Los wrappers generados en `scripts/*` pueden delegar con `repo-harness run <helper>`, de modo que los repos adoptados no necesitan vendorizar cada helper implementation.
-- **Ocho managed hook routes.** El README documenta la matriz exacta de routes que instalan los adapters de Claude y Codex: session context, edit guards, delegated-agent routing, post-edit/post-bash observers, always-on trace, prompt routing y stop closeout.
-- **Ejemplos de instalación listos para release.** First 5 Minutes separa machine bootstrap, user-level updates, read-only setup audit y repo-local adoption.
+- **Tooling advisories más silenciosos.** Los update checks de SessionStart usan por defecto un timestamp cache semanal, para que los avisos de Waza y CodeGraph no aparezcan en cada sesión.
+- **Safety hooks locales revisados.** `repo-harness security scan` separa active findings y reviewed exceptions; los hooks user-level warning-only necesitan exact command match, y los comandos de alto riesgo siguen activos.
+- **Setup checks más limpios.** `repo-harness setup check --check-updates` trata el skip de DB de gbrain fast-mode como readiness aceptado, pero mantiene visibles los warnings reales de gbrain.
+- **Cross-review más resistente.** El skill bundled `claude-review` puede recuperar resultados print-mode con stdout vacío desde los transcripts de sesión de Claude Code.
 
 ## Qué hace el producto
 
@@ -378,8 +378,8 @@ Guards habituales:
 
 ## Release actual
 
-- npm package: `repo-harness@0.5.1`
-- Generated workflow stamp: `repo-harness@0.5.1+template@0.5.1`
+- npm package: `repo-harness@0.5.2`
+- Generated workflow stamp: `repo-harness@0.5.2+template@0.5.2`
 - GitHub repository: `Ancienttwo/repo-harness`
 - Release history: [`docs/CHANGELOG.md`](docs/CHANGELOG.md)
 

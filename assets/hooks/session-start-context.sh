@@ -127,7 +127,7 @@ repo_harness_setup_check() {
 
 tooling_update_cache_is_fresh() {
   local report_file="$1"
-  local ttl="${REPO_HARNESS_TOOLING_ADVISORY_TTL_SECONDS:-86400}"
+  local ttl="${REPO_HARNESS_TOOLING_ADVISORY_TTL_SECONDS:-604800}"
   local now mtime age
 
   [[ -f "$report_file" ]] || return 1

@@ -20,6 +20,18 @@ export interface SecurityFinding {
   severity: SecuritySeverity;
   summary: string;
   recommendation: string;
+  command?: string;
+}
+
+export type SecurityReviewedExceptionSource = 'repo-policy' | 'user-config';
+
+export interface SecurityReviewedFinding extends SecurityFinding {
+  reviewed: {
+    reason: string;
+    source: SecurityReviewedExceptionSource;
+    reviewedAt?: string;
+    reviewedBy?: string;
+  };
 }
 
 export interface SecurityScannedFile {
@@ -31,6 +43,7 @@ export interface SecurityScannedFile {
 export interface SecurityScanReport {
   status: SecurityStatus;
   findings: SecurityFinding[];
+  reviewedFindings: SecurityReviewedFinding[];
   scannedFiles: SecurityScannedFile[];
 }
 
@@ -61,6 +74,20 @@ interface VscodeTask {
 
 interface VscodeTasksFile {
   tasks?: VscodeTask[];
+}
+
+interface SecurityReviewedException {
+  filePath: string;
+  ruleId: string;
+  reason: string;
+  command?: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+}
+
+interface LoadedSecurityReviewedException extends SecurityReviewedException {
+  normalizedFilePath: string;
+  source: SecurityReviewedExceptionSource;
 }
 
 const SUSPICIOUS_COMMAND_PATTERNS: Array<{ ruleId: string; regex: RegExp; summary: string }> = [
@@ -116,6 +143,10 @@ function readJson(filePath: string): unknown {
   return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
 function pushJsonFailure(findings: SecurityFinding[], filePath: string, err: unknown): void {
   findings.push({
     filePath,
@@ -138,6 +169,63 @@ function suspiciousMatch(command: string): { ruleId: string; summary: string } |
 function commandSnippet(command: string): string {
   const compact = command.replace(/\s+/g, ' ').trim();
   return compact.length > 160 ? `${compact.slice(0, 157)}...` : compact;
+}
+
+function normalizeConfigPath(value: string, repoRoot: string, home: string): string {
+  if (value === '~') return path.resolve(home);
+  if (value.startsWith('~/')) return path.resolve(home, value.slice(2));
+  if (path.isAbsolute(value)) return path.resolve(value);
+  return path.resolve(repoRoot, value);
+}
+
+function asString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
+}
+
+function reviewedExceptionEntries(raw: unknown): unknown[] {
+  if (!isRecord(raw)) return [];
+  const security = isRecord(raw.security) ? raw.security : undefined;
+  if (!security) return [];
+  const entries = security.reviewed_findings ?? security.reviewedFindings;
+  return Array.isArray(entries) ? entries : [];
+}
+
+function loadReviewedExceptions(repoRoot: string, home: string): LoadedSecurityReviewedException[] {
+  const sources: Array<{ filePath: string; source: SecurityReviewedExceptionSource }> = [
+    { filePath: path.join(repoRoot, '.ai', 'harness', 'policy.json'), source: 'repo-policy' },
+    { filePath: path.join(home, '.repo-harness', 'config.json'), source: 'user-config' },
+  ];
+  const exceptions: LoadedSecurityReviewedException[] = [];
+  for (const source of sources) {
+    if (!fs.existsSync(source.filePath)) continue;
+    let parsed: unknown;
+    try {
+      parsed = readJson(source.filePath);
+    } catch {
+      continue;
+    }
+    for (const entry of reviewedExceptionEntries(parsed)) {
+      if (!isRecord(entry)) continue;
+      const filePath = asString(entry.filePath);
+      const ruleId = asString(entry.ruleId);
+      const reason = asString(entry.reason);
+      if (!filePath || !ruleId || !reason) continue;
+      const command = asString(entry.command);
+      const reviewedAt = asString(entry.reviewedAt);
+      const reviewedBy = asString(entry.reviewedBy);
+      exceptions.push({
+        filePath,
+        ruleId,
+        reason,
+        ...(command ? { command } : {}),
+        ...(reviewedAt ? { reviewedAt } : {}),
+        ...(reviewedBy ? { reviewedBy } : {}),
+        normalizedFilePath: normalizeConfigPath(filePath, repoRoot, home),
+        source: source.source,
+      });
+    }
+  }
+  return exceptions;
 }
 
 function hookBlocks(config: HookConfig): Array<{ event: string; hook: HookCommand }> {
@@ -193,6 +281,7 @@ function scanHookConfig(
         ? `${hostLabel} ${event} hook looks risky: ${suspicious.summary}`
         : `${hostLabel} ${event} hook is not managed by repo-harness`,
       recommendation: `Review this command before trusting it: ${commandSnippet(command)}`,
+      command,
     });
   }
 }
@@ -244,8 +333,48 @@ function scanVscodeTasks(findings: SecurityFinding[], filePath: string): void {
       recommendation: command
         ? `Review or disable this automatic task: ${commandSnippet(command)}`
         : 'Review or disable this automatic task before opening the folder in VS Code.',
+      ...(command ? { command } : {}),
     });
   }
+}
+
+function matchingReviewedException(
+  finding: SecurityFinding,
+  exceptions: LoadedSecurityReviewedException[],
+): LoadedSecurityReviewedException | undefined {
+  if (finding.severity !== 'warn') return undefined;
+  const findingFilePath = path.resolve(finding.filePath);
+  return exceptions.find((entry) => {
+    if (entry.normalizedFilePath !== findingFilePath) return false;
+    if (entry.ruleId !== finding.ruleId) return false;
+    if (finding.command) return entry.command === finding.command;
+    return entry.command === undefined;
+  });
+}
+
+function applyReviewedExceptions(
+  findings: SecurityFinding[],
+  exceptions: LoadedSecurityReviewedException[],
+): { findings: SecurityFinding[]; reviewedFindings: SecurityReviewedFinding[] } {
+  const activeFindings: SecurityFinding[] = [];
+  const reviewedFindings: SecurityReviewedFinding[] = [];
+  for (const finding of findings) {
+    const reviewed = matchingReviewedException(finding, exceptions);
+    if (!reviewed) {
+      activeFindings.push(finding);
+      continue;
+    }
+    reviewedFindings.push({
+      ...finding,
+      reviewed: {
+        reason: reviewed.reason,
+        source: reviewed.source,
+        ...(reviewed.reviewedAt ? { reviewedAt: reviewed.reviewedAt } : {}),
+        ...(reviewed.reviewedBy ? { reviewedBy: reviewed.reviewedBy } : {}),
+      },
+    });
+  }
+  return { findings: activeFindings, reviewedFindings };
 }
 
 function reportStatus(findings: SecurityFinding[]): SecurityStatus {
@@ -273,7 +402,14 @@ export function runSecurityScan(opts: SecurityScanOptions = {}): SecurityScanRep
   scanHookConfig(findings, scannedFiles[3].filePath, 'Claude', true);
   scanHookConfig(findings, scannedFiles[4].filePath, 'Codex', true);
 
-  return { status: reportStatus(findings), findings, scannedFiles };
+  const reviewedExceptions = loadReviewedExceptions(repoRoot, home);
+  const applied = applyReviewedExceptions(findings, reviewedExceptions);
+  return {
+    status: reportStatus(applied.findings),
+    findings: applied.findings,
+    reviewedFindings: applied.reviewedFindings,
+    scannedFiles,
+  };
 }
 
 export function formatSecurityScan(report: SecurityScanReport, asJson = false): string {
@@ -282,13 +418,20 @@ export function formatSecurityScan(report: SecurityScanReport, asJson = false): 
   lines.push(`Security config: ${report.status}`);
   lines.push(`Scanned files: ${report.scannedFiles.length}`);
   if (report.findings.length === 0) {
-    lines.push('No findings.');
-    return lines.join('\n');
+    lines.push(report.reviewedFindings.length > 0 ? 'No active findings.' : 'No findings.');
   }
   for (const finding of report.findings) {
     lines.push(`- [${finding.severity}] ${finding.ruleId}: ${finding.summary}`);
     lines.push(`  ${finding.filePath}`);
     lines.push(`  ${finding.recommendation}`);
+  }
+  if (report.reviewedFindings.length > 0) {
+    lines.push('Reviewed exceptions:');
+  }
+  for (const finding of report.reviewedFindings) {
+    lines.push(`- [reviewed] ${finding.ruleId}: ${finding.summary}`);
+    lines.push(`  ${finding.filePath}`);
+    lines.push(`  reason: ${finding.reviewed.reason}`);
   }
   return lines.join('\n');
 }

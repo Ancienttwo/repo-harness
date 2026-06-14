@@ -50,21 +50,19 @@ In an adopted repo, the surface area is intentionally small:
 | `tasks/contracts/`, `tasks/reviews/`, and `.ai/harness/checks/` | Scope, verification, and review evidence for proving the work is done. |
 | `.ai/harness/handoff/` and `tasks/current.md` | Session journal and resumable status, derived from workflow artifacts instead of chat memory. |
 
-## What's New in 0.5.1
+## What's New in 0.5.2
 
-- **Clean command boundary.** `repo-harness update` now refreshes only the
-  user-level CLI/runtime surface, while `repo-harness adopt` owns repo-local
-  workflow install, refresh, and migration.
-- **Package-dispatched helper runtime.** Generated `scripts/*` wrappers can
-  delegate through `repo-harness run <helper>`, so adopted repos do not need to
-  vendor every helper implementation when the installed package already owns it.
-- **Eight managed hook routes.** The README now documents the exact hook route
-  matrix that Claude and Codex adapters install: session context, edit guards,
-  delegated-agent routing, post-edit and post-bash observers, always-on trace,
-  prompt routing, and stop closeout.
-- **Release-ready install examples.** The first-run and refresh commands now
-  show the split between machine bootstrap, user-level updates, read-only setup
-  audit, and repo-local adoption.
+- **Quieter tooling advisories.** SessionStart update checks now use a weekly
+  timestamp cache by default, so Waza and CodeGraph advisories stay useful
+  without firing on every new agent session.
+- **Reviewed local safety hooks.** `repo-harness security scan` separates
+  active findings from reviewed exceptions, using exact command matches for
+  user-level warning-only hooks while keeping high-risk commands blocking.
+- **Cleaner setup checks.** `repo-harness setup check --check-updates` now
+  treats gbrain fast-mode DB skips as accepted readiness and keeps real gbrain
+  warnings visible.
+- **More resilient cross-review.** The bundled `claude-review` skill can recover
+  empty-stdout print-mode results from Claude Code session transcripts.
 
 ## What repo-harness Does
 
@@ -461,8 +459,8 @@ Most common guards:
 
 ## Current Release
 
-- npm package: `repo-harness@0.5.1`
-- Generated workflow stamp: `repo-harness@0.5.1+template@0.5.1`
+- npm package: `repo-harness@0.5.2`
+- Generated workflow stamp: `repo-harness@0.5.2+template@0.5.2`
 - GitHub repository: `Ancienttwo/repo-harness`
 - Release history: [`docs/CHANGELOG.md`](docs/CHANGELOG.md)
 

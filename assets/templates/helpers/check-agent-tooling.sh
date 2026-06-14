@@ -963,6 +963,17 @@ function detectGbrainMcp(host) {
   };
 }
 
+function isGbrainFastOnlyConnectionSkip(doctorJson) {
+  if (!doctorJson || doctorJson.status !== "warnings") return false;
+  if (!Array.isArray(doctorJson.checks)) return false;
+  const warnings = doctorJson.checks.filter((entry) => entry?.status === "warn" || entry?.status === "warning");
+  if (warnings.length !== 1) return false;
+  const warning = warnings[0];
+  const message = String(warning.message || "");
+  return warning.name === "connection"
+    && (/Skipping DB checks \((--fast mode|"--fast mode)/i.test(message) || /fast mode skipped DB checks/i.test(message));
+}
+
 function detectGbrain() {
   const gbrainBin = resolvePathCommand("gbrain");
   let versionResult = gbrainBin
@@ -998,9 +1009,10 @@ function detectGbrain() {
   }
 
   const mcpConfigured = Object.values(mcpHosts).some((entry) => entry.status === "configured");
+  const acceptedFastWarning = doctorCommand.join(" ") === "doctor --json --fast" && isGbrainFastOnlyConnectionSkip(doctorJson);
   const status = !present
     ? "missing"
-    : (doctorJson?.status === "ok" ? "present" : doctorJson?.status === "warnings" ? "warning" : "warning");
+    : (doctorJson?.status === "ok" || acceptedFastWarning ? "present" : doctorJson?.status === "warnings" ? "warning" : "warning");
   const updateStatus = !checkUpdates
     ? "not-checked"
     : checkUpdateJson?.update_available
@@ -1014,6 +1026,8 @@ function detectGbrain() {
     status,
     reason: !present
       ? "gbrain CLI is not installed."
+      : acceptedFastWarning
+        ? "gbrain CLI is present; fast doctor only skipped DB checks."
       : doctorJson
         ? `gbrain CLI is present; doctor status is ${doctorJson.status}.`
         : "gbrain CLI is present, but doctor output could not be parsed.",

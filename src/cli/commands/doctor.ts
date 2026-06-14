@@ -362,12 +362,13 @@ function checkCodegraphIndex(probe: CodegraphProbe): DoctorCheckResult {
 function checkSecurityConfig(report: SecurityScanReport): DoctorCheckResult {
   const id = 'security-config';
   const describe = 'Local hook and VS Code automatic task security scan';
+  const reviewed = report.reviewedFindings.length;
   if (report.status === 'ok') {
     return {
       id,
       describe,
       status: 'ok',
-      detail: `scanned ${report.scannedFiles.length} files; no findings`,
+      detail: `scanned ${report.scannedFiles.length} files; no active findings${reviewed > 0 ? `; ${reviewed} reviewed exception(s)` : ''}`,
     };
   }
 
@@ -379,7 +380,7 @@ function checkSecurityConfig(report: SecurityScanReport): DoctorCheckResult {
     id,
     describe,
     status: report.status === 'fail' ? 'fail' : 'warn',
-    detail: `${report.findings.length} finding(s): ${high} high, ${warn} warn, ${fail} fail; first=${first.ruleId} at ${first.filePath}`,
+    detail: `${report.findings.length} finding(s): ${high} high, ${warn} warn, ${fail} fail${reviewed > 0 ? `; ${reviewed} reviewed exception(s)` : ''}; first=${first.ruleId} at ${first.filePath}`,
   };
 }
 

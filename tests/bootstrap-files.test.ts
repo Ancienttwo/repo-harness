@@ -58,7 +58,7 @@ describe("Bootstrap Script Contracts", () => {
     const pkg = JSON.parse(read("package.json"));
     const cliEntry = read("src/cli/index.ts");
     expect(pkg.name).toBe("repo-harness");
-    expect(pkg.version).toBe("0.5.1");
+    expect(pkg.version).toBe("0.5.2");
     expect(pkg.private).toBeUndefined();
     expect(pkg.bin["repo-harness"]).toBe("src/cli/index.ts");
     expect(pkg.bin["repo-harness-hook"]).toBe("src/cli/hook-entry.ts");
@@ -372,6 +372,11 @@ describe("Bootstrap Script Contracts", () => {
     expect(claudeReview).toContain("else BASE=HEAD");
     expect(claudeReview).toContain("Review the combined branch, staged, unstaged, and untracked changes");
     expect(claudeReview).toContain("run_with_optional_timeout claude -p");
+    expect(claudeReview).toContain("recover_claude_review_from_transcript");
+    expect(claudeReview).toContain("~/.claude/projects/<project>/<session-id>.jsonl");
+    expect(claudeReview).toContain("CLAUDE_CONFIG_DIR");
+    expect(claudeReview).toContain("stdout was empty; output above was recovered from the session transcript");
+    expect(claudeReview).toContain("intentionally does not pass `--no-session-persistence`");
     expect(claudeReview).not.toContain("${TO:+$TO 330}");
 
     expect(codexReview).toContain("committed branch diff");

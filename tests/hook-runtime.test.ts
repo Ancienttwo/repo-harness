@@ -1504,11 +1504,26 @@ describe("Hook runtime behavior", () => {
         "setup check --target codex --check-updates --json",
       ]);
 
+      const reportFile = join(cwd, ".ai/harness/security/tooling-update-advisory-codex.json");
+      const sixDaysAgo = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000);
+      utimesSync(reportFile, sixDaysAgo, sixDaysAgo);
+
       const second = runHook("session-start-context.sh", cwd, { env });
       expect(second.status).toBe(0);
       expect(second.stdout).toContain("Tooling Update Advisory");
       expect(second.stdout).toContain("tooling.codegraph.update");
       expect(readFileSync(logFile, "utf-8").trim().split("\n")).toEqual([
+        "setup check --target codex --check-updates --json",
+      ]);
+
+      const eightDaysAgo = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
+      utimesSync(reportFile, eightDaysAgo, eightDaysAgo);
+
+      const third = runHook("session-start-context.sh", cwd, { env });
+      expect(third.status).toBe(0);
+      expect(third.stdout).toContain("Tooling Update Advisory");
+      expect(readFileSync(logFile, "utf-8").trim().split("\n")).toEqual([
+        "setup check --target codex --check-updates --json",
         "setup check --target codex --check-updates --json",
       ]);
     } finally {

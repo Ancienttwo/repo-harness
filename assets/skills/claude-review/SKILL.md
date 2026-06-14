@@ -83,7 +83,11 @@ Claude runs in print mode with only `Read,Grep,Glob` (no `Bash`/`Edit`/`Write`),
 it can inspect repo files for context but cannot modify anything. `--disable-slash-commands`
 and the DIFF_START/DIFF_END markers defend against prompt injection from diff content.
 The filesystem-boundary prefix keeps Claude on repository code instead of crawling
-the host's agent skill definitions.
+the host's agent skill definitions. Claude Code also persists print-mode
+sessions to `~/.claude/projects/<project>/<session-id>.jsonl` unless
+`CLAUDE_CODE_SKIP_PROMPT_HISTORY` or `--no-session-persistence` disables it; this
+skill intentionally does not pass `--no-session-persistence`, so stdout capture
+failures can recover the final assistant text from the session transcript.
 
 ```bash
 TO=$(command -v gtimeout || command -v timeout || true)
@@ -103,13 +107,119 @@ Report findings, each marked [P1] (critical — must fix before merge) or [P2] (
 DIFF_START
 $DIFF
 DIFF_END"
-printf '%s' "$PROMPT" | run_with_optional_timeout claude -p --output-format text --disable-slash-commands --allowedTools Read,Grep,Glob --disallowedTools Bash,Edit,Write
+recover_claude_review_from_transcript() {
+  command -v node >/dev/null 2>&1 || return 1
+  node - "$ROOT" "$CLAUDE_REVIEW_STARTED" <<'NODE'
+const fs = require('fs');
+const path = require('path');
+
+const [rootArg, startedArg] = process.argv.slice(2);
+const home = process.env.HOME || '';
+const configDir = process.env.CLAUDE_CONFIG_DIR || (home ? path.join(home, '.claude') : '');
+if (!rootArg || !configDir) process.exit(1);
+
+const startedMs = Number(startedArg || 0) * 1000;
+const cwdCandidates = new Set([rootArg]);
+try {
+  cwdCandidates.add(fs.realpathSync(rootArg));
+} catch {
+  // Best effort; the literal git root still gives us the normal project key.
+}
+
+function projectKey(cwd) {
+  return cwd.replace(/[\\/]/g, '-');
+}
+
+function textFromContent(content) {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  return content
+    .filter((block) => block && block.type === 'text' && typeof block.text === 'string')
+    .map((block) => block.text)
+    .join('\n');
+}
+
+function textFromEntry(entry) {
+  if (!entry || entry.type !== 'assistant') return '';
+  if (entry.cwd && !cwdCandidates.has(entry.cwd)) return '';
+  return textFromContent(entry.message && entry.message.content);
+}
+
+const projectsRoot = path.join(configDir, 'projects');
+const dirs = [...new Set([...cwdCandidates].map(projectKey))]
+  .map((name) => path.join(projectsRoot, name))
+  .filter((dir) => {
+    try {
+      return fs.statSync(dir).isDirectory();
+    } catch {
+      return false;
+    }
+  });
+
+let best = null;
+for (const dir of dirs) {
+  for (const name of fs.readdirSync(dir)) {
+    if (!name.endsWith('.jsonl')) continue;
+    const file = path.join(dir, name);
+    const stat = fs.statSync(file);
+    if (startedMs && stat.mtimeMs + 5000 < startedMs) continue;
+    let lastText = '';
+    for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
+      if (!line.trim()) continue;
+      try {
+        const text = textFromEntry(JSON.parse(line));
+        if (text.trim()) lastText = text;
+      } catch {
+        // Ignore partial/corrupt transcript lines; another line may still hold the result.
+      }
+    }
+    if (lastText && (!best || stat.mtimeMs > best.mtimeMs)) {
+      best = { mtimeMs: stat.mtimeMs, text: lastText };
+    }
+  }
+}
+
+if (!best) process.exit(1);
+process.stdout.write(best.text.endsWith('\n') ? best.text : `${best.text}\n`);
+NODE
+}
+
+CLAUDE_REVIEW_OUT=$(mktemp -t claude-review-out.XXXXXX)
+CLAUDE_REVIEW_ERR=$(mktemp -t claude-review-err.XXXXXX)
+CLAUDE_REVIEW_RECOVERED=$(mktemp -t claude-review-transcript.XXXXXX)
+CLAUDE_REVIEW_STARTED=$(date +%s)
+printf '%s' "$PROMPT" | run_with_optional_timeout claude -p --output-format text --disable-slash-commands --allowedTools Read,Grep,Glob --disallowedTools Bash,Edit,Write >"$CLAUDE_REVIEW_OUT" 2>"$CLAUDE_REVIEW_ERR"
 CLAUDE_EXIT=$?
-if [ "$CLAUDE_EXIT" = "124" ]; then
-  echo "[claude-review] Claude stalled past 5.5 min — re-run, or narrow the diff."
-elif [ "$CLAUDE_EXIT" != "0" ]; then
-  echo "[claude-review] claude exited $CLAUDE_EXIT (check sign-in / network)."
+CLAUDE_USED_TRANSCRIPT=0
+if [ -s "$CLAUDE_REVIEW_OUT" ]; then
+  cat "$CLAUDE_REVIEW_OUT"
+else
+  recover_claude_review_from_transcript >"$CLAUDE_REVIEW_RECOVERED" || true
+  if [ -s "$CLAUDE_REVIEW_RECOVERED" ]; then
+    cat "$CLAUDE_REVIEW_RECOVERED"
+    CLAUDE_USED_TRANSCRIPT=1
+  fi
 fi
+if [ "$CLAUDE_EXIT" = "124" ]; then
+  if [ "$CLAUDE_USED_TRANSCRIPT" = "1" ]; then
+    echo "[claude-review] Claude stalled past 5.5 min; output above was recovered from the session transcript." >&2
+  else
+    echo "[claude-review] Claude stalled past 5.5 min — re-run, or narrow the diff."
+  fi
+elif [ "$CLAUDE_EXIT" != "0" ]; then
+  if [ "$CLAUDE_USED_TRANSCRIPT" = "1" ]; then
+    echo "[claude-review] claude exited $CLAUDE_EXIT; output above was recovered from the session transcript." >&2
+  else
+    echo "[claude-review] claude exited $CLAUDE_EXIT (check sign-in / network)."
+  fi
+elif [ ! -s "$CLAUDE_REVIEW_OUT" ]; then
+  if [ "$CLAUDE_USED_TRANSCRIPT" = "1" ]; then
+    echo "[claude-review] stdout was empty; output above was recovered from the session transcript." >&2
+  else
+    echo "[claude-review] Claude produced no stdout and no session transcript fallback was found. Check CLAUDE_CODE_SKIP_PROMPT_HISTORY, --no-session-persistence, sign-in, or network state."
+  fi
+fi
+rm -f "$CLAUDE_REVIEW_OUT" "$CLAUDE_REVIEW_ERR" "$CLAUDE_REVIEW_RECOVERED"
 ```
 
 ## Step 3 — Present verbatim + gate

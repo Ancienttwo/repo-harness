@@ -317,6 +317,44 @@ describe('doctor command (Phase 1C)', () => {
     });
   }, DOCTOR_CHECK_TIMEOUT_MS);
 
+  test('security-config treats reviewed user-level warning as ok', () => {
+    withTempHome((home) => {
+      const settingsPath = path.join(home, '.claude/settings.json');
+      const configPath = path.join(home, '.repo-harness/config.json');
+      fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+      fs.mkdirSync(path.dirname(configPath), { recursive: true });
+      fs.writeFileSync(
+        settingsPath,
+        JSON.stringify({
+          hooks: {
+            SessionStart: [{ hooks: [{ type: 'command', command: 'echo hello' }] }],
+          },
+        }, null, 2),
+      );
+      fs.writeFileSync(
+        configPath,
+        JSON.stringify({
+          security: {
+            reviewed_findings: [
+              {
+                filePath: '~/.claude/settings.json',
+                ruleId: 'unmanaged-hook-command',
+                command: 'echo hello',
+                reason: 'Reviewed local test hook',
+              },
+            ],
+          },
+        }, null, 2),
+      );
+
+      const r = runDoctor();
+      const security = r.checks.find((c) => c.id === 'security-config')!;
+      expect(security.status).toBe('ok');
+      expect(security.detail).toContain('no active findings');
+      expect(security.detail).toContain('1 reviewed exception');
+    });
+  }, DOCTOR_CHECK_TIMEOUT_MS);
+
   test('CLI doctor includes CodeGraph readiness without mutating CodeGraph state', () => {
     const envRoot = setupFakeEnvironment('repo-harness-doctor-codegraph');
     const logFile = path.join(envRoot.root, 'tool.log');

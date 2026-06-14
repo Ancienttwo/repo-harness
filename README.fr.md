@@ -56,12 +56,12 @@ Dans un dépôt adopté, la surface à comprendre reste volontairement réduite 
 | `tasks/contracts/`, `tasks/reviews/` et `.ai/harness/checks/` | Scope, vérification et preuves de review pour démontrer que le travail est terminé. |
 | `.ai/harness/handoff/` et `tasks/current.md` | Session journal et état resumable dérivés des workflow artifacts plutôt que de la chat memory. |
 
-## Nouveautés de la 0.5.1
+## Nouveautés de la 0.5.2
 
-- **Frontière de commande claire.** `repo-harness update` ne rafraîchit que la surface user-level CLI/runtime, tandis que `repo-harness adopt` porte l'installation, le rafraîchissement et la migration du workflow repo-local.
-- **Package-dispatched helper runtime.** Les wrappers générés dans `scripts/*` peuvent déléguer via `repo-harness run <helper>`, donc les dépôts adoptés n'ont pas besoin de vendoriser chaque helper implementation.
-- **Huit managed hook routes.** Le README documente la matrice exacte installée par les adapters Claude et Codex : session context, edit guards, delegated-agent routing, post-edit/post-bash observers, always-on trace, prompt routing et stop closeout.
-- **Exemples d'installation prêts pour release.** First 5 Minutes sépare machine bootstrap, user-level updates, read-only setup audit et repo-local adoption.
+- **Tooling advisories plus calmes.** Les checks update de SessionStart utilisent désormais un cache timestamp d'une semaine par défaut, afin que les advisories Waza et CodeGraph restent utiles sans apparaître à chaque session.
+- **Safety hooks locaux reviewés.** `repo-harness security scan` sépare les active findings des reviewed exceptions, avec exact command match pour les hooks user-level warning-only ; les commandes à haut risque restent actives.
+- **Setup checks plus propres.** `repo-harness setup check --check-updates` traite le skip DB de gbrain fast-mode comme un état readiness accepté, tout en gardant les vrais warnings gbrain visibles.
+- **Cross-review plus robuste.** Le skill bundled `claude-review` peut récupérer les résultats print-mode à stdout vide depuis les transcripts de session Claude Code.
 
 ## Ce que fait le produit
 
@@ -382,8 +382,8 @@ Guards courants :
 
 ## Release actuelle
 
-- npm package : `repo-harness@0.5.1`
-- Generated workflow stamp : `repo-harness@0.5.1+template@0.5.1`
+- npm package : `repo-harness@0.5.2`
+- Generated workflow stamp : `repo-harness@0.5.2+template@0.5.2`
 - GitHub repository : `Ancienttwo/repo-harness`
 - Release history : [`docs/CHANGELOG.md`](docs/CHANGELOG.md)
 

@@ -327,7 +327,8 @@ describe("check-agent-tooling", () => {
         architecture_diagram: "mermaid",
       });
       expect(report.tools.codex_automation_profile.vendoring_policy).toBe("do-not-vendor-skill-body");
-      expect(report.tools.gbrain.status).toBe("warning");
+      expect(report.tools.gbrain.status).toBe("present");
+      expect(report.tools.gbrain.reason).toContain("fast doctor only skipped DB checks");
       expect(report.tools.gbrain.mcp_hosts.claude.status).toBe("disabled");
       expect(report.tools.gbrain.mcp_hosts.codex.status).toBe("disabled");
       expect(report.tools.gbrain.impact.knowledge_tasks).toBe("manual-only");
@@ -338,6 +339,52 @@ describe("check-agent-tooling", () => {
       expect(report.tools.codegraph.mcp_hosts.codex.status).toBe("configured");
       expect(report.tools.codegraph.project_index.status).toBe("up-to-date");
       expect(report.tools.codegraph.impact.code_navigation).toBe("missing");
+    } finally {
+      rmSync(envRoot.root, { recursive: true, force: true });
+    }
+  }, 15000);
+
+  test("keeps gbrain warning when fast doctor reports a real warning", () => {
+    const envRoot = setupFakeEnvironment("check-agent-tooling-gbrain-warning");
+    try {
+      writeExecutable(
+        join(envRoot.fakeBin, "gbrain"),
+        [
+          "#!/bin/bash",
+          "set -euo pipefail",
+          "case \"$*\" in",
+          "  \"--version\")",
+          "    echo 'gbrain 0.12.0'",
+          "    ;;",
+          "  \"doctor --json --fast\")",
+          "    echo '{\"status\":\"warnings\",\"health_score\":80,\"checks\":[{\"name\":\"sync_freshness\",\"status\":\"warn\",\"message\":\"stale source\"}]}'",
+          "    ;;",
+          "  \"integrations list --json\")",
+          "    echo '{}'",
+          "    ;;",
+          "  *)",
+          "    exit 1",
+          "    ;;",
+          "esac",
+          "",
+        ].join("\n")
+      );
+
+      const res = spawnSync("bash", [SCRIPT, "--json", "--host", "codex"], {
+        cwd: ROOT,
+        encoding: "utf-8",
+        env: {
+          ...process.env,
+          HOME: envRoot.home,
+          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: "0",
+        },
+      });
+
+      expect(res.status).toBe(0);
+      const report = JSON.parse(res.stdout);
+      expect(report.tools.gbrain.status).toBe("warning");
+      expect(report.tools.gbrain.reason).toContain("doctor status is warnings");
     } finally {
       rmSync(envRoot.root, { recursive: true, force: true });
     }

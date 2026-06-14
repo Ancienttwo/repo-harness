@@ -8,7 +8,7 @@
         "commander": "^14.0.3",
       },
       "devDependencies": {
-        "@colbymchenry/codegraph": "^1.0.1",
+        "@colbymchenry/codegraph": "1.0.1",
         "@types/bun": "latest",
       },
     },

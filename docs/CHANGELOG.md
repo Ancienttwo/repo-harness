@@ -4,6 +4,41 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-06-15
+
+### Added
+
+- Added a weekly timestamp cache for SessionStart tooling-update advisories so
+  Waza and CodeGraph update checks run at most once per week by default unless
+  `REPO_HARNESS_TOOLING_ADVISORY_TTL_SECONDS` overrides the TTL.
+- Added reviewed security exceptions to `repo-harness security scan` so
+  user-level warning-only hook findings can be accepted through exact
+  `filePath` + `ruleId` + `command` matches while high/fail findings stay
+  active.
+- Added transcript recovery to the bundled `claude-review` cross-review skill
+  for Claude Code print-mode runs that write the final assistant message to the
+  session transcript but produce empty stdout.
+
+### Changed
+
+- Treated `gbrain doctor --json --fast` connection warnings that only report
+  skipped DB checks as an accepted fast-mode readiness state, while preserving
+  real gbrain warnings such as freshness drift.
+- Pinned the repo-local CodeGraph dev dependency to `1.0.1` so local-first
+  readiness checks do not float across patch releases.
+
+### Fixed
+
+- `repo-harness setup check --target codex --check-updates --json` now reports
+  a fully green setup on this machine after Waza and CodeGraph are up to date,
+  reviewed user-level safety hooks are recorded, and gbrain fast-mode DB checks
+  are treated as intentionally skipped.
+
+### Release Notes
+
+- Prepared the `repo-harness@0.5.2` package line for npm publish, registry
+  readback, clean-room `npx` smoke, Git tag, and GitHub release creation.
+
 ## [0.5.1] - 2026-06-14
 
 ### Fixed
