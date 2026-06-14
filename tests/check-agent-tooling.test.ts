@@ -679,4 +679,49 @@ describe("check-agent-tooling", () => {
       rmSync(envRoot.root, { recursive: true, force: true });
     }
   }, 15000);
+
+  test("uses the local CodeGraph platform bundle when the npm shim is unusable", () => {
+    const envRoot = setupFakeEnvironment("check-agent-tooling-codegraph-bundle");
+    const bundleBin = join(
+      envRoot.root,
+      "node_modules",
+      `@colbymchenry/codegraph-${process.platform}-${process.arch}`,
+      "bin"
+    );
+    const shimBin = join(envRoot.root, "node_modules", ".bin");
+    try {
+      mkdirSync(bundleBin, { recursive: true });
+      mkdirSync(shimBin, { recursive: true });
+      mkdirSync(join(envRoot.home, ".codex"), { recursive: true });
+      writeFileSync(join(envRoot.home, ".codex", "config.toml"), "[mcp_servers.codegraph]\ncommand = \"codegraph\"\n");
+      writeFileSync(
+        join(envRoot.root, "package.json"),
+        JSON.stringify({ devDependencies: { "@colbymchenry/codegraph": "1.0.1" } }, null, 2)
+      );
+      writeFakeNpx(envRoot.fakeBin);
+      writeFakeGbrain(envRoot.fakeBin);
+      writeFakeCodeGraph(bundleBin, { version: "1.0.1" });
+      writeExecutable(join(shimBin, "codegraph"), "#!/bin/bash\necho 'bad shim used' >&2\nexit 99\n");
+
+      const res = spawnSync("bash", [SCRIPT, "--json", "--host", "codex"], {
+        cwd: envRoot.root,
+        encoding: "utf-8",
+        env: {
+          ...process.env,
+          HOME: envRoot.home,
+          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+        },
+      });
+
+      expect(res.status).toBe(0);
+      const report = JSON.parse(res.stdout);
+      expect(report.tools.codegraph.status).toBe("present");
+      expect(report.tools.codegraph.source).toBe("local");
+      expect(report.tools.codegraph.bin_path).toContain(`@colbymchenry/codegraph-${process.platform}-${process.arch}`);
+      expect(report.tools.codegraph.local_version).toBe("1.0.1");
+      expect(report.tools.codegraph.project_index.status).toBe("up-to-date");
+    } finally {
+      rmSync(envRoot.root, { recursive: true, force: true });
+    }
+  }, 15000);
 });

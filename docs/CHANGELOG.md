@@ -4,6 +4,21 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-06-14
+
+### Fixed
+
+- Fixed CodeGraph readiness detection so repo-local checks prefer the installed
+  platform bundle before the npm shim. This prevents a broken `.bin/codegraph`
+  shim from turning a ready local index into `project_index=unavailable`.
+- Synced the same CodeGraph resolver into the generated-project helper template.
+
+### Release Notes
+
+- Prepared the `repo-harness@0.5.1` package line for publish; npm publish,
+  registry readback, and GitHub release creation remain explicit release
+  actions.
+
 ## [0.5.0] - 2026-06-14
 
 ### Added

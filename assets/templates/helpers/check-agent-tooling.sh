@@ -1159,6 +1159,15 @@ function codeGraphPackageDeclared() {
   );
 }
 
+function codeGraphPlatformPackageName() {
+  return `${CODEGRAPH_PACKAGE}-${process.platform}-${process.arch}`;
+}
+
+function codeGraphPlatformBundleBin() {
+  if (process.platform === "win32") return null;
+  return path.join(REPO_ROOT, "node_modules", codeGraphPlatformPackageName(), "bin", "codegraph");
+}
+
 function resolveCodeGraphBinary() {
   const allowRepoLocal = process.env.AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL !== "0";
   const allowGlobal = process.env.AGENTIC_DEV_CODEGRAPH_ALLOW_GLOBAL !== "0";
@@ -1167,7 +1176,10 @@ function resolveCodeGraphBinary() {
   const globalOverride = process.env.AGENTIC_DEV_CODEGRAPH_GLOBAL_BIN;
 
   if (localOverride) localCandidates.push(localOverride);
-  if (allowRepoLocal) localCandidates.push(path.join(REPO_ROOT, "node_modules", ".bin", "codegraph"));
+  if (allowRepoLocal) {
+    localCandidates.push(codeGraphPlatformBundleBin());
+    localCandidates.push(path.join(REPO_ROOT, "node_modules", ".bin", "codegraph"));
+  }
 
   let localBinPath = null;
   for (const candidate of localCandidates) {

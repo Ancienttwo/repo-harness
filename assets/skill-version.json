@@ -1,6 +1,6 @@
 {
-  "version": "0.5.0",
-  "templateVersion": "0.5.0",
+  "version": "0.5.1",
+  "templateVersion": "0.5.1",
   "skillName": "repo-harness",
   "contractId": "tasks-first-harness-v1",
   "retiredAliases": [
@@ -127,6 +127,10 @@
     {
       "version": "0.5.0",
       "description": "Splits user-level runtime refresh from repo adoption, adds package-dispatched helper commands, documents the eight managed hook routes, and prepares the release README surface"
+    },
+    {
+      "version": "0.5.1",
+      "description": "Fixes CodeGraph readiness detection by preferring the local platform bundle before the npm shim and syncs the downstream helper template"
     }
   ],
   "generatedProjectStamp": {

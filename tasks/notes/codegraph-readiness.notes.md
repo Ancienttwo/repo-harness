@@ -72,3 +72,11 @@ The initial captured plan picked the right product shape, but it missed three ex
 - Because upstream `codegraph install --target claude` rewrites `~/.claude.json` without preserving `alwaysLoad`, repo-harness skips that install when the Claude global MCP entry is already present and only repairs the always-load pin plus allowed-tools entry.
 - Chosen tradeoff: pin only the CodeGraph server so structural code-navigation tools stay directly visible while other high-cardinality MCP/plugin tools can remain deferred.
 - The detector now reports Claude CodeGraph MCP as `deferred` when the server entry exists without `alwaysLoad=true`; doctor surfaces that as a warning with the same configure command as remediation.
+
+## 2026-06-14 Local Bundle Resolver Slice
+
+- `repo-harness setup check --target codex --check-updates --json` reported `index=unavailable` even though global `codegraph status /Users/ancienttwo/Projects/agentic-dev` and the repo-local platform bundle both read the index as up to date.
+- The pressure point was the npm shim at `node_modules/.bin/codegraph`: direct execution could hang before `--version`, while `node_modules/@colbymchenry/codegraph-darwin-arm64/bin/codegraph` returned immediately.
+- The detector now resolves the local platform optionalDependency launcher before falling back to `.bin/codegraph`; explicit `AGENTIC_DEV_CODEGRAPH_LOCAL_BIN` still wins for tests and operator override.
+- This keeps the self-host repo's local dependency boundary intact without falling back to global CodeGraph when the checked-in package has a working platform bundle.
+- Regression coverage lives in `tests/check-agent-tooling.test.ts` and proves an unusable `.bin` shim no longer turns a ready local index into `project_index=unavailable`.
