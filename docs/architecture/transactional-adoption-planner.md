@@ -69,6 +69,9 @@ without executing the legacy shell migrator or writing files.
 Operation paths are repo-relative. `repoRoot` appears only in the plan header.
 Renderers redact generated file content by default and expose `contentHash` plus
 `contentPreview` for reviewable diffs without large stdout payloads.
+Each rendered operation includes `rollback` metadata so reviewers can see the
+planned recovery strategy before apply runs. Runtime backup paths remain in the
+apply result because those paths are created only by the fs-transaction writer.
 
 ## Supported Operation Kinds
 
@@ -100,6 +103,20 @@ path is returned in the operation result.
 This currently protects `writeFile ifMissing` and `appendManagedBlock`
 application in the safe subset. Dry-run and skipped operations do not create
 locks, temp files, or backups.
+
+## Rollback Metadata
+
+Every planned operation carries a rollback strategy:
+
+- `mkdir`: `remove-empty-directory`
+- `writeFile ifMissing`: `delete-created-file`
+- `writeFile` replacement and `appendManagedBlock`: `restore-or-delete-file`
+  using the runtime fs-transaction backup when one is produced
+- skipped operations and verification-only boundaries: `none`
+
+The metadata is part of the operation plan. It does not perform rollback by
+itself; it makes the intended recovery path auditable before future applicator
+slices widen the supported mutation set.
 
 ## Gitignore Managed Block
 
@@ -182,4 +199,4 @@ recoverable before widening its supported operation set:
 - move workflow-contract install application into the TypeScript applicator
 - move remaining bootstrap templates into the workflow contract manifest
 - move source-helper/runtime-copy handling into the TypeScript planner
-- add rollback metadata to operation plans
+- add rollback execution helpers for the fs-transaction backup records

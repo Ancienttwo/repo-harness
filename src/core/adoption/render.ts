@@ -1,5 +1,6 @@
 import { createHash } from "crypto";
 import type { AdoptionOperation, AdoptionPlan } from "./operations";
+import { rollbackMetadataForOperation } from "./rollback";
 
 function contentHash(content: string): string {
   return `sha256:${createHash("sha256").update(content).digest("hex")}`;
@@ -11,10 +12,12 @@ function contentPreview(content: string): string {
 }
 
 function renderOperation(operation: AdoptionOperation): Record<string, unknown> {
+  const rollback = operation.rollback ?? rollbackMetadataForOperation(operation);
   if (operation.kind === "writeFile") {
     const { content: _content, ...rest } = operation;
     return {
       ...rest,
+      rollback,
       contentHash: contentHash(operation.content),
       contentPreview: contentPreview(operation.content),
     };
@@ -23,11 +26,12 @@ function renderOperation(operation: AdoptionOperation): Record<string, unknown> 
     const { content: _content, ...rest } = operation;
     return {
       ...rest,
+      rollback,
       contentHash: contentHash(operation.content),
       contentPreview: contentPreview(operation.content),
     };
   }
-  return { ...operation };
+  return { ...operation, rollback };
 }
 
 export function renderAdoptionPlanObject(plan: AdoptionPlan): Record<string, unknown> {

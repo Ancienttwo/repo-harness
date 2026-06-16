@@ -175,3 +175,19 @@ Result: pass; source entrypoint emitted `protocol: 1`, `command: "adopt"`, and
   `bash scripts/ensure-codegraph.sh --sync`.
 - Setup residual: `repo-harness setup check --target codex --check-updates --json`
   reports no warn/fail and one existing Waza update `needs_agent` action.
+
+## Follow-up Slice: Rollback Metadata
+
+- Added per-operation rollback metadata to the TypeScript adoption plan.
+- Planned `mkdir` operations advertise `remove-empty-directory`, `writeFile
+  ifMissing` advertises `delete-created-file`, and replacement/managed-block
+  writes advertise `restore-or-delete-file` through runtime fs-transaction
+  backups.
+- Kept runtime backup paths in apply results because those paths are created
+  only during mutation.
+- Ran the bounded tooling update advisory commands. CodeGraph readiness cleared
+  after sync; Waza still reports the existing `needs_agent` update action even
+  though `npx -y skills update` reports all global skills are up to date.
+- Verification: focused adoption/init/workflow tests passed, CLI dry-run JSON
+  smoke confirmed every operation has rollback metadata, and full
+  `bash scripts/check-ci.sh` passed with 771 tests.

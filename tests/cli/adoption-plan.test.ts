@@ -182,6 +182,45 @@ describe("planAdoption", () => {
       rmSync(repo, { recursive: true, force: true });
     }
   });
+
+  test("adds rollback metadata to every planned operation", () => {
+    const repo = tempRepo();
+    try {
+      const plan = planAdoption({ repoRoot: repo, mode: "standard" });
+      const mkdir = plan.operations.find((operation) => operation.id === "mkdir:plans");
+      const spec = plan.operations.find((operation) => operation.id === "writeFile:docs/spec.md:ifMissing");
+      const workflowContract = plan.operations.find(
+        (operation) => operation.id === "writeFile:.ai/harness/workflow-contract.json:workflow-contract",
+      );
+      const gitignore = plan.operations.find(
+        (operation) => operation.id === "appendManagedBlock:.gitignore:repo-harness-generated-runtime",
+      );
+
+      expect(plan.operations.every((operation) => operation.rollback)).toBe(true);
+      expect(mkdir?.rollback).toEqual(
+        expect.objectContaining({ strategy: "remove-empty-directory", paths: ["plans"], backup: "not-needed" }),
+      );
+      expect(spec?.rollback).toEqual(
+        expect.objectContaining({ strategy: "delete-created-file", paths: ["docs/spec.md"], backup: "not-needed" }),
+      );
+      expect(workflowContract?.rollback).toEqual(
+        expect.objectContaining({
+          strategy: "restore-or-delete-file",
+          paths: [".ai/harness/workflow-contract.json"],
+          backup: "runtime-fs-transaction",
+        }),
+      );
+      expect(gitignore?.rollback).toEqual(
+        expect.objectContaining({
+          strategy: "restore-or-delete-file",
+          paths: [".gitignore"],
+          backup: "runtime-fs-transaction",
+        }),
+      );
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("adoption renderers", () => {
@@ -197,6 +236,9 @@ describe("adoption renderers", () => {
       expect(writeFile?.content).toBeUndefined();
       expect(String(writeFile?.contentHash).startsWith("sha256:")).toBe(true);
       expect(String(writeFile?.contentPreview)).toContain("# Product Spec:");
+      expect(writeFile?.rollback).toEqual(
+        expect.objectContaining({ strategy: "delete-created-file", paths: ["docs/spec.md"] }),
+      );
       expect(JSON.parse(renderAdoptionPlanJson(plan)).protocol).toBe(1);
     } finally {
       rmSync(repo, { recursive: true, force: true });

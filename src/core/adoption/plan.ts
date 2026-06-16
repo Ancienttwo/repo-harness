@@ -9,6 +9,7 @@ import { managedBlockNeedsUpdate } from "../../effects/managed-block";
 import { workflowContractInstallOperation } from "./workflow-contract-plan";
 import { adoptionTemplateFile } from "./manifest-templates";
 import { helperWrapperGitignoreContent, helperWrapperOperations } from "./helper-wrapper-plan";
+import { withRollbackMetadata } from "./rollback";
 
 export interface PlanAdoptionOptions {
   readonly repoRoot: string;
@@ -171,6 +172,7 @@ export function planAdoption(opts: PlanAdoptionOptions): AdoptionPlan {
   );
 
   operations.push(gitignoreOperation, ...selfHostOperations(mode));
+  const operationsWithRollback = operations.map(withRollbackMetadata);
 
   return {
     protocol: 1,
@@ -178,8 +180,8 @@ export function planAdoption(opts: PlanAdoptionOptions): AdoptionPlan {
     repoRoot,
     mode,
     apply: opts.apply === true,
-    operations,
-    summary: summarizeOperations(operations),
+    operations: operationsWithRollback,
+    summary: summarizeOperations(operationsWithRollback),
     warnings: selfHostWarnings(mode),
   };
 }

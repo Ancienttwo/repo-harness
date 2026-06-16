@@ -2,6 +2,19 @@ import type { AdoptionMode } from "./modes";
 
 export type AdoptionRisk = "low" | "medium" | "high";
 export type AdoptionOperationStatus = "planned" | "skipped" | "applied" | "failed";
+export type AdoptionRollbackStrategy =
+  | "none"
+  | "remove-empty-directory"
+  | "delete-created-file"
+  | "restore-or-delete-file"
+  | "manual";
+
+export interface AdoptionRollbackMetadata {
+  readonly strategy: AdoptionRollbackStrategy;
+  readonly paths?: readonly string[];
+  readonly backup?: "not-needed" | "runtime-fs-transaction";
+  readonly description: string;
+}
 
 export interface BaseOperation {
   readonly id: string;
@@ -10,6 +23,7 @@ export interface BaseOperation {
   readonly reason: string;
   readonly risk: AdoptionRisk;
   readonly status: AdoptionOperationStatus;
+  readonly rollback?: AdoptionRollbackMetadata;
 }
 
 export interface MkdirOperation extends BaseOperation {

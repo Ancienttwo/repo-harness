@@ -14,6 +14,7 @@
 
 - 2026-06-16: Phase 1 landed the TypeScript adoption operation model, planner, renderer, `adopt --dry-run --json` CLI branch, safe applicator subset, fixture snapshots, and CLI smoke coverage. Evidence: `bun test tests/cli/adoption-plan.test.ts` passed.
 - 2026-06-16: Sprint closeout added architecture/changelog documentation, updated compatibility tests, preserved HOME-target validation on the new JSON dry-run path, and passed `bun test`, `bash scripts/check-ci.sh`, and source-entrypoint `bun src/cli/index.ts adopt --repo . --dry-run --json`.
+- 2026-06-16: Follow-up backlog completed workflow-contract planning, manifest templates, helper wrappers, atomic writer, text dry-run routing, experimental TS apply, and rollback metadata. Evidence: focused adoption/init/workflow tests, CLI rollback smoke, and final `bash scripts/check-ci.sh` passed.
 
 ## 1. 背景与问题
 
@@ -879,7 +880,7 @@ Low-medium. New JSON dry-run path is additive. Existing apply path is preserved.
 [x] 引入 atomic writer with backup / lock / fsync
 [x] 让 adopt --dry-run text 也使用 TS planner renderer
 [x] 让 adopt apply 可选启用 TS applicator：--experimental-ts-apply
-[ ] 给 operation plan 增加 rollback metadata
+[x] 给 operation plan 增加 rollback metadata
 ```
 
 推荐下一 sprint 名称：

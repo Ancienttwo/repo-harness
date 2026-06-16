@@ -27,6 +27,8 @@ All notable changes to this skill are documented here.
 - Added `repo-harness adopt --experimental-ts-apply` as an opt-in TypeScript
   safe-applicator path, with preflight rejection for plans containing
   unsupported operations.
+- Added rollback metadata to adoption operation plans so dry-run JSON and
+  experimental apply reports expose the planned recovery strategy per operation.
 
 ## [0.5.3] - 2026-06-15
 
