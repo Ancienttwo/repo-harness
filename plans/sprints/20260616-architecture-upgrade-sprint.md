@@ -17,7 +17,7 @@
 
 ## 1. 背景与问题
 
-当前代码库已经有清晰的 `init/update/adopt` 边界：`update` 会拒绝 repo-level 参数并提示使用 `adopt`，`adopt` 也拒绝写 user-level 状态的参数。 
+当前代码库已经有清晰的 `init/update/adopt` 边界：`update` 会拒绝 repo-level 参数并提示使用 `adopt`，`adopt` 也拒绝写 user-level 状态的参数。
 
 但 `adopt` 的核心迁移逻辑仍主要由 `scripts/migrate-project-template.sh` 承担。该脚本负责 repo workflow surface、hook、docs、helpers、gitignore、handoff、version stamp、verify 等大量行为。  它还内嵌 Node 片段做 JSON hook merge。
 
@@ -333,7 +333,7 @@ appendManagedBlock:
   .gitignore repo-harness runtime/generated block
 ```
 
-这些目录和文件对应当前 shell migration 已经在创建的 repo workflow surface。 
+这些目录和文件对应当前 shell migration 已经在创建的 repo workflow surface。
 
 **Checklist**：
 
