@@ -50,15 +50,17 @@ In an adopted repo, the surface area is intentionally small:
 | `tasks/contracts/`, `tasks/reviews/`, and `.ai/harness/checks/` | Scope, verification, and review evidence for proving the work is done. |
 | `.ai/harness/handoff/` and `tasks/current.md` | Session journal and resumable status, derived from workflow artifacts instead of chat memory. |
 
-## What's New in 0.5.3
+## What's New in 0.6.0
 
-- **Pinned runtime updates.** `repo-harness update --version <version>` now
-  installs the requested `repo-harness@<version>` package instead of being
-  intercepted by the top-level CLI version shortcut.
-- **Version shortcut preserved.** `repo-harness --version` and
-  `repo-harness -V` still print the CLI version when used at the top level.
-- **Patch-only surface.** No hook route, setup check, security scan, or workflow
-  contract behavior changes beyond the update command option fix.
+- **Transactional adoption plans.** `repo-harness adopt --dry-run --json` now
+  emits a protocol v1 operation plan with stable IDs, summaries, content hashes,
+  and rollback metadata.
+- **Manifest-owned bootstrap files.** The initial `docs/spec.md`,
+  `tasks/todos.md`, `tasks/current.md`, and `tasks/lessons.md` templates now
+  come from the workflow contract manifest instead of planner-local strings.
+- **Experimental TypeScript apply.** `repo-harness adopt --experimental-ts-apply`
+  can apply the safe operation subset with atomic writes, target locks, backups,
+  and preflight rejection for unsupported self-host boundaries.
 
 ## What repo-harness Does
 
@@ -455,8 +457,8 @@ Most common guards:
 
 ## Current Release
 
-- npm package: `repo-harness@0.5.3`
-- Generated workflow stamp: `repo-harness@0.5.3+template@0.5.3`
+- npm package: `repo-harness@0.6.0`
+- Generated workflow stamp: `repo-harness@0.6.0+template@0.6.0`
 - GitHub repository: `Ancienttwo/repo-harness`
 - Release history: [`docs/CHANGELOG.md`](docs/CHANGELOG.md)
 

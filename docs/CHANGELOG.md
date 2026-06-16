@@ -4,6 +4,10 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+- (empty)
+
+## [0.6.0] - 2026-06-16
+
 ### Added
 
 - Added the Transactional Adoption Planner foundation for
@@ -34,6 +38,12 @@ All notable changes to this skill are documented here.
 - Added workflow-contract-backed adoption templates for `tasks/todos.md` and
   `tasks/lessons.md`, completing manifest ownership of the initial bootstrap
   ledger file bodies.
+
+### Release Notes
+
+- Prepared the `repo-harness@0.6.0` minor release line for npm publish,
+  registry readback, clean-room `npx` smoke, Git tag, and GitHub release
+  creation.
 
 ## [0.5.3] - 2026-06-15
 

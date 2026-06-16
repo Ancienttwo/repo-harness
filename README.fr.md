@@ -56,11 +56,18 @@ Dans un dépôt adopté, la surface à comprendre reste volontairement réduite 
 | `tasks/contracts/`, `tasks/reviews/` et `.ai/harness/checks/` | Scope, vérification et preuves de review pour démontrer que le travail est terminé. |
 | `.ai/harness/handoff/` et `tasks/current.md` | Session journal et état resumable dérivés des workflow artifacts plutôt que de la chat memory. |
 
-## Nouveautés de la 0.5.3
+## Nouveautés de la 0.6.0
 
-- **Runtime updates épinglés.** `repo-harness update --version <version>` installe maintenant le package `repo-harness@<version>` demandé au lieu d'être intercepté par le raccourci global de version de la CLI.
-- **Version shortcut préservé.** `repo-harness --version` et `repo-harness -V` continuent d'afficher la version CLI lorsqu'ils sont utilisés au niveau supérieur.
-- **Patch-only surface.** Aucun changement de hook route, setup check, security scan ou workflow contract au-delà du fix de l'option du command update.
+- **Transactional adoption plans.** `repo-harness adopt --dry-run --json` émet
+  maintenant un operation plan protocol v1 avec IDs stables, summary, content
+  hashes et rollback metadata.
+- **Bootstrap files gérés par le manifest.** Les templates initiaux
+  `docs/spec.md`, `tasks/todos.md`, `tasks/current.md` et `tasks/lessons.md`
+  viennent désormais du workflow contract manifest plutôt que de strings locales
+  au planner.
+- **Apply TypeScript expérimental.** `repo-harness adopt --experimental-ts-apply`
+  peut appliquer le safe operation subset avec atomic writes, target locks,
+  backups et preflight rejection des boundaries self-host non prises en charge.
 
 ## Ce que fait le produit
 
@@ -381,8 +388,8 @@ Guards courants :
 
 ## Release actuelle
 
-- npm package : `repo-harness@0.5.3`
-- Generated workflow stamp : `repo-harness@0.5.3+template@0.5.3`
+- npm package : `repo-harness@0.6.0`
+- Generated workflow stamp : `repo-harness@0.6.0+template@0.6.0`
 - GitHub repository : `Ancienttwo/repo-harness`
 - Release history : [`docs/CHANGELOG.md`](docs/CHANGELOG.md)
 

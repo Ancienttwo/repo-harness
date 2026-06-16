@@ -1,6 +1,6 @@
 {
-  "version": "0.5.3",
-  "templateVersion": "0.5.3",
+  "version": "0.6.0",
+  "templateVersion": "0.6.0",
   "skillName": "repo-harness",
   "contractId": "tasks-first-harness-v1",
   "retiredAliases": [
@@ -139,6 +139,10 @@
     {
       "version": "0.5.3",
       "description": "Fixes repo-harness update --version so the update command can install a pinned package version without being intercepted by the top-level CLI version flag"
+    },
+    {
+      "version": "0.6.0",
+      "description": "Adds the transactional adoption planner foundation with protocol v1 dry-run plans, manifest-owned bootstrap templates, experimental TypeScript apply, atomic writes, and rollback metadata"
     }
   ],
   "generatedProjectStamp": {

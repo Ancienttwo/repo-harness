@@ -56,11 +56,17 @@ En un repositorio adoptado, la superficie se mantiene pequeña:
 | `tasks/contracts/`, `tasks/reviews/` y `.ai/harness/checks/` | Scope, verificación y evidencia de review para probar que el trabajo terminó. |
 | `.ai/harness/handoff/` y `tasks/current.md` | Session journal y estado resumible, derivados de workflow artifacts en vez de chat memory. |
 
-## Novedades en 0.5.3
+## Novedades en 0.6.0
 
-- **Runtime updates con versión fija.** `repo-harness update --version <version>` ahora instala el package `repo-harness@<version>` solicitado, en vez de ser interceptado por el shortcut global de versión de la CLI.
-- **Version shortcut preservado.** `repo-harness --version` y `repo-harness -V` siguen mostrando la versión de la CLI cuando se usan en el nivel superior.
-- **Patch-only surface.** No cambian hook routes, setup checks, security scan ni workflow contracts, salvo el fix del option del comando update.
+- **Transactional adoption plans.** `repo-harness adopt --dry-run --json` ahora
+  emite un operation plan protocol v1 con IDs estables, summary, content hashes
+  y rollback metadata.
+- **Bootstrap files gestionados por el manifest.** Los templates iniciales
+  `docs/spec.md`, `tasks/todos.md`, `tasks/current.md` y `tasks/lessons.md`
+  ahora salen del workflow contract manifest, no de strings locales del planner.
+- **Apply TypeScript experimental.** `repo-harness adopt --experimental-ts-apply`
+  puede aplicar el safe operation subset con atomic writes, target locks,
+  backups y preflight rejection para boundaries self-host no soportadas.
 
 ## Qué hace el producto
 
@@ -377,8 +383,8 @@ Guards habituales:
 
 ## Release actual
 
-- npm package: `repo-harness@0.5.3`
-- Generated workflow stamp: `repo-harness@0.5.3+template@0.5.3`
+- npm package: `repo-harness@0.6.0`
+- Generated workflow stamp: `repo-harness@0.6.0+template@0.6.0`
 - GitHub repository: `Ancienttwo/repo-harness`
 - Release history: [`docs/CHANGELOG.md`](docs/CHANGELOG.md)
 

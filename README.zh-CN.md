@@ -43,14 +43,16 @@ handoff、检查结果和 review evidence 写回项目文件，让下一个 agen
 | `tasks/contracts/`、`tasks/reviews/`、`.ai/harness/checks/` | 证明完成所需的 scope、verification 和 review evidence。 |
 | `.ai/harness/handoff/` 和 `tasks/current.md` | session journal 与可恢复状态，从 workflow artifacts 派生，而不是依赖聊天记忆。 |
 
-## 0.5.3 新特性
+## 0.6.0 新特性
 
-- **可 pin 的 runtime update。** `repo-harness update --version <version>` 现在会
-  安装指定的 `repo-harness@<version>` package，不再被顶层 CLI version shortcut 抢占。
-- **保留 version shortcut。** `repo-harness --version` 和 `repo-harness -V` 在顶层使用时
-  仍然输出 CLI version。
-- **Patch-only surface。** 除 update command option 修复外，hook route、setup check、
-  security scan 和 workflow contract 行为不变。
+- **事务型 adoption plan。** `repo-harness adopt --dry-run --json` 现在输出
+  protocol v1 operation plan，包含稳定 ID、summary、content hash 和 rollback metadata。
+- **Manifest-owned bootstrap 文件。** 初始 `docs/spec.md`、`tasks/todos.md`、
+  `tasks/current.md`、`tasks/lessons.md` 模板改由 workflow contract manifest 管理，
+  不再放在 planner 本地字符串里。
+- **实验性 TypeScript apply。** `repo-harness adopt --experimental-ts-apply`
+  可以执行 safe operation subset，并使用 atomic write、target lock、backup 和
+  unsupported self-host boundary preflight。
 
 ## 产品做什么
 
@@ -410,8 +412,8 @@ hook block 工作时，先看 terminal 里的结构化输出。核心字段是
 
 ## 当前 Release
 
-- npm package：`repo-harness@0.5.3`
-- Generated workflow stamp：`repo-harness@0.5.3+template@0.5.3`
+- npm package：`repo-harness@0.6.0`
+- Generated workflow stamp：`repo-harness@0.6.0+template@0.6.0`
 - GitHub repository：`Ancienttwo/repo-harness`
 - Release history：[`docs/CHANGELOG.md`](docs/CHANGELOG.md)
 
