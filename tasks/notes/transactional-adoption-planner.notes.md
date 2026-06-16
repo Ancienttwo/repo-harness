@@ -136,3 +136,22 @@ Result: pass; source entrypoint emitted `protocol: 1`, `command: "adopt"`, and
 - Tooling residual: the bounded Waza update command completed with "All global
   skills are up to date", but setup check still reports one Waza
   `needs_agent` action and no warn/fail.
+
+## Follow-up Slice: Text Dry-Run Renderer
+
+- Routed ordinary `repo-harness adopt --dry-run` text output through
+  `runAdoptionPlan()` and `renderAdoptionPlanText()` so text and JSON dry-runs
+  share the same TypeScript planner source of truth.
+- Preserved default `repo-harness adopt` apply behavior on the shell migrator.
+- Left `--reclaim-runtime` / `--compact` dry-runs on their existing runtime
+  reclaim path because they report a different operation surface.
+- Verification: `bun test tests/cli/adoption-plan.test.ts`; text and JSON CLI
+  smoke runs both reported planner output and did not create repo files.
+- Full verification: targeted adoption/init/workflow/bootstrap/scaffold tests
+  passed, and `bash scripts/check-ci.sh` passed with 768 tests.
+- Follow-up gates passed: `git diff --check`,
+  `bash scripts/check-task-sync.sh`, `bash scripts/check-task-workflow.sh --strict`,
+  and `bash scripts/ensure-codegraph.sh --sync`.
+- Setup residual: `repo-harness setup check --target codex --check-updates --json`
+  reports no warn/fail and one Waza update `needs_agent` action. A transient
+  CodeGraph attention result cleared after the index sync settled.

@@ -295,7 +295,28 @@ describe("safe adoption applicator subset", () => {
   });
 });
 
-describe("repo-harness adopt --dry-run --json", () => {
+describe("repo-harness adopt dry-run planner output", () => {
+  test("prints text from the TypeScript planner without writing repo files", () => {
+    const repo = tempRepo();
+    try {
+      const result = spawnSync("bun", [CLI, "adopt", "--repo", repo, "--dry-run"], {
+        cwd: ROOT,
+        encoding: "utf-8",
+      });
+
+      expect(result.status).toBe(0);
+      expect(result.stderr).toBe("");
+      expect(result.stdout).toContain("[adopt-plan] repo:");
+      expect(result.stdout).toContain("[adopt-plan] operations: 65");
+      expect(result.stdout).toContain("[adopt-plan] writeFile: 47");
+      expect(result.stdout).not.toContain("plan repo harness");
+      expect(existsSync(join(repo, "docs", "spec.md"))).toBe(false);
+      expect(existsSync(join(repo, ".gitignore"))).toBe(false);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
   test("prints protocol v1 JSON without writing repo files or shell migration output", () => {
     const repo = tempRepo();
     try {

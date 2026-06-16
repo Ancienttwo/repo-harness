@@ -158,9 +158,10 @@ installation.
 
 The current sprint does not replace shell apply. The invariant is:
 
-- `repo-harness adopt --dry-run --json`: TypeScript planner, no shell migration,
-  no file writes.
-- `repo-harness adopt --dry-run`: existing human-readable dry-run path.
+- `repo-harness adopt --dry-run --json`: TypeScript planner JSON renderer, no
+  shell migration, no file writes.
+- `repo-harness adopt --dry-run`: TypeScript planner text renderer, no shell
+  migration, no file writes.
 - `repo-harness adopt`: existing shell apply path and verification behavior.
 
 This keeps existing user adoption behavior stable while making the new plan
@@ -176,4 +177,3 @@ planner proves stable:
 - move source-helper/runtime-copy handling into the TypeScript planner
 - expose `--experimental-ts-apply` for the safe subset
 - add rollback metadata to operation plans
-- migrate human-readable dry-run text to render from the same plan

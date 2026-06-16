@@ -276,11 +276,15 @@ export function buildProgram(): Command {
         console.error('repo-harness adopt: brain configuration writes user-level state; run repo-harness update instead');
         process.exit(2);
       }
-      if (rawOpts.dryRun === true && rawOpts.json === true) {
+      if (
+        rawOpts.dryRun === true &&
+        (rawOpts.json === true ||
+          (rawOpts.interactive !== true && rawOpts.reclaimRuntime !== true && rawOpts.compact !== true))
+      ) {
         const plan = runAdoptionPlan({
           repo: rawOpts.repo,
           mode: (rawOpts.mode ?? 'standard') as AdoptionMode,
-          json: true,
+          json: rawOpts.json === true,
           explicitRepo: rawOpts.repo !== undefined,
         });
         process.stdout.write(plan.output);

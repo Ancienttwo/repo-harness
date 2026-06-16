@@ -877,7 +877,7 @@ Low-medium. New JSON dry-run path is additive. Existing apply path is preserved.
 [x] 把 docs/spec.md / tasks/current.md templates 改成 manifest-driven
 [x] 把 helper wrapper install 迁到 TS operation
 [x] 引入 atomic writer with backup / lock / fsync
-[ ] 让 adopt --dry-run text 也使用 TS planner renderer
+[x] 让 adopt --dry-run text 也使用 TS planner renderer
 [ ] 让 adopt apply 可选启用 TS applicator：--experimental-ts-apply
 [ ] 给 operation plan 增加 rollback metadata
 ```

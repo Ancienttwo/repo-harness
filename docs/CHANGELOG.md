@@ -21,6 +21,9 @@ All notable changes to this skill are documented here.
   wrappers from the workflow contract helper manifest.
 - Added an atomic safe-applicator writer with target locks, temp-file fsync,
   parent-directory fsync, and backup metadata for existing targets.
+- Routed human-readable `repo-harness adopt --dry-run` output through the
+  TypeScript adoption planner text renderer, matching the JSON dry-run source of
+  truth without writing repo files.
 
 ## [0.5.3] - 2026-06-15
 
