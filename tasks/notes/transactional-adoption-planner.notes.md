@@ -60,3 +60,12 @@ Result: pass; source entrypoint emitted `protocol: 1`, `command: "adopt"`, and
   `runInit()` JSON shape. The sprint code is verified through the source
   entrypoint and will become the plain `repo-harness` behavior after the local
   CLI is refreshed from this branch or the package is published.
+
+## Checklist Closeout
+
+- Updated `plans/sprints/20260616-architecture-upgrade-sprint.md` checkboxes to
+  reflect the verified sprint implementation, DoD, review checklist, PR test
+  checklist, and minimal executable checklist.
+- Left section 12, "下一 sprint 预留 backlog", unchecked because those items are
+  intentionally deferred migration candidates rather than completed work in
+  this sprint.
