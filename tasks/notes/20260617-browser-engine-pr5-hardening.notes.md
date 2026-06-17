@@ -21,6 +21,7 @@ PR #5 adds the experimental ChatGPT browser engine, including CLI session storag
 - `verify-contract.sh` parses the `Review File` header with literal blockquote matching (`^>`) and shell string slicing instead of awk `match(...)`. Hosted CI exposed that the old parser could drop a backtick-wrapped review path and then falsely fail `qa_scores` and manual pass checks.
 - After merging the latest `origin/main`, the helper workflow fixture now seeds the required reference-config and deploy surface before testing stale resume detection, then uses fixed `touch -t` mtimes instead of `sleep 1`. This keeps that unit focused on resume freshness instead of failing early on main's broader workflow-shape gate or drifting across macOS/Linux timestamp behavior.
 - `check-task-workflow.sh` now treats `stat` output as valid only when it is numeric and tries GNU `stat -c` before BSD `stat -f`. Linux hosted runs exposed that GNU `stat -f '%m'` exits 0 with filesystem metadata, which skipped resume freshness failures.
+- Contract and sprint helper parsers now use literal `^>` blockquote matching for `Task Profile`, `Updated`, and `Source Plan` headers. Hosted GNU awk treats `\>` as a word-boundary operator, so the escaped form failed open in some workflow-helper cases.
 
 ## Verification Focus
 

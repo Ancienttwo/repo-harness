@@ -119,7 +119,7 @@ touch_deferred_ledger_update_marker() {
   tmp_file="$(mktemp)"
   awk '
     BEGIN { updated = 0 }
-    !updated && /^\> \*\*Updated\*\*:/ {
+    !updated && /^> \*\*Updated\*\*:/ {
       print "> **Updated**: (archive-workflow)"
       updated = 1
       next
@@ -210,7 +210,7 @@ slug="$(echo "$plan_base" | sed -E 's/^plan-[0-9]{8}-[0-9]{4}-//; s/\.md$//')"
 original_artifact_stem="$(printf '%s' "$plan_base" | sed -E 's/^plan-//; s/\.md$//')"
 artifact_stem="$(plan_artifact_stem_from_parts "$plan_file" "$original_artifact_stem" "$slug")"
 parent_run_id="${HOOK_RUN_ID:-${CLAUDE_RUN_ID:-${CODEX_RUN_ID:-run-${timestamp}}}}"
-todo_source_plan="$(awk -F': ' '/^\> \*\*Source Plan\*\*:/ {print $2; exit}' tasks/todos.md 2>/dev/null | xargs)"
+todo_source_plan="$(awk -F': ' '/^> \*\*Source Plan\*\*:/ {print $2; exit}' tasks/todos.md 2>/dev/null | xargs)"
 
 plan_status="Archived"
 if [[ "$outcome" == "Abandoned" ]]; then

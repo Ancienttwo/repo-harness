@@ -70,7 +70,7 @@ field_has_concrete_value() {
 
 read_contract_task_profile() {
   local file="$1"
-  awk '/^\> \*\*Task Profile\*\*:/ {sub(/^.*\> \*\*Task Profile\*\*:[[:space:]]*/, ""); gsub(/\r/, ""); print; exit}' "$file" | xargs
+  awk '/^> \*\*Task Profile\*\*:/ {sub(/^.*> \*\*Task Profile\*\*:[[:space:]]*/, ""); gsub(/\r/, ""); print; exit}' "$file" | xargs
 }
 
 contract_allowed_paths() {
