@@ -69,9 +69,12 @@ describe('mcp command', () => {
       ]);
       expect(result.status).toBe(0);
       expect(result.stdout).toContain('/goal');
-      expect(result.stdout).toContain(`阅读： ${join(repoRoot, 'plans/prds/example.prd.md')}`);
-      expect(result.stdout).toContain(`开worktree完整执行：${join(repoRoot, 'plans/sprints/example.sprint.md')}`);
-      expect(result.stdout).toContain('完成阶段性任务，要staging再继续');
+      expect(result.stdout).toContain(`Read: ${join(repoRoot, 'plans/prds/example.prd.md')}`);
+      expect(result.stdout).toContain(`Open or use a worktree and complete: ${join(repoRoot, 'plans/sprints/example.sprint.md')}`);
+      expect(result.stdout).toContain('After each completed phase, stage the result before continuing.');
+      expect(result.stdout).toContain("Use the user's language for status reports unless repo-local instructions require otherwise.");
+      expect(result.stdout).not.toContain('阅读：');
+      expect(result.stdout).not.toContain('开worktree完整执行');
       const goalPath = join(repoRoot, '.ai/harness/handoff/codex-goal.md');
       expect(existsSync(goalPath)).toBe(true);
       expect(readFileSync(goalPath, 'utf-8')).toContain('## Host-native /goal prompt');

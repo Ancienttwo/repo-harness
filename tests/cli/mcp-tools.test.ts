@@ -223,9 +223,12 @@ describe('mcp tools', () => {
       expect(goal.status).toBe('written');
       expect(goal.path).toBe('.ai/harness/handoff/codex-goal.md');
       expect(goal.prompt).toContain('/goal');
-      expect(goal.prompt).toContain(`阅读： ${prd.path}`);
-      expect(goal.prompt).toContain(`开worktree完整执行：${sprint.path}`);
-      expect(goal.prompt).toContain('完成阶段性任务，要staging再继续');
+      expect(goal.prompt).toContain(`Read: ${prd.path}`);
+      expect(goal.prompt).toContain(`Open or use a worktree and complete: ${sprint.path}`);
+      expect(goal.prompt).toContain('After each completed phase, stage the result before continuing.');
+      expect(goal.prompt).toContain("Use the user's language for status reports unless repo-local instructions require otherwise.");
+      expect(goal.prompt).not.toContain('阅读：');
+      expect(goal.prompt).not.toContain('开worktree完整执行');
       const goalContent = readFileSync(join(repoRoot, '.ai/harness/handoff/codex-goal.md'), 'utf-8');
       expect(goalContent).toContain('## Host-native /goal prompt');
       expect(goalContent).toContain('No commit is created unless the user explicitly asks for commit.');

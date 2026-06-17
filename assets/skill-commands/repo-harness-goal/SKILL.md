@@ -32,7 +32,7 @@ Non-goals: <explicit exclusions>
 Execution route: <repo-harness-sprint row, repo-harness-plan, or contract worktree path>
 Acceptance checks: <commands or machine-checkable assertions>
 Stop condition: <verified completion or blocker evidence>
-Reporting: concise Chinese status, include changed files, tradeoffs, checks, and next bottleneck only if verified
+Reporting: use the user's language unless repo-local instructions require otherwise; include changed files, tradeoffs, checks, and next bottleneck only if verified
 ```
 
 ## Failure Modes

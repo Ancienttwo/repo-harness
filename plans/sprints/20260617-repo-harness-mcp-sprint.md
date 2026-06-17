@@ -1649,7 +1649,7 @@ Checklist:
 * [x] Implement `prepare_codex_goal_from_sprint` for Sprint -> Goal.
 * [x] Implement `repo-harness mcp prepare-goal` as the local CLI equivalent.
 * [x] Ensure generated Sprint task cards include checklist items and staging gates.
-* [x] Ensure generated Goal includes the user's `阅读 / 开worktree完整执行 / 完成阶段性任务，要staging再继续 / 参考repo` shape.
+* [x] Ensure generated Goal uses a language-neutral `/goal` shape with read, worktree execution, stage-before-continue, user-language reporting, and optional reference repo lines.
 * [x] Keep direct Codex execution out of MCP; local Codex owns `/goal` execution.
 * [x] Add tests for the full chain and CLI handoff.
 * [x] Update guide and bridge Skill references.

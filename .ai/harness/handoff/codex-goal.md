@@ -49,8 +49,9 @@ Codex is the executor. ChatGPT/repo-harness may prepare planning artifacts, but 
 
 ```text
 /goal
-阅读： /Users/ancienttwo/Projects/agentic-dev-wt-mcp-connector/plans/prds/20260617-repo-harness-mcp-prd.md
-开worktree完整执行：/Users/ancienttwo/Projects/agentic-dev-wt-mcp-connector/plans/sprints/20260617-repo-harness-mcp-sprint.md
-完成阶段性任务，要staging再继续
-参考repo: /Users/ancienttwo/Projects/agentic-dev/_ref/local-dev-mcp
+Read: /Users/ancienttwo/Projects/agentic-dev-wt-mcp-connector/plans/prds/20260617-repo-harness-mcp-prd.md
+Open or use a worktree and complete: /Users/ancienttwo/Projects/agentic-dev-wt-mcp-connector/plans/sprints/20260617-repo-harness-mcp-sprint.md
+After each completed phase, stage the result before continuing.
+Use the user's language for status reports unless repo-local instructions require otherwise.
+Reference repo: /Users/ancienttwo/Projects/agentic-dev/_ref/local-dev-mcp
 ```
