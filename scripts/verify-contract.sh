@@ -517,7 +517,7 @@ fi
 
 if ((${#commands_succeed[@]})); then
   for cmd in "${commands_succeed[@]}"; do
-    if bash -lc "$cmd" >"$tmp_dir/contract-command.log" 2>&1; then
+    if env -u BASH_ENV bash --noprofile --norc -c "$cmd" >"$tmp_dir/contract-command.log" 2>&1; then
       pass "commands_succeed" "$cmd" "commands_succeed: $cmd"
     else
       fail "commands_succeed" "$cmd" "commands_succeed: $cmd"

@@ -16,6 +16,7 @@ PR #5 adds the experimental ChatGPT browser engine, including CLI session storag
 - Hosted CI pins Bun to `1.3.10`, matching the local verified runtime. `bun-version: latest` resolved to Bun 1.3.14 on GitHub Actions and produced helper-script false failures outside the browser-engine surface. The `codex/**` push trigger remains intentional while this PR introduces the workflow file; until it lands on `main`, branch push checks are the authoritative PR5 gate.
 - Hosted CI installs `jq` explicitly because workflow policy parsing controls contract-worktree startup; relying on runner-image preinstalls makes the gate non-portable. Linux validation also fixed `workflow_with_lock` stale-lock mtime detection by preferring GNU `stat -c '%Y'` before the BSD fallback.
 - Hosted CI runs Bun test files in isolated processes via `BUN_TEST_ISOLATE_FILES=1`. The default local gate still runs one full `bun test`, while the hosted PR gate trades runtime for repeatability after full-suite GitHub runs exposed state leakage between historical workflow-helper tests outside the browser-engine surface.
+- Contract verification now runs `commands_succeed` in a non-login Bash with `BASH_ENV` unset. Hosted runners can carry shell profile state that should not influence machine-verifiable contract criteria.
 
 ## Verification Focus
 
