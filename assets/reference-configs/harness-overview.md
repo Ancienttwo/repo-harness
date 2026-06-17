@@ -81,6 +81,19 @@ with the project.
 - External knowledge: `brain/<project>/*` stores long-form explanations, runbooks, decisions, and patterns. Hooks may write only explicitly opted-in `repo-to-brain` manifest entries; checks must not require gbrain or MCP.
 - Assets: policies, hooks, scripts, templates, and reference configs only change when a pattern has evidence across tasks or fixtures.
 
+## Trace Evidence
+
+`scripts/verify-sprint.sh` writes `.ai/harness/checks/latest.json` and an immutable `.ai/harness/runs/*.json` snapshot using `schema: repo-harness-run-trace.v1`. The trace is local evidence for workflow grading, not a cloud tracing dependency.
+
+Required v1 fields:
+
+- `run_id`, `generated_at`, `status`, `exit_code`, and `source`
+- `task_profile`, `active_plan`, `contract`, `review`, `worktree`, and `branch`
+- `commands`, `guards`, `handoffs`, `files_changed`, and `allowed_paths_check`
+- `external_acceptance`, `failure_class`, and `next_step`
+
+`scripts/check-task-workflow.sh --strict` validates the latest trace shape when a non-empty latest checks file exists. `scripts/harness-trace-grade.sh --run <trace> --strict` applies the local graders used for workflow regression checks: active plan resolves, contract profile is valid, Human Review Card passes, command evidence exists, and changed files stay inside allowed paths.
+
 ## Capability Context
 
 - Do not infer agent context boundaries from physical layout globs such as `apps/*`, `packages/*`, or `services/*`.

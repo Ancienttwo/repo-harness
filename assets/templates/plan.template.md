@@ -5,8 +5,8 @@
 > **Slug**: {{SLUG}}
 > **Spec**: `docs/spec.md`
 > **Research**: See `docs/researches/`
-> **Sprint Contract**: `tasks/contracts/{{ARTIFACT_STEM}}.contract.md`
-> **Sprint Review**: `tasks/reviews/{{ARTIFACT_STEM}}.review.md`
+> **Task Contract**: `tasks/contracts/{{ARTIFACT_STEM}}.contract.md`
+> **Task Review**: `tasks/reviews/{{ARTIFACT_STEM}}.review.md`
 > **Implementation Notes**: `tasks/notes/{{ARTIFACT_STEM}}.notes.md`
 
 ## Agentic Routing

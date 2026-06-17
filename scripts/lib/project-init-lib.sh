@@ -142,8 +142,8 @@ PI_TEMPLATE_PLAN=$(cat <<'EOF_TEMPLATE_PLAN'
 > **Slug**: {{SLUG}}
 > **Spec**: `docs/spec.md`
 > **Research**: See `docs/researches/`
-> **Sprint Contract**: `tasks/contracts/{{ARTIFACT_STEM}}.contract.md`
-> **Sprint Review**: `tasks/reviews/{{ARTIFACT_STEM}}.review.md`
+> **Task Contract**: `tasks/contracts/{{ARTIFACT_STEM}}.contract.md`
+> **Task Review**: `tasks/reviews/{{ARTIFACT_STEM}}.review.md`
 > **Implementation Notes**: `tasks/notes/{{ARTIFACT_STEM}}.notes.md`
 
 ## Agentic Routing
@@ -219,6 +219,7 @@ PI_TEMPLATE_CONTRACT=$(cat <<'EOF_TEMPLATE_CONTRACT'
 
 > **Status**: Pending
 > **Plan**: {{PLAN_FILE}}
+> **Task Profile**: {{TASK_PROFILE}}
 > **Owner**: {{OWNER}}
 > **Capability ID**: {{CAPABILITY_ID}}
 > **Last Updated**: {{TIMESTAMP}}
@@ -272,9 +273,18 @@ delegation:
     writable_paths: []
     network: inherited
   roles:
-    parent: narrate_and_gatekeep
-    worker: implement_contract
-    verifier: review_exit_criteria
+    parent:
+      mode: narrate_and_gatekeep
+      purpose: approval_checkpoint_owner
+    explorer:
+      mode: read_only
+      purpose: codebase_research
+    worker:
+      mode: edit_within_allowed_paths
+      purpose: implementation
+    verifier:
+      mode: read_only
+      purpose: exit_criteria_review
 ```
 
 ## Exit Criteria (Machine Verifiable)
@@ -306,7 +316,7 @@ exit_criteria:
 EOF_TEMPLATE_CONTRACT
 )
 PI_TEMPLATE_REVIEW=$(cat <<'EOF_TEMPLATE_REVIEW'
-# Sprint Review: {{TASK_SLUG}}
+# Task Review: {{TASK_SLUG}}
 
 > **Status**: Pending
 > **Plan**: {{PLAN_FILE}}
@@ -315,6 +325,18 @@ PI_TEMPLATE_REVIEW=$(cat <<'EOF_TEMPLATE_REVIEW'
 > **Checks File**: {{CHECKS_FILE}}
 > **Last Updated**: {{TIMESTAMP}}
 > **Recommendation**: fail
+
+## Human Review Card
+
+- Verdict: pending
+- Change type: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run
+- Intended files changed:
+- Actual files changed:
+- Commands passed:
+- External acceptance: unavailable
+- Residual risks:
+- Reviewer action required: inspect diff and card
+- Rollback:
 
 ## Verification Evidence
 
@@ -1039,7 +1061,7 @@ pi_install_helpers() {
   local target_dir="$1"
   local helpers_dir="$2"
   local mode="${3:-apply}"
-  local helper_names="${4:-new-spec.sh new-sprint.sh new-plan.sh capture-plan.sh plan-to-todo.sh contract-run.ts contract-worktree.sh ship-worktrees.sh archive-workflow.sh refresh-current-status.sh prepare-handoff.sh verify-contract.sh summarize-failures.sh verify-sprint.sh sprint-backlog.sh check-task-sync.sh check-deploy-sql-order.sh check-architecture-sync.sh check-agent-tooling.sh check-context-files.sh check-brain-manifest.sh sync-brain-docs.sh check-skill-version.ts select-agent-context-blocks.sh ensure-task-workflow.sh check-task-workflow.sh maintenance-triage.sh heartbeat-triage.sh switch-plan.sh workflow-contract.ts inspect-project-state.ts migrate-workflow-docs.ts migrate-project-template.sh capability-resolver.ts architecture-event.ts capability-config.ts architecture-queue.sh archive-architecture-request.sh context-contract-sync.sh workstream-sync.sh prepare-codex-handoff.sh codex-handoff-resume.sh}"
+  local helper_names="${4:-new-spec.sh new-sprint.sh new-plan.sh capture-plan.sh plan-to-todo.sh contract-run.ts contract-worktree.sh ship-worktrees.sh archive-workflow.sh refresh-current-status.sh prepare-handoff.sh verify-contract.sh summarize-failures.sh verify-sprint.sh harness-trace-grade.sh sprint-backlog.sh check-task-sync.sh check-deploy-sql-order.sh check-architecture-sync.sh check-agent-tooling.sh check-context-files.sh check-brain-manifest.sh sync-brain-docs.sh check-skill-version.ts select-agent-context-blocks.sh ensure-task-workflow.sh check-task-workflow.sh maintenance-triage.sh heartbeat-triage.sh switch-plan.sh workflow-contract.ts inspect-project-state.ts migrate-workflow-docs.ts migrate-project-template.sh capability-resolver.ts architecture-event.ts capability-config.ts architecture-queue.sh archive-architecture-request.sh context-contract-sync.sh workstream-sync.sh prepare-codex-handoff.sh codex-handoff-resume.sh}"
   local scripts_dir="$target_dir/scripts"
   local runtime_dir="$target_dir/.ai/harness/scripts"
   local helper_name
@@ -1120,7 +1142,7 @@ pi_preserve_existing_app_script() {
     return 1
   fi
 
-  if grep -Eiq '(repo-harness|project-initializer|claude-runtime-temp|Task Contract|Sprint Review|Deferred Goal Ledger|Workflow Contract|ContractWorktree|SprintBacklog|ArchitectureSync|ArchitectureDrift|BrainSync|CurrentStatus|\.ai/harness|\.claude/templates|tasks/contracts|tasks/reviews)' "$output_file"; then
+  if grep -Eiq '(repo-harness|project-initializer|claude-runtime-temp|Task Contract|Task Review|Deferred Goal Ledger|Workflow Contract|ContractWorktree|SprintBacklog|ArchitectureSync|ArchitectureDrift|BrainSync|CurrentStatus|\.ai/harness|\.claude/templates|tasks/contracts|tasks/reviews)' "$output_file"; then
     return 1
   fi
 

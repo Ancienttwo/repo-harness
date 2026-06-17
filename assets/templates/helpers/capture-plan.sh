@@ -232,8 +232,8 @@ cat > "$plan_file" <<PLAN_EOF
 > **Source Ref**: ${source_ref:-"(none)"}
 > **Spec**: \`docs/spec.md\`
 > **Research**: See \`docs/researches/\`
-> **Sprint Contract**: \`tasks/contracts/${artifact_stem}.contract.md\`
-> **Sprint Review**: \`tasks/reviews/${artifact_stem}.review.md\`
+> **Task Contract**: \`tasks/contracts/${artifact_stem}.contract.md\`
+> **Task Review**: \`tasks/reviews/${artifact_stem}.review.md\`
 > **Implementation Notes**: \`tasks/notes/${artifact_stem}.notes.md\`
 
 ## Agentic Routing

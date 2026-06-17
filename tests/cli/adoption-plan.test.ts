@@ -451,8 +451,8 @@ describe("repo-harness adopt dry-run planner output", () => {
       expect(result.status).toBe(0);
       expect(result.stderr).toBe("");
       expect(result.stdout).toContain("[adopt-plan] repo:");
-      expect(result.stdout).toContain("[adopt-plan] operations: 65 total, 65 planned, 0 skipped");
-      expect(result.stdout).toContain("[adopt-plan] writeFile: 47");
+      expect(result.stdout).toContain("[adopt-plan] operations: 66 total, 66 planned, 0 skipped");
+      expect(result.stdout).toContain("[adopt-plan] writeFile: 48");
       expect(result.stdout).not.toContain("plan repo harness");
       expect(existsSync(join(repo, "docs", "spec.md"))).toBe(false);
       expect(existsSync(join(repo, ".gitignore"))).toBe(false);

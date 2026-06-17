@@ -120,6 +120,26 @@ describe("README DX contract", () => {
     expect(zhReadme).toContain("逐 commit 显式添加");
   });
 
+  test("documents human review and agent tracking paths", () => {
+    const readme = read("README.md");
+    const zhReadme = read("README.zh-CN.md");
+    const spec = read("docs/spec.md");
+    const flow = read("docs/reference-configs/agentic-development-flow.md");
+
+    expect(spec).toContain("## Product Outcome");
+    expect(spec).toContain("## Core Invariants");
+    expect(spec).toContain("## Human Review Expectations");
+    expect(spec).toContain("## Acceptance Scenarios");
+    expect(readme).toContain("## Human Review Path");
+    expect(readme).toContain("## Agent Tracking Path");
+    expect(readme).toContain("Agent reads first");
+    expect(readme).toContain("Human reviews first");
+    expect(zhReadme).toContain("## Human Review Path");
+    expect(zhReadme).toContain("## Agent Tracking Path");
+    expect(flow).toContain("Agent reads first");
+    expect(flow).toContain("Human reviews first");
+  });
+
   test("localized READMEs track the current English release surface", () => {
     for (const file of LOCALIZED_READMES) {
       const localized = read(file);

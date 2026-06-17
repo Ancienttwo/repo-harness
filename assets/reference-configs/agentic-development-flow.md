@@ -58,6 +58,13 @@ work, or shared contracts, report the P1/P2/P3 evidence explicitly.
 
 ## Daily Flow
 
+| Agent reads first | Human reviews first |
+|-----------|---------|
+| Current user prompt and referenced files | Human Review Card in `tasks/reviews/<task>.review.md` |
+| `AGENTS.md` / `CLAUDE.md` and active plan | Changed files and active contract scope |
+| Active contract, notes, latest checks, and handoff | Latest trace/checks, residual risk, rollback |
+| `tasks/current.md` only for orientation | External acceptance or manual override |
+
 1. Route the request by intent before reading broadly.
 2. Read the repo-local contract first: `AGENTS.md` or `CLAUDE.md`, `tasks/todos.md`, `tasks/lessons.md`, and `.ai/harness/policy.json`.
 3. Use the selected skill or mode to produce either an approved plan, a root cause, or a review verdict.

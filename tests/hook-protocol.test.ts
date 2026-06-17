@@ -155,7 +155,7 @@ describe("Claude Code hook protocol compliance", () => {
       writeFileSync(
         join(cwd, "tasks/contracts/scope.contract.md"),
         [
-          "# Sprint Contract: scope",
+          "# Task Contract: scope",
           "",
           "> **Status**: Pending",
           `> **Plan**: ${planPath}`,
@@ -313,7 +313,7 @@ describe("Claude Code hook protocol compliance", () => {
       writeFileSync(
         join(cwd, "tasks/contracts/outside.contract.md"),
         [
-          "# Sprint Contract: outside",
+          "# Task Contract: outside",
           "",
           "> **Status**: Pending",
           `> **Plan**: ${planPath}`,
@@ -360,7 +360,7 @@ describe("Claude Code hook protocol compliance", () => {
       writeFileSync(
         join(cwd, "tasks/contracts/allowed.contract.md"),
         [
-          "# Sprint Contract: allowed",
+          "# Task Contract: allowed",
           "",
           "> **Status**: Pending",
           `> **Plan**: ${planPath}`,

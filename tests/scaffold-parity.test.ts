@@ -115,6 +115,7 @@ describe("create-project-dirs scaffold parity", () => {
         "./scripts/contract-run.ts",
         "./scripts/contract-worktree.sh",
         "./scripts/ensure-task-workflow.sh",
+        "./scripts/harness-trace-grade.sh",
         "./scripts/heartbeat-triage.sh",
         "./scripts/inspect-project-state.ts",
         "./scripts/maintenance-triage.sh",
