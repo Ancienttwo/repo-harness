@@ -204,11 +204,41 @@ describe("contract-run helper", () => {
       expect(readFileSync(join(repo, "src/pilot.txt"), "utf-8")).toContain("worker-output");
       expect(existsSync(join(repo, "tasks/reviews/pilot.review.md"))).toBe(true);
 
+      const verifyReport = ".ai/harness/runs/pilot/verify-report.json";
       const verify = spawnSync(
         "bash",
-        [join(ROOT, "scripts/verify-contract.sh"), "--contract", "tasks/contracts/pilot.contract.md", "--strict", "--read-only"],
+        [
+          join(ROOT, "scripts/verify-contract.sh"),
+          "--contract",
+          "tasks/contracts/pilot.contract.md",
+          "--strict",
+          "--read-only",
+          "--report-file",
+          verifyReport,
+        ],
         { cwd: repo, encoding: "utf-8" },
       );
+      if (verify.status !== 0) {
+        console.error(
+          [
+            "verify-contract failed in contract-run test",
+            `status=${verify.status}`,
+            `signal=${verify.signal ?? ""}`,
+            "stdout:",
+            verify.stdout,
+            "stderr:",
+            verify.stderr,
+            "report:",
+            existsSync(join(repo, verifyReport)) ? readFileSync(join(repo, verifyReport), "utf-8") : "(missing)",
+            "review:",
+            existsSync(join(repo, "tasks/reviews/pilot.review.md"))
+              ? readFileSync(join(repo, "tasks/reviews/pilot.review.md"), "utf-8")
+              : "(missing)",
+            "artifact:",
+            existsSync(join(repo, "src/pilot.txt")) ? readFileSync(join(repo, "src/pilot.txt"), "utf-8") : "(missing)",
+          ].join("\n"),
+        );
+      }
       expect(verify.status).toBe(0);
       expect(verify.stdout).toContain("[ContractVerify] total=");
       expect(verify.stdout).toContain("failed=0");
