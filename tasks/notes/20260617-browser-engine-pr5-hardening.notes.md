@@ -12,6 +12,7 @@ PR #5 adds the experimental ChatGPT browser engine, including CLI session storag
 - Follow-up sessions keep `sourceSessionId` as the repo-harness local session id, but Oracle receives only `providerSessionId` from the stored upstream provider metadata.
 - Native provider remains experimental. It fails closed for `--model` and `--thinking`, waits for stable assistant text before returning `completed`, and no longer scans `ps` output to kill Chrome by profile path.
 - PR #5 now has a minimal GitHub Actions CI gate that delegates to `bun run check:ci`, so the hosted check uses the same install/typecheck/test/workflow/migration/package-smoke path as local release-style validation.
+- Hosted CI configures a deterministic git identity and runs the full Bun suite with `BUN_TEST_MAX_CONCURRENCY=1` / `BUN_TEST_TIMEOUT_MS=180000`. The workflow/helper tests create temporary git repos, worktrees, locks, and migration commits; repo release notes already use this serial full-suite mode for final gates.
 
 ## Verification Focus
 

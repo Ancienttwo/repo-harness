@@ -11,9 +11,17 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    env:
+      BUN_TEST_MAX_CONCURRENCY: "1"
+      BUN_TEST_TIMEOUT_MS: "180000"
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
+      - name: Configure git identity
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
