@@ -14,6 +14,7 @@ jobs:
     env:
       BUN_TEST_MAX_CONCURRENCY: "1"
       BUN_TEST_TIMEOUT_MS: "180000"
+      BUN_TEST_ISOLATE_FILES: "1"
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -24,7 +25,7 @@ jobs:
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Install shell dependencies
-        run: sudo apt-get update && sudo apt-get install -y jq
+        run: sudo apt-get update && sudo apt-get install -y jq rsync
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
