@@ -17,6 +17,7 @@
 - It does not upload arbitrary repo files.
 - It does not enable remote CDP by default.
 - It does not treat ChatGPT Web as the source of truth; the repo-local session store is the audit record.
+- It does not import local artifact paths from ordinary provider stdout.
 - The native Chrome CDP provider is a spike surface. It is available, but selector/login behavior must be validated against ChatGPT Web changes before promotion.
 
 ## First-Time Setup
@@ -54,7 +55,9 @@ repo-harness chatgpt browser-consult \
   --write-output .ai/harness/handoff/chatgpt-review.md
 ```
 
-The wrapper maps repo-harness input to `oracle --engine browser`, then saves stdout, transcript, metadata, any detected ChatGPT conversation URL, provider session ID, and explicitly reported local artifacts into the repo-local session store.
+The wrapper maps repo-harness input to `oracle --engine browser`, then saves stdout, transcript, metadata, any detected ChatGPT conversation URL, and provider session ID into the repo-local session store. It deliberately ignores `Artifact:` / `Output:` / `Session file:` paths in ordinary stdout because that text can include model-controlled content.
+
+`--write-output` is validated by repo-harness before the provider runs. By default it must be repo-relative, must not target denied paths, and must not overwrite an existing file unless `--overwrite-output` is passed. Absolute output paths require the human-only `--allow-absolute-output` flag and are not available through MCP browser tools.
 
 ## Native Provider Spike
 
@@ -71,11 +74,15 @@ repo-harness chatgpt browser-consult \
 
 The native provider launches installed Google Chrome and drives it through a local Chrome DevTools Protocol websocket. It opens ChatGPT Web, waits for a visible composer, submits the assembled prompt, waits for an assistant response, and saves the captured text into the same repo-local session store.
 
+Native provider runs use the current model and thinking mode already selected in the ChatGPT Web UI. Passing `--model` or `--thinking` with `--provider native` fails closed with `NATIVE_MODEL_SELECTION_UNSUPPORTED`; use the Oracle provider when provider-side model selection is required.
+
 Failure is explicit:
 
 - Missing Google Chrome reports `NATIVE_PROVIDER_FAILED` with the missing app path.
+- Unsupported native model/thinking selection reports `NATIVE_MODEL_SELECTION_UNSUPPORTED`.
 - Missing login or composer reports `LOGIN_OR_COMPOSER_NOT_READY`.
 - A submitted run with no captured assistant text reports `ASSISTANT_CAPTURE_TIMEOUT`.
+- A submitted run whose assistant text did not stabilize before timeout reports `ASSISTANT_CAPTURE_INCOMPLETE`.
 
 For first login, run with `--browser-channel chrome --keep-browser`, complete login manually, then rerun with the same `--profile-dir`.
 
@@ -109,7 +116,7 @@ repo-harness chatgpt browser-followup \
   --prompt "Turn that review into a Codex-ready goal."
 ```
 
-Follow-up sessions are linked with `sourceSessionId` in `meta.json`. The Oracle provider receives the source session as provider context; dry-run follow-ups still write a linked local session without opening a browser.
+Follow-up sessions are linked with `sourceSessionId` in `meta.json`. The Oracle provider receives `providerSessionId` from the source session as upstream provider context; it does not pass the repo-harness local `chgpt_...` session ID as an Oracle session. Dry-run follow-ups still write a linked local session without opening a browser.
 
 ## Cleanup
 
@@ -142,6 +149,8 @@ Enabled tools:
 
 Use `dryRun: true` for planning or policy inspection. Non-dry-run consults may create a real ChatGPT Web conversation through the configured provider.
 
+MCP browser consults restrict `writeOutput` to repo-harness workflow artifacts such as `.ai/harness/handoff/*.md`, `tasks/reviews/**`, `.ai/harness/checks/**`, `plans/prds/**`, and `plans/sprints/**`. Absolute paths, source paths, package manifests, lockfiles, secrets, and existing files without `overwriteOutput: true` are rejected before provider execution.
+
 ## File Policy
 
 Allowed by default:
@@ -164,6 +173,7 @@ Denied by default:
 - `.repo-harness/**/*.json`
 
 The engine rejects denied files before browser/provider execution.
+Allowed-path symlinks that resolve outside the repository are rejected.
 
 ## Security Notes
 

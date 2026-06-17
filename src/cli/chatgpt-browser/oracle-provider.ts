@@ -1,6 +1,4 @@
 import { spawnSync } from 'child_process';
-import { existsSync, statSync } from 'fs';
-import { basename, resolve } from 'path';
 import type { BrowserConsultInput, BrowserImportedArtifact, PromptBundle } from './types';
 
 export interface OracleProviderResult {
@@ -19,7 +17,7 @@ export interface OracleProviderResult {
 
 export function buildOracleCommand(input: BrowserConsultInput): string[] {
   const args = ['--engine', 'browser', '--browser-manual-login', '--prompt', input.prompt];
-  if (input.sourceSessionId) args.push('--session', input.sourceSessionId);
+  if (input.providerSessionId) args.push('--session', input.providerSessionId);
   if (input.model) args.push('--model', input.model);
   if (input.thinking) args.push('--browser-thinking-time', input.thinking);
   for (const file of input.files ?? []) args.push('--file', file.path);
@@ -36,28 +34,26 @@ function extractProviderSessionId(output: string): string | undefined {
   return output.match(/\b(?:oracle[_ -]?session|session(?: id)?)[:=]\s*([A-Za-z0-9_.:-]+)/i)?.[1];
 }
 
-function extractArtifactPaths(output: string, cwd: string): BrowserImportedArtifact[] {
-  const artifacts: BrowserImportedArtifact[] = [];
-  const seen = new Set<string>();
-  for (const line of output.split(/\r?\n/)) {
-    const match = line.match(/\b(?:artifact|artifacts|output|transcript|session file)[:=]\s*(.+)$/i);
-    if (!match) continue;
-    const candidate = match[1].trim().replace(/^file:\/\//, '').replace(/^["']|["']$/g, '');
-    if (!candidate) continue;
-    const sourcePath = candidate.startsWith('/') ? candidate : resolve(cwd, candidate);
-    if (seen.has(sourcePath) || !existsSync(sourcePath)) continue;
-    const fileStat = statSync(sourcePath);
-    if (!fileStat.isFile()) continue;
-    seen.add(sourcePath);
-    artifacts.push({ sourcePath, fileName: basename(sourcePath), size: fileStat.size });
-  }
-  return artifacts;
+function extractArtifactPaths(_output: string): BrowserImportedArtifact[] {
+  return [];
 }
 
 export function runOracleProvider(input: BrowserConsultInput, _bundle: PromptBundle): OracleProviderResult {
   const oraclePath = Bun.which('oracle');
   const args = buildOracleCommand(input);
   const command = ['oracle', ...args];
+  if (input.sourceSessionId && !input.providerSessionId) {
+    return {
+      status: 'failed',
+      output: `Oracle follow-up requires providerSessionId for source session ${input.sourceSessionId}.`,
+      command,
+      error: {
+        code: 'ORACLE_PROVIDER_SESSION_MISSING',
+        message: 'Oracle follow-up requires the upstream provider session id',
+        recovery: 'Start from a session whose meta.json contains providerSessionId, or run a new browser consult.',
+      },
+    };
+  }
   if (!oraclePath) {
     return {
       status: 'failed',
@@ -106,7 +102,7 @@ export function runOracleProvider(input: BrowserConsultInput, _bundle: PromptBun
     output,
     conversationUrl: extractConversationUrl(output),
     providerSessionId: extractProviderSessionId(output),
-    artifacts: extractArtifactPaths(output, input.repoRoot),
+    artifacts: extractArtifactPaths(output),
     command,
   };
 }

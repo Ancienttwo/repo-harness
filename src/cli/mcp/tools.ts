@@ -487,6 +487,7 @@ export function buildMcpToolDefinitions(policy: McpPolicy, opts: { enableChatgpt
       browserChannel: { type: 'string', enum: ['chrome', 'chrome-beta', 'chrome-dev', 'chrome-canary'] },
       followups: { type: 'array', items: { type: 'string' } },
       writeOutput: { type: 'string' },
+      overwriteOutput: { type: 'boolean' },
       timeoutMs: { type: 'number' },
       dryRun: { type: 'boolean' },
     },
@@ -818,6 +819,8 @@ export async function callMcpTool(ctx: McpToolContext, name: string, args: Recor
           provider: parseBrowserProvider(args.provider),
           browserChannel: parseNativeBrowserChannel(args.browserChannel),
           writeOutput: typeof args.writeOutput === 'string' ? args.writeOutput : undefined,
+          writeOutputPolicy: 'mcp',
+          overwriteOutput: args.overwriteOutput === true,
           timeoutMs: typeof args.timeoutMs === 'number' ? args.timeoutMs : undefined,
           dryRun: args.dryRun === true,
         });

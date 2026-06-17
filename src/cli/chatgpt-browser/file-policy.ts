@@ -1,7 +1,9 @@
 import { createHash } from 'crypto';
-import { readFileSync, statSync } from 'fs';
-import { normalizeMcpRelativePath, globMatches } from '../mcp/paths';
-import type { PromptBundleFile } from './types';
+import { existsSync, readFileSync, statSync } from 'fs';
+import { isAbsolute, resolve } from 'path';
+import { resolveMcpPath } from '../mcp/paths';
+import type { McpPolicy } from '../mcp/types';
+import type { BrowserWriteOutputPolicy, PromptBundleFile } from './types';
 
 const READ_ALLOW_GLOBS = [
   'AGENTS.md',
@@ -37,11 +39,51 @@ const READ_DENY_GLOBS = [
   '.ai/harness/chatgpt/tmp/**',
 ];
 
-function denyGlobMatches(pattern: string, relativePath: string): boolean {
-  if (globMatches(pattern, relativePath)) return true;
-  if (!pattern.includes('/')) return relativePath.split('/').some((segment) => globMatches(pattern, segment));
-  return globMatches(`**/${pattern}`, relativePath);
-}
+const WRITE_DENY_GLOBS = [
+  ...READ_DENY_GLOBS,
+  'src/**',
+  'app/**',
+  'packages/**',
+  'package.json',
+  'bun.lock',
+  'package-lock.json',
+  'pnpm-lock.yaml',
+  'yarn.lock',
+  '.github/workflows/**',
+];
+
+const BROWSER_READ_POLICY: McpPolicy = {
+  profile: 'planner',
+  readGlobs: READ_ALLOW_GLOBS,
+  writeGlobs: [],
+  denyGlobs: READ_DENY_GLOBS,
+  maxFileBytes: 512 * 1024,
+  execution: { fixedWorkflowCheck: false, codexRunner: false },
+};
+
+const BROWSER_CLI_OUTPUT_POLICY: McpPolicy = {
+  profile: 'planner',
+  readGlobs: [],
+  writeGlobs: ['**'],
+  denyGlobs: WRITE_DENY_GLOBS,
+  maxFileBytes: 0,
+  execution: { fixedWorkflowCheck: false, codexRunner: false },
+};
+
+const BROWSER_MCP_OUTPUT_POLICY: McpPolicy = {
+  profile: 'planner',
+  readGlobs: [],
+  writeGlobs: [
+    '.ai/harness/handoff/*.md',
+    'tasks/reviews/**',
+    '.ai/harness/checks/**',
+    'plans/prds/**',
+    'plans/sprints/**',
+  ],
+  denyGlobs: WRITE_DENY_GLOBS,
+  maxFileBytes: 0,
+  execution: { fixedWorkflowCheck: false, codexRunner: false },
+};
 
 function isProbablyBinary(bytes: Buffer): boolean {
   return bytes.subarray(0, Math.min(bytes.length, 8000)).includes(0);
@@ -51,26 +93,55 @@ function sha256(bytes: Buffer): string {
   return createHash('sha256').update(bytes).digest('hex');
 }
 
-export function resolveBrowserInputPath(inputPath: string): { ok: true; path: string } | { ok: false; reason: string; path?: string } {
-  const normalized = normalizeMcpRelativePath(inputPath);
-  if (!normalized.ok || !normalized.relativePath) return { ok: false, reason: normalized.reason ?? 'invalid path' };
-  const path = normalized.relativePath;
-  if (READ_DENY_GLOBS.some((pattern) => denyGlobMatches(pattern, path))) {
-    return { ok: false, path, reason: `path is denied by ChatGPT browser policy: ${path}` };
+function browserReason(reason?: string): string {
+  return (reason ?? 'path denied').replace('MCP policy', 'ChatGPT browser policy');
+}
+
+export function resolveBrowserInputPath(repoRoot: string, inputPath: string): { ok: true; path: string; absolutePath: string } | { ok: false; reason: string; path?: string } {
+  const decision = resolveMcpPath(repoRoot, inputPath, BROWSER_READ_POLICY, 'read');
+  if (!decision.ok || !decision.relativePath || !decision.absolutePath) {
+    return { ok: false, path: decision.relativePath, reason: browserReason(decision.reason) };
   }
-  if (!READ_ALLOW_GLOBS.some((pattern) => globMatches(pattern, path))) {
-    return { ok: false, path, reason: `path is not allowed for ChatGPT browser consult: ${path}` };
+  return { ok: true, path: decision.relativePath, absolutePath: decision.absolutePath };
+}
+
+export function resolveBrowserOutputPath(repoRoot: string, inputPath: string, opts: {
+  policy?: BrowserWriteOutputPolicy;
+  allowAbsolute?: boolean;
+  overwrite?: boolean;
+} = {}): { ok: true; path: string; absolutePath: string } | { ok: false; reason: string; path?: string } {
+  const rawPath = inputPath.trim();
+  if (!rawPath) return { ok: false, reason: 'write output path is required' };
+
+  if (isAbsolute(rawPath)) {
+    if (opts.policy === 'mcp') return { ok: false, path: rawPath, reason: 'absolute write output paths are not allowed for MCP browser consults' };
+    if (opts.allowAbsolute !== true) {
+      return { ok: false, path: rawPath, reason: 'absolute write output paths require --allow-absolute-output' };
+    }
+    const absolutePath = resolve(rawPath);
+    if (existsSync(absolutePath) && opts.overwrite !== true) {
+      return { ok: false, path: rawPath, reason: `write output already exists: ${rawPath}` };
+    }
+    return { ok: true, path: rawPath, absolutePath };
   }
-  return { ok: true, path };
+
+  const policy = opts.policy === 'mcp' ? BROWSER_MCP_OUTPUT_POLICY : BROWSER_CLI_OUTPUT_POLICY;
+  const decision = resolveMcpPath(repoRoot, rawPath, policy, 'write');
+  if (!decision.ok || !decision.relativePath || !decision.absolutePath) {
+    return { ok: false, path: decision.relativePath, reason: browserReason(decision.reason) };
+  }
+  if (existsSync(decision.absolutePath) && opts.overwrite !== true) {
+    return { ok: false, path: decision.relativePath, reason: `write output already exists: ${decision.relativePath}` };
+  }
+  return { ok: true, path: decision.relativePath, absolutePath: decision.absolutePath };
 }
 
 export function readBrowserInputFile(repoRoot: string, inputPath: string, maxInlineChars: number): PromptBundleFile {
-  const decision = resolveBrowserInputPath(inputPath);
+  const decision = resolveBrowserInputPath(repoRoot, inputPath);
   if (!decision.ok) throw new Error(decision.reason);
-  const absolutePath = `${repoRoot}/${decision.path}`;
-  const fileStat = statSync(absolutePath);
+  const fileStat = statSync(decision.absolutePath);
   if (!fileStat.isFile()) throw new Error(`path is not a file: ${decision.path}`);
-  const bytes = readFileSync(absolutePath);
+  const bytes = readFileSync(decision.absolutePath);
   if (isProbablyBinary(bytes)) throw new Error(`binary files are not supported by inline browser consult: ${decision.path}`);
   const content = bytes.toString('utf-8');
   if (content.length > maxInlineChars) {

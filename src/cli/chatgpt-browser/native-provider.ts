@@ -30,6 +30,7 @@ const SEND_BUTTON_SELECTORS = [
 ];
 
 const ASSISTANT_SELECTOR = '[data-message-author-role="assistant"]';
+const STABLE_CAPTURE_MS = 5000;
 
 const CHANNEL_APPS: Record<NativeBrowserChannel, { appName: string; executable: string }> = {
   chrome: {
@@ -175,23 +176,6 @@ async function launchChrome(channel: NativeBrowserChannel, profileDir: string, p
   }
 }
 
-function killProfileChrome(profileDir: string): void {
-  const escaped = profileDir.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const listing = spawnSync('ps', ['-ax', '-o', 'pid=,command='], { encoding: 'utf-8' }).stdout ?? '';
-  for (const line of listing.split(/\r?\n/)) {
-    if (!new RegExp(escaped).test(line)) continue;
-    if (!line.includes('/Applications/Google Chrome')) continue;
-    const pid = Number(line.trim().split(/\s+/, 1)[0]);
-    if (Number.isInteger(pid) && pid > 0) {
-      try {
-        process.kill(pid);
-      } catch (_error) {
-        // Browser cleanup is best-effort; the session store records the run result.
-      }
-    }
-  }
-}
-
 function browserEval(body: string): string {
   return `(() => { try { ${body} } catch (error) { return { ok: false, error: String(error), url: location.href, title: document.title }; } })()`;
 }
@@ -260,16 +244,42 @@ async function submitPrompt(connection: CdpConnection, sessionId: string, render
   await connection.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 }, sessionId);
 }
 
-async function waitForAssistantText(connection: CdpConnection, sessionId: string, timeoutMs: number): Promise<string> {
-  const result = await waitFor(timeoutMs, () => evaluate(connection, sessionId, `
+async function waitForStableAssistantText(connection: CdpConnection, sessionId: string, timeoutMs: number): Promise<{ text: string; stable: boolean }> {
+  const deadline = Date.now() + timeoutMs;
+  let latest = '';
+  let stableSince = 0;
+  while (Date.now() < deadline) {
+    const result = await evaluate(connection, sessionId, `
     const nodes = [...document.querySelectorAll(${JSON.stringify(ASSISTANT_SELECTOR)})];
     const raw = nodes.at(-1)?.innerText || '';
     return { text: raw, url: location.href };
-  `), (value) => Boolean(normalizeAssistantText(value?.text)));
-  return normalizeAssistantText(result?.text);
+  `);
+    const text = normalizeAssistantText(result?.text);
+    if (text) {
+      if (text !== latest) {
+        latest = text;
+        stableSince = Date.now();
+      } else if (Date.now() - stableSince >= STABLE_CAPTURE_MS) {
+        return { text, stable: true };
+      }
+    }
+    await Bun.sleep(500);
+  }
+  return { text: latest, stable: false };
 }
 
 export async function runNativeProvider(input: BrowserConsultInput, bundle: PromptBundle): Promise<NativeProviderResult> {
+  if (input.model || input.thinking) {
+    return {
+      status: 'failed',
+      output: 'Native ChatGPT browser provider uses the current web UI model and thinking settings; --model and --thinking are not supported yet.',
+      error: {
+        code: 'NATIVE_MODEL_SELECTION_UNSUPPORTED',
+        message: 'native provider cannot select model or thinking level',
+        recovery: 'Omit --model/--thinking for native runs, or use the Oracle provider when model selection is required.',
+      },
+    };
+  }
   const channel = browserChannel(input.browserChannel);
   const profileDir = input.profileDir ? resolve(input.profileDir) : defaultProfileDir();
   const timeoutMs = input.timeoutMs ?? 180_000;
@@ -308,9 +318,9 @@ export async function runNativeProvider(input: BrowserConsultInput, bundle: Prom
     }
 
     await submitPrompt(connection, sessionId, bundle.rendered);
-    const output = await waitForAssistantText(connection, sessionId, timeoutMs);
+    const capture = await waitForStableAssistantText(connection, sessionId, timeoutMs);
     const url = await currentUrl(connection, sessionId);
-    if (!output) {
+    if (!capture.text) {
       return {
         status: 'incomplete_capture',
         output: [
@@ -326,9 +336,25 @@ export async function runNativeProvider(input: BrowserConsultInput, bundle: Prom
         },
       };
     }
+    if (!capture.stable) {
+      return {
+        status: 'incomplete_capture',
+        output: [
+          capture.text,
+          '',
+          '[repo-harness native provider warning: assistant text was captured but did not remain stable before timeout.]',
+        ].join('\n'),
+        conversationUrl: conversationUrl(url),
+        error: {
+          code: 'ASSISTANT_CAPTURE_INCOMPLETE',
+          message: 'assistant text did not stabilize before timeout',
+          recovery: 'Inspect the kept browser session or rerun with a longer --timeout-ms.',
+        },
+      };
+    }
     return {
       status: 'completed',
-      output,
+      output: capture.text,
       conversationUrl: conversationUrl(url),
     };
   } catch (error) {
@@ -347,7 +373,6 @@ export async function runNativeProvider(input: BrowserConsultInput, bundle: Prom
         await connection.send('Browser.close').catch(() => undefined);
         connection.close();
       }
-      killProfileChrome(profileDir);
     }
   }
 }

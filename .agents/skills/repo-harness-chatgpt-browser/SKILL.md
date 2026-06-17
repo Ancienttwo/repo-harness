@@ -25,7 +25,7 @@ repo-harness chatgpt browser-doctor --repo .
 ```
 
 6. Use browser consult for planning, review, critique, and goal generation. Do not use it as the executor for code edits.
-7. Save useful results into repo-harness artifacts such as:
+7. Save useful results into repo-harness artifacts with repo-relative `--write-output` paths such as:
 
 ```text
 .ai/harness/handoff/chatgpt-review.md
@@ -41,6 +41,9 @@ plans/sprints/*.sprint.md
 ```bash
 repo-harness mcp serve --repo . --enable-chatgpt-browser
 ```
+
+11. Do not rely on provider stdout `Artifact:` / `Output:` paths being imported. Browser engine session records save prompt, transcript, output, metadata, and trusted provider IDs; ordinary stdout paths are ignored.
+12. Native provider uses the current ChatGPT Web model selection. Do not pass `--model` or `--thinking` with `--provider native`; use Oracle when model selection is required.
 
 ## Common Commands
 

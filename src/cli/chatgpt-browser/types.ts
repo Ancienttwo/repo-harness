@@ -6,6 +6,8 @@ export type NativeBrowserChannel = 'chrome' | 'chrome-beta' | 'chrome-dev' | 'ch
 
 export type ThinkingLevel = 'light' | 'standard' | 'extended' | 'heavy';
 
+export type BrowserWriteOutputPolicy = 'cli' | 'mcp';
+
 export interface BrowserFileInput {
   path: string;
   delivery?: 'inline';
@@ -16,6 +18,7 @@ export interface BrowserConsultInput {
   title?: string;
   prompt: string;
   sourceSessionId?: string;
+  providerSessionId?: string;
   files?: BrowserFileInput[];
   followups?: string[];
   model?: string;
@@ -25,6 +28,9 @@ export interface BrowserConsultInput {
   timeoutMs?: number;
   dryRun?: boolean;
   writeOutput?: string;
+  writeOutputPolicy?: BrowserWriteOutputPolicy;
+  allowAbsoluteOutput?: boolean;
+  overwriteOutput?: boolean;
   sessionRoot?: string;
   maxInlineChars?: number;
   manualLogin?: boolean;

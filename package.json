@@ -9,9 +9,11 @@
   },
   "type": "module",
   "files": [
+    ".agents/skills/repo-harness-chatgpt-browser/",
     "agents/",
     "assets/",
     "docs/images/",
+    "docs/repo-harness-chatgpt-browser-engine.md",
     "install.sh",
     "install.ps1",
     "scripts/",

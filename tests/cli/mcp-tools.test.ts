@@ -67,6 +67,30 @@ describe('mcp tools', () => {
       const opened = JSON.parse(openedRaw.content[0].text);
       expect(opened.url).toBe('https://chatgpt.com/c/mcp-open-test');
       expect(openedRaw.structuredContent).toEqual(opened);
+
+      const absolute = await jsonTool(browserCtx, 'run_chatgpt_browser_consult', {
+        prompt: 'Review this sprint.',
+        writeOutput: '/tmp/repo-harness-mcp-browser-output.md',
+        dryRun: true,
+      });
+      expect(absolute.error.code).toBe('TOOL_FAILED');
+      expect(absolute.error.message).toContain('absolute write output paths are not allowed');
+
+      const denied = await jsonTool(browserCtx, 'run_chatgpt_browser_consult', {
+        prompt: 'Review this sprint.',
+        writeOutput: '.env',
+        dryRun: true,
+      });
+      expect(denied.error.code).toBe('TOOL_FAILED');
+      expect(denied.error.message).toContain('path is denied by ChatGPT browser policy');
+
+      const allowed = await jsonTool(browserCtx, 'run_chatgpt_browser_consult', {
+        prompt: 'Review this sprint.',
+        writeOutput: 'plans/sprints/browser-review.md',
+        dryRun: true,
+      });
+      expect(allowed.status).toBe('dry_run');
+      expect(readFileSync(join(repoRoot, 'plans/sprints/browser-review.md'), 'utf-8')).toContain('Dry run only');
     });
   });
 

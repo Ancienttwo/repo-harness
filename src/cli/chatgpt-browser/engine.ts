@@ -1,6 +1,7 @@
 import { spawnSync } from 'child_process';
 import { existsSync } from 'fs';
 import { join, resolve } from 'path';
+import { resolveBrowserOutputPath } from './file-policy';
 import { nativeProviderAvailable, runNativeProvider } from './native-provider';
 import { buildOracleCommand, runOracleProvider } from './oracle-provider';
 import { assemblePromptBundle } from './prompt-assembler';
@@ -31,6 +32,16 @@ function providerOutput(provider: BrowserProviderName, command?: string[]): stri
 
 export function resolveRepoRoot(input = '.'): string {
   return resolve(input);
+}
+
+function assertOutputTarget(input: BrowserConsultInput): void {
+  if (!input.writeOutput) return;
+  const decision = resolveBrowserOutputPath(input.repoRoot, input.writeOutput, {
+    policy: input.writeOutputPolicy ?? 'cli',
+    allowAbsolute: input.allowAbsoluteOutput === true,
+    overwrite: input.overwriteOutput === true,
+  });
+  if (!decision.ok) throw new Error(decision.reason);
 }
 
 export function runBrowserSetup(repoRoot: string): { lines: string[] } {
@@ -93,6 +104,7 @@ export async function browserDoctor(repoRoot: string, provider: BrowserProviderN
 
 export async function runBrowserConsult(input: BrowserConsultInput): Promise<BrowserConsultResult> {
   const provider = input.provider ?? 'oracle';
+  assertOutputTarget(input);
   const bundle = assemblePromptBundle(input);
   if (input.dryRun !== true) {
     if (provider === 'oracle') {
@@ -142,13 +154,15 @@ export function listSessions(repoRoot: string, limit?: number): StoredBrowserSes
 
 export async function runBrowserFollowup(input: Omit<BrowserConsultInput, 'sourceSessionId'> & { sessionId: string }): Promise<BrowserConsultResult> {
   const existing = readBrowserSession(input.repoRoot, input.sessionId);
+  const provider = input.provider ?? existing.meta.provider;
   return runBrowserConsult({
     ...input,
     title: input.title ?? `followup ${input.sessionId}`,
     sourceSessionId: input.sessionId,
+    providerSessionId: input.providerSessionId ?? existing.meta.providerSessionId,
     model: input.model ?? existing.meta.model.requested,
     thinking: input.thinking ?? existing.meta.model.thinking,
-    provider: input.provider ?? existing.meta.provider,
+    provider,
     chatgptUrl: input.chatgptUrl ?? existing.meta.browser.conversationUrl ?? existing.meta.browser.chatgptUrl,
   });
 }

@@ -1,0 +1,18 @@
+# Browser Engine PR5 Hardening Notes
+
+## Context
+
+PR #5 adds the experimental ChatGPT browser engine, including CLI session storage, Oracle/native providers, MCP opt-in tools, docs, and a Codex skill.
+
+## Decisions
+
+- Oracle stdout is treated as model-visible text, not a trusted artifact manifest. The wrapper still records stdout, conversation URL, and provider session id, but it ignores `Artifact:` / `Output:` / `Session file:` paths until a structured provider-owned manifest exists.
+- Browser input files now reuse MCP path containment logic so allowed-path symlinks cannot escape the repository.
+- `writeOutput` is validated before provider execution. CLI output paths are repo-relative by default, absolute output requires `--allow-absolute-output`, and overwrites require `--overwrite-output`. MCP browser tools use a narrower workflow-artifact write policy and never accept absolute paths.
+- Follow-up sessions keep `sourceSessionId` as the repo-harness local session id, but Oracle receives only `providerSessionId` from the stored upstream provider metadata.
+- Native provider remains experimental. It fails closed for `--model` and `--thinking`, waits for stable assistant text before returning `completed`, and no longer scans `ps` output to kill Chrome by profile path.
+
+## Verification Focus
+
+- `tests/cli/chatgpt-browser.test.ts` covers symlink escape denial, unsafe output denial, stdout artifact path ignoring, provider session follow-up wiring, native model-selection failure, and invalid session id rejection.
+- `tests/cli/mcp-tools.test.ts` covers MCP browser `writeOutput` path policy.

@@ -64,6 +64,16 @@ function realpathInside(child: string, parent: string): boolean {
   return child === parent || child.startsWith(normalizedParent);
 }
 
+function nearestExistingPath(path: string): string | undefined {
+  let current = path;
+  while (!existsSync(current)) {
+    const parent = dirname(current);
+    if (parent === current) return undefined;
+    current = parent;
+  }
+  return current;
+}
+
 export function resolveMcpPath(repoRoot: string, inputPath: string, policy: McpPolicy, intent: McpPathIntent): McpPathDecision {
   const normalized = normalizeMcpRelativePath(inputPath);
   if (!normalized.ok || !normalized.relativePath) return normalized;
@@ -80,10 +90,13 @@ export function resolveMcpPath(repoRoot: string, inputPath: string, policy: McpP
 
   const repoRealpath = realpathSync(repoRoot);
   const absolutePath = resolve(repoRealpath, relativePath);
-  const existingPath = existsSync(absolutePath) ? absolutePath : dirname(absolutePath);
-  if (!existsSync(existingPath)) {
-    if (intent === 'read') return { ok: false, relativePath, reason: `path does not exist: ${relativePath}` };
-    return { ok: true, relativePath, absolutePath };
+  if (intent === 'read' && !existsSync(absolutePath)) {
+    return { ok: false, relativePath, reason: `path does not exist: ${relativePath}` };
+  }
+
+  const existingPath = existsSync(absolutePath) ? absolutePath : nearestExistingPath(dirname(absolutePath));
+  if (!existingPath) {
+    return { ok: false, relativePath, reason: `path cannot be resolved: ${relativePath}` };
   }
 
   const realExistingPath = realpathSync(existingPath);

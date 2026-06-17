@@ -28,6 +28,8 @@ interface BrowserConsultOptions extends BrowserCommonOptions {
   timeoutMs?: string;
   dryRun?: boolean;
   writeOutput?: string;
+  allowAbsoluteOutput?: boolean;
+  overwriteOutput?: boolean;
   maxInlineChars?: string;
   manualLogin?: boolean;
   profileDir?: string;
@@ -47,6 +49,8 @@ interface BrowserFollowupOptions extends BrowserCommonOptions {
   timeoutMs?: string;
   dryRun?: boolean;
   writeOutput?: string;
+  allowAbsoluteOutput?: boolean;
+  overwriteOutput?: boolean;
   profileDir?: string;
   browserChannel?: string;
   keepBrowser?: boolean;
@@ -134,7 +138,9 @@ export function buildChatgptCommand(): Command {
     .option('--chatgpt-url <url>', 'ChatGPT URL to open', 'https://chatgpt.com/')
     .option('--timeout-ms <ms>', 'Assistant timeout in milliseconds')
     .option('--max-inline-chars <chars>', 'Maximum inline chars per file', '120000')
-    .option('--write-output <path>', 'Repo-relative or absolute path to copy final output')
+    .option('--write-output <path>', 'Repo-relative path to copy final output')
+    .option('--allow-absolute-output', 'Permit --write-output to target an absolute path')
+    .option('--overwrite-output', 'Allow --write-output to replace an existing file')
     .option('--manual-login', 'Document that manual login is expected before non-dry-run browser execution', true)
     .option('--profile-dir <path>', 'Native provider persistent browser profile directory')
     .option('--browser-channel <channel>', 'Native provider Chrome channel: chrome|chrome-beta|chrome-dev|chrome-canary', 'chrome')
@@ -157,6 +163,8 @@ export function buildChatgptCommand(): Command {
           timeoutMs: parsePositiveInteger('timeout-ms', rawOpts.timeoutMs),
           dryRun: rawOpts.dryRun === true,
           writeOutput: rawOpts.writeOutput,
+          allowAbsoluteOutput: rawOpts.allowAbsoluteOutput === true,
+          overwriteOutput: rawOpts.overwriteOutput === true,
           maxInlineChars: parsePositiveInteger('max-inline-chars', rawOpts.maxInlineChars),
           manualLogin: rawOpts.manualLogin !== false,
           profileDir: rawOpts.profileDir,
@@ -199,7 +207,9 @@ export function buildChatgptCommand(): Command {
     .option('--thinking <level>', 'Thinking level: light|standard|extended|heavy')
     .option('--provider <provider>', 'Browser provider: oracle|native')
     .option('--timeout-ms <ms>', 'Assistant timeout in milliseconds')
-    .option('--write-output <path>', 'Repo-relative or absolute path to copy final output')
+    .option('--write-output <path>', 'Repo-relative path to copy final output')
+    .option('--allow-absolute-output', 'Permit --write-output to target an absolute path')
+    .option('--overwrite-output', 'Allow --write-output to replace an existing file')
     .option('--profile-dir <path>', 'Native provider persistent browser profile directory')
     .option('--browser-channel <channel>', 'Native provider Chrome channel: chrome|chrome-beta|chrome-dev|chrome-canary')
     .option('--keep-browser', 'Native provider leaves the browser open after the run')
@@ -220,6 +230,8 @@ export function buildChatgptCommand(): Command {
           timeoutMs: parsePositiveInteger('timeout-ms', rawOpts.timeoutMs),
           dryRun: rawOpts.dryRun === true,
           writeOutput: rawOpts.writeOutput,
+          allowAbsoluteOutput: rawOpts.allowAbsoluteOutput === true,
+          overwriteOutput: rawOpts.overwriteOutput === true,
           profileDir: rawOpts.profileDir,
           browserChannel: parseBrowserChannel(rawOpts.browserChannel),
           keepBrowser: rawOpts.keepBrowser === true,

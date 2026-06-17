@@ -1,5 +1,6 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs';
 import { basename, dirname, join, relative } from 'path';
+import { resolveBrowserOutputPath } from './file-policy';
 import type {
   BrowserConsultInput,
   BrowserConsultResult,
@@ -14,6 +15,7 @@ import type {
 } from './types';
 
 export const DEFAULT_SESSION_ROOT = '.ai/harness/chatgpt/sessions';
+export const BROWSER_SESSION_ID_PATTERN = /^chgpt_\d{8}_\d{6}_[a-z0-9-]+(?:-\d+)?$/;
 
 function slugify(input: string): string {
   return input
@@ -38,11 +40,18 @@ function sessionRoot(repoRoot: string, customRoot?: string): string {
   return customRoot?.startsWith('/') ? customRoot : join(repoRoot, customRoot ?? DEFAULT_SESSION_ROOT);
 }
 
+function assertValidSessionId(sessionId: string): void {
+  if (!BROWSER_SESSION_ID_PATTERN.test(sessionId)) {
+    throw new Error(`invalid ChatGPT browser session id: ${sessionId}`);
+  }
+}
+
 export function createBrowserSessionId(input: Pick<BrowserConsultInput, 'title' | 'prompt'>, date = new Date()): string {
   return `chgpt_${timestamp(date)}_${slugify(input.title ?? input.prompt.split(/\r?\n/)[0] ?? 'consult')}`;
 }
 
 export function browserSessionPaths(repoRoot: string, sessionId: string, customRoot?: string): BrowserSessionPaths {
+  assertValidSessionId(sessionId);
   const root = sessionRoot(repoRoot, customRoot);
   const sessionDir = join(root, sessionId);
   return {
@@ -91,6 +100,25 @@ function copyArtifacts(artifactsDir: string, artifacts?: BrowserImportedArtifact
   });
 }
 
+function allocateBrowserSessionPaths(input: BrowserConsultInput): { sessionId: string; paths: BrowserSessionPaths } {
+  const baseSessionId = createBrowserSessionId(input);
+  const root = sessionRoot(input.repoRoot, input.sessionRoot);
+  mkdirSync(root, { recursive: true });
+  for (let attempt = 1; attempt <= 100; attempt += 1) {
+    const sessionId = attempt === 1 ? baseSessionId : `${baseSessionId}-${attempt}`;
+    const paths = browserSessionPaths(input.repoRoot, sessionId, input.sessionRoot);
+    try {
+      mkdirSync(paths.sessionDir);
+      mkdirSync(paths.artifactsDir);
+      return { sessionId, paths };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST') continue;
+      throw error;
+    }
+  }
+  throw new Error(`could not allocate unique ChatGPT browser session id for ${baseSessionId}`);
+}
+
 export function writeBrowserSession(opts: {
   input: BrowserConsultInput;
   provider: BrowserProviderName;
@@ -103,9 +131,16 @@ export function writeBrowserSession(opts: {
   artifacts?: BrowserImportedArtifact[];
   command?: string[];
 }): BrowserConsultResult {
-  const sessionId = createBrowserSessionId(opts.input);
-  const paths = browserSessionPaths(opts.input.repoRoot, sessionId, opts.input.sessionRoot);
-  mkdirSync(paths.artifactsDir, { recursive: true });
+  const outputTarget = opts.input.writeOutput
+    ? resolveBrowserOutputPath(opts.input.repoRoot, opts.input.writeOutput, {
+      policy: opts.input.writeOutputPolicy ?? 'cli',
+      allowAbsolute: opts.input.allowAbsoluteOutput === true,
+      overwrite: opts.input.overwriteOutput === true,
+    })
+    : undefined;
+  if (outputTarget && !outputTarget.ok) throw new Error(outputTarget.reason);
+
+  const { sessionId, paths } = allocateBrowserSessionPaths(opts.input);
   const now = new Date().toISOString();
   const copiedArtifacts = copyArtifacts(paths.artifactsDir, opts.artifacts);
   const meta: BrowserSessionMeta = {
@@ -159,10 +194,9 @@ export function writeBrowserSession(opts: {
   writeFileSync(paths.output, opts.output.trimEnd() + '\n', 'utf-8');
   writeFileSync(paths.transcript, renderTranscript(meta, opts.bundle, opts.output), 'utf-8');
   writeFileSync(paths.events, JSON.stringify({ ts: now, event: 'session.created', sessionId, status: opts.status }) + '\n', 'utf-8');
-  if (opts.input.writeOutput) {
-    const writePath = opts.input.writeOutput.startsWith('/') ? opts.input.writeOutput : join(opts.input.repoRoot, opts.input.writeOutput);
-    mkdirSync(dirname(writePath), { recursive: true });
-    writeFileSync(writePath, opts.output.trimEnd() + '\n', 'utf-8');
+  if (outputTarget?.ok) {
+    mkdirSync(dirname(outputTarget.absolutePath), { recursive: true });
+    writeFileSync(outputTarget.absolutePath, opts.output.trimEnd() + '\n', 'utf-8');
   }
   return {
     sessionId,
