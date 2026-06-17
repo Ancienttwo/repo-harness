@@ -1132,8 +1132,8 @@ workflow_with_lock() {
   while ! mkdir "$lock_dir" 2>/dev/null; do
     if [[ "$waited" -ge 40 ]]; then
       now="$(date +%s)"
-      mtime="$(stat -f '%m' "$lock_dir" 2>/dev/null || stat -c '%Y' "$lock_dir" 2>/dev/null || echo 0)"
-      if [[ "${mtime:-0}" -gt 0 && $((now - mtime)) -ge 60 ]]; then
+      mtime="$(stat -c '%Y' "$lock_dir" 2>/dev/null || stat -f '%m' "$lock_dir" 2>/dev/null || echo 0)"
+      if [[ "${mtime:-0}" =~ ^[0-9]+$ && "${mtime:-0}" -gt 0 && $((now - mtime)) -ge 60 ]]; then
         rmdir "$lock_dir" 2>/dev/null || true
         waited=0
         continue

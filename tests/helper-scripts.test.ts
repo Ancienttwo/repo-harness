@@ -135,6 +135,36 @@ function writeActivePlan(cwd: string, planPath: string) {
   writeFileSync(join(cwd, ".ai/harness/active-worktree"), `${realpathSync(cwd)}\n`);
 }
 
+function writeWorkflowRequiredSurface(cwd: string) {
+  for (const dir of [
+    ".ai/harness/triage",
+    "deploy",
+    "deploy/env",
+    "deploy/scripts",
+    "deploy/submissions",
+    "deploy/runbooks",
+    "deploy/release-checklists",
+    "deploy/sql",
+    "docs/reference-configs",
+  ]) {
+    mkdirSync(join(cwd, dir), { recursive: true });
+  }
+  writeFileSync(join(cwd, ".ai/context/capability-source-map.json"), "{}\n");
+  for (const file of [
+    "docs/reference-configs/harness-overview.md",
+    "docs/reference-configs/agentic-development-flow.md",
+    "docs/reference-configs/external-tooling.md",
+    "docs/reference-configs/sprint-contracts.md",
+    "docs/reference-configs/heartbeat-triage.md",
+    "docs/reference-configs/handoff-protocol.md",
+    "docs/reference-configs/document-generation.md",
+    "docs/reference-configs/global-working-rules.md",
+    "deploy/README.md",
+  ]) {
+    writeFileSync(join(cwd, file), "# Fixture\n");
+  }
+}
+
 function evidenceContract(): string {
   return [
     "## Evidence Contract",
@@ -3174,10 +3204,14 @@ describe("Workflow helper scripts", () => {
         run("bash", ["scripts/ensure-task-workflow.sh", "--slug", "resume-freshness", "--title", "Resume Freshness"], cwd)
           .status
       ).toBe(0);
+      writeWorkflowRequiredSurface(cwd);
 
       writeFileSync(join(cwd, ".ai/harness/handoff/current.md"), "# Harness Handoff\n\n## Exact Next Step\n- Continue.\n");
       writeFileSync(join(cwd, ".ai/harness/handoff/resume.md"), "# Codex Resume Packet\n\n## Source Artifacts\n\n- Plan: (none)\n");
-      expect(run("bash", ["-lc", "sleep 1; mkdir -p tasks; printf '# Current Status Snapshot\\n' > tasks/current.md"], cwd).status).toBe(0);
+      writeFileSync(join(cwd, "tasks/current.md"), "# Current Status Snapshot\n");
+      expect(run("touch", ["-t", "202601010000.00", join(cwd, ".ai/harness/handoff/current.md")], cwd).status).toBe(0);
+      expect(run("touch", ["-t", "202601010000.00", join(cwd, ".ai/harness/handoff/resume.md")], cwd).status).toBe(0);
+      expect(run("touch", ["-t", "202601010001.00", join(cwd, "tasks/current.md")], cwd).status).toBe(0);
 
       const res = run("bash", ["scripts/check-task-workflow.sh", "--strict"], cwd);
 
@@ -3196,33 +3230,7 @@ describe("Workflow helper scripts", () => {
         run("bash", ["scripts/ensure-task-workflow.sh", "--slug", "handoff-check", "--title", "Handoff Check"], cwd)
           .status
       ).toBe(0);
-      for (const dir of [
-        ".ai/harness/triage",
-        "deploy",
-        "deploy/env",
-        "deploy/scripts",
-        "deploy/submissions",
-        "deploy/runbooks",
-        "deploy/release-checklists",
-        "deploy/sql",
-        "docs/reference-configs",
-      ]) {
-        mkdirSync(join(cwd, dir), { recursive: true });
-      }
-      writeFileSync(join(cwd, ".ai/context/capability-source-map.json"), "{}\n");
-      for (const file of [
-        "docs/reference-configs/harness-overview.md",
-        "docs/reference-configs/agentic-development-flow.md",
-        "docs/reference-configs/external-tooling.md",
-        "docs/reference-configs/sprint-contracts.md",
-        "docs/reference-configs/heartbeat-triage.md",
-        "docs/reference-configs/handoff-protocol.md",
-        "docs/reference-configs/document-generation.md",
-        "docs/reference-configs/global-working-rules.md",
-        "deploy/README.md",
-      ]) {
-        writeFileSync(join(cwd, file), "# Fixture\n");
-      }
+      writeWorkflowRequiredSurface(cwd);
 
       writeFileSync(
         join(cwd, ".ai/harness/handoff/current.md"),

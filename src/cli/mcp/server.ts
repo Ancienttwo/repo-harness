@@ -10,6 +10,7 @@ import type { McpAgentRunnerName } from './types';
 export interface McpServerOptions {
   repo?: string;
   profile?: string;
+  enableChatgptBrowser?: boolean;
   enableDevRunner?: boolean;
   devRunnerAgents?: string;
   devRunnerTimeoutMs?: number;
@@ -58,6 +59,7 @@ export function createMcpToolContext(opts: McpServerOptions): McpToolContext {
       allowedAgents,
       runnerTimeoutMs,
     }),
+    enableChatgptBrowser: opts.enableChatgptBrowser === true,
   };
 }
 
@@ -72,7 +74,7 @@ export function createRepoHarnessMcpServer(opts: McpServerOptions): Server {
   );
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: buildMcpToolDefinitions(ctx.policy),
+    tools: buildMcpToolDefinitions(ctx.policy, { enableChatgptBrowser: ctx.enableChatgptBrowser === true }),
   }));
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {

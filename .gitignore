@@ -52,6 +52,9 @@ tasks/.current.md.tmp.*
 .ai/harness/worktrees/
 .ai/harness/runs/
 .ai/harness/mcp/audit.log
+.ai/harness/chatgpt/browser-lock.json
+.ai/harness/chatgpt/tmp/
+.ai/harness/chatgpt/sessions/
 .ai/harness/triage/*
 !.ai/harness/triage/.gitkeep
 .codex/*
@@ -67,6 +70,8 @@ _ref/
 _ops/
 .repo-harness/mcp.local.json
 .repo-harness/mcp.tokens.json
+.repo-harness/chatgpt-browser.local.json
+.repo-harness/chatgpt-browser.tokens.json
 .codegraph/
 .understand-anything/
 # Environment

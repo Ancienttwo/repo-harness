@@ -19,6 +19,7 @@ export interface McpServeOptions {
   port: string;
   profile: string;
   auth?: string;
+  enableChatgptBrowser?: boolean;
   enableDevRunner?: boolean;
   devRunnerAgents?: string;
   devRunnerTimeoutMs?: string;
@@ -119,6 +120,7 @@ export function buildMcpCommand(): Command {
     .option('--port <port>', 'HTTP bind port', '8765')
     .option('--profile <profile>', 'MCP profile: planner|executor|orchestrator', 'planner')
     .option('--auth <mode>', 'HTTP auth mode: oauth|bearer', 'oauth')
+    .option('--enable-chatgpt-browser', 'Expose tools that operate the user logged-in ChatGPT Web browser session')
     .option('--enable-dev-runner', 'Enable local dev-mode agent runner tools for the orchestrator profile')
     .option('--dev-runner-agents <agents>', 'Comma-separated dev runner agents: codex,claude')
     .option('--dev-runner-timeout-ms <ms>', 'Dev runner timeout in milliseconds')
@@ -129,6 +131,7 @@ export function buildMcpCommand(): Command {
           await startMcpStdio({
             repo: rawOpts.repo,
             profile: rawOpts.profile,
+            enableChatgptBrowser: rawOpts.enableChatgptBrowser === true,
             enableDevRunner: rawOpts.enableDevRunner,
             devRunnerAgents: rawOpts.devRunnerAgents,
             devRunnerTimeoutMs,
@@ -142,6 +145,7 @@ export function buildMcpCommand(): Command {
             host: rawOpts.host,
             port: parsePort(rawOpts.port),
             auth: rawOpts.auth,
+            enableChatgptBrowser: rawOpts.enableChatgptBrowser === true,
             enableDevRunner: rawOpts.enableDevRunner,
             devRunnerAgents: rawOpts.devRunnerAgents,
             devRunnerTimeoutMs,
