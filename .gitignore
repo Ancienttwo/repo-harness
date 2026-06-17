@@ -51,6 +51,7 @@ tasks/.current.md.tmp.*
 .ai/harness/sprint/
 .ai/harness/worktrees/
 .ai/harness/runs/
+.ai/harness/mcp/audit.log
 .ai/harness/triage/*
 !.ai/harness/triage/.gitkeep
 .codex/*
@@ -64,6 +65,8 @@ autoresearch/
 *.tgz
 _ref/
 _ops/
+.repo-harness/mcp.local.json
+.repo-harness/mcp.tokens.json
 .codegraph/
 .understand-anything/
 # Environment
@@ -75,3 +78,5 @@ _ops/
 # Operations
 # Local operations state
 .claude/worktrees/
+.repo-harness/mcp.oauth.json
+.repo-harness/mcp.oauth-tokens.json
