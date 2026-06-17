@@ -12,6 +12,14 @@ All notable changes to this skill are documented here.
 - Added `repo-harness uninstall` to remove repo-harness managed Codex/Claude
   hook adapters while preserving sibling user hooks and Codex trust-state
   residue.
+- Added fs-transaction manifests for `repo-harness adopt --experimental-ts-apply`
+  and `repo-harness adopt rollback --transaction <manifest>` so the safe
+  TypeScript applicator has an executable recovery path.
+- Added `scripts/check-release-published.sh` for post-publish npm registry,
+  dist-tag, tarball integrity, Git tag, and local version readback.
+- Added `scripts/check-tarball-install-smoke.sh` and wired it into the CI gate
+  so release checks install the packed tarball in a temporary project and start
+  the packaged `repo-harness` and `repo-harness-hook` bins.
 
 ### Changed
 

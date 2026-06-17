@@ -114,6 +114,17 @@ This currently protects `writeFile ifMissing`, workflow-contract install, and
 `appendManagedBlock` application in the safe subset. Dry-run and skipped
 operations do not create locks, temp files, or backups.
 
+Successful non-dry-run TypeScript apply writes a transaction manifest at:
+
+```text
+.ai/harness/backups/fs-transaction/<transaction>/manifest.json
+```
+
+The manifest records each operation result, backup path, applied content hash
+when available, and the rollback command. Backup files created during plan-level
+apply live under the same transaction directory, keeping the apply evidence and
+restore inputs together.
+
 ## CLI Process Runner Boundary
 
 Repo adoption, global runtime setup, CodeGraph setup, and `repo-harness run`
@@ -135,9 +146,14 @@ Every planned operation carries a rollback strategy:
   using the runtime fs-transaction backup when one is produced
 - skipped operations and verification-only boundaries: `none`
 
-The metadata is part of the operation plan. It does not perform rollback by
-itself; it makes the intended recovery path auditable before future applicator
-slices widen the supported mutation set.
+The metadata is part of the operation plan. For the current TypeScript safe
+subset, successful apply turns that metadata into an executable transaction
+manifest. `repo-harness adopt rollback --transaction <manifest>` walks applied
+operations in reverse order: file operations restore their fs-transaction backup
+when present, created files are deleted only if the current content hash still
+matches the transaction hash, and directories are removed only when empty.
+Skipped operations stay skipped during rollback, and unsupported/manual
+operations fail closed instead of guessing.
 
 ## Gitignore Managed Block
 

@@ -1,7 +1,7 @@
 # Release Filing: repo-harness 0.6.0
 
 Date: 2026-06-16
-Status: Prepared locally; npm publish is blocked by missing npm auth
+Status: Published and verified
 
 ## Scope
 
@@ -37,11 +37,20 @@ into `--experimental-ts-apply`.
   returned current latest `0.5.3` before the version bump.
 - `npm view repo-harness@0.6.0 version --json --registry https://registry.npmjs.org/`
   returned `E404`, proving the target package is unpublished before publish.
-- `npm whoami --registry https://registry.npmjs.org/` returned `ENEEDAUTH`; npm
-  publish cannot proceed from this machine until npm auth is configured.
+- `npm whoami --registry https://registry.npmjs.org/` initially returned
+  `ENEEDAUTH`; npm publish was completed later from an authenticated runtime.
 - Tooling update advisory was attempted. CodeGraph update/sync completed and
   setup check cleared the CodeGraph action. Waza update exited `0` but still
   leaves one `needs_agent` action; setup check has no warn/fail findings.
+- `bash scripts/check-release-published.sh 0.6.0` passed after publish,
+  proving npm registry readback, `latest` dist-tag, tarball integrity/shasum,
+  local `v0.6.0` tag, and local version-file alignment.
+- Registry readback returned:
+  - version: `0.6.0`
+  - dist-tag latest: `0.6.0`
+  - shasum: `f0386f616f5ec0310166f728aa80539f1afe9c1b`
+  - integrity:
+    `sha512-g3rDuz3PQbOkI7+IeRebTfBK+xfXtEy7DagzRIz6d3FcU+vc1dfXYCn95L0nF9iYswCsKDdor/u4M65bLXPC4Q==`
 
 ## Verification
 
@@ -61,9 +70,13 @@ into `--experimental-ts-apply`.
   - total files: `295`
   - shasum: `572bdfe55cb763ae300addf28d38da81337388a2`
   - integrity: `sha512-4dzCZs2htwLrBpcqoGSRxWdlrvrkZFhfSCXFCkhMtwb8wdow3Ns5T2rKJymSipNxtH8FjNjZ4036KOTqmdJPjQ==`
+- `bash scripts/check-tarball-install-smoke.sh` passed, proving the local packed
+  tarball installs into a temporary project and starts the packaged
+  `repo-harness` and `repo-harness-hook` bins.
 
-## Publish Hold
+## Publish Evidence
 
-- Hold reason: npm auth is missing (`ENEEDAUTH`).
-- Do not create `v0.6.0` tag or GitHub release until npm publish can run and
-  registry readback proves the package was published.
+- npm package: `repo-harness@0.6.0`
+- npm dist-tag: `latest -> 0.6.0`
+- Git tag: `v0.6.0`
+- Post-publish readback command: `bash scripts/check-release-published.sh 0.6.0`

@@ -139,6 +139,12 @@ release_backlog_lock() {
 
 acquire_backlog_lock() {
   local attempts=0
+  local max_attempts="${REPO_HARNESS_BACKLOG_LOCK_ATTEMPTS:-100}"
+  local sleep_seconds="${REPO_HARNESS_BACKLOG_LOCK_SLEEP_SECONDS:-0.1}"
+  case "$max_attempts" in
+    ''|*[!0-9]*) max_attempts=100 ;;
+  esac
+  [[ "$sleep_seconds" =~ ^[0-9]+([.][0-9]+)?$ ]] || sleep_seconds=0.1
   BACKLOG_LOCK_DIR="$(dirname "$marker_file")/.backlog-lock"
   mkdir -p "$(dirname "$BACKLOG_LOCK_DIR")"
   until mkdir "$BACKLOG_LOCK_DIR" 2>/dev/null; do
@@ -150,11 +156,11 @@ acquire_backlog_lock() {
       continue
     fi
     attempts=$((attempts + 1))
-    if [[ "$attempts" -ge 100 ]]; then
+    if [[ "$attempts" -ge "$max_attempts" ]]; then
       echo "sprint-backlog: timed out acquiring backlog lock: $BACKLOG_LOCK_DIR" >&2
       exit 1
     fi
-    sleep 0.1
+    sleep "$sleep_seconds"
   done
   trap release_backlog_lock EXIT INT TERM
 }

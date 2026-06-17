@@ -79,9 +79,11 @@ describe("Bootstrap Script Contracts", () => {
 
   test("ci gate should refresh handoff current before resume packet", () => {
     const ciGate = read("scripts/check-ci.sh");
+    const bunfig = read("bunfig.toml");
     const prepare = 'REPO_HARNESS_SKIP_RESUME_REFRESH=1 bash scripts/prepare-handoff.sh "ci gate"';
     const resume = 'bash scripts/codex-handoff-resume.sh --cwd . --reason "ci gate"';
 
+    expect(bunfig).toContain("maxConcurrency = 4");
     expect(ciGate).toContain(prepare);
     expect(ciGate).toContain(resume);
     expect(ciGate.indexOf(prepare)).toBeLessThan(ciGate.indexOf(resume));
@@ -90,11 +92,16 @@ describe("Bootstrap Script Contracts", () => {
 
   test("release gate should delegate owned checks to the ci gate", () => {
     const releaseGate = read("scripts/check-npm-release.sh");
+    const ciGate = read("scripts/check-ci.sh");
+    const pkg = JSON.parse(read("package.json"));
     expect(releaseGate).toContain('npm view "${PACKAGE_NAME}@${PACKAGE_VERSION}"');
     expect(releaseGate).toContain("bash scripts/check-ci.sh");
     expect(releaseGate.indexOf("bash scripts/check-ci.sh")).toBeGreaterThan(
       releaseGate.indexOf('npm view "${PACKAGE_NAME}@${PACKAGE_VERSION}"')
     );
+    expect(ciGate).toContain("bash scripts/check-tarball-install-smoke.sh");
+    expect(pkg.scripts["check:release-published"]).toBe("bash scripts/check-release-published.sh");
+    expect(pkg.scripts["smoke:tarball-install"]).toBe("bash scripts/check-tarball-install-smoke.sh");
   });
 
   test("create-project-dirs should create tasks primary files", () => {

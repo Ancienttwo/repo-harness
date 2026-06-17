@@ -77,6 +77,9 @@ review、checks 或 handoff 冲突，以 source artifacts 为准。
 - **实验性 TypeScript apply。** `repo-harness adopt --experimental-ts-apply`
   可以执行 safe operation subset，并使用 atomic write、target lock、backup 和
   unsupported self-host boundary preflight。
+- **可执行 rollback evidence。** 实验性 TypeScript apply 会在
+  `.ai/harness/backups/fs-transaction/` 下写入 transaction manifest；可用
+  `repo-harness adopt rollback --transaction <manifest>` 恢复。
 
 ## 产品做什么
 

@@ -35,5 +35,6 @@ bash scripts/migrate-project-template.sh --repo . --dry-run >/dev/null
 
 echo "[ci] package dry-run"
 npm pack --dry-run --json >/dev/null
+bash scripts/check-tarball-install-smoke.sh
 
 echo "[ci] OK"

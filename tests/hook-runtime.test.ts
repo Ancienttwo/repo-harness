@@ -3910,6 +3910,7 @@ describe("Hook runtime behavior", () => {
       expect(existsSync(join(cwd, ".claude/.task-state.json"))).toBe(true);
       const handoff = readFileSync(join(cwd, ".claude/.task-handoff.md"), "utf-8");
       expect(handoff).toContain("second task");
+      expect(handoff).toContain("stage its coherent diff first");
       expect(handoff).toContain("Stage: task");
       expect(handoff).toContain("Progress");
       expect(handoff).toContain("plans/plan-20260304-1410-demo.md");

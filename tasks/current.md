@@ -1,27 +1,27 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-06-17T17:01:56+0800 -->
+<!-- updated_at: 2026-06-17T17:30:15+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-06-17T17:01:56+0800
+> **Status**: Active
+> **Updated At**: 2026-06-17T17:30:15+0800
 > **Source Branch**: codex/harness-engineering-optimization
-> **Source Commit**: f77414a
+> **Source Commit**: 98e468d
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: archive-workflow
+> **Reason**: merge-origin-main
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: ManualClearedWithActiveWork
+- Status: Active
 - Active Plan: (none)
 - Plan Status: (none)
 - Next Task: inspect active worktree marker(s)
-- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
+- Clear Note: (none)
 
 ## Mainline Snapshot Reading
 
@@ -49,49 +49,49 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 103 changed/untracked path(s)
+- Summary: 60 changed/untracked path(s)
 
 ```
-M  .ai/harness/workflow-contract.json
+A  .agents/skills/repo-harness-chatgpt-bridge/SKILL.md
+A  .agents/skills/repo-harness-chatgpt-bridge/references/chatgpt-connector-manual.md
+A  .agents/skills/repo-harness-chatgpt-bridge/references/workflow.md
+A  .ai/harness/handoff/codex-goal.md
+A  .ai/harness/handoff/mcp-connector-sprint-closeout.md
+A  .ai/harness/handoff/mcp-discovery.md
+A  .ai/harness/handoff/mcp-e2e-result.md
 M  .ai/hooks/lib/workflow-state.sh
-M  .claude/templates/contract.template.md
-M  .claude/templates/plan.template.md
-M  .claude/templates/review.template.md
+M  .gitignore
 M  README.md
 M  README.zh-CN.md
 M  assets/hooks/lib/workflow-state.sh
-M  assets/reference-configs/agentic-development-flow.md
-M  assets/reference-configs/document-generation.md
-M  assets/reference-configs/handoff-protocol.md
-M  assets/reference-configs/harness-overview.md
-M  assets/reference-configs/sprint-contracts.md
-M  assets/templates/contract.template.md
-M  assets/templates/helpers/capture-plan.sh
-M  assets/templates/helpers/check-task-workflow.sh
-M  assets/templates/helpers/contract-run.ts
-M  assets/templates/helpers/contract-worktree.sh
-M  assets/templates/helpers/ensure-task-workflow.sh
-A  assets/templates/helpers/harness-trace-grade.sh
-M  assets/templates/helpers/new-plan.sh
-M  assets/templates/helpers/plan-to-todo.sh
-M  assets/templates/helpers/prepare-handoff.sh
-M  assets/templates/helpers/verify-contract.sh
-M  assets/templates/helpers/verify-sprint.sh
-M  assets/templates/plan.template.md
-M  assets/templates/review.template.md
-M  assets/workflow-contract.v1.json
+M  assets/templates/helpers/sprint-backlog.sh
+M  bun.lock
+M  bunfig.toml
+M  deploy/release-checklists/260616-repo-harness-0.6.0.md
 M  docs/CHANGELOG.md
-M  docs/reference-configs/agentic-development-flow.md
-M  docs/reference-configs/document-generation.md
-M  docs/reference-configs/handoff-protocol.md
-M  docs/reference-configs/harness-overview.md
-M  docs/reference-configs/sprint-contracts.md
-A  docs/researches/20260616-harness-engineering-frameworks.md
-M  docs/spec.md
-A  plans/plan-20260616-HE-01-harness-research-baseline.md
-A  plans/plan-20260616-HE-02-filing-terminology-normalization.md
-A  plans/plan-20260616-HE-03-human-review-card.md
-A  plans/plan-20260616-HE-04-contract-profiles.md
+M  docs/architecture/transactional-adoption-planner.md
+A  docs/repo-harness-chatgpt-mcp-setup.md
+A  docs/researches/20260617-repo-harness-mcp.md
+M  package.json
+A  plans/prds/20260617-repo-harness-mcp-prd.md
+A  plans/sprints/20260617-repo-harness-mcp-sprint.md
+M  scripts/check-ci.sh
+A  scripts/check-release-published.sh
+A  scripts/check-tarball-install-smoke.sh
+M  scripts/sprint-backlog.sh
+A  src/cli/commands/mcp.ts
+M  src/cli/index.ts
+A  src/cli/mcp/audit.ts
+A  src/cli/mcp/auth.ts
+A  src/cli/mcp/instructions.ts
+A  src/cli/mcp/oauth.ts
+A  src/cli/mcp/paths.ts
+A  src/cli/mcp/policy.ts
+A  src/cli/mcp/redaction.ts
+A  src/cli/mcp/repo.ts
+A  src/cli/mcp/server.ts
+A  src/cli/mcp/setup.ts
+A  src/cli/mcp/tools.ts
 ```
 
 ## Source Artifacts

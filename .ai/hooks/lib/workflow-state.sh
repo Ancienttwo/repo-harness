@@ -596,6 +596,7 @@ workflow_next_action() {
 
     if [[ "$total" -gt "$done" ]]; then
       message="${next_pending:-continue active plan Task Breakdown}"
+      message="If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: ${message}"
       printf 'task\t-\t%s\n' "$message"
       return 0
     fi
@@ -605,17 +606,17 @@ workflow_next_action() {
     checks_file="$(workflow_checks_file)"
 
     if [[ -z "$review_file" || ! -f "$review_file" ]]; then
-      printf 'check\t/check\tRun /check and record a sprint review before finishing this worktree.\n'
+      printf 'check\t/check\tStage the completed module diff first; then run /check and record a sprint review before finishing this worktree.\n'
       return 0
     fi
 
     if ! workflow_review_recommends_pass "$review_file"; then
-      printf 'check\t/check\tRun /check until %s records Recommendation: pass.\n' "$review_file"
+      printf 'check\t/check\tStage the completed module diff first; then run /check until %s records Recommendation: pass.\n' "$review_file"
       return 0
     fi
 
     if [[ -z "$contract_file" || ! -f "$contract_file" ]]; then
-      printf 'check\t/check\tRegenerate the active sprint contract, then run /check.\n'
+      printf 'check\t/check\tStage the completed module diff first; then regenerate the active sprint contract and run /check.\n'
       return 0
     fi
 
@@ -623,17 +624,17 @@ workflow_next_action() {
     IFS=$'\t' read -r external_state external_reviewer external_source external_message <<< "$external_status"
     if [[ "$external_state" != "pass" && "$external_state" != "manual_override" ]]; then
       expected_source="$(workflow_external_acceptance_expected_source)"
-      printf 'check\t/check\t%s Run external acceptance via %s and record ## External Acceptance Advice in %s.\n' "${external_message:-External acceptance is missing.}" "$expected_source" "$review_file"
+      printf 'check\t/check\tStage the completed module diff first; then %s Run external acceptance via %s and record ## External Acceptance Advice in %s.\n' "${external_message:-External acceptance is missing.}" "$expected_source" "$review_file"
       return 0
     fi
 
     if [[ ! -f "$checks_file" ]]; then
-      printf 'check\t/check\tRun /check and verify-sprint so %s exists.\n' "$checks_file"
+      printf 'check\t/check\tStage the completed module diff first; then run /check and verify-sprint so %s exists.\n' "$checks_file"
       return 0
     fi
 
     if ! checks_error="$(workflow_checks_pass "$checks_file" "$contract_file" "$review_file")"; then
-      printf 'check\t/check\t%s\n' "$checks_error"
+      printf 'check\t/check\tStage the completed module diff first; then resolve check evidence: %s\n' "$checks_error"
       return 0
     fi
 

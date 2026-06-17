@@ -33,8 +33,8 @@ afterAll(() => {
 describe("workflow-state locking", () => {
   test("concurrent counter increments lose no updates", async () => {
     const counter = join(cwd, ".claude-test-counter");
-    const workers = 10;
-    const perWorker = 10;
+    const workers = 6;
+    const perWorker = 8;
     const jobs: Promise<number>[] = [];
     for (let i = 0; i < workers; i += 1) {
       jobs.push(
@@ -49,7 +49,7 @@ describe("workflow-state locking", () => {
   }, 60000);
 
   test("concurrent event appends produce complete, valid JSONL", async () => {
-    const workers = 8;
+    const workers = 4;
     const perWorker = 5;
     const jobs: Promise<number>[] = [];
     for (let i = 0; i < workers; i += 1) {

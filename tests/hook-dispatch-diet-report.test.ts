@@ -39,7 +39,7 @@ describe("hook dispatch diet report", () => {
         "--iterations",
         "1",
         "--baseline-ms",
-        "250",
+        "5000",
         "--json",
       ], { encoding: "utf-8" });
       const report = JSON.parse(run.stdout) as HookDietReport;

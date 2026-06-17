@@ -1,5 +1,6 @@
 [test]
 root = "tests"
 timeout = 60000
+maxConcurrency = 4
 preload = ["./tests/setup-timeout.ts"]
 pathIgnorePatterns = ["_ref/**", "_ops/**", ".codegraph/**", ".understand-anything/**"]

@@ -23,6 +23,7 @@ describe("workflow-state shared library", () => {
     expect(content).toContain("workflow_todo_done()");
     expect(content).toContain("workflow_plan_task_state()");
     expect(content).toContain("workflow_next_action()");
+    expect(content).toContain("stage its coherent diff first");
     expect(content).toContain("workflow_cleanup_candidate()");
     expect(content).toContain("workflow_sync_task_state_from_todo()");
     expect(content).toContain("has_research_for_new_plan()");

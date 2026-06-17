@@ -28,9 +28,18 @@ function tmpWorkspace(prefix: string): string {
   return realpathSync(mkdtempSync(join(tmpdir(), `${prefix}-`)));
 }
 
-function run(cmd: string, args: string[], cwd: string) {
-  return spawnSync(cmd, args, { cwd, encoding: "utf-8" });
+function run(cmd: string, args: string[], cwd: string, env?: Record<string, string>) {
+  return spawnSync(cmd, args, {
+    cwd,
+    encoding: "utf-8",
+    env: env ? { ...process.env, ...env } : undefined,
+  });
 }
+
+const LOCK_TEST_ENV = {
+  REPO_HARNESS_BACKLOG_LOCK_ATTEMPTS: "5",
+  REPO_HARNESS_BACKLOG_LOCK_SLEEP_SECONDS: "0.02",
+};
 
 function copySprintHelpers(cwd: string, files: string[]) {
   mkdirSync(join(cwd, "scripts"), { recursive: true });
@@ -358,7 +367,7 @@ describe("sprint-backlog helper", () => {
       writeFileSync(join(lockDir, "holder"), "still here");
       expect(run("bash", ["-lc", `touch -t 202001010000 '${lockDir}'`], cwd).status).toBe(0);
 
-      const complete = run("bash", ["scripts/sprint-backlog.sh", "complete-task", "--task", "task-a"], cwd);
+      const complete = run("bash", ["scripts/sprint-backlog.sh", "complete-task", "--task", "task-a"], cwd, LOCK_TEST_ENV);
       expect(complete.status).toBe(1);
       expect(complete.stderr).toContain("timed out acquiring backlog lock");
       expect(readFileSync(join(cwd, sprintPath), "utf-8")).toContain("| 1 | [ ] | task-a |");
@@ -437,7 +446,7 @@ describe("sprint-backlog helper", () => {
       // Backdate the lock past the 1-minute stale threshold.
       expect(run("bash", ["-lc", `touch -t 202001010000 '${lockDir}'`], cwd).status).toBe(0);
 
-      const complete = run("bash", ["scripts/sprint-backlog.sh", "complete-task", "--task", "task-a"], cwd);
+      const complete = run("bash", ["scripts/sprint-backlog.sh", "complete-task", "--task", "task-a"], cwd, LOCK_TEST_ENV);
       expect(complete.status).toBe(0);
       expect(complete.stderr).toContain("reclaiming stale backlog lock");
       expect(existsSync(lockDir)).toBe(false);

@@ -18,12 +18,14 @@ import { buildToolsCommand } from './commands/tools';
 import { buildBrainCommand } from './commands/brain';
 import { buildCapabilityContextCommand } from './commands/capability-context';
 import { buildDocsCommand } from './commands/docs';
+import { buildMcpCommand } from './commands/mcp';
 import { buildRunCommand } from './commands/run';
 import { formatSecurityScan, runSecurityScan } from './commands/security';
 import { runGlobalRuntimeSetup } from './commands/global-runtime';
 import { runPromptGuardDecideCli } from './commands/prompt-guard-decision';
 import { runAdoptionPlan, runExperimentalTsApply } from './commands/adopt-plan';
 import { runRuntimeReclaim, runRuntimeRollback } from './repo-adoption/reclaim-runtime';
+import { rollbackAdoptionTransaction } from '../effects/fs-transaction';
 import type { Location } from './installer/types';
 import type { HookEvent, RouteId } from './hook/route-registry';
 import type { AdoptionMode } from '../core/adoption/modes';
@@ -46,6 +48,7 @@ export const SUBCOMMANDS = [
   'brain',
   'capability-context',
   'docs',
+  'mcp',
 ] as const;
 export type Subcommand = (typeof SUBCOMMANDS)[number];
 
@@ -205,6 +208,7 @@ export function buildProgram(): Command {
     .argument('[action]', 'Optional action: rollback')
     .option('--repo <path>', 'Target repository path (defaults to cwd)')
     .option('--archive <path>', 'Runtime reclaim archive to restore when action is rollback')
+    .option('--transaction <path>', 'Adoption transaction manifest to restore when action is rollback')
     .option('--dry-run', 'Plan repo harness changes without applying them')
     .option('--target <target>', `Host target for readiness checks and optional global bootstrap: ${VALID_TARGETS.join('|')}`, 'both')
     .option('--no-sync-skill', 'Compatibility no-op; adopt never refreshes user-level skill aliases')
@@ -225,6 +229,7 @@ export function buildProgram(): Command {
     .action(async (action: string | undefined, rawOpts: {
       repo?: string;
       archive?: string;
+      transaction?: string;
       dryRun?: boolean;
       target: string;
       syncSkill?: boolean;
@@ -248,8 +253,22 @@ export function buildProgram(): Command {
           console.error(`repo-harness adopt: unknown action "${action}"`);
           process.exit(2);
         }
+        if (rawOpts.transaction) {
+          const rollback = rollbackAdoptionTransaction({ repoRoot: rawOpts.repo ?? process.cwd(), transaction: rawOpts.transaction });
+          if (rawOpts.json === true) {
+            console.log(JSON.stringify(rollback, null, 2));
+          } else {
+            console.log(`[adopt] ${rollback.ok ? 'ok' : 'failed'}: rollback transaction ${rollback.transactionManifestPath}`);
+            for (const result of rollback.results) {
+              const target = result.path ? ` ${result.path}` : '';
+              const detail = result.error ? ` - ${result.error}` : '';
+              console.log(`[adopt] ${result.status}: ${result.action}${target}${detail}`);
+            }
+          }
+          process.exit(rollback.ok ? 0 : 1);
+        }
         if (!rawOpts.archive) {
-          console.error('repo-harness adopt rollback: --archive is required');
+          console.error('repo-harness adopt rollback: --archive or --transaction is required');
           process.exit(2);
         }
         const rollback = runRuntimeRollback({ repo: rawOpts.repo, archive: rawOpts.archive });
@@ -496,6 +515,7 @@ export function buildProgram(): Command {
   program.addCommand(buildBrainCommand());
   program.addCommand(buildCapabilityContextCommand());
   program.addCommand(buildDocsCommand());
+  program.addCommand(buildMcpCommand());
   program.addCommand(buildRunCommand());
   program
     .command('prompt-guard-decide', { hidden: true })

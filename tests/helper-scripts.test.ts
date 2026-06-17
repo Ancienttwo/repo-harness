@@ -2584,7 +2584,8 @@ describe("Workflow helper scripts", () => {
       expect(handoff).toContain("## Active Artifacts");
       expect(handoff).toContain("Active sprint row:");
       expect(handoff).toContain("Alpha handoff");
-      expect(handoff).toContain("Next recommended action: Finish handoff");
+      expect(handoff).toContain("Next recommended action:");
+      expect(handoff).toContain("Finish handoff");
       expect(handoff).toContain("## Exact Next Step");
       expect(handoff).toContain("## Resume Prompt");
       expect(existsSync(join(cwd, ".ai/harness/handoff/resume.md"))).toBe(true);

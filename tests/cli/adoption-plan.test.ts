@@ -12,7 +12,7 @@ import { summarizeOperations } from "../../src/core/adoption/summary";
 import { gitignoreManagedBlockOperation } from "../../src/core/adoption/gitignore-plan";
 import { renderManagedBlock, upsertManagedBlock } from "../../src/effects/managed-block";
 import { ensureRepoRelativePath, resolveInsideRepo } from "../../src/effects/path-safety";
-import { applyAdoptionPlan, applyAppendManagedBlockOperation } from "../../src/effects/fs-transaction";
+import { applyAdoptionPlan, applyAppendManagedBlockOperation, rollbackAdoptionTransaction } from "../../src/effects/fs-transaction";
 import { readWorkflowContractAsset } from "../../src/core/adoption/workflow-contract-asset";
 
 const ROOT = join(import.meta.dir, "..", "..");
@@ -329,6 +329,17 @@ describe("safe adoption applicator subset", () => {
       const plan = planAdoption({ repoRoot: repo, mode: "minimal" });
       const result = applyAdoptionPlan(plan);
       expect(result.ok).toBe(true);
+      expect(result.transactionManifestPath?.startsWith(".ai/harness/backups/fs-transaction/")).toBe(true);
+      expect(readJson(join(repo, result.transactionManifestPath ?? ""))).toEqual(
+        expect.objectContaining({
+          protocol: 1,
+          command: "adopt",
+          mode: "minimal",
+          rollback: expect.objectContaining({
+            command: expect.stringContaining("repo-harness adopt rollback --transaction"),
+          }),
+        }),
+      );
       expect(existsSync(join(repo, "docs", "spec.md"))).toBe(true);
       expect(readFileSync(join(repo, ".ai", "harness", "workflow-contract.json"), "utf-8")).toBe(
         readWorkflowContractAsset(),
@@ -395,8 +406,8 @@ describe("safe adoption applicator subset", () => {
 
       expect(result.ok).toBe(true);
       expect(workflowContract?.status).toBe("applied");
-      expect(workflowContract?.backupPath?.startsWith(".ai/harness/backups/fs-transaction/.ai__harness__workflow-contract.json.")).toBe(
-        true,
+      expect(workflowContract?.backupPath).toMatch(
+        /^\.ai\/harness\/backups\/fs-transaction\/[^/]+\/\.ai__harness__workflow-contract\.json\..+\.bak$/,
       );
       expect(readFileSync(join(repo, workflowContract?.backupPath ?? ""), "utf-8")).toBe("{\"version\":\"old\"}\n");
       expect(readFileSync(join(repo, ".ai", "harness", "workflow-contract.json"), "utf-8")).toBe(
@@ -511,12 +522,38 @@ describe("repo-harness adopt --experimental-ts-apply", () => {
       expect(output.experimentalTsApply).toBe(true);
       expect(output.ok).toBe(true);
       expect(output.apply.ok).toBe(true);
+      expect(output.apply.transactionManifestPath).toMatch(
+        /^\.ai\/harness\/backups\/fs-transaction\/[^/]+\/manifest\.json$/,
+      );
       expect(output.plan.apply).toBe(true);
       expect(existsSync(join(repo, "docs", "spec.md"))).toBe(true);
       expect(readFileSync(join(repo, ".ai", "harness", "workflow-contract.json"), "utf-8")).toBe(
         readWorkflowContractAsset(),
       );
       expect(readFileSync(join(repo, ".gitignore"), "utf-8")).toContain("# BEGIN: repo-harness generated-runtime");
+
+      const manifest = readJson<{ rollback: { command: string }; operations: Array<{ status: string; contentHash?: string }> }>(
+        join(repo, output.apply.transactionManifestPath),
+      );
+      expect(manifest.rollback.command).toContain(output.apply.transactionManifestPath);
+      expect(manifest.operations.some((operation) => operation.status === "applied" && operation.contentHash)).toBe(true);
+
+      const rollback = spawnSync(
+        "bun",
+        [CLI, "adopt", "rollback", "--repo", repo, "--transaction", output.apply.transactionManifestPath, "--json"],
+        {
+          cwd: ROOT,
+          encoding: "utf-8",
+        },
+      );
+      expect(rollback.status).toBe(0);
+      expect(rollback.stderr).toBe("");
+      const rollbackOutput = JSON.parse(rollback.stdout);
+      expect(rollbackOutput.ok).toBe(true);
+      expect(rollbackOutput.results.some((entry: { action: string }) => entry.action === "delete_created_file")).toBe(true);
+      expect(existsSync(join(repo, "docs", "spec.md"))).toBe(false);
+      expect(existsSync(join(repo, ".gitignore"))).toBe(false);
+      expect(existsSync(join(repo, ".ai", "harness", "workflow-contract.json"))).toBe(false);
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
@@ -564,6 +601,148 @@ describe("repo-harness adopt --experimental-ts-apply", () => {
       ]);
       expect(existsSync(join(repo, "docs", "spec.md"))).toBe(false);
       expect(existsSync(join(repo, ".gitignore"))).toBe(false);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("adopt rollback --transaction destructive safety", () => {
+  test("restore_backup restores prior content when the target is unchanged since apply", () => {
+    const repo = tempRepo();
+    try {
+      mkdirSync(join(repo, ".ai", "harness"), { recursive: true });
+      writeFileSync(join(repo, ".ai", "harness", "workflow-contract.json"), "{\"version\":\"old\"}\n");
+
+      const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "standard", apply: true }));
+      expect(apply.ok).toBe(true);
+      const manifestPath = apply.transactionManifestPath ?? "";
+      expect(manifestPath).not.toBe("");
+
+      const rollback = rollbackAdoptionTransaction({ repoRoot: repo, transaction: manifestPath });
+      expect(rollback.ok).toBe(true);
+      expect(
+        rollback.results.some((entry) => entry.action === "restore_backup" && entry.status === "rolled_back"),
+      ).toBe(true);
+      expect(readFileSync(join(repo, ".ai", "harness", "workflow-contract.json"), "utf-8")).toBe("{\"version\":\"old\"}\n");
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  test("restore_backup refuses to overwrite a target edited after apply", () => {
+    const repo = tempRepo();
+    try {
+      mkdirSync(join(repo, ".ai", "harness"), { recursive: true });
+      writeFileSync(join(repo, ".ai", "harness", "workflow-contract.json"), "{\"version\":\"old\"}\n");
+
+      const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "standard", apply: true }));
+      expect(apply.ok).toBe(true);
+
+      // The user edits the applied file before rolling back; rollback must not clobber it.
+      writeFileSync(join(repo, ".ai", "harness", "workflow-contract.json"), "USER EDIT\n");
+
+      const rollback = rollbackAdoptionTransaction({ repoRoot: repo, transaction: apply.transactionManifestPath ?? "" });
+      expect(rollback.ok).toBe(false);
+      const contract = rollback.results.find((entry) => entry.path === ".ai/harness/workflow-contract.json");
+      expect(contract?.action).toBe("restore_backup");
+      expect(contract?.status).toBe("failed");
+      expect(contract?.error).toContain("current file hash differs");
+      expect(readFileSync(join(repo, ".ai", "harness", "workflow-contract.json"), "utf-8")).toBe("USER EDIT\n");
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  test("delete_created_file refuses to delete a created file edited after apply", () => {
+    const repo = tempRepo();
+    try {
+      const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "minimal", apply: true }));
+      expect(apply.ok).toBe(true);
+
+      writeFileSync(join(repo, "docs", "spec.md"), "USER EDIT\n");
+
+      const rollback = rollbackAdoptionTransaction({ repoRoot: repo, transaction: apply.transactionManifestPath ?? "" });
+      expect(rollback.ok).toBe(false);
+      const spec = rollback.results.find((entry) => entry.path === "docs/spec.md");
+      expect(spec?.action).toBe("delete_created_file");
+      expect(spec?.status).toBe("failed");
+      expect(existsSync(join(repo, "docs", "spec.md"))).toBe(true);
+      expect(readFileSync(join(repo, "docs", "spec.md"), "utf-8")).toBe("USER EDIT\n");
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  test("rollback returns a structured failure instead of throwing when a target is unreadable", () => {
+    const repo = tempRepo();
+    try {
+      const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "minimal", apply: true }));
+      expect(apply.ok).toBe(true);
+
+      // Replace a created file with a directory so reading it throws EISDIR.
+      rmSync(join(repo, "docs", "spec.md"));
+      mkdirSync(join(repo, "docs", "spec.md"));
+
+      const rollback = rollbackAdoptionTransaction({ repoRoot: repo, transaction: apply.transactionManifestPath ?? "" });
+      expect(rollback.ok).toBe(false);
+      const spec = rollback.results.find((entry) => entry.path === "docs/spec.md");
+      expect(spec?.action).toBe("delete_created_file");
+      expect(spec?.status).toBe("failed");
+      expect(existsSync(join(repo, "docs", "spec.md"))).toBe(true);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  test("rollback does not remove a directory that existed before apply", () => {
+    const repo = tempRepo();
+    try {
+      // A user-owned directory that the adoption plan also wants to create.
+      mkdirSync(join(repo, "plans"), { recursive: true });
+
+      const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "minimal", apply: true }));
+      expect(apply.ok).toBe(true);
+      // A pre-existing directory is not an applied (rollback-eligible) create.
+      const plansOp = apply.results.find((entry) => entry.kind === "mkdir" && entry.path === "plans");
+      expect(plansOp?.status).toBe("skipped");
+
+      const rollback = rollbackAdoptionTransaction({ repoRoot: repo, transaction: apply.transactionManifestPath ?? "" });
+      // The user's pre-existing directory survives rollback.
+      expect(existsSync(join(repo, "plans"))).toBe(true);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  test("rollback rejects a manifest whose backup path escapes its transaction directory", () => {
+    const repo = tempRepo();
+    try {
+      const txnDir = join(repo, ".ai", "harness", "backups", "fs-transaction", "crafted-txn");
+      mkdirSync(txnDir, { recursive: true });
+      const manifest = {
+        protocol: 1,
+        command: "adopt",
+        createdAt: "2026-06-17T00:00:00.000Z",
+        repoRoot: repo,
+        mode: "minimal",
+        operations: [
+          {
+            id: "writeFile:README.md:crafted",
+            kind: "writeFile",
+            path: "README.md",
+            status: "applied",
+            contentHash: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+            backupPath: ".ai/harness/backups/fs-transaction/other-txn/README.md.bak",
+          },
+        ],
+        rollback: { command: "repo-harness adopt rollback --transaction x" },
+      };
+      writeFileSync(join(txnDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+
+      const rollback = rollbackAdoptionTransaction({ repoRoot: repo, transaction: join(txnDir, "manifest.json") });
+      expect(rollback.ok).toBe(false);
+      expect(rollback.results[0]?.error).toContain("invalid transaction manifest");
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
