@@ -56,18 +56,17 @@ Dans un dépôt adopté, la surface à comprendre reste volontairement réduite 
 | `tasks/contracts/`, `tasks/reviews/` et `.ai/harness/checks/` | Scope, vérification et preuves de review pour démontrer que le travail est terminé. |
 | `.ai/harness/handoff/` et `tasks/current.md` | Session journal et état resumable dérivés des workflow artifacts plutôt que de la chat memory. |
 
-## Nouveautés de la 0.6.0
+## Nouveautés de la 0.7.0
 
-- **Transactional adoption plans.** `repo-harness adopt --dry-run --json` émet
-  maintenant un operation plan protocol v1 avec IDs stables, summary, content
-  hashes et rollback metadata.
-- **Bootstrap files gérés par le manifest.** Les templates initiaux
-  `docs/spec.md`, `tasks/todos.md`, `tasks/current.md` et `tasks/lessons.md`
-  viennent désormais du workflow contract manifest plutôt que de strings locales
-  au planner.
-- **Apply TypeScript expérimental.** `repo-harness adopt --experimental-ts-apply`
-  peut appliquer le safe operation subset avec atomic writes, target locks,
-  backups et preflight rejection des boundaries self-host non prises en charge.
+- **ChatGPT browser engine.** `repo-harness chatgpt browser-*` crée des sessions
+  ChatGPT Web repo-locales avec des fichiers contrôlés par policy, sans OpenAI API.
+- **MCP browser tools opt-in.** `repo-harness mcp serve
+  --enable-chatgpt-browser` expose consult/read/list/continue/open, désactivés
+  par défaut.
+- **Oracle et native providers.** Le moteur inclut un Oracle browser wrapper et
+  un spike native via Chrome installé et CDP local.
+- **Hosted CI et release smoke.** Le dépôt ajoute un GitHub CI gate et un
+  tarball install smoke qui démarre les binaires packagés `repo-harness`.
 
 ## Ce que fait le produit
 
@@ -388,8 +387,8 @@ Guards courants :
 
 ## Release actuelle
 
-- npm package : `repo-harness@0.6.0`
-- Generated workflow stamp : `repo-harness@0.6.0+template@0.6.0`
+- npm package : `repo-harness@0.7.0`
+- Generated workflow stamp : `repo-harness@0.7.0+template@0.7.0`
 - GitHub repository : `Ancienttwo/repo-harness`
 - Release history : [`docs/CHANGELOG.md`](docs/CHANGELOG.md)
 

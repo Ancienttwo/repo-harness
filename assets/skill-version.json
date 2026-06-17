@@ -1,6 +1,6 @@
 {
-  "version": "0.6.0",
-  "templateVersion": "0.6.0",
+  "version": "0.7.0",
+  "templateVersion": "0.7.0",
   "skillName": "repo-harness",
   "contractId": "tasks-first-harness-v1",
   "retiredAliases": [
@@ -143,6 +143,10 @@
     {
       "version": "0.6.0",
       "description": "Adds the transactional adoption planner foundation with protocol v1 dry-run plans, manifest-owned bootstrap templates, experimental TypeScript apply, atomic writes, and rollback metadata"
+    },
+    {
+      "version": "0.7.0",
+      "description": "Adds the ChatGPT browser engine with repo-local sessions, opt-in MCP browser tools, an Oracle wrapper, a native Chrome CDP provider spike, and hosted CI gate hardening"
     }
   ],
   "generatedProjectStamp": {

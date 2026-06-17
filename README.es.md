@@ -56,17 +56,17 @@ En un repositorio adoptado, la superficie se mantiene pequeña:
 | `tasks/contracts/`, `tasks/reviews/` y `.ai/harness/checks/` | Scope, verificación y evidencia de review para probar que el trabajo terminó. |
 | `.ai/harness/handoff/` y `tasks/current.md` | Session journal y estado resumible, derivados de workflow artifacts en vez de chat memory. |
 
-## Novedades en 0.6.0
+## Novedades en 0.7.0
 
-- **Transactional adoption plans.** `repo-harness adopt --dry-run --json` ahora
-  emite un operation plan protocol v1 con IDs estables, summary, content hashes
-  y rollback metadata.
-- **Bootstrap files gestionados por el manifest.** Los templates iniciales
-  `docs/spec.md`, `tasks/todos.md`, `tasks/current.md` y `tasks/lessons.md`
-  ahora salen del workflow contract manifest, no de strings locales del planner.
-- **Apply TypeScript experimental.** `repo-harness adopt --experimental-ts-apply`
-  puede aplicar el safe operation subset con atomic writes, target locks,
-  backups y preflight rejection para boundaries self-host no soportadas.
+- **ChatGPT browser engine.** `repo-harness chatgpt browser-*` crea sesiones
+  ChatGPT Web repo-locales con archivos revisados por policy, sin usar OpenAI API.
+- **MCP browser tools opt-in.** `repo-harness mcp serve
+  --enable-chatgpt-browser` expone consult/read/list/continue/open; por defecto
+  estos tools siguen desactivados.
+- **Oracle y native providers.** El engine incluye un Oracle browser wrapper y
+  un spike native vía Chrome instalado + CDP local.
+- **Hosted CI y release smoke.** El repo añade un GitHub CI gate y un tarball
+  install smoke que arranca los binarios empaquetados de `repo-harness`.
 
 ## Qué hace el producto
 
@@ -383,8 +383,8 @@ Guards habituales:
 
 ## Release actual
 
-- npm package: `repo-harness@0.6.0`
-- Generated workflow stamp: `repo-harness@0.6.0+template@0.6.0`
+- npm package: `repo-harness@0.7.0`
+- Generated workflow stamp: `repo-harness@0.7.0+template@0.7.0`
 - GitHub repository: `Ancienttwo/repo-harness`
 - Release history: [`docs/CHANGELOG.md`](docs/CHANGELOG.md)
 

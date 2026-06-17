@@ -4,8 +4,23 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-06-18
+
 ### Added
 
+- Added `repo-harness chatgpt browser-*`, a policy-checked ChatGPT Web browser
+  session engine with dry-run prompt assembly, repo-local session records,
+  linked follow-ups, output copying, session read/list/open, and dry-run-first
+  cleanup.
+- Added optional MCP ChatGPT browser tools behind
+  `repo-harness mcp serve --enable-chatgpt-browser`, keeping browser consults
+  out of the default MCP surface.
+- Added an Oracle provider wrapper for `oracle --engine browser` and a native
+  installed-Google-Chrome CDP provider spike for logged-in ChatGPT Web sessions.
+- Added a bundled `repo-harness-chatgpt-browser` skill and user guide at
+  `docs/repo-harness-chatgpt-browser-engine.md`.
+- Added a hosted GitHub CI gate for pull requests and pushes to `main` /
+  `codex/**`.
 - Added the Harness Engineering Optimization sprint closeout surface, including
   task profiles, Human Review Card enforcement, trace/eval evidence grading,
   handoff UX, delegation contract roles, and compressed spec/onboarding paths.
@@ -48,6 +63,12 @@ All notable changes to this skill are documented here.
 - Added a bounded CLI process runner for init/adopt/global-runtime, CodeGraph
   setup, and `repo-harness run` helper dispatch, with default timeout, output
   cap, and common secret redaction.
+
+### Release Notes
+
+- Prepared the `repo-harness@0.7.0` minor release line for npm publish,
+  registry readback, clean-room `npx` smoke, Git tag, and GitHub release
+  creation.
 
 ## [0.6.0] - 2026-06-16
 

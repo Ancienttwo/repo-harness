@@ -67,19 +67,16 @@ Agent 先读 source artifacts，再读派生摘要：
 `tasks/current.md` 只是 orientation snapshot。如果它和 active plan、contract、
 review、checks 或 handoff 冲突，以 source artifacts 为准。
 
-## 0.6.0 新特性
+## 0.7.0 新特性
 
-- **事务型 adoption plan。** `repo-harness adopt --dry-run --json` 现在输出
-  protocol v1 operation plan，包含稳定 ID、summary、content hash 和 rollback metadata。
-- **Manifest-owned bootstrap 文件。** 初始 `docs/spec.md`、`tasks/todos.md`、
-  `tasks/current.md`、`tasks/lessons.md` 模板改由 workflow contract manifest 管理，
-  不再放在 planner 本地字符串里。
-- **实验性 TypeScript apply。** `repo-harness adopt --experimental-ts-apply`
-  可以执行 safe operation subset，并使用 atomic write、target lock、backup 和
-  unsupported self-host boundary preflight。
-- **可执行 rollback evidence。** 实验性 TypeScript apply 会在
-  `.ai/harness/backups/fs-transaction/` 下写入 transaction manifest；可用
-  `repo-harness adopt rollback --transaction <manifest>` 恢复。
+- **ChatGPT browser engine。** `repo-harness chatgpt browser-*` 可以用
+  policy-checked 文件输入创建 repo-local ChatGPT Web consult session，不走 OpenAI API。
+- **Opt-in MCP browser tools。** `repo-harness mcp serve
+  --enable-chatgpt-browser` 才会暴露 consult/read/list/continue/open 工具，默认关闭。
+- **Oracle 和 native provider。** Browser engine 支持 Oracle browser wrapper，
+  也支持基于本机已安装 Chrome CDP 的 logged-in ChatGPT Web spike。
+- **Hosted CI 和 release smoke。** 仓库新增 GitHub CI gate，并用 tarball install
+  smoke 验证 packaged `repo-harness` binaries 能启动。
 
 ## 产品做什么
 
@@ -445,8 +442,8 @@ hook block 工作时，先看 terminal 里的结构化输出。核心字段是
 
 ## 当前 Release
 
-- npm package：`repo-harness@0.6.0`
-- Generated workflow stamp：`repo-harness@0.6.0+template@0.6.0`
+- npm package：`repo-harness@0.7.0`
+- Generated workflow stamp：`repo-harness@0.7.0+template@0.7.0`
 - GitHub repository：`Ancienttwo/repo-harness`
 - Release history：[`docs/CHANGELOG.md`](docs/CHANGELOG.md)
 

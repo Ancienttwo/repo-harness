@@ -145,9 +145,9 @@ describe("README DX contract", () => {
       const localized = read(file);
 
       expect(localized).toContain("docs/images/image.png");
-      expect(localized).toContain("0.6.0");
-      expect(localized).toContain("repo-harness@0.6.0");
-      expect(localized).toContain("repo-harness@0.6.0+template@0.6.0");
+      expect(localized).toContain("0.7.0");
+      expect(localized).toContain("repo-harness@0.7.0");
+      expect(localized).toContain("repo-harness@0.7.0+template@0.7.0");
       expect(localized).toContain("repo-harness update");
       expect(localized).toContain("repo-harness adopt");
       expect(localized).toContain("repo-harness docs list");

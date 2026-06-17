@@ -1,6 +1,6 @@
 {
   "name": "repo-harness",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Installs, migrates, audits, and repairs repo-local agentic development harnesses",
   "license": "MIT",
   "repository": {

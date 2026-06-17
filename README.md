@@ -75,20 +75,18 @@ Agents read source artifacts before derived summaries:
 `tasks/current.md` is only an orientation snapshot. If it disagrees with the
 active plan, contract, review, checks, or handoff, the source artifacts win.
 
-## What's New in 0.6.0
+## What's New in 0.7.0
 
-- **Transactional adoption plans.** `repo-harness adopt --dry-run --json` now
-  emits a protocol v1 operation plan with stable IDs, summaries, content hashes,
-  and rollback metadata.
-- **Manifest-owned bootstrap files.** The initial `docs/spec.md`,
-  `tasks/todos.md`, `tasks/current.md`, and `tasks/lessons.md` templates now
-  come from the workflow contract manifest instead of planner-local strings.
-- **Experimental TypeScript apply.** `repo-harness adopt --experimental-ts-apply`
-  can apply the safe operation subset with atomic writes, target locks, backups,
-  and preflight rejection for unsupported self-host boundaries.
-- **Executable rollback evidence.** Experimental TypeScript apply writes a
-  transaction manifest under `.ai/harness/backups/fs-transaction/`; restore with
-  `repo-harness adopt rollback --transaction <manifest>`.
+- **ChatGPT browser engine.** `repo-harness chatgpt browser-*` can create
+  policy-checked, repo-local ChatGPT Web consult sessions without using the
+  OpenAI API.
+- **Opt-in MCP browser tools.** `repo-harness mcp serve
+  --enable-chatgpt-browser` exposes consult/read/list/continue/open tools while
+  keeping them disabled by default.
+- **Oracle and native providers.** The engine supports an Oracle browser wrapper
+  plus a native installed-Chrome CDP spike for logged-in ChatGPT Web runs.
+- **Hosted CI and release smoke.** The repo now ships a GitHub CI gate and a
+  tarball install smoke that starts the packaged `repo-harness` binaries.
 
 ## What repo-harness Does
 
@@ -552,8 +550,8 @@ Most common guards:
 
 ## Current Release
 
-- npm package: `repo-harness@0.6.0`
-- Generated workflow stamp: `repo-harness@0.6.0+template@0.6.0`
+- npm package: `repo-harness@0.7.0`
+- Generated workflow stamp: `repo-harness@0.7.0+template@0.7.0`
 - GitHub repository: `Ancienttwo/repo-harness`
 - Release history: [`docs/CHANGELOG.md`](docs/CHANGELOG.md)
 
