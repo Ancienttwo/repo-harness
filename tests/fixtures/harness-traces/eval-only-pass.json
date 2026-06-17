@@ -1,0 +1,46 @@
+{
+  "schema": "repo-harness-run-trace.v1",
+  "status": "pass",
+  "source": "verify-sprint",
+  "command": "bash scripts/verify-sprint.sh",
+  "exit_code": 0,
+  "generated_at": "2026-06-17T00:04:00+0800",
+  "run_id": "fixture-eval-only",
+  "run_file": ".ai/harness/runs/fixture-eval-only.json",
+  "task_profile": "eval-only",
+  "active_plan": "plans/plan-20260616-HE-05-trace-eval-schema.md",
+  "contract": {
+    "file": "tasks/contracts/fixture-eval-only.contract.md",
+    "task_profile": "eval-only",
+    "allowed_paths": ["tests", "scripts", "docs"]
+  },
+  "review": {
+    "file": "tasks/reviews/fixture-eval-only.review.md",
+    "card": {
+      "verdict": "pass",
+      "change_type": "eval-only",
+      "external_acceptance": "not_required",
+      "rollback": "revert fixture eval-only branch"
+    }
+  },
+  "worktree": "/tmp/repo-harness-fixture",
+  "branch": "codex/fixture",
+  "commands": [
+    {"name": "trace-grade", "command": "bash scripts/harness-trace-grade.sh --run .ai/harness/checks/latest.json --strict", "status": "pass", "exit_code": 0}
+  ],
+  "guards": [
+    {"name": "review", "status": "pass"},
+    {"name": "allowed_paths", "status": "pass"}
+  ],
+  "handoffs": [],
+  "external_acceptance": {
+    "status": "not_required"
+  },
+  "files_changed": ["tests/fixtures/harness-traces/eval-only-pass.json"],
+  "allowed_paths_check": {
+    "status": "pass",
+    "outside": []
+  },
+  "failure_class": "",
+  "next_step": "finish contract worktree or archive completed task"
+}

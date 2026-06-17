@@ -38,6 +38,7 @@
     {"id":"writeFile:scripts/verify-contract.sh:helper-wrapper","kind":"writeFile","path":"scripts/verify-contract.sh","status":"planned","ifMissing":true},
     {"id":"writeFile:scripts/summarize-failures.sh:helper-wrapper","kind":"writeFile","path":"scripts/summarize-failures.sh","status":"planned","ifMissing":true},
     {"id":"writeFile:scripts/verify-sprint.sh:helper-wrapper","kind":"writeFile","path":"scripts/verify-sprint.sh","status":"planned","ifMissing":true},
+    {"id":"writeFile:scripts/harness-trace-grade.sh:helper-wrapper","kind":"writeFile","path":"scripts/harness-trace-grade.sh","status":"planned","ifMissing":true},
     {"id":"writeFile:scripts/sprint-backlog.sh:helper-wrapper","kind":"writeFile","path":"scripts/sprint-backlog.sh","status":"planned","ifMissing":true},
     {"id":"writeFile:scripts/check-task-sync.sh:helper-wrapper","kind":"writeFile","path":"scripts/check-task-sync.sh","status":"planned","ifMissing":true},
     {"id":"writeFile:scripts/check-deploy-sql-order.sh:helper-wrapper","kind":"writeFile","path":"scripts/check-deploy-sql-order.sh","status":"planned","ifMissing":true},
@@ -69,20 +70,20 @@
     {"id":"appendManagedBlock:.gitignore:repo-harness-generated-runtime","kind":"appendManagedBlock","path":".gitignore","status":"planned","marker":"repo-harness generated-runtime"}
   ],
   "summary": {
-    "total": 65,
+    "total": 66,
     "byKind": {
       "mkdir": 17,
-      "writeFile": 47,
+      "writeFile": 48,
       "appendManagedBlock": 1
     },
     "byStatus": {
-      "planned": 65
+      "planned": 66
     },
-    "plannedTotal": 65,
+    "plannedTotal": 66,
     "skippedTotal": 0,
     "failedTotal": 0,
     "userOwnedFilesTouched": 1,
-    "generatedFiles": 48,
+    "generatedFiles": 49,
     "repoHarnessOwnedFiles": 7,
     "requiresVerification": false
   },

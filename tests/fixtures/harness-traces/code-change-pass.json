@@ -1,0 +1,46 @@
+{
+  "schema": "repo-harness-run-trace.v1",
+  "status": "pass",
+  "source": "verify-sprint",
+  "command": "bash scripts/verify-sprint.sh",
+  "exit_code": 0,
+  "generated_at": "2026-06-17T00:00:00+0800",
+  "run_id": "fixture-code-change",
+  "run_file": ".ai/harness/runs/fixture-code-change.json",
+  "task_profile": "code-change",
+  "active_plan": "plans/plan-20260616-HE-05-trace-eval-schema.md",
+  "contract": {
+    "file": "tasks/contracts/fixture-code-change.contract.md",
+    "task_profile": "code-change",
+    "allowed_paths": ["scripts", "tests"]
+  },
+  "review": {
+    "file": "tasks/reviews/fixture-code-change.review.md",
+    "card": {
+      "verdict": "pass",
+      "change_type": "code-change",
+      "external_acceptance": "not_required",
+      "rollback": "revert fixture code-change branch"
+    }
+  },
+  "worktree": "/tmp/repo-harness-fixture",
+  "branch": "codex/fixture",
+  "commands": [
+    {"name": "verify-sprint", "command": "bash scripts/verify-sprint.sh", "status": "pass", "exit_code": 0}
+  ],
+  "guards": [
+    {"name": "contract", "status": "pass"},
+    {"name": "allowed_paths", "status": "pass"}
+  ],
+  "handoffs": [],
+  "external_acceptance": {
+    "status": "not_required"
+  },
+  "files_changed": ["scripts/verify-sprint.sh", "tests/helper-scripts.test.ts"],
+  "allowed_paths_check": {
+    "status": "pass",
+    "outside": []
+  },
+  "failure_class": "",
+  "next_step": "finish contract worktree or archive completed task"
+}

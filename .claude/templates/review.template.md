@@ -1,4 +1,4 @@
-# Sprint Review: {{TASK_SLUG}}
+# Task Review: {{TASK_SLUG}}
 
 > **Status**: Pending
 > **Plan**: {{PLAN_FILE}}
@@ -7,6 +7,18 @@
 > **Checks File**: {{CHECKS_FILE}}
 > **Last Updated**: {{TIMESTAMP}}
 > **Recommendation**: fail
+
+## Human Review Card
+
+- Verdict: pending
+- Change type: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run
+- Intended files changed:
+- Actual files changed:
+- Commands passed:
+- External acceptance: unavailable
+- Residual risks:
+- Reviewer action required: inspect diff and card
+- Rollback:
 
 ## Mode Evidence
 

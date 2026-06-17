@@ -1,0 +1,46 @@
+{
+  "schema": "repo-harness-run-trace.v1",
+  "status": "pass",
+  "source": "verify-sprint",
+  "command": "bash scripts/verify-sprint.sh",
+  "exit_code": 0,
+  "generated_at": "2026-06-17T00:02:00+0800",
+  "run_id": "fixture-ledger-closeout",
+  "run_file": ".ai/harness/runs/fixture-ledger-closeout.json",
+  "task_profile": "ledger-closeout",
+  "active_plan": "plans/plan-20260616-HE-05-trace-eval-schema.md",
+  "contract": {
+    "file": "tasks/contracts/fixture-ledger-closeout.contract.md",
+    "task_profile": "ledger-closeout",
+    "allowed_paths": ["plans", "tasks"]
+  },
+  "review": {
+    "file": "tasks/reviews/fixture-ledger-closeout.review.md",
+    "card": {
+      "verdict": "pass",
+      "change_type": "ledger-closeout",
+      "external_acceptance": "manual_override",
+      "rollback": "revert fixture ledger-closeout branch"
+    }
+  },
+  "worktree": "/tmp/repo-harness-fixture",
+  "branch": "codex/fixture",
+  "commands": [
+    {"name": "check-task-workflow", "command": "bash scripts/check-task-workflow.sh --strict", "status": "pass", "exit_code": 0}
+  ],
+  "guards": [
+    {"name": "external_acceptance", "status": "manual_override"},
+    {"name": "allowed_paths", "status": "pass"}
+  ],
+  "handoffs": [],
+  "external_acceptance": {
+    "status": "manual_override"
+  },
+  "files_changed": ["plans/sprints/fixture.sprint.md", "tasks/reviews/fixture.review.md"],
+  "allowed_paths_check": {
+    "status": "pass",
+    "outside": []
+  },
+  "failure_class": "",
+  "next_step": "finish contract worktree or archive completed task"
+}

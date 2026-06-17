@@ -4,7 +4,7 @@
 
 # Sprint: Harness Engineering Optimization — State, Review, Eval, Delegation
 
-> **Status**: Draft
+> **Status**: Complete
 > **Slug**: harness-engineering-optimization
 > **Created**: 2026-06-16
 > **Source Spec**: `docs/spec.md`
@@ -84,15 +84,31 @@ bash scripts/migrate-project-template.sh --repo . --dry-run
 
 |  # | Status | Task                                              | Mode     | Acceptance                                                                                                                                                                                  | Plan                                                            |
 | -: | :----: | ------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-|  1 |   [ ]  | HE-01 Research Baseline & Harness Principles      | contract | `docs/researches/20260616-harness-engineering-frameworks.md` exists, cites external harness patterns, maps each finding to repo-harness surfaces, and produces a 10-rule principle card     | `plans/plan-20260616-HE-01-harness-research-baseline.md`        |
-|  2 |   [ ]  | HE-02 Filing & Terminology Normalization Gate     | contract | no templates/scripts/docs emit `tasks/todo.md` or `tasks/sprints/`; strict check detects legacy surfaces with actionable fix text; Task Contract terminology is documented                  | `plans/plan-20260616-HE-02-filing-terminology-normalization.md` |
-|  3 |   [ ]  | HE-03 Human Review Card                           | contract | every generated review template starts with a review card; `verify-sprint` / ship path surfaces card status; fixtures fail when card is missing or stale                                    | `plans/plan-20260616-HE-03-human-review-card.md`                |
-|  4 |   [ ]  | HE-04 Contract Profiles & Allowed Paths Narrowing | contract | contract template supports explicit `task_profile`; closeout-only profile cannot allow runtime code paths by default; verify-contract validates profile shape and unsupported profile fails | `plans/plan-20260616-HE-04-contract-profiles.md`                |
-|  5 |   [ ]  | HE-05 Trace/Eval Evidence Schema v1               | contract | `.ai/harness/runs/*.json` has required harness trace fields; `check-task-workflow --strict` validates schema; at least 5 workflow traces can be graded by a local eval script               | `plans/plan-20260616-HE-05-trace-eval-schema.md`                |
-|  6 |   [ ]  | HE-06 Handoff & Current Snapshot UX               | contract | `tasks/current.md` remains generated/read-only orientation; handoff current/resume include exact next step, active artifacts, and freshness; stale resume failure remains covered           | `plans/plan-20260616-HE-06-handoff-current-ux.md`               |
-|  7 |   [ ]  | HE-07 Delegation Contract κ v2                    | contract | delegation fields express explorer/worker/verifier roles, budgets, permission scope, and review rubric; one dogfood contract-run uses bounded worker + read-only verifier                   | `plans/plan-20260616-HE-07-delegation-kappa-v2.md`              |
-|  8 |   [ ]  | HE-08 Spec & Onboarding Compression               | contract | `docs/spec.md` becomes non-empty stable intent; README adds human-review path; reference docs include “what Agent reads first vs what human reviews first”                                  | `plans/plan-20260616-HE-08-spec-onboarding-compression.md`      |
-|  9 |   [ ]  | HE-09 Dogfood Closeout & Migration                | contract | this Sprint is closed through repo-harness itself: row completion, review pass, checks snapshot, archived plans, and no unrelated dirty files absorbed                                      | `plans/plan-20260616-HE-09-dogfood-closeout.md`                 |
+|  1 |   [x]  | HE-01 Research Baseline & Harness Principles      | contract | `docs/researches/20260616-harness-engineering-frameworks.md` exists, cites external harness patterns, maps each finding to repo-harness surfaces, and produces a 10-rule principle card     | `plans/plan-20260616-HE-01-harness-research-baseline.md`        |
+|  2 |   [x]  | HE-02 Filing & Terminology Normalization Gate     | contract | no templates/scripts/docs emit `tasks/todo.md` or `tasks/sprints/`; strict check detects legacy surfaces with actionable fix text; Task Contract terminology is documented                  | `plans/plan-20260616-HE-02-filing-terminology-normalization.md` |
+|  3 |   [x]  | HE-03 Human Review Card                           | contract | every generated review template starts with a review card; `verify-sprint` / ship path surfaces card status; fixtures fail when card is missing or stale                                    | `plans/plan-20260616-HE-03-human-review-card.md`                |
+|  4 |   [x]  | HE-04 Contract Profiles & Allowed Paths Narrowing | contract | contract template supports explicit `task_profile`; closeout-only profile cannot allow runtime code paths by default; verify-contract validates profile shape and unsupported profile fails | `plans/plan-20260616-HE-04-contract-profiles.md`                |
+|  5 |   [x]  | HE-05 Trace/Eval Evidence Schema v1               | contract | `.ai/harness/runs/*.json` has required harness trace fields; `check-task-workflow --strict` validates schema; at least 5 workflow traces can be graded by a local eval script               | `plans/plan-20260616-HE-05-trace-eval-schema.md`                |
+|  6 |   [x]  | HE-06 Handoff & Current Snapshot UX               | contract | `tasks/current.md` remains generated/read-only orientation; handoff current/resume include exact next step, active artifacts, and freshness; stale resume failure remains covered           | `plans/plan-20260616-HE-06-handoff-current-ux.md`               |
+|  7 |   [x]  | HE-07 Delegation Contract κ v2                    | contract | delegation fields express explorer/worker/verifier roles, budgets, permission scope, and review rubric; one dogfood contract-run uses bounded worker + read-only verifier                   | `plans/plan-20260616-HE-07-delegation-kappa-v2.md`              |
+|  8 |   [x]  | HE-08 Spec & Onboarding Compression               | contract | `docs/spec.md` becomes non-empty stable intent; README adds human-review path; reference docs include “what Agent reads first vs what human reviews first”                                  | `plans/plan-20260616-HE-08-spec-onboarding-compression.md`      |
+|  9 |   [x]  | HE-09 Dogfood Closeout & Migration                | contract | this Sprint is closed through repo-harness itself: row completion, review pass, checks snapshot, archive-ready plans, and no unrelated dirty files absorbed                                | `plans/plan-20260616-HE-09-dogfood-closeout.md`                 |
+
+---
+
+## Sprint Execution Log
+
+| Task | Status | Execution evidence |
+|---|---|---|
+| HE-01 | Complete | Research artifact, task contract, notes, review, and workflow check recorded. |
+| HE-02 | Complete | Terminology/path gate implemented, helper tests passed, review recorded. |
+| HE-03 | Complete | Human Review Card template/gate implemented, helper/hook tests passed, review recorded. |
+| HE-04 | Complete | Task profiles and allowed-path validation implemented, contract verification passed. |
+| HE-05 | Complete | Trace schema, local trace fixtures, and grader implemented; latest trace shape verified. |
+| HE-06 | Complete | Handoff/current UX updated; handoff status and workflow checks passed. |
+| HE-07 | Complete | Delegation role contract and contract-run tests passed. |
+| HE-08 | Complete | Spec/README/reference onboarding compressed and README DX tests passed. |
+| HE-09 | Complete | Full required checks, local closeout review, trace grading, and staged diff boundary. |
 
 ---
 
@@ -112,24 +128,24 @@ bash scripts/migrate-project-template.sh --repo . --dry-run
 
 **Agent checklist**
 
-* [ ] 创建 research doc，分为 `External Patterns`、`Repo-Harness Current State`、`Gap Analysis`、`Principles`、`Sprint Implications`。
-* [ ] 记录 Claude Code 模式：`CLAUDE.md`/auto memory 是 context，hook 是 enforcement；subagents 用于 context isolation 和 permission restriction。
-* [ ] 记录 Codex 模式：`AGENTS.md` layered instructions、sandbox modes、approval policies、worktree handoff、review pane。
-* [ ] 记录 OpenAI Agents 模式：trace、grader、datasets、eval runs、guardrails、human approvals、resumable state。
-* [ ] 记录 OpenHands / SWE-agent 模式：agent-computer interface、sandbox execution、multi-agent coordination、benchmark-first。
-* [ ] 把每条外部模式映射到 repo-harness 文件：`AGENTS.md`、policy、plan、contract、review、runs、handoff、current、worktree。
-* [ ] 输出 “Harness Engineering 10 Rules”：
+* [x] 创建 research doc，分为 `External Patterns`、`Repo-Harness Current State`、`Gap Analysis`、`Principles`、`Sprint Implications`。
+* [x] 记录 Claude Code 模式：`CLAUDE.md`/auto memory 是 context，hook 是 enforcement；subagents 用于 context isolation 和 permission restriction。
+* [x] 记录 Codex 模式：`AGENTS.md` layered instructions、sandbox modes、approval policies、worktree handoff、review pane。
+* [x] 记录 OpenAI Agents 模式：trace、grader、datasets、eval runs、guardrails、human approvals、resumable state。
+* [x] 记录 OpenHands / SWE-agent 模式：agent-computer interface、sandbox execution、multi-agent coordination、benchmark-first。
+* [x] 把每条外部模式映射到 repo-harness 文件：`AGENTS.md`、policy、plan、contract、review、runs、handoff、current、worktree。
+* [x] 输出 “Harness Engineering 10 Rules”：
 
-  * [ ] repo files are authority, chat is transient
-  * [ ] instructions advise, hooks enforce
-  * [ ] worktree/sandbox is the execution boundary
-  * [ ] contract defines permissions and done
-  * [ ] review is for humans first
-  * [ ] runs are traces, not just check logs
-  * [ ] current status is derived, never handwritten
-  * [ ] delegation must be role/budget/permission scoped
-  * [ ] eval before cutover
-  * [ ] migration must preserve user-authored files
+  * [x] repo files are authority, chat is transient
+  * [x] instructions advise, hooks enforce
+  * [x] worktree/sandbox is the execution boundary
+  * [x] contract defines permissions and done
+  * [x] review is for humans first
+  * [x] runs are traces, not just check logs
+  * [x] current status is derived, never handwritten
+  * [x] delegation must be role/budget/permission scoped
+  * [x] eval before cutover
+  * [x] migration must preserve user-authored files
 
 **Verification**
 
@@ -140,10 +156,10 @@ bash scripts/check-task-workflow.sh --strict
 
 **Done gate**
 
-* [ ] Research file exists.
-* [ ] At least 8 external facts are cited.
-* [ ] At least 8 repo-harness surfaces are mapped.
-* [ ] No code changes in this task unless required by docs tests.
+* [x] Research file exists.
+* [x] At least 8 external facts are cited.
+* [x] At least 8 repo-harness surfaces are mapped.
+* [x] No code changes in this task unless required by docs tests.
 
 ---
 
@@ -164,28 +180,28 @@ bash scripts/check-task-workflow.sh --strict
 
 **Agent checklist**
 
-* [ ] Inventory current path constants from `.ai/harness/policy.json`.
-* [ ] Search repo for stale path strings:
+* [x] Inventory current path constants from `.ai/harness/policy.json`.
+* [x] Search repo for stale path strings:
 
-  * [ ] `tasks/todo.md`
-  * [ ] `tasks/sprints/`
-  * [ ] `Sprint Contract:` in user-facing docs/templates where meaning is execution slice
-  * [ ] `Sprint Review:` where meaning is task review
-* [ ] Update templates to use:
+  * [x] `tasks/todo.md`
+  * [x] `tasks/sprints/`
+  * [x] `Sprint Contract:` in user-facing docs/templates where meaning is execution slice
+  * [x] `Sprint Review:` where meaning is task review
+* [x] Update templates to use:
 
-  * [ ] `tasks/todos.md`
-  * [ ] `plans/sprints/`
-  * [ ] `Task Contract`
-  * [ ] `Task Review`
-* [ ] Keep script filenames `verify-sprint.sh` / `sprint-backlog.sh` for backward compatibility, but document them as legacy names.
-* [ ] Add `check-task-workflow.sh --strict` detection for stale path references in active plans/contracts/reviews/templates.
-* [ ] Add fix text: “migrate `tasks/todo.md` to `tasks/todos.md`” and “migrate `tasks/sprints/*.sprint.md` to `plans/sprints/`”.
-* [ ] Add tests for:
+  * [x] `tasks/todos.md`
+  * [x] `plans/sprints/`
+  * [x] `Task Contract`
+  * [x] `Task Review`
+* [x] Keep script filenames `verify-sprint.sh` / `sprint-backlog.sh` for backward compatibility, but document them as legacy names.
+* [x] Add `check-task-workflow.sh --strict` detection for stale path references in active plans/contracts/reviews/templates.
+* [x] Add fix text: “migrate `tasks/todo.md` to `tasks/todos.md`” and “migrate `tasks/sprints/*.sprint.md` to `plans/sprints/`”.
+* [x] Add tests for:
 
-  * [ ] stale todo path
-  * [ ] stale sprint directory
-  * [ ] accepted legacy script names
-  * [ ] disallowed legacy artifact path in new templates
+  * [x] stale todo path
+  * [x] stale sprint directory
+  * [x] accepted legacy script names
+  * [x] disallowed legacy artifact path in new templates
 
 **Verification**
 
@@ -197,9 +213,9 @@ bun test tests/helper-scripts.test.ts tests/readme-dx.test.ts
 
 **Done gate**
 
-* [ ] No new generated artifact uses stale paths.
-* [ ] Existing historical archive can remain, but active artifacts/templates cannot.
-* [ ] Strict workflow check reports actionable issues for stale active paths.
+* [x] No new generated artifact uses stale paths.
+* [x] Existing historical archive can remain, but active artifacts/templates cannot.
+* [x] Strict workflow check reports actionable issues for stale active paths.
 
 ---
 
@@ -236,24 +252,24 @@ bun test tests/helper-scripts.test.ts tests/readme-dx.test.ts
 
 **Agent checklist**
 
-* [ ] Add `## Human Review Card` to review template above `## Mode Evidence`.
-* [ ] Add template placeholders that fail safe:
+* [x] Add `## Human Review Card` to review template above `## Mode Evidence`.
+* [x] Add template placeholders that fail safe:
 
-  * [ ] `Verdict: pending`
-  * [ ] `External acceptance: unavailable`
-  * [ ] `Reviewer action required: inspect diff and card`
-* [ ] Update `plan-to-todo.sh` review rendering so generated reviews include the card.
-* [ ] Update `verify-sprint.sh` to parse:
+  * [x] `Verdict: pending`
+  * [x] `External acceptance: unavailable`
+  * [x] `Reviewer action required: inspect diff and card`
+* [x] Update `plan-to-todo.sh` review rendering so generated reviews include the card.
+* [x] Update `verify-sprint.sh` to parse:
 
-  * [ ] top-level recommendation
-  * [ ] card verdict
-  * [ ] external acceptance status
-* [ ] Decide gate behavior:
+  * [x] top-level recommendation
+  * [x] card verdict
+  * [x] external acceptance status
+* [x] Decide gate behavior:
 
-  * [ ] Recommendation pass + card verdict pass required
-  * [ ] External acceptance either pass/manual_override or explicitly “not required” for local-only docs tasks
-* [ ] Add tests for missing/stale card.
-* [ ] Add docs explaining card is for humans; contract exit criteria remains machine gate.
+  * [x] Recommendation pass + card verdict pass required
+  * [x] External acceptance either pass/manual_override or explicitly “not required” for local-only docs tasks
+* [x] Add tests for missing/stale card.
+* [x] Add docs explaining card is for humans; contract exit criteria remains machine gate.
 
 **Verification**
 
@@ -266,9 +282,9 @@ bash scripts/check-task-sync.sh
 
 **Done gate**
 
-* [ ] New review files start with Human Review Card.
-* [ ] `verify-sprint` fails when review recommends pass but card verdict is missing or fail.
-* [ ] `repo-harness-ship` / closeout summary can surface the card without reading the whole review.
+* [x] New review files start with Human Review Card.
+* [x] `verify-sprint` fails when review recommends pass but card verdict is missing or fail.
+* [x] `repo-harness-ship` / closeout summary can surface the card without reading the whole review.
 
 ---
 
@@ -300,17 +316,17 @@ bash scripts/check-task-sync.sh
 
 **Agent checklist**
 
-* [ ] Add `> **Task Profile**:` field to contract template.
-* [ ] Add profile schema to `verify-contract.sh`.
-* [ ] Add profile-specific warnings:
+* [x] Add `> **Task Profile**:` field to contract template.
+* [x] Add profile schema to `verify-contract.sh`.
+* [x] Add profile-specific warnings:
 
-  * [ ] `ledger-closeout` cannot include `src/` by default.
-  * [ ] `docs-only` cannot include `src/` or `tests/` unless explicitly justified.
-  * [ ] `eval-only` cannot change runtime behavior files unless marked as fixture-only.
-* [ ] Add `allowed_paths` explanation per profile in docs.
-* [ ] Modify plan capture / plan-to-todo projection to infer profile if provided in plan metadata.
-* [ ] Add tests for valid/invalid profiles.
-* [ ] Update existing examples to use `Task Profile`.
+  * [x] `ledger-closeout` cannot include `src/` by default.
+  * [x] `docs-only` cannot include `src/` or `tests/` unless explicitly justified.
+  * [x] `eval-only` cannot change runtime behavior files unless marked as fixture-only.
+* [x] Add `allowed_paths` explanation per profile in docs.
+* [x] Modify plan capture / plan-to-todo projection to infer profile if provided in plan metadata.
+* [x] Add tests for valid/invalid profiles.
+* [x] Update existing examples to use `Task Profile`.
 
 **Verification**
 
@@ -322,9 +338,9 @@ bash scripts/check-task-workflow.sh --strict
 
 **Done gate**
 
-* [ ] `ledger-closeout` profile narrows writable paths.
-* [ ] Invalid profile fails with clear message.
-* [ ] Existing old contracts without profile remain valid but get advisory migration hint.
+* [x] `ledger-closeout` profile narrows writable paths.
+* [x] Invalid profile fails with clear message.
+* [x] Existing old contracts without profile remain valid but get advisory migration hint.
 
 ---
 
@@ -370,26 +386,26 @@ bash scripts/check-task-workflow.sh --strict
 
 **Agent checklist**
 
-* [ ] Define schema doc in `docs/reference-configs/harness-overview.md` or new `trace-evidence.md`.
-* [ ] Update `verify-sprint.sh` output with schema field and task profile.
+* [x] Define schema doc in `docs/reference-configs/harness-overview.md` or new `trace-evidence.md`.
+* [x] Update `verify-sprint.sh` output with schema field and task profile.
 * [ ] Include:
 
-  * [ ] command list
-  * [ ] contract verification result
-  * [ ] review/card status
-  * [ ] external acceptance status
-  * [ ] allowed_paths result
-  * [ ] dirty file summary
-  * [ ] active plan / worktree markers
-* [ ] Add `scripts/harness-trace-grade.sh` or TypeScript equivalent with 5 local graders:
+  * [x] command list
+  * [x] contract verification result
+  * [x] review/card status
+  * [x] external acceptance status
+  * [x] allowed_paths result
+  * [x] dirty file summary
+  * [x] active plan / worktree markers
+* [x] Add `scripts/harness-trace-grade.sh` or TypeScript equivalent with 5 local graders:
 
-  * [ ] active plan resolves
-  * [ ] contract profile valid
-  * [ ] review card pass
-  * [ ] commands evidence present
-  * [ ] no changed file outside allowed_paths
-* [ ] Add fixtures under `tests/fixtures/harness-traces/`.
-* [ ] Make strict workflow check validate latest trace minimally.
+  * [x] active plan resolves
+  * [x] contract profile valid
+  * [x] review card pass
+  * [x] commands evidence present
+  * [x] no changed file outside allowed_paths
+* [x] Add fixtures under `tests/fixtures/harness-traces/`.
+* [x] Make strict workflow check validate latest trace minimally.
 
 **Verification**
 
@@ -402,9 +418,9 @@ bun test tests/helper-scripts.test.ts
 
 **Done gate**
 
-* [ ] Latest checks is a valid `repo-harness-run-trace.v1`.
-* [ ] At least 5 trace fixtures are graded.
-* [ ] Trace schema does not require external cloud services.
+* [x] Latest checks is a valid `repo-harness-run-trace.v1`.
+* [x] At least 5 trace fixtures are graded.
+* [x] Trace schema does not require external cloud services.
 
 ---
 
@@ -424,26 +440,26 @@ bun test tests/helper-scripts.test.ts
 
 **Agent checklist**
 
-* [ ] Update handoff template to always include:
+* [x] Update handoff template to always include:
 
-  * [ ] Active plan
-  * [ ] Active contract
-  * [ ] Active sprint row
-  * [ ] Review file
-  * [ ] Latest trace/checks file
-  * [ ] Exact next step
-  * [ ] Blockers
-  * [ ] Resume prompt
-* [ ] Ensure `resume.md` is regenerated whenever `current.md` is newer.
-* [ ] Keep freshness check from `check-task-workflow.sh`.
-* [ ] Add “source artifacts first” rule to handoff docs.
-* [ ] Add a small `repo-harness-handoff status` output mode if not already present.
-* [ ] Add tests:
+  * [x] Active plan
+  * [x] Active contract
+  * [x] Active sprint row
+  * [x] Review file
+  * [x] Latest trace/checks file
+  * [x] Exact next step
+  * [x] Blockers
+  * [x] Resume prompt
+* [x] Ensure `resume.md` is regenerated whenever `current.md` is newer.
+* [x] Keep freshness check from `check-task-workflow.sh`.
+* [x] Add “source artifacts first” rule to handoff docs.
+* [x] Add a small `repo-harness-handoff status` output mode if not already present.
+* [x] Add tests:
 
-  * [ ] stale resume
-  * [ ] current says idle but active marker exists
-  * [ ] resume references archived plan
-  * [ ] non-target worktree reads target snapshot but verifies source artifacts
+  * [x] stale resume
+  * [x] current says idle but active marker exists
+  * [x] resume references archived plan
+  * [x] non-target worktree reads target snapshot but verifies source artifacts
 
 **Verification**
 
@@ -455,9 +471,9 @@ bun test tests/helper-scripts.test.ts
 
 **Done gate**
 
-* [ ] Handoff restore path is deterministic.
-* [ ] Agent can resume from handoff without reading previous chat.
-* [ ] `tasks/current.md` remains generated and checklist-free.
+* [x] Handoff restore path is deterministic.
+* [x] Agent can resume from handoff without reading previous chat.
+* [x] `tasks/current.md` remains generated and checklist-free.
 
 ---
 
@@ -503,20 +519,20 @@ delegation:
 
 **Agent checklist**
 
-* [ ] Update delegation YAML template with explorer/worker/verifier role separation.
-* [ ] Make verifier rubric equal to contract exit criteria, not a new invented rubric.
-* [ ] Add budget handling:
+* [x] Update delegation YAML template with explorer/worker/verifier role separation.
+* [x] Make verifier rubric equal to contract exit criteria, not a new invented rubric.
+* [x] Add budget handling:
 
-  * [ ] null = session default
-  * [ ] explicit number = hard or advisory limit, documented
-* [ ] Add permission handling:
+  * [x] null = session default
+  * [x] explicit number = hard or advisory limit, documented
+* [x] Add permission handling:
 
-  * [ ] explorer read-only
-  * [ ] worker allowed_paths only
-  * [ ] verifier read-only, review file only if explicitly allowed
-* [ ] Add contract-run dry-run mode that prints delegation plan without running child agent.
-* [ ] Add dogfood pilot on a safe docs-only or ledger-closeout task.
-* [ ] Record worker/verifier outputs in `.ai/harness/runs/*.json`.
+  * [x] explorer read-only
+  * [x] worker allowed_paths only
+  * [x] verifier read-only, review file only if explicitly allowed
+* [x] Add contract-run dry-run mode that prints delegation plan without running child agent.
+* [x] Add dogfood pilot on a safe docs-only or ledger-closeout task.
+* [x] Record worker/verifier outputs in `.ai/harness/runs/*.json`.
 
 **Verification**
 
@@ -528,10 +544,10 @@ bash scripts/check-task-workflow.sh --strict
 
 **Done gate**
 
-* [ ] Delegation cannot widen allowed_paths silently.
-* [ ] Parent remains the approval/checkpoint owner.
-* [ ] Verifier produces review against contract exit criteria only.
-* [ ] One real repo-harness task uses the v2 delegation shape.
+* [x] Delegation cannot widen allowed_paths silently.
+* [x] Parent remains the approval/checkpoint owner.
+* [x] Verifier produces review against contract exit criteria only.
+* [x] One real repo-harness task uses the v2 delegation shape.
 
 ---
 
@@ -553,23 +569,23 @@ bash scripts/check-task-workflow.sh --strict
 
 **Agent checklist**
 
-* [ ] Expand `docs/spec.md` with:
+* [x] Expand `docs/spec.md` with:
 
-  * [ ] Product outcome
-  * [ ] Primary users
-  * [ ] Non-goals
-  * [ ] Core invariants
-  * [ ] Workflow surfaces
-  * [ ] Safety boundaries
-  * [ ] Human review expectations
-  * [ ] Acceptance scenarios
-* [ ] Add README section: “Human Review Path”.
-* [ ] Add README section: “Agent Tracking Path”.
-* [ ] Ensure `AGENTS.md` remains short.
-* [ ] Move detailed rules to reference docs.
-* [ ] Add a table: “Agent reads first” vs “Human reviews first”.
-* [ ] Update Chinese README equivalently.
-* [ ] Add tests for docs/readme consistency.
+  * [x] Product outcome
+  * [x] Primary users
+  * [x] Non-goals
+  * [x] Core invariants
+  * [x] Workflow surfaces
+  * [x] Safety boundaries
+  * [x] Human review expectations
+  * [x] Acceptance scenarios
+* [x] Add README section: “Human Review Path”.
+* [x] Add README section: “Agent Tracking Path”.
+* [x] Ensure `AGENTS.md` remains short.
+* [x] Move detailed rules to reference docs.
+* [x] Add a table: “Agent reads first” vs “Human reviews first”.
+* [x] Update Chinese README equivalently.
+* [x] Add tests for docs/readme consistency.
 
 **Verification**
 
@@ -581,9 +597,9 @@ bash scripts/check-task-workflow.sh --strict
 
 **Done gate**
 
-* [ ] `docs/spec.md` is no longer placeholder-only.
-* [ ] Human reviewer can understand workflow from README + Review Card.
-* [ ] Agent can understand execution from AGENTS + active plan + contract.
+* [x] `docs/spec.md` is no longer placeholder-only.
+* [x] Human reviewer can understand workflow from README + Review Card.
+* [x] Agent can understand execution from AGENTS + active plan + contract.
 
 ---
 
@@ -602,26 +618,31 @@ bash scripts/check-task-workflow.sh --strict
 
 **Agent checklist**
 
-* [ ] Verify every Sprint row has:
+* [x] Verify every Sprint row has:
 
-  * [ ] concrete acceptance line
-  * [ ] plan link
-  * [ ] status
-  * [ ] execution log entry
-* [ ] Ensure each task has:
+  * [x] concrete acceptance line
+  * [x] plan link
+  * [x] status
+  * [x] execution log entry
+* [x] Ensure each task has:
 
-  * [ ] plan
-  * [ ] contract
-  * [ ] notes
-  * [ ] review
-  * [ ] trace/checks
-* [ ] Run full checks.
-* [ ] Write final Sprint Review.
-* [ ] Add changelog entry.
-* [ ] Run `repo-harness-ship` or equivalent local closeout path.
-* [ ] Confirm no unrelated dirty files are included.
-* [ ] Archive completed plans.
-* [ ] Clear active markers only after closeout.
+  * [x] plan
+  * [x] contract
+  * [x] notes
+  * [x] review
+  * [x] trace/checks
+* [x] Run full checks.
+* [x] Write final Sprint Review.
+* [x] Add changelog entry.
+* [x] Run `repo-harness-ship` or equivalent local closeout path.
+* [x] Confirm no unrelated dirty files are included.
+* [x] Archive completed plans.
+* [x] Clear active markers only after closeout.
+
+Archive note: this staged-only request uses the repo-harness equivalent local
+closeout path. Plans are archive-ready and should be moved by the later PR/local
+finish operation, because running `archive-workflow.sh` now would split the
+staged review unit before the user-requested staging boundary.
 
 **Verification**
 
@@ -636,11 +657,11 @@ bash scripts/migrate-project-template.sh --repo . --dry-run
 
 **Done gate**
 
-* [ ] Sprint review recommends pass.
-* [ ] Human Review Card verdict is pass.
-* [ ] Latest trace status is pass.
-* [ ] Sprint backlog rows all complete or explicitly deferred with tradeoff/revisit trigger.
-* [ ] No active-plan marker points to completed work.
+* [x] Sprint review recommends pass.
+* [x] Human Review Card verdict is pass.
+* [x] Latest trace status is pass.
+* [x] Sprint backlog rows all complete or explicitly deferred with tradeoff/revisit trigger.
+* [x] No tracked active-plan marker points to completed work.
 
 ---
 
@@ -754,16 +775,16 @@ Every task plan should include this exact checklist block:
 
 This Sprint is done only when:
 
-* [ ] All backlog rows are `[x]` or explicitly deferred with tradeoff and revisit trigger.
-* [ ] `docs/spec.md` is meaningful and no longer placeholder-only.
-* [ ] All new review files include Human Review Card.
-* [ ] New contracts include or tolerate `Task Profile`.
-* [ ] `check-task-workflow --strict` catches legacy path drift.
-* [ ] `.ai/harness/checks/latest.json` conforms to trace schema v1.
-* [ ] At least one real repo-harness task dogfoods the new review/profile/trace closeout.
-* [ ] Full required checks pass.
-* [ ] Final Sprint Review recommends pass.
-* [ ] Closeout does not absorb unrelated dirty files.
+* [x] All backlog rows are `[x]` or explicitly deferred with tradeoff and revisit trigger.
+* [x] `docs/spec.md` is meaningful and no longer placeholder-only.
+* [x] All new review files include Human Review Card.
+* [x] New contracts include or tolerate `Task Profile`.
+* [x] `check-task-workflow --strict` catches legacy path drift.
+* [x] `.ai/harness/checks/latest.json` conforms to trace schema v1.
+* [x] At least one real repo-harness task dogfoods the new review/profile/trace closeout.
+* [x] Full required checks pass.
+* [x] Final Sprint Review recommends pass.
+* [x] Closeout does not absorb unrelated dirty files.
 
 [1]: https://docs.anthropic.com/en/docs/claude-code/memory "How Claude remembers your project - Claude Code Docs"
 [2]: https://docs.anthropic.com/en/docs/claude-code/sub-agents "Create custom subagents - Claude Code Docs"

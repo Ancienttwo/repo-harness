@@ -1,7 +1,8 @@
-# Sprint Contract: {{TASK_SLUG}}
+# Task Contract: {{TASK_SLUG}}
 
 > **Status**: Active
 > **Plan**: {{PLAN_FILE}}
+> **Task Profile**: {{TASK_PROFILE}}
 > **Owner**: {{OWNER}}
 > **Capability ID**: {{CAPABILITY_ID}}
 > **Last Updated**: {{TIMESTAMP}}
@@ -39,6 +40,7 @@ allowed_paths:
   - {{REVIEW_FILE}}
   - {{NOTES_FILE}}
   - .ai/context/capabilities.json
+  - .claude/templates/
   - src/
   - tests/
 ```
@@ -56,9 +58,18 @@ delegation:
     writable_paths: []
     network: inherited
   roles:
-    parent: narrate_and_gatekeep
-    worker: implement_contract
-    verifier: review_exit_criteria
+    parent:
+      mode: narrate_and_gatekeep
+      purpose: approval_checkpoint_owner
+    explorer:
+      mode: read_only
+      purpose: codebase_research
+    worker:
+      mode: edit_within_allowed_paths
+      purpose: implementation
+    verifier:
+      mode: read_only
+      purpose: exit_criteria_review
 ```
 
 ## Exit Criteria (Machine Verifiable)

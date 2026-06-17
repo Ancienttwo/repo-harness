@@ -33,13 +33,21 @@ function writePilotContract(repo: string, toolCalls: string | number | null = 2)
   writeFileSync(
     contractPath,
     [
-      "# Sprint Contract: pilot",
+      "# Task Contract: pilot",
       "",
       "> **Status**: Active",
       "> **Plan**: plans/plan.md",
       "> **Owner**: test",
       "> **Review File**: `tasks/reviews/pilot.review.md`",
       "> **Notes File**: `tasks/notes/pilot.notes.md`",
+      "",
+      "## Allowed Paths",
+      "",
+      "```yaml",
+      "allowed_paths:",
+      "  - src/",
+      "  - tasks/reviews/",
+      "```",
       "",
       "## Delegation Contract",
       "",
@@ -54,9 +62,18 @@ function writePilotContract(repo: string, toolCalls: string | number | null = 2)
       "    writable_paths: []",
       "    network: off",
       "  roles:",
-      "    parent: narrate_and_gatekeep",
-      "    worker: implement_contract",
-      "    verifier: review_exit_criteria",
+      "    parent:",
+      "      mode: narrate_and_gatekeep",
+      "      purpose: approval_checkpoint_owner",
+      "    explorer:",
+      "      mode: read_only",
+      "      purpose: codebase_research",
+      "    worker:",
+      "      mode: edit_within_allowed_paths",
+      "      purpose: implementation",
+      "    verifier:",
+      "      mode: read_only",
+      "      purpose: exit_criteria_review",
       "```",
       "",
       "## Exit Criteria (Machine Verifiable)",
@@ -126,9 +143,18 @@ describe("contract-run helper", () => {
       expect(manifest.status).toBe("dry_run");
       expect(manifest.contract).toBe("tasks/contracts/pilot.contract.md");
       expect((manifest.children as unknown[])).toEqual([]);
+      expect((manifest.delegation_plan as { verifier_rubric: string }).verifier_rubric).toBe("contract exit_criteria");
+      expect((manifest.delegation_plan as { allowed_paths: string[] }).allowed_paths).toEqual(["src/", "tasks/reviews/"]);
+      expect(((manifest.delegation_plan as { verifier: { mode: string } }).verifier).mode).toBe("read_only");
       expect(existsSync(join(repo, ".ai/harness/runs/dry-run/worker-prompt.md"))).toBe(true);
       expect(existsSync(join(repo, ".ai/harness/runs/dry-run/verifier-prompt.md"))).toBe(true);
       expect(existsSync(join(repo, ".ai/harness/runs/dry-run/manifest.json"))).toBe(true);
+      expect(readFileSync(join(repo, ".ai/harness/runs/dry-run/worker-prompt.md"), "utf-8")).toContain(
+        "Permission scope: inherit_allowed_paths"
+      );
+      expect(readFileSync(join(repo, ".ai/harness/runs/dry-run/verifier-prompt.md"), "utf-8")).toContain(
+        "Review only against the contract exit criteria"
+      );
       expect(existsSync(join(repo, "src/pilot.txt"))).toBe(false);
     } finally {
       rmSync(repo, { recursive: true, force: true });
@@ -148,6 +174,7 @@ describe("contract-run helper", () => {
           'test "$CONTRACT_RUN_ROLE" = "worker"',
           'test -f "$CONTRACT_RUN_PROMPT"',
           'test "$CONTRACT_RUN_CONTRACT" = "tasks/contracts/pilot.contract.md"',
+          'printf "%s" "$CONTRACT_RUN_ALLOWED_PATHS" | grep -q "src/"',
           "mkdir -p src",
           "printf 'worker-output\\n' > src/pilot.txt",
           "",
@@ -161,6 +188,7 @@ describe("contract-run helper", () => {
           "set -euo pipefail",
           'test "$CONTRACT_RUN_ROLE" = "verifier"',
           'test -f "$CONTRACT_RUN_PROMPT"',
+          'printf "%s" "$CONTRACT_RUN_VERIFIER_RUBRIC" | grep -q "files_exist"',
           "mkdir -p \"$(dirname \"$CONTRACT_RUN_REVIEW\")\"",
           "cat > \"$CONTRACT_RUN_REVIEW\" <<'REVIEW_EOF'",
           "# Contract Review: pilot",

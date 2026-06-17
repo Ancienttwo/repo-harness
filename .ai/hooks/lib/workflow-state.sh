@@ -362,9 +362,31 @@ workflow_preferred_or_legacy_path() {
   fi
 }
 
+workflow_plan_declared_path() {
+  local plan_file="$1"
+  local label="$2"
+  [[ -f "$plan_file" ]] || return 1
+  awk -v label="$label" '
+    BEGIN { pattern = "^> \\*\\*" label "\\*\\*:" }
+    $0 ~ pattern {
+      sub(pattern "[[:space:]]*", "")
+      gsub(/`/, "")
+      gsub(/\r/, "")
+      print
+      exit
+    }
+  ' "$plan_file" | xargs
+}
+
 derive_contract_path() {
   local plan_file="$1"
-  local stem slug
+  local stem slug explicit
+
+  explicit="$(workflow_plan_declared_path "$plan_file" "Task Contract" || workflow_plan_declared_path "$plan_file" "Sprint Contract" || true)"
+  if [[ -n "$explicit" ]]; then
+    printf '%s' "$explicit"
+    return 0
+  fi
 
   stem="$(workflow_plan_artifact_stem_from_path "$plan_file" || true)"
   slug="$(workflow_plan_slug_from_path "$plan_file" || true)"
@@ -1054,9 +1076,14 @@ workflow_active_contract() {
 }
 
 workflow_active_review() {
-  local active_plan stem slug reviews_dir
+  local active_plan stem slug reviews_dir explicit
   active_plan="$(get_active_plan || true)"
   [[ -n "$active_plan" ]] || return 1
+  explicit="$(workflow_plan_declared_path "$active_plan" "Task Review" || workflow_plan_declared_path "$active_plan" "Sprint Review" || true)"
+  if [[ -n "$explicit" ]]; then
+    printf '%s' "$explicit"
+    return 0
+  fi
   stem="$(workflow_plan_artifact_stem_from_path "$active_plan" || true)"
   slug="$(workflow_plan_slug_from_path "$active_plan" || true)"
   [[ -n "$stem" && -n "$slug" ]] || return 1
@@ -1065,9 +1092,14 @@ workflow_active_review() {
 }
 
 workflow_active_notes() {
-  local active_plan stem slug notes_dir
+  local active_plan stem slug notes_dir explicit
   active_plan="$(get_active_plan || true)"
   [[ -n "$active_plan" ]] || return 1
+  explicit="$(workflow_plan_declared_path "$active_plan" "Implementation Notes" || workflow_plan_declared_path "$active_plan" "Notes File" || true)"
+  if [[ -n "$explicit" ]]; then
+    printf '%s' "$explicit"
+    return 0
+  fi
   stem="$(workflow_plan_artifact_stem_from_path "$active_plan" || true)"
   slug="$(workflow_plan_slug_from_path "$active_plan" || true)"
   [[ -n "$stem" && -n "$slug" ]] || return 1
@@ -1503,7 +1535,8 @@ workflow_write_handoff() {
   local reason="${1:-session-stop}"
   local handoff_file active_plan active_contract active_review active_notes checks_file next_task changed_files diff_stat spec_file source_plan parent_run_id supersedes
   local next_action next_stage next_command next_message
-  local resume_file trace_file recent_commands blockers decisions goal
+  local resume_file trace_file recent_commands blockers decisions goal latest_trace_file
+  local active_sprint active_sprint_row
   local changed_count untracked_count
 
   workflow_ensure_harness_surface
@@ -1515,6 +1548,26 @@ workflow_write_handoff() {
   active_contract="$(workflow_active_contract || true)"
   active_review="$(workflow_active_review || true)"
   active_notes="$(workflow_active_notes || true)"
+  active_sprint=""
+  if [[ -f ".ai/harness/sprint/active-sprint" ]]; then
+    active_sprint="$(cat ".ai/harness/sprint/active-sprint" 2>/dev/null | xargs)"
+  fi
+  active_sprint_row="(none)"
+  if [[ -n "$active_sprint" && -f "$active_sprint" ]]; then
+    active_sprint_row="$(
+      awk -v plan="$active_plan" '
+        /^\|[[:space:]]*[0-9]+[[:space:]]*\|/ {
+          if (plan != "" && index($0, plan) > 0) {
+            print
+            found = 1
+            exit
+          }
+        }
+        END { if (!found) exit 1 }
+      ' "$active_sprint" 2>/dev/null || true
+    )"
+    active_sprint_row="${active_sprint_row:-Active sprint: ${active_sprint}}"
+  fi
   source_plan="$(get_todo_source_plan || true)"
   if [[ "$source_plan" == "(none)" ]]; then
     source_plan=""
@@ -1586,6 +1639,12 @@ workflow_write_handoff() {
   fi
   decisions="Use filesystem artifacts as source of truth; treat SQLite/thread state as a rebuildable read model only."
   blockers="(none recorded)"
+  if [[ -f "$checks_file" ]] && command -v jq >/dev/null 2>&1; then
+    latest_trace_file="$(jq -r '.run_file // empty' "$checks_file" 2>/dev/null || true)"
+  else
+    latest_trace_file=""
+  fi
+  latest_trace_file="${latest_trace_file:-$checks_file}"
 
   cat > "$handoff_file" <<EOF_HANDOFF
 # Harness Handoff
@@ -1614,10 +1673,20 @@ ${recent_commands}
 ## Checks
 
 - Checks file: ${checks_file}
+- Latest trace: ${latest_trace_file}
 
 ## Blockers
 
 - ${blockers}
+
+## Active Artifacts
+
+- Active plan: ${active_plan:-(none)}
+- Active contract: ${active_contract:-(none)}
+- Active sprint row: ${active_sprint_row}
+- Review file: ${active_review:-(none)}
+- Latest trace/checks file: ${latest_trace_file}
+- Resume packet: ${resume_file}
 
 ## Exact Next Step
 
@@ -1626,7 +1695,7 @@ ${recent_commands}
 ## Resume Prompt
 
 - Resume packet: ${resume_file}
-- Start a fresh Codex session and read this handoff before continuing; do not rely on auto-compact.
+- Start a fresh Codex session and read source artifacts first, then this handoff, before continuing; do not rely on auto-compact.
 
 ## Source Artifacts
 

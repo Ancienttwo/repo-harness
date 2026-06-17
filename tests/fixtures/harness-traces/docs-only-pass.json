@@ -1,0 +1,46 @@
+{
+  "schema": "repo-harness-run-trace.v1",
+  "status": "pass",
+  "source": "verify-sprint",
+  "command": "bash scripts/verify-sprint.sh",
+  "exit_code": 0,
+  "generated_at": "2026-06-17T00:01:00+0800",
+  "run_id": "fixture-docs-only",
+  "run_file": ".ai/harness/runs/fixture-docs-only.json",
+  "task_profile": "docs-only",
+  "active_plan": "plans/plan-20260616-HE-05-trace-eval-schema.md",
+  "contract": {
+    "file": "tasks/contracts/fixture-docs-only.contract.md",
+    "task_profile": "docs-only",
+    "allowed_paths": ["docs", "plans", "tasks"]
+  },
+  "review": {
+    "file": "tasks/reviews/fixture-docs-only.review.md",
+    "card": {
+      "verdict": "pass",
+      "change_type": "docs-only",
+      "external_acceptance": "not_required",
+      "rollback": "revert fixture docs-only branch"
+    }
+  },
+  "worktree": "/tmp/repo-harness-fixture",
+  "branch": "codex/fixture",
+  "commands": [
+    {"name": "verify-contract", "command": "bash scripts/verify-contract.sh --strict", "status": "pass", "exit_code": 0}
+  ],
+  "guards": [
+    {"name": "contract", "status": "pass"},
+    {"name": "review", "status": "pass"}
+  ],
+  "handoffs": [],
+  "external_acceptance": {
+    "status": "not_required"
+  },
+  "files_changed": ["docs/reference-configs/harness-overview.md"],
+  "allowed_paths_check": {
+    "status": "pass",
+    "outside": []
+  },
+  "failure_class": "",
+  "next_step": "finish contract worktree or archive completed task"
+}

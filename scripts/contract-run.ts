@@ -26,9 +26,15 @@ interface DelegationContract {
   budget: DelegationBudget;
   permission_scope: {
     mode: string;
+    writable_paths: string[];
     network: string;
   };
-  roles: Record<string, string>;
+  roles: Record<string, DelegationRole>;
+}
+
+interface DelegationRole {
+  mode: string;
+  purpose: string;
 }
 
 interface ChildResult {
@@ -178,9 +184,28 @@ function parseNullableNumber(block: string, key: string): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function parseRoles(block: string): Record<string, string> {
-  const roles: Record<string, string> = {};
+function parseList(block: string, key: string): string[] {
+  const lines = block.split("\n");
+  const values: string[] = [];
+  let inList = false;
+  const keyPattern = new RegExp(`^\\s*${key}:\\s*$`);
+  for (const line of lines) {
+    if (keyPattern.test(line)) {
+      inList = true;
+      continue;
+    }
+    if (!inList) continue;
+    if (/^\S/.test(line) || /^\s+[a-zA-Z0-9_-]+:/.test(line)) break;
+    const match = line.match(/^\s*-\s*(.+)$/);
+    if (match) values.push(match[1].trim().replace(/^["']|["']$/g, ""));
+  }
+  return values;
+}
+
+function parseRoles(block: string): Record<string, DelegationRole> {
+  const roles: Record<string, DelegationRole> = {};
   let inRoles = false;
+  let currentRole = "";
   for (const line of block.split("\n")) {
     if (/^\s*roles:\s*$/.test(line)) {
       inRoles = true;
@@ -188,8 +213,25 @@ function parseRoles(block: string): Record<string, string> {
     }
     if (!inRoles) continue;
     if (/^\S/.test(line)) break;
-    const match = line.match(/^\s+([a-zA-Z0-9_-]+):\s*(.+)$/);
-    if (match) roles[match[1]] = match[2].trim();
+    const scalar = line.match(/^\s{4}([a-zA-Z0-9_-]+):\s*(.+)$/);
+    if (scalar) {
+      roles[scalar[1]] = { mode: scalar[2].trim(), purpose: scalar[2].trim() };
+      currentRole = scalar[1];
+      continue;
+    }
+    const nested = line.match(/^\s{4}([a-zA-Z0-9_-]+):\s*$/);
+    if (nested) {
+      currentRole = nested[1];
+      roles[currentRole] = roles[currentRole] ?? { mode: "", purpose: "" };
+      continue;
+    }
+    const field = line.match(/^\s{6}(mode|purpose):\s*(.+)$/);
+    if (field && currentRole) {
+      roles[currentRole] = {
+        ...roles[currentRole],
+        [field[1]]: field[2].trim().replace(/^["']|["']$/g, ""),
+      };
+    }
   }
   return roles;
 }
@@ -204,12 +246,14 @@ function parseDelegation(markdown: string): DelegationContract {
     },
     permission_scope: {
       mode: parseScalar(block, "mode") ?? "inherit_allowed_paths",
+      writable_paths: parseList(block, "writable_paths"),
       network: parseScalar(block, "network") ?? "inherited",
     },
     roles: {
-      parent: "narrate_and_gatekeep",
-      worker: "implement_contract",
-      verifier: "review_exit_criteria",
+      parent: { mode: "narrate_and_gatekeep", purpose: "approval_checkpoint_owner" },
+      explorer: { mode: "read_only", purpose: "codebase_research" },
+      worker: { mode: "edit_within_allowed_paths", purpose: "implementation" },
+      verifier: { mode: "read_only", purpose: "exit_criteria_review" },
       ...parseRoles(block),
     },
   };
@@ -262,6 +306,7 @@ function buildRun(opts: Options) {
   const notesFile = readHeader(contractText, "Notes File");
   const exitCriteria = fencedYamlBlock(contractText, "exit_criteria");
   const delegation = parseDelegation(contractText);
+  const allowedPaths = parseList(fencedYamlBlock(contractText, "allowed_paths"), "allowed_paths");
   const toolLimit = opts.maxToolCalls ?? delegation.budget.tool_calls;
   const slug = contractPath
     .split("/")
@@ -280,6 +325,10 @@ function buildRun(opts: Options) {
     `Contract: ${repoRelative(repo, contractPath)}`,
     `Plan: ${plan || "(none)"}`,
     `Notes: ${notesFile || "(none)"}`,
+    `Role mode: ${delegation.roles.worker?.mode ?? "edit_within_allowed_paths"}`,
+    `Role purpose: ${delegation.roles.worker?.purpose ?? "implementation"}`,
+    `Permission scope: ${delegation.permission_scope.mode}`,
+    `Writable paths: ${(delegation.permission_scope.writable_paths.length ? delegation.permission_scope.writable_paths : allowedPaths).join(", ") || "(none)"}`,
     "",
     "Implement only the contract scope. Do not mark the task done; the verifier owns review.",
     "",
@@ -289,6 +338,8 @@ function buildRun(opts: Options) {
   writePrompt(verifierPrompt, "Contract Verifier Task", [
     `Contract: ${repoRelative(repo, contractPath)}`,
     `Review file: ${reviewFile || "(none)"}`,
+    `Role mode: ${delegation.roles.verifier?.mode ?? "read_only"}`,
+    `Role purpose: ${delegation.roles.verifier?.purpose ?? "exit_criteria_review"}`,
     "",
     "Review only against the contract exit criteria. Do not invent another rubric.",
     "",
@@ -310,6 +361,8 @@ function buildRun(opts: Options) {
     CONTRACT_RUN_DIR: repoRelative(repo, runDir),
     CONTRACT_RUN_WORKER_PROMPT: repoRelative(repo, workerPrompt),
     CONTRACT_RUN_VERIFIER_PROMPT: repoRelative(repo, verifierPrompt),
+    CONTRACT_RUN_ALLOWED_PATHS: allowedPaths.join("\n"),
+    CONTRACT_RUN_VERIFIER_RUBRIC: exitCriteria,
   };
 
   const consume = (role: "worker" | "verifier") => {
@@ -374,6 +427,16 @@ function buildRun(opts: Options) {
       verifier: repoRelative(repo, verifierPrompt),
     },
     delegation,
+    delegation_plan: {
+      parent_owner: delegation.roles.parent,
+      explorer: delegation.roles.explorer,
+      worker: delegation.roles.worker,
+      verifier: delegation.roles.verifier,
+      allowed_paths: allowedPaths,
+      verifier_rubric: "contract exit_criteria",
+      budget_semantics: "null uses session default; explicit numbers are enforced where the runner supports that dimension",
+      permission_semantics: "explorer and verifier are read-only; worker is constrained to allowed_paths or narrower writable_paths",
+    },
     budget_usage: {
       tool_calls: toolCalls,
       tool_call_limit: toolLimit,

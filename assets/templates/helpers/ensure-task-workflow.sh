@@ -287,8 +287,8 @@ PRD_TEMPLATE_EOF
 > **Slug**: {{SLUG}}
 > **Spec**: `docs/spec.md`
 > **Research**: See `docs/researches/`
-> **Sprint Contract**: `tasks/contracts/{{ARTIFACT_STEM}}.contract.md`
-> **Sprint Review**: `tasks/reviews/{{ARTIFACT_STEM}}.review.md`
+> **Task Contract**: `tasks/contracts/{{ARTIFACT_STEM}}.contract.md`
+> **Task Review**: `tasks/reviews/{{ARTIFACT_STEM}}.review.md`
 > **Implementation Notes**: `tasks/notes/{{ARTIFACT_STEM}}.notes.md`
 
 ## Agentic Routing
@@ -366,6 +366,7 @@ PLAN_TEMPLATE_EOF
 
 > **Status**: Pending
 > **Plan**: {{PLAN_FILE}}
+> **Task Profile**: {{TASK_PROFILE}}
 > **Owner**: {{OWNER}}
 > **Capability ID**: {{CAPABILITY_ID}}
 > **Last Updated**: {{TIMESTAMP}}
@@ -419,9 +420,18 @@ delegation:
     writable_paths: []
     network: inherited
   roles:
-    parent: narrate_and_gatekeep
-    worker: implement_contract
-    verifier: review_exit_criteria
+    parent:
+      mode: narrate_and_gatekeep
+      purpose: approval_checkpoint_owner
+    explorer:
+      mode: read_only
+      purpose: codebase_research
+    worker:
+      mode: edit_within_allowed_paths
+      purpose: implementation
+    verifier:
+      mode: read_only
+      purpose: exit_criteria_review
 ```
 
 ## Exit Criteria (Machine Verifiable)
@@ -455,7 +465,7 @@ CONTRACT_TEMPLATE_EOF
 
   if [[ ! -f ".claude/templates/review.template.md" ]]; then
     cat > .claude/templates/review.template.md <<'REVIEW_TEMPLATE_EOF'
-# Sprint Review: {{TASK_SLUG}}
+# Task Review: {{TASK_SLUG}}
 
 > **Status**: Pending
 > **Plan**: {{PLAN_FILE}}
@@ -464,6 +474,18 @@ CONTRACT_TEMPLATE_EOF
 > **Checks File**: {{CHECKS_FILE}}
 > **Last Updated**: {{TIMESTAMP}}
 > **Recommendation**: fail
+
+## Human Review Card
+
+- Verdict: pending
+- Change type: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run
+- Intended files changed:
+- Actual files changed:
+- Commands passed:
+- External acceptance: unavailable
+- Residual risks:
+- Reviewer action required: inspect diff and card
+- Rollback:
 
 ## Verification Evidence
 

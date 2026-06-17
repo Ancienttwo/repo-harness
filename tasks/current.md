@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-06-17T02:02:19+0800 -->
+<!-- updated_at: 2026-06-17T17:30:15+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-06-17T02:02:19+0800
-> **Source Branch**: main
-> **Source Commit**: f77414a
+> **Updated At**: 2026-06-17T17:30:15+0800
+> **Source Branch**: codex/harness-engineering-optimization
+> **Source Commit**: 98e468d
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: 0.6.1 sprint transaction rollback and release evidence
+> **Reason**: merge-origin-main
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -41,7 +41,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/contract-assets/cleanup-script-policy.md`: status=completed, current_slice=todo-01, source_plan=(none)
 ## Handoff
 
-- Exact Next Step: Clean up merged contract worktree codex/think-plan-000127. Command: bash scripts/contract-worktree.sh cleanup --slug think-plan-000127 --target main
+- Exact Next Step: Review/checks pass; finish and fast-forward merge this contract worktree. Command: bash scripts/contract-worktree.sh finish
 
 ## Checks
 
@@ -49,22 +49,49 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 13 changed/untracked path(s)
+- Summary: 60 changed/untracked path(s)
 
 ```
- M README.md
- M README.zh-CN.md
- M deploy/release-checklists/260616-repo-harness-0.6.0.md
- M docs/CHANGELOG.md
- M docs/architecture/transactional-adoption-planner.md
- M package.json
- M scripts/check-ci.sh
- M src/cli/index.ts
- M src/effects/fs-transaction.ts
- M tests/bootstrap-files.test.ts
- M tests/cli/adoption-plan.test.ts
-?? scripts/check-release-published.sh
-?? scripts/check-tarball-install-smoke.sh
+A  .agents/skills/repo-harness-chatgpt-bridge/SKILL.md
+A  .agents/skills/repo-harness-chatgpt-bridge/references/chatgpt-connector-manual.md
+A  .agents/skills/repo-harness-chatgpt-bridge/references/workflow.md
+A  .ai/harness/handoff/codex-goal.md
+A  .ai/harness/handoff/mcp-connector-sprint-closeout.md
+A  .ai/harness/handoff/mcp-discovery.md
+A  .ai/harness/handoff/mcp-e2e-result.md
+M  .ai/hooks/lib/workflow-state.sh
+M  .gitignore
+M  README.md
+M  README.zh-CN.md
+M  assets/hooks/lib/workflow-state.sh
+M  assets/templates/helpers/sprint-backlog.sh
+M  bun.lock
+M  bunfig.toml
+M  deploy/release-checklists/260616-repo-harness-0.6.0.md
+M  docs/CHANGELOG.md
+M  docs/architecture/transactional-adoption-planner.md
+A  docs/repo-harness-chatgpt-mcp-setup.md
+A  docs/researches/20260617-repo-harness-mcp.md
+M  package.json
+A  plans/prds/20260617-repo-harness-mcp-prd.md
+A  plans/sprints/20260617-repo-harness-mcp-sprint.md
+M  scripts/check-ci.sh
+A  scripts/check-release-published.sh
+A  scripts/check-tarball-install-smoke.sh
+M  scripts/sprint-backlog.sh
+A  src/cli/commands/mcp.ts
+M  src/cli/index.ts
+A  src/cli/mcp/audit.ts
+A  src/cli/mcp/auth.ts
+A  src/cli/mcp/instructions.ts
+A  src/cli/mcp/oauth.ts
+A  src/cli/mcp/paths.ts
+A  src/cli/mcp/policy.ts
+A  src/cli/mcp/redaction.ts
+A  src/cli/mcp/repo.ts
+A  src/cli/mcp/server.ts
+A  src/cli/mcp/setup.ts
+A  src/cli/mcp/tools.ts
 ```
 
 ## Source Artifacts

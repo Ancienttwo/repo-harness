@@ -87,6 +87,49 @@ read_contract_review_file() {
   printf '%s' "$value" | tr -d '\r' | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//'
 }
 
+read_contract_task_profile() {
+  local file="$1"
+  awk '/^\> \*\*Task Profile\*\*:/ {sub(/^.*\> \*\*Task Profile\*\*:[[:space:]]*/, ""); gsub(/\r/, ""); print; exit}' "$file" | xargs
+}
+
+contract_allowed_paths() {
+  local file="$1"
+  awk '
+    BEGIN { in_block = 0; block = ""; found = 0 }
+    /^```yaml[[:space:]]*$/ {
+      in_block = 1
+      block = ""
+      next
+    }
+    /^```[[:space:]]*$/ && in_block == 1 {
+      if (!found && block ~ /(^|[[:space:]])allowed_paths:/) {
+        printf "%s", block
+        found = 1
+      }
+      in_block = 0
+      block = ""
+      next
+    }
+    in_block == 1 {
+      block = block $0 ORS
+    }
+  ' "$file" | awk '
+    function trim(s) {
+      gsub(/^[[:space:]]+/, "", s)
+      gsub(/[[:space:]]+$/, "", s)
+      return s
+    }
+    /^[[:space:]]*allowed_paths:[[:space:]]*$/ { in_paths = 1; next }
+    in_paths && /^[^[:space:]]/ { exit }
+    in_paths && /^[[:space:]]*-[[:space:]]*/ {
+      line = $0
+      sub(/^[[:space:]]*-[[:space:]]*/, "", line)
+      gsub(/^["'\''`]+|["'\''`]+$/, "", line)
+      print trim(line)
+    }
+  '
+}
+
 review_recommends_pass() {
   local review_file="$1"
   [[ -n "$review_file" && -f "$review_file" ]] || return 1
@@ -350,6 +393,11 @@ section=""
 pending_path=""
 pending_dimension=""
 review_file="$(read_contract_review_file "$contract_file" || true)"
+task_profile="$(read_contract_task_profile "$contract_file" || true)"
+declare -a allowed_paths=()
+while IFS= read -r allowed_path; do
+  [[ -n "$allowed_path" ]] && allowed_paths+=("$allowed_path")
+done < <(contract_allowed_paths "$contract_file")
 
 while IFS= read -r raw_line; do
   line="$(printf '%s' "$raw_line" | sed -E 's/[[:space:]]+$//')"
@@ -474,6 +522,34 @@ RESULT_KINDS=()
 RESULT_TARGETS=()
 RESULT_PASSED=()
 RESULT_MESSAGES=()
+
+case "$task_profile" in
+  "")
+    pass "task_profile" "(legacy)" "task_profile missing: legacy contract accepted"
+    ;;
+  code-change|docs-only|ledger-closeout|migration|eval-only|delegated-run)
+    pass "task_profile" "$task_profile" "task_profile: $task_profile"
+    ;;
+  *)
+    fail "task_profile" "$task_profile" "unsupported task_profile: $task_profile"
+    ;;
+esac
+
+if [[ -n "$task_profile" ]]; then
+  for path in "${allowed_paths[@]+"${allowed_paths[@]}"}"; do
+    case "$task_profile:$path" in
+      ledger-closeout:src/*|ledger-closeout:src/|ledger-closeout:tests/*|ledger-closeout:tests/|ledger-closeout:.ai/hooks/*|ledger-closeout:.ai/hooks/|ledger-closeout:assets/hooks/*|ledger-closeout:assets/hooks/)
+        fail "allowed_paths" "$path" "ledger-closeout profile cannot allow runtime code or hook paths by default: $path"
+        ;;
+      docs-only:src/*|docs-only:src/|docs-only:tests/*|docs-only:tests/)
+        fail "allowed_paths" "$path" "docs-only profile cannot allow src/ or tests/ by default: $path"
+        ;;
+      eval-only:src/*|eval-only:src/)
+        fail "allowed_paths" "$path" "eval-only profile cannot allow runtime src/ by default: $path"
+        ;;
+    esac
+  done
+fi
 
 if ((${#files_exist[@]})); then
   for path in "${files_exist[@]}"; do

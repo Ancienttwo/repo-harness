@@ -120,6 +120,22 @@ function externalAcceptanceAdvice(reviewer = "Codex", source = "codex-review"): 
   ].join("\n");
 }
 
+function humanReviewCard(verdict = "pass", externalAcceptance = "pass"): string {
+  return [
+    "## Human Review Card",
+    "",
+    `- Verdict: ${verdict}`,
+    "- Change type: code-change",
+    "- Intended files changed: fixture",
+    "- Actual files changed: fixture",
+    "- Commands passed: fixture",
+    `- External acceptance: ${externalAcceptance}`,
+    "- Residual risks: (none)",
+    "- Reviewer action required: approve fixture closeout",
+    "- Rollback: revert fixture branch",
+  ].join("\n");
+}
+
 function run(cmd: string, args: string[], cwd: string) {
   return spawnSync(cmd, args, {
     cwd,
@@ -3394,7 +3410,7 @@ describe("Hook runtime behavior", () => {
       writeFileSync(join(cwd, "tasks/contracts/demo.contract.md"), "# contract\n");
       writeFileSync(
         join(cwd, "tasks/reviews/demo.review.md"),
-        ["# Sprint Review: demo", "", "> **Recommendation**: pass", "", externalAcceptanceAdvice(), ""].join("\n")
+        ["# Task Review: demo", "", "> **Recommendation**: pass", "", humanReviewCard(), "", externalAcceptanceAdvice(), ""].join("\n")
       );
       writeValidSprintChecks(cwd);
       writeFileSync(
@@ -3444,7 +3460,10 @@ describe("Hook runtime behavior", () => {
         "# Task Execution Checklist (Primary)\n\n> **Source Plan**: plans/plan-20260304-1410-demo.md\n"
       );
       writeFileSync(join(cwd, "tasks/contracts/demo.contract.md"), "# contract\n");
-      writeFileSync(join(cwd, "tasks/reviews/demo.review.md"), "# Sprint Review: demo\n\n> **Recommendation**: pass\n");
+      writeFileSync(
+        join(cwd, "tasks/reviews/demo.review.md"),
+        ["# Task Review: demo", "", "> **Recommendation**: pass", "", humanReviewCard("pass", "unavailable"), ""].join("\n")
+      );
       writeValidSprintChecks(cwd);
       writeFileSync(join(cwd, "scripts/verify-contract.sh"), "#!/bin/bash\nset -euo pipefail\necho \"[verify] ok\"\n");
       expect(run("chmod", ["+x", "scripts/verify-contract.sh"], cwd).status).toBe(0);
@@ -3555,7 +3574,7 @@ describe("Hook runtime behavior", () => {
         writeFileSync(join(cwd, "tasks/contracts/demo.contract.md"), "# contract\n");
         writeFileSync(
           join(cwd, "tasks/reviews/demo.review.md"),
-          ["# Sprint Review: demo", "", "> **Recommendation**: pass", "", externalAcceptanceAdvice(), ""].join("\n")
+          ["# Task Review: demo", "", "> **Recommendation**: pass", "", humanReviewCard(), "", externalAcceptanceAdvice(), ""].join("\n")
         );
         writeFileSync(join(cwd, ".ai/harness/checks/latest.json"), checks);
         writeFileSync(
