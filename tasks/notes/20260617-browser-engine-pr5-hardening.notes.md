@@ -11,6 +11,7 @@ PR #5 adds the experimental ChatGPT browser engine, including CLI session storag
 - `writeOutput` is validated before provider execution. CLI output paths are repo-relative by default, absolute output requires `--allow-absolute-output`, and overwrites require `--overwrite-output`. MCP browser tools use a narrower workflow-artifact write policy and never accept absolute paths.
 - Follow-up sessions keep `sourceSessionId` as the repo-harness local session id, but Oracle receives only `providerSessionId` from the stored upstream provider metadata.
 - Native provider remains experimental. It fails closed for `--model` and `--thinking`, waits for stable assistant text before returning `completed`, and no longer scans `ps` output to kill Chrome by profile path.
+- PR #5 now has a minimal GitHub Actions CI gate that delegates to `bun run check:ci`, so the hosted check uses the same install/typecheck/test/workflow/migration/package-smoke path as local release-style validation.
 
 ## Verification Focus
 
