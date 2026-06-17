@@ -45,6 +45,10 @@ All notable changes to this skill are documented here.
 
 ### Fixed
 
+- Made generated ChatGPT Connector `/goal` prompts and `repo-harness-goal`
+  reporting guidance language-neutral, so installed skills and MCP goal handoff
+  output follow the user's language or repo-local instructions instead of
+  hard-coding Chinese prompt lines.
 - Made non-standard `repo-harness adopt --mode minimal|self-host` fail closed
   unless it routes to ordinary TypeScript `--dry-run` or
   `--experimental-ts-apply`,

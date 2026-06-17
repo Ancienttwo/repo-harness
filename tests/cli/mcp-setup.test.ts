@@ -110,7 +110,12 @@ describe('mcp setup', () => {
       expect(protectedResult.changed).toHaveLength(0);
       expect(readFileSync(skill, 'utf-8')).toBe('custom\n');
       runMcpInstallSkill({ repo: repoRoot, overwrite: true });
-      expect(readFileSync(skill, 'utf-8')).toContain('repo-harness-chatgpt-bridge');
+      const installed = readFileSync(skill, 'utf-8');
+      expect(installed).toContain('repo-harness-chatgpt-bridge');
+      expect(installed).toContain("Use the user's language for status reports unless repo-local instructions require otherwise.");
+      expect(installed).not.toContain('阅读：');
+      expect(installed).not.toContain('开worktree完整执行');
+      expect(installed).not.toContain('完成阶段性任务，要staging再继续');
     });
   });
 });

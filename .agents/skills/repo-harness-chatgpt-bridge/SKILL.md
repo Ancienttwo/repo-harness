@@ -55,10 +55,11 @@ The generated `/goal` prompt should preserve this shape when absolute paths are 
 
 ```text
 /goal
-阅读： <prd-path>
-开worktree完整执行：<sprint-path>
-完成阶段性任务，要staging再继续
-参考repo: <optional-reference-repo>
+Read: <prd-path>
+Open or use a worktree and complete: <sprint-path>
+After each completed phase, stage the result before continuing.
+Use the user's language for status reports unless repo-local instructions require otherwise.
+Reference repo: <optional-reference-repo>
 ```
 
 ## Safety Boundaries

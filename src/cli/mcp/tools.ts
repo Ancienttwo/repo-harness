@@ -398,10 +398,11 @@ function renderCodexGoalFromSprint(args: Record<string, unknown>): { body: strin
   const extraInstructions = String(args.extra_instructions ?? '').trim();
   const prompt = [
     '/goal',
-    `阅读： ${goalPrdPath}`,
-    `开worktree完整执行：${goalSprintPath}`,
-    '完成阶段性任务，要staging再继续',
-    referenceRepo ? `参考repo: ${referenceRepo}` : '',
+    `Read: ${goalPrdPath}`,
+    `Open or use a worktree and complete: ${goalSprintPath}`,
+    'After each completed phase, stage the result before continuing.',
+    'Use the user\'s language for status reports unless repo-local instructions require otherwise.',
+    referenceRepo ? `Reference repo: ${referenceRepo}` : '',
   ].filter(Boolean).join('\n');
   const body = [
     '# Codex Goal',

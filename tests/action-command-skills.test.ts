@@ -256,5 +256,7 @@ describe("repo-harness action command skills", () => {
     expect(goal).toContain("If no detailed PRD/Sprint artifact is attached or named");
     expect(goal).toContain("Does not create, approve, or execute a Goal session without detailed PRD/Sprint context");
     expect(goal).toContain("Preserve host-native `/goal` ownership");
+    expect(goal).toContain("use the user's language unless repo-local instructions require otherwise");
+    expect(goal).not.toContain("concise Chinese status");
   });
 });

@@ -29,6 +29,8 @@ session cleanup remains dry-run unless `--force` is passed.
 - `assets/skill-version.json`
 - README current release/stamp references, including localized READMEs
 - `docs/CHANGELOG.md`
+- ChatGPT Connector goal handoff and `repo-harness-goal` reporting language
+  policy
 - version expectation tests
 - release checklist and task notes
 
@@ -55,6 +57,10 @@ session cleanup remains dry-run unless `--force` is passed.
 - Focused release/browser checks passed:
   `bun test tests/bootstrap-files.test.ts tests/skill-version.test.ts tests/readme-dx.test.ts tests/cli/chatgpt-browser.test.ts tests/cli/mcp-tools.test.ts`
   returned `56 pass`, `0 fail`.
+- Focused MCP/Skill language checks passed:
+  `bun test tests/cli/mcp.test.ts tests/cli/mcp-tools.test.ts tests/cli/mcp-setup.test.ts tests/action-command-skills.test.ts`
+  returned `33 pass`, `0 fail`, and the old Chinese `/goal` tokens are absent
+  from non-test release surfaces.
 - Full release gate passed:
   `BUN_TEST_TIMEOUT_MS=180000 BUN_TEST_MAX_CONCURRENCY=1 bun run check:release`
   returned `840 pass`, `0 fail`, then completed deploy SQL order,
@@ -63,12 +69,12 @@ session cleanup remains dry-run unless `--force` is passed.
   `[release] OK: npm package gate passed`.
 - `npm pack --dry-run --json` returned:
   - filename: `repo-harness-0.7.0.tgz`
-  - package size: `4774929`
-  - unpacked size: `6898693`
+  - package size: `4774793`
+  - unpacked size: `6898999`
   - total files: `325`
-  - shasum: `5a3c69ac2cecab8265a7392e5e4f5ea31879b90d`
+  - shasum: `bbc8f22e4f9e4e7d3b3e39de91f530092fa1d872`
   - integrity:
-    `sha512-Ya0Y/KCxUdtYfzWW9Bsgslb4bthZnAeejXS0Lq5VuB3pIPR8zu8DB+KaaIEbfM+LD4/+flJuwqjTJqDko7OQTQ==`
+    `sha512-Gc6AiRtGgHfgYK2zdOA3MoMNzAKPBXVXcii6wyc+FImV/aO0ooUIk5E79rjOiBUA4wvUz8AZ/BVgWBxhJfbaLg==`
 - The package dry-run includes
   `.agents/skills/repo-harness-chatgpt-browser/SKILL.md`,
   `docs/repo-harness-chatgpt-browser-engine.md`, and
