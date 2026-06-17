@@ -19,6 +19,7 @@ import { buildBrainCommand } from './commands/brain';
 import { buildCapabilityContextCommand } from './commands/capability-context';
 import { buildDocsCommand } from './commands/docs';
 import { buildMcpCommand } from './commands/mcp';
+import { buildChatgptCommand } from './commands/chatgpt';
 import { buildRunCommand } from './commands/run';
 import { formatSecurityScan, runSecurityScan } from './commands/security';
 import { runGlobalRuntimeSetup } from './commands/global-runtime';
@@ -49,6 +50,7 @@ export const SUBCOMMANDS = [
   'capability-context',
   'docs',
   'mcp',
+  'chatgpt',
 ] as const;
 export type Subcommand = (typeof SUBCOMMANDS)[number];
 
@@ -516,6 +518,7 @@ export function buildProgram(): Command {
   program.addCommand(buildCapabilityContextCommand());
   program.addCommand(buildDocsCommand());
   program.addCommand(buildMcpCommand());
+  program.addCommand(buildChatgptCommand());
   program.addCommand(buildRunCommand());
   program
     .command('prompt-guard-decide', { hidden: true })

@@ -19,6 +19,7 @@ export interface McpServeOptions {
   port: string;
   profile: string;
   auth?: string;
+  enableChatgptBrowser?: boolean;
 }
 
 interface McpSetupChatgptOptions {
@@ -109,10 +110,15 @@ export function buildMcpCommand(): Command {
     .option('--port <port>', 'HTTP bind port', '8765')
     .option('--profile <profile>', 'MCP profile: planner|executor|orchestrator', 'planner')
     .option('--auth <mode>', 'HTTP auth mode: oauth|bearer', 'oauth')
+    .option('--enable-chatgpt-browser', 'Expose tools that operate the user logged-in ChatGPT Web browser session')
     .action(async (rawOpts: McpServeOptions) => {
       await runMcpAction(async () => {
         if (rawOpts.transport === 'stdio') {
-          await startMcpStdio({ repo: rawOpts.repo, profile: rawOpts.profile });
+          await startMcpStdio({
+            repo: rawOpts.repo,
+            profile: rawOpts.profile,
+            enableChatgptBrowser: rawOpts.enableChatgptBrowser === true,
+          });
           return;
         }
         if (rawOpts.transport === 'http') {
@@ -122,6 +128,7 @@ export function buildMcpCommand(): Command {
             host: rawOpts.host,
             port: parsePort(rawOpts.port),
             auth: rawOpts.auth,
+            enableChatgptBrowser: rawOpts.enableChatgptBrowser === true,
           });
           return;
         }

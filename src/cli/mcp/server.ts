@@ -8,6 +8,7 @@ import { buildMcpToolDefinitions, callMcpTool, type McpToolContext } from './too
 export interface McpServerOptions {
   repo?: string;
   profile?: string;
+  enableChatgptBrowser?: boolean;
 }
 
 export function createMcpToolContext(opts: McpServerOptions): McpToolContext {
@@ -15,6 +16,7 @@ export function createMcpToolContext(opts: McpServerOptions): McpToolContext {
   return {
     repoRoot: resolveMcpRepoRoot(opts.repo ?? '.'),
     policy: getMcpPolicy(profile),
+    enableChatgptBrowser: opts.enableChatgptBrowser === true,
   };
 }
 
@@ -29,7 +31,7 @@ export function createRepoHarnessMcpServer(opts: McpServerOptions): Server {
   );
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: buildMcpToolDefinitions(ctx.policy),
+    tools: buildMcpToolDefinitions(ctx.policy, { enableChatgptBrowser: ctx.enableChatgptBrowser === true }),
   }));
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {

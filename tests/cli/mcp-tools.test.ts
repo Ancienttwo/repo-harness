@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { getMcpPolicy } from '../../src/cli/mcp/policy';
-import { callMcpTool, type McpToolContext } from '../../src/cli/mcp/tools';
+import { buildMcpToolDefinitions, callMcpTool, type McpToolContext } from '../../src/cli/mcp/tools';
 
 async function withRepo<T>(fn: (repoRoot: string, ctx: McpToolContext) => Promise<T>): Promise<T> {
   const repoRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-tools-'));
@@ -16,6 +16,7 @@ async function withRepo<T>(fn: (repoRoot: string, ctx: McpToolContext) => Promis
     writeFileSync(join(repoRoot, '.ai/harness/policy.json'), '{}\n');
     writeFileSync(join(repoRoot, 'tasks/current.md'), 'status=Active\n');
     writeFileSync(join(repoRoot, 'plans/prds/existing.prd.md'), '# Existing\n');
+    writeFileSync(join(repoRoot, 'plans/sprints/example.sprint.md'), '# Sprint\n');
     return await fn(repoRoot, { repoRoot, policy: getMcpPolicy('planner') });
   } finally {
     rmSync(repoRoot, { recursive: true, force: true });
@@ -28,6 +29,47 @@ async function jsonTool(ctx: McpToolContext, name: string, args: Record<string, 
 }
 
 describe('mcp tools', () => {
+  test('exposes ChatGPT browser tools only behind the explicit enable flag', async () => {
+    await withRepo(async (_repoRoot, ctx) => {
+      expect(buildMcpToolDefinitions(ctx.policy).some((tool) => tool.name === 'run_chatgpt_browser_consult')).toBe(false);
+      expect(buildMcpToolDefinitions(ctx.policy, { enableChatgptBrowser: true }).some((tool) => tool.name === 'run_chatgpt_browser_consult')).toBe(true);
+      expect(buildMcpToolDefinitions(ctx.policy, { enableChatgptBrowser: true }).some((tool) => tool.name === 'open_chatgpt_browser_session')).toBe(true);
+      const disabled = await jsonTool(ctx, 'run_chatgpt_browser_consult', { prompt: 'Say OK', dryRun: true });
+      expect(disabled.error.code).toBe('TOOL_DISABLED');
+    });
+  });
+
+  test('runs ChatGPT browser dry-run consults through MCP and reads the saved session', async () => {
+    await withRepo(async (repoRoot, ctx) => {
+      const browserCtx = { ...ctx, enableChatgptBrowser: true };
+      const created = await jsonTool(browserCtx, 'run_chatgpt_browser_consult', {
+        prompt: 'Review this sprint.',
+        files: ['plans/sprints/example.sprint.md'],
+        model: 'GPT-5.5 Pro',
+        thinking: 'heavy',
+        dryRun: true,
+      });
+      expect(created.status).toBe('dry_run');
+      expect(created.sessionId).toMatch(/^chgpt_/);
+
+      const read = await jsonTool(browserCtx, 'read_chatgpt_browser_session', { sessionId: created.sessionId });
+      expect(read.meta.engine).toBe('chatgpt-browser');
+      expect(read.output).toContain('Dry run only');
+
+      const listed = await jsonTool(browserCtx, 'list_chatgpt_browser_sessions', { limit: 1 });
+      expect(listed.sessions[0].sessionId).toBe(created.sessionId);
+
+      const metaPath = join(repoRoot, '.ai/harness/chatgpt/sessions', created.sessionId, 'meta.json');
+      const meta = JSON.parse(readFileSync(metaPath, 'utf-8'));
+      meta.browser.conversationUrl = 'https://chatgpt.com/c/mcp-open-test';
+      writeFileSync(metaPath, JSON.stringify(meta, null, 2) + '\n');
+      const openedRaw = await callMcpTool(browserCtx, 'open_chatgpt_browser_session', { sessionId: created.sessionId });
+      const opened = JSON.parse(openedRaw.content[0].text);
+      expect(opened.url).toBe('https://chatgpt.com/c/mcp-open-test');
+      expect(openedRaw.structuredContent).toEqual(opened);
+    });
+  });
+
   test('lists and reads allowed workflow files with redaction', async () => {
     await withRepo(async (_repoRoot, ctx) => {
       const listed = await jsonTool(ctx, 'list_workflow_files');

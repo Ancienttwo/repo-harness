@@ -2,6 +2,8 @@ import { createHash } from 'crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync, appendFileSync } from 'fs';
 import { basename, dirname, join } from 'path';
 import { runHelper } from '../runtime/helper-runner';
+import { listSessions, openSession, readSession, runBrowserConsult, runBrowserFollowup } from '../chatgpt-browser/engine';
+import type { BrowserProviderName, NativeBrowserChannel, ThinkingLevel } from '../chatgpt-browser/types';
 import { hashMcpInput, tryWriteMcpAuditEntry } from './audit';
 import { resolveMcpPath } from './paths';
 import { currentGitBranch, isRepoHarnessAdopted } from './repo';
@@ -11,6 +13,7 @@ import type { McpPolicy } from './types';
 export interface McpToolContext {
   repoRoot: string;
   policy: McpPolicy;
+  enableChatgptBrowser?: boolean;
 }
 
 export interface McpToolDefinition {
@@ -22,6 +25,7 @@ export interface McpToolDefinition {
 
 interface CallToolResult {
   content: Array<{ type: 'text'; text: string }>;
+  structuredContent?: unknown;
   isError?: boolean;
 }
 
@@ -30,6 +34,7 @@ const EMPTY_SCHEMA = { type: 'object', additionalProperties: false };
 function textResult(value: unknown): CallToolResult {
   return {
     content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) }],
+    structuredContent: typeof value === 'string' ? undefined : value,
   };
 }
 
@@ -375,7 +380,25 @@ function renderCodexGoalFromSprint(args: Record<string, unknown>): { body: strin
   return { body, prompt };
 }
 
-export function buildMcpToolDefinitions(policy: McpPolicy): McpToolDefinition[] {
+function parseThinking(value: unknown): ThinkingLevel | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (value === 'light' || value === 'standard' || value === 'extended' || value === 'heavy') return value;
+  throw new Error(`invalid thinking level: ${String(value)}`);
+}
+
+function parseBrowserProvider(value: unknown): BrowserProviderName | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (value === 'oracle' || value === 'native') return value;
+  throw new Error(`invalid browser provider: ${String(value)}`);
+}
+
+function parseNativeBrowserChannel(value: unknown): NativeBrowserChannel | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (value === 'chrome' || value === 'chrome-beta' || value === 'chrome-dev' || value === 'chrome-canary') return value;
+  throw new Error(`invalid browser channel: ${String(value)}`);
+}
+
+export function buildMcpToolDefinitions(policy: McpPolicy, opts: { enableChatgptBrowser?: boolean } = {}): McpToolDefinition[] {
   const readOnly = { readOnlyHint: true, openWorldHint: false };
   const write = { readOnlyHint: false, openWorldHint: false, destructiveHint: false };
   const stringPathSchema = {
@@ -452,6 +475,30 @@ export function buildMcpToolDefinitions(policy: McpPolicy): McpToolDefinition[] 
     required: ['prd_path', 'sprint_path'],
     additionalProperties: false,
   };
+  const browserRunSchema = {
+    type: 'object',
+    properties: {
+      prompt: { type: 'string' },
+      title: { type: 'string' },
+      files: { type: 'array', items: { type: 'string' } },
+      model: { type: 'string' },
+      thinking: { type: 'string', enum: ['light', 'standard', 'extended', 'heavy'] },
+      provider: { type: 'string', enum: ['oracle', 'native'] },
+      browserChannel: { type: 'string', enum: ['chrome', 'chrome-beta', 'chrome-dev', 'chrome-canary'] },
+      followups: { type: 'array', items: { type: 'string' } },
+      writeOutput: { type: 'string' },
+      timeoutMs: { type: 'number' },
+      dryRun: { type: 'boolean' },
+    },
+    required: ['prompt'],
+    additionalProperties: false,
+  };
+  const browserSessionSchema = {
+    type: 'object',
+    properties: { sessionId: { type: 'string' } },
+    required: ['sessionId'],
+    additionalProperties: false,
+  };
 
   const tools: McpToolDefinition[] = [
     { name: 'harness_status', description: 'Return repo-harness adoption and workflow status.', inputSchema: EMPTY_SCHEMA, annotations: readOnly },
@@ -495,6 +542,53 @@ export function buildMcpToolDefinitions(policy: McpPolicy): McpToolDefinition[] 
 
   if (policy.execution.fixedWorkflowCheck) {
     tools.push({ name: 'run_workflow_check', description: 'Run the fixed repo-harness strict workflow check.', inputSchema: EMPTY_SCHEMA, annotations: write });
+  }
+  if (opts.enableChatgptBrowser === true) {
+    tools.push(
+      {
+        name: 'run_chatgpt_browser_consult',
+        description: 'Run a local ChatGPT Web browser consult through repo-harness. This may create a real ChatGPT Web conversation unless dryRun is true.',
+        inputSchema: browserRunSchema,
+        annotations: { readOnlyHint: false, openWorldHint: true, destructiveHint: false },
+      },
+      {
+        name: 'read_chatgpt_browser_session',
+        description: 'Read a saved repo-harness ChatGPT browser consult session.',
+        inputSchema: browserSessionSchema,
+        annotations: readOnly,
+      },
+      {
+        name: 'list_chatgpt_browser_sessions',
+        description: 'List saved repo-harness ChatGPT browser consult sessions.',
+        inputSchema: {
+          type: 'object',
+          properties: { limit: { type: 'number' } },
+          additionalProperties: false,
+        },
+        annotations: readOnly,
+      },
+      {
+        name: 'open_chatgpt_browser_session',
+        description: 'Return the ChatGPT conversation URL for a saved browser session. The MCP tool does not launch the local browser.',
+        inputSchema: browserSessionSchema,
+        annotations: readOnly,
+      },
+      {
+        name: 'continue_chatgpt_browser_session',
+        description: 'Create a follow-up ChatGPT browser consult record linked to an existing session.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            sessionId: { type: 'string' },
+            prompt: { type: 'string' },
+            dryRun: { type: 'boolean' },
+          },
+          required: ['sessionId', 'prompt'],
+          additionalProperties: false,
+        },
+        annotations: { readOnlyHint: false, openWorldHint: true, destructiveHint: false },
+      },
+    );
   }
   return tools;
 }
@@ -709,6 +803,86 @@ export async function callMcpTool(ctx: McpToolContext, name: string, args: Recor
           stdout: stdout.text,
           stderr: stderr.text,
           helper: result.resolved ? { source: result.resolved.source, fileName: basename(result.resolved.path) } : null,
+        });
+      }
+      case 'run_chatgpt_browser_consult': {
+        if (ctx.enableChatgptBrowser !== true) return errorResult('TOOL_DISABLED', 'ChatGPT browser tools require repo-harness mcp serve --enable-chatgpt-browser');
+        const result = await runBrowserConsult({
+          repoRoot: ctx.repoRoot,
+          title: typeof args.title === 'string' ? args.title : undefined,
+          prompt: String(args.prompt ?? ''),
+          files: stringList(args.files).map((path) => ({ path })),
+          followups: stringList(args.followups),
+          model: typeof args.model === 'string' ? args.model : undefined,
+          thinking: parseThinking(args.thinking),
+          provider: parseBrowserProvider(args.provider),
+          browserChannel: parseNativeBrowserChannel(args.browserChannel),
+          writeOutput: typeof args.writeOutput === 'string' ? args.writeOutput : undefined,
+          timeoutMs: typeof args.timeoutMs === 'number' ? args.timeoutMs : undefined,
+          dryRun: args.dryRun === true,
+        });
+        audit(ctx, name, result.error ? 'failed' : 'ok', args, result.meta.output.outputPath, result.error?.message);
+        return textResult({
+          sessionId: result.sessionId,
+          status: result.status,
+          output: result.output,
+          conversationUrl: result.conversationUrl,
+          paths: {
+            sessionDir: result.paths.sessionDir,
+            output: result.paths.output,
+            transcript: result.paths.transcript,
+          },
+          dryRun: result.dryRun,
+          error: result.error,
+        });
+      }
+      case 'read_chatgpt_browser_session': {
+        if (ctx.enableChatgptBrowser !== true) return errorResult('TOOL_DISABLED', 'ChatGPT browser tools require repo-harness mcp serve --enable-chatgpt-browser');
+        const sessionId = String(args.sessionId ?? '').trim();
+        const session = readSession(ctx.repoRoot, sessionId);
+        audit(ctx, name, 'ok', args);
+        return textResult({
+          meta: session.meta,
+          output: session.output,
+          transcript: session.transcript,
+        });
+      }
+      case 'list_chatgpt_browser_sessions': {
+        if (ctx.enableChatgptBrowser !== true) return errorResult('TOOL_DISABLED', 'ChatGPT browser tools require repo-harness mcp serve --enable-chatgpt-browser');
+        const limit = typeof args.limit === 'number' && Number.isInteger(args.limit) && args.limit > 0 ? args.limit : 20;
+        const sessions = listSessions(ctx.repoRoot, limit);
+        audit(ctx, name, 'ok', args);
+        return textResult({ sessions });
+      }
+      case 'open_chatgpt_browser_session': {
+        if (ctx.enableChatgptBrowser !== true) return errorResult('TOOL_DISABLED', 'ChatGPT browser tools require repo-harness mcp serve --enable-chatgpt-browser');
+        const sessionId = String(args.sessionId ?? '').trim();
+        const result = openSession(ctx.repoRoot, sessionId, false);
+        audit(ctx, name, 'ok', args);
+        return textResult({ sessionId, url: result.url, launched: false });
+      }
+      case 'continue_chatgpt_browser_session': {
+        if (ctx.enableChatgptBrowser !== true) return errorResult('TOOL_DISABLED', 'ChatGPT browser tools require repo-harness mcp serve --enable-chatgpt-browser');
+        const sessionId = String(args.sessionId ?? '').trim();
+        const prompt = String(args.prompt ?? '').trim();
+        const result = await runBrowserFollowup({
+          repoRoot: ctx.repoRoot,
+          sessionId,
+          title: `followup ${sessionId}`,
+          prompt,
+          dryRun: args.dryRun === true,
+        });
+        audit(ctx, name, result.error ? 'failed' : 'ok', args, result.meta.output.outputPath, result.error?.message);
+        return textResult({
+          sourceSessionId: sessionId,
+          sessionId: result.sessionId,
+          status: result.status,
+          output: result.output,
+          paths: {
+            output: result.paths.output,
+            transcript: result.paths.transcript,
+          },
+          error: result.error,
         });
       }
       default:
