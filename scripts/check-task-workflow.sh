@@ -379,7 +379,21 @@ derive_contract_path() {
 
 file_mtime() {
   local file="$1"
-  stat -f '%m' "$file" 2>/dev/null || stat -c '%Y' "$file" 2>/dev/null || printf '0'
+  local mtime
+
+  mtime="$(stat -c '%Y' "$file" 2>/dev/null || true)"
+  if [[ "$mtime" =~ ^[0-9]+$ ]]; then
+    printf '%s' "$mtime"
+    return 0
+  fi
+
+  mtime="$(stat -f '%m' "$file" 2>/dev/null || true)"
+  if [[ "$mtime" =~ ^[0-9]+$ ]]; then
+    printf '%s' "$mtime"
+    return 0
+  fi
+
+  printf '0'
 }
 
 handoff_declares_no_active_plan() {

@@ -19,6 +19,8 @@ PR #5 adds the experimental ChatGPT browser engine, including CLI session storag
 - Contract verification now runs `commands_succeed` in a non-login Bash with `BASH_ENV` unset. Hosted runners can carry shell profile state that should not influence machine-verifiable contract criteria.
 - `tests/contract-run.test.ts` now prints verifier stdout, stderr, structured report, review, and artifact content only on failure so hosted CI can expose the exact failed contract criterion instead of a bare status mismatch.
 - `verify-contract.sh` parses the `Review File` header with literal blockquote matching (`^>`) and shell string slicing instead of awk `match(...)`. Hosted CI exposed that the old parser could drop a backtick-wrapped review path and then falsely fail `qa_scores` and manual pass checks.
+- After merging the latest `origin/main`, the helper workflow fixture now seeds the required reference-config and deploy surface before testing stale resume detection, then uses fixed `touch -t` mtimes instead of `sleep 1`. This keeps that unit focused on resume freshness instead of failing early on main's broader workflow-shape gate or drifting across macOS/Linux timestamp behavior.
+- `check-task-workflow.sh` now treats `stat` output as valid only when it is numeric and tries GNU `stat -c` before BSD `stat -f`. Linux hosted runs exposed that GNU `stat -f '%m'` exits 0 with filesystem metadata, which skipped resume freshness failures.
 
 ## Verification Focus
 
