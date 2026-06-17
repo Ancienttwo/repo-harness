@@ -43,6 +43,30 @@ handoff、检查结果和 review evidence 写回项目文件，让下一个 agen
 | `tasks/contracts/`、`tasks/reviews/`、`.ai/harness/checks/` | 证明完成所需的 scope、verification 和 review evidence。 |
 | `.ai/harness/handoff/` 和 `tasks/current.md` | session journal 与可恢复状态，从 workflow artifacts 派生，而不是依赖聊天记忆。 |
 
+## Human Review Path
+
+先读 `tasks/reviews/<task>.review.md`。`## Human Review Card` 是一屏决策面：
+verdict、change type、预期/实际改动文件、已通过命令、external acceptance、
+残余风险、reviewer action 和 rollback。然后检查 active contract、
+`.ai/harness/checks/latest.json` 里的 latest trace，以及实际 diff。只有当 review
+recommend pass、card verdict 为 pass，且 external acceptance 为 pass、not_required
+或明确 manual override 时，才进入 closeout。
+
+## Agent Tracking Path
+
+Agent 先读 source artifacts，再读派生摘要：
+
+| Agent reads first | Human reviews first |
+| --- | --- |
+| 当前用户 prompt 和引用文件 | `tasks/reviews/<task>.review.md` 的 Human Review Card |
+| `AGENTS.md` / `CLAUDE.md` | changed files 和 diff |
+| `.ai/harness/active-plan` 指向的 active plan | active contract 的 allowed paths 和 exit criteria |
+| `tasks/contracts/` 下的 active contract | `.ai/harness/checks/latest.json` 和 run trace |
+| `.ai/harness/handoff/` 下的 latest handoff | 残余风险和 rollback |
+
+`tasks/current.md` 只是 orientation snapshot。如果它和 active plan、contract、
+review、checks 或 handoff 冲突，以 source artifacts 为准。
+
 ## 0.6.0 新特性
 
 - **事务型 adoption plan。** `repo-harness adopt --dry-run --json` 现在输出

@@ -351,15 +351,11 @@ check_scope_against_contract() {
   . ".ai/hooks/lib/workflow-state.sh"
 
   changed_paths="$(
-    git status --porcelain=v1 --untracked-files=all \
-      | awk '{
-          path = substr($0, 4)
-          rename_idx = index(path, " -> ")
-          if (rename_idx > 0) {
-            path = substr(path, rename_idx + 4)
-          }
-          print path
-        }'
+    {
+      git -c core.quotePath=false diff --name-only
+      git -c core.quotePath=false diff --cached --name-only
+      git -c core.quotePath=false ls-files --others --exclude-standard
+    } | awk 'NF && !seen[$0]++'
   )"
 
   while IFS= read -r path; do

@@ -50,6 +50,31 @@ In an adopted repo, the surface area is intentionally small:
 | `tasks/contracts/`, `tasks/reviews/`, and `.ai/harness/checks/` | Scope, verification, and review evidence for proving the work is done. |
 | `.ai/harness/handoff/` and `tasks/current.md` | Session journal and resumable status, derived from workflow artifacts instead of chat memory. |
 
+## Human Review Path
+
+Start with `tasks/reviews/<task>.review.md`. The `## Human Review Card` is the
+one-screen decision surface: verdict, change type, intended vs actual files,
+commands passed, external acceptance, residual risk, reviewer action, and
+rollback. Then inspect the active contract, latest trace in
+`.ai/harness/checks/latest.json`, and the changed files. Accept only when the
+review recommends pass, the card verdict is pass, and external acceptance is
+pass, `not_required`, or an explicit manual override.
+
+## Agent Tracking Path
+
+Agents read source artifacts before derived summaries:
+
+| Agent reads first | Human reviews first |
+| --- | --- |
+| Current user prompt and referenced files | `tasks/reviews/<task>.review.md` Human Review Card |
+| `AGENTS.md` / `CLAUDE.md` | Changed files and diff |
+| Active plan in `.ai/harness/active-plan` | Active contract allowed paths and exit criteria |
+| Active contract in `tasks/contracts/` | `.ai/harness/checks/latest.json` and run trace |
+| Latest handoff in `.ai/harness/handoff/` | Residual risks and rollback |
+
+`tasks/current.md` is only an orientation snapshot. If it disagrees with the
+active plan, contract, review, checks, or handoff, the source artifacts win.
+
 ## What's New in 0.6.0
 
 - **Transactional adoption plans.** `repo-harness adopt --dry-run --json` now

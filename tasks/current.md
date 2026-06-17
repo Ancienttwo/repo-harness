@@ -1,27 +1,27 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-06-16T18:08:55+0800 -->
+<!-- updated_at: 2026-06-17T17:01:56+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: Idle
-> **Updated At**: 2026-06-16T18:08:55+0800
-> **Source Branch**: main
-> **Source Commit**: 87eeb70
+> **Status**: ManualClearedWithActiveWork
+> **Updated At**: 2026-06-17T17:01:56+0800
+> **Source Branch**: codex/harness-engineering-optimization
+> **Source Commit**: f77414a
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: manual
+> **Reason**: archive-workflow
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: Idle
+- Status: ManualClearedWithActiveWork
 - Active Plan: (none)
 - Plan Status: (none)
-- Next Task: (none)
-- Clear Note: (none)
+- Next Task: inspect active worktree marker(s)
+- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
 
 ## Mainline Snapshot Reading
 
@@ -31,7 +31,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- (none)
+- /Users/ancienttwo/Projects/agentic-dev-wt-think-plan-000127: plans/plan-20260617-0010-think-plan-000127.md
+- /Users/ancienttwo/Projects/agentic-dev-wt-think-plan-000127: active-worktree owner -> /Users/ancienttwo/Projects/agentic-dev-wt-think-plan-000127
 ## Active Sprint
 
 - Sprint: (none)
@@ -40,7 +41,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/contract-assets/cleanup-script-policy.md`: status=completed, current_slice=todo-01, source_plan=(none)
 ## Handoff
 
-- Exact Next Step: (none)
+- Exact Next Step: Review/checks pass; finish and fast-forward merge this contract worktree. Command: bash scripts/contract-worktree.sh finish
 
 ## Checks
 
@@ -48,31 +49,49 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 22 changed/untracked path(s)
+- Summary: 103 changed/untracked path(s)
 
 ```
- M README.md
- M README.zh-CN.md
- M bun.lock
- M docs/CHANGELOG.md
- M docs/architecture/modules/public-surface/root-router.md
- M docs/reference-configs/external-tooling.md
- M package.json
- M scripts/check-ci.sh
- M src/cli/commands/install.ts
- M src/cli/index.ts
- M src/cli/runtime/helper-runner.ts
- M src/core/adoption/helper-wrapper-plan.ts
- M src/effects/fs-transaction.ts
- M src/effects/process-runner.ts
- M tasks/current.md
- M tests/cli/adoption-plan.test.ts
- M tests/cli/install.test.ts
- M tests/cli/run.test.ts
- M tests/install-scripts.test.ts
- M tests/process-runner.test.ts
- M tests/readme-dx.test.ts
-?? tsconfig.json
+M  .ai/harness/workflow-contract.json
+M  .ai/hooks/lib/workflow-state.sh
+M  .claude/templates/contract.template.md
+M  .claude/templates/plan.template.md
+M  .claude/templates/review.template.md
+M  README.md
+M  README.zh-CN.md
+M  assets/hooks/lib/workflow-state.sh
+M  assets/reference-configs/agentic-development-flow.md
+M  assets/reference-configs/document-generation.md
+M  assets/reference-configs/handoff-protocol.md
+M  assets/reference-configs/harness-overview.md
+M  assets/reference-configs/sprint-contracts.md
+M  assets/templates/contract.template.md
+M  assets/templates/helpers/capture-plan.sh
+M  assets/templates/helpers/check-task-workflow.sh
+M  assets/templates/helpers/contract-run.ts
+M  assets/templates/helpers/contract-worktree.sh
+M  assets/templates/helpers/ensure-task-workflow.sh
+A  assets/templates/helpers/harness-trace-grade.sh
+M  assets/templates/helpers/new-plan.sh
+M  assets/templates/helpers/plan-to-todo.sh
+M  assets/templates/helpers/prepare-handoff.sh
+M  assets/templates/helpers/verify-contract.sh
+M  assets/templates/helpers/verify-sprint.sh
+M  assets/templates/plan.template.md
+M  assets/templates/review.template.md
+M  assets/workflow-contract.v1.json
+M  docs/CHANGELOG.md
+M  docs/reference-configs/agentic-development-flow.md
+M  docs/reference-configs/document-generation.md
+M  docs/reference-configs/handoff-protocol.md
+M  docs/reference-configs/harness-overview.md
+M  docs/reference-configs/sprint-contracts.md
+A  docs/researches/20260616-harness-engineering-frameworks.md
+M  docs/spec.md
+A  plans/plan-20260616-HE-01-harness-research-baseline.md
+A  plans/plan-20260616-HE-02-filing-terminology-normalization.md
+A  plans/plan-20260616-HE-03-human-review-card.md
+A  plans/plan-20260616-HE-04-contract-profiles.md
 ```
 
 ## Source Artifacts

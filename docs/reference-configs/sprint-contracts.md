@@ -1,6 +1,7 @@
-# Sprint Contracts
+# Task Contracts and Sprint Backlogs
 
-Sprint contracts are the repo-local agreement between planner, generator, and evaluator.
+Task contracts are the repo-local agreement between planner, generator, and evaluator.
+Sprint backlogs are the ordered program layer that expands into task contracts.
 
 ## Three-Layer Glossary
 
@@ -15,7 +16,7 @@ The word "sprint" historically named a single execution slice in this harness. T
 - A PRD decomposes `docs/spec.md` intent into product direction, users, success criteria, acceptance scenarios, module behavior, data model, performance targets, and developer handoff. `repo-harness-prd` writes PRDs with compact/standard tiers and evidence rules for `[UNKNOWN]` / `[UNVERIFIED]` facts.
 - A Sprint decomposes a PRD or `docs/spec.md` into an ordered backlog; each backlog task executes as one task-contract slice through the existing plan -> contract -> worktree -> verify flow.
 - `tasks/todos.md` stays the deferred-goal ledger; it never carries the sprint backlog or any active checklist.
-- Legacy naming: "Sprint Contract" / "Sprint Review" headings and the `verify-sprint.sh` / `new-sprint.sh` filenames predate the program layer and refer to the execution slice. The filenames are kept for downstream compatibility; read them as task-contract verification.
+- Legacy filenames: `verify-sprint.sh` and `new-sprint.sh` predate the program layer and are kept for downstream compatibility. Read them as task-contract verification helpers. New generated artifact headings and plan metadata should use **Task Contract** and **Task Review**.
 - Sprint lifecycle: `Draft -> Approved -> Executing -> Done -> Archived`, tracked in the sprint file's `> **Status**:` line. Where the sprint layer is installed, `scripts/sprint-backlog.sh` is the compatibility command and delegates to the installed helper runtime under `.ai/harness/scripts/`; `.ai/harness/sprint/active-sprint` (runtime state, not committed) marks the single active sprint. Harness installs predating the sprint layer do not ship the helper, so check for the script before invoking it. `check-task-workflow.sh` rejects Approved/Executing sprints whose PRD/source section is placeholder-only or whose backlog rows lack a concrete acceptance line.
 
 ## Inventory First
@@ -29,18 +30,37 @@ The word "sprint" historically named a single execution slice in this harness. T
 - Goal
 - Scope and non-goals
 - Allowed paths
+- Task Profile
 - Delegation contract
 - Exit criteria
 - Verification commands
 - Risks and rollback point
 
+## Task Profiles
+
+New task contracts should declare `> **Task Profile**:` before ownership
+metadata. The profile sets the default human expectation for writable scope and
+review focus.
+
+| Profile | Default expectation |
+|---|---|
+| `code-change` | Runtime behavior may change within the contract's explicit allowed paths. |
+| `docs-only` | Documentation, plans, notes, and reviews only; `src/` and `tests/` are not allowed by default. |
+| `ledger-closeout` | Close already-landed workflow evidence only; runtime source, tests, and hook paths are not allowed by default. |
+| `migration` | Scripts, templates, assets, docs, and tests may change; preserve user-authored files. |
+| `eval-only` | Eval, fixture, run, docs, and review surfaces only; runtime `src/` is not allowed by default. |
+| `delegated-run` | Worker edits only contract-defined paths; parent remains the gate owner. |
+
+Older contracts without `Task Profile` remain valid as legacy contracts, but
+new generated contracts should include the field.
+
 ## Delegation Contract Fields
 
 New contracts include a `## Delegation Contract` YAML block between allowed paths and exit criteria. This block is the forward-compatible contract-kappa surface for future delegated execution; it is metadata unless a runner such as `contract-run` consumes it.
 
-- `budget`: optional limits for `tokens`, `tool_calls`, and `wall_time_minutes`. `null` means no additional limit beyond the current session and command timeout defaults.
+- `budget`: optional limits for `tokens`, `tool_calls`, and `wall_time_minutes`. `null` means the current session/default command limits apply; explicit numbers are hard limits only where the runner can enforce them and otherwise advisory in the run manifest.
 - `permission_scope`: the execution permission model. The default `mode: inherit_allowed_paths` means worker edits are limited by the contract `allowed_paths`; `writable_paths: []` means no narrower override; `network: inherited` means no new network permission is granted by the contract itself.
-- `roles`: named responsibilities for `parent`, `worker`, and `verifier`. The default parent narrates and gates, worker implements the contract, and verifier reviews only against the contract exit criteria.
+- `roles`: named responsibilities for `parent`, `explorer`, `worker`, and `verifier`. The parent remains the approval/checkpoint owner; explorer and verifier are read-only; worker may edit only within `allowed_paths` or a narrower `writable_paths` list. The verifier rubric is exactly the contract `exit_criteria`.
 
 Existing contracts without this block remain valid. `.ai/harness/scripts/verify-contract.sh` continues to evaluate only the `exit_criteria` YAML block, so adding delegation metadata must not make old or new contracts fail verification.
 

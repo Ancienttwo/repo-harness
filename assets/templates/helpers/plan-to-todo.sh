@@ -137,6 +137,20 @@ plan_title_slug_from_file() {
   printf '%s' "$slug"
 }
 
+plan_task_profile_from_file() {
+  local plan_file="$1"
+  local profile
+  profile="$(awk '
+    /^> \*\*Task Profile\*\*:/ {
+      sub(/^> \*\*Task Profile\*\*:[[:space:]]*/, "")
+      gsub(/\r/, "")
+      print
+      exit
+    }
+  ' "$plan_file" | xargs)"
+  printf '%s' "${profile:-code-change}"
+}
+
 plan_artifact_stem_from_path() {
   local plan_file="$1"
   local stem stamp slug title_slug
@@ -271,8 +285,11 @@ render_contract_file() {
   local timestamp="$6"
   local capability_id="$7"
   local owner="${USER:-AI Agent}"
+  local task_profile
   local template_file=".claude/templates/contract.template.md"
   local tmp_file
+
+  task_profile="$(plan_task_profile_from_file "$plan_file")"
 
   if [[ ! -f "$template_file" ]]; then
     mkdir -p .claude/templates
@@ -281,6 +298,7 @@ render_contract_file() {
 
 > **Status**: Pending
 > **Plan**: {{PLAN_FILE}}
+> **Task Profile**: {{TASK_PROFILE}}
 > **Owner**: {{OWNER}}
 > **Capability ID**: {{CAPABILITY_ID}}
 > **Last Updated**: {{TIMESTAMP}}
@@ -334,9 +352,18 @@ delegation:
     writable_paths: []
     network: inherited
   roles:
-    parent: narrate_and_gatekeep
-    worker: implement_contract
-    verifier: review_exit_criteria
+    parent:
+      mode: narrate_and_gatekeep
+      purpose: approval_checkpoint_owner
+    explorer:
+      mode: read_only
+      purpose: codebase_research
+    worker:
+      mode: edit_within_allowed_paths
+      purpose: implementation
+    verifier:
+      mode: read_only
+      purpose: exit_criteria_review
 ```
 
 ## Exit Criteria (Machine Verifiable)
@@ -372,6 +399,7 @@ CONTRACT_TEMPLATE_EOF
   sed \
     -e "s/{{TASK_SLUG}}/${slug}/g" \
     -e "s|{{PLAN_FILE}}|${plan_file}|g" \
+    -e "s|{{TASK_PROFILE}}|${task_profile}|g" \
     -e "s|{{CONTRACT_FILE}}|${contract_file}|g" \
     -e "s|{{REVIEW_FILE}}|${review_file}|g" \
     -e "s|{{NOTES_FILE}}|${notes_file}|g" \
@@ -654,7 +682,7 @@ if [[ -f ".claude/templates/review.template.md" ]]; then
 else
   mkdir -p .claude/templates
   cat > .claude/templates/review.template.md <<'REVIEW_TEMPLATE_EOF'
-# Sprint Review: {{TASK_SLUG}}
+# Task Review: {{TASK_SLUG}}
 
 > **Status**: Pending
 > **Plan**: {{PLAN_FILE}}
@@ -663,6 +691,18 @@ else
 > **Checks File**: {{CHECKS_FILE}}
 > **Last Updated**: {{TIMESTAMP}}
 > **Recommendation**: fail
+
+## Human Review Card
+
+- Verdict: pending
+- Change type: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run
+- Intended files changed:
+- Actual files changed:
+- Commands passed:
+- External acceptance: unavailable
+- Residual risks:
+- Reviewer action required: inspect diff and card
+- Rollback:
 
 ## Mode Evidence
 

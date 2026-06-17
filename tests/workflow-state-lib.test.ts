@@ -48,7 +48,7 @@ describe("workflow-state shared library", () => {
       writeFileSync(
         join(cwd, "pass.review.md"),
         [
-          "# Sprint Review: demo",
+          "# Task Review: demo",
           "",
           "> **Recommendation**: pass",
           "",
@@ -73,7 +73,7 @@ describe("workflow-state shared library", () => {
       writeFileSync(
         join(cwd, "override.review.md"),
         [
-          "# Sprint Review: demo",
+          "# Task Review: demo",
           "",
           "> **Recommendation**: pass",
           "",

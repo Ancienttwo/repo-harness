@@ -20,6 +20,199 @@ json_escape() {
   printf '%s' "$value"
 }
 
+review_card_field() {
+  local file="$1"
+  local label="$2"
+  [[ -n "$file" && -f "$file" ]] || return 1
+  awk -v wanted="$label" '
+    function trim(s) {
+      gsub(/^[[:space:]]+/, "", s)
+      gsub(/[[:space:]]+$/, "", s)
+      return s
+    }
+    BEGIN { wanted = tolower(wanted) }
+    /^##[[:space:]]+Human Review Card[[:space:]]*$/ { in_section = 1; next }
+    in_section && /^##[[:space:]]+/ { exit }
+    !in_section { next }
+    /^[[:space:]]*-[[:space:]]*/ {
+      line = $0
+      sub(/^[[:space:]]*-[[:space:]]*/, "", line)
+      key = line
+      sub(/:.*/, "", key)
+      key = tolower(trim(key))
+      if (key == wanted) {
+        sub(/^[^:]*:[[:space:]]*/, "", line)
+        print trim(line)
+        exit
+      }
+    }
+  ' "$file"
+}
+
+normalize_status_token() {
+  local value="$1"
+  value="$(printf '%s' "$value" | sed -E 's/[;,].*$//; s/[[:space:]].*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' | tr '[:upper:]' '[:lower:]')"
+  printf '%s' "$value"
+}
+
+read_contract_task_profile() {
+  local file="$1"
+  awk '/^\> \*\*Task Profile\*\*:/ {sub(/^.*\> \*\*Task Profile\*\*:[[:space:]]*/, ""); gsub(/\r/, ""); print; exit}' "$file" | xargs
+}
+
+contract_allowed_paths() {
+  local file="$1"
+  awk '
+    BEGIN { in_block = 0; block = ""; found = 0 }
+    /^```yaml[[:space:]]*$/ {
+      in_block = 1
+      block = ""
+      next
+    }
+    /^```[[:space:]]*$/ && in_block == 1 {
+      if (!found && block ~ /(^|[[:space:]])allowed_paths:/) {
+        printf "%s", block
+        found = 1
+      }
+      in_block = 0
+      block = ""
+      next
+    }
+    in_block == 1 {
+      block = block $0 ORS
+    }
+  ' "$file" | awk '
+    function trim(s) {
+      gsub(/^[[:space:]]+/, "", s)
+      gsub(/[[:space:]]+$/, "", s)
+      return s
+    }
+    /^[[:space:]]*allowed_paths:[[:space:]]*$/ { in_paths = 1; next }
+    in_paths && /^[^[:space:]]/ { exit }
+    in_paths && /^[[:space:]]*-[[:space:]]*/ {
+      line = $0
+      sub(/^[[:space:]]*-[[:space:]]*/, "", line)
+      gsub(/^["'\''`]+|["'\''`]+$/, "", line)
+      print trim(line)
+    }
+  '
+}
+
+read_active_plan() {
+  local marker plan
+  if declare -F workflow_active_plan >/dev/null 2>&1; then
+    workflow_active_plan || true
+    return 0
+  fi
+  for marker in ".ai/harness/active-plan" ".claude/.active-plan"; do
+    if [[ -f "$marker" ]]; then
+      plan="$(cat "$marker" 2>/dev/null | xargs)"
+      if [[ -n "$plan" ]]; then
+        printf '%s' "$plan"
+        return 0
+      fi
+    fi
+  done
+}
+
+active_plan_declared_path() {
+  local label="$1"
+  local active_plan
+  active_plan="$(read_active_plan || true)"
+  [[ -n "$active_plan" && -f "$active_plan" ]] || return 1
+  awk -v label="$label" '
+    BEGIN { pattern = "^> \\*\\*" label "\\*\\*:" }
+    $0 ~ pattern {
+      sub(pattern "[[:space:]]*", "")
+      gsub(/`/, "")
+      gsub(/\r/, "")
+      print
+      exit
+    }
+  ' "$active_plan" | xargs
+}
+
+git_changed_files_json() {
+  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1 || ! command -v jq >/dev/null 2>&1; then
+    printf '[]'
+    return 0
+  fi
+  {
+    git -c core.quotePath=false diff --name-only HEAD 2>/dev/null || true
+    git -c core.quotePath=false ls-files --others --exclude-standard 2>/dev/null || true
+  } | awk 'NF && !seen[$0]++' | jq -R -s 'split("\n") | map(select(length > 0))'
+}
+
+allowed_paths_json() {
+  local file="$1"
+  if ! command -v jq >/dev/null 2>&1; then
+    printf '[]'
+    return 0
+  fi
+  contract_allowed_paths "$file" | jq -R -s 'split("\n") | map(select(length > 0))'
+}
+
+path_under_allowed_prefix() {
+  local path="$1"
+  local prefix="$2"
+  prefix="${prefix%/}"
+  [[ -n "$prefix" ]] || return 1
+  [[ "$path" == "$prefix" || "$path" == "$prefix/"* ]]
+}
+
+allowed_paths_check_json() {
+  local file="$1"
+  shift
+  local changed_file allowed_path outside=0 checked=0
+  local outside_file=""
+  local allowed_paths=()
+  local changed_files=("$@")
+
+  if ! command -v jq >/dev/null 2>&1; then
+    printf '{"status":"unavailable","message":"jq unavailable"}'
+    return 0
+  fi
+
+  while IFS= read -r allowed_path; do
+    [[ -n "$allowed_path" ]] && allowed_paths+=("$allowed_path")
+  done < <(contract_allowed_paths "$file")
+
+  if ((${#allowed_paths[@]} == 0)); then
+    jq -n '{status:"unavailable", message:"contract has no allowed_paths", allowed_paths: [], outside: []}'
+    return 0
+  fi
+
+  for changed_file in "${changed_files[@]+"${changed_files[@]}"}"; do
+    [[ -n "$changed_file" ]] || continue
+    checked=1
+    local matched=0
+    for allowed_path in "${allowed_paths[@]+"${allowed_paths[@]}"}"; do
+      if path_under_allowed_prefix "$changed_file" "$allowed_path"; then
+        matched=1
+        break
+      fi
+    done
+    if [[ "$matched" -eq 0 ]]; then
+      outside=1
+      outside_file="${outside_file}${changed_file}"$'\n'
+    fi
+  done
+
+  if [[ "$outside" -eq 0 ]]; then
+    contract_allowed_paths "$file" | jq -R -s --arg checked "$checked" '{
+      status: "pass",
+      checked: ($checked == "1"),
+      allowed_paths: (split("\n") | map(select(length > 0))),
+      outside: []
+    }'
+  else
+    jq -n \
+      --argjson allowed "$(allowed_paths_json "$file")" \
+      --argjson outside "$(printf '%s' "$outside_file" | jq -R -s 'split("\n") | map(select(length > 0))')" \
+      '{status:"fail", checked:true, allowed_paths:$allowed, outside:$outside}'
+  fi
+}
+
 if [[ -f ".ai/hooks/lib/workflow-state.sh" ]]; then
   # shellcheck source=/dev/null
   . ".ai/hooks/lib/workflow-state.sh"
@@ -35,6 +228,12 @@ else
     review_file=""
   fi
   checks_file=".ai/harness/checks/latest.json"
+fi
+if [[ -z "$contract_file" || ! -f "$contract_file" ]]; then
+  contract_file="$(active_plan_declared_path "Task Contract" || active_plan_declared_path "Sprint Contract" || true)"
+fi
+if [[ -z "$review_file" || ! -f "$review_file" ]]; then
+  review_file="$(active_plan_declared_path "Task Review" || active_plan_declared_path "Sprint Review" || true)"
 fi
 
 [[ -n "$contract_file" && -f "$contract_file" ]] || { echo "No active sprint contract found" >&2; exit 1; }
@@ -56,8 +255,24 @@ mkdir -p "$runs_dir"
 contract_report="$(mktemp)"
 checks_report="$(mktemp)"
 trap 'rm -f "$contract_report" "$checks_report"' EXIT
+task_profile="$(read_contract_task_profile "$contract_file" || true)"
+active_plan="$(read_active_plan || true)"
+worktree_path="$(pwd -P)"
+branch_name="$(git branch --show-current 2>/dev/null || true)"
+changed_files=()
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  while IFS= read -r changed_file; do
+    [[ -n "$changed_file" ]] && changed_files+=("$changed_file")
+  done < <({ git -c core.quotePath=false diff --name-only HEAD 2>/dev/null || true; git -c core.quotePath=false ls-files --others --exclude-standard 2>/dev/null || true; } | awk 'NF && !seen[$0]++')
+fi
 
 contract_command="bash scripts/verify-contract.sh --contract $contract_file --strict --report-file <temp>"
+if [[ -f "scripts/sync-brain-docs.sh" && -f ".ai/harness/brain-manifest.json" ]]; then
+  bash scripts/sync-brain-docs.sh --all >/dev/null || true
+fi
+if [[ -f "scripts/prepare-codex-handoff.sh" && ( -f ".ai/harness/handoff/current.md" || -f ".ai/harness/handoff/resume.md" ) ]]; then
+  bash scripts/prepare-codex-handoff.sh --reason "repo-harness-verify-sprint" >/dev/null || true
+fi
 set +e
 contract_output="$(bash scripts/verify-contract.sh --contract "$contract_file" --strict --report-file "$contract_report" 2>&1)"
 contract_exit=$?
@@ -68,15 +283,34 @@ if [[ -n "$contract_output" ]]; then
 fi
 
 review_status="fail"
-review_message="Sprint review recommends pass."
+review_message="Task review recommends pass and Human Review Card verdict is pass."
+review_card_verdict=""
+review_card_external=""
 if [[ -z "$review_file" || ! -f "$review_file" ]]; then
-  review_message="Missing sprint review file."
-  echo "Missing sprint review file" >&2
-elif grep -Eq '^> \*\*Recommendation\*\*:[[:space:]]*pass([[:space:]]*)$' "$review_file"; then
+  review_message="Missing task review file."
+  echo "Missing task review file" >&2
+else
+  review_card_verdict="$(normalize_status_token "$(review_card_field "$review_file" "Verdict" || true)")"
+  review_card_external="$(review_card_field "$review_file" "External acceptance" || true)"
+fi
+
+if [[ -n "$review_file" && -f "$review_file" ]] \
+  && grep -Eq '^> \*\*Recommendation\*\*:[[:space:]]*pass([[:space:]]*)$' "$review_file" \
+  && [[ "$review_card_verdict" == "pass" ]]; then
   review_status="pass"
 else
-  review_message="Sprint review does not recommend pass."
-  echo "Sprint review does not recommend pass" >&2
+  if [[ -n "$review_file" && -f "$review_file" ]]; then
+    if ! grep -Eq '^> \*\*Recommendation\*\*:[[:space:]]*pass([[:space:]]*)$' "$review_file"; then
+      review_message="Task review does not recommend pass."
+      echo "Task review does not recommend pass" >&2
+    elif [[ -z "$review_card_verdict" ]]; then
+      review_message="Task review is missing Human Review Card verdict."
+      echo "Task review is missing Human Review Card verdict" >&2
+    else
+      review_message="Human Review Card verdict is not pass: $review_card_verdict"
+      echo "Human Review Card verdict is not pass: $review_card_verdict" >&2
+    fi
+  fi
 fi
 
 external_status="missing"
@@ -87,23 +321,69 @@ if declare -F workflow_external_acceptance_status >/dev/null 2>&1; then
   external_row="$(workflow_external_acceptance_status "$review_file")"
   IFS=$'\t' read -r external_status external_reviewer external_source external_message <<< "$external_row"
 fi
+card_external_status="$(normalize_status_token "$review_card_external")"
+case "$external_status" in
+  missing|unavailable|"")
+    case "$card_external_status" in
+      pass|manual_override|not_required)
+        external_status="$card_external_status"
+        external_message="Human Review Card external acceptance: $review_card_external"
+        ;;
+    esac
+    ;;
+esac
 
 status="fail"
 exit_code=1
-if [[ "$contract_exit" -eq 0 && "$review_status" == "pass" ]]; then
+case "$external_status" in
+  pass|manual_override|not_required)
+    external_gate="pass"
+    ;;
+  *)
+    external_gate="fail"
+    ;;
+esac
+if [[ "$contract_exit" -eq 0 && "$review_status" == "pass" && "$external_gate" == "pass" ]]; then
   status="pass"
   exit_code=0
 fi
+failure_class=""
+if command -v jq >/dev/null 2>&1 && jq -e . "$contract_report" >/dev/null 2>&1; then
+  failure_class="$(jq -r '.failure_class // empty' "$contract_report" 2>/dev/null || true)"
+fi
+if [[ -z "$failure_class" && "$status" != "pass" ]]; then
+  if [[ "$contract_exit" -ne 0 ]]; then
+    failure_class="contract"
+  elif [[ "$review_status" != "pass" ]]; then
+    failure_class="review"
+  elif [[ "$external_gate" != "pass" ]]; then
+    failure_class="external_acceptance"
+  else
+    failure_class="unknown"
+  fi
+fi
+if [[ "$status" == "pass" ]]; then
+  next_step="finish contract worktree or archive completed task"
+else
+  next_step="resolve failing contract, review, external acceptance, or allowed_paths gate"
+fi
+handoff_current_exists=false
+handoff_resume_exists=false
+[[ -f ".ai/harness/handoff/current.md" ]] && handoff_current_exists=true
+[[ -f ".ai/harness/handoff/resume.md" ]] && handoff_resume_exists=true
 
 if command -v jq >/dev/null 2>&1 && jq -e . "$contract_report" >/dev/null 2>&1; then
   jq -n \
     --slurpfile contract_report "$contract_report" \
+    --arg schema "repo-harness-run-trace.v1" \
     --arg status "$status" \
     --arg source "verify-sprint" \
     --arg command "bash scripts/verify-sprint.sh" \
     --arg generated_at "$generated_at" \
     --arg run_id "$run_id" \
     --arg run_file "$run_file" \
+    --arg task_profile "$task_profile" \
+    --arg active_plan "$active_plan" \
     --arg contract_file "$contract_file" \
     --arg contract_status "$([[ "$contract_exit" -eq 0 ]] && printf pass || printf fail)" \
     --arg contract_command "$contract_command" \
@@ -111,12 +391,24 @@ if command -v jq >/dev/null 2>&1 && jq -e . "$contract_report" >/dev/null 2>&1; 
     --arg review_file "${review_file:-}" \
     --arg review_status "$review_status" \
     --arg review_message "$review_message" \
+    --arg review_card_verdict "$review_card_verdict" \
+    --arg review_card_external "$review_card_external" \
     --arg external_status "$external_status" \
     --arg external_reviewer "$external_reviewer" \
     --arg external_source "$external_source" \
     --arg external_message "$external_message" \
+    --arg worktree "$worktree_path" \
+    --arg branch "$branch_name" \
+    --argjson files_changed "$(git_changed_files_json)" \
+    --argjson allowed_paths_check "$(allowed_paths_check_json "$contract_file" "${changed_files[@]+"${changed_files[@]}"}")" \
+    --argjson allowed_paths "$(allowed_paths_json "$contract_file")" \
+    --argjson handoff_current_exists "$handoff_current_exists" \
+    --argjson handoff_resume_exists "$handoff_resume_exists" \
+    --arg failure_class "$failure_class" \
+    --arg next_step "$next_step" \
     --argjson exit_code "$exit_code" \
     '{
+      schema: $schema,
       status: $status,
       source: $source,
       command: $command,
@@ -124,22 +416,50 @@ if command -v jq >/dev/null 2>&1 && jq -e . "$contract_report" >/dev/null 2>&1; 
       generated_at: $generated_at,
       run_id: $run_id,
       run_file: $run_file,
+      task_profile: $task_profile,
+      active_plan: $active_plan,
+      worktree: $worktree,
+      branch: $branch,
+      commands: [
+        {name: "verify-sprint", command: $command, status: $status, exit_code: $exit_code},
+        {name: "verify-contract", command: $contract_command, status: $contract_status, exit_code: $contract_exit}
+      ],
+      guards: [
+        {name: "contract", status: $contract_status},
+        {name: "review", status: $review_status},
+        {name: "external_acceptance", status: $external_status},
+        {name: "allowed_paths", status: ($allowed_paths_check.status // "unavailable")}
+      ],
+      handoffs: [
+        {file: ".ai/harness/handoff/current.md", exists: $handoff_current_exists},
+        {file: ".ai/harness/handoff/resume.md", exists: $handoff_resume_exists}
+      ],
+      files_changed: $files_changed,
+      allowed_paths_check: $allowed_paths_check,
+      failure_class: $failure_class,
+      next_step: $next_step,
       lifecycle: {
         latest: ".ai/harness/checks/latest.json",
         snapshot: $run_file,
-        evidence_tier: "raw-verification"
+        evidence_tier: "harness-trace-v1"
       },
       contract: {
         file: $contract_file,
         status: $contract_status,
         command: $contract_command,
         exit_code: $contract_exit,
-        report: ($contract_report[0] // {})
+        report: ($contract_report[0] // {}),
+        task_profile: $task_profile,
+        allowed_paths: $allowed_paths
       },
       review: {
         file: $review_file,
         status: $review_status,
-        message: $review_message
+        message: $review_message,
+        card: {
+          verdict: $review_card_verdict,
+          external_acceptance: $review_card_external
+        }
       },
       external_acceptance: {
         status: $external_status,
@@ -151,6 +471,7 @@ if command -v jq >/dev/null 2>&1 && jq -e . "$contract_report" >/dev/null 2>&1; 
 else
   cat > "$checks_report" <<EOF_CHECKS
 {
+  "schema": "repo-harness-run-trace.v1",
   "status": "$(json_escape "$status")",
   "source": "verify-sprint",
   "command": "bash scripts/verify-sprint.sh",
@@ -158,21 +479,62 @@ else
   "generated_at": "$(json_escape "$generated_at")",
   "run_id": "$(json_escape "$run_id")",
   "run_file": "$(json_escape "$run_file")",
+  "task_profile": "$(json_escape "$task_profile")",
+  "active_plan": "$(json_escape "$active_plan")",
+  "worktree": "$(json_escape "$worktree_path")",
+  "branch": "$(json_escape "$branch_name")",
+  "commands": [
+    {
+      "name": "verify-sprint",
+      "command": "bash scripts/verify-sprint.sh",
+      "status": "$(json_escape "$status")",
+      "exit_code": $exit_code
+    },
+    {
+      "name": "verify-contract",
+      "command": "$(json_escape "$contract_command")",
+      "status": "$([[ "$contract_exit" -eq 0 ]] && printf pass || printf fail)",
+      "exit_code": $contract_exit
+    }
+  ],
+  "guards": [
+    {"name": "contract", "status": "$([[ "$contract_exit" -eq 0 ]] && printf pass || printf fail)"},
+    {"name": "review", "status": "$(json_escape "$review_status")"},
+    {"name": "external_acceptance", "status": "$(json_escape "$external_status")"},
+    {"name": "allowed_paths", "status": "unavailable"}
+  ],
+  "handoffs": [
+    {"file": ".ai/harness/handoff/current.md", "exists": $handoff_current_exists},
+    {"file": ".ai/harness/handoff/resume.md", "exists": $handoff_resume_exists}
+  ],
+  "files_changed": [],
+  "allowed_paths_check": {
+    "status": "unavailable",
+    "message": "jq unavailable"
+  },
+  "failure_class": "$(json_escape "$failure_class")",
+  "next_step": "$(json_escape "$next_step")",
   "lifecycle": {
     "latest": ".ai/harness/checks/latest.json",
     "snapshot": "$(json_escape "$run_file")",
-    "evidence_tier": "raw-verification"
+    "evidence_tier": "harness-trace-v1"
   },
   "contract": {
     "file": "$(json_escape "$contract_file")",
     "status": "$([[ "$contract_exit" -eq 0 ]] && printf pass || printf fail)",
     "command": "$(json_escape "$contract_command")",
-    "exit_code": $contract_exit
+    "exit_code": $contract_exit,
+    "task_profile": "$(json_escape "$task_profile")",
+    "allowed_paths": []
   },
   "review": {
     "file": "$(json_escape "${review_file:-}")",
     "status": "$(json_escape "$review_status")",
-    "message": "$(json_escape "$review_message")"
+    "message": "$(json_escape "$review_message")",
+    "card": {
+      "verdict": "$(json_escape "$review_card_verdict")",
+      "external_acceptance": "$(json_escape "$review_card_external")"
+    }
   },
   "external_acceptance": {
     "status": "$(json_escape "$external_status")",

@@ -338,6 +338,12 @@ derive_slug() {
 plan_contract_path() {
   local plan_file="$1" path
   path="$(awk '
+    /^> \*\*Task Contract\*\*:/ {
+      sub(/^> \*\*Task Contract\*\*:[[:space:]]*/, "")
+      gsub(/`/, "")
+      print
+      exit
+    }
     /^> \*\*Sprint Contract\*\*:/ {
       sub(/^> \*\*Sprint Contract\*\*:[[:space:]]*/, "")
       gsub(/`/, "")
@@ -416,6 +422,19 @@ check_handoff_resume_pair() {
   fi
 }
 
+check_current_resume_freshness() {
+  local current_file="$1"
+  local resume_file="$2"
+  local current_mtime resume_mtime
+
+  [[ -f "$current_file" && -f "$resume_file" ]] || return 0
+  current_mtime="$(file_mtime "$current_file")"
+  resume_mtime="$(file_mtime "$resume_file")"
+  if [[ "$current_mtime" =~ ^[0-9]+$ && "$resume_mtime" =~ ^[0-9]+$ && "$resume_mtime" -lt "$current_mtime" ]]; then
+    report_issue "Resume packet is older than current status snapshot: $resume_file < $current_file. Run scripts/prepare-handoff.sh --reason <reason> or scripts/codex-handoff-resume.sh."
+  fi
+}
+
 check_required_file() {
   local path="$1"
   if [[ -f "$path" ]]; then
@@ -461,6 +480,126 @@ check_reference_config_stubs() {
   done
 }
 
+check_generation_surface_terminology() {
+  local file
+  local surfaces=(
+    ".claude/templates/plan.template.md"
+    ".claude/templates/contract.template.md"
+    ".claude/templates/review.template.md"
+    "scripts/capture-plan.sh"
+    "scripts/new-plan.sh"
+    "scripts/ensure-task-workflow.sh"
+    "scripts/plan-to-todo.sh"
+    "scripts/lib/project-init-lib.sh"
+  )
+
+  for file in "${surfaces[@]}"; do
+    [[ -f "$file" ]] || continue
+    if grep -Eq 'Sprint Contract|Sprint Review' "$file"; then
+      report_issue "Legacy task artifact terminology in generation surface: $file. Use Task Contract / Task Review for new artifacts; keep verify-sprint.sh and other legacy filenames only for compatibility."
+    fi
+    if grep -Eq 'tasks/todo\.md|tasks/sprints/' "$file"; then
+      report_issue "Legacy workflow path emitted by generation surface: $file. Migrate tasks/todo.md to tasks/todos.md and tasks/sprints/*.sprint.md to plans/sprints/."
+    fi
+  done
+}
+
+trace_schema_error() {
+  local file="$1"
+  local runtime
+
+  [[ -s "$file" ]] || return 0
+  if ! grep -q '[^[:space:]]' "$file"; then
+    return 0
+  fi
+  if grep -Eq '^[[:space:]]*\{[[:space:]]*\}[[:space:]]*$' "$file"; then
+    return 0
+  fi
+
+  runtime="$(resolve_json_runtime || true)"
+  if [[ -z "$runtime" ]]; then
+    echo "missing node, bun, or python3 to validate trace schema"
+    return 1
+  fi
+
+  case "$runtime" in
+    python3)
+      "$runtime" - "$file" <<'PY_EOF'
+import json
+import sys
+
+path = sys.argv[1]
+try:
+    data = json.load(open(path, "r", encoding="utf-8"))
+except Exception as exc:
+    print(f"invalid JSON: {exc}")
+    sys.exit(1)
+
+errors = []
+if data.get("schema") != "repo-harness-run-trace.v1":
+    errors.append("schema must be repo-harness-run-trace.v1")
+for key in ["run_id", "task_profile", "active_plan", "worktree", "branch", "failure_class", "next_step"]:
+    if key not in data:
+        errors.append(f"missing field: {key}")
+for key in ["commands", "guards", "handoffs", "files_changed"]:
+    if not isinstance(data.get(key), list):
+        errors.append(f"field must be an array: {key}")
+for key in ["external_acceptance", "allowed_paths_check"]:
+    if not isinstance(data.get(key), dict):
+        errors.append(f"field must be an object: {key}")
+if data.get("status") not in ["pass", "fail"]:
+    errors.append("status must be pass or fail")
+contract = data.get("contract")
+if not (isinstance(contract, str) or (isinstance(contract, dict) and contract.get("file"))):
+    errors.append("contract must be a string or object with file")
+review = data.get("review")
+if not (isinstance(review, str) or (isinstance(review, dict) and "file" in review)):
+    errors.append("review must be a string or object with file")
+if errors:
+    print("; ".join(errors))
+    sys.exit(1)
+PY_EOF
+      ;;
+    *)
+      "$runtime" -e '
+const fs = require("fs");
+const file = process.argv[1];
+let data;
+try {
+  data = JSON.parse(fs.readFileSync(file, "utf8"));
+} catch (error) {
+  console.log(`invalid JSON: ${error.message}`);
+  process.exit(1);
+}
+const errors = [];
+if (data.schema !== "repo-harness-run-trace.v1") errors.push("schema must be repo-harness-run-trace.v1");
+for (const key of ["run_id", "task_profile", "active_plan", "worktree", "branch", "failure_class", "next_step"]) {
+  if (!(key in data)) errors.push(`missing field: ${key}`);
+}
+for (const key of ["commands", "guards", "handoffs", "files_changed"]) {
+  if (!Array.isArray(data[key])) errors.push(`field must be an array: ${key}`);
+}
+for (const key of ["external_acceptance", "allowed_paths_check"]) {
+  if (!data[key] || typeof data[key] !== "object" || Array.isArray(data[key])) {
+    errors.push(`field must be an object: ${key}`);
+  }
+}
+if (!["pass", "fail"].includes(data.status)) errors.push("status must be pass or fail");
+if (!(typeof data.contract === "string" || (data.contract && typeof data.contract === "object" && data.contract.file))) {
+  errors.push("contract must be a string or object with file");
+}
+if (!(typeof data.review === "string" || (data.review && typeof data.review === "object" && "file" in data.review))) {
+  errors.push("review must be a string or object with file");
+}
+if (errors.length) {
+  console.log(errors.join("; "));
+  process.exit(1);
+}
+' "$file"
+      ;;
+  esac
+}
+
 check_required_dir() {
   local path="$1"
   if [[ -d "$path" ]]; then
@@ -493,7 +632,7 @@ check_helper_runtime_files() {
       new-spec.sh new-sprint.sh new-plan.sh capture-plan.sh plan-to-todo.sh
       contract-run.ts contract-worktree.sh ship-worktrees.sh archive-workflow.sh
       refresh-current-status.sh prepare-handoff.sh verify-contract.sh summarize-failures.sh
-      verify-sprint.sh sprint-backlog.sh check-task-sync.sh check-deploy-sql-order.sh
+      verify-sprint.sh harness-trace-grade.sh sprint-backlog.sh check-task-sync.sh check-deploy-sql-order.sh
       check-architecture-sync.sh check-agent-tooling.sh check-context-files.sh
       check-brain-manifest.sh sync-brain-docs.sh check-skill-version.ts
       select-agent-context-blocks.sh ensure-task-workflow.sh check-task-workflow.sh
@@ -543,6 +682,7 @@ reviews_dir="$(policy_get '.tasks.reviews_dir' 'tasks/reviews')"
 notes_dir="$(policy_get '.tasks.notes_dir' 'tasks/notes')"
 workstreams_dir="$(policy_get '.tasks.workstreams_dir' 'tasks/workstreams')"
 runs_dir="$(policy_get '.harness.runs_dir' '.ai/harness/runs')"
+checks_file="$(policy_get '.harness.checks_file' '.ai/harness/checks/latest.json')"
 helper_runtime_dir="$(policy_get '.harness.helper_runtime_dir' '.ai/harness/scripts')"
 helper_compat_dir="$(policy_get '.harness.helper_compat_dir' 'scripts')"
 helper_source="$(policy_get '.harness.helper_source' 'package')"
@@ -624,6 +764,10 @@ else
 fi
 
 check_reference_config_stubs
+check_generation_surface_terminology
+if [[ -f "$checks_file" ]] && ! trace_error="$(trace_schema_error "$checks_file")"; then
+  report_issue "Latest checks trace is not repo-harness-run-trace.v1 compatible: ${trace_error//$'\n'/; }"
+fi
 
 if [[ -f "docs/plan.md" ]]; then
   report_issue "Legacy docs/plan.md detected; migrate or archive it into plans/."
@@ -767,6 +911,7 @@ if [[ -f "$current_status_file" ]]; then
 fi
 
 check_handoff_resume_pair "$handoff_file" "$resume_file"
+check_current_resume_freshness "$current_status_file" "$resume_file"
 
 active_plan="$(get_active_plan || true)"
 if [[ -z "$active_plan" ]]; then

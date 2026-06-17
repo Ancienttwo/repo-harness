@@ -6,6 +6,9 @@ All notable changes to this skill are documented here.
 
 ### Added
 
+- Added the Harness Engineering Optimization sprint closeout surface, including
+  task profiles, Human Review Card enforcement, trace/eval evidence grading,
+  handoff UX, delegation contract roles, and compressed spec/onboarding paths.
 - Added `repo-harness uninstall` to remove repo-harness managed Codex/Claude
   hook adapters while preserving sibling user hooks and Codex trust-state
   residue.
