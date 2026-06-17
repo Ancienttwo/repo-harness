@@ -66,24 +66,25 @@ resolve_run_id() {
 
 read_contract_status() {
   local file="$1"
-  awk '/^\> \*\*Status\*\*:/ {sub(/^.*\> \*\*Status\*\*: */, ""); gsub(/\r/, ""); print; exit}' "$file" | xargs
+  awk '/^> \*\*Status\*\*:/ {sub(/^.*> \*\*Status\*\*: */, ""); gsub(/\r/, ""); print; exit}' "$file" | xargs
 }
 
 read_contract_review_file() {
   local file="$1"
-  awk '
-    /^\> \*\*Review File\*\*:/ {
-      line = $0
-      if (match(line, /`[^`]+`/)) {
-        print substr(line, RSTART + 1, RLENGTH - 2)
-        exit
-      }
-      sub(/^.*\> \*\*Review File\*\*:[[:space:]]*/, "", line)
-      gsub(/\r/, "", line)
-      print line
-      exit
-    }
-  ' "$file" | xargs
+  local line=""
+  local value=""
+
+  line="$(grep -m 1 -E '^> \*\*Review File\*\*:' "$file" || true)"
+  [[ -n "$line" ]] || return 0
+
+  if [[ "$line" == *\`* ]]; then
+    value="${line#*\`}"
+    value="${value%%\`*}"
+  else
+    value="${line#*> **Review File**:}"
+  fi
+
+  printf '%s' "$value" | tr -d '\r' | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//'
 }
 
 review_recommends_pass() {
@@ -125,7 +126,7 @@ update_contract_status() {
   awk -v next_status="$status" '
     BEGIN { updated = 0 }
     {
-      if (!updated && $0 ~ /^\> \*\*Status\*\*:/) {
+      if (!updated && $0 ~ /^> \*\*Status\*\*:/) {
         print "> **Status**: " next_status
         updated = 1
         next
