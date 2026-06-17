@@ -16,6 +16,11 @@ export interface McpLocalConfig {
     oauthFile?: string;
   };
   profile?: string;
+  devMode?: {
+    agentRunner?: boolean;
+    allowedAgents?: string[];
+    timeoutMs?: number;
+  };
 }
 
 export type McpHttpAuthMode = 'oauth' | 'bearer';

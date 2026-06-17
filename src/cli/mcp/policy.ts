@@ -1,4 +1,4 @@
-import type { McpPolicy, McpProfileName } from './types';
+import type { McpAgentRunnerName, McpPolicy, McpProfileName } from './types';
 
 const COMMON_DENY_GLOBS = [
   '.env',
@@ -44,7 +44,26 @@ export const PLANNER_WRITE_GLOBS = [
   '.ai/harness/handoff/chatgpt-plan.md',
 ];
 
-export function getMcpPolicy(profile: McpProfileName): McpPolicy {
+export interface McpPolicyOptions {
+  devAgentRunner?: boolean;
+  allowedAgents?: McpAgentRunnerName[];
+  runnerTimeoutMs?: number;
+}
+
+const DEFAULT_RUNNER_TIMEOUT_MS = 120_000;
+
+function executionPolicy(overrides: Partial<McpPolicy['execution']> = {}): McpPolicy['execution'] {
+  return {
+    fixedWorkflowCheck: false,
+    codexRunner: false,
+    agentRunner: false,
+    allowedAgents: [],
+    runnerTimeoutMs: DEFAULT_RUNNER_TIMEOUT_MS,
+    ...overrides,
+  };
+}
+
+export function getMcpPolicy(profile: McpProfileName, opts: McpPolicyOptions = {}): McpPolicy {
   if (profile === 'planner') {
     return {
       profile,
@@ -63,10 +82,9 @@ export function getMcpPolicy(profile: McpProfileName): McpPolicy {
         '.github/workflows/**',
       ],
       maxFileBytes: 512 * 1024,
-      execution: {
+      execution: executionPolicy({
         fixedWorkflowCheck: true,
-        codexRunner: false,
-      },
+      }),
     };
   }
 
@@ -77,24 +95,26 @@ export function getMcpPolicy(profile: McpProfileName): McpPolicy {
       writeGlobs: ['tasks/reviews/**', '.ai/harness/checks/**', '.ai/harness/handoff/**'],
       denyGlobs: COMMON_DENY_GLOBS,
       maxFileBytes: 512 * 1024,
-      execution: {
+      execution: executionPolicy({
         fixedWorkflowCheck: true,
-        codexRunner: false,
-      },
+      }),
     };
   }
 
   if (profile === 'orchestrator') {
+    const devRunner = opts.devAgentRunner === true;
     return {
       profile,
-      readGlobs: [],
+      readGlobs: devRunner ? ['.ai/harness/handoff/codex-goal.md'] : [],
       writeGlobs: [],
-      denyGlobs: ['**'],
-      maxFileBytes: 0,
-      execution: {
-        fixedWorkflowCheck: false,
-        codexRunner: false,
-      },
+      denyGlobs: devRunner ? COMMON_DENY_GLOBS : ['**'],
+      maxFileBytes: devRunner ? 512 * 1024 : 0,
+      execution: executionPolicy({
+        codexRunner: devRunner,
+        agentRunner: devRunner,
+        allowedAgents: devRunner ? (opts.allowedAgents?.length ? opts.allowedAgents : ['codex']) : [],
+        runnerTimeoutMs: opts.runnerTimeoutMs ?? DEFAULT_RUNNER_TIMEOUT_MS,
+      }),
     };
   }
 

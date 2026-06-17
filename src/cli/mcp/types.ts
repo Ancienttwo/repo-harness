@@ -1,5 +1,6 @@
 export type McpProfileName = 'planner' | 'executor' | 'orchestrator';
 export type McpPathIntent = 'read' | 'write';
+export type McpAgentRunnerName = 'codex' | 'claude';
 
 export interface McpPolicy {
   profile: McpProfileName;
@@ -10,6 +11,9 @@ export interface McpPolicy {
   execution: {
     fixedWorkflowCheck: boolean;
     codexRunner: boolean;
+    agentRunner: boolean;
+    allowedAgents: McpAgentRunnerName[];
+    runnerTimeoutMs: number;
   };
 }
 

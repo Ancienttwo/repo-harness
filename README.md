@@ -114,6 +114,59 @@ runner. Codex remains the executor. The generated manual setup guide lives at
 `docs/repo-harness-chatgpt-mcp-setup.md`, and the local CLI handoff is
 `repo-harness mcp prepare-goal --prd <prd> --sprint <sprint>`.
 
+### MCP Connector Quickstart
+
+Use the MCP sidecar when you want ChatGPT to plan against the real repo state
+and Codex to execute the resulting file-backed Sprint.
+
+```bash
+repo-harness mcp setup chatgpt --repo .
+repo-harness mcp serve --repo . --transport http --host 127.0.0.1 --port 8765 --profile planner
+```
+
+Expose that local server through an HTTPS tunnel and create a ChatGPT Connector
+with the `/mcp` URL. The generated guide is written to:
+
+```text
+docs/repo-harness-chatgpt-mcp-setup.md
+```
+
+The human workflow is:
+
+1. ChatGPT reads repo-harness workflow files through MCP.
+2. ChatGPT writes a PRD with `write_prd_from_idea`.
+3. ChatGPT writes a checklist Sprint with `write_checklist_sprint`.
+4. ChatGPT prepares `.ai/harness/handoff/codex-goal.md` with `prepare_codex_goal_from_sprint`.
+5. Codex runs the host-native `/goal` prompt and stages each completed Sprint phase.
+
+Local fallback for the last handoff step:
+
+```bash
+repo-harness mcp prepare-goal --repo . --prd plans/prds/<feature>.prd.md --sprint plans/sprints/<feature>.sprint.md
+```
+
+The agent-facing Skill is installed at:
+
+```text
+.agents/skills/repo-harness-chatgpt-bridge/SKILL.md
+```
+
+That Skill tells Codex how to consume ChatGPT-produced PRD/Sprint/Goal artifacts
+without granting ChatGPT source-code writes or shell execution.
+
+Dev Mode can opt into local agent execution through MCP. This is off by default.
+When the user enables the `orchestrator` profile with the dev runner setting,
+ChatGPT can call `run_agent_goal`, which reads only
+`.ai/harness/handoff/codex-goal.md` and runs the fixed handoff through an
+allowed local CLI such as `codex exec` or `claude -p`.
+
+```bash
+repo-harness mcp serve --repo . --transport http --profile orchestrator --enable-dev-runner --dev-runner-agents codex
+```
+
+This setting is for local Developer Mode only. It is timeout-bounded, audited,
+and not arbitrary shell.
+
 ## How It Works
 
 The design has three layers:

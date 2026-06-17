@@ -1,6 +1,7 @@
 import { createHash } from 'crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync, appendFileSync } from 'fs';
 import { basename, dirname, join } from 'path';
+import { runProcess } from '../../effects/process-runner';
 import { runHelper } from '../runtime/helper-runner';
 import { listSessions, openSession, readSession, runBrowserConsult, runBrowserFollowup } from '../chatgpt-browser/engine';
 import type { BrowserProviderName, NativeBrowserChannel, ThinkingLevel } from '../chatgpt-browser/types';
@@ -8,7 +9,7 @@ import { hashMcpInput, tryWriteMcpAuditEntry } from './audit';
 import { resolveMcpPath } from './paths';
 import { currentGitBranch, isRepoHarnessAdopted } from './repo';
 import { redactMcpText } from './redaction';
-import type { McpPolicy } from './types';
+import type { McpAgentRunnerName, McpPolicy } from './types';
 
 export interface McpToolContext {
   repoRoot: string;
@@ -130,6 +131,80 @@ function timestampPrefix(date = new Date()): string {
   const hh = String(date.getHours()).padStart(2, '0');
   const min = String(date.getMinutes()).padStart(2, '0');
   return `${yyyy}${mm}${dd}-${hh}${min}`;
+}
+
+function parseRunnerAgent(value: unknown): McpAgentRunnerName | null {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  return normalized === 'codex' || normalized === 'claude' ? normalized : null;
+}
+
+function runnerGoalPath(args: Record<string, unknown>): string {
+  return String(args.goal_path ?? '.ai/harness/handoff/codex-goal.md').trim();
+}
+
+function runnerTimeoutMs(ctx: McpToolContext, value: unknown): number {
+  const requested = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+  if (!Number.isFinite(requested)) return ctx.policy.execution.runnerTimeoutMs;
+  return Math.min(Math.max(Math.trunc(requested), 5_000), ctx.policy.execution.runnerTimeoutMs);
+}
+
+function runAgentGoal(ctx: McpToolContext, args: Record<string, unknown>): CallToolResult {
+  if (!ctx.policy.execution.agentRunner || !ctx.policy.execution.codexRunner) {
+    audit(ctx, 'run_agent_goal', 'blocked', args, undefined, 'dev runner is disabled');
+    return errorResult('DEV_RUNNER_DISABLED', 'MCP dev runner is disabled. Start the orchestrator profile with an explicit dev-runner setting.');
+  }
+
+  const agent = parseRunnerAgent(args.agent);
+  if (!agent) {
+    audit(ctx, 'run_agent_goal', 'blocked', args, undefined, 'invalid agent');
+    return errorResult('INVALID_AGENT', 'agent must be codex or claude');
+  }
+  if (!ctx.policy.execution.allowedAgents.includes(agent)) {
+    audit(ctx, 'run_agent_goal', 'blocked', args, undefined, `agent is not allowed: ${agent}`);
+    return errorResult('AGENT_DENIED', `agent is not enabled for this MCP dev runner: ${agent}`);
+  }
+
+  const goalPath = runnerGoalPath(args);
+  const decision = resolveMcpPath(ctx.repoRoot, goalPath, ctx.policy, 'read');
+  if (!decision.ok || !decision.absolutePath || !decision.relativePath) {
+    audit(ctx, 'run_agent_goal', 'blocked', args, goalPath, decision.reason);
+    return errorResult('POLICY_DENIED', decision.reason ?? 'goal path denied', { path: goalPath });
+  }
+
+  const fileStat = statSync(decision.absolutePath);
+  if (!fileStat.isFile()) return errorResult('NOT_A_FILE', `goal path is not a file: ${decision.relativePath}`);
+  if (fileStat.size > ctx.policy.maxFileBytes) return errorResult('FILE_TOO_LARGE', `goal exceeds ${ctx.policy.maxFileBytes} bytes`);
+
+  const rawGoal = readFileSync(decision.absolutePath, 'utf-8');
+  const redactedGoal = redactMcpText(rawGoal);
+  const prompt = [
+    'Execute this repo-harness dev-mode agent handoff from the local repository.',
+    'Respect the goal text exactly. Do not reveal secrets or credentials in your final output.',
+    '',
+    redactedGoal.text,
+  ].join('\n');
+  const timeoutMs = runnerTimeoutMs(ctx, args.timeout_ms);
+  const command = agent === 'codex'
+    ? { bin: 'codex', args: ['exec', '--json', '--cd', ctx.repoRoot, prompt], preview: `codex exec --json --cd ${ctx.repoRoot} <goal>` }
+    : { bin: 'claude', args: ['-p', prompt], preview: 'claude -p <goal>' };
+  const result = runProcess(command.bin, command.args, {
+    cwd: ctx.repoRoot,
+    timeoutMs,
+    maxOutputBytes: 128 * 1024,
+  });
+  const stdout = redactMcpText(result.stdout);
+  const stderr = redactMcpText(result.stderr || result.error);
+  audit(ctx, 'run_agent_goal', result.ok ? 'ok' : 'failed', args, decision.relativePath, stderr.text);
+  return textResult({
+    agent,
+    goalPath: decision.relativePath,
+    command: command.preview,
+    exitCode: result.status,
+    timedOut: result.timedOut,
+    stdout: stdout.text,
+    stderr: stderr.text,
+    redactions: redactedGoal.redactions + stdout.redactions + stderr.redactions,
+  });
 }
 
 function prdArtifactPath(slug: string): string {
@@ -500,6 +575,16 @@ export function buildMcpToolDefinitions(policy: McpPolicy, opts: { enableChatgpt
     required: ['sessionId'],
     additionalProperties: false,
   };
+  const agentRunnerSchema = {
+    type: 'object',
+    properties: {
+      agent: { type: 'string', enum: ['codex', 'claude'] },
+      goal_path: { type: 'string', default: '.ai/harness/handoff/codex-goal.md' },
+      timeout_ms: { type: 'number' },
+    },
+    required: ['agent'],
+    additionalProperties: false,
+  };
 
   const tools: McpToolDefinition[] = [
     { name: 'harness_status', description: 'Return repo-harness adoption and workflow status.', inputSchema: EMPTY_SCHEMA, annotations: readOnly },
@@ -590,6 +675,14 @@ export function buildMcpToolDefinitions(policy: McpPolicy, opts: { enableChatgpt
         annotations: { readOnlyHint: false, openWorldHint: true, destructiveHint: false },
       },
     );
+  }
+  if (policy.execution.agentRunner && policy.execution.codexRunner) {
+    tools.push({
+      name: 'run_agent_goal',
+      description: 'Dev mode only: run the fixed Codex goal handoff through an explicitly enabled local Codex or Claude CLI.',
+      inputSchema: agentRunnerSchema,
+      annotations: write,
+    });
   }
   return tools;
 }
@@ -888,6 +981,8 @@ export async function callMcpTool(ctx: McpToolContext, name: string, args: Recor
           error: result.error,
         });
       }
+      case 'run_agent_goal':
+        return runAgentGoal(ctx, args);
       default:
         return errorResult('UNKNOWN_TOOL', `unknown MCP tool: ${name}`);
     }

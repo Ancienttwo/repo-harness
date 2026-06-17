@@ -27,6 +27,7 @@ describe('mcp command', () => {
     expect(serve.status).toBe(0);
     expect(serve.stdout).toContain('--transport <transport>');
     expect(serve.stdout).toContain('--profile <profile>');
+    expect(serve.stdout).toContain('--enable-dev-runner');
 
     const doctor = runMcp(['doctor', '--help']);
     expect(doctor.status).toBe(0);

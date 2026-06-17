@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { getMcpPolicy } from '../../src/cli/mcp/policy';
@@ -273,5 +273,42 @@ describe('mcp tools', () => {
       const result = await jsonTool(ctx, 'latest_checks');
       expect(result.files.some((entry: { path: string }) => entry.path === '.ai/harness/checks/latest.json')).toBe(true);
     });
+  });
+
+  test('runs fixed Codex goal only when orchestrator dev runner is enabled', async () => {
+    const repoRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-runner-'));
+    const binRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-runner-bin-'));
+    const originalPath = process.env.PATH;
+    try {
+      mkdirSync(join(repoRoot, '.ai/harness/handoff'), { recursive: true });
+      writeFileSync(join(repoRoot, '.ai/harness/policy.json'), '{}\n');
+      writeFileSync(join(repoRoot, '.ai/harness/handoff/codex-goal.md'), '# Codex Goal\n\n## Required workflow\n\nRun fake codex.\n');
+      const fakeCodex = join(binRoot, 'codex');
+      writeFileSync(fakeCodex, '#!/usr/bin/env bash\necho "fake-codex:$1:$2:$3"\n', 'utf-8');
+      chmodSync(fakeCodex, 0o755);
+      process.env.PATH = `${binRoot}:${originalPath ?? ''}`;
+
+      const disabledCtx = { repoRoot, policy: getMcpPolicy('orchestrator') };
+      const disabled = await jsonTool(disabledCtx, 'run_agent_goal', { agent: 'codex' });
+      expect(disabled.error.code).toBe('DEV_RUNNER_DISABLED');
+
+      const enabledCtx = {
+        repoRoot,
+        policy: getMcpPolicy('orchestrator', { devAgentRunner: true, allowedAgents: ['codex'], runnerTimeoutMs: 5000 }),
+      };
+      const result = await jsonTool(enabledCtx, 'run_agent_goal', { agent: 'codex', timeout_ms: 5000 });
+      expect(result.agent).toBe('codex');
+      expect(result.goalPath).toBe('.ai/harness/handoff/codex-goal.md');
+      expect(result.command).toContain('codex exec --json --cd');
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('fake-codex:exec:--json:--cd');
+
+      const denied = await jsonTool(enabledCtx, 'run_agent_goal', { agent: 'claude' });
+      expect(denied.error.code).toBe('AGENT_DENIED');
+    } finally {
+      process.env.PATH = originalPath;
+      rmSync(repoRoot, { recursive: true, force: true });
+      rmSync(binRoot, { recursive: true, force: true });
+    }
   });
 });

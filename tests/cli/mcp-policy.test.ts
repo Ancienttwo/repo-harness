@@ -6,6 +6,7 @@ import { hashMcpInput, mcpAuditLogPath, tryWriteMcpAuditEntry, writeMcpAuditEntr
 import { getMcpPolicy } from '../../src/cli/mcp/policy';
 import { redactMcpText } from '../../src/cli/mcp/redaction';
 import { globMatches, normalizeMcpRelativePath, resolveMcpPath } from '../../src/cli/mcp/paths';
+import { buildMcpToolDefinitions } from '../../src/cli/mcp/tools';
 
 describe('mcp policy and paths', () => {
   test('matches repo-harness workflow globs without matching sibling paths', () => {
@@ -76,6 +77,30 @@ describe('mcp policy and paths', () => {
     } finally {
       rmSync(tmp, { recursive: true, force: true });
       rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  test('orchestrator dev runner is opt-in and reads only the fixed goal handoff', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-orchestrator-'));
+    try {
+      mkdirSync(join(tmp, '.ai/harness/handoff'), { recursive: true });
+      mkdirSync(join(tmp, 'src'), { recursive: true });
+      writeFileSync(join(tmp, '.ai/harness/handoff/codex-goal.md'), '# Codex Goal\n');
+      writeFileSync(join(tmp, 'src/index.ts'), 'export const value = 1;\n');
+
+      const disabled = getMcpPolicy('orchestrator');
+      expect(disabled.execution.agentRunner).toBe(false);
+      expect(buildMcpToolDefinitions(disabled).some((tool) => tool.name === 'run_agent_goal')).toBe(false);
+      expect(resolveMcpPath(tmp, '.ai/harness/handoff/codex-goal.md', disabled, 'read')).toMatchObject({ ok: false });
+
+      const enabled = getMcpPolicy('orchestrator', { devAgentRunner: true, allowedAgents: ['codex'], runnerTimeoutMs: 5000 });
+      expect(enabled.execution.agentRunner).toBe(true);
+      expect(enabled.execution.allowedAgents).toEqual(['codex']);
+      expect(buildMcpToolDefinitions(enabled).some((tool) => tool.name === 'run_agent_goal')).toBe(true);
+      expect(resolveMcpPath(tmp, '.ai/harness/handoff/codex-goal.md', enabled, 'read')).toMatchObject({ ok: true });
+      expect(resolveMcpPath(tmp, 'src/index.ts', enabled, 'read')).toMatchObject({ ok: false });
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
     }
   });
 });

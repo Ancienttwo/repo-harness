@@ -58,6 +58,91 @@ Use this Connector URL:
 9. Wait for the tool scan to finish, then create the Connector.
 10. Keep write confirmations enabled.
 
+## Human Workflow
+
+Use ChatGPT for planning and review. Use Codex for local execution.
+
+1. Ask ChatGPT to inspect workflow state with read-only tools first.
+2. Ask ChatGPT to turn the idea into a PRD with `write_prd_from_idea`.
+3. Ask ChatGPT to turn the PRD into a checklist Sprint with `write_checklist_sprint`.
+4. Ask ChatGPT to prepare a Codex Goal with `prepare_codex_goal_from_sprint`.
+5. Open Codex locally and run the generated `/goal` prompt.
+6. Let Codex execute one Sprint task card at a time, run checks, update the checklist, and stage each completed phase before continuing.
+
+The sidecar is not a remote coding agent. It prepares workflow artifacts for the local agent host.
+
+## Dev Mode Agent Runner
+
+The default planner Connector does not run Codex or Claude. If you intentionally want ChatGPT to trigger a local agent from MCP, use the `orchestrator` profile and enable the dev runner setting yourself.
+
+Local config setting:
+
+```json
+{
+  "devMode": {
+    "agentRunner": true,
+    "allowedAgents": ["codex"],
+    "timeoutMs": 120000
+  }
+}
+```
+
+Equivalent one-shot launch:
+
+```bash
+repo-harness mcp serve --repo . --transport http --host 127.0.0.1 --port 8765 --profile orchestrator --enable-dev-runner --dev-runner-agents codex
+```
+
+Environment override:
+
+```bash
+REPO_HARNESS_MCP_DEV_RUNNER=1 REPO_HARNESS_MCP_DEV_RUNNER_AGENTS=codex,claude repo-harness mcp serve --repo . --transport http --profile orchestrator
+```
+
+When enabled, the server exposes `run_agent_goal`. The tool reads only `.ai/harness/handoff/codex-goal.md` and runs that fixed handoff through the allowed local CLI:
+
+```text
+codex exec --json --cd <repo> <goal>
+claude -p <goal>
+```
+
+Keep this behind local Developer Mode and per-call confirmations. Do not expose an orchestrator tunnel to untrusted users.
+
+## Agent Handoff Contract
+
+The agent-facing Skill is installed at:
+
+```text
+.agents/skills/repo-harness-chatgpt-bridge/SKILL.md
+```
+
+Use it in Codex when continuing a ChatGPT-generated handoff:
+
+```text
+Use repo-harness-chatgpt-bridge.
+Execute .ai/harness/handoff/codex-goal.md.
+```
+
+The Skill tells Codex to read the PRD and checklist Sprint, preserve stage gates, run focused checks, and stage each completed phase. It does not authorize ChatGPT to edit source code or run shell commands through MCP.
+
+## Tool Chain
+
+Expected planning chain:
+
+```text
+idea
+  -> write_prd_from_idea
+  -> write_checklist_sprint
+  -> prepare_codex_goal_from_sprint
+  -> local Codex /goal execution
+```
+
+Local fallback for the last handoff step:
+
+```bash
+repo-harness mcp prepare-goal --repo . --prd plans/prds/<feature>.prd.md --sprint plans/sprints/<feature>.sprint.md --reference-repo <optional-readonly-reference>
+```
+
 ## Test Prompt
 
 ```text
@@ -109,5 +194,7 @@ Use repo-harness-chatgpt-bridge. Execute the latest ChatGPT-generated Codex goal
 - The `/mcp` endpoint requires OAuth-issued Bearer tokens by default. Do not expose it through a tunnel without Connector auth configured.
 - `repo-harness mcp serve --auth bearer` is available for non-ChatGPT clients that can send a static bearer token.
 - Planner profile cannot write application source files, package manifests, lockfiles, CI config, secrets, or files outside the repo root.
-- MCP does not expose a default Codex runner. It prepares `.ai/harness/handoff/codex-goal.md`; the local Codex host owns `/goal` execution.
+- MCP does not expose a default Codex runner. It prepares `.ai/harness/handoff/codex-goal.md`; the local Codex host owns `/goal` execution unless the user explicitly enables the local orchestrator dev runner.
+- The orchestrator dev runner is local-only, opt-in, timeout-bounded, audited, and limited to the fixed Codex goal handoff. It is not arbitrary shell.
+- Keep `_ref/` read-only when used as a comparison source.
 - Do not put tunnel tokens, OAuth tokens, passphrases, or ChatGPT/Codex credentials in git.

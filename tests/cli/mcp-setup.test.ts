@@ -37,6 +37,11 @@ describe('mcp setup', () => {
         oauthFile: '.repo-harness/mcp.oauth.json',
         tokenFile: '.repo-harness/mcp.tokens.json',
       });
+      expect(config.devMode).toMatchObject({
+        agentRunner: false,
+        allowedAgents: ['codex'],
+        timeoutMs: 120000,
+      });
       const token = JSON.parse(readFileSync(join(repoRoot, '.repo-harness/mcp.tokens.json'), 'utf-8')).bearerToken;
       expect(typeof token).toBe('string');
       expect(token.length).toBeGreaterThan(30);
@@ -52,6 +57,7 @@ describe('mcp setup', () => {
 
       const doctor = JSON.parse(runMcpDoctor({ repo: repoRoot, json: true }).lines[0]);
       expect(doctor.mcp.authConfigured).toBe(true);
+      expect(doctor.mcp.devMode.agentRunner).toBe(false);
       expect(doctor.chatgpt.localEndpoint).toBe('http://127.0.0.1:8765/mcp');
     });
   });
@@ -62,6 +68,9 @@ describe('mcp setup', () => {
     expect(guide).toContain('.repo-harness/mcp.oauth.json');
     expect(guide).toContain('oauth-protected-resource');
     expect(guide).toContain('--auth bearer');
+    expect(guide).toContain('## Dev Mode Agent Runner');
+    expect(guide).toContain('--enable-dev-runner');
+    expect(guide).toContain('run_agent_goal');
     expect(guide).toContain('https://example.test/mcp');
   });
 

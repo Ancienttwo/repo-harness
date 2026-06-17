@@ -20,6 +20,9 @@ export interface McpServeOptions {
   profile: string;
   auth?: string;
   enableChatgptBrowser?: boolean;
+  enableDevRunner?: boolean;
+  devRunnerAgents?: string;
+  devRunnerTimeoutMs?: string;
 }
 
 interface McpSetupChatgptOptions {
@@ -55,6 +58,13 @@ function parsePort(value: string): number {
     throw new Error(`invalid --port "${value}"`);
   }
   return port;
+}
+
+function parsePositiveIntegerOption(name: string, value: string | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) throw new Error(`invalid --${name} "${value}"`);
+  return parsed;
 }
 
 async function runMcpAction(action: () => void | Promise<void>): Promise<void> {
@@ -111,13 +121,20 @@ export function buildMcpCommand(): Command {
     .option('--profile <profile>', 'MCP profile: planner|executor|orchestrator', 'planner')
     .option('--auth <mode>', 'HTTP auth mode: oauth|bearer', 'oauth')
     .option('--enable-chatgpt-browser', 'Expose tools that operate the user logged-in ChatGPT Web browser session')
+    .option('--enable-dev-runner', 'Enable local dev-mode agent runner tools for the orchestrator profile')
+    .option('--dev-runner-agents <agents>', 'Comma-separated dev runner agents: codex,claude')
+    .option('--dev-runner-timeout-ms <ms>', 'Dev runner timeout in milliseconds')
     .action(async (rawOpts: McpServeOptions) => {
       await runMcpAction(async () => {
+        const devRunnerTimeoutMs = parsePositiveIntegerOption('dev-runner-timeout-ms', rawOpts.devRunnerTimeoutMs);
         if (rawOpts.transport === 'stdio') {
           await startMcpStdio({
             repo: rawOpts.repo,
             profile: rawOpts.profile,
             enableChatgptBrowser: rawOpts.enableChatgptBrowser === true,
+            enableDevRunner: rawOpts.enableDevRunner,
+            devRunnerAgents: rawOpts.devRunnerAgents,
+            devRunnerTimeoutMs,
           });
           return;
         }
@@ -129,6 +146,9 @@ export function buildMcpCommand(): Command {
             port: parsePort(rawOpts.port),
             auth: rawOpts.auth,
             enableChatgptBrowser: rawOpts.enableChatgptBrowser === true,
+            enableDevRunner: rawOpts.enableDevRunner,
+            devRunnerAgents: rawOpts.devRunnerAgents,
+            devRunnerTimeoutMs,
           });
           return;
         }
