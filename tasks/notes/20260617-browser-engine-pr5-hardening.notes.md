@@ -13,6 +13,7 @@ PR #5 adds the experimental ChatGPT browser engine, including CLI session storag
 - Native provider remains experimental. It fails closed for `--model` and `--thinking`, waits for stable assistant text before returning `completed`, and no longer scans `ps` output to kill Chrome by profile path.
 - PR #5 now has a minimal GitHub Actions CI gate that delegates to `bun run check:ci`, so the hosted check uses the same install/typecheck/test/workflow/migration/package-smoke path as local release-style validation.
 - Hosted CI configures a deterministic git identity and runs the full Bun suite with `BUN_TEST_MAX_CONCURRENCY=1` / `BUN_TEST_TIMEOUT_MS=180000`. The workflow/helper tests create temporary git repos, worktrees, locks, and migration commits; repo release notes already use this serial full-suite mode for final gates.
+- Hosted CI pins Bun to `1.3.10`, matching the local verified runtime. `bun-version: latest` resolved to Bun 1.3.14 on GitHub Actions and produced helper-script false failures outside the browser-engine surface. Feature-branch pushes no longer run a duplicate workflow; PR checks are the authoritative branch gate, while `main` keeps a push gate.
 
 ## Verification Focus
 
