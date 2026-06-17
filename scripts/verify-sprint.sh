@@ -55,6 +55,19 @@ normalize_status_token() {
   printf '%s' "$value"
 }
 
+field_has_concrete_value() {
+  local value="$1"
+  local token
+  token="$(normalize_status_token "$value")"
+  [[ -n "$token" ]] || return 1
+  case "$token" in
+    tbd|todo|n/a|na|none|unknown|unavailable|pending|...)
+      return 1
+      ;;
+  esac
+  return 0
+}
+
 read_contract_task_profile() {
   local file="$1"
   awk '/^\> \*\*Task Profile\*\*:/ {sub(/^.*\> \*\*Task Profile\*\*:[[:space:]]*/, ""); gsub(/\r/, ""); print; exit}' "$file" | xargs
@@ -133,14 +146,70 @@ active_plan_declared_path() {
 }
 
 git_changed_files_json() {
+  local changed_file
   if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1 || ! command -v jq >/dev/null 2>&1; then
     printf '[]'
     return 0
   fi
-  {
-    git -c core.quotePath=false diff --name-only HEAD 2>/dev/null || true
-    git -c core.quotePath=false ls-files --others --exclude-standard 2>/dev/null || true
-  } | awk 'NF && !seen[$0]++' | jq -R -s 'split("\n") | map(select(length > 0))'
+  while IFS= read -r changed_file; do
+    if [[ -n "$changed_file" ]] && ! ignore_changed_file_for_scope "$changed_file"; then
+      printf '%s\n' "$changed_file"
+    fi
+  done < <(git_changed_files_list | awk 'NF && !seen[$0]++') | jq -R -s 'split("\n") | map(select(length > 0))'
+}
+
+git_diff_base_ref() {
+  local branch
+  if [[ -n "${REPO_HARNESS_DIFF_BASE:-}" ]]; then
+    printf '%s' "$REPO_HARNESS_DIFF_BASE"
+    return 0
+  fi
+  if [[ -n "${HARNESS_DIFF_BASE:-}" ]]; then
+    printf '%s' "$HARNESS_DIFF_BASE"
+    return 0
+  fi
+  if [[ -n "${GITHUB_BASE_REF:-}" ]]; then
+    if git rev-parse --verify "origin/${GITHUB_BASE_REF}^{commit}" >/dev/null 2>&1; then
+      printf 'origin/%s' "$GITHUB_BASE_REF"
+    else
+      printf '%s' "$GITHUB_BASE_REF"
+    fi
+    return 0
+  fi
+
+  branch="$(git branch --show-current 2>/dev/null || true)"
+  if [[ "$branch" != "main" ]] && git rev-parse --verify "origin/main^{commit}" >/dev/null 2>&1; then
+    printf 'origin/main'
+    return 0
+  fi
+  if [[ "$branch" != "main" ]] && git rev-parse --verify "main^{commit}" >/dev/null 2>&1; then
+    printf 'main'
+    return 0
+  fi
+
+  return 1
+}
+
+git_diff_merge_base() {
+  local base_ref
+  base_ref="$(git_diff_base_ref || true)"
+  [[ -n "$base_ref" ]] || return 1
+  git rev-parse --verify "$base_ref^{commit}" >/dev/null 2>&1 || return 1
+  git merge-base HEAD "$base_ref" 2>/dev/null
+}
+
+git_changed_files_list() {
+  local merge_base
+  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    return 0
+  fi
+
+  merge_base="$(git_diff_merge_base || true)"
+  if [[ -n "$merge_base" ]]; then
+    git -c core.quotePath=false diff --name-only "$merge_base" HEAD 2>/dev/null || true
+  fi
+  git -c core.quotePath=false diff --name-only HEAD 2>/dev/null || true
+  git -c core.quotePath=false ls-files --others --exclude-standard 2>/dev/null || true
 }
 
 allowed_paths_json() {
@@ -158,6 +227,15 @@ path_under_allowed_prefix() {
   prefix="${prefix%/}"
   [[ -n "$prefix" ]] || return 1
   [[ "$path" == "$prefix" || "$path" == "$prefix/"* ]]
+}
+
+ignore_changed_file_for_scope() {
+  case "$1" in
+    .ai/harness/active-plan|.ai/harness/active-worktree|.claude/.active-plan)
+      return 0
+      ;;
+  esac
+  return 1
 }
 
 allowed_paths_check_json() {
@@ -178,12 +256,21 @@ allowed_paths_check_json() {
   done < <(contract_allowed_paths "$file")
 
   if ((${#allowed_paths[@]} == 0)); then
-    jq -n '{status:"unavailable", message:"contract has no allowed_paths", allowed_paths: [], outside: []}'
+    if ((${#changed_files[@]} == 0)); then
+      jq -n '{status:"unavailable", checked:false, message:"contract has no allowed_paths and no changed files were detected", allowed_paths: [], outside: []}'
+    else
+      jq -n \
+        --argjson outside "$(printf '%s\n' "${changed_files[@]+"${changed_files[@]}"}" | jq -R -s 'split("\n") | map(select(length > 0))')" \
+        '{status:"fail", checked:true, message:"contract has no allowed_paths", allowed_paths: [], outside:$outside}'
+    fi
     return 0
   fi
 
   for changed_file in "${changed_files[@]+"${changed_files[@]}"}"; do
     [[ -n "$changed_file" ]] || continue
+    if ignore_changed_file_for_scope "$changed_file"; then
+      continue
+    fi
     checked=1
     local matched=0
     for allowed_path in "${allowed_paths[@]+"${allowed_paths[@]}"}"; do
@@ -259,11 +346,20 @@ task_profile="$(read_contract_task_profile "$contract_file" || true)"
 active_plan="$(read_active_plan || true)"
 worktree_path="$(pwd -P)"
 branch_name="$(git branch --show-current 2>/dev/null || true)"
+diff_base_ref="$(git_diff_base_ref || true)"
+diff_base_commit="$(git_diff_merge_base || true)"
 changed_files=()
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   while IFS= read -r changed_file; do
-    [[ -n "$changed_file" ]] && changed_files+=("$changed_file")
-  done < <({ git -c core.quotePath=false diff --name-only HEAD 2>/dev/null || true; git -c core.quotePath=false ls-files --others --exclude-standard 2>/dev/null || true; } | awk 'NF && !seen[$0]++')
+    if [[ -n "$changed_file" ]] && ! ignore_changed_file_for_scope "$changed_file"; then
+      changed_files+=("$changed_file")
+    fi
+  done < <(git_changed_files_list | awk 'NF && !seen[$0]++')
+fi
+allowed_paths_check="$(allowed_paths_check_json "$contract_file" "${changed_files[@]+"${changed_files[@]}"}")"
+allowed_paths_status="unavailable"
+if command -v jq >/dev/null 2>&1; then
+  allowed_paths_status="$(printf '%s' "$allowed_paths_check" | jq -r '.status // "unavailable"' 2>/dev/null || printf 'unavailable')"
 fi
 
 contract_command="bash scripts/verify-contract.sh --contract $contract_file --strict --report-file <temp>"
@@ -286,30 +382,36 @@ review_status="fail"
 review_message="Task review recommends pass and Human Review Card verdict is pass."
 review_card_verdict=""
 review_card_external=""
+review_card_change_type=""
+review_card_rollback=""
 if [[ -z "$review_file" || ! -f "$review_file" ]]; then
   review_message="Missing task review file."
   echo "Missing task review file" >&2
 else
   review_card_verdict="$(normalize_status_token "$(review_card_field "$review_file" "Verdict" || true)")"
   review_card_external="$(review_card_field "$review_file" "External acceptance" || true)"
+  review_card_change_type="$(normalize_status_token "$(review_card_field "$review_file" "Change type" || true)")"
+  review_card_rollback="$(review_card_field "$review_file" "Rollback" || true)"
 fi
 
-if [[ -n "$review_file" && -f "$review_file" ]] \
-  && grep -Eq '^> \*\*Recommendation\*\*:[[:space:]]*pass([[:space:]]*)$' "$review_file" \
-  && [[ "$review_card_verdict" == "pass" ]]; then
-  review_status="pass"
-else
-  if [[ -n "$review_file" && -f "$review_file" ]]; then
-    if ! grep -Eq '^> \*\*Recommendation\*\*:[[:space:]]*pass([[:space:]]*)$' "$review_file"; then
-      review_message="Task review does not recommend pass."
-      echo "Task review does not recommend pass" >&2
-    elif [[ -z "$review_card_verdict" ]]; then
-      review_message="Task review is missing Human Review Card verdict."
-      echo "Task review is missing Human Review Card verdict" >&2
-    else
-      review_message="Human Review Card verdict is not pass: $review_card_verdict"
-      echo "Human Review Card verdict is not pass: $review_card_verdict" >&2
-    fi
+if [[ -n "$review_file" && -f "$review_file" ]]; then
+  if ! grep -Eq '^> \*\*Recommendation\*\*:[[:space:]]*pass([[:space:]]*)$' "$review_file"; then
+    review_message="Task review does not recommend pass."
+    echo "Task review does not recommend pass" >&2
+  elif [[ -z "$review_card_verdict" ]]; then
+    review_message="Task review is missing Human Review Card verdict."
+    echo "Task review is missing Human Review Card verdict" >&2
+  elif [[ "$review_card_verdict" != "pass" ]]; then
+    review_message="Human Review Card verdict is not pass: $review_card_verdict"
+    echo "Human Review Card verdict is not pass: $review_card_verdict" >&2
+  elif [[ -n "$task_profile" && "$review_card_change_type" != "$task_profile" ]]; then
+    review_message="Human Review Card change type does not match task_profile: ${review_card_change_type:-missing} != $task_profile"
+    echo "$review_message" >&2
+  elif ! field_has_concrete_value "$review_card_rollback"; then
+    review_message="Human Review Card rollback is missing or not concrete."
+    echo "$review_message" >&2
+  else
+    review_status="pass"
   fi
 fi
 
@@ -343,7 +445,7 @@ case "$external_status" in
     external_gate="fail"
     ;;
 esac
-if [[ "$contract_exit" -eq 0 && "$review_status" == "pass" && "$external_gate" == "pass" ]]; then
+if [[ "$contract_exit" -eq 0 && "$review_status" == "pass" && "$external_gate" == "pass" && "$allowed_paths_status" == "pass" ]]; then
   status="pass"
   exit_code=0
 fi
@@ -358,6 +460,8 @@ if [[ -z "$failure_class" && "$status" != "pass" ]]; then
     failure_class="review"
   elif [[ "$external_gate" != "pass" ]]; then
     failure_class="external_acceptance"
+  elif [[ "$allowed_paths_status" != "pass" ]]; then
+    failure_class="allowed_paths"
   else
     failure_class="unknown"
   fi
@@ -392,15 +496,19 @@ if command -v jq >/dev/null 2>&1 && jq -e . "$contract_report" >/dev/null 2>&1; 
     --arg review_status "$review_status" \
     --arg review_message "$review_message" \
     --arg review_card_verdict "$review_card_verdict" \
+    --arg review_card_change_type "$review_card_change_type" \
     --arg review_card_external "$review_card_external" \
+    --arg review_card_rollback "$review_card_rollback" \
     --arg external_status "$external_status" \
     --arg external_reviewer "$external_reviewer" \
     --arg external_source "$external_source" \
     --arg external_message "$external_message" \
     --arg worktree "$worktree_path" \
     --arg branch "$branch_name" \
+    --arg diff_base_ref "$diff_base_ref" \
+    --arg diff_base_commit "$diff_base_commit" \
     --argjson files_changed "$(git_changed_files_json)" \
-    --argjson allowed_paths_check "$(allowed_paths_check_json "$contract_file" "${changed_files[@]+"${changed_files[@]}"}")" \
+    --argjson allowed_paths_check "$allowed_paths_check" \
     --argjson allowed_paths "$(allowed_paths_json "$contract_file")" \
     --argjson handoff_current_exists "$handoff_current_exists" \
     --argjson handoff_resume_exists "$handoff_resume_exists" \
@@ -420,6 +528,10 @@ if command -v jq >/dev/null 2>&1 && jq -e . "$contract_report" >/dev/null 2>&1; 
       active_plan: $active_plan,
       worktree: $worktree,
       branch: $branch,
+      diff_base: {
+        ref: $diff_base_ref,
+        merge_base: $diff_base_commit
+      },
       commands: [
         {name: "verify-sprint", command: $command, status: $status, exit_code: $exit_code},
         {name: "verify-contract", command: $contract_command, status: $contract_status, exit_code: $contract_exit}
@@ -458,7 +570,9 @@ if command -v jq >/dev/null 2>&1 && jq -e . "$contract_report" >/dev/null 2>&1; 
         message: $review_message,
         card: {
           verdict: $review_card_verdict,
-          external_acceptance: $review_card_external
+          change_type: $review_card_change_type,
+          external_acceptance: $review_card_external,
+          rollback: $review_card_rollback
         }
       },
       external_acceptance: {
@@ -483,6 +597,10 @@ else
   "active_plan": "$(json_escape "$active_plan")",
   "worktree": "$(json_escape "$worktree_path")",
   "branch": "$(json_escape "$branch_name")",
+  "diff_base": {
+    "ref": "$(json_escape "$diff_base_ref")",
+    "merge_base": "$(json_escape "$diff_base_commit")"
+  },
   "commands": [
     {
       "name": "verify-sprint",
@@ -501,7 +619,7 @@ else
     {"name": "contract", "status": "$([[ "$contract_exit" -eq 0 ]] && printf pass || printf fail)"},
     {"name": "review", "status": "$(json_escape "$review_status")"},
     {"name": "external_acceptance", "status": "$(json_escape "$external_status")"},
-    {"name": "allowed_paths", "status": "unavailable"}
+    {"name": "allowed_paths", "status": "$(json_escape "$allowed_paths_status")"}
   ],
   "handoffs": [
     {"file": ".ai/harness/handoff/current.md", "exists": $handoff_current_exists},
@@ -533,7 +651,9 @@ else
     "message": "$(json_escape "$review_message")",
     "card": {
       "verdict": "$(json_escape "$review_card_verdict")",
-      "external_acceptance": "$(json_escape "$review_card_external")"
+      "change_type": "$(json_escape "$review_card_change_type")",
+      "external_acceptance": "$(json_escape "$review_card_external")",
+      "rollback": "$(json_escape "$review_card_rollback")"
     }
   },
   "external_acceptance": {

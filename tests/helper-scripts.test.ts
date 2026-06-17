@@ -2385,6 +2385,8 @@ describe("Workflow helper scripts", () => {
       expect(checks.review.file).toBe("tasks/reviews/demo.review.md");
       expect(checks.review.status).toBe("pass");
       expect(checks.review.card.verdict).toBe("pass");
+      expect(checks.review.card.change_type).toBe("code-change");
+      expect(checks.review.card.rollback).toBe("revert fixture branch");
       expect(checks.external_acceptance.status).toBe("pass");
       expect(checks.external_acceptance.reviewer).toBe("Codex");
       expect(checks.external_acceptance.source).toBe("codex-review");
@@ -2393,6 +2395,120 @@ describe("Workflow helper scripts", () => {
       expect(existsSync(join(cwd, checks.run_file))).toBe(true);
       const snapshot = JSON.parse(readFileSync(join(cwd, checks.run_file), "utf-8"));
       expect(snapshot.lifecycle.evidence_tier).toBe("harness-trace-v1");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("verify-sprint should fail when committed branch diff exceeds allowed_paths", () => {
+    const cwd = tmpWorkspace("helper-verify-sprint-branch-scope");
+    try {
+      mkdirSync(join(cwd, ".ai/hooks/lib"), { recursive: true });
+      mkdirSync(join(cwd, "plans"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/contracts"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/reviews"), { recursive: true });
+      mkdirSync(join(cwd, "docs"), { recursive: true });
+      copyHelpers(cwd);
+      copyFileSync(
+        join(ROOT, "assets/hooks/lib/workflow-state.sh"),
+        join(cwd, ".ai/hooks/lib/workflow-state.sh")
+      );
+
+      writeFileSync(join(cwd, "docs/spec.md"), "# Product Spec\n");
+      writeFileSync(join(cwd, "plans/plan-20260304-1602-demo.md"), "# Plan: demo\n\n> **Status**: Executing\n");
+      writeActivePlan(cwd, "plans/plan-20260304-1602-demo.md");
+      writeFileSync(
+        join(cwd, "tasks/contracts/demo.contract.md"),
+        [
+          "# Task Contract: demo",
+          "",
+          "> **Status**: Active",
+          "> **Task Profile**: docs-only",
+          "",
+          "```yaml",
+          "allowed_paths:",
+          "  - docs",
+          "  - tasks",
+          "exit_criteria:",
+          "  files_exist:",
+          "    - docs/spec.md",
+          "```",
+          "",
+        ].join("\n")
+      );
+      writeFileSync(
+        join(cwd, "tasks/reviews/demo.review.md"),
+        ["# Task Review: demo", "", "> **Recommendation**: pass", "", humanReviewCard("pass", "pass").replace("- Change type: code-change", "- Change type: docs-only"), "", externalAcceptanceAdvice(), ""].join("\n")
+      );
+
+      initGitRepo(cwd);
+      commitAll(cwd, "base workflow");
+      expect(run("git", ["checkout", "-b", "feature/scope"], cwd).status).toBe(0);
+      mkdirSync(join(cwd, "src"), { recursive: true });
+      writeFileSync(join(cwd, "src/outside.ts"), "export const outside = true;\n");
+      commitAll(cwd, "change outside allowed paths");
+
+      const res = run("bash", ["scripts/verify-sprint.sh"], cwd, { REPO_HARNESS_DIFF_BASE: "main", HOOK_HOST: "claude" });
+      expect(res.status).toBe(1);
+      const checks = JSON.parse(readFileSync(join(cwd, ".ai/harness/checks/latest.json"), "utf-8"));
+      expect(checks.status).toBe("fail");
+      expect(checks.failure_class).toBe("allowed_paths");
+      expect(checks.diff_base.ref).toBe("main");
+      expect(checks.files_changed).toContain("src/outside.ts");
+      expect(checks.allowed_paths_check.status).toBe("fail");
+      expect(checks.allowed_paths_check.outside).toContain("src/outside.ts");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("verify-sprint should fail when Human Review Card change type mismatches task_profile", () => {
+    const cwd = tmpWorkspace("helper-verify-sprint-card-profile");
+    try {
+      mkdirSync(join(cwd, ".ai/hooks/lib"), { recursive: true });
+      mkdirSync(join(cwd, "plans"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/contracts"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/reviews"), { recursive: true });
+      mkdirSync(join(cwd, "docs"), { recursive: true });
+      copyHelpers(cwd);
+      copyFileSync(
+        join(ROOT, "assets/hooks/lib/workflow-state.sh"),
+        join(cwd, ".ai/hooks/lib/workflow-state.sh")
+      );
+
+      writeFileSync(join(cwd, "docs/spec.md"), "# Product Spec\n");
+      writeFileSync(join(cwd, "plans/plan-20260304-1603-demo.md"), "# Plan: demo\n\n> **Status**: Executing\n");
+      writeActivePlan(cwd, "plans/plan-20260304-1603-demo.md");
+      writeFileSync(
+        join(cwd, "tasks/contracts/demo.contract.md"),
+        [
+          "# Task Contract: demo",
+          "",
+          "> **Status**: Active",
+          "> **Task Profile**: docs-only",
+          "",
+          "```yaml",
+          "allowed_paths:",
+          "  - docs",
+          "  - tasks",
+          "exit_criteria:",
+          "  files_exist:",
+          "    - docs/spec.md",
+          "```",
+          "",
+        ].join("\n")
+      );
+      writeFileSync(
+        join(cwd, "tasks/reviews/demo.review.md"),
+        ["# Task Review: demo", "", "> **Recommendation**: pass", "", humanReviewCard(), "", externalAcceptanceAdvice(), ""].join("\n")
+      );
+
+      const res = run("bash", ["scripts/verify-sprint.sh"], cwd);
+      expect(res.status).toBe(1);
+      expect(res.stderr).toContain("change type does not match task_profile");
+      const checks = JSON.parse(readFileSync(join(cwd, ".ai/harness/checks/latest.json"), "utf-8"));
+      expect(checks.review.status).toBe("fail");
+      expect(checks.review.card.change_type).toBe("code-change");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

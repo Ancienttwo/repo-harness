@@ -18,7 +18,9 @@
     "file": "tasks/reviews/fixture-ledger-closeout.review.md",
     "card": {
       "verdict": "pass",
-      "external_acceptance": "manual_override"
+      "change_type": "ledger-closeout",
+      "external_acceptance": "manual_override",
+      "rollback": "revert fixture ledger-closeout branch"
     }
   },
   "worktree": "/tmp/repo-harness-fixture",

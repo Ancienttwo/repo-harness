@@ -18,7 +18,9 @@
     "file": "tasks/reviews/fixture-eval-only.review.md",
     "card": {
       "verdict": "pass",
-      "external_acceptance": "not_required"
+      "change_type": "eval-only",
+      "external_acceptance": "not_required",
+      "rollback": "revert fixture eval-only branch"
     }
   },
   "worktree": "/tmp/repo-harness-fixture",

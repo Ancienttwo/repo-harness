@@ -335,6 +335,7 @@ allowed_paths:
   - {{REVIEW_FILE}}
   - {{NOTES_FILE}}
   - .ai/context/capabilities.json
+  - .claude/templates/
   - src/
   - tests/
 ```

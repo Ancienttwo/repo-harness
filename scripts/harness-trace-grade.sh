@@ -72,6 +72,8 @@ schema="$(trace_get '.schema')"
 active_plan="$(trace_get '.active_plan')"
 task_profile="$(trace_get '.task_profile')"
 review_card_verdict="$(trace_get '.review.card.verdict')"
+review_card_change_type="$(trace_get '.review.card.change_type')"
+review_card_rollback="$(trace_get '.review.card.rollback')"
 commands_count="$(jq '.commands | if type == "array" then length else 0 end' "$run_file")"
 outside_count="$(jq '.allowed_paths_check.outside | if type == "array" then length else 0 end' "$run_file")"
 allowed_status="$(trace_get '.allowed_paths_check.status')"
@@ -103,16 +105,32 @@ else
   record "review_card.pass" false "Human Review Card verdict is ${review_card_verdict:-missing}"
 fi
 
+if [[ -n "$review_card_change_type" && "$review_card_change_type" == "$task_profile" ]]; then
+  record "review_card.change_type" true "Human Review Card change type matches task profile"
+else
+  record "review_card.change_type" false "Human Review Card change type ${review_card_change_type:-missing} does not match task profile ${task_profile:-missing}"
+fi
+
+rollback_token="$(printf '%s' "$review_card_rollback" | sed -E 's/[;,].*$//; s/[[:space:]].*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' | tr '[:upper:]' '[:lower:]')"
+case "$rollback_token" in
+  ""|tbd|todo|n/a|na|none|unknown|unavailable|pending|...)
+    record "review_card.rollback" false "Human Review Card rollback is missing or not concrete"
+    ;;
+  *)
+    record "review_card.rollback" true "Human Review Card rollback is concrete"
+    ;;
+esac
+
 if [[ "$commands_count" -gt 0 ]] && jq -e '.commands[]? | select((.command // "") | length > 0)' "$run_file" >/dev/null; then
   record "commands.present" true "commands evidence is present"
 else
   record "commands.present" false "commands evidence is missing"
 fi
 
-if [[ "$outside_count" -eq 0 && "$allowed_status" != "fail" ]]; then
+if [[ "$outside_count" -eq 0 && "$allowed_status" == "pass" ]]; then
   record "allowed_paths.clean" true "no changed file is outside allowed paths"
 else
-  record "allowed_paths.clean" false "changed files outside allowed paths: $outside_count"
+  record "allowed_paths.clean" false "allowed_paths status is ${allowed_status:-missing}; changed files outside allowed paths: $outside_count"
 fi
 
 failed="$(jq -s '[.[] | select(.passed == false)] | length' "$results_file")"

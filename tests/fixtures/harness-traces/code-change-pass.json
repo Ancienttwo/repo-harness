@@ -18,7 +18,9 @@
     "file": "tasks/reviews/fixture-code-change.review.md",
     "card": {
       "verdict": "pass",
-      "external_acceptance": "not_required"
+      "change_type": "code-change",
+      "external_acceptance": "not_required",
+      "rollback": "revert fixture code-change branch"
     }
   },
   "worktree": "/tmp/repo-harness-fixture",
