@@ -15,13 +15,7 @@ repo-harness 应该做的：
 
 `local-dev-mcp` 当前就是“让 ChatGPT 通过 MCP 操作选定本地项目”的本地 MCP server，带项目 registry、denied paths、shell 风险分类、OAuth、redaction、localhost + HTTPS tunnel 这些安全控制；这些设计可以直接借鉴。([GitHub][1]) 但 `repo-harness` README 明确说它现在不是 agent gateway 或 MCP server，而是 repo-local workflow、hooks、checks、handoff 的协调层；所以这个功能最好作为可选 sidecar，而不是改变主产品边界。([GitHub][2])
 
-下面是一份可以直接放进：
-
-```text
-plans/prds/repo-harness-chatgpt-mcp-connector.prd.md
-```
-
-的详细 PRD。
+本 PRD 的当前仓库路径是 `plans/prds/20260617-repo-harness-mcp-prd.md`。
 
 ---
 

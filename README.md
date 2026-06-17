@@ -77,10 +77,17 @@ target repository so Claude, Codex, and humans can agree on:
 - which checks and review evidence prove the work is done
 - how hooks should warn, block, trace, and hand off work across sessions
 
-It is not an agent gateway, product runtime, database service, or MCP server.
 The product boundary is deliberately boring: inspect a repo, install or refresh
 workflow files, route host events through repo-local hooks, and verify that the
 workflow surfaces stay consistent.
+
+As an optional sidecar, `repo-harness mcp` exposes only workflow artifacts to
+MCP clients. ChatGPT can use it as a planner/reviewer to read state and move an
+idea through PRD, checklist Sprint, and Codex goal handoff artifacts; it does
+not get source-code write access, arbitrary shell execution, or a default Codex
+runner. Codex remains the executor. The generated manual setup guide lives at
+`docs/repo-harness-chatgpt-mcp-setup.md`, and the local CLI handoff is
+`repo-harness mcp prepare-goal --prd <prd> --sprint <sprint>`.
 
 ## How It Works
 
