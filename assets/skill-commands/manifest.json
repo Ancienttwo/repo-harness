@@ -122,6 +122,20 @@
       "mutatesRepoByDefault": false,
       "engine": "Codex or Claude native /goal plus repo-harness PRD/Sprint contract",
       "summary": "Prepares a bounded host-native /goal prompt from detailed PRD or Sprint artifacts and requires those documents before continuation."
+    },
+    {
+      "name": "repo-harness-gptpro-setup",
+      "class": "gptpro-local-setup",
+      "mutatesRepoByDefault": true,
+      "engine": "repo-harness chatgpt browser/session commands plus repo-harness MCP Connector setup",
+      "summary": "Guides gptpro_browser and gptpro_mcp setup so local repo-harness can use ChatGPT Web sessions and ChatGPT can connect back through MCP."
+    },
+    {
+      "name": "repo-harness-gptpro",
+      "class": "gptpro-browser-consult",
+      "mutatesRepoByDefault": true,
+      "engine": "repo-harness chatgpt browser-consult/session/followup/open using GPT Pro wording",
+      "summary": "Consults or continues GPT Pro through the local ChatGPT Web browser/session bridge while mapping user-facing gptpro language to browser engine commands."
     }
   ],
   "nonPublicInternalSteps": [

@@ -39,6 +39,8 @@ migrating, repairing, or verifying this repo-local harness:
 | Generate an upper-layer PRD | `repo-harness-prd` | `$geju` direction pass, Claude-first `claude -p --model opus` drafting, Codex fallback only when needed, PRD in `plans/prds/*.prd.md` |
 | Plan and run a program-level sprint | `repo-harness-sprint` | Upper-layer PRD in `plans/prds/`, sprint backlog in `plans/sprints/`; each row expands through `$think` before plan -> contract -> worktree |
 | Prepare a bounded native goal session | `repo-harness-goal` / `repo-harness:goal` | Codex/Claude `/goal` prompt from detailed PRD or Sprint artifacts; stops to request those documents when missing |
+| Configure GPT Pro local bridge | `repo-harness-gptpro-setup` / `repo-harness:gptpro_setup` | Separates `gptpro_browser` local ChatGPT Web browser/session consults from `gptpro_mcp` ChatGPT Connector MCP sidecar setup; preserves auth, tunnel, and API-billing boundaries |
+| Consult GPT Pro through browser session | `repo-harness-gptpro` / `repo-harness:gptpro` | Uses `gptpro consult/read/continue/open` wording while mapping to `browser-consult`, `browser-session`, `browser-followup`, and `browser-open` engine commands |
 
 `hooks-init`, `docs-init`, and `create-project-dirs` are not public commands.
 They are implementation steps behind `init`, `scaffold`, `migrate`, and

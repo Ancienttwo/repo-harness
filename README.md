@@ -75,18 +75,17 @@ Agents read source artifacts before derived summaries:
 `tasks/current.md` is only an orientation snapshot. If it disagrees with the
 active plan, contract, review, checks, or handoff, the source artifacts win.
 
-## What's New in 0.7.0
+## What's New in 0.7.1
 
-- **ChatGPT browser engine.** `repo-harness chatgpt browser-*` can create
-  policy-checked, repo-local ChatGPT Web consult sessions without using the
-  OpenAI API.
-- **Opt-in MCP browser tools.** `repo-harness mcp serve
-  --enable-chatgpt-browser` exposes consult/read/list/continue/open tools while
-  keeping them disabled by default.
-- **Oracle and native providers.** The engine supports an Oracle browser wrapper
-  plus a native installed-Chrome CDP spike for logged-in ChatGPT Web runs.
-- **Hosted CI and release smoke.** The repo now ships a GitHub CI gate and a
-  tarball install smoke that starts the packaged `repo-harness` binaries.
+- **GPT Pro setup path.** `repo-harness:gptpro_setup` guides
+  `gptpro_browser` browser/session setup and `gptpro_mcp` ChatGPT Connector MCP
+  setup while keeping ChatGPT Pro separate from API quota.
+- **GPT Pro consult path.** `repo-harness:gptpro` presents `gptpro
+  consult/read/continue/open` language over the existing ChatGPT Web browser
+  session engine.
+- **Trace-safe PostBash checks.** PostBash advisory metadata now writes to
+  `.ai/harness/checks/post-bash-latest.json`, leaving `latest.json` reserved for
+  authoritative `repo-harness-run-trace.v1` evidence.
 
 ## What repo-harness Does
 
@@ -551,8 +550,8 @@ Most common guards:
 
 ## Current Release
 
-- npm package: `repo-harness@0.7.0`
-- Generated workflow stamp: `repo-harness@0.7.0+template@0.7.0`
+- npm package: `repo-harness@0.7.1`
+- Generated workflow stamp: `repo-harness@0.7.1+template@0.7.1`
 - GitHub repository: `Ancienttwo/repo-harness`
 - Release history: [`docs/CHANGELOG.md`](docs/CHANGELOG.md)
 
@@ -639,6 +638,8 @@ skill discovery compatible while the CLI and hooks own execution:
 - Product planning layer: `repo-harness-prd` (activates `$geju`, then uses Claude-first `claude -p --model opus` drafting with Codex fallback to write upper-layer PRDs in `plans/prds/`)
 - Sprint program layer: `repo-harness-sprint` (ordered sprint backlogs in `plans/sprints/`, each row expanded with `$think` before the contract flow)
 - Goal session layer: `repo-harness-goal` / `repo-harness:goal` (prepares Codex/Claude `/goal` prompts from detailed PRD or Sprint artifacts and asks for those docs when missing)
+- GPT Pro local setup layer: `repo-harness-gptpro-setup` / `repo-harness:gptpro_setup` (guides `gptpro_browser` browser/session setup and `gptpro_mcp` ChatGPT Connector MCP setup while keeping ChatGPT Pro separate from API quota)
+- GPT Pro consult layer: `repo-harness-gptpro` / `repo-harness:gptpro` (uses `gptpro consult/read/continue/open` language while mapping to the local ChatGPT Web browser session engine)
 - Repo workflow actions: `repo-harness-ship`, `repo-harness-init`, `repo-harness-migrate`, `repo-harness-upgrade`, `repo-harness-capability`, `repo-harness-architecture`, `repo-harness-handoff`, `repo-harness-deploy`, `repo-harness-repair`, `repo-harness-check`
 - Branch project creation command: `repo-harness-scaffold`
 

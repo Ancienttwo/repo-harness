@@ -145,6 +145,8 @@ contract files:
 - `repo-harness-prd`: generate an upper-layer PRD in `plans/prds/`
 - `repo-harness-sprint`: plan a sprint backlog in `plans/sprints/` from a PRD or source spec, then expand each row with `$think` before the task-contract flow
 - `repo-harness-goal` / `repo-harness:goal`: prepare a Codex/Claude `/goal` prompt from detailed PRD or Sprint artifacts; request those documents before starting when missing
+- `repo-harness-gptpro-setup` / `repo-harness:gptpro_setup`: guide `gptpro_browser` ChatGPT Web browser/session setup and `gptpro_mcp` ChatGPT Connector MCP setup without treating GPT Pro as API quota
+- `repo-harness-gptpro` / `repo-harness:gptpro`: consult or continue GPT Pro through the local ChatGPT Web browser/session bridge while presenting `gptpro consult/read/continue/open` wording over the underlying `browser-*` engine commands
 
 Internal steps such as `hooks-init`, `docs-init`, and `create-project-dirs` are
 not public commands. They stay behind `init`, `scaffold`, `migrate`, and

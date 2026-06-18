@@ -22,6 +22,8 @@ const COMMANDS = [
   "repo-harness-prd",
   "repo-harness-sprint",
   "repo-harness-goal",
+  "repo-harness-gptpro-setup",
+  "repo-harness-gptpro",
 ];
 
 function readCommand(name: string): string {
@@ -258,5 +260,38 @@ describe("repo-harness action command skills", () => {
     expect(goal).toContain("Preserve host-native `/goal` ownership");
     expect(goal).toContain("use the user's language unless repo-local instructions require otherwise");
     expect(goal).not.toContain("concise Chinese status");
+  });
+
+  test("gptpro setup command separates browser/session from MCP connector setup", () => {
+    const gptpro = readCommand("repo-harness-gptpro-setup");
+
+    expect(gptpro).toContain("repo-harness:gptpro_setup");
+    expect(gptpro).toContain("gptpro_browser");
+    expect(gptpro).toContain("gptpro_broswser");
+    expect(gptpro).toContain("gptpro_mcp");
+    expect(gptpro).toContain("repo-harness chatgpt browser-setup");
+    expect(gptpro).toContain("repo-harness chatgpt browser-doctor");
+    expect(gptpro).toContain("repo-harness mcp setup chatgpt");
+    expect(gptpro).toContain("--enable-chatgpt-browser");
+    expect(gptpro).toContain("HTTPS tunnel");
+    expect(gptpro).toContain("ChatGPT Pro subscription as an OpenAI API key");
+    expect(gptpro).toContain("Does not create OpenAI API keys");
+  });
+
+  test("gptpro command uses GPT Pro language over browser session engine commands", () => {
+    const gptpro = readCommand("repo-harness-gptpro");
+
+    expect(gptpro).toContain("repo-harness:gptpro");
+    expect(gptpro).toContain("gptpro consult");
+    expect(gptpro).toContain("gptpro continue");
+    expect(gptpro).toContain("gptpro read");
+    expect(gptpro).toContain("gptpro open");
+    expect(gptpro).toContain("repo-harness chatgpt browser-consult");
+    expect(gptpro).toContain("repo-harness chatgpt browser-session");
+    expect(gptpro).toContain("repo-harness chatgpt browser-followup");
+    expect(gptpro).toContain("repo-harness chatgpt browser-open");
+    expect(gptpro).toContain(".ai/harness/handoff/gptpro-consult.md");
+    expect(gptpro).toContain("route to `repo-harness:gptpro_setup`");
+    expect(gptpro).toContain("Does not rename or replace the underlying");
   });
 });

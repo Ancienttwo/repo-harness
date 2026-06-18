@@ -1254,6 +1254,120 @@
         "Produces a host-native /goal prompt with bounded scope, non-goals, acceptance checks, and stop condition.",
         "Does not start implementation when the source PRD/Sprint document is missing."
       ]
+    },
+    {
+      "id": 29,
+      "slug": "gptpro-browser-mcp-setup",
+      "prompt": "Use repo-harness:gptpro_setup to guide setup for both gptpro_browser and gptpro_mcp. The user has ChatGPT Pro in the browser and wants local repo-harness to use browser/session consults while ChatGPT can also connect back to the local repo through MCP.",
+      "expected_output": "Routes to repo-harness-gptpro-setup / repo-harness:gptpro_setup, separates gptpro_browser local ChatGPT Web browser/session consults from gptpro_mcp ChatGPT Connector -> local MCP sidecar setup, runs or names browser-setup/browser-doctor and mcp setup/doctor, requires HTTPS tunnel/manual ChatGPT Connector steps, redacts local auth files, and states ChatGPT Pro is not OpenAI API quota.",
+      "files": [
+        "assets/skill-commands/repo-harness-gptpro-setup/SKILL.md"
+      ],
+      "graders": {
+        "files_exist": [
+          "final-response.md"
+        ],
+        "files_contain": [
+          {
+            "path": "final-response.md",
+            "pattern": "repo-harness-gptpro-setup|repo-harness:gptpro_setup"
+          },
+          {
+            "path": "final-response.md",
+            "pattern": "gptpro_browser"
+          },
+          {
+            "path": "final-response.md",
+            "pattern": "gptpro_mcp"
+          },
+          {
+            "path": "final-response.md",
+            "pattern": "browser-setup|browser-doctor"
+          },
+          {
+            "path": "final-response.md",
+            "pattern": "mcp setup|mcp doctor|MCP"
+          },
+          {
+            "path": "final-response.md",
+            "pattern": "HTTPS tunnel|Connector"
+          },
+          {
+            "path": "final-response.md",
+            "pattern": "API quota|API key|API billing"
+          }
+        ]
+      },
+      "anti_graders": {
+        "files_not_contain": [
+          {
+            "path": "final-response.md",
+            "pattern": "print.*token|print.*passphrase|show.*cookies"
+          }
+        ]
+      },
+      "expectations": [
+        "Routes the request to repo-harness-gptpro-setup.",
+        "Keeps gptpro_browser and gptpro_mcp as separate setup lanes with different directions.",
+        "Requires browser doctor and MCP doctor verification before claiming success.",
+        "Keeps ChatGPT Pro Web access separate from OpenAI API quota or API keys.",
+        "Redacts local auth files and requires explicit HTTPS tunnel/manual Connector setup."
+      ]
+    },
+    {
+      "id": 30,
+      "slug": "gptpro-browser-session-consult",
+      "prompt": "Use repo-harness:gptpro to ask GPT Pro for architecture feedback on the current plan. If there is an existing GPT Pro session, continue it; otherwise start a new browser-session consult and write the result into the repo handoff area.",
+      "expected_output": "Routes to repo-harness-gptpro / repo-harness:gptpro, speaks in gptpro consult/read/continue/open language, maps the actual work to browser-doctor plus browser-consult or browser-followup, can read/open existing saved sessions with browser-session/browser-open, writes or names .ai/harness/handoff/gptpro-consult.md, and routes setup or gptpro_mcp requests back to repo-harness:gptpro_setup.",
+      "files": [
+        "assets/skill-commands/repo-harness-gptpro/SKILL.md"
+      ],
+      "graders": {
+        "files_exist": [
+          "final-response.md"
+        ],
+        "files_contain": [
+          {
+            "path": "final-response.md",
+            "pattern": "repo-harness-gptpro|repo-harness:gptpro"
+          },
+          {
+            "path": "final-response.md",
+            "pattern": "gptpro consult|GPT Pro consult"
+          },
+          {
+            "path": "final-response.md",
+            "pattern": "gptpro continue|browser-followup"
+          },
+          {
+            "path": "final-response.md",
+            "pattern": "browser-consult|browser-session|browser-open"
+          },
+          {
+            "path": "final-response.md",
+            "pattern": "\\.ai/harness/handoff/gptpro-consult\\.md"
+          },
+          {
+            "path": "final-response.md",
+            "pattern": "repo-harness:gptpro_setup|setup"
+          }
+        ]
+      },
+      "anti_graders": {
+        "files_not_contain": [
+          {
+            "path": "final-response.md",
+            "pattern": "rename.*browser-\\* CLI|replace.*browser-\\* CLI"
+          }
+        ]
+      },
+      "expectations": [
+        "Routes the request to repo-harness-gptpro.",
+        "Uses GPT Pro wording for the user while keeping browser-* as the implementation engine.",
+        "Supports both new consults and continuing existing saved GPT Pro sessions.",
+        "Writes or names a repo-local handoff artifact for the GPT Pro result.",
+        "Routes setup and gptpro_mcp work back to repo-harness-gptpro-setup."
+      ]
     }
   ]
 }

@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-06-17T17:30:15+0800 -->
+<!-- updated_at: 2026-06-18T18:32:17+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-06-17T17:30:15+0800
-> **Source Branch**: codex/harness-engineering-optimization
-> **Source Commit**: 98e468d
+> **Updated At**: 2026-06-18T18:32:17+0800
+> **Source Branch**: main
+> **Source Commit**: 018c433
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: merge-origin-main
+> **Reason**: release-0.7.1-preflight
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -31,8 +31,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- /Users/ancienttwo/Projects/agentic-dev-wt-think-plan-000127: plans/plan-20260617-0010-think-plan-000127.md
-- /Users/ancienttwo/Projects/agentic-dev-wt-think-plan-000127: active-worktree owner -> /Users/ancienttwo/Projects/agentic-dev-wt-think-plan-000127
+- /Users/kito/Projects/agentic-dev-wt-think-skill-codex-repo-skill-think-hook-agents-md: plans/plan-20260606-0245-think-skill-codex-repo-skill-think-hook-agents-md.md
+- /Users/kito/Projects/agentic-dev-wt-think-skill-codex-repo-skill-think-hook-agents-md: active-worktree owner -> /Users/kito/Projects/agentic-dev-wt-think-skill-codex-repo-skill-think-hook-agents-md
 ## Active Sprint
 
 - Sprint: (none)
@@ -41,57 +41,43 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/contract-assets/cleanup-script-policy.md`: status=completed, current_slice=todo-01, source_plan=(none)
 ## Handoff
 
-- Exact Next Step: Review/checks pass; finish and fast-forward merge this contract worktree. Command: bash scripts/contract-worktree.sh finish
+- Exact Next Step: Clean up merged contract worktree codex/think-skill-codex-repo-skill-think-hook-agents-md. Command: bash scripts/contract-worktree.sh cleanup --slug think-skill-codex-repo-skill-think-hook-agents-md --target main
 
 ## Checks
 
-- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
+- status=(none), source=(none), exit_code=(none), file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 60 changed/untracked path(s)
+- Summary: 26 changed/untracked path(s)
 
 ```
-A  .agents/skills/repo-harness-chatgpt-bridge/SKILL.md
-A  .agents/skills/repo-harness-chatgpt-bridge/references/chatgpt-connector-manual.md
-A  .agents/skills/repo-harness-chatgpt-bridge/references/workflow.md
-A  .ai/harness/handoff/codex-goal.md
-A  .ai/harness/handoff/mcp-connector-sprint-closeout.md
-A  .ai/harness/handoff/mcp-discovery.md
-A  .ai/harness/handoff/mcp-e2e-result.md
-M  .ai/hooks/lib/workflow-state.sh
-M  .gitignore
-M  README.md
-M  README.zh-CN.md
-M  assets/hooks/lib/workflow-state.sh
-M  assets/templates/helpers/sprint-backlog.sh
-M  bun.lock
-M  bunfig.toml
-M  deploy/release-checklists/260616-repo-harness-0.6.0.md
-M  docs/CHANGELOG.md
-M  docs/architecture/transactional-adoption-planner.md
-A  docs/repo-harness-chatgpt-mcp-setup.md
-A  docs/researches/20260617-repo-harness-mcp.md
-M  package.json
-A  plans/prds/20260617-repo-harness-mcp-prd.md
-A  plans/sprints/20260617-repo-harness-mcp-sprint.md
-M  scripts/check-ci.sh
-A  scripts/check-release-published.sh
-A  scripts/check-tarball-install-smoke.sh
-M  scripts/sprint-backlog.sh
-A  src/cli/commands/mcp.ts
-M  src/cli/index.ts
-A  src/cli/mcp/audit.ts
-A  src/cli/mcp/auth.ts
-A  src/cli/mcp/instructions.ts
-A  src/cli/mcp/oauth.ts
-A  src/cli/mcp/paths.ts
-A  src/cli/mcp/policy.ts
-A  src/cli/mcp/redaction.ts
-A  src/cli/mcp/repo.ts
-A  src/cli/mcp/server.ts
-A  src/cli/mcp/setup.ts
-A  src/cli/mcp/tools.ts
+ M .ai/hooks/post-bash.sh
+ M .claude/.skill-version
+ M README.es.md
+ M README.fr.md
+ M README.ja.md
+ M README.md
+ M README.zh-CN.md
+ M SKILL.md
+ M assets/hooks/post-bash.sh
+ M assets/reference-configs/agentic-development-flow.md
+ M assets/skill-commands/manifest.json
+ M assets/skill-version.json
+ M docs/CHANGELOG.md
+ M docs/architecture/modules/public-surface/action-commands.md
+ M docs/reference-configs/agentic-development-flow.md
+ M evals/evals.json
+ M package.json
+ M tasks/current.md
+ M tests/action-command-skills.test.ts
+ M tests/bootstrap-files.test.ts
+ M tests/evals-contract.test.ts
+ M tests/hook-runtime.test.ts
+ M tests/readme-dx.test.ts
+?? assets/skill-commands/repo-harness-gptpro-setup/
+?? assets/skill-commands/repo-harness-gptpro/
+?? deploy/release-checklists/260618-repo-harness-0.7.1.md
 ```
 
 ## Source Artifacts

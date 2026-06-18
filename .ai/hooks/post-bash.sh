@@ -169,10 +169,7 @@ fi
 
 checks_file="$(workflow_checks_file)"
 post_bash_checks_file="$(dirname "$checks_file")/post-bash-latest.json"
-target_checks_file="$checks_file"
-if [[ -f "$checks_file" ]] && grep -Eq '"source"[[:space:]]*:[[:space:]]*"verify-sprint"' "$checks_file"; then
-  target_checks_file="$post_bash_checks_file"
-fi
+target_checks_file="$post_bash_checks_file"
 
 mkdir -p "$(dirname "$target_checks_file")"
 if [[ -n "$raw_output_path" ]]; then
@@ -205,10 +202,10 @@ cat > "$target_checks_file" <<EOF_CHECKS
 }
 EOF_CHECKS
 
-if [[ "$target_checks_file" != "$checks_file" ]]; then
+if [[ -f "$checks_file" ]]; then
   echo "[ChecksFile] Preserved ${checks_file}; updated ${target_checks_file}."
 else
-  echo "[ChecksFile] Updated ${checks_file}."
+  echo "[ChecksFile] Updated ${target_checks_file}; ${checks_file} remains reserved for repo-harness-run-trace.v1."
 fi
 
 # Aggregated advisory (route-registry keeps one PostToolUse bash entry; the

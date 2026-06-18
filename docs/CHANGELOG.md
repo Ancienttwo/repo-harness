@@ -4,6 +4,29 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-06-18
+
+### Added
+
+- Added `repo-harness-gptpro-setup` / `repo-harness:gptpro_setup` to guide
+  local `gptpro_browser` browser/session setup and `gptpro_mcp` ChatGPT
+  Connector MCP setup without treating ChatGPT Pro as API quota.
+- Added `repo-harness-gptpro` / `repo-harness:gptpro` as the local consult
+  skill for GPT Pro browser-session assistance, using `gptpro
+  consult/read/continue/open` language over the existing ChatGPT Web browser
+  session engine.
+
+### Fixed
+
+- Preserved `.ai/harness/checks/latest.json` for authoritative
+  `repo-harness-run-trace.v1` evidence by writing PostBash advisory metadata to
+  `.ai/harness/checks/post-bash-latest.json`.
+
+### Release Notes
+
+- Prepared the `repo-harness@0.7.1` patch line for npm publish, registry
+  readback, clean-room `npx` smoke, Git tag, and GitHub release creation.
+
 ## [0.7.0] - 2026-06-18
 
 ### Added

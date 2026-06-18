@@ -61,6 +61,8 @@ describe("Skill eval assets", () => {
       "repo-harness-prd",
       "repo-harness-sprint",
       "repo-harness-goal",
+      "repo-harness-gptpro-setup",
+      "repo-harness-gptpro",
     ]) {
       expect(combined).toContain(command);
     }

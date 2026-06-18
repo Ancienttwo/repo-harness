@@ -67,7 +67,7 @@ Agent 先读 source artifacts，再读派生摘要：
 `tasks/current.md` 只是 orientation snapshot。如果它和 active plan、contract、
 review、checks 或 handoff 冲突，以 source artifacts 为准。
 
-## 0.7.0 新特性
+## 0.7.1 新特性
 
 - **ChatGPT browser engine。** `repo-harness chatgpt browser-*` 可以用
   policy-checked 文件输入创建 repo-local ChatGPT Web consult session，不走 OpenAI API。
@@ -442,8 +442,8 @@ hook block 工作时，先看 terminal 里的结构化输出。核心字段是
 
 ## 当前 Release
 
-- npm package：`repo-harness@0.7.0`
-- Generated workflow stamp：`repo-harness@0.7.0+template@0.7.0`
+- npm package：`repo-harness@0.7.1`
+- Generated workflow stamp：`repo-harness@0.7.1+template@0.7.1`
 - GitHub repository：`Ancienttwo/repo-harness`
 - Release history：[`docs/CHANGELOG.md`](docs/CHANGELOG.md)
 

@@ -56,7 +56,7 @@ Dans un dépôt adopté, la surface à comprendre reste volontairement réduite 
 | `tasks/contracts/`, `tasks/reviews/` et `.ai/harness/checks/` | Scope, vérification et preuves de review pour démontrer que le travail est terminé. |
 | `.ai/harness/handoff/` et `tasks/current.md` | Session journal et état resumable dérivés des workflow artifacts plutôt que de la chat memory. |
 
-## Nouveautés de la 0.7.0
+## Nouveautés de la 0.7.1
 
 - **ChatGPT browser engine.** `repo-harness chatgpt browser-*` crée des sessions
   ChatGPT Web repo-locales avec des fichiers contrôlés par policy, sans OpenAI API.
@@ -387,8 +387,8 @@ Guards courants :
 
 ## Release actuelle
 
-- npm package : `repo-harness@0.7.0`
-- Generated workflow stamp : `repo-harness@0.7.0+template@0.7.0`
+- npm package : `repo-harness@0.7.1`
+- Generated workflow stamp : `repo-harness@0.7.1+template@0.7.1`
 - GitHub repository : `Ancienttwo/repo-harness`
 - Release history : [`docs/CHANGELOG.md`](docs/CHANGELOG.md)
 

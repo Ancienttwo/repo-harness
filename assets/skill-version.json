@@ -1,6 +1,6 @@
 {
-  "version": "0.7.0",
-  "templateVersion": "0.7.0",
+  "version": "0.7.1",
+  "templateVersion": "0.7.1",
   "skillName": "repo-harness",
   "contractId": "tasks-first-harness-v1",
   "retiredAliases": [
@@ -147,6 +147,10 @@
     {
       "version": "0.7.0",
       "description": "Adds the ChatGPT browser engine with repo-local sessions, opt-in MCP browser tools, an Oracle wrapper, a native Chrome CDP provider spike, and hosted CI gate hardening"
+    },
+    {
+      "version": "0.7.1",
+      "description": "Adds GPT Pro setup and consult command skills over the ChatGPT Web browser bridge and keeps PostBash advisory traces out of the authoritative latest checks trace"
     }
   ],
   "generatedProjectStamp": {

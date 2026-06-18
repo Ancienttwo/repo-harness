@@ -4014,7 +4014,7 @@ describe("Hook runtime behavior", () => {
         }),
       });
       expect(broad.status).toBe(0);
-      const broadJson = JSON.parse(readFileSync(join(cwd, ".ai/harness/checks/latest.json"), "utf-8"));
+      const broadJson = JSON.parse(readFileSync(join(cwd, ".ai/harness/checks/post-bash-latest.json"), "utf-8"));
       expect(broadJson.broad_command).toBe(true);
       expect(broadJson.output_line_count).toBe(2);
       expect(broadJson.recommended_next_tool).toBe("codegraph_context");
@@ -4033,7 +4033,7 @@ describe("Hook runtime behavior", () => {
         }),
       });
       expect(precise.status).toBe(0);
-      const preciseJson = JSON.parse(readFileSync(join(cwd, ".ai/harness/checks/latest.json"), "utf-8"));
+      const preciseJson = JSON.parse(readFileSync(join(cwd, ".ai/harness/checks/post-bash-latest.json"), "utf-8"));
       expect(preciseJson.broad_command).toBe(false);
       expect(preciseJson.output_line_count).toBe(1);
       expect(preciseJson.recommended_next_tool).toBe("");
@@ -4066,7 +4066,7 @@ describe("Hook runtime behavior", () => {
       });
 
       expect(res.status).toBe(0);
-      const latest = JSON.parse(readFileSync(join(cwd, ".ai/harness/checks/latest.json"), "utf-8"));
+      const latest = JSON.parse(readFileSync(join(cwd, ".ai/harness/checks/post-bash-latest.json"), "utf-8"));
       expect(latest.broad_command).toBe(true);
       expect(latest.output_line_count).toBe(201);
       expect(latest.verbosity_class).toBe("long");
@@ -4098,7 +4098,7 @@ describe("Hook runtime behavior", () => {
 
       expect(res.status).toBe(0);
       expect(res.stdout).toContain("[PostBash] Tests failed");
-      const latest = JSON.parse(readFileSync(join(cwd, ".ai/harness/checks/latest.json"), "utf-8"));
+      const latest = JSON.parse(readFileSync(join(cwd, ".ai/harness/checks/post-bash-latest.json"), "utf-8"));
       expect(latest.status).toBe("fail");
       expect(latest.verbosity_class).toBe("failure");
       expect(latest.suggested_runner).toBe("raw");
@@ -4126,7 +4126,7 @@ describe("Hook runtime behavior", () => {
       });
 
       expect(res.status).toBe(0);
-      const latest = JSON.parse(readFileSync(join(cwd, ".ai/harness/checks/latest.json"), "utf-8"));
+      const latest = JSON.parse(readFileSync(join(cwd, ".ai/harness/checks/post-bash-latest.json"), "utf-8"));
       expect(latest.status).toBe("pass");
       expect(latest.verbosity_class).toBe("inline");
       expect(latest.failure_signal).toBe(true);

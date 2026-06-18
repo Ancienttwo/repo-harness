@@ -28,6 +28,8 @@ scripts, hooks, and contract files:
 - `repo-harness-prd`
 - `repo-harness-sprint`
 - `repo-harness-goal`
+- `repo-harness-gptpro-setup`
+- `repo-harness-gptpro`
 
 The manifest at `assets/skill-commands/manifest.json` is the compatibility
 facade catalog. The root `SKILL.md` remains the router over the same engine.
