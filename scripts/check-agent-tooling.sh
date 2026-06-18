@@ -78,6 +78,9 @@ const WAZA_SHARED_RULES = ["anti-patterns.md", "chinese.md", "durable-context.md
 const CODEX_AUTOMATION_SKILLS = ["health", "check", "mermaid"];
 const CODEGRAPH_PACKAGE = "@colbymchenry/codegraph";
 const CODEGRAPH_GLOBAL_INSTALL_COMMAND = `bun add -g ${CODEGRAPH_PACKAGE} && repo-harness tools configure codegraph --target codex --location global`;
+const GBRAIN_INSTALL_COMMAND = "bun install -g github:garrytan/gbrain";
+const GBRAIN_INSTALL_NOTE =
+  "Install from GitHub; npm registry package gbrain is an unrelated GPU library and does not ship this CLI.";
 const CODEGRAPH_MCP_CONFIGURE_COMMAND = "repo-harness tools configure codegraph --target <codex|claude|both> --location global";
 const CODEGRAPH_LOCAL_INSTALL_COMMAND = "bun install";
 const CODEGRAPH_ENSURE_COMMAND = [
@@ -1025,7 +1028,7 @@ function detectGbrain() {
     name: "gbrain",
     status,
     reason: !present
-      ? "gbrain CLI is not installed."
+      ? "gbrain CLI is not installed; install the official GitHub package, not npm registry package gbrain."
       : acceptedFastWarning
         ? "gbrain CLI is present; fast doctor only skipped DB checks."
       : doctorJson
@@ -1047,7 +1050,8 @@ function detectGbrain() {
           : "gbrain update status is unknown.",
     integrations_available: integrationsAvailable,
     mcp_hosts: mcpHosts,
-    install_command: "bun add -g gbrain",
+    install_command: GBRAIN_INSTALL_COMMAND,
+    install_note: GBRAIN_INSTALL_NOTE,
     upgrade_command: checkUpdateJson?.upgrade_command || "gbrain upgrade",
     sync_command: "gbrain sync --repo <path>",
     impact: {

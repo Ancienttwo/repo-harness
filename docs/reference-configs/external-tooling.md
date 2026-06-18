@@ -143,8 +143,11 @@ done
 ### gbrain
 
 ```bash
-bun add -g gbrain
+bun install -g github:garrytan/gbrain
 ```
+
+Do not install npm registry `gbrain`; that package is unrelated to the GBrain
+CLI and does not ship the repo-harness advisory command.
 
 ### CodeGraph
 

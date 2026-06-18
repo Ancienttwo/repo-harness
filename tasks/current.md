@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-06-18T18:55:34+0800 -->
+<!-- updated_at: 2026-06-18T19:07:08+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-06-18T18:55:34+0800
+> **Updated At**: 2026-06-18T19:07:08+0800
 > **Source Branch**: main
-> **Source Commit**: 43d2f3d
+> **Source Commit**: e9126c9
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: release-0.7.1-postpublish-evidence
+> **Reason**: gbrain-install-source-remediation
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -49,11 +49,18 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 2 changed/untracked path(s)
+- Summary: 9 changed/untracked path(s)
 
 ```
- M deploy/release-checklists/260618-repo-harness-0.7.1.md
+ M assets/reference-configs/external-tooling.md
+ M assets/templates/helpers/check-agent-tooling.sh
+ M docs/CHANGELOG.md
+ M docs/reference-configs/external-tooling.md
+ M scripts/check-agent-tooling.sh
+ M src/cli/commands/init.ts
  M tasks/current.md
+ M tests/check-agent-tooling.test.ts
+ M tests/cli/init.test.ts
 ```
 
 ## Source Artifacts

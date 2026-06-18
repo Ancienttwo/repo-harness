@@ -310,6 +310,53 @@ describe("init command", () => {
     }
   });
 
+  test("installs the gbrain CLI from GitHub when requested", () => {
+    const tmp = join(tmpdir(), `repo-harness-init-gbrain-${Date.now()}`);
+    const source = join(tmp, "source");
+    const repo = join(tmp, "repo");
+    const home = join(tmp, "home");
+    const fakeBin = join(tmp, "bin");
+    const bunLog = join(tmp, "bun.log");
+    try {
+      mkdirSync(source, { recursive: true });
+      mkdirSync(repo, { recursive: true });
+      mkdirSync(home, { recursive: true });
+      mkdirSync(fakeBin, { recursive: true });
+      setupFakeSource(source);
+      makeExecutable(
+        join(fakeBin, "bun"),
+        ["#!/bin/bash", "set -euo pipefail", `printf '%s\\n' "$*" >> "${bunLog}"`, "exit 0", ""].join("\n"),
+      );
+
+      const result = runInit({
+        repo,
+        sourceRoot: source,
+        syncSkill: false,
+        hostAdapters: false,
+        externalSkills: false,
+        verify: false,
+        codegraph: false,
+        brainRoot: join(tmp, "brain"),
+        brainMode: "install-gbrain-cli",
+        env: {
+          ...process.env,
+          HOME: home,
+          PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
+        },
+      });
+
+      expect(result.exitCode).toBe(0);
+      const installStep = result.steps.find((step) => step.step === "install gbrain CLI");
+      expect(installStep?.status).toBe("ok");
+      expect(installStep?.command).toEqual(["bun", "install", "-g", "github:garrytan/gbrain"]);
+      const bunCommands = readFileSync(bunLog, "utf-8");
+      expect(bunCommands).toContain("install -g github:garrytan/gbrain");
+      expect(bunCommands).not.toContain("add -g gbrain");
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   test("npx cache sources force copy-based installed skill sync", () => {
     const tmp = join(tmpdir(), `repo-harness-init-npx-${Date.now()}`);
     const source = join(tmp, "_npx", "abc123", "node_modules", "repo-harness");

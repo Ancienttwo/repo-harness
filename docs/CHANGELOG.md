@@ -4,6 +4,11 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Corrected gbrain remediation guidance to install the official GitHub GBrain
+  CLI instead of the unrelated npm registry `gbrain` package.
+
 ## [0.7.1] - 2026-06-18
 
 ### Added

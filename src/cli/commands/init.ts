@@ -35,6 +35,7 @@ import { runProcess as runBoundedProcess } from "../../effects/process-runner";
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(SCRIPT_DIR, "..", "..", "..");
 const WAZA_SKILLS = ["think", "hunt", "check", "health"];
+const GBRAIN_INSTALL_ARGS = ["install", "-g", "github:garrytan/gbrain"] as const;
 const GLOBAL_RULES_BEGIN = "<!-- BEGIN: repo-harness global-working-rules -->";
 const GLOBAL_RULES_END = "<!-- END: repo-harness global-working-rules -->";
 
@@ -536,7 +537,7 @@ export function runInit(opts: InitCommandOptions = {}): InitCommandResult {
       steps.push({ step: "ensure brain root", status: "ok", detail: root });
     }
     if (brainMode === "install-gbrain-cli") {
-      const gbrain = runProcess("bun", ["add", "-g", "gbrain"], sourceRoot, commandEnv);
+      const gbrain = runProcess("bun", [...GBRAIN_INSTALL_ARGS], sourceRoot, commandEnv);
       steps.push(withStepName(gbrain, "install gbrain CLI"));
     }
     try {
@@ -776,7 +777,7 @@ export async function runInteractiveInit(opts: InteractiveInitOptions = {}): Pro
       "Brain mode",
       [
         { label: "manifest only", value: "manifest-only", detail: "Use file-vault manifest/check/sync" },
-        { label: "install gbrain CLI", value: "install-gbrain-cli", detail: "Install CLI, but do not enable MCP" },
+        { label: "install gbrain CLI", value: "install-gbrain-cli", detail: "Install GitHub GBrain CLI, but do not enable MCP" },
         { label: "skip brain sync", value: "skip", detail: "Do not create or sync a brain root" },
       ],
       0,
