@@ -54,8 +54,10 @@ tasks/.current.md.tmp.*
 .ai/harness/mcp/audit.log
 .ai/harness/chatgpt/browser-lock.json
 .ai/harness/chatgpt/bridge-extension/
+.ai/harness/chatgpt/oracle-home/
 .ai/harness/chatgpt/tmp/
 .ai/harness/chatgpt/sessions/
+.ai/harness/handoff/gptpro/*.md
 .ai/harness/triage/*
 !.ai/harness/triage/.gitkeep
 .codex/*

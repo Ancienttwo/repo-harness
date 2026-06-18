@@ -15,8 +15,14 @@ function json(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
 
-function renderContentScript(bridgeUrl: string): string {
+function renderContentScript(bridgeUrl: string, token?: string): string {
   return `const REPO_HARNESS_CHATGPT_BRIDGE_URL = ${JSON.stringify(bridgeUrl)};
+const REPO_HARNESS_CHATGPT_BRIDGE_TOKEN = ${JSON.stringify(token ?? '')};
+function repoHarnessAuthHeaders(base) {
+  const headers = Object.assign({}, base);
+  if (REPO_HARNESS_CHATGPT_BRIDGE_TOKEN) headers['x-repo-harness-bridge-token'] = REPO_HARNESS_CHATGPT_BRIDGE_TOKEN;
+  return headers;
+}
 const REPO_HARNESS_CHATGPT_COMPOSERS = [
   '[data-testid="composer-text-input"]',
   '#prompt-textarea',
@@ -49,14 +55,14 @@ function repoHarnessSendButton() {
 async function repoHarnessPost(path, payload) {
   await fetch(REPO_HARNESS_CHATGPT_BRIDGE_URL + path, {
     method: 'POST',
-    headers: {'content-type': 'application/json'},
+    headers: repoHarnessAuthHeaders({'content-type': 'application/json'}),
     body: JSON.stringify(payload),
   }).catch(() => undefined);
 }
 
 async function repoHarnessJson(path) {
   const response = await fetch(REPO_HARNESS_CHATGPT_BRIDGE_URL + path, {
-    headers: {'accept': 'application/json'},
+    headers: repoHarnessAuthHeaders({'accept': 'application/json'}),
   });
   if (!response.ok) return {};
   return await response.json();
@@ -183,7 +189,7 @@ repoHarnessPoll().catch(() => undefined);
 `;
 }
 
-export function writeChatgptBridgeExtension(repoRoot: string, bridgeUrl: string): ChatgptBridgeExtension {
+export function writeChatgptBridgeExtension(repoRoot: string, bridgeUrl: string, token?: string): ChatgptBridgeExtension {
   const extensionDir = join(repoRoot, CHATGPT_BRIDGE_EXTENSION_RELATIVE_PATH);
   const manifestPath = join(extensionDir, 'manifest.json');
   const contentScriptPath = join(extensionDir, 'content-script.js');
@@ -210,6 +216,6 @@ export function writeChatgptBridgeExtension(repoRoot: string, bridgeUrl: string)
       },
     ],
   }), 'utf-8');
-  writeFileSync(contentScriptPath, renderContentScript(bridgeUrl), 'utf-8');
+  writeFileSync(contentScriptPath, renderContentScript(bridgeUrl, token), 'utf-8');
   return { extensionDir, manifestPath, contentScriptPath, bridgeUrl };
 }

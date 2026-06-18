@@ -35,6 +35,7 @@ interface BrowserDoctorOptions extends BrowserCommonOptions {
   timeoutMs?: string;
   keepBrowser?: boolean;
   headless?: boolean;
+  oracleBin?: string;
 }
 
 interface BrowserBindOptions extends BrowserCommonOptions {
@@ -58,12 +59,14 @@ interface BrowserConsultOptions extends BrowserCommonOptions {
   provider?: string;
   chatgptUrl?: string;
   timeoutMs?: string;
+  heartbeat?: string;
   dryRun?: boolean;
   writeOutput?: string;
   allowAbsoluteOutput?: boolean;
   overwriteOutput?: boolean;
   maxInlineChars?: string;
   manualLogin?: boolean;
+  oracleBin?: string;
   profileDir?: string;
   profileDirectory?: string;
   browserChannel?: string;
@@ -80,6 +83,7 @@ interface BrowserFollowupOptions extends BrowserCommonOptions {
   thinking?: string;
   provider?: string;
   timeoutMs?: string;
+  heartbeat?: string;
   dryRun?: boolean;
   writeOutput?: string;
   allowAbsoluteOutput?: boolean;
@@ -89,6 +93,7 @@ interface BrowserFollowupOptions extends BrowserCommonOptions {
   browserChannel?: string;
   keepBrowser?: boolean;
   headless?: boolean;
+  oracleBin?: string;
 }
 
 function parseProvider(value?: string): BrowserProviderName {
@@ -117,9 +122,16 @@ function parsePositiveInteger(name: string, value?: string): number | undefined 
   return parsed;
 }
 
+function parseNonNegativeInteger(name: string, value?: string): number | undefined {
+  if (value === undefined) return undefined;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0) throw new Error(`invalid --${name} "${value}"`);
+  return parsed;
+}
+
 function parseStatus(value?: string): BrowserSessionStatus | undefined {
   if (value === undefined) return undefined;
-  if (value === 'completed' || value === 'running' || value === 'incomplete_capture' || value === 'failed' || value === 'cancelled' || value === 'dry_run') return value;
+  if (value === 'completed' || value === 'running' || value === 'incomplete_capture' || value === 'recoverable' || value === 'failed' || value === 'cancelled' || value === 'dry_run') return value;
   throw new Error(`invalid --status "${value}"`);
 }
 
@@ -196,6 +208,7 @@ export function buildChatgptCommand(): Command {
     .option('--timeout-ms <ms>', 'Native session validation timeout in milliseconds')
     .option('--keep-browser', 'Leave the validation browser open')
     .option('--headless', 'Run native validation headless')
+    .option('--oracle-bin <path>', 'Explicit oracle binary path (overrides REPO_HARNESS_ORACLE_BIN / node_modules / PATH)')
     .option('--json', 'Output JSON instead of human-readable text')
     .action((rawOpts: BrowserDoctorOptions) => {
       void runChatgptAction(async () => {
@@ -208,6 +221,7 @@ export function buildChatgptCommand(): Command {
           timeoutMs: parsePositiveInteger('timeout-ms', rawOpts.timeoutMs),
           keepBrowser: rawOpts.keepBrowser === true,
           headless: rawOpts.headless === true,
+          oracleBin: rawOpts.oracleBin,
         });
         console.log(rawOpts.json === true ? JSON.stringify(result.json, null, 2) : result.lines.join('\n'));
       });
@@ -226,6 +240,7 @@ export function buildChatgptCommand(): Command {
     .option('--provider <provider>', 'Browser provider: oracle|native|bridge', 'oracle')
     .option('--chatgpt-url <url>', 'ChatGPT URL to open')
     .option('--timeout-ms <ms>', 'Assistant timeout in milliseconds')
+    .option('--heartbeat <seconds>', 'Oracle provider heartbeat interval in seconds; 0 disables Oracle heartbeat (default: 59)')
     .option('--max-inline-chars <chars>', 'Maximum inline chars per file', '120000')
     .option('--write-output <path>', 'Repo-relative path to copy final output')
     .option('--allow-absolute-output', 'Permit --write-output to target an absolute path')
@@ -236,6 +251,7 @@ export function buildChatgptCommand(): Command {
     .option('--browser-channel <channel>', 'Native provider Chrome channel: chrome|chrome-beta|chrome-dev|chrome-canary')
     .option('--keep-browser', 'Native provider leaves the browser open after the run')
     .option('--headless', 'Native provider runs the selected Chrome channel headless')
+    .option('--oracle-bin <path>', 'Explicit oracle binary path (overrides REPO_HARNESS_ORACLE_BIN / node_modules / PATH)')
     .option('--dry-run', 'Resolve prompt/files and save a dry-run session without opening a browser')
     .action((rawOpts: BrowserConsultOptions) => {
       void runChatgptAction(async () => {
@@ -251,6 +267,7 @@ export function buildChatgptCommand(): Command {
           provider: parseProvider(rawOpts.provider),
           chatgptUrl: rawOpts.chatgptUrl,
           timeoutMs: parsePositiveInteger('timeout-ms', rawOpts.timeoutMs),
+          heartbeatSeconds: parseNonNegativeInteger('heartbeat', rawOpts.heartbeat),
           dryRun: rawOpts.dryRun === true,
           writeOutput: rawOpts.writeOutput,
           allowAbsoluteOutput: rawOpts.allowAbsoluteOutput === true,
@@ -262,6 +279,7 @@ export function buildChatgptCommand(): Command {
           browserChannel: parseBrowserChannel(rawOpts.browserChannel),
           keepBrowser: rawOpts.keepBrowser === true,
           headless: rawOpts.headless === true,
+          oracleBin: rawOpts.oracleBin,
         });
         console.log(JSON.stringify({
           sessionId: result.sessionId,
@@ -298,6 +316,7 @@ export function buildChatgptCommand(): Command {
     .option('--thinking <level>', 'Thinking level: light|standard|extended|heavy')
     .option('--provider <provider>', 'Browser provider: oracle|native|bridge')
     .option('--timeout-ms <ms>', 'Assistant timeout in milliseconds')
+    .option('--heartbeat <seconds>', 'Oracle provider heartbeat interval in seconds; 0 disables Oracle heartbeat (default: 59)')
     .option('--write-output <path>', 'Repo-relative path to copy final output')
     .option('--allow-absolute-output', 'Permit --write-output to target an absolute path')
     .option('--overwrite-output', 'Allow --write-output to replace an existing file')
@@ -306,6 +325,7 @@ export function buildChatgptCommand(): Command {
     .option('--browser-channel <channel>', 'Native provider Chrome channel: chrome|chrome-beta|chrome-dev|chrome-canary')
     .option('--keep-browser', 'Native provider leaves the browser open after the run')
     .option('--headless', 'Native provider runs the selected Chrome channel headless')
+    .option('--oracle-bin <path>', 'Explicit oracle binary path (overrides REPO_HARNESS_ORACLE_BIN / node_modules / PATH)')
     .option('--dry-run', 'Resolve prompt/session and save a dry-run follow-up without opening a browser')
     .action((rawOpts: BrowserFollowupOptions) => {
       void runChatgptAction(async () => {
@@ -320,6 +340,7 @@ export function buildChatgptCommand(): Command {
           thinking: parseThinking(rawOpts.thinking),
           provider: rawOpts.provider ? parseProvider(rawOpts.provider) : undefined,
           timeoutMs: parsePositiveInteger('timeout-ms', rawOpts.timeoutMs),
+          heartbeatSeconds: parseNonNegativeInteger('heartbeat', rawOpts.heartbeat),
           dryRun: rawOpts.dryRun === true,
           writeOutput: rawOpts.writeOutput,
           allowAbsoluteOutput: rawOpts.allowAbsoluteOutput === true,
@@ -329,6 +350,7 @@ export function buildChatgptCommand(): Command {
           browserChannel: parseBrowserChannel(rawOpts.browserChannel),
           keepBrowser: rawOpts.keepBrowser === true,
           headless: rawOpts.headless === true,
+          oracleBin: rawOpts.oracleBin,
         });
         console.log(JSON.stringify({
           sourceSessionId: rawOpts.session,

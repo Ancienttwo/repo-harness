@@ -2,6 +2,7 @@ import { join, resolve } from 'path';
 import { existsSync, readFileSync } from 'fs';
 import { CHATGPT_BRIDGE_DEFAULT_PORT, writeChatgptBridgeExtension } from './bridge-extension';
 import {
+  ensureBridgeToken,
   readBrowserBinding,
   updateBrowserBindingStatus,
 } from './binding';
@@ -328,7 +329,7 @@ export async function startBrowserBindServer(repoRoot: string, opts: BrowserBind
   const host = opts.host ?? '127.0.0.1';
   const port = opts.port ?? CHATGPT_BRIDGE_DEFAULT_PORT;
   const bridgeUrl = `http://${host}:${port}`;
-  const extension = writeChatgptBridgeExtension(repoRoot, bridgeUrl);
+  const extension = writeChatgptBridgeExtension(repoRoot, bridgeUrl, ensureBridgeToken(repoRoot));
   const timeoutMs = opts.timeoutMs ?? 30_000;
   let heartbeat: { composerVisible: boolean; url?: string; receivedAt: number } | undefined;
 

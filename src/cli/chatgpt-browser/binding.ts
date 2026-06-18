@@ -1,3 +1,4 @@
+import { randomBytes } from 'crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { basename, dirname, join, resolve } from 'path';
 import type { NativeBrowserChannel } from './types';
@@ -13,9 +14,15 @@ export interface ChatgptBrowserBinding {
   selectedProfilePath?: string;
   browserChannel: NativeBrowserChannel;
   chatgptUrl: string;
+  /** Per-binding capability token; the localhost bridge rejects callers that do not present it. */
+  bridgeToken?: string;
   updatedAt: string;
   lastCheckedAt?: string;
   lastStatus?: 'ready' | 'login_required' | 'failed';
+}
+
+export function generateBridgeToken(): string {
+  return randomBytes(24).toString('base64url');
 }
 
 export interface BrowserSetupOptions {
@@ -93,12 +100,28 @@ export function writeBrowserBinding(repoRoot: string, opts: BrowserSetupOptions 
     selectedProfilePath: selection.selectedProfilePath,
     browserChannel: opts.browserChannel,
     chatgptUrl: normalizeChatgptUrl(opts.chatgptUrl),
+    bridgeToken: generateBridgeToken(),
     updatedAt: new Date().toISOString(),
   };
   const bindingPath = resolveBrowserBindingPath(repoRoot);
   mkdirSync(dirname(bindingPath), { recursive: true });
   writeFileSync(bindingPath, `${JSON.stringify(binding, null, 2)}\n`, 'utf-8');
   return binding;
+}
+
+/**
+ * Return the binding's bridge capability token, lazily generating and persisting
+ * one for pre-existing bindings that predate the token. Returns undefined when no
+ * binding file exists (callers fall back to an ephemeral per-run token).
+ */
+export function ensureBridgeToken(repoRoot: string): string | undefined {
+  const current = readBrowserBinding(repoRoot).binding;
+  if (!current) return undefined;
+  if (current.bridgeToken) return current.bridgeToken;
+  const bridgeToken = generateBridgeToken();
+  const next: ChatgptBrowserBinding = { ...current, bridgeToken, updatedAt: new Date().toISOString() };
+  writeFileSync(resolveBrowserBindingPath(repoRoot), `${JSON.stringify(next, null, 2)}\n`, 'utf-8');
+  return bridgeToken;
 }
 
 export function updateBrowserBindingStatus(

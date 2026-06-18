@@ -1,6 +1,6 @@
 {
-  "version": "0.7.1",
-  "templateVersion": "0.7.1",
+  "version": "0.7.2",
+  "templateVersion": "0.7.2",
   "skillName": "repo-harness",
   "contractId": "tasks-first-harness-v1",
   "compatibility": {
@@ -147,6 +147,10 @@
     {
       "version": "0.7.1",
       "description": "Adds GPT Pro setup and consult command skills over the ChatGPT Web browser bridge and keeps PostBash advisory traces out of the authoritative latest checks trace"
+    },
+    {
+      "version": "0.7.2",
+      "description": "Hardens GPT Pro setup bootstrap gates, preserves ChatGPT MCP connector settings, adds Oracle heartbeat support, and makes Oracle repair guidance source-aware"
     }
   ],
   "generatedProjectStamp": {

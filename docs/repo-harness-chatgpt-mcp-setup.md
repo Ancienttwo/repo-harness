@@ -71,13 +71,15 @@ Use this Connector URL:
 1. Open ChatGPT Settings.
 2. Enable Developer Mode if your workspace exposes it.
 3. Go to Connectors.
-4. Create a Connector named `repo-harness`.
+4. Create a Connector using the server name recorded in `.repo-harness/mcp.local.json` under `chatgpt.serverName` (new setup records the default `repo-harness` unless `--server-name` is provided).
 5. Paste the HTTPS Connector URL ending in `/mcp`.
 6. Configure Connector authentication as OAuth.
 7. Click Scan Tools.
 8. When the authorization page opens, enter the passphrase from `.repo-harness/mcp.oauth.json`.
 9. Wait for the tool scan to finish, then create the Connector.
 10. Keep write confirmations enabled.
+
+If `repo-harness mcp doctor --repo . --json` reports `chatgpt.serverNameConfigured:false`, rerun setup with `--server-name <connector-name>` before using GPT Pro MCP read-back prompts.
 
 ## Human Workflow
 

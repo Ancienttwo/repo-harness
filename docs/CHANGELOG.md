@@ -4,12 +4,17 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-06-19
+
 ### Added
 
 - Added ChatGPT native browser product-session binding for user-selected Chrome
   profiles, with printed bind-page URLs, Chrome profile-directory support,
   doctor session validation, and fail-closed native consults when no ChatGPT
   profile is bound.
+- Added Oracle browser-provider heartbeat support. GPT Pro / ChatGPT browser
+  consults now pass `--heartbeat`, defaulting to 59 seconds, so long-running GPT
+  analysis stays observable through Cloudflare and local process boundaries.
 
 ### Fixed
 
@@ -35,9 +40,22 @@ All notable changes to this skill are documented here.
 - Kept ChatGPT MCP stable endpoints out of tracked generated guides, storing
   real Connector URLs only in ignored local config while public docs remain
   placeholder-only.
+- Preserved existing ChatGPT MCP endpoint, auth, transport, profile, and dev-mode
+  settings when rerunning `repo-harness mcp setup chatgpt --server-name`.
+- Made `repo-harness mcp doctor --profile chatgpt` report whether the ChatGPT
+  server name is actually configured instead of masking missing local state with
+  the default `repo-harness` name.
+- Made Oracle doctor repair actions source-aware, so explicit `--oracle-bin`,
+  `REPO_HARNESS_ORACLE_BIN`, and repo-local Oracle installs get actionable repair
+  guidance instead of a generic global install suggestion.
 - Limited SessionStart tooling update advisories to one render per cached
   report, so weekly Waza/CodeGraph update checks do not re-inject stale
   update instructions on every new agent turn.
+
+### Release Notes
+
+- Prepared the `repo-harness@0.7.2` patch line for npm publish, registry
+  readback, clean-room install smoke, Git tag, and GitHub release creation.
 
 ## [0.7.1] - 2026-06-18
 

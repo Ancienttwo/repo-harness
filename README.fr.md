@@ -85,7 +85,7 @@ l'emportent.
 ## Nouveautés
 
 Les notes de version vivent dans [`docs/CHANGELOG.md`](docs/CHANGELOG.md). La
-ligne actuelle est `0.7.1`.
+ligne actuelle est `0.7.2`.
 
 ## Comment ça marche
 
@@ -424,8 +424,8 @@ Guards courants :
 
 ## Release actuelle
 
-- npm package : `repo-harness@0.7.1`
-- Generated workflow stamp : `repo-harness@0.7.1+template@0.7.1`
+- npm package : `repo-harness@0.7.2`
+- Generated workflow stamp : `repo-harness@0.7.2+template@0.7.2`
 - GitHub repository : `Ancienttwo/repo-harness`
 - Release history : [`docs/CHANGELOG.md`](docs/CHANGELOG.md)
 
@@ -443,6 +443,12 @@ bug hunt et verification de `repo-harness`.
 Merci à [Garry Tan](https://x.com/garrytan), auteur de gstack et gbrain. Ils ont
 influencé le workflow de product discovery, plan/design review, release
 documentation, knowledge sync et handoff retrieval.
+
+Merci à [Peter Steinberger](https://x.com/steipete), auteur d'Oracle
+(`@steipete/oracle`, MIT). C'est le moteur de consult navigateur GPT Pro /
+ChatGPT Web par défaut de `chatgpt-browser` : le provider Oracle lance le binaire
+oracle externe pour les consults `gptpro`, sans téléchargement automatique, et un
+binaire manquant est une erreur franche.
 
 
 ### Attribution GitHub des contributeurs

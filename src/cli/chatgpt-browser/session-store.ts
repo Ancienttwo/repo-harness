@@ -128,6 +128,8 @@ export function writeBrowserSession(opts: {
   error?: { code: string; message: string; recovery?: string };
   conversationUrl?: string;
   providerSessionId?: string;
+  parentProviderSessionId?: string;
+  oracle?: { binary?: string; version?: string; captureStatus?: 'completed' | 'recoverable' };
   artifacts?: BrowserImportedArtifact[];
   command?: string[];
 }): BrowserConsultResult {
@@ -185,11 +187,13 @@ export function writeBrowserSession(opts: {
     },
     diagnostics: {
       dryRun: opts.input.dryRun === true,
-      reattachable: opts.status === 'incomplete_capture',
+      reattachable: opts.status === 'incomplete_capture' || opts.status === 'recoverable',
       lastCaptureAt: now,
     },
     sourceSessionId: opts.input.sourceSessionId,
     providerSessionId: opts.providerSessionId,
+    parentProviderSessionId: opts.parentProviderSessionId ?? opts.input.parentProviderSessionId,
+    oracle: opts.oracle,
     error: opts.error,
   };
   writeFileSync(join(paths.sessionDir, 'meta.json'), JSON.stringify(meta, null, 2) + '\n', 'utf-8');

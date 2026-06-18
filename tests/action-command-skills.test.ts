@@ -271,11 +271,22 @@ describe("repo-harness action command skills", () => {
     expect(gptpro).toContain("gptpro_mcp");
     expect(gptpro).toContain("repo-harness chatgpt browser-setup");
     expect(gptpro).toContain("repo-harness chatgpt browser-doctor");
+    expect(gptpro).toContain("--provider oracle --json");
+    expect(gptpro).toContain("node >=24");
+    expect(gptpro).toContain("REPO_HARNESS_ORACLE_BIN");
+    expect(gptpro).toContain("agent_actions");
+    expect(gptpro).toContain("chatgpt-oracle-install-pinned");
+    expect(gptpro).toContain("chatgpt-oracle-upgrade-pinned");
+    expect(gptpro).toContain("chatgpt-oracle-fix-configured-source");
+    expect(gptpro).toContain("Does not install or upgrade Oracle from default repo-harness install");
+    expect(gptpro).toContain("Does not raise repo-harness' package/runtime floor");
     expect(gptpro).toContain("repo-harness mcp setup chatgpt");
+    expect(gptpro).toContain("--server-name <name>");
     expect(gptpro).toContain("--enable-chatgpt-browser");
     expect(gptpro).toContain("HTTPS tunnel");
     expect(gptpro).toContain("ChatGPT Pro subscription as an OpenAI API key");
     expect(gptpro).toContain("Does not create OpenAI API keys");
+    expect(gptpro).not.toContain("--provider bridge --manual-login");
   });
 
   test("gptpro command uses GPT Pro language over browser session engine commands", () => {
@@ -290,8 +301,19 @@ describe("repo-harness action command skills", () => {
     expect(gptpro).toContain("repo-harness chatgpt browser-session");
     expect(gptpro).toContain("repo-harness chatgpt browser-followup");
     expect(gptpro).toContain("repo-harness chatgpt browser-open");
-    expect(gptpro).toContain(".ai/harness/handoff/gptpro-consult.md");
+    expect(gptpro).toContain("date -u +%Y%m%dT%H%M%SZ");
+    expect(gptpro).toContain("mkdir -p .ai/harness/handoff/gptpro");
+    expect(gptpro).toContain(".ai/harness/handoff/gptpro/gptpro-${stamp}-${slug}.md");
+    expect(gptpro).toContain("--model gpt-5.5-pro");
+    expect(gptpro).toContain("docs/researches/YYYYMMDD-<topic>.md");
+    expect(gptpro).toContain("raw artifact path");
+    expect(gptpro).toContain("MCP Read-Back Acceptance");
+    expect(gptpro).toContain("chatgpt.serverName");
+    expect(gptpro).toContain(".repo-harness/mcp.local.json");
+    expect(gptpro).toContain("MCP Read Evidence");
+    expect(gptpro).toContain("blocked or partial");
     expect(gptpro).toContain("route to `repo-harness:gptpro_setup`");
     expect(gptpro).toContain("Does not rename or replace the underlying");
+    expect(gptpro).not.toContain("kito-mcp");
   });
 });

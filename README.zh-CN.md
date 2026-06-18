@@ -69,7 +69,7 @@ review、checks 或 handoff 冲突，以 source artifacts 为准。
 
 ## What's New
 
-Release notes 见 [`docs/CHANGELOG.md`](docs/CHANGELOG.md)，当前版本线是 `0.7.1`。
+Release notes 见 [`docs/CHANGELOG.md`](docs/CHANGELOG.md)，当前版本线是 `0.7.2`。
 
 ## 工作原理
 
@@ -437,8 +437,8 @@ hook block 工作时，先看 terminal 里的结构化输出。核心字段是
 
 ## 当前 Release
 
-- npm package：`repo-harness@0.7.1`
-- Generated workflow stamp：`repo-harness@0.7.1+template@0.7.1`
+- npm package：`repo-harness@0.7.2`
+- Generated workflow stamp：`repo-harness@0.7.2+template@0.7.2`
 - GitHub repository：`Ancienttwo/repo-harness`
 - Release history：[`docs/CHANGELOG.md`](docs/CHANGELOG.md)
 
@@ -455,6 +455,10 @@ decision rationale 的要求，来自他的贡献与启发。
 感谢 [Garry Tan](https://x.com/garrytan) 创作 gstack 和 gbrain；它们影响了
 product discovery、plan/design review、release 文档、knowledge sync 和
 handoff retrieval 的工作流设计。
+
+感谢 [Peter Steinberger](https://x.com/steipete) 创作 Oracle（`@steipete/oracle`，MIT）；它是
+`chatgpt-browser` 默认的 GPT Pro / ChatGPT Web 浏览器 consult 引擎，Oracle provider
+通过 spawn 外部 oracle 二进制完成 `gptpro` consult，从不自动下载，缺失即硬失败。
 
 感谢 OpenAI Codex 作为本仓库主要执行 agent 参与实现、验证和收口。
 

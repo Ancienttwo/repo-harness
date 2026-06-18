@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 import { writeChatgptBridgeExtension, CHATGPT_BRIDGE_DEFAULT_PORT } from './bridge-extension';
-import { DEFAULT_CHATGPT_URL } from './binding';
+import { DEFAULT_CHATGPT_URL, ensureBridgeToken, generateBridgeToken } from './binding';
 import { openNativeBrowserPage } from './native-provider';
 import type { BrowserConsultInput, BrowserSessionStatus, PromptBundle } from './types';
 
@@ -42,7 +42,7 @@ function corsHeaders(): HeadersInit {
   return {
     'access-control-allow-origin': '*',
     'access-control-allow-methods': 'GET,POST,OPTIONS',
-    'access-control-allow-headers': 'content-type,accept',
+    'access-control-allow-headers': 'content-type,accept,x-repo-harness-bridge-token',
     'access-control-allow-private-network': 'true',
     'cache-control': 'no-store',
   };
@@ -75,6 +75,14 @@ function validStatus(value: unknown): BrowserSessionStatus {
   return 'failed';
 }
 
+// Status chrome that ChatGPT renders mid-stream and that the DOM-scrape fallback
+// can mistake for a final answer. Used by the server-side backstop only.
+const STATUS_ONLY_OUTPUTS = new Set(['pro thinking', 'thinking', 'reasoning', 'searching', 'analyzing', 'retry']);
+
+function isStatusOnlyOutput(output: string): boolean {
+  return STATUS_ONLY_OUTPUTS.has(output.trim().toLowerCase());
+}
+
 function bridgePort(): number {
   const raw = process.env.REPO_HARNESS_CHATGPT_BRIDGE_PORT;
   if (!raw) return CHATGPT_BRIDGE_DEFAULT_PORT;
@@ -99,7 +107,9 @@ export async function runBridgeProvider(input: BrowserConsultInput, bundle: Prom
   const host = '127.0.0.1';
   const port = bridgePort();
   const bridgeUrl = `http://${host}:${port}`;
-  const extension = writeChatgptBridgeExtension(input.repoRoot, bridgeUrl);
+  // Stable per-binding token when bound; ephemeral per-run token otherwise.
+  const token = ensureBridgeToken(input.repoRoot) ?? generateBridgeToken();
+  const extension = writeChatgptBridgeExtension(input.repoRoot, bridgeUrl, token);
   const task: ExtensionTask = {
     id: randomUUID(),
     kind: 'consult',
@@ -124,6 +134,12 @@ export async function runBridgeProvider(input: BrowserConsultInput, bundle: Prom
       async fetch(request) {
         if (request.method === 'OPTIONS') {
           return new Response(null, { status: 204, headers: corsHeaders() });
+        }
+        // Capability-token gate: only the extension we generated knows the token,
+        // so any other local process/page is rejected before it can read the
+        // queued prompt or submit a forged result.
+        if (request.headers.get('x-repo-harness-bridge-token') !== token) {
+          return jsonResponse({ error: { code: 'CHATGPT_BRIDGE_UNAUTHORIZED', message: 'missing or invalid bridge token' } }, 401);
         }
         const url = new URL(request.url);
         if (request.method === 'POST' && url.pathname === '/api/extension/heartbeat') {
@@ -150,17 +166,36 @@ export async function runBridgeProvider(input: BrowserConsultInput, bundle: Prom
         if (request.method === 'POST' && url.pathname === '/api/extension/result') {
           const body = await readJson(request);
           if (body.taskId === task.id) {
-            state.result = {
-              taskId: task.id,
-              status: validStatus(body.status),
-              output: typeof body.output === 'string' ? body.output : '',
-              conversationUrl: typeof body.conversationUrl === 'string' ? body.conversationUrl : undefined,
-              error: body.error && typeof body.error === 'object' ? {
-                code: typeof body.error.code === 'string' ? body.error.code : 'CHATGPT_BRIDGE_TASK_FAILED',
-                message: typeof body.error.message === 'string' ? body.error.message : 'ChatGPT bridge task failed',
-                recovery: typeof body.error.recovery === 'string' ? body.error.recovery : undefined,
-              } : undefined,
-            };
+            const status = validStatus(body.status);
+            const output = typeof body.output === 'string' ? body.output : '';
+            // Server-side backstop: a `completed` with an empty or status-only
+            // body can never be a real answer (the "Pro thinking"/"" capture bug).
+            // Coerce it to a failure so it can never persist as success.
+            if (status === 'completed' && (output.trim().length === 0 || isStatusOnlyOutput(output))) {
+              state.result = {
+                taskId: task.id,
+                status: 'failed',
+                output: output.trim().length === 0 ? 'ChatGPT bridge captured no final assistant message.' : output,
+                conversationUrl: typeof body.conversationUrl === 'string' ? body.conversationUrl : undefined,
+                error: {
+                  code: 'CHATGPT_BRIDGE_NO_FINAL_MESSAGE',
+                  message: 'bridge reported completion without a final assistant message',
+                  recovery: 'Keep the ChatGPT tab active until the response finishes, then retry; the DOM-scrape fallback cannot confirm completion.',
+                },
+              };
+            } else {
+              state.result = {
+                taskId: task.id,
+                status,
+                output,
+                conversationUrl: typeof body.conversationUrl === 'string' ? body.conversationUrl : undefined,
+                error: body.error && typeof body.error === 'object' ? {
+                  code: typeof body.error.code === 'string' ? body.error.code : 'CHATGPT_BRIDGE_TASK_FAILED',
+                  message: typeof body.error.message === 'string' ? body.error.message : 'ChatGPT bridge task failed',
+                  recovery: typeof body.error.recovery === 'string' ? body.error.recovery : undefined,
+                } : undefined,
+              };
+            }
           }
           return jsonResponse({ ok: true });
         }

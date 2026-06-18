@@ -1,4 +1,4 @@
-export type BrowserSessionStatus = 'completed' | 'running' | 'incomplete_capture' | 'failed' | 'cancelled' | 'dry_run';
+export type BrowserSessionStatus = 'completed' | 'running' | 'incomplete_capture' | 'recoverable' | 'failed' | 'cancelled' | 'dry_run';
 
 export type BrowserProviderName = 'oracle' | 'native' | 'bridge';
 
@@ -19,6 +19,8 @@ export interface BrowserConsultInput {
   prompt: string;
   sourceSessionId?: string;
   providerSessionId?: string;
+  parentProviderSessionId?: string;
+  oracleBin?: string;
   files?: BrowserFileInput[];
   followups?: string[];
   model?: string;
@@ -26,6 +28,7 @@ export interface BrowserConsultInput {
   provider?: BrowserProviderName;
   chatgptUrl?: string;
   timeoutMs?: number;
+  heartbeatSeconds?: number;
   dryRun?: boolean;
   writeOutput?: string;
   writeOutputPolicy?: BrowserWriteOutputPolicy;
@@ -115,6 +118,12 @@ export interface BrowserSessionMeta {
   };
   sourceSessionId?: string;
   providerSessionId?: string;
+  parentProviderSessionId?: string;
+  oracle?: {
+    binary?: string;
+    version?: string;
+    captureStatus?: 'completed' | 'recoverable';
+  };
   error?: {
     code: string;
     message: string;

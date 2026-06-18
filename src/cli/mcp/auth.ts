@@ -16,6 +16,7 @@ export interface McpLocalConfig {
     oauthFile?: string;
   };
   chatgpt?: {
+    serverName?: string;
     endpoint?: string;
   };
   profile?: string;

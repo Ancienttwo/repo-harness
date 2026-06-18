@@ -18,41 +18,42 @@ Use this skill when the user asks to consult ChatGPT Web, GPT Pro, browser GPT, 
 repo-harness chatgpt browser-consult --repo . --dry-run --prompt "<prompt>" --file <path>
 ```
 
-5. For existing signed-in Chrome profile readiness, run:
+5. For Oracle provider readiness, run:
 
 ```bash
-repo-harness chatgpt browser-doctor --repo . --provider bridge --json
+repo-harness chatgpt browser-doctor --repo . --provider oracle --json
 ```
 
-6. If the bridge doctor reports no bound ChatGPT product session, bind the user-selected Chrome profile first:
+6. Oracle's published CLI requires `node >=24`, but that requirement belongs to the resolved Oracle binary. Do not raise repo-harness' overall runtime floor or add Oracle as an implicit dependency just for a GPT Pro consult. If the Oracle doctor reports `nodeCompatible:false`, fix the Oracle install/runtime and rerun doctor.
+7. If the Oracle doctor JSON includes `agent_actions` such as `chatgpt-oracle-install-pinned`, `chatgpt-oracle-upgrade-pinned`, or `chatgpt-oracle-fix-configured-source`, run them only when the user has explicitly asked to set up or repair GPT Pro browser consults. Do not run Oracle bootstrap from default repo-harness install or unrelated setup checks.
+8. If the user wants Oracle to use an existing signed-in Chrome profile, record the selected profile metadata first:
 
 ```bash
 repo-harness chatgpt browser-setup --repo . --profile-dir <user-selected-chrome-profile-dir> --browser-channel chrome
-repo-harness chatgpt browser-bind --repo . --open
-repo-harness chatgpt browser-doctor --repo . --provider bridge --json
+repo-harness chatgpt browser-doctor --repo . --provider oracle --json
 ```
 
-Report the printed `Local authorization URL: http://127.0.0.1:...` and `bridgeExtension=...` to the user and keep the command running while they authorize. The authorization page must guide the user to open Chrome Extensions, enable **Developer mode**, click **Load unpacked**, select `bridgeExtension`, open or refresh ChatGPT, then click **Bind ChatGPT**. The Bind button must call repo-harness locally; do not treat a direct link to ChatGPT as authorization. If the authorization page reports login required, have the user click **Open ChatGPT Login**, sign in, return, and bind again. After authorization succeeds, stop `browser-bind` before `browser-consult --provider bridge` because they use the same local bridge port. Do not route native CDP through the user's default Chrome data directory; Chrome 136+ blocks remote debugging against the default directory. Existing signed-in real Chrome profiles use `--provider bridge`.
-7. Use browser consult for planning, review, critique, and goal generation. Do not use it as the executor for code edits.
-8. Save useful results into repo-harness artifacts with repo-relative `--write-output` paths such as:
+The Oracle path must fail closed rather than silently falling back to an unbound/default browser session. Use `browser-bind` only when the user explicitly asks for the experimental bridge provider; then report the printed `Local authorization URL: http://127.0.0.1:...` and `bridgeExtension=...`, keep the command running while they authorize, and stop it before `browser-consult --provider bridge`.
+9. Use browser consult for planning, review, critique, and goal generation. Do not use it as the executor for code edits.
+10. Save useful results into repo-harness artifacts with repo-relative, timestamped `--write-output` paths such as:
 
 ```text
-.ai/harness/handoff/chatgpt-review.md
-.ai/harness/handoff/codex-goal.md
+.ai/harness/handoff/chatgpt-review-<timestamp>.md
+.ai/harness/handoff/codex-goal-<timestamp>.md
 plans/prds/*.prd.md
 plans/sprints/*.sprint.md
 ```
 
-9. If login, captcha, workspace picker, or SSO is required, stop and ask the user to complete it in the browser.
-10. Do not enable remote CDP unless the user explicitly asked for remote browser control and the security boundary is documented.
-11. For MCP usage, require the server to be started with:
+11. If login, captcha, workspace picker, or SSO is required, stop and ask the user to complete it in the browser.
+12. Do not enable remote CDP unless the user explicitly asked for remote browser control and the security boundary is documented.
+13. For MCP usage, require the server to be started with:
 
 ```bash
 repo-harness mcp serve --repo . --enable-chatgpt-browser
 ```
 
-12. Do not rely on provider stdout `Artifact:` / `Output:` paths being imported. Browser engine session records save prompt, transcript, output, metadata, and trusted provider IDs; ordinary stdout paths are ignored.
-13. Native and bridge providers use the current ChatGPT Web model selection. Do not pass `--model` or `--thinking` with `--provider native` or `--provider bridge`; use Oracle when model selection is required.
+14. Do not rely on provider stdout `Artifact:` / `Output:` paths being imported. Browser engine session records save prompt, transcript, output, metadata, and trusted provider IDs; ordinary stdout paths are ignored.
+15. Native and bridge providers use the current ChatGPT Web model selection. Do not pass `--model` or `--thinking` with `--provider native` or `--provider bridge`; use Oracle when model selection is required.
 
 ## Common Commands
 
@@ -69,12 +70,13 @@ repo-harness chatgpt browser-consult \
 Oracle provider consult:
 
 ```bash
+stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 repo-harness chatgpt browser-consult \
   --repo . \
   --provider oracle \
   --prompt "Review this PRD and return risks plus a smallest next step." \
   --file plans/prds/example.prd.md \
-  --write-output .ai/harness/handoff/chatgpt-review.md
+  --write-output ".ai/harness/handoff/chatgpt-review-${stamp}.md"
 ```
 
 Bridge provider for an existing signed-in profile:
