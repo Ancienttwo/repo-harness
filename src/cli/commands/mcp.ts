@@ -29,6 +29,7 @@ interface McpSetupChatgptOptions {
   repo?: string;
   host?: string;
   port?: string;
+  endpoint?: string;
 }
 
 interface McpSetupCodexOptions {
@@ -176,6 +177,7 @@ export function buildMcpCommand(): Command {
     .option('--repo <path>', 'Repository root to configure', '.')
     .option('--host <host>', 'Local MCP HTTP bind host', '127.0.0.1')
     .option('--port <port>', 'Local MCP HTTP bind port', '8765')
+    .option('--endpoint <url>', 'Stable public HTTPS /mcp endpoint to include in local config and guide')
     .action((rawOpts: McpSetupChatgptOptions) => {
       void runMcpAction(() => {
         const result = runMcpSetupChatgpt(rawOpts);

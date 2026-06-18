@@ -15,6 +15,9 @@ export interface McpLocalConfig {
     tokenFile?: string;
     oauthFile?: string;
   };
+  chatgpt?: {
+    endpoint?: string;
+  };
   profile?: string;
   devMode?: {
     agentRunner?: boolean;

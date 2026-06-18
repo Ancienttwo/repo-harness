@@ -40,6 +40,22 @@ function ensureGitignoreEntries(repoRoot: string, entries: string[], changed: st
   writeFileIfChanged(path, next, changed);
 }
 
+function normalizePublicMcpEndpoint(endpoint: string | undefined): string | undefined {
+  if (endpoint === undefined) return undefined;
+  const trimmed = endpoint.trim();
+  if (trimmed.length === 0) return undefined;
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch (_error) {
+    throw new Error(`invalid --endpoint "${endpoint}" (expected a public HTTPS URL ending in /mcp)`);
+  }
+  if (parsed.protocol !== 'https:' || !parsed.pathname.endsWith('/mcp')) {
+    throw new Error(`invalid --endpoint "${endpoint}" (expected a public HTTPS URL ending in /mcp)`);
+  }
+  return parsed.toString();
+}
+
 export function chatgptGuideMarkdown(endpoint = '<https-tunnel-url>/mcp'): string {
   return `# repo-harness ChatGPT MCP Connector Setup
 
@@ -48,7 +64,7 @@ export function chatgptGuideMarkdown(endpoint = '<https-tunnel-url>/mcp'): strin
 - A repo-harness adopted repository.
 - A local \`repo-harness\` CLI on PATH.
 - ChatGPT workspace access to Developer Mode and custom MCP Connectors.
-- A public HTTPS tunnel for ChatGPT Web. Local Codex can use stdio without a tunnel.
+- A stable public HTTPS \`/mcp\` endpoint for recurring ChatGPT Connector use. Local Codex can use stdio without a tunnel.
 
 ## Start Local MCP Server
 
@@ -76,7 +92,26 @@ OAuth discovery smoke:
 curl http://127.0.0.1:8765/.well-known/oauth-protected-resource/mcp
 \`\`\`
 
-## Start Tunnel
+## Choose Tunnel Endpoint
+
+For recurring ChatGPT Connector use, prefer a stable hostname from a named tunnel or reserved domain. Quick tunnels are useful for one-off smoke tests, but their URL changes and ChatGPT will treat the new URL as a different Connector app.
+
+Stable Cloudflare named tunnel shape:
+
+\`\`\`bash
+cloudflared tunnel login
+cloudflared tunnel create repo-harness-mcp
+cloudflared tunnel route dns repo-harness-mcp repo-harness-mcp.example.com
+cloudflared tunnel run --url http://127.0.0.1:8765 repo-harness-mcp
+\`\`\`
+
+Then regenerate this guide with the stable endpoint:
+
+\`\`\`bash
+repo-harness mcp setup chatgpt --repo . --endpoint https://repo-harness-mcp.example.com/mcp
+\`\`\`
+
+One-off quick tunnel smoke:
 
 \`\`\`bash
 cloudflared tunnel --url http://127.0.0.1:8765
@@ -249,6 +284,7 @@ export function runMcpSetupChatgpt(opts: { repo?: string; host?: string; port?: 
   const changed: string[] = [];
   const host = opts.host ?? '127.0.0.1';
   const port = opts.port ?? '8765';
+  const endpoint = normalizePublicMcpEndpoint(opts.endpoint);
   const configPath = join(repoRoot, '.repo-harness', 'mcp.local.json');
   const guidePath = join(repoRoot, 'docs', 'repo-harness-chatgpt-mcp-setup.md');
   const token = ensureMcpBearerToken(repoRoot);
@@ -260,6 +296,7 @@ export function runMcpSetupChatgpt(opts: { repo?: string; host?: string; port?: 
     repo: repoRoot,
     server: { host, port: Number(port), transport: 'http' },
     auth: { mode: 'oauth', oauthFile: '.repo-harness/mcp.oauth.json', tokenFile: '.repo-harness/mcp.tokens.json' },
+    ...(endpoint ? { chatgpt: { endpoint } } : {}),
     profile: 'planner',
     devMode: {
       agentRunner: false,
@@ -268,7 +305,7 @@ export function runMcpSetupChatgpt(opts: { repo?: string; host?: string; port?: 
     },
   };
   writeFileIfChanged(configPath, `${JSON.stringify(config, null, 2)}\n`, changed);
-  writeFileIfChanged(guidePath, chatgptGuideMarkdown(opts.endpoint), changed);
+  writeFileIfChanged(guidePath, chatgptGuideMarkdown(endpoint), changed);
   ensureGitignoreEntries(repoRoot, [
     '.repo-harness/mcp.local.json',
     '.repo-harness/mcp.tokens.json',
@@ -285,7 +322,9 @@ export function runMcpSetupChatgpt(opts: { repo?: string; host?: string; port?: 
       `[repo-harness mcp] Repo: ${repoRoot}`,
       '[repo-harness mcp] Profile: planner',
       `[repo-harness mcp] Local endpoint: http://${host}:${port}/mcp`,
-      '[repo-harness mcp] ChatGPT endpoint: requires HTTPS tunnel',
+      endpoint
+        ? `[repo-harness mcp] ChatGPT endpoint: ${endpoint}`
+        : '[repo-harness mcp] ChatGPT endpoint: requires stable HTTPS tunnel',
       `[repo-harness mcp] Auth: OAuth passphrase (${relative(repoRoot, oauth.path)})`,
       `[repo-harness mcp] Bearer fallback token: ${relative(repoRoot, token.path)}`,
       `[repo-harness mcp] Config: ${relative(repoRoot, configPath)}`,
@@ -611,7 +650,7 @@ The orchestrator dev runner is separate from planner mode. It is off by default 
 export function runMcpPrintGuide(opts: { repo?: string; endpoint?: string; write?: boolean }): McpSetupResult {
   const repoRoot = resolveMcpRepoRoot(opts.repo ?? '.');
   const changed: string[] = [];
-  const content = chatgptGuideMarkdown(opts.endpoint);
+  const content = chatgptGuideMarkdown(normalizePublicMcpEndpoint(opts.endpoint));
   if (opts.write === true) {
     writeFileIfChanged(join(repoRoot, 'docs', 'repo-harness-chatgpt-mcp-setup.md'), content, changed);
   }
@@ -658,6 +697,7 @@ export function runMcpDoctor(opts: { repo?: string; json?: boolean }): McpSetupR
     },
     chatgpt: {
       localEndpoint: `http://${host}:${port}/mcp`,
+      publicEndpoint: localConfig?.chatgpt?.endpoint,
       authMode,
       manualStepsRequired: true,
       setup: 'repo-harness mcp setup chatgpt --repo .',

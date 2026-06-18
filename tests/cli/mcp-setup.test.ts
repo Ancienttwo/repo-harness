@@ -62,6 +62,33 @@ describe('mcp setup', () => {
     });
   });
 
+  test('stores a stable ChatGPT endpoint in ignored local config and generated guide', () => {
+    withTmpRepo((repoRoot) => {
+      runMcpSetupChatgpt({ repo: repoRoot, endpoint: 'https://repo-harness-mcp.example.com/mcp' });
+
+      const config = JSON.parse(readFileSync(join(repoRoot, '.repo-harness/mcp.local.json'), 'utf-8'));
+      expect(config.chatgpt.endpoint).toBe('https://repo-harness-mcp.example.com/mcp');
+
+      const guide = readFileSync(join(repoRoot, 'docs/repo-harness-chatgpt-mcp-setup.md'), 'utf-8');
+      expect(guide).toContain('https://repo-harness-mcp.example.com/mcp');
+      expect(guide).toContain('Quick tunnels are useful for one-off smoke tests');
+
+      const doctor = JSON.parse(runMcpDoctor({ repo: repoRoot, json: true }).lines[0]);
+      expect(doctor.chatgpt.publicEndpoint).toBe('https://repo-harness-mcp.example.com/mcp');
+    });
+  });
+
+  test('rejects unstable ChatGPT endpoint values', () => {
+    withTmpRepo((repoRoot) => {
+      expect(() => runMcpSetupChatgpt({ repo: repoRoot, endpoint: 'http://example.test/mcp' })).toThrow(
+        'expected a public HTTPS URL ending in /mcp',
+      );
+      expect(() => runMcpSetupChatgpt({ repo: repoRoot, endpoint: 'https://example.test/not-mcp' })).toThrow(
+        'expected a public HTTPS URL ending in /mcp',
+      );
+    });
+  });
+
   test('ChatGPT guide uses OAuth for ChatGPT and documents bearer fallback', () => {
     const guide = chatgptGuideMarkdown('https://example.test/mcp');
     expect(guide).toContain('Configure Connector authentication as OAuth');
@@ -72,6 +99,8 @@ describe('mcp setup', () => {
     expect(guide).toContain('--enable-dev-runner');
     expect(guide).toContain('run_agent_goal');
     expect(guide).toContain('https://example.test/mcp');
+    expect(guide).toContain('cloudflared tunnel create repo-harness-mcp');
+    expect(guide).toContain('quick tunnel');
   });
 
   test('patches Codex config while preserving unrelated content', () => {

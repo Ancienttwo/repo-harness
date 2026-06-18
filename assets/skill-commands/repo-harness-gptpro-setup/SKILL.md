@@ -29,9 +29,14 @@ Use this command when the user wants repo-harness to guide local GPT Pro setup a
    - `repo-harness mcp doctor --repo <repo> --json`
    - Start the sidecar when the user is ready to connect ChatGPT:
      `repo-harness mcp serve --repo <repo> --transport http --host 127.0.0.1 --port 8765 --profile planner --enable-chatgpt-browser`
-6. Tell the user that ChatGPT Connector setup still requires an HTTPS tunnel or equivalent public HTTPS `/mcp` endpoint, then manual connector creation in ChatGPT settings. Keep OAuth passphrases and bearer tokens redacted.
-7. If local Codex also needs repo-harness MCP tools, separately run `repo-harness mcp setup codex --repo <repo> --scope project` and verify with `repo-harness mcp doctor --repo <repo> --json`.
-8. Finish with a concise matrix: `gptpro_browser` status, `gptpro_mcp` status, exact commands run, manual steps remaining, verification evidence, and residual risk.
+6. Tell the user that ChatGPT Connector setup still requires an HTTPS tunnel or equivalent public HTTPS `/mcp` endpoint, then manual connector creation in ChatGPT settings. For recurring use, prefer a stable hostname from a named tunnel or reserved domain and run `repo-harness mcp setup chatgpt --endpoint <https-url>/mcp`; account-less quick tunnels are only for smoke tests because their URL changes. Keep OAuth passphrases and bearer tokens redacted.
+7. When the user asks to create or bind a real domain for the Connector, keep the flow generic in tracked repo files and keep all real operator state private:
+   - generic Cloudflare shape: create/login to a named tunnel, route a stable hostname to the tunnel, configure ingress to `http://127.0.0.1:8765`, run the tunnel, then smoke `/health`, OAuth discovery, and unauthenticated `/mcp` returning 401.
+   - for recurring use, offer a host-local process manager such as launchd/systemd/screen for both the MCP sidecar and HTTPS tunnel; verify restart/reconnect by smoking local `/health`, public `/health`, unauthenticated `/mcp` 401, and MCP `initialize`/`tools/list`.
+   - never commit or write real user-owned domains, account IDs, zone IDs, tunnel IDs, tunnel tokens, OAuth passphrases, bearer tokens, cookie/profile paths, or provider account names into tracked docs, notes, plans, reviews, or runbooks.
+   - put real domain/tunnel runbooks, process names, IDs, provider account details, env files, and verification commands only under ignored `_ops/*`, ignored repo-local `.repo-harness/*`, or global `~/.repo-harness/*`; public docs may use placeholders such as `repo-harness-mcp.example.com`.
+8. If local Codex also needs repo-harness MCP tools, separately run `repo-harness mcp setup codex --repo <repo> --scope project` and verify with `repo-harness mcp doctor --repo <repo> --json`.
+9. Finish with a concise matrix: `gptpro_browser` status, `gptpro_mcp` status, exact commands run, manual steps remaining, verification evidence, and residual risk. If a real domain was configured, report the public URL to the user in chat but do not persist it to tracked repo files.
 
 ## Failure Modes
 
@@ -48,3 +53,4 @@ Use this command when the user wants repo-harness to guide local GPT Pro setup a
 - Does not expose a local MCP server to the public internet without explicit auth, tunnel, and user intent.
 - Does not enable `--enable-chatgpt-browser` silently; require the user to ask for GPT Pro browser/session bridging.
 - Does not commit `.repo-harness/` local auth files, browser profiles, cookies, tokens, or tunnel state.
+- Does not commit personal Connector endpoints, provider account metadata, DNS zone IDs, tunnel IDs, or real tunnel runbooks; keep those in `_ops/*` or equivalent ignored local state.

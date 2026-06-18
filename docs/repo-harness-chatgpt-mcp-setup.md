@@ -5,7 +5,7 @@
 - A repo-harness adopted repository.
 - A local `repo-harness` CLI on PATH.
 - ChatGPT workspace access to Developer Mode and custom MCP Connectors.
-- A public HTTPS tunnel for ChatGPT Web. Local Codex can use stdio without a tunnel.
+- A stable public HTTPS `/mcp` endpoint for recurring ChatGPT Connector use. Local Codex can use stdio without a tunnel.
 
 ## Start Local MCP Server
 
@@ -33,7 +33,26 @@ OAuth discovery smoke:
 curl http://127.0.0.1:8765/.well-known/oauth-protected-resource/mcp
 ```
 
-## Start Tunnel
+## Choose Tunnel Endpoint
+
+For recurring ChatGPT Connector use, prefer a stable hostname from a named tunnel or reserved domain. Quick tunnels are useful for one-off smoke tests, but their URL changes and ChatGPT will treat the new URL as a different Connector app.
+
+Stable Cloudflare named tunnel shape:
+
+```bash
+cloudflared tunnel login
+cloudflared tunnel create repo-harness-mcp
+cloudflared tunnel route dns repo-harness-mcp repo-harness-mcp.example.com
+cloudflared tunnel run --url http://127.0.0.1:8765 repo-harness-mcp
+```
+
+Then regenerate this guide with the stable endpoint:
+
+```bash
+repo-harness mcp setup chatgpt --repo . --endpoint https://repo-harness-mcp.example.com/mcp
+```
+
+One-off quick tunnel smoke:
 
 ```bash
 cloudflared tunnel --url http://127.0.0.1:8765
