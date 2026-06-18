@@ -38,6 +38,21 @@ export interface BrowserDoctorOptions {
 
 export type BrowserDoctorStatus = 'ready' | 'unavailable' | 'action_required' | 'deprecated' | 'experimental';
 
+export interface BrowserDoctorAgentAction {
+  id: 'chatgpt-oracle-install-pinned' | 'chatgpt-oracle-upgrade-pinned' | 'chatgpt-oracle-fix-configured-source';
+  status: 'needs_agent';
+  requires_agent: true;
+  reason: string;
+  risk: string;
+  command: string;
+  alternatives: string[];
+  verification: string;
+  automatic: false;
+}
+
+const PINNED_ORACLE_INSTALL = 'bun add -g @steipete/oracle@0.14.1';
+const PINNED_ORACLE_REPO_LOCAL_INSTALL = 'bun add -D @steipete/oracle@0.14.1';
+
 const EMPTY_ORACLE_CAPABILITIES = {
   browserEngine: false,
   writeOutput: false,
@@ -48,6 +63,7 @@ const EMPTY_ORACLE_CAPABILITIES = {
   browserCookiePath: false,
   browserThinkingTime: false,
   chatgptUrl: false,
+  heartbeat: false,
 };
 
 export interface BrowserBindOptions {
@@ -88,6 +104,81 @@ function assertOutputTarget(input: BrowserConsultInput): void {
     overwrite: input.overwriteOutput === true,
   });
   if (!decision.ok) throw new Error(decision.reason);
+}
+
+function buildOracleAgentActions(input: {
+  provider: BrowserProviderName;
+  oraclePresent: boolean;
+  oracleCapabilitiesReady: boolean;
+  missingOracleCapabilities: string[];
+  oracleSource?: string;
+}): BrowserDoctorAgentAction[] {
+  if (input.provider !== 'oracle') return [];
+  const verification = 'repo-harness chatgpt browser-doctor --repo <repo> --provider oracle --json';
+  const configuredSourceAction = (reason: string): BrowserDoctorAgentAction => ({
+    id: 'chatgpt-oracle-fix-configured-source',
+    status: 'needs_agent',
+    requires_agent: true,
+    reason,
+    risk: 'Changes the explicit Oracle binary selection used for GPT Pro browser consults; verify the selected binary before any real run.',
+    command: input.oracleSource === '--oracle-bin'
+      ? 'repo-harness chatgpt browser-doctor --repo <repo> --provider oracle --oracle-bin <path-to-pinned-oracle> --json'
+      : 'REPO_HARNESS_ORACLE_BIN=<path-to-pinned-oracle> repo-harness chatgpt browser-doctor --repo <repo> --provider oracle --json',
+    alternatives: [
+      'Pass a valid --oracle-bin path for the command.',
+      'Set REPO_HARNESS_ORACLE_BIN to a valid pinned oracle binary.',
+      'Unset the explicit source only if you intentionally want repo-local or PATH resolution.',
+    ],
+    verification,
+    automatic: false,
+  });
+  const alternatives = [
+    'Pass --oracle-bin <path-to-oracle> for this command.',
+    'Set REPO_HARNESS_ORACLE_BIN=<path-to-oracle> for the host runtime.',
+    'Install a repo-local node_modules/.bin/oracle in a Node >=24 toolchain.',
+  ];
+  if (!input.oraclePresent) {
+    if (input.oracleSource === '--oracle-bin' || input.oracleSource === 'REPO_HARNESS_ORACLE_BIN') {
+      return [configuredSourceAction(
+        `Configured Oracle source ${input.oracleSource} did not resolve; installing Oracle globally will not fix the same doctor command until the explicit source points at a valid binary or is removed.`,
+      )];
+    }
+    return [{
+      id: 'chatgpt-oracle-install-pinned',
+      status: 'needs_agent',
+      requires_agent: true,
+      reason: input.oracleSource === '--oracle-bin' || input.oracleSource === 'REPO_HARNESS_ORACLE_BIN'
+        ? `Configured Oracle source ${input.oracleSource} did not resolve; GPT Pro browser consults require a pinned oracle CLI.`
+        : 'Oracle CLI is not installed or not visible; GPT Pro browser consults require a pinned oracle CLI.',
+      risk: 'Installs an optional external CLI with its own Node >=24 runtime boundary; do not run from default repo-harness install.',
+      command: PINNED_ORACLE_INSTALL,
+      alternatives,
+      verification,
+      automatic: false,
+    }];
+  }
+  if (!input.oracleCapabilitiesReady) {
+    if (input.oracleSource === '--oracle-bin' || input.oracleSource === 'REPO_HARNESS_ORACLE_BIN') {
+      return [configuredSourceAction(
+        `Configured Oracle source ${input.oracleSource} resolved but is missing required browser-mode capabilities: ${input.missingOracleCapabilities.join(', ') || 'nodeCompatible'}.`,
+      )];
+    }
+    const repoLocal = input.oracleSource === 'node_modules/.bin';
+    return [{
+      id: 'chatgpt-oracle-upgrade-pinned',
+      status: 'needs_agent',
+      requires_agent: true,
+      reason: `Resolved Oracle is missing required browser-mode capabilities: ${input.missingOracleCapabilities.join(', ') || 'nodeCompatible'}.`,
+      risk: repoLocal
+        ? 'Upgrades an optional repo-local external CLI dev dependency; verify the pinned binary before running any real GPT Pro consult.'
+        : 'Upgrades an optional external CLI; verify the pinned binary before running any real GPT Pro consult.',
+      command: repoLocal ? PINNED_ORACLE_REPO_LOCAL_INSTALL : PINNED_ORACLE_INSTALL,
+      alternatives,
+      verification,
+      automatic: false,
+    }];
+  }
+  return [];
 }
 
 export function runBrowserSetup(repoRoot: string, opts: BrowserSetupOptions = {}): { lines: string[] } {
@@ -287,10 +378,18 @@ export async function browserDoctor(
       recovery: 'Upgrade oracle or check `oracle --help`; repo-harness requires every flag it may send at runtime.',
     } : undefined)
     : undefined;
+  const agentActions = buildOracleAgentActions({
+    provider,
+    oraclePresent,
+    oracleCapabilitiesReady,
+    missingOracleCapabilities,
+    oracleSource: oracleResolution.source,
+  });
   const json = {
     status,
     code: oracleCode,
     provider,
+    agent_actions: agentActions,
     posture: { oracle: 'default', native: 'deprecated', bridge: 'experimental' },
     repo: { root: repoRoot, sessionRoot },
     oracle: {
@@ -353,6 +452,7 @@ export async function browserDoctor(
       ...(profileDirectory ? [`[repo-harness chatgpt] profileDirectory=${profileDirectory}`] : []),
       ...(defaultProfileBlocked ? ['[repo-harness chatgpt] defaultProfileCdpBlocked=true'] : []),
       ...(profileDir ? ['[repo-harness chatgpt] bindCommand=repo-harness chatgpt browser-bind --open'] : []),
+      ...agentActions.map((action) => `[repo-harness chatgpt] agentAction=${action.id} command=${action.command}`),
       ...(bindingResult.error ? [`[repo-harness chatgpt] bindingError=${bindingResult.error}`] : []),
       ...(validation?.error ? [`[repo-harness chatgpt] validationError=${validation.error.message}`] : []),
     ],
@@ -366,7 +466,7 @@ export async function runBrowserConsult(input: BrowserConsultInput): Promise<Bro
   const bundle = assemblePromptBundle(effectiveInput);
   if (effectiveInput.dryRun !== true) {
     if (provider === 'oracle') {
-      const oracle = runOracleProvider(effectiveInput, bundle);
+      const oracle = await runOracleProvider(effectiveInput, bundle);
       return writeBrowserSession({
         input: effectiveInput,
         provider,

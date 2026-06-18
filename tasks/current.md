@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-06-18T19:07:08+0800 -->
+<!-- updated_at: 2026-06-19T04:13:31+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-06-18T19:07:08+0800
-> **Source Branch**: main
-> **Source Commit**: e9126c9
+> **Updated At**: 2026-06-19T04:13:31+0800
+> **Source Branch**: codex/gptpro-setup-bootstrap-gates
+> **Source Commit**: 893ecf0
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: gbrain-install-source-remediation
+> **Reason**: gptpro-setup-pr-review-fixes
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -41,7 +41,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/contract-assets/cleanup-script-policy.md`: status=completed, current_slice=todo-01, source_plan=(none)
 ## Handoff
 
-- Exact Next Step: Clean up merged contract worktree codex/think-skill-codex-repo-skill-think-hook-agents-md. Command: bash scripts/contract-worktree.sh cleanup --slug think-skill-codex-repo-skill-think-hook-agents-md --target main
+- Exact Next Step: Clean up merged contract worktree codex/gptpro-setup-bootstrap-gates. Command: bash scripts/contract-worktree.sh cleanup --slug gptpro-setup-bootstrap-gates --target main
 
 ## Checks
 
@@ -49,18 +49,22 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 9 changed/untracked path(s)
+- Summary: 13 changed/untracked path(s)
 
 ```
- M assets/reference-configs/external-tooling.md
- M assets/templates/helpers/check-agent-tooling.sh
- M docs/CHANGELOG.md
- M docs/reference-configs/external-tooling.md
- M scripts/check-agent-tooling.sh
- M src/cli/commands/init.ts
- M tasks/current.md
- M tests/check-agent-tooling.test.ts
- M tests/cli/init.test.ts
+ M .agents/skills/repo-harness-chatgpt-browser/SKILL.md
+ M assets/skill-commands/repo-harness-gptpro-setup/SKILL.md
+ M assets/skill-commands/repo-harness-gptpro/SKILL.md
+ M docs/repo-harness-chatgpt-browser-engine.md
+ M docs/repo-harness-chatgpt-mcp-setup.md
+ M src/cli/chatgpt-browser/engine.ts
+ M src/cli/chatgpt-browser/oracle-provider.ts
+ M src/cli/chatgpt-browser/types.ts
+ M src/cli/commands/chatgpt.ts
+ M src/cli/mcp/setup.ts
+ M tests/action-command-skills.test.ts
+ M tests/cli/chatgpt-browser.test.ts
+ M tests/cli/mcp-setup.test.ts
 ```
 
 ## Source Artifacts

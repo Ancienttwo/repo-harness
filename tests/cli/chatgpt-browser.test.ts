@@ -86,6 +86,7 @@ describe('chatgpt browser command', () => {
     expect(consult.stdout).toContain('--profile-dir');
     expect(consult.stdout).toContain('--keep-browser');
     expect(consult.stdout).toContain('--allow-absolute-output');
+    expect(consult.stdout).toContain('--heartbeat');
   });
 
   test('dry-run consult writes a repo-local session with inline files', () => {
@@ -348,7 +349,12 @@ describe('chatgpt browser command', () => {
       expect(readiness.native.productSession.profileDirectory).toBe('Profile 1');
       expect(readiness.native.productSession.selectedProfilePath).toBe(profileDir);
       expect(Object.keys(readiness.native.productSession)).not.toEqual(expect.arrayContaining(retiredPageKeys));
-      expect(readiness.next).toContain('repo-harness chatgpt browser-doctor --provider native --validate-session');
+      expect(readiness.next).toContain('The native CDP provider is deprecated; use --provider oracle. Native remains only for short-term diagnostics.');
+      if (readiness.native.installed) {
+        expect(readiness.next).toContain('repo-harness chatgpt browser-doctor --provider native --validate-session');
+      } else {
+        expect(readiness.next).toContain('Install Google Chrome before native provider execution.');
+      }
 
       const result = runChatgpt([
         'browser-consult',
@@ -638,10 +644,13 @@ describe('chatgpt browser command', () => {
           ORACLE_REMOTE_HOST: '127.0.0.1:9473',
         });
         expect(result.status).toBe(0);
+        expect(result.stderr).toContain('Oracle saw:');
+        expect(result.stderr).toContain('--heartbeat 59');
         const payload = JSON.parse(result.stdout);
         expect(payload.status).toBe('completed');
         const output = readFileSync(payload.paths.output, 'utf-8');
         expect(output).toContain('Final answer: Oracle saw: --engine browser');
+        expect(output).toContain('--heartbeat 59');
         expect(output).toContain('--browser-archive never');
         expect(output).toContain('--browser-model-strategy select');
         expect(output).toContain(`--file ${join(repoRoot, 'docs/example.md')}`);
@@ -941,7 +950,7 @@ describe('chatgpt browser command', () => {
             '#!/bin/sh',
             'case "$1" in',
             '  --version) printf "%s\\n" "0.13.0";;',
-            '  *) printf "%s\\n" "Usage: oracle --engine browser --browser-archive never --write-output <p> --browser-follow-up <t> --followup <id> --browser-model-strategy current --browser-cookie-path <path> --chatgpt-url <url>";;',
+            '  *) printf "%s\\n" "Usage: oracle --engine browser --browser-archive never --write-output <p> --browser-follow-up <t> --followup <id> --browser-model-strategy current --browser-cookie-path <path> --chatgpt-url <url> --heartbeat <seconds>";;',
             'esac',
           ].join('\n'),
         );
@@ -950,6 +959,7 @@ describe('chatgpt browser command', () => {
         expect(doctor.status).toBe(0);
         const readiness = JSON.parse(doctor.stdout);
         expect(readiness.status).toBe('ready');
+        expect(readiness.agent_actions).toEqual([]);
         expect(readiness.oracle.installed).toBe(true);
         expect(readiness.oracle.binary).toBe(oraclePath);
         expect(readiness.oracle.version).toBe('0.13.0');
@@ -963,6 +973,7 @@ describe('chatgpt browser command', () => {
           browserCookiePath: true,
           browserThinkingTime: true,
           chatgptUrl: true,
+          heartbeat: true,
         });
         expect(readiness.oracle.missingCapabilities).toEqual([]);
 
@@ -976,6 +987,18 @@ describe('chatgpt browser command', () => {
         expect(missingReadiness.oracle.installed).toBe(false);
         expect(missingReadiness.oracle.resolvedFrom).toBe('--oracle-bin');
         expect(missingReadiness.oracle.error.message).toContain('--oracle-bin');
+        expect(missingReadiness.agent_actions).toHaveLength(1);
+        expect(missingReadiness.agent_actions[0]).toMatchObject({
+          id: 'chatgpt-oracle-fix-configured-source',
+          status: 'needs_agent',
+          requires_agent: true,
+          command: 'repo-harness chatgpt browser-doctor --repo <repo> --provider oracle --oracle-bin <path-to-pinned-oracle> --json',
+          automatic: false,
+          verification: 'repo-harness chatgpt browser-doctor --repo <repo> --provider oracle --json',
+        });
+        expect(missingReadiness.agent_actions[0].reason).toContain('--oracle-bin');
+        expect(missingReadiness.agent_actions[0].reason).toContain('globally will not fix');
+        expect(missingReadiness.agent_actions[0].risk).toContain('explicit Oracle binary selection');
       } finally {
         rmSync(binDir, { recursive: true, force: true });
       }
@@ -1016,12 +1039,64 @@ describe('chatgpt browser command', () => {
           browserCookiePath: false,
           browserThinkingTime: false,
           chatgptUrl: false,
+          heartbeat: false,
         });
-        expect(readiness.oracle.missingCapabilities).toEqual(['browserFollowup', 'sessionFollowup', 'browserArchive', 'browserModelStrategy', 'browserCookiePath', 'browserThinkingTime', 'chatgptUrl']);
+        expect(readiness.oracle.missingCapabilities).toEqual(['browserFollowup', 'sessionFollowup', 'browserArchive', 'browserModelStrategy', 'browserCookiePath', 'browserThinkingTime', 'chatgptUrl', 'heartbeat']);
         expect(readiness.oracle.error.message).toContain('browserFollowup');
+        expect(readiness.agent_actions).toHaveLength(1);
+        expect(readiness.agent_actions[0]).toMatchObject({
+          id: 'chatgpt-oracle-fix-configured-source',
+          status: 'needs_agent',
+          requires_agent: true,
+          command: 'repo-harness chatgpt browser-doctor --repo <repo> --provider oracle --oracle-bin <path-to-pinned-oracle> --json',
+          automatic: false,
+        });
+        expect(readiness.agent_actions[0].reason).toContain('browserFollowup');
       } finally {
         rmSync(binDir, { recursive: true, force: true });
       }
+    });
+  });
+
+  test('oracle doctor repairs repo-local and env-selected binaries through source-aware actions', () => {
+    withRepo((repoRoot) => {
+      const repoBinDir = join(repoRoot, 'node_modules/.bin');
+      mkdirSync(repoBinDir, { recursive: true });
+      const repoOracle = join(repoBinDir, 'oracle');
+      writeFileSync(
+        repoOracle,
+        [
+          '#!/bin/sh',
+          'case "$1" in',
+          '  --version) printf "%s\\n" "0.12.0";;',
+          '  *) printf "%s\\n" "Usage: oracle --engine browser --write-output <p>";;',
+          'esac',
+        ].join('\n'),
+      );
+      chmodSync(repoOracle, 0o755);
+
+      const repoLocal = runChatgpt(['browser-doctor', '--repo', repoRoot, '--provider', 'oracle', '--json']);
+      expect(repoLocal.status).toBe(0);
+      const repoLocalReadiness = JSON.parse(repoLocal.stdout);
+      expect(repoLocalReadiness.status).toBe('action_required');
+      expect(repoLocalReadiness.oracle.resolvedFrom).toBe('node_modules/.bin');
+      expect(repoLocalReadiness.agent_actions[0]).toMatchObject({
+        id: 'chatgpt-oracle-upgrade-pinned',
+        command: 'bun add -D @steipete/oracle@0.14.1',
+      });
+
+      const envSelected = runChatgpt(['browser-doctor', '--repo', repoRoot, '--provider', 'oracle', '--json'], ROOT, {
+        ...process.env,
+        REPO_HARNESS_ORACLE_BIN: join(repoRoot, 'missing-oracle'),
+      });
+      expect(envSelected.status).toBe(0);
+      const envReadiness = JSON.parse(envSelected.stdout);
+      expect(envReadiness.status).toBe('unavailable');
+      expect(envReadiness.oracle.resolvedFrom).toBe('REPO_HARNESS_ORACLE_BIN');
+      expect(envReadiness.agent_actions[0]).toMatchObject({
+        id: 'chatgpt-oracle-fix-configured-source',
+        command: 'REPO_HARNESS_ORACLE_BIN=<path-to-pinned-oracle> repo-harness chatgpt browser-doctor --repo <repo> --provider oracle --json',
+      });
     });
   });
 
@@ -1126,15 +1201,24 @@ describe('chatgpt browser command', () => {
     expect(readFileSync(guide, 'utf-8')).toContain('not `oracle-mcp`');
     expect(readFileSync(join(ROOT, 'docs/researches/README.md'), 'utf-8')).toContain('.ai/harness/handoff/gptpro/');
     expect(readFileSync(guide, 'utf-8')).toContain('Oracle CLI package currently requires `node >=24`');
+    expect(readFileSync(guide, 'utf-8')).toContain('agent_actions');
+    expect(readFileSync(guide, 'utf-8')).toContain('chatgpt-oracle-install-pinned');
     const browserSkillText = readFileSync(skill, 'utf-8');
     expect(browserSkillText).toContain('repo-harness-chatgpt-browser');
     expect(browserSkillText).toContain('--provider oracle --json');
     expect(browserSkillText).toContain('node >=24');
+    expect(browserSkillText).toContain('chatgpt-oracle-install-pinned');
+    expect(browserSkillText).toContain('default repo-harness install');
     const gptproSkillText = readFileSync(gptproSkill, 'utf-8');
     expect(gptproSkillText).toContain('date -u +%Y%m%dT%H%M%SZ');
     expect(gptproSkillText).toContain('mkdir -p .ai/harness/handoff/gptpro');
     expect(gptproSkillText).toContain('.ai/harness/handoff/gptpro/gptpro-${stamp}-${slug}.md');
     expect(gptproSkillText).toContain('--model gpt-5.5-pro');
+    expect(gptproSkillText).toContain('MCP Read-Back Acceptance');
+    expect(gptproSkillText).toContain('chatgpt.serverName');
+    expect(gptproSkillText).toContain('.repo-harness/mcp.local.json');
+    expect(gptproSkillText).toContain('MCP Read Evidence');
+    expect(gptproSkillText).not.toContain('kito-mcp');
     expect(gptproSkillText).not.toContain('gptpro-consult.md');
   });
 });

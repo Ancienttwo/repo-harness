@@ -59,6 +59,7 @@ interface BrowserConsultOptions extends BrowserCommonOptions {
   provider?: string;
   chatgptUrl?: string;
   timeoutMs?: string;
+  heartbeat?: string;
   dryRun?: boolean;
   writeOutput?: string;
   allowAbsoluteOutput?: boolean;
@@ -82,6 +83,7 @@ interface BrowserFollowupOptions extends BrowserCommonOptions {
   thinking?: string;
   provider?: string;
   timeoutMs?: string;
+  heartbeat?: string;
   dryRun?: boolean;
   writeOutput?: string;
   allowAbsoluteOutput?: boolean;
@@ -117,6 +119,13 @@ function parsePositiveInteger(name: string, value?: string): number | undefined 
   if (value === undefined) return undefined;
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed <= 0) throw new Error(`invalid --${name} "${value}"`);
+  return parsed;
+}
+
+function parseNonNegativeInteger(name: string, value?: string): number | undefined {
+  if (value === undefined) return undefined;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0) throw new Error(`invalid --${name} "${value}"`);
   return parsed;
 }
 
@@ -231,6 +240,7 @@ export function buildChatgptCommand(): Command {
     .option('--provider <provider>', 'Browser provider: oracle|native|bridge', 'oracle')
     .option('--chatgpt-url <url>', 'ChatGPT URL to open')
     .option('--timeout-ms <ms>', 'Assistant timeout in milliseconds')
+    .option('--heartbeat <seconds>', 'Oracle provider heartbeat interval in seconds; 0 disables Oracle heartbeat (default: 59)')
     .option('--max-inline-chars <chars>', 'Maximum inline chars per file', '120000')
     .option('--write-output <path>', 'Repo-relative path to copy final output')
     .option('--allow-absolute-output', 'Permit --write-output to target an absolute path')
@@ -257,6 +267,7 @@ export function buildChatgptCommand(): Command {
           provider: parseProvider(rawOpts.provider),
           chatgptUrl: rawOpts.chatgptUrl,
           timeoutMs: parsePositiveInteger('timeout-ms', rawOpts.timeoutMs),
+          heartbeatSeconds: parseNonNegativeInteger('heartbeat', rawOpts.heartbeat),
           dryRun: rawOpts.dryRun === true,
           writeOutput: rawOpts.writeOutput,
           allowAbsoluteOutput: rawOpts.allowAbsoluteOutput === true,
@@ -305,6 +316,7 @@ export function buildChatgptCommand(): Command {
     .option('--thinking <level>', 'Thinking level: light|standard|extended|heavy')
     .option('--provider <provider>', 'Browser provider: oracle|native|bridge')
     .option('--timeout-ms <ms>', 'Assistant timeout in milliseconds')
+    .option('--heartbeat <seconds>', 'Oracle provider heartbeat interval in seconds; 0 disables Oracle heartbeat (default: 59)')
     .option('--write-output <path>', 'Repo-relative path to copy final output')
     .option('--allow-absolute-output', 'Permit --write-output to target an absolute path')
     .option('--overwrite-output', 'Allow --write-output to replace an existing file')
@@ -328,6 +340,7 @@ export function buildChatgptCommand(): Command {
           thinking: parseThinking(rawOpts.thinking),
           provider: rawOpts.provider ? parseProvider(rawOpts.provider) : undefined,
           timeoutMs: parsePositiveInteger('timeout-ms', rawOpts.timeoutMs),
+          heartbeatSeconds: parseNonNegativeInteger('heartbeat', rawOpts.heartbeat),
           dryRun: rawOpts.dryRun === true,
           writeOutput: rawOpts.writeOutput,
           allowAbsoluteOutput: rawOpts.allowAbsoluteOutput === true,

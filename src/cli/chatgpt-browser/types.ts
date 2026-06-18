@@ -28,6 +28,7 @@ export interface BrowserConsultInput {
   provider?: BrowserProviderName;
   chatgptUrl?: string;
   timeoutMs?: number;
+  heartbeatSeconds?: number;
   dryRun?: boolean;
   writeOutput?: string;
   writeOutputPolicy?: BrowserWriteOutputPolicy;

@@ -1,4 +1,4 @@
-import { spawnSync } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import { accessSync, constants, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from 'fs';
 import { tmpdir } from 'os';
 import { isAbsolute, join, resolve } from 'path';
@@ -42,6 +42,7 @@ export interface OracleCapabilities {
   browserCookiePath: boolean;
   browserThinkingTime: boolean;
   chatgptUrl: boolean;
+  heartbeat: boolean;
 }
 
 export interface OracleProbe {
@@ -121,6 +122,7 @@ function detectCapabilities(helpText: string, browserThinkingTime: boolean): Ora
     browserCookiePath: has('--browser-cookie-path'),
     browserThinkingTime,
     chatgptUrl: has('--chatgpt-url'),
+    heartbeat: has('--heartbeat'),
   };
 }
 
@@ -192,6 +194,7 @@ export function buildOracleCommand(input: BrowserConsultInput, answerPath?: stri
   else args.push('--browser-model-strategy', 'current');
   if (input.thinking) args.push('--browser-thinking-time', input.thinking);
   if (input.chatgptUrl) args.push('--chatgpt-url', input.chatgptUrl);
+  args.push('--heartbeat', String(input.heartbeatSeconds ?? 59));
   const cookiePath = resolveOracleCookiePath(input);
   if (cookiePath) args.push('--browser-cookie-path', cookiePath);
   for (const file of input.files ?? []) args.push('--file', resolveOracleFilePath(input, file.path));
@@ -248,7 +251,63 @@ function extractProviderSessionId(text: string): string | undefined {
   return text.match(/\b(?:oracle[_ -]?session|session(?: id)?)[:=]\s*([A-Za-z0-9_.:-]+)/i)?.[1];
 }
 
-export function runOracleProvider(input: BrowserConsultInput, _bundle: PromptBundle): OracleProviderResult {
+interface OracleProcessResult {
+  stdout: string;
+  stderr: string;
+  status: number | null;
+  signal: NodeJS.Signals | null;
+  error?: Error;
+}
+
+function runOracleProcess(
+  binary: string,
+  args: string[],
+  opts: { cwd: string; env: NodeJS.ProcessEnv; timeoutMs: number },
+): Promise<OracleProcessResult> {
+  return new Promise((resolveResult) => {
+    let stdout = '';
+    let stderr = '';
+    let spawnError: Error | undefined;
+    let timedOut = false;
+    let killTimer: NodeJS.Timeout | undefined;
+    const child = spawn(binary, args, {
+      cwd: opts.cwd,
+      env: opts.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      child.kill('SIGTERM');
+      killTimer = setTimeout(() => child.kill('SIGKILL'), 5_000);
+    }, opts.timeoutMs);
+    const collect = (chunk: Buffer | string, stream: 'stdout' | 'stderr') => {
+      const text = typeof chunk === 'string' ? chunk : chunk.toString('utf-8');
+      if (stream === 'stdout') stdout += text;
+      else stderr += text;
+      process.stderr.write(text);
+    };
+    child.stdout?.setEncoding('utf-8');
+    child.stderr?.setEncoding('utf-8');
+    child.stdout?.on('data', (chunk) => collect(chunk, 'stdout'));
+    child.stderr?.on('data', (chunk) => collect(chunk, 'stderr'));
+    child.on('error', (error) => {
+      spawnError = error;
+    });
+    child.on('close', (status, signal) => {
+      clearTimeout(timeout);
+      if (killTimer) clearTimeout(killTimer);
+      resolveResult({
+        stdout,
+        stderr,
+        status,
+        signal,
+        error: spawnError ?? (timedOut ? new Error(`oracle timed out after ${opts.timeoutMs}ms`) : undefined),
+      });
+    });
+  });
+}
+
+export async function runOracleProvider(input: BrowserConsultInput, _bundle: PromptBundle): Promise<OracleProviderResult> {
   const resolution = resolveOracleBin(input);
   if (input.sourceSessionId && !input.providerSessionId) {
     return {
@@ -299,12 +358,10 @@ export function runOracleProvider(input: BrowserConsultInput, _bundle: PromptBun
   const args = buildOracleCommand(input, answerPath);
   const command = [resolution.binary, ...args];
   try {
-    const result = spawnSync(resolution.binary, args, {
+    const result = await runOracleProcess(resolution.binary, args, {
       cwd: runCwd,
       env: buildOracleEnv(oracleHomeDir),
-      encoding: 'utf-8',
-      timeout: input.timeoutMs ?? 1_800_000,
-      maxBuffer: 8 * 1024 * 1024,
+      timeoutMs: input.timeoutMs ?? 1_800_000,
     });
     const stdout = result.stdout?.trimEnd() ?? '';
     const stderr = result.stderr?.trimEnd() ?? '';
@@ -327,13 +384,13 @@ export function runOracleProvider(input: BrowserConsultInput, _bundle: PromptBun
     if (result.status !== 0) {
       return {
         status: 'failed',
-        output: log || `oracle exited with status ${result.status}`,
+        output: log || `oracle exited with status ${result.status ?? result.signal ?? 'unknown'}`,
         command,
         oracleBinary: resolution.binary,
         oracleVersion,
         conversationUrl,
         providerSessionId,
-        error: { code: 'ORACLE_EXIT_NONZERO', message: `oracle exited with status ${result.status}` },
+        error: { code: 'ORACLE_EXIT_NONZERO', message: `oracle exited with status ${result.status ?? result.signal ?? 'unknown'}` },
       };
     }
 

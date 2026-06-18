@@ -22,7 +22,9 @@ const REQUIRED_CODEX_TOOLS = [
 ];
 
 const CHATGPT_MCP_ENDPOINT_PLACEHOLDER = '<https-tunnel-url>/mcp';
+const DEFAULT_CHATGPT_MCP_SERVER_NAME = 'repo-harness';
 const ENDPOINT_ERROR = 'expected a public HTTPS URL exactly ending in /mcp with no username, password, query, or fragment';
+const SERVER_NAME_ERROR = 'expected a ChatGPT MCP server name using 1-80 letters, numbers, spaces, dots, underscores, or hyphens';
 
 function writeFileIfChanged(path: string, content: string, changed: string[]): void {
   if (existsSync(path) && readFileSync(path, 'utf-8') === content) return;
@@ -108,6 +110,19 @@ function normalizePublicMcpEndpoint(endpoint: string | undefined): string | unde
   return parsed.toString();
 }
 
+function normalizeChatgptMcpServerName(value: string | undefined): string {
+  const trimmed = (value ?? DEFAULT_CHATGPT_MCP_SERVER_NAME).trim();
+  if (
+    trimmed.length < 1 ||
+    trimmed.length > 80 ||
+    !/^[A-Za-z0-9][A-Za-z0-9._ -]*$/.test(trimmed) ||
+    / {2,}/.test(trimmed)
+  ) {
+    throw new Error(`invalid --server-name "${value ?? ''}" (${SERVER_NAME_ERROR})`);
+  }
+  return trimmed;
+}
+
 export function chatgptGuideMarkdown(endpoint = CHATGPT_MCP_ENDPOINT_PLACEHOLDER): string {
   return `# repo-harness ChatGPT MCP Connector Setup
 
@@ -182,13 +197,15 @@ ${endpoint}
 1. Open ChatGPT Settings.
 2. Enable Developer Mode if your workspace exposes it.
 3. Go to Connectors.
-4. Create a Connector named \`repo-harness\`.
+4. Create a Connector using the server name recorded in \`.repo-harness/mcp.local.json\` under \`chatgpt.serverName\` (new setup records the default \`repo-harness\` unless \`--server-name\` is provided).
 5. Paste the HTTPS Connector URL ending in \`/mcp\`.
 6. Configure Connector authentication as OAuth.
 7. Click Scan Tools.
 8. When the authorization page opens, enter the passphrase from \`.repo-harness/mcp.oauth.json\`.
 9. Wait for the tool scan to finish, then create the Connector.
 10. Keep write confirmations enabled.
+
+If \`repo-harness mcp doctor --repo . --json\` reports \`chatgpt.serverNameConfigured:false\`, rerun setup with \`--server-name <connector-name>\` before using GPT Pro MCP read-back prompts.
 
 ## Human Workflow
 
@@ -333,12 +350,14 @@ Use repo-harness-chatgpt-bridge. Execute the latest ChatGPT-generated Codex goal
 `;
 }
 
-export function runMcpSetupChatgpt(opts: { repo?: string; host?: string; port?: string; endpoint?: string }): McpSetupResult {
+export function runMcpSetupChatgpt(opts: { repo?: string; host?: string; port?: string; endpoint?: string; serverName?: string }): McpSetupResult {
   const repoRoot = resolveMcpRepoRoot(opts.repo ?? '.');
   const changed: string[] = [];
-  const host = opts.host ?? '127.0.0.1';
-  const port = opts.port ?? '8765';
-  const endpoint = normalizePublicMcpEndpoint(opts.endpoint);
+  const existingConfig = loadMcpLocalConfig(repoRoot);
+  const host = opts.host ?? existingConfig?.server?.host ?? '127.0.0.1';
+  const port = opts.port ?? String(existingConfig?.server?.port ?? 8765);
+  const serverName = normalizeChatgptMcpServerName(opts.serverName ?? existingConfig?.chatgpt?.serverName);
+  const endpoint = normalizePublicMcpEndpoint(opts.endpoint ?? existingConfig?.chatgpt?.endpoint);
   const configPath = join(repoRoot, '.repo-harness', 'mcp.local.json');
   const guidePath = join(repoRoot, 'docs', 'repo-harness-chatgpt-mcp-setup.md');
   const token = ensureMcpBearerToken(repoRoot);
@@ -348,11 +367,15 @@ export function runMcpSetupChatgpt(opts: { repo?: string; host?: string; port?: 
   const config = {
     version: 1,
     repo: repoRoot,
-    server: { host, port: Number(port), transport: 'http' },
-    auth: { mode: 'oauth', oauthFile: '.repo-harness/mcp.oauth.json', tokenFile: '.repo-harness/mcp.tokens.json' },
-    ...(endpoint ? { chatgpt: { endpoint } } : {}),
-    profile: 'planner',
-    devMode: {
+    server: { ...existingConfig?.server, host, port: Number(port), transport: existingConfig?.server?.transport ?? 'http' },
+    auth: existingConfig?.auth ?? { mode: 'oauth', oauthFile: '.repo-harness/mcp.oauth.json', tokenFile: '.repo-harness/mcp.tokens.json' },
+    chatgpt: {
+      ...existingConfig?.chatgpt,
+      serverName,
+      ...(endpoint ? { endpoint } : {}),
+    },
+    profile: existingConfig?.profile ?? 'planner',
+    devMode: existingConfig?.devMode ?? {
       agentRunner: false,
       allowedAgents: ['codex'],
       timeoutMs: 120000,
@@ -375,6 +398,7 @@ export function runMcpSetupChatgpt(opts: { repo?: string; host?: string; port?: 
     lines: [
       `[repo-harness mcp] Repo: ${repoRoot}`,
       '[repo-harness mcp] Profile: planner',
+      `[repo-harness mcp] ChatGPT MCP server name: ${serverName}`,
       `[repo-harness mcp] Local endpoint: http://${host}:${port}/mcp`,
       endpoint
         ? `[repo-harness mcp] ChatGPT endpoint: ${endpoint}`
@@ -723,6 +747,7 @@ export function runMcpPrintGuide(opts: { repo?: string; endpoint?: string; write
 export function runMcpDoctor(opts: { repo?: string; json?: boolean }): McpSetupResult {
   const repoRoot = resolveMcpRepoRoot(opts.repo ?? '.');
   const localConfig = loadMcpLocalConfig(repoRoot);
+  const configuredServerName = localConfig?.chatgpt?.serverName;
   const host = localConfig?.server?.host ?? '127.0.0.1';
   const port = localConfig?.server?.port ?? 8765;
   const authMode = localConfig?.auth?.mode ?? 'missing';
@@ -754,6 +779,9 @@ export function runMcpDoctor(opts: { repo?: string; json?: boolean }): McpSetupR
       fix: 'repo-harness mcp setup codex --repo . --scope project',
     },
     chatgpt: {
+      ...(configuredServerName ? { serverName: configuredServerName } : {}),
+      serverNameConfigured: Boolean(configuredServerName),
+      defaultServerName: DEFAULT_CHATGPT_MCP_SERVER_NAME,
       localEndpoint: `http://${host}:${port}/mcp`,
       publicEndpoint: localConfig?.chatgpt?.endpoint,
       authMode,
@@ -768,6 +796,9 @@ export function runMcpDoctor(opts: { repo?: string; json?: boolean }): McpSetupR
     lines: opts.json === true ? [JSON.stringify(report, null, 2)] : [
       `[repo-harness mcp] Repo: ${repoRoot}`,
       `[repo-harness mcp] Status: ${report.status}`,
+      `[repo-harness mcp] ChatGPT MCP server name: ${
+        configuredServerName ?? `missing (run setup; default is ${DEFAULT_CHATGPT_MCP_SERVER_NAME})`
+      }`,
       `[repo-harness mcp] ChatGPT guide: ${report.mcp.guide ? 'present' : 'missing'}`,
       `[repo-harness mcp] ChatGPT auth: ${report.mcp.authConfigured ? `${authMode} present` : 'missing'}`,
       `[repo-harness mcp] Dev runner: ${report.mcp.devMode.agentRunner ? `enabled (${report.mcp.devMode.allowedAgents.join(',')})` : 'disabled'}`,
