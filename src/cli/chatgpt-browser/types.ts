@@ -1,6 +1,6 @@
 export type BrowserSessionStatus = 'completed' | 'running' | 'incomplete_capture' | 'failed' | 'cancelled' | 'dry_run';
 
-export type BrowserProviderName = 'oracle' | 'native';
+export type BrowserProviderName = 'oracle' | 'native' | 'bridge';
 
 export type NativeBrowserChannel = 'chrome' | 'chrome-beta' | 'chrome-dev' | 'chrome-canary';
 
@@ -35,6 +35,7 @@ export interface BrowserConsultInput {
   maxInlineChars?: number;
   manualLogin?: boolean;
   profileDir?: string;
+  profileDirectory?: string;
   browserChannel?: NativeBrowserChannel;
   keepBrowser?: boolean;
   headless?: boolean;
@@ -90,6 +91,9 @@ export interface BrowserSessionMeta {
     mode: 'manual-login';
     chatgptUrl: string;
     channel?: NativeBrowserChannel;
+    profileDir?: string;
+    profileDirectory?: string;
+    selectedProfilePath?: string;
     conversationUrl?: string;
   };
   input: {

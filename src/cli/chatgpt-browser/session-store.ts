@@ -161,6 +161,9 @@ export function writeBrowserSession(opts: {
       mode: 'manual-login',
       chatgptUrl: opts.input.chatgptUrl ?? 'https://chatgpt.com/',
       channel: opts.input.browserChannel,
+      profileDir: opts.input.profileDir,
+      profileDirectory: opts.input.profileDirectory,
+      selectedProfilePath: opts.input.profileDirectory ? join(opts.input.profileDir ?? '', opts.input.profileDirectory) : opts.input.profileDir,
       conversationUrl: opts.conversationUrl,
     },
     input: {

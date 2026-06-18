@@ -29,6 +29,23 @@ repo-harness chatgpt browser-doctor --repo .
 
 `browser-setup` creates the session root and prints recommended ignore rules for local browser state. Browser profile and token files should remain local.
 
+For an existing signed-in Chrome profile, use the product-scoped bridge:
+
+```bash
+repo-harness chatgpt browser-setup \
+  --repo . \
+  --profile-dir "<user-selected-chrome-profile-dir>" \
+  --browser-channel chrome
+repo-harness chatgpt browser-bind --repo . --open
+repo-harness chatgpt browser-doctor --repo . --provider bridge --json
+```
+
+`browser-setup` records only product binding metadata in `.repo-harness/chatgpt-browser.local.json`; it does not copy cookies, tokens, passwords, or browser storage. `browser-bind` then serves a local `http://127.0.0.1:<port>/` authorization page and writes an unpacked Chrome extension under `.ai/harness/chatgpt/bridge-extension/`. The page guides the user to open Chrome Extensions, enable **Developer mode**, click **Load unpacked**, select that extension directory, open or refresh ChatGPT, then click **Bind ChatGPT**. The **Bind ChatGPT** button validates a heartbeat from that extension. If ChatGPT is not logged in or the composer is missing, the page tells the user to open ChatGPT, sign in, and bind again. After authorization succeeds, stop the `browser-bind` command before running `browser-consult --provider bridge` because both use the same local bridge port.
+
+If the user selects a Chrome profile subdirectory such as `<chrome-user-data-dir>/<profile-name>`, repo-harness stores the parent user data directory and launches Chrome with `--profile-directory <profile-name>`. On macOS this may look like `~/Library/Application Support/Google/Chrome/Profile 1`; Windows and Linux use their own Chrome profile roots. If the user selects the user data directory itself, pass `--profile-directory <name>` explicitly.
+
+Do not use the default Chrome data directory for native CDP validation. Chrome 136+ no longer honors remote-debugging switches against the current user's default Chrome data directory; it requires a non-standard `--user-data-dir`. Existing signed-in real Chrome profiles should use the bridge provider instead of native CDP.
+
 ## Dry Run
 
 ```bash
@@ -59,6 +76,27 @@ The wrapper maps repo-harness input to `oracle --engine browser`, then saves std
 
 `--write-output` is validated by repo-harness before the provider runs. By default it must be repo-relative, must not target denied paths, and must not overwrite an existing file unless `--overwrite-output` is passed. Absolute output paths require the human-only `--allow-absolute-output` flag and are not available through MCP browser tools.
 
+## Bridge Provider
+
+```bash
+repo-harness chatgpt browser-bind --repo . --open
+repo-harness chatgpt browser-consult \
+  --repo . \
+  --provider bridge \
+  --prompt "Reply exactly OK"
+```
+
+The bridge provider uses the generated unpacked Chrome extension in the user's selected profile. The extension is scoped to `https://chatgpt.com/*`, `https://chat.openai.com/*`, and the local bridge URL only. It does not request cookies or storage permissions. The extension polls localhost for one task, submits the prompt through the visible ChatGPT composer, waits for assistant text, and posts the result back to repo-harness.
+
+Bridge provider runs use the current model and thinking mode already selected in the ChatGPT Web UI. Passing `--model` or `--thinking` with `--provider bridge` fails closed with `BRIDGE_MODEL_SELECTION_UNSUPPORTED`; use the Oracle provider when provider-side model selection is required.
+
+Failure is explicit:
+
+- Missing extension connection reports `CHATGPT_BRIDGE_EXTENSION_NOT_CONNECTED`.
+- Connected extension without task completion reports `CHATGPT_BRIDGE_RESULT_TIMEOUT` or `CHATGPT_BRIDGE_TASK_NOT_CLAIMED`.
+- Page-side execution failure reports `CHATGPT_BRIDGE_TASK_FAILED`.
+- Missing captured assistant text reports `CHATGPT_BRIDGE_CAPTURE_TIMEOUT`.
+
 ## Native Provider Spike
 
 ```bash
@@ -66,25 +104,26 @@ repo-harness chatgpt browser-doctor --repo . --provider native
 repo-harness chatgpt browser-consult \
   --repo . \
   --provider native \
-  --browser-channel chrome \
-  --keep-browser \
-  --profile-dir ~/.repo-harness/chatgpt-browser-profile \
   --prompt "Reply exactly OK"
 ```
 
 The native provider launches installed Google Chrome and drives it through a local Chrome DevTools Protocol websocket. It opens ChatGPT Web, waits for a visible composer, submits the assembled prompt, waits for an assistant response, and saves the captured text into the same repo-local session store.
+
+Native provider consults require a bound ChatGPT product session in a non-default automation profile. Configure it with `browser-setup --profile-dir <dir>`, authorize it with `browser-bind --open`, or pass an explicit non-default `--profile-dir` for an ad hoc run. Existing default Chrome profiles should use `--provider bridge`. The saved binding also carries the Chrome channel and ChatGPT URL, so normal consult and follow-up commands do not need to repeat them.
 
 Native provider runs use the current model and thinking mode already selected in the ChatGPT Web UI. Passing `--model` or `--thinking` with `--provider native` fails closed with `NATIVE_MODEL_SELECTION_UNSUPPORTED`; use the Oracle provider when provider-side model selection is required.
 
 Failure is explicit:
 
 - Missing Google Chrome reports `NATIVE_PROVIDER_FAILED` with the missing app path.
+- Missing profile binding reports `NATIVE_PROFILE_NOT_BOUND`.
+- Default Chrome data directory usage reports `NATIVE_DEFAULT_PROFILE_CDP_BLOCKED` / `blocked_default_profile`.
 - Unsupported native model/thinking selection reports `NATIVE_MODEL_SELECTION_UNSUPPORTED`.
 - Missing login or composer reports `LOGIN_OR_COMPOSER_NOT_READY`.
 - A submitted run with no captured assistant text reports `ASSISTANT_CAPTURE_TIMEOUT`.
 - A submitted run whose assistant text did not stabilize before timeout reports `ASSISTANT_CAPTURE_INCOMPLETE`.
 
-For first login, run with `--browser-channel chrome --keep-browser`, complete login manually, then rerun with the same `--profile-dir`.
+For first login, run `browser-setup --profile-dir <non-default-dir>`, then `browser-bind --open`. Click **Bind ChatGPT**. If it reports login required, click **Open ChatGPT Login**, complete login, return to the authorization page, and click **Bind ChatGPT** again.
 
 ## Sessions
 
@@ -178,6 +217,7 @@ Allowed-path symlinks that resolve outside the repository are rejected.
 ## Security Notes
 
 - Keep browser profiles and local config uncommitted.
+- Prefer product-session binding over copying cookies or launching an unrelated fresh profile.
 - Do not expose Chrome remote debugging outside localhost without an explicit tunnel/security plan.
 - Use dry-run before sending large or sensitive context.
 - Prefer narrow files over whole-repo dumps.

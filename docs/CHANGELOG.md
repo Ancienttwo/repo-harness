@@ -4,10 +4,32 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Added ChatGPT native browser product-session binding for user-selected Chrome
+  profiles, with printed bind-page URLs, Chrome profile-directory support,
+  doctor session validation, and fail-closed native consults when no ChatGPT
+  profile is bound.
+
 ### Fixed
 
 - Corrected gbrain remediation guidance to install the official GitHub GBrain
   CLI instead of the unrelated npm registry `gbrain` package.
+- Fail closed when native ChatGPT browser setup targets the default Chrome data
+  directory, because Chrome 136+ blocks remote debugging there; doctor now
+  reports `blocked_default_profile` instead of opening Chrome and timing out.
+- Removed the static `file://` ChatGPT bind page path. Product-session binding
+  now goes through `repo-harness chatgpt browser-bind`, whose **Bind ChatGPT**
+  action calls a local authorization endpoint instead of linking directly to
+  ChatGPT.
+- Added the ChatGPT bridge provider for existing signed-in Chrome profiles. It
+  generates a product-scoped unpacked extension for ChatGPT domains plus
+  localhost, validates composer readiness through extension heartbeat, and
+  supports `browser-consult --provider bridge` without copying cookies or
+  browser storage.
+- Hardened ChatGPT bridge authorization diagnostics for unpacked extensions
+  recorded in Chrome `Secure Preferences`, and isolated bridge-provider tests
+  from user-installed extensions polling the default local port.
 - Excluded `gbrain` from setup readiness dependencies: missing or stale gbrain
   stays visible as advisory tooling state without creating Agent actions.
 - Kept ChatGPT MCP stable endpoints out of tracked generated guides, storing
