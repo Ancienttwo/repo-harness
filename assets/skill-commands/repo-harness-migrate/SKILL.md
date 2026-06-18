@@ -1,7 +1,7 @@
 ---
 name: repo-harness-migrate
 description: Migrates older Claude/Codex workflow repos to the current tasks-first harness while preserving or archiving user-authored docs and hooks.
-when_to_use: "repo-harness-migrate, migrate legacy Claude repo, migrate docs/TODO.md, migrate docs/PROGRESS.md, upgrade repo from retired project-initializer era, legacy workflow docs"
+when_to_use: "repo-harness-migrate, migrate legacy Claude repo, migrate docs/TODO.md, migrate docs/PROGRESS.md, legacy workflow docs"
 ---
 
 # repo-harness-migrate

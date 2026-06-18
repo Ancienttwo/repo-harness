@@ -8,10 +8,6 @@ export const LEGACY_GITIGNORE_MANAGED_MARKERS: readonly ManagedBlockMarker[] = [
     begin: "# BEGIN: claude-runtime-temp (managed by repo-harness)",
     end: "# END: claude-runtime-temp",
   },
-  {
-    begin: "# BEGIN: claude-runtime-temp (managed by project-initializer)",
-    end: "# END: claude-runtime-temp",
-  },
 ];
 
 export const GITIGNORE_MANAGED_BLOCK_CONTENT = [

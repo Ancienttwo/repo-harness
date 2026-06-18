@@ -168,7 +168,7 @@ function classifyHelperRuntime(repo: string, fileName: string, helperSourceRepo:
     };
   }
 
-  if (current?.match(/repo-harness|project-initializer|\.ai\/harness|Workflow Contract|Task Contract/)) {
+  if (current?.match(/repo-harness|\.ai\/harness|Workflow Contract|Task Contract/)) {
     return {
       path: rel(repo, path),
       category: 'helper-runtime',
@@ -237,7 +237,6 @@ function managedCommand(command: unknown): boolean {
     (
       command.includes('repo-harness hook') ||
       command.includes('repo-harness-hook') ||
-      command.includes('project-initializer') ||
       command.includes('.ai/hooks/run-hook.sh') ||
       command.includes('/.repo-harness/')
     )
@@ -428,7 +427,7 @@ function isAppOwnedScript(path: string, packagedHelper: string): boolean {
   if (!existsSync(path)) return false;
   const current = readFileSync(path, 'utf-8');
   if (current === packagedHelper) return false;
-  return !current.match(/repo-harness|project-initializer|\.ai\/harness|Workflow Contract|Task Contract/);
+  return !current.match(/repo-harness|\.ai\/harness|Workflow Contract|Task Contract/);
 }
 
 function writeWrappers(repo: string): Array<{ path: string; sha256: string }> {

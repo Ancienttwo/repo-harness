@@ -2,7 +2,6 @@
 # Shared install helpers for repo-harness scaffolding scripts.
 
 PI_RUNTIME_BLOCK_BEGIN="# BEGIN: claude-runtime-temp (managed by repo-harness)"
-PI_RUNTIME_BLOCK_BEGIN_LEGACY="# BEGIN: claude-runtime-temp (managed by project-initializer)"
 PI_RUNTIME_BLOCK_END="# END: claude-runtime-temp"
 PI_DEFAULT_GITIGNORE_CONTENT=$(cat <<'EOF_GITIGNORE'
 # Dependencies
@@ -751,12 +750,12 @@ pi_helper_wrapper_gitignore_entries() {
 
 pi_is_runtime_block_begin() {
   local line="$1"
-  [[ "$line" == "$PI_RUNTIME_BLOCK_BEGIN" || "$line" == "$PI_RUNTIME_BLOCK_BEGIN_LEGACY" ]]
+  [[ "$line" == "$PI_RUNTIME_BLOCK_BEGIN" ]]
 }
 
 pi_has_runtime_block() {
   local file_path="$1"
-  grep -Fq "$PI_RUNTIME_BLOCK_BEGIN" "$file_path" || grep -Fq "$PI_RUNTIME_BLOCK_BEGIN_LEGACY" "$file_path"
+  grep -Fq "$PI_RUNTIME_BLOCK_BEGIN" "$file_path"
 }
 
 pi_ensure_gitignore_block() {
@@ -1148,7 +1147,7 @@ pi_preserve_existing_app_script() {
     return 1
   fi
 
-  if grep -Eiq '(repo-harness|project-initializer|claude-runtime-temp|Task Contract|Task Review|Deferred Goal Ledger|Workflow Contract|ContractWorktree|SprintBacklog|ArchitectureSync|ArchitectureDrift|BrainSync|CurrentStatus|\.ai/harness|\.claude/templates|tasks/contracts|tasks/reviews)' "$output_file"; then
+  if grep -Eiq '(repo-harness|claude-runtime-temp|Task Contract|Task Review|Deferred Goal Ledger|Workflow Contract|ContractWorktree|SprintBacklog|ArchitectureSync|ArchitectureDrift|BrainSync|CurrentStatus|\.ai/harness|\.claude/templates|tasks/contracts|tasks/reviews)' "$output_file"; then
     return 1
   fi
 

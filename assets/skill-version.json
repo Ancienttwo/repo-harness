@@ -3,10 +3,6 @@
   "templateVersion": "0.7.2",
   "skillName": "repo-harness",
   "contractId": "tasks-first-harness-v1",
-  "retiredAliases": [
-    "repo-harness-skill",
-    "project-initializer"
-  ],
   "compatibility": {
     "minClaudeCodeVersion": "1.0.0",
     "minBunVersion": "1.0.0"

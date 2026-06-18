@@ -276,16 +276,16 @@ export function migrate(repo: string, mode: Mode): MigrationSummary {
     });
   }
 
-  // NOTE: The "<!-- project-initializer: legacy-docs-import ... -->" markers below are
-  // historical data markers, not an active compatibility surface. They are written into
-  // migrated repos and used by appendIfMissing as the idempotency key, so renaming them
-  // would re-import already-migrated legacy docs. Keep the marker string stable.
+  // NOTE: The "<!-- repo-harness: legacy-docs-import ... -->" markers below are
+  // data markers written into migrated repos and used by appendIfMissing as the
+  // idempotency key, so renaming them would re-import already-migrated legacy docs.
+  // Keep the marker string stable.
   if (existsSync(planDoc)) {
     const content = readFileSync(planDoc, "utf-8");
     const archiveBlock = [
       "# Legacy Plan Import",
       "",
-      "<!-- project-initializer: legacy-docs-import docs/plan.md -->",
+      "<!-- repo-harness: legacy-docs-import docs/plan.md -->",
       "",
       "Original `docs/plan.md` content was archived during migration.",
       "",
@@ -339,7 +339,7 @@ export function migrate(repo: string, mode: Mode): MigrationSummary {
     if (!readFileSync(progressDoc, "utf-8").includes("milestone checkpoints only")) {
       writeResearchReport(
         legacyProgressResearch,
-        "<!-- project-initializer: legacy-docs-import docs/PROGRESS.md -->",
+        "<!-- repo-harness: legacy-docs-import docs/PROGRESS.md -->",
         "Legacy Progress Import",
         ["Imported from a legacy execution log stored in `docs/PROGRESS.md`.", "", content].join("\n"),
         mode

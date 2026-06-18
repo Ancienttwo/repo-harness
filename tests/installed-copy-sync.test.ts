@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, lstatSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
@@ -17,19 +17,12 @@ describe("Codex installed copy sync", () => {
     const source = join(tmp, "source");
     const codexSkills = join(tmp, "codex-skills");
     const claudeSkills = join(tmp, "claude-skills");
-    const legacyAliasTarget = join(tmp, "legacy-project-initializer-target");
 
     try {
       mkdirSync(join(source, "assets", "skill-commands", "repo-harness-plan"), { recursive: true });
       mkdirSync(join(source, "evals"), { recursive: true });
       mkdirSync(codexSkills, { recursive: true });
       mkdirSync(claudeSkills, { recursive: true });
-      mkdirSync(legacyAliasTarget, { recursive: true });
-      symlinkSync(legacyAliasTarget, join(codexSkills, "project-initializer"), "dir");
-      mkdirSync(join(codexSkills, "repo-harness-skill"), { recursive: true });
-      writeFileSync(join(codexSkills, "repo-harness-skill", "README.md"), "stale retired copy\n");
-      mkdirSync(join(claudeSkills, "repo-harness-skill"), { recursive: true });
-      writeFileSync(join(claudeSkills, "repo-harness-skill", "README.md"), "stale retired copy\n");
 
       writeFileSync(join(source, "SKILL.md"), "---\nname: repo-harness\n---\n");
       writeFileSync(join(source, "assets", "skill-commands", "repo-harness-plan", "SKILL.md"), "---\nname: repo-harness-plan\n---\n");
@@ -61,18 +54,10 @@ describe("Codex installed copy sync", () => {
       expect(existsSync(join(codexSkills, "repo-harness", ".claude", ".trace.jsonl"))).toBe(false);
       expect(existsSync(join(codexSkills, "repo-harness", ".codex", "hooks.json"))).toBe(false);
 
-      for (const retiredName of ["repo-harness-skill", "project-initializer"]) {
-        expect(existsSync(join(codexSkills, retiredName))).toBe(false);
-        expect(existsSync(join(claudeSkills, retiredName))).toBe(false);
-      }
-      expect(result.stdout).toContain("retired alias removed");
       expect(existsSync(join(claudeSkills, "repo-harness", "SKILL.md"))).toBe(true);
       expect(existsSync(join(claudeSkills, "repo-harness", ".ai", "harness", "checks", "latest.json"))).toBe(false);
       expect(existsSync(join(claudeSkills, "repo-harness", ".claude", ".trace.jsonl"))).toBe(false);
       expect(existsSync(join(claudeSkills, "repo-harness", ".codex", "hooks.json"))).toBe(false);
-      expect(existsSync(join(legacyAliasTarget, "SKILL.md"))).toBe(false);
-      expect(existsSync(join(legacyAliasTarget, "assets", "skill-commands"))).toBe(false);
-
       // Each facade is also registered as its own host skill (copy mode).
       expect(existsSync(join(codexSkills, "repo-harness-plan", "SKILL.md"))).toBe(true);
       expect(existsSync(join(claudeSkills, "repo-harness-plan", "SKILL.md"))).toBe(true);
@@ -92,8 +77,6 @@ describe("Codex installed copy sync", () => {
       mkdirSync(join(source, "assets", "skill-commands", "repo-harness-plan"), { recursive: true });
       mkdirSync(codexSkills, { recursive: true });
       mkdirSync(claudeSkills, { recursive: true });
-      symlinkSync(source, join(codexSkills, "repo-harness-skill"), "dir");
-      symlinkSync(source, join(claudeSkills, "repo-harness-skill"), "dir");
 
       writeFileSync(join(source, "SKILL.md"), "---\nname: repo-harness\n---\n");
       writeFileSync(join(source, "assets", "skill-commands", "repo-harness-plan", "SKILL.md"), "---\nname: repo-harness-plan\n---\n");
@@ -115,14 +98,6 @@ describe("Codex installed copy sync", () => {
       expect(result.status).toBe(0);
       expect(lstatSync(join(codexSkills, "repo-harness")).isSymbolicLink()).toBe(true);
       expect(lstatSync(join(claudeSkills, "repo-harness")).isSymbolicLink()).toBe(true);
-
-      for (const retiredName of ["repo-harness-skill", "project-initializer"]) {
-        expect(existsSync(join(codexSkills, retiredName))).toBe(false);
-        expect(existsSync(join(claudeSkills, retiredName))).toBe(false);
-      }
-      // The pre-existing repo-harness-skill symlinks must be removed, not refreshed.
-      expect(() => lstatSync(join(codexSkills, "repo-harness-skill"))).toThrow();
-      expect(() => lstatSync(join(claudeSkills, "repo-harness-skill"))).toThrow();
       expect(existsSync(join(source, "SKILL.md"))).toBe(true);
 
       // Each facade is registered as its own source-backed symlink (link mode).

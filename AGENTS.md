@@ -1,6 +1,6 @@
 # repo-harness AGENTS.md
 
-This repository self-hosts the `repo-harness` contract; the former `repo-harness-skill` and `project-initializer` names are retired and removed by installed-copy sync. Claude and Codex should follow the same repo-local workflow surface.
+This repository self-hosts the `repo-harness` contract; the former `repo-harness-skill` and `project-initializer` names have been fully removed and are no longer recognized by any tooling. Claude and Codex should follow the same repo-local workflow surface.
 
 ## Canonical Workflow Files
 

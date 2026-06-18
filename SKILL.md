@@ -15,14 +15,12 @@ Compatibility boundary:
 - internal engine: CLI plus hook-backed tasks-first harness
 - contract ID: tasks-first-harness-v1
 - canonical skill, CLI, and package name: `repo-harness`
-- retired legacy aliases: `repo-harness-skill`, `project-initializer`
 - new-project creation surface: `repo-harness-scaffold` (secondary generator)
 
-`repo-harness-skill` and `project-initializer` are retired: do not create,
-sync, or search their directories under `~/.codex/skills` or
-`~/.claude/skills` as active upstream roots; installed-copy sync removes any
-existing copies. Historical `project-initializer` markers in generated files
-may remain only as legacy evidence.
+The former `repo-harness-skill` and `project-initializer` aliases have been
+fully removed. They are no longer recognized, synced, or cleaned up by any
+tooling. Historical markers left behind in long-migrated repos are inert
+evidence and are not handled.
 
 The skill should not carry the whole workflow contract in prose. It should:
 

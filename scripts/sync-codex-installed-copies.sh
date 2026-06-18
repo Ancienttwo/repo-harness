@@ -114,23 +114,6 @@ remove_managed_dest() {
   fi
 }
 
-remove_retired_aliases() {
-  local root="$1"
-  if [[ -z "$root" ]]; then
-    return 0
-  fi
-
-  local retired_name
-  local retired_dest
-  for retired_name in project-initializer repo-harness-skill; do
-    retired_dest="$root/$retired_name"
-    if [[ -e "$retired_dest" || -L "$retired_dest" ]]; then
-      remove_managed_dest "$retired_dest"
-      echo "[sync-installed] retired alias removed: $retired_dest"
-    fi
-  done
-}
-
 sync_claude_alias_links() {
   if [[ -z "$CLAUDE_SKILLS_ROOT" ]]; then
     return 0
@@ -197,10 +180,8 @@ if [[ "$LINK_INSTALLED_COPIES" == "1" ]]; then
   echo "[sync-installed] canonical skill link: $canonical_dest -> $SOURCE_ROOT"
 
   sync_command_facades "$CODEX_SKILLS_ROOT" link
-  remove_retired_aliases "$CODEX_SKILLS_ROOT"
   sync_claude_alias_links
   sync_command_facades "$CLAUDE_SKILLS_ROOT" link
-  remove_retired_aliases "$CLAUDE_SKILLS_ROOT"
   echo "[sync-installed] OK"
   exit 0
 fi
@@ -209,8 +190,6 @@ sync_copy "$canonical_dest"
 echo "[sync-installed] canonical skill copy: $canonical_dest"
 
 sync_command_facades "$CODEX_SKILLS_ROOT" copy
-remove_retired_aliases "$CODEX_SKILLS_ROOT"
 sync_claude_alias_copies
 sync_command_facades "$CLAUDE_SKILLS_ROOT" copy
-remove_retired_aliases "$CLAUDE_SKILLS_ROOT"
 echo "[sync-installed] OK"

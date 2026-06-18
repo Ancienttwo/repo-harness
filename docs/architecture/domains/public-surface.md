@@ -21,7 +21,7 @@ compatibility router, README, root agent docs, the `repo-harness` CLI, and thin
 - Root `AGENTS.md` and `CLAUDE.md` stay concise; detailed operating rules live in `docs/reference-configs/`.
 - Public commands are CLI-backed facades. Internal steps such as `hooks-init`, `docs-init`, and `create-project-dirs` stay behind `init`, `scaffold`, `migrate`, and `upgrade`.
 - `repo-harness-skill` remains a compatibility trigger, not the canonical name.
-- Retired `project-initializer` install paths are removed by installed-copy sync and are not runtime lookup targets.
+- The former `project-initializer` install paths have been fully removed; no tooling recognizes, syncs, or cleans them up.
 
 ## Verification Surface
 

@@ -21,7 +21,6 @@ Strong dependencies:
 Weak dependencies:
 
 - Compatibility name `repo-harness-skill`.
-- Retired `project-initializer` install paths, which are cleanup targets only.
 - `repo-harness install` owns first-run global bootstrap: install the CLI, install user-level hook adapters, configure Waza, persist the brain root, and configure CodeGraph MCP. `repo-harness init` remains a compatibility alias.
 - `repo-harness uninstall` removes repo-harness managed host adapters without deleting sibling hooks or third-party tools.
 - `repo-harness adopt` owns repo-local harness adoption and refresh.

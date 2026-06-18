@@ -338,8 +338,9 @@ For this repo, use:
 brain/repo-harness/*
 ```
 
-The legacy repo-harness-skill and project-initializer paths are retired and
-removed by installed-copy sync; do not use them as sync targets.
+The legacy repo-harness-skill and project-initializer paths have been fully
+removed; no tooling recognizes, syncs, or cleans them up. Do not use them as
+sync targets.
 
 Keep runtime contracts, hooks, scripts, checks, evidence, and migration state in
 the repo. The default brain stores reusable explanations, runbooks, decisions,

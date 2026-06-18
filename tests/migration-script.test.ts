@@ -1114,7 +1114,7 @@ describe("Migration script contract", () => {
         join(repo, ".gitignore"),
         [
           "# base",
-          "# BEGIN: claude-runtime-temp (managed by project-initializer)",
+          "# BEGIN: claude-runtime-temp (managed by repo-harness)",
           ".claude/settings.local.json",
           "# END: claude-runtime-temp",
         ].join("\n") + "\n"
@@ -1129,7 +1129,6 @@ describe("Migration script contract", () => {
       expect(res.status).toBe(0);
       const gitignore = readFileSync(join(repo, ".gitignore"), "utf-8");
       expect(gitignore).toContain("# BEGIN: claude-runtime-temp (managed by repo-harness)");
-      expect(gitignore).not.toContain("# BEGIN: claude-runtime-temp (managed by project-initializer)");
       expect(gitignore).toContain(".claude/.task-state.json");
       expect(gitignore).toContain(".ai/harness/active-plan");
       expect(gitignore).toContain(".ai/harness/active-worktree");
