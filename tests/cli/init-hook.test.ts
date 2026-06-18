@@ -231,6 +231,39 @@ describe('init-hook command', () => {
     });
   });
 
+  test('keeps optional gbrain gaps out of setup dependency actions', () => {
+    withTempHome((home, repo) => {
+      mkdirSync(join(home, '.codex'), { recursive: true });
+      writeFileSync(join(home, '.codex', 'AGENTS.md'), '# Global Working Rules\n');
+
+      const report = runInitHook({
+        cwd: repo,
+        target: 'codex',
+        checkUpdates: true,
+        env: { ...process.env, HOME: home },
+        statusReport: baseStatusReport(),
+        doctorReport: baseDoctorReport(),
+        toolingReport: baseToolingReport({
+          gbrain: {
+            name: 'gbrain',
+            required: false,
+            status: 'missing',
+            reason: 'gbrain CLI is not installed.',
+            update_status: 'update-available',
+            install_command: 'install-gbrain',
+            upgrade_command: 'upgrade-gbrain',
+          },
+        }),
+      });
+
+      const check = report.checks.find((entry) => entry.id === 'tooling.gbrain');
+      expect(check?.status).toBe('ok');
+      expect(check?.detail).toContain('optional');
+      expect(report.agent_actions.find((entry) => entry.id.startsWith('tooling.gbrain.'))).toBeUndefined();
+      expect(report.status).toBe('ok');
+    });
+  });
+
   test('reports runtime capabilities as separate setup checks', () => {
     withTempHome((home, repo) => {
       mkdirSync(join(home, '.codex'), { recursive: true });

@@ -8,6 +8,8 @@ All notable changes to this skill are documented here.
 
 - Corrected gbrain remediation guidance to install the official GitHub GBrain
   CLI instead of the unrelated npm registry `gbrain` package.
+- Excluded `gbrain` from setup readiness dependencies: missing or stale gbrain
+  stays visible as advisory tooling state without creating Agent actions.
 - Limited SessionStart tooling update advisories to one render per cached
   report, so weekly Waza/CodeGraph update checks do not re-inject stale
   update instructions on every new agent turn.

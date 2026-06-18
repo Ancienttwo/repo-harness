@@ -79,6 +79,7 @@ export interface RuntimeCapability {
 
 export interface ToolingTool {
   name?: string;
+  required?: boolean;
   status?: string;
   reason?: string;
   update_status?: string | null;
@@ -479,14 +480,16 @@ function toolingChecks(
 
   const checks: InitHookCheck[] = [];
   for (const [toolName, tool] of Object.entries(report.tools ?? {})) {
-    const readinessStatus = toolCheckStatus(toolName, tool.status, target);
-    const hasUpdateAction = checkUpdates && updateNeedsAgent(tool.update_status);
+    const required = tool.required !== false;
+    const readinessStatus = required ? toolCheckStatus(toolName, tool.status, target) : 'ok';
+    const hasUpdateAction = required && checkUpdates && updateNeedsAgent(tool.update_status);
     const status: InitHookCheckStatus = hasUpdateAction && readinessStatus === 'ok'
       ? 'needs_agent'
       : readinessStatus;
     const update = tool.update_status && tool.update_status !== 'not-checked'
       ? `; update=${tool.update_status}`
       : '';
+    const requirement = required ? '' : 'optional; ';
     checks.push({
       id: `tooling.${toolName}`,
       title: `External tooling: ${tool.name ?? toolName}`,
@@ -494,10 +497,10 @@ function toolingChecks(
       source: 'tooling',
       detail: status === 'na'
         ? `skipped for target=${target}`
-        : `${tool.status ?? 'unknown'}${update}; ${tool.reason ?? 'no detail'}`,
+        : `${tool.status ?? 'unknown'}${update}; ${requirement}${tool.reason ?? 'no detail'}`,
     });
 
-    if (readinessStatus === 'needs_agent') {
+    if (required && readinessStatus === 'needs_agent') {
       const command = commandForToolGap(toolName, tool, target);
       addAction(actions, {
         id: `tooling.${toolName}.repair`,

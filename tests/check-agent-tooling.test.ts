@@ -328,6 +328,7 @@ describe("check-agent-tooling", () => {
       });
       expect(report.tools.codex_automation_profile.vendoring_policy).toBe("do-not-vendor-skill-body");
       expect(report.tools.gbrain.status).toBe("present");
+      expect(report.tools.gbrain.required).toBe(false);
       expect(report.tools.gbrain.reason).toContain("fast doctor only skipped DB checks");
       expect(report.tools.gbrain.install_command).toBe("bun install -g github:garrytan/gbrain");
       expect(report.tools.gbrain.install_command).not.toContain("bun add -g gbrain");

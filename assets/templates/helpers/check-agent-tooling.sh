@@ -1026,6 +1026,7 @@ function detectGbrain() {
 
   return {
     name: "gbrain",
+    required: false,
     status,
     reason: !present
       ? "gbrain CLI is not installed; install the official GitHub package, not npm registry package gbrain."

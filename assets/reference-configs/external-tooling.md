@@ -149,6 +149,10 @@ bun install -g github:garrytan/gbrain
 Do not install npm registry `gbrain`; that package is unrelated to the GBrain
 CLI and does not ship the repo-harness advisory command.
 
+`gbrain` is optional advisory tooling for knowledge sync and retrieval. `setup
+check` may report its local state, but missing or stale `gbrain` must not
+create Agent repair/update actions or change the setup readiness result.
+
 ### CodeGraph
 
 `CodeGraph` is required readiness for agent code navigation. It speeds up
@@ -367,6 +371,7 @@ bash .ai/harness/scripts/sync-brain-docs.sh --check
 ## Why gbrain MCP Stays Off by Default
 
 - `gbrain` is useful even when only the CLI is healthy.
+- Missing `gbrain` CLI is not a setup dependency failure.
 - Local MCP endpoints are more failure-prone than the CLI health path.
 - The policy keeps `gbrain` as a candidate MCP entry, not a required runtime dependency.
 - Re-enable MCP only after the local host config is explicitly updated and `gbrain doctor --json` is healthy enough for your workflow.
