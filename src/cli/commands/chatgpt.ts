@@ -6,6 +6,7 @@ import {
   openSession,
   readSession,
   resolveRepoRoot,
+  runBrowserBind,
   runBrowserConsult,
   runBrowserFollowup,
   runBrowserSetup,
@@ -14,6 +15,37 @@ import type { BrowserProviderName, BrowserSessionStatus, NativeBrowserChannel, T
 
 interface BrowserCommonOptions {
   repo?: string;
+}
+
+interface BrowserSetupOptions extends BrowserCommonOptions {
+  profileDir?: string;
+  profileDirectory?: string;
+  browserChannel?: string;
+  chatgptUrl?: string;
+}
+
+interface BrowserDoctorOptions extends BrowserCommonOptions {
+  provider?: string;
+  json?: boolean;
+  profileDir?: string;
+  profileDirectory?: string;
+  browserChannel?: string;
+  chatgptUrl?: string;
+  validateSession?: boolean;
+  timeoutMs?: string;
+  keepBrowser?: boolean;
+  headless?: boolean;
+}
+
+interface BrowserBindOptions extends BrowserCommonOptions {
+  profileDir?: string;
+  profileDirectory?: string;
+  browserChannel?: string;
+  chatgptUrl?: string;
+  host?: string;
+  port?: string;
+  timeoutMs?: string;
+  open?: boolean;
 }
 
 interface BrowserConsultOptions extends BrowserCommonOptions {
@@ -33,6 +65,7 @@ interface BrowserConsultOptions extends BrowserCommonOptions {
   maxInlineChars?: string;
   manualLogin?: boolean;
   profileDir?: string;
+  profileDirectory?: string;
   browserChannel?: string;
   keepBrowser?: boolean;
   headless?: boolean;
@@ -52,6 +85,7 @@ interface BrowserFollowupOptions extends BrowserCommonOptions {
   allowAbsoluteOutput?: boolean;
   overwriteOutput?: boolean;
   profileDir?: string;
+  profileDirectory?: string;
   browserChannel?: string;
   keepBrowser?: boolean;
   headless?: boolean;
@@ -60,7 +94,8 @@ interface BrowserFollowupOptions extends BrowserCommonOptions {
 function parseProvider(value?: string): BrowserProviderName {
   if (value === undefined || value === 'oracle') return 'oracle';
   if (value === 'native') return 'native';
-  throw new Error(`invalid --provider "${value}" (expected: oracle, native)`);
+  if (value === 'bridge') return 'bridge';
+  throw new Error(`invalid --provider "${value}" (expected: oracle, native, bridge)`);
 }
 
 function parseThinking(value?: string): ThinkingLevel | undefined {
@@ -102,11 +137,48 @@ export function buildChatgptCommand(): Command {
 
   chatgpt
     .command('browser-setup')
-    .description('Prepare local ChatGPT browser session directories and show safe ignore rules')
+    .description('Prepare local ChatGPT browser session directories and optionally bind a user-selected Chrome profile')
     .option('--repo <path>', 'Repository root to configure', '.')
-    .action((rawOpts: BrowserCommonOptions) => {
+    .option('--profile-dir <path>', 'User-selected Chrome profile directory for the ChatGPT product session')
+    .option('--profile-directory <name>', 'Chrome profile name when --profile-dir points at the user data directory')
+    .option('--browser-channel <channel>', 'Chrome channel: chrome|chrome-beta|chrome-dev|chrome-canary', 'chrome')
+    .option('--chatgpt-url <url>', 'ChatGPT URL to open for product-session binding', 'https://chatgpt.com/')
+    .action((rawOpts: BrowserSetupOptions) => {
       void runChatgptAction(() => {
-        const result = runBrowserSetup(resolveRepoRoot(rawOpts.repo));
+        const result = runBrowserSetup(resolveRepoRoot(rawOpts.repo), {
+          profileDir: rawOpts.profileDir,
+          profileDirectory: rawOpts.profileDirectory,
+          browserChannel: parseBrowserChannel(rawOpts.browserChannel) ?? 'chrome',
+          chatgptUrl: rawOpts.chatgptUrl,
+        });
+        console.log(result.lines.join('\n'));
+      });
+    });
+
+  chatgpt
+    .command('browser-bind')
+    .description('Run a local ChatGPT product-session authorization page for a bound Chrome profile')
+    .option('--repo <path>', 'Repository root to inspect', '.')
+    .option('--profile-dir <path>', 'Ad hoc Chrome profile directory to authorize instead of the saved binding')
+    .option('--profile-directory <name>', 'Chrome profile name when --profile-dir points at the user data directory')
+    .option('--browser-channel <channel>', 'Native provider Chrome channel: chrome|chrome-beta|chrome-dev|chrome-canary')
+    .option('--chatgpt-url <url>', 'ChatGPT URL to authorize')
+    .option('--host <host>', 'Local bind host', '127.0.0.1')
+    .option('--port <port>', 'Local bind port; defaults to the ChatGPT bridge port')
+    .option('--timeout-ms <ms>', 'Native session validation timeout in milliseconds')
+    .option('--open', 'Open the local authorization page in the selected Chrome profile')
+    .action((rawOpts: BrowserBindOptions) => {
+      void runChatgptAction(async () => {
+        const result = await runBrowserBind(resolveRepoRoot(rawOpts.repo), {
+          profileDir: rawOpts.profileDir,
+          profileDirectory: rawOpts.profileDirectory,
+          browserChannel: parseBrowserChannel(rawOpts.browserChannel),
+          chatgptUrl: rawOpts.chatgptUrl,
+          host: rawOpts.host,
+          port: parsePositiveInteger('port', rawOpts.port),
+          timeoutMs: parsePositiveInteger('timeout-ms', rawOpts.timeoutMs),
+          open: rawOpts.open === true,
+        });
         console.log(result.lines.join('\n'));
       });
     });
@@ -115,11 +187,28 @@ export function buildChatgptCommand(): Command {
     .command('browser-doctor')
     .description('Check local ChatGPT browser engine readiness')
     .option('--repo <path>', 'Repository root to inspect', '.')
-    .option('--provider <provider>', 'Browser provider: oracle|native', 'oracle')
+    .option('--provider <provider>', 'Browser provider: oracle|native|bridge', 'oracle')
+    .option('--profile-dir <path>', 'Ad hoc Chrome profile directory to validate instead of the saved binding')
+    .option('--profile-directory <name>', 'Chrome profile name when --profile-dir points at the user data directory')
+    .option('--browser-channel <channel>', 'Native provider Chrome channel: chrome|chrome-beta|chrome-dev|chrome-canary')
+    .option('--chatgpt-url <url>', 'ChatGPT URL to validate')
+    .option('--validate-session', 'Open the selected profile and verify ChatGPT composer readiness')
+    .option('--timeout-ms <ms>', 'Native session validation timeout in milliseconds')
+    .option('--keep-browser', 'Leave the validation browser open')
+    .option('--headless', 'Run native validation headless')
     .option('--json', 'Output JSON instead of human-readable text')
-    .action((rawOpts: BrowserCommonOptions & { provider?: string; json?: boolean }) => {
+    .action((rawOpts: BrowserDoctorOptions) => {
       void runChatgptAction(async () => {
-        const result = await browserDoctor(resolveRepoRoot(rawOpts.repo), parseProvider(rawOpts.provider));
+        const result = await browserDoctor(resolveRepoRoot(rawOpts.repo), parseProvider(rawOpts.provider), {
+          profileDir: rawOpts.profileDir,
+          profileDirectory: rawOpts.profileDirectory,
+          browserChannel: parseBrowserChannel(rawOpts.browserChannel),
+          chatgptUrl: rawOpts.chatgptUrl,
+          validateSession: rawOpts.validateSession === true,
+          timeoutMs: parsePositiveInteger('timeout-ms', rawOpts.timeoutMs),
+          keepBrowser: rawOpts.keepBrowser === true,
+          headless: rawOpts.headless === true,
+        });
         console.log(rawOpts.json === true ? JSON.stringify(result.json, null, 2) : result.lines.join('\n'));
       });
     });
@@ -134,8 +223,8 @@ export function buildChatgptCommand(): Command {
     .option('--follow-up <text>', 'Follow-up prompt for the same conversation', (value, previous: string[] = []) => [...previous, value], [])
     .option('--model <label>', 'Requested ChatGPT model label')
     .option('--thinking <level>', 'Thinking level: light|standard|extended|heavy')
-    .option('--provider <provider>', 'Browser provider: oracle|native', 'oracle')
-    .option('--chatgpt-url <url>', 'ChatGPT URL to open', 'https://chatgpt.com/')
+    .option('--provider <provider>', 'Browser provider: oracle|native|bridge', 'oracle')
+    .option('--chatgpt-url <url>', 'ChatGPT URL to open')
     .option('--timeout-ms <ms>', 'Assistant timeout in milliseconds')
     .option('--max-inline-chars <chars>', 'Maximum inline chars per file', '120000')
     .option('--write-output <path>', 'Repo-relative path to copy final output')
@@ -143,7 +232,8 @@ export function buildChatgptCommand(): Command {
     .option('--overwrite-output', 'Allow --write-output to replace an existing file')
     .option('--manual-login', 'Document that manual login is expected before non-dry-run browser execution', true)
     .option('--profile-dir <path>', 'Native provider persistent browser profile directory')
-    .option('--browser-channel <channel>', 'Native provider Chrome channel: chrome|chrome-beta|chrome-dev|chrome-canary', 'chrome')
+    .option('--profile-directory <name>', 'Chrome profile name when --profile-dir points at the user data directory')
+    .option('--browser-channel <channel>', 'Native provider Chrome channel: chrome|chrome-beta|chrome-dev|chrome-canary')
     .option('--keep-browser', 'Native provider leaves the browser open after the run')
     .option('--headless', 'Native provider runs the selected Chrome channel headless')
     .option('--dry-run', 'Resolve prompt/files and save a dry-run session without opening a browser')
@@ -168,6 +258,7 @@ export function buildChatgptCommand(): Command {
           maxInlineChars: parsePositiveInteger('max-inline-chars', rawOpts.maxInlineChars),
           manualLogin: rawOpts.manualLogin !== false,
           profileDir: rawOpts.profileDir,
+          profileDirectory: rawOpts.profileDirectory,
           browserChannel: parseBrowserChannel(rawOpts.browserChannel),
           keepBrowser: rawOpts.keepBrowser === true,
           headless: rawOpts.headless === true,
@@ -205,12 +296,13 @@ export function buildChatgptCommand(): Command {
     .option('--follow-up <text>', 'Additional follow-up prompt', (value, previous: string[] = []) => [...previous, value], [])
     .option('--model <label>', 'Override requested ChatGPT model label')
     .option('--thinking <level>', 'Thinking level: light|standard|extended|heavy')
-    .option('--provider <provider>', 'Browser provider: oracle|native')
+    .option('--provider <provider>', 'Browser provider: oracle|native|bridge')
     .option('--timeout-ms <ms>', 'Assistant timeout in milliseconds')
     .option('--write-output <path>', 'Repo-relative path to copy final output')
     .option('--allow-absolute-output', 'Permit --write-output to target an absolute path')
     .option('--overwrite-output', 'Allow --write-output to replace an existing file')
     .option('--profile-dir <path>', 'Native provider persistent browser profile directory')
+    .option('--profile-directory <name>', 'Chrome profile name when --profile-dir points at the user data directory')
     .option('--browser-channel <channel>', 'Native provider Chrome channel: chrome|chrome-beta|chrome-dev|chrome-canary')
     .option('--keep-browser', 'Native provider leaves the browser open after the run')
     .option('--headless', 'Native provider runs the selected Chrome channel headless')
@@ -233,6 +325,7 @@ export function buildChatgptCommand(): Command {
           allowAbsoluteOutput: rawOpts.allowAbsoluteOutput === true,
           overwriteOutput: rawOpts.overwriteOutput === true,
           profileDir: rawOpts.profileDir,
+          profileDirectory: rawOpts.profileDirectory,
           browserChannel: parseBrowserChannel(rawOpts.browserChannel),
           keepBrowser: rawOpts.keepBrowser === true,
           headless: rawOpts.headless === true,

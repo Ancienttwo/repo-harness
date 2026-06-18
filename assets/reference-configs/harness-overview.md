@@ -106,3 +106,19 @@ Required v1 fields:
 - `.ai/context/capability-source-map.json` is the optional human-edited source-map manifest for capability positioning and source pointers. Missing entries fall back to registry/architecture/workstream metadata; `--auto-fill-positioning` writes deterministic draft entries explicitly, not from hooks.
 - `.ai/harness/capability-context/` is ignored runtime queue state. Post-edit hooks may enqueue requests, and `SessionStart` only reminds the current agent to run `repo-harness capability-context sync --pending --apply`.
 - `SessionStart` also summarizes pending architecture request cards so a resumed agent can see drift debt before claiming finish.
+
+## Initializer and Runtime Model
+
+Maintainer-facing detail on how the initializer and runtime defaults are wired.
+
+- Question flow uses **12 grouped decision points** with harness defaults inferred first.
+- Plan menu is tiered: **Core Plans (A-F)** first, **Custom Presets (G-K)** only when needed.
+- Skill routing is inspection-first: `scripts/inspect-project-state.ts`, `scripts/migrate-workflow-docs.ts`, `assets/workflow-contract.v1.json`.
+- Runtime mode is configurable with template vars: `{{RUNTIME_MODE}}`, `{{RUNTIME_PROFILE}}`, `{{RECOVERY_PROFILE}}`, `{{STATE_PROFILE}}`.
+- Question-pack source of truth: `assets/initializer-question-pack.v4.json`.
+- Generated repos default to the repo-local harness flow: `docs/spec.md -> plans/ -> tasks/contracts/ -> tasks/reviews/ -> .ai/context/context-map.json -> .ai/harness/*`.
+- Generated and self-hosted repos install `.ai/harness/workflow-contract.json` and `.ai/harness/policy.json`.
+- Generated and migrated repos default `external_tooling` to: `complex -> gstack`; `simple -> Waza` with Codex-first runtime copies in `~/.codex/skills`; `knowledge -> gbrain`.
+- `repo-harness install` bootstraps the Codex/Claude runtime pieces for the default workflow: refreshes `repo-harness` skill aliases, installs global Codex/Claude hook adapters, installs Waza skills (`think`, `hunt`, `check`, `health`) and Mermaid through the skills CLI, persists the brain root in `~/.repo-harness/config.json`, and configures CodeGraph MCP for selected host agents. `repo-harness init` remains a compatibility alias for existing automation.
+- Other external tooling stays advisory-only: `bash scripts/check-agent-tooling.sh --host both --check-updates`; Waza update checks compare upstream `tw93/Waza` `SKILL.md` hashes without running `npx skills check`; no automatic gstack, gbrain MCP, CodeGraph daemon, or provider setup.
+- Manual distillation stays repo-local: repeated corrections -> `tasks/lessons.md`; deep findings and hidden contracts -> topic-scoped `docs/researches/*.md`; sprint verification evidence -> `tasks/reviews/*.review.md`; durable capability progress -> `tasks/workstreams/`; release history -> `docs/CHANGELOG.md`.

@@ -34,6 +34,12 @@ function section(doc: string, heading: string): string {
 
 function isAllowedRuntimeReference(file: string, line: string): boolean {
   if (/Claude skill alias/.test(line)) return true;
+  if (file === "README.md" && /Claude\/Codex paths \(`~\/\.claude\/skills\/repo-harness`/.test(line)) {
+    return true;
+  }
+  if (file === "README.zh-CN.md" && /~\/\.claude\/skills\/repo-harness/.test(line)) {
+    return true;
+  }
   if (file === "docs/reference-configs/external-tooling.md" && /~\/\.claude\/skills\/gstack/.test(line)) {
     return true;
   }
@@ -47,14 +53,23 @@ describe("README DX contract", () => {
     const hookAuthority = section(readme, "Hook Authority Map");
     const maintainer = section(readme, "Maintainer Reference");
 
-    expect(readme.indexOf("## First 5 Minutes")).toBeLessThan(readme.indexOf("## Current Model"));
+    expect(readme.indexOf("## First 5 Minutes")).toBeLessThan(readme.indexOf("## MCP Connector Quickstart"));
+    expect(firstFive).toContain("No Node.js required for the default path");
+    expect(firstFive).toContain("# Bun (recommended)");
+    expect(firstFive).toContain("bun add -g repo-harness");
+    expect(firstFive).toContain("npx fallback");
     expect(firstFive).toContain("npx -y repo-harness install");
-    expect(firstFive).toContain("npx -y repo-harness adopt --dry-run");
-    expect(firstFive).toContain("npx -y repo-harness adopt");
+    expect(firstFive).toContain("repo-harness install");
+    expect(firstFive).toContain("repo-harness adopt --dry-run");
+    expect(firstFive).toContain("repo-harness adopt");
     expect(firstFive).toContain("first-run global bootstrap path");
-    expect(firstFive.match(/npx -y repo-harness adopt --dry-run/g)?.length).toBe(2);
-    expect(firstFive).not.toContain("npx -y repo-harness install --dry-run");
-    expect(firstFive).not.toContain("npx -y repo-harness init --dry-run");
+    expect(firstFive.match(/repo-harness adopt --dry-run/g)?.length).toBe(1);
+    expect(firstFive).not.toContain("npm install -g repo-harness");
+    expect(firstFive).not.toContain("npx -y repo-harness adopt");
+    expect(firstFive).not.toContain("npx -y repo-harness setup");
+    expect(firstFive).not.toContain("npx -y repo-harness init");
+    expect(firstFive).not.toContain("repo-harness install --dry-run");
+    expect(firstFive).not.toContain("repo-harness init --dry-run");
     expect(firstFive).not.toContain("bun scripts/assemble-template.ts");
     expect(firstFive).toContain("=== Migration Report ===");
     expect(firstFive).toContain("Project hooks synced from:");

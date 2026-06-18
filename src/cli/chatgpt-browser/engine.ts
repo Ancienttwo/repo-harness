@@ -1,8 +1,17 @@
 import { spawnSync } from 'child_process';
 import { existsSync } from 'fs';
 import { join, resolve } from 'path';
+import { startBrowserBindServer } from './bind-server';
+import { runBridgeProvider } from './bridge-provider';
+import {
+  DEFAULT_CHATGPT_URL,
+  type BrowserSetupOptions,
+  readBrowserBinding,
+  updateBrowserBindingStatus,
+  writeBrowserBinding,
+} from './binding';
 import { resolveBrowserOutputPath } from './file-policy';
-import { nativeProviderAvailable, runNativeProvider } from './native-provider';
+import { checkNativeChatgptSession, nativeDebuggingBlockedByDefaultProfile, nativeProviderAvailable, runNativeProvider } from './native-provider';
 import { buildOracleCommand, runOracleProvider } from './oracle-provider';
 import { assemblePromptBundle } from './prompt-assembler';
 import {
@@ -13,7 +22,29 @@ import {
   resolveConversationUrl,
   writeBrowserSession,
 } from './session-store';
-import type { BrowserConsultInput, BrowserConsultResult, BrowserProviderName, BrowserSessionStatus, StoredBrowserSession, StoredBrowserSessionSummary } from './types';
+import type { BrowserConsultInput, BrowserConsultResult, BrowserProviderName, BrowserSessionStatus, NativeBrowserChannel, StoredBrowserSession, StoredBrowserSessionSummary } from './types';
+
+export interface BrowserDoctorOptions {
+  profileDir?: string;
+  profileDirectory?: string;
+  browserChannel?: NativeBrowserChannel;
+  chatgptUrl?: string;
+  validateSession?: boolean;
+  timeoutMs?: number;
+  keepBrowser?: boolean;
+  headless?: boolean;
+}
+
+export interface BrowserBindOptions {
+  profileDir?: string;
+  profileDirectory?: string;
+  browserChannel?: NativeBrowserChannel;
+  chatgptUrl?: string;
+  host?: string;
+  port?: number;
+  timeoutMs?: number;
+  open?: boolean;
+}
 
 function providerOutput(provider: BrowserProviderName, command?: string[]): string {
   if (provider === 'oracle') {
@@ -27,7 +58,7 @@ function providerOutput(provider: BrowserProviderName, command?: string[]): stri
       '```',
     ].join('\n');
   }
-  return 'Dry run only. Native browser provider is not executed in this command.';
+  return `Dry run only. ${provider} browser provider is not executed in this command.`;
 }
 
 export function resolveRepoRoot(input = '.'): string {
@@ -44,14 +75,14 @@ function assertOutputTarget(input: BrowserConsultInput): void {
   if (!decision.ok) throw new Error(decision.reason);
 }
 
-export function runBrowserSetup(repoRoot: string): { lines: string[] } {
+export function runBrowserSetup(repoRoot: string, opts: BrowserSetupOptions = {}): { lines: string[] } {
   const sessionRoot = ensureBrowserSessionRoot(repoRoot);
   const gitignorePath = join(repoRoot, '.gitignore');
   const ignoreLines = [
     '.repo-harness/chatgpt-browser.local.json',
     '.repo-harness/chatgpt-browser.tokens.json',
     '.ai/harness/chatgpt/browser-lock.json',
-    '.ai/harness/chatgpt/tmp/',
+    '.ai/harness/chatgpt/bridge-extension/',
     '.ai/harness/chatgpt/sessions/',
   ];
   let updated = false;
@@ -61,33 +92,192 @@ export function runBrowserSetup(repoRoot: string): { lines: string[] } {
     // mutation to the CLI command implementation if needed in a later phase.
     void current;
   }
+  const lines = [
+    `[repo-harness chatgpt] Session root: ${sessionRoot}`,
+    '[repo-harness chatgpt] Local browser config remains uncommitted.',
+    '[repo-harness chatgpt] Recommended .gitignore entries:',
+    ...ignoreLines.map((line) => `  ${line}`),
+    updated ? '[repo-harness chatgpt] .gitignore updated' : '[repo-harness chatgpt] .gitignore not modified by MVP setup',
+  ];
+
+  if (opts.profileDir) {
+    const binding = writeBrowserBinding(repoRoot, {
+      profileDir: opts.profileDir,
+      profileDirectory: opts.profileDirectory,
+      browserChannel: opts.browserChannel ?? 'chrome',
+      chatgptUrl: opts.chatgptUrl ?? DEFAULT_CHATGPT_URL,
+    });
+    lines.push(`[repo-harness chatgpt] ChatGPT profile binding: ${binding.profileDir}`);
+    if (binding.profileDirectory) lines.push(`[repo-harness chatgpt] Chrome profile: ${binding.profileDirectory}`);
+    if (binding.selectedProfilePath) lines.push(`[repo-harness chatgpt] Selected profile path: ${binding.selectedProfilePath}`);
+    lines.push(`[repo-harness chatgpt] Browser channel: ${binding.browserChannel}`);
+    if (nativeDebuggingBlockedByDefaultProfile(binding.profileDir, binding.browserChannel)) {
+      lines.push('[repo-harness chatgpt] Warning: this is the default Chrome data directory. Chrome 136+ blocks native CDP validation for this profile; use a separate automation profile or a session import/bridge path.');
+    } else {
+      lines.push('[repo-harness chatgpt] Next: run repo-harness chatgpt browser-bind --open, click Bind ChatGPT, then run browser-doctor --provider native --validate-session.');
+    }
+    return { lines };
+  }
+
+  const existing = readBrowserBinding(repoRoot);
+  if (existing.binding) {
+    lines.push(`[repo-harness chatgpt] Existing ChatGPT profile binding: ${existing.binding.profileDir}`);
+    if (existing.binding.profileDirectory) lines.push(`[repo-harness chatgpt] Chrome profile: ${existing.binding.profileDirectory}`);
+    if (existing.binding.selectedProfilePath) lines.push(`[repo-harness chatgpt] Selected profile path: ${existing.binding.selectedProfilePath}`);
+    lines.push(`[repo-harness chatgpt] Browser channel: ${existing.binding.browserChannel}`);
+    if (nativeDebuggingBlockedByDefaultProfile(existing.binding.profileDir, existing.binding.browserChannel)) {
+      lines.push('[repo-harness chatgpt] Warning: this is the default Chrome data directory. Chrome 136+ blocks native CDP validation for this profile; use a separate automation profile or a session import/bridge path.');
+    } else {
+      lines.push('[repo-harness chatgpt] Next: run repo-harness chatgpt browser-bind --open, click Bind ChatGPT, then run browser-doctor --provider native --validate-session.');
+    }
+  } else {
+    lines.push('[repo-harness chatgpt] No ChatGPT profile binding configured.');
+    lines.push('[repo-harness chatgpt] Next: repo-harness chatgpt browser-setup --profile-dir <non-default-automation-user-data-dir>, then repo-harness chatgpt browser-bind --open');
+  }
   return {
+    lines,
+  };
+}
+
+export async function runBrowserBind(repoRoot: string, opts: BrowserBindOptions = {}): Promise<{ lines: string[]; stop(): void }> {
+  const server = await startBrowserBindServer(repoRoot, opts);
+  return {
+    stop: server.stop,
     lines: [
-      `[repo-harness chatgpt] Session root: ${sessionRoot}`,
-      '[repo-harness chatgpt] Local browser config remains uncommitted.',
-      '[repo-harness chatgpt] Recommended .gitignore entries:',
-      ...ignoreLines.map((line) => `  ${line}`),
-      updated ? '[repo-harness chatgpt] .gitignore updated' : '[repo-harness chatgpt] .gitignore not modified by MVP setup',
+      `[repo-harness chatgpt] Local authorization URL: ${server.url}`,
+      `[repo-harness chatgpt] profileDir=${server.profileDir}`,
+      ...(server.profileDirectory ? [`[repo-harness chatgpt] profileDirectory=${server.profileDirectory}`] : []),
+      `[repo-harness chatgpt] browserChannel=${server.browserChannel}`,
+      `[repo-harness chatgpt] bridgeExtension=${server.extensionDir}`,
+      '[repo-harness chatgpt] Keep this command running while you click Bind ChatGPT in the browser.',
+      '[repo-harness chatgpt] After authorization succeeds, stop this command before running browser-consult --provider bridge.',
     ],
   };
 }
 
-export async function browserDoctor(repoRoot: string, provider: BrowserProviderName = 'oracle'): Promise<{ status: 'ready' | 'partial'; lines: string[]; json: Record<string, unknown> }> {
+function withNativeBinding(input: BrowserConsultInput, provider: BrowserProviderName): BrowserConsultInput {
+  if (provider !== 'native' && provider !== 'bridge') return input;
+  const binding = readBrowserBinding(input.repoRoot).binding;
+  return {
+    ...input,
+    profileDir: input.profileDir ? resolve(input.profileDir) : binding?.profileDir,
+    profileDirectory: input.profileDirectory ?? binding?.profileDirectory,
+    browserChannel: input.browserChannel ?? binding?.browserChannel,
+    chatgptUrl: input.chatgptUrl ?? binding?.chatgptUrl ?? DEFAULT_CHATGPT_URL,
+  };
+}
+
+export async function browserDoctor(
+  repoRoot: string,
+  provider: BrowserProviderName = 'oracle',
+  opts: BrowserDoctorOptions = {},
+): Promise<{ status: 'ready' | 'partial'; lines: string[]; json: Record<string, unknown> }> {
   const sessionRoot = ensureBrowserSessionRoot(repoRoot);
   const oraclePresent = Bun.which('oracle') !== null;
   const nativePresent = await nativeProviderAvailable();
-  const status = provider === 'oracle' && !oraclePresent ? 'partial' : provider === 'native' && !nativePresent ? 'partial' : 'ready';
+  const bindingResult = readBrowserBinding(repoRoot);
+  const binding = bindingResult.binding;
+  const profileDir = opts.profileDir ? resolve(opts.profileDir) : binding?.profileDir;
+  const profileDirectory = opts.profileDirectory ?? binding?.profileDirectory;
+  const browserChannel = opts.browserChannel ?? binding?.browserChannel ?? 'chrome';
+  const chatgptUrl = opts.chatgptUrl ?? binding?.chatgptUrl ?? DEFAULT_CHATGPT_URL;
+  const defaultProfileBlocked = profileDir
+    ? nativeDebuggingBlockedByDefaultProfile(profileDir, browserChannel)
+    : false;
+  const nativeProductSessionStatus = profileDir
+    ? (defaultProfileBlocked ? 'blocked_default_profile' : opts.validateSession === true ? 'checking' : binding ? 'bound' : 'ad_hoc')
+    : 'not_configured';
+  const validation = provider === 'native' && opts.validateSession === true && nativePresent && profileDir && !defaultProfileBlocked
+    ? await checkNativeChatgptSession({
+      profileDir,
+      profileDirectory,
+      browserChannel,
+      chatgptUrl,
+      timeoutMs: opts.timeoutMs,
+      keepBrowser: opts.keepBrowser,
+      headless: opts.headless,
+    })
+    : undefined;
+  const productSessionStatus = validation?.status ?? nativeProductSessionStatus;
+  if (validation && binding && !opts.profileDir) {
+    updateBrowserBindingStatus(repoRoot, validation.status);
+  }
+  const nativeReady = nativePresent && Boolean(profileDir) && !defaultProfileBlocked && (opts.validateSession !== true || validation?.status === 'ready');
+  const bridgeReady = Boolean(profileDir);
+  const status = provider === 'oracle' && !oraclePresent
+    ? 'partial'
+    : provider === 'native' && !nativeReady
+      ? 'partial'
+      : provider === 'bridge' && !bridgeReady
+        ? 'partial'
+        : 'ready';
+  const next = [
+    'repo-harness chatgpt browser-consult --dry-run --prompt "Reply exactly OK"',
+  ];
+  if (provider === 'oracle' && !oraclePresent) {
+    next.push('Install oracle before non-dry-run provider execution.');
+  } else if (provider === 'native') {
+    if (!nativePresent) {
+      next.push('Install Google Chrome before native provider execution.');
+    } else if (!profileDir) {
+      next.push('repo-harness chatgpt browser-setup --profile-dir <non-default-automation-user-data-dir>');
+      next.push('repo-harness chatgpt browser-bind --open');
+    } else if (defaultProfileBlocked) {
+      next.push('Chrome 136+ blocks native CDP against the default Chrome profile. Use a separate automation user-data-dir or a domain-scoped ChatGPT session import/bridge path.');
+    } else if (opts.validateSession !== true) {
+      next.push('repo-harness chatgpt browser-doctor --provider native --validate-session');
+    } else if (validation?.status !== 'ready') {
+      next.push(validation?.error?.recovery ?? 'Run browser-bind --open, sign in from the local authorization page if needed, then validate again.');
+    } else {
+      next.push('repo-harness chatgpt browser-consult --provider native --prompt "Reply exactly OK"');
+    }
+  } else if (provider === 'bridge') {
+    if (!profileDir) {
+      next.push('repo-harness chatgpt browser-setup --profile-dir <user-selected-chrome-profile-dir>');
+      next.push('repo-harness chatgpt browser-bind --open');
+    } else {
+      next.push('repo-harness chatgpt browser-bind --open');
+      next.push('repo-harness chatgpt browser-consult --provider bridge --prompt "Reply exactly OK"');
+    }
+  }
   const json = {
     status,
     provider,
     repo: { root: repoRoot, sessionRoot },
     oracle: { installed: oraclePresent, path: Bun.which('oracle') },
-    native: { installed: nativePresent, driver: 'chrome-cdp', defaultChannel: 'chrome' },
-    browser: { mode: 'manual-login', opensBrowser: false },
-    next: [
-      'repo-harness chatgpt browser-consult --dry-run --prompt "Reply exactly OK"',
-      provider === 'oracle' ? 'Install oracle before non-dry-run provider execution.' : 'Run with --provider native --browser-channel chrome --keep-browser for first login, then retry.',
-    ],
+    native: {
+      installed: nativePresent,
+      driver: 'chrome-cdp',
+      defaultChannel: 'chrome',
+      productSession: {
+        status: productSessionStatus,
+        configPath: bindingResult.path,
+        configError: bindingResult.error,
+        profileDir,
+        profileDirectory,
+        selectedProfilePath: binding?.selectedProfilePath ?? (profileDir && profileDirectory ? join(profileDir, profileDirectory) : profileDir),
+        browserChannel,
+        chatgptUrl,
+        blockedByDefaultProfile: defaultProfileBlocked,
+        lastCheckedAt: binding?.lastCheckedAt,
+        lastStatus: binding?.lastStatus,
+        validation,
+      },
+    },
+    bridge: {
+      installed: bridgeReady,
+      driver: 'chrome-extension-localhost',
+      productSession: {
+        status: profileDir ? 'configured' : 'not_configured',
+        profileDir,
+        profileDirectory,
+        selectedProfilePath: binding?.selectedProfilePath ?? (profileDir && profileDirectory ? join(profileDir, profileDirectory) : profileDir),
+        browserChannel,
+        chatgptUrl,
+      },
+    },
+    browser: { mode: 'manual-login', opensBrowser: provider === 'native' && opts.validateSession === true && !defaultProfileBlocked },
+    next,
   };
   return {
     status,
@@ -98,19 +288,27 @@ export async function browserDoctor(repoRoot: string, provider: BrowserProviderN
       `[repo-harness chatgpt] sessionRoot=${sessionRoot}`,
       `[repo-harness chatgpt] oracle=${oraclePresent ? Bun.which('oracle') : 'missing'}`,
       `[repo-harness chatgpt] native=${nativePresent ? 'chrome-cdp' : 'missing'}`,
+      `[repo-harness chatgpt] chatgptSession=${productSessionStatus}`,
+      ...(profileDir ? [`[repo-harness chatgpt] profileDir=${profileDir}`] : []),
+      ...(profileDirectory ? [`[repo-harness chatgpt] profileDirectory=${profileDirectory}`] : []),
+      ...(defaultProfileBlocked ? ['[repo-harness chatgpt] defaultProfileCdpBlocked=true'] : []),
+      ...(profileDir ? ['[repo-harness chatgpt] bindCommand=repo-harness chatgpt browser-bind --open'] : []),
+      ...(bindingResult.error ? [`[repo-harness chatgpt] bindingError=${bindingResult.error}`] : []),
+      ...(validation?.error ? [`[repo-harness chatgpt] validationError=${validation.error.message}`] : []),
     ],
   };
 }
 
 export async function runBrowserConsult(input: BrowserConsultInput): Promise<BrowserConsultResult> {
   const provider = input.provider ?? 'oracle';
-  assertOutputTarget(input);
-  const bundle = assemblePromptBundle(input);
-  if (input.dryRun !== true) {
+  const effectiveInput = withNativeBinding(input, provider);
+  assertOutputTarget(effectiveInput);
+  const bundle = assemblePromptBundle(effectiveInput);
+  if (effectiveInput.dryRun !== true) {
     if (provider === 'oracle') {
-      const oracle = runOracleProvider(input, bundle);
+      const oracle = runOracleProvider(effectiveInput, bundle);
       return writeBrowserSession({
-        input,
+        input: effectiveInput,
         provider,
         status: oracle.status,
         bundle,
@@ -122,9 +320,21 @@ export async function runBrowserConsult(input: BrowserConsultInput): Promise<Bro
         command: oracle.command,
       });
     }
-    const native = await runNativeProvider(input, bundle);
+    if (provider === 'bridge') {
+      const bridge = await runBridgeProvider(effectiveInput, bundle);
+      return writeBrowserSession({
+        input: effectiveInput,
+        provider,
+        status: bridge.status,
+        bundle,
+        output: bridge.output,
+        conversationUrl: bridge.conversationUrl,
+        error: bridge.error,
+      });
+    }
+    const native = await runNativeProvider(effectiveInput, bundle);
     return writeBrowserSession({
-      input,
+      input: effectiveInput,
       provider,
       status: native.status,
       bundle,
@@ -133,9 +343,9 @@ export async function runBrowserConsult(input: BrowserConsultInput): Promise<Bro
       error: native.error,
     });
   }
-  const command = provider === 'oracle' ? ['oracle', ...buildOracleCommand(input)] : undefined;
+  const command = provider === 'oracle' ? ['oracle', ...buildOracleCommand(effectiveInput)] : undefined;
   return writeBrowserSession({
-    input,
+    input: effectiveInput,
     provider,
     status: 'dry_run',
     bundle,
@@ -164,6 +374,9 @@ export async function runBrowserFollowup(input: Omit<BrowserConsultInput, 'sourc
     thinking: input.thinking ?? existing.meta.model.thinking,
     provider,
     chatgptUrl: input.chatgptUrl ?? existing.meta.browser.conversationUrl ?? existing.meta.browser.chatgptUrl,
+    profileDir: input.profileDir ?? existing.meta.browser.profileDir,
+    profileDirectory: input.profileDirectory ?? existing.meta.browser.profileDirectory,
+    browserChannel: input.browserChannel ?? existing.meta.browser.channel,
   });
 }
 

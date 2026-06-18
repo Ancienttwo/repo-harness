@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import { spawnSync } from 'child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs';
-import { tmpdir } from 'os';
+import { homedir, tmpdir } from 'os';
 import { join } from 'path';
+import { inspectBridgeExtensionInstall, renderBrowserAuthorizePage } from '../../src/cli/chatgpt-browser/bind-server';
+import { writeChatgptBridgeExtension } from '../../src/cli/chatgpt-browser/bridge-extension';
 
 const ROOT = join(import.meta.dir, '../..');
 const CLI = join(ROOT, 'src/cli/index.ts');
@@ -37,8 +39,25 @@ describe('chatgpt browser command', () => {
     expect(root.stdout).toContain('browser-followup');
     expect(root.stdout).toContain('browser-session');
     expect(root.stdout).toContain('browser-doctor');
+    expect(root.stdout).toContain('browser-bind');
     expect(root.stdout).toContain('browser-open');
     expect(root.stdout).toContain('browser-cleanup');
+
+    const setup = runChatgpt(['browser-setup', '--help']);
+    expect(setup.status).toBe(0);
+    expect(setup.stdout).toContain('--profile-dir');
+    expect(setup.stdout).toContain('--profile-directory');
+    expect(setup.stdout).not.toContain('--open');
+
+    const doctor = runChatgpt(['browser-doctor', '--help']);
+    expect(doctor.status).toBe(0);
+    expect(doctor.stdout).toContain('--validate-session');
+    expect(doctor.stdout).toContain('--profile-directory');
+
+    const bind = runChatgpt(['browser-bind', '--help']);
+    expect(bind.status).toBe(0);
+    expect(bind.stdout).toContain('authorization page');
+    expect(bind.stdout).toContain('--profile-directory');
 
     const consult = runChatgpt(['browser-consult', '--help']);
     expect(consult.status).toBe(0);
@@ -80,6 +99,7 @@ describe('chatgpt browser command', () => {
       const meta = JSON.parse(readFileSync(metaPath, 'utf-8'));
       expect(meta.engine).toBe('chatgpt-browser');
       expect(meta.provider).toBe('oracle');
+      expect(meta.browser.profileDir).toBeUndefined();
 
       const read = runChatgpt(['browser-session', '--repo', repoRoot, payload.sessionId]);
       expect(read.status).toBe(0);
@@ -212,6 +232,7 @@ describe('chatgpt browser command', () => {
       expect(typeof readiness.native.installed).toBe('boolean');
       expect(readiness.native.driver).toBe('chrome-cdp');
       expect(readiness.native.defaultChannel).toBe('chrome');
+      expect(readiness.native.productSession.status).toBe('not_configured');
 
       const result = runChatgpt([
         'browser-consult',
@@ -228,6 +249,7 @@ describe('chatgpt browser command', () => {
       const meta = JSON.parse(readFileSync(join(repoRoot, '.ai/harness/chatgpt/sessions', payload.sessionId, 'meta.json'), 'utf-8'));
       expect(meta.provider).toBe('native');
       expect(meta.status).toBe('dry_run');
+      expect(meta.browser.profileDir).toBeUndefined();
 
       const unsupported = runChatgpt([
         'browser-consult',
@@ -244,6 +266,254 @@ describe('chatgpt browser command', () => {
       const unsupportedPayload = JSON.parse(unsupported.stdout);
       expect(unsupportedPayload.status).toBe('failed');
       expect(unsupportedPayload.error.code).toBe('NATIVE_MODEL_SELECTION_UNSUPPORTED');
+
+      const unbound = runChatgpt([
+        'browser-consult',
+        '--repo',
+        repoRoot,
+        '--provider',
+        'native',
+        '--prompt',
+        'Reply exactly OK',
+      ]);
+      expect(unbound.status).toBe(0);
+      const unboundPayload = JSON.parse(unbound.stdout);
+      expect(unboundPayload.status).toBe('failed');
+      expect(unboundPayload.error.code).toBe('NATIVE_PROFILE_NOT_BOUND');
+    });
+  });
+
+  test('browser setup binds a user-selected ChatGPT profile and native dry-run uses it', () => {
+    withRepo((repoRoot) => {
+      const userDataDir = join(repoRoot, 'Chrome/User Data');
+      const profileDir = join(userDataDir, 'Profile 1');
+      mkdirSync(profileDir, { recursive: true });
+      writeFileSync(join(userDataDir, 'Local State'), '{}\n');
+      writeFileSync(join(profileDir, 'Preferences'), '{}\n');
+      const setup = runChatgpt([
+        'browser-setup',
+        '--repo',
+        repoRoot,
+        '--profile-dir',
+        profileDir,
+        '--browser-channel',
+        'chrome',
+        '--chatgpt-url',
+        'https://chatgpt.com/',
+      ]);
+      expect(setup.status).toBe(0);
+      expect(setup.stdout).toContain('ChatGPT profile binding');
+      expect(setup.stdout).toContain('browser-bind --open');
+
+      const configPath = join(repoRoot, '.repo-harness/chatgpt-browser.local.json');
+      expect(existsSync(configPath)).toBe(true);
+      const binding = JSON.parse(readFileSync(configPath, 'utf-8'));
+      expect(binding.product).toBe('chatgpt');
+      expect(binding.profileDir).toBe(userDataDir);
+      expect(binding.profileDirectory).toBe('Profile 1');
+      expect(binding.selectedProfilePath).toBe(profileDir);
+      expect(binding.browserChannel).toBe('chrome');
+      expect(binding.chatgptUrl).toBe('https://chatgpt.com/');
+      const retiredPageKeys = ['bind' + 'PagePath', 'bind' + 'PageUrl'];
+      expect(Object.keys(binding)).not.toEqual(expect.arrayContaining(retiredPageKeys));
+
+      const doctor = runChatgpt(['browser-doctor', '--repo', repoRoot, '--provider', 'native', '--json']);
+      expect(doctor.status).toBe(0);
+      const readiness = JSON.parse(doctor.stdout);
+      expect(readiness.native.productSession.status).toBe('bound');
+      expect(readiness.native.productSession.profileDir).toBe(userDataDir);
+      expect(readiness.native.productSession.profileDirectory).toBe('Profile 1');
+      expect(readiness.native.productSession.selectedProfilePath).toBe(profileDir);
+      expect(Object.keys(readiness.native.productSession)).not.toEqual(expect.arrayContaining(retiredPageKeys));
+      expect(readiness.next).toContain('repo-harness chatgpt browser-doctor --provider native --validate-session');
+
+      const result = runChatgpt([
+        'browser-consult',
+        '--repo',
+        repoRoot,
+        '--provider',
+        'native',
+        '--dry-run',
+        '--prompt',
+        'Reply exactly OK',
+      ]);
+      expect(result.status).toBe(0);
+      const payload = JSON.parse(result.stdout);
+      const meta = JSON.parse(readFileSync(join(repoRoot, '.ai/harness/chatgpt/sessions', payload.sessionId, 'meta.json'), 'utf-8'));
+      expect(meta.provider).toBe('native');
+      expect(meta.browser.profileDir).toBe(userDataDir);
+      expect(meta.browser.profileDirectory).toBe('Profile 1');
+      expect(meta.browser.selectedProfilePath).toBe(profileDir);
+      expect(meta.browser.channel).toBe('chrome');
+    });
+  });
+
+  test('browser authorization page binds through a local endpoint instead of linking to ChatGPT', () => {
+    const html = renderBrowserAuthorizePage({
+      profileDir: '/tmp/repo-harness-chatgpt-profile',
+      profileDirectory: 'Profile 1',
+      selectedProfilePath: '/tmp/repo-harness-chatgpt-profile/Profile 1',
+      browserChannel: 'chrome',
+      chatgptUrl: 'https://chatgpt.com/',
+      blockedByDefaultProfile: false,
+      extensionDir: '/tmp/repo-harness-chatgpt-extension',
+    });
+    expect(html).toContain('Authorize ChatGPT Web Session');
+    expect(html).toContain('Bind ChatGPT');
+    expect(html).toContain('Bridge extension');
+    expect(html).toContain("postJson('/api/authorize')");
+    expect(html).toContain("postJson('/api/open-chatgpt')");
+    expect(html).toContain("postJson('/api/open-extensions')");
+    expect(html).toContain("fetch('/api/extension/status'");
+    expect(html).toContain('Copy Extension Path');
+    expect(html).not.toContain('href="https://chatgpt.com/');
+  });
+
+  test('bridge authorization diagnoses whether the unpacked extension is installed in the selected profile', () => {
+    const profileRoot = mkdtempSync(join(tmpdir(), 'repo-harness-chatgpt-profile-'));
+    try {
+      const profileDir = join(profileRoot, 'Profile 1');
+      mkdirSync(profileDir, { recursive: true });
+      const extensionDir = join(profileRoot, 'bridge-extension');
+      writeFileSync(join(profileDir, 'Preferences'), JSON.stringify({ extensions: { settings: {} } }));
+      expect(inspectBridgeExtensionInstall(profileRoot, 'Profile 1', extensionDir).status).toBe('not_installed');
+
+      writeFileSync(join(profileDir, 'Secure Preferences'), JSON.stringify({
+        extensions: {
+          settings: {
+            secureOnly: {
+              location: 4,
+              path: extensionDir,
+            },
+          },
+        },
+      }));
+      const secureInstalled = inspectBridgeExtensionInstall(profileRoot, 'Profile 1', extensionDir);
+      expect(secureInstalled.status).toBe('installed');
+      expect(secureInstalled.extensionId).toBe('secureOnly');
+
+      rmSync(join(profileDir, 'Secure Preferences'), { force: true });
+      writeFileSync(join(profileDir, 'Preferences'), JSON.stringify({
+        extensions: {
+          settings: {
+            abc: {
+              state: 1,
+              path: extensionDir,
+              manifest: { name: 'repo-harness ChatGPT Bridge' },
+            },
+          },
+        },
+      }));
+      const installed = inspectBridgeExtensionInstall(profileRoot, 'Profile 1', extensionDir);
+      expect(installed.status).toBe('installed');
+      expect(installed.extensionId).toBe('abc');
+
+      writeFileSync(join(profileDir, 'Preferences'), JSON.stringify({
+        extensions: {
+          settings: {
+            abc: {
+              state: 0,
+              path: extensionDir,
+              manifest: { name: 'repo-harness ChatGPT Bridge' },
+            },
+          },
+        },
+      }));
+      expect(inspectBridgeExtensionInstall(profileRoot, 'Profile 1', extensionDir).status).toBe('disabled');
+    } finally {
+      rmSync(profileRoot, { recursive: true, force: true });
+    }
+  });
+
+  test('bridge extension is scoped to ChatGPT product domains and localhost only', () => {
+    withRepo((repoRoot) => {
+      const extension = writeChatgptBridgeExtension(repoRoot, 'http://127.0.0.1:17651');
+      const manifest = JSON.parse(readFileSync(extension.manifestPath, 'utf-8'));
+      expect(manifest.host_permissions).toEqual([
+        'https://chatgpt.com/*',
+        'https://chat.openai.com/*',
+        'http://127.0.0.1:17651/*',
+      ]);
+      expect(JSON.stringify(manifest)).not.toContain('<all_urls>');
+      expect(JSON.stringify(manifest)).not.toContain('cookies');
+      expect(JSON.stringify(manifest)).not.toContain('storage');
+      expect(readFileSync(extension.contentScriptPath, 'utf-8')).toContain('/api/extension/task');
+    });
+  });
+
+  test('bridge provider fails closed when the product-scoped extension is not connected', () => {
+    withRepo((repoRoot) => {
+      const result = runChatgpt([
+        'browser-consult',
+        '--repo',
+        repoRoot,
+        '--provider',
+        'bridge',
+        '--timeout-ms',
+        '1000',
+        '--prompt',
+        'Reply exactly OK',
+      ], repoRoot, {
+        ...process.env,
+        REPO_HARNESS_CHATGPT_BRIDGE_PORT: String(32000 + Math.floor(Math.random() * 10000)),
+      });
+      expect(result.status).toBe(0);
+      const payload = JSON.parse(result.stdout);
+      expect(payload.status).toBe('failed');
+      expect(payload.error.code).toBe('CHATGPT_BRIDGE_EXTENSION_NOT_CONNECTED');
+      const meta = JSON.parse(readFileSync(join(repoRoot, '.ai/harness/chatgpt/sessions', payload.sessionId, 'meta.json'), 'utf-8'));
+      expect(meta.provider).toBe('bridge');
+      expect(existsSync(join(repoRoot, '.ai/harness/chatgpt/bridge-extension/manifest.json'))).toBe(true);
+    });
+  });
+
+  test('native provider blocks the default Chrome profile before CDP launch', () => {
+    if (process.platform !== 'darwin') {
+      expect(process.platform).not.toBe('darwin');
+      return;
+    }
+    withRepo((repoRoot) => {
+      const defaultChromeDir = join(homedir(), 'Library/Application Support/Google/Chrome');
+      const doctor = runChatgpt([
+        'browser-doctor',
+        '--repo',
+        repoRoot,
+        '--provider',
+        'native',
+        '--profile-dir',
+        defaultChromeDir,
+        '--profile-directory',
+        'Default',
+        '--validate-session',
+        '--json',
+      ]);
+      expect(doctor.status).toBe(0);
+      const readiness = JSON.parse(doctor.stdout);
+      expect(readiness.status).toBe('partial');
+      expect(readiness.native.productSession.status).toBe('blocked_default_profile');
+      expect(readiness.native.productSession.blockedByDefaultProfile).toBe(true);
+      expect(readiness.native.productSession.validation).toBeUndefined();
+      expect(readiness.browser.opensBrowser).toBe(false);
+
+      const result = runChatgpt([
+        'browser-consult',
+        '--repo',
+        repoRoot,
+        '--provider',
+        'native',
+        '--profile-dir',
+        defaultChromeDir,
+        '--profile-directory',
+        'Default',
+        '--prompt',
+        'Reply exactly OK',
+      ]);
+      expect(result.status).toBe(0);
+      const payload = JSON.parse(result.stdout);
+      expect(payload.status).toBe('failed');
+      expect(payload.error.code).toBe('NATIVE_DEFAULT_PROFILE_CDP_BLOCKED');
+      expect(payload.error.recovery).toContain('Chrome 136+ requires a non-standard --user-data-dir');
+      expect(readFileSync(payload.paths.output, 'utf-8')).toContain('Chrome 136+ requires a non-standard --user-data-dir');
     });
   });
 
@@ -362,6 +632,7 @@ describe('chatgpt browser command', () => {
     const skill = join(ROOT, '.agents/skills/repo-harness-chatgpt-browser/SKILL.md');
     expect(readFileSync(guide, 'utf-8')).toContain('repo-harness chatgpt browser-consult');
     expect(readFileSync(guide, 'utf-8')).toContain('--provider native');
+    expect(readFileSync(guide, 'utf-8')).toContain('--provider bridge');
     expect(readFileSync(guide, 'utf-8')).toContain('--browser-channel chrome');
     expect(readFileSync(skill, 'utf-8')).toContain('repo-harness-chatgpt-browser');
   });

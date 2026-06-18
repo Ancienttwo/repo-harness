@@ -85,6 +85,8 @@ describe("create-project-dirs runtime smoke", () => {
       const gitignore = readFileSync(join(cwd, ".gitignore"), "utf-8");
       expect(gitignore).toContain("tasks/.current.md.tmp.*");
       expect(gitignore).toContain(".claude/.plan-state/");
+      expect(gitignore).toContain(".ai/harness/chatgpt/bridge-extension/");
+      expect(gitignore).toContain(".repo-harness/chatgpt-browser.local.json");
       expect(gitignore).toContain("# repo-harness generated helper wrappers");
       expect(gitignore).toContain("scripts/check-task-workflow.sh");
       expect(gitignore).toContain("scripts/prepare-codex-handoff.sh");

@@ -61,8 +61,14 @@ tasks/.current.md.tmp.*
 .ai/harness/sprint/
 .ai/harness/worktrees/
 .ai/harness/runs/
+.ai/harness/chatgpt/browser-lock.json
+.ai/harness/chatgpt/bridge-extension/
+.ai/harness/chatgpt/tmp/
+.ai/harness/chatgpt/sessions/
 .ai/harness/triage/*
 !.ai/harness/triage/.gitkeep
+.repo-harness/chatgpt-browser.local.json
+.repo-harness/chatgpt-browser.tokens.json
 .codex/*
 .claude/.active-plan
 .claude/.plan-state/

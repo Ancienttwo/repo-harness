@@ -2,13 +2,27 @@ import { spawnSync } from 'child_process';
 import { existsSync } from 'fs';
 import { createServer } from 'net';
 import { homedir } from 'os';
-import { resolve } from 'path';
+import { join, resolve } from 'path';
+import { pathToFileURL } from 'url';
 import type { BrowserConsultInput, NativeBrowserChannel, PromptBundle } from './types';
 
 export interface NativeProviderResult {
   status: 'completed' | 'failed' | 'incomplete_capture';
   output: string;
   conversationUrl?: string;
+  error?: {
+    code: string;
+    message: string;
+    recovery?: string;
+  };
+}
+
+export interface NativeSessionCheckResult {
+  status: 'ready' | 'login_required' | 'failed';
+  profileDir: string;
+  profileDirectory?: string;
+  browserChannel: NativeBrowserChannel;
+  url?: string;
   error?: {
     code: string;
     message: string;
@@ -56,16 +70,66 @@ interface CdpConnection {
   close(): void;
 }
 
-function defaultProfileDir(): string {
-  return resolve(homedir(), '.repo-harness/chatgpt-browser-profile');
-}
-
 function browserChannel(input?: NativeBrowserChannel): NativeBrowserChannel {
   return input ?? 'chrome';
 }
 
 function chromeExecutable(channel: NativeBrowserChannel): string {
   return CHANNEL_APPS[channel].executable;
+}
+
+function chromeProfileArgs(profileDir: string, profileDirectory?: string): string[] {
+  return [
+    `--user-data-dir=${profileDir}`,
+    ...(profileDirectory ? [`--profile-directory=${profileDirectory}`] : []),
+  ];
+}
+
+function normalizeComparablePath(path: string): string {
+  const normalized = resolve(path);
+  return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+}
+
+function defaultChromeUserDataDir(channel: NativeBrowserChannel): string | undefined {
+  if (process.platform === 'darwin') {
+    const base = join(homedir(), 'Library/Application Support/Google');
+    if (channel === 'chrome') return join(base, 'Chrome');
+    if (channel === 'chrome-beta') return join(base, 'Chrome Beta');
+    if (channel === 'chrome-dev') return join(base, 'Chrome Dev');
+    return join(base, 'Chrome Canary');
+  }
+
+  if (process.platform === 'win32') {
+    const base = join(process.env.LOCALAPPDATA ?? join(homedir(), 'AppData/Local'), 'Google');
+    if (channel === 'chrome') return join(base, 'Chrome/User Data');
+    if (channel === 'chrome-beta') return join(base, 'Chrome Beta/User Data');
+    if (channel === 'chrome-dev') return join(base, 'Chrome Dev/User Data');
+    return join(base, 'Chrome SxS/User Data');
+  }
+
+  if (process.platform === 'linux') {
+    const base = process.env.XDG_CONFIG_HOME ?? join(homedir(), '.config');
+    if (channel === 'chrome') return join(base, 'google-chrome');
+    if (channel === 'chrome-beta') return join(base, 'google-chrome-beta');
+    if (channel === 'chrome-dev') return join(base, 'google-chrome-unstable');
+    return join(base, 'google-chrome-unstable');
+  }
+
+  return undefined;
+}
+
+export function nativeDebuggingBlockedByDefaultProfile(profileDir: string, channel: NativeBrowserChannel): boolean {
+  const defaultDir = defaultChromeUserDataDir(channel);
+  return defaultDir !== undefined && normalizeComparablePath(profileDir) === normalizeComparablePath(defaultDir);
+}
+
+function defaultProfileCdpBlockedError(channel: NativeBrowserChannel, profileDir: string, profileDirectory?: string): NonNullable<NativeProviderResult['error']> {
+  const app = CHANNEL_APPS[channel].appName;
+  return {
+    code: 'NATIVE_DEFAULT_PROFILE_CDP_BLOCKED',
+    message: `${app} blocks remote debugging against the default Chrome data directory: ${profileDir}${profileDirectory ? ` (${profileDirectory})` : ''}`,
+    recovery: 'Chrome 136+ requires a non-standard --user-data-dir for remote debugging. Use a separate automation profile directory and sign in there, or use a domain-scoped ChatGPT session import/bridge path for an existing real Chrome profile.',
+  };
 }
 
 export async function nativeProviderAvailable(): Promise<boolean> {
@@ -155,7 +219,25 @@ function connectCdp(webSocketUrl: string): Promise<CdpConnection> {
   });
 }
 
-async function launchChrome(channel: NativeBrowserChannel, profileDir: string, port: number, headless: boolean): Promise<void> {
+export function openNativeBrowserPage(channel: NativeBrowserChannel, profileDir: string, url: string, profileDirectory?: string): void {
+  const app = CHANNEL_APPS[channel];
+  if (!existsSync(app.executable)) throw new Error(`${app.appName} is not installed at ${app.executable}`);
+  const args = [
+    '-na',
+    app.appName,
+    '--args',
+    ...chromeProfileArgs(profileDir, profileDirectory),
+    '--no-first-run',
+    '--no-default-browser-check',
+    url.startsWith('/') ? pathToFileURL(url).toString() : url,
+  ];
+  const result = spawnSync('open', args, { encoding: 'utf-8' });
+  if (result.status !== 0) {
+    throw new Error((result.stderr || result.stdout || `failed to open ${app.appName}`).trim());
+  }
+}
+
+async function launchChrome(channel: NativeBrowserChannel, profileDir: string, port: number, headless: boolean, url = 'about:blank', profileDirectory?: string): Promise<void> {
   const app = CHANNEL_APPS[channel];
   if (!existsSync(app.executable)) throw new Error(`${app.appName} is not installed at ${app.executable}`);
   const args = [
@@ -164,11 +246,11 @@ async function launchChrome(channel: NativeBrowserChannel, profileDir: string, p
     '--args',
     `--remote-debugging-port=${port}`,
     '--remote-allow-origins=*',
-    `--user-data-dir=${profileDir}`,
+    ...chromeProfileArgs(profileDir, profileDirectory),
     '--no-first-run',
     '--no-default-browser-check',
     ...(headless ? ['--headless=new'] : []),
-    'about:blank',
+    url,
   ];
   const result = spawnSync('open', args, { encoding: 'utf-8' });
   if (result.status !== 0) {
@@ -211,6 +293,78 @@ async function findComposer(connection: CdpConnection, sessionId: string, timeou
     const element = selectors.map((selector) => document.querySelector(selector)).find((candidate) => candidate && candidate.getClientRects().length);
     return { ok: Boolean(element), url: location.href, title: document.title };
   `), (value) => value?.ok === true);
+}
+
+export async function checkNativeChatgptSession(input: {
+  profileDir: string;
+  profileDirectory?: string;
+  browserChannel?: NativeBrowserChannel;
+  chatgptUrl?: string;
+  timeoutMs?: number;
+  keepBrowser?: boolean;
+  headless?: boolean;
+}): Promise<NativeSessionCheckResult> {
+  const channel = browserChannel(input.browserChannel);
+  const profileDir = resolve(input.profileDir);
+  const profileDirectory = input.profileDirectory;
+  const timeoutMs = input.timeoutMs ?? 30_000;
+  let connection: CdpConnection | undefined;
+  let sessionId: string | undefined;
+  if (nativeDebuggingBlockedByDefaultProfile(profileDir, channel)) {
+    return {
+      status: 'failed',
+      profileDir,
+      profileDirectory,
+      browserChannel: channel,
+      error: defaultProfileCdpBlockedError(channel, profileDir, profileDirectory),
+    };
+  }
+  try {
+    const port = await getFreePort();
+    await launchChrome(channel, profileDir, port, input.headless === true, 'about:blank', profileDirectory);
+    const version = await waitForCdp(port, Math.min(timeoutMs, 30_000));
+    connection = await connectCdp(version.webSocketDebuggerUrl);
+    const target = await connection.send('Target.createTarget', { url: 'about:blank' });
+    const attached = await connection.send('Target.attachToTarget', { targetId: target.targetId, flatten: true });
+    sessionId = attached.sessionId;
+    await connection.send('Page.enable', {}, sessionId);
+    await connection.send('Runtime.enable', {}, sessionId);
+    await connection.send('Page.navigate', { url: input.chatgptUrl ?? 'https://chatgpt.com/' }, sessionId);
+    const composer = await findComposer(connection, sessionId, Math.min(timeoutMs, 30_000));
+    const url = await currentUrl(connection, sessionId);
+    if (composer?.ok === true) {
+      return { status: 'ready', profileDir, profileDirectory, browserChannel: channel, url };
+    }
+    return {
+      status: 'login_required',
+      profileDir,
+      profileDirectory,
+      browserChannel: channel,
+      url,
+      error: {
+        code: 'LOGIN_OR_COMPOSER_NOT_READY',
+        message: 'ChatGPT login or composer is not ready',
+        recovery: 'Run browser-bind --open, click Open ChatGPT Login if needed, sign in, then click Bind ChatGPT again.',
+      },
+    };
+  } catch (error) {
+    return {
+      status: 'failed',
+      profileDir,
+      profileDirectory,
+      browserChannel: channel,
+      error: {
+        code: 'NATIVE_SESSION_CHECK_FAILED',
+        message: error instanceof Error ? error.message : String(error),
+        recovery: `Verify Google Chrome is installed for channel "${channel}", close other Chrome windows using this profile, then retry.`,
+      },
+    };
+  } finally {
+    if (input.keepBrowser !== true && connection) {
+      await connection.send('Browser.close').catch(() => undefined);
+      connection.close();
+    }
+  }
 }
 
 async function submitPrompt(connection: CdpConnection, sessionId: string, renderedPrompt: string): Promise<void> {
@@ -281,13 +435,33 @@ export async function runNativeProvider(input: BrowserConsultInput, bundle: Prom
     };
   }
   const channel = browserChannel(input.browserChannel);
-  const profileDir = input.profileDir ? resolve(input.profileDir) : defaultProfileDir();
+  if (!input.profileDir) {
+    return {
+      status: 'failed',
+      output: 'Native ChatGPT browser provider requires a bound ChatGPT profile.',
+      error: {
+        code: 'NATIVE_PROFILE_NOT_BOUND',
+        message: 'native provider requires a ChatGPT browser profile binding',
+        recovery: 'Run repo-harness chatgpt browser-setup --profile-dir <non-default-automation-user-data-dir>, then repo-harness chatgpt browser-bind --open.',
+      },
+    };
+  }
+  const profileDir = resolve(input.profileDir);
+  const profileDirectory = input.profileDirectory;
   const timeoutMs = input.timeoutMs ?? 180_000;
   let connection: CdpConnection | undefined;
   let sessionId: string | undefined;
+  if (nativeDebuggingBlockedByDefaultProfile(profileDir, channel)) {
+    const error = defaultProfileCdpBlockedError(channel, profileDir, profileDirectory);
+    return {
+      status: 'failed',
+      output: [error.message, error.recovery].filter(Boolean).join('\n'),
+      error,
+    };
+  }
   try {
     const port = await getFreePort();
-    await launchChrome(channel, profileDir, port, input.headless === true);
+    await launchChrome(channel, profileDir, port, input.headless === true, 'about:blank', profileDirectory);
     const version = await waitForCdp(port, Math.min(timeoutMs, 30_000));
     connection = await connectCdp(version.webSocketDebuggerUrl);
     const target = await connection.send('Target.createTarget', { url: 'about:blank' });
@@ -305,6 +479,7 @@ export async function runNativeProvider(input: BrowserConsultInput, bundle: Prom
           'ChatGPT login or composer is not ready.',
           `Opened: ${url}`,
           `Profile: ${profileDir}`,
+          ...(profileDirectory ? [`Chrome profile: ${profileDirectory}`] : []),
           `Browser channel: ${channel}`,
           'Complete login manually, then rerun with the same profile.',
         ].join('\n'),
@@ -364,7 +539,7 @@ export async function runNativeProvider(input: BrowserConsultInput, bundle: Prom
       error: {
         code: 'NATIVE_PROVIDER_FAILED',
         message: error instanceof Error ? error.message : String(error),
-        recovery: `Verify Google Chrome is installed for channel "${channel}", then rerun with a fresh --profile-dir.`,
+        recovery: `Verify Google Chrome is installed for channel "${channel}", close other Chrome windows using this profile, then retry.`,
       },
     };
   } finally {

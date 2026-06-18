@@ -258,6 +258,8 @@ describe("workflow contract manifest", () => {
     expect(gitignore).toContain(".ai/harness/planning/");
     expect(gitignore).toContain("!.ai/harness/planning/.gitkeep");
     expect(gitignore).toContain(".ai/harness/worktrees/");
+    expect(gitignore).toContain(".ai/harness/chatgpt/bridge-extension/");
+    expect(gitignore).toContain(".repo-harness/chatgpt-browser.local.json");
     expect(gitignore).toContain(".ai/harness/triage/*");
     expect(gitignore).toContain("!.ai/harness/triage/.gitkeep");
   });

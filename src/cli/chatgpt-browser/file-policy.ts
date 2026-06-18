@@ -36,7 +36,7 @@ const READ_DENY_GLOBS = [
   'private/**',
   '_ops/**',
   '.repo-harness/**/*.json',
-  '.ai/harness/chatgpt/tmp/**',
+  '.ai/harness/chatgpt/bridge-extension/**',
 ];
 
 const WRITE_DENY_GLOBS = [

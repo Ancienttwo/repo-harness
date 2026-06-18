@@ -19,11 +19,17 @@ Use this command when the user wants repo-harness to guide local GPT Pro setup a
    - `gptpro_mcp` is ChatGPT -> local through `repo-harness mcp serve --transport http`.
    - ChatGPT Pro Web access is not OpenAI API quota or an API key substitute.
 3. Configure browser/session support:
-   - `repo-harness chatgpt browser-setup --repo <repo>`
-   - `repo-harness chatgpt browser-doctor --repo <repo> --provider native --json`
-   - For a non-mutating prompt/file preview, run `repo-harness chatgpt browser-consult --repo <repo> --provider native --dry-run --prompt <text>`.
+   - Ask the user which Chrome profile directory should own the ChatGPT product session, or use an explicit path they already provided.
+   - `repo-harness chatgpt browser-setup --repo <repo> --profile-dir <user-selected-chrome-profile-dir> --browser-channel chrome`
+   - `repo-harness chatgpt browser-bind --repo <repo> --open`
+   - Report the printed `Local authorization URL: http://127.0.0.1:...` and `bridgeExtension=...` to the user and keep the command running while they authorize.
+   - The authorization page must guide the user to open Chrome Extensions, enable **Developer mode**, click **Load unpacked**, select the printed `bridgeExtension` directory, open or refresh ChatGPT, then click **Bind ChatGPT**.
+   - If the authorization page reports login required, have the user click **Open ChatGPT Login**, sign in, return to the authorization page, and click **Bind ChatGPT** again.
+   - After authorization succeeds, stop `browser-bind` before running `browser-consult --provider bridge` because both use the same local bridge port.
+   - `repo-harness chatgpt browser-doctor --repo <repo> --provider bridge --json`
+   - For a non-mutating prompt/file preview, run `repo-harness chatgpt browser-consult --repo <repo> --provider bridge --dry-run --prompt <text>`.
 4. For a real GPT Pro browser consult, require an already logged-in ChatGPT Web session and run a bounded command such as:
-   - `repo-harness chatgpt browser-consult --repo <repo> --provider native --manual-login --prompt <text> --model <label> --thinking <level>`
+   - `repo-harness chatgpt browser-consult --repo <repo> --provider bridge --manual-login --prompt <text>`
 5. Configure ChatGPT Connector MCP support:
    - `repo-harness mcp setup chatgpt --repo <repo>`
    - `repo-harness mcp doctor --repo <repo> --json`
@@ -41,6 +47,9 @@ Use this command when the user wants repo-harness to guide local GPT Pro setup a
 ## Failure Modes
 
 - If `browser-doctor` reports the native provider unavailable, report the missing Chrome/CDP prerequisite and stop before a non-dry-run browser consult.
+- If `browser-doctor --provider bridge` reports `productSession.status=not_configured`, configure the selected profile with `browser-setup --profile-dir <dir>`, then authorize it with `browser-bind --open` before any non-dry-run browser consult.
+- If `browser-doctor --provider native` reports `productSession.status=blocked_default_profile`, route to `--provider bridge`; do not ask the user to close Chrome and retry.
+- If setup completes but the user cannot see the authorization page, provide the printed `Local authorization URL` directly; do not substitute a generic ChatGPT URL because that does not bind or validate the selected product session.
 - If ChatGPT Web is not logged in or requires manual verification, report the manual-login blocker and preserve the dry-run session artifact.
 - If `mcp doctor` reports `ready_local` but ChatGPT is not connected, report the missing HTTPS tunnel or manual Connector step instead of claiming end-to-end success.
 - If the user asks to use a ChatGPT Pro subscription as an OpenAI API key or API billing source, stop and explain that ChatGPT Web subscriptions and API Platform usage are separate products.

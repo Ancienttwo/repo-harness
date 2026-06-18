@@ -22,22 +22,25 @@ Use GPT Pro language with the user. Treat the `browser-*` command names as imple
 
 1. Confirm the target repo path with `git rev-parse --show-toplevel` or the user's explicit path. Preserve unrelated dirty worktree state.
 2. Verify GPT Pro browser readiness before any real consult:
-   `repo-harness chatgpt browser-doctor --repo <repo> --provider native --json`
-3. If setup is missing, route to `repo-harness-gptpro-setup` / `repo-harness:gptpro_setup` instead of improvising configuration.
-4. If the user provides an existing GPT Pro session id, inspect it with:
+   `repo-harness chatgpt browser-doctor --repo <repo> --provider bridge --json`
+3. If setup is missing or `bridge.productSession.status` is `not_configured`, route to `repo-harness-gptpro-setup` / `repo-harness:gptpro_setup` so the user can bind their selected Chrome profile before a real consult.
+4. If a native doctor reports `blocked_default_profile`, route to `--provider bridge`; do not retry native CDP against the default Chrome profile.
+5. If the user provides an existing GPT Pro session id, inspect it with:
    `repo-harness chatgpt browser-session --repo <repo> <sessionId>`
-5. Continue an existing GPT Pro conversation with:
+6. Continue an existing GPT Pro conversation with:
    `repo-harness chatgpt browser-followup --repo <repo> --session <sessionId> --prompt <prompt>`
-6. Open the saved GPT Pro conversation when the user asks to view it:
+7. Open the saved GPT Pro conversation when the user asks to view it:
    `repo-harness chatgpt browser-open --repo <repo> <sessionId>`
-7. Start a new GPT Pro consult with GPT Pro wording in the report, while running the browser engine underneath:
-   `repo-harness chatgpt browser-consult --repo <repo> --provider native --manual-login --prompt <prompt> --write-output .ai/harness/handoff/gptpro-consult.md`
-8. Use `--dry-run` first when attaching files, then run the real consult only after the prompt bundle and allowed paths are clear.
-9. Report the GPT Pro result with: session id, output path, conversation URL if present, whether it was a new consult or follow-up, and any manual-login blocker.
+8. Start a new GPT Pro consult with GPT Pro wording in the report, while running the browser engine underneath:
+   `repo-harness chatgpt browser-consult --repo <repo> --provider bridge --manual-login --prompt <prompt> --write-output .ai/harness/handoff/gptpro-consult.md`
+9. Use `--dry-run` first when attaching files, then run the real consult only after the prompt bundle and allowed paths are clear.
+10. Report the GPT Pro result with: session id, output path, conversation URL if present, whether it was a new consult or follow-up, and any manual-login blocker.
 
 ## Failure Modes
 
 - If `browser-doctor` reports native provider unavailable, route to `repo-harness:gptpro_setup` and stop before claiming GPT Pro access works.
+- If `browser-doctor` reports no bound ChatGPT product session, route to `repo-harness:gptpro_setup`; do not open a fresh unbound profile and claim it represents the user's GPT Pro account.
+- If bridge consult reports `CHATGPT_BRIDGE_EXTENSION_NOT_CONNECTED`, tell the user to run `browser-bind --open`, load the unpacked extension, open ChatGPT, and retry.
 - If ChatGPT Web needs login, captcha, SSO, workspace selection, or manual verification, report the blocker and ask the user to complete it in the visible browser.
 - If the user asks for `gptpro_mcp`, Connector setup, or ChatGPT -> local repo access, route to `repo-harness:gptpro_setup`; this command is for local -> GPT Pro consults.
 - If a session id is invalid or missing, list recent GPT Pro sessions with `repo-harness chatgpt browser-list --repo <repo>` and ask for the intended session.
