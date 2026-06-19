@@ -131,6 +131,115 @@ emit_stop_block_json() {
   printf '{"decision":"block","reason":"%s"}\n' "$(workflow_json_escape "$reason")"
 }
 
+delegation_state_paths_json() {
+  local state_dir
+
+  state_dir="${HOOK_REPO_ROOT:-$(pwd)}/.ai/harness/delegation"
+  [[ -f "$state_dir/latest.json" ]] || return 1
+  command -v bun >/dev/null 2>&1 || return 1
+
+  JSON_INPUT="${HOOK_STDIN_JSON:-}" DELEGATION_STATE_DIR="$state_dir" bun -e '
+    const fs = require("fs");
+    const path = require("path");
+    const crypto = require("crypto");
+
+    function sanitize(value) {
+      return String(value || "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .replace(/-{2,}/g, "-")
+        .slice(0, 120);
+    }
+
+    function firstString(input, keys) {
+      for (const key of keys) {
+        const value = input?.[key];
+        if (typeof value === "string" && value.trim()) return value;
+      }
+      return "";
+    }
+
+    function parseInput() {
+      try {
+        return JSON.parse(process.env.JSON_INPUT || "{}");
+      } catch {
+        return {};
+      }
+    }
+
+    function delegationScope(input) {
+      const runId = firstString(input, ["run_id"]);
+      if (runId) return { source: "run_id", id: `run-${sanitize(runId)}` };
+
+      const sessionId = firstString(input, ["session_id"]);
+      if (sessionId) return { source: "session_id", id: `session-${sanitize(sessionId)}` };
+
+      const transcriptPath = firstString(input, ["transcript_path"]);
+      if (transcriptPath) {
+        const digest = crypto.createHash("sha1").update(transcriptPath).digest("hex").slice(0, 16);
+        return { source: "transcript_path", id: `transcript-${digest}` };
+      }
+
+      const envSession = process.env.CODEX_SESSION_ID || process.env.CLAUDE_SESSION_ID || "";
+      if (envSession) return { source: "env_session", id: `session-${sanitize(envSession)}` };
+
+      return null;
+    }
+
+    const stateDir = process.env.DELEGATION_STATE_DIR;
+    const latestPath = path.join(stateDir, "latest.json");
+    const latest = JSON.parse(fs.readFileSync(latestPath, "utf8"));
+    const scope = delegationScope(parseInput());
+    if (latest.scope_id) {
+      if (!scope || latest.scope_id !== scope.id) process.exit(1);
+      const statePath = path.resolve(stateDir, latest.state_file || path.join("turns", `${latest.scope_id}.json`));
+      const stateRoot = path.resolve(stateDir) + path.sep;
+      if (!statePath.startsWith(stateRoot)) process.exit(1);
+      process.stdout.write(JSON.stringify({ latestPath, statePath }));
+      process.exit(0);
+    }
+    process.stdout.write(JSON.stringify({ latestPath, statePath: latestPath }));
+  ' 2>/dev/null
+}
+
+delegation_should_block() {
+  local stop_active="$1"
+  local state_paths
+
+  [[ "$stop_active" != "true" ]] || return 1
+  state_paths="$(delegation_state_paths_json)" || return 1
+  command -v bun >/dev/null 2>&1 || return 1
+
+  DELEGATION_STATE_PATHS="$state_paths" bun -e '
+    const fs = require("fs");
+    const paths = JSON.parse(process.env.DELEGATION_STATE_PATHS || "{}");
+    const state = JSON.parse(fs.readFileSync(paths.statePath, "utf8"));
+    const now = Math.floor(Date.now() / 1000);
+    const age = Number.isFinite(Number(state.created_at_epoch)) ? now - Number(state.created_at_epoch) : 0;
+    const fresh = age >= 0 && age <= 24 * 60 * 60;
+    process.exit(state.eligible === true && state.explicit === true && state.spawned !== true && state.fallback_used !== true && state.stop_fallback !== false && fresh ? 0 : 1);
+  ' >/dev/null 2>&1
+}
+
+delegation_mark_fallback_used() {
+  local state_paths
+
+  state_paths="$(delegation_state_paths_json)" || return 0
+  command -v bun >/dev/null 2>&1 || return 0
+
+  DELEGATION_STATE_PATHS="$state_paths" bun -e '
+    const fs = require("fs");
+    const paths = JSON.parse(process.env.DELEGATION_STATE_PATHS || "{}");
+    const state = JSON.parse(fs.readFileSync(paths.statePath, "utf8"));
+    state.fallback_used = true;
+    state.fallback_used_at = new Date().toISOString();
+    state.updated_at = state.fallback_used_at;
+    fs.writeFileSync(paths.statePath, `${JSON.stringify(state, null, 2)}\n`);
+    fs.writeFileSync(paths.latestPath, `${JSON.stringify(state, null, 2)}\n`);
+  ' >/dev/null 2>&1 || true
+}
+
 refresh_handoff() {
   workflow_write_handoff "session-stop"
   echo "[FinalizeHandoff] Refreshed $(workflow_handoff_file)." >&2
@@ -167,5 +276,11 @@ if should_run_plan_completeness_gate "$stop_hook_active" "$last_assistant_messag
     emit_stop_block_json "[PlanCompletenessGate] A first planning answer was produced while pending orchestration is still open: ${summary}
 
 ${guidance}"
+    exit 0
   fi
+fi
+
+if delegation_should_block "$stop_hook_active"; then
+  delegation_mark_fallback_used
+  emit_stop_block_json "[DelegationFallback] This turn explicitly requested bounded delegation, but no SubagentStart event was observed. Continue the task now by spawning the independent explorer/reviewer or isolated worker workstreams first when at least two independent workstreams exist, wait for them, reconcile their findings in the parent, then complete the response. Do not spawn for a trivial or strictly sequential task."
 fi

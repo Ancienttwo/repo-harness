@@ -18,6 +18,7 @@ Use this command when the user wants to start a bounded native `/goal` session i
 6. When a Sprint row is the source, include the sprint file path, row id or task label, acceptance line, and whether the work should proceed through `$think`, `capture-plan.sh`, and the contract worktree flow before implementation.
 7. When a PRD is the source but no Sprint exists, route to `repo-harness-sprint from-prd <prd-file>` unless the requested goal is explicitly limited to PRD review, Sprint generation, or planning.
 8. Verify the prepared goal contract against repo state before handing it to `/goal`: named files exist, acceptance checks are concrete, and the stop condition is testable.
+9. For Codex goals, include explicit bounded delegation authorization: spawn no more than 3 subagents, max depth 1, only when the goal contains at least two independent workstreams, and never give overlapping write ownership.
 
 ## Goal Prompt Shape
 
@@ -32,6 +33,7 @@ Non-goals: <explicit exclusions>
 Execution route: <repo-harness-sprint row, repo-harness-plan, or contract worktree path>
 Acceptance checks: <commands or machine-checkable assertions>
 Stop condition: <verified completion or blocker evidence>
+Delegation: this goal explicitly authorizes bounded Codex subagents when at least two independent workstreams exist; max 3 agents, max depth 1, no overlapping write ownership; do not spawn for trivial or strictly sequential work
 Reporting: use the user's language unless repo-local instructions require otherwise; include changed files, tradeoffs, checks, and next bottleneck only if verified
 ```
 

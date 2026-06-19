@@ -38,8 +38,8 @@ function baseStatusReport(overrides: Partial<StatusReport['targets'][number]> = 
         installed: true,
         alreadyConfigured: true,
         configPath: '/tmp/.codex/hooks.json',
-        managedEntryCount: 8,
-        expectedEntryCount: 8,
+        managedEntryCount: 11,
+        expectedEntryCount: 11,
         ...overrides,
       },
       {
@@ -49,8 +49,8 @@ function baseStatusReport(overrides: Partial<StatusReport['targets'][number]> = 
         installed: true,
         alreadyConfigured: true,
         configPath: '/tmp/.claude/settings.json',
-        managedEntryCount: 8,
-        expectedEntryCount: 8,
+        managedEntryCount: 11,
+        expectedEntryCount: 11,
       },
     ],
     repo: {
@@ -59,7 +59,18 @@ function baseStatusReport(overrides: Partial<StatusReport['targets'][number]> = 
       optIn: true,
       optInMarker: '.ai/harness/workflow-contract.json',
     },
-    routes: { total: 8, byEvent: { SessionStart: 1, PreToolUse: 2, PostToolUse: 3, UserPromptSubmit: 1, Stop: 1 } },
+    routes: {
+      total: 11,
+      byEvent: {
+        SessionStart: 1,
+        PreToolUse: 2,
+        PostToolUse: 3,
+        UserPromptSubmit: 2,
+        SubagentStart: 1,
+        SubagentStop: 1,
+        Stop: 1,
+      },
+    },
   };
 }
 

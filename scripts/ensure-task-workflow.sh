@@ -625,7 +625,7 @@ CURRENT_STATUS_EOF
 }
 
 ensure_auxiliary_files() {
-  mkdir -p plans plans/archive plans/prds plans/sprints tasks/archive tasks/contracts tasks/reviews tasks/notes tasks/workstreams docs/architecture/domains docs/architecture/modules docs/architecture/requests docs/architecture/snapshots docs/architecture/diagrams scripts .ai/context .ai/harness/checks .ai/harness/handoff .ai/harness/scripts .ai/harness/failures .ai/harness/security .ai/harness/planning .ai/harness/architecture .ai/harness/worktrees .ai/harness/runs
+  mkdir -p plans plans/archive plans/prds plans/sprints tasks/archive tasks/contracts tasks/reviews tasks/notes tasks/workstreams docs/architecture/domains docs/architecture/modules docs/architecture/requests docs/architecture/snapshots docs/architecture/diagrams scripts .ai/context .ai/harness/checks .ai/harness/handoff .ai/harness/scripts .ai/harness/failures .ai/harness/security .ai/harness/planning .ai/harness/delegation .ai/harness/architecture .ai/harness/worktrees .ai/harness/runs
 
   if [[ ! -f "docs/spec.md" ]]; then
     cat > docs/spec.md <<'SPEC_EOF'
@@ -703,6 +703,10 @@ RESUME_EOF
 
   if [[ ! -f ".ai/harness/security/.gitkeep" ]]; then
     : > ".ai/harness/security/.gitkeep"
+  fi
+
+  if [[ ! -f ".ai/harness/delegation/.gitkeep" ]]; then
+    : > ".ai/harness/delegation/.gitkeep"
   fi
 
   if [[ ! -f ".ai/harness/runs/.gitkeep" ]]; then
@@ -911,6 +915,15 @@ ARCHITECTURE_INDEX_EOF
     "edit_plan_gate": "enforce",
     "edit_plan_gate_modes": ["enforce", "advice", "off"],
     "rule": "pre-edit-guard blocks implementation edits (non-workflow paths) unless an active plan is Approved/Executing; prompt-layer plan gates are advisory routing only"
+  },
+  "delegation": {
+    "mode": "explicit",
+    "max_agents": 3,
+    "max_depth": 1,
+    "allow_parallel_writers": false,
+    "stop_fallback": true,
+    "state_file": ".ai/harness/delegation/latest.json",
+    "rule": "UserPromptSubmit.delegation only injects bounded subagent context after explicit user authorization such as /delegate, /parallel, spawn subagents, or parallel investigation"
   },
   "sidecar_research": {
     "default": true,

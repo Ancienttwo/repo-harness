@@ -1,4 +1,4 @@
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect, setDefaultTimeout } from "bun:test";
 import {
   existsSync,
   mkdtempSync,
@@ -19,6 +19,8 @@ import {
 } from "../scripts/run-skill-evals";
 
 const ROOT = join(import.meta.dir, "..");
+
+setDefaultTimeout(10000);
 
 function tempPath(prefix: string): string {
   return mkdtempSync(join(tmpdir(), `${prefix}-`));

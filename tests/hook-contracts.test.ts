@@ -23,7 +23,9 @@ describe("Hook contracts", () => {
     expect(script).toContain("HookRunner");
     expect(script).toContain(".ai/hooks");
     expect(script).toContain('"$HOOK_NAME" == "stop-orchestrator.sh"');
-    expect(script).toContain('"decision"[[:space:]]*:');
+    expect(script).toContain("hook_stdout_is_json_kind");
+    expect(script).toContain('(.decision == "block") or (.decision == "allow")');
+    expect(script).toContain('"$HOOK_NAME" == "codex-delegation-advisor.sh"');
   });
 
   test("hook input parser should support current Claude Code prompt and memory fields", () => {
@@ -88,6 +90,26 @@ describe("Hook contracts", () => {
     expect(script).toContain("/subagents/agent-");
     expect(script).not.toContain("claude-opus");
     expect(script).not.toContain("model");
+  });
+
+  test("codex delegation hooks should use explicit prompt authorization and bounded roles", () => {
+    const advisor = read("assets/hooks/codex-delegation-advisor.sh");
+    expect(advisor).toContain("UserPromptSubmit.delegation");
+    expect(advisor).toContain("/(delegate|parallel)");
+    expect(advisor).toContain("spawn_agent");
+    expect(advisor).toContain("max_agents");
+    expect(advisor).toContain("max_depth");
+    expect(advisor).toContain(".ai\", \"harness\", \"delegation");
+
+    const start = read("assets/hooks/subagent-start-context.sh");
+    expect(start).toContain("SubagentStart.context");
+    expect(start).toContain("[repo-harness:subagent-context]");
+    expect(start).toContain("Do not claim overall task completion");
+
+    const stop = read("assets/hooks/subagent-stop-quality.sh");
+    expect(stop).toContain("SubagentStop.quality");
+    expect(stop).toContain("[SubagentQualityGate]");
+    expect(stop).toContain("last_blocked_hash");
   });
 
   test("prompt-guard shell layer keeps route hints, gates, and rendering without emoji", () => {
@@ -264,6 +286,16 @@ describe("Hook contracts", () => {
     expect(codexHooks).toContain("subagent-return-channel-guard.sh");
     expect(settings).toContain("Task|Agent|SendUserMessage");
     expect(codexHooks).toContain("Task|Agent|SendUserMessage");
+    expect(settings).toContain("codex-delegation-advisor.sh");
+    expect(codexHooks).toContain("codex-delegation-advisor.sh");
+    expect(settings).toContain("SubagentStart");
+    expect(codexHooks).toContain("SubagentStart");
+    expect(settings).toContain("subagent-start-context.sh");
+    expect(codexHooks).toContain("subagent-start-context.sh");
+    expect(settings).toContain("SubagentStop");
+    expect(codexHooks).toContain("SubagentStop");
+    expect(settings).toContain("subagent-stop-quality.sh");
+    expect(codexHooks).toContain("subagent-stop-quality.sh");
     expect(settings).toContain("post-edit-guard.sh");
     expect(codexHooks).toContain("post-edit-guard.sh");
     expect(settings).not.toContain("autoresearch-advisory.sh");

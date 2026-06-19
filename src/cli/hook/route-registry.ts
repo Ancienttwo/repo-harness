@@ -22,10 +22,20 @@ export type HookEvent =
   | 'PreToolUse'
   | 'PostToolUse'
   | 'UserPromptSubmit'
+  | 'SubagentStart'
+  | 'SubagentStop'
   | 'Stop';
 
 /** Stable route id within an event. Public contract — never rename without coordinated adapter migration. */
-export type RouteId = 'default' | 'edit' | 'subagent' | 'bash' | 'always';
+export type RouteId =
+  | 'default'
+  | 'edit'
+  | 'subagent'
+  | 'bash'
+  | 'always'
+  | 'delegation'
+  | 'context'
+  | 'quality';
 
 export interface Route {
   readonly event: HookEvent;
@@ -78,6 +88,21 @@ export const ROUTES: readonly Route[] = Object.freeze([
     event: 'UserPromptSubmit' as const,
     routeId: 'default' as const,
     scripts: Object.freeze(['prompt-guard.sh']),
+  }),
+  Object.freeze({
+    event: 'UserPromptSubmit' as const,
+    routeId: 'delegation' as const,
+    scripts: Object.freeze(['codex-delegation-advisor.sh']),
+  }),
+  Object.freeze({
+    event: 'SubagentStart' as const,
+    routeId: 'context' as const,
+    scripts: Object.freeze(['subagent-start-context.sh']),
+  }),
+  Object.freeze({
+    event: 'SubagentStop' as const,
+    routeId: 'quality' as const,
+    scripts: Object.freeze(['subagent-stop-quality.sh']),
   }),
   Object.freeze({
     event: 'Stop' as const,

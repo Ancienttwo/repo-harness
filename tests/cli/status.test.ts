@@ -20,15 +20,17 @@ function withTempHome(fn: (home: string) => void): void {
 }
 
 describe('status command (Phase 1C)', () => {
-  test('reports CLI version + 8 routes with correct per-event breakdown', () => {
+  test('reports CLI version + 11 routes with correct per-event breakdown', () => {
     withTempHome(() => {
       const r = runStatus();
       expect(r.cli.version).toBeTruthy();
-      expect(r.routes.total).toBe(8);
+      expect(r.routes.total).toBe(11);
       expect(r.routes.byEvent.PreToolUse).toBe(2);
       expect(r.routes.byEvent.PostToolUse).toBe(3);
       expect(r.routes.byEvent.SessionStart).toBe(1);
-      expect(r.routes.byEvent.UserPromptSubmit).toBe(1);
+      expect(r.routes.byEvent.UserPromptSubmit).toBe(2);
+      expect(r.routes.byEvent.SubagentStart).toBe(1);
+      expect(r.routes.byEvent.SubagentStop).toBe(1);
       expect(r.routes.byEvent.Stop).toBe(1);
     });
   });
@@ -51,9 +53,9 @@ describe('status command (Phase 1C)', () => {
       const codex = r.targets.find((t) => t.id === 'codex')!;
       expect(codex.alreadyConfigured).toBe(true);
       expect(codex.managedEntryCount).toBe(codex.expectedEntryCount);
-      expect(codex.managedEntryCount).toBe(8);
+      expect(codex.managedEntryCount).toBe(11);
       const claude = r.targets.find((t) => t.id === 'claude')!;
-      expect(claude.managedEntryCount).toBe(8);
+      expect(claude.managedEntryCount).toBe(11);
     });
   });
 
@@ -105,7 +107,7 @@ describe('status command (Phase 1C)', () => {
       expect(() => JSON.parse(json)).not.toThrow();
       const parsed = JSON.parse(json);
       expect(parsed.cli).toBeDefined();
-      expect(parsed.routes.total).toBe(8);
+      expect(parsed.routes.total).toBe(11);
     });
   });
 });

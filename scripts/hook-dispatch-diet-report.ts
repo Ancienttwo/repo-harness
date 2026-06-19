@@ -8,7 +8,9 @@ import { ROUTES } from "../src/cli/hook/route-registry";
 
 export const DEFAULT_OUT = ".ai/harness/runs/loop-engine-08-hook-diet-report.json";
 export const PREVIOUS_DISPATCH_COUNT = 13;
-export const TARGET_DISPATCH_MAX = 8;
+export const CORE_DISPATCH_TARGET_MAX = 8;
+export const CODEX_SUBAGENT_LIFECYCLE_ROUTE_ALLOWANCE = 3;
+export const TARGET_DISPATCH_MAX = CORE_DISPATCH_TARGET_MAX + CODEX_SUBAGENT_LIFECYCLE_ROUTE_ALLOWANCE;
 export const DEFAULT_BASELINE_MS = 250;
 
 export interface HookDietReport {

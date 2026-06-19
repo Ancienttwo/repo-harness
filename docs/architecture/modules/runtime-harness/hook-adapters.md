@@ -22,6 +22,8 @@ Authoritative split:
 - `src/cli/commands/security.ts`: read-only security scan for user-level hook config and VS Code folder-open task injection surfaces.
 - Repo-local `.claude/settings.json` and `.codex/hooks.json`: retired legacy project-level adapters cleaned by migration.
 - Repo-local `.codex/*`: ignored Codex runtime residue.
+- `.ai/harness/delegation/`: ignored per-turn delegation state used by Codex
+  delegation hooks.
 - Codex Settings trust state: user-controlled runtime approval required before Codex executes `~/.codex/hooks.json`.
 - `scripts/run-skill-hook.ts`: skill lifecycle hook runner for pre/post migration events.
 
@@ -46,6 +48,20 @@ spawns, the guard appends a return-channel contract to the prompt through
 delivery because subagent final text is the only payload returned to the caller.
 Missing copies of this route are soft-skipped so older repo-pinned hook runtimes
 do not break subagent creation before a hook refresh.
+
+Codex delegation route: `UserPromptSubmit.delegation` runs
+`codex-delegation-advisor.sh`. It does not infer delegation from prompt length;
+it only reacts to explicit `/delegate`, `/parallel`, subagent, multi-agent, or
+parallel-investigation language. The script writes ignored scoped runtime state
+under `.ai/harness/delegation/` with `latest.json` as the current pointer and emits
+`hookSpecificOutput.additionalContext`; `runtime.ts` forwards that stdout only
+for this route and only when the JSON is valid for `UserPromptSubmit`.
+
+Codex subagent lifecycle routes: `SubagentStart.context` runs
+`subagent-start-context.sh` after a subagent exists, marks explicit delegation
+state as spawned, and injects role/evidence/final-response requirements.
+`SubagentStop.quality` runs `subagent-stop-quality.sh` and forwards valid
+decision JSON only when the final report is clearly incomplete.
 
 Post-edit route: edit/write -> `post-edit-guard.sh` -> architecture-sensitive
 paths call `architecture-queue.sh` -> capability resolver binds the changed file
@@ -128,6 +144,14 @@ flowchart TD
 
     Route --> Prompt["UserPromptSubmit.default"]
     Prompt --> PromptGuard["prompt-guard.sh"]
+    Route --> Delegation["UserPromptSubmit.delegation"]
+    Delegation --> DelegationAdvisor["codex-delegation-advisor.sh<br/>explicit bounded spawn contract"]
+
+    Route --> SubagentStart["SubagentStart.context"]
+    SubagentStart --> SubagentContext["subagent-start-context.sh<br/>role + evidence requirements"]
+
+    Route --> SubagentStop["SubagentStop.quality"]
+    SubagentStop --> SubagentQuality["subagent-stop-quality.sh<br/>one-shot quality continuation"]
 
     Route --> Stop["Stop.default"]
     Stop --> StopOrchestrator["stop-orchestrator.sh"]
@@ -153,6 +177,7 @@ flowchart TD
   Observer -. uses .-> Workflow
   PromptGuard -. uses .-> Input
   PromptGuard -. uses .-> Workflow
+  DelegationAdvisor -. uses .-> Input
   StopOrchestrator -. uses .-> Input
   StopOrchestrator -. uses .-> Workflow
 
@@ -169,8 +194,14 @@ flowchart TD
     Observer --> TraceLog[".claude/.trace.jsonl"]
     PromptGuard --> PlanGate["plan start/capture/execution/done/archive gates"]
     PromptGuard --> Hints["Waza / CodeGraph / CrossReview / TDD / BDD hints"]
+    DelegationAdvisor --> DelegationState[".ai/harness/delegation/<br/>scoped explicit turn state"]
+    DelegationAdvisor --> DelegationCtx["UserPromptSubmit additionalContext<br/>bounded spawn_agent rules"]
+    SubagentContext --> SpawnedState["mark spawned=true"]
+    SubagentContext --> SubagentCtx["SubagentStart additionalContext"]
+    SubagentQuality --> QualityBlock["SubagentStop decision block when report is incomplete"]
     StopOrchestrator --> StopHandoff["workflow_write_handoff(session-stop)"]
     StopOrchestrator --> Completeness["one-shot pending plan completeness Stop block"]
+    StopOrchestrator --> DelegationFallback["one-shot missed-delegation Stop block"]
   end
 
   subgraph Compat["Legacy / Template Compatibility"]

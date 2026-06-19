@@ -37,16 +37,73 @@ fi
 export HOOK_REPO_ROOT="$REPO_ROOT"
 cd "$REPO_ROOT"
 
+hook_stdout_is_json_kind() {
+  local stdout_file="$1"
+  local kind="$2"
+
+  [[ -s "$stdout_file" ]] || return 1
+
+  if command -v jq >/dev/null 2>&1; then
+    case "$kind" in
+      decision)
+        jq -e '(.decision == "block") or (.decision == "allow")' "$stdout_file" >/dev/null 2>&1
+        return
+        ;;
+      user_prompt_context)
+        jq -e '.hookSpecificOutput.hookEventName == "UserPromptSubmit" and (.hookSpecificOutput.additionalContext | type == "string" and length > 0)' "$stdout_file" >/dev/null 2>&1
+        return
+        ;;
+      subagent_start_context)
+        jq -e '.hookSpecificOutput.hookEventName == "SubagentStart" and (.hookSpecificOutput.additionalContext | type == "string" and length > 0)' "$stdout_file" >/dev/null 2>&1
+        return
+        ;;
+    esac
+  fi
+
+  command -v bun >/dev/null 2>&1 || return 1
+  STDOUT_FILE="$stdout_file" JSON_KIND="$kind" bun -e '
+    const fs = require("fs");
+    const file = process.env.STDOUT_FILE;
+    const kind = process.env.JSON_KIND;
+    const raw = fs.readFileSync(file, "utf8").trim();
+    if (!raw.startsWith("{")) process.exit(1);
+    const parsed = JSON.parse(raw);
+    if (kind === "decision") {
+      process.exit(parsed.decision === "block" || parsed.decision === "allow" ? 0 : 1);
+    }
+    const specific = parsed.hookSpecificOutput || {};
+    if (
+      kind === "user_prompt_context" &&
+      specific.hookEventName === "UserPromptSubmit" &&
+      typeof specific.additionalContext === "string" &&
+      specific.additionalContext.trim()
+    ) process.exit(0);
+    if (
+      kind === "subagent_start_context" &&
+      specific.hookEventName === "SubagentStart" &&
+      typeof specific.additionalContext === "string" &&
+      specific.additionalContext.trim()
+    ) process.exit(0);
+    process.exit(1);
+  ' >/dev/null 2>&1
+}
+
 # Codex swallows hook stdout differently from Claude: success stdout is
-# dropped for every hook except session-start-context.sh, and only
-# stop-orchestrator.sh may surface its Stop decision JSON on success.
+# dropped for ordinary hooks. Only context/decision JSON for approved routes is
+# surfaced on success.
 if [[ "${HOOK_HOST:-}" == "codex" && "$HOOK_NAME" != "session-start-context.sh" ]]; then
   if ! tmp_stdout="$(mktemp)" || ! tmp_stderr="$(mktemp)"; then
     # No temp space: run unfiltered rather than silently dropping the hook.
     exec bash "$HOOK_PATH" "$@"
   fi
   if bash "$HOOK_PATH" "$@" >"$tmp_stdout" 2>"$tmp_stderr"; then
-    if [[ "$HOOK_NAME" == "stop-orchestrator.sh" ]] && grep -q '"decision"[[:space:]]*:' "$tmp_stdout"; then
+    if [[ "$HOOK_NAME" == "stop-orchestrator.sh" ]] && hook_stdout_is_json_kind "$tmp_stdout" decision; then
+      cat "$tmp_stdout"
+    elif [[ "$HOOK_NAME" == "subagent-stop-quality.sh" ]] && hook_stdout_is_json_kind "$tmp_stdout" decision; then
+      cat "$tmp_stdout"
+    elif [[ "$HOOK_NAME" == "codex-delegation-advisor.sh" ]] && hook_stdout_is_json_kind "$tmp_stdout" user_prompt_context; then
+      cat "$tmp_stdout"
+    elif [[ "$HOOK_NAME" == "subagent-start-context.sh" ]] && hook_stdout_is_json_kind "$tmp_stdout" subagent_start_context; then
       cat "$tmp_stdout"
     fi
     rm -f "$tmp_stdout" "$tmp_stderr"

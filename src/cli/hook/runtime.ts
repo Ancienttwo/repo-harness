@@ -48,6 +48,28 @@ function looksLikeHookDecisionJson(output: Buffer | string | null | undefined): 
   }
 }
 
+function looksLikeHookAdditionalContextJson(
+  output: Buffer | string | null | undefined,
+  hookEventName: HookEvent,
+): boolean {
+  if (!output) return false;
+  const text = output.toString().trim();
+  if (!text.startsWith('{')) return false;
+  try {
+    const parsed = JSON.parse(text) as {
+      hookSpecificOutput?: { hookEventName?: unknown; additionalContext?: unknown };
+    };
+    const specific = parsed.hookSpecificOutput;
+    return (
+      specific?.hookEventName === hookEventName &&
+      typeof specific.additionalContext === 'string' &&
+      specific.additionalContext.trim().length > 0
+    );
+  } catch {
+    return false;
+  }
+}
+
 function extractSessionStartContext(output: Buffer | string | null | undefined): string | null {
   if (!output) return null;
   const text = output.toString().trim();
@@ -146,6 +168,9 @@ function isSoftMissingRoute(event: HookEvent, routeId: RouteId): boolean {
   return (
     (event === 'SessionStart' && routeId === 'default') ||
     (event === 'PreToolUse' && routeId === 'subagent') ||
+    (event === 'UserPromptSubmit' && routeId === 'delegation') ||
+    (event === 'SubagentStart' && routeId === 'context') ||
+    (event === 'SubagentStop' && routeId === 'quality') ||
     (event === 'Stop' && routeId === 'default') ||
     (event === 'PostToolUse' && routeId === 'always')
   );
@@ -189,15 +214,31 @@ export function runHook(opts: RunHookOptions): RunHookResult {
     process.env.HOOK_HOST === 'codex' &&
     opts.event === 'Stop' &&
     opts.stdio === undefined;
+  const codexSubagentStopDecisionStdout =
+    process.env.HOOK_HOST === 'codex' &&
+    opts.event === 'SubagentStop' &&
+    opts.routeId === 'quality' &&
+    opts.stdio === undefined;
+  const codexDecisionStdout = codexStopDecisionStdout || codexSubagentStopDecisionStdout;
+  const codexAdditionalContextStdout =
+    process.env.HOOK_HOST === 'codex' &&
+    opts.stdio === undefined &&
+    (
+      (opts.event === 'UserPromptSubmit' && opts.routeId === 'delegation') ||
+      (opts.event === 'SubagentStart' && opts.routeId === 'context')
+    );
   const codexQuietStdout =
     process.env.HOOK_HOST === 'codex' &&
     opts.event !== 'SessionStart' &&
-    !codexStopDecisionStdout &&
+    !codexDecisionStdout &&
+    !codexAdditionalContextStdout &&
     opts.stdio === undefined;
   const stdio: StdioOptions = sessionStartCollectStdout
     ? ['inherit', 'pipe', 'inherit']
-    : codexStopDecisionStdout
+    : codexDecisionStdout
     ? ['inherit', 'pipe', 'pipe']
+    : codexAdditionalContextStdout
+    ? ['inherit', 'pipe', 'inherit']
     : codexQuietStdout
     ? ['inherit', 'pipe', 'inherit']
     : (opts.stdio ?? 'inherit');
@@ -248,9 +289,17 @@ export function runHook(opts: RunHookOptions): RunHookResult {
     }
 
     if (
-      codexStopDecisionStdout &&
+      codexDecisionStdout &&
       child.status === 0 &&
       looksLikeHookDecisionJson(child.stdout)
+    ) {
+      process.stdout.write(child.stdout);
+    }
+
+    if (
+      codexAdditionalContextStdout &&
+      child.status === 0 &&
+      looksLikeHookAdditionalContextJson(child.stdout, opts.event)
     ) {
       process.stdout.write(child.stdout);
     }
@@ -260,12 +309,12 @@ export function runHook(opts: RunHookOptions): RunHookResult {
       if (context) sessionStartContexts.push(context);
     }
 
-    if (codexStopDecisionStdout && child.status !== 0 && child.stderr) {
+    if (codexDecisionStdout && child.status !== 0 && child.stderr) {
       process.stderr.write(child.stderr);
     }
 
     if (
-      (codexQuietStdout || codexStopDecisionStdout) &&
+      (codexQuietStdout || codexDecisionStdout || codexAdditionalContextStdout) &&
       child.status !== 0 &&
       child.stdout
     ) {

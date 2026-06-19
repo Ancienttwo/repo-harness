@@ -513,6 +513,218 @@ describe('hook command (Phase 1B)', () => {
     );
   });
 
+  test('CLI dispatcher forwards Codex delegation additionalContext only for explicit prompts', () => {
+    withTempRepo({ optIn: true }, (repoRoot) => {
+      installAssetHooks(repoRoot);
+
+      const implicit = spawnSync(
+        process.execPath,
+        [CLI, 'hook', 'UserPromptSubmit', '--route', 'delegation'],
+        {
+          cwd: repoRoot,
+          input: JSON.stringify({ session_id: 'session-1', prompt: 'implement the next sequential task' }),
+          encoding: 'utf-8',
+          env: { ...process.env, HOOK_HOST: 'codex' },
+        },
+      );
+      expect(implicit.status).toBe(0);
+      expect(implicit.stdout).toBe('');
+      expect(fs.existsSync(path.join(repoRoot, '.ai/harness/delegation/latest.json'))).toBe(false);
+
+      const explicit = spawnSync(
+        process.execPath,
+        [CLI, 'hook', 'UserPromptSubmit', '--route', 'delegation'],
+        {
+          cwd: repoRoot,
+          input: JSON.stringify({ session_id: 'session-1', prompt: '/delegate map src and tests in parallel' }),
+          encoding: 'utf-8',
+          env: { ...process.env, HOOK_HOST: 'codex' },
+        },
+      );
+      expect(explicit.status).toBe(0);
+      const parsed = JSON.parse(explicit.stdout);
+      expect(parsed.hookSpecificOutput.hookEventName).toBe('UserPromptSubmit');
+      expect(parsed.hookSpecificOutput.additionalContext).toContain('[repo-harness:delegation]');
+      expect(parsed.hookSpecificOutput.additionalContext).toContain('Spawn no more than 3 agents');
+
+      const state = JSON.parse(
+        fs.readFileSync(path.join(repoRoot, '.ai/harness/delegation/latest.json'), 'utf-8'),
+      );
+      expect(state.explicit).toBe(true);
+      expect(state.spawned).toBe(false);
+      expect(state.max_depth).toBe(1);
+      expect(state.scope_id).toBe('session-session-1');
+      expect(state.state_file).toBe('turns/session-session-1.json');
+      expect(fs.existsSync(path.join(repoRoot, '.ai/harness/delegation/turns/session-session-1.json'))).toBe(true);
+    });
+  });
+
+  test('Codex SubagentStart marks explicit delegation as spawned and injects role context', () => {
+    withTempRepo({ optIn: true }, (repoRoot) => {
+      installAssetHooks(repoRoot);
+      spawnSync(
+        process.execPath,
+        [CLI, 'hook', 'UserPromptSubmit', '--route', 'delegation'],
+        {
+          cwd: repoRoot,
+          input: JSON.stringify({ session_id: 'session-1', prompt: '/parallel split explorer and reviewer' }),
+          encoding: 'utf-8',
+          env: { ...process.env, HOOK_HOST: 'codex' },
+        },
+      );
+
+      const start = spawnSync(
+        process.execPath,
+        [CLI, 'hook', 'SubagentStart', '--route', 'context'],
+        {
+          cwd: repoRoot,
+          input: JSON.stringify({ hook_event_name: 'SubagentStart', session_id: 'session-2' }),
+          encoding: 'utf-8',
+          env: { ...process.env, HOOK_HOST: 'codex' },
+        },
+      );
+      expect(start.status).toBe(0);
+      const parsed = JSON.parse(start.stdout);
+      expect(parsed.hookSpecificOutput.hookEventName).toBe('SubagentStart');
+      expect(parsed.hookSpecificOutput.additionalContext).toContain('[repo-harness:subagent-context]');
+
+      const mismatchedState = JSON.parse(
+        fs.readFileSync(path.join(repoRoot, '.ai/harness/delegation/latest.json'), 'utf-8'),
+      );
+      expect(mismatchedState.spawned).toBe(false);
+
+      const matchingStart = spawnSync(
+        process.execPath,
+        [CLI, 'hook', 'SubagentStart', '--route', 'context'],
+        {
+          cwd: repoRoot,
+          input: JSON.stringify({ hook_event_name: 'SubagentStart', session_id: 'session-1' }),
+          encoding: 'utf-8',
+          env: { ...process.env, HOOK_HOST: 'codex' },
+        },
+      );
+      expect(matchingStart.status).toBe(0);
+
+      const state = JSON.parse(
+        fs.readFileSync(path.join(repoRoot, '.ai/harness/delegation/latest.json'), 'utf-8'),
+      );
+      expect(state.spawned).toBe(true);
+      expect(state.spawned_at).toBeTruthy();
+    });
+  });
+
+  test('Codex Stop fallback blocks once when explicit delegation did not spawn', () => {
+    withTempRepo({ optIn: true }, (repoRoot) => {
+      installAssetHooks(repoRoot);
+      spawnSync(
+        process.execPath,
+        [CLI, 'hook', 'UserPromptSubmit', '--route', 'delegation'],
+        {
+          cwd: repoRoot,
+          input: JSON.stringify({ session_id: 'session-1', prompt: '/delegate investigate docs and tests' }),
+          encoding: 'utf-8',
+          env: { ...process.env, HOOK_HOST: 'codex' },
+        },
+      );
+
+      const mismatched = spawnSync(
+        process.execPath,
+        [CLI, 'hook', 'Stop', '--route', 'default'],
+        {
+          cwd: repoRoot,
+          input: JSON.stringify({ hook_event_name: 'Stop', session_id: 'session-2', stop_hook_active: false }),
+          encoding: 'utf-8',
+          env: { ...process.env, HOOK_HOST: 'codex' },
+        },
+      );
+      expect(mismatched.status).toBe(0);
+      expect(mismatched.stdout).toBe('');
+
+      const first = spawnSync(
+        process.execPath,
+        [CLI, 'hook', 'Stop', '--route', 'default'],
+        {
+          cwd: repoRoot,
+          input: JSON.stringify({ hook_event_name: 'Stop', session_id: 'session-1', stop_hook_active: false }),
+          encoding: 'utf-8',
+          env: { ...process.env, HOOK_HOST: 'codex' },
+        },
+      );
+      expect(first.status).toBe(0);
+      const decision = JSON.parse(first.stdout);
+      expect(decision.decision).toBe('block');
+      expect(decision.reason).toContain('[DelegationFallback]');
+
+      const state = JSON.parse(
+        fs.readFileSync(path.join(repoRoot, '.ai/harness/delegation/latest.json'), 'utf-8'),
+      );
+      expect(state.fallback_used).toBe(true);
+
+      const second = spawnSync(
+        process.execPath,
+        [CLI, 'hook', 'Stop', '--route', 'default'],
+        {
+          cwd: repoRoot,
+          input: JSON.stringify({ hook_event_name: 'Stop', session_id: 'session-1', stop_hook_active: false }),
+          encoding: 'utf-8',
+          env: { ...process.env, HOOK_HOST: 'codex' },
+        },
+      );
+      expect(second.status).toBe(0);
+      expect(second.stdout).toBe('');
+    });
+  });
+
+  test('Codex SubagentStop quality route continues only obviously incomplete reports', () => {
+    withTempRepo({ optIn: true }, (repoRoot) => {
+      installAssetHooks(repoRoot);
+
+      const thin = spawnSync(
+        process.execPath,
+        [CLI, 'hook', 'SubagentStop', '--route', 'quality'],
+        {
+          cwd: repoRoot,
+          input: JSON.stringify({ hook_event_name: 'SubagentStop', final_message: 'looks good' }),
+          encoding: 'utf-8',
+          env: { ...process.env, HOOK_HOST: 'codex' },
+        },
+      );
+      expect(thin.status).toBe(0);
+      const decision = JSON.parse(thin.stdout);
+      expect(decision.decision).toBe('block');
+      expect(decision.reason).toContain('[SubagentQualityGate]');
+
+      const repeated = spawnSync(
+        process.execPath,
+        [CLI, 'hook', 'SubagentStop', '--route', 'quality'],
+        {
+          cwd: repoRoot,
+          input: JSON.stringify({ hook_event_name: 'SubagentStop', final_message: 'looks good' }),
+          encoding: 'utf-8',
+          env: { ...process.env, HOOK_HOST: 'codex' },
+        },
+      );
+      expect(repeated.status).toBe(0);
+      expect(repeated.stdout).toBe('');
+
+      const complete = spawnSync(
+        process.execPath,
+        [CLI, 'hook', 'SubagentStop', '--route', 'quality'],
+        {
+          cwd: repoRoot,
+          input: JSON.stringify({
+            hook_event_name: 'SubagentStop',
+            final_message: 'Inspected src/cli/hook/runtime.ts and tests/cli/hook.test.ts. Evidence: dispatcher forwards UserPromptSubmit delegation JSON and SubagentStop decision JSON. Ran bun test tests/cli/hook.test.ts. Risk: host event schema may vary; parent should verify live setup check.',
+          }),
+          encoding: 'utf-8',
+          env: { ...process.env, HOOK_HOST: 'codex' },
+        },
+      );
+      expect(complete.status).toBe(0);
+      expect(complete.stdout).toBe('');
+    });
+  });
+
   test('CLI dispatcher forwards Codex Stop decision JSON and suppresses success stderr', () => {
     withTempRepo({ optIn: true }, (repoRoot) => {
       installAssetHooks(repoRoot);

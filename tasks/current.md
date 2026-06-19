@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-06-19T04:13:31+0800 -->
+<!-- updated_at: 2026-06-19T19:33:03+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-06-19T04:13:31+0800
-> **Source Branch**: codex/gptpro-setup-bootstrap-gates
-> **Source Commit**: 893ecf0
+> **Updated At**: 2026-06-19T19:33:03+0800
+> **Source Branch**: codex/delegation-hooks
+> **Source Commit**: 52103a6
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: gptpro-setup-pr-review-fixes
+> **Reason**: codex-delegation-hooks
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -31,8 +31,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- /Users/kito/Projects/agentic-dev-wt-think-skill-codex-repo-skill-think-hook-agents-md: plans/plan-20260606-0245-think-skill-codex-repo-skill-think-hook-agents-md.md
-- /Users/kito/Projects/agentic-dev-wt-think-skill-codex-repo-skill-think-hook-agents-md: active-worktree owner -> /Users/kito/Projects/agentic-dev-wt-think-skill-codex-repo-skill-think-hook-agents-md
+- /Users/ancienttwo/Projects/agentic-dev-wt-think-plan-000127: plans/plan-20260617-0010-think-plan-000127.md
+- /Users/ancienttwo/Projects/agentic-dev-wt-think-plan-000127: active-worktree owner -> /Users/ancienttwo/Projects/agentic-dev-wt-think-plan-000127
 ## Active Sprint
 
 - Sprint: (none)
@@ -41,7 +41,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/contract-assets/cleanup-script-policy.md`: status=completed, current_slice=todo-01, source_plan=(none)
 ## Handoff
 
-- Exact Next Step: Clean up merged contract worktree codex/gptpro-setup-bootstrap-gates. Command: bash scripts/contract-worktree.sh cleanup --slug gptpro-setup-bootstrap-gates --target main
+- Exact Next Step: Clean up merged contract worktree codex/think-plan-000127. Command: bash scripts/contract-worktree.sh cleanup --slug think-plan-000127 --target main
 
 ## Checks
 
@@ -49,22 +49,47 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 13 changed/untracked path(s)
+- Summary: 38 changed/untracked path(s)
 
 ```
- M .agents/skills/repo-harness-chatgpt-browser/SKILL.md
- M assets/skill-commands/repo-harness-gptpro-setup/SKILL.md
- M assets/skill-commands/repo-harness-gptpro/SKILL.md
- M docs/repo-harness-chatgpt-browser-engine.md
- M docs/repo-harness-chatgpt-mcp-setup.md
- M src/cli/chatgpt-browser/engine.ts
- M src/cli/chatgpt-browser/oracle-provider.ts
- M src/cli/chatgpt-browser/types.ts
- M src/cli/commands/chatgpt.ts
- M src/cli/mcp/setup.ts
- M tests/action-command-skills.test.ts
- M tests/cli/chatgpt-browser.test.ts
- M tests/cli/mcp-setup.test.ts
+ M .ai/harness/policy.json
+ M .ai/harness/workflow-contract.json
+ M .ai/hooks/run-hook.sh
+ M .ai/hooks/stop-orchestrator.sh
+ M .gitignore
+ M assets/hooks/codex.hooks.template.json
+ M assets/hooks/run-hook.sh
+ M assets/hooks/settings.template.json
+ M assets/hooks/stop-orchestrator.sh
+ M assets/reference-configs/hook-operations.md
+ M assets/skill-commands/repo-harness-goal/SKILL.md
+ M assets/templates/helpers/ensure-task-workflow.sh
+ M assets/workflow-contract.v1.json
+ M bun.lock
+ M docs/architecture/modules/runtime-harness/hook-adapters.md
+ M docs/reference-configs/hook-operations.md
+ M scripts/ensure-task-workflow.sh
+ M scripts/hook-dispatch-diet-report.ts
+ M scripts/lib/project-init-lib.sh
+ M src/cli/hook/route-registry.ts
+ M src/cli/hook/runtime.ts
+ M src/core/adoption/gitignore-plan.ts
+ M tasks/current.md
+ M tests/cli/hook.test.ts
+ M tests/cli/init-hook.test.ts
+ M tests/cli/install.test.ts
+ M tests/cli/route-registry.test.ts
+ M tests/cli/status.test.ts
+ M tests/hook-contracts.test.ts
+ M tests/run-skill-evals.test.ts
+ M tests/scaffold-parity.test.ts
+?? .ai/harness/delegation/
+?? .ai/hooks/codex-delegation-advisor.sh
+?? .ai/hooks/subagent-start-context.sh
+?? .ai/hooks/subagent-stop-quality.sh
+?? assets/hooks/codex-delegation-advisor.sh
+?? assets/hooks/subagent-start-context.sh
+?? assets/hooks/subagent-stop-quality.sh
 ```
 
 ## Source Artifacts
