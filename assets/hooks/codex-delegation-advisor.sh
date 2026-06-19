@@ -72,14 +72,24 @@ JSON_INPUT="$input" REPO_ROOT="${HOOK_REPO_ROOT:-$(pwd)}" bun -e '
   ]);
   if (!prompt) process.exit(0);
 
+  function isDelegationDiscussion(text) {
+    if (!/\b(spawn|use|run)\s+(bounded\s+)?subagents?\b/i.test(text)) return false;
+    return [
+      /[?？]/,
+      /\b(should|need|necessary|why|how|what)\b/i,
+      /(机制|有必要|必要|是否|为什么|怎么|如何|架构|设计|注册|路由|本来就有)/i,
+      /\b(mechanism|architecture|design|registration|route|routing|adapter|hook)\b/i,
+    ].some((pattern) => pattern.test(text));
+  }
+
   const triggers = [
     { name: "slash-delegate", pattern: /(^|\s)\/(delegate|parallel)\b/i },
-    { name: "spawn-subagents", pattern: /\b(spawn|use|run)\s+(bounded\s+)?subagents?\b/i },
+    { name: "spawn-subagents", pattern: /\b(spawn|use|run)\s+(bounded\s+)?subagents?\b/i, skipDiscussion: true },
     { name: "multiple-agents", pattern: /\buse\s+multiple\s+agents?\b/i },
     { name: "parallel-agents", pattern: /\bparallel\s+(agents?|workstreams?|investigation|research)\b/i },
     { name: "chinese-subagent", pattern: /交给\s*子代理|使用多个\s*(agent|代理)|并行(调查|研究|处理|执行|agent|代理)/i },
   ];
-  const trigger = triggers.find((entry) => entry.pattern.test(prompt));
+  const trigger = triggers.find((entry) => entry.pattern.test(prompt) && !(entry.skipDiscussion && isDelegationDiscussion(prompt)));
   if (!trigger) process.exit(0);
 
   const repoRoot = process.env.REPO_ROOT || process.cwd();

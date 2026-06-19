@@ -55,7 +55,8 @@ describe('status command (Phase 1C)', () => {
       expect(codex.managedEntryCount).toBe(codex.expectedEntryCount);
       expect(codex.managedEntryCount).toBe(11);
       const claude = r.targets.find((t) => t.id === 'claude')!;
-      expect(claude.managedEntryCount).toBe(11);
+      expect(claude.managedEntryCount).toBe(claude.expectedEntryCount);
+      expect(claude.managedEntryCount).toBe(8);
     });
   });
 

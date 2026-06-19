@@ -3250,6 +3250,35 @@ describe("Workflow helper scripts", () => {
     }
   });
 
+  test("check-task-workflow should materialize ignored runtime delegation dir", () => {
+    const cwd = tmpWorkspace("helper-check-workflow-delegation-dir");
+    try {
+      copyHelpers(cwd);
+      expect(
+        run("bash", ["scripts/ensure-task-workflow.sh", "--slug", "delegation-dir", "--title", "Delegation Dir"], cwd)
+          .status
+      ).toBe(0);
+      writeWorkflowRequiredSurface(cwd);
+      expect(
+        run(
+          "touch",
+          ["-t", "202601010000.00", "tasks/current.md", ".ai/harness/handoff/current.md"],
+          cwd
+        ).status
+      ).toBe(0);
+      expect(run("touch", ["-t", "202601010001.00", ".ai/harness/handoff/resume.md"], cwd).status).toBe(0);
+      rmSync(join(cwd, ".ai/harness/delegation"), { recursive: true, force: true });
+      expect(existsSync(join(cwd, ".ai/harness/delegation"))).toBe(false);
+
+      const res = run("bash", ["scripts/check-task-workflow.sh", "--strict"], cwd);
+
+      expect(res.status).toBe(0);
+      expect(existsSync(join(cwd, ".ai/harness/delegation"))).toBe(true);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   test("check-task-workflow should fail strict mode when no JSON runtime is available", () => {
     const cwd = tmpWorkspace("helper-check-workflow-runtime");
     try {

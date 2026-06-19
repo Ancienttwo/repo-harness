@@ -15,7 +15,7 @@
  * fail when CLI is uninstalled or not on PATH).
  */
 
-import { ROUTES, type Route } from '../hook/route-registry';
+import { routesForHost, type Route, type RouteHost } from '../hook/route-registry';
 
 export const MANAGED_TAG = 'repo-harness hook';
 
@@ -31,7 +31,7 @@ export interface HookEntry {
 }
 
 export type HooksByEvent = Record<string, HookEntry[]>;
-export type HookHost = 'claude' | 'codex';
+export type HookHost = RouteHost;
 
 export function buildHookCommand(route: Route, host: HookHost): string {
   return `if command -v repo-harness-hook >/dev/null 2>&1; then HOOK_HOST=${host} repo-harness-hook ${route.event} --route ${route.routeId} && exit 0; fi; command -v repo-harness >/dev/null 2>&1 || exit 0; HOOK_HOST=${host} exec repo-harness hook ${route.event} --route ${route.routeId}`;
@@ -52,7 +52,7 @@ export function isManagedEntry(entry: HookEntry): boolean {
 
 export function buildManagedHooks(host: HookHost): HooksByEvent {
   const out: HooksByEvent = {};
-  for (const route of ROUTES) {
+  for (const route of routesForHost(host)) {
     if (!out[route.event]) out[route.event] = [];
     out[route.event].push(buildHookEntry(route, host));
   }

@@ -52,16 +52,19 @@ do not break subagent creation before a hook refresh.
 Codex delegation route: `UserPromptSubmit.delegation` runs
 `codex-delegation-advisor.sh`. It does not infer delegation from prompt length;
 it only reacts to explicit `/delegate`, `/parallel`, subagent, multi-agent, or
-parallel-investigation language. The script writes ignored scoped runtime state
-under `.ai/harness/delegation/` with `latest.json` as the current pointer and emits
-`hookSpecificOutput.additionalContext`; `runtime.ts` forwards that stdout only
-for this route and only when the JSON is valid for `UserPromptSubmit`.
+parallel-investigation language, excluding mechanism/design questions that only
+mention `spawn subagent(s)`. The script writes ignored scoped runtime state under
+`.ai/harness/delegation/` with `latest.json` as the current pointer and emits
+`hookSpecificOutput.additionalContext`; `runtime.ts` forwards that stdout only for
+this route and only when the JSON is valid for `UserPromptSubmit`.
 
 Codex subagent lifecycle routes: `SubagentStart.context` runs
 `subagent-start-context.sh` after a subagent exists, marks explicit delegation
 state as spawned, and injects role/evidence/final-response requirements.
 `SubagentStop.quality` runs `subagent-stop-quality.sh` and forwards valid
-decision JSON only when the final report is clearly incomplete.
+decision JSON only when the final report is clearly incomplete. These three
+Codex delegation routes are host-scoped in `route-registry.ts` and are not
+installed into Claude adapters.
 
 Post-edit route: edit/write -> `post-edit-guard.sh` -> architecture-sensitive
 paths call `architecture-queue.sh` -> capability resolver binds the changed file
@@ -218,8 +221,8 @@ flowchart TD
   CLI --> CodexTarget["src/cli/installer/targets/codex.ts"]
   CLI --> ClaudeTarget["src/cli/installer/targets/claude.ts"]
 
-  CodexTarget --> ManagedCodex["managed-entries.ts<br/>buildManagedHooks('codex')"]
-  ClaudeTarget --> ManagedClaude["managed-entries.ts<br/>buildManagedHooks('claude')"]
+  CodexTarget --> ManagedCodex["managed-entries.ts<br/>buildManagedHooks('codex')<br/>11 routes"]
+  ClaudeTarget --> ManagedClaude["managed-entries.ts<br/>buildManagedHooks('claude')<br/>8 routes"]
 
   ManagedCodex --> CodexHooks["~/.codex/hooks.json"]
   ManagedClaude --> ClaudeSettings["~/.claude/settings.json"]

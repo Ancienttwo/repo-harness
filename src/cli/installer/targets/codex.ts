@@ -1,9 +1,9 @@
 /**
  * Codex CLI hook-runtime target.
  *
- * Writes 8 managed adapter entries to ~/.codex/hooks.json (Phase 0 verified
- * Codex 0.130.0+ supports user-level hooks at this path; trust prompt fires
- * once per new (command, key) tuple, byte-identical re-runs hash-skip).
+ * Writes route-registry managed adapter entries to ~/.codex/hooks.json (Phase 0
+ * verified Codex 0.130.0+ supports user-level hooks at this path; trust prompt
+ * fires once per new (command, key) tuple, byte-identical re-runs hash-skip).
  *
  * supportsLocation('local') returns false — Codex has no project-local hook
  * config concept (verified Phase 0 2026-05-28). The installer skips Codex

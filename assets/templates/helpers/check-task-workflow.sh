@@ -631,6 +631,12 @@ check_required_dir() {
   report_issue "Missing required directory: $path"
 }
 
+ensure_required_runtime_dirs() {
+  # Some required workflow directories are ignored runtime state and are absent
+  # from a clean checkout. Materialize the empty dirs before validating them.
+  mkdir -p ".ai/harness/delegation"
+}
+
 check_helper_runtime_files() {
   local helper_names=()
   local helper_name
@@ -765,6 +771,8 @@ else
   if [[ -z "$json_runtime" ]]; then
     report_issue "Missing node, bun, or python3 to read workflow contract manifest: $WORKFLOW_CONTRACT_PATH"
   else
+    ensure_required_runtime_dirs
+
     while IFS= read -r rel_dir; do
       [[ -z "$rel_dir" ]] && continue
       check_required_dir "$rel_dir"

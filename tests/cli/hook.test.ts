@@ -531,6 +531,23 @@ describe('hook command (Phase 1B)', () => {
       expect(implicit.stdout).toBe('');
       expect(fs.existsSync(path.join(repoRoot, '.ai/harness/delegation/latest.json'))).toBe(false);
 
+      const discussion = spawnSync(
+        process.execPath,
+        [CLI, 'hook', 'UserPromptSubmit', '--route', 'delegation'],
+        {
+          cwd: repoRoot,
+          input: JSON.stringify({
+            session_id: 'session-discussion',
+            prompt: 'Claude的harness本来就有spawn subagent的机制，真的有必要吗？',
+          }),
+          encoding: 'utf-8',
+          env: { ...process.env, HOOK_HOST: 'codex' },
+        },
+      );
+      expect(discussion.status).toBe(0);
+      expect(discussion.stdout).toBe('');
+      expect(fs.existsSync(path.join(repoRoot, '.ai/harness/delegation/latest.json'))).toBe(false);
+
       const explicit = spawnSync(
         process.execPath,
         [CLI, 'hook', 'UserPromptSubmit', '--route', 'delegation'],

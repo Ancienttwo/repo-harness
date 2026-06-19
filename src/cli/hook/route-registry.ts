@@ -26,6 +26,8 @@ export type HookEvent =
   | 'SubagentStop'
   | 'Stop';
 
+export type RouteHost = 'claude' | 'codex';
+
 /** Stable route id within an event. Public contract — never rename without coordinated adapter migration. */
 export type RouteId =
   | 'default'
@@ -45,6 +47,8 @@ export interface Route {
    * no matcher — fires for all tools at this event.
    */
   readonly matcher?: string;
+  /** Host adapters this route is installed into. Undefined means all supported hosts. */
+  readonly hosts?: readonly RouteHost[];
   /** Repo-local `.ai/hooks/<script>` names, in execution order. */
   readonly scripts: readonly string[];
 }
@@ -92,16 +96,19 @@ export const ROUTES: readonly Route[] = Object.freeze([
   Object.freeze({
     event: 'UserPromptSubmit' as const,
     routeId: 'delegation' as const,
+    hosts: Object.freeze(['codex'] as const),
     scripts: Object.freeze(['codex-delegation-advisor.sh']),
   }),
   Object.freeze({
     event: 'SubagentStart' as const,
     routeId: 'context' as const,
+    hosts: Object.freeze(['codex'] as const),
     scripts: Object.freeze(['subagent-start-context.sh']),
   }),
   Object.freeze({
     event: 'SubagentStop' as const,
     routeId: 'quality' as const,
+    hosts: Object.freeze(['codex'] as const),
     scripts: Object.freeze(['subagent-stop-quality.sh']),
   }),
   Object.freeze({
@@ -117,6 +124,14 @@ export function getRoute(event: HookEvent, routeId: RouteId): Route | undefined 
 
 export function listRoutesForEvent(event: HookEvent): readonly Route[] {
   return ROUTES.filter((r) => r.event === event);
+}
+
+export function routeSupportsHost(route: Route, host: RouteHost): boolean {
+  return route.hosts === undefined || route.hosts.includes(host);
+}
+
+export function routesForHost(host: RouteHost): readonly Route[] {
+  return ROUTES.filter((route) => routeSupportsHost(route, host));
 }
 
 export function allEvents(): readonly HookEvent[] {

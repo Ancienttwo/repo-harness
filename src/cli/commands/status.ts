@@ -11,7 +11,7 @@ import * as path from 'path';
 import { execFileSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { ALL_TARGETS } from '../installer/targets/registry';
-import { ROUTES } from '../hook/route-registry';
+import { ROUTES, routesForHost } from '../hook/route-registry';
 import { isManagedEntry, type HooksByEvent } from '../installer/managed-entries';
 import { readJsonOrEmpty } from '../installer/shared';
 import type { Location } from '../installer/types';
@@ -85,9 +85,9 @@ export function runStatus(cwd: string = process.cwd()): StatusReport {
   }
 
   const targets: StatusReport['targets'] = [];
-  const expectedEntryCount = ROUTES.length;
   for (const target of ALL_TARGETS) {
     if (!target.supportsLocation('global')) continue;
+    const expectedEntryCount = routesForHost(target.id).length;
     const det = target.detect('global');
     const managedEntryCount = det.configPath ? countManagedEntries(det.configPath) : 0;
     targets.push({

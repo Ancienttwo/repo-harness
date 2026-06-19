@@ -423,6 +423,12 @@ describe("Bootstrap Script Contracts", () => {
     expect(settings).not.toContain("trace-event.sh");
     expect(settings).not.toContain("context-pressure-hook.sh");
     expect(settings).toContain("session-start-context.sh");
+    expect(settings).not.toContain("codex-delegation-advisor.sh");
+    expect(settings).not.toContain("subagent-start-context.sh");
+    expect(settings).not.toContain("subagent-stop-quality.sh");
+    expect(codexHooks).toContain("codex-delegation-advisor.sh");
+    expect(codexHooks).toContain("subagent-start-context.sh");
+    expect(codexHooks).toContain("subagent-stop-quality.sh");
     expect(settings).not.toContain("memory-intake.sh");
     expect(settings).not.toContain("skill-factory-session-end.sh");
     expect(settings).not.toContain("bash -lc");

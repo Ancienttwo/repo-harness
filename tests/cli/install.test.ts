@@ -123,7 +123,7 @@ describe('install command (Phase 1B)', () => {
     });
   });
 
-  test('claude --location global creates ~/.claude/settings.json with hooks segment', () => {
+  test('claude --location global creates ~/.claude/settings.json with 8 shared hooks', () => {
     withTempHome((home) => {
       const result = runInstall({ target: 'claude', location: 'global' });
       expect(result.exitCode).toBe(0);
@@ -131,13 +131,48 @@ describe('install command (Phase 1B)', () => {
         fs.readFileSync(path.join(home, '.claude/settings.json'), 'utf-8'),
       );
       const total = Object.values(data.hooks as Record<string, unknown[]>).flat().length;
-      expect(total).toBe(11);
+      expect(total).toBe(8);
+      expect(data.hooks.UserPromptSubmit.length).toBe(1);
+      expect(data.hooks.SubagentStart).toBeUndefined();
+      expect(data.hooks.SubagentStop).toBeUndefined();
       for (const entries of Object.values(data.hooks) as { hooks: { command: string; timeout?: number }[] }[][]) {
         for (const entry of entries) {
           expect(entry.hooks[0].command).toContain('HOOK_HOST=claude');
           expect(entry.hooks[0].timeout).toBe(30);
         }
       }
+    });
+  });
+
+  test('claude install self-heals legacy Codex-only managed entries back to 8 shared hooks', () => {
+    withTempHome((home) => {
+      const filePath = path.join(home, '.claude/settings.json');
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      fs.writeFileSync(
+        filePath,
+        `${JSON.stringify({
+          hooks: {
+            UserPromptSubmit: [
+              { hooks: [{ type: 'command', command: 'HOOK_HOST=claude repo-harness hook UserPromptSubmit --route delegation' }] },
+            ],
+            SubagentStart: [
+              { hooks: [{ type: 'command', command: 'HOOK_HOST=claude repo-harness hook SubagentStart --route context' }] },
+            ],
+            SubagentStop: [
+              { hooks: [{ type: 'command', command: 'HOOK_HOST=claude repo-harness hook SubagentStop --route quality' }] },
+            ],
+          },
+        }, null, 2)}\n`,
+      );
+
+      const result = runInstall({ target: 'claude', location: 'global' });
+      expect(result.exitCode).toBe(0);
+      const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+      const total = Object.values(data.hooks as Record<string, unknown[]>).flat().length;
+      expect(total).toBe(8);
+      expect(data.hooks.UserPromptSubmit.length).toBe(1);
+      expect(data.hooks.SubagentStart).toBeUndefined();
+      expect(data.hooks.SubagentStop).toBeUndefined();
     });
   });
 
@@ -180,7 +215,7 @@ describe('install command (Phase 1B)', () => {
       runInstall({ target: 'claude', location: 'global' });
       const beforeUninstall = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
       expect(beforeUninstall.theme).toBe('dark');
-      expect(beforeUninstall.hooks.UserPromptSubmit.length).toBe(3);
+      expect(beforeUninstall.hooks.UserPromptSubmit.length).toBe(2);
 
       const uninstall = runUninstall({ target: 'claude', location: 'global' });
       expect(uninstall.exitCode).toBe(0);

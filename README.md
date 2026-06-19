@@ -405,7 +405,8 @@ and not arbitrary shell.
 - Debug in this order: user-level adapter config -> `repo-harness-hook` (or fallback `repo-harness hook`) -> route registry -> `.ai/hooks/*`.
 - If `repo-harness-hook` reports `.ai/hooks` drift, refresh the repo-local copy with `repo-harness adopt --repo <root>`.
 
-The installed adapter owns eight managed hook routes. The route tuple
+The installed adapter owns eight shared managed hook routes. Codex also installs
+three Codex-only bounded-delegation routes. The route tuple
 `event + routeId + matcher` is the stable contract; script names are the current
 implementation under `assets/hooks/` or a repo-pinned `.ai/hooks/` copy.
 
@@ -419,6 +420,11 @@ implementation under `assets/hooks/` or a repo-pinned `.ai/hooks/` copy.
 | `PostToolUse.always` | all tools | `post-tool-observer.sh` | Provides low-noise always-on trace and runtime observation; stale pinned copies soft-skip with a refresh hint. |
 | `UserPromptSubmit.default` | all prompts | `prompt-guard.sh` | Classifies prompt intent, routes planning/check/hunt hints, and renders host-safe workflow guidance. |
 | `Stop.default` | session stop | `stop-orchestrator.sh` | Finalizes handoff and guards against ending with unresolved draft-plan or completion evidence gaps. |
+
+Codex-only routes are `UserPromptSubmit.delegation`,
+`SubagentStart.context`, and `SubagentStop.quality`. Claude keeps the shared
+`PreToolUse.subagent` return-channel route and does not install those Codex
+delegation lifecycle entries.
 
 `SessionStart` resolves hooks central-first, then runs two ordered scripts before
 work begins:

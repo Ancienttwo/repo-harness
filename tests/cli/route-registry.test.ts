@@ -6,12 +6,33 @@ import {
   allEvents,
   getRoute,
   listRoutesForEvent,
+  routeSupportsHost,
+  routesForHost,
 } from '../../src/cli/hook/route-registry';
 
 describe('route registry (Phase 1B Z design)', () => {
   test('ROUTES is frozen and has exactly 11 routes', () => {
     expect(Object.isFrozen(ROUTES)).toBe(true);
     expect(ROUTES.length).toBe(11);
+  });
+
+  test('host-scoped route views keep Codex at 11 and Claude at 8 shared routes', () => {
+    expect(routesForHost('codex').length).toBe(11);
+    expect(routesForHost('claude').length).toBe(8);
+    expect(routesForHost('claude').map((r) => `${r.event}.${r.routeId}`)).toEqual([
+      'SessionStart.default',
+      'PreToolUse.edit',
+      'PreToolUse.subagent',
+      'PostToolUse.edit',
+      'PostToolUse.bash',
+      'PostToolUse.always',
+      'UserPromptSubmit.default',
+      'Stop.default',
+    ]);
+    expect(routeSupportsHost(getRoute('UserPromptSubmit', 'delegation')!, 'codex')).toBe(true);
+    expect(routeSupportsHost(getRoute('UserPromptSubmit', 'delegation')!, 'claude')).toBe(false);
+    expect(routeSupportsHost(getRoute('SubagentStart', 'context')!, 'claude')).toBe(false);
+    expect(routeSupportsHost(getRoute('SubagentStop', 'quality')!, 'claude')).toBe(false);
   });
 
   test('PostToolUse has 3 matcher-disjoint routes (Edit|Write / Bash / undefined)', () => {
@@ -97,6 +118,7 @@ describe('route registry (Phase 1B Z design)', () => {
     for (const r of ROUTES) {
       expect(Object.isFrozen(r)).toBe(true);
       expect(Object.isFrozen(r.scripts)).toBe(true);
+      if (r.hosts) expect(Object.isFrozen(r.hosts)).toBe(true);
     }
   });
 });
