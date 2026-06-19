@@ -10,7 +10,7 @@
         "express": "^5.2.1",
       },
       "devDependencies": {
-        "@colbymchenry/codegraph": "1.0.1",
+        "@colbymchenry/codegraph": "^1.0.1",
         "@types/bun": "latest",
         "@types/cors": "^2.8.17",
         "@types/express": "^5.0.0",
