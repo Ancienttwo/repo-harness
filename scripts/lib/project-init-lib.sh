@@ -56,7 +56,6 @@ tasks/.current.md.tmp.*
 .ai/harness/planning/*
 !.ai/harness/planning/.gitkeep
 .ai/harness/delegation/*
-!.ai/harness/delegation/.gitkeep
 .ai/harness/architecture/events.jsonl
 .ai/harness/active-plan
 .ai/harness/active-worktree
@@ -2438,7 +2437,6 @@ pi_ensure_harness_state_surface() {
   [[ -f "$target_dir/.ai/harness/security/.gitkeep" ]] || : > "$target_dir/.ai/harness/security/.gitkeep"
   [[ -f "$target_dir/.ai/harness/scripts/.gitkeep" ]] || : > "$target_dir/.ai/harness/scripts/.gitkeep"
   [[ -f "$target_dir/.ai/harness/planning/.gitkeep" ]] || : > "$target_dir/.ai/harness/planning/.gitkeep"
-  [[ -f "$target_dir/.ai/harness/delegation/.gitkeep" ]] || : > "$target_dir/.ai/harness/delegation/.gitkeep"
   [[ -f "$target_dir/.ai/harness/worktrees/.gitkeep" ]] || : > "$target_dir/.ai/harness/worktrees/.gitkeep"
   [[ -f "$target_dir/.ai/harness/runs/.gitkeep" ]] || : > "$target_dir/.ai/harness/runs/.gitkeep"
   [[ -f "$target_dir/.ai/harness/triage/.gitkeep" ]] || : > "$target_dir/.ai/harness/triage/.gitkeep"

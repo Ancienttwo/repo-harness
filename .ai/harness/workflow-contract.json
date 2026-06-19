@@ -257,7 +257,6 @@
       ".ai/harness/capability-context/",
       ".ai/harness/security/.gitkeep",
       ".ai/harness/planning/",
-      ".ai/harness/delegation/.gitkeep",
       ".ai/harness/architecture/events.jsonl",
       ".ai/harness/active-plan",
       ".ai/harness/active-worktree",

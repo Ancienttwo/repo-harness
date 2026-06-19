@@ -60,7 +60,6 @@ export const GITIGNORE_MANAGED_BLOCK_CONTENT = [
   ".ai/harness/planning/*",
   "!.ai/harness/planning/.gitkeep",
   ".ai/harness/delegation/*",
-  "!.ai/harness/delegation/.gitkeep",
   ".ai/harness/architecture/events.jsonl",
   ".ai/harness/active-plan",
   ".ai/harness/active-worktree",

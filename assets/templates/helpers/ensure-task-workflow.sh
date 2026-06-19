@@ -705,10 +705,6 @@ RESUME_EOF
     : > ".ai/harness/security/.gitkeep"
   fi
 
-  if [[ ! -f ".ai/harness/delegation/.gitkeep" ]]; then
-    : > ".ai/harness/delegation/.gitkeep"
-  fi
-
   if [[ ! -f ".ai/harness/runs/.gitkeep" ]]; then
     : > ".ai/harness/runs/.gitkeep"
   fi
