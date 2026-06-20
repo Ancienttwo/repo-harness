@@ -158,7 +158,7 @@
     },
     {
       "version": "0.7.4",
-      "description": "Stops compact adopt from restoring retired root helper wrappers and lets package-dispatched architecture helpers run without repo-local scripts"
+      "description": "Adds user-scope ChatGPT MCP full-disk repo discovery, GPT Pro Connector read-back safeguards, and package-dispatched architecture helper fixes while retiring compact adopt root wrappers"
     }
   ],
   "generatedProjectStamp": {

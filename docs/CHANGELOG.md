@@ -4,12 +4,6 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
-### Added
-
-- Added explicit ChatGPT app preselection for Oracle browser consults via
-  `--chatgpt-app`, so GPT Pro MCP read-back prompts can select the recorded
-  Connector app before submitting instead of relying on prompt text mentions.
-
 ## [0.7.4] - 2026-06-20
 
 ### Added
@@ -21,6 +15,11 @@ All notable changes to this skill are documented here.
 - Added `discover_harness_repos` plus `repo_path` targeting for MCP read tools,
   so a user-authorized full-disk ChatGPT Connector can find adopted repos before
   reading workflow state.
+- Added explicit ChatGPT app preselection for Oracle browser consults via
+  `--chatgpt-app`, so GPT Pro MCP read-back prompts can select the recorded
+  Connector app before submitting instead of relying on prompt text mentions.
+- Added ChatGPT Connector invocation-evidence metadata to `mcp doctor`, making
+  local setup readiness distinct from per-chat/model tool invocation proof.
 
 ### Fixed
 
