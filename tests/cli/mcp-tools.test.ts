@@ -95,7 +95,7 @@ describe('mcp tools', () => {
   });
 
   test('lists and reads allowed workflow files with redaction', async () => {
-    await withRepo(async (_repoRoot, ctx) => {
+    await withRepo(async (repoRoot, ctx) => {
       const listed = await jsonTool(ctx, 'list_workflow_files');
       expect(listed.files.some((entry: { path: string }) => entry.path === 'tasks/current.md')).toBe(true);
 
@@ -105,6 +105,12 @@ describe('mcp tools', () => {
 
       const denied = await jsonTool(ctx, 'read_workflow_file', { path: '.env' });
       expect(denied.error.code).toBe('POLICY_DENIED');
+
+      writeFileSync(join(repoRoot, '.env'), 'OPENAI_API_KEY=sk-testsecret\n');
+      const fullDiskCtx = { ...ctx, policy: getMcpPolicy('planner', { fullDiskRead: true }) };
+      const absolute = await jsonTool(fullDiskCtx, 'read_workflow_file', { path: join(repoRoot, '.env') });
+      expect(absolute.path).toBe('.env');
+      expect(absolute.content).toContain('OPENAI_API_KEY=[REDACTED]');
     });
   });
 

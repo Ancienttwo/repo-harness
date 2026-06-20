@@ -1,7 +1,16 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { isIP } from 'net';
 import { dirname, join, relative } from 'path';
-import { ensureMcpBearerToken, ensureMcpOAuthPassphrase, loadMcpLocalConfig, mcpOAuthPath, mcpTokenPath } from './auth';
+import {
+  ensureMcpBearerToken,
+  ensureMcpOAuthPassphrase,
+  loadMcpLocalConfig,
+  mcpLocalConfigPath,
+  mcpOAuthPath,
+  mcpTokenPath,
+  resolveMcpConfigScope,
+  type McpConfigScope,
+} from './auth';
 import { resolveMcpRepoRoot } from './repo';
 
 export interface McpSetupResult {
@@ -123,6 +132,20 @@ function normalizeChatgptMcpServerName(value: string | undefined): string {
   return trimmed;
 }
 
+function parseMcpConfigScope(value: string | undefined): McpConfigScope {
+  const normalized = (value ?? 'repo').trim().toLowerCase();
+  if (normalized === 'repo' || normalized === 'user') return normalized;
+  throw new Error(`invalid --scope "${value}" (expected: repo, user)`);
+}
+
+function displayMcpSetupPath(repoRoot: string, path: string, scope: McpConfigScope): string {
+  if (scope === 'repo') return relative(repoRoot, path);
+  const home = process.env.HOME;
+  if (home && path === home) return '~';
+  if (home && path.startsWith(`${home}/`)) return `~/${path.slice(home.length + 1)}`;
+  return path;
+}
+
 export function chatgptGuideMarkdown(endpoint = CHATGPT_MCP_ENDPOINT_PLACEHOLDER): string {
   return `# repo-harness ChatGPT MCP Connector Setup
 
@@ -135,8 +158,19 @@ export function chatgptGuideMarkdown(endpoint = CHATGPT_MCP_ENDPOINT_PLACEHOLDER
 
 ## Start Local MCP Server
 
+Repo-local setup keeps MCP reads scoped to one adopted repository:
+
 \`\`\`bash
 repo-harness mcp serve --repo . --transport http --host 127.0.0.1 --port 8765 --profile planner
+\`\`\`
+
+Developer Mode can also be configured at OS user level when the user explicitly
+authorizes broad local file reads. This stores MCP config and auth under
+\`~/.repo-harness/\` and allows read tools to inspect any file the OS user can read:
+
+\`\`\`bash
+repo-harness mcp setup chatgpt --scope user --repo / --allow-full-disk-read --endpoint <https-url>/mcp
+repo-harness mcp serve --repo / --transport http --host 127.0.0.1 --port 8765 --profile planner
 \`\`\`
 
 Health check:
@@ -150,6 +184,8 @@ The ChatGPT path uses OAuth with a local passphrase. The passphrase is stored in
 \`\`\`bash
 jq -r .passphrase .repo-harness/mcp.oauth.json
 \`\`\`
+
+For user-scope setup, read the passphrase from \`~/.repo-harness/mcp.oauth.json\`.
 
 Do not commit or paste this passphrase into issue trackers, PRs, or shared logs.
 
@@ -350,30 +386,52 @@ Use repo-harness-chatgpt-bridge. Execute the latest ChatGPT-generated Codex goal
 `;
 }
 
-export function runMcpSetupChatgpt(opts: { repo?: string; host?: string; port?: string; endpoint?: string; serverName?: string }): McpSetupResult {
+export function runMcpSetupChatgpt(opts: {
+  repo?: string;
+  host?: string;
+  port?: string;
+  endpoint?: string;
+  serverName?: string;
+  scope?: string;
+  allowFullDiskRead?: boolean;
+}): McpSetupResult {
   const repoRoot = resolveMcpRepoRoot(opts.repo ?? '.');
+  const scope = parseMcpConfigScope(opts.scope);
+  if (opts.allowFullDiskRead === true && scope !== 'user') {
+    throw new Error('repo-harness mcp setup chatgpt --allow-full-disk-read requires --scope user');
+  }
   const changed: string[] = [];
-  const existingConfig = loadMcpLocalConfig(repoRoot);
+  const existingConfig = loadMcpLocalConfig(repoRoot, scope) ?? (scope === 'user' ? loadMcpLocalConfig(repoRoot, 'repo') : null);
+  const fullDiskRead = scope === 'user' && (opts.allowFullDiskRead === true || existingConfig?.permissions?.fullDiskRead === true);
   const host = opts.host ?? existingConfig?.server?.host ?? '127.0.0.1';
   const port = opts.port ?? String(existingConfig?.server?.port ?? 8765);
   const serverName = normalizeChatgptMcpServerName(opts.serverName ?? existingConfig?.chatgpt?.serverName);
   const endpoint = normalizePublicMcpEndpoint(opts.endpoint ?? existingConfig?.chatgpt?.endpoint);
-  const configPath = join(repoRoot, '.repo-harness', 'mcp.local.json');
+  const configPath = mcpLocalConfigPath(repoRoot, scope);
   const guidePath = join(repoRoot, 'docs', 'repo-harness-chatgpt-mcp-setup.md');
-  const token = ensureMcpBearerToken(repoRoot);
-  const oauth = ensureMcpOAuthPassphrase(repoRoot);
+  const token = ensureMcpBearerToken(repoRoot, scope);
+  const oauth = ensureMcpOAuthPassphrase(repoRoot, scope);
   if (token.changed) changed.push(token.path);
   if (oauth.changed) changed.push(oauth.path);
+  const auth = scope === 'repo'
+    ? existingConfig?.auth ?? { mode: 'oauth', oauthFile: '.repo-harness/mcp.oauth.json', tokenFile: '.repo-harness/mcp.tokens.json' }
+    : {
+        mode: existingConfig?.auth?.mode ?? 'oauth',
+        oauthFile: displayMcpSetupPath(repoRoot, oauth.path, scope),
+        tokenFile: displayMcpSetupPath(repoRoot, token.path, scope),
+      };
   const config = {
     version: 1,
+    scope,
     repo: repoRoot,
     server: { ...existingConfig?.server, host, port: Number(port), transport: existingConfig?.server?.transport ?? 'http' },
-    auth: existingConfig?.auth ?? { mode: 'oauth', oauthFile: '.repo-harness/mcp.oauth.json', tokenFile: '.repo-harness/mcp.tokens.json' },
+    auth,
     chatgpt: {
       ...existingConfig?.chatgpt,
       serverName,
       ...(endpoint ? { endpoint } : {}),
     },
+    ...(scope === 'user' ? { permissions: { ...existingConfig?.permissions, fullDiskRead } } : {}),
     profile: existingConfig?.profile ?? 'planner',
     devMode: existingConfig?.devMode ?? {
       agentRunner: false,
@@ -382,14 +440,16 @@ export function runMcpSetupChatgpt(opts: { repo?: string; host?: string; port?: 
     },
   };
   writeFileIfChanged(configPath, `${JSON.stringify(config, null, 2)}\n`, changed);
-  writeFileIfChanged(guidePath, chatgptGuideMarkdown(), changed);
-  ensureGitignoreEntries(repoRoot, [
-    '.repo-harness/mcp.local.json',
-    '.repo-harness/mcp.tokens.json',
-    '.repo-harness/mcp.oauth.json',
-    '.repo-harness/mcp.oauth-tokens.json',
-    '.ai/harness/mcp/audit.log',
-  ], changed);
+  if (scope === 'repo') {
+    writeFileIfChanged(guidePath, chatgptGuideMarkdown(), changed);
+    ensureGitignoreEntries(repoRoot, [
+      '.repo-harness/mcp.local.json',
+      '.repo-harness/mcp.tokens.json',
+      '.repo-harness/mcp.oauth.json',
+      '.repo-harness/mcp.oauth-tokens.json',
+      '.ai/harness/mcp/audit.log',
+    ], changed);
+  }
 
   return {
     status: 'ok',
@@ -397,17 +457,21 @@ export function runMcpSetupChatgpt(opts: { repo?: string; host?: string; port?: 
     changed,
     lines: [
       `[repo-harness mcp] Repo: ${repoRoot}`,
+      `[repo-harness mcp] Config scope: ${scope}`,
+      ...(scope === 'user' ? [`[repo-harness mcp] Full-disk read: ${fullDiskRead ? 'enabled (user-authorized)' : 'disabled'}`] : []),
       '[repo-harness mcp] Profile: planner',
       `[repo-harness mcp] ChatGPT MCP server name: ${serverName}`,
       `[repo-harness mcp] Local endpoint: http://${host}:${port}/mcp`,
       endpoint
         ? `[repo-harness mcp] ChatGPT endpoint: ${endpoint}`
         : '[repo-harness mcp] ChatGPT endpoint: requires stable HTTPS tunnel',
-      `[repo-harness mcp] Auth: OAuth passphrase (${relative(repoRoot, oauth.path)})`,
-      `[repo-harness mcp] Bearer fallback token: ${relative(repoRoot, token.path)}`,
-      `[repo-harness mcp] Config: ${relative(repoRoot, configPath)}`,
-      `[repo-harness mcp] Guide: ${relative(repoRoot, guidePath)} (generic; endpoint stays in ignored local config)`,
-      `Next: repo-harness mcp serve --repo . --transport http --host ${host} --port ${port} --profile planner`,
+      `[repo-harness mcp] Auth: OAuth passphrase (${displayMcpSetupPath(repoRoot, oauth.path, scope)})`,
+      `[repo-harness mcp] Bearer fallback token: ${displayMcpSetupPath(repoRoot, token.path, scope)}`,
+      `[repo-harness mcp] Config: ${displayMcpSetupPath(repoRoot, configPath, scope)}`,
+      ...(scope === 'repo'
+        ? [`[repo-harness mcp] Guide: ${relative(repoRoot, guidePath)} (generic; endpoint stays in ignored local config)`]
+        : ['[repo-harness mcp] Guide: user-scope setup does not write repo docs']),
+      `Next: repo-harness mcp serve --repo ${scope === 'user' ? repoRoot : '.'} --transport http --host ${host} --port ${port} --profile planner`,
     ],
   };
 }
@@ -746,6 +810,7 @@ export function runMcpPrintGuide(opts: { repo?: string; endpoint?: string; write
 
 export function runMcpDoctor(opts: { repo?: string; json?: boolean }): McpSetupResult {
   const repoRoot = resolveMcpRepoRoot(opts.repo ?? '.');
+  const configScope = resolveMcpConfigScope(repoRoot);
   const localConfig = loadMcpLocalConfig(repoRoot);
   const configuredServerName = localConfig?.chatgpt?.serverName;
   const host = localConfig?.server?.host ?? '127.0.0.1';
@@ -756,14 +821,24 @@ export function runMcpDoctor(opts: { repo?: string; json?: boolean }): McpSetupR
   const codexHasServer = codexConfig.includes('[mcp_servers.repo_harness]');
   const missingTools = REQUIRED_CODEX_TOOLS.filter((tool) => !codexConfig.includes(`"${tool}"`));
   const codexCommand = Bun.which('codex');
+  const authConfigured = (authMode === 'oauth' && existsSync(mcpOAuthPath(repoRoot, configScope))) ||
+    (authMode === 'bearer' && existsSync(mcpTokenPath(repoRoot, configScope)));
+  const status = existsSync(join(repoRoot, '.ai', 'harness', 'policy.json'))
+    ? 'ready_local'
+    : configScope === 'user' && Boolean(localConfig) && authConfigured
+      ? 'ready_user'
+      : 'not_adopted';
   const report = {
-    status: existsSync(join(repoRoot, '.ai', 'harness', 'policy.json')) ? 'ready_local' : 'not_adopted',
+    status,
     repo: repoRoot,
     mcp: {
-      localConfig: existsSync(join(repoRoot, '.repo-harness', 'mcp.local.json')),
+      configScope,
+      localConfig: Boolean(localConfig),
       guide: existsSync(join(repoRoot, 'docs', 'repo-harness-chatgpt-mcp-setup.md')),
-      authConfigured: (authMode === 'oauth' && existsSync(mcpOAuthPath(repoRoot))) ||
-        (authMode === 'bearer' && existsSync(mcpTokenPath(repoRoot))),
+      authConfigured,
+      permissions: {
+        fullDiskRead: localConfig?.scope === 'user' && localConfig.permissions?.fullDiskRead === true,
+      },
       devMode: {
         agentRunner: localConfig?.devMode?.agentRunner === true,
         allowedAgents: localConfig?.devMode?.allowedAgents ?? ['codex'],
@@ -786,7 +861,9 @@ export function runMcpDoctor(opts: { repo?: string; json?: boolean }): McpSetupR
       publicEndpoint: localConfig?.chatgpt?.endpoint,
       authMode,
       manualStepsRequired: true,
-      setup: 'repo-harness mcp setup chatgpt --repo .',
+      setup: configScope === 'user'
+        ? `repo-harness mcp setup chatgpt --repo ${repoRoot} --scope user`
+        : 'repo-harness mcp setup chatgpt --repo .',
     },
   };
   return {
@@ -796,6 +873,8 @@ export function runMcpDoctor(opts: { repo?: string; json?: boolean }): McpSetupR
     lines: opts.json === true ? [JSON.stringify(report, null, 2)] : [
       `[repo-harness mcp] Repo: ${repoRoot}`,
       `[repo-harness mcp] Status: ${report.status}`,
+      `[repo-harness mcp] Config scope: ${configScope}`,
+      `[repo-harness mcp] Full-disk read: ${report.mcp.permissions.fullDiskRead ? 'enabled' : 'disabled'}`,
       `[repo-harness mcp] ChatGPT MCP server name: ${
         configuredServerName ?? `missing (run setup; default is ${DEFAULT_CHATGPT_MCP_SERVER_NAME})`
       }`,

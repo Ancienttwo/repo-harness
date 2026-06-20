@@ -12,6 +12,7 @@ import {
   runMcpSetupChatgpt,
   runMcpSetupCodex,
 } from '../../src/cli/mcp/setup';
+import { createMcpToolContext } from '../../src/cli/mcp/server';
 
 const CLI = join(import.meta.dir, '../..', 'src/cli/index.ts');
 
@@ -90,6 +91,99 @@ describe('mcp setup', () => {
       expect(doctor.chatgpt.serverName).toBe('team-review-mcp');
       expect(doctor.chatgpt.serverNameConfigured).toBe(true);
     });
+  });
+
+  test('user-scope ChatGPT setup stores MCP state under the OS user and authorizes full-disk reads', () => {
+    withTmpRepo((repoRoot) => {
+      const userState = mkdtempSync(join(tmpdir(), 'repo-harness-user-mcp-'));
+      const previousHome = process.env.REPO_HARNESS_HOME;
+      try {
+        process.env.REPO_HARNESS_HOME = userState;
+
+        const setup = runMcpSetupChatgpt({
+          repo: repoRoot,
+          scope: 'user',
+          serverName: 'team-review-mcp',
+          endpoint: 'https://repo-harness-mcp.example.com/mcp',
+          allowFullDiskRead: true,
+        });
+        expect(setup.lines.join('\n')).toContain('Config scope: user');
+        expect(setup.lines.join('\n')).toContain('Full-disk read: enabled');
+        expect(existsSync(join(userState, 'mcp.local.json'))).toBe(true);
+        expect(existsSync(join(userState, 'mcp.tokens.json'))).toBe(true);
+        expect(existsSync(join(userState, 'mcp.oauth.json'))).toBe(true);
+        expect(existsSync(join(repoRoot, 'docs/repo-harness-chatgpt-mcp-setup.md'))).toBe(false);
+
+        const config = JSON.parse(readFileSync(join(userState, 'mcp.local.json'), 'utf-8'));
+        expect(config).toMatchObject({
+          scope: 'user',
+          repo: repoRoot,
+          chatgpt: {
+            serverName: 'team-review-mcp',
+            endpoint: 'https://repo-harness-mcp.example.com/mcp',
+          },
+          permissions: { fullDiskRead: true },
+        });
+        expect(config.auth.oauthFile).toContain('mcp.oauth.json');
+        expect(config.auth.tokenFile).toContain('mcp.tokens.json');
+
+        const doctor = JSON.parse(runMcpDoctor({ repo: repoRoot, json: true }).lines[0]);
+        expect(doctor.status).toBe('ready_local');
+        expect(doctor.mcp.configScope).toBe('user');
+        expect(doctor.mcp.localConfig).toBe(true);
+        expect(doctor.mcp.authConfigured).toBe(true);
+        expect(doctor.mcp.permissions.fullDiskRead).toBe(true);
+        expect(doctor.codex.configured).toBe(false);
+        expect(doctor.chatgpt.serverName).toBe('team-review-mcp');
+
+        const ctx = createMcpToolContext({ repo: repoRoot, profile: 'planner' });
+        expect(ctx.policy.allowAbsoluteRead).toBe(true);
+        expect(ctx.policy.readGlobs).toEqual(['**']);
+      } finally {
+        if (previousHome === undefined) {
+          delete process.env.REPO_HARNESS_HOME;
+        } else {
+          process.env.REPO_HARNESS_HOME = previousHome;
+        }
+        rmSync(userState, { recursive: true, force: true });
+      }
+    });
+  });
+
+  test('full-disk read setup requires user scope', () => {
+    withTmpRepo((repoRoot) => {
+      expect(() => runMcpSetupChatgpt({ repo: repoRoot, allowFullDiskRead: true })).toThrow(
+        '--allow-full-disk-read requires --scope user',
+      );
+    });
+  });
+
+  test('doctor reports ready_user for user-scope MCP on a non-repo root', () => {
+    const root = mkdtempSync(join(tmpdir(), 'repo-harness-user-mcp-root-'));
+    const userState = mkdtempSync(join(tmpdir(), 'repo-harness-user-mcp-'));
+    const previousHome = process.env.REPO_HARNESS_HOME;
+    try {
+      process.env.REPO_HARNESS_HOME = userState;
+      runMcpSetupChatgpt({
+        repo: root,
+        scope: 'user',
+        serverName: 'team-review-mcp',
+        allowFullDiskRead: true,
+      });
+
+      const doctor = JSON.parse(runMcpDoctor({ repo: root, json: true }).lines[0]);
+      expect(doctor.status).toBe('ready_user');
+      expect(doctor.mcp.configScope).toBe('user');
+      expect(doctor.mcp.permissions.fullDiskRead).toBe(true);
+    } finally {
+      if (previousHome === undefined) {
+        delete process.env.REPO_HARNESS_HOME;
+      } else {
+        process.env.REPO_HARNESS_HOME = previousHome;
+      }
+      rmSync(root, { recursive: true, force: true });
+      rmSync(userState, { recursive: true, force: true });
+    }
   });
 
   test('mcp doctor does not mask a missing recorded ChatGPT server name', () => {

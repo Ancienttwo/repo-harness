@@ -6,11 +6,21 @@ All notable changes to this skill are documented here.
 
 ## [0.7.4] - 2026-06-20
 
+### Added
+
+- Added user-scope ChatGPT MCP setup for Developer Mode deployments, with an
+  explicit `--allow-full-disk-read` opt-in that stores local MCP config and auth
+  under `~/.repo-harness/` and lets read tools inspect any OS-readable file when
+  the server is launched from `/`.
+
 ### Fixed
 
 - Stopped `repo-harness adopt --compact --dry-run --json` from planning retired
   root helper compatibility wrappers after helper runtime has moved to the
   user-level/package surface.
+- Kept ChatGPT MCP writes scoped to workflow artifacts while widening only the
+  authorized read boundary, so absolute writes and runner execution remain
+  blocked under the planner profile.
 - Let package-dispatched architecture helpers find their sibling
   `architecture-event` and `capability-resolver` helpers without requiring
   repo-local `scripts/*` copies.

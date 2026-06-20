@@ -48,9 +48,17 @@ export interface McpPolicyOptions {
   devAgentRunner?: boolean;
   allowedAgents?: McpAgentRunnerName[];
   runnerTimeoutMs?: number;
+  fullDiskRead?: boolean;
 }
 
 const DEFAULT_RUNNER_TIMEOUT_MS = 120_000;
+
+function withWorkspacePrefixGlobs(globs: string[]): string[] {
+  return Array.from(new Set([
+    ...globs,
+    ...globs.map((glob) => `*/${glob}`),
+  ]));
+}
 
 function executionPolicy(overrides: Partial<McpPolicy['execution']> = {}): McpPolicy['execution'] {
   return {
@@ -65,11 +73,12 @@ function executionPolicy(overrides: Partial<McpPolicy['execution']> = {}): McpPo
 
 export function getMcpPolicy(profile: McpProfileName, opts: McpPolicyOptions = {}): McpPolicy {
   if (profile === 'planner') {
+    const fullDiskRead = opts.fullDiskRead === true;
     return {
       profile,
-      readGlobs: PLANNER_READ_GLOBS,
-      writeGlobs: PLANNER_WRITE_GLOBS,
-      denyGlobs: [
+      readGlobs: fullDiskRead ? ['**'] : withWorkspacePrefixGlobs(PLANNER_READ_GLOBS),
+      writeGlobs: withWorkspacePrefixGlobs(PLANNER_WRITE_GLOBS),
+      denyGlobs: fullDiskRead ? [] : [
         ...COMMON_DENY_GLOBS,
         'src/**',
         'app/**',
@@ -81,22 +90,25 @@ export function getMcpPolicy(profile: McpProfileName, opts: McpPolicyOptions = {
         'yarn.lock',
         '.github/workflows/**',
       ],
+      allowAbsoluteRead: fullDiskRead,
       maxFileBytes: 512 * 1024,
       execution: executionPolicy({
-        fixedWorkflowCheck: true,
+        fixedWorkflowCheck: !fullDiskRead,
       }),
     };
   }
 
   if (profile === 'executor') {
+    const fullDiskRead = opts.fullDiskRead === true;
     return {
       profile,
-      readGlobs: ['plans/**', 'tasks/**', 'docs/spec.md', '.ai/context/**', '.ai/harness/**'],
-      writeGlobs: ['tasks/reviews/**', '.ai/harness/checks/**', '.ai/harness/handoff/**'],
-      denyGlobs: COMMON_DENY_GLOBS,
+      readGlobs: fullDiskRead ? ['**'] : withWorkspacePrefixGlobs(['plans/**', 'tasks/**', 'docs/spec.md', '.ai/context/**', '.ai/harness/**']),
+      writeGlobs: withWorkspacePrefixGlobs(['tasks/reviews/**', '.ai/harness/checks/**', '.ai/harness/handoff/**']),
+      denyGlobs: fullDiskRead ? [] : COMMON_DENY_GLOBS,
+      allowAbsoluteRead: fullDiskRead,
       maxFileBytes: 512 * 1024,
       execution: executionPolicy({
-        fixedWorkflowCheck: true,
+        fixedWorkflowCheck: !fullDiskRead,
       }),
     };
   }
@@ -105,7 +117,7 @@ export function getMcpPolicy(profile: McpProfileName, opts: McpPolicyOptions = {
     const devRunner = opts.devAgentRunner === true;
     return {
       profile,
-      readGlobs: devRunner ? ['.ai/harness/handoff/codex-goal.md'] : [],
+      readGlobs: devRunner ? withWorkspacePrefixGlobs(['.ai/harness/handoff/codex-goal.md']) : [],
       writeGlobs: [],
       denyGlobs: devRunner ? COMMON_DENY_GLOBS : ['**'],
       maxFileBytes: devRunner ? 512 * 1024 : 0,

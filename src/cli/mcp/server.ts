@@ -52,12 +52,14 @@ export function createMcpToolContext(opts: McpServerOptions): McpToolContext {
   const runnerTimeoutMs = parseTimeoutMs(
     opts.devRunnerTimeoutMs ?? process.env.REPO_HARNESS_MCP_DEV_RUNNER_TIMEOUT_MS ?? config?.devMode?.timeoutMs,
   );
+  const fullDiskRead = config?.scope === 'user' && config.permissions?.fullDiskRead === true;
   return {
     repoRoot,
     policy: getMcpPolicy(profile, {
       devAgentRunner,
       allowedAgents,
       runnerTimeoutMs,
+      fullDiskRead,
     }),
     enableChatgptBrowser: opts.enableChatgptBrowser === true,
   };

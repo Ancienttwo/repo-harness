@@ -7,6 +7,7 @@ export interface McpPolicy {
   readGlobs: string[];
   writeGlobs: string[];
   denyGlobs: string[];
+  allowAbsoluteRead?: boolean;
   maxFileBytes: number;
   execution: {
     fixedWorkflowCheck: boolean;

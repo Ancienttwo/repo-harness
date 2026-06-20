@@ -1,9 +1,13 @@
 import { randomBytes } from 'crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
-import { dirname, join } from 'path';
+import { homedir } from 'os';
+import { dirname, join, resolve } from 'path';
+
+export type McpConfigScope = 'repo' | 'user';
 
 export interface McpLocalConfig {
   version?: number;
+  scope?: McpConfigScope;
   repo?: string;
   server?: {
     host?: string;
@@ -19,6 +23,9 @@ export interface McpLocalConfig {
     serverName?: string;
     endpoint?: string;
   };
+  permissions?: {
+    fullDiskRead?: boolean;
+  };
   profile?: string;
   devMode?: {
     agentRunner?: boolean;
@@ -29,24 +36,31 @@ export interface McpLocalConfig {
 
 export type McpHttpAuthMode = 'oauth' | 'bearer';
 
-export function mcpLocalConfigPath(repoRoot: string): string {
-  return join(repoRoot, '.repo-harness', 'mcp.local.json');
+function repoHarnessHome(): string {
+  return resolve(process.env.REPO_HARNESS_HOME ?? join(process.env.HOME ?? homedir(), '.repo-harness'));
 }
 
-export function mcpTokenPath(repoRoot: string): string {
-  return join(repoRoot, '.repo-harness', 'mcp.tokens.json');
+function mcpStorageDir(repoRoot: string, scope: McpConfigScope): string {
+  return scope === 'user' ? repoHarnessHome() : join(repoRoot, '.repo-harness');
 }
 
-export function mcpOAuthPath(repoRoot: string): string {
-  return join(repoRoot, '.repo-harness', 'mcp.oauth.json');
+export function mcpLocalConfigPath(repoRoot: string, scope: McpConfigScope = 'repo'): string {
+  return join(mcpStorageDir(repoRoot, scope), 'mcp.local.json');
 }
 
-export function mcpOAuthTokenStorePath(repoRoot: string): string {
-  return join(repoRoot, '.repo-harness', 'mcp.oauth-tokens.json');
+export function mcpTokenPath(repoRoot: string, scope: McpConfigScope = 'repo'): string {
+  return join(mcpStorageDir(repoRoot, scope), 'mcp.tokens.json');
 }
 
-export function loadMcpLocalConfig(repoRoot: string): McpLocalConfig | null {
-  const path = mcpLocalConfigPath(repoRoot);
+export function mcpOAuthPath(repoRoot: string, scope: McpConfigScope = 'repo'): string {
+  return join(mcpStorageDir(repoRoot, scope), 'mcp.oauth.json');
+}
+
+export function mcpOAuthTokenStorePath(repoRoot: string, scope: McpConfigScope = 'repo'): string {
+  return join(mcpStorageDir(repoRoot, scope), 'mcp.oauth-tokens.json');
+}
+
+function readMcpLocalConfig(path: string): McpLocalConfig | null {
   if (!existsSync(path)) return null;
   try {
     return JSON.parse(readFileSync(path, 'utf-8')) as McpLocalConfig;
@@ -55,9 +69,21 @@ export function loadMcpLocalConfig(repoRoot: string): McpLocalConfig | null {
   }
 }
 
-export function readMcpBearerToken(repoRoot: string): string | null {
+export function resolveMcpConfigScope(repoRoot: string, requested?: McpConfigScope): McpConfigScope {
+  if (requested) return requested;
+  if (existsSync(mcpLocalConfigPath(repoRoot, 'repo'))) return 'repo';
+  if (existsSync(mcpLocalConfigPath(repoRoot, 'user'))) return 'user';
+  return 'repo';
+}
+
+export function loadMcpLocalConfig(repoRoot: string, scope?: McpConfigScope): McpLocalConfig | null {
+  if (scope) return readMcpLocalConfig(mcpLocalConfigPath(repoRoot, scope));
+  return readMcpLocalConfig(mcpLocalConfigPath(repoRoot, 'repo')) ?? readMcpLocalConfig(mcpLocalConfigPath(repoRoot, 'user'));
+}
+
+export function readMcpBearerToken(repoRoot: string, scope?: McpConfigScope): string | null {
   if (process.env.REPO_HARNESS_MCP_TOKEN?.trim()) return process.env.REPO_HARNESS_MCP_TOKEN.trim();
-  const path = mcpTokenPath(repoRoot);
+  const path = mcpTokenPath(repoRoot, resolveMcpConfigScope(repoRoot, scope));
   if (!existsSync(path)) return null;
   try {
     const parsed = JSON.parse(readFileSync(path, 'utf-8')) as { bearerToken?: unknown };
@@ -67,9 +93,9 @@ export function readMcpBearerToken(repoRoot: string): string | null {
   }
 }
 
-export function ensureMcpBearerToken(repoRoot: string): { token: string; path: string; changed: boolean } {
-  const path = mcpTokenPath(repoRoot);
-  const existing = readMcpBearerToken(repoRoot);
+export function ensureMcpBearerToken(repoRoot: string, scope: McpConfigScope = 'repo'): { token: string; path: string; changed: boolean } {
+  const path = mcpTokenPath(repoRoot, scope);
+  const existing = readMcpBearerToken(repoRoot, scope);
   if (existing) return { token: existing, path, changed: false };
 
   const token = randomBytes(32).toString('base64url');
@@ -84,11 +110,11 @@ export function parseMcpHttpAuthMode(value: string | undefined): McpHttpAuthMode
   throw new Error(`invalid --auth "${value}" (expected: oauth, bearer)`);
 }
 
-export function readMcpOAuthPassphrase(repoRoot: string): string | null {
+export function readMcpOAuthPassphrase(repoRoot: string, scope?: McpConfigScope): string | null {
   if (process.env.REPO_HARNESS_MCP_OAUTH_PASSPHRASE?.trim()) {
     return process.env.REPO_HARNESS_MCP_OAUTH_PASSPHRASE.trim();
   }
-  const path = mcpOAuthPath(repoRoot);
+  const path = mcpOAuthPath(repoRoot, resolveMcpConfigScope(repoRoot, scope));
   if (!existsSync(path)) return null;
   try {
     const parsed = JSON.parse(readFileSync(path, 'utf-8')) as { passphrase?: unknown };
@@ -98,9 +124,9 @@ export function readMcpOAuthPassphrase(repoRoot: string): string | null {
   }
 }
 
-export function ensureMcpOAuthPassphrase(repoRoot: string): { passphrase: string; path: string; changed: boolean } {
-  const path = mcpOAuthPath(repoRoot);
-  const existing = readMcpOAuthPassphrase(repoRoot);
+export function ensureMcpOAuthPassphrase(repoRoot: string, scope: McpConfigScope = 'repo'): { passphrase: string; path: string; changed: boolean } {
+  const path = mcpOAuthPath(repoRoot, scope);
+  const existing = readMcpOAuthPassphrase(repoRoot, scope);
   if (existing) return { passphrase: existing, path, changed: false };
 
   const passphrase = randomBytes(24).toString('base64url');

@@ -62,6 +62,29 @@ describe('mcp policy and paths', () => {
     }
   });
 
+  test('full-disk read policy accepts authorized absolute reads without granting absolute writes', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-full-disk-'));
+    const outside = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-full-disk-outside-'));
+    try {
+      writeFileSync(join(tmp, '.env'), 'TOKEN=secret\n');
+      writeFileSync(join(outside, 'note.md'), '# outside\n');
+
+      const normal = getMcpPolicy('planner');
+      expect(resolveMcpPath(tmp, join(tmp, '.env'), normal, 'read')).toMatchObject({ ok: false });
+
+      const fullDisk = getMcpPolicy('planner', { fullDiskRead: true });
+      expect(resolveMcpPath(tmp, join(tmp, '.env'), fullDisk, 'read')).toMatchObject({
+        ok: true,
+        relativePath: '.env',
+      });
+      expect(resolveMcpPath(tmp, join(tmp, 'plans/prds/new.md'), fullDisk, 'write')).toMatchObject({ ok: false });
+      expect(resolveMcpPath(tmp, join(outside, 'note.md'), fullDisk, 'read')).toMatchObject({ ok: false });
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
   test('blocks symlink escapes from allowed workflow roots', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-symlink-'));
     const outside = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-outside-'));

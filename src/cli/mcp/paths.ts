@@ -1,5 +1,5 @@
 import { existsSync, lstatSync, realpathSync } from 'fs';
-import { dirname, isAbsolute, resolve, sep } from 'path';
+import { dirname, isAbsolute, relative, resolve, sep } from 'path';
 import type { McpPathDecision, McpPathIntent, McpPolicy } from './types';
 
 function toPosixPath(value: string): string {
@@ -75,10 +75,26 @@ function nearestExistingPath(path: string): string | undefined {
 }
 
 export function resolveMcpPath(repoRoot: string, inputPath: string, policy: McpPolicy, intent: McpPathIntent): McpPathDecision {
-  const normalized = normalizeMcpRelativePath(inputPath);
-  if (!normalized.ok || !normalized.relativePath) return normalized;
+  const trimmed = inputPath.trim();
+  const repoRealpath = realpathSync(repoRoot);
+  let relativePath: string;
+  let absolutePath: string;
 
-  const relativePath = normalized.relativePath;
+  if (isAbsolute(trimmed)) {
+    if (!(intent === 'read' && policy.allowAbsoluteRead === true)) {
+      return { ok: false, reason: 'absolute paths are not allowed' };
+    }
+    absolutePath = resolve(trimmed);
+    const comparablePath = existsSync(absolutePath) ? realpathSync(absolutePath) : absolutePath;
+    relativePath = toPosixPath(relative(repoRealpath, comparablePath));
+    if (relativePath === '') return { ok: false, reason: 'path must target a file' };
+  } else {
+    const normalized = normalizeMcpRelativePath(inputPath);
+    if (!normalized.ok || !normalized.relativePath) return normalized;
+    relativePath = normalized.relativePath;
+    absolutePath = resolve(repoRealpath, relativePath);
+  }
+
   if (anyDenyGlobMatches(policy.denyGlobs, relativePath)) {
     return { ok: false, relativePath, reason: `path is denied by MCP policy: ${relativePath}` };
   }
@@ -88,8 +104,6 @@ export function resolveMcpPath(repoRoot: string, inputPath: string, policy: McpP
     return { ok: false, relativePath, reason: `path is not allowed for ${intent}: ${relativePath}` };
   }
 
-  const repoRealpath = realpathSync(repoRoot);
-  const absolutePath = resolve(repoRealpath, relativePath);
   if (intent === 'read' && !existsSync(absolutePath)) {
     return { ok: false, relativePath, reason: `path does not exist: ${relativePath}` };
   }

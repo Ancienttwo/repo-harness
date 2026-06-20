@@ -13,6 +13,7 @@ import {
   parseMcpHttpAuthMode,
   readMcpBearerToken,
   readMcpOAuthPassphrase,
+  resolveMcpConfigScope,
   type McpHttpAuthMode,
 } from '../auth';
 import { createMcpOAuthProvider, McpOAuthTokenStore } from '../oauth';
@@ -275,10 +276,11 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
   const host = opts.host ?? '127.0.0.1';
   const port = opts.port ?? 8765;
   const repoRoot = resolveMcpRepoRoot(opts.repo ?? '.');
+  const configScope = resolveMcpConfigScope(repoRoot);
   const authMode = parseMcpHttpAuthMode(opts.auth);
-  const authToken = authMode === 'bearer' ? opts.authToken ?? readMcpBearerToken(repoRoot) : null;
-  const oauthPassphrase = authMode === 'oauth' ? readMcpOAuthPassphrase(repoRoot) : null;
-  const tokenStore = authMode === 'oauth' ? new McpOAuthTokenStore(mcpOAuthTokenStorePath(repoRoot)) : null;
+  const authToken = authMode === 'bearer' ? opts.authToken ?? readMcpBearerToken(repoRoot, configScope) : null;
+  const oauthPassphrase = authMode === 'oauth' ? readMcpOAuthPassphrase(repoRoot, configScope) : null;
+  const tokenStore = authMode === 'oauth' ? new McpOAuthTokenStore(mcpOAuthTokenStorePath(repoRoot, configScope)) : null;
   tokenStore?.load();
   const oauthProvider = tokenStore ? createMcpOAuthProvider(tokenStore) : null;
   const transports = new Map<string, StreamableHTTPServerTransport>();

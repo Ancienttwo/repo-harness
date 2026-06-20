@@ -591,7 +591,7 @@ export function buildMcpToolDefinitions(policy: McpPolicy, opts: { enableChatgpt
     { name: 'harness_status', description: 'Return repo-harness adoption and workflow status.', inputSchema: EMPTY_SCHEMA, annotations: readOnly },
     { name: 'harness_doctor', description: 'Return compact MCP setup diagnostics.', inputSchema: EMPTY_SCHEMA, annotations: readOnly },
     { name: 'list_workflow_files', description: 'List policy-readable workflow files.', inputSchema: EMPTY_SCHEMA, annotations: readOnly },
-    { name: 'read_workflow_file', description: 'Read one policy-allowed workflow file by repo-relative path.', inputSchema: stringPathSchema, annotations: readOnly },
+    { name: 'read_workflow_file', description: 'Read one policy-allowed file path. Absolute paths require user-scope full-disk read authorization.', inputSchema: stringPathSchema, annotations: readOnly },
     { name: 'latest_handoff', description: 'Return latest repo-harness handoff artifacts.', inputSchema: EMPTY_SCHEMA, annotations: readOnly },
     { name: 'latest_checks', description: 'Return latest repo-harness check artifacts.', inputSchema: EMPTY_SCHEMA, annotations: readOnly },
     { name: 'list_prds', description: 'List PRD artifacts under plans/prds.', inputSchema: EMPTY_SCHEMA, annotations: readOnly },
@@ -707,7 +707,7 @@ export async function callMcpTool(ctx: McpToolContext, name: string, args: Recor
         const codexConfig = existsSync(join(ctx.repoRoot, '.codex', 'config.toml'));
         audit(ctx, name, 'ok', args);
         return textResult({
-          status: isRepoHarnessAdopted(ctx.repoRoot) ? 'ready_local' : 'not_adopted',
+          status: isRepoHarnessAdopted(ctx.repoRoot) ? 'ready_local' : ctx.policy.allowAbsoluteRead ? 'ready_user' : 'not_adopted',
           repo: ctx.repoRoot,
           profile: ctx.policy.profile,
           mcp: {

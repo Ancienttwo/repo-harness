@@ -27,10 +27,12 @@ export interface McpServeOptions {
 
 interface McpSetupChatgptOptions {
   repo?: string;
+  scope?: string;
   host?: string;
   port?: string;
   endpoint?: string;
   serverName?: string;
+  allowFullDiskRead?: boolean;
 }
 
 interface McpSetupCodexOptions {
@@ -176,10 +178,12 @@ export function buildMcpCommand(): Command {
     .command('chatgpt')
     .description('Generate ChatGPT Connector local config and manual setup guide')
     .option('--repo <path>', 'Repository root to configure', '.')
+    .option('--scope <scope>', 'Config scope: repo|user', 'repo')
     .option('--host <host>', 'Local MCP HTTP bind host')
     .option('--port <port>', 'Local MCP HTTP bind port')
     .option('--endpoint <url>', 'Stable public HTTPS /mcp endpoint to store in ignored local config')
     .option('--server-name <name>', 'ChatGPT Connector/MCP server name to record in ignored local config')
+    .option('--allow-full-disk-read', 'User-scope Developer Mode: allow MCP read tools to read any OS-readable file')
     .action((rawOpts: McpSetupChatgptOptions) => {
       void runMcpAction(() => {
         const result = runMcpSetupChatgpt(rawOpts);

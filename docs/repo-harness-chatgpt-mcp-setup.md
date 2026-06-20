@@ -9,8 +9,19 @@
 
 ## Start Local MCP Server
 
+Repo-local setup keeps MCP reads scoped to one adopted repository:
+
 ```bash
 repo-harness mcp serve --repo . --transport http --host 127.0.0.1 --port 8765 --profile planner
+```
+
+Developer Mode can also be configured at OS user level when the user explicitly
+authorizes broad local file reads. This stores MCP config and auth under
+`~/.repo-harness/` and allows read tools to inspect any file the OS user can read:
+
+```bash
+repo-harness mcp setup chatgpt --scope user --repo / --allow-full-disk-read --endpoint <https-url>/mcp
+repo-harness mcp serve --repo / --transport http --host 127.0.0.1 --port 8765 --profile planner
 ```
 
 Health check:
@@ -24,6 +35,8 @@ The ChatGPT path uses OAuth with a local passphrase. The passphrase is stored in
 ```bash
 jq -r .passphrase .repo-harness/mcp.oauth.json
 ```
+
+For user-scope setup, read the passphrase from `~/.repo-harness/mcp.oauth.json`.
 
 Do not commit or paste this passphrase into issue trackers, PRs, or shared logs.
 
