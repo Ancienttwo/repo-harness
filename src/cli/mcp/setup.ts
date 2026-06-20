@@ -334,6 +334,63 @@ repo-harness mcp prepare-goal --repo . --prd plans/prds/<feature>.prd.md --sprin
 Use repo-harness to inspect this repo. Call harness_status, latest_handoff, and list_workflow_files. Do not write files.
 \`\`\`
 
+## Connector Invocation Evidence
+
+Treat Connector readiness as four independent checks:
+
+1. Endpoint: the sidecar and public HTTPS \`/mcp\` endpoint respond.
+2. Schema: ChatGPT Connector settings show the expected Action after Refresh.
+3. Selection: a fresh chat has the recorded Connector selected from \`+\` -> More.
+4. Invocation: the current model surface emits a real tool call.
+
+Only a visible \`Called tool\` event with the selected Action/result, or an
+equivalent captured tool-call transcript, proves MCP invocation. Connector
+selection, assistant self-report, plausible JSON, or sandbox shell commands do
+not prove that ChatGPT called MCP.
+
+For Pro runs, the normal tool-call runtime UI may not appear the way it does for
+other models because Pro uses a sandbox/process flow. In the visible ChatGPT Web
+UI, click the assistant's \`Thinking\` / \`Thought for ...\` disclosure to open
+the right-side process pane. Use that pane to confirm whether Pro actually
+emitted a \`Called tool\` event for the selected app, which action it chose, or
+whether it only reasoned inside the sandbox without invoking MCP. If the pane
+shows sandbox-only exploration, or the answer reports \`app_unavailable\` without
+a tool event, classify the outcome as \`surface_blocked\`, not as a broken repo
+or sidecar.
+
+Detailed Pro Extended planning and review tasks commonly take 15 minutes or
+more. When driving Pro through the browser path, do not treat elapsed time as
+failure while the session is still alive; wait for a final answer or a concrete
+browser, login, capture, or tool-call failure. Keep the Oracle heartbeat enabled;
+heartbeat diagnostics such as \`no thinking status detected yet\` are progress
+signals, not blockers by themselves.
+
+Outcome labels:
+
+- \`invocation_verified\`: real \`Called tool\` event or captured tool-call transcript.
+- \`approval_pending\`: a real tool request produced a confirmation prompt.
+- \`surface_blocked\`: schema is current, but the current model surface did not call MCP.
+- \`bundle_fallback\`: Pro is reviewing a local evidence bundle and did not read through MCP.
+
+When Pro is \`surface_blocked\`, use \`repo-harness-gptpro\` to send a bounded
+local evidence bundle through the existing Oracle/browser handoff. The bundle
+must say it was produced locally, list included and omitted/truncated material,
+and include:
+
+\`\`\`yaml
+source: local_repo_harness_bundle
+pro_invoked_mcp: false
+working_tree: clean | dirty
+\`\`\`
+
+Do not claim MCP read-back evidence for fallback output. Pro can plan or review
+the supplied bundle, while Codex still executes and verifies locally.
+
+Permission scope is separate from invocation evidence. Repo-scope setup is bound
+to the configured repo and does not imply arbitrary repo discovery. User-scope
+setup with explicit full-disk read is required before broad repo discovery is
+authorized.
+
 ## PRD Prompt
 
 \`\`\`text
@@ -837,6 +894,7 @@ export function runMcpDoctor(opts: { repo?: string; json?: boolean }): McpSetupR
       guide: existsSync(join(repoRoot, 'docs', 'repo-harness-chatgpt-mcp-setup.md')),
       authConfigured,
       permissions: {
+        configurationScope: configScope,
         fullDiskRead: localConfig?.scope === 'user' && localConfig.permissions?.fullDiskRead === true,
       },
       devMode: {
@@ -861,6 +919,15 @@ export function runMcpDoctor(opts: { repo?: string; json?: boolean }): McpSetupR
       publicEndpoint: localConfig?.chatgpt?.endpoint,
       authMode,
       manualStepsRequired: true,
+      invocationVerification: {
+        status: 'manual_required',
+        checkableByDoctor: false,
+        scope: 'per_chat_model_surface',
+        acceptedEvidence: [
+          'called_tool_event',
+          'captured_tool_call_transcript',
+        ],
+      },
       setup: configScope === 'user'
         ? `repo-harness mcp setup chatgpt --repo ${repoRoot} --scope user`
         : 'repo-harness mcp setup chatgpt --repo .',
@@ -874,10 +941,11 @@ export function runMcpDoctor(opts: { repo?: string; json?: boolean }): McpSetupR
       `[repo-harness mcp] Repo: ${repoRoot}`,
       `[repo-harness mcp] Status: ${report.status}`,
       `[repo-harness mcp] Config scope: ${configScope}`,
-      `[repo-harness mcp] Full-disk read: ${report.mcp.permissions.fullDiskRead ? 'enabled' : 'disabled'}`,
+      `[repo-harness mcp] Full-disk read: ${report.mcp.permissions.fullDiskRead ? 'enabled' : 'disabled'} (configuration scope: ${report.mcp.permissions.configurationScope})`,
       `[repo-harness mcp] ChatGPT MCP server name: ${
         configuredServerName ?? `missing (run setup; default is ${DEFAULT_CHATGPT_MCP_SERVER_NAME})`
       }`,
+      '[repo-harness mcp] ChatGPT tool invocation: manual verification required (doctor checks local MCP health, not per-chat/model dispatch)',
       `[repo-harness mcp] ChatGPT guide: ${report.mcp.guide ? 'present' : 'missing'}`,
       `[repo-harness mcp] ChatGPT auth: ${report.mcp.authConfigured ? `${authMode} present` : 'missing'}`,
       `[repo-harness mcp] Dev runner: ${report.mcp.devMode.agentRunner ? `enabled (${report.mcp.devMode.allowedAgents.join(',')})` : 'disabled'}`,

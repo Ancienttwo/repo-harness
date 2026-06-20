@@ -54,6 +54,10 @@ export interface OracleProbe {
   helpText: string;
 }
 
+export function supportsBrowserAppPreselect(helpText: string): boolean {
+  return helpText.includes('--browser-app');
+}
+
 /**
  * Resolve the oracle binary through a fixed, auditable order. We never implicitly
  * download or `npx`-execute an unpinned oracle; a missing binary is a hard,
@@ -193,6 +197,7 @@ export function buildOracleCommand(input: BrowserConsultInput, answerPath?: stri
   if (input.model) args.push('--model', input.model, '--browser-model-strategy', 'select');
   else args.push('--browser-model-strategy', 'current');
   if (input.thinking) args.push('--browser-thinking-time', input.thinking);
+  if (input.chatgptApp) args.push('--browser-app', input.chatgptApp);
   if (input.chatgptUrl) args.push('--chatgpt-url', input.chatgptUrl);
   args.push('--heartbeat', String(input.heartbeatSeconds ?? 59));
   const cookiePath = resolveOracleCookiePath(input);
@@ -333,6 +338,23 @@ export async function runOracleProvider(input: BrowserConsultInput, _bundle: Pro
         recovery: resolution.error?.recovery ?? 'Install oracle (pin the version; do not auto-download), or pass --oracle-bin / set REPO_HARNESS_ORACLE_BIN, or rerun with --dry-run.',
       },
     };
+  }
+  if (input.chatgptApp) {
+    const probe = probeOracle(resolution.binary);
+    if (!supportsBrowserAppPreselect(probe.helpText)) {
+      return {
+        status: 'failed',
+        output: `Oracle binary does not support ChatGPT app preselection for "${input.chatgptApp}".`,
+        command: [resolution.binary, ...buildOracleCommand(input)],
+        oracleBinary: resolution.binary,
+        oracleVersion: probe.version,
+        error: {
+          code: 'ORACLE_APP_PRESELECT_UNSUPPORTED',
+          message: 'oracle binary did not report --browser-app support',
+          recovery: 'Upgrade or point repo-harness at an Oracle binary that supports --browser-app, omit --chatgpt-app, or manually select the ChatGPT app in the composer before relying on MCP tools.',
+        },
+      };
+    }
   }
   if (input.profileDir && !resolveOracleCookiePath(input)) {
     const selectedProfilePath = input.profileDirectory

@@ -36,21 +36,44 @@ Use GPT Pro language with the user. Treat the `browser-*` command names as imple
    `stamp="$(date -u +%Y%m%dT%H%M%SZ)"; slug="<short-purpose>"; mkdir -p .ai/harness/handoff/gptpro; out=".ai/harness/handoff/gptpro/gptpro-${stamp}-${slug}.md"; repo-harness chatgpt browser-consult --repo <repo> --provider oracle --model gpt-5.5-pro --heartbeat 59 --title "gptpro-${stamp}-${slug}" --prompt <prompt> --write-output "$out"`
 10. Use `--dry-run` first when attaching files, then run the real consult only after the prompt bundle and allowed paths are clear.
 11. For GPT Pro reviews or acceptance checks, resolve the recorded ChatGPT MCP server name from `repo-harness mcp doctor --repo <repo> --json` or `.repo-harness/mcp.local.json` (`chatgpt.serverName`). Treat `chatgpt.serverNameConfigured:false` or a missing `chatgpt.serverName` as setup-incomplete, then route to `repo-harness:gptpro_setup` before an MCP read-back review. Do not substitute a user-specific hard-coded MCP name.
-12. When the user asks for a reasoning mode, pass repo-harness `--thinking <light|standard|extended|heavy>` only after `browser-doctor --provider oracle` reports `browserThinkingTime:true`; repo-harness maps it to Oracle `--browser-thinking-time`.
-13. For long GPT Pro analysis tasks, keep Oracle heartbeat enabled at 59 seconds unless the user explicitly disables it; repo-harness streams heartbeat/diagnostic lines to stderr and reserves stdout for final JSON.
-14. Report the GPT Pro result with: session id, timestamped output path, conversation URL if present, whether it was a new consult or follow-up, and any visible-browser blocker.
+12. When MCP read-back is required, pass the recorded server name as an explicit ChatGPT app preselect: `serverName="$(repo-harness mcp doctor --repo <repo> --json | jq -r '.chatgpt.serverName // empty')"` and add `--chatgpt-app "$serverName"` to `browser-consult` or `browser-followup`. If the command fails with `ORACLE_APP_PRESELECT_UNSUPPORTED`, the selected Oracle binary cannot click the ChatGPT app selector yet; report that as a browser-trigger blocker instead of relying on prompt text like `@serverName`.
+13. When the user asks for a reasoning mode, pass repo-harness `--thinking <light|standard|extended|heavy>` only after `browser-doctor --provider oracle` reports `browserThinkingTime:true`; repo-harness maps it to Oracle `--browser-thinking-time`.
+14. For long GPT Pro analysis tasks, expect detailed Pro Extended planning/review runs to take 15 minutes or more. Do not treat elapsed time as failure while the session is still alive; wait for a final answer or a concrete browser, login, capture, or tool-call failure.
+15. Keep Oracle heartbeat enabled at 59 seconds unless the user explicitly disables it; repo-harness streams heartbeat/diagnostic lines to stderr and reserves stdout for final JSON. Heartbeat lines like `no thinking status detected yet` are progress diagnostics, not a blocker by themselves.
+16. Report the GPT Pro result with: session id, timestamped output path, conversation URL if present, whether it was a new consult or follow-up, and any visible-browser blocker.
 
 ## MCP Read-Back Acceptance
 
 When asking GPT Pro to review repo updates, include an explicit acceptance requirement in the prompt:
 
 - Use the recorded ChatGPT MCP server name from `chatgpt.serverName` to read the current repo state before producing findings or a merge/readiness verdict.
+- Before a Pro MCP attempt, open ChatGPT Settings -> Connectors for the recorded server name, run Refresh or Scan Tools, verify the expected Action is listed, then start a fresh chat and select the Connector from `+` -> More.
 - Read at least the changed-file list or status, the relevant diffs or changed files, and any requested session/handoff artifacts through that recorded MCP server; pasted summaries are context, not sufficient evidence.
 - Include a short `MCP Read Evidence` section in the final answer naming the recorded MCP server, the reads performed, and the files, diffs, or artifacts inspected.
 - If the recorded MCP server name is missing, or `mcp doctor --json` reports `chatgpt.serverNameConfigured:false`, route to `repo-harness:gptpro_setup` so initialization can record it before review.
 - If the recorded MCP server is unavailable, blocked, stale, or cannot read the requested paths, classify the result as blocked or partial instead of issuing a merge-ready verdict.
 - A prompt that asks ChatGPT to use the recorded MCP server is not sufficient by itself; the ChatGPT conversation must expose the app/action schema. If the conversation reports that the app is not exposed, use a fresh app-enabled conversation or a GitHub PR/diff evidence source instead of claiming MCP read-back evidence.
+- For Pro runs, the normal tool-call runtime UI may not appear the way it does for other models because Pro uses a sandbox/process flow. In the visible ChatGPT Web UI, click the assistant's `Thinking` / `Thought for ...` disclosure to open the right-side process pane. Use that pane to confirm whether Pro actually emitted a `Called tool` event for the selected app, which action it chose, or whether it only reasoned inside the sandbox without invoking MCP.
+- Treat `Called tool` with an action/result, or an equivalent captured tool-call transcript, as the only accepted MCP invocation evidence. Reject connector selection, assistant self-report, plausible JSON, and sandbox shell exploration as proof.
+- Classify Pro outcomes explicitly: `invocation_verified` for a real tool call, `approval_pending` for a real confirmation prompt, `surface_blocked` for sandbox-only reasoning or `app_unavailable` with no tool event, and `bundle_fallback` when Pro reviews a local evidence bundle instead of reading through MCP.
 - Do not ask GPT Pro to retrieve secrets, cookies, browser storage, ignored private operations state, or other denied paths through the recorded MCP server.
+
+## Pro Surface Fallback
+
+- When Pro is `surface_blocked`, stop retrying the same connector prompt after one explicit-tool retry. Do not delete/recreate the Connector as the first response to a Pro-only dispatch failure.
+- Reuse the existing local GPT Pro/Oracle handoff path. Build a bounded evidence bundle from local files, diffs, checks, and known external findings, then ask Pro for a plan or review over that bundle.
+- The fallback prompt must include a provenance header:
+
+```yaml
+source: local_repo_harness_bundle
+pro_invoked_mcp: false
+working_tree: clean | dirty
+included_paths: [...]
+omitted_or_truncated: [...]
+```
+
+- Tell Pro that anything outside the bundle is unknown. Codex executes and verifies locally, then creates a fresh post-change bundle for another Pro review if needed.
+- Distinguish permissions: repo-scope setup is repo-bound; broad repo discovery requires explicit user-scope setup with full-disk read. Do not recommend full-disk read by default.
 
 ## Research Promotion
 

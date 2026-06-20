@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-06-20T14:05:59+0800 -->
+<!-- updated_at: 2026-06-20T16:27:16+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-06-20T14:05:59+0800
+> **Updated At**: 2026-06-20T16:27:16+0800
 > **Source Branch**: main
-> **Source Commit**: 02231d8
+> **Source Commit**: ed34dfe
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: mcp-user-scope-full-disk-read
+> **Reason**: chatgpt-app-preselect
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -49,22 +49,21 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 14 changed/untracked path(s)
+- Summary: 13 changed/untracked path(s)
 
 ```
+ M assets/skill-commands/repo-harness-gptpro/SKILL.md
+ M docs/CHANGELOG.md
+ M docs/repo-harness-chatgpt-browser-engine.md
  M docs/repo-harness-chatgpt-mcp-setup.md
- M src/cli/commands/mcp.ts
- M src/cli/mcp/auth.ts
- M src/cli/mcp/paths.ts
- M src/cli/mcp/policy.ts
- M src/cli/mcp/server.ts
- M src/cli/mcp/setup.ts
+ M src/cli/chatgpt-browser/engine.ts
+ M src/cli/chatgpt-browser/oracle-provider.ts
+ M src/cli/chatgpt-browser/session-store.ts
+ M src/cli/chatgpt-browser/types.ts
+ M src/cli/commands/chatgpt.ts
  M src/cli/mcp/tools.ts
- M src/cli/mcp/transports/http.ts
- M src/cli/mcp/types.ts
  M tasks/current.md
- M tests/cli/mcp-policy.test.ts
- M tests/cli/mcp-setup.test.ts
+ M tests/cli/chatgpt-browser.test.ts
  M tests/cli/mcp-tools.test.ts
 ```
 

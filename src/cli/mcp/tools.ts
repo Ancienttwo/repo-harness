@@ -1,13 +1,14 @@
 import { createHash } from 'crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync, appendFileSync } from 'fs';
-import { basename, dirname, join } from 'path';
+import { homedir } from 'os';
+import { basename, dirname, isAbsolute, join, resolve } from 'path';
 import { runProcess } from '../../effects/process-runner';
 import { runHelper } from '../runtime/helper-runner';
 import { listSessions, openSession, readSession, runBrowserConsult, runBrowserFollowup } from '../chatgpt-browser/engine';
 import type { BrowserProviderName, NativeBrowserChannel, ThinkingLevel } from '../chatgpt-browser/types';
 import { hashMcpInput, tryWriteMcpAuditEntry } from './audit';
 import { resolveMcpPath } from './paths';
-import { currentGitBranch, isRepoHarnessAdopted } from './repo';
+import { currentGitBranch, isRepoHarnessAdopted, resolveMcpRepoRoot } from './repo';
 import { redactMcpText } from './redaction';
 import type { McpAgentRunnerName, McpPolicy } from './types';
 
@@ -31,6 +32,40 @@ interface CallToolResult {
 }
 
 const EMPTY_SCHEMA = { type: 'object', additionalProperties: false };
+const DEFAULT_DISCOVERY_DEPTH = 7;
+const DEFAULT_DISCOVERY_LIMIT = 12;
+const DISCOVERY_SKIP_DIRS = new Set([
+  '.bun',
+  '.codegraph',
+  '.local',
+  '.Trash',
+  '.worktrees',
+  '.cache',
+  '.git',
+  '.npm',
+  '.pnpm-store',
+  '.repo-harness',
+  '.rustup',
+  'Applications',
+  'Caches',
+  'Library',
+  'Movies',
+  'Music',
+  'Pictures',
+  'System',
+  'Volumes',
+  'bin',
+  'build',
+  'coverage',
+  'codex-backups',
+  'dev',
+  'dist',
+  'node_modules',
+  'private',
+  'proc',
+  'sbin',
+  'usr',
+]);
 
 function textResult(value: unknown): CallToolResult {
   return {
@@ -52,6 +87,127 @@ function audit(ctx: McpToolContext, tool: string, status: 'ok' | 'blocked' | 'fa
     inputHash: hashMcpInput(input),
     error,
   });
+}
+
+function repoSummary(repoRoot: string): { repoRoot: string; adopted: boolean; branch: string | null; workflowRoots: Array<{ path: string; exists: boolean }> } {
+  const roots = ['docs/spec.md', 'plans', 'tasks/current.md', '.ai/harness/handoff', '.ai/harness/checks'];
+  return {
+    repoRoot,
+    adopted: isRepoHarnessAdopted(repoRoot),
+    branch: currentGitBranch(repoRoot),
+    workflowRoots: roots.map((path) => ({ path, exists: existsSync(join(repoRoot, path)) })),
+  };
+}
+
+function isFullDiskRead(ctx: McpToolContext): boolean {
+  return ctx.policy.allowAbsoluteRead === true && ctx.policy.readGlobs.includes('**');
+}
+
+function isDiscoverableHarnessRepo(path: string): boolean {
+  return existsSync(join(path, '.ai', 'harness', 'policy.json'));
+}
+
+function discoveryDefaultRoots(ctx: McpToolContext): string[] {
+  if (ctx.repoRoot !== '/') return [ctx.repoRoot];
+  const home = homedir();
+  const candidates = [
+    join(home, 'Projects'),
+    join(home, 'Documents'),
+    join(home, 'Developer'),
+    home,
+    '/Users',
+    '/Volumes',
+    '/opt',
+    '/tmp',
+  ];
+  return Array.from(new Set(candidates.map((path) => resolve(path)))).filter((path) => existsSync(path));
+}
+
+function discoverySortWeight(repoRoot: string): string {
+  const home = homedir();
+  const projects = join(home, 'Projects');
+  if (repoRoot.startsWith(`${projects}/`) || repoRoot === projects) return `0:${repoRoot}`;
+  if (repoRoot.startsWith(`${home}/`) || repoRoot === home) return `1:${repoRoot}`;
+  if (repoRoot.startsWith('/Volumes/')) return `2:${repoRoot}`;
+  if (repoRoot.startsWith('/tmp/') || repoRoot.startsWith('/private/tmp/')) return `9:${repoRoot}`;
+  return `5:${repoRoot}`;
+}
+
+function numberArg(value: unknown, fallback: number, min: number, max: number): number {
+  const parsed = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(Math.max(Math.trunc(parsed), min), max);
+}
+
+function stringArgList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((entry) => String(entry).trim()).filter(Boolean);
+}
+
+function discoverHarnessRepos(ctx: McpToolContext, args: Record<string, unknown> = {}): { scannedRoots: string[]; repos: ReturnType<typeof repoSummary>[]; truncated: boolean } {
+  if (!isFullDiskRead(ctx)) return { scannedRoots: [], repos: [], truncated: false };
+  const roots = (stringArgList(args.roots).length > 0 ? stringArgList(args.roots) : discoveryDefaultRoots(ctx))
+    .map((path) => resolve(path))
+    .filter((path) => existsSync(path));
+  const maxDepth = numberArg(args.max_depth, DEFAULT_DISCOVERY_DEPTH, 1, 12);
+  const limit = numberArg(args.limit, DEFAULT_DISCOVERY_LIMIT, 1, 100);
+  const repos = new Map<string, ReturnType<typeof repoSummary>>();
+  const queue = roots.map((path) => ({ path, depth: 0 }));
+  let truncated = false;
+
+  for (let index = 0; index < queue.length; index += 1) {
+    const current = queue[index];
+    if (!current) continue;
+    if (repos.size >= limit) {
+      truncated = true;
+      break;
+    }
+    let currentStat;
+    try {
+      currentStat = statSync(current.path);
+    } catch (_error) {
+      continue;
+    }
+    if (!currentStat.isDirectory()) continue;
+    if (isDiscoverableHarnessRepo(current.path)) {
+      const root = resolveMcpRepoRoot(current.path);
+      if (!repos.has(root)) repos.set(root, repoSummary(root));
+      continue;
+    }
+    if (current.depth >= maxDepth) continue;
+    let entries;
+    try {
+      entries = readdirSync(current.path, { withFileTypes: true });
+    } catch (_error) {
+      continue;
+    }
+    for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+      if (!entry.isDirectory() || DISCOVERY_SKIP_DIRS.has(entry.name)) continue;
+      queue.push({ path: join(current.path, entry.name), depth: current.depth + 1 });
+    }
+  }
+
+  return {
+    scannedRoots: roots,
+    repos: Array.from(repos.values()).sort((a, b) => discoverySortWeight(a.repoRoot).localeCompare(discoverySortWeight(b.repoRoot))),
+    truncated,
+  };
+}
+
+function targetRepoRoot(ctx: McpToolContext, args: Record<string, unknown>): { ok: true; repoRoot: string } | { ok: false; result: CallToolResult } {
+  const raw = typeof args.repo_path === 'string' ? args.repo_path.trim() : '';
+  if (!raw) {
+    return { ok: true, repoRoot: ctx.repoRoot };
+  }
+  if (isAbsolute(raw) && !isFullDiskRead(ctx)) {
+    return { ok: false, result: errorResult('POLICY_DENIED', 'repo_path absolute paths require user-scope full-disk read authorization.', { repo_path: raw }) };
+  }
+  const candidate = isAbsolute(raw) ? raw : resolve(ctx.repoRoot, raw);
+  const repoRoot = resolveMcpRepoRoot(candidate);
+  if (!isFullDiskRead(ctx) && repoRoot !== ctx.repoRoot) {
+    return { ok: false, result: errorResult('POLICY_DENIED', 'repo_path outside the configured repo requires user-scope full-disk read authorization.', { repo_path: raw }) };
+  }
+  return { ok: true, repoRoot };
 }
 
 function isProbablyBinary(bytes: Buffer): boolean {
@@ -477,9 +633,23 @@ function parseNativeBrowserChannel(value: unknown): NativeBrowserChannel | undef
 export function buildMcpToolDefinitions(policy: McpPolicy, opts: { enableChatgptBrowser?: boolean } = {}): McpToolDefinition[] {
   const readOnly = { readOnlyHint: true, openWorldHint: false };
   const write = { readOnlyHint: false, openWorldHint: false, destructiveHint: false };
+  const optionalRepoSchema = {
+    type: 'object',
+    properties: { repo_path: { type: 'string' } },
+    additionalProperties: false,
+  };
+  const discoverySchema = {
+    type: 'object',
+    properties: {
+      roots: { type: 'array', items: { type: 'string' } },
+      max_depth: { type: 'number' },
+      limit: { type: 'number' },
+    },
+    additionalProperties: false,
+  };
   const stringPathSchema = {
     type: 'object',
-    properties: { path: { type: 'string' } },
+    properties: { path: { type: 'string' }, repo_path: { type: 'string' } },
     required: ['path'],
     additionalProperties: false,
   };
@@ -588,15 +758,16 @@ export function buildMcpToolDefinitions(policy: McpPolicy, opts: { enableChatgpt
   };
 
   const tools: McpToolDefinition[] = [
-    { name: 'harness_status', description: 'Return repo-harness adoption and workflow status.', inputSchema: EMPTY_SCHEMA, annotations: readOnly },
-    { name: 'harness_doctor', description: 'Return compact MCP setup diagnostics.', inputSchema: EMPTY_SCHEMA, annotations: readOnly },
-    { name: 'list_workflow_files', description: 'List policy-readable workflow files.', inputSchema: EMPTY_SCHEMA, annotations: readOnly },
+    { name: 'harness_status', description: 'Return repo-harness adoption and workflow status. Pass repo_path after discover_harness_repos when targeting another adopted repo.', inputSchema: optionalRepoSchema, annotations: readOnly },
+    { name: 'harness_doctor', description: 'Return compact MCP setup diagnostics.', inputSchema: optionalRepoSchema, annotations: readOnly },
+    { name: 'discover_harness_repos', description: 'Discover repo-harness adopted repositories from authorized local disk roots. Requires user-scope full-disk read.', inputSchema: discoverySchema, annotations: readOnly },
+    { name: 'list_workflow_files', description: 'List policy-readable workflow files.', inputSchema: optionalRepoSchema, annotations: readOnly },
     { name: 'read_workflow_file', description: 'Read one policy-allowed file path. Absolute paths require user-scope full-disk read authorization.', inputSchema: stringPathSchema, annotations: readOnly },
-    { name: 'latest_handoff', description: 'Return latest repo-harness handoff artifacts.', inputSchema: EMPTY_SCHEMA, annotations: readOnly },
-    { name: 'latest_checks', description: 'Return latest repo-harness check artifacts.', inputSchema: EMPTY_SCHEMA, annotations: readOnly },
-    { name: 'list_prds', description: 'List PRD artifacts under plans/prds.', inputSchema: EMPTY_SCHEMA, annotations: readOnly },
-    { name: 'list_sprints', description: 'List sprint artifacts under plans/sprints.', inputSchema: EMPTY_SCHEMA, annotations: readOnly },
-    { name: 'summarize_repo_harness_state', description: 'Return a compact planning state summary.', inputSchema: EMPTY_SCHEMA, annotations: readOnly },
+    { name: 'latest_handoff', description: 'Return latest repo-harness handoff artifacts.', inputSchema: optionalRepoSchema, annotations: readOnly },
+    { name: 'latest_checks', description: 'Return latest repo-harness check artifacts.', inputSchema: optionalRepoSchema, annotations: readOnly },
+    { name: 'list_prds', description: 'List PRD artifacts under plans/prds.', inputSchema: optionalRepoSchema, annotations: readOnly },
+    { name: 'list_sprints', description: 'List sprint artifacts under plans/sprints.', inputSchema: optionalRepoSchema, annotations: readOnly },
+    { name: 'summarize_repo_harness_state', description: 'Return a compact planning state summary.', inputSchema: optionalRepoSchema, annotations: readOnly },
     { name: 'write_prd', description: 'Write a PRD under plans/prds/*.prd.md.', inputSchema: markdownWriterSchema, annotations: write },
     { name: 'write_prd_from_idea', description: 'Turn a product idea into a strict-compatible draft PRD under plans/prds/*.prd.md.', inputSchema: ideaPrdSchema, annotations: write },
     { name: 'write_sprint', description: 'Write a sprint under plans/sprints/*.sprint.md.', inputSchema: markdownWriterSchema, annotations: write },
@@ -692,23 +863,27 @@ export async function callMcpTool(ctx: McpToolContext, name: string, args: Recor
   try {
     switch (name) {
       case 'harness_status': {
-        const roots = ['docs/spec.md', 'plans', 'tasks/current.md', '.ai/harness/handoff', '.ai/harness/checks'];
+        const target = targetRepoRoot(ctx, args);
+        if (!target.ok) return target.result;
+        const summary = repoSummary(target.repoRoot);
         audit(ctx, name, 'ok', args);
         return textResult({
-          repoRoot: ctx.repoRoot,
-          adopted: isRepoHarnessAdopted(ctx.repoRoot),
+          repoRoot: summary.repoRoot,
+          adopted: summary.adopted,
           profile: ctx.policy.profile,
-          branch: currentGitBranch(ctx.repoRoot),
-          workflowRoots: roots.map((path) => ({ path, exists: existsSync(join(ctx.repoRoot, path)) })),
+          branch: summary.branch,
+          workflowRoots: summary.workflowRoots,
         });
       }
       case 'harness_doctor': {
-        const localConfig = existsSync(join(ctx.repoRoot, '.repo-harness', 'mcp.local.json'));
-        const codexConfig = existsSync(join(ctx.repoRoot, '.codex', 'config.toml'));
+        const target = targetRepoRoot(ctx, args);
+        if (!target.ok) return target.result;
+        const localConfig = existsSync(join(target.repoRoot, '.repo-harness', 'mcp.local.json'));
+        const codexConfig = existsSync(join(target.repoRoot, '.codex', 'config.toml'));
         audit(ctx, name, 'ok', args);
         return textResult({
-          status: isRepoHarnessAdopted(ctx.repoRoot) ? 'ready_local' : ctx.policy.allowAbsoluteRead ? 'ready_user' : 'not_adopted',
-          repo: ctx.repoRoot,
+          status: isRepoHarnessAdopted(target.repoRoot) ? 'ready_local' : ctx.policy.allowAbsoluteRead ? 'ready_user' : 'not_adopted',
+          repo: target.repoRoot,
           profile: ctx.policy.profile,
           mcp: {
             localConfig,
@@ -726,18 +901,31 @@ export async function callMcpTool(ctx: McpToolContext, name: string, args: Recor
           },
         });
       }
+      case 'discover_harness_repos': {
+        if (!isFullDiskRead(ctx)) {
+          audit(ctx, name, 'blocked', args, undefined, 'full-disk read is not enabled');
+          return errorResult('FULL_DISK_READ_REQUIRED', 'discover_harness_repos requires user-scope full-disk read authorization.');
+        }
+        const discovery = discoverHarnessRepos(ctx, args);
+        audit(ctx, name, 'ok', args);
+        return textResult(discovery);
+      }
       case 'list_workflow_files': {
-        const files = workflowFileCandidates(ctx.repoRoot)
-          .filter((path) => resolveMcpPath(ctx.repoRoot, path, ctx.policy, 'read').ok)
-          .map((path) => fileSummary(path, ctx.repoRoot))
+        const target = targetRepoRoot(ctx, args);
+        if (!target.ok) return target.result;
+        const files = workflowFileCandidates(target.repoRoot)
+          .filter((path) => resolveMcpPath(target.repoRoot, path, ctx.policy, 'read').ok)
+          .map((path) => fileSummary(path, target.repoRoot))
           .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
           .filter((entry) => entry.size <= ctx.policy.maxFileBytes);
         audit(ctx, name, 'ok', args);
         return textResult({ files });
       }
       case 'read_workflow_file': {
+        const target = targetRepoRoot(ctx, args);
+        if (!target.ok) return target.result;
         const path = typeof args.path === 'string' ? args.path : '';
-        const decision = resolveMcpPath(ctx.repoRoot, path, ctx.policy, 'read');
+        const decision = resolveMcpPath(target.repoRoot, path, ctx.policy, 'read');
         if (!decision.ok || !decision.absolutePath || !decision.relativePath) {
           audit(ctx, name, 'blocked', args, path, decision.reason);
           return errorResult('POLICY_DENIED', decision.reason ?? 'path denied', { path });
@@ -759,21 +947,25 @@ export async function callMcpTool(ctx: McpToolContext, name: string, args: Recor
         });
       }
       case 'latest_handoff': {
+        const target = targetRepoRoot(ctx, args);
+        if (!target.ok) return target.result;
         const paths = ['.ai/harness/handoff/resume.md', '.ai/harness/handoff/codex-goal.md', '.ai/harness/handoff/chatgpt-plan.md'];
         const handoff = paths.map((path) => {
-          const decision = resolveMcpPath(ctx.repoRoot, path, ctx.policy, 'read');
+          const decision = resolveMcpPath(target.repoRoot, path, ctx.policy, 'read');
           if (!decision.ok || !decision.absolutePath || !existsSync(decision.absolutePath)) return { path, exists: false };
           const content = redactMcpText(readFileSync(decision.absolutePath, 'utf-8')).text;
-          return { path, exists: true, preview: content.split(/\r?\n/).slice(0, 24).join('\n') };
+          return { path, exists: true, preview: content.split(/\r?\n/).slice(0, 10).join('\n').slice(0, 1600) };
         });
         audit(ctx, name, 'ok', args);
         return textResult({ handoff });
       }
       case 'latest_checks': {
-        const files = workflowFileCandidates(ctx.repoRoot)
+        const target = targetRepoRoot(ctx, args);
+        if (!target.ok) return target.result;
+        const files = workflowFileCandidates(target.repoRoot)
           .filter((path) => path.startsWith('.ai/harness/checks/'))
-          .filter((path) => resolveMcpPath(ctx.repoRoot, path, ctx.policy, 'read').ok)
-          .map((path) => fileSummary(path, ctx.repoRoot))
+          .filter((path) => resolveMcpPath(target.repoRoot, path, ctx.policy, 'read').ok)
+          .map((path) => fileSummary(path, target.repoRoot))
           .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
           .sort((a, b) => b.modifiedAt.localeCompare(a.modifiedAt))
           .slice(0, 20);
@@ -782,21 +974,25 @@ export async function callMcpTool(ctx: McpToolContext, name: string, args: Recor
       }
       case 'list_prds':
       case 'list_sprints': {
+        const target = targetRepoRoot(ctx, args);
+        if (!target.ok) return target.result;
         const root = name === 'list_prds' ? 'plans/prds' : 'plans/sprints';
         const files: string[] = [];
-        listFilesUnder(ctx.repoRoot, root, 200, files);
+        listFilesUnder(target.repoRoot, root, 200, files);
         audit(ctx, name, 'ok', args);
-        return textResult({ files: files.map((path) => fileSummary(path, ctx.repoRoot)).filter(Boolean) });
+        return textResult({ files: files.map((path) => fileSummary(path, target.repoRoot)).filter(Boolean) });
       }
       case 'summarize_repo_harness_state': {
-        const current = existsSync(join(ctx.repoRoot, 'tasks/current.md'))
-          ? readFileSync(join(ctx.repoRoot, 'tasks/current.md'), 'utf-8').split(/\r?\n/).slice(0, 50).join('\n')
+        const target = targetRepoRoot(ctx, args);
+        if (!target.ok) return target.result;
+        const current = existsSync(join(target.repoRoot, 'tasks/current.md'))
+          ? readFileSync(join(target.repoRoot, 'tasks/current.md'), 'utf-8').split(/\r?\n/).slice(0, 50).join('\n')
           : null;
         audit(ctx, name, 'ok', args);
         return textResult({
           status: {
-            adopted: isRepoHarnessAdopted(ctx.repoRoot),
-            branch: currentGitBranch(ctx.repoRoot),
+            adopted: isRepoHarnessAdopted(target.repoRoot),
+            branch: currentGitBranch(target.repoRoot),
             profile: ctx.policy.profile,
           },
           current: current ? redactMcpText(current).text : null,

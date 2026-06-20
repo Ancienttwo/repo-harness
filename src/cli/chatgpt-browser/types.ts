@@ -25,6 +25,7 @@ export interface BrowserConsultInput {
   followups?: string[];
   model?: string;
   thinking?: ThinkingLevel;
+  chatgptApp?: string;
   provider?: BrowserProviderName;
   chatgptUrl?: string;
   timeoutMs?: number;
@@ -93,6 +94,7 @@ export interface BrowserSessionMeta {
   browser: {
     mode: 'manual-login';
     chatgptUrl: string;
+    chatgptApp?: string;
     channel?: NativeBrowserChannel;
     profileDir?: string;
     profileDirectory?: string;

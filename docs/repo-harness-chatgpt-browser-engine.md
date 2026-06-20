@@ -101,6 +101,15 @@ The wrapper maps repo-harness input to `oracle --engine browser --browser-archiv
 
 The oracle binary is resolved in a fixed, auditable order — `--oracle-bin`, then `REPO_HARNESS_ORACLE_BIN`, then repo-local `node_modules/.bin/oracle`, then `oracle` on `PATH`. A missing binary fails with `ORACLE_NOT_INSTALLED`; explicitly configured binaries (`--oracle-bin` or `REPO_HARNESS_ORACLE_BIN`) fail closed when invalid and do not silently fall through to the next source. repo-harness never implicitly downloads or `npx`-executes an unpinned oracle. `browser-doctor --provider oracle --json` runs `--help`, `--debug-help`, `--version`, plus an isolated `--browser-thinking-time` dry-run parser probe, and reports `installed`, resolved `binary`, `version`, `nodeCompatible`, a `capabilities` map (`browserEngine`, `writeOutput`, `browserFollowup`, `sessionFollowup`, `browserArchive`, `browserModelStrategy`, `browserCookiePath`, `browserThinkingTime`, `chatgptUrl`, `heartbeat`), and opt-in `agent_actions` when a GPT Pro setup repair can install, upgrade, or re-point the selected pinned external CLI; `status:"ready"` requires every capability for every flag repo-harness may send at runtime.
 
+When a ChatGPT MCP Connector app must be active for read-back, use `--chatgpt-app <serverName>` with the server name recorded by `repo-harness mcp doctor --repo <repo> --json` under `chatgpt.serverName`. repo-harness maps that to Oracle `--browser-app <serverName>` so Oracle selects the composer app before submitting the prompt. This is an opt-in capability: it is reported under `oracle.optionalCapabilities.browserAppPreselect` and is required only when `--chatgpt-app` is present. If the selected Oracle binary lacks `--browser-app`, the run fails before prompt submission with `ORACLE_APP_PRESELECT_UNSUPPORTED`; do not rely on plain prompt text such as `@serverName` as evidence that ChatGPT exposed MCP tools.
+
+App selection and tool availability are separate gates. `--chatgpt-app` only
+selects the Connector in the composer; ChatGPT can still see a stale scanned
+tool schema. If a run proves the app is selected but ChatGPT reports a specific
+tool unavailable, compare the live MCP `/mcp` `tools/list` against the
+Connector's visible tools and use ChatGPT Connector **Scan Tools** to refresh the
+schema.
+
 Long Oracle browser runs default to `--heartbeat 59`. repo-harness streams Oracle diagnostics and heartbeat lines to stderr while preserving stdout for the final JSON payload, so humans and agents get a periodic liveness signal without breaking automation that parses command output.
 
 Oracle browser mode supports model selection through `--model` and thinking intensity through `--browser-thinking-time <light|standard|extended|heavy>`. repo-harness maps its `--thinking` value directly to that Oracle browser flag after doctor has verified parser support. Oracle also supports `--browser-manual-login`, but repo-harness intentionally does not send it on the bound-profile path because it skips cookie copy and would make the selected Chrome profile cookie DB non-authoritative.

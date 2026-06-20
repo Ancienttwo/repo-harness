@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
+import { assertChatGptMcpContract } from "./helpers/chatgpt-mcp-contract";
 
 const ROOT = join(import.meta.dir, "..");
 const COMMAND_ROOT = join(ROOT, "assets", "skill-commands");
@@ -311,9 +312,15 @@ describe("repo-harness action command skills", () => {
     expect(gptpro).toContain("chatgpt.serverName");
     expect(gptpro).toContain(".repo-harness/mcp.local.json");
     expect(gptpro).toContain("MCP Read Evidence");
+    expect(gptpro).toContain("right-side process pane");
+    expect(gptpro).toContain("Called tool");
+    expect(gptpro).toContain("sandbox/process flow");
+    expect(gptpro).toContain("15 minutes or more");
+    expect(gptpro).toContain("Do not treat elapsed time as failure");
+    expect(gptpro).toContain("no thinking status detected yet");
     expect(gptpro).toContain("blocked or partial");
     expect(gptpro).toContain("route to `repo-harness:gptpro_setup`");
     expect(gptpro).toContain("Does not rename or replace the underlying");
-    expect(gptpro).not.toContain("kito-mcp");
+    assertChatGptMcpContract(gptpro);
   });
 });

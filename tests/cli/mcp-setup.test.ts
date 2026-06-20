@@ -13,6 +13,7 @@ import {
   runMcpSetupCodex,
 } from '../../src/cli/mcp/setup';
 import { createMcpToolContext } from '../../src/cli/mcp/server';
+import { assertChatGptMcpContract } from '../helpers/chatgpt-mcp-contract';
 
 const CLI = join(import.meta.dir, '../..', 'src/cli/index.ts');
 
@@ -63,9 +64,21 @@ describe('mcp setup', () => {
 
       const doctor = JSON.parse(runMcpDoctor({ repo: repoRoot, json: true }).lines[0]);
       expect(doctor.mcp.authConfigured).toBe(true);
+      expect(doctor.mcp.permissions.configurationScope).toBe('repo');
       expect(doctor.mcp.devMode.agentRunner).toBe(false);
       expect(doctor.chatgpt.serverName).toBe('repo-harness');
       expect(doctor.chatgpt.localEndpoint).toBe('http://127.0.0.1:8765/mcp');
+      expect(doctor.chatgpt.invocationVerification).toMatchObject({
+        status: 'manual_required',
+        checkableByDoctor: false,
+        scope: 'per_chat_model_surface',
+      });
+      expect(doctor.chatgpt.invocationVerification.acceptedEvidence).toEqual([
+        'called_tool_event',
+        'captured_tool_call_transcript',
+      ]);
+      const humanDoctor = runMcpDoctor({ repo: repoRoot }).lines.join('\n');
+      expect(humanDoctor).toContain('ChatGPT tool invocation: manual verification required');
     });
   });
 
@@ -132,6 +145,7 @@ describe('mcp setup', () => {
         expect(doctor.mcp.configScope).toBe('user');
         expect(doctor.mcp.localConfig).toBe(true);
         expect(doctor.mcp.authConfigured).toBe(true);
+        expect(doctor.mcp.permissions.configurationScope).toBe('user');
         expect(doctor.mcp.permissions.fullDiskRead).toBe(true);
         expect(doctor.codex.configured).toBe(false);
         expect(doctor.chatgpt.serverName).toBe('team-review-mcp');
@@ -174,6 +188,7 @@ describe('mcp setup', () => {
       const doctor = JSON.parse(runMcpDoctor({ repo: root, json: true }).lines[0]);
       expect(doctor.status).toBe('ready_user');
       expect(doctor.mcp.configScope).toBe('user');
+      expect(doctor.mcp.permissions.configurationScope).toBe('user');
       expect(doctor.mcp.permissions.fullDiskRead).toBe(true);
     } finally {
       if (previousHome === undefined) {
@@ -358,6 +373,13 @@ describe('mcp setup', () => {
     expect(guide).toContain('cloudflared tunnel create repo-harness-mcp');
     expect(guide).toContain('quick tunnel');
     expect(guide).toContain('chatgpt.serverName');
+    expect(guide).toContain('right-side process pane');
+    expect(guide).toContain('Called tool');
+    expect(guide).toContain('sandbox/process flow');
+    expect(guide).toContain('15 minutes or');
+    expect(guide).toContain('do not treat elapsed time as');
+    expect(guide).toContain('no thinking status detected yet');
+    assertChatGptMcpContract(guide);
   });
 
   test('patches Codex config while preserving unrelated content', () => {

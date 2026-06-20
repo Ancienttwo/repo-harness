@@ -76,6 +76,7 @@ function renderTranscript(meta: BrowserSessionMeta, bundle: PromptBundle, output
     `- Provider: ${meta.provider}`,
     `- Model: ${meta.model.requested ?? 'current'}`,
     `- Thinking: ${meta.model.thinking ?? 'unspecified'}`,
+    ...(meta.browser.chatgptApp ? [`- ChatGPT App: ${meta.browser.chatgptApp}`] : []),
     ...(meta.sourceSessionId ? [`- Source Session: ${meta.sourceSessionId}`] : []),
     ...(meta.browser.conversationUrl ? [`- Conversation: ${meta.browser.conversationUrl}`] : []),
     `- Created: ${meta.createdAt}`,
@@ -162,6 +163,7 @@ export function writeBrowserSession(opts: {
     browser: {
       mode: 'manual-login',
       chatgptUrl: opts.input.chatgptUrl ?? 'https://chatgpt.com/',
+      chatgptApp: opts.input.chatgptApp,
       channel: opts.input.browserChannel,
       profileDir: opts.input.profileDir,
       profileDirectory: opts.input.profileDirectory,

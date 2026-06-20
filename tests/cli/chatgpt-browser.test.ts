@@ -7,6 +7,7 @@ import { inspectBridgeExtensionInstall, renderBrowserAuthorizePage } from '../..
 import { writeChatgptBridgeExtension } from '../../src/cli/chatgpt-browser/bridge-extension';
 import { runBridgeProvider } from '../../src/cli/chatgpt-browser/bridge-provider';
 import type { PromptBundle } from '../../src/cli/chatgpt-browser/types';
+import { assertChatGptMcpContract } from '../helpers/chatgpt-mcp-contract';
 
 const ROOT = join(import.meta.dir, '../..');
 const CLI = join(ROOT, 'src/cli/index.ts');
@@ -87,6 +88,7 @@ describe('chatgpt browser command', () => {
     expect(consult.stdout).toContain('--keep-browser');
     expect(consult.stdout).toContain('--allow-absolute-output');
     expect(consult.stdout).toContain('--heartbeat');
+    expect(consult.stdout).toContain('--chatgpt-app');
   });
 
   test('dry-run consult writes a repo-local session with inline files', () => {
@@ -108,6 +110,8 @@ describe('chatgpt browser command', () => {
         'GPT-5.5 Pro',
         '--thinking',
         'heavy',
+        '--chatgpt-app',
+        'team-review-mcp',
       ]);
       expect(result.status).toBe(0);
       const payload = JSON.parse(result.stdout);
@@ -121,6 +125,9 @@ describe('chatgpt browser command', () => {
       expect(meta.engine).toBe('chatgpt-browser');
       expect(meta.provider).toBe('oracle');
       expect(meta.browser.profileDir).toBeUndefined();
+      expect(meta.browser.chatgptApp).toBe('team-review-mcp');
+      expect(payload.dryRun.command).toContain('--browser-app');
+      expect(payload.dryRun.command).toContain('team-review-mcp');
 
       const read = runChatgpt(['browser-session', '--repo', repoRoot, payload.sessionId]);
       expect(read.status).toBe(0);
@@ -145,6 +152,7 @@ describe('chatgpt browser command', () => {
       expect(followupPayload.sourceSessionId).toBe(payload.sessionId);
       const followupMeta = JSON.parse(readFileSync(join(repoRoot, '.ai/harness/chatgpt/sessions', followupPayload.sessionId, 'meta.json'), 'utf-8'));
       expect(followupMeta.sourceSessionId).toBe(payload.sessionId);
+      expect(followupMeta.browser.chatgptApp).toBe('team-review-mcp');
 
       const cleanupPlan = runChatgpt(['browser-cleanup', '--repo', repoRoot, '--status', 'dry_run', '--limit', '1', '--json']);
       expect(cleanupPlan.status).toBe(0);
@@ -274,6 +282,23 @@ describe('chatgpt browser command', () => {
       expect(meta.provider).toBe('native');
       expect(meta.status).toBe('dry_run');
       expect(meta.browser.profileDir).toBeUndefined();
+
+      const appPreselectDryRun = runChatgpt([
+        'browser-consult',
+        '--repo',
+        repoRoot,
+        '--provider',
+        'native',
+        '--dry-run',
+        '--prompt',
+        'Reply exactly OK',
+        '--chatgpt-app',
+        'team-review-mcp',
+      ]);
+      expect(appPreselectDryRun.status).toBe(0);
+      const appPreselectPayload = JSON.parse(appPreselectDryRun.stdout);
+      expect(appPreselectPayload.status).toBe('failed');
+      expect(appPreselectPayload.error.code).toBe('CHATGPT_APP_PRESELECT_PROVIDER_UNSUPPORTED');
 
       const unsupported = runChatgpt([
         'browser-consult',
@@ -939,6 +964,99 @@ describe('chatgpt browser command', () => {
     });
   });
 
+  test('oracle app preselection fails closed when the binary lacks browser-app support', () => {
+    withRepo((repoRoot) => {
+      const binDir = mkdtempSync(join(tmpdir(), 'repo-harness-fake-oracle-no-app-'));
+      try {
+        const oraclePath = join(binDir, 'oracle');
+        writeFileSync(
+          oraclePath,
+          [
+            '#!/bin/sh',
+            'case "$1" in',
+            '  --version) printf "%s\\n" "0.14.1"; exit 0;;',
+            '  --help|--debug-help) printf "%s\\n" "Usage: oracle --engine browser --write-output <p> --browser-thinking-time <level>"; exit 0;;',
+            'esac',
+            'for a in "$@"; do',
+            '  if [ "$a" = "--dry-run" ]; then exit 0; fi',
+            'done',
+            'printf "%s\\n" "unexpected oracle execution" >&2',
+            'exit 23',
+          ].join('\n'),
+        );
+        chmodSync(oraclePath, 0o755);
+        const result = runChatgpt([
+          'browser-consult',
+          '--repo',
+          repoRoot,
+          '--prompt',
+          'Review this.',
+          '--chatgpt-app',
+          'team-review-mcp',
+          '--oracle-bin',
+          oraclePath,
+        ]);
+        expect(result.status).toBe(0);
+        const payload = JSON.parse(result.stdout);
+        expect(payload.status).toBe('failed');
+        expect(payload.error.code).toBe('ORACLE_APP_PRESELECT_UNSUPPORTED');
+        const output = readFileSync(payload.paths.output, 'utf-8');
+        expect(output).toContain('does not support ChatGPT app preselection');
+        expect(output).not.toContain('unexpected oracle execution');
+      } finally {
+        rmSync(binDir, { recursive: true, force: true });
+      }
+    });
+  });
+
+  test('oracle provider passes ChatGPT app preselection to Oracle when supported', () => {
+    withRepo((repoRoot) => {
+      const binDir = mkdtempSync(join(tmpdir(), 'repo-harness-fake-oracle-app-'));
+      try {
+        const oraclePath = join(binDir, 'oracle');
+        writeFileSync(
+          oraclePath,
+          [
+            '#!/bin/sh',
+            'case "$1" in',
+            '  --version) printf "%s\\n" "0.14.2"; exit 0;;',
+            '  --help|--debug-help) printf "%s\\n" "Usage: oracle --engine browser --write-output <p> --browser-app <name> --browser-thinking-time <level>"; exit 0;;',
+            'esac',
+            'ARGS="$*"',
+            'OUT=""',
+            'PREV=""',
+            'for a in "$@"; do',
+            '  if [ "$PREV" = "--write-output" ]; then OUT="$a"; fi',
+            '  PREV="$a"',
+            'done',
+            'if [ -n "$OUT" ]; then printf "%s\\n" "Oracle saw: $ARGS" > "$OUT"; fi',
+          ].join('\n'),
+        );
+        chmodSync(oraclePath, 0o755);
+        const result = runChatgpt([
+          'browser-consult',
+          '--repo',
+          repoRoot,
+          '--prompt',
+          'Review this.',
+          '--chatgpt-app',
+          'team-review-mcp',
+          '--oracle-bin',
+          oraclePath,
+        ]);
+        expect(result.status).toBe(0);
+        const payload = JSON.parse(result.stdout);
+        expect(payload.status).toBe('completed');
+        const output = readFileSync(payload.paths.output, 'utf-8');
+        expect(output).toContain('--browser-app team-review-mcp');
+        const meta = JSON.parse(readFileSync(join(repoRoot, '.ai/harness/chatgpt/sessions', payload.sessionId, 'meta.json'), 'utf-8'));
+        expect(meta.browser.chatgptApp).toBe('team-review-mcp');
+      } finally {
+        rmSync(binDir, { recursive: true, force: true });
+      }
+    });
+  });
+
   test('oracle doctor probes binary capabilities and reports ready', () => {
     withRepo((repoRoot) => {
       const binDir = mkdtempSync(join(tmpdir(), 'repo-harness-fake-oracle-doctor-'));
@@ -974,6 +1092,9 @@ describe('chatgpt browser command', () => {
           browserThinkingTime: true,
           chatgptUrl: true,
           heartbeat: true,
+        });
+        expect(readiness.oracle.optionalCapabilities).toEqual({
+          browserAppPreselect: false,
         });
         expect(readiness.oracle.missingCapabilities).toEqual([]);
 
@@ -1203,6 +1324,7 @@ describe('chatgpt browser command', () => {
     expect(readFileSync(guide, 'utf-8')).toContain('Oracle CLI package currently requires `node >=24`');
     expect(readFileSync(guide, 'utf-8')).toContain('agent_actions');
     expect(readFileSync(guide, 'utf-8')).toContain('chatgpt-oracle-install-pinned');
+    expect(readFileSync(guide, 'utf-8')).toContain('--chatgpt-app <serverName>');
     const browserSkillText = readFileSync(skill, 'utf-8');
     expect(browserSkillText).toContain('repo-harness-chatgpt-browser');
     expect(browserSkillText).toContain('--provider oracle --json');
@@ -1216,9 +1338,16 @@ describe('chatgpt browser command', () => {
     expect(gptproSkillText).toContain('--model gpt-5.5-pro');
     expect(gptproSkillText).toContain('MCP Read-Back Acceptance');
     expect(gptproSkillText).toContain('chatgpt.serverName');
+    expect(gptproSkillText).toContain('--chatgpt-app "$serverName"');
     expect(gptproSkillText).toContain('.repo-harness/mcp.local.json');
     expect(gptproSkillText).toContain('MCP Read Evidence');
-    expect(gptproSkillText).not.toContain('kito-mcp');
+    expect(gptproSkillText).toContain('right-side process pane');
+    expect(gptproSkillText).toContain('Called tool');
+    expect(gptproSkillText).toContain('sandbox/process flow');
+    expect(gptproSkillText).toContain('15 minutes or more');
+    expect(gptproSkillText).toContain('Do not treat elapsed time as failure');
+    expect(gptproSkillText).toContain('no thinking status detected yet');
     expect(gptproSkillText).not.toContain('gptpro-consult.md');
+    assertChatGptMcpContract(gptproSkillText);
   });
 });
