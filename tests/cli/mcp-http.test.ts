@@ -4,7 +4,10 @@ import { createServer } from 'net';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { McpSessionStore, type McpSessionClosableTransport } from '../../src/cli/mcp/session-store';
 import { runMcpSetupChatgpt } from '../../src/cli/mcp/setup';
+import { startMcpHttp } from '../../src/cli/mcp/transports/http';
+import { repoHarnessPackageVersion } from '../../src/cli/mcp/version';
 
 function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -47,10 +50,76 @@ function initializeBody(): string {
   });
 }
 
+function useTempRegistryHome(): () => void {
+  const home = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-http-registry-'));
+  const previous = process.env.REPO_HARNESS_HOME;
+  process.env.REPO_HARNESS_HOME = home;
+  return () => {
+    if (previous === undefined) delete process.env.REPO_HARNESS_HOME;
+    else process.env.REPO_HARNESS_HOME = previous;
+    rmSync(home, { recursive: true, force: true });
+  };
+}
+
 describe('mcp http transport', () => {
+  test('session store enforces TTL, max sessions, lastSeen refresh, and close semantics without sleeping', async () => {
+    let now = 1_000;
+    const closed: string[] = [];
+    const makeTransport = (sessionId: string): McpSessionClosableTransport => ({
+      sessionId,
+      async close() {
+        closed.push(sessionId);
+      },
+    });
+    const store = new McpSessionStore({ ttlMs: 100, maxSessions: 2, now: () => now });
+
+    expect(store.canCreate()).toBe(true);
+    store.set('s1', makeTransport('s1'));
+    now += 40;
+    store.set('s2', makeTransport('s2'));
+    expect(store.size).toBe(2);
+    expect(store.canCreate()).toBe(false);
+
+    now += 40;
+    expect(store.get('s1')?.lastSeenAt).toBe(now);
+    now += 70;
+    expect(store.cleanupExpired()).toBe(1);
+    expect(closed).toEqual(['s2']);
+    expect(store.size).toBe(1);
+    expect(store.canCreate()).toBe(true);
+
+    await store.closeAndDelete('s1');
+    expect(closed).toEqual(['s2', 's1']);
+    expect(store.size).toBe(0);
+
+    store.set('s3', makeTransport('s3'));
+    store.set('s4', makeTransport('s4'));
+    await store.closeAll();
+    expect(closed.slice(-2).sort()).toEqual(['s3', 's4']);
+    expect(store.size).toBe(0);
+  });
+
+  test('public HTTP bind fails closed without an explicit public origin', async () => {
+    const repoRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-public-origin-'));
+    const port = await freePort();
+    const previous = process.env.REPO_HARNESS_MCP_PUBLIC_ORIGIN;
+    try {
+      delete process.env.REPO_HARNESS_MCP_PUBLIC_ORIGIN;
+      mkdirSync(join(repoRoot, '.ai/harness'), { recursive: true });
+      writeFileSync(join(repoRoot, '.ai/harness/policy.json'), '{}\n');
+      await expect(startMcpHttp({ repo: repoRoot, host: '0.0.0.0', port, auth: 'bearer', authToken: 'test-token' }))
+        .rejects.toThrow('REPO_HARNESS_MCP_PUBLIC_ORIGIN is required');
+    } finally {
+      if (previous === undefined) delete process.env.REPO_HARNESS_MCP_PUBLIC_ORIGIN;
+      else process.env.REPO_HARNESS_MCP_PUBLIC_ORIGIN = previous;
+      rmSync(repoRoot, { recursive: true, force: true });
+    }
+  });
+
   test('requires bearer auth and accepts authenticated initialize requests', async () => {
     const repoRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-http-'));
     const port = await freePort();
+    const restoreRegistryHome = useTempRegistryHome();
     let proc: Bun.Subprocess<'ignore', 'pipe', 'pipe'> | null = null;
     try {
       mkdirSync(join(repoRoot, '.ai/harness'), { recursive: true });
@@ -82,7 +151,16 @@ describe('mcp http transport', () => {
       await waitForHealth(port);
 
       const health = await fetch(`http://127.0.0.1:${port}/health`);
-      expect(await health.json()).toMatchObject({ status: 'ok', auth: 'required' });
+      const healthJson = await health.json();
+      expect(healthJson).toMatchObject({
+        status: 'ok',
+        package_version: repoHarnessPackageVersion(),
+        auth: 'bearer',
+        auth_mode: 'bearer',
+        profile: 'planner',
+      });
+      expect(healthJson.schema_hash).toMatch(/^[a-f0-9]{64}$/);
+      expect(JSON.stringify(healthJson)).not.toContain(token);
 
       const noAuth = await fetch(`http://127.0.0.1:${port}/mcp`, {
         method: 'POST',
@@ -109,9 +187,117 @@ describe('mcp http transport', () => {
       });
       expect(initialized.status).toBe(200);
       expect(await initialized.text()).toContain('repo-harness-mcp');
+      const sessionId = initialized.headers.get('mcp-session-id');
+      expect(sessionId).toMatch(/^[0-9a-f-]{36}$/);
+
+      const toolsList = await fetch(`http://127.0.0.1:${port}/mcp`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+          accept: 'application/json, text/event-stream',
+          'mcp-session-id': sessionId ?? '',
+        },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' }),
+      });
+      expect(toolsList.status).toBe(200);
+      expect(await toolsList.text()).toContain('read_workflow_file');
+
+      const deleted = await fetch(`http://127.0.0.1:${port}/mcp`, {
+        method: 'DELETE',
+        headers: {
+          authorization: `Bearer ${token}`,
+          accept: 'application/json, text/event-stream',
+          'mcp-session-id': sessionId ?? '',
+        },
+      });
+      expect([200, 202, 204]).toContain(deleted.status);
+
+      const afterDelete = await fetch(`http://127.0.0.1:${port}/mcp`, {
+        method: 'GET',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'mcp-session-id': sessionId ?? '',
+        },
+      });
+      expect(afterDelete.status).toBe(404);
+
+      const stale = await fetch(`http://127.0.0.1:${port}/mcp`, {
+        method: 'GET',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'mcp-session-id': '00000000-0000-4000-8000-000000000000',
+        },
+      });
+      expect(stale.status).toBe(404);
+      expect(await stale.json()).toMatchObject({
+        error: { code: 'SESSION_NOT_FOUND' },
+      });
     } finally {
       proc?.kill();
       await proc?.exited.catch(() => undefined);
+      restoreRegistryHome();
+      rmSync(repoRoot, { recursive: true, force: true });
+    }
+  });
+
+  test('supports URL token compatibility mode for single-user clients', async () => {
+    const repoRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-url-token-'));
+    const port = await freePort();
+    const restoreRegistryHome = useTempRegistryHome();
+    let proc: Bun.Subprocess<'ignore', 'pipe', 'pipe'> | null = null;
+    try {
+      mkdirSync(join(repoRoot, '.ai/harness'), { recursive: true });
+      writeFileSync(join(repoRoot, '.ai/harness/policy.json'), '{}\n');
+      runMcpSetupChatgpt({ repo: repoRoot, port: String(port) });
+      const token = (await Bun.file(join(repoRoot, '.repo-harness/mcp.tokens.json')).json()).bearerToken;
+
+      proc = Bun.spawn(
+        [
+          'bun',
+          'src/cli/index.ts',
+          'mcp',
+          'serve',
+          '--repo',
+          repoRoot,
+          '--transport',
+          'http',
+          '--host',
+          '127.0.0.1',
+          '--port',
+          String(port),
+          '--profile',
+          'planner',
+          '--auth',
+          'url-token',
+        ],
+        { cwd: process.cwd(), stdout: 'ignore', stderr: 'pipe' },
+      );
+      await waitForHealth(port);
+
+      const health = await fetch(`http://127.0.0.1:${port}/health`);
+      expect(await health.json()).toMatchObject({
+        status: 'ok',
+        auth: 'url-token',
+        profile: 'planner',
+        capabilities: { workspaceReader: true, workflowPlanner: true },
+        allowed_root_count: 1,
+      });
+
+      const initialized = await fetch(`http://127.0.0.1:${port}/mcp?repo_harness_token=${encodeURIComponent(token)}`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          accept: 'application/json, text/event-stream',
+        },
+        body: initializeBody(),
+      });
+      expect(initialized.status).toBe(200);
+      expect(await initialized.text()).toContain('repo-harness-mcp');
+    } finally {
+      proc?.kill();
+      await proc?.exited.catch(() => undefined);
+      restoreRegistryHome();
       rmSync(repoRoot, { recursive: true, force: true });
     }
   });
@@ -119,6 +305,7 @@ describe('mcp http transport', () => {
   test('supports ChatGPT-compatible OAuth authorization flow', async () => {
     const repoRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-oauth-'));
     const port = await freePort();
+    const restoreRegistryHome = useTempRegistryHome();
     let proc: Bun.Subprocess<'ignore', 'pipe', 'pipe'> | null = null;
     try {
       mkdirSync(join(repoRoot, '.ai/harness'), { recursive: true });
@@ -156,6 +343,15 @@ describe('mcp http transport', () => {
       expect(await metadata.json()).toMatchObject({
         resource: 'https://example.test/mcp',
         authorization_servers: ['https://example.test'],
+        scopes_supported: ['repo-harness', 'offline_access'],
+      });
+
+      const authorizationMetadata = await fetch(`http://127.0.0.1:${port}/.well-known/oauth-authorization-server`, {
+        headers: { 'x-forwarded-proto': 'https', 'x-forwarded-host': 'example.test' },
+      });
+      expect(await authorizationMetadata.json()).toMatchObject({
+        issuer: 'https://example.test',
+        scopes_supported: ['repo-harness', 'offline_access'],
       });
 
       const registered = await fetch(`http://127.0.0.1:${port}/register`, {
@@ -182,6 +378,7 @@ describe('mcp http transport', () => {
         response_type: 'code',
         code_challenge: challenge,
         code_challenge_method: 'S256',
+        scope: 'repo-harness offline_access',
         state: 'state-1',
       });
       const authorized = await fetch(`http://127.0.0.1:${port}/authorize`, {
@@ -207,8 +404,24 @@ describe('mcp http transport', () => {
         }),
       });
       expect(token.status).toBe(200);
-      const tokenJson = await token.json() as { access_token: string; token_type: string };
+      const tokenJson = await token.json() as { access_token: string; refresh_token: string; token_type: string; scope: string };
       expect(tokenJson.token_type).toBe('Bearer');
+      expect(tokenJson.scope).toBe('repo-harness offline_access');
+
+      const refreshed = await fetch(`http://127.0.0.1:${port}/token`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'refresh_token',
+          client_id: client.client_id,
+          refresh_token: tokenJson.refresh_token,
+        }),
+      });
+      expect(refreshed.status).toBe(200);
+      const refreshedJson = await refreshed.json() as { access_token: string; refresh_token: string; scope: string };
+      expect(refreshedJson.access_token).not.toBe(tokenJson.access_token);
+      expect(refreshedJson.refresh_token).not.toBe(tokenJson.refresh_token);
+      expect(refreshedJson.scope).toBe('repo-harness offline_access');
 
       const noAuth = await fetch(`http://127.0.0.1:${port}/mcp`, {
         method: 'POST',
@@ -227,11 +440,23 @@ describe('mcp http transport', () => {
         },
         body: initializeBody(),
       });
-      expect(initialized.status).toBe(200);
-      expect(await initialized.text()).toContain('repo-harness-mcp');
+      expect(initialized.status).toBe(401);
+
+      const refreshedInitialized = await fetch(`http://127.0.0.1:${port}/mcp`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${refreshedJson.access_token}`,
+          'content-type': 'application/json',
+          accept: 'application/json, text/event-stream',
+        },
+        body: initializeBody(),
+      });
+      expect(refreshedInitialized.status).toBe(200);
+      expect(await refreshedInitialized.text()).toContain('repo-harness-mcp');
     } finally {
       proc?.kill();
       await proc?.exited.catch(() => undefined);
+      restoreRegistryHome();
       rmSync(repoRoot, { recursive: true, force: true });
     }
   });

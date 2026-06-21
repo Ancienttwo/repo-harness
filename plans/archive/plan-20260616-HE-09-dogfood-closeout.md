@@ -20,7 +20,7 @@
 
 ## Evidence Contract
 
-- **State/progress path**: HE-09 row in `plans/sprints/20260617-Sprint: Harness Engineering Optimization - State, Review, Eval, Delegation.md`
+- **State/progress path**: HE-09 row in `plans/sprints/20260617-harness-engineering-optimization-state-review-eval-delegation.md`
 - **Verification evidence**: `git status --short --branch`; root required checks; `bash scripts/verify-sprint.sh`; `bash scripts/harness-trace-grade.sh --run .ai/harness/checks/latest.json --strict`
 - **Evaluator rubric**: all sprint rows are complete or explicitly closeout-ready, final review recommends pass, latest trace passes, no unrelated dirty files are included in the staged batch.
 - **Stop condition**: HE-09 review is pass, full checks pass, sprint checklist is updated, changelog is updated, and all HE-09 closeout files are staged.

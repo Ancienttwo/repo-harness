@@ -2,33 +2,48 @@
 
 ## Prerequisites
 
-- A repo-harness adopted repository.
+- At least one repo-harness adopted repository. New `repo-harness adopt`,
+  `repo-harness init`, and user-scope ChatGPT setup register adopted repos in
+  `~/.repo-harness/registered-repos.json`.
 - A local `repo-harness` CLI on PATH.
 - ChatGPT workspace access to Developer Mode and custom MCP Connectors.
 - A stable public HTTPS `/mcp` endpoint for recurring ChatGPT Connector use. Local Codex can use stdio without a tunnel.
 
 ## Start Local MCP Server
 
-Repo-local setup keeps MCP reads scoped to one adopted repository:
+Standard users run one MCP server and configure one ChatGPT Connector URL:
 
 ```bash
 repo-harness mcp serve --repo . --transport http --host 127.0.0.1 --port 8765 --profile planner
 ```
 
-Developer Mode can also be configured at OS user level when the user explicitly
-authorizes broad local file reads. This stores MCP config and auth under
-`~/.repo-harness/` and allows read tools to inspect any file the OS user can read:
+The ChatGPT Connector registers the HTTPS endpoint, not a per-repo URL. The
+server discovers target repos from the global registry, so any repo registered by
+`repo-harness adopt`, `repo-harness init`, or user-scope MCP setup can be
+selected by passing `repo_path` to workflow tools. The `--repo` value is only
+the default repo/bootstrap context, not the only usable project.
+
+Developer Mode should normally be configured at OS user level. This stores MCP
+config, auth, and the registered repo index under `~/.repo-harness/`. Extra
+non-repo document roots are optional and require explicit `--allow-root`:
 
 ```bash
-repo-harness mcp setup chatgpt --scope user --repo / --allow-full-disk-read --endpoint <https-url>/mcp
-repo-harness mcp serve --repo / --transport http --host 127.0.0.1 --port 8765 --profile planner
+repo-harness mcp setup chatgpt --scope user --repo . --endpoint <https-url>/mcp
+repo-harness mcp serve --repo . --transport http --host 127.0.0.1 --port 8765 --profile planner
 ```
 
-In user-scope mode, ChatGPT should first call `discover_harness_repos` to find
-adopted repositories, then pass the selected `repoRoot` as `repo_path` to
-`harness_status`, `latest_handoff`, `latest_checks`, and other read tools. Read
-tools without `repo_path` report the configured server root; they do not
-auto-select a discovered repo.
+Optional external non-repo reader roots stay in the same Connector and must be
+explicitly authorized:
+
+```bash
+repo-harness mcp setup chatgpt \
+  --scope user \
+  --repo . \
+  --enable-reader \
+  --allow-root "$HOME/Documents" \
+  --allow-root "$HOME/Projects" \
+  --endpoint <https-url>/mcp
+```
 
 Health check:
 
@@ -98,18 +113,24 @@ Use this Connector URL:
 9. Wait for the tool scan to finish, then create the Connector.
 10. Keep write confirmations enabled.
 
+After changing repo-harness versions or any MCP tool schema, restart
+`repo-harness mcp serve`, rescan the Connector tools, and start a fresh ChatGPT
+chat. If ChatGPT keeps an old schema, delete and recreate the App/Connector.
+
 If `repo-harness mcp doctor --repo . --json` reports `chatgpt.serverNameConfigured:false`, rerun setup with `--server-name <connector-name>` before using GPT Pro MCP read-back prompts.
 
 ## Human Workflow
 
 Use ChatGPT for planning and review. Use Codex for local execution.
 
-1. Ask ChatGPT to inspect workflow state with read-only tools first.
-2. Ask ChatGPT to turn the idea into a PRD with `write_prd_from_idea`.
-3. Ask ChatGPT to turn the PRD into a checklist Sprint with `write_checklist_sprint`.
-4. Ask ChatGPT to prepare a Codex Goal with `prepare_codex_goal_from_sprint`.
-5. Open Codex locally and run the generated `/goal` prompt.
-6. Let Codex execute one Sprint task card at a time, run checks, update the checklist, and stage each completed phase before continuing.
+1. Use the single configured Connector for workflow planning and read-only workspace tools.
+2. Call `discover_harness_repos` to list registered adopted repos, then pass `repo_path` when targeting a specific project.
+3. For registered repo document/code reading, call `list_allowed_roots`, `open_workspace`, `tree`, `search_text`, and `read_text`; non-repo external directories require explicit allowed roots.
+4. Ask ChatGPT to turn the idea into a PRD with `write_prd_from_idea`.
+5. Ask ChatGPT to turn the PRD into a checklist Sprint with `write_checklist_sprint`.
+6. Ask ChatGPT to prepare a Codex Goal with `prepare_codex_goal_from_sprint`.
+7. Open Codex locally and run the generated `/goal` prompt.
+8. Let Codex execute one Sprint task card at a time, run checks, update the checklist, and stage each completed phase before continuing.
 
 The sidecar is not a remote coding agent. It prepares workflow artifacts for the local agent host.
 
@@ -187,32 +208,21 @@ repo-harness mcp prepare-goal --repo . --prd plans/prds/<feature>.prd.md --sprin
 
 ## Test Prompt
 
-When testing through `repo-harness-gptpro`, pass the configured Connector name
-as an explicit browser app selector instead of relying on prompt text:
-
-```bash
-serverName="$(repo-harness mcp doctor --repo . --json | jq -r '.chatgpt.serverName // empty')"
-repo-harness chatgpt browser-consult --repo . --provider oracle --chatgpt-app "$serverName" --prompt "Call harness_doctor and report MCP Read Evidence."
+```text
+Use repo-harness to inspect this repo. Call harness_status, latest_handoff, and list_workflow_files. Do not write files.
 ```
 
-If the selected Oracle binary does not support app preselection yet,
-repo-harness fails before prompt submission with `ORACLE_APP_PRESELECT_UNSUPPORTED`.
-In that case, manually select the Connector from ChatGPT's composer `+` menu or
-upgrade/pin an Oracle binary with `--browser-app` support before treating the
-run as MCP read-back evidence.
+## Reader Test Prompt
 
 ```text
-Use repo-harness to inspect my local development repos. First call discover_harness_repos. Pick the repoRoot that matches the user's target, then call harness_status, latest_handoff, and list_workflow_files with repo_path set to that repoRoot. Do not write files.
+Use the repo-harness Connector. First call discover_harness_repos and choose the target repo_path. Then call list_allowed_roots, open_workspace for the matching root, tree on ".", read_text on README.md or docs/spec.md, and search_text for "repo-harness". Do not write files.
 ```
 
-ChatGPT can only call tools present in the Connector schema it scanned. Selecting
-the app in the composer exposes that scanned schema to the conversation; it does
-not force ChatGPT to refresh the server's current `tools/list`. After adding a
-tool or changing the sidecar scope, restart `repo-harness mcp serve`, verify the
-local `/mcp` `tools/list`, then open the ChatGPT Connector settings and run
-**Scan Tools** again. If ChatGPT says the app is selected but a tool is
-unavailable while local `tools/list` includes it, the ChatGPT Connector schema is
-stale.
+Blocked-file smoke:
+
+```text
+Use the opened workspace to try read_text on ".env", ".ssh/id_rsa", "secrets/token.txt", and "credentials/config.json". Each request must be blocked by policy. Do not print secret contents.
+```
 
 ## Connector Invocation Evidence
 
@@ -230,13 +240,13 @@ not prove that ChatGPT called MCP.
 
 For Pro runs, the normal tool-call runtime UI may not appear the way it does for
 other models because Pro uses a sandbox/process flow. In the visible ChatGPT Web
-UI, click the assistant's `Thinking` / `Thought for ...` disclosure to open the
-right-side process pane. Use that pane to confirm whether Pro actually emitted a
-`Called tool` event for the selected app, which action it chose, or whether it
-only reasoned inside the sandbox without invoking MCP. If the pane shows
-sandbox-only exploration, or the answer reports `app_unavailable` without a tool
-event, classify the outcome as `surface_blocked`, not as a broken repo or
-sidecar.
+UI, click the assistant's `Thinking` / `Thought for ...` disclosure to open
+the right-side process pane. Use that pane to confirm whether Pro actually
+emitted a `Called tool` event for the selected app, which action it chose, or
+whether it only reasoned inside the sandbox without invoking MCP. If the pane
+shows sandbox-only exploration, or the answer reports `app_unavailable` without
+a tool event, classify the outcome as `surface_blocked`, not as a broken repo
+or sidecar.
 
 Detailed Pro Extended planning and review tasks commonly take 15 minutes or
 more. When driving Pro through the browser path, do not treat elapsed time as
@@ -252,10 +262,10 @@ Outcome labels:
 - `surface_blocked`: schema is current, but the current model surface did not call MCP.
 - `bundle_fallback`: Pro is reviewing a local evidence bundle and did not read through MCP.
 
-When Pro is `surface_blocked`, use `repo-harness-gptpro` to send a bounded local
-evidence bundle through the existing Oracle/browser handoff. The bundle must say
-it was produced locally, list included and omitted/truncated material, and
-include:
+When Pro is `surface_blocked`, use `repo-harness-gptpro` to send a bounded
+local evidence bundle through the existing Oracle/browser handoff. The bundle
+must say it was produced locally, list included and omitted/truncated material,
+and include:
 
 ```yaml
 source: local_repo_harness_bundle
@@ -266,27 +276,29 @@ working_tree: clean | dirty
 Do not claim MCP read-back evidence for fallback output. Pro can plan or review
 the supplied bundle, while Codex still executes and verifies locally.
 
-Permission scope is separate from invocation evidence. Repo-scope setup is bound
-to the configured repo and does not imply arbitrary repo discovery. User-scope
-setup with explicit full-disk read is required before broad repo discovery is
-authorized.
+Permission scope is separate from invocation evidence. Standard user-scope setup
+uses the global registered repo index, not one Connector per project. Random
+external directories are still excluded unless the local user adds explicit
+`--allow-root` entries; broad full-disk read is not a supported default.
+Repo-scope setup remains for repo-local guide/auth compatibility, but it is not
+the recommended ChatGPT Connector shape for users working across projects.
 
 ## PRD Prompt
 
 ```text
-Use repo-harness to inspect docs/spec.md, tasks/current.md, latest handoff, and existing plans. Convert this idea into a PRD with write_prd_from_idea. Do not edit source code.
+Use repo-harness discover_harness_repos first, choose the target repo_path, inspect docs/spec.md, tasks/current.md, latest handoff, and existing plans in that repo, then convert this idea into a PRD with write_prd_from_idea using the same repo_path. Do not edit source code.
 ```
 
 ## Checklist Sprint Prompt
 
 ```text
-Use repo-harness to read the PRD. Convert it into an ordered checklist Sprint with write_checklist_sprint. Every task card must include a stage gate that requires Codex to stage the completed phase before continuing.
+Use repo-harness to read the target repo PRD by repo_path. Convert it into an ordered checklist Sprint with write_checklist_sprint using the same repo_path. Every task card must include a stage gate that requires Codex to stage the completed phase before continuing.
 ```
 
 ## Codex Goal Prompt
 
 ```text
-Use repo-harness prepare_codex_goal_from_sprint with the PRD path and checklist Sprint path. Return the host-native /goal prompt. Do not run Codex remotely.
+Use repo-harness prepare_codex_goal_from_sprint with repo_path, the PRD path, and the checklist Sprint path. Return the host-native /goal prompt. Do not run Codex remotely.
 ```
 
 Equivalent local CLI:
@@ -305,16 +317,20 @@ Use repo-harness-chatgpt-bridge. Execute the latest ChatGPT-generated Codex goal
 
 - If ChatGPT cannot connect, verify the tunnel URL is HTTPS and ends in `/mcp`.
 - If ChatGPT returns unauthorized, verify OAuth discovery works and re-run the authorization passphrase flow.
-- If tools are missing in ChatGPT but present in local `tools/list`, restart `repo-harness mcp serve`, then run **Scan Tools** in the ChatGPT Connector settings so ChatGPT refreshes its cached schema.
+- If tools are missing, restart `repo-harness mcp serve` and rescan tools.
 - If writes fail, verify the target path is a PRD, sprint, plan, or approved handoff file.
 - If ChatGPT generated prose instead of checklist Sprint task cards, ask it to use write_checklist_sprint.
 - If Codex cannot see the server, run `repo-harness mcp setup codex --repo . --scope project`.
 
 ## Security Notes
 
-- This MCP server exposes workflow artifacts, not general filesystem access.
+- The default planner Connector exposes workflow planning tools plus read-only access to registered adopted repos' non-ignored files.
+- Registered repo paths are loaded from `~/.repo-harness/registered-repos.json` and revalidated against live repo-harness adoption markers before use.
+- External read-only workspace roots appear in the same Connector only when the local user enables reader capability with explicit allowed roots.
 - The `/mcp` endpoint requires OAuth-issued Bearer tokens by default. Do not expose it through a tunnel without Connector auth configured.
 - `repo-harness mcp serve --auth bearer` is available for non-ChatGPT clients that can send a static bearer token.
+- `repo-harness mcp serve --auth url-token` is a single-user compatibility mode that accepts the same token in either `Authorization: Bearer` or `?repo_harness_token=`; logs and shared docs must not include the token.
+- Reader mode never disables deny globs for `.env`, private keys, SSH keys, credentials, secrets, `.git`, or dependency/build output.
 - Planner profile cannot write application source files, package manifests, lockfiles, CI config, secrets, or files outside the repo root.
 - MCP does not expose a default Codex runner. It prepares `.ai/harness/handoff/codex-goal.md`; the local Codex host owns `/goal` execution unless the user explicitly enables the local orchestrator dev runner.
 - The orchestrator dev runner is local-only, opt-in, timeout-bounded, audited, and limited to the fixed Codex goal handoff. It is not arbitrary shell.

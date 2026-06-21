@@ -1,4 +1,4 @@
-import { randomUUID, timingSafeEqual } from 'crypto';
+import { createHash, randomUUID, timingSafeEqual } from 'crypto';
 import express, { type Request, type Response, type NextFunction } from 'express';
 import { tokenHandler } from '@modelcontextprotocol/sdk/server/auth/handlers/token.js';
 import { revocationHandler } from '@modelcontextprotocol/sdk/server/auth/handlers/revoke.js';
@@ -7,7 +7,7 @@ import { redirectUriMatches } from '@modelcontextprotocol/sdk/server/auth/handle
 import { InvalidTokenError } from '@modelcontextprotocol/sdk/server/auth/errors.js';
 import type { OAuthClientInformationFull } from '@modelcontextprotocol/sdk/shared/auth.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { createRepoHarnessMcpServer, type McpServerOptions } from '../server';
+import { createMcpToolContext, createRepoHarnessMcpServer, type McpServerOptions } from '../server';
 import {
   mcpOAuthTokenStorePath,
   parseMcpHttpAuthMode,
@@ -18,6 +18,9 @@ import {
 } from '../auth';
 import { createMcpOAuthProvider, McpOAuthTokenStore } from '../oauth';
 import { resolveMcpRepoRoot } from '../repo';
+import { McpSessionStore } from '../session-store';
+import { buildMcpToolDefinitions } from '../tools';
+import { repoHarnessPackageVersion } from '../version';
 
 export interface McpHttpOptions extends McpServerOptions {
   host?: string;
@@ -26,6 +29,17 @@ export interface McpHttpOptions extends McpServerOptions {
   auth?: string;
 }
 
+const SESSION_TTL_MS = 30 * 60 * 1000;
+const MAX_SESSIONS = 64;
+const MCP_ALLOWED_HEADERS = [
+  'Content-Type',
+  'Accept',
+  'Authorization',
+  'Mcp-Session-Id',
+  'MCP-Protocol-Version',
+  'Last-Event-ID',
+].join(', ');
+
 function bearerFromRequest(req: Request): string | null {
   const header = req.headers.authorization;
   if (typeof header !== 'string') return null;
@@ -33,9 +47,21 @@ function bearerFromRequest(req: Request): string | null {
   return match ? match[1].trim() : null;
 }
 
-export function isAuthorizedMcpHttpRequest(req: Request, expectedToken: string | null): boolean {
+function tokenFromQuery(req: Request): string | null {
+  const raw = req.query.repo_harness_token;
+  return typeof raw === 'string' && raw.trim() ? raw.trim() : null;
+}
+
+function tokensMatch(provided: string | null, expected: string | null): boolean {
+  if (!provided || !expected) return false;
+  const providedBuffer = Buffer.from(provided);
+  const expectedBuffer = Buffer.from(expected);
+  return providedBuffer.length === expectedBuffer.length && timingSafeEqual(providedBuffer, expectedBuffer);
+}
+
+export function isAuthorizedMcpHttpRequest(req: Request, expectedToken: string | null, allowQueryToken = false): boolean {
   if (!expectedToken) return false;
-  return bearerFromRequest(req) === expectedToken;
+  return tokensMatch(bearerFromRequest(req), expectedToken) || (allowQueryToken && tokensMatch(tokenFromQuery(req), expectedToken));
 }
 
 function rawBodyToJson(body: Buffer): unknown | undefined {
@@ -50,15 +76,24 @@ function isInitializeRequest(body: unknown): boolean {
 function getPublicOrigin(req: Request): string {
   const configured = process.env.REPO_HARNESS_MCP_PUBLIC_ORIGIN?.trim();
   if (configured) {
-    try {
-      return new URL(configured).origin;
-    } catch (_error) {
-      // Fall through to request-derived origin.
-    }
+    return normalizePublicOrigin(configured);
   }
   const proto = (req.headers['x-forwarded-proto'] as string | undefined) ?? 'https';
   const host = (req.headers['x-forwarded-host'] as string | undefined) ?? req.headers.host ?? '127.0.0.1:8765';
   return `${proto}://${host}`;
+}
+
+function normalizePublicOrigin(value: string): string {
+  const parsed = new URL(value);
+  if (parsed.pathname !== '/' || parsed.search !== '' || parsed.hash !== '' || parsed.username !== '' || parsed.password !== '') {
+    throw new Error('REPO_HARNESS_MCP_PUBLIC_ORIGIN must be an origin only, for example https://mcp.example.com');
+  }
+  return parsed.origin;
+}
+
+function isLoopbackBindHost(host: string): boolean {
+  const normalized = host.trim().toLowerCase().replace(/^\[|\]$/g, '');
+  return normalized === 'localhost' || normalized === '127.0.0.1' || normalized === '::1';
 }
 
 export function isAllowedMcpOAuthRedirectUri(redirectUri: string): boolean {
@@ -67,14 +102,7 @@ export function isAllowedMcpOAuthRedirectUri(redirectUri: string): boolean {
     if (url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) {
       return true;
     }
-    if (
-      url.protocol === 'https:' &&
-      (url.origin === 'https://chatgpt.com' || url.origin === 'https://chat.openai.com') &&
-      url.pathname.startsWith('/connector/oauth/')
-    ) {
-      return true;
-    }
-    return false;
+    return url.protocol === 'https:' && url.username === '' && url.password === '';
   } catch (_error) {
     return false;
   }
@@ -189,6 +217,26 @@ function oauthAuthorizationHandler(provider: ReturnType<typeof createMcpOAuthPro
   };
 }
 
+function rateLimitMiddleware(opts: { windowMs: number; maxRequests: number }) {
+  const buckets = new Map<string, { windowStart: number; count: number }>();
+  return (req: Request, res: Response, next: NextFunction) => {
+    const now = Date.now();
+    const key = `${req.ip ?? 'unknown'}:${req.path}`;
+    const current = buckets.get(key);
+    if (!current || now - current.windowStart > opts.windowMs) {
+      buckets.set(key, { windowStart: now, count: 1 });
+      next();
+      return;
+    }
+    current.count += 1;
+    if (current.count > opts.maxRequests) {
+      res.status(429).json({ error: 'rate_limited', error_description: 'Too many OAuth requests' });
+      return;
+    }
+    next();
+  };
+}
+
 function sendOAuthUnauthorized(req: Request, res: Response, description: string): void {
   const resourceMetadataUrl = `${getPublicOrigin(req)}/.well-known/oauth-protected-resource/mcp`;
   res.setHeader(
@@ -200,8 +248,8 @@ function sendOAuthUnauthorized(req: Request, res: Response, description: string)
 
 function requireMcpHttpAuth(mode: McpHttpAuthMode, bearerToken: string | null, provider: ReturnType<typeof createMcpOAuthProvider> | null) {
   return (req: Request, res: Response, next: NextFunction) => {
-    if (mode === 'bearer') {
-      if (!isAuthorizedMcpHttpRequest(req, bearerToken)) {
+    if (mode === 'bearer' || mode === 'url-token') {
+      if (!isAuthorizedMcpHttpRequest(req, bearerToken, mode === 'url-token')) {
         res.setHeader('www-authenticate', 'Bearer realm="repo-harness-mcp"');
         res.status(bearerToken ? 401 : 503).json({ error: bearerToken ? 'unauthorized' : 'auth_not_configured' });
         return;
@@ -230,7 +278,38 @@ function requireMcpHttpAuth(mode: McpHttpAuthMode, bearerToken: string | null, p
   };
 }
 
-async function handleMcpPost(req: Request, res: Response, opts: McpHttpOptions, transports: Map<string, StreamableHTTPServerTransport>): Promise<void> {
+function sessionIdFromRequest(req: Request): string | undefined {
+  const raw = req.headers['mcp-session-id'];
+  return typeof raw === 'string' ? raw : undefined;
+}
+
+function isValidSessionId(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function boundedIntegerEnv(name: string, fallback: number, min: number, max: number): number {
+  const raw = process.env[name]?.trim();
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(Math.max(Math.trunc(parsed), min), max);
+}
+
+function sendSessionNotFound(res: Response, status = 404): void {
+  res.status(status).json({
+    error: {
+      code: 'SESSION_NOT_FOUND',
+      message: 'The MCP session is missing or expired; initialize a new session.',
+    },
+  });
+}
+
+function recordForSession(sessions: McpSessionStore<StreamableHTTPServerTransport>, sessionId: string | undefined) {
+  if (!sessionId || !isValidSessionId(sessionId)) return undefined;
+  return sessions.get(sessionId);
+}
+
+async function handleMcpPost(req: Request, res: Response, opts: McpHttpOptions, sessions: McpSessionStore<StreamableHTTPServerTransport>): Promise<void> {
   let body: unknown;
   try {
     body = rawBodyToJson(req.body as Buffer);
@@ -238,14 +317,18 @@ async function handleMcpPost(req: Request, res: Response, opts: McpHttpOptions, 
     res.status(400).json({ error: 'invalid JSON request body' });
     return;
   }
-  const sessionId = req.headers['mcp-session-id'] as string | undefined;
+  const sessionId = sessionIdFromRequest(req);
   if (!sessionId && isInitializeRequest(body)) {
+    if (!sessions.canCreate()) {
+      res.status(429).json({ error: { code: 'SESSION_LIMIT_REACHED', message: 'Too many active MCP sessions.' } });
+      return;
+    }
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
-      onsessioninitialized: (newSessionId) => transports.set(newSessionId, transport),
+      onsessioninitialized: (newSessionId) => sessions.set(newSessionId, transport),
     });
     transport.onclose = () => {
-      if (transport.sessionId) transports.delete(transport.sessionId);
+      if (transport.sessionId) sessions.delete(transport.sessionId);
     };
     const server = createRepoHarnessMcpServer(opts);
     await server.connect(transport);
@@ -253,55 +336,106 @@ async function handleMcpPost(req: Request, res: Response, opts: McpHttpOptions, 
     return;
   }
   if (sessionId) {
-    const transport = transports.get(sessionId);
-    if (transport) {
-      await transport.handleRequest(req, res, body);
+    const record = recordForSession(sessions, sessionId);
+    if (record) {
+      await record.transport.handleRequest(req, res, body);
       return;
     }
   }
-  res.status(400).json({ error: 'No valid session' });
+  sendSessionNotFound(res);
 }
 
-async function handleMcpGet(req: Request, res: Response, transports: Map<string, StreamableHTTPServerTransport>): Promise<void> {
-  const sessionId = req.headers['mcp-session-id'] as string | undefined;
-  const transport = sessionId ? transports.get(sessionId) : undefined;
-  if (!transport) {
-    res.status(400).json({ error: 'No valid session' });
+async function handleMcpGet(req: Request, res: Response, sessions: McpSessionStore<StreamableHTTPServerTransport>): Promise<void> {
+  const record = recordForSession(sessions, sessionIdFromRequest(req));
+  if (!record) {
+    sendSessionNotFound(res);
     return;
   }
-  await transport.handleRequest(req, res);
+  await record.transport.handleRequest(req, res);
+}
+
+async function handleMcpDelete(req: Request, res: Response, sessions: McpSessionStore<StreamableHTTPServerTransport>): Promise<void> {
+  const sessionId = sessionIdFromRequest(req);
+  const record = recordForSession(sessions, sessionId);
+  if (!sessionId || !record) {
+    sendSessionNotFound(res);
+    return;
+  }
+  await record.transport.handleRequest(req, res);
+  await sessions.closeAndDelete(sessionId);
 }
 
 export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
   const host = opts.host ?? '127.0.0.1';
   const port = opts.port ?? 8765;
+  if (!isLoopbackBindHost(host) && !process.env.REPO_HARNESS_MCP_PUBLIC_ORIGIN?.trim()) {
+    throw new Error('REPO_HARNESS_MCP_PUBLIC_ORIGIN is required when binding MCP HTTP to a non-loopback host');
+  }
+  const configuredPublicOrigin = process.env.REPO_HARNESS_MCP_PUBLIC_ORIGIN?.trim()
+    ? normalizePublicOrigin(process.env.REPO_HARNESS_MCP_PUBLIC_ORIGIN.trim())
+    : undefined;
   const repoRoot = resolveMcpRepoRoot(opts.repo ?? '.');
   const configScope = resolveMcpConfigScope(repoRoot);
   const authMode = parseMcpHttpAuthMode(opts.auth);
-  const authToken = authMode === 'bearer' ? opts.authToken ?? readMcpBearerToken(repoRoot, configScope) : null;
+  const authToken = authMode === 'bearer' || authMode === 'url-token' ? opts.authToken ?? readMcpBearerToken(repoRoot, configScope) : null;
   const oauthPassphrase = authMode === 'oauth' ? readMcpOAuthPassphrase(repoRoot, configScope) : null;
   const tokenStore = authMode === 'oauth' ? new McpOAuthTokenStore(mcpOAuthTokenStorePath(repoRoot, configScope)) : null;
   tokenStore?.load();
   const oauthProvider = tokenStore ? createMcpOAuthProvider(tokenStore) : null;
-  const transports = new Map<string, StreamableHTTPServerTransport>();
+  const sessionTtlMs = boundedIntegerEnv('REPO_HARNESS_MCP_SESSION_TTL_MS', SESSION_TTL_MS, 1_000, 24 * 60 * 60 * 1000);
+  const maxSessions = boundedIntegerEnv('REPO_HARNESS_MCP_MAX_SESSIONS', MAX_SESSIONS, 1, 256);
+  const sessions = new McpSessionStore<StreamableHTTPServerTransport>({ ttlMs: sessionTtlMs, maxSessions });
+  const cleanupTimer = setInterval(() => {
+    sessions.cleanupExpired();
+  }, Math.min(sessionTtlMs, 60_000));
+  cleanupTimer.unref?.();
   const app = express();
   app.set('trust proxy', 1);
 
-  app.get('/health', (_req, res) => {
+  app.use((req, res, next) => {
+    const origin = typeof req.headers.origin === 'string' ? req.headers.origin : '*';
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', MCP_ALLOWED_HEADERS);
+    res.setHeader('Access-Control-Expose-Headers', 'Mcp-Session-Id');
+    if (req.method === 'OPTIONS') {
+      res.status(204).end();
+      return;
+    }
+    next();
+  });
+
+  app.get('/health', (req, res) => {
+    sessions.cleanupExpired();
+    const ctx = createMcpToolContext({ ...opts, repo: repoRoot });
+    const tools = buildMcpToolDefinitions(ctx.policy, { enableChatgptBrowser: opts.enableChatgptBrowser === true });
     res.json({
       status: 'ok',
       server: 'repo-harness-mcp',
-      auth: authMode === 'oauth' ? (oauthPassphrase ? 'oauth' : 'missing') : (authToken ? 'required' : 'missing'),
+      package_version: repoHarnessPackageVersion(),
+      mcp_protocol: 'streamable-http',
+      profile: ctx.policy.profile,
+      capabilities: ctx.policy.capabilities,
+      allowed_root_count: ctx.policy.allowedRoots?.length ?? 0,
+      auth: authMode === 'oauth' ? (oauthPassphrase ? 'oauth' : 'missing') : (authToken ? authMode : 'missing'),
+      auth_mode: authMode,
+      public_origin: configuredPublicOrigin ?? getPublicOrigin(req),
+      active_sessions: sessions.size,
+      max_sessions: sessions.maxSessions,
+      session_ttl_ms: sessions.ttlMs,
+      schema_hash: createHash('sha256').update(JSON.stringify(tools)).digest('hex'),
     });
   });
 
   if (authMode === 'oauth' && oauthProvider) {
+    const oauthRateLimit = rateLimitMiddleware({ windowMs: 60_000, maxRequests: 120 });
+    app.use(['/authorize', '/token', '/revoke', '/register'], oauthRateLimit);
     app.use('/authorize', express.urlencoded({ extended: false, limit: '10kb' }));
     app.use('/authorize', requirePassphrase(oauthPassphrase ?? ''));
     app.use('/authorize', oauthAuthorizationHandler(oauthProvider));
-    app.use('/token', tokenHandler({ provider: oauthProvider, rateLimit: false }));
-    app.use('/revoke', revocationHandler({ provider: oauthProvider, rateLimit: false }));
-    app.use('/register', clientRegistrationHandler({ clientsStore: oauthProvider.clientsStore, rateLimit: false }));
+    app.use('/token', tokenHandler({ provider: oauthProvider }));
+    app.use('/revoke', revocationHandler({ provider: oauthProvider }));
+    app.use('/register', clientRegistrationHandler({ clientsStore: oauthProvider.clientsStore }));
     app.get('/.well-known/oauth-authorization-server', (req, res) => {
       const origin = getPublicOrigin(req);
       res.json({
@@ -314,7 +448,7 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
         grant_types_supported: ['authorization_code', 'refresh_token'],
         code_challenge_methods_supported: ['S256'],
         token_endpoint_auth_methods_supported: ['client_secret_post', 'none'],
-        scopes_supported: ['repo-harness'],
+        scopes_supported: ['repo-harness', 'offline_access'],
       });
     });
     app.get('/.well-known/openid-configuration', (req, res) => {
@@ -328,7 +462,7 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
         grant_types_supported: ['authorization_code', 'refresh_token'],
         code_challenge_methods_supported: ['S256'],
         token_endpoint_auth_methods_supported: ['client_secret_post', 'none'],
-        scopes_supported: ['repo-harness'],
+        scopes_supported: ['repo-harness', 'offline_access'],
       });
     });
     app.get('/.well-known/oauth-protected-resource/mcp', (req, res) => {
@@ -336,19 +470,24 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
       res.json({
         resource: `${origin}/mcp`,
         authorization_servers: [origin],
-        scopes_supported: ['repo-harness'],
+        scopes_supported: ['repo-harness', 'offline_access'],
         bearer_methods_supported: ['header'],
       });
     });
   }
 
   app.post('/mcp', requireMcpHttpAuth(authMode, authToken, oauthProvider), express.raw({ type: '*/*', limit: '1mb' }), (req, res) => {
-    handleMcpPost(req, res, { ...opts, repo: repoRoot }, transports).catch((error: unknown) => {
+    handleMcpPost(req, res, { ...opts, repo: repoRoot }, sessions).catch((error: unknown) => {
       if (!res.headersSent) res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
     });
   });
   app.get('/mcp', requireMcpHttpAuth(authMode, authToken, oauthProvider), (req, res) => {
-    handleMcpGet(req, res, transports).catch((error: unknown) => {
+    handleMcpGet(req, res, sessions).catch((error: unknown) => {
+      if (!res.headersSent) res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+    });
+  });
+  app.delete('/mcp', requireMcpHttpAuth(authMode, authToken, oauthProvider), (req, res) => {
+    handleMcpDelete(req, res, sessions).catch((error: unknown) => {
       if (!res.headersSent) res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
     });
   });
@@ -359,13 +498,12 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
   await new Promise<void>((resolve) => {
     httpServer.once('listening', resolve);
   });
-  const authLabel = authMode === 'oauth' ? (oauthPassphrase ? 'oauth' : 'oauth-missing') : (authToken ? 'bearer' : 'missing');
+  const authLabel = authMode === 'oauth' ? (oauthPassphrase ? 'oauth' : 'oauth-missing') : (authToken ? authMode : 'missing');
   console.error(`repo-harness mcp http listening on http://${host}:${port}/mcp (auth: ${authLabel})`);
 
   const shutdown = () => {
-    for (const transport of transports.values()) {
-      void transport.close().catch(() => undefined);
-    }
+    clearInterval(cleanupTimer);
+    void sessions.closeAll();
     tokenStore?.flush();
     httpServer.close(() => process.exit(0));
   };

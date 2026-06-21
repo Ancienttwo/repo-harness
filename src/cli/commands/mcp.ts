@@ -19,6 +19,8 @@ export interface McpServeOptions {
   port: string;
   profile: string;
   auth?: string;
+  enableReader?: boolean;
+  allowRoot?: string[];
   enableChatgptBrowser?: boolean;
   enableDevRunner?: boolean;
   devRunnerAgents?: string;
@@ -32,6 +34,8 @@ interface McpSetupChatgptOptions {
   port?: string;
   endpoint?: string;
   serverName?: string;
+  enableReader?: boolean;
+  allowRoot?: string[];
   allowFullDiskRead?: boolean;
 }
 
@@ -69,6 +73,10 @@ function parsePositiveIntegerOption(name: string, value: string | undefined): nu
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed <= 0) throw new Error(`invalid --${name} "${value}"`);
   return parsed;
+}
+
+function collectOption(value: string, previous: string[] = []): string[] {
+  return [...previous, value];
 }
 
 async function runMcpAction(action: () => void | Promise<void>): Promise<void> {
@@ -118,12 +126,14 @@ export function buildMcpCommand(): Command {
   mcp
     .command('serve')
     .description('Start the repo-harness MCP server')
-    .option('--repo <path>', 'Repository root to expose through workflow-scoped MCP tools', '.')
+    .option('--repo <path>', 'Default repository/bootstrap context for workflow-scoped MCP tools', '.')
     .option('--transport <transport>', 'Transport: stdio|http', 'stdio')
     .option('--host <host>', 'HTTP bind host', '127.0.0.1')
     .option('--port <port>', 'HTTP bind port', '8765')
     .option('--profile <profile>', 'MCP profile: planner|executor|orchestrator', 'planner')
-    .option('--auth <mode>', 'HTTP auth mode: oauth|bearer', 'oauth')
+    .option('--auth <mode>', 'HTTP auth mode: oauth|bearer|url-token', 'oauth')
+    .option('--enable-reader', 'Force read-only workspace tools in this same MCP connector; registered adopted repos are included automatically')
+    .option('--allow-root <path>', 'Additional non-repo local root for workspace reader/discovery tools; may be repeated', collectOption, [])
     .option('--enable-chatgpt-browser', 'Expose tools that operate the user logged-in ChatGPT Web browser session')
     .option('--enable-dev-runner', 'Enable local dev-mode agent runner tools for the orchestrator profile')
     .option('--dev-runner-agents <agents>', 'Comma-separated dev runner agents: codex,claude')
@@ -135,6 +145,8 @@ export function buildMcpCommand(): Command {
           await startMcpStdio({
             repo: rawOpts.repo,
             profile: rawOpts.profile,
+            enableReader: rawOpts.enableReader === true,
+            allowedRoots: rawOpts.allowRoot,
             enableChatgptBrowser: rawOpts.enableChatgptBrowser === true,
             enableDevRunner: rawOpts.enableDevRunner,
             devRunnerAgents: rawOpts.devRunnerAgents,
@@ -146,6 +158,8 @@ export function buildMcpCommand(): Command {
           await startMcpHttp({
             repo: rawOpts.repo,
             profile: rawOpts.profile,
+            enableReader: rawOpts.enableReader === true,
+            allowedRoots: rawOpts.allowRoot,
             host: rawOpts.host,
             port: parsePort(rawOpts.port),
             auth: rawOpts.auth,
@@ -183,7 +197,9 @@ export function buildMcpCommand(): Command {
     .option('--port <port>', 'Local MCP HTTP bind port')
     .option('--endpoint <url>', 'Stable public HTTPS /mcp endpoint to store in ignored local config')
     .option('--server-name <name>', 'ChatGPT Connector/MCP server name to record in ignored local config')
-    .option('--allow-full-disk-read', 'User-scope Developer Mode: allow MCP read tools to read any OS-readable file')
+    .option('--enable-reader', 'Enable read-only workspace tools in the same ChatGPT MCP Connector; registered adopted repos are included automatically')
+    .option('--allow-root <path>', 'Additional non-repo local root for workspace reader/discovery tools; may be repeated', collectOption, [])
+    .option('--allow-full-disk-read', 'Deprecated: use --enable-reader with explicit --allow-root paths')
     .action((rawOpts: McpSetupChatgptOptions) => {
       void runMcpAction(() => {
         const result = runMcpSetupChatgpt(rawOpts);

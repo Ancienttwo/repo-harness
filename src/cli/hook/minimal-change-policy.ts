@@ -39,14 +39,14 @@ export interface MinimalChangePolicy {
   readonly warnings: readonly string[];
 }
 
-export const DEFAULT_MINIMAL_CHANGE_POLICY: MinimalChangePolicy = Object.freeze({
+const ACTIVE_MINIMAL_CHANGE_POLICY_DEFAULTS: MinimalChangePolicy = Object.freeze({
   version: 1,
   mode: 'advice',
   requestedMode: 'advice',
   blocking: false,
   session_context: true,
   prompt_advice: true,
-  post_edit_observer: true,
+  post_edit_observer: false,
   stop_review: true,
   max_findings: 5,
   max_context_words: 180,
@@ -57,6 +57,16 @@ export const DEFAULT_MINIMAL_CHANGE_POLICY: MinimalChangePolicy = Object.freeze(
   report_path: MINIMAL_CHANGE_REPORT_PATH,
   event_dedupe: true,
   warnings: Object.freeze([]),
+});
+
+export const DEFAULT_MINIMAL_CHANGE_POLICY: MinimalChangePolicy = Object.freeze({
+  ...ACTIVE_MINIMAL_CHANGE_POLICY_DEFAULTS,
+  mode: 'off',
+  requestedMode: 'off',
+  session_context: false,
+  prompt_advice: false,
+  post_edit_observer: false,
+  stop_review: false,
 });
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -97,14 +107,14 @@ function normalizeMode(value: unknown): {
   }
   if (typeof value === 'string') {
     return {
-      mode: DEFAULT_MINIMAL_CHANGE_POLICY.mode,
-      requestedMode: DEFAULT_MINIMAL_CHANGE_POLICY.requestedMode,
-      warning: `unknown minimal_change.mode=${value}; using advice`,
+      mode: 'off',
+      requestedMode: 'off',
+      warning: `unknown minimal_change.mode=${value}; using off`,
     };
   }
   return {
-    mode: DEFAULT_MINIMAL_CHANGE_POLICY.mode,
-    requestedMode: DEFAULT_MINIMAL_CHANGE_POLICY.requestedMode,
+    mode: 'off',
+    requestedMode: 'off',
   };
 }
 
@@ -129,6 +139,8 @@ export function normalizeMinimalChangePolicy(value: unknown): MinimalChangePolic
   const input = isRecord(value) ? value : {};
   const mode = normalizeMode(input.mode);
   if (mode.warning) warnings.push(mode.warning);
+  const fallback =
+    mode.mode === 'off' ? DEFAULT_MINIMAL_CHANGE_POLICY : ACTIVE_MINIMAL_CHANGE_POLICY_DEFAULTS;
 
   const reportPath = validHarnessRelativePath(input.report_path);
   if (input.report_path !== undefined && !reportPath) {
@@ -140,35 +152,35 @@ export function normalizeMinimalChangePolicy(value: unknown): MinimalChangePolic
     mode: mode.mode,
     requestedMode: mode.requestedMode,
     blocking: false,
-    session_context: boolField(input.session_context, DEFAULT_MINIMAL_CHANGE_POLICY.session_context),
-    prompt_advice: boolField(input.prompt_advice, DEFAULT_MINIMAL_CHANGE_POLICY.prompt_advice),
-    post_edit_observer: boolField(input.post_edit_observer, DEFAULT_MINIMAL_CHANGE_POLICY.post_edit_observer),
-    stop_review: boolField(input.stop_review, DEFAULT_MINIMAL_CHANGE_POLICY.stop_review),
-    max_findings: boundedInteger(input.max_findings, DEFAULT_MINIMAL_CHANGE_POLICY.max_findings, 1, 20),
+    session_context: boolField(input.session_context, fallback.session_context),
+    prompt_advice: boolField(input.prompt_advice, fallback.prompt_advice),
+    post_edit_observer: boolField(input.post_edit_observer, fallback.post_edit_observer),
+    stop_review: boolField(input.stop_review, fallback.stop_review),
+    max_findings: boundedInteger(input.max_findings, fallback.max_findings, 1, 20),
     max_context_words: boundedInteger(
       input.max_context_words,
-      DEFAULT_MINIMAL_CHANGE_POLICY.max_context_words,
+      fallback.max_context_words,
       60,
       240,
     ),
     new_dependency: enumField(
       input.new_dependency,
       ['warn', 'observe', 'off'] as const,
-      DEFAULT_MINIMAL_CHANGE_POLICY.new_dependency,
+      fallback.new_dependency,
     ),
     new_file: enumField(
       input.new_file,
       ['warn', 'observe', 'off'] as const,
-      DEFAULT_MINIMAL_CHANGE_POLICY.new_file,
+      fallback.new_file,
     ),
     new_abstraction: enumField(
       input.new_abstraction,
       ['warn', 'observe', 'off'] as const,
-      DEFAULT_MINIMAL_CHANGE_POLICY.new_abstraction,
+      fallback.new_abstraction,
     ),
     protected_concerns: protectedConcerns(input.protected_concerns),
     report_path: reportPath ?? DEFAULT_MINIMAL_CHANGE_POLICY.report_path,
-    event_dedupe: boolField(input.event_dedupe, DEFAULT_MINIMAL_CHANGE_POLICY.event_dedupe),
+    event_dedupe: boolField(input.event_dedupe, fallback.event_dedupe),
     warnings: Object.freeze(warnings),
   });
 }

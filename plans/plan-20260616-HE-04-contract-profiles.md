@@ -20,7 +20,7 @@
 
 ## Evidence Contract
 
-- **State/progress path**: HE-04 row in `plans/sprints/20260617-Sprint: Harness Engineering Optimization - State, Review, Eval, Delegation.md`
+- **State/progress path**: HE-04 row in `plans/sprints/20260617-harness-engineering-optimization-state-review-eval-delegation.md`
 - **Verification evidence**: `bun test tests/helper-scripts.test.ts`; `bash scripts/check-task-workflow.sh --strict`; `bash scripts/verify-contract.sh --contract tasks/contracts/20260616-HE-04-contract-profiles.contract.md --strict --read-only`
 - **Evaluator rubric**: templates include Task Profile, unsupported profiles fail, ledger-closeout runtime allowed paths fail, and legacy no-profile contracts still pass.
 - **Stop condition**: HE-04 row checked and staged diff contains only profile/template/verifier/docs/test/file artifacts.

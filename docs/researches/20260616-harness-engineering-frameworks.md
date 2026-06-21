@@ -2,7 +2,7 @@
 
 > **Date**: 2026-06-17
 > **Status**: Sprint baseline
-> **Source Sprint**: `plans/sprints/20260617-Sprint: Harness Engineering Optimization - State, Review, Eval, Delegation.md`
+> **Source Sprint**: `plans/sprints/20260617-harness-engineering-optimization-state-review-eval-delegation.md`
 > **Source PRD**: `plans/prds/repo-harness Plan to Closeout 工作流对标报告.md`
 
 ## Judgment

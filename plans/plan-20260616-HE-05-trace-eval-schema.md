@@ -20,7 +20,7 @@
 
 ## Evidence Contract
 
-- **State/progress path**: HE-05 row in `plans/sprints/20260617-Sprint: Harness Engineering Optimization - State, Review, Eval, Delegation.md`
+- **State/progress path**: HE-05 row in `plans/sprints/20260617-harness-engineering-optimization-state-review-eval-delegation.md`
 - **Verification evidence**: `bash scripts/verify-sprint.sh`; `jq '.schema' .ai/harness/checks/latest.json`; `bash scripts/harness-trace-grade.sh --run .ai/harness/checks/latest.json --strict`; `bun test tests/helper-scripts.test.ts`
 - **Evaluator rubric**: latest checks conforms to `repo-harness-run-trace.v1`, five local fixtures grade pass, strict workflow rejects malformed non-empty latest traces, and no external service is required.
 - **Stop condition**: HE-05 row checked and staged diff contains trace schema, grader, fixtures, docs, manifest, and task filing only.

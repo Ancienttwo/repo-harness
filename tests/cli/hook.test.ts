@@ -357,6 +357,75 @@ describe('hook command (Phase 1B)', () => {
     );
   });
 
+  test('explicit HOOK_REPO_ROOT can bind a hook launched outside a git repo', () => {
+    const outside = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'repo-harness-hook-outside-')),
+    );
+    withTempRepo(
+      {
+        optIn: true,
+        scripts: {
+          'session-start-context.sh':
+            '#!/bin/bash\n[ "$(pwd)" = "$1" ] && [ "$HOOK_REPO_ROOT" = "$1" ] && exit 0 || exit 99\n',
+          'security-sentinel.sh': '#!/bin/bash\nexit 0\n',
+        },
+      },
+      (repoRoot) => {
+        const prev = process.env.HOOK_REPO_ROOT;
+        process.env.HOOK_REPO_ROOT = repoRoot;
+        try {
+          const result = runHook({
+            event: 'SessionStart',
+            routeId: 'default',
+            cwd: outside,
+            args: [repoRoot],
+            stdio: 'ignore',
+          });
+          expect(result.exitCode).toBe(0);
+          expect(result.reason).toBe('ok');
+        } finally {
+          if (prev === undefined) delete process.env.HOOK_REPO_ROOT;
+          else process.env.HOOK_REPO_ROOT = prev;
+          fs.rmSync(outside, { recursive: true, force: true });
+        }
+      },
+    );
+  });
+
+  test('conflicting HOOK_REPO_ROOT and git cwd no-op before running scripts', () => {
+    withTempRepo(
+      {
+        optIn: true,
+        scripts: {
+          'session-start-context.sh': '#!/bin/bash\ntouch script-ran\nexit 0\n',
+          'security-sentinel.sh': '#!/bin/bash\ntouch sentinel-ran\nexit 0\n',
+        },
+      },
+      (cwdRepo) => {
+        withTempRepo({ optIn: true }, (explicitRepo) => {
+          const prev = process.env.HOOK_REPO_ROOT;
+          process.env.HOOK_REPO_ROOT = explicitRepo;
+          try {
+            const result = runHook({
+              event: 'SessionStart',
+              routeId: 'default',
+              cwd: cwdRepo,
+              stdio: 'ignore',
+            });
+            expect(result.exitCode).toBe(0);
+            expect(result.reason).toBe('repo-root-mismatch');
+            expect(result.scriptsRun).toEqual([]);
+            expect(fs.existsSync(path.join(cwdRepo, 'script-ran'))).toBe(false);
+            expect(fs.existsSync(path.join(cwdRepo, 'sentinel-ran'))).toBe(false);
+          } finally {
+            if (prev === undefined) delete process.env.HOOK_REPO_ROOT;
+            else process.env.HOOK_REPO_ROOT = prev;
+          }
+        });
+      },
+    );
+  });
+
   test('SessionStart route aggregates security sentinel context and stays quiet when unchanged', () => {
     const envRoot = fs.realpathSync(
       fs.mkdtempSync(path.join(os.tmpdir(), 'repo-harness-security-hook-')),

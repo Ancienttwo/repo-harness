@@ -85,7 +85,7 @@ artifacts.
 ## Novedades
 
 Las notas de versión viven en [`docs/CHANGELOG.md`](docs/CHANGELOG.md). La línea
-actual es `0.7.4`.
+actual es `0.7.5`.
 
 ## Cómo funciona
 
@@ -419,8 +419,8 @@ Guards habituales:
 
 ## Release actual
 
-- npm package: `repo-harness@0.7.4`
-- Generated workflow stamp: `repo-harness@0.7.4+template@0.7.4`
+- npm package: `repo-harness@0.7.5`
+- Generated workflow stamp: `repo-harness@0.7.5+template@0.7.5`
 - GitHub repository: `Ancienttwo/repo-harness`
 - Release history: [`docs/CHANGELOG.md`](docs/CHANGELOG.md)
 

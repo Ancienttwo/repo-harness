@@ -164,6 +164,62 @@ describe("init command", () => {
     }
   });
 
+  test("runInit registers an adopted repo in the global repo-harness registry", () => {
+    const tmp = join(tmpdir(), `repo-harness-init-registry-${Date.now()}`);
+    const source = join(tmp, "source");
+    const repo = join(tmp, "repo");
+    const home = join(tmp, "home");
+    try {
+      mkdirSync(source, { recursive: true });
+      mkdirSync(repo, { recursive: true });
+      mkdirSync(home, { recursive: true });
+      setupFakeSource(source);
+      makeExecutable(
+        join(source, "scripts", "migrate-project-template.sh"),
+        [
+          "#!/bin/bash",
+          "set -euo pipefail",
+          "repo=''",
+          "while [[ $# -gt 0 ]]; do",
+          "  case \"$1\" in",
+          "    --repo) repo=\"$2\"; shift 2 ;;",
+          "    --apply|--dry-run) shift ;;",
+          "    *) shift ;;",
+          "  esac",
+          "done",
+          "mkdir -p \"$repo/.ai/harness\"",
+          "printf '{}\\n' > \"$repo/.ai/harness/policy.json\"",
+          "echo migrate \"$repo\"",
+          "",
+        ].join("\n"),
+      );
+
+      const result = runInit({
+        repo,
+        sourceRoot: source,
+        syncSkill: false,
+        hostAdapters: false,
+        externalSkills: false,
+        verify: false,
+        codegraph: false,
+        env: {
+          ...process.env,
+          HOME: home,
+          REPO_HARNESS_HOME: join(home, ".repo-harness"),
+        },
+      });
+
+      expect(result.exitCode).toBe(0);
+      expect(result.steps.find((step) => step.step === "register repo harness repo")?.status).toBe("ok");
+      const registry = JSON.parse(readFileSync(join(home, ".repo-harness", "registered-repos.json"), "utf-8"));
+      expect(registry.repos).toEqual([
+        expect.objectContaining({ source: "init", path: realpathSync(repo) }),
+      ]);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   test("runInit refreshes Codex handoff before outer workflow verification", () => {
     const tmp = join(tmpdir(), `repo-harness-init-handoff-${Date.now()}`);
     const source = join(tmp, "source");

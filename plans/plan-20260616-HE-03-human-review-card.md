@@ -37,7 +37,7 @@ card verdict, and surface card fields in checks JSON.
 
 ## Evidence Contract
 
-- **State/progress path**: HE-03 row in `plans/sprints/20260617-Sprint: Harness Engineering Optimization - State, Review, Eval, Delegation.md`
+- **State/progress path**: HE-03 row in `plans/sprints/20260617-harness-engineering-optimization-state-review-eval-delegation.md`
 - **Verification evidence**: `bun test tests/helper-scripts.test.ts`; `bun test tests/bootstrap-files.test.ts tests/readme-dx.test.ts`; `bash scripts/check-task-workflow.sh --strict`; `bash scripts/verify-contract.sh --contract tasks/contracts/20260616-HE-03-human-review-card.contract.md --strict --read-only`
 - **Evaluator rubric**: generated reviews start with Human Review Card, verify-sprint fails missing card, checks JSON includes card status, and template assets stay synced.
 - **Stop condition**: HE-03 row checked, review recommends pass, and staged HE-03 batch contains no unrelated files.

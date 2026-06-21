@@ -90,6 +90,21 @@ describe("Bootstrap Script Contracts", () => {
     expect(ciGate.indexOf(resume)).toBeLessThan(ciGate.indexOf("bash scripts/check-task-workflow.sh --strict"));
   });
 
+  test("ci workflow should run MCP path matrix across hosted operating systems", () => {
+    const workflow = read(".github/workflows/ci.yml");
+    expect(workflow).toContain("mcp-path-matrix:");
+    expect(workflow).toContain("MCP path matrix (${{ matrix.os }})");
+    expect(workflow).toContain("ubuntu-latest");
+    expect(workflow).toContain("macos-latest");
+    expect(workflow).toContain("windows-latest");
+    expect(workflow).toContain("tests/cli/mcp-workspaces.test.ts");
+    expect(workflow).toContain("tests/cli/mcp-reader-tools.test.ts");
+    expect(workflow).toContain("tests/cli/mcp-policy.test.ts");
+    expect(workflow).toContain("tests/cli/mcp-http.test.ts");
+    expect(workflow).toContain("tests/cli/mcp-oauth.test.ts");
+    expect(workflow).toContain("tests/cli/mcp-stdio.test.ts");
+  });
+
   test("release gate should delegate owned checks to the ci gate", () => {
     const releaseGate = read("scripts/check-npm-release.sh");
     const ciGate = read("scripts/check-ci.sh");

@@ -1,6 +1,6 @@
 {
   "name": "repo-harness",
-  "version": "0.7.4",
+  "version": "0.7.5",
   "description": "Installs, migrates, audits, and repairs repo-local agentic development harnesses",
   "license": "MIT",
   "repository": {
@@ -34,7 +34,7 @@
     "benchmark:skills": "bun scripts/run-skill-evals.ts",
     "test": "bun test",
     "test:coverage": "bun test --coverage",
-    "check:type": "tsc --noEmit",
+    "check:type": "node node_modules/typescript/bin/tsc --noEmit",
     "check:ci": "bash scripts/check-ci.sh",
     "check:release": "bash scripts/check-npm-release.sh",
     "check:release-published": "bash scripts/check-release-published.sh",

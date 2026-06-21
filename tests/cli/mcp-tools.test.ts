@@ -1,9 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { registerRepoHarnessRepo } from '../../src/effects/repo-registry';
 import { getMcpPolicy } from '../../src/cli/mcp/policy';
 import { buildMcpToolDefinitions, callMcpTool, type McpToolContext } from '../../src/cli/mcp/tools';
+import { WorkspaceManager } from '../../src/cli/mcp/workspaces';
 
 async function withRepo<T>(fn: (repoRoot: string, ctx: McpToolContext) => Promise<T>): Promise<T> {
   const repoRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-tools-'));
@@ -17,7 +19,12 @@ async function withRepo<T>(fn: (repoRoot: string, ctx: McpToolContext) => Promis
     writeFileSync(join(repoRoot, 'tasks/current.md'), 'status=Active\n');
     writeFileSync(join(repoRoot, 'plans/prds/existing.prd.md'), '# Existing\n');
     writeFileSync(join(repoRoot, 'plans/sprints/example.sprint.md'), '# Sprint\n');
-    return await fn(repoRoot, { repoRoot, policy: getMcpPolicy('planner') });
+    const policy = getMcpPolicy('planner', { enableReader: true, allowedRoots: [repoRoot] });
+    return await fn(repoRoot, {
+      repoRoot,
+      policy,
+      workspaceManager: new WorkspaceManager({ allowedRoots: [repoRoot], policy }),
+    });
   } finally {
     rmSync(repoRoot, { recursive: true, force: true });
   }
@@ -26,6 +33,19 @@ async function withRepo<T>(fn: (repoRoot: string, ctx: McpToolContext) => Promis
 async function jsonTool(ctx: McpToolContext, name: string, args: Record<string, unknown> = {}) {
   const result = await callMcpTool(ctx, name, args);
   return JSON.parse(result.content[0].text);
+}
+
+async function withRegistryHome<T>(fn: (home: string) => Promise<T>): Promise<T> {
+  const home = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-registry-'));
+  const previous = process.env.REPO_HARNESS_HOME;
+  try {
+    process.env.REPO_HARNESS_HOME = home;
+    return await fn(home);
+  } finally {
+    if (previous === undefined) delete process.env.REPO_HARNESS_HOME;
+    else process.env.REPO_HARNESS_HOME = previous;
+    rmSync(home, { recursive: true, force: true });
+  }
 }
 
 describe('mcp tools', () => {
@@ -109,59 +129,167 @@ describe('mcp tools', () => {
       writeFileSync(join(repoRoot, '.env'), 'OPENAI_API_KEY=sk-testsecret\n');
       const fullDiskCtx = { ...ctx, policy: getMcpPolicy('planner', { fullDiskRead: true }) };
       const absolute = await jsonTool(fullDiskCtx, 'read_workflow_file', { path: join(repoRoot, '.env') });
-      expect(absolute.path).toBe('.env');
-      expect(absolute.content).toContain('OPENAI_API_KEY=[REDACTED]');
+      expect(absolute.error.code).toBe('POLICY_DENIED');
     });
   });
 
-  test('discovers adopted repos under full-disk authorization and reads a target repo', async () => {
-    const scanRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-discovery-'));
-    const repoRoot = join(scanRoot, 'workspace', 'agentic-dev');
+  test('planner connector opens allowed repo workspaces and reads text through tree search and line ranges', async () => {
+    const repoRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-reader-'));
+    const outside = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-reader-outside-'));
     try {
-      mkdirSync(join(repoRoot, '.ai/harness/handoff'), { recursive: true });
-      mkdirSync(join(repoRoot, 'tasks'), { recursive: true });
-      writeFileSync(join(repoRoot, '.ai/harness/policy.json'), '{}\n');
-      writeFileSync(join(repoRoot, '.ai/harness/handoff/resume.md'), '# Resume\n\nready\n');
-      writeFileSync(join(repoRoot, 'tasks/current.md'), 'status=Active\n');
+      mkdirSync(join(repoRoot, 'docs'), { recursive: true });
+      mkdirSync(join(repoRoot, 'src'), { recursive: true });
+      mkdirSync(join(repoRoot, 'ignored-dir'), { recursive: true });
+      mkdirSync(join(repoRoot, 'secrets'), { recursive: true });
+      writeFileSync(join(repoRoot, 'docs/design.md'), ['# Design', 'authentication route', 'final line'].join('\n'));
+      writeFileSync(join(repoRoot, 'src/index.ts'), 'export const readerFixture = 1;\n');
+      writeFileSync(join(repoRoot, 'package.json'), JSON.stringify({ name: 'reader-fixture', private: true }, null, 2));
+      writeFileSync(join(repoRoot, '.gitignore'), 'ignored.md\nignored-dir/\n');
+      writeFileSync(join(repoRoot, 'ignored.md'), '# ignored\n');
+      writeFileSync(join(repoRoot, 'ignored-dir/note.md'), '# ignored child\n');
+      writeFileSync(join(repoRoot, '.env'), 'OPENAI_API_KEY=sk-testsecret\n');
+      writeFileSync(join(repoRoot, 'secrets/token.txt'), 'TOKEN=secret\n');
+      const policy = getMcpPolicy('planner', { enableReader: true, allowedRoots: [repoRoot] });
+      const ctx: McpToolContext = {
+        repoRoot,
+        policy,
+        workspaceManager: new WorkspaceManager({ allowedRoots: [repoRoot], policy }),
+      };
 
-      const fullDiskCtx = { repoRoot: scanRoot, policy: getMcpPolicy('planner', { fullDiskRead: true }) };
-      expect(buildMcpToolDefinitions(fullDiskCtx.policy).some((tool) => tool.name === 'discover_harness_repos')).toBe(true);
+      const toolNames = buildMcpToolDefinitions(ctx.policy).map((tool) => tool.name);
+      expect(toolNames).toContain('write_prd');
+      expect(toolNames).toContain('prepare_codex_goal_from_sprint');
+      expect(toolNames).toContain('reader_status');
+      expect(toolNames).toContain('list_allowed_roots');
+      expect(toolNames).toContain('open_workspace');
+      expect(toolNames).toContain('tree');
+      expect(toolNames).toContain('search_text');
+      expect(toolNames).toContain('read_text');
+      expect(toolNames).not.toContain('run_agent_goal');
 
-      const discovered = await jsonTool(fullDiskCtx, 'discover_harness_repos', { roots: [scanRoot], max_depth: 4 });
-      expect(discovered.repos.some((entry: { repoRoot: string }) => entry.repoRoot === repoRoot)).toBe(true);
+      const status = await jsonTool(ctx, 'reader_status');
+      expect(status.profile).toBe('planner');
+      expect(status.capability).toBe('workspaceReader');
+      expect(status.package_version).toMatch(/^\d+\.\d+\.\d+/);
+      expect(typeof status.schema_hash).toBe('string');
 
-      const status = await jsonTool(fullDiskCtx, 'harness_status');
-      expect(status.repoRoot).toBe(scanRoot);
-      expect(status.adopted).toBe(false);
+      const roots = await jsonTool(ctx, 'list_allowed_roots');
+      const root = roots.roots.find((entry: { path: string }) => entry.path === realpathSync(repoRoot));
+      expect(root.root_id).toMatch(/^root_/);
 
-      const targetedStatus = await jsonTool(fullDiskCtx, 'harness_status', { repo_path: repoRoot });
-      expect(targetedStatus.repoRoot).toBe(repoRoot);
-      expect(targetedStatus.adopted).toBe(true);
+      const opened = await jsonTool(ctx, 'open_workspace', { root_id: root.root_id });
+      expect(opened.workspace_id).toMatch(/^ws_/);
 
-      const handoff = await jsonTool(fullDiskCtx, 'latest_handoff', { repo_path: repoRoot });
-      const resume = handoff.handoff.find((entry: { path: string }) => entry.path === '.ai/harness/handoff/resume.md');
-      expect(resume).toMatchObject({ exists: true });
-      expect(resume.preview).toContain('# Resume');
+      const deniedRoot = await jsonTool(ctx, 'open_workspace', { root_id: root.root_id, path: outside });
+      expect(deniedRoot.error.code).toBe('ABSOLUTE_PATH_DENIED');
 
-      const current = await jsonTool(fullDiskCtx, 'read_workflow_file', { repo_path: repoRoot, path: 'tasks/current.md' });
-      expect(current.content).toContain('status=Active');
+      const tree = await jsonTool(ctx, 'tree', { workspace_id: opened.workspace_id, path: '.', include_hidden: true });
+      expect(tree.entries.some((entry: { path: string }) => entry.path === 'docs/design.md')).toBe(true);
+      expect(tree.entries.some((entry: { path: string }) => entry.path === '.env')).toBe(false);
+      expect(tree.entries.some((entry: { path: string }) => entry.path === 'ignored.md')).toBe(false);
+      expect(tree.entries.some((entry: { path: string }) => entry.path === 'ignored-dir')).toBe(false);
+      expect(tree.blocked_entries).toBeGreaterThanOrEqual(1);
 
-      const absoluteCurrent = await jsonTool(fullDiskCtx, 'read_workflow_file', { path: join(repoRoot, 'tasks/current.md') });
-      expect(absoluteCurrent.content).toContain('status=Active');
+      const search = await jsonTool(ctx, 'search_text', {
+        workspace_id: opened.workspace_id,
+        query: 'authentication',
+        glob: '**/*.md',
+      });
+      expect(search.matches).toEqual([
+        expect.objectContaining({ path: 'docs/design.md', line: 2, snippet: 'authentication route' }),
+      ]);
 
-      const repoLocalCtx = { repoRoot: scanRoot, policy: getMcpPolicy('planner') };
-      const denied = await jsonTool(repoLocalCtx, 'discover_harness_repos', { roots: [scanRoot] });
-      expect(denied.error.code).toBe('FULL_DISK_READ_REQUIRED');
-      const deniedAbsoluteTarget = await jsonTool(repoLocalCtx, 'latest_handoff', { repo_path: repoRoot });
-      expect(deniedAbsoluteTarget.error.code).toBe('POLICY_DENIED');
-      const siblingRoot = join(scanRoot, 'sibling');
-      mkdirSync(join(siblingRoot, '.ai/harness/handoff'), { recursive: true });
-      writeFileSync(join(siblingRoot, '.ai/harness/policy.json'), '{}\n');
-      const deniedRelativeTarget = await jsonTool(repoLocalCtx, 'latest_handoff', { repo_path: 'sibling' });
-      expect(deniedRelativeTarget.error.code).toBe('POLICY_DENIED');
+      const read = await jsonTool(ctx, 'read_text', {
+        workspace_id: opened.workspace_id,
+        path: 'docs/design.md',
+        start_line: 2,
+        end_line: 2,
+      });
+      expect(read.text).toBe('2: authentication route');
+      expect(read.has_more).toBe(true);
+      expect(read.next_start_line).toBe(3);
+
+      const source = await jsonTool(ctx, 'read_text', { workspace_id: opened.workspace_id, path: 'src/index.ts' });
+      expect(source.text).toBe('1: export const readerFixture = 1;');
+      const legacySource = await jsonTool(ctx, 'read_workflow_file', { path: 'src/index.ts' });
+      expect(legacySource.error.code).toBe('POLICY_DENIED');
+      const legacyManifest = await jsonTool(ctx, 'read_workflow_file', { path: 'package.json' });
+      expect(legacyManifest.error.code).toBe('POLICY_DENIED');
+
+      const blocked = await jsonTool(ctx, 'read_text', { workspace_id: opened.workspace_id, path: 'secrets/token.txt' });
+      expect(blocked.error.code).toBe('PATH_DENIED');
+      const ignored = await jsonTool(ctx, 'read_text', { workspace_id: opened.workspace_id, path: 'ignored.md' });
+      expect(ignored.error.code).toBe('PATH_IGNORED');
     } finally {
-      rmSync(scanRoot, { recursive: true, force: true });
+      rmSync(repoRoot, { recursive: true, force: true });
+      rmSync(outside, { recursive: true, force: true });
     }
+  });
+
+  test('discovers registered adopted repos and targets them with repo_path', async () => {
+    await withRegistryHome(async () => {
+      const scanRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-discovery-'));
+      const repoRoot = join(scanRoot, 'workspace', 'agentic-dev');
+      try {
+        mkdirSync(join(repoRoot, '.ai/harness/handoff'), { recursive: true });
+        mkdirSync(join(repoRoot, 'plans/prds'), { recursive: true });
+        mkdirSync(join(repoRoot, 'tasks'), { recursive: true });
+        writeFileSync(join(repoRoot, '.ai/harness/policy.json'), '{}\n');
+        writeFileSync(join(repoRoot, '.ai/harness/handoff/resume.md'), '# Resume\n\nready\n');
+        writeFileSync(join(repoRoot, 'tasks/current.md'), 'status=Active\n');
+        registerRepoHarnessRepo(repoRoot, 'adopt');
+        const canonicalRepoRoot = realpathSync(repoRoot);
+
+        const policy = getMcpPolicy('planner', { enableReader: true });
+        const ctx: McpToolContext = {
+          repoRoot: scanRoot,
+          policy,
+          workspaceManager: new WorkspaceManager({ allowedRoots: [], policy }),
+        };
+        expect(buildMcpToolDefinitions(ctx.policy).some((tool) => tool.name === 'discover_harness_repos')).toBe(true);
+
+        const discovered = await jsonTool(ctx, 'discover_harness_repos');
+        expect(discovered.repos.some((entry: { repoRoot: string }) => entry.repoRoot === canonicalRepoRoot)).toBe(true);
+
+        const roots = await jsonTool(ctx, 'list_allowed_roots');
+        expect(roots.roots.some((entry: { path: string }) => entry.path === canonicalRepoRoot)).toBe(true);
+
+        const status = await jsonTool(ctx, 'harness_status');
+        expect(status.repoRoot).toBe(scanRoot);
+        expect(status.adopted).toBe(false);
+
+        const targetedStatus = await jsonTool(ctx, 'harness_status', { repo_path: repoRoot });
+        expect(targetedStatus.repoRoot).toBe(canonicalRepoRoot);
+        expect(targetedStatus.adopted).toBe(true);
+
+        const handoff = await jsonTool(ctx, 'latest_handoff', { repo_path: repoRoot });
+        const resume = handoff.handoff.find((entry: { path: string }) => entry.path === '.ai/harness/handoff/resume.md');
+        expect(resume).toMatchObject({ exists: true });
+        expect(resume.preview).toContain('# Resume');
+
+        const current = await jsonTool(ctx, 'read_workflow_file', { repo_path: repoRoot, path: 'tasks/current.md' });
+        expect(current.content).toContain('status=Active');
+
+        const prd = await jsonTool(ctx, 'write_prd', {
+          repo_path: repoRoot,
+          title: 'Registered Repo Feature',
+          slug: 'registered-repo-feature',
+          body: '# Registered Repo Feature\n\nBody.',
+        });
+        expect(prd.repoRoot).toBe(canonicalRepoRoot);
+        expect(existsSync(join(repoRoot, prd.path))).toBe(true);
+
+        const siblingRoot = join(scanRoot, 'sibling');
+        mkdirSync(join(siblingRoot, '.ai/harness/handoff'), { recursive: true });
+        writeFileSync(join(siblingRoot, '.ai/harness/policy.json'), '{}\n');
+        const deniedAbsoluteTarget = await jsonTool(ctx, 'latest_handoff', { repo_path: siblingRoot });
+        expect(deniedAbsoluteTarget.error.code).toBe('POLICY_DENIED');
+        const deniedRelativeTarget = await jsonTool(ctx, 'latest_handoff', { repo_path: 'sibling' });
+        expect(deniedRelativeTarget.error.code).toBe('POLICY_DENIED');
+      } finally {
+        rmSync(scanRoot, { recursive: true, force: true });
+      }
+    });
   });
 
   test('writes planning artifacts and blocks overwrite by default', async () => {

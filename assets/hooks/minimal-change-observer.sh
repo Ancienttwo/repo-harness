@@ -11,12 +11,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 file_path="$(hook_get_file_path "${1:-}")"
 [[ -z "$file_path" ]] && exit 0
+minimal_change_post_edit_enabled || exit 0
 
-if output="$(minimal_change_hook_entry signals --phase post-edit --path "$file_path" 2>&1 >/dev/null)"; then
-  :
-else
-  [[ -n "$output" ]] && printf 'minimal-change observer skipped: %s\n' "$output" >&2
-  exit 0
-fi
+minimal_change_hook_entry signals --phase post-edit --path "$file_path" >/dev/null 2>&1 || true
 
 exit 0

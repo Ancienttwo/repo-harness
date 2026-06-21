@@ -4,6 +4,14 @@ export type McpAgentRunnerName = 'codex' | 'claude';
 
 export interface McpPolicy {
   profile: McpProfileName;
+  allowedRoots?: string[];
+  discoveryRoots?: string[];
+  capabilities: {
+    workspaceReader: boolean;
+    workflowPlanner: boolean;
+    workflowExecutor: boolean;
+    agentRunner: boolean;
+  };
   readGlobs: string[];
   writeGlobs: string[];
   denyGlobs: string[];

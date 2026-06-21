@@ -44,8 +44,8 @@ principle card for the rest of the Sprint.
 allowed_paths:
   - docs/researches/20260616-harness-engineering-frameworks.md
   - plans/prds/repo-harness Plan to Closeout 工作流对标报告.md
-  - "plans/sprints/20260617-Sprint: Harness Engineering Optimization - State, Review, Eval, Delegation.md"
-  - "plans/sprints/20260617-Sprint: Harness Engineering Optimization — State, Review, Eval, Delegation.md"
+  - "plans/sprints/20260617-harness-engineering-optimization-state-review-eval-delegation.md"
+  - "plans/sprints/20260617-harness-engineering-optimization-state-review-eval-delegation.md"
   - plans/plan-20260616-HE-01-harness-research-baseline.md
   - tasks/contracts/20260616-HE-01-harness-research-baseline.contract.md
   - tasks/reviews/20260616-HE-01-harness-research-baseline.review.md

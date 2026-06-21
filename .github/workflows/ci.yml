@@ -37,3 +37,35 @@ jobs:
 
       - name: Diff hygiene
         run: git diff --check
+
+  mcp-path-matrix:
+    name: MCP path matrix (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.10
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: MCP reader and path security tests
+        run: >-
+          bun test --timeout 180000 --max-concurrency 1
+          tests/cli/mcp-workspaces.test.ts
+          tests/cli/mcp-reader-tools.test.ts
+          tests/cli/mcp-policy.test.ts
+          tests/cli/mcp-http.test.ts
+          tests/cli/mcp-oauth.test.ts
+          tests/cli/mcp-stdio.test.ts

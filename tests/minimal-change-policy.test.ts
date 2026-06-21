@@ -9,12 +9,25 @@ import {
 } from '../src/cli/hook/minimal-change-policy';
 
 describe('minimal-change policy', () => {
-  test('defaults to advisory and non-blocking', () => {
+  test('defaults to off and non-blocking', () => {
     const policy = normalizeMinimalChangePolicy(undefined);
+    expect(policy.mode).toBe('off');
+    expect(policy.blocking).toBe(false);
+    expect(policy.session_context).toBe(false);
+    expect(policy.prompt_advice).toBe(false);
+    expect(policy.post_edit_observer).toBe(false);
+    expect(policy.stop_review).toBe(false);
+    expect(policy.report_path).toBe('.ai/harness/checks/minimal-change.latest.json');
+  });
+
+  test('explicit advice enables advisory context while post-edit remains opt-in', () => {
+    const policy = normalizeMinimalChangePolicy({ mode: 'advice' });
     expect(policy.mode).toBe('advice');
     expect(policy.blocking).toBe(false);
     expect(policy.session_context).toBe(true);
-    expect(policy.report_path).toBe('.ai/harness/checks/minimal-change.latest.json');
+    expect(policy.prompt_advice).toBe(true);
+    expect(policy.post_edit_observer).toBe(false);
+    expect(policy.stop_review).toBe(true);
   });
 
   test('supports explicit off mode', () => {
@@ -43,17 +56,19 @@ describe('minimal-change policy', () => {
     expect(policy.warnings.join('\n')).toContain('report_path');
   });
 
-  test('loads repo policy and fail-opens on malformed JSON', () => {
+  test('loads repo policy and disables on missing or malformed policy', () => {
     const repo = mkdtempSync(join(tmpdir(), 'minimal-change-policy-'));
     mkdirSync(join(repo, '.ai/harness'), { recursive: true });
 
-    writeFileSync(
-      join(repo, '.ai/harness/policy.json'),
-      JSON.stringify({ minimal_change: { mode: 'off' } }, null, 2),
-    );
     expect(loadMinimalChangePolicy(repo).mode).toBe('off');
 
-    writeFileSync(join(repo, '.ai/harness/policy.json'), '{not-json');
+    writeFileSync(
+      join(repo, '.ai/harness/policy.json'),
+      JSON.stringify({ minimal_change: { mode: 'advice' } }, null, 2),
+    );
     expect(loadMinimalChangePolicy(repo).mode).toBe('advice');
+
+    writeFileSync(join(repo, '.ai/harness/policy.json'), '{not-json');
+    expect(loadMinimalChangePolicy(repo).mode).toBe('off');
   });
 });

@@ -39,7 +39,7 @@ allowed_paths:
   - tasks/contracts/20260616-HE-07-delegation-kappa-v2.contract.md
   - tasks/reviews/20260616-HE-07-delegation-kappa-v2.review.md
   - tasks/notes/20260616-HE-07-delegation-kappa-v2.notes.md
-  - "plans/sprints/20260617-Sprint: Harness Engineering Optimization — State, Review, Eval, Delegation.md"
+  - "plans/sprints/20260617-harness-engineering-optimization-state-review-eval-delegation.md"
 ```
 
 ## Delegation Contract

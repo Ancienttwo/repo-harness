@@ -69,7 +69,7 @@ review、checks 或 handoff 冲突，以 source artifacts 为准。
 
 ## What's New
 
-Release notes 见 [`docs/CHANGELOG.md`](docs/CHANGELOG.md)，当前版本线是 `0.7.4`。
+Release notes 见 [`docs/CHANGELOG.md`](docs/CHANGELOG.md)，当前版本线是 `0.7.5`。
 
 ## 工作原理
 
@@ -87,10 +87,11 @@ Release notes 见 [`docs/CHANGELOG.md`](docs/CHANGELOG.md)，当前版本线是 
    也可以把自托管开发钉回 `.ai/hooks/*`。
 
 minimal-change hooks 复用同一套路由 surface，不新增公开 adapter route。`SessionStart`
-和允许执行的 prompt 会打印 advisory context，`PostToolUse.edit` 把有界改动信号写到
+和允许执行的 prompt 只在 policy opt in 时打印 advisory context；只有显式启用
+`post_edit_observer:true` 时，`PostToolUse.edit` 才会把有界改动信号写到
 `.ai/harness/checks/minimal-change.latest.json`，`Stop` 把最新 review 摘要写进 handoff。
-默认 policy 是 `mode: "advice"` 并且 fail-open；即使配置 `mode: "enforce"` 也会归一化为
-advisory 行为，真正的 enforcement boundary 仍然是 tests、contracts 和 human review。
+缺失或损坏的 policy 默认 off；即使配置 `mode: "enforce"` 也会归一化为 advisory 行为，
+真正的 enforcement boundary 仍然是 tests、contracts 和 human review。
 
 对 `UserPromptSubmit` 来说，公开 adapter contract 仍然是
 `repo-harness-hook UserPromptSubmit --route default`。CLI route registry 会把这个
@@ -443,8 +444,8 @@ hook block 工作时，先看 terminal 里的结构化输出。核心字段是
 
 ## 当前 Release
 
-- npm package：`repo-harness@0.7.4`
-- Generated workflow stamp：`repo-harness@0.7.4+template@0.7.4`
+- npm package：`repo-harness@0.7.5`
+- Generated workflow stamp：`repo-harness@0.7.5+template@0.7.5`
 - GitHub repository：`Ancienttwo/repo-harness`
 - Release history：[`docs/CHANGELOG.md`](docs/CHANGELOG.md)
 

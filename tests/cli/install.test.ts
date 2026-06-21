@@ -75,6 +75,8 @@ describe('install command (Phase 1B)', () => {
         for (const entry of entries) {
           const hook = entry.hooks[0];
           const cmd = hook.command;
+          expect(cmd).toContain('git rev-parse --show-toplevel');
+          expect(cmd).toContain('export HOOK_REPO_ROOT="$repo"');
           expect(cmd).toContain('command -v repo-harness-hook');
           expect(cmd).toContain('repo-harness-hook ');
           expect(cmd).toContain('&& exit 0');

@@ -1,21 +1,31 @@
 import { createHash } from 'crypto';
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync, appendFileSync } from 'fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync, appendFileSync } from 'fs';
 import { homedir } from 'os';
 import { basename, dirname, isAbsolute, join, resolve } from 'path';
+import { isRegisteredRepoHarnessRoot, readRegisteredRepoHarnessRepos } from '../../effects/repo-registry';
 import { runProcess } from '../../effects/process-runner';
 import { runHelper } from '../runtime/helper-runner';
 import { listSessions, openSession, readSession, runBrowserConsult, runBrowserFollowup } from '../chatgpt-browser/engine';
 import type { BrowserProviderName, NativeBrowserChannel, ThinkingLevel } from '../chatgpt-browser/types';
 import { hashMcpInput, tryWriteMcpAuditEntry } from './audit';
-import { resolveMcpPath } from './paths';
+import { isPathInside, resolveMcpPath } from './paths';
+import { buildReaderToolDefinitions, callReaderTool, createReaderToolContext, isReaderTool } from './reader-tools';
 import { currentGitBranch, isRepoHarnessAdopted, resolveMcpRepoRoot } from './repo';
 import { redactMcpText } from './redaction';
 import type { McpAgentRunnerName, McpPolicy } from './types';
+import type { WorkspaceManager } from './workspaces';
 
 export interface McpToolContext {
   repoRoot: string;
   policy: McpPolicy;
   enableChatgptBrowser?: boolean;
+  workspaceManager?: WorkspaceManager;
+}
+
+function readerContext(ctx: McpToolContext) {
+  const reader = createReaderToolContext(ctx.repoRoot, ctx.policy, ctx.workspaceManager);
+  ctx.workspaceManager = reader.workspaceManager;
+  return reader;
 }
 
 export interface McpToolDefinition {
@@ -31,7 +41,6 @@ interface CallToolResult {
   isError?: boolean;
 }
 
-const EMPTY_SCHEMA = { type: 'object', additionalProperties: false };
 const DEFAULT_DISCOVERY_DEPTH = 7;
 const DEFAULT_DISCOVERY_LIMIT = 12;
 const DISCOVERY_SKIP_DIRS = new Set([
@@ -104,10 +113,14 @@ function isFullDiskRead(ctx: McpToolContext): boolean {
 }
 
 function isDiscoverableHarnessRepo(path: string): boolean {
-  return existsSync(join(path, '.ai', 'harness', 'policy.json'));
+  return existsSync(join(path, '.ai', 'harness', 'policy.json')) || existsSync(join(path, 'tasks', 'current.md'));
 }
 
 function discoveryDefaultRoots(ctx: McpToolContext): string[] {
+  const configured = [...(ctx.policy.discoveryRoots ?? []), ...(ctx.policy.allowedRoots ?? [])]
+    .map((path) => resolve(path))
+    .filter((path) => existsSync(path));
+  if (configured.length > 0) return Array.from(new Set(configured));
   if (ctx.repoRoot !== '/') return [ctx.repoRoot];
   const home = homedir();
   const candidates = [
@@ -144,14 +157,56 @@ function stringArgList(value: unknown): string[] {
   return value.map((entry) => String(entry).trim()).filter(Boolean);
 }
 
+function canonicalDirectory(path: string): string | null {
+  const absolute = resolve(path);
+  try {
+    if (!statSync(absolute).isDirectory()) return null;
+    return realpathSync(absolute);
+  } catch (_error) {
+    return null;
+  }
+}
+
+function authorizedDiscoveryRoots(ctx: McpToolContext): string[] {
+  return Array.from(new Set([
+    ...(isRepoHarnessAdopted(ctx.repoRoot) ? [ctx.repoRoot] : []),
+    ...(ctx.policy.discoveryRoots ?? []),
+    ...(ctx.policy.allowedRoots ?? []),
+  ].map((path) => canonicalDirectory(path)).filter((path): path is string => path !== null)));
+}
+
+function isAuthorizedDiscoveryRoot(ctx: McpToolContext, root: string): boolean {
+  const canonical = canonicalDirectory(root);
+  if (!canonical) return false;
+  if (isFullDiskRead(ctx)) return true;
+  return authorizedDiscoveryRoots(ctx).some((authorized) => isPathInside(authorized, canonical));
+}
+
+function addDiscoveredRepo(ctx: McpToolContext, repos: Map<string, ReturnType<typeof repoSummary>>, repoRoot: string): void {
+  const root = canonicalDirectory(resolveMcpRepoRoot(repoRoot));
+  if (!root || !isRepoHarnessAdopted(root)) return;
+  if (!repos.has(root)) repos.set(root, repoSummary(root));
+  try {
+    ctx.workspaceManager?.ensureAllowedRoot(root);
+  } catch (_error) {
+    // Discovery should report the repo even if a transient filesystem error
+    // prevents opening it as a workspace in this session.
+  }
+}
+
 function discoverHarnessRepos(ctx: McpToolContext, args: Record<string, unknown> = {}): { scannedRoots: string[]; repos: ReturnType<typeof repoSummary>[]; truncated: boolean } {
-  if (!isFullDiskRead(ctx)) return { scannedRoots: [], repos: [], truncated: false };
-  const roots = (stringArgList(args.roots).length > 0 ? stringArgList(args.roots) : discoveryDefaultRoots(ctx))
+  const requestedRoots = stringArgList(args.roots);
+  const roots = (requestedRoots.length > 0 ? requestedRoots : discoveryDefaultRoots(ctx))
     .map((path) => resolve(path))
-    .filter((path) => existsSync(path));
+    .filter((path) => existsSync(path))
+    .filter((path) => isAuthorizedDiscoveryRoot(ctx, path));
   const maxDepth = numberArg(args.max_depth, DEFAULT_DISCOVERY_DEPTH, 1, 12);
   const limit = numberArg(args.limit, DEFAULT_DISCOVERY_LIMIT, 1, 100);
   const repos = new Map<string, ReturnType<typeof repoSummary>>();
+  for (const entry of readRegisteredRepoHarnessRepos({ adoptedOnly: true })) {
+    addDiscoveredRepo(ctx, repos, entry.path);
+    if (repos.size >= limit) break;
+  }
   const queue = roots.map((path) => ({ path, depth: 0 }));
   let truncated = false;
 
@@ -170,8 +225,7 @@ function discoverHarnessRepos(ctx: McpToolContext, args: Record<string, unknown>
     }
     if (!currentStat.isDirectory()) continue;
     if (isDiscoverableHarnessRepo(current.path)) {
-      const root = resolveMcpRepoRoot(current.path);
-      if (!repos.has(root)) repos.set(root, repoSummary(root));
+      addDiscoveredRepo(ctx, repos, current.path);
       continue;
     }
     if (current.depth >= maxDepth) continue;
@@ -199,13 +253,33 @@ function targetRepoRoot(ctx: McpToolContext, args: Record<string, unknown>): { o
   if (!raw) {
     return { ok: true, repoRoot: ctx.repoRoot };
   }
-  if (isAbsolute(raw) && !isFullDiskRead(ctx)) {
-    return { ok: false, result: errorResult('POLICY_DENIED', 'repo_path absolute paths require user-scope full-disk read authorization.', { repo_path: raw }) };
-  }
   const candidate = isAbsolute(raw) ? raw : resolve(ctx.repoRoot, raw);
-  const repoRoot = resolveMcpRepoRoot(candidate);
-  if (!isFullDiskRead(ctx) && repoRoot !== ctx.repoRoot) {
-    return { ok: false, result: errorResult('POLICY_DENIED', 'repo_path outside the configured repo requires user-scope full-disk read authorization.', { repo_path: raw }) };
+  const repoRoot = canonicalDirectory(resolveMcpRepoRoot(candidate)) ?? resolveMcpRepoRoot(candidate);
+  const currentRoot = canonicalDirectory(ctx.repoRoot) ?? ctx.repoRoot;
+  if (repoRoot === currentRoot) {
+    return { ok: true, repoRoot };
+  }
+  const registered = isRegisteredRepoHarnessRoot(repoRoot);
+  const explicitlyAuthorized = isRepoHarnessAdopted(repoRoot) &&
+    authorizedDiscoveryRoots(ctx).some((root) => isPathInside(root, repoRoot));
+  if (!registered && !explicitlyAuthorized) {
+    return {
+      ok: false,
+      result: errorResult(
+        'POLICY_DENIED',
+        'repo_path must target a repo-harness adopted repo registered in ~/.repo-harness/registered-repos.json, or an adopted repo under an explicit allowed discovery root.',
+        { repo_path: raw },
+      ),
+    };
+  }
+  if (!isRepoHarnessAdopted(repoRoot)) {
+    return { ok: false, result: errorResult('REPO_NOT_ADOPTED', 'repo_path is not a repo-harness adopted repository.', { repo_path: raw }) };
+  }
+  try {
+    ctx.workspaceManager?.ensureAllowedRoot(repoRoot);
+  } catch (_error) {
+    // Workflow tools can still use policy-scoped files even if the workspace
+    // reader cannot open the root in this session.
   }
   return { ok: true, repoRoot };
 }
@@ -393,6 +467,7 @@ function bodyWithFrontmatter(title: string, kind: string, body: string): string 
 
 function writeMarkdownArtifact(
   ctx: McpToolContext,
+  repoRoot: string,
   tool: string,
   relativePath: string,
   title: string,
@@ -402,7 +477,7 @@ function writeMarkdownArtifact(
   input: unknown,
   extra?: Record<string, unknown>,
 ): CallToolResult {
-  const decision = resolveMcpPath(ctx.repoRoot, relativePath, ctx.policy, 'write');
+  const decision = resolveMcpPath(repoRoot, relativePath, ctx.policy, 'write');
   if (!decision.ok || !decision.absolutePath) {
     audit(ctx, tool, 'blocked', input, relativePath, decision.reason);
     return errorResult('POLICY_DENIED', decision.reason ?? 'path denied', { path: relativePath });
@@ -414,7 +489,7 @@ function writeMarkdownArtifact(
   mkdirSync(dirname(decision.absolutePath), { recursive: true });
   writeFileSync(decision.absolutePath, bodyWithFrontmatter(title, kind, body), 'utf-8');
   audit(ctx, tool, 'ok', input, relativePath);
-  return textResult({ status: 'written', path: relativePath, ...(extra ?? {}) });
+  return textResult({ status: 'written', repoRoot, path: relativePath, ...(extra ?? {}) });
 }
 
 function validateGoal(body: string): string[] {
@@ -631,7 +706,7 @@ function parseNativeBrowserChannel(value: unknown): NativeBrowserChannel | undef
 }
 
 export function buildMcpToolDefinitions(policy: McpPolicy, opts: { enableChatgptBrowser?: boolean } = {}): McpToolDefinition[] {
-  const readOnly = { readOnlyHint: true, openWorldHint: false };
+  const readOnly = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
   const write = { readOnlyHint: false, openWorldHint: false, destructiveHint: false };
   const optionalRepoSchema = {
     type: 'object',
@@ -656,6 +731,7 @@ export function buildMcpToolDefinitions(policy: McpPolicy, opts: { enableChatgpt
   const markdownWriterSchema = {
     type: 'object',
     properties: {
+      repo_path: { type: 'string' },
       title: { type: 'string' },
       slug: { type: 'string' },
       body: { type: 'string' },
@@ -667,6 +743,7 @@ export function buildMcpToolDefinitions(policy: McpPolicy, opts: { enableChatgpt
   const ideaPrdSchema = {
     type: 'object',
     properties: {
+      repo_path: { type: 'string' },
       title: { type: 'string' },
       slug: { type: 'string' },
       idea: { type: 'string' },
@@ -684,6 +761,7 @@ export function buildMcpToolDefinitions(policy: McpPolicy, opts: { enableChatgpt
   const checklistSprintSchema = {
     type: 'object',
     properties: {
+      repo_path: { type: 'string' },
       title: { type: 'string' },
       slug: { type: 'string' },
       prd_path: { type: 'string' },
@@ -710,6 +788,7 @@ export function buildMcpToolDefinitions(policy: McpPolicy, opts: { enableChatgpt
   const goalFromSprintSchema = {
     type: 'object',
     properties: {
+      repo_path: { type: 'string' },
       prd_path: { type: 'string' },
       sprint_path: { type: 'string' },
       goal_prd_path: { type: 'string' },
@@ -760,9 +839,9 @@ export function buildMcpToolDefinitions(policy: McpPolicy, opts: { enableChatgpt
   const tools: McpToolDefinition[] = [
     { name: 'harness_status', description: 'Return repo-harness adoption and workflow status. Pass repo_path after discover_harness_repos when targeting another adopted repo.', inputSchema: optionalRepoSchema, annotations: readOnly },
     { name: 'harness_doctor', description: 'Return compact MCP setup diagnostics.', inputSchema: optionalRepoSchema, annotations: readOnly },
-    { name: 'discover_harness_repos', description: 'Discover repo-harness adopted repositories from authorized local disk roots. Requires user-scope full-disk read.', inputSchema: discoverySchema, annotations: readOnly },
-    { name: 'list_workflow_files', description: 'List policy-readable workflow files.', inputSchema: optionalRepoSchema, annotations: readOnly },
-    { name: 'read_workflow_file', description: 'Read one policy-allowed file path. Absolute paths require user-scope full-disk read authorization.', inputSchema: stringPathSchema, annotations: readOnly },
+    { name: 'discover_harness_repos', description: 'Discover repo-harness adopted repositories from the global registry and explicit allowed discovery roots.', inputSchema: discoverySchema, annotations: readOnly },
+    { name: 'list_workflow_files', description: 'List policy-readable workflow files. Pass repo_path to target a registered adopted repo.', inputSchema: optionalRepoSchema, annotations: readOnly },
+    { name: 'read_workflow_file', description: 'Read one policy-allowed workflow file path from the current or target registered repo.', inputSchema: stringPathSchema, annotations: readOnly },
     { name: 'latest_handoff', description: 'Return latest repo-harness handoff artifacts.', inputSchema: optionalRepoSchema, annotations: readOnly },
     { name: 'latest_checks', description: 'Return latest repo-harness check artifacts.', inputSchema: optionalRepoSchema, annotations: readOnly },
     { name: 'list_prds', description: 'List PRD artifacts under plans/prds.', inputSchema: optionalRepoSchema, annotations: readOnly },
@@ -779,7 +858,7 @@ export function buildMcpToolDefinitions(policy: McpPolicy, opts: { enableChatgpt
       description: 'Write .ai/harness/handoff/codex-goal.md after required section validation.',
       inputSchema: {
         type: 'object',
-        properties: { body: { type: 'string' }, overwrite: { type: 'boolean' } },
+        properties: { repo_path: { type: 'string' }, body: { type: 'string' }, overwrite: { type: 'boolean' } },
         required: ['body'],
         additionalProperties: false,
       },
@@ -790,7 +869,7 @@ export function buildMcpToolDefinitions(policy: McpPolicy, opts: { enableChatgpt
       description: 'Append a timestamped planner handoff note.',
       inputSchema: {
         type: 'object',
-        properties: { actor: { type: 'string' }, body: { type: 'string' } },
+        properties: { repo_path: { type: 'string' }, actor: { type: 'string' }, body: { type: 'string' } },
         required: ['body'],
         additionalProperties: false,
       },
@@ -799,7 +878,10 @@ export function buildMcpToolDefinitions(policy: McpPolicy, opts: { enableChatgpt
   ];
 
   if (policy.execution.fixedWorkflowCheck) {
-    tools.push({ name: 'run_workflow_check', description: 'Run the fixed repo-harness strict workflow check.', inputSchema: EMPTY_SCHEMA, annotations: write });
+    tools.push({ name: 'run_workflow_check', description: 'Run the fixed repo-harness strict workflow check in the current or target registered repo.', inputSchema: optionalRepoSchema, annotations: write });
+  }
+  if (policy.capabilities.workspaceReader) {
+    tools.push(...buildReaderToolDefinitions());
   }
   if (opts.enableChatgptBrowser === true) {
     tools.push(
@@ -861,6 +943,12 @@ export function buildMcpToolDefinitions(policy: McpPolicy, opts: { enableChatgpt
 
 export async function callMcpTool(ctx: McpToolContext, name: string, args: Record<string, unknown> = {}): Promise<CallToolResult> {
   try {
+    if (isReaderTool(name)) {
+      if (!ctx.policy.capabilities.workspaceReader) {
+        return errorResult('TOOL_NOT_AVAILABLE', 'reader tools require the workspace reader capability to be enabled in MCP config.');
+      }
+      return callReaderTool(readerContext(ctx), name, args);
+    }
     switch (name) {
       case 'harness_status': {
         const target = targetRepoRoot(ctx, args);
@@ -902,10 +990,6 @@ export async function callMcpTool(ctx: McpToolContext, name: string, args: Recor
         });
       }
       case 'discover_harness_repos': {
-        if (!isFullDiskRead(ctx)) {
-          audit(ctx, name, 'blocked', args, undefined, 'full-disk read is not enabled');
-          return errorResult('FULL_DISK_READ_REQUIRED', 'discover_harness_repos requires user-scope full-disk read authorization.');
-        }
         const discovery = discoverHarnessRepos(ctx, args);
         audit(ctx, name, 'ok', args);
         return textResult(discovery);
@@ -999,46 +1083,58 @@ export async function callMcpTool(ctx: McpToolContext, name: string, args: Recor
         });
       }
       case 'write_prd': {
+        const target = targetRepoRoot(ctx, args);
+        if (!target.ok) return target.result;
         const title = String(args.title ?? '').trim();
         const slug = slugify(String(args.slug ?? title));
-        return writeMarkdownArtifact(ctx, name, prdArtifactPath(slug), title, 'prd', String(args.body ?? ''), args.overwrite === true, args);
+        return writeMarkdownArtifact(ctx, target.repoRoot, name, prdArtifactPath(slug), title, 'prd', String(args.body ?? ''), args.overwrite === true, args);
       }
       case 'write_prd_from_idea': {
+        const target = targetRepoRoot(ctx, args);
+        if (!target.ok) return target.result;
         const title = String(args.title ?? '').trim();
         const slug = slugify(String(args.slug ?? title));
         const body = renderPrdFromIdeaBody(args);
-        return writeMarkdownArtifact(ctx, name, prdArtifactPath(slug), title, 'prd', body, args.overwrite === true, args);
+        return writeMarkdownArtifact(ctx, target.repoRoot, name, prdArtifactPath(slug), title, 'prd', body, args.overwrite === true, args);
       }
       case 'write_sprint': {
+        const target = targetRepoRoot(ctx, args);
+        if (!target.ok) return target.result;
         const title = String(args.title ?? '').trim();
         const slug = slugify(String(args.slug ?? title));
-        return writeMarkdownArtifact(ctx, name, sprintArtifactPath(slug), title, 'sprint', String(args.body ?? ''), args.overwrite === true, args);
+        return writeMarkdownArtifact(ctx, target.repoRoot, name, sprintArtifactPath(slug), title, 'sprint', String(args.body ?? ''), args.overwrite === true, args);
       }
       case 'write_checklist_sprint': {
+        const target = targetRepoRoot(ctx, args);
+        if (!target.ok) return target.result;
         const title = String(args.title ?? '').trim();
         const slug = slugify(String(args.slug ?? title));
         const prdPath = String(args.prd_path ?? '').trim();
-        const prdDecision = resolveMcpPath(ctx.repoRoot, prdPath, ctx.policy, 'read');
+        const prdDecision = resolveMcpPath(target.repoRoot, prdPath, ctx.policy, 'read');
         if (!prdDecision.ok || !prdDecision.absolutePath || !existsSync(prdDecision.absolutePath)) {
           audit(ctx, name, 'blocked', args, prdPath, prdDecision.reason ?? 'PRD path does not exist or is not readable');
           return errorResult('PRD_NOT_READABLE', 'PRD path does not exist or is not policy-readable.', { path: prdPath });
         }
         const body = renderChecklistSprintBody(args);
-        return writeMarkdownArtifact(ctx, name, sprintArtifactPath(slug), title, 'sprint', body, args.overwrite === true, args);
+        return writeMarkdownArtifact(ctx, target.repoRoot, name, sprintArtifactPath(slug), title, 'sprint', body, args.overwrite === true, args);
       }
       case 'write_plan': {
+        const target = targetRepoRoot(ctx, args);
+        if (!target.ok) return target.result;
         const title = String(args.title ?? '').trim();
         const slug = slugify(String(args.slug ?? title));
-        return writeMarkdownArtifact(ctx, name, `plans/plan-${slug}.md`, title, 'plan', String(args.body ?? ''), args.overwrite === true, args);
+        return writeMarkdownArtifact(ctx, target.repoRoot, name, `plans/plan-${slug}.md`, title, 'plan', String(args.body ?? ''), args.overwrite === true, args);
       }
       case 'prepare_codex_goal_from_sprint': {
+        const target = targetRepoRoot(ctx, args);
+        if (!target.ok) return target.result;
         const prdPath = String(args.prd_path ?? '').trim();
         const sprintPath = String(args.sprint_path ?? '').trim();
         const missingInputs = [
           { label: 'PRD', path: prdPath },
           { label: 'Sprint', path: sprintPath },
         ].filter((entry) => {
-          const decision = resolveMcpPath(ctx.repoRoot, entry.path, ctx.policy, 'read');
+          const decision = resolveMcpPath(target.repoRoot, entry.path, ctx.policy, 'read');
           return !decision.ok || !decision.absolutePath || !existsSync(decision.absolutePath);
         });
         if (missingInputs.length > 0) {
@@ -1051,22 +1147,26 @@ export async function callMcpTool(ctx: McpToolContext, name: string, args: Recor
           audit(ctx, name, 'blocked', args, '.ai/harness/handoff/codex-goal.md', `missing required goal sections: ${missing.join(', ')}`);
           return errorResult('INVALID_GOAL', 'Generated Codex goal is missing required sections.', { missing });
         }
-        return writeMarkdownArtifact(ctx, name, '.ai/harness/handoff/codex-goal.md', 'Codex Goal', 'codex-goal', goal.body, args.overwrite === true, args, {
+        return writeMarkdownArtifact(ctx, target.repoRoot, name, '.ai/harness/handoff/codex-goal.md', 'Codex Goal', 'codex-goal', goal.body, args.overwrite === true, args, {
           prompt: goal.prompt,
         });
       }
       case 'write_codex_goal': {
+        const target = targetRepoRoot(ctx, args);
+        if (!target.ok) return target.result;
         const body = String(args.body ?? '');
         const missing = validateGoal(body);
         if (body.trim().length < 120 || missing.length > 0) {
           audit(ctx, name, 'blocked', args, '.ai/harness/handoff/codex-goal.md', `missing required goal sections: ${missing.join(', ')}`);
           return errorResult('INVALID_GOAL', 'Codex goal is missing required sections or is too small.', { missing });
         }
-        return writeMarkdownArtifact(ctx, name, '.ai/harness/handoff/codex-goal.md', 'Codex Goal', 'codex-goal', body, args.overwrite === true, args);
+        return writeMarkdownArtifact(ctx, target.repoRoot, name, '.ai/harness/handoff/codex-goal.md', 'Codex Goal', 'codex-goal', body, args.overwrite === true, args);
       }
       case 'append_handoff_note': {
+        const target = targetRepoRoot(ctx, args);
+        if (!target.ok) return target.result;
         const path = '.ai/harness/handoff/chatgpt-plan.md';
-        const decision = resolveMcpPath(ctx.repoRoot, path, ctx.policy, 'write');
+        const decision = resolveMcpPath(target.repoRoot, path, ctx.policy, 'write');
         if (!decision.ok || !decision.absolutePath) return errorResult('POLICY_DENIED', decision.reason ?? 'path denied');
         mkdirSync(dirname(decision.absolutePath), { recursive: true });
         const actor = String(args.actor ?? 'chatgpt-planner').trim() || 'chatgpt-planner';
@@ -1074,13 +1174,15 @@ export async function callMcpTool(ctx: McpToolContext, name: string, args: Recor
         const block = [``, `## ${new Date().toISOString()}`, ``, `Actor: ${actor}`, ``, body, ``].join('\n');
         appendFileSync(decision.absolutePath, block, 'utf-8');
         audit(ctx, name, 'ok', args, path);
-        return textResult({ status: 'appended', path });
+        return textResult({ status: 'appended', repoRoot: target.repoRoot, path });
       }
       case 'run_workflow_check': {
+        const target = targetRepoRoot(ctx, args);
+        if (!target.ok) return target.result;
         const result = runHelper({
           helper: 'check-task-workflow',
           args: ['--strict'],
-          cwd: ctx.repoRoot,
+          cwd: target.repoRoot,
           stdio: 'pipe',
           timeoutMs: 60_000,
           maxOutputBytes: 96 * 1024,
@@ -1089,6 +1191,7 @@ export async function callMcpTool(ctx: McpToolContext, name: string, args: Recor
         const stderr = redactMcpText(result.stderr ?? '');
         audit(ctx, name, result.exitCode === 0 ? 'ok' : 'failed', args, undefined, stderr.text);
         return textResult({
+          repoRoot: target.repoRoot,
           exitCode: result.exitCode,
           reason: result.reason,
           stdout: stdout.text,

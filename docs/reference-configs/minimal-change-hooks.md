@@ -1,7 +1,8 @@
 # Minimal Change Hooks
 
 Minimal-change hooks keep large or risky edits visible without turning the hook
-runtime into an implementation policy engine. The default mode is advisory and
+runtime into an implementation policy engine. Repos that do not declare
+`minimal_change` policy stay off by default; enabled policy remains advisory and
 fail-open.
 
 ## Runtime Path
@@ -13,8 +14,9 @@ fail-open.
   the prompt is allowed and looks execution-oriented, prompt guard appends the
   same advisory context.
 - `PostToolUse.edit` keeps `post-edit-guard.sh` first and then runs
-  `minimal-change-observer.sh`. The observer writes a deterministic report to
-  `.ai/harness/checks/minimal-change.latest.json`.
+  `minimal-change-observer.sh`. The observer is silent unless policy explicitly
+  sets `post_edit_observer: true`; when enabled it writes a deterministic report
+  to `.ai/harness/checks/minimal-change.latest.json`.
 - `Stop.default` still routes through `stop-orchestrator.sh`. Stop review reads
   the latest report and records summary evidence in the handoff. It does not
   block the session by itself.
@@ -29,7 +31,7 @@ The policy lives at `.ai/harness/policy.json` under `minimal_change`:
   "mode": "advice",
   "session_context": true,
   "prompt_advice": true,
-  "post_edit_observer": true,
+  "post_edit_observer": false,
   "stop_review": true,
   "max_findings": 5,
   "max_context_words": 180,
@@ -50,8 +52,10 @@ The policy lives at `.ai/harness/policy.json` under `minimal_change`:
 }
 ```
 
-`mode: "off"` disables the layer. `mode: "advice"` is the default. `mode:
-"enforce"` is accepted for compatibility but normalized to advisory behavior so
+Missing or malformed policy disables the layer. `mode: "off"` also disables it.
+`mode: "advice"` enables advisory context and Stop review; the post-edit
+observer stays opt-in through `post_edit_observer: true`. `mode: "enforce"` is
+accepted for compatibility but normalized to advisory behavior so
 minimal-change findings never become a host-level block.
 
 ## Report Contract

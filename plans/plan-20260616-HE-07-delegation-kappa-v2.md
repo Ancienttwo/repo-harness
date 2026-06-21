@@ -20,7 +20,7 @@
 
 ## Evidence Contract
 
-- **State/progress path**: HE-07 row in `plans/sprints/20260617-Sprint: Harness Engineering Optimization - State, Review, Eval, Delegation.md`
+- **State/progress path**: HE-07 row in `plans/sprints/20260617-harness-engineering-optimization-state-review-eval-delegation.md`
 - **Verification evidence**: `bun test tests/contract-run.test.ts`; `bash scripts/verify-contract.sh --contract tasks/contracts/20260616-HE-07-delegation-kappa-v2.contract.md --strict --read-only`; `bash scripts/check-task-workflow.sh --strict`
 - **Evaluator rubric**: dry-run prints delegation plan, worker is constrained to allowed paths, verifier rubric is the contract exit criteria, and parent remains checkpoint owner.
 - **Stop condition**: HE-07 row checked and staged diff contains delegation template/runner/docs/tests/filing only.

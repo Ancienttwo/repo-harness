@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { spawnSync } from 'child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { join, resolve } from 'path';
 import {
   chatgptGuideMarkdown,
   patchCodexConfigToml,
@@ -13,6 +13,7 @@ import {
   runMcpSetupCodex,
 } from '../../src/cli/mcp/setup';
 import { createMcpToolContext } from '../../src/cli/mcp/server';
+import { repoHarnessPackageVersion } from '../../src/cli/mcp/version';
 import { assertChatGptMcpContract } from '../helpers/chatgpt-mcp-contract';
 
 const CLI = join(import.meta.dir, '../..', 'src/cli/index.ts');
@@ -63,6 +64,7 @@ describe('mcp setup', () => {
       expect(ignore).toContain('.ai/harness/mcp/audit.log');
 
       const doctor = JSON.parse(runMcpDoctor({ repo: repoRoot, json: true }).lines[0]);
+      expect(doctor.mcp.packageVersion).toBe(repoHarnessPackageVersion());
       expect(doctor.mcp.authConfigured).toBe(true);
       expect(doctor.mcp.permissions.configurationScope).toBe('repo');
       expect(doctor.mcp.devMode.agentRunner).toBe(false);
@@ -78,6 +80,7 @@ describe('mcp setup', () => {
         'captured_tool_call_transcript',
       ]);
       const humanDoctor = runMcpDoctor({ repo: repoRoot }).lines.join('\n');
+      expect(humanDoctor).toContain(`[repo-harness mcp] Package version: ${repoHarnessPackageVersion()}`);
       expect(humanDoctor).toContain('ChatGPT tool invocation: manual verification required');
     });
   });
@@ -106,7 +109,7 @@ describe('mcp setup', () => {
     });
   });
 
-  test('user-scope ChatGPT setup stores MCP state under the OS user and authorizes full-disk reads', () => {
+  test('user-scope ChatGPT setup stores MCP state under the OS user and authorizes current-repo reader access', () => {
     withTmpRepo((repoRoot) => {
       const userState = mkdtempSync(join(tmpdir(), 'repo-harness-user-mcp-'));
       const previousHome = process.env.REPO_HARNESS_HOME;
@@ -118,13 +121,15 @@ describe('mcp setup', () => {
           scope: 'user',
           serverName: 'team-review-mcp',
           endpoint: 'https://repo-harness-mcp.example.com/mcp',
-          allowFullDiskRead: true,
         });
         expect(setup.lines.join('\n')).toContain('Config scope: user');
-        expect(setup.lines.join('\n')).toContain('Full-disk read: enabled');
+        expect(setup.lines.join('\n')).toContain('Reader capability: enabled');
+        expect(setup.lines.join('\n')).toContain('Registered repo:');
+        expect(setup.lines.join('\n')).toContain('--profile planner');
         expect(existsSync(join(userState, 'mcp.local.json'))).toBe(true);
         expect(existsSync(join(userState, 'mcp.tokens.json'))).toBe(true);
         expect(existsSync(join(userState, 'mcp.oauth.json'))).toBe(true);
+        expect(existsSync(join(userState, 'registered-repos.json'))).toBe(true);
         expect(existsSync(join(repoRoot, 'docs/repo-harness-chatgpt-mcp-setup.md'))).toBe(false);
 
         const config = JSON.parse(readFileSync(join(userState, 'mcp.local.json'), 'utf-8'));
@@ -135,8 +140,14 @@ describe('mcp setup', () => {
             serverName: 'team-review-mcp',
             endpoint: 'https://repo-harness-mcp.example.com/mcp',
           },
-          permissions: { fullDiskRead: true },
+          capabilities: { workspaceReader: true, workflowPlanner: true },
+          permissions: { fullDiskRead: false, allowedRoots: [], discoveryRoots: [] },
+          profile: 'planner',
         });
+        const registry = JSON.parse(readFileSync(join(userState, 'registered-repos.json'), 'utf-8'));
+        expect(registry.repos).toEqual([
+          expect.objectContaining({ path: realpathSync(repoRoot), source: 'mcp-setup' }),
+        ]);
         expect(config.auth.oauthFile).toContain('mcp.oauth.json');
         expect(config.auth.tokenFile).toContain('mcp.tokens.json');
 
@@ -146,13 +157,18 @@ describe('mcp setup', () => {
         expect(doctor.mcp.localConfig).toBe(true);
         expect(doctor.mcp.authConfigured).toBe(true);
         expect(doctor.mcp.permissions.configurationScope).toBe('user');
-        expect(doctor.mcp.permissions.fullDiskRead).toBe(true);
+        expect(doctor.mcp.permissions.fullDiskRead).toBe(false);
+        expect(doctor.mcp.permissions.allowedRootCount).toBe(0);
+        expect(doctor.mcp.permissions.registeredRepoCount).toBe(1);
+        expect(doctor.mcp.capabilities.workspaceReader).toBe(true);
         expect(doctor.codex.configured).toBe(false);
         expect(doctor.chatgpt.serverName).toBe('team-review-mcp');
 
         const ctx = createMcpToolContext({ repo: repoRoot, profile: 'planner' });
-        expect(ctx.policy.allowAbsoluteRead).toBe(true);
-        expect(ctx.policy.readGlobs).toEqual(['**']);
+        expect(ctx.policy.allowAbsoluteRead).toBe(false);
+        expect(ctx.policy.capabilities.workspaceReader).toBe(true);
+        expect(ctx.policy.allowedRoots).toEqual([realpathSync(repoRoot)]);
+        expect(ctx.policy.denyGlobs).toContain('.env');
       } finally {
         if (previousHome === undefined) {
           delete process.env.REPO_HARNESS_HOME;
@@ -164,11 +180,85 @@ describe('mcp setup', () => {
     });
   });
 
-  test('full-disk read setup requires user scope', () => {
+  test('full-disk read setup flag is deprecated and rejected', () => {
     withTmpRepo((repoRoot) => {
       expect(() => runMcpSetupChatgpt({ repo: repoRoot, allowFullDiskRead: true })).toThrow(
-        '--allow-full-disk-read requires --scope user',
+        '--allow-full-disk-read is deprecated',
       );
+    });
+  });
+
+  test('rejects explicit allowed roots that target sensitive directories', () => {
+    withTmpRepo((repoRoot) => {
+      for (const relativeRoot of ['.ssh', '.cache', 'node_modules/pkg', 'private/subdir']) {
+        const sensitiveRoot = join(repoRoot, ...relativeRoot.split('/'));
+        mkdirSync(sensitiveRoot, { recursive: true });
+        expect(() => runMcpSetupChatgpt({ repo: repoRoot, allowRoot: [sensitiveRoot] })).toThrow(
+          '--allow-root points at a sensitive directory denied by MCP policy',
+        );
+      }
+    });
+  });
+
+  test('server context rejects configured allowed roots that rebase denied directory globs', () => {
+    withTmpRepo((repoRoot) => {
+      const sensitiveRoot = join(repoRoot, 'node_modules/pkg');
+      mkdirSync(sensitiveRoot, { recursive: true });
+      expect(() => createMcpToolContext({ repo: repoRoot, enableReader: true, allowedRoots: [sensitiveRoot] })).toThrow(
+        'MCP allowed root is denied by policy',
+      );
+    });
+  });
+
+  test('doctor reports config version and explicit allowed-root diagnostics', () => {
+    withTmpRepo((repoRoot) => {
+      const externalRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-allowed-root-'));
+      try {
+        runMcpSetupChatgpt({
+          repo: repoRoot,
+          allowRoot: [externalRoot],
+          endpoint: 'https://repo-harness-mcp.example.com/mcp',
+        });
+        const doctor = JSON.parse(runMcpDoctor({ repo: repoRoot, json: true }).lines[0]);
+        expect(doctor.mcp.configVersion).toBe(2);
+        expect(doctor.mcp.configVersionOk).toBe(true);
+        expect(doctor.mcp.permissions.allowedRootCount).toBe(1);
+        expect(doctor.mcp.permissions.allowedRoots).toEqual([
+          expect.objectContaining({
+            path: realpathSync(externalRoot),
+            exists: true,
+            readable: true,
+            canonicalPath: realpathSync(externalRoot),
+          }),
+        ]);
+        expect(doctor.mcp.permissions.unsafeAllowedRoots).toEqual([]);
+        expect(doctor.chatgpt.publicEndpointConfigured).toBe(true);
+        expect(doctor.chatgpt.healthExpectations).toMatchObject({
+          offlineAccessDiscovery: true,
+          mcpDeleteSupported: true,
+        });
+        const human = runMcpDoctor({ repo: repoRoot }).lines.join('\n');
+        expect(human).toContain('Allowed roots: ok:');
+      } finally {
+        rmSync(externalRoot, { recursive: true, force: true });
+      }
+    });
+  });
+
+  test('doctor reports sensitive configured allowed roots as unsafe', () => {
+    withTmpRepo((repoRoot) => {
+      runMcpSetupChatgpt({ repo: repoRoot });
+      const sensitiveRoot = join(repoRoot, 'credentials');
+      mkdirSync(sensitiveRoot);
+      const configPath = join(repoRoot, '.repo-harness/mcp.local.json');
+      const config = JSON.parse(readFileSync(configPath, 'utf-8'));
+      config.permissions.allowedRoots = [sensitiveRoot];
+      writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n');
+
+      const doctor = JSON.parse(runMcpDoctor({ repo: repoRoot, json: true }).lines[0]);
+      expect(doctor.mcp.permissions.unsafeAllowedRoots).toEqual([resolve(sensitiveRoot)]);
+      const human = runMcpDoctor({ repo: repoRoot }).lines.join('\n');
+      expect(human).toContain('Unsafe allowed roots:');
     });
   });
 
@@ -182,14 +272,16 @@ describe('mcp setup', () => {
         repo: root,
         scope: 'user',
         serverName: 'team-review-mcp',
-        allowFullDiskRead: true,
       });
 
       const doctor = JSON.parse(runMcpDoctor({ repo: root, json: true }).lines[0]);
       expect(doctor.status).toBe('ready_user');
       expect(doctor.mcp.configScope).toBe('user');
       expect(doctor.mcp.permissions.configurationScope).toBe('user');
-      expect(doctor.mcp.permissions.fullDiskRead).toBe(true);
+      expect(doctor.mcp.permissions.fullDiskRead).toBe(false);
+      expect(doctor.mcp.permissions.allowedRootCount).toBe(0);
+      expect(doctor.mcp.permissions.registeredRepoCount).toBe(0);
+      expect(doctor.mcp.capabilities.workspaceReader).toBe(false);
     } finally {
       if (previousHome === undefined) {
         delete process.env.REPO_HARNESS_HOME;
@@ -366,6 +458,15 @@ describe('mcp setup', () => {
     expect(guide).toContain('.repo-harness/mcp.oauth.json');
     expect(guide).toContain('oauth-protected-resource');
     expect(guide).toContain('--auth bearer');
+    expect(guide).toContain('--auth url-token');
+    expect(guide).toContain('open_workspace');
+    expect(guide).toContain('--allow-root "$HOME/Documents"');
+    expect(guide).toContain('rescan the Connector tools');
+    expect(guide).toContain('delete and recreate the App/Connector');
+    expect(guide).toContain('## Reader Test Prompt');
+    expect(guide).toContain('Blocked-file smoke');
+    expect(guide).toContain('secrets/token.txt');
+    expect(guide).toContain('deny globs');
     expect(guide).toContain('## Dev Mode Agent Runner');
     expect(guide).toContain('--enable-dev-runner');
     expect(guide).toContain('run_agent_goal');

@@ -25,6 +25,7 @@ export interface RunHookResult {
   exitCode: number;
   reason:
     | 'not-in-git-repo'
+    | 'repo-root-mismatch'
     | 'non-opt-in'
     | 'unknown-route'
     | 'missing-script'
@@ -102,6 +103,33 @@ export function resolveRepoRoot(cwd: string): string | null {
   } catch {
     return null;
   }
+}
+
+function canonicalPath(input: string): string {
+  const resolved = path.resolve(input);
+  try {
+    return fs.realpathSync(resolved);
+  } catch {
+    return resolved;
+  }
+}
+
+function resolveExplicitRepoRoot(cwd: string, env: NodeJS.ProcessEnv = process.env): {
+  repoRoot: string | null;
+  mismatch: boolean;
+} {
+  const explicit = env.HOOK_REPO_ROOT?.trim();
+  if (!explicit) return { repoRoot: resolveRepoRoot(cwd), mismatch: false };
+
+  const explicitRoot = resolveRepoRoot(explicit);
+  if (!explicitRoot) return { repoRoot: null, mismatch: false };
+
+  const cwdRoot = resolveRepoRoot(cwd);
+  if (cwdRoot && canonicalPath(cwdRoot) !== canonicalPath(explicitRoot)) {
+    return { repoRoot: null, mismatch: true };
+  }
+
+  return { repoRoot: explicitRoot, mismatch: false };
 }
 
 export function isOptIn(repoRoot: string): boolean {
@@ -187,7 +215,11 @@ export function runHook(opts: RunHookOptions): RunHookResult {
   const scriptsRun: string[] = [];
   const skippedScripts: string[] = [];
 
-  const repoRoot = resolveRepoRoot(cwd);
+  const resolvedRepo = resolveExplicitRepoRoot(cwd);
+  if (resolvedRepo.mismatch) {
+    return { exitCode: 0, reason: 'repo-root-mismatch', scriptsRun, skippedScripts };
+  }
+  const repoRoot = resolvedRepo.repoRoot;
   if (!repoRoot) {
     return { exitCode: 0, reason: 'not-in-git-repo', scriptsRun, skippedScripts };
   }

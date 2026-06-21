@@ -20,7 +20,7 @@
 
 ## Evidence Contract
 
-- **State/progress path**: HE-06 row in `plans/sprints/20260617-Sprint: Harness Engineering Optimization - State, Review, Eval, Delegation.md`
+- **State/progress path**: HE-06 row in `plans/sprints/20260617-harness-engineering-optimization-state-review-eval-delegation.md`
 - **Verification evidence**: `bash scripts/prepare-handoff.sh --reason "HE-06 verification"`; `bash scripts/check-task-workflow.sh --strict`; `bun test tests/helper-scripts.test.ts`
 - **Evaluator rubric**: handoff includes active artifacts, resume refresh status is visible, stale current/resume state fails strict workflow, and current snapshot remains checklist-free.
 - **Stop condition**: HE-06 row checked and staged diff contains handoff/current UX surfaces only.

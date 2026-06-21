@@ -41,7 +41,7 @@ This sprint implements the high-value minimal-change principles from the Ponytai
 4. 在 Stop 阶段生成一次非阻断的 minimal-change review 证据。
 5. 保持 Claude Code 与 Codex hook 协议、公开 route tuple、信任哈希顺序不变。
 6. 同时支持 packaged central-first hooks 和 repo-pinned self-host hooks。
-7. 默认 `advice`，本 Sprint 不引入强制阻断。
+7. 缺失或损坏配置默认 off；显式 opt-in 后保持 `advice`，本 Sprint 不引入强制阻断。
 
 ## 2. 背景与关键架构结论
 
@@ -152,7 +152,7 @@ This sprint implements the high-value minimal-change principles from the Ponytai
     "mode": "advice",
     "session_context": true,
     "prompt_advice": true,
-    "post_edit_observer": true,
+    "post_edit_observer": false,
     "stop_review": true,
     "max_findings": 5,
     "max_context_words": 180,
@@ -179,7 +179,7 @@ This sprint implements the high-value minimal-change principles from the Ponytai
 | Field | Semantics |
 |---|---|
 | `mode=off` | 不注入 context、不分析、不写报告 |
-| `mode=advice` | 注入指导、收集信号、输出非阻断审查 |
+| `mode=advice` | 注入指导、输出非阻断审查；编辑后信号收集仍需 `post_edit_observer=true` |
 | `mode=enforce` | v1 解析为 `advice` 并记录 unsupported warning；不得阻断 |
 | `new_dependency=warn` | 仅当 manifest diff 可证明新增依赖时产生信号 |
 | `new_file=observe` | 记录新增文件，不单独判定为问题 |
@@ -647,7 +647,7 @@ Rules：
 - [ ] 定义 versioned interface。
 - [ ] 提供 immutable defaults。
 - [ ] unknown field 忽略。
-- [ ] unknown mode → `advice` 或 fail-open default，并有测试。
+- [ ] unknown mode → `off` fail-open default，并有测试。
 - [ ] `enforce` 在 v1 normalize 为 `advice`，且 `blocking=false`。
 - [ ] path 必须限制在 repo `.ai/harness/` 下。
 - [ ] `max_findings` bounded，例如 1–20。
@@ -958,7 +958,7 @@ repo-harness-hook minimal-change review --phase stop
 **Checklist**
 
 - [ ] 根据 MC-000 结果修改 canonical source，不只改 `.ai/harness/policy.json`。
-- [ ] downstream 新安装默认 `minimal_change.mode=advice`。
+- [ ] downstream 新安装显式写入 `minimal_change.mode=advice`，但 `post_edit_observer=false`。
 - [ ] migrate 对已有显式配置执行 preserve/merge。
 - [ ] 用户显式 `off` 不被升级覆盖。
 - [ ] unknown custom fields 保留。
@@ -1167,7 +1167,7 @@ repo-harness-hook minimal-change review --phase stop
 
 - [ ] dogfood evidence 进入 `.ai/harness/checks/` 或现有 run evidence。
 - [ ] unsafe finding = 0。
-- [ ] reviewer 批准默认 advice。
+- [ ] reviewer 批准 default-off 和显式 advice opt-in。
 
 ### Story MC-802: Release readiness
 
@@ -1514,7 +1514,7 @@ jq . .ai/harness/checks/minimal-change.latest.json
 
 ### Phase B — Packaged default
 
-- [ ] fresh init 默认 `advice`。
+- [ ] fresh init 显式 opt-in `advice`，post-edit observer 默认关闭。
 - [ ] existing explicit config preserved。
 - [ ] release notes 提供 `mode=off`。
 - [ ] 监控 latency/issue feedback。

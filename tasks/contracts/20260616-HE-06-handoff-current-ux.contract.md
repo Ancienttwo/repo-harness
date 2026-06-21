@@ -36,7 +36,7 @@ allowed_paths:
   - tasks/contracts/20260616-HE-06-handoff-current-ux.contract.md
   - tasks/reviews/20260616-HE-06-handoff-current-ux.review.md
   - tasks/notes/20260616-HE-06-handoff-current-ux.notes.md
-  - "plans/sprints/20260617-Sprint: Harness Engineering Optimization — State, Review, Eval, Delegation.md"
+  - "plans/sprints/20260617-harness-engineering-optimization-state-review-eval-delegation.md"
 ```
 
 ## Delegation Contract

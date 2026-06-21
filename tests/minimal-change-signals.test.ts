@@ -21,7 +21,7 @@ function tmpRepo(prefix: string): string {
   git(repo, ['config', 'user.email', 'minimal-change@test.local']);
   mkdirSync(join(repo, '.ai/harness'), { recursive: true });
   writeJson(join(repo, '.ai/harness/policy.json'), {
-    minimal_change: { mode: 'advice', max_findings: 5 },
+    minimal_change: { mode: 'advice', post_edit_observer: true, max_findings: 5 },
   });
   writeJson(join(repo, 'package.json'), {
     dependencies: { 'left-pad': '1.0.0' },

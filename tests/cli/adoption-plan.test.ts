@@ -528,6 +528,7 @@ describe("repo-harness adopt dry-run planner output", () => {
 describe("repo-harness adopt --experimental-ts-apply", () => {
   test("applies the safe minimal TypeScript plan", () => {
     const repo = tempRepo();
+    const registryHome = mkdtempSync(join(tmpdir(), "repo-harness-adoption-registry-"));
     try {
       const result = spawnSync(
         "bun",
@@ -535,6 +536,7 @@ describe("repo-harness adopt --experimental-ts-apply", () => {
         {
           cwd: ROOT,
           encoding: "utf-8",
+          env: { ...process.env, REPO_HARNESS_HOME: registryHome },
         },
       );
 
@@ -545,6 +547,7 @@ describe("repo-harness adopt --experimental-ts-apply", () => {
       expect(output.experimentalTsApply).toBe(true);
       expect(output.ok).toBe(true);
       expect(output.apply.ok).toBe(true);
+      expect(output.registration.registered).toBe(true);
       expect(output.apply.transactionManifestPath).toMatch(
         /^\.ai\/harness\/backups\/fs-transaction\/[^/]+\/manifest\.json$/,
       );
@@ -567,6 +570,7 @@ describe("repo-harness adopt --experimental-ts-apply", () => {
         {
           cwd: ROOT,
           encoding: "utf-8",
+          env: { ...process.env, REPO_HARNESS_HOME: registryHome },
         },
       );
       expect(rollback.status).toBe(0);
@@ -579,21 +583,25 @@ describe("repo-harness adopt --experimental-ts-apply", () => {
       expect(existsSync(join(repo, ".ai", "harness", "workflow-contract.json"))).toBe(false);
     } finally {
       rmSync(repo, { recursive: true, force: true });
+      rmSync(registryHome, { recursive: true, force: true });
     }
   });
 
   test("applies the standard TypeScript plan including workflow-contract install", () => {
     const repo = tempRepo();
+    const registryHome = mkdtempSync(join(tmpdir(), "repo-harness-adoption-registry-"));
     try {
       const result = spawnSync("bun", [CLI, "adopt", "--repo", repo, "--experimental-ts-apply", "--json"], {
         cwd: ROOT,
         encoding: "utf-8",
+        env: { ...process.env, REPO_HARNESS_HOME: registryHome },
       });
 
       expect(result.status).toBe(0);
       expect(result.stderr).toBe("");
       const output = JSON.parse(result.stdout);
       expect(output.ok).toBe(true);
+      expect(output.registration.registered).toBe(true);
       expect(output.unsupportedOperations).toBeUndefined();
       expect(readFileSync(join(repo, ".ai", "harness", "workflow-contract.json"), "utf-8")).toBe(
         readWorkflowContractAsset(),
@@ -601,6 +609,7 @@ describe("repo-harness adopt --experimental-ts-apply", () => {
       expect(readFileSync(join(repo, ".gitignore"), "utf-8")).toContain("# BEGIN: repo-harness generated-runtime");
     } finally {
       rmSync(repo, { recursive: true, force: true });
+      rmSync(registryHome, { recursive: true, force: true });
     }
   });
 

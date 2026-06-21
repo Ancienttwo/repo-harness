@@ -1,6 +1,26 @@
 #!/bin/bash
 # Shared minimal-change hook adapter helpers.
 
+minimal_change_post_edit_enabled() {
+  local repo_root policy_file mode observer compact
+
+  repo_root="${HOOK_REPO_ROOT:-$(pwd)}"
+  policy_file="$repo_root/.ai/harness/policy.json"
+  [[ -f "$policy_file" ]] || return 1
+
+  if command -v jq >/dev/null 2>&1; then
+    mode="$(jq -r '.minimal_change.mode // "off"' "$policy_file" 2>/dev/null || true)"
+    observer="$(jq -r '.minimal_change.post_edit_observer // false' "$policy_file" 2>/dev/null || true)"
+    [[ "$mode" != "off" && "$observer" == "true" ]]
+    return $?
+  fi
+
+  compact="$(tr -d '[:space:]' < "$policy_file" 2>/dev/null || true)"
+  [[ "$compact" == *'"minimal_change":{'* ]] || return 1
+  [[ "$compact" == *'"mode":"advice"'* || "$compact" == *'"mode":"enforce"'* ]] || return 1
+  [[ "$compact" == *'"post_edit_observer":true'* ]]
+}
+
 minimal_change_hook_entry() {
   local lib_dir hooks_dir source_hook_cli
 

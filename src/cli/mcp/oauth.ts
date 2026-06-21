@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync, renameSync } from 'fs';
 import { dirname } from 'path';
 import type { OAuthRegisteredClientsStore } from '@modelcontextprotocol/sdk/server/auth/clients.js';
 import { InvalidGrantError, InvalidTokenError } from '@modelcontextprotocol/sdk/server/auth/errors.js';
@@ -23,6 +23,17 @@ function nowSeconds(): number {
 
 function issueToken(): string {
   return randomUUID();
+}
+
+function normalizeScopes(scopes: string[] | undefined): string[] {
+  const allowed = new Set(['repo-harness', 'offline_access']);
+  const normalized = (scopes ?? [])
+    .flatMap((scope) => scope.split(' '))
+    .map((scope) => scope.trim())
+    .filter((scope) => allowed.has(scope));
+  const unique = Array.from(new Set(normalized));
+  if (!unique.includes('repo-harness')) unique.unshift('repo-harness');
+  return unique;
 }
 
 export class McpOAuthTokenStore implements OAuthRegisteredClientsStore {
@@ -61,7 +72,9 @@ export class McpOAuthTokenStore implements OAuthRegisteredClientsStore {
       refreshTokens: Object.fromEntries(this.refreshTokens),
       clients: Object.fromEntries(this.clients),
     };
-    writeFileSync(this.path, `${JSON.stringify(data, null, 2)}\n`, { encoding: 'utf-8', mode: 0o600 });
+    const tmpPath = `${this.path}.${process.pid}.${Date.now()}.tmp`;
+    writeFileSync(tmpPath, `${JSON.stringify(data, null, 2)}\n`, { encoding: 'utf-8', mode: 0o600 });
+    renameSync(tmpPath, this.path);
     chmodSync(this.path, 0o600);
   }
 
@@ -117,8 +130,41 @@ export class McpOAuthTokenStore implements OAuthRegisteredClientsStore {
   }
 }
 
-export function createMcpOAuthProvider(store: McpOAuthTokenStore): OAuthServerProvider {
-  const authCodes = new Map<string, { challenge: string; clientId: string }>();
+interface AuthorizationCodeRecord {
+  challenge: string;
+  clientId: string;
+  redirectUri: string;
+  scopes: string[];
+  createdAt: number;
+  expiresAt: number;
+}
+
+export function createMcpOAuthProvider(
+  store: McpOAuthTokenStore,
+  opts: { readonly nowSeconds?: () => number; readonly authorizationCodeTtlSeconds?: number } = {},
+): OAuthServerProvider {
+  const authCodes = new Map<string, AuthorizationCodeRecord>();
+  const clock = opts.nowSeconds ?? nowSeconds;
+  const authorizationCodeTtlSeconds = opts.authorizationCodeTtlSeconds ?? 10 * 60;
+
+  const cleanupExpiredAuthorizationCodes = (): void => {
+    const now = clock();
+    for (const [code, record] of authCodes) {
+      if (record.expiresAt > now) continue;
+      authCodes.delete(code);
+    }
+  };
+
+  const authorizationCodeRecord = (authorizationCode: string): AuthorizationCodeRecord => {
+    cleanupExpiredAuthorizationCodes();
+    const stored = authCodes.get(authorizationCode);
+    if (!stored) throw new InvalidGrantError('Invalid authorization code');
+    if (stored.expiresAt <= clock()) {
+      authCodes.delete(authorizationCode);
+      throw new InvalidGrantError('Authorization code has expired');
+    }
+    return stored;
+  };
 
   return {
     get clientsStore(): OAuthRegisteredClientsStore {
@@ -126,10 +172,16 @@ export function createMcpOAuthProvider(store: McpOAuthTokenStore): OAuthServerPr
     },
 
     async authorize(client: OAuthClientInformationFull, params: AuthorizationParams, res): Promise<void> {
+      cleanupExpiredAuthorizationCodes();
       const code = issueToken();
+      const createdAt = clock();
       authCodes.set(code, {
         challenge: params.codeChallenge,
         clientId: client.client_id,
+        redirectUri: params.redirectUri,
+        scopes: normalizeScopes(params.scopes),
+        createdAt,
+        expiresAt: createdAt + authorizationCodeTtlSeconds,
       });
       const redirectUrl = new URL(params.redirectUri);
       redirectUrl.searchParams.set('code', code);
@@ -138,39 +190,45 @@ export function createMcpOAuthProvider(store: McpOAuthTokenStore): OAuthServerPr
     },
 
     async challengeForAuthorizationCode(_client: OAuthClientInformationFull, authorizationCode: string): Promise<string> {
-      const stored = authCodes.get(authorizationCode);
-      if (!stored) throw new InvalidGrantError('Invalid authorization code');
-      return stored.challenge;
+      return authorizationCodeRecord(authorizationCode).challenge;
     },
 
     async exchangeAuthorizationCode(
       client: OAuthClientInformationFull,
       authorizationCode: string,
       _codeVerifier?: string,
+      redirectUri?: string,
     ): Promise<OAuthTokens> {
-      const stored = authCodes.get(authorizationCode);
-      if (!stored || stored.clientId !== client.client_id) {
+      const stored = authorizationCodeRecord(authorizationCode);
+      if (stored.clientId !== client.client_id) {
         throw new InvalidGrantError('Invalid authorization code');
+      }
+      if (redirectUri !== stored.redirectUri) {
+        throw new InvalidGrantError('redirect_uri mismatch');
       }
       authCodes.delete(authorizationCode);
       const accessToken = issueToken();
-      const refreshToken = issueToken();
       const expiresIn = 30 * 24 * 60 * 60;
-      const expiresAt = nowSeconds() + expiresIn;
+      const expiresAt = clock() + expiresIn;
+      const scopes = normalizeScopes(stored.scopes);
       store.setAccessToken(accessToken, {
         token: accessToken,
         clientId: client.client_id,
-        scopes: ['repo-harness'],
+        scopes,
         expiresAt,
       });
-      store.setRefreshToken(refreshToken, accessToken);
-      return {
+      const response: OAuthTokens = {
         access_token: accessToken,
         token_type: 'Bearer',
         expires_in: expiresIn,
-        refresh_token: refreshToken,
-        scope: 'repo-harness',
+        scope: scopes.join(' '),
       };
+      if (scopes.includes('offline_access')) {
+        const refreshToken = issueToken();
+        store.setRefreshToken(refreshToken, accessToken);
+        response.refresh_token = refreshToken;
+      }
+      return response;
     },
 
     async exchangeRefreshToken(client: OAuthClientInformationFull, refreshToken: string): Promise<OAuthTokens> {
@@ -180,23 +238,26 @@ export function createMcpOAuthProvider(store: McpOAuthTokenStore): OAuthServerPr
         throw new InvalidGrantError('Invalid refresh token');
       }
       store.deleteRefreshToken(refreshToken);
+      store.deleteAccessToken(accessToken);
+      const nextAccessToken = issueToken();
       const nextRefreshToken = issueToken();
       const expiresIn = 30 * 24 * 60 * 60;
-      store.setAccessToken(accessToken, { ...existing, expiresAt: nowSeconds() + expiresIn });
-      store.setRefreshToken(nextRefreshToken, accessToken);
+      const scopes = normalizeScopes(existing.scopes);
+      store.setAccessToken(nextAccessToken, { ...existing, token: nextAccessToken, scopes, expiresAt: clock() + expiresIn });
+      store.setRefreshToken(nextRefreshToken, nextAccessToken);
       return {
-        access_token: accessToken,
+        access_token: nextAccessToken,
         token_type: 'Bearer',
         expires_in: expiresIn,
         refresh_token: nextRefreshToken,
-        scope: existing.scopes.join(' '),
+        scope: scopes.join(' '),
       };
     },
 
     async verifyAccessToken(token: string): Promise<AuthInfo> {
       const info = store.getAccessToken(token);
       if (!info) throw new InvalidTokenError('Token not found');
-      if (info.expiresAt && info.expiresAt < nowSeconds()) {
+      if (info.expiresAt && info.expiresAt < clock()) {
         if (!store.findRefreshTokenByAccessToken(token)) {
           store.deleteAccessToken(token);
         }
@@ -206,6 +267,12 @@ export function createMcpOAuthProvider(store: McpOAuthTokenStore): OAuthServerPr
     },
 
     async revokeToken(_client: OAuthClientInformationFull, request: OAuthTokenRevocationRequest): Promise<void> {
+      const linkedAccessToken = store.getRefreshToken(request.token);
+      if (linkedAccessToken) {
+        store.deleteRefreshToken(request.token);
+        store.deleteAccessToken(linkedAccessToken);
+        return;
+      }
       store.deleteAccessToken(request.token);
       const refreshToken = store.findRefreshTokenByAccessToken(request.token);
       if (refreshToken) store.deleteRefreshToken(refreshToken);

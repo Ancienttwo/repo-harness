@@ -19,6 +19,8 @@ MINIMAL_CHANGE_REVIEW_SUMMARY=""
 MINIMAL_CHANGE_REVIEW_VERDICT=""
 MINIMAL_CHANGE_REVIEW_PATH=""
 MINIMAL_CHANGE_REVIEW_FINDINGS="0"
+MINIMAL_CHANGE_HANDOFF_BEGIN="<!-- repo-harness:minimal-change-review begin -->"
+MINIMAL_CHANGE_HANDOFF_END="<!-- repo-harness:minimal-change-review end -->"
 
 plan_completeness_state_file() {
   workflow_repo_relative_path \
@@ -198,22 +200,41 @@ minimal_change_refresh_review() {
   minimal_change_parse_review_json "$raw" || return 0
 }
 
+minimal_change_render_handoff_section() {
+  printf '%s\n' "$MINIMAL_CHANGE_HANDOFF_BEGIN"
+  printf '\n## Minimal Change Review\n\n'
+  printf -- '- Report: `%s`\n' "${MINIMAL_CHANGE_REVIEW_PATH:-.ai/harness/checks/minimal-change.latest.json}"
+  printf -- '- Verdict: `%s`\n' "${MINIMAL_CHANGE_REVIEW_VERDICT:-unknown}"
+  printf -- '- Findings: `%s`\n' "${MINIMAL_CHANGE_REVIEW_FINDINGS:-0}"
+  if [[ -n "$MINIMAL_CHANGE_REVIEW_SUMMARY" ]]; then
+    printf '\n%s\n' "$MINIMAL_CHANGE_REVIEW_SUMMARY"
+  fi
+  printf '\n%s\n' "$MINIMAL_CHANGE_HANDOFF_END"
+}
+
 minimal_change_append_handoff() {
-  local handoff_file
+  local handoff_file tmp_file
 
   [[ -n "$MINIMAL_CHANGE_REVIEW_VERDICT" ]] || return 0
   [[ "$MINIMAL_CHANGE_REVIEW_VERDICT" != "disabled" ]] || return 0
   handoff_file="$(workflow_handoff_file)"
   mkdir -p "$(dirname "$handoff_file")"
-  {
-    printf '\n## Minimal Change Review\n\n'
-    printf -- '- Report: `%s`\n' "${MINIMAL_CHANGE_REVIEW_PATH:-.ai/harness/checks/minimal-change.latest.json}"
-    printf -- '- Verdict: `%s`\n' "${MINIMAL_CHANGE_REVIEW_VERDICT:-unknown}"
-    printf -- '- Findings: `%s`\n' "${MINIMAL_CHANGE_REVIEW_FINDINGS:-0}"
-    if [[ -n "$MINIMAL_CHANGE_REVIEW_SUMMARY" ]]; then
-      printf '\n%s\n' "$MINIMAL_CHANGE_REVIEW_SUMMARY"
-    fi
-  } >> "$handoff_file"
+  tmp_file="$(mktemp "${handoff_file}.minimal-change.XXXXXX")" || return 0
+
+  if [[ -f "$handoff_file" ]]; then
+    awk -v begin="$MINIMAL_CHANGE_HANDOFF_BEGIN" -v end="$MINIMAL_CHANGE_HANDOFF_END" '
+      $0 == begin { skip = 1; next }
+      $0 == end { skip = 0; next }
+      !skip { print }
+    ' "$handoff_file" > "$tmp_file" || {
+      rm -f "$tmp_file"
+      return 0
+    }
+  fi
+
+  printf '\n' >> "$tmp_file"
+  minimal_change_render_handoff_section >> "$tmp_file"
+  mv "$tmp_file" "$handoff_file"
 }
 
 minimal_change_reason_suffix() {
@@ -352,13 +373,17 @@ should_run_plan_completeness_gate() {
   assistant_message_looks_like_plan "$last_message"
 }
 
+stop_hook_active="$(hook_json_get '.stop_hook_active' 'false')"
+last_assistant_message="$(hook_json_get '.last_assistant_message' '')"
+
+if [[ "$stop_hook_active" == "true" ]]; then
+  exit 0
+fi
+
 refresh_handoff
 
 minimal_change_refresh_review
 minimal_change_append_handoff
-
-stop_hook_active="$(hook_json_get '.stop_hook_active' 'false')"
-last_assistant_message="$(hook_json_get '.last_assistant_message' '')"
 
 if should_run_plan_completeness_gate "$stop_hook_active" "$last_assistant_message"; then
   signature="$(plan_completeness_signature)"

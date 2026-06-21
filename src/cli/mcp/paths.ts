@@ -46,6 +46,10 @@ function anyGlobMatches(patterns: string[], relativePath: string): boolean {
 
 function denyGlobMatches(pattern: string, relativePath: string): boolean {
   if (globMatches(pattern, relativePath)) return true;
+  if (pattern.endsWith('/**')) {
+    const directoryPattern = pattern.slice(0, -3);
+    if (globMatches(directoryPattern, relativePath) || globMatches(`**/${directoryPattern}`, relativePath)) return true;
+  }
   if (!pattern.includes('/')) {
     return relativePath.split('/').some((segment) => globMatches(pattern, segment));
   }
@@ -59,9 +63,13 @@ function anyDenyGlobMatches(patterns: string[], relativePath: string): boolean {
   return patterns.some((pattern) => denyGlobMatches(pattern, relativePath));
 }
 
-function realpathInside(child: string, parent: string): boolean {
-  const normalizedParent = parent.endsWith(sep) ? parent : `${parent}${sep}`;
-  return child === parent || child.startsWith(normalizedParent);
+export function isPathInside(parent: string, child: string): boolean {
+  const relation = relative(parent, child);
+  return relation === '' || (
+    relation !== '..' &&
+    !relation.startsWith(`..${sep}`) &&
+    !isAbsolute(relation)
+  );
 }
 
 function nearestExistingPath(path: string): string | undefined {
@@ -114,13 +122,13 @@ export function resolveMcpPath(repoRoot: string, inputPath: string, policy: McpP
   }
 
   const realExistingPath = realpathSync(existingPath);
-  if (!realpathInside(realExistingPath, repoRealpath)) {
+  if (!isPathInside(repoRealpath, realExistingPath)) {
     return { ok: false, relativePath, reason: `path escapes repository root: ${relativePath}` };
   }
 
   if (existsSync(absolutePath) && lstatSync(absolutePath).isSymbolicLink()) {
     const realTarget = realpathSync(absolutePath);
-    if (!realpathInside(realTarget, repoRealpath)) {
+    if (!isPathInside(repoRealpath, realTarget)) {
       return { ok: false, relativePath, reason: `symlink escapes repository root: ${relativePath}` };
     }
   }

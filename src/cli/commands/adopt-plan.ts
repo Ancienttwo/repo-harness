@@ -4,6 +4,7 @@ import { planAdoption } from "../../core/adoption/plan";
 import type { AdoptionOperation, AdoptionPlan } from "../../core/adoption/operations";
 import { renderAdoptionPlanJson, renderAdoptionPlanObject, renderAdoptionPlanText } from "../../core/adoption/render";
 import { applyAdoptionPlan, isSupportedAdoptionOperation, type ApplyAdoptionPlanResult } from "../../effects/fs-transaction";
+import { registerRepoHarnessRepo, type RepoHarnessRegisterResult } from "../../effects/repo-registry";
 import { validateRepoAdoptionTarget } from "./init";
 
 export interface RunAdoptionPlanOptions {
@@ -35,6 +36,7 @@ interface ExperimentalTsApplyReport {
   readonly ok: boolean;
   readonly plan: Record<string, unknown>;
   readonly apply?: ApplyAdoptionPlanResult;
+  readonly registration?: RepoHarnessRegisterResult;
   readonly unsupportedOperations?: readonly Record<string, unknown>[];
 }
 
@@ -132,6 +134,9 @@ function renderExperimentalTsApplyText(report: ExperimentalTsApplyReport): strin
       lines.push(`[adopt-ts-apply] failed operation: ${result.id}${result.error ? ` - ${result.error}` : ""}`);
     }
   }
+  if (report.registration) {
+    lines.push(`[adopt-ts-apply] registry: ${report.registration.registered ? "registered" : "skipped"}${report.registration.reason ? ` - ${report.registration.reason}` : ""}`);
+  }
   return `${lines.join("\n")}\n`;
 }
 
@@ -172,6 +177,7 @@ export function runExperimentalTsApply(opts: RunAdoptionPlanOptions): RunExperim
   }
 
   const apply = applyAdoptionPlan(plan);
+  const registration = apply.ok ? registerRepoHarnessRepo(repoRoot, "adopt", { env: opts.env }) : undefined;
   const report: ExperimentalTsApplyReport = {
     protocol: 1,
     command: "adopt",
@@ -181,6 +187,7 @@ export function runExperimentalTsApply(opts: RunAdoptionPlanOptions): RunExperim
     ok: apply.ok,
     plan: renderAdoptionPlanObject(plan),
     apply,
+    registration,
   };
   return {
     exitCode: apply.ok ? 0 : 1,

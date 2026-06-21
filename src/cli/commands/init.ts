@@ -23,6 +23,7 @@ import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
 import { runInstall, type InstallTargetSpec } from "./install";
 import { runBrain } from "./brain";
+import { registerRepoHarnessRepo } from "../../effects/repo-registry";
 import {
   defaultBrainRootChoice,
   discoverBrainRootChoices,
@@ -461,6 +462,21 @@ export function runInit(opts: InitCommandOptions = {}): InitCommandResult {
     commandEnv,
   );
   steps.push(withStepName(migrate, apply ? "apply repo harness" : "plan repo harness", repoRoot));
+
+  if (apply && migrate.status === "ok") {
+    const registered = registerRepoHarnessRepo(repoRoot, "init", { env: commandEnv });
+    steps.push({
+      step: "register repo harness repo",
+      status: registered.registered ? "ok" : "skipped",
+      detail: registered.registered ? registered.path : registered.reason,
+    });
+  } else {
+    steps.push({
+      step: "register repo harness repo",
+      status: "skipped",
+      detail: apply ? "repo harness did not apply cleanly" : "dry-run",
+    });
+  }
 
   if (externalSkills && apply && migrate.status === "ok") {
     steps.push(...installExternalSkills(sourceRoot, target, commandEnv));

@@ -20,6 +20,44 @@ const COMMON_DENY_GLOBS = [
   '.DS_Store',
 ];
 
+function pathParts(value: string): string[] {
+  return value.replace(/\\+/g, '/').split('/').filter(Boolean).map((part) => part.toLowerCase());
+}
+
+function directoryDenyGlobParts(pattern: string): string[] | undefined {
+  if (!pattern.endsWith('/**')) return undefined;
+  const directoryPattern = pattern.slice(0, -3);
+  if (directoryPattern.length === 0 || /[*?[\]{}]/.test(directoryPattern)) return undefined;
+  return directoryPattern.split('/').filter(Boolean).map((part) => part.toLowerCase());
+}
+
+function partsContainDeniedRoot(parts: string[], deniedParts: string[]): boolean {
+  for (let index = 0; index <= parts.length - deniedParts.length; index += 1) {
+    if (deniedParts.length === 1 && deniedParts[0] === 'private' && index === 0 && parts[1] === 'var') {
+      continue;
+    }
+    const matches = deniedParts.every((part, offset) => parts[index + offset] === part);
+    if (matches) return true;
+  }
+  return false;
+}
+
+export function sensitiveAllowedRootReason(canonicalPath: string, denyGlobs = COMMON_DENY_GLOBS, rawPath?: string): string | undefined {
+  const candidateParts = Array.from(new Set([rawPath, canonicalPath]
+    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    .map((value) => pathParts(value))));
+
+  for (const pattern of denyGlobs) {
+    const deniedParts = directoryDenyGlobParts(pattern);
+    if (!deniedParts) continue;
+    if (candidateParts.some((parts) => partsContainDeniedRoot(parts, deniedParts))) {
+      return pattern;
+    }
+  }
+
+  return undefined;
+}
+
 export const PLANNER_READ_GLOBS = [
   'AGENTS.md',
   'CLAUDE.md',
@@ -49,6 +87,9 @@ export interface McpPolicyOptions {
   allowedAgents?: McpAgentRunnerName[];
   runnerTimeoutMs?: number;
   fullDiskRead?: boolean;
+  enableReader?: boolean;
+  allowedRoots?: string[];
+  discoveryRoots?: string[];
 }
 
 const DEFAULT_RUNNER_TIMEOUT_MS = 120_000;
@@ -71,44 +112,52 @@ function executionPolicy(overrides: Partial<McpPolicy['execution']> = {}): McpPo
   };
 }
 
+function capabilities(overrides: Partial<McpPolicy['capabilities']> = {}): McpPolicy['capabilities'] {
+  return {
+    workspaceReader: false,
+    workflowPlanner: false,
+    workflowExecutor: false,
+    agentRunner: false,
+    ...overrides,
+  };
+}
+
 export function getMcpPolicy(profile: McpProfileName, opts: McpPolicyOptions = {}): McpPolicy {
   if (profile === 'planner') {
-    const fullDiskRead = opts.fullDiskRead === true;
+    const broadRead = opts.fullDiskRead === true;
     return {
       profile,
-      readGlobs: fullDiskRead ? ['**'] : withWorkspacePrefixGlobs(PLANNER_READ_GLOBS),
+      allowedRoots: opts.allowedRoots,
+      discoveryRoots: opts.discoveryRoots,
+      capabilities: capabilities({
+        workspaceReader: opts.enableReader === true,
+        workflowPlanner: true,
+      }),
+      readGlobs: broadRead ? ['**'] : withWorkspacePrefixGlobs(PLANNER_READ_GLOBS),
       writeGlobs: withWorkspacePrefixGlobs(PLANNER_WRITE_GLOBS),
-      denyGlobs: fullDiskRead ? [] : [
-        ...COMMON_DENY_GLOBS,
-        'src/**',
-        'app/**',
-        'packages/**',
-        'package.json',
-        'bun.lock',
-        'package-lock.json',
-        'pnpm-lock.yaml',
-        'yarn.lock',
-        '.github/workflows/**',
-      ],
-      allowAbsoluteRead: fullDiskRead,
+      denyGlobs: COMMON_DENY_GLOBS,
+      allowAbsoluteRead: broadRead,
       maxFileBytes: 512 * 1024,
       execution: executionPolicy({
-        fixedWorkflowCheck: !fullDiskRead,
+        fixedWorkflowCheck: !broadRead,
       }),
     };
   }
 
   if (profile === 'executor') {
-    const fullDiskRead = opts.fullDiskRead === true;
+    const broadRead = opts.fullDiskRead === true;
     return {
       profile,
-      readGlobs: fullDiskRead ? ['**'] : withWorkspacePrefixGlobs(['plans/**', 'tasks/**', 'docs/spec.md', '.ai/context/**', '.ai/harness/**']),
+      allowedRoots: opts.allowedRoots,
+      discoveryRoots: opts.discoveryRoots,
+      capabilities: capabilities({ workflowExecutor: true }),
+      readGlobs: broadRead ? ['**'] : withWorkspacePrefixGlobs(['plans/**', 'tasks/**', 'docs/spec.md', '.ai/context/**', '.ai/harness/**']),
       writeGlobs: withWorkspacePrefixGlobs(['tasks/reviews/**', '.ai/harness/checks/**', '.ai/harness/handoff/**']),
-      denyGlobs: fullDiskRead ? [] : COMMON_DENY_GLOBS,
-      allowAbsoluteRead: fullDiskRead,
+      denyGlobs: COMMON_DENY_GLOBS,
+      allowAbsoluteRead: broadRead,
       maxFileBytes: 512 * 1024,
       execution: executionPolicy({
-        fixedWorkflowCheck: !fullDiskRead,
+        fixedWorkflowCheck: !broadRead,
       }),
     };
   }
@@ -117,6 +166,9 @@ export function getMcpPolicy(profile: McpProfileName, opts: McpPolicyOptions = {
     const devRunner = opts.devAgentRunner === true;
     return {
       profile,
+      allowedRoots: opts.allowedRoots,
+      discoveryRoots: opts.discoveryRoots,
+      capabilities: capabilities({ agentRunner: devRunner }),
       readGlobs: devRunner ? withWorkspacePrefixGlobs(['.ai/harness/handoff/codex-goal.md']) : [],
       writeGlobs: [],
       denyGlobs: devRunner ? COMMON_DENY_GLOBS : ['**'],

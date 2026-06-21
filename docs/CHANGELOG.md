@@ -9,19 +9,51 @@ All notable changes to this skill are documented here.
 - Added advisory minimal-change hooks across `SessionStart`,
   `UserPromptSubmit`, `PostToolUse.edit`, and `Stop`, with deterministic
   `.ai/harness/checks/minimal-change.latest.json` evidence, handoff summaries,
-  default policy, scaffold/migration adoption, and reference-config docs.
+  explicit opt-in policy, scaffold/migration adoption, and reference-config
+  docs.
+- Added ChatGPT MCP `workspaceReader` capability on the default `planner`
+  profile, with registered-repo workspaces and `reader_status`,
+  `list_allowed_roots`, `open_workspace`, `tree`, `search_text`, and
+  `read_text` tools for read-only local repo access.
+- Added global `~/.repo-harness/registered-repos.json` discovery for repos
+  registered by `repo-harness adopt`, `repo-harness init`, or user-scope MCP
+  setup, plus `repo_path` targeting for workflow reads and writers.
+- Added HTTP MCP `url-token` compatibility auth mode, structured session health
+  metadata, OAuth `offline_access` discovery, and refresh-token rotation that
+  replaces both access and refresh tokens.
+
+### Fixed
+
+- Kept MCP broad-read/user-scope deny globs active for `.env`, private keys,
+  SSH keys, credentials, secrets, `.git`, and dependency/build output instead
+  of clearing deny rules when broad reads are enabled.
+- Made legacy MCP `fullDiskRead: true` configurations fail closed instead of
+  auto-migrating to `/`; users must explicitly choose registered adopted repos
+  or add extra non-repo directories with `--allow-root`.
+
+## [0.7.5] - 2026-06-21
+
+### Fixed
+
+- Bound managed Codex and Claude hook adapters to the current git repository
+  before dispatching user-level hooks, so global hook commands cannot
+  accidentally run against a sibling repository.
+- Made the hook runtime silently skip execution when an explicit
+  `HOOK_REPO_ROOT` conflicts with the hook process git root.
+- Stopped prompt-guard from creating or capturing repo-local plan artifacts when
+  a planning prompt references a different git repository by absolute path.
 
 ## [0.7.4] - 2026-06-20
 
 ### Added
 
-- Added user-scope ChatGPT MCP setup for Developer Mode deployments, with an
-  explicit `--allow-full-disk-read` opt-in that stores local MCP config and auth
-  under `~/.repo-harness/` and lets read tools inspect any OS-readable file when
-  the server is launched from `/`.
+- Added user-scope ChatGPT MCP setup for Developer Mode deployments, storing
+  local MCP config and auth under `~/.repo-harness/`; broad full-disk read is now
+  deprecated in favor of registered adopted repos plus explicit `--allow-root`
+  entries for extra non-repo roots.
 - Added `discover_harness_repos` plus `repo_path` targeting for MCP read tools,
-  so a user-authorized full-disk ChatGPT Connector can find adopted repos before
-  reading workflow state.
+  so a single ChatGPT Connector can find registered adopted repos before reading
+  workflow state.
 - Added explicit ChatGPT app preselection for Oracle browser consults via
   `--chatgpt-app`, so GPT Pro MCP read-back prompts can select the recorded
   Connector app before submitting instead of relying on prompt text mentions.

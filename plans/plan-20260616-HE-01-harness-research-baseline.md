@@ -58,7 +58,7 @@ the Sprint row checkboxes.
 | `tasks/contracts/20260616-HE-01-harness-research-baseline.contract.md` | add | Docs-only done gate |
 | `tasks/reviews/20260616-HE-01-harness-research-baseline.review.md` | add | Review outcome |
 | `tasks/notes/20260616-HE-01-harness-research-baseline.notes.md` | add | Task-local decisions |
-| `plans/sprints/20260617-Sprint: Harness Engineering Optimization - State, Review, Eval, Delegation.md` | update | HE-01 checkbox completion |
+| `plans/sprints/20260617-harness-engineering-optimization-state-review-eval-delegation.md` | update | HE-01 checkbox completion |
 
 ### Data Flow
 
@@ -85,7 +85,7 @@ section, and workflow checks. The review records pass/fail and residual risk.
 
 ## Evidence Contract
 
-- **State/progress path**: HE-01 row in `plans/sprints/20260617-Sprint: Harness Engineering Optimization - State, Review, Eval, Delegation.md`
+- **State/progress path**: HE-01 row in `plans/sprints/20260617-harness-engineering-optimization-state-review-eval-delegation.md`
 - **Verification evidence**: `grep -n "Harness Engineering 10 Rules" docs/researches/20260616-harness-engineering-frameworks.md`; `bash scripts/verify-contract.sh --contract tasks/contracts/20260616-HE-01-harness-research-baseline.contract.md --strict --read-only`; `bash scripts/check-task-workflow.sh --strict`
 - **Evaluator rubric**: research doc exists, includes cited external patterns, maps repo surfaces, includes 10 rules, and no runtime source edits are included.
 - **Stop condition**: HE-01 row is checked, review recommends pass, and staged diff contains only source artifacts plus HE-01 docs/plans/review files.

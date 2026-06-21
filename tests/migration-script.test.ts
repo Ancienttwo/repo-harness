@@ -471,7 +471,7 @@ describe("Migration script contract", () => {
         mode: "advice",
         session_context: true,
         prompt_advice: true,
-        post_edit_observer: true,
+        post_edit_observer: false,
         stop_review: true,
         max_findings: 5,
         max_context_words: 180,

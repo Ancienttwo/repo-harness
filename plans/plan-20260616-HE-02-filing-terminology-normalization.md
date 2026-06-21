@@ -78,7 +78,7 @@ from migration code that intentionally mentions legacy paths.
 
 ## Evidence Contract
 
-- **State/progress path**: HE-02 row in `plans/sprints/20260617-Sprint: Harness Engineering Optimization - State, Review, Eval, Delegation.md`
+- **State/progress path**: HE-02 row in `plans/sprints/20260617-harness-engineering-optimization-state-review-eval-delegation.md`
 - **Verification evidence**: `bun test tests/helper-scripts.test.ts`; `bash scripts/check-task-workflow.sh --strict`; active generation-surface `rg` for `Sprint Contract|Sprint Review`
 - **Evaluator rubric**: generated artifacts use Task Contract/Task Review, strict check catches legacy generation wording, and legacy filenames remain compatible.
 - **Stop condition**: HE-02 review recommends pass and staged diff contains only HE-02 surfaces plus Sprint checkbox updates.

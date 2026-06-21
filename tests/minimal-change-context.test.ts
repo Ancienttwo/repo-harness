@@ -12,7 +12,7 @@ import { runMinimalChangeCli } from '../src/cli/hook/minimal-change-cli';
 
 describe('minimal-change context', () => {
   test('renders stable session context within policy budget', () => {
-    const policy = normalizeMinimalChangePolicy({ max_context_words: 180 });
+    const policy = normalizeMinimalChangePolicy({ mode: 'advice', max_context_words: 180 });
     const context = renderMinimalChangeSessionContext(policy);
     expect(context).toContain('Minimal-change policy');
     expect(context).toContain('Preserve explicit requirements');
@@ -27,7 +27,7 @@ describe('minimal-change context', () => {
   });
 
   test('prompt advice is scoped to execution intents', () => {
-    const policy = normalizeMinimalChangePolicy(undefined);
+    const policy = normalizeMinimalChangePolicy({ mode: 'advice' });
     expect(renderMinimalChangePromptAdvice(policy, 'general_execution')).toContain(
       'Minimal-change execution advice',
     );
@@ -38,6 +38,15 @@ describe('minimal-change context', () => {
     const repo = mkdtempSync(join(tmpdir(), 'minimal-change-cli-'));
     mkdirSync(join(repo, '.ai/harness'), { recursive: true });
 
+    const defaultOff = runMinimalChangeCli(['context', '--phase', 'session'], { cwd: repo });
+    expect(defaultOff.exitCode).toBe(0);
+    expect(defaultOff.stdout).toBe('');
+    expect(defaultOff.stderr).toBe('');
+
+    writeFileSync(
+      join(repo, '.ai/harness/policy.json'),
+      JSON.stringify({ minimal_change: { mode: 'advice' } }, null, 2),
+    );
     const enabled = runMinimalChangeCli(['context', '--phase', 'session'], { cwd: repo });
     expect(enabled.exitCode).toBe(0);
     expect(enabled.stdout).toContain('Minimal-change policy');

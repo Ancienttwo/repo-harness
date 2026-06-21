@@ -20,7 +20,7 @@
 
 ## Evidence Contract
 
-- **State/progress path**: HE-08 row in `plans/sprints/20260617-Sprint: Harness Engineering Optimization - State, Review, Eval, Delegation.md`
+- **State/progress path**: HE-08 row in `plans/sprints/20260617-harness-engineering-optimization-state-review-eval-delegation.md`
 - **Verification evidence**: `grep -n "Product Outcome\\|Core Invariants\\|Human Review" docs/spec.md`; `bun test tests/readme-dx.test.ts`; `bash scripts/check-task-workflow.sh --strict`
 - **Evaluator rubric**: spec is non-placeholder, README has human/agent paths in both languages, and reference docs state agent/human first-read split.
 - **Stop condition**: HE-08 row checked and staged diff contains docs/tests/filing only.

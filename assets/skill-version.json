@@ -1,6 +1,6 @@
 {
-  "version": "0.7.4",
-  "templateVersion": "0.7.4",
+  "version": "0.7.5",
+  "templateVersion": "0.7.5",
   "skillName": "repo-harness",
   "contractId": "tasks-first-harness-v1",
   "compatibility": {
@@ -159,6 +159,10 @@
     {
       "version": "0.7.4",
       "description": "Adds user-scope ChatGPT MCP full-disk repo discovery, GPT Pro Connector read-back safeguards, and package-dispatched architecture helper fixes while retiring compact adopt root wrappers"
+    },
+    {
+      "version": "0.7.5",
+      "description": "Hardens user-level hook repo isolation with explicit repo-root binding, runtime mismatch no-ops, and foreign-repo planning skips"
     }
   ],
   "generatedProjectStamp": {

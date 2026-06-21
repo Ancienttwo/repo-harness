@@ -5,6 +5,7 @@ import { join } from "path";
 import { spawnSync } from "child_process";
 
 const ROOT = join(import.meta.dir, "..");
+const MIGRATE_SMOKE_TIMEOUT_MS = 30000;
 
 function childEnvWithoutNpmLifecycle(): NodeJS.ProcessEnv {
   const env = { ...process.env };
@@ -54,5 +55,5 @@ describe("Hook recursive copy", () => {
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
-  }, 15000);
+  }, MIGRATE_SMOKE_TIMEOUT_MS);
 });

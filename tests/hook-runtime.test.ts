@@ -10,10 +10,11 @@ import {
   readdirSync,
   realpathSync,
   rmSync,
+  symlinkSync,
   utimesSync,
   writeFileSync,
 } from "fs";
-import { tmpdir } from "os";
+import { platform, tmpdir } from "os";
 import { dirname, join } from "path";
 import { spawnSync } from "child_process";
 
@@ -1740,6 +1741,11 @@ describe("Hook runtime behavior", () => {
     try {
       initGitRepo(cwd);
       installHooks(cwd);
+      mkdirSync(join(cwd, ".ai/harness"), { recursive: true });
+      writeFileSync(
+        join(cwd, ".ai/harness/policy.json"),
+        JSON.stringify({ minimal_change: { mode: "advice", post_edit_observer: true } }, null, 2)
+      );
       mkdirSync(join(cwd, "src"), { recursive: true });
       writeFileSync(
         join(cwd, "src/payment-wrapper.ts"),
@@ -1776,6 +1782,11 @@ describe("Hook runtime behavior", () => {
       mkdirSync(join(cwd, "docs"), { recursive: true });
       mkdirSync(join(cwd, "plans"), { recursive: true });
       mkdirSync(join(cwd, "tasks/contracts"), { recursive: true });
+      mkdirSync(join(cwd, ".ai/harness"), { recursive: true });
+      writeFileSync(
+        join(cwd, ".ai/harness/policy.json"),
+        JSON.stringify({ minimal_change: { mode: "advice" } }, null, 2)
+      );
       writeFileSync(join(cwd, "docs/spec.md"), "# Product Spec\n");
 
       const planPath = "plans/plan-20260621-1200-demo.md";
@@ -1819,6 +1830,11 @@ describe("Hook runtime behavior", () => {
     try {
       initGitRepo(cwd);
       installHooks(cwd);
+      mkdirSync(join(cwd, ".ai/harness"), { recursive: true });
+      writeFileSync(
+        join(cwd, ".ai/harness/policy.json"),
+        JSON.stringify({ minimal_change: { mode: "advice" } }, null, 2)
+      );
       mkdirSync(join(cwd, ".ai/harness/checks"), { recursive: true });
       writeFileSync(
         join(cwd, ".ai/harness/checks/minimal-change.latest.json"),
@@ -1864,16 +1880,24 @@ describe("Hook runtime behavior", () => {
       );
 
       const res = runHook("stop-orchestrator.sh", cwd, {
-        stdin: JSON.stringify({ hook_event_name: "Stop", stop_hook_active: true }),
+        stdin: JSON.stringify({ hook_event_name: "Stop", stop_hook_active: false }),
       });
       expect(res.status).toBe(0);
       expect(res.stdout).toBe("");
 
       const handoff = readFileSync(join(cwd, ".ai/harness/handoff/current.md"), "utf-8");
+      expect(handoff).toContain("<!-- repo-harness:minimal-change-review begin -->");
       expect(handoff).toContain("## Minimal Change Review");
       expect(handoff).toContain("Verdict: `review`");
       expect(handoff).toContain("package.json");
       expect(handoff).toContain("Can an existing dependency cover this?");
+
+      const second = runHook("stop-orchestrator.sh", cwd, {
+        stdin: JSON.stringify({ hook_event_name: "Stop", stop_hook_active: false }),
+      });
+      expect(second.status).toBe(0);
+      const updated = readFileSync(join(cwd, ".ai/harness/handoff/current.md"), "utf-8");
+      expect(updated.match(/## Minimal Change Review/g)?.length).toBe(1);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -2247,6 +2271,213 @@ describe("Hook runtime behavior", () => {
     }
   });
 
+  test("prompt-guard: skips automatic Draft plan workflow for prompts that target another git repo", () => {
+    const cwd = tmpWorkspace("prompt-guard-foreign-repo");
+    const foreign = tmpWorkspace("prompt-guard-foreign-target");
+    try {
+      initGitRepo(cwd);
+      initGitRepo(foreign);
+      installHooks(cwd);
+      installPlanWorkflowHelpers(cwd);
+      mkdirSync(join(foreign, "docs/researches"), { recursive: true });
+      mkdirSync(join(foreign, "plans/sprints"), { recursive: true });
+      writeFileSync(join(foreign, "docs/researches/devision.md"), "# DeVision research\n");
+      writeFileSync(join(foreign, "plans/sprints/devision.sprint.md"), "# DeVision sprint\n");
+
+      const res = runHook("prompt-guard.sh", cwd, {
+        stdin: JSON.stringify({
+          user_message: [
+            `/goal read: ${foreign}/docs/researches/devision.md`,
+            `execute: ${foreign}/plans/sprints/devision.sprint.md`,
+            "plan this target-state baseline with $think",
+          ].join("\n"),
+        }),
+      });
+
+      expect(res.status).toBe(0);
+      expect(res.stdout).toContain("[RepoIsolationGate]");
+      expect(res.stdout).toContain(foreign);
+      expect(res.stdout).not.toContain("Created plan:");
+      const plans = existsSync(join(cwd, "plans"))
+        ? readdirSync(join(cwd, "plans")).filter((name) => name.startsWith("plan-"))
+        : [];
+      expect(plans).toEqual([]);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      rmSync(foreign, { recursive: true, force: true });
+    }
+  });
+
+  test("prompt-guard: treats same-prefix sibling paths as a foreign repo", () => {
+    const parent = tmpWorkspace("prompt-guard-sibling-parent");
+    const cwd = join(parent, "repo");
+    const foreign = join(parent, "repo2");
+    try {
+      mkdirSync(cwd, { recursive: true });
+      mkdirSync(foreign, { recursive: true });
+      initGitRepo(cwd);
+      initGitRepo(foreign);
+      installHooks(cwd);
+      installPlanWorkflowHelpers(cwd);
+      mkdirSync(join(foreign, "docs/researches"), { recursive: true });
+      mkdirSync(join(foreign, "plans/sprints"), { recursive: true });
+      writeFileSync(join(foreign, "docs/researches/devision.md"), "# DeVision research\n");
+      writeFileSync(join(foreign, "plans/sprints/devision.sprint.md"), "# DeVision sprint\n");
+
+      const res = runHook("prompt-guard.sh", cwd, {
+        stdin: JSON.stringify({
+          user_message: [
+            `/goal read: ${foreign}/docs/researches/devision.md`,
+            `execute: ${foreign}/plans/sprints/devision.sprint.md`,
+            "plan this target-state baseline with $think",
+          ].join("\n"),
+        }),
+      });
+
+      expect(res.status).toBe(0);
+      expect(res.stdout).toContain("[RepoIsolationGate]");
+      expect(res.stdout).toContain(foreign);
+      expect(res.stdout).not.toContain("Created plan:");
+      const plans = existsSync(join(cwd, "plans"))
+        ? readdirSync(join(cwd, "plans")).filter((name) => name.startsWith("plan-"))
+        : [];
+      expect(plans).toEqual([]);
+    } finally {
+      rmSync(parent, { recursive: true, force: true });
+    }
+  });
+
+  test("prompt-guard: resolves traversal, symlink, and missing-tail foreign repo paths canonically", () => {
+    const parent = tmpWorkspace("prompt-guard-canon-parent");
+    const cwd = join(parent, "repo");
+    const foreign = join(parent, "repo2");
+    const linkToForeign = join(cwd, "link-to-repo2");
+    try {
+      mkdirSync(cwd, { recursive: true });
+      mkdirSync(foreign, { recursive: true });
+      initGitRepo(cwd);
+      initGitRepo(foreign);
+      installHooks(cwd);
+      installPlanWorkflowHelpers(cwd);
+      mkdirSync(join(foreign, "docs/researches"), { recursive: true });
+      mkdirSync(join(foreign, "plans/sprints"), { recursive: true });
+      writeFileSync(join(foreign, "docs/researches/devision.md"), "# DeVision research\n");
+      writeFileSync(join(foreign, "plans/sprints/devision.sprint.md"), "# DeVision sprint\n");
+      symlinkSync(foreign, linkToForeign, platform() === "win32" ? "junction" : "dir");
+
+      const foreignPathCases = [
+        join(cwd, "..", "repo2", "docs/researches/devision.md"),
+        join(linkToForeign, "docs/researches/devision.md"),
+        join(cwd, "..", "repo2", "docs/researches/missing/future.md"),
+      ];
+
+      for (const foreignPath of foreignPathCases) {
+        const res = runHook("prompt-guard.sh", cwd, {
+          stdin: JSON.stringify({
+            user_message: [
+              `/goal read: ${foreignPath}`,
+              "plan this target-state baseline with $think",
+            ].join("\n"),
+          }),
+        });
+
+        expect(res.status).toBe(0);
+        expect(res.stdout).toContain("[RepoIsolationGate]");
+        expect(res.stdout).toContain(foreign);
+        expect(res.stdout).not.toContain("Created plan:");
+      }
+
+      const plans = existsSync(join(cwd, "plans"))
+        ? readdirSync(join(cwd, "plans")).filter((name) => name.startsWith("plan-"))
+        : [];
+      expect(plans).toEqual([]);
+    } finally {
+      rmSync(parent, { recursive: true, force: true });
+    }
+  });
+
+  test("prompt-guard: resolves file symlink targets before repo isolation checks", () => {
+    const parent = tmpWorkspace("prompt-guard-file-symlink-parent");
+    const cwd = join(parent, "repo");
+    const foreign = join(parent, "repo2");
+    const foreignSpec = join(foreign, "docs/researches/devision.md");
+    const linkedForeignSpec = join(cwd, "foreign-spec.md");
+    const linkedMissingForeignSpec = join(cwd, "foreign-missing-spec.md");
+    const loopA = join(cwd, "loop-a.md");
+    const loopB = join(cwd, "loop-b.md");
+    try {
+      mkdirSync(cwd, { recursive: true });
+      mkdirSync(foreign, { recursive: true });
+      initGitRepo(cwd);
+      initGitRepo(foreign);
+      installHooks(cwd);
+      installPlanWorkflowHelpers(cwd);
+      mkdirSync(join(cwd, "docs"), { recursive: true });
+      mkdirSync(join(foreign, "docs/researches"), { recursive: true });
+      writeFileSync(join(cwd, "docs/spec.md"), "# Product Spec\n");
+      writeFileSync(foreignSpec, "# DeVision research\n");
+
+      try {
+        symlinkSync(foreignSpec, linkedForeignSpec, "file");
+        symlinkSync(join(foreign, "docs/researches/missing/future.md"), linkedMissingForeignSpec, "file");
+        symlinkSync("loop-b.md", loopA, "file");
+        symlinkSync("loop-a.md", loopB, "file");
+      } catch {
+        if (platform() === "win32") {
+          return;
+        }
+        throw new Error("failed to create file symlink for prompt-guard regression");
+      }
+
+      for (const planPath of [linkedForeignSpec, linkedMissingForeignSpec, loopA]) {
+        const planStart = runHook("prompt-guard.sh", cwd, {
+          stdin: JSON.stringify({
+            user_message: [
+              `/goal read: ${planPath}`,
+              "plan this target-state baseline with $think",
+            ].join("\n"),
+          }),
+        });
+
+        expect(planStart.status).toBe(0);
+        expect(planStart.stdout).toContain("[RepoIsolationGate]");
+        if (planPath !== loopA) {
+          expect(planStart.stdout).toContain(foreign);
+        }
+        expect(planStart.stdout).not.toContain("Created plan:");
+      }
+
+      const embeddedCapture = runHook("prompt-guard.sh", cwd, {
+        stdin: JSON.stringify({
+          user_message: [
+            "PLEASE IMPLEMENT THIS PLAN:",
+            "# Plan: Foreign Symlink Plan",
+            "",
+            "## Context",
+            `- Source: ${linkedForeignSpec}`,
+            "",
+            "## Task Breakdown",
+            "- [ ] Keep workflow artifacts out of the current repo",
+          ].join("\n"),
+        }),
+      });
+
+      expect(embeddedCapture.status).toBe(0);
+      expect(embeddedCapture.stdout).toContain("[RepoIsolationGate] Embedded plan references a different git repo");
+      expect(embeddedCapture.stdout).toContain(foreign);
+      expect(embeddedCapture.stdout).toContain("Skipping capture-plan");
+      expect(embeddedCapture.stdout).not.toContain("[PlanCaptureGate] Embedded approved plan detected");
+      expect(embeddedCapture.stdout).not.toContain("Captured plan:");
+      const plans = existsSync(join(cwd, "plans"))
+        ? readdirSync(join(cwd, "plans")).filter((name) => name.startsWith("plan-"))
+        : [];
+      expect(plans).toEqual([]);
+      expect(existsSync(join(cwd, "tasks/todos.md"))).toBe(false);
+    } finally {
+      rmSync(parent, { recursive: true, force: true });
+    }
+  });
+
   test("prompt-guard: keeps multi-turn pending plan discussion out of implementation gates", () => {
     const cwd = tmpWorkspace("prompt-guard-pending-plan-discussion");
     try {
@@ -2415,6 +2646,7 @@ describe("Hook runtime behavior", () => {
       });
       expect(recursive.status).toBe(0);
       expect(recursive.stdout).toBe("");
+      expect(existsSync(join(cwd, ".ai/harness/handoff/current.md"))).toBe(false);
 
       const codex = runHook("stop-orchestrator.sh", cwd, {
         stdin: JSON.stringify({
