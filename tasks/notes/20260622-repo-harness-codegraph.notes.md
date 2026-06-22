@@ -73,7 +73,7 @@ Sprint 0 contract freeze for `plans/sprints/20260622-repo-harness-codegraph-spri
 ## Sprint 2 Snapshot Cache/Index-Lag Notes
 
 - Snapshot TTL is currently a bounded in-process memoization contract:
-  30 seconds, at most 16 snapshots. The cache key includes repo id, registry
+  5 minutes, at most 16 snapshots. The cache key includes repo id, registry
   revision, `.ignore` digest, and the validated snapshot id. A hit is only
   reported after the reader recomputes the current manifest digest and confirms
   the snapshot id still matches; this preserves stale detection for file,
@@ -89,3 +89,22 @@ Sprint 0 contract freeze for `plans/sprints/20260622-repo-harness-codegraph-spri
   still walks the complete visible tree to compute counts, hashes, and the
   manifest digest. The remaining performance slice must measure 10k/100k/500k
   fixtures and decide whether to introduce a true streaming inventory structure.
+
+## Sprint 2 Cache-Key/Performance Notes
+
+- Public `snapshot_cache.key` is now scoped by tool and repo-relative path set;
+  `snapshot_cache.snapshot_key` names the underlying repo snapshot. This keeps
+  `repo_manifest`, `stat_file`, `read_file`, `read_files`, `list_tree`, and
+  `search_text` from presenting a single repo-wide cache key for path-specific
+  work.
+- Entry metadata has a bounded in-process cache keyed by repo id, registry
+  revision, `.ignore` digest, repo-relative path, and the current stat
+  signature. Warm snapshot revalidation can reuse unchanged metadata without
+  re-hashing and binary-probing every unchanged file. File changes, `.ignore`
+  changes, and registry revision changes produce different cache keys.
+- `docs/researches/20260623-general-repo-reader-performance-baseline.md`
+  records the first reproducible baseline. The 10k fixture completed with a
+  warm manifest first page at 360.91 ms and warm search at 763.39 ms. The 100k
+  fixture completed without OOM, returned paginated results, and hit the warm
+  snapshot/metadata cache, but warm manifest/read/search still took about
+  4.3-4.4 seconds. The 100k SLO and 500k baseline remain open.

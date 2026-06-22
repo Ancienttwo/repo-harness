@@ -366,14 +366,25 @@ keeping the filesystem walker as the complete manifest source of truth. Response
 carry `snapshot_id`, `index_revision`, `ignore_digest`, and `indexed` metadata;
 stale client snapshots return `SNAPSHOT_STALE` instead of silently mixing
 versions. Responses also expose `snapshot_state`, snapshot TTL/expiry, and a
-bounded in-process snapshot cache marker. The cache key includes repo identity,
-registry revision, `.ignore` digest, and the validated snapshot id; a cache hit
-is returned only after the current manifest digest still matches, so file,
-registry, and `.ignore` changes keep producing a new snapshot. If CodeGraph
-reports a now-missing indexed path or metadata that no longer matches the
-filesystem, the snapshot becomes `index_lagging` while authorized read/stat
+bounded in-process snapshot cache marker. The public `snapshot_cache.key` is
+scoped by tool and repo-relative path set, while `snapshot_cache.snapshot_key`
+identifies the underlying repo snapshot. Entry metadata is cached separately by
+repo, registry revision, `.ignore` digest, relative path, and current stat
+signature, so unchanged warm manifest/stat/read calls avoid repeated file hash
+and binary probes without hiding file, registry, or `.ignore` changes. If
+CodeGraph reports a now-missing indexed path or metadata that no longer matches
+the filesystem, the snapshot becomes `index_lagging` while authorized read/stat
 fallback stays available. Full-text search still falls back to the guarded
 filesystem path when CodeGraph cannot provide complete repo-text search.
+
+For large-repo reader baselines, run:
+
+```bash
+bun run benchmark:mcp-reader -- --entries 10000 --json
+```
+
+Use `--entries all` for the full 10k/100k/500k fixture sequence when the local
+machine can spend the filesystem time.
 
 This sidecar assumes the CLI is already installed from
 [First 5 Minutes](#first-5-minutes). Use it when you want ChatGPT to plan

@@ -243,13 +243,21 @@ describe('MCP reader tools', () => {
       const byPath = new Map(manifest.entries.map((entry: { path: string }) => [entry.path, entry]));
       expect(manifest.index_revision).toBe('index_fake1234');
       expect(manifest.snapshot_state).toBe('index_lagging');
-      expect(manifest.snapshot_ttl_ms).toBe(30_000);
+      expect(manifest.snapshot_ttl_ms).toBe(300_000);
       expect(manifest.snapshot_created_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
       expect(manifest.snapshot_expires_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
       expect(manifest.snapshot_cache).toMatchObject({
         hit: false,
+        scope: 'repo_manifest',
+        paths: ['.'],
         max_entries: 16,
+        entry_metadata: {
+          hits: expect.any(Number),
+          misses: expect.any(Number),
+          max_entries: 200_000,
+        },
       });
+      expect(manifest.snapshot_cache.key).not.toBe(manifest.snapshot_cache.snapshot_key);
       expect(manifest.codegraph).toMatchObject({
         integrated: true,
         available: true,
@@ -275,10 +283,17 @@ describe('MCP reader tools', () => {
       const stat = await jsonTool(cgCtx, 'stat_file', { repo_id: repoId, path: 'src/index.ts', snapshot_id: manifest.snapshot_id });
       expect(stat.snapshot_id).toBe(manifest.snapshot_id);
       expect(stat.snapshot_cache.hit).toBe(true);
+      expect(stat.snapshot_cache.scope).toBe('stat_file');
+      expect(stat.snapshot_cache.paths).toEqual(['src/index.ts']);
+      expect(stat.snapshot_cache.key).not.toBe(manifest.snapshot_cache.key);
+      expect(stat.snapshot_cache.snapshot_key).toBe(manifest.snapshot_cache.snapshot_key);
+      expect(stat.snapshot_cache.entry_metadata.hits).toBeGreaterThan(0);
       expect(stat).toMatchObject({ indexed: true, codegraph_language: 'typescript' });
 
       const read = await jsonTool(cgCtx, 'read_file', { repo_id: repoId, path: 'src/index.ts', snapshot_id: manifest.snapshot_id });
       expect(read.snapshot_id).toBe(manifest.snapshot_id);
+      expect(read.snapshot_cache.scope).toBe('read_file');
+      expect(read.snapshot_cache.paths).toEqual(['src/index.ts']);
       expect(read).toMatchObject({ indexed: true, backend: 'codegraph-indexed-filesystem-read' });
 
       const firstSearch = await jsonTool(cgCtx, 'search_text', {
@@ -300,6 +315,19 @@ describe('MCP reader tools', () => {
         snapshot_id: manifest.snapshot_id,
       });
       expect(secondSearch.matches[0].line).toBe(3);
+
+      writeFileSync(join(repoRoot, 'src', 'index.ts'), 'export const readerFixture = 200;\n');
+      const changed = await jsonTool(cgCtx, 'stat_file', { repo_id: repoId, path: 'src/index.ts' });
+      expect(changed.snapshot_id).not.toBe(manifest.snapshot_id);
+      expect(changed.snapshot_cache.hit).toBe(false);
+      expect(changed.sha256).not.toBe((byPath.get('src/index.ts') as { sha256?: string }).sha256);
+      const staleAfterChange = await jsonTool(cgCtx, 'read_file', {
+        repo_id: repoId,
+        path: 'src/index.ts',
+        snapshot_id: manifest.snapshot_id,
+      });
+      expect(staleAfterChange.error.code).toBe('SNAPSHOT_STALE');
+      expect(staleAfterChange.error.retryable).toBe(true);
 
       const stale = await jsonTool(cgCtx, 'read_file', { repo_id: repoId, path: 'src/index.ts', snapshot_id: 'snap_stale' });
       expect(stale.error.code).toBe('SNAPSHOT_STALE');

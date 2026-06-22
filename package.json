@@ -31,6 +31,7 @@
     "bun": ">=1.0.0"
   },
   "scripts": {
+    "benchmark:mcp-reader": "bun scripts/benchmark-general-repo-reader.ts",
     "benchmark:skills": "bun scripts/run-skill-evals.ts",
     "test": "bun test",
     "test:coverage": "bun test --coverage",

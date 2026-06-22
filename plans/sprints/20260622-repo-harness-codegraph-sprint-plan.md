@@ -486,8 +486,8 @@ Sprint 1 evidence:
 ## 9.5 性能与缓存
 
 - [ ] **S2-PERF-001** manifest 流式生成，不将全仓库一次性载入内存。
-- [ ] **S2-PERF-002** cache key 包含 repo、snapshot、ignore digest 和路径。
-- [ ] **S2-PERF-003** 文件变化、ignore 变化、registry 变化时精确失效。
+- [x] **S2-PERF-002** cache key 包含 repo、snapshot、ignore digest 和路径。
+- [x] **S2-PERF-003** 文件变化、ignore 变化、registry 变化时精确失效。
 - [ ] **S2-PERF-004** 在 10k/100k/500k entries fixture 上记录基线。
 - [ ] **S2-PERF-005** 建议初始目标：100k 文件 warm manifest 首屏 p95 < 2s；普通 read 首块 p95 < 500ms；warm search p95 < 2s。最终以环境基线调整。
 
@@ -507,7 +507,8 @@ Sprint 2 adapter/snapshot evidence:
 - Tests: `tests/cli/mcp-reader-tools.test.ts`
 - Verification: `bun test tests/cli/mcp-reader-tools.test.ts`, `bun run check:type`
 - Snapshot cache/index-lag update: responses now expose `snapshot_state`, creation/expiry, TTL, bounded snapshot metadata, and CodeGraph lagging path summaries. Snapshot memoization is repo-wide and revalidated by the current manifest digest, so it closes `S2-SNP-006/007` but does not claim the per-path cache requirements in `S2-PERF-002/003`.
-- Deferred by design: all `S2-PERF-*` items and the 100k/OOM exit gate remain open for true streaming inventory, per-path cache keys, precise cache invalidation, and measured large-repo baselines. CodeGraph CLI `query` remains symbol-oriented, so full-text `search_text` continues to use the policy-consistent filesystem fallback while exposing CodeGraph indexed metadata.
+- Cache-key/performance update: public `snapshot_cache.key` is scoped by tool and repo-relative path set, with `snapshot_cache.snapshot_key` naming the underlying snapshot. Entry metadata cache keys include repo id, registry revision, `.ignore` digest, path, and current stat signature, so file, `.ignore`, and registry changes do not reuse stale metadata. Verification: `bun test tests/cli/mcp-reader-tools.test.ts tests/cli/mcp-codegraph-contract.test.ts`, `bun run check:type`, and `bun run benchmark:mcp-reader -- --entries 10000 --json`.
+- Deferred by design: `S2-PERF-001`, `S2-PERF-004/005`, and the 100k/OOM exit gate remain open. The 10k and 100k baselines are recorded in `docs/researches/20260623-general-repo-reader-performance-baseline.md`; 100k completes without OOM and returns paginated results, but warm manifest/read/search still take about 4.3-4.4 seconds and miss the proposed S2 SLO. CodeGraph CLI `query` remains symbol-oriented, so full-text `search_text` continues to use the policy-consistent filesystem fallback while exposing CodeGraph indexed metadata.
 
 ---
 

@@ -158,12 +158,23 @@ merged as indexed metadata (`indexed`, `codegraph_language`,
 truth for complete manifest coverage. If a caller sends a stale `snapshot_id`,
 the reader returns `SNAPSHOT_STALE` instead of silently mixing versions.
 Each response also reports `snapshot_state`, creation/expiry time, TTL, and a
-bounded snapshot cache marker. The cache is revalidated by the current manifest
-digest before it can be reported as a hit; it does not let stale file or
-`.ignore` changes masquerade as current state. If CodeGraph still references a
-deleted indexed path or returns metadata that no longer matches the filesystem,
-the response uses `snapshot_state: "index_lagging"` and includes lagging paths
-under the `codegraph` object.
+bounded snapshot cache marker. `snapshot_cache.key` is scoped by tool and
+repo-relative path set; `snapshot_cache.snapshot_key` names the underlying repo
+snapshot. Entry metadata is cached by repo, registry revision, `.ignore`
+digest, path, and current stat signature, so warm calls can reuse unchanged file
+metadata while file, registry, and `.ignore` changes produce a different
+snapshot. If CodeGraph still references a deleted indexed path or returns
+metadata that no longer matches the filesystem, the response uses
+`snapshot_state: "index_lagging"` and includes lagging paths under the
+`codegraph` object.
+
+Large-repo reader baselines are reproducible with:
+
+```bash
+bun run benchmark:mcp-reader -- --entries 10000 --json
+```
+
+Use `--entries all` for the full 10k/100k/500k fixture sequence.
 
 CodeGraph search support is treated conservatively: current CodeGraph CLI query
 is symbol-oriented, so general full-text `search_text` uses the same guarded
