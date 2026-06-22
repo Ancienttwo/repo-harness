@@ -178,7 +178,7 @@ function evidenceContract(): string {
   ].join("\n");
 }
 
-function externalAcceptanceAdvice(reviewer = "Codex", source = "codex-review"): string {
+function externalAcceptanceAdvice(reviewer = "Codex", source = "codex-review", manualOverride?: string): string {
   return [
     "## External Acceptance Advice",
     "",
@@ -191,6 +191,12 @@ function externalAcceptanceAdvice(reviewer = "Codex", source = "codex-review"): 
     "- P1 blockers: none",
     "- P2 advisories: none",
     "- Acceptance checklist: pass",
+    // These integration fixtures exercise script orchestration, not fingerprint
+    // binding. A rubric-less review can no longer pass external acceptance, so a
+    // Manual Override (honoured before the rubric check) keeps them on a passing
+    // external-acceptance path without computing a per-worktree fingerprint. The
+    // genuine rubric+fingerprint pass path is covered in hook-runtime.test.ts.
+    ...(manualOverride ? [`Manual Override: ${manualOverride}`] : []),
   ].join("\n");
 }
 
@@ -1119,7 +1125,7 @@ describe("Workflow helper scripts", () => {
           "## Verification Evidence",
           "- Unit test and typecheck covered by verify-sprint.",
           "",
-          externalAcceptanceAdvice(),
+          externalAcceptanceAdvice("Codex", "codex-review", "peer review recorded out-of-band for this fixture"),
           "",
         ].join("\n")
       );
@@ -1265,7 +1271,7 @@ describe("Workflow helper scripts", () => {
           "## Verification Evidence",
           "- Unit test and typecheck covered by verify-sprint.",
           "",
-          externalAcceptanceAdvice(),
+          externalAcceptanceAdvice("Codex", "codex-review", "peer review recorded out-of-band for this fixture"),
           "",
         ].join("\n")
       );
@@ -1366,7 +1372,7 @@ describe("Workflow helper scripts", () => {
       writeFileSync(join(worktreePath, "tasks/contracts/demo.contract.md"), "# contract\n");
       writeFileSync(
         join(worktreePath, "tasks/reviews/demo.review.md"),
-        ["# Task Review: demo", "", "> **Recommendation**: pass", "", humanReviewCard(), "", externalAcceptanceAdvice(), ""].join("\n")
+        ["# Task Review: demo", "", "> **Recommendation**: pass", "", humanReviewCard(), "", externalAcceptanceAdvice("Codex", "codex-review", "peer review recorded out-of-band for this fixture"), ""].join("\n")
       );
       writeValidSprintChecks(worktreePath);
       writeFileSync(
@@ -2395,7 +2401,7 @@ describe("Workflow helper scripts", () => {
       );
       writeFileSync(
         join(cwd, "tasks/reviews/demo.review.md"),
-        ["# Task Review: demo", "", "> **Recommendation**: pass", "", humanReviewCard(), "", externalAcceptanceAdvice(), ""].join("\n")
+        ["# Task Review: demo", "", "> **Recommendation**: pass", "", humanReviewCard(), "", externalAcceptanceAdvice("Codex", "codex-review", "peer review recorded out-of-band for this fixture"), ""].join("\n")
       );
 
       const res = run("bash", ["scripts/verify-sprint.sh"], cwd, { HOOK_HOST: "claude" });
@@ -2418,7 +2424,7 @@ describe("Workflow helper scripts", () => {
       expect(checks.review.card.verdict).toBe("pass");
       expect(checks.review.card.change_type).toBe("code-change");
       expect(checks.review.card.rollback).toBe("revert fixture branch");
-      expect(checks.external_acceptance.status).toBe("pass");
+      expect(checks.external_acceptance.status).toBe("manual_override");
       expect(checks.external_acceptance.reviewer).toBe("Codex");
       expect(checks.external_acceptance.source).toBe("codex-review");
       expect(checks.allowed_paths_check.status).toBe("pass");
@@ -2469,7 +2475,7 @@ describe("Workflow helper scripts", () => {
       );
       writeFileSync(
         join(cwd, "tasks/reviews/demo.review.md"),
-        ["# Task Review: demo", "", "> **Recommendation**: pass", "", humanReviewCard("pass", "pass").replace("- Change type: code-change", "- Change type: docs-only"), "", externalAcceptanceAdvice(), ""].join("\n")
+        ["# Task Review: demo", "", "> **Recommendation**: pass", "", humanReviewCard("pass", "pass").replace("- Change type: code-change", "- Change type: docs-only"), "", externalAcceptanceAdvice("Codex", "codex-review", "peer review recorded out-of-band for this fixture"), ""].join("\n")
       );
 
       initGitRepo(cwd);

@@ -43,7 +43,7 @@ describe("workflow-state shared library", () => {
     expect(helper).not.toContain("^\\> \\*\\*Recommendation\\*\\*:[[:space:]]*pass");
   });
 
-  test("external acceptance parser enforces reviewer, source, blockers, and manual override", () => {
+  test("external acceptance parser enforces reviewer, source, blockers, manual override, and a supported rubric", () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), "workflow-external-acceptance-")));
     try {
       writeFileSync(
@@ -112,8 +112,14 @@ describe("workflow-state shared library", () => {
       );
 
       expect(res.status).toBe(0);
-      expect(res.stdout).toContain("pass\tClaude\tclaude-review\tExternal acceptance passed.");
+      // pass.review.md has a correct reviewer/source/blockers but no rubric line.
+      // A rubric-less review can no longer pass external acceptance (it cannot be
+      // proven legacy); the happy pass path is covered end-to-end in
+      // hook-runtime.test.ts where a real fingerprint binding is available.
+      expect(res.stdout).toContain("fail\tClaude\tclaude-review\tReview Rubric Version is missing; rerun peer acceptance under a supported rubric or record a Manual Override.");
+      // P1 blockers are checked before the rubric, so this still reports blockers.
       expect(res.stdout).toContain("fail\tClaude\tclaude-review\tExternal acceptance has P1 blockers: release regression");
+      // Manual Override is honoured before the rubric check, so override still wins.
       expect(res.stdout).toContain("manual_override\t-\tclaude-review\tManual override recorded for external acceptance");
     } finally {
       rmSync(cwd, { recursive: true, force: true });

@@ -390,7 +390,7 @@ if [[ -n "$review_file" && -f "$review_file" ]]; then
   review_freshness="$(workflow_review_freshness_status "$review_file")"
   IFS=$'\t' read -r review_freshness_state _review_fingerprint review_freshness_message <<< "$review_freshness"
   case "$review_freshness_state" in
-    stale|malformed|unknown|missing)
+    stale|malformed|malformed_schema|unknown|missing)
       echo "[ReviewFreshness] $review_freshness_message" >&2
       ;;
   esac

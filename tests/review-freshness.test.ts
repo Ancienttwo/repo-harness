@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { spawnSync } from 'child_process';
@@ -7,6 +7,7 @@ import {
   IMPLEMENTATION_FINGERPRINT_SCOPE,
   buildImplementationDiffFingerprint,
   runReviewFingerprintCli,
+  splitNul,
 } from '../src/cli/hook/diff-fingerprint';
 
 function tmpRepo(prefix: string): string {
@@ -215,6 +216,81 @@ describe('review freshness fingerprint', () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
+  });
+
+  test('detects content changes in untracked files whose names use git pathspec magic', () => {
+    const cwd = tmpFeatureRepo('repo-harness-review-freshness-pathspec');
+    try {
+      // A leading `:(...)` is valid git pathspec magic, not a literal path. When
+      // the discovered name is fed back to git without --literal-pathspecs it is
+      // re-interpreted as a (case-insensitive) match for `noop.ts`, which matches
+      // nothing, so the file's content was silently excluded from the hash.
+      const magicPath = join(cwd, ':(icase)noop.ts');
+      writeFileSync(magicPath, 'v1');
+      const first = buildImplementationDiffFingerprint(cwd, { baseRef: 'main' });
+      writeFileSync(magicPath, 'v2-changed');
+      const second = buildImplementationDiffFingerprint(cwd, { baseRef: 'main' });
+      expect(first.status).toBe('ok');
+      expect(first.paths).toContain(':(icase)noop.ts');
+      expect(second.fingerprint).not.toBe(first.fingerprint);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test('detects an untracked symlink retargeted to a same-content file', () => {
+    const cwd = tmpFeatureRepo('repo-harness-review-freshness-symlink');
+    try {
+      // Two tracked files with identical content; the implementation diff is the
+      // untracked symlink. statSync would follow the link to the (unchanged)
+      // content and miss the retarget — the link target must be in the hash.
+      writeFileSync(join(cwd, 'a.txt'), 'SAME\n');
+      writeFileSync(join(cwd, 'b.txt'), 'SAME\n');
+      runGit(cwd, ['add', 'a.txt', 'b.txt']);
+      runGit(cwd, ['commit', '-m', 'targets']);
+      symlinkSync('a.txt', join(cwd, 'link'));
+      const first = buildImplementationDiffFingerprint(cwd, { baseRef: 'main' });
+      rmSync(join(cwd, 'link'));
+      symlinkSync('b.txt', join(cwd, 'link'));
+      const second = buildImplementationDiffFingerprint(cwd, { baseRef: 'main' });
+      expect(first.status).toBe('ok');
+      expect(first.paths).toContain('link');
+      expect(second.fingerprint).not.toBe(first.fingerprint);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test('detects an untracked executable-bit flip with no content change', () => {
+    const cwd = tmpFeatureRepo('repo-harness-review-freshness-mode');
+    try {
+      const script = join(cwd, 'script.sh');
+      writeFileSync(script, '#!/bin/sh\necho hi\n');
+      chmodSync(script, 0o644);
+      const first = buildImplementationDiffFingerprint(cwd, { baseRef: 'main' });
+      // The executable bit becomes the committed blob mode (100755 vs 100644),
+      // so a chmod with no content change is a real implementation diff.
+      chmodSync(script, 0o755);
+      const second = buildImplementationDiffFingerprint(cwd, { baseRef: 'main' });
+      expect(first.status).toBe('ok');
+      expect(second.fingerprint).not.toBe(first.fingerprint);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test('splitNul fails closed when a git pathname does not round-trip through utf-8', () => {
+    // macOS/APFS rejects non-utf-8 filenames, so this Linux-reproducible case is
+    // unit-tested against the parser directly: a lossy decode must mark the
+    // computation degraded rather than risk a silent path collision.
+    const ctx = { degraded: false };
+    const tokens = splitNul(Buffer.from([0x62, 0x61, 0x64, 0xff, 0xfe, 0x2e, 0x74, 0x73, 0x00]), ctx);
+    expect(tokens.length).toBe(1);
+    expect(ctx.degraded).toBe(true);
+
+    const clean = { degraded: false };
+    splitNul(Buffer.from('src/ok.ts ', 'utf-8'), clean);
+    expect(clean.degraded).toBe(false);
   });
 
   test('CLI is fail-open for malformed arguments', () => {

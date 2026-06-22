@@ -1,6 +1,6 @@
 import { execFileSync } from 'child_process';
 import { createHash } from 'crypto';
-import { existsSync, readFileSync, statSync } from 'fs';
+import { lstatSync, readFileSync, readlinkSync } from 'fs';
 import { join } from 'path';
 
 // Raised from 4 MiB: a diff that overflows this cap can no longer be observed,
@@ -86,9 +86,14 @@ export function uniqueSorted(values: readonly string[]): string[] {
 // missing) so callers can distinguish a legitimately empty result from an
 // unobservable one. The previous helper returned '' for both, which let command
 // failures masquerade as clean state.
+// --literal-pathspecs: every path handed back to git here was discovered from
+// git's own `-z` output, so it must be matched verbatim. Without this flag a
+// filename that looks like pathspec magic (a leading `:`, e.g. `:(icase)x`) is
+// re-interpreted as a pattern, silently matching a different file or nothing and
+// dropping its content from the fingerprint.
 function gitRun(repoRoot: string, args: readonly string[], maxBuffer = PATCH_HASH_MAX_BUFFER): GitTextResult {
   try {
-    const text = execFileSync('git', ['-C', repoRoot, ...args], {
+    const text = execFileSync('git', ['-C', repoRoot, '--literal-pathspecs', ...args], {
       encoding: 'utf-8',
       stdio: ['ignore', 'pipe', 'ignore'],
       maxBuffer,
@@ -104,7 +109,7 @@ function gitRun(repoRoot: string, args: readonly string[], maxBuffer = PATCH_HAS
 // line/space splitting.
 function gitRunBuffer(repoRoot: string, args: readonly string[], maxBuffer = PATCH_HASH_MAX_BUFFER): GitBufferResult {
   try {
-    const out = execFileSync('git', ['-C', repoRoot, ...args], {
+    const out = execFileSync('git', ['-C', repoRoot, '--literal-pathspecs', ...args], {
       stdio: ['ignore', 'pipe', 'ignore'],
       maxBuffer,
     });
@@ -151,17 +156,29 @@ function hashEmptyGitPatch(): string {
   return hashText('');
 }
 
-// Split a NUL-delimited git buffer into verbatim utf-8 tokens.
-function splitNul(buf: Buffer): string[] {
+// Split a NUL-delimited git buffer into verbatim utf-8 tokens. When ctx is
+// provided, a token whose bytes do not round-trip through utf-8 marks the
+// computation degraded: such a pathname cannot be passed back to the
+// string-based git/fs calls without corruption, and two distinct non-utf-8 names
+// can decode to the same replacement-character string, so fail closed instead of
+// risking a silent collision. (Exported for unit testing.)
+export function splitNul(buf: Buffer, ctx?: FingerprintCtx): string[] {
   const parts: string[] = [];
   let start = 0;
+  const push = (from: number, to: number): void => {
+    const token = buf.toString('utf-8', from, to);
+    if (ctx && !Buffer.from(token, 'utf-8').equals(buf.subarray(from, to))) {
+      ctx.degraded = true;
+    }
+    parts.push(token);
+  };
   for (let index = 0; index < buf.length; index += 1) {
     if (buf[index] === 0) {
-      if (index > start) parts.push(buf.toString('utf-8', start, index));
+      if (index > start) push(start, index);
       start = index + 1;
     }
   }
-  if (start < buf.length) parts.push(buf.toString('utf-8', start, buf.length));
+  if (start < buf.length) push(start, buf.length);
   return parts;
 }
 
@@ -176,18 +193,35 @@ function untrackedContentHash(repoRoot: string, paths: readonly string[], ctx: F
     if (!statusRes.text.split('\0').some((token) => token.startsWith('?? '))) continue;
 
     const absolute = join(repoRoot, path);
-    if (!existsSync(absolute)) continue;
     try {
-      const stat = statSync(absolute);
-      if (!stat.isFile()) continue;
+      // lstat, never stat: an untracked symlink must be fingerprinted by its own
+      // target and type, not by the content it points at. statSync would follow
+      // the link and miss a retarget to a same-content file, and existsSync would
+      // skip a dangling symlink entirely.
+      const stat = lstatSync(absolute);
+      if (stat.isSymbolicLink()) {
+        entries.push({ path, type: 'symlink', target: readlinkSync(absolute) });
+        continue;
+      }
+      if (!stat.isFile()) {
+        // Directory, socket, fifo, gitlink, etc.: its content cannot be modelled
+        // as a blob, so fail closed rather than silently ignore it.
+        ctx.degraded = true;
+        entries.push({ path, type: 'other' });
+        continue;
+      }
       if (stat.size > UNTRACKED_HASH_MAX_BYTES) {
         // Cannot fully observe the content of an oversized untracked file.
         ctx.degraded = true;
-        entries.push({ path, oversized: true, size: stat.size });
+        entries.push({ path, type: 'file', oversized: true, size: stat.size });
         continue;
       }
       entries.push({
         path,
+        type: 'file',
+        // The executable bit becomes the committed blob mode (100755 vs 100644),
+        // so a chmod with no content change is a real implementation diff.
+        executable: (stat.mode & 0o111) !== 0,
         sha256: createHash('sha256').update(readFileSync(absolute)).digest('hex'),
       });
     } catch {
@@ -368,11 +402,11 @@ export function buildImplementationDiffFingerprint(
 
   const statusRes = gitRunBuffer(repoRoot, ['status', '--porcelain=v1', '--untracked-files=all', '-z']);
   if (!statusRes.ok) ctx.degraded = true;
-  const statusParsed = parseStatusZ(splitNul(statusRes.buf));
+  const statusParsed = parseStatusZ(splitNul(statusRes.buf, ctx));
 
   const branchRes = gitRunBuffer(repoRoot, ['diff', '--name-status', '--find-renames', '-z', `${baseRef}...HEAD`]);
   if (!branchRes.ok) ctx.degraded = true;
-  const branchPaths = parseNameStatusZ(splitNul(branchRes.buf));
+  const branchPaths = parseNameStatusZ(splitNul(branchRes.buf, ctx));
 
   const allPaths = uniqueSorted([...branchPaths, ...statusParsed.all]);
   const excludedPaths = allPaths.filter(isOperationalReviewPath);

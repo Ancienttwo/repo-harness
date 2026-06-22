@@ -1153,6 +1153,8 @@ if [ "$done_intent" -eq 1 ]; then
     pass)
       ;;
     legacy_missing)
+      # Advisory only: an absent rubric is blocked downstream by the external
+      # acceptance gate, which requires a supported rubric.
       echo "[ReviewFreshness] WARN: $review_freshness_message"
       ;;
     *)
