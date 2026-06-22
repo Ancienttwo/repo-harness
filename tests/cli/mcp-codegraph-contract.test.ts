@@ -22,6 +22,11 @@ const TOOL_NAMES = [
 const COMMON_RESPONSE_FIELDS = [
   'repo_id',
   'snapshot_id',
+  'snapshot_state',
+  'snapshot_created_at',
+  'snapshot_expires_at',
+  'snapshot_ttl_ms',
+  'snapshot_cache',
   'index_revision',
   'ignore_digest',
   'stale',

@@ -69,3 +69,23 @@ Sprint 0 contract freeze for `plans/sprints/20260622-repo-harness-codegraph-spri
 - CodeGraph CLI `query` is symbol search, not complete repo full-text search.
   `search_text` therefore keeps the policy-consistent filesystem fallback while
   surfacing whether each matched file is present in CodeGraph indexed metadata.
+
+## Sprint 2 Snapshot Cache/Index-Lag Notes
+
+- Snapshot TTL is currently a bounded in-process memoization contract:
+  30 seconds, at most 16 snapshots. The cache key includes repo id, registry
+  revision, `.ignore` digest, and the validated snapshot id. A hit is only
+  reported after the reader recomputes the current manifest digest and confirms
+  the snapshot id still matches; this preserves stale detection for file,
+  registry, and `.ignore` changes.
+- `snapshot_state` is `ready` when the filesystem-backed snapshot can be served,
+  and `index_lagging` when CodeGraph metadata proves the index is behind the
+  filesystem. Secure walker traversal errors remain represented by the existing
+  `partial` and `walker_errors` fields, because a partial manifest can still be
+  served with explicit completeness metadata. CodeGraph lag evidence is limited
+  to stale indexed paths that no longer resolve and indexed files whose
+  CodeGraph size differs from the current filesystem size.
+- This slice does not claim the full S2 performance target. Manifest generation
+  still walks the complete visible tree to compute counts, hashes, and the
+  manifest digest. The remaining performance slice must measure 10k/100k/500k
+  fixtures and decide whether to introduce a true streaming inventory structure.

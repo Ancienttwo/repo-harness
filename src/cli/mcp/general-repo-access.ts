@@ -28,6 +28,7 @@ export interface GeneralRepoToolResult {
 
 type RepoEntryType = 'file' | 'directory' | 'symlink' | 'other';
 type SymlinkTargetKind = 'internal' | 'external' | 'none';
+type SnapshotState = 'ready' | 'index_lagging' | 'failed';
 
 interface RepoRecord {
   repoId: string;
@@ -73,6 +74,7 @@ interface ManifestEntry {
   codegraph_language?: string;
   codegraph_node_count?: number;
   codegraph_size?: number;
+  codegraph_index_lagging?: boolean;
   readable: boolean;
   writable: boolean;
   symlink_target_kind: SymlinkTargetKind;
@@ -80,6 +82,14 @@ interface ManifestEntry {
 
 interface VisibleEntrySnapshot {
   id: string;
+  state: SnapshotState;
+  createdAtMs: number;
+  createdAt: string;
+  expiresAt: string;
+  ttlMs: number;
+  cacheKey: string;
+  cacheHit: boolean;
+  cacheSize: number;
   entries: ManifestEntry[];
   entriesByPath: Map<string, ManifestEntry>;
   manifestDigest: string;
@@ -87,6 +97,7 @@ interface VisibleEntrySnapshot {
   walkerErrors: number;
   codeGraph: CodeGraphRepoSnapshot;
   codeGraphFilteredPaths: number;
+  codeGraphLaggingPaths: string[];
 }
 
 const GENERAL_REPO_TOOLS = [
@@ -107,7 +118,11 @@ const BINARY_PROBE_BYTES = 8 * 1024;
 const SEARCH_FILE_SCAN_BYTES = 1024 * 1024;
 const DEFAULT_SEARCH_RESULTS = 50;
 const HARD_SEARCH_RESULTS = 100;
+const SNAPSHOT_TTL_MS = 30_000;
+const MAX_SNAPSHOT_CACHE_ENTRIES = 16;
+const MAX_LAGGING_PATHS_RETURNED = 50;
 const DEFAULT_CODEGRAPH_ADAPTER = createCodeGraphCliAdapter();
+const SNAPSHOT_CACHE = new Map<string, VisibleEntrySnapshot>();
 
 export type GeneralRepoToolName = typeof GENERAL_REPO_TOOLS[number];
 
@@ -403,6 +418,16 @@ function commonFields(repo: RepoRecord, ignore: IgnorePolicy, snapshot: VisibleE
   return {
     repo_id: repo.repoId,
     snapshot_id: snapshot.id,
+    snapshot_state: snapshot.state,
+    snapshot_created_at: snapshot.createdAt,
+    snapshot_expires_at: snapshot.expiresAt,
+    snapshot_ttl_ms: snapshot.ttlMs,
+    snapshot_cache: {
+      key: snapshot.cacheKey,
+      hit: snapshot.cacheHit,
+      size: snapshot.cacheSize,
+      max_entries: MAX_SNAPSHOT_CACHE_ENTRIES,
+    },
     index_revision: snapshot.codeGraph.indexRevision,
     ignore_digest: ignore.digest,
     stale: false,
@@ -487,13 +512,15 @@ function metadataDigest(entries: ManifestEntry[]): string {
   ])))}`;
 }
 
-function mergeCodeGraphMetadata(repo: RepoRecord, ignore: IgnorePolicy, entries: ManifestEntry[], codeGraph: CodeGraphRepoSnapshot): { entriesByPath: Map<string, ManifestEntry>; filteredPaths: number } {
+function mergeCodeGraphMetadata(repo: RepoRecord, ignore: IgnorePolicy, entries: ManifestEntry[], codeGraph: CodeGraphRepoSnapshot): { entriesByPath: Map<string, ManifestEntry>; filteredPaths: number; laggingPaths: string[] } {
   const entriesByPath = new Map(entries.map((entry) => [entry.path, entry]));
   let filteredPaths = 0;
+  const laggingPaths = new Set<string>();
 
   for (const file of codeGraph.files) {
+    let relativePath = '';
     try {
-      const relativePath = normalizeRepoRelativePath(file.path);
+      relativePath = normalizeRepoRelativePath(file.path);
       if (isIgnored(ignore, relativePath)) {
         filteredPaths += 1;
         continue;
@@ -508,22 +535,43 @@ function mergeCodeGraphMetadata(repo: RepoRecord, ignore: IgnorePolicy, entries:
       entry.codegraph_language = file.language;
       entry.codegraph_node_count = file.nodeCount;
       entry.codegraph_size = file.size;
-    } catch (_error) {
+      if (typeof file.size === 'number' && typeof entry.size === 'number' && file.size !== entry.size) {
+        entry.codegraph_index_lagging = true;
+        laggingPaths.add(resolved.relativePath);
+      }
+    } catch (error) {
       filteredPaths += 1;
+      if (error instanceof GeneralRepoAccessError && error.code === 'NOT_FOUND' && relativePath) {
+        laggingPaths.add(relativePath);
+      }
     }
   }
 
-  return { entriesByPath, filteredPaths };
+  return { entriesByPath, filteredPaths, laggingPaths: [...laggingPaths].sort((a, b) => a.localeCompare(b)) };
 }
 
 function buildVisibleEntrySnapshot(ctx: GeneralRepoToolContext, repo: RepoRecord, ignore: IgnorePolicy): VisibleEntrySnapshot {
+  const createdAtMs = Date.now();
   const codeGraph = (ctx.codeGraphAdapter ?? DEFAULT_CODEGRAPH_ADAPTER).discoverRepo(repo.canonicalRoot);
   const walked = walkVisibleEntries(repo, ignore);
   const merged = mergeCodeGraphMetadata(repo, ignore, walked.entries, codeGraph);
   const manifestDigest = metadataDigest(walked.entries);
   const id = `snap_${sha256(`${repo.repoId}\0${repo.registryRevision}\0${ignore.digest}\0${codeGraph.indexRevision}\0${manifestDigest}`).slice(0, 16)}`;
-  return {
+  const cacheKey = `cache_${sha256(`${repo.repoId}\0${repo.registryRevision}\0${ignore.digest}\0${id}`).slice(0, 16)}`;
+  const state: SnapshotState = codeGraph.available && merged.laggingPaths.length > 0
+    ? 'index_lagging'
+    : 'ready';
+  const expiresAtMs = createdAtMs + SNAPSHOT_TTL_MS;
+  const snapshot: VisibleEntrySnapshot = {
     id,
+    state,
+    createdAtMs,
+    createdAt: new Date(createdAtMs).toISOString(),
+    expiresAt: new Date(expiresAtMs).toISOString(),
+    ttlMs: SNAPSHOT_TTL_MS,
+    cacheKey,
+    cacheHit: false,
+    cacheSize: SNAPSHOT_CACHE.size,
     entries: walked.entries,
     entriesByPath: merged.entriesByPath,
     manifestDigest,
@@ -531,6 +579,45 @@ function buildVisibleEntrySnapshot(ctx: GeneralRepoToolContext, repo: RepoRecord
     walkerErrors: walked.walkerErrors,
     codeGraph,
     codeGraphFilteredPaths: merged.filteredPaths,
+    codeGraphLaggingPaths: merged.laggingPaths,
+  };
+  return rememberSnapshot(snapshot);
+}
+
+function rememberSnapshot(snapshot: VisibleEntrySnapshot): VisibleEntrySnapshot {
+  const now = Date.now();
+  for (const [key, cached] of SNAPSHOT_CACHE) {
+    if (Date.parse(cached.expiresAt) <= now) SNAPSHOT_CACHE.delete(key);
+  }
+
+  const cached = SNAPSHOT_CACHE.get(snapshot.cacheKey);
+  if (cached && cached.id === snapshot.id && Date.parse(cached.expiresAt) > now) {
+    const cacheHit = {
+      ...cached,
+      cacheHit: true,
+      cacheSize: SNAPSHOT_CACHE.size,
+    };
+    SNAPSHOT_CACHE.set(snapshot.cacheKey, cacheHit);
+    return cacheHit;
+  }
+
+  SNAPSHOT_CACHE.set(snapshot.cacheKey, snapshot);
+  while (SNAPSHOT_CACHE.size > MAX_SNAPSHOT_CACHE_ENTRIES) {
+    let oldestKey: string | null = null;
+    let oldestCreatedAt = Number.POSITIVE_INFINITY;
+    for (const [key, cachedSnapshot] of SNAPSHOT_CACHE) {
+      if (cachedSnapshot.createdAtMs < oldestCreatedAt) {
+        oldestCreatedAt = cachedSnapshot.createdAtMs;
+        oldestKey = key;
+      }
+    }
+    if (!oldestKey) break;
+    SNAPSHOT_CACHE.delete(oldestKey);
+  }
+
+  return {
+    ...snapshot,
+    cacheSize: SNAPSHOT_CACHE.size,
   };
 }
 
@@ -553,6 +640,9 @@ function codeGraphSummary(snapshot: VisibleEntrySnapshot): Record<string, unknow
     latency_ms: snapshot.codeGraph.latencyMs,
     indexed_files: snapshot.codeGraph.files.length,
     filtered_paths: snapshot.codeGraphFilteredPaths,
+    index_lagging: snapshot.codeGraphLaggingPaths.length > 0,
+    lagging_path_count: snapshot.codeGraphLaggingPaths.length,
+    lagging_paths: snapshot.codeGraphLaggingPaths.slice(0, MAX_LAGGING_PATHS_RETURNED),
     error: snapshot.codeGraph.error,
   };
 }
@@ -710,6 +800,7 @@ function repoManifest(ctx: GeneralRepoToolContext, args: Record<string, unknown>
       symlinks: entries.filter((entry) => entry.type === 'symlink').length,
       indexed: entries.filter((entry) => entry.indexed).length,
       unindexed: entries.filter((entry) => !entry.indexed).length,
+      index_lagging: entries.filter((entry) => entry.codegraph_index_lagging).length,
       text: entries.filter((entry) => entry.type === 'file' && entry.binary === false).length,
       binary: entries.filter((entry) => entry.type === 'file' && entry.binary === true).length,
     },

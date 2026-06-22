@@ -454,8 +454,8 @@ Sprint 1 evidence:
 - [x] **S2-SNP-003** manifest、tree、search、read、batch read 可复用同一 snapshot。
 - [x] **S2-SNP-004** 文件或 ignore 变化时标记 snapshot stale。
 - [x] **S2-SNP-005** stale 时返回显式状态；禁止静默混合版本。
-- [ ] **S2-SNP-006** 定义 snapshot TTL、最大并发数和清理策略。
-- [ ] **S2-SNP-007** 为“索引落后于文件系统”提供 `index_lagging` 状态。
+- [x] **S2-SNP-006** 定义 snapshot TTL、最大并发数和清理策略。
+- [x] **S2-SNP-007** 为“索引落后于文件系统”提供 `index_lagging` 状态。
 
 ## 9.3 Repo Manifest
 
@@ -506,7 +506,8 @@ Sprint 2 adapter/snapshot evidence:
 - Runtime: `src/cli/mcp/codegraph-adapter.ts`, `src/cli/mcp/general-repo-access.ts`, `src/cli/mcp/reader-tools.ts`
 - Tests: `tests/cli/mcp-reader-tools.test.ts`
 - Verification: `bun test tests/cli/mcp-reader-tools.test.ts`, `bun run check:type`
-- Deferred by design: `S2-SNP-006`, `S2-SNP-007`, and all `S2-PERF-*` remain open for cache/TTL/index-lag/performance baselines. CodeGraph CLI `query` remains symbol-oriented, so full-text `search_text` continues to use the policy-consistent filesystem fallback while exposing CodeGraph indexed metadata.
+- Snapshot cache/index-lag update: responses now expose `snapshot_state`, creation/expiry, TTL, bounded snapshot metadata, and CodeGraph lagging path summaries. Snapshot memoization is repo-wide and revalidated by the current manifest digest, so it closes `S2-SNP-006/007` but does not claim the per-path cache requirements in `S2-PERF-002/003`.
+- Deferred by design: all `S2-PERF-*` items and the 100k/OOM exit gate remain open for true streaming inventory, per-path cache keys, precise cache invalidation, and measured large-repo baselines. CodeGraph CLI `query` remains symbol-oriented, so full-text `search_text` continues to use the policy-consistent filesystem fallback while exposing CodeGraph indexed metadata.
 
 ---
 

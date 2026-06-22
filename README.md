@@ -365,8 +365,15 @@ CodeGraph indexed-file metadata into manifest/stat/read/search responses while
 keeping the filesystem walker as the complete manifest source of truth. Responses
 carry `snapshot_id`, `index_revision`, `ignore_digest`, and `indexed` metadata;
 stale client snapshots return `SNAPSHOT_STALE` instead of silently mixing
-versions. Full-text search still falls back to the guarded filesystem path when
-CodeGraph cannot provide complete repo-text search.
+versions. Responses also expose `snapshot_state`, snapshot TTL/expiry, and a
+bounded in-process snapshot cache marker. The cache key includes repo identity,
+registry revision, `.ignore` digest, and the validated snapshot id; a cache hit
+is returned only after the current manifest digest still matches, so file,
+registry, and `.ignore` changes keep producing a new snapshot. If CodeGraph
+reports a now-missing indexed path or metadata that no longer matches the
+filesystem, the snapshot becomes `index_lagging` while authorized read/stat
+fallback stays available. Full-text search still falls back to the guarded
+filesystem path when CodeGraph cannot provide complete repo-text search.
 
 This sidecar assumes the CLI is already installed from
 [First 5 Minutes](#first-5-minutes). Use it when you want ChatGPT to plan

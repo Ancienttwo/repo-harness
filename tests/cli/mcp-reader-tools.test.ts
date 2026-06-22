@@ -222,7 +222,7 @@ describe('MCP reader tools', () => {
             indexRevision: 'index_fake1234',
             latencyMs: 3,
             files: [
-              { path: 'src/index.ts', language: 'typescript', nodeCount: 2, size: 31 },
+              { path: 'src/index.ts', language: 'typescript', nodeCount: 2, size: 1 },
               { path: '.env', language: 'dotenv', nodeCount: 0, size: 29 },
               { path: 'ignored.md', language: 'markdown', nodeCount: 0, size: 10 },
               { path: '../outside.ts', language: 'typescript', nodeCount: 1, size: 10 },
@@ -242,18 +242,31 @@ describe('MCP reader tools', () => {
       const manifest = await jsonTool(cgCtx, 'repo_manifest', { repo_id: repoId, page_size: 1000 });
       const byPath = new Map(manifest.entries.map((entry: { path: string }) => [entry.path, entry]));
       expect(manifest.index_revision).toBe('index_fake1234');
+      expect(manifest.snapshot_state).toBe('index_lagging');
+      expect(manifest.snapshot_ttl_ms).toBe(30_000);
+      expect(manifest.snapshot_created_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+      expect(manifest.snapshot_expires_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+      expect(manifest.snapshot_cache).toMatchObject({
+        hit: false,
+        max_entries: 16,
+      });
       expect(manifest.codegraph).toMatchObject({
         integrated: true,
         available: true,
         source: 'test-double',
         indexed_files: 5,
         filtered_paths: 3,
+        index_lagging: true,
+        lagging_path_count: 2,
       });
+      expect(manifest.codegraph.lagging_paths).toEqual(['missing.ts', 'src/index.ts']);
       expect(manifest.counts.indexed).toBe(2);
+      expect(manifest.counts.index_lagging).toBe(1);
       expect(byPath.get('src/index.ts')).toMatchObject({
         indexed: true,
         codegraph_language: 'typescript',
         codegraph_node_count: 2,
+        codegraph_index_lagging: true,
       });
       expect(byPath.get('.env')).toMatchObject({ indexed: true, codegraph_language: 'dotenv' });
       expect(byPath.get('docs/design.md')).toMatchObject({ indexed: false });
@@ -261,6 +274,7 @@ describe('MCP reader tools', () => {
 
       const stat = await jsonTool(cgCtx, 'stat_file', { repo_id: repoId, path: 'src/index.ts', snapshot_id: manifest.snapshot_id });
       expect(stat.snapshot_id).toBe(manifest.snapshot_id);
+      expect(stat.snapshot_cache.hit).toBe(true);
       expect(stat).toMatchObject({ indexed: true, codegraph_language: 'typescript' });
 
       const read = await jsonTool(cgCtx, 'read_file', { repo_id: repoId, path: 'src/index.ts', snapshot_id: manifest.snapshot_id });
