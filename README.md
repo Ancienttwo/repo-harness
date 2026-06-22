@@ -360,6 +360,14 @@ the only content exclusion source, paths are repo-relative, and authorized file
 content is not implicitly redacted. External non-repo local roots require
 explicit `--allow-root` authorization.
 
+When CodeGraph is initialized for a registered repo, the general reader merges
+CodeGraph indexed-file metadata into manifest/stat/read/search responses while
+keeping the filesystem walker as the complete manifest source of truth. Responses
+carry `snapshot_id`, `index_revision`, `ignore_digest`, and `indexed` metadata;
+stale client snapshots return `SNAPSHOT_STALE` instead of silently mixing
+versions. Full-text search still falls back to the guarded filesystem path when
+CodeGraph cannot provide complete repo-text search.
+
 This sidecar assumes the CLI is already installed from
 [First 5 Minutes](#first-5-minutes). Use it when you want ChatGPT to plan
 against the real repo state and Codex to execute the resulting file-backed

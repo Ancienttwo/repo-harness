@@ -380,7 +380,7 @@ Sprint 0 evidence:
 - [x] **S1-GRD-003** 支持内部 symlink；拒绝 external symlink 和 symlink chain escape。
 - [ ] **S1-GRD-004** 写路径对不存在目标检查最近的已存在父目录。
 - [x] **S1-GRD-005** 使用 fd-relative/openat 等机制降低 check-then-open TOCTOU 风险。
-- [ ] **S1-GRD-006** 对 CodeGraph 返回的每个 path 执行二次 guard。
+- [x] **S1-GRD-006** 对 CodeGraph 返回的每个 path 执行二次 guard。
 - [x] **S1-GRD-007** 增加 Windows/macOS/Linux 路径差异测试；若首版只支持单平台，在 capability 中显式声明。
 
 ## 8.3 Ignore Policy
@@ -439,49 +439,49 @@ Sprint 1 evidence:
 
 ## 9.1 CodeGraph Adapter
 
-- [ ] **S2-CG-001** 定义稳定 adapter interface，隔离 CodeGraph 具体版本和调用方式。
-- [ ] **S2-CG-002** 启动时执行 capability discovery，并缓存结果。
-- [ ] **S2-CG-003** 统一 CodeGraph timeout、取消、重试和错误映射。
-- [ ] **S2-CG-004** 所有返回路径执行 canonical guard 和 `.ignore` 二次过滤。
-- [ ] **S2-CG-005** 记录 adapter latency、failure 和 index revision 指标。
-- [ ] **S2-CG-006** 对 CodeGraph 不支持的能力提供明确 fallback，而非静默缺失。
-- [ ] **S2-CG-007** 建立 adapter contract tests，可替换 fake/real CodeGraph。
+- [x] **S2-CG-001** 定义稳定 adapter interface，隔离 CodeGraph 具体版本和调用方式。
+- [x] **S2-CG-002** 启动时执行 capability discovery，并缓存结果。
+- [x] **S2-CG-003** 统一 CodeGraph timeout、取消、重试和错误映射。
+- [x] **S2-CG-004** 所有返回路径执行 canonical guard 和 `.ignore` 二次过滤。
+- [x] **S2-CG-005** 记录 adapter latency、failure 和 index revision 指标。
+- [x] **S2-CG-006** 对 CodeGraph 不支持的能力提供明确 fallback，而非静默缺失。
+- [x] **S2-CG-007** 建立 adapter contract tests，可替换 fake/real CodeGraph。
 
 ## 9.2 Snapshot Coordinator
 
-- [ ] **S2-SNP-001** 定义 `snapshot_id` 生命周期。
-- [ ] **S2-SNP-002** snapshot 绑定 `fs_revision + codegraph_revision + ignore_digest`。
-- [ ] **S2-SNP-003** manifest、tree、search、read、batch read 可复用同一 snapshot。
-- [ ] **S2-SNP-004** 文件或 ignore 变化时标记 snapshot stale。
-- [ ] **S2-SNP-005** stale 时返回显式状态；禁止静默混合版本。
+- [x] **S2-SNP-001** 定义 `snapshot_id` 生命周期。
+- [x] **S2-SNP-002** snapshot 绑定 `fs_revision + codegraph_revision + ignore_digest`。
+- [x] **S2-SNP-003** manifest、tree、search、read、batch read 可复用同一 snapshot。
+- [x] **S2-SNP-004** 文件或 ignore 变化时标记 snapshot stale。
+- [x] **S2-SNP-005** stale 时返回显式状态；禁止静默混合版本。
 - [ ] **S2-SNP-006** 定义 snapshot TTL、最大并发数和清理策略。
 - [ ] **S2-SNP-007** 为“索引落后于文件系统”提供 `index_lagging` 状态。
 
 ## 9.3 Repo Manifest
 
-- [ ] **S2-MAN-001** 实现 `repo_manifest`，覆盖所有非忽略 entries。
-- [ ] **S2-MAN-002** 每项包含 `indexed/readable/binary/size/mtime/hash/type`。
-- [ ] **S2-MAN-003** CodeGraph inventory 不完整时，由 secure walker 补齐。
-- [ ] **S2-MAN-004** 合并 CodeGraph metadata 和文件系统 metadata，定义冲突优先级。
-- [ ] **S2-MAN-005** 支持稳定排序、分页、cursor 和 manifest digest。
-- [ ] **S2-MAN-006** 返回总文件数、目录数、文本/二进制数、未索引数。
-- [ ] **S2-MAN-007** 仅在完整遍历成功时返回 `complete: true`。
-- [ ] **S2-MAN-008** 对遍历中发生的变化返回 stale/partial，而不是伪造完整性。
-- [ ] **S2-MAN-009** 建立 manifest parity test：期望集合与实际集合逐项对比。
+- [x] **S2-MAN-001** 实现 `repo_manifest`，覆盖所有非忽略 entries。
+- [x] **S2-MAN-002** 每项包含 `indexed/readable/binary/size/mtime/hash/type`。
+- [x] **S2-MAN-003** CodeGraph inventory 不完整时，由 secure walker 补齐。
+- [x] **S2-MAN-004** 合并 CodeGraph metadata 和文件系统 metadata，定义冲突优先级。
+- [x] **S2-MAN-005** 支持稳定排序、分页、cursor 和 manifest digest。
+- [x] **S2-MAN-006** 返回总文件数、目录数、文本/二进制数、未索引数。
+- [x] **S2-MAN-007** 仅在完整遍历成功时返回 `complete: true`。
+- [x] **S2-MAN-008** 对遍历中发生的变化返回 stale/partial，而不是伪造完整性。
+- [x] **S2-MAN-009** 建立 manifest parity test：期望集合与实际集合逐项对比。
 
 ## 9.4 搜索与批量读取
 
-- [ ] **S2-SRC-001** 实现 `search_text` literal 模式。
-- [ ] **S2-SRC-002** 实现 regex 模式；限制复杂度但不按路径或扩展名过滤。
-- [ ] **S2-SRC-003** 支持 path include filter；filter 只能缩小用户主动请求，不得成为隐式 policy。
-- [ ] **S2-SRC-004** 返回行号、上下文、文件 hash、snapshot。
-- [ ] **S2-SRC-005** 支持稳定分页和 continuation。
-- [ ] **S2-SRC-006** CodeGraph 搜索不可用时提供受限 filesystem search fallback，并保持同一 ignore 语义。
-- [ ] **S2-RD-001** 实现 `read_files`。
-- [ ] **S2-RD-002** 支持 per-file range、全局 byte budget 和 partial success。
-- [ ] **S2-RD-003** CodeGraph 未索引但授权允许的文本使用 secure read fallback。
-- [ ] **S2-RD-004** 二进制文件默认返回 metadata；可选开放 byte chunk。
-- [ ] **S2-RD-005** 为读取结果返回 sha256，供后续写前置条件使用。
+- [x] **S2-SRC-001** 实现 `search_text` literal 模式。
+- [x] **S2-SRC-002** 实现 regex 模式；限制复杂度但不按路径或扩展名过滤。
+- [x] **S2-SRC-003** 支持 path include filter；filter 只能缩小用户主动请求，不得成为隐式 policy。
+- [x] **S2-SRC-004** 返回行号、上下文、文件 hash、snapshot。
+- [x] **S2-SRC-005** 支持稳定分页和 continuation。
+- [x] **S2-SRC-006** CodeGraph 搜索不可用时提供受限 filesystem search fallback，并保持同一 ignore 语义。
+- [x] **S2-RD-001** 实现 `read_files`。
+- [x] **S2-RD-002** 支持 per-file range、全局 byte budget 和 partial success。
+- [x] **S2-RD-003** CodeGraph 未索引但授权允许的文本使用 secure read fallback。
+- [x] **S2-RD-004** 二进制文件默认返回 metadata；可选开放 byte chunk。
+- [x] **S2-RD-005** 为读取结果返回 sha256，供后续写前置条件使用。
 
 ## 9.5 性能与缓存
 
@@ -493,13 +493,20 @@ Sprint 1 evidence:
 
 ## 9.6 Sprint 2 退出标准
 
-- [ ] Manifest 与真实非忽略文件集合在 fixture 中达到 100% parity。
-- [ ] 未索引文件仍会出现在 manifest，并可在授权条件下读取。
-- [ ] 同一 snapshot 中 manifest/search/read 的 hash 一致。
-- [ ] CodeGraph 返回越界或已忽略路径时被二次过滤。
-- [ ] search 不因 dotfile、扩展名或 `.gitignore` 漏结果。
+- [x] Manifest 与真实非忽略文件集合在 fixture 中达到 100% parity。
+- [x] 未索引文件仍会出现在 manifest，并可在授权条件下读取。
+- [x] 同一 snapshot 中 manifest/search/read 的 hash 一致。
+- [x] CodeGraph 返回越界或已忽略路径时被二次过滤。
+- [x] search 不因 dotfile、扩展名或 `.gitignore` 漏结果。
 - [ ] 100k 文件规模下无 OOM，所有大结果均可分页恢复。
-- [ ] CodeGraph 故障时错误清晰；允许 fallback 的路径可降级运行。
+- [x] CodeGraph 故障时错误清晰；允许 fallback 的路径可降级运行。
+
+Sprint 2 adapter/snapshot evidence:
+
+- Runtime: `src/cli/mcp/codegraph-adapter.ts`, `src/cli/mcp/general-repo-access.ts`, `src/cli/mcp/reader-tools.ts`
+- Tests: `tests/cli/mcp-reader-tools.test.ts`
+- Verification: `bun test tests/cli/mcp-reader-tools.test.ts`, `bun run check:type`
+- Deferred by design: `S2-SNP-006`, `S2-SNP-007`, and all `S2-PERF-*` remain open for cache/TTL/index-lag/performance baselines. CodeGraph CLI `query` remains symbol-oriented, so full-text `search_text` continues to use the policy-consistent filesystem fallback while exposing CodeGraph indexed metadata.
 
 ---
 

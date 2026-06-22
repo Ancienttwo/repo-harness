@@ -46,3 +46,26 @@ Sprint 0 contract freeze for `plans/sprints/20260622-repo-harness-codegraph-spri
   reduces symlink-swap exposure with the Node filesystem APIs available here,
   but a stronger fd-relative/openat design still belongs in the S2/S4 security
   pass if the runtime grows native bindings.
+
+## Sprint 2 Adapter/Snapshot Notes
+
+- The CodeGraph integration is a bounded CLI adapter over
+  `codegraph files --format flat --json`. Its output is treated as indexed
+  metadata only. Secure filesystem walking remains the manifest source of truth
+  because the Sprint 0 spike proved CodeGraph inventory is not a complete repo
+  file list.
+- Every CodeGraph-returned path is normalized, resolved under the canonical repo
+  root, and checked against `.ignore` before metadata is merged. Returned paths
+  that are ignored, missing, directories, or outside the repo increment
+  `codegraph.filtered_paths` instead of widening access.
+- `snapshot_id` is deterministic from repo identity, registry revision,
+  `.ignore` digest, CodeGraph revision, and the manifest digest. A caller-provided
+  stale `snapshot_id` returns `SNAPSHOT_STALE` rather than silently mixing
+  manifest/search/read versions.
+- `.ai/harness/mcp/audit.log` is not included in the snapshot revision digest.
+  The audit file remains visible according to `.ignore`; the exclusion is only
+  to prevent the reader's own append-only audit side effect from invalidating the
+  snapshot it just returned.
+- CodeGraph CLI `query` is symbol search, not complete repo full-text search.
+  `search_text` therefore keeps the policy-consistent filesystem fallback while
+  surfacing whether each matched file is present in CodeGraph indexed metadata.

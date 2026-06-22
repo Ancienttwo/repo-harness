@@ -3,6 +3,7 @@ import { closeSync, constants, existsSync, lstatSync, openSync, readFileSync, re
 import { basename, isAbsolute, relative, resolve, sep } from 'path';
 import { readRegisteredRepoHarnessRepos, repoHarnessRepoIdFor, type RepoHarnessAccessMode } from '../../effects/repo-registry';
 import { hashMcpInput, tryWriteMcpAuditEntry } from './audit';
+import { createCodeGraphCliAdapter, type CodeGraphRepoSnapshot, type GeneralRepoCodeGraphAdapter } from './codegraph-adapter';
 import { globMatches, isPathInside } from './paths';
 import type { McpPolicy } from './types';
 
@@ -16,6 +17,7 @@ export interface GeneralRepoToolDefinition {
 export interface GeneralRepoToolContext {
   repoRoot: string;
   policy: McpPolicy;
+  codeGraphAdapter?: GeneralRepoCodeGraphAdapter;
 }
 
 export interface GeneralRepoToolResult {
@@ -68,9 +70,23 @@ interface ManifestEntry {
   sha256?: string;
   binary?: boolean;
   indexed: boolean;
+  codegraph_language?: string;
+  codegraph_node_count?: number;
+  codegraph_size?: number;
   readable: boolean;
   writable: boolean;
   symlink_target_kind: SymlinkTargetKind;
+}
+
+interface VisibleEntrySnapshot {
+  id: string;
+  entries: ManifestEntry[];
+  entriesByPath: Map<string, ManifestEntry>;
+  manifestDigest: string;
+  partial: boolean;
+  walkerErrors: number;
+  codeGraph: CodeGraphRepoSnapshot;
+  codeGraphFilteredPaths: number;
 }
 
 const GENERAL_REPO_TOOLS = [
@@ -91,6 +107,7 @@ const BINARY_PROBE_BYTES = 8 * 1024;
 const SEARCH_FILE_SCAN_BYTES = 1024 * 1024;
 const DEFAULT_SEARCH_RESULTS = 50;
 const HARD_SEARCH_RESULTS = 100;
+const DEFAULT_CODEGRAPH_ADAPTER = createCodeGraphCliAdapter();
 
 export type GeneralRepoToolName = typeof GENERAL_REPO_TOOLS[number];
 
@@ -382,16 +399,14 @@ function resolveRepoPath(repo: RepoRecord, inputPath: unknown, ignore: IgnorePol
   };
 }
 
-function commonFields(repo: RepoRecord, ignore: IgnorePolicy) {
-  const rootStat = statSync(repo.canonicalRoot);
-  const snapshotHash = sha256(`${repo.repoId}\0${repo.registryRevision}\0${ignore.digest}\0${rootStat.mtimeMs}\0${rootStat.ctimeMs}`);
+function commonFields(repo: RepoRecord, ignore: IgnorePolicy, snapshot: VisibleEntrySnapshot) {
   return {
     repo_id: repo.repoId,
-    snapshot_id: `snap_${snapshotHash.slice(0, 16)}`,
-    index_revision: 0,
+    snapshot_id: snapshot.id,
+    index_revision: snapshot.codeGraph.indexRevision,
     ignore_digest: ignore.digest,
     stale: false,
-    partial: false,
+    partial: snapshot.partial,
     next_cursor: null,
   };
 }
@@ -420,12 +435,19 @@ function metadataForResolved(resolved: ResolvedRepoPath): ManifestEntry {
   };
 }
 
-function walkVisibleEntries(repo: RepoRecord, ignore: IgnorePolicy, startRelative = '.'): ManifestEntry[] {
+function walkVisibleEntries(repo: RepoRecord, ignore: IgnorePolicy, startRelative = '.'): { entries: ManifestEntry[]; partial: boolean; walkerErrors: number } {
   const start = resolveRepoPath(repo, startRelative, ignore, { allowRoot: true, allowExternalSymlinkMetadata: true });
   const entries: ManifestEntry[] = [];
+  let walkerErrors = 0;
 
   const visit = (absoluteDir: string, relativeDir: string): void => {
-    const children = readdirSync(absoluteDir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name));
+    let children;
+    try {
+      children = readdirSync(absoluteDir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name));
+    } catch (_error) {
+      walkerErrors += 1;
+      return;
+    }
     for (const child of children) {
       const childRelative = relativeDir === '.' ? child.name : `${relativeDir}/${child.name}`;
       const childAbsolute = resolve(absoluteDir, child.name);
@@ -436,7 +458,7 @@ function walkVisibleEntries(repo: RepoRecord, ignore: IgnorePolicy, startRelativ
           resolvedChild = resolveRepoPath(repo, childRelative, ignore, { allowExternalSymlinkMetadata: true });
           entries.push(metadataForResolved(resolvedChild));
         } catch (_error) {
-          // Ignore races and unreadable children at this layer; callers mark partial in later snapshot work.
+          walkerErrors += 1;
         }
       }
       if (child.isDirectory()) {
@@ -449,7 +471,90 @@ function walkVisibleEntries(repo: RepoRecord, ignore: IgnorePolicy, startRelativ
 
   if (start.relativePath !== '.') entries.push(metadataForResolved(start));
   if (start.readable && statSync(start.canonicalPath).isDirectory()) visit(start.canonicalPath, start.relativePath);
-  return entries.sort((a, b) => a.path.localeCompare(b.path));
+  return { entries: entries.sort((a, b) => a.path.localeCompare(b.path)), partial: walkerErrors > 0, walkerErrors };
+}
+
+function isInternalRevisionPath(path: string): boolean {
+  return path === '.ai/harness/mcp/audit.log' || path.startsWith('.ai/harness/mcp/');
+}
+
+function metadataDigest(entries: ManifestEntry[]): string {
+  return `sha256:${sha256(JSON.stringify(entries.filter((entry) => !isInternalRevisionPath(entry.path)).map((entry) => [
+    entry.path,
+    entry.sha256 ?? '',
+    entry.type,
+    entry.indexed ? 'indexed' : 'unindexed',
+  ])))}`;
+}
+
+function mergeCodeGraphMetadata(repo: RepoRecord, ignore: IgnorePolicy, entries: ManifestEntry[], codeGraph: CodeGraphRepoSnapshot): { entriesByPath: Map<string, ManifestEntry>; filteredPaths: number } {
+  const entriesByPath = new Map(entries.map((entry) => [entry.path, entry]));
+  let filteredPaths = 0;
+
+  for (const file of codeGraph.files) {
+    try {
+      const relativePath = normalizeRepoRelativePath(file.path);
+      if (isIgnored(ignore, relativePath)) {
+        filteredPaths += 1;
+        continue;
+      }
+      const resolved = resolveRepoPath(repo, relativePath, ignore, { allowExternalSymlinkMetadata: true });
+      const entry = entriesByPath.get(resolved.relativePath);
+      if (!entry || resolved.type !== 'file') {
+        filteredPaths += 1;
+        continue;
+      }
+      entry.indexed = true;
+      entry.codegraph_language = file.language;
+      entry.codegraph_node_count = file.nodeCount;
+      entry.codegraph_size = file.size;
+    } catch (_error) {
+      filteredPaths += 1;
+    }
+  }
+
+  return { entriesByPath, filteredPaths };
+}
+
+function buildVisibleEntrySnapshot(ctx: GeneralRepoToolContext, repo: RepoRecord, ignore: IgnorePolicy): VisibleEntrySnapshot {
+  const codeGraph = (ctx.codeGraphAdapter ?? DEFAULT_CODEGRAPH_ADAPTER).discoverRepo(repo.canonicalRoot);
+  const walked = walkVisibleEntries(repo, ignore);
+  const merged = mergeCodeGraphMetadata(repo, ignore, walked.entries, codeGraph);
+  const manifestDigest = metadataDigest(walked.entries);
+  const id = `snap_${sha256(`${repo.repoId}\0${repo.registryRevision}\0${ignore.digest}\0${codeGraph.indexRevision}\0${manifestDigest}`).slice(0, 16)}`;
+  return {
+    id,
+    entries: walked.entries,
+    entriesByPath: merged.entriesByPath,
+    manifestDigest,
+    partial: walked.partial,
+    walkerErrors: walked.walkerErrors,
+    codeGraph,
+    codeGraphFilteredPaths: merged.filteredPaths,
+  };
+}
+
+function assertSnapshotFresh(args: Record<string, unknown>, snapshot: VisibleEntrySnapshot): void {
+  const requested = typeof args.snapshot_id === 'string' ? args.snapshot_id.trim() : '';
+  if (requested && requested !== snapshot.id) {
+    throw new GeneralRepoAccessError('SNAPSHOT_STALE', 'requested snapshot_id does not match current repo snapshot', {
+      requested_snapshot_id: requested,
+      current_snapshot_id: snapshot.id,
+    }, true);
+  }
+}
+
+function codeGraphSummary(snapshot: VisibleEntrySnapshot): Record<string, unknown> {
+  return {
+    integrated: snapshot.codeGraph.integrated,
+    available: snapshot.codeGraph.available,
+    source: snapshot.codeGraph.source,
+    index_revision: snapshot.codeGraph.indexRevision,
+    latency_ms: snapshot.codeGraph.latencyMs,
+    indexed_files: snapshot.codeGraph.files.length,
+    filtered_paths: snapshot.codeGraphFilteredPaths,
+    error: snapshot.codeGraph.error,
+  };
 }
 
 function pageEntries<T>(entries: T[], cursor: unknown, pageSize: unknown): { page: T[]; nextCursor: string | null } {
@@ -476,11 +581,13 @@ function byteRange(value: unknown, maxLength: number): [number, number] | null {
   return [start, Math.min(length, maxLength)];
 }
 
-function readFilePayload(repo: RepoRecord, ignore: IgnorePolicy, args: Record<string, unknown>, maxBytes = HARD_READ_BYTES): Record<string, unknown> {
+function readFilePayload(repo: RepoRecord, ignore: IgnorePolicy, snapshot: VisibleEntrySnapshot, args: Record<string, unknown>, maxBytes = HARD_READ_BYTES): Record<string, unknown> {
   if (args.line_range !== undefined && args.byte_range !== undefined) {
     throw new GeneralRepoAccessError('INVALID_RANGE', 'line_range and byte_range are mutually exclusive');
   }
   const target = resolveRepoPath(repo, args.path, ignore, { requireFile: true });
+  const snapshotEntry = snapshot.entriesByPath.get(target.relativePath);
+  const indexed = snapshotEntry?.indexed ?? false;
   const raw = readFileSync(target.canonicalPath);
   const fullHash = sha256(raw);
   const binary = raw.subarray(0, BINARY_PROBE_BYTES).includes(0);
@@ -491,9 +598,11 @@ function readFilePayload(repo: RepoRecord, ignore: IgnorePolicy, args: Record<st
     const [start, length] = range;
     const chunk = raw.subarray(start, start + length);
     return {
-      ...commonFields(repo, ignore),
+      ...commonFields(repo, ignore, snapshot),
       path: target.relativePath,
       sha256: fullHash,
+      indexed,
+      backend: indexed ? 'codegraph-indexed-filesystem-read' : 'filesystem-fallback',
       encoding: 'base64',
       content: chunk.toString('base64'),
       bytes_returned: chunk.length,
@@ -519,9 +628,11 @@ function readFilePayload(repo: RepoRecord, ignore: IgnorePolicy, args: Record<st
       throw new GeneralRepoAccessError('PAYLOAD_LIMIT_REACHED', 'line_range exceeds response byte budget', { max_bytes: maxBytes });
     }
     return {
-      ...commonFields(repo, ignore),
+      ...commonFields(repo, ignore, snapshot),
       path: target.relativePath,
       sha256: fullHash,
+      indexed,
+      backend: indexed ? 'codegraph-indexed-filesystem-read' : 'filesystem-fallback',
       encoding: 'utf-8',
       content: selected,
       start_line: start,
@@ -536,9 +647,11 @@ function readFilePayload(repo: RepoRecord, ignore: IgnorePolicy, args: Record<st
   const bytes = raw.subarray(0, maxBytes);
   const content = bytes.toString('utf-8');
   return {
-    ...commonFields(repo, ignore),
+    ...commonFields(repo, ignore, snapshot),
     path: target.relativePath,
     sha256: fullHash,
+    indexed,
+    backend: indexed ? 'codegraph-indexed-filesystem-read' : 'filesystem-fallback',
     encoding: 'utf-8',
     content,
     bytes_returned: Buffer.byteLength(content, 'utf-8'),
@@ -551,8 +664,10 @@ function readFilePayload(repo: RepoRecord, ignore: IgnorePolicy, args: Record<st
 function getRepoCapabilities(ctx: GeneralRepoToolContext, args: Record<string, unknown>): GeneralRepoToolResult {
   const repo = resolveRepo(ctx, args.repo_id);
   const ignore = readIgnorePolicy(repo.canonicalRoot);
+  const snapshot = buildVisibleEntrySnapshot(ctx, repo, ignore);
+  assertSnapshotFresh(args, snapshot);
   return textResult({
-    ...commonFields(repo, ignore),
+    ...commonFields(repo, ignore, snapshot),
     access_mode: repo.accessMode,
     writable: repo.accessMode === 'read_write',
     display_name: repo.displayName,
@@ -562,8 +677,10 @@ function getRepoCapabilities(ctx: GeneralRepoToolContext, args: Record<string, u
     write_tools: repo.accessMode === 'read_write' ? [] : [],
     codegraph: {
       primary_backend: true,
-      integrated: false,
-      note: 'Sprint 1 uses filesystem fallback; CodeGraph adapter metadata merge is Sprint 2.',
+      ...codeGraphSummary(snapshot),
+      note: snapshot.codeGraph.available
+        ? 'CodeGraph inventory is merged as indexed metadata; secure filesystem walking remains the manifest source of truth.'
+        : 'CodeGraph is unavailable for this repo; authorized filesystem fallback remains active.',
     },
     limits: {
       max_page_size: HARD_PAGE_SIZE,
@@ -576,22 +693,29 @@ function getRepoCapabilities(ctx: GeneralRepoToolContext, args: Record<string, u
 function repoManifest(ctx: GeneralRepoToolContext, args: Record<string, unknown>): GeneralRepoToolResult {
   const repo = resolveRepo(ctx, args.repo_id);
   const ignore = readIgnorePolicy(repo.canonicalRoot);
-  const entries = walkVisibleEntries(repo, ignore);
+  const snapshot = buildVisibleEntrySnapshot(ctx, repo, ignore);
+  assertSnapshotFresh(args, snapshot);
+  const entries = snapshot.entries;
   const paged = pageEntries(entries, args.cursor, args.page_size);
   return textResult({
-    ...commonFields(repo, ignore),
+    ...commonFields(repo, ignore, snapshot),
     entries: paged.page,
     next_cursor: paged.nextCursor,
-    complete: true,
+    complete: !snapshot.partial,
     page_complete: paged.nextCursor === null,
     counts: {
       entries: entries.length,
       files: entries.filter((entry) => entry.type === 'file').length,
       directories: entries.filter((entry) => entry.type === 'directory').length,
       symlinks: entries.filter((entry) => entry.type === 'symlink').length,
+      indexed: entries.filter((entry) => entry.indexed).length,
       unindexed: entries.filter((entry) => !entry.indexed).length,
+      text: entries.filter((entry) => entry.type === 'file' && entry.binary === false).length,
+      binary: entries.filter((entry) => entry.type === 'file' && entry.binary === true).length,
     },
-    manifest_digest: `sha256:${sha256(JSON.stringify(entries.map((entry) => [entry.path, entry.sha256 ?? '', entry.type])))}`,
+    manifest_digest: snapshot.manifestDigest,
+    walker_errors: snapshot.walkerErrors,
+    codegraph: codeGraphSummary(snapshot),
   });
 }
 
@@ -599,8 +723,10 @@ function listTree(ctx: GeneralRepoToolContext, args: Record<string, unknown>): G
   const repo = resolveRepo(ctx, args.repo_id);
   const ignore = readIgnorePolicy(repo.canonicalRoot);
   const root = resolveRepoPath(repo, args.path ?? '.', ignore, { allowRoot: true, requireDirectory: true });
+  const snapshot = buildVisibleEntrySnapshot(ctx, repo, ignore);
+  assertSnapshotFresh(args, snapshot);
   const depth = numberArg(args.depth, 1, 0, 6);
-  const entries = walkVisibleEntries(repo, ignore, root.relativePath)
+  const entries = snapshot.entries
     .filter((entry) => entry.path !== root.relativePath)
     .filter((entry) => {
       const relation = root.relativePath === '.'
@@ -611,10 +737,11 @@ function listTree(ctx: GeneralRepoToolContext, args: Record<string, unknown>): G
     });
   const paged = pageEntries(entries, args.cursor, (args.page_size ?? DEFAULT_PAGE_SIZE));
   return textResult({
-    ...commonFields(repo, ignore),
+    ...commonFields(repo, ignore, snapshot),
     path: root.relativePath,
     entries: paged.page,
     next_cursor: paged.nextCursor,
+    codegraph: codeGraphSummary(snapshot),
   });
 }
 
@@ -622,21 +749,32 @@ function statFile(ctx: GeneralRepoToolContext, args: Record<string, unknown>): G
   const repo = resolveRepo(ctx, args.repo_id);
   const ignore = readIgnorePolicy(repo.canonicalRoot);
   const resolved = resolveRepoPath(repo, args.path, ignore);
+  const snapshot = buildVisibleEntrySnapshot(ctx, repo, ignore);
+  assertSnapshotFresh(args, snapshot);
+  const entry = snapshot.entriesByPath.get(resolved.relativePath) ?? metadataForResolved(resolved);
   return textResult({
-    ...commonFields(repo, ignore),
-    ...metadataForResolved(resolved),
+    ...commonFields(repo, ignore, snapshot),
+    ...entry,
+    codegraph: codeGraphSummary(snapshot),
   });
 }
 
 function readFileTool(ctx: GeneralRepoToolContext, args: Record<string, unknown>): GeneralRepoToolResult {
   const repo = resolveRepo(ctx, args.repo_id);
   const ignore = readIgnorePolicy(repo.canonicalRoot);
-  return textResult(readFilePayload(repo, ignore, args));
+  const snapshot = buildVisibleEntrySnapshot(ctx, repo, ignore);
+  assertSnapshotFresh(args, snapshot);
+  return textResult({
+    ...readFilePayload(repo, ignore, snapshot, args),
+    codegraph: codeGraphSummary(snapshot),
+  });
 }
 
 function readFiles(ctx: GeneralRepoToolContext, args: Record<string, unknown>): GeneralRepoToolResult {
   const repo = resolveRepo(ctx, args.repo_id);
   const ignore = readIgnorePolicy(repo.canonicalRoot);
+  const snapshot = buildVisibleEntrySnapshot(ctx, repo, ignore);
+  assertSnapshotFresh(args, snapshot);
   const requests = Array.isArray(args.requests) ? args.requests : [];
   const byteBudget = numberArg(args.byte_budget, HARD_READ_BYTES, 1, HARD_READ_BYTES);
   let remaining = byteBudget;
@@ -655,7 +793,7 @@ function readFiles(ctx: GeneralRepoToolContext, args: Record<string, unknown>): 
       continue;
     }
     try {
-      const payload = readFilePayload(repo, ignore, request as Record<string, unknown>, remaining);
+      const payload = readFilePayload(repo, ignore, snapshot, request as Record<string, unknown>, remaining);
       remaining -= Number(payload.bytes_returned ?? 0);
       results.push(payload);
     } catch (error) {
@@ -669,10 +807,11 @@ function readFiles(ctx: GeneralRepoToolContext, args: Record<string, unknown>): 
   }
 
   return textResult({
-    ...commonFields(repo, ignore),
-    partial,
+    ...commonFields(repo, ignore, snapshot),
+    partial: partial || snapshot.partial,
     results,
     bytes_remaining: remaining,
+    codegraph: codeGraphSummary(snapshot),
   });
 }
 
@@ -682,14 +821,20 @@ function searchText(ctx: GeneralRepoToolContext, args: Record<string, unknown>):
   const mode = args.mode === 'regex' ? 'regex' : 'literal';
   const repo = resolveRepo(ctx, args.repo_id);
   const ignore = readIgnorePolicy(repo.canonicalRoot);
+  const snapshot = buildVisibleEntrySnapshot(ctx, repo, ignore);
+  assertSnapshotFresh(args, snapshot);
   const requestedPaths = Array.isArray(args.paths) && args.paths.length > 0 ? args.paths : ['.'];
   const candidates: ManifestEntry[] = [];
   for (const path of requestedPaths) {
     const resolved = resolveRepoPath(repo, path, ignore, { allowRoot: true });
     if (resolved.type === 'directory') {
-      candidates.push(...walkVisibleEntries(repo, ignore, resolved.relativePath));
+      candidates.push(...snapshot.entries.filter((entry) => (
+        resolved.relativePath === '.'
+          ? true
+          : entry.path === resolved.relativePath || entry.path.startsWith(`${resolved.relativePath}/`)
+      )));
     } else {
-      candidates.push(metadataForResolved(resolved));
+      candidates.push(snapshot.entriesByPath.get(resolved.relativePath) ?? metadataForResolved(resolved));
     }
   }
   const seen = new Set<string>();
@@ -704,9 +849,11 @@ function searchText(ctx: GeneralRepoToolContext, args: Record<string, unknown>):
   const needle = query.toLowerCase();
   const matches: Record<string, unknown>[] = [];
   const maxResults = numberArg(args.max_results, DEFAULT_SEARCH_RESULTS, 1, HARD_SEARCH_RESULTS);
+  const offset = numberArg(args.cursor, 0, 0, Number.MAX_SAFE_INTEGER);
+  let seenMatches = 0;
 
   for (const entry of candidates.sort((a, b) => a.path.localeCompare(b.path))) {
-    if (matches.length >= maxResults) break;
+    if (matches.length >= maxResults + 1) break;
     if (entry.type !== 'file' || !entry.readable || seen.has(entry.path) || entry.binary || (entry.size ?? 0) > SEARCH_FILE_SCAN_BYTES) continue;
     seen.add(entry.path);
     const resolved = resolveRepoPath(repo, entry.path, ignore, { requireFile: true });
@@ -716,24 +863,35 @@ function searchText(ctx: GeneralRepoToolContext, args: Record<string, unknown>):
       const line = lines[index] ?? '';
       const column = regex ? line.search(regex) : line.toLowerCase().indexOf(needle);
       if (column < 0) continue;
+      if (seenMatches < offset) {
+        seenMatches += 1;
+        continue;
+      }
       matches.push({
         path: entry.path,
         line: index + 1,
         column: column + 1,
         snippet: line.slice(Math.max(0, column - 60), column + 120),
         sha256: entry.sha256,
+        indexed: entry.indexed,
+        backend: entry.indexed ? 'codegraph-indexed-filesystem-search' : 'filesystem-fallback',
       });
-      if (matches.length >= maxResults) break;
+      seenMatches += 1;
+      if (matches.length >= maxResults + 1) break;
     }
   }
+  const returned = matches.slice(0, maxResults);
+  const nextCursor = matches.length > maxResults ? String(offset + maxResults) : null;
 
   return textResult({
-    ...commonFields(repo, ignore),
+    ...commonFields(repo, ignore, snapshot),
     query,
     mode,
-    matches,
-    truncated: matches.length >= maxResults,
-    backend: 'filesystem-fallback',
+    matches: returned,
+    truncated: nextCursor !== null,
+    next_cursor: nextCursor,
+    backend: snapshot.codeGraph.available ? 'codegraph-metadata+filesystem-fallback' : 'filesystem-fallback',
+    codegraph: codeGraphSummary(snapshot),
   });
 }
 

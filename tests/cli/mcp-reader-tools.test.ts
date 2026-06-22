@@ -5,6 +5,7 @@ import { join } from 'path';
 import { getMcpPolicy } from '../../src/cli/mcp/policy';
 import { buildReaderToolDefinitions, callReaderTool, createReaderToolContext, type ReaderToolContext } from '../../src/cli/mcp/reader-tools';
 import { WorkspaceManager } from '../../src/cli/mcp/workspaces';
+import type { GeneralRepoCodeGraphAdapter } from '../../src/cli/mcp/codegraph-adapter';
 
 async function jsonTool(ctx: ReaderToolContext, name: string, args: Record<string, unknown> = {}) {
   const result = await callReaderTool(ctx, name, args);
@@ -206,6 +207,89 @@ describe('MCP reader tools', () => {
       } finally {
         rmSync(outside, { recursive: true, force: true });
       }
+    });
+  });
+
+  test('general repo tools merge CodeGraph metadata under the same guarded snapshot', async () => {
+    await withReaderRepo(async (repoRoot, ctx) => {
+      writeFileSync(join(repoRoot, '.ignore'), 'ignored.md\n');
+      const fakeCodeGraph: GeneralRepoCodeGraphAdapter = {
+        discoverRepo() {
+          return {
+            available: true,
+            integrated: true,
+            source: 'test-double',
+            indexRevision: 'index_fake1234',
+            latencyMs: 3,
+            files: [
+              { path: 'src/index.ts', language: 'typescript', nodeCount: 2, size: 31 },
+              { path: '.env', language: 'dotenv', nodeCount: 0, size: 29 },
+              { path: 'ignored.md', language: 'markdown', nodeCount: 0, size: 10 },
+              { path: '../outside.ts', language: 'typescript', nodeCount: 1, size: 10 },
+              { path: 'missing.ts', language: 'typescript', nodeCount: 1, size: 10 },
+            ],
+          };
+        },
+      };
+      const cgCtx = createReaderToolContext(
+        repoRoot,
+        ctx.policy,
+        new WorkspaceManager({ allowedRoots: [repoRoot], policy: ctx.policy }),
+        fakeCodeGraph,
+      );
+
+      const repoId = (await jsonTool(cgCtx, 'list_allowed_roots')).roots[0].repo_id;
+      const manifest = await jsonTool(cgCtx, 'repo_manifest', { repo_id: repoId, page_size: 1000 });
+      const byPath = new Map(manifest.entries.map((entry: { path: string }) => [entry.path, entry]));
+      expect(manifest.index_revision).toBe('index_fake1234');
+      expect(manifest.codegraph).toMatchObject({
+        integrated: true,
+        available: true,
+        source: 'test-double',
+        indexed_files: 5,
+        filtered_paths: 3,
+      });
+      expect(manifest.counts.indexed).toBe(2);
+      expect(byPath.get('src/index.ts')).toMatchObject({
+        indexed: true,
+        codegraph_language: 'typescript',
+        codegraph_node_count: 2,
+      });
+      expect(byPath.get('.env')).toMatchObject({ indexed: true, codegraph_language: 'dotenv' });
+      expect(byPath.get('docs/design.md')).toMatchObject({ indexed: false });
+      expect(byPath.has('ignored.md')).toBe(false);
+
+      const stat = await jsonTool(cgCtx, 'stat_file', { repo_id: repoId, path: 'src/index.ts', snapshot_id: manifest.snapshot_id });
+      expect(stat.snapshot_id).toBe(manifest.snapshot_id);
+      expect(stat).toMatchObject({ indexed: true, codegraph_language: 'typescript' });
+
+      const read = await jsonTool(cgCtx, 'read_file', { repo_id: repoId, path: 'src/index.ts', snapshot_id: manifest.snapshot_id });
+      expect(read.snapshot_id).toBe(manifest.snapshot_id);
+      expect(read).toMatchObject({ indexed: true, backend: 'codegraph-indexed-filesystem-read' });
+
+      const firstSearch = await jsonTool(cgCtx, 'search_text', {
+        repo_id: repoId,
+        query: 'alpha',
+        paths: ['docs/notes.txt'],
+        max_results: 1,
+        snapshot_id: manifest.snapshot_id,
+      });
+      expect(firstSearch.snapshot_id).toBe(manifest.snapshot_id);
+      expect(firstSearch.matches).toHaveLength(1);
+      expect(firstSearch.next_cursor).toBe('1');
+      const secondSearch = await jsonTool(cgCtx, 'search_text', {
+        repo_id: repoId,
+        query: 'alpha',
+        paths: ['docs/notes.txt'],
+        max_results: 1,
+        cursor: firstSearch.next_cursor,
+        snapshot_id: manifest.snapshot_id,
+      });
+      expect(secondSearch.matches[0].line).toBe(3);
+
+      const stale = await jsonTool(cgCtx, 'read_file', { repo_id: repoId, path: 'src/index.ts', snapshot_id: 'snap_stale' });
+      expect(stale.error.code).toBe('SNAPSHOT_STALE');
+      expect(stale.error.retryable).toBe(true);
     });
   });
 

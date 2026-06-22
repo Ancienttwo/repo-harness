@@ -10,6 +10,7 @@ import { redactMcpText } from './redaction';
 import { repoHarnessPackageVersion } from './version';
 import { WorkspaceError, WorkspaceManager, type McpWorkspace, type WorkspaceResolvedPath } from './workspaces';
 import { buildGeneralRepoToolDefinitions, callGeneralRepoTool, hasGeneralRepoArgs, isGeneralRepoTool, listGeneralRepoRecords } from './general-repo-access';
+import type { GeneralRepoCodeGraphAdapter } from './codegraph-adapter';
 import { repoHarnessRepoIdFor } from '../../effects/repo-registry';
 import type { McpPolicy } from './types';
 
@@ -24,6 +25,7 @@ export interface ReaderToolContext {
   repoRoot: string;
   policy: McpPolicy;
   workspaceManager: WorkspaceManager;
+  codeGraphAdapter?: GeneralRepoCodeGraphAdapter;
 }
 
 export interface ReaderToolResult {
@@ -605,11 +607,12 @@ export async function callReaderTool(ctx: ReaderToolContext, name: string, args:
   }
 }
 
-export function createReaderToolContext(repoRoot: string, policy: McpPolicy, workspaceManager?: WorkspaceManager): ReaderToolContext {
+export function createReaderToolContext(repoRoot: string, policy: McpPolicy, workspaceManager?: WorkspaceManager, codeGraphAdapter?: GeneralRepoCodeGraphAdapter): ReaderToolContext {
   return {
     repoRoot,
     policy,
     workspaceManager: workspaceManager ?? new WorkspaceManager({ allowedRoots: policy.allowedRoots ?? [], policy }),
+    codeGraphAdapter,
   };
 }
 

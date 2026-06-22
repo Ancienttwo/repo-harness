@@ -150,6 +150,19 @@ Authorized file content is not implicitly redacted in `read_file`,
 `read_files`, or `search_text` responses. The MCP audit path records tool name,
 target path, input hash, status, and errors, but not file bodies.
 
+When a repo has a CodeGraph index, `repo_manifest`, `list_tree`, `stat_file`,
+`read_file`, `read_files`, and `search_text` share a deterministic
+`snapshot_id`, `ignore_digest`, and `index_revision`. CodeGraph inventory is
+merged as indexed metadata (`indexed`, `codegraph_language`,
+`codegraph_node_count`); the secure filesystem walker remains the source of
+truth for complete manifest coverage. If a caller sends a stale `snapshot_id`,
+the reader returns `SNAPSHOT_STALE` instead of silently mixing versions.
+
+CodeGraph search support is treated conservatively: current CodeGraph CLI query
+is symbol-oriented, so general full-text `search_text` uses the same guarded
+filesystem fallback while preserving `.ignore` semantics and indicating whether
+the matched file is indexed by CodeGraph.
+
 The older `open_workspace`, `tree`, and `read_text` tools remain compatibility
 tools for the previous workspace reader surface. They still apply the legacy
 deny/redaction behavior and should not be used as proof of the general repo
