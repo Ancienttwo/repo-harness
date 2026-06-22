@@ -32,3 +32,17 @@ Sprint 0 contract freeze for `plans/sprints/20260622-repo-harness-codegraph-spri
 - Sprint 1 must replace legacy MCP reader filtering with the general repo
   Registry, Path Guard, and `.ignore` policy rather than layering the new API on
   top of current `COMMON_DENY_GLOBS`.
+
+## Sprint 1 Runtime Notes
+
+- The first runtime slice adds a separate general repo access service rather
+  than changing `WorkspaceManager` in place. The older workspace tools keep
+  their compatibility behavior; the new `repo_id` tools implement the PRD
+  contract.
+- `repo_manifest` is walker-backed in this slice and marks entries
+  `indexed:false`. CodeGraph metadata merge, real index revisions, shared
+  snapshot lifecycle, and cache/performance work remain Sprint 2.
+- Reads open the canonical in-repo target after path and symlink checks. This
+  reduces symlink-swap exposure with the Node filesystem APIs available here,
+  but a stronger fd-relative/openat design still belongs in the S2/S4 security
+  pass if the runtime grows native bindings.

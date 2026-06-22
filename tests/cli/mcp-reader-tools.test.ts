@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { getMcpPolicy } from '../../src/cli/mcp/policy';
@@ -54,7 +54,13 @@ describe('MCP reader tools', () => {
         'open_workspace',
         'tree',
         'read_text',
+        'get_repo_capabilities',
+        'repo_manifest',
+        'list_tree',
         'search_text',
+        'read_file',
+        'read_files',
+        'stat_file',
       ]);
       for (const definition of definitions) {
         expect(definition.annotations).toMatchObject({
@@ -74,6 +80,8 @@ describe('MCP reader tools', () => {
       const roots = await jsonTool(ctx, 'list_allowed_roots');
       const root = roots.roots.find((entry: { path: string }) => entry.path === realpathSync(repoRoot));
       expect(root.root_id).toMatch(/^root_/);
+      expect(root.repo_id).toMatch(/^repo_/);
+      expect(roots.repos.some((entry: { repo_id: string }) => entry.repo_id === root.repo_id)).toBe(true);
 
       const opened = await jsonTool(ctx, 'open_workspace', { root_id: root.root_id });
       expect(opened.workspace_id).toMatch(/^ws_/);
@@ -82,6 +90,122 @@ describe('MCP reader tools', () => {
       const otherCtx = createReaderToolContext(repoRoot, otherPolicy, new WorkspaceManager({ allowedRoots: [repoRoot], policy: otherPolicy }));
       const denied = await jsonTool(otherCtx, 'tree', { workspace_id: opened.workspace_id });
       expect(denied.error.code).toBe('WORKSPACE_NOT_FOUND');
+    });
+  });
+
+  test('general repo tools use repo_id, .ignore-only policy, and unredacted authorized reads', async () => {
+    await withReaderRepo(async (repoRoot, ctx) => {
+      const outside = mkdtempSync(join(tmpdir(), 'repo-harness-general-reader-outside-'));
+      try {
+        writeFileSync(join(repoRoot, '.ignore'), 'ignored.md\nignored-dir/**\n!ignored-dir/visible.txt\n');
+        writeFileSync(join(repoRoot, 'ignored-dir', 'visible.txt'), 'visible through negation\n');
+        mkdirSync(join(repoRoot, 'unicode', 'drop'), { recursive: true });
+        writeFileSync(join(repoRoot, 'unicode', '雪.md'), 'snow\n');
+        writeFileSync(join(repoRoot, 'unicode', 'drop', 'note.md'), 'ignored directory child\n');
+        const longRelativePath = `docs/${'long-segment-'.repeat(8)}file.txt`;
+        writeFileSync(join(repoRoot, longRelativePath), 'long path content\n');
+        writeFileSync(join(repoRoot, '#hash.txt'), 'escaped hash pattern\n');
+        writeFileSync(join(repoRoot, '!bang.txt'), 'escaped bang pattern\n');
+        writeFileSync(
+          join(repoRoot, '.ignore'),
+          [
+            'ignored.md',
+            'ignored-dir/**',
+            '!ignored-dir/visible.txt',
+            'unicode/drop/',
+            '\\#hash.txt',
+            '\\!bang.txt',
+            '',
+          ].join('\n'),
+        );
+        writeFileSync(join(repoRoot, 'docs', 'huge.txt'), 'x'.repeat(300_000));
+        writeFileSync(join(outside, 'outside.txt'), 'outside\n');
+        try {
+          symlinkSync(join(outside, 'outside.txt'), join(repoRoot, 'docs', 'external-link.txt'));
+        } catch (_error) {
+          // Symlink creation can be unavailable on some runners; guarded read is covered when present.
+        }
+
+        const roots = await jsonTool(ctx, 'list_allowed_roots');
+        const repoId = roots.roots[0].repo_id;
+
+        const capabilities = await jsonTool(ctx, 'get_repo_capabilities', { repo_id: repoId });
+        expect(capabilities.access_mode).toBe('read_only');
+        expect(capabilities.repo_id).toBe(repoId);
+        expect(capabilities.registry_revision).toMatch(/^registry_/);
+
+        const manifest = await jsonTool(ctx, 'repo_manifest', { repo_id: repoId, page_size: 1000 });
+        const visiblePaths = manifest.entries.map((entry: { path: string }) => entry.path);
+        expect(visiblePaths).toContain('.env');
+        expect(visiblePaths).toContain('.gitignore');
+        expect(visiblePaths).toContain('docs/.hidden.md');
+        expect(visiblePaths).toContain(longRelativePath);
+        expect(visiblePaths).toContain('ignored-dir/visible.txt');
+        expect(visiblePaths).toContain('unicode/雪.md');
+        expect(visiblePaths).not.toContain('.ignore');
+        expect(visiblePaths).not.toContain('ignored.md');
+        expect(visiblePaths).not.toContain('ignored-dir/note.md');
+        expect(visiblePaths).not.toContain('unicode/drop');
+        expect(visiblePaths).not.toContain('unicode/drop/note.md');
+        expect(visiblePaths).not.toContain('#hash.txt');
+        expect(visiblePaths).not.toContain('!bang.txt');
+        expect(manifest.ignore_digest).toMatch(/^sha256:[a-f0-9]{64}$/);
+        expect(manifest.complete).toBe(true);
+
+        const tree = await jsonTool(ctx, 'list_tree', { repo_id: repoId, path: '.', depth: 3, page_size: 1000 });
+        const treePaths = tree.entries.map((entry: { path: string }) => entry.path);
+        expect(treePaths).toContain('.env');
+        expect(treePaths).toContain('docs/.hidden.md');
+        expect(treePaths).toContain('ignored-dir/visible.txt');
+        expect(treePaths).not.toContain('ignored-dir/note.md');
+
+        const stat = await jsonTool(ctx, 'stat_file', { repo_id: repoId, path: '.env' });
+        expect(stat).toMatchObject({ path: '.env', type: 'file', indexed: false, readable: true, binary: false });
+        expect(stat.sha256).toMatch(/^[a-f0-9]{64}$/);
+        const longStat = await jsonTool(ctx, 'stat_file', { repo_id: repoId, path: longRelativePath });
+        expect(longStat).toMatchObject({ path: longRelativePath, type: 'file', readable: true });
+
+        const envRead = await jsonTool(ctx, 'read_file', { repo_id: repoId, path: '.env' });
+        expect(envRead.content).toContain('sk-testsecret');
+        expect(envRead.redactions).toBeUndefined();
+        expect(envRead.sha256).toMatch(/^[a-f0-9]{64}$/);
+
+        const range = await jsonTool(ctx, 'read_file', { repo_id: repoId, path: 'docs/design.md', line_range: [2, 2] });
+        expect(range.content).toBe('authentication route');
+        expect(range.start_line).toBe(2);
+        expect(range.has_more).toBe(true);
+        const huge = await jsonTool(ctx, 'read_file', { repo_id: repoId, path: 'docs/huge.txt' });
+        expect(huge.has_more).toBe(true);
+        expect(huge.next_cursor).toBe('byte:262144');
+
+        const search = await jsonTool(ctx, 'search_text', { repo_id: repoId, query: 'sk-testsecret', paths: ['.env'] });
+        expect(search.matches[0].snippet).toContain('sk-testsecret');
+        expect(search.backend).toBe('filesystem-fallback');
+
+        const batch = await jsonTool(ctx, 'read_files', {
+          repo_id: repoId,
+          requests: [
+            { path: 'src/index.ts' },
+            { path: 'ignored.md' },
+            { path: 'docs/binary.bin', byte_range: [0, 4] },
+          ],
+        });
+        expect(batch.partial).toBe(true);
+        expect(batch.results[0].content).toContain('readerFixture');
+        expect(batch.results[1].error.code).toBe('PATH_IGNORED');
+        expect(batch.results[2]).toMatchObject({ encoding: 'base64', binary: true });
+
+        const absolute = await jsonTool(ctx, 'read_file', { repo_id: repoId, path: join(repoRoot, 'src/index.ts') });
+        expect(absolute.error.code).toBe('INVALID_RELATIVE_PATH');
+        const unknownRepo = await jsonTool(ctx, 'stat_file', { repo_id: 'repo_missing', path: 'src/index.ts' });
+        expect(unknownRepo.error.code).toBe('REPO_NOT_ALLOWED');
+        if (existsSync(join(repoRoot, 'docs', 'external-link.txt'))) {
+          const external = await jsonTool(ctx, 'read_file', { repo_id: repoId, path: 'docs/external-link.txt' });
+          expect(external.error.code).toBe('SYMLINK_ESCAPE');
+        }
+      } finally {
+        rmSync(outside, { recursive: true, force: true });
+      }
     });
   });
 

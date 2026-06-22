@@ -123,9 +123,9 @@ If `repo-harness mcp doctor --repo . --json` reports `chatgpt.serverNameConfigur
 
 Use ChatGPT for planning and review. Use Codex for local execution.
 
-1. Use the single configured Connector for workflow planning and read-only workspace tools.
+1. Use the single configured Connector for workflow planning and read-only repo tools.
 2. Call `discover_harness_repos` to list registered adopted repos, then pass `repo_path` when targeting a specific project.
-3. For registered repo document/code reading, call `list_allowed_roots`, `open_workspace`, `tree`, `search_text`, and `read_text`; non-repo external directories require explicit allowed roots.
+3. For registered repo document/code reading, call `list_allowed_roots` to get the stable `repo_id`, then use `get_repo_capabilities`, `repo_manifest`, `list_tree`, `stat_file`, `read_file`, `read_files`, and `search_text`.
 4. Ask ChatGPT to turn the idea into a PRD with `write_prd_from_idea`.
 5. Ask ChatGPT to turn the PRD into a checklist Sprint with `write_checklist_sprint`.
 6. Ask ChatGPT to prepare a Codex Goal with `prepare_codex_goal_from_sprint`.
@@ -133,6 +133,27 @@ Use ChatGPT for planning and review. Use Codex for local execution.
 8. Let Codex execute one Sprint task card at a time, run checks, update the checklist, and stage each completed phase before continuing.
 
 The sidecar is not a remote coding agent. It prepares workflow artifacts for the local agent host.
+
+## General Repo Reader Contract
+
+The general repo reader uses the registered repo whitelist as the repo-level
+authorization boundary. GPT-facing calls use `repo_id` plus repo-relative paths;
+they never require or return the local absolute repo root.
+
+Inside an authorized repo, `.ignore` is the only content-level exclusion source
+for the general repo API. Dotfiles, hidden directories, unknown extensions,
+`.gitignore` matches, and ordinary source files are visible unless `.ignore`
+excludes them. The `.ignore` file itself is treated as policy input, not as a
+normal manifest entry.
+
+Authorized file content is not implicitly redacted in `read_file`,
+`read_files`, or `search_text` responses. The MCP audit path records tool name,
+target path, input hash, status, and errors, but not file bodies.
+
+The older `open_workspace`, `tree`, and `read_text` tools remain compatibility
+tools for the previous workspace reader surface. They still apply the legacy
+deny/redaction behavior and should not be used as proof of the general repo
+access contract.
 
 ## Dev Mode Agent Runner
 
@@ -215,13 +236,13 @@ Use repo-harness to inspect this repo. Call harness_status, latest_handoff, and 
 ## Reader Test Prompt
 
 ```text
-Use the repo-harness Connector. First call discover_harness_repos and choose the target repo_path. Then call list_allowed_roots, open_workspace for the matching root, tree on ".", read_text on README.md or docs/spec.md, and search_text for "repo-harness". Do not write files.
+Use the repo-harness Connector. First call discover_harness_repos and choose the target repo. Then call list_allowed_roots and use the matching repo_id with get_repo_capabilities, repo_manifest, list_tree on ".", stat_file on README.md, read_file on README.md or docs/spec.md, and search_text for "repo-harness". Do not write files.
 ```
 
 Blocked-file smoke:
 
 ```text
-Use the opened workspace to try read_text on ".env", ".ssh/id_rsa", "secrets/token.txt", and "credentials/config.json". Each request must be blocked by policy. Do not print secret contents.
+Use the general repo reader to try read_file with "../outside", an absolute path, and one path that the repo's .ignore excludes. These must return path-policy errors. If the repo contains an external symlink, read_file on that symlink must return SYMLINK_ESCAPE. Do not print file contents while testing blocked paths.
 ```
 
 ## Connector Invocation Evidence

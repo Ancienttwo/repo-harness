@@ -351,13 +351,14 @@ planner/reviewer that reads state and moves an idea through PRD, checklist
 Sprint, and Codex goal handoff artifacts — with no source-code write access,
 arbitrary shell execution, or default Codex runner. Codex remains the executor.
 
-The same `planner` Connector also exposes read-only workspace tools for
-registered adopted repos. Use `discover_harness_repos` first, then pass
-`repo_path` to workflow tools and use `list_allowed_roots`, `open_workspace`,
-`tree`, `search_text`, and `read_text` to inspect non-ignored docs/source while
-retaining deny rules for secrets, private keys, `.git`, and dependency/build
-output. External non-repo local roots require explicit `--allow-root`
-authorization.
+The same `planner` Connector also exposes read-only general repo tools for
+registered adopted repos. Use `discover_harness_repos` first, then call
+`list_allowed_roots` to get the stable `repo_id`. General repo reads use
+`repo_manifest`, `list_tree`, `stat_file`, `read_file`, `read_files`, and
+`search_text`. The repo whitelist is the authorization boundary, `.ignore` is
+the only content exclusion source, paths are repo-relative, and authorized file
+content is not implicitly redacted. External non-repo local roots require
+explicit `--allow-root` authorization.
 
 This sidecar assumes the CLI is already installed from
 [First 5 Minutes](#first-5-minutes). Use it when you want ChatGPT to plan

@@ -9,6 +9,8 @@ import { globMatches } from './paths';
 import { redactMcpText } from './redaction';
 import { repoHarnessPackageVersion } from './version';
 import { WorkspaceError, WorkspaceManager, type McpWorkspace, type WorkspaceResolvedPath } from './workspaces';
+import { buildGeneralRepoToolDefinitions, callGeneralRepoTool, hasGeneralRepoArgs, isGeneralRepoTool, listGeneralRepoRecords } from './general-repo-access';
+import { repoHarnessRepoIdFor } from '../../effects/repo-registry';
 import type { McpPolicy } from './types';
 
 export interface ReaderToolDefinition {
@@ -203,26 +205,7 @@ export function buildReaderToolDefinitions(): ReaderToolDefinition[] {
       },
       annotations: readOnly,
     },
-    {
-      name: 'search_text',
-      description: 'Search text files under an opened workspace using literal matching, limits, and deny rules.',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          workspace_id: { type: 'string' },
-          query: { type: 'string', minLength: 1, maxLength: 512 },
-          path: { type: 'string', default: '.' },
-          glob: { type: 'string' },
-          case_sensitive: { type: 'boolean' },
-          max_results: { type: 'number', minimum: 1, maximum: HARD_SEARCH_RESULTS },
-          max_files: { type: 'number', minimum: 1, maximum: HARD_SEARCH_FILES },
-          timeout_ms: { type: 'number', minimum: 1, maximum: HARD_SEARCH_TIMEOUT_MS },
-        },
-        required: ['workspace_id', 'query'],
-        additionalProperties: false,
-      },
-      annotations: readOnly,
-    },
+    ...buildGeneralRepoToolDefinitions(),
   ];
 }
 
@@ -254,13 +237,16 @@ function readerStatus(ctx: ReaderToolContext): ReaderToolResult {
 }
 
 function listAllowedRoots(ctx: ReaderToolContext): ReaderToolResult {
+  const generalRepos = new Map(listGeneralRepoRecords(ctx).map((repo) => [repo.repo_id, repo]));
   return textResult({
     roots: ctx.workspaceManager.listAllowedRoots().map((root) => ({
       root_id: root.id,
+      repo_id: repoHarnessRepoIdFor(root.canonicalPath),
       display_name: root.displayName,
       path: root.canonicalPath,
       readable: root.readable,
     })),
+    repos: Array.from(generalRepos.values()),
   });
 }
 
@@ -592,6 +578,9 @@ function searchText(ctx: ReaderToolContext, args: Record<string, unknown>): Read
 
 export async function callReaderTool(ctx: ReaderToolContext, name: string, args: Record<string, unknown> = {}): Promise<ReaderToolResult> {
   try {
+    if (isGeneralRepoTool(name) && (name !== 'search_text' || hasGeneralRepoArgs(args))) {
+      return callGeneralRepoTool(ctx, name, args);
+    }
     switch (name) {
       case 'reader_status':
         audit(ctx, name, 'ok', args);

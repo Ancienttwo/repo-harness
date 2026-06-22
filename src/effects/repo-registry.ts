@@ -4,10 +4,12 @@ import { homedir } from "os";
 import { dirname, join, resolve } from "path";
 
 export type RepoHarnessRegistrySource = "adopt" | "init" | "mcp-setup" | "manual" | "discovery";
+export type RepoHarnessAccessMode = "read_only" | "read_write";
 
 export interface RepoHarnessRegisteredRepo {
   readonly id: string;
   readonly path: string;
+  readonly accessMode: RepoHarnessAccessMode;
   readonly source: RepoHarnessRegistrySource;
   readonly registeredAt: string;
   readonly lastSeenAt: string;
@@ -34,7 +36,7 @@ export function repoHarnessRegisteredReposPath(env: NodeJS.ProcessEnv = process.
   return join(repoHarnessHome(env), "registered-repos.json");
 }
 
-function repoIdFor(path: string): string {
+export function repoHarnessRepoIdFor(path: string): string {
   return `repo_${createHash("sha256").update(path).digest("hex").slice(0, 16)}`;
 }
 
@@ -59,6 +61,10 @@ function normalizeSource(value: unknown): RepoHarnessRegistrySource {
     : "manual";
 }
 
+function normalizeAccessMode(value: unknown): RepoHarnessAccessMode {
+  return value === "read_write" ? "read_write" : "read_only";
+}
+
 function normalizeTimestamp(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim().length > 0 ? value : fallback;
 }
@@ -80,8 +86,9 @@ function readRegistryFile(path: string): RepoHarnessRegistryFile {
         if (!rawPath) return null;
         const canonicalPath = canonicalRepoPath(rawPath);
         return {
-          id: typeof entry.id === "string" && entry.id.trim() ? entry.id : repoIdFor(canonicalPath),
+          id: typeof entry.id === "string" && entry.id.trim() ? entry.id : repoHarnessRepoIdFor(canonicalPath),
           path: canonicalPath,
+          accessMode: normalizeAccessMode(entry.accessMode),
           source: normalizeSource(entry.source),
           registeredAt: normalizeTimestamp(entry.registeredAt, now),
           lastSeenAt: normalizeTimestamp(entry.lastSeenAt, now),
@@ -157,8 +164,9 @@ export function registerRepoHarnessRepo(
   const existing = dedupeRepos(readRegistryFile(registryPath).repos);
   const previous = existing.find((repo) => repo.path === canonical);
   const nextEntry: RepoHarnessRegisteredRepo = {
-    id: previous?.id ?? repoIdFor(canonical),
+    id: previous?.id ?? repoHarnessRepoIdFor(canonical),
     path: canonical,
+    accessMode: previous?.accessMode ?? "read_only",
     source,
     registeredAt: previous?.registeredAt ?? now,
     lastSeenAt: now,

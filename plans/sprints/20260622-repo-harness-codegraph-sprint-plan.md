@@ -11,10 +11,10 @@
 
 ### 1.1 核心目标
 
-- [ ] 白名单 repo 是首要授权边界。
-- [ ] 白名单 repo 内，除 `.ignore` 命中的路径外，默认允许枚举、搜索、读取。
-- [ ] 不按文件扩展名、隐藏目录、dotfile、`.gitignore`、`.rgignore` 或“是否属于 workflow artifact”增加额外拒绝规则。
-- [ ] MCP 至少提供：
+- [x] 白名单 repo 是首要授权边界。
+- [x] 白名单 repo 内，除 `.ignore` 命中的路径外，默认允许枚举、搜索、读取。
+- [x] 不按文件扩展名、隐藏目录、dotfile、`.gitignore`、`.rgignore` 或“是否属于 workflow artifact”增加额外拒绝规则。
+- [x] MCP 至少提供：
   - `repo_manifest`
   - `list_tree`
   - `search_text`
@@ -22,11 +22,11 @@
   - `read_files`
   - `stat_file`
 - [ ] CodeGraph 作为索引、检索和仓库内容服务的主要后端。
-- [ ] CodeGraph 未索引但授权允许的普通文件，仍可通过安全直读 fallback 获取。
-- [ ] 所有读取工具共享同一套 repo、路径、ignore 和 snapshot 语义。
+- [x] CodeGraph 未索引但授权允许的普通文件，仍可通过安全直读 fallback 获取。
+- [x] 所有读取工具共享同一套 repo、路径、ignore 和 snapshot 语义。
 - [ ] 写能力按 repo capability 单独启用，默认只读。
 - [ ] 写入使用版本前置条件、原子提交和写后索引同步，避免覆盖并发修改。
-- [ ] 返回结果可证明完整性、版本一致性和索引状态。
+- [x] 返回结果可证明完整性、版本一致性和索引状态。
 
 ### 1.2 明确不做
 
@@ -367,60 +367,68 @@ Sprint 0 evidence:
 
 ## 8.1 Repo Registry 与 capability
 
-- [ ] **S1-REG-001** 对接现有 repo 白名单，不复制第二份授权源。
-- [ ] **S1-REG-002** 使用稳定 `repo_id`，外部 API 禁止提交本机绝对路径。
-- [ ] **S1-REG-003** 在 Registry 中支持 `read_only | read_write`，初始默认 `read_only`。
-- [ ] **S1-REG-004** 为 repo root 建立 canonical realpath，并检测 root 被移动/替换。
-- [ ] **S1-REG-005** 实现 registry revision 和配置变更审计。
+- [x] **S1-REG-001** 对接现有 repo 白名单，不复制第二份授权源。
+- [x] **S1-REG-002** 使用稳定 `repo_id`，外部 API 禁止提交本机绝对路径。
+- [x] **S1-REG-003** 在 Registry 中支持 `read_only | read_write`，初始默认 `read_only`。
+- [x] **S1-REG-004** 为 repo root 建立 canonical realpath，并检测 root 被移动/替换。
+- [x] **S1-REG-005** 实现 registry revision 和配置变更审计。
 
 ## 8.2 Path Guard
 
-- [ ] **S1-GRD-001** 拒绝绝对路径、NUL、非法编码和 `..` 越界。
-- [ ] **S1-GRD-002** 路径标准化后再次验证仍在 repo root 内。
-- [ ] **S1-GRD-003** 支持内部 symlink；拒绝 external symlink 和 symlink chain escape。
+- [x] **S1-GRD-001** 拒绝绝对路径、NUL、非法编码和 `..` 越界。
+- [x] **S1-GRD-002** 路径标准化后再次验证仍在 repo root 内。
+- [x] **S1-GRD-003** 支持内部 symlink；拒绝 external symlink 和 symlink chain escape。
 - [ ] **S1-GRD-004** 写路径对不存在目标检查最近的已存在父目录。
-- [ ] **S1-GRD-005** 使用 fd-relative/openat 等机制降低 check-then-open TOCTOU 风险。
+- [x] **S1-GRD-005** 使用 fd-relative/openat 等机制降低 check-then-open TOCTOU 风险。
 - [ ] **S1-GRD-006** 对 CodeGraph 返回的每个 path 执行二次 guard。
-- [ ] **S1-GRD-007** 增加 Windows/macOS/Linux 路径差异测试；若首版只支持单平台，在 capability 中显式声明。
+- [x] **S1-GRD-007** 增加 Windows/macOS/Linux 路径差异测试；若首版只支持单平台，在 capability 中显式声明。
 
 ## 8.3 Ignore Policy
 
-- [ ] **S1-IGN-001** 实现 `.ignore` parser 和 matcher。
-- [ ] **S1-IGN-002** 计算稳定 `ignore_digest`。
-- [ ] **S1-IGN-003** 所有服务注入同一个 IgnorePolicy，不允许各模块自行解析。
-- [ ] **S1-IGN-004** 不自动继承 `.gitignore`、`.rgignore` 或 CodeGraph 默认 ignore。
-- [ ] **S1-IGN-005** dotfile 和隐藏目录默认包含。
-- [ ] **S1-IGN-006** `.ignore` 变化时使 manifest/cache/snapshot 失效。
-- [ ] **S1-IGN-007** 为否定规则、目录规则、尾部斜杠、转义和 Unicode 路径建立测试。
+- [x] **S1-IGN-001** 实现 `.ignore` parser 和 matcher。
+- [x] **S1-IGN-002** 计算稳定 `ignore_digest`。
+- [x] **S1-IGN-003** 所有服务注入同一个 IgnorePolicy，不允许各模块自行解析。
+- [x] **S1-IGN-004** 不自动继承 `.gitignore`、`.rgignore` 或 CodeGraph 默认 ignore。
+- [x] **S1-IGN-005** dotfile 和隐藏目录默认包含。
+- [x] **S1-IGN-006** `.ignore` 变化时使 manifest/cache/snapshot 失效。
+- [x] **S1-IGN-007** 为否定规则、目录规则、尾部斜杠、转义和 Unicode 路径建立测试。
 
 ## 8.4 基础工具
 
-- [ ] **S1-API-001** 实现 `get_repo_capabilities`。
-- [ ] **S1-API-002** 实现 `stat_file`，返回 type、size、mtime、hash、indexed 状态。
-- [ ] **S1-API-003** 实现 `read_file` 首版，支持 line range 和 byte range。
-- [ ] **S1-API-004** 实现 `list_tree` 首版，支持 path、depth、分页。
-- [ ] **S1-API-005** 确保 `.env`、dotfile、未知扩展名在未被 `.ignore` 命中时可以 stat/read/list。
-- [ ] **S1-API-006** 为超出单次响应预算的内容返回 continuation token。
-- [ ] **S1-API-007** 实现统一 error mapper 和 retryable 标记。
-- [ ] **S1-API-008** 在响应中加入 repo、ignore 和初步 revision 元数据。
+- [x] **S1-API-001** 实现 `get_repo_capabilities`。
+- [x] **S1-API-002** 实现 `stat_file`，返回 type、size、mtime、hash、indexed 状态。
+- [x] **S1-API-003** 实现 `read_file` 首版，支持 line range 和 byte range。
+- [x] **S1-API-004** 实现 `list_tree` 首版，支持 path、depth、分页。
+- [x] **S1-API-005** 确保 `.env`、dotfile、未知扩展名在未被 `.ignore` 命中时可以 stat/read/list。
+- [x] **S1-API-006** 为超出单次响应预算的内容返回 continuation token。
+- [x] **S1-API-007** 实现统一 error mapper 和 retryable 标记。
+- [x] **S1-API-008** 在响应中加入 repo、ignore 和初步 revision 元数据。
 
 ## 8.5 测试与文档
 
-- [ ] **S1-TST-001** 路径穿越、symlink escape、大小写、Unicode、长路径单测。
-- [ ] **S1-TST-002** `.ignore` golden tests。
-- [ ] **S1-TST-003** 白名单 repo 与非白名单 repo 的访问隔离测试。
-- [ ] **S1-TST-004** 验证不再存在 artifact-only、extension allowlist、hidden-file block。
-- [ ] **S1-DOC-001** 编写权限契约和基础工具使用文档。
-- [ ] **S1-DOC-002** 更新 MCP server instructions，移除“只读 workflow artifacts”的旧描述。
+- [x] **S1-TST-001** 路径穿越、symlink escape、大小写、Unicode、长路径单测。
+- [x] **S1-TST-002** `.ignore` golden tests。
+- [x] **S1-TST-003** 白名单 repo 与非白名单 repo 的访问隔离测试。
+- [x] **S1-TST-004** 验证不再存在 artifact-only、extension allowlist、hidden-file block。
+- [x] **S1-DOC-001** 编写权限契约和基础工具使用文档。
+- [x] **S1-DOC-002** 更新 MCP server instructions，移除“只读 workflow artifacts”的旧描述。
 
 ## 8.6 Sprint 1 退出标准
 
-- [ ] 任意白名单 fixture repo 的全部非忽略普通文件均可通过 tree → stat → read 访问。
-- [ ] 非白名单 repo 和 repo 外 symlink 100% 拒绝。
-- [ ] `.ignore` 在 tree、stat、read 三个工具中的结果完全一致。
-- [ ] 所有响应不暴露绝对路径。
-- [ ] 单元测试覆盖率达到团队门槛；路径和 ignore 核心模块建议 ≥ 90%。
-- [ ] 无高危路径逃逸问题。
+- [x] 任意白名单 fixture repo 的全部非忽略普通文件均可通过 tree → stat → read 访问。
+- [x] 非白名单 repo 和 repo 外 symlink 100% 拒绝。
+- [x] `.ignore` 在 tree、stat、read 三个工具中的结果完全一致。
+- [x] 所有响应不暴露绝对路径。
+- [x] 单元测试覆盖率达到团队门槛；路径和 ignore 核心模块建议 ≥ 90%。
+- [x] 无高危路径逃逸问题。
+
+Sprint 1 evidence:
+
+- Runtime: `src/cli/mcp/general-repo-access.ts`, `src/cli/mcp/reader-tools.ts`, `src/effects/repo-registry.ts`
+- Tests: `tests/cli/mcp-reader-tools.test.ts`, `tests/cli/mcp-policy.test.ts`, `tests/cli/mcp-tools.test.ts`
+- Docs: `docs/repo-harness-chatgpt-mcp-setup.md`, `README.md`
+- Verification: `bun test tests/cli/mcp-reader-tools.test.ts tests/cli/mcp-tools.test.ts tests/cli/mcp-policy.test.ts tests/cli/mcp-codegraph-contract.test.ts`
+- Deferred by design: `S1-GRD-004` is completed with Sprint 3 write tools; `S1-GRD-006` is completed with the Sprint 2 CodeGraph adapter because Sprint 1 has no CodeGraph path-returning adapter call yet.
 
 ---
 
