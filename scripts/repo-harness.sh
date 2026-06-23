@@ -39,9 +39,9 @@
 #     Direct invoke shim (for testing, debugging).
 #
 # Hooks registered:
-#   SessionStart     → session-start-context.sh
+#   SessionStart     → session-start-context.sh + minimal-change-context.sh + security-sentinel.sh
 #   PreToolUse       → worktree-guard.sh + pre-edit-guard.sh (matcher: Edit|Write)
-#   PostToolUse      → post-edit-guard.sh (matcher: Edit|Write)
+#   PostToolUse      → post-edit-guard.sh + minimal-change-observer.sh (matcher: Edit|Write)
 #                    → post-bash.sh (matcher: Bash)
 #                    → post-tool-observer.sh (no matcher, all tools)
 #   UserPromptSubmit → prompt-guard.sh
@@ -131,6 +131,7 @@ build_hooks_json() {
   "SessionStart": [
     { "hooks": [
         { "type": "command", "command": "bash ${SHIM_PATH} session-start-context.sh", "timeout": 30 },
+        { "type": "command", "command": "bash ${SHIM_PATH} minimal-change-context.sh", "timeout": 30 },
         { "type": "command", "command": "bash ${SHIM_PATH} security-sentinel.sh", "timeout": 30 }
     ]}
   ],
@@ -142,7 +143,8 @@ build_hooks_json() {
   ],
   "PostToolUse": [
     { "matcher": "Edit|Write", "hooks": [
-        { "type": "command", "command": "bash ${SHIM_PATH} post-edit-guard.sh", "timeout": 30 }
+        { "type": "command", "command": "bash ${SHIM_PATH} post-edit-guard.sh", "timeout": 30 },
+        { "type": "command", "command": "bash ${SHIM_PATH} minimal-change-observer.sh", "timeout": 30 }
     ]},
     { "matcher": "Bash", "hooks": [
         { "type": "command", "command": "bash ${SHIM_PATH} post-bash.sh", "timeout": 30 }

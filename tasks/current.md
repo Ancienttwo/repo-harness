@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-06-23T17:50:45+0800 -->
+<!-- updated_at: 2026-06-23T18:10:13+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Idle
-> **Updated At**: 2026-06-23T17:50:45+0800
+> **Updated At**: 2026-06-23T18:10:13+0800
 > **Source Branch**: main
-> **Source Commit**: 86cf953
+> **Source Commit**: 8a39f53
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: artifact-closeout
+> **Reason**: hook-doc-asset-drift-closeout
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -40,7 +40,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/contract-assets/cleanup-script-policy.md`: status=completed, current_slice=todo-01, source_plan=(none)
 ## Handoff
 
-- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Confirm actual installed/resolved hook source and route list for this repo.
+- Exact Next Step: Clean up merged contract worktree codex/single-source-minimal-change-review. Command: bash scripts/contract-worktree.sh cleanup --slug single-source-minimal-change-review --target main
 
 ## Checks
 
@@ -48,15 +48,19 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 6 changed/untracked path(s)
+- Summary: 10 changed/untracked path(s)
 
 ```
- M tasks/current.md
- M tasks/todos.md
-?? "docs/researches/repo-harness \351\222\251\345\255\220\346\227\266\345\273\266\344\270\216 LLM \346\217\220\344\276\233\345\225\206\351\231\220\346\265\201\345\275\222\345\233\240\347\240\224\347\251\266\346\212\245\345\221\212.md"
-?? plans/archive/plan-20260623-1508-think-users-ancienttwo-projects-repo-harness-docs-researches-rep.md
-?? plans/archive/plan-20260623-1513-think-users-ancienttwo-projects-repo-harness-docs-researches-rep.md
-?? tasks/archive/todo-20260623-1750-think-users-ancienttwo-projects-repo-harness-docs-researches-rep.md
+ M README.md
+ M assets/hooks/codex.hooks.template.json
+ M assets/hooks/settings.template.json
+ M assets/reference-configs/hook-operations.md
+ M docs/reference-configs/hook-operations.md
+ M "docs/researches/repo-harness \351\222\251\345\255\220\346\227\266\345\273\266\344\270\216 LLM \346\217\220\344\276\233\345\225\206\351\231\220\346\265\201\345\275\222\345\233\240\347\240\224\347\251\266\346\212\245\345\221\212.md"
+ M scripts/repo-harness.sh
+ M tests/bootstrap-files.test.ts
+ M tests/hook-contracts.test.ts
+ M tests/readme-dx.test.ts
 ```
 
 ## Source Artifacts

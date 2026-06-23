@@ -80,6 +80,10 @@ describe("README DX contract", () => {
     expect(hookAuthority).toContain("bun run sync:hooks");
     expect(hookAuthority).toContain("repo-harness-hook");
     expect(hookAuthority).toContain("route registry");
+    expect(hookAuthority).toContain("minimal-change-context.sh");
+    expect(hookAuthority).toContain("minimal-change-observer.sh");
+    expect(hookAuthority).toContain("stop-orchestrator.sh");
+    expect(readme).not.toContain("finalize-handoff.sh");
     expect(maintainer).toContain("bun scripts/assemble-template.ts --plan C --name \"MyProject\"");
   });
 

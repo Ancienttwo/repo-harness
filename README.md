@@ -30,9 +30,10 @@ Repository: `https://github.com/Ancienttwo/repo-harness`
   Codex, now and later — stay coordinated through the repo, not a thread.
   `.ai/hooks/session-start-context.sh` injects the prior session's resume packet
   (`.ai/harness/handoff/resume.md`, `tasks/current.md`) when a new session starts;
-  `finalize-handoff.sh` and `post-edit-guard.sh` write the next handoff back on stop
-  and after edits. A session can end mid-task and the next one resumes the exact next
-  step, blockers, and changed files without re-deriving them.
+  `stop-orchestrator.sh` writes the stop handoff, while `post-edit-guard.sh`
+  refreshes edit-time traces and task status after changes. A session can end
+  mid-task and the next one resumes the exact next step, blockers, and changed
+  files without re-deriving them.
 - **Token-lean by design.** Instead of grep-and-read loops that re-scan the repo every
   session, the harness leans on a pre-built CodeGraph index for structural queries
   (callers, callees, definitions) and on progressive context loading via
@@ -516,10 +517,10 @@ implementation under `assets/hooks/` or a repo-pinned `.ai/hooks/` copy.
 
 | Route | Matcher | Scripts | Function |
 | --- | --- | --- | --- |
-| `SessionStart.default` | all sessions | `session-start-context.sh`, `security-sentinel.sh` | Injects prior handoff, sprint status, and read-only config-security findings before work starts. |
+| `SessionStart.default` | all sessions | `session-start-context.sh`, `minimal-change-context.sh`, `security-sentinel.sh` | Injects prior handoff, sprint status, minimal-change guidance, and read-only config-security findings before work starts. |
 | `PreToolUse.edit` | `Edit|Write` | `worktree-guard.sh`, `pre-edit-guard.sh` | Enforces worktree policy and plan/contract readiness before implementation edits. |
 | `PreToolUse.subagent` | `Task|Agent|SendUserMessage` | `subagent-return-channel-guard.sh` | Keeps delegated work returning through the parent session instead of leaking completion claims. |
-| `PostToolUse.edit` | `Edit|Write` | `post-edit-guard.sh` | Records edit traces, refreshes handoff/task status, and queues architecture drift when controlled files change. |
+| `PostToolUse.edit` | `Edit|Write` | `post-edit-guard.sh`, `minimal-change-observer.sh` | Records edit traces, refreshes handoff/task status, queues architecture drift, and writes bounded minimal-change evidence when controlled files change. |
 | `PostToolUse.bash` | `Bash` | `post-bash.sh` | Observes command results and captures verification evidence without replacing the command runner. |
 | `PostToolUse.always` | all tools | `post-tool-observer.sh` | Provides low-noise always-on trace and runtime observation; stale pinned copies soft-skip with a refresh hint. |
 | `UserPromptSubmit.default` | all prompts | `prompt-guard.sh` | Classifies prompt intent, routes planning/check/hunt hints, and renders host-safe workflow guidance. |
@@ -530,7 +531,7 @@ Codex-only routes are `UserPromptSubmit.delegation`,
 `PreToolUse.subagent` return-channel route and does not install those Codex
 delegation lifecycle entries.
 
-`SessionStart` resolves hooks central-first, then runs two ordered scripts before
+`SessionStart` resolves hooks central-first, then runs three ordered scripts before
 work begins:
 
 ```mermaid
@@ -542,7 +543,8 @@ flowchart LR
   Source -->|repo policy pin| Repo["repo .ai/hooks<br/>self-host development"]
   Central --> Ctx["session-start-context.sh<br/>resume + sprint + handoff context"]
   Repo --> Ctx
-  Ctx --> Sec["security-sentinel.sh<br/>read-only config scan, fingerprint-gated"]
+  Ctx --> Min["minimal-change-context.sh<br/>advice-only scope pressure"]
+  Min --> Sec["security-sentinel.sh<br/>read-only config scan, fingerprint-gated"]
   Sec --> SSOut["SessionStart additionalContext<br/>prior-session state + SecurityConfig findings"]
 ```
 

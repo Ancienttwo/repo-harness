@@ -108,7 +108,7 @@ flowchart TD
 
 首先，README 英文和中文都用很强的产品叙事来描述 loop：给 Agent 一个 PRD/Sprint，之后“review and `next`”，或者 `/goal` 后 AFK；同时又在“0.4.x loop-system surfaces”里画了一个涵盖 heartbeat、state-snapshot/eval evidence、route cutover 等概念的大流程图。**但 runtime 代码里并不存在一个叫“loop”的独立执行器；实际执行面仍然只是固定事件 + 固定 route + 固定 shell 脚本的同步分发。** 因而 README 的 loop 更像 workflow 概念，不是一个常驻循环线程或后台服务。
 
-其次，`docs/reference-configs/hook-operations.md` 说 `SessionStart.default` 会聚合 `minimal-change-context.sh`、`session-start-context.sh`、`security-sentinel.sh`，而 `route-registry.ts` 也确实这样登记了。**但当前打包资产目录 `assets/hooks/` 里并没有 `minimal-change-context.sh`**；runtime 又明确把 `SessionStart.default` 认定为“soft missing route”，对于缺失脚本会跳过并只打印 drift 提示，而不阻塞。也就是说，**文档/registry 和 packaged assets 之间存在已经被 runtime 吸收掉的漂移**。这不会直接造成长卡顿，但会造成“你以为跑了 3 个脚本，实际上可能只跑了 2 个”的诊断偏差。
+其次，`docs/reference-configs/hook-operations.md` 说 `SessionStart.default` 会聚合 `session-start-context.sh`、`minimal-change-context.sh`、`security-sentinel.sh`，而 `route-registry.ts` 也这样登记。早期需要重点核对的是 packaged assets 是否缺 `minimal-change-context.sh`；**当前 main 已包含 `assets/hooks/minimal-change-context.sh`**。如果下游仍只跑 2 个脚本，应优先归因为 installed/runtime copy stale，而不是主干资产缺失。这个点不直接造成长卡顿，但会造成“你以为跑了 3 个脚本，实际安装副本只跑了 2 个”的诊断偏差。
 
 再次，README 里还提到 `finalize-handoff.sh`，说它与 `post-edit-guard.sh` 一起在 stop 和 edit 后写回 handoff；但当前 `assets/hooks/` 列表与 route registry 中真正可见的 stop 脚本是 `stop-orchestrator.sh`，而不是一个已打包的 `finalize-handoff.sh`。这说明 README 至少保留了部分旧命名或旧实现叙事。对于你判断“哪些脚本可能拖慢 Stop 阶段”，应该以 route registry 与已打包脚本为准，而不是 README 文案。
 
@@ -423,7 +423,7 @@ export REPO_HARNESS_TOOLING_ADVISORY=0
 
 这不会改变主执行流，只会减少 SessionStart 的冷路径工作量。其依据是当前脚本确实已经把 update advisory 设计成“默认后台、可切同步”的模式。
 
-第五优先级是修正文档与资产漂移。当前 `route-registry.ts` 与 `hook-operations.md` 都认为 `SessionStart.default` 应有 `minimal-change-context.sh`，但 packaged assets 中并没有这个脚本；README 又提到 `finalize-handoff.sh`，而打包资产和 route 实际是 `stop-orchestrator.sh`。这类漂移本身未必致慢，但会严重干扰诊断与运维。建议尽快统一文档、registry 与 `assets/hooks/`。
+第五优先级是把文档与资产漂移纳入回归检查。主干资产已经补齐 `minimal-change-context.sh`；真正需要固定的是 README、package-only host 模板和旧 bash 原型必须持续跟 `route-registry.ts` 一致，尤其是 `SessionStart.default` 的 `minimal-change-context.sh`、`PostToolUse.edit` 的 `minimal-change-observer.sh`，以及 Stop 阶段使用 `stop-orchestrator.sh` 而不是旧名 `finalize-handoff.sh`。这类漂移本身未必致慢，但会严重干扰诊断与运维。
 
 ### 如果更可能是 provider 限流，应该怎么改
 

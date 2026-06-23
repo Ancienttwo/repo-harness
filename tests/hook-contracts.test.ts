@@ -280,6 +280,8 @@ describe("Hook contracts", () => {
     expect(codexHooks).toContain("SessionStart");
     expect(settings).toContain("session-start-context.sh");
     expect(codexHooks).toContain("session-start-context.sh");
+    expect(settings).toContain("minimal-change-context.sh");
+    expect(codexHooks).toContain("minimal-change-context.sh");
     expect(settings).toContain("pre-edit-guard.sh");
     expect(codexHooks).toContain("pre-edit-guard.sh");
     expect(settings).toContain("subagent-return-channel-guard.sh");
@@ -298,6 +300,8 @@ describe("Hook contracts", () => {
     expect(codexHooks).toContain("subagent-stop-quality.sh");
     expect(settings).toContain("post-edit-guard.sh");
     expect(codexHooks).toContain("post-edit-guard.sh");
+    expect(settings).toContain("minimal-change-observer.sh");
+    expect(codexHooks).toContain("minimal-change-observer.sh");
     expect(settings).not.toContain("autoresearch-advisory.sh");
     expect(codexHooks).not.toContain("autoresearch-advisory.sh");
     expect(settings).toContain("post-tool-observer.sh");

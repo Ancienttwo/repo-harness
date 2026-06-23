@@ -429,6 +429,7 @@ describe("Bootstrap Script Contracts", () => {
     expect(settings).toContain("pre-edit-guard.sh");
     expect(settings).toContain("subagent-return-channel-guard.sh");
     expect(settings).toContain("post-edit-guard.sh");
+    expect(settings).toContain("minimal-change-observer.sh");
     expect(settings).toContain("prompt-guard.sh");
     expect(settings).not.toContain("autoresearch-advisory.sh");
     expect(codexHooks).not.toContain("autoresearch-advisory.sh");
@@ -438,12 +439,15 @@ describe("Bootstrap Script Contracts", () => {
     expect(settings).not.toContain("trace-event.sh");
     expect(settings).not.toContain("context-pressure-hook.sh");
     expect(settings).toContain("session-start-context.sh");
+    expect(settings).toContain("minimal-change-context.sh");
     expect(settings).not.toContain("codex-delegation-advisor.sh");
     expect(settings).not.toContain("subagent-start-context.sh");
     expect(settings).not.toContain("subagent-stop-quality.sh");
     expect(codexHooks).toContain("codex-delegation-advisor.sh");
     expect(codexHooks).toContain("subagent-start-context.sh");
     expect(codexHooks).toContain("subagent-stop-quality.sh");
+    expect(codexHooks).toContain("minimal-change-context.sh");
+    expect(codexHooks).toContain("minimal-change-observer.sh");
     expect(settings).not.toContain("memory-intake.sh");
     expect(settings).not.toContain("skill-factory-session-end.sh");
     expect(settings).not.toContain("bash -lc");

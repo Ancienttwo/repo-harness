@@ -30,7 +30,7 @@ Repo-local `.claude/settings.json` and `.codex/hooks.json` hook adapters are leg
 `SubagentStop.quality` runs `subagent-stop-quality.sh` and forwards only valid decision JSON; it asks Codex to continue the same subagent once when the final report is obviously incomplete, keyed by session/run identity, subagent identity, and message hash. These delegation lifecycle routes are installed only into the Codex adapter; Claude keeps the shared `PreToolUse.subagent` return-channel route.
 `Stop.default` routes through `stop-orchestrator.sh`. On Codex, dispatcher stdout stays quiet for ordinary successful hooks, but valid Stop decision JSON is forwarded so Codex can honor a one-shot planning completeness block or one-shot explicit-delegation fallback; success stderr such as handoff refresh noise remains suppressed.
 
-`SessionStart.default` runs `minimal-change-context.sh`, `session-start-context.sh`, and `security-sentinel.sh` under one adapter entry and aggregates their context into one JSON payload. The minimal-change context is fixed, advice-only, and disabled by `.ai/harness/policy.json` `minimal_change.mode=off`; the security sentinel is changed-only and advisory; stale repo-local copies emit one drift reminder instead of blocking the host session.
+`SessionStart.default` runs `session-start-context.sh`, `minimal-change-context.sh`, and `security-sentinel.sh` under one adapter entry and aggregates their context into one JSON payload. The minimal-change context is fixed, advice-only, and disabled by `.ai/harness/policy.json` `minimal_change.mode=off`; the security sentinel is changed-only and advisory; stale repo-local copies emit one drift reminder instead of blocking the host session.
 
 Explicit read-only audit: `repo-harness security scan --json`.
 
