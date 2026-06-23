@@ -62,6 +62,7 @@ describe('mcp setup', () => {
       expect(ignore).toContain('.repo-harness/mcp.oauth.json');
       expect(ignore).toContain('.repo-harness/mcp.oauth-tokens.json');
       expect(ignore).toContain('.ai/harness/mcp/audit.log');
+      expect(ignore).toContain('.ai/harness/mcp/index-events.jsonl');
 
       const doctor = JSON.parse(runMcpDoctor({ repo: repoRoot, json: true }).lines[0]);
       expect(doctor.mcp.packageVersion).toBe(repoHarnessPackageVersion());

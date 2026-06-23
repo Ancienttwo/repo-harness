@@ -367,14 +367,19 @@ misses and stale hashes return `REVISION_CONFLICT` without writing. Successful
 file moves require a source `expected_sha256` plus `must_not_exist: true` for the
 target. Deletes require `expected_sha256`; v1 deletes regular files only and
 rejects directory or recursive deletes. Successful writes leave the index
-pending; `refresh_repo_index` runs CodeGraph sync for the repo, invalidates
-reader snapshots, and returns the new `snapshot_id`, `index_revision`,
-`index_state`, and refresh strategy. The CLI adapter reports
-`path_refresh_supported:false` when it must use repo-level sync for requested
-paths. The repo whitelist is the authorization boundary, `.ignore` is the only
-content exclusion source, paths are repo-relative, and authorized file content is
-not implicitly redacted. External non-repo local roots require explicit
-`--allow-root` authorization.
+pending and append an index invalidation event under
+`.ai/harness/mcp/index-events.jsonl`; `refresh_repo_index` runs CodeGraph sync
+for the repo, invalidates reader snapshots, records refresh success or
+dead-letter failure in that same event log, and returns the new `snapshot_id`,
+`index_revision`, `index_state`, refresh strategy, and optional mutation lag when
+called with `mutation_id`. The CLI adapter reports `path_refresh_supported:false`
+when it must use repo-level sync for requested paths. The MCP audit log records
+actor/profile, repo id, operation, relative paths, hash summary, result, error
+code, duration, and mutation/index event ids without storing file bodies or
+patch text. The repo whitelist is the authorization boundary, `.ignore` is the
+only content exclusion source, paths are repo-relative, and authorized file
+content is not implicitly redacted. External non-repo local roots require
+explicit `--allow-root` authorization.
 
 When CodeGraph is initialized for a registered repo, the general reader merges
 CodeGraph indexed-file metadata into manifest/stat/read/search responses while

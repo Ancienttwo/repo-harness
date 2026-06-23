@@ -37,6 +37,21 @@ export interface McpAuditEntry {
   timestamp: string;
   tool: string;
   status: 'ok' | 'blocked' | 'failed';
+  actor?: string;
+  repoId?: string;
+  operation?: string;
+  relativePaths?: string[];
+  mutationId?: string;
+  indexInvalidationId?: string;
+  indexEventId?: string;
+  indexState?: string;
+  fileHashes?: {
+    before_sha256?: string | null;
+    after_sha256?: string | null;
+  };
+  result?: 'ok' | 'blocked' | 'failed';
+  durationMs?: number;
+  errorCode?: string;
   targetPath?: string;
   inputHash?: string;
   error?: string;

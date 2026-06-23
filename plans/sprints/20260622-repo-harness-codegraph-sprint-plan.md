@@ -540,38 +540,38 @@ Sprint 2 adapter/snapshot evidence:
 - [x] **S3-MUT-006** 保留原文件权限和必要 metadata，策略写入 ADR。
 - [x] **S3-MUT-007** patch 应验证每个 hunk 或精确文本 precondition。
 - [x] **S3-MUT-008** move/delete 同样进行版本和目标存在性检查。
-- [ ] **S3-MUT-009** 写失败不得留下半文件或跨 repo 临时文件。
-- [ ] **S3-MUT-010** 对写入过程进行故障注入测试：磁盘满、权限变化、进程中断、rename 失败。
+- [x] **S3-MUT-009** 写失败不得留下半文件或跨 repo 临时文件。
+- [x] **S3-MUT-010** 对写入过程进行故障注入测试：磁盘满、权限变化、进程中断、rename 失败。
 
 ## 10.3 Index Sync
 
-- [ ] **S3-IDX-001** 每次成功 mutation 产生 index invalidation event。
+- [x] **S3-IDX-001** 每次成功 mutation 产生 index invalidation event。
 - [x] **S3-IDX-002** 能按 path 增量 reindex 时优先使用；否则明确使用 repo refresh。
 - [x] **S3-IDX-003** 写后返回 `index_state: pending|ready|failed`。
 - [x] **S3-IDX-004** 索引完成后生成新 `codegraph_revision` 和 snapshot。
 - [x] **S3-IDX-005** 在索引 pending 时，changed path 的 read/stat 走安全直读并返回最新 hash。
 - [x] **S3-IDX-006** search 必须明确使用旧索引还是等待新索引；禁止假装已可搜。
 - [x] **S3-IDX-007** 实现 `refresh_repo_index` 或内部等价管理接口。
-- [ ] **S3-IDX-008** 定义 reindex retry、dead-letter 和人工恢复流程。
-- [ ] **S3-IDX-009** 监控 mutation commit 到 CodeGraph 可搜索的 index lag。
+- [x] **S3-IDX-008** 定义 reindex retry、dead-letter 和人工恢复流程。
+- [x] **S3-IDX-009** 监控 mutation commit 到 CodeGraph 可搜索的 index lag。
 
 ## 10.4 审计
 
-- [ ] **S3-AUD-001** 审计 actor、repo_id、operation、relative paths、hash、结果和耗时。
-- [ ] **S3-AUD-002** 不记录文件正文、patch 全文或 secret。
-- [ ] **S3-AUD-003** 审计日志与应用日志分离并设置保留策略。
-- [ ] **S3-AUD-004** mutation id 可追踪到索引刷新状态。
-- [ ] **S3-AUD-005** 对拒绝的写请求记录错误码，不记录内容。
+- [x] **S3-AUD-001** 审计 actor、repo_id、operation、relative paths、hash、结果和耗时。
+- [x] **S3-AUD-002** 不记录文件正文、patch 全文或 secret。
+- [x] **S3-AUD-003** 审计日志与应用日志分离并设置保留策略。
+- [x] **S3-AUD-004** mutation id 可追踪到索引刷新状态。
+- [x] **S3-AUD-005** 对拒绝的写请求记录错误码，不记录内容。
 
 ## 10.5 Sprint 3 退出标准
 
-- [ ] 所有写工具在 read-only repo 中可靠拒绝。
-- [ ] 100% 检测并发覆盖冲突，无 lost update。
-- [ ] 原子写故障注入不产生半写文件。
-- [ ] 写后 stat/read 立即可见最新内容。
-- [ ] 写后 search 在定义的 index lag SLO 内可见，或明确返回 pending。
-- [ ] move/delete 后 manifest 与索引最终一致。
-- [ ] 所有写操作可通过 mutation id 审计。
+- [x] 所有写工具在 read-only repo 中可靠拒绝。
+- [x] 100% 检测并发覆盖冲突，无 lost update。
+- [x] 原子写故障注入不产生半写文件。
+- [x] 写后 stat/read 立即可见最新内容。
+- [x] 写后 search 在定义的 index lag SLO 内可见，或明确返回 pending。
+- [x] move/delete 后 manifest 与索引最终一致。
+- [x] 所有写操作可通过 mutation id 审计。
 
 Sprint 3 write_file evidence:
 
@@ -583,12 +583,13 @@ Sprint 3 write_file evidence:
   requires `must_not_exist` for create and `expected_sha256` for replace,
   writes through a same-directory temporary file plus fsync/atomic rename, and
   returns `mutation_id`, `before`, `after`, `diff`, and `index_state`.
-- Verified in this slice: success and precondition-conflict paths leave no
-  `.repo-harness-*` temporary files in the target directory. Full write-failure
-  injection remains open under `S3-MUT-009/010`.
-- Explicitly still open: full write-failure injection, full index
-  retry/dead-letter, index-lag monitoring, and complete write audit/runbook
-  coverage.
+- Verified in this slice: success, precondition-conflict, and injected
+  pre-commit fault paths leave no `.repo-harness-*` temporary files in the
+  target directory and preserve the old file or absent target state.
+- Fault coverage: deterministic fault points cover temp-write-after-fsync before
+  rename, move before rename, and delete before unlink. These model disk-full,
+  permission-change, interrupted-process, and rename-failure boundaries before a
+  filesystem commit.
 
 Sprint 3 index-sync evidence:
 
@@ -609,6 +610,15 @@ Sprint 3 index-sync evidence:
 - Pending-state reads/stat use filesystem truth and return the latest hash;
   `search_text` keeps the explicit CodeGraph-metadata plus guarded filesystem
   fallback backend instead of claiming the changed path is already indexed.
+- Successful mutations now append `.ai/harness/mcp/index-events.jsonl`
+  invalidation events with mutation id, invalidation id, relative paths, hash
+  summaries, retry metadata, and the refresh tool. `refresh_repo_index` accepts
+  the returned `mutation_id`, accepts recently deleted paths for move/delete
+  refresh, records refresh success or dead-letter failure, and reports
+  mutation-to-refresh lag when the source event is in the recent event window.
+- Manual recovery for dead-letter refresh is documented as retrying
+  `refresh_repo_index`, then running `bash scripts/ensure-codegraph.sh --sync`
+  before retrying the tool if the adapter remains unavailable.
 
 Sprint 3 apply_patch evidence:
 
@@ -653,6 +663,27 @@ Sprint 3 move/delete path mutation evidence:
 - Directory policy for v1 is now explicit: write tools do not create parent
   directories; empty-directory mutation is unsupported; recursive delete is
   disabled and returns a stable policy error before any filesystem mutation.
+
+Sprint 3 failure-injection and audit evidence:
+
+- Runtime: `src/cli/mcp/general-repo-access.ts`, `src/cli/mcp/types.ts`,
+  `src/cli/mcp/setup.ts`
+- Tests: `tests/cli/mcp-reader-tools.test.ts`,
+  `tests/cli/mcp-codegraph-contract.test.ts`, `tests/cli/mcp-setup.test.ts`
+- Docs/schema: `assets/mcp/general-repo-reader-tools.v1.schema.json`,
+  `.gitignore`, `README.md`, `docs/repo-harness-chatgpt-mcp-setup.md`,
+  `docs/architecture/decisions/20260622-general-repo-codegraph-access.md`
+- Completed slice: deterministic test-only mutation fault points verify
+  create/replace/patch abort after temp fsync but before rename, move aborts
+  before rename, and delete aborts before unlink. All fault cases leave no
+  committed partial file and no same-directory repo-harness temp residue.
+- The MCP audit log remains separate at `.ai/harness/mcp/audit.log`; the index
+  event/recovery log is separate ignored runtime state at
+  `.ai/harness/mcp/index-events.jsonl`. Both are managed by MCP setup ignore
+  entries. Audit records actor/profile, repo id, operation, relative paths, hash
+  summaries, result, duration, mutation id, index invalidation id, index event id,
+  and rejection error code without storing file bodies, patch text, or secret
+  error strings.
 
 ---
 

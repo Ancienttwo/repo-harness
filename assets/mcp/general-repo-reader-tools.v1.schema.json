@@ -770,6 +770,9 @@
             "items": {
               "type": "string"
             }
+          },
+          "mutation_id": {
+            "type": "string"
           }
         },
         "additionalProperties": false

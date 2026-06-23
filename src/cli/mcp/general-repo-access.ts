@@ -1,11 +1,12 @@
 import { createHash, randomBytes } from 'crypto';
-import { closeSync, existsSync, fsyncSync, lstatSync, openSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeSync, type Dirent } from 'fs';
-import { basename, dirname, isAbsolute, relative, resolve, sep } from 'path';
+import { appendFileSync, closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeSync, type Dirent } from 'fs';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'path';
 import { readRegisteredRepoHarnessRepos, repoHarnessRepoIdFor, type RepoHarnessAccessMode } from '../../effects/repo-registry';
 import { hashMcpInput, tryWriteMcpAuditEntry } from './audit';
 import { createCodeGraphCliAdapter, type CodeGraphRefreshResult, type CodeGraphRepoSnapshot, type GeneralRepoCodeGraphAdapter } from './codegraph-adapter';
 import { globMatches, isPathInside } from './paths';
-import type { McpPolicy } from './types';
+import { redactMcpText } from './redaction';
+import type { McpAuditEntry, McpPolicy } from './types';
 
 export interface GeneralRepoToolDefinition {
   name: string;
@@ -187,6 +188,8 @@ const DEFAULT_CODEGRAPH_ADAPTER = createCodeGraphCliAdapter();
 const SNAPSHOT_CACHE = new Map<string, VisibleEntrySnapshot>();
 const ENTRY_METADATA_CACHE = new Map<string, EntryMetadataCacheValue>();
 const WRITE_TOOLS = new Set<string>(['write_file', 'apply_patch', 'move_path', 'delete_path', 'refresh_repo_index']);
+const MCP_INDEX_EVENTS_RELATIVE_PATH = '.ai/harness/mcp/index-events.jsonl';
+const MUTATION_FAULT_ENV = 'REPO_HARNESS_MCP_MUTATION_FAULT_POINT';
 
 export type GeneralRepoToolName = typeof GENERAL_REPO_TOOLS[number];
 
@@ -218,13 +221,16 @@ function errorResult(code: string, message: string, details?: unknown, retryable
   };
 }
 
-function audit(ctx: GeneralRepoToolContext, tool: string, status: 'ok' | 'blocked' | 'failed', input: unknown, targetPath?: string, error?: string): void {
+function audit(ctx: GeneralRepoToolContext, tool: string, status: 'ok' | 'blocked' | 'failed', input: unknown, targetPath?: string, error?: string, details: Partial<McpAuditEntry> = {}): void {
   tryWriteMcpAuditEntry(ctx.repoRoot, {
     timestamp: new Date().toISOString(),
     tool,
     status,
+    actor: `mcp:${ctx.policy.profile}`,
+    result: status,
     targetPath,
     inputHash: hashMcpInput(input),
+    ...details,
     error,
   });
 }
@@ -233,6 +239,76 @@ function auditTargetPath(input: Record<string, unknown>): string | undefined {
   if (typeof input.path === 'string') return input.path;
   if (typeof input.from_path === 'string' && typeof input.to_path === 'string') return `${input.from_path} -> ${input.to_path}`;
   return undefined;
+}
+
+function auditPaths(input: Record<string, unknown>): string[] {
+  const paths = new Set<string>();
+  if (typeof input.path === 'string') paths.add(input.path);
+  if (typeof input.from_path === 'string') paths.add(input.from_path);
+  if (typeof input.to_path === 'string') paths.add(input.to_path);
+  if (Array.isArray(input.paths)) {
+    for (const path of input.paths) {
+      if (typeof path === 'string') paths.add(path);
+    }
+  }
+  return [...paths];
+}
+
+function recordObject(value: unknown): Record<string, unknown> | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function stringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const values = value.filter((entry): entry is string => typeof entry === 'string');
+  return values.length > 0 ? values : undefined;
+}
+
+function stringField(value: unknown): string | undefined {
+  return typeof value === 'string' && value ? value : undefined;
+}
+
+function auditDetailsFromResult(result: GeneralRepoToolResult, input: Record<string, unknown>, durationMs: number, tool: string): Partial<McpAuditEntry> {
+  const payload = recordObject(result.structuredContent);
+  if (!payload) {
+    return {
+      repoId: stringField(input.repo_id),
+      operation: tool,
+      relativePaths: auditPaths(input),
+      durationMs,
+    };
+  }
+  const index = recordObject(payload.index);
+  const diff = recordObject(payload.diff);
+  const relativePaths = stringArray(index?.changed_paths)
+    ?? stringArray(index?.refreshed_paths)
+    ?? stringArray(payload.paths)
+    ?? auditPaths(input);
+  return {
+    repoId: stringField(payload.repo_id) ?? stringField(input.repo_id),
+    operation: stringField(payload.operation) ?? stringField(input.operation) ?? tool,
+    relativePaths,
+    mutationId: stringField(payload.mutation_id) ?? stringField(index?.mutation_id),
+    indexInvalidationId: stringField(index?.invalidation_id),
+    indexEventId: stringField(index?.event_id),
+    indexState: stringField(payload.index_state) ?? stringField(index?.state),
+    fileHashes: diff ? {
+      before_sha256: typeof diff.before_sha256 === 'string' ? diff.before_sha256 : diff.before_sha256 === null ? null : undefined,
+      after_sha256: typeof diff.after_sha256 === 'string' ? diff.after_sha256 : diff.after_sha256 === null ? null : undefined,
+    } : undefined,
+    durationMs,
+  };
+}
+
+function auditDetailsFromError(error: GeneralRepoAccessError, input: Record<string, unknown>, durationMs: number, tool: string): Partial<McpAuditEntry> {
+  return {
+    repoId: stringField(input.repo_id),
+    operation: tool,
+    relativePaths: auditPaths(input),
+    durationMs,
+    errorCode: error.code,
+  };
 }
 
 function sha256(value: string | Buffer): string {
@@ -259,6 +335,99 @@ function cachePaths(paths: string[] | undefined): string[] {
   const normalized = (paths && paths.length > 0 ? paths : ['.'])
     .map((path) => toPosixPath(String(path || '.')).replace(/^\.\/+/, '') || '.');
   return [...new Set(normalized)].sort((a, b) => a.localeCompare(b));
+}
+
+function mcpIndexEventsPath(repoRoot: string): string {
+  return join(repoRoot, MCP_INDEX_EVENTS_RELATIVE_PATH);
+}
+
+function indexEventId(repo: RepoRecord, eventType: string, seed: string): string {
+  return `idxevt_${sha256(`${repo.repoId}\0${eventType}\0${seed}\0${Date.now()}\0${randomBytes(4).toString('hex')}`).slice(0, 16)}`;
+}
+
+function safeEventError(error: CodeGraphRefreshResult['error'] | undefined): Record<string, unknown> | undefined {
+  if (!error) return undefined;
+  return {
+    code: error.code,
+    message: redactMcpText(error.message).text,
+    retryable: error.retryable,
+  };
+}
+
+function tryWriteIndexEvent(ctx: GeneralRepoToolContext, repo: RepoRecord, event: Record<string, unknown>): string | null {
+  const eventId = typeof event.event_id === 'string'
+    ? event.event_id
+    : indexEventId(repo, String(event.event_type ?? 'index_event'), JSON.stringify(event));
+  try {
+    const logPath = mcpIndexEventsPath(ctx.repoRoot);
+    mkdirSync(dirname(logPath), { recursive: true });
+    appendFileSync(logPath, `${JSON.stringify({
+      schema_version: 1,
+      timestamp: new Date().toISOString(),
+      event_id: eventId,
+      repo_id: repo.repoId,
+      ...event,
+    })}\n`, 'utf-8');
+    return eventId;
+  } catch (_error) {
+    return null;
+  }
+}
+
+function readRecentIndexEvents(repoRoot: string): Record<string, unknown>[] {
+  const logPath = mcpIndexEventsPath(repoRoot);
+  if (!existsSync(logPath)) return [];
+  try {
+    return readFileSync(logPath, 'utf-8')
+      .trimEnd()
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .slice(-1000)
+      .map((line) => JSON.parse(line))
+      .filter((entry): entry is Record<string, unknown> => typeof entry === 'object' && entry !== null && !Array.isArray(entry));
+  } catch (_error) {
+    return [];
+  }
+}
+
+function eventPathsOverlap(eventPaths: unknown, paths: string[]): boolean {
+  const values = stringArray(eventPaths);
+  if (!values) return false;
+  const refreshPaths = new Set(cachePaths(paths));
+  return values.some((path) => refreshPaths.has(path) || refreshPaths.has('.') || path === '.');
+}
+
+function latestIndexInvalidationEvent(ctx: GeneralRepoToolContext, repo: RepoRecord, mutationId: string, paths: string[]): Record<string, unknown> | null {
+  const events = readRecentIndexEvents(ctx.repoRoot);
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event?.event_type !== 'index_invalidation' || event.repo_id !== repo.repoId) continue;
+    if (mutationId && event.mutation_id === mutationId) return event;
+    if (!mutationId && eventPathsOverlap(event.relative_paths, paths)) return event;
+  }
+  return null;
+}
+
+function indexLagMsFrom(event: Record<string, unknown> | null, nowMs = Date.now()): number | undefined {
+  if (!event || typeof event.timestamp !== 'string') return undefined;
+  const startedAt = Date.parse(event.timestamp);
+  if (!Number.isFinite(startedAt)) return undefined;
+  return Math.max(0, nowMs - startedAt);
+}
+
+function indexRecovery(paths: string[], retryable = true): Record<string, unknown> {
+  return {
+    retryable,
+    retry_tool: 'refresh_repo_index',
+    retry_paths: paths,
+    dead_letter_log: MCP_INDEX_EVENTS_RELATIVE_PATH,
+    manual_recovery: 'bash scripts/ensure-codegraph.sh --sync',
+  };
+}
+
+function injectMutationFault(point: string): void {
+  if ((process.env[MUTATION_FAULT_ENV] ?? '').trim() !== point) return;
+  throw new GeneralRepoAccessError('INJECTED_MUTATION_FAULT', `injected mutation fault at ${point}`, { fault_point: point }, true);
 }
 
 function responseCacheKey(repo: RepoRecord, ignore: IgnorePolicy, snapshot: VisibleEntrySnapshot, scope: { tool: string; paths?: string[] }): { key: string; paths: string[]; pathDigest: string } {
@@ -546,8 +715,20 @@ function refreshPathsArg(repo: RepoRecord, ignore: IgnorePolicy, value: unknown)
     if (typeof item !== 'string') {
       throw new GeneralRepoAccessError('INVALID_RELATIVE_PATH', 'paths must contain only strings');
     }
-    const resolved = resolveRepoPath(repo, item, ignore, { allowRoot: true, allowExternalSymlinkMetadata: true });
-    paths.add(resolved.relativePath);
+    const relativePath = normalizeRepoRelativePath(item, { allowRoot: true });
+    if (relativePath !== '.' && isIgnored(ignore, relativePath)) {
+      throw new GeneralRepoAccessError('PATH_IGNORED', 'path is excluded by .ignore', { path: relativePath });
+    }
+    const absolutePath = relativePath === '.' ? repo.canonicalRoot : resolve(repo.canonicalRoot, relativePath);
+    if (!isPathInside(repo.canonicalRoot, absolutePath)) {
+      throw new GeneralRepoAccessError('PATH_OUTSIDE_REPO', 'path escapes repo root', { path: relativePath });
+    }
+    if (existsSync(absolutePath)) {
+      const resolved = resolveRepoPath(repo, relativePath, ignore, { allowRoot: true, allowExternalSymlinkMetadata: true });
+      paths.add(resolved.relativePath);
+    } else {
+      paths.add(relativePath);
+    }
   }
   return [...paths].sort((a, b) => a.localeCompare(b));
 }
@@ -1401,6 +1582,7 @@ function atomicWriteFile(target: ResolvedRepoWritePath, raw: Buffer, mode: numbe
     } finally {
       closeSync(fd);
     }
+    injectMutationFault('atomic_write_before_rename');
     renameSync(tempPath, target.canonicalPath);
     renamed = true;
     fsyncDirectoryBestEffort(target.parentCanonicalPath);
@@ -1456,6 +1638,21 @@ function mutationResult(ctx: GeneralRepoToolContext, repo: RepoRecord, ignore: I
   const mutationTool = opts.tool ?? (opts.operation === 'patch' ? 'apply_patch' : 'write_file');
   const mutationId = `mut_${sha256(`${repo.repoId}\0${changedPaths.join('\0')}\0${opts.beforeHash ?? 'new'}\0${afterHash}\0${Date.now()}`).slice(0, 16)}`;
   const invalidationId = `idxinv_${sha256(`${mutationId}\0${snapshot.codeGraph.indexRevision}\0${target.relativePath}`).slice(0, 16)}`;
+  const indexEventId = tryWriteIndexEvent(ctx, repo, {
+    event_type: 'index_invalidation',
+    status: 'pending',
+    operation: opts.operation,
+    mutation_id: mutationId,
+    invalidation_id: invalidationId,
+    relative_paths: changedPaths,
+    index_state: indexState,
+    before_index_revision: snapshot.codeGraph.indexRevision,
+    file_hashes: {
+      before_sha256: opts.beforeHash,
+      after_sha256: afterHash,
+    },
+    retry: indexRecovery(changedPaths, snapshot.codeGraph.available),
+  });
 
   return textResult({
     ...commonFields(repo, ignore, snapshot, { tool: mutationTool, paths: changedPaths }),
@@ -1491,6 +1688,8 @@ function mutationResult(ctx: GeneralRepoToolContext, repo: RepoRecord, ignore: I
       changed_paths: changedPaths,
       mutation_id: mutationId,
       invalidation_id: invalidationId,
+      event_id: indexEventId,
+      event_log: MCP_INDEX_EVENTS_RELATIVE_PATH,
       refresh_tool: 'refresh_repo_index',
       before_index_revision: snapshot.codeGraph.indexRevision,
     },
@@ -1503,6 +1702,21 @@ function deleteMutationResult(ctx: GeneralRepoToolContext, repo: RepoRecord, ign
   const indexState = mutationIndexState(snapshot);
   const mutationId = `mut_${sha256(`${repo.repoId}\0${deleted.path}\0${beforeHash}\0deleted\0${Date.now()}`).slice(0, 16)}`;
   const invalidationId = `idxinv_${sha256(`${mutationId}\0${snapshot.codeGraph.indexRevision}\0${deleted.path}`).slice(0, 16)}`;
+  const indexEventId = tryWriteIndexEvent(ctx, repo, {
+    event_type: 'index_invalidation',
+    status: 'pending',
+    operation: 'delete',
+    mutation_id: mutationId,
+    invalidation_id: invalidationId,
+    relative_paths: [deleted.path],
+    index_state: indexState,
+    before_index_revision: snapshot.codeGraph.indexRevision,
+    file_hashes: {
+      before_sha256: beforeHash,
+      after_sha256: null,
+    },
+    retry: indexRecovery([deleted.path], snapshot.codeGraph.available),
+  });
 
   return textResult({
     ...commonFields(repo, ignore, snapshot, { tool: 'delete_path', paths: [deleted.path] }),
@@ -1535,6 +1749,8 @@ function deleteMutationResult(ctx: GeneralRepoToolContext, repo: RepoRecord, ign
       changed_paths: [deleted.path],
       mutation_id: mutationId,
       invalidation_id: invalidationId,
+      event_id: indexEventId,
+      event_log: MCP_INDEX_EVENTS_RELATIVE_PATH,
       refresh_tool: 'refresh_repo_index',
       before_index_revision: snapshot.codeGraph.indexRevision,
     },
@@ -1781,6 +1997,7 @@ function movePathTool(ctx: GeneralRepoToolContext, args: Record<string, unknown>
     });
   }
 
+  injectMutationFault('move_before_rename');
   renameSync(source.canonicalPath, target.canonicalPath);
   fsyncDirectoryBestEffort(dirname(source.canonicalPath));
   if (dirname(source.canonicalPath) !== target.parentCanonicalPath) fsyncDirectoryBestEffort(target.parentCanonicalPath);
@@ -1843,6 +2060,7 @@ function deletePathTool(ctx: GeneralRepoToolContext, args: Record<string, unknow
   }
   const deleted = metadataForResolved(target, ignore, undefined, { contentHash: true, cache: false });
 
+  injectMutationFault('delete_before_unlink');
   rmSync(target.canonicalPath);
   fsyncDirectoryBestEffort(dirname(target.canonicalPath));
   invalidateRepoCaches(repo);
@@ -1856,21 +2074,101 @@ function refreshRepoIndex(ctx: GeneralRepoToolContext, args: Record<string, unkn
   const ignore = readIgnorePolicy(repo.canonicalRoot);
   const paths = refreshPathsArg(repo, ignore, args.paths);
   const refreshScope = paths.length > 0 ? paths : ['.'];
+  const mutationId = typeof args.mutation_id === 'string' ? args.mutation_id.trim() : '';
+  const sourceEvent = latestIndexInvalidationEvent(ctx, repo, mutationId, refreshScope);
+  const sourceEventId = typeof sourceEvent?.event_id === 'string' ? sourceEvent.event_id : undefined;
+  const sourceMutationId = typeof sourceEvent?.mutation_id === 'string' ? sourceEvent.mutation_id : mutationId || undefined;
+  const sourceInvalidationId = typeof sourceEvent?.invalidation_id === 'string' ? sourceEvent.invalidation_id : undefined;
   const before = buildVisibleEntrySnapshot(ctx, repo, ignore, { contentHash: false });
   const adapter = ctx.codeGraphAdapter ?? DEFAULT_CODEGRAPH_ADAPTER;
   if (!adapter.refreshRepo) {
+    tryWriteIndexEvent(ctx, repo, {
+      event_type: 'index_refresh',
+      status: 'failed',
+      operation: 'refresh_repo_index',
+      mutation_id: sourceMutationId,
+      source_event_id: sourceEventId,
+      invalidation_id: sourceInvalidationId,
+      relative_paths: refreshScope,
+      before_index_revision: before.codeGraph.indexRevision,
+      strategy: 'unsupported',
+      index_lag_ms: indexLagMsFrom(sourceEvent),
+      error: { code: 'INDEX_UNAVAILABLE', message: 'CodeGraph adapter does not support explicit refresh', retryable: true },
+      dead_letter: indexRecovery(refreshScope, true),
+    });
     throw new GeneralRepoAccessError('INDEX_UNAVAILABLE', 'CodeGraph adapter does not support explicit refresh', {
       paths: refreshScope,
     }, true);
   }
 
-  const refresh = adapter.refreshRepo(repo.canonicalRoot, { paths });
+  let refresh: CodeGraphRefreshResult;
+  try {
+    refresh = adapter.refreshRepo(repo.canonicalRoot, { paths });
+  } catch (error) {
+    tryWriteIndexEvent(ctx, repo, {
+      event_type: 'index_refresh',
+      status: 'failed',
+      operation: 'refresh_repo_index',
+      mutation_id: sourceMutationId,
+      source_event_id: sourceEventId,
+      invalidation_id: sourceInvalidationId,
+      relative_paths: refreshScope,
+      before_index_revision: before.codeGraph.indexRevision,
+      strategy: 'repo-sync',
+      index_lag_ms: indexLagMsFrom(sourceEvent),
+      error: {
+        code: 'INTERNAL_ADAPTER_ERROR',
+        message: redactMcpText(error instanceof Error ? error.message : String(error)).text,
+        retryable: false,
+      },
+      dead_letter: indexRecovery(refreshScope, false),
+    });
+    throw error;
+  }
   invalidateRepoCaches(repo);
   if (!refresh.available || !refresh.refreshed) {
+    tryWriteIndexEvent(ctx, repo, {
+      event_type: 'index_refresh',
+      status: 'failed',
+      operation: 'refresh_repo_index',
+      mutation_id: sourceMutationId,
+      source_event_id: sourceEventId,
+      invalidation_id: sourceInvalidationId,
+      relative_paths: refreshScope,
+      before_index_revision: before.codeGraph.indexRevision,
+      adapter_index_revision: refresh.indexRevision,
+      strategy: refresh.strategy,
+      path_refresh_supported: refresh.pathRefreshSupported,
+      latency_ms: refresh.latencyMs,
+      index_lag_ms: indexLagMsFrom(sourceEvent),
+      error: safeEventError(refresh.error),
+      dead_letter: indexRecovery(refreshScope, refresh.error?.retryable ?? true),
+    });
     throw indexRefreshError(refresh);
   }
   const snapshot = buildVisibleEntrySnapshot(ctx, repo, ignore, { contentHash: false });
   const indexState = refreshedIndexState(snapshot);
+  const indexLagMs = indexLagMsFrom(sourceEvent);
+  const indexEventId = tryWriteIndexEvent(ctx, repo, {
+    event_type: 'index_refresh',
+    status: indexState,
+    operation: 'refresh_repo_index',
+    mutation_id: sourceMutationId,
+    source_event_id: sourceEventId,
+    invalidation_id: sourceInvalidationId,
+    relative_paths: refreshScope,
+    before_index_revision: before.codeGraph.indexRevision,
+    adapter_index_revision: refresh.indexRevision,
+    after_index_revision: snapshot.codeGraph.indexRevision,
+    strategy: refresh.strategy,
+    path_refresh_supported: refresh.pathRefreshSupported,
+    latency_ms: refresh.latencyMs,
+    indexed_files: refresh.files,
+    index_lag_ms: indexLagMs,
+    lagging_path_count: snapshot.codeGraphLaggingPaths.length,
+    lagging_paths: snapshot.codeGraphLaggingPaths.slice(0, MAX_LAGGING_PATHS_RETURNED),
+    recovery: indexState === 'ready' ? undefined : indexRecovery(refreshScope, true),
+  });
 
   return textResult({
     ...commonFields(repo, ignore, snapshot, { tool: 'refresh_repo_index', paths: refreshScope }),
@@ -1886,11 +2184,20 @@ function refreshRepoIndex(ctx: GeneralRepoToolContext, args: Record<string, unkn
       adapter_index_revision: refresh.indexRevision,
       after_index_revision: snapshot.codeGraph.indexRevision,
       indexed_files: refresh.files,
+      source_event_id: sourceEventId,
+      mutation_id: sourceMutationId,
+      index_lag_ms: indexLagMs,
     },
     index: {
       state: indexState,
       action: indexState === 'ready' ? 'refresh_complete' : 'refresh_complete_with_lag',
       refreshed_paths: refreshScope,
+      mutation_id: sourceMutationId,
+      source_event_id: sourceEventId,
+      event_id: indexEventId,
+      event_log: MCP_INDEX_EVENTS_RELATIVE_PATH,
+      index_lag_ms: indexLagMs,
+      lagging_path_count: snapshot.codeGraphLaggingPaths.length,
       before_index_revision: before.codeGraph.indexRevision,
       after_index_revision: snapshot.codeGraph.indexRevision,
     },
@@ -2320,6 +2627,7 @@ export function buildGeneralRepoToolDefinitions(): GeneralRepoToolDefinition[] {
         properties: {
           repo_id: { type: 'string' },
           paths: { type: 'array', items: { type: 'string' } },
+          mutation_id: { type: 'string' },
         },
         required: ['repo_id'],
         additionalProperties: false,
@@ -2330,6 +2638,7 @@ export function buildGeneralRepoToolDefinitions(): GeneralRepoToolDefinition[] {
 }
 
 export async function callGeneralRepoTool(ctx: GeneralRepoToolContext, name: string, args: Record<string, unknown> = {}): Promise<GeneralRepoToolResult> {
+  const startedAtMs = Date.now();
   try {
     let result: GeneralRepoToolResult;
     switch (name) {
@@ -2372,14 +2681,20 @@ export async function callGeneralRepoTool(ctx: GeneralRepoToolContext, name: str
       default:
         return errorResult('INTERNAL_ADAPTER_ERROR', `tool is not a general repo reader tool: ${name}`);
     }
-    audit(ctx, name, 'ok', args, auditTargetPath(args));
+    audit(ctx, name, 'ok', args, auditTargetPath(args), undefined, auditDetailsFromResult(result, args, Date.now() - startedAtMs, name));
     return result;
   } catch (error) {
     if (error instanceof GeneralRepoAccessError) {
-      audit(ctx, name, 'blocked', args, auditTargetPath(args), error.message);
+      audit(ctx, name, 'blocked', args, auditTargetPath(args), error.message, auditDetailsFromError(error, args, Date.now() - startedAtMs, name));
       return errorResult(error.code, error.message, error.details, error.retryable);
     }
-    audit(ctx, name, 'failed', args, auditTargetPath(args), error instanceof Error ? error.message : String(error));
+    audit(ctx, name, 'failed', args, auditTargetPath(args), error instanceof Error ? error.message : String(error), {
+      repoId: stringField(args.repo_id),
+      operation: name,
+      relativePaths: auditPaths(args),
+      durationMs: Date.now() - startedAtMs,
+      errorCode: 'INTERNAL_ADAPTER_ERROR',
+    });
     return errorResult('INTERNAL_ADAPTER_ERROR', error instanceof Error ? error.message : String(error));
   }
 }

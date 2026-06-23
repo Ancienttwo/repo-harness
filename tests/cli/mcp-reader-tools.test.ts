@@ -13,6 +13,29 @@ async function jsonTool(ctx: ReaderToolContext, name: string, args: Record<strin
   return JSON.parse(result.content[0].text);
 }
 
+function readJsonLines(path: string): Record<string, unknown>[] {
+  if (!existsSync(path)) return [];
+  return readFileSync(path, 'utf-8')
+    .trimEnd()
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+}
+
+async function withMutationFault<T>(point: string, fn: () => Promise<T>): Promise<T> {
+  const previous = process.env.REPO_HARNESS_MCP_MUTATION_FAULT_POINT;
+  try {
+    process.env.REPO_HARNESS_MCP_MUTATION_FAULT_POINT = point;
+    return await fn();
+  } finally {
+    if (previous === undefined) {
+      delete process.env.REPO_HARNESS_MCP_MUTATION_FAULT_POINT;
+    } else {
+      process.env.REPO_HARNESS_MCP_MUTATION_FAULT_POINT = previous;
+    }
+  }
+}
+
 async function withReaderRepo<T>(fn: (repoRoot: string, ctx: ReaderToolContext) => Promise<T>, opts: { accessMode?: RepoHarnessAccessMode } = {}): Promise<T> {
   const repoRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-reader-tools-'));
   const repoHarnessHome = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-home-'));
@@ -305,8 +328,8 @@ describe('MCP reader tools', () => {
     });
   });
 
-  test('write_file is capability-gated, atomic, and guarded by revision preconditions', async () => {
-    await withReaderRepo(async (repoRoot, ctx) => {
+	  test('write_file is capability-gated, atomic, and guarded by revision preconditions', async () => {
+	    await withReaderRepo(async (repoRoot, ctx) => {
       writeFileSync(join(repoRoot, '.ignore'), 'ignored.md\n');
       let indexedAfterRefresh = false;
       const refreshCalls: string[][] = [];
@@ -378,12 +401,32 @@ describe('MCP reader tools', () => {
       expect(created.index.invalidation_id).toMatch(/^idxinv_[a-f0-9]{16}$/);
       expect(created.index.refresh_tool).toBe('refresh_repo_index');
       expect(created.after.sha256).toMatch(/^[a-f0-9]{64}$/);
-      expect(created.diff.after_sha256).toBe(created.after.sha256);
-      expect(readFileSync(join(repoRoot, 'docs', 'generated.txt'), 'utf-8')).toBe('first\n');
-      expect(readdirSync(join(repoRoot, 'docs')).some((name) => name.includes('.repo-harness-'))).toBe(false);
+	      expect(created.diff.after_sha256).toBe(created.after.sha256);
+	      expect(readFileSync(join(repoRoot, 'docs', 'generated.txt'), 'utf-8')).toBe('first\n');
+	      expect(readdirSync(join(repoRoot, 'docs')).some((name) => name.includes('.repo-harness-'))).toBe(false);
+	      const indexEventsAfterCreate = readJsonLines(join(repoRoot, '.ai', 'harness', 'mcp', 'index-events.jsonl'));
+	      const createdIndexEvent = indexEventsAfterCreate.find((entry) => entry.mutation_id === created.mutation_id);
+	      expect(created.index.event_id).toBe(createdIndexEvent?.event_id);
+	      expect(createdIndexEvent).toMatchObject({
+	        event_type: 'index_invalidation',
+	        status: 'pending',
+	        repo_id: repoId,
+	        operation: 'create',
+	        mutation_id: created.mutation_id,
+	        invalidation_id: created.index.invalidation_id,
+	        relative_paths: ['docs/generated.txt'],
+	        before_index_revision: 'index_before_write',
+	        retry: {
+	          retryable: true,
+	          retry_tool: 'refresh_repo_index',
+	          retry_paths: ['docs/generated.txt'],
+	          manual_recovery: 'bash scripts/ensure-codegraph.sh --sync',
+	        },
+	      });
+	      expect(JSON.stringify(createdIndexEvent)).not.toContain('first\n');
 
-      const readCreated = await jsonTool(writeCtx, 'read_file', { repo_id: repoId, path: 'docs/generated.txt' });
-      expect(readCreated.content).toBe('first\n');
+	      const readCreated = await jsonTool(writeCtx, 'read_file', { repo_id: repoId, path: 'docs/generated.txt' });
+	      expect(readCreated.content).toBe('first\n');
       expect(readCreated.sha256).toBe(created.after.sha256);
 
       const targetExists = await jsonTool(writeCtx, 'write_file', {
@@ -433,31 +476,56 @@ describe('MCP reader tools', () => {
       expect(searchBeforeRefresh.backend).toBe('codegraph-metadata+filesystem-fallback');
       expect(searchBeforeRefresh.matches).toMatchObject([{ path: 'docs/generated.txt', indexed: false }]);
 
-      const refreshed = await jsonTool(writeCtx, 'refresh_repo_index', {
-        repo_id: repoId,
-        paths: ['docs/generated.txt'],
-      });
-      expect(refreshed).toMatchObject({
-        paths: ['docs/generated.txt'],
-        refreshed: true,
+	      const refreshed = await jsonTool(writeCtx, 'refresh_repo_index', {
+	        repo_id: repoId,
+	        paths: ['docs/generated.txt'],
+	        mutation_id: replaced.mutation_id,
+	      });
+	      const refreshedEventId = refreshed.index.event_id;
+	      const refreshedSourceEventId = refreshed.refresh.source_event_id;
+	      expect(typeof refreshedEventId).toBe('string');
+	      expect(typeof refreshedSourceEventId).toBe('string');
+	      expect(refreshed).toMatchObject({
+	        paths: ['docs/generated.txt'],
+	        refreshed: true,
         index_state: 'ready',
         refresh: {
           strategy: 'repo-sync',
           requested_paths: ['docs/generated.txt'],
           path_refresh_supported: false,
-          before_index_revision: 'index_before_write',
-          adapter_index_revision: 'index_after_write',
-          after_index_revision: 'index_after_write',
-          indexed_files: 1,
-        },
-        index: {
-          state: 'ready',
-          action: 'refresh_complete',
-          refreshed_paths: ['docs/generated.txt'],
-        },
-      });
-      expect(refreshCalls).toEqual([['docs/generated.txt']]);
-      const statAfterRefresh = await jsonTool(writeCtx, 'stat_file', { repo_id: repoId, path: 'docs/generated.txt' });
+	          before_index_revision: 'index_before_write',
+	          adapter_index_revision: 'index_after_write',
+	          after_index_revision: 'index_after_write',
+	          indexed_files: 1,
+	          source_event_id: refreshedSourceEventId,
+	          mutation_id: replaced.mutation_id,
+	          index_lag_ms: expect.any(Number),
+	        },
+	        index: {
+	          state: 'ready',
+	          action: 'refresh_complete',
+	          refreshed_paths: ['docs/generated.txt'],
+	          mutation_id: replaced.mutation_id,
+	          event_id: refreshedEventId,
+	          event_log: '.ai/harness/mcp/index-events.jsonl',
+	          index_lag_ms: expect.any(Number),
+	        },
+	      });
+	      expect(refreshCalls).toEqual([['docs/generated.txt']]);
+	      const indexEventsAfterRefresh = readJsonLines(join(repoRoot, '.ai', 'harness', 'mcp', 'index-events.jsonl'));
+	      const refreshEvent = indexEventsAfterRefresh.find((entry) => entry.event_type === 'index_refresh' && entry.mutation_id === replaced.mutation_id);
+	      expect(refreshEvent?.event_id).toBe(refreshedEventId);
+	      expect(refreshEvent).toMatchObject({
+	        event_type: 'index_refresh',
+	        status: 'ready',
+	        repo_id: repoId,
+	        operation: 'refresh_repo_index',
+	        mutation_id: replaced.mutation_id,
+	        source_event_id: refreshedSourceEventId,
+	        relative_paths: ['docs/generated.txt'],
+	        index_lag_ms: expect.any(Number),
+	      });
+	      const statAfterRefresh = await jsonTool(writeCtx, 'stat_file', { repo_id: repoId, path: 'docs/generated.txt' });
       expect(statAfterRefresh).toMatchObject({
         indexed: true,
         codegraph_language: 'text',
@@ -610,19 +678,36 @@ describe('MCP reader tools', () => {
         expected_sha256: deleteStat.sha256,
       });
       expect(deleted.error).toBeUndefined();
-      expect(deleted).toMatchObject({
-        path: 'docs/moved.txt',
-        operation: 'delete',
-        before: { existed: true, sha256: deleteStat.sha256, size: 'move me\n'.length },
+	      expect(deleted).toMatchObject({
+	        path: 'docs/moved.txt',
+	        operation: 'delete',
+	        before: { existed: true, sha256: deleteStat.sha256, size: 'move me\n'.length },
         after: { existed: false, sha256: null, size: 0 },
         deleted: { path: 'docs/moved.txt', type: 'file' },
         index: { action: 'refresh_repo_index_required', changed_paths: ['docs/moved.txt'] },
-      });
-      expect(existsSync(join(repoRoot, 'docs', 'moved.txt'))).toBe(false);
-      const readDeleted = await jsonTool(writeCtx, 'read_file', { repo_id: repoId, path: 'docs/moved.txt' });
-      expect(readDeleted.error.code).toBe('NOT_FOUND');
+	      });
+	      expect(existsSync(join(repoRoot, 'docs', 'moved.txt'))).toBe(false);
+	      const readDeleted = await jsonTool(writeCtx, 'read_file', { repo_id: repoId, path: 'docs/moved.txt' });
+	      expect(readDeleted.error.code).toBe('NOT_FOUND');
+	      const refreshedAfterDelete = await jsonTool(writeCtx, 'refresh_repo_index', {
+	        repo_id: repoId,
+	        paths: ['docs/moved.txt'],
+	        mutation_id: deleted.mutation_id,
+	      });
+	      expect(refreshedAfterDelete.error).toBeUndefined();
+	      expect(refreshedAfterDelete).toMatchObject({
+	        paths: ['docs/moved.txt'],
+	        refreshed: true,
+	        index: {
+	          action: 'refresh_complete',
+	          refreshed_paths: ['docs/moved.txt'],
+	          mutation_id: deleted.mutation_id,
+	          source_event_id: deleted.index.event_id,
+	        },
+	      });
+	      expect(refreshCalls.at(-1)).toEqual(['docs/moved.txt']);
 
-      const directoryDelete = await jsonTool(writeCtx, 'delete_path', {
+	      const directoryDelete = await jsonTool(writeCtx, 'delete_path', {
         repo_id: repoId,
         path: 'docs',
         expected_sha256: 'unused',
@@ -643,16 +728,74 @@ describe('MCP reader tools', () => {
         must_not_exist: true,
       });
       expect(ignored.error.code).toBe('PATH_IGNORED');
-      const missingParent = await jsonTool(writeCtx, 'write_file', {
-        repo_id: repoId,
-        path: 'missing-dir/file.txt',
-        content: 'blocked\n',
-        must_not_exist: true,
-      });
-      expect(missingParent.error.code).toBe('NOT_FOUND');
+	      const missingParent = await jsonTool(writeCtx, 'write_file', {
+	        repo_id: repoId,
+	        path: 'missing-dir/file.txt',
+	        content: 'blocked\n',
+	        must_not_exist: true,
+	      });
+	      expect(missingParent.error.code).toBe('NOT_FOUND');
 
-      const auditText = readFileSync(join(repoRoot, '.ai', 'harness', 'mcp', 'audit.log'), 'utf-8');
-      expect(auditText).toContain('"tool":"write_file"');
+	      const failingCodeGraph: GeneralRepoCodeGraphAdapter = {
+	        discoverRepo() {
+	          return {
+	            available: true,
+	            integrated: true,
+	            source: 'test-double',
+	            indexRevision: 'index_before_failed_refresh',
+	            latencyMs: 1,
+	            files: [],
+	          };
+	        },
+	        refreshRepo(_repoRoot, opts = {}) {
+	          return {
+	            available: false,
+	            refreshed: false,
+	            integrated: true,
+	            source: 'test-double',
+	            indexRevision: 'index_before_failed_refresh',
+	            latencyMs: 4,
+	            strategy: 'repo-sync',
+	            requestedPaths: opts.paths ?? [],
+	            pathRefreshSupported: false,
+	            files: 0,
+	            error: {
+	              code: 'INDEX_UNAVAILABLE',
+	              message: 'OPENAI_API_KEY=sk-testsecret refresh failed',
+	              retryable: true,
+	            },
+	          };
+	        },
+	      };
+	      const failingCtx = createReaderToolContext(
+	        repoRoot,
+	        ctx.policy,
+	        new WorkspaceManager({ allowedRoots: [repoRoot], policy: ctx.policy }),
+	        failingCodeGraph,
+	      );
+	      const failedRefresh = await jsonTool(failingCtx, 'refresh_repo_index', {
+	        repo_id: repoId,
+	        paths: ['docs/generated.txt'],
+	        mutation_id: patched.mutation_id,
+	      });
+	      expect(failedRefresh.error.code).toBe('INDEX_UNAVAILABLE');
+	      expect(failedRefresh.error.retryable).toBe(true);
+	      const failedRefreshEvent = readJsonLines(join(repoRoot, '.ai', 'harness', 'mcp', 'index-events.jsonl'))
+	        .find((entry) => entry.event_type === 'index_refresh' && entry.status === 'failed' && entry.mutation_id === patched.mutation_id);
+	      expect(failedRefreshEvent).toMatchObject({
+	        operation: 'refresh_repo_index',
+	        relative_paths: ['docs/generated.txt'],
+	        error: { code: 'INDEX_UNAVAILABLE', retryable: true },
+	        dead_letter: {
+	          retry_tool: 'refresh_repo_index',
+	          retry_paths: ['docs/generated.txt'],
+	          manual_recovery: 'bash scripts/ensure-codegraph.sh --sync',
+	        },
+	      });
+	      expect(JSON.stringify(failedRefreshEvent)).not.toContain('sk-testsecret');
+
+	      const auditText = readFileSync(join(repoRoot, '.ai', 'harness', 'mcp', 'audit.log'), 'utf-8');
+	      expect(auditText).toContain('"tool":"write_file"');
       expect(auditText).toContain('"tool":"apply_patch"');
       expect(auditText).toContain('"tool":"move_path"');
       expect(auditText).toContain('"tool":"delete_path"');
@@ -662,13 +805,111 @@ describe('MCP reader tools', () => {
       expect(auditText).not.toContain('second\n');
       expect(auditText).not.toContain('second patched\n');
       expect(auditText).not.toContain('bravo');
-      expect(auditText).not.toContain('move me\n');
-      expect(auditText).not.toContain('changed\n');
-      expect(auditText).not.toContain('stale\n');
-    }, { accessMode: 'read_write' });
-  });
+	      expect(auditText).not.toContain('move me\n');
+	      expect(auditText).not.toContain('changed\n');
+	      expect(auditText).not.toContain('stale\n');
+	      const auditEntries = readJsonLines(join(repoRoot, '.ai', 'harness', 'mcp', 'audit.log'));
+	      const createdAudit = auditEntries.find((entry) => entry.tool === 'write_file' && entry.mutationId === created.mutation_id);
+	      expect(createdAudit).toMatchObject({
+	        status: 'ok',
+	        actor: 'mcp:planner',
+	        repoId,
+	        operation: 'create',
+	        relativePaths: ['docs/generated.txt'],
+	        mutationId: created.mutation_id,
+	        indexInvalidationId: created.index.invalidation_id,
+	        indexEventId: created.index.event_id,
+	        result: 'ok',
+	        fileHashes: {
+	          before_sha256: null,
+	          after_sha256: created.after.sha256,
+	        },
+	      });
+	      expect(typeof createdAudit?.durationMs).toBe('number');
+	      const blockedDeleteAudit = auditEntries.find((entry) => entry.tool === 'delete_path' && entry.errorCode === 'REVISION_CONFLICT');
+	      expect(blockedDeleteAudit).toMatchObject({
+	        status: 'blocked',
+	        repoId,
+	        relativePaths: ['docs/moved.txt'],
+	        result: 'blocked',
+	        errorCode: 'REVISION_CONFLICT',
+	      });
+	      expect(JSON.stringify(auditEntries)).not.toContain('OPENAI_API_KEY=sk-testsecret refresh failed');
+	    }, { accessMode: 'read_write' });
+	  });
 
-  test('general repo tools merge CodeGraph metadata under the same guarded snapshot', async () => {
+	  test('write mutations cleanly abort injected pre-commit filesystem faults', async () => {
+	    await withReaderRepo(async (repoRoot, ctx) => {
+	      const writeCtx = createReaderToolContext(
+	        repoRoot,
+	        ctx.policy,
+	        new WorkspaceManager({ allowedRoots: [repoRoot], policy: ctx.policy }),
+	      );
+	      const repoId = (await jsonTool(writeCtx, 'list_allowed_roots')).roots[0].repo_id;
+
+	      const createFault = await withMutationFault('atomic_write_before_rename', () => jsonTool(writeCtx, 'write_file', {
+	        repo_id: repoId,
+	        path: 'docs/fault-create.txt',
+	        content: 'new\n',
+	        must_not_exist: true,
+	      }));
+	      expect(createFault.error.code).toBe('INJECTED_MUTATION_FAULT');
+	      expect(existsSync(join(repoRoot, 'docs', 'fault-create.txt'))).toBe(false);
+	      expect(readdirSync(join(repoRoot, 'docs')).some((name) => name.includes('.repo-harness-'))).toBe(false);
+
+	      writeFileSync(join(repoRoot, 'docs', 'fault-replace.txt'), 'old\n');
+	      const replaceStat = await jsonTool(writeCtx, 'stat_file', { repo_id: repoId, path: 'docs/fault-replace.txt' });
+	      const replaceFault = await withMutationFault('atomic_write_before_rename', () => jsonTool(writeCtx, 'write_file', {
+	        repo_id: repoId,
+	        path: 'docs/fault-replace.txt',
+	        content: 'new\n',
+	        expected_sha256: replaceStat.sha256,
+	      }));
+	      expect(replaceFault.error.code).toBe('INJECTED_MUTATION_FAULT');
+	      expect(readFileSync(join(repoRoot, 'docs', 'fault-replace.txt'), 'utf-8')).toBe('old\n');
+	      expect(readdirSync(join(repoRoot, 'docs')).some((name) => name.includes('.repo-harness-'))).toBe(false);
+
+	      const patchFault = await withMutationFault('atomic_write_before_rename', () => jsonTool(writeCtx, 'apply_patch', {
+	        repo_id: repoId,
+	        path: 'docs/fault-replace.txt',
+	        expected_sha256: replaceStat.sha256,
+	        edits: [{ old_text: 'old\n', new_text: 'patched\n' }],
+	      }));
+	      expect(patchFault.error.code).toBe('INJECTED_MUTATION_FAULT');
+	      expect(readFileSync(join(repoRoot, 'docs', 'fault-replace.txt'), 'utf-8')).toBe('old\n');
+	      expect(readdirSync(join(repoRoot, 'docs')).some((name) => name.includes('.repo-harness-'))).toBe(false);
+
+	      writeFileSync(join(repoRoot, 'docs', 'fault-move.txt'), 'move\n');
+	      const moveStat = await jsonTool(writeCtx, 'stat_file', { repo_id: repoId, path: 'docs/fault-move.txt' });
+	      const moveFault = await withMutationFault('move_before_rename', () => jsonTool(writeCtx, 'move_path', {
+	        repo_id: repoId,
+	        from_path: 'docs/fault-move.txt',
+	        to_path: 'docs/fault-moved.txt',
+	        expected_sha256: moveStat.sha256,
+	        must_not_exist: true,
+	      }));
+	      expect(moveFault.error.code).toBe('INJECTED_MUTATION_FAULT');
+	      expect(readFileSync(join(repoRoot, 'docs', 'fault-move.txt'), 'utf-8')).toBe('move\n');
+	      expect(existsSync(join(repoRoot, 'docs', 'fault-moved.txt'))).toBe(false);
+
+	      const deleteFault = await withMutationFault('delete_before_unlink', () => jsonTool(writeCtx, 'delete_path', {
+	        repo_id: repoId,
+	        path: 'docs/fault-move.txt',
+	        expected_sha256: moveStat.sha256,
+	      }));
+	      expect(deleteFault.error.code).toBe('INJECTED_MUTATION_FAULT');
+	      expect(readFileSync(join(repoRoot, 'docs', 'fault-move.txt'), 'utf-8')).toBe('move\n');
+	      expect(readJsonLines(join(repoRoot, '.ai', 'harness', 'mcp', 'index-events.jsonl'))).toEqual([]);
+
+	      const auditText = readFileSync(join(repoRoot, '.ai', 'harness', 'mcp', 'audit.log'), 'utf-8');
+	      expect(auditText).toContain('"errorCode":"INJECTED_MUTATION_FAULT"');
+	      expect(auditText).not.toContain('new\n');
+	      expect(auditText).not.toContain('patched\n');
+	      expect(auditText).not.toContain('move\n');
+	    }, { accessMode: 'read_write' });
+	  });
+
+	  test('general repo tools merge CodeGraph metadata under the same guarded snapshot', async () => {
     await withReaderRepo(async (repoRoot, ctx) => {
       writeFileSync(join(repoRoot, '.ignore'), 'ignored.md\n');
       const fakeCodeGraph: GeneralRepoCodeGraphAdapter = {

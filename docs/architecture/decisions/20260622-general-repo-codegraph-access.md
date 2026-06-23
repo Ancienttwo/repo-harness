@@ -63,8 +63,12 @@ Sprint 0 freezes the read contract for:
 The current write implementation covers `write_file` create/replace,
 `apply_patch`, `move_path`, `delete_path`, and `refresh_repo_index`.
 
-`write_file` and `apply_patch` commit filesystem truth first and return an index
-invalidation record with `index_state: pending` when CodeGraph is available.
+`write_file` and `apply_patch` commit filesystem truth first, return an index
+invalidation record with `index_state: pending` when CodeGraph is available, and
+append an index invalidation event under `.ai/harness/mcp/index-events.jsonl`.
+The same mutation result shape is used by `move_path` and `delete_path`; the
+event log stores mutation ids, invalidation ids, relative paths, hash summaries,
+index revisions, and retry instructions, but never file bodies or patch text.
 `apply_patch` is text-only and supports structured `old_text`/`new_text` edits
 plus guarded unified diff hunks. Both patch modes require an exact
 `expected_sha256` file precondition; each edit/hunk also acts as a local text
@@ -84,11 +88,18 @@ lost-update contract for file moves and deletes.
 
 The explicit `refresh_repo_index` tool requires the same `read_write` repo
 capability, reuses the same path guard and `.ignore` policy for requested paths,
-runs the adapter refresh, invalidates in-process repo snapshots, then returns the
-new snapshot and CodeGraph revision. The bundled CLI adapter uses repo-level
-`codegraph sync` because the local CodeGraph CLI surface does not expose a
-stable path-only refresh command; responses report `path_refresh_supported:false`
-so callers do not assume true incremental reindexing.
+runs the adapter refresh, invalidates in-process repo snapshots, records refresh
+success or failure in the index event log, then returns the new snapshot and
+CodeGraph revision. Requested refresh paths may be recently deleted paths so
+delete and move invalidations can still be synchronized. Callers may pass the
+mutation id returned by the write tool; when the matching invalidation event is
+still in the recent event window, refresh responses include mutation-to-refresh
+lag and the source event id. Refresh failures are written as dead-letter events
+with retry metadata and the manual recovery command
+`bash scripts/ensure-codegraph.sh --sync`. The bundled CLI adapter uses repo-level
+`codegraph sync` because the local CodeGraph CLI surface does not expose a stable
+path-only refresh command; responses report `path_refresh_supported:false` so
+callers do not assume true incremental reindexing.
 
 ## Snapshot Contract
 

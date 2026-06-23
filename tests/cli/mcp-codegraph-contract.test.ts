@@ -201,10 +201,11 @@ describe('general repo CodeGraph contract', () => {
         } else if (tool.name === 'delete_path') {
           expect(tool.input_schema.required).toEqual(['repo_id', 'path', 'expected_sha256']);
           expect(tool.input_schema.properties.recursive).toEqual({ type: 'boolean' });
-        } else {
-          expect(tool.input_schema.required).toEqual(['repo_id']);
-          expect(tool.input_schema.properties.paths.items).toEqual({ type: 'string' });
-        }
+	        } else {
+	          expect(tool.input_schema.required).toEqual(['repo_id']);
+	          expect(tool.input_schema.properties.paths.items).toEqual({ type: 'string' });
+	          expect(tool.input_schema.properties.mutation_id).toEqual({ type: 'string' });
+	        }
       } else {
         expect(tool.annotations).toEqual({
           readOnlyHint: true,

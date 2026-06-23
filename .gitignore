@@ -53,6 +53,7 @@ tasks/.current.md.tmp.*
 .ai/harness/worktrees/
 .ai/harness/runs/
 .ai/harness/mcp/audit.log
+.ai/harness/mcp/index-events.jsonl
 .ai/harness/chatgpt/browser-lock.json
 .ai/harness/chatgpt/bridge-extension/
 .ai/harness/chatgpt/oracle-home/

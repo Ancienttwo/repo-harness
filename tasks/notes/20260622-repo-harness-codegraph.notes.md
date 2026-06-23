@@ -205,3 +205,28 @@ Sprint 0 contract freeze for `plans/sprints/20260622-repo-harness-codegraph-spri
   returns an explicit unsupported-policy error.
 - Successful move/delete mutations invalidate snapshots and return the same
   pending CodeGraph refresh contract as `write_file` and `apply_patch`.
+
+## 2026-06-23 failure injection, index recovery, and audit slice
+
+- Mutation fault injection is intentionally test-only and env-gated through
+  `REPO_HARNESS_MCP_MUTATION_FAULT_POINT`. The supported fault points sit after
+  temp-file fsync and before atomic rename, before move rename, and before
+  delete unlink. They model the pre-commit boundaries for disk/permission,
+  interrupted-process, and rename/delete failures without adding a public MCP
+  option.
+- Successful mutations now append `.ai/harness/mcp/index-events.jsonl`
+  invalidation events. The event log is ignored runtime state, separate from
+  `.ai/harness/mcp/audit.log`, and carries mutation id, invalidation id, relative
+  paths, hash summaries, index revision, and retry metadata without file bodies
+  or patch text.
+- `refresh_repo_index` accepts an optional `mutation_id` so callers can trace
+  the refresh back to the invalidation event and measure mutation-to-refresh lag.
+  It also accepts recently deleted repo-relative paths so move/delete old paths
+  can be synchronized instead of failing `NOT_FOUND` before refresh.
+- Refresh failures write dead-letter index events with retry metadata and the
+  manual recovery command `bash scripts/ensure-codegraph.sh --sync`; the tool
+  still returns the adapter error to the caller.
+- General repo MCP audit entries now include actor/profile, repo id, operation,
+  relative paths, mutation id, index invalidation/event ids, hash summaries,
+  result, duration, and rejection error code. The logged input remains hashed,
+  not embedded, so file contents and patch bodies do not enter the audit log.
