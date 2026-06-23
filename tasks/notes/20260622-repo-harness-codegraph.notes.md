@@ -345,3 +345,20 @@ Sprint 0 contract freeze for `plans/sprints/20260622-repo-harness-codegraph-spri
 - Sprint 4 machine-verifiable exit criteria are local-gated, but human
   release/test/security signoff and the post-fix external review remain the PR
   review/merge gate and are not self-signed by the implementing agent.
+
+## 2026-06-23 review granularity consolidation
+
+- User feedback: the open PR stack was too fine-grained to review efficiently.
+  The review boundary is now the sprint module, not each implementation slice.
+- Keep S0 and S1 as module-sized PRs because they already map to contract
+  freeze and first runtime reader module boundaries.
+- Replace S2's five incremental PRs with one S2 module PR covering snapshots,
+  manifest/search/read integration, caching, performance baselines, and
+  streaming manifest behavior.
+- Replace S3's five incremental PRs with one S3 module PR covering write-file,
+  index refresh, guarded patch, move/delete, recovery, and mutation audit.
+- Replace S4's three incremental PRs with one S4 module PR covering security,
+  observability, migration, rollout gate, documentation, and machine-verifiable
+  exit evidence.
+- Close the superseded small PRs after the replacement module PRs exist, leaving
+  their branches intact for audit history.
