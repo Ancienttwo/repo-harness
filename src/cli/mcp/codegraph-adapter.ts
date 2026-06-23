@@ -23,6 +23,21 @@ export interface CodeGraphRepoSnapshot {
     retryable: boolean;
   };
 }
+
+export interface CodeGraphRefreshResult {
+  available: boolean;
+  refreshed: boolean;
+  integrated: boolean;
+  source: CodeGraphRepoSnapshot['source'];
+  indexRevision: string | 0;
+  latencyMs: number;
+  strategy: 'repo-sync' | 'path-sync' | 'unsupported';
+  requestedPaths: string[];
+  pathRefreshSupported: boolean;
+  files: number;
+  error?: CodeGraphRepoSnapshot['error'];
+}
+
 export interface CodeGraphTextSearchMatch {
   path: string;
   line?: number;
@@ -40,6 +55,7 @@ export interface CodeGraphTextSearchResult {
 
 export interface GeneralRepoCodeGraphAdapter {
   discoverRepo(repoRoot: string): CodeGraphRepoSnapshot;
+  refreshRepo?(repoRoot: string, opts?: { paths?: string[] }): CodeGraphRefreshResult;
   searchText?(repoRoot: string, query: string, opts: { mode: 'literal' | 'regex'; paths: string[]; maxResults: number }): CodeGraphTextSearchResult;
 }
 
@@ -96,6 +112,80 @@ function revisionFor(files: CodeGraphIndexedFile[]): string {
   return `index_${sha256(JSON.stringify(stable)).slice(0, 16)}`;
 }
 
+function discoverCodeGraphRepo(repoRoot: string, env: NodeJS.ProcessEnv, timeoutMs: number): CodeGraphRepoSnapshot {
+  const start = Date.now();
+  if (!existsSync(join(repoRoot, '.codegraph'))) {
+    return unavailable('CodeGraph index is not initialized for this repo', 0, false);
+  }
+
+  const bin = codegraphBin(repoRoot, env);
+  const result = spawnSync(bin, ['files', '--path', repoRoot, '--format', 'flat', '--json'], {
+    cwd: repoRoot,
+    env,
+    encoding: 'utf-8',
+    timeout: timeoutMs,
+    maxBuffer: MAX_STDOUT_BYTES,
+  });
+  const latencyMs = Date.now() - start;
+
+  if (result.error) {
+    const code = result.error.message.includes('ETIMEDOUT') ? 'INDEX_UNAVAILABLE' : 'INTERNAL_ADAPTER_ERROR';
+    return {
+      available: false,
+      integrated: false,
+      source: 'unavailable',
+      indexRevision: 0,
+      files: [],
+      latencyMs,
+      error: { code, message: result.error.message, retryable: code === 'INDEX_UNAVAILABLE' },
+    };
+  }
+  if (result.status !== 0) {
+    return {
+      available: false,
+      integrated: false,
+      source: 'unavailable',
+      indexRevision: 0,
+      files: [],
+      latencyMs,
+      error: {
+        code: 'INDEX_UNAVAILABLE',
+        message: (result.stderr || result.stdout || `codegraph exited with ${result.status}`).trim(),
+        retryable: true,
+      },
+    };
+  }
+
+  try {
+    const parsed = JSON.parse(result.stdout);
+    const files = Array.isArray(parsed)
+      ? parsed.map(normalizeIndexedFile).filter((file): file is CodeGraphIndexedFile => file !== null)
+      : [];
+    return {
+      available: true,
+      integrated: true,
+      source: 'codegraph-cli',
+      indexRevision: revisionFor(files),
+      files,
+      latencyMs,
+    };
+  } catch (error) {
+    return {
+      available: false,
+      integrated: false,
+      source: 'unavailable',
+      indexRevision: 0,
+      files: [],
+      latencyMs,
+      error: {
+        code: 'INTERNAL_ADAPTER_ERROR',
+        message: error instanceof Error ? error.message : String(error),
+        retryable: false,
+      },
+    };
+  }
+}
+
 export function createCodeGraphCliAdapter(opts: {
   env?: NodeJS.ProcessEnv;
   timeoutMs?: number;
@@ -105,41 +195,65 @@ export function createCodeGraphCliAdapter(opts: {
 
   return {
     discoverRepo(repoRoot: string): CodeGraphRepoSnapshot {
+      return discoverCodeGraphRepo(repoRoot, env, timeoutMs);
+    },
+    refreshRepo(repoRoot: string, opts: { paths?: string[] } = {}): CodeGraphRefreshResult {
       const start = Date.now();
       if (!existsSync(join(repoRoot, '.codegraph'))) {
-        return unavailable('CodeGraph index is not initialized for this repo', 0, false);
+        const snapshot = unavailable('CodeGraph index is not initialized for this repo', 0, false);
+        return {
+          available: false,
+          refreshed: false,
+          integrated: false,
+          source: snapshot.source,
+          indexRevision: snapshot.indexRevision,
+          latencyMs: snapshot.latencyMs,
+          strategy: 'unsupported',
+          requestedPaths: opts.paths ?? [],
+          pathRefreshSupported: false,
+          files: 0,
+          error: snapshot.error,
+        };
       }
 
       const bin = codegraphBin(repoRoot, env);
-      const result = spawnSync(bin, ['files', '--path', repoRoot, '--format', 'flat', '--json'], {
+      const result = spawnSync(bin, ['sync', repoRoot], {
         cwd: repoRoot,
         env,
         encoding: 'utf-8',
-        timeout: timeoutMs,
+        timeout: Math.max(timeoutMs, 30_000),
         maxBuffer: MAX_STDOUT_BYTES,
       });
-      const latencyMs = Date.now() - start;
+      const syncLatencyMs = Date.now() - start;
 
       if (result.error) {
         const code = result.error.message.includes('ETIMEDOUT') ? 'INDEX_UNAVAILABLE' : 'INTERNAL_ADAPTER_ERROR';
         return {
           available: false,
+          refreshed: false,
           integrated: false,
           source: 'unavailable',
           indexRevision: 0,
-          files: [],
-          latencyMs,
+          latencyMs: syncLatencyMs,
+          strategy: 'repo-sync',
+          requestedPaths: opts.paths ?? [],
+          pathRefreshSupported: false,
+          files: 0,
           error: { code, message: result.error.message, retryable: code === 'INDEX_UNAVAILABLE' },
         };
       }
       if (result.status !== 0) {
         return {
           available: false,
+          refreshed: false,
           integrated: false,
           source: 'unavailable',
           indexRevision: 0,
-          files: [],
-          latencyMs,
+          latencyMs: syncLatencyMs,
+          strategy: 'repo-sync',
+          requestedPaths: opts.paths ?? [],
+          pathRefreshSupported: false,
+          files: 0,
           error: {
             code: 'INDEX_UNAVAILABLE',
             message: (result.stderr || result.stdout || `codegraph exited with ${result.status}`).trim(),
@@ -148,34 +262,20 @@ export function createCodeGraphCliAdapter(opts: {
         };
       }
 
-      try {
-        const parsed = JSON.parse(result.stdout);
-        const files = Array.isArray(parsed)
-          ? parsed.map(normalizeIndexedFile).filter((file): file is CodeGraphIndexedFile => file !== null)
-          : [];
-        return {
-          available: true,
-          integrated: true,
-          source: 'codegraph-cli',
-          indexRevision: revisionFor(files),
-          files,
-          latencyMs,
-        };
-      } catch (error) {
-        return {
-          available: false,
-          integrated: false,
-          source: 'unavailable',
-          indexRevision: 0,
-          files: [],
-          latencyMs,
-          error: {
-            code: 'INTERNAL_ADAPTER_ERROR',
-            message: error instanceof Error ? error.message : String(error),
-            retryable: false,
-          },
-        };
-      }
+      const snapshot = discoverCodeGraphRepo(repoRoot, env, timeoutMs);
+      return {
+        available: snapshot.available,
+        refreshed: snapshot.available,
+        integrated: snapshot.integrated,
+        source: snapshot.source,
+        indexRevision: snapshot.indexRevision,
+        latencyMs: syncLatencyMs + snapshot.latencyMs,
+        strategy: 'repo-sync',
+        requestedPaths: opts.paths ?? [],
+        pathRefreshSupported: false,
+        files: snapshot.files.length,
+        error: snapshot.error,
+      };
     },
   };
 }

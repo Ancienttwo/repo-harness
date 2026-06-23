@@ -3,7 +3,7 @@ import { closeSync, constants, existsSync, fstatSync, fsyncSync, lstatSync, open
 import { basename, dirname, isAbsolute, relative, resolve, sep } from 'path';
 import { readRegisteredRepoHarnessRepos, repoHarnessRepoIdFor, type RepoHarnessAccessMode } from '../../effects/repo-registry';
 import { hashMcpInput, tryWriteMcpAuditEntry } from './audit';
-import { createCodeGraphCliAdapter, type CodeGraphRepoSnapshot, type GeneralRepoCodeGraphAdapter } from './codegraph-adapter';
+import { createCodeGraphCliAdapter, type CodeGraphRefreshResult, type CodeGraphRepoSnapshot, type GeneralRepoCodeGraphAdapter } from './codegraph-adapter';
 import { globMatches, isPathInside } from './paths';
 import type { McpPolicy } from './types';
 
@@ -170,6 +170,7 @@ const GENERAL_REPO_TOOLS = [
   'read_files',
   'stat_file',
   'write_file',
+  'refresh_repo_index',
 ] as const;
 
 const DEFAULT_PAGE_SIZE = 300;
@@ -188,6 +189,7 @@ const MAX_SNAPSHOT_BUILD_ATTEMPTS = 2;
 const DEFAULT_CODEGRAPH_ADAPTER = createCodeGraphCliAdapter();
 const SNAPSHOT_CACHE = new Map<string, VisibleEntrySnapshot>();
 const ENTRY_METADATA_CACHE = new Map<string, EntryMetadataCacheValue>();
+const WRITE_TOOLS = new Set<string>(['write_file', 'refresh_repo_index']);
 
 export type GeneralRepoToolName = typeof GENERAL_REPO_TOOLS[number];
 
@@ -554,11 +556,27 @@ function leafName(relativePath: string): string {
 
 function assertRepoWriteEnabled(repo: RepoRecord): void {
   if (repo.accessMode !== 'read_write') {
-    throw new GeneralRepoAccessError('WRITE_DISABLED', 'repo is read_only; write_file requires read_write capability', {
+    throw new GeneralRepoAccessError('WRITE_DISABLED', 'repo is read_only; mutation tools require read_write capability', {
       repo_id: repo.repoId,
       access_mode: repo.accessMode,
     });
   }
+}
+
+function refreshPathsArg(repo: RepoRecord, ignore: IgnorePolicy, value: unknown): string[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) {
+    throw new GeneralRepoAccessError('INVALID_RANGE', 'paths must be an array of repo-relative paths');
+  }
+  const paths = new Set<string>();
+  for (const item of value) {
+    if (typeof item !== 'string') {
+      throw new GeneralRepoAccessError('INVALID_RELATIVE_PATH', 'paths must contain only strings');
+    }
+    const resolved = resolveRepoPath(repo, item, ignore, { allowRoot: true, allowExternalSymlinkMetadata: true });
+    paths.add(resolved.relativePath);
+  }
+  return [...paths].sort((a, b) => a.localeCompare(b));
 }
 
 function resolveRepoWritePath(repo: RepoRecord, inputPath: unknown, ignore: IgnorePolicy): ResolvedRepoWritePath {
@@ -1332,6 +1350,25 @@ function invalidateRepoCaches(repo: RepoRecord): void {
   ENTRY_METADATA_CACHE.clear();
 }
 
+function mutationIndexState(snapshot: VisibleEntrySnapshot): 'pending' | 'failed' {
+  return snapshot.codeGraph.available ? 'pending' : 'failed';
+}
+
+function refreshedIndexState(snapshot: VisibleEntrySnapshot): 'ready' | 'index_lagging' | 'failed' {
+  if (!snapshot.codeGraph.available) return 'failed';
+  return snapshot.codeGraphLaggingPaths.length > 0 ? 'index_lagging' : 'ready';
+}
+
+function indexRefreshError(refresh: CodeGraphRefreshResult): GeneralRepoAccessError {
+  const error = refresh.error;
+  return new GeneralRepoAccessError(error?.code ?? 'INDEX_UNAVAILABLE', error?.message ?? 'CodeGraph refresh failed', {
+    strategy: refresh.strategy,
+    requested_paths: refresh.requestedPaths,
+    path_refresh_supported: refresh.pathRefreshSupported,
+    index_revision: refresh.indexRevision,
+  }, error?.retryable ?? true);
+}
+
 function readFilePayload(repo: RepoRecord, ignore: IgnorePolicy, snapshot: VisibleEntrySnapshot, args: Record<string, unknown>, maxBytes = HARD_READ_BYTES, tool = 'read_file', verifySnapshotEntry = false): Record<string, unknown> {
   if (args.line_range !== undefined && args.byte_range !== undefined) {
     throw new GeneralRepoAccessError('INVALID_RANGE', 'line_range and byte_range are mutually exclusive');
@@ -1436,8 +1473,8 @@ function getRepoCapabilities(ctx: GeneralRepoToolContext, args: Record<string, u
     display_name: repo.displayName,
     registry_revision: repo.registryRevision,
     source: repo.source,
-    read_tools: GENERAL_REPO_TOOLS.filter((tool) => tool !== 'get_repo_capabilities' && tool !== 'write_file'),
-    write_tools: repo.accessMode === 'read_write' ? ['write_file'] : [],
+    read_tools: GENERAL_REPO_TOOLS.filter((tool) => tool !== 'get_repo_capabilities' && !WRITE_TOOLS.has(tool)),
+    write_tools: repo.accessMode === 'read_write' ? [...WRITE_TOOLS] : [],
     codegraph: {
       primary_backend: true,
       ...codeGraphSummary(snapshot),
@@ -1502,8 +1539,9 @@ function writeFileTool(ctx: GeneralRepoToolContext, args: Record<string, unknown
   const afterEntry = metadataForResolved(after, ignore);
   const snapshot = buildVisibleEntrySnapshot(ctx, repo, ignore, { contentHash: false });
   const indexedEntry = snapshot.entriesByPath.get(target.relativePath);
-  const indexState = snapshot.codeGraph.available ? 'pending' : 'failed';
+  const indexState = mutationIndexState(snapshot);
   const mutationId = `mut_${sha256(`${repo.repoId}\0${target.relativePath}\0${beforeHash ?? 'new'}\0${afterHash}\0${Date.now()}`).slice(0, 16)}`;
+  const invalidationId = `idxinv_${sha256(`${mutationId}\0${snapshot.codeGraph.indexRevision}\0${target.relativePath}`).slice(0, 16)}`;
 
   return textResult({
     ...commonFields(repo, ignore, snapshot, { tool: 'write_file', paths: [target.relativePath] }),
@@ -1538,6 +1576,57 @@ function writeFileTool(ctx: GeneralRepoToolContext, args: Record<string, unknown
       action: snapshot.codeGraph.available ? 'refresh_repo_index_required' : 'codegraph_unavailable',
       changed_paths: [target.relativePath],
       mutation_id: mutationId,
+      invalidation_id: invalidationId,
+      refresh_tool: 'refresh_repo_index',
+      before_index_revision: snapshot.codeGraph.indexRevision,
+    },
+    codegraph: codeGraphSummary(snapshot),
+  });
+}
+
+function refreshRepoIndex(ctx: GeneralRepoToolContext, args: Record<string, unknown>): GeneralRepoToolResult {
+  const repo = resolveRepo(ctx, args.repo_id);
+  assertRepoWriteEnabled(repo);
+  const ignore = readIgnorePolicy(repo.canonicalRoot);
+  const paths = refreshPathsArg(repo, ignore, args.paths);
+  const refreshScope = paths.length > 0 ? paths : ['.'];
+  const before = buildVisibleEntrySnapshot(ctx, repo, ignore, { contentHash: false });
+  const adapter = ctx.codeGraphAdapter ?? DEFAULT_CODEGRAPH_ADAPTER;
+  if (!adapter.refreshRepo) {
+    throw new GeneralRepoAccessError('INDEX_UNAVAILABLE', 'CodeGraph adapter does not support explicit refresh', {
+      paths: refreshScope,
+    }, true);
+  }
+
+  const refresh = adapter.refreshRepo(repo.canonicalRoot, { paths });
+  invalidateRepoCaches(repo);
+  if (!refresh.available || !refresh.refreshed) {
+    throw indexRefreshError(refresh);
+  }
+  const snapshot = buildVisibleEntrySnapshot(ctx, repo, ignore, { contentHash: false });
+  const indexState = refreshedIndexState(snapshot);
+
+  return textResult({
+    ...commonFields(repo, ignore, snapshot, { tool: 'refresh_repo_index', paths: refreshScope }),
+    paths: refreshScope,
+    refreshed: true,
+    index_state: indexState,
+    refresh: {
+      strategy: refresh.strategy,
+      requested_paths: refresh.requestedPaths,
+      path_refresh_supported: refresh.pathRefreshSupported,
+      latency_ms: refresh.latencyMs,
+      before_index_revision: before.codeGraph.indexRevision,
+      adapter_index_revision: refresh.indexRevision,
+      after_index_revision: snapshot.codeGraph.indexRevision,
+      indexed_files: refresh.files,
+    },
+    index: {
+      state: indexState,
+      action: indexState === 'ready' ? 'refresh_complete' : 'refresh_complete_with_lag',
+      refreshed_paths: refreshScope,
+      before_index_revision: before.codeGraph.indexRevision,
+      after_index_revision: snapshot.codeGraph.indexRevision,
     },
     codegraph: codeGraphSummary(snapshot),
   });
@@ -1895,6 +1984,20 @@ export function buildGeneralRepoToolDefinitions(): GeneralRepoToolDefinition[] {
       },
       annotations: writeTool,
     },
+    {
+      name: 'refresh_repo_index',
+      description: 'Synchronize CodeGraph for a read_write repo after mutations and return the new index/snapshot state.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          repo_id: { type: 'string' },
+          paths: { type: 'array', items: { type: 'string' } },
+        },
+        required: ['repo_id'],
+        additionalProperties: false,
+      },
+      annotations: writeTool,
+    },
   ];
 }
 
@@ -1925,6 +2028,9 @@ export async function callGeneralRepoTool(ctx: GeneralRepoToolContext, name: str
         break;
       case 'write_file':
         result = writeFileTool(ctx, args);
+        break;
+      case 'refresh_repo_index':
+        result = refreshRepoIndex(ctx, args);
         break;
       default:
         return errorResult('INTERNAL_ADAPTER_ERROR', `tool is not a general repo reader tool: ${name}`);

@@ -348,21 +348,27 @@ before applying anything.
 As an optional sidecar, `repo-harness mcp` exposes workflow artifacts to MCP
 clients through the default `planner` profile. ChatGPT acts as a
 planner/reviewer that reads state and moves an idea through PRD, checklist
-Sprint, and Codex goal handoff artifacts — with no source-code write access,
+Sprint, and Codex goal handoff artifacts — with no default source-code write access,
 arbitrary shell execution, or default Codex runner. Codex remains the executor.
 
 The same `planner` Connector also exposes general repo tools for
 registered adopted repos. Use `discover_harness_repos` first, then call
 `list_allowed_roots` to get the stable `repo_id`. General repo reads use
 `repo_manifest`, `list_tree`, `stat_file`, `read_file`, `read_files`, and
-`search_text`. The initial write surface is `write_file`, which is rejected
-unless that registered repo is explicitly configured as `read_write`.
+`search_text`. The write surface currently exposes `write_file` and
+`refresh_repo_index`, both rejected unless that registered repo is explicitly
+configured as `read_write`.
 `write_file` creates only with `must_not_exist: true`, replaces only with
 `expected_sha256`, and reports `before`, `after`, `diff`, `mutation_id`, and
-`index_state` after an atomic same-directory rename. The repo whitelist is the
-authorization boundary, `.ignore` is the only content exclusion source, paths
-are repo-relative, and authorized file content is not implicitly redacted.
-External non-repo local roots require explicit `--allow-root` authorization.
+`index_state` after an atomic same-directory rename. Successful writes leave the
+index pending; `refresh_repo_index` runs CodeGraph sync for the repo, invalidates
+reader snapshots, and returns the new `snapshot_id`, `index_revision`,
+`index_state`, and refresh strategy. The CLI adapter reports
+`path_refresh_supported:false` when it must use repo-level sync for requested
+paths. The repo whitelist is the authorization boundary, `.ignore` is the only
+content exclusion source, paths are repo-relative, and authorized file content is
+not implicitly redacted. External non-repo local roots require explicit
+`--allow-root` authorization.
 
 When CodeGraph is initialized for a registered repo, the general reader merges
 CodeGraph indexed-file metadata into manifest/stat/read/search responses while

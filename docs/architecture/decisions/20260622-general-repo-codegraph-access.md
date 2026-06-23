@@ -60,9 +60,20 @@ Sprint 0 freezes the read contract for:
 - `read_files`
 - `search_text`
 
-The initial write implementation covers `write_file` create/replace. Patch,
-move, delete, and explicit index-refresh tools remain implementation-gated until
+The current write implementation covers `write_file` create/replace and
+`refresh_repo_index`. Patch, move, and delete remain implementation-gated until
 their Sprint 3 slices land.
+
+`write_file` commits filesystem truth first and returns an index invalidation
+record with `index_state: pending` when CodeGraph is available. The explicit
+`refresh_repo_index` tool requires the same `read_write` repo capability,
+reuses the same path guard and `.ignore` policy for requested paths, runs the
+adapter refresh, invalidates in-process repo snapshots, then returns the new
+snapshot and CodeGraph revision. The bundled CLI adapter uses repo-level
+`codegraph sync` because the local CodeGraph CLI surface does not expose a
+stable path-only refresh command; responses report
+`path_refresh_supported:false` so callers do not assume true incremental
+reindexing.
 
 ## Snapshot Contract
 

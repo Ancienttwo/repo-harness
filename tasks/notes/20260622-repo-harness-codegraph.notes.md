@@ -151,3 +151,23 @@ Sprint 0 contract freeze for `plans/sprints/20260622-repo-harness-codegraph-spri
   available, or `failed` when no index is available. The process-local snapshot
   and metadata caches are invalidated after successful writes so immediate
   read/stat calls see filesystem truth.
+
+## 2026-06-23 refresh_repo_index slice
+
+- The index-sync slice adds `refresh_repo_index` as a read_write-gated mutation
+  companion rather than making `write_file` block on CodeGraph. This keeps the
+  filesystem commit boundary small and makes index lag explicit to the caller.
+- Requested refresh paths are repo-relative, deduplicated, and resolved through
+  the same canonical root, symlink, and `.ignore` guard used by read/write
+  tools. Empty `paths` means repo-level refresh.
+- The CLI adapter uses `codegraph sync <repo>` and then reads
+  `codegraph files --format flat --json` for the new revision. Path-only
+  refresh is reported as unsupported with `path_refresh_supported:false` because
+  the local CodeGraph CLI does not expose a stable path incremental contract.
+- `write_file` now returns an `index.invalidation_id` and
+  `index.refresh_tool`. `refresh_repo_index` returns before/after index
+  revisions, the adapter revision, refresh strategy, snapshot id, and
+  `index_state: ready|index_lagging|failed`.
+- Search still uses the existing CodeGraph-metadata plus guarded filesystem
+  fallback path. This slice makes the index state observable; it does not claim
+  a CodeGraph-only full-text backend.

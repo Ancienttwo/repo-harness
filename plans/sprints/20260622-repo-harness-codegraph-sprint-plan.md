@@ -528,7 +528,7 @@ Sprint 2 adapter/snapshot evidence:
 - [ ] **S3-API-003** 实现 `move_path`。
 - [ ] **S3-API-004** 实现 `delete_path`。
 - [ ] **S3-API-005** 定义目录创建、空目录和递归删除策略；递归删除建议首版默认关闭或要求显式参数。
-- [ ] **S3-API-006** 写响应返回 before/after hash、diff、mutation id 和 index state。
+- [x] **S3-API-006** 写响应返回 before/after hash、diff、mutation id 和 index state。
 
 ## 10.2 乐观并发与原子写
 
@@ -546,12 +546,12 @@ Sprint 2 adapter/snapshot evidence:
 ## 10.3 Index Sync
 
 - [ ] **S3-IDX-001** 每次成功 mutation 产生 index invalidation event。
-- [ ] **S3-IDX-002** 能按 path 增量 reindex 时优先使用；否则明确使用 repo refresh。
-- [ ] **S3-IDX-003** 写后返回 `index_state: pending|ready|failed`。
-- [ ] **S3-IDX-004** 索引完成后生成新 `codegraph_revision` 和 snapshot。
-- [ ] **S3-IDX-005** 在索引 pending 时，changed path 的 read/stat 走安全直读并返回最新 hash。
-- [ ] **S3-IDX-006** search 必须明确使用旧索引还是等待新索引；禁止假装已可搜。
-- [ ] **S3-IDX-007** 实现 `refresh_repo_index` 或内部等价管理接口。
+- [x] **S3-IDX-002** 能按 path 增量 reindex 时优先使用；否则明确使用 repo refresh。
+- [x] **S3-IDX-003** 写后返回 `index_state: pending|ready|failed`。
+- [x] **S3-IDX-004** 索引完成后生成新 `codegraph_revision` 和 snapshot。
+- [x] **S3-IDX-005** 在索引 pending 时，changed path 的 read/stat 走安全直读并返回最新 hash。
+- [x] **S3-IDX-006** search 必须明确使用旧索引还是等待新索引；禁止假装已可搜。
+- [x] **S3-IDX-007** 实现 `refresh_repo_index` 或内部等价管理接口。
 - [ ] **S3-IDX-008** 定义 reindex retry、dead-letter 和人工恢复流程。
 - [ ] **S3-IDX-009** 监控 mutation commit 到 CodeGraph 可搜索的 index lag。
 
@@ -587,8 +587,28 @@ Sprint 3 write_file evidence:
   `.repo-harness-*` temporary files in the target directory. Full write-failure
   injection remains open under `S3-MUT-009/010`.
 - Explicitly still open: `apply_patch`, `move_path`, `delete_path`,
-  `refresh_repo_index`, recursive directory policy, full index retry/dead-letter,
+  recursive directory policy, full index retry/dead-letter, index-lag monitoring,
   and complete write audit/runbook coverage.
+
+Sprint 3 index-sync evidence:
+
+- Runtime: `src/cli/mcp/general-repo-access.ts`,
+  `src/cli/mcp/codegraph-adapter.ts`
+- Tests: `tests/cli/mcp-reader-tools.test.ts`,
+  `tests/cli/mcp-codegraph-contract.test.ts`
+- Schema/docs: `assets/mcp/general-repo-reader-tools.v1.schema.json`,
+  `README.md`, `docs/repo-harness-chatgpt-mcp-setup.md`,
+  `docs/architecture/decisions/20260622-general-repo-codegraph-access.md`,
+  `tasks/notes/20260622-repo-harness-codegraph.notes.md`
+- Completed slice: `refresh_repo_index` is exposed only for `read_write` repos,
+  validates requested paths through the same guard/`.ignore` policy, calls
+  CodeGraph refresh, invalidates local snapshots, and returns before/after index
+  revisions plus a fresh snapshot.
+- The bundled adapter uses repo-level `codegraph sync` when path incremental
+  refresh is unavailable and reports `path_refresh_supported:false`.
+- Pending-state reads/stat use filesystem truth and return the latest hash;
+  `search_text` keeps the explicit CodeGraph-metadata plus guarded filesystem
+  fallback backend instead of claiming the changed path is already indexed.
 
 ---
 

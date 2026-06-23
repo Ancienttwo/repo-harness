@@ -18,6 +18,7 @@ const TOOL_NAMES = [
   'read_files',
   'stat_file',
   'write_file',
+  'refresh_repo_index',
 ];
 
 const COMMON_RESPONSE_FIELDS = [
@@ -164,6 +165,15 @@ function sampleSuccessPayload(toolName: string): Record<string, unknown> {
         diff: { format: 'summary', bytes_before: 0, bytes_after: 2, bytes_delta: 2, before_sha256: null, after_sha256: 'd'.repeat(64) },
         index_state: 'pending',
       };
+    case 'refresh_repo_index':
+      return {
+        ...common,
+        paths: ['README.md'],
+        refreshed: true,
+        index_state: 'ready',
+        refresh: { strategy: 'repo-sync', requested_paths: ['README.md'], path_refresh_supported: false },
+        index: { state: 'ready', action: 'refresh_complete', refreshed_paths: ['README.md'] },
+      };
     default:
       throw new Error(`Missing sample payload for ${toolName}`);
   }
@@ -294,7 +304,7 @@ function manifestFromSecureWalker(root: string, indexedPaths: Set<string>): { ig
 }
 
 describe('general repo CodeGraph contract', () => {
-  test('versioned schema freezes the general repo reader plus initial write_file surface', () => {
+  test('versioned schema freezes the general repo reader plus write/index-sync surface', () => {
     const schema = readJson(SCHEMA_PATH);
     expect(schema.properties.version.const).toBe('1');
     expect(schema.properties.policy.properties.content_exclusion.const).toBe('.ignore');
@@ -305,16 +315,21 @@ describe('general repo CodeGraph contract', () => {
 
     for (const tool of schema.tools) {
       expect(validateJsonSchema(schema.$defs.tool, tool, schema).errors).toEqual([]);
-      if (tool.name === 'write_file') {
+      if (tool.name === 'write_file' || tool.name === 'refresh_repo_index') {
         expect(tool.annotations).toEqual({
           readOnlyHint: false,
           destructiveHint: true,
           idempotentHint: false,
           openWorldHint: false,
         });
-        expect(tool.input_schema.required).toEqual(['repo_id', 'path', 'content']);
-        expect(tool.input_schema.properties.expected_sha256).toEqual({ type: 'string' });
-        expect(tool.input_schema.properties.must_not_exist).toEqual({ type: 'boolean' });
+        if (tool.name === 'write_file') {
+          expect(tool.input_schema.required).toEqual(['repo_id', 'path', 'content']);
+          expect(tool.input_schema.properties.expected_sha256).toEqual({ type: 'string' });
+          expect(tool.input_schema.properties.must_not_exist).toEqual({ type: 'boolean' });
+        } else {
+          expect(tool.input_schema.required).toEqual(['repo_id']);
+          expect(tool.input_schema.properties.paths.items).toEqual({ type: 'string' });
+        }
       } else {
         expect(tool.annotations).toEqual({
           readOnlyHint: true,

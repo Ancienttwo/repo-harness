@@ -45,7 +45,7 @@
     },
     "tools": {
       "type": "array",
-      "minItems": 8,
+      "minItems": 9,
       "items": {
         "$ref": "#/$defs/tool"
       }
@@ -118,7 +118,8 @@
             "read_file",
             "read_files",
             "stat_file",
-            "write_file"
+            "write_file",
+            "refresh_repo_index"
           ]
         },
         "description": {
@@ -965,6 +966,109 @@
               },
               "index_state": {
                 "type": "string"
+              }
+            },
+            "additionalProperties": true
+          },
+          {
+            "type": "object",
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {
+                "type": "object",
+                "required": [
+                  "code",
+                  "message",
+                  "retryable"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string"
+                  },
+                  "message": {
+                    "type": "string"
+                  },
+                  "retryable": {
+                    "type": "boolean"
+                  },
+                  "details": {}
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "refresh_repo_index",
+      "description": "Synchronize CodeGraph for a read_write repo after mutations and return the new index/snapshot state.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "repo_id"
+        ],
+        "properties": {
+          "repo_id": {
+            "type": "string"
+          },
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "repo_id",
+              "snapshot_id",
+              "ignore_digest",
+              "paths",
+              "refreshed",
+              "index_state",
+              "refresh",
+              "index"
+            ],
+            "properties": {
+              "repo_id": {
+                "type": "string"
+              },
+              "snapshot_id": {
+                "type": "string"
+              },
+              "ignore_digest": {
+                "type": "string"
+              },
+              "paths": {
+                "type": "array"
+              },
+              "refreshed": {
+                "type": "boolean"
+              },
+              "index_state": {
+                "type": "string"
+              },
+              "refresh": {
+                "type": "object"
+              },
+              "index": {
+                "type": "object"
               }
             },
             "additionalProperties": true
