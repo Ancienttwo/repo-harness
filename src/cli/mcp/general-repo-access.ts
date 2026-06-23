@@ -1,6 +1,6 @@
 import { createHash } from 'crypto';
-import { closeSync, constants, existsSync, lstatSync, openSync, readFileSync, readSync, readdirSync, realpathSync, statSync } from 'fs';
-import { basename, isAbsolute, relative, resolve, sep } from 'path';
+import { closeSync, constants, existsSync, fstatSync, lstatSync, openSync, readFileSync, readSync, readdirSync, realpathSync, statSync } from 'fs';
+import { basename, dirname, isAbsolute, relative, resolve, sep } from 'path';
 import { readRegisteredRepoHarnessRepos, repoHarnessRepoIdFor, type RepoHarnessAccessMode } from '../../effects/repo-registry';
 import { hashMcpInput, tryWriteMcpAuditEntry } from './audit';
 import { globMatches, isPathInside } from './paths';
@@ -58,6 +58,8 @@ interface ResolvedRepoPath {
   modifiedAt?: string;
   symlinkTargetKind: SymlinkTargetKind;
   readable: boolean;
+  identity?: string;
+  parentIdentity?: string;
 }
 
 interface ManifestEntry {
@@ -135,6 +137,15 @@ function audit(ctx: GeneralRepoToolContext, tool: string, status: 'ok' | 'blocke
 
 function sha256(value: string | Buffer): string {
   return createHash('sha256').update(value).digest('hex');
+}
+
+function statIdentity(stat: { dev: number; ino: number }): string {
+  return `${stat.dev}:${stat.ino}`;
+}
+
+function openNoFollow(path: string): number {
+  const noFollow = typeof constants.O_NOFOLLOW === 'number' ? constants.O_NOFOLLOW : 0;
+  return openSync(path, constants.O_RDONLY | noFollow);
 }
 
 function numberArg(value: unknown, fallback: number, min: number, max: number): number {
@@ -250,7 +261,25 @@ function parseIgnoreLine(line: string): IgnoreRule | null {
 function readIgnorePolicy(repoRoot: string): IgnorePolicy {
   const ignorePath = resolve(repoRoot, '.ignore');
   if (!existsSync(ignorePath)) return { digest: `sha256:${sha256('')}`, rules: [] };
-  const text = readFileSync(ignorePath, 'utf-8');
+  const before = lstatSync(ignorePath);
+  if (before.isSymbolicLink()) {
+    throw new GeneralRepoAccessError('SYMLINK_ESCAPE', '.ignore must be a regular repo-local file', { path: '.ignore' });
+  }
+  if (!before.isFile()) {
+    throw new GeneralRepoAccessError('NOT_A_FILE', '.ignore must be a regular file', { path: '.ignore' });
+  }
+  const fd = openNoFollow(ignorePath);
+  let buffer: Buffer;
+  try {
+    const opened = fstatSync(fd);
+    if (!opened.isFile() || statIdentity(opened) !== statIdentity(before)) {
+      throw new GeneralRepoAccessError('SNAPSHOT_STALE', '.ignore changed while it was being opened', { path: '.ignore' }, true);
+    }
+    buffer = readFileSync(fd);
+  } finally {
+    closeSync(fd);
+  }
+  const text = buffer.toString('utf-8');
   return {
     digest: `sha256:${sha256(text)}`,
     rules: text.split(/\r?\n/).map(parseIgnoreLine).filter((rule): rule is IgnoreRule => rule !== null),
@@ -362,6 +391,7 @@ function resolveRepoPath(repo: RepoRecord, inputPath: unknown, ignore: IgnorePol
   }
 
   const fileStat = readable ? statSync(canonicalPath) : lstat;
+  const parentStat = statSync(dirname(absolutePath));
   if (opts.requireFile && (!readable || !fileStat.isFile())) {
     throw new GeneralRepoAccessError('NOT_A_FILE', 'path is not a regular file', { path: relativePath });
   }
@@ -379,7 +409,51 @@ function resolveRepoPath(repo: RepoRecord, inputPath: unknown, ignore: IgnorePol
     modifiedAt: fileStat.mtime.toISOString(),
     symlinkTargetKind,
     readable,
+    identity: readable ? statIdentity(fileStat) : undefined,
+    parentIdentity: statIdentity(parentStat),
   };
+}
+
+function revalidateResolvedPath(
+  resolved: ResolvedRepoPath,
+  ignore: IgnorePolicy,
+  opened?: { dev: number; ino: number; isFile(): boolean },
+): void {
+  if (resolved.parentIdentity && statIdentity(statSync(dirname(resolved.absolutePath))) !== resolved.parentIdentity) {
+    throw new GeneralRepoAccessError('SNAPSHOT_STALE', 'path parent changed after guard resolution', { path: resolved.relativePath }, true);
+  }
+  const currentType = entryType(resolved.absolutePath);
+  const currentCanonical = currentType === 'symlink' ? realpathSync(resolved.absolutePath) : realpathSync(resolved.absolutePath);
+  if (!isPathInside(resolved.repo.canonicalRoot, currentCanonical)) {
+    throw new GeneralRepoAccessError('PATH_OUTSIDE_REPO', 'path escapes repo root after open', { path: resolved.relativePath });
+  }
+  const physicalRelative = toPosixPath(relative(resolved.repo.canonicalRoot, currentCanonical)) || '.';
+  if (physicalRelative !== '.' && isIgnored(ignore, physicalRelative)) {
+    throw new GeneralRepoAccessError('PATH_IGNORED', 'path target is excluded by .ignore after open', { path: resolved.relativePath });
+  }
+  const currentStat = statSync(currentCanonical);
+  if (resolved.identity && statIdentity(currentStat) !== resolved.identity) {
+    throw new GeneralRepoAccessError('SNAPSHOT_STALE', 'path changed after guard resolution', { path: resolved.relativePath }, true);
+  }
+  if (opened) {
+    if (!opened.isFile()) {
+      throw new GeneralRepoAccessError('NOT_A_FILE', 'opened path is not a regular file', { path: resolved.relativePath });
+    }
+    if (resolved.identity && statIdentity(opened) !== resolved.identity) {
+      throw new GeneralRepoAccessError('SNAPSHOT_STALE', 'opened file changed after guard resolution', { path: resolved.relativePath }, true);
+    }
+  }
+}
+
+function readStableResolvedFile(resolved: ResolvedRepoPath, ignore: IgnorePolicy): Buffer {
+  const fd = openNoFollow(resolved.canonicalPath);
+  try {
+    const opened = fstatSync(fd);
+    revalidateResolvedPath(resolved, ignore, opened);
+    return readFileSync(fd);
+  } finally {
+    closeSync(fd);
+  }
 }
 
 function commonFields(repo: RepoRecord, ignore: IgnorePolicy) {
@@ -402,8 +476,9 @@ function metadataForResolved(resolved: ResolvedRepoPath): ManifestEntry {
   if (resolved.readable) {
     const stat = statSync(resolved.canonicalPath);
     if (stat.isFile()) {
-      binary = binaryProbe(resolved.canonicalPath);
-      fileHash = sha256(readFileSync(resolved.canonicalPath));
+      const raw = readStableResolvedFile(resolved, { digest: '', rules: [] });
+      binary = raw.subarray(0, BINARY_PROBE_BYTES).includes(0);
+      fileHash = sha256(raw);
     }
   }
   return {
@@ -480,13 +555,23 @@ function readFilePayload(repo: RepoRecord, ignore: IgnorePolicy, args: Record<st
   if (args.line_range !== undefined && args.byte_range !== undefined) {
     throw new GeneralRepoAccessError('INVALID_RANGE', 'line_range and byte_range are mutually exclusive');
   }
+  let cursorByteStart: number | null = null;
+  const cursor = typeof args.cursor === 'string' ? args.cursor.trim() : '';
+  if (cursor && args.line_range === undefined && args.byte_range === undefined) {
+    const match = /^(byte|line):([0-9]+)$/.exec(cursor);
+    if (!match) throw new GeneralRepoAccessError('INVALID_RANGE', 'cursor must use byte:<offset> or line:<line>');
+    const offset = Number(match[2]);
+    if (!Number.isSafeInteger(offset) || offset < 0) throw new GeneralRepoAccessError('INVALID_RANGE', 'cursor offset is invalid');
+    if (match[1] === 'byte') cursorByteStart = offset;
+    if (match[1] === 'line') args = { ...args, line_range: [Math.max(1, offset), Math.max(1, offset) + MAX_READ_LINES - 1] };
+  }
   const target = resolveRepoPath(repo, args.path, ignore, { requireFile: true });
-  const raw = readFileSync(target.canonicalPath);
+  const raw = readStableResolvedFile(target, ignore);
   const fullHash = sha256(raw);
   const binary = raw.subarray(0, BINARY_PROBE_BYTES).includes(0);
 
-  if (args.byte_range !== undefined) {
-    const range = byteRange(args.byte_range, maxBytes);
+  if (args.byte_range !== undefined || cursorByteStart !== null) {
+    const range = cursorByteStart !== null ? [cursorByteStart, maxBytes] as [number, number] : byteRange(args.byte_range, maxBytes);
     if (!range) throw new GeneralRepoAccessError('INVALID_RANGE', 'byte_range must be [start, length]');
     const [start, length] = range;
     const chunk = raw.subarray(start, start + length);
@@ -710,7 +795,7 @@ function searchText(ctx: GeneralRepoToolContext, args: Record<string, unknown>):
     if (entry.type !== 'file' || !entry.readable || seen.has(entry.path) || entry.binary || (entry.size ?? 0) > SEARCH_FILE_SCAN_BYTES) continue;
     seen.add(entry.path);
     const resolved = resolveRepoPath(repo, entry.path, ignore, { requireFile: true });
-    const text = readFileSync(resolved.canonicalPath, 'utf-8');
+    const text = readStableResolvedFile(resolved, ignore).toString('utf-8');
     const lines = text.split(/\r?\n/);
     for (let index = 0; index < lines.length; index += 1) {
       const line = lines[index] ?? '';

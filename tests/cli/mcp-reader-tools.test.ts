@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { getMcpPolicy } from '../../src/cli/mcp/policy';
@@ -78,7 +78,8 @@ describe('MCP reader tools', () => {
       expect(status.schema_hash).toMatch(/^[a-f0-9]{64}$/);
 
       const roots = await jsonTool(ctx, 'list_allowed_roots');
-      const root = roots.roots.find((entry: { path: string }) => entry.path === realpathSync(repoRoot));
+      const root = roots.roots[0];
+      expect(root.path).toBeUndefined();
       expect(root.root_id).toMatch(/^root_/);
       expect(root.repo_id).toMatch(/^repo_/);
       expect(roots.repos.some((entry: { repo_id: string }) => entry.repo_id === root.repo_id)).toBe(true);
@@ -177,6 +178,10 @@ describe('MCP reader tools', () => {
         const huge = await jsonTool(ctx, 'read_file', { repo_id: repoId, path: 'docs/huge.txt' });
         expect(huge.has_more).toBe(true);
         expect(huge.next_cursor).toBe('byte:262144');
+        const hugeNext = await jsonTool(ctx, 'read_file', { repo_id: repoId, path: 'docs/huge.txt', cursor: huge.next_cursor });
+        expect(hugeNext.bytes_returned).toBe(37_856);
+        expect(hugeNext.has_more).toBe(false);
+        expect(hugeNext.next_cursor).toBeNull();
 
         const search = await jsonTool(ctx, 'search_text', { repo_id: repoId, query: 'sk-testsecret', paths: ['.env'] });
         expect(search.matches[0].snippet).toContain('sk-testsecret');
@@ -203,6 +208,28 @@ describe('MCP reader tools', () => {
           const external = await jsonTool(ctx, 'read_file', { repo_id: repoId, path: 'docs/external-link.txt' });
           expect(external.error.code).toBe('SYMLINK_ESCAPE');
         }
+      } finally {
+        rmSync(outside, { recursive: true, force: true });
+      }
+    });
+  });
+
+  test('.ignore symlink fails closed before policy content is read', async () => {
+    await withReaderRepo(async (repoRoot, ctx) => {
+      const outside = mkdtempSync(join(tmpdir(), 'repo-harness-ignore-outside-'));
+      try {
+        const original = join(repoRoot, '.ignore');
+        rmSync(original, { force: true });
+        writeFileSync(join(outside, 'ignore-policy.txt'), '.env\n');
+        try {
+          symlinkSync(join(outside, 'ignore-policy.txt'), original);
+        } catch (_error) {
+          return;
+        }
+        const roots = await jsonTool(ctx, 'list_allowed_roots');
+        const repoId = roots.roots[0].repo_id;
+        const manifest = await jsonTool(ctx, 'repo_manifest', { repo_id: repoId });
+        expect(manifest.error.code).toBe('SYMLINK_ESCAPE');
       } finally {
         rmSync(outside, { recursive: true, force: true });
       }

@@ -243,7 +243,6 @@ function listAllowedRoots(ctx: ReaderToolContext): ReaderToolResult {
       root_id: root.id,
       repo_id: repoHarnessRepoIdFor(root.canonicalPath),
       display_name: root.displayName,
-      path: root.canonicalPath,
       readable: root.readable,
     })),
     repos: Array.from(generalRepos.values()),
