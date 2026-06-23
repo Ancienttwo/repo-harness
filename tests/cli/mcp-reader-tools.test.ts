@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import { spawnSync } from 'child_process';
+import { createHash } from 'crypto';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -20,6 +22,26 @@ function readJsonLines(path: string): Record<string, unknown>[] {
     .split(/\r?\n/)
     .filter(Boolean)
     .map((line) => JSON.parse(line));
+}
+
+function sha256(value: string): string {
+  return createHash('sha256').update(value).digest('hex');
+}
+
+function mutationLockPath(repoId: string, relativePath: string): string {
+  const harnessHome = process.env.REPO_HARNESS_HOME;
+  if (!harnessHome) throw new Error('REPO_HARNESS_HOME is required for mutation lock tests');
+  return join(harnessHome, 'mcp', 'mutation-locks', repoId, `${sha256(relativePath).slice(0, 32)}.lock`);
+}
+
+function writeMutationLockOwner(lockPath: string, owner: Record<string, unknown>): void {
+  mkdirSync(lockPath, { recursive: true, mode: 0o700 });
+  writeFileSync(join(lockPath, 'owner.json'), `${JSON.stringify(owner)}\n`, { encoding: 'utf-8', mode: 0o600 });
+}
+
+function exitedProcessPid(): number {
+  const result = spawnSync(process.execPath, ['-e', '']);
+  return typeof result.pid === 'number' && result.pid > 0 ? result.pid : 999999;
 }
 
 async function withMutationFault<T>(point: string, fn: () => Promise<T>): Promise<T> {
@@ -1051,6 +1073,86 @@ describe('MCP reader tools', () => {
 	      } finally {
 	        rmSync(externalLockRoot, { recursive: true, force: true });
 	      }
+	    }, { accessMode: 'read_write' });
+	  });
+
+	  test('write mutation reclaims dead owner directory locks before commit', async () => {
+	    await withReaderRepo(async (repoRoot, ctx) => {
+	      const repoId = (await jsonTool(ctx, 'list_allowed_roots')).roots[0].repo_id;
+	      const relativePath = 'docs/stale-lock.txt';
+	      const lockPath = mutationLockPath(repoId, relativePath);
+	      writeMutationLockOwner(lockPath, {
+	        repo_id: repoId,
+	        path: relativePath,
+	        pid: exitedProcessPid(),
+	        token: 'dead-owner',
+	        created_at: '2026-06-23T00:00:00.000Z',
+	      });
+
+	      const created = await jsonTool(ctx, 'write_file', {
+	        repo_id: repoId,
+	        path: relativePath,
+	        content: 'recovered\n',
+	        must_not_exist: true,
+	      });
+
+	      expect(created.error).toBeUndefined();
+	      expect(readFileSync(join(repoRoot, relativePath), 'utf-8')).toBe('recovered\n');
+	      expect(existsSync(lockPath)).toBe(false);
+	    }, { accessMode: 'read_write' });
+	  });
+
+	  test('write mutation does not reclaim dead owner locks for a different path', async () => {
+	    await withReaderRepo(async (repoRoot, ctx) => {
+	      const repoId = (await jsonTool(ctx, 'list_allowed_roots')).roots[0].repo_id;
+	      const relativePath = 'docs/mismatched-lock.txt';
+	      const lockPath = mutationLockPath(repoId, relativePath);
+	      writeMutationLockOwner(lockPath, {
+	        repo_id: repoId,
+	        path: 'docs/other-lock.txt',
+	        pid: exitedProcessPid(),
+	        token: 'mismatched-owner',
+	        created_at: '2026-06-23T00:00:00.000Z',
+	      });
+
+	      const blocked = await jsonTool(ctx, 'write_file', {
+	        repo_id: repoId,
+	        path: relativePath,
+	        content: 'blocked\n',
+	        must_not_exist: true,
+	      });
+
+	      expect(blocked.error.code).toBe('REVISION_CONFLICT');
+	      expect(existsSync(join(repoRoot, relativePath))).toBe(false);
+	      expect(existsSync(lockPath)).toBe(true);
+	      rmSync(lockPath, { recursive: true, force: true });
+	    }, { accessMode: 'read_write' });
+	  });
+
+	  test('write mutation keeps live owner directory locks fail-closed', async () => {
+	    await withReaderRepo(async (repoRoot, ctx) => {
+	      const repoId = (await jsonTool(ctx, 'list_allowed_roots')).roots[0].repo_id;
+	      const relativePath = 'docs/live-lock.txt';
+	      const lockPath = mutationLockPath(repoId, relativePath);
+	      writeMutationLockOwner(lockPath, {
+	        repo_id: repoId,
+	        path: relativePath,
+	        pid: process.pid,
+	        token: 'live-owner',
+	        created_at: '2026-06-23T00:00:00.000Z',
+	      });
+
+	      const blocked = await jsonTool(ctx, 'write_file', {
+	        repo_id: repoId,
+	        path: relativePath,
+	        content: 'blocked\n',
+	        must_not_exist: true,
+	      });
+
+	      expect(blocked.error.code).toBe('REVISION_CONFLICT');
+	      expect(existsSync(join(repoRoot, relativePath))).toBe(false);
+	      expect(existsSync(lockPath)).toBe(true);
+	      rmSync(lockPath, { recursive: true, force: true });
 	    }, { accessMode: 'read_write' });
 	  });
 

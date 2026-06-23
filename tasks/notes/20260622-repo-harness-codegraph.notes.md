@@ -453,3 +453,17 @@ Sprint 0 contract freeze for `plans/sprints/20260622-repo-harness-codegraph-spri
   exit evidence.
 - Close the superseded small PRs after the replacement module PRs exist, leaving
   their branches intact for audit history.
+
+## 2026-06-24 mutation lock stale recovery
+
+- Follow-up for external review P2-1: directory mutation locks in the trusted
+  `REPO_HARNESS_HOME/mcp/mutation-locks/<repo_id>` root could survive a killed
+  process and block later writes forever.
+- The reclaim rule is deliberately narrow. A later writer only reclaims a lock
+  when `owner.json` has the same repo id and relative path and the recorded PID
+  is no longer live. Live owners, malformed owners, missing owners, or mismatched
+  repo/path metadata remain fail-closed as `REVISION_CONFLICT`.
+- Reclaim first renames the stale lock directory to a unique sibling path before
+  removal, then retries atomic `mkdir`. Release now removes only locks whose
+  owner token still matches the process-created token, so a cleanup path cannot
+  remove a replacement lock.

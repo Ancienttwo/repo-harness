@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-06-24T00:52:08+0800 -->
+<!-- updated_at: 2026-06-24T01:53:50+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Idle
-> **Updated At**: 2026-06-24T00:52:08+0800
+> **Updated At**: 2026-06-24T01:53:50+0800
 > **Source Branch**: main
-> **Source Commit**: c75273d
+> **Source Commit**: 1b87fbf
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: split-hook-latency-from-codegraph-rollout
+> **Reason**: mcp-mutation-lock-stale-reclaim
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -48,17 +48,14 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 8 changed/untracked path(s)
+- Summary: 5 changed/untracked path(s)
 
 ```
- M .ai/hooks/.projection.json
- M .ai/hooks/post-tool-observer.sh
- M .ai/hooks/prompt-guard.sh
- M assets/hooks/post-tool-observer.sh
- M assets/hooks/prompt-guard.sh
- M src/cli/hook/runtime.ts
- M tests/cli/hook.test.ts
- M tests/hook-runtime.test.ts
+ M src/cli/mcp/general-repo-access.ts
+ M tasks/current.md
+ M tasks/notes/20260622-repo-harness-codegraph.notes.md
+ M tests/cli/mcp-reader-tools.test.ts
+ M tests/helper-scripts.test.ts
 ```
 
 ## Source Artifacts

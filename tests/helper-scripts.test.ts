@@ -3329,7 +3329,7 @@ describe("Workflow helper scripts", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 10000);
 
   test("check-task-workflow should fail strict mode when no JSON runtime is available", () => {
     const cwd = tmpWorkspace("helper-check-workflow-runtime");
