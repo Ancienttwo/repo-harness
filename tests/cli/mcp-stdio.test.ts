@@ -4,6 +4,7 @@ import { describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import { repoHarnessPackageVersion } from '../../src/cli/mcp/version';
 
 const ROOT = join(import.meta.dir, '../..');
@@ -68,7 +69,10 @@ describe('mcp stdio transport', () => {
       expect(toolNames).not.toContain('run_agent_goal');
 
       const roots = textPayload(await client.callTool({ name: 'list_allowed_roots', arguments: {} }));
-      const root = (roots.roots as Array<{ root_id: string; path: string }>).find((entry) => entry.path === realpathSync(repoRoot));
+      const root = (roots.roots as Array<{ root_id: string; repo_id: string; path?: string }>).find(
+        (entry) => entry.repo_id === repoHarnessRepoIdFor(realpathSync(repoRoot)),
+      );
+      expect(root?.path).toBeUndefined();
       expect(root?.root_id).toMatch(/^root_/);
 
       const opened = textPayload(await client.callTool({
