@@ -400,7 +400,7 @@ describe('MCP reader tools', () => {
           afterSnapshotWalk(event) {
             if (event.kind !== 'complete' || completeMutations >= 2) return;
             completeMutations += 1;
-            writeFileSync(join(repoRoot, 'src', 'race-complete.ts'), `export const race = ${completeMutations};\n`);
+            writeFileSync(join(repoRoot, 'src', `race-complete-${completeMutations}.ts`), `export const race = ${completeMutations};\n`);
           },
         },
       };
@@ -417,7 +417,7 @@ describe('MCP reader tools', () => {
           afterSnapshotWalk(event) {
             if (event.kind !== 'manifest_page' || pageMutations >= 2) return;
             pageMutations += 1;
-            writeFileSync(join(repoRoot, 'src', 'race-page.ts'), `export const pageRace = ${pageMutations};\n`);
+            writeFileSync(join(repoRoot, 'src', `race-page-${pageMutations}.ts`), `export const pageRace = ${pageMutations};\n`);
           },
         },
       };
