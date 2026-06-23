@@ -615,6 +615,8 @@ export function runMcpSetupChatgpt(opts: {
       '.repo-harness/mcp.oauth-tokens.json',
       '.ai/harness/mcp/audit.log',
       '.ai/harness/mcp/index-events.jsonl',
+      '.ai/harness/mcp/metrics.jsonl',
+      '.ai/harness/mcp/trace.jsonl',
     ], changed);
   }
 

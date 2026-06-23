@@ -191,7 +191,10 @@ const SNAPSHOT_CACHE = new Map<string, VisibleEntrySnapshot>();
 const ENTRY_METADATA_CACHE = new Map<string, EntryMetadataCacheValue>();
 const WRITE_TOOLS = new Set<string>(['write_file', 'apply_patch', 'move_path', 'delete_path', 'refresh_repo_index']);
 const MCP_INDEX_EVENTS_RELATIVE_PATH = '.ai/harness/mcp/index-events.jsonl';
+const MCP_METRICS_RELATIVE_PATH = '.ai/harness/mcp/metrics.jsonl';
+const MCP_TRACE_RELATIVE_PATH = '.ai/harness/mcp/trace.jsonl';
 const MUTATION_FAULT_ENV = 'REPO_HARNESS_MCP_MUTATION_FAULT_POINT';
+const PATH_ESCAPE_ERROR_CODES = new Set(['INVALID_RELATIVE_PATH', 'PATH_OUTSIDE_REPO', 'SYMLINK_ESCAPE']);
 
 export type GeneralRepoToolName = typeof GENERAL_REPO_TOOLS[number];
 
@@ -261,6 +264,13 @@ function recordObject(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>;
 }
 
+function recordArray(value: unknown): Record<string, unknown>[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => recordObject(entry))
+    .filter((entry): entry is Record<string, unknown> => entry !== null);
+}
+
 function stringArray(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const values = value.filter((entry): entry is string => typeof entry === 'string');
@@ -269,6 +279,10 @@ function stringArray(value: unknown): string[] | undefined {
 
 function stringField(value: unknown): string | undefined {
   return typeof value === 'string' && value ? value : undefined;
+}
+
+function numberField(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
 function auditDetailsFromResult(result: GeneralRepoToolResult, input: Record<string, unknown>, durationMs: number, tool: string): Partial<McpAuditEntry> {
@@ -341,6 +355,18 @@ function cachePaths(paths: string[] | undefined): string[] {
 
 function mcpIndexEventsPath(repoRoot: string): string {
   return join(repoRoot, MCP_INDEX_EVENTS_RELATIVE_PATH);
+}
+
+function mcpMetricsPath(repoRoot: string): string {
+  return join(repoRoot, MCP_METRICS_RELATIVE_PATH);
+}
+
+function mcpTracePath(repoRoot: string): string {
+  return join(repoRoot, MCP_TRACE_RELATIVE_PATH);
+}
+
+function correlationId(tool: string): string {
+  return `mcpcorr_${sha256(`${tool}\0${Date.now()}\0${randomBytes(8).toString('hex')}`).slice(0, 16)}`;
 }
 
 function indexEventId(repo: RepoRecord, eventType: string, seed: string): string {
@@ -425,6 +451,164 @@ function indexRecovery(paths: string[], retryable = true): Record<string, unknow
     dead_letter_log: MCP_INDEX_EVENTS_RELATIVE_PATH,
     manual_recovery: 'bash scripts/ensure-codegraph.sh --sync',
   };
+}
+
+function tryAppendJsonLine(path: string, entry: Record<string, unknown>): void {
+  try {
+    mkdirSync(dirname(path), { recursive: true });
+    appendFileSync(path, `${JSON.stringify(entry)}\n`, 'utf-8');
+  } catch (_error) {
+    // Observability must never change MCP tool behavior.
+  }
+}
+
+function withCorrelationId(result: GeneralRepoToolResult, id: string): GeneralRepoToolResult {
+  const payload = recordObject(result.structuredContent);
+  if (!payload) return result;
+  const nextPayload = { ...payload, correlation_id: id };
+  return {
+    ...result,
+    structuredContent: nextPayload,
+    content: [{ type: 'text', text: JSON.stringify(nextPayload, null, 2) }],
+  };
+}
+
+function payloadCodeGraph(payload: Record<string, unknown> | null): Record<string, unknown> | null {
+  return recordObject(payload?.codegraph);
+}
+
+function payloadIndex(payload: Record<string, unknown> | null): Record<string, unknown> | null {
+  return recordObject(payload?.index);
+}
+
+function payloadRefresh(payload: Record<string, unknown> | null): Record<string, unknown> | null {
+  return recordObject(payload?.refresh);
+}
+
+function payloadDiff(payload: Record<string, unknown> | null): Record<string, unknown> | null {
+  return recordObject(payload?.diff);
+}
+
+function payloadPathDigest(payload: Record<string, unknown> | null, input: Record<string, unknown>): string {
+  const snapshotCache = recordObject(payload?.snapshot_cache);
+  const digest = stringField(snapshotCache?.path_digest);
+  if (digest) return digest;
+  return `sha256:${sha256(JSON.stringify(cachePaths(auditPaths(input))))}`;
+}
+
+function payloadPathCount(payload: Record<string, unknown> | null, input: Record<string, unknown>): number {
+  const snapshotCache = recordObject(payload?.snapshot_cache);
+  const paths = stringArray(snapshotCache?.paths);
+  return paths?.length ?? cachePaths(auditPaths(input)).length;
+}
+
+function payloadBytesReturned(payload: Record<string, unknown> | null): number {
+  let total = numberField(payload?.bytes_returned) ?? 0;
+  for (const result of recordArray(payload?.results)) {
+    total += numberField(result.bytes_returned) ?? 0;
+  }
+  return total;
+}
+
+function payloadBytesWritten(payload: Record<string, unknown> | null): number {
+  const diff = payloadDiff(payload);
+  return numberField(diff?.bytes_after) ?? 0;
+}
+
+function payloadFallbackUsed(payload: Record<string, unknown> | null): boolean {
+  const values = [
+    stringField(payload?.backend),
+    ...recordArray(payload?.results).map((result) => stringField(result.backend)),
+  ].filter((value): value is string => value !== undefined);
+  return values.some((value) => value.includes('filesystem-fallback'));
+}
+
+function payloadIndexLagMs(payload: Record<string, unknown> | null): number | undefined {
+  const index = payloadIndex(payload);
+  const refresh = payloadRefresh(payload);
+  return numberField(index?.index_lag_ms) ?? numberField(refresh?.index_lag_ms);
+}
+
+function resultErrorCode(payload: Record<string, unknown> | null): string | undefined {
+  return stringField(recordObject(payload?.error)?.code);
+}
+
+function traceBackend(payload: Record<string, unknown> | null): string {
+  const backend = stringField(payload?.backend);
+  if (backend) return backend;
+  const codeGraph = payloadCodeGraph(payload);
+  if (codeGraph?.available === false) return 'filesystem-fallback';
+  return 'codegraph-or-filesystem';
+}
+
+function writeToolObservability(ctx: GeneralRepoToolContext, tool: string, status: 'ok' | 'blocked' | 'failed', input: Record<string, unknown>, result: GeneralRepoToolResult | null, durationMs: number, id: string, errorCode?: string): void {
+  const payload = recordObject(result?.structuredContent);
+  const codeGraph = payloadCodeGraph(payload);
+  const index = payloadIndex(payload);
+  const refresh = payloadRefresh(payload);
+  const effectiveErrorCode = errorCode ?? resultErrorCode(payload);
+  const indexState = stringField(payload?.index_state) ?? stringField(index?.state);
+  const indexLagMs = payloadIndexLagMs(payload);
+  const manifestIncomplete = tool === 'repo_manifest' && payload?.complete === false;
+  const reindexFailure = tool === 'refresh_repo_index' && (status !== 'ok' || indexState === 'failed');
+  const writeConflict = effectiveErrorCode === 'REVISION_CONFLICT';
+  const atomicWriteFailure = WRITE_TOOLS.has(tool) && (effectiveErrorCode === 'INJECTED_MUTATION_FAULT' || status === 'failed');
+  const pathEscapeAttempt = effectiveErrorCode ? PATH_ESCAPE_ERROR_CODES.has(effectiveErrorCode) : false;
+
+  const metric = {
+    schema_version: 1,
+    event_type: 'mcp_tool_metric',
+    timestamp: new Date().toISOString(),
+    correlation_id: id,
+    repo_id: stringField(payload?.repo_id) ?? stringField(input.repo_id),
+    tool,
+    operation: stringField(payload?.operation) ?? tool,
+    status,
+    error_code: effectiveErrorCode,
+    duration_ms: durationMs,
+    codegraph_revision: stringField(payload?.index_revision) ?? stringField(codeGraph?.index_revision),
+    codegraph_available: typeof codeGraph?.available === 'boolean' ? codeGraph.available : undefined,
+    codegraph_latency_ms: numberField(codeGraph?.latency_ms),
+    path_count: payloadPathCount(payload, input),
+    path_digest: payloadPathDigest(payload, input),
+    bytes_returned: payloadBytesReturned(payload),
+    bytes_written: payloadBytesWritten(payload),
+    partial: payload?.partial === true,
+    fallback_used: payloadFallbackUsed(payload),
+    filtered_path_count: numberField(codeGraph?.filtered_paths) ?? 0,
+    manifest_parity_failure_count: tool === 'repo_manifest' ? numberField(codeGraph?.filtered_paths) ?? 0 : 0,
+    manifest_incomplete: manifestIncomplete,
+    snapshot_stale: effectiveErrorCode === 'SNAPSHOT_STALE',
+    index_lagging: codeGraph?.index_lagging === true || indexState === 'index_lagging',
+    index_lag_ms: indexLagMs,
+    lagging_path_count: numberField(codeGraph?.lagging_path_count) ?? numberField(index?.lagging_path_count) ?? 0,
+    write_conflict: writeConflict,
+    atomic_write_failure: atomicWriteFailure,
+    reindex_failure: reindexFailure,
+    path_escape_attempt: pathEscapeAttempt,
+  };
+
+  const trace = {
+    schema_version: 1,
+    event_type: 'mcp_tool_trace',
+    timestamp: metric.timestamp,
+    correlation_id: id,
+    trace_id: id,
+    repo_id: metric.repo_id,
+    tool,
+    status,
+    duration_ms: durationMs,
+    error_code: effectiveErrorCode,
+    route: ['mcp_tool_gateway', 'repo_policy', 'path_guard_ignore_policy', traceBackend(payload), 'response'],
+    backend: traceBackend(payload),
+    codegraph_revision: metric.codegraph_revision,
+    index_state: indexState,
+    source_index_event_id: stringField(index?.source_event_id) ?? stringField(refresh?.source_event_id),
+    index_event_id: stringField(index?.event_id),
+  };
+
+  tryAppendJsonLine(mcpMetricsPath(ctx.repoRoot), metric);
+  tryAppendJsonLine(mcpTracePath(ctx.repoRoot), trace);
 }
 
 function injectMutationFault(point: string): void {
@@ -992,7 +1176,7 @@ function pushManifestChildren(pending: PendingWalkEntry[], absoluteDir: string, 
 }
 
 function isInternalRevisionPath(path: string): boolean {
-  return path === '.ai/harness/mcp/audit.log' || path.startsWith('.ai/harness/mcp/');
+  return path === '.ai' || path === '.ai/harness' || path === '.ai/harness/mcp' || path.startsWith('.ai/harness/mcp/');
 }
 
 function createManifestDigest() {
@@ -2664,6 +2848,7 @@ export function buildGeneralRepoToolDefinitions(): GeneralRepoToolDefinition[] {
 
 export async function callGeneralRepoTool(ctx: GeneralRepoToolContext, name: string, args: Record<string, unknown> = {}): Promise<GeneralRepoToolResult> {
   const startedAtMs = Date.now();
+  const callCorrelationId = correlationId(name);
   try {
     let result: GeneralRepoToolResult;
     switch (name) {
@@ -2706,22 +2891,37 @@ export async function callGeneralRepoTool(ctx: GeneralRepoToolContext, name: str
       default:
         return errorResult('INTERNAL_ADAPTER_ERROR', `tool is not a general repo reader tool: ${name}`);
     }
-    audit(ctx, name, 'ok', args, auditTargetPath(args), undefined, auditDetailsFromResult(result, args, Date.now() - startedAtMs, name));
-    return result;
+    const durationMs = Date.now() - startedAtMs;
+    const correlated = withCorrelationId(result, callCorrelationId);
+    audit(ctx, name, 'ok', args, auditTargetPath(args), undefined, {
+      ...auditDetailsFromResult(correlated, args, durationMs, name),
+      correlationId: callCorrelationId,
+    });
+    writeToolObservability(ctx, name, 'ok', args, correlated, durationMs, callCorrelationId);
+    return correlated;
   } catch (error) {
+    const durationMs = Date.now() - startedAtMs;
     if (error instanceof GeneralRepoAccessError) {
       const message = redactMcpText(error.message).text;
-      audit(ctx, name, 'blocked', args, auditTargetPath(args), message, auditDetailsFromError(error, args, Date.now() - startedAtMs, name));
-      return errorResult(error.code, message, error.details, error.retryable);
+      const result = withCorrelationId(errorResult(error.code, message, error.details, error.retryable), callCorrelationId);
+      audit(ctx, name, 'blocked', args, auditTargetPath(args), message, {
+        ...auditDetailsFromError(error, args, durationMs, name),
+        correlationId: callCorrelationId,
+      });
+      writeToolObservability(ctx, name, 'blocked', args, result, durationMs, callCorrelationId, error.code);
+      return result;
     }
     const message = redactMcpText(error instanceof Error ? error.message : String(error)).text;
+    const result = withCorrelationId(errorResult('INTERNAL_ADAPTER_ERROR', message), callCorrelationId);
     audit(ctx, name, 'failed', args, auditTargetPath(args), message, {
       repoId: stringField(args.repo_id),
       operation: name,
       relativePaths: auditPaths(args),
-      durationMs: Date.now() - startedAtMs,
+      durationMs,
+      correlationId: callCorrelationId,
       errorCode: 'INTERNAL_ADAPTER_ERROR',
     });
-    return errorResult('INTERNAL_ADAPTER_ERROR', message);
+    writeToolObservability(ctx, name, 'failed', args, result, durationMs, callCorrelationId, 'INTERNAL_ADAPTER_ERROR');
+    return result;
   }
 }

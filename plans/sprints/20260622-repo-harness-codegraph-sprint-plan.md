@@ -737,12 +737,53 @@ Sprint 4 security hardening evidence:
 
 ## 11.2 可观测性
 
-- [ ] **S4-OBS-001** 指标：tool calls、latency、bytes、errors、partial、fallback rate。
-- [ ] **S4-OBS-002** 指标：manifest parity failures、snapshot stale rate、index lag。
-- [ ] **S4-OBS-003** 指标：write conflicts、atomic write failures、reindex failures。
-- [ ] **S4-OBS-004** Dashboard：按 repo、tool、CodeGraph revision 聚合。
-- [ ] **S4-OBS-005** 告警：路径逃逸尝试突增、index lag 超阈值、manifest incomplete、reindex dead-letter。
-- [ ] **S4-OBS-006** tracing：MCP → policy → CodeGraph/FS → response，全链路 correlation id。
+- [x] **S4-OBS-001** 指标：tool calls、latency、bytes、errors、partial、fallback rate。
+- [x] **S4-OBS-002** 指标：manifest parity failures、snapshot stale rate、index lag。
+- [x] **S4-OBS-003** 指标：write conflicts、atomic write failures、reindex failures。
+- [x] **S4-OBS-004** Dashboard：按 repo、tool、CodeGraph revision 聚合。
+- [x] **S4-OBS-005** 告警：路径逃逸尝试突增、index lag 超阈值、manifest incomplete、reindex dead-letter。
+- [x] **S4-OBS-006** tracing：MCP → policy → CodeGraph/FS → response，全链路 correlation id。
+
+Sprint 4 observability evidence:
+
+- Runtime: `src/cli/mcp/general-repo-access.ts`
+- Report script: `scripts/mcp-observability-report.ts`
+- Tests: `tests/cli/mcp-reader-tools.test.ts`,
+  `tests/mcp-observability-report.test.ts`, `tests/cli/mcp-setup.test.ts`
+- Every general repo MCP tool call now receives a `correlation_id` in the MCP
+  response and audit entry. The same id is written to
+  `.ai/harness/mcp/metrics.jsonl` and `.ai/harness/mcp/trace.jsonl`, so an
+  operator can join MCP response, audit, metrics, and trace rows without using
+  local absolute paths.
+- Metrics cover tool, repo id, status, duration, CodeGraph revision/latency,
+  bytes returned/written, partial result, fallback usage, manifest parity
+  mismatches, snapshot stale errors, index lag, write conflicts, atomic write
+  failures, reindex failures, and path-escape attempts. Metrics store path count
+  and path digest, not raw path labels or file content.
+- Trace rows record the route
+  `mcp_tool_gateway -> repo_policy -> path_guard_ignore_policy -> CodeGraph/FS -> response`
+  with backend, status, error code, index state, and index event ids where
+  applicable. Tests verify trace/metrics do not contain authorized file content
+  or secret-bearing fixture text.
+- `scripts/mcp-observability-report.ts` aggregates metrics into a local
+  dashboard grouped by repo, tool, and CodeGraph revision, including p95/max
+  latency, failed-call error rate, blocked-call count, partial/fallback rates,
+  bytes, parity failures, stale
+  snapshots, index lag, write conflicts, atomic failures, reindex failures, and
+  path-escape attempts.
+- The report script emits actionable alerts for path escape spikes, index lag
+  over threshold, incomplete manifests, and reindex dead-letter failures. The
+  CLI exits non-zero when alerts fire, making it usable as a release/canary
+  gate without adding a hosted telemetry dependency.
+- MCP runtime observability files are ignored by setup and `.gitignore`. The
+  snapshot digest explicitly treats `.ai/harness/mcp/` as internal runtime state
+  so metrics/trace writes do not make a caller's `snapshot_id` stale.
+- Claude no-tools diff review reported no P1 findings. The actionable P2s were
+  fixed in this slice: report max-latency aggregation no longer uses argument
+  spreading, large metrics logs are capped to the latest 100k events, blocked
+  policy rejections are separated from failed-call error rate, manifest parity
+  failures are manifest-scoped, and tests cover snapshot stability plus
+  escape-input redaction.
 
 ## 11.3 兼容与迁移
 

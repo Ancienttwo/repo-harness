@@ -259,3 +259,35 @@ Sprint 0 contract freeze for `plans/sprints/20260622-repo-harness-codegraph-spri
   theoretically miss a same-path replacement. This is still stricter than the
   previous realpath-only guard and remains fail-closed for normal remove,
   replace, or symlink target changes observed in the test fixture.
+
+## 2026-06-23 S4 observability slice
+
+- General repo MCP tool calls now generate a response/audit/metrics/trace
+  correlation id. The id is returned as `correlation_id`, recorded on audit
+  entries as `correlationId`, and written to both
+  `.ai/harness/mcp/metrics.jsonl` and `.ai/harness/mcp/trace.jsonl`.
+- Metrics stay content-free: they include repo id, tool, operation, status,
+  error code, duration, CodeGraph revision/latency, path count, path digest,
+  bytes returned/written, partial/fallback flags, manifest parity failures,
+  stale snapshots, index lag, write conflicts, atomic write failures, reindex
+  failures, and path escape attempts. Raw paths and file bodies are intentionally
+  excluded from metric labels.
+- Trace rows are deliberately coarse-grained rather than fake subspan timings:
+  they record the observed route from MCP gateway through policy, path/ignore
+  guard, CodeGraph or filesystem backend, and response. This preserves a useful
+  chain for canary/debugging without inventing precision the runtime does not
+  measure.
+- `scripts/mcp-observability-report.ts` is a local JSONL aggregator, not a
+  hosted telemetry dependency. It produces dashboard rows grouped by repo, tool,
+  and CodeGraph revision, separates failed-call error rate from blocked policy
+  rejections, caps input to the latest 100k metrics/trace events, and emits
+  alerts for path escape spikes, high index lag, incomplete manifests, and
+  reindex dead-letter failures.
+- `.ai/harness/mcp/metrics.jsonl` and `.ai/harness/mcp/trace.jsonl` are added
+  to setup-managed ignore entries. The MCP runtime directory is treated as an
+  internal revision path for snapshot digests so observability writes do not
+  invalidate a user's `snapshot_id` between related tool calls.
+- Claude diff-only review found no P1 issues. Its P2s drove follow-up fixes for
+  large-log max latency aggregation, blocked-vs-failed reporting, manifest-only
+  parity failure accounting, snapshot stability coverage, and escape-input
+  redaction assertions.

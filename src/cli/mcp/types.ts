@@ -51,6 +51,7 @@ export interface McpAuditEntry {
   };
   result?: 'ok' | 'blocked' | 'failed';
   durationMs?: number;
+  correlationId?: string;
   errorCode?: string;
   targetPath?: string;
   inputHash?: string;

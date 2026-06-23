@@ -1169,6 +1169,113 @@ describe('MCP reader tools', () => {
     }, { accessMode: 'read_write' });
   });
 
+  test('general repo observability emits metrics and traces without content labels', async () => {
+    await withReaderRepo(async (repoRoot, ctx) => {
+      const fakeCodeGraph: GeneralRepoCodeGraphAdapter = {
+        discoverRepo() {
+          return {
+            available: true,
+            integrated: true,
+            source: 'test-double',
+            indexRevision: 'index_observable',
+            latencyMs: 7,
+            files: [
+              { path: 'docs/design.md', language: 'markdown', nodeCount: 2, size: 999 },
+              { path: '../outside.ts', language: 'typescript', nodeCount: 1, size: 10 },
+            ],
+          };
+        },
+      };
+      const obsCtx = createReaderToolContext(
+        repoRoot,
+        ctx.policy,
+        new WorkspaceManager({ allowedRoots: [repoRoot], policy: ctx.policy }),
+        fakeCodeGraph,
+      );
+      const repoId = (await jsonTool(obsCtx, 'list_allowed_roots')).roots[0].repo_id;
+
+      const manifest = await jsonTool(obsCtx, 'repo_manifest', { repo_id: repoId, page_size: 20 });
+      expect(manifest.correlation_id).toMatch(/^mcpcorr_[a-f0-9]{16}$/);
+      expect(manifest.codegraph).toMatchObject({
+        index_revision: 'index_observable',
+        filtered_paths: 1,
+        index_lagging: true,
+        lagging_path_count: 1,
+      });
+
+      const fallbackRead = await jsonTool(obsCtx, 'read_file', { repo_id: repoId, path: '.env' });
+      expect(fallbackRead.content).toContain('sk-testsecret');
+      expect(fallbackRead.backend).toBe('filesystem-fallback');
+      expect(fallbackRead.correlation_id).toMatch(/^mcpcorr_[a-f0-9]{16}$/);
+
+      const blocked = await jsonTool(obsCtx, 'stat_file', { repo_id: repoId, path: '../outside.md' });
+      expect(blocked.error.code).toBe('INVALID_RELATIVE_PATH');
+      expect(blocked.correlation_id).toMatch(/^mcpcorr_[a-f0-9]{16}$/);
+
+      const repeatedManifest = await jsonTool(obsCtx, 'repo_manifest', {
+        repo_id: repoId,
+        page_size: 20,
+        snapshot_id: manifest.snapshot_id,
+      });
+      expect(repeatedManifest.snapshot_id).toBe(manifest.snapshot_id);
+      expect(repeatedManifest.error).toBeUndefined();
+
+      const metrics = readJsonLines(join(repoRoot, '.ai', 'harness', 'mcp', 'metrics.jsonl'));
+      const traces = readJsonLines(join(repoRoot, '.ai', 'harness', 'mcp', 'trace.jsonl'));
+      const metricText = JSON.stringify(metrics);
+      const traceText = JSON.stringify(traces);
+      expect(metricText).not.toContain('authentication route');
+      expect(metricText).not.toContain('sk-testsecret');
+      expect(metricText).not.toContain('docs/design.md');
+      expect(metricText).not.toContain('outside');
+      expect(traceText).not.toContain('authentication route');
+      expect(traceText).not.toContain('sk-testsecret');
+      expect(traceText).not.toContain('docs/design.md');
+      expect(traceText).not.toContain('outside');
+
+      const manifestMetric = metrics.find((entry) => entry.correlation_id === manifest.correlation_id);
+      expect(manifestMetric).toMatchObject({
+        event_type: 'mcp_tool_metric',
+        repo_id: repoId,
+        tool: 'repo_manifest',
+        status: 'ok',
+        codegraph_revision: 'index_observable',
+        manifest_parity_failure_count: 1,
+        index_lagging: true,
+        lagging_path_count: 1,
+      });
+      expect(manifestMetric?.path_digest).toMatch(/^sha256:/);
+
+      const readMetric = metrics.find((entry) => entry.correlation_id === fallbackRead.correlation_id);
+      expect(readMetric).toMatchObject({
+        tool: 'read_file',
+        status: 'ok',
+        fallback_used: true,
+        bytes_returned: fallbackRead.bytes_returned,
+        filtered_path_count: 1,
+        manifest_parity_failure_count: 0,
+      });
+
+      const blockedMetric = metrics.find((entry) => entry.correlation_id === blocked.correlation_id);
+      expect(blockedMetric).toMatchObject({
+        tool: 'stat_file',
+        status: 'blocked',
+        error_code: 'INVALID_RELATIVE_PATH',
+        path_escape_attempt: true,
+      });
+
+      const readTrace = traces.find((entry) => entry.correlation_id === fallbackRead.correlation_id);
+      expect(readTrace).toMatchObject({
+        event_type: 'mcp_tool_trace',
+        trace_id: fallbackRead.correlation_id,
+        tool: 'read_file',
+        status: 'ok',
+        backend: 'filesystem-fallback',
+      });
+      expect(readTrace?.route).toEqual(['mcp_tool_gateway', 'repo_policy', 'path_guard_ignore_policy', 'filesystem-fallback', 'response']);
+    });
+  });
+
   test('general repo tools fail closed when the repo root disappears or is replaced during runtime', async () => {
     await withReaderRepo(async (repoRoot, ctx) => {
       const repoId = (await jsonTool(ctx, 'list_allowed_roots')).roots[0].repo_id;
