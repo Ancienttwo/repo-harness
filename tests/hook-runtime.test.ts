@@ -1234,6 +1234,63 @@ describe("Hook runtime behavior", () => {
     }
   });
 
+  test("post-tool observer parses hot-path stdin with a single jq call", () => {
+    const jqLookup = spawnSync("sh", ["-c", "command -v jq"], { encoding: "utf-8" });
+    if (jqLookup.status !== 0 || !jqLookup.stdout.trim()) {
+      return;
+    }
+
+    const cwd = tmpWorkspace("post-tool-jq-budget");
+    try {
+      initGitRepo(cwd);
+      installHooks(cwd);
+
+      const binDir = join(cwd, "bin");
+      const jqCountFile = join(cwd, "jq-count.txt");
+      const jqShim = join(binDir, "jq");
+      mkdirSync(binDir, { recursive: true });
+      writeFileSync(jqCountFile, "");
+      writeFileSync(
+        jqShim,
+        [
+          "#!/bin/bash",
+          'printf x >> "$JQ_COUNT_FILE"',
+          'exec "$REAL_JQ" "$@"',
+          "",
+        ].join("\n")
+      );
+      expect(spawnSync("chmod", ["+x", jqShim]).status).toBe(0);
+
+      const res = runHook("post-tool-observer.sh", cwd, {
+        stdin: JSON.stringify({
+          hook_event_name: "PostToolUse",
+          tool_name: "Bash",
+          tool_response: { exit_code: 0, duration_ms: 12 },
+          session_id: "session-fast",
+          source: "codex",
+        }),
+        env: {
+          PATH: `${binDir}:${process.env.PATH ?? ""}`,
+          REAL_JQ: jqLookup.stdout.trim(),
+          JQ_COUNT_FILE: jqCountFile,
+        },
+      });
+
+      expect(res.status).toBe(0);
+      expect(readFileSync(jqCountFile, "utf-8")).toHaveLength(1);
+
+      const trace = readFileSync(join(cwd, ".claude", ".trace.jsonl"), "utf-8")
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+      expect(trace[0].tool_name).toBe("Bash");
+      expect(trace[0].session_key).toBe("session-fast");
+      expect(trace[0].run_id).toBe("run-codex-session-fast");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   test("post-tool observer: Codex apply_patch warns on dirty plan annotations", () => {
     const cwd = tmpWorkspace("post-tool-plan-guard");
     try {

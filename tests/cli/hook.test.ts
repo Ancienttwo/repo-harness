@@ -334,6 +334,70 @@ describe('hook command (Phase 1B)', () => {
     );
   });
 
+  test('slow hook script logging is opt-in and stays on stderr', () => {
+    withTempRepo(
+      {
+        optIn: true,
+        scripts: {
+          'post-bash.sh': '#!/bin/bash\nexit 0\n',
+        },
+      },
+      (repoRoot) => {
+        const quiet = spawnSync(
+          process.execPath,
+          [HOOK_ENTRY, 'PostToolUse', '--route', 'bash'],
+          {
+            cwd: repoRoot,
+            encoding: 'utf-8',
+          },
+        );
+        expect(quiet.status).toBe(0);
+        expect(quiet.stdout).toBe('');
+        expect(quiet.stderr).not.toContain('[repo-harness][hook-latency]');
+
+        const verbose = spawnSync(
+          process.execPath,
+          [HOOK_ENTRY, 'PostToolUse', '--route', 'bash'],
+          {
+            cwd: repoRoot,
+            encoding: 'utf-8',
+            env: { ...process.env, REPO_HARNESS_HOOK_SLOW_MS: '1' },
+          },
+        );
+        expect(verbose.status).toBe(0);
+        expect(verbose.stdout).toBe('');
+        expect(verbose.stderr).toContain(
+          '[repo-harness][hook-latency] PostToolUse.bash post-bash.sh elapsed=',
+        );
+      },
+    );
+  });
+
+  test('hook script timeout is opt-in and reports the timed-out script', () => {
+    withTempRepo(
+      {
+        optIn: true,
+        scripts: {
+          'post-bash.sh': '#!/bin/bash\nsleep 1\n',
+        },
+      },
+      (repoRoot) => {
+        const res = spawnSync(
+          process.execPath,
+          [HOOK_ENTRY, 'PostToolUse', '--route', 'bash'],
+          {
+            cwd: repoRoot,
+            encoding: 'utf-8',
+            env: { ...process.env, REPO_HARNESS_HOOK_TIMEOUT_MS: '50' },
+          },
+        );
+        expect(res.status).toBe(1);
+        expect(res.stdout).toBe('');
+        expect(res.stderr).toContain('post-bash.sh timed out after 50ms');
+      },
+    );
+  });
+
   test('HOOK_REPO_ROOT is set to resolved repo root in child env', () => {
     withTempRepo(
       {

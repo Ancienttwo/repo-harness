@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { execFileSync, spawnSync, type StdioOptions } from 'child_process';
+import { performance } from 'node:perf_hooks';
 import { getRoute, type HookEvent, type RouteId } from './route-registry';
 
 const OPT_IN_MARKER = '.ai/harness/workflow-contract.json';
@@ -209,11 +210,21 @@ function isSoftMissingScript(event: HookEvent, routeId: RouteId, script: string)
   return event === 'PostToolUse' && routeId === 'edit' && script === 'minimal-change-observer.sh';
 }
 
+function positiveIntegerEnv(name: string): number | undefined {
+  const raw = process.env[name]?.trim();
+  if (!raw) return undefined;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) return undefined;
+  return value;
+}
+
 export function runHook(opts: RunHookOptions): RunHookResult {
   const cwd = opts.cwd ?? process.cwd();
   const commandName = opts.commandName ?? 'repo-harness hook';
   const scriptsRun: string[] = [];
   const skippedScripts: string[] = [];
+  const slowMs = positiveIntegerEnv('REPO_HARNESS_HOOK_SLOW_MS');
+  const timeoutMs = positiveIntegerEnv('REPO_HARNESS_HOOK_TIMEOUT_MS');
 
   const resolvedRepo = resolveExplicitRepoRoot(cwd);
   if (resolvedRepo.mismatch) {
@@ -305,16 +316,32 @@ export function runHook(opts: RunHookOptions): RunHookResult {
     }
 
     scriptsRun.push(script);
+    const startedAt = performance.now();
     const child = spawnSync('bash', [scriptPath, ...(opts.args ?? [])], {
       cwd: repoRoot,
       stdio,
       env: { ...process.env, HOOK_REPO_ROOT: repoRoot },
+      ...(timeoutMs ? { timeout: timeoutMs, killSignal: 'SIGKILL' as const } : {}),
     });
+    const elapsedMs = Math.round(performance.now() - startedAt);
+
+    if (slowMs !== undefined && elapsedMs >= slowMs) {
+      process.stderr.write(
+        `[repo-harness][hook-latency] ${opts.event}.${opts.routeId} ${script} elapsed=${elapsedMs}ms\n`,
+      );
+    }
 
     if (child.error) {
-      process.stderr.write(
-        `${commandName}: failed to run ${scriptPath}: ${child.error.message}\n`,
-      );
+      const childError = child.error as Error & { code?: string };
+      if (childError.code === 'ETIMEDOUT' && timeoutMs) {
+        process.stderr.write(
+          `${commandName}: script ${scriptPath} timed out after ${timeoutMs}ms\n`,
+        );
+      } else {
+        process.stderr.write(
+          `${commandName}: failed to run ${scriptPath}: ${childError.message}\n`,
+        );
+      }
       return {
         exitCode: 1,
         reason: 'script-failed',
