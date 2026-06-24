@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync } from "fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync } from "fs";
 import { homedir } from "os";
 import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
@@ -129,10 +129,37 @@ function packageVersion(sourceRoot: string): string | null {
   }
 }
 
+function bunGlobalPackageRoot(env?: NodeJS.ProcessEnv): string | null {
+  const bunInstall = env?.BUN_INSTALL ?? process.env.BUN_INSTALL;
+  const home = env?.HOME ?? process.env.HOME ?? process.env.USERPROFILE;
+  const bunRoot = bunInstall ? resolve(bunInstall) : home ? join(resolve(home), ".bun") : null;
+  return bunRoot ? join(bunRoot, "install", "global", "node_modules", "repo-harness") : null;
+}
+
+function isBunGlobalPackageSource(sourceRoot: string, env?: NodeJS.ProcessEnv): boolean {
+  const globalPackageRoot = bunGlobalPackageRoot(env);
+  if (globalPackageRoot === null) return false;
+  if (resolve(sourceRoot) === globalPackageRoot) return true;
+  try {
+    return realpathSync(join(sourceRoot, "package.json")) === realpathSync(join(globalPackageRoot, "package.json"));
+  } catch (_error) {
+    return false;
+  }
+}
+
 function installCli(sourceRoot: string, cwd: string, env?: NodeJS.ProcessEnv, installSpec?: string): GlobalRuntimeStep {
+  const version = packageVersion(sourceRoot);
+  if (installSpec === undefined && isBunGlobalPackageSource(sourceRoot, env)) {
+    return {
+      step: "install repo-harness CLI",
+      status: "skipped",
+      detail: version
+        ? `already installed from Bun global package source; version=${version}`
+        : "already installed from Bun global package source",
+    };
+  }
   const spec = installSpec ?? (existsSync(join(sourceRoot, "package.json")) ? sourceRoot : "repo-harness");
   const step = runProcess("bun", ["add", "-g", spec], cwd, env);
-  const version = packageVersion(sourceRoot);
   return withStepName(
     step,
     "install repo-harness CLI",

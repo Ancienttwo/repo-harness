@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { spawnSync } from 'child_process';
@@ -155,6 +155,87 @@ describe('init command global runtime bootstrap', () => {
       expect(result.steps.find((step) => step.step === 'sync repo-harness skill runtime')?.stdout).toContain(
         'link=0',
       );
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test('skips CLI self-install when running from the Bun global package source', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-global-init-self-install-'));
+    const home = join(tmp, 'home');
+    const source = join(home, '.bun', 'install', 'global', 'node_modules', 'repo-harness');
+    const repo = join(tmp, 'repo');
+    const fakeBin = join(tmp, 'bin');
+    const bunLog = join(tmp, 'bun.log');
+    try {
+      mkdirSync(source, { recursive: true });
+      mkdirSync(repo, { recursive: true });
+      mkdirSync(fakeBin, { recursive: true });
+      setupFakeSource(source);
+      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nexit 42\n`);
+
+      const result = runGlobalRuntimeSetup({
+        sourceRoot: source,
+        cwd: repo,
+        syncSkill: false,
+        hostAdapters: false,
+        externalSkills: false,
+        codegraph: false,
+        env: {
+          ...process.env,
+          HOME: home,
+          BUN_INSTALL: join(home, '.bun'),
+          PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+        },
+      });
+
+      const installStep = result.steps.find((step) => step.step === 'install repo-harness CLI');
+      expect(result.exitCode).toBe(0);
+      expect(installStep?.status).toBe('skipped');
+      expect(installStep?.detail).toContain('already installed from Bun global package source');
+      expect(existsSync(bunLog)).toBe(false);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test('skips CLI self-install when Bun global package links to the workspace source', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-global-init-linked-source-'));
+    const home = join(tmp, 'home');
+    const source = join(tmp, 'workspace', 'repo-harness');
+    const globalPackage = join(home, '.bun', 'install', 'global', 'node_modules', 'repo-harness');
+    const repo = join(tmp, 'repo');
+    const fakeBin = join(tmp, 'bin');
+    const bunLog = join(tmp, 'bun.log');
+    try {
+      mkdirSync(source, { recursive: true });
+      mkdirSync(join(globalPackage, '..'), { recursive: true });
+      mkdirSync(repo, { recursive: true });
+      mkdirSync(fakeBin, { recursive: true });
+      setupFakeSource(source);
+      symlinkSync(source, globalPackage, 'dir');
+      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nexit 42\n`);
+
+      const result = runGlobalRuntimeSetup({
+        sourceRoot: source,
+        cwd: repo,
+        syncSkill: false,
+        hostAdapters: false,
+        externalSkills: false,
+        codegraph: false,
+        env: {
+          ...process.env,
+          HOME: home,
+          BUN_INSTALL: join(home, '.bun'),
+          PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+        },
+      });
+
+      const installStep = result.steps.find((step) => step.step === 'install repo-harness CLI');
+      expect(result.exitCode).toBe(0);
+      expect(installStep?.status).toBe('skipped');
+      expect(installStep?.detail).toContain('already installed from Bun global package source');
+      expect(existsSync(bunLog)).toBe(false);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
