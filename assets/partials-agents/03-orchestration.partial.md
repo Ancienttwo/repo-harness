@@ -12,7 +12,7 @@
 ### 3. Plan Node Default
 - Enter plan mode for non-trivial tasks.
 - If `docs/spec.md` is missing, run `bash .ai/harness/scripts/new-spec.sh` first.
-- Capture decision-complete Codex Plan mode or Waza `/think` output with `bash .ai/harness/scripts/capture-plan.sh --slug <slug> --title <title>`; if no captured active execution plan exists, use `new-plan.sh`; after approval, run `plan-to-todo.sh` or capture with `--status Approved --execute`.
+- Capture decision-complete work-package output from Codex Plan mode or Waza `/think` with `bash .ai/harness/scripts/capture-plan.sh --slug <slug> --title <title> --artifact-level work-package --promotion-reason <merge_boundary|rollback_boundary|verification_boundary|risk_boundary|human_decision_boundary|worktree_boundary>`; if no captured active execution plan exists, use `new-plan.sh`; after approval, run `plan-to-todo.sh` or capture with `--artifact-level work-package --promotion-reason <reason> --status Approved --execute`.
 - Use `new-sprint.sh` only for Sprint backlogs; it writes `plans/sprints/*.sprint.md`, while PRDs stay in `plans/prds/`.
 - Keep active checklist items in the active plan's `## Task Breakdown`; record only deferred goals in `tasks/todos.md`.
 

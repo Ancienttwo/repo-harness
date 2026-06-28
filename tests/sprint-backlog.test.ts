@@ -309,15 +309,19 @@ describe("sprint-backlog helper", () => {
       const sprintAfterContract = readFileSync(join(cwd, sprintPath), "utf-8");
       expect(sprintAfterContract).toContain("| 1 | [ ] | task-a | contract | unit tests pass | (pending) |");
 
-      // Row 2 (task-b) is inline mode: it stays in the sprint backlog and
-      // does not create a top-level plan or task artifacts.
+      // Row 2 (task-b) is inline mode: it appends checklist rows to the active
+      // plan and does not create a new top-level plan or task artifacts.
       const inline = run("bash", ["scripts/sprint-backlog.sh", "start-task", "--task", "task-b"], cwd);
       expect(inline.status).toBe(0);
-      expect(inline.stdout).toContain("is inline; no plan or task artifacts were captured");
+      expect(inline.stdout).toContain("Appended checklist row(s) to");
+      expect(inline.stdout).toContain("is inline; appended checklist row(s) to the active plan");
       expect(inline.stdout).not.toContain("Captured plan:");
       const sprintAfterInline = readFileSync(join(cwd, sprintPath), "utf-8");
       expect(sprintAfterInline).toContain("| 2 | [ ] | task-b | inline | doc section updated | (pending) |");
       expect(readdirSync(join(cwd, "plans")).filter((name) => name.includes("task-b")).length).toBe(0);
+      const activePlan = readFileSync(join(cwd, ".ai/harness/active-plan"), "utf-8").trim();
+      const activePlanBody = readFileSync(join(cwd, activePlan), "utf-8");
+      expect(activePlanBody).toContain("- [ ] Complete sprint row `task-b`: doc section updated");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -341,7 +345,7 @@ describe("sprint-backlog helper", () => {
       const auto = run("bash", ["scripts/sprint-backlog.sh", "start-task"], cwd);
       expect(auto.status).toBe(0);
       expect(auto.stdout).toContain("task-b");
-      expect(auto.stdout).toContain("no plan or task artifacts were captured");
+      expect(auto.stdout).toContain("appended checklist row(s) to the active plan");
 
       const exhausted = run("bash", ["scripts/sprint-backlog.sh", "start-task"], cwd);
       expect(exhausted.status).toBe(3);
@@ -392,6 +396,25 @@ describe("sprint-backlog helper", () => {
       const draft = run("bash", ["scripts/sprint-backlog.sh", "start-task"], cwd);
       expect(draft.status).toBe(1);
       expect(draft.stderr).toContain("approve the sprint before starting tasks");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("inline start-task requires an active plan for checklist-row capture", () => {
+    const cwd = tmpWorkspace("sprint-backlog-inline-no-active-plan");
+    try {
+      copySprintHelpers(cwd, ["sprint-backlog.sh", "capture-plan.sh"]);
+      const sprintPath = "plans/sprints/20260610-0000-fixture-sprint.sprint.md";
+      writeActiveSprintFixture(cwd, sprintPath);
+
+      const inline = run("bash", ["scripts/sprint-backlog.sh", "start-task", "--task", "task-b"], cwd);
+
+      expect(inline.status).toBe(1);
+      expect(inline.stderr).toContain("No active plan marker resolves to a plan");
+      expect(inline.stderr).toContain("checklist-row capture failed for inline task 'task-b'");
+      expect(existsSync(join(cwd, ".ai/harness/sprint/in-flight/task-b"))).toBe(false);
+      expect(readdirSync(join(cwd, "plans")).filter((name) => name.includes("task-b"))).toHaveLength(0);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

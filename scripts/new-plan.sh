@@ -78,6 +78,10 @@ if [[ ! -f "$template_file" ]]; then
 > **Status**: Draft
 > **Created**: {{TIMESTAMP}}
 > **Slug**: {{SLUG}}
+> **Artifact Level**: work-package
+> **Promotion Reason**:
+> **Verification Boundary**:
+> **Rollback Surface**:
 > **Spec**: `docs/spec.md`
 > **Research**: See `docs/researches/`
 > **Task Contract**: `tasks/contracts/{{ARTIFACT_STEM}}.contract.md`

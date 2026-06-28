@@ -45,6 +45,68 @@ extract_status() {
   awk '/\*\*Status\*\*:/ {sub(/^.*\*\*Status\*\*: */, ""); gsub(/\r/, ""); print; exit}' "$file" | xargs
 }
 
+plan_field_value() {
+  local file="$1"
+  local label="$2"
+  awk -v label="$label" '
+    {
+      pattern = "^> \\*\\*" label "\\*\\*:[[:space:]]*"
+      if ($0 ~ pattern) {
+        sub(pattern, "")
+        gsub(/\r/, "")
+        print
+        exit
+      }
+    }
+  ' "$file" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//'
+}
+
+value_is_missing_or_placeholder() {
+  local value="$1"
+  [[ -n "$value" ]] || return 0
+  printf '%s' "$value" | grep -Eiq '^(\(required before projection\)|required before projection|tbd|todo|n/a|none|unknown|\.\.\.)$'
+}
+
+promotion_reason_is_forbidden() {
+  local value="$1"
+  printf '%s' "$value" | grep -Eiq '^(next_sprint_row_only|red_green_step_only|docs_or_handoff_only|same_allowed_paths_as_active_plan|same_verification_as_active_plan|same_rollback_surface_as_active_plan)$'
+}
+
+plan_artifact_level_error() {
+  local file="$1"
+  local artifact_level promotion_reason verification_boundary rollback_surface missing=0
+
+  artifact_level="$(plan_field_value "$file" "Artifact Level")"
+  if [[ "$artifact_level" != "work-package" ]]; then
+    echo "Artifact Level must be work-package before contract projection (current: ${artifact_level:-missing})"
+    return 1
+  fi
+
+  promotion_reason="$(plan_field_value "$file" "Promotion Reason")"
+  verification_boundary="$(plan_field_value "$file" "Verification Boundary")"
+  rollback_surface="$(plan_field_value "$file" "Rollback Surface")"
+
+  if value_is_missing_or_placeholder "$promotion_reason"; then
+    echo "field has no concrete value: Promotion Reason"
+    missing=1
+  elif promotion_reason_is_forbidden "$promotion_reason"; then
+    echo "forbidden Promotion Reason for work-package projection: $promotion_reason"
+    missing=1
+  fi
+
+  if value_is_missing_or_placeholder "$verification_boundary"; then
+    echo "field has no concrete value: Verification Boundary"
+    missing=1
+  fi
+
+  if value_is_missing_or_placeholder "$rollback_surface"; then
+    echo "field has no concrete value: Rollback Surface"
+    missing=1
+  fi
+
+  [[ "$missing" -eq 0 ]]
+}
+
 plan_evidence_contract_error() {
   local file="$1"
   local section=""
@@ -650,6 +712,12 @@ fi
 if ! promotion_error="$(plan_promotion_gate_error "$plan_file")"; then
   echo "Plan Promotion Gate is incomplete in $plan_file:" >&2
   printf '%s\n' "$promotion_error" >&2
+  exit 1
+fi
+
+if ! artifact_error="$(plan_artifact_level_error "$plan_file")"; then
+  echo "Plan Artifact Level gate is incomplete in $plan_file:" >&2
+  printf '%s\n' "$artifact_error" >&2
   exit 1
 fi
 

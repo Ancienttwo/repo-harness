@@ -20,12 +20,17 @@ usage() {
   cat <<'USAGE_EOF'
 Usage:
   scripts/capture-plan.sh --slug <slug> [--title <title>] [--status Draft|Approved]
+                          [--artifact-level work-package|checklist-row]
+                          [--promotion-reason <reason>]
+                          [--verification-boundary <description>]
+                          [--rollback-surface <description>]
                           [--source <codex-plan|waza-think|repo-harness-plan|repo-harness-sprint>]
                           [--orchestration-kind <kind>] [--source-ref <ref>]
                           [--route <route>] [--body-file <file>] [--execute]
 
 Reads a finished planning note from stdin or --body-file and stores it as a
-repo-local plans/plan-*.md artifact with a complete Evidence Contract.
+repo-local work-package plan artifact, or appends checklist rows to the active
+plan when --artifact-level checklist-row is selected.
 USAGE_EOF
 }
 
@@ -100,6 +105,60 @@ extract_task_breakdown() {
   return 1
 }
 
+read_active_plan_marker() {
+  local marker_file="$1"
+  local marker_plan
+
+  if [[ -f "$marker_file" ]]; then
+    marker_plan="$(cat "$marker_file" 2>/dev/null | xargs)"
+    if [[ -n "$marker_plan" && -f "$marker_plan" ]]; then
+      printf '%s' "$marker_plan"
+      return 0
+    fi
+  fi
+
+  return 1
+}
+
+get_active_plan() {
+  read_active_plan_marker "$ACTIVE_PLAN_MARKER" \
+    || read_active_plan_marker "$LEGACY_ACTIVE_PLAN_MARKER"
+}
+
+append_task_breakdown_rows() {
+  local plan_file="$1"
+  local tasks="$2"
+  local tmp_file
+
+  tmp_file="$(mktemp)"
+  awk -v tasks="$tasks" '
+    BEGIN { in_section = 0; inserted = 0 }
+    /^## Task Breakdown[[:space:]]*$/ {
+      print
+      in_section = 1
+      next
+    }
+    in_section && /^## / && !inserted {
+      printf "%s\n", tasks
+      inserted = 1
+      in_section = 0
+      print
+      next
+    }
+    { print }
+    END {
+      if (!inserted) {
+        if (!in_section) {
+          print ""
+          print "## Task Breakdown"
+        }
+        printf "%s\n", tasks
+      }
+    }
+  ' "$plan_file" > "$tmp_file"
+  mv "$tmp_file" "$plan_file"
+}
+
 slug=""
 title=""
 status="Draft"
@@ -110,6 +169,10 @@ source_ref=""
 body_file=""
 execute=0
 set_active=1
+artifact_level="work-package"
+promotion_reason=""
+verification_boundary=""
+rollback_surface=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -131,6 +194,26 @@ while [[ $# -gt 0 ]]; do
     --source)
       [[ -n "${2:-}" ]] || { echo "Error: --source requires a value" >&2; usage; exit 1; }
       source_name="$2"
+      shift 2
+      ;;
+    --artifact-level)
+      [[ -n "${2:-}" ]] || { echo "Error: --artifact-level requires a value" >&2; usage; exit 1; }
+      artifact_level="$2"
+      shift 2
+      ;;
+    --promotion-reason)
+      [[ -n "${2:-}" ]] || { echo "Error: --promotion-reason requires a value" >&2; usage; exit 1; }
+      promotion_reason="$2"
+      shift 2
+      ;;
+    --verification-boundary)
+      [[ -n "${2:-}" ]] || { echo "Error: --verification-boundary requires a value" >&2; usage; exit 1; }
+      verification_boundary="$2"
+      shift 2
+      ;;
+    --rollback-surface)
+      [[ -n "${2:-}" ]] || { echo "Error: --rollback-surface requires a value" >&2; usage; exit 1; }
+      rollback_surface="$2"
       shift 2
       ;;
     --orchestration-kind)
@@ -187,8 +270,27 @@ case "$status" in
     ;;
 esac
 
+case "$artifact_level" in
+  work-package|checklist-row)
+    ;;
+  *)
+    echo "Artifact level must be work-package or checklist-row (got: $artifact_level)" >&2
+    exit 1
+    ;;
+esac
+
 if [[ "$execute" -eq 1 && "$status" != "Approved" ]]; then
   echo "--execute requires --status Approved" >&2
+  exit 1
+fi
+
+if [[ "$execute" -eq 1 && "$artifact_level" != "work-package" ]]; then
+  echo "--execute is only valid with --artifact-level work-package" >&2
+  exit 1
+fi
+
+if [[ "$execute" -eq 1 && -z "$promotion_reason" ]]; then
+  echo "--execute with --artifact-level work-package requires --promotion-reason" >&2
   exit 1
 fi
 
@@ -205,6 +307,28 @@ if [[ -z "$(printf '%s' "$body" | tr -d '[:space:]')" ]]; then
   exit 1
 fi
 
+tasks="$(extract_task_breakdown "$body" || true)"
+if [[ -z "$tasks" ]]; then
+  tasks="- [ ] Execute captured plan: ${title}"
+fi
+
+if [[ "$artifact_level" == "checklist-row" ]]; then
+  active_plan="$(get_active_plan || true)"
+  if [[ -z "$active_plan" ]]; then
+    echo "No active plan marker resolves to a plan; checklist-row capture needs .ai/harness/active-plan or .claude/.active-plan." >&2
+    exit 1
+  fi
+
+  append_task_breakdown_rows "$active_plan" "$tasks"
+  if declare -F workflow_clear_pending_orchestration >/dev/null 2>&1; then
+    workflow_clear_pending_orchestration
+  else
+    rm -f .ai/harness/planning/pending.json
+  fi
+  echo "Appended checklist row(s) to $active_plan"
+  exit 0
+fi
+
 timestamp="$(date +%Y%m%d-%H%M)"
 mkdir -p plans plans/archive .claude
 
@@ -216,10 +340,9 @@ while [[ -f "$plan_file" ]]; do
 done
 artifact_stem="$(artifact_stem_for_capture "$plan_file" "$slug" "$title")"
 
-tasks="$(extract_task_breakdown "$body" || true)"
-if [[ -z "$tasks" ]]; then
-  tasks="- [ ] Execute captured plan: ${title}"
-fi
+promotion_reason_for_plan="${promotion_reason:-"(required before projection)"}"
+verification_boundary_for_plan="${verification_boundary:-"Commands named in the captured planning output plus \`bash scripts/verify-contract.sh --contract tasks/contracts/${artifact_stem}.contract.md --strict\`."}"
+rollback_surface_for_plan="${rollback_surface:-"Before execution remove \`${plan_file}\`; after execution revert branch \`codex/${slug}\` or the explicitly reviewed diff."}"
 
 cat > "$plan_file" <<PLAN_EOF
 # Plan: ${title}
@@ -230,6 +353,10 @@ cat > "$plan_file" <<PLAN_EOF
 > **Planning Source**: ${source_name}
 > **Orchestration Kind**: ${orchestration_kind}
 > **Source Ref**: ${source_ref:-"(none)"}
+> **Artifact Level**: work-package
+> **Promotion Reason**: ${promotion_reason_for_plan}
+> **Verification Boundary**: ${verification_boundary_for_plan}
+> **Rollback Surface**: ${rollback_surface_for_plan}
 > **Spec**: \`docs/spec.md\`
 > **Research**: See \`docs/researches/\`
 > **Task Contract**: \`tasks/contracts/${artifact_stem}.contract.md\`
@@ -301,11 +428,11 @@ See captured planning output.
 ## Promotion Gate
 
 - **Merge/PR unit**: Captured plan \`${plan_file}\` is the proposed mergeable execution unit; revise before execute if this is only a checklist step.
-- **Rollback surface**: Before execution remove \`${plan_file}\`; after execution revert branch \`codex/${slug}\` or the explicitly reviewed diff.
-- **Verification boundary**: Commands named in the captured planning output plus \`bash scripts/verify-contract.sh --contract tasks/contracts/${artifact_stem}.contract.md --strict\`.
+- **Rollback surface**: ${rollback_surface_for_plan}
+- **Verification boundary**: ${verification_boundary_for_plan}
 - **Review/acceptance boundary**: \`tasks/reviews/${artifact_stem}.review.md\` must record pass against the captured acceptance criteria.
 - **High-risk surface**: Risks named in captured planning output; keep the plan Draft if risk ownership is not concrete.
-- **Why not checklist row**: Capture was explicitly requested from ${source_name} as a decision-complete plan; inline sprint rows should remain in the sprint backlog or active plan Task Breakdown.
+- **Why not checklist row**: ${promotion_reason_for_plan}
 
 ## Evidence Contract
 
@@ -313,7 +440,7 @@ See captured planning output.
 - **Verification evidence**: \`.ai/harness/checks/latest.json\`, \`.ai/harness/runs/\`, and the commands named in the captured planning output
 - **Evaluator rubric**: \`tasks/reviews/${artifact_stem}.review.md\` must record a passing Waza /check style recommendation
 - **Stop condition**: all task breakdown items are complete, sprint verification passes, and the review recommends pass
-- **Rollback surface**: before execution remove \`${plan_file}\`; after execution revert branch \`codex/${slug}\` or the generated task artifacts
+- **Rollback surface**: ${rollback_surface_for_plan}
 
 ## Captured Planning Output
 

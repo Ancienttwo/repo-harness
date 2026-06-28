@@ -378,7 +378,7 @@ printf '%s\n' '<decision-complete plan body>' | bash ${capture_script} --slug ${
 If the user has already approved implementation:
 
 \`\`\`bash
-printf '%s\n' '<approved plan body>' | bash ${capture_script} --slug ${prompt_slug:-<slug>} --title <title> --status Approved --source ${capture_source} --orchestration-kind ${capture_source} --route planning --execute${source_arg}
+printf '%s\n' '<approved plan body>' | bash ${capture_script} --slug ${prompt_slug:-<slug>} --title <title> --artifact-level work-package --promotion-reason human_decision_boundary --status Approved --source ${capture_source} --orchestration-kind ${capture_source} --route planning --execute${source_arg}
 \`\`\`
 EOF_CONTEXT
 }

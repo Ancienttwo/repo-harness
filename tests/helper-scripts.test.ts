@@ -180,6 +180,11 @@ function evidenceContract(): string {
 
 function promotionGate(): string {
   return [
+    "> **Artifact Level**: work-package",
+    "> **Promotion Reason**: worktree_boundary",
+    "> **Verification Boundary**: bun test and contract verification",
+    "> **Rollback Surface**: revert the demo branch and generated task files",
+    "",
     "## Promotion Gate",
     "",
     "- **Merge/PR unit**: demo branch is the reviewed merge unit",
@@ -407,6 +412,7 @@ describe("Workflow helper scripts", () => {
       const plan = readFileSync(join(cwd, "plans", plans[0]), "utf-8");
       expect(plan).toContain("## Workflow Inventory");
       expect(plan).toContain("## Promotion Gate");
+      expect(plan).toContain("> **Artifact Level**: work-package");
       expect(plan).toContain("> **Task Contract**:");
       expect(plan).toContain("> **Task Review**:");
       expect(plan).not.toContain("> **Sprint Contract**:");
@@ -469,6 +475,8 @@ describe("Workflow helper scripts", () => {
       expect(plan).toContain("> **Planning Source**: waza-think");
       expect(plan).toContain("> **Orchestration Kind**: waza-think");
       expect(plan).toContain("> **Source Ref**: thread://plan-discussion");
+      expect(plan).toContain("> **Artifact Level**: work-package");
+      expect(plan).toContain("> **Promotion Reason**: (required before projection)");
       expect(plan).toContain("- Selected route: waza:think");
       expect(plan).toContain("- Source ref: thread://plan-discussion");
       expect(plan).toContain("## Workflow Inventory");
@@ -536,6 +544,64 @@ describe("Workflow helper scripts", () => {
     }
   });
 
+  test("capture-plan checklist-row appends to the active plan without durable projection", () => {
+    const cwd = tmpWorkspace("helper-capture-plan-checklist-row");
+    try {
+      mkdirSync(join(cwd, "plans"), { recursive: true });
+      mkdirSync(join(cwd, ".ai/harness"), { recursive: true });
+      copyHelpers(cwd);
+      writeFileSync(
+        join(cwd, "plans/plan-20260304-1500-active.md"),
+        [
+          "# Plan: active",
+          "",
+          "> **Status**: Executing",
+          "> **Artifact Level**: work-package",
+          "> **Promotion Reason**: worktree_boundary",
+          "> **Verification Boundary**: bun test",
+          "> **Rollback Surface**: revert active branch",
+          "",
+          "## Task Breakdown",
+          "- [ ] Existing row",
+        ].join("\n")
+      );
+      writeFileSync(join(cwd, ".ai/harness/active-plan"), "plans/plan-20260304-1500-active.md");
+      writeFileSync(
+        join(cwd, "captured.md"),
+        [
+          "## Approved design summary",
+          "- Building: checklist-only row",
+          "",
+          "## Task Breakdown",
+          "- [ ] Add a row-level check",
+        ].join("\n")
+      );
+
+      const res = run("bash", [
+        "scripts/capture-plan.sh",
+        "--artifact-level",
+        "checklist-row",
+        "--slug",
+        "row-only",
+        "--title",
+        "Row Only",
+        "--body-file",
+        "captured.md",
+      ], cwd);
+
+      expect(res.status).toBe(0);
+      expect(res.stdout).toContain("Appended checklist row(s)");
+      const planNames = readdirSync(join(cwd, "plans")).filter((name) => /^plan-\d{8}-\d{4}-row-only/.test(name));
+      expect(planNames).toHaveLength(0);
+      expect(existsSync(join(cwd, "tasks/contracts"))).toBe(false);
+      const activePlan = readFileSync(join(cwd, "plans/plan-20260304-1500-active.md"), "utf-8");
+      expect(activePlan).toContain("- [ ] Existing row");
+      expect(activePlan).toContain("- [ ] Add a row-level check");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   test("switch-plan should prefer the host-neutral marker and mirror legacy marker", () => {
     const cwd = tmpWorkspace("helper-switch-plan-active-marker");
     try {
@@ -587,6 +653,8 @@ describe("Workflow helper scripts", () => {
         "Approved Capture",
         "--status",
         "Approved",
+        "--promotion-reason",
+        "verification_boundary",
         "--execute",
         "--body-file",
         "approved.md",
@@ -605,6 +673,43 @@ describe("Workflow helper scripts", () => {
       expect(existsSync(join(cwd, `tasks/contracts/${artifactStem}.contract.md`))).toBe(true);
       expect(existsSync(join(cwd, `tasks/reviews/${artifactStem}.review.md`))).toBe(true);
       expect(existsSync(join(cwd, `tasks/notes/${artifactStem}.notes.md`))).toBe(true);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("capture-plan execute should require a concrete promotion reason", () => {
+    const cwd = tmpWorkspace("helper-capture-plan-execute-missing-reason");
+    try {
+      mkdirSync(join(cwd, "plans"), { recursive: true });
+      copyHelpers(cwd);
+      writeFileSync(
+        join(cwd, "approved.md"),
+        [
+          "## Approved design summary",
+          "- Building: approved capture",
+          "",
+          "## Task Breakdown",
+          "- [ ] Implement approved capture",
+        ].join("\n")
+      );
+
+      const res = run("bash", [
+        "scripts/capture-plan.sh",
+        "--slug",
+        "approved-capture",
+        "--title",
+        "Approved Capture",
+        "--status",
+        "Approved",
+        "--execute",
+        "--body-file",
+        "approved.md",
+      ], cwd);
+
+      expect(res.status).toBe(1);
+      expect(res.stderr).toContain("--execute with --artifact-level work-package requires --promotion-reason");
+      expect(readdirSync(join(cwd, "plans"))).toHaveLength(0);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -653,6 +758,8 @@ describe("Workflow helper scripts", () => {
         "Transfer Markers",
         "--status",
         "Approved",
+        "--promotion-reason",
+        "worktree_boundary",
         "--execute",
         "--body-file",
         "approved.md",
@@ -1749,6 +1856,45 @@ describe("Workflow helper scripts", () => {
       expect(res.status).toBe(1);
       expect(res.stderr).toContain("Plan Promotion Gate is incomplete");
       expect(res.stderr).toContain("missing ## Promotion Gate section");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("plan-to-todo should reject approved plans without work-package artifact metadata", () => {
+    const cwd = tmpWorkspace("helper-plan-artifact-level");
+    try {
+      mkdirSync(join(cwd, "plans"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/archive"), { recursive: true });
+      copyHelpers(cwd);
+
+      writeFileSync(
+        join(cwd, "plans/plan-20260304-14185-missing-artifact-level.md"),
+        [
+          "# Plan: missing artifact level",
+          "",
+          "> **Status**: Approved",
+          "",
+          evidenceContract(),
+          "",
+          "## Promotion Gate",
+          "",
+          "- **Merge/PR unit**: demo branch is the reviewed merge unit",
+          "- **Rollback surface**: revert the demo branch and generated task files",
+          "- **Verification boundary**: bun test and contract verification",
+          "- **Review/acceptance boundary**: task review must recommend pass",
+          "- **High-risk surface**: generated workflow artifacts and helper scripts",
+          "- **Why not checklist row**: fixture exercises contract projection",
+          "",
+          "## Task Breakdown",
+          "- [ ] Step one",
+        ].join("\n")
+      );
+
+      const res = run("bash", ["scripts/plan-to-todo.sh", "--plan", "plans/plan-20260304-14185-missing-artifact-level.md"], cwd);
+      expect(res.status).toBe(1);
+      expect(res.stderr).toContain("Plan Artifact Level gate is incomplete");
+      expect(res.stderr).toContain("Artifact Level must be work-package");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

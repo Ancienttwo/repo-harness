@@ -530,8 +530,8 @@ emit_pending_orchestration_capture_gate() {
   [[ -n "$source_ref" ]] && source_arg=" --source-ref <source-ref>"
   echo "[PlanCaptureGate] Implementation requested while a pending plan/orchestration discussion has not been captured."
   echo "[PlanCaptureGate] $(workflow_pending_orchestration_summary)"
-  echo "[PlanCaptureGate] Capture the final plan body first; if implementation is already approved, use --status Approved --execute:"
-  echo "  printf '%s\n' '<approved plan body>' | bash scripts/capture-plan.sh --slug <slug> --title <title> --status Approved --source ${kind:-host-plan} --orchestration-kind ${kind:-host-plan} --route planning --execute${source_arg}"
+  echo "[PlanCaptureGate] Capture the final plan body first; if implementation is already approved, use --status Approved --execute with a work-package promotion reason:"
+  echo "  printf '%s\n' '<approved plan body>' | bash scripts/capture-plan.sh --slug <slug> --title <title> --artifact-level work-package --promotion-reason human_decision_boundary --status Approved --source ${kind:-host-plan} --orchestration-kind ${kind:-host-plan} --route planning --execute${source_arg}"
   return 0
 }
 
@@ -662,7 +662,7 @@ maybe_capture_embedded_approved_plan() {
   fi
 
   echo "[PlanCaptureGate] Embedded approved plan detected. Capturing and projecting before implementation."
-  if ! capture_output="$(printf '%s\n' "$body" | bash "scripts/capture-plan.sh" --slug "$slug" --title "$title" --status Approved --source user-approved-plan --route planning --execute 2>&1)"; then
+  if ! capture_output="$(printf '%s\n' "$body" | bash "scripts/capture-plan.sh" --slug "$slug" --title "$title" --artifact-level work-package --promotion-reason human_decision_boundary --status Approved --source user-approved-plan --route planning --execute 2>&1)"; then
     printf '%s\n' "$capture_output"
     hook_structured_error \
       "PlanCaptureGate" \
@@ -906,18 +906,18 @@ render_prompt_guard_action() {
       echo "[PlanCaptureGate] Approval detected before an active plan artifact exists."
       echo "[PlanCaptureGate] Let the agent run the approved-plan capture path now:"
       echo "  git status --short --branch -uall"
-      echo "  printf '%s\n' '<approved plan body>' | bash scripts/capture-plan.sh --slug <slug> --title <title> --status Approved --source waza-think --route planning --execute"
+      echo "  printf '%s\n' '<approved plan body>' | bash scripts/capture-plan.sh --slug <slug> --title <title> --artifact-level work-package --promotion-reason human_decision_boundary --status Approved --source waza-think --route planning --execute"
       exit 0
       ;;
     plan_status_no_active_block)
       echo "[PlanStatusGuard] Advisory: No active plan found in plans/. Implementation edits will be blocked at the edit layer until a plan is captured."
-      echo "[PlanStatusGuard] Capture the approved planning output with: bash scripts/capture-plan.sh --slug <slug> --title <title> --status Approved --execute"
+      echo "[PlanStatusGuard] Capture the approved planning output with: bash scripts/capture-plan.sh --slug <slug> --title <title> --artifact-level work-package --promotion-reason human_decision_boundary --status Approved --execute"
       echo "[PlanStatusGuard] If there is no captured planning output yet, run: bash scripts/ensure-task-workflow.sh --slug <slug> --title <title>"
       exit 0
       ;;
     plan_capture_draft_advice)
       echo "[PlanCaptureGate] Approval detected for $plan_status plan: $active_plan"
-      echo "[PlanCaptureGate] Recapture the exact approved plan body with --status Approved --execute, or mark this plan Approved and run:"
+      echo "[PlanCaptureGate] Recapture the exact approved plan body with --artifact-level work-package --promotion-reason <reason> --status Approved --execute, or mark this plan Approved and run:"
       echo "  bash scripts/plan-to-todo.sh --plan $active_plan"
       exit 0
       ;;

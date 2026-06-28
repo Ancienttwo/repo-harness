@@ -135,6 +135,68 @@ extract_status() {
     | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//'
 }
 
+plan_field_value() {
+  local file="$1"
+  local label="$2"
+  awk -v label="$label" '
+    {
+      pattern = "^> \\*\\*" label "\\*\\*:[[:space:]]*"
+      if ($0 ~ pattern) {
+        sub(pattern, "")
+        gsub(/\r/, "")
+        print
+        exit
+      }
+    }
+  ' "$file" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//'
+}
+
+value_is_missing_or_placeholder() {
+  local value="$1"
+  [[ -n "$value" ]] || return 0
+  printf '%s' "$value" | grep -Eiq '^(\(required before projection\)|required before projection|tbd|todo|n/a|none|unknown|\.\.\.)$'
+}
+
+promotion_reason_is_forbidden() {
+  local value="$1"
+  printf '%s' "$value" | grep -Eiq '^(next_sprint_row_only|red_green_step_only|docs_or_handoff_only|same_allowed_paths_as_active_plan|same_verification_as_active_plan|same_rollback_surface_as_active_plan)$'
+}
+
+plan_artifact_level_error() {
+  local file="$1"
+  local artifact_level promotion_reason verification_boundary rollback_surface missing=0
+
+  artifact_level="$(plan_field_value "$file" "Artifact Level")"
+  if [[ "$artifact_level" != "work-package" ]]; then
+    echo "Artifact Level must be work-package before contract projection (current: ${artifact_level:-missing})"
+    return 1
+  fi
+
+  promotion_reason="$(plan_field_value "$file" "Promotion Reason")"
+  verification_boundary="$(plan_field_value "$file" "Verification Boundary")"
+  rollback_surface="$(plan_field_value "$file" "Rollback Surface")"
+
+  if value_is_missing_or_placeholder "$promotion_reason"; then
+    echo "field has no concrete value: Promotion Reason"
+    missing=1
+  elif promotion_reason_is_forbidden "$promotion_reason"; then
+    echo "forbidden Promotion Reason for work-package projection: $promotion_reason"
+    missing=1
+  fi
+
+  if value_is_missing_or_placeholder "$verification_boundary"; then
+    echo "field has no concrete value: Verification Boundary"
+    missing=1
+  fi
+
+  if value_is_missing_or_placeholder "$rollback_surface"; then
+    echo "field has no concrete value: Rollback Surface"
+    missing=1
+  fi
+
+  [[ "$missing" -eq 0 ]]
+}
+
 plan_evidence_contract_error() {
   local file="$1"
   local section=""
@@ -237,6 +299,17 @@ check_plan_template_promotion_gate() {
   for label in "Merge/PR unit" "Rollback surface" "Verification boundary" "Review/acceptance boundary" "High-risk surface" "Why not checklist row"; do
     if ! grep -Eiq "^[[:space:]]*-[[:space:]]*(\\*\\*)?${label}(\\*\\*)?[[:space:]]*:" "$file"; then
       report_issue "Plan template Promotion Gate is missing field '${label}': $file"
+    fi
+  done
+}
+
+check_plan_template_artifact_fields() {
+  local file="$1"
+  local label
+
+  for label in "Artifact Level" "Promotion Reason" "Verification Boundary" "Rollback Surface"; do
+    if ! grep -Eiq "^[[:space:]]*>[[:space:]]*\*\*${label}\*\*:" "$file"; then
+      report_issue "Plan template is missing metadata field '${label}': $file"
     fi
   done
 }
@@ -936,6 +1009,7 @@ check_required_file "$policy_file"
 check_required_file "$(policy_get '.information_lifecycle.external_knowledge.manifest_file' '.ai/harness/brain-manifest.json')"
 
 if [[ -f ".claude/templates/plan.template.md" ]]; then
+  check_plan_template_artifact_fields ".claude/templates/plan.template.md"
   check_plan_template_evidence_contract ".claude/templates/plan.template.md"
   check_plan_template_promotion_gate ".claude/templates/plan.template.md"
 fi
@@ -1161,6 +1235,9 @@ else
     fi
     if ! promotion_error="$(plan_promotion_gate_error "$active_plan")"; then
       report_issue "Active $plan_status plan has incomplete Promotion Gate: $active_plan (${promotion_error//$'\n'/; })"
+    fi
+    if ! artifact_error="$(plan_artifact_level_error "$active_plan")"; then
+      report_issue "Active $plan_status plan has incomplete Artifact Level gate: $active_plan (${artifact_error//$'\n'/; })"
     fi
 
     contract_file="$(derive_contract_path "$active_plan")"

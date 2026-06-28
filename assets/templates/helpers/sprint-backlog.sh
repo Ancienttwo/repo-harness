@@ -716,14 +716,6 @@ cmd_start_task() {
   fi
   record_in_flight "$target_task" "capturing"
 
-  if [[ "$target_mode" == "inline" ]]; then
-    record_in_flight "$target_task" "inline:${sprint_file}#${target_index}"
-    release_backlog_lock
-    echo "Backlog row ${target_index} ('${target_task}') is inline; no plan or task artifacts were captured."
-    echo "Execute it from ${sprint_file} and keep detailed checklist items in the active plan Task Breakdown if needed."
-    return 0
-  fi
-
   [[ -f "scripts/capture-plan.sh" ]] || {
     release_backlog_lock
     clear_in_flight "$target_task"
@@ -738,6 +730,36 @@ cmd_start_task() {
 
   local body_file capture_output plan_path
   body_file="$(mktemp)"
+  if [[ "$target_mode" == "inline" ]]; then
+    cat > "$body_file" <<BODY_EOF
+# Sprint Row: ${target_task}
+
+## Context
+
+- Sprint: \`${sprint_file}\`
+- Backlog row: ${target_index}
+- Mode: ${target_mode}
+- Keep this as a checklist row in the current active plan; do not promote it to a top-level plan, contract, review, or notes bundle.
+
+## Task Breakdown
+
+- [ ] Complete sprint row \`${target_task}\`: ${target_acceptance}
+BODY_EOF
+
+    capture_output="$(bash scripts/capture-plan.sh --artifact-level checklist-row --slug "$target_task" --title "Sprint row: ${target_task}" --source repo-harness-sprint --orchestration-kind sprint-inline --source-ref "sprint:${sprint_file}#${target_task}" --body-file "$body_file" 2>&1)" || {
+      printf '%s\n' "$capture_output" >&2
+      rm -f "$body_file"
+      clear_in_flight "$target_task"
+      echo "sprint-backlog: checklist-row capture failed for inline task '$target_task'" >&2
+      exit 1
+    }
+    rm -f "$body_file"
+    printf '%s\n' "$capture_output"
+    record_in_flight "$target_task" "inline:${sprint_file}#${target_index}"
+    echo "Backlog row ${target_index} ('${target_task}') is inline; appended checklist row(s) to the active plan without plan/contract/review/notes projection."
+    return 0
+  fi
+
   cat > "$body_file" <<BODY_EOF
 # Sprint Task: ${target_task}
 
@@ -775,7 +797,7 @@ BODY_EOF
     --body-file "$body_file"
   )
   if [[ "$execute" -eq 1 ]]; then
-    capture_args+=(--execute)
+    capture_args+=(--promotion-reason worktree_boundary --execute)
   fi
 
   capture_output="$(bash scripts/capture-plan.sh "${capture_args[@]}" 2>&1)" || {

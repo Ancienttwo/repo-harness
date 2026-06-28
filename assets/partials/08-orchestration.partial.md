@@ -14,11 +14,12 @@
 ### 3. Plan Node Default
 - Enter plan mode for non-trivial tasks.
 - If no stable product truth exists, run `bash .ai/harness/scripts/new-spec.sh`.
-- When Codex Plan mode or Waza `/think` reaches a decision-complete plan, capture it with `bash .ai/harness/scripts/capture-plan.sh --slug <slug> --title <title>` and the plan text on stdin.
+- When Codex Plan mode or Waza `/think` reaches a decision-complete work-package plan, capture it with `bash .ai/harness/scripts/capture-plan.sh --slug <slug> --title <title> --artifact-level work-package --promotion-reason <merge_boundary|rollback_boundary|verification_boundary|risk_boundary|human_decision_boundary|worktree_boundary>` and the plan text on stdin.
+- When the output is only the next checklist row for the current active plan, capture it with `bash .ai/harness/scripts/capture-plan.sh --artifact-level checklist-row --slug <slug> --title <title>` so the row stays in `## Task Breakdown`.
 - If no captured active execution plan exists, run `bash .ai/harness/scripts/new-plan.sh --slug <slug> --title <title>` or capture a finished planning note with `bash .ai/harness/scripts/capture-plan.sh`.
 - If the user asks for a Sprint backlog, run `bash .ai/harness/scripts/new-sprint.sh --slug <slug> --title <title>`; it writes `plans/sprints/*.sprint.md`, not `plans/plan-*.md`.
-- When the user approves implementation, run `bash .ai/harness/scripts/plan-to-todo.sh --plan <active-plan>` or capture the approved plan with `--status Approved --execute`; this creates contract/review/notes scaffolding and leaves plan tasks in `## Task Breakdown`.
-- Promote work into a top-level plan only when the Promotion Gate is concrete: merge/PR unit, rollback surface, verification boundary, review/acceptance boundary, high-risk surface, and why it cannot stay a checklist row. Inline sprint rows stay in the sprint backlog or active plan `## Task Breakdown`.
+- When the user approves implementation, run `bash .ai/harness/scripts/plan-to-todo.sh --plan <active-plan>` or capture the approved work-package plan with `--artifact-level work-package --promotion-reason <reason> --status Approved --execute`; this creates contract/review/notes scaffolding and leaves plan tasks in `## Task Breakdown`.
+- Promote work into a top-level plan only when `Artifact Level: work-package` and the Promotion Gate are concrete: merge/PR unit, rollback surface, verification boundary, review/acceptance boundary, high-risk surface, and why it cannot stay a checklist row. Inline sprint rows stay in the sprint backlog or active plan `## Task Breakdown`.
 - Re-plan when execution drifts.
 
 ### 4. Research Delegation Strategy

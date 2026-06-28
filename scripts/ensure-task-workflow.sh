@@ -285,6 +285,10 @@ PRD_TEMPLATE_EOF
 > **Status**: Draft
 > **Created**: {{TIMESTAMP}}
 > **Slug**: {{SLUG}}
+> **Artifact Level**: work-package
+> **Promotion Reason**:
+> **Verification Boundary**:
+> **Rollback Surface**:
 > **Spec**: `docs/spec.md`
 > **Research**: See `docs/researches/`
 > **Task Contract**: `tasks/contracts/{{ARTIFACT_STEM}}.contract.md`
@@ -885,7 +889,7 @@ ARCHITECTURE_INDEX_EOF
       "latest": ".ai/harness/checks/latest.json",
       "snapshots_dir": ".ai/harness/runs",
       "cache_globs": [".ai/harness/checks/*.latest.json", ".ai/harness/checks/*.latest.md"],
-      "purpose": "raw verification records used to audit notes, reviews, and future promotion; checks latest reports are ignored runtime cache unless promoted into reviews, contracts, notes, runs, or research"
+      "purpose": "raw verification records used to audit notes, reviews, and future promotion; checks latest reports and run snapshots are ignored runtime cache unless distilled into reviews, contracts, notes, or research"
     },
     "assets": {
       "sources": [".ai/harness/policy.json", ".ai/harness/workflow-contract.json", ".ai/hooks/", "scripts/", "docs/reference-configs/"],
@@ -914,7 +918,7 @@ ARCHITECTURE_INDEX_EOF
   "plan_capture": {
     "script": "scripts/capture-plan.sh",
     "sources": ["codex-plan-mode", "waza-think", "repo-harness-plan"],
-    "rule": "Codex Plan mode and Waza think planning should capture decision-complete plans into plans/plan-*.md; implementation approval then projects the active approved plan through scripts/plan-to-todo.sh"
+    "rule": "Codex Plan mode and Waza think planning should capture decision-complete work-package plans into plans/plan-*.md only when Artifact Level is work-package and the Promotion Gate is concrete; implementation approval then projects the active approved work-package plan through scripts/plan-to-todo.sh; checklist-row and inline sprint work stay in the sprint backlog or active plan Task Breakdown"
   },
   "planning": {
     "pending_orchestration_file": ".ai/harness/planning/pending.json",

@@ -76,7 +76,7 @@ with the project.
 
 - Notes: `tasks/notes/<plan-stem>.notes.md` is task-local and auditable. It should not be treated as durable knowledge by default.
 - Current status: `tasks/current.md` is a tracked derived snapshot for orientation only. It must be regenerated from source artifacts and must not contain hand-written kanban/checklist state.
-- Evidence: `.ai/harness/checks/latest.json` is the current gate, while `.ai/harness/runs/*.json` keeps immutable verification snapshots for later audit. Task-specific `.ai/harness/checks/*.latest.{json,md}` reports are ignored runtime cache; promote durable conclusions into reviews, contracts, notes, or research.
+- Evidence: `.ai/harness/checks/latest.json` is the current gate, while `.ai/harness/runs/*.json` keeps ignored local verification snapshots for the current workflow audit. Task-specific `.ai/harness/checks/*.latest.{json,md}` reports are ignored runtime cache; promote durable conclusions into reviews, contracts, notes, or research.
 - Human reading surface: `docs/spec.md`, `docs/architecture/`, and durable `docs/researches/` conclusions are the default entrypoint. Root workflow artifacts should describe active work only; completed plan/contract/review/notes/todo artifacts move to `plans/archive/` or `tasks/archive/`, and `.rgignore` keeps those archives plus runtime evidence out of default `rg` results.
 - Closeout order: promote durable truth first, then archive the workflow artifacts. If a fact only lives in a review/contract/checks file, the workflow is not ready to disappear from the active reading surface.
 - Memory: `docs/researches/`, `tasks/lessons.md`, and gbrain are advisory. Current repo state and evidence override summaries.
@@ -85,7 +85,7 @@ with the project.
 
 ## Trace Evidence
 
-`scripts/verify-sprint.sh` writes `.ai/harness/checks/latest.json` and an immutable `.ai/harness/runs/*.json` snapshot using `schema: repo-harness-run-trace.v1`. The trace is local evidence for workflow grading, not a cloud tracing dependency.
+`scripts/verify-sprint.sh` writes `.ai/harness/checks/latest.json` and an ignored `.ai/harness/runs/*.json` snapshot using `schema: repo-harness-run-trace.v1`. The trace is local evidence for workflow grading, not a cloud tracing dependency or a committed durable artifact.
 
 Required v1 fields:
 

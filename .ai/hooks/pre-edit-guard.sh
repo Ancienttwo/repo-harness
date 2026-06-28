@@ -115,12 +115,12 @@ run_edit_plan_gate() {
   if [[ -z "$gate_plan" || ! -f "$gate_plan" ]]; then
     echo "[PlanStatusGuard] No active plan covers implementation edit: $FILE_PATH"
     if [[ "$mode" == "advice" ]]; then
-      echo "[PlanStatusGuard] Advisory: capture the approved plan with bash scripts/capture-plan.sh --slug <slug> --title <title> --status Approved --execute"
+      echo "[PlanStatusGuard] Advisory: capture the approved plan with bash scripts/capture-plan.sh --slug <slug> --title <title> --artifact-level work-package --promotion-reason human_decision_boundary --status Approved --execute"
     else
       hook_structured_error \
         "PlanStatusGuard" \
         "Implementation edit to $FILE_PATH without an active plan." \
-        "Capture the approved planning output with bash scripts/capture-plan.sh --slug <slug> --title <title> --status Approved --execute, or set policy .guards.edit_plan_gate to advice/off for this repo." \
+        "Capture the approved planning output with bash scripts/capture-plan.sh --slug <slug> --title <title> --artifact-level work-package --promotion-reason human_decision_boundary --status Approved --execute, or set policy .guards.edit_plan_gate to advice/off for this repo." \
         "missing_artifact"
       exit 2
     fi
