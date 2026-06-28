@@ -392,6 +392,14 @@ describe("Workflow helper scripts", () => {
     );
   });
 
+  test("core workflow helpers match their distributed template mirrors", () => {
+    for (const helper of ["capture-plan.sh", "plan-to-todo.sh", "sprint-backlog.sh"]) {
+      expect(readFileSync(join(ROOT, "scripts", helper), "utf-8")).toBe(
+        readFileSync(join(HELPER_DIR, helper), "utf-8")
+      );
+    }
+  });
+
   test("new-plan should create timestamped plan without compatibility pointer", () => {
     const cwd = tmpWorkspace("helper-new-plan");
     try {
@@ -602,6 +610,52 @@ describe("Workflow helper scripts", () => {
     }
   });
 
+  test("capture-plan checklist-row rejects active plans without Task Breakdown", () => {
+    const cwd = tmpWorkspace("helper-capture-plan-checklist-row-missing-breakdown");
+    try {
+      mkdirSync(join(cwd, "plans"), { recursive: true });
+      mkdirSync(join(cwd, ".ai/harness"), { recursive: true });
+      copyHelpers(cwd);
+      writeFileSync(
+        join(cwd, "plans/plan-20260304-1500-active.md"),
+        [
+          "# Plan: active",
+          "",
+          "> **Status**: Executing",
+          "> **Artifact Level**: work-package",
+        ].join("\n")
+      );
+      writeFileSync(join(cwd, ".ai/harness/active-plan"), "plans/plan-20260304-1500-active.md");
+      writeFileSync(
+        join(cwd, "captured.md"),
+        [
+          "## Task Breakdown",
+          "- [ ] Add a row-level check",
+        ].join("\n")
+      );
+
+      const res = run("bash", [
+        "scripts/capture-plan.sh",
+        "--artifact-level",
+        "checklist-row",
+        "--slug",
+        "row-only",
+        "--title",
+        "Row Only",
+        "--body-file",
+        "captured.md",
+      ], cwd);
+
+      expect(res.status).toBe(1);
+      expect(res.stderr).toContain("Active plan lacks ## Task Breakdown");
+      const activePlan = readFileSync(join(cwd, "plans/plan-20260304-1500-active.md"), "utf-8");
+      expect(activePlan).not.toContain("- [ ] Add a row-level check");
+      expect(readdirSync(join(cwd, "plans")).filter((name) => /^plan-\d{8}-\d{4}-row-only/.test(name))).toHaveLength(0);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   test("switch-plan should prefer the host-neutral marker and mirror legacy marker", () => {
     const cwd = tmpWorkspace("helper-switch-plan-active-marker");
     try {
@@ -708,7 +762,26 @@ describe("Workflow helper scripts", () => {
       ], cwd);
 
       expect(res.status).toBe(1);
-      expect(res.stderr).toContain("--execute with --artifact-level work-package requires --promotion-reason");
+      expect(res.stderr).toContain("--execute with --artifact-level work-package requires a concrete --promotion-reason");
+      expect(readdirSync(join(cwd, "plans"))).toHaveLength(0);
+
+      const placeholder = run("bash", [
+        "scripts/capture-plan.sh",
+        "--slug",
+        "approved-capture",
+        "--title",
+        "Approved Capture",
+        "--status",
+        "Approved",
+        "--promotion-reason",
+        "TBD",
+        "--execute",
+        "--body-file",
+        "approved.md",
+      ], cwd);
+
+      expect(placeholder.status).toBe(1);
+      expect(placeholder.stderr).toContain("--execute with --artifact-level work-package requires a concrete --promotion-reason");
       expect(readdirSync(join(cwd, "plans"))).toHaveLength(0);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
@@ -1009,7 +1082,7 @@ describe("Workflow helper scripts", () => {
     }
   });
 
-  test("plan-to-todo should name transient plan artifacts from the task title", () => {
+  test("plan-to-todo should reject transient plan projection", () => {
     const cwd = tmpWorkspace("helper-plan-to-todo-transient-artifact-name");
     try {
       mkdirSync(join(cwd, "plans"), { recursive: true });
@@ -1043,24 +1116,13 @@ describe("Workflow helper scripts", () => {
       );
 
       const res = run("bash", ["scripts/plan-to-todo.sh", "--plan", "plans/plan-20260304-1400-think-plan-224448.md"], cwd);
-      expect(res.status).toBe(0);
+      expect(res.status).toBe(1);
+      expect(res.stderr).toContain("transient plan slug 'think-plan-224448' cannot be projected");
 
-      const semanticStem = "20260304-1400-batch-digest-repository";
       const transientStem = "20260304-1400-think-plan-224448";
-      expect(existsSync(join(cwd, `tasks/contracts/${semanticStem}.contract.md`))).toBe(true);
-      expect(readFileSync(join(cwd, `tasks/contracts/${semanticStem}.contract.md`), "utf-8")).toContain(
-        "> **Task Profile**: docs-only"
-      );
-      expect(existsSync(join(cwd, `tasks/reviews/${semanticStem}.review.md`))).toBe(true);
-      expect(existsSync(join(cwd, `tasks/notes/${semanticStem}.notes.md`))).toBe(true);
       expect(existsSync(join(cwd, `tasks/contracts/${transientStem}.contract.md`))).toBe(false);
-
-      const updatedPlan = readFileSync(planFile, "utf-8");
-      expect(updatedPlan).toContain(`tasks/contracts/${semanticStem}.contract.md`);
-      expect(updatedPlan).toContain(`tasks/reviews/${semanticStem}.review.md`);
-      expect(updatedPlan).toContain(`tasks/notes/${semanticStem}.notes.md`);
-      expect(updatedPlan).not.toContain(`tasks/contracts/${transientStem}.contract.md`);
-      expect(updatedPlan).toContain("**Status**: Executing");
+      expect(existsSync(join(cwd, "tasks/contracts"))).toBe(false);
+      expect(readFileSync(planFile, "utf-8")).toContain("> **Status**: Approved");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -1931,7 +1993,40 @@ describe("Workflow helper scripts", () => {
       const res = run("bash", ["scripts/plan-to-todo.sh", "--plan", "plans/plan-20260304-1419-inline-sprint.md"], cwd);
       expect(res.status).toBe(1);
       expect(res.stderr).toContain("Plan cannot be projected into task artifacts");
-      expect(res.stderr).toContain("inline sprint-task rows must stay");
+      expect(res.stderr).toContain("inline sprint rows and inline orchestration modes must stay");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("plan-to-todo should reject sprint-inline work-package projections", () => {
+    const cwd = tmpWorkspace("helper-plan-sprint-inline-work-package");
+    try {
+      mkdirSync(join(cwd, "plans"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/archive"), { recursive: true });
+      copyHelpers(cwd);
+
+      writeFileSync(
+        join(cwd, "plans/plan-20260304-1420-sprint-inline.md"),
+        [
+          "# Plan: sprint inline",
+          "",
+          "> **Status**: Approved",
+          "> **Orchestration Kind**: sprint-inline",
+          "",
+          evidenceContract(),
+          "",
+          promotionGate(),
+          "",
+          "## Task Breakdown",
+          "- [ ] Step one",
+        ].join("\n")
+      );
+
+      const res = run("bash", ["scripts/plan-to-todo.sh", "--plan", "plans/plan-20260304-1420-sprint-inline.md"], cwd);
+      expect(res.status).toBe(1);
+      expect(res.stderr).toContain("Plan cannot be projected into task artifacts");
+      expect(res.stderr).toContain("inline sprint rows and inline orchestration modes must stay");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

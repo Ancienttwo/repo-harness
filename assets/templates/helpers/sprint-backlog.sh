@@ -791,6 +791,7 @@ BODY_EOF
     --slug "$target_task"
     --title "Sprint task: ${target_task}"
     --status Approved
+    --artifact-level work-package
     --source repo-harness-sprint
     --orchestration-kind sprint-task
     --source-ref "sprint:${sprint_file}#${target_task}"

@@ -183,10 +183,26 @@ plan_promotion_gate_error() {
 
 plan_inline_sprint_mode_error() {
   local file="$1"
+  local orchestration_kind
 
-  if grep -Eiq '^> \*\*Orchestration Kind\*\*:[[:space:]]*sprint-task[[:space:]]*$' "$file" \
-    && grep -Eiq '^[[:space:]]*-[[:space:]]*Mode:[[:space:]]*inline[[:space:]]*$' "$file"; then
-    echo "inline sprint-task rows must stay in the active sprint backlog or plan Task Breakdown; do not project them into contract/review/notes"
+  orchestration_kind="$(plan_field_value "$file" "Orchestration Kind")"
+  if [[ "$orchestration_kind" == "sprint-inline" || "$orchestration_kind" == *"-inline" ]] \
+    || { [[ "$orchestration_kind" == "sprint-task" || "$orchestration_kind" == "repo-harness-sprint" ]] \
+      && grep -Eiq '^[[:space:]]*-[[:space:]]*Mode:[[:space:]]*inline[[:space:]]*$' "$file"; }; then
+    echo "inline sprint rows and inline orchestration modes must stay in the active sprint backlog or plan Task Breakdown; do not project them into contract/review/notes"
+    return 1
+  fi
+
+  return 0
+}
+
+plan_transient_projection_error() {
+  local file="$1"
+  local slug
+
+  slug="$(plan_slug_from_path "$file")"
+  if is_transient_plan_slug "$slug"; then
+    echo "transient plan slug '$slug' cannot be projected into contract/review/notes; capture it under a durable work-package slug first"
     return 1
   fi
 
@@ -700,6 +716,12 @@ fi
 status="$(extract_status "$plan_file")"
 if [[ "$status" != "Approved" ]]; then
   echo "Plan status must be Approved before extraction (current: ${status:-unknown})." >&2
+  exit 1
+fi
+
+if ! transient_error="$(plan_transient_projection_error "$plan_file")"; then
+  echo "Plan cannot be projected into task artifacts: $plan_file:" >&2
+  printf '%s\n' "$transient_error" >&2
   exit 1
 fi
 

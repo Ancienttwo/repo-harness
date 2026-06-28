@@ -66,6 +66,17 @@ artifact_stem_for_capture() {
   printf '%s' "$stem"
 }
 
+value_is_missing_or_placeholder() {
+  local value="$1"
+  [[ -n "$value" ]] || return 0
+  printf '%s' "$value" | grep -Eiq '^(\(required before projection\)|required before projection|tbd|todo|n/a|none|unknown|\.\.\.)$'
+}
+
+promotion_reason_is_forbidden() {
+  local value="$1"
+  printf '%s' "$value" | grep -Eiq '^(next_sprint_row_only|red_green_step_only|docs_or_handoff_only|same_allowed_paths_as_active_plan|same_verification_as_active_plan|same_rollback_surface_as_active_plan)$'
+}
+
 ACTIVE_PLAN_MARKER=".ai/harness/active-plan"
 LEGACY_ACTIVE_PLAN_MARKER=".claude/.active-plan"
 ACTIVE_WORKTREE_MARKER=".ai/harness/active-worktree"
@@ -130,6 +141,11 @@ append_task_breakdown_rows() {
   local tasks="$2"
   local tmp_file
 
+  if ! grep -Eq '^## Task Breakdown[[:space:]]*$' "$plan_file"; then
+    echo "Active plan lacks ## Task Breakdown: $plan_file" >&2
+    return 1
+  fi
+
   tmp_file="$(mktemp)"
   awk -v tasks="$tasks" '
     BEGIN { in_section = 0; inserted = 0 }
@@ -148,10 +164,6 @@ append_task_breakdown_rows() {
     { print }
     END {
       if (!inserted) {
-        if (!in_section) {
-          print ""
-          print "## Task Breakdown"
-        }
         printf "%s\n", tasks
       }
     }
@@ -289,8 +301,13 @@ if [[ "$execute" -eq 1 && "$artifact_level" != "work-package" ]]; then
   exit 1
 fi
 
-if [[ "$execute" -eq 1 && -z "$promotion_reason" ]]; then
-  echo "--execute with --artifact-level work-package requires --promotion-reason" >&2
+if [[ "$execute" -eq 1 ]] && value_is_missing_or_placeholder "$promotion_reason"; then
+  echo "--execute with --artifact-level work-package requires a concrete --promotion-reason" >&2
+  exit 1
+fi
+
+if [[ "$execute" -eq 1 ]] && promotion_reason_is_forbidden "$promotion_reason"; then
+  echo "--execute with --artifact-level work-package rejects checklist-only promotion reason: $promotion_reason" >&2
   exit 1
 fi
 
@@ -319,7 +336,7 @@ if [[ "$artifact_level" == "checklist-row" ]]; then
     exit 1
   fi
 
-  append_task_breakdown_rows "$active_plan" "$tasks"
+  append_task_breakdown_rows "$active_plan" "$tasks" || exit 1
   if declare -F workflow_clear_pending_orchestration >/dev/null 2>&1; then
     workflow_clear_pending_orchestration
   else
