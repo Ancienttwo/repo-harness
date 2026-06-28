@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-06-29T04:26:02+0800 -->
+<!-- updated_at: 2026-06-29T04:50:31+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Idle
-> **Updated At**: 2026-06-29T04:26:02+0800
+> **Updated At**: 2026-06-29T04:50:31+0800
 > **Source Branch**: main
-> **Source Commit**: 8f5b599
+> **Source Commit**: c878664
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: review-hardening-plan-artifact-gates
+> **Reason**: release-0.8.2
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -48,16 +48,20 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 7 changed/untracked path(s)
+- Summary: 11 changed/untracked path(s)
 
 ```
- M assets/templates/helpers/capture-plan.sh
- M assets/templates/helpers/plan-to-todo.sh
- M assets/templates/helpers/sprint-backlog.sh
- M scripts/capture-plan.sh
- M scripts/plan-to-todo.sh
- M scripts/sprint-backlog.sh
- M tests/helper-scripts.test.ts
+ M .claude/.skill-version
+ M README.es.md
+ M README.fr.md
+ M README.ja.md
+ M README.md
+ M README.zh-CN.md
+ M assets/skill-version.json
+ M bun.lock
+ M docs/CHANGELOG.md
+ M package.json
+?? deploy/release-checklists/260629-repo-harness-0.8.2.md
 ```
 
 ## Source Artifacts

@@ -1,6 +1,6 @@
 {
-  "version": "0.8.1",
-  "templateVersion": "0.8.1",
+  "version": "0.8.2",
+  "templateVersion": "0.8.2",
   "skillName": "repo-harness",
   "contractId": "tasks-first-harness-v1",
   "compatibility": {
@@ -171,6 +171,10 @@
     {
       "version": "0.8.1",
       "description": "Adds General Repo MCP CodeGraph access, removes the ChatGPT extension bridge provider, and suppresses Codex Stop decision stdout"
+    },
+    {
+      "version": "0.8.2",
+      "description": "Hardens two-tier plan artifact gates, rejects transient and inline projection misuse, keeps CodeGraph tooling on latest, and reduces completed workflow artifact noise"
     }
   ],
   "generatedProjectStamp": {

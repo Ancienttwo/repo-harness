@@ -4,6 +4,28 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-06-29
+
+### Changed
+
+- Updated the repo-local CodeGraph dev dependency to `@colbymchenry/codegraph@latest`
+  so self-hosted tooling checks stay on the current bundle line; the release
+  lockfile resolves this to `1.1.2`.
+
+### Fixed
+
+- Fixed repo alias discovery for registered repo resolution so MCP/workspace
+  reader flows can resolve configured repository aliases consistently.
+- Reduced completed workflow artifact noise by keeping fulfilled plan,
+  contract, review, notes, and runtime-evidence surfaces out of active grep and
+  root workflow projections after closeout.
+- Hardened plan artifact gates so `work-package` remains the only durable
+  plan -> contract/review/notes projection boundary, while `checklist-row`
+  work stays inside the active plan `## Task Breakdown`.
+- Rejected placeholder `--promotion-reason` values before `capture-plan
+  --execute` writes durable state, and blocked transient or inline sprint plans
+  from being projected into contract/review/notes artifacts.
+
 ## [0.8.1] - 2026-06-24
 
 ### Fixed

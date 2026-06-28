@@ -85,7 +85,7 @@ l'emportent.
 ## Nouveautés
 
 Les notes de version vivent dans [`docs/CHANGELOG.md`](docs/CHANGELOG.md). La
-ligne actuelle est `0.8.1`.
+ligne actuelle est `0.8.2`.
 
 ## Comment ça marche
 
@@ -424,8 +424,8 @@ Guards courants :
 
 ## Release actuelle
 
-- npm package : `repo-harness@0.8.1`
-- Generated workflow stamp : `repo-harness@0.8.1+template@0.8.1`
+- npm package : `repo-harness@0.8.2`
+- Generated workflow stamp : `repo-harness@0.8.2+template@0.8.2`
 - GitHub repository : `Ancienttwo/repo-harness`
 - Release history : [`docs/CHANGELOG.md`](docs/CHANGELOG.md)
 
