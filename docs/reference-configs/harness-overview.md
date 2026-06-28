@@ -11,8 +11,8 @@ or refreshes a repo. The harness gives agents three durable surfaces:
   `AGENTS.md`, and root `CLAUDE.md` explain stable product intent, coding
   rules, and local workflow boundaries.
 - **Task contracts**: `plans/`, `tasks/contracts/`, `tasks/reviews/`, and
-  `.ai/harness/checks/` turn a request into scoped implementation work with
-  evidence-backed completion.
+  the current `.ai/harness/checks/latest.json` pointer turn a request into
+  scoped implementation work with evidence-backed completion.
 - **Session journal**: `.ai/harness/handoff/`, `tasks/current.md`, and
   `.ai/harness/events.jsonl` let a new agent session resume from repo state
   without treating chat history as authority.
@@ -76,7 +76,9 @@ with the project.
 
 - Notes: `tasks/notes/<plan-stem>.notes.md` is task-local and auditable. It should not be treated as durable knowledge by default.
 - Current status: `tasks/current.md` is a tracked derived snapshot for orientation only. It must be regenerated from source artifacts and must not contain hand-written kanban/checklist state.
-- Evidence: `.ai/harness/checks/latest.json` is the current gate, while `.ai/harness/runs/*.json` keeps immutable verification snapshots for later audit.
+- Evidence: `.ai/harness/checks/latest.json` is the current gate, while `.ai/harness/runs/*.json` keeps immutable verification snapshots for later audit. Task-specific `.ai/harness/checks/*.latest.{json,md}` reports are ignored runtime cache; promote durable conclusions into reviews, contracts, notes, or research.
+- Human reading surface: `docs/spec.md`, `docs/architecture/`, and durable `docs/researches/` conclusions are the default entrypoint. Root workflow artifacts should describe active work only; completed plan/contract/review/notes/todo artifacts move to `plans/archive/` or `tasks/archive/`, and `.rgignore` keeps those archives plus runtime evidence out of default `rg` results.
+- Closeout order: promote durable truth first, then archive the workflow artifacts. If a fact only lives in a review/contract/checks file, the workflow is not ready to disappear from the active reading surface.
 - Memory: `docs/researches/`, `tasks/lessons.md`, and gbrain are advisory. Current repo state and evidence override summaries.
 - External knowledge: `brain/<project>/*` stores long-form explanations, runbooks, decisions, and patterns. Hooks may write only explicitly opted-in `repo-to-brain` manifest entries; checks must not require gbrain or MCP.
 - Assets: policies, hooks, scripts, templates, and reference configs only change when a pattern has evidence across tasks or fixtures.

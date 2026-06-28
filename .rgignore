@@ -1,0 +1,14 @@
+# repo-harness default reading surface: keep historical workflow audit artifacts
+# out of normal search while preserving them in git history and explicit paths.
+plans/archive/
+tasks/archive/
+
+# Runtime evidence/cache surfaces. Use explicit paths or rg -uu when auditing.
+.ai/harness/archive/
+.ai/harness/checks/latest.json
+.ai/harness/checks/*.latest.json
+.ai/harness/checks/*.latest.md
+.ai/harness/failures/latest.jsonl
+.ai/harness/handoff/current.md
+.ai/harness/handoff/resume.md
+.ai/harness/runs/

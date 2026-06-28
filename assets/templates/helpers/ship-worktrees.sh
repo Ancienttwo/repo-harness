@@ -113,6 +113,27 @@ dirty_paths_for_worktree() {
   } | sed '/^$/d' | sort -u
 }
 
+ensure_worktree_status_for_cleanup() {
+  local worktree="$1"
+
+  if git -C "$worktree" status --porcelain=v1 --untracked-files=all >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    echo "[Ship] would repair stale worktree gitdir before dirty check: $worktree"
+    return 1
+  fi
+
+  git worktree repair "$worktree" >/dev/null 2>&1 || true
+  if git -C "$worktree" status --porcelain=v1 --untracked-files=all >/dev/null 2>&1; then
+    echo "[Ship] Repaired stale worktree gitdir: $worktree" >&2
+    return 0
+  fi
+
+  fail "linked worktree status unavailable after repair attempt: $worktree"
+}
+
 is_scaffold_path() {
   local path="$1"
   case "$path" in
@@ -456,7 +477,17 @@ cleanup_merged() {
   while IFS=$'\t' read -r branch path; do
     [[ -n "$branch" && -n "$path" ]] || continue
     slug="${branch#${BRANCH_PREFIX}}"
+    if [[ -n "$SLUG_OVERRIDE" && "$slug" != "$SLUG_OVERRIDE" ]]; then
+      continue
+    fi
     if git merge-base --is-ancestor "$branch" "$TARGET_BRANCH" >/dev/null 2>&1; then
+      if ! ensure_worktree_status_for_cleanup "$path"; then
+        if [[ "$DRY_RUN" -eq 1 ]]; then
+          run_cmd bash "scripts/contract-worktree.sh" cleanup --slug "$slug" --target "$TARGET_BRANCH" --dry-run
+          cleaned=1
+          continue
+        fi
+      fi
       guard_dirty_merged_worktree "$branch" "$path" || exit 1
       if [[ "$DRY_RUN" -eq 1 ]]; then
         run_cmd bash "scripts/contract-worktree.sh" cleanup --slug "$slug" --target "$TARGET_BRANCH" --dry-run
@@ -470,7 +501,11 @@ cleanup_merged() {
   done < <(list_contract_worktrees "$BRANCH_PREFIX")
 
   if [[ "$cleaned" -eq 0 ]]; then
-    echo "[Ship] No merged contract worktrees to clean."
+    if [[ -n "$SLUG_OVERRIDE" ]]; then
+      echo "[Ship] No merged contract worktree to clean for slug: $SLUG_OVERRIDE"
+    else
+      echo "[Ship] No merged contract worktrees to clean."
+    fi
   fi
 }
 

@@ -344,6 +344,15 @@ Complete this inventory before implementation. If any line is unknown, keep the 
 - Checks file: `.ai/harness/checks/latest.json`
 - Session handoff: `.ai/harness/handoff/current.md`
 
+## Promotion Gate
+
+- **Merge/PR unit**:
+- **Rollback surface**:
+- **Verification boundary**:
+- **Review/acceptance boundary**:
+- **High-risk surface**:
+- **Why not checklist row**:
+
 ## Evidence Contract
 
 - **State/progress path**:
@@ -875,7 +884,8 @@ ARCHITECTURE_INDEX_EOF
     "evidence": {
       "latest": ".ai/harness/checks/latest.json",
       "snapshots_dir": ".ai/harness/runs",
-      "purpose": "raw verification records used to audit notes, reviews, and future promotion"
+      "cache_globs": [".ai/harness/checks/*.latest.json", ".ai/harness/checks/*.latest.md"],
+      "purpose": "raw verification records used to audit notes, reviews, and future promotion; checks latest reports are ignored runtime cache unless promoted into reviews, contracts, notes, runs, or research"
     },
     "assets": {
       "sources": [".ai/harness/policy.json", ".ai/harness/workflow-contract.json", ".ai/hooks/", "scripts/", "docs/reference-configs/"],

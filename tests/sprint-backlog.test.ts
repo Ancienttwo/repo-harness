@@ -309,14 +309,15 @@ describe("sprint-backlog helper", () => {
       const sprintAfterContract = readFileSync(join(cwd, sprintPath), "utf-8");
       expect(sprintAfterContract).toContain("| 1 | [ ] | task-a | contract | unit tests pass | (pending) |");
 
-      // Row 2 (task-b) is inline mode: it executes in the primary tree, so
-      // the Plan cell is filled immediately.
+      // Row 2 (task-b) is inline mode: it stays in the sprint backlog and
+      // does not create a top-level plan or task artifacts.
       const inline = run("bash", ["scripts/sprint-backlog.sh", "start-task", "--task", "task-b"], cwd);
       expect(inline.status).toBe(0);
-      const inlinePlan = inline.stdout.match(/Captured plan: (plans\/plan-[^\s]+\.md)/)?.[1] ?? "";
-      expect(inlinePlan).toMatch(/task-b\.md$/);
+      expect(inline.stdout).toContain("is inline; no plan or task artifacts were captured");
+      expect(inline.stdout).not.toContain("Captured plan:");
       const sprintAfterInline = readFileSync(join(cwd, sprintPath), "utf-8");
-      expect(sprintAfterInline).toContain(`| 2 | [ ] | task-b | inline | doc section updated | \`${inlinePlan}\` |`);
+      expect(sprintAfterInline).toContain("| 2 | [ ] | task-b | inline | doc section updated | (pending) |");
+      expect(readdirSync(join(cwd, "plans")).filter((name) => name.includes("task-b")).length).toBe(0);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -339,7 +340,8 @@ describe("sprint-backlog helper", () => {
 
       const auto = run("bash", ["scripts/sprint-backlog.sh", "start-task"], cwd);
       expect(auto.status).toBe(0);
-      expect(auto.stdout).toMatch(/Captured plan: plans\/plan-\d{8}-\d{4}-task-b\.md/);
+      expect(auto.stdout).toContain("task-b");
+      expect(auto.stdout).toContain("no plan or task artifacts were captured");
 
       const exhausted = run("bash", ["scripts/sprint-backlog.sh", "start-task"], cwd);
       expect(exhausted.status).toBe(3);

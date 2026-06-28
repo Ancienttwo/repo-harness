@@ -154,6 +154,28 @@ find_worktree_for_branch() {
   '
 }
 
+worktree_status_for_cleanup() {
+  local worktree_path="$1"
+  local allow_repair="${2:-0}"
+  local status
+
+  if status="$(git -C "$worktree_path" status --porcelain=v1 --untracked-files=all 2>/dev/null)"; then
+    printf '%s' "$status"
+    return 0
+  fi
+
+  if [[ "$allow_repair" -eq 1 ]]; then
+    git worktree repair "$worktree_path" >/dev/null 2>&1 || true
+    if status="$(git -C "$worktree_path" status --porcelain=v1 --untracked-files=all 2>/dev/null)"; then
+      echo "[ContractWorktree] Repaired stale worktree gitdir: $worktree_path" >&2
+      printf '%s' "$status"
+      return 0
+    fi
+  fi
+
+  return 1
+}
+
 default_worktree_path() {
   local slug="$1"
   local parent repo_name
@@ -629,6 +651,7 @@ cleanup_worktree() {
   fi
 
   local target_worktree current_root branch_prefix branch_name worktree_path metadata_file
+  local worktree_status repair_needed=0
   branch_prefix="$(policy_get '.worktree_strategy.branch_prefix' 'codex/')"
   branch_name="${branch_prefix}${slug}"
   metadata_file=".ai/harness/worktrees/${slug}.json"
@@ -663,7 +686,16 @@ cleanup_worktree() {
   fi
 
   if [[ -n "$worktree_path" ]]; then
-    if [[ -n "$(git -C "$worktree_path" status --porcelain=v1 --untracked-files=all)" ]]; then
+    if ! worktree_status="$(worktree_status_for_cleanup "$worktree_path" "$((1 - dry_run))")"; then
+      if [[ "$dry_run" -eq 1 ]]; then
+        repair_needed=1
+      else
+        echo "contract-worktree: linked worktree status unavailable after repair attempt, refusing cleanup: $worktree_path" >&2
+        echo "contract-worktree: run git worktree repair '$worktree_path' and retry, or inspect the directory manually before removing it" >&2
+        exit 1
+      fi
+    fi
+    if [[ -n "$worktree_status" ]]; then
       echo "contract-worktree: linked worktree is dirty, refusing cleanup: $worktree_path" >&2
       echo "contract-worktree: pick/apply/commit useful changes first; scaffold-only discard belongs in scripts/ship-worktrees.sh --cleanup-merged --discard-scaffold-only" >&2
       exit 1
@@ -674,6 +706,9 @@ cleanup_worktree() {
 
   if [[ "$dry_run" -eq 1 ]]; then
     echo "[ContractWorktree] dry-run cleanup slug=$slug target=$target_branch"
+    if [[ "$repair_needed" -eq 1 ]]; then
+      echo "[ContractWorktree] would repair stale worktree gitdir before dirty check: $worktree_path"
+    fi
     echo "[ContractWorktree] would remove worktree: ${worktree_path:-"(absent)"}"
     echo "[ContractWorktree] would delete branch: $branch_name"
     echo "[ContractWorktree] would remove metadata: $metadata_file"

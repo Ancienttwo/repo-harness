@@ -47,6 +47,8 @@ export const GITIGNORE_MANAGED_BLOCK_CONTENT = [
   ".claude/*.backup-*",
   "tasks/.current.md.tmp.*",
   ".ai/harness/checks/latest.json",
+  ".ai/harness/checks/*.latest.json",
+  ".ai/harness/checks/*.latest.md",
   ".ai/harness/checks/post-bash-latest.json",
   ".ai/harness/events.jsonl",
   ".ai/harness/archive/",

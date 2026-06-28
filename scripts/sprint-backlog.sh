@@ -21,12 +21,13 @@ Usage:
 
 Program-level sprint backlog helper. PRDs live in plans/prds/ as the upper
 planning layer; sprints live in plans/sprints/ as ordered execution backlogs.
-Each backlog row is expanded with $think before the existing plan -> contract
--> worktree flow. tasks/todos.md stays the deferred-goal ledger.
+Contract backlog rows are expanded with $think before the existing plan ->
+contract -> worktree flow. Inline rows stay in the sprint backlog or active
+plan Task Breakdown. tasks/todos.md stays the deferred-goal ledger.
 
-start-task reserves the next (or named) pending backlog row and can capture a
-thin plan seed. The coding agent must still use `$think` to expand the row into
-a decision-complete plan before code edits.
+start-task reserves the next (or named) pending backlog row. Contract rows can
+capture a thin plan seed. Inline rows only record an in-flight marker and should
+not create plan/contract/review artifacts.
 --sprint overrides the active-sprint marker (still confined to the sprints
 dir), which finish back-fill uses inside worktrees where the runtime marker
 is absent.
@@ -217,8 +218,9 @@ render_sprint_file() {
 > **Goal Mode**: incremental
 
 Program-level sprint container. The Source PRD summary and ordered backlog
-decompose product intent into task-contract slices; each backlog row is a
-long-task waypoint that must be expanded with `$think` before code edits.
+decompose product intent into ordered rows. Contract rows become task-contract
+slices after `$think` expansion; inline rows stay in the sprint backlog or
+active plan Task Breakdown.
 `tasks/todos.md` stays the deferred-goal ledger and never carries this backlog.
 
 ## PRD
@@ -660,8 +662,6 @@ cmd_start_task() {
       ;;
   esac
 
-  [[ -f "scripts/capture-plan.sh" ]] || { echo "sprint-backlog: scripts/capture-plan.sh not found" >&2; exit 1; }
-
   acquire_backlog_lock
   prune_in_flight_markers "$sprint_file"
 
@@ -716,6 +716,21 @@ cmd_start_task() {
   fi
   record_in_flight "$target_task" "capturing"
 
+  if [[ "$target_mode" == "inline" ]]; then
+    record_in_flight "$target_task" "inline:${sprint_file}#${target_index}"
+    release_backlog_lock
+    echo "Backlog row ${target_index} ('${target_task}') is inline; no plan or task artifacts were captured."
+    echo "Execute it from ${sprint_file} and keep detailed checklist items in the active plan Task Breakdown if needed."
+    return 0
+  fi
+
+  [[ -f "scripts/capture-plan.sh" ]] || {
+    release_backlog_lock
+    clear_in_flight "$target_task"
+    echo "sprint-backlog: scripts/capture-plan.sh not found" >&2
+    exit 1
+  }
+
   # Do not hold the backlog lock across capture-plan: with --execute it can
   # run git worktree setup for minutes and the stale-reclaim would hand the
   # lock to a second writer.
@@ -763,25 +778,13 @@ BODY_EOF
     capture_args+=(--execute)
   fi
 
-  # Inline-mode rows execute in the primary tree: suppress the automatic
-  # contract worktree for them.
-  if [[ "$target_mode" == "inline" ]]; then
-    capture_output="$(REPO_HARNESS_DISABLE_CONTRACT_WORKTREE=1 bash scripts/capture-plan.sh "${capture_args[@]}" 2>&1)" || {
-      printf '%s\n' "$capture_output" >&2
-      rm -f "$body_file"
-      clear_in_flight "$target_task"
-      echo "sprint-backlog: capture-plan failed for task '$target_task'" >&2
-      exit 1
-    }
-  else
-    capture_output="$(bash scripts/capture-plan.sh "${capture_args[@]}" 2>&1)" || {
-      printf '%s\n' "$capture_output" >&2
-      rm -f "$body_file"
-      clear_in_flight "$target_task"
-      echo "sprint-backlog: capture-plan failed for task '$target_task'" >&2
-      exit 1
-    }
-  fi
+  capture_output="$(bash scripts/capture-plan.sh "${capture_args[@]}" 2>&1)" || {
+    printf '%s\n' "$capture_output" >&2
+    rm -f "$body_file"
+    clear_in_flight "$target_task"
+    echo "sprint-backlog: capture-plan failed for task '$target_task'" >&2
+    exit 1
+  }
   rm -f "$body_file"
   printf '%s\n' "$capture_output"
 
@@ -792,17 +795,11 @@ BODY_EOF
   fi
   record_in_flight "$target_task" "$plan_path"
 
-  if [[ "$target_mode" == "inline" ]]; then
-    acquire_backlog_lock
-    set_row_plan_cell "$sprint_file" "$target_index" "$target_task" "\`${plan_path}\`"
-    echo "Backlog row ${target_index} ('${target_task}') now references ${plan_path}"
-  else
-    # Contract mode: the plan moves into a worktree branched from HEAD, so
-    # writing the Plan cell here would dirty the primary tree and block the
-    # eventual --ff-only merge back. The finish back-fill writes the row
-    # (status + plan) atomically with the merged slice instead.
-    echo "Backlog row ${target_index} ('${target_task}') stays (pending); contract-worktree finish back-fills the Plan cell after merge."
-  fi
+  # Contract mode: the plan moves into a worktree branched from HEAD, so
+  # writing the Plan cell here would dirty the primary tree and block the
+  # eventual --ff-only merge back. The finish back-fill writes the row
+  # (status + plan) atomically with the merged slice instead.
+  echo "Backlog row ${target_index} ('${target_task}') stays (pending); contract-worktree finish back-fills the Plan cell after merge."
 }
 
 [[ $# -gt 0 ]] || { usage >&2; exit 2; }

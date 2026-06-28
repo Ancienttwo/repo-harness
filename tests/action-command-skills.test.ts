@@ -245,7 +245,8 @@ describe("repo-harness action command skills", () => {
     expect(sprint).toContain("plans/sprints/");
     expect(sprint).toContain("> **Source PRD**");
     expect(sprint).toContain("must be machine-checkable");
-    expect(sprint).toContain("must still run `$think` before code edits");
+    expect(sprint).toContain("For `contract` rows, invoke `$think`");
+    expect(sprint).toContain("For `inline` rows, do not create a new `plans/plan-*.md` or task contract");
   });
 
   test("goal command requires detailed PRD or Sprint context before native goal continuation", () => {

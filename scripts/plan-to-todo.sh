@@ -82,6 +82,55 @@ plan_evidence_contract_error() {
   [[ "$missing" -eq 0 ]]
 }
 
+plan_promotion_gate_error() {
+  local file="$1"
+  local section=""
+  local missing=0
+
+  section="$(awk '
+    BEGIN { in_section = 0 }
+    /^## Promotion Gate[[:space:]]*$/ { in_section = 1; next }
+    in_section && /^## / { exit }
+    in_section { print }
+  ' "$file")"
+
+  if [[ -z "$(printf '%s' "$section" | tr -d '[:space:]')" ]]; then
+    echo "missing ## Promotion Gate section"
+    return 1
+  fi
+
+  local label line value
+  for label in "Merge/PR unit" "Rollback surface" "Verification boundary" "Review/acceptance boundary" "High-risk surface" "Why not checklist row"; do
+    line="$(printf '%s\n' "$section" | grep -Ei "^[[:space:]]*-[[:space:]]*(\\*\\*)?${label}(\\*\\*)?[[:space:]]*:" | head -1 || true)"
+    if [[ -z "$line" ]]; then
+      echo "missing field: ${label}"
+      missing=1
+      continue
+    fi
+
+    value="${line#*:}"
+    value="$(printf '%s' "$value" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+    if [[ -z "$value" ]] || printf '%s' "$value" | grep -Eiq '^(tbd|todo|n/a|none|unknown|\.\.\.)$'; then
+      echo "field has no concrete value: ${label}"
+      missing=1
+    fi
+  done
+
+  [[ "$missing" -eq 0 ]]
+}
+
+plan_inline_sprint_mode_error() {
+  local file="$1"
+
+  if grep -Eiq '^> \*\*Orchestration Kind\*\*:[[:space:]]*sprint-task[[:space:]]*$' "$file" \
+    && grep -Eiq '^[[:space:]]*-[[:space:]]*Mode:[[:space:]]*inline[[:space:]]*$' "$file"; then
+    echo "inline sprint-task rows must stay in the active sprint backlog or plan Task Breakdown; do not project them into contract/review/notes"
+    return 1
+  fi
+
+  return 0
+}
+
 extract_capability_id() {
   local file="$1"
   awk -F': ' '/^\> \*\*Capability ID\*\*:/ {print $2; exit}' "$file" | xargs
@@ -595,6 +644,18 @@ fi
 if ! evidence_error="$(plan_evidence_contract_error "$plan_file")"; then
   echo "Plan Evidence Contract is incomplete in $plan_file:" >&2
   printf '%s\n' "$evidence_error" >&2
+  exit 1
+fi
+
+if ! promotion_error="$(plan_promotion_gate_error "$plan_file")"; then
+  echo "Plan Promotion Gate is incomplete in $plan_file:" >&2
+  printf '%s\n' "$promotion_error" >&2
+  exit 1
+fi
+
+if ! inline_mode_error="$(plan_inline_sprint_mode_error "$plan_file")"; then
+  echo "Plan cannot be projected into task artifacts: $plan_file:" >&2
+  printf '%s\n' "$inline_mode_error" >&2
   exit 1
 fi
 

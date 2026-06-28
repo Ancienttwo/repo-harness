@@ -172,6 +172,43 @@ plan_evidence_contract_error() {
   [[ "$missing" -eq 0 ]]
 }
 
+plan_promotion_gate_error() {
+  local file="$1"
+  local section=""
+  local missing=0
+
+  section="$(awk '
+    BEGIN { in_section = 0 }
+    /^## Promotion Gate[[:space:]]*$/ { in_section = 1; next }
+    in_section && /^## / { exit }
+    in_section { print }
+  ' "$file")"
+
+  if [[ -z "$(printf '%s' "$section" | tr -d '[:space:]')" ]]; then
+    echo "missing ## Promotion Gate section"
+    return 1
+  fi
+
+  local label line value
+  for label in "Merge/PR unit" "Rollback surface" "Verification boundary" "Review/acceptance boundary" "High-risk surface" "Why not checklist row"; do
+    line="$(printf '%s\n' "$section" | grep -Ei "^[[:space:]]*-[[:space:]]*(\\*\\*)?${label}(\\*\\*)?[[:space:]]*:" | head -1 || true)"
+    if [[ -z "$line" ]]; then
+      echo "missing field: ${label}"
+      missing=1
+      continue
+    fi
+
+    value="${line#*:}"
+    value="$(printf '%s' "$value" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+    if [[ -z "$value" ]] || printf '%s' "$value" | grep -Eiq '^(tbd|todo|n/a|none|unknown|\.\.\.)$'; then
+      echo "field has no concrete value: ${label}"
+      missing=1
+    fi
+  done
+
+  [[ "$missing" -eq 0 ]]
+}
+
 check_plan_template_evidence_contract() {
   local file="$1"
   local label
@@ -184,6 +221,22 @@ check_plan_template_evidence_contract() {
   for label in "State/progress path" "Verification evidence" "Evaluator rubric" "Stop condition" "Rollback surface"; do
     if ! grep -Eiq "^[[:space:]]*-[[:space:]]*(\\*\\*)?${label}(\\*\\*)?[[:space:]]*:" "$file"; then
       report_issue "Plan template Evidence Contract is missing field '${label}': $file"
+    fi
+  done
+}
+
+check_plan_template_promotion_gate() {
+  local file="$1"
+  local label
+
+  grep -Eq '^## Promotion Gate[[:space:]]*$' "$file" || {
+    report_issue "Plan template is missing ## Promotion Gate: $file"
+    return
+  }
+
+  for label in "Merge/PR unit" "Rollback surface" "Verification boundary" "Review/acceptance boundary" "High-risk surface" "Why not checklist row"; do
+    if ! grep -Eiq "^[[:space:]]*-[[:space:]]*(\\*\\*)?${label}(\\*\\*)?[[:space:]]*:" "$file"; then
+      report_issue "Plan template Promotion Gate is missing field '${label}': $file"
     fi
   done
 }
@@ -242,6 +295,35 @@ prd_known_status() {
       ;;
   esac
   return 1
+}
+
+plan_terminal_status() {
+  case "$1" in
+    Complete|Completed|Done|Fulfilled|Archived|Abandoned|Superseded)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+root_terminal_plan_count() {
+  local count=0
+  local plan_file status
+
+  [[ -d "plans" ]] || {
+    printf '0'
+    return 0
+  }
+
+  while IFS= read -r plan_file; do
+    [[ -n "$plan_file" ]] || continue
+    status="$(extract_status "$plan_file")"
+    if plan_terminal_status "$status"; then
+      count=$((count + 1))
+    fi
+  done < <(find plans -maxdepth 1 -type f -name 'plan-*.md' 2>/dev/null | sort)
+
+  printf '%s' "$count"
 }
 
 markdown_section_has_content() {
@@ -745,6 +827,35 @@ check_helper_runtime_files() {
   done
 }
 
+check_tracked_ignored_runtime_artifacts() {
+  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    return 0
+  fi
+
+  local path
+  while IFS= read -r path; do
+    [[ -n "$path" ]] || continue
+    if [[ "$path" == ".ai/harness/security/.gitkeep" ]]; then
+      continue
+    fi
+
+    if git check-ignore --no-index -q -- "$path"; then
+      report_issue "Runtime cache is ignored but still tracked: $path. Run: git rm --cached -- '$path' (keeps the local file)."
+    fi
+  done < <(
+    git ls-files -- \
+      "$checks_file" \
+      ".ai/harness/checks/post-bash-latest.json" \
+      ".ai/harness/checks/*.latest.json" \
+      ".ai/harness/checks/*.latest.md" \
+      ".ai/harness/failures/latest.jsonl" \
+      "$handoff_file" \
+      "$resume_file" \
+      ".ai/harness/security/*" \
+      2>/dev/null || true
+  )
+}
+
 policy_get() {
   local jq_path="$1"
   local default_value="$2"
@@ -826,11 +937,22 @@ check_required_file "$(policy_get '.information_lifecycle.external_knowledge.man
 
 if [[ -f ".claude/templates/plan.template.md" ]]; then
   check_plan_template_evidence_contract ".claude/templates/plan.template.md"
+  check_plan_template_promotion_gate ".claude/templates/plan.template.md"
+fi
+
+root_terminal_plan_limit="${REPO_HARNESS_ROOT_TERMINAL_PLAN_LIMIT:-25}"
+if [[ "$root_terminal_plan_limit" =~ ^[0-9]+$ ]]; then
+  root_terminal_plans="$(root_terminal_plan_count)"
+  if [[ "$root_terminal_plans" -gt "$root_terminal_plan_limit" ]]; then
+    report_issue "Root plans/ contains ${root_terminal_plans} terminal plans (limit ${root_terminal_plan_limit}); archive completed or superseded plan artifacts."
+  fi
 fi
 
 if [[ -f "$policy_file" && -z "$upgrade_strategy_version" ]] && command -v jq >/dev/null 2>&1; then
   report_issue "Harness policy is missing upgrade.strategy_version; rerun migration to merge the versioned upgrade strategy."
 fi
+
+check_tracked_ignored_runtime_artifacts
 
 if [[ ! -f "$WORKFLOW_CONTRACT_PATH" ]]; then
   report_issue "Missing workflow contract manifest: $WORKFLOW_CONTRACT_PATH"
@@ -1029,9 +1151,16 @@ else
     report_issue "Active plan is missing a '**Status**' line: $active_plan"
   fi
 
+  if plan_terminal_status "$plan_status"; then
+    report_issue "Active plan has terminal status '${plan_status}': $active_plan. Switch to an active plan or clear the active-plan markers before continuing."
+  fi
+
   if [[ "$plan_status" == "Approved" || "$plan_status" == "Executing" ]]; then
     if ! evidence_error="$(plan_evidence_contract_error "$active_plan")"; then
       report_issue "Active $plan_status plan has incomplete Evidence Contract: $active_plan (${evidence_error//$'\n'/; })"
+    fi
+    if ! promotion_error="$(plan_promotion_gate_error "$active_plan")"; then
+      report_issue "Active $plan_status plan has incomplete Promotion Gate: $active_plan (${promotion_error//$'\n'/; })"
     fi
 
     contract_file="$(derive_contract_path "$active_plan")"

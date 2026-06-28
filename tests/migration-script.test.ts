@@ -616,6 +616,8 @@ describe("Migration script contract", () => {
       expect(gitignore).toContain(".ai/harness/active-plan");
       expect(gitignore).toContain(".ai/harness/active-worktree");
       expect(gitignore).toContain("tasks/.current.md.tmp.*");
+      expect(gitignore).toContain(".ai/harness/checks/*.latest.json");
+      expect(gitignore).toContain(".ai/harness/checks/*.latest.md");
       expect(gitignore).toContain(".ai/harness/planning/");
       expect(gitignore).toContain("!.ai/harness/planning/.gitkeep");
       expect(gitignore).toContain(".claude/.active-plan");

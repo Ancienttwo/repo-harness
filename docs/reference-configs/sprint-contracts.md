@@ -16,12 +16,14 @@ The word "sprint" historically named a single execution slice in this harness. T
 - A PRD decomposes `docs/spec.md` intent into product direction, users, success criteria, acceptance scenarios, module behavior, data model, performance targets, and developer handoff. `repo-harness-prd` writes PRDs with compact/standard tiers and evidence rules for `[UNKNOWN]` / `[UNVERIFIED]` facts.
 - A Sprint decomposes a PRD or `docs/spec.md` into an ordered backlog; each backlog task executes as one task-contract slice through the existing plan -> contract -> worktree -> verify flow.
 - `tasks/todos.md` stays the deferred-goal ledger; it never carries the sprint backlog or any active checklist.
+- Backlog row mode is a granularity decision. `contract` rows are allowed to become a top-level plan plus task contract when they pass the plan Promotion Gate. `inline` rows stay inside the sprint backlog or active plan `## Task Breakdown` and must not generate contract/review/notes artifacts.
 - Legacy filenames: `verify-sprint.sh` and `new-sprint.sh` predate the program layer and are kept for downstream compatibility. Read them as task-contract verification helpers. New generated artifact headings and plan metadata should use **Task Contract** and **Task Review**.
 - Sprint lifecycle: `Draft -> Approved -> Executing -> Done -> Archived`, tracked in the sprint file's `> **Status**:` line. Where the sprint layer is installed, `scripts/sprint-backlog.sh` is the compatibility command and delegates to the installed helper runtime under `.ai/harness/scripts/`; `.ai/harness/sprint/active-sprint` (runtime state, not committed) marks the single active sprint. Harness installs predating the sprint layer do not ship the helper, so check for the script before invoking it. `check-task-workflow.sh` rejects Approved/Executing sprints whose PRD/source section is placeholder-only or whose backlog rows lack a concrete acceptance line.
 
 ## Inventory First
 
-- Every execution-ready `plans/plan-*.md` should name the active plan, owning worktree, expected contract, review, notes file, deferred-goal ledger, `.ai/harness/checks/latest.json`, `.ai/harness/runs/`, scope authority, plan switching rule, and worktree isolation path.
+- Every execution-ready `plans/plan-*.md` should name the active plan, owning worktree, expected contract, review, notes file, deferred-goal ledger, `.ai/harness/checks/latest.json`, `.ai/harness/runs/`, scope authority, plan switching rule, and worktree isolation path. Checks latest files are runtime evidence pointers/cache, not commit surface.
+- Every execution-ready `plans/plan-*.md` should fill `## Promotion Gate` with the merge/PR unit, rollback surface, verification boundary, review/acceptance boundary, high-risk surface, and why this cannot remain a checklist row.
 - Every `tasks/contracts/*.contract.md` should repeat the source plan, deferred-goal ledger, review, notes, checks, run snapshots, scope gate, and completion gate.
 - If the inventory is incomplete, keep the plan in Draft or revise the contract before editing implementation files.
 
@@ -81,6 +83,7 @@ Existing contracts without this block remain valid. `.ai/harness/scripts/verify-
 - A contract is not truly done until the matching review file records a passing recommendation.
 - `tasks/reviews/<plan-stem>.review.md` should be filled from Waza `/check` after verification and cite the contract, implementation notes, checks file, run snapshot, `## External Acceptance Advice`, and any manual observations.
 - `tasks/notes/<plan-stem>.notes.md` captures task-local decisions and should be archived or promoted deliberately, not left as hidden long-term memory.
+- Closeout is promote-then-archive: durable truths move into `docs/architecture/`, `docs/researches/`, `docs/spec.md`, or `tasks/lessons.md` before `archive-workflow.sh` moves fulfilled plan/contract/review/notes/todo artifacts into `plans/archive/` and `tasks/archive/`.
 
 ## Worktree Lifecycle
 

@@ -9,8 +9,9 @@
 > **Goal Mode**: incremental
 
 Program-level sprint container. The Source PRD summary and ordered backlog
-decompose product intent into task-contract slices; each backlog row is a
-long-task waypoint that must be expanded with `$think` before code edits.
+decompose product intent into ordered rows. Contract rows become task-contract
+slices after `$think` expansion; inline rows stay in the sprint backlog or
+active plan Task Breakdown.
 `tasks/todos.md` stays the deferred-goal ledger and never carries this backlog.
 
 ## PRD

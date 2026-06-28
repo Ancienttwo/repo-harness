@@ -258,6 +258,8 @@ describe("workflow contract manifest", () => {
     expect(gitignore).toContain("tasks/.current.md.tmp.*");
     expect(gitignore).toContain(".claude/.plan-state/");
     expect(gitignore).toContain(".ai/harness/checks/latest.json");
+    expect(gitignore).toContain(".ai/harness/checks/*.latest.json");
+    expect(gitignore).toContain(".ai/harness/checks/*.latest.md");
     expect(gitignore).toContain(".ai/harness/archive/");
     expect(gitignore).toContain(".ai/harness/handoff/current.md");
     expect(gitignore).toContain(".ai/harness/planning/");

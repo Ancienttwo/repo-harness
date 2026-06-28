@@ -178,6 +178,19 @@ function evidenceContract(): string {
   ].join("\n");
 }
 
+function promotionGate(): string {
+  return [
+    "## Promotion Gate",
+    "",
+    "- **Merge/PR unit**: demo branch is the reviewed merge unit",
+    "- **Rollback surface**: revert the demo branch and generated task files",
+    "- **Verification boundary**: bun test and contract verification",
+    "- **Review/acceptance boundary**: task review must recommend pass",
+    "- **High-risk surface**: generated workflow artifacts and helper scripts",
+    "- **Why not checklist row**: fixture exercises contract projection",
+  ].join("\n");
+}
+
 function externalAcceptanceAdvice(reviewer = "Codex", source = "codex-review", manualOverride?: string): string {
   return [
     "## External Acceptance Advice",
@@ -393,6 +406,7 @@ describe("Workflow helper scripts", () => {
       expect(plans.length).toBe(1);
       const plan = readFileSync(join(cwd, "plans", plans[0]), "utf-8");
       expect(plan).toContain("## Workflow Inventory");
+      expect(plan).toContain("## Promotion Gate");
       expect(plan).toContain("> **Task Contract**:");
       expect(plan).toContain("> **Task Review**:");
       expect(plan).not.toContain("> **Sprint Contract**:");
@@ -461,6 +475,8 @@ describe("Workflow helper scripts", () => {
       expect(plan).toContain("- Active plan: `plans/");
       expect(plan).toContain("scripts/contract-worktree.sh start --plan");
       expect(plan).toContain("## Evidence Contract");
+      expect(plan).toContain("## Promotion Gate");
+      expect(plan).toContain("Why not checklist row");
       expect(plan).toContain(`tasks/contracts/${artifactStem}.contract.md`);
       expect(plan).toContain("## Captured Planning Output");
       expect(plan).toContain("- [ ] Add capture helper");
@@ -841,6 +857,8 @@ describe("Workflow helper scripts", () => {
           "",
           evidenceContract(),
           "",
+          promotionGate(),
+          "",
           "## Task Breakdown",
           "- [ ] Step one",
           "- [ ] Step two",
@@ -904,6 +922,8 @@ describe("Workflow helper scripts", () => {
           "> **Implementation Notes**: `tasks/notes/20260304-1400-think-plan-224448.notes.md`",
           "",
           evidenceContract(),
+          "",
+          promotionGate(),
           "",
           "## Task Breakdown",
           "- [ ] Step one",
@@ -974,6 +994,8 @@ describe("Workflow helper scripts", () => {
           "> **Status**: Approved",
           "",
           evidenceContract(),
+          "",
+          promotionGate(),
           "",
           "## Task Breakdown",
           "- [ ] Step one",
@@ -1063,6 +1085,8 @@ describe("Workflow helper scripts", () => {
           "> **Status**: Approved",
           "",
           evidenceContract(),
+          "",
+          promotionGate(),
           "",
           "## Task Breakdown",
           "- [ ] Build demo",
@@ -1236,6 +1260,8 @@ describe("Workflow helper scripts", () => {
           "",
           evidenceContract(),
           "",
+          promotionGate(),
+          "",
           "## Task Breakdown",
           "- [ ] Build demo",
         ].join("\n")
@@ -1362,7 +1388,7 @@ describe("Workflow helper scripts", () => {
       mkdirSync(join(worktreePath, "scripts"), { recursive: true });
       writeFileSync(
         join(worktreePath, "plans/plan-20260304-1450-demo.md"),
-        ["# Plan: demo", "", "> **Status**: Executing", "", evidenceContract(), ""].join("\n")
+        ["# Plan: demo", "", "> **Status**: Executing", "", evidenceContract(), "", promotionGate(), ""].join("\n")
       );
       writeActivePlan(worktreePath, "plans/plan-20260304-1450-demo.md");
       writeFileSync(
@@ -1436,6 +1462,41 @@ describe("Workflow helper scripts", () => {
     }
   }, 15000);
 
+  test("contract-worktree cleanup should repair stale gitdir before removing a merged worktree", () => {
+    const cwd = tmpWorkspace("helper-contract-cleanup-repair");
+    const worktreePath = `${cwd}-wt-demo`;
+    try {
+      copyHelpers(cwd);
+      initGitRepo(cwd);
+      writeFileSync(join(cwd, "README.md"), "# demo\n");
+      commitAll(cwd, "init cleanup repair");
+
+      expect(run("git", ["worktree", "add", worktreePath, "-b", "codex/demo"], cwd).status).toBe(0);
+      mkdirSync(join(cwd, ".ai/harness/worktrees"), { recursive: true });
+      writeFileSync(join(cwd, ".ai/harness/worktrees/demo.json"), '{"slug":"demo"}\n');
+      writeFileSync(join(worktreePath, ".git"), "gitdir: /tmp/moved-repo/.git/worktrees/wt-demo\n");
+
+      const dryRun = run("bash", ["scripts/contract-worktree.sh", "cleanup", "--slug", "demo", "--dry-run"], cwd);
+      expect(dryRun.status).toBe(0);
+      expect(dryRun.stderr).not.toContain("fatal:");
+      expect(dryRun.stdout).toContain("would repair stale worktree gitdir before dirty check");
+      expect(existsSync(worktreePath)).toBe(true);
+      expect(run("git", ["show-ref", "--verify", "--quiet", "refs/heads/codex/demo"], cwd).status).toBe(0);
+
+      const cleanup = run("bash", ["scripts/contract-worktree.sh", "cleanup", "--slug", "demo"], cwd);
+      expect(cleanup.status).toBe(0);
+      expect(cleanup.stderr).toContain("Repaired stale worktree gitdir");
+      expect(cleanup.stdout).toContain("Removed worktree");
+      expect(cleanup.stdout).toContain("Deleted branch: codex/demo");
+      expect(existsSync(worktreePath)).toBe(false);
+      expect(run("git", ["show-ref", "--verify", "--quiet", "refs/heads/codex/demo"], cwd).status).not.toBe(0);
+    } finally {
+      run("git", ["worktree", "remove", "--force", worktreePath], cwd);
+      rmSync(worktreePath, { recursive: true, force: true });
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 15000);
+
   test("contract-worktree cleanup should refuse unmerged, dirty, and linked-cwd cleanup", () => {
     const cwd = tmpWorkspace("helper-contract-cleanup-refuse");
     const unmergedPath = `${cwd}-wt-unmerged`;
@@ -1502,6 +1563,45 @@ describe("Workflow helper scripts", () => {
     } finally {
       run("git", ["worktree", "remove", "--force", worktreePath], cwd);
       rmSync(worktreePath, { recursive: true, force: true });
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 15000);
+
+  test("ship-worktrees cleanup-merged should honor slug filter and repair stale gitdir", () => {
+    const cwd = tmpWorkspace("helper-ship-cleanup-slug-repair");
+    const demoPath = `${cwd}-wt-demo`;
+    const keepPath = `${cwd}-wt-keep`;
+    try {
+      copyHelpers(cwd);
+      initGitRepo(cwd);
+      writeFileSync(join(cwd, "README.md"), "# demo\n");
+      commitAll(cwd, "init slug cleanup");
+
+      expect(run("git", ["worktree", "add", demoPath, "-b", "codex/demo"], cwd).status).toBe(0);
+      expect(run("git", ["worktree", "add", keepPath, "-b", "codex/keep"], cwd).status).toBe(0);
+      mkdirSync(join(cwd, ".ai/harness/worktrees"), { recursive: true });
+      writeFileSync(join(cwd, ".ai/harness/worktrees/demo.json"), '{"slug":"demo"}\n');
+      writeFileSync(join(cwd, ".ai/harness/worktrees/keep.json"), '{"slug":"keep"}\n');
+      writeFileSync(join(demoPath, ".git"), "gitdir: /tmp/moved-repo/.git/worktrees/wt-demo\n");
+
+      const cleanup = run(
+        "bash",
+        ["scripts/ship-worktrees.sh", "--cleanup-merged", "--slug", "demo", "--target", "main"],
+        cwd
+      );
+
+      expect(cleanup.status).toBe(0);
+      expect(cleanup.stderr).toContain("Repaired stale worktree gitdir");
+      expect(cleanup.stdout).toContain("Removed worktree");
+      expect(existsSync(demoPath)).toBe(false);
+      expect(existsSync(keepPath)).toBe(true);
+      expect(run("git", ["show-ref", "--verify", "--quiet", "refs/heads/codex/demo"], cwd).status).not.toBe(0);
+      expect(run("git", ["show-ref", "--verify", "--quiet", "refs/heads/codex/keep"], cwd).status).toBe(0);
+    } finally {
+      for (const path of [demoPath, keepPath]) {
+        run("git", ["worktree", "remove", "--force", path], cwd);
+        rmSync(path, { recursive: true, force: true });
+      }
       rmSync(cwd, { recursive: true, force: true });
     }
   }, 15000);
@@ -1624,6 +1724,73 @@ describe("Workflow helper scripts", () => {
     }
   });
 
+  test("plan-to-todo should reject approved plans without a promotion gate", () => {
+    const cwd = tmpWorkspace("helper-plan-promotion-gate");
+    try {
+      mkdirSync(join(cwd, "plans"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/archive"), { recursive: true });
+      copyHelpers(cwd);
+
+      writeFileSync(
+        join(cwd, "plans/plan-20260304-1418-missing-promotion.md"),
+        [
+          "# Plan: missing promotion",
+          "",
+          "> **Status**: Approved",
+          "",
+          evidenceContract(),
+          "",
+          "## Task Breakdown",
+          "- [ ] Step one",
+        ].join("\n")
+      );
+
+      const res = run("bash", ["scripts/plan-to-todo.sh", "--plan", "plans/plan-20260304-1418-missing-promotion.md"], cwd);
+      expect(res.status).toBe(1);
+      expect(res.stderr).toContain("Plan Promotion Gate is incomplete");
+      expect(res.stderr).toContain("missing ## Promotion Gate section");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("plan-to-todo should reject inline sprint-task projections", () => {
+    const cwd = tmpWorkspace("helper-plan-inline-sprint-task");
+    try {
+      mkdirSync(join(cwd, "plans"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/archive"), { recursive: true });
+      copyHelpers(cwd);
+
+      writeFileSync(
+        join(cwd, "plans/plan-20260304-1419-inline-sprint.md"),
+        [
+          "# Plan: inline sprint",
+          "",
+          "> **Status**: Approved",
+          "> **Orchestration Kind**: sprint-task",
+          "",
+          "## Context",
+          "",
+          "- Mode: inline",
+          "",
+          evidenceContract(),
+          "",
+          promotionGate(),
+          "",
+          "## Task Breakdown",
+          "- [ ] Step one",
+        ].join("\n")
+      );
+
+      const res = run("bash", ["scripts/plan-to-todo.sh", "--plan", "plans/plan-20260304-1419-inline-sprint.md"], cwd);
+      expect(res.status).toBe(1);
+      expect(res.stderr).toContain("Plan cannot be projected into task artifacts");
+      expect(res.stderr).toContain("inline sprint-task rows must stay");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   test("plan-to-todo archive should include metadata header and original todo content", () => {
     const cwd = tmpWorkspace("helper-plan-archive-meta");
     try {
@@ -1639,6 +1806,8 @@ describe("Workflow helper scripts", () => {
           "> **Status**: Approved",
           "",
           evidenceContract(),
+          "",
+          promotionGate(),
           "",
           "## Task Breakdown",
           "- [ ] Step one",
@@ -1718,7 +1887,11 @@ describe("Workflow helper scripts", () => {
         "# Plan: demo\n\n> **Status**: Executing\n"
       );
       mkdirSync(join(cwd, "tasks/notes"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/contracts"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/reviews"), { recursive: true });
       writeFileSync(join(cwd, "tasks/notes/demo.notes.md"), "# Implementation Notes: demo\n");
+      writeFileSync(join(cwd, "tasks/contracts/demo.contract.md"), "# Task Contract: demo\n");
+      writeFileSync(join(cwd, "tasks/reviews/demo.review.md"), "# Task Review: demo\n");
       writeFileSync(join(cwd, "tasks/todos.md"), "# Task Execution Checklist (Primary)\n\n- [ ] task\n");
 
       const res = run(
@@ -1740,6 +1913,14 @@ describe("Workflow helper scripts", () => {
       expect(archivedNotes.length).toBeGreaterThanOrEqual(1);
       expect(readFileSync(join(cwd, "tasks/archive", archivedNotes[0]), "utf-8")).toContain("**Lifecycle**: notes");
       expect(existsSync(join(cwd, "tasks/notes/demo.notes.md"))).toBe(false);
+      const archivedContracts = readdirSync(join(cwd, "tasks/archive")).filter((name) => name.startsWith("contract-"));
+      expect(archivedContracts.length).toBeGreaterThanOrEqual(1);
+      expect(readFileSync(join(cwd, "tasks/archive", archivedContracts[0]), "utf-8")).toContain("**Lifecycle**: contract");
+      expect(existsSync(join(cwd, "tasks/contracts/demo.contract.md"))).toBe(false);
+      const archivedReviews = readdirSync(join(cwd, "tasks/archive")).filter((name) => name.startsWith("review-"));
+      expect(archivedReviews.length).toBeGreaterThanOrEqual(1);
+      expect(readFileSync(join(cwd, "tasks/archive", archivedReviews[0]), "utf-8")).toContain("**Lifecycle**: review");
+      expect(existsSync(join(cwd, "tasks/reviews/demo.review.md"))).toBe(false);
 
       const resetTodo = readFileSync(join(cwd, "tasks/todos.md"), "utf-8");
       expect(resetTodo).toContain("# Deferred Goal Ledger");
@@ -3160,6 +3341,42 @@ describe("Workflow helper scripts", () => {
     }
   });
 
+  test("check-task-workflow should fail strict mode when plan template lacks a promotion gate", () => {
+    const cwd = tmpWorkspace("helper-check-workflow-promotion-template");
+    try {
+      copyHelpers(cwd);
+      expect(
+        run("bash", ["scripts/ensure-task-workflow.sh", "--slug", "promotion-template", "--title", "Promotion Template"], cwd)
+          .status
+      ).toBe(0);
+
+      writeFileSync(
+        join(cwd, ".claude/templates/plan.template.md"),
+        [
+          "# Plan: {{TITLE}}",
+          "",
+          "> **Status**: Draft",
+          "> **Task Contract**: `tasks/contracts/{{ARTIFACT_STEM}}.contract.md`",
+          "> **Task Review**: `tasks/reviews/{{ARTIFACT_STEM}}.review.md`",
+          "",
+          "## Evidence Contract",
+          "- State/progress path: fixture",
+          "- Verification evidence: fixture",
+          "- Evaluator rubric: fixture",
+          "- Stop condition: fixture",
+          "- Rollback surface: fixture",
+        ].join("\n")
+      );
+
+      const res = run("bash", ["scripts/check-task-workflow.sh", "--strict"], cwd);
+
+      expect(res.status).toBe(1);
+      expect(res.stdout).toContain("Plan template is missing ## Promotion Gate");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   test("check-task-workflow should fail strict mode for legacy sprint directory", () => {
     const cwd = tmpWorkspace("helper-check-workflow-legacy-sprint-dir");
     try {
@@ -3257,6 +3474,92 @@ describe("Workflow helper scripts", () => {
 
       expect(res.status).toBe(0);
       expect(res.stdout).not.toContain("resume packet references a historical plan");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("check-task-workflow should fail strict mode when active plan is terminal", () => {
+    const cwd = tmpWorkspace("helper-check-workflow-terminal-active");
+    try {
+      copyHelpers(cwd);
+      expect(
+        run("bash", ["scripts/ensure-task-workflow.sh", "--slug", "terminal-active", "--title", "Terminal Active"], cwd)
+          .status
+      ).toBe(0);
+      writeWorkflowRequiredSurface(cwd);
+
+      const activePlanName = readdirSync(join(cwd, "plans")).find((name) => name.endsWith("-terminal-active.md"));
+      expect(activePlanName).toBeDefined();
+      const activePlan = `plans/${activePlanName}`;
+      writeActivePlan(cwd, activePlan);
+      const activePlanPath = join(cwd, activePlan);
+      writeFileSync(
+        activePlanPath,
+        readFileSync(activePlanPath, "utf-8").replace("> **Status**: Draft", "> **Status**: Completed")
+      );
+
+      const res = run("bash", ["scripts/check-task-workflow.sh", "--strict"], cwd);
+
+      expect(res.status).toBe(1);
+      expect(res.stdout).toContain("Active plan has terminal status 'Completed'");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("check-task-workflow should fail strict mode when ignored runtime cache remains tracked", () => {
+    const cwd = tmpWorkspace("helper-check-workflow-tracked-runtime-cache");
+    try {
+      copyHelpers(cwd);
+      expect(
+        run("bash", ["scripts/ensure-task-workflow.sh", "--slug", "tracked-runtime", "--title", "Tracked Runtime"], cwd)
+          .status
+      ).toBe(0);
+      writeWorkflowRequiredSurface(cwd);
+      writeFileSync(
+        join(cwd, ".gitignore"),
+        [
+          ".ai/harness/checks/latest.json",
+          ".ai/harness/checks/*.latest.json",
+          ".ai/harness/checks/*.latest.md",
+          ".ai/harness/handoff/current.md",
+          ".ai/harness/security/*",
+          "!.ai/harness/security/.gitkeep",
+        ].join("\n") + "\n"
+      );
+      initGitRepo(cwd);
+
+      mkdirSync(join(cwd, ".ai/harness/checks"), { recursive: true });
+      mkdirSync(join(cwd, ".ai/harness/handoff"), { recursive: true });
+      mkdirSync(join(cwd, ".ai/harness/security"), { recursive: true });
+      writeFileSync(join(cwd, ".ai/harness/checks/minimal-change.latest.json"), "{}\n");
+      writeFileSync(join(cwd, ".ai/harness/checks/minimal-change.latest.md"), "# local\n");
+      writeFileSync(join(cwd, ".ai/harness/handoff/current.md"), "# Harness Handoff\n");
+      writeFileSync(join(cwd, ".ai/harness/security/state.sha256"), "abc123\n");
+      expect(
+        run(
+          "git",
+          [
+            "add",
+            "-f",
+            ".ai/harness/checks/minimal-change.latest.json",
+            ".ai/harness/checks/minimal-change.latest.md",
+            ".ai/harness/handoff/current.md",
+            ".ai/harness/security/state.sha256",
+          ],
+          cwd
+        ).status
+      ).toBe(0);
+
+      const res = run("bash", ["scripts/check-task-workflow.sh", "--strict"], cwd);
+
+      expect(res.status).toBe(1);
+      expect(res.stdout).toContain("Runtime cache is ignored but still tracked: .ai/harness/checks/minimal-change.latest.json");
+      expect(res.stdout).toContain("Runtime cache is ignored but still tracked: .ai/harness/checks/minimal-change.latest.md");
+      expect(res.stdout).toContain("Runtime cache is ignored but still tracked: .ai/harness/handoff/current.md");
+      expect(res.stdout).toContain("Runtime cache is ignored but still tracked: .ai/harness/security/state.sha256");
+      expect(res.stdout).toContain("git rm --cached");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

@@ -137,6 +137,15 @@ Complete this inventory before implementation. If any line is unknown, keep the 
 - Checks file: `.ai/harness/checks/latest.json`
 - Session handoff: `.ai/harness/handoff/current.md`
 
+## Promotion Gate
+
+- **Merge/PR unit**:
+- **Rollback surface**:
+- **Verification boundary**:
+- **Review/acceptance boundary**:
+- **High-risk surface**:
+- **Why not checklist row**:
+
 ## Evidence Contract
 
 - **State/progress path**:

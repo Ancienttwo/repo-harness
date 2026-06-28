@@ -256,6 +256,42 @@ if [[ -f "$notes_file" ]]; then
   rm -f "$notes_file"
 fi
 
+contract_file="tasks/contracts/${artifact_stem}.contract.md"
+if [[ ! -f "$contract_file" && -f "tasks/contracts/${slug}.contract.md" ]]; then
+  contract_file="tasks/contracts/${slug}.contract.md"
+fi
+if [[ -f "$contract_file" ]]; then
+  archive_contract="$(unique_archive_path "tasks/archive/contract-${timestamp}-${slug}.md")"
+  {
+    echo "> **Archived**: ${timestamp_human}"
+    echo "> **Related Plan**: ${archive_plan_path}"
+    echo "> **Outcome**: ${outcome}"
+    echo "> **Lifecycle**: contract"
+    echo "> **Parent Run ID**: ${parent_run_id}"
+    echo
+    cat "$contract_file"
+  } > "$archive_contract"
+  rm -f "$contract_file"
+fi
+
+review_file="tasks/reviews/${artifact_stem}.review.md"
+if [[ ! -f "$review_file" && -f "tasks/reviews/${slug}.review.md" ]]; then
+  review_file="tasks/reviews/${slug}.review.md"
+fi
+if [[ -f "$review_file" ]]; then
+  archive_review="$(unique_archive_path "tasks/archive/review-${timestamp}-${slug}.md")"
+  {
+    echo "> **Archived**: ${timestamp_human}"
+    echo "> **Related Plan**: ${archive_plan_path}"
+    echo "> **Outcome**: ${outcome}"
+    echo "> **Lifecycle**: review"
+    echo "> **Parent Run ID**: ${parent_run_id}"
+    echo
+    cat "$review_file"
+  } > "$archive_review"
+  rm -f "$review_file"
+fi
+
 if todo_is_deferred_ledger tasks/todos.md; then
   touch_deferred_ledger_update_marker tasks/todos.md
 else

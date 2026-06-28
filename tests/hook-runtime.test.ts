@@ -102,6 +102,15 @@ function planEvidenceContract(): string {
     "- **Evaluator rubric**: sprint review must recommend pass",
     "- **Stop condition**: stop on failing contract verification",
     "- **Rollback surface**: revert generated task files and changed source files",
+    "",
+    "## Promotion Gate",
+    "",
+    "- **Merge/PR unit**: demo branch is the reviewed merge unit",
+    "- **Rollback surface**: revert generated task files and changed source files",
+    "- **Verification boundary**: verify-sprint and hook runtime checks",
+    "- **Review/acceptance boundary**: sprint review must recommend pass",
+    "- **High-risk surface**: hook guard workflow state",
+    "- **Why not checklist row**: fixture exercises approved-plan gating",
   ].join("\n");
 }
 

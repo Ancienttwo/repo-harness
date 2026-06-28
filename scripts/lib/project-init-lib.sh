@@ -44,6 +44,8 @@ PI_DEFAULT_RUNTIME_ENTRIES=$(cat <<'EOF_RUNTIME'
 .claude/*.backup-*
 tasks/.current.md.tmp.*
 .ai/harness/checks/latest.json
+.ai/harness/checks/*.latest.json
+.ai/harness/checks/*.latest.md
 .ai/harness/checks/post-bash-latest.json
 .ai/harness/events.jsonl
 .ai/harness/archive/
@@ -203,6 +205,15 @@ Complete this inventory before implementation. If any line is unknown, keep the 
 
 - Checks file: `.ai/harness/checks/latest.json`
 - Session handoff: `.ai/harness/handoff/current.md`
+
+## Promotion Gate
+
+- **Merge/PR unit**:
+- **Rollback surface**:
+- **Verification boundary**:
+- **Review/acceptance boundary**:
+- **High-risk surface**:
+- **Why not checklist row**:
 
 ## Evidence Contract
 
@@ -1988,7 +1999,8 @@ pi_write_harness_policy() {
     "evidence": {
       "latest": ".ai/harness/checks/latest.json",
       "snapshots_dir": ".ai/harness/runs",
-      "purpose": "raw verification records used to audit notes, reviews, and future promotion"
+      "cache_globs": [".ai/harness/checks/*.latest.json", ".ai/harness/checks/*.latest.md"],
+      "purpose": "raw verification records used to audit notes, reviews, and future promotion; checks latest reports are ignored runtime cache unless promoted into reviews, contracts, notes, runs, or research"
     },
     "assets": {
       "sources": [".ai/harness/policy.json", ".ai/harness/workflow-contract.json", ".ai/hooks/", "scripts/", "docs/reference-configs/"],
@@ -2017,7 +2029,7 @@ pi_write_harness_policy() {
   "plan_capture": {
     "script": "scripts/capture-plan.sh",
     "sources": ["codex-plan-mode", "waza-think", "repo-harness-plan", "repo-harness-sprint"],
-    "rule": "Codex Plan mode and Waza think planning should capture decision-complete plans into plans/plan-*.md; implementation approval then projects the active approved plan through scripts/plan-to-todo.sh; sprint backlog rows are long-task waypoints and should be expanded with \$think before capture/execution"
+    "rule": "Codex Plan mode and Waza think planning should capture decision-complete plans into plans/plan-*.md only when the Promotion Gate is concrete; implementation approval then projects the active approved plan through scripts/plan-to-todo.sh; inline sprint rows stay in the sprint backlog or active plan Task Breakdown, while contract rows may expand with \$think before capture/execution"
   },
   "planning": {
     "pending_orchestration_file": ".ai/harness/planning/pending.json",

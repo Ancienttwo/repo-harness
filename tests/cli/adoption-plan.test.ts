@@ -286,6 +286,8 @@ describe("safe adoption applicator subset", () => {
     expect(inserted.changed).toBe(true);
     expect(inserted.content).toContain("custom.log");
     expect(inserted.content).toContain("# BEGIN: repo-harness generated-runtime");
+    expect(inserted.content).toContain(".ai/harness/checks/*.latest.json");
+    expect(inserted.content).toContain(".ai/harness/checks/*.latest.md");
 
     const repeated = upsertManagedBlock(inserted.content ?? "", operation);
     expect(repeated.ok).toBe(true);

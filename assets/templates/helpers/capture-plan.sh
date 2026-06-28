@@ -298,6 +298,15 @@ See captured planning output.
 - Checks file: \`.ai/harness/checks/latest.json\`
 - Session handoff: \`.ai/harness/handoff/current.md\`
 
+## Promotion Gate
+
+- **Merge/PR unit**: Captured plan \`${plan_file}\` is the proposed mergeable execution unit; revise before execute if this is only a checklist step.
+- **Rollback surface**: Before execution remove \`${plan_file}\`; after execution revert branch \`codex/${slug}\` or the explicitly reviewed diff.
+- **Verification boundary**: Commands named in the captured planning output plus \`bash scripts/verify-contract.sh --contract tasks/contracts/${artifact_stem}.contract.md --strict\`.
+- **Review/acceptance boundary**: \`tasks/reviews/${artifact_stem}.review.md\` must record pass against the captured acceptance criteria.
+- **High-risk surface**: Risks named in captured planning output; keep the plan Draft if risk ownership is not concrete.
+- **Why not checklist row**: Capture was explicitly requested from ${source_name} as a decision-complete plan; inline sprint rows should remain in the sprint backlog or active plan Task Breakdown.
+
 ## Evidence Contract
 
 - **State/progress path**: \`${plan_file}\` task breakdown, \`tasks/todos.md\` deferred-goal ledger, \`tasks/contracts/${artifact_stem}.contract.md\`, \`tasks/reviews/${artifact_stem}.review.md\`, and \`tasks/notes/${artifact_stem}.notes.md\`

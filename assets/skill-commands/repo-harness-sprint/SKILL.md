@@ -1,6 +1,6 @@
 ---
 name: repo-harness-sprint
-description: Program-level sprint planning and execution entrypoint. Uses upper-layer PRDs from plans/prds/ when present, writes ordered sprint backlogs in plans/sprints/, then expands each row with $think before the existing plan, contract, and worktree flow.
+description: Program-level sprint planning and execution entrypoint. Uses upper-layer PRDs from plans/prds/ when present, writes ordered sprint backlogs in plans/sprints/, expands contract rows with $think into plan/contract/worktree flow, and keeps inline rows inside the sprint backlog or active plan checklist.
 when_to_use: "repo-harness-sprint, plan a sprint, create sprint backlog, from-prd, PRD to sprint, sprint from PRD, run next sprint task, sprint status"
 ---
 
@@ -19,15 +19,16 @@ Use this command to plan a program-level Sprint from an upper-layer PRD or sourc
    - Read the PRD `Problem`, `Users`, `Success Criteria`, `Acceptance Scenarios`, and `Non-goals`; summarize them into the Sprint `## PRD` section and set `> **Source PRD**:` to the PRD path.
    - Derive backlog rows from `Module Behaviors (P0)` and acceptance scenario groups. Preserve dependency order and make every acceptance line traceable to a PRD acceptance scenario.
    - Keep discussion focused on ordering, slice granularity, and mode selection; do not re-decide the product intent unless the PRD has blocking contradictions.
-   - Use one row for one plan -> contract -> worktree cycle. Split larger work at stable integration boundaries.
+   - Use `contract` rows for one plan -> contract -> worktree cycle. Split larger work at stable integration boundaries.
    - Acceptance lines must be machine-checkable, such as a test command, file existence assertion, grep pattern, or numeric assertion. Avoid subjective wording such as "works well".
    - Default mode is `contract`; use `inline` only for small isolated documentation, configuration, or single-file changes.
 4. Route `run` (incremental, one backlog task per invocation):
    - Run `bash .ai/harness/scripts/sprint-backlog.sh next` to resolve the next pending row; when it exits 3, report the backlog as complete and recommend setting the sprint Status to Done after review.
-   - Treat the row as a long-task waypoint, not a detailed implementation plan. Invoke `$think` with the sprint path, row task, mode, and acceptance line so the coding agent expands it into a decision-complete plan.
-   - Capture the approved `$think` output with `bash .ai/harness/scripts/capture-plan.sh --source waza-think --source-ref sprint:<sprint-file>#<task> --status Approved --execute` so the plan projects through the contract worktree flow.
-   - `bash .ai/harness/scripts/sprint-backlog.sh start-task` remains a compatibility helper for reserving a row and generating a thin plan seed; its generated plan must still run `$think` before code edits.
-   - Execute the slice as usual (implement, `/check`, external acceptance, `bash .ai/harness/scripts/contract-worktree.sh finish`); finish back-fills the backlog row warn-only.
+   - Treat the row as a long-task waypoint, not a detailed implementation plan.
+   - For `contract` rows, invoke `$think` with the sprint path, row task, mode, acceptance line, and Promotion Gate fields so the coding agent expands it into a decision-complete plan. Capture the approved `$think` output with `bash .ai/harness/scripts/capture-plan.sh --source waza-think --source-ref sprint:<sprint-file>#<task> --status Approved --execute`.
+   - For `inline` rows, do not create a new `plans/plan-*.md` or task contract. Keep the work in the sprint backlog or the current active plan's `## Task Breakdown`, then complete the row when the acceptance line is verified.
+   - `bash .ai/harness/scripts/sprint-backlog.sh start-task` remains a compatibility helper for reserving a row. It captures a thin plan seed only for `contract` rows; inline rows only record an in-flight marker.
+   - Execute contract slices as usual (implement, `/check`, external acceptance, `bash .ai/harness/scripts/contract-worktree.sh finish`); finish back-fills the backlog row warn-only.
 5. Route `status`: report `bash .ai/harness/scripts/sprint-backlog.sh status` plus the Active Sprint section of `tasks/current.md`; mutate nothing.
 6. After each completed task, re-read the sprint file before starting the next one; user edits to the backlog override stale session memory.
 
@@ -40,7 +41,7 @@ Use this command to plan a program-level Sprint from an upper-layer PRD or sourc
 
 ## Boundaries
 
-- Does not implement backlog tasks itself; execution always flows through the existing plan -> contract -> worktree -> verify gates.
+- Does not implement backlog tasks itself; contract rows flow through the existing plan -> contract -> worktree -> verify gates, while inline rows stay in sprint/active-plan checklist scope.
 - Does not set `> **Status**: Approved` without explicit user approval of the PRD and backlog.
 - Never bypasses `/check`, external acceptance, or `verify-sprint.sh` to mark a backlog row complete.
 - Goal mode (`run --goal`, autonomous continuation) is not part of this command yet; treat requests for it as future work and say so.
