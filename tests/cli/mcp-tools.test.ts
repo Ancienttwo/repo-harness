@@ -261,6 +261,10 @@ describe('mcp tools', () => {
         const discovered = await jsonTool(ctx, 'discover_harness_repos');
         expect(discovered.repos.some((entry: { repoRoot: string }) => entry.repoRoot === canonicalRepoRoot)).toBe(true);
 
+        const queried = await jsonTool(ctx, 'discover_harness_repos', { query: 'agentic-dev/' });
+        expect(queried.query).toBe('agentic-dev');
+        expect(queried.repos.map((entry: { repoRoot: string }) => entry.repoRoot)).toContain(canonicalRepoRoot);
+
         const roots = await jsonTool(ctx, 'list_allowed_roots');
         expect(roots.roots.some(
           (entry: { repo_id: string; path?: string }) => entry.repo_id === repoHarnessRepoIdFor(canonicalRepoRoot) && entry.path === undefined,
@@ -274,13 +278,24 @@ describe('mcp tools', () => {
         expect(targetedStatus.repoRoot).toBe(canonicalRepoRoot);
         expect(targetedStatus.adopted).toBe(true);
 
+        const aliasStatus = await jsonTool(ctx, 'harness_status', { repo_path: 'agentic-dev/' });
+        expect(aliasStatus.repoRoot).toBe(canonicalRepoRoot);
+        expect(aliasStatus.adopted).toBe(true);
+
         const handoff = await jsonTool(ctx, 'latest_handoff', { repo_path: repoRoot });
         const resume = handoff.handoff.find((entry: { path: string }) => entry.path === '.ai/harness/handoff/resume.md');
         expect(resume).toMatchObject({ exists: true });
         expect(resume.preview).toContain('# Resume');
 
+        const aliasHandoff = await jsonTool(ctx, 'latest_handoff', { repo_path: 'agentic-dev/' });
+        const aliasResume = aliasHandoff.handoff.find((entry: { path: string }) => entry.path === '.ai/harness/handoff/resume.md');
+        expect(aliasResume).toMatchObject({ exists: true });
+
         const current = await jsonTool(ctx, 'read_workflow_file', { repo_path: repoRoot, path: 'tasks/current.md' });
         expect(current.content).toContain('status=Active');
+
+        const aliasCurrent = await jsonTool(ctx, 'read_workflow_file', { repo_path: 'agentic-dev/', path: 'tasks/current.md' });
+        expect(aliasCurrent.content).toContain('status=Active');
 
         const prd = await jsonTool(ctx, 'write_prd', {
           repo_path: repoRoot,

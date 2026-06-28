@@ -43,7 +43,7 @@ interface CallToolResult {
 }
 
 const DEFAULT_DISCOVERY_DEPTH = 7;
-const DEFAULT_DISCOVERY_LIMIT = 12;
+const DEFAULT_DISCOVERY_LIMIT = 25;
 const GENERAL_REPO_READ_SINGLE_CHUNK_BYTES = 262_144;
 const DISCOVERY_SKIP_DIRS = new Set([
   '.bun',
@@ -118,6 +118,40 @@ function isDiscoverableHarnessRepo(path: string): boolean {
   return existsSync(join(path, '.ai', 'harness', 'policy.json')) || existsSync(join(path, 'tasks', 'current.md'));
 }
 
+function normalizeRepoSearchTerm(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  const normalized = value.trim()
+    .replace(/\\/g, '/')
+    .replace(/^\/+/, '')
+    .replace(/\/+$/, '')
+    .replace(/\/+/g, '/')
+    .toLowerCase();
+  if (normalized === '.' || normalized === '..') return '';
+  return normalized;
+}
+
+function repoMatchesQuery(repoRoot: string, query: string): boolean {
+  const normalizedQuery = normalizeRepoSearchTerm(query);
+  if (!normalizedQuery) return true;
+  const normalizedRoot = repoRoot.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+  const repoName = basename(repoRoot).toLowerCase();
+  return repoName === normalizedQuery ||
+    repoName.includes(normalizedQuery) ||
+    normalizedRoot === normalizedQuery ||
+    normalizedRoot.endsWith(`/${normalizedQuery}`) ||
+    normalizedRoot.includes(`/${normalizedQuery}/`) ||
+    normalizedRoot.includes(normalizedQuery);
+}
+
+function repoMatchesAliasExactly(repoRoot: string, query: string): boolean {
+  const normalizedQuery = normalizeRepoSearchTerm(query);
+  if (!normalizedQuery) return false;
+  const normalizedRoot = repoRoot.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+  return basename(repoRoot).toLowerCase() === normalizedQuery ||
+    normalizedRoot === normalizedQuery ||
+    normalizedRoot.endsWith(`/${normalizedQuery}`);
+}
+
 function discoveryDefaultRoots(ctx: McpToolContext): string[] {
   const configured = [...(ctx.policy.discoveryRoots ?? []), ...(ctx.policy.allowedRoots ?? [])]
     .map((path) => resolve(path))
@@ -138,14 +172,33 @@ function discoveryDefaultRoots(ctx: McpToolContext): string[] {
   return Array.from(new Set(candidates.map((path) => resolve(path)))).filter((path) => existsSync(path));
 }
 
-function discoverySortWeight(repoRoot: string): string {
+function discoverySortWeight(repoRoot: string, query = ''): string {
+  const normalizedQuery = normalizeRepoSearchTerm(query);
+  const repoName = basename(repoRoot).toLowerCase();
+  const normalizedRoot = repoRoot.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+  const queryWeight = !normalizedQuery
+    ? '0'
+    : repoName === normalizedQuery || normalizedRoot.endsWith(`/${normalizedQuery}`)
+      ? '0'
+      : repoName.startsWith(normalizedQuery)
+        ? '1'
+        : repoName.includes(normalizedQuery)
+          ? '2'
+          : normalizedRoot.includes(normalizedQuery)
+            ? '3'
+            : '4';
   const home = homedir();
   const projects = join(home, 'Projects');
-  if (repoRoot.startsWith(`${projects}/`) || repoRoot === projects) return `0:${repoRoot}`;
-  if (repoRoot.startsWith(`${home}/`) || repoRoot === home) return `1:${repoRoot}`;
-  if (repoRoot.startsWith('/Volumes/')) return `2:${repoRoot}`;
-  if (repoRoot.startsWith('/tmp/') || repoRoot.startsWith('/private/tmp/')) return `9:${repoRoot}`;
-  return `5:${repoRoot}`;
+  const locationWeight = repoRoot.startsWith(`${projects}/`) || repoRoot === projects
+    ? '0'
+    : repoRoot.startsWith(`${home}/`) || repoRoot === home
+      ? '1'
+      : repoRoot.startsWith('/Volumes/')
+        ? '2'
+        : repoRoot.startsWith('/tmp/') || repoRoot.startsWith('/private/tmp/')
+          ? '9'
+          : '5';
+  return `${queryWeight}:${locationWeight}:${repoRoot}`;
 }
 
 function numberArg(value: unknown, fallback: number, min: number, max: number): number {
@@ -184,9 +237,10 @@ function isAuthorizedDiscoveryRoot(ctx: McpToolContext, root: string): boolean {
   return authorizedDiscoveryRoots(ctx).some((authorized) => isPathInside(authorized, canonical));
 }
 
-function addDiscoveredRepo(ctx: McpToolContext, repos: Map<string, ReturnType<typeof repoSummary>>, repoRoot: string): void {
+function addDiscoveredRepo(ctx: McpToolContext, repos: Map<string, ReturnType<typeof repoSummary>>, repoRoot: string, query = ''): void {
   const root = canonicalDirectory(resolveMcpRepoRoot(repoRoot));
   if (!root || !isRepoHarnessAdopted(root)) return;
+  if (!repoMatchesQuery(root, query)) return;
   if (!repos.has(root)) repos.set(root, repoSummary(root));
   try {
     ctx.workspaceManager?.ensureAllowedRoot(root);
@@ -196,7 +250,8 @@ function addDiscoveredRepo(ctx: McpToolContext, repos: Map<string, ReturnType<ty
   }
 }
 
-function discoverHarnessRepos(ctx: McpToolContext, args: Record<string, unknown> = {}): { scannedRoots: string[]; repos: ReturnType<typeof repoSummary>[]; truncated: boolean } {
+function discoverHarnessRepos(ctx: McpToolContext, args: Record<string, unknown> = {}): { scannedRoots: string[]; query: string | null; repos: ReturnType<typeof repoSummary>[]; truncated: boolean } {
+  const query = normalizeRepoSearchTerm(args.query) || normalizeRepoSearchTerm(args.name) || normalizeRepoSearchTerm(args.repo_path);
   const requestedRoots = stringArgList(args.roots);
   const roots = (requestedRoots.length > 0 ? requestedRoots : discoveryDefaultRoots(ctx))
     .map((path) => resolve(path))
@@ -206,7 +261,7 @@ function discoverHarnessRepos(ctx: McpToolContext, args: Record<string, unknown>
   const limit = numberArg(args.limit, DEFAULT_DISCOVERY_LIMIT, 1, 100);
   const repos = new Map<string, ReturnType<typeof repoSummary>>();
   for (const entry of readRegisteredRepoHarnessRepos({ adoptedOnly: true })) {
-    addDiscoveredRepo(ctx, repos, entry.path);
+    addDiscoveredRepo(ctx, repos, entry.path, query);
     if (repos.size >= limit) break;
   }
   const queue = roots.map((path) => ({ path, depth: 0 }));
@@ -227,8 +282,8 @@ function discoverHarnessRepos(ctx: McpToolContext, args: Record<string, unknown>
     }
     if (!currentStat.isDirectory()) continue;
     if (isDiscoverableHarnessRepo(current.path)) {
-      addDiscoveredRepo(ctx, repos, current.path);
-      continue;
+      addDiscoveredRepo(ctx, repos, current.path, query);
+      if (!query) continue;
     }
     if (current.depth >= maxDepth) continue;
     let entries;
@@ -245,9 +300,36 @@ function discoverHarnessRepos(ctx: McpToolContext, args: Record<string, unknown>
 
   return {
     scannedRoots: roots,
-    repos: Array.from(repos.values()).sort((a, b) => discoverySortWeight(a.repoRoot).localeCompare(discoverySortWeight(b.repoRoot))),
+    query: query || null,
+    repos: Array.from(repos.values()).sort((a, b) => discoverySortWeight(a.repoRoot, query).localeCompare(discoverySortWeight(b.repoRoot, query))),
     truncated,
   };
+}
+
+function resolveAuthorizedRepoAlias(ctx: McpToolContext, raw: string): { ok: true; repoRoot: string } | { ok: false; result: CallToolResult } | null {
+  const rawSegments = raw.replace(/\\/g, '/').split('/').filter(Boolean);
+  if (isAbsolute(raw) || rawSegments.includes('.') || rawSegments.includes('..')) return null;
+  const candidate = resolve(ctx.repoRoot, raw);
+  if (existsSync(candidate)) return null;
+  const query = normalizeRepoSearchTerm(raw);
+  if (!query) return null;
+  const discovery = discoverHarnessRepos(ctx, { query, limit: 10 });
+  const exact = discovery.repos.filter((repo) => repoMatchesAliasExactly(repo.repoRoot, query));
+  const candidates = exact.length > 0 ? exact : discovery.repos;
+  if (candidates.length === 1) {
+    return { ok: true, repoRoot: candidates[0].repoRoot };
+  }
+  if (candidates.length > 1) {
+    return {
+      ok: false,
+      result: errorResult(
+        'REPO_ALIAS_AMBIGUOUS',
+        'repo_path matched multiple adopted repositories; call discover_harness_repos with query and pass an exact repo_path.',
+        { repo_path: raw, matches: candidates.map((repo) => repo.repoRoot) },
+      ),
+    };
+  }
+  return null;
 }
 
 function targetRepoRoot(ctx: McpToolContext, args: Record<string, unknown>): { ok: true; repoRoot: string } | { ok: false; result: CallToolResult } {
@@ -255,6 +337,8 @@ function targetRepoRoot(ctx: McpToolContext, args: Record<string, unknown>): { o
   if (!raw) {
     return { ok: true, repoRoot: ctx.repoRoot };
   }
+  const alias = resolveAuthorizedRepoAlias(ctx, raw);
+  if (alias) return alias;
   const candidate = isAbsolute(raw) ? raw : resolve(ctx.repoRoot, raw);
   const repoRoot = canonicalDirectory(resolveMcpRepoRoot(candidate)) ?? resolveMcpRepoRoot(candidate);
   const currentRoot = canonicalDirectory(ctx.repoRoot) ?? ctx.repoRoot;
@@ -745,6 +829,9 @@ export function buildMcpToolDefinitions(policy: McpPolicy, opts: { enableChatgpt
   const discoverySchema = {
     type: 'object',
     properties: {
+      query: { type: 'string' },
+      name: { type: 'string' },
+      repo_path: { type: 'string' },
       roots: { type: 'array', items: { type: 'string' } },
       max_depth: { type: 'number' },
       limit: { type: 'number' },
@@ -868,7 +955,7 @@ export function buildMcpToolDefinitions(policy: McpPolicy, opts: { enableChatgpt
   const tools: McpToolDefinition[] = [
     { name: 'harness_status', description: 'Return repo-harness adoption and workflow status. Pass repo_path after discover_harness_repos when targeting another adopted repo.', inputSchema: optionalRepoSchema, annotations: readOnly },
     { name: 'harness_doctor', description: 'Return compact MCP setup diagnostics.', inputSchema: optionalRepoSchema, annotations: readOnly },
-    { name: 'discover_harness_repos', description: 'Discover repo-harness adopted repositories from the global registry and explicit allowed discovery roots.', inputSchema: discoverySchema, annotations: readOnly },
+    { name: 'discover_harness_repos', description: 'Discover repo-harness adopted repositories from the global registry and explicit allowed discovery roots. Pass query, name, or repo_path for repo-like user inputs such as "my-app/".', inputSchema: discoverySchema, annotations: readOnly },
     { name: 'list_workflow_files', description: 'List policy-readable workflow files. Pass repo_path to target a registered adopted repo.', inputSchema: optionalRepoSchema, annotations: readOnly },
     { name: 'read_workflow_file', description: 'Read one policy-allowed workflow file path from the current or target registered repo.', inputSchema: stringPathSchema, annotations: readOnly },
     { name: 'latest_handoff', description: 'Return latest repo-harness handoff artifacts.', inputSchema: optionalRepoSchema, annotations: readOnly },
