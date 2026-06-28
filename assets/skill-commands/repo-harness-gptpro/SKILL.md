@@ -47,7 +47,8 @@ Use GPT Pro language with the user. Treat the `browser-*` command names as imple
 When asking GPT Pro to review repo updates, include an explicit acceptance requirement in the prompt:
 
 - Use the recorded ChatGPT MCP server name from `chatgpt.serverName` to read the current repo state before producing findings or a merge/readiness verdict.
-- Before a Pro MCP attempt, open ChatGPT Settings -> Connectors for the recorded server name, run Refresh or Scan Tools, verify the expected Action is listed, then start a fresh chat and select the Connector from `+` -> More.
+- Before a Pro MCP attempt, open ChatGPT Settings -> Connectors for the recorded server name, run Refresh or Scan Tools, verify the expected Action is listed, then start a fresh chat with Deep research enabled when the review requires Pro research, and select the Connector from `+` -> More.
+- For multi-repo or user-scope reads, first call `discover_harness_repos` with `query`, `name`, or `repo_path` for repo-like text such as `my-app/`; use the returned exact target for follow-up workflow reads. Do not rely on a literal relative path guess.
 - Read at least the changed-file list or status, the relevant diffs or changed files, and any requested session/handoff artifacts through that recorded MCP server; pasted summaries are context, not sufficient evidence.
 - Include a short `MCP Read Evidence` section in the final answer naming the recorded MCP server, the reads performed, and the files, diffs, or artifacts inspected.
 - If the recorded MCP server name is missing, or `mcp doctor --json` reports `chatgpt.serverNameConfigured:false`, route to `repo-harness:gptpro_setup` so initialization can record it before review.

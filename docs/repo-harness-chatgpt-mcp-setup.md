@@ -124,7 +124,7 @@ If `repo-harness mcp doctor --repo . --json` reports `chatgpt.serverNameConfigur
 Use ChatGPT for planning and review. Use Codex for local execution.
 
 1. Use the single configured Connector for workflow planning and repo tools.
-2. Call `discover_harness_repos` to list registered adopted repos, then pass `repo_path` when targeting a specific project.
+2. Call `discover_harness_repos` to list registered adopted repos, or pass `query`/`name`/`repo_path` for repo-like user text such as `my-app/`; then pass the selected exact `repo_path` when targeting a specific project. Registered repo aliases are resolved through the same authorized discovery surface, not by widening filesystem access.
 3. For registered repo document/code reading, call `list_allowed_roots` to get the stable `repo_id`, then use `get_repo_capabilities`, `repo_manifest`, `list_tree`, `stat_file`, `read_file`, `read_files`, and `search_text`.
 4. For registered repo writes, first check `get_repo_capabilities.write_tools`; only repos explicitly configured as `read_write` expose `write_file`, `apply_patch`, `move_path`, `delete_path`, and `refresh_repo_index`.
 5. Ask ChatGPT to turn the idea into a PRD with `write_prd_from_idea`.
@@ -309,7 +309,7 @@ Use repo-harness to inspect this repo. Call harness_status, latest_handoff, and 
 ## Reader Test Prompt
 
 ```text
-Use the repo-harness Connector. First call discover_harness_repos and choose the target repo. Then call list_allowed_roots and use the matching repo_id with get_repo_capabilities, repo_manifest, list_tree on ".", stat_file on README.md, read_file on README.md or docs/spec.md, and search_text for "repo-harness". Do not write files.
+Use the repo-harness Connector. First call discover_harness_repos with query/name/repo_path when the user gives repo-like text such as "my-app/", then choose the exact target repo_path. Then call list_allowed_roots and use the matching repo_id with get_repo_capabilities, repo_manifest, list_tree on ".", stat_file on README.md, read_file on README.md or docs/spec.md, and search_text for "repo-harness". Do not write files.
 ```
 
 Blocked-file smoke:
@@ -380,7 +380,7 @@ the recommended ChatGPT Connector shape for users working across projects.
 ## PRD Prompt
 
 ```text
-Use repo-harness discover_harness_repos first, choose the target repo_path, inspect docs/spec.md, tasks/current.md, latest handoff, and existing plans in that repo, then convert this idea into a PRD with write_prd_from_idea using the same repo_path. Do not edit source code.
+Use repo-harness discover_harness_repos first, pass query/name/repo_path when the user gives repo-like text such as "my-app/", choose the exact target repo_path, inspect docs/spec.md, tasks/current.md, latest handoff, and existing plans in that repo, then convert this idea into a PRD with write_prd_from_idea using the same repo_path. Do not edit source code.
 ```
 
 ## Checklist Sprint Prompt
