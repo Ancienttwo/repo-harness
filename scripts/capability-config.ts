@@ -2,6 +2,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, resolve } from "path";
 import { spawnSync } from "child_process";
+import { fileURLToPath } from "url";
 
 type ContractFiles = {
   agents: string;
@@ -49,6 +50,10 @@ type Args = {
 };
 
 const REGISTRY_PATH = ".ai/context/capabilities.json";
+const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
+const HELPER_DIR = process.env.REPO_HARNESS_HELPER_SOURCE_PATH
+  ? dirname(process.env.REPO_HARNESS_HELPER_SOURCE_PATH)
+  : SCRIPT_DIR;
 
 function usage(): never {
   console.error(
@@ -289,8 +294,12 @@ function runChecked(repo: string, command: string, args: string[]): string {
   return result.stdout.trim();
 }
 
+function helperPath(fileName: string): string {
+  return resolve(HELPER_DIR, fileName);
+}
+
 function validateRegistry(repo: string): void {
-  runChecked(repo, process.execPath, ["scripts/capability-resolver.ts", "validate", "--repo", repo, "--format", "text"]);
+  runChecked(repo, process.execPath, [helperPath("capability-resolver.ts"), "validate", "--repo", repo, "--format", "text"]);
 }
 
 function syncContracts(repo: string, capability: Capability): void {
@@ -314,7 +323,7 @@ function syncContracts(repo: string, capability: Capability): void {
     contract_sync_required: true,
   };
 
-  runChecked(repo, "bash", ["scripts/context-contract-sync.sh", "sync-event", "--json", JSON.stringify(event)]);
+  runChecked(repo, "bash", [helperPath("context-contract-sync.sh"), "sync-event", "--json", JSON.stringify(event)]);
 }
 
 function createArchitectureModule(repo: string, capability: Capability): void {
@@ -342,7 +351,7 @@ function createArchitectureModule(repo: string, capability: Capability): void {
 }
 
 function createWorkstream(repo: string, capability: Capability): void {
-  runChecked(repo, "bash", ["scripts/workstream-sync.sh", "ensure", "--block", capability.prefixes[0]]);
+  runChecked(repo, "bash", [helperPath("workstream-sync.sh"), "ensure", "--block", capability.prefixes[0]]);
 }
 
 function main(): void {

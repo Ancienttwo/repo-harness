@@ -2,13 +2,14 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null)"; then
+if [[ -n "${REPO_HARNESS_TARGET_REPO_ROOT:-}" ]]; then
+  cd "$REPO_HARNESS_TARGET_REPO_ROOT"
+elif REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null)"; then
   cd "$REPO_ROOT"
-elif [[ "$SCRIPT_DIR" == */.ai/harness/scripts ]]; then
-  cd "$SCRIPT_DIR/../../.."
 else
   cd "$SCRIPT_DIR/.."
 fi
+helper_dir="$SCRIPT_DIR"
 
 reason="manual"
 mode="write"
@@ -52,8 +53,8 @@ if [[ -f ".ai/hooks/lib/workflow-state.sh" ]]; then
   fi
   workflow_write_handoff "$reason"
   echo "Updated $(workflow_handoff_file)"
-  if [[ "${REPO_HARNESS_SKIP_RESUME_REFRESH:-0}" != "1" && -f "scripts/codex-handoff-resume.sh" ]]; then
-    bash scripts/codex-handoff-resume.sh --cwd "$(pwd -P)" --reason "$reason" >/dev/null
+  if [[ "${REPO_HARNESS_SKIP_RESUME_REFRESH:-0}" != "1" && -f "$helper_dir/codex-handoff-resume.sh" ]]; then
+    bash "$helper_dir/codex-handoff-resume.sh" --cwd "$(pwd -P)" --reason "$reason" >/dev/null
   fi
   exit 0
 fi
@@ -76,6 +77,6 @@ cat > .ai/harness/handoff/current.md <<EOF_HANDOFF
 > **Reason**: ${reason}
 EOF_HANDOFF
 echo "Updated .ai/harness/handoff/current.md"
-if [[ "${REPO_HARNESS_SKIP_RESUME_REFRESH:-0}" != "1" && -f "scripts/codex-handoff-resume.sh" ]]; then
-  bash scripts/codex-handoff-resume.sh --cwd "$(pwd -P)" --reason "$reason" >/dev/null
+if [[ "${REPO_HARNESS_SKIP_RESUME_REFRESH:-0}" != "1" && -f "$helper_dir/codex-handoff-resume.sh" ]]; then
+  bash "$helper_dir/codex-handoff-resume.sh" --cwd "$(pwd -P)" --reason "$reason" >/dev/null
 fi

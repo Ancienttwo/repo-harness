@@ -48,7 +48,7 @@ describe("run command", () => {
     }
   });
 
-  test("prefers repo helper runtime when helper_source is repo pinned", () => {
+  test("ignores repo-local helper runtime when helper_source is repo pinned", () => {
     const tmp = mkdtempSync(join(tmpdir(), "repo-harness-run-repo-pin-"));
     try {
       mkdirSync(join(tmp, ".ai/harness/scripts"), { recursive: true });
@@ -57,8 +57,8 @@ describe("run command", () => {
 
       const resolved = resolveHelper("check-task-workflow", tmp);
 
-      expect(resolved?.source).toBe("repo-pin");
-      expect(resolved?.path).toBe(join(tmp, ".ai/harness/scripts/check-task-workflow.sh"));
+      expect(resolved?.source).toBe("package");
+      expect(resolved?.path).toContain("assets/templates/helpers/check-task-workflow.sh");
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

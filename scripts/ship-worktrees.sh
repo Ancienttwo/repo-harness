@@ -2,14 +2,15 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if REPO_ROOT="$(git -C "$SCRIPT_DIR/.." rev-parse --show-toplevel 2>/dev/null)"; then
+if [[ -n "${REPO_HARNESS_TARGET_REPO_ROOT:-}" ]]; then
+  REPO_ROOT="$REPO_HARNESS_TARGET_REPO_ROOT"
+elif REPO_ROOT="$(git -C "$SCRIPT_DIR/.." rev-parse --show-toplevel 2>/dev/null)"; then
   :
-elif [[ "$SCRIPT_DIR" == */.ai/harness/scripts ]]; then
-  REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 else
   REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 fi
 cd "$REPO_ROOT"
+helper_dir="$SCRIPT_DIR"
 
 usage() {
   cat <<'USAGE_EOF'
@@ -259,8 +260,8 @@ external_acceptance_pass_fallback() {
 require_finish_ready() {
   local contract_file="" review_file="" checks_file=".ai/harness/checks/latest.json" checks_error=""
 
-  [[ -x "scripts/contract-worktree.sh" ]] || fail "scripts/contract-worktree.sh is missing or not executable"
-  [[ -x "scripts/verify-sprint.sh" ]] || fail "scripts/verify-sprint.sh is missing or not executable"
+  [[ -x "$helper_dir/contract-worktree.sh" ]] || fail "packaged contract-worktree helper is missing or not executable"
+  [[ -x "$helper_dir/verify-sprint.sh" ]] || fail "packaged verify-sprint helper is missing or not executable"
 
   load_workflow_state
   if declare -F workflow_active_contract >/dev/null 2>&1; then
@@ -288,7 +289,7 @@ require_finish_ready() {
     external_acceptance_pass_fallback "$review_file" || fail "$review_file has no passing external acceptance"
   fi
 
-  run_cmd bash "scripts/verify-sprint.sh"
+  run_cmd bash "$helper_dir/verify-sprint.sh"
   if [[ "$DRY_RUN" -eq 1 ]]; then
     return 0
   fi
@@ -306,9 +307,9 @@ finish_contract_worktree() {
   local merge_mode="$1"
   require_finish_ready
   if [[ "$merge_mode" == "local" ]]; then
-    run_cmd bash "scripts/contract-worktree.sh" finish --target "$TARGET_BRANCH"
+    run_cmd bash "$helper_dir/contract-worktree.sh" finish --target "$TARGET_BRANCH"
   else
-    run_cmd bash "scripts/contract-worktree.sh" finish --no-merge --target "$TARGET_BRANCH"
+    run_cmd bash "$helper_dir/contract-worktree.sh" finish --no-merge --target "$TARGET_BRANCH"
   fi
 }
 
@@ -331,7 +332,7 @@ Automated repo-harness ship for \`${branch}\`.
 Checks:
 - Waza /check review artifact recommends pass.
 - External acceptance is recorded in the sprint review.
-- \`bash scripts/verify-sprint.sh\` passed before \`contract-worktree.sh finish --no-merge\`.
+- \`repo-harness run verify-sprint\` passed before \`contract-worktree finish --no-merge\`.
 
 This PR intentionally does not merge \`${TARGET_BRANCH}\` locally.
 EOF_BODY
@@ -440,7 +441,7 @@ ship_primary_pr() {
     [[ -n "$branch" && -n "$path" ]] || continue
     [[ "$(cd "$path" && pwd -P)" != "$(pwd -P)" ]] || continue
     echo "[Ship] Shipping linked worktree $branch at $path with PR mode"
-    (cd "$path" && bash "scripts/ship-worktrees.sh" --target "$TARGET_BRANCH" --remote "$REMOTE_NAME" "${child_args[@]}")
+    (cd "$path" && REPO_HARNESS_TARGET_REPO_ROOT="$path" bash "$helper_dir/ship-worktrees.sh" --target "$TARGET_BRANCH" --remote "$REMOTE_NAME" "${child_args[@]}")
     shipped=1
   done < <(list_contract_worktrees "$BRANCH_PREFIX")
 
@@ -460,8 +461,8 @@ ship_primary_local_merge() {
     [[ "$(cd "$path" && pwd -P)" != "$(pwd -P)" ]] || continue
     slug="${branch#${BRANCH_PREFIX}}"
     echo "[Ship] Shipping linked worktree $branch at $path with local merge mode"
-    (cd "$path" && bash "scripts/ship-worktrees.sh" --local-merge --target "$TARGET_BRANCH" "${child_args[@]}")
-    run_cmd bash "scripts/contract-worktree.sh" cleanup --slug "$slug" --target "$TARGET_BRANCH"
+    (cd "$path" && REPO_HARNESS_TARGET_REPO_ROOT="$path" bash "$helper_dir/ship-worktrees.sh" --local-merge --target "$TARGET_BRANCH" "${child_args[@]}")
+    run_cmd bash "$helper_dir/contract-worktree.sh" cleanup --slug "$slug" --target "$TARGET_BRANCH"
     shipped=1
   done < <(list_contract_worktrees "$BRANCH_PREFIX")
 
@@ -483,16 +484,16 @@ cleanup_merged() {
     if git merge-base --is-ancestor "$branch" "$TARGET_BRANCH" >/dev/null 2>&1; then
       if ! ensure_worktree_status_for_cleanup "$path"; then
         if [[ "$DRY_RUN" -eq 1 ]]; then
-          run_cmd bash "scripts/contract-worktree.sh" cleanup --slug "$slug" --target "$TARGET_BRANCH" --dry-run
+          run_cmd bash "$helper_dir/contract-worktree.sh" cleanup --slug "$slug" --target "$TARGET_BRANCH" --dry-run
           cleaned=1
           continue
         fi
       fi
       guard_dirty_merged_worktree "$branch" "$path" || exit 1
       if [[ "$DRY_RUN" -eq 1 ]]; then
-        run_cmd bash "scripts/contract-worktree.sh" cleanup --slug "$slug" --target "$TARGET_BRANCH" --dry-run
+        run_cmd bash "$helper_dir/contract-worktree.sh" cleanup --slug "$slug" --target "$TARGET_BRANCH" --dry-run
       else
-        run_cmd bash "scripts/contract-worktree.sh" cleanup --slug "$slug" --target "$TARGET_BRANCH"
+        run_cmd bash "$helper_dir/contract-worktree.sh" cleanup --slug "$slug" --target "$TARGET_BRANCH"
       fi
       cleaned=1
     else

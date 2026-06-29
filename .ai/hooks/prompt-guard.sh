@@ -27,6 +27,23 @@ if [[ -f "$SCRIPT_DIR/lib/minimal-change.sh" ]]; then
   . "$SCRIPT_DIR/lib/minimal-change.sh"
 fi
 
+repo_harness_runner_available() {
+  if [[ -n "${REPO_HARNESS_CLI:-}" && -f "$REPO_HARNESS_CLI" ]] && command -v bun >/dev/null 2>&1; then
+    return 0
+  fi
+  command -v repo-harness >/dev/null 2>&1
+}
+
+run_repo_harness_helper() {
+  local helper="$1"
+  shift
+  if [[ -n "${REPO_HARNESS_CLI:-}" && -f "$REPO_HARNESS_CLI" ]] && command -v bun >/dev/null 2>&1; then
+    bun "$REPO_HARNESS_CLI" run "$helper" "$@"
+    return $?
+  fi
+  repo-harness run "$helper" "$@"
+}
+
 # --- Filesystem/worktree helpers (shell-owned authority) ---
 
 prompt_matches_worktree_record() {
@@ -518,7 +535,7 @@ emit_pending_orchestration_discussion() {
   echo "[PlanDiscussionGate] Pending plan/orchestration discussion is still open; continuing discussion, not implementation."
   echo "[PlanDiscussionGate] $(workflow_pending_orchestration_summary)"
   echo "[PlanDiscussionGate] When the decision is complete, capture the final plan body before editing implementation files:"
-  echo "  printf '%s\n' '<decision-complete plan body>' | bash scripts/capture-plan.sh --slug <slug> --title <title> --status Draft --source ${kind:-host-plan} --orchestration-kind ${kind:-host-plan} --route planning${source_arg}"
+  echo "  printf '%s\n' '<decision-complete plan body>' | repo-harness run capture-plan --slug <slug> --title <title> --status Draft --source ${kind:-host-plan} --orchestration-kind ${kind:-host-plan} --route planning${source_arg}"
 }
 
 emit_pending_orchestration_capture_gate() {
@@ -531,7 +548,7 @@ emit_pending_orchestration_capture_gate() {
   echo "[PlanCaptureGate] Implementation requested while a pending plan/orchestration discussion has not been captured."
   echo "[PlanCaptureGate] $(workflow_pending_orchestration_summary)"
   echo "[PlanCaptureGate] Capture the final plan body first; if implementation is already approved, use --status Approved --execute with a work-package promotion reason:"
-  echo "  printf '%s\n' '<approved plan body>' | bash scripts/capture-plan.sh --slug <slug> --title <title> --artifact-level work-package --promotion-reason human_decision_boundary --status Approved --source ${kind:-host-plan} --orchestration-kind ${kind:-host-plan} --route planning --execute${source_arg}"
+  echo "  printf '%s\n' '<approved plan body>' | repo-harness run capture-plan --slug <slug> --title <title> --artifact-level work-package --promotion-reason human_decision_boundary --status Approved --source ${kind:-host-plan} --orchestration-kind ${kind:-host-plan} --route planning --execute${source_arg}"
   return 0
 }
 
@@ -546,8 +563,8 @@ maybe_start_plan_workflow() {
     return 0
   fi
 
-  if [[ ! -x "scripts/ensure-task-workflow.sh" ]]; then
-    echo "[PlanStartGate] Think/plan intent detected, but scripts/ensure-task-workflow.sh is missing. Continue with planning and capture manually."
+  if ! repo_harness_runner_available; then
+    echo "[PlanStartGate] Think/plan intent detected, but repo-harness run is unavailable. Continue with planning and capture manually."
     return 0
   fi
 
@@ -558,7 +575,7 @@ maybe_start_plan_workflow() {
   kind="${PG_PENDING_KIND:-repo-harness-plan}"
   source_ref="$title"
   echo "[PlanStartGate] Think/plan intent detected. Starting independent file-backed Draft plan workflow."
-  if ! start_output="$(bash "scripts/ensure-task-workflow.sh" --new-plan --slug "$slug" --title "$title" 2>&1)"; then
+  if ! start_output="$(run_repo_harness_helper ensure-task-workflow --new-plan --slug "$slug" --title "$title" 2>&1)"; then
     printf '%s\n' "$start_output"
     return 0
   fi
@@ -633,12 +650,12 @@ maybe_capture_embedded_approved_plan() {
     return 0
   fi
 
-  if [[ ! -x "scripts/capture-plan.sh" ]]; then
-    echo "[PlanCaptureGate] Embedded approved plan detected, but scripts/capture-plan.sh is missing."
+  if ! repo_harness_runner_available; then
+    echo "[PlanCaptureGate] Embedded approved plan detected, but repo-harness run is unavailable."
     hook_structured_error \
       "PlanCaptureGate" \
-      "Embedded approved plan detected but scripts/capture-plan.sh is missing." \
-      "Install workflow helpers before executing an embedded approved plan." \
+      "Embedded approved plan detected but repo-harness run is unavailable." \
+      "Install the repo-harness global runtime before executing an embedded approved plan." \
       "missing_artifact"
     exit 2
   fi
@@ -650,7 +667,7 @@ maybe_capture_embedded_approved_plan() {
     hook_structured_error \
       "PlanCaptureGate" \
       "PLEASE IMPLEMENT THIS PLAN was provided without a plan body." \
-      "Paste the approved plan body after the marker so scripts/capture-plan.sh can store and project it." \
+      "Paste the approved plan body after the marker so repo-harness run capture-plan can store and project it." \
       "missing_artifact"
     exit 2
   fi
@@ -662,12 +679,12 @@ maybe_capture_embedded_approved_plan() {
   fi
 
   echo "[PlanCaptureGate] Embedded approved plan detected. Capturing and projecting before implementation."
-  if ! capture_output="$(printf '%s\n' "$body" | bash "scripts/capture-plan.sh" --slug "$slug" --title "$title" --artifact-level work-package --promotion-reason human_decision_boundary --status Approved --source user-approved-plan --route planning --execute 2>&1)"; then
+  if ! capture_output="$(printf '%s\n' "$body" | run_repo_harness_helper capture-plan --slug "$slug" --title "$title" --artifact-level work-package --promotion-reason human_decision_boundary --status Approved --source user-approved-plan --route planning --execute 2>&1)"; then
     printf '%s\n' "$capture_output"
     hook_structured_error \
       "PlanCaptureGate" \
       "Embedded approved plan capture failed." \
-      "Fix the capture-plan.sh or plan-to-todo.sh error before editing implementation files." \
+      "Fix the repo-harness run capture-plan or plan-to-todo error before editing implementation files." \
       "state_violation"
     exit 2
   fi
@@ -884,7 +901,7 @@ render_prompt_guard_action() {
       ;;
     spec_block)
       echo "[SpecGuard] Advisory: docs/spec.md is missing. Create stable product truth before implementation."
-      echo "[SpecGuard] Run bash scripts/new-spec.sh and capture stable product intent; implementation edits without a spec are blocked at the edit layer."
+      echo "[SpecGuard] Run repo-harness run new-spec and capture stable product intent; implementation edits without a spec are blocked at the edit layer."
       exit 0
       ;;
     stale_active_plan_advice)
@@ -906,19 +923,19 @@ render_prompt_guard_action() {
       echo "[PlanCaptureGate] Approval detected before an active plan artifact exists."
       echo "[PlanCaptureGate] Let the agent run the approved-plan capture path now:"
       echo "  git status --short --branch -uall"
-      echo "  printf '%s\n' '<approved plan body>' | bash scripts/capture-plan.sh --slug <slug> --title <title> --artifact-level work-package --promotion-reason human_decision_boundary --status Approved --source waza-think --route planning --execute"
+      echo "  printf '%s\n' '<approved plan body>' | repo-harness run capture-plan --slug <slug> --title <title> --artifact-level work-package --promotion-reason human_decision_boundary --status Approved --source waza-think --route planning --execute"
       exit 0
       ;;
     plan_status_no_active_block)
       echo "[PlanStatusGuard] Advisory: No active plan found in plans/. Implementation edits will be blocked at the edit layer until a plan is captured."
-      echo "[PlanStatusGuard] Capture the approved planning output with: bash scripts/capture-plan.sh --slug <slug> --title <title> --artifact-level work-package --promotion-reason human_decision_boundary --status Approved --execute"
-      echo "[PlanStatusGuard] If there is no captured planning output yet, run: bash scripts/ensure-task-workflow.sh --slug <slug> --title <title>"
+      echo "[PlanStatusGuard] Capture the approved planning output with: repo-harness run capture-plan --slug <slug> --title <title> --artifact-level work-package --promotion-reason human_decision_boundary --status Approved --execute"
+      echo "[PlanStatusGuard] If there is no captured planning output yet, run: repo-harness run ensure-task-workflow --slug <slug> --title <title>"
       exit 0
       ;;
     plan_capture_draft_advice)
       echo "[PlanCaptureGate] Approval detected for $plan_status plan: $active_plan"
       echo "[PlanCaptureGate] Recapture the exact approved plan body with --artifact-level work-package --promotion-reason <reason> --status Approved --execute, or mark this plan Approved and run:"
-      echo "  bash scripts/plan-to-todo.sh --plan $active_plan"
+      echo "  repo-harness run plan-to-todo --plan $active_plan"
       exit 0
       ;;
     plan_status_not_approved_block)
@@ -934,12 +951,12 @@ render_prompt_guard_action() {
     plan_execution_scaffold_advice)
       echo "[PlanExecutionGate] Approval detected for approved plan: $active_plan"
       echo "[PlanExecutionGate] Create the sprint contract/review/notes before implementation:"
-      echo "  bash scripts/plan-to-todo.sh --plan $active_plan"
+      echo "  repo-harness run plan-to-todo --plan $active_plan"
       exit 0
       ;;
     contract_missing_block)
       echo "[ContractGuard] Advisory: missing active sprint contract for $active_plan."
-      echo "[ContractGuard] Run bash scripts/plan-to-todo.sh --plan $active_plan to create the contract/review/notes scaffold before implementation."
+      echo "[ContractGuard] Run repo-harness run plan-to-todo --plan $active_plan to create the contract/review/notes scaffold before implementation."
       exit 0
       ;;
     done_missing_active_plan)
@@ -1109,11 +1126,11 @@ fi
 if [ "$done_intent" -eq 1 ]; then
   render_prompt_guard_action "$PG_ACTION"
 
-  if [ -f "scripts/verify-contract.sh" ]; then
+  if repo_harness_runner_available; then
     # --read-only: hook-driven verification must not rewrite the contract Status
     # header, otherwise a transient failure (e.g. flaky `bun test`) dirties the
     # worktree and chains into worktree-guard on the next prompt.
-    if ! bash "scripts/verify-contract.sh" --contract "$contract_file" --strict --read-only; then
+    if ! run_repo_harness_helper verify-contract --contract "$contract_file" --strict --read-only; then
       echo "[ContractGuard] Contract verification failed: $contract_file"
       hook_structured_error \
         "ContractGuard" \
@@ -1123,7 +1140,7 @@ if [ "$done_intent" -eq 1 ]; then
       exit 2
     fi
   else
-    echo "[ContractGuard] verify-contract.sh not found at scripts/verify-contract.sh (degraded mode: skipping strict verification)."
+    echo "[ContractGuard] repo-harness run verify-contract is unavailable (degraded mode: skipping strict verification)."
   fi
 
   review_file="$(workflow_active_review || true)"
@@ -1196,7 +1213,7 @@ if [ "$done_intent" -eq 1 ]; then
     hook_structured_error \
       "EvidenceGuard" \
       "$checks_error" \
-      "Run bash scripts/verify-sprint.sh so .ai/harness/checks/latest.json records a passing current sprint verification." \
+      "Run repo-harness run verify-sprint so .ai/harness/checks/latest.json records a passing current sprint verification." \
       "quality_gate"
     exit 2
   fi
@@ -1228,24 +1245,24 @@ if [ "$done_intent" -eq 1 ]; then
     exit 0
   fi
 
-  if [ ! -x scripts/archive-workflow.sh ]; then
-    echo "[AutoArchive] scripts/archive-workflow.sh is missing or not executable. Skipping auto-archive."
+  if ! repo_harness_runner_available; then
+    echo "[AutoArchive] repo-harness run archive-workflow is unavailable. Skipping auto-archive."
     hook_structured_error \
       "AutoArchive" \
-      "scripts/archive-workflow.sh is missing or not executable." \
-      "Install the workflow helper before relying on auto-archive." \
+      "repo-harness run archive-workflow is unavailable." \
+      "Install the repo-harness global runtime before relying on auto-archive." \
       "missing_artifact"
     exit 1
   fi
 
   outcome="${PG_DONE_OUTCOME:-Completed}"
   echo "[AutoArchive] All quality gates passed. Archiving $active_plan as outcome=$outcome"
-  if ! archive_output="$(bash scripts/archive-workflow.sh --plan "$active_plan" --outcome "$outcome" 2>&1)"; then
+  if ! archive_output="$(run_repo_harness_helper archive-workflow --plan "$active_plan" --outcome "$outcome" 2>&1)"; then
     printf '%s\n' "$archive_output"
     hook_structured_error \
       "AutoArchive" \
       "Automatic archive failed for $active_plan." \
-      "Run bash scripts/archive-workflow.sh --plan $active_plan --outcome $outcome and resolve the error." \
+      "Run repo-harness run archive-workflow --plan $active_plan --outcome $outcome and resolve the error." \
       "contract_failure"
     exit 1
   fi

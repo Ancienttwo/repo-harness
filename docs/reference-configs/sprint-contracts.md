@@ -18,7 +18,7 @@ The word "sprint" historically named a single execution slice in this harness. T
 - `tasks/todos.md` stays the deferred-goal ledger; it never carries the sprint backlog or any active checklist.
 - Backlog row mode is a granularity decision. `contract` rows are allowed to become a top-level plan plus task contract only when they are captured as `Artifact Level: work-package` and pass the plan Promotion Gate. `inline` and `checklist-row` work stays inside the sprint backlog or active plan `## Task Breakdown` and must not generate contract/review/notes artifacts.
 - Legacy filenames: `verify-sprint.sh` and `new-sprint.sh` predate the program layer and are kept for downstream compatibility. Read them as task-contract verification helpers. New generated artifact headings and plan metadata should use **Task Contract** and **Task Review**.
-- Sprint lifecycle: `Draft -> Approved -> Executing -> Done -> Archived`, tracked in the sprint file's `> **Status**:` line. Where the sprint layer is installed, `scripts/sprint-backlog.sh` is the compatibility command and delegates to the installed helper runtime under `.ai/harness/scripts/`; `.ai/harness/sprint/active-sprint` (runtime state, not committed) marks the single active sprint. Harness installs predating the sprint layer do not ship the helper, so check for the script before invoking it. `check-task-workflow.sh` rejects Approved/Executing sprints whose PRD/source section is placeholder-only or whose backlog rows lack a concrete acceptance line.
+- Sprint lifecycle: `Draft -> Approved -> Executing -> Done -> Archived`, tracked in the sprint file's `> **Status**:` line. Use `repo-harness run sprint-backlog` for sprint operations; `.ai/harness/sprint/active-sprint` (runtime state, not committed) marks the single active sprint. Harness installs predating the sprint layer must upgrade the global/package runtime before invoking it. `repo-harness run check-task-workflow --strict` rejects Approved/Executing sprints whose PRD/source section is placeholder-only or whose backlog rows lack a concrete acceptance line.
 
 ## Inventory First
 
@@ -64,7 +64,7 @@ New contracts include a `## Delegation Contract` YAML block between allowed path
 - `permission_scope`: the execution permission model. The default `mode: inherit_allowed_paths` means worker edits are limited by the contract `allowed_paths`; `writable_paths: []` means no narrower override; `network: inherited` means no new network permission is granted by the contract itself.
 - `roles`: named responsibilities for `parent`, `explorer`, `worker`, and `verifier`. The parent remains the approval/checkpoint owner; explorer and verifier are read-only; worker may edit only within `allowed_paths` or a narrower `writable_paths` list. The verifier rubric is exactly the contract `exit_criteria`.
 
-Existing contracts without this block remain valid. `.ai/harness/scripts/verify-contract.sh` continues to evaluate only the `exit_criteria` YAML block, so adding delegation metadata must not make old or new contracts fail verification.
+Existing contracts without this block remain valid. `repo-harness run verify-contract` continues to evaluate only the `exit_criteria` YAML block, so adding delegation metadata must not make old or new contracts fail verification.
 
 ## Verification Execution Boundary
 
@@ -87,6 +87,6 @@ Existing contracts without this block remain valid. `.ai/harness/scripts/verify-
 
 ## Worktree Lifecycle
 
-- When `.ai/harness/policy.json` has `worktree_strategy.auto_for_contract_tasks: true`, `.ai/harness/scripts/plan-to-todo.sh --plan <approved-plan>` starts a linked `codex/<slug>` worktree instead of mutating the primary tree.
+- When `.ai/harness/policy.json` has `worktree_strategy.auto_for_contract_tasks: true`, `repo-harness run plan-to-todo --plan <approved-plan>` starts a linked `codex/<slug>` worktree instead of mutating the primary tree.
 - Execute the sprint in that linked worktree. The primary worktree remains a merge target and must stay clean before merge-back.
-- After implementation, run Waza `/check` so the review file recommends pass, record passing `## External Acceptance Advice` from the peer reviewer or a concrete manual override, then run `.ai/harness/scripts/contract-worktree.sh finish`. The finish command gates on external acceptance before `verify-sprint.sh`, commits the branch, and fast-forwards the target branch only when the target worktree is clean.
+- After implementation, run Waza `/check` so the review file recommends pass, record passing `## External Acceptance Advice` from the peer reviewer or a concrete manual override, then run `repo-harness run contract-worktree finish`. The finish command gates on external acceptance before `repo-harness run verify-sprint`, commits the branch, and fast-forwards the target branch only when the target worktree is clean.

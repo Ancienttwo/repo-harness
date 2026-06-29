@@ -149,10 +149,10 @@ plan_completeness_capture_guidance() {
 
   cat <<EOF_GUIDANCE
 If the planning answer is decision-complete, capture the final plan body before stopping:
-  printf '%s\n' '<decision-complete plan body>' | bash scripts/capture-plan.sh --slug $(plan_completeness_shell_quote "$prompt_slug") --title ${title_arg} --status Draft --source $(plan_completeness_shell_quote "$kind") --orchestration-kind $(plan_completeness_shell_quote "$kind") --route planning${source_arg}
+  printf '%s\n' '<decision-complete plan body>' | repo-harness run capture-plan --slug $(plan_completeness_shell_quote "$prompt_slug") --title ${title_arg} --status Draft --source $(plan_completeness_shell_quote "$kind") --orchestration-kind $(plan_completeness_shell_quote "$kind") --route planning${source_arg}
 
 If the user already approved implementation, use:
-  printf '%s\n' '<approved plan body>' | bash scripts/capture-plan.sh --slug $(plan_completeness_shell_quote "$prompt_slug") --title ${title_arg} --artifact-level work-package --promotion-reason human_decision_boundary --status Approved --source $(plan_completeness_shell_quote "$kind") --orchestration-kind $(plan_completeness_shell_quote "$kind") --route planning --execute${source_arg}
+  printf '%s\n' '<approved plan body>' | repo-harness run capture-plan --slug $(plan_completeness_shell_quote "$prompt_slug") --title ${title_arg} --artifact-level work-package --promotion-reason human_decision_boundary --status Approved --source $(plan_completeness_shell_quote "$kind") --orchestration-kind $(plan_completeness_shell_quote "$kind") --route planning --execute${source_arg}
 
 Use a short English title/source-ref alias in these runtime instructions; do not paste non-ASCII prompt text into command arguments.
 

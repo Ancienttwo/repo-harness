@@ -28,7 +28,7 @@ RULES:
   - Treat .ai/harness/active-plan as authoritative only for this worktree; .ai/harness/active-worktree records the owner; .claude/.active-plan is a legacy fallback during transition
   - Keep multiple active plans in parallel worktrees when tasks diverge; fill workflow inventory before implementation: active plan, owning worktree, contract, review, notes, deferred ledger, checks, runs, scope owner, switching rule, and worktree path
   - Process annotation notes before implementing
-  - Project approved plans with .ai/harness/scripts/plan-to-todo.sh only after a concrete Promotion Gate; the execution checklist stays in the plan ## Task Breakdown, inline sprint rows stay inline, and only contract rows generate contract/review/notes artifacts
+  - Project approved plans with `repo-harness run plan-to-todo` only after a concrete Promotion Gate; the execution checklist stays in the plan ## Task Breakdown, inline sprint rows stay inline, and only contract rows generate contract/review/notes artifacts
   - Define task contracts in tasks/contracts/{plan-stem}.contract.md
   - Fill tasks/reviews/{plan-stem}.review.md from Waza /check after verification
   - Record only non-obvious implementation decisions, deviations, tradeoffs, and open questions in tasks/notes/{plan-stem}.notes.md
@@ -43,15 +43,15 @@ RULES:
   - Promote implementation-ready follow-up work into a new plans/plan-{timestamp}-{slug}.md file; keep deferred goals in tasks/todos.md only when intentionally postponed
   - Treat `.ai/hooks/` as the shared automation entrypoint when repo scripts reference hook-backed workflow checks
   - Treat user-level `~/.claude/settings.json` and `~/.codex/hooks.json` as host adapters; do not add repo-local project hook adapters unless explicitly migrating legacy config
-  - For Codex sessions, treat `bash .ai/harness/scripts/check-task-sync.sh` and `bash .ai/harness/scripts/check-task-workflow.sh --strict` as required repo-local checks
+  - For Codex sessions, treat `repo-harness run check-task-sync` and `repo-harness run check-task-workflow --strict` as required checks
   - Before ending a session, refresh `.ai/harness/handoff/current.md` when the task state changed
   - Update `tasks/workstreams/` only when durable capability progress changes
   - Archive completed/abandoned plans, contracts, reviews, notes, and todos with metadata
 {{#IF FACTOR_FACTORY_ENABLED}}
   - Treat `tasks/factors/registry.json` as the source of truth for factor lifecycle state
-  - Create factor candidates with `bash .ai/harness/scripts/factor-lab-new.sh --name <slug>`
+  - Create factor candidates with the configured factor-lab command for this repo.
   - Promote factors only after hypothesis and backtest summary artifacts exist
-  - Run `bash .ai/harness/scripts/factor-lab-check.sh` before claiming factor-lab work is complete
+  - Run the configured factor-lab check before claiming factor-lab work is complete
 {{/IF}}
 
 ACTIVE_PLAN:

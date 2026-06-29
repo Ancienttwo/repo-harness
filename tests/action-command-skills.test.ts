@@ -104,7 +104,7 @@ describe("repo-harness action command skills", () => {
     for (const command of ["repo-harness-plan", "repo-harness-review"]) {
       expect(readCommand(command)).toContain("Does not edit");
     }
-    expect(readCommand("repo-harness-plan")).toContain("capture-plan.sh");
+    expect(readCommand("repo-harness-plan")).toContain("repo-harness run capture-plan");
   });
 
   test("autoplan runs full workflow with bounded self-review and delegates ship", () => {
@@ -133,7 +133,7 @@ describe("repo-harness action command skills", () => {
   test("ship defaults to PR closeout and keeps local merge explicit", () => {
     const ship = readCommand("repo-harness-ship");
 
-    expect(ship).toContain("scripts/ship-worktrees.sh");
+    expect(ship).toContain("repo-harness run ship-worktrees");
     expect(ship).toContain("finish --no-merge");
     expect(ship).toContain("gh pr create --base main --head codex/<slug>");
     expect(ship).toContain("--local-merge");
@@ -179,13 +179,13 @@ describe("repo-harness action command skills", () => {
     const handoff = readCommand("repo-harness-handoff");
     const deploy = readCommand("repo-harness-deploy");
 
-    expect(architecture).toContain("archive-architecture-request.sh");
+    expect(architecture).toContain("repo-harness run archive-architecture-request");
     expect(architecture).toContain("mermaid");
     expect(architecture).toContain("Does not run `scripts/migrate-project-template.sh --apply`");
     expect(architecture).toContain("hooks only record drift requests");
 
-    expect(handoff).toContain("prepare-codex-handoff.sh");
-    expect(handoff).toContain("codex-handoff-resume.sh");
+    expect(handoff).toContain("repo-harness run prepare-codex-handoff");
+    expect(handoff).toContain("repo-harness run codex-handoff-resume");
     expect(handoff).toContain("Does not run `/check`");
     expect(handoff).toContain("handoff packet files");
 
@@ -235,7 +235,7 @@ describe("repo-harness action command skills", () => {
     expect(prd).toContain("Does not create or approve a Sprint backlog");
     expect(prd).toContain("Does not skip the `$geju` direction pass");
     expect(prd).toContain("Does not make Codex the primary PRD author");
-    expect(prd).toContain("bash scripts/check-task-workflow.sh --strict");
+    expect(prd).toContain("repo-harness run check-task-workflow --strict");
   });
 
   test("sprint command consumes PRDs without re-deciding product intent", () => {

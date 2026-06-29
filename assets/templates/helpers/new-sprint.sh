@@ -2,20 +2,21 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null)"; then
+if [[ -n "${REPO_HARNESS_TARGET_REPO_ROOT:-}" ]]; then
+  cd "$REPO_HARNESS_TARGET_REPO_ROOT"
+elif REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null)"; then
   cd "$REPO_ROOT"
-elif [[ "$SCRIPT_DIR" == */.ai/harness/scripts ]]; then
-  cd "$SCRIPT_DIR/../../.."
 else
   cd "$SCRIPT_DIR/.."
 fi
+helper_dir="$SCRIPT_DIR"
 
 usage() {
   cat <<'USAGE_EOF'
 Usage: scripts/new-sprint.sh --slug <slug> [--title <title>]
 
 Creates a program-level sprint backlog under plans/sprints/.
-Use scripts/new-plan.sh or scripts/capture-plan.sh for execution plans under plans/.
+Use repo-harness run new-plan or repo-harness run capture-plan for execution plans under plans/.
 USAGE_EOF
 }
 
@@ -46,4 +47,4 @@ done
 [[ -n "$slug" ]] || { echo "--slug is required" >&2; usage; exit 1; }
 [[ -n "$title" ]] || title="$slug"
 
-exec bash scripts/sprint-backlog.sh init --slug "$slug" --title "$title"
+exec bash "$helper_dir/sprint-backlog.sh" init --slug "$slug" --title "$title"

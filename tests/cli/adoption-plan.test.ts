@@ -5,7 +5,6 @@ import { tmpdir } from "os";
 import { basename, join } from "path";
 import { planAdoption } from "../../src/core/adoption/plan";
 import { adoptionTemplateFile } from "../../src/core/adoption/manifest-templates";
-import { helperWrapperContent, helperWrapperGitignoreContent } from "../../src/core/adoption/helper-wrapper-plan";
 import { renderAdoptionPlanJson, renderAdoptionPlanObject } from "../../src/core/adoption/render";
 import { makeOperationId, type AdoptionOperation, type AdoptionPlan } from "../../src/core/adoption/operations";
 import { summarizeOperations } from "../../src/core/adoption/summary";
@@ -105,28 +104,14 @@ describe("planAdoption", () => {
     }
   });
 
-  test("standard mode plans helper compatibility wrappers from the workflow contract", () => {
+  test("standard mode does not plan repo-local helper scripts", () => {
     const repo = tempRepo();
     try {
-      const contract = readJson(join(ROOT, "assets", "workflow-contract.v1.json")) as {
-        helpers: { scripts: string[] };
-      };
       const plan = planAdoption({ repoRoot: repo, mode: "standard" });
       const wrappers = plan.operations.filter((operation) => operation.id.endsWith(":helper-wrapper"));
-      const newPlanWrapper = plan.operations.find(
-        (operation) => operation.id === "writeFile:scripts/new-plan.sh:helper-wrapper",
-      );
 
-      expect(wrappers).toHaveLength(contract.helpers.scripts.length);
-      expect(newPlanWrapper?.kind).toBe("writeFile");
-      if (newPlanWrapper?.kind === "writeFile") {
-        expect(newPlanWrapper.ifMissing).toBe(true);
-        expect(newPlanWrapper.mode).toBe(0o755);
-        expect(newPlanWrapper.content).toContain("repo-harness run new-plan");
-      }
-      expect(helperWrapperContent("contract-run.ts")).toContain('["repo-harness", "run", "contract-run"]');
-      expect(helperWrapperContent("contract-run.ts")).toContain("timeout: timeoutMs");
-      expect(helperWrapperContent("contract-run.ts")).toContain("timed out after ${timeoutMs}ms");
+      expect(wrappers).toHaveLength(0);
+      expect(plan.operations.some((operation) => operation.path?.startsWith("scripts/"))).toBe(false);
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
@@ -184,7 +169,7 @@ describe("planAdoption", () => {
       );
       writeFileSync(
         join(repo, ".gitignore"),
-        renderManagedBlock(gitignoreManagedBlockOperation("planned", helperWrapperGitignoreContent(repo, "standard"))) + "\n",
+        renderManagedBlock(gitignoreManagedBlockOperation("planned", "")) + "\n",
       );
 
       const plan = planAdoption({ repoRoot: repo, mode: "standard" });
@@ -195,9 +180,7 @@ describe("planAdoption", () => {
         plan.operations.find((operation) => operation.id === "writeFile:.ai/harness/workflow-contract.json:workflow-contract")
           ?.status,
       ).toBe("skipped");
-      expect(plan.operations.find((operation) => operation.id === "writeFile:scripts/new-plan.sh:helper-wrapper")?.status).toBe(
-        "skipped",
-      );
+      expect(plan.operations.find((operation) => operation.id === "writeFile:scripts/new-plan.sh:helper-wrapper")).toBeUndefined();
       expect(
         plan.operations.find((operation) => operation.id === "appendManagedBlock:.gitignore:repo-harness-generated-runtime")
           ?.status,
@@ -453,8 +436,8 @@ describe("repo-harness adopt dry-run planner output", () => {
       expect(result.status).toBe(0);
       expect(result.stderr).toBe("");
       expect(result.stdout).toContain("[adopt-plan] repo:");
-      expect(result.stdout).toContain("[adopt-plan] operations: 66 total, 66 planned, 0 skipped");
-      expect(result.stdout).toContain("[adopt-plan] writeFile: 48");
+      expect(result.stdout).toContain("[adopt-plan] operations: 23 total, 23 planned, 0 skipped");
+      expect(result.stdout).toContain("[adopt-plan] writeFile: 5");
       expect(result.stdout).not.toContain("plan repo harness");
       expect(existsSync(join(repo, "docs", "spec.md"))).toBe(false);
       expect(existsSync(join(repo, ".gitignore"))).toBe(false);
@@ -486,7 +469,7 @@ describe("repo-harness adopt dry-run planner output", () => {
     }
   });
 
-  test("compact JSON dry-run does not plan helper compatibility wrappers", () => {
+  test("compact JSON dry-run does not plan repo-local helper scripts", () => {
     const repo = tempRepo();
     try {
       const result = spawnSync("bun", [CLI, "adopt", "--repo", repo, "--compact", "--dry-run", "--json"], {

@@ -109,12 +109,8 @@ function normalizeRel(filePath) {
 
 function fileExistsWithSelfHostFallback(relPath) {
   if (!relPath) return false;
+  if (relPath.startsWith("repo-harness run ")) return true;
   if (fs.existsSync(path.resolve(repoRoot, relPath))) return true;
-  if (relPath.startsWith(".ai/harness/scripts/")) {
-    const helperName = path.basename(relPath);
-    return fs.existsSync(path.resolve(repoRoot, "scripts", helperName)) &&
-      fs.existsSync(path.resolve(repoRoot, "assets", "templates", "helpers", helperName));
-  }
   return false;
 }
 

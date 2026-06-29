@@ -114,6 +114,21 @@ function planEvidenceContract(): string {
   ].join("\n");
 }
 
+function passingContractFixture(): string {
+  return [
+    "# Task Contract: demo",
+    "",
+    "> **Status**: Pending",
+    "",
+    "```yaml",
+    "exit_criteria:",
+    "  files_exist:",
+    "    - tracked.txt",
+    "```",
+    "",
+  ].join("\n");
+}
+
 function externalAcceptanceAdvice(reviewer = "Codex", source = "codex-review", fingerprint?: string): string {
   return [
     "## External Acceptance Advice",
@@ -245,7 +260,6 @@ function writeDoneGateBase(cwd: string, options: { archive?: boolean } = {}) {
   mkdirSync(join(cwd, "tasks/contracts"), { recursive: true });
   mkdirSync(join(cwd, "tasks/reviews"), { recursive: true });
   mkdirSync(join(cwd, ".ai/harness/checks"), { recursive: true });
-  mkdirSync(join(cwd, "scripts"), { recursive: true });
 
   writeFileSync(
     join(cwd, "plans/plan-20260304-1410-demo.md"),
@@ -254,23 +268,11 @@ function writeDoneGateBase(cwd: string, options: { archive?: boolean } = {}) {
   writeActivePlan(cwd, "plans/plan-20260304-1410-demo.md");
   writeFileSync(
     join(cwd, "tasks/todos.md"),
-    "# Task Execution Checklist (Primary)\n\n> **Source Plan**: plans/plan-20260304-1410-demo.md\n"
+      "# Task Execution Checklist (Primary)\n\n> **Source Plan**: plans/plan-20260304-1410-demo.md\n"
   );
-  writeFileSync(join(cwd, "tasks/contracts/demo.contract.md"), "# contract\n");
+  writeFileSync(join(cwd, "tasks/contracts/demo.contract.md"), passingContractFixture());
   writeValidSprintChecks(cwd);
-  writeFileSync(
-    join(cwd, "scripts/verify-contract.sh"),
-    "#!/bin/bash\nset -euo pipefail\necho \"[verify] ok\"\n"
-  );
-  expect(run("chmod", ["+x", "scripts/verify-contract.sh"], cwd).status).toBe(0);
-
-  if (options.archive) {
-    writeFileSync(
-      join(cwd, "scripts/archive-workflow.sh"),
-      "#!/bin/bash\nset -euo pipefail\necho \"[archive] mocked $*\"\n"
-    );
-    expect(run("chmod", ["+x", "scripts/archive-workflow.sh"], cwd).status).toBe(0);
-  }
+  void options;
 }
 
 function writePassingReview(cwd: string, fingerprint?: string) {
@@ -894,7 +896,7 @@ describe("Hook runtime behavior", () => {
     }
   });
 
-  test("post-edit-guard: reports sync-chain warnings without blocking when drift helpers fail", () => {
+  test("post-edit-guard: ignores repo-local fake drift helpers under global-only helper runtime", () => {
     const cwd = tmpWorkspace("post-edit-sync-chain-warning");
     try {
       installHooks(cwd);
@@ -910,8 +912,8 @@ describe("Hook runtime behavior", () => {
       });
 
       expect(res.status).toBe(0);
-      expect(res.stdout).toContain("drift blew up");
-      expect(res.stdout).toContain("[SyncChain] WARN: architecture-queue failed for apps/web/src/main.tsx (exit 7)");
+      expect(res.stdout).not.toContain("drift blew up");
+      expect(res.stdout).toContain("[ArchitectureDrift] No architecture drift request for apps/web/src/main.tsx");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -1489,7 +1491,7 @@ describe("Hook runtime behavior", () => {
       expect(res.stdout).toContain("SessionStart");
       expect(res.stdout).toContain("Architecture Queue");
       expect(res.stdout).toContain("1 capabilities have pending architecture drift");
-      expect(res.stdout).toContain("bash .ai/harness/scripts/architecture-queue.sh status");
+      expect(res.stdout).toContain("repo-harness run architecture-queue status");
       expect(res.stdout).not.toContain("[CrossReview]");
 
       const codexRes = runHook("session-start-context.sh", cwd, { env: { HOOK_HOST: "codex" } });
@@ -1532,7 +1534,7 @@ describe("Hook runtime behavior", () => {
       expect(res.stdout).toContain("Input Priority");
       expect(res.stdout.indexOf("Input Priority") < res.stdout.indexOf("Pending Plan Capture")).toBe(true);
       expect(res.stdout).toContain("dynamic-workflow");
-      expect(res.stdout).toContain("capture-plan.sh");
+      expect(res.stdout).toContain("repo-harness run capture-plan");
       expect(res.stdout).toContain("do not edit implementation files");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
@@ -2197,7 +2199,7 @@ describe("Hook runtime behavior", () => {
 
         expect(res.status).toBe(0);
         expect(res.stdout).toContain(`[PlanCaptureGate] Approval detected for Draft plan: ${planPath}`);
-        expect(res.stdout).toContain(`bash scripts/plan-to-todo.sh --plan ${planPath}`);
+        expect(res.stdout).toContain(`repo-harness run plan-to-todo --plan ${planPath}`);
         expect(res.stdout).not.toContain("[PlanStatusGuard]");
         expect(res.stdout).not.toContain('"guard":"PlanStatusGuard"');
       }
@@ -2635,7 +2637,7 @@ describe("Hook runtime behavior", () => {
 
       expect(res.status).toBe(0);
       expect(res.stdout).toContain("[PlanCaptureGate] Implementation requested while a pending plan/orchestration discussion has not been captured.");
-      expect(res.stdout).toContain("capture-plan.sh");
+      expect(res.stdout).toContain("repo-harness run capture-plan");
       expect(res.stdout).not.toContain('"guard":"PlanStatusGuard"');
     } finally {
       rmSync(cwd, { recursive: true, force: true });
@@ -2691,7 +2693,7 @@ describe("Hook runtime behavior", () => {
       expect(decision.decision).toBe("block");
       expect(decision.reason).toContain("[PlanCompletenessGate]");
       expect(decision.reason).toContain("capture the final plan body");
-      expect(decision.reason).toContain("scripts/capture-plan.sh");
+      expect(decision.reason).toContain("repo-harness run capture-plan");
       expect(decision.reason).toContain("--slug plan-completeness");
       expect(decision.reason).toContain('--title "Waza think planning output"');
       expect(decision.reason).toContain("--status Draft");
@@ -3153,8 +3155,8 @@ describe("Hook runtime behavior", () => {
 
       expect(res.status).toBe(0);
       expect(res.stdout).toContain("No active plan found in plans/");
-      expect(res.stdout).toContain("capture-plan.sh");
-      expect(res.stdout).toContain("ensure-task-workflow.sh");
+      expect(res.stdout).toContain("repo-harness run capture-plan");
+      expect(res.stdout).toContain("repo-harness run ensure-task-workflow");
       expect(res.stdout).not.toContain('"guard":"PlanStatusGuard"');
     } finally {
       rmSync(cwd, { recursive: true, force: true });
@@ -3176,7 +3178,7 @@ describe("Hook runtime behavior", () => {
 
         expect(res.status).toBe(0);
         expect(res.stdout).toContain("[PlanCaptureGate] Approval detected before an active plan artifact exists.");
-        expect(res.stdout).toContain("capture-plan.sh");
+        expect(res.stdout).toContain("repo-harness run capture-plan");
         expect(res.stdout).not.toContain("[PlanStatusGuard] No active plan found");
         expect(res.stdout).not.toContain('"guard":"PlanStatusGuard"');
       }
@@ -3688,7 +3690,7 @@ describe("Hook runtime behavior", () => {
 
         expect(res.status).toBe(0);
         expect(res.stdout).toContain("[PlanCaptureGate]");
-        expect(res.stdout).toContain("capture-plan.sh");
+        expect(res.stdout).toContain("repo-harness run capture-plan");
         expect(res.stdout).not.toContain('"guard":"PlanStatusGuard"');
       }
     } finally {
@@ -3719,7 +3721,7 @@ describe("Hook runtime behavior", () => {
 
         expect(res.status).toBe(0);
         expect(res.stdout).toContain("[PlanExecutionGate]");
-        expect(res.stdout).toContain("plan-to-todo.sh --plan plans/plan-20260304-1400-demo.md");
+        expect(res.stdout).toContain("repo-harness run plan-to-todo --plan plans/plan-20260304-1400-demo.md");
         expect(res.stdout).not.toContain("[ContractGuard]");
         expect(res.stdout).not.toContain("[TodoGuard]");
       }
@@ -3888,7 +3890,6 @@ describe("Hook runtime behavior", () => {
       mkdirSync(join(cwd, "tasks/contracts"), { recursive: true });
       mkdirSync(join(cwd, "tasks/reviews"), { recursive: true });
       mkdirSync(join(cwd, ".ai/harness/checks"), { recursive: true });
-      mkdirSync(join(cwd, "scripts"), { recursive: true });
 
       writeFileSync(
         join(cwd, "plans/plan-20260304-1410-demo.md"),
@@ -3897,20 +3898,10 @@ describe("Hook runtime behavior", () => {
       writeActivePlan(cwd, "plans/plan-20260304-1410-demo.md");
       writeFileSync(
         join(cwd, "tasks/todos.md"),
-        "# Task Execution Checklist (Primary)\n\n> **Source Plan**: plans/plan-20260304-1410-demo.md\n"
+          "# Task Execution Checklist (Primary)\n\n> **Source Plan**: plans/plan-20260304-1410-demo.md\n"
       );
-      writeFileSync(join(cwd, "tasks/contracts/demo.contract.md"), "# contract\n");
+      writeFileSync(join(cwd, "tasks/contracts/demo.contract.md"), passingContractFixture());
       writeValidSprintChecks(cwd);
-      writeFileSync(
-        join(cwd, "scripts/verify-contract.sh"),
-        "#!/bin/bash\nset -euo pipefail\necho \"[verify] ok\"\n"
-      );
-      expect(run("chmod", ["+x", "scripts/verify-contract.sh"], cwd).status).toBe(0);
-      writeFileSync(
-        join(cwd, "scripts/archive-workflow.sh"),
-        "#!/bin/bash\nset -euo pipefail\necho \"[archive] mocked $*\"\n"
-      );
-      expect(run("chmod", ["+x", "scripts/archive-workflow.sh"], cwd).status).toBe(0);
       // A valid rubric-v1 review bound to the current implementation fingerprint:
       // the gate clears freshness + external on the fresh path. (The legacy
       // warn-only path for a rubric-less review was removed.)
@@ -3923,11 +3914,10 @@ describe("Hook runtime behavior", () => {
       });
 
       expect(res.status).toBe(0);
-      expect(res.stdout).toContain("[verify] ok");
+      expect(res.stdout).toContain("[ContractVerify]");
       expect(res.stdout).not.toContain("[ReviewFreshness] WARN");
       expect(res.stdout).not.toContain("[ReviewFreshnessGuard]");
       expect(res.stdout).toContain("[AutoArchive] All quality gates passed");
-      expect(res.stdout).toContain("[archive] mocked");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -3949,7 +3939,7 @@ describe("Hook runtime behavior", () => {
       });
 
       expect(res.status).toBe(0);
-      expect(res.stdout).toContain("[verify] ok");
+      expect(res.stdout).toContain("[ContractVerify]");
       expect(res.stdout).not.toContain("[ReviewFreshness] WARN");
       expect(res.stdout).not.toContain("[ReviewFreshnessGuard]");
       expect(res.stdout).toContain("[AutoArchive] All quality gates passed");
@@ -4232,7 +4222,6 @@ describe("Hook runtime behavior", () => {
       mkdirSync(join(cwd, "tasks/contracts"), { recursive: true });
       mkdirSync(join(cwd, "tasks/reviews"), { recursive: true });
       mkdirSync(join(cwd, ".ai/harness/checks"), { recursive: true });
-      mkdirSync(join(cwd, "scripts"), { recursive: true });
 
       writeFileSync(
         join(cwd, "plans/plan-20260304-1410-demo.md"),
@@ -4241,12 +4230,10 @@ describe("Hook runtime behavior", () => {
       writeActivePlan(cwd, "plans/plan-20260304-1410-demo.md");
       writeFileSync(
         join(cwd, "tasks/todos.md"),
-        "# Task Execution Checklist (Primary)\n\n> **Source Plan**: plans/plan-20260304-1410-demo.md\n"
+          "# Task Execution Checklist (Primary)\n\n> **Source Plan**: plans/plan-20260304-1410-demo.md\n"
       );
-      writeFileSync(join(cwd, "tasks/contracts/demo.contract.md"), "# contract\n");
+      writeFileSync(join(cwd, "tasks/contracts/demo.contract.md"), passingContractFixture());
       writeValidSprintChecks(cwd);
-      writeFileSync(join(cwd, "scripts/verify-contract.sh"), "#!/bin/bash\nset -euo pipefail\necho \"[verify] ok\"\n");
-      expect(run("chmod", ["+x", "scripts/verify-contract.sh"], cwd).status).toBe(0);
       // Valid rubric-v1 header bound to the current fingerprint (freshness passes)
       // but NO External Acceptance section, so the gate reaches and trips the
       // external-acceptance guard this test asserts.
@@ -4277,7 +4264,6 @@ describe("Hook runtime behavior", () => {
       mkdirSync(join(cwd, "plans"), { recursive: true });
       mkdirSync(join(cwd, "tasks"), { recursive: true });
       mkdirSync(join(cwd, "tasks/contracts"), { recursive: true });
-      mkdirSync(join(cwd, "scripts"), { recursive: true });
 
       writeFileSync(
         join(cwd, "plans/plan-20260304-1415-demo.md"),
@@ -4286,14 +4272,9 @@ describe("Hook runtime behavior", () => {
       writeActivePlan(cwd, "plans/plan-20260304-1415-demo.md");
       writeFileSync(
         join(cwd, "tasks/todos.md"),
-        "# Task Execution Checklist (Primary)\n\n> **Source Plan**: plans/plan-20260304-1415-demo.md\n"
+          "# Task Execution Checklist (Primary)\n\n> **Source Plan**: plans/plan-20260304-1415-demo.md\n"
       );
-      writeFileSync(join(cwd, "tasks/contracts/demo.contract.md"), "# contract\n");
-      writeFileSync(
-        join(cwd, "scripts/verify-contract.sh"),
-        "#!/bin/bash\nset -euo pipefail\necho \"[verify] ok\"\n"
-      );
-      expect(run("chmod", ["+x", "scripts/verify-contract.sh"], cwd).status).toBe(0);
+      writeFileSync(join(cwd, "tasks/contracts/demo.contract.md"), passingContractFixture());
 
       const res = runHook("prompt-guard.sh", cwd, {
         stdin: JSON.stringify({ user_message: "done" }),
@@ -4348,7 +4329,6 @@ describe("Hook runtime behavior", () => {
         mkdirSync(join(cwd, "tasks/contracts"), { recursive: true });
         mkdirSync(join(cwd, "tasks/reviews"), { recursive: true });
         mkdirSync(join(cwd, ".ai/harness/checks"), { recursive: true });
-        mkdirSync(join(cwd, "scripts"), { recursive: true });
 
         writeFileSync(
           join(cwd, "plans/plan-20260304-1410-demo.md"),
@@ -4357,15 +4337,10 @@ describe("Hook runtime behavior", () => {
         writeActivePlan(cwd, "plans/plan-20260304-1410-demo.md");
         writeFileSync(
           join(cwd, "tasks/todos.md"),
-          "# Task Execution Checklist (Primary)\n\n> **Source Plan**: plans/plan-20260304-1410-demo.md\n"
+            "# Task Execution Checklist (Primary)\n\n> **Source Plan**: plans/plan-20260304-1410-demo.md\n"
         );
-        writeFileSync(join(cwd, "tasks/contracts/demo.contract.md"), "# contract\n");
+        writeFileSync(join(cwd, "tasks/contracts/demo.contract.md"), passingContractFixture());
         writeFileSync(join(cwd, ".ai/harness/checks/latest.json"), checks);
-        writeFileSync(
-          join(cwd, "scripts/verify-contract.sh"),
-          "#!/bin/bash\nset -euo pipefail\necho \"[verify] ok\"\n"
-        );
-        expect(run("chmod", ["+x", "scripts/verify-contract.sh"], cwd).status).toBe(0);
         // A valid rubric-v1 review bound to the current fingerprint clears
         // freshness + external so the gate reaches the structured-checks
         // (EvidenceGuard) stage that this case exercises.
@@ -4393,7 +4368,6 @@ describe("Hook runtime behavior", () => {
       mkdirSync(join(cwd, "plans"), { recursive: true });
       mkdirSync(join(cwd, "tasks"), { recursive: true });
       mkdirSync(join(cwd, "tasks/contracts"), { recursive: true });
-      mkdirSync(join(cwd, "scripts"), { recursive: true });
 
       writeFileSync(
         join(cwd, "plans/plan-20260304-1420-demo.md"),
@@ -4402,14 +4376,9 @@ describe("Hook runtime behavior", () => {
       writeActivePlan(cwd, "plans/plan-20260304-1420-demo.md");
       writeFileSync(
         join(cwd, "tasks/todos.md"),
-        "# Task Execution Checklist (Primary)\n\n> **Source Plan**: plans/plan-20260304-1420-demo.md\n"
+          "# Task Execution Checklist (Primary)\n\n> **Source Plan**: plans/plan-20260304-1420-demo.md\n"
       );
       writeFileSync(join(cwd, "tasks/contracts/demo.contract.md"), "# contract\n");
-      writeFileSync(
-        join(cwd, "scripts/verify-contract.sh"),
-        "#!/bin/bash\nset -euo pipefail\necho \"[verify] fail\"\nexit 1\n"
-      );
-      expect(run("chmod", ["+x", "scripts/verify-contract.sh"], cwd).status).toBe(0);
 
       const res = runHook("prompt-guard.sh", cwd, {
         stdin: JSON.stringify({ user_message: "done" }),
@@ -4762,11 +4731,6 @@ describe("Hook runtime behavior", () => {
           "",
         ].join("\n")
       );
-      writeFileSync(
-        join(cwd, "scripts/verify-contract.sh"),
-        "#!/bin/bash\nset -euo pipefail\necho \"[ContractVerify] total=1 failed=1 status=Pending->Partial\"\nexit 1\n"
-      );
-      expect(run("chmod", ["+x", "scripts/verify-contract.sh"], cwd).status).toBe(0);
       writeFileSync(join(cwd, "src/demo.ts"), "export const demo = true;\n");
 
       const res = runHook("post-edit-guard.sh", cwd, {

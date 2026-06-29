@@ -7,18 +7,18 @@
 ### 2. Annotation Cycle
 - Iterate plan updates directly in `plans/plan-*.md` via inline notes.
 - Treat `.ai/harness/active-plan` as authoritative for this worktree when present; `.ai/harness/active-worktree` records the owning worktree; `.claude/.active-plan` is a legacy fallback during transition.
-- Switch between concurrent plans with `bash .ai/harness/scripts/switch-plan.sh --plan <plan-file>`.
+- Switch between concurrent plans with `repo-harness run switch-plan --plan <plan-file>`.
 - Fill the plan/contract workflow inventory before implementation.
 - Do not implement while plan status is `Draft` or `Annotating`.
 
 ### 3. Plan Node Default
 - Enter plan mode for non-trivial tasks.
-- If no stable product truth exists, run `bash .ai/harness/scripts/new-spec.sh`.
-- When Codex Plan mode or Waza `/think` reaches a decision-complete work-package plan, capture it with `bash .ai/harness/scripts/capture-plan.sh --slug <slug> --title <title> --artifact-level work-package --promotion-reason <merge_boundary|rollback_boundary|verification_boundary|risk_boundary|human_decision_boundary|worktree_boundary>` and the plan text on stdin.
-- When the output is only the next checklist row for the current active plan, capture it with `bash .ai/harness/scripts/capture-plan.sh --artifact-level checklist-row --slug <slug> --title <title>` so the row stays in `## Task Breakdown`.
-- If no captured active execution plan exists, run `bash .ai/harness/scripts/new-plan.sh --slug <slug> --title <title>` or capture a finished planning note with `bash .ai/harness/scripts/capture-plan.sh`.
-- If the user asks for a Sprint backlog, run `bash .ai/harness/scripts/new-sprint.sh --slug <slug> --title <title>`; it writes `plans/sprints/*.sprint.md`, not `plans/plan-*.md`.
-- When the user approves implementation, run `bash .ai/harness/scripts/plan-to-todo.sh --plan <active-plan>` or capture the approved work-package plan with `--artifact-level work-package --promotion-reason <reason> --status Approved --execute`; this creates contract/review/notes scaffolding and leaves plan tasks in `## Task Breakdown`.
+- If no stable product truth exists, run `repo-harness run new-spec`.
+- When Codex Plan mode or Waza `/think` reaches a decision-complete work-package plan, capture it with `repo-harness run capture-plan --slug <slug> --title <title> --artifact-level work-package --promotion-reason <merge_boundary|rollback_boundary|verification_boundary|risk_boundary|human_decision_boundary|worktree_boundary>` and the plan text on stdin.
+- When the output is only the next checklist row for the current active plan, capture it with `repo-harness run capture-plan --artifact-level checklist-row --slug <slug> --title <title>` so the row stays in `## Task Breakdown`.
+- If no captured active execution plan exists, run `repo-harness run new-plan --slug <slug> --title <title>` or capture a finished planning note with `repo-harness run capture-plan`.
+- If the user asks for a Sprint backlog, run `repo-harness run new-sprint --slug <slug> --title <title>`; it writes `plans/sprints/*.sprint.md`, not `plans/plan-*.md`.
+- When the user approves implementation, run `repo-harness run plan-to-todo --plan <active-plan>` or capture the approved work-package plan with `--artifact-level work-package --promotion-reason <reason> --status Approved --execute`; this creates contract/review/notes scaffolding and leaves plan tasks in `## Task Breakdown`.
 - Promote work into a top-level plan only when `Artifact Level: work-package` and the Promotion Gate are concrete: merge/PR unit, rollback surface, verification boundary, review/acceptance boundary, high-risk surface, and why it cannot stay a checklist row. Inline sprint rows stay in the sprint backlog or active plan `## Task Breakdown`.
 - Re-plan when execution drifts.
 
@@ -39,7 +39,7 @@
 - Define per-sprint contract files in `tasks/contracts/`.
 - Verify contract exit criteria before claiming completion.
 - Require Waza `/check` to produce the matching evaluator review before any done/completed response.
-- Use `.ai/harness/scripts/verify-contract.sh --contract tasks/contracts/{plan-stem}.contract.md --strict`.
+- Use `repo-harness run verify-contract --contract tasks/contracts/{plan-stem}.contract.md --strict`.
 
 ### 7. Balanced Elegance
 - Redesign hacky non-trivial fixes before shipping.

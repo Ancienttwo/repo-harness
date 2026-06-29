@@ -4,17 +4,18 @@ set -euo pipefail
 usage() {
   cat <<'USAGE_EOF'
 Usage:
-  scripts/architecture-queue.sh record --file <path>
-  scripts/architecture-queue.sh status [--format text|json|summary] [--gate]
-  scripts/architecture-queue.sh reindex [--check] [--quiet]
-  scripts/architecture-queue.sh triage --before <YYYY-MM-DD>
-  scripts/architecture-queue.sh check
+  repo-harness run architecture-queue record --file <path>
+  repo-harness run architecture-queue status [--format text|json|summary] [--gate]
+  repo-harness run architecture-queue reindex [--check] [--quiet]
+  repo-harness run architecture-queue triage --before <YYYY-MM-DD>
+  repo-harness run architecture-queue check
 USAGE_EOF
 }
 
 repo="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 repo="$(cd "$repo" && pwd)"
 cd "$repo"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 command_name="${1:-status}"
 shift || true
@@ -73,7 +74,7 @@ event_file=".ai/harness/architecture/events.jsonl"
 
 helper_sibling() {
   local helper_name="$1"
-  local helper_dir=""
+  local helper_dir="$SCRIPT_DIR"
   if [[ -n "${REPO_HARNESS_HELPER_SOURCE_PATH:-}" ]]; then
     helper_dir="$(dirname "$REPO_HARNESS_HELPER_SOURCE_PATH")"
   fi
@@ -86,10 +87,6 @@ helper_sibling() {
 
 architecture_event() {
   local sibling=""
-  if command -v bun >/dev/null 2>&1 && [[ -f "scripts/architecture-event.ts" ]]; then
-    bun scripts/architecture-event.ts "$@"
-    return $?
-  fi
   sibling="$(helper_sibling architecture-event.ts || true)"
   if command -v bun >/dev/null 2>&1 && [[ -n "$sibling" ]]; then
     bun "$sibling" "$@"
@@ -108,10 +105,6 @@ architecture_event_required() {
 
 capability_resolver() {
   local sibling=""
-  if command -v bun >/dev/null 2>&1 && [[ -f "scripts/capability-resolver.ts" ]]; then
-    bun scripts/capability-resolver.ts "$@"
-    return $?
-  fi
   sibling="$(helper_sibling capability-resolver.ts || true)"
   if command -v bun >/dev/null 2>&1 && [[ -n "$sibling" ]]; then
     bun "$sibling" "$@"
@@ -236,8 +229,10 @@ metadata_value() {
 }
 
 selected_blocks() {
-  if [[ -x "scripts/select-agent-context-blocks.sh" ]]; then
-    "scripts/select-agent-context-blocks.sh" "$repo" 2>/dev/null || true
+  local sibling=""
+  sibling="$(helper_sibling select-agent-context-blocks.sh || true)"
+  if [[ -n "$sibling" ]]; then
+    "$sibling" "$repo" 2>/dev/null || true
     return 0
   fi
 
@@ -630,8 +625,9 @@ triage_command() {
     capability_id="${capability_id:-root}"
     card="$(request_card_path "$capability_id")"
     architecture_event upsert-from-request --source-request "$request" --request-file "$card"
-    if [[ -x "scripts/archive-architecture-request.sh" ]]; then
-      bash scripts/archive-architecture-request.sh \
+    archive_sibling="$(helper_sibling archive-architecture-request.sh || true)"
+    if [[ -n "$archive_sibling" ]]; then
+      bash "$archive_sibling" \
         --request "$request" \
         --status superseded \
         --artifact "$card" \

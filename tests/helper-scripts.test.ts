@@ -115,7 +115,7 @@ function writeValidSprintChecks(cwd: string) {
       {
         status: "pass",
         source: "verify-sprint",
-        command: "bash scripts/verify-sprint.sh",
+        command: "repo-harness run verify-sprint",
         exit_code: 0,
         generated_at: "2026-03-04T14:10:00+0000",
         contract: { file: "tasks/contracts/demo.contract.md", status: "pass", exit_code: 0 },
@@ -388,7 +388,7 @@ describe("Workflow helper scripts", () => {
     expect(script).toContain("check_architecture_freshness");
     expect(script.indexOf('check_architecture_freshness "$target_branch"')).toBeGreaterThan(-1);
     expect(script.indexOf('check_architecture_freshness "$target_branch"')).toBeLessThan(
-      script.indexOf('bash "scripts/verify-sprint.sh"'),
+      script.indexOf('bash "$helper_dir/verify-sprint.sh"'),
     );
   });
 
@@ -425,7 +425,7 @@ describe("Workflow helper scripts", () => {
       expect(plan).toContain("> **Task Review**:");
       expect(plan).not.toContain("> **Sprint Contract**:");
       expect(plan).not.toContain("> **Sprint Review**:");
-      expect(plan).toContain("scripts/plan-to-todo.sh --plan");
+      expect(plan).toContain("repo-harness run plan-to-todo --plan");
       expect(plan).toContain(".ai/harness/active-worktree");
       expect(existsSync(join(cwd, "docs/plan.md"))).toBe(false);
     } finally {
@@ -489,7 +489,7 @@ describe("Workflow helper scripts", () => {
       expect(plan).toContain("- Source ref: thread://plan-discussion");
       expect(plan).toContain("## Workflow Inventory");
       expect(plan).toContain("- Active plan: `plans/");
-      expect(plan).toContain("scripts/contract-worktree.sh start --plan");
+      expect(plan).toContain("repo-harness run contract-worktree start --plan");
       expect(plan).toContain("## Evidence Contract");
       expect(plan).toContain("## Promotion Gate");
       expect(plan).toContain("Why not checklist row");
@@ -1554,7 +1554,6 @@ describe("Workflow helper scripts", () => {
       mkdirSync(join(worktreePath, "plans"), { recursive: true });
       mkdirSync(join(worktreePath, "tasks/contracts"), { recursive: true });
       mkdirSync(join(worktreePath, "tasks/reviews"), { recursive: true });
-      mkdirSync(join(worktreePath, "scripts"), { recursive: true });
       writeFileSync(
         join(worktreePath, "plans/plan-20260304-1450-demo.md"),
         ["# Plan: demo", "", "> **Status**: Executing", "", evidenceContract(), "", promotionGate(), ""].join("\n")
@@ -1564,18 +1563,27 @@ describe("Workflow helper scripts", () => {
         join(worktreePath, "tasks/todos.md"),
         "# Deferred Goal Ledger\n\n> **Status**: Backlog\n"
       );
-      writeFileSync(join(worktreePath, "tasks/contracts/demo.contract.md"), "# contract\n");
+      writeFileSync(
+        join(worktreePath, "tasks/contracts/demo.contract.md"),
+        [
+          "# Task Contract: demo",
+          "",
+          "> **Status**: Pending",
+          "> **Review File**: `tasks/reviews/demo.review.md`",
+          "",
+          "```yaml",
+          "exit_criteria:",
+          "  files_exist:",
+          "    - docs/spec.md",
+          "```",
+          "",
+        ].join("\n")
+      );
       writeFileSync(
         join(worktreePath, "tasks/reviews/demo.review.md"),
         ["# Task Review: demo", "", "> **Recommendation**: pass", "", humanReviewCard(), "", externalAcceptanceAdvice("Codex", "codex-review", "peer review recorded out-of-band for this fixture"), ""].join("\n")
       );
       writeValidSprintChecks(worktreePath);
-      writeFileSync(
-        join(worktreePath, "scripts/verify-contract.sh"),
-        "#!/bin/bash\nset -euo pipefail\necho \"[verify] ok\"\n"
-      );
-      expect(run("chmod", ["+x", "scripts/verify-contract.sh"], worktreePath).status).toBe(0);
-
       const res = runHook(
         "prompt-guard.sh",
         worktreePath,
@@ -1585,7 +1593,7 @@ describe("Workflow helper scripts", () => {
 
       expect(res.status).toBe(0);
       expect(res.stdout).toContain("[WorkflowNextAction] Review/checks pass; finish and fast-forward merge this contract worktree.");
-      expect(res.stdout).toContain("bash scripts/contract-worktree.sh finish");
+      expect(res.stdout).toContain("repo-harness run contract-worktree finish");
       expect(res.stdout).not.toContain("[AutoArchive]");
       expect(existsSync(join(worktreePath, "plans/plan-20260304-1450-demo.md"))).toBe(true);
       expect(existsSync(join(worktreePath, "plans/archive/plan-20260304-1450-demo.md"))).toBe(false);
@@ -2833,7 +2841,7 @@ describe("Workflow helper scripts", () => {
       expect(checks.schema).toBe("repo-harness-run-trace.v1");
       expect(checks.status).toBe("pass");
       expect(checks.source).toBe("verify-sprint");
-      expect(checks.command).toBe("bash scripts/verify-sprint.sh");
+      expect(checks.command).toBe("repo-harness run verify-sprint");
       expect(checks.exit_code).toBe(0);
       expect(checks.task_profile).toBe("code-change");
       expect(checks.active_plan).toBe("plans/plan-20260304-1600-demo.md");
@@ -3835,7 +3843,7 @@ describe("Workflow helper scripts", () => {
     }
   });
 
-  test("check-task-workflow should accept packaged helpers without root compatibility wrappers", () => {
+  test("check-task-workflow should accept packaged helpers without root helper scripts", () => {
     const cwd = tmpWorkspace("helper-check-workflow-package-helpers");
     try {
       copyHelpers(cwd);
@@ -3845,8 +3853,8 @@ describe("Workflow helper scripts", () => {
       ).toBe(0);
       const policyPath = join(cwd, ".ai/harness/policy.json");
       const policy = JSON.parse(readFileSync(policyPath, "utf-8"));
-      policy.harness.helper_runtime_dir = ".ai/harness/scripts";
-      policy.harness.helper_compat_dir = "scripts";
+      policy.harness.helper_runtime_dir = "package:assets/templates/helpers";
+      delete policy.harness.helper_compat_dir;
       policy.harness.helper_source = "package";
       writeFileSync(policyPath, `${JSON.stringify(policy, null, 2)}\n`);
       writeWorkflowRequiredSurface(cwd);

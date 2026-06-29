@@ -64,7 +64,7 @@ execution for small tasks. Every row needs a concrete acceptance line.
 
 ## Execution Log
 
-Keep this section last; `.ai/harness/scripts/sprint-backlog.sh complete-task` appends rows here.
+Keep this section last; `repo-harness run sprint-backlog complete-task` appends rows here.
 
 | When | Task | Plan | Result |
 |------|------|------|--------|

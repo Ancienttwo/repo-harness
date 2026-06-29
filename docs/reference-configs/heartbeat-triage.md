@@ -9,14 +9,14 @@ open PRs, or install a persistent scheduler.
 Run from the repository root:
 
 ```bash
-bash .ai/harness/scripts/heartbeat-triage.sh run --source scheduled
+repo-harness run heartbeat-triage run --source scheduled
 ```
 
 The command appends a run section to `.ai/harness/triage/inbox.md` and writes a
 JSON snapshot under `.ai/harness/runs/`. Each run records:
 
-- `workflow-check`: `bash .ai/harness/scripts/check-task-workflow.sh --strict`
-- `sprint-next`: `bash .ai/harness/scripts/sprint-backlog.sh next` when an active sprint
+- `workflow-check`: `repo-harness run check-task-workflow --strict`
+- `sprint-next`: `repo-harness run sprint-backlog next` when an active sprint
   marker exists, with a read-only sprint-file fallback when it does not
 - `drift-requests`: pending files under `docs/architecture/requests/`
 
@@ -25,7 +25,7 @@ JSON snapshot under `.ai/harness/runs/`. Each run records:
 Example cron entry for a local checkout:
 
 ```cron
-17 8 * * * cd /path/to/repo && bash .ai/harness/scripts/heartbeat-triage.sh run --source scheduled >/tmp/repo-harness-heartbeat.log 2>&1
+17 8 * * * cd /path/to/repo && repo-harness run heartbeat-triage run --source scheduled >/tmp/repo-harness-heartbeat.log 2>&1
 ```
 
 ## loop
@@ -35,7 +35,7 @@ process manager:
 
 ```bash
 while true; do
-  cd /path/to/repo && bash .ai/harness/scripts/heartbeat-triage.sh run --source scheduled
+  cd /path/to/repo && repo-harness run heartbeat-triage run --source scheduled
   sleep 86400
 done
 ```

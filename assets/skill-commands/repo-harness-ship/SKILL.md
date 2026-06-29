@@ -11,10 +11,10 @@ Use this command when implementation is complete and the user wants the harness 
 ## Protocol
 
 1. Run worktree safety preflight with `git status --short --branch -uall` and `git worktree list --porcelain`.
-2. In default PR mode, run `bash .ai/harness/scripts/ship-worktrees.sh`; it validates review/check evidence, runs `.ai/harness/scripts/contract-worktree.sh finish --no-merge`, pushes `codex/<slug>`, and creates a draft PR with `gh pr create --base main --head codex/<slug>`.
+2. In default PR mode, run `repo-harness run ship-worktrees`; it validates review/check evidence, runs `repo-harness run contract-worktree finish --no-merge`, pushes `codex/<slug>`, and creates a draft PR with `gh pr create --base main --head codex/<slug>`.
 3. For a dirty target branch that is explicitly attributable to the active plan, pass `--slug <slug>` so the script creates `codex/<slug>-main-closeout` and opens a PR instead of committing to `main`.
-4. For maintainer-only local closeout, run `bash .ai/harness/scripts/ship-worktrees.sh --local-merge`; this preserves the older `finish` -> fast-forward `main` -> `cleanup` path.
-5. After a PR has merged and local `main` contains the branch, run `bash .ai/harness/scripts/ship-worktrees.sh --cleanup-merged` to remove only proven-merged local worktrees and branches. If the branch is merged but the linked worktree is dirty, pick/apply/commit useful changes first; use `--discard-scaffold-only` only when the dirty paths are generated plan/contract/review/notes scaffold.
+4. For maintainer-only local closeout, run `repo-harness run ship-worktrees --local-merge`; this preserves the older `finish` -> fast-forward `main` -> `cleanup` path.
+5. After a PR has merged and local `main` contains the branch, run `repo-harness run ship-worktrees --cleanup-merged` to remove only proven-merged local worktrees and branches. If the branch is merged but the linked worktree is dirty, pick/apply/commit useful changes first; use `--discard-scaffold-only` only when the dirty paths are generated plan/contract/review/notes scaffold.
 
 ## CHECKPOINTS
 

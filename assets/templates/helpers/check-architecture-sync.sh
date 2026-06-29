@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'USAGE_EOF'
-Usage: scripts/check-architecture-sync.sh [--mode off|advisory|strict] [--target <branch>] [--changed-files <file>] [--format text|json]
+Usage: repo-harness run check-architecture-sync [--mode off|advisory|strict] [--target <branch>] [--changed-files <file>] [--format text|json]
 
 Checks architecture request index integrity, then gates pending architecture
 drift only for capabilities touched by the current branch or working tree.
@@ -13,6 +13,7 @@ USAGE_EOF
 repo="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 repo="$(cd "$repo" && pwd)"
 cd "$repo"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 mode=""
 target_branch=""
@@ -92,7 +93,7 @@ try {
 
 helper_sibling() {
   local helper_name="$1"
-  local helper_dir=""
+  local helper_dir="$SCRIPT_DIR"
   if [[ -n "${REPO_HARNESS_HELPER_SOURCE_PATH:-}" ]]; then
     helper_dir="$(dirname "$REPO_HARNESS_HELPER_SOURCE_PATH")"
   fi
@@ -213,10 +214,6 @@ esac
 
 run_architecture_queue() {
   local sibling=""
-  if [[ -x "scripts/architecture-queue.sh" ]]; then
-    bash scripts/architecture-queue.sh "$@"
-    return $?
-  fi
   sibling="$(helper_sibling architecture-queue.sh || true)"
   if [[ -n "$sibling" ]]; then
     bash "$sibling" "$@"
@@ -226,17 +223,12 @@ run_architecture_queue() {
 }
 
 architecture_queue_available() {
-  [[ -x "scripts/architecture-queue.sh" ]] && return 0
   helper_sibling architecture-queue.sh >/dev/null 2>&1 && return 0
   return 1
 }
 
 run_capability_resolver() {
   local sibling=""
-  if command -v bun >/dev/null 2>&1 && [[ -f "scripts/capability-resolver.ts" ]]; then
-    bun scripts/capability-resolver.ts "$@"
-    return $?
-  fi
   sibling="$(helper_sibling capability-resolver.ts || true)"
   if command -v bun >/dev/null 2>&1 && [[ -n "$sibling" ]]; then
     bun "$sibling" "$@"

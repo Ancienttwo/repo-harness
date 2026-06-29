@@ -14,7 +14,7 @@ PLAN_LOOP:
   PLAN_DIR: plans/
   PLAN_ARCHIVE: plans/archive/
   ACTIVE_PLAN_RULE: .ai/harness/active-plan marker is scoped to this worktree; .ai/harness/active-worktree records the owner; legacy .claude/.active-plan is fallback only
-  PLAN_SWITCH: .ai/harness/scripts/switch-plan.sh --plan <plan-file> | --list
+  PLAN_SWITCH: repo-harness run switch-plan --plan <plan-file> | --list
   DEFERRED_LEDGER: tasks/todos.md
   TODO_ARCHIVE: tasks/archive/
   CONTRACT_DIR: tasks/contracts/
@@ -30,7 +30,7 @@ PLAN_LOOP:
   ANNOTATION_GUARD: do not implement until plan Status is "Approved"
   CONTRACT_GUARD: do not mark done until contract exit criteria pass and review recommends pass
   EXECUTION_CONTEXT: contract-level work starts in a linked codex/<slug> worktree when policy enables it; primary worktree warning by default; enforce via .claude/.require-worktree
-  CONTRACT_WORKTREE_FINISH: run Waza /check, fill the review artifact from that verdict, then .ai/harness/scripts/contract-worktree.sh finish
+  CONTRACT_WORKTREE_FINISH: run Waza /check, fill the review artifact from that verdict, then repo-harness run contract-worktree finish
   COMMIT_POLICY: explicit commits after green checks; no automatic checkpoint hook
 ```
 
@@ -72,8 +72,8 @@ Core rules (canonical source: see Workflow Orchestration section below):
 ### Factor Research Protocol
 
 - `tasks/factors/registry.json` is the authoritative factor inventory for Plan G projects.
-- Use `bash .ai/harness/scripts/factor-lab-new.sh --name <slug>` to create a candidate workspace.
-- Use `bash .ai/harness/scripts/factor-lab-promote.sh --name <slug>` only after `hypothesis.md` and `backtest-summary.md` exist.
-- Use `bash .ai/harness/scripts/factor-lab-reject.sh --name <slug> --reason "<reason>"` to reject a candidate with an auditable reason.
-- Use `bash .ai/harness/scripts/factor-lab-check.sh` to validate registry state, candidate completeness, and promoted directory drift.
+- Use `repo-harness run factor-lab-new --name <slug>` to create a candidate workspace when that optional helper is present in the global package.
+- Use `repo-harness run factor-lab-promote --name <slug>` only after `hypothesis.md` and `backtest-summary.md` exist.
+- Use `repo-harness run factor-lab-reject --name <slug> --reason "<reason>"` to reject a candidate with an auditable reason.
+- Use `repo-harness run factor-lab-check` to validate registry state, candidate completeness, and promoted directory drift.
 {{/IF}}

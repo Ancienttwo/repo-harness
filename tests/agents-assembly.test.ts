@@ -47,13 +47,13 @@ describe("AGENTS Target Assembly", () => {
     expect(output).toContain("gstack `plan-eng-review`");
     expect(output).toContain("Waza `/think`, `/hunt`, `/check`");
     expect(output).toContain(".ai/harness/active-plan as authoritative only for this worktree");
-    expect(output).toContain("new-spec.sh");
-    expect(output).toContain("new-sprint.sh");
+    expect(output).toContain("repo-harness run new-spec");
+    expect(output).toContain("repo-harness run new-plan");
     expect(output).toContain("The main agent decides whether to spawn based on task breadth");
     expect(output).toContain("Do not ask the user for spawn confirmation");
-    expect(output).toContain("bash .ai/harness/scripts/check-task-sync.sh");
-    expect(output).toContain("bash .ai/harness/scripts/check-task-workflow.sh --strict");
-    expect(output).toContain("bash .ai/harness/scripts/verify-contract.sh --contract <active-plan-contract> --strict");
+    expect(output).toContain("repo-harness run check-task-sync");
+    expect(output).toContain("repo-harness run check-task-workflow --strict");
+    expect(output).toContain("repo-harness run verify-contract --contract <active-plan-contract> --strict");
     expect(output).toContain("Which workflow artifacts were updated");
   });
 

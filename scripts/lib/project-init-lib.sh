@@ -177,7 +177,7 @@ Complete this inventory before implementation. If any line is unknown, keep the 
 - Run snapshots: `.ai/harness/runs/`
 - Scope authority: `tasks/contracts/{{ARTIFACT_STEM}}.contract.md` `allowed_paths`
 - Concurrency rule: `.ai/harness/active-plan` selects the active plan for this worktree when present; `.ai/harness/active-worktree` records the owning worktree; `.claude/.active-plan` is a legacy fallback during transition. If another worktree already owns active work, open or switch to the matching worktree instead of serializing unrelated plans.
-- Execution isolation: approved contract-level work projects through `.ai/harness/scripts/plan-to-todo.sh --plan {{PLAN_FILE}}` and may start `.ai/harness/scripts/contract-worktree.sh start --plan {{PLAN_FILE}}`.
+- Execution isolation: approved contract-level work projects through `repo-harness run plan-to-todo --plan {{PLAN_FILE}}` and may start `repo-harness run contract-worktree start --plan {{PLAN_FILE}}`.
 
 ## Approach
 ### Strategy
@@ -202,7 +202,7 @@ Complete this inventory before implementation. If any line is unknown, keep the 
 - Review file: `tasks/reviews/{{ARTIFACT_STEM}}.review.md`
 - Implementation notes file: `tasks/notes/{{ARTIFACT_STEM}}.notes.md`
 - Template: `.claude/templates/contract.template.md`
-- Verification command: `bash .ai/harness/scripts/verify-contract.sh --contract tasks/contracts/{{ARTIFACT_STEM}}.contract.md --strict`
+- Verification command: `repo-harness run verify-contract --contract tasks/contracts/{{ARTIFACT_STEM}}.contract.md --strict`
 - Active plan rule: `.ai/harness/active-plan` is authoritative for this worktree when present; `.ai/harness/active-worktree` records the owning worktree; `.claude/.active-plan` is a legacy fallback during transition. Do not infer active execution from the latest non-archived plan.
 
 ## Handoff
@@ -264,7 +264,7 @@ Describe the exact outcome this task must deliver.
 - Checks file: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
-- Completion gate: `scripts/verify-sprint.sh` must see this contract pass, the review recommend pass, and `## External Acceptance Advice` pass or record a manual override.
+- Completion gate: `repo-harness run verify-sprint` must see this contract pass, the review recommend pass, and `## External Acceptance Advice` pass or record a manual override.
 
 ## Allowed Paths
 
@@ -575,18 +575,6 @@ pi_repo_pins_hook_source() {
   grep -Eq '"hook_source"[[:space:]]*:[[:space:]]*"repo"' "$policy_file"
 }
 
-pi_repo_pins_helper_source() {
-  local repo="$1"
-  local policy_file="$repo/.ai/harness/policy.json"
-
-  if [[ "${REPO_HARNESS_HELPER_SOURCE:-}" == "repo" ]]; then
-    return 0
-  fi
-
-  [[ -f "$policy_file" ]] || return 1
-  grep -Eq '"helper_source"[[:space:]]*:[[:space:]]*"repo"' "$policy_file"
-}
-
 pi_write_hook_runtime_readme() {
   local hooks_dir="$1"
   local mode="${2:-apply}"
@@ -747,7 +735,7 @@ pi_default_runtime_block() {
   printf '%s\n%s\n%s\n' "$PI_RUNTIME_BLOCK_BEGIN" "$runtime_entries" "$PI_RUNTIME_BLOCK_END"
 }
 
-pi_helper_wrapper_paths() {
+pi_legacy_root_helper_paths() {
   local workflow_contract="$1"
   local helper_names
   local helper_name
@@ -756,18 +744,6 @@ pi_helper_wrapper_paths() {
   for helper_name in $helper_names; do
     printf 'scripts/%s\n' "$helper_name"
   done
-}
-
-pi_helper_wrapper_gitignore_entries() {
-  local workflow_contract="$1"
-  local paths
-
-  paths="$(pi_helper_wrapper_paths "$workflow_contract")"
-  [[ -n "$paths" ]] || return 0
-
-  printf '%s\n' "# repo-harness generated helper wrappers"
-  printf '%s\n' "$paths"
-  printf '%s\n' "scripts/repo-harness/"
 }
 
 pi_is_runtime_block_begin() {
@@ -1088,9 +1064,8 @@ pi_install_helpers() {
   local target_dir="$1"
   local helpers_dir="$2"
   local mode="${3:-apply}"
-  local helper_names="${4:-new-spec.sh new-sprint.sh new-plan.sh capture-plan.sh plan-to-todo.sh contract-run.ts contract-worktree.sh ship-worktrees.sh archive-workflow.sh refresh-current-status.sh prepare-handoff.sh verify-contract.sh summarize-failures.sh verify-sprint.sh harness-trace-grade.sh sprint-backlog.sh check-task-sync.sh check-deploy-sql-order.sh check-architecture-sync.sh check-agent-tooling.sh check-context-files.sh check-brain-manifest.sh sync-brain-docs.sh check-skill-version.ts select-agent-context-blocks.sh ensure-task-workflow.sh check-task-workflow.sh maintenance-triage.sh heartbeat-triage.sh switch-plan.sh workflow-contract.ts inspect-project-state.ts migrate-workflow-docs.ts migrate-project-template.sh capability-resolver.ts architecture-event.ts capability-config.ts architecture-queue.sh archive-architecture-request.sh context-contract-sync.sh workstream-sync.sh prepare-codex-handoff.sh codex-handoff-resume.sh}"
+  local helper_names="${4:-new-spec.sh new-sprint.sh new-plan.sh capture-plan.sh plan-to-todo.sh contract-run.ts contract-worktree.sh ship-worktrees.sh archive-workflow.sh refresh-current-status.sh prepare-handoff.sh verify-contract.sh summarize-failures.sh verify-sprint.sh harness-trace-grade.sh sprint-backlog.sh factor-lab-new.sh factor-lab-promote.sh factor-lab-reject.sh factor-lab-check.sh check-task-sync.sh check-deploy-sql-order.sh check-architecture-sync.sh check-agent-tooling.sh check-context-files.sh check-brain-manifest.sh sync-brain-docs.sh check-skill-version.ts select-agent-context-blocks.sh ensure-task-workflow.sh check-task-workflow.sh maintenance-triage.sh heartbeat-triage.sh switch-plan.sh workflow-contract.ts inspect-project-state.ts migrate-workflow-docs.ts migrate-project-template.sh capability-resolver.ts architecture-event.ts capability-config.ts architecture-queue.sh archive-architecture-request.sh context-contract-sync.sh workstream-sync.sh prepare-codex-handoff.sh codex-handoff-resume.sh}"
   local scripts_dir="$target_dir/scripts"
-  local runtime_dir="$target_dir/.ai/harness/scripts"
   local helper_name
   local source_repo_target=0
 
@@ -1104,16 +1079,13 @@ pi_install_helpers() {
   fi
 
   if [[ "$mode" != "apply" ]]; then
-    if [[ "$source_repo_target" -eq 1 || "$(pi_repo_pins_helper_source "$target_dir" && printf yes || true)" == "yes" ]]; then
+    if [[ "$source_repo_target" -eq 1 ]]; then
       echo "[dry-run] install source helpers into $scripts_dir"
     else
-      echo "[dry-run] install helper compatibility wrappers in $scripts_dir; package runtime dispatches through repo-harness run"
+      echo "[dry-run] use global repo-harness helper runtime; do not write local helper scripts"
     fi
     return 0
   fi
-
-  mkdir -p "$scripts_dir"
-  mkdir -p "$runtime_dir"
 
   if [[ -d "$helpers_dir" ]]; then
     for helper_name in $helper_names; do
@@ -1132,132 +1104,16 @@ pi_install_helpers() {
           fi
         fi
         if [[ "$source_repo_target" -eq 1 ]]; then
+          mkdir -p "$scripts_dir"
           cp "$helpers_dir/$helper_name" "$scripts_dir/$helper_name"
-        elif pi_repo_pins_helper_source "$target_dir"; then
-          cp "$helpers_dir/$helper_name" "$runtime_dir/$helper_name"
-          pi_normalize_installed_helper "$runtime_dir/$helper_name"
-          if ! pi_preserve_existing_app_script "$scripts_dir/$helper_name" "$helpers_dir/$helper_name"; then
-            pi_write_helper_wrapper "$scripts_dir/$helper_name" "$helper_name"
-          fi
-        else
-          if ! pi_preserve_existing_app_script "$scripts_dir/$helper_name" "$helpers_dir/$helper_name"; then
-            pi_write_helper_wrapper "$scripts_dir/$helper_name" "$helper_name"
-          else
-            mkdir -p "$scripts_dir/repo-harness"
-            pi_write_helper_wrapper "$scripts_dir/repo-harness/$helper_name" "$helper_name"
-          fi
         fi
       fi
     done
-    pi_ensure_executable_if_apply "$mode" "$runtime_dir"/*.sh "$runtime_dir"/*.ts "$scripts_dir"/*.sh "$scripts_dir"/*.ts "$scripts_dir/repo-harness"/*.sh "$scripts_dir/repo-harness"/*.ts
+    pi_ensure_executable_if_apply "$mode" "$scripts_dir"/*.sh "$scripts_dir"/*.ts
     return 0
   fi
 
-  for helper_name in $helper_names; do
-    pi_write_helper_wrapper "$scripts_dir/$helper_name" "$helper_name"
-  done
-  pi_ensure_executable_if_apply "$mode" "$scripts_dir"/*.sh "$scripts_dir"/*.ts
-}
-
-pi_preserve_existing_app_script() {
-  local output_file="$1"
-  local source_file="$2"
-
-  [[ -f "$output_file" ]] || return 1
-
-  if cmp -s "$output_file" "$source_file"; then
-    return 1
-  fi
-
-  if grep -Eiq '(repo-harness|claude-runtime-temp|Task Contract|Task Review|Deferred Goal Ledger|Workflow Contract|ContractWorktree|SprintBacklog|ArchitectureSync|ArchitectureDrift|BrainSync|CurrentStatus|\.ai/harness|\.claude/templates|tasks/contracts|tasks/reviews)' "$output_file"; then
-    return 1
-  fi
-
   return 0
-}
-
-pi_write_helper_wrapper() {
-  local output_file="$1"
-  local helper_name="$2"
-
-  case "$helper_name" in
-    *.ts)
-      cat > "$output_file" <<EOF_WRAPPER_TS
-#!/usr/bin/env bun
-import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
-
-const sourceRoot =
-  process.env.REPO_HARNESS_SOURCE_ROOT ||
-  process.env.AGENTIC_DEV_ROOT ||
-  process.env.AGENTIC_DEV_SKILL_ROOT;
-const command = sourceRoot && existsSync(join(sourceRoot, "src", "cli", "index.ts"))
-  ? ["bun", join(sourceRoot, "src", "cli", "index.ts"), "run", "$(basename "$helper_name" .ts)"]
-  : ["repo-harness", "run", "$(basename "$helper_name" .ts)"];
-
-const result = spawnSync(command[0], [...command.slice(1), ...process.argv.slice(2)], {
-  cwd: process.cwd(),
-  env: process.env,
-  stdio: "inherit",
-});
-
-if (result.error) {
-  console.error(\`Missing repo-harness CLI for helper $(basename "$helper_name" .ts): \${result.error.message}\`);
-  process.exit(1);
-}
-
-process.exit(result.status ?? 1);
-EOF_WRAPPER_TS
-      ;;
-    *)
-      local helper_id="${helper_name%.*}"
-      cat > "$output_file" <<EOF_WRAPPER_SH
-#!/bin/bash
-set -euo pipefail
-
-SOURCE_ROOT="\${REPO_HARNESS_SOURCE_ROOT:-\${AGENTIC_DEV_ROOT:-\${AGENTIC_DEV_SKILL_ROOT:-}}}"
-
-if [[ -n "\$SOURCE_ROOT" && -f "\$SOURCE_ROOT/src/cli/index.ts" ]]; then
-  if command -v bun >/dev/null 2>&1; then
-    exec bun "\$SOURCE_ROOT/src/cli/index.ts" run $helper_id "\$@"
-  fi
-fi
-
-if command -v repo-harness >/dev/null 2>&1; then
-  exec repo-harness run $helper_id "\$@"
-fi
-
-echo "Missing repo-harness CLI for helper $helper_id" >&2
-exit 1
-EOF_WRAPPER_SH
-      ;;
-  esac
-}
-
-pi_normalize_installed_helper() {
-  local helper_file="$1"
-  [[ -f "$helper_file" ]] || return 0
-
-  if [[ "$helper_file" == *.sh ]]; then
-    perl -0pi -e '
-      s#([A-Z_][A-Z0-9_]*)="\$\(cd "\$SCRIPT_DIR/\.\." && pwd\)"#${1}="\$(cd "\$SCRIPT_DIR/../../.." && pwd)"#g;
-      s#if ([A-Z_][A-Z0-9_]*)="\$\(git -C "\$SCRIPT_DIR/\.\." rev-parse --show-toplevel 2>/dev/null\)"; then#if ${1}="\$(git -C "\$SCRIPT_DIR/../../.." rev-parse --show-toplevel 2>/dev/null)"; then#g;
-      s#cd "\$SCRIPT_DIR/\.\."#if [[ "\$SCRIPT_DIR" == */.ai/harness/scripts ]]; then\n  cd "\$SCRIPT_DIR/../../.."\nelse\n  cd "\$SCRIPT_DIR/.."\nfi#g;
-      s#git -C "\$SCRIPT_DIR/\.\."#git -C "\$SCRIPT_DIR/../../.."#g;
-      s#\./scripts/#.ai/harness/scripts/#g;
-      s#(\$[A-Za-z_][A-Za-z0-9_]*|\$\{[A-Za-z_][A-Za-z0-9_]*\})/scripts/#$1/.ai/harness/scripts/#g;
-      s#(?<![A-Za-z0-9_./-])scripts/#.ai/harness/scripts/#g;
-    ' "$helper_file"
-  elif [[ "$helper_file" == *.ts ]]; then
-    perl -0pi -e '
-      s#join\(SCRIPT_DIR, "\.\."\)#join(SCRIPT_DIR, "..", "..", "..")#g;
-      s#join\(__dirname, "\.\."\)#join(__dirname, "..", "..", "..")#g;
-      s#\./scripts/#.ai/harness/scripts/#g;
-      s#(\$[A-Za-z_][A-Za-z0-9_]*|\$\{[A-Za-z_][A-Za-z0-9_]*\})/scripts/#$1/.ai/harness/scripts/#g;
-      s#(?<![A-Za-z0-9_./-])scripts/#.ai/harness/scripts/#g;
-    ' "$helper_file"
-  fi
 }
 
 pi_env_value() {
@@ -1347,21 +1203,9 @@ EOF_EXTERNAL_TOOLING_DEFAULTS
 pi_resolve_external_tooling_detector() {
   local repo_dir="$1"
   local fallback_script="${2:-}"
-  local repo_detector="$repo_dir/.ai/harness/scripts/check-agent-tooling.sh"
-  local legacy_repo_detector="$repo_dir/scripts/check-agent-tooling.sh"
 
   if [[ -n "$fallback_script" && -f "$fallback_script" ]]; then
     printf '%s' "$fallback_script"
-    return 0
-  fi
-
-  if [[ -f "$repo_detector" ]]; then
-    printf '%s' "$repo_detector"
-    return 0
-  fi
-
-  if [[ -f "$legacy_repo_detector" ]]; then
-    printf '%s' "$legacy_repo_detector"
     return 0
   fi
 
@@ -1631,11 +1475,6 @@ pi_context_block_candidates() {
 
   registry_file="$(pi_capability_registry_file "$target_dir")"
   if [[ -f "$registry_file" ]]; then
-    if command -v bun >/dev/null 2>&1 && [[ -f "$target_dir/.ai/harness/scripts/capability-resolver.ts" ]]; then
-      (cd "$target_dir" && bun .ai/harness/scripts/capability-resolver.ts list --format prefixes 2>/dev/null || true)
-      return 0
-    fi
-
     if command -v node >/dev/null 2>&1; then
       node - "$registry_file" <<'JS_EOF'
 const fs = require("fs");
@@ -1923,7 +1762,7 @@ pi_write_harness_policy() {
     "dir": "plans/sprints",
     "active_marker_file": ".ai/harness/sprint/active-sprint",
     "template_file": ".claude/templates/sprint.template.md",
-    "helper_script": "scripts/sprint-backlog.sh",
+    "helper_script": "repo-harness run sprint-backlog",
     "statuses": ["Draft", "Approved", "Executing", "Done", "Archived"],
     "rule": "PRDs live in plans/prds as the upper planning layer. Sprints live in plans/sprints as long-task execution backlogs; each sprint row is expanded with Waza \$think into a detailed plans/plan-*.md before the plan -> contract -> worktree flow; tasks/todos.md stays the deferred-goal ledger"
   },
@@ -1944,11 +1783,11 @@ pi_write_harness_policy() {
     "profile": "$(pi_context_profile)",
     "map_file": ".ai/context/context-map.json",
     "capability_registry_file": ".ai/context/capabilities.json",
-    "capability_resolver": "scripts/capability-resolver.ts",
-    "capability_config": "scripts/capability-config.ts",
+    "capability_resolver": "repo-harness run capability-resolver",
+    "capability_config": "repo-harness run capability-config",
     "capability_match_rule": "longest-prefix; same-length ambiguity fails",
     "functional_block_selector": {
-      "script": "scripts/select-agent-context-blocks.sh",
+      "script": "repo-harness run select-agent-context-blocks",
       "config_file": ".ai/context/agent-context-blocks.txt",
       "env": "REPO_HARNESS_CONTEXT_BLOCKS",
       "rule": "compatibility selector; capability registry is the source of truth"
@@ -1962,10 +1801,8 @@ pi_write_harness_policy() {
     "events_file": ".ai/harness/events.jsonl",
     "architecture_events_file": ".ai/harness/architecture/events.jsonl",
     "runs_dir": ".ai/harness/runs",
-    "helper_runtime_dir": ".ai/harness/scripts",
-    "helper_compat_dir": "scripts",
-    "helper_source": "package",
-    "helper_package_dir": "assets/templates/helpers"
+    "helper_runtime_dir": "package:assets/templates/helpers",
+    "helper_source": "package"
   },
   "architecture": {
     "index_file": "docs/architecture/index.md",
@@ -1982,7 +1819,7 @@ pi_write_harness_policy() {
     "pending_card_scope": "capability",
     "pending_block_begin": "<!-- BEGIN ARCHITECTURE PENDING REQUESTS -->",
     "pending_block_end": "<!-- END ARCHITECTURE PENDING REQUESTS -->",
-    "queue_script": ".ai/harness/scripts/architecture-queue.sh",
+    "queue_script": "repo-harness run architecture-queue",
     "contract_block_begin": "<!-- BEGIN ARCHITECTURE CONTRACT -->",
     "contract_block_end": "<!-- END ARCHITECTURE CONTRACT -->",
     "rule": "hooks record architecture queue cards and sync controlled local context blocks; agents author semantic snapshots and diagrams"
@@ -2007,7 +1844,7 @@ pi_write_harness_policy() {
       "purpose": "raw verification records used to audit notes, reviews, and future promotion; checks latest reports and run snapshots are ignored runtime cache unless distilled into reviews, contracts, notes, or research"
     },
     "assets": {
-      "sources": [".ai/harness/policy.json", ".ai/harness/workflow-contract.json", ".ai/hooks/", "scripts/", "docs/reference-configs/"],
+      "sources": [".ai/harness/policy.json", ".ai/harness/workflow-contract.json", ".ai/hooks/", "package:assets/templates/helpers", "docs/reference-configs/"],
       "promotion_rule": "only promote patterns after verified reuse across tasks or fixtures"
     },
     "memory": {
@@ -2018,8 +1855,8 @@ pi_write_harness_policy() {
       "default_brain_path": "brain/<project>/*",
       "project_path": "brain/<project>/*",
       "manifest_file": ".ai/harness/brain-manifest.json",
-      "drift_check": "scripts/check-brain-manifest.sh",
-      "sync_script": "scripts/sync-brain-docs.sh",
+      "drift_check": "repo-harness run check-brain-manifest",
+      "sync_script": "repo-harness run sync-brain-docs",
       "hook_trigger": "PostToolUse Edit|Write for manifest entries with sync.direction=repo-to-brain",
       "rule": "external knowledge stores long-lived explanations, runbooks, and patterns only; repo-local contracts, hooks, scripts, checks, and evidence remain authoritative",
       "sync_rule": "only explicitly opted-in repo-to-brain manifest entries may be written to the default brain vault; pointer-only externalized stubs remain check-only"
@@ -2031,9 +1868,9 @@ pi_write_harness_policy() {
     "auto_start_new_session": false
   },
   "plan_capture": {
-    "script": "scripts/capture-plan.sh",
+    "script": "repo-harness run capture-plan",
     "sources": ["codex-plan-mode", "waza-think", "repo-harness-plan", "repo-harness-sprint"],
-    "rule": "Codex Plan mode and Waza think planning should capture decision-complete work-package plans into plans/plan-*.md only when Artifact Level is work-package and the Promotion Gate is concrete; implementation approval then projects the active approved work-package plan through scripts/plan-to-todo.sh; checklist-row and inline sprint work stay in the sprint backlog or active plan Task Breakdown, while contract rows may expand with \$think before capture/execution"
+    "rule": "Codex Plan mode and Waza think planning should capture decision-complete work-package plans into plans/plan-*.md only when Artifact Level is work-package and the Promotion Gate is concrete; implementation approval then projects the active approved work-package plan through repo-harness run plan-to-todo; checklist-row and inline sprint work stay in the sprint backlog or active plan Task Breakdown, while contract rows may expand with \$think before capture/execution"
   },
   "planning": {
     "pending_orchestration_file": ".ai/harness/planning/pending.json",
@@ -2082,9 +1919,9 @@ pi_write_harness_policy() {
     "branch_prefix": "codex/",
     "base_branch": "main",
     "worktree_dir_template": "../{{repo}}-wt-{{slug}}",
-    "start_script": "scripts/contract-worktree.sh start --plan <plan-file>",
-    "finish_script": "scripts/contract-worktree.sh finish",
-    "cleanup_script": "scripts/contract-worktree.sh cleanup --slug <slug>",
+    "start_script": "repo-harness run contract-worktree start --plan <plan-file>",
+    "finish_script": "repo-harness run contract-worktree finish",
+    "cleanup_script": "repo-harness run contract-worktree cleanup --slug <slug>",
     "conflict_signals": [
       "dirty_worktree_overlaps_task_files",
       "current_branch_not_suitable_for_task",
@@ -2289,7 +2126,7 @@ pi_write_context_map() {
   "version": 1,
   "profile": "$(pi_context_profile)",
   "functional_block_selector": {
-      "script": "scripts/select-agent-context-blocks.sh",
+    "script": "repo-harness run select-agent-context-blocks",
     "config_file": ".ai/context/agent-context-blocks.txt",
     "env": "REPO_HARNESS_CONTEXT_BLOCKS",
     "rule": "compatibility selector; capability registry is the source of truth"
@@ -2448,7 +2285,6 @@ pi_ensure_harness_state_surface() {
     "$target_dir/.ai/context" \
     "$target_dir/.ai/harness/checks" \
     "$target_dir/.ai/harness/handoff" \
-    "$target_dir/.ai/harness/scripts" \
     "$target_dir/.ai/harness/failures" \
     "$target_dir/.ai/harness/security" \
     "$target_dir/.ai/harness/planning" \
@@ -2473,7 +2309,6 @@ pi_ensure_harness_state_surface() {
   [[ -f "$target_dir/.ai/harness/architecture/.gitkeep" ]] || : > "$target_dir/.ai/harness/architecture/.gitkeep"
   [[ -f "$target_dir/.ai/harness/failures/latest.jsonl" ]] || : > "$target_dir/.ai/harness/failures/latest.jsonl"
   [[ -f "$target_dir/.ai/harness/security/.gitkeep" ]] || : > "$target_dir/.ai/harness/security/.gitkeep"
-  [[ -f "$target_dir/.ai/harness/scripts/.gitkeep" ]] || : > "$target_dir/.ai/harness/scripts/.gitkeep"
   [[ -f "$target_dir/.ai/harness/planning/.gitkeep" ]] || : > "$target_dir/.ai/harness/planning/.gitkeep"
   [[ -f "$target_dir/.ai/harness/worktrees/.gitkeep" ]] || : > "$target_dir/.ai/harness/worktrees/.gitkeep"
   [[ -f "$target_dir/.ai/harness/runs/.gitkeep" ]] || : > "$target_dir/.ai/harness/runs/.gitkeep"
@@ -2529,10 +2364,10 @@ CURRENT_STATUS_EOF
 
 ## Architecture Drift Flow
 
-- `.ai/harness/scripts/architecture-queue.sh` records architecture-sensitive edits as requests.
-- `.ai/harness/scripts/archive-architecture-request.sh` archives handled requests after an agent records the resolution status and linked artifacts.
-- `.ai/harness/scripts/context-contract-sync.sh` keeps only the controlled architecture block in functional-block `AGENTS.md` and `CLAUDE.md` files aligned.
-- `.ai/harness/scripts/workstream-sync.sh` keeps durable multi-session progress under `tasks/workstreams/<domain>/<capability>/` and projects only pointers into local contracts.
+- `repo-harness run architecture-queue` records architecture-sensitive edits as requests.
+- `repo-harness run archive-architecture-request` archives handled requests after an agent records the resolution status and linked artifacts.
+- `repo-harness run context-contract-sync` keeps only the controlled architecture block in functional-block `AGENTS.md` and `CLAUDE.md` files aligned.
+- `repo-harness run workstream-sync` keeps durable multi-session progress under `tasks/workstreams/<domain>/<capability>/` and projects only pointers into local contracts.
 - Semantic architecture diagrams live as Mermaid fenced blocks in the relevant module or snapshot Markdown.
 - Human-readable architecture diagrams are optional `mermaid` HTML files in `docs/architecture/diagrams/` and should link back to the Markdown semantic source.
 
@@ -2761,9 +2596,8 @@ pi_should_enable_factor_factory() {
 pi_install_factor_factory() {
   local target_dir="$1"
   local factor_assets_dir="$2"
-  local scripts_source_dir="$3"
+  local _scripts_source_dir="$3"
   local mode="${4:-apply}"
-  local scripts_dir="$target_dir/.ai/harness/scripts"
   local factors_dir="$target_dir/tasks/factors"
   local cache_dir="$target_dir/.claude/.factor-cache/candidates"
   local registry_template="$factor_assets_dir/factor-registry.template.json"
@@ -2775,7 +2609,7 @@ pi_install_factor_factory() {
     return 0
   fi
 
-  mkdir -p "$factors_dir/promoted" "$cache_dir" "$scripts_dir"
+  mkdir -p "$factors_dir/promoted" "$cache_dir"
 
   if [[ -f "$registry_template" ]]; then
     cp "$registry_template" "$factors_dir/registry.json"
@@ -2791,13 +2625,5 @@ pi_install_factor_factory() {
     cp "$report_template" "$target_dir/.claude/factor-factory/backtest-report.template.md"
   fi
 
-  local factor_script
-  for factor_script in factor-lab-new.sh factor-lab-promote.sh factor-lab-reject.sh factor-lab-check.sh; do
-    if [[ -f "$scripts_source_dir/$factor_script" ]]; then
-      cp "$scripts_source_dir/$factor_script" "$scripts_dir/$factor_script"
-      pi_normalize_installed_helper "$scripts_dir/$factor_script"
-    fi
-  done
-
-  pi_ensure_executable_if_apply "$mode" "$scripts_dir"/factor-lab-*.sh
+  return 0
 }

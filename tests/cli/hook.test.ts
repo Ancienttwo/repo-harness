@@ -586,7 +586,7 @@ describe('hook command (Phase 1B)', () => {
 
       expect(res.status).toBe(0);
       expect(res.stdout).toContain('[PlanCaptureGate]');
-      expect(res.stdout).toContain('plan-to-todo.sh --plan');
+      expect(res.stdout).toContain('repo-harness run plan-to-todo --plan');
       expect(res.stderr).toBe('');
     });
   });

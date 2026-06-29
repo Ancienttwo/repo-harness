@@ -600,7 +600,7 @@ check_current_resume_freshness() {
   current_mtime="$(file_mtime "$current_file")"
   resume_mtime="$(file_mtime "$resume_file")"
   if [[ "$current_mtime" =~ ^[0-9]+$ && "$resume_mtime" =~ ^[0-9]+$ && "$resume_mtime" -lt "$current_mtime" ]]; then
-    report_issue "Resume packet is older than current status snapshot: $resume_file < $current_file. Run scripts/prepare-handoff.sh --reason <reason> or scripts/codex-handoff-resume.sh."
+    report_issue "Resume packet is older than current status snapshot: $resume_file < $current_file. Run repo-harness run prepare-handoff --reason <reason> or repo-harness run codex-handoff-resume."
   fi
 }
 
@@ -608,16 +608,6 @@ check_required_file() {
   local path="$1"
   if [[ -f "$path" ]]; then
     return 0
-  fi
-
-  if [[ "$path" == .ai/harness/scripts/* ]]; then
-    local helper_name="${path##*/}"
-    if [[ "${helper_source:-package}" == "package" && -f "scripts/$helper_name" ]]; then
-      return 0
-    fi
-    if [[ -f "assets/templates/helpers/$helper_name" && -f "scripts/$helper_name" ]]; then
-      return 0
-    fi
   fi
 
   report_issue "Missing required file: $path"
@@ -638,16 +628,21 @@ package_helper_dir() {
   return 1
 }
 
-check_package_helper_file() {
+package_helper_file() {
   local helper_name="$1"
   local package_dir
-
   package_dir="$(package_helper_dir || true)"
-  if [[ -n "$package_dir" && -f "$package_dir/$helper_name" ]]; then
-    return 0
-  fi
+  [[ -n "$package_dir" && -f "$package_dir/$helper_name" ]] || return 1
+  printf '%s\n' "$package_dir/$helper_name"
+}
 
-  report_issue "Missing packaged helper runtime: $helper_name"
+run_optional_helper() {
+  local helper_name="$1"
+  shift
+  local helper_file
+  helper_file="$(package_helper_file "$helper_name" || true)"
+  [[ -n "$helper_file" ]] || return 0
+  bash "$helper_file" "$@"
 }
 
 is_contract_helper_path() {
@@ -834,18 +829,7 @@ if (errors.length) {
 
 check_required_dir() {
   local path="$1"
-  if [[ -d "$path" ]]; then
-    return 0
-  fi
-
-  if [[ "$path" == ".ai/harness/scripts" && "${helper_source:-package}" == "package" && -d "scripts" ]]; then
-    return 0
-  fi
-
-  if [[ "$path" == ".ai/harness/scripts" && -d "assets/templates/helpers" && -d "scripts" ]]; then
-    return 0
-  fi
-
+  [[ -d "$path" ]] && return 0
   report_issue "Missing required directory: $path"
 }
 
@@ -870,7 +854,8 @@ check_helper_runtime_files() {
       new-spec.sh new-sprint.sh new-plan.sh capture-plan.sh plan-to-todo.sh
       contract-run.ts contract-worktree.sh ship-worktrees.sh archive-workflow.sh
       refresh-current-status.sh prepare-handoff.sh verify-contract.sh summarize-failures.sh
-      verify-sprint.sh harness-trace-grade.sh sprint-backlog.sh check-task-sync.sh check-deploy-sql-order.sh
+      verify-sprint.sh harness-trace-grade.sh sprint-backlog.sh factor-lab-new.sh factor-lab-promote.sh
+      factor-lab-reject.sh factor-lab-check.sh check-task-sync.sh check-deploy-sql-order.sh
       check-architecture-sync.sh check-agent-tooling.sh check-context-files.sh
       check-brain-manifest.sh sync-brain-docs.sh check-skill-version.ts
       select-agent-context-blocks.sh ensure-task-workflow.sh check-task-workflow.sh
@@ -882,21 +867,16 @@ check_helper_runtime_files() {
     )
   fi
 
-  if [[ "${helper_source:-package}" == "package" ]]; then
-    for helper_name in "${helper_names[@]}"; do
-      check_package_helper_file "$helper_name"
-    done
+  if [[ "${helper_source:-package}" != "package" ]]; then
+    report_issue "Unsupported repo-local helper_source=$helper_source. Use global/package helper runtime via repo-harness run."
     return
   fi
 
-  check_required_dir "$helper_compat_dir"
-  check_required_dir "$helper_runtime_dir"
-
+  local package_dir
+  package_dir="$(package_helper_dir || true)"
+  [[ -n "$package_dir" ]] || return 0
   for helper_name in "${helper_names[@]}"; do
-    check_required_file "$helper_compat_dir/$helper_name"
-    if [[ "$helper_runtime_dir" != "$helper_compat_dir" ]]; then
-      check_required_file "$helper_runtime_dir/$helper_name"
-    fi
+    [[ -f "$package_dir/$helper_name" ]] || report_issue "Missing packaged helper runtime: $helper_name"
   done
 }
 
@@ -955,8 +935,7 @@ notes_dir="$(policy_get '.tasks.notes_dir' 'tasks/notes')"
 workstreams_dir="$(policy_get '.tasks.workstreams_dir' 'tasks/workstreams')"
 runs_dir="$(policy_get '.harness.runs_dir' '.ai/harness/runs')"
 checks_file="$(policy_get '.harness.checks_file' '.ai/harness/checks/latest.json')"
-helper_runtime_dir="$(policy_get '.harness.helper_runtime_dir' '.ai/harness/scripts')"
-helper_compat_dir="$(policy_get '.harness.helper_compat_dir' 'scripts')"
+helper_runtime_dir="$(policy_get '.harness.helper_runtime_dir' 'package:assets/templates/helpers')"
 helper_source="$(policy_get '.harness.helper_source' 'package')"
 context_map_file="$(policy_get '.context.map_file' '.ai/context/context-map.json')"
 handoff_file="$(policy_get '.harness.handoff_file' '.ai/harness/handoff/current.md')"
@@ -1070,22 +1049,16 @@ if [[ "$todo_file" != "tasks/todo.md" && -f "tasks/todo.md" ]]; then
   report_issue "Legacy tasks/todo.md detected; migrate it into ${todo_file}."
 fi
 
-if [[ -f "scripts/check-deploy-sql-order.sh" ]]; then
-  if ! bash "scripts/check-deploy-sql-order.sh" --quiet; then
-    report_issue "Deploy SQL order check failed."
-  fi
+if ! run_optional_helper "check-deploy-sql-order.sh" --quiet; then
+  report_issue "Deploy SQL order check failed."
 fi
 
-if [[ -f "scripts/check-brain-manifest.sh" ]]; then
-  if ! bash "scripts/check-brain-manifest.sh"; then
-    report_issue "Brain manifest check failed."
-  fi
+if ! run_optional_helper "check-brain-manifest.sh"; then
+  report_issue "Brain manifest check failed."
 fi
 
-if [[ -f "scripts/sync-brain-docs.sh" ]]; then
-  if ! bash "scripts/sync-brain-docs.sh" --check; then
-    report_issue "Brain doc sync check failed."
-  fi
+if ! run_optional_helper "sync-brain-docs.sh" --check; then
+  report_issue "Brain doc sync check failed."
 fi
 
 todo_source="$(todo_source_plan || true)"

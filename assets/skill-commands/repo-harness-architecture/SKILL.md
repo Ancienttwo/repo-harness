@@ -14,7 +14,7 @@ architecture documentation, drift-request, or diagram pass.
 1. Confirm the target repo path and architecture scope.
 2. Inspect `docs/architecture/index.md` and pending files under `docs/architecture/requests/`.
 3. When the scope maps to repo code or config, resolve the capability with:
-   - `bun scripts/capability-resolver.ts match --repo <repo> --path <path> --format json`
+   - `repo-harness run capability-resolver match --repo <repo> --path <path> --format json`
 4. Update the smallest relevant architecture artifact:
    - umbrella status in `docs/architecture/index.md`
    - module or snapshot docs under `docs/architecture/`
@@ -22,11 +22,11 @@ architecture documentation, drift-request, or diagram pass.
    - optional human-readable diagram artifact under `docs/architecture/diagrams/`
 5. Use Markdown Mermaid as the semantic diagram source; use `mermaid` only for optional human-readable HTML renderings grounded in observed repo files.
 6. Archive handled requests with:
-   - `bash scripts/archive-architecture-request.sh --request <request> --status <resolved|superseded|rejected|no-change> --artifact <path> --note <text>`
+   - `repo-harness run archive-architecture-request --request <request> --status <resolved|superseded|rejected|no-change> --artifact <path> --note <text>`
 7. Verify with:
-   - `bash scripts/check-architecture-sync.sh`
-   - `bun scripts/capability-resolver.ts validate --repo <repo> --format text`
-   - `bash .ai/harness/scripts/check-task-workflow.sh --strict` when repo workflow surfaces changed
+   - `repo-harness run check-architecture-sync`
+   - `repo-harness run capability-resolver validate --repo <repo> --format text`
+   - `repo-harness run check-task-workflow --strict` when repo workflow surfaces changed
 
 ## Failure Modes
 

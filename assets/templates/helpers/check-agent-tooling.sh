@@ -84,7 +84,6 @@ const GBRAIN_INSTALL_NOTE =
 const CODEGRAPH_MCP_CONFIGURE_COMMAND = "repo-harness tools configure codegraph --target <codex|claude|both> --location global";
 const CODEGRAPH_LOCAL_INSTALL_COMMAND = "bun install";
 const CODEGRAPH_ENSURE_COMMAND = [
-  ".ai/harness/scripts/ensure-codegraph.sh",
   "scripts/ensure-codegraph.sh",
 ].find((relPath) => fs.existsSync(path.join(REPO_ROOT, relPath)));
 const CODEGRAPH_ENSURE_BASH_COMMAND = CODEGRAPH_ENSURE_COMMAND

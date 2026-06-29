@@ -2,22 +2,23 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if REPO_ROOT="$(git -C "$SCRIPT_DIR/.." rev-parse --show-toplevel 2>/dev/null)"; then
+if [[ -n "${REPO_HARNESS_TARGET_REPO_ROOT:-}" ]]; then
+  REPO_ROOT="$REPO_HARNESS_TARGET_REPO_ROOT"
+elif REPO_ROOT="$(git -C "$SCRIPT_DIR/.." rev-parse --show-toplevel 2>/dev/null)"; then
   :
-elif [[ "$SCRIPT_DIR" == */.ai/harness/scripts ]]; then
-  REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 else
   REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 fi
 cd "$REPO_ROOT"
+helper_dir="$(cd "$(dirname "${REPO_HARNESS_HELPER_SOURCE_PATH:-$0}")" && pwd)"
 
 usage() {
   cat <<'USAGE_EOF'
 Usage:
-  scripts/contract-worktree.sh start --plan <plan-file> [--path <worktree-path>] [--branch <branch-name>]
-  scripts/contract-worktree.sh finish [--merge|--no-merge] [--target <branch>] [--message <commit-message>]
-  scripts/contract-worktree.sh cleanup --slug <slug> [--target <branch>] [--dry-run]
-  scripts/contract-worktree.sh status
+  repo-harness run contract-worktree start --plan <plan-file> [--path <worktree-path>] [--branch <branch-name>]
+  repo-harness run contract-worktree finish [--merge|--no-merge] [--target <branch>] [--message <commit-message>]
+  repo-harness run contract-worktree cleanup --slug <slug> [--target <branch>] [--dry-run]
+  repo-harness run contract-worktree status
 USAGE_EOF
 }
 
@@ -51,18 +52,18 @@ check_architecture_freshness() {
   local target_branch="$1"
   local mode
 
-  if [[ -x "scripts/check-architecture-sync.sh" ]]; then
-    bash "scripts/check-architecture-sync.sh" --target "$target_branch"
+  if [[ -f "$helper_dir/check-architecture-sync.sh" ]]; then
+    bash "$helper_dir/check-architecture-sync.sh" --target "$target_branch"
     return $?
   fi
 
   mode="$(policy_get '.architecture.freshness_gate' 'advisory')"
   if [[ "$mode" == "strict" ]]; then
-    echo "contract-worktree: strict architecture freshness gate failed: missing scripts/check-architecture-sync.sh" >&2
+    echo "contract-worktree: strict architecture freshness gate failed: missing packaged check-architecture-sync helper" >&2
     return 1
   fi
 
-  echo "contract-worktree: WARN missing scripts/check-architecture-sync.sh; skipping advisory architecture freshness gate" >&2
+  echo "contract-worktree: WARN missing packaged check-architecture-sync helper; skipping advisory architecture freshness gate" >&2
   return 0
 }
 
@@ -326,8 +327,8 @@ start_worktree() {
   (
     cd "$worktree_path"
     write_start_metadata "$slug" "$plan_file" "$branch_name" "$worktree_path" "$base_branch"
-    if [[ "$run_plan_to_todo" -eq 1 && -f "scripts/plan-to-todo.sh" ]]; then
-      REPO_HARNESS_CONTRACT_WORKTREE=1 bash "scripts/plan-to-todo.sh" --plan "$plan_file"
+    if [[ "$run_plan_to_todo" -eq 1 && -f "$helper_dir/plan-to-todo.sh" ]]; then
+      REPO_HARNESS_TARGET_REPO_ROOT="$worktree_path" REPO_HARNESS_CONTRACT_WORKTREE=1 bash "$helper_dir/plan-to-todo.sh" --plan "$plan_file"
     fi
   )
 
@@ -428,10 +429,10 @@ archive_finished_workflow() {
 
   [[ -n "$plan_file" ]] || { echo "contract-worktree: no active plan found to archive" >&2; exit 1; }
   [[ -f "$plan_file" ]] || { echo "contract-worktree: active plan not found for archive: $plan_file" >&2; exit 1; }
-  [[ -x "scripts/archive-workflow.sh" ]] || { echo "contract-worktree: scripts/archive-workflow.sh is missing or not executable" >&2; exit 1; }
+  [[ -x "$helper_dir/archive-workflow.sh" ]] || { echo "contract-worktree: archive-workflow helper is missing or not executable" >&2; exit 1; }
 
   echo "[ContractWorktree] Archiving completed workflow before merge: $plan_file"
-  bash "scripts/archive-workflow.sh" --plan "$plan_file" --outcome Completed
+  REPO_HARNESS_TARGET_REPO_ROOT="$REPO_ROOT" bash "$helper_dir/archive-workflow.sh" --plan "$plan_file" --outcome Completed
 }
 
 finish_worktree() {
@@ -528,7 +529,7 @@ finish_worktree() {
   fi
 
   check_architecture_freshness "$target_branch"
-  bash "scripts/verify-sprint.sh"
+  REPO_HARNESS_TARGET_REPO_ROOT="$REPO_ROOT" bash "$helper_dir/verify-sprint.sh"
   check_scope_against_contract "$contract_file"
   archive_finished_workflow "$active_plan"
   clean_local_runtime_markers
@@ -568,7 +569,7 @@ backfill_sprint_backlog() {
   local plan_file="$1"
   local archived_plan source_ref sprint_path task_ref
 
-  [[ -f "scripts/sprint-backlog.sh" ]] || return 0
+  [[ -f "$helper_dir/sprint-backlog.sh" ]] || return 0
 
   archived_plan="plans/archive/$(basename "$plan_file")"
   if [[ ! -f "$archived_plan" ]]; then
@@ -597,7 +598,7 @@ backfill_sprint_backlog() {
   task_ref="${sprint_path#*#}"
   sprint_path="${sprint_path%%#*}"
 
-  if bash scripts/sprint-backlog.sh complete-task --sprint "$sprint_path" --task "$task_ref" --plan "$archived_plan"; then
+  if REPO_HARNESS_TARGET_REPO_ROOT="$REPO_ROOT" bash "$helper_dir/sprint-backlog.sh" complete-task --sprint "$sprint_path" --task "$task_ref" --plan "$archived_plan"; then
     echo "[ContractWorktree] Sprint backlog updated: $sprint_path ($task_ref)"
   else
     echo "[ContractWorktree] Warning: sprint backlog back-fill failed for $sprint_path ($task_ref); update the row manually." >&2
@@ -697,7 +698,7 @@ cleanup_worktree() {
     fi
     if [[ -n "$worktree_status" ]]; then
       echo "contract-worktree: linked worktree is dirty, refusing cleanup: $worktree_path" >&2
-      echo "contract-worktree: pick/apply/commit useful changes first; scaffold-only discard belongs in scripts/ship-worktrees.sh --cleanup-merged --discard-scaffold-only" >&2
+      echo "contract-worktree: pick/apply/commit useful changes first; scaffold-only discard belongs in repo-harness run ship-worktrees --cleanup-merged --discard-scaffold-only" >&2
       exit 1
     fi
   else

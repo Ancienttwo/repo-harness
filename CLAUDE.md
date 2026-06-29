@@ -6,7 +6,7 @@ This repository self-hosts the `repo-harness` contract; the former `repo-harness
 
 - `tasks/current.md` for the tracked current-status snapshot derived from workflow artifacts
 - `tasks/todos.md` for deferred medium/long-term goals, not active execution checklists
-- `plans/prds/` for upper-layer PRDs; `plans/sprints/` for ordered sprint backlogs operated through `scripts/sprint-backlog.sh` (installed implementations live under `.ai/harness/scripts/`; task contracts stay the execution slices)
+- `plans/prds/` for upper-layer PRDs; `plans/sprints/` for ordered sprint backlogs operated through `repo-harness run sprint-backlog`; task contracts stay the execution slices
 - `.ai/context/capabilities.json` for the capability registry and longest-prefix context boundaries
 - `tasks/workstreams/` for capability long-running workstreams that project durable progress into local contracts
 - `tasks/lessons.md` for correction-derived rules
@@ -35,8 +35,8 @@ This repository self-hosts the `repo-harness` contract; the former `repo-harness
 - Treat `_ref/` as an occasional ignored external reference checkout cache, not a commit surface or daily workflow. Agents may read or refresh it for comparison; when it influences a decision, cite the source repo plus commit/tag and path in `tasks/notes/` or `docs/researches/`.
 - Treat `deploy/` as the trackable deployment and operations surface for runbooks, submission materials, release checklists, helper scripts, ordered SQL files under `deploy/sql/`, and env examples.
 - Treat `_ops/` as ignored local operations state for secrets, real env files, provider state, artifacts, logs, and scratch files; do not commit or agent-edit `_ops/*`.
-- Treat contract-level task execution as worktree-first: `scripts/plan-to-todo.sh --plan <approved-plan>` starts `scripts/contract-worktree.sh start --plan <approved-plan>` when policy enables it, and completed blocks finish through Waza `/check` plus `scripts/contract-worktree.sh finish`.
-- After Codex Plan mode, Waza `/think`, or `repo-harness-plan` produces a decision-complete work-package plan, capture it with `scripts/capture-plan.sh --artifact-level work-package --slug <slug> --title <title>` so `plans/` becomes the file-backed source of truth; if the user has already approved implementation, capture with `--status Approved --execute --promotion-reason <merge_boundary|rollback_boundary|verification_boundary|risk_boundary|human_decision_boundary|worktree_boundary>` or run `scripts/plan-to-todo.sh --plan <active-plan>`.
+- Treat contract-level task execution as worktree-first: `repo-harness run plan-to-todo --plan <approved-plan>` starts `repo-harness run contract-worktree start --plan <approved-plan>` when policy enables it, and completed blocks finish through Waza `/check` plus `repo-harness run contract-worktree finish`.
+- After Codex Plan mode, Waza `/think`, or `repo-harness-plan` produces a decision-complete work-package plan, capture it with `repo-harness run capture-plan --artifact-level work-package --slug <slug> --title <title>` so `plans/` becomes the file-backed source of truth; if the user has already approved implementation, capture with `--status Approved --execute --promotion-reason <merge_boundary|rollback_boundary|verification_boundary|risk_boundary|human_decision_boundary|worktree_boundary>` or run `repo-harness run plan-to-todo --plan <active-plan>`.
 - Promote work into a top-level `plans/plan-*.md` only when `Artifact Level: work-package` is justified by a merge/PR unit, rollback surface, independent verification boundary, review/acceptance boundary, high-risk surface, or otherwise cannot remain a checklist item in the current active plan or sprint backlog. Inline sprint rows and checklist rows stay in the sprint backlog or active plan `## Task Breakdown`; contract rows may expand into plan -> contract -> review -> notes only through the work-package gate.
 - If current repo state conflicts with the task, open an isolated `codex/<task-slug>` worktree, finish there, run Waza `/check`-style validation, then merge back to `main` without absorbing unrelated dirty changes.
 - Route product discovery to gstack `office-hours`, complex engineering plans to gstack `plan-eng-review`, design plans to gstack `plan-design-review`, and daily small/medium planning, bug hunts, and checks to Waza `/think`, `/hunt`, and `/check`.
@@ -55,7 +55,7 @@ bun test
 bash scripts/check-deploy-sql-order.sh
 bash scripts/check-architecture-sync.sh
 bash scripts/check-task-sync.sh
-bash scripts/check-task-workflow.sh --strict
+repo-harness run check-task-workflow --strict
 bun scripts/inspect-project-state.ts --repo . --format text
 bash scripts/migrate-project-template.sh --repo . --dry-run
 ```

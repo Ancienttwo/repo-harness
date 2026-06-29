@@ -282,7 +282,7 @@ sync_context_map() {
   "version": 1,
   "profile": "stable-root-progressive-subdir",
   "functional_block_selector": {
-    "script": "scripts/select-agent-context-blocks.sh",
+    "script": "repo-harness run select-agent-context-blocks",
     "config_file": ".ai/context/agent-context-blocks.txt",
     "env": "REPO_HARNESS_CONTEXT_BLOCKS",
     "rule": "compatibility selector; capability registry is the source of truth"

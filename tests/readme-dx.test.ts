@@ -199,7 +199,7 @@ describe("README DX contract", () => {
     expect(res.stdout).toContain("Project hooks synced from:");
     expect(res.stdout).toContain("Workflow migration:");
     expect(res.stdout).toContain("Helper runtime:");
-    expect(res.stdout).toContain("package-dispatched through repo-harness run with scripts/* compatibility wrappers");
+    expect(res.stdout).toContain("package/global only through repo-harness run; no repo-local helper script writes");
     expect(res.stdout).toContain("Host hook config target: user-level ~/.claude/settings.json and ~/.codex/hooks.json");
     expect(res.stdout).toContain("Host hook adapters are user-level:");
   }, 15000);

@@ -50,7 +50,7 @@ describe("Bootstrap Script Contracts", () => {
     expect(claude).toContain("external-tooling.md");
     expect(claude).toContain("gstack");
     expect(agents).toContain("tasks/todos.md");
-    expect(agents).toContain("check-task-workflow.sh --strict");
+    expect(agents).toContain("repo-harness run check-task-workflow --strict");
     expect(agents).toContain("check-agent-tooling.sh --host both --check-updates");
   });
 
@@ -68,13 +68,13 @@ describe("Bootstrap Script Contracts", () => {
     expect(cliEntry).toContain("buildDocsCommand");
     expect(cliEntry).not.toMatch(/\\.version\\(['\"][0-9]+\\.[0-9]+\\.[0-9]+['\"]\\)/);
     expect(pkg.scripts["check:ci"]).toBe("bash scripts/check-ci.sh");
-    expect(pkg.scripts["check:brain-manifest"]).toBe("bash scripts/check-brain-manifest.sh");
-    expect(pkg.scripts["check:task-sync"]).toBe("bash scripts/check-task-sync.sh");
-    expect(pkg.scripts["check:deploy-sql"]).toBe("bash scripts/check-deploy-sql-order.sh");
-    expect(pkg.scripts["check:architecture-sync"]).toBe("bash scripts/check-architecture-sync.sh");
-    expect(pkg.scripts["check:task-workflow"]).toBe("bash scripts/check-task-workflow.sh --strict");
-    expect(pkg.scripts["check:context-files"]).toBe("bash scripts/check-context-files.sh");
-    expect(pkg.scripts["sync:brain-docs"]).toBe("bash scripts/sync-brain-docs.sh --all");
+    expect(pkg.scripts["check:brain-manifest"]).toBe("repo-harness run check-brain-manifest");
+    expect(pkg.scripts["check:task-sync"]).toBe("repo-harness run check-task-sync");
+    expect(pkg.scripts["check:deploy-sql"]).toBe("repo-harness run check-deploy-sql-order");
+    expect(pkg.scripts["check:architecture-sync"]).toBe("repo-harness run check-architecture-sync");
+    expect(pkg.scripts["check:task-workflow"]).toBe("repo-harness run check-task-workflow --strict");
+    expect(pkg.scripts["check:context-files"]).toBe("repo-harness run check-context-files");
+    expect(pkg.scripts["sync:brain-docs"]).toBe("repo-harness run sync-brain-docs --all");
   });
 
   test("ci gate should refresh handoff current before resume packet", () => {
@@ -207,15 +207,15 @@ describe("Bootstrap Script Contracts", () => {
     expect(contract.helpers.scripts).toContain("capability-resolver.ts");
     expect(contract.helpers.scripts).toContain("architecture-event.ts");
     expect(contract.helpers.scripts).toContain("capability-config.ts");
-    expect(contract.artifacts.requiredFiles).toContain("scripts/contract-worktree.sh");
-    expect(contract.artifacts.requiredFiles).toContain("scripts/contract-run.ts");
-    expect(contract.artifacts.requiredFiles).toContain("scripts/ship-worktrees.sh");
-    expect(contract.artifacts.requiredFiles).toContain("scripts/heartbeat-triage.sh");
-    expect(contract.artifacts.requiredFiles).toContain("scripts/capture-plan.sh");
-    expect(contract.artifacts.requiredFiles).toContain("scripts/refresh-current-status.sh");
-    expect(contract.artifacts.requiredFiles).toContain("scripts/sync-brain-docs.sh");
+    expect(contract.artifacts.requiredFiles).not.toContain("scripts/contract-worktree.sh");
+    expect(contract.artifacts.requiredFiles).not.toContain("scripts/contract-run.ts");
+    expect(contract.artifacts.requiredFiles).not.toContain("scripts/ship-worktrees.sh");
+    expect(contract.artifacts.requiredFiles).not.toContain("scripts/heartbeat-triage.sh");
+    expect(contract.artifacts.requiredFiles).not.toContain("scripts/capture-plan.sh");
+    expect(contract.artifacts.requiredFiles).not.toContain("scripts/refresh-current-status.sh");
+    expect(contract.artifacts.requiredFiles).not.toContain("scripts/sync-brain-docs.sh");
     expect(contract.artifacts.requiredFiles).toContain("tasks/current.md");
-    expect(contract.artifacts.requiredFiles).toContain("scripts/capability-config.ts");
+    expect(contract.artifacts.requiredFiles).not.toContain("scripts/capability-config.ts");
     expect(contract.artifacts.requiredFiles).toContain(".ai/harness/workflow-contract.json");
     expect(contract.artifacts.requiredFiles).not.toContain(".codex/hooks.json");
     expect(contract.artifacts.requiredFiles).toContain(".ai/harness/brain-manifest.json");
@@ -313,9 +313,9 @@ describe("Bootstrap Script Contracts", () => {
     expect(contract.helpers.scripts).toContain("contract-run.ts");
     expect(contract.helpers.scripts).toContain("heartbeat-triage.sh");
     expect(contract.artifacts.requiredFiles).toContain("docs/reference-configs/agentic-development-flow.md");
-    expect(contract.artifacts.requiredFiles).toContain("scripts/capture-plan.sh");
-    expect(contract.artifacts.requiredFiles).toContain("scripts/contract-run.ts");
-    expect(contract.artifacts.requiredFiles).toContain("scripts/heartbeat-triage.sh");
+    expect(contract.artifacts.requiredFiles).not.toContain("scripts/capture-plan.sh");
+    expect(contract.artifacts.requiredFiles).not.toContain("scripts/contract-run.ts");
+    expect(contract.artifacts.requiredFiles).not.toContain("scripts/heartbeat-triage.sh");
     expect(contract.artifacts.requiredFiles).toContain(".claude/templates/implementation-notes.template.md");
     expect(contract.artifacts.requiredDirectories).toContain("tasks/notes");
     expect(contract.artifacts.requiredDirectories).toContain("tasks/workstreams");
@@ -374,7 +374,7 @@ describe("Bootstrap Script Contracts", () => {
     expect(workflowState).toContain("git status --porcelain=v1");
     expect(content).toContain("has_changes_glob");
     expect(content).toContain("PlanStatusGuard");
-    expect(content).toContain("ensure-task-workflow.sh");
+    expect(content).toContain("repo-harness run ensure-task-workflow");
     // Block-path guards must use exit 2 so Claude Code's hook protocol treats
     // them as blocking and surfaces stderr to the model (exit 1 is reported as
     // "non-blocking status code: No stderr output").

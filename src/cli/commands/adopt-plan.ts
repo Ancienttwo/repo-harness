@@ -97,7 +97,6 @@ export function runAdoptionPlan(opts: RunAdoptionPlanOptions): RunAdoptionPlanRe
     repoRoot,
     mode: opts.mode,
     apply: false,
-    helperCompatibilityWrappers: opts.reclaimRuntime !== true && opts.compact !== true,
   });
 
   return {

@@ -226,10 +226,10 @@ describe("Output Quality Gates", () => {
     expect(claude).toContain("Self-Improvement Loop");
     expect(agents).toContain("Self-Improvement Loop");
     expect(agents).toContain("gstack");
-    expect(agents).toContain("check-agent-tooling.sh --host both --check-updates");
-    expect(agents).toContain("check-task-sync.sh");
-    expect(agents).toContain("check-task-workflow.sh --strict");
-    expect(agents).toContain("verify-contract.sh --contract <active-plan-contract> --strict");
+    expect(agents).toContain("repo-harness run check-agent-tooling --host both --check-updates");
+    expect(agents).toContain("repo-harness run check-task-sync");
+    expect(agents).toContain("repo-harness run check-task-workflow --strict");
+    expect(agents).toContain("repo-harness run verify-contract --contract <active-plan-contract> --strict");
     expect(agents).toContain(".ai/harness/checks/latest.json");
     expect(agents).toContain("new plans/plan-{timestamp}-{slug}.md");
     expect(claude).toContain(".ai/harness/active-plan");

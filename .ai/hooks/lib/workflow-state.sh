@@ -641,7 +641,7 @@ workflow_next_action() {
     target="$(workflow_target_branch)"
     current_branch="$(workflow_current_branch)"
     if workflow_is_linked_worktree && [[ -n "$current_branch" && "$current_branch" != "$target" ]]; then
-      printf 'finish\tbash scripts/contract-worktree.sh finish\tReview/checks pass; finish and fast-forward merge this contract worktree.\n'
+      printf 'finish\trepo-harness run contract-worktree finish\tReview/checks pass; finish and fast-forward merge this contract worktree.\n'
       return 0
     fi
   fi
@@ -649,7 +649,7 @@ workflow_next_action() {
   if candidate="$(workflow_cleanup_candidate)"; then
     IFS=$'\t' read -r slug branch worktree <<< "$candidate"
     target="$(workflow_target_branch)"
-    command="bash scripts/contract-worktree.sh cleanup --slug ${slug} --target ${target}"
+    command="repo-harness run contract-worktree cleanup --slug ${slug} --target ${target}"
     printf 'cleanup\t%s\tClean up merged contract worktree %s.\n' "$command" "${branch:-$slug}"
     return 0
   fi

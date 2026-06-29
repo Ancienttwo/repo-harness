@@ -63,7 +63,7 @@ function configuredGeneralRepoFlags(config: ReturnType<typeof loadMcpLocalConfig
   };
 }
 
-function normalizeAllowedRoots(rawRoots: string[]): string[] {
+function normalizeAllowedRoots(rawRoots: string[], opts: { skipDenied?: boolean } = {}): string[] {
   const roots: string[] = [];
   const seen = new Set<string>();
   for (const rawRoot of rawRoots) {
@@ -77,11 +77,23 @@ function normalizeAllowedRoots(rawRoots: string[]): string[] {
     }
     const sensitiveReason = sensitiveAllowedRootReason(normalized, undefined, rawRoot);
     if (sensitiveReason) {
+      if (opts.skipDenied === true) continue;
       throw new Error(`MCP allowed root is denied by policy: ${rawRoot} (${sensitiveReason})`);
     }
     if (seen.has(normalized)) continue;
     seen.add(normalized);
     roots.push(normalized);
+  }
+  return roots;
+}
+
+function uniqueRoots(rawRoots: string[]): string[] {
+  const roots: string[] = [];
+  const seen = new Set<string>();
+  for (const root of rawRoots) {
+    if (seen.has(root)) continue;
+    seen.add(root);
+    roots.push(root);
   }
   return roots;
 }
@@ -108,7 +120,6 @@ export function createMcpToolContext(opts: McpServerOptions): McpToolContext {
   const registeredRepoRoots = registeredRepoHarnessRoots({ adoptedOnly: true });
   const currentRepoRoot = isRepoHarnessAdopted(repoRoot) ? [repoRoot] : [];
   const configuredDiscoveryRoots = Array.from(new Set([
-    ...currentRepoRoot,
     ...(config?.permissions?.discoveryRoots ?? []),
     ...(config?.permissions?.allowedRoots ?? []),
     ...(opts.allowedRoots ?? []),
@@ -125,14 +136,15 @@ export function createMcpToolContext(opts: McpServerOptions): McpToolContext {
   const readerEnabled = explicitReaderEnable ||
     configuredReaderEnable ||
     defaultRepoReader;
-  const policyAllowedRoots = normalizeAllowedRoots([
-    ...configuredAllowedRoots,
-    ...(readerEnabled ? registeredRepoRoots : []),
-    ...(readerEnabled ? currentRepoRoot : []),
+  const policyAllowedRoots = uniqueRoots([
+    ...normalizeAllowedRoots(configuredAllowedRoots),
+    ...(readerEnabled ? normalizeAllowedRoots(registeredRepoRoots, { skipDenied: true }) : []),
+    ...(readerEnabled ? normalizeAllowedRoots(currentRepoRoot, { skipDenied: true }) : []),
   ]);
-  const discoveryRoots = normalizeAllowedRoots([
-    ...configuredDiscoveryRoots,
-    ...registeredRepoRoots,
+  const discoveryRoots = uniqueRoots([
+    ...normalizeAllowedRoots(configuredDiscoveryRoots),
+    ...normalizeAllowedRoots(currentRepoRoot, { skipDenied: true }),
+    ...normalizeAllowedRoots(registeredRepoRoots, { skipDenied: true }),
   ]);
   const policy = getMcpPolicy(profile, {
     devAgentRunner,

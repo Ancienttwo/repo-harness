@@ -114,7 +114,7 @@
     },
     {
       "version": "0.4.2",
-      "description": "Adds the PRD-to-Sprint planning hierarchy, isolates generated-project helper runtime under .ai/harness/scripts, and installs the subagent return-channel guard"
+      "description": "Adds the PRD-to-Sprint planning hierarchy, package-scoped helper runtime routing, and the subagent return-channel guard"
     },
     {
       "version": "0.4.3",

@@ -135,7 +135,7 @@ describe("Hook contracts", () => {
     expect(script).toContain("ContractGuard");
     expect(script).toContain("ResearchGate");
     expect(script).toContain("done");
-    expect(script).toContain("scripts/verify-contract.sh");
+    expect(script).toContain("repo-harness run verify-contract");
     expect(script).toContain("HarnessMaintenance");
     expect(script).toContain("has_changes_glob");
     expect(script).toContain("emit_cross_review_hint");
@@ -218,9 +218,9 @@ describe("Hook contracts", () => {
     expect(script).toContain("[DocDrift]");
     expect(script).toContain("[DeployAsset]");
     expect(script).toContain("[TaskHandoff]");
-    expect(script).toContain("architecture-queue.sh");
-    expect(script).toContain("context-contract-sync.sh");
-    expect(script).toContain("sync-brain-docs.sh");
+    expect(script).toContain("run_repo_harness_helper architecture-queue");
+    expect(script).toContain("run_repo_harness_helper context-contract-sync");
+    expect(script).toContain("run_repo_harness_helper sync-brain-docs");
     expect(read("assets/templates/helpers/archive-architecture-request.sh")).toContain("[ArchitectureArchive]");
     expect(read("assets/templates/helpers/workstream-sync.sh")).toContain("tasks/workstreams");
     expect(script).toContain("tasks/todos.md");
@@ -240,7 +240,7 @@ describe("Hook contracts", () => {
     expect(drift).toContain("docs/architecture/requests");
     expect(drift).toContain("architecture-event.ts");
     expect(drift).toContain(".ai/harness/architecture/events.jsonl");
-    expect(eventHelper).toContain("workstream-sync.sh");
+    expect(eventHelper).toContain("repo-harness run workstream-sync");
     expect(drift).not.toContain("BEGIN ARCHITECTURE CONTRACT");
     expect(sync).toContain("architecture-event.ts");
     expect(sync).toContain("BEGIN ARCHITECTURE CONTRACT");

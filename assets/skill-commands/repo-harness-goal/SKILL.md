@@ -15,7 +15,7 @@ Use this command when the user wants to start a bounded native `/goal` session i
 3. If the user did not attach or name a detailed PRD/Sprint document, stop and prompt them to attach one. The prompt must ask for the PRD/Sprint artifact, target repo/path, desired goal outcome, hard non-goals, and verification surface.
 4. Read the PRD/Sprint enough to extract a single goal statement, bounded scope, non-goals, authoritative files, ordered tasks, acceptance checks, rollback or stop condition, and any explicit owner or dependency constraints.
 5. Produce a host-ready `/goal` prompt that tells Codex or Claude to use the attached PRD/Sprint as source of truth, preserve repo-harness workflow gates, run one bounded goal, report checkpoints, and stop on verified completion or blocker evidence.
-6. When a Sprint row is the source, include the sprint file path, row id or task label, acceptance line, and whether the work should proceed through `$think`, `capture-plan.sh`, and the contract worktree flow before implementation.
+6. When a Sprint row is the source, include the sprint file path, row id or task label, acceptance line, and whether the work should proceed through `$think`, `repo-harness run capture-plan`, and the contract worktree flow before implementation.
 7. When a PRD is the source but no Sprint exists, route to `repo-harness-sprint from-prd <prd-file>` unless the requested goal is explicitly limited to PRD review, Sprint generation, or planning.
 8. Verify the prepared goal contract against repo state before handing it to `/goal`: named files exist, acceptance checks are concrete, and the stop condition is testable.
 9. For Codex goals, include explicit bounded delegation authorization: spawn no more than 3 subagents, max depth 1, only when the goal contains at least two independent workstreams, and never give overlapping write ownership.
@@ -48,6 +48,6 @@ Reporting: use the user's language unless repo-local instructions require otherw
 
 - Does not create, approve, or execute a Goal session without detailed PRD/Sprint context.
 - Does not replace `repo-harness-prd` or `repo-harness-sprint`; it consumes their artifacts.
-- Does not bypass `$think`, `capture-plan.sh`, task contracts, `/check`, external acceptance, or repo-harness verification gates.
+- Does not bypass `$think`, `repo-harness run capture-plan`, task contracts, `/check`, external acceptance, or repo-harness verification gates.
 - Never treats `tasks/todos.md` as the active goal backlog; it is only the deferred-goal ledger.
 - Preserve host-native `/goal` ownership: repo-harness prepares the prompt and contract, while Codex or Claude owns continuation mechanics.

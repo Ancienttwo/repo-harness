@@ -367,8 +367,8 @@ function renderRequiredFollowUp(event: ArchitectureEvent): string {
     "- When a visual explains the boundary better than prose, add or update a Mermaid fenced block in the relevant architecture module or snapshot Markdown first; that Markdown is the semantic source for LLM readers.",
     "- When a human-readable rendering is useful, generate a matching `$mermaid` architecture HTML file under `docs/architecture/diagrams/` and link it back to the Markdown semantic source.",
     "- Treat `mermaid` as an external installed skill dependency at `~/.codex/skills/mermaid`; do not copy, vendor, or inline its templates into this repo.",
-    `- If this starts or advances durable execution, run \`scripts/workstream-sync.sh ensure --block "${functionalBlock}" --request "${requestFile}"\`.`,
-    "- After the snapshot or diagram is produced, run `scripts/context-contract-sync.sh sync-latest` so the local architecture contract block links to the latest artifacts.",
+    `- If this starts or advances durable execution, run \`repo-harness run workstream-sync ensure --block "${functionalBlock}" --request "${requestFile}"\`.`,
+    "- After the snapshot or diagram is produced, run `repo-harness run context-contract-sync sync-latest` so the local architecture contract block links to the latest artifacts.",
   ].join("\n");
 }
 
@@ -537,7 +537,7 @@ function defaultContextMap() {
     version: 1,
     profile: "stable-root-progressive-subdir",
     functional_block_selector: {
-      script: "scripts/select-agent-context-blocks.sh",
+      script: "repo-harness run select-agent-context-blocks",
       config_file: ".ai/context/agent-context-blocks.txt",
       env: "REPO_HARNESS_CONTEXT_BLOCKS",
       rule: "compatibility selector; capability registry is the source of truth",

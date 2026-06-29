@@ -8,14 +8,12 @@ import { summarizeOperations } from "./summary";
 import { managedBlockNeedsUpdate } from "../../effects/managed-block";
 import { workflowContractInstallOperation } from "./workflow-contract-plan";
 import { adoptionTemplateFile } from "./manifest-templates";
-import { helperWrapperGitignoreContent, helperWrapperOperations } from "./helper-wrapper-plan";
 import { withRollbackMetadata } from "./rollback";
 
 export interface PlanAdoptionOptions {
   readonly repoRoot: string;
   readonly mode?: AdoptionMode;
   readonly apply?: boolean;
-  readonly helperCompatibilityWrappers?: boolean;
 }
 
 const MINIMAL_DIRS = [
@@ -106,7 +104,6 @@ function selfHostWarnings(mode: AdoptionMode): AdoptionWarning[] {
 export function planAdoption(opts: PlanAdoptionOptions): AdoptionPlan {
   const repoRoot = resolve(opts.repoRoot);
   const mode = opts.mode ?? "standard";
-  const helperCompatibilityWrappers = opts.helperCompatibilityWrappers !== false;
   const operations: AdoptionOperation[] = [
     ...directoryPaths(mode).map((path) => ({
       id: makeOperationId("mkdir", path),
@@ -118,11 +115,10 @@ export function planAdoption(opts: PlanAdoptionOptions): AdoptionPlan {
     })),
     ...writeIfMissingOperations(repoRoot),
     ...workflowContractOperations(repoRoot),
-    ...(helperCompatibilityWrappers ? helperWrapperOperations(repoRoot, mode) : []),
   ];
 
   const gitignorePath = resolve(repoRoot, ".gitignore");
-  const gitignoreExtraContent = helperCompatibilityWrappers ? helperWrapperGitignoreContent(repoRoot, mode) : "";
+  const gitignoreExtraContent = "";
   const plannedGitignoreOperation = gitignoreManagedBlockOperation("planned", gitignoreExtraContent);
   const gitignoreOperation = gitignoreManagedBlockOperation(
     managedBlockNeedsUpdate(existsSync(gitignorePath) ? readFileSync(gitignorePath, "utf-8") : "", plannedGitignoreOperation)

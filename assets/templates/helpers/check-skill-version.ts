@@ -16,11 +16,9 @@ import { resolveAgenticDevRoot } from "./workflow-contract.ts";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const REPO_ROOT = __dirname.endsWith("/.ai/harness/scripts")
+const REPO_ROOT = __dirname.endsWith("/assets/templates/helpers")
   ? join(__dirname, "../../..")
-  : __dirname.endsWith("/assets/templates/helpers")
-    ? join(__dirname, "../../..")
-    : join(__dirname, "..");
+  : join(__dirname, "..");
 
 export interface ConsistencyResult {
   consistent: boolean;

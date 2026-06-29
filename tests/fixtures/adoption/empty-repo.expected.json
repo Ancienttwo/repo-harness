@@ -2,88 +2,165 @@
   "mode": "standard",
   "apply": false,
   "operations": [
-    {"id":"mkdir:plans","kind":"mkdir","path":"plans","status":"planned"},
-    {"id":"mkdir:tasks","kind":"mkdir","path":"tasks","status":"planned"},
-    {"id":"mkdir:tasks/contracts","kind":"mkdir","path":"tasks/contracts","status":"planned"},
-    {"id":"mkdir:tasks/reviews","kind":"mkdir","path":"tasks/reviews","status":"planned"},
-    {"id":"mkdir:tasks/notes","kind":"mkdir","path":"tasks/notes","status":"planned"},
-    {"id":"mkdir:docs","kind":"mkdir","path":"docs","status":"planned"},
-    {"id":"mkdir:.ai/harness/checks","kind":"mkdir","path":".ai/harness/checks","status":"planned"},
-    {"id":"mkdir:.ai/harness/handoff","kind":"mkdir","path":".ai/harness/handoff","status":"planned"},
-    {"id":"mkdir:plans/archive","kind":"mkdir","path":"plans/archive","status":"planned"},
-    {"id":"mkdir:plans/prds","kind":"mkdir","path":"plans/prds","status":"planned"},
-    {"id":"mkdir:plans/sprints","kind":"mkdir","path":"plans/sprints","status":"planned"},
-    {"id":"mkdir:tasks/workstreams","kind":"mkdir","path":"tasks/workstreams","status":"planned"},
-    {"id":"mkdir:docs/reference-configs","kind":"mkdir","path":"docs/reference-configs","status":"planned"},
-    {"id":"mkdir:.ai/context","kind":"mkdir","path":".ai/context","status":"planned"},
-    {"id":"mkdir:.ai/harness/failures","kind":"mkdir","path":".ai/harness/failures","status":"planned"},
-    {"id":"mkdir:.ai/harness/architecture","kind":"mkdir","path":".ai/harness/architecture","status":"planned"},
-    {"id":"mkdir:.ai/harness/runs","kind":"mkdir","path":".ai/harness/runs","status":"planned"},
-    {"id":"writeFile:docs/spec.md:ifMissing","kind":"writeFile","path":"docs/spec.md","status":"planned","ifMissing":true},
-    {"id":"writeFile:tasks/todos.md:ifMissing","kind":"writeFile","path":"tasks/todos.md","status":"planned","ifMissing":true},
-    {"id":"writeFile:tasks/current.md:ifMissing","kind":"writeFile","path":"tasks/current.md","status":"planned","ifMissing":true},
-    {"id":"writeFile:tasks/lessons.md:ifMissing","kind":"writeFile","path":"tasks/lessons.md","status":"planned","ifMissing":true},
-    {"id":"writeFile:.ai/harness/workflow-contract.json:workflow-contract","kind":"writeFile","path":".ai/harness/workflow-contract.json","status":"planned"},
-    {"id":"writeFile:scripts/new-spec.sh:helper-wrapper","kind":"writeFile","path":"scripts/new-spec.sh","status":"planned","ifMissing":true},
-    {"id":"writeFile:scripts/new-sprint.sh:helper-wrapper","kind":"writeFile","path":"scripts/new-sprint.sh","status":"planned","ifMissing":true},
-    {"id":"writeFile:scripts/new-plan.sh:helper-wrapper","kind":"writeFile","path":"scripts/new-plan.sh","status":"planned","ifMissing":true},
-    {"id":"writeFile:scripts/capture-plan.sh:helper-wrapper","kind":"writeFile","path":"scripts/capture-plan.sh","status":"planned","ifMissing":true},
-    {"id":"writeFile:scripts/plan-to-todo.sh:helper-wrapper","kind":"writeFile","path":"scripts/plan-to-todo.sh","status":"planned","ifMissing":true},
-    {"id":"writeFile:scripts/contract-run.ts:helper-wrapper","kind":"writeFile","path":"scripts/contract-run.ts","status":"planned","ifMissing":true},
-    {"id":"writeFile:scripts/contract-worktree.sh:helper-wrapper","kind":"writeFile","path":"scripts/contract-worktree.sh","status":"planned","ifMissing":true},
-    {"id":"writeFile:scripts/ship-worktrees.sh:helper-wrapper","kind":"writeFile","path":"scripts/ship-worktrees.sh","status":"planned","ifMissing":true},
-    {"id":"writeFile:scripts/archive-workflow.sh:helper-wrapper","kind":"writeFile","path":"scripts/archive-workflow.sh","status":"planned","ifMissing":true},
-    {"id":"writeFile:scripts/refresh-current-status.sh:helper-wrapper","kind":"writeFile","path":"scripts/refresh-current-status.sh","status":"planned","ifMissing":true},
-    {"id":"writeFile:scripts/prepare-handoff.sh:helper-wrapper","kind":"writeFile","path":"scripts/prepare-handoff.sh","status":"planned","ifMissing":true},
-    {"id":"writeFile:scripts/verify-contract.sh:helper-wrapper","kind":"writeFile","path":"scripts/verify-contract.sh","status":"planned","ifMissing":true},
-    {"id":"writeFile:scripts/summarize-failures.sh:helper-wrapper","kind":"writeFile","path":"scripts/summarize-failures.sh","status":"planned","ifMissing":true},
-    {"id":"writeFile:scripts/verify-sprint.sh:helper-wrapper","kind":"writeFile","path":"scripts/verify-sprint.sh","status":"planned","ifMissing":true},
-    {"id":"writeFile:scripts/harness-trace-grade.sh:helper-wrapper","kind":"writeFile","path":"scripts/harness-trace-grade.sh","status":"planned","ifMissing":true},
-    {"id":"writeFile:scripts/sprint-backlog.sh:helper-wrapper","kind":"writeFile","path":"scripts/sprint-backlog.sh","status":"planned","ifMissing":true},
-    {"id":"writeFile:scripts/check-task-sync.sh:helper-wrapper","kind":"writeFile","path":"scripts/check-task-sync.sh","status":"planned","ifMissing":true},
-    {"id":"writeFile:scripts/check-deploy-sql-order.sh:helper-wrapper","kind":"writeFile","path":"scripts/check-deploy-sql-order.sh","status":"planned","ifMissing":true},
-    {"id":"writeFile:scripts/check-architecture-sync.sh:helper-wrapper","kind":"writeFile","path":"scripts/check-architecture-sync.sh","status":"planned","ifMissing":true},
-    {"id":"writeFile:scripts/check-agent-tooling.sh:helper-wrapper","kind":"writeFile","path":"scripts/check-agent-tooling.sh","status":"planned","ifMissing":true},
-    {"id":"writeFile:scripts/check-context-files.sh:helper-wrapper","kind":"writeFile","path":"scripts/check-context-files.sh","status":"planned","ifMissing":true},
-    {"id":"writeFile:scripts/check-brain-manifest.sh:helper-wrapper","kind":"writeFile","path":"scripts/check-brain-manifest.sh","status":"planned","ifMissing":true},
-    {"id":"writeFile:scripts/sync-brain-docs.sh:helper-wrapper","kind":"writeFile","path":"scripts/sync-brain-docs.sh","status":"planned","ifMissing":true},
-    {"id":"writeFile:scripts/check-skill-version.ts:helper-wrapper","kind":"writeFile","path":"scripts/check-skill-version.ts","status":"planned","ifMissing":true},
-    {"id":"writeFile:scripts/select-agent-context-blocks.sh:helper-wrapper","kind":"writeFile","path":"scripts/select-agent-context-blocks.sh","status":"planned","ifMissing":true},
-    {"id":"writeFile:scripts/ensure-task-workflow.sh:helper-wrapper","kind":"writeFile","path":"scripts/ensure-task-workflow.sh","status":"planned","ifMissing":true},
-    {"id":"writeFile:scripts/check-task-workflow.sh:helper-wrapper","kind":"writeFile","path":"scripts/check-task-workflow.sh","status":"planned","ifMissing":true},
-    {"id":"writeFile:scripts/maintenance-triage.sh:helper-wrapper","kind":"writeFile","path":"scripts/maintenance-triage.sh","status":"planned","ifMissing":true},
-    {"id":"writeFile:scripts/heartbeat-triage.sh:helper-wrapper","kind":"writeFile","path":"scripts/heartbeat-triage.sh","status":"planned","ifMissing":true},
-    {"id":"writeFile:scripts/switch-plan.sh:helper-wrapper","kind":"writeFile","path":"scripts/switch-plan.sh","status":"planned","ifMissing":true},
-    {"id":"writeFile:scripts/workflow-contract.ts:helper-wrapper","kind":"writeFile","path":"scripts/workflow-contract.ts","status":"planned","ifMissing":true},
-    {"id":"writeFile:scripts/inspect-project-state.ts:helper-wrapper","kind":"writeFile","path":"scripts/inspect-project-state.ts","status":"planned","ifMissing":true},
-    {"id":"writeFile:scripts/migrate-workflow-docs.ts:helper-wrapper","kind":"writeFile","path":"scripts/migrate-workflow-docs.ts","status":"planned","ifMissing":true},
-    {"id":"writeFile:scripts/migrate-project-template.sh:helper-wrapper","kind":"writeFile","path":"scripts/migrate-project-template.sh","status":"planned","ifMissing":true},
-    {"id":"writeFile:scripts/capability-resolver.ts:helper-wrapper","kind":"writeFile","path":"scripts/capability-resolver.ts","status":"planned","ifMissing":true},
-    {"id":"writeFile:scripts/architecture-event.ts:helper-wrapper","kind":"writeFile","path":"scripts/architecture-event.ts","status":"planned","ifMissing":true},
-    {"id":"writeFile:scripts/capability-config.ts:helper-wrapper","kind":"writeFile","path":"scripts/capability-config.ts","status":"planned","ifMissing":true},
-    {"id":"writeFile:scripts/architecture-queue.sh:helper-wrapper","kind":"writeFile","path":"scripts/architecture-queue.sh","status":"planned","ifMissing":true},
-    {"id":"writeFile:scripts/archive-architecture-request.sh:helper-wrapper","kind":"writeFile","path":"scripts/archive-architecture-request.sh","status":"planned","ifMissing":true},
-    {"id":"writeFile:scripts/context-contract-sync.sh:helper-wrapper","kind":"writeFile","path":"scripts/context-contract-sync.sh","status":"planned","ifMissing":true},
-    {"id":"writeFile:scripts/workstream-sync.sh:helper-wrapper","kind":"writeFile","path":"scripts/workstream-sync.sh","status":"planned","ifMissing":true},
-    {"id":"writeFile:scripts/prepare-codex-handoff.sh:helper-wrapper","kind":"writeFile","path":"scripts/prepare-codex-handoff.sh","status":"planned","ifMissing":true},
-    {"id":"writeFile:scripts/codex-handoff-resume.sh:helper-wrapper","kind":"writeFile","path":"scripts/codex-handoff-resume.sh","status":"planned","ifMissing":true},
-    {"id":"appendManagedBlock:.gitignore:repo-harness-generated-runtime","kind":"appendManagedBlock","path":".gitignore","status":"planned","marker":"repo-harness generated-runtime"}
+    {
+      "id": "mkdir:plans",
+      "kind": "mkdir",
+      "path": "plans",
+      "status": "planned"
+    },
+    {
+      "id": "mkdir:tasks",
+      "kind": "mkdir",
+      "path": "tasks",
+      "status": "planned"
+    },
+    {
+      "id": "mkdir:tasks/contracts",
+      "kind": "mkdir",
+      "path": "tasks/contracts",
+      "status": "planned"
+    },
+    {
+      "id": "mkdir:tasks/reviews",
+      "kind": "mkdir",
+      "path": "tasks/reviews",
+      "status": "planned"
+    },
+    {
+      "id": "mkdir:tasks/notes",
+      "kind": "mkdir",
+      "path": "tasks/notes",
+      "status": "planned"
+    },
+    {
+      "id": "mkdir:docs",
+      "kind": "mkdir",
+      "path": "docs",
+      "status": "planned"
+    },
+    {
+      "id": "mkdir:.ai/harness/checks",
+      "kind": "mkdir",
+      "path": ".ai/harness/checks",
+      "status": "planned"
+    },
+    {
+      "id": "mkdir:.ai/harness/handoff",
+      "kind": "mkdir",
+      "path": ".ai/harness/handoff",
+      "status": "planned"
+    },
+    {
+      "id": "mkdir:plans/archive",
+      "kind": "mkdir",
+      "path": "plans/archive",
+      "status": "planned"
+    },
+    {
+      "id": "mkdir:plans/prds",
+      "kind": "mkdir",
+      "path": "plans/prds",
+      "status": "planned"
+    },
+    {
+      "id": "mkdir:plans/sprints",
+      "kind": "mkdir",
+      "path": "plans/sprints",
+      "status": "planned"
+    },
+    {
+      "id": "mkdir:tasks/workstreams",
+      "kind": "mkdir",
+      "path": "tasks/workstreams",
+      "status": "planned"
+    },
+    {
+      "id": "mkdir:docs/reference-configs",
+      "kind": "mkdir",
+      "path": "docs/reference-configs",
+      "status": "planned"
+    },
+    {
+      "id": "mkdir:.ai/context",
+      "kind": "mkdir",
+      "path": ".ai/context",
+      "status": "planned"
+    },
+    {
+      "id": "mkdir:.ai/harness/failures",
+      "kind": "mkdir",
+      "path": ".ai/harness/failures",
+      "status": "planned"
+    },
+    {
+      "id": "mkdir:.ai/harness/architecture",
+      "kind": "mkdir",
+      "path": ".ai/harness/architecture",
+      "status": "planned"
+    },
+    {
+      "id": "mkdir:.ai/harness/runs",
+      "kind": "mkdir",
+      "path": ".ai/harness/runs",
+      "status": "planned"
+    },
+    {
+      "id": "writeFile:docs/spec.md:ifMissing",
+      "kind": "writeFile",
+      "path": "docs/spec.md",
+      "status": "planned",
+      "ifMissing": true
+    },
+    {
+      "id": "writeFile:tasks/todos.md:ifMissing",
+      "kind": "writeFile",
+      "path": "tasks/todos.md",
+      "status": "planned",
+      "ifMissing": true
+    },
+    {
+      "id": "writeFile:tasks/current.md:ifMissing",
+      "kind": "writeFile",
+      "path": "tasks/current.md",
+      "status": "planned",
+      "ifMissing": true
+    },
+    {
+      "id": "writeFile:tasks/lessons.md:ifMissing",
+      "kind": "writeFile",
+      "path": "tasks/lessons.md",
+      "status": "planned",
+      "ifMissing": true
+    },
+    {
+      "id": "writeFile:.ai/harness/workflow-contract.json:workflow-contract",
+      "kind": "writeFile",
+      "path": ".ai/harness/workflow-contract.json",
+      "status": "planned"
+    },
+    {
+      "id": "appendManagedBlock:.gitignore:repo-harness-generated-runtime",
+      "kind": "appendManagedBlock",
+      "path": ".gitignore",
+      "status": "planned",
+      "marker": "repo-harness generated-runtime"
+    }
   ],
   "summary": {
-    "total": 66,
+    "total": 23,
     "byKind": {
       "mkdir": 17,
-      "writeFile": 48,
+      "writeFile": 5,
       "appendManagedBlock": 1
     },
     "byStatus": {
-      "planned": 66
+      "planned": 23
     },
-    "plannedTotal": 66,
+    "plannedTotal": 23,
     "skippedTotal": 0,
     "failedTotal": 0,
     "userOwnedFilesTouched": 1,
-    "generatedFiles": 49,
+    "generatedFiles": 6,
     "repoHarnessOwnedFiles": 7,
     "requiresVerification": false
   },

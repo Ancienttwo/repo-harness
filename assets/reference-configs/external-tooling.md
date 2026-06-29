@@ -56,7 +56,7 @@ installations.
 
 ## Detect Safely
 
-Use `bash .ai/harness/scripts/check-agent-tooling.sh` for a read-only tooling report.
+Use `repo-harness run check-agent-tooling` for a read-only tooling report.
 Init and migration reports run the detector without update checks by default;
 set `REPO_HARNESS_CHECK_TOOLING_UPDATES=1` when that advisory pass should
 also compare upstream versions.
@@ -364,9 +364,9 @@ After that, PostEdit hooks sync only that source file. Manual sync and drift
 checks are also available:
 
 ```bash
-bash .ai/harness/scripts/check-brain-manifest.sh
-bash .ai/harness/scripts/sync-brain-docs.sh --all
-bash .ai/harness/scripts/sync-brain-docs.sh --check
+repo-harness run check-brain-manifest
+repo-harness run sync-brain-docs --all
+repo-harness run sync-brain-docs --check
 ```
 
 ## Why gbrain MCP Stays Off by Default

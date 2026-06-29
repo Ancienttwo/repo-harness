@@ -73,21 +73,7 @@ function setupFakeSource(root: string): void {
       "  echo dry-run \"$repo\"",
       "  exit 0",
       "fi",
-      "mkdir -p \"$repo/scripts\" \"$repo/.ai/harness\"",
-      "printf '{}\\n' > \"$repo/.ai/harness/workflow-contract.json\"",
-      "cat > \"$repo/.ai/harness/brain-manifest.json\" <<'EOF'",
-      "{",
-      "  \"version\": 1,",
-      "  \"project\": \"demo\",",
-      "  \"default_brain_path\": \"brain/demo/*\",",
-      "  \"entries\": []",
-      "}",
-      "EOF",
-      "cat > \"$repo/scripts/check-task-workflow.sh\" <<'EOF'",
-      "#!/bin/bash",
-      "echo '[workflow] OK'",
-      "EOF",
-      "chmod +x \"$repo/scripts/check-task-workflow.sh\"",
+      `(cd "$repo" && bash "${ROOT}/scripts/create-project-dirs.sh" >/dev/null)`,
       "echo migrate \"$repo\"",
       "",
     ].join("\n"),
@@ -242,26 +228,10 @@ describe("init command", () => {
           "    *) shift ;;",
           "  esac",
           "done",
-          "mkdir -p \"$repo/scripts\" \"$repo/.ai/harness/handoff\"",
-          "cat > \"$repo/scripts/prepare-codex-handoff.sh\" <<'EOF'",
-          "#!/bin/bash",
-          "set -euo pipefail",
-          "mkdir -p .ai/harness/handoff",
-          "printf 'refreshed\\n' > .ai/harness/handoff/refresh-marker",
-          "printf '# Harness Handoff\\n' > .ai/harness/handoff/current.md",
-          "printf '# Codex Resume Packet\\n' > .ai/harness/handoff/resume.md",
-          "EOF",
-          "chmod +x \"$repo/scripts/prepare-codex-handoff.sh\"",
-          "cat > \"$repo/scripts/check-task-workflow.sh\" <<'EOF'",
-          "#!/bin/bash",
-          "set -euo pipefail",
-          "if [[ ! -f .ai/harness/handoff/refresh-marker ]]; then",
-          "  echo '[workflow] Resume packet is older than handoff current' >&2",
-          "  exit 1",
-          "fi",
-          "echo '[workflow] OK'",
-          "EOF",
-          "chmod +x \"$repo/scripts/check-task-workflow.sh\"",
+          `(cd "$repo" && bash "${ROOT}/scripts/create-project-dirs.sh" >/dev/null)`,
+          "mkdir -p \"$repo/.ai/harness/handoff\"",
+          "printf '# Harness Handoff\\n' > \"$repo/.ai/harness/handoff/current.md\"",
+          "printf '# Codex Resume Packet\\n' > \"$repo/.ai/harness/handoff/resume.md\"",
           "echo migrate \"$repo\"",
           "",
         ].join("\n"),
@@ -280,7 +250,8 @@ describe("init command", () => {
       expect(result.exitCode).toBe(0);
       expect(result.steps.find((step) => step.step === "refresh handoff packet")?.status).toBe("ok");
       expect(result.steps.find((step) => step.step === "verify repo harness")?.status).toBe("ok");
-      expect(readFileSync(join(repo, ".ai", "harness", "handoff", "refresh-marker"), "utf-8")).toContain("refreshed");
+      expect(readFileSync(join(repo, ".ai", "harness", "handoff", "current.md"), "utf-8")).toContain("repo-harness-adopt-verify");
+      expect(readFileSync(join(repo, ".ai", "harness", "handoff", "resume.md"), "utf-8")).toContain("Codex Resume Packet");
     } finally {
       process.chdir(previousCwd);
       rmSync(tmp, { recursive: true, force: true });

@@ -84,14 +84,11 @@ const GBRAIN_INSTALL_NOTE =
 const CODEGRAPH_MCP_CONFIGURE_COMMAND = "repo-harness tools configure codegraph --target <codex|claude|both> --location global";
 const CODEGRAPH_LOCAL_INSTALL_COMMAND = "bun install";
 const CODEGRAPH_ENSURE_COMMAND = [
-  ".ai/harness/scripts/ensure-codegraph.sh",
   "scripts/ensure-codegraph.sh",
 ].find((relPath) => fs.existsSync(path.join(REPO_ROOT, relPath)));
 const CODEGRAPH_ENSURE_BASH_COMMAND = CODEGRAPH_ENSURE_COMMAND
   ? `bash ${CODEGRAPH_ENSURE_COMMAND}`
   : null;
-const SKILLS_CLI_TIMEOUT_MS = 5000;
-const CODEGRAPH_PROBE_TIMEOUT_MS = 5000;
 const WAZA_STAGING_ROOT = path.join(HOME, ".agents");
 const WAZA_STAGING_DIR = path.join(WAZA_STAGING_ROOT, "skills");
 const WAZA_STAGING_RULES_DIR = path.join(WAZA_STAGING_ROOT, "rules");
@@ -707,7 +704,7 @@ function inspectWazaSkill(host, skill, skillLock, skillItems, upstreamSkills) {
 function detectWaza() {
   const skillLockPath = path.join(HOME, ".agents", ".skill-lock.json");
   const skillLock = readJson(skillLockPath);
-  const skillsResult = run("npx", ["-y", "skills", "ls", "-g", "--json"], { timeoutMs: SKILLS_CLI_TIMEOUT_MS });
+  const skillsResult = run("npx", ["-y", "skills", "ls", "-g", "--json"], { timeoutMs: 1500 });
   const skillItems = skillsResult.ok ? parseJson(skillsResult.stdout) || [] : [];
   const wazaEntries = Object.entries(skillLock?.skills || {}).filter(([, meta]) => meta?.source === WAZA_SOURCE_REPO);
   const upstream = fetchWazaUpstreamSkills();
@@ -1268,10 +1265,10 @@ function resolveCodeGraphBinary() {
 
 function codeGraphVersion(binPath) {
   if (!binPath) return null;
-  const result = run(binPath, ["--version"], { timeoutMs: CODEGRAPH_PROBE_TIMEOUT_MS });
+  const result = run(binPath, ["--version"], { timeoutMs: 1000 });
   if (result.ok) return result.stdout.trim() || null;
   if (result.timed_out) {
-    const retry = run(binPath, ["--version"], { timeoutMs: CODEGRAPH_PROBE_TIMEOUT_MS });
+    const retry = run(binPath, ["--version"], { timeoutMs: 1000 });
     if (retry.ok) return retry.stdout.trim() || null;
   }
   return null;
@@ -1298,7 +1295,7 @@ function detectCodeGraph() {
   }
 
   const selectedMcpConfigured = SELECTED_HOSTS.every((host) => mcpHosts[host]?.status === "configured");
-  const statusResult = cliPresent ? run(resolution.bin_path, ["status", "."], { timeoutMs: CODEGRAPH_PROBE_TIMEOUT_MS }) : null;
+  const statusResult = cliPresent ? run(resolution.bin_path, ["status", "."], { timeoutMs: 1500 }) : null;
   const statusOutput = `${statusResult?.stdout || ""}\n${statusResult?.stderr || ""}`;
   const projectIndexStatus = cliPresent ? parseCodeGraphProjectStatus(statusOutput) : "unavailable";
   const indexInitialized = fs.existsSync(path.join(REPO_ROOT, ".codegraph"))

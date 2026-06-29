@@ -4,11 +4,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null)"; then
   cd "$REPO_ROOT"
-elif [[ "$SCRIPT_DIR" == */.ai/harness/scripts ]]; then
-  cd "$SCRIPT_DIR/../../.."
 else
   cd "$SCRIPT_DIR/.."
 fi
+helper_dir="$SCRIPT_DIR"
 
 json_escape() {
   local value="$1"
@@ -362,15 +361,15 @@ if command -v jq >/dev/null 2>&1; then
   allowed_paths_status="$(printf '%s' "$allowed_paths_check" | jq -r '.status // "unavailable"' 2>/dev/null || printf 'unavailable')"
 fi
 
-contract_command="bash scripts/verify-contract.sh --contract $contract_file --strict --report-file <temp>"
-if [[ -f "scripts/sync-brain-docs.sh" && -f ".ai/harness/brain-manifest.json" ]]; then
-  bash scripts/sync-brain-docs.sh --all >/dev/null || true
+contract_command="repo-harness run verify-contract --contract $contract_file --strict --report-file <temp>"
+if [[ -f "$helper_dir/sync-brain-docs.sh" && -f ".ai/harness/brain-manifest.json" ]]; then
+  bash "$helper_dir/sync-brain-docs.sh" --all >/dev/null || true
 fi
-if [[ -f "scripts/prepare-codex-handoff.sh" && ( -f ".ai/harness/handoff/current.md" || -f ".ai/harness/handoff/resume.md" ) ]]; then
-  bash scripts/prepare-codex-handoff.sh --reason "repo-harness-verify-sprint" >/dev/null || true
+if [[ -f "$helper_dir/prepare-codex-handoff.sh" && ( -f ".ai/harness/handoff/current.md" || -f ".ai/harness/handoff/resume.md" ) ]]; then
+  bash "$helper_dir/prepare-codex-handoff.sh" --reason "repo-harness-verify-sprint" >/dev/null || true
 fi
 set +e
-contract_output="$(bash scripts/verify-contract.sh --contract "$contract_file" --strict --report-file "$contract_report" 2>&1)"
+contract_output="$(bash "$helper_dir/verify-contract.sh" --contract "$contract_file" --strict --report-file "$contract_report" 2>&1)"
 contract_exit=$?
 set -e
 
@@ -482,7 +481,7 @@ if command -v jq >/dev/null 2>&1 && jq -e . "$contract_report" >/dev/null 2>&1; 
     --arg schema "repo-harness-run-trace.v1" \
     --arg status "$status" \
     --arg source "verify-sprint" \
-    --arg command "bash scripts/verify-sprint.sh" \
+    --arg command "repo-harness run verify-sprint" \
     --arg generated_at "$generated_at" \
     --arg run_id "$run_id" \
     --arg run_file "$run_file" \
@@ -588,7 +587,7 @@ else
   "schema": "repo-harness-run-trace.v1",
   "status": "$(json_escape "$status")",
   "source": "verify-sprint",
-  "command": "bash scripts/verify-sprint.sh",
+  "command": "repo-harness run verify-sprint",
   "exit_code": $exit_code,
   "generated_at": "$(json_escape "$generated_at")",
   "run_id": "$(json_escape "$run_id")",
@@ -604,7 +603,7 @@ else
   "commands": [
     {
       "name": "verify-sprint",
-      "command": "bash scripts/verify-sprint.sh",
+      "command": "repo-harness run verify-sprint",
       "status": "$(json_escape "$status")",
       "exit_code": $exit_code
     },

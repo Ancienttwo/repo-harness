@@ -32,7 +32,7 @@ function copyHelper(repo: string, helper: string): void {
   );
 }
 
-function writeGeneratedRootWrapper(repo: string, helper: string): void {
+function writeLegacyRootHelper(repo: string, helper: string): void {
   const helperId = helper.replace(/\.[^.]+$/, "");
   mkdirSync(join(repo, "scripts"), { recursive: true });
   writeFileSync(
@@ -57,7 +57,7 @@ describe("runtime reclaim", () => {
     const repo = tempRepo("runtime-reclaim-generated-");
     try {
       copyHelper(repo, "check-task-workflow.sh");
-      writeGeneratedRootWrapper(repo, "check-task-workflow.sh");
+      writeLegacyRootHelper(repo, "check-task-workflow.sh");
       copyFileSync(
         join(ROOT, "assets/templates/helpers/check-task-sync.sh"),
         join(repo, "scripts/check-task-sync.sh"),
@@ -114,7 +114,7 @@ describe("runtime reclaim", () => {
     }
   });
 
-  test("preserves app-owned root scripts and writes repo-harness wrapper fallback", () => {
+  test("preserves app-owned root scripts without writing repo-harness fallback files", () => {
     const repo = tempRepo("runtime-reclaim-app-script-");
     try {
       mkdirSync(join(repo, "scripts"), { recursive: true });
@@ -123,15 +123,13 @@ describe("runtime reclaim", () => {
       runRuntimeReclaim({ repo, apply: true, verify: false });
 
       expect(readFileSync(join(repo, "scripts/check-task-workflow.sh"), "utf-8")).toContain("app-owned");
-      expect(readFileSync(join(repo, "scripts/repo-harness/check-task-workflow.sh"), "utf-8")).toContain(
-        "repo-harness run check-task-workflow",
-      );
+      expect(existsSync(join(repo, "scripts/repo-harness/check-task-workflow.sh"))).toBe(false);
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
   });
 
-  test("compact mode preserves app-owned root scripts without writing fallback wrappers", () => {
+  test("compact mode preserves app-owned root scripts without writing fallback files", () => {
     const repo = tempRepo("runtime-reclaim-compact-app-script-");
     try {
       mkdirSync(join(repo, "scripts"), { recursive: true });
@@ -197,7 +195,7 @@ describe("runtime reclaim", () => {
     }
   });
 
-  test("preserves helper runtime when helper_source is repo pinned", () => {
+  test("removes helper runtime even when helper_source was repo pinned", () => {
     const repo = tempRepo("runtime-reclaim-helper-pin-");
     try {
       copyHelper(repo, "check-task-workflow.sh");
@@ -206,9 +204,10 @@ describe("runtime reclaim", () => {
       const result = runRuntimeReclaim({ repo, apply: true, verify: false });
       const entry = result.runtime_reclaim.files.find((file) => file.path === ".ai/harness/scripts/check-task-workflow.sh");
 
-      expect(entry?.classification).toBe("self-host-pinned");
-      expect(entry?.action).toBe("preserve");
-      expect(existsSync(join(repo, ".ai/harness/scripts/check-task-workflow.sh"))).toBe(true);
+      expect(entry?.classification).toBe("known-generated");
+      expect(entry?.action).toBe("remove-after-helper-verify");
+      expect(existsSync(join(repo, ".ai/harness/scripts/check-task-workflow.sh"))).toBe(false);
+      expect(result.runtime_reclaim.policy_pins.helper_source).toBe("package");
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
@@ -235,7 +234,7 @@ describe("runtime reclaim", () => {
     const repo = tempRepo("runtime-reclaim-rollback-");
     try {
       copyHelper(repo, "check-task-workflow.sh");
-      writeGeneratedRootWrapper(repo, "check-task-workflow.sh");
+      writeLegacyRootHelper(repo, "check-task-workflow.sh");
       writeJson(join(repo, "package.json"), {
         name: "demo",
         scripts: { "check:task-workflow": "bash .ai/harness/scripts/check-task-workflow.sh --strict" },

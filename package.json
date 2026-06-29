@@ -42,18 +42,18 @@
     "check:release": "bash scripts/check-npm-release.sh",
     "check:release-published": "bash scripts/check-release-published.sh",
     "smoke:tarball-install": "bash scripts/check-tarball-install-smoke.sh",
-    "check:brain-manifest": "bash scripts/check-brain-manifest.sh",
-    "check:context-files": "bash scripts/check-context-files.sh",
-    "check:deploy-sql": "bash scripts/check-deploy-sql-order.sh",
-    "check:architecture-sync": "bash scripts/check-architecture-sync.sh",
-    "check:task-sync": "bash scripts/check-task-sync.sh",
-    "check:task-workflow": "bash scripts/check-task-workflow.sh --strict",
+    "check:brain-manifest": "repo-harness run check-brain-manifest",
+    "check:context-files": "repo-harness run check-context-files",
+    "check:deploy-sql": "repo-harness run check-deploy-sql-order",
+    "check:architecture-sync": "repo-harness run check-architecture-sync",
+    "check:task-sync": "repo-harness run check-task-sync",
+    "check:task-workflow": "repo-harness run check-task-workflow --strict",
     "prepublishOnly": "bash scripts/check-npm-release.sh",
-    "sync:brain-docs": "bash scripts/sync-brain-docs.sh --all",
+    "sync:brain-docs": "repo-harness run sync-brain-docs --all",
     "sync:codex-installed": "bash scripts/sync-codex-installed-copies.sh"
   },
   "devDependencies": {
-    "@colbymchenry/codegraph": "latest",
+    "@colbymchenry/codegraph": "1.1.3",
     "@types/bun": "latest",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.0",
@@ -61,7 +61,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.28.0",
-    "commander": "^14.0.3",
+    "commander": "^15.0.0",
     "express": "^5.2.1"
   }
 }

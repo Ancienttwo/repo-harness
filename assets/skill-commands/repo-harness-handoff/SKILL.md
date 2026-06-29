@@ -13,10 +13,10 @@ handoff surface without running a full check or repair pass.
 
 1. Confirm the target repo path and handoff reason.
 2. To prepare a rollover packet, run:
-   - `bash scripts/prepare-codex-handoff.sh --reason <reason>`
+   - `repo-harness run prepare-codex-handoff --reason <reason>`
 3. Use `--print-prompt` when the user needs the exact fresh-session prompt.
 4. To resume from an existing packet, run:
-   - `bash scripts/codex-handoff-resume.sh --cwd <repo> --reason <reason> --print-prompt`
+   - `repo-harness run codex-handoff-resume --cwd <repo> --reason <reason> --print-prompt`
 5. Verify the handoff files exist and are current:
    - `.ai/harness/handoff/current.md`
    - `.ai/harness/handoff/resume.md`
@@ -25,12 +25,12 @@ handoff surface without running a full check or repair pass.
 ## Failure Modes
 
 - If there is no active plan, the resume packet must report `(none)` for plan, contract, and notes.
-- If `resume.md` is older than `current.md`, regenerate with `prepare-codex-handoff.sh`.
+- If `resume.md` is older than `current.md`, regenerate with `repo-harness run prepare-codex-handoff`.
 - If the user asks for readiness, route to `repo-harness-check` instead of expanding this command.
 
 ## Boundaries
 
 - Does not run `/check`.
-- Does not run `bash .ai/harness/scripts/check-task-workflow.sh --strict` unless the user asks for readiness verification.
+- Does not run `repo-harness run check-task-workflow --strict` unless the user asks for readiness verification.
 - Does not mutate plans, tasks, source code, or architecture docs except the handoff packet files.
 - Does not replace task sync, review, or release-readiness checks.

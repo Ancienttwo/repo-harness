@@ -34,18 +34,19 @@ done
 
 repo="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$repo"
+helper_dir="$(cd "$(dirname "${REPO_HARNESS_HELPER_SOURCE_PATH:-$0}")" && pwd)"
 
-if [[ -f "scripts/prepare-handoff.sh" ]]; then
-  REPO_HARNESS_SKIP_RESUME_REFRESH=1 bash scripts/prepare-handoff.sh "$reason"
+if [[ -f "$helper_dir/prepare-handoff.sh" ]]; then
+  REPO_HARNESS_SKIP_RESUME_REFRESH=1 bash "$helper_dir/prepare-handoff.sh" "$reason"
 fi
 
-resume_args=(scripts/codex-handoff-resume.sh --cwd "$repo" --reason "$reason")
+resume_args=("$helper_dir/codex-handoff-resume.sh" --cwd "$repo" --reason "$reason")
 if [[ "$print_prompt" -eq 1 ]]; then
   resume_args+=(--print-prompt)
 fi
 
 resume_output=""
-if [[ -f "scripts/codex-handoff-resume.sh" ]]; then
+if [[ -f "$helper_dir/codex-handoff-resume.sh" ]]; then
   resume_output="$(bash "${resume_args[@]}")"
 fi
 

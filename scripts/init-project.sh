@@ -47,17 +47,8 @@ install_hook_settings_template() {
 ensure_runtime_gitignore_block() {
     local file_path="$1"
     local extra_entries=""
-    local helper_entries=""
     if pi_should_enable_factor_factory "$(pi_plan_type "$STACK")"; then
         extra_entries="$(pi_factor_factory_gitignore_entries)"
-    fi
-    helper_entries="$(pi_helper_wrapper_gitignore_entries "$ASSETS_WORKFLOW_CONTRACT")"
-    if [[ -n "$helper_entries" ]]; then
-        if [[ -n "$extra_entries" ]]; then
-            extra_entries="${extra_entries}"$'\n'"${helper_entries}"
-        else
-            extra_entries="$helper_entries"
-        fi
     fi
     pi_ensure_gitignore_block "$file_path" "" "$extra_entries" "apply"
 }
@@ -493,8 +484,8 @@ main() {
     echo "  1. cd $PROJECT_NAME"
     echo "  2. Copy .env.example to .env and configure"
     echo "  3. Run: $PKG_MANAGER run dev"
-    echo "  4. Use Codex Plan mode or Waza /think, then capture it with: bash scripts/capture-plan.sh --slug first-feature --title \"First Feature\""
-    echo "  5. After approval, run: bash scripts/plan-to-todo.sh --plan <active-plan>"
+    echo "  4. Use Codex Plan mode or Waza /think, then capture it with: repo-harness run capture-plan --slug first-feature --title \"First Feature\""
+    echo "  5. After approval, run: repo-harness run plan-to-todo --plan <active-plan>"
     echo ""
     pi_print_external_tooling_report "$PWD" "apply" "$SCRIPT_DIR/check-agent-tooling.sh"
     echo ""

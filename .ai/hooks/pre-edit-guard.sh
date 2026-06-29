@@ -100,12 +100,12 @@ run_edit_plan_gate() {
   if [[ ! -f "docs/spec.md" ]]; then
     echo "[SpecGuard] Implementation edit without docs/spec.md: $FILE_PATH"
     if [[ "$mode" == "advice" ]]; then
-      echo "[SpecGuard] Advisory: run bash scripts/new-spec.sh and capture stable product intent."
+      echo "[SpecGuard] Advisory: run repo-harness run new-spec and capture stable product intent."
     else
       hook_structured_error \
         "SpecGuard" \
         "Implementation edit to $FILE_PATH without docs/spec.md." \
-        "Run bash scripts/new-spec.sh and capture stable product intent before implementing." \
+        "Run repo-harness run new-spec and capture stable product intent before implementing." \
         "missing_artifact"
       exit 2
     fi
@@ -115,12 +115,12 @@ run_edit_plan_gate() {
   if [[ -z "$gate_plan" || ! -f "$gate_plan" ]]; then
     echo "[PlanStatusGuard] No active plan covers implementation edit: $FILE_PATH"
     if [[ "$mode" == "advice" ]]; then
-      echo "[PlanStatusGuard] Advisory: capture the approved plan with bash scripts/capture-plan.sh --slug <slug> --title <title> --artifact-level work-package --promotion-reason human_decision_boundary --status Approved --execute"
+      echo "[PlanStatusGuard] Advisory: capture the approved plan with repo-harness run capture-plan --slug <slug> --title <title> --artifact-level work-package --promotion-reason human_decision_boundary --status Approved --execute"
     else
       hook_structured_error \
         "PlanStatusGuard" \
         "Implementation edit to $FILE_PATH without an active plan." \
-        "Capture the approved planning output with bash scripts/capture-plan.sh --slug <slug> --title <title> --artifact-level work-package --promotion-reason human_decision_boundary --status Approved --execute, or set policy .guards.edit_plan_gate to advice/off for this repo." \
+        "Capture the approved planning output with repo-harness run capture-plan --slug <slug> --title <title> --artifact-level work-package --promotion-reason human_decision_boundary --status Approved --execute, or set policy .guards.edit_plan_gate to advice/off for this repo." \
         "missing_artifact"
       exit 2
     fi

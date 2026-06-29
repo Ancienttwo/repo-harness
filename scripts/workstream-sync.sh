@@ -6,13 +6,14 @@ set -euo pipefail
 usage() {
   cat <<'USAGE_EOF'
 Usage:
-  scripts/workstream-sync.sh ensure --block <capability-prefix> [--slug <slug>] [--title <title>] [--plan <plan-file>] [--slice <todo-id>] [--request <architecture-request>]
+  repo-harness run workstream-sync ensure --block <capability-prefix> [--slug <slug>] [--title <title>] [--plan <plan-file>] [--slice <todo-id>] [--request <architecture-request>]
 USAGE_EOF
 }
 
 repo="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 repo="$(cd "$repo" && pwd)"
 cd "$repo"
+helper_dir="$(cd "$(dirname "${REPO_HARNESS_HELPER_SOURCE_PATH:-$0}")" && pwd)"
 
 command_name="${1:-ensure}"
 shift || true
@@ -256,8 +257,8 @@ fi
 event_json="{\"ts\":\"$(json_escape "$iso_timestamp")\",\"file_path\":\"$(json_escape "$workstream_file")\",\"severity\":\"medium\",\"functional_block\":\"$(json_escape "$functional_block")\",\"capability_id\":\"$(json_escape "$capability_id")\",\"matched_prefix\":\"$(json_escape "$matched_prefix")\",\"architecture_domain\":\"$(json_escape "$architecture_domain")\",\"architecture_capability\":\"$(json_escape "$architecture_capability")\",\"architecture_module\":\"$(json_escape "$architecture_module")\",\"workstream_dir\":\"$(json_escape "$workstream_dir")\",\"contract_agents\":\"$(json_escape "$contract_agents")\",\"contract_claude\":\"$(json_escape "$contract_claude")\",\"active_workstream\":\"$(json_escape "$workstream_file")\",\"change_type\":\"workstream-sync\",\"spawn_recommended\":false,\"contract_sync_required\":true,\"request_file\":\"$(json_escape "$request_file")\"}"
 printf '%s\n' "$event_json" >> "$event_file"
 
-if [[ -x "scripts/context-contract-sync.sh" ]]; then
-  bash "scripts/context-contract-sync.sh" sync-event --json "$event_json"
+if [[ -f "$helper_dir/context-contract-sync.sh" ]]; then
+  bash "$helper_dir/context-contract-sync.sh" sync-event --json "$event_json"
 fi
 
 echo "[WorkstreamSync] Ensured $workstream_file for $capability_id."

@@ -4,20 +4,19 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null)"; then
   cd "$REPO_ROOT"
-elif [[ "$SCRIPT_DIR" == */.ai/harness/scripts ]]; then
-  cd "$SCRIPT_DIR/../../.."
 else
   cd "$SCRIPT_DIR/.."
 fi
+helper_dir="$(cd "$(dirname "${REPO_HARNESS_HELPER_SOURCE_PATH:-$0}")" && pwd)"
 
 usage() {
   cat <<'USAGE_EOF'
 Usage:
-  scripts/sprint-backlog.sh init --slug <slug> [--title <title>]
-  scripts/sprint-backlog.sh status
-  scripts/sprint-backlog.sh next
-  scripts/sprint-backlog.sh start-task [--task <index|task>] [--execute] [--force] [--sprint <file>]
-  scripts/sprint-backlog.sh complete-task --task <index|task> [--plan <plan-file>] [--sprint <file>]
+  repo-harness run sprint-backlog init --slug <slug> [--title <title>]
+  repo-harness run sprint-backlog status
+  repo-harness run sprint-backlog next
+  repo-harness run sprint-backlog start-task [--task <index|task>] [--execute] [--force] [--sprint <file>]
+  repo-harness run sprint-backlog complete-task --task <index|task> [--plan <plan-file>] [--sprint <file>]
 
 Program-level sprint backlog helper. PRDs live in plans/prds/ as the upper
 planning layer; sprints live in plans/sprints/ as ordered execution backlogs.
@@ -273,7 +272,7 @@ execution for small tasks. Every row needs a concrete acceptance line.
 
 ## Execution Log
 
-Keep this section last; `scripts/sprint-backlog.sh complete-task` appends rows here.
+Keep this section last; `repo-harness run sprint-backlog complete-task` appends rows here.
 
 | When | Task | Plan | Result |
 |------|------|------|--------|
@@ -716,10 +715,10 @@ cmd_start_task() {
   fi
   record_in_flight "$target_task" "capturing"
 
-  [[ -f "scripts/capture-plan.sh" ]] || {
+  [[ -f "$helper_dir/capture-plan.sh" ]] || {
     release_backlog_lock
     clear_in_flight "$target_task"
-    echo "sprint-backlog: scripts/capture-plan.sh not found" >&2
+    echo "sprint-backlog: packaged capture-plan helper not found" >&2
     exit 1
   }
 
@@ -746,7 +745,7 @@ cmd_start_task() {
 - [ ] Complete sprint row \`${target_task}\`: ${target_acceptance}
 BODY_EOF
 
-    capture_output="$(bash scripts/capture-plan.sh --artifact-level checklist-row --slug "$target_task" --title "Sprint row: ${target_task}" --source repo-harness-sprint --orchestration-kind sprint-inline --source-ref "sprint:${sprint_file}#${target_task}" --body-file "$body_file" 2>&1)" || {
+    capture_output="$(bash "$helper_dir/capture-plan.sh" --artifact-level checklist-row --slug "$target_task" --title "Sprint row: ${target_task}" --source repo-harness-sprint --orchestration-kind sprint-inline --source-ref "sprint:${sprint_file}#${target_task}" --body-file "$body_file" 2>&1)" || {
       printf '%s\n' "$capture_output" >&2
       rm -f "$body_file"
       clear_in_flight "$target_task"
@@ -782,7 +781,7 @@ Before editing code, use \`\$think\` to expand this sprint row into a decision-c
 ## Task Breakdown
 
 - [ ] Run \`\$think\` for backlog task \`${target_task}\` using sprint \`${sprint_file}\` and acceptance: ${target_acceptance}
-- [ ] Capture the approved \`\$think\` output with \`scripts/capture-plan.sh --source waza-think --source-ref sprint:${sprint_file}#${target_task}\`
+- [ ] Capture the approved \`\$think\` output with \`repo-harness run capture-plan --source waza-think --source-ref sprint:${sprint_file}#${target_task}\`
 - [ ] Verify acceptance: ${target_acceptance}
 BODY_EOF
 
@@ -801,7 +800,7 @@ BODY_EOF
     capture_args+=(--promotion-reason worktree_boundary --execute)
   fi
 
-  capture_output="$(bash scripts/capture-plan.sh "${capture_args[@]}" 2>&1)" || {
+  capture_output="$(bash "$helper_dir/capture-plan.sh" "${capture_args[@]}" 2>&1)" || {
     printf '%s\n' "$capture_output" >&2
     rm -f "$body_file"
     clear_in_flight "$target_task"

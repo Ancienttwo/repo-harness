@@ -35,7 +35,7 @@ describe("Factor Factory", () => {
       expect(existsSync(join(planGCwd, "tasks/factors/registry.json"))).toBe(true);
       expect(existsSync(join(planGCwd, "tasks/factors/promoted"))).toBe(true);
       expect(existsSync(join(planGCwd, ".claude/.factor-cache/candidates"))).toBe(true);
-      expect(existsSync(join(planGCwd, ".ai/harness/scripts/factor-lab-new.sh"))).toBe(true);
+      expect(existsSync(join(planGCwd, ".ai/harness/scripts/factor-lab-new.sh"))).toBe(false);
       expect(existsSync(join(planGCwd, ".claude/factor-factory/hypothesis.template.md"))).toBe(true);
 
       expect(existsSync(join(planCCwd, "tasks/factors"))).toBe(false);
@@ -50,7 +50,7 @@ describe("Factor Factory", () => {
     const cwd = bootstrapRepo("factor-flow", { REPO_HARNESS_PLAN_TYPE: "G" });
 
     try {
-      const newRes = spawnSync("bash", [join(cwd, ".ai/harness/scripts/factor-lab-new.sh"), "--name", "Mean Reversion"], {
+      const newRes = spawnSync("bun", [join(ROOT, "src/cli/index.ts"), "run", "factor-lab-new", "--name", "Mean Reversion"], {
         cwd,
         encoding: "utf-8",
       });
@@ -70,7 +70,7 @@ describe("Factor Factory", () => {
         JSON.stringify({ sharpe: 1.2 }, null, 2)
       );
 
-      const promoteRes = spawnSync("bash", [join(cwd, ".ai/harness/scripts/factor-lab-promote.sh"), "--name", "Mean Reversion"], {
+      const promoteRes = spawnSync("bun", [join(ROOT, "src/cli/index.ts"), "run", "factor-lab-promote", "--name", "Mean Reversion"], {
         cwd,
         encoding: "utf-8",
       });
@@ -82,15 +82,15 @@ describe("Factor Factory", () => {
       expect(registry.candidates.some((entry: { slug: string }) => entry.slug === "mean-reversion")).toBe(false);
       expect(registry.promoted.some((entry: { slug: string }) => entry.slug === "mean-reversion")).toBe(true);
 
-      const secondNewRes = spawnSync("bash", [join(cwd, ".ai/harness/scripts/factor-lab-new.sh"), "--name", "Volume Spike"], {
+      const secondNewRes = spawnSync("bun", [join(ROOT, "src/cli/index.ts"), "run", "factor-lab-new", "--name", "Volume Spike"], {
         cwd,
         encoding: "utf-8",
       });
       expect(secondNewRes.status).toBe(0);
 
       const rejectRes = spawnSync(
-        "bash",
-        [join(cwd, ".ai/harness/scripts/factor-lab-reject.sh"), "--name", "Volume Spike", "--reason", "Too correlated"],
+        "bun",
+        [join(ROOT, "src/cli/index.ts"), "run", "factor-lab-reject", "--name", "Volume Spike", "--reason", "Too correlated"],
         {
           cwd,
           encoding: "utf-8",
@@ -101,7 +101,7 @@ describe("Factor Factory", () => {
       registry = JSON.parse(readFileSync(join(cwd, "tasks/factors/registry.json"), "utf-8"));
       expect(registry.rejected.some((entry: { slug: string; reason: string }) => entry.slug === "volume-spike" && entry.reason === "Too correlated")).toBe(true);
 
-      const checkRes = spawnSync("bash", [join(cwd, ".ai/harness/scripts/factor-lab-check.sh")], {
+      const checkRes = spawnSync("bun", [join(ROOT, "src/cli/index.ts"), "run", "factor-lab-check"], {
         cwd,
         encoding: "utf-8",
       });
@@ -139,7 +139,7 @@ describe("Factor Factory", () => {
     });
 
     expect(planGOutput).toContain("tasks/factors/registry.json");
-    expect(planGOutput).toContain("factor-lab-new.sh");
+    expect(planGOutput).toContain("repo-harness run factor-lab-new");
     expect(planCOutput).not.toContain("tasks/factors/registry.json");
   });
 });

@@ -2,13 +2,14 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null)"; then
+if [[ -n "${REPO_HARNESS_TARGET_REPO_ROOT:-}" ]]; then
+  cd "$REPO_HARNESS_TARGET_REPO_ROOT"
+elif REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null)"; then
   cd "$REPO_ROOT"
-elif [[ "$SCRIPT_DIR" == */.ai/harness/scripts ]]; then
-  cd "$SCRIPT_DIR/../../.."
 else
   cd "$SCRIPT_DIR/.."
 fi
+helper_dir="$(cd "$(dirname "${REPO_HARNESS_HELPER_SOURCE_PATH:-$0}")" && pwd)"
 
 usage() {
   cat <<'USAGE_EOF'
@@ -315,7 +316,7 @@ Complete this inventory before implementation. If any line is unknown, keep the 
 - Run snapshots: `.ai/harness/runs/`
 - Scope authority: `tasks/contracts/{{ARTIFACT_STEM}}.contract.md` `allowed_paths`
 - Concurrency rule: `.ai/harness/active-plan` selects the active plan for this worktree when present; `.ai/harness/active-worktree` records the owning worktree; `.claude/.active-plan` is a legacy fallback during transition. If another worktree already owns active work, open or switch to the matching worktree instead of serializing unrelated plans.
-- Execution isolation: approved contract-level work projects through `scripts/plan-to-todo.sh --plan {{PLAN_FILE}}` and may start `scripts/contract-worktree.sh start --plan {{PLAN_FILE}}`.
+- Execution isolation: approved contract-level work projects through `repo-harness run plan-to-todo --plan {{PLAN_FILE}}` and may start `repo-harness run contract-worktree start --plan {{PLAN_FILE}}`.
 
 ## Approach
 ### Strategy
@@ -340,7 +341,7 @@ Complete this inventory before implementation. If any line is unknown, keep the 
 - Review file: `tasks/reviews/{{ARTIFACT_STEM}}.review.md`
 - Implementation notes file: `tasks/notes/{{ARTIFACT_STEM}}.notes.md`
 - Template: `.claude/templates/contract.template.md`
-- Verification command: `bash scripts/verify-contract.sh --contract tasks/contracts/{{ARTIFACT_STEM}}.contract.md --strict`
+- Verification command: `repo-harness run verify-contract --contract tasks/contracts/{{ARTIFACT_STEM}}.contract.md --strict`
 - Active plan rule: `.ai/harness/active-plan` is authoritative for this worktree when present; `.ai/harness/active-worktree` records the owning worktree; `.claude/.active-plan` is a legacy fallback during transition. Do not infer active execution from the latest non-archived plan.
 
 ## Handoff
@@ -404,7 +405,7 @@ Describe the exact outcome this task must deliver.
 - Checks file: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
-- Completion gate: `scripts/verify-sprint.sh` must see this contract pass, the review recommend pass, and `## External Acceptance Advice` pass or record a manual override.
+- Completion gate: `repo-harness run verify-sprint` must see this contract pass, the review recommend pass, and `## External Acceptance Advice` pass or record a manual override.
 
 ## Allowed Paths
 
@@ -613,8 +614,8 @@ TODO_EOF
 
 ensure_current_status_snapshot() {
   mkdir -p tasks
-  if [[ -x "scripts/refresh-current-status.sh" ]]; then
-    bash "scripts/refresh-current-status.sh" --clear --write --reason "ensure-task-workflow" >/dev/null 2>&1 || true
+  if [[ -f "$helper_dir/refresh-current-status.sh" ]]; then
+    bash "$helper_dir/refresh-current-status.sh" --clear --write --reason "ensure-task-workflow" >/dev/null 2>&1 || true
     return 0
   fi
 
@@ -641,7 +642,7 @@ CURRENT_STATUS_EOF
 }
 
 ensure_auxiliary_files() {
-  mkdir -p plans plans/archive plans/prds plans/sprints tasks/archive tasks/contracts tasks/reviews tasks/notes tasks/workstreams docs/architecture/domains docs/architecture/modules docs/architecture/requests docs/architecture/snapshots docs/architecture/diagrams scripts .ai/context .ai/harness/checks .ai/harness/handoff .ai/harness/scripts .ai/harness/failures .ai/harness/security .ai/harness/planning .ai/harness/delegation .ai/harness/architecture .ai/harness/worktrees .ai/harness/runs
+  mkdir -p plans plans/archive plans/prds plans/sprints tasks/archive tasks/contracts tasks/reviews tasks/notes tasks/workstreams docs/architecture/domains docs/architecture/modules docs/architecture/requests docs/architecture/snapshots docs/architecture/diagrams .ai/context .ai/harness/checks .ai/harness/handoff .ai/harness/failures .ai/harness/security .ai/harness/planning .ai/harness/delegation .ai/harness/architecture .ai/harness/worktrees .ai/harness/runs
 
   if [[ ! -f "docs/spec.md" ]]; then
     cat > docs/spec.md <<'SPEC_EOF'
@@ -775,10 +776,10 @@ CAPABILITIES_EOF
 
 ## Architecture Drift Flow
 
-- `scripts/architecture-queue.sh` records architecture-sensitive edits as requests.
-- `scripts/archive-architecture-request.sh` archives handled requests after an agent records the resolution status and linked artifacts.
-- `scripts/context-contract-sync.sh` keeps only the controlled architecture block in functional-block `AGENTS.md` and `CLAUDE.md` files aligned.
-- `scripts/workstream-sync.sh` keeps durable multi-session progress under `tasks/workstreams/<domain>/<capability>/` and projects only pointers into local contracts.
+- `repo-harness run architecture-queue` records architecture-sensitive edits as requests.
+- `repo-harness run archive-architecture-request` archives handled requests after an agent records the resolution status and linked artifacts.
+- `repo-harness run context-contract-sync` keeps only the controlled architecture block in functional-block `AGENTS.md` and `CLAUDE.md` files aligned.
+- `repo-harness run workstream-sync` keeps durable multi-session progress under `tasks/workstreams/<domain>/<capability>/` and projects only pointers into local contracts.
 - Semantic architecture diagrams live as Mermaid fenced blocks in the relevant module or snapshot Markdown.
 - Human-readable architecture diagrams are optional `mermaid` HTML files in `docs/architecture/diagrams/` and should link back to the Markdown semantic source.
 
@@ -831,10 +832,10 @@ ARCHITECTURE_INDEX_EOF
     "profile": "stable-root-progressive-subdir",
     "map_file": ".ai/context/context-map.json",
     "capability_registry_file": ".ai/context/capabilities.json",
-    "capability_resolver": "scripts/capability-resolver.ts",
+    "capability_resolver": "repo-harness run capability-resolver",
     "capability_match_rule": "longest-prefix; same-length ambiguity fails",
     "functional_block_selector": {
-      "script": "scripts/select-agent-context-blocks.sh",
+      "script": "repo-harness run select-agent-context-blocks",
       "config_file": ".ai/context/agent-context-blocks.txt",
       "env": "REPO_HARNESS_CONTEXT_BLOCKS",
       "rule": "compatibility selector; capability registry is the source of truth"
@@ -848,9 +849,8 @@ ARCHITECTURE_INDEX_EOF
     "events_file": ".ai/harness/events.jsonl",
     "architecture_events_file": ".ai/harness/architecture/events.jsonl",
     "runs_dir": ".ai/harness/runs",
-    "helper_runtime_dir": "scripts",
-    "helper_compat_dir": "scripts",
-    "helper_source": "compat-bootstrap"
+    "helper_runtime_dir": "package:assets/templates/helpers",
+    "helper_source": "package"
   },
   "architecture": {
     "index_file": "docs/architecture/index.md",
@@ -867,7 +867,7 @@ ARCHITECTURE_INDEX_EOF
     "pending_card_scope": "capability",
     "pending_block_begin": "<!-- BEGIN ARCHITECTURE PENDING REQUESTS -->",
     "pending_block_end": "<!-- END ARCHITECTURE PENDING REQUESTS -->",
-    "queue_script": "scripts/architecture-queue.sh",
+    "queue_script": "repo-harness run architecture-queue",
     "contract_block_begin": "<!-- BEGIN ARCHITECTURE CONTRACT -->",
     "contract_block_end": "<!-- END ARCHITECTURE CONTRACT -->",
     "rule": "hooks record architecture queue cards and sync controlled local context blocks; agents author semantic snapshots and diagrams"
@@ -892,7 +892,7 @@ ARCHITECTURE_INDEX_EOF
       "purpose": "raw verification records used to audit notes, reviews, and future promotion; checks latest reports and run snapshots are ignored runtime cache unless distilled into reviews, contracts, notes, or research"
     },
     "assets": {
-      "sources": [".ai/harness/policy.json", ".ai/harness/workflow-contract.json", ".ai/hooks/", "scripts/", "docs/reference-configs/"],
+      "sources": [".ai/harness/policy.json", ".ai/harness/workflow-contract.json", ".ai/hooks/", "package:assets/templates/helpers", "docs/reference-configs/"],
       "promotion_rule": "only promote patterns after verified reuse across tasks or fixtures"
     },
     "memory": {
@@ -903,8 +903,8 @@ ARCHITECTURE_INDEX_EOF
       "default_brain_path": "brain/<project>/*",
       "project_path": "brain/<project>/*",
       "manifest_file": ".ai/harness/brain-manifest.json",
-      "drift_check": "scripts/check-brain-manifest.sh",
-      "sync_script": "scripts/sync-brain-docs.sh",
+      "drift_check": "repo-harness run check-brain-manifest",
+      "sync_script": "repo-harness run sync-brain-docs",
       "hook_trigger": "PostToolUse Edit|Write for manifest entries with sync.direction=repo-to-brain",
       "rule": "external knowledge stores long-lived explanations, runbooks, and patterns only; repo-local contracts, hooks, scripts, checks, and evidence remain authoritative",
       "sync_rule": "only explicitly opted-in repo-to-brain manifest entries may be written to the default brain vault; pointer-only externalized stubs remain check-only"
@@ -916,9 +916,9 @@ ARCHITECTURE_INDEX_EOF
     "auto_start_new_session": false
   },
   "plan_capture": {
-    "script": "scripts/capture-plan.sh",
+    "script": "repo-harness run capture-plan",
     "sources": ["codex-plan-mode", "waza-think", "repo-harness-plan"],
-    "rule": "Codex Plan mode and Waza think planning should capture decision-complete work-package plans into plans/plan-*.md only when Artifact Level is work-package and the Promotion Gate is concrete; implementation approval then projects the active approved work-package plan through scripts/plan-to-todo.sh; checklist-row and inline sprint work stay in the sprint backlog or active plan Task Breakdown"
+    "rule": "Codex Plan mode and Waza think planning should capture decision-complete work-package plans into plans/plan-*.md only when Artifact Level is work-package and the Promotion Gate is concrete; implementation approval then projects the active approved work-package plan through repo-harness run plan-to-todo; checklist-row and inline sprint work stay in the sprint backlog or active plan Task Breakdown"
   },
   "planning": {
     "pending_orchestration_file": ".ai/harness/planning/pending.json",
@@ -967,9 +967,9 @@ ARCHITECTURE_INDEX_EOF
     "branch_prefix": "codex/",
     "base_branch": "main",
     "worktree_dir_template": "../{{repo}}-wt-{{slug}}",
-    "start_script": "scripts/contract-worktree.sh start --plan <plan-file>",
-    "finish_script": "scripts/contract-worktree.sh finish",
-    "cleanup_script": "scripts/contract-worktree.sh cleanup --slug <slug>",
+    "start_script": "repo-harness run contract-worktree start --plan <plan-file>",
+    "finish_script": "repo-harness run contract-worktree finish",
+    "cleanup_script": "repo-harness run contract-worktree cleanup --slug <slug>",
     "conflict_signals": [
       "dirty_worktree_overlaps_task_files",
       "current_branch_not_suitable_for_task",
@@ -1025,7 +1025,7 @@ ARCHITECTURE_INDEX_EOF
     ],
     "mode": "agent-readiness-required",
     "detection": "init-migrate",
-    "readiness_gate": "scripts/check-agent-tooling.sh --host codex --strict-readiness",
+    "readiness_gate": "repo-harness run check-agent-tooling --host codex --strict-readiness",
     "waza": {
       "source_repo": "tw93/Waza",
       "source_url": "https://github.com/tw93/Waza.git",
@@ -1119,7 +1119,7 @@ BRAIN_MANIFEST_EOF
   "version": 1,
   "profile": "stable-root-progressive-subdir",
   "functional_block_selector": {
-    "script": "scripts/select-agent-context-blocks.sh",
+    "script": "repo-harness run select-agent-context-blocks",
     "config_file": ".ai/context/agent-context-blocks.txt",
     "env": "REPO_HARNESS_CONTEXT_BLOCKS",
     "rule": "compatibility selector; capability registry is the source of truth"
@@ -1205,8 +1205,8 @@ if [[ -n "$active_plan" && "$new_plan" -eq 0 ]]; then
 fi
 
 if [[ ! -f "docs/spec.md" ]]; then
-  if [[ -x "scripts/new-spec.sh" ]]; then
-    bash "scripts/new-spec.sh"
+  if [[ -f "$helper_dir/new-spec.sh" ]]; then
+    bash "$helper_dir/new-spec.sh"
   fi
 fi
 
@@ -1216,7 +1216,7 @@ if [[ -z "$slug" ]]; then
     exit 1
   fi
   echo "Workflow ready. No active plan present."
-  echo "Create one with: bash scripts/ensure-task-workflow.sh --slug <slug> --title <title>"
+  echo "Create one with: repo-harness run ensure-task-workflow --slug <slug> --title <title>"
   exit 0
 fi
 
@@ -1230,9 +1230,9 @@ if [[ -z "$title" ]]; then
   title="$slug"
 fi
 
-if [[ -x "scripts/new-plan.sh" ]]; then
-  bash "scripts/new-plan.sh" --slug "$slug" --title "$title"
+if [[ -f "$helper_dir/new-plan.sh" ]]; then
+  bash "$helper_dir/new-plan.sh" --slug "$slug" --title "$title"
 else
-  echo "Missing scripts/new-plan.sh" >&2
+  echo "Missing packaged new-plan helper" >&2
   exit 1
 fi

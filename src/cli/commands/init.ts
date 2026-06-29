@@ -630,30 +630,22 @@ export function runInit(opts: InitCommandOptions = {}): InitCommandResult {
   if (apply && verify) {
     const verifyEnv = { ...(commandEnv ?? {}), REPO_HARNESS_SOURCE_ROOT: sourceRoot };
     if (migrate.status === "ok") {
-      if (existsSync(join(repoRoot, "scripts", "prepare-codex-handoff.sh"))) {
-        const handoff = runProcess(
-          "bash",
-          ["scripts/prepare-codex-handoff.sh", "--reason", "repo-harness-adopt-verify"],
-          repoRoot,
-          verifyEnv,
-        );
-        steps.push(
-          withStepName(
-            handoff,
-            "refresh handoff packet",
-            "scripts/prepare-codex-handoff.sh --reason repo-harness-adopt-verify",
-          ),
-        );
-      } else {
-        steps.push({
-          step: "refresh handoff packet",
-          status: "skipped",
-          detail: "scripts/prepare-codex-handoff.sh missing",
-        });
-      }
+      const handoff = runProcess(
+        "bun",
+        [join(REPO_ROOT, "src/cli/index.ts"), "run", "prepare-codex-handoff", "--reason", "repo-harness-adopt-verify"],
+        repoRoot,
+        verifyEnv,
+      );
+      steps.push(
+        withStepName(
+          handoff,
+          "refresh handoff packet",
+          "repo-harness run prepare-codex-handoff --reason repo-harness-adopt-verify",
+        ),
+      );
     }
-    const verifyStep = runProcess("bash", ["scripts/check-task-workflow.sh", "--strict"], repoRoot, verifyEnv);
-    steps.push(withStepName(verifyStep, "verify repo harness", "scripts/check-task-workflow.sh --strict"));
+    const verifyStep = runProcess("bun", [join(REPO_ROOT, "src/cli/index.ts"), "run", "check-task-workflow", "--strict"], repoRoot, verifyEnv);
+    steps.push(withStepName(verifyStep, "verify repo harness", "repo-harness run check-task-workflow --strict"));
   } else {
     steps.push({ step: "verify repo harness", status: "skipped" });
   }

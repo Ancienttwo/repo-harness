@@ -2,17 +2,19 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null)"; then
+if [[ -n "${REPO_HARNESS_TARGET_REPO_ROOT:-}" ]]; then
+  cd "$REPO_HARNESS_TARGET_REPO_ROOT"
+elif REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null)"; then
   cd "$REPO_ROOT"
-elif [[ "$SCRIPT_DIR" == */.ai/harness/scripts ]]; then
-  cd "$SCRIPT_DIR/../../.."
 else
   cd "$SCRIPT_DIR/.."
 fi
+REPO_ROOT="$(pwd)"
+helper_dir="$SCRIPT_DIR"
 
 usage() {
   cat <<'USAGE_EOF'
-Usage: scripts/plan-to-todo.sh --plan <plan-file>
+Usage: repo-harness run plan-to-todo --plan <plan-file>
 USAGE_EOF
 }
 
@@ -341,12 +343,12 @@ maybe_start_contract_worktree() {
 
   [[ "${REPO_HARNESS_CONTRACT_WORKTREE:-}" != "1" ]] || return 0
   [[ "${REPO_HARNESS_DISABLE_CONTRACT_WORKTREE:-}" != "1" ]] || return 0
-  [[ -x "scripts/contract-worktree.sh" ]] || return 0
+  [[ -x "$helper_dir/contract-worktree.sh" ]] || return 0
   git rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
   ! is_linked_worktree || return 0
   plan_requests_contract_worktree "$file" || return 0
 
-  bash "scripts/contract-worktree.sh" start --plan "$file"
+  REPO_HARNESS_TARGET_REPO_ROOT="$REPO_ROOT" bash "$helper_dir/contract-worktree.sh" start --plan "$file"
   exit $?
 }
 
@@ -450,7 +452,7 @@ Describe the exact outcome this task must deliver.
 - Checks file: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
-- Completion gate: `scripts/verify-sprint.sh` must see this contract pass, the review recommend pass, and `## External Acceptance Advice` pass or record a manual override.
+- Completion gate: `repo-harness run verify-sprint` must see this contract pass, the review recommend pass, and `## External Acceptance Advice` pass or record a manual override.
 
 ## Allowed Paths
 

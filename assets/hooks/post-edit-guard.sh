@@ -11,10 +11,27 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
 . "$SCRIPT_DIR/lib/workflow-state.sh"
 
+repo_harness_runner_available() {
+  if [[ -n "${REPO_HARNESS_CLI:-}" && -f "$REPO_HARNESS_CLI" ]] && command -v bun >/dev/null 2>&1; then
+    return 0
+  fi
+  command -v repo-harness >/dev/null 2>&1
+}
+
+run_repo_harness_helper() {
+  local helper="$1"
+  shift
+  if [[ -n "${REPO_HARNESS_CLI:-}" && -f "$REPO_HARNESS_CLI" ]] && command -v bun >/dev/null 2>&1; then
+    bun "$REPO_HARNESS_CLI" run "$helper" "$@"
+    return $?
+  fi
+  repo-harness run "$helper" "$@"
+}
+
 run_continuous_contract_verification() {
   local active_plan contract_file checks_file
 
-  [[ -f "scripts/verify-contract.sh" ]] || return 0
+  repo_harness_runner_available || return 0
 
   active_plan="$(get_active_plan || true)"
   [[ -n "$active_plan" && -f "$active_plan" ]] || return 0
@@ -25,16 +42,16 @@ run_continuous_contract_verification() {
   mkdir -p "$(dirname "$checks_file")"
 
   if contract_references_path "$contract_file" "$FILE_PATH"; then
-    bash "scripts/verify-contract.sh" --contract "$contract_file" --quiet --report-file "$checks_file" || true
+    run_repo_harness_helper verify-contract --contract "$contract_file" --quiet --report-file "$checks_file" || true
   fi
 }
 
 run_architecture_queue_sync() {
   local queue_output status
 
-  [[ -x "scripts/architecture-queue.sh" ]] || return 0
+  repo_harness_runner_available || return 0
 
-  if queue_output="$(bash "scripts/architecture-queue.sh" record --file "$FILE_PATH" 2>&1)"; then
+  if queue_output="$(run_repo_harness_helper architecture-queue record --file "$FILE_PATH" 2>&1)"; then
     :
   else
     status=$?
@@ -45,8 +62,8 @@ run_architecture_queue_sync() {
   [[ -n "$queue_output" ]] && printf '%s\n' "$queue_output"
 
   if printf '%s\n' "$queue_output" | grep -q '^\[ArchitectureDrift\] Request:'; then
-    if [[ -x "scripts/context-contract-sync.sh" ]]; then
-      if bash "scripts/context-contract-sync.sh" sync-latest; then
+    if repo_harness_runner_available; then
+      if run_repo_harness_helper context-contract-sync sync-latest; then
         :
       else
         status=$?
@@ -79,7 +96,7 @@ run_architecture_queue_sync() {
 }
 
 run_brain_doc_sync() {
-  [[ -x "scripts/sync-brain-docs.sh" ]] || return 0
+  repo_harness_runner_available || return 0
   [[ -f ".ai/harness/brain-manifest.json" ]] || return 0
 
   # Fast-path: most edits are not repo-to-brain sources. Avoid starting the JS
@@ -88,7 +105,7 @@ run_brain_doc_sync() {
     return 0
   fi
 
-  if bash "scripts/sync-brain-docs.sh" --changed "$FILE_PATH"; then
+  if run_repo_harness_helper sync-brain-docs --changed "$FILE_PATH"; then
     :
   else
     local status=$?
