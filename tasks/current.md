@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-06-29T04:50:31+0800 -->
+<!-- updated_at: 2026-06-29T10:51:12+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Idle
-> **Updated At**: 2026-06-29T04:50:31+0800
+> **Updated At**: 2026-06-29T10:51:12+0800
 > **Source Branch**: main
-> **Source Commit**: c878664
+> **Source Commit**: 26eff6f
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: release-0.8.2
+> **Reason**: release-0.8.2-published
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -48,20 +48,10 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 11 changed/untracked path(s)
+- Summary: 1 changed/untracked path(s)
 
 ```
- M .claude/.skill-version
- M README.es.md
- M README.fr.md
- M README.ja.md
- M README.md
- M README.zh-CN.md
- M assets/skill-version.json
- M bun.lock
- M docs/CHANGELOG.md
- M package.json
-?? deploy/release-checklists/260629-repo-harness-0.8.2.md
+ M deploy/release-checklists/260629-repo-harness-0.8.2.md
 ```
 
 ## Source Artifacts

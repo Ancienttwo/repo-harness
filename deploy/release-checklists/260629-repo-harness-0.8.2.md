@@ -1,7 +1,7 @@
 # Release Filing: repo-harness 0.8.2
 
 Date: 2026-06-29
-Status: Prepublish verified; npm publish blocked by local npm auth (`ENEEDAUTH`)
+Status: Published to npm and GitHub
 
 ## Scope
 
@@ -9,7 +9,8 @@ Status: Prepublish verified; npm publish blocked by local npm auth (`ENEEDAUTH`)
 - Base release: `v0.8.1`
 - Release branch: `main`
 - Release prep base: `c878664b2cb791a94a02e18a061c1c0df8166890`
-- Release tag target: pending npm auth and final publish step
+- Release commit: `26eff6fc70b2c24cc3a00616204d3611f61df18e`
+- Release tag: `v0.8.2`
 - Registry: `https://registry.npmjs.org/`
 
 ## Version Decision
@@ -74,10 +75,33 @@ This release keeps one package/template version line:
 - `npm view repo-harness@0.8.2 version --json --registry
   https://registry.npmjs.org/` returned `E404`, confirming the target version
   is still unpublished before publish.
-- `npm whoami --registry https://registry.npmjs.org/` returned `ENEEDAUTH`.
+- Initial `npm whoami --registry https://registry.npmjs.org/` returned
+  `ENEEDAUTH`; publish continued after using the local private npm token through
+  a temporary userconfig that was deleted after the command.
+- Publish-time `npm publish --access public --registry
+  https://registry.npmjs.org/` reran `prepublishOnly` and passed: `1002 pass`,
+  `1 skip`, `0 fail`, plus workflow checks, package dry-run, tarball smoke, and
+  `[release] OK`.
 
 ## Publish Evidence
 
-- Blocked before publish: this machine is not logged in to npm.
-- Do not create `v0.8.2` or the GitHub release until npm auth is available and
-  the publish step succeeds.
+- `npm publish --access public --registry https://registry.npmjs.org/` published
+  `repo-harness@0.8.2` with tag `latest`.
+- `npm view repo-harness@0.8.2 version dist-tags dist.integrity dist.shasum
+  dist.tarball gitHead --json --registry https://registry.npmjs.org/` returned
+  version `0.8.2`, `latest: 0.8.2`, shasum
+  `d3932c3b3dfa367929f9a9987ee6f04e64f28cae`, integrity
+  `sha512-QeWgCKUzyLP5EPQdDDxSHrWWIW3z7PJwO61h7eRsJG+xPA3rUBrher/wo5Oo3+El1FO/S6zE+KEFZ0n8mQtrMw==`,
+  tarball `https://registry.npmjs.org/repo-harness/-/repo-harness-0.8.2.tgz`,
+  and gitHead `26eff6fc70b2c24cc3a00616204d3611f61df18e`.
+- `git tag -a v0.8.2 -m "repo-harness 0.8.2"` and
+  `git push origin v0.8.2` created the annotated tag.
+- `gh release create v0.8.2 --repo Ancienttwo/repo-harness --title
+  "repo-harness 0.8.2" ...` created
+  `https://github.com/Ancienttwo/repo-harness/releases/tag/v0.8.2`.
+- `bash scripts/check-release-published.sh 0.8.2` passed with registry,
+  dist-tag, tarball, tag, and local version files agreeing.
+- `gh release view v0.8.2 --repo Ancienttwo/repo-harness --json
+  tagName,url,name,isDraft,isPrerelease,targetCommitish,publishedAt` returned
+  non-draft, non-prerelease release `repo-harness 0.8.2`, published at
+  `2026-06-29T02:50:06Z`.
