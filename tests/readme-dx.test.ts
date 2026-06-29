@@ -146,6 +146,7 @@ describe("README DX contract", () => {
     const zhReadme = read("README.zh-CN.md");
     const spec = read("docs/spec.md");
     const flow = read("docs/reference-configs/agentic-development-flow.md");
+    const externalTooling = read("docs/reference-configs/external-tooling.md");
 
     expect(spec).toContain("## Product Outcome");
     expect(spec).toContain("## Core Invariants");
@@ -159,6 +160,11 @@ describe("README DX contract", () => {
     expect(zhReadme).toContain("## Agent Tracking Path");
     expect(flow).toContain("Agent reads first");
     expect(flow).toContain("Human reviews first");
+    expect(readme).toContain("external verification manifests");
+    expect(zhReadme).toContain("external verification manifest");
+    expect(externalTooling).toContain("## External Verification Evidence");
+    expect(externalTooling).toContain("evidence ingestion, not provider invocation");
+    expect(externalTooling).toContain(".ai/harness/runs/external/<task-id>/<run-id>/manifest.json");
   });
 
   test("localized READMEs track the current English release surface", () => {

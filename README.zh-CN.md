@@ -52,6 +52,11 @@ verdict、change type、预期/实际改动文件、已通过命令、external a
 recommend pass、card verdict 为 pass，且 external acceptance 为 pass、not_required
 或明确 manual override 时，才进入 closeout。
 
+Unity、浏览器 E2E、mobile simulator、硬件测试和 staging smoke test 这类
+运行时重验证器，可以把 external verification manifest 写到被忽略的 run-evidence
+surface。详见
+[`docs/reference-configs/external-tooling.md`](docs/reference-configs/external-tooling.md#external-verification-evidence)。
+
 ## Agent Tracking Path
 
 Agent 先读 source artifacts，再读派生摘要：

@@ -61,6 +61,11 @@ rollback. Then inspect the active contract, latest trace in
 review recommends pass, the card verdict is pass, and external acceptance is
 pass, `not_required`, or an explicit manual override.
 
+Runtime-heavy validators such as Unity, browser E2E, mobile simulators, hardware
+rigs, or staging smoke tests can publish external verification manifests under
+the ignored run-evidence surface. See
+[`docs/reference-configs/external-tooling.md`](docs/reference-configs/external-tooling.md#external-verification-evidence).
+
 ## Agent Tracking Path
 
 Agents read source artifacts before derived summaries:
