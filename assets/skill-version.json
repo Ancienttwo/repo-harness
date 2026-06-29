@@ -1,6 +1,6 @@
 {
-  "version": "0.8.2",
-  "templateVersion": "0.8.2",
+  "version": "0.8.3",
+  "templateVersion": "0.8.3",
   "skillName": "repo-harness",
   "contractId": "tasks-first-harness-v1",
   "compatibility": {
@@ -175,6 +175,10 @@
     {
       "version": "0.8.2",
       "description": "Hardens two-tier plan artifact gates, rejects transient and inline projection misuse, keeps CodeGraph tooling on latest, and reduces completed workflow artifact noise"
+    },
+    {
+      "version": "0.8.3",
+      "description": "Keeps adopt and migration helper runtime package-only, removes local compatibility wrapper generation, and refreshes dependency lines to latest"
     }
   ],
   "generatedProjectStamp": {

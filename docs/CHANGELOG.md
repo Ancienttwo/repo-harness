@@ -4,6 +4,23 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+## [0.8.3] - 2026-06-29
+
+### Changed
+
+- Kept downstream adopt and migration helper execution on the package/global
+  runtime path through `repo-harness run`, without generating repo-local helper
+  wrapper scripts.
+- Refreshed the current dependency lines so `commander` and the CodeGraph dev
+  dependency resolve to the latest accepted release lines.
+
+### Fixed
+
+- Removed the compatibility-wrapper adoption path so package-managed helpers do
+  not pollute target repository `scripts/` directories.
+- Added the missing packaged factor-lab helper templates so package helper
+  parity matches the source `scripts/` runtime surface.
+
 ## [0.8.2] - 2026-06-29
 
 ### Changed
