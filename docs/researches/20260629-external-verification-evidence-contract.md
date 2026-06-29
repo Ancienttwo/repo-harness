@@ -17,6 +17,11 @@ runtime, trust boundary, command execution, and cleanup. `repo-harness` only
 needs a small manifest plus relative artifact references that review and
 handoff flows can cite.
 
+The public reference should say explicitly that this is a convention only today:
+`repo-harness` does not yet discover, summarize, or gate on these manifests
+automatically. That wording avoids implying an implemented check gate before
+manifest ingestion exists in code.
+
 The recommended path uses the existing ignored runtime evidence surface:
 
 ```text

@@ -275,13 +275,19 @@ smoke tests can all produce logs, screenshots, traces, or device output that
 belongs in the harness review flow without making `repo-harness` run those
 tools directly.
 
-The v1 contract is evidence ingestion, not provider invocation:
+Today this is a convention only: `repo-harness` does not automatically discover,
+summarize, or gate on these manifests yet.
+
+The recommended v1 convention is evidence ingestion, not provider invocation.
+It is not yet an automatic `repo-harness check` gate:
 
 - external validators run under the project's own tooling and trust boundary
 - providers publish a small manifest plus artifact references
-- `repo-harness` consumes the manifest as check/review/handoff evidence
-- missing, skipped, or partial manifests are validation gaps, not implicit
-  passes
+- reviewers can cite these manifests from check/review/handoff artifacts
+- automatic manifest discovery and summarization are follow-up implementation
+  work
+- missing, skipped, or partial external evidence should be recorded as
+  validation gaps, not treated as implicit passes
 
 Recommended runtime layout:
 
@@ -309,7 +315,7 @@ Minimal manifest shape:
   "subject": {
     "task_type": "unity.ui",
     "branch": "feat/example",
-    "commit": "optional",
+    "commit": "26eff6fc70b2c24cc3a00616204d3611f61df18e",
     "worktree_dirty": true
   },
   "operations": [
@@ -327,7 +333,7 @@ Minimal manifest shape:
       "type": "log",
       "path": "artifacts/compile.log",
       "summary": "Unity compile passed with no Console errors",
-      "sha256": "optional",
+      "sha256": "b6e3f4a6a1c2d5e8f0b9c7d6a4e3f2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5",
       "redacted": true
     }
   ],

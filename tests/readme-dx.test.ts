@@ -147,6 +147,7 @@ describe("README DX contract", () => {
     const spec = read("docs/spec.md");
     const flow = read("docs/reference-configs/agentic-development-flow.md");
     const externalTooling = read("docs/reference-configs/external-tooling.md");
+    const externalToolingAsset = read("assets/reference-configs/external-tooling.md");
 
     expect(spec).toContain("## Product Outcome");
     expect(spec).toContain("## Core Invariants");
@@ -162,8 +163,9 @@ describe("README DX contract", () => {
     expect(flow).toContain("Human reviews first");
     expect(readme).toContain("external verification manifests");
     expect(zhReadme).toContain("external verification manifest");
+    expect(externalToolingAsset).toBe(externalTooling);
     expect(externalTooling).toContain("## External Verification Evidence");
-    expect(externalTooling).toContain("evidence ingestion, not provider invocation");
+    expect(externalTooling).toContain("not yet an automatic `repo-harness check` gate");
     expect(externalTooling).toContain(".ai/harness/runs/external/<task-id>/<run-id>/manifest.json");
   });
 
