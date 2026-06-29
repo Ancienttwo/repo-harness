@@ -32,6 +32,11 @@ The recommended path uses the existing ignored runtime evidence surface:
 This fits the current information lifecycle better than adding a new committed
 evidence directory. Durable conclusions still belong in `tasks/reviews/`,
 `tasks/contracts/`, `tasks/notes/`, or project documentation after redaction.
+The manifest is cited by repo-relative path from durable review files, while
+artifact paths inside the manifest stay relative to the manifest directory.
+Provider examples should not call typical Unity/browser/mobile validation
+`read_only` when those tools write ignored runtime state, caches, logs, or build
+outputs.
 
 ## Non-goals
 

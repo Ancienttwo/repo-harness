@@ -348,16 +348,21 @@ Minimal manifest shape:
     }
   ],
   "safety": {
-    "side_effects": "read_only",
+    "side_effects": "writes_ignored_runtime_state",
     "privacy_reviewed": true
   }
 }
 ```
 
-Manifests should prefer repo-relative paths and summaries over absolute local
-paths. Providers should mark whether artifacts are redacted, avoid storing
-secrets or private payloads in durable summaries, and record skipped validation
-explicitly so reviewers can see what was not exercised.
+Manifest locations are repo-relative when cited from durable reviews. Artifact
+paths inside a manifest are relative to the manifest directory unless explicitly
+documented otherwise. Providers should prefer summaries over absolute local
+paths, mark whether artifacts are redacted, avoid storing secrets or private
+payloads in durable summaries, and record skipped validation explicitly so
+reviewers can see what was not exercised.
+
+Use `read_only` only when the provider did not mutate project files, runtime
+caches, devices, external services, or build outputs.
 
 Global agent skills that wrap external validators should be project-gated:
 activate only when the current repo has an explicit local marker or CLI, no-op

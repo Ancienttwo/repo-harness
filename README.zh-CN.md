@@ -54,7 +54,8 @@ recommend pass、card verdict 为 pass，且 external acceptance 为 pass、not_
 
 Unity、浏览器 E2E、mobile simulator、硬件测试和 staging smoke test 这类
 运行时重验证器，可以把 external verification manifest 写到被忽略的 run-evidence
-surface。详见
+surface。当前这只是手动约定，不是 `repo-harness check` 已经会自动发现或 gate
+的能力。详见
 [`docs/reference-configs/external-tooling.md`](docs/reference-configs/external-tooling.md#external-verification-evidence)。
 
 ## Agent Tracking Path
