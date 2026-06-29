@@ -20,6 +20,11 @@ Prepare and publish `repo-harness@0.8.3` from current `main`.
   `BUN_TEST_TIMEOUT_MS=180000 BUN_TEST_MAX_CONCURRENCY=1 bun run check:release`
   passed end to end: `1002 pass / 1 skip / 0 fail`, workflow checks OK,
   package dry-run OK, and tarball smoke OK for `repo-harness-0.8.3.tgz`.
+- The first `npm publish` attempt did not publish; its `prepublishOnly` gate
+  reached `1002 pass / 1 skip / 0 fail` but stopped at `check-task-sync`
+  because local GPT Pro, Oracle, and MCP runtime files under `.ai/harness/`
+  were unignored operator state. `.gitignore` now excludes those runtime paths
+  while preserving `.ai/harness/handoff/gptpro/.gitkeep`.
 
 ## Remaining Closeout
 

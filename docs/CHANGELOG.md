@@ -20,6 +20,8 @@ All notable changes to this skill are documented here.
   not pollute target repository `scripts/` directories.
 - Added the missing packaged factor-lab helper templates so package helper
   parity matches the source `scripts/` runtime surface.
+- Ignored local GPT Pro, Oracle, and MCP runtime evidence under `.ai/harness/`
+  so self-host release gates do not treat operator state as source changes.
 
 ## [0.8.2] - 2026-06-29
 

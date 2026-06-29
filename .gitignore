@@ -55,8 +55,13 @@ tasks/.current.md.tmp.*
 .ai/harness/worktrees/
 .ai/harness/runs/
 .ai/harness/chatgpt/browser-lock.json
+.ai/harness/chatgpt/oracle-home/
 .ai/harness/chatgpt/tmp/
 .ai/harness/chatgpt/sessions/
+.ai/harness/handoff/gptpro/*
+!.ai/harness/handoff/gptpro/.gitkeep
+.ai/harness/mcp/*
+!.ai/harness/mcp/.gitkeep
 .ai/harness/triage/*
 !.ai/harness/triage/.gitkeep
 .repo-harness/chatgpt-browser.local.json
