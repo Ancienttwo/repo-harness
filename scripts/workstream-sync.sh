@@ -83,6 +83,47 @@ validate_block() {
   [[ -e "$block" ]]
 }
 
+helper_sibling() {
+  local helper_name="$1"
+  local helper_dir=""
+  if [[ -n "${REPO_HARNESS_HELPER_SOURCE_PATH:-}" ]]; then
+    helper_dir="$(dirname "$REPO_HARNESS_HELPER_SOURCE_PATH")"
+  fi
+  if [[ -n "$helper_dir" && -f "$helper_dir/$helper_name" ]]; then
+    printf '%s\n' "$helper_dir/$helper_name"
+    return 0
+  fi
+  return 1
+}
+
+capability_resolver() {
+  local sibling=""
+  if command -v bun >/dev/null 2>&1 && [[ -f "scripts/capability-resolver.ts" ]]; then
+    bun scripts/capability-resolver.ts "$@"
+    return $?
+  fi
+  sibling="$(helper_sibling capability-resolver.ts || true)"
+  if command -v bun >/dev/null 2>&1 && [[ -n "$sibling" ]]; then
+    bun "$sibling" "$@"
+    return $?
+  fi
+  return 127
+}
+
+context_contract_sync() {
+  local sibling=""
+  if [[ -x "scripts/context-contract-sync.sh" ]]; then
+    bash "scripts/context-contract-sync.sh" "$@"
+    return $?
+  fi
+  sibling="$(helper_sibling context-contract-sync.sh || true)"
+  if [[ -n "$sibling" ]]; then
+    bash "$sibling" "$@"
+    return $?
+  fi
+  return 127
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --block)
@@ -139,12 +180,12 @@ if ! validate_block "$functional_block"; then
   exit 2
 fi
 
-if [[ ! -f "scripts/capability-resolver.ts" ]] || ! command -v bun >/dev/null 2>&1; then
-  echo "workstream-sync: scripts/capability-resolver.ts and bun are required" >&2
+if ! command -v bun >/dev/null 2>&1 || ! capability_resolver list --format json >/dev/null 2>&1; then
+  echo "workstream-sync: capability-resolver.ts and bun are required" >&2
   exit 2
 fi
 
-if ! resolver_json="$(bun scripts/capability-resolver.ts match --path "$functional_block" --format json 2>&1)"; then
+if ! resolver_json="$(capability_resolver match --path "$functional_block" --format json 2>&1)"; then
   echo "$resolver_json" >&2
   exit 1
 fi
@@ -257,8 +298,6 @@ fi
 event_json="{\"ts\":\"$(json_escape "$iso_timestamp")\",\"file_path\":\"$(json_escape "$workstream_file")\",\"severity\":\"medium\",\"functional_block\":\"$(json_escape "$functional_block")\",\"capability_id\":\"$(json_escape "$capability_id")\",\"matched_prefix\":\"$(json_escape "$matched_prefix")\",\"architecture_domain\":\"$(json_escape "$architecture_domain")\",\"architecture_capability\":\"$(json_escape "$architecture_capability")\",\"architecture_module\":\"$(json_escape "$architecture_module")\",\"workstream_dir\":\"$(json_escape "$workstream_dir")\",\"contract_agents\":\"$(json_escape "$contract_agents")\",\"contract_claude\":\"$(json_escape "$contract_claude")\",\"active_workstream\":\"$(json_escape "$workstream_file")\",\"change_type\":\"workstream-sync\",\"spawn_recommended\":false,\"contract_sync_required\":true,\"request_file\":\"$(json_escape "$request_file")\"}"
 printf '%s\n' "$event_json" >> "$event_file"
 
-if [[ -f "$helper_dir/context-contract-sync.sh" ]]; then
-  bash "$helper_dir/context-contract-sync.sh" sync-event --json "$event_json"
-fi
+context_contract_sync sync-event --json "$event_json" >/dev/null 2>&1 || true
 
 echo "[WorkstreamSync] Ensured $workstream_file for $capability_id."

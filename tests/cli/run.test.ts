@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
@@ -134,6 +134,55 @@ describe("run command", () => {
       expect(res.exitCode).toBe(1);
       expect(res.reason).toBe("timeout");
       expect(res.stderr).toContain("process timed out after 20ms");
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test("bundled workstream-sync resolves bundled sibling helpers", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "repo-harness-run-workstream-package-"));
+    try {
+      mkdirSync(join(tmp, ".ai/context"), { recursive: true });
+      mkdirSync(join(tmp, "apps/extension"), { recursive: true });
+      writeFileSync(join(tmp, "apps/extension/AGENTS.md"), "# Extension Contract\n\nManual extension rule.\n");
+      writeFileSync(join(tmp, ".ai/context/capabilities.json"), JSON.stringify({
+        version: 1,
+        capabilities: [
+          {
+            id: "extension-runtime",
+            domain: "surface",
+            name: "extension-runtime",
+            prefixes: ["apps/extension"],
+            contract_files: {
+              agents: "apps/extension/AGENTS.md",
+              claude: "apps/extension/CLAUDE.md",
+            },
+            architecture_module: "docs/architecture/modules/surface/extension-runtime.md",
+            workstream_dir: "tasks/workstreams/surface/extension-runtime",
+            lsp_profile: "typescript-lsp",
+            verification_hints: ["bun --filter @devision/extension build"],
+          },
+        ],
+      }, null, 2) + "\n");
+
+      const res = runHelper({
+        helper: "workstream-sync",
+        cwd: tmp,
+        args: ["ensure", "--block", "apps/extension", "--slug", "extension-runtime-closure"],
+        stdio: "pipe",
+      });
+
+      expect(res.exitCode).toBe(0);
+      expect(res.resolved?.source).toBe("package");
+      expect(res.stdout).toContain("[WorkstreamSync] Ensured tasks/workstreams/surface/extension-runtime/extension-runtime-closure.md");
+      expect(existsSync(join(tmp, "tasks/workstreams/surface/extension-runtime/extension-runtime-closure.md"))).toBe(true);
+      expect(existsSync(join(tmp, "scripts/capability-resolver.ts"))).toBe(false);
+
+      const agents = readFileSync(join(tmp, "apps/extension/AGENTS.md"), "utf-8");
+      const claude = readFileSync(join(tmp, "apps/extension/CLAUDE.md"), "utf-8");
+      expect(agents).toBe(claude);
+      expect(agents).toContain("Manual extension rule.");
+      expect(agents).toContain("`tasks/workstreams/surface/extension-runtime/extension-runtime-closure.md`");
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
