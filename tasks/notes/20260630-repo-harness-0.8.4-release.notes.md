@@ -22,6 +22,19 @@
     task sync OK, brain sync OK, strict workflow OK.
   - Package checks: dry-run OK; tarball smoke confirmed
     `repo-harness-0.8.4.tgz` installs and packaged CLI bins start.
+- `git tag v0.8.4` points to `1085fdd`.
+- `npm publish --access public` passed after rerunning the prepublish release
+  gate; npm published `repo-harness@0.8.4` as latest.
+- `bash scripts/check-release-published.sh 0.8.4` passed: registry metadata,
+  latest dist-tag, tarball integrity, Git tag, and local version files agree.
+- `npm view repo-harness version dist-tags.latest --json` returned version
+  `0.8.4` and latest `0.8.4`.
+- Global install verification passed: `npm install -g repo-harness@0.8.4` and
+  `repo-harness --version` returned `0.8.4`.
+- DeVision downstream smoke passed in a temporary worktree:
+  `repo-harness run workstream-sync ensure --block "apps/extension" --slug
+  "extension-runtime-package-refresh-npm-0-8-4-smoke" --title "Extension
+  Runtime Package Refresh npm 0.8.4 Smoke"`.
 
 ## Boundary
 

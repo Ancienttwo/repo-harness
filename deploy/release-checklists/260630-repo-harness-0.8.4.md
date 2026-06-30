@@ -4,7 +4,7 @@
 - Package: `repo-harness@0.8.4`
 - Source commit: release tag target `v0.8.4` from base `5ee1bbd`
 - Release scope: patch release for package-dispatched `workstream-sync` helper resolution.
-- Publish status: ready for `npm publish`; registry publish pending
+- Publish status: published to npm as `repo-harness@0.8.4`
 - Hold reason: none after release gate
 
 ## Scope
@@ -25,9 +25,16 @@
   - package dry-run: OK
   - `bash scripts/check-tarball-install-smoke.sh`: `repo-harness-0.8.4.tgz`
     installs and packaged CLI bins start
-- Pending: `git tag v0.8.4`
-- Pending: `npm publish`
-- Pending: `bash scripts/check-release-published.sh 0.8.4`
+- Passed: `git tag v0.8.4`
+- Passed: `npm publish --access public`
+  - npm published `repo-harness@0.8.4` with `latest` dist-tag
+  - npm tarball shasum: `189f1b963f14d03bc5637ac30a6cedfec9ddd0c8`
+- Passed: `bash scripts/check-release-published.sh 0.8.4`
+  - registry metadata, latest dist-tag, tarball integrity, Git tag, and local
+    version files agree
+- Passed: `npm view repo-harness version dist-tags.latest --json`
+  - version: `0.8.4`
+  - latest: `0.8.4`
 
 ## Skill Eval Evidence
 
@@ -44,3 +51,7 @@
 - CodeGraph local install parity is outside this release worktree and remains
   dirty in the primary checkout; this filing covers only the package helper
   fallback patch line.
+- DeVision downstream smoke passed after installing the published package
+  globally: `repo-harness --version` returned `0.8.4`, and
+  `repo-harness run workstream-sync ensure --block "apps/extension"` succeeded
+  inside a temporary DeVision worktree.
