@@ -4,6 +4,14 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+## [0.8.4] - 2026-06-30
+
+### Fixed
+
+- Fixed package-dispatched `repo-harness run workstream-sync ensure` so it can
+  resolve bundled `capability-resolver.ts` and `context-contract-sync.sh`
+  helpers when a downstream repo no longer vendors legacy `scripts/` wrappers.
+
 ## [0.8.3] - 2026-06-29
 
 ### Changed

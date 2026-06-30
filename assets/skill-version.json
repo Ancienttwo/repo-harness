@@ -1,6 +1,6 @@
 {
-  "version": "0.8.3",
-  "templateVersion": "0.8.3",
+  "version": "0.8.4",
+  "templateVersion": "0.8.4",
   "skillName": "repo-harness",
   "contractId": "tasks-first-harness-v1",
   "compatibility": {
@@ -179,6 +179,10 @@
     {
       "version": "0.8.3",
       "description": "Keeps adopt and migration helper runtime package-only, removes local compatibility wrapper generation, and refreshes dependency lines to latest"
+    },
+    {
+      "version": "0.8.4",
+      "description": "Lets package-dispatched workstream sync resolve bundled helper siblings when downstream repos do not vendor legacy scripts"
     }
   ],
   "generatedProjectStamp": {
