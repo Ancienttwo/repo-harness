@@ -267,6 +267,109 @@ not rewrite Bash commands, require RTK, or suggest compression for failed
 commands. Failed command output stays raw so test, build, and review evidence is
 not hidden by a compressor.
 
+## External Verification Evidence
+
+Runtime-heavy projects often prove work outside normal source files and unit
+test output. Unity, browser E2E, mobile simulators, hardware rigs, and staging
+smoke tests can all produce logs, screenshots, traces, or device output that
+belongs in the harness review flow without making `repo-harness` run those
+tools directly.
+
+Today this is a convention only: `repo-harness` does not automatically discover,
+summarize, or gate on these manifests yet.
+
+The recommended v1 convention is evidence ingestion, not provider invocation.
+It is not yet an automatic `repo-harness check` gate:
+
+- external validators run under the project's own tooling and trust boundary
+- providers publish a small manifest plus artifact references
+- reviewers can cite these manifests from check/review/handoff artifacts
+- automatic manifest discovery and summarization are follow-up implementation
+  work
+- missing, skipped, or partial external evidence should be recorded as
+  validation gaps, not treated as implicit passes
+
+Recommended runtime layout:
+
+```text
+.ai/harness/runs/external/<task-id>/<run-id>/manifest.json
+.ai/harness/runs/external/<task-id>/<run-id>/artifacts/...
+```
+
+This uses the existing ignored run-evidence surface. Durable conclusions should
+be promoted into `tasks/reviews/<task>.review.md`, `tasks/contracts/`,
+`tasks/notes/`, or project documentation instead of committing raw provider
+artifacts by default.
+
+Minimal manifest shape:
+
+```json
+{
+  "schema_version": "repo-harness.external-evidence.v1",
+  "task_id": "20260629-runtime-heavy-ui",
+  "run_id": "20260629T023507Z-aibridge-screenshot",
+  "provider": {
+    "name": "aibridge",
+    "version": "1.5.0"
+  },
+  "subject": {
+    "task_type": "unity.ui",
+    "branch": "feat/example",
+    "commit": "26eff6fc70b2c24cc3a00616204d3611f61df18e",
+    "worktree_dirty": true
+  },
+  "operations": [
+    {
+      "kind": "unity.compile",
+      "command_display": "AIBridgeCLI compile unity",
+      "started_at": "2026-06-29T02:35:07Z",
+      "ended_at": "2026-06-29T02:36:10Z",
+      "exit_code": 0,
+      "outcome": "pass"
+    }
+  ],
+  "artifacts": [
+    {
+      "type": "log",
+      "path": "artifacts/compile.log",
+      "summary": "Unity compile passed with no Console errors",
+      "sha256": "b6e3f4a6a1c2d5e8f0b9c7d6a4e3f2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5",
+      "redacted": true
+    }
+  ],
+  "outcome": {
+    "status": "pass",
+    "summary": "Compile and Console validation passed"
+  },
+  "validation_gaps": [
+    {
+      "severity": "medium",
+      "description": "No PlayMode scenario was run"
+    }
+  ],
+  "safety": {
+    "side_effects": "writes_ignored_runtime_state",
+    "privacy_reviewed": true
+  }
+}
+```
+
+Manifest locations are repo-relative when cited from durable reviews. Artifact
+paths inside a manifest are relative to the manifest directory unless explicitly
+documented otherwise. Providers should prefer summaries over absolute local
+paths, mark whether artifacts are redacted, avoid storing secrets or private
+payloads in durable summaries, and record skipped validation explicitly so
+reviewers can see what was not exercised.
+
+Use `read_only` only when the provider did not mutate project files, runtime
+caches, devices, external services, or build outputs.
+
+Global agent skills that wrap external validators should be project-gated:
+activate only when the current repo has an explicit local marker or CLI, no-op
+outside that repo, and keep the repo's own AGENTS/CLAUDE/repo-harness routing in
+control. Treat this as activation and DX isolation, not a complete security
+boundary for untrusted repositories.
+
 ## Update
 
 ### gstack
