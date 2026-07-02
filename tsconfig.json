@@ -13,11 +13,7 @@
     "types": ["bun"]
   },
   "include": [
-    "src/core/adoption/**/*.ts",
-    "src/effects/**/*.ts",
-    "src/cli/runtime/**/*.ts",
-    "tests/process-runner.test.ts",
-    "tests/cli/run.test.ts",
-    "tests/cli/adoption-plan.test.ts"
+    "src/**/*.ts",
+    "tests/**/*.ts"
   ]
 }
