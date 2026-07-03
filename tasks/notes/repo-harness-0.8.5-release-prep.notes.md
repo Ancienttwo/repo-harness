@@ -11,8 +11,9 @@ The `0.8.5` patch line packages two post-`0.8.4` fixes:
 
 ## Release Boundary
 
-This slice prepares the release files and version surfaces only. It does not
-publish to npm, create `v0.8.5`, or create the GitHub release.
+The first slice prepared the release files and version surfaces only. The
+follow-up closeout published `repo-harness@0.8.5`, created `v0.8.5`, created the
+GitHub release, and verified post-publish readback.
 
 Version surfaces updated:
 
@@ -44,3 +45,20 @@ Final release gate:
   passed.
 - Tarball smoke readback: `repo-harness-0.8.5.tgz` installs and packaged CLI
   bins start.
+
+Publish closeout:
+
+- `npm publish --access public --registry https://registry.npmjs.org/`
+  published `repo-harness@0.8.5` after rerunning `prepublishOnly`.
+- Publish-time gate passed: `1013 pass`, `1 skip`, `0 fail`, `10593 expect()`;
+  package dry-run and `repo-harness-0.8.5.tgz` tarball smoke passed.
+- Registry readback returned `latest: 0.8.5`, gitHead
+  `a8f8663bb50c9201f37bf17c617c7918d5988618`, shasum
+  `b515499bf16cf73c766a96e6707306d872301826`, and matching integrity.
+- Annotated tag `v0.8.5` was pushed and peels to
+  `a8f8663bb50c9201f37bf17c617c7918d5988618`.
+- GitHub release:
+  `https://github.com/Ancienttwo/repo-harness/releases/tag/v0.8.5`.
+- `bash scripts/check-release-published.sh 0.8.5` passed.
+- Clean-cache `npx -y --registry https://registry.npmjs.org/
+  repo-harness@0.8.5 --version` returned `0.8.5`.

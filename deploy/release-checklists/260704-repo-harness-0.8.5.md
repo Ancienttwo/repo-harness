@@ -4,8 +4,9 @@
 - Package: `repo-harness@0.8.5`
 - Base release: `v0.8.4`
 - Release scope: patch release for Bun global install recovery and packaged sprint-backlog helper-root coverage.
-- Publish status: prepared; npm publish, Git tag, and GitHub release are pending.
-- Hold reason: publish has not been run in this prep slice.
+- Publish status: published; registry readback, Git tag, GitHub release, and
+  post-publish gate verified.
+- Published at: 2026-07-04 HKT / 2026-07-03T18:06:33Z GitHub release time.
 
 ## Scope
 
@@ -56,12 +57,43 @@
   - package dry-run: OK
   - tarball smoke: `repo-harness-0.8.5.tgz` installs and packaged CLI bins start
 
+## Publish Evidence
+
+- `npm publish --access public --registry https://registry.npmjs.org/`
+  published `repo-harness@0.8.5` with tag `latest`.
+- Publish-time `prepublishOnly` reran the full release gate and passed:
+  `1013 pass`, `1 skip`, `0 fail`, `10593 expect()`; workflow checks,
+  package dry-run, and `repo-harness-0.8.5.tgz` tarball smoke passed.
+- `npm view repo-harness@0.8.5 version dist-tags dist.integrity dist.shasum
+  dist.tarball gitHead --json --registry https://registry.npmjs.org/`
+  returned version `0.8.5`, `latest: 0.8.5`, shasum
+  `b515499bf16cf73c766a96e6707306d872301826`, integrity
+  `sha512-H5g/3qB2h/WRpFjtR77QH2ucdpoK95nKvu8yPXsFrxkYEuKwv0VEKY2EP3nt0T/EXsZCqYusJXsPXRQbqM5WZA==`,
+  tarball `https://registry.npmjs.org/repo-harness/-/repo-harness-0.8.5.tgz`,
+  and gitHead `a8f8663bb50c9201f37bf17c617c7918d5988618`.
+- `git tag -a v0.8.5 -m "repo-harness 0.8.5"` and
+  `git push origin v0.8.5` created the annotated tag. Remote tag readback
+  returned tag object `31a4eb4eb7f9a9f037e407f84d8c1988aed32a1a` and peeled
+  commit `a8f8663bb50c9201f37bf17c617c7918d5988618`.
+- `gh release create v0.8.5 --repo Ancienttwo/repo-harness --title
+  "repo-harness 0.8.5" ...` created
+  `https://github.com/Ancienttwo/repo-harness/releases/tag/v0.8.5`.
+- `gh release view v0.8.5 --repo Ancienttwo/repo-harness --json
+  tagName,url,name,isDraft,isPrerelease,targetCommitish,publishedAt` returned
+  non-draft, non-prerelease release `repo-harness 0.8.5`, published at
+  `2026-07-03T18:06:33Z`.
+- `bash scripts/check-release-published.sh 0.8.5` passed with registry,
+  dist-tag, tarball, tag, and local version files agreeing.
+- Clean-cache user-entry smoke passed:
+  `NPM_CONFIG_CACHE="$(mktemp -d)/npm-cache" npx -y --registry
+  https://registry.npmjs.org/ repo-harness@0.8.5 --version` returned `0.8.5`.
+
 ## Publish Checklist
 
-- Publish `repo-harness@0.8.5` to npm with the `latest` dist-tag.
-- Read back npm registry metadata, dist tag, tarball shasum/integrity, and
+- [x] Publish `repo-harness@0.8.5` to npm with the `latest` dist-tag.
+- [x] Read back npm registry metadata, dist tag, tarball shasum/integrity, and
   `gitHead`.
-- Push annotated tag `v0.8.5` at the published source commit.
-- Create GitHub release `repo-harness 0.8.5` and verify it is non-draft and
+- [x] Push annotated tag `v0.8.5` at the published source commit.
+- [x] Create GitHub release `repo-harness 0.8.5` and verify it is non-draft and
   non-prerelease.
-- Run `bash scripts/check-release-published.sh 0.8.5`.
+- [x] Run `bash scripts/check-release-published.sh 0.8.5`.
