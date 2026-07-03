@@ -63,35 +63,38 @@ bash scripts/migrate-project-template.sh --repo . --dry-run
 <!-- BEGIN ARCHITECTURE CONTRACT -->
 ## Architecture Contract
 
-- Functional block: `.ai/hooks`
-- Capability ID: `runtime-harness-hook-adapters`
-- Matched prefix: `.ai/hooks`
-- Architecture domain: `runtime-harness`
-- Architecture capability: `hook-adapters`
-- Architecture module: `docs/architecture/modules/runtime-harness/hook-adapters.md`
-- Last architecture event: 2026-05-29T09:44:46+0800
-- Last changed path: `.ai/hooks/session-start-context.sh`
+- Functional block: `scripts/inspect-project-state.ts`
+- Capability ID: `workflow-engine-inspection-migration`
+- Matched prefix: `scripts/inspect-project-state.ts`
+- Architecture domain: `workflow-engine`
+- Architecture capability: `inspection-migration`
+- Architecture module: `docs/architecture/modules/workflow-engine/inspection-migration.md`
+- Last architecture event: 2026-07-03T15:44:54+0800
+- Last changed path: `docs/architecture/requests/archive/2026/workflow-engine-inspection-migration.md`
 - Severity: high
-- Change type: workflow-surface
+- Change type: architecture-closeout
 - Module responsibility: Keep this block aligned with the local boundary described by surrounding human-owned context.
-- Entrypoints: `.ai/hooks`
+- Entrypoints: `scripts/inspect-project-state.ts`
 - Allowed dependencies: Follow root `AGENTS.md` / `CLAUDE.md` and this local contract.
 - Forbidden dependencies: Do not cross sibling app/service/package boundaries without an architecture snapshot or explicit plan.
-- Runtime path: `.ai/hooks`
+- Runtime path: `scripts/inspect-project-state.ts`
 - LSP/tooling profile: `typescript-lsp`
 - Verification: Use root required checks plus local commands recorded in this capability contract.
 - Latest snapshot: `(none yet)`
-- Semantic diagram source: `docs/architecture/modules/runtime-harness/hook-adapters.md`
+- Semantic diagram source: `docs/architecture/modules/workflow-engine/inspection-migration.md`
 - Latest human diagram: `(none yet)`
 - Pending architecture request: `(none)`
 
 ## Active Workstreams
 
-- (none yet)
+- `tasks/workstreams/workflow-engine/inspection-migration/20260703-inspection-migration.md`
+  - status: active
+  - current_slice: completed-20260703-architecture-closeout
+  - source_plan: (none)
 
 ## Current Session Projection
 
-- Durable progress lives under `tasks/workstreams/runtime-harness/hook-adapters`.
+- Durable progress lives under `tasks/workstreams/workflow-engine/inspection-migration`.
 - `tasks/current.md` is the tracked derived status snapshot; it is not a live lock or task source.
 - `tasks/todos.md` is the deferred-goal ledger; current execution slices stay in the active plan's `## Task Breakdown`.
 <!-- END ARCHITECTURE CONTRACT -->

@@ -29,6 +29,14 @@ Before changing behavior, infer why the current shape exists: compatibility boun
 
 Do not introduce a new abstraction unless it removes real complexity, matches an existing local pattern, or protects a cross-module invariant.
 
+## No Compatibility Fallbacks in Product Code
+
+Do not add fallback, compatibility, heuristic, defensive, or "best effort" code paths unless the current task or a human-approved migration/release contract explicitly demands that path. Prefer fail-closed behavior with a clear error over silently inventing output.
+
+When the source of truth is an LLM/provider/external authority/user input contract, do not re-derive the same semantic data with local deterministic rules, regexes, multilingual pattern lists, shadow parsers, or compatibility shims. If the authoritative value is missing, malformed, unauthenticated, or unavailable, surface that failure and stop; do not synthesize a replacement to make the flow continue.
+
+Product-logic compatibility is harmful by default. Do not preserve old product semantics, accept multiple semantic shapes, infer missing fields, or translate one domain meaning into another unless the user explicitly requested that compatibility in the current task or a human-approved migration/release contract names it. Compatibility for old wire formats, legacy clients, or migration windows is allowed only when it is explicit, covered by tests, and bounded by a removal or ownership path. Validation, security checks, data-safety checks, and error handling remain required, but they must reject or report invalid states instead of changing semantics.
+
 ## Reporting
 
 For small tasks, keep P1/P2/P3 internal and report only the conclusion.
@@ -43,12 +51,10 @@ Reports must be concise and grounded in files, commands, runtime behavior, obser
 
 ## Completion Summary Rule
 
-For non-trivial completed tasks, include a short `下一刀` section at the end of the final delivery report unless there is genuinely no meaningful follow-up.
 For non-trivial completed tasks, include a short `下一刀` section only when verified state shows a concrete next bottleneck, unresolved risk, failing check, deployment gap, review gap, or active-plan item that materially affects the user's stated goal.
 
 Do not manufacture follow-up work just to keep slicing. If the task is reasonably complete and the remaining work would be speculative, low-value polish, or over-engineering, omit `下一刀` and stop at the completion report.
 
-The recommendation is not a question. It must be one concrete, bounded next slice derived from verified state: active plan, todo, handoff, failing checks, review gaps, deployment state, unresolved risk, or observed system behavior.
 When included, the recommendation is not a question. It must be one concrete, bounded next slice derived from verified state: active plan, todo, handoff, failing checks, review gaps, deployment state, unresolved risk, or observed system behavior.
 
 Format:

@@ -1,4 +1,4 @@
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect, setDefaultTimeout } from "bun:test";
 import {
   copyFileSync,
   cpSync,
@@ -21,12 +21,22 @@ const HELPER_DIR = join(ROOT, "assets/templates/helpers");
 const TEMPLATE_DIR = join(ROOT, "assets/templates");
 const ASSETS_HOOKS_DIR = join(ROOT, "assets/hooks");
 
+setDefaultTimeout(30000);
+
 function tmpWorkspace(prefix: string): string {
   return realpathSync(mkdtempSync(join(tmpdir(), `${prefix}-`)));
 }
 
+const SANDBOX_ENV_BLOCKLIST = ["REPO_HARNESS_TARGET_REPO_ROOT", "REPO_HARNESS_HELPER_SOURCE", "REPO_HARNESS_HELPER_SOURCE_PATH"];
+
+function sandboxEnv(env?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const base = { ...process.env };
+  for (const key of SANDBOX_ENV_BLOCKLIST) delete base[key];
+  return { ...base, ...env };
+}
+
 function run(cmd: string, args: string[], cwd: string, env?: NodeJS.ProcessEnv) {
-  return spawnSync(cmd, args, { cwd, encoding: "utf-8", env: { ...process.env, ...env } });
+  return spawnSync(cmd, args, { cwd, encoding: "utf-8", env: sandboxEnv(env) });
 }
 
 function initGitRepo(cwd: string) {
@@ -98,12 +108,11 @@ function runHook(script: string, cwd: string, stdin: string, env?: NodeJS.Proces
     cwd,
     input: stdin,
     encoding: "utf-8",
-    env: {
-      ...process.env,
+    env: sandboxEnv({
       REPO_HARNESS_CLI: join(ROOT, "src/cli/index.ts"),
       REPO_HARNESS_HOOK_CLI: join(ROOT, "src/cli/hook-entry.ts"),
       ...env,
-    },
+    }),
   });
 }
 
@@ -397,6 +406,30 @@ describe("Workflow helper scripts", () => {
       expect(readFileSync(join(ROOT, "scripts", helper), "utf-8")).toBe(
         readFileSync(join(HELPER_DIR, helper), "utf-8")
       );
+    }
+  });
+
+  test("direct helper tests ignore ambient repo-root env", () => {
+    const poisonRepo = tmpWorkspace("helper-ambient-root-poison");
+    try {
+      const res = spawnSync("bun", [
+        "test",
+        "tests/helper-scripts.test.ts",
+        "--test-name-pattern",
+        "new-plan should create timestamped plan without compatibility pointer",
+      ], {
+        cwd: ROOT,
+        encoding: "utf-8",
+        env: {
+          ...process.env,
+          REPO_HARNESS_TARGET_REPO_ROOT: poisonRepo,
+        },
+      });
+
+      expect(res.status).toBe(0);
+      expect(existsSync(join(poisonRepo, "plans"))).toBe(false);
+    } finally {
+      rmSync(poisonRepo, { recursive: true, force: true });
     }
   });
 

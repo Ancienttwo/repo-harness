@@ -28,11 +28,19 @@ function tmpWorkspace(prefix: string): string {
   return realpathSync(mkdtempSync(join(tmpdir(), `${prefix}-`)));
 }
 
+// Strip vars that would let sprint-backlog.sh's REPO_HARNESS_TARGET_REPO_ROOT
+// branch redirect it out of the tmp workspace: bun test runs files in one
+// process (bunfig maxConcurrency=4), so an inherited/leaked value from any
+// concurrently-running test would otherwise silently repoint cwd at the real repo.
+const SANDBOX_ENV_BLOCKLIST = ["REPO_HARNESS_TARGET_REPO_ROOT", "REPO_HARNESS_HELPER_SOURCE", "REPO_HARNESS_HELPER_SOURCE_PATH"];
+
 function run(cmd: string, args: string[], cwd: string, env?: Record<string, string>) {
+  const base = { ...process.env };
+  for (const key of SANDBOX_ENV_BLOCKLIST) delete base[key];
   return spawnSync(cmd, args, {
     cwd,
     encoding: "utf-8",
-    env: env ? { ...process.env, ...env } : undefined,
+    env: { ...base, ...env },
   });
 }
 
@@ -100,6 +108,49 @@ function writeActiveSprintFixture(cwd: string, sprintRelPath: string) {
 }
 
 describe("sprint-backlog helper", () => {
+  test("rejects ambient target repo root that does not match the helper cwd", () => {
+    const cwd = tmpWorkspace("sprint-env-cwd");
+    const poisonRepo = tmpWorkspace("sprint-env-poison");
+    try {
+      copySprintHelpers(cwd, ["sprint-backlog.sh"]);
+      const result = spawnSync("bash", ["scripts/sprint-backlog.sh", "status"], {
+        cwd,
+        encoding: "utf-8",
+        env: {
+          ...process.env,
+          REPO_HARNESS_TARGET_REPO_ROOT: poisonRepo,
+        },
+      });
+
+      expect(result.status).toBe(2);
+      expect(result.stderr).toContain("REPO_HARNESS_TARGET_REPO_ROOT must match");
+      expect(existsSync(join(poisonRepo, "plans"))).toBe(false);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      rmSync(poisonRepo, { recursive: true, force: true });
+    }
+  });
+
+  test("accepts target repo root when it matches the helper cwd", () => {
+    const cwd = tmpWorkspace("sprint-env-match");
+    try {
+      copySprintHelpers(cwd, ["sprint-backlog.sh"]);
+
+      const init = run(
+        "bash",
+        ["scripts/sprint-backlog.sh", "init", "--slug", "Root Match", "--title", "Root Match"],
+        cwd,
+        { REPO_HARNESS_TARGET_REPO_ROOT: cwd }
+      );
+
+      expect(init.status).toBe(0);
+      expect(init.stdout).toContain("Created draft sprint: plans/sprints/");
+      expect(existsSync(join(cwd, ".ai/harness/sprint/active-sprint"))).toBe(true);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   test("init creates a draft sprint, sets the marker, and refuses a second active sprint", () => {
     const cwd = tmpWorkspace("sprint-backlog-init");
     try {

@@ -2,7 +2,8 @@
 
 > **Capability ID**: `workflow-engine-inspection-migration`
 > **Matched Prefixes**: `scripts/inspect-project-state.ts`, `scripts/migrate-project-template.sh`, `scripts/migrate-workflow-docs.ts`, `scripts/create-project-dirs.sh`, `scripts/init-project.sh`, `scripts/lib`
-> **Local Contracts**: `AGENTS.md`, `CLAUDE.md`
+> **Local Contracts**: `scripts/AGENTS.md`, `scripts/CLAUDE.md`
+> **Workstream**: `tasks/workstreams/workflow-engine/inspection-migration/20260703-inspection-migration.md`
 
 ## P1 Map
 

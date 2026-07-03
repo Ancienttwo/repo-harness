@@ -14,6 +14,7 @@ const SESSION_CONTEXT = [
   '3. Prefer the smallest direct implementation over new wrappers or extension points.',
   '4. Delete or shrink obsolete code before adding layers.',
   '5. Preserve explicit requirements, security, validation, data safety, error handling, accessibility, and runnable tests.',
+  '6. No compatibility fallbacks in product code: do not re-derive an LLM/provider/authority-owned value with local rules or regexes; if the authoritative value is missing or malformed, fail closed with a clear error instead of synthesizing a replacement.',
   'Before completion, justify each new dependency, file, and abstraction.',
 ].join('\n');
 

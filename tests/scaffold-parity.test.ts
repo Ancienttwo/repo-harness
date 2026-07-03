@@ -120,6 +120,13 @@ describe("create-project-dirs scaffold parity", () => {
 
       const agents = readFileSync(join(cwd, "AGENTS.md"), "utf-8");
       expect(agents).toContain("Repo Agent Context");
+      expect(agents).toContain("## Agent Context Scaffolding");
+      expect(agents).toContain("Treat scanners as leads, not authority");
+      expect(agents).toContain("Choose the smallest instruction stack that changes behavior");
+      expect(agents).toContain("## Decision Protocol");
+      expect(agents).toContain("complete P1/P2/P3 before design decisions or code edits");
+      expect(agents).toContain("do not implement until the user approves");
+      expect(agents).toContain("re-derives an authority's semantics");
       expect(agents).toBe(readFileSync(join(cwd, "CLAUDE.md"), "utf-8"));
 
       const template = readFileSync(join(cwd, ".claude/templates/plan.template.md"), "utf-8");

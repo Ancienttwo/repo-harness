@@ -17,6 +17,7 @@ describe('minimal-change context', () => {
     expect(context).toContain('Minimal-change policy');
     expect(context).toContain('Preserve explicit requirements');
     expect(context).toContain('security, validation, data safety');
+    expect(context).toContain('No compatibility fallbacks');
     expect(minimalChangeContextWordCount(context)).toBeLessThanOrEqual(180);
   });
 

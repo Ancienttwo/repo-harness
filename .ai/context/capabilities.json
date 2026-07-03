@@ -56,8 +56,8 @@
         "scripts/lib"
       ],
       "contract_files": {
-        "agents": "AGENTS.md",
-        "claude": "CLAUDE.md"
+        "agents": "scripts/AGENTS.md",
+        "claude": "scripts/CLAUDE.md"
       },
       "architecture_module": "docs/architecture/modules/workflow-engine/inspection-migration.md",
       "workstream_dir": "tasks/workstreams/workflow-engine/inspection-migration",

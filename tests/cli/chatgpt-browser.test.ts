@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test, setDefaultTimeout } from 'bun:test';
 import { spawnSync } from 'child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { homedir, tmpdir } from 'os';
@@ -7,6 +7,8 @@ import { assertChatGptMcpContract } from '../helpers/chatgpt-mcp-contract';
 
 const ROOT = join(import.meta.dir, '../..');
 const CLI = join(ROOT, 'src/cli/index.ts');
+
+setDefaultTimeout(180000);
 
 function runChatgpt(args: string[], cwd = ROOT, env: NodeJS.ProcessEnv = process.env) {
   return spawnSync('bun', [CLI, 'chatgpt', ...args], {

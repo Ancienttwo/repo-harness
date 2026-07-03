@@ -659,8 +659,50 @@ describe("init command", () => {
       const claude = readFileSync(join(home, ".claude", "CLAUDE.md"), "utf-8");
       expect(codex).toContain("user content");
       expect(codex).toContain("<!-- BEGIN: repo-harness global-working-rules -->");
+      expect(codex).toContain(
+        "<!-- repo-harness manages this block; edits inside are overwritten on sync. Keep personal rules outside the markers. -->",
+      );
       expect(codex).toContain("- Use Chinese to report to user.");
       expect(claude).toContain("- Use Chinese to report to user.");
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test("blocks the global working rules write when repo-harness markers are unbalanced", () => {
+    const tmp = join(tmpdir(), `repo-harness-init-global-rules-unbalanced-${Date.now()}`);
+    const source = join(tmp, "source");
+    const home = join(tmp, "home");
+    const duplicated = [
+      "<!-- BEGIN: repo-harness global-working-rules -->",
+      "# Global Working Rules",
+      "- one",
+      "<!-- END: repo-harness global-working-rules -->",
+      "",
+      "<!-- BEGIN: repo-harness global-working-rules -->",
+      "# Global Working Rules",
+      "- two",
+      "<!-- END: repo-harness global-working-rules -->",
+      "",
+    ].join("\n");
+    try {
+      mkdirSync(source, { recursive: true });
+      mkdirSync(home, { recursive: true });
+      setupFakeSource(source);
+      mkdirSync(join(home, ".codex"), { recursive: true });
+      writeFileSync(join(home, ".codex", "AGENTS.md"), duplicated);
+
+      const result = writeGlobalContextFiles(
+        source,
+        "codex",
+        { reportLanguageInstruction: "Use Chinese to report to user." },
+        { ...process.env, HOME: home },
+      );
+
+      expect(result.status).toBe("failed");
+      expect(result.detail).toContain(`blocked:${join(home, ".codex", "AGENTS.md")}`);
+      const codex = readFileSync(join(home, ".codex", "AGENTS.md"), "utf-8");
+      expect(codex).toBe(duplicated);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
@@ -714,7 +756,7 @@ describe("init command", () => {
       );
 
       expect(result.status).toBe("ok");
-      expect(result.detail).toContain(`unchanged:${join(home, ".codex", "AGENTS.md")}`);
+      expect(result.detail).toContain(`skipped-legacy:${join(home, ".codex", "AGENTS.md")}`);
       const codex = readFileSync(join(home, ".codex", "AGENTS.md"), "utf-8");
       expect(codex).toBe(existing);
       expect(codex).not.toContain("<!-- BEGIN: repo-harness global-working-rules -->");

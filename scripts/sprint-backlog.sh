@@ -2,7 +2,22 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null)"; then
+if [[ -n "${REPO_HARNESS_TARGET_REPO_ROOT:-}" ]]; then
+  if [[ "$REPO_HARNESS_TARGET_REPO_ROOT" != /* ]]; then
+    echo "sprint-backlog: REPO_HARNESS_TARGET_REPO_ROOT must be an absolute path" >&2
+    exit 2
+  fi
+  if ! REPO_ROOT="$(cd "$REPO_HARNESS_TARGET_REPO_ROOT" 2>/dev/null && pwd -P)"; then
+    echo "sprint-backlog: REPO_HARNESS_TARGET_REPO_ROOT does not resolve to a directory" >&2
+    exit 2
+  fi
+  CURRENT_ROOT="$(pwd -P)"
+  if [[ "$REPO_ROOT" != "$CURRENT_ROOT" ]]; then
+    echo "sprint-backlog: REPO_HARNESS_TARGET_REPO_ROOT must match the current helper cwd" >&2
+    exit 2
+  fi
+  cd "$REPO_ROOT"
+elif REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null)"; then
   cd "$REPO_ROOT"
 else
   cd "$SCRIPT_DIR/.."

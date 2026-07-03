@@ -40,6 +40,8 @@ const WAZA_SHARED_RULES = ["anti-patterns.md", "chinese.md", "durable-context.md
 const GBRAIN_INSTALL_ARGS = ["install", "-g", "github:garrytan/gbrain"] as const;
 const GLOBAL_RULES_BEGIN = "<!-- BEGIN: repo-harness global-working-rules -->";
 const GLOBAL_RULES_END = "<!-- END: repo-harness global-working-rules -->";
+const GLOBAL_RULES_SELF_NOTE =
+  "<!-- repo-harness manages this block; edits inside are overwritten on sync. Keep personal rules outside the markers. -->";
 
 export type InitBrainMode = "manifest-only" | "install-gbrain-cli" | "skip";
 export type ReportingLanguagePreset = "follow" | "zh-CN" | "en" | "custom";
@@ -234,16 +236,42 @@ function renderGlobalRules(sourceRoot: string, instruction: string): string {
     /^- Use the user's language for reports; keep technical terms in English\.$/m,
     `- ${instruction}`,
   );
-  return `${GLOBAL_RULES_BEGIN}\n${rendered.trim()}\n${GLOBAL_RULES_END}\n`;
+  return `${GLOBAL_RULES_BEGIN}\n${GLOBAL_RULES_SELF_NOTE}\n${rendered.trim()}\n${GLOBAL_RULES_END}\n`;
 }
 
-function mergeManagedBlock(current: string, block: string): string {
-  const start = current.indexOf(GLOBAL_RULES_BEGIN);
-  const end = current.indexOf(GLOBAL_RULES_END);
-  if (start >= 0 && end >= start) {
-    const afterEnd = end + GLOBAL_RULES_END.length;
-    return `${current.slice(0, start)}${block.trimEnd()}${current.slice(afterEnd).replace(/^\n?/, "\n")}`;
+type ManagedBlockStatus = "written" | "blocked-unbalanced" | "skipped-legacy";
+
+interface MergedManagedBlock {
+  content: string;
+  status: ManagedBlockStatus;
+}
+
+function countOccurrences(haystack: string, needle: string): number {
+  let count = 0;
+  let index = haystack.indexOf(needle);
+  while (index !== -1) {
+    count += 1;
+    index = haystack.indexOf(needle, index + needle.length);
   }
+  return count;
+}
+
+function mergeManagedBlock(current: string, block: string): MergedManagedBlock {
+  const beginCount = countOccurrences(current, GLOBAL_RULES_BEGIN);
+  const endCount = countOccurrences(current, GLOBAL_RULES_END);
+
+  if (beginCount > 0 || endCount > 0) {
+    const start = current.indexOf(GLOBAL_RULES_BEGIN);
+    const end = current.indexOf(GLOBAL_RULES_END);
+    const balanced = beginCount === 1 && endCount === 1 && start >= 0 && end >= start;
+    if (!balanced) {
+      return { content: current, status: "blocked-unbalanced" };
+    }
+    const afterEnd = end + GLOBAL_RULES_END.length;
+    const merged = `${current.slice(0, start)}${block.trimEnd()}${current.slice(afterEnd).replace(/^\n?/, "\n")}`;
+    return { content: merged, status: "written" };
+  }
+
   if (
     /^# Global Working Rules\s*$/m.test(current) ||
     (
@@ -253,10 +281,10 @@ function mergeManagedBlock(current: string, block: string): string {
       current.includes("### P3: Design Decision")
     )
   ) {
-    return current;
+    return { content: current, status: "skipped-legacy" };
   }
   const trimmed = current.trimEnd();
-  return `${trimmed}${trimmed ? "\n\n" : ""}${block}`;
+  return { content: `${trimmed}${trimmed ? "\n\n" : ""}${block}`, status: "written" };
 }
 
 export function writeGlobalContextFiles(
@@ -276,19 +304,29 @@ export function writeGlobalContextFiles(
   if (target === "claude" || target === "both") targets.push(join(home, ".claude", "CLAUDE.md"));
 
   const changes: string[] = [];
+  let blocked = false;
   for (const filePath of targets) {
     mkdirSync(dirname(filePath), { recursive: true });
     const current = existsSync(filePath) ? readFileSync(filePath, "utf-8") : "";
-    const next = mergeManagedBlock(current, block);
-    if (next === current) {
+    const merged = mergeManagedBlock(current, block);
+    if (merged.status === "blocked-unbalanced") {
+      blocked = true;
+      changes.push(`blocked:${filePath} (unbalanced repo-harness markers; repair manually, then re-run)`);
+      continue;
+    }
+    if (merged.status === "skipped-legacy") {
+      changes.push(`skipped-legacy:${filePath} (unmanaged Global Working Rules present; add the repo-harness markers to enable managed sync)`);
+      continue;
+    }
+    if (merged.content === current) {
       changes.push(`unchanged:${filePath}`);
       continue;
     }
-    writeFileSync(filePath, next, "utf-8");
+    writeFileSync(filePath, merged.content, "utf-8");
     changes.push(`${current ? "updated" : "created"}:${filePath}`);
   }
 
-  return { step: "global working rules", status: "ok", detail: changes.join(", ") };
+  return { step: "global working rules", status: blocked ? "failed" : "ok", detail: changes.join(", ") };
 }
 
 /**

@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -10,6 +10,11 @@ import { runHookEntry } from '../../src/cli/hook-entry';
 const ROOT = path.join(import.meta.dir, '../..');
 const CLI = path.join(ROOT, 'src/cli/index.ts');
 const HOOK_ENTRY = path.join(ROOT, 'src/cli/hook-entry.ts');
+
+// This file exercises hook routes through the full CLI, and several tests fork
+// multiple hook subprocesses. Under full-suite concurrency the default 5s Bun
+// timeout can expire before a healthy route completes.
+setDefaultTimeout(20000);
 
 function withTempRepo(
   opts: { optIn: boolean; scripts?: Record<string, string> },

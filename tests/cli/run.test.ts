@@ -8,6 +8,29 @@ import { resolveHelper, runHelper } from "../../src/cli/runtime/helper-runner";
 const ROOT = join(import.meta.dir, "..", "..");
 const CLI = join(ROOT, "src/cli/index.ts");
 
+function writeActiveSprintFixture(cwd: string) {
+  const sprintRelPath = "plans/sprints/20991231-2359-run-helper-root.sprint.md";
+  mkdirSync(join(cwd, "plans/sprints"), { recursive: true });
+  mkdirSync(join(cwd, ".ai/harness/sprint"), { recursive: true });
+  writeFileSync(
+    join(cwd, sprintRelPath),
+    [
+      "# Sprint: Run Helper Root",
+      "",
+      "> **Status**: Approved",
+      "",
+      "## Backlog",
+      "",
+      "| # | Status | Task | Mode | Acceptance | Plan |",
+      "|---|--------|------|------|------------|------|",
+      "| 1 | [ ] | root-task | inline | package run reads target repo | (pending) |",
+      "",
+    ].join("\n")
+  );
+  writeFileSync(join(cwd, ".ai/harness/sprint/active-sprint"), sprintRelPath);
+  return sprintRelPath;
+}
+
 describe("run command", () => {
   test("passes unknown options through to the selected helper", () => {
     const tmp = mkdtempSync(join(tmpdir(), "repo-harness-run-cli-"));
@@ -43,6 +66,40 @@ describe("run command", () => {
       expect(resolved?.source).toBe("package");
       expect(resolved?.fileName).toBe("check-task-workflow.sh");
       expect(resolved?.path).toContain("assets/templates/helpers/check-task-workflow.sh");
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test("package sprint-backlog helper resolves the target repo root from runHelper", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "repo-harness-run-sprint-root-"));
+    try {
+      const sprintRelPath = writeActiveSprintFixture(tmp);
+
+      const status = spawnSync("bun", [CLI, "run", "sprint-backlog", "status"], {
+        cwd: tmp,
+        encoding: "utf-8",
+        env: {
+          ...process.env,
+          REPO_HARNESS_HELPER_SOURCE: "package",
+        },
+      });
+
+      expect(status.status).toBe(0);
+      expect(status.stdout).toContain(`sprint: ${sprintRelPath}`);
+      expect(status.stdout).toContain("next_task: root-task");
+
+      const next = spawnSync("bun", [CLI, "run", "sprint-backlog", "next"], {
+        cwd: tmp,
+        encoding: "utf-8",
+        env: {
+          ...process.env,
+          REPO_HARNESS_HELPER_SOURCE: "package",
+        },
+      });
+
+      expect(next.status).toBe(0);
+      expect(next.stdout).toContain("task: root-task");
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
