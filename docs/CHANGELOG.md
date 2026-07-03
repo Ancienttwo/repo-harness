@@ -4,6 +4,17 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+## [0.8.5] - 2026-07-04
+
+### Fixed
+
+- Repaired workspace-source `repo-harness install` when Bun reports a
+  `DependencyLoop` by packing the source tree into `~/.repo-harness/packages/`
+  and reinstalling the global CLI from that tarball.
+- Added tarball smoke coverage for packaged `sprint-backlog` target-root
+  resolution, so release gates exercise the installed helper path instead of
+  only the source checkout.
+
 ## [0.8.4] - 2026-06-30
 
 ### Fixed

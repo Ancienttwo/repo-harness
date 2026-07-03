@@ -79,7 +79,7 @@ active plan, contract, review, checks, or handoff, the source artifacts win.
 ## What's New
 
 Release notes live in [`docs/CHANGELOG.md`](docs/CHANGELOG.md). The current line
-is `0.8.4`.
+is `0.8.5`.
 
 ## How It Works
 
@@ -599,8 +599,8 @@ Most common guards:
 
 ## Current Release
 
-- npm package: `repo-harness@0.8.4`
-- Generated workflow stamp: `repo-harness@0.8.4+template@0.8.4`
+- npm package: `repo-harness@0.8.5`
+- Generated workflow stamp: `repo-harness@0.8.5+template@0.8.5`
 - GitHub repository: `Ancienttwo/repo-harness`
 - Release history: [`docs/CHANGELOG.md`](docs/CHANGELOG.md)
 

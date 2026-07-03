@@ -1,6 +1,6 @@
 {
-  "version": "0.8.4",
-  "templateVersion": "0.8.4",
+  "version": "0.8.5",
+  "templateVersion": "0.8.5",
   "skillName": "repo-harness",
   "contractId": "tasks-first-harness-v1",
   "compatibility": {
@@ -183,6 +183,10 @@
     {
       "version": "0.8.4",
       "description": "Lets package-dispatched workstream sync resolve bundled helper siblings when downstream repos do not vendor legacy scripts"
+    },
+    {
+      "version": "0.8.5",
+      "description": "Repairs workspace-source Bun global installs that hit DependencyLoop by reinstalling from a packed tarball and adds packaged sprint-backlog target-root smoke coverage"
     }
   ],
   "generatedProjectStamp": {
