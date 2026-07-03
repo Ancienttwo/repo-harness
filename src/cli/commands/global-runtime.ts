@@ -129,6 +129,34 @@ function packageVersion(sourceRoot: string): string | null {
   }
 }
 
+function packageName(sourceRoot: string): string | null {
+  try {
+    const pkg = JSON.parse(readFileSync(join(sourceRoot, "package.json"), "utf-8"));
+    return typeof pkg.name === "string" ? pkg.name : null;
+  } catch (_error) {
+    return null;
+  }
+}
+
+function isBunDependencyLoop(step: GlobalRuntimeStep): boolean {
+  return /DependencyLoop|dependency loop/i.test(`${step.stdout ?? ""}\n${step.stderr ?? ""}`);
+}
+
+function parsePackedTarballFilename(stdout: string): string | null {
+  try {
+    const parsed = JSON.parse(stdout);
+    const entry = Array.isArray(parsed) ? parsed[0] : parsed;
+    return typeof entry?.filename === "string" ? entry.filename : null;
+  } catch (_error) {
+    return null;
+  }
+}
+
+function appendOutput(...values: Array<string | undefined>): string | undefined {
+  const output = values.filter((value) => value && value.trim()).join("\n");
+  return output || undefined;
+}
+
 function bunGlobalPackageRoot(env?: NodeJS.ProcessEnv): string | null {
   const bunInstall = env?.BUN_INSTALL ?? process.env.BUN_INSTALL;
   const home = env?.HOME ?? process.env.HOME ?? process.env.USERPROFILE;
@@ -149,6 +177,7 @@ function isBunGlobalPackageSource(sourceRoot: string, env?: NodeJS.ProcessEnv): 
 
 function installCli(sourceRoot: string, cwd: string, env?: NodeJS.ProcessEnv, installSpec?: string): GlobalRuntimeStep {
   const version = packageVersion(sourceRoot);
+  const name = packageName(sourceRoot);
   if (installSpec === undefined && isBunGlobalPackageSource(sourceRoot, env)) {
     return {
       step: "install repo-harness CLI",
@@ -160,11 +189,63 @@ function installCli(sourceRoot: string, cwd: string, env?: NodeJS.ProcessEnv, in
   }
   const spec = installSpec ?? (existsSync(join(sourceRoot, "package.json")) ? sourceRoot : "repo-harness");
   const step = runProcess("bun", ["add", "-g", spec], cwd, env);
+  if (installSpec === undefined && name === "repo-harness" && step.status === "failed" && isBunDependencyLoop(step)) {
+    return installCliFromPackedTarball(sourceRoot, cwd, env, version, step);
+  }
   return withStepName(
     step,
     "install repo-harness CLI",
     installSpec ? `spec=${installSpec}` : version ? `version=${version}` : undefined,
   );
+}
+
+function installCliFromPackedTarball(
+  sourceRoot: string,
+  cwd: string,
+  env: NodeJS.ProcessEnv | undefined,
+  version: string | null,
+  dependencyLoopStep: GlobalRuntimeStep,
+): GlobalRuntimeStep {
+  const packDir = join(homeDir(env), ".repo-harness", "packages");
+  const detailPrefix = version ? `version=${version}; ` : "";
+  mkdirSync(packDir, { recursive: true });
+
+  const pack = runProcess("npm", ["pack", "--json", "--pack-destination", packDir], sourceRoot, env);
+  if (pack.status !== "ok") {
+    return withStepName(
+      {
+        ...pack,
+        stderr: appendOutput(dependencyLoopStep.stderr, pack.stderr),
+      },
+      "install repo-harness CLI",
+      `${detailPrefix}dependency-loop repair pack failed`,
+    );
+  }
+  const filename = parsePackedTarballFilename(pack.stdout ?? "");
+  if (filename === null) {
+    return {
+      step: "install repo-harness CLI",
+      status: "failed",
+      command: pack.command,
+      detail: `${detailPrefix}dependency-loop repair pack output invalid`,
+      stdout: dependencyLoopStep.stdout,
+      stderr: appendOutput(dependencyLoopStep.stderr, pack.stderr, "npm pack --json did not return a tarball filename"),
+    };
+  }
+  const remove = runProcess("bun", ["remove", "-g", "repo-harness"], cwd, env);
+  if (remove.status !== "ok") {
+    return withStepName(
+      {
+        ...remove,
+        stdout: appendOutput(dependencyLoopStep.stdout, remove.stdout),
+        stderr: appendOutput(dependencyLoopStep.stderr, pack.stderr, remove.stderr),
+      },
+      "install repo-harness CLI",
+      `${detailPrefix}dependency-loop repair remove failed`,
+    );
+  }
+  const add = runProcess("bun", ["add", "-g", join(packDir, filename)], cwd, env);
+  return withStepName(add, "install repo-harness CLI", `${detailPrefix}repaired=packed-tarball`);
 }
 
 function syncRuntimeSkill(sourceRoot: string, env?: NodeJS.ProcessEnv): GlobalRuntimeStep {

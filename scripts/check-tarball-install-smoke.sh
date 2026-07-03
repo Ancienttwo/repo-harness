@@ -79,6 +79,33 @@ if ! "$CLI" run check-task-workflow --help >/dev/null; then
   echo "[tarball-smoke] ERROR: packaged 'repo-harness run check-task-workflow --help' failed (run dispatcher / helper lookup / bin startup broken)" >&2
   exit 1
 fi
+
+mkdir -p "$TARGET_REPO/plans/sprints" "$TARGET_REPO/.ai/harness/sprint"
+cat > "$TARGET_REPO/plans/sprints/20991231-2359-tarball-root.sprint.md" <<'SPRINT_EOF'
+# Sprint: Tarball Root
+
+> **Status**: Approved
+
+## Backlog
+
+| # | Status | Task | Mode | Acceptance | Plan |
+|---|--------|------|------|------------|------|
+| 1 | [ ] | task-a | inline | packaged helper reads target repo | (pending) |
+| 2 | [ ] | task-b | inline | packaged helper reads target repo | (pending) |
+| 3 | [ ] | task-c | inline | packaged helper reads target repo | (pending) |
+| 4 | [ ] | task-d | inline | packaged helper reads target repo | (pending) |
+| 5 | [ ] | task-e | inline | packaged helper reads target repo | (pending) |
+SPRINT_EOF
+printf '%s' 'plans/sprints/20991231-2359-tarball-root.sprint.md' > "$TARGET_REPO/.ai/harness/sprint/active-sprint"
+
+(cd "$TARGET_REPO" && "$CLI" run sprint-backlog status) >"$TMP_DIR/sprint-status.txt"
+if ! grep -qx 'sprint: plans/sprints/20991231-2359-tarball-root.sprint.md' "$TMP_DIR/sprint-status.txt" \
+  || ! grep -qx 'tasks_total: 5' "$TMP_DIR/sprint-status.txt"; then
+  echo "[tarball-smoke] ERROR: packaged sprint-backlog helper did not read the target repo sprint state" >&2
+  cat "$TMP_DIR/sprint-status.txt" >&2
+  exit 1
+fi
+
 printf '{"prompt":"review release readiness"}\n' | "$HOOK" prompt-guard-decide >/dev/null
 
 FAKE_HOME="$TMP_DIR/home"

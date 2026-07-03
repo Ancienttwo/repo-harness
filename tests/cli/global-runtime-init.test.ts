@@ -125,6 +125,85 @@ describe('init command global runtime bootstrap', () => {
     }
   }, 15000);
 
+  test('repairs Bun dependency loop by reinstalling CLI from a packed tarball', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-cli-loop-'));
+    const source = join(tmp, 'source');
+    const home = join(tmp, 'home');
+    const repo = join(tmp, 'repo');
+    const fakeBin = join(tmp, 'bin');
+    const bunLog = join(tmp, 'bun.log');
+    const npmLog = join(tmp, 'npm.log');
+    try {
+      mkdirSync(source, { recursive: true });
+      mkdirSync(home, { recursive: true });
+      mkdirSync(repo, { recursive: true });
+      mkdirSync(fakeBin, { recursive: true });
+      setupFakeSource(source);
+      writeExecutable(
+        join(fakeBin, 'bun'),
+        [
+          '#!/bin/bash',
+          'set -euo pipefail',
+          `printf '%s\\n' "$*" >> "${bunLog}"`,
+          `if [[ "$*" == "add -g ${source}" ]]; then`,
+          '  echo "error: DependencyLoop" >&2',
+          '  echo "Resolution: repo-harness@../../../Projects/repo-harness" >&2',
+          '  echo "Dependency: repo-harness@^9.9.9" >&2',
+          '  exit 1',
+          'fi',
+          'exit 0',
+          '',
+        ].join('\n'),
+      );
+      writeExecutable(
+        join(fakeBin, 'npm'),
+        [
+          '#!/bin/bash',
+          'set -euo pipefail',
+          `printf '%s\\n' "$*" >> "${npmLog}"`,
+          'if [[ "${1:-}" == "pack" ]]; then',
+          '  destination=""',
+          '  for ((i=1; i<=$#; i++)); do',
+          '    if [[ "${!i}" == "--pack-destination" ]]; then',
+          '      next=$((i + 1))',
+          '      destination="${!next}"',
+          '    fi',
+          '  done',
+          '  mkdir -p "$destination"',
+          '  touch "$destination/repo-harness-9.9.9.tgz"',
+          '  printf \'[{"filename":"repo-harness-9.9.9.tgz"}]\\n\'',
+          '  exit 0',
+          'fi',
+          'exit 1',
+          '',
+        ].join('\n'),
+      );
+
+      const result = runGlobalRuntimeSetup({
+        sourceRoot: source,
+        cwd: repo,
+        syncSkill: false,
+        hostAdapters: false,
+        externalSkills: false,
+        codegraph: false,
+        env: { ...process.env, HOME: home, PATH: `${fakeBin}:${process.env.PATH ?? ''}` },
+      });
+
+      expect(result.exitCode).toBe(0);
+      const install = result.steps.find((step) => step.step === 'install repo-harness CLI');
+      expect(install?.status).toBe('ok');
+      expect(install?.detail).toBe('version=9.9.9; repaired=packed-tarball');
+      const bunCommands = readFileSync(bunLog, 'utf-8').trim().split('\n');
+      expect(bunCommands[0]).toBe(`add -g ${source}`);
+      expect(bunCommands[1]).toBe('remove -g repo-harness');
+      expect(bunCommands[2]).toBe(`add -g ${join(home, '.repo-harness', 'packages', 'repo-harness-9.9.9.tgz')}`);
+      expect(existsSync(join(home, '.repo-harness', 'packages', 'repo-harness-9.9.9.tgz'))).toBe(true);
+      expect(readFileSync(npmLog, 'utf-8')).toContain('pack --json --pack-destination');
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   test('npx cache sources force copy-based installed skill sync', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-global-init-npx-'));
     const source = join(tmp, '_npx', 'abc123', 'node_modules', 'repo-harness');
