@@ -37,10 +37,10 @@ Owns the workflow-engine-contract-assets capability boundary declared in .ai/con
 - Architecture domain: `workflow-engine`
 - Architecture capability: `contract-assets`
 - Architecture module: `docs/architecture/modules/workflow-engine/contract-assets.md`
-- Last architecture event: 2026-05-29T02:15:07+0800
-- Last changed path: `tasks/workstreams/workflow-engine/contract-assets/cleanup-script-policy.md`
-- Severity: medium
-- Change type: workstream-sync
+- Last architecture event: 2026-07-05T04:35:33+0800
+- Last changed path: `.ai/harness/policy.json`
+- Severity: high
+- Change type: workflow-surface
 - Module responsibility: Keep this block aligned with the local boundary described by surrounding human-owned context.
 - Entrypoints: `.ai/harness/policy.json`
 - Allowed dependencies: Follow root `AGENTS.md` / `CLAUDE.md` and this local contract.
@@ -63,6 +63,6 @@ Owns the workflow-engine-contract-assets capability boundary declared in .ai/con
 ## Current Session Projection
 
 - Durable progress lives under `tasks/workstreams/workflow-engine/contract-assets`.
-- `tasks/current.md` is a tracked derived status snapshot, not a live lock or task source.
+- `tasks/current.md` is the tracked derived status snapshot; it is not a live lock or task source.
 - `tasks/todos.md` is the deferred-goal ledger; current execution slices stay in the active plan's `## Task Breakdown`.
 <!-- END ARCHITECTURE CONTRACT -->
