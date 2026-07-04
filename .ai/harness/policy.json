@@ -198,6 +198,10 @@
     "allow_parallel_writers": false,
     "stop_fallback": true,
     "state_file": ".ai/harness/delegation/latest.json",
+    "preferred_runners": ["subagent", "codex-exec", "main-thread"],
+    "fallback_runner": "main-thread",
+    "brief_source": "tasks/contracts/<stem>.contract.md",
+    "runner_rule": "the active task contract is the authoritative execution brief consumed by contract-run; native subagent is an optional parallelism accelerator. Degrade to codex-exec or sequential main-thread on the SAME contract when spawn is unavailable, sandboxed, or unreliable. Runner-availability fallback MUST be recorded in the contract-run manifest and MUST NOT silently succeed; it is a runner-availability fallback, not a product-semantics compatibility fallback.",
     "rule": "UserPromptSubmit.delegation only injects bounded subagent context after explicit user authorization such as /delegate, /parallel, spawn subagents, or parallel investigation"
   },
   "sidecar_research": {

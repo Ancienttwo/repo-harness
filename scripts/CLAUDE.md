@@ -31,21 +31,21 @@ Owns the workflow-engine-inspection-migration capability boundary declared in .a
 <!-- BEGIN ARCHITECTURE CONTRACT -->
 ## Architecture Contract
 
-- Functional block: `scripts/inspect-project-state.ts`
+- Functional block: `scripts/lib`
 - Capability ID: `workflow-engine-inspection-migration`
-- Matched prefix: `scripts/inspect-project-state.ts`
+- Matched prefix: `scripts/lib`
 - Architecture domain: `workflow-engine`
 - Architecture capability: `inspection-migration`
 - Architecture module: `docs/architecture/modules/workflow-engine/inspection-migration.md`
-- Last architecture event: 2026-07-03T15:45:36+0800
-- Last changed path: `docs/architecture/requests/archive/2026/workflow-engine-inspection-migration.md`
+- Last architecture event: 2026-07-05T04:35:41+0800
+- Last changed path: `scripts/lib/project-init-lib.sh`
 - Severity: high
-- Change type: architecture-closeout
+- Change type: workflow-surface
 - Module responsibility: Keep this block aligned with the local boundary described by surrounding human-owned context.
-- Entrypoints: `scripts/inspect-project-state.ts`
+- Entrypoints: `scripts/lib`
 - Allowed dependencies: Follow root `AGENTS.md` / `CLAUDE.md` and this local contract.
 - Forbidden dependencies: Do not cross sibling app/service/package boundaries without an architecture snapshot or explicit plan.
-- Runtime path: `scripts/inspect-project-state.ts`
+- Runtime path: `scripts/lib`
 - LSP/tooling profile: `typescript-lsp`
 - Verification: Use root required checks plus local commands recorded in this capability contract.
 - Latest snapshot: `(none yet)`
