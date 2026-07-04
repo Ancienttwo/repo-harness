@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, isAbsolute, join, relative, resolve } from "path";
 import { spawnSync } from "child_process";
 
-type Mode = "dry-run" | "run";
+type Mode = "dry-run" | "run" | "preflight";
 
 interface Options {
   mode: Mode;
@@ -22,6 +22,12 @@ interface DelegationBudget {
   wall_time_minutes: number | null;
 }
 
+interface RunnerContract {
+  preferred: string[];
+  fallback: string | null;
+  brief_is_authoritative: boolean;
+}
+
 interface DelegationContract {
   budget: DelegationBudget;
   permission_scope: {
@@ -30,6 +36,12 @@ interface DelegationContract {
     network: string;
   };
   roles: Record<string, DelegationRole>;
+  runner: RunnerContract;
+}
+
+interface BriefPreflight {
+  ok: boolean;
+  issues: string[];
 }
 
 interface DelegationRole {
@@ -49,15 +61,23 @@ interface ChildResult {
 function usage(): string {
   return [
     "Usage:",
+    "  bun scripts/contract-run.ts preflight --contract <contract-file> [--repo <path>] [--json]",
     "  bun scripts/contract-run.ts dry-run --contract <contract-file> [--repo <path>] [--out <dir>] [--json]",
     "  bun scripts/contract-run.ts run --contract <contract-file> --worker-command <cmd> --verifier-command <cmd> [--repo <path>] [--out <dir>] [--max-tool-calls <n>] [--json]",
+    "",
+    "preflight asserts the contract is a self-sufficient execution brief (Goal, Scope,",
+    "Allowed Paths, Exit Criteria are filled in, not template placeholders) and exits",
+    "non-zero otherwise. run enforces the same gate before dispatching the worker.",
+    "",
+    "A file-coupled runner consumes the generated prompt from $CONTRACT_RUN_PROMPT, e.g.:",
+    "  --worker-command 'codex exec --json \"$(cat \\\"$CONTRACT_RUN_PROMPT\\\")\"'",
   ].join("\n");
 }
 
 function parseArgs(argv: string[]): Options {
   let mode: Mode = "dry-run";
   let index = 0;
-  if (argv[0] === "run" || argv[0] === "dry-run") {
+  if (argv[0] === "run" || argv[0] === "dry-run" || argv[0] === "preflight") {
     mode = argv[0];
     index = 1;
   }
@@ -256,7 +276,64 @@ function parseDelegation(markdown: string): DelegationContract {
       verifier: { mode: "read_only", purpose: "exit_criteria_review" },
       ...parseRoles(block),
     },
+    runner: parseRunner(block),
   };
+}
+
+function parseRunner(block: string): RunnerContract {
+  const preferred = parseList(block, "preferred");
+  const fallback = parseScalar(block, "fallback");
+  const briefAuthoritative = parseScalar(block, "brief_is_authoritative");
+  return {
+    preferred: preferred.length > 0 ? preferred : ["subagent"],
+    fallback: fallback && fallback !== "null" ? fallback : null,
+    brief_is_authoritative: briefAuthoritative === null ? true : briefAuthoritative === "true",
+  };
+}
+
+function sectionBody(markdown: string, heading: string): string {
+  const headingPattern = new RegExp(`^##\\s+${heading}\\s*$`);
+  const lines = markdown.split("\n");
+  const body: string[] = [];
+  let inSection = false;
+  for (const line of lines) {
+    if (headingPattern.test(line)) {
+      inSection = true;
+      continue;
+    }
+    if (inSection && /^##\s/.test(line)) break;
+    if (inSection) body.push(line);
+  }
+  return body.join("\n");
+}
+
+function isConcreteBrief(text: string): boolean {
+  const body = text.trim();
+  if (!body) return false;
+  if (/\{\{[^}]+\}\}/.test(body)) return false;
+  const withoutPlaceholders = body
+    .replace(/Describe the exact outcome this task must deliver\./g, "")
+    .replace(/^\s*-\s*In scope:\s*$/gm, "")
+    .replace(/^\s*-\s*Out of scope:\s*$/gm, "")
+    .trim();
+  return withoutPlaceholders.length > 0;
+}
+
+function runBriefPreflight(markdown: string): BriefPreflight {
+  const issues: string[] = [];
+  if (!isConcreteBrief(sectionBody(markdown, "Goal"))) {
+    issues.push("Goal section is empty or still a template placeholder");
+  }
+  if (!isConcreteBrief(sectionBody(markdown, "Scope"))) {
+    issues.push("Scope section is empty or still a template placeholder");
+  }
+  if (parseList(fencedYamlBlock(markdown, "allowed_paths"), "allowed_paths").length === 0) {
+    issues.push("Allowed Paths is empty");
+  }
+  if (!fencedYamlBlock(markdown, "exit_criteria").trim()) {
+    issues.push("Exit Criteria block is missing");
+  }
+  return { ok: issues.length === 0, issues };
 }
 
 function runChild(
@@ -307,6 +384,21 @@ function buildRun(opts: Options) {
   const exitCriteria = fencedYamlBlock(contractText, "exit_criteria");
   const delegation = parseDelegation(contractText);
   const allowedPaths = parseList(fencedYamlBlock(contractText, "allowed_paths"), "allowed_paths");
+  const briefPreflight = runBriefPreflight(contractText);
+
+  if (opts.mode === "preflight") {
+    const manifest = {
+      version: 1,
+      kind: "repo-harness-contract-run",
+      status: briefPreflight.ok ? "preflight_pass" : "fail",
+      failure_class: briefPreflight.ok ? null : "incomplete_brief",
+      repo,
+      contract: repoRelative(repo, contractPath),
+      brief_preflight: briefPreflight,
+    };
+    return { manifest, manifestPath: "" };
+  }
+
   const toolLimit = opts.maxToolCalls ?? delegation.budget.tool_calls;
   const slug = contractPath
     .split("/")
@@ -383,7 +475,12 @@ function buildRun(opts: Options) {
     return true;
   };
 
-  if (opts.mode === "run") {
+  if (opts.mode === "run" && !briefPreflight.ok) {
+    status = "fail";
+    failureClass = "incomplete_brief";
+  }
+
+  if (opts.mode === "run" && briefPreflight.ok) {
     if (consume("worker")) {
       const worker = runChild("worker", opts.workerCommand!, repo, runDir, {
         ...baseEnv,
@@ -416,6 +513,7 @@ function buildRun(opts: Options) {
     kind: "repo-harness-contract-run",
     status,
     failure_class: failureClass || null,
+    brief_preflight: briefPreflight,
     repo,
     contract: repoRelative(repo, contractPath),
     plan,
@@ -454,7 +552,9 @@ try {
     console.log(JSON.stringify(manifest, null, 2));
   } else {
     console.log(`[ContractRun] ${manifest.status}: ${manifest.contract}`);
-    console.log(`[ContractRun] manifest: ${repoRelative(resolve(opts.repo), manifestPath)}`);
+    if (manifestPath) {
+      console.log(`[ContractRun] manifest: ${repoRelative(resolve(opts.repo), manifestPath)}`);
+    }
     if (manifest.failure_class) console.log(`[ContractRun] failure_class: ${manifest.failure_class}`);
   }
   process.exit(manifest.status === "fail" ? 1 : 0);

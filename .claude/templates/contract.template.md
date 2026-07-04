@@ -70,6 +70,13 @@ delegation:
     verifier:
       mode: read_only
       purpose: exit_criteria_review
+  runner:
+    preferred:
+      - subagent
+      - codex-exec
+      - main-thread
+    fallback: main-thread
+    brief_is_authoritative: true
 ```
 
 ## Exit Criteria (Machine Verifiable)
