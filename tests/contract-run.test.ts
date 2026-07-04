@@ -41,6 +41,15 @@ function writePilotContract(repo: string, toolCalls: string | number | null = 2)
       "> **Review File**: `tasks/reviews/pilot.review.md`",
       "> **Notes File**: `tasks/notes/pilot.notes.md`",
       "",
+      "## Goal",
+      "",
+      "Create src/pilot.txt containing worker-output so the verifier can confirm the exit criteria.",
+      "",
+      "## Scope",
+      "",
+      "- In scope: create src/pilot.txt with worker-output",
+      "- Out of scope: anything outside src/",
+      "",
       "## Allowed Paths",
       "",
       "```yaml",
@@ -74,6 +83,13 @@ function writePilotContract(repo: string, toolCalls: string | number | null = 2)
       "    verifier:",
       "      mode: read_only",
       "      purpose: exit_criteria_review",
+      "  runner:",
+      "    preferred:",
+      "      - subagent",
+      "      - codex-exec",
+      "      - main-thread",
+      "    fallback: main-thread",
+      "    brief_is_authoritative: true",
       "```",
       "",
       "## Exit Criteria (Machine Verifiable)",
@@ -338,5 +354,197 @@ describe("contract-run helper", () => {
     const res = runContractRun(ROOT, ["dry-run", "--bogus"]);
     expect(res.status).toBe(2);
     expect(res.stderr).toContain("unknown argument --bogus");
+  });
+
+  test("preflight passes for a self-sufficient brief", () => {
+    const repo = makeRepo("contract-run-preflight-ok-");
+    try {
+      writePilotContract(repo, 2);
+      const res = runContractRun(repo, [
+        "preflight",
+        "--repo",
+        repo,
+        "--contract",
+        "tasks/contracts/pilot.contract.md",
+        "--json",
+      ]);
+      expect(res.status).toBe(0);
+      const manifest = parseJson(res.stdout);
+      expect(manifest.status).toBe("preflight_pass");
+      expect((manifest.brief_preflight as { ok: boolean }).ok).toBe(true);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  test("preflight fails closed on a placeholder brief", () => {
+    const repo = makeRepo("contract-run-preflight-fail-");
+    try {
+      writeFileSync(
+        join(repo, "tasks/contracts/pilot.contract.md"),
+        [
+          "# Task Contract: pilot",
+          "",
+          "## Goal",
+          "",
+          "Describe the exact outcome this task must deliver.",
+          "",
+          "## Scope",
+          "",
+          "- In scope:",
+          "- Out of scope:",
+          "",
+          "## Allowed Paths",
+          "",
+          "```yaml",
+          "allowed_paths:",
+          "  - src/",
+          "```",
+          "",
+          "## Exit Criteria (Machine Verifiable)",
+          "",
+          "```yaml",
+          "exit_criteria:",
+          "  files_exist:",
+          "    - src/pilot.txt",
+          "```",
+          "",
+        ].join("\n"),
+      );
+      const res = runContractRun(repo, [
+        "preflight",
+        "--repo",
+        repo,
+        "--contract",
+        "tasks/contracts/pilot.contract.md",
+        "--json",
+      ]);
+      expect(res.status).toBe(1);
+      const manifest = parseJson(res.stdout);
+      expect(manifest.status).toBe("fail");
+      expect(manifest.failure_class).toBe("incomplete_brief");
+      expect((manifest.brief_preflight as { issues: string[] }).issues.length).toBeGreaterThanOrEqual(2);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  test("run refuses an incomplete brief before dispatching the worker", () => {
+    const repo = makeRepo("contract-run-incomplete-");
+    try {
+      writeFileSync(
+        join(repo, "tasks/contracts/pilot.contract.md"),
+        [
+          "# Task Contract: pilot",
+          "",
+          "> **Review File**: `tasks/reviews/pilot.review.md`",
+          "",
+          "## Goal",
+          "",
+          "Describe the exact outcome this task must deliver.",
+          "",
+          "## Scope",
+          "",
+          "- In scope:",
+          "- Out of scope:",
+          "",
+          "## Allowed Paths",
+          "",
+          "```yaml",
+          "allowed_paths:",
+          "  - src/",
+          "```",
+          "",
+          "## Delegation Contract",
+          "",
+          "```yaml",
+          "delegation:",
+          "  budget:",
+          "    tokens: null",
+          "    tool_calls: null",
+          "    wall_time_minutes: 5",
+          "  permission_scope:",
+          "    mode: inherit_allowed_paths",
+          "    writable_paths: []",
+          "    network: off",
+          "  roles:",
+          "    worker:",
+          "      mode: edit_within_allowed_paths",
+          "      purpose: implementation",
+          "```",
+          "",
+          "## Exit Criteria (Machine Verifiable)",
+          "",
+          "```yaml",
+          "exit_criteria:",
+          "  files_exist:",
+          "    - src/pilot.txt",
+          "```",
+          "",
+        ].join("\n"),
+      );
+      const workerCommand = writeExecutable(
+        repo,
+        "worker.sh",
+        ["#!/bin/bash", "set -euo pipefail", "mkdir -p src", "printf 'worker-output\\n' > src/pilot.txt", ""].join("\n"),
+      );
+      const verifierCommand = writeExecutable(
+        repo,
+        "verifier.sh",
+        ["#!/bin/bash", "set -euo pipefail", "printf 'ran\\n' > verifier-ran.txt", ""].join("\n"),
+      );
+      const res = runContractRun(repo, [
+        "run",
+        "--repo",
+        repo,
+        "--contract",
+        "tasks/contracts/pilot.contract.md",
+        "--worker-command",
+        workerCommand,
+        "--verifier-command",
+        verifierCommand,
+        "--out",
+        ".ai/harness/runs/incomplete",
+        "--json",
+      ]);
+      expect(res.status).toBe(1);
+      const manifest = parseJson(res.stdout);
+      expect(manifest.status).toBe("fail");
+      expect(manifest.failure_class).toBe("incomplete_brief");
+      expect(manifest.children as unknown[]).toEqual([]);
+      expect(existsSync(join(repo, "src/pilot.txt"))).toBe(false);
+      expect(existsSync(join(repo, "verifier-ran.txt"))).toBe(false);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  test("runner metadata from the contract flows into the manifest", () => {
+    const repo = makeRepo("contract-run-runner-");
+    try {
+      writePilotContract(repo, 2);
+      const res = runContractRun(repo, [
+        "dry-run",
+        "--repo",
+        repo,
+        "--contract",
+        "tasks/contracts/pilot.contract.md",
+        "--out",
+        ".ai/harness/runs/runner",
+        "--json",
+      ]);
+      expect(res.status).toBe(0);
+      const manifest = parseJson(res.stdout);
+      const runner = (
+        manifest.delegation as {
+          runner: { preferred: string[]; fallback: string | null; brief_is_authoritative: boolean };
+        }
+      ).runner;
+      expect(runner.preferred).toEqual(["subagent", "codex-exec", "main-thread"]);
+      expect(runner.fallback).toBe("main-thread");
+      expect(runner.brief_is_authoritative).toBe(true);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
   });
 });
