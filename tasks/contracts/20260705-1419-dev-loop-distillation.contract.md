@@ -15,12 +15,13 @@ Delegated executor models currently receive only task text plus allowed paths fr
 
 ## Goal
 
-Execute the dev-loop distillation Phase 3 plan: reconcile helper mirrors, auto-refresh the resume packet, add Why/Stop-Conditions/Exemplar to the contract brief surface, upgrade contract-run worker/verifier prompts with mandatory self-verification and stop/escalation contracts, gate ## Why in preflight, ship a golden example brief, add projection and finish advisories, record runner usage in the contract-run manifest, teach the four repo-harness skills, and pass the full verification battery.
+Execute the dev-loop distillation Phase 3 plan: reconcile helper mirrors, auto-refresh the resume packet, add Why/Stop-Conditions/Exemplar to the contract brief surface, upgrade contract-run worker/verifier prompts with mandatory self-verification and stop/escalation contracts, gate ## Why in preflight, ship a golden example brief, add the finish-time memory advisory, record runner usage in the contract-run manifest, teach the four repo-harness skills, and pass the full verification battery.
 
 ## Scope
 
-- In scope: slices 0, A1-A3, B1-B5, C1, D1(reduced), G1, F1 exactly as specified in the captured plan.
+- In scope: slices 0, A1-A3, B1-B4, C1, D1(reduced), G1, F1 exactly as specified in the captured plan.
 - Out of scope: touching assets/hooks/codex-delegation-advisor.sh or .ai/hooks/codex-delegation-advisor.sh (delivered by ca76def on the base branch); cross-runner auto-degradation inside contract-run; maintenance-triage --write; porting native-subagent hooks; superpowers imports; weakening existing gates; any git push or PR creation.
+- slice B5 (projection-time [Brief]/[BriefPreflight] advisory in plan-to-todo) — delegated to parallel branch codex/projection-brief-advisory; revisit trigger recorded in the plan Task Breakdown
 
 ## Stop Conditions
 
