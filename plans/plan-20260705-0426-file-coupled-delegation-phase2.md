@@ -1,6 +1,7 @@
 # Plan: File-coupled delegation Phase 2: policy runner degradation, advisor slim-down, preflight wiring
 
 > **Status**: Draft
+> **Superseded By**: dev-loop-distillation Phase 3 plan (captured on this branch as plans/plan-<stamp>-dev-loop-distillation.md). Rows 4-6 are absorbed there. IMPORTANT for any session continuing Phase 2: do NOT wire contract-run preflight as a hard gate into plan-to-todo/contract-worktree start — freshly projected contracts are placeholder-filled and a projection-time hard gate always fails. The completeness gate stays at the consumption point (contract-run run, shipped in Phase 1); Phase 3 slice B5 adds a projection-time ADVISORY print instead.
 > **Created**: 20260705-0426
 > **Slug**: file-coupled-delegation-phase2
 > **Planning Source**: codex-plan-or-waza-think
@@ -194,12 +195,11 @@ bash scripts/check-architecture-sync.sh
 repo-harness run check-task-workflow --strict
 diff -q scripts/contract-run.ts assets/templates/helpers/contract-run.ts
 # 手測:對一份完整 contract 跑 file-coupled run,確認 manifest 記錄實際 runner;
-# 對佔位 contract 走 plan-to-todo 交付路徑,確認 preflight fail-closed。
+# 對佔位 contract 走 plan-to-todo 交付路徑,確認只印 [BriefPreflight] advisory 且不阻塞投影。
 ```
 
 ## Annotations
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
-
 ## Task Breakdown
 - [x] `.ai/harness/policy.json` `delegation` 加 `preferred_runners` / `fallback_runner` / rule(runner 可用性降級、必寫 manifest、不得靜默)(PR #40, slice 1)
 - [x] 同步 policy 共維護面:`ensure-task-workflow.sh`、`project-init-lib.sh`、`assets/templates/helpers/*` + migration/bootstrap 測試 emit 並 assert 新欄位(PR #40, slice 1)
