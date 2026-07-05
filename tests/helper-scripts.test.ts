@@ -21,6 +21,13 @@ const HELPER_DIR = join(ROOT, "assets/templates/helpers");
 const TEMPLATE_DIR = join(ROOT, "assets/templates");
 const ASSETS_HOOKS_DIR = join(ROOT, "assets/hooks");
 
+// migrate-project-template.sh is an intentional split: the scripts/ copy is
+// the full self-host migration implementation, while the packaged
+// assets/templates/helpers/ copy is a thin delegate that points generated
+// projects at the canonical upstream repo-harness. They must never be
+// reconciled to match byte-for-byte.
+const INTENTIONALLY_DIVERGENT = ["migrate-project-template.sh"];
+
 setDefaultTimeout(30000);
 
 function tmpWorkspace(prefix: string): string {
@@ -401,11 +408,16 @@ describe("Workflow helper scripts", () => {
     );
   });
 
-  test("core workflow helpers match their distributed template mirrors", () => {
-    for (const helper of ["capture-plan.sh", "plan-to-todo.sh", "sprint-backlog.sh"]) {
-      expect(readFileSync(join(ROOT, "scripts", helper), "utf-8")).toBe(
-        readFileSync(join(HELPER_DIR, helper), "utf-8")
-      );
+  test("scripts/ helpers are byte-identical to assets/templates/helpers/ mirrors (except intentional splits)", () => {
+    const helpers = readdirSync(HELPER_DIR).filter(
+      (name) =>
+        (name.endsWith(".sh") || name.endsWith(".ts")) && !INTENTIONALLY_DIVERGENT.includes(name)
+    );
+    expect(helpers.length).toBeGreaterThan(0);
+    for (const helper of helpers) {
+      const scriptsPath = join(ROOT, "scripts", helper);
+      expect(existsSync(scriptsPath)).toBe(true);
+      expect(readFileSync(scriptsPath, "utf-8")).toBe(readFileSync(join(HELPER_DIR, helper), "utf-8"));
     }
   });
 
