@@ -682,7 +682,7 @@ case "$task_profile" in
   "")
     pass "task_profile" "(legacy)" "task_profile missing: legacy contract accepted"
     ;;
-  code-change|docs-only|ledger-closeout|migration|eval-only|delegated-run|bugfix)
+  code-change|docs-only|ledger-closeout|migration|eval-only|delegated-run|bugfix|frontend)
     pass "task_profile" "$task_profile" "task_profile: $task_profile"
     ;;
   *)
@@ -708,6 +708,21 @@ if [[ -n "$task_profile" ]]; then
         ;;
     esac
   done
+fi
+
+if [[ "$task_profile" == "frontend" ]]; then
+  frontend_design_brief_found=0
+  for path in "${files_exist[@]+"${files_exist[@]}"}"; do
+    base="$(basename "$path")"
+    base_lower="$(printf '%s' "$base" | tr '[:upper:]' '[:lower:]')"
+    if [[ "$path" == docs/design/* || "$base_lower" == *design* ]]; then
+      frontend_design_brief_found=1
+      break
+    fi
+  done
+  if ((! frontend_design_brief_found)); then
+    fail "files_exist" "(frontend)" "frontend profile requires a design brief artifact in files_exist"
+  fi
 fi
 
 if ((${#files_exist[@]})); then

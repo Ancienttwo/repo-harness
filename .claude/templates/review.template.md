@@ -14,7 +14,7 @@
 ## Human Review Card
 
 - Verdict: pending
-- Change type: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run
+- Change type: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | frontend
 - Intended files changed:
 - Actual files changed:
 - Commands passed:

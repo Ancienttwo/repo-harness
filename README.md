@@ -99,6 +99,10 @@ The design has three layers:
 3. **Host adapters**: user-level `~/.claude/settings.json` and
    `~/.codex/hooks.json` route Claude/Codex events into `repo-harness-hook`.
 
+<p align="center">
+  <img src="docs/images/repo-harness-hook-carrot.png" alt="repo-harness hooks leading Codex and Claude forward with repo-local workflow state" width="900">
+</p>
+
 The hook entrypoint exits silently for non-opt-in repos. For opted-in repos,
 it resolves hooks central-first through the packaged install or
 `~/.repo-harness/hooks/`, with repo policy able to pin self-host development

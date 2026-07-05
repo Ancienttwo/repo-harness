@@ -390,7 +390,7 @@ PI_TEMPLATE_REVIEW=$(cat <<'EOF_TEMPLATE_REVIEW'
 ## Human Review Card
 
 - Verdict: pending
-- Change type: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run
+- Change type: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | frontend
 - Intended files changed:
 - Actual files changed:
 - Commands passed:
@@ -1098,6 +1098,10 @@ pi_install_templates() {
 
   if [[ -f "$templates_dir/prd.template.md" ]]; then
     cp "$templates_dir/prd.template.md" "$output_dir/prd.template.md"
+  fi
+
+  if [[ -f "$templates_dir/design-brief.template.md" ]]; then
+    cp "$templates_dir/design-brief.template.md" "$output_dir/design-brief.template.md"
   fi
 }
 
