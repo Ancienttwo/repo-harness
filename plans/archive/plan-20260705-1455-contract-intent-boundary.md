@@ -1,6 +1,6 @@
 # Plan: Contract intent-boundary hardening: Non-scope carry-forward, split brief preflight, anti-extras injection
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260705-1455
 > **Slug**: contract-intent-boundary
 > **Planning Source**: waza-think
