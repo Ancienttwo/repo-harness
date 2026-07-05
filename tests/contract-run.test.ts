@@ -165,12 +165,15 @@ describe("contract-run helper", () => {
       expect(existsSync(join(repo, ".ai/harness/runs/dry-run/worker-prompt.md"))).toBe(true);
       expect(existsSync(join(repo, ".ai/harness/runs/dry-run/verifier-prompt.md"))).toBe(true);
       expect(existsSync(join(repo, ".ai/harness/runs/dry-run/manifest.json"))).toBe(true);
-      expect(readFileSync(join(repo, ".ai/harness/runs/dry-run/worker-prompt.md"), "utf-8")).toContain(
-        "Permission scope: inherit_allowed_paths"
-      );
-      expect(readFileSync(join(repo, ".ai/harness/runs/dry-run/verifier-prompt.md"), "utf-8")).toContain(
-        "Review only against the contract exit criteria"
-      );
+      const workerPromptContent = readFileSync(join(repo, ".ai/harness/runs/dry-run/worker-prompt.md"), "utf-8");
+      expect(workerPromptContent).toContain("Permission scope: inherit_allowed_paths");
+      expect(workerPromptContent).toContain("## Why this task matters");
+      expect(workerPromptContent).toContain("## Before you finish (mandatory self-verification)");
+      expect(workerPromptContent).toContain("## Record what you learned");
+      expect(workerPromptContent).toContain("## Stop / escalate");
+      const verifierPromptContent = readFileSync(join(repo, ".ai/harness/runs/dry-run/verifier-prompt.md"), "utf-8");
+      expect(verifierPromptContent).toContain("## Intent (context only)");
+      expect(verifierPromptContent).toContain("Score PASS or FAIL strictly against the Exit Criteria");
       expect(existsSync(join(repo, "src/pilot.txt"))).toBe(false);
     } finally {
       rmSync(repo, { recursive: true, force: true });

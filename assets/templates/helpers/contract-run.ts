@@ -381,6 +381,11 @@ function buildRun(opts: Options) {
   const plan = readHeader(contractText, "Plan");
   const reviewFile = readHeader(contractText, "Review File");
   const notesFile = readHeader(contractText, "Notes File");
+  const exemplar = readHeader(contractText, "Exemplar");
+  const why = sectionBody(contractText, "Why");
+  const goal = sectionBody(contractText, "Goal");
+  const scope = sectionBody(contractText, "Scope");
+  const stopConds = sectionBody(contractText, "Stop Conditions");
   const exitCriteria = fencedYamlBlock(contractText, "exit_criteria");
   const delegation = parseDelegation(contractText);
   const allowedPaths = parseList(fencedYamlBlock(contractText, "allowed_paths"), "allowed_paths");
@@ -413,18 +418,42 @@ function buildRun(opts: Options) {
 
   const workerPrompt = join(runDir, "worker-prompt.md");
   const verifierPrompt = join(runDir, "verifier-prompt.md");
+  const stopCondLines = stopConds
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .map((line) => `  ${line}`);
   writePrompt(workerPrompt, "Contract Worker Task", [
     `Contract: ${repoRelative(repo, contractPath)}`,
     `Plan: ${plan || "(none)"}`,
     `Notes: ${notesFile || "(none)"}`,
+    ...(exemplar ? [`Exemplar: ${exemplar}`] : []),
     `Role mode: ${delegation.roles.worker?.mode ?? "edit_within_allowed_paths"}`,
     `Role purpose: ${delegation.roles.worker?.purpose ?? "implementation"}`,
     `Permission scope: ${delegation.permission_scope.mode}`,
     `Writable paths: ${(delegation.permission_scope.writable_paths.length ? delegation.permission_scope.writable_paths : allowedPaths).join(", ") || "(none)"}`,
     "",
-    "Implement only the contract scope. Do not mark the task done; the verifier owns review.",
+    "## Why this task matters",
+    "",
+    why.trim(),
+    "",
+    "Implement only the contract scope. Do not widen it. Do not mark the task done; the verifier owns the verdict.",
+    "",
+    "## Before you finish (mandatory self-verification)",
+    "",
+    "Run every command listed under exit_criteria.commands_succeed and every test under exit_criteria.tests_pass yourself, in this worktree, before reporting. Paste the exact command line and its output/exit status into your final report. Do not report a criterion as satisfied if you did not run it. If a command fails and you cannot fix it within scope, STOP and report the failure instead of claiming completion. If the contract lists no tests_pass or commands_succeed items, state that explicitly in your report instead of inventing checks.",
+    "",
+    "## Record what you learned",
+    "",
+    "Before finishing, append to the Notes file above: Design Decisions, Deviations From Plan Or Spec, Tradeoffs Considered, and Open Questions. List anything reusable beyond this task under Promotion Candidates.",
+    "",
+    "## Stop / escalate",
+    "",
+    "Hand back to the parent (do not improvise) if the contract Goal, Scope, Allowed Paths, or Exit Criteria are missing or contradictory, if the work requires editing a path outside Allowed Paths, or if any condition under \"Stop Conditions\" in the contract triggers.",
+    ...stopCondLines,
     "",
     "## Contract",
+    "",
     contractText,
   ]);
   writePrompt(verifierPrompt, "Contract Verifier Task", [
@@ -433,9 +462,16 @@ function buildRun(opts: Options) {
     `Role mode: ${delegation.roles.verifier?.mode ?? "read_only"}`,
     `Role purpose: ${delegation.roles.verifier?.purpose ?? "exit_criteria_review"}`,
     "",
-    "Review only against the contract exit criteria. Do not invent another rubric.",
+    "## Intent (context only)",
+    "",
+    `Goal: ${goal.trim()}`,
+    `Scope: ${scope.trim()}`,
+    ...(why.trim() ? [`Why: ${why.trim()}`] : []),
+    "",
+    "Use the Intent above only to understand what the worker was asked to do. Score PASS or FAIL strictly against the Exit Criteria below; do not invent another rubric or grade work outside these criteria. Before scoring, confirm from the worker's report that it actually ran the tests_pass and commands_succeed items; re-run any item whose evidence you cannot confirm.",
     "",
     "## Exit Criteria",
+    "",
     exitCriteria || "(none)",
   ]);
 
