@@ -25,7 +25,7 @@
 - Actual files changed: 33 files, +1568/-46 (`git diff --stat ca76def..HEAD`); all paths within contract `allowed_paths`; B5 intentionally absent (delegated to parallel branch `codex/projection-brief-advisory`); advisor files untouched (delivered by base commit ca76def).
 - Commands passed: full F1 battery — bun test 1020 pass/1 skip/0 fail; tsc --noEmit exit 0; check:hooks projection OK (25 files); check-deploy-sql-order OK; check-architecture-sync advisory blocking=0; check-task-sync clean; check-task-workflow --strict exit 0; inspect-project-state drift_signals none; migrate --dry-run exit 0; 8-helper mirror parity zero drift; golden example preflight_pass; placeholder smoke fail-closed with issues [Goal, Scope, Why].
 - External acceptance: unavailable at closeout (peer quota) — round-2 full Codex review recorded verbatim below with all findings dispositioned; Manual Override recorded per gate rule; re-run available after 2026-07-07 09:59 +0800 before push/PR.
-- Residual risks: B5 rides on the parallel branch (revisit trigger recorded in Task Breakdown); dual resume-packet writers (lib function + codex-handoff-resume.sh) may drift cosmetically — dedup noted as follow-up; capture-plan.sh duplicate `## Task Breakdown` bug recorded as promotion candidate (out of scope); stacked-base merge ordering is owned by the user's PR flow (#39/#40 first).
+- Residual risks: B5 landed on main as 38141a6 (feat(plan-to-todo): surface advisory brief preflight at contract projection, Phase 2 slice 3) rather than via this branch; dual resume-packet writers (lib function + codex-handoff-resume.sh) may drift cosmetically — dedup noted as follow-up; capture-plan.sh duplicate `## Task Breakdown` bug recorded as promotion candidate (out of scope); stacked-base merge ordering is owned by the user's PR flow (#39/#40 first).
 - Reviewer action required: inspect diff and card
 - Rollback: drop branch `codex/dev-loop-distillation` and its worktree; stack base `codex/advisor-file-coupled-nudge` (ca76def) and `main` unaffected; no data migration.
 
@@ -81,7 +81,7 @@ Manual Override: peer CLI quota-exhausted mid-closeout — round 3 re-run return
 
 ## Residual Risks / Follow-ups
 
-- See Human Review Card residual risks (B5 parallel-branch dependency, dual resume writers, capture-plan duplication bug, stacked merge ordering).
+- See Human Review Card residual risks (B5 landed on main as 38141a6, dual resume writers, capture-plan duplication bug, stacked merge ordering).
 - `[BriefPreflight]` advisory on the parallel branch should print `brief_preflight.issues` once both branches merge (notes, Open Questions).
 
 ## Scorecard

@@ -46,7 +46,7 @@
 ## Open Questions
 
 - (A1's "extra hunk beyond the prologue" question was resolved via P3 judgment above, not left pending.)
-- Parallel branch `codex/projection-brief-advisory`'s `[BriefPreflight]` advisory message text enumerates Goal/Scope/Allowed Paths/Exit Criteria but not `## Why` (as of this writing). Once B3 lands here (making `## Why` the one mandatory preflight-checked field), the ideal form of that advisory should also print the actual `brief_preflight.issues` list from `contract-run preflight`, which would automatically surface a missing/placeholder Why without either branch needing to hardcode a Why-specific message. Follow-up for whichever branch merges second.
+- Parallel branch `codex/projection-brief-advisory`'s `[BriefPreflight]` advisory message text enumerates Goal/Scope/Allowed Paths/Exit Criteria but not `## Why` (as of this writing). Once B3 lands here (making `## Why` the one mandatory preflight-checked field), the ideal form of that advisory should also print the actual `brief_preflight.issues` list from `contract-run preflight`, which would automatically surface a missing/placeholder Why without either branch needing to hardcode a Why-specific message. Follow-up for whichever branch merges second. （更新：B5 已以 38141a6 落地 main；其 advisory 訊息仍列舉固定欄位而非印出 brief_preflight.issues——該改進仍為 open follow-up。）
 
 ## Evidence Links
 
