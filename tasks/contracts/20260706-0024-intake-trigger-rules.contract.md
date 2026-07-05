@@ -1,11 +1,11 @@
 # Task Contract: intake-trigger-rules
 
-> **Status**: Partial
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260706-0024-intake-trigger-rules.md
 > **Task Profile**: code-change
 > **Owner**: ancienttwo
 > **Capability ID**: root
-> **Last Updated**: 2026-07-06 00:24
+> **Last Updated**: 2026-07-06 04:37
 > **Review File**: `tasks/reviews/20260706-0024-intake-trigger-rules.review.md`
 > **Notes File**: `tasks/notes/20260706-0024-intake-trigger-rules.notes.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
@@ -59,6 +59,8 @@ allowed_paths:
   - tasks/contracts/20260706-0024-intake-trigger-rules.contract.md
   - tasks/reviews/20260706-0024-intake-trigger-rules.review.md
   - tasks/notes/20260706-0024-intake-trigger-rules.notes.md
+  - tasks/todos.md
+  - tasks/lessons.md
   - assets/skill-commands/repo-harness-prd/
   - assets/templates/
   - .claude/templates/

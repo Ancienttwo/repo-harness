@@ -13,6 +13,12 @@
 ## Active Lessons
 
 - Date: 2026-07-06
+- Triggered by correction: rubric-v2 scope gate + Codex acceptance both flagged `tasks/todos.md` outside hand-filled `allowed_paths`.
+- Mistake pattern: stripping tooling-touched default paths (`tasks/todos.md`) from the contract template's `allowed_paths` when hand-filling briefs.
+- Prevention rule: keep the template's default `allowed_paths` entries that projection tooling writes to (`tasks/todos.md`); minimal-change applies to scope semantics, not to deleting tooling defaults.
+- Where to apply next time: every hand-filled contract brief.
+
+- Date: 2026-07-06
 - Triggered by correction: authority-closure T2 — adding one apostrophe ("task's") to `PI_TEMPLATE_CONTRACT` broke `scripts/lib/project-init-lib.sh` at `bash -n` (exit 2, "unexpected EOF while looking for matching") on stock macOS bash 3.2.57.
 - Mistake pattern: a `$(cat <<'EOF' ... EOF)`-wrapped heredoc with a QUOTED delimiter still gets its body scanned for quote parity by bash 3.2's `$()` boundary matcher; an odd count of single quotes inside the literal body breaks parsing even though the heredoc content is never interpreted. Minimal 5-line repro confirmed; other `PI_TEMPLATE_*` heredocs had even quote counts by luck.
 - Prevention rule: never embed prose with apostrophes inside `$(cat <<'EOF')` on scripts that must run under /bin/bash 3.2; use temp-file indirection (`mktemp` + `cat > file <<'EOF'` + read back) as `project-init-lib.sh` now does. `read -r -d ''` is not a substitute here — it exits 1 at heredoc EOF and every consumer of this lib runs `set -euo pipefail`. Always `bash -n` every template-bearing .sh after editing embedded template text.
