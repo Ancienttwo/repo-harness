@@ -1089,6 +1089,19 @@ ARCHITECTURE_INDEX_EOF
       "sync_mode": "stage-upstream-then-copy-to-codex",
       "host_drift_policy": "report-per-host-version-staging-and-upstream-drift"
     },
+    "fable_agents": {
+      "source_repo": "Ancienttwo/Fable-agents",
+      "source_url": "https://github.com/Ancienttwo/Fable-agents.git",
+      "raw_base": "https://raw.githubusercontent.com/Ancienttwo/Fable-agents/main/assets",
+      "managed_agents": ["deep-reasoner", "fast-worker", "gatekeeper"],
+      "claude_target": "~/.claude/agents",
+      "codex_target": "~/.codex/agents",
+      "codex_generation": "derive-toml-from-md",
+      "install_mode": "advisory",
+      "conflict_policy": "never-clobber-without-force",
+      "install_command": "repo-harness run install-agent-fleet",
+      "vendoring_policy": "do-not-vendor-agent-bodies"
+    },
     "codex_automation_profile": {
       "required_skills": ["health", "check", "mermaid"],
       "optional_skills": [],

@@ -467,6 +467,10 @@ describe("Migration script contract", () => {
       expect(policy.external_tooling.codegraph.readiness).toBe("required-for-agent-code-navigation");
       expect(policy.external_tooling.codegraph.hook_policy).toBe("do-not-block-hooks");
       expect(policy.external_tooling.codegraph.vendoring_policy).toBe("do-not-add-package-dependency");
+      expect(policy.external_tooling.fable_agents.managed_agents).toEqual(["deep-reasoner", "fast-worker", "gatekeeper"]);
+      expect(policy.external_tooling.fable_agents.codex_generation).toBe("derive-toml-from-md");
+      expect(policy.external_tooling.fable_agents.install_mode).toBe("advisory");
+      expect(policy.external_tooling.fable_agents.conflict_policy).toBe("never-clobber-without-force");
       expect(policy.minimal_change).toMatchObject({
         version: 1,
         mode: "advice",
@@ -1028,6 +1032,9 @@ describe("Migration script contract", () => {
       expect(policy.external_tooling.gbrain.mcp).toBe("configured");
       expect(policy.external_tooling.codegraph.primary_host).toBe("both");
       expect(policy.external_tooling.codegraph.index_dir).toBe(".codegraph");
+      expect(policy.external_tooling.fable_agents.managed_agents).toEqual(["deep-reasoner", "fast-worker", "gatekeeper"]);
+      expect(policy.external_tooling.fable_agents.install_mode).toBe("advisory");
+      expect(policy.external_tooling.fable_agents.conflict_policy).toBe("never-clobber-without-force");
       expect(policy.agentic_development.routing.complex_engineering_plan).toBe("gstack:plan-eng-review");
       expect(policy.minimal_change.mode).toBe("off");
       expect(policy.minimal_change.custom_flag).toBe("preserve-me");

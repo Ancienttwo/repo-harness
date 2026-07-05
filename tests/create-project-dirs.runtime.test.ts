@@ -311,6 +311,17 @@ describe("create-project-dirs runtime smoke", () => {
       expect(policy.external_tooling.codegraph.readiness).toBe("required-for-agent-code-navigation");
       expect(policy.external_tooling.codegraph.hook_policy).toBe("do-not-block-hooks");
       expect(policy.external_tooling.codegraph.vendoring_policy).toBe("do-not-add-package-dependency");
+      expect(policy.external_tooling.fable_agents.source_repo).toBe("Ancienttwo/Fable-agents");
+      expect(policy.external_tooling.fable_agents.source_url).toBe("https://github.com/Ancienttwo/Fable-agents.git");
+      expect(policy.external_tooling.fable_agents.raw_base).toBe("https://raw.githubusercontent.com/Ancienttwo/Fable-agents/main/assets");
+      expect(policy.external_tooling.fable_agents.managed_agents).toEqual(["deep-reasoner", "fast-worker", "gatekeeper"]);
+      expect(policy.external_tooling.fable_agents.claude_target).toBe("~/.claude/agents");
+      expect(policy.external_tooling.fable_agents.codex_target).toBe("~/.codex/agents");
+      expect(policy.external_tooling.fable_agents.codex_generation).toBe("derive-toml-from-md");
+      expect(policy.external_tooling.fable_agents.install_mode).toBe("advisory");
+      expect(policy.external_tooling.fable_agents.conflict_policy).toBe("never-clobber-without-force");
+      expect(policy.external_tooling.fable_agents.install_command).toBe("repo-harness run install-agent-fleet");
+      expect(policy.external_tooling.fable_agents.vendoring_policy).toBe("do-not-vendor-agent-bodies");
       expect(policy.minimal_change).toMatchObject({
         version: 1,
         mode: "advice",
