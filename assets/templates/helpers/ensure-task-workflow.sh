@@ -192,6 +192,13 @@ PRD tier contract:
 - Then:
 - Machine-checkable evidence:
 
+### Scenario 3 (negative)
+
+- Given:
+- When:
+- Then (must NOT):
+- Machine-checkable evidence:
+
 ## Non-goals
 
 -
@@ -263,7 +270,7 @@ You are implementing this PRD.
 
 ## Adjacent Patterns
 
-Use this section only in standard tier or when explicitly requested. Prefer adjacent product patterns and common workflow debt. Do not name a competitor, API, platform limit, or package size unless the fact is sourced; otherwise mark it `[UNVERIFIED]`.
+Required when the `repo-harness-prd` prior-art trigger table hits (UI/taste, market-convention pattern, library/framework selection, architecture precedent, or an `[UNVERIFIED]` external assumption). Otherwise optional: use in standard tier or when explicitly requested. Prefer adjacent product patterns and common workflow debt. Do not name a competitor, API, platform limit, or package size unless the fact is sourced; otherwise mark it `[UNVERIFIED]`.
 
 ## Commercialization Notes
 
@@ -619,6 +626,10 @@ REVIEW_TEMPLATE_EOF
 
 - Checks: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
+
+## Promotion Filter
+
+Promote a candidate to `tasks/lessons.md`, `docs/researches/`, or harness asset files only when all three hold: hard to reverse, surprising without local context, and a real trade-off existed. If any one is missing, keep it in this notes file instead.
 
 ## Promotion Candidates
 
