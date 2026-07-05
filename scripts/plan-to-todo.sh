@@ -455,6 +455,10 @@ Describe the exact outcome this task must deliver.
 - Stop if an Exit Criteria command cannot be run in this environment.
 - Stop if Goal, Scope, or Exit Criteria are internally contradictory.
 
+## Falsifier
+
+What observable evidence would prove this task's direction wrong, and the cheapest proof point to check first. Leave as-is if not applicable.
+
 ## Workflow Inventory
 
 - Source plan: `{{PLAN_FILE}}`

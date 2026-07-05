@@ -142,6 +142,7 @@ describe("create-project-dirs scaffold parity", () => {
       expect(contractTemplate).toContain("## Delegation Contract");
       expect(contractTemplate).toContain("permission_scope:");
       expect(contractTemplate).toContain("roles:");
+      expect(contractTemplate).toContain("## Falsifier");
 
       const runtimeConsole = readFileSync(
         join(ROOT, "assets/project-structures/ai-native-runtime-console.txt"),

@@ -234,7 +234,8 @@ Complete this inventory before implementation. If any line is unknown, keep the 
 - [ ] ...
 EOF_TEMPLATE_PLAN
 )
-PI_TEMPLATE_CONTRACT=$(cat <<'EOF_TEMPLATE_CONTRACT'
+PI_TEMPLATE_CONTRACT_TMP="$(mktemp)"
+cat > "$PI_TEMPLATE_CONTRACT_TMP" <<'EOF_TEMPLATE_CONTRACT'
 # Task Contract: {{TASK_SLUG}}
 
 > **Status**: Active
@@ -266,6 +267,10 @@ Describe the exact outcome this task must deliver.
 - Stop and hand back to the parent if the change would require editing a path outside Allowed Paths.
 - Stop if an Exit Criteria command cannot be run in this environment.
 - Stop if Goal, Scope, or Exit Criteria are internally contradictory.
+
+## Falsifier
+
+What observable evidence would prove this task's direction wrong, and the cheapest proof point to check first. Leave as-is if not applicable.
 
 ## Workflow Inventory
 
@@ -359,7 +364,8 @@ exit_criteria:
 - Commit / checkpoint:
 - Revert strategy:
 EOF_TEMPLATE_CONTRACT
-)
+PI_TEMPLATE_CONTRACT="$(cat "$PI_TEMPLATE_CONTRACT_TMP")"
+rm -f "$PI_TEMPLATE_CONTRACT_TMP"
 PI_TEMPLATE_REVIEW=$(cat <<'EOF_TEMPLATE_REVIEW'
 # Task Review: {{TASK_SLUG}}
 

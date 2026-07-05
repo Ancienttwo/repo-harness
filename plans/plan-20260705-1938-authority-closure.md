@@ -371,7 +371,7 @@ grep -rl "forbidden design space" scripts/contract-run.ts assets/hooks/ src/cli/
 
 ## Task Breakdown
 - [x] T1 contract 模板全 surface diff inventory + 对齐 drift
-- [ ] T2 模板新增 `## Falsifier` 选填字段（全 surface）
+- [x] T2 模板新增 `## Falsifier` 选填字段（全 surface）
 - [ ] H0 bugfix 分类 schema owner（扩 task_profile 枚举）
 - [ ] H1 root-cause 一等 gate 维度：模板 + 显式修订 sprint-contracts.md
 - [ ] H2 root-cause gate（contract-run.ts）+ TS 嵌套解析 + 共享 fixtures
