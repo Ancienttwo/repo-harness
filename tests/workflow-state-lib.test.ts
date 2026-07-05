@@ -125,4 +125,54 @@ describe("workflow-state shared library", () => {
       rmSync(cwd, { recursive: true, force: true });
     }
   });
+
+  test("workflow_review_rubric_class accepts both the legacy (1) and current (2) rubric versions and still rejects unsupported ones", () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "workflow-rubric-class-")));
+    try {
+      writeFileSync(
+        join(cwd, "v1.review.md"),
+        ["# Task Review: demo", "", "> **Review Rubric Version**: 1", ""].join("\n")
+      );
+      writeFileSync(
+        join(cwd, "v2.review.md"),
+        ["# Task Review: demo", "", "> **Review Rubric Version**: 2", ""].join("\n")
+      );
+      writeFileSync(
+        join(cwd, "v3.review.md"),
+        ["# Task Review: demo", "", "> **Review Rubric Version**: 3", ""].join("\n")
+      );
+      writeFileSync(
+        join(cwd, "absent.review.md"),
+        ["# Task Review: demo", "", "> **Recommendation**: pass", ""].join("\n")
+      );
+
+      const res = spawnSync(
+        "bash",
+        [
+          "-lc",
+          [
+            'source "$WORKFLOW_STATE"',
+            'workflow_review_rubric_class "$PWD/v1.review.md"; printf "\\n"',
+            'workflow_review_rubric_class "$PWD/v2.review.md"; printf "\\n"',
+            'workflow_review_rubric_class "$PWD/v3.review.md"; printf "\\n"',
+            'workflow_review_rubric_class "$PWD/absent.review.md"; printf "\\n"',
+          ].join("\n"),
+        ],
+        {
+          cwd,
+          encoding: "utf-8",
+          env: {
+            ...process.env,
+            WORKFLOW_STATE: join(ROOT, "assets/hooks/lib/workflow-state.sh"),
+          },
+        }
+      );
+
+      expect(res.status).toBe(0);
+      const lines = res.stdout.split("\n").filter((line) => line.length > 0);
+      expect(lines).toEqual(["1", "2", "malformed", "absent"]);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
 });

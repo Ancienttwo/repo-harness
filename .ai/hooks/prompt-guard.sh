@@ -807,7 +807,7 @@ emit_review_fingerprint_prompt() {
   review_file="$(workflow_active_review || true)"
   echo "[ReviewFreshness] Current implementation diff fingerprint: ${fingerprint:-unknown}"
   echo "[ReviewFreshness] Record these review metadata lines in ${review_file:-tasks/reviews/<slug>.review.md}:"
-  echo "> **Review Rubric Version**: 1"
+  echo "> **Review Rubric Version**: 2"
   echo "> **Reviewed Diff Fingerprint**: ${fingerprint:-unknown}"
   echo "> **Reviewed Scope**: branch+staged+unstaged+untracked"
 }
@@ -865,9 +865,9 @@ emit_external_acceptance_prompt() {
   echo "[ExternalAcceptance] Diff scope for peer: branch diff against target, staged diff, unstaged diff, and untracked files."
   cat <<EOF_EXTERNAL_ACCEPTANCE
 [ExternalAcceptance] Prompt to send with $command:
-Review the current sprint for acceptance only. Do not run /check. Do not edit files. Do not write files. Inspect the diff scope, contract, review evidence, checks evidence, and Review Rubric v1, then return only a Markdown block that can be pasted into ${review_file:-tasks/reviews/<slug>.review.md}.
+Review the current sprint for acceptance only. Do not run /check. Do not edit files. Do not write files. Inspect the diff scope, contract, review evidence, checks evidence, and Review Rubric v2, then return only a Markdown block that can be pasted into ${review_file:-tasks/reviews/<slug>.review.md}.
 
-${rubric:-[ReviewRubric] Deep Diff Review Rubric v1 unavailable; use severity order P0/P1/P2/P3 and report no style-only nits.}
+${rubric:-[ReviewRubric] Deep Diff Review Rubric v2 unavailable; use severity order P0/P1/P2/P3 and report no style-only nits.}
 
 ## External Acceptance Advice
 > **External Acceptance**: pass
@@ -875,7 +875,7 @@ ${rubric:-[ReviewRubric] Deep Diff Review Rubric v1 unavailable; use severity or
 > **External Source**: $expected_source
 > **External Started**: YYYY-MM-DDTHH:MM:SS+0800
 > **External Completed**: YYYY-MM-DDTHH:MM:SS+0800
-> **Review Rubric Version**: 1
+> **Review Rubric Version**: 2
 > **Reviewed Diff Fingerprint**: ${fingerprint:-unknown}
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 

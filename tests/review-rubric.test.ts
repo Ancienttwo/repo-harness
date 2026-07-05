@@ -10,13 +10,13 @@ import {
 const ROOT = join(import.meta.dir, '..');
 
 describe('review rubric renderer', () => {
-  test('renders a stable v1 deep diff review prompt', () => {
+  test('renders a stable v2 deep diff review prompt', () => {
     const first = renderReviewRubric('prompt');
     const second = renderReviewRubric('prompt');
 
-    expect(REVIEW_RUBRIC_VERSION).toBe(1);
+    expect(REVIEW_RUBRIC_VERSION).toBe(2);
     expect(first).toBe(second);
-    expect(first).toContain('[ReviewRubric] Deep Diff Review Rubric v1');
+    expect(first).toContain('[ReviewRubric] Deep Diff Review Rubric v2');
     expect(first).toContain('branch diff against target, staged diff, unstaged diff, and untracked files');
     expect(first).toContain('review-only');
     expect(first).toContain('Do not edit files');
@@ -33,6 +33,13 @@ describe('review rubric renderer', () => {
     expect(first).toContain('Regression test');
     expect(first).toContain('No findings');
     expect(first).toContain('Ignore style-only nits');
+    expect(first).toContain(
+      'Scope fidelity: changes outside the contract In-scope, touching declared Out-of-scope/Non-Goals, or unrequested features/options/commentary',
+    );
+    expect(first).toContain('never upgrade it to P0/P1 by itself.');
+    expect(first).toContain(
+      'Exception: a Scope fidelity violation — changes touching declared Out-of-scope/Non-Goals items or adding unrequested features, options, or commentary — may be rated up to P1.',
+    );
   });
 
   test('CLI is fail-open for malformed arguments', () => {
@@ -49,7 +56,7 @@ describe('review rubric renderer', () => {
     });
 
     expect(res.status).toBe(0);
-    expect(res.stdout).toContain('[ReviewRubric] Deep Diff Review Rubric v1');
+    expect(res.stdout).toContain('[ReviewRubric] Deep Diff Review Rubric v2');
     expect(res.stderr).toBe('');
   });
 });
