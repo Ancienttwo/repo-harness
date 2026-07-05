@@ -76,6 +76,9 @@ const WAZA_RAW_BASE_URL = "https://raw.githubusercontent.com/tw93/Waza/main";
 const WAZA_MANAGED_SKILLS = ["think", "hunt", "check", "health"];
 const WAZA_SHARED_RULES = ["anti-patterns.md", "chinese.md", "durable-context.md", "english.md"];
 const CODEX_AUTOMATION_SKILLS = ["health", "check", "mermaid"];
+const FABLE_AGENTS_RAW_BASE = "https://raw.githubusercontent.com/Ancienttwo/Fable-agents/main/assets";
+const FABLE_AGENTS_DEFAULT_MANAGED = ["deep-reasoner", "fast-worker", "gatekeeper"];
+const FABLE_AGENTS_INSTALL_COMMAND = "repo-harness run install-agent-fleet";
 const CODEGRAPH_PACKAGE = "@colbymchenry/codegraph";
 const CODEGRAPH_GLOBAL_INSTALL_COMMAND = `bun add -g ${CODEGRAPH_PACKAGE} && repo-harness tools configure codegraph --target codex --location global`;
 const GBRAIN_INSTALL_COMMAND = "bun install -g github:garrytan/gbrain";
@@ -100,6 +103,7 @@ const HOSTS = {
     skillsDir: path.join(HOME, ".claude", "skills"),
     gstackDir: path.join(HOME, ".claude", "skills", "gstack"),
     configPath: path.join(HOME, ".claude", "settings.json"),
+    agentsDir: path.join(HOME, ".claude", "agents"),
   },
   codex: {
     label: "Codex",
@@ -107,6 +111,7 @@ const HOSTS = {
     skillsDir: path.join(HOME, ".codex", "skills"),
     gstackDir: path.join(HOME, ".codex", "skills", "gstack"),
     configPath: path.join(HOME, ".codex", "config.toml"),
+    agentsDir: path.join(HOME, ".codex", "agents"),
   },
 };
 
@@ -946,6 +951,133 @@ function detectCodexAutomationProfile() {
   };
 }
 
+function resolveManagedAgents() {
+  const policy = readJson(path.join(REPO_ROOT, ".ai", "harness", "policy.json"));
+  const configured = policy?.external_tooling?.fable_agents?.managed_agents;
+  if (Array.isArray(configured) && configured.length > 0 && configured.every((entry) => typeof entry === "string")) {
+    return configured;
+  }
+  return FABLE_AGENTS_DEFAULT_MANAGED;
+}
+
+function agentFleetFileExtension(host) {
+  return host === "codex" ? "toml" : "md";
+}
+
+function inspectAgentFleetFile(host, agent) {
+  const meta = HOSTS[host];
+  const filePath = path.join(meta.agentsDir, `${agent}.${agentFleetFileExtension(host)}`);
+  const local = readFileHash(filePath);
+  return {
+    name: agent,
+    path: filePath,
+    present: local.exists,
+    hash: local.hash,
+  };
+}
+
+function fetchAgentFleetUpstream(agent) {
+  const url = `${FABLE_AGENTS_RAW_BASE}/${agent}.md`;
+  const result = run("curl", ["-fsSL", "--max-time", "5", url], { timeoutMs: 7000 });
+  if (!result.ok || !result.stdout) {
+    return { status: "fetch-failed", url, hash: null };
+  }
+  return { status: "fetched", url, hash: sha1(result.stdout) };
+}
+
+function detectAgentFleetHost(host, managedAgents) {
+  const meta = HOSTS[host];
+  const files = managedAgents.map((agent) => inspectAgentFleetFile(host, agent));
+  const installedAgents = files.filter((entry) => entry.present).map((entry) => entry.name);
+  const missingAgents = files.filter((entry) => !entry.present).map((entry) => entry.name);
+  const status = missingAgents.length === 0 ? "present" : installedAgents.length > 0 ? "partial" : "missing";
+
+  let updateStatus = "not-checked";
+  let updateReason = "Update checks were skipped.";
+  const driftAgents = [];
+  const syncedAgents = [];
+  const fetchFailedAgents = [];
+
+  if (checkUpdates) {
+    if (host === "claude") {
+      for (const entry of files) {
+        if (!entry.present) continue;
+        const upstream = fetchAgentFleetUpstream(entry.name);
+        if (upstream.status === "fetch-failed") {
+          fetchFailedAgents.push(entry.name);
+          continue;
+        }
+        if (upstream.hash === entry.hash) {
+          syncedAgents.push(entry.name);
+        } else {
+          driftAgents.push(entry.name);
+        }
+      }
+
+      if (driftAgents.length > 0) {
+        updateStatus = "drift";
+        updateReason = `Local Claude agent definitions differ from upstream Fable-agents for: ${driftAgents.join(", ")}.`;
+      } else if (fetchFailedAgents.length > 0 && syncedAgents.length === 0) {
+        updateStatus = "unknown";
+        updateReason = `Unable to fetch upstream Fable-agents files for: ${fetchFailedAgents.join(", ")}.`;
+      } else if (syncedAgents.length > 0) {
+        updateStatus = "synced";
+        updateReason = "Local Claude agent definitions match upstream Fable-agents.";
+      } else {
+        updateStatus = "not-checked";
+        updateReason = "No installed Claude agent definitions to compare.";
+      }
+    } else {
+      updateStatus = "not-applicable";
+      updateReason = "Codex agent definitions are generated artifacts derived from the Claude .md source; readiness only checks presence, not upstream drift.";
+    }
+  }
+
+  return {
+    label: meta.agentLabel,
+    status,
+    installed_agents: installedAgents,
+    missing_agents: missingAgents,
+    agents: files,
+    update_status: updateStatus,
+    update_reason: updateReason,
+    drift_agents: driftAgents,
+    synced_agents: syncedAgents,
+    fetch_failed_agents: fetchFailedAgents,
+  };
+}
+
+function detectAgentFleet() {
+  const managedAgents = resolveManagedAgents();
+  const hosts = {};
+  for (const host of SELECTED_HOSTS) {
+    hosts[host] = detectAgentFleetHost(host, managedAgents);
+  }
+
+  const values = Object.values(hosts);
+  const presentCount = values.filter((entry) => entry.status === "present").length;
+  const anyInstalled = values.some((entry) => entry.installed_agents.length > 0);
+  const status = values.length > 0 && presentCount === values.length
+    ? "present"
+    : anyInstalled
+      ? "partial"
+      : "missing";
+
+  return {
+    name: "agent_fleet",
+    status,
+    reason: status === "present"
+      ? "Detected all managed Fable agent definitions on the requested hosts."
+      : status === "partial"
+        ? "Some managed Fable agent definitions are missing on the requested hosts."
+        : "No managed Fable agent definitions were found on the requested hosts.",
+    managed_agents: managedAgents,
+    source: FABLE_AGENTS_RAW_BASE,
+    install_command: FABLE_AGENTS_INSTALL_COMMAND,
+    hosts,
+  };
+}
+
 function detectGbrainMcp(host) {
   const meta = HOSTS[host];
   const content = readText(meta.configPath);
@@ -1397,6 +1529,7 @@ const report = {
     gstack: detectGstack(),
     waza: wazaReport,
     codex_automation_profile: detectCodexAutomationProfile(),
+    agent_fleet: detectAgentFleet(),
     gbrain: detectGbrain(),
     codegraph: detectCodeGraph(),
   },
@@ -1405,6 +1538,9 @@ const report = {
 const strictFailures = [];
 if (strictReadiness && ["missing", "partial"].includes(report.tools.codegraph.status)) {
   strictFailures.push(`CodeGraph readiness is ${report.tools.codegraph.status}: ${report.tools.codegraph.reason}`);
+}
+if (strictReadiness && report.tools.agent_fleet.status === "missing") {
+  strictFailures.push(`Agent fleet readiness is ${report.tools.agent_fleet.status}: ${report.tools.agent_fleet.reason}`);
 }
 
 function printText(result) {
@@ -1488,6 +1624,22 @@ function printText(result) {
   }
   console.log(`  - Routes: health=${codexAutomation.routes.workflow_health}, check=${codexAutomation.routes.review_gate}, diagram=${codexAutomation.routes.architecture_diagram}`);
   console.log(`  - Vendoring: ${codexAutomation.vendoring_policy}`);
+  console.log("");
+
+  const agentFleet = result.tools.agent_fleet;
+  console.log(`Agent fleet [${agentFleet.status}]`);
+  console.log(`  - Managed: ${agentFleet.managed_agents.join(", ")}`);
+  for (const host of SELECTED_HOSTS) {
+    const entry = agentFleet.hosts[host];
+    console.log(`  - ${entry.label}: ${entry.status}, ${entry.installed_agents.length}/${agentFleet.managed_agents.length} agents`);
+    if (entry.missing_agents.length) {
+      console.log(`    missing: ${entry.missing_agents.join(", ")}`);
+    }
+    if (entry.update_status !== "not-checked") {
+      console.log(`    updates: ${entry.update_status} (${entry.update_reason})`);
+    }
+  }
+  console.log(`  - Install: ${agentFleet.install_command}`);
   console.log("");
 
   const gbrain = result.tools.gbrain;

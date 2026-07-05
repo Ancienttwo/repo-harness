@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   chmodSync,
+  copyFileSync,
   mkdtempSync,
   mkdirSync,
   readFileSync,
@@ -16,6 +17,7 @@ const ROOT = join(import.meta.dir, "..");
 const SCRIPT = join(ROOT, "scripts/check-agent-tooling.sh");
 const WAZA_SKILLS = ["think", "hunt", "check", "health"];
 const WAZA_RULES = ["anti-patterns.md", "chinese.md", "durable-context.md", "english.md"];
+const FABLE_MANAGED_AGENTS = ["deep-reasoner", "fast-worker", "gatekeeper"];
 
 function writeExecutable(filePath: string, content: string) {
   writeFileSync(filePath, content);
@@ -261,6 +263,47 @@ function writeFakeCurl(fakeBin: string, version: string, logFile?: string) {
       "if [[ -z \"$skill\" ]]; then",
       "  exit 22",
       "fi",
+      "",
+    ].join("\n")
+  );
+}
+
+function fableAgentContent(agent: string, variant: string) {
+  return [
+    "---",
+    `name: ${agent}`,
+    `description: Test fixture agent (${variant}).`,
+    "model: sonnet",
+    "effort: max",
+    "---",
+    `Fixture body for ${agent} (${variant}).`,
+    "",
+  ].join("\n");
+}
+
+function writeFakeFleetCurl(fakeBin: string, upstreamContent: Record<string, string>, logFile?: string) {
+  const branches = Object.entries(upstreamContent)
+    .map(([agent, content]) => {
+      const escaped = content.replace(/'/g, `'\\''`);
+      return [
+        `  if [[ "$arg" == *"/Fable-agents/main/assets/${agent}.md"* ]]; then`,
+        `    printf '%s' '${escaped}'`,
+        "    exit 0",
+        "  fi",
+      ].join("\n");
+    })
+    .join("\n");
+
+  writeExecutable(
+    join(fakeBin, "curl"),
+    [
+      "#!/bin/bash",
+      "set -euo pipefail",
+      logFile ? `echo "curl $*" >> "${logFile}"` : "",
+      'for arg in "$@"; do',
+      branches,
+      "done",
+      "exit 22",
       "",
     ].join("\n")
   );
@@ -778,6 +821,139 @@ describe("check-agent-tooling", () => {
       expect(report.tools.codegraph.bin_path).toContain(`@colbymchenry/codegraph-${process.platform}-${process.arch}`);
       expect(report.tools.codegraph.local_version).toBe("1.0.1");
       expect(report.tools.codegraph.project_index.status).toBe("up-to-date");
+    } finally {
+      rmSync(envRoot.root, { recursive: true, force: true });
+    }
+  }, 15000);
+
+  test("fails strict readiness when the managed agent fleet is missing from an empty agents directory", () => {
+    const envRoot = setupFakeEnvironment("check-agent-tooling-fleet-missing");
+    try {
+      writeClaudeCodeGraphConfig(envRoot.home, true);
+      writeFakeNpx(envRoot.fakeBin);
+      writeFakeGbrain(envRoot.fakeBin);
+      writeFakeCodeGraph(envRoot.fakeBin);
+
+      const res = spawnSync("bash", [SCRIPT, "--json", "--host", "claude", "--strict-readiness"], {
+        cwd: ROOT,
+        encoding: "utf-8",
+        env: {
+          ...process.env,
+          HOME: envRoot.home,
+          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          AGENTIC_DEV_CODEGRAPH_LOCAL_BIN: join(envRoot.fakeBin, "codegraph"),
+        },
+      });
+
+      expect(res.status).toBe(2);
+      const report = JSON.parse(res.stdout);
+      expect(report.tools.codegraph.status).toBe("present");
+      expect(report.tools.agent_fleet.status).toBe("missing");
+      expect(report.tools.agent_fleet.managed_agents).toEqual(FABLE_MANAGED_AGENTS);
+      expect(report.tools.agent_fleet.hosts.claude.status).toBe("missing");
+      expect(report.tools.agent_fleet.hosts.claude.missing_agents).toEqual(FABLE_MANAGED_AGENTS);
+      expect(res.stderr).toContain("Agent fleet readiness is missing");
+      expect(res.stderr.toLowerCase()).toContain("fleet");
+    } finally {
+      rmSync(envRoot.root, { recursive: true, force: true });
+    }
+  }, 15000);
+
+  test("reports the agent fleet as present and passes strict readiness once all managed agents are installed", () => {
+    const envRoot = setupFakeEnvironment("check-agent-tooling-fleet-present");
+    try {
+      writeClaudeCodeGraphConfig(envRoot.home, true);
+      mkdirSync(join(envRoot.home, ".codex"), { recursive: true });
+      writeFileSync(join(envRoot.home, ".codex", "config.toml"), "[mcp_servers.codegraph]\ncommand = \"codegraph\"\n");
+      mkdirSync(join(envRoot.home, ".claude", "agents"), { recursive: true });
+      mkdirSync(join(envRoot.home, ".codex", "agents"), { recursive: true });
+      for (const agent of FABLE_MANAGED_AGENTS) {
+        copyFileSync(join(ROOT, ".claude", "agents", `${agent}.md`), join(envRoot.home, ".claude", "agents", `${agent}.md`));
+        copyFileSync(join(ROOT, ".codex", "agents", `${agent}.toml`), join(envRoot.home, ".codex", "agents", `${agent}.toml`));
+      }
+      writeFakeNpx(envRoot.fakeBin);
+      writeFakeGbrain(envRoot.fakeBin);
+      writeFakeCodeGraph(envRoot.fakeBin);
+
+      const res = spawnSync("bash", [SCRIPT, "--json", "--host", "both", "--strict-readiness"], {
+        cwd: ROOT,
+        encoding: "utf-8",
+        env: {
+          ...process.env,
+          HOME: envRoot.home,
+          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          AGENTIC_DEV_CODEGRAPH_LOCAL_BIN: join(envRoot.fakeBin, "codegraph"),
+        },
+      });
+
+      expect(res.status).toBe(0);
+      const report = JSON.parse(res.stdout);
+      expect(report.tools.codegraph.status).toBe("present");
+      expect(report.tools.agent_fleet.status).toBe("present");
+      expect(report.tools.agent_fleet.hosts.claude.status).toBe("present");
+      expect(report.tools.agent_fleet.hosts.claude.installed_agents).toEqual(FABLE_MANAGED_AGENTS);
+      expect(report.tools.agent_fleet.hosts.codex.status).toBe("present");
+      expect(report.tools.agent_fleet.hosts.codex.installed_agents).toEqual(FABLE_MANAGED_AGENTS);
+      expect(report.tools.agent_fleet.install_command).toBe("repo-harness run install-agent-fleet");
+    } finally {
+      rmSync(envRoot.root, { recursive: true, force: true });
+    }
+  }, 15000);
+
+  test("classifies Claude agent drift against upstream Fable-agents while skipping Codex upstream comparison", () => {
+    const envRoot = setupFakeEnvironment("check-agent-tooling-fleet-updates");
+    const logFile = join(envRoot.root, "curl.log");
+    try {
+      const localContent: Record<string, string> = {};
+      const upstreamContent: Record<string, string> = {};
+      for (const agent of FABLE_MANAGED_AGENTS) {
+        localContent[agent] = fableAgentContent(agent, "local");
+      }
+      // fast-worker differs from upstream (drift); the other two match (synced).
+      upstreamContent["deep-reasoner"] = localContent["deep-reasoner"];
+      upstreamContent["fast-worker"] = fableAgentContent("fast-worker", "upstream-newer");
+      upstreamContent["gatekeeper"] = localContent["gatekeeper"];
+
+      mkdirSync(join(envRoot.home, ".claude", "agents"), { recursive: true });
+      mkdirSync(join(envRoot.home, ".codex", "agents"), { recursive: true });
+      for (const agent of FABLE_MANAGED_AGENTS) {
+        writeFileSync(join(envRoot.home, ".claude", "agents", `${agent}.md`), localContent[agent]);
+        writeFileSync(join(envRoot.home, ".codex", "agents", `${agent}.toml`), `name = "${agent}"\n`);
+      }
+
+      writeFakeNpx(envRoot.fakeBin);
+      writeFakeGbrain(envRoot.fakeBin);
+      writeFakeCodeGraph(envRoot.fakeBin);
+      writeFakeNpm(envRoot.fakeBin, "0.9.6");
+      writeFakeFleetCurl(envRoot.fakeBin, upstreamContent, logFile);
+
+      const res = spawnSync("bash", [SCRIPT, "--json", "--check-updates", "--host", "both"], {
+        cwd: ROOT,
+        encoding: "utf-8",
+        env: {
+          ...process.env,
+          HOME: envRoot.home,
+          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: "0",
+        },
+      });
+
+      expect(res.status).toBe(0);
+      const report = JSON.parse(res.stdout);
+      const claude = report.tools.agent_fleet.hosts.claude;
+      expect(claude.update_status).toBe("drift");
+      expect(claude.drift_agents).toEqual(["fast-worker"]);
+      expect(claude.synced_agents).toEqual(["deep-reasoner", "gatekeeper"]);
+      const codex = report.tools.agent_fleet.hosts.codex;
+      expect(codex.update_status).toBe("not-applicable");
+      expect(codex.drift_agents).toEqual([]);
+      expect(codex.synced_agents).toEqual([]);
+
+      const log = readFileSync(logFile, "utf-8");
+      for (const agent of FABLE_MANAGED_AGENTS) {
+        expect(log).toContain(`curl -fsSL --max-time 5 https://raw.githubusercontent.com/Ancienttwo/Fable-agents/main/assets/${agent}.md`);
+      }
+      expect(log).not.toContain(".toml");
     } finally {
       rmSync(envRoot.root, { recursive: true, force: true });
     }
