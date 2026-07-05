@@ -1,7 +1,7 @@
 # repo-harness
 
 <p align="center">
-  <img src="docs/images/repo-harness-gptpro.png" alt="repo-harness architecture and ChatGPT Pro local planner workflow diagram" width="960">
+  <img src="docs/images/repo-harness-hook-carrot.png" alt="repo-harness hooks leading Codex and Claude forward with repo-local workflow state" width="900">
 </p>
 
 `repo-harness` turns Claude/Codex coding sessions into a repeatable repo-local
@@ -100,7 +100,7 @@ The design has three layers:
    `~/.codex/hooks.json` route Claude/Codex events into `repo-harness-hook`.
 
 <p align="center">
-  <img src="docs/images/repo-harness-hook-carrot.png" alt="repo-harness hooks leading Codex and Claude forward with repo-local workflow state" width="900">
+  <img src="docs/images/repo-harness-gptpro.png" alt="repo-harness architecture and ChatGPT Pro local planner workflow diagram" width="960">
 </p>
 
 The hook entrypoint exits silently for non-opt-in repos. For opted-in repos,
