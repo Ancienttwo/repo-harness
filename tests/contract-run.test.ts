@@ -607,6 +607,27 @@ describe("contract-run helper", () => {
       expect(runner.preferred).toEqual(["subagent", "codex-exec", "main-thread"]);
       expect(runner.fallback).toBe("main-thread");
       expect(runner.brief_is_authoritative).toBe(true);
+      const runnerUsage = manifest.runner_usage as { used: string; off_policy: boolean };
+      expect(runnerUsage.used).toBe("subagent");
+      expect(runnerUsage.off_policy).toBe(false);
+
+      const offPolicyRes = runContractRun(repo, [
+        "dry-run",
+        "--repo",
+        repo,
+        "--contract",
+        "tasks/contracts/pilot.contract.md",
+        "--out",
+        ".ai/harness/runs/runner-off-policy",
+        "--runner",
+        "gpt-5-cli",
+        "--json",
+      ]);
+      expect(offPolicyRes.status).toBe(0);
+      const offPolicyManifest = parseJson(offPolicyRes.stdout);
+      const offPolicyUsage = offPolicyManifest.runner_usage as { used: string; off_policy: boolean };
+      expect(offPolicyUsage.used).toBe("gpt-5-cli");
+      expect(offPolicyUsage.off_policy).toBe(true);
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
