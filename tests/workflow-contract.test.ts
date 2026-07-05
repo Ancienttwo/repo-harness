@@ -61,12 +61,18 @@ describe("workflow contract manifest", () => {
   });
 
   test("execution boundary canonical sentence stays identical across its constant sources", () => {
-    // The EXECUTION_BOUNDARY clause is duplicated in three places so it reaches every
-    // delegated runner surface (contract worker prompts, the MCP codex-goal path, and
-    // the Codex delegation advisor hook). This asserts the first sentence never drifts.
+    // The EXECUTION_BOUNDARY clause is duplicated across these surfaces so it reaches
+    // every delegated runner (contract worker prompts, the MCP codex-goal path, the
+    // Codex delegation advisor hook, and the generated Codex agent fleet TOML). This
+    // asserts the first sentence never drifts.
     const canonicalSentence =
       "Execution boundary: implement exactly the Goal, In scope items, Allowed Paths, and Exit Criteria in this brief.";
-    const sources = ["scripts/contract-run.ts", "src/cli/mcp/tools.ts", "assets/hooks/codex-delegation-advisor.sh"];
+    const sources = [
+      "scripts/contract-run.ts",
+      "src/cli/mcp/tools.ts",
+      "assets/hooks/codex-delegation-advisor.sh",
+      "scripts/install-agent-fleet.sh",
+    ];
     for (const relPath of sources) {
       const content = readFileSync(join(ROOT, relPath), "utf-8");
       expect(content).toContain(canonicalSentence);
@@ -100,6 +106,7 @@ describe("workflow contract manifest", () => {
     expect(contract.helpers.scripts).toContain("sync-brain-docs.sh");
     expect(contract.helpers.scripts).toContain("check-deploy-sql-order.sh");
     expect(contract.helpers.scripts).toContain("check-architecture-sync.sh");
+    expect(contract.helpers.scripts).toContain("install-agent-fleet.sh");
     expect(contract.externalTooling?.waza?.primaryHost).toBe("codex");
     expect(contract.externalTooling?.waza?.managedSkills).toContain("think");
     expect(contract.externalTooling?.codexAutomationProfile?.requiredSkills).toEqual(["health", "check", "mermaid"]);

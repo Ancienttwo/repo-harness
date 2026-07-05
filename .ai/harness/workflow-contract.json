@@ -108,6 +108,7 @@
       "check-deploy-sql-order.sh",
       "check-architecture-sync.sh",
       "check-agent-tooling.sh",
+      "install-agent-fleet.sh",
       "check-context-files.sh",
       "check-brain-manifest.sh",
       "sync-brain-docs.sh",
