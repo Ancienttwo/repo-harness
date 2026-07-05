@@ -1,6 +1,6 @@
 # Task Contract: agent-fleet-dependency
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260706-0232-agent-fleet-dependency.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
