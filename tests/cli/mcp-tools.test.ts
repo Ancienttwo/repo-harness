@@ -371,6 +371,25 @@ describe('mcp tools', () => {
       const invalid = await jsonTool(ctx, 'write_codex_goal', { body: '# Codex Goal\nshort' });
       expect(invalid.error.code).toBe('INVALID_GOAL');
 
+      const missingExecutionBoundary = [
+        '# Codex Goal',
+        '## Source of truth',
+        'plans/prds/example.prd.md',
+        '## Role',
+        'Codex executor.',
+        '## Scope',
+        'Only workflow artifacts.',
+        '## Required workflow',
+        'Read PRD and sprint.',
+        '## Required checks',
+        'bun test tests/cli/mcp.test.ts',
+        '## Done when',
+        'Checks pass and handoff is updated.',
+      ].join('\n\n');
+      const missingBoundary = await jsonTool(ctx, 'write_codex_goal', { body: missingExecutionBoundary });
+      expect(missingBoundary.error.code).toBe('INVALID_GOAL');
+      expect(missingBoundary.error.details.missing).toContain('## Execution boundary');
+
       const validBody = [
         '# Codex Goal',
         '## Source of truth',
@@ -379,6 +398,8 @@ describe('mcp tools', () => {
         'Codex executor.',
         '## Scope',
         'Only workflow artifacts.',
+        '## Execution boundary',
+        'Implement exactly the listed scope; do not add unrequested extras.',
         '## Required workflow',
         'Read PRD and sprint.',
         '## Required checks',
@@ -443,6 +464,10 @@ describe('mcp tools', () => {
       const goalContent = readFileSync(join(repoRoot, '.ai/harness/handoff/codex-goal.md'), 'utf-8');
       expect(goalContent).toContain('## Host-native /goal prompt');
       expect(goalContent).toContain('No commit is created unless the user explicitly asks for commit.');
+      expect(goalContent).toContain('## Execution boundary');
+      expect(goalContent).toContain(
+        'Execution boundary: implement exactly the Goal, In scope items, Allowed Paths, and Exit Criteria in this brief.',
+      );
     });
   });
 
@@ -456,6 +481,8 @@ describe('mcp tools', () => {
         'Codex executor.',
         '## Scope',
         'Only workflow artifacts.',
+        '## Execution boundary',
+        'Implement exactly the listed scope; do not add unrequested extras.',
         '## Required workflow',
         'Read PRD and sprint.',
         '## Required checks',

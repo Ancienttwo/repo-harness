@@ -1131,6 +1131,139 @@ describe("Workflow helper scripts", () => {
     }
   });
 
+  test("plan-to-todo should carry forward plan Out of scope bullets into the contract", () => {
+    const cwd = tmpWorkspace("helper-plan-to-todo-carry-forward");
+    try {
+      mkdirSync(join(cwd, "plans"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/archive"), { recursive: true });
+      copyHelpers(cwd);
+
+      const planFile = join(cwd, "plans/plan-20260304-1401-carry.md");
+      writeFileSync(
+        planFile,
+        [
+          "# Plan: carry",
+          "",
+          "> **Status**: Approved",
+          "",
+          evidenceContract(),
+          "",
+          promotionGate(),
+          "",
+          "## Scope / Non-scope",
+          "",
+          "In scope:",
+          "- Implement the carry-forward feature.",
+          "",
+          "Out of scope:",
+          "- Rewriting the verify-contract compatibility promise.",
+          "- Renaming the Non-goals/Non-scope/Out-of-scope terms across templates.",
+          "",
+          "## Task Breakdown",
+          "- [ ] Step one",
+          "",
+          "## Notes",
+        ].join("\n")
+      );
+
+      const res = run("bash", ["scripts/plan-to-todo.sh", "--plan", "plans/plan-20260304-1401-carry.md"], cwd);
+      expect(res.status).toBe(0);
+
+      const contract = readFileSync(join(cwd, "tasks/contracts/20260304-1401-carry.contract.md"), "utf-8");
+      expect(contract).toContain(
+        [
+          "- Out of scope:",
+          "  - Rewriting the verify-contract compatibility promise.",
+          "  - Renaming the Non-goals/Non-scope/Out-of-scope terms across templates.",
+        ].join("\n")
+      );
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("plan-to-todo should carry forward a Non-scope: labeled plan section too", () => {
+    const cwd = tmpWorkspace("helper-plan-to-todo-carry-forward-nonscope");
+    try {
+      mkdirSync(join(cwd, "plans"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/archive"), { recursive: true });
+      copyHelpers(cwd);
+
+      const planFile = join(cwd, "plans/plan-20260304-1403-carry-nonscope.md");
+      writeFileSync(
+        planFile,
+        [
+          "# Plan: carry nonscope",
+          "",
+          "> **Status**: Approved",
+          "",
+          evidenceContract(),
+          "",
+          promotionGate(),
+          "",
+          "## Scope / Non-scope",
+          "",
+          "In scope:",
+          "- Implement the feature.",
+          "",
+          "Non-scope:",
+          "- A deferred follow-up slice.",
+          "",
+          "## Task Breakdown",
+          "- [ ] Step one",
+          "",
+          "## Notes",
+        ].join("\n")
+      );
+
+      const res = run("bash", ["scripts/plan-to-todo.sh", "--plan", "plans/plan-20260304-1403-carry-nonscope.md"], cwd);
+      expect(res.status).toBe(0);
+
+      const contract = readFileSync(join(cwd, "tasks/contracts/20260304-1403-carry-nonscope.contract.md"), "utf-8");
+      expect(contract).toContain(["- Out of scope:", "  - A deferred follow-up slice."].join("\n"));
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("plan-to-todo should keep the Out of scope placeholder when the plan has no Non-scope section", () => {
+    const cwd = tmpWorkspace("helper-plan-to-todo-no-carry-forward");
+    try {
+      mkdirSync(join(cwd, "plans"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/archive"), { recursive: true });
+      copyHelpers(cwd);
+
+      const planFile = join(cwd, "plans/plan-20260304-1404-no-nonscope.md");
+      writeFileSync(
+        planFile,
+        [
+          "# Plan: no nonscope",
+          "",
+          "> **Status**: Approved",
+          "",
+          evidenceContract(),
+          "",
+          promotionGate(),
+          "",
+          "## Task Breakdown",
+          "- [ ] Step one",
+          "",
+          "## Notes",
+        ].join("\n")
+      );
+
+      const res = run("bash", ["scripts/plan-to-todo.sh", "--plan", "plans/plan-20260304-1404-no-nonscope.md"], cwd);
+      expect(res.status).toBe(0);
+      expect(res.stdout).toContain("[BriefPreflight]");
+      expect(res.stdout).toContain("contract brief is not yet self-sufficient");
+
+      const contract = readFileSync(join(cwd, "tasks/contracts/20260304-1404-no-nonscope.contract.md"), "utf-8");
+      expect(contract).toContain("- In scope:\n- Out of scope:\n");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   test("plan-to-todo should reject transient plan projection", () => {
     const cwd = tmpWorkspace("helper-plan-to-todo-transient-artifact-name");
     try {
