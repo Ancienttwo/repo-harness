@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { assembleTemplate, getAiNativeTemplateVariables, loadPlanMap } from "../../scripts/assemble-template";
-import { loadQuestionPack } from "../../scripts/initializer-question-pack";
+import { loadQuestionPack, InitializerQuestionPackV4 } from "../../scripts/initializer-question-pack";
 
 describe("AI-native scaffold architecture profile", () => {
   test("keeps AI-native profile as an overlay on the A-K plan catalog", () => {
@@ -31,7 +31,7 @@ describe("AI-native scaffold architecture profile", () => {
   });
 
   test("documents runtime-console defaults without making them global defaults", () => {
-    const pack = loadQuestionPack();
+    const pack = loadQuestionPack() as InitializerQuestionPackV4;
 
     expect(pack.inferredDefaults.aiNativeProfile).toBe("none");
     expect(pack.aiNativeProfiles["runtime-console"].backend).toBe("Bun/Hono agent gateway");

@@ -361,7 +361,7 @@ function sha256(value: string | Buffer): string {
   return createHash('sha256').update(value).digest('hex');
 }
 
-function statIdentity(stat: { dev: number; ino: number }): string {
+function statIdentity(stat: { dev: number | bigint; ino: number | bigint }): string {
   return `${stat.dev}:${stat.ino}`;
 }
 
@@ -1044,6 +1044,7 @@ function entryType(path: string): RepoEntryType {
 }
 
 function entryTypeFromStat(lstat: ReturnType<typeof lstatSync>): RepoEntryType {
+  if (!lstat) return 'other';
   if (lstat.isSymbolicLink()) return 'symlink';
   if (lstat.isFile()) return 'file';
   if (lstat.isDirectory()) return 'directory';
@@ -1051,6 +1052,7 @@ function entryTypeFromStat(lstat: ReturnType<typeof lstatSync>): RepoEntryType {
 }
 
 function metadataSignature(fileStat: ReturnType<typeof statSync>, type: RepoEntryType, readable: boolean): string {
+  if (!fileStat) return '';
   return [
     fileStat.size,
     fileStat.mtimeMs,
@@ -1263,13 +1265,13 @@ function resolveWalkedRepoPath(repo: RepoRecord, ignore: IgnorePolicy, relativeP
     absolutePath,
     canonicalPath,
     type,
-    size: fileStat.isFile() ? fileStat.size : undefined,
-    modifiedAt: fileStat.mtime.toISOString(),
-    metadataSignature: metadataSignature(fileStat, type, readable),
-    contentFile: readable && fileStat.isFile(),
+    size: fileStat?.isFile() ? Number(fileStat.size) : undefined,
+    modifiedAt: fileStat?.mtime.toISOString() ?? '',
+    metadataSignature: fileStat ? metadataSignature(fileStat, type, readable) : '',
+    contentFile: readable && !!fileStat?.isFile(),
     symlinkTargetKind,
     readable,
-    identity: readable ? statIdentity(fileStat) : undefined,
+    identity: readable && fileStat ? statIdentity(fileStat) : undefined,
     parentIdentity: statIdentity(parentStat),
   };
 }

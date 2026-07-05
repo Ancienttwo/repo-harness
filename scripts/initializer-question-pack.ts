@@ -100,12 +100,13 @@ export function loadQuestionPack(path: string = PACK_PATH): InitializerQuestionP
   }
 
   const parsed = JSON.parse(readFileSync(path, "utf-8")) as InitializerQuestionPack;
+  const version = parsed.version;
   if (
-    parsed.version !== "initializer-question-pack.v2" &&
-    parsed.version !== "initializer-question-pack.v3" &&
-    parsed.version !== "initializer-question-pack.v4"
+    version !== "initializer-question-pack.v2" &&
+    version !== "initializer-question-pack.v3" &&
+    version !== "initializer-question-pack.v4"
   ) {
-    throw new Error(`Unsupported question pack version: ${parsed.version}`);
+    throw new Error(`Unsupported question pack version: ${version}`);
   }
 
   return parsed;

@@ -881,7 +881,7 @@ export async function runInteractiveInit(opts: InteractiveInitOptions = {}): Pro
       `repo=${repoRoot}`,
       `target=${target}`,
       `reporting=${reportLanguageInstruction}`,
-      `brainRoot=${brainChoice.root}`,
+      `brainRoot=${(brainChoice as BrainRootChoice).root}`,
       `brainMode=${brainMode}`,
       "CodeGraph=required ensure --init --sync plus global MCP configure",
       `apply=${opts.apply === false ? "false" : "true"}`,
@@ -909,7 +909,7 @@ export async function runInteractiveInit(opts: InteractiveInitOptions = {}): Pro
       configureCodegraphMcp: true,
       syncCodegraph: true,
       globalContext: { reportLanguageInstruction },
-      brainRoot: brainChoice.root,
+      brainRoot: (brainChoice as BrainRootChoice).root,
       brainMode,
     });
   } finally {

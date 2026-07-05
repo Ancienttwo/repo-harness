@@ -181,7 +181,7 @@ export function createRepoHarnessMcpServer(opts: McpServerOptions): Server {
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const name = request.params.name;
     const args = (request.params.arguments ?? {}) as Record<string, unknown>;
-    return callMcpTool(ctx, name, args);
+    return callMcpTool(ctx, name, args) as any;
   });
 
   return server;

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "path";
+import { InitializerQuestionPackV4 } from "../scripts/initializer-question-pack";
 import {
   getAiNativeProfileIds,
   getDecisionPointsByBatch,
@@ -11,7 +12,7 @@ import {
 
 describe("Initializer question pack", () => {
   test("should load v4 question pack by default", () => {
-    const pack = loadQuestionPack();
+    const pack = loadQuestionPack() as InitializerQuestionPackV4;
     expect(pack.version).toBe("initializer-question-pack.v4");
     expect(pack.decisionPoints.length).toBe(15);
     expect(pack.planTiers.core).toEqual(["A", "B", "C", "D", "E", "F"]);

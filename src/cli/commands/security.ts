@@ -388,11 +388,11 @@ export function runSecurityScan(opts: SecurityScanOptions = {}): SecurityScanRep
   const home = opts.home ?? homeDir();
   const repoRoot = resolveRepoRoot(cwd);
   const scannedFiles: SecurityScannedFile[] = [
-    { filePath: path.join(home, '.claude', 'settings.json'), kind: 'claude-hooks', exists: false },
-    { filePath: path.join(home, '.codex', 'hooks.json'), kind: 'codex-hooks', exists: false },
-    { filePath: path.join(repoRoot, '.vscode', 'tasks.json'), kind: 'vscode-tasks', exists: false },
-    { filePath: path.join(repoRoot, '.claude', 'settings.json'), kind: 'claude-hooks', exists: false },
-    { filePath: path.join(repoRoot, '.codex', 'hooks.json'), kind: 'codex-hooks', exists: false },
+    { filePath: path.join(home, '.claude', 'settings.json'), kind: 'claude-hooks' as ScannedFileKind, exists: false },
+    { filePath: path.join(home, '.codex', 'hooks.json'), kind: 'codex-hooks' as ScannedFileKind, exists: false },
+    { filePath: path.join(repoRoot, '.vscode', 'tasks.json'), kind: 'vscode-tasks' as ScannedFileKind, exists: false },
+    { filePath: path.join(repoRoot, '.claude', 'settings.json'), kind: 'claude-hooks' as ScannedFileKind, exists: false },
+    { filePath: path.join(repoRoot, '.codex', 'hooks.json'), kind: 'codex-hooks' as ScannedFileKind, exists: false },
   ].map((entry) => ({ ...entry, exists: fs.existsSync(entry.filePath) }));
 
   const findings: SecurityFinding[] = [];
