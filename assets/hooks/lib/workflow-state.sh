@@ -1317,7 +1317,7 @@ workflow_review_rubric_version() {
 
 # Classify the top-of-file Review Rubric Version. Echoes one of:
 #   absent     - no rubric line at all (a genuine pre-rubric legacy artifact)
-#   1          - the supported modern rubric version
+#   1 or 2     - a supported rubric version (1 = legacy, 2 = current)
 #   malformed  - a rubric line is present but is not a supported version
 #                (non-numeric, 0, an unsupported number, or quote/space garbage)
 # A present-but-unsupported rubric means the artifact claims a schema this gate
@@ -1333,8 +1333,8 @@ workflow_review_rubric_class() {
   trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
   if [[ -z "$trimmed" ]]; then
     printf 'absent'
-  elif [[ "$trimmed" == "1" ]]; then
-    printf '1'
+  elif [[ "$trimmed" == "1" || "$trimmed" == "2" ]]; then
+    printf '%s' "$trimmed"
   else
     printf 'malformed'
   fi
@@ -1420,7 +1420,7 @@ workflow_review_freshness_status() {
     # path here — the external-acceptance gate is the authority that requires a
     # supported rubric (a rubric-less review fails external acceptance), so absent
     # is still blocked at every Done/finish/verify gate that enforces external.
-    if [[ "$rubric_class" == "1" ]]; then
+    if [[ "$rubric_class" != "absent" ]]; then
       printf 'missing\t-\tReview fingerprint is missing for rubric v%s; rerun /check and peer acceptance to record the current Reviewed Diff Fingerprint.\n' "$rubric_class"
       return 0
     fi
@@ -1570,7 +1570,7 @@ workflow_external_acceptance_status() {
   fi
 
   # Bind the peer's acceptance to the exact diff they reviewed. A supported rubric
-  # (v1) requires the External Acceptance section to carry its own current Reviewed
+  # (v1+) requires the External Acceptance section to carry its own current Reviewed
   # Diff Fingerprint and scope; otherwise a stale F1 acceptance keeps satisfying the
   # gate after the implementation moves to F2, because the top-of-file fingerprint
   # is agent-editable. An absent or malformed rubric fails closed here — external
