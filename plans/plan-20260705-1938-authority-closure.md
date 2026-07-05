@@ -380,6 +380,6 @@ grep -rl "forbidden design space" scripts/contract-run.ts assets/hooks/ src/cli/
 - [x] G2 geju 产物冻结 advisory
 - [x] C1 .claude/agents/ 舰队定义入库（从用户级复制）
 - [x] C2 对称 .codex/agents/*.toml + .gitignore 例外
-- [ ] C3 policy 补 codex-subagent runner（含种子面）+ contract-run 记录
+- [x] C3 policy 补 codex-subagent runner（含种子面）+ contract-run 记录
 - [ ] G3 SKILL.md + 文档教学面
 - [ ] F1 全量验证 battery

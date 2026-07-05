@@ -100,6 +100,7 @@ function writePilotContract(
       "  runner:",
       "    preferred:",
       "      - subagent",
+      "      - codex-subagent",
       "      - codex-exec",
       "      - main-thread",
       "    fallback: main-thread",
@@ -759,12 +760,30 @@ describe("contract-run helper", () => {
           runner: { preferred: string[]; fallback: string | null; brief_is_authoritative: boolean };
         }
       ).runner;
-      expect(runner.preferred).toEqual(["subagent", "codex-exec", "main-thread"]);
+      expect(runner.preferred).toEqual(["subagent", "codex-subagent", "codex-exec", "main-thread"]);
       expect(runner.fallback).toBe("main-thread");
       expect(runner.brief_is_authoritative).toBe(true);
       const runnerUsage = manifest.runner_usage as { used: string; off_policy: boolean };
       expect(runnerUsage.used).toBe("subagent");
       expect(runnerUsage.off_policy).toBe(false);
+
+      const codexSubagentRes = runContractRun(repo, [
+        "dry-run",
+        "--repo",
+        repo,
+        "--contract",
+        "tasks/contracts/pilot.contract.md",
+        "--out",
+        ".ai/harness/runs/runner-codex-subagent",
+        "--runner",
+        "codex-subagent",
+        "--json",
+      ]);
+      expect(codexSubagentRes.status).toBe(0);
+      const codexSubagentManifest = parseJson(codexSubagentRes.stdout);
+      const codexSubagentUsage = codexSubagentManifest.runner_usage as { used: string; off_policy: boolean };
+      expect(codexSubagentUsage.used).toBe("codex-subagent");
+      expect(codexSubagentUsage.off_policy).toBe(false);
 
       const offPolicyRes = runContractRun(repo, [
         "dry-run",

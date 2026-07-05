@@ -397,11 +397,13 @@ describe("create-project-dirs runtime smoke", () => {
       expect(policy.sidecar_research.main_thread_policy).toContain("if spawning is not worthwhile");
       expect(policy.delegation.preferred_runners).toEqual([
         "subagent",
+        "codex-subagent",
         "codex-exec",
         "main-thread",
       ]);
       expect(policy.delegation.fallback_runner).toBe("main-thread");
       expect(policy.delegation.brief_source).toBe("tasks/contracts/<stem>.contract.md");
+      expect(policy.delegation.runner_rule).toContain("codex-subagent (Codex's own native subagent)");
       expect(policy.delegation.runner_rule).toContain("MUST NOT silently succeed");
       expect(policy.documentation.reference_configs).toContain("global-working-rules.md");
       expect(policy.documentation.reference_configs).toContain("minimal-change-hooks.md");
