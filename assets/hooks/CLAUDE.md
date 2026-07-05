@@ -43,21 +43,21 @@ Owns the runtime-harness-hook-adapters capability boundary declared in .ai/conte
 <!-- BEGIN ARCHITECTURE CONTRACT -->
 ## Architecture Contract
 
-- Functional block: `.ai/hooks`
+- Functional block: `assets/hooks`
 - Capability ID: `runtime-harness-hook-adapters`
-- Matched prefix: `.ai/hooks`
+- Matched prefix: `assets/hooks`
 - Architecture domain: `runtime-harness`
 - Architecture capability: `hook-adapters`
 - Architecture module: `docs/architecture/modules/runtime-harness/hook-adapters.md`
-- Last architecture event: 2026-06-13T00:04:13+0800
-- Last changed path: `.ai/hooks/post-tool-observer.sh`
+- Last architecture event: 2026-07-05T13:45:11+0800
+- Last changed path: `assets/hooks/codex-delegation-advisor.sh`
 - Severity: high
 - Change type: workflow-surface
 - Module responsibility: Keep this block aligned with the local boundary described by surrounding human-owned context.
-- Entrypoints: `.ai/hooks`
+- Entrypoints: `assets/hooks`
 - Allowed dependencies: Follow root `AGENTS.md` / `CLAUDE.md` and this local contract.
 - Forbidden dependencies: Do not cross sibling app/service/package boundaries without an architecture snapshot or explicit plan.
-- Runtime path: `.ai/hooks`
+- Runtime path: `assets/hooks`
 - LSP/tooling profile: `typescript-lsp`
 - Verification: Use root required checks plus local commands recorded in this capability contract.
 - Latest snapshot: `(none yet)`

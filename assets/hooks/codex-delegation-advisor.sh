@@ -94,6 +94,25 @@ JSON_INPUT="$input" REPO_ROOT="${HOOK_REPO_ROOT:-$(pwd)}" bun -e '
   if (!trigger) process.exit(0);
 
   const repoRoot = process.env.REPO_ROOT || process.cwd();
+
+  let policyDelegation = {};
+  try {
+    policyDelegation =
+      JSON.parse(fs.readFileSync(path.join(repoRoot, ".ai", "harness", "policy.json"), "utf8")).delegation || {};
+  } catch {
+    policyDelegation = {};
+  }
+  const maxAgents = Number.isInteger(policyDelegation.max_agents) ? policyDelegation.max_agents : 3;
+  const maxDepth = Number.isInteger(policyDelegation.max_depth) ? policyDelegation.max_depth : 1;
+  const preferredRunners =
+    Array.isArray(policyDelegation.preferred_runners) && policyDelegation.preferred_runners.length
+      ? policyDelegation.preferred_runners
+      : ["subagent"];
+  const fallbackRunner =
+    typeof policyDelegation.fallback_runner === "string" && policyDelegation.fallback_runner
+      ? policyDelegation.fallback_runner
+      : null;
+
   const stateDir = path.join(repoRoot, ".ai", "harness", "delegation");
   fs.mkdirSync(stateDir, { recursive: true });
 
@@ -107,10 +126,12 @@ JSON_INPUT="$input" REPO_ROOT="${HOOK_REPO_ROOT:-$(pwd)}" bun -e '
     spawned: false,
     fallback_used: false,
     mode: "explicit",
-    max_agents: 3,
-    max_depth: 1,
+    max_agents: maxAgents,
+    max_depth: maxDepth,
     allow_parallel_writers: false,
     stop_fallback: true,
+    preferred_runners: preferredRunners,
+    fallback_runner: fallbackRunner,
     trigger: trigger.name,
     prompt_hash: crypto.createHash("sha1").update(prompt).digest("hex"),
     scope_source: scope?.source || "unscoped",
@@ -132,15 +153,19 @@ JSON_INPUT="$input" REPO_ROOT="${HOOK_REPO_ROOT:-$(pwd)}" bun -e '
     "",
     "The current user prompt explicitly enabled bounded delegation.",
     "",
-    "If this task contains at least two independent, bounded workstreams, call spawn_agent before doing the corresponding work in the parent.",
+    "Treat the active task contract (tasks/contracts/<active-plan-stem>.contract.md) as the authoritative execution brief: Goal, Scope, Allowed Paths, and Exit Criteria. Do not re-derive scope from this conversation.",
+    "",
+    `Runner preference (policy delegation.preferred_runners): ${preferredRunners.join(", ")}. Native subagent (spawn_agent) is the preferred parallelism accelerator that consumes the contract brief. When spawn_agent is unavailable, sandboxed, or unreliable, degrade to ${fallbackRunner || "main-thread"} on the SAME contract via contract-run. Runner-availability degradation MUST be recorded in the contract-run manifest and MUST NOT silently succeed; it is a runner-availability fallback, not a product-semantics change.`,
+    "",
+    "If this task contains at least two independent, bounded workstreams, dispatch per the contract before doing the corresponding work in the parent; otherwise run it sequentially.",
     "",
     "Rules:",
-    "- Spawn no more than 3 agents.",
+    `- Spawn no more than ${maxAgents} agents.`,
     "- Use explorer for read-only code mapping.",
     "- Use worker only for an isolated implementation slice.",
     "- Use reviewer for correctness, regression, security, and missing-test review.",
     "- Never give two agents overlapping write ownership.",
-    "- Keep max spawn depth at 1.",
+    `- Keep max spawn depth at ${maxDepth}.`,
     "- Give every agent a precise scope and required return format.",
     "- Wait for all requested agents.",
     "- Reconcile contradictory findings in the parent.",

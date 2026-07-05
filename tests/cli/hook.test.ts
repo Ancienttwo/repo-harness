@@ -714,6 +714,8 @@ describe('hook command (Phase 1B)', () => {
       expect(parsed.hookSpecificOutput.hookEventName).toBe('UserPromptSubmit');
       expect(parsed.hookSpecificOutput.additionalContext).toContain('[repo-harness:delegation]');
       expect(parsed.hookSpecificOutput.additionalContext).toContain('Spawn no more than 3 agents');
+      expect(parsed.hookSpecificOutput.additionalContext).toContain('authoritative execution brief');
+      expect(parsed.hookSpecificOutput.additionalContext).toContain('MUST NOT silently succeed');
 
       const state = JSON.parse(
         fs.readFileSync(path.join(repoRoot, '.ai/harness/delegation/latest.json'), 'utf-8'),
@@ -721,6 +723,7 @@ describe('hook command (Phase 1B)', () => {
       expect(state.explicit).toBe(true);
       expect(state.spawned).toBe(false);
       expect(state.max_depth).toBe(1);
+      expect(state.preferred_runners).toContain('subagent');
       expect(state.scope_id).toBe('session-session-1');
       expect(state.state_file).toBe('turns/session-session-1.json');
       expect(fs.existsSync(path.join(repoRoot, '.ai/harness/delegation/turns/session-session-1.json'))).toBe(true);
