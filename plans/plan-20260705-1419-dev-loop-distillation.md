@@ -512,7 +512,7 @@ bun scripts/contract-run.ts preflight --contract docs/reference-configs/contract
 - [x] C1 verify-sprint 收官記憶 advisory（不改 exit code）
 - [x] D1 縮減版：contract-run --runner 選項＋manifest runner_usage 記錄＋brief_source 測試斷言（advisor 半邊已由 ca76def 交付，本分支不碰 advisor 檔案）
 - [x] G1 4 份 repo-harness SKILL.md 教學段落
-- [ ] F1 全量驗證 battery
+- [x] F1 全量驗證 battery
 
 ## Deviations From Approved Plan
 - 分支治理改為 stack 疊加：發現 live stacked-PR 流（#39/#40 + codex/advisor-file-coupled-nudge 已推 origin），本地 merge main 會與遠端 PR 流脫鉤。本分支 codex/dev-loop-distillation 疊在 ca76def 之上；stack 自底向上合併後與原計劃等價。

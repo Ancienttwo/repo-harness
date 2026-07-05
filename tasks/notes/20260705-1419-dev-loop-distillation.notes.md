@@ -19,6 +19,7 @@
 - B2: the `<stopConds 非空時,以縮排 bullet 附在上行之下>` line in the plan was descriptive, not literal source; implemented as a local (non-exported) transform inside `buildRun` — split the raw `sectionBody` text on newlines, trim, drop blanks, prefix each remaining bullet with two spaces — rather than a new top-level helper, since it has exactly one call site and the plan's "用既有 helpers，不新增抽象" instruction was about the why/goal/scope/stopConds/exemplar pre-extraction, not a ban on any local formatting logic.
 - B2: verified both conditional branches by hand (not just via the no-Exemplar/no-Stop-Conditions fixture already in the test suite): wrote a scratch contract with `## Why`, `## Stop Conditions`, and `> **Exemplar**` all populated, ran `bun scripts/contract-run.ts dry-run` against it, and inspected the emitted worker/verifier prompts directly. Confirmed the Exemplar line appears, the two Stop Conditions bullets render indented directly under the "Hand back..." sentence with no blank line between, and Goal/Scope/Why render their raw (un-flattened) section text — a multi-line Scope or Why section will produce a multi-line "Scope: ..."/"Why: ..." block in the verifier prompt, since the plan's spec only says trim (strip leading/trailing whitespace), not flatten-to-one-line. Judged this acceptable: the full contract text is still available file-coupled below for disambiguation, and flattening was never requested.
 - B3: extended `writePilotContract`'s signature with an optional third `why` parameter (default: a concrete pilot-appropriate sentence) instead of adding a second fixture-writer function, matching the file's existing pattern of parameterizing the one shared fixture (it already takes an optional `toolCalls` override for the budget test). The new placeholder-Why test passes the literal B1 placeholder sentence as that third argument to get an otherwise-complete contract with only Why unfilled.
+- F1: ran `bun install` in the worktree (lockfile unchanged, verified via `git status --porcelain`) to clear a fresh-worktree env gap — 10 prior bun-test errors were all missing commander/express packages; node_modules is untracked. Battery execution finished inline by the orchestrator after the assigned executor hit a session limit mid-run (install done, no partial edits left behind).
 - B3: manually ran `contract-run preflight` against the exact contract text used by the "preflight fails closed on a placeholder brief" fixture (Goal/Scope placeholders, no `## Why` heading at all) and confirmed `brief_preflight.issues` grew from 2 to 3 (`Goal section is empty...`, `Scope section is empty...`, `Why section is empty or still a template placeholder`) — the existing `issues.length >= 2` assertion still holds without modification, exactly as the plan predicted.
 
 ## Deviations From Plan Or Spec
@@ -44,6 +45,19 @@
 
 - Checks: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
+- F1 battery (2026-07-05, run in this worktree at HEAD 21e399d):
+  - `bun test` → 1020 pass / 1 skip / 0 fail (1021 tests, 93 files, 604.55s)
+  - `bun run check:type` (tsc --noEmit) → exit 0
+  - `bun run check:hooks` → projection OK: 25 files
+  - `bash scripts/check-deploy-sql-order.sh` → OK
+  - `bash scripts/check-architecture-sync.sh` → advisory, changed_capabilities=6, blocking=0
+  - `bash scripts/check-task-sync.sh` → no changes detected
+  - `check-task-workflow --strict` → [workflow] OK, exit 0
+  - `bun scripts/inspect-project-state.ts --repo . --format text` → drift_signals: (none)
+  - `bash scripts/migrate-project-template.sh --repo . --dry-run` → exit 0
+  - mirror parity sweep (8 helpers incl. contract-run.ts/plan-to-todo.sh/verify-sprint.sh) → zero drift
+  - golden example preflight → `preflight_pass`
+  - fail-closed smoke (placeholder template copy) → `fail` + `incomplete_brief` + issues [Goal, Scope, Why]
 
 ## Promotion Candidates
 
