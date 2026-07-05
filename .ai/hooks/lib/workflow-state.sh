@@ -1930,6 +1930,31 @@ ${changed_files}
 \`\`\`
 EOF_HANDOFF
 
+  cat > "$resume_file" <<EOF_RESUME
+# Codex Resume Packet
+<!-- generated-by: workflow_write_handoff v1 -->
+
+> **Generated**: $(date '+%Y-%m-%d %H:%M:%S')
+> **Reason**: ${reason}
+
+## Resume Prompt
+
+Start a fresh session for this task; do not rely on auto-compact or prior chat history. Read the source artifacts below, then the handoff, before continuing from Exact Next Step.
+
+- ${next_task}
+
+## Source Artifacts
+
+- Handoff: ${handoff_file}
+- Spec: ${spec_file}
+- Active plan: ${active_plan:-(none)}
+- Active contract: ${active_contract:-(none)}
+- Review: ${active_review:-(none)}
+- Notes: ${active_notes:-(none)}
+- Research: $(workflow_policy_get '.tasks.research_dir' 'docs/researches')/
+- Checks: ${checks_file}
+EOF_RESUME
+
   workflow_append_event "handoff_refresh" "$reason" "{\"source_plan\":\"$(workflow_json_escape "${source_plan:-}")\",\"parent_run_id\":\"$(workflow_json_escape "$parent_run_id")\"}"
   workflow_write_run_summary "$reason"
 }

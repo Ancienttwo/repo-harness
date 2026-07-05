@@ -10,6 +10,7 @@ import {
   readdirSync,
   realpathSync,
   rmSync,
+  statSync,
   symlinkSync,
   utimesSync,
   writeFileSync,
@@ -2000,6 +2001,20 @@ describe("Hook runtime behavior", () => {
       expect(handoff).toContain("Verdict: `review`");
       expect(handoff).toContain("package.json");
       expect(handoff).toContain("Can an existing dependency cover this?");
+
+      // workflow_write_handoff must refresh the resume packet alongside
+      // current.md on every Stop, or check-task-workflow --strict's
+      // check_handoff_resume_pair / check_current_resume_freshness flag a
+      // stale resume.md (Phase 3 A3).
+      const resumePath = join(cwd, ".ai/harness/handoff/resume.md");
+      expect(existsSync(resumePath)).toBe(true);
+      const resumeContent = readFileSync(resumePath, "utf-8");
+      expect(resumeContent).toContain("# Codex Resume Packet");
+      expect(resumeContent).toContain("## Resume Prompt");
+      expect(resumeContent).toContain("## Source Artifacts");
+      expect(statSync(resumePath).mtimeMs).toBeGreaterThanOrEqual(
+        statSync(join(cwd, ".ai/harness/handoff/current.md")).mtimeMs
+      );
 
       const second = runHook("stop-orchestrator.sh", cwd, {
         stdin: JSON.stringify({ hook_event_name: "Stop", stop_hook_active: false }),

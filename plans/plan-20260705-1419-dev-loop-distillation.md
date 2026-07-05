@@ -503,7 +503,7 @@ bun scripts/contract-run.ts preflight --contract docs/reference-configs/contract
 - [x] 0 Phase-2 plan bookkeeping 勘誤（slice-0 commit 完成；advisor 行由 ca76def 交付）
 - [x] A1 調和 6 檔 helper 漂移（migrate-project-template.sh 除外）
 - [x] A2 泛化鏡像 parity 測試（INTENTIONALLY_DIVERGENT 唯一成員）
-- [ ] A3 resume.md 隨 Stop 自動刷新（workflow_write_handoff 尾部）
+- [x] A3 resume.md 隨 Stop 自動刷新（workflow_write_handoff 尾部）
 - [ ] B1 contract 模板三欄位（Why / Stop Conditions / Exemplar，四處同改）
 - [ ] B2 writePrompt() 蒸餾升級（worker 自驗+notes+stop；verifier 得 Intent）
 - [ ] B3 preflight 新增唯一必檢 ## Why
