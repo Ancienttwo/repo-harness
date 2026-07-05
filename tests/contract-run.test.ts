@@ -388,6 +388,31 @@ describe("contract-run helper", () => {
     }
   });
 
+  test("golden example contract brief passes its own preflight gate", () => {
+    const repo = makeRepo("contract-run-golden-example-");
+    try {
+      const exampleContract = readFileSync(
+        join(ROOT, "docs/reference-configs/contract-brief-example.md"),
+        "utf-8",
+      );
+      writeFileSync(join(repo, "tasks/contracts/golden-example.contract.md"), exampleContract);
+      const res = runContractRun(repo, [
+        "preflight",
+        "--repo",
+        repo,
+        "--contract",
+        "tasks/contracts/golden-example.contract.md",
+        "--json",
+      ]);
+      expect(res.status).toBe(0);
+      const manifest = parseJson(res.stdout);
+      expect(manifest.status).toBe("preflight_pass");
+      expect((manifest.brief_preflight as { ok: boolean }).ok).toBe(true);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
   test("preflight fails closed when Why is a placeholder", () => {
     const repo = makeRepo("contract-run-why-placeholder-");
     try {
