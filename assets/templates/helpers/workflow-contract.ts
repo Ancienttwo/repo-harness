@@ -64,6 +64,7 @@ export type WorkflowContract = {
   };
   helpers: {
     runtimeDirectory?: string;
+    runtimeSource?: string;
     scripts: string[];
   };
   artifacts: {
