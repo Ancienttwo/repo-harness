@@ -5,6 +5,7 @@ skill routing lives in `docs/reference-configs/agentic-development-flow.md`.
 
 - `gstack` supplies `office-hours`, `plan-eng-review`, and `plan-design-review`
 - `Waza` supplies `/think`, `/hunt`, and `/check` for daily small/medium work
+- `hai-stack` supplies `geju` for live, pre-contract exploration; only its frozen output enters a contract
 - Codex automation requires `health`, `check`, and `mermaid` from `~/.codex/skills`
 - `gbrain` supports knowledge capture, repo sync, and handoff retrieval
 - `CodeGraph` is required agent readiness for code navigation and impact tracing
@@ -13,6 +14,15 @@ Waza is Codex-first in this contract. `~/.codex/skills` is the Codex runtime
 source, while `~/.agents/skills` is only the skills CLI staging/cache path used
 to receive upstream `tw93/Waza` updates before syncing verified copies into
 Codex.
+
+`hai-stack` is Codex-first in this contract too. `~/.codex/skills` is the
+Codex runtime source for `geju`, while `~/.agents/skills` is only the skills
+CLI staging/cache path used to receive upstream `hylarucoder/hai-stack`
+updates before syncing verified copies into Codex. `geju` is pre-contract
+exploration only — live judgment that produces a thesis, direction, and
+falsifier; once that output is frozen into a task contract's `## Why` and
+`## Falsifier` sections, the contract is authoritative and `geju` is not
+consulted again for that task.
 
 `repo-harness install` is allowed to bootstrap the workflow-owned global runtime
 in one pass: the `repo-harness` CLI, repo-harness runtime aliases, user-level
@@ -138,6 +148,30 @@ done
 for f in anti-patterns.md chinese.md durable-context.md english.md; do
   cmp -s ~/.agents/rules/$f ~/.codex/rules/$f
 done
+```
+
+### hai-stack
+
+Both hosts:
+
+```bash
+npx -y skills add hylarucoder/hai-stack -g -a claude-code codex -s geju -y
+```
+
+Single host:
+
+```bash
+npx -y skills add hylarucoder/hai-stack -g -a claude-code -s geju -y
+```
+
+Replace `claude-code` with `codex` when installing for Codex only.
+
+After installing or updating through the skills CLI, verify Codex has its own
+runtime copy:
+
+```bash
+rsync -a --delete ~/.agents/skills/geju/ ~/.codex/skills/geju/
+diff -qr ~/.agents/skills/geju ~/.codex/skills/geju
 ```
 
 ### gbrain
@@ -403,6 +437,14 @@ done
 for f in anti-patterns.md chinese.md durable-context.md english.md; do
   cmp -s ~/.agents/rules/$f ~/.codex/rules/$f
 done
+```
+
+### hai-stack
+
+```bash
+npx -y skills update
+rsync -a --delete ~/.agents/skills/geju/ ~/.codex/skills/geju/
+diff -qr ~/.agents/skills/geju ~/.codex/skills/geju
 ```
 
 ### gbrain

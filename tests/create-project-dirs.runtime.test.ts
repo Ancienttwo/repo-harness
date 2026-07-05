@@ -288,6 +288,14 @@ describe("create-project-dirs runtime smoke", () => {
       expect(policy.external_tooling.waza.primary_host).toBe("codex");
       expect(policy.external_tooling.waza.managed_skills).toEqual(["think", "hunt", "check", "health"]);
       expect(policy.external_tooling.waza.codex_primary_path).toBe("~/.codex/skills");
+      expect(policy.external_tooling.hai_stack.source_repo).toBe("hylarucoder/hai-stack");
+      expect(policy.external_tooling.hai_stack.source_url).toBe("https://github.com/hylarucoder/hai-stack.git");
+      expect(policy.external_tooling.hai_stack.managed_skills).toEqual(["geju"]);
+      expect(policy.external_tooling.hai_stack.primary_host).toBe("codex");
+      expect(policy.external_tooling.hai_stack.codex_primary_path).toBe("~/.codex/skills");
+      expect(policy.external_tooling.hai_stack.staging_cache_path).toBe("~/.agents/skills");
+      expect(policy.external_tooling.hai_stack.sync_mode).toBe("stage-upstream-then-copy-to-codex");
+      expect(policy.external_tooling.hai_stack.host_drift_policy).toBe("report-per-host-version-staging-and-upstream-drift");
       expect(policy.external_tooling.codex_automation_profile.required_skills).toEqual(["health", "check", "mermaid"]);
       expect(policy.external_tooling.codex_automation_profile.mode).toBe("codex-runtime-reference");
       expect(policy.external_tooling.codex_automation_profile.source).toBe("~/.codex/skills");

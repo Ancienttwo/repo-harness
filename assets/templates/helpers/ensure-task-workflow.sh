@@ -1079,6 +1079,16 @@ ARCHITECTURE_INDEX_EOF
       "sync_mode": "stage-upstream-then-copy-to-codex",
       "host_drift_policy": "report-per-host-version-staging-and-upstream-drift"
     },
+    "hai_stack": {
+      "source_repo": "hylarucoder/hai-stack",
+      "source_url": "https://github.com/hylarucoder/hai-stack.git",
+      "managed_skills": ["geju"],
+      "primary_host": "codex",
+      "codex_primary_path": "~/.codex/skills",
+      "staging_cache_path": "~/.agents/skills",
+      "sync_mode": "stage-upstream-then-copy-to-codex",
+      "host_drift_policy": "report-per-host-version-staging-and-upstream-drift"
+    },
     "codex_automation_profile": {
       "required_skills": ["health", "check", "mermaid"],
       "optional_skills": [],
