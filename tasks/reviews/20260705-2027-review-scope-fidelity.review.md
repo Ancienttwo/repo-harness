@@ -1,11 +1,11 @@
-# Task Review: contract-intent-boundary
+# Task Review: review-scope-fidelity
 
 > **Status**: Pending
-> **Plan**: plans/plan-20260705-1455-contract-intent-boundary.md
-> **Contract**: tasks/contracts/20260705-1455-contract-intent-boundary.contract.md
-> **Notes File**: tasks/notes/20260705-1455-contract-intent-boundary.notes.md
+> **Plan**: plans/plan-20260705-2027-review-scope-fidelity.md
+> **Contract**: tasks/contracts/20260705-2027-review-scope-fidelity.contract.md
+> **Notes File**: tasks/notes/20260705-2027-review-scope-fidelity.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-07-05 15:12
+> **Last Updated**: 2026-07-05 20:27
 > **Recommendation**: fail
 > **Review Rubric Version**: 1
 > **Reviewed Diff Fingerprint**: pending

@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-05T18:58:35+0800 -->
+<!-- updated_at: 2026-07-05T20:36:15+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-07-05T18:58:35+0800
-> **Source Branch**: codex/dev-loop-distillation
-> **Source Commit**: 6a64d0c
+> **Updated At**: 2026-07-05T20:36:15+0800
+> **Source Branch**: main
+> **Source Commit**: a409656
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -18,9 +18,9 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 ## Current Focus
 
 - Status: ManualClearedWithActiveWork
-- Active Plan: (none)
-- Plan Status: (none)
-- Next Task: inspect active worktree marker(s)
+- Active Plan: plans/plan-20260705-1938-authority-closure.md
+- Plan Status: Approved
+- Next Task: T1 contract 模板全 surface diff inventory + 对齐 drift
 - Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
 
 ## Mainline Snapshot Reading
@@ -31,10 +31,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- /Users/ancienttwo/Projects/repo-harness: plans/plan-20260705-0426-file-coupled-delegation-phase2.md
-- /Users/ancienttwo/Projects/repo-harness: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness
-- /Users/ancienttwo/Projects/repo-harness-wt-contract-intent-boundary: plans/plan-20260705-1455-contract-intent-boundary.md
-- /Users/ancienttwo/Projects/repo-harness-wt-contract-intent-boundary: active-worktree owner -> /Users/ancienttwo/Projects/repo-harness-wt-contract-intent-boundary
+- .: plans/plan-20260705-1938-authority-closure.md
+- .: active-worktree owner -> /Users/kito/Projects/repo-harness
 ## Active Sprint
 
 - Sprint: (none)
@@ -44,27 +42,28 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/20260703-inspection-migration.md`: status=active, current_slice=completed-20260703-architecture-closeout, source_plan=(none)
 ## Handoff
 
-- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: B5 plan-to-todo 投影後 advisory —— 改由平行分支 codex/projection-brief-advisory 交付中（其實作直接呼叫 contract-run preflight，優於本計劃的靜態提示）；本分支不實作以免雙重 advisory 與合併衝突。若該分支未落地，重啟此列。
+- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Execute captured plan: Authority Closure: distill think/hunt/check/geju below the delegation boundary + symmetric Codex fleet
 
 ## Checks
 
-- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
+- status=(none), source=(none), exit_code=(none), file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 10 changed/untracked path(s)
+- Summary: 11 changed/untracked path(s)
 
 ```
- D plans/plan-20260705-1419-dev-loop-distillation.md
- D tasks/contracts/20260705-1419-dev-loop-distillation.contract.md
- D tasks/notes/20260705-1419-dev-loop-distillation.notes.md
- D tasks/reviews/20260705-1419-dev-loop-distillation.review.md
- M tasks/todos.md
-?? plans/archive/plan-20260705-1419-dev-loop-distillation.md
-?? tasks/archive/contract-20260705-1858-dev-loop-distillation.md
-?? tasks/archive/notes-20260705-1858-dev-loop-distillation.md
-?? tasks/archive/review-20260705-1858-dev-loop-distillation.md
-?? tasks/archive/todo-20260705-1858-dev-loop-distillation.md
+ D plans/plan-20260705-1455-contract-intent-boundary.md
+ D tasks/contracts/20260705-1455-contract-intent-boundary.contract.md
+ D tasks/notes/20260705-1455-contract-intent-boundary.notes.md
+ D tasks/reviews/20260705-1455-contract-intent-boundary.review.md
+?? .ai/harness/handoff/authority-closure-rereview.md
+?? plans/archive/plan-20260705-1455-contract-intent-boundary.md
+?? plans/plan-20260705-1938-authority-closure.md
+?? tasks/archive/contract-20260705-2036-contract-intent-boundary.md
+?? tasks/archive/notes-20260705-2036-contract-intent-boundary.md
+?? tasks/archive/review-20260705-2036-contract-intent-boundary.md
+?? tasks/archive/todo-20260705-2036-contract-intent-boundary.md
 ```
 
 ## Source Artifacts

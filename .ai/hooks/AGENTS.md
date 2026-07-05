@@ -37,7 +37,7 @@ Owns the runtime-harness-hook-adapters capability boundary declared in .ai/conte
 ## Refresh Hints
 
 - `bun test tests/hook-runtime.test.ts tests/hook-contracts.test.ts tests/workflow-contract.test.ts`
-- `repo-harness run check-task-workflow --strict`
+- `bash scripts/check-task-workflow.sh --strict`
 <!-- END CAPABILITY CONTEXT -->
 
 <!-- BEGIN ARCHITECTURE CONTRACT -->

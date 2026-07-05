@@ -1,4 +1,4 @@
-export const REVIEW_RUBRIC_VERSION = 1;
+export const REVIEW_RUBRIC_VERSION = 2;
 
 export type ReviewRubricFormat = 'prompt' | 'text';
 
@@ -17,6 +17,7 @@ const REVIEW_DIMENSIONS = Object.freeze([
   'Naming, API clarity, and misleading abstractions',
   'Test coverage and regression evidence',
   'Future maintenance cost, including minimal-change/YAGNI concerns',
+  'Scope fidelity: changes outside the contract In-scope, touching declared Out-of-scope/Non-Goals, or unrequested features/options/commentary',
 ] as const);
 
 const SEVERITY_DEFINITIONS = Object.freeze([
@@ -31,7 +32,7 @@ function formatList(items: readonly string[]): string {
 }
 
 export function renderReviewRubric(format: ReviewRubricFormat = 'prompt'): string {
-  const heading = format === 'prompt' ? '[ReviewRubric] Deep Diff Review Rubric v1' : 'Deep Diff Review Rubric v1';
+  const heading = format === 'prompt' ? '[ReviewRubric] Deep Diff Review Rubric v2' : 'Deep Diff Review Rubric v2';
   return [
     heading,
     '',
@@ -51,7 +52,7 @@ export function renderReviewRubric(format: ReviewRubricFormat = 'prompt'): strin
     '  Smallest safe fix: bounded change that preserves existing contracts.',
     '  Regression test: exact missing or changed test/check.',
     '',
-    'Rules: prioritize correctness, security, compatibility, and missing tests over minimal-change concerns. Treat minimal-change/YAGNI only as a maintenance-cost dimension; never upgrade it to P0/P1 by itself. Ignore style-only nits. If there are no findings, say "No findings" and list residual risks or test gaps.',
+    'Rules: prioritize correctness, security, compatibility, and missing tests over minimal-change concerns. Treat minimal-change/YAGNI only as a maintenance-cost dimension; never upgrade it to P0/P1 by itself. Exception: a Scope fidelity violation — changes touching declared Out-of-scope/Non-Goals items or adding unrequested features, options, or commentary — may be rated up to P1. Ignore style-only nits. If there are no findings, say "No findings" and list residual risks or test gaps.',
   ].join('\n');
 }
 

@@ -343,7 +343,7 @@ describe("Hook runtime behavior", () => {
       expect(reviewRes.status).toBe(0);
       expect(reviewRes.stdout).toContain("[WazaRoute] Review/release intent detected");
       expect(reviewRes.stdout).toContain("Waza /check");
-      expect(reviewRes.stdout).toContain("[ReviewRubric] Deep Diff Review Rubric v1");
+      expect(reviewRes.stdout).toContain("[ReviewRubric] Deep Diff Review Rubric v2");
       expect(reviewRes.stdout).toContain("[ReviewFreshness] Current implementation diff fingerprint:");
       expect(reviewRes.stdout).toContain("> **Reviewed Diff Fingerprint**:");
       expect(reviewRes.stdout).toContain("branch diff against target, staged diff, unstaged diff, and untracked files");
@@ -357,7 +357,7 @@ describe("Hook runtime behavior", () => {
         });
         expect(reviewExecuteRes.status).toBe(0);
         expect(reviewExecuteRes.stdout).toContain("[WazaRoute] Review/release intent detected");
-        expect(reviewExecuteRes.stdout).toContain("[ReviewRubric] Deep Diff Review Rubric v1");
+        expect(reviewExecuteRes.stdout).toContain("[ReviewRubric] Deep Diff Review Rubric v2");
         expect(reviewExecuteRes.stdout).toContain("[ReviewFreshness] Current implementation diff fingerprint:");
         expect(reviewExecuteRes.stdout).not.toContain("[PlanStatusGuard]");
         expect(reviewExecuteRes.stdout).not.toContain("[BDD] Feature intent detected");
@@ -479,7 +479,7 @@ describe("Hook runtime behavior", () => {
       expect(mergeClaude.stdout).toContain("[ExternalAcceptance]");
       expect(mergeClaude.stdout).toContain("Peer reviewer: Codex via codex-review");
       expect(mergeClaude.stdout).toContain("Do not run /check");
-      expect(mergeClaude.stdout).toContain("Review Rubric v1");
+      expect(mergeClaude.stdout).toContain("Review Rubric v2");
       expect(mergeClaude.stdout).toContain("[ExternalAcceptance] Current diff fingerprint:");
       expect(mergeClaude.stdout).toContain("> **Reviewed Diff Fingerprint**:");
       expect(mergeClaude.stdout).toContain("## External Acceptance Advice");
@@ -496,7 +496,7 @@ describe("Hook runtime behavior", () => {
       expect(mergeCodex.stdout).toContain("[ExternalAcceptance]");
       expect(mergeCodex.stdout).toContain("Peer reviewer: Claude via /claude-review");
       expect(mergeCodex.stdout).toContain("> **External Reviewer**: Claude");
-      expect(mergeCodex.stdout).toContain("Review Rubric v1");
+      expect(mergeCodex.stdout).toContain("Review Rubric v2");
       expect(mergeCodex.stdout).toContain("[ExternalAcceptance] Current diff fingerprint:");
       expect(mergeCodex.stdout).toContain("[CrossReview]");
       expect(mergeCodex.stdout).toContain("claude-review");
