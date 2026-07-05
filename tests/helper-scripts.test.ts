@@ -2916,6 +2916,101 @@ describe("Workflow helper scripts", () => {
     }
   });
 
+  test("verify-sprint prints a notes promotion-candidate advisory without changing exit code", () => {
+    const baseline = tmpWorkspace("helper-verify-sprint-notes-baseline");
+    const withCandidate = tmpWorkspace("helper-verify-sprint-notes-candidate");
+    try {
+      const setup = (cwd: string, notesBody: string) => {
+        mkdirSync(join(cwd, ".ai/hooks/lib"), { recursive: true });
+        mkdirSync(join(cwd, "plans"), { recursive: true });
+        mkdirSync(join(cwd, "tasks/contracts"), { recursive: true });
+        mkdirSync(join(cwd, "tasks/reviews"), { recursive: true });
+        mkdirSync(join(cwd, "tasks/notes"), { recursive: true });
+        mkdirSync(join(cwd, "docs"), { recursive: true });
+        copyHelpers(cwd);
+        copyFileSync(
+          join(ROOT, "assets/hooks/lib/workflow-state.sh"),
+          join(cwd, ".ai/hooks/lib/workflow-state.sh")
+        );
+
+        writeFileSync(join(cwd, "docs/spec.md"), "# Product Spec\n");
+        writeFileSync(
+          join(cwd, "plans/plan-20260304-1600-demo.md"),
+          "# Plan: demo\n\n> **Status**: Executing\n"
+        );
+        writeActivePlan(cwd, "plans/plan-20260304-1600-demo.md");
+        writeFileSync(
+          join(cwd, "tasks/contracts/demo.contract.md"),
+          [
+            "# Task Contract: demo",
+            "",
+            "> **Status**: Active",
+            "> **Task Profile**: code-change",
+            "",
+            "```yaml",
+            "allowed_paths:",
+            "  - docs",
+            "  - tasks",
+            "exit_criteria:",
+            "  files_exist:",
+            "    - docs/spec.md",
+            "```",
+            "",
+          ].join("\n")
+        );
+        writeFileSync(
+          join(cwd, "tasks/reviews/demo.review.md"),
+          ["# Task Review: demo", "", "> **Recommendation**: pass", "", humanReviewCard(), "", externalAcceptanceAdvice("Codex", "codex-review", "peer review recorded out-of-band for this fixture"), ""].join("\n")
+        );
+        writeFileSync(join(cwd, "tasks/notes/demo.notes.md"), notesBody);
+      };
+
+      const boilerplatePromotionCandidates = [
+        "- Promote to `tasks/lessons.md` only after a repeated correction or failure pattern.",
+        "- Promote to `docs/researches/` only when it is durable repo knowledge with evidence.",
+        "- Promote to harness asset files only after verification across more than one task or fixture.",
+      ];
+
+      const boilerplateNotes = [
+        "# Implementation Notes: demo",
+        "",
+        "## Promotion Candidates",
+        "",
+        ...boilerplatePromotionCandidates,
+        "",
+      ].join("\n");
+
+      const notesWithCandidate = [
+        "# Implementation Notes: demo",
+        "",
+        "## Promotion Candidates",
+        "",
+        ...boilerplatePromotionCandidates,
+        "- This retry-backoff helper showed up in two unrelated tasks; worth promoting to a shared script.",
+        "",
+      ].join("\n");
+
+      setup(baseline, boilerplateNotes);
+      setup(withCandidate, notesWithCandidate);
+
+      const baselineRes = run("bash", ["scripts/verify-sprint.sh"], baseline, { HOOK_HOST: "claude" });
+      const candidateRes = run("bash", ["scripts/verify-sprint.sh"], withCandidate, { HOOK_HOST: "claude" });
+
+      expect(baselineRes.status).toBe(0);
+      expect(candidateRes.status).toBe(0);
+      expect(candidateRes.status).toBe(baselineRes.status);
+      expect(baselineRes.stdout).toContain("Sprint verification passed");
+      expect(candidateRes.stdout).toContain("Sprint verification passed");
+      expect(baselineRes.stderr).not.toContain("[Maintenance] Notes list promotion candidates");
+      expect(candidateRes.stderr).toContain(
+        "[Maintenance] Notes list promotion candidates — review before archive: tasks/notes/demo.notes.md"
+      );
+    } finally {
+      rmSync(baseline, { recursive: true, force: true });
+      rmSync(withCandidate, { recursive: true, force: true });
+    }
+  });
+
   test("verify-sprint should fail when committed branch diff exceeds allowed_paths", () => {
     const cwd = tmpWorkspace("helper-verify-sprint-branch-scope");
     try {

@@ -69,6 +69,66 @@ field_has_concrete_value() {
   return 0
 }
 
+# Advisory only (Phase 3 C1): true when the notes file's "## Promotion
+# Candidates" section has at least one bullet beyond the three fixed
+# boilerplate lines shipped by implementation-notes.template.md. Never
+# gates verify-sprint's exit code; callers must guard with `|| true`.
+notes_has_promotion_candidates() {
+  local file="$1"
+  [[ -n "$file" && -f "$file" ]] || return 1
+  local in_section=0 line trimmed has_entry=0
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ "$in_section" -eq 0 && "$line" =~ ^##[[:space:]]+Promotion\ Candidates[[:space:]]*$ ]]; then
+      in_section=1
+      continue
+    fi
+    if [[ "$in_section" -eq 1 && "$line" =~ ^##[[:space:]] ]]; then
+      break
+    fi
+    [[ "$in_section" -eq 1 ]] || continue
+    trimmed="$(printf '%s' "$line" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+    [[ -z "$trimmed" ]] && continue
+    case "$trimmed" in
+      "- Promote to \`tasks/lessons.md\` only after a repeated correction or failure pattern.")
+        continue
+        ;;
+      "- Promote to \`docs/researches/\` only when it is durable repo knowledge with evidence.")
+        continue
+        ;;
+      "- Promote to harness asset files only after verification across more than one task or fixture.")
+        continue
+        ;;
+    esac
+    has_entry=1
+    break
+  done < "$file"
+  [[ "$has_entry" -eq 1 ]]
+}
+
+# Advisory only (Phase 3 C1): print finish-time memory nudges to stderr.
+# Never mutates tasks/lessons.md or tasks/todos.md (no --write), and never
+# changes verify-sprint's exit code; the caller guards with `|| true`.
+print_maintenance_advisories() {
+  local notes_file="$1"
+
+  if notes_has_promotion_candidates "$notes_file"; then
+    echo "[Maintenance] Notes list promotion candidates — review before archive: $notes_file" >&2
+  fi
+
+  if command -v jq >/dev/null 2>&1 && [[ -f "$helper_dir/maintenance-triage.sh" ]]; then
+    local triage_json guard_count eval_count skill_count
+    triage_json="$(bash "$helper_dir/maintenance-triage.sh" --json 2>/dev/null || true)"
+    if [[ -n "$triage_json" ]] && printf '%s' "$triage_json" | jq -e . >/dev/null 2>&1; then
+      guard_count="$(printf '%s' "$triage_json" | jq '.guard | length' 2>/dev/null || echo 0)"
+      eval_count="$(printf '%s' "$triage_json" | jq '.eval | length' 2>/dev/null || echo 0)"
+      skill_count="$(printf '%s' "$triage_json" | jq '.skill_proposal | length' 2>/dev/null || echo 0)"
+      if [[ "${guard_count:-0}" -gt 0 || "${eval_count:-0}" -gt 0 || "${skill_count:-0}" -gt 0 ]]; then
+        echo "[Maintenance] Repeated lessons ready to promote: guard=${guard_count} eval=${eval_count} skill_proposal=${skill_count} (see tasks/lessons.md)" >&2
+      fi
+    fi
+  fi
+}
+
 read_contract_task_profile() {
   local file="$1"
   awk '/^> \*\*Task Profile\*\*:/ {sub(/^.*> \*\*Task Profile\*\*:[[:space:]]*/, ""); gsub(/\r/, ""); print; exit}' "$file" | xargs
@@ -306,14 +366,17 @@ if [[ -f ".ai/hooks/lib/workflow-state.sh" ]]; then
   . ".ai/hooks/lib/workflow-state.sh"
   contract_file="$(workflow_active_contract || true)"
   review_file="$(workflow_active_review || true)"
+  notes_file="$(workflow_active_notes || true)"
   checks_file="$(workflow_checks_file)"
 else
   contract_file="$(find tasks/contracts -maxdepth 1 -name '*.contract.md' -type f 2>/dev/null | sort | head -n 1)"
   if [[ -n "$contract_file" ]]; then
     contract_slug="$(basename "$contract_file" | sed -E 's/\.contract\.md$//')"
     review_file="tasks/reviews/${contract_slug}.review.md"
+    notes_file="tasks/notes/${contract_slug}.notes.md"
   else
     review_file=""
+    notes_file=""
   fi
   checks_file=".ai/harness/checks/latest.json"
 fi
@@ -322,6 +385,9 @@ if [[ -z "$contract_file" || ! -f "$contract_file" ]]; then
 fi
 if [[ -z "$review_file" || ! -f "$review_file" ]]; then
   review_file="$(active_plan_declared_path "Task Review" || active_plan_declared_path "Sprint Review" || true)"
+fi
+if [[ -z "$notes_file" || ! -f "$notes_file" ]]; then
+  notes_file="$(active_plan_declared_path "Implementation Notes" || active_plan_declared_path "Notes File" || true)"
 fi
 
 [[ -n "$contract_file" && -f "$contract_file" ]] || { echo "No active sprint contract found" >&2; exit 1; }
@@ -669,6 +735,8 @@ fi
 
 cp "$checks_report" "$checks_file"
 cp "$checks_report" "$run_file"
+
+print_maintenance_advisories "$notes_file" || true
 
 if [[ "$exit_code" -eq 0 ]]; then
   echo "Sprint verification passed"
