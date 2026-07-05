@@ -27,7 +27,11 @@ function makeRepo(prefix = "contract-run-"): string {
   return repo;
 }
 
-function writePilotContract(repo: string, toolCalls: string | number | null = 2): string {
+function writePilotContract(
+  repo: string,
+  toolCalls: string | number | null = 2,
+  why: string = "This pilot proves the worker→verifier file-coupled loop; without it the runner ships unverified.",
+): string {
   const contractPath = join(repo, "tasks/contracts/pilot.contract.md");
   const budgetValue = toolCalls === null ? "null" : String(toolCalls);
   writeFileSync(
@@ -40,6 +44,10 @@ function writePilotContract(repo: string, toolCalls: string | number | null = 2)
       "> **Owner**: test",
       "> **Review File**: `tasks/reviews/pilot.review.md`",
       "> **Notes File**: `tasks/notes/pilot.notes.md`",
+      "",
+      "## Why",
+      "",
+      why,
       "",
       "## Goal",
       "",
@@ -375,6 +383,34 @@ describe("contract-run helper", () => {
       const manifest = parseJson(res.stdout);
       expect(manifest.status).toBe("preflight_pass");
       expect((manifest.brief_preflight as { ok: boolean }).ok).toBe(true);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  test("preflight fails closed when Why is a placeholder", () => {
+    const repo = makeRepo("contract-run-why-placeholder-");
+    try {
+      writePilotContract(
+        repo,
+        2,
+        "Why this task matters and what breaks downstream if it ships wrong or is skipped.",
+      );
+      const res = runContractRun(repo, [
+        "preflight",
+        "--repo",
+        repo,
+        "--contract",
+        "tasks/contracts/pilot.contract.md",
+        "--json",
+      ]);
+      expect(res.status).toBe(1);
+      const manifest = parseJson(res.stdout);
+      expect(manifest.status).toBe("fail");
+      expect(manifest.failure_class).toBe("incomplete_brief");
+      expect((manifest.brief_preflight as { issues: string[] }).issues).toContain(
+        "Why section is empty or still a template placeholder",
+      );
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }

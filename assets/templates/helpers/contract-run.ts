@@ -315,6 +315,7 @@ function isConcreteBrief(text: string): boolean {
     .replace(/Describe the exact outcome this task must deliver\./g, "")
     .replace(/^\s*-\s*In scope:\s*$/gm, "")
     .replace(/^\s*-\s*Out of scope:\s*$/gm, "")
+    .replace(/Why this task matters and what breaks downstream if it ships wrong or is skipped\./g, "")
     .trim();
   return withoutPlaceholders.length > 0;
 }
@@ -326,6 +327,9 @@ function runBriefPreflight(markdown: string): BriefPreflight {
   }
   if (!isConcreteBrief(sectionBody(markdown, "Scope"))) {
     issues.push("Scope section is empty or still a template placeholder");
+  }
+  if (!isConcreteBrief(sectionBody(markdown, "Why"))) {
+    issues.push("Why section is empty or still a template placeholder");
   }
   if (parseList(fencedYamlBlock(markdown, "allowed_paths"), "allowed_paths").length === 0) {
     issues.push("Allowed Paths is empty");
