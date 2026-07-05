@@ -130,6 +130,161 @@ contract_allowed_paths() {
   '
 }
 
+# Extracts the body of the markdown `## Root Cause Evidence` section (everything between
+# that heading and the next `##` heading), mirroring contract-run.ts's sectionBody().
+contract_root_cause_section() {
+  local file="$1"
+  awk '
+    BEGIN { in_section = 0 }
+    /^## Root Cause Evidence[[:space:]]*$/ {
+      in_section = 1
+      next
+    }
+    in_section == 1 && /^##[[:space:]]/ {
+      exit
+    }
+    in_section == 1 {
+      print
+    }
+  ' "$file"
+}
+
+# Extracts the inline value of a `- <field>: <value>` bullet from a Root Cause Evidence
+# section body. Prints nothing (empty string) when the field is absent.
+root_cause_field() {
+  local section="$1"
+  local field="$2"
+  local line
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^-[[:space:]]*${field}:[[:space:]]*(.+)$ ]]; then
+      printf '%s' "${BASH_REMATCH[1]}" | sed -E 's/[[:space:]]+$//'
+      return 0
+    fi
+  done <<< "$section"
+  printf ''
+}
+
+# Verbatim placeholder text from the contract template's `## Root Cause Evidence`
+# section (assets/templates/contract.template.md and its mirrors); a field still equal
+# to this text has not been filled in. Kept in sync with contract-run.ts's
+# ROOT_CAUSE_PLACEHOLDER by the shared tests/fixtures/root-cause/ fixtures rather than a
+# shared library (see plan YAGNI: no cross-implementation parsing library).
+root_cause_placeholder() {
+  local field="$1"
+  case "$field" in
+    root_cause)
+      printf '%s' 'one sentence naming file:line/condition (testable, not "a state issue").'
+      ;;
+    repro)
+      printf '%s' 'the command or UI path that reproduces the symptom.'
+      ;;
+    regression_guard)
+      printf '%s' 'path to a test that fails on the unfixed code and passes after the fix (must also appear under exit_criteria.tests_pass).'
+      ;;
+    pre_fix_failure_artifact)
+      printf '%s' 'path to a captured run of regression_guard on the UNFIXED code. Capture with `bun test <regression_guard> > <artifact> 2>&1; echo "PRE_FIX_EXIT=$?" >> <artifact>` (no pipes — pipes swallow the exit status). The gate requires a non-zero `PRE_FIX_EXIT=` line plus the regression_guard path string in the artifact (see H2/H3).'
+      ;;
+  esac
+}
+
+is_concrete_root_cause_field() {
+  local value="$1"
+  local field="$2"
+  [[ -n "$value" ]] || return 1
+  [[ "$value" != *"{{"*"}}"* ]] || return 1
+  local placeholder
+  placeholder="$(root_cause_placeholder "$field")"
+  [[ "$value" != "$placeholder" ]]
+}
+
+# Bugfix-only pre-fix failure evidence gate (see docs/reference-configs/sprint-contracts.md
+# "Root Cause Evidence Gate"). Mirrors contract-run.ts's checkRootCauseEvidence: all four
+# fields must be concrete, regression_guard must be listed under exit_criteria.tests_pass
+# (the already-populated $tests_pass array), and pre_fix_failure_artifact must exist and
+# show a genuine failure via a non-zero PRE_FIX_EXIT= line plus the regression_guard path
+# string — never a "fail" substring match, since a passing bun run's own summary line
+# contains "0 fail".
+check_root_cause_evidence() {
+  local contract_file="$1"
+  local section root_cause repro regression_guard pre_fix_artifact
+  section="$(contract_root_cause_section "$contract_file")"
+  root_cause="$(root_cause_field "$section" "root_cause")"
+  repro="$(root_cause_field "$section" "repro")"
+  regression_guard="$(root_cause_field "$section" "regression_guard")"
+  pre_fix_artifact="$(root_cause_field "$section" "pre_fix_failure_artifact")"
+
+  if is_concrete_root_cause_field "$root_cause" "root_cause"; then
+    pass "root_cause_evidence" "root_cause" "Root Cause Evidence: root_cause is concrete"
+  else
+    fail "root_cause_evidence" "root_cause" "Root Cause Evidence: root_cause is empty or still a template placeholder"
+  fi
+
+  if is_concrete_root_cause_field "$repro" "repro"; then
+    pass "root_cause_evidence" "repro" "Root Cause Evidence: repro is concrete"
+  else
+    fail "root_cause_evidence" "repro" "Root Cause Evidence: repro is empty or still a template placeholder"
+  fi
+
+  local regression_guard_concrete=0
+  if is_concrete_root_cause_field "$regression_guard" "regression_guard"; then
+    regression_guard_concrete=1
+    pass "root_cause_evidence" "regression_guard" "Root Cause Evidence: regression_guard is concrete"
+  else
+    fail "root_cause_evidence" "regression_guard" "Root Cause Evidence: regression_guard is empty or still a template placeholder"
+  fi
+
+  local pre_fix_artifact_concrete=0
+  if is_concrete_root_cause_field "$pre_fix_artifact" "pre_fix_failure_artifact"; then
+    pre_fix_artifact_concrete=1
+    pass "root_cause_evidence" "pre_fix_failure_artifact" "Root Cause Evidence: pre_fix_failure_artifact is concrete"
+  else
+    fail "root_cause_evidence" "pre_fix_failure_artifact" "Root Cause Evidence: pre_fix_failure_artifact is empty or still a template placeholder"
+  fi
+
+  if [[ "$regression_guard_concrete" -eq 1 ]]; then
+    local found=0
+    local tp
+    for tp in "${tests_pass[@]+"${tests_pass[@]}"}"; do
+      if [[ "$tp" == "$regression_guard" ]]; then
+        found=1
+        break
+      fi
+    done
+    if [[ "$found" -eq 1 ]]; then
+      pass "root_cause_evidence" "regression_guard_in_tests_pass" "Root Cause Evidence: regression_guard $regression_guard is listed under exit_criteria.tests_pass"
+    else
+      fail "root_cause_evidence" "regression_guard_in_tests_pass" "Root Cause Evidence: regression_guard $regression_guard is not listed under exit_criteria.tests_pass"
+    fi
+  fi
+
+  if [[ "$pre_fix_artifact_concrete" -eq 1 ]]; then
+    if [[ ! -f "$pre_fix_artifact" ]]; then
+      fail "root_cause_evidence" "pre_fix_failure_artifact_exists" "Root Cause Evidence: pre_fix_failure_artifact does not exist: $pre_fix_artifact"
+    else
+      pass "root_cause_evidence" "pre_fix_failure_artifact_exists" "Root Cause Evidence: pre_fix_failure_artifact exists: $pre_fix_artifact"
+
+      local exit_line="" exit_value=""
+      exit_line="$(grep -E '^PRE_FIX_EXIT=[0-9]+[[:space:]]*$' "$pre_fix_artifact" | tail -1 || true)"
+      if [[ -n "$exit_line" ]]; then
+        exit_value="$(printf '%s' "$exit_line" | sed -E 's/^PRE_FIX_EXIT=([0-9]+).*/\1/')"
+      fi
+      if [[ -n "$exit_value" && "$exit_value" != "0" ]]; then
+        pass "root_cause_evidence" "pre_fix_failure_artifact_exit" "Root Cause Evidence: pre_fix_failure_artifact shows PRE_FIX_EXIT=$exit_value"
+      else
+        fail "root_cause_evidence" "pre_fix_failure_artifact_exit" "Root Cause Evidence: pre_fix_failure_artifact is missing a non-zero PRE_FIX_EXIT= line: $pre_fix_artifact"
+      fi
+
+      if [[ "$regression_guard_concrete" -eq 1 ]]; then
+        if grep -qF -- "$regression_guard" "$pre_fix_artifact"; then
+          pass "root_cause_evidence" "pre_fix_failure_artifact_references_guard" "Root Cause Evidence: pre_fix_failure_artifact references the regression_guard path"
+        else
+          fail "root_cause_evidence" "pre_fix_failure_artifact_references_guard" "Root Cause Evidence: pre_fix_failure_artifact does not reference the regression_guard path $regression_guard"
+        fi
+      fi
+    fi
+  fi
+}
+
 review_recommends_pass() {
   local review_file="$1"
   [[ -n "$review_file" && -f "$review_file" ]] || return 1
@@ -527,13 +682,17 @@ case "$task_profile" in
   "")
     pass "task_profile" "(legacy)" "task_profile missing: legacy contract accepted"
     ;;
-  code-change|docs-only|ledger-closeout|migration|eval-only|delegated-run)
+  code-change|docs-only|ledger-closeout|migration|eval-only|delegated-run|bugfix)
     pass "task_profile" "$task_profile" "task_profile: $task_profile"
     ;;
   *)
     fail "task_profile" "$task_profile" "unsupported task_profile: $task_profile"
     ;;
 esac
+
+if [[ "$task_profile" == "bugfix" ]]; then
+  check_root_cause_evidence "$contract_file"
+fi
 
 if [[ -n "$task_profile" ]]; then
   for path in "${allowed_paths[@]+"${allowed_paths[@]}"}"; do

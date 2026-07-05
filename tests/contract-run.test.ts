@@ -11,6 +11,7 @@ import {
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
+import { ROOT_CAUSE_FIXTURE_CASES } from "./fixtures/root-cause/expected-results";
 
 const ROOT = join(import.meta.dir, "..");
 
@@ -99,6 +100,7 @@ function writePilotContract(
       "  runner:",
       "    preferred:",
       "      - subagent",
+      "      - codex-subagent",
       "      - codex-exec",
       "      - main-thread",
       "    fallback: main-thread",
@@ -526,6 +528,47 @@ describe("contract-run helper", () => {
     }
   });
 
+  describe("bugfix root-cause evidence gate", () => {
+    // Runs contract-run.ts directly against the real repo (not a synthetic temp repo):
+    // these fixtures' regression_guard and pre_fix_failure_artifact paths point at real
+    // files under tests/fixtures/root-cause/, so --repo ROOT resolves them without
+    // needing to copy that directory into a throwaway workspace.
+    function runFixturePreflight(contractRelativePath: string) {
+      return spawnSync(
+        "bun",
+        ["scripts/contract-run.ts", "preflight", "--repo", ROOT, "--contract", contractRelativePath, "--json"],
+        { cwd: ROOT, encoding: "utf-8", env: { ...process.env, FORCE_COLOR: "0" } },
+      );
+    }
+
+    // Shared with tests/helper-scripts.test.ts's bash-side root-cause gate tests via
+    // tests/fixtures/root-cause/expected-results.ts, so both independent gate
+    // implementations (contract-run.ts here, verify-contract.sh there) are proven
+    // against the exact same fixture files and the exact same expected outcomes.
+    for (const fixtureCase of ROOT_CAUSE_FIXTURE_CASES) {
+      test(fixtureCase.name, () => {
+        const res = runFixturePreflight(`tests/fixtures/root-cause/${fixtureCase.contractFile}`);
+        expect(res.status).toBe(fixtureCase.expectOk ? 0 : 1);
+        const manifest = parseJson(res.stdout);
+        const briefPreflight = manifest.brief_preflight as { ok: boolean; issues: string[] };
+        expect(briefPreflight.ok).toBe(fixtureCase.expectOk);
+        if (!fixtureCase.expectOk && fixtureCase.expectIssueSubstring) {
+          expect(briefPreflight.issues.join(" | ")).toContain(fixtureCase.expectIssueSubstring);
+        }
+      });
+    }
+
+    test("bugfix golden example contract passes its own preflight gate against real fixtures", () => {
+      const res = runFixturePreflight("docs/reference-configs/contract-brief-example-bugfix.md");
+      expect(res.status).toBe(0);
+      const manifest = parseJson(res.stdout);
+      expect(manifest.status).toBe("preflight_pass");
+      const briefPreflight = manifest.brief_preflight as { ok: boolean; issues: string[] };
+      expect(briefPreflight.ok).toBe(true);
+      expect(briefPreflight.issues).toEqual([]);
+    });
+  });
+
   test("preflight fails closed when Why is a placeholder", () => {
     const repo = makeRepo("contract-run-why-placeholder-");
     try {
@@ -717,12 +760,30 @@ describe("contract-run helper", () => {
           runner: { preferred: string[]; fallback: string | null; brief_is_authoritative: boolean };
         }
       ).runner;
-      expect(runner.preferred).toEqual(["subagent", "codex-exec", "main-thread"]);
+      expect(runner.preferred).toEqual(["subagent", "codex-subagent", "codex-exec", "main-thread"]);
       expect(runner.fallback).toBe("main-thread");
       expect(runner.brief_is_authoritative).toBe(true);
       const runnerUsage = manifest.runner_usage as { used: string; off_policy: boolean };
       expect(runnerUsage.used).toBe("subagent");
       expect(runnerUsage.off_policy).toBe(false);
+
+      const codexSubagentRes = runContractRun(repo, [
+        "dry-run",
+        "--repo",
+        repo,
+        "--contract",
+        "tasks/contracts/pilot.contract.md",
+        "--out",
+        ".ai/harness/runs/runner-codex-subagent",
+        "--runner",
+        "codex-subagent",
+        "--json",
+      ]);
+      expect(codexSubagentRes.status).toBe(0);
+      const codexSubagentManifest = parseJson(codexSubagentRes.stdout);
+      const codexSubagentUsage = codexSubagentManifest.runner_usage as { used: string; off_policy: boolean };
+      expect(codexSubagentUsage.used).toBe("codex-subagent");
+      expect(codexSubagentUsage.off_policy).toBe(false);
 
       const offPolicyRes = runContractRun(repo, [
         "dry-run",

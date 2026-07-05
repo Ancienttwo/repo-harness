@@ -47,6 +47,7 @@ review focus.
 | Profile | Default expectation |
 |---|---|
 | `code-change` | Runtime behavior may change within the contract's explicit allowed paths. |
+| `bugfix` | Same allowed-path defaults as `code-change`; additionally requires a concrete `## Root Cause Evidence` section (`root_cause`, `repro`, `regression_guard`, `pre_fix_failure_artifact`) and passes an additional pre-fix failure evidence gate (see below). |
 | `docs-only` | Documentation, plans, notes, and reviews only; `src/` and `tests/` are not allowed by default. |
 | `ledger-closeout` | Close already-landed workflow evidence only; runtime source, tests, and hook paths are not allowed by default. |
 | `migration` | Scripts, templates, assets, docs, and tests may change; preserve user-authored files. |
@@ -65,6 +66,18 @@ New contracts include a `## Delegation Contract` YAML block between allowed path
 - `roles`: named responsibilities for `parent`, `explorer`, `worker`, and `verifier`. The parent remains the approval/checkpoint owner; explorer and verifier are read-only; worker may edit only within `allowed_paths` or a narrower `writable_paths` list. The verifier rubric is exactly the contract `exit_criteria`.
 
 Existing contracts without this block remain valid. `repo-harness run verify-contract` continues to evaluate only the `exit_criteria` YAML block, so adding delegation metadata must not make old or new contracts fail verification.
+
+## Root Cause Evidence Gate
+
+As of this revision, `repo-harness run verify-contract` (and the equivalent `contract-run.ts` brief preflight) additionally evaluates the markdown `## Root Cause Evidence` section, but **only** when the contract's `> **Task Profile**:` header is `bugfix`. This is a deliberate, scoped expansion of the exit-criteria-only promise above: contracts with any other `Task Profile` (including contracts that omit the field entirely, which remain legacy passthrough) are unaffected and continue to be evaluated exit-criteria-only.
+
+For a `bugfix` contract, the gate requires all four `## Root Cause Evidence` fields to be filled in with concrete (non-template) content:
+
+- `root_cause` and `repro` must be non-empty and not the template placeholder text.
+- `regression_guard` must name a test path that also appears under `exit_criteria.tests_pass`.
+- `pre_fix_failure_artifact` must point to a file that exists, contains a non-zero `PRE_FIX_EXIT=` line, and contains the `regression_guard` path string. Capture it on the unfixed code with `bun test <regression_guard> > <artifact> 2>&1; echo "PRE_FIX_EXIT=$?" >> <artifact>` (no pipes — a pipe swallows the exit status). A passing run (for example one that only prints `0 fail`) does not satisfy this gate; the artifact must show the pre-fix failure with a nonzero recorded exit code.
+
+Both `verify-contract.sh` and `contract-run.ts` implement this check independently against the same fixture expectations so that a `bugfix` contract cannot pass one gate while failing the other.
 
 ## Verification Execution Boundary
 

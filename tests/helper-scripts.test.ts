@@ -15,6 +15,7 @@ import {
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
+import { ROOT_CAUSE_FIXTURE_CASES } from "./fixtures/root-cause/expected-results";
 
 const ROOT = join(import.meta.dir, "..");
 const HELPER_DIR = join(ROOT, "assets/templates/helpers");
@@ -250,6 +251,22 @@ function humanReviewCard(verdict = "pass", externalAcceptance = "pass"): string 
   ].join("\n");
 }
 
+// Extracts the body of a bash heredoc (exclusive of its open/close marker lines) so
+// tests can assert on the seed contract template text embedded in plan-to-todo.sh,
+// ensure-task-workflow.sh, and project-init-lib.sh without hard-coding line numbers.
+function extractHeredocBody(source: string, openToken: string, closeToken: string): string {
+  const lines = source.split("\n");
+  const startIdx = lines.findIndex((line) => line.includes(openToken));
+  if (startIdx === -1) {
+    throw new Error(`heredoc open token not found: ${openToken}`);
+  }
+  const endIdx = lines.findIndex((line, i) => i > startIdx && line.trim() === closeToken);
+  if (endIdx === -1) {
+    throw new Error(`heredoc close token not found: ${closeToken}`);
+  }
+  return lines.slice(startIdx + 1, endIdx).join("\n");
+}
+
 describe("Workflow helper scripts", () => {
   test("capability resolver ignores local worktrees during legacy discovery", () => {
     const cwd = tmpWorkspace("helper-capability-worktrees");
@@ -419,6 +436,69 @@ describe("Workflow helper scripts", () => {
       expect(existsSync(scriptsPath)).toBe(true);
       expect(readFileSync(scriptsPath, "utf-8")).toBe(readFileSync(join(HELPER_DIR, helper), "utf-8"));
     }
+  });
+
+  test("every contract template copy's ## section set is a superset of the standalone template", () => {
+    const standalone = readFileSync(join(TEMPLATE_DIR, "contract.template.md"), "utf-8");
+    const headingsOf = (content: string) =>
+      new Set(content.split("\n").filter((line) => line.startsWith("## ")));
+    const standaloneHeadings = headingsOf(standalone);
+    expect(standaloneHeadings.size).toBeGreaterThan(0);
+
+    const planToTodoSrc = readFileSync(join(ROOT, "scripts/plan-to-todo.sh"), "utf-8");
+    const ensureTaskWorkflowSrc = readFileSync(join(ROOT, "scripts/ensure-task-workflow.sh"), "utf-8");
+    const projectInitLibSrc = readFileSync(join(ROOT, "scripts/lib/project-init-lib.sh"), "utf-8");
+
+    const copies: Record<string, string> = {
+      ".claude/templates/contract.template.md": readFileSync(
+        join(ROOT, ".claude/templates/contract.template.md"),
+        "utf-8"
+      ),
+      "scripts/plan-to-todo.sh render_contract_file seed heredoc": extractHeredocBody(
+        planToTodoSrc,
+        "<<'CONTRACT_TEMPLATE_EOF'",
+        "CONTRACT_TEMPLATE_EOF"
+      ),
+      "scripts/ensure-task-workflow.sh seed heredoc": extractHeredocBody(
+        ensureTaskWorkflowSrc,
+        "<<'CONTRACT_TEMPLATE_EOF'",
+        "CONTRACT_TEMPLATE_EOF"
+      ),
+      // Explicit coverage for the project-init-lib.sh embedded copy: it has no
+      // assets/templates/helpers/ mirror file, so this test is its only structural guard.
+      "scripts/lib/project-init-lib.sh PI_TEMPLATE_CONTRACT": extractHeredocBody(
+        projectInitLibSrc,
+        "<<'EOF_TEMPLATE_CONTRACT'",
+        "EOF_TEMPLATE_CONTRACT"
+      ),
+    };
+
+    for (const [label, content] of Object.entries(copies)) {
+      const headings = headingsOf(content);
+      const missing = [...standaloneHeadings].filter((heading) => !headings.has(heading));
+      expect(missing, `${label} is missing sections present in the standalone template`).toEqual([]);
+    }
+  });
+
+  test("PI_TEMPLATE_CONTRACT (project-init-lib.sh) stays byte-identical to the ensure-task-workflow.sh embedded contract seed", () => {
+    const ensureTaskWorkflowSrc = readFileSync(join(ROOT, "scripts/ensure-task-workflow.sh"), "utf-8");
+    const projectInitLibSrc = readFileSync(join(ROOT, "scripts/lib/project-init-lib.sh"), "utf-8");
+
+    const ensureTaskWorkflowSeed = extractHeredocBody(
+      ensureTaskWorkflowSrc,
+      "<<'CONTRACT_TEMPLATE_EOF'",
+      "CONTRACT_TEMPLATE_EOF"
+    );
+    const projectInitLibSeed = extractHeredocBody(
+      projectInitLibSrc,
+      "<<'EOF_TEMPLATE_CONTRACT'",
+      "EOF_TEMPLATE_CONTRACT"
+    );
+
+    // project-init-lib.sh ships no assets/templates/helpers/ mirror for this seed (it is
+    // not one of the top-level scripts distributed there), so its parity guarantee with
+    // the ensure-task-workflow.sh embedded copy must come from this direct comparison.
+    expect(projectInitLibSeed).toBe(ensureTaskWorkflowSeed);
   });
 
   test("direct helper tests ignore ambient repo-root env", () => {
@@ -1097,6 +1177,9 @@ describe("Workflow helper scripts", () => {
       expect(res.status).toBe(0);
       expect(res.stdout).toContain("[BriefPreflight]");
       expect(res.stdout).toContain("contract brief is not yet self-sufficient");
+      expect(res.stderr).toContain("[Geju]");
+      expect(res.stderr).toContain("## Why");
+      expect(res.stderr).toContain("## Falsifier");
 
       const archiveFiles = readdirSync(join(cwd, "tasks/archive")).filter((name) => name.startsWith("todo-"));
       expect(archiveFiles.length).toBeGreaterThanOrEqual(1);
@@ -1118,6 +1201,7 @@ describe("Workflow helper scripts", () => {
       expect(contract).toContain("roles:");
       expect(contract).toContain("## Why");
       expect(contract).toContain("## Stop Conditions");
+      expect(contract).toContain("## Falsifier");
       expect(existsSync(join(cwd, "tasks/notes/20260304-1400-demo.notes.md"))).toBe(true);
       expect(readFileSync(join(cwd, "tasks/notes/20260304-1400-demo.notes.md"), "utf-8")).toContain("## Design Decisions");
       expect(readFileSync(join(cwd, "tasks/reviews/20260304-1400-demo.review.md"), "utf-8")).toContain("tasks/notes/20260304-1400-demo.notes.md");
@@ -1422,7 +1506,7 @@ describe("Workflow helper scripts", () => {
       );
       writeFileSync(
         join(cwd, "package.json"),
-        JSON.stringify({ scripts: { typecheck: "test -f src/modules/demo/index.ts" } }, null, 2) + "\n"
+        JSON.stringify({ scripts: { "check:type": "test -f src/modules/demo/index.ts" } }, null, 2) + "\n"
       );
       writeFileSync(join(cwd, "docs/spec.md"), "# Spec\n");
       initGitRepo(cwd);
@@ -1579,7 +1663,7 @@ describe("Workflow helper scripts", () => {
       );
       writeFileSync(
         join(cwd, "package.json"),
-        JSON.stringify({ scripts: { typecheck: "test -f src/modules/demo/index.ts" } }, null, 2) + "\n"
+        JSON.stringify({ scripts: { "check:type": "test -f src/modules/demo/index.ts" } }, null, 2) + "\n"
       );
       writeFileSync(join(cwd, "docs/spec.md"), "# Spec\n");
       initGitRepo(cwd);
@@ -2929,6 +3013,85 @@ describe("Workflow helper scripts", () => {
     }
   });
 
+  // Deliberately does not assert on overall exit code / --strict: this contract carries
+  // no ## Root Cause Evidence section, and once the bugfix root-cause gate (H2/H3) is
+  // wired in, a bugfix contract without that section will legitimately fail elsewhere.
+  // This test only proves the task_profile enum itself accepts "bugfix".
+  test("verify-contract should accept bugfix as a legal task_profile enum value", () => {
+    const cwd = tmpWorkspace("helper-verify-contract-profile-bugfix");
+    try {
+      mkdirSync(join(cwd, "scripts"), { recursive: true });
+      mkdirSync(join(cwd, "docs"), { recursive: true });
+      copyHelpers(cwd);
+
+      writeFileSync(join(cwd, "docs/spec.md"), "# Product Spec\n");
+      writeFileSync(
+        join(cwd, "task.contract.md"),
+        [
+          "# Task Contract: bugfix-profile",
+          "",
+          "> **Status**: Pending",
+          "> **Task Profile**: bugfix",
+          "",
+          "```yaml",
+          "exit_criteria:",
+          "  files_exist:",
+          "    - docs/spec.md",
+          "```",
+          "",
+        ].join("\n")
+      );
+
+      const res = run("bash", ["scripts/verify-contract.sh", "--contract", "task.contract.md"], cwd);
+      expect(res.stdout).toContain("[PASS] task_profile: bugfix");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  describe("verify-contract bugfix root-cause evidence gate", () => {
+    // Shared with tests/contract-run.test.ts's TypeScript-side root-cause gate tests via
+    // tests/fixtures/root-cause/expected-results.ts: both independent gate
+    // implementations (verify-contract.sh here, contract-run.ts there) are run against
+    // the exact same fixture files and asserted against the exact same expected
+    // outcomes, so neither side can silently drift from the other.
+    for (const fixtureCase of ROOT_CAUSE_FIXTURE_CASES) {
+      test(`verify-contract: ${fixtureCase.name}`, () => {
+        const workDir = tmpWorkspace("helper-verify-contract-root-cause");
+        try {
+          const reportFile = join(workDir, "report.json");
+          const res = run(
+            "bash",
+            [
+              "scripts/verify-contract.sh",
+              "--contract",
+              `tests/fixtures/root-cause/${fixtureCase.contractFile}`,
+              "--read-only",
+              "--quiet",
+              "--strict",
+              "--report-file",
+              reportFile,
+            ],
+            ROOT,
+          );
+          expect(res.status).toBe(fixtureCase.expectOk ? 0 : 1);
+          const report = JSON.parse(readFileSync(reportFile, "utf-8"));
+          const rootCauseResults = (
+            report.results as Array<{ kind: string; passed: boolean; message: string }>
+          ).filter((entry) => entry.kind === "root_cause_evidence");
+          if (fixtureCase.expectOk) {
+            expect(rootCauseResults.every((entry) => entry.passed)).toBe(true);
+          } else if (fixtureCase.expectIssueSubstring) {
+            const joinedMessages = rootCauseResults.map((entry) => entry.message).join(" | ");
+            expect(joinedMessages).toContain(fixtureCase.expectIssueSubstring);
+          }
+        } finally {
+          rmSync(workDir, { recursive: true, force: true });
+        }
+      });
+    }
+  });
+
   test("verify-contract should reject ledger-closeout runtime allowed paths by default", () => {
     const cwd = tmpWorkspace("helper-verify-contract-profile-ledger-paths");
     try {
@@ -3274,6 +3437,36 @@ describe("Workflow helper scripts", () => {
       expect(report.status).toBe("pass");
       expect(report.failed).toBe(0);
       expect(report.total).toBeGreaterThanOrEqual(6);
+    }
+  });
+
+  test("harness-trace-grade should reject an unsupported task_profile", () => {
+    const cwd = tmpWorkspace("helper-harness-trace-grade-invalid-profile");
+    try {
+      const traceFile = join(cwd, "invalid-profile-trace.json");
+      writeFileSync(
+        traceFile,
+        JSON.stringify({
+          schema: "repo-harness-run-trace.v1",
+          task_profile: "not-a-real-profile",
+        }),
+      );
+
+      const res = run(
+        "bash",
+        ["scripts/harness-trace-grade.sh", "--run", traceFile, "--repo", ROOT, "--strict"],
+        ROOT,
+      );
+      expect(res.status).toBe(1);
+      const report = JSON.parse(res.stdout);
+      expect(report.status).toBe("fail");
+      const grader = (report.graders as Array<{ id: string; passed: boolean; message: string }>).find(
+        (entry) => entry.id === "contract_profile.valid",
+      );
+      expect(grader?.passed).toBe(false);
+      expect(grader?.message).toContain("not-a-real-profile");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
     }
   });
 

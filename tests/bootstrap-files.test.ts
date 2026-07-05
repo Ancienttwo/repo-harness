@@ -34,6 +34,32 @@ describe("Bootstrap Script Contracts", () => {
     expect(metadata).toContain("default_prompt:");
   });
 
+  test("Codex fleet subagent TOML definitions should exist with required keys", () => {
+    const specs: Array<{ name: string; effort: string; sandboxMode?: string }> = [
+      { name: "deep-reasoner", effort: "xhigh" },
+      { name: "fast-worker", effort: "medium" },
+      { name: "gatekeeper", effort: "xhigh", sandboxMode: "read-only" },
+    ];
+
+    for (const spec of specs) {
+      const path = `.codex/agents/${spec.name}.toml`;
+      expect(existsSync(join(ROOT, path))).toBe(true);
+
+      const toml = read(path);
+      expect(toml).toContain(`name = "${spec.name}"`);
+      expect(toml).toContain("description = ");
+      expect(toml).toContain('model = "gpt-5.5"');
+      expect(toml).toContain(`model_reasoning_effort = "${spec.effort}"`);
+      expect(toml).toContain("developer_instructions = '''");
+      expect(toml).toContain(
+        "Execution boundary: implement exactly the Goal, In scope items, Allowed Paths, and Exit Criteria in this brief."
+      );
+      if (spec.sandboxMode) {
+        expect(toml).toContain(`sandbox_mode = "${spec.sandboxMode}"`);
+      }
+    }
+  });
+
   test("repo root should include routing docs and self-host hook implementation", () => {
     expect(existsSync(join(ROOT, "CLAUDE.md"))).toBe(true);
     expect(existsSync(join(ROOT, "AGENTS.md"))).toBe(true);

@@ -1,0 +1,7 @@
+bun test v1.3.10 (30e609e0)
+
+ 1 pass
+ 0 fail
+ 1 expect() calls
+Ran 1 test across 1 file. [11.00ms]
+PRE_FIX_EXIT=0

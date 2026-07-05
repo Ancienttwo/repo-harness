@@ -234,17 +234,24 @@ Complete this inventory before implementation. If any line is unknown, keep the 
 - [ ] ...
 EOF_TEMPLATE_PLAN
 )
-PI_TEMPLATE_CONTRACT=$(cat <<'EOF_TEMPLATE_CONTRACT'
+PI_TEMPLATE_CONTRACT_TMP="$(mktemp)"
+cat > "$PI_TEMPLATE_CONTRACT_TMP" <<'EOF_TEMPLATE_CONTRACT'
 # Task Contract: {{TASK_SLUG}}
 
-> **Status**: Pending
+> **Status**: Active
 > **Plan**: {{PLAN_FILE}}
 > **Task Profile**: {{TASK_PROFILE}}
+> <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: {{OWNER}}
 > **Capability ID**: {{CAPABILITY_ID}}
 > **Last Updated**: {{TIMESTAMP}}
 > **Review File**: `{{REVIEW_FILE}}`
 > **Notes File**: `{{NOTES_FILE}}`
+> **Exemplar**: `docs/reference-configs/contract-brief-example.md`
+
+## Why
+
+Why this task matters and what breaks downstream if it ships wrong or is skipped.
 
 ## Goal
 
@@ -254,6 +261,26 @@ Describe the exact outcome this task must deliver.
 
 - In scope:
 - Out of scope:
+- Taste constraints: <!-- advisory only, no run gate; default style/taste lives in AGENTS.md and the minimal-change policy, use this to record a per-task override -->
+
+## Stop Conditions
+
+- Stop and hand back to the parent if the change would require editing a path outside Allowed Paths.
+- Stop if an Exit Criteria command cannot be run in this environment.
+- Stop if Goal, Scope, or Exit Criteria are internally contradictory.
+
+## Falsifier
+
+What observable evidence would prove this task's direction wrong, and the cheapest proof point to check first. Leave as-is if not applicable.
+
+## Root Cause Evidence
+
+Required when Task Profile is `bugfix`; leave as-is otherwise.
+
+- root_cause: one sentence naming file:line/condition (testable, not "a state issue").
+- repro: the command or UI path that reproduces the symptom.
+- regression_guard: path to a test that fails on the unfixed code and passes after the fix (must also appear under exit_criteria.tests_pass).
+- pre_fix_failure_artifact: path to a captured run of regression_guard on the UNFIXED code. Capture with `bun test <regression_guard> > <artifact> 2>&1; echo "PRE_FIX_EXIT=$?" >> <artifact>` (no pipes — pipes swallow the exit status). The gate requires a non-zero `PRE_FIX_EXIT=` line plus the regression_guard path string in the artifact (see the Root Cause Evidence Gate section in docs/reference-configs/sprint-contracts.md).
 
 ## Workflow Inventory
 
@@ -270,12 +297,14 @@ Describe the exact outcome this task must deliver.
 
 ```yaml
 allowed_paths:
+  - docs/spec.md
   - plans/
   - tasks/todos.md
   - {{CONTRACT_FILE}}
   - {{REVIEW_FILE}}
   - {{NOTES_FILE}}
   - .ai/context/capabilities.json
+  - .claude/templates/
   - src/
   - tests/
 ```
@@ -305,6 +334,13 @@ delegation:
     verifier:
       mode: read_only
       purpose: exit_criteria_review
+  runner:
+    preferred:
+      - subagent
+      - codex-exec
+      - main-thread
+    fallback: main-thread
+    brief_is_authoritative: true
 ```
 
 ## Exit Criteria (Machine Verifiable)
@@ -312,15 +348,19 @@ delegation:
 ```yaml
 exit_criteria:
   files_exist:
-    - src/modules/{{TASK_SLUG}}/index.ts
+    - docs/spec.md
+  artifacts_exist:
+    - .ai/harness/checks/latest.json
     - {{NOTES_FILE}}
   tests_pass:
     - path: tests/unit/{{TASK_SLUG}}.test.ts
   commands_succeed:
-    - bun run typecheck
-  files_contain:
-    - path: src/modules/{{TASK_SLUG}}/index.ts
-      pattern: "export"
+    - bun run check:type
+  qa_scores:
+    - dimension: functionality
+      min: 7
+  manual_checks:
+    - "Evaluator review file recommends pass"
 ```
 
 ## Acceptance Notes (Human Review)
@@ -334,7 +374,8 @@ exit_criteria:
 - Commit / checkpoint:
 - Revert strategy:
 EOF_TEMPLATE_CONTRACT
-)
+PI_TEMPLATE_CONTRACT="$(cat "$PI_TEMPLATE_CONTRACT_TMP")"
+rm -f "$PI_TEMPLATE_CONTRACT_TMP"
 PI_TEMPLATE_REVIEW=$(cat <<'EOF_TEMPLATE_REVIEW'
 # Task Review: {{TASK_SLUG}}
 
@@ -1888,10 +1929,10 @@ pi_write_harness_policy() {
     "allow_parallel_writers": false,
     "stop_fallback": true,
     "state_file": ".ai/harness/delegation/latest.json",
-    "preferred_runners": ["subagent", "codex-exec", "main-thread"],
+    "preferred_runners": ["subagent", "codex-subagent", "codex-exec", "main-thread"],
     "fallback_runner": "main-thread",
     "brief_source": "tasks/contracts/<stem>.contract.md",
-    "runner_rule": "the active task contract is the authoritative execution brief consumed by contract-run; native subagent is an optional parallelism accelerator. Degrade to codex-exec or sequential main-thread on the SAME contract when spawn is unavailable, sandboxed, or unreliable. Runner-availability fallback MUST be recorded in the contract-run manifest and MUST NOT silently succeed; it is a runner-availability fallback, not a product-semantics compatibility fallback.",
+    "runner_rule": "the active task contract is the authoritative execution brief consumed by contract-run; native subagent (Claude) or codex-subagent (Codex's own native subagent) is an optional parallelism accelerator, preferred first per host. Degrade to codex-exec, then sequential main-thread, on the SAME contract when spawn is unavailable, sandboxed, or unreliable. Runner-availability fallback MUST be recorded in the contract-run manifest and MUST NOT silently succeed; it is a runner-availability fallback, not a product-semantics compatibility fallback.",
     "rule": "UserPromptSubmit.delegation only injects bounded subagent context after explicit user authorization such as /delegate, /parallel, spawn subagents, or parallel investigation"
   },
   "sidecar_research": {
@@ -1983,6 +2024,16 @@ pi_write_harness_policy() {
       "source_repo": "tw93/Waza",
       "source_url": "https://github.com/tw93/Waza.git",
       "managed_skills": ["think", "hunt", "check", "health"],
+      "primary_host": "codex",
+      "codex_primary_path": "~/.codex/skills",
+      "staging_cache_path": "~/.agents/skills",
+      "sync_mode": "stage-upstream-then-copy-to-codex",
+      "host_drift_policy": "report-per-host-version-staging-and-upstream-drift"
+    },
+    "hai_stack": {
+      "source_repo": "hylarucoder/hai-stack",
+      "source_url": "https://github.com/hylarucoder/hai-stack.git",
+      "managed_skills": ["geju"],
       "primary_host": "codex",
       "codex_primary_path": "~/.codex/skills",
       "staging_cache_path": "~/.agents/skills",

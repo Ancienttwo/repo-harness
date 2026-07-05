@@ -425,9 +425,10 @@ render_contract_file() {
     cat > "$template_file" <<'CONTRACT_TEMPLATE_EOF'
 # Task Contract: {{TASK_SLUG}}
 
-> **Status**: Pending
+> **Status**: Active
 > **Plan**: {{PLAN_FILE}}
 > **Task Profile**: {{TASK_PROFILE}}
+> <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: {{OWNER}}
 > **Capability ID**: {{CAPABILITY_ID}}
 > **Last Updated**: {{TIMESTAMP}}
@@ -447,12 +448,26 @@ Describe the exact outcome this task must deliver.
 
 - In scope:
 - Out of scope:
+- Taste constraints: <!-- advisory only, no run gate; default style/taste lives in AGENTS.md and the minimal-change policy, use this to record a per-task override -->
 
 ## Stop Conditions
 
 - Stop and hand back to the parent if the change would require editing a path outside Allowed Paths.
 - Stop if an Exit Criteria command cannot be run in this environment.
 - Stop if Goal, Scope, or Exit Criteria are internally contradictory.
+
+## Falsifier
+
+What observable evidence would prove this task's direction wrong, and the cheapest proof point to check first. Leave as-is if not applicable.
+
+## Root Cause Evidence
+
+Required when Task Profile is `bugfix`; leave as-is otherwise.
+
+- root_cause: one sentence naming file:line/condition (testable, not "a state issue").
+- repro: the command or UI path that reproduces the symptom.
+- regression_guard: path to a test that fails on the unfixed code and passes after the fix (must also appear under exit_criteria.tests_pass).
+- pre_fix_failure_artifact: path to a captured run of regression_guard on the UNFIXED code. Capture with `bun test <regression_guard> > <artifact> 2>&1; echo "PRE_FIX_EXIT=$?" >> <artifact>` (no pipes — pipes swallow the exit status). The gate requires a non-zero `PRE_FIX_EXIT=` line plus the regression_guard path string in the artifact (see the Root Cause Evidence Gate section in docs/reference-configs/sprint-contracts.md).
 
 ## Workflow Inventory
 
@@ -469,6 +484,7 @@ Describe the exact outcome this task must deliver.
 
 ```yaml
 allowed_paths:
+  - docs/spec.md
   - plans/
   - tasks/todos.md
   - {{CONTRACT_FILE}}
@@ -505,6 +521,13 @@ delegation:
     verifier:
       mode: read_only
       purpose: exit_criteria_review
+  runner:
+    preferred:
+      - subagent
+      - codex-exec
+      - main-thread
+    fallback: main-thread
+    brief_is_authoritative: true
 ```
 
 ## Exit Criteria (Machine Verifiable)
@@ -512,15 +535,19 @@ delegation:
 ```yaml
 exit_criteria:
   files_exist:
-    - src/modules/{{TASK_SLUG}}/index.ts
+    - docs/spec.md
+  artifacts_exist:
+    - .ai/harness/checks/latest.json
     - {{NOTES_FILE}}
   tests_pass:
     - path: tests/unit/{{TASK_SLUG}}.test.ts
   commands_succeed:
-    - bun run typecheck
-  files_contain:
-    - path: src/modules/{{TASK_SLUG}}/index.ts
-      pattern: "export"
+    - bun run check:type
+  qa_scores:
+    - dimension: functionality
+      min: 7
+  manual_checks:
+    - "Evaluator review file recommends pass"
 ```
 
 ## Acceptance Notes (Human Review)
@@ -632,6 +659,17 @@ maybe_advise_contract_brief_preflight() {
     echo "[BriefPreflight] contract brief is not yet self-sufficient: $contract_path"
     echo "[BriefPreflight] fill Goal, Scope, Allowed Paths, and Exit Criteria before file-coupled dispatch; contract-run run fails closed until then."
   fi
+}
+
+# Advisory-only geju (格局) freeze reminder at projection time. geju judgment stays
+# live, pre-contract exploration; only its output (thesis/direction/falsifier)
+# belongs in the contract. This MUST NOT affect exit code -- callers append
+# `|| true` -- it only nudges the author to freeze geju output into the
+# just-rendered contract before delegating.
+maybe_advise_geju_freeze() {
+  echo "[Geju] If this task came from a 格局/geju pass, freeze its output into the contract before delegating:" >&2
+  echo "[Geju]   thesis + high-level direction -> ## Why ; falsifier + cheapest proof point -> ## Falsifier" >&2
+  echo "[Geju] Live geju is pre-contract exploration only; once frozen, the contract is authoritative." >&2
 }
 
 render_implementation_notes_file() {
@@ -1014,6 +1052,7 @@ REVIEW_TEMPLATE_EOF
 fi
 
 render_contract_file "$plan_file" "$contract_file" "$review_file" "$notes_file" "$slug" "$timestamp_human" "$capability_id"
+maybe_advise_geju_freeze || true
 carry_forward_plan_scope_boundary "$plan_file" "$contract_file"
 maybe_advise_contract_brief_preflight "$contract_file"
 render_implementation_notes_file "$plan_file" "$contract_file" "$review_file" "$notes_file" "$slug" "$timestamp_human"

@@ -1,3 +1,9 @@
+> **Archived**: 2026-07-05 20:36
+> **Related Plan**: plans/archive/plan-20260705-1455-contract-intent-boundary.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260705-2036
+
 # Implementation Notes: contract-intent-boundary
 
 > **Status**: Active

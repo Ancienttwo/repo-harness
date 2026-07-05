@@ -12,6 +12,12 @@
 
 ## Active Lessons
 
+- Date: 2026-07-06
+- Triggered by correction: authority-closure T2 — adding one apostrophe ("task's") to `PI_TEMPLATE_CONTRACT` broke `scripts/lib/project-init-lib.sh` at `bash -n` (exit 2, "unexpected EOF while looking for matching") on stock macOS bash 3.2.57.
+- Mistake pattern: a `$(cat <<'EOF' ... EOF)`-wrapped heredoc with a QUOTED delimiter still gets its body scanned for quote parity by bash 3.2's `$()` boundary matcher; an odd count of single quotes inside the literal body breaks parsing even though the heredoc content is never interpreted. Minimal 5-line repro confirmed; other `PI_TEMPLATE_*` heredocs had even quote counts by luck.
+- Prevention rule: never embed prose with apostrophes inside `$(cat <<'EOF')` on scripts that must run under /bin/bash 3.2; use temp-file indirection (`mktemp` + `cat > file <<'EOF'` + read back) as `project-init-lib.sh` now does. `read -r -d ''` is not a substitute here — it exits 1 at heredoc EOF and every consumer of this lib runs `set -euo pipefail`. Always `bash -n` every template-bearing .sh after editing embedded template text.
+- Where to apply next time: any slice that inserts new template/field prose into `scripts/lib/project-init-lib.sh`, `scripts/ensure-task-workflow.sh`, or `scripts/plan-to-todo.sh` heredocs; check quoting mode per heredoc before writing text containing `'`, backticks, or `$`.
+
 - Date: 2026-07-03
 - Triggered by correction: a full `bun test` run leaked a real `plans/sprints/20260703-1424-auth-overhaul.sprint.md` + `.ai/harness/sprint/active-sprint` marker into this repo; content matched `tests/sprint-backlog.test.ts:108`'s fixture exactly.
 - Mistake pattern: shell-spawning test helpers that pass `env: undefined` (or `env ? {...} : undefined`) to `spawnSync` silently inherit the parent bun-test process's full `process.env`. Since `bunfig.toml` sets `maxConcurrency = 4`, all test files share one process; a leaked/poisoned env var (e.g. `REPO_HARNESS_TARGET_REPO_ROOT`, which `scripts/sprint-backlog.sh`'s WIP cwd-resolution branch trusts blindly) from anywhere in that shared process can silently redirect a "sandboxed" tmp-workspace test into the real repo. Root cause NOT confirmed — isolated single-file and 7-file/172-test concurrent reruns both failed to reproduce; likely needs full 93-file suite load or was a one-off timing fluke. Applied `tests/sprint-backlog.test.ts`'s explicit `SANDBOX_ENV_BLOCKLIST` strip as defense-in-depth regardless.
