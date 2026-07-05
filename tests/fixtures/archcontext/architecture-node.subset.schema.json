@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://archctx.repoharness.com/schemas/repo/architecture-node.schema.json#capability-subset",
+  "$comment": "Vendored capability-relevant SUBSET of ArchitectureNode (archcontext.node/v1), not the full upstream schema. Source: Ancienttwo/arch-context @ 11cb5ae35bd9540ec3253e9ebc5a3dfb5496f455, file schemas/repo/architecture-node.schema.json, fetched 2026-07-06. This is a read-only bridge fixture for repo-harness capability-resolver's `export --format archcontext-boundaries-v1` (see docs/researches/20260705-archcontext-capability-filing-handover.md and plans/plan-20260706-0211-archcontext-boundary-bridge.md). Narrowed vs upstream on purpose: `kind` is restricted from the full 8-value enum to the single const \"capability\" this bridge ever emits; `name`/`status`/`summary` are kept in `properties` for forward reference but dropped from `required` because this export does not populate them (no field mapping for them exists in the capability registry today). `schemaVersion` const and the `id` identifier pattern are unchanged from upstream. `source` is deliberately tightened beyond upstream for this repo's own output: `required: [\"include\"]` and `include.minItems: 1` are safe narrowings this bridge fixture adds on top of the vendored shape (this export's `toArchContextBoundaryNode` always emits a non-empty `source.include` from a validated registry's `capability.prefixes`; upstream leaves both optional/unconstrained because it also describes node shapes this bridge never produces) — they constrain this repo's own emitted output, not a divergence from the upstream field shape itself. `extensions` is otherwise unchanged from upstream. If upstream's architecture-node.schema.json changes (schemaVersion bump, id pattern change, source/extensions shape change), re-diff against the source file above before trusting this fixture again — do not silently widen it to keep tests green.",
+  "title": "ArchitectureNode (capability export subset)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "kind", "source", "extensions"],
+  "properties": {
+    "schemaVersion": { "const": "archcontext.node/v1" },
+    "id": {
+      "type": "string",
+      "pattern": "^([a-z][a-z0-9]*(\\.[a-z0-9][a-z0-9-]*)*::)?[a-z][a-z0-9]*(\\.[a-z0-9][a-z0-9-]*)+$"
+    },
+    "kind": { "const": "capability" },
+    "name": { "type": "string" },
+    "status": { "type": "string", "enum": ["active", "planned", "deprecated", "removed"] },
+    "summary": { "type": "string" },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["include"],
+      "properties": {
+        "include": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+        "exclude": { "type": "array", "items": { "type": "string" } },
+        "entrypoints": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "extensions": { "type": "object", "additionalProperties": true }
+  }
+}

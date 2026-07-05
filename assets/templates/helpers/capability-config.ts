@@ -1,30 +1,11 @@
 #!/usr/bin/env bun
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { dirname, resolve } from "path";
 import { spawnSync } from "child_process";
 import { fileURLToPath } from "url";
+import { readRegistry as readCapabilityRegistry, type Capability, type CapabilityRegistry } from "./capability-resolver";
 
-type ContractFiles = {
-  agents: string;
-  claude: string;
-};
-
-type Capability = {
-  id: string;
-  domain: string;
-  name: string;
-  prefixes: string[];
-  contract_files: ContractFiles;
-  architecture_module: string;
-  workstream_dir: string;
-  lsp_profile: string;
-  verification_hints: string[];
-};
-
-type Registry = {
-  version: number;
-  capabilities: Capability[];
-};
+type Registry = CapabilityRegistry;
 
 type Format = "text" | "json";
 
@@ -251,13 +232,7 @@ function buildCapability(args: Args, repo: string): Capability {
 }
 
 function readRegistry(repo: string): Registry {
-  const registryPath = resolve(repo, REGISTRY_PATH);
-  if (!existsSync(registryPath)) return { version: 1, capabilities: [] };
-  const parsed = JSON.parse(readFileSync(registryPath, "utf-8")) as Partial<Registry>;
-  return {
-    version: parsed.version ?? 1,
-    capabilities: Array.isArray(parsed.capabilities) ? parsed.capabilities : [],
-  };
+  return readCapabilityRegistry(repo);
 }
 
 function writeRegistry(repo: string, registry: Registry): void {

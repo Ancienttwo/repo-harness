@@ -3,12 +3,12 @@ import { existsSync, readdirSync, readFileSync } from "fs";
 import { relative, resolve } from "path";
 import { spawnSync } from "child_process";
 
-type ContractFiles = {
+export type ContractFiles = {
   agents: string;
   claude: string;
 };
 
-type Capability = {
+export type Capability = {
   id: string;
   domain: string;
   name: string;
@@ -20,12 +20,30 @@ type Capability = {
   verification_hints: string[];
 };
 
-type CapabilityRegistry = {
+export type CapabilityRegistry = {
   version: number;
   capabilities: Capability[];
 };
 
-type Format = "json" | "text" | "prefixes";
+// archcontext-boundaries-v1 is a deliberately narrow, read-only export of the
+// capability registry shaped as a subset of ArchitectureNode (archcontext.node/v1).
+// See tests/fixtures/archcontext/architecture-node.subset.schema.json for the
+// vendored schema subset and docs/researches/20260705-archcontext-capability-filing-handover.md
+// for why this stays a read-only bridge (no archctx runtime dependency).
+export type ArchContextBoundaryNode = {
+  schemaVersion: "archcontext.node/v1";
+  id: string;
+  kind: "capability";
+  source: {
+    include: string[];
+  };
+  extensions: {
+    lspProfile: string;
+    verification: string[];
+  };
+};
+
+type Format = "json" | "text" | "prefixes" | "archcontext-boundaries-v1";
 
 type Args = {
   command: string;
@@ -45,6 +63,7 @@ function usage(): never {
       "  scripts/capability-resolver.ts match --path <repo-relative-path> [--repo <repo>] [--format json|text]",
       "  scripts/capability-resolver.ts match --paths-from <file|-> [--repo <repo>] [--format json|text]",
       "  scripts/capability-resolver.ts validate [--repo <repo>] [--format json|text]",
+      "  scripts/capability-resolver.ts export --format archcontext-boundaries-v1 [--repo <repo>]",
     ].join("\n")
   );
   process.exit(2);
@@ -73,7 +92,7 @@ function parseArgs(argv: string[]): Args {
         break;
       case "--format": {
         const value = argv[++index] as Format;
-        if (!["json", "text", "prefixes"].includes(value)) usage();
+        if (!["json", "text", "prefixes", "archcontext-boundaries-v1"].includes(value)) usage();
         args.format = value;
         break;
       }
@@ -87,10 +106,12 @@ function parseArgs(argv: string[]): Args {
     }
   }
 
-  if (!["list", "match", "validate"].includes(args.command)) usage();
+  if (!["list", "match", "validate", "export"].includes(args.command)) usage();
   if (args.command === "match" && !args.path && !args.pathsFrom) usage();
   if (args.command === "match" && args.path && args.pathsFrom) usage();
   if (args.command === "match" && args.format === "prefixes") usage();
+  if (args.command === "export" && args.format !== "archcontext-boundaries-v1") usage();
+  if (args.command !== "export" && args.format === "archcontext-boundaries-v1") usage();
   return args;
 }
 
@@ -197,7 +218,7 @@ function legacyBlocks(repo: string): string[] {
   return [...new Set(discovered)].sort();
 }
 
-function readRegistry(repo: string): CapabilityRegistry {
+export function readRegistry(repo: string): CapabilityRegistry {
   const registryPath = resolve(repo, DEFAULT_REGISTRY);
   if (!existsSync(registryPath)) {
     return {
@@ -360,7 +381,7 @@ function validateRegistry(registry: CapabilityRegistry, repo: string): string[] 
   return errors;
 }
 
-function findMatch(registry: CapabilityRegistry, repo: string, inputPath: string) {
+export function findMatch(registry: CapabilityRegistry, repo: string, inputPath: string) {
   const relPath = normalizeRepoPath(inputPath, repo);
   const matches: Array<{ capability: Capability; prefix: string }> = [];
 
@@ -421,6 +442,27 @@ function printJson(value: unknown): void {
   console.log(JSON.stringify(value, null, 2));
 }
 
+function toArchContextBoundaryNode(capability: Capability): ArchContextBoundaryNode {
+  return {
+    schemaVersion: "archcontext.node/v1",
+    id: `capability.${capability.domain}.${capability.name}`,
+    kind: "capability",
+    source: {
+      include: [...capability.prefixes],
+    },
+    extensions: {
+      lspProfile: capability.lsp_profile,
+      verification: [...capability.verification_hints],
+    },
+  };
+}
+
+export function buildArchContextBoundariesV1(registry: CapabilityRegistry): ArchContextBoundaryNode[] {
+  return registry.capabilities
+    .map(toArchContextBoundaryNode)
+    .sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
+}
+
 async function readPathLines(input: string): Promise<string[]> {
   const text = input === "-" ? await Bun.stdin.text() : readFileSync(input, "utf-8");
   return text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
@@ -457,6 +499,15 @@ async function main(): Promise<void> {
         console.log(`${capability.id}\t${capability.prefixes.join(",")}`);
       }
     }
+    return;
+  }
+
+  if (args.command === "export") {
+    const exportErrors = validateRegistry(registry, repo);
+    if (exportErrors.length > 0) {
+      throw new Error(`capability registry is invalid:\n${exportErrors.join("\n")}`);
+    }
+    printJson(buildArchContextBoundariesV1(registry));
     return;
   }
 
@@ -497,9 +548,11 @@ async function main(): Promise<void> {
   }
 }
 
-try {
-  await main();
-} catch (error) {
-  console.error(`[CapabilityResolver] ${(error as Error).message}`);
-  process.exit(1);
+if (import.meta.main) {
+  try {
+    await main();
+  } catch (error) {
+    console.error(`[CapabilityResolver] ${(error as Error).message}`);
+    process.exit(1);
+  }
 }
