@@ -209,7 +209,7 @@ T 是模板地基（先做全 surface diff inventory 再对齐、再加字段）
   - root_cause: one sentence naming file:line/condition (testable, not "a state issue").
   - repro: the command or UI path that reproduces the symptom.
   - regression_guard: path to a test that fails on the unfixed code and passes after the fix (must also appear under exit_criteria.tests_pass).
-  - pre_fix_failure_artifact: path to a captured run of regression_guard on the UNFIXED code. Capture with `bun test <regression_guard> > <artifact> 2>&1; echo "PRE_FIX_EXIT=$?" >> <artifact>` (no pipes — pipes swallow the exit status). The gate requires a non-zero `PRE_FIX_EXIT=` line plus the regression_guard path string in the artifact (see H2/H3).
+  - pre_fix_failure_artifact: path to a captured run of regression_guard on the UNFIXED code. Capture with `bun test <regression_guard> > <artifact> 2>&1; echo "PRE_FIX_EXIT=$?" >> <artifact>` (no pipes — pipes swallow the exit status). The gate requires a non-zero `PRE_FIX_EXIT=` line plus the regression_guard path string in the artifact (see the Root Cause Evidence Gate section in docs/reference-configs/sprint-contracts.md).
   ```
 - 改动 2（sprint-contracts.md）：显式声明「自本版起，`verify-contract` 对 `task_profile: bugfix` 的 contract 额外评估 `## Root Cause Evidence` gate；非 bugfix contract 维持 exit_criteria-only」。这是承诺的**有意扩展**，记进文档与 CHANGELOG 式说明。
 - 测试：随 H2/H3。
@@ -220,13 +220,13 @@ T 是模板地基（先做全 surface diff inventory 再对齐、再加字段）
 
 **Why**：contract-run 是消费点 fail-closed 闸（authority closure）。Codex 指出 TS `parseList` 吃不了嵌套 `tests_pass.path`，「复用既有解析」是假的——本片先补最小嵌套解析，再定 fixtures 表供 H3 复用同输入同结果。
 
-- 文件：`scripts/contract-run.ts`(+镜像)；`tests/contract-run.test.ts`；`tests/fixtures/root-cause/`（新增共享 fixtures 实体文件）；`docs/reference-configs/contract-brief-example.md`（补一份 bugfix 黄金范例，守护测试；docs-only 无 assets 镜像）。
+- 文件：`scripts/contract-run.ts`(+镜像)；`tests/contract-run.test.ts`；`tests/fixtures/root-cause/`（新增共享 fixtures 实体文件）；`docs/reference-configs/contract-brief-example-bugfix.md`（新增独立 bugfix 黄金范例文件，守护测试；docs-only 无 assets 镜像；执行期偏差，见 notes——原设想补进既有 contract-brief-example.md，落地为独立新文件，因该文件的 brief 解析器假设「单文件单 contract」）。
 - 改动：
   1. 加最小 helper 解析 `tests_pass[].path`（不引第三方 YAML 库，anti-pattern 23；沿 `sectionBody`/`fencedYamlBlock` 风格）。
   2. `runBriefPreflight` 加条件检查：`task_profile==bugfix`（`readHeader` 读 `> **Task Profile**:`）时，Root Cause Evidence 四项非占位、`regression_guard` ∈ `tests_pass[].path`、`pre_fix_failure_artifact` 路径存在且内容**含非零 `PRE_FIX_EXIT=` 行**（钉死配方见 H1 字段文案；**禁用 FAIL/fail substring 启发式**——bun 通过输出也含 " 0 fail"）**且含 `regression_guard` 的 path 字符串**（不是测试标题）。不满足 → issues push，run 模式新 `failure_class: incomplete_root_cause`。
   3. fixtures 落成**实体共享文件**（`tests/fixtures/root-cause/` 下的 contract + artifact 文件）+ 一张共享期望表（TS module，H2/H3 两侧测试文件 import 同一份）：bugfix-pass / 缺 guard / guard 不在 tests_pass / artifact 缺失 / **artifact 为通过运行（含 " 0 fail" 与 `PRE_FIX_EXIT=0`，必须拒）** / PRE_FIX_EXIT 行缺失 / 非 bugfix 跳过。
 - 测试：上述 fixtures 全覆盖；bugfix 黄金范例过 preflight（守护）。
-- Verify：`diff -q scripts/contract-run.ts assets/templates/helpers/contract-run.ts`；`bun test tests/contract-run.test.ts`；`bun scripts/contract-run.ts preflight --contract docs/reference-configs/contract-brief-example.md --json`（bugfix 例 → pass）。
+- Verify：`diff -q scripts/contract-run.ts assets/templates/helpers/contract-run.ts`；`bun test tests/contract-run.test.ts`；`bun scripts/contract-run.ts preflight --contract docs/reference-configs/contract-brief-example-bugfix.md --json`（bugfix 例 → pass；执行期偏差，见 notes）。
 - **STOP**：嵌套解析需引第三方依赖才能做 → 停回报（评估手写 vs 依赖，不擅自加依赖）。fixtures 中任一在 TS 侧无法表达 → 停，H3 对齐前不推进。
 
 ### H3 — root-cause gate（verify-contract.sh 侧，复用 H2 fixtures）
