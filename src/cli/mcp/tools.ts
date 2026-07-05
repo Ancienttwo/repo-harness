@@ -546,7 +546,7 @@ function runAgentGoal(ctx: McpToolContext, args: Record<string, unknown>): CallT
     timedOut: result.timedOut,
     stdout: stdout.text,
     stderr: stderr.text,
-    redactions: redactedGoal.redactions + stdout.redactions + stderr.redactions,
+    redactions: redactedGoal.redactions.concat(stdout.redactions, stderr.redactions),
   });
 }
 

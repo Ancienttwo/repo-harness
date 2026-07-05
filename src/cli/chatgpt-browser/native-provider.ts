@@ -330,8 +330,8 @@ export async function checkNativeChatgptSession(input: {
     await connection.send('Page.enable', {}, sessionId);
     await connection.send('Runtime.enable', {}, sessionId);
     await connection.send('Page.navigate', { url: input.chatgptUrl ?? 'https://chatgpt.com/' }, sessionId);
-    const composer = await findComposer(connection, sessionId, Math.min(timeoutMs, 30_000));
-    const url = await currentUrl(connection, sessionId);
+    const composer = await findComposer(connection, sessionId!, Math.min(timeoutMs, 30_000));
+    const url = await currentUrl(connection, sessionId!);
     if (composer?.ok === true) {
       return { status: 'ready', profileDir, profileDirectory, browserChannel: channel, url };
     }
@@ -469,10 +469,10 @@ export async function runNativeProvider(input: BrowserConsultInput, bundle: Prom
     sessionId = attached.sessionId;
     await connection.send('Page.enable', {}, sessionId);
     await connection.send('Runtime.enable', {}, sessionId);
-    await connection.send('Page.navigate', { url: input.chatgptUrl ?? 'https://chatgpt.com/' }, sessionId);
-    const composer = await findComposer(connection, sessionId, Math.min(timeoutMs, 180_000));
+    await connection.send('Page.navigate', { url: input.chatgptUrl ?? 'https://chatgpt.com/' }, sessionId!);
+    const composer = await findComposer(connection, sessionId!, Math.min(timeoutMs, 180_000));
     if (!composer) {
-      const url = await currentUrl(connection, sessionId);
+      const url = await currentUrl(connection, sessionId!);
       return {
         status: 'failed',
         output: [
@@ -492,9 +492,9 @@ export async function runNativeProvider(input: BrowserConsultInput, bundle: Prom
       };
     }
 
-    await submitPrompt(connection, sessionId, bundle.rendered);
-    const capture = await waitForStableAssistantText(connection, sessionId, timeoutMs);
-    const url = await currentUrl(connection, sessionId);
+    await submitPrompt(connection, sessionId!, bundle.rendered);
+    const capture = await waitForStableAssistantText(connection, sessionId!, timeoutMs);
+    const url = await currentUrl(connection, sessionId!);
     if (!capture.text) {
       return {
         status: 'incomplete_capture',

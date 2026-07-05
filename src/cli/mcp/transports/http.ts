@@ -323,9 +323,9 @@ async function handleMcpPost(req: Request, res: Response, opts: McpHttpOptions, 
       res.status(429).json({ error: { code: 'SESSION_LIMIT_REACHED', message: 'Too many active MCP sessions.' } });
       return;
     }
-    const transport = new StreamableHTTPServerTransport({
+    const transport: StreamableHTTPServerTransport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
-      onsessioninitialized: (newSessionId) => sessions.set(newSessionId, transport),
+      onsessioninitialized: (newSessionId) => { sessions.set(newSessionId, transport); },
     });
     transport.onclose = () => {
       if (transport.sessionId) sessions.delete(transport.sessionId);

@@ -120,7 +120,7 @@ describe('mcp http transport', () => {
     const repoRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-http-'));
     const port = await freePort();
     const restoreRegistryHome = useTempRegistryHome();
-    let proc: Bun.Subprocess<'ignore', 'pipe', 'pipe'> | null = null;
+    let proc: Bun.Subprocess | null = null;
     try {
       mkdirSync(join(repoRoot, '.ai/harness'), { recursive: true });
       writeFileSync(join(repoRoot, '.ai/harness/policy.json'), '{}\n');
@@ -245,7 +245,7 @@ describe('mcp http transport', () => {
     const repoRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-url-token-'));
     const port = await freePort();
     const restoreRegistryHome = useTempRegistryHome();
-    let proc: Bun.Subprocess<'ignore', 'pipe', 'pipe'> | null = null;
+    let proc: Bun.Subprocess | null = null;
     try {
       mkdirSync(join(repoRoot, '.ai/harness'), { recursive: true });
       writeFileSync(join(repoRoot, '.ai/harness/policy.json'), '{}\n');
@@ -306,7 +306,7 @@ describe('mcp http transport', () => {
     const repoRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-oauth-'));
     const port = await freePort();
     const restoreRegistryHome = useTempRegistryHome();
-    let proc: Bun.Subprocess<'ignore', 'pipe', 'pipe'> | null = null;
+    let proc: Bun.Subprocess | null = null;
     try {
       mkdirSync(join(repoRoot, '.ai/harness'), { recursive: true });
       writeFileSync(join(repoRoot, '.ai/harness/policy.json'), '{}\n');

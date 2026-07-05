@@ -57,7 +57,21 @@ const BROWSER_READ_POLICY: McpPolicy = {
   writeGlobs: [],
   denyGlobs: READ_DENY_GLOBS,
   maxFileBytes: 512 * 1024,
-  execution: { fixedWorkflowCheck: false, codexRunner: false },
+  capabilities: {
+    workspaceReader: false,
+    workflowPlanner: false,
+    workflowExecutor: false,
+    agentRunner: false,
+  },
+  generalRepo: {
+    general_repo_read: false,
+    repo_write: false,
+    fs_fallback: false,
+    shadow_compare: false,
+    canary_repos: [],
+    rollback_to_legacy_tools: false,
+  },
+  execution: { fixedWorkflowCheck: false, codexRunner: false, agentRunner: false, allowedAgents: [], runnerTimeoutMs: 0 },
 };
 
 const BROWSER_CLI_OUTPUT_POLICY: McpPolicy = {
@@ -66,7 +80,21 @@ const BROWSER_CLI_OUTPUT_POLICY: McpPolicy = {
   writeGlobs: ['**'],
   denyGlobs: WRITE_DENY_GLOBS,
   maxFileBytes: 0,
-  execution: { fixedWorkflowCheck: false, codexRunner: false },
+  capabilities: {
+    workspaceReader: false,
+    workflowPlanner: false,
+    workflowExecutor: false,
+    agentRunner: false,
+  },
+  generalRepo: {
+    general_repo_read: false,
+    repo_write: false,
+    fs_fallback: false,
+    shadow_compare: false,
+    canary_repos: [],
+    rollback_to_legacy_tools: false,
+  },
+  execution: { fixedWorkflowCheck: false, codexRunner: false, agentRunner: false, allowedAgents: [], runnerTimeoutMs: 0 },
 };
 
 const BROWSER_MCP_OUTPUT_POLICY: McpPolicy = {
@@ -81,7 +109,21 @@ const BROWSER_MCP_OUTPUT_POLICY: McpPolicy = {
   ],
   denyGlobs: WRITE_DENY_GLOBS,
   maxFileBytes: 0,
-  execution: { fixedWorkflowCheck: false, codexRunner: false },
+  capabilities: {
+    workspaceReader: false,
+    workflowPlanner: false,
+    workflowExecutor: false,
+    agentRunner: false,
+  },
+  generalRepo: {
+    general_repo_read: false,
+    repo_write: false,
+    fs_fallback: false,
+    shadow_compare: false,
+    canary_repos: [],
+    rollback_to_legacy_tools: false,
+  },
+  execution: { fixedWorkflowCheck: false, codexRunner: false, agentRunner: false, allowedAgents: [], runnerTimeoutMs: 0 },
 };
 
 function isProbablyBinary(bytes: Buffer): boolean {

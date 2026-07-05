@@ -470,23 +470,28 @@ function normalizeDecisions(input: unknown): RouteNlDecision[] {
       : [];
 
   return source
-    .map((entry) => {
+    .map((entry): RouteNlDecision | null => {
       if (!entry || typeof entry !== "object") return null;
       const record = entry as Record<string, unknown>;
       const scenarioId = record.scenario_id ?? record.id;
+      const intent = record.intent;
+      const action = record.action;
       if (
         typeof scenarioId !== "string" ||
-        typeof record.intent !== "string" ||
-        typeof record.action !== "string"
+        typeof intent !== "string" ||
+        typeof action !== "string"
       ) {
         return null;
       }
-      return {
+      const result: RouteNlDecision = {
         scenario_id: scenarioId,
-        intent: record.intent,
-        action: record.action,
-        rationale: typeof record.rationale === "string" ? record.rationale : undefined,
+        intent,
+        action,
       };
+      if (typeof record.rationale === "string") {
+        result.rationale = record.rationale;
+      }
+      return result;
     })
     .filter((entry): entry is RouteNlDecision => entry !== null);
 }

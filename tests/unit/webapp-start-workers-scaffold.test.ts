@@ -4,7 +4,7 @@ import {
   getWebappRenderingTemplateVariables,
   loadPlanMap,
 } from "../../scripts/assemble-template";
-import { loadQuestionPack } from "../../scripts/initializer-question-pack";
+import { loadQuestionPack, InitializerQuestionPackV4 } from "../../scripts/initializer-question-pack";
 
 describe("webapp Start/Workers scaffold refresh", () => {
   test("keeps webapp rendering as an overlay on the A-K plan catalog", () => {
@@ -31,7 +31,7 @@ describe("webapp Start/Workers scaffold refresh", () => {
   });
 
   test("documents Start Workers route and deploy boundaries in the question pack", () => {
-    const pack = loadQuestionPack();
+    const pack = loadQuestionPack() as InitializerQuestionPackV4;
 
     expect(pack.inferredDefaults.webappRenderingModel).toBe("none");
     expect(pack.webappRenderingModels["start-workers"].frontend).toBe(

@@ -11,7 +11,8 @@ const ROOT = join(import.meta.dir, '../..');
 const CLI = join(ROOT, 'src/cli/index.ts');
 
 function textPayload(result: Awaited<ReturnType<Client['callTool']>>): Record<string, unknown> {
-  const first = 'content' in result ? result.content[0] : undefined;
+  const content = (result as { content?: Array<{ type: string; text: string }> }).content;
+  const first = content?.[0];
   if (!first || first.type !== 'text') throw new Error('expected text tool result');
   return JSON.parse(first.text);
 }
