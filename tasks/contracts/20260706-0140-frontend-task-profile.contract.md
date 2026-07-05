@@ -1,6 +1,6 @@
 # Task Contract: frontend-task-profile
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260706-0140-frontend-task-profile.md
 > **Task Profile**: code-change
 > **Owner**: ancienttwo
