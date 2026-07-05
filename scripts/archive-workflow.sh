@@ -2,11 +2,14 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null)"; then
+if [[ -n "${REPO_HARNESS_TARGET_REPO_ROOT:-}" ]]; then
+  cd "$REPO_HARNESS_TARGET_REPO_ROOT"
+elif REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null)"; then
   cd "$REPO_ROOT"
 else
   cd "$SCRIPT_DIR/.."
 fi
+helper_dir="$SCRIPT_DIR"
 
 usage() {
   cat <<'USAGE_EOF'
@@ -319,8 +322,8 @@ rm -f ".claude/.plan-state/${plan_key}.todo.md.bak"
 rm -f ".claude/.plan-state/${plan_key}.task-state.json.bak"
 rm -f ".claude/.plan-state/${plan_key}.task-handoff.md.bak"
 
-if [[ -x "scripts/refresh-current-status.sh" ]]; then
-  bash "scripts/refresh-current-status.sh" --clear --write --reason "archive-workflow" || true
+if [[ -x "$helper_dir/refresh-current-status.sh" ]]; then
+  bash "$helper_dir/refresh-current-status.sh" --clear --write --reason "archive-workflow" || true
 fi
 
 echo "Archived plan to: $archive_plan_path"
