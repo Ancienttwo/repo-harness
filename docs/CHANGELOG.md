@@ -4,6 +4,74 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-07-06
+
+### Added
+
+- Added a `bugfix` task profile with a first-class Root Cause Evidence gate:
+  `contract-run.ts` and `verify-contract.sh` independently evaluate the same
+  `## Root Cause Evidence` section against shared fixtures, matching a
+  pre-fix failure artifact by its captured `PRE_FIX_EXIT` recipe; added the
+  bugfix golden example `docs/reference-configs/contract-brief-example-bugfix.md`.
+- Declared file-coupled delegation policy (`delegation.preferred_runners` /
+  `fallback_runner` / `runner_rule`) that makes the task contract the
+  authoritative execution brief and the native subagent an optional
+  accelerator; slimmed `codex-delegation-advisor` to point at the contract
+  instead of commanding native spawn limits; `plan-to-todo` now prints a
+  non-blocking `[BriefPreflight]` advisory right after contract projection,
+  while `contract-run.ts run` keeps the fail-closed brief-completeness gate.
+- Added an optional `## Falsifier` section to the contract template and
+  aligned all five template/helper-mirror copies, backfilling the
+  Why/Stop-Conditions/Exemplar sections seeded for prompt distillation.
+  Distilled the contract-run prompts on top of that: `writePrompt()` folds
+  self-verify/notes/stop duties and Intent into the worker/verifier prompts,
+  `runBriefPreflight()` requires a concrete `## Why`, a golden contract-brief
+  example ships with a preflight guard test, `verify-sprint` prints
+  promotion/triage advisories at finish without changing its exit code,
+  `contract-run.ts` gained a `--runner` option with manifest `runner_usage`
+  recording, and the workflow is taught across the repo's `SKILL.md` docs.
+- Added geju (`hylarucoder/hai-stack`) as an `external_tooling` dependency;
+  `plan-to-todo` prints a `[Geju]` artifact-freeze advisory after rendering a
+  contract.
+- Made the agent fleet a first-class dependency: a `fable_agents` policy
+  entry (self-host `auto-install-on-init`, downstream `advisory`), the
+  `install-agent-fleet` helper (direct-installs upstream `.md` agent
+  definitions and generates matching Codex `.toml` mappings, never-clobber by
+  default with `--force` to override, `REPO_HARNESS_FLEET_SOURCE_DIR`
+  override), `check-agent-tooling`'s `detectAgentFleet()` with
+  strict-readiness (`missing`/`partial`), and tiered init/migrate policy
+  assembly where dry-run never writes to `$HOME`.
+- Added the `codex-subagent` runner label and committed this repo's own
+  fleet: three `.claude/agents/` definitions (`deep-reasoner`, `fast-worker`,
+  `gatekeeper`) with symmetric `.codex/agents/*.toml` mappings.
+- Added a `frontend` task profile with a design-brief gate, intake
+  prior-art/negative-scenario/canonical-term trigger rules with recorded
+  acceptance evidence, and a capability/archcontext boundary bridge exposing
+  a read-only `archcontext-boundaries-v1` export with export tests.
+- Mechanically landed the `EXECUTION_BOUNDARY` anti-extras clause on every
+  delegated runner surface, with a canonical-sentence parity test; contracts
+  now project the plan's Non-scope section, and In-scope/Out-of-scope get an
+  independent preflight check.
+
+### Changed
+
+- Renamed the dead `bun run typecheck` exit-criteria command to the real
+  `bun run check:type` script across every contract template/helper-mirror
+  surface; explicitly revised `sprint-contracts.md`'s exit-criteria-only
+  promise to scope the new Root Cause Evidence check to `bugfix`-profile
+  contracts only. Bumped the review rubric from v1 to v2 so external
+  acceptance must carry its own current Reviewed Diff Fingerprint and scope
+  instead of a stale one, and added a bounded P1-escalation Scope Fidelity
+  rubric dimension.
+
+### Fixed
+
+- Worked around a bash 3.2 parser trap where a `$(cat <<'EOF' ... EOF)`-wrapped
+  heredoc with a quoted delimiter is still scanned for quote parity: an odd
+  apostrophe count inside embedded template prose broke
+  `scripts/lib/project-init-lib.sh` under `bash -n`. Switched to `mktemp`
+  file indirection.
+
 ## [0.8.5] - 2026-07-04
 
 ### Fixed
