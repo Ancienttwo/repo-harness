@@ -1,0 +1,23 @@
+bun test v1.3.10 (30e609e0)
+
+tests/fixtures/root-cause/regression-guard.test.ts:
+ 6 |   return true;
+ 7 | }
+ 8 | 
+ 9 | describe("isNonEmptyLabel example root-cause regression guard", () => {
+10 |   test("treats an explicit zero-width label as empty, not falsy-true", () => {
+11 |     expect(isNonEmptyLabel("")).toBe(false);
+                                     ^
+error: expect(received).toBe(expected)
+
+Expected: false
+Received: true
+
+      at <anonymous> (/Users/kito/Projects/repo-harness-wt-authority-closure/tests/fixtures/root-cause/regression-guard.test.ts:11:33)
+(fail) isNonEmptyLabel example root-cause regression guard > treats an explicit zero-width label as empty, not falsy-true [0.40ms]
+
+ 0 pass
+ 1 fail
+ 1 expect() calls
+Ran 1 test across 1 file. [16.00ms]
+PRE_FIX_EXIT=1

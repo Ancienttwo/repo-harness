@@ -43,6 +43,7 @@ interface DelegationContract {
 interface BriefPreflight {
   ok: boolean;
   issues: string[];
+  failure_class: "incomplete_brief" | "incomplete_root_cause" | null;
 }
 
 interface DelegationRole {
@@ -245,6 +246,28 @@ function parseList(block: string, key: string): string[] {
   return values;
 }
 
+// Parses a list of nested objects shaped like `key:\n  - path: value` (for example
+// exit_criteria.tests_pass) and returns just the path values. Plain parseList cannot
+// decompose these: each list entry is a one-key object rather than a bare scalar, so it
+// would return the raw "path: value" string as a single item instead of the value alone.
+function parseNestedPathList(block: string, key: string): string[] {
+  const lines = block.split("\n");
+  const values: string[] = [];
+  let inList = false;
+  const keyPattern = new RegExp(`^\\s*${key}:\\s*$`);
+  for (const line of lines) {
+    if (keyPattern.test(line)) {
+      inList = true;
+      continue;
+    }
+    if (!inList) continue;
+    if (/^\S/.test(line) || /^\s+[a-zA-Z0-9_-]+:/.test(line)) break;
+    const match = line.match(/^\s*-\s*path:\s*(.+)$/);
+    if (match) values.push(match[1].trim().replace(/^["']|["']$/g, ""));
+  }
+  return values;
+}
+
 function parseRoles(block: string): Record<string, DelegationRole> {
   const roles: Record<string, DelegationRole> = {};
   let inRoles = false;
@@ -373,28 +396,125 @@ function isConcreteScopeBullet(scopeSection: string, label: "In scope" | "Out of
   return bullet.length > 0 && !/\{\{[^}]+\}\}/.test(bullet);
 }
 
-function runBriefPreflight(markdown: string): BriefPreflight {
+type RootCauseField = "root_cause" | "repro" | "regression_guard" | "pre_fix_failure_artifact";
+
+// Verbatim placeholder text from the contract template's `## Root Cause Evidence`
+// section (assets/templates/contract.template.md and its mirrors). A field counts as
+// still-a-placeholder when its value equals this text, the same idiom isConcreteBrief
+// uses for the Goal/Why placeholder sentences above.
+const ROOT_CAUSE_PLACEHOLDER: Record<RootCauseField, string> = {
+  root_cause: 'one sentence naming file:line/condition (testable, not "a state issue").',
+  repro: "the command or UI path that reproduces the symptom.",
+  regression_guard:
+    "path to a test that fails on the unfixed code and passes after the fix (must also appear under exit_criteria.tests_pass).",
+  pre_fix_failure_artifact:
+    'path to a captured run of regression_guard on the UNFIXED code. Capture with `bun test <regression_guard> > <artifact> 2>&1; echo "PRE_FIX_EXIT=$?" >> <artifact>` (no pipes — pipes swallow the exit status). The gate requires a non-zero `PRE_FIX_EXIT=` line plus the regression_guard path string in the artifact (see H2/H3).',
+};
+
+function parseRootCauseField(section: string, field: RootCauseField): string {
+  const match = section.match(new RegExp(`^-\\s*${field}:\\s*(.+)$`, "m"));
+  return match ? match[1].trim() : "";
+}
+
+function isConcreteRootCauseField(value: string, field: RootCauseField): boolean {
+  if (!value) return false;
+  if (/\{\{[^}]+\}\}/.test(value)) return false;
+  return value !== ROOT_CAUSE_PLACEHOLDER[field];
+}
+
+// Evaluates the bugfix-only pre-fix failure evidence gate: all four fields must be
+// concrete, regression_guard must also be listed under exit_criteria.tests_pass, and
+// pre_fix_failure_artifact must exist and show a genuine pre-fix failure (a non-zero
+// PRE_FIX_EXIT= line — not a "fail" substring match, since a passing bun run's own
+// summary text contains "0 fail") that references the regression_guard path.
+function checkRootCauseEvidence(markdown: string, repo: string): string[] {
   const issues: string[] = [];
+  const section = sectionBody(markdown, "Root Cause Evidence");
+
+  const rootCause = parseRootCauseField(section, "root_cause");
+  const repro = parseRootCauseField(section, "repro");
+  const regressionGuard = parseRootCauseField(section, "regression_guard");
+  const preFixArtifact = parseRootCauseField(section, "pre_fix_failure_artifact");
+
+  if (!isConcreteRootCauseField(rootCause, "root_cause")) {
+    issues.push("Root Cause Evidence: root_cause is empty or still a template placeholder");
+  }
+  if (!isConcreteRootCauseField(repro, "repro")) {
+    issues.push("Root Cause Evidence: repro is empty or still a template placeholder");
+  }
+
+  const regressionGuardConcrete = isConcreteRootCauseField(regressionGuard, "regression_guard");
+  if (!regressionGuardConcrete) {
+    issues.push("Root Cause Evidence: regression_guard is empty or still a template placeholder");
+  }
+
+  const preFixArtifactConcrete = isConcreteRootCauseField(preFixArtifact, "pre_fix_failure_artifact");
+  if (!preFixArtifactConcrete) {
+    issues.push("Root Cause Evidence: pre_fix_failure_artifact is empty or still a template placeholder");
+  }
+
+  if (regressionGuardConcrete) {
+    const testsPassPaths = parseNestedPathList(fencedYamlBlock(markdown, "exit_criteria"), "tests_pass");
+    if (!testsPassPaths.includes(regressionGuard)) {
+      issues.push(
+        `Root Cause Evidence: regression_guard ${regressionGuard} is not listed under exit_criteria.tests_pass`,
+      );
+    }
+  }
+
+  if (preFixArtifactConcrete) {
+    const artifactPath = repoPath(repo, preFixArtifact);
+    if (!existsSync(artifactPath)) {
+      issues.push(`Root Cause Evidence: pre_fix_failure_artifact does not exist: ${preFixArtifact}`);
+    } else {
+      const artifactContent = readFileSync(artifactPath, "utf-8");
+      const exitMatch = artifactContent.match(/^PRE_FIX_EXIT=(\d+)\s*$/m);
+      if (!exitMatch || Number(exitMatch[1]) === 0) {
+        issues.push(
+          `Root Cause Evidence: pre_fix_failure_artifact is missing a non-zero PRE_FIX_EXIT= line: ${preFixArtifact}`,
+        );
+      }
+      if (regressionGuardConcrete && !artifactContent.includes(regressionGuard)) {
+        issues.push(
+          `Root Cause Evidence: pre_fix_failure_artifact does not reference the regression_guard path ${regressionGuard}`,
+        );
+      }
+    }
+  }
+
+  return issues;
+}
+
+function runBriefPreflight(markdown: string, repo: string): BriefPreflight {
+  const baseIssues: string[] = [];
   if (!isConcreteBrief(sectionBody(markdown, "Goal"))) {
-    issues.push("Goal section is empty or still a template placeholder");
+    baseIssues.push("Goal section is empty or still a template placeholder");
   }
   const scopeSection = sectionBody(markdown, "Scope");
   if (!isConcreteScopeBullet(scopeSection, "In scope")) {
-    issues.push("Scope section is missing a concrete 'In scope:' item");
+    baseIssues.push("Scope section is missing a concrete 'In scope:' item");
   }
   if (!isConcreteScopeBullet(scopeSection, "Out of scope")) {
-    issues.push("Scope section is missing a concrete 'Out of scope:' item");
+    baseIssues.push("Scope section is missing a concrete 'Out of scope:' item");
   }
   if (!isConcreteBrief(sectionBody(markdown, "Why"))) {
-    issues.push("Why section is empty or still a template placeholder");
+    baseIssues.push("Why section is empty or still a template placeholder");
   }
   if (parseList(fencedYamlBlock(markdown, "allowed_paths"), "allowed_paths").length === 0) {
-    issues.push("Allowed Paths is empty");
+    baseIssues.push("Allowed Paths is empty");
   }
   if (!fencedYamlBlock(markdown, "exit_criteria").trim()) {
-    issues.push("Exit Criteria block is missing");
+    baseIssues.push("Exit Criteria block is missing");
   }
-  return { ok: issues.length === 0, issues };
+
+  const rootCauseIssues =
+    readHeader(markdown, "Task Profile") === "bugfix" ? checkRootCauseEvidence(markdown, repo) : [];
+
+  const issues = [...baseIssues, ...rootCauseIssues];
+  const failureClass: BriefPreflight["failure_class"] =
+    baseIssues.length > 0 ? "incomplete_brief" : rootCauseIssues.length > 0 ? "incomplete_root_cause" : null;
+
+  return { ok: issues.length === 0, issues, failure_class: failureClass };
 }
 
 function runChild(
@@ -450,14 +570,14 @@ function buildRun(opts: Options) {
   const exitCriteria = fencedYamlBlock(contractText, "exit_criteria");
   const delegation = parseDelegation(contractText);
   const allowedPaths = parseList(fencedYamlBlock(contractText, "allowed_paths"), "allowed_paths");
-  const briefPreflight = runBriefPreflight(contractText);
+  const briefPreflight = runBriefPreflight(contractText, repo);
 
   if (opts.mode === "preflight") {
     const manifest = {
       version: 1,
       kind: "repo-harness-contract-run",
       status: briefPreflight.ok ? "preflight_pass" : "fail",
-      failure_class: briefPreflight.ok ? null : "incomplete_brief",
+      failure_class: briefPreflight.failure_class,
       repo,
       contract: repoRelative(repo, contractPath),
       brief_preflight: briefPreflight,
@@ -578,7 +698,7 @@ function buildRun(opts: Options) {
 
   if (opts.mode === "run" && !briefPreflight.ok) {
     status = "fail";
-    failureClass = "incomplete_brief";
+    failureClass = briefPreflight.failure_class ?? "incomplete_brief";
   }
 
   if (opts.mode === "run" && briefPreflight.ok) {

@@ -325,7 +325,7 @@ diff -q .claude/templates/contract.template.md assets/templates/contract.templat
 # reference-configs 文档镜像成对一致（H1/G1/G3 触到的三份）
 for f in sprint-contracts.md agentic-development-flow.md external-tooling.md; do diff -q docs/reference-configs/$f assets/reference-configs/$f || echo "DRIFT $f"; done
 # 冒烟：bugfix 黄金范例过 preflight + verify-contract；缺 pre-fix artifact 的 bugfix contract 被挡；非 bugfix contract 不受影响
-bun scripts/contract-run.ts preflight --contract docs/reference-configs/contract-brief-example.md --json
+bun scripts/contract-run.ts preflight --contract docs/reference-configs/contract-brief-example-bugfix.md --json
 # 冒烟：.codex/agents/*.toml 不再被 gitignore（git check-ignore 无输出）+ 被 Codex 识别
 git check-ignore .codex/agents/deep-reasoner.toml || echo "OK not ignored"
 # 断言：反-extras 条款仍覆盖全部 runner 面（intent-boundary 已落地，勿重复注入）
@@ -374,7 +374,7 @@ grep -rl "forbidden design space" scripts/contract-run.ts assets/hooks/ src/cli/
 - [x] T2 模板新增 `## Falsifier` 选填字段（全 surface）
 - [x] H0 bugfix 分类 schema owner（扩 task_profile 枚举）
 - [x] H1 root-cause 一等 gate 维度：模板 + 显式修订 sprint-contracts.md
-- [ ] H2 root-cause gate（contract-run.ts）+ TS 嵌套解析 + 共享 fixtures
+- [x] H2 root-cause gate（contract-run.ts）+ TS 嵌套解析 + 共享 fixtures
 - [ ] H3 root-cause gate（verify-contract.sh，复用 fixtures）
 - [ ] G1 geju 落成 policy 依赖条目（含分发种子面）
 - [ ] G2 geju 产物冻结 advisory
