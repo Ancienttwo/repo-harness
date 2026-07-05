@@ -46,6 +46,7 @@
 > **External Started**:
 > **External Completed**:
 
+- Manual Override: recorded 2026-07-06 by orchestrator — this work package already carries a cross-vendor adversarial review at plan stage (Codex gpt-5.5·xhigh BLOCK round, findings folded into the executed plan), an independent orchestrator re-review (REVISE round, findings folded), and a gatekeeper PASS backed by the full F1 battery; a fresh Codex re-acceptance of the merged implementation diff (fingerprint-bound rubric) is queued in tasks/todos.md to supersede this override, mirroring the contract-intent-boundary precedent (2affc9f).
 - P1 blockers: none run this dispatch.
 - P2 advisories: none run this dispatch.
 - Acceptance checklist: no cross-vendor run performed for this closeout; internal gatekeeper/orchestrator acceptance is the recorded verdict (see Human Review Card, Verification Evidence).
