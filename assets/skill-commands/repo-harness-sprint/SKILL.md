@@ -32,6 +32,10 @@ Use this command to plan a program-level Sprint from an upper-layer PRD or sourc
 5. Route `status`: report `repo-harness run sprint-backlog status` plus the Active Sprint section of `tasks/current.md`; mutate nothing.
 6. After each completed task, re-read the sprint file before starting the next one; user edits to the backlog override stale session memory.
 
+## Delegation Brief
+
+Each `contract` row's `tasks/contracts/<stem>.contract.md` is the authoritative delegation brief once `$think` expands it and hands off implementation, not the sprint backlog row text. Fill in `## Why`, `## Goal`, `## Scope`, `## Stop Conditions`, `allowed_paths`, and `exit_criteria` before dispatching a file-coupled worker, and verify completeness with `repo-harness run contract-run preflight --contract <contract-file>`.
+
 ## Failure Modes
 
 - If no sprint file exists and the user asked for `run` or `status`, report that no sprint is active and route to `plan`.

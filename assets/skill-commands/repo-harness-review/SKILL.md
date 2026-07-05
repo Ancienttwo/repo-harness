@@ -15,6 +15,10 @@ Use this command when a plan exists and the user wants a review before implement
 3. Select review dimensions from the plan and repo type: `product`, `eng`, `design`, and `devex`.
 4. Report blocking issues first, then the minimal plan edits needed to clear them.
 
+## Delegation Brief Evidence
+
+A file-coupled `contract-run` verifier scores PASS or FAIL strictly against the contract's `exit_criteria`, never a rubric it invents. When reviewing such a run, check that the worker's report carries the actual command evidence for each `exit_criteria` item, not just a claim that it passed.
+
 ## Failure Modes
 
 - If no plan exists, route to `repo-harness-plan` instead of reviewing guesses.

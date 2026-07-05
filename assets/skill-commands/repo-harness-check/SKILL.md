@@ -30,6 +30,10 @@ Use this command when the user asks whether the harness, migration, or release s
    - unavailable: no current eval evidence; report the benchmark command needed
 7. Summarize pass/fail evidence, yellow flags, eval authority metrics, and the next blocking command if any.
 
+## Delegation Brief Evidence
+
+A file-coupled `contract-run` worker is instructed to self-run every `exit_criteria` command and paste the exact command line plus output before reporting done. When checking such a run, confirm that evidence was actually pasted, not merely asserted, and re-run any criterion you cannot confirm from the transcript.
+
 ## Failure Modes
 
 - If any required workflow gate fails, report the first blocking command and stop the readiness claim.
