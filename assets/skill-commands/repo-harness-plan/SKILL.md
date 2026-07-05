@@ -21,6 +21,8 @@ Use this command when the user wants a decision-complete plan for repo-harness w
 
 `tasks/contracts/<stem>.contract.md` is the authoritative delegation brief once implementation is handed to a file-coupled worker, not this skill's own narration. Before that handoff, fill in the contract's `## Why`, `## Goal`, `## Scope`, `## Stop Conditions`, `allowed_paths`, and `exit_criteria`; a template placeholder in any of these fails the gate closed. Verify completeness with `repo-harness run contract-run preflight --contract <contract-file>`.
 
+When this plan traces back to a `$geju`/格局 pass, freeze its thesis and high-level direction into the contract's `## Why` and its falsifier plus cheapest proof point into the optional `## Falsifier` before capturing the contract; live geju framing is pre-contract exploration only, and once frozen the contract governs, not the live pass.
+
 ## Failure Modes
 
 - If the inspector cannot classify the repo, keep the plan in Draft and list the missing files.

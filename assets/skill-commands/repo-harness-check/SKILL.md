@@ -34,6 +34,10 @@ Use this command when the user asks whether the harness, migration, or release s
 
 A file-coupled `contract-run` worker is instructed to self-run every `exit_criteria` command and paste the exact command line plus output before reporting done. When checking such a run, confirm that evidence was actually pasted, not merely asserted, and re-run any criterion you cannot confirm from the transcript.
 
+## Root Cause Evidence Review
+
+For a `bugfix` contract, confirm `## Root Cause Evidence` states a testable `root_cause`, a working `repro`, a `regression_guard` that also appears under `exit_criteria.tests_pass`, and a `pre_fix_failure_artifact` showing a non-zero `PRE_FIX_EXIT=` line for that guard, not a passing run. Also check whether `task_profile` was mislabeled or left out entirely: an omitted `task_profile` defaults to legacy pass-through (non-bugfix) by design, so confirm that default is actually correct here rather than an evasion of the gate.
+
 ## Failure Modes
 
 - If any required workflow gate fails, report the first blocking command and stop the readiness claim.

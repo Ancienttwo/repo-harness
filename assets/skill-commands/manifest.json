@@ -107,7 +107,7 @@
       "class": "product-planning",
       "mutatesRepoByDefault": true,
       "engine": "$geju direction pass, Claude-first claude -p --model opus drafting, PRD template, evidence rules, and task-workflow checks",
-      "summary": "Generates an AI-implementation-friendly PRD from a product idea into plans/prds/ after a geju framing pass, using Claude first and Codex only as fallback."
+      "summary": "Generates an AI-implementation-friendly PRD from a product idea into plans/prds/ after a geju framing pass, using Claude first and Codex only as fallback; the geju thesis and falsifier are pre-contract exploration and must be frozen into a delegated contract's ## Why / ## Falsifier."
     },
     {
       "name": "repo-harness-sprint",

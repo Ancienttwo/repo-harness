@@ -40,5 +40,6 @@ Use this command to generate an upper-layer PRD under `plans/prds/`. The PRD is 
 - Does not set `> **Status**: Approved`; the user must review and approve the PRD.
 - Does not write outside `plans/prds/` except for verification artifacts produced by existing workflow checks.
 - Does not skip the `$geju` direction pass; the PRD must carry a clear target model before section writing starts.
+- Does not treat the `$geju` framing captured here as delegation authority: once this PRD's direction is delegated through a task contract, freeze the thesis/high-level direction into that contract's `## Why` and the falsifier/first proof point into `## Falsifier`; live geju is pre-contract exploration only, and the frozen contract governs after that.
 - Does not make Codex the primary PRD author when Claude CLI is available and usable.
 - Never fabricates facts for `Adjacent Patterns`; use adjacent workflow patterns or mark claims `[UNVERIFIED]`.
