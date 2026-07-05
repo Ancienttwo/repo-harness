@@ -14,6 +14,7 @@ interface Options {
   out?: string;
   json: boolean;
   maxToolCalls?: number;
+  runner?: string;
 }
 
 interface DelegationBudget {
@@ -62,12 +63,16 @@ function usage(): string {
   return [
     "Usage:",
     "  bun scripts/contract-run.ts preflight --contract <contract-file> [--repo <path>] [--json]",
-    "  bun scripts/contract-run.ts dry-run --contract <contract-file> [--repo <path>] [--out <dir>] [--json]",
-    "  bun scripts/contract-run.ts run --contract <contract-file> --worker-command <cmd> --verifier-command <cmd> [--repo <path>] [--out <dir>] [--max-tool-calls <n>] [--json]",
+    "  bun scripts/contract-run.ts dry-run --contract <contract-file> [--repo <path>] [--out <dir>] [--runner <label>] [--json]",
+    "  bun scripts/contract-run.ts run --contract <contract-file> --worker-command <cmd> --verifier-command <cmd> [--repo <path>] [--out <dir>] [--max-tool-calls <n>] [--runner <label>] [--json]",
     "",
     "preflight asserts the contract is a self-sufficient execution brief (Goal, Scope,",
     "Allowed Paths, Exit Criteria are filled in, not template placeholders) and exits",
     "non-zero otherwise. run enforces the same gate before dispatching the worker.",
+    "",
+    "--runner records which runner label actually ran this contract (manifest.runner_usage);",
+    "it defaults to the contract's own delegation.runner.preferred[0] and does not itself",
+    "select, spawn, or degrade a runner.",
     "",
     "A file-coupled runner consumes the generated prompt from $CONTRACT_RUN_PROMPT, e.g.:",
     "  --worker-command 'codex exec --json \"$(cat \\\"$CONTRACT_RUN_PROMPT\\\")\"'",
@@ -114,6 +119,10 @@ function parseArgs(argv: string[]): Options {
         break;
       case "--max-tool-calls":
         opts.maxToolCalls = parsePositiveInt(requireValue(argv, ++index, arg), arg);
+        index++;
+        break;
+      case "--runner":
+        opts.runner = requireValue(argv, ++index, arg);
         index++;
         break;
       case "--json":
@@ -548,6 +557,9 @@ function buildRun(opts: Options) {
     }
   }
 
+  const usedRunner = opts.runner ?? delegation.runner.preferred[0];
+  const offPolicy = !delegation.runner.preferred.includes(usedRunner) && usedRunner !== delegation.runner.fallback;
+
   const manifest = {
     version: 1,
     kind: "repo-harness-contract-run",
@@ -565,6 +577,10 @@ function buildRun(opts: Options) {
       verifier: repoRelative(repo, verifierPrompt),
     },
     delegation,
+    runner_usage: {
+      used: usedRunner,
+      off_policy: offPolicy,
+    },
     delegation_plan: {
       parent_owner: delegation.roles.parent,
       explorer: delegation.roles.explorer,
