@@ -245,9 +245,9 @@ diff -q docs/reference-configs/external-tooling.md assets/reference-configs/exte
 ## Task Breakdown
 - [x] P1 policy fable_agents 条目 + 双种子面
 - [x] P2 安装器 install-agent-fleet.sh + 三处清单登记
-- [ ] P3 check-agent-tooling detectAgentFleet
-- [ ] P4 init/migrate 装配线（policy 分级 + dry-run 红线）
-- [ ] P5 文档面
+- [x] P3 check-agent-tooling detectAgentFleet
+- [x] P4 init/migrate 装配线（policy 分级 + dry-run 红线）
+- [x] P5 文档面
 - [ ] PF 收官电池
 
 ## Annotations
@@ -256,7 +256,7 @@ diff -q docs/reference-configs/external-tooling.md assets/reference-configs/exte
 ## Task Breakdown
 - [x] P1 policy fable_agents 条目 + 双种子面
 - [x] P2 安装器 install-agent-fleet.sh + 三处清单登记
-- [ ] P3 check-agent-tooling detectAgentFleet
-- [ ] P4 init/migrate 装配线（policy 分级 + dry-run 红线）
-- [ ] P5 文档面
+- [x] P3 check-agent-tooling detectAgentFleet
+- [x] P4 init/migrate 装配线（policy 分级 + dry-run 红线）
+- [x] P5 文档面
 - [ ] PF 收官电池

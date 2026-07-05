@@ -9,6 +9,7 @@ skill routing lives in `docs/reference-configs/agentic-development-flow.md`.
 - Codex automation requires `health`, `check`, and `mermaid` from `~/.codex/skills`
 - `gbrain` supports knowledge capture, repo sync, and handoff retrieval
 - `CodeGraph` is required agent readiness for code navigation and impact tracing
+- `fable_agents` supplies the delegation loop's global agent definitions (`deep-reasoner`, `fast-worker`, `gatekeeper`) for both hosts
 
 Waza is Codex-first in this contract. `~/.codex/skills` is the Codex runtime
 source, while `~/.agents/skills` is only the skills CLI staging/cache path used
@@ -458,6 +459,101 @@ gbrain upgrade
 
 ```bash
 bun add -g @colbymchenry/codegraph@latest && codegraph sync . && codegraph status .
+```
+
+## Agent Fleet
+
+`fable_agents` is the delegation loop's global agent-definitions dependency,
+managed the same way as `waza`, `hai_stack`, and `codegraph`: declared in
+`.ai/harness/policy.json` under `external_tooling.fable_agents`, detected by
+`check-agent-tooling.sh`, and installed on demand rather than vendored a
+second time into this repo or the npm package.
+
+The single upstream source is `Ancienttwo/Fable-agents`
+(`https://github.com/Ancienttwo/Fable-agents.git`,
+`raw_base: https://raw.githubusercontent.com/Ancienttwo/Fable-agents/main/assets`).
+The managed agent list defaults to `deep-reasoner`, `fast-worker`, and
+`gatekeeper`.
+
+### Two targets, one source
+
+- Claude Code: `~/.claude/agents/<agent>.md` — the upstream `.md` file is
+  installed as-is.
+- Codex: `~/.codex/agents/<agent>.toml` — generated deterministically from the
+  same upstream `.md`; there is no second upstream copy for Codex.
+
+### `.md` -> `.toml` mapping
+
+The generator is fail-closed: it asserts `name`, `description`, `model`, and
+`effort` are present in the upstream frontmatter, and only recognizes the
+`(model, effort)` pairs below. Any other combination is an error, not a
+guessed mapping.
+
+| Upstream frontmatter | Codex TOML |
+|---|---|
+| `model: opus`, `effort: max` | `model = "gpt-5.5"`, `model_reasoning_effort = "xhigh"` |
+| `model: sonnet`, `effort: max` | `model = "gpt-5.5"`, `model_reasoning_effort = "medium"` |
+| `tools: [...]` present | `sandbox_mode = "read-only"` |
+
+`developer_instructions` is the upstream `.md` body plus the canonical
+EXECUTION_BOUNDARY anti-extras clause, kept byte-identical to the
+`EXECUTION_BOUNDARY` constant in `scripts/contract-run.ts` so every generated
+Codex agent carries the same boundary as the Claude worker prompts, the MCP
+`codex-goal` path, and the Codex delegation advisor hook.
+
+### `install_mode`: self-host vs. downstream
+
+`install_mode` has the same self-host/downstream split as `codegraph`'s
+`install_mode`:
+
+- This repo's own `.ai/harness/policy.json` sets
+  `"install_mode": "auto-install-on-init"` — `init` and `migrate --apply`
+  install the fleet automatically.
+- Generated downstream repos default to `"install_mode": "advisory"` — `init`
+  and `migrate` only print a one-line reminder naming
+  `repo-harness run install-agent-fleet`; nothing is written automatically.
+
+`migrate --dry-run` never installs the fleet regardless of `install_mode`;
+dry-run makes no writes to the global agent-fleet directories at all.
+
+### Install / update
+
+```bash
+repo-harness run install-agent-fleet
+```
+
+`REPO_HARNESS_FLEET_SOURCE_DIR=<local dir>` overrides the upstream fetch with
+a local directory of `<agent>.md` files (used for offline installs and
+tests); otherwise each agent is fetched with
+`curl -fsSL --max-time 10 <raw_base>/<agent>.md`. A single agent's fetch
+failure or invalid frontmatter is recorded and skipped without failing the
+other agents.
+
+The installer is **never-clobber by default**: an existing target file that
+differs from the newly resolved content is reported as `drift` and left
+untouched. Pass `--force` to overwrite drifted files. Re-running with no
+upstream or local changes reports every file as `up-to-date`.
+
+### Readiness
+
+`repo-harness run check-agent-tooling --host both --strict-readiness` reports
+`agent_fleet` alongside `codegraph`. With `--check-updates`, it also compares
+each installed Claude-side `.md` against the upstream hash and reports
+`drift`/`synced` per agent; the Codex `.toml` side is a generated artifact and
+is only checked for presence, not compared against upstream.
+
+### Uninstall
+
+There is no uninstall command. Removing the fleet means deleting the six
+managed files by hand:
+
+```text
+~/.claude/agents/deep-reasoner.md
+~/.claude/agents/fast-worker.md
+~/.claude/agents/gatekeeper.md
+~/.codex/agents/deep-reasoner.toml
+~/.codex/agents/fast-worker.toml
+~/.codex/agents/gatekeeper.toml
 ```
 
 ## Manual Knowledge Sync
