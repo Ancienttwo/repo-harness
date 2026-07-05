@@ -59,6 +59,7 @@ describe("create-project-dirs scaffold parity", () => {
         "./.ai/hooks/lib/session-state.sh",
         "./.ai/hooks/lib/workflow-state.sh",
         "./.claude/templates/contract.template.md",
+        "./.claude/templates/design-brief.template.md",
         "./.claude/templates/implementation-notes.template.md",
         "./.claude/templates/plan.template.md",
         "./.claude/templates/prd.template.md",

@@ -24,7 +24,8 @@ Use this command to generate an upper-layer PRD under `plans/prds/`. The PRD is 
 12. Apply five canonical-term disciplines while drafting and reviewing the draft: challenge user or PRD terms against `docs/spec.md` `## Canonical Terms` and flag conflicts (for example, "spec defines X as A, this usage means B — which is correct?"); sharpen fuzzy or overloaded words into one canonical term before writing the section that depends on them; stress-test concept boundaries with concrete edge scenarios; cross-reference claimed behavior against existing code and cite the paths; record each newly resolved term inline into `docs/spec.md` `## Canonical Terms` as a one-line glossary entry, never implementation detail.
 13. Inline response should include only the AI Quick-Read Card, the PRD file path, whether Claude or Codex fallback drafted the PRD, and the one-sentence `$geju` thesis; do not paste the full document.
 14. Verify with `repo-harness run check-task-workflow --strict`. If verification fails, stop and fix the PRD instead of bypassing the check.
-15. Suggest `repo-harness-sprint plan from-prd <prd-file>` only after the PRD exists and the user wants an ordered Sprint backlog.
+15. When the PRD carries a `## Frontend Perspective` section or the downstream work is expected to execute under the `frontend` task profile, first produce `docs/design/DESIGN-<slug>.md` from `.claude/templates/design-brief.template.md`, then get explicit human confirmation against its five-item Confirmation Checklist before suggesting Sprint or contract execution — this gate carries the same weight as plan approval. imagegen-type skills (for example `imagegen-frontend-web`, `design-taste-frontend`) are optional preview enhancers for the brief, never a substitute for the checklist.
+16. Suggest `repo-harness-sprint plan from-prd <prd-file>` only after the PRD exists and the user wants an ordered Sprint backlog.
 
 ## Failure Modes
 

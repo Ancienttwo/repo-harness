@@ -3135,6 +3135,78 @@ describe("Workflow helper scripts", () => {
     }
   });
 
+  test("verify-contract should pass frontend profile when files_exist includes a design brief", () => {
+    const cwd = tmpWorkspace("helper-verify-contract-profile-frontend-pass");
+    try {
+      mkdirSync(join(cwd, "scripts"), { recursive: true });
+      mkdirSync(join(cwd, "docs/design"), { recursive: true });
+      copyHelpers(cwd);
+
+      writeFileSync(join(cwd, "docs/design/DESIGN-fixture.md"), "# Design Brief: fixture\n");
+      writeFileSync(
+        join(cwd, "task.contract.md"),
+        [
+          "# Task Contract: frontend-with-brief",
+          "",
+          "> **Status**: Pending",
+          "> **Task Profile**: frontend",
+          "",
+          "## Exit Criteria",
+          "",
+          "```yaml",
+          "exit_criteria:",
+          "  files_exist:",
+          "    - docs/design/DESIGN-fixture.md",
+          "```",
+          "",
+        ].join("\n")
+      );
+
+      const res = run("bash", ["scripts/verify-contract.sh", "--contract", "task.contract.md", "--strict"], cwd);
+      expect(res.status).toBe(0);
+      expect(res.stdout).toContain("task_profile: frontend");
+      expect(res.stdout).not.toContain("frontend profile requires a design brief artifact");
+      expect(readFileSync(join(cwd, "task.contract.md"), "utf-8")).toContain("> **Status**: Fulfilled");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("verify-contract should fail frontend profile when files_exist has no design brief", () => {
+    const cwd = tmpWorkspace("helper-verify-contract-profile-frontend-fail");
+    try {
+      mkdirSync(join(cwd, "scripts"), { recursive: true });
+      mkdirSync(join(cwd, "docs"), { recursive: true });
+      copyHelpers(cwd);
+
+      writeFileSync(join(cwd, "docs/spec.md"), "# Product Spec\n");
+      writeFileSync(
+        join(cwd, "task.contract.md"),
+        [
+          "# Task Contract: frontend-without-brief",
+          "",
+          "> **Status**: Pending",
+          "> **Task Profile**: frontend",
+          "",
+          "## Exit Criteria",
+          "",
+          "```yaml",
+          "exit_criteria:",
+          "  files_exist:",
+          "    - docs/spec.md",
+          "```",
+          "",
+        ].join("\n")
+      );
+
+      const res = run("bash", ["scripts/verify-contract.sh", "--contract", "task.contract.md", "--strict"], cwd);
+      expect(res.status).toBe(1);
+      expect(res.stdout).toContain("frontend profile requires a design brief artifact in files_exist");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   test("verify-sprint should write passing structured checks for the active sprint", () => {
     const cwd = tmpWorkspace("helper-verify-sprint-pass");
     try {
