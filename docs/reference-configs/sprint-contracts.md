@@ -67,6 +67,18 @@ New contracts include a `## Delegation Contract` YAML block between allowed path
 
 Existing contracts without this block remain valid. `repo-harness run verify-contract` continues to evaluate only the `exit_criteria` YAML block, so adding delegation metadata must not make old or new contracts fail verification.
 
+## Root Cause Evidence Gate
+
+As of this revision, `repo-harness run verify-contract` (and the equivalent `contract-run.ts` brief preflight) additionally evaluates the markdown `## Root Cause Evidence` section, but **only** when the contract's `> **Task Profile**:` header is `bugfix`. This is a deliberate, scoped expansion of the exit-criteria-only promise above: contracts with any other `Task Profile` (including contracts that omit the field entirely, which remain legacy passthrough) are unaffected and continue to be evaluated exit-criteria-only.
+
+For a `bugfix` contract, the gate requires all four `## Root Cause Evidence` fields to be filled in with concrete (non-template) content:
+
+- `root_cause` and `repro` must be non-empty and not the template placeholder text.
+- `regression_guard` must name a test path that also appears under `exit_criteria.tests_pass`.
+- `pre_fix_failure_artifact` must point to a file that exists, contains a non-zero `PRE_FIX_EXIT=` line, and contains the `regression_guard` path string. Capture it on the unfixed code with `bun test <regression_guard> > <artifact> 2>&1; echo "PRE_FIX_EXIT=$?" >> <artifact>` (no pipes — a pipe swallows the exit status). A passing run (for example one that only prints `0 fail`) does not satisfy this gate; the artifact must show the pre-fix failure with a nonzero recorded exit code.
+
+Both `verify-contract.sh` and `contract-run.ts` implement this check independently against the same fixture expectations so that a `bugfix` contract cannot pass one gate while failing the other.
+
 ## Verification Execution Boundary
 
 `verify-contract.sh --read-only` is read-only for contract state writes only: it does not rewrite the contract `> **Status**:` line. It still executes `tests_pass` with Bun and `commands_succeed` in a non-login Bash with `BASH_ENV` unset so hook-driven done gates can verify the same exit criteria as an explicit maintainer run without sourcing host shell profiles. Do not put mutating commands in `commands_succeed` unless the contract deliberately treats that side effect as part of verification.
