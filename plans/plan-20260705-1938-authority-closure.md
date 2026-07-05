@@ -382,4 +382,4 @@ grep -rl "forbidden design space" scripts/contract-run.ts assets/hooks/ src/cli/
 - [x] C2 对称 .codex/agents/*.toml + .gitignore 例外
 - [x] C3 policy 补 codex-subagent runner（含种子面）+ contract-run 记录
 - [x] G3 SKILL.md + 文档教学面
-- [ ] F1 全量验证 battery
+- [x] F1 全量验证 battery
