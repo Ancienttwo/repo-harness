@@ -1,6 +1,6 @@
 # Task Contract: intake-trigger-rules
 
-> **Status**: Partial
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260706-0024-intake-trigger-rules.md
 > **Task Profile**: code-change
 > **Owner**: ancienttwo
@@ -59,6 +59,7 @@ allowed_paths:
   - tasks/contracts/20260706-0024-intake-trigger-rules.contract.md
   - tasks/reviews/20260706-0024-intake-trigger-rules.review.md
   - tasks/notes/20260706-0024-intake-trigger-rules.notes.md
+  - tasks/todos.md
   - assets/skill-commands/repo-harness-prd/
   - assets/templates/
   - .claude/templates/
