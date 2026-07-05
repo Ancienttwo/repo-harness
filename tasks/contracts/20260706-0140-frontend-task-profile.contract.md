@@ -60,6 +60,7 @@ allowed_paths:
   - tasks/contracts/20260706-0140-frontend-task-profile.contract.md
   - tasks/reviews/20260706-0140-frontend-task-profile.review.md
   - tasks/notes/20260706-0140-frontend-task-profile.notes.md
+  - tasks/todos.md
   - scripts/verify-contract.sh
   - assets/templates/helpers/verify-contract.sh
   - scripts/harness-trace-grade.sh
