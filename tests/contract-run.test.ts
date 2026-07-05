@@ -31,6 +31,7 @@ function writePilotContract(
   repo: string,
   toolCalls: string | number | null = 2,
   why: string = "This pilot proves the worker→verifier file-coupled loop; without it the runner ships unverified.",
+  options: { exemplar?: boolean; stopConditions?: string[] } = {},
 ): string {
   const contractPath = join(repo, "tasks/contracts/pilot.contract.md");
   const budgetValue = toolCalls === null ? "null" : String(toolCalls);
@@ -44,6 +45,7 @@ function writePilotContract(
       "> **Owner**: test",
       "> **Review File**: `tasks/reviews/pilot.review.md`",
       "> **Notes File**: `tasks/notes/pilot.notes.md`",
+      ...(options.exemplar ? ["> **Exemplar**: `docs/reference-configs/contract-brief-example.md`"] : []),
       "",
       "## Why",
       "",
@@ -58,6 +60,9 @@ function writePilotContract(
       "- In scope: create src/pilot.txt with worker-output",
       "- Out of scope: anything outside src/",
       "",
+      ...(options.stopConditions && options.stopConditions.length > 0
+        ? ["## Stop Conditions", "", ...options.stopConditions, ""]
+        : []),
       "## Allowed Paths",
       "",
       "```yaml",
@@ -179,10 +184,53 @@ describe("contract-run helper", () => {
       expect(workerPromptContent).toContain("## Before you finish (mandatory self-verification)");
       expect(workerPromptContent).toContain("## Record what you learned");
       expect(workerPromptContent).toContain("## Stop / escalate");
+      expect(workerPromptContent).not.toContain("Exemplar:");
       const verifierPromptContent = readFileSync(join(repo, ".ai/harness/runs/dry-run/verifier-prompt.md"), "utf-8");
       expect(verifierPromptContent).toContain("## Intent (context only)");
       expect(verifierPromptContent).toContain("Score PASS or FAIL strictly against the Exit Criteria");
       expect(existsSync(join(repo, "src/pilot.txt"))).toBe(false);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  test("dry-run propagates contract Why/Goal/Scope/Exemplar/Stop Conditions content into prompts", () => {
+    const repo = makeRepo("contract-run-propagation-");
+    try {
+      const distinctWhy = "Distinct-why-marker: prove propagation into worker prompt.";
+      writePilotContract(repo, 2, distinctWhy, {
+        exemplar: true,
+        stopConditions: ["- Stop if the propagation marker is missing."],
+      });
+      const res = runContractRun(repo, [
+        "dry-run",
+        "--repo",
+        repo,
+        "--contract",
+        "tasks/contracts/pilot.contract.md",
+        "--out",
+        ".ai/harness/runs/propagation",
+        "--json",
+      ]);
+
+      expect(res.status).toBe(0);
+      const workerPromptContent = readFileSync(
+        join(repo, ".ai/harness/runs/propagation/worker-prompt.md"),
+        "utf-8",
+      );
+      expect(workerPromptContent).toContain(distinctWhy);
+      expect(workerPromptContent).toContain("Exemplar: docs/reference-configs/contract-brief-example.md");
+      expect(workerPromptContent).toContain("  - Stop if the propagation marker is missing.");
+
+      const verifierPromptContent = readFileSync(
+        join(repo, ".ai/harness/runs/propagation/verifier-prompt.md"),
+        "utf-8",
+      );
+      expect(verifierPromptContent).toContain(
+        "Goal: Create src/pilot.txt containing worker-output so the verifier can confirm the exit criteria.",
+      );
+      expect(verifierPromptContent).toContain("Scope: - In scope: create src/pilot.txt with worker-output");
+      expect(verifierPromptContent).toContain(`Why: ${distinctWhy}`);
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
