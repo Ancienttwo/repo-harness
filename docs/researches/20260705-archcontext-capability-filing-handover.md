@@ -5,6 +5,7 @@
 > **Repo-side census**: capability filing 全讀寫方普查(本文件 §2,file:line 佐證)
 > **Decision owner**: ancienttwo(兩專案同一作者,ID 統一已授權)
 > **Status**: direction-approved analysis;分階段執行待各 stage 立項
+> **Addendum**: 2026-07-06 雙軌覆核(Opus deep-reasoner + Codex 盲評)結論見 §7;Stage 2+ 暫緩,gating 條件未滿足前不重開。
 
 ## 1. 責任分界(整合的核心判定)
 
@@ -14,7 +15,7 @@
 
 ## 2. capabilities.json 欄位級移交表
 
-現行 schema(6 個 live capability;TS type 在 capability-resolver.ts:6-26 / capability-config.ts:7-22 / capability-context.ts:6-26 重複三份):
+現行 schema(7 個 live capability(2026-07-06 覆核修正:原記 6 個已過期);TS type 在 capability-resolver.ts:6-26 / capability-config.ts:7-22 / capability-context.ts:6-26 重複三份):
 
 | 欄位 | 去向 |
 |---|---|
@@ -60,3 +61,19 @@
 - 不做 capabilities.json ↔ nodes 的長期雙向同步橋(No-Fallback;切換是單向、fail-closed)。
 - 不把 workstreams/lessons/todos 移進 arch-context(任務記憶 ≠ 架構記憶)。
 - 不等 GitHub App/雲面;整合只依賴 Local Core。
+
+## 7. 2026-07-06 覆核修正與 gating 條件(雙軌評審結論)
+
+Opus(deep-reasoner)與 Codex 盲評獨立收斂:現階段不接入 archctx 運行時,`capabilities.json` 保持權威;先做 repo-harness 內部收斂與只讀 export 橋(見 `plans/` 中 slug 為 archcontext-boundary-bridge 的 work package)。
+
+覆核修正:
+- live capability 已為 7 個(2026-07-06 實測 `.ai/context/capabilities.json`),§2 的 6 個已過期。
+- node/v1 schema 的 `source.include/exclude/entrypoints` 欄位確實存在(`packages/contracts/fixtures/valid/architecture-node.json` 核實),但 arch-context 無任何 runtime 消費這些 glob 做 path→node 歸屬解析;`context`/`prepare`/`checkpoint` 全走 daemon,daemon 硬依賴 codegraph+SQLite。§2 "既有欄位覆蓋 prefixes" 只在 schema 層成立,不在 runtime 層成立。
+- Stage 2 的 "capabilities.json 直接停用(不留唯讀鏡像)" 過於激進:會同時打破 workflow-contract requiredFiles、context-map 與 scaffold parity 測試,下游 migrate 會崩。停用必須分階段並同步遷移這些消費面。
+- No-Fallback fail-closed 適用於 authority 切換,不適用於 hook 熱路徑與下游 scaffold 預設行為:hook 保持 fail-open/advisory,嚴格失敗只放在顯式 gate(`check-architecture-sync --strict`)。
+- 實測環境狀態(2026-07-06):全域 archctx 為 0.1.4 且 `doctor` readiness `ok:false`;source checkout 0.1.5 未裝依賴無法直跑;`@archcontext/contracts` 有未解決的 npm scope blocker。
+
+重開 Stage 2 討論的 gating 條件(三者齊備):
+1. arch-context 交付 daemon-optional 的 `archctx resolve --path`(純讀 model YAML,不依賴 daemon+codegraph)。
+2. `@archcontext/contracts` 乾淨發佈 npm 且 node schema 穩定(schemaVersion pin 可 fail-closed)。
+3. projection 支持 `agent-context` targetType(schema enum + projection-engine + default-manifest 三處)。
