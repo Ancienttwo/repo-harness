@@ -103,7 +103,7 @@ exit_criteria:
   tests_pass:
     - path: tests/unit/{{TASK_SLUG}}.test.ts
   commands_succeed:
-    - bun run typecheck
+    - bun run check:type
   qa_scores:
     - dimension: functionality
       min: 7

@@ -250,6 +250,22 @@ function humanReviewCard(verdict = "pass", externalAcceptance = "pass"): string 
   ].join("\n");
 }
 
+// Extracts the body of a bash heredoc (exclusive of its open/close marker lines) so
+// tests can assert on the seed contract template text embedded in plan-to-todo.sh,
+// ensure-task-workflow.sh, and project-init-lib.sh without hard-coding line numbers.
+function extractHeredocBody(source: string, openToken: string, closeToken: string): string {
+  const lines = source.split("\n");
+  const startIdx = lines.findIndex((line) => line.includes(openToken));
+  if (startIdx === -1) {
+    throw new Error(`heredoc open token not found: ${openToken}`);
+  }
+  const endIdx = lines.findIndex((line, i) => i > startIdx && line.trim() === closeToken);
+  if (endIdx === -1) {
+    throw new Error(`heredoc close token not found: ${closeToken}`);
+  }
+  return lines.slice(startIdx + 1, endIdx).join("\n");
+}
+
 describe("Workflow helper scripts", () => {
   test("capability resolver ignores local worktrees during legacy discovery", () => {
     const cwd = tmpWorkspace("helper-capability-worktrees");
@@ -419,6 +435,69 @@ describe("Workflow helper scripts", () => {
       expect(existsSync(scriptsPath)).toBe(true);
       expect(readFileSync(scriptsPath, "utf-8")).toBe(readFileSync(join(HELPER_DIR, helper), "utf-8"));
     }
+  });
+
+  test("every contract template copy's ## section set is a superset of the standalone template", () => {
+    const standalone = readFileSync(join(TEMPLATE_DIR, "contract.template.md"), "utf-8");
+    const headingsOf = (content: string) =>
+      new Set(content.split("\n").filter((line) => line.startsWith("## ")));
+    const standaloneHeadings = headingsOf(standalone);
+    expect(standaloneHeadings.size).toBeGreaterThan(0);
+
+    const planToTodoSrc = readFileSync(join(ROOT, "scripts/plan-to-todo.sh"), "utf-8");
+    const ensureTaskWorkflowSrc = readFileSync(join(ROOT, "scripts/ensure-task-workflow.sh"), "utf-8");
+    const projectInitLibSrc = readFileSync(join(ROOT, "scripts/lib/project-init-lib.sh"), "utf-8");
+
+    const copies: Record<string, string> = {
+      ".claude/templates/contract.template.md": readFileSync(
+        join(ROOT, ".claude/templates/contract.template.md"),
+        "utf-8"
+      ),
+      "scripts/plan-to-todo.sh render_contract_file seed heredoc": extractHeredocBody(
+        planToTodoSrc,
+        "<<'CONTRACT_TEMPLATE_EOF'",
+        "CONTRACT_TEMPLATE_EOF"
+      ),
+      "scripts/ensure-task-workflow.sh seed heredoc": extractHeredocBody(
+        ensureTaskWorkflowSrc,
+        "<<'CONTRACT_TEMPLATE_EOF'",
+        "CONTRACT_TEMPLATE_EOF"
+      ),
+      // Explicit coverage for the project-init-lib.sh embedded copy: it has no
+      // assets/templates/helpers/ mirror file, so this test is its only structural guard.
+      "scripts/lib/project-init-lib.sh PI_TEMPLATE_CONTRACT": extractHeredocBody(
+        projectInitLibSrc,
+        "<<'EOF_TEMPLATE_CONTRACT'",
+        "EOF_TEMPLATE_CONTRACT"
+      ),
+    };
+
+    for (const [label, content] of Object.entries(copies)) {
+      const headings = headingsOf(content);
+      const missing = [...standaloneHeadings].filter((heading) => !headings.has(heading));
+      expect(missing, `${label} is missing sections present in the standalone template`).toEqual([]);
+    }
+  });
+
+  test("PI_TEMPLATE_CONTRACT (project-init-lib.sh) stays byte-identical to the ensure-task-workflow.sh embedded contract seed", () => {
+    const ensureTaskWorkflowSrc = readFileSync(join(ROOT, "scripts/ensure-task-workflow.sh"), "utf-8");
+    const projectInitLibSrc = readFileSync(join(ROOT, "scripts/lib/project-init-lib.sh"), "utf-8");
+
+    const ensureTaskWorkflowSeed = extractHeredocBody(
+      ensureTaskWorkflowSrc,
+      "<<'CONTRACT_TEMPLATE_EOF'",
+      "CONTRACT_TEMPLATE_EOF"
+    );
+    const projectInitLibSeed = extractHeredocBody(
+      projectInitLibSrc,
+      "<<'EOF_TEMPLATE_CONTRACT'",
+      "EOF_TEMPLATE_CONTRACT"
+    );
+
+    // project-init-lib.sh ships no assets/templates/helpers/ mirror for this seed (it is
+    // not one of the top-level scripts distributed there), so its parity guarantee with
+    // the ensure-task-workflow.sh embedded copy must come from this direct comparison.
+    expect(projectInitLibSeed).toBe(ensureTaskWorkflowSeed);
   });
 
   test("direct helper tests ignore ambient repo-root env", () => {
@@ -1422,7 +1501,7 @@ describe("Workflow helper scripts", () => {
       );
       writeFileSync(
         join(cwd, "package.json"),
-        JSON.stringify({ scripts: { typecheck: "test -f src/modules/demo/index.ts" } }, null, 2) + "\n"
+        JSON.stringify({ scripts: { "check:type": "test -f src/modules/demo/index.ts" } }, null, 2) + "\n"
       );
       writeFileSync(join(cwd, "docs/spec.md"), "# Spec\n");
       initGitRepo(cwd);
@@ -1579,7 +1658,7 @@ describe("Workflow helper scripts", () => {
       );
       writeFileSync(
         join(cwd, "package.json"),
-        JSON.stringify({ scripts: { typecheck: "test -f src/modules/demo/index.ts" } }, null, 2) + "\n"
+        JSON.stringify({ scripts: { "check:type": "test -f src/modules/demo/index.ts" } }, null, 2) + "\n"
       );
       writeFileSync(join(cwd, "docs/spec.md"), "# Spec\n");
       initGitRepo(cwd);
