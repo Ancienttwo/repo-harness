@@ -17,6 +17,10 @@ Use this command when the user wants a decision-complete plan for repo-harness w
 5. Produce one recommended plan and name the next action command: `repo-harness-init`, `repo-harness-scaffold`, `repo-harness-migrate`, `repo-harness-upgrade`, `repo-harness-repair`, or `repo-harness-check`.
 6. When the plan is decision-complete, capture it with `repo-harness run capture-plan --slug <slug> --title <title>` so the repo has a file-backed `plans/plan-*.md` artifact.
 
+## Delegation Brief
+
+`tasks/contracts/<stem>.contract.md` is the authoritative delegation brief once implementation is handed to a file-coupled worker, not this skill's own narration. Before that handoff, fill in the contract's `## Why`, `## Goal`, `## Scope`, `## Stop Conditions`, `allowed_paths`, and `exit_criteria`; a template placeholder in any of these fails the gate closed. Verify completeness with `repo-harness run contract-run preflight --contract <contract-file>`.
+
 ## Failure Modes
 
 - If the inspector cannot classify the repo, keep the plan in Draft and list the missing files.
