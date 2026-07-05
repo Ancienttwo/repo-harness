@@ -15,6 +15,7 @@ import {
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
+import { ROOT_CAUSE_FIXTURE_CASES } from "./fixtures/root-cause/expected-results";
 
 const ROOT = join(import.meta.dir, "..");
 const HELPER_DIR = join(ROOT, "assets/templates/helpers");
@@ -3042,6 +3043,49 @@ describe("Workflow helper scripts", () => {
       expect(res.stdout).toContain("[PASS] task_profile: bugfix");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  describe("verify-contract bugfix root-cause evidence gate", () => {
+    // Shared with tests/contract-run.test.ts's TypeScript-side root-cause gate tests via
+    // tests/fixtures/root-cause/expected-results.ts: both independent gate
+    // implementations (verify-contract.sh here, contract-run.ts there) are run against
+    // the exact same fixture files and asserted against the exact same expected
+    // outcomes, so neither side can silently drift from the other.
+    for (const fixtureCase of ROOT_CAUSE_FIXTURE_CASES) {
+      test(`verify-contract: ${fixtureCase.name}`, () => {
+        const workDir = tmpWorkspace("helper-verify-contract-root-cause");
+        try {
+          const reportFile = join(workDir, "report.json");
+          const res = run(
+            "bash",
+            [
+              "scripts/verify-contract.sh",
+              "--contract",
+              `tests/fixtures/root-cause/${fixtureCase.contractFile}`,
+              "--read-only",
+              "--quiet",
+              "--strict",
+              "--report-file",
+              reportFile,
+            ],
+            ROOT,
+          );
+          expect(res.status).toBe(fixtureCase.expectOk ? 0 : 1);
+          const report = JSON.parse(readFileSync(reportFile, "utf-8"));
+          const rootCauseResults = (
+            report.results as Array<{ kind: string; passed: boolean; message: string }>
+          ).filter((entry) => entry.kind === "root_cause_evidence");
+          if (fixtureCase.expectOk) {
+            expect(rootCauseResults.every((entry) => entry.passed)).toBe(true);
+          } else if (fixtureCase.expectIssueSubstring) {
+            const joinedMessages = rootCauseResults.map((entry) => entry.message).join(" | ");
+            expect(joinedMessages).toContain(fixtureCase.expectIssueSubstring);
+          }
+        } finally {
+          rmSync(workDir, { recursive: true, force: true });
+        }
+      });
     }
   });
 
