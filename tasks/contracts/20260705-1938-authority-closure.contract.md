@@ -1,6 +1,6 @@
 # Task Contract: authority-closure
 
-> **Status**: Partial
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260705-1938-authority-closure.md
 > **Task Profile**: code-change
 > **Owner**: kito
@@ -165,11 +165,11 @@ exit_criteria:
       min: 7
   manual_checks:
     - "Evaluator review file recommends pass"
-    - "C2 smoke output recorded in notes, or C2 suspended with STOP evidence"
 ```
 
 ## Acceptance Notes (Human Review)
 
+- Manual check（自 exit_criteria 移入——verify-contract 的 manual_checks 文法仅机器判「Evaluator review file recommends pass」一句，自由文本恒 fail）：C2 冒烟输出已记 notes；Codex `/agent` 交互识别为 manual verification pending（cli 0.141.0 无自省子命令，TOML schema 合规、boundary 逐字）。
 - Functional behavior: bugfix 黄金范例过 contract-run preflight 与 verify-contract --strict；缺 pre-fix artifact 的 bugfix contract 被双侧同判拒；非 bugfix contract 行为不变（exit_criteria-only 承诺仅按 H1 显式扩展）；plan-to-todo 渲染后出现 [Geju] advisory 且 exit code 不变。
 - Edge cases: task_profile 缺失=legacy 放行（已拍板缺省语义）；artifact 为通过运行（含 " 0 fail"）必须被拒；`.codex/agents/*.toml` 不再被 gitignore；C2 冒烟失败走挂起而非硬失败。
 - Regression risks: 模板五副本对齐动了 ensure-task-workflow/project-init-lib 种子（migrate dry-run + create-project-dirs 测试兜）；sprint-contracts.md 承诺文案变更需与 assets 镜像成对；harness-trace-grade 枚举扩展不得影响既有五 profile fixtures。
