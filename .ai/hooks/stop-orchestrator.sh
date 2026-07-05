@@ -253,7 +253,7 @@ minimal_change_render_handoff_section() {
 }
 
 minimal_change_append_handoff() {
-  local handoff_file tmp_file
+  local handoff_file tmp_file resume_file
 
   [[ -n "$MINIMAL_CHANGE_REVIEW_VERDICT" ]] || return 0
   [[ "$MINIMAL_CHANGE_REVIEW_VERDICT" != "disabled" ]] || return 0
@@ -275,6 +275,14 @@ minimal_change_append_handoff() {
   printf '\n' >> "$tmp_file"
   minimal_change_render_handoff_section >> "$tmp_file"
   mv "$tmp_file" "$handoff_file"
+
+  # refresh_handoff (workflow_write_handoff) already wrote a resume packet
+  # whose mtime matched the handoff snapshot at that time; this function just
+  # mutated handoff_file again, so bump the resume packet's mtime to match or
+  # check_handoff_resume_pair sees it as stale. Its content does not
+  # reference minimal-change-review data, so no rewrite is needed.
+  resume_file="$(workflow_resume_packet_file)"
+  [[ -f "$resume_file" ]] && touch -r "$handoff_file" "$resume_file" 2>/dev/null || true
 }
 
 minimal_change_reason_suffix() {
