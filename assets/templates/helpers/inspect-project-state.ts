@@ -175,6 +175,15 @@ export function inspectRepo(repo: string): InspectionResult {
   if (hasAnyPath(repo, generatedClaudeHookPaths)) {
     driftSignals.push("stale-generated-claude-hook-shims");
   }
+  const rootClaudeFile = join(repo, "CLAUDE.md");
+  const rootAgentsFile = join(repo, "AGENTS.md");
+  if (
+    existsSync(rootClaudeFile) &&
+    existsSync(rootAgentsFile) &&
+    readFileSync(rootClaudeFile, "utf-8") !== readFileSync(rootAgentsFile, "utf-8")
+  ) {
+    driftSignals.push("root-agent-context-divergent");
+  }
 
   if (driftSignals.includes("missing-runtime-contract-manifest")) {
     requiredDecisions.push("Install runtime workflow contract manifest");
@@ -199,6 +208,9 @@ export function inspectRepo(repo: string): InspectionResult {
   }
   if (driftSignals.includes("stale-generated-claude-hook-shims")) {
     requiredDecisions.push("Remove manifest-owned generated .claude/hooks shims and keep .ai/hooks as source of truth");
+  }
+  if (driftSignals.includes("root-agent-context-divergent")) {
+    requiredDecisions.push("Root CLAUDE.md and AGENTS.md have diverged; reconcile by hand — repo-harness never overwrites user-authored root files.");
   }
 
   const upgradeSignals = new Set(driftSignals);
