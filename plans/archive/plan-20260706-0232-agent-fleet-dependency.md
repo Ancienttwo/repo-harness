@@ -1,6 +1,6 @@
 # Plan: Agent Fleet 依赖面：舰队升格为 external_tooling 一等依赖
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260706-0232
 > **Slug**: agent-fleet-dependency
 > **Planning Source**: repo-harness-plan

@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-06T01:44:06+0800 -->
+<!-- updated_at: 2026-07-06T05:59:27+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Idle
-> **Updated At**: 2026-07-06T01:44:06+0800
-> **Source Branch**: codex/authority-closure
-> **Source Commit**: deeae17
+> **Updated At**: 2026-07-06T05:59:27+0800
+> **Source Branch**: codex/agent-fleet-dependency
+> **Source Commit**: 6629386
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -41,7 +41,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/20260703-inspection-migration.md`: status=active, current_slice=completed-20260703-architecture-closeout, source_plan=(none)
 ## Handoff
 
-- Exact Next Step: Review/checks pass; finish and fast-forward merge this contract worktree. Command: repo-harness run contract-worktree finish
+- Exact Next Step: (none)
 
 ## Checks
 
@@ -52,16 +52,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260705-1938-authority-closure.md
- D tasks/contracts/20260705-1938-authority-closure.contract.md
- D tasks/notes/20260705-1938-authority-closure.notes.md
- D tasks/reviews/20260705-1938-authority-closure.review.md
+ D plans/plan-20260706-0232-agent-fleet-dependency.md
+ D tasks/contracts/20260706-0232-agent-fleet-dependency.contract.md
+ D tasks/notes/20260706-0232-agent-fleet-dependency.notes.md
+ D tasks/reviews/20260706-0232-agent-fleet-dependency.review.md
  M tasks/todos.md
-?? plans/archive/plan-20260705-1938-authority-closure.md
-?? tasks/archive/contract-20260706-0144-authority-closure.md
-?? tasks/archive/notes-20260706-0144-authority-closure.md
-?? tasks/archive/review-20260706-0144-authority-closure.md
-?? tasks/archive/todo-20260706-0144-authority-closure.md
+?? plans/archive/plan-20260706-0232-agent-fleet-dependency.md
+?? tasks/archive/contract-20260706-0559-agent-fleet-dependency.md
+?? tasks/archive/notes-20260706-0559-agent-fleet-dependency.md
+?? tasks/archive/review-20260706-0559-agent-fleet-dependency.md
+?? tasks/archive/todo-20260706-0559-agent-fleet-dependency.md
 ```
 
 ## Source Artifacts

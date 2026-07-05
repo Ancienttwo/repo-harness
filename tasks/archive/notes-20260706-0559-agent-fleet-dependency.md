@@ -1,3 +1,9 @@
+> **Archived**: 2026-07-06 05:59
+> **Related Plan**: plans/archive/plan-20260706-0232-agent-fleet-dependency.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260706-0559
+
 # Implementation Notes: agent-fleet-dependency
 
 > **Status**: Active
