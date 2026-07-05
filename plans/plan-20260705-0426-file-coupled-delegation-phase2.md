@@ -1,7 +1,7 @@
 # Plan: File-coupled delegation Phase 2: policy runner degradation, advisor slim-down, preflight wiring
 
 > **Status**: Draft
-> **Superseded By**: dev-loop-distillation Phase 3 plan (captured on this branch as plans/plan-<stamp>-dev-loop-distillation.md). Rows 4-6 are absorbed there. IMPORTANT for any session continuing Phase 2: do NOT wire contract-run preflight as a hard gate into plan-to-todo/contract-worktree start — freshly projected contracts are placeholder-filled and a projection-time hard gate always fails. The completeness gate stays at the consumption point (contract-run run, shipped in Phase 1); Phase 3 slice B5 adds a projection-time ADVISORY print instead.
+> **Superseded By**: dev-loop-distillation Phase 3 plan (captured on this branch as plans/plan-20260705-1419-dev-loop-distillation.md). Rows 4-6 are absorbed there. IMPORTANT for any session continuing Phase 2: do NOT wire contract-run preflight as a hard gate into plan-to-todo/contract-worktree start — freshly projected contracts are placeholder-filled and a projection-time hard gate always fails. The completeness gate stays at the consumption point (contract-run run, shipped in Phase 1); Phase 3 slice B5 adds a projection-time ADVISORY print instead.
 > **Created**: 20260705-0426
 > **Slug**: file-coupled-delegation-phase2
 > **Planning Source**: codex-plan-or-waza-think
