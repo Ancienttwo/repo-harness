@@ -545,6 +545,23 @@ CONTRACT_TEMPLATE_EOF
   mv "$tmp_file" "$contract_file"
 }
 
+# Advisory-only brief preflight at projection time. The contract just rendered by
+# render_contract_file is placeholder by design (see the embedded template's Goal
+# text above), so this MUST NOT fail-closed here or it would block every normal
+# projection. contract-run.ts already fails closed for the `run` mode; this only
+# surfaces a heads-up so the brief gets filled in before file-coupled dispatch.
+maybe_advise_contract_brief_preflight() {
+  local contract_path="$1"
+
+  command -v bun >/dev/null 2>&1 || return 0
+  [[ -f "$helper_dir/contract-run.ts" ]] || return 0
+
+  if ! bun "$helper_dir/contract-run.ts" preflight --contract "$contract_path" --repo "$REPO_ROOT" >/dev/null 2>&1; then
+    echo "[BriefPreflight] contract brief is not yet self-sufficient: $contract_path"
+    echo "[BriefPreflight] fill Goal, Scope, Allowed Paths, and Exit Criteria before file-coupled dispatch; contract-run run fails closed until then."
+  fi
+}
+
 render_implementation_notes_file() {
   local plan_file="$1"
   local contract_file="$2"
@@ -921,6 +938,7 @@ REVIEW_TEMPLATE_EOF
 fi
 
 render_contract_file "$plan_file" "$contract_file" "$review_file" "$notes_file" "$slug" "$timestamp_human" "$capability_id"
+maybe_advise_contract_brief_preflight "$contract_file"
 render_implementation_notes_file "$plan_file" "$contract_file" "$review_file" "$notes_file" "$slug" "$timestamp_human"
 sed \
   -e "s/{{TASK_SLUG}}/${slug}/g" \
