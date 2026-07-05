@@ -433,6 +433,11 @@ render_contract_file() {
 > **Last Updated**: {{TIMESTAMP}}
 > **Review File**: `{{REVIEW_FILE}}`
 > **Notes File**: `{{NOTES_FILE}}`
+> **Exemplar**: `docs/reference-configs/contract-brief-example.md`
+
+## Why
+
+Why this task matters and what breaks downstream if it ships wrong or is skipped.
 
 ## Goal
 
@@ -442,6 +447,12 @@ Describe the exact outcome this task must deliver.
 
 - In scope:
 - Out of scope:
+
+## Stop Conditions
+
+- Stop and hand back to the parent if the change would require editing a path outside Allowed Paths.
+- Stop if an Exit Criteria command cannot be run in this environment.
+- Stop if Goal, Scope, or Exit Criteria are internally contradictory.
 
 ## Workflow Inventory
 
