@@ -508,7 +508,7 @@ bun scripts/contract-run.ts preflight --contract docs/reference-configs/contract
 - [x] B2 writePrompt() 蒸餾升級（worker 自驗+notes+stop；verifier 得 Intent）
 - [x] B3 preflight 新增唯一必檢 ## Why
 - [x] B4 黃金範例 docs/reference-configs/contract-brief-example.md＋守護測試
-- [ ] B5 plan-to-todo 投影後 advisory —— 改由平行分支 codex/projection-brief-advisory 交付中（其實作直接呼叫 contract-run preflight，優於本計劃的靜態提示）；本分支不實作以免雙重 advisory 與合併衝突。若該分支未落地，重啟此列。
+- [x] B5 plan-to-todo 投影後 advisory —— 已由 38141a6（feat(plan-to-todo): surface advisory brief preflight at contract projection (Phase 2 slice 3)）於 main 落地；本分支未重複實作，避免雙重 advisory。
 - [x] C1 verify-sprint 收官記憶 advisory（不改 exit code）
 - [x] D1 縮減版：contract-run --runner 選項＋manifest runner_usage 記錄＋brief_source 測試斷言（advisor 半邊已由 ca76def 交付，本分支不碰 advisor 檔案）
 - [x] G1 4 份 repo-harness SKILL.md 教學段落
