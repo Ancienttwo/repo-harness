@@ -487,6 +487,7 @@ main() {
     echo "  4. Use Codex Plan mode or Waza /think, then capture it with: repo-harness run capture-plan --slug first-feature --title \"First Feature\""
     echo "  5. After approval, run: repo-harness run plan-to-todo --plan <active-plan>"
     echo ""
+    pi_maybe_install_agent_fleet "$PWD" "apply" "$SCRIPT_DIR/install-agent-fleet.sh"
     pi_print_external_tooling_report "$PWD" "apply" "$SCRIPT_DIR/check-agent-tooling.sh"
     echo ""
 }

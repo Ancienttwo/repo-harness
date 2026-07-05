@@ -1081,6 +1081,7 @@ print_report() {
   echo "- Upgrade/reconfigure/cleanup plan: generated from workflow contract migrations.upgrade"
   echo "- Existing external_tooling overrides are preserved; missing defaults are merged into .ai/harness/policy.json"
   echo "- Runtime temporary ignore block synced to .gitignore"
+  pi_maybe_install_agent_fleet "$repo" "$MODE" "$SCRIPT_DIR/install-agent-fleet.sh"
   pi_print_external_tooling_report "$repo" "$MODE" "$SCRIPT_DIR/check-agent-tooling.sh"
 }
 

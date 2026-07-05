@@ -1352,4 +1352,66 @@ describe("Migration script contract", () => {
       rmSync(repo, { recursive: true, force: true });
     }
   }, MIGRATION_INTEGRATION_TIMEOUT);
+
+  test("dry-run mode never installs the agent fleet into HOME even when fable_agents install_mode is auto-install-on-init", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "migration-fleet-dry-run-"));
+    const repo = join(tmp, "repo");
+    const home = join(tmp, "home");
+    const fixtureAgentsDir = join(tmp, "fixture-agents");
+    const managedAgents = ["deep-reasoner", "fast-worker", "gatekeeper"];
+    try {
+      mkdirSync(join(repo, "docs"), { recursive: true });
+      mkdirSync(join(repo, ".ai", "harness"), { recursive: true });
+      mkdirSync(home, { recursive: true });
+      mkdirSync(fixtureAgentsDir, { recursive: true });
+      writeFileSync(join(repo, "package.json"), JSON.stringify({ name: "demo", scripts: {} }, null, 2));
+      writeFileSync(
+        join(repo, ".ai", "harness", "policy.json"),
+        JSON.stringify(
+          {
+            external_tooling: {
+              fable_agents: {
+                install_mode: "auto-install-on-init",
+                managed_agents: managedAgents,
+              },
+            },
+          },
+          null,
+          2
+        )
+      );
+      for (const agent of managedAgents) {
+        writeFileSync(
+          join(fixtureAgentsDir, `${agent}.md`),
+          [
+            "---",
+            `name: ${agent}`,
+            `description: Fixture ${agent} for the migrate dry-run fleet STOP test.`,
+            "model: sonnet",
+            "effort: max",
+            "---",
+            `Fixture body for ${agent}.`,
+            "",
+          ].join("\n")
+        );
+      }
+
+      const res = spawnSync(
+        "bash",
+        ["scripts/migrate-project-template.sh", "--repo", repo, "--dry-run"],
+        {
+          cwd: ROOT,
+          encoding: "utf-8",
+          env: { ...process.env, HOME: home, REPO_HARNESS_FLEET_SOURCE_DIR: fixtureAgentsDir },
+        }
+      );
+
+      expect(res.status).toBe(0);
+      expect(res.stdout).toContain("dry-run never writes to the global agent fleet directories");
+      expect(existsSync(join(home, ".claude", "agents"))).toBe(false);
+      expect(existsSync(join(home, ".codex", "agents"))).toBe(false);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }, MIGRATION_INTEGRATION_TIMEOUT);
 });

@@ -1289,6 +1289,48 @@ pi_print_external_tooling_report() {
   printf '%s\n' "$output" | sed 's/^/  /'
 }
 
+pi_maybe_install_agent_fleet() {
+  local repo_dir="$1"
+  local mode="${2:-apply}"
+  local fallback_script="${3:-}"
+  local policy_file="$repo_dir/.ai/harness/policy.json"
+  local raw_install_mode
+  local installer
+  local install_output
+
+  if [[ ! -f "$policy_file" ]]; then
+    echo "- Agent fleet: no .ai/harness/policy.json found; run 'repo-harness run install-agent-fleet' to install the managed agent fleet manually."
+    return 0
+  fi
+
+  raw_install_mode="$(pi_workflow_contract_query_lines "$policy_file" "external_tooling.fable_agents.install_mode" 2>/dev/null || true)"
+
+  if [[ "$raw_install_mode" != "auto-install-on-init" ]]; then
+    echo "- Agent fleet: install_mode=${raw_install_mode:-advisory}; run 'repo-harness run install-agent-fleet' to install the managed agent fleet."
+    return 0
+  fi
+
+  if [[ "$mode" != "apply" ]]; then
+    echo "- Agent fleet: install_mode=auto-install-on-init, but dry-run never writes to the global agent fleet directories; run 'repo-harness run install-agent-fleet' after applying."
+    return 0
+  fi
+
+  installer="$(pi_resolve_external_tooling_detector "$repo_dir" "$fallback_script" || true)"
+  if [[ -z "$installer" ]]; then
+    echo "- Agent fleet: install_mode=auto-install-on-init, but the installer script could not be resolved; run 'repo-harness run install-agent-fleet' manually."
+    return 0
+  fi
+
+  echo "- Agent fleet: install_mode=auto-install-on-init; installing managed agents via $installer"
+  if install_output="$(bash "$installer" 2>&1)"; then
+    printf '%s\n' "$install_output" | sed 's/^/  /'
+    return 0
+  fi
+
+  echo "[warn] Agent fleet install failed (non-fatal); run 'repo-harness run install-agent-fleet' manually." >&2
+  printf '%s\n' "$install_output" | sed 's/^/  /'
+}
+
 pi_reference_config_names() {
   local ref_assets_dir="$1"
   local name

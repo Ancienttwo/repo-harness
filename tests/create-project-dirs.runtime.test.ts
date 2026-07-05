@@ -718,4 +718,108 @@ describe("create-project-dirs runtime smoke", () => {
       rmSync(cwd, { recursive: true, force: true });
     }
   }, RUNTIME_SMOKE_TIMEOUT_MS);
+
+  test("pi_maybe_install_agent_fleet prints an advisory tip and never touches HOME when install_mode is advisory", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "fleet-install-advisory-"));
+    const libPath = join(ROOT, "scripts/lib/project-init-lib.sh");
+    const installerPath = join(ROOT, "scripts/install-agent-fleet.sh");
+    const home = join(cwd, "fakehome");
+    const repoDir = join(cwd, "repo");
+    try {
+      mkdirSync(join(repoDir, ".ai", "harness"), { recursive: true });
+      mkdirSync(home, { recursive: true });
+      writeFileSync(
+        join(repoDir, ".ai", "harness", "policy.json"),
+        JSON.stringify({ external_tooling: { fable_agents: { install_mode: "advisory" } } }, null, 2)
+      );
+
+      const res = spawnSync(
+        "bash",
+        [
+          "-lc",
+          [
+            `source '${libPath}'`,
+            `pi_maybe_install_agent_fleet '${repoDir}' apply '${installerPath}'`,
+          ].join("\n"),
+        ],
+        { cwd, encoding: "utf-8", env: { ...process.env, HOME: home } }
+      );
+
+      expect(res.status).toBe(0);
+      expect(res.stdout).toContain("repo-harness run install-agent-fleet");
+      expect(existsSync(join(home, ".claude", "agents"))).toBe(false);
+      expect(existsSync(join(home, ".codex", "agents"))).toBe(false);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, RUNTIME_SMOKE_TIMEOUT_MS);
+
+  test("pi_maybe_install_agent_fleet installs the managed agent fleet into HOME when install_mode is auto-install-on-init and mode is apply", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "fleet-install-auto-"));
+    const libPath = join(ROOT, "scripts/lib/project-init-lib.sh");
+    const installerPath = join(ROOT, "scripts/install-agent-fleet.sh");
+    const home = join(cwd, "fakehome");
+    const repoDir = join(cwd, "repo");
+    const fixtureAgentsDir = join(cwd, "fixture-agents");
+    const managedAgents = ["deep-reasoner", "fast-worker", "gatekeeper"];
+    try {
+      mkdirSync(join(repoDir, ".ai", "harness"), { recursive: true });
+      mkdirSync(home, { recursive: true });
+      mkdirSync(fixtureAgentsDir, { recursive: true });
+      writeFileSync(
+        join(repoDir, ".ai", "harness", "policy.json"),
+        JSON.stringify(
+          {
+            external_tooling: {
+              fable_agents: {
+                install_mode: "auto-install-on-init",
+                managed_agents: managedAgents,
+              },
+            },
+          },
+          null,
+          2
+        )
+      );
+      for (const agent of managedAgents) {
+        writeFileSync(
+          join(fixtureAgentsDir, `${agent}.md`),
+          [
+            "---",
+            `name: ${agent}`,
+            `description: Fixture ${agent} for the P4 apply-mode fleet install test.`,
+            "model: sonnet",
+            "effort: max",
+            "---",
+            `Fixture body for ${agent}.`,
+            "",
+          ].join("\n")
+        );
+      }
+
+      const res = spawnSync(
+        "bash",
+        [
+          "-lc",
+          [
+            `source '${libPath}'`,
+            `pi_maybe_install_agent_fleet '${repoDir}' apply '${installerPath}'`,
+          ].join("\n"),
+        ],
+        {
+          cwd,
+          encoding: "utf-8",
+          env: { ...process.env, HOME: home, REPO_HARNESS_FLEET_SOURCE_DIR: fixtureAgentsDir },
+        }
+      );
+
+      expect(res.status).toBe(0);
+      for (const agent of managedAgents) {
+        expect(existsSync(join(home, ".claude", "agents", `${agent}.md`))).toBe(true);
+        expect(existsSync(join(home, ".codex", "agents", `${agent}.toml`))).toBe(true);
+      }
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, RUNTIME_SMOKE_TIMEOUT_MS);
 });
