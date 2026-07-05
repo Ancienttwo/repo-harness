@@ -218,9 +218,10 @@ describe("contract-run helper", () => {
         join(repo, ".ai/harness/runs/propagation/worker-prompt.md"),
         "utf-8",
       );
-      expect(workerPromptContent).toContain(distinctWhy);
-      expect(workerPromptContent).toContain("Exemplar: docs/reference-configs/contract-brief-example.md");
-      expect(workerPromptContent).toContain("  - Stop if the propagation marker is missing.");
+      const workerPreContract = workerPromptContent.split("\n## Contract\n")[0];
+      expect(workerPreContract).toContain(distinctWhy);
+      expect(workerPreContract).toContain("Exemplar: docs/reference-configs/contract-brief-example.md");
+      expect(workerPreContract).toContain("  - Stop if the propagation marker is missing.");
 
       const verifierPromptContent = readFileSync(
         join(repo, ".ai/harness/runs/propagation/verifier-prompt.md"),

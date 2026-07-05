@@ -105,3 +105,16 @@ Manual Override: peer CLI quota-exhausted mid-closeout — round 3 re-run return
 ## Summary
 
 - Phase 3 distills the 8 agent-capability principles (why-first, file-based context, golden example, capability routing, mandatory self-verification, independent verification, persistent memory, stop conditions) into the file-coupled delegation brief surface, and closes the engine-integrity gaps found in the audit (helper mirror drift + parity lock, resume packet staleness). 11 slices shipped on this branch, B5 delegated to the parallel projection-advisory branch, advisor half of D1 inherited from base commit ca76def.
+
+## Re-Acceptance (supersedes Manual Override)
+
+> **External Acceptance**: pass
+> **External Reviewer**: Codex
+> **External Source**: codex-review
+> **External Completed**: 2026-07-05T19:37:52+0800
+> **Reviewed Range**: 95077e1..64cfaaa (merged PR #46, main tip 64cfaaa)
+
+- P1 blockers: none. Reviewer independently verified the two round-2 fixes are genuine: B5 removed from contract Goal/Scope with explicit delegation; propagation tests real and non-tautological for Exemplar/Stop-Conditions/verifier Intent. Reviewer ran: `bun test tests/contract-run.test.ts` (11 pass), helper mirror `diff -q` ×3 (clean), `git diff --check 95077e1..64cfaaa` (clean), `bash scripts/check-task-sync.sh` (no changes).
+- P2 advisories, both closed by the re-acceptance follow-up PR: (1) worker-prompt Why assertion was not section-scoped (full contract appended below could mask projection regression) — fixed by scoping Why/Exemplar/Stop assertions to the pre-`## Contract` segment; (2) archive body retains pre-merge working-branch SHAs — resolved by the mapping below rather than rewriting history references.
+- Pre-merge → main SHA mapping (rebase-merged): c333aab→(phase-2 plan bookkeeping, landed via parallel rebase), a73c22e→6c17552, 3c0fe9d→a7b5c77, d80c50a→9e1a917, 6a64d0c→5a7a461, db3a081→c3c732e, c3e591b→64cfaaa. Active-path pointers inside archived bodies (tasks/contracts/... etc.) describe the pre-archive state at authoring time; current locations are the tasks/archive/ and plans/archive/ twins.
+- The Manual Override recorded in `## External Acceptance Advice` above is hereby superseded by this passing re-acceptance.
