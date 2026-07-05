@@ -48,6 +48,8 @@ superpowers 的真正招數是**用檔案當耦合介質**(task-brief → child 
 
 policy `delegation.preferred_runners` / `fallback_runner`(語義=同一 contract 的 runner 可用性降級、必寫 manifest、不得靜默)+ `codex-delegation-advisor.sh` 瘦身為指向 active contract 的 nudge + 全面同步(policy 由 `ensure-task-workflow.sh` / `project-init-lib.sh` / `assets/templates/helpers/*` / 遷移測試共維護)。`subagent-stop-quality` host-agnostic 化為獨立品質閘,不綁本次。
 
+Slice 3(preflight 接進 `plan-to-todo`)執行時修正了原定的 fail-closed 硬閘設計:`plan-to-todo.sh` 產生的 contract 天生佔位(`render_contract_file` heredoc 預設 Goal = "Describe the exact outcome this task must deliver.",Scope 空 bullets),投影後 `maybe_start_contract_worktree` 又可能立即交給新 worktree,若在投影時 fail-closed 會擋死每次正常投影。改為投影時只印 `[BriefPreflight]` advisory、不擋 exit code;fail-closed 閘維持在 Phase 1 的 `contract-run.ts run`(`failure_class: incomplete_brief`)不變。
+
 ## 最脆弱假設
 
 contract 必須是「乾淨-context runner 可完成 slice」的自足 brief。Phase 1 的 preflight 硬門檻承接了它;`codex exec` fallback 可能與原生 spawn 共享 sandbox 失敗(detached HEAD、不能 branch/push),需在 manifest 記錄失敗而非靜默。

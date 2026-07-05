@@ -1083,6 +1083,8 @@ describe("Workflow helper scripts", () => {
 
       const res = run("bash", ["scripts/plan-to-todo.sh", "--plan", "plans/plan-20260304-1400-demo.md"], cwd);
       expect(res.status).toBe(0);
+      expect(res.stdout).toContain("[BriefPreflight]");
+      expect(res.stdout).toContain("contract brief is not yet self-sufficient");
 
       const archiveFiles = readdirSync(join(cwd, "tasks/archive")).filter((name) => name.startsWith("todo-"));
       expect(archiveFiles.length).toBeGreaterThanOrEqual(1);
