@@ -527,7 +527,7 @@ case "$task_profile" in
   "")
     pass "task_profile" "(legacy)" "task_profile missing: legacy contract accepted"
     ;;
-  code-change|docs-only|ledger-closeout|migration|eval-only|delegated-run)
+  code-change|docs-only|ledger-closeout|migration|eval-only|delegated-run|bugfix)
     pass "task_profile" "$task_profile" "task_profile: $task_profile"
     ;;
   *)

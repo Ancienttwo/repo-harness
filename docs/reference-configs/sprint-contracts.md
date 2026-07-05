@@ -47,6 +47,7 @@ review focus.
 | Profile | Default expectation |
 |---|---|
 | `code-change` | Runtime behavior may change within the contract's explicit allowed paths. |
+| `bugfix` | Same allowed-path defaults as `code-change`; additionally requires a concrete `## Root Cause Evidence` section (`root_cause`, `repro`, `regression_guard`, `pre_fix_failure_artifact`) and passes an additional pre-fix failure evidence gate (see below). |
 | `docs-only` | Documentation, plans, notes, and reviews only; `src/` and `tests/` are not allowed by default. |
 | `ledger-closeout` | Close already-landed workflow evidence only; runtime source, tests, and hook paths are not allowed by default. |
 | `migration` | Scripts, templates, assets, docs, and tests may change; preserve user-authored files. |

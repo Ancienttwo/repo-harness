@@ -3009,6 +3009,42 @@ describe("Workflow helper scripts", () => {
     }
   });
 
+  // Deliberately does not assert on overall exit code / --strict: this contract carries
+  // no ## Root Cause Evidence section, and once the bugfix root-cause gate (H2/H3) is
+  // wired in, a bugfix contract without that section will legitimately fail elsewhere.
+  // This test only proves the task_profile enum itself accepts "bugfix".
+  test("verify-contract should accept bugfix as a legal task_profile enum value", () => {
+    const cwd = tmpWorkspace("helper-verify-contract-profile-bugfix");
+    try {
+      mkdirSync(join(cwd, "scripts"), { recursive: true });
+      mkdirSync(join(cwd, "docs"), { recursive: true });
+      copyHelpers(cwd);
+
+      writeFileSync(join(cwd, "docs/spec.md"), "# Product Spec\n");
+      writeFileSync(
+        join(cwd, "task.contract.md"),
+        [
+          "# Task Contract: bugfix-profile",
+          "",
+          "> **Status**: Pending",
+          "> **Task Profile**: bugfix",
+          "",
+          "```yaml",
+          "exit_criteria:",
+          "  files_exist:",
+          "    - docs/spec.md",
+          "```",
+          "",
+        ].join("\n")
+      );
+
+      const res = run("bash", ["scripts/verify-contract.sh", "--contract", "task.contract.md"], cwd);
+      expect(res.stdout).toContain("[PASS] task_profile: bugfix");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   test("verify-contract should reject ledger-closeout runtime allowed paths by default", () => {
     const cwd = tmpWorkspace("helper-verify-contract-profile-ledger-paths");
     try {
@@ -3354,6 +3390,36 @@ describe("Workflow helper scripts", () => {
       expect(report.status).toBe("pass");
       expect(report.failed).toBe(0);
       expect(report.total).toBeGreaterThanOrEqual(6);
+    }
+  });
+
+  test("harness-trace-grade should reject an unsupported task_profile", () => {
+    const cwd = tmpWorkspace("helper-harness-trace-grade-invalid-profile");
+    try {
+      const traceFile = join(cwd, "invalid-profile-trace.json");
+      writeFileSync(
+        traceFile,
+        JSON.stringify({
+          schema: "repo-harness-run-trace.v1",
+          task_profile: "not-a-real-profile",
+        }),
+      );
+
+      const res = run(
+        "bash",
+        ["scripts/harness-trace-grade.sh", "--run", traceFile, "--repo", ROOT, "--strict"],
+        ROOT,
+      );
+      expect(res.status).toBe(1);
+      const report = JSON.parse(res.stdout);
+      expect(report.status).toBe("fail");
+      const grader = (report.graders as Array<{ id: string; passed: boolean; message: string }>).find(
+        (entry) => entry.id === "contract_profile.valid",
+      );
+      expect(grader?.passed).toBe(false);
+      expect(grader?.message).toContain("not-a-real-profile");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
     }
   });
 
