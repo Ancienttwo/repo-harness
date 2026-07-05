@@ -1539,7 +1539,7 @@ const strictFailures = [];
 if (strictReadiness && ["missing", "partial"].includes(report.tools.codegraph.status)) {
   strictFailures.push(`CodeGraph readiness is ${report.tools.codegraph.status}: ${report.tools.codegraph.reason}`);
 }
-if (strictReadiness && report.tools.agent_fleet.status === "missing") {
+if (strictReadiness && ["missing", "partial"].includes(report.tools.agent_fleet.status)) {
   strictFailures.push(`Agent fleet readiness is ${report.tools.agent_fleet.status}: ${report.tools.agent_fleet.reason}`);
 }
 

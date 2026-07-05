@@ -47,6 +47,7 @@
 ## Open Questions
 
 - P3: should the new strict-readiness fleet gate also fail on `"partial"` (matching CodeGraph's `["missing","partial"]` gate), not just `"missing"`? Implemented as `"missing"`-only per a literal reading of the plan text and its two named test scenarios (empty-HOME and fully-installed only — no partial-HOME scenario was specified). If the intended behavior is parity with CodeGraph, this is a one-line change in `scripts/check-agent-tooling.sh` (and its `assets/templates/helpers/` mirror) plus one new test case.
+- **Resolved by orchestrator ruling**: adopt CodeGraph parity. A partial fleet (e.g. 2/3 agents installed) still leaves the delegation loop broken, so `strict-readiness` now treats `agent_fleet.status` of `"missing"` **or** `"partial"` as a strict failure, matching the existing CodeGraph gate's shape at the same lines (the CodeGraph condition itself was not touched). Implemented in `scripts/check-agent-tooling.sh` (+`assets/templates/helpers/` mirror) with a new partial-HOME test case in `tests/check-agent-tooling.test.ts`.
 
 ## Evidence Links
 

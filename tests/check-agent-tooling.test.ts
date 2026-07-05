@@ -859,6 +859,44 @@ describe("check-agent-tooling", () => {
     }
   }, 15000);
 
+  test("fails strict readiness when the managed agent fleet is only partially installed", () => {
+    const envRoot = setupFakeEnvironment("check-agent-tooling-fleet-partial");
+    try {
+      writeClaudeCodeGraphConfig(envRoot.home, true);
+      writeFakeNpx(envRoot.fakeBin);
+      writeFakeGbrain(envRoot.fakeBin);
+      writeFakeCodeGraph(envRoot.fakeBin);
+
+      mkdirSync(join(envRoot.home, ".claude", "agents"), { recursive: true });
+      for (const agent of ["deep-reasoner", "fast-worker"]) {
+        copyFileSync(join(ROOT, ".claude", "agents", `${agent}.md`), join(envRoot.home, ".claude", "agents", `${agent}.md`));
+      }
+
+      const res = spawnSync("bash", [SCRIPT, "--json", "--host", "claude", "--strict-readiness"], {
+        cwd: ROOT,
+        encoding: "utf-8",
+        env: {
+          ...process.env,
+          HOME: envRoot.home,
+          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          AGENTIC_DEV_CODEGRAPH_LOCAL_BIN: join(envRoot.fakeBin, "codegraph"),
+        },
+      });
+
+      expect(res.status).toBe(2);
+      const report = JSON.parse(res.stdout);
+      expect(report.tools.codegraph.status).toBe("present");
+      expect(report.tools.agent_fleet.status).toBe("partial");
+      expect(report.tools.agent_fleet.hosts.claude.status).toBe("partial");
+      expect(report.tools.agent_fleet.hosts.claude.installed_agents).toEqual(["deep-reasoner", "fast-worker"]);
+      expect(report.tools.agent_fleet.hosts.claude.missing_agents).toEqual(["gatekeeper"]);
+      expect(res.stderr).toContain("Agent fleet readiness is partial");
+      expect(res.stderr.toLowerCase()).toContain("fleet");
+    } finally {
+      rmSync(envRoot.root, { recursive: true, force: true });
+    }
+  }, 15000);
+
   test("reports the agent fleet as present and passes strict readiness once all managed agents are installed", () => {
     const envRoot = setupFakeEnvironment("check-agent-tooling-fleet-present");
     try {
