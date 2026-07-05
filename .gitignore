@@ -67,6 +67,9 @@ tasks/.current.md.tmp.*
 .repo-harness/chatgpt-browser.local.json
 .repo-harness/chatgpt-browser.tokens.json
 .codex/*
+!.codex/
+!.codex/agents/
+!.codex/agents/*.toml
 .claude/.active-plan
 .claude/.plan-state/
 # END: claude-runtime-temp
