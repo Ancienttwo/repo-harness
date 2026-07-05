@@ -22,6 +22,7 @@ Describe the exact outcome this task must deliver.
 
 - In scope:
 - Out of scope:
+- Taste constraints: <!-- advisory only, no run gate; default style/taste lives in AGENTS.md and the minimal-change policy, use this to record a per-task override -->
 
 ## Stop Conditions
 

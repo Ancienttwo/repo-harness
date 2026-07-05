@@ -605,12 +605,27 @@ function writeMarkdownArtifact(
   return textResult({ status: 'written', repoRoot, path: relativePath, ...(extra ?? {}) });
 }
 
+// Canonical anti-extras clause injected into every runner-reachable surface (this
+// codex-goal path, the contract-run.ts worker prompt, the Codex delegation advisor hook,
+// and subagent start context). Keep the first sentence byte-identical across all
+// sources; a parity test asserts they never drift apart.
+const EXECUTION_BOUNDARY = [
+  'Execution boundary: implement exactly the Goal, In scope items, Allowed Paths, and Exit Criteria in this brief. Treat absent requirements as forbidden design space, not as permission to improve.',
+  '',
+  'Do not add optional features, alternate UX, extra integrations, migration paths, compatibility behavior, fallback behavior, telemetry, broad cleanup, refactors, new abstractions, extra docs, or polish unless that work is explicitly listed under In scope or required by Exit Criteria.',
+  '',
+  'If you discover useful additional work, record it under Out of scope / Future work in the notes or review artifact. Do not implement it. Do not end with unsolicited offers to do more work.',
+  '',
+  'If the requested outcome cannot be completed without expanding scope, fail closed: stop, name the missing decision, and cite the exact file/section that blocks execution.',
+].join('\n');
+
 function validateGoal(body: string): string[] {
   return [
     '# Codex Goal',
     '## Source of truth',
     '## Role',
     '## Scope',
+    '## Execution boundary',
     '## Required workflow',
     '## Required checks',
     '## Done when',
@@ -768,6 +783,10 @@ function renderCodexGoalFromSprint(args: Record<string, unknown>): { body: strin
     '- Update the Sprint checklist as phases complete.',
     '- Stage each completed phase before continuing to the next phase.',
     '- Do not modify the reference repo or ignored secrets/ops state.',
+    '',
+    '## Execution boundary',
+    '',
+    EXECUTION_BOUNDARY,
     '',
     '## Required workflow',
     '',

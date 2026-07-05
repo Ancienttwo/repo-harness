@@ -60,6 +60,19 @@ describe("workflow contract manifest", () => {
     }
   });
 
+  test("execution boundary canonical sentence stays identical across its constant sources", () => {
+    // The EXECUTION_BOUNDARY clause is duplicated in three places so it reaches every
+    // delegated runner surface (contract worker prompts, the MCP codex-goal path, and
+    // the Codex delegation advisor hook). This asserts the first sentence never drifts.
+    const canonicalSentence =
+      "Execution boundary: implement exactly the Goal, In scope items, Allowed Paths, and Exit Criteria in this brief.";
+    const sources = ["scripts/contract-run.ts", "src/cli/mcp/tools.ts", "assets/hooks/codex-delegation-advisor.sh"];
+    for (const relPath of sources) {
+      const content = readFileSync(join(ROOT, relPath), "utf-8");
+      expect(content).toContain(canonicalSentence);
+    }
+  });
+
   test("helper inventory should come from the workflow contract", () => {
     const contract = loadWorkflowContract(join(ROOT, "assets/workflow-contract.v1.json"));
     expect(contract.helpers.runtimeDirectory).toBe("package:assets/templates/helpers");

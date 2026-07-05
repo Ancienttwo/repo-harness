@@ -123,6 +123,70 @@ function writePilotContract(
   return contractPath;
 }
 
+// Same shape as writePilotContract, except "Out of scope:" is left as a bare label with
+// no bullet content, while "In scope:" stays populated. Exercises the split preflight:
+// each side of Scope must be independently concrete.
+function writeContractWithBlankOutOfScope(repo: string): string {
+  const contractPath = join(repo, "tasks/contracts/pilot.contract.md");
+  writeFileSync(
+    contractPath,
+    [
+      "# Task Contract: pilot",
+      "",
+      "> **Status**: Active",
+      "> **Plan**: plans/plan.md",
+      "> **Owner**: test",
+      "> **Review File**: `tasks/reviews/pilot.review.md`",
+      "> **Notes File**: `tasks/notes/pilot.notes.md`",
+      "",
+      "## Goal",
+      "",
+      "Create src/pilot.txt containing worker-output so the verifier can confirm the exit criteria.",
+      "",
+      "## Scope",
+      "",
+      "- In scope: create src/pilot.txt with worker-output",
+      "- Out of scope:",
+      "",
+      "## Allowed Paths",
+      "",
+      "```yaml",
+      "allowed_paths:",
+      "  - src/",
+      "  - tasks/reviews/",
+      "```",
+      "",
+      "## Delegation Contract",
+      "",
+      "```yaml",
+      "delegation:",
+      "  budget:",
+      "    tokens: null",
+      "    tool_calls: 2",
+      "    wall_time_minutes: 5",
+      "  permission_scope:",
+      "    mode: inherit_allowed_paths",
+      "    writable_paths: []",
+      "    network: off",
+      "  roles:",
+      "    worker:",
+      "      mode: edit_within_allowed_paths",
+      "      purpose: implementation",
+      "```",
+      "",
+      "## Exit Criteria (Machine Verifiable)",
+      "",
+      "```yaml",
+      "exit_criteria:",
+      "  files_exist:",
+      "    - src/pilot.txt",
+      "```",
+      "",
+    ].join("\n"),
+  );
+  return contractPath;
+}
+
 function writeExecutable(repo: string, name: string, body: string): string {
   const path = join(repo, name);
   writeFileSync(path, body);
@@ -628,6 +692,103 @@ describe("contract-run helper", () => {
       const offPolicyUsage = offPolicyManifest.runner_usage as { used: string; off_policy: boolean };
       expect(offPolicyUsage.used).toBe("gpt-5-cli");
       expect(offPolicyUsage.off_policy).toBe(true);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  test("run fails closed on a blank Out of scope even though In scope is populated", () => {
+    const repo = makeRepo("contract-run-outscope-run-");
+    try {
+      writeContractWithBlankOutOfScope(repo);
+      const workerCommand = writeExecutable(
+        repo,
+        "worker.sh",
+        ["#!/bin/bash", "set -euo pipefail", "mkdir -p src", "printf 'worker-output\\n' > src/pilot.txt", ""].join("\n"),
+      );
+      const verifierCommand = writeExecutable(
+        repo,
+        "verifier.sh",
+        ["#!/bin/bash", "set -euo pipefail", "printf 'ran\\n' > verifier-ran.txt", ""].join("\n"),
+      );
+
+      const res = runContractRun(repo, [
+        "run",
+        "--repo",
+        repo,
+        "--contract",
+        "tasks/contracts/pilot.contract.md",
+        "--worker-command",
+        workerCommand,
+        "--verifier-command",
+        verifierCommand,
+        "--out",
+        ".ai/harness/runs/outscope",
+        "--json",
+      ]);
+
+      expect(res.status).toBe(1);
+      const manifest = parseJson(res.stdout);
+      expect(manifest.status).toBe("fail");
+      expect(manifest.failure_class).toBe("incomplete_brief");
+      const issues = (manifest.brief_preflight as { issues: string[] }).issues;
+      expect(issues.some((issue) => /Out of scope/.test(issue))).toBe(true);
+      expect(issues.some((issue) => /In scope/.test(issue))).toBe(false);
+      expect(issues.some((issue) => /^Goal/.test(issue))).toBe(false);
+      expect(manifest.children as unknown[]).toEqual([]);
+      expect(existsSync(join(repo, "src/pilot.txt"))).toBe(false);
+      expect(existsSync(join(repo, "verifier-ran.txt"))).toBe(false);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  test("dry-run stays advisory on a blank Out of scope", () => {
+    const repo = makeRepo("contract-run-outscope-dryrun-");
+    try {
+      writeContractWithBlankOutOfScope(repo);
+      const res = runContractRun(repo, [
+        "dry-run",
+        "--repo",
+        repo,
+        "--contract",
+        "tasks/contracts/pilot.contract.md",
+        "--out",
+        ".ai/harness/runs/outscope-dry",
+        "--json",
+      ]);
+      expect(res.status).toBe(0);
+      const manifest = parseJson(res.stdout);
+      expect(manifest.status).toBe("dry_run");
+      const briefPreflight = manifest.brief_preflight as { ok: boolean; issues: string[] };
+      expect(briefPreflight.ok).toBe(false);
+      expect(briefPreflight.issues.some((issue) => /Out of scope/.test(issue))).toBe(true);
+      expect(existsSync(join(repo, ".ai/harness/runs/outscope-dry/worker-prompt.md"))).toBe(true);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  test("worker prompt carries the execution boundary clause", () => {
+    const repo = makeRepo("contract-run-boundary-");
+    try {
+      writePilotContract(repo, 2);
+      const res = runContractRun(repo, [
+        "dry-run",
+        "--repo",
+        repo,
+        "--contract",
+        "tasks/contracts/pilot.contract.md",
+        "--out",
+        ".ai/harness/runs/boundary",
+        "--json",
+      ]);
+      expect(res.status).toBe(0);
+      const workerPrompt = readFileSync(join(repo, ".ai/harness/runs/boundary/worker-prompt.md"), "utf-8");
+      expect(workerPrompt).toContain(
+        "Execution boundary: implement exactly the Goal, In scope items, Allowed Paths, and Exit Criteria in this brief.",
+      );
+      expect(workerPrompt).toContain("Do not add optional features");
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }

@@ -59,6 +59,20 @@ interface ChildResult {
   skipped?: boolean;
 }
 
+// Canonical anti-extras clause injected into every runner-reachable surface (worker
+// prompt here, the Codex delegation advisor hook, subagent start context, and the MCP
+// codex-goal path). Keep the first sentence byte-identical across all sources; a parity
+// test asserts they never drift apart.
+const EXECUTION_BOUNDARY = [
+  "Execution boundary: implement exactly the Goal, In scope items, Allowed Paths, and Exit Criteria in this brief. Treat absent requirements as forbidden design space, not as permission to improve.",
+  "",
+  "Do not add optional features, alternate UX, extra integrations, migration paths, compatibility behavior, fallback behavior, telemetry, broad cleanup, refactors, new abstractions, extra docs, or polish unless that work is explicitly listed under In scope or required by Exit Criteria.",
+  "",
+  "If you discover useful additional work, record it under Out of scope / Future work in the notes or review artifact. Do not implement it. Do not end with unsolicited offers to do more work.",
+  "",
+  "If the requested outcome cannot be completed without expanding scope, fail closed: stop, name the missing decision, and cite the exact file/section that blocks execution.",
+].join("\n");
+
 function usage(): string {
   return [
     "Usage:",
@@ -329,13 +343,47 @@ function isConcreteBrief(text: string): boolean {
   return withoutPlaceholders.length > 0;
 }
 
+// Scans a `## Scope` section body for a top-level `- <label>:` bullet and returns its
+// content, whether that content sits inline after the colon (`- In scope: foo`) or as
+// nested bullets on the following indented lines. A line that starts a new top-level
+// bullet (no leading indentation) ends the scan, so `In scope:` and `Out of scope:` are
+// judged independently even though they share one Scope section.
+function scopeBulletBody(scopeSection: string, label: "In scope" | "Out of scope"): string {
+  const lines = scopeSection.split("\n");
+  const startPattern = new RegExp(`^-\\s*${label}:\\s*(.*)$`);
+  const otherTopLevelBullet = /^-\s/;
+  const collected: string[] = [];
+  let collecting = false;
+  for (const line of lines) {
+    const start = line.match(startPattern);
+    if (start) {
+      collecting = true;
+      if (start[1].trim()) collected.push(start[1].trim());
+      continue;
+    }
+    if (!collecting) continue;
+    if (otherTopLevelBullet.test(line)) break;
+    if (line.trim()) collected.push(line.trim());
+  }
+  return collected.join(" ").trim();
+}
+
+function isConcreteScopeBullet(scopeSection: string, label: "In scope" | "Out of scope"): boolean {
+  const bullet = scopeBulletBody(scopeSection, label);
+  return bullet.length > 0 && !/\{\{[^}]+\}\}/.test(bullet);
+}
+
 function runBriefPreflight(markdown: string): BriefPreflight {
   const issues: string[] = [];
   if (!isConcreteBrief(sectionBody(markdown, "Goal"))) {
     issues.push("Goal section is empty or still a template placeholder");
   }
-  if (!isConcreteBrief(sectionBody(markdown, "Scope"))) {
-    issues.push("Scope section is empty or still a template placeholder");
+  const scopeSection = sectionBody(markdown, "Scope");
+  if (!isConcreteScopeBullet(scopeSection, "In scope")) {
+    issues.push("Scope section is missing a concrete 'In scope:' item");
+  }
+  if (!isConcreteScopeBullet(scopeSection, "Out of scope")) {
+    issues.push("Scope section is missing a concrete 'Out of scope:' item");
   }
   if (!isConcreteBrief(sectionBody(markdown, "Why"))) {
     issues.push("Why section is empty or still a template placeholder");
@@ -464,6 +512,10 @@ function buildRun(opts: Options) {
     "",
     "Hand back to the parent (do not improvise) if the contract Goal, Scope, Allowed Paths, or Exit Criteria are missing or contradictory, if the work requires editing a path outside Allowed Paths, or if any condition under \"Stop Conditions\" in the contract triggers.",
     ...stopCondLines,
+    "",
+    "## Execution boundary",
+    "",
+    EXECUTION_BOUNDARY,
     "",
     "## Contract",
     "",

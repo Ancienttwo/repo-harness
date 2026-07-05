@@ -556,6 +556,67 @@ CONTRACT_TEMPLATE_EOF
   mv "$tmp_file" "$contract_file"
 }
 
+# Recognizes only a standalone `Non-scope:` or `Out of scope:` label line in the plan
+# (colon immediately after the label word; an optional leading `-` bullet marker is
+# stripped first, so both a bare paragraph label and a bulleted label match). Copies the
+# label's own inline trailing text (if any) plus every following bulleted line verbatim
+# as one carried-forward bullet each, re-nested two spaces under the contract's
+# `Out of scope:` line; stops at the first non-bullet line. Emits nothing when the plan
+# has no such label, so callers must not synthesize a replacement.
+plan_negative_scope_bullets() {
+  local plan_file="$1"
+  awk '
+    BEGIN { collecting = 0 }
+    {
+      line = $0
+      sub(/\r$/, "", line)
+      if (!collecting) {
+        label = line
+        sub(/^[[:space:]]*-[[:space:]]*/, "", label)
+        if (label ~ /^(Non-scope|Out of scope):/) {
+          collecting = 1
+          rest = label
+          sub(/^(Non-scope|Out of scope):[[:space:]]*/, "", rest)
+          if (rest != "") print "  - " rest
+        }
+        next
+      }
+      if (line ~ /^[[:space:]]*-[[:space:]]+/) {
+        item = line
+        sub(/^[[:space:]]*-[[:space:]]*/, "", item)
+        print "  - " item
+        next
+      }
+      exit
+    }
+  ' "$plan_file"
+}
+
+# Carries the plan's Non-scope / Out-of-scope bullets forward into the just-rendered
+# contract's `Out of scope:` line, so the negative boundary survives projection instead
+# of evaporating into an empty placeholder. Only replaces the bare, unfilled
+# `- Out of scope:` placeholder line and never overwrites already-authored content; never
+# invents bullets when the plan has no recognized label (the existing [BriefPreflight]
+# advisory already covers that case).
+carry_forward_plan_scope_boundary() {
+  local plan_file="$1"
+  local contract_file="$2"
+  local bullets
+  bullets="$(plan_negative_scope_bullets "$plan_file")"
+  [[ -n "$bullets" ]] || return 0
+
+  local line_no
+  line_no="$(grep -nE '^-[[:space:]]*Out of scope:[[:space:]]*$' "$contract_file" | head -1 | cut -d: -f1)"
+  [[ -n "$line_no" ]] || return 0
+
+  local tmp_file
+  tmp_file="$(mktemp)"
+  head -n "$line_no" "$contract_file" > "$tmp_file"
+  printf '%s\n' "$bullets" >> "$tmp_file"
+  tail -n "+$((line_no + 1))" "$contract_file" >> "$tmp_file"
+  mv "$tmp_file" "$contract_file"
+}
+
 # Advisory-only brief preflight at projection time. The contract just rendered by
 # render_contract_file is placeholder by design (see the embedded template's Goal
 # text above), so this MUST NOT fail-closed here or it would block every normal
@@ -949,6 +1010,7 @@ REVIEW_TEMPLATE_EOF
 fi
 
 render_contract_file "$plan_file" "$contract_file" "$review_file" "$notes_file" "$slug" "$timestamp_human" "$capability_id"
+carry_forward_plan_scope_boundary "$plan_file" "$contract_file"
 maybe_advise_contract_brief_preflight "$contract_file"
 render_implementation_notes_file "$plan_file" "$contract_file" "$review_file" "$notes_file" "$slug" "$timestamp_human"
 sed \

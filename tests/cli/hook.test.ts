@@ -716,6 +716,9 @@ describe('hook command (Phase 1B)', () => {
       expect(parsed.hookSpecificOutput.additionalContext).toContain('Spawn no more than 3 agents');
       expect(parsed.hookSpecificOutput.additionalContext).toContain('authoritative execution brief');
       expect(parsed.hookSpecificOutput.additionalContext).toContain('MUST NOT silently succeed');
+      expect(parsed.hookSpecificOutput.additionalContext).toContain(
+        'Execution boundary: implement exactly the Goal, In scope items, Allowed Paths, and Exit Criteria in this brief.',
+      );
 
       const state = JSON.parse(
         fs.readFileSync(path.join(repoRoot, '.ai/harness/delegation/latest.json'), 'utf-8'),
@@ -758,6 +761,9 @@ describe('hook command (Phase 1B)', () => {
       const parsed = JSON.parse(start.stdout);
       expect(parsed.hookSpecificOutput.hookEventName).toBe('SubagentStart');
       expect(parsed.hookSpecificOutput.additionalContext).toContain('[repo-harness:subagent-context]');
+      expect(parsed.hookSpecificOutput.additionalContext).toContain(
+        'Execution boundary: implement exactly the Goal, In scope items, Allowed Paths, and Exit Criteria in this brief.',
+      );
 
       const mismatchedState = JSON.parse(
         fs.readFileSync(path.join(repoRoot, '.ai/harness/delegation/latest.json'), 'utf-8'),
