@@ -1,6 +1,6 @@
 # Plan: Dev loop distillation Phase 3: brief/prompt/preflight + engine integrity
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260705-1419
 > **Slug**: dev-loop-distillation
 > **Planning Source**: codex-plan-or-waza-think
