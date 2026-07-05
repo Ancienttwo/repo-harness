@@ -1,3 +1,9 @@
+> **Archived**: 2026-07-06 01:44
+> **Related Plan**: plans/archive/plan-20260705-1938-authority-closure.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260706-0144
+
 # Task Review: authority-closure
 
 > **Status**: Reviewed

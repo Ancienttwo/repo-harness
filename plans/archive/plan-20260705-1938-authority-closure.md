@@ -1,6 +1,6 @@
 # Plan: Authority Closure: distill think/hunt/check/geju below the delegation boundary + symmetric Codex fleet
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260705-1938
 > **Slug**: authority-closure
 > **Planning Source**: repo-harness-plan

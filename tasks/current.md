@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-05T20:36:15+0800 -->
+<!-- updated_at: 2026-07-06T01:44:06+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-07-05T20:36:15+0800
-> **Source Branch**: main
-> **Source Commit**: a409656
+> **Status**: Idle
+> **Updated At**: 2026-07-06T01:44:06+0800
+> **Source Branch**: codex/authority-closure
+> **Source Commit**: deeae17
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -17,11 +17,11 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Current Focus
 
-- Status: ManualClearedWithActiveWork
-- Active Plan: plans/plan-20260705-1938-authority-closure.md
-- Plan Status: Approved
-- Next Task: T1 contract 模板全 surface diff inventory + 对齐 drift
-- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
+- Status: Idle
+- Active Plan: (none)
+- Plan Status: (none)
+- Next Task: (none)
+- Clear Note: (none)
 
 ## Mainline Snapshot Reading
 
@@ -31,8 +31,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- .: plans/plan-20260705-1938-authority-closure.md
-- .: active-worktree owner -> /Users/kito/Projects/repo-harness
+- (none)
 ## Active Sprint
 
 - Sprint: (none)
@@ -42,28 +41,27 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/20260703-inspection-migration.md`: status=active, current_slice=completed-20260703-architecture-closeout, source_plan=(none)
 ## Handoff
 
-- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Execute captured plan: Authority Closure: distill think/hunt/check/geju below the delegation boundary + symmetric Codex fleet
+- Exact Next Step: Review/checks pass; finish and fast-forward merge this contract worktree. Command: repo-harness run contract-worktree finish
 
 ## Checks
 
-- status=(none), source=(none), exit_code=(none), file=.ai/harness/checks/latest.json
+- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 11 changed/untracked path(s)
+- Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260705-1455-contract-intent-boundary.md
- D tasks/contracts/20260705-1455-contract-intent-boundary.contract.md
- D tasks/notes/20260705-1455-contract-intent-boundary.notes.md
- D tasks/reviews/20260705-1455-contract-intent-boundary.review.md
-?? .ai/harness/handoff/authority-closure-rereview.md
-?? plans/archive/plan-20260705-1455-contract-intent-boundary.md
-?? plans/plan-20260705-1938-authority-closure.md
-?? tasks/archive/contract-20260705-2036-contract-intent-boundary.md
-?? tasks/archive/notes-20260705-2036-contract-intent-boundary.md
-?? tasks/archive/review-20260705-2036-contract-intent-boundary.md
-?? tasks/archive/todo-20260705-2036-contract-intent-boundary.md
+ D plans/plan-20260705-1938-authority-closure.md
+ D tasks/contracts/20260705-1938-authority-closure.contract.md
+ D tasks/notes/20260705-1938-authority-closure.notes.md
+ D tasks/reviews/20260705-1938-authority-closure.review.md
+ M tasks/todos.md
+?? plans/archive/plan-20260705-1938-authority-closure.md
+?? tasks/archive/contract-20260706-0144-authority-closure.md
+?? tasks/archive/notes-20260706-0144-authority-closure.md
+?? tasks/archive/review-20260706-0144-authority-closure.md
+?? tasks/archive/todo-20260706-0144-authority-closure.md
 ```
 
 ## Source Artifacts
