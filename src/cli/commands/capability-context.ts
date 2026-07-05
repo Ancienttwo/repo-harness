@@ -2,28 +2,15 @@ import { Command } from 'commander';
 import * as fs from 'fs';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
+import {
+  findMatch,
+  readRegistry as readCapabilityRegistry,
+  type Capability,
+  type CapabilityRegistry,
+  type ContractFiles,
+} from '../../../scripts/capability-resolver';
 
-type ContractFiles = {
-  agents: string;
-  claude: string;
-};
-
-export type Capability = {
-  id: string;
-  domain: string;
-  name: string;
-  prefixes: string[];
-  contract_files: ContractFiles;
-  architecture_module: string;
-  workstream_dir: string;
-  lsp_profile: string;
-  verification_hints: string[];
-};
-
-type CapabilityRegistry = {
-  version: number;
-  capabilities: Capability[];
-};
+export type { Capability, ContractFiles };
 
 type SourceMapEntry = {
   label: string;
@@ -157,10 +144,7 @@ function writeJsonFile(file: string, value: unknown): void {
 }
 
 function readRegistry(repo: string): CapabilityRegistry {
-  return readJsonFile<CapabilityRegistry>(path.join(repo, REGISTRY_PATH), {
-    version: 1,
-    capabilities: [],
-  });
+  return readCapabilityRegistry(repo);
 }
 
 function writeRegistry(repo: string, registry: CapabilityRegistry): void {
@@ -235,25 +219,19 @@ function targetContractFiles(repo: string, capability: Capability): ContractFile
   };
 }
 
-function matchesPrefix(relPath: string, prefix: string): boolean {
-  return relPath === prefix || relPath.startsWith(`${prefix}/`);
-}
-
+// Delegates the longest-prefix decision to capability-resolver's canonical findMatch
+// (see .ai/harness/policy.json capability_match_rule) instead of re-implementing the
+// sort/tie-break here. The exact-textual-match-not-found fallback to a registered
+// "root" capability (prefix === '.' or a file-shaped prefix) is capability-context's
+// own historical behavior and is preserved unchanged below.
 function findCapabilityByPath(registry: CapabilityRegistry, repo: string, inputPath: string): {
   capability: Capability;
   matchedPrefix: string;
 } {
-  const relPath = normalizeRepoPath(inputPath, repo);
-  const matches: Array<{ capability: Capability; prefix: string }> = [];
-  for (const capability of registry.capabilities) {
-    for (const rawPrefix of capability.prefixes || []) {
-      const prefix = normalizeRepoPath(rawPrefix, repo, true);
-      if (prefix === '.') continue;
-      if (matchesPrefix(relPath, prefix)) matches.push({ capability, prefix });
-    }
+  const match = findMatch(registry, repo, inputPath);
+  if (match.matched) {
+    return { capability: findCapabilityById(registry, match.capability_id), matchedPrefix: match.matched_prefix };
   }
-  matches.sort((a, b) => b.prefix.length - a.prefix.length);
-  if (matches[0]) return { capability: matches[0].capability, matchedPrefix: matches[0].prefix };
 
   const root = registry.capabilities.find((capability) =>
     (capability.prefixes || []).some((prefix) => {
