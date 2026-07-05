@@ -146,6 +146,8 @@ describe("README DX contract", () => {
     const zhReadme = read("README.zh-CN.md");
     const spec = read("docs/spec.md");
     const flow = read("docs/reference-configs/agentic-development-flow.md");
+    const externalTooling = read("docs/reference-configs/external-tooling.md");
+    const externalToolingAsset = read("assets/reference-configs/external-tooling.md");
 
     expect(spec).toContain("## Product Outcome");
     expect(spec).toContain("## Core Invariants");
@@ -159,6 +161,20 @@ describe("README DX contract", () => {
     expect(zhReadme).toContain("## Agent Tracking Path");
     expect(flow).toContain("Agent reads first");
     expect(flow).toContain("Human reviews first");
+    expect(readme).toContain("external verification manifests");
+    expect(readme).toContain("manual convention today");
+    expect(readme).toContain("automatic `repo-harness check` discovery or gate");
+    expect(zhReadme).toContain("external verification manifest");
+    expect(zhReadme).toContain("手动约定");
+    expect(zhReadme).toContain("`repo-harness check` 已经会自动发现或 gate");
+    expect(externalToolingAsset).toBe(externalTooling);
+    expect(externalTooling).toContain("## External Verification Evidence");
+    expect(externalTooling).toContain("convention only");
+    expect(externalTooling).toContain("does not automatically discover");
+    expect(externalTooling).toContain("not yet an automatic `repo-harness check` gate");
+    expect(externalTooling).toContain(".ai/harness/runs/external/<task-id>/<run-id>/manifest.json");
+    expect(externalTooling).toContain("relative to the manifest directory");
+    expect(externalTooling).toContain("\"side_effects\": \"writes_ignored_runtime_state\"");
   });
 
   test("localized READMEs track the current English release surface", () => {
