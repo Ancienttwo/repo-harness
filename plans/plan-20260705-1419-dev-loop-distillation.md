@@ -504,11 +504,11 @@ bun scripts/contract-run.ts preflight --contract docs/reference-configs/contract
 - [x] A1 調和 6 檔 helper 漂移（migrate-project-template.sh 除外）
 - [x] A2 泛化鏡像 parity 測試（INTENTIONALLY_DIVERGENT 唯一成員）
 - [x] A3 resume.md 隨 Stop 自動刷新（workflow_write_handoff 尾部）
-- [ ] B1 contract 模板三欄位（Why / Stop Conditions / Exemplar，四處同改）
+- [x] B1 contract 模板三欄位（Why / Stop Conditions / Exemplar，四處同改）
 - [ ] B2 writePrompt() 蒸餾升級（worker 自驗+notes+stop；verifier 得 Intent）
 - [ ] B3 preflight 新增唯一必檢 ## Why
 - [ ] B4 黃金範例 docs/reference-configs/contract-brief-example.md＋守護測試
-- [ ] B5 plan-to-todo 投影後 [Brief] advisory
+- [ ] B5 plan-to-todo 投影後 advisory —— 改由平行分支 codex/projection-brief-advisory 交付中（其實作直接呼叫 contract-run preflight，優於本計劃的靜態提示）；本分支不實作以免雙重 advisory 與合併衝突。若該分支未落地，重啟此列。
 - [ ] C1 verify-sprint 收官記憶 advisory（不改 exit code）
 - [ ] D1 縮減版：contract-run --runner 選項＋manifest runner_usage 記錄＋brief_source 測試斷言（advisor 半邊已由 ca76def 交付，本分支不碰 advisor 檔案）
 - [ ] G1 4 份 repo-harness SKILL.md 教學段落
