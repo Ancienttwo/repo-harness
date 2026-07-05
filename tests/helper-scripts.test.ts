@@ -1177,6 +1177,9 @@ describe("Workflow helper scripts", () => {
       expect(res.status).toBe(0);
       expect(res.stdout).toContain("[BriefPreflight]");
       expect(res.stdout).toContain("contract brief is not yet self-sufficient");
+      expect(res.stderr).toContain("[Geju]");
+      expect(res.stderr).toContain("## Why");
+      expect(res.stderr).toContain("## Falsifier");
 
       const archiveFiles = readdirSync(join(cwd, "tasks/archive")).filter((name) => name.startsWith("todo-"));
       expect(archiveFiles.length).toBeGreaterThanOrEqual(1);

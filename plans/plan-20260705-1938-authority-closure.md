@@ -376,8 +376,8 @@ grep -rl "forbidden design space" scripts/contract-run.ts assets/hooks/ src/cli/
 - [x] H1 root-cause 一等 gate 维度：模板 + 显式修订 sprint-contracts.md
 - [x] H2 root-cause gate（contract-run.ts）+ TS 嵌套解析 + 共享 fixtures
 - [x] H3 root-cause gate（verify-contract.sh，复用 fixtures）
-- [ ] G1 geju 落成 policy 依赖条目（含分发种子面）
-- [ ] G2 geju 产物冻结 advisory
+- [x] G1 geju 落成 policy 依赖条目（含分发种子面）
+- [x] G2 geju 产物冻结 advisory
 - [ ] C1 .claude/agents/ 舰队定义入库（从用户级复制）
 - [ ] C2 对称 .codex/agents/*.toml + .gitignore 例外
 - [ ] C3 policy 补 codex-subagent runner（含种子面）+ contract-run 记录
