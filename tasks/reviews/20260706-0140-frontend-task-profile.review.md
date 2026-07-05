@@ -1,11 +1,11 @@
-# Task Review: {{TASK_SLUG}}
+# Task Review: frontend-task-profile
 
 > **Status**: Pending
-> **Plan**: {{PLAN_FILE}}
-> **Contract**: {{CONTRACT_FILE}}
-> **Notes File**: {{NOTES_FILE}}
-> **Checks File**: {{CHECKS_FILE}}
-> **Last Updated**: {{TIMESTAMP}}
+> **Plan**: plans/plan-20260706-0140-frontend-task-profile.md
+> **Contract**: tasks/contracts/20260706-0140-frontend-task-profile.contract.md
+> **Notes File**: tasks/notes/20260706-0140-frontend-task-profile.notes.md
+> **Checks File**: .ai/harness/checks/latest.json
+> **Last Updated**: 2026-07-06 01:40
 > **Recommendation**: fail
 > **Review Rubric Version**: 1
 > **Reviewed Diff Fingerprint**: pending
@@ -14,7 +14,7 @@
 ## Human Review Card
 
 - Verdict: pending
-- Change type: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | frontend
+- Change type: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run
 - Intended files changed:
 - Actual files changed:
 - Commands passed:

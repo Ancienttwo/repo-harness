@@ -91,7 +91,7 @@ else
 fi
 
 case "$task_profile" in
-  code-change|docs-only|ledger-closeout|migration|eval-only|delegated-run|bugfix)
+  code-change|docs-only|ledger-closeout|migration|eval-only|delegated-run|bugfix|frontend)
     record "contract_profile.valid" true "contract profile is valid: $task_profile"
     ;;
   *)
