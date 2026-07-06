@@ -3,7 +3,9 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, sy
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { spawnSync } from 'child_process';
+import { PassThrough, Writable } from 'stream';
 import { runGlobalRuntimeSetup } from '../../src/cli/commands/global-runtime';
+import { resolveOptionalRuntimeDeps } from '../../src/cli/index';
 
 const ROOT = join(import.meta.dir, '..', '..');
 const CLI = join(ROOT, 'src/cli/index.ts');
@@ -62,6 +64,7 @@ describe('init command global runtime bootstrap', () => {
     const fakeBin = join(tmp, 'bin');
     const bunLog = join(tmp, 'bun.log');
     const npxLog = join(tmp, 'npx.log');
+    const bunxLog = join(tmp, 'bunx.log');
     const codegraphLog = join(tmp, 'codegraph.log');
     try {
       mkdirSync(source, { recursive: true });
@@ -76,6 +79,13 @@ describe('init command global runtime bootstrap', () => {
       writeFileSync(join(home, '.agents', 'rules', 'english.md'), 'en\n');
       writeFakeCodegraph(fakeBin, codegraphLog);
       writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nexit 0\n`);
+      // The install/init external-skills bootstrap (installWazaSkills /
+      // installMermaidSkill) invokes `bunx skills add ...` directly.
+      writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunxLog}"\nexit 0\n`);
+      // The CodeGraph MCP configure step shells out to the real
+      // scripts/check-agent-tooling.sh (for repo-agnostic tooling detection),
+      // which still calls `npx -y skills ls -g --json` for Waza status; keep
+      // a fake npx so that unrelated read-only call doesn't hit the network.
       writeExecutable(
         join(fakeBin, 'npx'),
         [
@@ -106,16 +116,16 @@ describe('init command global runtime bootstrap', () => {
         'sync runtime',
       );
       expect(existsSync(join(home, '.codex', 'hooks.json'))).toBe(true);
-      expect(readFileSync(npxLog, 'utf-8')).toContain(
-        '-y skills add tw93/Waza -g -a codex -s think hunt check health -y',
+      expect(readFileSync(bunxLog, 'utf-8')).toContain(
+        'skills add tw93/Waza -g -a codex -s think hunt check health -y',
       );
       expect(readFileSync(join(home, '.codex', 'rules', 'anti-patterns.md'), 'utf-8')).toBe('anti\n');
-      expect(readFileSync(npxLog, 'utf-8')).toContain(
-        '-y skills add BfdCampos/dotfiles -g -a codex -s mermaid -y',
+      expect(readFileSync(bunxLog, 'utf-8')).toContain(
+        'skills add BfdCampos/dotfiles -g -a codex -s mermaid -y',
       );
       expect(existsSync(join(home, '.codex', 'skills', 'claude-review', 'SKILL.md'))).toBe(true);
       expect(existsSync(join(home, '.claude', 'skills', 'codex-review', 'SKILL.md'))).toBe(false);
-      expect(readFileSync(npxLog, 'utf-8')).not.toContain('feature-dev');
+      expect(readFileSync(bunxLog, 'utf-8')).not.toContain('feature-dev');
       expect(JSON.parse(readFileSync(join(home, '.repo-harness', 'config.json'), 'utf-8')).brainRoot).toBe(
         join(home, 'Documents', 'brain'),
       );
@@ -474,5 +484,151 @@ describe('init command global runtime bootstrap', () => {
     expect(res.stdout).toContain('--configure-codegraph');
     expect(res.stdout).toContain('--no-cli');
     expect(res.stdout).toContain('Deprecated: use repo-harness adopt --repo <path>');
+  });
+
+  test('CLI install bootstraps non-interactively over piped (non-TTY) stdio with default-on optional deps', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-cli-install-non-tty-'));
+    const home = join(tmp, 'home');
+    const repo = join(tmp, 'repo');
+    const fakeBin = join(tmp, 'bin');
+    const bunLog = join(tmp, 'bun.log');
+    const bunxLog = join(tmp, 'bunx.log');
+    const npxLog = join(tmp, 'npx.log');
+    const codegraphLog = join(tmp, 'codegraph.log');
+    try {
+      mkdirSync(home, { recursive: true });
+      mkdirSync(repo, { recursive: true });
+      mkdirSync(fakeBin, { recursive: true });
+      writeFakeCodegraph(fakeBin, codegraphLog);
+      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nexit 0\n`);
+      writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunxLog}"\nexit 0\n`);
+      writeExecutable(
+        join(fakeBin, 'npx'),
+        [
+          '#!/bin/bash',
+          'set -euo pipefail',
+          `printf '%s\\n' "$*" >> "${npxLog}"`,
+          'if [[ "$*" == *"skills ls -g --json"* ]]; then echo "[]"; fi',
+          'exit 0',
+          '',
+        ].join('\n'),
+      );
+
+      // spawnSync's stdio pipes are never a TTY (isTTY is undefined), so this
+      // exercises the non-interactive branch of runGlobalRuntimeBootstrap.
+      // Passing input (even empty) closes stdin immediately, so a wrongly
+      // interactive code path would fail fast on EOF instead of hanging.
+      // Use process.execPath (not literal 'bun') since PATH below is
+      // overridden with a fake bin dir; a literal 'bun' command would
+      // resolve to the fake shim and never actually run the CLI script.
+      const res = spawnSync(
+        process.execPath,
+        [CLI, 'install', '--target', 'codex', '--no-sync-skill', '--no-hooks'],
+        {
+          cwd: repo,
+          encoding: 'utf-8',
+          input: '',
+          timeout: 20000,
+          env: {
+            ...process.env,
+            HOME: home,
+            PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+            AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: '0',
+          },
+        },
+      );
+
+      expect(res.status).toBe(0);
+      expect(res.stdout).toContain('install repo-harness CLI');
+      expect(readFileSync(bunxLog, 'utf-8')).toContain('skills add tw93/Waza');
+      expect(readFileSync(bunxLog, 'utf-8')).toContain('skills add BfdCampos/dotfiles');
+      expect(readFileSync(codegraphLog, 'utf-8')).toContain('codegraph install --target codex --location global --yes');
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }, 25000);
+});
+
+describe('resolveOptionalRuntimeDeps (interactive optional-dep prompts)', () => {
+  test('non-interactive keeps default-on behavior regardless of flags omitted', async () => {
+    const result = await resolveOptionalRuntimeDeps({ target: 'both' }, undefined, { interactive: false });
+    expect(result).toEqual({ externalSkills: true, codegraph: true });
+  });
+
+  test('non-interactive still honors explicit --no-* flags without prompting', async () => {
+    const result = await resolveOptionalRuntimeDeps(
+      { target: 'both', externalSkills: false, codegraph: false },
+      undefined,
+      { interactive: false },
+    );
+    expect(result).toEqual({ externalSkills: false, codegraph: false });
+  });
+
+  test('interactive mode prompts, and answering "n" skips both optional deps', async () => {
+    const input = new PassThrough();
+    ['n\n', 'n\n'].forEach((answer, index) => {
+      setTimeout(() => input.write(answer), index * 5);
+    });
+    setTimeout(() => input.end(), 20);
+    const outputChunks: string[] = [];
+    const output = new Writable({
+      write(chunk, _encoding, callback) {
+        outputChunks.push(String(chunk));
+        callback();
+      },
+    });
+
+    const result = await resolveOptionalRuntimeDeps({ target: 'both' }, undefined, {
+      interactive: true,
+      input,
+      output,
+    });
+
+    expect(result).toEqual({ externalSkills: false, codegraph: false });
+    expect(outputChunks.join('')).toContain('Install external skills');
+    expect(outputChunks.join('')).toContain('Install CodeGraph CLI');
+  });
+
+  test('interactive mode keeps the default-on outcome when the answer is blank (Enter)', async () => {
+    const input = new PassThrough();
+    ['\n', '\n'].forEach((answer, index) => {
+      setTimeout(() => input.write(answer), index * 5);
+    });
+    setTimeout(() => input.end(), 20);
+    const output = new Writable({
+      write(_chunk, _encoding, callback) {
+        callback();
+      },
+    });
+
+    const result = await resolveOptionalRuntimeDeps({ target: 'both' }, undefined, {
+      interactive: true,
+      input,
+      output,
+    });
+
+    expect(result).toEqual({ externalSkills: true, codegraph: true });
+  });
+
+  test('interactive mode does not prompt for a flag explicitly passed on the CLI', async () => {
+    const input = new PassThrough();
+    // Only externalSkills should be prompted (codegraph was explicit via
+    // --no-codegraph); a single "n" answer must apply to that one prompt.
+    setTimeout(() => input.write('n\n'), 5);
+    setTimeout(() => input.end(), 20);
+    const output = new Writable({
+      write(_chunk, _encoding, callback) {
+        callback();
+      },
+    });
+    const cmd = { getOptionValueSource: (key: string) => (key === 'codegraph' ? 'cli' : 'default') };
+
+    const result = await resolveOptionalRuntimeDeps({ target: 'both', codegraph: false }, cmd, {
+      interactive: true,
+      input,
+      output,
+    });
+
+    expect(result).toEqual({ externalSkills: false, codegraph: false });
   });
 });
