@@ -9,9 +9,12 @@
   agent-fleet first-class dependencies, this repo's own Claude/Codex agent
   fleet, a frontend task profile, an archcontext boundary bridge, the
   EXECUTION_BOUNDARY anti-extras clause, and a review rubric v2 bump.
-- Publish status: prepared; npm publish, Git tag, and GitHub release are pending.
-- Hold reason: publish has not been run in this prep slice; this slice only
-  updates version surfaces and release filings.
+- Publish status: source pushed (`main` = `30c59a6` on origin), annotated tag
+  `v0.9.0` pushed, GitHub release
+  `https://github.com/Ancienttwo/repo-harness/releases/tag/v0.9.0` created and
+  read back (2026-07-06); **npm publish still pending**.
+- Hold reason (npm): publish gated on the queued cross-vendor Codex
+  re-acceptance (`tasks/todos.md`) and the pre-publish battery items below.
 
 ## Scope
 
@@ -97,13 +100,20 @@
 
 ## Publish Checklist
 
-- Run the full `bun run check:release` battery (full `bun test`, type check,
-  deploy/architecture/task-sync/task-workflow gates, package dry-run, tarball
-  smoke).
-- Publish `repo-harness@0.9.0` to npm with the `latest` dist-tag.
-- Read back npm registry metadata, dist tag, tarball shasum/integrity, and
+- [x] Push `main` to origin (`30c59a6`, verified via `git ls-remote`).
+- [x] Push annotated tag `v0.9.0` (2026-07-06; tagged at `30c59a6`, one
+  docs-only commit after the prepare commit `5e82e1e`).
+- [x] Create GitHub release `repo-harness 0.9.0` — created from CHANGELOG
+  body + Verification section, read back via `gh release view v0.9.0`
+  (non-draft, non-prerelease); the release notes explicitly state npm 0.9.0
+  is not yet published.
+- [ ] Cross-vendor Codex re-acceptance of the merged diffs (queued in
+  `tasks/todos.md`; supersedes both manual overrides).
+- [ ] Run the full `bun run check:release` battery (full `bun test`, type
+  check, deploy/architecture/task-sync/task-workflow gates, package dry-run,
+  tarball smoke).
+- [ ] Publish `repo-harness@0.9.0` to npm with the `latest` dist-tag.
+- [ ] Read back npm registry metadata, dist tag, tarball shasum/integrity, and
   `gitHead`.
-- Push annotated tag `v0.9.0` at the published source commit.
-- Create GitHub release `repo-harness 0.9.0` and verify it is non-draft and
-  non-prerelease.
-- Run `bash scripts/check-release-published.sh 0.9.0`.
+- [ ] Run `bash scripts/check-release-published.sh 0.9.0` (2026-07-06 partial
+  run confirms npm currently 404s for 0.9.0, as expected pre-publish).
