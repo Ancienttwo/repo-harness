@@ -10,8 +10,9 @@
   `repo.adopt-refresh` setup-check advisory for adopted repos, plus the
   `archctx-contracts@0.2.1` schema-authority test migration for
   `archcontext-boundaries-v1` export.
-- Publish status: **prepared, not published**. No `v0.9.1` tag, GitHub release,
-  or npm publish has been created in this prep slice.
+- Publish status: **published**. `repo-harness@0.9.1` is published to npm with
+  the `latest` dist-tag, annotated tag `v0.9.1` is pushed, and GitHub release
+  `repo-harness 0.9.1` is published.
 
 ## Scope
 
@@ -85,14 +86,37 @@
   failed; workflow checks, repository inspection, package dry-run, and tarball
   smoke passed. The smoke line reported:
   `repo-harness-0.9.1.tgz installs and packaged CLI bins start`.
-- Still pending before publish: CI readback, npm publish, tag, GitHub release,
-  and `bash scripts/check-release-published.sh 0.9.1`.
+- CI readback completed for the source commit:
+  `c27a36e858b99776e84bdca5ce25b4acf122ba5b` passed GitHub Actions CI run
+  `28781757374`, including the main Test job and Windows/Ubuntu/macOS MCP path
+  matrix.
+- Publish readback completed:
+  `npm publish` ran the package gate again before upload with 1096 tests
+  passing, 1 skipped, 0 failed; the package gate, package dry-run, and tarball
+  smoke passed.
+- npm registry readback completed:
+  `npm view repo-harness version dist-tags --json --registry https://registry.npmjs.org/`
+  returned `version: 0.9.1` and `dist-tags.latest: 0.9.1`.
+- npm package metadata readback completed:
+  `npm view repo-harness@0.9.1 version gitHead dist.tarball dist.integrity --json`
+  returned `gitHead: c27a36e858b99776e84bdca5ce25b4acf122ba5b` and tarball
+  `https://registry.npmjs.org/repo-harness/-/repo-harness-0.9.1.tgz`.
+- Annotated tag readback completed:
+  `v0.9.1` points to `c27a36e858b99776e84bdca5ce25b4acf122ba5b` and is pushed
+  to `origin`.
+- GitHub release readback completed:
+  `https://github.com/Ancienttwo/repo-harness/releases/tag/v0.9.1` is
+  published, not draft, not prerelease, and targets
+  `c27a36e858b99776e84bdca5ce25b4acf122ba5b`.
+- Final release readback passed:
+  `bash scripts/check-release-published.sh 0.9.1` reported registry,
+  dist-tag, tarball, tag, and local version files agree.
 
 ## Publish Checklist
 
-- [ ] Push the release-prep commit to `origin/main`.
-- [ ] Confirm CI for the pushed commit is green.
-- [ ] Publish `repo-harness@0.9.1` to npm with the `latest` dist-tag.
-- [ ] Push annotated tag `v0.9.1` at the published source commit.
-- [ ] Create GitHub release `repo-harness 0.9.1`.
-- [ ] Run `bash scripts/check-release-published.sh 0.9.1`.
+- [x] Push the release-prep commit to `origin/main`.
+- [x] Confirm CI for the pushed commit is green.
+- [x] Publish `repo-harness@0.9.1` to npm with the `latest` dist-tag.
+- [x] Push annotated tag `v0.9.1` at the published source commit.
+- [x] Create GitHub release `repo-harness 0.9.1`.
+- [x] Run `bash scripts/check-release-published.sh 0.9.1`.

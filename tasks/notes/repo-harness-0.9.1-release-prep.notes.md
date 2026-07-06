@@ -26,8 +26,8 @@ landed after `v0.9.0`:
 
 ## Release Boundary
 
-This slice prepares version surfaces and release filing only. It does not
-publish to npm, create `v0.9.1`, push a GitHub release, or refresh the local
+This slice prepared version surfaces and release filing, then published
+`repo-harness@0.9.1` after CI readback. It did not refresh the local
 PATH-visible global install.
 
 Version surfaces updated:
@@ -79,6 +79,15 @@ scaffold is intentionally not part of this release-prep commit surface.
 - `bun src/cli/index.ts setup check --target codex --check-updates --json`
 - `bun src/cli/index.ts adopt --dry-run --json --repo .`
 - `bun run check:release`
+- GitHub Actions CI run `28781757374` for
+  `c27a36e858b99776e84bdca5ce25b4acf122ba5b`
+- `npm publish --registry https://registry.npmjs.org/ --access public`
+- `npm view repo-harness version dist-tags --json --registry https://registry.npmjs.org/`
+- `npm view repo-harness@0.9.1 version gitHead dist.tarball dist.integrity --json`
+- `git push origin v0.9.1`
+- `gh release create v0.9.1 --target c27a36e858b99776e84bdca5ce25b4acf122ba5b`
+- `gh release view v0.9.1 --json tagName,targetCommitish,name,isDraft,isPrerelease,url,publishedAt`
+- `bash scripts/check-release-published.sh 0.9.1`
 
 The final release gate reported 1094 pass, 1 skip, 0 fail and confirmed
 `repo-harness-0.9.1.tgz` installs with packaged CLI bins starting. The real
@@ -87,5 +96,9 @@ The final release gate reported 1094 pass, 1 skip, 0 fail and confirmed
 plan has one pending `.gitignore` managed-block refresh; that is an advisory
 state and was not auto-applied.
 
-Still pending before publish: CI readback, npm publish, tag, GitHub release,
-and `bash scripts/check-release-published.sh 0.9.1`.
+Publication completed on 2026-07-06. npm `latest` is `0.9.1`, npm package
+metadata reports `gitHead` `c27a36e858b99776e84bdca5ce25b4acf122ba5b`,
+annotated tag `v0.9.1` is pushed to `origin`, GitHub release
+`repo-harness 0.9.1` is published at
+`https://github.com/Ancienttwo/repo-harness/releases/tag/v0.9.1`, and
+`bash scripts/check-release-published.sh 0.9.1` passed.
