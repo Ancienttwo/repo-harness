@@ -74,7 +74,18 @@ scaffold is intentionally not part of this release-prep commit surface.
 - `bash scripts/migrate-project-template.sh --repo . --dry-run`
 - `git diff --check`
 - `bun test`
+- `bun test tests/cli/init-hook.test.ts tests/cli/adoption-plan.test.ts tests/readme-dx.test.ts`
+- `npm pack --dry-run --json --ignore-scripts`
+- `bun src/cli/index.ts setup check --target codex --check-updates --json`
+- `bun src/cli/index.ts adopt --dry-run --json --repo .`
+- `bun run check:release`
 
-Still pending before publish: the release-specific package dry-run, tarball
-install smoke, CI readback, npm publish, tag, GitHub release, and
-`bash scripts/check-release-published.sh 0.9.1`.
+The final release gate reported 1094 pass, 1 skip, 0 fail and confirmed
+`repo-harness-0.9.1.tgz` installs with packaged CLI bins starting. The real
+`setup check --check-updates` readback for this self-host repo reports
+`repo.adopt-refresh` as `needs_agent` because the current `adopt --dry-run`
+plan has one pending `.gitignore` managed-block refresh; that is an advisory
+state and was not auto-applied.
+
+Still pending before publish: CI readback, npm publish, tag, GitHub release,
+and `bash scripts/check-release-published.sh 0.9.1`.

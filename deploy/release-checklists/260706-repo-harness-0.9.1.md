@@ -42,8 +42,9 @@
 ## Preflight Evidence
 
 - `git fetch --tags origin` completed before this filing.
-- `git log v0.9.0..HEAD --oneline` showed eight commits after `v0.9.0`,
-  centered on install/setup-check/delegation behavior.
+- `git log v0.9.0..HEAD --oneline` showed twelve commits after `v0.9.0`,
+  centered on install/setup-check/delegation behavior, the
+  `repo.adopt-refresh` advisory, and release-prep workflow filing.
 - `npm view repo-harness version dist-tags --json --registry
   https://registry.npmjs.org/` returned `version: 0.9.0` and
   `dist-tags.latest: 0.9.0`, so `0.9.1` was not the current published package.
@@ -66,9 +67,26 @@
   `bun scripts/inspect-project-state.ts --repo . --format text`,
   `bash scripts/migrate-project-template.sh --repo . --dry-run`,
   `git diff --check`, and `bun test`.
-- Still pending before publish: release-specific package dry-run, tarball
-  install smoke, CI readback, npm publish, tag, GitHub release, and
-  `bash scripts/check-release-published.sh 0.9.1`.
+- Completed after the `repo.adopt-refresh` setup-check advisory landed:
+  `bun test tests/cli/init-hook.test.ts tests/cli/adoption-plan.test.ts tests/readme-dx.test.ts`
+  (53 pass), `bun run check:type`, `git diff --check`, and docs/assets
+  external-tooling mirror comparison.
+- Release package readback completed:
+  `npm pack --dry-run --json --ignore-scripts` reported
+  `repo-harness@0.9.1` with 365 package files.
+- Real setup-check readback completed:
+  `bun src/cli/index.ts setup check --target codex --check-updates --json`
+  returned `status: attention` with `repo.adopt-refresh` as `needs_agent` and
+  Agent command `repo-harness adopt --repo '/Users/kito/Projects/repo-harness'`.
+  The matching `adopt --dry-run --json --repo .` planned one managed
+  `.gitignore` block refresh and made no writes.
+- Full release gate passed on 2026-07-06:
+  `bun run check:release` completed with 1094 tests passing, 1 skipped, 0
+  failed; workflow checks, repository inspection, package dry-run, and tarball
+  smoke passed. The smoke line reported:
+  `repo-harness-0.9.1.tgz installs and packaged CLI bins start`.
+- Still pending before publish: CI readback, npm publish, tag, GitHub release,
+  and `bash scripts/check-release-published.sh 0.9.1`.
 
 ## Publish Checklist
 
