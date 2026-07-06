@@ -44,6 +44,12 @@ All notable changes to this skill are documented here.
 - Added the `codex-subagent` runner label and committed this repo's own
   fleet: three `.claude/agents/` definitions (`deep-reasoner`, `fast-worker`,
   `gatekeeper`) with symmetric `.codex/agents/*.toml` mappings.
+- Made the `install`/`init` global bootstrap prompt Y/n in interactive
+  terminals before installing the optional external-skills and CodeGraph
+  pieces (Enter keeps the default-on behavior; non-TTY and `--json` runs stay
+  unprompted; explicit `--no-*` flags are honored without prompting), moved
+  the skills bootstrap from `npx -y skills` to `bunx skills`, and pinned the
+  CodeGraph install to `@colbymchenry/codegraph@latest`.
 - Added a `frontend` task profile with a design-brief gate, intake
   prior-art/negative-scenario/canonical-term trigger rules with recorded
   acceptance evidence, and a capability/archcontext boundary bridge exposing
