@@ -10,6 +10,7 @@ import { Command } from 'commander';
 import { createInterface } from 'readline/promises';
 import { askConfirm } from './tty-prompt';
 import { runInstall, runUninstall, type InstallTargetSpec } from './commands/install';
+import { configuredDelegationMode, type DelegationMode } from './commands/delegation-mode';
 import { runInit, runInteractiveInit, type InitBrainMode } from './commands/init';
 import { runHook } from './commands/hook';
 import { CLI_VERSION, formatStatus, runStatus } from './commands/status';
@@ -37,8 +38,10 @@ import {
   assertLocation,
   assertAdoptionMode,
   assertBrainMode,
+  assertDelegationMode,
 } from './commands/validators';
 import type { HookEvent, RouteId } from './hook/route-registry';
+import type { Location } from './installer/types';
 
 export const SUBCOMMANDS = [
   'init',
@@ -127,6 +130,64 @@ export async function resolveOptionalRuntimeDeps(
     rl.close();
   }
   return { externalSkills, codegraph };
+}
+
+export interface ResolveDelegationModeOptions {
+  interactive: boolean;
+  input?: NodeJS.ReadableStream;
+  output?: NodeJS.WritableStream;
+}
+
+/**
+ * Resolve the Codex delegation-mode choice for `install --location global`.
+ * Only applies to the codex/both targets at the global location — every
+ * other combination (notably --target claude) resolves to `undefined`
+ * without prompting or touching `~/.repo-harness/config.json`.
+ *
+ * Non-interactive: an explicit `--delegation-mode <mode>` always wins
+ * (validated; exits 2 on an unknown value). With no flag and no TTY, this
+ * returns `undefined` so the caller skips the config write entirely — no
+ * silent default is ever persisted.
+ *
+ * Interactive: reuses the shared Y/n `askConfirm` helper, framed as keeping
+ * vs. switching away from the resolved default (the value already persisted
+ * in `~/.repo-harness/config.json`, else "explicit").
+ */
+export async function resolveDelegationMode(
+  rawOpts: { target: InstallTargetSpec; delegationMode?: string },
+  location: Location,
+  cmd: OptionSourceLookup | undefined,
+  opts: ResolveDelegationModeOptions,
+): Promise<DelegationMode | undefined> {
+  const applies = location === 'global' && rawOpts.target !== 'claude';
+
+  if (rawOpts.delegationMode !== undefined) {
+    const validated = assertDelegationMode(rawOpts.delegationMode, 'install');
+    return applies ? validated : undefined;
+  }
+  if (!applies || !opts.interactive || cmd?.getOptionValueSource('delegationMode') === 'cli') {
+    return undefined;
+  }
+
+  const input = opts.input ?? process.stdin;
+  const output = opts.output ?? process.stdout;
+  const rl = createInterface({ input, output, terminal: false });
+  try {
+    const current = configuredDelegationMode() ?? 'explicit';
+    const other: DelegationMode = current === 'auto' ? 'explicit' : 'auto';
+    const detail = (mode: DelegationMode): string =>
+      mode === 'auto'
+        ? 'hook injects bounded-delegation context on substantive prompts; policy standing authorization'
+        : 'only on /parallel, /delegate, explicit delegation wording';
+    const keepCurrent = await askConfirm(
+      rl,
+      output,
+      `Codex delegation mode: keep "${current}" (${detail(current)}) instead of "${other}" (${detail(other)})?`,
+    );
+    return keepCurrent ? current : other;
+  } finally {
+    rl.close();
+  }
 }
 
 async function runGlobalRuntimeBootstrap(
@@ -441,6 +502,10 @@ export function buildProgram(): Command {
     .description('Install the repo-harness global runtime; with --location, install only hook adapters')
     .option('--target <target>', `Target host: ${TARGET_HELP}`, 'both')
     .option('--location <location>', `Adapter-only install location: ${LOCATION_HELP}`)
+    .option(
+      '--delegation-mode <mode>',
+      'Codex delegation mode for --location global installs (codex/both targets only): auto|explicit',
+    )
     .option('--no-cli', 'Skip installing the repo-harness CLI globally')
     .option('--no-sync-skill', 'Skip refreshing repo-harness skill aliases under host skill roots')
     .option('--no-hooks', 'Skip global hook adapter installation during full runtime install')
@@ -448,16 +513,24 @@ export function buildProgram(): Command {
     .option('--no-codegraph', 'Skip CodeGraph CLI/MCP configuration')
     .option('--brain-root <path>', 'Brain vault root to persist for repo-harness brain commands')
     .option('--json', 'Output JSON instead of human-readable text')
-    .action(async (rawOpts: GlobalRuntimeCommandOptions & { location?: string }, cmd: Command) => {
+    .action(async (rawOpts: GlobalRuntimeCommandOptions & { location?: string; delegationMode?: string }, cmd: Command) => {
       const target = assertTarget(rawOpts.target, 'install');
       if (rawOpts.location === undefined) {
         await runGlobalRuntimeBootstrap('install', rawOpts, cmd);
         return;
       }
       const location = assertLocation(rawOpts.location!, 'install');
+      const interactive = process.stdin.isTTY === true && process.stdout.isTTY === true && rawOpts.json !== true;
+      const delegationMode = await resolveDelegationMode(
+        { target, delegationMode: rawOpts.delegationMode },
+        location,
+        cmd,
+        { interactive },
+      );
       const result = runInstall({
         target,
         location,
+        delegationMode,
       });
       for (const line of result.lines) console.log(line);
       process.exit(result.exitCode);

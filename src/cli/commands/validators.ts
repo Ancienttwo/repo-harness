@@ -8,6 +8,7 @@
 import type { InstallTargetSpec } from './install';
 import type { Location } from '../installer/types';
 import type { AdoptionMode } from '../../core/adoption/modes';
+import { VALID_DELEGATION_MODES, type DelegationMode } from './delegation-mode';
 
 // ---------------------------------------------------------------------------
 // Target
@@ -69,6 +70,20 @@ export function assertBrainMode(raw: string, commandName: string): string {
   }
   console.error(
     `repo-harness ${commandName}: invalid --brain-mode "${raw}" (expected: ${VALID_BRAIN_MODES.join(', ')})`,
+  );
+  process.exit(2);
+}
+
+// ---------------------------------------------------------------------------
+// Delegation mode
+// ---------------------------------------------------------------------------
+
+export function assertDelegationMode(raw: string, commandName: string): DelegationMode {
+  if ((VALID_DELEGATION_MODES as readonly string[]).includes(raw)) {
+    return raw as DelegationMode;
+  }
+  console.error(
+    `repo-harness ${commandName}: invalid --delegation-mode "${raw}" (expected: ${VALID_DELEGATION_MODES.join(', ')})`,
   );
   process.exit(2);
 }

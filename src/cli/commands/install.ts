@@ -17,12 +17,21 @@
 
 import type { Location } from '../installer/types';
 import { ALL_TARGETS, getTarget, listTargetIds } from '../installer/targets/registry';
+import { configureDelegationMode, type DelegationMode } from './delegation-mode';
 
 export type InstallTargetSpec = 'codex' | 'claude' | 'both';
 
 export interface InstallCommandOptions {
   target: InstallTargetSpec;
   location: Location;
+  /**
+   * Codex delegation mode to persist to `~/.repo-harness/config.json`
+   * `delegation.mode`. Only takes effect for the codex/both targets at the
+   * global location; `undefined` performs no write at all (the caller
+   * resolved neither an explicit flag nor an interactive answer — never a
+   * silent default).
+   */
+  delegationMode?: DelegationMode;
 }
 
 export interface InstallCommandResult {
@@ -78,7 +87,12 @@ function runAdapterAction(action: AdapterAction, opts: InstallCommandOptions): I
 }
 
 export function runInstall(opts: InstallCommandOptions): InstallCommandResult {
-  return runAdapterAction('install', opts);
+  const result = runAdapterAction('install', opts);
+  if (opts.delegationMode !== undefined && opts.target !== 'claude' && opts.location === 'global') {
+    const outcome = configureDelegationMode(opts.delegationMode);
+    result.lines.push(`[codex] ${outcome.action}: ${outcome.path} (delegation.mode=${outcome.mode})`);
+  }
+  return result;
 }
 
 export function runUninstall(opts: InstallCommandOptions): InstallCommandResult {
