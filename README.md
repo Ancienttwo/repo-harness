@@ -312,6 +312,17 @@ repo-harness update --check
 repo-harness adopt --repo /path/to/repo
 ```
 
+`repo-harness install --target codex|both --location global` also resolves and
+persists the Codex delegation mode read by the delegation-advisor hook: pass
+`--delegation-mode auto|explicit` for non-interactive use, or answer the
+one-line interactive prompt shown in a TTY (Enter keeps the current choice,
+defaulting to `explicit` when nothing is configured yet). The chosen mode is
+written to `delegation.mode` in `~/.repo-harness/config.json`, merged with
+existing keys such as `brainRoot`; this global value takes precedence over a
+repo's `.ai/harness/policy.json` `delegation.mode`. The step never fires for
+`--target claude`, and with no flag and no TTY it leaves the file untouched —
+it never writes a silent default.
+
 ### 3. Preview the repo-local contract
 
 ```bash
