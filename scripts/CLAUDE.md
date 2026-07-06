@@ -37,7 +37,7 @@ Owns the workflow-engine-inspection-migration capability boundary declared in .a
 - Architecture domain: `workflow-engine`
 - Architecture capability: `inspection-migration`
 - Architecture module: `docs/architecture/modules/workflow-engine/inspection-migration.md`
-- Last architecture event: 2026-07-05T04:35:41+0800
+- Last architecture event: 2026-07-06T13:54:43+0800
 - Last changed path: `scripts/lib/project-init-lib.sh`
 - Severity: high
 - Change type: workflow-surface

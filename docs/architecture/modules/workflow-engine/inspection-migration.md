@@ -55,6 +55,16 @@ drifting from `assets/workflow-contract.v1.json`. The current manifest-backed
 helper inventory is the right direction; new helpers should be added through the
 contract and mirrored tests, not one-off shell branches.
 
+## 2026-07-06 Delegation Policy Template Closeout
+
+- `scripts/lib/project-init-lib.sh` now emits the same `delegation.mode=auto`
+  policy explanation as the self-host `.ai/harness/policy.json`, so generated
+  repos understand auto mode as install-time standing authorization for bounded
+  Codex delegation.
+- The change stays inside policy generation text. It does not alter migration
+  ownership, helper installation, idempotency rules, or protected local runtime
+  state.
+
 ## Optimization Backlog
 
 - Reduce duplicated helper and required-path lists that still exist across shell scripts.

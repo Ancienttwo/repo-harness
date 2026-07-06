@@ -37,7 +37,7 @@ Owns the workflow-engine-contract-assets capability boundary declared in .ai/con
 - Architecture domain: `workflow-engine`
 - Architecture capability: `contract-assets`
 - Architecture module: `docs/architecture/modules/workflow-engine/contract-assets.md`
-- Last architecture event: 2026-07-05T04:35:33+0800
+- Last architecture event: 2026-07-06T13:54:27+0800
 - Last changed path: `.ai/harness/policy.json`
 - Severity: high
 - Change type: workflow-surface

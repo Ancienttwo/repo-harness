@@ -621,57 +621,61 @@ describe('hook command (Phase 1B)', () => {
     );
   });
 
-  test('CLI dispatcher forwards Codex delegation additionalContext only for explicit prompts', () => {
-    withTempRepo({ optIn: true }, (repoRoot) => {
-      installAssetHooks(repoRoot);
+  test('CLI dispatcher keeps default explicit mode quiet without trigger words and forwards explicit prompts', () => {
+    const emptyHome = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'repo-harness-hook-home-')),
+    );
+    try {
+      withTempRepo({ optIn: true }, (repoRoot) => {
+        installAssetHooks(repoRoot);
 
-      const implicit = spawnSync(
-        process.execPath,
-        [CLI, 'hook', 'UserPromptSubmit', '--route', 'delegation'],
-        {
-          cwd: repoRoot,
-          input: JSON.stringify({ session_id: 'session-1', prompt: 'implement the next sequential task' }),
-          encoding: 'utf-8',
-          env: { ...process.env, HOOK_HOST: 'codex' },
-        },
-      );
-      expect(implicit.status).toBe(0);
-      expect(implicit.stdout).toBe('');
-      expect(fs.existsSync(path.join(repoRoot, '.ai/harness/delegation/latest.json'))).toBe(false);
+        const implicit = spawnSync(
+          process.execPath,
+          [CLI, 'hook', 'UserPromptSubmit', '--route', 'delegation'],
+          {
+            cwd: repoRoot,
+            input: JSON.stringify({ session_id: 'session-1', prompt: 'implement the next sequential task' }),
+            encoding: 'utf-8',
+            env: { ...process.env, HOME: emptyHome, HOOK_HOST: 'codex' },
+          },
+        );
+        expect(implicit.status).toBe(0);
+        expect(implicit.stdout).toBe('');
+        expect(fs.existsSync(path.join(repoRoot, '.ai/harness/delegation/latest.json'))).toBe(false);
 
-      const discussion = spawnSync(
-        process.execPath,
-        [CLI, 'hook', 'UserPromptSubmit', '--route', 'delegation'],
-        {
-          cwd: repoRoot,
-          input: JSON.stringify({
-            session_id: 'session-discussion',
-            prompt: 'Claude的harness本来就有spawn subagent的机制，真的有必要吗？',
-          }),
-          encoding: 'utf-8',
-          env: { ...process.env, HOOK_HOST: 'codex' },
-        },
-      );
-      expect(discussion.status).toBe(0);
-      expect(discussion.stdout).toBe('');
-      expect(fs.existsSync(path.join(repoRoot, '.ai/harness/delegation/latest.json'))).toBe(false);
+        const discussion = spawnSync(
+          process.execPath,
+          [CLI, 'hook', 'UserPromptSubmit', '--route', 'delegation'],
+          {
+            cwd: repoRoot,
+            input: JSON.stringify({
+              session_id: 'session-discussion',
+              prompt: 'Claude的harness本来就有spawn subagent的机制，真的有必要吗？',
+            }),
+            encoding: 'utf-8',
+            env: { ...process.env, HOME: emptyHome, HOOK_HOST: 'codex' },
+          },
+        );
+        expect(discussion.status).toBe(0);
+        expect(discussion.stdout).toBe('');
+        expect(fs.existsSync(path.join(repoRoot, '.ai/harness/delegation/latest.json'))).toBe(false);
 
-      const englishDiscussion = spawnSync(
-        process.execPath,
-        [CLI, 'hook', 'UserPromptSubmit', '--route', 'delegation'],
-        {
-          cwd: repoRoot,
-          input: JSON.stringify({
-            session_id: 'session-english-discussion',
-            prompt: 'Should we use subagents for this?',
-          }),
-          encoding: 'utf-8',
-          env: { ...process.env, HOOK_HOST: 'codex' },
-        },
-      );
-      expect(englishDiscussion.status).toBe(0);
-      expect(englishDiscussion.stdout).toBe('');
-      expect(fs.existsSync(path.join(repoRoot, '.ai/harness/delegation/latest.json'))).toBe(false);
+        const englishDiscussion = spawnSync(
+          process.execPath,
+          [CLI, 'hook', 'UserPromptSubmit', '--route', 'delegation'],
+          {
+            cwd: repoRoot,
+            input: JSON.stringify({
+              session_id: 'session-english-discussion',
+              prompt: 'Should we use subagents for this?',
+            }),
+            encoding: 'utf-8',
+            env: { ...process.env, HOME: emptyHome, HOOK_HOST: 'codex' },
+          },
+        );
+        expect(englishDiscussion.status).toBe(0);
+        expect(englishDiscussion.stdout).toBe('');
+        expect(fs.existsSync(path.join(repoRoot, '.ai/harness/delegation/latest.json'))).toBe(false);
 
       for (const [sessionId, prompt] of [
         ['session-why', 'Use subagents to investigate why login fails'],
@@ -684,7 +688,7 @@ describe('hook command (Phase 1B)', () => {
             cwd: repoRoot,
             input: JSON.stringify({ session_id: sessionId, prompt }),
             encoding: 'utf-8',
-            env: { ...process.env, HOOK_HOST: 'codex' },
+            env: { ...process.env, HOME: emptyHome, HOOK_HOST: 'codex' },
           },
         );
         expect(imperative.status).toBe(0);
@@ -706,7 +710,7 @@ describe('hook command (Phase 1B)', () => {
           cwd: repoRoot,
           input: JSON.stringify({ session_id: 'session-1', prompt: '/delegate map src and tests in parallel' }),
           encoding: 'utf-8',
-          env: { ...process.env, HOOK_HOST: 'codex' },
+          env: { ...process.env, HOME: emptyHome, HOOK_HOST: 'codex' },
         },
       );
       expect(explicit.status).toBe(0);
@@ -730,7 +734,215 @@ describe('hook command (Phase 1B)', () => {
       expect(state.scope_id).toBe('session-session-1');
       expect(state.state_file).toBe('turns/session-session-1.json');
       expect(fs.existsSync(path.join(repoRoot, '.ai/harness/delegation/turns/session-session-1.json'))).toBe(true);
-    });
+      });
+    } finally {
+      fs.rmSync(emptyHome, { recursive: true, force: true });
+    }
+  });
+
+  test('CLI dispatcher injects bounded delegation context in policy auto mode without explicit trigger words', () => {
+    // Isolate HOME so an absent (or future) ~/.repo-harness/config.json on the
+    // real machine can never leak into this repo-policy-only scenario.
+    const emptyHome = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'repo-harness-hook-home-')),
+    );
+    try {
+      withTempRepo({ optIn: true }, (repoRoot) => {
+        installAssetHooks(repoRoot);
+
+        const policyPath = path.join(repoRoot, '.ai/harness/policy.json');
+        const existingPolicy = fs.existsSync(policyPath)
+          ? JSON.parse(fs.readFileSync(policyPath, 'utf-8'))
+          : {};
+        fs.writeFileSync(
+          policyPath,
+          `${JSON.stringify(
+            { ...existingPolicy, delegation: { ...(existingPolicy.delegation ?? {}), mode: 'auto' } },
+            null,
+            2,
+          )}\n`,
+        );
+
+        const auto = spawnSync(
+          process.execPath,
+          [CLI, 'hook', 'UserPromptSubmit', '--route', 'delegation'],
+          {
+            cwd: repoRoot,
+            input: JSON.stringify({ session_id: 'session-auto', prompt: 'implement the next sequential task' }),
+            encoding: 'utf-8',
+            env: { ...process.env, HOME: emptyHome, HOOK_HOST: 'codex' },
+          },
+        );
+        expect(auto.status).toBe(0);
+        const autoParsed = JSON.parse(auto.stdout);
+        expect(autoParsed.hookSpecificOutput.hookEventName).toBe('UserPromptSubmit');
+        expect(autoParsed.hookSpecificOutput.additionalContext).toContain('[repo-harness:delegation]');
+        expect(autoParsed.hookSpecificOutput.additionalContext).toContain('delegation.mode=auto');
+        expect(autoParsed.hookSpecificOutput.additionalContext).toContain(
+          'standing user authorization for bounded delegation',
+        );
+        const autoState = JSON.parse(
+          fs.readFileSync(path.join(repoRoot, '.ai/harness/delegation/latest.json'), 'utf-8'),
+        );
+        expect(autoState.explicit).toBe(false);
+        expect(autoState.mode).toBe('auto');
+        expect(autoState.trigger).toBe('auto-mode');
+        expect(autoState.stop_fallback).toBe(false);
+        fs.rmSync(path.join(repoRoot, '.ai/harness/delegation'), { recursive: true, force: true });
+
+        const discussion = spawnSync(
+          process.execPath,
+          [CLI, 'hook', 'UserPromptSubmit', '--route', 'delegation'],
+          {
+            cwd: repoRoot,
+            input: JSON.stringify({
+              session_id: 'session-auto-discussion',
+              prompt: 'Should we use subagents for this?',
+            }),
+            encoding: 'utf-8',
+            env: { ...process.env, HOME: emptyHome, HOOK_HOST: 'codex' },
+          },
+        );
+        expect(discussion.status).toBe(0);
+        expect(discussion.stdout).toBe('');
+        expect(fs.existsSync(path.join(repoRoot, '.ai/harness/delegation/latest.json'))).toBe(false);
+
+        const explicitUnderAuto = spawnSync(
+          process.execPath,
+          [CLI, 'hook', 'UserPromptSubmit', '--route', 'delegation'],
+          {
+            cwd: repoRoot,
+            input: JSON.stringify({
+              session_id: 'session-auto-explicit',
+              prompt: '/delegate map src and tests in parallel',
+            }),
+            encoding: 'utf-8',
+            env: { ...process.env, HOME: emptyHome, HOOK_HOST: 'codex' },
+          },
+        );
+        expect(explicitUnderAuto.status).toBe(0);
+        const explicitParsed = JSON.parse(explicitUnderAuto.stdout);
+        expect(explicitParsed.hookSpecificOutput.additionalContext).toContain('[repo-harness:delegation]');
+        const explicitState = JSON.parse(
+          fs.readFileSync(path.join(repoRoot, '.ai/harness/delegation/latest.json'), 'utf-8'),
+        );
+        expect(explicitState.explicit).toBe(true);
+        expect(explicitState.mode).toBe('explicit');
+        expect(explicitState.trigger).toBe('slash-delegate');
+        expect(explicitState.stop_fallback).toBe(true);
+      });
+    } finally {
+      fs.rmSync(emptyHome, { recursive: true, force: true });
+    }
+  });
+
+  test('global config delegation.mode=auto takes precedence over repo policy explicit', () => {
+    const home = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'repo-harness-hook-home-')),
+    );
+    try {
+      fs.mkdirSync(path.join(home, '.repo-harness'), { recursive: true });
+      fs.writeFileSync(
+        path.join(home, '.repo-harness', 'config.json'),
+        `${JSON.stringify({ delegation: { mode: 'auto' } }, null, 2)}\n`,
+      );
+
+      withTempRepo({ optIn: true }, (repoRoot) => {
+        installAssetHooks(repoRoot);
+
+        const policyPath = path.join(repoRoot, '.ai/harness/policy.json');
+        const existingPolicy = fs.existsSync(policyPath)
+          ? JSON.parse(fs.readFileSync(policyPath, 'utf-8'))
+          : {};
+        fs.writeFileSync(
+          policyPath,
+          `${JSON.stringify(
+            { ...existingPolicy, delegation: { ...(existingPolicy.delegation ?? {}), mode: 'explicit' } },
+            null,
+            2,
+          )}\n`,
+        );
+
+        const result = spawnSync(
+          process.execPath,
+          [CLI, 'hook', 'UserPromptSubmit', '--route', 'delegation'],
+          {
+            cwd: repoRoot,
+            input: JSON.stringify({
+              session_id: 'session-global-auto',
+              prompt: 'implement the next sequential task',
+            }),
+            encoding: 'utf-8',
+            env: { ...process.env, HOME: home, HOOK_HOST: 'codex' },
+          },
+        );
+        expect(result.status).toBe(0);
+        const parsed = JSON.parse(result.stdout);
+        expect(parsed.hookSpecificOutput.hookEventName).toBe('UserPromptSubmit');
+        expect(parsed.hookSpecificOutput.additionalContext).toContain('[repo-harness:delegation]');
+        expect(parsed.hookSpecificOutput.additionalContext).toContain(
+          'standing user authorization for bounded delegation',
+        );
+        const state = JSON.parse(
+          fs.readFileSync(path.join(repoRoot, '.ai/harness/delegation/latest.json'), 'utf-8'),
+        );
+        expect(state.mode).toBe('auto');
+        expect(state.trigger).toBe('auto-mode');
+        expect(state.explicit).toBe(false);
+        expect(state.stop_fallback).toBe(false);
+      });
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test('global config delegation.mode=explicit takes precedence over repo policy auto', () => {
+    const home = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'repo-harness-hook-home-')),
+    );
+    try {
+      fs.mkdirSync(path.join(home, '.repo-harness'), { recursive: true });
+      fs.writeFileSync(
+        path.join(home, '.repo-harness', 'config.json'),
+        `${JSON.stringify({ delegation: { mode: 'explicit' } }, null, 2)}\n`,
+      );
+
+      withTempRepo({ optIn: true }, (repoRoot) => {
+        installAssetHooks(repoRoot);
+
+        const policyPath = path.join(repoRoot, '.ai/harness/policy.json');
+        const existingPolicy = fs.existsSync(policyPath)
+          ? JSON.parse(fs.readFileSync(policyPath, 'utf-8'))
+          : {};
+        fs.writeFileSync(
+          policyPath,
+          `${JSON.stringify(
+            { ...existingPolicy, delegation: { ...(existingPolicy.delegation ?? {}), mode: 'auto' } },
+            null,
+            2,
+          )}\n`,
+        );
+
+        const result = spawnSync(
+          process.execPath,
+          [CLI, 'hook', 'UserPromptSubmit', '--route', 'delegation'],
+          {
+            cwd: repoRoot,
+            input: JSON.stringify({
+              session_id: 'session-global-explicit',
+              prompt: 'implement the next sequential task',
+            }),
+            encoding: 'utf-8',
+            env: { ...process.env, HOME: home, HOOK_HOST: 'codex' },
+          },
+        );
+        expect(result.status).toBe(0);
+        expect(result.stdout).toBe('');
+        expect(fs.existsSync(path.join(repoRoot, '.ai/harness/delegation/latest.json'))).toBe(false);
+      });
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
   });
 
   test('Codex SubagentStart marks explicit delegation as spawned and injects role context', () => {

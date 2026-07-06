@@ -49,7 +49,7 @@ Owns the runtime-harness-hook-adapters capability boundary declared in .ai/conte
 - Architecture domain: `runtime-harness`
 - Architecture capability: `hook-adapters`
 - Architecture module: `docs/architecture/modules/runtime-harness/hook-adapters.md`
-- Last architecture event: 2026-07-05T13:45:11+0800
+- Last architecture event: 2026-07-06T13:54:06+0800
 - Last changed path: `assets/hooks/codex-delegation-advisor.sh`
 - Severity: high
 - Change type: workflow-surface

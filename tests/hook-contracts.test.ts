@@ -102,6 +102,8 @@ describe("Hook contracts", () => {
     expect(advisor).toContain("max_agents");
     expect(advisor).toContain("max_depth");
     expect(advisor).toContain(".ai\", \"harness\", \"delegation");
+    expect(advisor).toContain("policyDelegation.mode");
+    expect(advisor).toContain("auto-mode");
 
     const start = read("assets/hooks/subagent-start-context.sh");
     expect(start).toContain("SubagentStart.context");

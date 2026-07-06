@@ -51,10 +51,14 @@ Missing copies of this route are soft-skipped so older repo-pinned hook runtimes
 do not break subagent creation before a hook refresh.
 
 Codex delegation route: `UserPromptSubmit.delegation` runs
-`codex-delegation-advisor.sh`. It does not infer delegation from prompt length;
-it only reacts to explicit `/delegate`, `/parallel`, imperative subagent,
+`codex-delegation-advisor.sh`. It does not infer delegation from prompt length.
+It reacts to explicit `/delegate`, `/parallel`, imperative subagent,
 multi-agent, or parallel-investigation language, excluding mechanism/design
-questions that only mention `spawn subagent(s)`. The script writes ignored scoped runtime state under
+questions that only mention `spawn subagent(s)`. When no explicit trigger is
+present, `delegation.mode=auto` in global `~/.repo-harness/config.json` or repo
+policy is treated as standing user authorization for bounded delegation; the
+global value wins when it is exactly `auto` or `explicit`. The script writes
+ignored scoped runtime state under
 `.ai/harness/delegation/` with `latest.json` as the current pointer and emits
 `hookSpecificOutput.additionalContext`; `runtime.ts` forwards that stdout only for
 this route and only when the JSON is valid for `UserPromptSubmit`.
@@ -154,7 +158,7 @@ flowchart TD
     Route --> Prompt["UserPromptSubmit.default"]
     Prompt --> PromptGuard["prompt-guard.sh"]
     Route --> Delegation["UserPromptSubmit.delegation"]
-    Delegation --> DelegationAdvisor["codex-delegation-advisor.sh<br/>explicit bounded spawn contract"]
+    Delegation --> DelegationAdvisor["codex-delegation-advisor.sh<br/>explicit or auto bounded spawn contract"]
 
     Route --> SubagentStart["SubagentStart.context"]
     SubagentStart --> SubagentContext["subagent-start-context.sh<br/>role + evidence requirements"]
@@ -203,7 +207,7 @@ flowchart TD
     Observer --> TraceLog[".claude/.trace.jsonl"]
     PromptGuard --> PlanGate["plan start/capture/execution/done/archive gates"]
     PromptGuard --> Hints["Waza / CodeGraph / CrossReview / TDD / BDD hints"]
-    DelegationAdvisor --> DelegationState[".ai/harness/delegation/<br/>scoped explicit turn state"]
+    DelegationAdvisor --> DelegationState[".ai/harness/delegation/<br/>scoped delegation turn state"]
     DelegationAdvisor --> DelegationCtx["UserPromptSubmit additionalContext<br/>bounded spawn_agent rules"]
     SubagentContext --> SpawnedState["mark spawned=true"]
     SubagentContext --> SubagentCtx["SubagentStart additionalContext"]
@@ -296,6 +300,20 @@ per-host implementation trees or loading non-hook command modules.
 - The pending request for `.ai/hooks/post-tool-observer.sh` did not correspond
   to an open route or observer implementation diff in this closeout. No new
   hook adapter entrypoint, dependency boundary, or runtime route was introduced.
+
+## 2026-07-06 Codex Delegation Auto Mode Closeout
+
+- `codex-delegation-advisor.sh` now consumes the install-time
+  `delegation.mode` choice. Global `~/.repo-harness/config.json` wins over repo
+  policy when it is exactly `auto` or `explicit`; malformed or missing global
+  values are ignored rather than repaired locally.
+- Auto mode injects the same bounded delegation contract without explicit
+  trigger words, records `explicit=false`, `mode=auto`, `trigger=auto-mode`,
+  and disables `stop_fallback`. Explicit trigger words keep the prior
+  `explicit=true` and `stop_fallback=true` behavior.
+- This changes route semantics only. It does not add a hook route, host adapter,
+  dependency, persistence location, or new runtime boundary, so no architecture
+  snapshot or rendered diagram is required.
 
 ## Optimization Backlog
 

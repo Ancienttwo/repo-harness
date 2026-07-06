@@ -56,6 +56,19 @@ JSON_INPUT="$input" REPO_ROOT="${HOOK_REPO_ROOT:-$(pwd)}" bun -e '
     return null;
   }
 
+  function readGlobalDelegationMode() {
+    try {
+      const home = process.env.HOME;
+      if (!home) return null;
+      const raw = fs.readFileSync(path.join(home, ".repo-harness", "config.json"), "utf8");
+      const parsed = JSON.parse(raw);
+      const mode = parsed && parsed.delegation && parsed.delegation.mode;
+      return mode === "auto" || mode === "explicit" ? mode : null;
+    } catch {
+      return null;
+    }
+  }
+
   let input;
   try {
     input = JSON.parse(process.env.JSON_INPUT || "");
@@ -91,7 +104,6 @@ JSON_INPUT="$input" REPO_ROOT="${HOOK_REPO_ROOT:-$(pwd)}" bun -e '
     { name: "chinese-subagent", pattern: /交给\s*子代理|使用多个\s*(agent|代理)|并行(调查|研究|处理|执行|agent|代理)/i },
   ];
   const trigger = triggers.find((entry) => entry.pattern.test(prompt) && !(entry.skipDiscussion && isDelegationDiscussion(prompt)));
-  if (!trigger) process.exit(0);
 
   const repoRoot = process.env.REPO_ROOT || process.cwd();
 
@@ -102,6 +114,16 @@ JSON_INPUT="$input" REPO_ROOT="${HOOK_REPO_ROOT:-$(pwd)}" bun -e '
   } catch {
     policyDelegation = {};
   }
+
+  const globalDelegationMode = readGlobalDelegationMode();
+  const effectiveDelegationMode = globalDelegationMode || (policyDelegation.mode === "auto" ? "auto" : "explicit");
+
+  const explicit = Boolean(trigger);
+  if (!explicit) {
+    if (effectiveDelegationMode !== "auto") process.exit(0);
+    if (isDelegationDiscussion(prompt)) process.exit(0);
+  }
+
   const maxAgents = Number.isInteger(policyDelegation.max_agents) ? policyDelegation.max_agents : 3;
   const maxDepth = Number.isInteger(policyDelegation.max_depth) ? policyDelegation.max_depth : 1;
   const preferredRunners =
@@ -122,17 +144,17 @@ JSON_INPUT="$input" REPO_ROOT="${HOOK_REPO_ROOT:-$(pwd)}" bun -e '
   const state = {
     version: 1,
     eligible: true,
-    explicit: true,
+    explicit,
     spawned: false,
     fallback_used: false,
-    mode: "explicit",
+    mode: explicit ? "explicit" : "auto",
     max_agents: maxAgents,
     max_depth: maxDepth,
     allow_parallel_writers: false,
-    stop_fallback: true,
+    stop_fallback: explicit,
     preferred_runners: preferredRunners,
     fallback_runner: fallbackRunner,
-    trigger: trigger.name,
+    trigger: explicit ? trigger.name : "auto-mode",
     prompt_hash: crypto.createHash("sha1").update(prompt).digest("hex"),
     scope_source: scope?.source || "unscoped",
     scope_id: scope?.id || "",
@@ -151,7 +173,9 @@ JSON_INPUT="$input" REPO_ROOT="${HOOK_REPO_ROOT:-$(pwd)}" bun -e '
   const context = [
     "[repo-harness:delegation]",
     "",
-    "The current user prompt explicitly enabled bounded delegation.",
+    explicit
+      ? "The current user prompt explicitly enabled bounded delegation."
+      : "Repo policy delegation.mode=auto is standing user authorization for bounded delegation, selected by the user at install time. This satisfies the user-authorization requirement for native subagents (spawn_agent) when the dispatch conditions below are met.",
     "",
     "Treat the active task contract (tasks/contracts/<active-plan-stem>.contract.md) as the authoritative execution brief: Goal, Scope, Allowed Paths, and Exit Criteria. Do not re-derive scope from this conversation.",
     "",

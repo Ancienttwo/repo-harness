@@ -72,6 +72,18 @@ self-migration dry-run.
   `assets/workflow-contract.v1.json` and `.ai/harness/workflow-contract.json`;
   helper installation stays flat under `scripts/`.
 
+## 2026-07-06 Delegation Policy Auto Mode Closeout
+
+- `.ai/harness/policy.json` now documents that `delegation.mode=auto` is
+  install-time standing user authorization for bounded Codex delegation on
+  prompts without explicit trigger words.
+- Global `~/.repo-harness/config.json` remains the user-level authority for the
+  mode choice and takes precedence over repo policy when the value is exactly
+  `auto` or `explicit`; repo policy is still the generated/self-host fallback.
+- This is a policy text contract change only. It does not change contract asset
+  ownership, helper inventory shape, byte-parity requirements, or generated repo
+  storage boundaries.
+
 ## Workstream Ledger
 
 - `tasks/workstreams/workflow-engine/contract-assets/cleanup-script-policy.md`

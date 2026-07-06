@@ -121,13 +121,13 @@ cd ~/.claude/skills/gstack && ./setup --host codex
 Both hosts:
 
 ```bash
-npx -y skills add tw93/Waza -g -a claude-code codex -s think hunt check health -y
+bunx skills add tw93/Waza -g -a claude-code codex -s think hunt check health -y
 ```
 
 Single host:
 
 ```bash
-npx -y skills add tw93/Waza -g -a claude-code -s think hunt check health -y
+bunx skills add tw93/Waza -g -a claude-code -s think hunt check health -y
 ```
 
 Replace `claude-code` with `codex` when installing for Codex only.
@@ -156,13 +156,13 @@ done
 Both hosts:
 
 ```bash
-npx -y skills add hylarucoder/hai-stack -g -a claude-code codex -s geju -y
+bunx skills add hylarucoder/hai-stack -g -a claude-code codex -s geju -y
 ```
 
 Single host:
 
 ```bash
-npx -y skills add hylarucoder/hai-stack -g -a claude-code -s geju -y
+bunx skills add hylarucoder/hai-stack -g -a claude-code -s geju -y
 ```
 
 Replace `claude-code` with `codex` when installing for Codex only.
@@ -424,7 +424,7 @@ cd ~/.claude/skills/gstack && git pull && ./setup --host codex
 ### Waza
 
 ```bash
-npx -y skills update
+bunx skills update
 for d in think hunt check health; do
   rsync -a --delete ~/.agents/skills/$d/ ~/.codex/skills/$d/
 done
@@ -443,7 +443,7 @@ done
 ### hai-stack
 
 ```bash
-npx -y skills update
+bunx skills update
 rsync -a --delete ~/.agents/skills/geju/ ~/.codex/skills/geju/
 diff -qr ~/.agents/skills/geju ~/.codex/skills/geju
 ```
