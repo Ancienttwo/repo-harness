@@ -264,7 +264,7 @@ describe("init command", () => {
     const repo = join(tmp, "repo");
     const home = join(tmp, "home");
     const fakeBin = join(tmp, "bin");
-    const npxLog = join(tmp, "npx.log");
+    const bunxLog = join(tmp, "bunx.log");
     try {
       mkdirSync(source, { recursive: true });
       mkdirSync(repo, { recursive: true });
@@ -276,8 +276,8 @@ describe("init command", () => {
       writeFileSync(join(home, ".agents", "rules", "durable-context.md"), "durable\n");
       writeFileSync(join(home, ".agents", "rules", "english.md"), "en\n");
       makeExecutable(
-        join(fakeBin, "npx"),
-        `#!/bin/bash\nprintf '%s\\n' "$*" >> "${npxLog}"\nexit 0\n`,
+        join(fakeBin, "bunx"),
+        `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunxLog}"\nexit 0\n`,
       );
 
       const result = runInit({
@@ -295,13 +295,13 @@ describe("init command", () => {
       });
 
       expect(result.exitCode).toBe(0);
-      expect(readFileSync(npxLog, "utf-8")).toContain(
-        "-y skills add tw93/Waza -g -a claude-code codex -s think hunt check health -y",
+      expect(readFileSync(bunxLog, "utf-8")).toContain(
+        "skills add tw93/Waza -g -a claude-code codex -s think hunt check health -y",
       );
       expect(readFileSync(join(home, ".claude", "rules", "anti-patterns.md"), "utf-8")).toBe("anti\n");
       expect(readFileSync(join(home, ".codex", "rules", "anti-patterns.md"), "utf-8")).toBe("anti\n");
-      expect(readFileSync(npxLog, "utf-8")).toContain(
-        "-y skills add BfdCampos/dotfiles -g -a claude-code codex -s mermaid -y",
+      expect(readFileSync(bunxLog, "utf-8")).toContain(
+        "skills add BfdCampos/dotfiles -g -a claude-code codex -s mermaid -y",
       );
       // Cross-review skills install host-aware: codex-review on Claude, claude-review on Codex.
       expect(existsSync(join(home, ".claude", "skills", "codex-review", "SKILL.md"))).toBe(true);
@@ -786,7 +786,7 @@ describe("init command", () => {
     const repo = join(tmp, "repo");
     const home = join(tmp, "home");
     const fakeBin = join(tmp, "bin");
-    const npxLog = join(tmp, "npx.log");
+    const bunxLog = join(tmp, "bunx.log");
     const codegraphLog = join(tmp, "codegraph.log");
     const outputChunks: string[] = [];
     try {
@@ -796,13 +796,18 @@ describe("init command", () => {
       mkdirSync(fakeBin, { recursive: true });
       setupFakeSource(source);
       writeFakeCodegraph(fakeBin, codegraphLog);
-      makeExecutable(join(fakeBin, "npx"), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${npxLog}"\nexit 0\n`);
+      makeExecutable(join(fakeBin, "bunx"), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunxLog}"\nexit 0\n`);
 
       const input = new PassThrough();
-      ["\n", "3\n", "\n", "\n", "y\n"].forEach((answer, index) => {
+      // Answers, in prompt order: host target, reporting language (English),
+      // brain location, brain mode, external skills confirm, CodeGraph
+      // confirm, final "Proceed" confirm. Blank lines take each prompt's
+      // default (defaults to "yes" for the two new confirms), preserving
+      // today's default-on outcome.
+      ["\n", "3\n", "\n", "\n", "\n", "\n", "y\n"].forEach((answer, index) => {
         setTimeout(() => input.write(answer), index * 5);
       });
-      setTimeout(() => input.end(), 30);
+      setTimeout(() => input.end(), 40);
       const output = new Writable({
         write(chunk, _encoding, callback) {
           outputChunks.push(String(chunk));
@@ -829,8 +834,62 @@ describe("init command", () => {
       expect(result.steps.find((step) => step.step === "global working rules")?.status).toBe("ok");
       expect(result.steps.find((step) => step.step === "ensure brain root")?.detail).toBe(join(home, "Documents", "brain"));
       expect(readFileSync(join(home, ".codex", "AGENTS.md"), "utf-8")).toContain("Use English to report to user.");
+      expect(readFileSync(bunxLog, "utf-8")).toContain("skills add tw93/Waza");
       expect(readFileSync(codegraphLog, "utf-8")).toContain("codegraph sync .");
-      expect(outputChunks.join("")).toContain("CodeGraph=required ensure --init --sync plus global MCP configure");
+      expect(outputChunks.join("")).toContain("externalSkills=true");
+      expect(outputChunks.join("")).toContain("CodeGraph=ensure --init --sync plus global MCP configure");
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }, CODEGRAPH_INIT_TIMEOUT_MS);
+
+  test("interactive init skips external skills and CodeGraph when declined", async () => {
+    const tmp = join(tmpdir(), `repo-harness-init-interactive-declined-${Date.now()}`);
+    const source = join(tmp, "source");
+    const repo = join(tmp, "repo");
+    const home = join(tmp, "home");
+    const outputChunks: string[] = [];
+    try {
+      mkdirSync(source, { recursive: true });
+      mkdirSync(repo, { recursive: true });
+      mkdirSync(home, { recursive: true });
+      setupFakeSource(source);
+
+      const input = new PassThrough();
+      // Same prompt order as above, but decline both new confirms ("n").
+      // Neither bunx nor codegraph should be invoked, so no fake binaries
+      // are needed on PATH for this run.
+      ["\n", "3\n", "\n", "\n", "n\n", "n\n", "y\n"].forEach((answer, index) => {
+        setTimeout(() => input.write(answer), index * 5);
+      });
+      setTimeout(() => input.end(), 40);
+      const output = new Writable({
+        write(chunk, _encoding, callback) {
+          outputChunks.push(String(chunk));
+          callback();
+        },
+      });
+      const result = await runInteractiveInit({
+        repo,
+        sourceRoot: source,
+        syncSkill: false,
+        hostAdapters: false,
+        verify: false,
+        input,
+        output,
+        env: {
+          ...process.env,
+          HOME: home,
+        },
+      });
+
+      expect(result.exitCode).toBe(0);
+      expect(result.steps.find((step) => step.step === "external skills")?.status).toBe("skipped");
+      expect(result.steps.find((step) => step.step === "external skills")?.detail).toBe("disabled");
+      expect(result.steps.find((step) => step.step === "ensure codegraph index")?.status).toBe("skipped");
+      expect(result.steps.find((step) => step.step === "ensure codegraph index")?.detail).toBe("disabled");
+      expect(outputChunks.join("")).toContain("externalSkills=false");
+      expect(outputChunks.join("")).toContain("CodeGraph=skip");
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

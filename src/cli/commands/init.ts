@@ -32,6 +32,7 @@ import {
 } from "./brain-root";
 import { configureCodegraph, ensureCodegraph } from "../tools/codegraph";
 import { runProcess as runBoundedProcess } from "../../effects/process-runner";
+import { askConfirm, writeLine } from "../tty-prompt";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(SCRIPT_DIR, "..", "..", "..");
@@ -419,9 +420,8 @@ function installExternalSkills(sourceRoot: string, target: InstallTargetSpec, en
   const steps: InitStep[] = [];
   const agents = hostAgents(target);
   const waza = runProcess(
-    "npx",
+    "bunx",
     [
-      "-y",
       "skills",
       "add",
       "tw93/Waza",
@@ -440,9 +440,8 @@ function installExternalSkills(sourceRoot: string, target: InstallTargetSpec, en
     ? syncWazaSharedRules(target, env)
     : { step: "external skills Waza shared rules", status: "skipped", detail: "Waza install failed" });
   const mermaid = runProcess(
-    "npx",
+    "bunx",
     [
-      "-y",
       "skills",
       "add",
       "BfdCampos/dotfiles",
@@ -697,10 +696,6 @@ export function runInit(opts: InitCommandOptions = {}): InitCommandResult {
   };
 }
 
-function writeLine(output: NodeJS.WritableStream, line = ""): void {
-  output.write(`${line}\n`);
-}
-
 function selectedIndex(answer: string, count: number, defaultIndex: number): number | null {
   const trimmed = answer.trim();
   if (!trimmed) return defaultIndex;
@@ -742,20 +737,6 @@ async function askText(
   const answer = await rl.question(`${question}${fallback ? ` [${fallback}]` : ""}: `);
   writeLine(output);
   return answer.trim() || fallback;
-}
-
-async function askConfirm(
-  rl: ReturnType<typeof createInterface>,
-  output: NodeJS.WritableStream,
-  question: string,
-): Promise<boolean> {
-  while (true) {
-    const answer = (await rl.question(`${question} [Y/n]: `)).trim().toLowerCase();
-    writeLine(output);
-    if (!answer || answer === "y" || answer === "yes") return true;
-    if (answer === "n" || answer === "no") return false;
-    writeLine(output, "Enter y or n.");
-  }
 }
 
 function brainChoiceLabel(choice: BrainRootChoice): string {
@@ -877,13 +858,21 @@ export async function runInteractiveInit(opts: InteractiveInitOptions = {}): Pro
       0,
     );
 
+    const externalSkills = await askConfirm(
+      rl,
+      output,
+      "Install external skills (Waza /think /hunt /check /health, Mermaid, cross-review)?",
+    );
+    const codegraph = await askConfirm(rl, output, "Install CodeGraph CLI and configure its MCP server?");
+
     writeLine(output, renderInteractivePlan([
       `repo=${repoRoot}`,
       `target=${target}`,
       `reporting=${reportLanguageInstruction}`,
       `brainRoot=${(brainChoice as BrainRootChoice).root}`,
       `brainMode=${brainMode}`,
-      "CodeGraph=required ensure --init --sync plus global MCP configure",
+      `externalSkills=${externalSkills}`,
+      `CodeGraph=${codegraph ? "ensure --init --sync plus global MCP configure" : "skip"}`,
       `apply=${opts.apply === false ? "false" : "true"}`,
       `verify=${opts.verify === false ? "false" : "true"}`,
     ]));
@@ -905,9 +894,10 @@ export async function runInteractiveInit(opts: InteractiveInitOptions = {}): Pro
       repo: repoRoot,
       sourceRoot,
       target,
-      codegraph: true,
-      configureCodegraphMcp: true,
-      syncCodegraph: true,
+      externalSkills,
+      codegraph,
+      configureCodegraphMcp: codegraph,
+      syncCodegraph: codegraph,
       globalContext: { reportLanguageInstruction },
       brainRoot: (brainChoice as BrainRootChoice).root,
       brainMode,

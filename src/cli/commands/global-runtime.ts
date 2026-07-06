@@ -40,7 +40,7 @@ export interface GlobalRuntimeResult {
 }
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
-const CODEGRAPH_PACKAGE = "@colbymchenry/codegraph";
+const CODEGRAPH_PACKAGE = "@colbymchenry/codegraph@latest";
 const WAZA_SKILLS = ["think", "hunt", "check", "health"] as const;
 const WAZA_SHARED_RULES = ["anti-patterns.md", "chinese.md", "durable-context.md", "english.md"] as const;
 
@@ -275,9 +275,8 @@ function installHostAdapters(target: InstallTargetSpec, env?: NodeJS.ProcessEnv)
 function installWazaSkills(sourceRoot: string, target: InstallTargetSpec, env?: NodeJS.ProcessEnv): GlobalRuntimeStep {
   const agents = hostAgents(target);
   const step = runProcess(
-    "npx",
+    "bunx",
     [
-      "-y",
       "skills",
       "add",
       "tw93/Waza",
@@ -330,9 +329,8 @@ function syncWazaSharedRules(target: InstallTargetSpec, env?: NodeJS.ProcessEnv)
 function installMermaidSkill(sourceRoot: string, target: InstallTargetSpec, env?: NodeJS.ProcessEnv): GlobalRuntimeStep {
   const agents = hostAgents(target);
   const step = runProcess(
-    "npx",
+    "bunx",
     [
-      "-y",
       "skills",
       "add",
       "BfdCampos/dotfiles",

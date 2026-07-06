@@ -7,6 +7,8 @@
  */
 
 import { Command } from 'commander';
+import { createInterface } from 'readline/promises';
+import { askConfirm } from './tty-prompt';
 import { runInstall, runUninstall, type InstallTargetSpec } from './commands/install';
 import { runInit, runInteractiveInit, type InitBrainMode } from './commands/init';
 import { runHook } from './commands/hook';
@@ -75,15 +77,73 @@ interface GlobalRuntimeCommandOptions {
   json?: boolean;
 }
 
-function runGlobalRuntimeBootstrap(commandName: 'init' | 'install', rawOpts: GlobalRuntimeCommandOptions): never {
+/** Minimal duck-typed slice of `Command` so tests can fake option-value sourcing without constructing a real commander `Command`. */
+export interface OptionSourceLookup {
+  getOptionValueSource(key: string): string | undefined;
+}
+
+export interface ResolveOptionalRuntimeDepsOptions {
+  interactive: boolean;
+  input?: NodeJS.ReadableStream;
+  output?: NodeJS.WritableStream;
+}
+
+/**
+ * Resolve the two user-selectable optional dependencies (external skills,
+ * CodeGraph) for the `init`/`install` global runtime bootstrap.
+ *
+ * Non-interactive (non-TTY, or `--json`): unchanged from today — default on,
+ * `--no-external-skills`/`--no-codegraph` opt out.
+ *
+ * Interactive: for each item not explicitly passed on the CLI (i.e. its
+ * option value source isn't `'cli'`), prompt; Enter/`y` keeps today's
+ * default-on outcome, `n` skips it. An explicitly passed `--no-*` flag is
+ * honored without prompting.
+ */
+export async function resolveOptionalRuntimeDeps(
+  rawOpts: GlobalRuntimeCommandOptions,
+  cmd: OptionSourceLookup | undefined,
+  opts: ResolveOptionalRuntimeDepsOptions,
+): Promise<{ externalSkills: boolean; codegraph: boolean }> {
+  let externalSkills = rawOpts.externalSkills !== false;
+  let codegraph = rawOpts.codegraph !== false;
+  if (!opts.interactive) return { externalSkills, codegraph };
+
+  const input = opts.input ?? process.stdin;
+  const output = opts.output ?? process.stdout;
+  const rl = createInterface({ input, output, terminal: false });
+  try {
+    if (cmd?.getOptionValueSource('externalSkills') !== 'cli') {
+      externalSkills = await askConfirm(
+        rl,
+        output,
+        'Install external skills (Waza /think /hunt /check /health, Mermaid, cross-review)?',
+      );
+    }
+    if (cmd?.getOptionValueSource('codegraph') !== 'cli') {
+      codegraph = await askConfirm(rl, output, 'Install CodeGraph CLI and configure its MCP server?');
+    }
+  } finally {
+    rl.close();
+  }
+  return { externalSkills, codegraph };
+}
+
+async function runGlobalRuntimeBootstrap(
+  commandName: 'init' | 'install',
+  rawOpts: GlobalRuntimeCommandOptions,
+  cmd?: OptionSourceLookup,
+): Promise<never> {
   const target = assertTarget(rawOpts.target, commandName);
+  const interactive = process.stdin.isTTY === true && process.stdout.isTTY === true && rawOpts.json !== true;
+  const { externalSkills, codegraph } = await resolveOptionalRuntimeDeps(rawOpts, cmd, { interactive });
   const result = runGlobalRuntimeSetup({
     target,
     installCli: rawOpts.cli !== false,
     syncSkill: rawOpts.syncSkill !== false,
     hostAdapters: rawOpts.hooks !== false,
-    externalSkills: rawOpts.externalSkills !== false,
-    codegraph: rawOpts.codegraph !== false,
+    externalSkills,
+    codegraph,
     brainRoot: rawOpts.brainRoot,
   });
   if (rawOpts.json === true) {
@@ -114,8 +174,8 @@ export function buildProgram(): Command {
     .option('--brain-root <path>', 'Brain vault root to persist for repo-harness brain commands')
     .option('--refresh', 'Compatibility no-op; init already refreshes the idempotent user-level runtime')
     .option('--json', 'Output JSON instead of human-readable text')
-    .action((rawOpts: GlobalRuntimeCommandOptions & { refresh?: boolean }) => {
-      runGlobalRuntimeBootstrap('init', rawOpts);
+    .action(async (rawOpts: GlobalRuntimeCommandOptions & { refresh?: boolean }, cmd: Command) => {
+      await runGlobalRuntimeBootstrap('init', rawOpts, cmd);
     });
 
   program
@@ -388,10 +448,11 @@ export function buildProgram(): Command {
     .option('--no-codegraph', 'Skip CodeGraph CLI/MCP configuration')
     .option('--brain-root <path>', 'Brain vault root to persist for repo-harness brain commands')
     .option('--json', 'Output JSON instead of human-readable text')
-    .action((rawOpts: GlobalRuntimeCommandOptions & { location?: string }) => {
+    .action(async (rawOpts: GlobalRuntimeCommandOptions & { location?: string }, cmd: Command) => {
       const target = assertTarget(rawOpts.target, 'install');
       if (rawOpts.location === undefined) {
-        runGlobalRuntimeBootstrap('install', rawOpts);
+        await runGlobalRuntimeBootstrap('install', rawOpts, cmd);
+        return;
       }
       const location = assertLocation(rawOpts.location!, 'install');
       const result = runInstall({
