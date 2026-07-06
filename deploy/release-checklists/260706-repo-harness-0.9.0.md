@@ -9,12 +9,18 @@
   agent-fleet first-class dependencies, this repo's own Claude/Codex agent
   fleet, a frontend task profile, an archcontext boundary bridge, the
   EXECUTION_BOUNDARY anti-extras clause, and a review rubric v2 bump.
-- Publish status: source pushed (`main` = `30c59a6` on origin), annotated tag
-  `v0.9.0` pushed, GitHub release
-  `https://github.com/Ancienttwo/repo-harness/releases/tag/v0.9.0` created and
-  read back (2026-07-06); **npm publish still pending**.
-- Hold reason (npm): publish gated on the queued cross-vendor Codex
-  re-acceptance (`tasks/todos.md`) and the pre-publish battery items below.
+- Publish status: **fully published 2026-07-06** — `repo-harness@0.9.0` on npm
+  with `latest` dist-tag (shasum `420e0c00e344a159ec4eb52b78ac13df87dae612`,
+  `gitHead=c70fa29`), annotated tag `v0.9.0` at `c70fa29`, GitHub release
+  live and non-draft at
+  `https://github.com/Ancienttwo/repo-harness/releases/tag/v0.9.0`.
+- Retag note: the tag was first cut at `30c59a6`, then deliberately moved to
+  `c70fa29` after the install-bootstrap changes (interactive optional-dep
+  prompts, bunx skills, codegraph@latest) were folded into 0.9.0 by user
+  decision; the GitHub release was re-published against the new tag (tag
+  deletion had reverted it to draft). npm was published only after the move,
+  so registry `gitHead`, tag, and the fingerprint-bound acceptance all agree
+  on `c70fa29`.
 
 ## Scope
 
@@ -107,13 +113,27 @@
   body + Verification section, read back via `gh release view v0.9.0`
   (non-draft, non-prerelease); the release notes explicitly state npm 0.9.0
   is not yet published.
-- [ ] Cross-vendor Codex re-acceptance of the merged diffs (queued in
-  `tasks/todos.md`; supersedes both manual overrides).
-- [ ] Run the full `bun run check:release` battery (full `bun test`, type
-  check, deploy/architecture/task-sync/task-workflow gates, package dry-run,
-  tarball smoke).
-- [ ] Publish `repo-harness@0.9.0` to npm with the `latest` dist-tag.
-- [ ] Read back npm registry metadata, dist tag, tarball shasum/integrity, and
-  `gitHead`.
-- [ ] Run `bash scripts/check-release-published.sh 0.9.0` (2026-07-06 partial
-  run confirms npm currently 404s for 0.9.0, as expected pre-publish).
+- [x] Cross-vendor Codex re-acceptance of the merged diffs — **pass**,
+  fingerprint-bound. Reviewed scope `v0.8.5..c70fa29`; fingerprint command
+  `git diff v0.8.5..HEAD | shasum -a 256` =
+  `fd27185b205a4ef8efb21b8d43fc0ede8f2b60144c3dba5a86b1a17c1bd60e12`
+  (independently computed by Codex and by the orchestrator, byte-identical).
+  Round 1 (full review, ~310k tokens) found zero P1/P2 across the dual-parser
+  root-cause gate, EXECUTION_BOUNDARY propagation, template parity, policy
+  seeds, installer never-clobber/TOML-generation, strict readiness, dry-run
+  guard, and the install-bootstrap TTY delta, but failed closed on a
+  fingerprint pairing error in the dispatch (hook working-tree fingerprint
+  paired with release-diff scope). Round 2 re-bound the canonical command and
+  returned: External Acceptance pass; authority-closure pass;
+  agent-fleet-dependency pass; install-bootstrap delta pass; P1 blockers
+  none. This supersedes both interim manual overrides.
+- [x] Full `bun run check:release` battery green at `c70fa29` (full
+  `bun test` 1075 pass / 1 skip / 0 fail, type check, all gates, package
+  dry-run, tarball smoke `[release] OK`).
+- [x] Published `repo-harness@0.9.0` to npm with the `latest` dist-tag
+  (`prepublishOnly` re-ran the battery at publish time).
+- [x] Registry read-back agrees: version `0.9.0`, `dist-tags.latest=0.9.0`,
+  shasum `420e0c00e344a159ec4eb52b78ac13df87dae612`, integrity
+  `sha512-1bwtbn8D4SNVb[...]`, `gitHead=c70fa295488680bdcf51a264ea1321cc933ac69e`.
+- [x] `bash scripts/check-release-published.sh 0.9.0` → OK: registry,
+  dist-tag, tarball, tag, and local version files agree.
