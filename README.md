@@ -282,9 +282,12 @@ user-level hook adapters, configures Waza runtime skills, persists a brain root
 under `~/.repo-harness/config.json`, and configures CodeGraph MCP. In an
 interactive terminal it asks Y/n before installing the external skills and
 CodeGraph pieces (Enter keeps today's default of installing both); non-TTY
-runs and `--json` stay unprompted with the same default-on behavior. It does
-not apply repo-local workflow files to the current directory. `repo-harness
-init` remains a compatibility alias for existing scripts.
+runs and `--json` stay unprompted with the same default-on behavior. Passing
+`--no-external-skills` or `--no-codegraph` explicitly also skips that item's
+prompt unprompted, which is the escape hatch for PTY-allocating CI (for
+example `docker run -t`). It does not apply repo-local workflow files to the
+current directory. `repo-harness init` remains a compatibility alias for
+existing scripts.
 
 For an Agent-owned, read-only bootstrap audit, run `repo-harness setup check
 --json` or add `--check-updates` for version advisories. `setup check` is

@@ -1,6 +1,8 @@
 #!/usr/bin/env sh
 set -eu
 
+ORIGINAL_PATH="${PATH:-}"
+
 PACKAGE_NAME="repo-harness"
 PACKAGE_VERSION="${REPO_HARNESS_VERSION:-latest}"
 
@@ -67,5 +69,14 @@ verify_repo_harness
 
 log ""
 log "Next:"
-log "  repo-harness init"
+log "  repo-harness install"
 log "  repo-harness adopt --dry-run"
+
+case ":$ORIGINAL_PATH:" in
+  *":$BUN_INSTALL_DIR/bin:"*) ;;
+  *)
+    log ""
+    log "To use repo-harness in new shells, add to your shell profile:"
+    log "  export PATH=\"$BUN_INSTALL_DIR/bin:\$PATH\""
+    ;;
+esac

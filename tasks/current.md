@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-06T05:59:27+0800 -->
+<!-- updated_at: 2026-07-06T13:29:15+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Idle
-> **Updated At**: 2026-07-06T05:59:27+0800
-> **Source Branch**: codex/agent-fleet-dependency
-> **Source Commit**: 6629386
+> **Updated At**: 2026-07-06T13:29:15+0800
+> **Source Branch**: main
+> **Source Commit**: f5364ef
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: archive-workflow
+> **Reason**: review-follow-up-fixes
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -45,23 +45,43 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Checks
 
-- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
+- status=(none), source=(none), exit_code=(none), file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 10 changed/untracked path(s)
+- Summary: 30 changed/untracked path(s)
 
 ```
- D plans/plan-20260706-0232-agent-fleet-dependency.md
- D tasks/contracts/20260706-0232-agent-fleet-dependency.contract.md
- D tasks/notes/20260706-0232-agent-fleet-dependency.notes.md
- D tasks/reviews/20260706-0232-agent-fleet-dependency.review.md
- M tasks/todos.md
-?? plans/archive/plan-20260706-0232-agent-fleet-dependency.md
-?? tasks/archive/contract-20260706-0559-agent-fleet-dependency.md
-?? tasks/archive/notes-20260706-0559-agent-fleet-dependency.md
-?? tasks/archive/review-20260706-0559-agent-fleet-dependency.md
-?? tasks/archive/todo-20260706-0559-agent-fleet-dependency.md
+ M .ai/harness/policy.json
+ M .ai/hooks/.projection.json
+ M .ai/hooks/AGENTS.md
+ M .ai/hooks/CLAUDE.md
+ M .ai/hooks/codex-delegation-advisor.sh
+ M README.md
+ M assets/AGENTS.md
+ M assets/CLAUDE.md
+ M assets/hooks/AGENTS.md
+ M assets/hooks/CLAUDE.md
+ M assets/hooks/codex-delegation-advisor.sh
+ M assets/templates/helpers/check-agent-tooling.sh
+ M docs/architecture/index.md
+ M install.ps1
+ M install.sh
+ M scripts/AGENTS.md
+ M scripts/CLAUDE.md
+ M scripts/check-agent-tooling.sh
+ M scripts/lib/project-init-lib.sh
+ M tests/check-agent-tooling.test.ts
+ M tests/cli/codegraph-resolver.test.ts
+ M tests/cli/codegraph.test.ts
+ M tests/cli/doctor.test.ts
+ M tests/cli/global-runtime-init.test.ts
+ M tests/cli/hook.test.ts
+ M tests/cli/tools.test.ts
+ M tests/hook-contracts.test.ts
+?? docs/architecture/requests/runtime-harness-hook-adapters.md
+?? docs/architecture/requests/workflow-engine-contract-assets.md
+?? docs/architecture/requests/workflow-engine-inspection-migration.md
 ```
 
 ## Source Artifacts

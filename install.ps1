@@ -4,6 +4,7 @@ $PackageName = "repo-harness"
 $PackageVersion = if ($env:REPO_HARNESS_VERSION) { $env:REPO_HARNESS_VERSION } else { "latest" }
 $BunInstall = if ($env:BUN_INSTALL) { $env:BUN_INSTALL } else { Join-Path $HOME ".bun" }
 $BunBin = Join-Path $BunInstall "bin"
+$OriginalPath = $env:PATH
 
 function Add-BunToPath {
   if (Test-Path $BunBin) {
@@ -49,5 +50,12 @@ if (-not $Version) {
 Write-Host "repo-harness $Version installed."
 Write-Host ""
 Write-Host "Next:"
-Write-Host "  repo-harness init"
+Write-Host "  repo-harness install"
 Write-Host "  repo-harness adopt --dry-run"
+
+$PathSep = [System.IO.Path]::PathSeparator
+if ("$PathSep$OriginalPath$PathSep" -notlike "*$PathSep$BunBin$PathSep*") {
+  Write-Host ""
+  Write-Host "To use repo-harness in new shells, add to your PATH:"
+  Write-Host "  $BunBin"
+}
