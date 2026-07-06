@@ -46,12 +46,14 @@ describe("install script contracts", () => {
 
     expect(readme).toContain("curl -fsSL https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/install.sh | sh");
     expect(readme).toContain("irm https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/install.ps1 | iex");
-    expect(readme).toContain("<summary>Already have Bun? Use Bun directly, or npx as a fallback</summary>");
+    expect(readme).toContain("If Bun is already on PATH, you can skip the shell installer:");
+    expect(readme).toContain("bunx repo-harness install");
     expect(readme).toContain("bun add -g repo-harness");
     expect(readme).toContain("npx -y repo-harness install");
     expect(readme).not.toContain("npm install -g repo-harness");
     expect(zhReadme).toContain("curl -fsSL https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/install.sh | sh");
     expect(zhReadme).toContain("irm https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/install.ps1 | iex");
+    expect(zhReadme).toContain("bunx repo-harness install");
     expect(pkg.files).toContain("install.sh");
     expect(pkg.files).toContain("install.ps1");
   });

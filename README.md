@@ -234,6 +234,10 @@ concrete sprint instead of reinterpreting the original chat.
 
 ## First 5 Minutes
 
+<p align="center">
+  <img src="docs/images/repo-harness-install-donkey-carrot.png" alt="Pixel art donkey following a carrot for repo-harness installation" width="900">
+</p>
+
 This is the fastest path for an AI tooling owner evaluating whether the workflow is
 safe to adopt in a real repo. It separates the machine-level runtime bootstrap
 from the repo-local contract install, so a dry run can show exactly what will
@@ -256,19 +260,19 @@ curl -fsSL https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/instal
 irm https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/install.ps1 | iex
 ```
 
-<details>
-<summary>Already have Bun? Use Bun directly, or npx as a fallback</summary>
+If Bun is already on PATH, you can skip the shell installer:
 
 ```bash
-# Bun (recommended)
+# Bun one-shot bootstrap
+bunx repo-harness install
+
+# Or install the persistent CLI first
 bun add -g repo-harness
 repo-harness install
 
 # npx fallback, with Bun already on PATH because the CLI runs on Bun
 npx -y repo-harness install
 ```
-
-</details>
 
 ### 2. Bootstrap the host runtime once
 
@@ -279,15 +283,17 @@ repo-harness install
 `install` is the first-run global bootstrap path. It installs the current npm
 package as the global CLI, refreshes repo-harness skill aliases, installs
 user-level hook adapters, configures Waza runtime skills, persists a brain root
-under `~/.repo-harness/config.json`, and configures CodeGraph MCP. In an
-interactive terminal it asks Y/n before installing the external skills and
-CodeGraph pieces (Enter keeps today's default of installing both); non-TTY
+under `~/.repo-harness/config.json`, and configures CodeGraph MCP. The command
+is idempotent: when the CLI is already installed from Bun's global package
+source, it skips the CLI reinstall and still refreshes the host runtime pieces.
+In an interactive terminal it asks Y/n before installing the external skills
+and CodeGraph pieces (Enter keeps today's default of installing both); non-TTY
 runs and `--json` stay unprompted with the same default-on behavior. Passing
 `--no-external-skills` or `--no-codegraph` explicitly also skips that item's
-prompt unprompted, which is the escape hatch for PTY-allocating CI (for
-example `docker run -t`). It does not apply repo-local workflow files to the
-current directory. `repo-harness init` remains a compatibility alias for
-existing scripts.
+prompt unprompted, which is the escape hatch for PTY-allocating CI (for example
+`docker run -t`). It does not apply repo-local workflow files to the current
+directory. `repo-harness init` remains a compatibility alias for existing
+scripts.
 
 For an Agent-owned, read-only bootstrap audit, run `repo-harness setup check
 --json` or add `--check-updates` for version and adopted-repo refresh

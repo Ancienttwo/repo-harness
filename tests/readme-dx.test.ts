@@ -55,8 +55,11 @@ describe("README DX contract", () => {
     const maintainer = section(readme, "Maintainer Reference");
 
     expect(readme.indexOf("## First 5 Minutes")).toBeLessThan(readme.indexOf("## MCP Connector Quickstart"));
+    expect(firstFive).toContain("docs/images/repo-harness-install-donkey-carrot.png");
     expect(firstFive).toContain("No Node.js required for the default path");
-    expect(firstFive).toContain("# Bun (recommended)");
+    expect(firstFive).toContain("# Bun one-shot bootstrap");
+    expect(firstFive).toContain("bunx repo-harness install");
+    expect(firstFive).toContain("# Or install the persistent CLI first");
     expect(firstFive).toContain("bun add -g repo-harness");
     expect(firstFive).toContain("npx fallback");
     expect(firstFive).toContain("npx -y repo-harness install");
