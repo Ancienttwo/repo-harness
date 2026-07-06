@@ -155,6 +155,19 @@ metadata_value() {
   ' "$file" 2>/dev/null
 }
 
+active_pending_request_file() {
+  local file="$1"
+  if [[ -z "$file" || "$file" == "unknown" || "$file" == *"/archive/"* || ! -f "$file" ]]; then
+    echo "(none)"
+    return 0
+  fi
+  if [[ "$(metadata_value "$file" "Status" | tr '[:upper:]' '[:lower:]')" == "pending" ]]; then
+    echo "$file"
+  else
+    echo "(none)"
+  fi
+}
+
 format_active_workstreams() {
   local dir="$1"
   local count=0
@@ -440,6 +453,7 @@ if [[ "$latest_snapshot" != "(none yet)" ]]; then
   semantic_diagram_source="$latest_snapshot"
 fi
 active_workstreams="$(format_active_workstreams "$workstream_dir")"
+pending_request_file="$(active_pending_request_file "${request_file:-}")"
 
 block_tmp="$(mktemp)"
 cat > "$block_tmp" <<EOF_BLOCK
@@ -466,7 +480,7 @@ cat > "$block_tmp" <<EOF_BLOCK
 - Latest snapshot: \`${latest_snapshot}\`
 - Semantic diagram source: \`${semantic_diagram_source}\`
 - Latest human diagram: \`${latest_human_diagram}\`
-- Pending architecture request: \`${request_file:-unknown}\`
+- Pending architecture request: \`${pending_request_file}\`
 
 ## Active Workstreams
 

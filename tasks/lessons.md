@@ -13,6 +13,12 @@
 ## Active Lessons
 
 - Date: 2026-07-06
+- Triggered by correction: `context-contract-sync sync-latest` repopulated `Pending architecture request` from the latest event's stale `request_file` after the request card had already been archived.
+- Mistake pattern: treating architecture event history as the live pending-request authority. Archived cards retain their original `request_file` for audit, so rendering that value directly makes resolved drift look active again.
+- Prevention rule: local architecture contracts may display a pending request only when the referenced card currently exists outside `docs/architecture/requests/archive/` and its metadata `Status` is `Pending`; otherwise render `(none)`.
+- Where to apply next time: every renderer or hook that projects architecture queue state from `.ai/harness/architecture/events.jsonl` into `AGENTS.md`, `CLAUDE.md`, session-start context, or architecture indexes.
+
+- Date: 2026-07-06
 - Triggered by correction: rubric-v2 scope gate + Codex acceptance both flagged `tasks/todos.md` outside hand-filled `allowed_paths`.
 - Mistake pattern: stripping tooling-touched default paths (`tasks/todos.md`) from the contract template's `allowed_paths` when hand-filling briefs.
 - Prevention rule: keep the template's default `allowed_paths` entries that projection tooling writes to (`tasks/todos.md`); minimal-change applies to scope semantics, not to deleting tooling defaults.

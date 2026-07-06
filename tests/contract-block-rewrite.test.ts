@@ -55,6 +55,30 @@ function makeFixture(agentsContent: string): string {
   return cwd;
 }
 
+function runShellSyncEvent(cwd: string, requestFile: string) {
+  const event = JSON.stringify({
+    functional_block: "apps/web",
+    capability_id: "apps-web",
+    matched_prefix: "apps/web",
+    file_path: "apps/web/routes.ts",
+    severity: "medium",
+    change_type: "source-change",
+    request_file: requestFile,
+    ts: "2026-07-06T15:13:43+0800",
+    architecture_domain: "apps-web",
+    architecture_capability: "web",
+    architecture_module: "docs/architecture/modules/apps-web/web.md",
+    workstream_dir: "tasks/workstreams/apps-web/web",
+    contract_agents: "apps/web/AGENTS.md",
+    contract_claude: "apps/web/CLAUDE.md",
+    lsp_profile: "typescript-lsp",
+  });
+  return spawnSync("bash", [SYNC_SCRIPT, "sync-event", "--json", event], {
+    cwd,
+    encoding: "utf-8",
+  });
+}
+
 // Run the real replace_contract_block function extracted from
 // context-contract-sync.sh against a source file, returning {status, output}.
 function runShellReplace(sourceContent: string): { status: number | null; output: string | null; stderr: string } {
@@ -186,5 +210,32 @@ describe("contract block rewrite hardening", () => {
     expect(res.output).toContain("outro");
     expect(res.output).not.toContain("old\n");
     expect(res.output?.match(/<!-- BEGIN ARCHITECTURE CONTRACT -->/g)?.length).toBe(1);
+  });
+
+  test("shell fallback renders no pending request when the event request has been archived", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "context-sync-shell-fallback-"));
+    const requestFile = "docs/architecture/requests/apps-web.md";
+    try {
+      mkdirSync(join(cwd, "apps/web"), { recursive: true });
+      mkdirSync(join(cwd, "docs/architecture/requests/archive/2026"), { recursive: true });
+      writeFileSync(join(cwd, "apps/web/AGENTS.md"), "# Web Context\n");
+      writeFileSync(
+        join(cwd, "docs/architecture/requests/archive/2026/apps-web.md"),
+        [
+          "# Architecture Queue Card: apps-web",
+          "",
+          "> **Status**: Resolved",
+          "",
+        ].join("\n"),
+      );
+
+      const res = runShellSyncEvent(cwd, requestFile);
+      expect(res.status).toBe(0);
+      const agents = readFileSync(join(cwd, "apps/web/AGENTS.md"), "utf-8");
+      expect(agents).toContain("Pending architecture request: `(none)`");
+      expect(agents).not.toContain(`Pending architecture request: \`${requestFile}\``);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
   });
 });

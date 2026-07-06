@@ -645,6 +645,13 @@ function findLatestMatchingFile(dir: string, token: string, extension: string): 
   return files.at(-1) || "(none yet)";
 }
 
+function activePendingRequestFile(file: string): string {
+  if (!file || file === "unknown") return "(none)";
+  if (file.includes("/archive/")) return "(none)";
+  if (!existsSync(file)) return "(none)";
+  return isPendingRequest(file) ? file : "(none)";
+}
+
 function collectFiles(dir: string): string[] {
   if (!existsSync(dir)) return [];
   const files: string[] = [];
@@ -680,7 +687,7 @@ function renderContractBlock(args: Args): string {
   const severity = args.options.severity || "unknown";
   const changeType = args.options.changeType || "unknown";
   const lspProfile = args.options.lspProfile || "typescript-lsp";
-  const requestFile = args.options.requestFile || "unknown";
+  const requestFile = activePendingRequestFile(args.options.requestFile || "");
 
   return [
     "<!-- BEGIN ARCHITECTURE CONTRACT -->",

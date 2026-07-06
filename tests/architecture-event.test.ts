@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
@@ -207,6 +207,75 @@ describe("architecture-event helper", () => {
       expect(agents).toContain("Semantic diagram source: `docs/architecture/snapshots/20260527-apps-web.md`");
       expect(agents).toContain("Latest human diagram: `docs/architecture/diagrams/20260527-apps-web.html`");
       expect(agents).toContain("current_slice: Shell reduction");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("syncs pending architecture request only when the card is active and pending", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "architecture-event-pending-request-"));
+    const requestPath = "docs/architecture/requests/apps-web.md";
+    const archivedRequestPath = "docs/architecture/requests/archive/2026/apps-web.md";
+    const args = [
+      "sync-contract-files",
+      "--functional-block",
+      "apps/web",
+      "--capability-id",
+      "apps-web",
+      "--matched-prefix",
+      "apps/web",
+      "--architecture-domain",
+      "apps-web",
+      "--architecture-capability",
+      "web",
+      "--architecture-module",
+      "docs/architecture/modules/apps-web/web.md",
+      "--workstream-dir",
+      "tasks/workstreams/apps-web/web",
+      "--contract-agents",
+      "apps/web/AGENTS.md",
+      "--contract-claude",
+      "apps/web/CLAUDE.md",
+      "--event-ts",
+      "2026-07-06T15:13:43+0800",
+      "--file-path",
+      "apps/web/routes.ts",
+      "--severity",
+      "medium",
+      "--change-type",
+      "source-change",
+      "--request-file",
+      requestPath,
+      "--lsp-profile",
+      "typescript-lsp",
+    ];
+
+    try {
+      mkdirSync(join(cwd, "apps/web"), { recursive: true });
+      mkdirSync(join(cwd, "docs/architecture/requests/archive/2026"), { recursive: true });
+      writeFileSync(join(cwd, "apps/web/AGENTS.md"), "# Web Context\n");
+      writeFileSync(
+        join(cwd, requestPath),
+        [
+          "# Architecture Queue Card: apps-web",
+          "",
+          "> **Status**: Pending",
+          "> **Updated**: 2026-07-06T15:13:43+0800",
+          "",
+        ].join("\n"),
+      );
+
+      const pending = runArchitectureEvent(args, cwd);
+      expect(pending.status).toBe(0);
+      let agents = readFileSync(join(cwd, "apps/web/AGENTS.md"), "utf-8");
+      expect(agents).toContain(`Pending architecture request: \`${requestPath}\``);
+
+      renameSync(join(cwd, requestPath), join(cwd, archivedRequestPath));
+      const archived = runArchitectureEvent(args, cwd);
+      expect(archived.status).toBe(0);
+      agents = readFileSync(join(cwd, "apps/web/AGENTS.md"), "utf-8");
+      expect(agents).toContain("Pending architecture request: `(none)`");
+      expect(agents).not.toContain(`Pending architecture request: \`${requestPath}\``);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
