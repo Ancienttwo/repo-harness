@@ -63,7 +63,6 @@ describe('init command global runtime bootstrap', () => {
     const repo = join(tmp, 'repo');
     const fakeBin = join(tmp, 'bin');
     const bunLog = join(tmp, 'bun.log');
-    const npxLog = join(tmp, 'npx.log');
     const bunxLog = join(tmp, 'bunx.log');
     const codegraphLog = join(tmp, 'codegraph.log');
     try {
@@ -80,23 +79,12 @@ describe('init command global runtime bootstrap', () => {
       writeFakeCodegraph(fakeBin, codegraphLog);
       writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nexit 0\n`);
       // The install/init external-skills bootstrap (installWazaSkills /
-      // installMermaidSkill) invokes `bunx skills add ...` directly.
-      writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunxLog}"\nexit 0\n`);
-      // The CodeGraph MCP configure step shells out to the real
+      // installMermaidSkill) invokes `bunx skills add ...` directly, and the
+      // CodeGraph MCP configure step shells out to the real
       // scripts/check-agent-tooling.sh (for repo-agnostic tooling detection),
-      // which still calls `npx -y skills ls -g --json` for Waza status; keep
-      // a fake npx so that unrelated read-only call doesn't hit the network.
-      writeExecutable(
-        join(fakeBin, 'npx'),
-        [
-          '#!/bin/bash',
-          'set -euo pipefail',
-          `printf '%s\\n' "$*" >> "${npxLog}"`,
-          'if [[ "$*" == *"skills ls -g --json"* ]]; then echo "[]"; fi',
-          'exit 0',
-          '',
-        ].join('\n'),
-      );
+      // which also calls `bunx skills ls -g --json` for Waza status. This one
+      // fake bunx answers both, so the read-only probe never hits the network.
+      writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunxLog}"\nexit 0\n`);
 
       const result = runGlobalRuntimeSetup({
         sourceRoot: source,
@@ -130,6 +118,10 @@ describe('init command global runtime bootstrap', () => {
         join(home, 'Documents', 'brain'),
       );
       expect(readFileSync(codegraphLog, 'utf-8')).toContain('codegraph install --target codex --location global --yes');
+      // Regression guard: the Waza status probe inside check-agent-tooling.sh
+      // must go through bunx, not npx, so bun-only machines don't get a false
+      // "Waza unavailable" report from the setup check diagnostic surface.
+      expect(readFileSync(bunxLog, 'utf-8')).toContain('skills ls -g --json');
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

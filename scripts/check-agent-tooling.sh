@@ -709,7 +709,7 @@ function inspectWazaSkill(host, skill, skillLock, skillItems, upstreamSkills) {
 function detectWaza() {
   const skillLockPath = path.join(HOME, ".agents", ".skill-lock.json");
   const skillLock = readJson(skillLockPath);
-  const skillsResult = run("npx", ["-y", "skills", "ls", "-g", "--json"], { timeoutMs: 1500 });
+  const skillsResult = run("bunx", ["skills", "ls", "-g", "--json"], { timeoutMs: 1500 });
   const skillItems = skillsResult.ok ? parseJson(skillsResult.stdout) || [] : [];
   const wazaEntries = Object.entries(skillLock?.skills || {}).filter(([, meta]) => meta?.source === WAZA_SOURCE_REPO);
   const upstream = fetchWazaUpstreamSkills();
@@ -815,7 +815,7 @@ function detectWaza() {
         : "Local Waza SKILL.md and shared rule files match upstream GitHub raw content.";
 
   const status = summarizeWazaStatus(hostStatuses);
-  const installCommand = `npx -y skills add tw93/Waza -g -a ${
+  const installCommand = `bunx skills add tw93/Waza -g -a ${
     hostMode === "both" ? "claude-code codex" : hostMode === "claude" ? "claude-code" : "codex"
   } -s think hunt check health -y`;
   const syncCommand = SELECTED_HOSTS.map((host) => buildWazaHostSyncCommand(host)).join(" && ");
@@ -889,7 +889,7 @@ function detectRuntimeCapabilities(waza) {
       owner: "external-skills-cli",
       required: false,
       required_for: "Waza/Mermaid external skill bootstrap; repo-harness reports this as an explicit exception boundary",
-      command: "npx -y skills ls -g --json",
+      command: "bunx skills ls -g --json",
     },
     bash: commandCapability(
       "bash",

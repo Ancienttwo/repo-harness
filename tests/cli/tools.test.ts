@@ -80,7 +80,7 @@ function writeFakeGbrain(fakeBin: string) {
 
 function writeFakeNpx(fakeBin: string) {
   writeExecutable(
-    join(fakeBin, "npx"),
+    join(fakeBin, "bunx"),
     [
       "#!/bin/bash",
       "set -euo pipefail",

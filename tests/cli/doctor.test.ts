@@ -118,7 +118,7 @@ function writeFakeGbrain(fakeBin: string): void {
 
 function writeFakeNpx(fakeBin: string): void {
   writeExecutable(
-    path.join(fakeBin, 'npx'),
+    path.join(fakeBin, 'bunx'),
     [
       '#!/bin/bash',
       'set -euo pipefail',

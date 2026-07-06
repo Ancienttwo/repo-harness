@@ -120,11 +120,11 @@ function writeFakeNpx(fakeBin: string, logFile?: string) {
     .map((item) => JSON.stringify(item))
     .join(",");
   writeExecutable(
-    join(fakeBin, "npx"),
+    join(fakeBin, "bunx"),
     [
       "#!/bin/bash",
       "set -euo pipefail",
-      logFile ? `echo "npx $*" >> "${logFile}"` : "",
+      logFile ? `echo "bunx $*" >> "${logFile}"` : "",
       "if [[ \"$*\" == *\"skills ls -g --json\"* ]]; then",
       `  echo '[${items}]'`,
       "  exit 0",
@@ -535,11 +535,11 @@ describe("check-agent-tooling", () => {
       );
 
       writeExecutable(
-        join(envRoot.fakeBin, "npx"),
+        join(envRoot.fakeBin, "bunx"),
         [
           "#!/bin/bash",
           "set -euo pipefail",
-          `echo "npx $*" >> "${logFile}"`,
+          `echo "bunx $*" >> "${logFile}"`,
           "if [[ \"$*\" == *\"skills ls -g --json\"* ]]; then",
           `  echo '[${WAZA_SKILLS.map((skill) => JSON.stringify({ name: skill, agents: ["Claude Code", "Codex"] })).join(",")}]'`,
           "  exit 0",
