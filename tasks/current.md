@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-06T14:26:26+0800 -->
+<!-- updated_at: 2026-07-06T15:04:40+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Idle
-> **Updated At**: 2026-07-06T14:26:26+0800
+> **Updated At**: 2026-07-06T15:04:40+0800
 > **Source Branch**: main
-> **Source Commit**: 38e20ab
+> **Source Commit**: 5b6507b
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: install-surface-ship
+> **Reason**: p3-npx-remnant-cleanup
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -49,7 +49,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 19 changed/untracked path(s)
+- Summary: 32 changed/untracked path(s)
 
 ```
  M .ai/harness/policy.json
@@ -62,15 +62,28 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
  M assets/hooks/AGENTS.md
  M assets/hooks/CLAUDE.md
  M assets/hooks/codex-delegation-advisor.sh
- M docs/architecture/index.md
+ M assets/reference-configs/external-tooling.md
+ M assets/templates/helpers/check-agent-tooling.sh
+ M docs/architecture/modules/runtime-harness/hook-adapters.md
+ M docs/architecture/modules/workflow-engine/contract-assets.md
+ M docs/architecture/modules/workflow-engine/inspection-migration.md
+ M docs/reference-configs/external-tooling.md
  M scripts/AGENTS.md
  M scripts/CLAUDE.md
+ M scripts/check-agent-tooling.sh
  M scripts/lib/project-init-lib.sh
+ M tasks/current.md
+ M tests/check-agent-tooling.test.ts
+ M tests/cli/codegraph-resolver.test.ts
+ M tests/cli/codegraph.test.ts
+ M tests/cli/doctor.test.ts
+ M tests/cli/global-runtime-init.test.ts
  M tests/cli/hook.test.ts
+ M tests/cli/tools.test.ts
  M tests/hook-contracts.test.ts
-?? docs/architecture/requests/runtime-harness-hook-adapters.md
-?? docs/architecture/requests/workflow-engine-contract-assets.md
-?? docs/architecture/requests/workflow-engine-inspection-migration.md
+?? docs/architecture/requests/archive/2026/20260706-145203-runtime-harness-hook-adapters.md
+?? docs/architecture/requests/archive/2026/20260706-145209-workflow-engine-contract-assets.md
+?? docs/architecture/requests/archive/2026/20260706-145215-workflow-engine-inspection-migration.md
 ```
 
 ## Source Artifacts

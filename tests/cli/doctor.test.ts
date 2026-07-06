@@ -116,7 +116,7 @@ function writeFakeGbrain(fakeBin: string): void {
   );
 }
 
-function writeFakeNpx(fakeBin: string): void {
+function writeFakeBunx(fakeBin: string): void {
   writeExecutable(
     path.join(fakeBin, 'bunx'),
     [
@@ -371,7 +371,7 @@ describe('doctor command (Phase 1C)', () => {
       );
       writeFakeCodeGraph(envRoot.fakeBin, logFile);
       writeFakeGbrain(envRoot.fakeBin);
-      writeFakeNpx(envRoot.fakeBin);
+      writeFakeBunx(envRoot.fakeBin);
 
       const root = path.join(import.meta.dir, '..', '..');
       const res = spawnSync('bun', [path.join(root, 'src/cli/index.ts'), 'doctor', '--json'], {

@@ -114,7 +114,7 @@ function symlinkClaudeWazaToAgents(home: string) {
   }
 }
 
-function writeFakeNpx(fakeBin: string, logFile?: string) {
+function writeFakeBunx(fakeBin: string, logFile?: string) {
   const items = WAZA_SKILLS
     .map((skill) => ({ name: skill, agents: ["Claude Code", "Codex"] }))
     .map((item) => JSON.stringify(item))
@@ -326,7 +326,7 @@ describe("check-agent-tooling", () => {
       writeSkill(join(envRoot.home, ".codex", "skills"), "mermaid", "1.0.0");
       symlinkClaudeWazaToAgents(envRoot.home);
       writeWazaLock(envRoot.home);
-      writeFakeNpx(envRoot.fakeBin);
+      writeFakeBunx(envRoot.fakeBin);
       writeFakeGbrain(envRoot.fakeBin);
       writeFakeCodeGraph(envRoot.fakeBin);
 
@@ -347,7 +347,7 @@ describe("check-agent-tooling", () => {
         expect.arrayContaining(["bun", "npm", "npx", "skills_cli", "bash", "rsync", "symlink"])
       );
       expect(report.runtime_capabilities.bun.required).toBe(true);
-      expect(report.runtime_capabilities.npx.owner).toBe("external-skills-cli");
+      expect(report.runtime_capabilities.npx.owner).toBe("npm-registry");
       expect(report.runtime_capabilities.skills_cli.status).toBe("available");
       expect(report.runtime_capabilities.rsync.required).toBe(false);
       expect(report.runtime_capabilities.symlink.required_for).toContain("copy mode remains the fallback");
@@ -441,7 +441,7 @@ describe("check-agent-tooling", () => {
     const envRoot = setupFakeEnvironment("check-agent-tooling-codegraph-claude-deferred");
     try {
       writeClaudeCodeGraphConfig(envRoot.home, false);
-      writeFakeNpx(envRoot.fakeBin);
+      writeFakeBunx(envRoot.fakeBin);
       writeFakeGbrain(envRoot.fakeBin);
       writeFakeCodeGraph(envRoot.fakeBin);
 
@@ -473,7 +473,7 @@ describe("check-agent-tooling", () => {
     const envRoot = setupFakeEnvironment("check-agent-tooling-codegraph-claude-always-load");
     try {
       writeClaudeCodeGraphConfig(envRoot.home, true);
-      writeFakeNpx(envRoot.fakeBin);
+      writeFakeBunx(envRoot.fakeBin);
       writeFakeGbrain(envRoot.fakeBin);
       writeFakeCodeGraph(envRoot.fakeBin);
 
@@ -613,7 +613,7 @@ describe("check-agent-tooling", () => {
     try {
       mkdirSync(join(envRoot.home, ".codex"), { recursive: true });
       writeFileSync(join(envRoot.home, ".codex", "config.toml"), "# no codegraph mcp\n");
-      writeFakeNpx(envRoot.fakeBin);
+      writeFakeBunx(envRoot.fakeBin);
       writeFakeGbrain(envRoot.fakeBin);
       writeFakeCodeGraph(envRoot.fakeBin);
 
@@ -654,7 +654,7 @@ describe("check-agent-tooling", () => {
       writeSkill(join(envRoot.home, ".codex", "skills"), "mermaid", "1.0.0");
       symlinkClaudeWazaToAgents(envRoot.home);
       writeWazaLock(envRoot.home);
-      writeFakeNpx(envRoot.fakeBin);
+      writeFakeBunx(envRoot.fakeBin);
       writeFakeGbrain(envRoot.fakeBin);
       writeFakeCodeGraph(envRoot.fakeBin);
       writeFakeNpm(envRoot.fakeBin, "0.9.6");
@@ -710,7 +710,7 @@ describe("check-agent-tooling", () => {
       writeSkill(join(envRoot.home, ".codex", "skills"), "mermaid", "1.0.0");
       symlinkClaudeWazaToAgents(envRoot.home);
       writeWazaLock(envRoot.home);
-      writeFakeNpx(envRoot.fakeBin);
+      writeFakeBunx(envRoot.fakeBin);
       writeFakeGbrain(envRoot.fakeBin);
       writeFakeCodeGraph(envRoot.fakeBin);
       writeFakeNpm(envRoot.fakeBin, "0.9.6");
@@ -753,7 +753,7 @@ describe("check-agent-tooling", () => {
       mkdirSync(localBin, { recursive: true });
       mkdirSync(join(envRoot.home, ".codex"), { recursive: true });
       writeFileSync(join(envRoot.home, ".codex", "config.toml"), "[mcp_servers.codegraph]\ncommand = \"codegraph\"\n");
-      writeFakeNpx(envRoot.fakeBin);
+      writeFakeBunx(envRoot.fakeBin);
       writeFakeGbrain(envRoot.fakeBin);
       writeFakeCodeGraph(localBin, { version: "0.9.6" });
       writeFakeCodeGraph(envRoot.fakeBin, { version: "0.8.0" });
@@ -799,7 +799,7 @@ describe("check-agent-tooling", () => {
         join(envRoot.root, "package.json"),
         JSON.stringify({ devDependencies: { "@colbymchenry/codegraph": "1.0.1" } }, null, 2)
       );
-      writeFakeNpx(envRoot.fakeBin);
+      writeFakeBunx(envRoot.fakeBin);
       writeFakeGbrain(envRoot.fakeBin);
       writeFakeCodeGraph(bundleBin, { version: "1.0.1" });
       writeExecutable(join(shimBin, "codegraph"), "#!/bin/bash\necho 'bad shim used' >&2\nexit 99\n");
@@ -830,7 +830,7 @@ describe("check-agent-tooling", () => {
     const envRoot = setupFakeEnvironment("check-agent-tooling-fleet-missing");
     try {
       writeClaudeCodeGraphConfig(envRoot.home, true);
-      writeFakeNpx(envRoot.fakeBin);
+      writeFakeBunx(envRoot.fakeBin);
       writeFakeGbrain(envRoot.fakeBin);
       writeFakeCodeGraph(envRoot.fakeBin);
 
@@ -863,7 +863,7 @@ describe("check-agent-tooling", () => {
     const envRoot = setupFakeEnvironment("check-agent-tooling-fleet-partial");
     try {
       writeClaudeCodeGraphConfig(envRoot.home, true);
-      writeFakeNpx(envRoot.fakeBin);
+      writeFakeBunx(envRoot.fakeBin);
       writeFakeGbrain(envRoot.fakeBin);
       writeFakeCodeGraph(envRoot.fakeBin);
 
@@ -909,7 +909,7 @@ describe("check-agent-tooling", () => {
         copyFileSync(join(ROOT, ".claude", "agents", `${agent}.md`), join(envRoot.home, ".claude", "agents", `${agent}.md`));
         copyFileSync(join(ROOT, ".codex", "agents", `${agent}.toml`), join(envRoot.home, ".codex", "agents", `${agent}.toml`));
       }
-      writeFakeNpx(envRoot.fakeBin);
+      writeFakeBunx(envRoot.fakeBin);
       writeFakeGbrain(envRoot.fakeBin);
       writeFakeCodeGraph(envRoot.fakeBin);
 
@@ -959,7 +959,7 @@ describe("check-agent-tooling", () => {
         writeFileSync(join(envRoot.home, ".codex", "agents", `${agent}.toml`), `name = "${agent}"\n`);
       }
 
-      writeFakeNpx(envRoot.fakeBin);
+      writeFakeBunx(envRoot.fakeBin);
       writeFakeGbrain(envRoot.fakeBin);
       writeFakeCodeGraph(envRoot.fakeBin);
       writeFakeNpm(envRoot.fakeBin, "0.9.6");

@@ -485,7 +485,6 @@ describe('init command global runtime bootstrap', () => {
     const fakeBin = join(tmp, 'bin');
     const bunLog = join(tmp, 'bun.log');
     const bunxLog = join(tmp, 'bunx.log');
-    const npxLog = join(tmp, 'npx.log');
     const codegraphLog = join(tmp, 'codegraph.log');
     try {
       mkdirSync(home, { recursive: true });
@@ -494,17 +493,6 @@ describe('init command global runtime bootstrap', () => {
       writeFakeCodegraph(fakeBin, codegraphLog);
       writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nexit 0\n`);
       writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunxLog}"\nexit 0\n`);
-      writeExecutable(
-        join(fakeBin, 'npx'),
-        [
-          '#!/bin/bash',
-          'set -euo pipefail',
-          `printf '%s\\n' "$*" >> "${npxLog}"`,
-          'if [[ "$*" == *"skills ls -g --json"* ]]; then echo "[]"; fi',
-          'exit 0',
-          '',
-        ].join('\n'),
-      );
 
       // spawnSync's stdio pipes are never a TTY (isTTY is undefined), so this
       // exercises the non-interactive branch of runGlobalRuntimeBootstrap.

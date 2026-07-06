@@ -78,7 +78,7 @@ function writeFakeGbrain(fakeBin: string) {
   );
 }
 
-function writeFakeNpx(fakeBin: string) {
+function writeFakeBunx(fakeBin: string) {
   writeExecutable(
     join(fakeBin, "bunx"),
     [
@@ -119,7 +119,7 @@ function runConfigure(target: string, options: RunConfigureOptions = {}) {
 
     writeFakeCodeGraph(envRoot.fakeBin, logFile);
     writeFakeGbrain(envRoot.fakeBin);
-    writeFakeNpx(envRoot.fakeBin);
+    writeFakeBunx(envRoot.fakeBin);
 
     const res = spawnSync("bun", [CLI, "tools", "configure", "codegraph", "--target", target, "--location", "global", "--json", "--repo", ROOT], {
       cwd: ROOT,

@@ -56,7 +56,7 @@ function writeFakeGbrain(fakeBin: string) {
   );
 }
 
-function writeFakeNpx(fakeBin: string) {
+function writeFakeBunx(fakeBin: string) {
   writeExecutable(
     join(fakeBin, "bunx"),
     [
@@ -78,7 +78,7 @@ describe("tools ensure codegraph", () => {
       writeFileSync(join(envRoot.home, ".codex", "config.toml"), "[mcp_servers.codegraph]\ncommand = \"codegraph\"\n");
       writeFakeCodeGraph(envRoot.fakeBin, logFile);
       writeFakeGbrain(envRoot.fakeBin);
-      writeFakeNpx(envRoot.fakeBin);
+      writeFakeBunx(envRoot.fakeBin);
 
       const res = spawnSync("bun", [CLI, "tools", "ensure", "codegraph", "--check", "--json", "--repo", ROOT], {
         cwd: ROOT,

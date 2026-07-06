@@ -878,8 +878,8 @@ function detectRuntimeCapabilities(waza) {
     ),
     npx: commandCapability(
       "npx",
-      "external Skills CLI bootstrap/update commands for Waza and Mermaid",
-      "external-skills-cli",
+      "no repo-harness usage; Skills CLI bootstrap/update for Waza and Mermaid runs through bunx instead",
+      "npm-registry",
       false
     ),
     skills_cli: {
