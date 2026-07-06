@@ -27,9 +27,9 @@ export type CapabilityRegistry = {
 
 // archcontext-boundaries-v1 is a deliberately narrow, read-only export of the
 // capability registry shaped as a subset of ArchitectureNode (archcontext.node/v1).
-// See tests/fixtures/archcontext/architecture-node.subset.schema.json for the
-// vendored schema subset and docs/researches/20260705-archcontext-capability-filing-handover.md
-// for why this stays a read-only bridge (no archctx runtime dependency).
+// Tests derive the bridge subset from archctx-contracts' authoritative schema;
+// docs/researches/20260705-archcontext-capability-filing-handover.md explains
+// why this stays a read-only bridge with no archctx CLI/daemon runtime dependency.
 export type ArchContextBoundaryNode = {
   schemaVersion: "archcontext.node/v1";
   id: string;

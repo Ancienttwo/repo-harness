@@ -1,6 +1,6 @@
 {
-  "version": "0.9.0",
-  "templateVersion": "0.9.0",
+  "version": "0.9.1",
+  "templateVersion": "0.9.1",
   "skillName": "repo-harness",
   "contractId": "tasks-first-harness-v1",
   "compatibility": {
@@ -191,6 +191,10 @@
     {
       "version": "0.9.0",
       "description": "Adds a bugfix task profile with root-cause evidence gating, distills contract-brief prompts and templates, makes the agent fleet and geju first-class dependencies, adds a frontend task profile and archcontext boundary bridge, and lands the EXECUTION_BOUNDARY anti-extras clause across delegated runners"
+    },
+    {
+      "version": "0.9.1",
+      "description": "Hardens the Bun-first installer and setup-check path with bunx skills probes, PATH readback hints, and explicit Codex delegation-mode selection"
     }
   ],
   "generatedProjectStamp": {

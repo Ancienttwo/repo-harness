@@ -289,6 +289,7 @@ describe("workflow contract manifest", () => {
     expect(gitignore).toContain(".repo-harness/chatgpt-browser.local.json");
     expect(gitignore).toContain(".ai/harness/triage/*");
     expect(gitignore).toContain("!.ai/harness/triage/.gitkeep");
+    expect(gitignore).toContain(".archcontext/");
   });
 });
 

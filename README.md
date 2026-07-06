@@ -85,7 +85,7 @@ active plan, contract, review, checks, or handoff, the source artifacts win.
 ## What's New
 
 Release notes live in [`docs/CHANGELOG.md`](docs/CHANGELOG.md). The current line
-is `0.9.0`.
+is `0.9.1`.
 
 ## How It Works
 
@@ -290,10 +290,11 @@ current directory. `repo-harness init` remains a compatibility alias for
 existing scripts.
 
 For an Agent-owned, read-only bootstrap audit, run `repo-harness setup check
---json` or add `--check-updates` for version advisories. `setup check` is
-not a runtime hook: it does not write user-level files, install updates, or
-register adapters. It emits `agent_actions` with the reason, risk, target files,
-optional command, and verification surface for the Agent to execute deliberately.
+--json` or add `--check-updates` for version and adopted-repo refresh
+advisories. `setup check` is not a runtime hook: it does not write user-level
+files, install updates, run `adopt`, or register adapters. It emits
+`agent_actions` with the reason, risk, target files, optional command, and
+verification surface for the Agent to execute deliberately.
 `repo-harness init-hook` remains a compatibility alias.
 
 ### Install and refresh examples
@@ -626,8 +627,8 @@ Most common guards:
 
 ## Current Release
 
-- npm package: `repo-harness@0.9.0`
-- Generated workflow stamp: `repo-harness@0.9.0+template@0.9.0`
+- npm package: `repo-harness@0.9.1`
+- Generated workflow stamp: `repo-harness@0.9.1+template@0.9.1`
 - GitHub repository: `Ancienttwo/repo-harness`
 - Release history: [`docs/CHANGELOG.md`](docs/CHANGELOG.md)
 

@@ -84,6 +84,7 @@ _ops/
 .repo-harness/mcp.tokens.json
 .repo-harness/chatgpt-browser.local.json
 .repo-harness/chatgpt-browser.tokens.json
+.archcontext/
 .codegraph/
 .understand-anything/
 # Environment

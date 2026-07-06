@@ -345,6 +345,7 @@ EOF
     ensure_gitignore_entry .gitignore ""
     ensure_gitignore_entry .gitignore "# External references"
     ensure_gitignore_entry .gitignore "_ref/"
+    ensure_gitignore_entry .gitignore ".archcontext/"
     ensure_gitignore_entry .gitignore ".codegraph/"
     ensure_gitignore_entry .gitignore ""
     ensure_gitignore_entry .gitignore "# Local operations state"

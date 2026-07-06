@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "fs";
+import { createRequire } from "module";
 import { join } from "path";
 import { spawnSync } from "child_process";
+import { digestJson, productVersionManifest, validateJsonSchema, type Json } from "archctx-contracts";
 import {
   buildArchContextBoundariesV1,
   findMatch,
@@ -11,78 +13,65 @@ import {
 } from "../scripts/capability-resolver";
 
 const ROOT = join(import.meta.dir, "..");
-const SCHEMA_PATH = join(ROOT, "tests/fixtures/archcontext/architecture-node.subset.schema.json");
 const REPO = ROOT;
+const requireFromTest = createRequire(import.meta.url);
+const ARCHITECTURE_NODE_SCHEMA_PATH = requireFromTest.resolve(
+  "archctx-contracts/schemas/repo/architecture-node.schema.json",
+);
+const PROJECTION_TARGET_SCHEMA_PATH = requireFromTest.resolve(
+  "archctx-contracts/schemas/runtime/projection-target.schema.json",
+);
 
-// Minimal, purpose-built JSON Schema subset validator for this test only. It supports
-// exactly the keywords tests/fixtures/archcontext/architecture-node.subset.schema.json
-// uses (type, const, enum, pattern, required, properties, items, additionalProperties,
-// minItems). This is NOT a vendored copy of arch-context's own validator -- only the
-// schema fixture itself is vendored (with attribution); this walker is native to this
-// repo, same division of concerns as arch-context keeps between its schema files and
-// its generic validateJsonSchema helper.
+// Minimal schema shape used to derive this bridge's validation subset from the
+// authoritative archctx-contracts architecture-node schema. The full upstream schema
+// also requires name/status/summary; this read-only boundary export intentionally
+// does not synthesize those fields from local rules.
 type JsonSchema = {
-  type?: string;
-  const?: unknown;
-  enum?: unknown[];
+  type?: string | string[];
+  const?: Json;
+  enum?: Json[];
   pattern?: string;
   required?: string[];
   properties?: Record<string, JsonSchema>;
   items?: JsonSchema;
-  additionalProperties?: boolean;
+  additionalProperties?: boolean | JsonSchema;
   minItems?: number;
 };
 
-function matchesType(type: string, value: unknown): boolean {
-  if (type === "array") return Array.isArray(value);
-  if (type === "object") return value !== null && typeof value === "object" && !Array.isArray(value);
-  return typeof value === type;
+function loadSchema(path: string): JsonSchema {
+  return JSON.parse(readFileSync(path, "utf-8")) as JsonSchema;
 }
 
-function validateAgainstSchema(schema: JsonSchema, value: unknown, path = "$"): string[] {
-  const issues: string[] = [];
-
-  if (schema.const !== undefined && JSON.stringify(value) !== JSON.stringify(schema.const)) {
-    issues.push(`${path}: expected const ${JSON.stringify(schema.const)}, got ${JSON.stringify(value)}`);
-    return issues;
-  }
-  if (schema.enum && !schema.enum.some((item) => JSON.stringify(item) === JSON.stringify(value))) {
-    issues.push(`${path}: expected one of ${schema.enum.map(String).join(", ")}`);
-  }
-  if (schema.type && !matchesType(schema.type, value)) {
-    issues.push(`${path}: expected type ${schema.type}, got ${typeof value}`);
-    return issues;
-  }
-  if (typeof value === "string" && schema.pattern && !new RegExp(schema.pattern).test(value)) {
-    issues.push(`${path}: "${value}" does not match pattern ${schema.pattern}`);
-  }
-  if (Array.isArray(value)) {
-    if (schema.minItems !== undefined && value.length < schema.minItems) {
-      issues.push(`${path}: expected at least ${schema.minItems} item(s), got ${value.length}`);
-    }
-    if (schema.items) {
-      value.forEach((item, index) => issues.push(...validateAgainstSchema(schema.items!, item, `${path}[${index}]`)));
-    }
-  }
-  if (value !== null && typeof value === "object" && !Array.isArray(value)) {
-    const objectValue = value as Record<string, unknown>;
-    for (const key of schema.required ?? []) {
-      if (!(key in objectValue)) issues.push(`${path}.${key}: required`);
-    }
-    for (const [key, childSchema] of Object.entries(schema.properties ?? {})) {
-      if (key in objectValue) issues.push(...validateAgainstSchema(childSchema, objectValue[key], `${path}.${key}`));
-    }
-    if (schema.additionalProperties === false && schema.properties) {
-      for (const key of Object.keys(objectValue)) {
-        if (!(key in schema.properties)) issues.push(`${path}.${key}: additional property denied`);
-      }
-    }
-  }
-  return issues;
+function requiredProperty(schema: JsonSchema, key: string): JsonSchema {
+  const property = schema.properties?.[key];
+  if (!property) throw new Error(`archctx-contracts architecture-node schema missing ${key}`);
+  return property;
 }
 
-function loadSchema(): JsonSchema {
-  return JSON.parse(readFileSync(SCHEMA_PATH, "utf-8")) as JsonSchema;
+function bridgeSchemaFromArchitectureNodeSchema(schema: JsonSchema): JsonSchema {
+  const source = requiredProperty(schema, "source");
+  const sourceInclude = source.properties?.include;
+  if (!sourceInclude) throw new Error("archctx-contracts architecture-node schema missing source.include");
+
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: ["schemaVersion", "id", "kind", "source", "extensions"],
+    properties: {
+      schemaVersion: requiredProperty(schema, "schemaVersion"),
+      id: requiredProperty(schema, "id"),
+      kind: { const: "capability" },
+      source: {
+        type: "object",
+        additionalProperties: false,
+        required: ["include"],
+        properties: {
+          include: { ...sourceInclude, minItems: 1 },
+        },
+      },
+      extensions: requiredProperty(schema, "extensions"),
+    },
+  };
 }
 
 // Same nesting shape used by tests/capability-resolver.test.ts's longest-prefix case,
@@ -187,14 +176,15 @@ describe("capability-resolver archcontext-boundaries-v1 export", () => {
     }
   });
 
-  test("export output validates against the vendored archcontext.node/v1 capability subset schema", () => {
-    const schema = loadSchema();
+  test("export output validates against the archctx-contracts architecture-node bridge subset", () => {
+    const schema = bridgeSchemaFromArchitectureNodeSchema(loadSchema(ARCHITECTURE_NODE_SCHEMA_PATH));
     const nodes = buildArchContextBoundariesV1(registry);
     expect(nodes.length).toBe(registry.capabilities.length);
 
     for (const node of nodes) {
-      const issues = validateAgainstSchema(schema, node);
-      expect(issues).toEqual([]);
+      const result = validateJsonSchema(schema, node as unknown as Json);
+      expect(result.issues).toEqual([]);
+      expect(result.valid).toBe(true);
     }
   });
 
@@ -222,11 +212,41 @@ describe("capability-resolver archcontext-boundaries-v1 export", () => {
       expect(node.kind).toBe("capability");
     }
 
-    // The vendored schema fixture's own const pins the same version; if arch-context
-    // ever bumps this to v2 this assertion (and the schema swap it forces) should be
-    // the first thing that fails, not a silent drift.
-    const schema = loadSchema();
+    // The authoritative archctx-contracts schema const pins the same version; if
+    // arch-context bumps this to v2 this assertion should fail before any silent drift.
+    const schema = loadSchema(ARCHITECTURE_NODE_SCHEMA_PATH);
     expect(schema.properties?.schemaVersion?.const).toBe("archcontext.node/v1");
+  });
+
+  test("archctx-contracts package exposes expected version, digest, and agent-context schema surface", () => {
+    expect(productVersionManifest().product.version).toBe("0.2.1");
+    expect(digestJson({ ok: true })).toMatch(/^sha256:[a-f0-9]{64}$/);
+
+    const projectionTargetSchema = loadSchema(PROJECTION_TARGET_SCHEMA_PATH);
+    expect(projectionTargetSchema.properties?.schemaVersion?.const).toBe("archcontext.projection-target/v1");
+    expect(projectionTargetSchema.properties?.type?.enum).toContain("agent-context");
+
+    const agentContextTarget = {
+      schemaVersion: "archcontext.projection-target/v1",
+      targetId: "projection_target.agent-context.test",
+      type: "agent-context",
+      scope: { kind: "entity", id: "capability.example.agent-context", entityKind: "capability" },
+      path: "scripts/AGENTS.md",
+      ownership: "mixed",
+      generatedRegion: { startMarker: "start", endMarker: "end" },
+      rendererVersion: "archcontext.agent-context-renderer/v1",
+      format: "markdown",
+      sourceDigest: `sha256:${"a".repeat(64)}`,
+      outputDigest: `sha256:${"b".repeat(64)}`,
+    };
+
+    expect(validateJsonSchema(projectionTargetSchema, agentContextTarget as Json).valid).toBe(true);
+    expect(
+      validateJsonSchema(projectionTargetSchema, {
+        ...agentContextTarget,
+        schemaVersion: "archcontext.projection-target/v2",
+      } as Json).valid,
+    ).toBe(false);
   });
 
   test("CLI export command produces the same nodes as the in-process builder", () => {
@@ -241,20 +261,18 @@ describe("capability-resolver archcontext-boundaries-v1 export", () => {
     const ids = cliNodes.map((node) => node.id);
     expect(ids).toEqual([...ids].sort());
 
-    // Full schema validation (not just the schemaVersion/kind/source-is-array smoke
+    // Full bridge-subset validation (not just the schemaVersion/kind/source-is-array smoke
     // checks below) against every node this repo's REAL capability registry produces,
-    // not just the synthetic 3-capability registry the other tests in this file use.
-    // This is what actually proves the vendored subset schema round-trips this repo's
-    // real output end-to-end -- a synthetic-registry-only check could pass while the
-    // real registry's data shape (e.g. an empty prefixes array tripping the vendored
-    // `source.include` minItems:1 narrowing) silently fails outside test coverage.
-    const schema = loadSchema();
+    // using the authoritative archctx-contracts schema as the source for pinned
+    // schemaVersion/id/source/extensions semantics.
+    const schema = bridgeSchemaFromArchitectureNodeSchema(loadSchema(ARCHITECTURE_NODE_SCHEMA_PATH));
     for (const node of cliNodes) {
       expect(node.schemaVersion).toBe("archcontext.node/v1");
       expect(node.kind).toBe("capability");
       expect(Array.isArray(node.source.include)).toBe(true);
-      const issues = validateAgainstSchema(schema, node);
-      expect(issues).toEqual([]);
+      const result = validateJsonSchema(schema, node as unknown as Json);
+      expect(result.issues).toEqual([]);
+      expect(result.valid).toBe(true);
     }
   });
 });

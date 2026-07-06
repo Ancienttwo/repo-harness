@@ -15,6 +15,7 @@ coverage/
 
 # External references
 _ref/
+.archcontext/
 .codegraph/
 
 # Local operations state

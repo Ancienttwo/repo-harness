@@ -634,6 +634,7 @@ describe("Migration script contract", () => {
       expect(gitignore).toContain(".codex/*");
       expect(gitignore).not.toContain("!.codex/hooks.json");
       expect(gitignore).toContain("_ref/");
+      expect(gitignore).toContain(".archcontext/");
       expect(gitignore).toContain(".codegraph/");
       expect(gitignore).toContain("_ops/");
       expect(gitignore).not.toContain("_ops/secrets/");
@@ -1180,6 +1181,7 @@ describe("Migration script contract", () => {
       expect(gitignore).toContain(".codex/*");
       expect(gitignore).not.toContain("!.codex/hooks.json");
       expect(gitignore).toContain("_ref/");
+      expect(gitignore).toContain(".archcontext/");
       expect(gitignore).toContain("_ops/");
       expect(gitignore).not.toContain(".claude/.memory-context.json");
       expect(gitignore).toContain("# END: claude-runtime-temp");

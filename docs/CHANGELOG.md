@@ -4,6 +4,37 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-07-06
+
+### Added
+
+- Added `repo-harness install --target codex|both --location global
+  --delegation-mode auto|explicit`, plus the matching interactive TTY prompt,
+  so users can persist the global Codex delegation mode in
+  `~/.repo-harness/config.json` without clobbering existing config keys.
+- Added an exact `archctx-contracts@0.2.1` devDependency and moved
+  `archcontext-boundaries-v1` export tests from a vendored schema fixture to
+  the package's authoritative schema/validator surface.
+- Added a read-only `repo.adopt-refresh` setup-check advisory: with
+  `--check-updates`, adopted repos now surface an Agent action when the
+  `repo-harness adopt` dry-run plan has pending operations.
+
+### Changed
+
+- Updated the shell and PowerShell install scripts to point new users at
+  `repo-harness install` instead of the compatibility `init` alias, and to
+  print a PATH hint when Bun's bin directory was not already visible in the
+  original shell.
+- Moved Waza and Geju setup-check probes and docs from `npx -y skills ...` to
+  `bunx skills ...`, keeping the release line Bun-first.
+- Made the Codex delegation advisor honor `delegation.mode=auto` from either
+  the global user config or repo policy, while keeping discussion prompts quiet
+  and disabling stop-fallback for implicit auto-mode injections.
+- Added `.archcontext/` to the self-host and generated-repo ignore surfaces so
+  local arch-context model scaffolds stay out of commits by default.
+- Removed the local `tests/fixtures/archcontext/architecture-node.subset.schema.json`
+  fixture now that `archctx-contracts@0.2.1` publishes the required schemas.
+
 ## [0.9.0] - 2026-07-06
 
 ### Added
