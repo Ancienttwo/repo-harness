@@ -41,7 +41,9 @@ brain config, package-manager globals, or user-authored sibling hook entries.
 runtime by default. Third-party tooling and CodeGraph registration stay
 readiness findings from `repo-harness setup check` unless the update command is
 run with an explicit opt-in such as `--with-external-skills` or
-`--configure-codegraph`.
+`--configure-codegraph`. Repo-local workflow refresh stays on
+`repo-harness adopt`; `setup check --check-updates` reports an Agent action when
+the current adopted repo's dry-run adoption plan has pending operations.
 
 The cross-review skills are **harness-owned and self-contained** — their source
 lives in `assets/skills/<skill>/` and they wrap the peer CLI (`codex exec` /
@@ -204,7 +206,9 @@ command directly unless local policy explicitly opts into vendoring.
 ### Runtime Ownership Boundary
 
 `repo-harness setup check --target <host> --check-updates --json` reports the
-execution base as separate `runtime.*` checks. Keep the boundary explicit:
+execution base as separate `runtime.*` checks and reports repo-local adoption
+refresh as `repo.adopt-refresh` when the current repo has opted in. Keep the
+boundary explicit:
 
 | Capability | Owner | Required for |
 |---|---|---|

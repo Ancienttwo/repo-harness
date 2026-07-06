@@ -10,6 +10,8 @@ import {
 } from '../../src/cli/commands/init-hook';
 import type { DoctorReport } from '../../src/cli/commands/doctor';
 import type { StatusReport } from '../../src/cli/commands/status';
+import { planAdoption } from '../../src/core/adoption/plan';
+import { applyAdoptionPlan } from '../../src/effects/fs-transaction';
 
 const ROOT = join(import.meta.dir, '..', '..');
 const CLI = join(ROOT, 'src/cli/index.ts');
@@ -56,7 +58,7 @@ function baseStatusReport(overrides: Partial<StatusReport['targets'][number]> = 
     repo: {
       inGitRepo: true,
       repoRoot: '/tmp/repo',
-      optIn: true,
+      optIn: false,
       optInMarker: '.ai/harness/workflow-contract.json',
     },
     routes: {
@@ -72,6 +74,23 @@ function baseStatusReport(overrides: Partial<StatusReport['targets'][number]> = 
       },
     },
   };
+}
+
+function statusReportForRepo(repo: string, optIn = true): StatusReport {
+  const report = baseStatusReport();
+  return {
+    ...report,
+    repo: {
+      inGitRepo: true,
+      repoRoot: repo,
+      optIn,
+      optInMarker: '.ai/harness/workflow-contract.json',
+    },
+  };
+}
+
+function shellQuoted(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
 function baseDoctorReport(checks: DoctorReport['checks'] = []): DoctorReport {
@@ -202,6 +221,100 @@ describe('init-hook command', () => {
       const action = report.agent_actions.find((entry) => entry.id === 'cli.update');
       expect(action?.command).toBe('bun add -g repo-harness@latest && repo-harness init');
       expect(action?.verification).toBe('repo-harness setup check --target codex --check-updates --json');
+    });
+  });
+
+  test('keeps repo adoption refresh check disabled unless update checks are requested', () => {
+    withTempHome((home, repo) => {
+      mkdirSync(join(home, '.codex'), { recursive: true });
+      writeFileSync(join(home, '.codex', 'AGENTS.md'), '# Global Working Rules\n');
+
+      const report = runInitHook({
+        cwd: repo,
+        target: 'codex',
+        env: { ...process.env, HOME: home },
+        statusReport: statusReportForRepo(repo),
+        doctorReport: baseDoctorReport(),
+        toolingReport: baseToolingReport(),
+      });
+
+      const check = report.checks.find((entry) => entry.id === 'repo.adopt-refresh');
+      expect(check?.status).toBe('na');
+      expect(check?.detail).toContain('disabled');
+      expect(report.agent_actions.find((entry) => entry.id === 'repo.adopt-refresh')).toBeUndefined();
+    });
+  });
+
+  test('turns pending adoption plan operations into an Agent refresh action', () => {
+    withTempHome((home, repo) => {
+      mkdirSync(join(home, '.codex'), { recursive: true });
+      mkdirSync(join(repo, '.ai', 'harness'), { recursive: true });
+      writeFileSync(join(home, '.codex', 'AGENTS.md'), '# Global Working Rules\n');
+      writeFileSync(join(repo, '.ai', 'harness', 'workflow-contract.json'), '{}\n');
+
+      const report = runInitHook({
+        cwd: repo,
+        target: 'codex',
+        checkUpdates: true,
+        env: { ...process.env, HOME: home },
+        statusReport: statusReportForRepo(repo),
+        doctorReport: baseDoctorReport(),
+        toolingReport: baseToolingReport(),
+      });
+
+      const check = report.checks.find((entry) => entry.id === 'repo.adopt-refresh');
+      const action = report.agent_actions.find((entry) => entry.id === 'repo.adopt-refresh');
+      expect(check?.status).toBe('needs_agent');
+      expect(check?.detail).toContain('planned=');
+      expect(action?.command).toBe(`repo-harness adopt --repo ${shellQuoted(repo)}`);
+      expect(action?.verification).toBe('repo-harness setup check --target codex --check-updates --json');
+      expect(existsSync(join(repo, 'docs', 'spec.md'))).toBe(false);
+    });
+  });
+
+  test('reports adopted repo refresh as ok when the adoption dry-run is a no-op', () => {
+    withTempHome((home, repo) => {
+      mkdirSync(join(home, '.codex'), { recursive: true });
+      writeFileSync(join(home, '.codex', 'AGENTS.md'), '# Global Working Rules\n');
+      const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: 'standard', apply: false }));
+      expect(apply.ok).toBe(true);
+
+      const report = runInitHook({
+        cwd: repo,
+        target: 'codex',
+        checkUpdates: true,
+        env: { ...process.env, HOME: home },
+        statusReport: statusReportForRepo(repo),
+        doctorReport: baseDoctorReport(),
+        toolingReport: baseToolingReport(),
+      });
+
+      const check = report.checks.find((entry) => entry.id === 'repo.adopt-refresh');
+      expect(check?.status).toBe('ok');
+      expect(check?.detail).toContain('up-to-date');
+      expect(report.agent_actions.find((entry) => entry.id === 'repo.adopt-refresh')).toBeUndefined();
+    });
+  });
+
+  test('does not ask Agents to refresh adoption for non-adopted repos', () => {
+    withTempHome((home, repo) => {
+      mkdirSync(join(home, '.codex'), { recursive: true });
+      writeFileSync(join(home, '.codex', 'AGENTS.md'), '# Global Working Rules\n');
+
+      const report = runInitHook({
+        cwd: repo,
+        target: 'codex',
+        checkUpdates: true,
+        env: { ...process.env, HOME: home },
+        statusReport: statusReportForRepo(repo, false),
+        doctorReport: baseDoctorReport(),
+        toolingReport: baseToolingReport(),
+      });
+
+      const check = report.checks.find((entry) => entry.id === 'repo.adopt-refresh');
+      expect(check?.status).toBe('na');
+      expect(check?.detail).toContain('not repo-harness adopted');
+      expect(report.agent_actions.find((entry) => entry.id === 'repo.adopt-refresh')).toBeUndefined();
     });
   });
 

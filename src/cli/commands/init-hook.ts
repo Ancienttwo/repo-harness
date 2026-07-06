@@ -16,6 +16,7 @@ import { Command } from 'commander';
 import { runDoctor, type CheckStatus, type DoctorReport } from './doctor';
 import { runStatus, type StatusReport } from './status';
 import type { InstallTargetSpec } from './install';
+import { planAdoption } from '../../core/adoption/plan';
 
 export type InitHookTarget = InstallTargetSpec;
 export type InitHookStatus = 'ok' | 'attention' | 'blocked';
@@ -144,6 +145,10 @@ function verificationCommand(target: InitHookTarget, checkUpdates: boolean): str
   return `repo-harness setup check --target ${target}${checkUpdates ? ' --check-updates' : ''} --json`;
 }
 
+function shellQuoteArg(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
 function addAction(actions: InitHookAction[], action: InitHookAction): void {
   if (actions.some((entry) => entry.id === action.id)) return;
   actions.push(action);
@@ -218,6 +223,75 @@ function statusChecks(
     }
   }
   return checks;
+}
+
+function adoptionRefreshCheck(
+  report: StatusReport,
+  target: InitHookTarget,
+  checkUpdates: boolean,
+  actions: InitHookAction[],
+): InitHookCheck {
+  const id = 'repo.adopt-refresh';
+  const title = 'Repo-local adoption refresh';
+  if (!checkUpdates) {
+    return {
+      id,
+      title,
+      status: 'na',
+      source: 'status',
+      detail: 'disabled; run setup check with --check-updates to evaluate repo-local adopt refresh',
+    };
+  }
+
+  if (!report.repo.inGitRepo || !report.repo.repoRoot) {
+    return {
+      id,
+      title,
+      status: 'na',
+      source: 'status',
+      detail: 'current directory is not inside a git repo',
+    };
+  }
+
+  if (!report.repo.optIn) {
+    return {
+      id,
+      title,
+      status: 'na',
+      source: 'status',
+      detail: `repo is not repo-harness adopted (${report.repo.optInMarker} missing)`,
+    };
+  }
+
+  const plan = planAdoption({ repoRoot: report.repo.repoRoot, mode: 'standard', apply: false });
+  if (plan.summary.plannedTotal === 0) {
+    return {
+      id,
+      title,
+      status: 'ok',
+      source: 'status',
+      detail: `up-to-date; ${plan.summary.total} operations skipped`,
+    };
+  }
+
+  const command = `repo-harness adopt --repo ${shellQuoteArg(report.repo.repoRoot)}`;
+  addAction(actions, {
+    id: 'repo.adopt-refresh',
+    status: 'needs_agent',
+    reason: 'The current adopted repo has pending repo-harness adoption plan operations.',
+    requires_agent: true,
+    risk: 'Updates repo-local workflow files; review the adopt dry-run first and preserve user-owned content.',
+    command,
+    targets: [report.repo.repoRoot],
+    verification: verificationCommand(target, checkUpdates),
+  });
+  return {
+    id,
+    title,
+    status: 'needs_agent',
+    source: 'status',
+    detail: `planned=${plan.summary.plannedTotal}; skipped=${plan.summary.skippedTotal}; user_owned=${plan.summary.userOwnedFilesTouched}; command=${command}`,
+  };
 }
 
 function parseActionCommand(detail: string): string | undefined {
@@ -591,6 +665,7 @@ export function runInitHook(opts: InitHookOptions = {}): InitHookReport {
 
   const checks: InitHookCheck[] = [
     ...statusChecks(statusReport, target, checkUpdates, actions),
+    adoptionRefreshCheck(statusReport, target, checkUpdates, actions),
     ...doctorChecks(doctorReport, target, checkUpdates, actions),
     ...globalRulesChecks(target, opts.env, checkUpdates, actions),
     ...runtimeCapabilityChecks(toolingProbe.report, target, checkUpdates, actions),
