@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-10T04:34:05+0800 -->
+<!-- updated_at: 2026-07-10T04:35:30+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Idle
-> **Updated At**: 2026-07-10T04:34:05+0800
-> **Source Branch**: codex/think-cli-hook-harness
-> **Source Commit**: 97956cd
+> **Updated At**: 2026-07-10T04:35:30+0800
+> **Source Branch**: main
+> **Source Commit**: 5cf5999
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: archive-workflow
+> **Reason**: post-merge-closeout
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -41,37 +41,18 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/20260703-inspection-migration.md`: status=active, current_slice=completed-20260703-architecture-closeout, source_plan=(none)
 ## Handoff
 
-- Exact Next Step: Stage the completed module diff first; then resolve check evidence: Structured checks are not passing in .ai/harness/checks/latest.json (status=fail). Command: /check
+- Exact Next Step: (none)
 
 ## Checks
 
-- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
+- status=(none), source=(none), exit_code=(none), file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 20 changed/untracked path(s)
+- Summary: clean
 
 ```
- M .codex/agents/fast-worker.toml
- M assets/reference-configs/external-tooling.md
- M assets/templates/helpers/install-agent-fleet.sh
- M docs/CHANGELOG.md
- M docs/reference-configs/external-tooling.md
- D plans/plan-20260710-0230-think-cli-hook-harness.md
- M scripts/install-agent-fleet.sh
- M src/cli/commands/doctor.ts
- M src/cli/commands/init-hook.ts
- M src/cli/hook/prompt-intents.ts
- M tests/bootstrap-files.test.ts
- M tests/cli/doctor.test.ts
- M tests/cli/init-hook.test.ts
- M tests/cli/prompt-intents.test.ts
- M tests/install-agent-fleet.test.ts
-?? plans/archive/plan-20260710-0230-think-cli-hook-harness.md
-?? tasks/archive/contract-20260710-0434-think-cli-hook-harness.md
-?? tasks/archive/notes-20260710-0434-think-cli-hook-harness.md
-?? tasks/archive/review-20260710-0434-think-cli-hook-harness.md
-?? tasks/archive/todo-20260710-0434-think-cli-hook-harness.md
+(none)
 ```
 
 ## Source Artifacts
