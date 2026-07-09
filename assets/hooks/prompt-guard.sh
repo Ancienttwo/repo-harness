@@ -1054,7 +1054,7 @@ prompt_guard_engine_call
 if [[ "$PG_ENGINE_STATE" != "ok" ]]; then
   if [[ "$PG_ENGINE_STATE" == "legacy" ]]; then
     echo "[PromptGuard] Advisory: the installed repo-harness CLI predates the prompt-verdict protocol; prompt intent gates are degraded to advisory for this prompt."
-    echo "[PromptGuard] Refresh the CLI with: bun add -g repo-harness@latest && repo-harness install. Fallback: npx -y repo-harness install."
+    echo "[PromptGuard] Refresh the CLI with: bun add -g repo-harness@latest && repo-harness install. Fallback: npx -y repo-harness@latest install."
   else
     echo "[PromptGuard] Advisory: prompt-guard decision engine is unavailable (repo-harness CLI or bun not found); prompt intent gates are degraded to advisory for this prompt."
     echo "[PromptGuard] Edit-layer guards still enforce plan and contract scope. Install the repo-harness CLI to restore prompt decisions."

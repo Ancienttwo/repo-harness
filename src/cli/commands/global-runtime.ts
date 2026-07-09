@@ -5,6 +5,7 @@ import { fileURLToPath } from "url";
 import { configureBrainRoot, defaultBrainRootChoice, expandHomePath } from "./brain-root";
 import { syncCrossReviewSkills } from "./init";
 import { runInstall, type InstallTargetSpec } from "./install";
+import { compareVersions, readLatestPackageVersion } from "./doctor";
 import { configureCodegraph } from "../tools/codegraph";
 import { runProcess as runBoundedProcess } from "../../effects/process-runner";
 
@@ -175,16 +176,31 @@ function isBunGlobalPackageSource(sourceRoot: string, env?: NodeJS.ProcessEnv): 
   }
 }
 
+// Best-effort: readLatestPackageVersion() already swallows offline/npm-missing/
+// timeout failures into `.error`, so any lookup failure just yields no hint —
+// this must never turn the "skipped" step into a "failed" one.
+function updateAvailableHint(version: string | null, env?: NodeJS.ProcessEnv): string {
+  if (!version) return "";
+  const activeEnv = env ?? process.env;
+  if (activeEnv.REPO_HARNESS_CHECK_UPDATES !== "1") return "";
+  const latest = readLatestPackageVersion(env);
+  if (!latest.version) return "";
+  const comparison = compareVersions(version, latest.version);
+  if (comparison === null || comparison >= 0) return "";
+  return `; latest=${latest.version} available — run: repo-harness update`;
+}
+
 function installCli(sourceRoot: string, cwd: string, env?: NodeJS.ProcessEnv, installSpec?: string): GlobalRuntimeStep {
   const version = packageVersion(sourceRoot);
   const name = packageName(sourceRoot);
   if (installSpec === undefined && isBunGlobalPackageSource(sourceRoot, env)) {
+    const base = version
+      ? `already installed from Bun global package source; version=${version}`
+      : "already installed from Bun global package source";
     return {
       step: "install repo-harness CLI",
       status: "skipped",
-      detail: version
-        ? `already installed from Bun global package source; version=${version}`
-        : "already installed from Bun global package source",
+      detail: `${base}${updateAvailableHint(version, env)}`,
     };
   }
   const spec = installSpec ?? (existsSync(join(sourceRoot, "package.json")) ? sourceRoot : "repo-harness");

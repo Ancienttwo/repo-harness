@@ -9,6 +9,23 @@ const SCRIPT = join(ROOT, "scripts/install-agent-fleet.sh");
 const CLAUDE_SOURCE_DIR = join(ROOT, ".claude/agents");
 const GOLDEN_CODEX_DIR = join(ROOT, ".codex/agents");
 const AGENTS = ["deep-reasoner", "fast-worker", "gatekeeper"];
+const CODEX_EXPECTATIONS: Record<string, { model: string; effort: string; descriptionLabel: string }> = {
+  "deep-reasoner": {
+    model: "gpt-5.6-sol",
+    effort: "xhigh",
+    descriptionLabel: "GPT-5.6 Sol at extra high reasoning",
+  },
+  "fast-worker": {
+    model: "gpt-5.6-terra",
+    effort: "high",
+    descriptionLabel: "GPT-5.6 Terra at high reasoning",
+  },
+  gatekeeper: {
+    model: "gpt-5.6-sol",
+    effort: "xhigh",
+    descriptionLabel: "GPT-5.6 Sol at extra high reasoning",
+  },
+};
 
 // Canonical anti-extras clause (scripts/contract-run.ts EXECUTION_BOUNDARY, joined with
 // "\n"). Hardcoded here the same way tests/workflow-contract.test.ts hardcodes the
@@ -60,7 +77,13 @@ describe("install-agent-fleet", () => {
 
         const installedCodex = readFileSync(join(home, ".codex/agents", `${agent}.toml`), "utf-8");
         const golden = readFileSync(join(GOLDEN_CODEX_DIR, `${agent}.toml`), "utf-8");
+        const expected = CODEX_EXPECTATIONS[agent];
         expect(installedCodex).toBe(golden);
+        expect(installedCodex).toContain(`model = "${expected.model}"`);
+        expect(installedCodex).toContain(`model_reasoning_effort = "${expected.effort}"`);
+        expect(installedCodex).toContain(expected.descriptionLabel);
+        expect(installedCodex).not.toContain("Opus 4.8 at max effort");
+        expect(installedCodex).not.toContain("Sonnet 5 at max effort");
       }
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -136,6 +159,30 @@ describe("install-agent-fleet", () => {
       // Unaffected agents still install.
       expect(res.stdout).toContain("[fleet] claude/deep-reasoner.md: installed");
       expect(existsSync(join(home, ".claude/agents/deep-reasoner.md"))).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("a provider-specific description that disagrees with the model mapping fails closed", () => {
+    const { root, home } = setupFakeHome("install-agent-fleet-description-mismatch");
+    const badSourceDir = join(root, "bad-source");
+    try {
+      mkdirSync(badSourceDir, { recursive: true });
+      for (const agent of AGENTS) {
+        cpSync(join(CLAUDE_SOURCE_DIR, `${agent}.md`), join(badSourceDir, `${agent}.md`));
+      }
+      const mismatched = readFileSync(join(badSourceDir, "fast-worker.md"), "utf-8").replace(
+        "Sonnet 5 at max effort",
+        "an unspecified model",
+      );
+      writeFileSync(join(badSourceDir, "fast-worker.md"), mismatched);
+
+      const res = runInstaller(home, badSourceDir);
+      expect(res.status).toBe(0);
+      expect(res.stdout).toContain("[fleet] claude/fast-worker.md: invalid");
+      expect(res.stdout).toContain("[fleet] codex/fast-worker.toml: invalid");
+      expect(existsSync(join(home, ".codex/agents/fast-worker.toml"))).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

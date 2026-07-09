@@ -61,11 +61,26 @@ const EXECUTION_BOUNDARY = [
   "If the requested outcome cannot be completed without expanding scope, fail closed: stop, name the missing decision, and cite the exact file/section that blocks execution.",
 ].join("\n");
 
-// Only (opus, max) and (sonnet, max) are recognized. Any other model or a
-// non-"max" effort is a fail-closed error -- the generator never guesses a mapping.
+// Only (opus, max) and (sonnet, max) are recognized. Each mapping also owns the
+// exact provider label rewritten in Codex metadata so the generated role never
+// claims to run a different model. Any mismatch is a fail-closed error.
 const MODEL_EFFORT_MAP = {
-  opus: { max: { model: "gpt-5.5", effort: "xhigh" } },
-  sonnet: { max: { model: "gpt-5.5", effort: "medium" } },
+  opus: {
+    max: {
+      model: "gpt-5.6-sol",
+      effort: "xhigh",
+      sourceDescription: "Opus 4.8 at max effort",
+      targetDescription: "GPT-5.6 Sol at extra high reasoning",
+    },
+  },
+  sonnet: {
+    max: {
+      model: "gpt-5.6-terra",
+      effort: "high",
+      sourceDescription: "Sonnet 5 at max effort",
+      targetDescription: "GPT-5.6 Terra at high reasoning",
+    },
+  },
 };
 
 function fetchSource(agent) {
@@ -133,6 +148,9 @@ function validateFrontmatter(parsed) {
   if (!mapped) {
     return { ok: false, reason: `unmapped model/effort combination: ${parsed.model}/${parsed.effort}` };
   }
+  if (!parsed.description.includes(mapped.sourceDescription)) {
+    return { ok: false, reason: `description missing expected model label: ${mapped.sourceDescription}` };
+  }
   return { ok: true, mapped };
 }
 
@@ -142,8 +160,9 @@ function tomlBasicString(value) {
 
 function generateToml(parsed, mapped) {
   const lines = [];
+  const description = parsed.description.replace(mapped.sourceDescription, mapped.targetDescription);
   lines.push(`name = ${tomlBasicString(parsed.name)}`);
-  lines.push(`description = ${tomlBasicString(parsed.description)}`);
+  lines.push(`description = ${tomlBasicString(description)}`);
   lines.push(`model = ${tomlBasicString(mapped.model)}`);
   lines.push(`model_reasoning_effort = ${tomlBasicString(mapped.effort)}`);
   if (parsed.hasTools) {

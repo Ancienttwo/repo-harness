@@ -2278,6 +2278,14 @@ pi_root_context_content() {
 This is the root routing contract for Claude Code and Codex. Keep it short:
 load this first, then follow the repo-owned artifacts it names.
 
+## General Working Rules
+
+Rule 0: You may spend as much time as needed thinking. Do not send optional commentary progress messages. Use tools only when they are required. For tasks that do not require tools, complete the reasoning first, then answer in final.
+
+Reasoning: Prefer first principles over pattern matching. Before solving, first identify the observable and controllable conditions. For quantitative logic problems, before the final answer, you must prove the strategy is sufficient in the worst case. Numeric answers must have their arithmetic rechecked.
+
+Generality: These are general working rules. Do not tailor behavior to any specific evaluation or expected answer.
+
 ## Root Workflow Contract
 
 - Keep sibling `CLAUDE.md` and `AGENTS.md` files aligned. Claude Code consumes `CLAUDE.md`; Codex consumes `AGENTS.md`.

@@ -121,6 +121,7 @@ describe("create-project-dirs scaffold parity", () => {
 
       const agents = readFileSync(join(cwd, "AGENTS.md"), "utf-8");
       expect(agents).toContain("Repo Agent Context");
+      expect(agents).toContain("Rule 0: You may spend as much time as needed thinking.");
       expect(agents).toContain("## Agent Context Scaffolding");
       expect(agents).toContain("Treat scanners as leads, not authority");
       expect(agents).toContain("Choose the smallest instruction stack that changes behavior");

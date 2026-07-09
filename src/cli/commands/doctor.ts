@@ -105,7 +105,7 @@ function parseVersion(value: string): number[] | null {
   return match.slice(1).map((part) => Number(part));
 }
 
-function compareVersions(a: string, b: string): number | null {
+export function compareVersions(a: string, b: string): number | null {
   const left = parseVersion(a);
   const right = parseVersion(b);
   if (!left || !right) return null;
@@ -116,14 +116,24 @@ function compareVersions(a: string, b: string): number | null {
   return 0;
 }
 
-function readLatestPackageVersion(): { version?: string; error?: string } {
-  if (process.env[LATEST_VERSION_ENV]) {
-    return { version: process.env[LATEST_VERSION_ENV] };
+export function readLatestPackageVersion(env?: NodeJS.ProcessEnv): { version?: string; error?: string } {
+  const activeEnv = env ?? process.env;
+  if (activeEnv[LATEST_VERSION_ENV]) {
+    return { version: activeEnv[LATEST_VERSION_ENV] };
   }
 
-  const result = spawnSync('npm', ['view', PACKAGE_NAME, 'version', '--json'], {
+  const result = spawnSync(process.execPath, [
+    'pm',
+    'view',
+    PACKAGE_NAME,
+    'version',
+    '--json',
+    '--registry=https://registry.npmjs.org',
+  ], {
     encoding: 'utf-8',
     timeout: 5000,
+    cwd: os.tmpdir(),
+    env: activeEnv,
   });
   if (result.status !== 0 || result.error) {
     return { error: result.stderr || result.stdout || String(result.error?.message ?? result.error ?? 'npm view failed') };

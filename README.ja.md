@@ -201,7 +201,7 @@ bun add -g repo-harness
 repo-harness install
 
 # npx fallback。CLI runtime は Bun なので、Bun が PATH 上に必要です。
-npx -y repo-harness install
+npx -y repo-harness@latest install
 ```
 
 </details>

@@ -6,6 +6,7 @@ import { execSync, spawnSync } from 'child_process';
 import {
   clearRegisteredChecks,
   formatDoctor,
+  readLatestPackageVersion,
   registerCheck,
   runDoctor,
 } from '../../src/cli/commands/doctor';
@@ -246,6 +247,51 @@ describe('doctor command (Phase 1C)', () => {
       });
     });
   }, DOCTOR_CHECK_TIMEOUT_MS);
+
+  test('registry version lookup uses the running Bun and ignores repo PATH package-manager shims', () => {
+    const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'repo-harness-version-lookup-')));
+    const fakeBin = path.join(root, 'bin');
+    const probe = path.join(root, 'bun-probe');
+    const probeLog = path.join(root, 'probe.log');
+    const fakeNpmLog = path.join(root, 'fake-npm.log');
+    const previousExecPath = process.execPath;
+    try {
+      fs.mkdirSync(fakeBin, { recursive: true });
+      writeExecutable(
+        probe,
+        [
+          '#!/bin/bash',
+          'set -euo pipefail',
+          `printf '%s\\n%s\\n' "$PWD" "$*" > "${probeLog}"`,
+          'printf \'"99.0.0"\\n\'',
+          '',
+        ].join('\n'),
+      );
+      writeExecutable(
+        path.join(fakeBin, 'npm'),
+        `#!/bin/bash\nprintf '%s\\n' "$*" > "${fakeNpmLog}"\nexit 42\n`,
+      );
+      Object.defineProperty(process, 'execPath', { value: probe, configurable: true });
+
+      const env: NodeJS.ProcessEnv = {
+        ...process.env,
+        PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+      };
+      delete env.REPO_HARNESS_LATEST_VERSION;
+      const result = readLatestPackageVersion(env);
+
+      expect(result).toEqual({ version: '99.0.0' });
+      const [cwd, args] = fs.readFileSync(probeLog, 'utf-8').trim().split('\n');
+      expect(fs.realpathSync(cwd)).toBe(fs.realpathSync(os.tmpdir()));
+      expect(args).toBe(
+        'pm view repo-harness version --json --registry=https://registry.npmjs.org',
+      );
+      expect(fs.existsSync(fakeNpmLog)).toBe(false);
+    } finally {
+      Object.defineProperty(process, 'execPath', { value: previousExecPath, configurable: true });
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
 
   test('codex-trust-state counts user-level [hooks.state] lines when present', () => {
     withTempHome((home) => {

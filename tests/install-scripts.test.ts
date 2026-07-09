@@ -47,14 +47,23 @@ describe("install script contracts", () => {
     expect(readme).toContain("curl -fsSL https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/install.sh | sh");
     expect(readme).toContain("irm https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/install.ps1 | iex");
     expect(readme).toContain("If Bun is already on PATH, you can skip the shell installer:");
-    expect(readme).toContain("bunx repo-harness install");
+    expect(readme).toContain("bunx repo-harness@latest install");
     expect(readme).toContain("bun add -g repo-harness");
-    expect(readme).toContain("npx -y repo-harness install");
+    expect(readme).toContain("npx -y repo-harness@latest install");
     expect(readme).not.toContain("npm install -g repo-harness");
     expect(zhReadme).toContain("curl -fsSL https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/install.sh | sh");
     expect(zhReadme).toContain("irm https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/install.ps1 | iex");
-    expect(zhReadme).toContain("bunx repo-harness install");
+    expect(zhReadme).toContain("bunx repo-harness@latest install");
+    expect(zhReadme).toContain("npx -y repo-harness@latest install");
     expect(pkg.files).toContain("install.sh");
     expect(pkg.files).toContain("install.ps1");
+  });
+
+  test("localized READMEs pin the npx install fallback to @latest", () => {
+    const localizedReadmes = ["README.es.md", "README.ja.md", "README.fr.md"];
+
+    for (const file of localizedReadmes) {
+      expect(read(file)).toContain("npx -y repo-harness@latest install");
+    }
   });
 });

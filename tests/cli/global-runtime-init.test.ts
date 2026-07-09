@@ -248,12 +248,14 @@ describe('init command global runtime bootstrap', () => {
     const repo = join(tmp, 'repo');
     const fakeBin = join(tmp, 'bin');
     const bunLog = join(tmp, 'bun.log');
+    const npmLog = join(tmp, 'npm.log');
     try {
       mkdirSync(source, { recursive: true });
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
       setupFakeSource(source);
       writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nexit 42\n`);
+      writeExecutable(join(fakeBin, 'npm'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${npmLog}"\nexit 42\n`);
 
       const result = runGlobalRuntimeSetup({
         sourceRoot: source,
@@ -275,6 +277,7 @@ describe('init command global runtime bootstrap', () => {
       expect(installStep?.status).toBe('skipped');
       expect(installStep?.detail).toContain('already installed from Bun global package source');
       expect(existsSync(bunLog)).toBe(false);
+      expect(existsSync(npmLog)).toBe(false);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
@@ -316,6 +319,109 @@ describe('init command global runtime bootstrap', () => {
       expect(result.exitCode).toBe(0);
       expect(installStep?.status).toBe('skipped');
       expect(installStep?.detail).toContain('already installed from Bun global package source');
+      expect(existsSync(bunLog)).toBe(false);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test('skip detail appends an update hint when a newer version is available', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-global-init-update-hint-'));
+    const home = join(tmp, 'home');
+    const source = join(home, '.bun', 'install', 'global', 'node_modules', 'repo-harness');
+    const repo = join(tmp, 'repo');
+    const fakeBin = join(tmp, 'bin');
+    const bunLog = join(tmp, 'bun.log');
+    try {
+      mkdirSync(source, { recursive: true });
+      mkdirSync(repo, { recursive: true });
+      mkdirSync(fakeBin, { recursive: true });
+      setupFakeSource(source);
+      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nexit 42\n`);
+
+      const result = runGlobalRuntimeSetup({
+        sourceRoot: source,
+        cwd: repo,
+        syncSkill: false,
+        hostAdapters: false,
+        externalSkills: false,
+        codegraph: false,
+        env: {
+          ...process.env,
+          HOME: home,
+          BUN_INSTALL: join(home, '.bun'),
+          PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+          REPO_HARNESS_CHECK_UPDATES: '1',
+          // readLatestPackageVersion() now receives this injected env directly
+          // (see doctor.ts), so the override is set here instead of mutating
+          // live process.env.
+          REPO_HARNESS_LATEST_VERSION: '99.0.0',
+        },
+      });
+
+      const installStep = result.steps.find((step) => step.step === 'install repo-harness CLI');
+      expect(result.exitCode).toBe(0);
+      expect(installStep?.status).toBe('skipped');
+      expect(installStep?.detail).toBe(
+        'already installed from Bun global package source; version=9.9.9; latest=99.0.0 available — run: repo-harness update',
+      );
+      expect(existsSync(bunLog)).toBe(false);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test('skip detail is unchanged when update checks are disabled or the override is current', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-global-init-update-hint-current-'));
+    const home = join(tmp, 'home');
+    const source = join(home, '.bun', 'install', 'global', 'node_modules', 'repo-harness');
+    const repo = join(tmp, 'repo');
+    const fakeBin = join(tmp, 'bin');
+    const bunLog = join(tmp, 'bun.log');
+    try {
+      mkdirSync(source, { recursive: true });
+      mkdirSync(repo, { recursive: true });
+      mkdirSync(fakeBin, { recursive: true });
+      setupFakeSource(source);
+      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nexit 42\n`);
+
+      const baseEnv: NodeJS.ProcessEnv = {
+        ...process.env,
+        HOME: home,
+        BUN_INSTALL: join(home, '.bun'),
+        PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+      };
+      delete baseEnv.REPO_HARNESS_LATEST_VERSION;
+      delete baseEnv.REPO_HARNESS_CHECK_UPDATES;
+      const runOpts = {
+        sourceRoot: source,
+        cwd: repo,
+        syncSkill: false,
+        hostAdapters: false,
+        externalSkills: false,
+        codegraph: false,
+      };
+      const expectedDetail = 'already installed from Bun global package source; version=9.9.9';
+
+      const unsetStep = runGlobalRuntimeSetup({ ...runOpts, env: baseEnv }).steps.find(
+        (step) => step.step === 'install repo-harness CLI',
+      );
+      expect(unsetStep?.status).toBe('skipped');
+      expect(unsetStep?.detail).toBe(expectedDetail);
+
+      // Explicit update checks can still use a caller-provided registry result
+      // without spawning the registry client.
+      const equalStep = runGlobalRuntimeSetup({
+        ...runOpts,
+        env: {
+          ...baseEnv,
+          REPO_HARNESS_CHECK_UPDATES: '1',
+          REPO_HARNESS_LATEST_VERSION: '9.9.9',
+        },
+      }).steps.find((step) => step.step === 'install repo-harness CLI');
+      expect(equalStep?.status).toBe('skipped');
+      expect(equalStep?.detail).toBe(expectedDetail);
+
       expect(existsSync(bunLog)).toBe(false);
     } finally {
       rmSync(tmp, { recursive: true, force: true });

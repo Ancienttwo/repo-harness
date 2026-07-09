@@ -226,14 +226,14 @@ irm https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/install.ps1 |
 
 ```bash
 # Bun 一步 bootstrap
-bunx repo-harness install
+bunx repo-harness@latest install
 
 # 或者先安装持久化 CLI
 bun add -g repo-harness
 repo-harness install
 
 # npx 备选；仍要求 Bun 已在 PATH 上，因为 CLI runtime 是 Bun
-npx -y repo-harness install
+npx -y repo-harness@latest install
 ```
 
 ### 2. 先做一次 host runtime bootstrap

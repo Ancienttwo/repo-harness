@@ -81,6 +81,7 @@ describe("create-project-dirs runtime smoke", () => {
         readFileSync(join(cwd, "AGENTS.md"), "utf-8")
       );
       expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain("Repo Agent Context");
+      expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain("Rule 0: You may spend as much time as needed thinking.");
       expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain("tasks/todos.md");
       expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain(".ai/context/context-map.json");
       expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain("## Agent Context Scaffolding");
@@ -593,6 +594,7 @@ describe("create-project-dirs runtime smoke", () => {
         readFileSync(join(cwd, "AGENTS.md"), "utf-8")
       );
       expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain("Repo Agent Context");
+      expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain("Rule 0: You may spend as much time as needed thinking.");
       expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain("## Agent Context Scaffolding");
       expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain("Choose the smallest instruction stack that changes behavior");
       expect(readFileSync(join(cwd, "AGENTS.md"), "utf-8")).toContain("## Decision Protocol");
@@ -788,7 +790,7 @@ describe("create-project-dirs runtime smoke", () => {
           [
             "---",
             `name: ${agent}`,
-            `description: Fixture ${agent} for the P4 apply-mode fleet install test.`,
+            `description: Fixture ${agent} on Sonnet 5 at max effort for the P4 apply-mode fleet install test.`,
             "model: sonnet",
             "effort: max",
             "---",

@@ -495,9 +495,14 @@ guessed mapping.
 
 | Upstream frontmatter | Codex TOML |
 |---|---|
-| `model: opus`, `effort: max` | `model = "gpt-5.5"`, `model_reasoning_effort = "xhigh"` |
-| `model: sonnet`, `effort: max` | `model = "gpt-5.5"`, `model_reasoning_effort = "medium"` |
+| `model: opus`, `effort: max` | `model = "gpt-5.6-sol"`, `model_reasoning_effort = "xhigh"` |
+| `model: sonnet`, `effort: max` | `model = "gpt-5.6-terra"`, `model_reasoning_effort = "high"` |
 | `tools: [...]` present | `sandbox_mode = "read-only"` |
+
+The Codex generator also rewrites the exact upstream provider label in the
+description (`Opus 4.8 at max effort` or `Sonnet 5 at max effort`) to the
+mapped GPT-5.6 model and reasoning level. A missing label fails closed so the
+installed metadata cannot claim a different model from the TOML settings.
 
 `developer_instructions` is the upstream `.md` body plus the canonical
 EXECUTION_BOUNDARY anti-extras clause, kept byte-identical to the

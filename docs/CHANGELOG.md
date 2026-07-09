@@ -4,6 +4,22 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Updated the generated Codex agent fleet so architecture and gatekeeper roles
+  use GPT-5.6 Sol with `xhigh` reasoning, while `fast-worker` uses GPT-5.6
+  Terra with `high` reasoning; generated descriptions now fail closed when the
+  upstream provider label does not match the declared model mapping.
+- Added the shared Rule 0, first-principles reasoning, and generality guidance
+  to global working-rule distribution and newly scaffolded root agent context.
+
+### Fixed
+
+- Pinned the documented `bunx`/`npx` bootstrap and prompt-guard recovery paths
+  to `repo-harness@latest`, and made an already-installed Bun global runtime
+  surface an opt-in, repository-isolated update hint instead of silently
+  perpetuating a stale version.
+
 ## [0.9.1] - 2026-07-06
 
 ### Added

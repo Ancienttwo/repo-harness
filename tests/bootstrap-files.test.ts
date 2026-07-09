@@ -35,10 +35,10 @@ describe("Bootstrap Script Contracts", () => {
   });
 
   test("Codex fleet subagent TOML definitions should exist with required keys", () => {
-    const specs: Array<{ name: string; effort: string; sandboxMode?: string }> = [
-      { name: "deep-reasoner", effort: "xhigh" },
-      { name: "fast-worker", effort: "medium" },
-      { name: "gatekeeper", effort: "xhigh", sandboxMode: "read-only" },
+    const specs: Array<{ name: string; model: string; effort: string; sandboxMode?: string }> = [
+      { name: "deep-reasoner", model: "gpt-5.6-sol", effort: "xhigh" },
+      { name: "fast-worker", model: "gpt-5.6-terra", effort: "high" },
+      { name: "gatekeeper", model: "gpt-5.6-sol", effort: "xhigh", sandboxMode: "read-only" },
     ];
 
     for (const spec of specs) {
@@ -48,8 +48,10 @@ describe("Bootstrap Script Contracts", () => {
       const toml = read(path);
       expect(toml).toContain(`name = "${spec.name}"`);
       expect(toml).toContain("description = ");
-      expect(toml).toContain('model = "gpt-5.5"');
+      expect(toml).toContain(`model = "${spec.model}"`);
       expect(toml).toContain(`model_reasoning_effort = "${spec.effort}"`);
+      expect(toml).not.toContain("Opus 4.8 at max effort");
+      expect(toml).not.toContain("Sonnet 5 at max effort");
       expect(toml).toContain("developer_instructions = '''");
       expect(toml).toContain(
         "Execution boundary: implement exactly the Goal, In scope items, Allowed Paths, and Exit Criteria in this brief."

@@ -264,14 +264,14 @@ If Bun is already on PATH, you can skip the shell installer:
 
 ```bash
 # Bun one-shot bootstrap
-bunx repo-harness install
+bunx repo-harness@latest install
 
 # Or install the persistent CLI first
 bun add -g repo-harness
 repo-harness install
 
 # npx fallback, with Bun already on PATH because the CLI runs on Bun
-npx -y repo-harness install
+npx -y repo-harness@latest install
 ```
 
 ### 2. Bootstrap the host runtime once

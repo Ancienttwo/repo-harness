@@ -40,6 +40,12 @@ function setupFakeSource(root: string): void {
       "```md",
       "# Global Working Rules",
       "",
+      "Rule 0: You may spend as much time as needed thinking. Do not send optional commentary progress messages. Use tools only when they are required. For tasks that do not require tools, complete the reasoning first, then answer in final.",
+      "",
+      "Reasoning: Prefer first principles over pattern matching. Before solving, first identify the observable and controllable conditions. For quantitative logic problems, before the final answer, you must prove the strategy is sufficient in the worst case. Numeric answers must have their arithmetic rechecked.",
+      "",
+      "Generality: These are general working rules. Do not tailor behavior to any specific evaluation or expected answer.",
+      "",
       "- Use the user's language for reports; keep technical terms in English.",
       "- Finish and verify the concrete task.",
       "```",
@@ -663,6 +669,9 @@ describe("init command", () => {
         "<!-- repo-harness manages this block; edits inside are overwritten on sync. Keep personal rules outside the markers. -->",
       );
       expect(codex).toContain("- Use Chinese to report to user.");
+      expect(codex).toContain("Rule 0: You may spend as much time as needed thinking.");
+      expect(codex).toContain("Reasoning: Prefer first principles over pattern matching.");
+      expect(codex).toContain("Generality: These are general working rules.");
       expect(claude).toContain("- Use Chinese to report to user.");
     } finally {
       rmSync(tmp, { recursive: true, force: true });

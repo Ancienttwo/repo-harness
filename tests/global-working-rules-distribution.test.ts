@@ -31,6 +31,13 @@ describe("global working rules distribution", () => {
     expect(fence).toContain("do not re-derive the same semantic data");
   });
 
+  test("assets template fence carries the Rule 0 reasoning and generality rules", () => {
+    const fence = extractFence(readFileSync(ASSETS_TEMPLATE, "utf-8"));
+    expect(fence).toContain("Rule 0: You may spend as much time as needed thinking.");
+    expect(fence).toContain("Reasoning: Prefer first principles over pattern matching.");
+    expect(fence).toContain("Generality: These are general working rules.");
+  });
+
   test("the two previously duplicated 下一刀 sentences are deduplicated to one occurrence each", () => {
     const raw = readFileSync(ASSETS_TEMPLATE, "utf-8");
     expect(countOccurrences(raw, "include a short `下一刀` section")).toBe(1);

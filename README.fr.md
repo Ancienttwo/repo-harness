@@ -224,7 +224,7 @@ bun add -g repo-harness
 repo-harness install
 
 # Fallback npx, avec Bun déjà sur PATH car le CLI s'exécute sur Bun
-npx -y repo-harness install
+npx -y repo-harness@latest install
 ```
 
 </details>
