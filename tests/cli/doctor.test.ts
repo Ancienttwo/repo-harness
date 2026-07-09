@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { fileURLToPath } from 'url';
 import { execSync, spawnSync } from 'child_process';
 import {
   clearRegisteredChecks,
@@ -141,6 +142,7 @@ describe('doctor command (Phase 1C)', () => {
       const ids = r.checks.map((c) => c.id);
       expect(ids).toContain('cli-on-path');
       expect(ids).toContain('cli-version');
+      expect(ids).toContain('codex-cli-version');
       expect(ids).toContain('cli-update');
       expect(ids).toContain('codex-adapter');
       expect(ids).toContain('claude-adapter');
@@ -174,6 +176,48 @@ describe('doctor command (Phase 1C)', () => {
       }
     });
   }, DOCTOR_CHECK_TIMEOUT_MS);
+
+  test('codex-cli-version reports n/a when codex is absent from PATH', () => {
+    const envRoot = setupFakeEnvironment('repo-harness-doctor-codex-absent');
+    try {
+      withEnv({ HOME: envRoot.home, PATH: envRoot.fakeBin }, () => {
+        const r = runDoctor(envRoot.root);
+        const codex = r.checks.find((c) => c.id === 'codex-cli-version')!;
+        expect(codex.status).toBe('na');
+        expect(codex.detail).toBe('codex not found on PATH');
+      });
+    } finally {
+      fs.rmSync(envRoot.root, { recursive: true, force: true });
+    }
+  }, DOCTOR_CHECK_TIMEOUT_MS);
+
+  for (const expected of [
+    { version: '0.143.0', status: 'warn', stable: true },
+    { version: '0.144.0', status: 'ok', stable: true },
+    { version: '0.144.0-alpha.4', status: 'warn', stable: false },
+  ] as const) {
+    test(`codex-cli-version reports ${expected.status} for Codex ${expected.version}`, () => {
+      const envRoot = setupFakeEnvironment(`repo-harness-doctor-codex-${expected.version}`);
+      const fakeCodex = path.join(envRoot.fakeBin, 'codex');
+      try {
+        writeExecutable(fakeCodex, `#!/bin/bash\nprintf 'codex-cli ${expected.version}\\n'\n`);
+        withEnv({ HOME: envRoot.home, PATH: envRoot.fakeBin }, () => {
+          const r = runDoctor(envRoot.root);
+          const codex = r.checks.find((c) => c.id === 'codex-cli-version')!;
+          expect(codex.status).toBe(expected.status);
+          expect(codex.detail).toContain(`path=${fakeCodex}`);
+          if (expected.stable) {
+            expect(codex.detail).toContain(`current=${expected.version}`);
+            expect(codex.detail).toContain('minimum=0.144.0');
+          } else {
+            expect(codex.detail).toContain(`unable to parse version from "codex-cli ${expected.version}"`);
+          }
+        });
+      } finally {
+        fs.rmSync(envRoot.root, { recursive: true, force: true });
+      }
+    }, DOCTOR_CHECK_TIMEOUT_MS);
+  }
 
   test('repo-hook-scripts reports n/a for non-opt-in repos', () => {
     withTempRepo({ optIn: false }, (repoRoot) => {
@@ -263,6 +307,7 @@ describe('doctor command (Phase 1C)', () => {
           '#!/bin/bash',
           'set -euo pipefail',
           `printf '%s\\n%s\\n' "$PWD" "$*" > "${probeLog}"`,
+          'if [[ ! -f "$PWD/package.json" ]]; then echo "missing package.json in cwd" >&2; exit 43; fi',
           'printf \'"99.0.0"\\n\'',
           '',
         ].join('\n'),
@@ -282,7 +327,8 @@ describe('doctor command (Phase 1C)', () => {
 
       expect(result).toEqual({ version: '99.0.0' });
       const [cwd, args] = fs.readFileSync(probeLog, 'utf-8').trim().split('\n');
-      expect(fs.realpathSync(cwd)).toBe(fs.realpathSync(os.tmpdir()));
+      const packageRoot = path.dirname(fileURLToPath(new URL('../../package.json', import.meta.url)));
+      expect(fs.realpathSync(cwd)).toBe(fs.realpathSync(packageRoot));
       expect(args).toBe(
         'pm view repo-harness version --json --registry=https://registry.npmjs.org',
       );

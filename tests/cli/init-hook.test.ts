@@ -224,6 +224,45 @@ describe('init-hook command', () => {
     });
   });
 
+  test('scopes the Codex CLI version doctor check to targets that include Codex', () => {
+    withTempHome((home, repo) => {
+      mkdirSync(join(home, '.codex'), { recursive: true });
+      mkdirSync(join(home, '.claude'), { recursive: true });
+      writeFileSync(join(home, '.codex', 'AGENTS.md'), '# Global Working Rules\n');
+      writeFileSync(join(home, '.claude', 'CLAUDE.md'), '# Global Working Rules\n');
+      const doctorReport = baseDoctorReport([
+        {
+          id: 'codex-cli-version',
+          describe: 'Codex CLI supports generated GPT-5.6 agent profiles',
+          status: 'warn',
+          detail: 'current=0.143.0; minimum=0.144.0',
+        },
+      ]);
+
+      for (const target of ['claude', 'codex', 'both'] as const) {
+        const report = runInitHook({
+          cwd: repo,
+          target,
+          env: { ...process.env, HOME: home },
+          statusReport: baseStatusReport(),
+          doctorReport,
+          toolingReport: baseToolingReport(),
+        });
+        const check = report.checks.find((entry) => entry.id === 'doctor.codex-cli-version');
+
+        if (target === 'claude') {
+          expect(check).toBeUndefined();
+          expect(report.summary.warn).toBe(0);
+          expect(report.status).toBe('ok');
+        } else {
+          expect(check?.status).toBe('warn');
+          expect(report.summary.warn).toBe(1);
+          expect(report.status).toBe('attention');
+        }
+      }
+    });
+  });
+
   test('keeps repo adoption refresh check disabled unless update checks are requested', () => {
     withTempHome((home, repo) => {
       mkdirSync(join(home, '.codex'), { recursive: true });

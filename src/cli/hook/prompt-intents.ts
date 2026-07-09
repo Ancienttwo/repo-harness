@@ -82,12 +82,40 @@ const EXPLICIT_EXECUTION_LINE = re(
   String.raw`^${SP}*(please\s+)?(implement\s+(this|the)|execute\s+(this|the)|start\s+(implementation|executing|coding)|go ahead|proceed|ship it|开始(实现|执行|落实|写)|执行计划|落实计划|批准执行|批准|直接(改|做|实现|执行|落地)|动手|开干|可以(开始|执行|干)|可以干|干吧|做吧)(${SP}|$)`,
 );
 
+// Unlike the legacy execution verbs above, this newly supported phrase must
+// remain an actual command at the start of a line. A whitespace-only prefix
+// keeps quoted examples, questions, and negations out of the execution path.
+const DIRECT_MODIFICATION_LINE = re(
+  String.raw`^\s*(请\s*)?直接修改`,
+);
+const DIRECT_MODIFICATION_INLINE_PAYLOAD =
+  /“[^”\n]*”|「[^」\n]*」|『[^』\n]*』|"[^"\n]*"|`[^`\n]*`/gu;
+const DIRECT_MODIFICATION_QUESTION = re(
+  String.raw`([?？]|[吗么呢]${SP}*$|是不是|能不能|可不可以|要不要|应不应该|该不该|会不会|行不行|好不好|对不对|合不合适)`,
+);
+const DIRECT_MODIFICATION_NON_COMMAND = re(
+  String.raw`(不合适(?:吧|${SP}*($|[,，;；。]))|(?:是)?不(?:对|应该|行)(?:吧|的?${SP}*($|[,，;；。]))|不要这么做|不是(我|我们)?的?要求|只是(一个|个)?示例|仅作示例|作为示例)`,
+);
+
+function isDirectModificationCommandLine(line: string): boolean {
+  const topLevelText = line.replace(DIRECT_MODIFICATION_INLINE_PAYLOAD, '');
+  return (
+    DIRECT_MODIFICATION_LINE.test(line) &&
+    !DIRECT_MODIFICATION_QUESTION.test(topLevelText) &&
+    !DIRECT_MODIFICATION_NON_COMMAND.test(topLevelText)
+  );
+}
+
+function hasDirectModificationCommandLine(ctx: PromptIntentContext): boolean {
+  return isDirectModificationCommandLine(ctx.firstLine);
+}
+
 export function promptHasExplicitExecutionCommandLine(ctx: PromptIntentContext): boolean {
-  return EXPLICIT_EXECUTION_LINE.test(ctx.text);
+  return EXPLICIT_EXECUTION_LINE.test(ctx.text) || hasDirectModificationCommandLine(ctx);
 }
 
 export function isExplicitExecutionStartLine(ctx: PromptIntentContext): boolean {
-  return EXPLICIT_EXECUTION_LINE.test(ctx.firstLine);
+  return EXPLICIT_EXECUTION_LINE.test(ctx.firstLine) || hasDirectModificationCommandLine(ctx);
 }
 
 const PLAN_EXECUTION_PROJECTION_LINE = re(
@@ -104,6 +132,7 @@ const TRIGGER_QUESTION = re(
 );
 
 export function isTriggerQuestionPrompt(ctx: PromptIntentContext): boolean {
+  if (hasDirectModificationCommandLine(ctx)) return false;
   return TRIGGER_QUESTION.test(ctx.firstLine);
 }
 
@@ -130,6 +159,7 @@ const PLAN_REFINEMENT = re(
 );
 
 export function isPlanRefinementIntent(ctx: PromptIntentContext): boolean {
+  if (hasDirectModificationCommandLine(ctx)) return false;
   if (PLAN_REFINEMENT_EXEC.test(ctx.firstLine)) return false;
   return PLAN_REFINEMENT.test(ctx.firstLine);
 }
@@ -179,6 +209,7 @@ export function isDiagnosticQuestionIntent(ctx: PromptIntentContext): boolean {
   if (isExecutionApprovalIntent(ctx)) return false;
   if (isEmbeddedApprovedPlanIntent(ctx)) return false;
   if (isPlanShapedMarkdownIntent(ctx)) return false;
+  if (hasDirectModificationCommandLine(ctx)) return false;
   if (DIAGNOSTIC_DIRECT.test(ctx.text)) return true;
   return DIAGNOSTIC_TOPIC.test(ctx.text) && DIAGNOSTIC_QUESTION.test(ctx.text);
 }
@@ -198,6 +229,7 @@ export function isReviewReleaseAdvisoryIntent(ctx: PromptIntentContext): boolean
   if (isEmbeddedApprovedPlanIntent(ctx)) return false;
   if (isPlanShapedMarkdownIntent(ctx)) return false;
   if (isExecutionApprovalIntent(ctx)) return false;
+  if (hasDirectModificationCommandLine(ctx)) return false;
   // Review/check prompts often say "execute /check" or "执行 checklist". Those
   // route to evaluator evidence, not implementation.
   if (REVIEW_RELEASE_CODING_VERB.test(ctx.text)) return false;
@@ -266,7 +298,9 @@ export function isNextSliceOrStatusAdvisoryIntent(ctx: PromptIntentContext): boo
   return false;
 }
 
-const IMPLEMENT_VERB = re('(implement|execute|build it|do it|go ahead|proceed|ship it|实现|执行|开始写|动手|开干)');
+const IMPLEMENT_VERB = re(
+  '(implement|execute|build it|do it|go ahead|proceed|ship it|实现|执行|开始写|动手|开干)',
+);
 
 export function isImplementIntent(ctx: PromptIntentContext): boolean {
   if (isTriggerQuestionPrompt(ctx)) return false;
@@ -280,6 +314,7 @@ export function isImplementIntent(ctx: PromptIntentContext): boolean {
   if (isPassiveWorktreeStatusIntent(ctx)) return false;
   return (
     IMPLEMENT_VERB.test(ctx.text) ||
+    hasDirectModificationCommandLine(ctx) ||
     isExecutionApprovalIntent(ctx) ||
     isEmbeddedApprovedPlanIntent(ctx) ||
     isPlanShapedMarkdownIntent(ctx)

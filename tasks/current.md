@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-10T02:30:00+0800 -->
+<!-- updated_at: 2026-07-10T04:34:05+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Idle
-> **Updated At**: 2026-07-10T02:30:00+0800
-> **Source Branch**: main
-> **Source Commit**: 55709e9
+> **Updated At**: 2026-07-10T04:34:05+0800
+> **Source Branch**: codex/think-cli-hook-harness
+> **Source Commit**: 97956cd
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: ensure-task-workflow
+> **Reason**: archive-workflow
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -41,54 +41,37 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/20260703-inspection-migration.md`: status=active, current_slice=completed-20260703-architecture-closeout, source_plan=(none)
 ## Handoff
 
-- Exact Next Step: Clean up merged contract worktree codex/context-contract-sync-archive-fix. Command: repo-harness run contract-worktree cleanup --slug context-contract-sync-archive-fix --target main
+- Exact Next Step: Stage the completed module diff first; then resolve check evidence: Structured checks are not passing in .ai/harness/checks/latest.json (status=fail). Command: /check
 
 ## Checks
 
-- status=(none), source=(none), exit_code=(none), file=.ai/harness/checks/latest.json
+- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 37 changed/untracked path(s)
+- Summary: 20 changed/untracked path(s)
 
 ```
- M .ai/hooks/.projection.json
- M .ai/hooks/AGENTS.md
- M .ai/hooks/CLAUDE.md
- M .ai/hooks/prompt-guard.sh
- M .codex/agents/deep-reasoner.toml
  M .codex/agents/fast-worker.toml
- M .codex/agents/gatekeeper.toml
- M README.es.md
- M README.fr.md
- M README.ja.md
- M README.md
- M README.zh-CN.md
- M assets/hooks/AGENTS.md
- M assets/hooks/CLAUDE.md
- M assets/hooks/prompt-guard.sh
  M assets/reference-configs/external-tooling.md
- M assets/reference-configs/global-working-rules.md
  M assets/templates/helpers/install-agent-fleet.sh
  M docs/CHANGELOG.md
  M docs/reference-configs/external-tooling.md
- M docs/reference-configs/global-working-rules.md
+ D plans/plan-20260710-0230-think-cli-hook-harness.md
  M scripts/install-agent-fleet.sh
- M scripts/lib/project-init-lib.sh
  M src/cli/commands/doctor.ts
- M src/cli/commands/global-runtime.ts
- M tasks/lessons.md
+ M src/cli/commands/init-hook.ts
+ M src/cli/hook/prompt-intents.ts
  M tests/bootstrap-files.test.ts
  M tests/cli/doctor.test.ts
- M tests/cli/global-runtime-init.test.ts
- M tests/cli/init.test.ts
- M tests/create-project-dirs.runtime.test.ts
- M tests/global-working-rules-distribution.test.ts
+ M tests/cli/init-hook.test.ts
+ M tests/cli/prompt-intents.test.ts
  M tests/install-agent-fleet.test.ts
- M tests/install-scripts.test.ts
- M tests/readme-dx.test.ts
- M tests/scaffold-parity.test.ts
-?? docs/architecture/requests/archive/2026/20260710-020546-runtime-harness-hook-adapters.md
+?? plans/archive/plan-20260710-0230-think-cli-hook-harness.md
+?? tasks/archive/contract-20260710-0434-think-cli-hook-harness.md
+?? tasks/archive/notes-20260710-0434-think-cli-hook-harness.md
+?? tasks/archive/review-20260710-0434-think-cli-hook-harness.md
+?? tasks/archive/todo-20260710-0434-think-cli-hook-harness.md
 ```
 
 ## Source Artifacts

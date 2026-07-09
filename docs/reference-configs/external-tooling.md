@@ -496,7 +496,7 @@ guessed mapping.
 | Upstream frontmatter | Codex TOML |
 |---|---|
 | `model: opus`, `effort: max` | `model = "gpt-5.6-sol"`, `model_reasoning_effort = "xhigh"` |
-| `model: sonnet`, `effort: max` | `model = "gpt-5.6-terra"`, `model_reasoning_effort = "high"` |
+| `model: sonnet`, `effort: max` | `model = "gpt-5.6-terra"`, `model_reasoning_effort = "medium"` |
 | `tools: [...]` present | `sandbox_mode = "read-only"` |
 
 The Codex generator also rewrites the exact upstream provider label in the

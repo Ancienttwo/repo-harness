@@ -8,7 +8,7 @@ All notable changes to this skill are documented here.
 
 - Updated the generated Codex agent fleet so architecture and gatekeeper roles
   use GPT-5.6 Sol with `xhigh` reasoning, while `fast-worker` uses GPT-5.6
-  Terra with `high` reasoning; generated descriptions now fail closed when the
+  Terra with `medium` reasoning; generated descriptions now fail closed when the
   upstream provider label does not match the declared model mapping.
 - Added the shared Rule 0, first-principles reasoning, and generality guidance
   to global working-rule distribution and newly scaffolded root agent context.

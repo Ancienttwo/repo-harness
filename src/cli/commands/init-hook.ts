@@ -311,6 +311,7 @@ function doctorChecks(
 ): InitHookCheck[] {
   const checks: InitHookCheck[] = [];
   for (const entry of report.checks) {
+    if (target === 'claude' && entry.id === 'codex-cli-version') continue;
     const source: InitHookCheckSource = entry.id === 'security-config' ? 'security' : 'doctor';
     let checkStatus: InitHookCheckStatus = entry.status;
 

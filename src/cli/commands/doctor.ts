@@ -10,6 +10,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { spawnSync } from 'child_process';
+import { fileURLToPath } from 'url';
 import { ALL_TARGETS } from '../installer/targets/registry';
 import { checkCodegraph, type CodegraphCheckResult } from '../tools/codegraph';
 import { CLI_VERSION } from './status';
@@ -19,6 +20,8 @@ import { ROUTES } from '../hook/route-registry';
 
 const TRUST_STATE_LINE = /^\[hooks\.state\."[^"]+\/\.codex\/hooks\.json:/;
 const PACKAGE_NAME = 'repo-harness';
+const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+const MIN_CODEX_CLI_VERSION = '0.144.0';
 const UPDATE_CHECK_ENV = 'REPO_HARNESS_CHECK_UPDATES';
 const LATEST_VERSION_ENV = 'REPO_HARNESS_LATEST_VERSION';
 
@@ -116,6 +119,52 @@ export function compareVersions(a: string, b: string): number | null {
   return 0;
 }
 
+function checkCodexCliVersion(): DoctorCheckResult {
+  const id = 'codex-cli-version';
+  const describe = `Codex CLI supports generated GPT-5.6 agent profiles (>= ${MIN_CODEX_CLI_VERSION})`;
+  const resolved = findCommandOnPath('codex');
+  if (!resolved) {
+    return { id, describe, status: 'na', detail: 'codex not found on PATH' };
+  }
+
+  const result = spawnSync(resolved, ['--version'], {
+    encoding: 'utf-8',
+    timeout: 5000,
+    env: process.env,
+  });
+  if (result.status !== 0 || result.error) {
+    const error = result.stderr || result.stdout || String(result.error?.message ?? result.error ?? 'codex --version failed');
+    return { id, describe, status: 'warn', detail: `path=${resolved}; ${error.trim()}` };
+  }
+
+  const output = result.stdout.trim();
+  const match = output.match(/^codex-cli (\d+\.\d+\.\d+)$/);
+  const version = match?.[1] ?? '';
+  const comparison = compareVersions(version, MIN_CODEX_CLI_VERSION);
+  if (comparison === null) {
+    return {
+      id,
+      describe,
+      status: 'warn',
+      detail: `path=${resolved}; unable to parse version from ${JSON.stringify(output)}`,
+    };
+  }
+  if (comparison < 0) {
+    return {
+      id,
+      describe,
+      status: 'warn',
+      detail: `path=${resolved}; current=${version}; minimum=${MIN_CODEX_CLI_VERSION}`,
+    };
+  }
+  return {
+    id,
+    describe,
+    status: 'ok',
+    detail: `path=${resolved}; current=${version}; minimum=${MIN_CODEX_CLI_VERSION}`,
+  };
+}
+
 export function readLatestPackageVersion(env?: NodeJS.ProcessEnv): { version?: string; error?: string } {
   const activeEnv = env ?? process.env;
   if (activeEnv[LATEST_VERSION_ENV]) {
@@ -132,7 +181,7 @@ export function readLatestPackageVersion(env?: NodeJS.ProcessEnv): { version?: s
   ], {
     encoding: 'utf-8',
     timeout: 5000,
-    cwd: os.tmpdir(),
+    cwd: PACKAGE_ROOT,
     env: activeEnv,
   });
   if (result.status !== 0 || result.error) {
@@ -449,6 +498,7 @@ export function runDoctor(cwd: string = process.cwd()): DoctorReport {
   const securityReport = runSecurityScan({ cwd });
   checks.push(checkPath());
   checks.push(checkVersion());
+  checks.push(checkCodexCliVersion());
   checks.push(checkCliUpdate());
   for (const target of ALL_TARGETS) {
     if (target.supportsLocation('global')) {

@@ -76,9 +76,9 @@ const MODEL_EFFORT_MAP = {
   sonnet: {
     max: {
       model: "gpt-5.6-terra",
-      effort: "high",
+      effort: "medium",
       sourceDescription: "Sonnet 5 at max effort",
-      targetDescription: "GPT-5.6 Terra at high reasoning",
+      targetDescription: "GPT-5.6 Terra at medium reasoning",
     },
   },
 };

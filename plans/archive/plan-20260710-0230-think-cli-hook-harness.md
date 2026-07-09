@@ -1,13 +1,13 @@
 # Plan: CLI / Hook harness 与 GPT-5.6 运行时收敛
 
-> **Status**: Approved
+> **Status**: Archived
 > **Created**: 20260710-0230
 > **Slug**: think-cli-hook-harness
 > **Artifact Level**: work-package
 > **Contract Level**: true
 > **Promotion Reason**: verification_boundary
 > **Verification Boundary**: live CLI readback, hook intent verdicts, agent-fleet parity, full required checks
-> **Rollback Surface**: one bounded CLI/hook/model-profile commit with no data migration or external-state write
+> **Rollback Surface**: one bounded CLI/hook/model-profile commit plus removal of the obsolete Homebrew Codex cask; repo rollback is a revert, while host rollback would explicitly reinstall the cask
 > **Spec**: `docs/spec.md`
 > **Task Contract**: `tasks/contracts/20260710-0230-think-cli-hook-harness.contract.md`
 > **Task Review**: `tasks/reviews/20260710-0230-think-cli-hook-harness.review.md`
@@ -15,7 +15,7 @@
 
 ## Goal
 
-Make the current CLI/update-check and prompt-hook paths truthful under live use, and finish the already-landed GPT-5.6 agent-fleet migration with a role-appropriate reasoning baseline.
+Make the current CLI/update-check and prompt-hook paths truthful under live use, finish the already-landed GPT-5.6 agent-fleet migration with a role-appropriate reasoning baseline, and leave one supported Codex CLI installation on this machine.
 
 ## Agentic Routing
 
@@ -29,6 +29,8 @@ Make the current CLI/update-check and prompt-hook paths truthful under live use,
 ## Implementation
 
 - Run the Bun registry lookup from the installed package root, retain the absolute `process.execPath` authority boundary, and add a regression probe that fails when the selected cwd lacks `package.json`.
+- Report the PATH-resolved Codex CLI version and warn below `0.144.0`, the live-proven minimum for the installed GPT-5.6 Sol/Terra profiles; keep this check out of Claude-only setup reports, and do not mutate PATH or host installations.
+- Remove the obsolete Homebrew Codex `0.143.0` installation and retain the existing standalone `~/.local/bin/codex` `0.144.0` as the sole PATH authority; verify both GPT-5.6 model profiles through it.
 - Recognize the bounded Chinese imperative form `请直接修改/直接修改` before release-review advisory routing; add verdict tests without broadening generic `修改` into an execution signal.
 - Keep deep-reasoner and gatekeeper on `gpt-5.6-sol` + `xhigh`; keep fast-worker on `gpt-5.6-terra` but restore `medium` reasoning across generator, checked-in profile, reference mirror, and parity tests.
 - Do not add Responses-API-only GPT-5.6 features (Programmatic Tool Calling, persisted reasoning, explicit cache controls, Pro mode, API multi-agent) to this CLI/hook layer. Codex 0.144 supports the model profiles but not those request fields here.
@@ -41,11 +43,12 @@ Make the current CLI/update-check and prompt-hook paths truthful under live use,
 | Chinese classifier becomes over-broad | Match only the explicit `直接修改` imperative, retain question/refinement exclusions, and test both execution and advisory forms. |
 | GPT-5.6 profile increases cost/latency | Preserve the previous fast-worker `medium` baseline; keep `xhigh` only for architecture and gate roles. |
 | Generated copies drift | Update canonical generator, asset mirror, checked-in TOML, docs mirror, and parity tests together. |
+| Multiple Codex installations disagree on model support | Keep standalone `0.144.0` as the single independently managed CLI authority and remove the incompatible Homebrew `0.143.0` cask. The signed ChatGPT app's embedded runtime is not modified. |
 
 ## Promotion Gate
 
 - **Merge/PR unit**: one CLI/hook/agent-profile correctness slice.
-- **Rollback surface**: revert the slice commit; no stored data or host configuration migration.
+- **Rollback surface**: revert the slice commit; the only host mutation is the explicitly approved Homebrew cask removal, reversible by reinstalling that cask if rollback is intentionally requested.
 - **Verification boundary**: live `setup check`, direct prompt verdict, model availability probes, focused tests, `bun test`, typecheck, and required repo gates.
 - **Review/acceptance boundary**: review must confirm no unrelated prompt rules or API integrations were added.
 - **High-risk surface**: user-level update advice and execution-gate intent classification.
@@ -57,7 +60,7 @@ Make the current CLI/update-check and prompt-hook paths truthful under live use,
 - **Verification evidence**: command output from live CLI/hook probes plus focused and full test suites.
 - **Evaluator rubric**: correctness, fail-closed scope, generated parity, no new dependency/file/abstraction, and no regression in the 250 ms hook-engine budget.
 - **Stop condition**: both live reproductions pass, GPT-5.6 profiles load, all required checks pass, and review records no blocker.
-- **Rollback surface**: revert the bounded implementation commit and regenerate no external state.
+- **Rollback surface**: revert the bounded implementation commit; host rollback is a separate explicit Homebrew reinstall because the incompatible cask is intentionally not retained as fallback.
 
 ## Out of scope / Future work
 
@@ -67,7 +70,9 @@ Make the current CLI/update-check and prompt-hook paths truthful under live use,
 
 ## Task Breakdown
 
-- [ ] Fix and test the Bun registry lookup cwd.
-- [ ] Fix and test the explicit Chinese execution-intent route.
-- [ ] Normalize fast-worker GPT-5.6 Terra effort to `medium` across owned mirrors.
-- [ ] Run live probes, focused tests, full required checks, and read-only review.
+- [x] Fix and test the Bun registry lookup cwd.
+- [x] Add and test the GPT-5.6 Codex host-version readiness check.
+- [x] Remove the obsolete Homebrew Codex and verify a clean login shell resolves only standalone `0.144.0`.
+- [x] Fix and test the explicit Chinese execution-intent route.
+- [x] Normalize fast-worker GPT-5.6 Terra effort to `medium` across owned mirrors.
+- [x] Run live probes, focused tests, full required checks, and read-only review.
