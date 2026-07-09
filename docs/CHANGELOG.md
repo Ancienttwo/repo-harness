@@ -4,9 +4,11 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-07-10
+
 ### Changed
 
-- Updated the generated Codex agent fleet so architecture and gatekeeper roles
+- Updated the generated Codex agent fleet so `deep-reasoner` and `gatekeeper`
   use GPT-5.6 Sol with `xhigh` reasoning, while `fast-worker` uses GPT-5.6
   Terra with `medium` reasoning; generated descriptions now fail closed when the
   upstream provider label does not match the declared model mapping.
@@ -19,6 +21,12 @@ All notable changes to this skill are documented here.
   to `repo-harness@latest`, and made an already-installed Bun global runtime
   surface an opt-in, repository-isolated update hint instead of silently
   perpetuating a stale version.
+- Made `repo-harness doctor` run Bun registry lookup from the package root,
+  require the stable PATH-visible Codex CLI to be at least `0.144.0`, and keep
+  Claude-only setup free of irrelevant Codex warnings.
+- Made explicit direct-change-and-commit requests enter hook execution while
+  generic change language, questions, quoted text, negation, and contractions
+  remain non-execution intent.
 
 ## [0.9.1] - 2026-07-06
 

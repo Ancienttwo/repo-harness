@@ -1,6 +1,6 @@
 {
-  "version": "0.9.1",
-  "templateVersion": "0.9.1",
+  "version": "0.9.2",
+  "templateVersion": "0.9.2",
   "skillName": "repo-harness",
   "contractId": "tasks-first-harness-v1",
   "compatibility": {
@@ -195,6 +195,10 @@
     {
       "version": "0.9.1",
       "description": "Hardens the Bun-first installer and setup-check path with bunx skills probes, PATH readback hints, and explicit Codex delegation-mode selection"
+    },
+    {
+      "version": "0.9.2",
+      "description": "Hardens CLI environment diagnostics and hook execution intent while aligning the generated GPT-5.6 agent fleet with current Codex runtime guidance"
     }
   ],
   "generatedProjectStamp": {
