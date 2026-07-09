@@ -5,8 +5,9 @@
 - Base release: `v0.9.1`
 - Release scope: patch release for CLI environment diagnostics, hook execution
   intent classification, and the generated Codex GPT-5.6 agent fleet.
-- Publish status: **prepared, not published**. npm authentication, tag, and
-  GitHub release creation remain pending.
+- Publish status: **published**. `repo-harness@0.9.2` is npm `latest`, the
+  annotated `v0.9.2` tag targets the published source commit, and GitHub
+  release `repo-harness 0.9.2` is published.
 
 ## Scope
 
@@ -46,16 +47,27 @@
   tarball install smoke.
 - `bash scripts/check-tarball-install-smoke.sh` passed and confirmed that
   `repo-harness-0.9.2.tgz` installs with packaged CLI bins starting.
-- Pending: pushed-commit CI readback, npm publish, registry readback, tag,
-  GitHub release, and `bash scripts/check-release-published.sh 0.9.2`.
-- `npm whoami --registry https://registry.npmjs.org/` currently returns
-  `ENEEDAUTH`; no publish attempt has been made.
+- GitHub Actions CI run `29050004774` for
+  `76cd77c07052384f4107d0e3cbc293c7781048c1` completed successfully, including
+  the main Test job and Windows/Ubuntu/macOS MCP path matrix.
+- Publish used the maintainer's local private npm token through a temporary
+  userconfig. A fresh npm cache readback reported `version: 0.9.2`,
+  `dist-tags.latest: 0.9.2`, matching `gitHead`, tarball, integrity, and shasum.
+- `bash scripts/check-release-published.sh 0.9.2` passed after the tag push.
+- GitHub release `repo-harness 0.9.2` is published, non-draft,
+  non-prerelease, and targets `76cd77c07052384f4107d0e3cbc293c7781048c1`.
+- `bun add -g repo-harness@0.9.2` refreshed the PATH-visible Bun runtime;
+  a clean login shell resolves `repo-harness` to `/Users/kito/.bun/bin` and
+  reports `0.9.2`. `setup check --target codex --check-updates --json` confirms
+  the 11/11 Codex hook adapter entries and version parity; its non-blocking
+  attention state is limited to the existing repo adoption refresh and an
+  available CodeGraph update.
 
 ## Publish Checklist
 
-- [ ] Push the release-prep commit to `origin/main`.
-- [ ] Confirm CI for the pushed commit is green.
-- [ ] Publish `repo-harness@0.9.2` to npm with the `latest` dist-tag.
-- [ ] Push annotated tag `v0.9.2` at the published source commit.
-- [ ] Create GitHub release `repo-harness 0.9.2`.
-- [ ] Run `bash scripts/check-release-published.sh 0.9.2`.
+- [x] Push the release-prep commit to `origin/main`.
+- [x] Confirm CI for the pushed commit is green.
+- [x] Publish `repo-harness@0.9.2` to npm with the `latest` dist-tag.
+- [x] Push annotated tag `v0.9.2` at the published source commit.
+- [x] Create GitHub release `repo-harness 0.9.2`.
+- [x] Run `bash scripts/check-release-published.sh 0.9.2`.
