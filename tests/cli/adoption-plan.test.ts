@@ -9,7 +9,7 @@ import { renderAdoptionPlanJson, renderAdoptionPlanObject } from "../../src/core
 import { makeOperationId, type AdoptionOperation, type AdoptionPlan } from "../../src/core/adoption/operations";
 import { summarizeOperations } from "../../src/core/adoption/summary";
 import { gitignoreManagedBlockOperation } from "../../src/core/adoption/gitignore-plan";
-import { renderManagedBlock, upsertManagedBlock } from "../../src/effects/managed-block";
+import { renderManagedBlock, upsertManagedBlock } from "../../src/core/adoption/managed-block";
 import { ensureRepoRelativePath, resolveInsideRepo } from "../../src/effects/path-safety";
 import { applyAdoptionPlan, applyAppendManagedBlockOperation, rollbackAdoptionTransaction } from "../../src/effects/fs-transaction";
 import { readWorkflowContractAsset } from "../../src/core/adoption/workflow-contract-asset";

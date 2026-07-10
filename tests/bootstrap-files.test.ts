@@ -157,13 +157,14 @@ describe("Bootstrap Script Contracts", () => {
     expect(content).toContain("cat > tasks/lessons.md");
     expect(content).toContain("cat > docs/researches/README.md");
     expect(content).not.toContain("docs/TODO.md");
-    expect(sharedLib).toContain("new-plan.sh");
-    expect(sharedLib).toContain("capture-plan.sh");
-    expect(sharedLib).toContain("plan-to-todo.sh");
-    expect(sharedLib).toContain("contract-worktree.sh");
-    expect(sharedLib).toContain("archive-workflow.sh");
-    expect(sharedLib).toContain("verify-contract.sh");
-    expect(sharedLib).toContain("summarize-failures.sh");
+    expect(sharedLib).toContain("pi_install_helpers requires contract helper inventory");
+    expect(contract.helpers.scripts).toContain("new-plan.sh");
+    expect(contract.helpers.scripts).toContain("capture-plan.sh");
+    expect(contract.helpers.scripts).toContain("plan-to-todo.sh");
+    expect(contract.helpers.scripts).toContain("contract-worktree.sh");
+    expect(contract.helpers.scripts).toContain("archive-workflow.sh");
+    expect(contract.helpers.scripts).toContain("verify-contract.sh");
+    expect(contract.helpers.scripts).toContain("summarize-failures.sh");
     expect(sharedLib).toContain("check:context-files");
     expect(sharedLib).toContain("check:deploy-sql");
     expect(sharedLib).toContain("check:brain-manifest");
@@ -172,7 +173,7 @@ describe("Bootstrap Script Contracts", () => {
     expect(sharedLib).toContain("fallback_runner");
     expect(sharedLib).toContain("if spawning is not worthwhile");
     expect(sharedLib).toContain("pi_print_external_tooling_report");
-    expect(sharedLib).toContain("check-task-sync.sh");
+    expect(contract.helpers.scripts).toContain("check-task-sync.sh");
     expect(content).toContain("mkdir -p .ai/context");
     expect(content).toContain(".ai/harness/policy.json");
     expect(content).toContain(".ai/context/context-map.json");
@@ -207,8 +208,8 @@ describe("Bootstrap Script Contracts", () => {
     expect(contract.helpers.scripts).toContain("select-agent-context-blocks.sh");
     expect(contract.helpers.scripts).toContain("architecture-event.ts");
     expect(contract.helpers.scripts).toContain("capability-config.ts");
-    expect(sharedLib).toContain("ensure-task-workflow.sh");
-    expect(sharedLib).toContain("check-task-workflow.sh");
+    expect(contract.helpers.scripts).toContain("ensure-task-workflow.sh");
+    expect(contract.helpers.scripts).toContain("check-task-workflow.sh");
     expect(sharedLib).not.toContain("skill-factory-create.sh");
     expect(sharedLib).not.toContain("skill-factory-check.sh");
     expect(sharedLib).toContain("pi_install_workflow_contract");
@@ -310,15 +311,16 @@ describe("Bootstrap Script Contracts", () => {
     expect(content).toContain("install_workflow_contract");
     expect(sharedLib).toContain("contract.template.md");
     expect(sharedLib).toContain("implementation-notes.template.md");
-    expect(sharedLib).toContain("verify-contract.sh");
-    expect(sharedLib).toContain("summarize-failures.sh");
+    expect(sharedLib).toContain("pi_install_helpers requires contract helper inventory");
+    expect(contract.helpers.scripts).toContain("verify-contract.sh");
+    expect(contract.helpers.scripts).toContain("summarize-failures.sh");
     expect(sharedLib).toContain("check:context-files");
     expect(sharedLib).toContain("check:deploy-sql");
     expect(sharedLib).toContain("pi_print_external_tooling_report");
-    expect(sharedLib).toContain("check-task-sync.sh");
-    expect(sharedLib).toContain("ensure-task-workflow.sh");
-    expect(sharedLib).toContain("capture-plan.sh");
-    expect(sharedLib).toContain("check-task-workflow.sh");
+    expect(contract.helpers.scripts).toContain("check-task-sync.sh");
+    expect(contract.helpers.scripts).toContain("ensure-task-workflow.sh");
+    expect(contract.helpers.scripts).toContain("capture-plan.sh");
+    expect(contract.helpers.scripts).toContain("check-task-workflow.sh");
     expect(content).toContain(".ai/context");
     expect(content).toContain(".ai/harness/policy.json");
     expect(content).toContain(".ai/context/context-map.json");
@@ -438,51 +440,6 @@ describe("Bootstrap Script Contracts", () => {
     expect(codexReview).toContain("else BASE=HEAD");
     expect(codexReview).toContain("run_with_optional_timeout codex exec");
     expect(codexReview).not.toContain("${TO:+$TO 330}");
-  });
-
-  test("hook template should reference existing local hook scripts", () => {
-    const settings = read("assets/hooks/settings.template.json");
-    const codexHooks = read("assets/hooks/codex.hooks.template.json");
-    const hookCommands = [...`${settings}\n${codexHooks}`.matchAll(/\.ai\/hooks\/([A-Za-z0-9.-]+\.sh)/g)].map((m) => m[1]);
-
-    expect(hookCommands.length).toBeGreaterThan(0);
-    for (const fileName of hookCommands) {
-      expect(existsSync(join(ROOT, "assets/hooks", fileName))).toBe(true);
-    }
-
-    expect(hookCommands).toContain("run-hook.sh");
-    expect(settings).toContain(".ai/hooks/run-hook.sh");
-    expect(codexHooks).toContain(".ai/hooks/run-hook.sh");
-    expect(settings).toContain("worktree-guard.sh");
-    expect(settings).toContain("pre-edit-guard.sh");
-    expect(settings).toContain("subagent-return-channel-guard.sh");
-    expect(settings).toContain("post-edit-guard.sh");
-    expect(settings).toContain("minimal-change-observer.sh");
-    expect(settings).toContain("prompt-guard.sh");
-    expect(settings).not.toContain("autoresearch-advisory.sh");
-    expect(codexHooks).not.toContain("autoresearch-advisory.sh");
-    expect(settings).toContain("stop-orchestrator.sh");
-    expect(settings).toContain("post-bash.sh");
-    expect(settings).toContain("post-tool-observer.sh");
-    expect(settings).not.toContain("trace-event.sh");
-    expect(settings).not.toContain("context-pressure-hook.sh");
-    expect(settings).toContain("session-start-context.sh");
-    expect(settings).toContain("minimal-change-context.sh");
-    expect(settings).not.toContain("codex-delegation-advisor.sh");
-    expect(settings).not.toContain("subagent-start-context.sh");
-    expect(settings).not.toContain("subagent-stop-quality.sh");
-    expect(codexHooks).toContain("codex-delegation-advisor.sh");
-    expect(codexHooks).toContain("subagent-start-context.sh");
-    expect(codexHooks).toContain("subagent-stop-quality.sh");
-    expect(codexHooks).toContain("minimal-change-context.sh");
-    expect(codexHooks).toContain("minimal-change-observer.sh");
-    expect(settings).not.toContain("memory-intake.sh");
-    expect(settings).not.toContain("skill-factory-session-end.sh");
-    expect(settings).not.toContain("bash -lc");
-    expect(settings).not.toContain("atomic-pending.sh");
-    expect(settings).not.toContain("atomic-commit.sh");
-    expect(settings).not.toContain("\"$TOOL_INPUT\"");
-    expect(settings).not.toContain("\"$PROMPT\"");
   });
 
   test("setup script should delegate to the typed global init path", () => {

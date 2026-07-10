@@ -3,12 +3,23 @@ import { createHash } from "crypto";
 import {
   existsSync,
   lstatSync,
+  mkdirSync,
+  mkdtempSync,
   readdirSync,
   readFileSync,
+  rmSync,
   statSync,
+  symlinkSync,
+  writeFileSync,
 } from "fs";
+import { tmpdir } from "os";
 import { join, relative } from "path";
 import { spawnSync } from "child_process";
+import {
+  collectProjectionFiles,
+  readProjectionFile,
+  writeProjectionFileAtomic,
+} from "../src/core/source-projection";
 
 const ROOT = join(import.meta.dir, "..");
 const ASSETS_HOOKS = join(ROOT, "assets/hooks");
@@ -84,11 +95,7 @@ describe("hook source projection", () => {
       version: 1,
       canonical_root: "assets/hooks",
       projection_target: ".ai/hooks",
-      package_only: [
-        "projection.json",
-        "codex.hooks.template.json",
-        "settings.template.json",
-      ],
+      package_only: ["projection.json"],
       repo_only: [],
     });
 
@@ -172,5 +179,58 @@ describe("hook source projection", () => {
       ]),
     );
     expect(after).toEqual(before);
+  });
+
+  test("projection reads reject symlinked roots and ancestor directories", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "source-projection-read-"));
+    const sourceRoot = join(tmp, "source");
+    const sourceLink = join(tmp, "source-link");
+    const outside = join(tmp, "outside");
+    try {
+      mkdirSync(sourceRoot);
+      mkdirSync(outside);
+      writeFileSync(join(sourceRoot, "local.sh"), "#!/bin/bash\n");
+      writeFileSync(join(outside, "escaped.sh"), "#!/bin/bash\n");
+      symlinkSync(sourceRoot, sourceLink);
+
+      expect(() => collectProjectionFiles(sourceLink)).toThrow("projection root must not be a symlink");
+
+      symlinkSync(outside, join(sourceRoot, "nested"));
+      expect(() => readProjectionFile(sourceRoot, "nested/escaped.sh")).toThrow(
+        "symlink is not allowed in projection path",
+      );
+      expect(() => collectProjectionFiles(sourceRoot)).toThrow("symlink is not allowed in source projection");
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test("projection writes reject symlinked roots, symlinked parents, and repo escapes", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "source-projection-write-"));
+    const repoRoot = join(tmp, "repo");
+    const repoLink = join(tmp, "repo-link");
+    const outside = join(tmp, "outside");
+    try {
+      mkdirSync(join(repoRoot, ".ai"), { recursive: true });
+      mkdirSync(outside);
+      symlinkSync(repoRoot, repoLink);
+
+      expect(() =>
+        writeProjectionFileAtomic(repoLink, join(repoLink, ".ai", "hooks", "test.sh"), "safe\n", "100644"),
+      ).toThrow("projection root must not be a symlink");
+
+      symlinkSync(outside, join(repoRoot, ".ai", "hooks"));
+      expect(() =>
+        writeProjectionFileAtomic(repoRoot, join(repoRoot, ".ai", "hooks", "test.sh"), "safe\n", "100644"),
+      ).toThrow("symlink is not allowed in projection parent");
+      expect(existsSync(join(outside, "test.sh"))).toBe(false);
+
+      expect(() =>
+        writeProjectionFileAtomic(repoRoot, join(repoRoot, "..", "escaped.sh"), "safe\n", "100644"),
+      ).toThrow("projection path escapes root");
+      expect(existsSync(join(tmp, "escaped.sh"))).toBe(false);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
   });
 });

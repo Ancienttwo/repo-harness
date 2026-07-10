@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "fs";
-import { dirname, join } from "path";
+import { dirname, extname, isAbsolute, join } from "path";
 import { fileURLToPath } from "url";
 
 export type WorkflowContract = {
@@ -63,8 +63,8 @@ export type WorkflowContract = {
     };
   };
   helpers: {
-    runtimeDirectory?: string;
-    runtimeSource?: string;
+    runtimeDirectory: string;
+    runtimeSource: string;
     scripts: string[];
   };
   artifacts: {
@@ -127,46 +127,137 @@ const REPO_ROOT = SCRIPT_DIR.endsWith("/assets/templates/helpers")
   : join(SCRIPT_DIR, "..");
 const LOCAL_ASSET_PATH = join(REPO_ROOT, "assets", "workflow-contract.v1.json");
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function requireRecord(value: unknown, field: string, contractPath: string): Record<string, unknown> {
+  if (!isRecord(value)) {
+    throw new Error(`invalid workflow contract at ${contractPath}: ${field} must be an object`);
+  }
+  return value;
+}
+
+function requireString(value: unknown, field: string, contractPath: string): string {
+  if (typeof value !== "string" || value.length === 0) {
+    throw new Error(`invalid workflow contract at ${contractPath}: ${field} must be a non-empty string`);
+  }
+  return value;
+}
+
+function requireStringArray(value: unknown, field: string, contractPath: string): string[] {
+  if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string" || entry.length === 0)) {
+    throw new Error(`invalid workflow contract at ${contractPath}: ${field} must be an array of non-empty strings`);
+  }
+  return value;
+}
+
+function validateHelperInventory(entries: string[], contractPath: string): void {
+  const fileNames = new Set<string>();
+  const helperIds = new Set<string>();
+
+  for (const entry of entries) {
+    if (
+      entry.includes("/") ||
+      entry.includes("\\") ||
+      entry === "." ||
+      entry === ".." ||
+      ![".sh", ".ts"].includes(extname(entry))
+    ) {
+      throw new Error(
+        `invalid workflow contract at ${contractPath}: helpers.scripts contains unsafe helper name ${JSON.stringify(entry)}`,
+      );
+    }
+    if (fileNames.has(entry)) {
+      throw new Error(`invalid workflow contract at ${contractPath}: duplicate helper file ${JSON.stringify(entry)}`);
+    }
+    fileNames.add(entry);
+
+    const id = entry.slice(0, -extname(entry).length);
+    if (!id) {
+      throw new Error(
+        `invalid workflow contract at ${contractPath}: helpers.scripts contains empty helper id ${JSON.stringify(entry)}`,
+      );
+    }
+    if (helperIds.has(id)) {
+      throw new Error(`invalid workflow contract at ${contractPath}: duplicate helper id ${JSON.stringify(id)}`);
+    }
+    helperIds.add(id);
+  }
+}
+
+function validateWorkflowContract(value: unknown, contractPath: string): WorkflowContract {
+  const contract = requireRecord(value, "root", contractPath);
+  requireString(contract.version, "version", contractPath);
+  requireString(contract.contractId, "contractId", contractPath);
+  requireRecord(contract.compatibility, "compatibility", contractPath);
+
+  const helpers = requireRecord(contract.helpers, "helpers", contractPath);
+  const helperScripts = requireStringArray(helpers.scripts, "helpers.scripts", contractPath);
+  validateHelperInventory(helperScripts, contractPath);
+  requireString(helpers.runtimeDirectory, "helpers.runtimeDirectory", contractPath);
+  requireString(helpers.runtimeSource, "helpers.runtimeSource", contractPath);
+
+  const artifacts = requireRecord(contract.artifacts, "artifacts", contractPath);
+  requireString(artifacts.runtimeManifest, "artifacts.runtimeManifest", contractPath);
+  requireStringArray(artifacts.requiredDirectories, "artifacts.requiredDirectories", contractPath);
+  requireStringArray(artifacts.requiredFiles, "artifacts.requiredFiles", contractPath);
+  if (artifacts.runtimeFiles !== undefined) {
+    requireStringArray(artifacts.runtimeFiles, "artifacts.runtimeFiles", contractPath);
+  }
+
+  requireRecord(contract.documents, "documents", contractPath);
+  const migrations = requireRecord(contract.migrations, "migrations", contractPath);
+  requireStringArray(migrations.legacyVersions, "migrations.legacyVersions", contractPath);
+  requireStringArray(migrations.legacyPaths, "migrations.legacyPaths", contractPath);
+
+  return value as WorkflowContract;
+}
+
 export function resolveAgenticDevRoot(_repoRoot = REPO_ROOT): string {
-  const configuredRoot =
-    process.env.AGENTIC_DEV_ROOT ||
-    process.env.AGENTIC_DEV_SKILL_ROOT;
-  if (configuredRoot && configuredRoot.length > 0) return configuredRoot;
+  const configuredRoot = process.env.REPO_HARNESS_SOURCE_ROOT?.trim();
+  if (configuredRoot) {
+    if (!isAbsolute(configuredRoot)) {
+      throw new Error("REPO_HARNESS_SOURCE_ROOT must be an absolute path");
+    }
+    const configuredContract = join(configuredRoot, "assets", "workflow-contract.v1.json");
+    if (!existsSync(configuredContract)) {
+      throw new Error(`REPO_HARNESS_SOURCE_ROOT has no workflow contract: ${configuredContract}`);
+    }
+    return configuredRoot;
+  }
 
   if (existsSync(LOCAL_ASSET_PATH)) return REPO_ROOT;
 
-  const home = process.env.HOME;
-  if (home && home.length > 0) {
-    const candidates = [
-      join(home, "Projects", "repo-harness"),
-      join(home, ".codex", "skills", "repo-harness"),
-      join(home, ".claude", "skills", "repo-harness"),
-      join(home, ".agents", "skills", "repo-harness"),
-    ];
-
-    for (const candidate of candidates) {
-      if (existsSync(candidate)) return candidate;
-    }
-
-    return candidates[0];
-  }
-
-  return "/Users/ancienttwo/.agents/skills/repo-harness";
-}
-
-export function resolveAgenticDevSkillRoot(repoRoot = REPO_ROOT): string {
-  return resolveAgenticDevRoot(repoRoot);
+  throw new Error(
+    `repo-harness package workflow contract is missing: ${LOCAL_ASSET_PATH}; ` +
+    "set REPO_HARNESS_SOURCE_ROOT to an explicit source checkout",
+  );
 }
 
 export function resolveUpstreamWorkflowContract(repoRoot = REPO_ROOT): string {
-  if (existsSync(LOCAL_ASSET_PATH)) return LOCAL_ASSET_PATH;
   return join(resolveAgenticDevRoot(repoRoot), "assets", "workflow-contract.v1.json");
 }
 
 export function loadWorkflowContract(
   contractPath = resolveUpstreamWorkflowContract()
 ): WorkflowContract {
-  return JSON.parse(readFileSync(contractPath, "utf-8")) as WorkflowContract;
+  let source: string;
+  try {
+    source = readFileSync(contractPath, "utf-8");
+  } catch {
+    throw new Error(`workflow contract not found: ${contractPath}`);
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(source);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`invalid workflow contract JSON at ${contractPath}: ${message}`);
+  }
+
+  return validateWorkflowContract(parsed, contractPath);
 }
 
 export function resolveInstalledWorkflowContract(repoRoot: string): string {
@@ -180,10 +271,6 @@ export function resolveWorkflowContractForRepo(repoRoot: string): string {
 
 export function getHelperScripts(contract: WorkflowContract): string[] {
   return [...contract.helpers.scripts];
-}
-
-export function getHelperRuntimeDir(contract: WorkflowContract): string {
-  return contract.helpers.runtimeDirectory ?? "package:assets/templates/helpers";
 }
 
 export function getRequiredDirectories(contract: WorkflowContract): string[] {

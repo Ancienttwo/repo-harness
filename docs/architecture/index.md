@@ -62,7 +62,7 @@ Project
 
 - `scripts/architecture-queue.sh` records architecture-sensitive edits as requests.
 - `scripts/capability-resolver.ts` resolves changed paths to capabilities with longest-prefix matching.
-- `scripts/archive-architecture-request.sh` archives handled requests after an agent records the resolution status and linked artifacts.
+- `scripts/archive-architecture-request.sh` archives handled requests after an agent records the resolution status and linked artifacts; `Resolved` requires the request's declared architecture module as an existing durable artifact.
 - `scripts/context-contract-sync.sh` keeps only the controlled architecture block in capability `AGENTS.md` and `CLAUDE.md` files aligned.
 - `scripts/workstream-sync.sh` keeps durable multi-session progress under `tasks/workstreams/<domain>/<capability>/` and projects only pointers into local contracts.
 - Semantic diagrams live as Mermaid fenced blocks in the relevant architecture module or snapshot Markdown.

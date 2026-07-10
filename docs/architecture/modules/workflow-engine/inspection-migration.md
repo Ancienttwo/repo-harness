@@ -20,7 +20,10 @@ Authoritative entrypoints:
 
 Scale signal: `migrate-project-template.sh` is about 900 lines and
 `project-init-lib.sh` is about 1,879 lines, so drift risk is concentrated in
-duplicated helper lists, policy generation, and idempotency behavior.
+policy generation and idempotency behavior. Helper implementations no longer
+have two authoring surfaces: `assets/workflow-contract.v1.json` owns the
+inventory, `scripts/` owns implementation bytes and modes, and
+`assets/templates/helpers/` is a checked-in deterministic projection.
 
 ## P2 Trace
 
@@ -32,6 +35,14 @@ templates, helper scripts, workflow contract, policy, context map, brain
 manifest, and reference config stubs -> updates `.claude/.skill-version` ->
 prints a migration report.
 
+The helper projection route is
+`assets/workflow-contract.v1.json#helpers.scripts` ->
+`scripts/sync-helper-sources.ts` -> `src/core/source-projection.ts` ->
+`assets/templates/helpers/`. `migrate-project-template.sh` is the only explicit
+package delegate: the `scripts/` file remains the full implementation while the
+package helper delegates to the package-local source tree or the checkout named
+by `REPO_HARNESS_SOURCE_ROOT`.
+
 The sync boundary is filesystem-first. Inputs are repo files and contract assets.
 Outputs are repo-local Markdown, JSON, JSONL, shell, and TypeScript files. The
 only async/external boundary is advisory external-tooling detection; it must not
@@ -41,6 +52,10 @@ Error paths:
 
 - Missing repo path exits before mutation.
 - Missing inspector or migrator exits before a partial workflow claim.
+- Missing or malformed workflow contracts fail before helper discovery; helper
+  directories and filename extensions are never scanned or guessed.
+- A source-checkout override must be an absolute `REPO_HARNESS_SOURCE_ROOT`
+  containing the canonical contract and selected helper implementation.
 - Apply mode runs strict workflow verification and fails the migration if it does not pass.
 
 ## P3 Decision
@@ -51,9 +66,28 @@ delete only manifest-owned `known_generated` files, and preserve `_ref/`, `_ops/
 secrets, local env, and custom hooks.
 
 At 10x target repo variety, the first failure would be hard-coded shell lists
-drifting from `assets/workflow-contract.v1.json`. The current manifest-backed
-helper inventory is the right direction; new helpers should be added through the
-contract and mirrored tests, not one-off shell branches.
+drifting from `assets/workflow-contract.v1.json`. The manifest-backed inventory
+and deterministic projection make that drift a failing check. New helpers must
+be added to the contract and `scripts/`; `bun run sync:helpers` produces the
+package copy and `bun run check:helpers` verifies it. No compatibility directory,
+home-directory search, legacy env alias, or extension fallback participates in
+helper resolution.
+
+## 2026-07-11 Helper Authority Closeout
+
+- `src/core/source-projection.ts` is the shared filesystem projection primitive
+  used by hook and helper projections; it preserves bytes and executable mode,
+  rejects symlinks, and writes atomically.
+- `scripts/sync-helper-sources.ts` reads the helper inventory only from the
+  workflow contract, rejects unclassified package files, and preserves the one
+  declared migration delegate.
+- `src/cli/runtime/helper-runner.ts` resolves only contract-listed helpers from
+  the package or an explicit source checkout. Missing contracts, malformed JSON,
+  unsafe inventory entries, ambiguous helper IDs, and missing implementation
+  files fail closed.
+- `scripts/workflow-contract.ts` accepts the package-local contract, an installed
+  target-repo contract, or an explicit source checkout. It no longer searches
+  home directories or legacy skill roots.
 
 ## 2026-07-06 Delegation Policy Template Closeout
 
@@ -67,5 +101,4 @@ contract and mirrored tests, not one-off shell branches.
 
 ## Optimization Backlog
 
-- Reduce duplicated helper and required-path lists that still exist across shell scripts.
-- Consider a pure-shell or bundled JSON reader fallback only if generated repos often lack Node, Bun, and Python.
+- Reduce duplicated required-path lists that still exist across shell scripts.

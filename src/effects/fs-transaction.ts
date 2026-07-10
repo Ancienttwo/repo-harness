@@ -23,7 +23,7 @@ import type {
 } from "../core/adoption/operations";
 import { isWorkflowContractInstallOperation } from "../core/adoption/workflow-contract-plan";
 import { resolveInsideRepo, resolveParentInsideRepo } from "./path-safety";
-import { upsertManagedBlock } from "./managed-block";
+import { upsertManagedBlock } from "../core/adoption/managed-block";
 
 const BACKUP_ROOT = ".ai/harness/backups/fs-transaction";
 const LOCK_SUFFIX = ".repo-harness.lock";

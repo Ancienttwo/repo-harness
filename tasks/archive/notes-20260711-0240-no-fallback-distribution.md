@@ -1,3 +1,19 @@
+> **Archived**: 2026-07-11 02:40
+> **Related Plan**: plans/archive/plan-20260703-1405-no-fallback-distribution.md
+> **Outcome**: Superseded
+> **Lifecycle**: notes
+> **Parent Run ID**: one-shot-authority-foundation-migration
+
+## 2026-07-11 Archive Migration Correction
+
+- The one-shot CO-08 migration originally labeled this historical workflow
+  `Completed` without producing completion evidence current to that archive
+  operation. That label overstated what the migration proved.
+- The archive outcome is therefore `Superseded`: the historical implementation
+  and review content remain intact, while
+  `plans/plan-20260711-0139-code-authority-foundation-v1.md` now owns the
+  authoritative no-compatibility and rule-distribution closeout.
+
 # No-Fallback Rule Distribution Hardening
 
 Implemented the plan at `plans/plan-20260703-1405-no-fallback-distribution.md`:

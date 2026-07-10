@@ -232,6 +232,10 @@ function buildCapability(args: Args, repo: string): Capability {
 }
 
 function readRegistry(repo: string): Registry {
+  if (!existsSync(resolve(repo, REGISTRY_PATH))) {
+    // This explicit add command is the sole creation path for a missing registry.
+    return { version: 1, capabilities: [] };
+  }
   return readCapabilityRegistry(repo);
 }
 

@@ -15,9 +15,12 @@ describe('minimal-change context', () => {
     const policy = normalizeMinimalChangePolicy({ mode: 'advice', max_context_words: 180 });
     const context = renderMinimalChangeSessionContext(policy);
     expect(context).toContain('Minimal-change policy');
+    expect(context).toContain('Reason from first principles');
     expect(context).toContain('Preserve explicit requirements');
     expect(context).toContain('security, validation, data safety');
     expect(context).toContain('No compatibility fallbacks');
+    expect(context).toContain('one source of truth per datum');
+    expect(context).toContain('at least two real consumers');
     expect(minimalChangeContextWordCount(context)).toBeLessThanOrEqual(180);
   });
 

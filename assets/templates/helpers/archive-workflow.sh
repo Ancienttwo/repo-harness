@@ -11,6 +11,130 @@ else
 fi
 helper_dir="$SCRIPT_DIR"
 
+archive_transaction_dir=""
+archive_transaction_active=0
+archive_transaction_paths=()
+archive_transaction_existed=()
+
+archive_transaction_snapshot() {
+  local path="$1"
+  local index="${#archive_transaction_paths[@]}"
+  archive_transaction_paths+=("$path")
+  if [[ -e "$path" || -L "$path" ]]; then
+    archive_transaction_existed+=("1")
+    mkdir -p "$archive_transaction_dir/$index"
+    cp -Rp "$path" "$archive_transaction_dir/$index/value"
+  else
+    archive_transaction_existed+=("0")
+  fi
+}
+
+archive_transaction_rollback() {
+  local index path
+  for ((index = ${#archive_transaction_paths[@]} - 1; index >= 0; index--)); do
+    path="${archive_transaction_paths[$index]}"
+    rm -rf "$path"
+    if [[ "${archive_transaction_existed[$index]}" == "1" ]]; then
+      mkdir -p "$(dirname "$path")"
+      cp -Rp "$archive_transaction_dir/$index/value" "$path"
+    fi
+  done
+}
+
+archive_transaction_on_exit() {
+  local status=$?
+  trap - EXIT
+  if [[ "$archive_transaction_active" -eq 1 && "$status" -ne 0 ]]; then
+    if ! archive_transaction_rollback; then
+      echo "archive-workflow: rollback failed; inspect $archive_transaction_dir before retrying" >&2
+      status=1
+    else
+      echo "archive-workflow: archive failed; restored live workflow artifacts" >&2
+    fi
+  fi
+  [[ -z "$archive_transaction_dir" ]] || rm -rf "$archive_transaction_dir"
+  exit "$status"
+}
+
+archive_transaction_begin() {
+  archive_transaction_dir="$(mktemp -d)"
+  archive_transaction_active=1
+  trap archive_transaction_on_exit EXIT
+  archive_transaction_snapshot "plans"
+  archive_transaction_snapshot "tasks"
+  archive_transaction_snapshot ".ai/harness/active-plan"
+  archive_transaction_snapshot ".ai/harness/active-worktree"
+  archive_transaction_snapshot ".claude/.active-plan"
+  archive_transaction_snapshot ".claude/.plan-state"
+}
+
+archive_transaction_commit() {
+  archive_transaction_active=0
+  trap - EXIT
+  rm -rf "$archive_transaction_dir"
+  archive_transaction_dir=""
+}
+
+completed_archive_gate() {
+  local contract_file="$1"
+  local review_file="$2"
+  local workflow_state_file=".ai/hooks/lib/workflow-state.sh"
+  local contract_status checks_file checks_message
+  local external_row external_state external_reviewer external_source external_message
+
+  [[ -f "$contract_file" ]] || {
+    echo "archive-workflow: Completed requires an active contract: $contract_file" >&2
+    return 1
+  }
+  [[ -f "$review_file" ]] || {
+    echo "archive-workflow: Completed requires an active review: $review_file" >&2
+    return 1
+  }
+  [[ -f "$workflow_state_file" ]] || {
+    echo "archive-workflow: Completed requires workflow gate authority: $workflow_state_file" >&2
+    return 1
+  }
+
+  # shellcheck source=/dev/null
+  . "$workflow_state_file"
+  for gate_function in workflow_review_recommends_pass workflow_external_acceptance_status workflow_checks_file workflow_checks_pass; do
+    if ! declare -F "$gate_function" >/dev/null 2>&1; then
+      echo "archive-workflow: workflow gate authority is missing $gate_function" >&2
+      return 1
+    fi
+  done
+
+  contract_status="$(awk '/^> \*\*Status\*\*:/ {sub(/^.*> \*\*Status\*\*:[[:space:]]*/, ""); gsub(/\r/, ""); print; exit}' "$contract_file" | xargs)"
+  if [[ "$contract_status" != "Fulfilled" ]]; then
+    echo "archive-workflow: Completed requires contract status Fulfilled, got ${contract_status:-missing}: $contract_file" >&2
+    return 1
+  fi
+
+  if ! workflow_review_recommends_pass "$review_file"; then
+    echo "archive-workflow: Completed requires review Recommendation: pass: $review_file" >&2
+    return 1
+  fi
+
+  checks_file="$(workflow_checks_file)"
+  if ! checks_message="$(workflow_checks_pass "$checks_file" "$contract_file" "$review_file")"; then
+    echo "archive-workflow: Completed requires current passing verify-sprint evidence: ${checks_message:-$checks_file}" >&2
+    return 1
+  fi
+
+  external_row="$(workflow_external_acceptance_status "$review_file")"
+  IFS=$'\t' read -r external_state external_reviewer external_source external_message <<< "$external_row"
+  if [[ "$external_state" != "pass" && "$external_state" != "manual_override" ]]; then
+    echo "archive-workflow: Completed external acceptance gate failed: ${external_message:-missing external acceptance}" >&2
+    return 1
+  fi
+
+  if [[ ! -f "$helper_dir/check-architecture-sync.sh" ]]; then
+    echo "archive-workflow: Completed requires architecture freshness helper: $helper_dir/check-architecture-sync.sh" >&2
+    return 1
+  fi
+  REPO_HARNESS_TARGET_REPO_ROOT="$PWD" bash "$helper_dir/check-architecture-sync.sh"
+}
+
 usage() {
   cat <<'USAGE_EOF'
 Usage: scripts/archive-workflow.sh --plan <plan-file> --outcome <Completed|Abandoned|Superseded>
@@ -202,8 +326,6 @@ if [[ "$normalized_plan" == plans/archive/* ]]; then
   exit 1
 fi
 
-mkdir -p plans/archive tasks/archive tasks/notes
-
 timestamp="$(date +%Y%m%d-%H%M)"
 timestamp_human="$(date '+%Y-%m-%d %H:%M')"
 plan_base="$(basename "$plan_file")"
@@ -212,6 +334,27 @@ original_artifact_stem="$(printf '%s' "$plan_base" | sed -E 's/^plan-//; s/\.md$
 artifact_stem="$(plan_artifact_stem_from_parts "$plan_file" "$original_artifact_stem" "$slug")"
 parent_run_id="${HOOK_RUN_ID:-${CLAUDE_RUN_ID:-${CODEX_RUN_ID:-run-${timestamp}}}}"
 todo_source_plan="$(awk -F': ' '/^> \*\*Source Plan\*\*:/ {print $2; exit}' tasks/todos.md 2>/dev/null | xargs)"
+
+contract_file="tasks/contracts/${artifact_stem}.contract.md"
+if [[ ! -f "$contract_file" && -f "tasks/contracts/${slug}.contract.md" ]]; then
+  contract_file="tasks/contracts/${slug}.contract.md"
+fi
+review_file="tasks/reviews/${artifact_stem}.review.md"
+if [[ ! -f "$review_file" && -f "tasks/reviews/${slug}.review.md" ]]; then
+  review_file="tasks/reviews/${slug}.review.md"
+fi
+
+if [[ "$outcome" == "Completed" ]]; then
+  completed_archive_gate "$contract_file" "$review_file"
+fi
+
+if [[ ! -f "$helper_dir/refresh-current-status.sh" ]]; then
+  echo "archive-workflow: required current-status refresh helper is missing: $helper_dir/refresh-current-status.sh" >&2
+  exit 1
+fi
+
+archive_transaction_begin
+mkdir -p plans/archive tasks/archive tasks/notes
 
 plan_status="Archived"
 if [[ "$outcome" == "Abandoned" ]]; then
@@ -257,10 +400,6 @@ if [[ -f "$notes_file" ]]; then
   rm -f "$notes_file"
 fi
 
-contract_file="tasks/contracts/${artifact_stem}.contract.md"
-if [[ ! -f "$contract_file" && -f "tasks/contracts/${slug}.contract.md" ]]; then
-  contract_file="tasks/contracts/${slug}.contract.md"
-fi
 if [[ -f "$contract_file" ]]; then
   archive_contract="$(unique_archive_path "tasks/archive/contract-${timestamp}-${slug}.md")"
   {
@@ -275,10 +414,6 @@ if [[ -f "$contract_file" ]]; then
   rm -f "$contract_file"
 fi
 
-review_file="tasks/reviews/${artifact_stem}.review.md"
-if [[ ! -f "$review_file" && -f "tasks/reviews/${slug}.review.md" ]]; then
-  review_file="tasks/reviews/${slug}.review.md"
-fi
 if [[ -f "$review_file" ]]; then
   archive_review="$(unique_archive_path "tasks/archive/review-${timestamp}-${slug}.md")"
   {
@@ -322,9 +457,9 @@ rm -f ".claude/.plan-state/${plan_key}.todo.md.bak"
 rm -f ".claude/.plan-state/${plan_key}.task-state.json.bak"
 rm -f ".claude/.plan-state/${plan_key}.task-handoff.md.bak"
 
-if [[ -x "$helper_dir/refresh-current-status.sh" ]]; then
-  bash "$helper_dir/refresh-current-status.sh" --clear --write --reason "archive-workflow" || true
-fi
+bash "$helper_dir/refresh-current-status.sh" --clear --write --reason "archive-workflow"
+
+archive_transaction_commit
 
 echo "Archived plan to: $archive_plan_path"
 if [[ -f "docs/reference-configs/handoff-protocol.md" ]]; then

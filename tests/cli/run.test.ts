@@ -8,6 +8,20 @@ import { resolveHelper, runHelper } from "../../src/cli/runtime/helper-runner";
 const ROOT = join(import.meta.dir, "..", "..");
 const CLI = join(ROOT, "src/cli/index.ts");
 
+function writeSourceHelper(tmp: string, fileName: string, content: string): string {
+  const sourceRoot = join(tmp, "source-root");
+  mkdirSync(join(sourceRoot, "assets"), { recursive: true });
+  mkdirSync(join(sourceRoot, "scripts"), { recursive: true });
+  writeFileSync(
+    join(sourceRoot, "assets", "workflow-contract.v1.json"),
+    `${JSON.stringify({ helpers: { scripts: [fileName] } }, null, 2)}\n`,
+  );
+  const helperPath = join(sourceRoot, "scripts", fileName);
+  writeFileSync(helperPath, content);
+  chmodSync(helperPath, 0o755);
+  return sourceRoot;
+}
+
 function writeActiveSprintFixture(cwd: string) {
   const sprintRelPath = "plans/sprints/20991231-2359-run-helper-root.sprint.md";
   mkdirSync(join(cwd, "plans/sprints"), { recursive: true });
@@ -34,20 +48,20 @@ function writeActiveSprintFixture(cwd: string) {
 describe("run command", () => {
   test("passes unknown options through to the selected helper", () => {
     const tmp = mkdtempSync(join(tmpdir(), "repo-harness-run-cli-"));
-    const helpers = join(tmp, "helpers");
     const logFile = join(tmp, "args.log");
     try {
-      mkdirSync(helpers, { recursive: true });
-      const helper = join(helpers, "echo-args.sh");
-      writeFileSync(helper, `#!/bin/bash\nprintf '%s\\n' "$*" > "${logFile}"\n`);
-      chmodSync(helper, 0o755);
+      const sourceRoot = writeSourceHelper(
+        tmp,
+        "echo-args.sh",
+        `#!/bin/bash\nprintf '%s\\n' "$*" > "${logFile}"\n`,
+      );
 
       const res = spawnSync("bun", [CLI, "run", "echo-args", "--strict", "--flag", "value"], {
         cwd: tmp,
         encoding: "utf-8",
         env: {
           ...process.env,
-          REPO_HARNESS_HELPER_SOURCE: helpers,
+          REPO_HARNESS_SOURCE_ROOT: sourceRoot,
         },
       });
 
@@ -71,6 +85,49 @@ describe("run command", () => {
     }
   });
 
+  test("source checkout override resolves only helpers declared by its contract", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "repo-harness-run-source-contract-"));
+    try {
+      const sourceRoot = writeSourceHelper(tmp, "known.sh", "#!/bin/bash\nexit 0\n");
+      writeFileSync(join(sourceRoot, "scripts", "unlisted.sh"), "#!/bin/bash\nexit 0\n");
+      chmodSync(join(sourceRoot, "scripts", "unlisted.sh"), 0o755);
+      const env = { REPO_HARNESS_SOURCE_ROOT: sourceRoot };
+
+      expect(resolveHelper("known", tmp, env)?.source).toBe("source");
+      expect(resolveHelper("known.sh", tmp, env)?.fileName).toBe("known.sh");
+      expect(resolveHelper("known.ts", tmp, env)).toBeNull();
+      expect(resolveHelper("unlisted", tmp, env)).toBeNull();
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test("source checkout override fails closed for missing and malformed authority", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "repo-harness-run-source-invalid-"));
+    try {
+      const sourceRoot = join(tmp, "source-root");
+      mkdirSync(join(sourceRoot, "assets"), { recursive: true });
+      mkdirSync(join(sourceRoot, "scripts"), { recursive: true });
+      const env = { REPO_HARNESS_SOURCE_ROOT: sourceRoot };
+
+      expect(() => resolveHelper("known", tmp, env)).toThrow("helper contract not found");
+
+      writeFileSync(join(sourceRoot, "assets", "workflow-contract.v1.json"), "{broken\n");
+      expect(() => resolveHelper("known", tmp, env)).toThrow("malformed JSON");
+
+      writeFileSync(
+        join(sourceRoot, "assets", "workflow-contract.v1.json"),
+        `${JSON.stringify({ helpers: { scripts: ["known.sh"] } })}\n`,
+      );
+      expect(() => resolveHelper("known", tmp, env)).toThrow("contract helper is missing");
+      expect(() => resolveHelper("known", tmp, { REPO_HARNESS_SOURCE_ROOT: "relative/source" })).toThrow(
+        "must be an absolute path",
+      );
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   test("package sprint-backlog helper resolves the target repo root from runHelper", () => {
     const tmp = mkdtempSync(join(tmpdir(), "repo-harness-run-sprint-root-"));
     try {
@@ -79,10 +136,7 @@ describe("run command", () => {
       const status = spawnSync("bun", [CLI, "run", "sprint-backlog", "status"], {
         cwd: tmp,
         encoding: "utf-8",
-        env: {
-          ...process.env,
-          REPO_HARNESS_HELPER_SOURCE: "package",
-        },
+        env: process.env,
       });
 
       expect(status.status).toBe(0);
@@ -92,10 +146,7 @@ describe("run command", () => {
       const next = spawnSync("bun", [CLI, "run", "sprint-backlog", "next"], {
         cwd: tmp,
         encoding: "utf-8",
-        env: {
-          ...process.env,
-          REPO_HARNESS_HELPER_SOURCE: "package",
-        },
+        env: process.env,
       });
 
       expect(next.status).toBe(0);
@@ -123,17 +174,17 @@ describe("run command", () => {
 
   test("runHelper pipe mode redacts common secrets from helper output", () => {
     const tmp = mkdtempSync(join(tmpdir(), "repo-harness-run-redact-"));
-    const helpers = join(tmp, "helpers");
     try {
-      mkdirSync(helpers, { recursive: true });
-      const helper = join(helpers, "leaky.sh");
-      writeFileSync(helper, "#!/bin/bash\necho 'api_key=super-secret'\necho 'Authorization: Bearer token-value' >&2\n");
-      chmodSync(helper, 0o755);
+      const sourceRoot = writeSourceHelper(
+        tmp,
+        "leaky.sh",
+        "#!/bin/bash\necho 'api_key=super-secret'\necho 'Authorization: Bearer token-value' >&2\n",
+      );
 
       const res = runHelper({
         helper: "leaky",
         cwd: tmp,
-        env: { REPO_HARNESS_HELPER_SOURCE: helpers },
+        env: { REPO_HARNESS_SOURCE_ROOT: sourceRoot },
         stdio: "pipe",
       });
 
@@ -149,17 +200,13 @@ describe("run command", () => {
 
   test("runHelper pipe mode caps helper output with a marker", () => {
     const tmp = mkdtempSync(join(tmpdir(), "repo-harness-run-cap-"));
-    const helpers = join(tmp, "helpers");
     try {
-      mkdirSync(helpers, { recursive: true });
-      const helper = join(helpers, "chatty.sh");
-      writeFileSync(helper, "#!/bin/bash\nprintf '0123456789'\n");
-      chmodSync(helper, 0o755);
+      const sourceRoot = writeSourceHelper(tmp, "chatty.sh", "#!/bin/bash\nprintf '0123456789'\n");
 
       const res = runHelper({
         helper: "chatty",
         cwd: tmp,
-        env: { REPO_HARNESS_HELPER_SOURCE: helpers },
+        env: { REPO_HARNESS_SOURCE_ROOT: sourceRoot },
         stdio: "pipe",
         maxOutputBytes: 5,
       });
@@ -173,17 +220,13 @@ describe("run command", () => {
 
   test("runHelper reports timed out helpers distinctly", () => {
     const tmp = mkdtempSync(join(tmpdir(), "repo-harness-run-timeout-"));
-    const helpers = join(tmp, "helpers");
     try {
-      mkdirSync(helpers, { recursive: true });
-      const helper = join(helpers, "sleepy.sh");
-      writeFileSync(helper, "#!/bin/bash\nsleep 1\n");
-      chmodSync(helper, 0o755);
+      const sourceRoot = writeSourceHelper(tmp, "sleepy.sh", "#!/bin/bash\nsleep 1\n");
 
       const res = runHelper({
         helper: "sleepy",
         cwd: tmp,
-        env: { REPO_HARNESS_HELPER_SOURCE: helpers },
+        env: { REPO_HARNESS_SOURCE_ROOT: sourceRoot },
         stdio: "pipe",
         timeoutMs: 20,
       });

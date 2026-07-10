@@ -625,6 +625,9 @@ triage_command() {
     capability_id="${capability_id:-root}"
     card="$(request_card_path "$capability_id")"
     architecture_event upsert-from-request --source-request "$request" --request-file "$card"
+    quiet="true"
+    check_mode="false"
+    reindex_requests
     archive_sibling="$(helper_sibling archive-architecture-request.sh || true)"
     if [[ -n "$archive_sibling" ]]; then
       bash "$archive_sibling" \

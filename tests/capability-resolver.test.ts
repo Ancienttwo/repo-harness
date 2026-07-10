@@ -122,24 +122,24 @@ describe("capability resolver", () => {
     }
   });
 
-  test("legacy agent-context-blocks file is only a fallback when registry is absent", () => {
-    const cwd = tmpWorkspace("capability-legacy-blocks");
+  test("missing registry fails closed instead of deriving legacy context blocks", () => {
+    const cwd = tmpWorkspace("capability-missing-registry");
     try {
       mkdirSync(join(cwd, "apps/web/src/routes/account"), { recursive: true });
       mkdirSync(join(cwd, ".ai/context"), { recursive: true });
       writeFileSync(join(cwd, ".ai/context/agent-context-blocks.txt"), "apps/web\napps/web/src/routes/account\n");
 
       const res = runResolver(cwd, ["match", "--path", "apps/web/src/routes/account/page.tsx", "--format", "json"]);
-      expect(res.status).toBe(0);
-      const match = JSON.parse(res.stdout);
-      expect(match.capability_id).toBe("apps-web-account");
-      expect(match.matched_prefix).toBe("apps/web/src/routes/account");
+      expect(res.status).toBe(1);
+      expect(res.stdout).toBe("");
+      expect(res.stderr).toContain("missing capability registry: .ai/context/capabilities.json");
+      expect(res.stderr).toContain("repo-harness run capability-config add --prefix <existing-path>");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
   });
 
-  test("REPO_HARNESS_CONTEXT_BLOCKS is honored and the retired legacy env is ignored", () => {
+  test("environment context blocks cannot replace the capability registry", () => {
     const cwd = tmpWorkspace("capability-env-blocks");
     try {
       mkdirSync(join(cwd, "apps/current"), { recursive: true });
@@ -155,20 +155,59 @@ describe("capability resolver", () => {
         ["match", "--path", "apps/current/page.tsx", "--format", "json"],
         env
       );
-      expect(res.status).toBe(0);
-      const match = JSON.parse(res.stdout);
-      expect(match.capability_id).toBe("apps-current");
-      expect(match.matched_prefix).toBe("apps/current");
+      expect(res.status).toBe(1);
+      expect(res.stderr).toContain("missing capability registry");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
 
-      const legacyRes = runResolver(
-        cwd,
-        ["match", "--path", "apps/legacy/page.tsx", "--format", "json"],
-        env
+  test("malformed registry JSON fails with an authority-specific error", () => {
+    const cwd = tmpWorkspace("capability-malformed-registry");
+    try {
+      mkdirSync(join(cwd, ".ai/context"), { recursive: true });
+      writeFileSync(join(cwd, ".ai/context/capabilities.json"), "{\"version\":1,\n");
+
+      const res = runResolver(cwd, ["validate", "--format", "text"]);
+      expect(res.status).toBe(1);
+      expect(res.stderr).toContain("malformed capability registry: .ai/context/capabilities.json");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("registry capabilities must be an array and version must be explicit", () => {
+    const cwd = tmpWorkspace("capability-invalid-registry-shape");
+    try {
+      mkdirSync(join(cwd, ".ai/context"), { recursive: true });
+      writeFileSync(
+        join(cwd, ".ai/context/capabilities.json"),
+        JSON.stringify({ version: 1, capabilities: {} }) + "\n"
       );
-      expect(legacyRes.status).toBe(0);
-      const legacyMatch = JSON.parse(legacyRes.stdout);
-      expect(legacyMatch.matched).toBe(false);
-      expect(legacyMatch.matched_prefix).toBe("root");
+      const invalidCapabilities = runResolver(cwd, ["validate", "--format", "text"]);
+      expect(invalidCapabilities.status).toBe(1);
+      expect(invalidCapabilities.stderr).toContain("capabilities must be an array");
+
+      writeFileSync(
+        join(cwd, ".ai/context/capabilities.json"),
+        JSON.stringify({ capabilities: [] }) + "\n"
+      );
+      const missingVersion = runResolver(cwd, ["validate", "--format", "text"]);
+      expect(missingVersion.status).toBe(1);
+      expect(missingVersion.stderr).toContain("version must be 1");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("registered prefixes must exist", () => {
+    const cwd = tmpWorkspace("capability-missing-prefix");
+    try {
+      writeRegistry(cwd, [webCapability]);
+
+      const res = runResolver(cwd, ["validate", "--format", "text"]);
+      expect(res.status).toBe(1);
+      expect(res.stdout).toContain("apps-web: prefix does not exist: apps/web");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

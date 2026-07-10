@@ -57,19 +57,60 @@ describe("Migration script contract", () => {
     expect(migrator).toContain("docs/PROGRESS.md");
   });
 
-  test("generated migration wrapper should support repo-harness roots without retired alias paths", () => {
+  test("generated migration wrapper should use only package-local or explicit source authority", () => {
     const wrapper = read("assets/templates/helpers/migrate-project-template.sh");
-    expect(wrapper).toContain("AGENTIC_DEV_ROOT");
-    expect(wrapper).toContain("AGENTIC_DEV_SKILL_ROOT");
-    expect(wrapper).toContain("Projects/repo-harness");
-    expect(wrapper).toContain(".codex/skills/repo-harness");
-    expect(wrapper).toContain(".claude/skills/repo-harness");
+    expect(wrapper).toContain("REPO_HARNESS_SOURCE_ROOT");
+    expect(wrapper).toContain('PACKAGE_ROOT="$(cd "$HELPER_DIR/../../.." && pwd -P)"');
+    expect(wrapper).not.toContain("AGENTIC_DEV_ROOT");
+    expect(wrapper).not.toContain("AGENTIC_DEV_SKILL_ROOT");
+    expect(wrapper).not.toContain("Projects/repo-harness");
+    expect(wrapper).not.toContain(".codex/skills/repo-harness");
+    expect(wrapper).not.toContain(".claude/skills/repo-harness");
+    expect(wrapper).not.toContain(".agents/skills/repo-harness");
     expect(wrapper).not.toContain(".codex/skills/repo-harness-skill");
     expect(wrapper).not.toContain(".claude/skills/repo-harness-skill");
     expect(wrapper).not.toContain(".agents/skills/repo-harness-skill");
     expect(wrapper).not.toContain("PROJECT_INITIALIZER_ROOT");
     expect(wrapper).not.toContain(".codex/skills/project-initializer");
     expect(wrapper).not.toContain(".claude/skills/project-initializer");
+  });
+
+  test("generated migration wrapper delegates to an explicit source checkout without path guessing", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "migration-wrapper-source-"));
+    const sourceRoot = join(tmp, "source-root");
+    const argsLog = join(tmp, "args.log");
+    try {
+      mkdirSync(join(sourceRoot, "scripts"), { recursive: true });
+      const upstream = join(sourceRoot, "scripts", "migrate-project-template.sh");
+      writeFileSync(upstream, `#!/bin/bash\nprintf '%s\\n' "$*" > "${argsLog}"\n`);
+      chmodSync(upstream, 0o755);
+
+      const delegated = spawnSync(
+        "bash",
+        [join(ROOT, "assets/templates/helpers/migrate-project-template.sh"), "--repo", "/tmp/demo", "--dry-run"],
+        {
+          cwd: ROOT,
+          encoding: "utf-8",
+          env: { ...process.env, REPO_HARNESS_SOURCE_ROOT: sourceRoot },
+        },
+      );
+      expect(delegated.status).toBe(0);
+      expect(readFileSync(argsLog, "utf-8").trim()).toBe("--repo /tmp/demo --dry-run");
+
+      const relative = spawnSync(
+        "bash",
+        [join(ROOT, "assets/templates/helpers/migrate-project-template.sh"), "--dry-run"],
+        {
+          cwd: ROOT,
+          encoding: "utf-8",
+          env: { ...process.env, REPO_HARNESS_SOURCE_ROOT: "relative/source" },
+        },
+      );
+      expect(relative.status).toBe(1);
+      expect(relative.stderr).toContain("REPO_HARNESS_SOURCE_ROOT must be an absolute path");
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
   });
 
   test("should migrate workflow files and runtime ignore block", () => {

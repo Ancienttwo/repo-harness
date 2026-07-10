@@ -34,6 +34,6 @@ Create these only when the agent has concrete repo evidence or the user asks:
 - Keep complete workstream TODOs in `tasks/workstreams/<domain>/<capability>/`; contract blocks should link to them instead of becoming task logs.
 - Keep onboarding docs split by reader: agents read active source artifacts first; humans review the Human Review Card, diff, latest trace, and rollback first.
 - Hooks may create `docs/architecture/requests/*.md`; agents own semantic snapshots, embedded Mermaid, and optional `mermaid` HTML output.
-- Archive handled architecture requests with `repo-harness run archive-architecture-request`; keep `docs/architecture/requests/` pending-only and preserve handled requests under `docs/architecture/requests/archive/YYYY/`.
+- Archive handled architecture requests with `repo-harness run archive-architecture-request`; keep `docs/architecture/requests/` pending-only and preserve handled requests under `docs/architecture/requests/archive/YYYY/`. A `Resolved` request must declare its `Architecture Module` and include that exact existing module as a durable `--artifact`.
 - When both Mermaid and HTML exist, keep the Mermaid in Markdown as the semantic source and make the HTML link back to that Markdown source.
 - Treat `mermaid` as an external installed skill dependency at `~/.codex/skills/mermaid`; do not copy or inline its assets into generated repos.

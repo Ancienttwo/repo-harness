@@ -416,6 +416,72 @@ clean_local_runtime_markers() {
   rm -f .ai/harness/active-plan .ai/harness/active-worktree .claude/.active-plan
 }
 
+finish_transaction_dir=""
+finish_transaction_active=0
+finish_transaction_paths=()
+finish_transaction_existed=()
+
+finish_transaction_snapshot() {
+  local path="$1"
+  local index="${#finish_transaction_paths[@]}"
+  finish_transaction_paths+=("$path")
+  if [[ -e "$path" || -L "$path" ]]; then
+    finish_transaction_existed+=("1")
+    mkdir -p "$finish_transaction_dir/$index"
+    cp -Rp "$path" "$finish_transaction_dir/$index/value"
+  else
+    finish_transaction_existed+=("0")
+  fi
+}
+
+finish_transaction_begin() {
+  finish_transaction_dir="$(mktemp -d)"
+  finish_transaction_active=1
+  finish_transaction_paths=()
+  finish_transaction_existed=()
+  trap finish_transaction_on_exit EXIT
+  finish_transaction_snapshot "plans"
+  finish_transaction_snapshot "tasks"
+  finish_transaction_snapshot ".ai/harness/active-plan"
+  finish_transaction_snapshot ".ai/harness/active-worktree"
+  finish_transaction_snapshot ".ai/harness/sprint"
+  finish_transaction_snapshot ".claude/.active-plan"
+  finish_transaction_snapshot ".claude/.plan-state"
+}
+
+finish_transaction_abort() {
+  local index path
+  for ((index = ${#finish_transaction_paths[@]} - 1; index >= 0; index--)); do
+    path="${finish_transaction_paths[$index]}"
+    rm -rf "$path"
+    if [[ "${finish_transaction_existed[$index]}" == "1" ]]; then
+      mkdir -p "$(dirname "$path")"
+      cp -Rp "$finish_transaction_dir/$index/value" "$path"
+    fi
+  done
+  rm -rf "$finish_transaction_dir"
+  finish_transaction_dir=""
+  finish_transaction_active=0
+  trap - EXIT
+  echo "contract-worktree: finish projection failed; restored live workflow artifacts" >&2
+}
+
+finish_transaction_commit() {
+  finish_transaction_active=0
+  trap - EXIT
+  rm -rf "$finish_transaction_dir"
+  finish_transaction_dir=""
+}
+
+finish_transaction_on_exit() {
+  local status=$?
+  trap - EXIT
+  if [[ "$finish_transaction_active" -eq 1 && "$status" -ne 0 ]]; then
+    finish_transaction_abort || status=1
+  fi
+  exit "$status"
+}
+
 latest_plan_for_slug() {
   local slug="$1"
   local latest
@@ -531,9 +597,20 @@ finish_worktree() {
   check_architecture_freshness "$target_branch"
   REPO_HARNESS_TARGET_REPO_ROOT="$REPO_ROOT" bash "$helper_dir/verify-sprint.sh"
   check_scope_against_contract "$contract_file"
-  archive_finished_workflow "$active_plan"
-  clean_local_runtime_markers
-  backfill_sprint_backlog "$active_plan" || true
+  finish_transaction_begin
+  if ! archive_finished_workflow "$active_plan"; then
+    finish_transaction_abort
+    return 1
+  fi
+  if ! clean_local_runtime_markers; then
+    finish_transaction_abort
+    return 1
+  fi
+  if ! backfill_sprint_backlog "$active_plan"; then
+    finish_transaction_abort
+    return 1
+  fi
+  finish_transaction_commit
 
   if ! git diff --quiet || ! git diff --cached --quiet || [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
     git add -A
@@ -561,10 +638,10 @@ finish_worktree() {
   echo "[ContractWorktree] Merged $current_branch into $target_branch at $target_worktree"
 }
 
-# Warn-only sprint backlog back-fill: plans captured via sprint-backlog
-# start-task carry "> **Source Ref**: sprint:<file>#<task>". After the
-# workflow archives, flip that backlog row so the update merges with the
-# slice. Any failure warns and never blocks finish.
+# Plans captured via sprint-backlog start-task carry
+# "> **Source Ref**: sprint:<file>#<task>". After the workflow archives,
+# flip that backlog row so tracked program state cannot silently lag the
+# completed contract.
 backfill_sprint_backlog() {
   local plan_file="$1"
   local archived_plan source_ref sprint_path task_ref
@@ -580,7 +657,7 @@ backfill_sprint_backlog() {
   [[ -n "$archived_plan" && -f "$archived_plan" ]] || archived_plan="$plan_file"
   if [[ ! -f "$archived_plan" ]]; then
     echo "[ContractWorktree] Warning: cannot resolve archived plan for sprint back-fill: $plan_file" >&2
-    return 0
+    return 1
   fi
 
   source_ref="$(awk '/^> \*\*Source Ref\*\*:/ {sub(/^> \*\*Source Ref\*\*:[[:space:]]*/, ""); gsub(/\r/, ""); print; exit}' "$archived_plan" 2>/dev/null | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
@@ -601,7 +678,8 @@ backfill_sprint_backlog() {
   if REPO_HARNESS_TARGET_REPO_ROOT="$REPO_ROOT" bash "$helper_dir/sprint-backlog.sh" complete-task --sprint "$sprint_path" --task "$task_ref" --plan "$archived_plan"; then
     echo "[ContractWorktree] Sprint backlog updated: $sprint_path ($task_ref)"
   else
-    echo "[ContractWorktree] Warning: sprint backlog back-fill failed for $sprint_path ($task_ref); update the row manually." >&2
+    echo "[ContractWorktree] Sprint backlog back-fill failed for $sprint_path ($task_ref); finish is incomplete." >&2
+    return 1
   fi
   return 0
 }

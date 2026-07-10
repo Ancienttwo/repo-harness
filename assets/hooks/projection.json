@@ -3,9 +3,7 @@
   "canonical_root": "assets/hooks",
   "projection_target": ".ai/hooks",
   "package_only": [
-    "projection.json",
-    "codex.hooks.template.json",
-    "settings.template.json"
+    "projection.json"
   ],
   "repo_only": []
 }

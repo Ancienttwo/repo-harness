@@ -7,6 +7,7 @@ import { renderMinimalChangeSessionContext } from "../src/cli/hook/minimal-chang
 const ROOT = join(import.meta.dir, "..");
 const ASSETS_TEMPLATE = join(ROOT, "assets/reference-configs/global-working-rules.md");
 const DOCS_MIRROR = join(ROOT, "docs/reference-configs/global-working-rules.md");
+const PROJECT_INIT_LIB = join(ROOT, "scripts/lib/project-init-lib.sh");
 
 function countOccurrences(haystack: string, needle: string): number {
   let count = 0;
@@ -38,6 +39,16 @@ describe("global working rules distribution", () => {
     expect(fence).toContain("Generality: These are general working rules.");
   });
 
+  test("assets template fence carries the code optimization authority rules", () => {
+    const fence = extractFence(readFileSync(ASSETS_TEMPLATE, "utf-8"));
+    expect(fence).toContain("## Code Optimization Principles");
+    expect(fence).toContain("Keep one source of truth for each datum");
+    expect(fence).toContain("Forbid steady-state compatibility behavior");
+    expect(fence).toContain("serves at least two real consumers");
+    expect(fence).toContain("do not convert a single-package repository into a monorepo");
+    expect(fence).toContain("operator-invoked, fail closed");
+  });
+
   test("the two previously duplicated 下一刀 sentences are deduplicated to one occurrence each", () => {
     const raw = readFileSync(ASSETS_TEMPLATE, "utf-8");
     expect(countOccurrences(raw, "include a short `下一刀` section")).toBe(1);
@@ -56,7 +67,19 @@ describe("global working rules distribution", () => {
   test("renderMinimalChangeSessionContext carries the no-fallback rule within budget", () => {
     const policy = normalizeMinimalChangePolicy({ mode: "advice", max_context_words: 180 });
     const context = renderMinimalChangeSessionContext(policy);
+    expect(context).toContain("Reason from first principles");
     expect(context).toContain("No compatibility fallbacks");
+    expect(context).toContain("one source of truth per datum");
+    expect(context).toContain("at least two real consumers");
+    expect(context).toContain("monorepo workspace");
     expect(context).toContain("fail closed");
+  });
+
+  test("generated root context carries the same code optimization constraints", () => {
+    const source = readFileSync(PROJECT_INIT_LIB, "utf-8");
+    expect(source).toContain("Keep one source of truth for each datum");
+    expect(source).toContain("Do not add steady-state compatibility paths");
+    expect(source).toContain("serves at least two real consumers");
+    expect(source).toContain("do not create a monorepo without a second independently released or deployed consumer");
   });
 });

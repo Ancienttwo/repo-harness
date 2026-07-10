@@ -1,3 +1,9 @@
+> **Archived**: 2026-07-11 02:40
+> **Related Plan**: plans/archive/plan-20260706-0211-archcontext-boundary-bridge.md
+> **Outcome**: Superseded
+> **Lifecycle**: contract
+> **Parent Run ID**: one-shot-authority-foundation-migration
+
 # Task Contract: archcontext-boundary-bridge
 
 > **Status**: Fulfilled

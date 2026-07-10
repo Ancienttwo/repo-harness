@@ -115,11 +115,11 @@ function planEvidenceContract(): string {
   ].join("\n");
 }
 
-function passingContractFixture(): string {
+function passingContractFixture(status = "Pending"): string {
   return [
     "# Task Contract: demo",
     "",
-    "> **Status**: Pending",
+    `> **Status**: ${status}`,
     "",
     "```yaml",
     "exit_criteria:",
@@ -128,6 +128,60 @@ function passingContractFixture(): string {
     "```",
     "",
   ].join("\n");
+}
+
+function writeAccountCapabilityRegistry(cwd: string): void {
+  mkdirSync(join(cwd, ".ai/context"), { recursive: true });
+  writeFileSync(join(cwd, ".ai/context/capabilities.json"), JSON.stringify({
+    version: 1,
+    capabilities: [
+      {
+        id: "apps-web-account",
+        domain: "apps-web",
+        name: "account",
+        prefixes: ["apps/web/src/routes/account"],
+        contract_files: {
+          agents: "apps/web/src/routes/account/AGENTS.md",
+          claude: "apps/web/src/routes/account/CLAUDE.md",
+        },
+        architecture_module: "docs/architecture/modules/apps-web/account.md",
+        workstream_dir: "tasks/workstreams/apps-web/account",
+        lsp_profile: "typescript-lsp",
+        verification_hints: ["account checks"],
+      },
+    ],
+  }, null, 2) + "\n");
+}
+
+function writeDoneCapabilityRegistry(cwd: string): void {
+  mkdirSync(join(cwd, ".ai/context"), { recursive: true });
+  mkdirSync(join(cwd, "docs/architecture/requests"), { recursive: true });
+  writeFileSync(join(cwd, ".ai/context/capabilities.json"), JSON.stringify({
+    version: 1,
+    capabilities: [
+      {
+        id: "fixture-tracked-file",
+        domain: "fixture",
+        name: "tracked-file",
+        prefixes: ["tracked.txt"],
+        contract_files: { agents: "AGENTS.md", claude: "CLAUDE.md" },
+        architecture_module: "docs/architecture/modules/fixture/tracked-file.md",
+        workstream_dir: "tasks/workstreams/fixture/tracked-file",
+        lsp_profile: "typescript-lsp",
+        verification_hints: ["fixture checks"],
+      },
+    ],
+  }, null, 2) + "\n");
+  writeFileSync(join(cwd, "docs/architecture/index.md"), [
+    "# Architecture Index",
+    "",
+    "## Pending Requests",
+    "",
+    "<!-- BEGIN ARCHITECTURE PENDING REQUESTS -->",
+    "- (none)",
+    "<!-- END ARCHITECTURE PENDING REQUESTS -->",
+    "",
+  ].join("\n"));
 }
 
 function externalAcceptanceAdvice(reviewer = "Codex", source = "codex-review", fingerprint?: string): string {
@@ -271,7 +325,8 @@ function writeDoneGateBase(cwd: string, options: { archive?: boolean } = {}) {
     join(cwd, "tasks/todos.md"),
       "# Task Execution Checklist (Primary)\n\n> **Source Plan**: plans/plan-20260304-1410-demo.md\n"
   );
-  writeFileSync(join(cwd, "tasks/contracts/demo.contract.md"), passingContractFixture());
+  writeFileSync(join(cwd, "tasks/contracts/demo.contract.md"), passingContractFixture(options.archive ? "Fulfilled" : "Pending"));
+  if (options.archive) writeDoneCapabilityRegistry(cwd);
   writeValidSprintChecks(cwd);
   void options;
 }
@@ -1046,6 +1101,7 @@ describe("Hook runtime behavior", () => {
       installHooks(cwd);
       installArchitectureHelpers(cwd);
       mkdirSync(join(cwd, "apps/web/src/routes/account"), { recursive: true });
+      writeAccountCapabilityRegistry(cwd);
       mkdirSync(join(cwd, ".ai/context"), { recursive: true });
       writeFileSync(join(cwd, ".ai/context/agent-context-blocks.txt"), [
         "apps/web",
@@ -1088,6 +1144,7 @@ describe("Hook runtime behavior", () => {
     try {
       installArchitectureHelpers(cwd);
       mkdirSync(join(cwd, "apps/web/src/routes/account"), { recursive: true });
+      writeAccountCapabilityRegistry(cwd);
       writeFileSync(join(cwd, "apps/web/src/routes/account/AGENTS.md"), "# Account Contract\n\nManual account rule.\n");
 
       const res = run("bash", [
@@ -3640,7 +3697,7 @@ describe("Hook runtime behavior", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  }, 10000);
+  }, HOOK_RUNTIME_TIMEOUT_MS);
 
   test("prompt-guard: treats Claude plan refinement as planning review despite pasted execution metadata", () => {
     const cwd = tmpWorkspace("prompt-guard-claude-plan-review");
@@ -3915,7 +3972,8 @@ describe("Hook runtime behavior", () => {
         join(cwd, "tasks/todos.md"),
           "# Task Execution Checklist (Primary)\n\n> **Source Plan**: plans/plan-20260304-1410-demo.md\n"
       );
-      writeFileSync(join(cwd, "tasks/contracts/demo.contract.md"), passingContractFixture());
+      writeFileSync(join(cwd, "tasks/contracts/demo.contract.md"), passingContractFixture("Fulfilled"));
+      writeDoneCapabilityRegistry(cwd);
       writeValidSprintChecks(cwd);
       // A valid rubric-v1 review bound to the current implementation fingerprint:
       // the gate clears freshness + external on the fresh path. (The legacy

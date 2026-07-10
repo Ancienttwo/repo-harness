@@ -1,7 +1,7 @@
 # Architecture Module: workflow-engine/contract-assets
 
 > **Capability ID**: `workflow-engine-contract-assets`
-> **Matched Prefixes**: `assets/workflow-contract.v1.json`, `.ai/harness/workflow-contract.json`, `.ai/harness/policy.json`, `.ai/context/context-map.json`, `.ai/context/capabilities.json`, `assets/templates`, `assets/reference-configs`, `docs/reference-configs`
+> **Matched Prefixes**: `assets/workflow-contract.v1.json`, `.ai/harness/workflow-contract.json`, `.ai/harness/policy.json`, `.ai/context/context-map.json`, `.ai/context/capabilities.json`, `scripts/capability-resolver.ts`, `scripts/capability-config.ts`, `src/cli/commands/capability-context.ts`, `assets/templates`, `assets/reference-configs`, `docs/reference-configs`
 > **Local Contracts**: `AGENTS.md`, `CLAUDE.md`
 
 ## P1 Map
@@ -15,6 +15,9 @@ Authoritative files:
 - `.ai/harness/policy.json`: self-host workflow policy and external tooling guidance.
 - `.ai/context/context-map.json`: progressive context loading contract.
 - `.ai/context/capabilities.json`: capability registry for longest-prefix ownership.
+- `scripts/capability-resolver.ts`: sole registry reader, validator, and longest-prefix matcher.
+- `scripts/capability-config.ts`: explicit authority-creation and capability-add command.
+- `src/cli/commands/capability-context.ts`: one-way projection of registered capability context into controlled agent blocks.
 - `assets/templates/` and `.claude/templates/`: generated workflow document templates.
 - `assets/reference-configs/` and `docs/reference-configs/`: repo-local and installable reference config corpus.
 
@@ -37,6 +40,7 @@ Error paths:
 
 - Contract/runtime parity drift is caught by `tests/workflow-contract.test.ts`.
 - Capability orphan modules are caught by `capability-resolver.ts validate`.
+- Missing, malformed, or non-existent capability prefixes fail closed; the resolver does not synthesize authority from legacy context blocks or directory scans.
 - Brain manifest drift is caught by `scripts/check-brain-manifest.sh`; opted-in repo-to-brain mirror drift is caught by `scripts/sync-brain-docs.sh --check`.
 
 ## P3 Decision
@@ -83,6 +87,35 @@ self-migration dry-run.
 - This is a policy text contract change only. It does not change contract asset
   ownership, helper inventory shape, byte-parity requirements, or generated repo
   storage boundaries.
+
+## 2026-07-11 Capability Authority Closeout
+
+- `.ai/context/capabilities.json` is the only runtime capability authority. Resolver commands fail when it is missing or malformed and reject registered prefixes that do not exist.
+- `capability-config add` remains the explicit creation path for a new registry; normal reads no longer derive capabilities from `agent-context-blocks.txt`, environment variables, or nested agent files.
+- Capability context files and the ArchContext boundary export remain deterministic, one-way projections of the registry. They do not become alternate authoring surfaces.
+
+## 2026-07-11 Archive Evidence Gate Closeout
+
+- `archive-workflow.sh` is the completion archive authority. `Completed` now
+  requires the linked contract to be `Fulfilled`, the review to recommend
+  `pass`, current `verify-sprint` structured evidence, passing external
+  acceptance or its explicit manual override, and the architecture freshness
+  helper to succeed before any workflow artifact moves.
+- `Abandoned` and `Superseded` remain non-completion outcomes and preserve the
+  complete plan and lifecycle artifact bodies. They do not synthesize passing
+  evidence.
+- `archive-architecture-request.sh` accepts only a live `Pending` request.
+  `Resolved` additionally requires the request's declared architecture module
+  to exist and be passed as an existing, repository-contained durable artifact.
+  Queue/index projection is rebuilt and checked before and after the move.
+- Current-status refresh, architecture reindex, and Sprint backlog back-fill
+  failures now propagate to the caller and restore the pre-archive live
+  workflow/architecture snapshot. A failed projection can neither be reported
+  as a successful finish nor strand the plan/request only in archive storage;
+  the same command can be retried after repairing the failed dependency.
+- These gates reuse the existing workflow-state, verify-sprint, architecture
+  queue, and freshness authorities. No new dependency or compatibility parser
+  was added.
 
 ## Workstream Ledger
 

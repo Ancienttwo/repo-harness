@@ -146,92 +146,40 @@ function normalizeRepoPath(value: string, repo: string): string {
   return parts.join("/");
 }
 
-function safeToken(value: string, fallback = "capability"): string {
-  const token = value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .replace(/-{2,}/g, "-");
-  return token || fallback;
-}
-
-function defaultCapabilityForPrefix(prefix: string): Capability {
-  const parts = prefix.split("/");
-  const domain =
-    parts.length >= 2 ? safeToken(`${parts[0]}-${parts[1]}`, safeToken(prefix)) : safeToken(prefix);
-  const name = parts.length > 2 ? safeToken(parts[parts.length - 1]) : safeToken(parts[parts.length - 1] || domain);
-  const id = parts.length > 2 ? `${domain}-${name}` : domain;
-
-  return {
-    id,
-    domain,
-    name,
-    prefixes: [prefix],
-    contract_files: {
-      agents: `${prefix}/AGENTS.md`,
-      claude: `${prefix}/CLAUDE.md`,
-    },
-    architecture_module: `docs/architecture/modules/${domain}/${name}.md`,
-    workstream_dir: `tasks/workstreams/${domain}/${name}`,
-    lsp_profile: "typescript-lsp",
-    verification_hints: ["record local commands here before implementation"],
-  };
-}
-
-function legacyBlocks(repo: string): string[] {
-  const configFile = resolve(repo, ".ai/context/agent-context-blocks.txt");
-  const envBlocks =
-    process.env.REPO_HARNESS_CONTEXT_BLOCKS || "";
-  const rawBlocks = envBlocks
-    ? envBlocks.split(/[,:]/)
-    : existsSync(configFile)
-      ? readFileSync(configFile, "utf-8").split(/\r?\n/)
-      : [];
-
-  const blocks = rawBlocks
-    .map((line) => line.replace(/#.*$/, "").trim())
-    .filter(Boolean)
-    .map((line) => normalizeRepoPath(line, repo))
-    .filter((line) => existsSync(resolve(repo, line)));
-
-  if (blocks.length > 0) {
-    return [...new Set(blocks)].sort();
-  }
-
-  const discovered: string[] = [];
-  const ignored = new Set([".git", "node_modules", ".ai", ".claude", ".worktrees", "_ref"]);
-  function walk(absDir: string) {
-    for (const entry of readdirSync(absDir, { withFileTypes: true })) {
-      if (ignored.has(entry.name)) continue;
-      const absPath = resolve(absDir, entry.name);
-      if (entry.isDirectory()) {
-        walk(absPath);
-        continue;
-      }
-      if (entry.isFile() && (entry.name === "AGENTS.md" || entry.name === "CLAUDE.md")) {
-        const dir = relative(repo, absDir).replaceAll("\\", "/");
-        if (dir && dir !== ".") discovered.push(normalizeRepoPath(dir, repo));
-      }
-    }
-  }
-  walk(repo);
-  return [...new Set(discovered)].sort();
-}
-
 export function readRegistry(repo: string): CapabilityRegistry {
   const registryPath = resolve(repo, DEFAULT_REGISTRY);
   if (!existsSync(registryPath)) {
-    return {
-      version: 1,
-      capabilities: legacyBlocks(repo).map(defaultCapabilityForPrefix),
-    };
+    throw new Error(
+      `missing capability registry: ${DEFAULT_REGISTRY}; create it with ` +
+        "repo-harness run capability-config add --prefix <existing-path>"
+    );
   }
 
-  const parsed = JSON.parse(readFileSync(registryPath, "utf-8")) as CapabilityRegistry;
-  return {
-    version: parsed.version ?? 1,
-    capabilities: Array.isArray(parsed.capabilities) ? parsed.capabilities : [],
-  };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(registryPath, "utf-8"));
+  } catch (error) {
+    throw new Error(`malformed capability registry: ${DEFAULT_REGISTRY}: ${(error as Error).message}`);
+  }
+
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error(`malformed capability registry: ${DEFAULT_REGISTRY}: expected an object`);
+  }
+  const registry = parsed as Partial<CapabilityRegistry>;
+  if (registry.version !== 1) {
+    throw new Error(`malformed capability registry: ${DEFAULT_REGISTRY}: version must be 1`);
+  }
+  if (!Array.isArray(registry.capabilities)) {
+    throw new Error(`malformed capability registry: ${DEFAULT_REGISTRY}: capabilities must be an array`);
+  }
+  for (const [index, capability] of registry.capabilities.entries()) {
+    if (!capability || typeof capability !== "object" || Array.isArray(capability)) {
+      throw new Error(
+        `malformed capability registry: ${DEFAULT_REGISTRY}: capabilities[${index}] must be an object`
+      );
+    }
+  }
+  return registry as CapabilityRegistry;
 }
 
 function validateCapability(capability: Capability, repo: string): string[] {
@@ -256,7 +204,10 @@ function validateCapability(capability: Capability, repo: string): string[] {
   } else {
     for (const prefix of capability.prefixes) {
       try {
-        normalizeRepoPath(prefix, repo);
+        const normalized = normalizeRepoPath(prefix, repo);
+        if (!existsSync(resolve(repo, normalized))) {
+          errors.push(`${capability.id}: prefix does not exist: ${normalized}`);
+        }
       } catch (error) {
         errors.push(`${capability.id}: invalid prefix ${prefix}: ${(error as Error).message}`);
       }

@@ -1,6 +1,6 @@
 # Plan: Capability boundary convergence + ArchContext export bridge
 
-> **Status**: Executing
+> **Status**: Superseded
 > **Created**: 20260706-0211
 > **Slug**: archcontext-boundary-bridge
 > **Planning Source**: repo-harness-plan

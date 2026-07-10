@@ -25,7 +25,7 @@ This repository self-hosts the `repo-harness` contract; the former `repo-harness
 - Use `tasks/notes/<plan-stem>.notes.md` only for non-obvious slice decisions, deviations, tradeoffs, and open questions; `<plan-stem>` is the active plan filename without `plan-` and `.md` (for example `20260531-0045-governance-workflow`). Do not use notes as durable memory or a task log, and archive/promote them deliberately when the slice closes.
 - Treat hook execution as central-first: trusted repos run `~/.repo-harness/hooks/` (bash shim) or the packaged CLI copy; this self-host repo pins `"hook_source": "repo"` in `.ai/harness/policy.json` so `.ai/hooks/` stays the live development runtime, with `assets/hooks/` as the product source mirrored on install. User-level `~/.claude/settings.json` and `~/.codex/hooks.json` are the host adapters.
 - Keep the umbrella hierarchy explicit: architecture owns stable truth, capability contracts own local agent context, `tasks/workstreams/<domain>/<capability>/` owns durable progress, and `tasks/todos.md` owns only deferred medium/long-term goals with tradeoff and revisit trigger.
-- Treat `.ai/context/capabilities.json` as the source of truth for capability prefixes; `agent-context-blocks.txt` and nested agent files are compatibility inputs only.
+- Treat `.ai/context/capabilities.json` as the source of truth for capability prefixes; `agent-context-blocks.txt` and nested agent files are initialization inputs only, never runtime resolver authority.
 - Keep architecture drift handling split: `architecture-queue.sh` writes architecture requests/events, `workstream-sync.sh` maintains durable capability workstreams, and `context-contract-sync.sh` only updates controlled local `CLAUDE.md`/`AGENTS.md` architecture blocks.
 - Keep `assets/workflow-contract.v1.json` and `.ai/harness/workflow-contract.json` in sync.
 - Keep `CLAUDE.md` and `AGENTS.md` short; put detailed guidance in `docs/reference-configs/`.
@@ -48,6 +48,13 @@ This repository self-hosts the `repo-harness` contract; the former `repo-harness
 - Use `docs/reference-configs/external-tooling.md` and `bash scripts/check-agent-tooling.sh --host both --check-updates` for environment checks; this self-host repo vendors CodeGraph as a dev dependency while generated downstream repos keep the global MCP default unless local policy opts in.
 - When changing `scripts/migrate-project-template.sh` or `scripts/lib/project-init-lib.sh`, verify self-migration of this repo still works.
 - Treat repo-local `.claude/settings.json` and `.codex/hooks.json` hook adapters as retired legacy config; migration may back them up locally, but they are not product deliverables.
+
+## Code Optimization Principles
+
+- Reason from first principles: identify observable conditions, controllable inputs, the invariant, and the actual pressure point before changing structure.
+- Keep one source of truth for each datum; every other representation must be a deterministic projection with a drift check.
+- Do not add steady-state compatibility code, dual authority, semantic fallbacks, aliases, or shadow parsers. Explicit one-shot migrations must fail closed and remove the retired path in the same work-package.
+- Create shared components only for observed reuse or a cross-module invariant. Prefer an existing monorepo workspace only when independently meaningful consumers need the shared package; do not convert this single-package repo without that boundary.
 
 ## Required Checks
 

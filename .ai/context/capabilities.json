@@ -44,6 +44,30 @@
       ]
     },
     {
+      "id": "public-surface-adoption",
+      "domain": "public-surface",
+      "name": "adoption",
+      "prefixes": [
+        "src/cli/commands/adopt-plan.ts",
+        "src/core/adoption",
+        "src/effects/fs-transaction.ts",
+        "src/effects/path-safety.ts",
+        "tests/cli/adoption-plan.test.ts",
+        "tests/fixtures/adoption"
+      ],
+      "contract_files": {
+        "agents": "AGENTS.md",
+        "claude": "CLAUDE.md"
+      },
+      "architecture_module": "docs/architecture/modules/public-surface/adoption.md",
+      "workstream_dir": "tasks/workstreams/public-surface/adoption",
+      "lsp_profile": "typescript-lsp",
+      "verification_hints": [
+        "bun test tests/cli/adoption-plan.test.ts",
+        "bun run check:type"
+      ]
+    },
+    {
       "id": "workflow-engine-inspection-migration",
       "domain": "workflow-engine",
       "name": "inspection-migration",
@@ -77,6 +101,9 @@
         ".ai/harness/policy.json",
         ".ai/context/context-map.json",
         ".ai/context/capabilities.json",
+        "scripts/capability-resolver.ts",
+        "scripts/capability-config.ts",
+        "src/cli/commands/capability-context.ts",
         "assets/templates",
         "assets/reference-configs",
         "docs/reference-configs"
@@ -100,8 +127,10 @@
       "prefixes": [
         "assets/hooks",
         ".ai/hooks",
-        ".claude/settings.json",
-        "scripts/run-skill-hook.ts"
+        "scripts/run-skill-hook.ts",
+        "src/cli/installer",
+        "src/cli/hook",
+        "src/cli/hook-entry.ts"
       ],
       "contract_files": {
         "agents": "assets/hooks/AGENTS.md",
@@ -122,7 +151,7 @@
       "prefixes": [
         "scripts/ensure-codegraph.sh",
         "src/cli/tools/codegraph.ts",
-        "src/cli/tools/codegraph-runner.ts",
+        "src/cli/mcp/codegraph-adapter.ts",
         "tests/cli/codegraph-resolver.test.ts",
         "docs/architecture/modules/verification/codegraph-readiness.md"
       ],
@@ -136,6 +165,31 @@
       "verification_hints": [
         "bun test tests/check-agent-tooling.test.ts tests/cli/codegraph-resolver.test.ts",
         "bash scripts/ensure-codegraph.sh --check --json"
+      ]
+    },
+    {
+      "id": "runtime-mcp-general-repo-access",
+      "domain": "runtime-mcp",
+      "name": "general-repo-access",
+      "prefixes": [
+        "src/cli/mcp/general-repo-access.ts",
+        "src/cli/mcp/general-repo-access",
+        "tests/cli/mcp-reader-tools.test.ts",
+        "tests/cli/mcp-codegraph-contract.test.ts",
+        "tests/cli/mcp-policy.test.ts",
+        "tests/cli/mcp-tools.test.ts"
+      ],
+      "contract_files": {
+        "agents": "AGENTS.md",
+        "claude": "CLAUDE.md"
+      },
+      "architecture_module": "docs/architecture/modules/runtime-mcp/general-repo-access.md",
+      "workstream_dir": "tasks/workstreams/runtime-mcp/general-repo-access",
+      "lsp_profile": "typescript-lsp",
+      "verification_hints": [
+        "bun test tests/cli/mcp-reader-tools.test.ts tests/cli/mcp-codegraph-contract.test.ts",
+        "bun test tests/cli/mcp-policy.test.ts tests/cli/mcp-tools.test.ts",
+        "bun run check:type"
       ]
     },
     {

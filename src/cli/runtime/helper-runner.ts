@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, readdirSync } from 'fs';
-import { dirname, extname, join, resolve } from 'path';
+import { existsSync, lstatSync, readFileSync } from 'fs';
+import { dirname, extname, isAbsolute, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { runProcess as runBoundedProcess } from '../../effects/process-runner';
 
@@ -8,7 +8,7 @@ const PACKAGE_ROOT = resolve(SCRIPT_DIR, '..', '..', '..');
 const PACKAGE_HELPERS_ROOT = join(PACKAGE_ROOT, 'assets', 'templates', 'helpers');
 const PACKAGE_CONTRACT = join(PACKAGE_ROOT, 'assets', 'workflow-contract.v1.json');
 
-export type HelperSource = 'env' | 'package';
+export type HelperSource = 'source' | 'package';
 
 export interface ResolvedHelper {
   id: string;
@@ -42,35 +42,106 @@ function helperId(fileName: string): string {
   return ext ? fileName.slice(0, -ext.length) : fileName;
 }
 
-function readContractHelpers(): string[] {
+type HelperRuntime = {
+  contractPath: string;
+  helpersRoot: string;
+  source: HelperSource;
+};
+
+function helperContractError(contractPath: string, detail: string): Error {
+  return new Error(`invalid helper contract at ${contractPath}: ${detail}`);
+}
+
+function readContractHelpers(contractPath: string): string[] {
+  let source: string;
   try {
-    const contract = JSON.parse(readFileSync(PACKAGE_CONTRACT, 'utf-8')) as {
-      helpers?: { scripts?: unknown };
-    };
-    if (Array.isArray(contract.helpers?.scripts)) {
-      return contract.helpers.scripts.filter((entry): entry is string => typeof entry === 'string');
-    }
-  } catch (_error) {
-    // Fall through to directory discovery for development checkouts.
+    source = readFileSync(contractPath, 'utf-8');
+  } catch {
+    throw new Error(`helper contract not found: ${contractPath}`);
   }
 
-  if (!existsSync(PACKAGE_HELPERS_ROOT)) return [];
-  return readdirSync(PACKAGE_HELPERS_ROOT).filter((entry) => entry.endsWith('.sh') || entry.endsWith('.ts')).sort();
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(source);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw helperContractError(contractPath, `malformed JSON: ${message}`);
+  }
+
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw helperContractError(contractPath, 'root must be an object');
+  }
+  const helpers = (parsed as { helpers?: unknown }).helpers;
+  if (typeof helpers !== 'object' || helpers === null || Array.isArray(helpers)) {
+    throw helperContractError(contractPath, 'helpers must be an object');
+  }
+  const scripts = (helpers as { scripts?: unknown }).scripts;
+  if (!Array.isArray(scripts) || scripts.length === 0) {
+    throw helperContractError(contractPath, 'helpers.scripts must be a non-empty array');
+  }
+
+  const fileNames = new Set<string>();
+  const ids = new Set<string>();
+  for (const entry of scripts) {
+    if (
+      typeof entry !== 'string' ||
+      entry.length === 0 ||
+      entry.includes('/') ||
+      entry.includes('\\') ||
+      !['.sh', '.ts'].includes(extname(entry))
+    ) {
+      throw helperContractError(contractPath, `helpers.scripts contains unsafe helper name ${JSON.stringify(entry)}`);
+    }
+    if (fileNames.has(entry)) {
+      throw helperContractError(contractPath, `duplicate helper file ${JSON.stringify(entry)}`);
+    }
+    fileNames.add(entry);
+
+    const id = helperId(entry);
+    if (!id) {
+      throw helperContractError(contractPath, `helpers.scripts contains empty helper id ${JSON.stringify(entry)}`);
+    }
+    if (ids.has(id)) {
+      throw helperContractError(contractPath, `duplicate helper id ${JSON.stringify(id)}`);
+    }
+    ids.add(id);
+  }
+
+  return [...fileNames];
 }
 
-export function listHelperFiles(): string[] {
-  return readContractHelpers();
+function resolveHelperRuntime(env: NodeJS.ProcessEnv): HelperRuntime {
+  const sourceRoot = env.REPO_HARNESS_SOURCE_ROOT?.trim();
+  if (sourceRoot) {
+    if (!isAbsolute(sourceRoot)) {
+      throw new Error('REPO_HARNESS_SOURCE_ROOT must be an absolute path');
+    }
+    return {
+      contractPath: join(sourceRoot, 'assets', 'workflow-contract.v1.json'),
+      helpersRoot: join(sourceRoot, 'scripts'),
+      source: 'source',
+    };
+  }
+
+  return {
+    contractPath: PACKAGE_CONTRACT,
+    helpersRoot: PACKAGE_HELPERS_ROOT,
+    source: 'package',
+  };
 }
 
-export function listHelperIds(): string[] {
-  return listHelperFiles().map(helperId);
+export function listHelperFiles(env: NodeJS.ProcessEnv = process.env): string[] {
+  const runtime = resolveHelperRuntime(env);
+  return readContractHelpers(runtime.contractPath);
 }
 
-function candidateFileNames(helper: string): string[] {
-  if (extname(helper)) return [helper];
-  const files = listHelperFiles();
-  const matches = files.filter((fileName) => helperId(fileName) === helper);
-  return matches.length > 0 ? matches : [`${helper}.sh`, `${helper}.ts`];
+export function listHelperIds(env: NodeJS.ProcessEnv = process.env): string[] {
+  return listHelperFiles(env).map(helperId);
+}
+
+function resolveHelperFileName(helper: string, files: readonly string[]): string | null {
+  if (extname(helper)) return files.includes(helper) ? helper : null;
+  return files.find((fileName) => helperId(fileName) === helper) ?? null;
 }
 
 function resolveRepoRoot(cwd: string, env: NodeJS.ProcessEnv): string {
@@ -82,28 +153,29 @@ function resolveRepoRoot(cwd: string, env: NodeJS.ProcessEnv): string {
 }
 
 function resolveFromDir(
-  helper: string,
+  fileName: string,
   dir: string,
   source: HelperSource,
   repoRoot: string,
-): ResolvedHelper | null {
-  for (const fileName of candidateFileNames(helper)) {
-    const filePath = join(dir, fileName);
-    if (existsSync(filePath)) {
-      return { id: helperId(fileName), fileName, path: filePath, source, repoRoot };
-    }
+): ResolvedHelper {
+  const filePath = join(dir, fileName);
+  if (!existsSync(filePath)) {
+    throw new Error(`contract helper is missing from ${source} runtime: ${filePath}`);
   }
-  return null;
+  const stat = lstatSync(filePath);
+  if (stat.isSymbolicLink() || !stat.isFile()) {
+    throw new Error(`contract helper is not a regular file: ${filePath}`);
+  }
+  return { id: helperId(fileName), fileName, path: filePath, source, repoRoot };
 }
 
 export function resolveHelper(helper: string, cwd = process.cwd(), env: NodeJS.ProcessEnv = process.env): ResolvedHelper | null {
   const repoRoot = resolveRepoRoot(cwd, env);
-  const override = env.REPO_HARNESS_HELPER_SOURCE?.trim();
+  const runtime = resolveHelperRuntime(env);
+  const fileName = resolveHelperFileName(helper, readContractHelpers(runtime.contractPath));
+  if (!fileName) return null;
 
-  if (override === 'package') return resolveFromDir(helper, PACKAGE_HELPERS_ROOT, 'env', repoRoot);
-  if (override && resolve(override) === override) return resolveFromDir(helper, override, 'env', repoRoot);
-
-  return resolveFromDir(helper, PACKAGE_HELPERS_ROOT, 'package', repoRoot);
+  return resolveFromDir(fileName, runtime.helpersRoot, runtime.source, repoRoot);
 }
 
 export function runHelper(opts: RunHelperOptions): RunHelperResult {

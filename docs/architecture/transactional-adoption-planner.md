@@ -198,19 +198,16 @@ existing `writeFile ifMissing` behavior.
 
 ## Helper Wrapper Operations
 
-For ordinary `standard` downstream repos, the planner reads
-`assets/workflow-contract.v1.json#helpers.scripts` and emits
-`writeFile ifMissing` operations for the generated `scripts/<helper>`
-compatibility wrappers. Wrapper content mirrors the shell
-`pi_write_helper_wrapper` behavior: prefer a source checkout via
-`REPO_HARNESS_SOURCE_ROOT`, `AGENTIC_DEV_ROOT`, or `AGENTIC_DEV_SKILL_ROOT`,
-otherwise delegate to `repo-harness run <helper>`.
+Ordinary downstream repos do not receive generated `scripts/<helper>` wrappers.
+`repo-harness run <helper>` reads the helper inventory from the packaged
+`assets/workflow-contract.v1.json` and executes the matching packaged helper.
+A source checkout is selected only by the explicit absolute
+`REPO_HARNESS_SOURCE_ROOT`; missing contracts or helper files fail closed.
 
-The planner also includes those generated wrapper paths in the `.gitignore`
-managed block. Self-host source repos and repos with
-`harness.helper_source = "repo"` remain shell-only in this slice so
-source-helper/runtime-copy behavior is not misrepresented as wrapper
-installation.
+Self-host source repos keep `harness.helper_source = "repo"` and project the
+contract inventory from canonical `scripts/` into packaged
+`assets/templates/helpers/`. There is no implicit search across legacy skill
+roots and no repo-local wrapper fallback.
 
 ## Compatibility Strategy
 

@@ -221,9 +221,7 @@ function targetContractFiles(repo: string, capability: Capability): ContractFile
 
 // Delegates the longest-prefix decision to capability-resolver's canonical findMatch
 // (see .ai/harness/policy.json capability_match_rule) instead of re-implementing the
-// sort/tie-break here. The exact-textual-match-not-found fallback to a registered
-// "root" capability (prefix === '.' or a file-shaped prefix) is capability-context's
-// own historical behavior and is preserved unchanged below.
+// sort/tie-break here.
 function findCapabilityByPath(registry: CapabilityRegistry, repo: string, inputPath: string): {
   capability: Capability;
   matchedPrefix: string;
@@ -232,15 +230,7 @@ function findCapabilityByPath(registry: CapabilityRegistry, repo: string, inputP
   if (match.matched) {
     return { capability: findCapabilityById(registry, match.capability_id), matchedPrefix: match.matched_prefix };
   }
-
-  const root = registry.capabilities.find((capability) =>
-    (capability.prefixes || []).some((prefix) => {
-      const normalized = normalizeRepoPath(prefix, repo, true);
-      return normalized === '.' || isLikelyFile(repo, normalized);
-    }),
-  );
-  if (!root) throw new Error(`no capability matches path: ${inputPath}`);
-  return { capability: root, matchedPrefix: normalizeRepoPath(root.prefixes[0] || '.', repo, true) };
+  throw new Error(`no capability matches path: ${inputPath}`);
 }
 
 function findCapabilityById(registry: CapabilityRegistry, id: string): Capability {

@@ -1,3 +1,9 @@
+> **Archived**: 2026-07-11 02:40
+> **Related Plan**: plans/archive/plan-20260703-1405-no-fallback-distribution.md
+> **Outcome**: Superseded
+> **Lifecycle**: contract
+> **Parent Run ID**: one-shot-authority-foundation-migration
+
 # Task Contract: no-fallback-distribution
 
 > **Status**: Fulfilled

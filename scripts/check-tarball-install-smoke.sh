@@ -32,8 +32,6 @@ const required = [
   "assets/hooks/run-hook.sh",
   "assets/hooks/lib/workflow-state.sh",
   "assets/hooks/projection.json",
-  "assets/hooks/codex.hooks.template.json",
-  "assets/hooks/settings.template.json",
 ];
 const missing = required.filter((file) => !files.has(file));
 const aiHooks = [...files].filter((file) => file.startsWith(".ai/hooks/"));

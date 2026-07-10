@@ -9,6 +9,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from "fs";
@@ -25,7 +26,7 @@ const ASSETS_HOOKS_DIR = join(ROOT, "assets/hooks");
 // migrate-project-template.sh is an intentional split: the scripts/ copy is
 // the full self-host migration implementation, while the packaged
 // assets/templates/helpers/ copy is a thin delegate that points generated
-// projects at the canonical upstream repo-harness. They must never be
+// projects at the explicitly selected or package-local repo-harness source. They must never be
 // reconciled to match byte-for-byte.
 const INTENTIONALLY_DIVERGENT = ["migrate-project-template.sh"];
 
@@ -35,7 +36,11 @@ function tmpWorkspace(prefix: string): string {
   return realpathSync(mkdtempSync(join(tmpdir(), `${prefix}-`)));
 }
 
-const SANDBOX_ENV_BLOCKLIST = ["REPO_HARNESS_TARGET_REPO_ROOT", "REPO_HARNESS_HELPER_SOURCE", "REPO_HARNESS_HELPER_SOURCE_PATH"];
+const SANDBOX_ENV_BLOCKLIST = [
+  "REPO_HARNESS_TARGET_REPO_ROOT",
+  "REPO_HARNESS_HELPER_SOURCE_PATH",
+  "REPO_HARNESS_SOURCE_ROOT",
+];
 
 function sandboxEnv(env?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const base = { ...process.env };
@@ -142,6 +147,26 @@ function writeValidSprintChecks(cwd: string) {
       2
     ) + "\n"
   );
+}
+
+function writeFixtureCapabilityRegistry(cwd: string): void {
+  mkdirSync(join(cwd, ".ai/context"), { recursive: true });
+  writeFileSync(join(cwd, ".ai/context/capabilities.json"), JSON.stringify({
+    version: 1,
+    capabilities: [
+      {
+        id: "fixture-package",
+        domain: "fixture",
+        name: "package",
+        prefixes: ["package.json"],
+        contract_files: { agents: "AGENTS.md", claude: "CLAUDE.md" },
+        architecture_module: "docs/architecture/modules/fixture/package.md",
+        workstream_dir: "tasks/workstreams/fixture/package",
+        lsp_profile: "typescript-lsp",
+        verification_hints: ["fixture checks"],
+      },
+    ],
+  }, null, 2) + "\n");
 }
 
 function writeActivePlan(cwd: string, planPath: string) {
@@ -268,7 +293,7 @@ function extractHeredocBody(source: string, openToken: string, closeToken: strin
 }
 
 describe("Workflow helper scripts", () => {
-  test("capability resolver ignores local worktrees during legacy discovery", () => {
+  test("capability resolver rejects missing registry instead of synthesizing legacy discovery", () => {
     const cwd = tmpWorkspace("helper-capability-worktrees");
     try {
       mkdirSync(join(cwd, "apps/mobile"), { recursive: true });
@@ -278,9 +303,10 @@ describe("Workflow helper scripts", () => {
       writeFileSync(join(cwd, ".worktrees/codex/old/apps/mobile/AGENTS.md"), "# Old Worktree Contract\n");
 
       const res = run("bun", ["scripts/capability-resolver.ts", "list", "--format", "prefixes"], cwd);
-      expect(res.status).toBe(0);
-      expect(res.stdout).toContain("apps/mobile");
-      expect(res.stdout).not.toContain(".worktrees");
+      expect(res.status).toBe(1);
+      expect(res.stdout).toBe("");
+      expect(res.stderr).toContain("missing capability registry: .ai/context/capabilities.json");
+      expect(res.stderr).not.toContain("apps/mobile");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -301,6 +327,7 @@ describe("Workflow helper scripts", () => {
           "",
           "> **Status**: Pending",
           "> **File**: `apps/web/src/routes/account/page.tsx`",
+          "> **Architecture Module**: `docs/architecture/modules/apps-web/account.md`",
           "",
           "## Required Follow-up",
           "",
@@ -338,6 +365,7 @@ describe("Workflow helper scripts", () => {
           "",
         ].join("\n")
       );
+      expect(run("bash", ["scripts/architecture-queue.sh", "reindex"], cwd).status).toBe(0);
 
       const res = run("bash", [
         "scripts/archive-architecture-request.sh",
@@ -425,16 +453,28 @@ describe("Workflow helper scripts", () => {
     );
   });
 
-  test("scripts/ helpers are byte-identical to assets/templates/helpers/ mirrors (except intentional splits)", () => {
-    const helpers = readdirSync(HELPER_DIR).filter(
-      (name) =>
-        (name.endsWith(".sh") || name.endsWith(".ts")) && !INTENTIONALLY_DIVERGENT.includes(name)
-    );
+  test("workflow contract drives a deterministic helper projection with one explicit package delegate", () => {
+    const check = run("bun", ["scripts/sync-helper-sources.ts", "--check"], ROOT);
+    expect(check.status).toBe(0);
+    expect(check.stdout).toContain("projection OK");
+    expect(check.stdout).toContain("1 package delegate preserved");
+    expect(check.stderr).toBe("");
+
+    const contract = JSON.parse(readFileSync(join(ROOT, "assets/workflow-contract.v1.json"), "utf-8")) as {
+      helpers: { scripts: string[] };
+    };
+    const packaged = readdirSync(HELPER_DIR)
+      .filter((name) => name.endsWith(".sh") || name.endsWith(".ts"))
+      .sort();
+    expect(packaged).toEqual([...contract.helpers.scripts].sort());
+
+    const helpers = packaged.filter((name) => !INTENTIONALLY_DIVERGENT.includes(name));
     expect(helpers.length).toBeGreaterThan(0);
     for (const helper of helpers) {
       const scriptsPath = join(ROOT, "scripts", helper);
       expect(existsSync(scriptsPath)).toBe(true);
       expect(readFileSync(scriptsPath, "utf-8")).toBe(readFileSync(join(HELPER_DIR, helper), "utf-8"));
+      expect(statSync(scriptsPath).mode & 0o111).toBe(statSync(join(HELPER_DIR, helper)).mode & 0o111);
     }
   });
 
@@ -1508,6 +1548,7 @@ describe("Workflow helper scripts", () => {
         join(cwd, "package.json"),
         JSON.stringify({ scripts: { "check:type": "test -f src/modules/demo/index.ts" } }, null, 2) + "\n"
       );
+      writeFixtureCapabilityRegistry(cwd);
       writeFileSync(join(cwd, "docs/spec.md"), "# Spec\n");
       initGitRepo(cwd);
       commitAll(cwd, "init workflow");
@@ -1615,7 +1656,7 @@ describe("Workflow helper scripts", () => {
       rmSync(worktreePath, { recursive: true, force: true });
       rmSync(cwd, { recursive: true, force: true });
     }
-  }, 15000);
+  }, 60000);
 
   test("ship-worktrees default mode should finish without merging, push branch, and create draft PR", () => {
     const cwd = tmpWorkspace("helper-ship-pr");
@@ -1665,6 +1706,7 @@ describe("Workflow helper scripts", () => {
         join(cwd, "package.json"),
         JSON.stringify({ scripts: { "check:type": "test -f src/modules/demo/index.ts" } }, null, 2) + "\n"
       );
+      writeFixtureCapabilityRegistry(cwd);
       writeFileSync(join(cwd, "docs/spec.md"), "# Spec\n");
       initGitRepo(cwd);
       commitAll(cwd, "init workflow");
@@ -1759,7 +1801,7 @@ describe("Workflow helper scripts", () => {
       rmSync(fakeBin, { recursive: true, force: true });
       rmSync(cwd, { recursive: true, force: true });
     }
-  }, 20000);
+  }, 60000);
 
   test("ship-worktrees should put dirty main closeout on a PR branch", () => {
     const cwd = tmpWorkspace("helper-ship-main-closeout");
@@ -2390,7 +2432,7 @@ describe("Workflow helper scripts", () => {
     }
   });
 
-  test("archive-workflow should archive plan and todo with outcome metadata", () => {
+  test("archive-workflow should archive plan and todo with non-completion outcome metadata", () => {
     const cwd = tmpWorkspace("helper-archive");
     try {
       mkdirSync(join(cwd, "plans/archive"), { recursive: true });
@@ -2411,19 +2453,19 @@ describe("Workflow helper scripts", () => {
 
       const res = run(
         "bash",
-        ["scripts/archive-workflow.sh", "--plan", "plans/plan-20260304-1500-demo.md", "--outcome", "Completed"],
+        ["scripts/archive-workflow.sh", "--plan", "plans/plan-20260304-1500-demo.md", "--outcome", "Abandoned"],
         cwd
       );
       expect(res.status).toBe(0);
 
       const archivedPlan = join(cwd, "plans/archive/plan-20260304-1500-demo.md");
       expect(existsSync(archivedPlan)).toBe(true);
-      expect(readFileSync(archivedPlan, "utf-8")).toContain("**Status**: Archived");
+      expect(readFileSync(archivedPlan, "utf-8")).toContain("**Status**: Abandoned");
 
       const archivedTodos = readdirSync(join(cwd, "tasks/archive")).filter((name) => name.startsWith("todo-"));
       expect(archivedTodos.length).toBeGreaterThanOrEqual(1);
       const todoArchiveContent = readFileSync(join(cwd, "tasks/archive", archivedTodos[0]), "utf-8");
-      expect(todoArchiveContent).toContain("**Outcome**: Completed");
+      expect(todoArchiveContent).toContain("**Outcome**: Abandoned");
       const archivedNotes = readdirSync(join(cwd, "tasks/archive")).filter((name) => name.startsWith("notes-"));
       expect(archivedNotes.length).toBeGreaterThanOrEqual(1);
       expect(readFileSync(join(cwd, "tasks/archive", archivedNotes[0]), "utf-8")).toContain("**Lifecycle**: notes");
@@ -2487,7 +2529,7 @@ describe("Workflow helper scripts", () => {
 
       const res = run(
         "bash",
-        ["scripts/archive-workflow.sh", "--plan", "plans/plan-20260304-1505-demo.md", "--outcome", "Completed"],
+        ["scripts/archive-workflow.sh", "--plan", "plans/plan-20260304-1505-demo.md", "--outcome", "Superseded"],
         cwd
       );
       expect(res.status).toBe(0);

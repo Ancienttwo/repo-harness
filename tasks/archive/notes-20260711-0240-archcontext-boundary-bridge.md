@@ -1,3 +1,20 @@
+> **Archived**: 2026-07-11 02:40
+> **Related Plan**: plans/archive/plan-20260706-0211-archcontext-boundary-bridge.md
+> **Outcome**: Superseded
+> **Lifecycle**: notes
+> **Parent Run ID**: one-shot-authority-foundation-migration
+
+## 2026-07-11 Archive Migration Correction
+
+- The one-shot CO-08 migration originally labeled this historical workflow
+  `Completed` without producing completion evidence current to that archive
+  operation. The archived review's pending fingerprint cannot satisfy the new
+  completion gate.
+- The archive outcome is therefore `Superseded`: the historical implementation
+  and review content remain intact, while
+  `plans/plan-20260711-0139-code-authority-foundation-v1.md` now owns the
+  authoritative capability-boundary and ArchContext export closeout.
+
 # Implementation Notes: archcontext-boundary-bridge
 
 > **Status**: Active

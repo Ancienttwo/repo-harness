@@ -13,6 +13,7 @@ trap 'rm -f "$LOOKUP_STDERR"' EXIT
 echo "[release] package: ${PACKAGE_NAME}@${PACKAGE_VERSION}"
 echo "[release] registry: ${NPM_RELEASE_REGISTRY}"
 bun run check:hooks
+bun run check:helpers
 if npm view "${PACKAGE_NAME}@${PACKAGE_VERSION}" version --json --registry "$NPM_RELEASE_REGISTRY" >/dev/null 2>"$LOOKUP_STDERR"; then
   echo "[release] ERROR: ${PACKAGE_NAME}@${PACKAGE_VERSION} already exists on npm." >&2
   echo "[release] Bump package.json, CLI version, status version, and tests before publishing." >&2

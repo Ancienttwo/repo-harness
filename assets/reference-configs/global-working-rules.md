@@ -33,7 +33,14 @@ For bug hunts, this trace is mandatory before fixing.
 
 Before changing behavior, infer why the current shape exists: compatibility boundary, deployment shape, persistence model, performance constraint, security boundary, product intent, or migration history. Preserve the core invariant, state the tradeoff, name what fails first at 10x scale, and choose the smallest coherent change.
 
-Do not introduce a new abstraction unless it removes real complexity, matches an existing local pattern, or protects a cross-module invariant.
+Do not introduce a new abstraction merely because it matches a familiar pattern. Add one only when it removes observed duplicate authority or complexity, serves at least two real consumers, or protects a cross-module invariant.
+
+## Code Optimization Principles
+
+- Reason from first principles: identify observable conditions, controllable inputs, the invariant to preserve, and the real pressure point before changing structure.
+- Keep one source of truth for each datum. Other representations must be deterministic projections with drift checks; an authority cutover removes the old authoring path in the same approved work-package.
+- Forbid steady-state compatibility behavior. Do not add dual reads or writes, aliases, shape translators, shadow parsers, or semantic fallbacks that keep old and new authorities alive together.
+- Create shared components only for observed reuse or invariants. When independently meaningful consumers need a shared package, prefer an existing monorepo workspace; do not convert a single-package repository into a monorepo without a second independently released or deployed consumer.
 
 ## No Compatibility Fallbacks in Product Code
 
@@ -41,7 +48,9 @@ Do not add fallback, compatibility, heuristic, defensive, or "best effort" code 
 
 When the source of truth is an LLM/provider/external authority/user input contract, do not re-derive the same semantic data with local deterministic rules, regexes, multilingual pattern lists, shadow parsers, or compatibility shims. If the authoritative value is missing, malformed, unauthenticated, or unavailable, surface that failure and stop; do not synthesize a replacement to make the flow continue.
 
-Product-logic compatibility is harmful by default. Do not preserve old product semantics, accept multiple semantic shapes, infer missing fields, or translate one domain meaning into another unless the user explicitly requested that compatibility in the current task or a human-approved migration/release contract names it. Compatibility for old wire formats, legacy clients, or migration windows is allowed only when it is explicit, covered by tests, and bounded by a removal or ownership path. Validation, security checks, data-safety checks, and error handling remain required, but they must reject or report invalid states instead of changing semantics.
+Product-logic compatibility is harmful by default. Do not preserve old product semantics, accept multiple semantic shapes, infer missing fields, or translate one domain meaning into another unless a human-approved migration/release contract explicitly requires a one-shot migration. That migration must be operator-invoked, fail closed, be covered by tests, and remove the old path or authority in the same work-package. Do not ship a long-lived compatibility shim. Validation, security checks, data-safety checks, and error handling remain required, but they must reject or report invalid states instead of changing semantics.
+
+Runtime availability degradation may select another runner only on the same task contract and must remain observable. It is not permission to change product semantics or synthesize missing authority.
 
 ## Reporting
 

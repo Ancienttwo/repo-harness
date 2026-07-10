@@ -1110,7 +1110,7 @@ pi_install_helpers() {
   local target_dir="$1"
   local helpers_dir="$2"
   local mode="${3:-apply}"
-  local helper_names="${4:-new-spec.sh new-sprint.sh new-plan.sh capture-plan.sh plan-to-todo.sh contract-run.ts contract-worktree.sh ship-worktrees.sh archive-workflow.sh refresh-current-status.sh prepare-handoff.sh verify-contract.sh summarize-failures.sh verify-sprint.sh harness-trace-grade.sh sprint-backlog.sh factor-lab-new.sh factor-lab-promote.sh factor-lab-reject.sh factor-lab-check.sh check-task-sync.sh check-deploy-sql-order.sh check-architecture-sync.sh check-agent-tooling.sh install-agent-fleet.sh check-context-files.sh check-brain-manifest.sh sync-brain-docs.sh check-skill-version.ts select-agent-context-blocks.sh ensure-task-workflow.sh check-task-workflow.sh maintenance-triage.sh heartbeat-triage.sh switch-plan.sh workflow-contract.ts inspect-project-state.ts migrate-workflow-docs.ts migrate-project-template.sh capability-resolver.ts architecture-event.ts capability-config.ts architecture-queue.sh archive-architecture-request.sh context-contract-sync.sh workstream-sync.sh prepare-codex-handoff.sh codex-handoff-resume.sh}"
+  local helper_names="${4:?pi_install_helpers requires contract helper inventory}"
   local scripts_dir="$target_dir/scripts"
   local helper_name
   local source_repo_target=0
@@ -2309,15 +2309,18 @@ Generality: These are general working rules. Do not tailor behavior to any speci
 ## Decision Protocol
 
 - For non-trivial engineering work, complete P1/P2/P3 before design decisions or code edits: P1 map the real system boundary, P2 trace one concrete data/control path, and P3 state the design rationale and invariant being preserved.
+- Keep one source of truth for each datum. Make other representations deterministic projections with drift checks, and remove the old authoring path in the same approved work-package when authority changes.
+- Do not add steady-state compatibility paths such as dual reads or writes, aliases, shape translators, shadow parsers, or semantic fallbacks. A one-shot migration must be operator-invoked, fail closed, covered by tests, and remove the old path in the same work-package.
+- Add an abstraction only when it removes observed duplicate authority or complexity, serves at least two real consumers, or protects a cross-module invariant. Prefer an existing monorepo workspace for a genuinely shared package; do not create a monorepo without a second independently released or deployed consumer.
 - For planning requests, produce one decision-complete recommendation with scope, non-scope, tradeoffs, tests, rollback/failure handling, and the most fragile assumption; do not implement until the user approves.
 - If the user says `implement this plan`, first check for obvious repo drift, then execute the approved plan without re-litigating the direction.
 - For bug hunts, trace the failing path and name the root cause before changing code.
 - For bundles of requests, classify items before accepting scope; do not treat every item as automatic implementation work.
-- Do not add fallback, compatibility, or "best effort" product code that re-derives an authority's semantics (LLM/provider/external/user-input) with local rules, regexes, or shadow parsers; fail closed with a clear error unless the current task or a human-approved migration/release contract explicitly requires that path.
+- Do not add fallback, compatibility, or "best effort" product code that re-derives an authority's semantics (LLM/provider/external/user-input) with local rules, regexes, or shadow parsers; fail closed with a clear error. Runtime runner degradation may select another runner only on the same task contract, must remain observable, and cannot change product semantics.
 
 ## Execution And Verification
 
-- Prefer existing repo patterns, scripts, and standard-library/platform features before adding dependencies, files, or abstractions.
+- Prefer platform or standard-library features, then existing dependencies and repo patterns, before adding dependencies, files, or abstractions.
 - Preserve user-authored files; do not overwrite existing `CLAUDE.md` or `AGENTS.md` except when explicitly applying an approved scaffold or syncing the controlled architecture block.
 - After substantive changes, run focused checks for the touched area plus `bash scripts/check-task-sync.sh` and `bash scripts/check-task-workflow.sh --strict` when those scripts exist.
 - Report what changed, why it was the smallest coherent change, verification evidence, and any concrete residual risk.
@@ -2513,7 +2516,7 @@ CURRENT_STATUS_EOF
 ## Architecture Drift Flow
 
 - `repo-harness run architecture-queue` records architecture-sensitive edits as requests.
-- `repo-harness run archive-architecture-request` archives handled requests after an agent records the resolution status and linked artifacts.
+- `repo-harness run archive-architecture-request` archives handled requests after an agent records the resolution status and linked artifacts; `Resolved` requires the request's declared architecture module as an existing durable artifact.
 - `repo-harness run context-contract-sync` keeps only the controlled architecture block in functional-block `AGENTS.md` and `CLAUDE.md` files aligned.
 - `repo-harness run workstream-sync` keeps durable multi-session progress under `tasks/workstreams/<domain>/<capability>/` and projects only pointers into local contracts.
 - Semantic architecture diagrams live as Mermaid fenced blocks in the relevant module or snapshot Markdown.

@@ -49,6 +49,9 @@ bun run check:type
 echo "[ci] hook projection"
 bun run check:hooks
 
+echo "[ci] helper projection"
+bun run check:helpers
+
 echo "[ci] tests"
 run_bun_tests
 

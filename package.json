@@ -38,6 +38,8 @@
     "check:type": "node node_modules/typescript/bin/tsc --noEmit",
     "sync:hooks": "bun scripts/sync-hook-sources.ts --write",
     "check:hooks": "bun scripts/sync-hook-sources.ts --check",
+    "sync:helpers": "bun scripts/sync-helper-sources.ts --write",
+    "check:helpers": "bun scripts/sync-helper-sources.ts --check",
     "check:ci": "bash scripts/check-ci.sh",
     "check:release": "bash scripts/check-npm-release.sh",
     "check:release-published": "bash scripts/check-release-published.sh",
@@ -53,11 +55,11 @@
     "sync:codex-installed": "bash scripts/sync-codex-installed-copies.sh"
   },
   "devDependencies": {
-    "@colbymchenry/codegraph": "1.1.3",
+    "@colbymchenry/codegraph": "1.4.0",
     "@types/bun": "latest",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.0",
-    "archctx-contracts": "0.2.1",
+    "archctx-contracts": "0.2.2",
     "typescript": "^6.0.3"
   },
   "dependencies": {

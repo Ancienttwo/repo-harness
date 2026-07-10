@@ -120,6 +120,18 @@ describe('capability-context command', () => {
     }
   });
 
+  test('request fails when no registered capability matches the path', () => {
+    const cwd = tmpWorkspace('capability-context-unmatched');
+    try {
+      writeRegistry(cwd, [rootCapability]);
+      expect(() => runCapabilityContextRequest({ repo: cwd, path: 'src/unowned.ts' })).toThrow(
+        'no capability matches path: src/unowned.ts',
+      );
+    } finally {
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   test('sync applies manifest content, preserves manual text, normalizes registry, and clears pending requests', () => {
     const cwd = tmpWorkspace('capability-context-sync');
     try {

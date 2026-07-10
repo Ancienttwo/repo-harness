@@ -1,4 +1,4 @@
-import type { AppendManagedBlockOperation, ManagedBlockMarker } from "../core/adoption/operations";
+import type { AppendManagedBlockOperation, ManagedBlockMarker } from "./operations";
 
 export function managedBlockMarker(marker: string): ManagedBlockMarker {
   return {

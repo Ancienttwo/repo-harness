@@ -23,6 +23,7 @@ architecture documentation, drift-request, or diagram pass.
 5. Use Markdown Mermaid as the semantic diagram source; use `mermaid` only for optional human-readable HTML renderings grounded in observed repo files.
 6. Archive handled requests with:
    - `repo-harness run archive-architecture-request --request <request> --status <resolved|superseded|rejected|no-change> --artifact <path> --note <text>`
+   - For `resolved`, the live `Pending` request must declare `> **Architecture Module**:` and that exact existing module path must be supplied as an `--artifact`.
 7. Verify with:
    - `repo-harness run check-architecture-sync`
    - `repo-harness run capability-resolver validate --repo <repo> --format text`

@@ -1,6 +1,6 @@
 # Plan: No-fallback rule distribution hardening
 
-> **Status**: Approved
+> **Status**: Superseded
 > **Created**: 20260703-1405
 > **Slug**: no-fallback-distribution
 > **Planning Source**: codex-plan-or-waza-think

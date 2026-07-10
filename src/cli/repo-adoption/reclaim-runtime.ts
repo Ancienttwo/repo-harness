@@ -559,11 +559,13 @@ export function runRuntimeReclaim(opts: RuntimeReclaimOptions = {}): RuntimeRecl
   archivedActions.push(...rewritePackageScripts(repo, archive));
 
   if (opts.verify !== false) {
+    const verificationEnv = { ...env };
+    delete verificationEnv.REPO_HARNESS_SOURCE_ROOT;
     const verification = runHelper({
       helper: 'check-task-workflow',
       args: ['--strict'],
       cwd: repo,
-      env: { ...env, REPO_HARNESS_HELPER_SOURCE: 'package' },
+      env: verificationEnv,
       stdio: 'pipe',
     });
     if (verification.exitCode !== 0) {

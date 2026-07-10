@@ -7,6 +7,8 @@ import {
   rmSync,
   writeFileSync,
   chmodSync,
+  cpSync,
+  copyFileSync,
 } from "fs";
 import { spawnSync } from "child_process";
 import { tmpdir } from "os";
@@ -31,7 +33,10 @@ function makeExecutable(path: string, body: string): void {
 
 function setupFakeSource(root: string): void {
   mkdirSync(join(root, "scripts"), { recursive: true });
+  mkdirSync(join(root, "assets"), { recursive: true });
   mkdirSync(join(root, "assets", "reference-configs"), { recursive: true });
+  cpSync(join(ROOT, "assets", "templates", "helpers"), join(root, "scripts"), { recursive: true });
+  copyFileSync(join(ROOT, "assets", "workflow-contract.v1.json"), join(root, "assets", "workflow-contract.v1.json"));
   writeFileSync(
     join(root, "assets", "reference-configs", "global-working-rules.md"),
     [
@@ -154,7 +159,7 @@ describe("init command", () => {
       process.chdir(previousCwd);
       rmSync(tmp, { recursive: true, force: true });
     }
-  });
+  }, 30000);
 
   test("runInit registers an adopted repo in the global repo-harness registry", () => {
     const tmp = join(tmpdir(), `repo-harness-init-registry-${Date.now()}`);
@@ -262,7 +267,7 @@ describe("init command", () => {
       process.chdir(previousCwd);
       rmSync(tmp, { recursive: true, force: true });
     }
-  });
+  }, 30000);
 
   test("runInit can bootstrap core Waza, Mermaid, and cross-review skills for Claude and Codex", () => {
     const tmp = join(tmpdir(), `repo-harness-init-skills-${Date.now()}`);

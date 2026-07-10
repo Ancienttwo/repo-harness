@@ -5,7 +5,7 @@ import type { AdoptionOperation, AdoptionPlan, AdoptionWarning } from "./operati
 import { makeOperationId } from "./operations";
 import { gitignoreManagedBlockOperation } from "./gitignore-plan";
 import { summarizeOperations } from "./summary";
-import { managedBlockNeedsUpdate } from "../../effects/managed-block";
+import { managedBlockNeedsUpdate } from "./managed-block";
 import { workflowContractInstallOperation } from "./workflow-contract-plan";
 import { adoptionTemplateFile } from "./manifest-templates";
 import { withRollbackMetadata } from "./rollback";

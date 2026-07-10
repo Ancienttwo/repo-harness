@@ -219,7 +219,12 @@ describe("capability-resolver archcontext-boundaries-v1 export", () => {
   });
 
   test("archctx-contracts package exposes expected version, digest, and agent-context schema surface", () => {
-    expect(productVersionManifest().product.version).toBe("0.2.1");
+    const packageManifest = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf-8")) as {
+      devDependencies: Record<string, string>;
+    };
+    const contractsVersion = packageManifest.devDependencies["archctx-contracts"];
+    expect(contractsVersion).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(String(productVersionManifest().product.version)).toBe(contractsVersion);
     expect(digestJson({ ok: true })).toMatch(/^sha256:[a-f0-9]{64}$/);
 
     const projectionTargetSchema = loadSchema(PROJECTION_TARGET_SCHEMA_PATH);

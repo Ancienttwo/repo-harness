@@ -192,58 +192,66 @@ describe("workflow contract manifest", () => {
     expect(legacyRootHelpers?.paths).toContain("scripts/check-task-workflow.sh");
   });
 
-  test("upstream skill root resolver prefers the canonical env var without retired alias surfaces", () => {
-    const code = [
-      'import { resolveAgenticDevRoot, resolveAgenticDevSkillRoot } from "./scripts/workflow-contract.ts";',
-      'console.log(resolveAgenticDevRoot());',
-      'console.log(resolveAgenticDevSkillRoot());',
-    ].join("\n");
-    const preferred = spawnSync("bun", ["-e", code], {
-      cwd: ROOT,
-      encoding: "utf-8",
-      env: {
-        ...process.env,
-        AGENTIC_DEV_ROOT: "/tmp/repo-harness-root",
-        AGENTIC_DEV_SKILL_ROOT: "/tmp/agentic-dev-skill-root",
-      },
-    });
-    expect(preferred.status).toBe(0);
-    expect(preferred.stdout.trim().split("\n")).toEqual([
-      "/tmp/repo-harness-root",
-      "/tmp/repo-harness-root",
-    ]);
+  test("source root resolver accepts only the explicit source-checkout authority", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "workflow-contract-source-root-"));
+    const sourceRoot = join(tmp, "source-root");
+    try {
+      mkdirSync(join(sourceRoot, "assets"), { recursive: true });
+      writeFileSync(join(sourceRoot, "assets", "workflow-contract.v1.json"), "{}\n");
+      const code = [
+        'import { resolveAgenticDevRoot, resolveUpstreamWorkflowContract } from "./scripts/workflow-contract.ts";',
+        'console.log(resolveAgenticDevRoot());',
+        'console.log(resolveUpstreamWorkflowContract());',
+      ].join("\n");
+      const explicit = spawnSync("bun", ["-e", code], {
+        cwd: ROOT,
+        encoding: "utf-8",
+        env: {
+          ...process.env,
+          REPO_HARNESS_SOURCE_ROOT: sourceRoot,
+          AGENTIC_DEV_ROOT: "/tmp/ignored-agentic-root",
+          AGENTIC_DEV_SKILL_ROOT: "/tmp/ignored-skill-root",
+          PROJECT_INITIALIZER_ROOT: "/tmp/ignored-project-initializer-root",
+        },
+      });
+      expect(explicit.status).toBe(0);
+      expect(explicit.stdout.trim().split("\n")).toEqual([
+        sourceRoot,
+        join(sourceRoot, "assets", "workflow-contract.v1.json"),
+      ]);
 
-    const skillRootOnly = spawnSync("bun", ["-e", code], {
-      cwd: ROOT,
-      encoding: "utf-8",
-      env: {
-        ...process.env,
-        AGENTIC_DEV_ROOT: "",
-        AGENTIC_DEV_SKILL_ROOT: "/tmp/agentic-dev-skill-root",
-      },
-    });
-    expect(skillRootOnly.status).toBe(0);
-    expect(skillRootOnly.stdout.trim().split("\n")).toEqual([
-      "/tmp/agentic-dev-skill-root",
-      "/tmp/agentic-dev-skill-root",
-    ]);
+      const relative = spawnSync("bun", ["-e", code], {
+        cwd: ROOT,
+        encoding: "utf-8",
+        env: { ...process.env, REPO_HARNESS_SOURCE_ROOT: "relative/source" },
+      });
+      expect(relative.status).not.toBe(0);
+      expect(relative.stderr).toContain("REPO_HARNESS_SOURCE_ROOT must be an absolute path");
 
-    const retiredLegacy = spawnSync("bun", ["-e", code], {
-      cwd: ROOT,
-      encoding: "utf-8",
-      env: {
-        ...process.env,
-        AGENTIC_DEV_ROOT: "",
-        AGENTIC_DEV_SKILL_ROOT: "",
-        PROJECT_INITIALIZER_ROOT: "/tmp/project-initializer-root",
-      },
-    });
-    expect(retiredLegacy.status).toBe(0);
-    expect(retiredLegacy.stdout).not.toContain("/tmp/project-initializer-root");
+      const resolverSource = readFileSync(join(ROOT, "scripts/workflow-contract.ts"), "utf-8");
+      expect(resolverSource).not.toContain("AGENTIC_DEV_SKILL_ROOT");
+      expect(resolverSource).not.toContain("PROJECT_INITIALIZER_ROOT");
+      expect(resolverSource).not.toContain("repo-harness-skill");
+      expect(resolverSource).not.toContain("/Users/");
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
 
-    const resolverSource = readFileSync(join(ROOT, "scripts/workflow-contract.ts"), "utf-8");
-    expect(resolverSource).not.toContain("repo-harness-skill");
-    expect(resolverSource).not.toContain("resolveProjectInitializerRoot");
+  test("workflow contract loader fails closed for missing and malformed contracts", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "workflow-contract-invalid-"));
+    try {
+      const contractPath = join(tmp, "workflow-contract.json");
+      expect(() => loadWorkflowContract(contractPath)).toThrow("workflow contract not found");
+
+      writeFileSync(contractPath, "{broken\n");
+      expect(() => loadWorkflowContract(contractPath)).toThrow("invalid workflow contract JSON");
+
+      writeFileSync(contractPath, `${JSON.stringify({ version: "1.0.0" })}\n`);
+      expect(() => loadWorkflowContract(contractPath)).toThrow("contractId must be a non-empty string");
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
   });
 
   test("runtime harness artifacts should be ignored local state, not tracked deliverables", () => {

@@ -9,12 +9,14 @@ export const MINIMAL_CHANGE_EXECUTION_INTENTS = Object.freeze([
 
 const SESSION_CONTEXT = [
   'Minimal-change policy:',
-  '1. Confirm new code is necessary.',
+  '1. Reason from first principles: identify observable and controllable conditions, preserve the real invariant, and confirm new code is necessary.',
   '2. Prefer platform or standard library features, then an already-installed dependency.',
   '3. Prefer the smallest direct implementation over new wrappers or extension points.',
   '4. Delete or shrink obsolete code before adding layers.',
   '5. Preserve explicit requirements, security, validation, data safety, error handling, accessibility, and runnable tests.',
-  '6. No compatibility fallbacks in product code: do not re-derive an LLM/provider/authority-owned value with local rules or regexes; if the authoritative value is missing or malformed, fail closed with a clear error instead of synthesizing a replacement.',
+  '6. Keep one source of truth per datum; other representations must be deterministic projections with drift checks.',
+  '7. No compatibility fallbacks in product code: do not re-derive an LLM/provider/authority-owned value with local rules or regexes; if the authoritative value is missing or malformed, fail closed with a clear error instead of synthesizing a replacement.',
+  '8. Add an abstraction only for observed duplicate authority, at least two real consumers, or a cross-module invariant. Prefer an existing monorepo workspace for a genuinely shared package; do not create one without a second independently released or deployed consumer.',
   'Before completion, justify each new dependency, file, and abstraction.',
 ].join('\n');
 

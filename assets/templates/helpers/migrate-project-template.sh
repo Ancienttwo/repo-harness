@@ -1,53 +1,25 @@
 #!/bin/bash
-# Delegate workflow migrations to the canonical upstream repo-harness.
+# Delegate workflow migrations to the canonical repo-harness implementation.
 #
-# Generated projects keep installed workflow runtime state under .ai/. The
-# template source lives in AGENTIC_DEV_ROOT, AGENTIC_DEV_SKILL_ROOT, or
-# ~/Projects/repo-harness. Retired legacy install paths are not
-# searched.
+# The package-local source tree is authoritative unless the caller explicitly
+# selects a source checkout with REPO_HARNESS_SOURCE_ROOT.
 
 set -euo pipefail
 
-resolve_agentic_dev_root() {
-  if [[ -n "${AGENTIC_DEV_ROOT:-}" ]]; then
-    printf '%s\n' "$AGENTIC_DEV_ROOT"
-    return 0
-  fi
+HELPER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+PACKAGE_ROOT="$(cd "$HELPER_DIR/../../.." && pwd -P)"
+SOURCE_ROOT="${REPO_HARNESS_SOURCE_ROOT:-$PACKAGE_ROOT}"
 
-  if [[ -n "${AGENTIC_DEV_SKILL_ROOT:-}" ]]; then
-    printf '%s\n' "$AGENTIC_DEV_SKILL_ROOT"
-    return 0
-  fi
+if [[ "$SOURCE_ROOT" != /* ]]; then
+  echo "[migrate] REPO_HARNESS_SOURCE_ROOT must be an absolute path: $SOURCE_ROOT" >&2
+  exit 1
+fi
 
-  if [[ -n "${HOME:-}" ]]; then
-    local roots=(
-      "$HOME/Projects/repo-harness"
-      "$HOME/.codex/skills/repo-harness"
-      "$HOME/.claude/skills/repo-harness"
-      "$HOME/.agents/skills/repo-harness"
-    )
-
-    local root
-    for root in "${roots[@]}"; do
-      if [[ -d "$root" ]]; then
-        printf '%s\n' "$root"
-        return 0
-      fi
-    done
-
-    printf '%s\n' "${roots[0]}"
-    return 0
-  fi
-
-  printf '%s\n' "/Users/ancienttwo/.agents/skills/repo-harness"
-}
-
-UPSTREAM_ROOT="$(resolve_agentic_dev_root)"
-UPSTREAM_SCRIPT="$UPSTREAM_ROOT/scripts/migrate-project-template.sh"
+UPSTREAM_SCRIPT="$SOURCE_ROOT/scripts/migrate-project-template.sh"
 
 if [[ ! -f "$UPSTREAM_SCRIPT" ]]; then
   echo "[migrate] Upstream repo-harness migration script not found: $UPSTREAM_SCRIPT" >&2
-  echo "[migrate] Set AGENTIC_DEV_ROOT or AGENTIC_DEV_SKILL_ROOT to the skill root." >&2
+  echo "[migrate] Set REPO_HARNESS_SOURCE_ROOT to an explicit repo-harness source checkout." >&2
   exit 1
 fi
 

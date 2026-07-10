@@ -16,6 +16,7 @@ function tmpRepo(fn: (cwd: string) => void): void {
     mkdirSync(join(cwd, "scripts"), { recursive: true });
     mkdirSync(join(cwd, ".ai/context"), { recursive: true });
     mkdirSync(join(cwd, ".ai/harness"), { recursive: true });
+    mkdirSync(join(cwd, "apps/web"), { recursive: true });
     mkdirSync(join(cwd, "docs/architecture/requests"), { recursive: true });
     for (const file of [
       "check-architecture-sync.sh",
