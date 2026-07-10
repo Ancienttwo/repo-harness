@@ -1,6 +1,6 @@
 # Plan: ChatGPT 云端直控本地 Coding MCP
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260711-0137
 > **Slug**: chatgpt-coding-mcp
 > **Planning Source**: waza-think

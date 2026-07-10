@@ -1,3 +1,9 @@
+> **Archived**: 2026-07-11 06:09
+> **Related Plan**: plans/archive/plan-20260711-0137-chatgpt-coding-mcp.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260711-0609
+
 # Task Review: chatgpt-coding-mcp
 
 > **Status**: Done
@@ -8,7 +14,7 @@
 > **Last Updated**: 2026-07-11 04:02 +0800
 > **Recommendation**: pass
 > **Review Rubric Version**: 1
-> **Reviewed Diff Fingerprint**: sha256:95fc0bf802f57b5aec150a5aca35f60467a48520a1feba75dce42ea9fe1a937b
+> **Reviewed Diff Fingerprint**: sha256:b2c943176e908d0d413bfa49d9265c3b8cbfadda67128f4657921f81d99f6145
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 ## Human Review Card
@@ -16,7 +22,7 @@
 - Verdict: pass
 - Change type: code-change
 - Intended files changed: MCP policy/config/OAuth/HTTP/setup, coding workspace/file/process modules, registry/access administration, CLI commands, architecture/setup/skill/research docs, dependency lock, tests, and workflow closeout artifacts.
-- Actual files changed: 43 implementation paths in the reviewed fingerprint; the ignored `_ref/devspace` checkout is pinned separately and the review file is excluded from freshness.
+- Actual files changed: 41 implementation paths in the post-rebase reviewed fingerprint; the ignored `_ref/devspace` checkout is pinned separately and the review file is excluded from freshness.
 - Commands passed: focused MCP suites, `bun run check:type`, full `bun test`, CLI help/readback, package tarball install smoke, and the repository required checks listed below.
 - External acceptance: unavailable; manual override recorded below because live Cloudflare/ChatGPT state requires separate user authorization and the architecture reviewer exhausted its runtime quota.
 - Residual risks: Bun 1.3.x cannot safely drive `node-pty@1.1.0`, so explicit PTY requests return `PTY_UNAVAILABLE`; real ChatGPT `Called tool` transcript remains `live_canary_pending_authorization`.
@@ -52,12 +58,16 @@
   - `repo-harness run check-task-workflow --strict`
   - `bun scripts/inspect-project-state.ts --repo . --format text`
   - `bash scripts/migrate-project-template.sh --repo . --dry-run`
+  - `bash scripts/verify-sprint.sh` -> pass after the global `repo-harness run verify-sprint` wrapper hit its fixed 120-second helper timeout
+  - post-rebase `bun run check:type` plus the 8-suite focused MCP gate -> 91 pass, 0 fail, 1063 assertions
 - Manual checks:
   - `_ref/devspace` is ignored, clean, detached, and exactly at the pinned commit.
   - Coding HTTP rejects bearer/url-token auth; missing `repo-harness.coding` is not silently upgraded.
   - Root instruction symlinks do not return external content; coding CodeGraph does not run a granted repo's local executable or inherit MCP/OAuth/Codex/Claude secrets.
   - No raw command/stdout/stderr is written to coding audit; process completion remains auditable after grant revocation.
   - `open_workspace` public metadata does not return the local repo root. Live external systems were not changed.
+  - The verified commit was rebased from `e020e01` onto current local `main` `d25bc6d`; only derived `tasks/current.md` and already-increased integration-test budgets conflicted. The projection was regenerated and the newer 30s/60s budgets were preserved; product code had no textual conflict.
+  - Post-rebase finish initially exposed a new mainline fixture recursion: `tests/archive-evidence-gates.test.ts` inherited outer `REPO_HARNESS_TARGET_REPO_ROOT`, redirecting its temp-repo helper back to this repo. The fixture now scrubs the three authority env keys before both subprocess entrypoints; an explicit poisoned-env regression test invocation passes and product helper authority remains unchanged.
 - Supporting artifacts: implementation notes, DevSpace research, runtime-harness architecture module, coding operator guide, local HTTP E2E tests, and `.ai/harness/checks/latest.json`.
 - Implementation notes reviewed: yes.
 - Run snapshot: `.ai/harness/checks/latest.json`.

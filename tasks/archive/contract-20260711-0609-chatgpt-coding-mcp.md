@@ -1,3 +1,9 @@
+> **Archived**: 2026-07-11 06:09
+> **Related Plan**: plans/archive/plan-20260711-0137-chatgpt-coding-mcp.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260711-0609
+
 # Task Contract: chatgpt-coding-mcp
 
 > **Status**: Fulfilled
