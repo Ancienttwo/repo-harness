@@ -45,6 +45,19 @@ repo-harness mcp setup chatgpt \
   --endpoint <https-url>/mcp
 ```
 
+Direct coding is a separate, default-off profile. It requires user scope and an
+explicit read-write repo grant:
+
+```bash
+repo-harness mcp setup chatgpt --scope user --profile coding --grant-read-write "$HOME/Projects/my-repo" --endpoint https://mcp.example.com/mcp
+repo-harness mcp serve --repo "$HOME/Projects/my-repo" --transport http --host 127.0.0.1 --port 8765 --profile coding
+```
+
+It exposes `open_workspace`, `read`, `apply_patch`, `exec_command`, and
+`write_stdin`. Bash has local-user authority and is not a filesystem sandbox.
+It does not call local Codex or consume Codex quota. Read
+`docs/reference-configs/chatgpt-coding-mcp.md` before enabling it.
+
 Health check:
 
 ```bash
@@ -69,6 +82,15 @@ curl http://127.0.0.1:8765/.well-known/oauth-protected-resource/mcp
 
 ## Choose Tunnel Endpoint
 
+Keep the four network values distinct:
+
+| Value | Example |
+|---|---|
+| Local origin | `http://127.0.0.1:8765` |
+| Tunnel upstream | `http://127.0.0.1:8765` |
+| Public origin | `https://mcp.example.com` (no `/mcp`) |
+| ChatGPT MCP server URL | `https://mcp.example.com/mcp` |
+
 For recurring ChatGPT Connector use, prefer a stable hostname from a named tunnel or reserved domain. Quick tunnels are useful for one-off smoke tests, but their URL changes and ChatGPT will treat the new URL as a different Connector app.
 
 Stable Cloudflare named tunnel shape:
@@ -77,7 +99,7 @@ Stable Cloudflare named tunnel shape:
 cloudflared tunnel login
 cloudflared tunnel create repo-harness-mcp
 cloudflared tunnel route dns repo-harness-mcp repo-harness-mcp.example.com
-cloudflared tunnel run --url http://127.0.0.1:8765 repo-harness-mcp
+cloudflared tunnel run repo-harness-mcp
 ```
 
 Then regenerate this guide with the stable endpoint:
@@ -94,24 +116,31 @@ One-off quick tunnel smoke:
 cloudflared tunnel --url http://127.0.0.1:8765
 ```
 
+| Provider | Intended use |
+|---|---|
+| Cloudflare named tunnel | Preferred recurring path with stable hostname |
+| Cloudflare quick tunnel | One-off smoke only; URL changes |
+| ngrok reserved domain | Stable debugging path with provider plan limits |
+| Pinggy | Low-setup temporary smoke |
+| Tailscale Funnel | Tailnet identity/ACL environments |
+
 Use this Connector URL:
 
 ```text
 <https-tunnel-url>/mcp
 ```
 
-## Create ChatGPT Connector
+## Create ChatGPT Developer-mode App / Connector
 
-1. Open ChatGPT Settings.
-2. Enable Developer Mode if your workspace exposes it.
-3. Go to Connectors.
-4. Create a Connector using the server name recorded in `.repo-harness/mcp.local.json` under `chatgpt.serverName` (new setup records the default `repo-harness` unless `--server-name` is provided).
-5. Paste the HTTPS Connector URL ending in `/mcp`.
-6. Configure Connector authentication as OAuth.
-7. Click Scan Tools.
+1. Open ChatGPT **Settings → Security and login** and enable Developer mode.
+2. Open **Settings → Plugins** and create a developer-mode app (older UI/material may call it a Connector).
+3. Use the server name recorded in `.repo-harness/mcp.local.json` under `chatgpt.serverName` (new setup records the default `repo-harness` unless `--server-name` is provided).
+4. Provide a description and paste the public MCP server URL ending in `/mcp`.
+5. Configure Connector authentication as OAuth when prompted.
+6. Create/Scan the app and verify the advertised tools.
 8. When the authorization page opens, enter the passphrase from `.repo-harness/mcp.oauth.json`.
 9. Wait for the tool scan to finish, then create the Connector.
-10. Keep write confirmations enabled.
+10. Keep a permission level that asks before changes; coding tools are destructive and shell is open-world.
 
 After changing repo-harness versions or any MCP tool schema, restart
 `repo-harness mcp serve`, rescan the Connector tools, and start a fresh ChatGPT
@@ -133,7 +162,8 @@ Use ChatGPT for planning and review. Use Codex for local execution.
 8. Open Codex locally and run the generated `/goal` prompt.
 9. Let Codex execute one Sprint task card at a time, run checks, update the checklist, and stage each completed phase before continuing.
 
-The sidecar is not a remote coding agent. It prepares workflow artifacts for the local agent host.
+Planner remains a workflow sidecar rather than a remote coding agent. Only the
+separate, explicitly granted coding profile provides direct coding and shell.
 
 ## General Repo Reader Contract
 
@@ -411,6 +441,7 @@ Use repo-harness-chatgpt-bridge. Execute the latest ChatGPT-generated Codex goal
 - If ChatGPT cannot connect, verify the tunnel URL is HTTPS and ends in `/mcp`.
 - If ChatGPT returns unauthorized, verify OAuth discovery works and re-run the authorization passphrase flow.
 - If tools are missing, restart `repo-harness mcp serve` and rescan tools.
+- Run `repo-harness mcp doctor --repo . --live` to verify config, local server, tunnel, OAuth, initialize, and exact `tools/list` schema without printing credentials.
 - If workflow artifact writes fail, verify the target path is a PRD, sprint, plan, or approved handoff file.
 - If general repo writes fail, call `get_repo_capabilities`; write tools require a repo registered with `accessMode: "read_write"`.
 - If ChatGPT generated prose instead of checklist Sprint task cards, ask it to use write_checklist_sprint.
@@ -426,6 +457,7 @@ Use repo-harness-chatgpt-bridge. Execute the latest ChatGPT-generated Codex goal
 - `repo-harness mcp serve --auth url-token` is a single-user compatibility mode that accepts the same token in either `Authorization: Bearer` or `?repo_harness_token=`; logs and shared docs must not include the token.
 - Legacy workspace reader mode keeps deny globs for `.env`, private keys, SSH keys, credentials, secrets, `.git`, and dependency/build output. The general repo API uses `.ignore` as the content filter and relies on repo registration plus path guards.
 - Planner profile cannot write application source files, package manifests, lockfiles, CI config, secrets, or files outside the repo root.
+- Coding profile is user-scoped and fail-closed without explicit `read_write` grants. Its shell has local-user authority; allowed roots constrain workspace selection, not shell access.
 - MCP does not expose a default Codex runner. It prepares `.ai/harness/handoff/codex-goal.md`; the local Codex host owns `/goal` execution unless the user explicitly enables the local orchestrator dev runner.
 - The orchestrator dev runner is local-only, opt-in, timeout-bounded, audited, and limited to the fixed Codex goal handoff. It is not arbitrary shell.
 - Keep `_ref/` read-only when used as a comparison source.

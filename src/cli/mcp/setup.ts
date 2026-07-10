@@ -1,8 +1,15 @@
-import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'fs';
+import { createHash, randomBytes } from 'crypto';
+import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from 'fs';
 import { isIP } from 'net';
 import { homedir } from 'os';
 import { dirname, join, relative, resolve } from 'path';
-import { readRegisteredRepoHarnessRepos, registerRepoHarnessRepo } from '../../effects/repo-registry';
+import {
+  bumpRepoHarnessAuthorizationRevision,
+  readRegisteredRepoHarnessRepos,
+  registerRepoHarnessRepo,
+  repoHarnessAuthorizationRevision,
+  setRepoHarnessAccessMode,
+} from '../../effects/repo-registry';
 import {
   ensureMcpBearerToken,
   ensureMcpOAuthPassphrase,
@@ -10,10 +17,13 @@ import {
   mcpLocalConfigPath,
   mcpOAuthPath,
   mcpTokenPath,
+  readMcpOAuthPassphrase,
   resolveMcpConfigScope,
   type McpConfigScope,
 } from './auth';
 import { sensitiveAllowedRootReason } from './policy';
+import { parseMcpProfile } from './policy';
+import { buildCodingToolDefinitions } from './coding-tools';
 import { isRepoHarnessAdopted, resolveMcpRepoRoot } from './repo';
 import { repoHarnessPackageVersion } from './version';
 
@@ -43,6 +53,15 @@ function writeFileIfChanged(path: string, content: string, changed: string[]): v
   if (existsSync(path) && readFileSync(path, 'utf-8') === content) return;
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, content, 'utf-8');
+  changed.push(path);
+}
+
+function writePrivateFileAtomicIfChanged(path: string, content: string, changed: string[]): void {
+  if (existsSync(path) && readFileSync(path, 'utf-8') === content) return;
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  const temporary = `${path}.${process.pid}.${Date.now()}.tmp`;
+  writeFileSync(temporary, content, { encoding: 'utf-8', mode: 0o600 });
+  renameSync(temporary, path);
   changed.push(path);
 }
 
@@ -221,6 +240,19 @@ repo-harness mcp setup chatgpt \\
   --endpoint <https-url>/mcp
 \`\`\`
 
+Direct coding is a separate, default-off profile. It requires user scope and an
+explicit read-write repo grant:
+
+\`\`\`bash
+repo-harness mcp setup chatgpt --scope user --profile coding --grant-read-write "$HOME/Projects/my-repo" --endpoint https://mcp.example.com/mcp
+repo-harness mcp serve --repo "$HOME/Projects/my-repo" --transport http --host 127.0.0.1 --port 8765 --profile coding
+\`\`\`
+
+It exposes \`open_workspace\`, \`read\`, \`apply_patch\`, \`exec_command\`, and
+\`write_stdin\`. Bash has local-user authority and is not a filesystem sandbox.
+It does not call local Codex or consume Codex quota. Read
+\`docs/reference-configs/chatgpt-coding-mcp.md\` before enabling it.
+
 Health check:
 
 \`\`\`bash
@@ -245,6 +277,15 @@ curl http://127.0.0.1:8765/.well-known/oauth-protected-resource/mcp
 
 ## Choose Tunnel Endpoint
 
+Keep the four network values distinct:
+
+| Value | Example |
+|---|---|
+| Local origin | \`http://127.0.0.1:8765\` |
+| Tunnel upstream | \`http://127.0.0.1:8765\` |
+| Public origin | \`https://mcp.example.com\` (no \`/mcp\`) |
+| ChatGPT MCP server URL | \`https://mcp.example.com/mcp\` |
+
 For recurring ChatGPT Connector use, prefer a stable hostname from a named tunnel or reserved domain. Quick tunnels are useful for one-off smoke tests, but their URL changes and ChatGPT will treat the new URL as a different Connector app.
 
 Stable Cloudflare named tunnel shape:
@@ -253,7 +294,7 @@ Stable Cloudflare named tunnel shape:
 cloudflared tunnel login
 cloudflared tunnel create repo-harness-mcp
 cloudflared tunnel route dns repo-harness-mcp repo-harness-mcp.example.com
-cloudflared tunnel run --url http://127.0.0.1:8765 repo-harness-mcp
+cloudflared tunnel run repo-harness-mcp
 \`\`\`
 
 Then regenerate this guide with the stable endpoint:
@@ -270,24 +311,31 @@ One-off quick tunnel smoke:
 cloudflared tunnel --url http://127.0.0.1:8765
 \`\`\`
 
+| Provider | Intended use |
+|---|---|
+| Cloudflare named tunnel | Preferred recurring path with stable hostname |
+| Cloudflare quick tunnel | One-off smoke only; URL changes |
+| ngrok reserved domain | Stable debugging path with provider plan limits |
+| Pinggy | Low-setup temporary smoke |
+| Tailscale Funnel | Tailnet identity/ACL environments |
+
 Use this Connector URL:
 
 \`\`\`text
 ${endpoint}
 \`\`\`
 
-## Create ChatGPT Connector
+## Create ChatGPT Developer-mode App / Connector
 
-1. Open ChatGPT Settings.
-2. Enable Developer Mode if your workspace exposes it.
-3. Go to Connectors.
-4. Create a Connector using the server name recorded in \`.repo-harness/mcp.local.json\` under \`chatgpt.serverName\` (new setup records the default \`repo-harness\` unless \`--server-name\` is provided).
-5. Paste the HTTPS Connector URL ending in \`/mcp\`.
-6. Configure Connector authentication as OAuth.
-7. Click Scan Tools.
+1. Open ChatGPT **Settings → Security and login** and enable Developer mode.
+2. Open **Settings → Plugins** and create a developer-mode app (older UI/material may call it a Connector).
+3. Use the server name recorded in \`.repo-harness/mcp.local.json\` under \`chatgpt.serverName\` (new setup records the default \`repo-harness\` unless \`--server-name\` is provided).
+4. Provide a description and paste the public MCP server URL ending in \`/mcp\`.
+5. Configure Connector authentication as OAuth when prompted.
+6. Create/Scan the app and verify the advertised tools.
 8. When the authorization page opens, enter the passphrase from \`.repo-harness/mcp.oauth.json\`.
 9. Wait for the tool scan to finish, then create the Connector.
-10. Keep write confirmations enabled.
+10. Keep a permission level that asks before changes; coding tools are destructive and shell is open-world.
 
 After changing repo-harness versions or any MCP tool schema, restart
 \`repo-harness mcp serve\`, rescan the Connector tools, and start a fresh ChatGPT
@@ -309,7 +357,8 @@ Use ChatGPT for planning and review. Use Codex for local execution.
 8. Open Codex locally and run the generated \`/goal\` prompt.
 9. Let Codex execute one Sprint task card at a time, run checks, update the checklist, and stage each completed phase before continuing.
 
-The sidecar is not a remote coding agent. It prepares workflow artifacts for the local agent host.
+Planner remains a workflow sidecar rather than a remote coding agent. Only the
+separate, explicitly granted coding profile provides direct coding and shell.
 
 ## General Repo Reader Reference
 
@@ -517,6 +566,7 @@ Use repo-harness-chatgpt-bridge. Execute the latest ChatGPT-generated Codex goal
 - If ChatGPT cannot connect, verify the tunnel URL is HTTPS and ends in \`/mcp\`.
 - If ChatGPT returns unauthorized, verify OAuth discovery works and re-run the authorization passphrase flow.
 - If tools are missing, restart \`repo-harness mcp serve\` and rescan tools.
+- Run \`repo-harness mcp doctor --repo . --live\` to verify config, local server, tunnel, OAuth, initialize, and exact \`tools/list\` schema without printing credentials.
 - If workflow artifact writes fail, verify the target path is a PRD, sprint, plan, or approved handoff file.
 - If general repo writes fail, call \`get_repo_capabilities\`; write tools require a repo registered with \`accessMode: "read_write"\`.
 - If ChatGPT generated prose instead of checklist Sprint task cards, ask it to use write_checklist_sprint.
@@ -532,6 +582,7 @@ Use repo-harness-chatgpt-bridge. Execute the latest ChatGPT-generated Codex goal
 - \`repo-harness mcp serve --auth url-token\` is a single-user compatibility mode that accepts the same token in either \`Authorization: Bearer\` or \`?repo_harness_token=\`; logs and shared docs must not include the token.
 - Legacy workspace reader mode keeps deny globs for \`.env\`, private keys, SSH keys, credentials, secrets, \`.git\`, and dependency/build output. The general repo API uses \`.ignore\` as the content filter and relies on repo registration plus path guards.
 - Planner profile cannot write application source files, package manifests, lockfiles, CI config, secrets, or files outside the repo root.
+- Coding profile is user-scoped and fail-closed without explicit \`read_write\` grants. Its shell has local-user authority; allowed roots constrain workspace selection, not shell access.
 - MCP does not expose a default Codex runner. It prepares \`.ai/harness/handoff/codex-goal.md\`; the local Codex host owns \`/goal\` execution unless the user explicitly enables the local orchestrator dev runner.
 - The orchestrator dev runner is local-only, opt-in, timeout-bounded, audited, and limited to the fixed Codex goal handoff. It is not arbitrary shell.
 - Keep \`_ref/\` read-only when used as a comparison source.
@@ -549,6 +600,8 @@ export function runMcpSetupChatgpt(opts: {
   allowRoot?: string[];
   scope?: string;
   allowFullDiskRead?: boolean;
+  profile?: string;
+  grantReadWrite?: string[];
 }): McpSetupResult {
   const repoRoot = resolveMcpRepoRoot(opts.repo ?? '.');
   const scope = parseMcpConfigScope(opts.scope);
@@ -557,6 +610,19 @@ export function runMcpSetupChatgpt(opts: {
   }
   const changed: string[] = [];
   const existingConfig = loadMcpLocalConfig(repoRoot, scope) ?? (scope === 'user' ? loadMcpLocalConfig(repoRoot, 'repo') : null);
+  const requestedProfile = parseMcpProfile(opts.profile ?? existingConfig?.profile ?? 'planner');
+  if (requestedProfile === 'coding' && scope !== 'user') {
+    throw new Error('coding profile setup requires --scope user so grants and authorization revision live in user-owned ignored state');
+  }
+  const grantReadWrite = Array.from(new Set((opts.grantReadWrite ?? []).map((entry) => resolve(entry)).filter(Boolean)));
+  if (requestedProfile === 'coding' && existingConfig?.coding?.enabled !== true && grantReadWrite.length === 0) {
+    throw new Error('coding profile setup requires at least one explicit --grant-read-write <repo>');
+  }
+  for (const grantRoot of grantReadWrite) {
+    const grant = setRepoHarnessAccessMode(grantRoot, 'read_write');
+    if (!grant.registered) throw new Error(`cannot grant coding access: ${grant.reason ?? grant.path}`);
+    if (grant.changed) changed.push(grant.registryPath);
+  }
   const requestedRoots = normalizeAllowedRoots(opts.allowRoot ?? []);
   const existingRoots = normalizeAllowedRoots(existingConfig?.permissions?.allowedRoots ?? []);
   const allowedRoots = Array.from(new Set([
@@ -568,7 +634,7 @@ export function runMcpSetupChatgpt(opts: {
     : { registered: false, changed: false, registryPath: '', path: repoRoot };
   if (registered.changed) changed.push(registered.registryPath);
   const registeredRepoCount = readRegisteredRepoHarnessRepos({ adoptedOnly: true }).length;
-  const readerEnabled = opts.enableReader !== false && (
+  const readerEnabled = requestedProfile !== 'coding' && opts.enableReader !== false && (
     allowedRoots.length > 0 ||
     currentRepoAdopted ||
     registered.registered ||
@@ -586,19 +652,27 @@ export function runMcpSetupChatgpt(opts: {
   const oauth = ensureMcpOAuthPassphrase(repoRoot, scope);
   if (token.changed) changed.push(token.path);
   if (oauth.changed) changed.push(oauth.path);
+  const defaultRedirectHosts = ['chatgpt.com', 'localhost', '127.0.0.1', '::1'];
   const auth = scope === 'repo'
-    ? existingConfig?.auth ?? { mode: 'oauth', oauthFile: '.repo-harness/mcp.oauth.json', tokenFile: '.repo-harness/mcp.tokens.json' }
+    ? {
+        mode: existingConfig?.auth?.mode ?? 'oauth',
+        oauthFile: existingConfig?.auth?.oauthFile ?? '.repo-harness/mcp.oauth.json',
+        tokenFile: existingConfig?.auth?.tokenFile ?? '.repo-harness/mcp.tokens.json',
+        allowedRedirectHosts: existingConfig?.auth?.allowedRedirectHosts ?? defaultRedirectHosts,
+      }
     : {
         mode: existingConfig?.auth?.mode ?? 'oauth',
         oauthFile: displayMcpSetupPath(repoRoot, oauth.path, scope),
         tokenFile: displayMcpSetupPath(repoRoot, token.path, scope),
+        allowedRedirectHosts: existingConfig?.auth?.allowedRedirectHosts ?? defaultRedirectHosts,
       };
-  const profile = existingConfig?.profile === 'executor' || existingConfig?.profile === 'orchestrator'
-    ? existingConfig.profile
-    : 'planner';
+  const profile = requestedProfile;
+  if (existingConfig && (existingConfig.coding?.enabled === true) !== (profile === 'coding')) {
+    bumpRepoHarnessAuthorizationRevision();
+  }
   const { reader: _legacyReader, ...existingCapabilities } = existingConfig?.capabilities ?? {};
   const config = {
-    version: 2,
+    version: 3,
     scope,
     repo: repoRoot,
     server: { ...existingConfig?.server, host, port: Number(port), transport: existingConfig?.server?.transport ?? 'http' },
@@ -611,9 +685,10 @@ export function runMcpSetupChatgpt(opts: {
     capabilities: {
       ...existingCapabilities,
       workspaceReader: readerEnabled,
-      workflowPlanner: profile === 'planner',
+      workflowPlanner: profile === 'planner' || profile === 'coding',
       workflowExecutor: profile === 'executor',
       agentRunner: profile === 'orchestrator' && existingConfig?.devMode?.agentRunner === true,
+      workspaceCoder: profile === 'coding',
     },
     permissions: {
       ...existingConfig?.permissions,
@@ -623,13 +698,19 @@ export function runMcpSetupChatgpt(opts: {
       fullDiskRead: false,
     },
     profile,
+    authorizationRevision: repoHarnessAuthorizationRevision(),
+    coding: {
+      ...existingConfig?.coding,
+      enabled: profile === 'coding',
+      environmentAllowlist: existingConfig?.coding?.environmentAllowlist ?? [],
+    },
     devMode: existingConfig?.devMode ?? {
       agentRunner: false,
       allowedAgents: ['codex'],
       timeoutMs: 120000,
     },
   };
-  writeFileIfChanged(configPath, `${JSON.stringify(config, null, 2)}\n`, changed);
+  writePrivateFileAtomicIfChanged(configPath, `${JSON.stringify(config, null, 2)}\n`, changed);
   if (scope === 'repo') {
     writeFileIfChanged(guidePath, chatgptGuideMarkdown(), changed);
     ensureGitignoreEntries(repoRoot, [
@@ -750,11 +831,12 @@ You are operating inside a repo-harness adopted repository.
 
 Use this Skill when the user asks to set up, operate, inspect, or continue the repo-harness ChatGPT MCP Connector, or when a ChatGPT-generated repo-harness PRD/Sprint/Goal handoff needs to be consumed by Codex.
 
-This Skill has three modes:
+This Skill has four modes:
 
 1. Setup mode: configure local MCP server files, ChatGPT guide, or Codex MCP config.
 2. Planning handoff mode: preserve the chain idea -> PRD -> checklist Sprint -> Codex Goal.
 3. Execution mode: local Codex reads \`.ai/harness/handoff/codex-goal.md\` and executes the referenced checklist Sprint.
+4. Direct coding mode: an explicitly enabled \`coding\` profile opens a granted repo workspace and uses the five guarded coding/process tools without invoking Codex.
 
 ## First Reads
 
@@ -770,7 +852,7 @@ Do not rely on chat history when these files exist.
 
 1. Treat ChatGPT as planner/reviewer and Codex as executor.
 2. Prefer \`repo-harness mcp\` CLI commands over manual file edits when preparing setup or handoff artifacts.
-3. Keep ChatGPT write access limited to PRD, checklist Sprint, plan, notes, and approved handoff artifacts.
+3. In planner mode, keep ChatGPT write access limited to PRD, checklist Sprint, plan, notes, and approved handoff artifacts. Direct source writes require the separate coding profile.
 4. Preserve checklist Sprint task cards and stage gates; do not collapse them into prose.
 5. Stage each completed execution phase before moving to the next Sprint task card.
 6. Report exact commands run, files changed, checks passed, and any remaining blocker.
@@ -803,7 +885,7 @@ Reference repo: <optional-reference-repo>
 
 ## Safety Boundaries
 
-Never do these through MCP:
+Never do these through planner, executor, or orchestrator MCP profiles:
 
 - Do not expose arbitrary shell execution.
 - Do not allow ChatGPT to edit application source files.
@@ -813,6 +895,8 @@ Never do these through MCP:
 - Do not modify \`_ref/\`, \`_ops/\`, \`.env*\`, \`.git/\`, package lockfiles, or source paths through planner-profile MCP tools.
 
 MCP prepares \`.ai/harness/handoff/codex-goal.md\`; the local Codex host owns \`/goal\` execution.
+
+Coding exception: the user may explicitly run user-scoped setup with \`--profile coding --grant-read-write <repo>\`. That profile exposes only \`open_workspace\`, \`read\`, \`apply_patch\`, \`exec_command\`, and \`write_stdin\` for direct coding, is revision-bound to explicit repo grants, defaults to managed worktrees, and runs Bash with local-user authority. It must remain off by default; shell is not a filesystem sandbox. It still hard-denies secret paths, \`.git/**\`, \`.env*\`, \`_ops/**\`, writable \`_ref/**\`, traversal, and symlink escapes.
 
 Exception: if the user explicitly enables the local \`orchestrator\` dev runner setting, MCP may expose \`run_agent_goal\`. That tool must stay local-only, timeout-bounded, audited, limited to the fixed \`.ai/harness/handoff/codex-goal.md\`, and limited to user-allowed agents such as \`codex\` or \`claude\`. It is not arbitrary shell and must not be exposed through an untrusted tunnel.
 
@@ -825,6 +909,14 @@ repo-harness mcp doctor --repo .
 repo-harness mcp setup chatgpt --repo .
 repo-harness mcp setup codex --repo . --scope project
 repo-harness mcp install-skill --repo .
+\`\`\`
+
+Enable direct coding only after the user accepts the local-shell trust model:
+
+\`\`\`bash
+repo-harness mcp setup chatgpt --scope user --profile coding --grant-read-write <repo> --endpoint https://host/mcp
+repo-harness mcp serve --repo <repo> --transport http --host 127.0.0.1 --port 8765 --profile coding
+repo-harness mcp doctor --repo <repo> --live
 \`\`\`
 
 Run the local HTTP server for ChatGPT:
@@ -863,6 +955,8 @@ When consuming \`.ai/harness/handoff/codex-goal.md\`:
 - ChatGPT cannot connect: verify the HTTPS tunnel ends in \`/mcp\` and local \`/health\` responds.
 - ChatGPT auth loops: prefer \`allow once\`; persistent \`allow always\` may require OAuth/session follow-up.
 - Tool scan misses tools: restart \`repo-harness mcp serve\` and rescan the Connector.
+- Coding is disabled: verify user-scoped v3 config, a live \`read_write\` grant, and current OAuth authorization revision.
+- PTY returns \`PTY_UNAVAILABLE\`: keep the failure explicit; do not silently downgrade a requested PTY to pipe execution.
 - Codex cannot see the MCP server: rerun \`repo-harness mcp setup codex --repo . --scope project\`.
 - Sprint is prose-only: regenerate with \`write_checklist_sprint\` before execution.
 `;
@@ -901,7 +995,7 @@ Use this chain for execution-ready planning:
 2. PRD -> checklist Sprint: call \`write_checklist_sprint\`.
 3. Sprint -> Goal: call \`prepare_codex_goal_from_sprint\` or run \`repo-harness mcp prepare-goal\`.
 
-The MCP server prepares artifacts only. The local Codex host owns \`/goal\` execution.
+Planner/executor MCP prepares artifacts only. The local Codex host owns \`/goal\` execution. The separate user-authorized \`coding\` profile may edit a granted repo and run Bash directly without invoking Codex.
 
 Dev-mode exception:
 
@@ -974,6 +1068,8 @@ Codex should update checklist status as work completes and stop at staging gates
 MCP planner profile is for workflow artifacts only. It must not expose source-code edits, arbitrary shell commands, package manifest writes, lockfile writes, CI writes, secrets, \`_ops/\`, or writable \`_ref/\` access.
 
 The orchestrator dev runner is separate from planner mode. It is off by default and exists only for users who intentionally want ChatGPT Developer Mode to trigger a local Codex/Claude CLI against the fixed Codex goal handoff.
+
+The coding profile is separate from both. It requires user-scoped v3 config and an explicit \`read_write\` grant, defaults to an isolated worktree, and exposes only \`open_workspace\`, \`read\`, \`apply_patch\`, \`exec_command\`, and \`write_stdin\`. Its shell has local-user authority and is not a filesystem sandbox. Secret paths, \`.git/**\`, \`.env*\`, \`_ops/**\`, writable \`_ref/**\`, traversal, and symlink escapes remain denied.
 `, changed);
   writeFileIfChanged(join(skillRoot, 'references', 'chatgpt-connector-manual.md'), chatgptGuideMarkdown(), changed);
   return {
@@ -1052,7 +1148,7 @@ export function runMcpDoctor(opts: { repo?: string; json?: boolean }): McpSetupR
       packageVersion: repoHarnessPackageVersion(),
       configScope,
       configVersion: localConfig?.version,
-      configVersionOk: localConfig?.version === 2,
+      configVersionOk: localConfig?.version === 3,
       localConfig: Boolean(localConfig),
       guide: existsSync(join(repoRoot, 'docs', 'repo-harness-chatgpt-mcp-setup.md')),
       authConfigured,
@@ -1070,7 +1166,9 @@ export function runMcpDoctor(opts: { repo?: string; json?: boolean }): McpSetupR
         workflowPlanner: localConfig?.capabilities?.workflowPlanner !== false,
         workflowExecutor: localConfig?.capabilities?.workflowExecutor === true,
         agentRunner: localConfig?.capabilities?.agentRunner === true,
+        workspaceCoder: localConfig?.capabilities?.workspaceCoder === true,
       },
+      authorizationRevision: localConfig?.authorizationRevision ?? 0,
       devMode: {
         agentRunner: localConfig?.devMode?.agentRunner === true,
         allowedAgents: localConfig?.devMode?.allowedAgents ?? ['codex'],
@@ -1137,5 +1235,233 @@ export function runMcpDoctor(opts: { repo?: string; json?: boolean }): McpSetupR
       `[repo-harness mcp] Codex CLI: ${report.codex.cliAvailable ? 'present' : 'missing'}`,
       `[repo-harness mcp] Next ChatGPT setup: ${report.chatgpt.setup}`,
     ],
+  };
+}
+
+interface LiveLayer {
+  name: 'config_ready' | 'local_ready' | 'tunnel_ready' | 'oauth_ready' | 'mcp_ready';
+  ok: boolean;
+  detail: string;
+}
+
+async function fetchWithTimeout(url: string, init: RequestInit = {}): Promise<Response> {
+  return fetch(url, { ...init, signal: AbortSignal.timeout(8_000) });
+}
+
+function jsonFromMcpResponse(text: string): Record<string, unknown> | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  try {
+    return JSON.parse(trimmed) as Record<string, unknown>;
+  } catch {
+    for (const line of trimmed.split(/\r?\n/)) {
+      if (!line.startsWith('data:')) continue;
+      try {
+        return JSON.parse(line.slice(5).trim()) as Record<string, unknown>;
+      } catch {
+        // Continue to the next SSE data line.
+      }
+    }
+    return null;
+  }
+}
+
+export async function runMcpLiveDoctor(opts: { repo?: string; json?: boolean }): Promise<McpSetupResult> {
+  const repoRoot = resolveMcpRepoRoot(opts.repo ?? '.');
+  const configScope = resolveMcpConfigScope(repoRoot);
+  const config = loadMcpLocalConfig(repoRoot);
+  const host = config?.server?.host ?? '127.0.0.1';
+  const port = config?.server?.port ?? 8765;
+  const localOrigin = `http://${host}:${port}`;
+  const publicEndpoint = config?.chatgpt?.endpoint;
+  const publicOrigin = publicEndpoint ? new URL(publicEndpoint).origin : undefined;
+  const coding = config?.profile === 'coding';
+  const readWriteRepos = readRegisteredRepoHarnessRepos({ adoptedOnly: true }).filter((repo) => repo.accessMode === 'read_write');
+  const layers: LiveLayer[] = [];
+  const configReady = config?.version === 3 && config?.auth?.mode === 'oauth' && Boolean(publicEndpoint) && (!coding || (
+    config.capabilities?.workspaceCoder === true && readWriteRepos.length > 0
+  ));
+  layers.push({
+    name: 'config_ready',
+    ok: configReady,
+    detail: configReady
+      ? `profile=${config?.profile ?? 'planner'} config=v3 authorization_revision=${repoHarnessAuthorizationRevision()}`
+      : 'run setup with a stable endpoint and explicit coding grant',
+  });
+
+  let localReady = false;
+  try {
+    const response = await fetchWithTimeout(`${localOrigin}/health`);
+    const health = response.ok ? await response.json() as Record<string, unknown> : {};
+    localReady = response.ok && health.profile === (config?.profile ?? 'planner');
+    layers.push({ name: 'local_ready', ok: localReady, detail: localReady ? `health profile=${String(health.profile)}` : `local health returned ${response.status}` });
+  } catch (error) {
+    layers.push({ name: 'local_ready', ok: false, detail: error instanceof Error ? error.message : String(error) });
+  }
+
+  let tunnelReady = false;
+  if (!publicOrigin) {
+    layers.push({ name: 'tunnel_ready', ok: false, detail: 'public HTTPS /mcp endpoint is not configured' });
+  } else {
+    try {
+      const response = await fetchWithTimeout(`${publicOrigin}/health`);
+      tunnelReady = response.ok;
+      layers.push({ name: 'tunnel_ready', ok: tunnelReady, detail: tunnelReady ? `${publicOrigin}/health reachable` : `public health returned ${response.status}` });
+    } catch (error) {
+      layers.push({ name: 'tunnel_ready', ok: false, detail: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
+  let oauthReady = false;
+  let mcpReady = false;
+  let toolNames: string[] = [];
+  const probeOrigin = tunnelReady && publicOrigin ? publicOrigin : localReady ? localOrigin : undefined;
+  const passphrase = readMcpOAuthPassphrase(repoRoot, configScope);
+  if (!probeOrigin || !passphrase) {
+    layers.push({ name: 'oauth_ready', ok: false, detail: !probeOrigin ? 'no reachable endpoint for OAuth probe' : 'OAuth passphrase is missing' });
+    layers.push({ name: 'mcp_ready', ok: false, detail: 'OAuth probe did not produce a bearer token' });
+  } else {
+    let accessToken = '';
+    let clientId = '';
+    let clientSecret = '';
+    try {
+      const metadataResponse = await fetchWithTimeout(`${probeOrigin}/.well-known/oauth-protected-resource/mcp`);
+      if (!metadataResponse.ok) throw new Error(`OAuth metadata returned ${metadataResponse.status}`);
+      const redirectUri = 'http://127.0.0.1/callback';
+      const registrationResponse = await fetchWithTimeout(`${probeOrigin}/register`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          client_name: 'repo-harness-live-doctor',
+          redirect_uris: [redirectUri],
+          grant_types: ['authorization_code', 'refresh_token'],
+          response_types: ['code'],
+          token_endpoint_auth_method: 'none',
+        }),
+      });
+      if (!registrationResponse.ok) throw new Error(`OAuth registration returned ${registrationResponse.status}`);
+      const client = await registrationResponse.json() as { client_id?: string; client_secret?: string };
+      clientId = client.client_id ?? '';
+      clientSecret = client.client_secret ?? '';
+      if (!clientId) throw new Error('OAuth registration omitted client_id');
+      const verifier = randomBytes(32).toString('base64url');
+      const challenge = createHash('sha256').update(verifier).digest('base64url');
+      const scope = ['repo-harness', ...(coding ? ['repo-harness.coding'] : []), 'offline_access'].join(' ');
+      const authorize = new URLSearchParams({
+        passphrase,
+        response_type: 'code',
+        client_id: clientId,
+        redirect_uri: redirectUri,
+        code_challenge: challenge,
+        code_challenge_method: 'S256',
+        scope,
+        state: 'doctor',
+      });
+      const authorizationResponse = await fetchWithTimeout(`${probeOrigin}/authorize`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: authorize.toString(),
+        redirect: 'manual',
+      });
+      const location = authorizationResponse.headers.get('location');
+      const code = location ? new URL(location).searchParams.get('code') ?? '' : '';
+      if (!code) throw new Error(`OAuth authorization did not return a code (${authorizationResponse.status})`);
+      const tokenBody = new URLSearchParams({
+        grant_type: 'authorization_code',
+        client_id: clientId,
+        code,
+        redirect_uri: redirectUri,
+        code_verifier: verifier,
+        ...(clientSecret ? { client_secret: clientSecret } : {}),
+      });
+      const tokenResponse = await fetchWithTimeout(`${probeOrigin}/token`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: tokenBody.toString(),
+      });
+      if (!tokenResponse.ok) throw new Error(`OAuth token exchange returned ${tokenResponse.status}`);
+      const token = await tokenResponse.json() as { access_token?: string; scope?: string };
+      accessToken = token.access_token ?? '';
+      if (!accessToken || (coding && !String(token.scope ?? '').split(' ').includes('repo-harness.coding'))) {
+        throw new Error('OAuth token is missing the required coding scope');
+      }
+      oauthReady = true;
+      layers.push({ name: 'oauth_ready', ok: true, detail: `DCR + PKCE succeeded${coding ? ' with repo-harness.coding' : ''}` });
+
+      const initializeResponse = await fetchWithTimeout(`${probeOrigin}/mcp`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json, text/event-stream', 'content-type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'repo-harness-live-doctor', version: '1' } } }),
+      });
+      const sessionId = initializeResponse.headers.get('mcp-session-id') ?? '';
+      if (!initializeResponse.ok || !sessionId) throw new Error(`MCP initialize failed (${initializeResponse.status})`);
+      await fetchWithTimeout(`${probeOrigin}/mcp`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json, text/event-stream', 'content-type': 'application/json', 'mcp-session-id': sessionId },
+        body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }),
+      });
+      const toolsResponse = await fetchWithTimeout(`${probeOrigin}/mcp`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json, text/event-stream', 'content-type': 'application/json', 'mcp-session-id': sessionId },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }),
+      });
+      const toolsPayload = jsonFromMcpResponse(await toolsResponse.text());
+      const tools = (toolsPayload?.result as { tools?: Array<{ name?: string }> } | undefined)?.tools ?? [];
+      toolNames = tools.map((tool) => tool.name ?? '').filter(Boolean);
+      const required = coding ? ['open_workspace', 'read', 'apply_patch', 'exec_command', 'write_stdin'] : REQUIRED_CODEX_TOOLS;
+      const missing = required.filter((name) => !toolNames.includes(name));
+      const codingSchemaMatches = !coding || JSON.stringify(tools
+        .filter((tool) => required.includes(tool.name ?? ''))
+        .map((tool) => ({ name: tool.name, inputSchema: (tool as Record<string, unknown>).inputSchema, annotations: (tool as Record<string, unknown>).annotations }))) === JSON.stringify(buildCodingToolDefinitions()
+        .map((tool) => ({ name: tool.name, inputSchema: tool.inputSchema, annotations: tool.annotations })));
+      mcpReady = toolsResponse.ok && missing.length === 0 && codingSchemaMatches;
+      layers.push({
+        name: 'mcp_ready',
+        ok: mcpReady,
+        detail: mcpReady
+          ? `initialize + exact tools/list schema succeeded (${toolNames.length} tools)`
+          : missing.length > 0 ? `missing tools: ${missing.join(', ')}` : 'coding tool schema mismatch',
+      });
+      await fetchWithTimeout(`${probeOrigin}/mcp`, {
+        method: 'DELETE',
+        headers: { authorization: `Bearer ${accessToken}`, 'mcp-session-id': sessionId },
+      }).catch(() => undefined);
+    } catch (error) {
+      if (!oauthReady) layers.push({ name: 'oauth_ready', ok: false, detail: error instanceof Error ? error.message : String(error) });
+      layers.push({ name: 'mcp_ready', ok: false, detail: error instanceof Error ? error.message : String(error) });
+    } finally {
+      if (accessToken && clientId) {
+        const revokeBody = new URLSearchParams({ token: accessToken, client_id: clientId, ...(clientSecret ? { client_secret: clientSecret } : {}) });
+        await fetchWithTimeout(`${probeOrigin}/revoke`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/x-www-form-urlencoded' },
+          body: revokeBody.toString(),
+        }).catch(() => undefined);
+      }
+    }
+  }
+
+  const report = {
+    status: mcpReady && layers.every((layer) => layer.ok)
+      ? 'mcp_ready'
+      : layers.find((layer) => !layer.ok)?.name ?? 'unknown',
+    repo: repoRoot,
+    profile: config?.profile ?? 'planner',
+    layers,
+    tool_names: toolNames,
+    invocation_verification: 'manual_required',
+    accepted_invocation_evidence: ['called_tool_event', 'captured_tool_call_transcript'],
+  };
+  return {
+    status: 'ok',
+    repoRoot,
+    changed: [],
+    lines: opts.json
+      ? [JSON.stringify(report, null, 2)]
+      : [
+          `[repo-harness mcp] Live status: ${report.status}`,
+          ...layers.map((layer) => `[repo-harness mcp] ${layer.name}: ${layer.ok ? 'PASS' : 'FAIL'} - ${layer.detail}`),
+          '[repo-harness mcp] ChatGPT invocation: manual Called tool evidence still required',
+        ],
   };
 }

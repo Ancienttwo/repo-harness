@@ -11,11 +11,12 @@
 
 ## System Boundary
 
-`repo-harness` is a repo-local workflow harness skill. It is not a product
-runtime, agent gateway, database service, or MCP server. Its job is to inspect a
-target repository, install or refresh a file-backed workflow contract, route
-public command skills, and verify that the generated repo-local surfaces remain
-consistent.
+`repo-harness` is a repo-local workflow harness CLI and skill with an optional
+local MCP sidecar. It is not a hosted product runtime, agent gateway, or database
+service. Its job is to inspect a target repository, install or refresh a
+file-backed workflow contract, route public command skills, expose explicitly
+configured local MCP capabilities, and verify that generated repo-local surfaces
+remain consistent.
 
 Authoritative surfaces:
 
@@ -24,6 +25,7 @@ Authoritative surfaces:
 - Engine: `scripts/inspect-project-state.ts`, `scripts/migrate-project-template.sh`, `scripts/migrate-workflow-docs.ts`, `scripts/create-project-dirs.sh`, `scripts/lib/project-init-lib.sh`, and the [Transactional Adoption Planner](transactional-adoption-planner.md).
 - Contract assets: `assets/workflow-contract.v1.json`, `.ai/harness/workflow-contract.json`, `.ai/harness/policy.json`, `.ai/context/context-map.json`, `.ai/context/capabilities.json`.
 - Runtime harness: `assets/hooks/`, `.ai/hooks/`, user-level host adapters, and ignored `.ai/harness/*` runtime state.
+- MCP sidecar: `src/cli/mcp/`, `src/cli/commands/mcp.ts`, user-owned ignored config/registry under `~/.repo-harness/`, and the [MCP sidecar architecture](modules/runtime-harness/mcp-sidecar.md).
 - Verification: `tests/`, `evals/`, `scripts/check-task-workflow.sh`, `scripts/check-task-sync.sh`, `scripts/check-agent-tooling.sh`, `scripts/ensure-codegraph.sh`, `scripts/check-brain-manifest.sh`, `scripts/sync-brain-docs.sh`.
 
 Out of scope:

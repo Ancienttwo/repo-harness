@@ -10,6 +10,10 @@ import type { BrowserProviderName, NativeBrowserChannel, ThinkingLevel } from '.
 import { hashMcpInput, tryWriteMcpAuditEntry } from './audit';
 import { isPathInside, resolveMcpPath } from './paths';
 import { buildReaderToolDefinitions, callReaderTool, createReaderToolContext, isReaderTool } from './reader-tools';
+import { buildCodingToolDefinitions, callCodingTool, isCodingTool, type CodingToolContext } from './coding-tools';
+import type { CodingWorkspaceManager } from './coding-workspaces';
+import type { GeneralRepoCodeGraphAdapter } from './codegraph-adapter';
+import type { McpProcessSessionManager } from './process-sessions';
 import { currentGitBranch, isRepoHarnessAdopted, resolveMcpRepoRoot } from './repo';
 import { redactMcpText } from './redaction';
 import type { McpAgentRunnerName, McpPolicy } from './types';
@@ -20,6 +24,24 @@ export interface McpToolContext {
   policy: McpPolicy;
   enableChatgptBrowser?: boolean;
   workspaceManager?: WorkspaceManager;
+  codingWorkspaceManager?: CodingWorkspaceManager;
+  processManager?: McpProcessSessionManager;
+  sessionOwnerId?: string;
+  codeGraphAdapter?: GeneralRepoCodeGraphAdapter;
+}
+
+function codingContext(ctx: McpToolContext): CodingToolContext {
+  if (!ctx.codingWorkspaceManager || !ctx.processManager || !ctx.sessionOwnerId) {
+    throw new Error('coding MCP runtime is not initialized');
+  }
+  return {
+    repoRoot: ctx.repoRoot,
+    policy: ctx.policy,
+    ownerId: ctx.sessionOwnerId,
+    workspaceManager: ctx.codingWorkspaceManager,
+    processManager: ctx.processManager,
+    codeGraphAdapter: ctx.codeGraphAdapter,
+  };
 }
 
 function readerContext(ctx: McpToolContext) {
@@ -989,6 +1011,9 @@ export function buildMcpToolDefinitions(policy: McpPolicy, opts: { enableChatgpt
   if (policy.capabilities.workspaceReader) {
     tools.push(...buildReaderToolDefinitions(policy));
   }
+  if (policy.capabilities.workspaceCoder && policy.execution.codingShell) {
+    tools.push(...buildCodingToolDefinitions());
+  }
   if (opts.enableChatgptBrowser === true) {
     tools.push(
       {
@@ -1049,6 +1074,9 @@ export function buildMcpToolDefinitions(policy: McpPolicy, opts: { enableChatgpt
 
 export async function callMcpTool(ctx: McpToolContext, name: string, args: Record<string, unknown> = {}): Promise<CallToolResult> {
   try {
+    if (isCodingTool(name) && ctx.policy.capabilities.workspaceCoder) {
+      return callCodingTool(codingContext(ctx), name, args);
+    }
     if (isReaderTool(name, ctx.policy)) {
       if (!ctx.policy.capabilities.workspaceReader) {
         return errorResult('TOOL_NOT_AVAILABLE', 'reader tools require the workspace reader capability to be enabled in MCP config.');

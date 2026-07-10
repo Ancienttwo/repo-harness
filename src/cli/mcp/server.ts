@@ -1,15 +1,20 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { randomUUID } from 'crypto';
 import { realpathSync, statSync } from 'fs';
 import { resolve } from 'path';
-import { registeredRepoHarnessRoots } from '../../effects/repo-registry';
+import { readRegisteredRepoHarnessRepos, registeredRepoHarnessRoots } from '../../effects/repo-registry';
 import { loadMcpLocalConfig } from './auth';
+import { recordCodingProcessCompletion } from './coding-tools';
+import { createCodeGraphCliAdapter } from './codegraph-adapter';
+import { CodingWorkspaceManager } from './coding-workspaces';
 import { buildMcpServerInstructions } from './instructions';
 import { getMcpPolicy, parseMcpProfile, sensitiveAllowedRootReason } from './policy';
 import { isRepoHarnessAdopted, resolveMcpRepoRoot } from './repo';
 import { buildMcpToolDefinitions, callMcpTool, type McpToolContext } from './tools';
 import type { McpAgentRunnerName } from './types';
 import { repoHarnessPackageVersion } from './version';
+import { buildMcpProcessEnvironment, McpProcessSessionManager } from './process-sessions';
 import { WorkspaceManager } from './workspaces';
 
 export interface McpServerOptions {
@@ -21,6 +26,20 @@ export interface McpServerOptions {
   enableDevRunner?: boolean;
   devRunnerAgents?: string;
   devRunnerTimeoutMs?: number;
+}
+
+const activeCodingContexts = new Set<McpToolContext>();
+
+async function shutdownCodingContext(ctx: McpToolContext): Promise<void> {
+  const ownerId = ctx.sessionOwnerId;
+  if (ownerId) ctx.processManager?.terminateOwner(ownerId);
+  await ctx.processManager?.shutdown();
+  ctx.codingWorkspaceManager?.closeSession();
+  activeCodingContexts.delete(ctx);
+}
+
+export async function shutdownAllMcpCodingRuntimes(): Promise<void> {
+  await Promise.all(Array.from(activeCodingContexts, (ctx) => shutdownCodingContext(ctx)));
 }
 
 function parseBooleanSetting(value: string | undefined): boolean | undefined {
@@ -86,6 +105,14 @@ export function createMcpToolContext(opts: McpServerOptions): McpToolContext {
   const config = loadMcpLocalConfig(repoRoot);
   const requestedProfile = opts.profile ?? config?.profile ?? 'planner';
   const profile = parseMcpProfile(requestedProfile === 'reader' ? 'planner' : requestedProfile);
+  if (profile === 'coding') {
+    if (config?.version !== 3 || config.scope !== 'user' || config.profile !== 'coding' || config.coding?.enabled !== true) {
+      throw new Error('coding MCP is disabled; run user-scoped setup with profile coding and an explicit read-write grant');
+    }
+    if (!readRegisteredRepoHarnessRepos({ adoptedOnly: true }).some((repo) => repo.accessMode === 'read_write')) {
+      throw new Error('coding MCP requires at least one adopted repo with an explicit read_write grant');
+    }
+  }
   const envDevRunner = parseBooleanSetting(process.env.REPO_HARNESS_MCP_DEV_RUNNER);
   const configuredDevRunner = envDevRunner ?? config?.devMode?.agentRunner === true;
   const devAgentRunner = opts.enableDevRunner === true || configuredDevRunner;
@@ -138,21 +165,53 @@ export function createMcpToolContext(opts: McpServerOptions): McpToolContext {
     allowedRoots: policyAllowedRoots,
     discoveryRoots,
   });
-  return {
+  const ctx: McpToolContext = {
     repoRoot,
     policy,
     workspaceManager: readerEnabled ? new WorkspaceManager({ allowedRoots: policyAllowedRoots, policy }) : undefined,
     enableChatgptBrowser: opts.enableChatgptBrowser === true,
   };
+  if (profile === 'coding') {
+    const codingEnv: NodeJS.ProcessEnv = { ...process.env };
+    if (config?.coding?.worktreeRoot) codingEnv.REPO_HARNESS_MCP_WORKTREE_ROOT = config.coding.worktreeRoot;
+    const workspaceManager = new CodingWorkspaceManager(codingEnv);
+    const ownerId = `mcp_${randomUUID()}`;
+    const configuredEnv = Object.fromEntries((config?.coding?.environmentAllowlist ?? [])
+      .map((key) => key.trim())
+      .filter((key) => key && process.env[key] !== undefined)
+      .map((key) => [key, process.env[key] as string]));
+    const codingProcessEnv = buildMcpProcessEnvironment({ baseEnv: codingEnv, configuredEnv });
+    ctx.sessionOwnerId = ownerId;
+    ctx.codingWorkspaceManager = workspaceManager;
+    ctx.codeGraphAdapter = createCodeGraphCliAdapter({
+      env: codingProcessEnv,
+      allowRepoLocalBin: false,
+    });
+    ctx.processManager = new McpProcessSessionManager({
+      configuredEnv,
+      onComplete: (event) => recordCodingProcessCompletion({
+        repoRoot,
+        policy,
+        ownerId,
+        workspaceManager,
+        processManager: ctx.processManager!,
+      }, event),
+    });
+  }
+  return ctx;
 }
 
 export function createRepoHarnessMcpServer(opts: McpServerOptions): Server {
   const ctx = createMcpToolContext(opts);
+  if (ctx.processManager) activeCodingContexts.add(ctx);
   const server = new Server(
     { name: 'repo-harness-mcp', version: repoHarnessPackageVersion() },
     {
       capabilities: { tools: {} },
-      instructions: buildMcpServerInstructions({ readerEnabled: ctx.policy.capabilities.workspaceReader }),
+      instructions: buildMcpServerInstructions({
+        readerEnabled: ctx.policy.capabilities.workspaceReader,
+        codingEnabled: ctx.policy.capabilities.workspaceCoder,
+      }),
     },
   );
 
@@ -165,6 +224,10 @@ export function createRepoHarnessMcpServer(opts: McpServerOptions): Server {
     const args = (request.params.arguments ?? {}) as Record<string, unknown>;
     return callMcpTool(ctx, name, args) as any;
   });
+
+  server.onclose = () => {
+    void shutdownCodingContext(ctx);
+  };
 
   return server;
 }

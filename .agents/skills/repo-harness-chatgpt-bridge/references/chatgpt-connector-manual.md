@@ -13,6 +13,18 @@
 repo-harness mcp serve --repo . --transport http --host 127.0.0.1 --port 8765 --profile planner
 ```
 
+Direct coding requires a separate user-scoped profile and explicit repo grant:
+
+```bash
+repo-harness mcp setup chatgpt --scope user --profile coding --grant-read-write <repo> --endpoint https://host/mcp
+repo-harness mcp serve --repo <repo> --transport http --host 127.0.0.1 --port 8765 --profile coding
+repo-harness mcp doctor --repo <repo> --live
+```
+
+Coding Bash runs with local-user authority and is not a filesystem sandbox. See
+`docs/reference-configs/chatgpt-coding-mcp.md` for the grant, OAuth revision,
+worktree, process, and cleanup contract.
+
 Health check:
 
 ```bash
@@ -69,7 +81,7 @@ Use ChatGPT for planning and review. Use Codex for local execution.
 5. Open Codex locally and run the generated `/goal` prompt.
 6. Let Codex execute one Sprint task card at a time, run checks, update the checklist, and stage each completed phase before continuing.
 
-The sidecar is not a remote coding agent. It prepares workflow artifacts for the local agent host.
+Planner is not a remote coding agent. Only the separate, explicitly granted coding profile exposes direct source editing and shell tools.
 
 ## Dev Mode Agent Runner
 
@@ -190,7 +202,7 @@ Use repo-harness-chatgpt-bridge. Execute the latest ChatGPT-generated Codex goal
 
 ## Security Notes
 
-- This MCP server exposes workflow artifacts, not general filesystem access.
+- Planner exposes workflow/reader surfaces; coding is a separate, default-off local-user-authority profile.
 - The `/mcp` endpoint requires OAuth-issued Bearer tokens by default. Do not expose it through a tunnel without Connector auth configured.
 - `repo-harness mcp serve --auth bearer` is available for non-ChatGPT clients that can send a static bearer token.
 - Planner profile cannot write application source files, package manifests, lockfiles, CI config, secrets, or files outside the repo root.

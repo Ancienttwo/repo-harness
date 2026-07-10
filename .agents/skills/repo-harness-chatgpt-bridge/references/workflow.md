@@ -10,7 +10,7 @@ Use this chain for execution-ready planning:
 2. PRD -> checklist Sprint: call `write_checklist_sprint`.
 3. Sprint -> Goal: call `prepare_codex_goal_from_sprint` or run `repo-harness mcp prepare-goal`.
 
-The MCP server prepares artifacts only. The local Codex host owns `/goal` execution.
+Planner/executor MCP prepares artifacts only. The local Codex host owns `/goal` execution. The separate user-authorized `coding` profile may edit a granted repo and run Bash directly without invoking Codex.
 
 Dev-mode exception:
 
@@ -83,3 +83,5 @@ Codex should update checklist status as work completes and stop at staging gates
 MCP planner profile is for workflow artifacts only. It must not expose source-code edits, arbitrary shell commands, package manifest writes, lockfile writes, CI writes, secrets, `_ops/`, or writable `_ref/` access.
 
 The orchestrator dev runner is separate from planner mode. It is off by default and exists only for users who intentionally want ChatGPT Developer Mode to trigger a local Codex/Claude CLI against the fixed Codex goal handoff.
+
+The coding profile is separate from both. It requires user-scoped v3 config and an explicit `read_write` grant, defaults to an isolated worktree, and exposes only `open_workspace`, `read`, `apply_patch`, `exec_command`, and `write_stdin`. Its shell has local-user authority and is not a filesystem sandbox. Secret paths, `.git/**`, `.env*`, `_ops/**`, writable `_ref/**`, traversal, and symlink escapes remain denied.

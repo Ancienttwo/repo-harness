@@ -4,11 +4,12 @@ import { tokenHandler } from '@modelcontextprotocol/sdk/server/auth/handlers/tok
 import { revocationHandler } from '@modelcontextprotocol/sdk/server/auth/handlers/revoke.js';
 import { clientRegistrationHandler } from '@modelcontextprotocol/sdk/server/auth/handlers/register.js';
 import { redirectUriMatches } from '@modelcontextprotocol/sdk/server/auth/handlers/authorize.js';
-import { InvalidTokenError } from '@modelcontextprotocol/sdk/server/auth/errors.js';
+import { InvalidScopeError, InvalidTokenError } from '@modelcontextprotocol/sdk/server/auth/errors.js';
 import type { OAuthClientInformationFull } from '@modelcontextprotocol/sdk/shared/auth.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { createMcpToolContext, createRepoHarnessMcpServer, type McpServerOptions } from '../server';
+import { createMcpToolContext, createRepoHarnessMcpServer, shutdownAllMcpCodingRuntimes, type McpServerOptions } from '../server';
 import {
+  loadMcpLocalConfig,
   mcpOAuthTokenStorePath,
   parseMcpHttpAuthMode,
   readMcpBearerToken,
@@ -17,6 +18,7 @@ import {
   type McpHttpAuthMode,
 } from '../auth';
 import { createMcpOAuthProvider, McpOAuthTokenStore } from '../oauth';
+import { readRegisteredRepoHarnessRepos, repoHarnessAuthorizationRevision } from '../../../effects/repo-registry';
 import { resolveMcpRepoRoot } from '../repo';
 import { McpSessionStore } from '../session-store';
 import { buildMcpToolDefinitions } from '../tools';
@@ -73,11 +75,8 @@ function isInitializeRequest(body: unknown): boolean {
   return typeof body === 'object' && body !== null && (body as Record<string, unknown>).method === 'initialize';
 }
 
-function getPublicOrigin(req: Request): string {
-  const configured = process.env.REPO_HARNESS_MCP_PUBLIC_ORIGIN?.trim();
-  if (configured) {
-    return normalizePublicOrigin(configured);
-  }
+function getPublicOrigin(req: Request, configured?: string): string {
+  if (configured) return normalizePublicOrigin(configured);
   const proto = (req.headers['x-forwarded-proto'] as string | undefined) ?? 'https';
   const host = (req.headers['x-forwarded-host'] as string | undefined) ?? req.headers.host ?? '127.0.0.1:8765';
   return `${proto}://${host}`;
@@ -96,13 +95,18 @@ function isLoopbackBindHost(host: string): boolean {
   return normalized === 'localhost' || normalized === '127.0.0.1' || normalized === '::1';
 }
 
-export function isAllowedMcpOAuthRedirectUri(redirectUri: string): boolean {
+export function isAllowedMcpOAuthRedirectUri(
+  redirectUri: string,
+  allowedHosts: string[] = ['chatgpt.com', 'localhost', '127.0.0.1', '::1'],
+): boolean {
   try {
     const url = new URL(redirectUri);
-    if (url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) {
+    const normalizedHost = url.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+    const allowed = new Set(allowedHosts.map((host) => host.replace(/^\[|\]$/g, '').toLowerCase()));
+    if (url.protocol === 'http:' && ['localhost', '127.0.0.1', '::1'].includes(normalizedHost) && allowed.has(normalizedHost)) {
       return true;
     }
-    return url.protocol === 'https:' && url.username === '' && url.password === '';
+    return url.protocol === 'https:' && url.username === '' && url.password === '' && allowed.has(normalizedHost);
   } catch (_error) {
     return false;
   }
@@ -121,7 +125,7 @@ function escapeHtmlAttribute(value: string): string {
     .replace(/>/g, '&gt;');
 }
 
-function renderPassphrasePage(params: URLSearchParams): string {
+function renderPassphrasePage(params: URLSearchParams, opts: { coding?: boolean; repoNames?: string[] } = {}): string {
   const hiddenFields = Array.from(params.entries())
     .filter(([key]) => key !== 'passphrase')
     .map(([key, value]) => `<input type="hidden" name="${escapeHtmlAttribute(key)}" value="${escapeHtmlAttribute(value)}">`)
@@ -140,7 +144,9 @@ button{width:100%;margin-top:14px;border:0;border-radius:8px;padding:12px;backgr
 </style></head>
 <body><main class="card">
 <h1>Authorize repo-harness</h1>
-<p>Enter the local MCP passphrase to let ChatGPT use this workflow-scoped connector.</p>
+<p>${opts.coding
+    ? `This Connector can edit source files and run arbitrary shell commands with your local user account in these repos: ${escapeHtmlAttribute((opts.repoNames ?? []).join(', ') || '(none)')}. Allowed roots are not a shell sandbox. Access tokens expire after 1 hour; refresh authorization lasts up to 30 days and rotates.`
+    : 'Enter the local MCP passphrase to let ChatGPT use this workflow-scoped connector.'}</p>
 <form method="POST" action="/authorize">
 ${hiddenFields}
 <input type="password" name="passphrase" placeholder="Passphrase" autofocus>
@@ -149,7 +155,10 @@ ${hiddenFields}
 </main></body></html>`;
 }
 
-function requirePassphrase(passphrase: string): (req: Request, res: Response, next: NextFunction) => void {
+function requirePassphrase(
+  passphrase: string,
+  opts: { coding?: boolean; repoNames?: string[] } = {},
+): (req: Request, res: Response, next: NextFunction) => void {
   return (req, res, next) => {
     const provided = typeof req.body?.passphrase === 'string' ? req.body.passphrase : undefined;
     if (provided) {
@@ -161,11 +170,11 @@ function requirePassphrase(passphrase: string): (req: Request, res: Response, ne
       }
     }
     const params = new URLSearchParams(req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '');
-    res.type('html').send(renderPassphrasePage(params));
+    res.type('html').send(renderPassphrasePage(params, opts));
   };
 }
 
-function oauthAuthorizationHandler(provider: ReturnType<typeof createMcpOAuthProvider>) {
+function oauthAuthorizationHandler(provider: ReturnType<typeof createMcpOAuthProvider>, allowedRedirectHosts: string[]) {
   return async (req: Request, res: Response) => {
     const query = req.method === 'POST' ? req.body : req.query;
     const clientId = typeof query.client_id === 'string' ? query.client_id : '';
@@ -193,7 +202,7 @@ function oauthAuthorizationHandler(provider: ReturnType<typeof createMcpOAuthPro
     if (!redirectUri && client.redirect_uris.length === 1) {
       redirectUri = client.redirect_uris[0];
     }
-    if (!redirectUri || !isAllowedMcpOAuthRedirectUri(redirectUri)) {
+    if (!redirectUri || !isAllowedMcpOAuthRedirectUri(redirectUri, allowedRedirectHosts)) {
       res.status(400).json({
         error: 'invalid_request',
         error_description: 'redirect_uri must be localhost or a ChatGPT connector callback URL',
@@ -208,12 +217,20 @@ function oauthAuthorizationHandler(provider: ReturnType<typeof createMcpOAuthPro
       return;
     }
 
-    await provider.authorize(client as OAuthClientInformationFull, {
-      state,
-      scopes: scope ? scope.split(' ') : [],
-      redirectUri,
-      codeChallenge,
-    }, res);
+    try {
+      await provider.authorize(client as OAuthClientInformationFull, {
+        state,
+        scopes: scope ? scope.split(' ') : [],
+        redirectUri,
+        codeChallenge,
+      }, res);
+    } catch (error) {
+      if (error instanceof InvalidScopeError) {
+        res.status(400).json({ error: 'invalid_scope', error_description: error.message });
+        return;
+      }
+      throw error;
+    }
   };
 }
 
@@ -237,8 +254,8 @@ function rateLimitMiddleware(opts: { windowMs: number; maxRequests: number }) {
   };
 }
 
-function sendOAuthUnauthorized(req: Request, res: Response, description: string): void {
-  const resourceMetadataUrl = `${getPublicOrigin(req)}/.well-known/oauth-protected-resource/mcp`;
+function sendOAuthUnauthorized(req: Request, res: Response, description: string, publicOrigin?: string): void {
+  const resourceMetadataUrl = `${getPublicOrigin(req, publicOrigin)}/.well-known/oauth-protected-resource/mcp`;
   res.setHeader(
     'www-authenticate',
     `Bearer error="invalid_token", error_description="${description}", resource_metadata="${resourceMetadataUrl}"`,
@@ -246,7 +263,12 @@ function sendOAuthUnauthorized(req: Request, res: Response, description: string)
   res.status(401).json({ error: 'invalid_token', message: description });
 }
 
-function requireMcpHttpAuth(mode: McpHttpAuthMode, bearerToken: string | null, provider: ReturnType<typeof createMcpOAuthProvider> | null) {
+function requireMcpHttpAuth(
+  mode: McpHttpAuthMode,
+  bearerToken: string | null,
+  provider: ReturnType<typeof createMcpOAuthProvider> | null,
+  publicOrigin?: string,
+) {
   return (req: Request, res: Response, next: NextFunction) => {
     if (mode === 'bearer' || mode === 'url-token') {
       if (!isAuthorizedMcpHttpRequest(req, bearerToken, mode === 'url-token')) {
@@ -260,7 +282,7 @@ function requireMcpHttpAuth(mode: McpHttpAuthMode, bearerToken: string | null, p
 
     const token = bearerFromRequest(req);
     if (!token || !provider) {
-      sendOAuthUnauthorized(req, res, token ? 'OAuth is not configured' : 'Missing Authorization header');
+      sendOAuthUnauthorized(req, res, token ? 'OAuth is not configured' : 'Missing Authorization header', publicOrigin);
       return;
     }
     provider.verifyAccessToken(token)
@@ -270,7 +292,7 @@ function requireMcpHttpAuth(mode: McpHttpAuthMode, bearerToken: string | null, p
       })
       .catch((error: unknown) => {
         if (error instanceof InvalidTokenError) {
-          sendOAuthUnauthorized(req, res, error.message);
+          sendOAuthUnauthorized(req, res, error.message, publicOrigin);
         } else {
           res.status(500).json({ error: 'server_error', message: 'Internal Server Error' });
         }
@@ -368,23 +390,68 @@ async function handleMcpDelete(req: Request, res: Response, sessions: McpSession
 export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
   const host = opts.host ?? '127.0.0.1';
   const port = opts.port ?? 8765;
-  if (!isLoopbackBindHost(host) && !process.env.REPO_HARNESS_MCP_PUBLIC_ORIGIN?.trim()) {
-    throw new Error('REPO_HARNESS_MCP_PUBLIC_ORIGIN is required when binding MCP HTTP to a non-loopback host');
-  }
-  const configuredPublicOrigin = process.env.REPO_HARNESS_MCP_PUBLIC_ORIGIN?.trim()
-    ? normalizePublicOrigin(process.env.REPO_HARNESS_MCP_PUBLIC_ORIGIN.trim())
-    : undefined;
   const repoRoot = resolveMcpRepoRoot(opts.repo ?? '.');
   const configScope = resolveMcpConfigScope(repoRoot);
+  const localConfig = loadMcpLocalConfig(repoRoot, configScope);
+  const profile = opts.profile ?? localConfig?.profile ?? 'planner';
+  const storedEndpoint = localConfig?.chatgpt?.endpoint;
+  const storedPublicOrigin = storedEndpoint ? new URL(storedEndpoint).origin : undefined;
+  const configuredPublicOrigin = process.env.REPO_HARNESS_MCP_PUBLIC_ORIGIN?.trim()
+    ? normalizePublicOrigin(process.env.REPO_HARNESS_MCP_PUBLIC_ORIGIN.trim())
+    : storedPublicOrigin;
+  if (!isLoopbackBindHost(host) && !configuredPublicOrigin) {
+    throw new Error('REPO_HARNESS_MCP_PUBLIC_ORIGIN is required when binding MCP HTTP to a non-loopback host');
+  }
+  const coding = profile === 'coding';
+  if (coding && (configScope !== 'user' || localConfig?.profile !== 'coding' || localConfig.coding?.enabled !== true)) {
+    throw new Error('coding profile requires enabled user-scoped v3 setup');
+  }
+  const readWriteRepos = readRegisteredRepoHarnessRepos({ adoptedOnly: true }).filter((repo) => repo.accessMode === 'read_write');
+  if (coding && readWriteRepos.length === 0) {
+    throw new Error('coding profile requires at least one explicitly registered read_write repo');
+  }
   const authMode = parseMcpHttpAuthMode(opts.auth);
+  if (coding && authMode !== 'oauth') {
+    throw new Error('coding profile requires OAuth authentication');
+  }
   const authToken = authMode === 'bearer' || authMode === 'url-token' ? opts.authToken ?? readMcpBearerToken(repoRoot, configScope) : null;
   const oauthPassphrase = authMode === 'oauth' ? readMcpOAuthPassphrase(repoRoot, configScope) : null;
   const tokenStore = authMode === 'oauth' ? new McpOAuthTokenStore(mcpOAuthTokenStorePath(repoRoot, configScope)) : null;
   tokenStore?.load();
-  const oauthProvider = tokenStore ? createMcpOAuthProvider(tokenStore) : null;
+  let observedAuthorizationRevision = repoHarnessAuthorizationRevision();
+  const oauthProvider = tokenStore ? createMcpOAuthProvider(tokenStore, {
+    profile,
+    authorizationRevision: () => repoHarnessAuthorizationRevision(),
+    accessTokenTtlSeconds: coding ? 60 * 60 : 30 * 24 * 60 * 60,
+    refreshTokenTtlSeconds: 30 * 24 * 60 * 60,
+  }) : null;
+  const allowedRedirectHosts = localConfig?.auth?.allowedRedirectHosts ?? ['chatgpt.com', 'localhost', '127.0.0.1', '::1'];
+  const publicHost = configuredPublicOrigin ? new URL(configuredPublicOrigin).host.toLowerCase() : undefined;
+  const allowedRequestHosts = new Set([
+    `127.0.0.1:${port}`,
+    `localhost:${port}`,
+    `[::1]:${port}`,
+    ...(publicHost ? [publicHost] : []),
+  ]);
   const sessionTtlMs = boundedIntegerEnv('REPO_HARNESS_MCP_SESSION_TTL_MS', SESSION_TTL_MS, 1_000, 24 * 60 * 60 * 1000);
   const maxSessions = boundedIntegerEnv('REPO_HARNESS_MCP_MAX_SESSIONS', MAX_SESSIONS, 1, 256);
   const sessions = new McpSessionStore<StreamableHTTPServerTransport>({ ttlMs: sessionTtlMs, maxSessions });
+  let authorizationCleanupRunning = false;
+  const closeStaleCodingSessions = (): void => {
+    if (!coding || authorizationCleanupRunning || sessions.size === 0) return;
+    authorizationCleanupRunning = true;
+    void sessions.closeAll().finally(() => { authorizationCleanupRunning = false; });
+  };
+  const authorizationTimer = coding ? setInterval(() => {
+    const currentRevision = repoHarnessAuthorizationRevision();
+    const liveConfig = loadMcpLocalConfig(repoRoot, 'user');
+    if (currentRevision !== observedAuthorizationRevision) {
+      observedAuthorizationRevision = currentRevision;
+      closeStaleCodingSessions();
+    }
+    if (liveConfig?.profile !== 'coding' || liveConfig.coding?.enabled !== true) closeStaleCodingSessions();
+  }, 1_000) : undefined;
+  authorizationTimer?.unref?.();
   const cleanupTimer = setInterval(() => {
     sessions.cleanupExpired();
   }, Math.min(sessionTtlMs, 60_000));
@@ -393,8 +460,27 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
   app.set('trust proxy', 1);
 
   app.use((req, res, next) => {
-    const origin = typeof req.headers.origin === 'string' ? req.headers.origin : '*';
-    res.setHeader('Access-Control-Allow-Origin', origin);
+    if (coding) {
+      const liveConfig = loadMcpLocalConfig(repoRoot, 'user');
+      const hasGrant = readRegisteredRepoHarnessRepos({ adoptedOnly: true }).some((repo) => repo.accessMode === 'read_write');
+      if (liveConfig?.profile !== 'coding' || liveConfig.coding?.enabled !== true || !hasGrant) {
+        closeStaleCodingSessions();
+        res.status(503).json({ error: 'coding_disabled' });
+        return;
+      }
+    }
+    const forwardedHost = typeof req.headers['x-forwarded-host'] === 'string' ? req.headers['x-forwarded-host'].split(',')[0].trim().toLowerCase() : undefined;
+    const requestHost = forwardedHost ?? req.headers.host?.toLowerCase();
+    if (coding && (!requestHost || !allowedRequestHosts.has(requestHost))) {
+      res.status(421).json({ error: 'host_not_allowed' });
+      return;
+    }
+    const origin = typeof req.headers.origin === 'string' ? req.headers.origin : undefined;
+    if (coding && origin && origin !== 'https://chatgpt.com') {
+      res.status(403).json({ error: 'origin_not_allowed' });
+      return;
+    }
+    res.setHeader('Access-Control-Allow-Origin', coding ? (origin ?? 'https://chatgpt.com') : (origin ?? '*'));
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', MCP_ALLOWED_HEADERS);
     res.setHeader('Access-Control-Expose-Headers', 'Mcp-Session-Id');
@@ -419,7 +505,7 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
       allowed_root_count: ctx.policy.allowedRoots?.length ?? 0,
       auth: authMode === 'oauth' ? (oauthPassphrase ? 'oauth' : 'missing') : (authToken ? authMode : 'missing'),
       auth_mode: authMode,
-      public_origin: configuredPublicOrigin ?? getPublicOrigin(req),
+      public_origin: getPublicOrigin(req, configuredPublicOrigin),
       active_sessions: sessions.size,
       max_sessions: sessions.maxSessions,
       session_ttl_ms: sessions.ttlMs,
@@ -431,13 +517,13 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
     const oauthRateLimit = rateLimitMiddleware({ windowMs: 60_000, maxRequests: 120 });
     app.use(['/authorize', '/token', '/revoke', '/register'], oauthRateLimit);
     app.use('/authorize', express.urlencoded({ extended: false, limit: '10kb' }));
-    app.use('/authorize', requirePassphrase(oauthPassphrase ?? ''));
-    app.use('/authorize', oauthAuthorizationHandler(oauthProvider));
+    app.use('/authorize', requirePassphrase(oauthPassphrase ?? '', { coding, repoNames: readWriteRepos.map((repo) => repo.path.split('/').pop() ?? repo.id) }));
+    app.use('/authorize', oauthAuthorizationHandler(oauthProvider, allowedRedirectHosts));
     app.use('/token', tokenHandler({ provider: oauthProvider }));
     app.use('/revoke', revocationHandler({ provider: oauthProvider }));
     app.use('/register', clientRegistrationHandler({ clientsStore: oauthProvider.clientsStore }));
     app.get('/.well-known/oauth-authorization-server', (req, res) => {
-      const origin = getPublicOrigin(req);
+      const origin = getPublicOrigin(req, configuredPublicOrigin);
       res.json({
         issuer: origin,
         authorization_endpoint: `${origin}/authorize`,
@@ -448,11 +534,11 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
         grant_types_supported: ['authorization_code', 'refresh_token'],
         code_challenge_methods_supported: ['S256'],
         token_endpoint_auth_methods_supported: ['client_secret_post', 'none'],
-        scopes_supported: ['repo-harness', 'offline_access'],
+        scopes_supported: ['repo-harness', ...(coding ? ['repo-harness.coding'] : []), 'offline_access'],
       });
     });
     app.get('/.well-known/openid-configuration', (req, res) => {
-      const origin = getPublicOrigin(req);
+      const origin = getPublicOrigin(req, configuredPublicOrigin);
       res.json({
         issuer: origin,
         authorization_endpoint: `${origin}/authorize`,
@@ -462,31 +548,31 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
         grant_types_supported: ['authorization_code', 'refresh_token'],
         code_challenge_methods_supported: ['S256'],
         token_endpoint_auth_methods_supported: ['client_secret_post', 'none'],
-        scopes_supported: ['repo-harness', 'offline_access'],
+        scopes_supported: ['repo-harness', ...(coding ? ['repo-harness.coding'] : []), 'offline_access'],
       });
     });
     app.get('/.well-known/oauth-protected-resource/mcp', (req, res) => {
-      const origin = getPublicOrigin(req);
+      const origin = getPublicOrigin(req, configuredPublicOrigin);
       res.json({
         resource: `${origin}/mcp`,
         authorization_servers: [origin],
-        scopes_supported: ['repo-harness', 'offline_access'],
+        scopes_supported: ['repo-harness', ...(coding ? ['repo-harness.coding'] : []), 'offline_access'],
         bearer_methods_supported: ['header'],
       });
     });
   }
 
-  app.post('/mcp', requireMcpHttpAuth(authMode, authToken, oauthProvider), express.raw({ type: '*/*', limit: '1mb' }), (req, res) => {
+  app.post('/mcp', requireMcpHttpAuth(authMode, authToken, oauthProvider, configuredPublicOrigin), express.raw({ type: '*/*', limit: '1mb' }), (req, res) => {
     handleMcpPost(req, res, { ...opts, repo: repoRoot }, sessions).catch((error: unknown) => {
       if (!res.headersSent) res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
     });
   });
-  app.get('/mcp', requireMcpHttpAuth(authMode, authToken, oauthProvider), (req, res) => {
+  app.get('/mcp', requireMcpHttpAuth(authMode, authToken, oauthProvider, configuredPublicOrigin), (req, res) => {
     handleMcpGet(req, res, sessions).catch((error: unknown) => {
       if (!res.headersSent) res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
     });
   });
-  app.delete('/mcp', requireMcpHttpAuth(authMode, authToken, oauthProvider), (req, res) => {
+  app.delete('/mcp', requireMcpHttpAuth(authMode, authToken, oauthProvider, configuredPublicOrigin), (req, res) => {
     handleMcpDelete(req, res, sessions).catch((error: unknown) => {
       if (!res.headersSent) res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
     });
@@ -501,11 +587,19 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
   const authLabel = authMode === 'oauth' ? (oauthPassphrase ? 'oauth' : 'oauth-missing') : (authToken ? authMode : 'missing');
   console.error(`repo-harness mcp http listening on http://${host}:${port}/mcp (auth: ${authLabel})`);
 
+  let shuttingDown = false;
   const shutdown = () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     clearInterval(cleanupTimer);
-    void sessions.closeAll();
-    tokenStore?.flush();
-    httpServer.close(() => process.exit(0));
+    if (authorizationTimer) clearInterval(authorizationTimer);
+    void (async () => {
+      await sessions.closeAll();
+      await shutdownAllMcpCodingRuntimes();
+      tokenStore?.flush();
+      await new Promise<void>((resolve) => httpServer.close(() => resolve()));
+      process.exit(0);
+    })();
   };
   process.once('SIGINT', shutdown);
   process.once('SIGTERM', shutdown);

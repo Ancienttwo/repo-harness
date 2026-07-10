@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { InvalidGrantError, InvalidTokenError } from '@modelcontextprotocol/sdk/server/auth/errors.js';
+import { InvalidGrantError, InvalidScopeError, InvalidTokenError } from '@modelcontextprotocol/sdk/server/auth/errors.js';
 import { createMcpOAuthProvider, McpOAuthTokenStore } from '../../src/cli/mcp/oauth';
 
 function redirectRecorder() {
@@ -85,6 +85,65 @@ describe('mcp oauth provider', () => {
       now += 31;
       await expect(provider.challengeForAuthorizationCode(client, expiredCode))
         .rejects.toBeInstanceOf(InvalidGrantError);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('coding tokens are scope/profile/revision bound with one-hour access and rotating thirty-day refresh', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-oauth-coding-'));
+    try {
+      let now = 20_000;
+      let authorizationRevision = 7;
+      const store = new McpOAuthTokenStore(join(root, 'tokens.json'));
+      const coding = createMcpOAuthProvider(store, {
+        nowSeconds: () => now,
+        profile: 'coding',
+        authorizationRevision: () => authorizationRevision,
+        accessTokenTtlSeconds: 60 * 60,
+        refreshTokenTtlSeconds: 30 * 24 * 60 * 60,
+      });
+      const client = store.registerClient({
+        redirect_uris: ['https://chatgpt.com/connector/callback'],
+        token_endpoint_auth_method: 'none',
+        grant_types: ['authorization_code', 'refresh_token'],
+        response_types: ['code'],
+      });
+      const redirect = redirectRecorder();
+      await expect(coding.authorize(client, {
+        scopes: ['repo-harness', 'offline_access'],
+        redirectUri: client.redirect_uris[0]!,
+        codeChallenge: 'missing-coding-scope',
+      }, redirect.response as never)).rejects.toBeInstanceOf(InvalidScopeError);
+      await coding.authorize(client, {
+        scopes: ['repo-harness', 'repo-harness.coding', 'offline_access'],
+        redirectUri: client.redirect_uris[0]!,
+        codeChallenge: 'coding-challenge',
+      }, redirect.response as never);
+      const code = new URL(redirect.state.url).searchParams.get('code') ?? '';
+      const tokens = await coding.exchangeAuthorizationCode(client, code, 'verifier', client.redirect_uris[0]);
+      expect(tokens).toMatchObject({
+        expires_in: 3600,
+        scope: 'repo-harness repo-harness.coding offline_access',
+      });
+      expect(await coding.verifyAccessToken(tokens.access_token)).toMatchObject({
+        profile: 'coding',
+        authorizationRevision: 7,
+        scopes: ['repo-harness', 'repo-harness.coding', 'offline_access'],
+      });
+
+      const planner = createMcpOAuthProvider(store, { nowSeconds: () => now, profile: 'planner' });
+      await expect(planner.verifyAccessToken(tokens.access_token)).rejects.toBeInstanceOf(InvalidTokenError);
+
+      now += 3601;
+      await expect(coding.verifyAccessToken(tokens.access_token)).rejects.toBeInstanceOf(InvalidTokenError);
+      const rotated = await coding.exchangeRefreshToken(client, tokens.refresh_token ?? '');
+      expect(rotated.refresh_token).not.toBe(tokens.refresh_token);
+      await expect(coding.exchangeRefreshToken(client, tokens.refresh_token ?? '')).rejects.toBeInstanceOf(InvalidGrantError);
+
+      authorizationRevision = 8;
+      await expect(coding.verifyAccessToken(rotated.access_token)).rejects.toBeInstanceOf(InvalidTokenError);
+      await expect(coding.exchangeRefreshToken(client, rotated.refresh_token ?? '')).rejects.toBeInstanceOf(InvalidGrantError);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

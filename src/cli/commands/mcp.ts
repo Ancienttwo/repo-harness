@@ -4,8 +4,11 @@ import { createMcpToolContext } from '../mcp/server';
 import { startMcpHttp } from '../mcp/transports/http';
 import { startMcpStdio } from '../mcp/transports/stdio';
 import { callMcpTool } from '../mcp/tools';
+import { cleanupManagedCodingWorkspace, listManagedCodingWorkspaces } from '../mcp/coding-workspaces';
+import { setRepoHarnessAccessMode } from '../../effects/repo-registry';
 import {
   runMcpDoctor,
+  runMcpLiveDoctor,
   runMcpInstallSkill,
   runMcpPrintGuide,
   runMcpSetupChatgpt,
@@ -37,6 +40,8 @@ interface McpSetupChatgptOptions {
   enableReader?: boolean;
   allowRoot?: string[];
   allowFullDiskRead?: boolean;
+  profile?: string;
+  grantReadWrite?: string[];
 }
 
 interface McpSetupCodexOptions {
@@ -130,7 +135,7 @@ export function buildMcpCommand(): Command {
     .option('--transport <transport>', 'Transport: stdio|http', 'stdio')
     .option('--host <host>', 'HTTP bind host', '127.0.0.1')
     .option('--port <port>', 'HTTP bind port', '8765')
-    .option('--profile <profile>', 'MCP profile: planner|executor|orchestrator', 'planner')
+    .option('--profile <profile>', 'MCP profile: planner|executor|orchestrator|coding', 'planner')
     .option('--auth <mode>', 'HTTP auth mode: oauth|bearer|url-token', 'oauth')
     .option('--enable-reader', 'Force read-only workspace tools in this same MCP connector; registered adopted repos are included automatically')
     .option('--allow-root <path>', 'Additional non-repo local root for workspace reader/discovery tools; may be repeated', collectOption, [])
@@ -178,13 +183,54 @@ export function buildMcpCommand(): Command {
     .command('doctor')
     .description('Check repo-harness MCP setup status')
     .option('--repo <path>', 'Repository root to inspect', '.')
+    .option('--live', 'Probe local/public health, OAuth metadata, and MCP tool schema without changing external state')
     .option('--json', 'Output JSON instead of human-readable text')
-    .action((rawOpts: { repo?: string; json?: boolean }) => {
+    .action((rawOpts: { repo?: string; json?: boolean; live?: boolean }) => {
       void runMcpAction(() => {
-        const result = runMcpDoctor(rawOpts);
-        console.log(result.lines.join('\n'));
+        if (rawOpts.live) {
+          return runMcpLiveDoctor(rawOpts).then((result) => console.log(result.lines.join('\n')));
+        }
+        console.log(runMcpDoctor(rawOpts).lines.join('\n'));
       });
     });
+
+  const access = new Command('access').description('Manage explicit user-scope MCP repo access');
+  access
+    .command('set')
+    .requiredOption('--repo <path>', 'Adopted repository to authorize')
+    .requiredOption('--mode <mode>', 'Access mode: read_only|read_write')
+    .option('--json', 'Output JSON')
+    .action((rawOpts: { repo: string; mode: string; json?: boolean }) => {
+      void runMcpAction(() => {
+        if (rawOpts.mode !== 'read_only' && rawOpts.mode !== 'read_write') throw new Error('access mode must be read_only or read_write');
+        const result = setRepoHarnessAccessMode(rawOpts.repo, rawOpts.mode);
+        if (!result.registered) throw new Error(result.reason ?? 'repo is not adopted');
+        console.log(rawOpts.json ? JSON.stringify(result, null, 2) : `[repo-harness mcp] ${result.path}: ${result.accessMode} (authorization revision ${result.authorizationRevision})`);
+      });
+    });
+  mcp.addCommand(access);
+
+  const workspaces = new Command('workspaces').description('Inspect or clean locally managed coding worktrees');
+  workspaces
+    .command('list')
+    .option('--json', 'Output JSON')
+    .action((rawOpts: { json?: boolean }) => {
+      void runMcpAction(() => {
+        const rows = listManagedCodingWorkspaces();
+        console.log(rawOpts.json ? JSON.stringify({ workspaces: rows }, null, 2) : rows.map((row) => `${row.id}\t${row.branch}\t${row.dirty ? 'dirty' : 'clean'}\t${row.path_exists ? 'present' : 'missing'}`).join('\n'));
+      });
+    });
+  workspaces
+    .command('cleanup')
+    .requiredOption('--workspace-id <id>', 'Managed workspace id')
+    .option('--json', 'Output JSON')
+    .action((rawOpts: { workspaceId: string; json?: boolean }) => {
+      void runMcpAction(() => {
+        const result = cleanupManagedCodingWorkspace(rawOpts.workspaceId);
+        console.log(rawOpts.json ? JSON.stringify(result, null, 2) : `[repo-harness mcp] Removed ${result.workspace_id} (${result.branch})`);
+      });
+    });
+  mcp.addCommand(workspaces);
 
   const setup = new Command('setup').description('Generate MCP setup files for ChatGPT or Codex');
 
@@ -197,6 +243,8 @@ export function buildMcpCommand(): Command {
     .option('--port <port>', 'Local MCP HTTP bind port')
     .option('--endpoint <url>', 'Stable public HTTPS /mcp endpoint to store in ignored local config')
     .option('--server-name <name>', 'ChatGPT Connector/MCP server name to record in ignored local config')
+    .option('--profile <profile>', 'MCP profile to configure: planner|executor|orchestrator|coding')
+    .option('--grant-read-write <path>', 'Explicitly grant one adopted repo read_write access for coding; may be repeated', collectOption, [])
     .option('--enable-reader', 'Enable read-only workspace tools in the same ChatGPT MCP Connector; registered adopted repos are included automatically')
     .option('--allow-root <path>', 'Additional non-repo local root for workspace reader/discovery tools; may be repeated', collectOption, [])
     .option('--allow-full-disk-read', 'Deprecated: use --enable-reader with explicit --allow-root paths')

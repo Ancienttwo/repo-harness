@@ -106,6 +106,7 @@ function executionPolicy(overrides: Partial<McpPolicy['execution']> = {}): McpPo
     fixedWorkflowCheck: false,
     codexRunner: false,
     agentRunner: false,
+    codingShell: false,
     allowedAgents: [],
     runnerTimeoutMs: DEFAULT_RUNNER_TIMEOUT_MS,
     ...overrides,
@@ -118,6 +119,7 @@ function capabilities(overrides: Partial<McpPolicy['capabilities']> = {}): McpPo
     workflowPlanner: false,
     workflowExecutor: false,
     agentRunner: false,
+    workspaceCoder: false,
     ...overrides,
   };
 }
@@ -182,10 +184,30 @@ export function getMcpPolicy(profile: McpProfileName, opts: McpPolicyOptions = {
     };
   }
 
+  if (profile === 'coding') {
+    return {
+      profile,
+      allowedRoots: opts.allowedRoots,
+      discoveryRoots: opts.discoveryRoots,
+      capabilities: capabilities({
+        workflowPlanner: true,
+        workspaceCoder: true,
+      }),
+      readGlobs: withWorkspacePrefixGlobs(PLANNER_READ_GLOBS),
+      writeGlobs: withWorkspacePrefixGlobs(PLANNER_WRITE_GLOBS),
+      denyGlobs: COMMON_DENY_GLOBS,
+      maxFileBytes: 512 * 1024,
+      execution: executionPolicy({
+        fixedWorkflowCheck: true,
+        codingShell: true,
+      }),
+    };
+  }
+
   throw new Error(`unknown MCP profile: ${String(profile)}`);
 }
 
 export function parseMcpProfile(value: string): McpProfileName {
-  if (value === 'planner' || value === 'executor' || value === 'orchestrator') return value;
-  throw new Error(`invalid MCP profile "${value}" (expected: planner, executor, orchestrator)`);
+  if (value === 'planner' || value === 'executor' || value === 'orchestrator' || value === 'coding') return value;
+  throw new Error(`invalid MCP profile "${value}" (expected: planner, executor, orchestrator, coding)`);
 }
