@@ -190,10 +190,14 @@ write_start_metadata() {
   local branch_name="$3"
   local worktree_path="$4"
   local base_branch="$5"
+  local base_commit="$6"
   local metadata_dir=".ai/harness/worktrees"
   local metadata_file="${metadata_dir}/${slug}.json"
 
   mkdir -p "$metadata_dir"
+  if [[ -f "$metadata_file" ]] && grep -Eq '"base_commit"[[:space:]]*:[[:space:]]*"[0-9a-f]{40,64}"' "$metadata_file"; then
+    return 0
+  fi
   cat > "$metadata_file" <<EOF_METADATA
 {
   "slug": "$(json_escape "$slug")",
@@ -202,6 +206,7 @@ write_start_metadata() {
   "worktree": "$(json_escape "$worktree_path")",
   "source_repo": "$(json_escape "$REPO_ROOT")",
   "base_branch": "$(json_escape "$base_branch")",
+  "base_commit": "$(json_escape "$base_commit")",
   "started_at": "$(date '+%Y-%m-%dT%H:%M:%S%z')"
 }
 EOF_METADATA
@@ -298,10 +303,11 @@ start_worktree() {
     return 0
   fi
 
-  local slug branch_prefix base_branch existing_worktree
+  local slug branch_prefix base_branch existing_worktree base_commit source_commit new_branch=0
   slug="$(derive_slug_from_plan "$plan_file")"
   branch_prefix="$(policy_get '.worktree_strategy.branch_prefix' 'codex/')"
   base_branch="$(policy_get '.worktree_strategy.base_branch' 'main')"
+  source_commit="$(git rev-parse HEAD)"
   branch_name="${branch_name:-${branch_prefix}${slug}}"
   worktree_path="${worktree_path:-$(default_worktree_path "$slug")}"
 
@@ -314,17 +320,23 @@ start_worktree() {
     echo "[ContractWorktree] Added worktree for existing branch: $worktree_path"
   else
     git worktree add "$worktree_path" -b "$branch_name" HEAD
+    new_branch=1
     echo "[ContractWorktree] Created worktree: $worktree_path"
   fi
 
   copy_plan_into_worktree "$plan_file" "$worktree_path"
   remove_copied_untracked_source_plan "$plan_file" "$worktree_path"
   clear_primary_markers_for_transferred_plan "$plan_file"
+  if [[ "$new_branch" -eq 1 ]]; then
+    base_commit="$source_commit"
+  else
+    base_commit="$(git -C "$worktree_path" merge-base HEAD "$base_branch" 2>/dev/null || git -C "$worktree_path" rev-parse HEAD)"
+  fi
 
   mkdir -p "$worktree_path/.ai/harness/worktrees"
   (
     cd "$worktree_path"
-    write_start_metadata "$slug" "$plan_file" "$branch_name" "$worktree_path" "$base_branch"
+    write_start_metadata "$slug" "$plan_file" "$branch_name" "$worktree_path" "$base_branch" "$base_commit"
     if [[ "$run_plan_to_todo" -eq 1 && -f "$helper_dir/plan-to-todo.sh" ]]; then
       REPO_HARNESS_TARGET_REPO_ROOT="$worktree_path" REPO_HARNESS_CONTRACT_WORKTREE=1 bash "$helper_dir/plan-to-todo.sh" --plan "$plan_file"
     fi

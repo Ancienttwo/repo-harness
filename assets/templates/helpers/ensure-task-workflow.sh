@@ -555,6 +555,15 @@ CONTRACT_TEMPLATE_EOF
 - Manual checks:
 - Supporting artifacts:
 
+## Manual Check Evidence
+
+Copy each non-built-in contract `manual_checks` requirement exactly. Check it only after
+the observation is complete and replace the placeholder with concrete command output,
+screenshot/artifact path, or reviewer observation.
+
+- [ ] Exact manual_checks requirement
+  - Evidence: concrete observation, command output, screenshot path, or reviewer note
+
 ## External Acceptance Advice
 
 > **External Acceptance**: unavailable
