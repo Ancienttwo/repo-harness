@@ -1,0 +1,13 @@
+{
+  "schema": "repo-harness-bdd2-truth-set.v1",
+  "partition": "held_out",
+  "audit_tasks": {
+    "A-H-01": {
+      "clean": false,
+      "issues": [
+        { "id": "A-H-01-I1", "severity": "P1", "taxonomy": "BACKSTAGE_LEAK", "summary": "Automatic recovery internals are exposed as default user decisions without authority." }
+      ]
+    },
+    "A-H-02": { "clean": true, "issues": [] }
+  }
+}

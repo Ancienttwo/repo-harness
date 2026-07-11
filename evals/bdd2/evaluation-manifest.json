@@ -1,0 +1,54 @@
+{
+  "schema": "repo-harness-bdd2-evaluation.v1",
+  "freeze": {
+    "id": "bdd2-phase-e-foundation-v1",
+    "state": "foundation",
+    "sealed_at": null
+  },
+  "runner": {
+    "path": "scripts/run-bdd2-evals.ts",
+    "sha256": "93fdf81cfbd5f54d9cb9517ed5b00b66315ce6b6c9f727e71e12a181f46efb19"
+  },
+  "output_root": ".ai/harness/runs/bdd2",
+  "experiments": {
+    "S": {
+      "kind": "shape",
+      "repetitions": 3,
+      "held_out_task_count": 12,
+      "conditions": {
+        "baseline": { "prompt": "evals/bdd2/prompts/shape-baseline.md", "sha256": "d16899c22c6998e6b406c1dd493c75a468c31ec1c86b8e4514e15f56eb1e67af" },
+        "treatment": { "prompt": "evals/bdd2/prompts/shape-treatment.md", "sha256": "05041ac2129ee45c72012986ec6565454e7fe5ae0bb59d7fedd8852dc358b956" }
+      }
+    },
+    "A": {
+      "kind": "audit",
+      "repetitions": 2,
+      "held_out_task_count": 12,
+      "conditions": {
+        "baseline": { "prompt": "evals/bdd2/prompts/audit-baseline.md", "sha256": "61a312eb9848fa211bd81c01f439fdeba17f57f2b84aafabbba549db8fcc8b6c" },
+        "treatment": { "prompt": "evals/bdd2/prompts/audit-treatment.md", "sha256": "096ee79656f7863833aedf02ee6726ef1e050a5ef30ab42a7e69056e9d2a0f89" }
+      }
+    }
+  },
+  "partitions": {
+    "development": {
+      "tasks": "evals/bdd2/tasks/development.json",
+      "tasks_sha256": "fcdb7722c31e427b8e194fbd98a349b3781e5c0c3981cddeabfdcbc9ddbd353a",
+      "truth": "evals/bdd2/truth/development.json",
+      "truth_sha256": "26b1433012641619dc1e6af6a45f84f52ff724639c520cd4061f4671e0896123"
+    },
+    "held_out": {
+      "tasks": "evals/bdd2/tasks/held-out.json",
+      "tasks_sha256": "106679f572a60620f4124406ba5dfa5938c760f0e8ce1473519cf4434af00127",
+      "truth": "evals/bdd2/truth/held-out.json",
+      "truth_sha256": "f66f908b5f8819aa58c92d0f70e34ba1808863f2c27b200d2ebfc17ba4c8db9b"
+    }
+  },
+  "adjudication": {
+    "rubric": "evals/bdd2/rubrics/blind-adjudication.md",
+    "rubric_sha256": "96082f845dc67ad3db256b2ec40e1b66b9d5d7b748a2a0a8257c4b7b60e4dba1",
+    "score_schema": "evals/bdd2/rubrics/score.schema.json",
+    "score_schema_sha256": "a23b15a98b736c1abce9ba7bbaad4a5492d591907ff6d65e0f97d52018775f28"
+  },
+  "agents": {}
+}
