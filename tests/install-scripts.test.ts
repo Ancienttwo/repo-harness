@@ -20,6 +20,8 @@ describe("install script contracts", () => {
     expect(syntax.status).toBe(0);
     expect(script).toContain("REPO_HARNESS_VERSION");
     expect(script).toContain("https://bun.sh/install");
+    expect(script).toContain('MIN_BUN_VERSION="1.1.35"');
+    expect(script).toContain('bun_version_at_least "$current_bun_version"');
     expect(script).toContain("bun add -g \"$package_spec\"");
     expect(script).toContain("repo-harness --version");
     expect(script).not.toMatch(/\bnpm\b/);
@@ -32,6 +34,8 @@ describe("install script contracts", () => {
 
     expect(script).toContain("REPO_HARNESS_VERSION");
     expect(script).toContain("https://bun.sh/install.ps1");
+    expect(script).toContain('$MinimumBunVersion = [Version]"1.1.35"');
+    expect(script).toContain('$BunVersion -lt $MinimumBunVersion');
     expect(script).toContain("& bun add -g $PackageSpec");
     expect(script).toContain("repo-harness --version");
     expect(script).not.toMatch(/\bnpm\b/i);
@@ -46,7 +50,8 @@ describe("install script contracts", () => {
 
     expect(readme).toContain("curl -fsSL https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/install.sh | sh");
     expect(readme).toContain("irm https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/install.ps1 | iex");
-    expect(readme).toContain("If Bun is already on PATH, you can skip the shell installer:");
+    expect(readme).toContain("If Bun >= 1.1.35 is already on PATH, you can skip the shell installer.");
+    expect(readme).toContain("Bun >= 1.1.35");
     expect(readme).toContain("bunx repo-harness@latest install");
     expect(readme).toContain("bun add -g repo-harness");
     expect(readme).toContain("npx -y repo-harness@latest install");

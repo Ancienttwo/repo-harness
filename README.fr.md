@@ -203,9 +203,9 @@ lors de l'application d'un settings merge.
 
 ### 1. Installer le CLI
 
-Le chemin par défaut ne demande pas Node.js : l'installateur utilise Bun comme
-runtime. Si Bun est absent, il installe Bun d'abord, puis installe le CLI
-`repo-harness`.
+Le chemin par défaut ne demande pas Node.js : l'installateur utilise Bun >=
+1.1.35 comme runtime. Si Bun est absent ou plus ancien, il l'installe ou le met
+à niveau avant d'installer le CLI `repo-harness`.
 
 ```bash
 # macOS / Linux
@@ -216,7 +216,7 @@ irm https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/install.ps1 |
 ```
 
 <details>
-<summary>Vous avez déjà Bun ? Utilisez Bun en priorité, ou npx en fallback</summary>
+<summary>Vous avez déjà Bun >= 1.1.35 ? Utilisez Bun en priorité, ou npx en fallback</summary>
 
 ```bash
 # Bun (recommandé)

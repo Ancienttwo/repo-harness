@@ -249,8 +249,9 @@ applying settings merges.
 
 ### 1. Install the CLI
 
-No Node.js required for the default path: the installer uses Bun as the runtime.
-If Bun is missing, it installs Bun first, then installs the `repo-harness` CLI.
+No Node.js required for the default path: the installer uses Bun >= 1.1.35 as
+the runtime. If Bun is missing or older, it installs or upgrades Bun first, then
+installs the `repo-harness` CLI.
 
 ```bash
 # macOS / Linux
@@ -260,7 +261,11 @@ curl -fsSL https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/instal
 irm https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/install.ps1 | iex
 ```
 
-If Bun is already on PATH, you can skip the shell installer:
+If Bun >= 1.1.35 is already on PATH, you can skip the shell installer. When an
+older self-managed Bun launches one of these direct paths, `repo-harness install`
+upgrades that same binary before continuing. Package-manager-owned Bun installs
+fail closed with the matching upgrade command (for example, `brew upgrade bun`
+or `scoop update bun`) instead of overwriting manager-owned files:
 
 ```bash
 # Bun one-shot bootstrap

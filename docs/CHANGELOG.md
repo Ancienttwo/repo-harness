@@ -9,7 +9,30 @@ All notable changes to this skill are documented here.
 - Mapped the generated Codex `fast-worker` to GPT-5.6 Sol with `high`
   reasoning and `workspace-write` sandboxing, while keeping Terra/medium for
   read-heavy explorer work and keeping native MultiAgentV2 role selection
-  behind a runtime canary instead of treating installed TOML as proof.
+  behind a runtime canary instead of treating installed TOML as proof. The
+  installer now also rejects source files whose frontmatter role name does not
+  match the managed filename before deriving sandbox permissions, exits
+  non-zero for unresolved identity failure, and checks every installed managed
+  target for a mismatched declared identity before normal drift handling so a
+  corrected source automatically repairs stale vulnerable targets. Role-name
+  checks accept quoted YAML/TOML scalar forms plus bare or quoted TOML `name`
+  keys with legal indentation. Installed identity reads are structure-aware:
+  YAML requires one flat root mapping and TOML uses Bun's semantic parser with
+  exact managed-role comparison, preserving identity-correct or ambiguous local
+  drift across multiline strings, tables, YAML non-string scalars, and
+  comment-like string content. The package and installer now require Bun >=
+  1.1.35, the first supported runtime boundary for stdin execution plus semantic
+  parsing of the generated multiline TOML agents, and reject older runtimes
+  before creating user-level state. The Unix and Windows bootstrap installers
+  now upgrade older Bun runtimes instead of trusting unenforced engine metadata,
+  and incomplete managed-role installation or remediation stays non-zero across
+  later retries until both host targets are available. The CLI's global
+  `install`, `init`, and mutating `update` paths bind setup subprocesses to the
+  exact Bun executable they validate and enforce the same floor, closing direct
+  `bunx`/`bun add`/`npx` entrypoints that bypass the top-level bootstrap scripts.
+  Self-installer-owned Bun can upgrade in place; package-manager-owned Bun fails
+  closed with its manager command instead of overwriting manager state. Read-only
+  update checks remain mutation-free.
 
 ## [0.9.2] - 2026-07-10
 

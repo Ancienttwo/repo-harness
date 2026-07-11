@@ -1,14 +1,36 @@
 #!/bin/bash
 set -euo pipefail
 
-if command -v node >/dev/null 2>&1; then
-  RUNTIME_BIN="$(command -v node)"
-elif command -v bun >/dev/null 2>&1; then
-  RUNTIME_BIN="$(command -v bun)"
-elif [[ -x "${HOME}/.bun/bin/bun" ]]; then
-  RUNTIME_BIN="${HOME}/.bun/bin/bun"
-else
-  echo "install-agent-fleet.sh requires node or bun" >&2
+MIN_BUN_VERSION="1.1.35"
+
+bun_version_is_supported() {
+  local version="$1"
+  [[ "$version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+) ]] &&
+    (( BASH_REMATCH[1] > 1 ||
+      (BASH_REMATCH[1] == 1 && BASH_REMATCH[2] > 1) ||
+      (BASH_REMATCH[1] == 1 && BASH_REMATCH[2] == 1 && BASH_REMATCH[3] >= 35) ))
+}
+
+RUNTIME_BIN=""
+BUN_VERSION=""
+PATH_BUN="$(command -v bun 2>/dev/null || true)"
+for candidate in "$PATH_BUN" "${HOME}/.bun/bin/bun"; do
+  [[ -n "$candidate" && -x "$candidate" ]] || continue
+  candidate_version="$("$candidate" --version 2>/dev/null || true)"
+  [[ -n "$BUN_VERSION" ]] || BUN_VERSION="$candidate_version"
+  if bun_version_is_supported "$candidate_version"; then
+    RUNTIME_BIN="$candidate"
+    BUN_VERSION="$candidate_version"
+    break
+  fi
+done
+
+if [[ -z "$RUNTIME_BIN" && -z "$BUN_VERSION" ]]; then
+  echo "install-agent-fleet.sh requires bun" >&2
+  exit 1
+fi
+if [[ -z "$RUNTIME_BIN" ]]; then
+  echo "install-agent-fleet.sh requires Bun >= ${MIN_BUN_VERSION} (found: ${BUN_VERSION:-unknown})" >&2
   exit 1
 fi
 
@@ -101,8 +123,14 @@ function fetchSource(agent) {
   return { ok: true, text: result.stdout };
 }
 
+function parseRoleNameScalar(rawValue) {
+  if (typeof rawValue !== "string") return undefined;
+  const match = rawValue.trim().match(/^(?:"([A-Za-z0-9_-]+)"|'([A-Za-z0-9_-]+)'|([A-Za-z0-9_-]+))(?:\s+#.*)?$/);
+  return match?.[1] || match?.[2] || match?.[3];
+}
+
 function parseFrontmatter(raw) {
-  const lines = raw.split("\n");
+  const lines = raw.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n").split("\n");
   if (lines[0] !== "---") return null;
 
   let closeIndex = -1;
@@ -119,15 +147,20 @@ function parseFrontmatter(raw) {
   while (bodyLines.length > 0 && bodyLines[0].trim() === "") bodyLines.shift();
   while (bodyLines.length > 0 && bodyLines[bodyLines.length - 1].trim() === "") bodyLines.pop();
 
+  const fieldLines = frontmatterLines.filter((line) => line.trim() && !line.trimStart().startsWith("#"));
+  const firstField = fieldLines[0]?.match(/^( *)([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$/);
+  if (!firstField) return null;
+  const rootIndent = firstField[1].length;
   const fields = {};
-  for (const line of frontmatterLines) {
-    const match = line.match(/^([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$/);
-    if (!match) continue;
-    fields[match[1]] = match[2];
+  for (const line of fieldLines) {
+    const match = line.match(/^( *)([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$/);
+    if (!match || match[1].length !== rootIndent) return null;
+    if (Object.hasOwn(fields, match[2])) return null;
+    fields[match[2]] = match[3];
   }
 
   return {
-    name: fields.name,
+    name: parseRoleNameScalar(fields.name),
     description: fields.description,
     model: fields.model,
     effort: fields.effort,
@@ -136,11 +169,21 @@ function parseFrontmatter(raw) {
   };
 }
 
-function validateFrontmatter(parsed) {
+function validateFrontmatter(parsed, expectedAgent) {
   if (!parsed) {
-    return { ok: false, reason: "missing or malformed frontmatter delimiters" };
+    return { ok: false, kind: "identity-invalid", reason: "missing or malformed frontmatter delimiters" };
   }
-  if (!parsed.name || !parsed.description || !parsed.model || !parsed.effort) {
+  if (parsed.name && parsed.name !== expectedAgent) {
+    return {
+      ok: false,
+      kind: "identity-mismatch",
+      reason: `frontmatter name does not match source role: ${parsed.name}/${expectedAgent}`,
+    };
+  }
+  if (!parsed.name) {
+    return { ok: false, kind: "identity-invalid", reason: "missing or malformed frontmatter name" };
+  }
+  if (!parsed.description || !parsed.model || !parsed.effort) {
     return { ok: false, reason: "missing required frontmatter field (name/description/model/effort)" };
   }
   const modelMap = MODEL_EFFORT_MAP[parsed.model];
@@ -158,14 +201,14 @@ function tomlBasicString(value) {
   return `"${String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
 
-function generateToml(parsed, mapped) {
+function generateToml(agent, parsed, mapped) {
   const lines = [];
   const description = parsed.description.replace(mapped.sourceDescription, mapped.targetDescription);
   lines.push(`name = ${tomlBasicString(parsed.name)}`);
   lines.push(`description = ${tomlBasicString(description)}`);
   lines.push(`model = ${tomlBasicString(mapped.model)}`);
   lines.push(`model_reasoning_effort = ${tomlBasicString(mapped.effort)}`);
-  if (parsed.name === "fast-worker") {
+  if (agent === "fast-worker") {
     lines.push(`sandbox_mode = "workspace-write"`);
   } else if (parsed.hasTools) {
     lines.push(`sandbox_mode = "read-only"`);
@@ -199,8 +242,39 @@ function compareAndWrite(targetPath, content) {
   return "drift";
 }
 
+function readTomlRootRoleName(content) {
+  try {
+    const parsed = Bun.TOML.parse(content);
+    return typeof parsed.name === "string" && MANAGED_AGENTS.includes(parsed.name) ? parsed.name : undefined;
+  } catch (_error) {
+    return undefined;
+  }
+}
+
+function readInstalledRoleName(targetPath, host) {
+  let content;
+  try {
+    content = fs.readFileSync(targetPath, "utf8");
+  } catch (_error) {
+    return undefined;
+  }
+  if (host === "claude") {
+    const parsedName = parseFrontmatter(content)?.name;
+    return typeof parsedName === "string" && MANAGED_AGENTS.includes(parsedName) ? parsedName : undefined;
+  }
+  return readTomlRootRoleName(content);
+}
+
+function deactivateMismatchedTarget(targetPath, host, expectedAgent) {
+  const installedRoleName = readInstalledRoleName(targetPath, host);
+  if (!installedRoleName || installedRoleName === expectedAgent) return false;
+  fs.rmSync(targetPath, { force: true });
+  return true;
+}
+
 let anyProcessed = false;
 let anyTargetAlreadyPresent = false;
+let fleetFailure = false;
 const results = [];
 
 for (const agent of MANAGED_AGENTS) {
@@ -209,26 +283,43 @@ for (const agent of MANAGED_AGENTS) {
   if (fs.existsSync(claudeTarget) || fs.existsSync(codexTarget)) {
     anyTargetAlreadyPresent = true;
   }
+  const claudeDeactivated = deactivateMismatchedTarget(claudeTarget, "claude", agent);
+  const codexDeactivated = deactivateMismatchedTarget(codexTarget, "codex", agent);
 
   const source = fetchSource(agent);
   if (!source.ok) {
-    results.push({ host: "claude", file: `${agent}.md`, status: "fetch-failed" });
-    results.push({ host: "codex", file: `${agent}.toml`, status: "fetch-failed" });
+    const roleUnavailable = !fs.existsSync(claudeTarget) || !fs.existsSync(codexTarget);
+    fleetFailure ||= roleUnavailable;
+    results.push({
+      host: "claude",
+      file: `${agent}.md`,
+      status: claudeDeactivated ? "deactivated-fetch-failed" : "fetch-failed",
+    });
+    results.push({
+      host: "codex",
+      file: `${agent}.toml`,
+      status: codexDeactivated ? "deactivated-fetch-failed" : "fetch-failed",
+    });
     continue;
   }
 
   const parsed = parseFrontmatter(source.text);
-  const validation = validateFrontmatter(parsed);
+  const validation = validateFrontmatter(parsed, agent);
   if (!validation.ok) {
-    results.push({ host: "claude", file: `${agent}.md`, status: "invalid" });
-    results.push({ host: "codex", file: `${agent}.toml`, status: "invalid" });
+    const identityIssue = validation.kind === "identity-mismatch" || validation.kind === "identity-invalid";
+    const roleUnavailable = !fs.existsSync(claudeTarget) || !fs.existsSync(codexTarget);
+    fleetFailure ||= identityIssue || roleUnavailable;
+    const claudeStatus = claudeDeactivated ? "deactivated-invalid" : "invalid";
+    const codexStatus = codexDeactivated ? "deactivated-invalid" : "invalid";
+    results.push({ host: "claude", file: `${agent}.md`, status: claudeStatus });
+    results.push({ host: "codex", file: `${agent}.toml`, status: codexStatus });
     continue;
   }
 
   const claudeStatus = compareAndWrite(claudeTarget, source.text);
   results.push({ host: "claude", file: `${agent}.md`, status: claudeStatus });
 
-  const tomlContent = generateToml(parsed, validation.mapped);
+  const tomlContent = generateToml(agent, parsed, validation.mapped);
   const codexStatus = compareAndWrite(codexTarget, tomlContent);
   results.push({ host: "codex", file: `${agent}.toml`, status: codexStatus });
 
@@ -240,5 +331,5 @@ for (const entry of results) {
 }
 
 const totalFailure = !anyProcessed && !anyTargetAlreadyPresent;
-process.exit(totalFailure ? 1 : 0);
+process.exit(totalFailure || fleetFailure ? 1 : 0);
 NODE_EOF

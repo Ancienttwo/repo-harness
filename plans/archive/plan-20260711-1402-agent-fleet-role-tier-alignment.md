@@ -35,7 +35,7 @@
 
 ## Scope
 
-- In scope: generated Codex `fast-worker` model/effort/description and workspace-write sandbox, generator and template parity, golden/test/doc projections, workflow closeout, and local installed readback.
+- In scope: generated Codex `fast-worker` model/effort/description and workspace-write sandbox, generator and template parity, golden/test/doc projections, workflow closeout, local installed readback, and corrective enforcement of the Bun runtime floor across shell, PowerShell, and CLI-driven public install/update entrypoints.
 - Out of scope: native V2 role selection, explorer fleet management, Claude source semantics, delegation triggers, CLI upgrades, provider changes, or compatibility aliases.
 
 ## Task Breakdown

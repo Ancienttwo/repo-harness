@@ -200,8 +200,9 @@ recomienda al aplicar el settings merge.
 
 ### Instalar el CLI
 
-La ruta por defecto no requiere Node.js: el instalador usa Bun como runtime. Si
-Bun no existe, instala Bun primero y después instala el CLI `repo-harness`.
+La ruta por defecto no requiere Node.js: el instalador usa Bun >= 1.1.35 como
+runtime. Si Bun no existe o es anterior, lo instala o actualiza antes de
+instalar el CLI `repo-harness`.
 
 ```bash
 # macOS / Linux
@@ -212,7 +213,7 @@ irm https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/install.ps1 |
 ```
 
 <details>
-<summary>¿Ya tienes Bun? Usa Bun primero, o npx como fallback</summary>
+<summary>¿Ya tienes Bun >= 1.1.35? Usa Bun primero, o npx como fallback</summary>
 
 ```bash
 # Bun (recomendado)

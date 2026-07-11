@@ -181,8 +181,8 @@ PRD Sprint が durable source of truth となり、Codex Goal mode は元の cha
 
 ### CLI をインストールする
 
-既定の経路では Node.js は不要です。installer は Bun を runtime として使います。
-Bun が見つからない場合は、先に Bun をインストールしてから `repo-harness` CLI をインストールします。
+既定の経路では Node.js は不要です。installer は Bun >= 1.1.35 を runtime として使います。
+Bun が見つからない場合や古い場合は、先に Bun をインストールまたは更新してから `repo-harness` CLI をインストールします。
 
 ```bash
 # macOS / Linux
@@ -193,7 +193,7 @@ irm https://raw.githubusercontent.com/Ancienttwo/repo-harness/main/install.ps1 |
 ```
 
 <details>
-<summary>Bun がすでにある場合は Bun を優先し、npx を fallback として使えます</summary>
+<summary>Bun >= 1.1.35 がすでにある場合は Bun を優先し、npx を fallback として使えます</summary>
 
 ```bash
 # Bun（推奨）

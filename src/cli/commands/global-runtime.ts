@@ -1,6 +1,6 @@
 import { copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync } from "fs";
 import { homedir } from "os";
-import { dirname, join, resolve } from "path";
+import { delimiter, dirname, join, resolve, sep } from "path";
 import { fileURLToPath } from "url";
 import { configureBrainRoot, defaultBrainRootChoice, expandHomePath } from "./brain-root";
 import { syncCrossReviewSkills } from "./init";
@@ -41,6 +41,7 @@ export interface GlobalRuntimeResult {
 }
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
+const MIN_BUN_VERSION = "1.1.35";
 const CODEGRAPH_PACKAGE = "@colbymchenry/codegraph@latest";
 const WAZA_SKILLS = ["think", "hunt", "check", "health"] as const;
 const WAZA_SHARED_RULES = ["anti-patterns.md", "chinese.md", "durable-context.md", "english.md"] as const;
@@ -63,6 +64,124 @@ function runProcess(command: string, args: string[], cwd: string, env?: NodeJS.P
 
 function withStepName(step: GlobalRuntimeStep, name: string, detail?: string): GlobalRuntimeStep {
   return { ...step, step: name, detail: detail ?? step.detail };
+}
+
+function resolveBunExecutable(env?: NodeJS.ProcessEnv): string {
+  const explicit = env?.REPO_HARNESS_BUN_EXECUTABLE ?? process.env.REPO_HARNESS_BUN_EXECUTABLE;
+  if (explicit) return resolve(explicit);
+  if (env?.PATH) {
+    const extensions = process.platform === "win32"
+      ? (env.PATHEXT ?? process.env.PATHEXT ?? ".EXE;.CMD;.BAT;.COM").split(";").filter(Boolean)
+      : [""];
+    for (const directory of env.PATH.split(delimiter)) {
+      if (!directory) continue;
+      for (const extension of extensions) {
+        const candidate = join(directory, `bun${extension}`);
+        if (existsSync(candidate)) return candidate;
+      }
+    }
+  }
+  return process.execPath;
+}
+
+function bindBunRuntimeEnv(env: NodeJS.ProcessEnv | undefined, bunExecutable: string): NodeJS.ProcessEnv {
+  const activePath = env?.PATH ?? process.env.PATH ?? "";
+  return {
+    ...(env ?? {}),
+    PATH: [dirname(bunExecutable), activePath].filter(Boolean).join(delimiter),
+  };
+}
+
+function realPathOrResolved(pathValue: string): string {
+  try {
+    return realpathSync(pathValue);
+  } catch (_error) {
+    return resolve(pathValue);
+  }
+}
+
+function pathIsWithin(candidate: string, root: string): boolean {
+  const normalize = (value: string) => process.platform === "win32" ? value.toLowerCase() : value;
+  const normalizedCandidate = normalize(realPathOrResolved(candidate));
+  const normalizedRoot = normalize(realPathOrResolved(root));
+  return normalizedCandidate === normalizedRoot || normalizedCandidate.startsWith(`${normalizedRoot}${sep}`);
+}
+
+function isSelfManagedBun(bunExecutable: string, env?: NodeJS.ProcessEnv): boolean {
+  const bunInstall = env?.BUN_INSTALL ?? process.env.BUN_INSTALL ?? join(homeDir(env), ".bun");
+  return pathIsWithin(bunExecutable, join(bunInstall, "bin"));
+}
+
+function packageManagerUpgradeInstruction(bunExecutable: string): string {
+  const normalized = realPathOrResolved(bunExecutable).replace(/\\/g, "/").toLowerCase();
+  if (normalized.includes("/cellar/bun/")) return "run `brew upgrade bun`, then retry";
+  if (normalized.includes("/scoop/apps/bun/")) return "run `scoop update bun`, then retry";
+  if (normalized.includes("/node_modules/bun/")) return "run `npm install -g bun`, then retry";
+  return `upgrade Bun with the package manager that owns ${bunExecutable}, then retry`;
+}
+
+function ensureSupportedBunRuntime(
+  cwd: string,
+  env: NodeJS.ProcessEnv | undefined,
+  bunExecutable: string,
+): GlobalRuntimeStep {
+  const current = runProcess(bunExecutable, ["--version"], cwd, env);
+  const currentVersion = current.stdout?.trim().split(/\s+/)[0] ?? "";
+  const comparison = compareVersions(currentVersion, MIN_BUN_VERSION);
+  if (current.status === "ok" && comparison !== null && comparison >= 0) {
+    return {
+      ...current,
+      step: "ensure Bun runtime",
+      status: "skipped",
+      detail: `current=${currentVersion}; minimum=${MIN_BUN_VERSION}`,
+    };
+  }
+
+  if (current.status === "failed" || comparison === null) {
+    return {
+      ...current,
+      step: "ensure Bun runtime",
+      status: "failed",
+      detail: `unable to verify Bun runtime; minimum=${MIN_BUN_VERSION}; executable=${bunExecutable}`,
+    };
+  }
+
+  if (!isSelfManagedBun(bunExecutable, env)) {
+    const instruction = packageManagerUpgradeInstruction(bunExecutable);
+    return {
+      ...current,
+      step: "ensure Bun runtime",
+      status: "failed",
+      detail: `upgrade required; current=${currentVersion}; minimum=${MIN_BUN_VERSION}; executable=${bunExecutable}`,
+      stderr: appendOutput(current.stderr, `Bun is not owned by the Bun self-installer; ${instruction}.`),
+    };
+  }
+
+  const upgrade = runProcess(bunExecutable, ["upgrade"], cwd, env);
+  if (upgrade.status === "failed") {
+    return withStepName(upgrade, "ensure Bun runtime", `upgrade required; current=${currentVersion}; minimum=${MIN_BUN_VERSION}`);
+  }
+
+  const readback = runProcess(bunExecutable, ["--version"], cwd, env);
+  const upgradedVersion = readback.stdout?.trim().split(/\s+/)[0] ?? "";
+  const upgradedComparison = compareVersions(upgradedVersion, MIN_BUN_VERSION);
+  if (readback.status === "failed" || upgradedComparison === null || upgradedComparison < 0) {
+    return {
+      ...readback,
+      step: "ensure Bun runtime",
+      status: "failed",
+      detail: `upgrade did not reach minimum=${MIN_BUN_VERSION}; found=${upgradedVersion || "unknown"}`,
+    };
+  }
+
+  return {
+    ...upgrade,
+    step: "ensure Bun runtime",
+    status: "ok",
+    detail: `upgraded=${upgradedVersion}; minimum=${MIN_BUN_VERSION}`,
+    stdout: appendOutput(upgrade.stdout, readback.stdout),
+    stderr: appendOutput(upgrade.stderr, readback.stderr),
+  };
 }
 
 function renderStep(step: GlobalRuntimeStep): string[] {
@@ -190,7 +309,13 @@ function updateAvailableHint(version: string | null, env?: NodeJS.ProcessEnv): s
   return `; latest=${latest.version} available — run: repo-harness update`;
 }
 
-function installCli(sourceRoot: string, cwd: string, env?: NodeJS.ProcessEnv, installSpec?: string): GlobalRuntimeStep {
+function installCli(
+  sourceRoot: string,
+  cwd: string,
+  bunExecutable: string,
+  env?: NodeJS.ProcessEnv,
+  installSpec?: string,
+): GlobalRuntimeStep {
   const version = packageVersion(sourceRoot);
   const name = packageName(sourceRoot);
   if (installSpec === undefined && isBunGlobalPackageSource(sourceRoot, env)) {
@@ -204,9 +329,9 @@ function installCli(sourceRoot: string, cwd: string, env?: NodeJS.ProcessEnv, in
     };
   }
   const spec = installSpec ?? (existsSync(join(sourceRoot, "package.json")) ? sourceRoot : "repo-harness");
-  const step = runProcess("bun", ["add", "-g", spec], cwd, env);
+  const step = runProcess(bunExecutable, ["add", "-g", spec], cwd, env);
   if (installSpec === undefined && name === "repo-harness" && step.status === "failed" && isBunDependencyLoop(step)) {
-    return installCliFromPackedTarball(sourceRoot, cwd, env, version, step);
+    return installCliFromPackedTarball(sourceRoot, cwd, bunExecutable, env, version, step);
   }
   return withStepName(
     step,
@@ -218,6 +343,7 @@ function installCli(sourceRoot: string, cwd: string, env?: NodeJS.ProcessEnv, in
 function installCliFromPackedTarball(
   sourceRoot: string,
   cwd: string,
+  bunExecutable: string,
   env: NodeJS.ProcessEnv | undefined,
   version: string | null,
   dependencyLoopStep: GlobalRuntimeStep,
@@ -248,7 +374,7 @@ function installCliFromPackedTarball(
       stderr: appendOutput(dependencyLoopStep.stderr, pack.stderr, "npm pack --json did not return a tarball filename"),
     };
   }
-  const remove = runProcess("bun", ["remove", "-g", "repo-harness"], cwd, env);
+  const remove = runProcess(bunExecutable, ["remove", "-g", "repo-harness"], cwd, env);
   if (remove.status !== "ok") {
     return withStepName(
       {
@@ -260,7 +386,7 @@ function installCliFromPackedTarball(
       `${detailPrefix}dependency-loop repair remove failed`,
     );
   }
-  const add = runProcess("bun", ["add", "-g", join(packDir, filename)], cwd, env);
+  const add = runProcess(bunExecutable, ["add", "-g", join(packDir, filename)], cwd, env);
   return withStepName(add, "install repo-harness CLI", `${detailPrefix}repaired=packed-tarball`);
 }
 
@@ -383,10 +509,10 @@ function configureBrain(root: string | undefined, env?: NodeJS.ProcessEnv): Glob
   }
 }
 
-function ensureCodegraphCli(cwd: string, env?: NodeJS.ProcessEnv): GlobalRuntimeStep {
+function ensureCodegraphCli(cwd: string, bunExecutable: string, env?: NodeJS.ProcessEnv): GlobalRuntimeStep {
   const check = runProcess("codegraph", ["--version"], cwd, env);
   if (check.status === "ok") return withStepName(check, "ensure CodeGraph CLI", "present");
-  const install = runProcess("bun", ["add", "-g", CODEGRAPH_PACKAGE], cwd, env);
+  const install = runProcess(bunExecutable, ["add", "-g", CODEGRAPH_PACKAGE], cwd, env);
   if (install.status !== "ok") return withStepName(install, "ensure CodeGraph CLI", CODEGRAPH_PACKAGE);
   const recheck = runProcess("codegraph", ["--version"], cwd, env);
   if (recheck.status === "ok") return withStepName(recheck, "ensure CodeGraph CLI", "installed");
@@ -419,10 +545,24 @@ export function runGlobalRuntimeSetup(opts: GlobalRuntimeOptions = {}): GlobalRu
   const sourceRoot = opts.sourceRoot ?? defaultSourceRoot();
   const cwd = opts.cwd ?? process.cwd();
   const target = opts.target ?? "both";
-  const env = commandEnv(sourceRoot, opts.env);
+  const bunExecutable = resolveBunExecutable(opts.env);
+  const env = bindBunRuntimeEnv(commandEnv(sourceRoot, opts.env), bunExecutable);
   const steps: GlobalRuntimeStep[] = [];
 
-  if (opts.installCli !== false) steps.push(installCli(sourceRoot, cwd, env, opts.installSpec));
+  const bunRuntime = ensureSupportedBunRuntime(cwd, env, bunExecutable);
+  steps.push(bunRuntime);
+  if (bunRuntime.status === "failed") {
+    const lines = steps.flatMap(renderStep);
+    return {
+      exitCode: 1,
+      steps,
+      lines,
+      stdout: lines.join("\n"),
+      stderr: bunRuntime.stderr ?? "",
+    };
+  }
+
+  if (opts.installCli !== false) steps.push(installCli(sourceRoot, cwd, bunExecutable, env, opts.installSpec));
   else steps.push({ step: "install repo-harness CLI", status: "skipped", detail: "disabled" });
 
   if (opts.syncSkill !== false) steps.push(syncRuntimeSkill(sourceRoot, env));
@@ -448,7 +588,7 @@ export function runGlobalRuntimeSetup(opts: GlobalRuntimeOptions = {}): GlobalRu
   steps.push(configureBrain(opts.brainRoot, env));
 
   if (opts.codegraph !== false) {
-    const ensure = ensureCodegraphCli(cwd, env);
+    const ensure = ensureCodegraphCli(cwd, bunExecutable, env);
     steps.push(ensure);
     if (ensure.status === "ok") steps.push(configureCodegraphMcp(cwd, target, env));
     else steps.push({ step: "configure CodeGraph MCP", status: "skipped", detail: "CodeGraph CLI install failed" });

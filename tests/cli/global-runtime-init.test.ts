@@ -56,6 +56,146 @@ function writeFakeCodegraph(fakeBin: string, logFile: string): void {
 }
 
 describe('init command global runtime bootstrap', () => {
+  test('upgrades an old Bun runtime before any global install or update steps', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-global-init-bun-floor-'));
+    const home = join(tmp, 'home');
+    const repo = join(tmp, 'repo');
+    const fakeBin = join(home, '.bun', 'bin');
+    const bunLog = join(tmp, 'bun.log');
+    const upgradedMarker = join(tmp, 'upgraded');
+    try {
+      mkdirSync(home, { recursive: true });
+      mkdirSync(repo, { recursive: true });
+      mkdirSync(fakeBin, { recursive: true });
+      writeExecutable(
+        join(fakeBin, 'bun'),
+        [
+          '#!/bin/bash',
+          `printf '%s\n' "$*" >> "${bunLog}"`,
+          `if [[ "\${1:-}" == "upgrade" ]]; then touch "${upgradedMarker}"; exit 0; fi`,
+          `if [[ "\${1:-}" == "--version" ]]; then [[ -f "${upgradedMarker}" ]] && echo "1.1.35" || echo "1.1.34"; exit 0; fi`,
+          'exit 99',
+          '',
+        ].join('\n'),
+      );
+
+      const result = runGlobalRuntimeSetup({
+        cwd: repo,
+        installCli: false,
+        syncSkill: false,
+        hostAdapters: false,
+        externalSkills: false,
+        codegraph: false,
+        env: {
+          ...process.env,
+          HOME: home,
+          BUN_INSTALL: join(home, '.bun'),
+          PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+        },
+      });
+
+      expect(result.exitCode).toBe(0);
+      expect(result.steps[0]).toMatchObject({
+        step: 'ensure Bun runtime',
+        status: 'ok',
+        detail: 'upgraded=1.1.35; minimum=1.1.35',
+      });
+      expect(readFileSync(bunLog, 'utf-8')).toBe('--version\nupgrade\n--version\n');
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test('an old package-manager-owned Bun fails closed with its manager upgrade command', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-global-init-managed-bun-'));
+    const home = join(tmp, 'home');
+    const repo = join(tmp, 'repo');
+    const fakeBin = join(tmp, 'Cellar', 'bun', '1.1.34', 'bin');
+    const bunLog = join(tmp, 'bun.log');
+    try {
+      mkdirSync(home, { recursive: true });
+      mkdirSync(repo, { recursive: true });
+      mkdirSync(fakeBin, { recursive: true });
+      writeExecutable(
+        join(fakeBin, 'bun'),
+        [
+          '#!/bin/bash',
+          `printf '%s\n' "$*" >> "${bunLog}"`,
+          'if [[ "${1:-}" == "--version" ]]; then echo "1.1.34"; exit 0; fi',
+          'exit 99',
+          '',
+        ].join('\n'),
+      );
+
+      const result = runGlobalRuntimeSetup({
+        cwd: repo,
+        installCli: false,
+        syncSkill: false,
+        hostAdapters: false,
+        externalSkills: false,
+        codegraph: false,
+        env: {
+          ...process.env,
+          HOME: home,
+          PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+        },
+      });
+
+      expect(result.exitCode).toBe(1);
+      expect(result.steps[0]?.status).toBe('failed');
+      expect(result.steps[0]?.stderr).toContain('run `brew upgrade bun`, then retry');
+      expect(readFileSync(bunLog, 'utf-8')).toBe('--version\n');
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test('CLI subprocesses stay bound to the validated launcher Bun when PATH contains an older Bun', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-global-init-path-mismatch-'));
+    const home = join(tmp, 'home');
+    const repo = join(tmp, 'repo');
+    const fakeBin = join(tmp, 'bin');
+    const bunLog = join(tmp, 'bun.log');
+    try {
+      mkdirSync(home, { recursive: true });
+      mkdirSync(repo, { recursive: true });
+      mkdirSync(fakeBin, { recursive: true });
+      writeExecutable(
+        join(fakeBin, 'bun'),
+        `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.0.0; exit 0; fi\nexit 99\n`,
+      );
+      const childEnv: NodeJS.ProcessEnv = {
+        ...process.env,
+        HOME: home,
+        PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+      };
+      delete childEnv.REPO_HARNESS_BUN_EXECUTABLE;
+
+      const res = spawnSync(
+        process.execPath,
+        [
+          CLI,
+          'update',
+          '--no-cli',
+          '--no-sync-skill',
+          '--no-hooks',
+          '--no-external-skills',
+          '--no-codegraph',
+          '--json',
+        ],
+        { cwd: repo, encoding: 'utf-8', env: childEnv },
+      );
+
+      expect(res.status).toBe(0);
+      const runtimeStep = JSON.parse(res.stdout).steps[0];
+      expect(runtimeStep.status).toBe('skipped');
+      expect(runtimeStep.command[0]).toBe(process.execPath);
+      expect(existsSync(bunLog)).toBe(false);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   test('installs CLI, hooks, Waza, brain root, and CodeGraph without setup-plugins.sh', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-global-init-'));
     const source = join(tmp, 'node_modules', 'repo-harness');
@@ -77,7 +217,7 @@ describe('init command global runtime bootstrap', () => {
       writeFileSync(join(home, '.agents', 'rules', 'durable-context.md'), 'durable\n');
       writeFileSync(join(home, '.agents', 'rules', 'english.md'), 'en\n');
       writeFakeCodegraph(fakeBin, codegraphLog);
-      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nexit 0\n`);
+      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.3.14; fi\nexit 0\n`);
       // The install/init external-skills bootstrap (installWazaSkills /
       // installMermaidSkill) invokes `bunx skills add ...` directly, and the
       // CodeGraph MCP configure step shells out to the real
@@ -147,6 +287,7 @@ describe('init command global runtime bootstrap', () => {
           '#!/bin/bash',
           'set -euo pipefail',
           `printf '%s\\n' "$*" >> "${bunLog}"`,
+          'if [[ "${1:-}" == "--version" ]]; then echo "1.3.14"; exit 0; fi',
           `if [[ "$*" == "add -g ${source}" ]]; then`,
           '  echo "error: DependencyLoop" >&2',
           '  echo "Resolution: repo-harness@../../../Projects/repo-harness" >&2',
@@ -196,9 +337,10 @@ describe('init command global runtime bootstrap', () => {
       expect(install?.status).toBe('ok');
       expect(install?.detail).toBe('version=9.9.9; repaired=packed-tarball');
       const bunCommands = readFileSync(bunLog, 'utf-8').trim().split('\n');
-      expect(bunCommands[0]).toBe(`add -g ${source}`);
-      expect(bunCommands[1]).toBe('remove -g repo-harness');
-      expect(bunCommands[2]).toBe(`add -g ${join(home, '.repo-harness', 'packages', 'repo-harness-9.9.9.tgz')}`);
+      expect(bunCommands[0]).toBe('--version');
+      expect(bunCommands[1]).toBe(`add -g ${source}`);
+      expect(bunCommands[2]).toBe('remove -g repo-harness');
+      expect(bunCommands[3]).toBe(`add -g ${join(home, '.repo-harness', 'packages', 'repo-harness-9.9.9.tgz')}`);
       expect(existsSync(join(home, '.repo-harness', 'packages', 'repo-harness-9.9.9.tgz'))).toBe(true);
       expect(readFileSync(npmLog, 'utf-8')).toContain('pack --json --pack-destination');
     } finally {
@@ -216,7 +358,7 @@ describe('init command global runtime bootstrap', () => {
       mkdirSync(home, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
       setupFakeSource(source);
-      writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nexit 0\n');
+      writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.3.14; fi\nexit 0\n');
       writeExecutable(join(fakeBin, 'npx'), '#!/bin/bash\nexit 0\n');
 
       const result = runGlobalRuntimeSetup({
@@ -254,7 +396,7 @@ describe('init command global runtime bootstrap', () => {
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
       setupFakeSource(source);
-      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nexit 42\n`);
+      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.3.14; exit 0; fi\nexit 42\n`);
       writeExecutable(join(fakeBin, 'npm'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${npmLog}"\nexit 42\n`);
 
       const result = runGlobalRuntimeSetup({
@@ -276,7 +418,7 @@ describe('init command global runtime bootstrap', () => {
       expect(result.exitCode).toBe(0);
       expect(installStep?.status).toBe('skipped');
       expect(installStep?.detail).toContain('already installed from Bun global package source');
-      expect(existsSync(bunLog)).toBe(false);
+      expect(readFileSync(bunLog, 'utf-8')).toBe('--version\n');
       expect(existsSync(npmLog)).toBe(false);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
@@ -298,7 +440,7 @@ describe('init command global runtime bootstrap', () => {
       mkdirSync(fakeBin, { recursive: true });
       setupFakeSource(source);
       symlinkSync(source, globalPackage, 'dir');
-      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nexit 42\n`);
+      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.3.14; exit 0; fi\nexit 42\n`);
 
       const result = runGlobalRuntimeSetup({
         sourceRoot: source,
@@ -319,7 +461,7 @@ describe('init command global runtime bootstrap', () => {
       expect(result.exitCode).toBe(0);
       expect(installStep?.status).toBe('skipped');
       expect(installStep?.detail).toContain('already installed from Bun global package source');
-      expect(existsSync(bunLog)).toBe(false);
+      expect(readFileSync(bunLog, 'utf-8')).toBe('--version\n');
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
@@ -337,7 +479,7 @@ describe('init command global runtime bootstrap', () => {
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
       setupFakeSource(source);
-      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nexit 42\n`);
+      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.3.14; exit 0; fi\nexit 42\n`);
 
       const result = runGlobalRuntimeSetup({
         sourceRoot: source,
@@ -365,7 +507,7 @@ describe('init command global runtime bootstrap', () => {
       expect(installStep?.detail).toBe(
         'already installed from Bun global package source; version=9.9.9; latest=99.0.0 available — run: repo-harness update',
       );
-      expect(existsSync(bunLog)).toBe(false);
+      expect(readFileSync(bunLog, 'utf-8')).toBe('--version\n');
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
@@ -383,7 +525,7 @@ describe('init command global runtime bootstrap', () => {
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
       setupFakeSource(source);
-      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nexit 42\n`);
+      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.3.14; exit 0; fi\nexit 42\n`);
 
       const baseEnv: NodeJS.ProcessEnv = {
         ...process.env,
@@ -422,7 +564,7 @@ describe('init command global runtime bootstrap', () => {
       expect(equalStep?.status).toBe('skipped');
       expect(equalStep?.detail).toBe(expectedDetail);
 
-      expect(existsSync(bunLog)).toBe(false);
+      expect(readFileSync(bunLog, 'utf-8')).toBe('--version\n--version\n');
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
@@ -454,7 +596,7 @@ describe('init command global runtime bootstrap', () => {
       mkdirSync(home, { recursive: true });
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
-      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nexit 0\n`);
+      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.3.14; fi\nexit 0\n`);
 
       const res = spawnSync(
         process.execPath,
@@ -470,7 +612,12 @@ describe('init command global runtime bootstrap', () => {
         {
           cwd: repo,
           encoding: 'utf-8',
-          env: { ...process.env, HOME: home, PATH: `${fakeBin}:${process.env.PATH ?? ''}` },
+          env: {
+            ...process.env,
+            HOME: home,
+            PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+            REPO_HARNESS_BUN_EXECUTABLE: join(fakeBin, 'bun'),
+          },
         },
       );
 
@@ -497,7 +644,7 @@ describe('init command global runtime bootstrap', () => {
       mkdirSync(home, { recursive: true });
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
-      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nexit 0\n`);
+      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.3.14; fi\nexit 0\n`);
 
       const res = spawnSync(
         process.execPath,
@@ -515,7 +662,12 @@ describe('init command global runtime bootstrap', () => {
         {
           cwd: repo,
           encoding: 'utf-8',
-          env: { ...process.env, HOME: home, PATH: `${fakeBin}:${process.env.PATH ?? ''}` },
+          env: {
+            ...process.env,
+            HOME: home,
+            PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+            REPO_HARNESS_BUN_EXECUTABLE: join(fakeBin, 'bun'),
+          },
         },
       );
 
@@ -597,7 +749,7 @@ describe('init command global runtime bootstrap', () => {
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
       writeFakeCodegraph(fakeBin, codegraphLog);
-      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nexit 0\n`);
+      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.3.14; fi\nexit 0\n`);
       writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunxLog}"\nexit 0\n`);
 
       // spawnSync's stdio pipes are never a TTY (isTTY is undefined), so this
@@ -619,6 +771,7 @@ describe('init command global runtime bootstrap', () => {
             ...process.env,
             HOME: home,
             PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+            REPO_HARNESS_BUN_EXECUTABLE: join(fakeBin, 'bun'),
             AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: '0',
           },
         },

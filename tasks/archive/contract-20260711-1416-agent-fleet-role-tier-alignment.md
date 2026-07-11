@@ -78,7 +78,29 @@ allowed_paths:
   - docs/reference-configs/external-tooling.md
   - assets/reference-configs/external-tooling.md
   - docs/CHANGELOG.md
+  - package.json
+  - install.sh
+  - install.ps1
+  - tests/install-scripts.test.ts
+  - tasks/lessons.md
+  - src/cli/commands/global-runtime.ts
+  - tests/cli/global-runtime-init.test.ts
+  - README.md
+  - README.zh-CN.md
+  - README.es.md
+  - README.ja.md
+  - README.fr.md
 ```
+
+### Corrective Scope Expansion
+
+External ship acceptance proved that the role-identity correction requires a
+real Bun runtime floor and that the package bootstrap paths must enforce it.
+The ongoing user instruction to continue this closeout authorizes the five
+additional paths above solely for runtime-floor enforcement across shell,
+PowerShell, and CLI-driven public bootstrap/update entrypoints, their regression
+tests and localized install guidance, and the correction-derived lesson; native
+role routing remains out of scope.
 
 ## Delegation Contract
 

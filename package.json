@@ -28,7 +28,7 @@
     "repo-harness-hook": "src/cli/hook-entry.ts"
   },
   "engines": {
-    "bun": ">=1.0.0"
+    "bun": ">=1.1.35"
   },
   "scripts": {
     "benchmark:mcp-reader": "bun scripts/benchmark-general-repo-reader.ts",

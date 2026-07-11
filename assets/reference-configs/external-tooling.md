@@ -540,9 +540,28 @@ repo-harness run install-agent-fleet
 `REPO_HARNESS_FLEET_SOURCE_DIR=<local dir>` overrides the upstream fetch with
 a local directory of `<agent>.md` files (used for offline installs and
 tests); otherwise each agent is fetched with
-`curl -fsSL --max-time 10 <raw_base>/<agent>.md`. A single agent's fetch
-failure or invalid frontmatter is recorded and skipped without failing the
-other agents.
+`curl -fsSL --max-time 10 <raw_base>/<agent>.md`. Fetch and validation failures
+are isolated per agent so the remaining roles can still be processed, but the
+overall installer exits non-zero whenever a failure leaves either host's
+managed target unavailable. Missing, malformed, or mismatched source role
+identity is always fatal even when a prior installed target remains present.
+
+The installer requires Bun >= 1.1.35, matching repo-harness's package runtime
+contract and the first supported `Bun.TOML.parse` behavior for the generated
+multiline agent files.
+The top-level Unix and Windows bootstrap installers upgrade an older detected
+Bun before installing repo-harness, rather than relying on package-engine
+metadata that older Bun releases do not enforce.
+The shared global runtime setup used by mutating `repo-harness install`, `init`,
+and `update` binds every Bun subprocess to the exact executable it probes. It
+runs and verifies `bun upgrade` only for Bun self-installer-owned binaries;
+older Homebrew, Scoop, npm, or other package-manager-owned binaries fail closed
+with an actionable manager upgrade command. This covers direct
+`bunx`/`bun add`/`npx` entrypoints without overwriting manager-owned files;
+read-only update checks bypass this mutation.
+Installed Codex identity checks use `Bun.TOML.parse` rather than text matching,
+so quoted keys, tables, and multiline strings retain TOML semantics before any
+stale managed target can be deactivated.
 
 The installer is **never-clobber by default**: an existing target file that
 differs from the newly resolved content is reported as `drift` and left
