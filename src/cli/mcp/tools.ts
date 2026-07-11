@@ -2,7 +2,7 @@ import { createHash } from 'crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync, appendFileSync } from 'fs';
 import { homedir } from 'os';
 import { basename, dirname, isAbsolute, join, resolve } from 'path';
-import { isRegisteredRepoHarnessRoot, readRegisteredRepoHarnessRepos, repoHarnessRepoIdFor } from '../../effects/repo-registry';
+import { isRegisteredRepoHarnessRoot, readRegisteredRepoHarnessRepos } from '../../effects/repo-registry';
 import { runProcess } from '../../effects/process-runner';
 import { runHelper } from '../runtime/helper-runner';
 import { listSessions, openSession, readSession, runBrowserConsult, runBrowserFollowup } from '../chatgpt-browser/engine';
@@ -10,7 +10,6 @@ import type { BrowserProviderName, NativeBrowserChannel, ThinkingLevel } from '.
 import { hashMcpInput, tryWriteMcpAuditEntry } from './audit';
 import { isPathInside, resolveMcpPath } from './paths';
 import { buildReaderToolDefinitions, callReaderTool, createReaderToolContext, isReaderTool } from './reader-tools';
-import { callGeneralRepoTool } from './general-repo-access';
 import { currentGitBranch, isRepoHarnessAdopted, resolveMcpRepoRoot } from './repo';
 import { redactMcpText } from './redaction';
 import type { McpAgentRunnerName, McpPolicy } from './types';
@@ -44,7 +43,6 @@ interface CallToolResult {
 
 const DEFAULT_DISCOVERY_DEPTH = 7;
 const DEFAULT_DISCOVERY_LIMIT = 25;
-const GENERAL_REPO_READ_SINGLE_CHUNK_BYTES = 262_144;
 const DISCOVERY_SKIP_DIRS = new Set([
   '.bun',
   '.codegraph',
@@ -386,33 +384,6 @@ function fileSummary(path: string, repoRoot: string): { path: string; size: numb
   } catch (_error) {
     return null;
   }
-}
-
-async function readWorkflowFileViaGeneralRepo(ctx: McpToolContext, repoRoot: string, relativePath: string, fileSize: number): Promise<CallToolResult | null> {
-  if (
-    !ctx.policy.generalRepo.general_repo_read ||
-    ctx.policy.generalRepo.rollback_to_legacy_tools ||
-    fileSize > GENERAL_REPO_READ_SINGLE_CHUNK_BYTES
-  ) {
-    return null;
-  }
-  const repoId = repoHarnessRepoIdFor(realpathSync(repoRoot));
-  const result = await callGeneralRepoTool(ctx, 'read_file', { repo_id: repoId, path: relativePath });
-  const payload = typeof result.structuredContent === 'object' && result.structuredContent !== null
-    ? result.structuredContent as Record<string, unknown>
-    : JSON.parse(result.content[0]?.text ?? '{}') as Record<string, unknown>;
-  if (payload.error) return result;
-  if (payload.encoding !== 'utf-8' || typeof payload.content !== 'string' || payload.has_more === true) return null;
-  const redacted = redactMcpText(payload.content);
-  return textResult({
-    path: relativePath,
-    size: fileSize,
-    sha256: payload.sha256,
-    redactions: redacted.redactions,
-    content: redacted.text,
-    source: 'general_repo_read_file',
-    correlation_id: payload.correlation_id,
-  });
 }
 
 function listFilesUnder(repoRoot: string, root: string, maxFiles: number, out: string[]): void {
@@ -1152,11 +1123,6 @@ export async function callMcpTool(ctx: McpToolContext, name: string, args: Recor
         const fileStat = statSync(decision.absolutePath);
         if (!fileStat.isFile()) return errorResult('NOT_A_FILE', `path is not a file: ${decision.relativePath}`);
         if (fileStat.size > ctx.policy.maxFileBytes) return errorResult('FILE_TOO_LARGE', `file exceeds ${ctx.policy.maxFileBytes} bytes`);
-        const generalRepoRead = await readWorkflowFileViaGeneralRepo(ctx, target.repoRoot, decision.relativePath, fileStat.size);
-        if (generalRepoRead) {
-          audit(ctx, name, generalRepoRead.isError ? 'blocked' : 'ok', args, decision.relativePath);
-          return generalRepoRead;
-        }
         const bytes = readFileSync(decision.absolutePath);
         if (isProbablyBinary(bytes)) return errorResult('BINARY_FILE', 'binary files are not supported');
         const raw = bytes.toString('utf-8');

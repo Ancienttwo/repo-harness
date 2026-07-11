@@ -125,8 +125,8 @@ Use ChatGPT for planning and review. Use Codex for local execution.
 
 1. Use the single configured Connector for workflow planning and repo tools.
 2. Call `discover_harness_repos` to list registered adopted repos, or pass `query`/`name`/`repo_path` for repo-like user text such as `my-app/`; then pass the selected exact `repo_path` when targeting a specific project. Registered repo aliases are resolved through the same authorized discovery surface, not by widening filesystem access.
-3. For registered repo document/code reading, call `list_allowed_roots` to get the stable `repo_id`, then use `get_repo_capabilities`, `repo_manifest`, `list_tree`, `stat_file`, `read_file`, `read_files`, and `search_text`.
-4. For registered repo writes, first check `get_repo_capabilities.write_tools`; only repos explicitly configured as `read_write` expose `write_file`, `apply_patch`, `move_path`, `delete_path`, and `refresh_repo_index`.
+3. For registered repo document/code reading, capture the `repo_id` from `discover_harness_repos`, then use `get_repo_capabilities`, `repo_manifest`, `list_tree`, `stat_file`, `read_file`, `read_files`, and `search_text`.
+4. For registered repo writes, first check `get_repo_capabilities.write_tools`; the schema is deterministic, but mutation calls execute only for repos explicitly configured as `read_write`.
 5. Ask ChatGPT to turn the idea into a PRD with `write_prd_from_idea`.
 6. Ask ChatGPT to turn the PRD into a checklist Sprint with `write_checklist_sprint`.
 7. Ask ChatGPT to prepare a Codex Goal with `prepare_codex_goal_from_sprint`.
@@ -214,18 +214,17 @@ is symbol-oriented, so general full-text `search_text` uses the same guarded
 filesystem fallback while preserving `.ignore` semantics and indicating whether
 the matched file is indexed by CodeGraph.
 
-The older `open_workspace`, `tree`, and `read_text` tools remain compatibility
-tools for the previous workspace reader surface. They still apply the legacy
-deny/redaction behavior and should not be used as proof of the general repo
-access contract.
+`open_workspace`, `tree`, and `read_text` are explicit session-local workspace
+tools. General repository analysis uses the registered-repo flow above; the two
+surfaces do not fall back to one another.
 
 Full reference:
 
-- Tool reference, JSON examples, repo administration, privacy/audit, migration,
-  rollout flags, and known limits:
+- Tool reference, JSON examples, repo administration, privacy/audit, and known
+  limits:
   `docs/reference-configs/general-repo-mcp.md`
 - Operations runbook for index stale, CodeGraph down, manifest incomplete,
-  mutation conflict, reindex dead-letter, and rollback:
+  mutation conflict, and reindex dead-letter:
   `deploy/runbooks/general-repo-mcp-codegraph.md`
 
 ## Dev Mode Agent Runner
@@ -309,7 +308,7 @@ Use repo-harness to inspect this repo. Call harness_status, latest_handoff, and 
 ## Reader Test Prompt
 
 ```text
-Use the repo-harness Connector. First call discover_harness_repos with query/name/repo_path when the user gives repo-like text such as "my-app/", then choose the exact target repo_path. Then call list_allowed_roots and use the matching repo_id with get_repo_capabilities, repo_manifest, list_tree on ".", stat_file on README.md, read_file on README.md or docs/spec.md, and search_text for "repo-harness". Do not write files.
+Use the repo-harness Connector. First call discover_harness_repos with query/name/repo_path when the user gives repo-like text such as "my-app/", then choose the exact registered repo_id. Call get_repo_capabilities, repo_manifest, list_tree on ".", stat_file on README.md, read_file on README.md or docs/spec.md, and search_text for "repo-harness". Do not write files.
 ```
 
 Blocked-file smoke:
@@ -413,7 +412,7 @@ Use repo-harness-chatgpt-bridge. Execute the latest ChatGPT-generated Codex goal
 - If ChatGPT returns unauthorized, verify OAuth discovery works and re-run the authorization passphrase flow.
 - If tools are missing, restart `repo-harness mcp serve` and rescan tools.
 - If workflow artifact writes fail, verify the target path is a PRD, sprint, plan, or approved handoff file.
-- If general repo writes fail, call `get_repo_capabilities`; write tools require both a read-write repo and rollout `repo_write=true`.
+- If general repo writes fail, call `get_repo_capabilities`; write tools require a repo registered with `accessMode: "read_write"`.
 - If ChatGPT generated prose instead of checklist Sprint task cards, ask it to use write_checklist_sprint.
 - If Codex cannot see the server, run `repo-harness mcp setup codex --repo . --scope project`.
 

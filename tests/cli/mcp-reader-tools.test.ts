@@ -81,23 +81,21 @@ async function withReaderRepo<T>(fn: (repoRoot: string, ctx: ReaderToolContext) 
     writeFileSync(join(repoRoot, '.ssh', 'id_rsa'), 'private\n');
     writeFileSync(join(repoRoot, 'ignored.md'), '# Ignored\n');
     writeFileSync(join(repoRoot, 'ignored-dir', 'note.md'), '# Ignored child\n');
-    if (opts.accessMode) {
-      const canonicalRoot = realpathSync(repoRoot);
-      mkdirSync(join(repoRoot, '.ai', 'harness'), { recursive: true });
-      writeFileSync(join(repoRoot, '.ai', 'harness', 'policy.json'), '{}\n');
-      mkdirSync(repoHarnessHome, { recursive: true });
-      writeFileSync(join(repoHarnessHome, 'registered-repos.json'), `${JSON.stringify({
-        version: 1,
-        repos: [{
-          id: repoHarnessRepoIdFor(canonicalRoot),
-          path: canonicalRoot,
-          accessMode: opts.accessMode,
-          source: 'manual',
-          registeredAt: '2026-06-23T00:00:00.000Z',
-          lastSeenAt: '2026-06-23T00:00:00.000Z',
-        }],
-      }, null, 2)}\n`);
-    }
+    const canonicalRoot = realpathSync(repoRoot);
+    mkdirSync(join(repoRoot, '.ai', 'harness'), { recursive: true });
+    writeFileSync(join(repoRoot, '.ai', 'harness', 'policy.json'), '{}\n');
+    mkdirSync(repoHarnessHome, { recursive: true });
+    writeFileSync(join(repoHarnessHome, 'registered-repos.json'), `${JSON.stringify({
+      version: 1,
+      repos: [{
+        id: repoHarnessRepoIdFor(canonicalRoot),
+        path: canonicalRoot,
+        accessMode: opts.accessMode ?? 'read_only',
+        source: 'manual',
+        registeredAt: '2026-06-23T00:00:00.000Z',
+        lastSeenAt: '2026-06-23T00:00:00.000Z',
+      }],
+    }, null, 2)}\n`);
     try {
       symlinkSync(repoRoot, join(repoRoot, 'docs', 'loop'));
     } catch (_error) {
@@ -106,7 +104,6 @@ async function withReaderRepo<T>(fn: (repoRoot: string, ctx: ReaderToolContext) 
     const policy = getMcpPolicy('planner', {
       enableReader: true,
       allowedRoots: [repoRoot],
-      generalRepo: { general_repo_read: true, fs_fallback: true, repo_write: opts.accessMode === 'read_write' },
     });
     const ctx = createReaderToolContext(repoRoot, policy, new WorkspaceManager({ allowedRoots: [repoRoot], policy }));
     return await fn(repoRoot, ctx);
@@ -122,7 +119,7 @@ async function withReaderRepo<T>(fn: (repoRoot: string, ctx: ReaderToolContext) 
 }
 
 describe('MCP reader tools', () => {
-  test('exposes reader and gated general repo tool registry with session-local workspaces', async () => {
+  test('exposes deterministic general repo tools with session-local workspace tools', async () => {
     await withReaderRepo(async (repoRoot, ctx) => {
       const definitions = buildReaderToolDefinitions();
       expect(definitions.map((tool) => tool.name)).toEqual([
@@ -185,19 +182,18 @@ describe('MCP reader tools', () => {
     });
   });
 
-  test('general repo rollout flags gate tool surface, writes, fallback, and rollback mode', async () => {
+  test('general repo access uses registry mode and guarded filesystem reads', async () => {
     await withReaderRepo(async (repoRoot) => {
       const repoId = repoHarnessRepoIdFor(realpathSync(repoRoot));
       const readOnlyPolicy = getMcpPolicy('planner', {
         enableReader: true,
         allowedRoots: [repoRoot],
-        generalRepo: { general_repo_read: true, fs_fallback: true, repo_write: false },
       });
       const readOnlyTools = buildReaderToolDefinitions(readOnlyPolicy).map((tool) => tool.name);
       expect(readOnlyTools).toContain('repo_manifest');
       expect(readOnlyTools).toContain('read_file');
-      expect(readOnlyTools).not.toContain('write_file');
-      expect(readOnlyTools).not.toContain('refresh_repo_index');
+      expect(readOnlyTools).toContain('write_file');
+      expect(readOnlyTools).toContain('refresh_repo_index');
       const readOnlyCtx = createReaderToolContext(repoRoot, readOnlyPolicy, new WorkspaceManager({ allowedRoots: [repoRoot], policy: readOnlyPolicy }));
       const blockedWrite = await jsonTool(readOnlyCtx, 'write_file', {
         repo_id: repoId,
@@ -207,32 +203,39 @@ describe('MCP reader tools', () => {
       });
       expect(blockedWrite.error.code).toBe('WRITE_DISABLED');
 
-      const noFallbackPolicy = getMcpPolicy('planner', {
-        enableReader: true,
-        allowedRoots: [repoRoot],
-        generalRepo: { general_repo_read: true, fs_fallback: false },
-      });
-      const noFallbackCtx = createReaderToolContext(repoRoot, noFallbackPolicy, new WorkspaceManager({ allowedRoots: [repoRoot], policy: noFallbackPolicy }));
-      const manifest = await jsonTool(noFallbackCtx, 'repo_manifest', { repo_id: repoId, page_size: 1000 });
+      const manifest = await jsonTool(readOnlyCtx, 'repo_manifest', { repo_id: repoId, page_size: 1000 });
       expect(manifest.entries.some((entry: { path: string }) => entry.path === 'src/index.ts')).toBe(true);
-      const unindexedRead = await jsonTool(noFallbackCtx, 'read_file', { repo_id: repoId, path: 'src/index.ts' });
-      expect(unindexedRead.error.code).toBe('INDEX_UNAVAILABLE');
+      const unindexedRead = await jsonTool(readOnlyCtx, 'read_file', { repo_id: repoId, path: 'src/index.ts' });
+      expect(unindexedRead.content).toContain('readerFixture');
+      expect(unindexedRead.backend).toBe('filesystem-fallback');
+    }, { accessMode: 'read_only' });
+  });
 
-      const rollbackPolicy = getMcpPolicy('planner', {
-        enableReader: true,
-        allowedRoots: [repoRoot],
-        generalRepo: { general_repo_read: false, rollback_to_legacy_tools: true },
+  test('does not promote allowed workspace roots into general repo records', async () => {
+    const repoRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-unregistered-root-'));
+    const repoHarnessHome = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-unregistered-home-'));
+    const previousRepoHarnessHome = process.env.REPO_HARNESS_HOME;
+    try {
+      process.env.REPO_HARNESS_HOME = repoHarnessHome;
+      writeFileSync(join(repoRoot, '.env'), 'SENTINEL=not-registered\n');
+      const policy = getMcpPolicy('planner', { enableReader: true, allowedRoots: [repoRoot] });
+      const ctx = createReaderToolContext(repoRoot, policy, new WorkspaceManager({ allowedRoots: [repoRoot], policy }));
+      const roots = await jsonTool(ctx, 'list_allowed_roots');
+      expect(roots.roots[0].repo_id).toBeUndefined();
+      expect(roots.repos).toEqual([]);
+
+      const denied = await jsonTool(ctx, 'read_file', {
+        repo_id: repoHarnessRepoIdFor(realpathSync(repoRoot)),
+        path: '.env',
       });
-      const rollbackTools = buildReaderToolDefinitions(rollbackPolicy).map((tool) => tool.name);
-      expect(rollbackTools).toContain('read_text');
-      expect(rollbackTools).toContain('search_text');
-      expect(rollbackTools).not.toContain('repo_manifest');
-      expect(rollbackTools).not.toContain('read_file');
-      expect(rollbackTools).not.toContain('write_file');
-      const rollbackCtx = createReaderToolContext(repoRoot, rollbackPolicy, new WorkspaceManager({ allowedRoots: [repoRoot], policy: rollbackPolicy }));
-      const blockedManifest = await jsonTool(rollbackCtx, 'repo_manifest', { repo_id: repoId });
-      expect(blockedManifest.error.code).toBe('TOOL_NOT_AVAILABLE');
-    });
+      expect(denied.error.code).toBe('REPO_NOT_ALLOWED');
+      expect(JSON.stringify(denied)).not.toContain('not-registered');
+    } finally {
+      if (previousRepoHarnessHome === undefined) delete process.env.REPO_HARNESS_HOME;
+      else process.env.REPO_HARNESS_HOME = previousRepoHarnessHome;
+      rmSync(repoRoot, { recursive: true, force: true });
+      rmSync(repoHarnessHome, { recursive: true, force: true });
+    }
   });
 
   test('general repo tools use repo_id, .ignore-only policy, and unredacted authorized reads', async () => {
@@ -1846,44 +1849,4 @@ describe('MCP reader tools', () => {
     });
   });
 
-  test('search_text is literal, bounded, deterministic, redacted, and deny-aware', async () => {
-    await withReaderRepo(async (repoRoot, ctx) => {
-      writeFileSync(join(repoRoot, 'docs', 'secrets-in-text.md'), 'OPENAI_API_KEY=sk-testsecret is mentioned near authentication\n');
-      const root = (await jsonTool(ctx, 'list_allowed_roots')).roots[0];
-      const opened = await jsonTool(ctx, 'open_workspace', { root_id: root.root_id });
-
-      const insensitive = await jsonTool(ctx, 'search_text', {
-        workspace_id: opened.workspace_id,
-        query: 'alpha',
-        path: 'docs',
-        glob: '**/*.txt',
-      });
-      expect(insensitive.matches.map((entry: { line: number }) => entry.line)).toEqual([1, 3]);
-
-      const sensitive = await jsonTool(ctx, 'search_text', {
-        workspace_id: opened.workspace_id,
-        query: 'alpha',
-        path: 'docs',
-        glob: '**/*.txt',
-        case_sensitive: true,
-      });
-      expect(sensitive.matches).toHaveLength(0);
-
-      const redacted = await jsonTool(ctx, 'search_text', {
-        workspace_id: opened.workspace_id,
-        query: 'authentication',
-        path: 'docs',
-        max_results: 2,
-      });
-      expect(redacted.matches).toHaveLength(2);
-      expect(redacted.truncated).toBe(true);
-      expect(JSON.stringify(redacted.matches)).not.toContain('sk-testsecret');
-      expect(redacted.matches.map((entry: { path: string }) => entry.path)).toEqual([...redacted.matches.map((entry: { path: string }) => entry.path)].sort());
-
-      const denied = await jsonTool(ctx, 'search_text', { workspace_id: opened.workspace_id, query: 'TOKEN', path: 'secrets' });
-      expect(denied.error.code).toBe('PATH_DENIED');
-      const missingQuery = await jsonTool(ctx, 'search_text', { workspace_id: opened.workspace_id, query: '' });
-      expect(missingQuery.error.code).toBe('MISSING_QUERY');
-    });
-  });
 });

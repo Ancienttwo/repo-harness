@@ -22,7 +22,6 @@ async function withRepo<T>(fn: (repoRoot: string, ctx: McpToolContext) => Promis
     const policy = getMcpPolicy('planner', {
       enableReader: true,
       allowedRoots: [repoRoot],
-      generalRepo: { general_repo_read: true, fs_fallback: true },
     });
     return await fn(repoRoot, {
       repoRoot,
@@ -126,8 +125,6 @@ describe('mcp tools', () => {
       const read = await jsonTool(ctx, 'read_workflow_file', { path: 'tasks/current.md' });
       expect(read.path).toBe('tasks/current.md');
       expect(read.content).toContain('status=Active');
-      expect(read.source).toBe('general_repo_read_file');
-      expect(read.correlation_id).toMatch(/^mcpcorr_/);
 
       const denied = await jsonTool(ctx, 'read_workflow_file', { path: '.env' });
       expect(denied.error.code).toBe('POLICY_DENIED');
@@ -139,7 +136,7 @@ describe('mcp tools', () => {
     });
   });
 
-  test('planner connector opens allowed repo workspaces and reads text through tree search and line ranges', async () => {
+  test('planner connector opens allowed repo workspaces and reads text through tree and line ranges', async () => {
     const repoRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-reader-'));
     const outside = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-reader-outside-'));
     try {
@@ -180,10 +177,9 @@ describe('mcp tools', () => {
       expect(typeof status.schema_hash).toBe('string');
 
       const roots = await jsonTool(ctx, 'list_allowed_roots');
-      const root = roots.roots.find(
-        (entry: { repo_id: string; path?: string }) => entry.repo_id === repoHarnessRepoIdFor(realpathSync(repoRoot)),
-      );
+      const root = roots.roots.find((entry: { root_id: string; path?: string }) => entry.root_id.startsWith('root_'));
       expect(root?.path).toBeUndefined();
+      expect(root?.repo_id).toBeUndefined();
       const rootId = root?.root_id;
       expect(rootId).toMatch(/^root_/);
 
@@ -199,15 +195,6 @@ describe('mcp tools', () => {
       expect(tree.entries.some((entry: { path: string }) => entry.path === 'ignored.md')).toBe(false);
       expect(tree.entries.some((entry: { path: string }) => entry.path === 'ignored-dir')).toBe(false);
       expect(tree.blocked_entries).toBeGreaterThanOrEqual(1);
-
-      const search = await jsonTool(ctx, 'search_text', {
-        workspace_id: opened.workspace_id,
-        query: 'authentication',
-        glob: '**/*.md',
-      });
-      expect(search.matches).toEqual([
-        expect.objectContaining({ path: 'docs/design.md', line: 2, snippet: 'authentication route' }),
-      ]);
 
       const read = await jsonTool(ctx, 'read_text', {
         workspace_id: opened.workspace_id,

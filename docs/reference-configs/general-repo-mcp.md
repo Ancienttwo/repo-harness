@@ -1,13 +1,12 @@
 # General Repo MCP Reference
 
-Status: Sprint 4 rollout reference
+Status: General repository API reference
 Source PRD: `plans/prds/20260622-1700-gpt-codegraph.prd.md`
 Source sprint: `plans/sprints/20260622-repo-harness-codegraph-sprint-plan.md`
 
 This document is the operator and developer reference for the repo-harness MCP
 general repo API. It covers the tool contract, repo administration, privacy
-boundary, migration path from workflow-artifact reads, known limits, and rollout
-flags.
+boundary, workflow-tool boundary, and known limits.
 
 ## Contract
 
@@ -19,40 +18,26 @@ content-level exclusion rule for the general repo API.
 CodeGraph is the indexed metadata and code-navigation backend. It is not the
 permission engine. Every path is checked by repo-harness before adapter calls,
 and every path returned by CodeGraph is checked again against root containment
-and `.ignore`. Files that CodeGraph does not index remain manifest-visible; text
-content is readable through filesystem fallback only when rollout policy
-explicitly enables `fs_fallback`.
+and `.ignore`. Files that CodeGraph does not index remain manifest-visible and
+their visible text is read through the same guarded filesystem path. CodeGraph
+is metadata and navigation support, never a read-authorization decision.
 
-The default rollout posture is closed. Operators opt in per deployment or
-canary window:
-
-```json
-{
-  "general_repo_read": false,
-  "repo_write": false,
-  "fs_fallback": false,
-  "shadow_compare": false,
-  "canary_repos": [],
-  "rollback_to_legacy_tools": false
-}
-```
-
-Write tools appear and execute only when both conditions are true:
-
-- the registered repo has `accessMode: "read_write"`;
-- rollout policy has `repo_write: true`.
+The MCP server advertises one deterministic tool schema for an enabled reader.
+Before a mutation, call `get_repo_capabilities`: `write_tools` is populated and
+the mutation executes only when the selected registered repo has
+`accessMode: "read_write"`.
 
 ## Repo Administration
 
 Adopted repos are registered in `~/.repo-harness/registered-repos.json` by
 `repo-harness adopt`, `repo-harness init`, or user-scope ChatGPT MCP setup.
-Use `discover_harness_repos` and `list_allowed_roots` from the Connector to
-discover the current `repo_id` before calling general repo tools.
+Use `discover_harness_repos` from the Connector to discover the registered
+`repo_id` before calling general repo tools. `list_allowed_roots` is only for
+the separate session-local workspace capability.
 
-Read/write access is an operator decision in the registry or MCP setup state.
-Do not grant `read_write` for routine planning. Keep first canaries read-only,
-run the rollout gate, and enable `repo_write` for a single repo only after the
-team accepts the write-conflict and rollback evidence.
+Read/write access is an operator decision in the registry. Do not grant
+`read_write` for routine planning. Mutation calls retain revision preconditions
+and are denied for every `read_only` repo.
 
 `.ignore` is the only content filter for this API. Do not rely on `.gitignore`,
 file extensions, dotfile status, hidden directories, or CodeGraph indexing as an
@@ -78,7 +63,7 @@ Responses include consistency fields where relevant: `snapshot_id`,
 
 | Tool | Purpose | Write |
 |---|---|---|
-| `get_repo_capabilities` | Report read/write mode, rollout state, limits, and visible tool surface. | No |
+| `get_repo_capabilities` | Report registry read/write mode, limits, and visible tool surface. | No |
 | `repo_manifest` | Page through the complete visible file set. | No |
 | `list_tree` | Return one tree page for a directory prefix. | No |
 | `stat_file` | Return metadata, hashes, binary/text status, and index metadata. | No |
@@ -116,14 +101,7 @@ Expected response shape:
   "access_mode": "read_only",
   "writable": false,
   "read_tools": ["repo_manifest", "list_tree", "stat_file", "read_file", "read_files", "search_text"],
-  "write_tools": [],
-  "rollout": {
-    "general_repo_read": true,
-    "repo_write": false,
-    "fs_fallback": false,
-    "shadow_compare": false,
-    "rollback_to_legacy_tools": false
-  }
+  "write_tools": []
 }
 ```
 
@@ -132,8 +110,7 @@ Manifest first page:
 ```json
 {
   "repo_id": "repo_a5b76eee64af71c3",
-  "path": ".",
-  "limit": 100
+  "page_size": 100
 }
 ```
 
@@ -143,11 +120,7 @@ Read one file:
 {
   "repo_id": "repo_a5b76eee64af71c3",
   "path": "README.md",
-  "range": {
-    "kind": "lines",
-    "start": 1,
-    "end": 80
-  }
+  "line_range": [1, 80]
 }
 ```
 
@@ -157,8 +130,8 @@ Search visible text:
 {
   "repo_id": "repo_a5b76eee64af71c3",
   "query": "repo_manifest",
-  "limit": 20,
-  "context_lines": 2
+  "paths": ["docs"],
+  "max_results": 20
 }
 ```
 
@@ -166,7 +139,7 @@ Create a new file in a write-enabled repo:
 
 ```json
 {
-  "repo_id": "repo_write_enabled",
+  "repo_id": "repo_read_write",
   "path": "tasks/notes/example.notes.md",
   "content": "Decision note\n",
   "must_not_exist": true
@@ -177,13 +150,13 @@ Patch an existing file:
 
 ```json
 {
-  "repo_id": "repo_write_enabled",
+  "repo_id": "repo_read_write",
   "path": "tasks/notes/example.notes.md",
   "expected_sha256": "8d8fca...",
   "edits": [
     {
       "old_text": "Decision note\n",
-      "new_text": "Decision note\n\nFollow-up: rerun rollout gate.\n"
+      "new_text": "Decision note\n\nFollow-up: re-read repository capabilities.\n"
     }
   ]
 }
@@ -193,7 +166,7 @@ Move a file:
 
 ```json
 {
-  "repo_id": "repo_write_enabled",
+  "repo_id": "repo_read_write",
   "from_path": "tasks/notes/example.notes.md",
   "to_path": "tasks/notes/example-archived.notes.md",
   "expected_sha256": "8d8fca...",
@@ -205,7 +178,7 @@ Delete a file:
 
 ```json
 {
-  "repo_id": "repo_write_enabled",
+  "repo_id": "repo_read_write",
   "path": "tasks/notes/example-archived.notes.md",
   "expected_sha256": "91a42b..."
 }
@@ -215,7 +188,7 @@ Refresh CodeGraph after a mutation:
 
 ```json
 {
-  "repo_id": "repo_write_enabled",
+  "repo_id": "repo_read_write",
   "paths": ["tasks/notes/example.notes.md"],
   "mutation_id": "mcpmut_..."
 }
@@ -235,17 +208,16 @@ passphrases, or Connector secrets.
 
 ## Migration Guide
 
-Old workflow-artifact tools still exist for planning compatibility:
-`list_workflow_files`, `read_workflow_file`, `latest_handoff`, and related
-writers. Use them when the task is specifically about repo-harness workflow
-artifacts.
+Workflow-artifact tools such as `list_workflow_files`, `read_workflow_file`,
+`latest_handoff`, and related writers are bounded workflow operations. Use them
+only when the task is specifically about repo-harness workflow artifacts.
 
 For repository analysis, migrate prompts and integrations to the general repo
 flow:
 
 1. Call `discover_harness_repos`.
-2. Call `list_allowed_roots` and capture the stable `repo_id`.
-3. Call `get_repo_capabilities` and honor `write_tools`.
+2. Capture the selected registered `repo_id` from discovery.
+3. Call `get_repo_capabilities` and honor the registry-derived `write_tools`.
 4. Use `repo_manifest` for completeness proof.
 5. Use `list_tree`, `stat_file`, `read_file`, `read_files`, and `search_text`
    for actual inspection.
@@ -253,37 +225,10 @@ flow:
    preconditions.
 7. Call `refresh_repo_index` after successful writes.
 
-Legacy `read_workflow_file` may internally call `read_file` when the rollout is
-enabled and the file fits the single-read limit. Rollback mode forces the old
-bounded workflow path.
-
-## Rollout And Known Limits
-
-Local rollout gate:
-
-```bash
-bun scripts/mcp-rollout-gate.ts --repo . --out .ai/harness/runs/mcp-rollout-gate.json
-```
-
-The gate report is also the release evidence artifact. A passing report must
-show `provenance.status: "bound"`, including base SHA, head SHA, current SHA,
-clean/dirty tree state, PR number, CI workflow/run metadata, and a SHA-256
-digest of the canonical JSON payload. Reports generated outside PR CI may still
-be useful for local diagnosis, but they must remain `partial` and cannot pass the
-release gate. The canary section records the observation window, selected
-read-only repo set, request volume, error rate, latency summary, shadow mismatch
-counts, and rollback trigger checks.
-
-Release canary gate when small, medium, and large repos are registered:
-
-```bash
-bun scripts/mcp-rollout-gate.ts --repo . --require-three-canaries
-```
+## Known Limits
 
 Current known limits:
 
-- The self-host registry may contain only one medium read-only canary until an
-  operator registers small and large repos.
 - CodeGraph 1.0.1 does not expose stable path-only refresh through the bundled
   CLI adapter; `refresh_repo_index` may use repo-level sync and reports
   `path_refresh_supported:false`.

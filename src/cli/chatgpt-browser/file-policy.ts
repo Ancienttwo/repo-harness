@@ -63,14 +63,6 @@ const BROWSER_READ_POLICY: McpPolicy = {
     workflowExecutor: false,
     agentRunner: false,
   },
-  generalRepo: {
-    general_repo_read: false,
-    repo_write: false,
-    fs_fallback: false,
-    shadow_compare: false,
-    canary_repos: [],
-    rollback_to_legacy_tools: false,
-  },
   execution: { fixedWorkflowCheck: false, codexRunner: false, agentRunner: false, allowedAgents: [], runnerTimeoutMs: 0 },
 };
 
@@ -85,14 +77,6 @@ const BROWSER_CLI_OUTPUT_POLICY: McpPolicy = {
     workflowPlanner: false,
     workflowExecutor: false,
     agentRunner: false,
-  },
-  generalRepo: {
-    general_repo_read: false,
-    repo_write: false,
-    fs_fallback: false,
-    shadow_compare: false,
-    canary_repos: [],
-    rollback_to_legacy_tools: false,
   },
   execution: { fixedWorkflowCheck: false, codexRunner: false, agentRunner: false, allowedAgents: [], runnerTimeoutMs: 0 },
 };
@@ -114,14 +98,6 @@ const BROWSER_MCP_OUTPUT_POLICY: McpPolicy = {
     workflowPlanner: false,
     workflowExecutor: false,
     agentRunner: false,
-  },
-  generalRepo: {
-    general_repo_read: false,
-    repo_write: false,
-    fs_fallback: false,
-    shadow_compare: false,
-    canary_repos: [],
-    rollback_to_legacy_tools: false,
   },
   execution: { fixedWorkflowCheck: false, codexRunner: false, agentRunner: false, allowedAgents: [], runnerTimeoutMs: 0 },
 };

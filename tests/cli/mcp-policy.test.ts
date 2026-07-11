@@ -107,11 +107,6 @@ describe('mcp policy and paths', () => {
       expect(policy.capabilities.workspaceReader).toBe(true);
       expect(policy.capabilities.workflowPlanner).toBe(true);
       expect(policy.capabilities.agentRunner).toBe(false);
-      expect(policy.generalRepo).toMatchObject({
-        general_repo_read: false,
-        repo_write: false,
-        fs_fallback: false,
-      });
       expect(policy.writeGlobs).toContain('plans/prds/**');
       expect(policy.allowAbsoluteRead).toBe(false);
       expect(resolveMcpPath(tmp, '.env', policy, 'read')).toMatchObject({ ok: false });
@@ -124,6 +119,8 @@ describe('mcp policy and paths', () => {
       expect(tools).toContain('tree');
       expect(tools).toContain('search_text');
       expect(tools).toContain('read_text');
+      expect(tools).toContain('repo_manifest');
+      expect(tools).toContain('write_file');
       expect(tools).not.toContain('run_agent_goal');
     } finally {
       rmSync(tmp, { recursive: true, force: true });

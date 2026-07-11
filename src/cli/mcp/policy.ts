@@ -90,18 +90,9 @@ export interface McpPolicyOptions {
   enableReader?: boolean;
   allowedRoots?: string[];
   discoveryRoots?: string[];
-  generalRepo?: Partial<McpPolicy['generalRepo']>;
 }
 
 const DEFAULT_RUNNER_TIMEOUT_MS = 120_000;
-const DEFAULT_GENERAL_REPO_FLAGS: McpPolicy['generalRepo'] = {
-  general_repo_read: false,
-  repo_write: false,
-  fs_fallback: false,
-  shadow_compare: false,
-  canary_repos: [],
-  rollback_to_legacy_tools: false,
-};
 
 function withWorkspacePrefixGlobs(globs: string[]): string[] {
   return Array.from(new Set([
@@ -131,19 +122,6 @@ function capabilities(overrides: Partial<McpPolicy['capabilities']> = {}): McpPo
   };
 }
 
-function generalRepoFlags(overrides: Partial<McpPolicy['generalRepo']> = {}): McpPolicy['generalRepo'] {
-  const normalized = Object.fromEntries(
-    Object.entries(overrides).filter(([key, value]) => key === 'canary_repos' ? Array.isArray(value) : typeof value === 'boolean'),
-  ) as Partial<McpPolicy['generalRepo']>;
-  return {
-    ...DEFAULT_GENERAL_REPO_FLAGS,
-    ...normalized,
-    canary_repos: Array.isArray(normalized.canary_repos)
-      ? Array.from(new Set(normalized.canary_repos.map((entry) => String(entry).trim()).filter(Boolean)))
-      : DEFAULT_GENERAL_REPO_FLAGS.canary_repos,
-  };
-}
-
 export function getMcpPolicy(profile: McpProfileName, opts: McpPolicyOptions = {}): McpPolicy {
   if (profile === 'planner') {
     const broadRead = opts.fullDiskRead === true;
@@ -160,7 +138,6 @@ export function getMcpPolicy(profile: McpProfileName, opts: McpPolicyOptions = {
       denyGlobs: COMMON_DENY_GLOBS,
       allowAbsoluteRead: broadRead,
       maxFileBytes: 512 * 1024,
-      generalRepo: generalRepoFlags(opts.generalRepo),
       execution: executionPolicy({
         fixedWorkflowCheck: !broadRead,
       }),
@@ -179,7 +156,6 @@ export function getMcpPolicy(profile: McpProfileName, opts: McpPolicyOptions = {
       denyGlobs: COMMON_DENY_GLOBS,
       allowAbsoluteRead: broadRead,
       maxFileBytes: 512 * 1024,
-      generalRepo: generalRepoFlags(opts.generalRepo),
       execution: executionPolicy({
         fixedWorkflowCheck: !broadRead,
       }),
@@ -197,7 +173,6 @@ export function getMcpPolicy(profile: McpProfileName, opts: McpPolicyOptions = {
       writeGlobs: [],
       denyGlobs: devRunner ? COMMON_DENY_GLOBS : ['**'],
       maxFileBytes: devRunner ? 512 * 1024 : 0,
-      generalRepo: generalRepoFlags(opts.generalRepo),
       execution: executionPolicy({
         codexRunner: devRunner,
         agentRunner: devRunner,

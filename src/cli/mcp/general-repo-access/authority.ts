@@ -16,7 +16,7 @@ export interface RepoRecord {
   displayName: string;
   accessMode: RepoHarnessAccessMode;
   registryRevision: string;
-  source: 'current' | 'policy' | 'registered';
+  source: 'registered';
 }
 
 export interface IgnoreRule {
@@ -149,26 +149,25 @@ export function uniqueRepoRecords(ctx: RepoAuthorityContext): RepoRecord[] {
   }));
   const revision = registryRevision(canonicalRegistered);
 
-  const add = (rawPath: string, source: RepoRecord['source']): void => {
+  const add = (rawPath: string): void => {
     const canonicalRoot = canonicalDirectory(rawPath);
     if (!canonicalRoot || byPath.has(canonicalRoot)) return;
     const rootIdentity = expectedRootIdentity(canonicalRoot);
     if (!rootIdentity) return;
     const registeredEntry = known.get(canonicalRoot);
+    if (!registeredEntry) return;
     byPath.set(canonicalRoot, {
-      repoId: registeredEntry?.id ?? repoHarnessRepoIdFor(canonicalRoot),
+      repoId: registeredEntry.id,
       canonicalRoot,
       rootIdentity,
       displayName: basename(canonicalRoot) || canonicalRoot,
-      accessMode: registeredEntry?.accessMode ?? 'read_only',
+      accessMode: registeredEntry.accessMode,
       registryRevision: revision,
-      source,
+      source: 'registered',
     });
   };
 
-  add(ctx.repoRoot, 'current');
-  for (const root of ctx.policy.allowedRoots ?? []) add(root, 'policy');
-  for (const repo of registered) add(repo.path, 'registered');
+  for (const repo of registered) add(repo.path);
 
   return Array.from(byPath.values()).sort((a, b) => a.displayName.localeCompare(b.displayName) || a.canonicalRoot.localeCompare(b.canonicalRoot));
 }

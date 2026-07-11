@@ -1,10 +1,9 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import { repoHarnessPackageVersion } from '../../src/cli/mcp/version';
 
 const ROOT = join(import.meta.dir, '../..');
@@ -70,10 +69,11 @@ describe('mcp stdio transport', () => {
       expect(toolNames).not.toContain('run_agent_goal');
 
       const roots = textPayload(await client.callTool({ name: 'list_allowed_roots', arguments: {} }));
-      const root = (roots.roots as Array<{ root_id: string; repo_id: string; path?: string }>).find(
-        (entry) => entry.repo_id === repoHarnessRepoIdFor(realpathSync(repoRoot)),
+      const root = (roots.roots as Array<{ root_id: string; repo_id?: string; path?: string }>).find(
+        (entry) => entry.root_id.startsWith('root_'),
       );
       expect(root?.path).toBeUndefined();
+      expect(root?.repo_id).toBeUndefined();
       expect(root?.root_id).toMatch(/^root_/);
 
       const opened = textPayload(await client.callTool({
@@ -92,18 +92,6 @@ describe('mcp stdio transport', () => {
         },
       }));
       expect(read.text).toBe('2: stdio reader route');
-
-      const search = textPayload(await client.callTool({
-        name: 'search_text',
-        arguments: {
-          workspace_id: opened.workspace_id,
-          query: 'stdio',
-          path: 'docs',
-        },
-      }));
-      expect(search.matches).toEqual([
-        expect.objectContaining({ path: 'docs/design.md', line: 2 }),
-      ]);
 
       const denied = textPayload(await client.callTool({
         name: 'read_text',
