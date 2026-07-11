@@ -19,7 +19,7 @@
 > **Plan**: plans/plan-20260711-1034-chatgpt-coding-mcp-live-canary.md
 > **Contract**: tasks/contracts/20260711-1034-chatgpt-coding-mcp-live-canary.contract.md
 > **Review**: tasks/reviews/20260711-1034-chatgpt-coding-mcp-live-canary.review.md
-> **Last Updated**: 2026-07-11 13:29
+> **Last Updated**: 2026-07-11 15:23
 > **Lifecycle**: notes
 
 ## Design Decisions
@@ -62,11 +62,22 @@
 - The next `read` call was made under another MCP session and the source-repo audit recorded `WORKSPACE_NOT_FOUND` at `2026-07-11T05:25:29.051Z`. ChatGPT then reported that OpenAI safety blocked its retry. No write or shell action ran.
 - This proves the Cloudflare/OAuth/App/tool boundary is real, but also proves the current ChatGPT multi-call behavior is incompatible with workspace IDs bound to a single MCP session. Product behavior was not changed in this eval-only contract.
 
+## Post-authorization-runtime canary
+
+- Commit `2a9d49053acf` replaced transport-session workspace/process ownership with opaque OAuth-authorization ownership while preserving authorization-revision revocation, repo-grant isolation, transport hijack rejection, idle cleanup, and shutdown cleanup.
+- Disposable App `kito-mcp-coding-canary-auth-runtime` connected to `https://mcp.repoharness.com/mcp`, discovered the exact 24 actions, and was configured to allow read actions while retaining confirmations for destructive actions.
+- Fresh conversation `https://chatgpt.com/c/6a51ed4c-b6d8-83ea-904b-8b2b3debe7a7` completed the bounded canary against `repo_ead1bdeb70dca348`. The new managed worktree is `cws_155e096c-f7ee-4dfe-90d9-3d7aca50db4c` on `codex/mcp-repo-851e1dd3`.
+- The preserved worktree proves the exact final effects: `docs/spec.md` ends with `canary-auth-runtime-ok`, and `canary/process.txt` contains exactly `process-auth-runtime-ok`. Their SHA-256 values are `dcdc87d6d67799c6b66a72bc296443a24719ac291e53bc8f6eaf64d05ac091e6` and `6b4bf83675e7312e7ad902e3756a812a3f97f0889b6940bed93eec4debc60724`.
+- Audit records successful `open_workspace`, `read`, `apply_patch`, `exec_command` with exit 0 and 17 output bytes, and both final reads. It contains no raw command, stdout, or stderr. `write_stdin` polling is not a standalone audit event by design; the current ChatGPT Activity UI also omitted the literal poll row, so the strict transcript classifier cannot independently attest that one call.
+- Both mutation-triggered CodeGraph refreshes recorded non-retryable `INDEX_UNAVAILABLE` because the dedicated canary repo intentionally has no CodeGraph index. This is expected dead-letter behavior, not a coding mutation failure.
+- The expanded ChatGPT Activity panel visibly showed the structured App, `open_workspace` input, subsequent `read` input, and exact final response, but no literal `Called tool` labels and no complete enumeration of the patch/process/poll rows. After the disposable App was deleted, reopening the conversation URL rendered an empty conversation, so that transient UI cannot serve as durable acceptance evidence. Functional live execution is verified; the plan's stricter UI-only classifier remains `surface_blocked`.
+- Rollback deleted the disposable App, stopped the foreground server/Tunnel, removed generated credentials/runtime state, restored ignored config and launchd plists from the exact pre-canary snapshot, restored `/etc/resolver/repoharness.com` to SHA-256 `e37d88018df438ebc571cf1a12fcefbe96ff9bcb82932bd8ec560fd84dd58f0b`, returned both old labels to `spawn scheduled` with `EX_CONFIG`, kept the canary source repo clean, and preserved both managed worktrees. `registered-repos.json` was rewritten once after its first restore; after all canary processes were stopped it was restored again and remained byte-identical across a delayed comparison. Main WIP remained `M tasks/current.md` plus `?? plans/plan-20260711-0115-think-plan-011459.md`.
+
 ## Evidence Links
 
 - Checks: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
-- Fresh ChatGPT canary: `https://chatgpt.com/c/6a51b1c4-22a0-83ea-b3fb-2ec13308e691`
+- Fresh ChatGPT canary: `https://chatgpt.com/c/6a51ed4c-b6d8-83ea-904b-8b2b3debe7a7`
 
 ## Sanitized Live Evidence
 
@@ -75,8 +86,8 @@
 | Local coding server | pass | Loopback health, OAuth, initialize, and exact tools schema completed on the feature-worktree CLI. |
 | Cloudflare | pass with host-only diagnostic caveat | Named tunnel/DNS/remote ingress matched; Cloudflare edge returned health and OAuth metadata while unauthenticated `/mcp` returned 401. |
 | OAuth/App schema | pass | DCR + PKCE + coding scope completed; ChatGPT settings showed the five coding tools with current schemas and security annotations. |
-| ChatGPT invocation | partial real invocation, acceptance blocked | Non-Pro structured-App chat created a real managed workspace; the next read crossed MCP sessions and failed with `WORKSPACE_NOT_FOUND`, then safety blocked the retry. |
-| File/process proof | partial | Worktree metadata and `open_workspace` audit exist; no patch, command session, poll, or canary output file exists. |
+| ChatGPT invocation | functional pass, strict transcript blocked | Structured-App chat completed the requested local coding sequence; the current Activity panel omitted literal `Called tool` labels and some call rows. |
+| File/process proof | pass with poll-visibility caveat | Patch and command output match the final response and metadata-only audit; the UI and audit do not independently enumerate the `write_stdin` poll. |
 | Rollback | pass | Disposable App deleted; manual server/Tunnel stopped; prior ignored config/plists and resolver matched backup bytes before temporary copies were removed. |
 | Main WIP | preserved | `/Users/kito/Projects/repo-harness` remained on `main` with `M tasks/current.md` and `?? plans/plan-20260711-0115-think-plan-011459.md`. |
 

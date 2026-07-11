@@ -6,7 +6,7 @@
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: kito
 > **Capability ID**: root
-> **Last Updated**: 2026-07-11 13:29
+> **Last Updated**: 2026-07-11 15:23
 > **Review File**: `tasks/reviews/20260711-1034-chatgpt-coding-mcp-live-canary.review.md`
 > **Notes File**: `tasks/notes/20260711-1034-chatgpt-coding-mcp-live-canary.notes.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
@@ -161,8 +161,8 @@ exit_criteria:
 
 ## Blocked Evidence
 
-- `config_ready`, `local_ready`, `oauth_ready`, and `mcp_ready` passed with the exact 24-action schema. The user-authorized temporary move of `/etc/resolver/repoharness.com` made the public hostname resolve locally and public health passed through the named Tunnel.
-- Disposable App `kito-mcp-coding-canary-retest2` connected over OAuth and exposed the current coding action schemas, including `open_workspace`, `read`, `apply_patch`, `exec_command`, and `write_stdin`.
-- Fresh non-Pro Chat conversation `https://chatgpt.com/c/6a51d385-ca3c-83ea-909e-a523079301f5` invoked `open_workspace`. Local metadata and audit prove it created `cws_e0da6855-f199-4121-8ead-0f4a8b440a70` on branch `codex/mcp-repo-b14693e3`.
-- The following `read` arrived under another MCP session and failed closed with `WORKSPACE_NOT_FOUND: workspace_id is unknown or belongs to another MCP session`; OpenAI safety blocked the retry. Therefore patch, process, poll, readback, and visible complete `Called tool` acceptance remain unmet.
-- Rollback restored backed-up ignored user config, launchd plist files, and `/etc/resolver/repoharness.com` byte-for-byte; deleted the disposable App; stopped both manual processes; removed copied credentials; left the canary source repo clean; and preserved the managed worktree/audit for inspection.
+- `config_ready`, local/public health, OAuth discovery, and the exact 24-action coding schema passed through the named Tunnel after the user-authorized temporary resolver move.
+- Disposable App `kito-mcp-coding-canary-auth-runtime` connected over OAuth and used commit `2a9d49053acf`, whose authorization-scoped workspace/process runtime accepts sequential ChatGPT calls that use different MCP transports.
+- Fresh Chat conversation `https://chatgpt.com/c/6a51ed4c-b6d8-83ea-904b-8b2b3debe7a7` completed the requested functional sequence in `cws_155e096c-f7ee-4dfe-90d9-3d7aca50db4c`: workspace open, cross-transport read, atomic patch, bounded process exit 0, and exact final readback. Local audit and file hashes match the final response without retaining raw command/output.
+- The current ChatGPT Activity panel visibly exposed the workspace and read inputs plus exact final contents, but did not render the literal `Called tool` entries or enumerate every patch/process/poll row. Therefore the strict manual transcript criterion remains unmet and the fail-closed classifier stays `surface_blocked`, despite functional live execution being verified.
+- Rollback deleted the disposable App, stopped the manual processes, removed generated credentials/runtime state, restored backed-up ignored config and launchd plists byte-for-byte, returned both launchd labels to their original stale `EX_CONFIG` state, kept the canary source repo clean, preserved the managed worktrees, and left main WIP untouched.

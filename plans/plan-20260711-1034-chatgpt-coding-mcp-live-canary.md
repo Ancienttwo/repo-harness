@@ -146,15 +146,17 @@ Stop the coding server and tunnel replica started by this slice, downgrade the c
 - [x] Create and connect an isolated ChatGPT developer-mode canary App with the dedicated repo as the only read-write grant.
 - [x] Run a fresh structured-App ChatGPT canary and classify the observed result without treating setup or model prose as invocation proof.
 - [x] Roll back the canary App, manual server/Tunnel processes, duplicated credentials, and ignored user config while preserving main WIP.
-- [ ] Obtain the complete read/patch/process transcript; retest 2 produced a real `open_workspace` call, but ChatGPT issued `read` through another MCP session, causing `WORKSPACE_NOT_FOUND`, then blocked the retry with OpenAI safety checks.
+- [x] Re-run the complete read/patch/process/readback sequence after the authorization-scoped runtime fix and verify the matching managed-worktree files plus metadata-only audit.
+- [ ] Obtain a current-UI transcript that visibly enumerates every patch/process/poll call. The Activity panel showed the real workspace/read inputs and exact final contents, but did not render the literal `Called tool` entries required by this plan's strict classifier.
 
 ## Observed Outcome
 
-- Classification: `surface_blocked` after a real partial invocation; the full acceptance sequence did not complete.
-- Fresh non-Pro conversation: `https://chatgpt.com/c/6a51d385-ca3c-83ea-909e-a523079301f5`.
-- The temporary split-DNS resolver move allowed normal public OAuth. ChatGPT connected, discovered the coding schema, and invoked `open_workspace`, creating worktree `cws_e0da6855-f199-4121-8ead-0f4a8b440a70`; its metadata-only audit proves the call was real.
-- ChatGPT's next `read` used another MCP session. The server correctly returned `WORKSPACE_NOT_FOUND: workspace_id is unknown or belongs to another MCP session`; OpenAI safety then blocked the retry. No patch, command session, poll, or canary output file was created.
-- Rollback completed: the disposable App was deleted, manual server and Tunnel processes stopped, prior ignored config and launchd plist bytes restored, the resolver was restored byte-for-byte, duplicated credential/backup copies were removed, and the dirty main checkout retained its original two WIP entries. The managed worktree remains as failure evidence.
+- Strict classification: `surface_blocked` only at the literal transcript-visibility gate; the functional Cloudflare/OAuth/coding sequence completed successfully.
+- Fresh conversation: `https://chatgpt.com/c/6a51ed4c-b6d8-83ea-904b-8b2b3debe7a7`.
+- Commit `2a9d49053acf` moved workspace/process ownership from transport session to OAuth authorization. The disposable App connected over the stable named Tunnel and current OAuth scope, discovered the exact 24-action schema, and completed the bounded canary in managed worktree `cws_155e096c-f7ee-4dfe-90d9-3d7aca50db4c`.
+- Local audit records successful `open_workspace`, cross-transport `read`, atomic `apply_patch`, `exec_command` exit 0, and final reads of both files. `docs/spec.md` ends with `canary-auth-runtime-ok`; `canary/process.txt` contains exactly `process-auth-runtime-ok`. The process audit contains only hash/cwd/session/duration/exit/byte metadata and no raw command or output. The canary repo has no CodeGraph index, so both mutation refreshes correctly recorded non-retryable `INDEX_UNAVAILABLE` events.
+- ChatGPT's expanded Activity panel visibly showed the structured App, workspace input, follow-up read input, and exact final contents, but the current UI did not render literal `Called tool` labels or expose every patch/process/poll row. After the disposable App was deleted during required rollback, reopening the conversation URL rendered an empty conversation, so the UI transcript is not durable evidence. Under this plan's fail-closed rule that prevents `invocation_verified`, even though matching server and file evidence proves direct local execution occurred.
+- Rollback removed the disposable App, stopped the manual server and Tunnel replica, restored the ignored config and launchd plist bytes, removed generated credentials/runtime state, restored the original stale `EX_CONFIG` launchd jobs, and preserved both managed worktrees as evidence. The dirty main checkout retained its original two WIP entries.
 
 ## Qualification Retest
 
