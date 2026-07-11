@@ -8,7 +8,7 @@ import { buildMcpServerInstructions } from './instructions';
 import { getMcpPolicy, parseMcpProfile, sensitiveAllowedRootReason } from './policy';
 import { isRepoHarnessAdopted, resolveMcpRepoRoot } from './repo';
 import { buildMcpToolDefinitions, callMcpTool, type McpToolContext } from './tools';
-import type { McpAgentRunnerName, McpPolicy } from './types';
+import type { McpAgentRunnerName } from './types';
 import { repoHarnessPackageVersion } from './version';
 import { WorkspaceManager } from './workspaces';
 
@@ -44,23 +44,6 @@ function parseTimeoutMs(value: unknown): number | undefined {
   const integer = Math.trunc(parsed);
   if (integer < 5_000 || integer > 900_000) return undefined;
   return integer;
-}
-
-function parseStringList(value: unknown): string[] {
-  const raw = Array.isArray(value) ? value : typeof value === 'string' ? value.split(',') : [];
-  return Array.from(new Set(raw.map((entry) => String(entry).trim()).filter(Boolean)));
-}
-
-function configuredGeneralRepoFlags(config: ReturnType<typeof loadMcpLocalConfig>): Partial<McpPolicy['generalRepo']> {
-  const configured = config?.rollout?.generalRepo ?? {};
-  return {
-    general_repo_read: parseBooleanSetting(process.env.REPO_HARNESS_MCP_GENERAL_REPO_READ) ?? configured.general_repo_read,
-    repo_write: parseBooleanSetting(process.env.REPO_HARNESS_MCP_REPO_WRITE) ?? configured.repo_write,
-    fs_fallback: parseBooleanSetting(process.env.REPO_HARNESS_MCP_FS_FALLBACK) ?? configured.fs_fallback,
-    shadow_compare: parseBooleanSetting(process.env.REPO_HARNESS_MCP_SHADOW_COMPARE) ?? configured.shadow_compare,
-    rollback_to_legacy_tools: parseBooleanSetting(process.env.REPO_HARNESS_MCP_ROLLBACK_LEGACY_TOOLS) ?? configured.rollback_to_legacy_tools,
-    canary_repos: parseStringList(process.env.REPO_HARNESS_MCP_CANARY_REPOS ?? configured.canary_repos),
-  };
 }
 
 function normalizeAllowedRoots(rawRoots: string[], opts: { skipDenied?: boolean } = {}): string[] {
@@ -154,7 +137,6 @@ export function createMcpToolContext(opts: McpServerOptions): McpToolContext {
     enableReader: readerEnabled,
     allowedRoots: policyAllowedRoots,
     discoveryRoots,
-    generalRepo: configuredGeneralRepoFlags(config),
   });
   return {
     repoRoot,

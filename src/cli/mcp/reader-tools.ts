@@ -5,11 +5,10 @@ import { opendir } from 'fs/promises';
 import { createInterface } from 'readline';
 import { join } from 'path';
 import { hashMcpInput, tryWriteMcpAuditEntry } from './audit';
-import { globMatches } from './paths';
 import { redactMcpText } from './redaction';
 import { repoHarnessPackageVersion } from './version';
 import { WorkspaceError, WorkspaceManager, type McpWorkspace, type WorkspaceResolvedPath } from './workspaces';
-import { buildGeneralRepoToolDefinitions, callGeneralRepoTool, hasGeneralRepoArgs, isGeneralRepoTool, isGeneralRepoWriteTool, listGeneralRepoRecords, type GeneralRepoToolContext } from './general-repo-access';
+import { buildGeneralRepoToolDefinitions, callGeneralRepoTool, isGeneralRepoTool, listGeneralRepoRecords, type GeneralRepoToolContext } from './general-repo-access';
 import type { GeneralRepoCodeGraphAdapter } from './codegraph-adapter';
 import { repoHarnessRepoIdFor } from '../../effects/repo-registry';
 import type { McpPolicy } from './types';
@@ -44,14 +43,6 @@ const DEFAULT_READ_BYTES = 65_536;
 const HARD_READ_BYTES = 262_144;
 const MAX_READ_LINES = 2_000;
 const BINARY_PROBE_BYTES = 8 * 1024;
-const DEFAULT_SEARCH_RESULTS = 50;
-const HARD_SEARCH_RESULTS = 100;
-const DEFAULT_SEARCH_FILES = 1000;
-const HARD_SEARCH_FILES = 2000;
-const DEFAULT_SEARCH_TIMEOUT_MS = 3000;
-const HARD_SEARCH_TIMEOUT_MS = 5000;
-const SEARCH_FILE_SCAN_BYTES = 1024 * 1024;
-const SEARCH_SNIPPET_CHARS = 180;
 const HARD_RESPONSE_BYTES = 262_144;
 
 function textResult(value: unknown): ReaderToolResult {
@@ -158,37 +149,8 @@ function workspacePayload(workspace: McpWorkspace): Record<string, unknown> {
   };
 }
 
-function workspaceSearchToolDefinition(): ReaderToolDefinition {
-  const readOnly = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
-  return {
-    name: 'search_text',
-    description: 'Legacy workspace reader search within an opened workspace path while applying deny rules and response limits.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        workspace_id: { type: 'string' },
-        query: { type: 'string' },
-        path: { type: 'string', default: '.' },
-        case_sensitive: { type: 'boolean' },
-        max_results: { type: 'number', minimum: 1, maximum: HARD_SEARCH_RESULTS },
-        max_files: { type: 'number', minimum: 1, maximum: HARD_SEARCH_FILES },
-        timeout_ms: { type: 'number', minimum: 100, maximum: HARD_SEARCH_TIMEOUT_MS },
-        glob: { type: 'string' },
-      },
-      required: ['workspace_id', 'query'],
-      additionalProperties: false,
-    },
-    annotations: readOnly,
-  };
-}
-
-function generalRepoToolDefinitions(policy?: McpPolicy): ReaderToolDefinition[] {
-  if (policy && (!policy.generalRepo.general_repo_read || policy.generalRepo.rollback_to_legacy_tools)) return [];
-  const definitions = buildGeneralRepoToolDefinitions();
-  if (policy?.generalRepo.repo_write === false) {
-    return definitions.filter((tool) => !isGeneralRepoWriteTool(tool.name));
-  }
-  return definitions;
+function generalRepoToolDefinitions(): ReaderToolDefinition[] {
+  return buildGeneralRepoToolDefinitions();
 }
 
 export function buildReaderToolDefinitions(policy?: McpPolicy): ReaderToolDefinition[] {
@@ -241,8 +203,7 @@ export function buildReaderToolDefinitions(policy?: McpPolicy): ReaderToolDefini
       },
       annotations: readOnly,
     },
-    ...(policy && (!policy.generalRepo.general_repo_read || policy.generalRepo.rollback_to_legacy_tools) ? [workspaceSearchToolDefinition()] : []),
-    ...generalRepoToolDefinitions(policy),
+    ...generalRepoToolDefinitions(),
   ];
 }
 
@@ -265,9 +226,6 @@ function readerStatus(ctx: ReaderToolContext): ReaderToolResult {
       max_workspaces: 16,
       max_tree_depth: HARD_TREE_DEPTH,
       max_tree_entries: HARD_TREE_ENTRIES,
-      max_search_files: HARD_SEARCH_FILES,
-      max_search_results: HARD_SEARCH_RESULTS,
-      search_timeout_ms: HARD_SEARCH_TIMEOUT_MS,
       max_response_bytes: HARD_READ_BYTES,
     },
   });
@@ -276,12 +234,15 @@ function readerStatus(ctx: ReaderToolContext): ReaderToolResult {
 function listAllowedRoots(ctx: ReaderToolContext): ReaderToolResult {
   const generalRepos = new Map(listGeneralRepoRecords(ctx).map((repo) => [repo.repo_id, repo]));
   return textResult({
-    roots: ctx.workspaceManager.listAllowedRoots().map((root) => ({
-      root_id: root.id,
-      repo_id: repoHarnessRepoIdFor(root.canonicalPath),
-      display_name: root.displayName,
-      readable: root.readable,
-    })),
+    roots: ctx.workspaceManager.listAllowedRoots().map((root) => {
+      const repoId = repoHarnessRepoIdFor(root.canonicalPath);
+      return {
+        root_id: root.id,
+        ...(generalRepos.has(repoId) ? { repo_id: repoId } : {}),
+        display_name: root.displayName,
+        readable: root.readable,
+      };
+    }),
     repos: Array.from(generalRepos.values()),
   });
 }
@@ -469,158 +430,9 @@ async function readText(ctx: ReaderToolContext, args: Record<string, unknown>): 
   });
 }
 
-function collectSearchFiles(
-  ctx: ReaderToolContext,
-  workspaceId: string,
-  absoluteDir: string,
-  relativeDir: string,
-  options: { glob?: string; deadline: number; maxFiles: number },
-  out: string[],
-  counters: { blocked: number; skipped: number; truncated: boolean; timedOut: boolean },
-): void {
-  if (Date.now() > options.deadline) {
-    counters.timedOut = true;
-    return;
-  }
-  if (out.length >= options.maxFiles) {
-    counters.truncated = true;
-    return;
-  }
-  let children;
-  try {
-    children = readdirSync(absoluteDir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name));
-  } catch (_error) {
-    counters.blocked += 1;
-    return;
-  }
-  for (const child of children) {
-    if (Date.now() > options.deadline) {
-      counters.timedOut = true;
-      return;
-    }
-    if (child.name.startsWith('.')) continue;
-    const childRelative = relativeDir === '.' ? child.name : `${relativeDir}/${child.name}`;
-    let resolved: WorkspaceResolvedPath;
-    try {
-      resolved = ctx.workspaceManager.resolve(workspaceId, childRelative);
-    } catch (_error) {
-      counters.blocked += 1;
-      continue;
-    }
-    const kind = entryType(resolved.absolutePath);
-    if (kind === 'directory') {
-      collectSearchFiles(ctx, workspaceId, resolved.absolutePath, childRelative, options, out, counters);
-      if (counters.timedOut || counters.truncated) return;
-    } else if (kind === 'file') {
-      if (options.glob && !globMatches(options.glob, childRelative)) continue;
-      out.push(childRelative);
-      if (out.length >= options.maxFiles) {
-        counters.truncated = true;
-        return;
-      }
-    } else {
-      counters.skipped += 1;
-    }
-  }
-}
-
-function snippetFor(line: string, column: number): string {
-  const start = Math.max(0, column - 60);
-  return line.slice(start, start + SEARCH_SNIPPET_CHARS);
-}
-
-function searchText(ctx: ReaderToolContext, args: Record<string, unknown>): ReaderToolResult {
-  const query = String(args.query ?? '');
-  if (query.trim().length === 0) return errorResult('MISSING_QUERY', 'search_text requires a non-empty literal query');
-  if (query.length > 512) return errorResult('QUERY_TOO_LONG', 'search_text query is limited to 512 characters');
-  let start: WorkspaceResolvedPath;
-  try {
-    start = ctx.workspaceManager.resolve(String(args.workspace_id ?? ''), args.path ?? '.', { requireDirectory: true });
-  } catch (error) {
-    return errorFromWorkspace(error);
-  }
-  const caseSensitive = booleanArg(args.case_sensitive, false);
-  const needle = caseSensitive ? query : query.toLowerCase();
-  const glob = typeof args.glob === 'string' && args.glob.trim() ? args.glob.trim() : undefined;
-  const maxResults = numberArg(args.max_results, DEFAULT_SEARCH_RESULTS, 1, HARD_SEARCH_RESULTS);
-  const maxFiles = numberArg(args.max_files, DEFAULT_SEARCH_FILES, 1, HARD_SEARCH_FILES);
-  const timeoutMs = numberArg(args.timeout_ms, DEFAULT_SEARCH_TIMEOUT_MS, 1, HARD_SEARCH_TIMEOUT_MS);
-  const deadline = Date.now() + timeoutMs;
-  const files: string[] = [];
-  const counters = { blocked: 0, skipped: 0, truncated: false, timedOut: false };
-  collectSearchFiles(ctx, start.workspace.id, start.absolutePath, start.relativePath, { glob, deadline, maxFiles }, files, counters);
-
-  const matches: Record<string, unknown>[] = [];
-  const responseBytes = { bytes: 0 };
-  for (const file of files) {
-    if (Date.now() > deadline) {
-      counters.timedOut = true;
-      break;
-    }
-    if (matches.length >= maxResults) {
-      counters.truncated = true;
-      break;
-    }
-    let resolved: WorkspaceResolvedPath;
-    try {
-      resolved = ctx.workspaceManager.resolve(start.workspace.id, file, { requireFile: true });
-    } catch (_error) {
-      counters.blocked += 1;
-      continue;
-    }
-    if ((resolved.size ?? 0) > SEARCH_FILE_SCAN_BYTES || isProbablyBinaryPrefix(resolved.absolutePath)) {
-      counters.skipped += 1;
-      continue;
-    }
-    const lines = readFileSync(resolved.absolutePath, 'utf-8').split(/\r?\n/);
-    for (let index = 0; index < lines.length; index += 1) {
-      if (Date.now() > deadline) {
-        counters.timedOut = true;
-        break;
-      }
-      const haystack = caseSensitive ? lines[index] : lines[index].toLowerCase();
-      const column = haystack.indexOf(needle);
-      if (column < 0) continue;
-      const redacted = redactMcpText(snippetFor(lines[index], column));
-      const added = pushBoundedEntry(matches, {
-        path: resolved.relativePath,
-        line: index + 1,
-        column: column + 1,
-        snippet: redacted.text,
-        redactions: redacted.redactions,
-      }, responseBytes);
-      if (!added || matches.length >= maxResults) {
-        counters.truncated = true;
-        break;
-      }
-    }
-    if (counters.timedOut || counters.truncated) break;
-  }
-
-  audit(ctx, 'search_text', 'ok', args, start.relativePath);
-  return textResult({
-    workspace_id: start.workspace.id,
-    query,
-    path: start.relativePath,
-    glob,
-    matches,
-    files_scanned: files.length,
-    files_skipped: counters.skipped,
-    blocked_files: counters.blocked,
-    truncated: counters.truncated,
-    timed_out: counters.timedOut,
-  });
-}
-
 export async function callReaderTool(ctx: ReaderToolContext, name: string, args: Record<string, unknown> = {}): Promise<ReaderToolResult> {
   try {
-    if (isGeneralRepoTool(name) && (name !== 'search_text' || hasGeneralRepoArgs(args))) {
-      if (!ctx.policy.generalRepo.general_repo_read || ctx.policy.generalRepo.rollback_to_legacy_tools) {
-        return errorResult('TOOL_NOT_AVAILABLE', 'general repo tools are disabled by MCP rollout policy');
-      }
-      if (isGeneralRepoWriteTool(name) && !ctx.policy.generalRepo.repo_write) {
-        return errorResult('WRITE_DISABLED', 'general repo write tools are disabled by MCP rollout policy');
-      }
+    if (isGeneralRepoTool(name)) {
       return callGeneralRepoTool(ctx, name, args);
     }
     switch (name) {
@@ -636,8 +448,6 @@ export async function callReaderTool(ctx: ReaderToolContext, name: string, args:
         return tree(ctx, args);
       case 'read_text':
         return readText(ctx, args);
-      case 'search_text':
-        return searchText(ctx, args);
       default:
         return errorResult('TOOL_NOT_AVAILABLE_FOR_CAPABILITY', `tool is not available for workspace reader capability: ${name}`);
     }

@@ -1935,12 +1935,6 @@ function readFilePayload(ctx: GeneralRepoToolContext, repo: RepoRecord, ignore: 
   const snapshotEntry = snapshot.entriesByPath.get(target.relativePath);
   const indexed = snapshotEntry?.indexed ?? false;
   const fields = commonFields(repo, ignore, snapshot, { tool, paths: [target.relativePath] });
-  if (!indexed && !ctx.policy.generalRepo.fs_fallback) {
-    throw new GeneralRepoAccessError('INDEX_UNAVAILABLE', 'filesystem fallback is disabled for unindexed file content', {
-      path: target.relativePath,
-      fs_fallback: false,
-    }, true);
-  }
   const raw = readStableResolvedFile(target, ignore);
   const fullHash = sha256(raw);
   if (verifySnapshotEntry) assertSnapshotEntryCurrent(snapshot, target.relativePath, fullHash);
@@ -2024,28 +2018,18 @@ function getRepoCapabilities(ctx: GeneralRepoToolContext, args: Record<string, u
   return textResult({
     ...commonFields(repo, snapshotIgnore, snapshot, { tool: 'get_repo_capabilities' }),
     access_mode: repo.accessMode,
-    writable: repo.accessMode === 'read_write' && ctx.policy.generalRepo.repo_write,
+    writable: repo.accessMode === 'read_write',
     display_name: repo.displayName,
     registry_revision: repo.registryRevision,
     source: repo.source,
     read_tools: GENERAL_REPO_TOOLS.filter((tool) => tool !== 'get_repo_capabilities' && !WRITE_TOOLS.has(tool)),
-    write_tools: repo.accessMode === 'read_write' && ctx.policy.generalRepo.repo_write ? [...WRITE_TOOLS] : [],
-    rollout: {
-      general_repo_read: ctx.policy.generalRepo.general_repo_read,
-      repo_write: ctx.policy.generalRepo.repo_write,
-      fs_fallback: ctx.policy.generalRepo.fs_fallback,
-      shadow_compare: ctx.policy.generalRepo.shadow_compare,
-      canary_repos: ctx.policy.generalRepo.canary_repos,
-      rollback_to_legacy_tools: ctx.policy.generalRepo.rollback_to_legacy_tools,
-    },
+    write_tools: repo.accessMode === 'read_write' ? [...WRITE_TOOLS] : [],
     codegraph: {
       primary_backend: true,
       ...codeGraphSummary(snapshot),
       note: snapshot.codeGraph.available
         ? 'CodeGraph inventory is merged as indexed metadata; secure filesystem walking remains the manifest source of truth.'
-        : ctx.policy.generalRepo.fs_fallback
-          ? 'CodeGraph is unavailable for this repo; authorized filesystem fallback remains active.'
-          : 'CodeGraph is unavailable for this repo; filesystem fallback is disabled by rollout policy.',
+        : 'CodeGraph is unavailable for this repo; authorized filesystem reads remain active.',
     },
     limits: {
       max_page_size: HARD_PAGE_SIZE,
@@ -2623,15 +2607,10 @@ function searchText(ctx: GeneralRepoToolContext, args: Record<string, unknown>):
   const maxResults = numberArg(args.max_results, DEFAULT_SEARCH_RESULTS, 1, HARD_SEARCH_RESULTS);
   const offset = numberArg(args.cursor, 0, 0, Number.MAX_SAFE_INTEGER);
   let seenMatches = 0;
-  let fallbackDisabledSkipped = 0;
 
   for (const entry of candidates.sort((a, b) => a.path.localeCompare(b.path))) {
     if (matches.length >= maxResults + 1) break;
     if (entry.type !== 'file' || !entry.readable || seen.has(entry.path) || entry.binary || (entry.size ?? 0) > SEARCH_FILE_SCAN_BYTES) continue;
-    if (!entry.indexed && !ctx.policy.generalRepo.fs_fallback) {
-      fallbackDisabledSkipped += 1;
-      continue;
-    }
     seen.add(entry.path);
     const resolved = resolveRepoPath(repo, entry.path, snapshotIgnore, { requireFile: true });
     const raw = readStableResolvedFile(resolved, snapshotIgnore);
@@ -2668,8 +2647,7 @@ function searchText(ctx: GeneralRepoToolContext, args: Record<string, unknown>):
     mode,
     matches: returned,
     truncated: nextCursor !== null,
-    partial: snapshot.partial || fallbackDisabledSkipped > 0,
-    fallback_disabled_skipped: fallbackDisabledSkipped,
+    partial: snapshot.partial,
     next_cursor: nextCursor,
     backend: snapshot.codeGraph.available ? 'codegraph-metadata+filesystem-fallback' : 'filesystem-fallback',
     codegraph: codeGraphSummary(snapshot),
@@ -2688,14 +2666,6 @@ export function listGeneralRepoRecords(ctx: GeneralRepoToolContext): Array<{ rep
 
 export function isGeneralRepoTool(name: string): name is GeneralRepoToolName {
   return (GENERAL_REPO_TOOLS as readonly string[]).includes(name);
-}
-
-export function isGeneralRepoWriteTool(name: string): boolean {
-  return WRITE_TOOLS.has(name);
-}
-
-export function hasGeneralRepoArgs(args: Record<string, unknown>): boolean {
-  return typeof args.repo_id === 'string' && args.repo_id.trim().length > 0;
 }
 
 export function buildGeneralRepoToolDefinitions(): GeneralRepoToolDefinition[] {
@@ -2877,17 +2847,6 @@ export async function callGeneralRepoTool(ctx: GeneralRepoToolContext, name: str
   const startedAtMs = Date.now();
   const callCorrelationId = correlationId(name);
   try {
-    if (ctx.policy.generalRepo.rollback_to_legacy_tools || !ctx.policy.generalRepo.general_repo_read) {
-      throw new GeneralRepoAccessError('TOOL_NOT_AVAILABLE', 'general repo tools are disabled by MCP rollout policy', {
-        general_repo_read: ctx.policy.generalRepo.general_repo_read,
-        rollback_to_legacy_tools: ctx.policy.generalRepo.rollback_to_legacy_tools,
-      });
-    }
-    if (WRITE_TOOLS.has(name) && !ctx.policy.generalRepo.repo_write) {
-      throw new GeneralRepoAccessError('WRITE_DISABLED', 'general repo write tools are disabled by MCP rollout policy', {
-        repo_write: false,
-      });
-    }
     let result: GeneralRepoToolResult;
     switch (name) {
       case 'get_repo_capabilities':

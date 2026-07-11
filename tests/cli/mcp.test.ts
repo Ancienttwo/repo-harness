@@ -7,10 +7,11 @@ import { join } from 'path';
 const ROOT = join(import.meta.dir, '../..');
 const CLI = join(ROOT, 'src/cli/index.ts');
 
-function runMcp(args: string[]) {
+function runMcp(args: string[], env: NodeJS.ProcessEnv = {}) {
   return spawnSync('bun', [CLI, 'mcp', ...args], {
     cwd: ROOT,
     encoding: 'utf-8',
+    env: { ...process.env, ...env },
   });
 }
 
@@ -52,6 +53,7 @@ describe('mcp command', () => {
 
   test('prepare-goal writes Codex handoff and prints host-native /goal prompt', () => {
     const repoRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-goal-'));
+    const repoHarnessHome = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-goal-home-'));
     try {
       mkdirSync(join(repoRoot, '.ai/harness'), { recursive: true });
       mkdirSync(join(repoRoot, 'plans/prds'), { recursive: true });
@@ -70,7 +72,7 @@ describe('mcp command', () => {
         join(repoRoot, 'plans/sprints/example.sprint.md'),
         '--reference-repo',
         '/tmp/reference-repo',
-      ]);
+      ], { REPO_HARNESS_HOME: repoHarnessHome });
       expect(result.status).toBe(0);
       expect(result.stdout).toContain('/goal');
       expect(result.stdout).toContain(`Read: ${join(repoRoot, 'plans/prds/example.prd.md')}`);
@@ -84,6 +86,7 @@ describe('mcp command', () => {
       expect(readFileSync(goalPath, 'utf-8')).toContain('## Host-native /goal prompt');
     } finally {
       rmSync(repoRoot, { recursive: true, force: true });
+      rmSync(repoHarnessHome, { recursive: true, force: true });
     }
   });
 });

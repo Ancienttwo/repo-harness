@@ -20,12 +20,18 @@ const CLI = join(import.meta.dir, '../..', 'src/cli/index.ts');
 
 function withTmpRepo<T>(fn: (repoRoot: string) => T): T {
   const repoRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-setup-'));
+  const repoHarnessHome = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-setup-home-'));
+  const previousRepoHarnessHome = process.env.REPO_HARNESS_HOME;
   try {
+    process.env.REPO_HARNESS_HOME = repoHarnessHome;
     mkdirSync(join(repoRoot, '.ai/harness'), { recursive: true });
     writeFileSync(join(repoRoot, '.ai/harness/policy.json'), '{}\n');
     return fn(repoRoot);
   } finally {
+    if (previousRepoHarnessHome === undefined) delete process.env.REPO_HARNESS_HOME;
+    else process.env.REPO_HARNESS_HOME = previousRepoHarnessHome;
     rmSync(repoRoot, { recursive: true, force: true });
+    rmSync(repoHarnessHome, { recursive: true, force: true });
   }
 }
 
@@ -50,11 +56,7 @@ describe('mcp setup', () => {
         allowedAgents: ['codex'],
         timeoutMs: 120000,
       });
-      expect(config.rollout.generalRepo).toMatchObject({
-        general_repo_read: false,
-        repo_write: false,
-        fs_fallback: false,
-      });
+      expect(config.rollout).toBeUndefined();
       const token = JSON.parse(readFileSync(join(repoRoot, '.repo-harness/mcp.tokens.json'), 'utf-8')).bearerToken;
       expect(typeof token).toBe('string');
       expect(token.length).toBeGreaterThan(30);
@@ -117,6 +119,44 @@ describe('mcp setup', () => {
     });
   });
 
+  test('ignores and removes retired general-repo rollout config on setup', () => {
+    withTmpRepo((repoRoot) => {
+      runMcpSetupChatgpt({ repo: repoRoot });
+      const configPath = join(repoRoot, '.repo-harness/mcp.local.json');
+      const staleConfig = JSON.parse(readFileSync(configPath, 'utf-8'));
+      staleConfig.rollout = {
+        generalRepo: {
+          general_repo_read: false,
+          repo_write: false,
+          fs_fallback: false,
+          shadow_compare: true,
+          canary_repos: ['repo_stale'],
+          rollback_to_legacy_tools: true,
+        },
+      };
+      writeFileSync(configPath, `${JSON.stringify(staleConfig, null, 2)}\n`);
+
+      const context = createMcpToolContext({ repo: repoRoot, profile: 'planner' });
+      expect(context.policy).not.toHaveProperty('generalRepo');
+
+      runMcpSetupChatgpt({ repo: repoRoot });
+      const cleanedConfig = JSON.parse(readFileSync(configPath, 'utf-8'));
+      expect(cleanedConfig.rollout).toBeUndefined();
+    });
+  });
+
+  test('fails closed when local MCP config cannot be parsed', () => {
+    withTmpRepo((repoRoot) => {
+      runMcpSetupChatgpt({ repo: repoRoot });
+      const configPath = join(repoRoot, '.repo-harness/mcp.local.json');
+      writeFileSync(configPath, '{not-json\n');
+
+      expect(() => createMcpToolContext({ repo: repoRoot, profile: 'planner' })).toThrow(
+        'invalid MCP local config',
+      );
+    });
+  });
+
   test('user-scope ChatGPT setup stores MCP state under the OS user and authorizes current-repo reader access', () => {
     withTmpRepo((repoRoot) => {
       const userState = mkdtempSync(join(tmpdir(), 'repo-harness-user-mcp-'));
@@ -150,13 +190,6 @@ describe('mcp setup', () => {
           },
           capabilities: { workspaceReader: true, workflowPlanner: true },
           permissions: { fullDiskRead: false, allowedRoots: [], discoveryRoots: [] },
-          rollout: {
-            generalRepo: {
-              general_repo_read: false,
-              repo_write: false,
-              fs_fallback: false,
-            },
-          },
           profile: 'planner',
         });
         const registry = JSON.parse(readFileSync(join(userState, 'registered-repos.json'), 'utf-8'));
