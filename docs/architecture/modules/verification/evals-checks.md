@@ -17,7 +17,7 @@ Authoritative checks:
 - `bash scripts/check-task-workflow.sh --strict`
 - `bash scripts/sync-brain-docs.sh --check` for opted-in default-brain mirrors.
 - `bun scripts/inspect-project-state.ts --repo . --format text`
-- `bash scripts/migrate-project-template.sh --repo . --dry-run`
+- `repo-harness adopt --repo . --dry-run`
 - non-dry-run `bun run benchmark:skills --eval <slug>` runs when release or
   readiness evidence depends on skill effectiveness.
 

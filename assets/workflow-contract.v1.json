@@ -121,8 +121,6 @@
       "switch-plan.sh",
       "workflow-contract.ts",
       "inspect-project-state.ts",
-      "migrate-workflow-docs.ts",
-      "migrate-project-template.sh",
       "capability-resolver.ts",
       "architecture-event.ts",
       "capability-config.ts",

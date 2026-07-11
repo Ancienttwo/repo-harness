@@ -1,767 +1,344 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "fs";
 import { spawnSync } from "child_process";
 import { tmpdir } from "os";
-import { basename, join } from "path";
+import { join } from "path";
 import { planAdoption } from "../../src/core/adoption/plan";
-import { adoptionTemplateFile } from "../../src/core/adoption/manifest-templates";
-import { renderAdoptionPlanJson, renderAdoptionPlanObject } from "../../src/core/adoption/render";
-import { makeOperationId, type AdoptionOperation, type AdoptionPlan } from "../../src/core/adoption/operations";
-import { summarizeOperations } from "../../src/core/adoption/summary";
-import { gitignoreManagedBlockOperation } from "../../src/core/adoption/gitignore-plan";
-import { renderManagedBlock, upsertManagedBlock } from "../../src/core/adoption/managed-block";
-import { ensureRepoRelativePath, resolveInsideRepo } from "../../src/effects/path-safety";
-import { applyAdoptionPlan, applyAppendManagedBlockOperation, rollbackAdoptionTransaction } from "../../src/effects/fs-transaction";
-import { readWorkflowContractAsset } from "../../src/core/adoption/workflow-contract-asset";
+import { applyAdoptionPlan, rollbackAdoptionTransaction } from "../../src/effects/fs-transaction";
 
 const ROOT = join(import.meta.dir, "..", "..");
 const CLI = join(ROOT, "src/cli/index.ts");
-const FIXTURES = join(import.meta.dir, "..", "fixtures", "adoption");
 
 function tempRepo(): string {
   return mkdtempSync(join(tmpdir(), "repo-harness-adoption-plan-"));
 }
 
-function readJson<T = Record<string, unknown>>(path: string): T {
-  return JSON.parse(readFileSync(path, "utf-8")) as T;
+function cleanup(path: string): void {
+  rmSync(path, { recursive: true, force: true });
 }
 
-function snapshotOperation(operation: AdoptionOperation): Record<string, unknown> {
-  const result: Record<string, unknown> = {
-    id: operation.id,
-    kind: operation.kind,
-    status: operation.status,
-  };
-  if (operation.path) result.path = operation.path;
-  if (operation.kind === "writeFile" && operation.ifMissing !== undefined) result.ifMissing = operation.ifMissing;
-  if (operation.kind === "appendManagedBlock") result.marker = operation.marker;
-  if (operation.kind === "runCheck") result.command = operation.command;
-  return result;
-}
-
-function snapshotPlan(plan: AdoptionPlan): Record<string, unknown> {
-  return {
-    mode: plan.mode,
-    apply: plan.apply,
-    operations: plan.operations.map(snapshotOperation),
-    summary: plan.summary,
-    warnings: plan.warnings,
-  };
-}
-
-describe("adoption operation model", () => {
-  test("operation ids are stable and summarizeOperations counts by kind", () => {
-    const operations: AdoptionOperation[] = [
-      {
-        id: makeOperationId("mkdir", "plans"),
-        kind: "mkdir",
-        path: "plans",
-        reason: "test",
-        risk: "low",
-        status: "planned",
-      },
-      {
-        id: makeOperationId("writeFile", "docs/spec.md", "ifMissing"),
-        kind: "writeFile",
-        path: "docs/spec.md",
-        content: "# Spec\n",
-        ifMissing: true,
-        reason: "test",
-        risk: "low",
-        status: "planned",
-      },
-    ];
-
-    expect(operations[0].id).toBe("mkdir:plans");
-    expect(operations[1].id).toBe("writeFile:docs/spec.md:ifMissing");
-    const summary = summarizeOperations(operations);
-    expect(summary.byKind).toEqual({ mkdir: 1, writeFile: 1 });
-    expect(summary.byStatus).toEqual({ planned: 2 });
-    expect(summary.plannedTotal).toBe(2);
-    expect(summary.skippedTotal).toBe(0);
-  });
-});
-
-describe("planAdoption", () => {
-  test("bootstrap templates come from the workflow contract", () => {
-    const repo = tempRepo();
-    try {
-      const spec = adoptionTemplateFile(repo, "spec");
-      const deferredGoalLedger = adoptionTemplateFile(repo, "deferredGoalLedger");
-      const currentStatus = adoptionTemplateFile(repo, "currentStatus");
-      const lessonsLog = adoptionTemplateFile(repo, "lessonsLog");
-
-      expect(spec.path).toBe("docs/spec.md");
-      expect(spec.content).toContain(`# Product Spec: ${basename(repo)}`);
-      expect(deferredGoalLedger.path).toBe("tasks/todos.md");
-      expect(deferredGoalLedger.content).toContain("# Deferred Goal Ledger");
-      expect(currentStatus.path).toBe("tasks/current.md");
-      expect(currentStatus.content).toContain("<!-- generated-by: repo-harness refresh-current-status v1 -->");
-      expect(lessonsLog.path).toBe("tasks/lessons.md");
-      expect(lessonsLog.content).toContain("Correction-derived rules");
-    } finally {
-      rmSync(repo, { recursive: true, force: true });
-    }
-  });
-
-  test("standard mode does not plan repo-local helper scripts", () => {
+describe("canonical adoption plan", () => {
+  test("standard plan is a complete repo-local projection and does not install root helpers", () => {
     const repo = tempRepo();
     try {
       const plan = planAdoption({ repoRoot: repo, mode: "standard" });
-      const wrappers = plan.operations.filter((operation) => operation.id.endsWith(":helper-wrapper"));
-
-      expect(wrappers).toHaveLength(0);
+      expect(plan.operations.some((operation) => operation.path === ".ai/harness/policy.json")).toBe(true);
+      expect(plan.operations.some((operation) => operation.path === ".ai/context/capabilities.json")).toBe(true);
+      expect(plan.operations.some((operation) => operation.path === "deploy/README.md")).toBe(true);
+      expect(plan.operations.some((operation) => operation.path === ".ai/hooks/README.md")).toBe(true);
       expect(plan.operations.some((operation) => operation.path?.startsWith("scripts/"))).toBe(false);
+      expect(plan.operations.every((operation) => operation.rollback)).toBe(true);
+      expect(plan.summary.requiresVerification).toBe(true);
     } finally {
-      rmSync(repo, { recursive: true, force: true });
+      cleanup(repo);
     }
   });
 
-  test("renders stable standard fixture for an empty repo", () => {
+  test("self-host source planning never schedules its canonical scripts for generated-runtime cleanup", () => {
+    const plan = planAdoption({ repoRoot: ROOT, mode: "standard" });
+    expect(plan.operations.some((operation) => operation.kind === "remove" && operation.path?.startsWith("scripts/"))).toBe(false);
+    expect(plan.operations.some((operation) => operation.kind === "gitUntrack" && operation.path?.startsWith("scripts/"))).toBe(false);
+  });
+
+  test("standard apply installs state, hooks, templates, package scripts, and a recoverable manifest", () => {
     const repo = tempRepo();
     try {
-      const plan = planAdoption({ repoRoot: repo, mode: "standard", apply: false });
-      expect(snapshotPlan(plan)).toEqual(readJson(join(FIXTURES, "empty-repo.expected.json")));
-      expect(plan.operations.every((operation) => !operation.path?.startsWith(repo))).toBe(true);
-    } finally {
-      rmSync(repo, { recursive: true, force: true });
-    }
-  });
+      writeFileSync(join(repo, "package.json"), JSON.stringify({ name: "fixture", scripts: { test: "bun test" } }, null, 2));
+      const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "standard", apply: true }));
 
-  test("minimal and self-host modes have distinct operation counts", () => {
-    const minimalRepo = tempRepo();
-    const selfHostRepo = tempRepo();
-    try {
-      expect(snapshotPlan(planAdoption({ repoRoot: minimalRepo, mode: "minimal" }))).toEqual(
-        readJson(join(FIXTURES, "minimal-repo.expected.json")),
+      expect(apply.ok).toBe(true);
+      expect(apply.transactionManifestPath).toBeDefined();
+      expect(existsSync(join(repo, ".ai", "harness", "workflow-contract.json"))).toBe(true);
+      expect(existsSync(join(repo, ".ai", "harness", "policy.json"))).toBe(true);
+      expect(existsSync(join(repo, ".ai", "hooks", "lib", "workflow-state.sh"))).toBe(true);
+      expect(existsSync(join(repo, ".claude", "templates", "contract.template.md"))).toBe(true);
+      expect(existsSync(join(repo, "docs", "reference-configs", "harness-overview.md"))).toBe(true);
+      expect(JSON.parse(readFileSync(join(repo, "package.json"), "utf-8")).scripts["check:task-workflow"]).toBe(
+        "repo-harness run check-task-workflow --strict",
       );
-      expect(snapshotPlan(planAdoption({ repoRoot: selfHostRepo, mode: "self-host" }))).toEqual(
-        readJson(join(FIXTURES, "self-host-repo.expected.json")),
-      );
+      expect(readFileSync(join(repo, apply.transactionManifestPath!), "utf-8")).toContain('"command": "adopt"');
     } finally {
-      rmSync(minimalRepo, { recursive: true, force: true });
-      rmSync(selfHostRepo, { recursive: true, force: true });
+      cleanup(repo);
     }
   });
 
-  test("minimal mode still plans the workflow-contract opt-in marker", () => {
-    const repo = tempRepo();
-    try {
-      const plan = planAdoption({ repoRoot: repo, mode: "minimal" });
-      expect(plan.operations.find((operation) => operation.id === "writeFile:.ai/harness/workflow-contract.json:workflow-contract"))
-        ?.toEqual(expect.objectContaining({ kind: "writeFile", path: ".ai/harness/workflow-contract.json" }));
-    } finally {
-      rmSync(repo, { recursive: true, force: true });
-    }
-  });
-
-  test("existing files are planned as skipped instead of overwritten", () => {
+  test("planner archives legacy workflow artifacts while preserving private _ops material and custom files", () => {
     const repo = tempRepo();
     try {
       mkdirSync(join(repo, "docs"), { recursive: true });
-      mkdirSync(join(repo, ".ai", "harness"), { recursive: true });
+      mkdirSync(join(repo, "tasks", "sprints"), { recursive: true });
+      mkdirSync(join(repo, "_ops", "scripts"), { recursive: true });
       mkdirSync(join(repo, "scripts"), { recursive: true });
-      writeFileSync(join(repo, "docs", "spec.md"), "# User spec\n");
-      writeFileSync(join(repo, "scripts", "new-plan.sh"), "#!/bin/bash\necho user-owned\n");
-      writeFileSync(
-        join(repo, ".ai", "harness", "workflow-contract.json"),
-        readFileSync(join(ROOT, "assets", "workflow-contract.v1.json"), "utf-8"),
-      );
-      writeFileSync(
-        join(repo, ".gitignore"),
-        renderManagedBlock(gitignoreManagedBlockOperation("planned", "")) + "\n",
-      );
-
-      const plan = planAdoption({ repoRoot: repo, mode: "standard" });
-      expect(plan.operations.find((operation) => operation.id === "writeFile:docs/spec.md:ifMissing")?.status).toBe(
-        "skipped",
-      );
-      expect(
-        plan.operations.find((operation) => operation.id === "writeFile:.ai/harness/workflow-contract.json:workflow-contract")
-          ?.status,
-      ).toBe("skipped");
-      expect(plan.operations.find((operation) => operation.id === "writeFile:scripts/new-plan.sh:helper-wrapper")).toBeUndefined();
-      expect(
-        plan.operations.find((operation) => operation.id === "appendManagedBlock:.gitignore:repo-harness-generated-runtime")
-          ?.status,
-      ).toBe("skipped");
-    } finally {
-      rmSync(repo, { recursive: true, force: true });
-    }
-  });
-
-  test("adds rollback metadata to every planned operation", () => {
-    const repo = tempRepo();
-    try {
-      const plan = planAdoption({ repoRoot: repo, mode: "standard" });
-      const mkdir = plan.operations.find((operation) => operation.id === "mkdir:plans");
-      const spec = plan.operations.find((operation) => operation.id === "writeFile:docs/spec.md:ifMissing");
-      const workflowContract = plan.operations.find(
-        (operation) => operation.id === "writeFile:.ai/harness/workflow-contract.json:workflow-contract",
-      );
-      const gitignore = plan.operations.find(
-        (operation) => operation.id === "appendManagedBlock:.gitignore:repo-harness-generated-runtime",
-      );
-
-      expect(plan.operations.every((operation) => operation.rollback)).toBe(true);
-      expect(mkdir?.rollback).toEqual(
-        expect.objectContaining({ strategy: "remove-empty-directory", paths: ["plans"], backup: "not-needed" }),
-      );
-      expect(spec?.rollback).toEqual(
-        expect.objectContaining({ strategy: "delete-created-file", paths: ["docs/spec.md"], backup: "not-needed" }),
-      );
-      expect(workflowContract?.rollback).toEqual(
-        expect.objectContaining({
-          strategy: "restore-or-delete-file",
-          paths: [".ai/harness/workflow-contract.json"],
-          backup: "runtime-fs-transaction",
-        }),
-      );
-      expect(gitignore?.rollback).toEqual(
-        expect.objectContaining({
-          strategy: "restore-or-delete-file",
-          paths: [".gitignore"],
-          backup: "runtime-fs-transaction",
-        }),
-      );
-    } finally {
-      rmSync(repo, { recursive: true, force: true });
-    }
-  });
-});
-
-describe("adoption renderers", () => {
-  test("JSON renderer redacts file content with hash and preview", () => {
-    const repo = tempRepo();
-    try {
-      const plan = planAdoption({ repoRoot: repo, mode: "minimal" });
-      const rendered = renderAdoptionPlanObject(plan);
-      const writeFile = (rendered.operations as Record<string, unknown>[]).find(
-        (operation) => operation.kind === "writeFile",
-      );
-
-      expect(writeFile?.content).toBeUndefined();
-      expect(String(writeFile?.contentHash).startsWith("sha256:")).toBe(true);
-      expect(String(writeFile?.contentPreview)).toContain("# Product Spec:");
-      expect(writeFile?.rollback).toEqual(
-        expect.objectContaining({ strategy: "delete-created-file", paths: ["docs/spec.md"] }),
-      );
-      expect(JSON.parse(renderAdoptionPlanJson(plan)).protocol).toBe(1);
-    } finally {
-      rmSync(repo, { recursive: true, force: true });
-    }
-  });
-});
-
-describe("safe adoption applicator subset", () => {
-  test("path safety rejects absolute paths and traversal", () => {
-    expect(ensureRepoRelativePath("../evil").ok).toBe(false);
-    expect(ensureRepoRelativePath("/tmp/evil").ok).toBe(false);
-    expect(resolveInsideRepo("/tmp/repo", "../evil").ok).toBe(false);
-    expect(resolveInsideRepo("/tmp/repo", "docs/spec.md").ok).toBe(true);
-  });
-
-  test("managed block insertion, replacement, and idempotency preserve user content", () => {
-    const operation = gitignoreManagedBlockOperation("planned");
-    const userContent = "# User rules\ncustom.log\n";
-    const inserted = upsertManagedBlock(userContent, operation);
-    expect(inserted.ok).toBe(true);
-    expect(inserted.changed).toBe(true);
-    expect(inserted.content).toContain("custom.log");
-    expect(inserted.content).toContain("# BEGIN: repo-harness generated-runtime");
-    expect(inserted.content).toContain(".ai/harness/checks/*.latest.json");
-    expect(inserted.content).toContain(".ai/harness/checks/*.latest.md");
-
-    const repeated = upsertManagedBlock(inserted.content ?? "", operation);
-    expect(repeated.ok).toBe(true);
-    expect(repeated.changed).toBe(false);
-
-    const oldBlock = [
-      "# User rules",
-      "# BEGIN: repo-harness generated-runtime",
-      "old-entry/",
-      "# END: repo-harness generated-runtime",
-      "",
-    ].join("\n");
-    const replaced = upsertManagedBlock(oldBlock, operation);
-    expect(replaced.ok).toBe(true);
-    expect(replaced.content).not.toContain("old-entry/");
-    expect(replaced.content).toContain("_ops/");
-  });
-
-  test("managed block replacement recognizes CRLF markers without duplicating the block", () => {
-    const operation = gitignoreManagedBlockOperation("planned");
-    const staleBlock = [
-      "# User rules",
-      "# BEGIN: repo-harness generated-runtime",
-      "old-entry/",
-      "# END: repo-harness generated-runtime",
-      "",
-    ].join("\r\n");
-
-    const replaced = upsertManagedBlock(staleBlock, operation);
-
-    expect(replaced.ok).toBe(true);
-    expect(replaced.changed).toBe(true);
-    expect(replaced.content?.match(/# BEGIN: repo-harness generated-runtime/g)).toHaveLength(1);
-    expect(replaced.content).not.toContain("old-entry/");
-    expect(replaced.content).toContain("\r\n");
-  });
-
-  test("applicator writes safe subset and remains idempotent", () => {
-    const repo = tempRepo();
-    try {
-      const plan = planAdoption({ repoRoot: repo, mode: "minimal" });
-      const result = applyAdoptionPlan(plan);
-      expect(result.ok).toBe(true);
-      expect(result.transactionManifestPath?.startsWith(".ai/harness/backups/fs-transaction/")).toBe(true);
-      expect(readJson(join(repo, result.transactionManifestPath ?? ""))).toEqual(
-        expect.objectContaining({
-          protocol: 1,
-          command: "adopt",
-          mode: "minimal",
-          rollback: expect.objectContaining({
-            command: expect.stringContaining("repo-harness adopt rollback --transaction"),
-          }),
-        }),
-      );
-      expect(existsSync(join(repo, "docs", "spec.md"))).toBe(true);
-      expect(readFileSync(join(repo, ".ai", "harness", "workflow-contract.json"), "utf-8")).toBe(
-        readWorkflowContractAsset(),
-      );
-      expect(readFileSync(join(repo, ".gitignore"), "utf-8")).toContain("# BEGIN: repo-harness generated-runtime");
-
-      writeFileSync(join(repo, "docs", "spec.md"), "# User spec\n");
-      const secondPlan = planAdoption({ repoRoot: repo, mode: "minimal" });
-      const second = applyAdoptionPlan(secondPlan);
-      expect(second.ok).toBe(true);
-      expect(readFileSync(join(repo, "docs", "spec.md"), "utf-8")).toBe("# User spec\n");
-      expect(second.results.find((entry) => entry.id === "writeFile:docs/spec.md:ifMissing")?.status).toBe("skipped");
-      expect(second.results.find((entry) => entry.kind === "appendManagedBlock")?.status).toBe("skipped");
-    } finally {
-      rmSync(repo, { recursive: true, force: true });
-    }
-  });
-
-  test("atomic writer backs up managed block updates and cleans transient locks", () => {
-    const repo = tempRepo();
-    try {
-      writeFileSync(join(repo, ".gitignore"), "# User rules\ncustom.log\n");
-      const result = applyAppendManagedBlockOperation(repo, gitignoreManagedBlockOperation("planned"));
-
-      expect(result.status).toBe("applied");
-      expect(result.backupPath?.startsWith(".ai/harness/backups/fs-transaction/.gitignore.")).toBe(true);
-      expect(existsSync(join(repo, result.backupPath ?? ""))).toBe(true);
-      expect(readFileSync(join(repo, result.backupPath ?? ""), "utf-8")).toBe("# User rules\ncustom.log\n");
-      expect(readFileSync(join(repo, ".gitignore"), "utf-8")).toContain("# BEGIN: repo-harness generated-runtime");
-      expect(readFileSync(join(repo, ".gitignore"), "utf-8")).toContain(".ai/harness/backups/");
-      expect(existsSync(join(repo, ".gitignore.repo-harness.lock"))).toBe(false);
-    } finally {
-      rmSync(repo, { recursive: true, force: true });
-    }
-  });
-
-  test("atomic writer reports a structured failure when the target is locked", () => {
-    const repo = tempRepo();
-    try {
-      writeFileSync(join(repo, ".gitignore"), "# User rules\n");
-      writeFileSync(join(repo, ".gitignore.repo-harness.lock"), "external writer\n");
-
-      const result = applyAppendManagedBlockOperation(repo, gitignoreManagedBlockOperation("planned"));
-
-      expect(result.status).toBe("failed");
-      expect(result.error).toContain("target is locked");
-      expect(readFileSync(join(repo, ".gitignore"), "utf-8")).toBe("# User rules\n");
-      expect(readFileSync(join(repo, ".gitignore.repo-harness.lock"), "utf-8")).toBe("external writer\n");
-    } finally {
-      rmSync(repo, { recursive: true, force: true });
-    }
-  });
-
-  test("workflow-contract install writes stale manifests through the atomic writer", () => {
-    const repo = tempRepo();
-    try {
-      mkdirSync(join(repo, ".ai", "harness"), { recursive: true });
-      writeFileSync(join(repo, ".ai", "harness", "workflow-contract.json"), "{\"version\":\"old\"}\n");
-
-      const result = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "standard", apply: true }));
-      const workflowContract = result.results.find(
-        (entry) => entry.id === "writeFile:.ai/harness/workflow-contract.json:workflow-contract",
-      );
-
-      expect(result.ok).toBe(true);
-      expect(workflowContract?.status).toBe("applied");
-      expect(workflowContract?.backupPath).toMatch(
-        /^\.ai\/harness\/backups\/fs-transaction\/[^/]+\/\.ai__harness__workflow-contract\.json\..+\.bak$/,
-      );
-      expect(readFileSync(join(repo, workflowContract?.backupPath ?? ""), "utf-8")).toBe("{\"version\":\"old\"}\n");
-      expect(readFileSync(join(repo, ".ai", "harness", "workflow-contract.json"), "utf-8")).toBe(
-        readWorkflowContractAsset(),
-      );
-    } finally {
-      rmSync(repo, { recursive: true, force: true });
-    }
-  });
-
-  test("applicator preflights unsupported operations before partial writes", () => {
-    const repo = tempRepo();
-    try {
-      const result = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "self-host", apply: true }));
-
-      expect(result.ok).toBe(false);
-      expect(result.results).toEqual([
-        expect.objectContaining({
-          id: "runCheck:self-host-adoption-boundary-review",
-          kind: "runCheck",
-          status: "failed",
-        }),
-      ]);
-      expect(existsSync(join(repo, "docs", "spec.md"))).toBe(false);
-      expect(existsSync(join(repo, ".gitignore"))).toBe(false);
-    } finally {
-      rmSync(repo, { recursive: true, force: true });
-    }
-  });
-});
-
-describe("repo-harness adopt dry-run planner output", () => {
-  test("prints text from the TypeScript planner without writing repo files", () => {
-    const repo = tempRepo();
-    try {
-      const result = spawnSync("bun", [CLI, "adopt", "--repo", repo, "--dry-run"], {
-        cwd: ROOT,
-        encoding: "utf-8",
-      });
-
-      expect(result.status).toBe(0);
-      expect(result.stderr).toBe("");
-      expect(result.stdout).toContain("[adopt-plan] repo:");
-      expect(result.stdout).toContain("[adopt-plan] operations: 23 total, 23 planned, 0 skipped");
-      expect(result.stdout).toContain("[adopt-plan] writeFile: 5");
-      expect(result.stdout).not.toContain("plan repo harness");
-      expect(existsSync(join(repo, "docs", "spec.md"))).toBe(false);
-      expect(existsSync(join(repo, ".gitignore"))).toBe(false);
-    } finally {
-      rmSync(repo, { recursive: true, force: true });
-    }
-  });
-
-  test("prints protocol v1 JSON without writing repo files or shell migration output", () => {
-    const repo = tempRepo();
-    try {
-      const result = spawnSync("bun", [CLI, "adopt", "--repo", repo, "--dry-run", "--json"], {
-        cwd: ROOT,
-        encoding: "utf-8",
-      });
-
-      expect(result.status).toBe(0);
-      expect(result.stderr).toBe("");
-      const output = JSON.parse(result.stdout);
-      expect(output.protocol).toBe(1);
-      expect(output.command).toBe("adopt");
-      expect(output.apply).toBe(false);
-      expect(output.operations.some((operation: { kind: string }) => operation.kind === "appendManagedBlock")).toBe(true);
-      expect(result.stdout).not.toContain("plan repo harness");
-      expect(existsSync(join(repo, "docs", "spec.md"))).toBe(false);
-      expect(existsSync(join(repo, ".gitignore"))).toBe(false);
-    } finally {
-      rmSync(repo, { recursive: true, force: true });
-    }
-  });
-
-  test("compact JSON dry-run does not plan repo-local helper scripts", () => {
-    const repo = tempRepo();
-    try {
-      const result = spawnSync("bun", [CLI, "adopt", "--repo", repo, "--compact", "--dry-run", "--json"], {
-        cwd: ROOT,
-        encoding: "utf-8",
-      });
-
-      expect(result.status).toBe(0);
-      expect(result.stderr).toBe("");
-      const output = JSON.parse(result.stdout);
-      expect(output.protocol).toBe(1);
-      expect(output.command).toBe("adopt");
-      expect(output.operations.some((operation: { id: string }) => operation.id.endsWith(":helper-wrapper"))).toBe(false);
-      expect(output.operations.some((operation: { path?: string }) => operation.path === "scripts/new-plan.sh")).toBe(false);
-      expect(result.stdout).not.toContain("Install repo-harness helper compatibility wrapper");
-      expect(existsSync(join(repo, "scripts", "new-plan.sh"))).toBe(false);
-      expect(existsSync(join(repo, ".gitignore"))).toBe(false);
-    } finally {
-      rmSync(repo, { recursive: true, force: true });
-    }
-  });
-
-  test("refuses non-standard default apply while shell migrator mode parity is incomplete", () => {
-    const repo = tempRepo();
-    try {
-      const result = spawnSync("bun", [CLI, "adopt", "--repo", repo, "--mode", "minimal", "--no-verify", "--no-codegraph"], {
-        cwd: ROOT,
-        encoding: "utf-8",
-      });
-
-      expect(result.status).toBe(2);
-      expect(result.stdout).toBe("");
-      expect(result.stderr).toContain("--mode minimal is only supported with ordinary --dry-run or --experimental-ts-apply");
-      expect(existsSync(join(repo, "docs", "spec.md"))).toBe(false);
-    } finally {
-      rmSync(repo, { recursive: true, force: true });
-    }
-  });
-});
-
-describe("repo-harness adopt --experimental-ts-apply", () => {
-  test("applies the safe minimal TypeScript plan", () => {
-    const repo = tempRepo();
-    const registryHome = mkdtempSync(join(tmpdir(), "repo-harness-adoption-registry-"));
-    try {
-      const result = spawnSync(
-        "bun",
-        [CLI, "adopt", "--repo", repo, "--mode", "minimal", "--experimental-ts-apply", "--json"],
-        {
-          cwd: ROOT,
-          encoding: "utf-8",
-          env: { ...process.env, REPO_HARNESS_HOME: registryHome },
-        },
-      );
-
-      expect(result.status).toBe(0);
-      expect(result.stderr).toBe("");
-      const output = JSON.parse(result.stdout);
-      expect(output.protocol).toBe(1);
-      expect(output.experimentalTsApply).toBe(true);
-      expect(output.ok).toBe(true);
-      expect(output.apply.ok).toBe(true);
-      expect(output.registration.registered).toBe(true);
-      expect(output.apply.transactionManifestPath).toMatch(
-        /^\.ai\/harness\/backups\/fs-transaction\/[^/]+\/manifest\.json$/,
-      );
-      expect(output.plan.apply).toBe(true);
-      expect(existsSync(join(repo, "docs", "spec.md"))).toBe(true);
-      expect(readFileSync(join(repo, ".ai", "harness", "workflow-contract.json"), "utf-8")).toBe(
-        readWorkflowContractAsset(),
-      );
-      expect(readFileSync(join(repo, ".gitignore"), "utf-8")).toContain("# BEGIN: repo-harness generated-runtime");
-
-      const manifest = readJson<{ rollback: { command: string }; operations: Array<{ status: string; contentHash?: string }> }>(
-        join(repo, output.apply.transactionManifestPath),
-      );
-      expect(manifest.rollback.command).toContain(output.apply.transactionManifestPath);
-      expect(manifest.operations.some((operation) => operation.status === "applied" && operation.contentHash)).toBe(true);
-
-      const rollback = spawnSync(
-        "bun",
-        [CLI, "adopt", "rollback", "--repo", repo, "--transaction", output.apply.transactionManifestPath, "--json"],
-        {
-          cwd: ROOT,
-          encoding: "utf-8",
-          env: { ...process.env, REPO_HARNESS_HOME: registryHome },
-        },
-      );
-      expect(rollback.status).toBe(0);
-      expect(rollback.stderr).toBe("");
-      const rollbackOutput = JSON.parse(rollback.stdout);
-      expect(rollbackOutput.ok).toBe(true);
-      expect(rollbackOutput.results.some((entry: { action: string }) => entry.action === "delete_created_file")).toBe(true);
-      expect(existsSync(join(repo, "docs", "spec.md"))).toBe(false);
-      expect(existsSync(join(repo, ".gitignore"))).toBe(false);
-      expect(existsSync(join(repo, ".ai", "harness", "workflow-contract.json"))).toBe(false);
-    } finally {
-      rmSync(repo, { recursive: true, force: true });
-      rmSync(registryHome, { recursive: true, force: true });
-    }
-  });
-
-  test("applies the standard TypeScript plan including workflow-contract install", () => {
-    const repo = tempRepo();
-    const registryHome = mkdtempSync(join(tmpdir(), "repo-harness-adoption-registry-"));
-    try {
-      const result = spawnSync("bun", [CLI, "adopt", "--repo", repo, "--experimental-ts-apply", "--json"], {
-        cwd: ROOT,
-        encoding: "utf-8",
-        env: { ...process.env, REPO_HARNESS_HOME: registryHome },
-      });
-
-      expect(result.status).toBe(0);
-      expect(result.stderr).toBe("");
-      const output = JSON.parse(result.stdout);
-      expect(output.ok).toBe(true);
-      expect(output.registration.registered).toBe(true);
-      expect(output.unsupportedOperations).toBeUndefined();
-      expect(readFileSync(join(repo, ".ai", "harness", "workflow-contract.json"), "utf-8")).toBe(
-        readWorkflowContractAsset(),
-      );
-      expect(readFileSync(join(repo, ".gitignore"), "utf-8")).toContain("# BEGIN: repo-harness generated-runtime");
-    } finally {
-      rmSync(repo, { recursive: true, force: true });
-      rmSync(registryHome, { recursive: true, force: true });
-    }
-  });
-
-  test("fails before writes when the plan contains unsupported applicator operations", () => {
-    const repo = tempRepo();
-    try {
-      const result = spawnSync("bun", [CLI, "adopt", "--repo", repo, "--mode", "self-host", "--experimental-ts-apply", "--json"], {
-        cwd: ROOT,
-        encoding: "utf-8",
-      });
-
-      expect(result.status).toBe(1);
-      expect(result.stderr).toBe("");
-      const output = JSON.parse(result.stdout);
-      expect(output.ok).toBe(false);
-      expect(output.unsupportedOperations).toEqual([
-        expect.objectContaining({
-          id: "runCheck:self-host-adoption-boundary-review",
-          kind: "runCheck",
-        }),
-      ]);
-      expect(existsSync(join(repo, "docs", "spec.md"))).toBe(false);
-      expect(existsSync(join(repo, ".gitignore"))).toBe(false);
-    } finally {
-      rmSync(repo, { recursive: true, force: true });
-    }
-  });
-});
-
-describe("adopt rollback --transaction destructive safety", () => {
-  test("restore_backup restores prior content when the target is unchanged since apply", () => {
-    const repo = tempRepo();
-    try {
-      mkdirSync(join(repo, ".ai", "harness"), { recursive: true });
-      writeFileSync(join(repo, ".ai", "harness", "workflow-contract.json"), "{\"version\":\"old\"}\n");
+      writeFileSync(join(repo, "docs", "plan.md"), "# Old plan\n");
+      writeFileSync(join(repo, "tasks", "sprints", "release.sprint.md"), "# Sprint: Release\n");
+      writeFileSync(join(repo, "_ops", "scripts", "deploy.sh"), "#!/bin/bash\n");
+      writeFileSync(join(repo, "scripts", "app-owned.sh"), "#!/bin/bash\necho app\n");
 
       const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "standard", apply: true }));
       expect(apply.ok).toBe(true);
-      const manifestPath = apply.transactionManifestPath ?? "";
-      expect(manifestPath).not.toBe("");
+      expect(readFileSync(join(repo, "plans", "archive", "legacy-docs-plan.md"), "utf-8")).toContain("# Old plan");
+      expect(existsSync(join(repo, "docs", "plan.md.migrated.bak"))).toBe(true);
+      expect(existsSync(join(repo, "plans", "sprints", "release.sprint.md"))).toBe(true);
+      expect(existsSync(join(repo, "_ops", "scripts", "deploy.sh"))).toBe(true);
+      expect(existsSync(join(repo, "deploy", "scripts", "deploy.sh"))).toBe(false);
+      expect(readFileSync(join(repo, "scripts", "app-owned.sh"), "utf-8")).toContain("echo app");
+    } finally {
+      cleanup(repo);
+    }
+  });
 
-      const rollback = rollbackAdoptionTransaction({ repoRoot: repo, transaction: manifestPath });
+  test("managed replacements keep user-authored reference docs intact", () => {
+    const repo = tempRepo();
+    try {
+      mkdirSync(join(repo, "docs", "reference-configs"), { recursive: true });
+      writeFileSync(join(repo, "docs", "reference-configs", "harness-overview.md"), "# Local Operations Guide\n");
+      const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "standard", apply: true }));
+      expect(apply.ok).toBe(true);
+      expect(readFileSync(join(repo, "docs", "reference-configs", "harness-overview.md"), "utf-8")).toBe("# Local Operations Guide\n");
+    } finally {
+      cleanup(repo);
+    }
+  });
+
+  test("planner leaves custom files in retired generated-helper paths untouched", () => {
+    const repo = tempRepo();
+    try {
+      mkdirSync(join(repo, "scripts"), { recursive: true });
+      mkdirSync(join(repo, ".codex"), { recursive: true });
+      writeFileSync(join(repo, "scripts", "check-task-workflow.sh"), "#!/bin/bash\necho repo-harness custom\n");
+      writeFileSync(join(repo, ".codex", "hooks.json"), '{"hooks":{"PostToolUse":"bash scripts/custom-hook.sh"}}\n');
+      const plan = planAdoption({ repoRoot: repo, mode: "standard" });
+      expect(plan.operations.some((operation) => operation.path === "scripts/check-task-workflow.sh")).toBe(false);
+      expect(plan.operations.some((operation) => operation.path === ".codex/hooks.json")).toBe(false);
+      expect(applyAdoptionPlan(plan).ok).toBe(true);
+      expect(readFileSync(join(repo, ".codex", "hooks.json"), "utf-8")).toContain("custom-hook.sh");
+    } finally {
+      cleanup(repo);
+    }
+  });
+
+  test("legacy todo archive collisions fail closed before normalization", () => {
+    const repo = tempRepo();
+    try {
+      mkdirSync(join(repo, "tasks", "archive"), { recursive: true });
+      writeFileSync(join(repo, "tasks", "todos.md"), "# Old Todo\n");
+      writeFileSync(join(repo, "tasks", "archive", "legacy-tasks-todo.md"), "# User archive\n");
+      expect(() => planAdoption({ repoRoot: repo, mode: "standard" })).toThrow("legacy archive collision");
+      expect(readFileSync(join(repo, "tasks", "todos.md"), "utf-8")).toBe("# Old Todo\n");
+    } finally {
+      cleanup(repo);
+    }
+  });
+
+  test("legacy document and research archive collisions fail closed before retirement", () => {
+    const documentRepo = tempRepo();
+    const researchRepo = tempRepo();
+    try {
+      mkdirSync(join(documentRepo, "docs"), { recursive: true });
+      mkdirSync(join(documentRepo, "tasks", "archive"), { recursive: true });
+      writeFileSync(join(documentRepo, "docs", "TODO.md"), "# Legacy todo\n");
+      writeFileSync(join(documentRepo, "tasks", "archive", "legacy-docs-TODO.md"), "# Different user archive\n");
+      expect(() => planAdoption({ repoRoot: documentRepo, mode: "standard" })).toThrow("legacy archive collision");
+      expect(readFileSync(join(documentRepo, "docs", "TODO.md"), "utf-8")).toBe("# Legacy todo\n");
+
+      mkdirSync(join(researchRepo, "tasks"), { recursive: true });
+      mkdirSync(join(researchRepo, "docs", "researches"), { recursive: true });
+      writeFileSync(join(researchRepo, "tasks", "research.md"), "# Legacy research\n");
+      writeFileSync(join(researchRepo, "docs", "researches", "legacy-research-notes.md"), "# Different user archive\n");
+      expect(() => planAdoption({ repoRoot: researchRepo, mode: "standard" })).toThrow("legacy archive collision");
+      expect(readFileSync(join(researchRepo, "tasks", "research.md"), "utf-8")).toBe("# Legacy research\n");
+    } finally {
+      cleanup(documentRepo);
+      cleanup(researchRepo);
+    }
+  });
+
+  test("atomic replacements preserve an existing private file mode", () => {
+    const repo = tempRepo();
+    try {
+      mkdirSync(join(repo, ".ai", "harness"), { recursive: true });
+      const target = join(repo, ".ai", "harness", "workflow-contract.json");
+      writeFileSync(target, "{}\n", { mode: 0o600 });
+      const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "minimal", apply: true }));
+      expect(apply.ok).toBe(true);
+      expect(statSync(target).mode & 0o777).toBe(0o600);
+      const manifest = JSON.parse(readFileSync(join(repo, apply.transactionManifestPath!), "utf-8")) as { operations: Array<{ path?: string; backupPath?: string }> };
+      const backup = manifest.operations.find((operation) => operation.path === ".ai/harness/workflow-contract.json")?.backupPath;
+      expect(backup).toBeDefined();
+      expect(statSync(join(repo, backup!)).mode & 0o777).toBe(0o600);
+    } finally {
+      cleanup(repo);
+    }
+  });
+
+  test("self-host is rejected before the standard scaffold is created", () => {
+    const repo = tempRepo();
+    try {
+      const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "self-host", apply: true }));
+      expect(apply.ok).toBe(false);
+      expect(apply.results.some((result) => result.id.includes("self-host-adoption-boundary-review") && result.status === "failed")).toBe(true);
+      expect(existsSync(join(repo, "docs", "spec.md"))).toBe(false);
+      expect(apply.transactionManifestPath).toBeDefined();
+    } finally {
+      cleanup(repo);
+    }
+  });
+
+  test("apply refuses a target created after planning instead of overwriting it", () => {
+    const repo = tempRepo();
+    try {
+      const plan = planAdoption({ repoRoot: repo, mode: "standard", apply: true });
+      mkdirSync(join(repo, "docs"), { recursive: true });
+      writeFileSync(join(repo, "docs", "spec.md"), "# User-authored after planning\n");
+      const apply = applyAdoptionPlan(plan);
+      expect(apply.ok).toBe(false);
+      expect(apply.results.find((result) => result.path === "docs/spec.md")?.error).toContain("created after planning");
+      expect(readFileSync(join(repo, "docs", "spec.md"), "utf-8")).toBe("# User-authored after planning\n");
+    } finally {
+      cleanup(repo);
+    }
+  });
+
+  test("preflight symlink failures never write a transaction manifest outside the repo", () => {
+    const repo = tempRepo();
+    const outside = tempRepo();
+    try {
+      const plan = planAdoption({ repoRoot: repo, mode: "minimal", apply: true });
+      symlinkSync(outside, join(repo, ".ai"));
+      const apply = applyAdoptionPlan(plan);
+      expect(apply.ok).toBe(false);
+      expect(apply.transactionManifestPath).toBeUndefined();
+      expect(existsSync(join(outside, "harness", "backups", "fs-transaction"))).toBe(false);
+    } finally {
+      cleanup(repo);
+      cleanup(outside);
+    }
+  });
+
+  test("manifest path failures stop before repo mutations and report the missing recovery evidence", () => {
+    const repo = tempRepo();
+    try {
+      mkdirSync(join(repo, ".ai", "harness"), { recursive: true });
+      writeFileSync(join(repo, ".ai", "harness", "backups"), "not a directory\n");
+      const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "minimal", apply: true }));
+      expect(apply.ok).toBe(false);
+      expect(apply.results.find((result) => result.id === "transaction-manifest")?.error).toContain("parent is not a directory");
+      expect(existsSync(join(repo, "docs", "spec.md"))).toBe(false);
+      expect(apply.transactionManifestPath).toBeUndefined();
+    } finally {
+      cleanup(repo);
+    }
+  });
+
+  test("rollback restores a legacy move only when its destination has not changed", () => {
+    const repo = tempRepo();
+    try {
+      mkdirSync(join(repo, "docs"), { recursive: true });
+      writeFileSync(join(repo, "docs", "plan.md"), "# Old plan\n");
+      const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "standard", apply: true }));
+      expect(apply.ok).toBe(true);
+      const rollback = rollbackAdoptionTransaction({ repoRoot: repo, transaction: apply.transactionManifestPath! });
       expect(rollback.ok).toBe(true);
-      expect(
-        rollback.results.some((entry) => entry.action === "restore_backup" && entry.status === "rolled_back"),
-      ).toBe(true);
-      expect(readFileSync(join(repo, ".ai", "harness", "workflow-contract.json"), "utf-8")).toBe("{\"version\":\"old\"}\n");
+      expect(readFileSync(join(repo, "docs", "plan.md"), "utf-8")).toBe("# Old plan\n");
     } finally {
-      rmSync(repo, { recursive: true, force: true });
+      cleanup(repo);
     }
   });
 
-  test("restore_backup refuses to overwrite a target edited after apply", () => {
+  test("rollback refuses symlinked destinations without writing outside the repo", () => {
+    const repo = tempRepo();
+    const outside = tempRepo();
+    try {
+      const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "minimal", apply: true }));
+      expect(apply.ok).toBe(true);
+      rmSync(join(repo, "docs"), { recursive: true, force: true });
+      symlinkSync(outside, join(repo, "docs"));
+      const rollback = rollbackAdoptionTransaction({ repoRoot: repo, transaction: apply.transactionManifestPath! });
+      expect(rollback.ok).toBe(false);
+      expect(rollback.results.some((result) => result.error?.includes("symlink is not allowed"))).toBe(true);
+      expect(existsSync(join(outside, "spec.md"))).toBe(false);
+    } finally {
+      cleanup(repo);
+      cleanup(outside);
+    }
+  });
+
+  test("rollback restores the git index after a generated helper is untracked", () => {
     const repo = tempRepo();
     try {
-      mkdirSync(join(repo, ".ai", "harness"), { recursive: true });
-      writeFileSync(join(repo, ".ai", "harness", "workflow-contract.json"), "{\"version\":\"old\"}\n");
-
+      mkdirSync(join(repo, "scripts"), { recursive: true });
+      const helper = "scripts/check-task-workflow.sh";
+      writeFileSync(join(repo, helper), readFileSync(join(ROOT, "assets", "templates", "helpers", "check-task-workflow.sh"), "utf-8"));
+      expect(spawnSync("git", ["init", "-q"], { cwd: repo }).status).toBe(0);
+      expect(spawnSync("git", ["add", helper], { cwd: repo }).status).toBe(0);
       const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "standard", apply: true }));
       expect(apply.ok).toBe(true);
-
-      // The user edits the applied file before rolling back; rollback must not clobber it.
-      writeFileSync(join(repo, ".ai", "harness", "workflow-contract.json"), "USER EDIT\n");
-
-      const rollback = rollbackAdoptionTransaction({ repoRoot: repo, transaction: apply.transactionManifestPath ?? "" });
-      expect(rollback.ok).toBe(false);
-      const contract = rollback.results.find((entry) => entry.path === ".ai/harness/workflow-contract.json");
-      expect(contract?.action).toBe("restore_backup");
-      expect(contract?.status).toBe("failed");
-      expect(contract?.error).toContain("current file hash differs");
-      expect(readFileSync(join(repo, ".ai", "harness", "workflow-contract.json"), "utf-8")).toBe("USER EDIT\n");
+      expect(existsSync(join(repo, helper))).toBe(false);
+      const rollback = rollbackAdoptionTransaction({ repoRoot: repo, transaction: apply.transactionManifestPath! });
+      expect(rollback.ok).toBe(true);
+      expect(spawnSync("git", ["ls-files", "--error-unmatch", "--", helper], { cwd: repo }).status).toBe(0);
     } finally {
-      rmSync(repo, { recursive: true, force: true });
+      cleanup(repo);
+    }
+  });
+});
+
+describe("adopt command cutover", () => {
+  test("dry-run is structured and leaves the target untouched", () => {
+    const repo = tempRepo();
+    try {
+      const result = spawnSync("bun", [CLI, "adopt", "--repo", repo, "--dry-run", "--json"], { cwd: ROOT, encoding: "utf-8" });
+      expect(result.status).toBe(0);
+      const payload = JSON.parse(result.stdout) as { apply: boolean; operations: unknown[] };
+      expect(payload.apply).toBe(false);
+      expect(payload.operations.length).toBeGreaterThan(50);
+      expect(existsSync(join(repo, ".ai"))).toBe(false);
+    } finally {
+      cleanup(repo);
     }
   });
 
-  test("delete_created_file refuses to delete a created file edited after apply", () => {
+  test("ordinary minimal apply uses the TypeScript transaction and retired experimental flag is absent", () => {
     const repo = tempRepo();
+    const home = tempRepo();
     try {
-      const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "minimal", apply: true }));
-      expect(apply.ok).toBe(true);
-
-      writeFileSync(join(repo, "docs", "spec.md"), "USER EDIT\n");
-
-      const rollback = rollbackAdoptionTransaction({ repoRoot: repo, transaction: apply.transactionManifestPath ?? "" });
-      expect(rollback.ok).toBe(false);
-      const spec = rollback.results.find((entry) => entry.path === "docs/spec.md");
-      expect(spec?.action).toBe("delete_created_file");
-      expect(spec?.status).toBe("failed");
-      expect(existsSync(join(repo, "docs", "spec.md"))).toBe(true);
-      expect(readFileSync(join(repo, "docs", "spec.md"), "utf-8")).toBe("USER EDIT\n");
+      const apply = spawnSync("bun", [CLI, "adopt", "--repo", repo, "--mode", "minimal", "--no-verify", "--no-codegraph", "--json"], {
+        cwd: ROOT,
+        encoding: "utf-8",
+        env: { ...process.env, REPO_HARNESS_HOME: home },
+      });
+      expect(apply.status).toBe(0);
+      expect(existsSync(join(repo, ".ai", "harness", "workflow-contract.json"))).toBe(true);
+      const retired = spawnSync("bun", [CLI, "adopt", "--experimental-ts-apply"], { cwd: ROOT, encoding: "utf-8" });
+      expect(retired.status).toBe(1);
+      expect(retired.stderr).toContain("unknown option");
     } finally {
-      rmSync(repo, { recursive: true, force: true });
+      cleanup(repo);
+      cleanup(home);
     }
   });
 
-  test("rollback returns a structured failure instead of throwing when a target is unreadable", () => {
+  test("reclaim and compact are rejected before the canonical adoption transaction starts", () => {
     const repo = tempRepo();
     try {
-      const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "minimal", apply: true }));
-      expect(apply.ok).toBe(true);
-
-      // Replace a created file with a directory so reading it throws EISDIR.
-      rmSync(join(repo, "docs", "spec.md"));
-      mkdirSync(join(repo, "docs", "spec.md"));
-
-      const rollback = rollbackAdoptionTransaction({ repoRoot: repo, transaction: apply.transactionManifestPath ?? "" });
-      expect(rollback.ok).toBe(false);
-      const spec = rollback.results.find((entry) => entry.path === "docs/spec.md");
-      expect(spec?.action).toBe("delete_created_file");
-      expect(spec?.status).toBe("failed");
-      expect(existsSync(join(repo, "docs", "spec.md"))).toBe(true);
+      const result = spawnSync("bun", [CLI, "adopt", "--repo", repo, "--reclaim-runtime"], { cwd: ROOT, encoding: "utf-8" });
+      expect(result.status).toBe(2);
+      expect(result.stderr).toContain("canonical adoption transaction");
+      expect(existsSync(join(repo, ".ai"))).toBe(false);
     } finally {
-      rmSync(repo, { recursive: true, force: true });
+      cleanup(repo);
     }
   });
 
-  test("rollback does not remove a directory that existed before apply", () => {
+  test("interactive adopt is rejected before it can configure user-level runtime state", () => {
     const repo = tempRepo();
     try {
-      // A user-owned directory that the adoption plan also wants to create.
-      mkdirSync(join(repo, "plans"), { recursive: true });
-
-      const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "minimal", apply: true }));
-      expect(apply.ok).toBe(true);
-      // A pre-existing directory is not an applied (rollback-eligible) create.
-      const plansOp = apply.results.find((entry) => entry.kind === "mkdir" && entry.path === "plans");
-      expect(plansOp?.status).toBe("skipped");
-
-      const rollback = rollbackAdoptionTransaction({ repoRoot: repo, transaction: apply.transactionManifestPath ?? "" });
-      // The user's pre-existing directory survives rollback.
-      expect(existsSync(join(repo, "plans"))).toBe(true);
+      const result = spawnSync("bun", [CLI, "adopt", "--repo", repo, "--interactive"], { cwd: ROOT, encoding: "utf-8" });
+      expect(result.status).toBe(2);
+      expect(result.stderr).toContain("user-level runtime state");
+      expect(existsSync(join(repo, ".ai"))).toBe(false);
     } finally {
-      rmSync(repo, { recursive: true, force: true });
-    }
-  });
-
-  test("rollback rejects a manifest whose backup path escapes its transaction directory", () => {
-    const repo = tempRepo();
-    try {
-      const txnDir = join(repo, ".ai", "harness", "backups", "fs-transaction", "crafted-txn");
-      mkdirSync(txnDir, { recursive: true });
-      const manifest = {
-        protocol: 1,
-        command: "adopt",
-        createdAt: "2026-06-17T00:00:00.000Z",
-        repoRoot: repo,
-        mode: "minimal",
-        operations: [
-          {
-            id: "writeFile:README.md:crafted",
-            kind: "writeFile",
-            path: "README.md",
-            status: "applied",
-            contentHash: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-            backupPath: ".ai/harness/backups/fs-transaction/other-txn/README.md.bak",
-          },
-        ],
-        rollback: { command: "repo-harness adopt rollback --transaction x" },
-      };
-      writeFileSync(join(txnDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
-
-      const rollback = rollbackAdoptionTransaction({ repoRoot: repo, transaction: join(txnDir, "manifest.json") });
-      expect(rollback.ok).toBe(false);
-      expect(rollback.results[0]?.error).toContain("invalid transaction manifest");
-    } finally {
-      rmSync(repo, { recursive: true, force: true });
+      cleanup(repo);
     }
   });
 });

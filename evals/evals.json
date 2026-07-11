@@ -296,7 +296,7 @@
       "id": 7,
       "slug": "route-existing-repo-init",
       "prompt": "Initialize this existing repo with the repo-harness workflow. Do not create a new Vite or app scaffold; just add the repo-local harness, hooks, docs/spec.md, tasks, plans, .ai/context, and .ai/harness.",
-      "expected_output": "Routes the request to repo-harness-init, inspects the existing repo first, uses migrate-project-template --apply for the safe init path, and explicitly avoids app scaffolding.",
+      "expected_output": "Routes the request to repo-harness-init, inspects the existing repo first, applies the canonical repo-harness adopt transaction, and explicitly avoids app scaffolding.",
       "files": [
         "evals/fixtures/new-project-empty"
       ],
@@ -315,7 +315,7 @@
           },
           {
             "path": "final-response.md",
-            "pattern": "migrate-project-template"
+            "pattern": "repo-harness adopt"
           }
         ]
       },
@@ -528,7 +528,7 @@
           },
           {
             "path": "final-response.md",
-            "pattern": "migrate-project-template.*dry-run"
+            "pattern": "repo-harness adopt.*dry-run"
           }
         ]
       },
@@ -676,7 +676,7 @@
         "files_not_contain": [
           {
             "path": "final-response.md",
-            "pattern": "migrate-project-template.*--apply"
+            "pattern": "repo-harness adopt.*--apply"
           }
         ]
       },
@@ -717,7 +717,7 @@
         "files_not_contain": [
           {
             "path": "final-response.md",
-            "pattern": "migrate-project-template.*--apply"
+            "pattern": "repo-harness adopt.*--apply"
           }
         ]
       },

@@ -802,7 +802,7 @@ bun run benchmark:skills --eval repair-agents-task-sync
 - Template assembler: `scripts/assemble-template.ts`
 - Question inference helper: `scripts/initializer-question-pack.ts`
 - State inspector: `scripts/inspect-project-state.ts`
-- Legacy-doc migrator: `scripts/migrate-workflow-docs.ts`
+- Canonical adoption planner: `src/core/adoption/standard-plan.ts`
 - External tooling detector: `scripts/check-agent-tooling.sh`
 - Scaffolding scripts:
   - `scripts/init-project.sh`
@@ -844,7 +844,7 @@ bash scripts/check-architecture-sync.sh
 bash scripts/check-task-sync.sh
 bash scripts/check-task-workflow.sh --strict
 bun scripts/inspect-project-state.ts --repo . --format text
-bash scripts/migrate-project-template.sh --repo . --dry-run
+bun src/cli/index.ts adopt --repo . --dry-run
 bash scripts/check-agent-tooling.sh --host both --check-updates
 bun run benchmark:skills --eval route-workflow-check
 ```

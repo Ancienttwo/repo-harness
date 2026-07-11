@@ -23,7 +23,6 @@ import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
 import { runInstall, type InstallTargetSpec } from "./install";
 import { runBrain } from "./brain";
-import { registerRepoHarnessRepo } from "../../effects/repo-registry";
 import {
   defaultBrainRootChoice,
   discoverBrainRootChoices,
@@ -33,6 +32,9 @@ import {
 import { configureCodegraph, ensureCodegraph } from "../tools/codegraph";
 import { runProcess as runBoundedProcess } from "../../effects/process-runner";
 import { askConfirm, writeLine } from "../tty-prompt";
+import { validateRepoAdoptionTarget } from "../repo-adoption/target";
+import { runAdoptionApply, runAdoptionPlan } from "./adopt-plan";
+import type { AdoptionMode } from "../../core/adoption/modes";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(SCRIPT_DIR, "..", "..", "..");
@@ -79,6 +81,7 @@ export interface InitCommandOptions {
   brainRoot?: string;
   brainMode?: InitBrainMode;
   target?: InstallTargetSpec;
+  mode?: AdoptionMode;
   env?: NodeJS.ProcessEnv;
 }
 
@@ -185,37 +188,7 @@ function samePath(a: string, b: string): boolean {
   }
 }
 
-function isGitWorkTree(repoRoot: string, env?: NodeJS.ProcessEnv): boolean {
-  const result = runBoundedProcess("git", ["-C", repoRoot, "rev-parse", "--is-inside-work-tree"], { env });
-  return result.ok && result.stdout.trim() === "true";
-}
-
-export function validateRepoAdoptionTarget(
-  repoRoot: string,
-  explicitRepo: boolean,
-  env?: NodeJS.ProcessEnv,
-): InitStep | null {
-  const home = homeDir(env);
-  if (home && samePath(repoRoot, home)) {
-    return {
-      step: "validate repo target",
-      status: "failed",
-      detail:
-        `refusing to apply repo harness to HOME (${repoRoot}); run repo-harness adopt --repo <git-repo> from an intended project`,
-    };
-  }
-
-  if (!explicitRepo && !isGitWorkTree(repoRoot, env)) {
-    return {
-      step: "validate repo target",
-      status: "failed",
-      detail:
-        `cwd is not inside a git work tree (${repoRoot}); pass --repo <project-path> explicitly for non-git scaffolds`,
-    };
-  }
-
-  return null;
-}
+export { validateRepoAdoptionTarget } from "../repo-adoption/target";
 
 function languageInstruction(preset: ReportingLanguagePreset, custom?: string): string {
   if (preset === "zh-CN") return "Use Chinese to report to user.";
@@ -474,6 +447,7 @@ export function runInit(opts: InitCommandOptions = {}): InitCommandResult {
   const syncCodegraph = opts.syncCodegraph === true;
   const brainMode = opts.brainMode ?? "skip";
   const target = opts.target ?? "both";
+  const mode = opts.mode ?? "standard";
   const steps: InitStep[] = [];
 
   if (opts.brainRoot) {
@@ -535,31 +509,30 @@ export function runInit(opts: InitCommandOptions = {}): InitCommandResult {
   );
   steps.push(withStepName(inspect, "inspect repo", repoRoot));
 
-  const migrate = runProcess(
-    "bash",
-    [
-      join(sourceRoot, "scripts", "migrate-project-template.sh"),
-      "--repo",
-      repoRoot,
-      apply ? "--apply" : "--dry-run",
-    ],
-    sourceRoot,
-    commandEnv,
-  );
-  steps.push(withStepName(migrate, apply ? "apply repo harness" : "plan repo harness", repoRoot));
+  const adoptionApply = apply
+    ? runAdoptionApply({ repo: repoRoot, mode, explicitRepo: true, env: commandEnv })
+    : undefined;
+  const adoption = adoptionApply ?? runAdoptionPlan({ repo: repoRoot, mode, explicitRepo: true, env: commandEnv });
+  const migrate: InitStep = {
+    step: apply ? "apply repo harness" : "plan repo harness",
+    status: adoption.exitCode === 0 ? "ok" : "failed",
+    detail: repoRoot,
+    stdout: adoption.output,
+  };
+  steps.push(migrate);
 
-  if (apply && migrate.status === "ok") {
-    const registered = registerRepoHarnessRepo(repoRoot, "init", { env: commandEnv });
+  const registration = adoptionApply?.report.registration;
+  if (apply && migrate.status === "ok" && registration) {
     steps.push({
       step: "register repo harness repo",
-      status: registered.registered ? "ok" : "skipped",
-      detail: registered.registered ? registered.path : registered.reason,
+      status: registration.registered ? "ok" : "skipped",
+      detail: registration.registered ? registration.path : registration.reason,
     });
   } else {
     steps.push({
       step: "register repo harness repo",
       status: "skipped",
-      detail: apply ? "repo harness did not apply cleanly" : "dry-run",
+      detail: apply ? "repo harness did not apply cleanly or registry effect was unavailable" : "dry-run",
     });
   }
 

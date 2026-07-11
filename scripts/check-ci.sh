@@ -70,7 +70,7 @@ bash scripts/check-task-workflow.sh --strict
 
 echo "[ci] repository inspection"
 bun scripts/inspect-project-state.ts --repo . --format text >/dev/null
-bash scripts/migrate-project-template.sh --repo . --dry-run >/dev/null
+bun src/cli/index.ts adopt --repo . --dry-run >/dev/null
 
 echo "[ci] package dry-run"
 npm pack --dry-run --json >/dev/null

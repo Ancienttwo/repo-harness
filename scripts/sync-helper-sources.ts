@@ -19,7 +19,6 @@ const REPO_ROOT = resolve(SCRIPT_DIR, "..");
 const CANONICAL_ROOT = join(REPO_ROOT, "scripts");
 const TARGET_ROOT = join(REPO_ROOT, "assets", "templates", "helpers");
 const CONTRACT_PATH = join(REPO_ROOT, "assets", "workflow-contract.v1.json");
-const INTENTIONAL_PACKAGE_DELEGATES = new Set(["migrate-project-template.sh"]);
 
 function usage(): never {
   process.stderr.write("Usage: bun scripts/sync-helper-sources.ts [--check|--write]\n");
@@ -47,23 +46,9 @@ function main(): void {
   const contract = loadWorkflowContract(CONTRACT_PATH);
   const inventory = getHelperScripts(contract);
   const inventorySet = new Set(inventory);
-  const managedNames = inventory.filter((name) => !INTENTIONAL_PACKAGE_DELEGATES.has(name));
   const errors: string[] = [];
 
-  for (const delegate of INTENTIONAL_PACKAGE_DELEGATES) {
-    if (!inventorySet.has(delegate)) {
-      errors.push(`intentional package delegate is absent from helpers.scripts: ${delegate}`);
-      continue;
-    }
-    if (!existsSync(join(CANONICAL_ROOT, delegate))) {
-      errors.push(`canonical migration implementation is missing: scripts/${delegate}`);
-    }
-    if (!existsSync(join(TARGET_ROOT, delegate))) {
-      errors.push(`intentional package delegate is missing: assets/templates/helpers/${delegate}`);
-    }
-  }
-
-  const sourceFiles = managedNames.map((name) => {
+  const sourceFiles = inventory.map((name) => {
     const sourcePath = join(CANONICAL_ROOT, name);
     if (!existsSync(sourcePath)) {
       errors.push(`contract helper source is missing: scripts/${name}`);
@@ -81,7 +66,6 @@ function main(): void {
 
   for (const name of inventory) {
     if (!existsSync(join(TARGET_ROOT, name))) {
-      if (INTENTIONAL_PACKAGE_DELEGATES.has(name)) continue;
       if (mode === "check") {
         errors.push(`missing projected helper: assets/templates/helpers/${name}`);
       }
@@ -149,15 +133,13 @@ function main(): void {
   const digest = digestProjectionFiles(sourceFiles);
   if (mode === "write") {
     process.stdout.write(
-      `[helpers] projected ${sourceFiles.length} helpers from scripts to assets/templates/helpers (${digest}); ` +
-      `${INTENTIONAL_PACKAGE_DELEGATES.size} package delegate preserved\n`,
+      `[helpers] projected ${sourceFiles.length} helpers from scripts to assets/templates/helpers (${digest})\n`,
     );
     return;
   }
 
   process.stdout.write(
-    `[helpers] projection OK: ${sourceFiles.length} helpers (${digest}); ` +
-    `${INTENTIONAL_PACKAGE_DELEGATES.size} package delegate preserved\n`,
+    `[helpers] projection OK: ${sourceFiles.length} helpers (${digest})\n`,
   );
 }
 

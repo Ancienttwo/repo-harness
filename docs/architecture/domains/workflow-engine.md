@@ -26,5 +26,5 @@ verify without a live service.
 ## Verification Surface
 
 - `bun test tests/migration-script.test.ts tests/create-project-dirs.runtime.test.ts tests/workflow-contract.test.ts`
-- `bash scripts/migrate-project-template.sh --repo . --dry-run`
+- `repo-harness adopt --repo . --dry-run`
 - `bash scripts/check-task-workflow.sh --strict`

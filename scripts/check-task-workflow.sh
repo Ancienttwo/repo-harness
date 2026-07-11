@@ -670,7 +670,7 @@ check-deploy-sql-order.sh|check-architecture-sync.sh|check-agent-tooling.sh|\
 check-context-files.sh|check-brain-manifest.sh|sync-brain-docs.sh|check-skill-version.ts|\
 select-agent-context-blocks.sh|ensure-task-workflow.sh|check-task-workflow.sh|\
 maintenance-triage.sh|heartbeat-triage.sh|switch-plan.sh|workflow-contract.ts|\
-inspect-project-state.ts|migrate-workflow-docs.ts|migrate-project-template.sh|\
+inspect-project-state.ts|\
 capability-resolver.ts|architecture-event.ts|capability-config.ts|architecture-queue.sh|\
 archive-architecture-request.sh|context-contract-sync.sh|workstream-sync.sh|\
 prepare-codex-handoff.sh|codex-handoff-resume.sh)
@@ -860,7 +860,7 @@ check_helper_runtime_files() {
       check-brain-manifest.sh sync-brain-docs.sh check-skill-version.ts
       select-agent-context-blocks.sh ensure-task-workflow.sh check-task-workflow.sh
       maintenance-triage.sh heartbeat-triage.sh switch-plan.sh workflow-contract.ts
-      inspect-project-state.ts migrate-workflow-docs.ts migrate-project-template.sh
+      inspect-project-state.ts
       capability-resolver.ts architecture-event.ts capability-config.ts architecture-queue.sh
       archive-architecture-request.sh context-contract-sync.sh workstream-sync.sh
       prepare-codex-handoff.sh codex-handoff-resume.sh

@@ -10,7 +10,7 @@ Run the eval set when you change any of these:
 - `SKILL.md` trigger description or routing logic
 - template partials for `CLAUDE.md` or `AGENTS.md`
 - generated repo contracts under `tasks/`, `plans/`, or `docs/reference-configs/`
-- migration behavior in `scripts/migrate-project-template.sh`
+- adoption transaction behavior in `src/core/adoption/standard-plan.ts`
 - helper scripts that affect repo-local enforcement
 
 If the change only affects wording in a non-routing reference file, a full eval pass is optional.
@@ -87,7 +87,7 @@ Good dimensions for this skill:
 
 Run a migration-focused eval whenever you change:
 
-- `scripts/migrate-project-template.sh`
+- `src/core/adoption/standard-plan.ts`
 - helper script installation
 - version stamp semantics
 - generated repo contract rules

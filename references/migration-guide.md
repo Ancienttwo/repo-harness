@@ -1,8 +1,7 @@
-# Migration Guide (current tasks-first contract)
+# Migration Guide (current repo-harness contract)
 
-This guide upgrades existing repositories to the current `agentic-dev` tasks-first
-harness. `agentic-dev-skill` and `project-initializer` remain legacy aliases, but
-new docs and commands should use `agentic-dev`.
+This guide upgrades existing repositories to the current `repo-harness`
+tasks-first harness. The canonical public entrypoint is `repo-harness adopt`.
 
 ## Current Contract Surface
 
@@ -10,7 +9,7 @@ new docs and commands should use `agentic-dev`.
 - **Version source**: `assets/skill-version.json`; generated repos still stamp `.claude/.skill-version` with the legacy `project-initializer@{version}+template@{templateVersion}` format for compatibility.
 - **Action commands**: public command skills are `agentic-dev-plan`, `agentic-dev-review`, `agentic-dev-autoplan`, `agentic-dev-init`, `agentic-dev-scaffold`, `agentic-dev-migrate`, `agentic-dev-upgrade`, `agentic-dev-capability`, `agentic-dev-architecture`, `agentic-dev-handoff`, `agentic-dev-deploy`, `agentic-dev-repair`, and `agentic-dev-check`.
 - Shared hook product source lives in `assets/hooks/`; active runtime resolves central-first through `repo-harness-hook`, with full `.ai/hooks/` vendoring only when a repo pins `"hook_source": "repo"`.
-- User-level host adapters live in `~/.claude/settings.json` and `~/.codex/hooks.json`; repo-local `.claude/settings.json` and `.codex/hooks.json` are legacy cleanup targets.
+- User-level host adapters live in `~/.claude/settings.json` and `~/.codex/hooks.json`; repo-local adapter files are user-owned and must be reviewed manually rather than rewritten by adoption.
 - Generated `.claude/hooks/` shims are legacy cleanup targets. Custom `.claude/hooks/custom-*.sh` files are preserved.
 - Stable product truth lives in `docs/spec.md`.
 - `plans/` is the timestamped plan catalog; `.ai/harness/active-plan` selects the active plan, `.claude/.active-plan` remains a legacy fallback during transition, and any `docs/plan.md` pointer is legacy drift that should be removed during migration.
@@ -47,26 +46,25 @@ new docs and commands should use `agentic-dev`.
 
 ```bash
 # Preview only
-bash scripts/migrate-project-template.sh --repo /path/to/project --dry-run
+repo-harness adopt --repo /path/to/project --dry-run
 
 # Apply migration
-bash scripts/migrate-project-template.sh --repo /path/to/project --apply
+repo-harness adopt --repo /path/to/project
 ```
 
-## What the Script Does
+## What the Transaction Does
 
 1. Refreshes `<repo>/.ai/hooks/` as a repo-local fallback: helper libs plus a README by default, or the full hook runtime when `"hook_source": "repo"` is pinned.
 2. Removes known generated legacy `<repo>/.claude/hooks/` shims while preserving user-owned `custom-*.sh` hooks.
-3. Creates or merges user-level Claude and Codex host adapters that dispatch into `repo-harness-hook`.
-4. If `jq` exists, moves legacy project-level Claude `hooks` from `settings.local.json` into the managed user-level adapter path.
-5. Archives legacy `docs/TODO.md`, `docs/plan.md`, `docs/PROGRESS.md`, `docs/contract.md`, `docs/review.md`, `docs/handoff.md`, and `HANDOFF.md` through `scripts/migrate-workflow-docs.ts`.
+3. Preserves project-level host adapter configuration for explicit manual review; user-level adapter setup remains a separate explicit command.
+4. Archives legacy `docs/TODO.md`, `docs/plan.md`, `docs/PROGRESS.md`, `docs/contract.md`, `docs/review.md`, `docs/handoff.md`, and `HANDOFF.md` in the transaction before retiring their old paths.
 6. Ensures `docs/spec.md`, `tasks/todos.md`, `tasks/lessons.md`, `docs/researches/`, `tasks/contracts/`, `tasks/reviews/`, `tasks/notes/`, `tasks/workstreams/`, `docs/architecture/`, `.ai/context/*`, and `.ai/harness/*` exist.
 7. Installs `.ai/harness/workflow-contract.json`, merges missing policy defaults, and preserves explicit repo overrides.
-8. Installs workflow helpers from the workflow contract manifest rather than from a hardcoded prose list.
+8. Uses the workflow contract manifest for cleanup ownership; downstream repos use `repo-harness run` instead of installed root helper wrappers.
 9. Copies the current shared harness reference configs into `docs/reference-configs/`, including external tooling guidance.
 10. Injects `check:task-sync`, `check:context-files`, and `check:task-workflow` into `package.json` when present.
-11. Prints a migration report with an external tooling advisory section and the Codex Settings hook-trust reminder.
-12. Keeps Claude and Codex hook references valid through user-level host adapters while keeping downstream `.ai/hooks/` as a fallback surface.
+11. Returns a structured transaction manifest and explicit post-apply registry, CodeGraph, handoff, and strict workflow steps.
+12. Keeps downstream `.ai/hooks/` as a lib-only central-first surface unless policy explicitly pins `hook_source` to `repo`.
 13. Never auto-installs or auto-upgrades gstack/Waza/gbrain, never starts `gbrain serve`, and never enables MCP automatically.
 
 ## External Tooling Safety Contract
@@ -102,12 +100,9 @@ The migration flow must not treat these as probes:
 4. Confirm `docs/spec.md`, `tasks/reviews/`, and `.ai/harness/` exist and match the repo’s live workflow.
 5. Confirm repo-local Skill Factory, old auto-memory artifacts, and generated `.claude/hooks/` shims were removed from `.claude/`, `.ai/hooks/`, and `scripts/` while custom hooks were preserved.
 6. Confirm `.ai/harness/policy.json` contains the expected `external_tooling` profile and that explicit repo overrides were preserved.
-7. Review the migration report's external tooling advisory section:
-   - does gstack/Waza/gbrain presence match the local machine?
-   - does `gbrain` stay advisory/manual-only when MCP is disabled?
-   - are install and upgrade commands appropriate for the target hosts?
+7. Review the transaction manifest and any explicit post-apply verification failure.
 8. Run `bash scripts/check-agent-tooling.sh --host both --check-updates` inside the migrated repo if you want a fresh advisory snapshot.
-9. Run project smoke checks, `check:task-sync`, `check:task-workflow`, and basic hook trigger scenarios through the user-level adapter -> `repo-harness-hook` route.
+9. Run project smoke checks, `check:task-sync`, `check:task-workflow`, and basic hook trigger scenarios.
 10. Run `bash scripts/prepare-handoff.sh migration` if the migration changed the active task state.
 11. Run `bash scripts/verify-sprint.sh` when the repo already has an active sprint review flow.
 12. Commit migration in one isolated change-set.
