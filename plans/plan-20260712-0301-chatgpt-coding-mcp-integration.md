@@ -139,18 +139,11 @@ Integrate the already verified `codex/chatgpt-coding-mcp` commit series onto the
 
 Delete the isolated integration worktree/branch before push, or close the draft PR and delete the remote integration branch after push. Do not alter the source feature branch, local main, or preserved canary worktrees.
 
-## Task Breakdown
-
-- [ ] Capture the integration contract and preflight the seven-commit replay against current `origin/main`.
-- [ ] Cherry-pick the seven commits in order and resolve conflicts without reviving retired rollout authority.
-- [ ] Regenerate workflow projections and complete focused plus full verification.
-- [ ] Record review/notes, push the integration branch, and create a draft PR against `main`.
-
 ## Annotations
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
 
 ## Task Breakdown
-- [ ] Capture the integration contract and preflight the seven-commit replay against current `origin/main`.
-- [ ] Cherry-pick the seven commits in order and resolve conflicts without reviving retired rollout authority.
+- [x] Capture the integration contract and preflight the seven-commit replay against current `origin/main`.
+- [x] Cherry-pick the seven commits in order and resolve conflicts without reviving retired rollout authority.
 - [ ] Regenerate workflow projections and complete focused plus full verification.
 - [ ] Record review/notes, push the integration branch, and create a draft PR against `main`.

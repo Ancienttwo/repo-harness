@@ -6,7 +6,7 @@
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: kito
 > **Capability ID**: root
-> **Last Updated**: 2026-07-12 03:01
+> **Last Updated**: 2026-07-12 03:07
 > **Review File**: `tasks/reviews/20260712-0301-chatgpt-coding-mcp-integration.review.md`
 > **Notes File**: `tasks/notes/20260712-0301-chatgpt-coding-mcp-integration.notes.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`

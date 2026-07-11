@@ -12,7 +12,7 @@ import { buildMcpServerInstructions } from './instructions';
 import { getMcpPolicy, parseMcpProfile, sensitiveAllowedRootReason } from './policy';
 import { isRepoHarnessAdopted, resolveMcpRepoRoot } from './repo';
 import { buildMcpToolDefinitions, callMcpTool, type McpToolContext } from './tools';
-import type { McpAgentRunnerName } from './types';
+import type { McpAgentRunnerName, McpPolicy } from './types';
 import { repoHarnessPackageVersion } from './version';
 import { buildMcpProcessEnvironment, McpProcessSessionManager } from './process-sessions';
 import { WorkspaceManager } from './workspaces';
