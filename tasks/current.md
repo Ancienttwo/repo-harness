@@ -1,27 +1,27 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-12T05:46:36+0800 -->
+<!-- updated_at: 2026-07-12T05:54:48+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-07-12T05:46:36+0800
-> **Source Branch**: codex/adoption-apply-cutover-v1
-> **Source Commit**: 788ba60
+> **Status**: Active
+> **Updated At**: 2026-07-12T05:54:48+0800
+> **Source Branch**: codex/bdd2-eval-foundation
+> **Source Commit**: b80238f
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: archive-workflow
+> **Reason**: BDD2 E-01 rebased on origin/main after PR review
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: ManualClearedWithActiveWork
-- Active Plan: (none)
-- Plan Status: (none)
-- Next Task: inspect active worktree marker(s)
-- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
+- Status: Active
+- Active Plan: plans/plan-20260712-0450-bdd2-eval-foundation.md
+- Plan Status: Executing
+- Next Task: (none)
+- Clear Note: (none)
 
 ## Mainline Snapshot Reading
 
@@ -31,8 +31,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- /Users/kito/Projects/repo-harness-worktrees/bdd2-eval-foundation: plans/plan-20260712-0450-bdd2-eval-foundation.md
-- /Users/kito/Projects/repo-harness-worktrees/bdd2-eval-foundation: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/bdd2-eval-foundation
+- .: plans/plan-20260712-0450-bdd2-eval-foundation.md
+- .: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/bdd2-eval-foundation
 - /Users/kito/Projects/repo-harness-worktrees/chatgpt-coding-mcp-integration: plans/plan-20260712-0301-chatgpt-coding-mcp-integration.md
 - /Users/kito/Projects/repo-harness-worktrees/chatgpt-coding-mcp-integration: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/chatgpt-coding-mcp-integration
 - /Users/kito/Projects/repo-harness-worktrees/native-role-capability-gate: plans/plan-20260712-0219-native-role-capability-gate.md
@@ -48,57 +48,18 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/20260703-inspection-migration.md`: status=active, current_slice=completed-20260703-architecture-closeout, source_plan=(none)
 ## Handoff
 
-- Exact Next Step: (none)
+- Exact Next Step: Stage the completed module diff first; then External acceptance is unavailable; expected pass from Claude via claude-review. Run external acceptance via claude-review and record ## External Acceptance Advice in tasks/reviews/20260712-0450-bdd2-eval-foundation.review.md. Command: /check
 
 ## Checks
 
-- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
+- status=(none), source=(none), exit_code=(none), file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 69 changed/untracked path(s)
+- Summary: clean
 
 ```
- M .ai/context/capabilities.json
- M .ai/harness/workflow-contract.json
- M AGENTS.md
- M CLAUDE.md
- M README.es.md
- M README.fr.md
- M README.ja.md
- M README.md
- M README.zh-CN.md
- M SKILL.md
- M assets/reference-configs/harness-overview.md
- M assets/reference-configs/hook-operations.md
- M assets/skill-commands/manifest.json
- M assets/skill-commands/repo-harness-architecture/SKILL.md
- M assets/skill-commands/repo-harness-capability/SKILL.md
- M assets/skill-commands/repo-harness-check/SKILL.md
- M assets/skill-commands/repo-harness-init/SKILL.md
- M assets/skill-commands/repo-harness-migrate/SKILL.md
- M assets/templates/helpers/architecture-queue.sh
- M assets/templates/helpers/check-task-workflow.sh
- D assets/templates/helpers/migrate-project-template.sh
- D assets/templates/helpers/migrate-workflow-docs.ts
- M assets/workflow-contract.v1.json
- M docs/architecture/domains/public-surface.md
- M docs/architecture/domains/verification.md
- M docs/architecture/domains/workflow-engine.md
- M docs/architecture/index.md
- M docs/architecture/modules/public-surface/adoption.md
- M docs/architecture/modules/public-surface/root-router.md
- M docs/architecture/modules/verification/evals-checks.md
- M docs/architecture/modules/workflow-engine/inspection-migration.md
- M docs/architecture/transactional-adoption-planner.md
- M docs/reference-configs/harness-overview.md
- M docs/reference-configs/hook-operations.md
- M evals/evals.json
- M references/evaluation-playbook.md
- M references/migration-guide.md
- M scripts/AGENTS.md
- M scripts/CLAUDE.md
- M scripts/architecture-queue.sh
+(none)
 ```
 
 ## Source Artifacts

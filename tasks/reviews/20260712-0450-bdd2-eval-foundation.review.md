@@ -8,7 +8,7 @@
 > **Last Updated**: 2026-07-12 05:43
 > **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Diff Fingerprint**: sha256:077fe6e0295b56e4c72f6ab916e798f523b2857fc2fc0d4344f9ac20cd2a01cf
+> **Reviewed Diff Fingerprint**: sha256:1d4a2bd11cd06a4efc6ac5d09ec724365f0cb208b76cadcb3ea9cb6b6cd2459c
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 ## Human Review Card
@@ -26,8 +26,8 @@
   sync; inspector; direct migration dry-run.
 - External acceptance: unavailable before PR; the PR is the human acceptance surface.
 - Residual risks: full 12-task arms and actual model profiles are intentionally not
-  sealed in E-01; strict workflow has a pre-existing brain-mirror drift; local Codex
-  Waza installed-copy and worktree CodeGraph index readiness are partial.
+  sealed in E-01; local Codex Waza installed-copy and worktree CodeGraph index
+  readiness are partial.
 - Reviewer action required: review the PR's treatment prompts, leakage boundary,
   sealed-run contract, and decision to keep Browser/ImageGen in gated E-04.
 - Rollback: revert the E-01 commit; no runtime cutover, migration, user data, or
@@ -65,14 +65,14 @@
 | `repo-harness run check-task-sync` | pass |
 | `bun scripts/inspect-project-state.ts --repo . --format text` | pass; no drift signals or required decisions |
 | `bash scripts/migrate-project-template.sh --repo . --dry-run` | pass |
-| `LC_ALL=C repo-harness run check-task-workflow --strict` | baseline fail only: `harness-overview.md` differs from its brain mirror |
+| `LC_ALL=C repo-harness run check-task-workflow --strict` | pass after rebase onto `origin/main` `8e16032` and handoff refresh |
 
-- Strict workflow finding is not introduced by this branch: both flagged files are
-  unchanged from `origin/main`, and the same BrainSync failure occurs on the base.
-  Syncing the brain mirror would edit an unrelated path outside this contract.
-- Default-locale `awk` also failed on Unicode PRD prose; `LC_ALL=C` reaches the real
-  check and leaves only the baseline BrainSync finding. This is a workflow-tooling
-  locale limitation, not a malformed PRD.
+- PR #54 advanced `origin/main` while this PR was under review. The branch was
+  rebased onto `8e16032`; `tasks/current.md` conflicts were resolved by preserving
+  the new base projection and regenerating the BDD² current snapshot afterward.
+- Default-locale `awk` still cannot safely process all Unicode PRD prose, so the
+  recorded strict workflow command pins `LC_ALL=C`; with that locale and a refreshed
+  handoff, BrainSync and workflow checks both pass.
 - Full suite ran before the final bounded path/placeholder hardening; the focused
   suite and typecheck were rerun after those edits and directly cover them.
 - Manual checks: agent packets contain no truth issue IDs or condition labels;
@@ -92,7 +92,7 @@
 > **External Started**: 2026-07-12T05:27:00+08:00
 > **External Completed**: pending
 > **Review Rubric Version**: 2
-> **Reviewed Diff Fingerprint**: sha256:077fe6e0295b56e4c72f6ab916e798f523b2857fc2fc0d4344f9ac20cd2a01cf
+> **Reviewed Diff Fingerprint**: sha256:1d4a2bd11cd06a4efc6ac5d09ec724365f0cb208b76cadcb3ea9cb6b6cd2459c
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 - P1 blockers: none after local remediation; GitHub re-review is still pending.
@@ -129,8 +129,6 @@
   development/held-out seed sets only; no effectiveness claim is authorized.
 - Prompt fairness and the full 12-task composition require human review during the
   E-02/E-03 sealing PRs.
-- The pre-existing brain mirror drift prevents a green strict workflow trace until
-  its owning work-package syncs the mirror.
 - Advisory tooling reports Codex Waza installed copies and the linked-worktree
   CodeGraph index as partial; neither affected this source diff or its tests.
 
@@ -145,8 +143,7 @@
 
 ## Failing Items
 
-- None in the reviewed diff.
-- Out-of-scope base failure: brain mirror drift in strict workflow.
+- None in the reviewed diff or strict workflow gate.
 
 ## Retest Steps
 
@@ -154,8 +151,7 @@
 2. `bun run check:type`
 3. `bun scripts/run-bdd2-evals.ts validate`
 4. `bun scripts/run-bdd2-evals.ts plan --experiment S --partition development --dry-run`
-5. After the baseline brain mirror is fixed, rerun
-   `LC_ALL=C repo-harness run check-task-workflow --strict`.
+5. `LC_ALL=C repo-harness run check-task-workflow --strict`
 
 ## Summary
 
@@ -164,6 +160,6 @@ without any BDD product surface. It fails closed on drift, leakage, symlink/path
 escape, incomplete held-out arms, unapplied model/sampling profiles, dirty source
 state, untracked/ignored authority, reversible blind IDs, and attempted execution
 before seal. The full repository suite and focused tests pass. Browser/ImageGen and
-Behavior Brief remain explicitly preserved for their gated hypotheses; the only red
-workflow signal is an unrelated base BrainSync drift that this contract correctly
-does not absorb.
+Behavior Brief remain explicitly preserved for their gated hypotheses. The rebased
+strict workflow check also passes without adding any unrelated mirror change to this
+branch.

@@ -63,9 +63,10 @@
 - Dry-run plan: `bun scripts/run-bdd2-evals.ts plan --experiment S --partition development --dry-run` — deterministic coordinates emitted.
 - Required checks: deploy SQL, architecture sync, task sync, inspector, and direct migration dry-run passed.
 - Module PR: <https://github.com/Ancienttwo/repo-harness/pull/53>.
-- Known baseline blocker: strict workflow reaches only the pre-existing brain mirror drift
-  (`docs/reference-configs/harness-overview.md` -> `brain/repo-harness/references/harness-overview.md`);
-  the same failure reproduces on `origin/main` and is outside this contract.
+- Post-review rebase: branch rebased onto `origin/main` at `8e16032` after PR #54
+  advanced the base. The refreshed handoff plus `LC_ALL=C repo-harness run
+  check-task-workflow --strict` now pass; the former brain mirror drift was resolved
+  upstream and was not copied into this branch.
 - Advisory environment gaps: Codex Waza `health`/`check` installed-copy paths and the
   worktree-local CodeGraph index are absent; focused/full tests and source checks are
   unaffected, and no user-level environment mutation was authorized by this contract.
