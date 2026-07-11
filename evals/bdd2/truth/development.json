@@ -1,0 +1,13 @@
+{
+  "schema": "repo-harness-bdd2-truth-set.v1",
+  "partition": "development",
+  "audit_tasks": {
+    "A-D-01": {
+      "clean": false,
+      "issues": [
+        { "id": "A-D-01-I1", "severity": "P1", "taxonomy": "BACKSTAGE_LEAK", "summary": "Internal queue and infrastructure policy is exposed as required user configuration." }
+      ]
+    },
+    "A-D-02": { "clean": true, "issues": [] }
+  }
+}

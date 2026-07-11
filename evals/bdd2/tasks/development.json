@@ -1,0 +1,30 @@
+{
+  "schema": "repo-harness-bdd2-task-set.v1",
+  "partition": "development",
+  "tasks": [
+    {
+      "id": "S-D-01",
+      "experiment": "S",
+      "title": "Retry a failed document upload",
+      "agent_input": "Current truth: the document page already shows upload state and one primary Upload action. Request: when a transient upload fails, let the user recover without leaving the page. Shape the behavior for implementation."
+    },
+    {
+      "id": "S-D-02",
+      "experiment": "S",
+      "title": "Rename one saved view",
+      "agent_input": "Current truth: saved views appear in an existing list and names are editable nowhere else. Request: allow the owner to rename one saved view from that list. Shape the behavior for implementation."
+    },
+    {
+      "id": "A-D-01",
+      "experiment": "A",
+      "title": "Queue settings leak into a retry flow",
+      "agent_input": "Authority: users must be able to retry one failed import and see whether it succeeded; queue policy remains internal. Artifact: the failed-import row adds Retry, Retry count, Queue priority, Worker pool, and Fallback region controls. Audit the artifact."
+    },
+    {
+      "id": "A-D-02",
+      "experiment": "A",
+      "title": "Clean destructive confirmation",
+      "agent_input": "Authority: deleting a draft is irreversible and requires a clear confirmation naming the draft. Artifact: the existing row action opens a confirmation dialog naming the draft, explains deletion is permanent, offers Cancel as default and Delete as destructive action, and returns focus to the list after cancellation. Audit the artifact."
+    }
+  ]
+}
