@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-12T03:54:05+0800 -->
+<!-- updated_at: 2026-07-12T05:56:00+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-07-12T03:54:05+0800
+> **Updated At**: 2026-07-12T05:56:00+0800
 > **Source Branch**: codex/chatgpt-coding-mcp-integration
-> **Source Commit**: 791c4f0
+> **Source Commit**: 0e8948b
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: chatgpt-coding-mcp-integration-contract-fulfilled
+> **Reason**: merge-origin-main-projection-bootstrap
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -31,24 +31,26 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- .: plans/plan-20260712-0301-chatgpt-coding-mcp-integration.md
-- .: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/chatgpt-coding-mcp-integration
-- /Users/kito/Projects/repo-harness-worktrees/adoption-apply-cutover-v1: plans/plan-20260711-2105-adoption-apply-cutover-v1.md
-- /Users/kito/Projects/repo-harness-worktrees/adoption-apply-cutover-v1: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/adoption-apply-cutover-v1
+- /Users/kito/Projects/repo-harness-worktrees/bdd2-eval-foundation: plans/plan-20260712-0450-bdd2-eval-foundation.md
+- /Users/kito/Projects/repo-harness-worktrees/bdd2-eval-foundation: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/bdd2-eval-foundation
+- /Users/kito/Projects/repo-harness-worktrees/chatgpt-coding-mcp-integration: plans/plan-20260712-0301-chatgpt-coding-mcp-integration.md
+- /Users/kito/Projects/repo-harness-worktrees/chatgpt-coding-mcp-integration: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/chatgpt-coding-mcp-integration
 - /Users/kito/Projects/repo-harness-worktrees/native-role-capability-gate: plans/plan-20260712-0219-native-role-capability-gate.md
 - /Users/kito/Projects/repo-harness-worktrees/native-role-capability-gate: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/native-role-capability-gate
 - /Users/kito/Projects/repo-harness-wt-codex-native-role-model-override: plans/plan-20260711-0219-codex-native-role-model-override.md
-- /Users/kito/Projects/repo-harness-wt-codex-native-role-model-override: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-codex-native-role-model-override
+
 ## Active Sprint
 
 - Sprint: (none)
+
 ## Workstreams
 
 - `tasks/workstreams/workflow-engine/contract-assets/cleanup-script-policy.md`: status=completed, current_slice=todo-01, source_plan=(none)
 - `tasks/workstreams/workflow-engine/inspection-migration/20260703-inspection-migration.md`: status=active, current_slice=completed-20260703-architecture-closeout, source_plan=(none)
+
 ## Handoff
 
-- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Regenerate workflow projections and complete focused plus full verification.
+- Exact Next Step: regenerate this projection after the origin/main merge completes, then re-run integration verification.
 
 ## Checks
 
@@ -56,15 +58,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 5 changed/untracked path(s)
-
-```
- M plans/plan-20260712-0301-chatgpt-coding-mcp-integration.md
- M tasks/contracts/20260712-0301-chatgpt-coding-mcp-integration.contract.md
- M tasks/current.md
- M tasks/notes/20260712-0301-chatgpt-coding-mcp-integration.notes.md
- M tasks/reviews/20260712-0301-chatgpt-coding-mcp-integration.review.md
-```
+- Summary: merge in progress; regenerate after merge commit.
 
 ## Source Artifacts
 

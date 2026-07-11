@@ -65,30 +65,6 @@ function setupFakeSource(root: string): void {
     join(root, "scripts", "inspect-project-state.ts"),
     "console.log('mode: initialize')\n",
   );
-  makeExecutable(
-    join(root, "scripts", "migrate-project-template.sh"),
-    [
-      "#!/bin/bash",
-      "set -euo pipefail",
-      "repo=''",
-      "mode='dry-run'",
-      "while [[ $# -gt 0 ]]; do",
-      "  case \"$1\" in",
-      "    --repo) repo=\"$2\"; shift 2 ;;",
-      "    --apply) mode='apply'; shift ;;",
-      "    --dry-run) mode='dry-run'; shift ;;",
-      "    *) shift ;;",
-      "  esac",
-      "done",
-      "if [[ \"$mode\" != 'apply' ]]; then",
-      "  echo dry-run \"$repo\"",
-      "  exit 0",
-      "fi",
-      `(cd "$repo" && bash "${ROOT}/scripts/create-project-dirs.sh" >/dev/null)`,
-      "echo migrate \"$repo\"",
-      "",
-    ].join("\n"),
-  );
   mkdirSync(join(root, "assets", "skills", "codex-review"), { recursive: true });
   writeFileSync(
     join(root, "assets", "skills", "codex-review", "SKILL.md"),
@@ -171,25 +147,6 @@ describe("init command", () => {
       mkdirSync(repo, { recursive: true });
       mkdirSync(home, { recursive: true });
       setupFakeSource(source);
-      makeExecutable(
-        join(source, "scripts", "migrate-project-template.sh"),
-        [
-          "#!/bin/bash",
-          "set -euo pipefail",
-          "repo=''",
-          "while [[ $# -gt 0 ]]; do",
-          "  case \"$1\" in",
-          "    --repo) repo=\"$2\"; shift 2 ;;",
-          "    --apply|--dry-run) shift ;;",
-          "    *) shift ;;",
-          "  esac",
-          "done",
-          "mkdir -p \"$repo/.ai/harness\"",
-          "printf '{}\\n' > \"$repo/.ai/harness/policy.json\"",
-          "echo migrate \"$repo\"",
-          "",
-        ].join("\n"),
-      );
 
       const result = runInit({
         repo,
@@ -210,7 +167,7 @@ describe("init command", () => {
       expect(result.steps.find((step) => step.step === "register repo harness repo")?.status).toBe("ok");
       const registry = JSON.parse(readFileSync(join(home, ".repo-harness", "registered-repos.json"), "utf-8"));
       expect(registry.repos).toEqual([
-        expect.objectContaining({ source: "init", path: realpathSync(repo) }),
+        expect.objectContaining({ source: "adopt", path: realpathSync(repo) }),
       ]);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
@@ -226,27 +183,6 @@ describe("init command", () => {
       mkdirSync(source, { recursive: true });
       mkdirSync(repo, { recursive: true });
       setupFakeSource(source);
-      makeExecutable(
-        join(source, "scripts", "migrate-project-template.sh"),
-        [
-          "#!/bin/bash",
-          "set -euo pipefail",
-          "repo=''",
-          "while [[ $# -gt 0 ]]; do",
-          "  case \"$1\" in",
-          "    --repo) repo=\"$2\"; shift 2 ;;",
-          "    --apply|--dry-run) shift ;;",
-          "    *) shift ;;",
-          "  esac",
-          "done",
-          `(cd "$repo" && bash "${ROOT}/scripts/create-project-dirs.sh" >/dev/null)`,
-          "mkdir -p \"$repo/.ai/harness/handoff\"",
-          "printf '# Harness Handoff\\n' > \"$repo/.ai/harness/handoff/current.md\"",
-          "printf '# Codex Resume Packet\\n' > \"$repo/.ai/harness/handoff/resume.md\"",
-          "echo migrate \"$repo\"",
-          "",
-        ].join("\n"),
-      );
       expect(spawnSync("git", ["init", "-q"], { cwd: repo }).status).toBe(0);
       process.chdir(repo);
 
@@ -441,9 +377,6 @@ describe("init command", () => {
           "--repo",
           tmp,
           "--dry-run",
-          "--no-sync-skill",
-          "--no-host-adapters",
-          "--no-external-skills",
           "--no-verify",
           "--no-codegraph",
           "--json",
@@ -476,7 +409,7 @@ describe("init command", () => {
     expect(res.stdout).toContain("Usage: repo-harness adopt");
     expect(res.stdout).toContain("--repo <path>");
     expect(res.stdout).toContain("--dry-run");
-    expect(res.stdout).toContain("--experimental-ts-apply");
+    expect(res.stdout).not.toContain("--experimental-ts-apply");
     expect(res.stdout).toContain("--no-codegraph");
   });
 
@@ -519,9 +452,6 @@ describe("init command", () => {
           CLI,
           "adopt",
           "--dry-run",
-          "--no-sync-skill",
-          "--no-host-adapters",
-          "--no-external-skills",
           "--no-verify",
           "--no-codegraph",
           "--json",

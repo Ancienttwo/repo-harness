@@ -28,7 +28,7 @@ wants to add selected capability boundaries without refreshing the full harness.
 
 ## Boundaries
 
-- Does not run `scripts/migrate-project-template.sh --apply`.
+- Does not run `repo-harness adopt`.
 - Does not install or refresh the full harness.
 - Does not create an application stack.
 - Does not infer capabilities from broad directory globs; use explicit prefixes.

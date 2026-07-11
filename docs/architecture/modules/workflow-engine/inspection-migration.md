@@ -1,7 +1,7 @@
 # Architecture Module: workflow-engine/inspection-migration
 
 > **Capability ID**: `workflow-engine-inspection-migration`
-> **Matched Prefixes**: `scripts/inspect-project-state.ts`, `scripts/migrate-project-template.sh`, `scripts/migrate-workflow-docs.ts`, `scripts/create-project-dirs.sh`, `scripts/init-project.sh`, `scripts/lib`
+> **Matched Prefixes**: `scripts/inspect-project-state.ts`, `src/core/adoption/`, `src/effects/fs-transaction.ts`, `scripts/create-project-dirs.sh`, `scripts/init-project.sh`, `scripts/lib`
 > **Local Contracts**: `scripts/AGENTS.md`, `scripts/CLAUDE.md`
 > **Workstream**: `tasks/workstreams/workflow-engine/inspection-migration/20260703-inspection-migration.md`
 
@@ -13,35 +13,31 @@ target repo moves between workflow states.
 Authoritative entrypoints:
 
 - `scripts/inspect-project-state.ts`: classifies initialize, migrate, audit, or repair state.
-- `scripts/migrate-workflow-docs.ts`: preserves and normalizes legacy workflow docs.
-- `scripts/migrate-project-template.sh`: orchestrates hooks, docs, workflow files, policy, helper installation, version stamp, and strict verification.
+- `src/core/adoption/standard-plan.ts`: preserves and normalizes legacy workflow documents, then plans all standard repo-local migration operations.
+- `src/effects/fs-transaction.ts`: preflights and executes the planned transaction with rollback evidence.
 - `scripts/create-project-dirs.sh` and `scripts/init-project.sh`: scaffold paths that attach the same workflow contract.
 - `scripts/lib/project-init-lib.sh`: shared install and policy generation library.
 
-Scale signal: `migrate-project-template.sh` is about 900 lines and
-`project-init-lib.sh` is about 1,879 lines, so drift risk is concentrated in
-policy generation and idempotency behavior. Helper implementations no longer
+Scale signal: migration behavior must remain one ordered TypeScript plan rather
+than split across direct shell mutation routes. Helper implementations no longer
 have two authoring surfaces: `assets/workflow-contract.v1.json` owns the
 inventory, `scripts/` owns implementation bytes and modes, and
 `assets/templates/helpers/` is a checked-in deterministic projection.
 
 ## P2 Trace
 
-Concrete route: `bash scripts/migrate-project-template.sh --repo . --dry-run`
-starts with `inspect-project-state.ts` -> syncs `.ai/hooks` from `assets/hooks`
--> routes legacy docs through `migrate-workflow-docs.ts` -> creates plans,
-tasks, docs, harness dirs, deploy dirs, and ignored runtime state -> installs
-templates, helper scripts, workflow contract, policy, context map, brain
-manifest, and reference config stubs -> updates `.claude/.skill-version` ->
-prints a migration report.
+Concrete route: `repo-harness adopt --repo . --dry-run` starts with target
+validation and `inspect-project-state.ts` -> produces the complete ordered TS
+plan. Apply preflights every operation, then creates plans, tasks, docs,
+harness dirs, deploy dirs, ignored runtime state, templates, hook libraries,
+workflow contract, policy, context map, brain manifest, and reference stubs,
+while archiving legacy content and preserving user-owned files.
 
-The helper projection route is
+The helper projection route remains
 `assets/workflow-contract.v1.json#helpers.scripts` ->
 `scripts/sync-helper-sources.ts` -> `src/core/source-projection.ts` ->
-`assets/templates/helpers/`. `migrate-project-template.sh` is the only explicit
-package delegate: the `scripts/` file remains the full implementation while the
-package helper delegates to the package-local source tree or the checkout named
-by `REPO_HARNESS_SOURCE_ROOT`.
+`assets/templates/helpers/`; it is separate from repo adoption and no helper
+wrapper is installed into downstream root `scripts/` directories.
 
 The sync boundary is filesystem-first. Inputs are repo files and contract assets.
 Outputs are repo-local Markdown, JSON, JSONL, shell, and TypeScript files. The

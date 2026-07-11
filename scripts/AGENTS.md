@@ -25,7 +25,7 @@ Owns the workflow-engine-inspection-migration capability boundary declared in .a
 ## Refresh Hints
 
 - `bun test tests/migration-script.test.ts tests/create-project-dirs.runtime.test.ts tests/workflow-contract.test.ts`
-- `bash scripts/migrate-project-template.sh --repo . --dry-run`
+- `bun src/cli/index.ts adopt --repo . --dry-run`
 <!-- END CAPABILITY CONTEXT -->
 
 <!-- BEGIN ARCHITECTURE CONTRACT -->

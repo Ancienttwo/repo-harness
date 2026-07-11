@@ -30,4 +30,4 @@ repos, command facades, hooks, migration helpers, and installed runtime copies.
 - `bash scripts/check-task-workflow.sh --strict`
 - `bash scripts/ensure-codegraph.sh --check --json`
 - `bun scripts/inspect-project-state.ts --repo . --format text`
-- `bash scripts/migrate-project-template.sh --repo . --dry-run`
+- `repo-harness adopt --repo . --dry-run`

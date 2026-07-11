@@ -43,6 +43,26 @@ export function rollbackMetadataForOperation(operation: AdoptionOperation): Adop
         backup: "runtime-fs-transaction",
         description: "Restore the fs-transaction backup when present; delete the file if no backup was produced.",
       };
+    case "move":
+      return {
+        strategy: "manual",
+        paths: [operation.path, operation.to],
+        backup: "runtime-fs-transaction",
+        description: "Move the destination back to the original path only if it has not changed since this transaction.",
+      };
+    case "remove":
+      return {
+        strategy: "manual",
+        paths: [operation.path],
+        backup: "runtime-fs-transaction",
+        description: "Restore the retained transaction backup only if no new file occupies the removed path.",
+      };
+    case "gitUntrack":
+      return {
+        strategy: "manual",
+        paths: [operation.path],
+        description: "Restore the git index explicitly after reviewing the transaction manifest.",
+      };
     case "runCheck":
       return noRollback("No rollback is needed because this operation is a verification boundary.");
     default:

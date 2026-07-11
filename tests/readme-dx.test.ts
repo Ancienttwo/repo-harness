@@ -207,20 +207,16 @@ describe("README DX contract", () => {
     }
   });
 
-  test("dry-run keeps the migration report onboarding signals", () => {
-    const res = spawnSync("bash", ["scripts/migrate-project-template.sh", "--repo", ".", "--dry-run"], {
+  test("dry-run keeps the canonical adoption-plan onboarding signal", () => {
+    const res = spawnSync("bun", ["src/cli/index.ts", "adopt", "--repo", ".", "--dry-run"], {
       cwd: ROOT,
       encoding: "utf-8",
     });
 
     expect(res.status).toBe(0);
-    expect(res.stdout).toContain("=== Migration Report ===");
-    expect(res.stdout).toContain("Project hooks synced from:");
-    expect(res.stdout).toContain("Workflow migration:");
-    expect(res.stdout).toContain("Helper runtime:");
-    expect(res.stdout).toContain("package/global only through repo-harness run; no repo-local helper script writes");
-    expect(res.stdout).toContain("Host hook config target: user-level ~/.claude/settings.json and ~/.codex/hooks.json");
-    expect(res.stdout).toContain("Host hook adapters are user-level:");
+    expect(res.stdout).toContain("[adopt-plan] repo:");
+    expect(res.stdout).toContain("[adopt-plan] operations:");
+    expect(res.stdout).toContain("writeFile:");
   }, 15000);
 
   test("runtime red-flag scan uses an explicit allowlist for install examples and legacy aliases", () => {

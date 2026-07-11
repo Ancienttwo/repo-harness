@@ -13,7 +13,8 @@ import { tmpdir } from "os";
 import { join, relative } from "path";
 import { spawnSync } from "child_process";
 import { inspectRepo } from "../scripts/inspect-project-state";
-import { migrate } from "../scripts/migrate-workflow-docs";
+import { planAdoption } from "../src/core/adoption/plan";
+import { applyAdoptionPlan } from "../src/effects/fs-transaction";
 import { loadWorkflowContract } from "../scripts/workflow-contract";
 
 const ROOT = join(import.meta.dir, "..");
@@ -368,7 +369,7 @@ describe("state inspection and legacy doc migration", () => {
     }
   });
 
-  test("legacy doc migrator should preserve content while normalizing workflow files", () => {
+  test("canonical adoption transaction preserves legacy documents while normalizing workflow files", () => {
     const repo = mkdtempSync(join(tmpdir(), "migrate-workflow-docs-"));
 
     try {
@@ -377,8 +378,8 @@ describe("state inspection and legacy doc migration", () => {
       writeFileSync(join(repo, "docs/plan.md"), "# Old Plan\n\nKeep the useful parts.\n");
       writeFileSync(join(repo, "docs/PROGRESS.md"), "# Session Notes\n\n- [ ] investigate drift\n");
 
-      const summary = migrate(repo, "apply");
-      expect(summary.migrated.length).toBeGreaterThanOrEqual(3);
+      const summary = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "standard", apply: true }));
+      expect(summary.ok).toBe(true);
       expect(existsSync(join(repo, "tasks/todos.md"))).toBe(true);
       expect(existsSync(join(repo, "docs/researches/README.md"))).toBe(true);
       expect(existsSync(join(repo, "tasks/archive/legacy-docs-TODO.md"))).toBe(true);
@@ -403,41 +404,41 @@ describe("state inspection and legacy doc migration", () => {
     }
   });
 
-  test("legacy doc migrator should normalize pre-existing tasks/todos.md", () => {
+  test("canonical adoption transaction normalizes pre-existing tasks/todos.md", () => {
     const repo = mkdtempSync(join(tmpdir(), "migrate-workflow-docs-partial-"));
 
     try {
       mkdirSync(join(repo, "tasks"), { recursive: true });
       writeFileSync(join(repo, "tasks/todos.md"), "# Old Todo\n\n- [ ] existing task\n");
 
-      const summary = migrate(repo, "apply");
-      expect(summary.migrated.some((item) => item.source === "tasks/todos.md" && item.action === "rewrite")).toBe(true);
+      const summary = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "standard", apply: true }));
+      expect(summary.ok).toBe(true);
       expect(existsSync(join(repo, "tasks/archive/legacy-tasks-todo.md"))).toBe(true);
 
       const todo = readFileSync(join(repo, "tasks/todos.md"), "utf-8");
       expect(todo).toContain("# Deferred Goal Ledger");
-      expect(todo).toContain("Review archived legacy checklist");
+      expect(todo).toContain("No deferred medium/long-term goal recorded yet");
       expect(todo).not.toContain("existing task");
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
   });
 
-  test("legacy doc migrator should migrate pre-existing singular tasks/todo.md", () => {
+  test("canonical adoption transaction migrates pre-existing singular tasks/todo.md", () => {
     const repo = mkdtempSync(join(tmpdir(), "migrate-workflow-docs-singular-todo-"));
 
     try {
       mkdirSync(join(repo, "tasks"), { recursive: true });
       writeFileSync(join(repo, "tasks/todo.md"), "# Old Todo\n\n- [ ] existing task\n");
 
-      const summary = migrate(repo, "apply");
-      expect(summary.migrated.some((item) => item.source === "tasks/todo.md" && item.target === "tasks/todos.md")).toBe(true);
+      const summary = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "standard", apply: true }));
+      expect(summary.ok).toBe(true);
       expect(existsSync(join(repo, "tasks/archive/legacy-tasks-todo.md"))).toBe(true);
       expect(existsSync(join(repo, "tasks/todo.md.migrated.bak"))).toBe(true);
 
       const todo = readFileSync(join(repo, "tasks/todos.md"), "utf-8");
       expect(todo).toContain("# Deferred Goal Ledger");
-      expect(todo).toContain("Review archived legacy checklist");
+      expect(todo).toContain("No deferred medium/long-term goal recorded yet");
       expect(todo).not.toContain("existing task");
     } finally {
       rmSync(repo, { recursive: true, force: true });
