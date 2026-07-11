@@ -9,16 +9,17 @@ const SCRIPT = join(ROOT, "scripts/install-agent-fleet.sh");
 const CLAUDE_SOURCE_DIR = join(ROOT, ".claude/agents");
 const GOLDEN_CODEX_DIR = join(ROOT, ".codex/agents");
 const AGENTS = ["deep-reasoner", "fast-worker", "gatekeeper"];
-const CODEX_EXPECTATIONS: Record<string, { model: string; effort: string; descriptionLabel: string }> = {
+const CODEX_EXPECTATIONS: Record<string, { model: string; effort: string; descriptionLabel: string; sandboxMode?: string }> = {
   "deep-reasoner": {
     model: "gpt-5.6-sol",
     effort: "xhigh",
     descriptionLabel: "GPT-5.6 Sol at extra high reasoning",
   },
   "fast-worker": {
-    model: "gpt-5.6-terra",
-    effort: "medium",
-    descriptionLabel: "GPT-5.6 Terra at medium reasoning",
+    model: "gpt-5.6-sol",
+    effort: "high",
+    descriptionLabel: "GPT-5.6 Sol at high reasoning",
+    sandboxMode: "workspace-write",
   },
   gatekeeper: {
     model: "gpt-5.6-sol",
@@ -82,6 +83,9 @@ describe("install-agent-fleet", () => {
         expect(installedCodex).toContain(`model = "${expected.model}"`);
         expect(installedCodex).toContain(`model_reasoning_effort = "${expected.effort}"`);
         expect(installedCodex).toContain(expected.descriptionLabel);
+        if (expected.sandboxMode) {
+          expect(installedCodex).toContain(`sandbox_mode = "${expected.sandboxMode}"`);
+        }
         expect(installedCodex).not.toContain("Opus 4.8 at max effort");
         expect(installedCodex).not.toContain("Sonnet 5 at max effort");
       }

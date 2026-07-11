@@ -496,13 +496,19 @@ guessed mapping.
 | Upstream frontmatter | Codex TOML |
 |---|---|
 | `model: opus`, `effort: max` | `model = "gpt-5.6-sol"`, `model_reasoning_effort = "xhigh"` |
-| `model: sonnet`, `effort: max` | `model = "gpt-5.6-terra"`, `model_reasoning_effort = "medium"` |
+| `model: sonnet`, `effort: max` | `model = "gpt-5.6-sol"`, `model_reasoning_effort = "high"` |
+| generated role is `fast-worker` | `sandbox_mode = "workspace-write"` |
 | `tools: [...]` present | `sandbox_mode = "read-only"` |
 
 The Codex generator also rewrites the exact upstream provider label in the
 description (`Opus 4.8 at max effort` or `Sonnet 5 at max effort`) to the
 mapped GPT-5.6 model and reasoning level. A missing label fails closed so the
 installed metadata cannot claim a different model from the TOML settings.
+
+These files define the desired installed role configuration. They do not by
+themselves prove that every native MultiAgentV2 spawn surface selects a named
+role instead of inheriting the parent model; keep runtime selection claims
+behind a real subagent canary.
 
 `developer_instructions` is the upstream `.md` body plus the canonical
 EXECUTION_BOUNDARY anti-extras clause, kept byte-identical to the

@@ -4,6 +4,13 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Mapped the generated Codex `fast-worker` to GPT-5.6 Sol with `high`
+  reasoning and `workspace-write` sandboxing, while keeping Terra/medium for
+  read-heavy explorer work and keeping native MultiAgentV2 role selection
+  behind a runtime canary instead of treating installed TOML as proof.
+
 ## [0.9.2] - 2026-07-10
 
 ### Changed

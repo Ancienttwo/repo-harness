@@ -75,10 +75,10 @@ const MODEL_EFFORT_MAP = {
   },
   sonnet: {
     max: {
-      model: "gpt-5.6-terra",
-      effort: "medium",
+      model: "gpt-5.6-sol",
+      effort: "high",
       sourceDescription: "Sonnet 5 at max effort",
-      targetDescription: "GPT-5.6 Terra at medium reasoning",
+      targetDescription: "GPT-5.6 Sol at high reasoning",
     },
   },
 };
@@ -165,7 +165,9 @@ function generateToml(parsed, mapped) {
   lines.push(`description = ${tomlBasicString(description)}`);
   lines.push(`model = ${tomlBasicString(mapped.model)}`);
   lines.push(`model_reasoning_effort = ${tomlBasicString(mapped.effort)}`);
-  if (parsed.hasTools) {
+  if (parsed.name === "fast-worker") {
+    lines.push(`sandbox_mode = "workspace-write"`);
+  } else if (parsed.hasTools) {
     lines.push(`sandbox_mode = "read-only"`);
   }
   const developerInstructions = `${parsed.body}\n\n${EXECUTION_BOUNDARY}`;
