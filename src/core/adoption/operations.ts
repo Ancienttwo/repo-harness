@@ -23,6 +23,10 @@ export interface BaseOperation {
   readonly reason: string;
   readonly risk: AdoptionRisk;
   readonly status: AdoptionOperationStatus;
+  /** Immutable planning precondition; the executor rejects a changed target. */
+  readonly expectedContentHash?: string;
+  /** The target did not exist while planning and must still be absent to write. */
+  readonly expectedAbsent?: boolean;
   readonly rollback?: AdoptionRollbackMetadata;
 }
 

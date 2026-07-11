@@ -12,9 +12,9 @@ Use this command when inspection finds legacy workflow docs or stale harness art
 
 1. Confirm the target repo path.
 2. Run `bun scripts/inspect-project-state.ts --repo <repo> --format text`.
-3. Dry-run legacy document migration with `bun scripts/migrate-workflow-docs.ts --repo <repo> --dry-run` when legacy docs exist.
-4. Apply through `bash scripts/migrate-project-template.sh --repo <repo> --apply`.
-5. Verify task workflow, migration report, and archived legacy content.
+3. Dry-run the canonical transaction with `repo-harness adopt --repo <repo> --dry-run` when legacy docs exist.
+4. Apply with `repo-harness adopt --repo <repo>`; it archives legacy docs and removes only ownership-proven generated files.
+5. Verify task workflow, transaction manifest, and archived legacy content.
 
 ## CHECKPOINTS
 

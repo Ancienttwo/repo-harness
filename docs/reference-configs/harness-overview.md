@@ -115,7 +115,7 @@ Maintainer-facing detail on how the initializer and runtime defaults are wired.
 
 - Question flow uses **12 grouped decision points** with harness defaults inferred first.
 - Plan menu is tiered: **Core Plans (A-F)** first, **Custom Presets (G-K)** only when needed.
-- Skill routing is inspection-first: `scripts/inspect-project-state.ts`, `scripts/migrate-workflow-docs.ts`, `assets/workflow-contract.v1.json`.
+- Skill routing is inspection-first: `scripts/inspect-project-state.ts`, `src/core/adoption/standard-plan.ts`, `assets/workflow-contract.v1.json`.
 - Runtime mode is configurable with template vars: `{{RUNTIME_MODE}}`, `{{RUNTIME_PROFILE}}`, `{{RECOVERY_PROFILE}}`, `{{STATE_PROFILE}}`.
 - Question-pack source of truth: `assets/initializer-question-pack.v4.json`.
 - Generated repos default to the repo-local harness flow: `docs/spec.md -> plans/ -> tasks/contracts/ -> tasks/reviews/ -> .ai/context/context-map.json -> .ai/harness/*`.

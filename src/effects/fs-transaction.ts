@@ -5,6 +5,7 @@ import {
   fsyncSync,
   mkdirSync,
   openSync,
+  lstatSync,
   readFileSync,
   renameSync,
   rmdirSync,
@@ -12,18 +13,21 @@ import {
   writeSync,
 } from "fs";
 import { createHash } from "crypto";
-import { basename, dirname, relative, resolve } from "path";
+import { basename, dirname, relative, resolve, sep } from "path";
 import type {
   AdoptionOperation,
   AdoptionOperationStatus,
   AdoptionPlan,
   AppendManagedBlockOperation,
+  GitUntrackOperation,
   MkdirOperation,
+  MoveOperation,
+  RemoveOperation,
   WriteFileOperation,
 } from "../core/adoption/operations";
-import { isWorkflowContractInstallOperation } from "../core/adoption/workflow-contract-plan";
 import { resolveInsideRepo, resolveParentInsideRepo } from "./path-safety";
 import { upsertManagedBlock } from "../core/adoption/managed-block";
+import { runProcess } from "./process-runner";
 
 const BACKUP_ROOT = ".ai/harness/backups/fs-transaction";
 const LOCK_SUFFIX = ".repo-harness.lock";
@@ -34,6 +38,7 @@ export interface ApplyOperationResult {
   readonly id: string;
   readonly kind: AdoptionOperation["kind"];
   readonly path?: string;
+  readonly to?: string;
   readonly status: AdoptionOperationStatus;
   readonly backupPath?: string;
   readonly contentHash?: string;
@@ -51,6 +56,7 @@ export interface FsTransactionManifestOperation {
   readonly id: string;
   readonly kind: AdoptionOperation["kind"];
   readonly path?: string;
+  readonly to?: string;
   readonly status: AdoptionOperationStatus;
   readonly backupPath?: string;
   readonly contentHash?: string;
@@ -75,7 +81,7 @@ export interface RollbackOperationResult {
   readonly kind: AdoptionOperation["kind"];
   readonly path?: string;
   readonly status: "rolled_back" | "skipped" | "failed";
-  readonly action: "restore_backup" | "delete_created_file" | "remove_empty_directory" | "none";
+  readonly action: "restore_backup" | "restore_git_index" | "delete_created_file" | "remove_empty_directory" | "none";
   readonly error?: string;
 }
 
@@ -99,18 +105,31 @@ function failure(operation: AdoptionOperation, error: string): ApplyOperationRes
 }
 
 export function isSupportedAdoptionOperation(operation: AdoptionOperation): boolean {
-  if (operation.kind === "mkdir" || operation.kind === "appendManagedBlock") return true;
-  return operation.kind === "writeFile" && (operation.ifMissing === true || isWorkflowContractInstallOperation(operation));
+  return ["mkdir", "writeFile", "appendManagedBlock", "move", "remove", "gitUntrack"].includes(operation.kind);
 }
 
 function unsupportedOperationReason(operation: AdoptionOperation): string {
-  if (operation.kind === "writeFile") {
-    return "writeFile applicator only supports ifMissing operations and workflow-contract install";
-  }
   return `unsupported operation kind: ${operation.kind}`;
 }
 
+function assertNoSymlinkInPath(repoRoot: string, path: string): string | null {
+  const target = resolveInsideRepo(repoRoot, path);
+  if (!target.ok || !target.path) return target.error ?? "invalid path";
+  const root = resolve(repoRoot);
+  const rel = relative(root, target.path);
+  let current = root;
+  for (const part of rel.split(sep)) {
+    if (!part) continue;
+    current = resolve(current, part);
+    if (!existsSync(current)) continue;
+    if (lstatSync(current).isSymbolicLink()) return `symlink is not allowed in adoption path: ${path}`;
+  }
+  return null;
+}
+
 function ensureParent(repoRoot: string, path: string): string | null {
+  const symlinkError = assertNoSymlinkInPath(repoRoot, path);
+  if (symlinkError) return symlinkError;
   const parent = resolveParentInsideRepo(repoRoot, path);
   if (!parent.ok || !parent.path) return parent.error ?? "failed to resolve parent directory";
   mkdirSync(parent.path, { recursive: true });
@@ -155,6 +174,23 @@ function sanitizeBackupStem(path: string): string {
 
 function contentHash(content: string): string {
   return `sha256:${createHash("sha256").update(content).digest("hex")}`;
+}
+
+function checkExpectedFileState(repoRoot: string, operation: AdoptionOperation): string | null {
+  if (!operation.path) return null;
+  const target = resolveInsideRepo(repoRoot, operation.path);
+  if (!target.ok || !target.path) return target.error ?? "invalid operation path";
+  const exists = existsSync(target.path);
+  if (operation.expectedAbsent === true && exists) {
+    return `target was created after planning: ${operation.path}`;
+  }
+  if (operation.expectedContentHash) {
+    if (!exists || !lstatSync(target.path).isFile()) return `target changed after planning: ${operation.path}`;
+    if (contentHash(readFileSync(target.path, "utf-8")) !== operation.expectedContentHash) {
+      return `target content changed after planning: ${operation.path}`;
+    }
+  }
+  return null;
 }
 
 function backupPathFor(path: string, backupRoot = BACKUP_ROOT): string {
@@ -205,6 +241,12 @@ export function atomicWriteFile(
   const target = resolveInsideRepo(repoRoot, path);
   if (!target.ok || !target.path) throw new Error(target.error ?? "invalid path");
   const targetPath = target.path;
+  const symlinkError = assertNoSymlinkInPath(repoRoot, path);
+  if (symlinkError) throw new Error(symlinkError);
+  if (existsSync(targetPath) && !lstatSync(targetPath).isFile()) {
+    throw new Error(`file target is not a regular file: ${path}`);
+  }
+  const existingMode = existsSync(targetPath) ? lstatSync(targetPath).mode & 0o777 : undefined;
   const parentError = ensureParent(repoRoot, path);
   if (parentError) throw new Error(parentError);
 
@@ -217,13 +259,13 @@ export function atomicWriteFile(
       const resolvedBackupPath = backup.path;
       const backupParentError = ensureParent(repoRoot, backupPath);
       if (backupParentError) throw new Error(backupParentError);
-      writeFileDurably(resolvedBackupPath, readFileSync(targetPath, "utf-8"));
+      writeFileDurably(resolvedBackupPath, readFileSync(targetPath, "utf-8"), existingMode);
       fsyncDirectory(dirname(resolvedBackupPath));
     }
 
     const tempPath = resolve(dirname(targetPath), `.${basename(targetPath)}.${process.pid}.${Date.now()}.tmp`);
     try {
-      writeFileDurably(tempPath, content, opts.mode);
+      writeFileDurably(tempPath, content, opts.mode ?? existingMode);
       renameSync(tempPath, targetPath);
       fsyncDirectory(dirname(targetPath));
     } finally {
@@ -237,6 +279,8 @@ export function atomicWriteFile(
 export function applyMkdirOperation(repoRoot: string, operation: MkdirOperation, dryRun = false): ApplyOperationResult {
   const target = resolveInsideRepo(repoRoot, operation.path);
   if (!target.ok || !target.path) return failure(operation, target.error ?? "invalid path");
+  const symlinkError = assertNoSymlinkInPath(repoRoot, operation.path);
+  if (symlinkError) return failure(operation, symlinkError);
   if (dryRun) return { id: operation.id, kind: operation.kind, path: operation.path, status: "planned" };
   // Only report an applied (rollback-eligible) result when we actually create the
   // directory. A directory that already existed must never be removed during rollback.
@@ -255,13 +299,14 @@ export function applyWriteFileOperation(
 ): ApplyOperationResult {
   const target = resolveInsideRepo(repoRoot, operation.path);
   if (!target.ok || !target.path) return failure(operation, target.error ?? "invalid path");
+  const symlinkError = assertNoSymlinkInPath(repoRoot, operation.path);
+  if (symlinkError) return failure(operation, symlinkError);
+  const preconditionError = checkExpectedFileState(repoRoot, operation);
+  if (preconditionError) return failure(operation, preconditionError);
   if (operation.ifMissing === true && existsSync(target.path)) {
     return { id: operation.id, kind: operation.kind, path: operation.path, status: "skipped" };
   }
-  if (operation.ifMissing !== true && !isWorkflowContractInstallOperation(operation)) {
-    return failure(operation, "writeFile applicator only supports ifMissing operations and workflow-contract install");
-  }
-  if (operation.ifMissing !== true && existsSync(target.path) && readFileSync(target.path, "utf-8") === operation.content) {
+  if (existsSync(target.path) && readFileSync(target.path, "utf-8") === operation.content) {
     return { id: operation.id, kind: operation.kind, path: operation.path, status: "skipped" };
   }
   if (dryRun) return { id: operation.id, kind: operation.kind, path: operation.path, status: "planned" };
@@ -288,6 +333,10 @@ export function applyAppendManagedBlockOperation(
 ): ApplyOperationResult {
   const target = resolveInsideRepo(repoRoot, operation.path);
   if (!target.ok || !target.path) return failure(operation, target.error ?? "invalid path");
+  const symlinkError = assertNoSymlinkInPath(repoRoot, operation.path);
+  if (symlinkError) return failure(operation, symlinkError);
+  const preconditionError = checkExpectedFileState(repoRoot, operation);
+  if (preconditionError) return failure(operation, preconditionError);
   const existing = existsSync(target.path) ? readFileSync(target.path, "utf-8") : "";
   const update = upsertManagedBlock(existing, operation);
   if (!update.ok) return failure(operation, update.error ?? "failed to update managed block");
@@ -311,6 +360,102 @@ export function applyAppendManagedBlockOperation(
   }
 }
 
+function moveIntoTransactionBackup(repoRoot: string, path: string, transactionDir: string): string {
+  const source = resolveInsideRepo(repoRoot, path);
+  if (!source.ok || !source.path) throw new Error(source.error ?? "invalid source path");
+  const backupPath = `${transactionDir}/removed/${sanitizeBackupStem(path)}.${Date.now()}-${process.pid}-${atomicWriteSequence + 1}`;
+  const backup = resolveInsideRepo(repoRoot, backupPath);
+  if (!backup.ok || !backup.path) throw new Error(backup.error ?? "invalid backup path");
+  const parentError = ensureParent(repoRoot, backupPath);
+  if (parentError) throw new Error(parentError);
+  renameSync(source.path, backup.path);
+  fsyncDirectory(dirname(source.path));
+  fsyncDirectory(dirname(backup.path));
+  return backupPath;
+}
+
+function targetContentHash(targetPath: string): string | undefined {
+  if (!existsSync(targetPath) || !lstatSync(targetPath).isFile()) return undefined;
+  return contentHash(readFileSync(targetPath, "utf-8"));
+}
+
+export function applyMoveOperation(
+  repoRoot: string,
+  operation: MoveOperation,
+  dryRun = false,
+): ApplyOperationResult {
+  const source = resolveInsideRepo(repoRoot, operation.path);
+  const destination = resolveInsideRepo(repoRoot, operation.to);
+  if (!source.ok || !source.path) return failure(operation, source.error ?? "invalid move source");
+  if (!destination.ok || !destination.path) return failure(operation, destination.error ?? "invalid move destination");
+  const sourceSymlinkError = assertNoSymlinkInPath(repoRoot, operation.path);
+  const destinationSymlinkError = assertNoSymlinkInPath(repoRoot, operation.to);
+  if (sourceSymlinkError || destinationSymlinkError) return failure(operation, sourceSymlinkError ?? destinationSymlinkError ?? "invalid move path");
+  const preconditionError = checkExpectedFileState(repoRoot, operation);
+  if (preconditionError) return failure(operation, preconditionError);
+  if (!existsSync(source.path)) return { id: operation.id, kind: operation.kind, path: operation.path, to: operation.to, status: "skipped" };
+  if (!lstatSync(source.path).isFile()) return failure(operation, `move source is not a regular file: ${operation.path}`);
+  if (existsSync(destination.path)) return failure(operation, `move destination already exists: ${operation.to}`);
+  if (dryRun) return { id: operation.id, kind: operation.kind, path: operation.path, to: operation.to, status: "planned" };
+  try {
+    const parentError = ensureParent(repoRoot, operation.to);
+    if (parentError) throw new Error(parentError);
+    renameSync(source.path, destination.path);
+    fsyncDirectory(dirname(source.path));
+    fsyncDirectory(dirname(destination.path));
+    return {
+      id: operation.id,
+      kind: operation.kind,
+      path: operation.path,
+      to: operation.to,
+      status: "applied",
+      contentHash: targetContentHash(destination.path),
+    };
+  } catch (error) {
+    return failure(operation, errorMessage(error));
+  }
+}
+
+export function applyRemoveOperation(
+  repoRoot: string,
+  operation: RemoveOperation,
+  dryRun = false,
+  transactionDir?: string,
+): ApplyOperationResult {
+  const target = resolveInsideRepo(repoRoot, operation.path);
+  if (!target.ok || !target.path) return failure(operation, target.error ?? "invalid remove path");
+  const symlinkError = assertNoSymlinkInPath(repoRoot, operation.path);
+  if (symlinkError) return failure(operation, symlinkError);
+  const preconditionError = checkExpectedFileState(repoRoot, operation);
+  if (preconditionError) return failure(operation, preconditionError);
+  if (!existsSync(target.path)) return { id: operation.id, kind: operation.kind, path: operation.path, status: "skipped" };
+  if (!lstatSync(target.path).isFile()) return failure(operation, `remove target is not a regular file: ${operation.path}`);
+  if (dryRun) return { id: operation.id, kind: operation.kind, path: operation.path, status: "planned" };
+  if (!transactionDir) return failure(operation, "remove operation requires a transaction directory");
+  try {
+    const backupPath = moveIntoTransactionBackup(repoRoot, operation.path, transactionDir);
+    return { id: operation.id, kind: operation.kind, path: operation.path, status: "applied", backupPath };
+  } catch (error) {
+    return failure(operation, errorMessage(error));
+  }
+}
+
+export function applyGitUntrackOperation(repoRoot: string, operation: GitUntrackOperation, dryRun = false): ApplyOperationResult {
+  const target = resolveInsideRepo(repoRoot, operation.path);
+  if (!target.ok || !target.path) return failure(operation, target.error ?? "invalid git untrack path");
+  const symlinkError = assertNoSymlinkInPath(repoRoot, operation.path);
+  if (symlinkError) return failure(operation, symlinkError);
+  const preconditionError = checkExpectedFileState(repoRoot, operation);
+  if (preconditionError) return failure(operation, preconditionError);
+  const tracked = runProcess("git", ["-C", repoRoot, "ls-files", "--error-unmatch", "--", operation.path]);
+  if (!tracked.ok) return { id: operation.id, kind: operation.kind, path: operation.path, status: "skipped" };
+  if (dryRun) return { id: operation.id, kind: operation.kind, path: operation.path, status: "planned" };
+  const result = runProcess("git", ["-C", repoRoot, "rm", "--cached", "--force", "--quiet", "--", operation.path]);
+  return result.ok
+    ? { id: operation.id, kind: operation.kind, path: operation.path, status: "applied" }
+    : failure(operation, result.stderr || result.error || "git rm --cached failed");
+}
+
 function writeTransactionManifest(plan: AdoptionPlan, transactionDir: string, results: readonly ApplyOperationResult[]): string {
   const manifestPath = `${transactionDir}/manifest.json`;
   const manifest: FsTransactionManifest = {
@@ -325,6 +470,7 @@ function writeTransactionManifest(plan: AdoptionPlan, transactionDir: string, re
         id: result.id,
         kind: result.kind,
         path: result.path,
+        to: result.to,
         status: result.status,
         backupPath: result.backupPath,
         contentHash: result.contentHash,
@@ -340,17 +486,114 @@ function writeTransactionManifest(plan: AdoptionPlan, transactionDir: string, re
   return manifestPath;
 }
 
+function finalizeTransactionManifest(
+  plan: AdoptionPlan,
+  transactionDir: string,
+  results: readonly ApplyOperationResult[],
+): { readonly results: readonly ApplyOperationResult[]; readonly transactionManifestPath?: string } {
+  try {
+    return { results, transactionManifestPath: writeTransactionManifest(plan, transactionDir, results) };
+  } catch (error) {
+    return {
+      results: [
+        ...results,
+        {
+          id: "transaction-manifest",
+          kind: "runCheck",
+          status: "failed",
+          error: `failed to persist transaction manifest: ${errorMessage(error)}`,
+        },
+      ],
+    };
+  }
+}
+
+function preflightTransactionManifest(repoRoot: string, transactionDir: string): string | null {
+  const manifestPath = `${transactionDir}/manifest.json`;
+  const manifest = resolveInsideRepo(repoRoot, manifestPath);
+  if (!manifest.ok || !manifest.path) return manifest.error ?? "invalid transaction manifest path";
+  const symlinkError = assertNoSymlinkInPath(repoRoot, manifestPath);
+  if (symlinkError) return symlinkError;
+  const root = resolve(repoRoot);
+  const parent = dirname(manifest.path);
+  const rel = relative(root, parent);
+  let current = root;
+  for (const part of rel.split(sep)) {
+    if (!part) continue;
+    current = resolve(current, part);
+    if (existsSync(current) && !lstatSync(current).isDirectory()) {
+      return `transaction manifest parent is not a directory: ${relative(root, current).replace(/\\/g, "/")}`;
+    }
+  }
+  return null;
+}
+
+function preflightOperation(repoRoot: string, operation: AdoptionOperation): string | null {
+  if (!isSupportedAdoptionOperation(operation)) return unsupportedOperationReason(operation);
+  if (!operation.path) return `operation kind ${operation.kind} is missing a path`;
+  const target = resolveInsideRepo(repoRoot, operation.path);
+  if (!target.ok || !target.path) return target.error ?? "invalid operation path";
+  const symlinkError = assertNoSymlinkInPath(repoRoot, operation.path);
+  if (symlinkError) return symlinkError;
+  const preconditionError = checkExpectedFileState(repoRoot, operation);
+  if (preconditionError) return preconditionError;
+
+  if (operation.kind === "move") {
+    const destination = resolveInsideRepo(repoRoot, operation.to);
+    if (!destination.ok || !destination.path) return destination.error ?? "invalid move destination";
+    const destinationSymlinkError = assertNoSymlinkInPath(repoRoot, operation.to);
+    if (destinationSymlinkError) return destinationSymlinkError;
+    if (existsSync(target.path) && existsSync(destination.path)) return `move destination already exists: ${operation.to}`;
+    if (existsSync(target.path) && !lstatSync(target.path).isFile()) return `move source is not a regular file: ${operation.path}`;
+    return null;
+  }
+
+  if (operation.kind === "remove" && existsSync(target.path) && !lstatSync(target.path).isFile()) {
+    return `remove target is not a regular file: ${operation.path}`;
+  }
+
+  if (operation.kind === "mkdir") {
+    if (existsSync(target.path) && !lstatSync(target.path).isDirectory()) return `mkdir target is not a directory: ${operation.path}`;
+    return null;
+  }
+
+  if ((operation.kind === "writeFile" || operation.kind === "appendManagedBlock") && existsSync(target.path) && !lstatSync(target.path).isFile()) {
+    return `file target is not a regular file: ${operation.path}`;
+  }
+
+  return null;
+}
+
 export function applyAdoptionPlan(plan: AdoptionPlan, dryRun = false): ApplyAdoptionPlanResult {
-  const unsupported = plan.operations.filter((operation) => !isSupportedAdoptionOperation(operation));
-  if (unsupported.length > 0) {
+  const preflight = plan.operations.map((operation) => ({ operation, error: preflightOperation(plan.repoRoot, operation) }));
+  const preflightFailures = preflight.filter((entry) => entry.error);
+  const transactionDir = dryRun ? undefined : transactionDirFor();
+  const manifestPreflightError = transactionDir ? preflightTransactionManifest(plan.repoRoot, transactionDir) : null;
+  if (preflightFailures.length > 0 || manifestPreflightError) {
+    const results: ApplyOperationResult[] = preflight.map(({ operation, error }) =>
+      error
+        ? failure(operation, error)
+        : { id: operation.id, kind: operation.kind, path: operation.path, status: "planned" as const },
+    );
+    if (manifestPreflightError) {
+      results.push({
+        id: "transaction-manifest",
+        kind: "runCheck",
+        status: "failed",
+        error: `transaction manifest preflight failed: ${manifestPreflightError}`,
+      });
+    }
+    const finalized = transactionDir && !manifestPreflightError
+      ? finalizeTransactionManifest(plan, transactionDir, results)
+      : { results };
     return {
       ok: false,
       dryRun,
-      results: unsupported.map((operation) => failure(operation, unsupportedOperationReason(operation))),
+      results: finalized.results,
+      transactionManifestPath: finalized.transactionManifestPath,
     };
   }
 
-  const transactionDir = dryRun ? undefined : transactionDirFor();
   const results = plan.operations.map((operation) => {
     switch (operation.kind) {
       case "mkdir":
@@ -359,18 +602,24 @@ export function applyAdoptionPlan(plan: AdoptionPlan, dryRun = false): ApplyAdop
         return applyWriteFileOperation(plan.repoRoot, operation, dryRun, transactionDir);
       case "appendManagedBlock":
         return applyAppendManagedBlockOperation(plan.repoRoot, operation, dryRun, transactionDir);
+      case "move":
+        return applyMoveOperation(plan.repoRoot, operation, dryRun);
+      case "remove":
+        return applyRemoveOperation(plan.repoRoot, operation, dryRun, transactionDir);
+      case "gitUntrack":
+        return applyGitUntrackOperation(plan.repoRoot, operation, dryRun);
       default:
         return failure(operation, `unsupported operation kind: ${operation.kind}`);
     }
   });
-  const ok = results.every((result) => result.status !== "failed");
-  const transactionManifestPath = !dryRun && ok && transactionDir ? writeTransactionManifest(plan, transactionDir, results) : undefined;
+  const finalized = transactionDir ? finalizeTransactionManifest(plan, transactionDir, results) : { results };
+  const ok = finalized.results.every((result) => result.status !== "failed");
 
   return {
     ok,
     dryRun,
-    results,
-    transactionManifestPath,
+    results: finalized.results,
+    transactionManifestPath: finalized.transactionManifestPath,
   };
 }
 
@@ -393,10 +642,14 @@ function rollbackFailed(operation: FsTransactionManifestOperation, action: Rollb
 
 function rollbackFileOperation(repoRoot: string, operation: FsTransactionManifestOperation): RollbackOperationResult {
   if (!operation.path) return rollbackFailed(operation, "none", "file operation is missing path");
+  const targetSymlinkError = assertNoSymlinkInPath(repoRoot, operation.path);
+  if (targetSymlinkError) return rollbackFailed(operation, "none", targetSymlinkError);
   const target = resolveInsideRepo(repoRoot, operation.path);
   if (!target.ok || !target.path) return rollbackFailed(operation, "none", target.error ?? "invalid path");
 
   if (operation.backupPath) {
+    const backupSymlinkError = assertNoSymlinkInPath(repoRoot, operation.backupPath);
+    if (backupSymlinkError) return rollbackFailed(operation, "restore_backup", backupSymlinkError);
     const backup = resolveInsideRepo(repoRoot, operation.backupPath);
     if (!backup.ok || !backup.path) return rollbackFailed(operation, "restore_backup", backup.error ?? "invalid backup path");
     if (!existsSync(backup.path)) return rollbackFailed(operation, "restore_backup", `missing backup: ${operation.backupPath}`);
@@ -441,6 +694,8 @@ function rollbackFileOperation(repoRoot: string, operation: FsTransactionManifes
 
 function rollbackMkdirOperation(repoRoot: string, operation: FsTransactionManifestOperation): RollbackOperationResult {
   if (!operation.path) return rollbackFailed(operation, "remove_empty_directory", "mkdir operation is missing path");
+  const symlinkError = assertNoSymlinkInPath(repoRoot, operation.path);
+  if (symlinkError) return rollbackFailed(operation, "remove_empty_directory", symlinkError);
   const target = resolveInsideRepo(repoRoot, operation.path);
   if (!target.ok || !target.path) return rollbackFailed(operation, "remove_empty_directory", target.error ?? "invalid path");
   if (!existsSync(target.path)) {
@@ -464,6 +719,7 @@ function isValidManifestOperation(operation: unknown, transactionDir: string): o
   const op = operation as Record<string, unknown>;
   if (typeof op.id !== "string" || typeof op.kind !== "string" || typeof op.status !== "string") return false;
   if (op.path !== undefined && typeof op.path !== "string") return false;
+  if (op.to !== undefined && typeof op.to !== "string") return false;
   if (op.contentHash !== undefined && typeof op.contentHash !== "string") return false;
   if (op.rollbackStrategy !== undefined && typeof op.rollbackStrategy !== "string") return false;
   if (op.error !== undefined && typeof op.error !== "string") return false;
@@ -477,9 +733,84 @@ function isValidManifestOperation(operation: unknown, transactionDir: string): o
   return true;
 }
 
+function rollbackMoveOperation(repoRoot: string, operation: FsTransactionManifestOperation): RollbackOperationResult {
+  if (!operation.path || !operation.to) return rollbackFailed(operation, "none", "move operation is missing source or destination");
+  const sourceSymlinkError = assertNoSymlinkInPath(repoRoot, operation.path);
+  const destinationSymlinkError = assertNoSymlinkInPath(repoRoot, operation.to);
+  if (sourceSymlinkError || destinationSymlinkError) {
+    return rollbackFailed(operation, "none", sourceSymlinkError ?? destinationSymlinkError ?? "invalid move path");
+  }
+  const source = resolveInsideRepo(repoRoot, operation.path);
+  const destination = resolveInsideRepo(repoRoot, operation.to);
+  if (!source.ok || !source.path) return rollbackFailed(operation, "none", source.error ?? "invalid move source");
+  if (!destination.ok || !destination.path) return rollbackFailed(operation, "none", destination.error ?? "invalid move destination");
+  if (existsSync(source.path)) return rollbackFailed(operation, "none", "move source is occupied; refusing to overwrite it");
+  if (!existsSync(destination.path)) return { id: operation.id, kind: operation.kind, path: operation.path, status: "skipped", action: "none" };
+  try {
+    if (operation.contentHash) {
+      const currentHash = targetContentHash(destination.path);
+      if (currentHash !== operation.contentHash) {
+        return rollbackFailed(operation, "none", "move destination hash differs from transaction content hash");
+      }
+    }
+    renameSync(destination.path, source.path);
+    fsyncDirectory(dirname(destination.path));
+    fsyncDirectory(dirname(source.path));
+    return { id: operation.id, kind: operation.kind, path: operation.path, status: "rolled_back", action: "restore_backup" };
+  } catch (error) {
+    return rollbackFailed(operation, "none", errorMessage(error));
+  }
+}
+
+function rollbackRemoveOperation(repoRoot: string, operation: FsTransactionManifestOperation): RollbackOperationResult {
+  if (!operation.path || !operation.backupPath) return rollbackFailed(operation, "restore_backup", "remove operation is missing path or backup");
+  const targetSymlinkError = assertNoSymlinkInPath(repoRoot, operation.path);
+  const backupSymlinkError = assertNoSymlinkInPath(repoRoot, operation.backupPath);
+  if (targetSymlinkError || backupSymlinkError) {
+    return rollbackFailed(operation, "restore_backup", targetSymlinkError ?? backupSymlinkError ?? "invalid remove path");
+  }
+  const target = resolveInsideRepo(repoRoot, operation.path);
+  const backup = resolveInsideRepo(repoRoot, operation.backupPath);
+  if (!target.ok || !target.path) return rollbackFailed(operation, "restore_backup", target.error ?? "invalid removed path");
+  if (!backup.ok || !backup.path) return rollbackFailed(operation, "restore_backup", backup.error ?? "invalid remove backup");
+  if (existsSync(target.path)) return rollbackFailed(operation, "restore_backup", "removed path is occupied; refusing to overwrite it");
+  if (!existsSync(backup.path)) return rollbackFailed(operation, "restore_backup", `missing backup: ${operation.backupPath}`);
+  try {
+    const parentError = ensureParent(repoRoot, operation.path);
+    if (parentError) throw new Error(parentError);
+    renameSync(backup.path, target.path);
+    fsyncDirectory(dirname(backup.path));
+    fsyncDirectory(dirname(target.path));
+    return { id: operation.id, kind: operation.kind, path: operation.path, status: "rolled_back", action: "restore_backup" };
+  } catch (error) {
+    return rollbackFailed(operation, "restore_backup", errorMessage(error));
+  }
+}
+
+function rollbackGitUntrackOperation(repoRoot: string, operation: FsTransactionManifestOperation): RollbackOperationResult {
+  if (!operation.path) return rollbackFailed(operation, "restore_git_index", "git untrack operation is missing path");
+  const symlinkError = assertNoSymlinkInPath(repoRoot, operation.path);
+  if (symlinkError) return rollbackFailed(operation, "restore_git_index", symlinkError);
+  const target = resolveInsideRepo(repoRoot, operation.path);
+  if (!target.ok || !target.path) return rollbackFailed(operation, "restore_git_index", target.error ?? "invalid git path");
+  if (!existsSync(target.path) || !lstatSync(target.path).isFile()) {
+    return rollbackFailed(operation, "restore_git_index", "cannot restore git index because the file is absent or not regular");
+  }
+  const tracked = runProcess("git", ["-C", repoRoot, "ls-files", "--error-unmatch", "--", operation.path]);
+  if (tracked.ok) {
+    return { id: operation.id, kind: operation.kind, path: operation.path, status: "skipped", action: "restore_git_index" };
+  }
+  const restore = runProcess("git", ["-C", repoRoot, "add", "--", operation.path]);
+  return restore.ok
+    ? { id: operation.id, kind: operation.kind, path: operation.path, status: "rolled_back", action: "restore_git_index" }
+    : rollbackFailed(operation, "restore_git_index", restore.stderr || restore.error || "git add failed");
+}
+
 function readTransactionManifest(repoRoot: string, transaction: string): { manifest?: FsTransactionManifest; rel?: string; error?: string } {
   const resolved = resolveTransactionManifest(repoRoot, transaction);
   if (!resolved.ok) return { error: resolved.error };
+  const symlinkError = assertNoSymlinkInPath(repoRoot, resolved.rel);
+  if (symlinkError) return { error: symlinkError };
   if (!existsSync(resolved.path)) return { error: `transaction manifest not found: ${resolved.rel}` };
   try {
     const manifest = JSON.parse(readFileSync(resolved.path, "utf-8")) as FsTransactionManifest;
@@ -520,14 +851,25 @@ export function rollbackAdoptionTransaction(opts: { readonly repoRoot: string; r
     };
   }
 
-  const results = [...loaded.manifest.operations].reverse().map((operation) => {
+  const reversed = [...loaded.manifest.operations].reverse();
+  const restoreIndex = reversed.filter((operation) => operation.kind === "gitUntrack");
+  const results = reversed.filter((operation) => operation.kind !== "gitUntrack").map((operation) => {
     if (operation.status !== "applied") {
       return { id: operation.id, kind: operation.kind, path: operation.path, status: "skipped" as const, action: "none" as const };
     }
     if (operation.kind === "mkdir") return rollbackMkdirOperation(repoRoot, operation);
     if (operation.kind === "writeFile" || operation.kind === "appendManagedBlock") return rollbackFileOperation(repoRoot, operation);
+    if (operation.kind === "move") return rollbackMoveOperation(repoRoot, operation);
+    if (operation.kind === "remove") return rollbackRemoveOperation(repoRoot, operation);
     return rollbackFailed(operation, "none", `unsupported rollback operation kind: ${operation.kind}`);
   });
+  for (const operation of restoreIndex) {
+    results.push(
+      operation.status === "applied"
+        ? rollbackGitUntrackOperation(repoRoot, operation)
+        : { id: operation.id, kind: operation.kind, path: operation.path, status: "skipped", action: "none" },
+    );
+  }
 
   return {
     protocol: 1,

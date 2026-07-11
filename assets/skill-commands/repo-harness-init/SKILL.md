@@ -14,7 +14,7 @@ Use this command for an existing repository that needs the repo-local agentic wo
 2. If running from the target repo root, use `repo-harness adopt`; do not require `--repo .`.
 3. Run `bun scripts/inspect-project-state.ts --repo <repo> --format text`.
 4. If the repo is legacy, route to `repo-harness-migrate`.
-5. Otherwise run the safe path through `repo-harness adopt` or `bash scripts/migrate-project-template.sh --repo <repo> --apply`.
+5. Apply the canonical transaction with `repo-harness adopt --repo <repo>`.
 6. If user-level runtime dependencies are missing, run `repo-harness update` separately; repo adoption must not write HOME.
 7. Verify with `repo-harness run check-task-workflow --strict` inside the target repo.
 

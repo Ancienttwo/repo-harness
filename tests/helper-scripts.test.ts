@@ -23,12 +23,7 @@ const HELPER_DIR = join(ROOT, "assets/templates/helpers");
 const TEMPLATE_DIR = join(ROOT, "assets/templates");
 const ASSETS_HOOKS_DIR = join(ROOT, "assets/hooks");
 
-// migrate-project-template.sh is an intentional split: the scripts/ copy is
-// the full self-host migration implementation, while the packaged
-// assets/templates/helpers/ copy is a thin delegate that points generated
-// projects at the explicitly selected or package-local repo-harness source. They must never be
-// reconciled to match byte-for-byte.
-const INTENTIONALLY_DIVERGENT = ["migrate-project-template.sh"];
+const INTENTIONALLY_DIVERGENT: string[] = [];
 
 setDefaultTimeout(30000);
 
@@ -453,11 +448,11 @@ describe("Workflow helper scripts", () => {
     );
   });
 
-  test("workflow contract drives a deterministic helper projection with one explicit package delegate", () => {
+  test("workflow contract drives a deterministic helper projection without a migration delegate", () => {
     const check = run("bun", ["scripts/sync-helper-sources.ts", "--check"], ROOT);
     expect(check.status).toBe(0);
     expect(check.stdout).toContain("projection OK");
-    expect(check.stdout).toContain("1 package delegate preserved");
+    expect(check.stdout).not.toContain("package delegate preserved");
     expect(check.stderr).toBe("");
 
     const contract = JSON.parse(readFileSync(join(ROOT, "assets/workflow-contract.v1.json"), "utf-8")) as {

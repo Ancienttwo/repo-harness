@@ -11,7 +11,7 @@ import { createInterface } from 'readline/promises';
 import { askConfirm } from './tty-prompt';
 import { runInstall, runUninstall, type InstallTargetSpec } from './commands/install';
 import { configuredDelegationMode, type DelegationMode } from './commands/delegation-mode';
-import { runInit, runInteractiveInit, type InitBrainMode } from './commands/init';
+import { runInit, type InitBrainMode } from './commands/init';
 import { runHook } from './commands/hook';
 import { CLI_VERSION, formatStatus, runStatus } from './commands/status';
 import { formatDoctor, runDoctor } from './commands/doctor';
@@ -30,8 +30,8 @@ import { runPromptGuardDecideCli } from './commands/prompt-guard-decision';
 import { runMinimalChangeCli } from './hook/minimal-change-cli';
 import { runReviewRubricCli } from './hook/review-rubric';
 import { runReviewFingerprintCli } from './hook/diff-fingerprint';
-import { runAdoptionPlan, runExperimentalTsApply } from './commands/adopt-plan';
-import { runRuntimeReclaim, runRuntimeRollback } from './repo-adoption/reclaim-runtime';
+import { runAdoptionPlan } from './commands/adopt-plan';
+import { runRuntimeRollback } from './repo-adoption/reclaim-runtime';
 import { rollbackAdoptionTransaction } from '../effects/fs-transaction';
 import {
   assertTarget,
@@ -331,20 +331,16 @@ export function buildProgram(): Command {
     .option('--transaction <path>', 'Adoption transaction manifest to restore when action is rollback')
     .option('--dry-run', 'Plan repo harness changes without applying them')
     .option('--target <target>', `Host target for readiness checks and optional global bootstrap: ${TARGET_HELP}`, 'both')
-    .option('--no-sync-skill', 'Compatibility no-op; adopt never refreshes user-level skill aliases')
-    .option('--no-host-adapters', 'Compatibility no-op; adopt never writes global Codex/Claude hook adapters')
-    .option('--no-external-skills', 'Compatibility no-op; adopt never bootstraps user-level external skills')
     .option('--no-verify', 'Skip repo workflow verification after apply')
     .option('--no-codegraph', 'Skip building the CodeGraph index and MCP readiness check')
-    .option('--reclaim-runtime', 'Reclaim generated repo-local hook/helper runtime copies after replacement paths verify')
-    .option('--compact', 'Compact repo surface; includes --reclaim-runtime plus package script rewrite')
+    .option('--reclaim-runtime', 'Rejected until reclaim operations are part of the canonical adoption transaction')
+    .option('--compact', 'Rejected until compact operations are part of the canonical adoption transaction')
     .option('--mode <mode>', 'Adoption mode: minimal|standard|self-host', 'standard')
     .option('--configure-codegraph', 'Deprecated: user-level MCP config belongs to repo-harness update/setup')
     .option('--sync-codegraph', 'Sync the CodeGraph index after ensure')
     .option('--brain-root <path>', 'Deprecated: user-level brain config belongs to repo-harness update/setup')
     .option('--brain-mode <mode>', 'Deprecated: adopt does not perform user-level brain sync', 'skip')
-    .option('--interactive', 'Run the numbered interactive install planner')
-    .option('--experimental-ts-apply', 'Apply the current TypeScript safe-subset adoption plan instead of the shell migrator')
+    .option('--interactive', 'Rejected: public adopt is repo-local and does not configure user-level runtime state')
     .option('--json', 'Output JSON instead of human-readable text')
     .action(async (action: string | undefined, rawOpts: {
       repo?: string;
@@ -352,9 +348,6 @@ export function buildProgram(): Command {
       transaction?: string;
       dryRun?: boolean;
       target: string;
-      syncSkill?: boolean;
-      hostAdapters?: boolean;
-      externalSkills?: boolean;
       verify?: boolean;
       codegraph?: boolean;
       reclaimRuntime?: boolean;
@@ -365,7 +358,6 @@ export function buildProgram(): Command {
       brainRoot?: string;
       brainMode?: string;
       interactive?: boolean;
-      experimentalTsApply?: boolean;
       json?: boolean;
     }) => {
       if (action) {
@@ -412,51 +404,27 @@ export function buildProgram(): Command {
         console.error('repo-harness adopt: brain configuration writes user-level state; run repo-harness update instead');
         process.exit(2);
       }
-      const routesToTsDryRunPlan =
-        rawOpts.dryRun === true &&
-        (rawOpts.json === true ||
-          (rawOpts.interactive !== true && rawOpts.reclaimRuntime !== true && rawOpts.compact !== true));
-      if (
-        mode !== 'standard' &&
-        routesToTsDryRunPlan !== true &&
-        rawOpts.experimentalTsApply !== true
-      ) {
-        console.error(
-          `repo-harness adopt: --mode ${mode} is only supported with ordinary --dry-run or --experimental-ts-apply; default apply still uses the shell migrator`,
-        );
+      if (rawOpts.interactive === true) {
+        console.error('repo-harness adopt: --interactive can configure user-level runtime state; use repo-harness install or setup instead');
         process.exit(2);
       }
-      if (routesToTsDryRunPlan) {
+      if (rawOpts.reclaimRuntime === true || rawOpts.compact === true) {
+        console.error('repo-harness adopt: --reclaim-runtime and --compact are unavailable until their mutations join the canonical adoption transaction');
+        process.exit(2);
+      }
+      if (rawOpts.dryRun === true) {
         const plan = runAdoptionPlan({
           repo: rawOpts.repo,
           mode,
           json: rawOpts.json === true,
           explicitRepo: rawOpts.repo !== undefined,
-          reclaimRuntime: rawOpts.reclaimRuntime === true,
-          compact: rawOpts.compact === true,
         });
         process.stdout.write(plan.output);
         process.exit(plan.exitCode);
       }
-      if (rawOpts.experimentalTsApply === true) {
-        if (rawOpts.interactive === true || rawOpts.reclaimRuntime === true || rawOpts.compact === true) {
-          console.error(
-            'repo-harness adopt: --experimental-ts-apply cannot be combined with --interactive, --reclaim-runtime, or --compact',
-          );
-          process.exit(2);
-        }
-        const apply = runExperimentalTsApply({
-          repo: rawOpts.repo,
-          mode,
-          json: rawOpts.json === true,
-          explicitRepo: rawOpts.repo !== undefined,
-        });
-        process.stdout.write(apply.output);
-        process.exit(apply.exitCode);
-      }
       const common = {
         repo: rawOpts.repo,
-        apply: rawOpts.dryRun !== true,
+        apply: true,
         target,
         syncSkill: false,
         hostAdapters: false,
@@ -465,36 +433,17 @@ export function buildProgram(): Command {
         codegraph: rawOpts.codegraph !== false,
         configureCodegraphMcp: false,
         syncCodegraph: rawOpts.syncCodegraph === true,
+        mode,
         brainRoot: rawOpts.brainRoot,
         brainMode: rawOpts.brainMode as InitBrainMode,
       };
-      const result = rawOpts.interactive === true
-        ? await runInteractiveInit({
-            ...common,
-            output: rawOpts.json === true ? process.stderr : process.stdout,
-          })
-        : runInit(common);
-      const shouldReclaim = rawOpts.reclaimRuntime === true || rawOpts.compact === true;
-      const reclaim = shouldReclaim && (result.exitCode === 0 || rawOpts.dryRun === true)
-        ? runRuntimeReclaim({
-            repo: result.repoRoot,
-            apply: rawOpts.dryRun !== true,
-            compact: rawOpts.compact === true,
-            verify: rawOpts.verify !== false,
-            mode,
-          })
-        : null;
+      const result = runInit(common);
       if (rawOpts.json === true) {
-        console.log(JSON.stringify(reclaim ? { adopt: result, runtime_reclaim: reclaim } : result, null, 2));
+        console.log(JSON.stringify(result, null, 2));
       } else {
         for (const line of result.lines) console.log(line);
-        if (reclaim) {
-          console.log(`[adopt] ${reclaim.status}: reclaim runtime - files=${reclaim.runtime_reclaim.files.length}`);
-          if (reclaim.runtime_reclaim.archive) console.log(`[adopt] archive: ${reclaim.runtime_reclaim.archive}`);
-          for (const blocked of reclaim.runtime_reclaim.blocked) console.log(`[adopt] blocked: ${blocked}`);
-        }
       }
-      process.exit(result.exitCode || (reclaim?.status === 'blocked' ? 1 : 0));
+      process.exit(result.exitCode);
     });
 
   program

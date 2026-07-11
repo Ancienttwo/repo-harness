@@ -97,4 +97,4 @@ Every hook change should state whether it affects `self-host`, `generated`, or
 
 ## Verification Checklist
 
-Run after hook or workflow contract changes: `bun test`, `repo-harness run check-task-sync`, `repo-harness run check-task-workflow --strict`, and `bash scripts/migrate-project-template.sh --repo . --dry-run`.
+Run after hook or workflow contract changes: `bun test`, `repo-harness run check-task-sync`, `repo-harness run check-task-workflow --strict`, and `repo-harness adopt --repo . --dry-run`.

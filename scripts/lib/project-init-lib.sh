@@ -1136,19 +1136,6 @@ pi_install_helpers() {
   if [[ -d "$helpers_dir" ]]; then
     for helper_name in $helper_names; do
       if [[ -f "$helpers_dir/$helper_name" ]]; then
-        if [[ "$helper_name" == "migrate-project-template.sh" ]]; then
-          local target_abs=""
-          local skill_abs=""
-          target_abs="$(cd "$target_dir" && pwd)"
-          if [[ -n "${SKILL_ROOT:-}" ]]; then
-            skill_abs="$(cd "$SKILL_ROOT" && pwd)"
-          else
-            skill_abs="$(cd "$helpers_dir/../.." && pwd)"
-          fi
-          if [[ "$target_abs" == "$skill_abs" ]]; then
-            continue
-          fi
-        fi
         if [[ "$source_repo_target" -eq 1 ]]; then
           mkdir -p "$scripts_dir"
           cp "$helpers_dir/$helper_name" "$scripts_dir/$helper_name"

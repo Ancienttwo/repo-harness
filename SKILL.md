@@ -113,8 +113,8 @@ The installed runtime copy inside a repo is:
 The main engine entrypoints are:
 
 - `scripts/inspect-project-state.ts`
-- `scripts/migrate-workflow-docs.ts`
-- `scripts/migrate-project-template.sh`
+- `src/core/adoption/standard-plan.ts`
+- `src/effects/fs-transaction.ts`
 - `scripts/check-agent-tooling.sh`
 - `scripts/check-task-workflow.sh`
 - `scripts/create-project-dirs.sh`
@@ -278,10 +278,7 @@ Legacy paths include:
 - `docs/handoff.md`
 - `HANDOFF.md`
 
-Use:
-
-- `bun scripts/migrate-workflow-docs.ts --repo <path> --dry-run`
-- `bun scripts/migrate-workflow-docs.ts --repo <path> --apply`
+Use `repo-harness adopt --repo <path> --dry-run` to inspect the complete transaction, then `repo-harness adopt --repo <path>` to apply it.
 
 Migration defaults:
 
@@ -400,14 +397,14 @@ bun test
 bash scripts/check-deploy-sql-order.sh
 bash scripts/check-task-sync.sh
 bash scripts/check-task-workflow.sh --strict
-bash scripts/migrate-project-template.sh --repo . --dry-run
+bun src/cli/index.ts adopt --repo . --dry-run
 ```
 
-For migration-focused work, also inspect and dry-run legacy doc migration explicitly:
+For migration-focused work, inspect state and the canonical dry-run explicitly:
 
 ```bash
 bun scripts/inspect-project-state.ts --repo . --format text
-bun scripts/migrate-workflow-docs.ts --repo . --dry-run
+bun src/cli/index.ts adopt --repo . --dry-run
 ```
 
 ## Iteration Notes

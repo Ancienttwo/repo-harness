@@ -21,7 +21,7 @@
       "lsp_profile": "typescript-lsp",
       "verification_hints": [
         "bun scripts/inspect-project-state.ts --repo . --format text",
-        "bash scripts/migrate-project-template.sh --repo . --dry-run"
+        "bun src/cli/index.ts adopt --repo . --dry-run"
       ]
     },
     {
@@ -73,8 +73,6 @@
       "name": "inspection-migration",
       "prefixes": [
         "scripts/inspect-project-state.ts",
-        "scripts/migrate-project-template.sh",
-        "scripts/migrate-workflow-docs.ts",
         "scripts/create-project-dirs.sh",
         "scripts/init-project.sh",
         "scripts/lib"
@@ -88,7 +86,7 @@
       "lsp_profile": "typescript-lsp",
       "verification_hints": [
         "bun test tests/migration-script.test.ts tests/create-project-dirs.runtime.test.ts tests/workflow-contract.test.ts",
-        "bash scripts/migrate-project-template.sh --repo . --dry-run"
+        "bun src/cli/index.ts adopt --repo . --dry-run"
       ]
     },
     {

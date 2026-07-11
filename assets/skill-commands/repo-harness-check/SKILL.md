@@ -17,7 +17,7 @@ Use this command when the user asks whether the harness, migration, or release s
    - `repo-harness run check-task-sync`
    - `repo-harness run check-task-workflow --strict`
    - `repo-harness run inspect-project-state --repo . --format text`
-   - `repo-harness run migrate-project-template --repo . --dry-run`
+   - `repo-harness adopt --repo . --dry-run`
 3. Run advisory readiness when available:
    - `repo-harness run check-agent-tooling --host both --json`
 4. Treat missing CodeGraph or missing Codex `health`/`check`/`mermaid` as hard failures.

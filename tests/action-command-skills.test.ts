@@ -149,7 +149,7 @@ describe("repo-harness action command skills", () => {
     expect(init).toContain("existing repository");
     expect(init).toContain("Does not create a new application stack");
     expect(init).toContain("repo-harness adopt");
-    expect(init).toContain("migrate-project-template.sh --repo <repo> --apply");
+    expect(init).toContain("repo-harness adopt --repo <repo>");
     expect(scaffold).toContain("new project");
     expect(scaffold).toContain("plan catalog A-K");
     expect(scaffold).toContain("If the user says \"initialize existing repo\", route to `repo-harness-init`");
@@ -169,7 +169,7 @@ describe("repo-harness action command skills", () => {
     const capability = readCommand("repo-harness-capability");
 
     expect(capability).toContain("capability-config.ts add");
-    expect(capability).toContain("Does not run `scripts/migrate-project-template.sh --apply`");
+    expect(capability).toContain("Does not run `repo-harness adopt`");
     expect(capability).toContain("Does not install or refresh the full harness");
     expect(capability).toContain("explicit prefixes");
   });
@@ -181,7 +181,7 @@ describe("repo-harness action command skills", () => {
 
     expect(architecture).toContain("repo-harness run archive-architecture-request");
     expect(architecture).toContain("mermaid");
-    expect(architecture).toContain("Does not run `scripts/migrate-project-template.sh --apply`");
+    expect(architecture).toContain("Does not run `repo-harness adopt`");
     expect(architecture).toContain("hooks only record drift requests");
 
     expect(handoff).toContain("repo-harness run prepare-codex-handoff");

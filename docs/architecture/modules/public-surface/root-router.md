@@ -43,9 +43,9 @@ host target.
 
 Concrete route: user asks for an existing repo install -> root `SKILL.md`
 selects `repo-harness-init` semantics -> that action routes to
-`repo-harness adopt` or `migrate-project-template.sh --repo <repo> --apply` ->
+`repo-harness adopt --repo <repo>` ->
 the command runs `inspect-project-state.ts --repo <repo> --format text` -> if no
-legacy state is found, `migrate-project-template.sh --repo <repo> --apply`
+legacy state is found, `repo-harness adopt --repo <repo>`
 installs or refreshes the workflow -> repo-local checks verify the target repo.
 
 For global bootstrap, the input source of truth is the selected host target and

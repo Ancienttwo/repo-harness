@@ -38,7 +38,7 @@ architecture documentation, drift-request, or diagram pass.
 
 ## Boundaries
 
-- Does not run `scripts/migrate-project-template.sh --apply`.
+- Does not run `repo-harness adopt`.
 - Does not install or refresh the full harness.
 - Does not let hooks rewrite architecture prose; hooks only record drift requests.
 - Does not vendor `mermaid`; it remains an external installed skill for optional human-readable HTML.

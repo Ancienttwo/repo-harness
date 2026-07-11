@@ -36,7 +36,7 @@
       "name": "repo-harness-init",
       "class": "repo-initialization",
       "mutatesRepoByDefault": true,
-      "engine": "inspect-project-state then migrate-project-template --apply",
+      "engine": "inspect-project-state then canonical adoption transaction",
       "summary": "Installs or refreshes the agentic workflow in an existing repository without creating an app stack."
     },
     {
@@ -50,7 +50,7 @@
       "name": "repo-harness-migrate",
       "class": "legacy-migration",
       "mutatesRepoByDefault": true,
-      "engine": "inspect-project-state, migrate-workflow-docs, migrate-project-template",
+      "engine": "inspect-project-state then canonical adoption transaction",
       "summary": "Migrates legacy Claude/Codex workflow surfaces while preserving or archiving user-authored content."
     },
     {

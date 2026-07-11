@@ -11,6 +11,9 @@ export const LEGACY_GITIGNORE_MANAGED_MARKERS: readonly ManagedBlockMarker[] = [
 ];
 
 export const GITIGNORE_MANAGED_BLOCK_CONTENT = [
+  "# Dependencies",
+  "node_modules/",
+  "",
   "# Project-specific",
   "artifacts/",
   "coverage/",
@@ -19,6 +22,7 @@ export const GITIGNORE_MANAGED_BLOCK_CONTENT = [
   "",
   "# External references",
   "_ref/",
+  ".archcontext/",
   ".codegraph/",
   "",
   "# Local operations state",
