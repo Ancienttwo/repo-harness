@@ -8,7 +8,7 @@
 > **Last Updated**: 2026-07-12 05:43
 > **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Diff Fingerprint**: sha256:67fe53d2ba2ffce0d1bff8c8861df7590e1ad89633e1a0b31cdea72c2b10364b
+> **Reviewed Diff Fingerprint**: sha256:077fe6e0295b56e4c72f6ab916e798f523b2857fc2fc0d4344f9ac20cd2a01cf
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 ## Human Review Card
@@ -92,7 +92,7 @@
 > **External Started**: 2026-07-12T05:27:00+08:00
 > **External Completed**: pending
 > **Review Rubric Version**: 2
-> **Reviewed Diff Fingerprint**: sha256:67fe53d2ba2ffce0d1bff8c8861df7590e1ad89633e1a0b31cdea72c2b10364b
+> **Reviewed Diff Fingerprint**: sha256:077fe6e0295b56e4c72f6ab916e798f523b2857fc2fc0d4344f9ac20cd2a01cf
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 - P1 blockers: none after local remediation; GitHub re-review is still pending.

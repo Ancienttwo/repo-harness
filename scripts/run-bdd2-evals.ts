@@ -528,12 +528,13 @@ function assertAuthorityTrackedAtHead(repoRoot: string, authorityPaths: string[]
     if (relativePath.startsWith("../") || isAbsolute(relativePath)) {
       fail(`Evaluation authority escapes repository root: ${path}`);
     }
-    const tracked = spawnSync(
+    const atHead = spawnSync(
       "git",
-      ["ls-files", "--error-unmatch", "--", relativePath],
+      ["ls-tree", "-r", "--name-only", "-z", "HEAD", "--", relativePath],
       { cwd: repoRoot, encoding: "utf-8" }
     );
-    if (tracked.status !== 0) {
+    const headPaths = (atHead.stdout ?? "").split("\0").filter(Boolean);
+    if (atHead.status !== 0 || !headPaths.includes(relativePath)) {
       fail(`Sealed evaluation authority must be tracked at HEAD: ${relativePath}`);
     }
   }

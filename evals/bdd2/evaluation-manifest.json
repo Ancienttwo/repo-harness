@@ -7,7 +7,7 @@
   },
   "runner": {
     "path": "scripts/run-bdd2-evals.ts",
-    "sha256": "fc9297b6e5fdd74cda4988cfcfa0d1503a232c1086e4df9b6c52501c1b0bf398"
+    "sha256": "93fdf81cfbd5f54d9cb9517ed5b00b66315ce6b6c9f727e71e12a181f46efb19"
   },
   "output_root": ".ai/harness/runs/bdd2",
   "experiments": {
