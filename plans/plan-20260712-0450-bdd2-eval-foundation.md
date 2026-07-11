@@ -137,6 +137,8 @@ allowed_paths:
 - [x] Add contract and runner tests, including drift and data-leak failures.
 - [x] Run focused tests, strict workflow checks, and the repository required checks.
 - [x] Complete task review/notes, commit, push, and open the module PR.
+- [x] Address PR #53 P1 by separating deterministic private coordinates from random blind packet IDs.
+- [x] Address PR #53 P2 by requiring every sealed authority input, including the manifest and runner, to be tracked at clean HEAD.
 
 ## Exit Criteria
 

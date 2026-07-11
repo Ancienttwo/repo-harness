@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   cpSync,
   mkdtempSync,
+  mkdirSync,
   readFileSync,
   rmSync,
   symlinkSync,
@@ -21,6 +22,8 @@ const ROOT = join(import.meta.dir, "..");
 function tempRepo(prefix: string): string {
   const root = mkdtempSync(join(tmpdir(), `${prefix}-`));
   cpSync(join(ROOT, "evals/bdd2"), join(root, "evals/bdd2"), { recursive: true });
+  mkdirSync(join(root, "scripts"), { recursive: true });
+  cpSync(join(ROOT, "scripts/run-bdd2-evals.ts"), join(root, "scripts/run-bdd2-evals.ts"));
   return root;
 }
 
@@ -50,8 +53,8 @@ describe("run-bdd2-evals validation and planning", () => {
 
     expect(first).toEqual(second);
     expect(first).toHaveLength(4);
-    expect(first.every((entry) => /^[a-f0-9]{16}$/.test(entry.packetId))).toBe(true);
-    expect(new Set(first.map((entry) => entry.packetId)).size).toBe(4);
+    expect(first.every((entry) => /^[a-f0-9]{16}$/.test(entry.coordinateId))).toBe(true);
+    expect(new Set(first.map((entry) => entry.coordinateId)).size).toBe(4);
     expect(() =>
       buildRunPlan(evaluation, {
         ...options,
@@ -65,6 +68,16 @@ describe("run-bdd2-evals validation and planning", () => {
     try {
       writeFileSync(join(root, "evals/bdd2/prompts/shape-baseline.md"), "changed\n", "utf-8");
       expect(() => validateEvaluation(root)).toThrow("sha256 drift");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("fails closed when the frozen runner drifts", () => {
+    const root = tempRepo("bdd2-runner-drift");
+    try {
+      writeFileSync(join(root, "scripts/run-bdd2-evals.ts"), "changed runner\n", "utf-8");
+      expect(() => validateEvaluation(root)).toThrow("runner sha256 drift");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -157,6 +170,7 @@ describe("run-bdd2-evals sealed execution", () => {
         },
       };
       writeManifest(root, manifest);
+      writeFileSync(join(root, ".gitignore"), ".ai/\n.ignored/\n", "utf-8");
       for (const args of [
         ["init"],
         ["config", "user.name", "BDD2 Test"],
@@ -169,6 +183,13 @@ describe("run-bdd2-evals sealed execution", () => {
       }
 
       const evaluation = validateEvaluation(root);
+      const privateCoordinateId = buildRunPlan(evaluation, {
+        experiment: "A",
+        partition: "held_out",
+        taskIds: ["A-H-01"],
+        conditions: ["treatment"],
+        repetitions: 1,
+      })[0].coordinateId;
       const report = runEvaluation(evaluation, {
         experiment: "A",
         partition: "held_out",
@@ -181,6 +202,8 @@ describe("run-bdd2-evals sealed execution", () => {
 
       expect(report.packets).toHaveLength(1);
       const packetId = report.packets[0].packet_id;
+      expect(packetId).toMatch(/^[a-f0-9]{32}$/);
+      expect(packetId).not.toBe(privateCoordinateId);
       const blind = JSON.parse(
         readFileSync(join(root, ".ai/harness/runs/bdd2/test-run/blind", `${packetId}.json`), "utf-8")
       );
@@ -198,8 +221,28 @@ describe("run-bdd2-evals sealed execution", () => {
       expect(JSON.stringify(blind)).not.toContain("treatment");
       expect(Object.keys(blind)).not.toContain("model");
       expect(privateCoordinate.condition).toBe("treatment");
+      expect(privateCoordinate.coordinate_id).toBe(privateCoordinateId);
       expect(privateCoordinate.model).toBe("stub-model-v1");
       expect(privateCoordinate.sampling).toEqual({ temperature: 0 });
+
+      mkdirSync(join(root, ".ignored"), { recursive: true });
+      writeFileSync(
+        join(root, ".ignored/evaluation-manifest.json"),
+        `${JSON.stringify(manifest, null, 2)}\n`,
+        "utf-8"
+      );
+      const ignoredEvaluation = validateEvaluation(root, ".ignored/evaluation-manifest.json");
+      expect(() =>
+        runEvaluation(ignoredEvaluation, {
+          experiment: "A",
+          partition: "held_out",
+          taskIds: ["A-H-01"],
+          conditions: ["treatment"],
+          repetitions: 1,
+          agent: "stub",
+          outputPath: ".ai/harness/runs/bdd2/ignored-manifest-run",
+        })
+      ).toThrow("must be tracked at HEAD");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

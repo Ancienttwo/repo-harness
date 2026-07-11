@@ -5,6 +5,10 @@
     "state": "foundation",
     "sealed_at": null
   },
+  "runner": {
+    "path": "scripts/run-bdd2-evals.ts",
+    "sha256": "fc9297b6e5fdd74cda4988cfcfa0d1503a232c1086e4df9b6c52501c1b0bf398"
+  },
   "output_root": ".ai/harness/runs/bdd2",
   "experiments": {
     "S": {
@@ -44,7 +48,7 @@
     "rubric": "evals/bdd2/rubrics/blind-adjudication.md",
     "rubric_sha256": "96082f845dc67ad3db256b2ec40e1b66b9d5d7b748a2a0a8257c4b7b60e4dba1",
     "score_schema": "evals/bdd2/rubrics/score.schema.json",
-    "score_schema_sha256": "6627ccad7730f5281d74da9d4a546739fa9a67957562d61c4ed03e1379d881bb"
+    "score_schema_sha256": "a23b15a98b736c1abce9ba7bbaad4a5492d591907ff6d65e0f97d52018775f28"
   },
   "agents": {}
 }

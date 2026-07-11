@@ -7,7 +7,7 @@
   "required": ["schema", "packet_id", "task_id", "experiment", "reviewer_id", "locked_at", "score"],
   "properties": {
     "schema": { "const": "repo-harness-bdd2-score.v1" },
-    "packet_id": { "type": "string", "pattern": "^[a-f0-9]{16}$" },
+    "packet_id": { "type": "string", "pattern": "^[a-f0-9]{32}$" },
     "task_id": { "type": "string", "minLength": 4 },
     "experiment": { "enum": ["S", "A"] },
     "reviewer_id": { "type": "string", "minLength": 1 },

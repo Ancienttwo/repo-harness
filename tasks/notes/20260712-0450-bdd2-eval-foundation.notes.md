@@ -24,6 +24,13 @@
 - Model and sampling authority lives only in the sealed agent profile; `freeze` does
   not duplicate it. Blind packets exclude condition, repetition, prompt, agent,
   model, sampling, truth, and private coordinate fields.
+- PR #53 review remediation removes the deterministic public packet ID entirely.
+  Deterministic 16-hex coordinates remain private for reproducible execution;
+  adjudication packets receive independent 128-bit IDs from `crypto.randomBytes`.
+- A sealed run now treats the manifest, runner, every treatment prompt, both task
+  and truth partitions, rubric, and score schema as one committed authority set.
+  It refuses any member that is ignored/untracked even when the worktree otherwise
+  appears clean.
 - Browser and ImageGen remain first-class later experiments in Sprint row BDD2-E-04.
   They were not deleted or bundled into the S/A foundation.
 
@@ -50,7 +57,7 @@
 - Checks: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Full suite: `bun test` — 1146 passed, 1 platform skip, 0 failed.
-- Focused suite: `bun test tests/run-bdd2-evals.test.ts tests/bdd2-evals-contract.test.ts` — 10 passed.
+- Focused suite: `bun test tests/run-bdd2-evals.test.ts tests/bdd2-evals-contract.test.ts` — 11 passed after PR review remediation.
 - Typecheck: `bun run check:type` — passed.
 - Foundation validation: `bun scripts/run-bdd2-evals.ts validate` — valid.
 - Dry-run plan: `bun scripts/run-bdd2-evals.ts plan --experiment S --partition development --dry-run` — deterministic coordinates emitted.
@@ -72,3 +79,21 @@ Promote a candidate to `tasks/lessons.md`, `docs/researches/`, or harness asset 
 - Promote to `tasks/lessons.md` only after a repeated correction or failure pattern.
 - Promote to `docs/researches/` only when it is durable repo knowledge with evidence.
 - Promote to harness asset files only after verification across more than one task or fixture.
+
+## Minimal-change Audit
+
+- New dependencies: none. Random blinding uses the Node/Bun standard-library
+  `crypto.randomBytes`; hashing, filesystem, process, and Git behavior continue to
+  use existing standard-library/platform surfaces.
+- New files: each committed file owns a distinct Phase E datum or evidence boundary:
+  one manifest, four treatment prompts, two task partitions, two separate truth
+  partitions, one human rubric, one score schema, one runner, two focused tests, and
+  the repository-required PRD/Sprint/plan/contract/review/notes/current projections.
+  Combining task and truth files would violate blinding; adding a sidecar/catalog or
+  shared package would add authority without a second consumer and was rejected.
+- New abstractions: no shared package, provider wrapper, compatibility parser, or
+  extension registry was added. `FileReference` and the local authority-path list
+  protect one cross-file invariant inside the single runner.
+- Deleted/shrunk behavior: the reversible deterministic public `packetId` path was
+  removed rather than retained behind an alias. There is no compatibility fallback;
+  old 16-hex score packet IDs now fail the v1 schema explicitly.

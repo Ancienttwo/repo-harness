@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 
-import { createHash } from "crypto";
+import { createHash, randomBytes } from "crypto";
 import { spawnSync } from "child_process";
 import {
   existsSync,
@@ -24,6 +24,11 @@ export type FreezeState = "foundation" | "sealed";
 
 interface PromptReference {
   prompt: string;
+  sha256: string;
+}
+
+interface FileReference {
+  path: string;
   sha256: string;
 }
 
@@ -56,6 +61,7 @@ export interface EvaluationManifest {
     state: FreezeState;
     sealed_at: string | null;
   };
+  runner: FileReference;
   output_root: string;
   experiments: Record<ExperimentId, ExperimentDefinition>;
   partitions: Record<PartitionId, PartitionDefinition>;
@@ -97,6 +103,7 @@ interface TruthSet {
 export interface ValidatedEvaluation {
   repoRoot: string;
   manifestPath: string;
+  authorityPaths: string[];
   manifest: EvaluationManifest;
   tasks: Record<PartitionId, EvaluationTask[]>;
 }
@@ -110,7 +117,7 @@ export interface PlanOptions {
 }
 
 export interface RunCoordinate {
-  packetId: string;
+  coordinateId: string;
   experiment: ExperimentId;
   partition: PartitionId;
   taskId: string;
@@ -206,12 +213,20 @@ function validatePromptReference(
   repoRoot: string,
   value: unknown,
   label: string
-): asserts value is PromptReference {
+): string {
   assertRecord(value, label);
   assertExactKeys(value, ["prompt", "sha256"], label);
   assertString(value.prompt, `${label}.prompt`);
   assertString(value.sha256, `${label}.sha256`);
-  verifyHash(repoRoot, value.prompt, value.sha256, label);
+  return verifyHash(repoRoot, value.prompt, value.sha256, label);
+}
+
+function validateFileReference(repoRoot: string, value: unknown, label: string): string {
+  assertRecord(value, label);
+  assertExactKeys(value, ["path", "sha256"], label);
+  assertString(value.path, `${label}.path`);
+  assertString(value.sha256, `${label}.sha256`);
+  return verifyHash(repoRoot, value.path, value.sha256, label);
 }
 
 function validateTaskSet(raw: unknown, partition: PartitionId): TaskSet {
@@ -323,13 +338,14 @@ export function validateEvaluation(
   const manifestPath = authorityPath(absoluteRoot, manifestRelativePath, "manifest");
   const raw = readJson(manifestPath);
   assertRecord(raw, "manifest");
-  assertExactKeys(raw, ["schema", "freeze", "output_root", "experiments", "partitions", "adjudication", "agents"], "manifest");
+  assertExactKeys(raw, ["schema", "freeze", "runner", "output_root", "experiments", "partitions", "adjudication", "agents"], "manifest");
   if (raw.schema !== "repo-harness-bdd2-evaluation.v1") fail("Unsupported evaluation manifest schema");
 
   assertRecord(raw.freeze, "freeze");
   assertExactKeys(raw.freeze, ["id", "state", "sealed_at"], "freeze");
   assertString(raw.freeze.id, "freeze.id");
   if (raw.freeze.state !== "foundation" && raw.freeze.state !== "sealed") fail("freeze.state must be foundation or sealed");
+  const authorityPaths = [manifestPath, validateFileReference(absoluteRoot, raw.runner, "runner")];
   assertString(raw.output_root, "output_root");
   assertRecord(raw.experiments, "experiments");
   assertExactKeys(raw.experiments, ["S", "A"], "experiments");
@@ -342,8 +358,10 @@ export function validateEvaluation(
     if (!Number.isInteger(experiment.held_out_task_count) || Number(experiment.held_out_task_count) < 1) fail(`experiments.${experimentId}.held_out_task_count must be positive`);
     assertRecord(experiment.conditions, `experiments.${experimentId}.conditions`);
     assertExactKeys(experiment.conditions, ["baseline", "treatment"], `experiments.${experimentId}.conditions`);
-    validatePromptReference(absoluteRoot, experiment.conditions.baseline, `experiments.${experimentId}.conditions.baseline`);
-    validatePromptReference(absoluteRoot, experiment.conditions.treatment, `experiments.${experimentId}.conditions.treatment`);
+    authorityPaths.push(
+      validatePromptReference(absoluteRoot, experiment.conditions.baseline, `experiments.${experimentId}.conditions.baseline`),
+      validatePromptReference(absoluteRoot, experiment.conditions.treatment, `experiments.${experimentId}.conditions.treatment`)
+    );
   }
 
   assertRecord(raw.partitions, "partitions");
@@ -359,6 +377,7 @@ export function validateEvaluation(
     assertString(partition.truth_sha256, `partitions.${partitionId}.truth_sha256`);
     const taskPath = verifyHash(absoluteRoot, partition.tasks, partition.tasks_sha256, `${partitionId} tasks`);
     const truthPath = verifyHash(absoluteRoot, partition.truth, partition.truth_sha256, `${partitionId} truth`);
+    authorityPaths.push(taskPath, truthPath);
     const taskSet = validateTaskSet(readJson(taskPath), partitionId);
     validateTruthSet(readJson(truthPath), partitionId, taskSet.tasks);
     tasks[partitionId] = taskSet.tasks;
@@ -376,8 +395,10 @@ export function validateEvaluation(
   const rubricSha256 = raw.adjudication.rubric_sha256 as string;
   const scoreSchema = raw.adjudication.score_schema as string;
   const scoreSchemaSha256 = raw.adjudication.score_schema_sha256 as string;
-  verifyHash(absoluteRoot, rubric, rubricSha256, "adjudication rubric");
-  verifyHash(absoluteRoot, scoreSchema, scoreSchemaSha256, "adjudication score schema");
+  authorityPaths.push(
+    verifyHash(absoluteRoot, rubric, rubricSha256, "adjudication rubric"),
+    verifyHash(absoluteRoot, scoreSchema, scoreSchemaSha256, "adjudication score schema")
+  );
 
   assertRecord(raw.agents, "agents");
   const manifest = raw as unknown as EvaluationManifest;
@@ -396,11 +417,20 @@ export function validateEvaluation(
     }
   }
 
-  return { repoRoot: absoluteRoot, manifestPath, manifest, tasks };
+  return { repoRoot: absoluteRoot, manifestPath, authorityPaths: [...new Set(authorityPaths)], manifest, tasks };
 }
 
-function opaquePacketId(parts: string[]): string {
+function privateCoordinateId(parts: string[]): string {
   return createHash("sha256").update(parts.join("\0")).digest("hex").slice(0, 16);
+}
+
+function randomBlindPacketId(used: Set<string>): string {
+  let packetId = "";
+  do {
+    packetId = randomBytes(16).toString("hex");
+  } while (used.has(packetId));
+  used.add(packetId);
+  return packetId;
 }
 
 export function buildRunPlan(evaluation: ValidatedEvaluation, options: PlanOptions): RunCoordinate[] {
@@ -427,7 +457,7 @@ export function buildRunPlan(evaluation: ValidatedEvaluation, options: PlanOptio
     for (const condition of conditions) {
       for (let repetition = 1; repetition <= repetitions; repetition += 1) {
         coordinates.push({
-          packetId: opaquePacketId([evaluation.manifest.freeze.id, options.experiment, options.partition, task.id, condition, String(repetition)]),
+          coordinateId: privateCoordinateId([evaluation.manifest.freeze.id, options.experiment, options.partition, task.id, condition, String(repetition)]),
           experiment: options.experiment,
           partition: options.partition,
           taskId: task.id,
@@ -492,11 +522,29 @@ function cleanHeadCommit(repoRoot: string): string {
   return commit;
 }
 
+function assertAuthorityTrackedAtHead(repoRoot: string, authorityPaths: string[]): void {
+  for (const path of authorityPaths) {
+    const relativePath = relative(repoRoot, path).replace(/\\/g, "/");
+    if (relativePath.startsWith("../") || isAbsolute(relativePath)) {
+      fail(`Evaluation authority escapes repository root: ${path}`);
+    }
+    const tracked = spawnSync(
+      "git",
+      ["ls-files", "--error-unmatch", "--", relativePath],
+      { cwd: repoRoot, encoding: "utf-8" }
+    );
+    if (tracked.status !== 0) {
+      fail(`Sealed evaluation authority must be tracked at HEAD: ${relativePath}`);
+    }
+  }
+}
+
 export function runEvaluation(evaluation: ValidatedEvaluation, options: RunOptions): RunReport {
   if (evaluation.manifest.freeze.state !== "sealed") fail("Evaluation manifest is foundation-only; seal commit, model, and agent profiles before execution");
   const profile = evaluation.manifest.agents[options.agent];
   if (!profile) fail(`Unknown frozen agent profile: ${options.agent}`);
   const sourceCommit = cleanHeadCommit(evaluation.repoRoot);
+  assertAuthorityTrackedAtHead(evaluation.repoRoot, evaluation.authorityPaths);
   const plan = buildRunPlan(evaluation, options);
   const outputPath = options.outputPath
     ? resolve(evaluation.repoRoot, options.outputPath)
@@ -520,8 +568,9 @@ export function runEvaluation(evaluation: ValidatedEvaluation, options: RunOptio
     packets: [],
   };
 
+  const blindPacketIds = new Set<string>();
   for (const coordinate of plan) {
-    const packetRoot = resolve(outputPath, "packets", coordinate.packetId);
+    const packetRoot = resolve(outputPath, "packets", coordinate.coordinateId);
     const promptPath = resolve(packetRoot, "agent-prompt.md");
     const responsePath = resolve(packetRoot, "response.md");
     const stderrPath = resolve(packetRoot, "stderr.txt");
@@ -541,25 +590,27 @@ export function runEvaluation(evaluation: ValidatedEvaluation, options: RunOptio
     writeJson(resolve(packetRoot, "command.json"), { command: profile.command, args, cwd: evaluation.repoRoot });
     const result = spawnSync(profile.command, args, { cwd: evaluation.repoRoot, encoding: "utf-8", env: process.env });
     writeFileSync(stderrPath, result.stderr ?? "", "utf-8");
-    if (result.error) fail(`Agent command failed to start for ${coordinate.packetId}: ${result.error.message}`);
-    if (result.status !== 0) fail(`Agent command failed for ${coordinate.packetId} with exit ${result.status}`);
+    if (result.error) fail(`Agent command failed to start for ${coordinate.coordinateId}: ${result.error.message}`);
+    if (result.status !== 0) fail(`Agent command failed for ${coordinate.coordinateId} with exit ${result.status}`);
 
     if (profile.response_source === "stdout") {
       writeFileSync(responsePath, result.stdout ?? "", "utf-8");
     } else if (!existsSync(responsePath)) {
-      fail(`Agent response file missing for ${coordinate.packetId}`);
+      fail(`Agent response file missing for ${coordinate.coordinateId}`);
     }
     const response = readFileSync(responsePath, "utf-8");
-    writeJson(resolve(outputPath, "blind", `${coordinate.packetId}.json`), {
+    const blindPacketId = randomBlindPacketId(blindPacketIds);
+    writeJson(resolve(outputPath, "blind", `${blindPacketId}.json`), {
       schema: "repo-harness-bdd2-blind-packet.v1",
-      packet_id: coordinate.packetId,
+      packet_id: blindPacketId,
       task_id: coordinate.taskId,
       experiment: coordinate.experiment,
       response,
     });
-    writeJson(resolve(outputPath, "private", `${coordinate.packetId}.json`), {
+    writeJson(resolve(outputPath, "private", `${blindPacketId}.json`), {
       schema: "repo-harness-bdd2-private-coordinate.v1",
-      packet_id: coordinate.packetId,
+      packet_id: blindPacketId,
+      coordinate_id: coordinate.coordinateId,
       task_id: coordinate.taskId,
       condition: coordinate.condition,
       repetition: coordinate.repetition,
@@ -569,7 +620,7 @@ export function runEvaluation(evaluation: ValidatedEvaluation, options: RunOptio
       sampling: profile.sampling,
       exit_code: result.status,
     });
-    report.packets.push({ packet_id: coordinate.packetId, task_id: coordinate.taskId, status: "success" });
+    report.packets.push({ packet_id: blindPacketId, task_id: coordinate.taskId, status: "success" });
   }
 
   writeJson(resolve(outputPath, "run.json"), report);
