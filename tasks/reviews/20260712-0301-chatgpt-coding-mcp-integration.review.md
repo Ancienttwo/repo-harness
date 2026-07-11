@@ -5,10 +5,10 @@
 > **Contract**: tasks/contracts/20260712-0301-chatgpt-coding-mcp-integration.contract.md
 > **Notes File**: tasks/notes/20260712-0301-chatgpt-coding-mcp-integration.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-07-12 06:48
+> **Last Updated**: 2026-07-12 06:56
 > **Recommendation**: pass
 > **Review Rubric Version**: 1
-> **Reviewed Diff Fingerprint**: sha256:b608104170f40fa8ff2259df46f220e1f5c26024c5515d02c1a621691a7500b3
+> **Reviewed Diff Fingerprint**: sha256:a9bbbd088fe3df18243dfaaadfa9573a0e4c6f56edbe02b7fe46daefc7f10517
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 ## Human Review Card
@@ -43,15 +43,15 @@
 > **External Acceptance**: pass
 > **External Reviewer**: Claude
 > **External Source**: claude-review
-> **External Started**: 2026-07-12T06:48:00+08:00
-> **External Completed**: 2026-07-12T06:48:25+08:00
+> **External Started**: 2026-07-12T06:56:20+08:00
+> **External Completed**: 2026-07-12T06:56:53+08:00
 > **Review Rubric Version**: 1
-> **Reviewed Diff Fingerprint**: sha256:b608104170f40fa8ff2259df46f220e1f5c26024c5515d02c1a621691a7500b3
+> **Reviewed Diff Fingerprint**: sha256:a9bbbd088fe3df18243dfaaadfa9573a0e4c6f56edbe02b7fe46daefc7f10517
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 - P1 blockers: none
 - P2 advisories: none from the final Claude re-review against latest main. The separate ChatGPT live-canary review still retains `surface_blocked` for its stricter literal `Called tool` transcript classifier; this integration does not claim `invocation_verified`.
-- Acceptance checklist: early reviews surfaced cleanup and move-rollback gaps, then final gate-scope reviews caught misleading host-authority consent copy and an environment-variable production fault injector. All four issues were remediated with focused regressions. Claude re-reviewed the complete local-target-bound branch/staged/unstaged/untracked diff and returned verbatim `No P1 or P2 findings.` for the final recorded fingerprint.
+- Acceptance checklist: early reviews surfaced cleanup and move-rollback gaps, then final gate-scope reviews caught misleading host-authority consent copy and an environment-variable production fault injector. All four issues were remediated with focused regressions. After the implementation/evidence commit, Claude re-reviewed the complete committed local-target-bound branch/staged/unstaged/untracked diff and returned verbatim `No P1 or P2 findings.` for the final recorded fingerprint.
 
 ## Behavior Diff Notes
 
