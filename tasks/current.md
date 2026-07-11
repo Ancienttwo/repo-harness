@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-12T06:22:50+0800 -->
+<!-- updated_at: 2026-07-12T07:23:43+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-07-12T06:22:50+0800
+> **Updated At**: 2026-07-12T07:23:43+0800
 > **Source Branch**: codex/bdd2-shape-experiment
-> **Source Commit**: bb75014
+> **Source Commit**: cd9e042
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: bdd2-e02-authority-freeze
+> **Reason**: bdd2-e02-awaiting-blind-panel
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -20,7 +20,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Status: Active
 - Active Plan: plans/plan-20260712-0605-bdd2-e-02-run-experiment-s-shape-hypothesis.md
 - Plan Status: Executing
-- Next Task: Commit the final authority, update every frozen hash, and verify a clean HEAD.
+- Next Task: Obtain condition-blind human scores without exposing the private mapping.
 - Clear Note: (none)
 
 ## Mainline Snapshot Reading
@@ -50,7 +50,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/20260703-inspection-migration.md`: status=active, current_slice=completed-20260703-architecture-closeout, source_plan=(none)
 ## Handoff
 
-- Exact Next Step: (none)
+- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Commit the final authority, update every frozen hash, and verify a clean HEAD.
 
 ## Checks
 
@@ -58,25 +58,12 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 16 changed/untracked path(s)
+- Summary: 3 changed/untracked path(s)
 
 ```
- M evals/bdd2/evaluation-manifest.json
- M evals/bdd2/rubrics/blind-adjudication.md
- M evals/bdd2/rubrics/score.schema.json
- M evals/bdd2/tasks/held-out.json
- M evals/bdd2/truth/development.json
- M evals/bdd2/truth/held-out.json
- M plans/sprints/20260712-bdd2-phase-e-evaluation.sprint.md
- M scripts/run-bdd2-evals.ts
- M tasks/todos.md
- M tests/bdd2-evals-contract.test.ts
- M tests/run-bdd2-evals.test.ts
-?? evals/bdd2/metrics/
-?? plans/plan-20260712-0605-bdd2-e-02-run-experiment-s-shape-hypothesis.md
-?? tasks/contracts/20260712-0605-bdd2-e-02-run-experiment-s-shape-hypothesis.contract.md
-?? tasks/notes/20260712-0605-bdd2-e-02-run-experiment-s-shape-hypothesis.notes.md
-?? tasks/reviews/20260712-0605-bdd2-e-02-run-experiment-s-shape-hypothesis.review.md
+ M plans/plan-20260712-0605-bdd2-e-02-run-experiment-s-shape-hypothesis.md
+ M tasks/notes/20260712-0605-bdd2-e-02-run-experiment-s-shape-hypothesis.notes.md
+ M tasks/reviews/20260712-0605-bdd2-e-02-run-experiment-s-shape-hypothesis.review.md
 ```
 
 ## Source Artifacts

@@ -194,8 +194,8 @@ allowed_paths:
       and deterministic aggregation.
 - [x] Add regression tests for independent S sealing, A remaining unsealed,
       isolated cwd/stdin delivery, leakage prevention, score errors, and gate math.
-- [ ] Commit the final authority, update every frozen hash, and verify a clean HEAD.
-- [ ] Execute the 72-coordinate held-out Shape run with the frozen Codex profile.
+- [x] Commit the final authority, update every frozen hash, and verify a clean HEAD.
+- [x] Execute the 72-coordinate held-out Shape run with the frozen Codex profile.
 - [ ] Obtain condition-blind human scores without exposing the private mapping.
 - [ ] Generate and verify the tracked Experiment S report and gate decision.
 - [ ] Complete review/notes/current/handoff, run required checks, commit, push, and

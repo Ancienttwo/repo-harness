@@ -44,12 +44,20 @@
 
 ## Open Questions
 
-- None.
+- Human acceptance boundary: 72 condition-blind locked scores are still required.
+  The implementation owner must not inspect private mappings or substitute model
+  scores for the Sprint's `human-blind-panel` owner.
 
 ## Evidence Links
 
 - Checks: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
+- Frozen authority commit: `cd9e0426d362614ba277e067633db2596c236491`.
+- Completed raw run: `.ai/harness/runs/bdd2/bdd2-e02-shape-s-v2/` — 72/72
+  successful packets, 12 tasks, two conditions, three repetitions, no skill/plugin
+  leakage in agent stderr.
+- Reviewer-safe queue: `.ai/harness/runs/bdd2/bdd2-e02-shape-s-v2-blind-review/`
+  — 72 randomized packets plus frozen rubric/schema, with no private mapping.
 
 ## Promotion Filter
 

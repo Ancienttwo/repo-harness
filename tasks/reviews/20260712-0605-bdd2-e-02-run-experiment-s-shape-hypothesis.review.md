@@ -14,29 +14,32 @@
 ## Human Review Card
 
 - Verdict: pending
-- Change type: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | frontend
-- Intended files changed:
-- Actual files changed:
-- Commands passed:
-- External acceptance: unavailable
-- Residual risks:
-- Reviewer action required: inspect diff and card
-- Rollback:
+- Change type: eval-only
+- Intended files changed: frozen BDD² eval authority/runner/data/rubric/metrics plus workflow artifacts
+- Actual files changed: matches contract allowed paths; raw evidence remains ignored
+- Commands passed: focused 12-test suite, TypeScript noEmit, manifest validation,
+  72-coordinate held-out run and structural evidence checks
+- External acceptance: pending human blind scores
+- Residual risks: no Shape product claim is valid until all 72 locked scores pass validation
+- Reviewer action required: complete the reviewer-safe blind queue without reading private mappings
+- Rollback: revert the E-02 branch; delete ignored raw run evidence
 
 ## Mode Evidence
 
-- Selected route:
-- P1/P2/P3 evidence:
-- Root cause or plan evidence:
+- Selected route: isolated evaluation-only Shape hypothesis
+- P1/P2/P3 evidence: recorded in the active plan and implementation notes
+- Root cause or plan evidence: global S/A seal coupling and repo-readable truth were
+  removed before the formal run; S-v1 smoke was discarded after local skill leakage
 
 ## Verification Evidence
 
 - Waza `/check` run:
-- Commands run:
+- Commands run: `bunx tsc --noEmit --pretty false`; focused Bun tests; manifest
+  validate/plan; one S-v2 real smoke; formal 72-coordinate S run; structural jq checks
 - Manual checks:
-- Supporting artifacts:
-- Implementation notes reviewed:
-- Run snapshot:
+- Supporting artifacts: `.ai/harness/runs/bdd2/bdd2-e02-shape-s-v2/`
+- Implementation notes reviewed: yes, pending final blind adjudication
+- Run snapshot: source commit `cd9e0426d362614ba277e067633db2596c236491`
 
 ## External Acceptance Advice
 
@@ -47,35 +50,38 @@
 > **External Completed**:
 
 - P1 blockers:
+- 72 locked condition-blind human scores are not yet present.
 - P2 advisories:
-- Acceptance checklist:
+- Acceptance checklist: do not reveal `private/` until every score validates
 
 ## Behavior Diff Notes
 
-- ...
+- 72 responses exist and remain unscored by the implementation owner. No
+  Pass/Reshape/Kill claim is recorded yet.
 
 ## Residual Risks / Follow-ups
 
-- ...
+- Human blind-panel availability is the only current acceptance blocker.
 
 ## Scorecard
 
 | Dimension | Score | Notes |
 |-----------|-------|-------|
-| Functionality | 0/10 | |
-| Product depth | 0/10 | |
-| Design quality | 0/10 | |
-| Code quality | 0/10 | |
+| Functionality | 7/10 | Runner and 72-output evidence complete; score gate pending. |
+| Product depth | 8/10 | Independent hypothesis, omission counter-metrics, and kill rules preserved. |
+| Design quality | 8/10 | Per-experiment seal and isolated HOME/cwd prevent two concrete leakage modes. |
+| Code quality | 8/10 | Dependency-free exact schemas and deterministic aggregation tests pass. |
 
 ## Failing Items
 
-- ...
+- Missing required human blind scores and aggregate decision report.
 
 ## Retest Steps
 
-- Re-run:
-- Re-check:
+- Re-run: `bun scripts/run-bdd2-evals.ts validate-scores --experiment S --run .ai/harness/runs/bdd2/bdd2-e02-shape-s-v2`
+- Re-check: summarize only after the 72-file score set validates.
 
 ## Summary
 
-- ...
+- Authority and model run are complete. Review remains fail/pending by design until
+  human blind adjudication closes the pre-registered product gate.
