@@ -1,27 +1,27 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-11T20:34:32+0800 -->
+<!-- updated_at: 2026-07-12T03:54:05+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-07-11T20:34:32+0800
-> **Source Branch**: detached
-> **Source Commit**: eaae117
+> **Status**: Active
+> **Updated At**: 2026-07-12T03:54:05+0800
+> **Source Branch**: codex/chatgpt-coding-mcp-integration
+> **Source Commit**: 791c4f0
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: archive-workflow rebase
+> **Reason**: chatgpt-coding-mcp-integration-contract-fulfilled
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: ManualClearedWithActiveWork
-- Active Plan: (none)
-- Plan Status: (none)
-- Next Task: inspect active worktree marker(s)
-- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
+- Status: Active
+- Active Plan: plans/plan-20260712-0301-chatgpt-coding-mcp-integration.md
+- Plan Status: Executing
+- Next Task: Record review/notes, push the integration branch, and create a draft PR against `main`.
+- Clear Note: (none)
 
 ## Mainline Snapshot Reading
 
@@ -31,6 +31,12 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
+- .: plans/plan-20260712-0301-chatgpt-coding-mcp-integration.md
+- .: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/chatgpt-coding-mcp-integration
+- /Users/kito/Projects/repo-harness-worktrees/adoption-apply-cutover-v1: plans/plan-20260711-2105-adoption-apply-cutover-v1.md
+- /Users/kito/Projects/repo-harness-worktrees/adoption-apply-cutover-v1: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/adoption-apply-cutover-v1
+- /Users/kito/Projects/repo-harness-worktrees/native-role-capability-gate: plans/plan-20260712-0219-native-role-capability-gate.md
+- /Users/kito/Projects/repo-harness-worktrees/native-role-capability-gate: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/native-role-capability-gate
 - /Users/kito/Projects/repo-harness-wt-codex-native-role-model-override: plans/plan-20260711-0219-codex-native-role-model-override.md
 - /Users/kito/Projects/repo-harness-wt-codex-native-role-model-override: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-codex-native-role-model-override
 ## Active Sprint
@@ -42,44 +48,22 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/20260703-inspection-migration.md`: status=active, current_slice=completed-20260703-architecture-closeout, source_plan=(none)
 ## Handoff
 
-- Exact Next Step: (none)
+- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Regenerate workflow projections and complete focused plus full verification.
 
 ## Checks
 
-- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
+- status=(none), source=(none), exit_code=(none), file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 27 changed/untracked path(s)
+- Summary: 5 changed/untracked path(s)
 
 ```
-M  deploy/runbooks/general-repo-mcp-codegraph.md
-M  docs/reference-configs/general-repo-mcp.md
-M  docs/repo-harness-chatgpt-mcp-setup.md
-A  plans/archive/plan-20260711-1401-mcp-rollout-cutover-v1.md
-D  scripts/mcp-rollout-gate.ts
-M  src/cli/chatgpt-browser/file-policy.ts
-M  src/cli/mcp/auth.ts
-M  src/cli/mcp/general-repo-access.ts
-M  src/cli/mcp/general-repo-access/authority.ts
-M  src/cli/mcp/policy.ts
-M  src/cli/mcp/reader-tools.ts
-M  src/cli/mcp/server.ts
-M  src/cli/mcp/setup.ts
-M  src/cli/mcp/tools.ts
-M  src/cli/mcp/types.ts
-A  tasks/archive/contract-20260711-2033-mcp-rollout-cutover-v1.md
-A  tasks/archive/notes-20260711-2033-mcp-rollout-cutover-v1.md
-A  tasks/archive/review-20260711-2033-mcp-rollout-cutover-v1.md
-A  tasks/archive/todo-20260711-2033-mcp-rollout-cutover-v1.md
-UU tasks/current.md
-M  tests/cli/mcp-policy.test.ts
-M  tests/cli/mcp-reader-tools.test.ts
-M  tests/cli/mcp-setup.test.ts
-M  tests/cli/mcp-stdio.test.ts
-M  tests/cli/mcp-tools.test.ts
-M  tests/cli/mcp.test.ts
-D  tests/mcp-rollout-gate.test.ts
+ M plans/plan-20260712-0301-chatgpt-coding-mcp-integration.md
+ M tasks/contracts/20260712-0301-chatgpt-coding-mcp-integration.contract.md
+ M tasks/current.md
+ M tasks/notes/20260712-0301-chatgpt-coding-mcp-integration.notes.md
+ M tasks/reviews/20260712-0301-chatgpt-coding-mcp-integration.review.md
 ```
 
 ## Source Artifacts

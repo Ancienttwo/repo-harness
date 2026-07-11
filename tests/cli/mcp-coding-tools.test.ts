@@ -276,6 +276,21 @@ describe('coding MCP workspace and file tools', () => {
       expect(readFileSync(join(workspace.root, 'src/b.txt'), 'utf-8')).toBe('bravo\n');
       delete process.env.REPO_HARNESS_MCP_CODING_PATCH_FAULT_AFTER;
 
+      process.env.REPO_HARNESS_MCP_CODING_PATCH_FAULT_AFTER = '1';
+      const moveFailed = parse(await callCodingTool(state.ctx, 'apply_patch', {
+        workspace_id: opened.workspace_id,
+        operations: [{
+          op: 'move',
+          path: 'src/a.txt',
+          to_path: 'src/moved.txt',
+          expected_sha256: sha256('alpha\n'),
+        }],
+      }));
+      expect(moveFailed.error.code).toBe('TOOL_FAILED');
+      expect(readFileSync(join(workspace.root, 'src/a.txt'), 'utf-8')).toBe('alpha\n');
+      expect(existsSync(join(workspace.root, 'src/moved.txt'))).toBe(false);
+      delete process.env.REPO_HARNESS_MCP_CODING_PATCH_FAULT_AFTER;
+
       state.ctx.codeGraphAdapter = {
         discoverRepo: () => { throw new Error('index discovery failed'); },
         refreshRepo: () => { throw new Error('index refresh failed'); },

@@ -52,13 +52,20 @@ const MCP_ALLOWED_HEADERS = [
 
 type McpHttpTransport = StreamableHTTPServerTransport & { authorizationId?: string };
 
-class CodingAuthorizationRuntimeStore {
+function reportCodingRuntimeCleanupError(error: unknown): void {
+  const name = error instanceof Error && error.name ? error.name : 'UnknownError';
+  console.error(`[repo-harness-mcp] background coding runtime cleanup failed: ${name}`);
+}
+
+export class CodingAuthorizationRuntimeStore {
   private readonly runtimes = new Map<string, { runtime: McpCodingRuntime; lastUsedAt: number }>();
 
   constructor(
     readonly ttlMs: number,
     readonly maxRuntimes: number,
     private readonly now: () => number = Date.now,
+    private readonly shutdown: (runtime: McpCodingRuntime) => Promise<void> = shutdownMcpCodingRuntime,
+    private readonly onCleanupError: (error: unknown) => void = reportCodingRuntimeCleanupError,
   ) {}
 
   getOrCreate(authorizationId: string, factory: () => McpCodingRuntime): McpCodingRuntime {
@@ -87,7 +94,8 @@ class CodingAuthorizationRuntimeStore {
     const expired = Array.from(this.runtimes.entries())
       .filter(([, record]) => now - record.lastUsedAt >= this.ttlMs);
     for (const [authorizationId] of expired) this.runtimes.delete(authorizationId);
-    void Promise.all(expired.map(([, record]) => shutdownMcpCodingRuntime(record.runtime)));
+    void Promise.all(expired.map(([, record]) => this.shutdown(record.runtime)))
+      .catch(this.onCleanupError);
     return expired.length;
   }
 
@@ -95,13 +103,13 @@ class CodingAuthorizationRuntimeStore {
     const existing = this.runtimes.get(authorizationId);
     if (!existing) return;
     this.runtimes.delete(authorizationId);
-    await shutdownMcpCodingRuntime(existing.runtime);
+    await this.shutdown(existing.runtime);
   }
 
   async closeAll(): Promise<void> {
     const records = Array.from(this.runtimes.values());
     this.runtimes.clear();
-    await Promise.all(records.map((record) => shutdownMcpCodingRuntime(record.runtime)));
+    await Promise.all(records.map((record) => this.shutdown(record.runtime)));
   }
 }
 
@@ -561,7 +569,9 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
     void Promise.all([
       sessions.closeAll(),
       codingRuntimes?.closeAll() ?? Promise.resolve(),
-    ]).finally(() => { authorizationCleanupRunning = false; });
+    ])
+      .catch(reportCodingRuntimeCleanupError)
+      .finally(() => { authorizationCleanupRunning = false; });
   };
   const authorizationTimer = coding ? setInterval(() => {
     const currentRevision = repoHarnessAuthorizationRevision();

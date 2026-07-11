@@ -1,12 +1,12 @@
 # Task Contract: chatgpt-coding-mcp-integration
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260712-0301-chatgpt-coding-mcp-integration.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: kito
 > **Capability ID**: root
-> **Last Updated**: 2026-07-12 03:07
+> **Last Updated**: 2026-07-12 04:49
 > **Review File**: `tasks/reviews/20260712-0301-chatgpt-coding-mcp-integration.review.md`
 > **Notes File**: `tasks/notes/20260712-0301-chatgpt-coding-mcp-integration.notes.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
@@ -168,7 +168,7 @@ exit_criteria:
   commands_succeed:
     - bun install --frozen-lockfile
     - bun run check:type
-    - bun test
+    - BUN_TEST_MAX_CONCURRENCY=1 BUN_TEST_TIMEOUT_MS=180000 BUN_TEST_ISOLATE_FILES=1 bun test
     - bash scripts/check-deploy-sql-order.sh
     - bash scripts/check-architecture-sync.sh
     - bash scripts/check-task-sync.sh

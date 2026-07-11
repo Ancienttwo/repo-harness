@@ -145,5 +145,5 @@ Delete the isolated integration worktree/branch before push, or close the draft 
 ## Task Breakdown
 - [x] Capture the integration contract and preflight the seven-commit replay against current `origin/main`.
 - [x] Cherry-pick the seven commits in order and resolve conflicts without reviving retired rollout authority.
-- [ ] Regenerate workflow projections and complete focused plus full verification.
+- [x] Regenerate workflow projections and complete focused plus full verification.
 - [ ] Record review/notes, push the integration branch, and create a draft PR against `main`.

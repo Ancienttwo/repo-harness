@@ -5,8 +5,9 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { McpSessionStore, type McpSessionClosableTransport } from '../../src/cli/mcp/session-store';
+import type { McpCodingRuntime } from '../../src/cli/mcp/server';
 import { runMcpSetupChatgpt } from '../../src/cli/mcp/setup';
-import { startMcpHttp } from '../../src/cli/mcp/transports/http';
+import { CodingAuthorizationRuntimeStore, startMcpHttp } from '../../src/cli/mcp/transports/http';
 import { repoHarnessPackageVersion } from '../../src/cli/mcp/version';
 import { readRegisteredRepoHarnessRepos, setRepoHarnessAccessMode } from '../../src/effects/repo-registry';
 
@@ -72,6 +73,33 @@ function useTempRegistryHome(): () => void {
 }
 
 describe('mcp http transport', () => {
+  test('authorization runtime expiry catches background shutdown rejection and remains race-idempotent', async () => {
+    let now = 1_000;
+    let shutdownCalls = 0;
+    const cleanupErrors: unknown[] = [];
+    const runtime = {} as McpCodingRuntime;
+    const store = new CodingAuthorizationRuntimeStore(
+      100,
+      2,
+      () => now,
+      async () => {
+        shutdownCalls += 1;
+        throw new Error('injected cleanup failure');
+      },
+      (error) => cleanupErrors.push(error),
+    );
+
+    expect(store.getOrCreate('authorization-1', () => runtime)).toBe(runtime);
+    now += 101;
+    expect(store.cleanupExpired()).toBe(1);
+    await store.close('authorization-1');
+    await Bun.sleep(0);
+
+    expect(shutdownCalls).toBe(1);
+    expect(cleanupErrors).toHaveLength(1);
+    expect(cleanupErrors[0]).toBeInstanceOf(Error);
+  });
+
   test('session store enforces TTL, max sessions, lastSeen refresh, and close semantics without sleeping', async () => {
     let now = 1_000;
     const closed: string[] = [];
