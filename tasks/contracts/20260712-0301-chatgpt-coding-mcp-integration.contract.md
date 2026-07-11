@@ -6,7 +6,7 @@
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: kito
 > **Capability ID**: root
-> **Last Updated**: 2026-07-12 04:49
+> **Last Updated**: 2026-07-12 06:05
 > **Review File**: `tasks/reviews/20260712-0301-chatgpt-coding-mcp-integration.review.md`
 > **Notes File**: `tasks/notes/20260712-0301-chatgpt-coding-mcp-integration.notes.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
@@ -17,12 +17,13 @@ The coding MCP feature and its authorization-runtime repair passed local, reposi
 
 ## Goal
 
-Replay the seven accepted coding MCP commits onto current `origin/main`, resolve conflicts so the current rollout-retirement/adoption model remains authoritative while the complete default-off coding profile and OAuth authorization-scoped runtime remain intact, pass all focused and root verification gates, and publish one draft PR from `codex/chatgpt-coding-mcp-integration` to `main` without modifying the dirty local main checkout.
+Replay the seven accepted coding MCP commits onto the rollout-retirement base, merge the subsequently advanced transactional-adoption `origin/main`, preserve both current main authorities while keeping the complete default-off coding profile and OAuth authorization-scoped runtime intact, pass all focused and root verification gates, and publish one draft PR from `codex/chatgpt-coding-mcp-integration` to `main` without modifying the dirty local main checkout.
 
 ## Scope
 
 - In scope:
   - Cherry-pick `0b80ef4`, `47cbe50`, `2f3405d`, `443f3ea`, `2a9d490`, `c3a77d1`, and `f3b546d` in order onto `origin/main@788ba60`.
+  - Merge refreshed `origin/main@8e160323` and preserve its transactional TypeScript adoption cutover; regenerate derived current/handoff state rather than carrying the retired migration helper contract forward.
   - Preserve current mainline removal of MCP rollout controls, candidate flags, and retired policy/type fields while layering the accepted coding-only profile, workspace/file/process tools, OAuth grant identity, docs, tests, and evidence.
   - Preserve the current Bun engine floor and add only the already-reviewed optional `node-pty` dependency; keep the lockfile deterministic.
   - Regenerate `tasks/current.md` and handoff/resume projections from the integrated state rather than selecting either stale side.
@@ -174,7 +175,7 @@ exit_criteria:
     - bash scripts/check-task-sync.sh
     - repo-harness run check-task-workflow --strict
     - bun scripts/inspect-project-state.ts --repo . --format text
-    - bash scripts/migrate-project-template.sh --repo . --dry-run
+    - bun src/cli/index.ts adopt --repo . --dry-run
   qa_scores:
     - dimension: functionality
       min: 8
@@ -192,5 +193,5 @@ exit_criteria:
 
 ## Rollback Point
 
-- Commit / checkpoint: integration branch base `788ba60cca5e0072febc19833002a3ffe497b0a1`; source feature head `f3b546dc8ff9bb357f20d709aca51809cb3e3ad0`; local main WIP hashes `ef3558e089fbf2f054b60c9f8cca6e8dc01fb0dee9984df3e575cbe3e7c3c12b` and `4c3aeda0ca8b82fa95da5c91cf2bc829ba8eddeb62f99e5468678fcc20e6a786`.
+- Commit / checkpoint: initial integration base `788ba60cca5e0072febc19833002a3ffe497b0a1`, refreshed main `8e160323872751ffbc105a760b06fed0db1f8cb8`, source feature head `f3b546dc8ff9bb357f20d709aca51809cb3e3ad0`; local main WIP hashes `ef3558e089fbf2f054b60c9f8cca6e8dc01fb0dee9984df3e575cbe3e7c3c12b` and `4c3aeda0ca8b82fa95da5c91cf2bc829ba8eddeb62f99e5468678fcc20e6a786`.
 - Revert strategy: abort the active cherry-pick before commit, or delete the isolated integration branch/worktree before push; after push close the draft PR and delete only the integration branch. Never alter the source feature branch or local main.
