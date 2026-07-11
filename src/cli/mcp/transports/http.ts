@@ -216,7 +216,7 @@ button{width:100%;margin-top:14px;border:0;border-radius:8px;padding:12px;backgr
 <body><main class="card">
 <h1>Authorize repo-harness</h1>
 <p>${opts.coding
-    ? `This Connector can edit source files and run arbitrary shell commands with your local user account in these repos: ${escapeHtmlAttribute((opts.repoNames ?? []).join(', ') || '(none)')}. Allowed roots are not a shell sandbox. Access tokens expire after 1 hour; refresh authorization lasts up to 30 days and rotates.`
+    ? `This Connector can open and edit these explicitly granted repositories: ${escapeHtmlAttribute((opts.repoNames ?? []).join(', ') || '(none)')}. It can also run arbitrary shell commands that can access anything your local OS user can access on this machine, including outside these repositories. Repository grants and allowed roots select workspaces; they do not sandbox shell access. Access tokens expire after 1 hour; refresh authorization lasts up to 30 days and rotates.`
     : 'Enter the local MCP passphrase to let ChatGPT use this workflow-scoped connector.'}</p>
 <form method="POST" action="/authorize">
 ${hiddenFields}

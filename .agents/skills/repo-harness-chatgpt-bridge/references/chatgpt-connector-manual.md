@@ -21,8 +21,10 @@ repo-harness mcp serve --repo <repo> --transport http --host 127.0.0.1 --port 87
 repo-harness mcp doctor --repo <repo> --live
 ```
 
-Coding Bash runs with local-user authority and is not a filesystem sandbox. See
-`docs/reference-configs/chatgpt-coding-mcp.md` for the grant, OAuth revision,
+Coding Bash runs with local-user authority and is not a filesystem sandbox. The
+repo grant selects which workspace can be opened; shell commands can access
+anything the local OS user can access on the machine, including outside that repo.
+See `docs/reference-configs/chatgpt-coding-mcp.md` for the grant, OAuth revision,
 worktree, process, and cleanup contract.
 
 Health check:

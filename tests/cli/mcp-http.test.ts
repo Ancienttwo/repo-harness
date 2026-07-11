@@ -576,6 +576,20 @@ describe('mcp http transport', () => {
       const client = await registered.json() as { client_id: string };
       const verifier = randomBytes(32).toString('base64url');
       const challenge = createHash('sha256').update(verifier).digest('base64url');
+      const consent = await fetch(`http://127.0.0.1:${port}/authorize?${new URLSearchParams({
+        client_id: client.client_id,
+        redirect_uri: 'https://chatgpt.com/connector/callback',
+        response_type: 'code',
+        code_challenge: challenge,
+        code_challenge_method: 'S256',
+        scope: 'repo-harness repo-harness.coding offline_access',
+      })}`);
+      expect(consent.status).toBe(200);
+      const consentHtml = await consent.text();
+      expect(consentHtml).toContain('can access anything your local OS user can access on this machine');
+      expect(consentHtml).toContain('including outside these repositories');
+      expect(consentHtml).toContain('Repository grants and allowed roots select workspaces; they do not sandbox shell access.');
+      expect(consentHtml).toContain(repoRoot.split('/').pop()!);
       const authorize = (redirectUri: string) => fetch(`http://127.0.0.1:${port}/authorize`, {
         method: 'POST',
         headers: { 'content-type': 'application/x-www-form-urlencoded' },

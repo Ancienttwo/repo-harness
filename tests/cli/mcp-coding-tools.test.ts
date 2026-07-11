@@ -106,7 +106,6 @@ function fixture(): {
 }
 
 afterEach(() => {
-  delete process.env.REPO_HARNESS_MCP_CODING_PATCH_FAULT_AFTER;
   for (const path of temporaryRoots.splice(0)) rmSync(path, { recursive: true, force: true });
 });
 
@@ -263,7 +262,11 @@ describe('coding MCP workspace and file tools', () => {
     try {
       const opened = parse(await callCodingTool(state.ctx, 'open_workspace', { repo_id: state.repoId }));
       const workspace = state.manager.get(opened.workspace_id);
-      process.env.REPO_HARNESS_MCP_CODING_PATCH_FAULT_AFTER = '1';
+      state.ctx.testHooks = {
+        afterPatchCommit: ({ commitCount }) => {
+          if (commitCount === 1) throw new Error('injected coding patch commit failure');
+        },
+      };
       const failed = parse(await callCodingTool(state.ctx, 'apply_patch', {
         workspace_id: opened.workspace_id,
         operations: [
@@ -274,9 +277,7 @@ describe('coding MCP workspace and file tools', () => {
       expect(failed.error.code).toBe('TOOL_FAILED');
       expect(readFileSync(join(workspace.root, 'src/a.txt'), 'utf-8')).toBe('alpha\n');
       expect(readFileSync(join(workspace.root, 'src/b.txt'), 'utf-8')).toBe('bravo\n');
-      delete process.env.REPO_HARNESS_MCP_CODING_PATCH_FAULT_AFTER;
 
-      process.env.REPO_HARNESS_MCP_CODING_PATCH_FAULT_AFTER = '1';
       const moveFailed = parse(await callCodingTool(state.ctx, 'apply_patch', {
         workspace_id: opened.workspace_id,
         operations: [{
@@ -289,7 +290,7 @@ describe('coding MCP workspace and file tools', () => {
       expect(moveFailed.error.code).toBe('TOOL_FAILED');
       expect(readFileSync(join(workspace.root, 'src/a.txt'), 'utf-8')).toBe('alpha\n');
       expect(existsSync(join(workspace.root, 'src/moved.txt'))).toBe(false);
-      delete process.env.REPO_HARNESS_MCP_CODING_PATCH_FAULT_AFTER;
+      state.ctx.testHooks = undefined;
 
       state.ctx.codeGraphAdapter = {
         discoverRepo: () => { throw new Error('index discovery failed'); },

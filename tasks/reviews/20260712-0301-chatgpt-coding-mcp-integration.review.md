@@ -5,19 +5,19 @@
 > **Contract**: tasks/contracts/20260712-0301-chatgpt-coding-mcp-integration.contract.md
 > **Notes File**: tasks/notes/20260712-0301-chatgpt-coding-mcp-integration.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-07-12 06:14
+> **Last Updated**: 2026-07-12 06:48
 > **Recommendation**: pass
 > **Review Rubric Version**: 1
-> **Reviewed Diff Fingerprint**: sha256:6418aaa54a7962a4a38ae48ee338cafd1996bc381ee1a6f4aab8f975c7103348
+> **Reviewed Diff Fingerprint**: sha256:b608104170f40fa8ff2259df46f220e1f5c26024c5515d02c1a621691a7500b3
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 ## Human Review Card
 
-- Verdict: pass; the accepted coding MCP series is reconciled with refreshed main without reviving retired rollout or migration authority.
+- Verdict: pass; the accepted coding MCP series is reconciled with latest main without reviving retired rollout/migration authority or modifying the independent BDD² evaluation foundation.
 - Change type: code-change
 - Intended files changed: seven accepted coding MCP commits plus bounded integration workflow artifacts.
-- Actual files changed: coding profile, OAuth/runtime/workspace/process/file tooling, setup/operator/research/architecture docs, focused tests, optional `node-pty`, and matching workflow evidence.
-- Commands passed: refreshed-main focused MCP suites (98/98), frozen install, typecheck, deploy SQL order, architecture sync, task sync, strict workflow, project inspection, transactional `adopt --dry-run`, diff whitespace check, and the isolated CodeGraph file that hit the raw suite's default timeout.
+- Actual files changed: coding profile, OAuth/runtime/workspace/process/file tooling, truthful host-authority consent copy, setup/operator/research/architecture docs, focused tests, optional `node-pty`, and matching workflow evidence.
+- Commands passed: refreshed-main focused MCP suites, latest-main combined BDD²/MCP suites (74 pass / 1 platform skip / 0 fail), post-consent-fix HTTP/setup suites (31 pass / 0 fail / 324 expectations), post-fault-hook coding/HTTP suites (12 pass / 0 fail / 148 expectations), frozen install, typecheck, deploy SQL order, architecture sync, task sync, strict workflow under the macOS-safe `LC_ALL=C` locale, project inspection, transactional `adopt --dry-run`, diff whitespace check, and the isolated CodeGraph file that hit the raw suite's default timeout.
 - External acceptance: pass from Claude via `claude-review` against the exact current fingerprint; the preserved ChatGPT authorization-runtime live canary remains separate product-runtime evidence.
 - Residual risks: `node-pty` remains optional and PTY correctly fails closed when unavailable; the draft PR still needs human merge review against the moving main branch.
 - Reviewer action required: review the draft PR; do not merge automatically.
@@ -32,7 +32,7 @@
 ## Verification Evidence
 
 - Waza `/check` run: manual Waza-style diff, authority, security, and regression review completed; no P1/P2 findings remain.
-- Commands run: original-base focused MCP suite (97 pass / 1119 expectations); two independent original-base `bun test` passes (each 1158 pass / 1 skip / 0 fail / 11695 expectations); refreshed-main focused MCP suite (98 pass / 0 fail / 1127 expectations); `bun install --frozen-lockfile`; `bun run check:type`; every current root required check; isolated-brain strict workflow; `git diff --check`; refreshed-main raw `bun test` (1121 pass / 1 skip / one default-timeout-only failure); isolated timed-out file recheck (2 pass / 0 fail / 13 expectations); final strict contract verification uses the complete 180-second CI envelope.
+- Commands run: original-base focused MCP suite (97 pass / 1119 expectations); two independent original-base `bun test` passes (each 1158 pass / 1 skip / 0 fail / 11695 expectations); refreshed-main focused MCP suite (98 pass / 0 fail / 1127 expectations); latest-main combined BDD²/MCP suite (74 pass / 1 skip / 0 fail / 680 expectations); `bun install --frozen-lockfile`; `bun run check:type`; every current root required check; isolated-brain strict workflow; `git diff --check`; refreshed-main raw `bun test` (1121 pass / 1 skip / one default-timeout-only failure); isolated timed-out file recheck (2 pass / 0 fail / 13 expectations); latest-main strict contract verification passed all 23 criteria using the complete 180-second CI envelope.
 - Manual checks: confirmed retired rollout files remain absent, rollout/generalRepo runtime fields are absent, coding exposes exactly five direct tools, and local main preflight hashes are checked again before push.
 - Supporting artifacts: integration plan, contract, notes, Claude external acceptance bound to the current fingerprint, existing ChatGPT coding MCP live-canary review, and `.ai/harness/checks/latest.json` after final verification.
 - Implementation notes reviewed: yes.
@@ -43,15 +43,15 @@
 > **External Acceptance**: pass
 > **External Reviewer**: Claude
 > **External Source**: claude-review
-> **External Started**: 2026-07-12T05:10:00+08:00
-> **External Completed**: 2026-07-12T05:10:51+08:00
+> **External Started**: 2026-07-12T06:48:00+08:00
+> **External Completed**: 2026-07-12T06:48:25+08:00
 > **Review Rubric Version**: 1
-> **Reviewed Diff Fingerprint**: sha256:6418aaa54a7962a4a38ae48ee338cafd1996bc381ee1a6f4aab8f975c7103348
+> **Reviewed Diff Fingerprint**: sha256:b608104170f40fa8ff2259df46f220e1f5c26024c5515d02c1a621691a7500b3
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 - P1 blockers: none
-- P2 advisories: none from the final Claude re-review. The separate ChatGPT live-canary review still retains `surface_blocked` for its stricter literal `Called tool` transcript classifier; this integration does not claim `invocation_verified`.
-- Acceptance checklist: two initial full-diff read-tool reviews timed out without a final transcript and were rejected as evidence; a complete no-tools review surfaced actionable cleanup and move-rollback gaps; those were remediated and tested; Claude then re-reviewed the complete current diff and returned verbatim `No P1 or P2 findings.` for the final recorded fingerprint, including the CI-envelope contract update.
+- P2 advisories: none from the final Claude re-review against latest main. The separate ChatGPT live-canary review still retains `surface_blocked` for its stricter literal `Called tool` transcript classifier; this integration does not claim `invocation_verified`.
+- Acceptance checklist: early reviews surfaced cleanup and move-rollback gaps, then final gate-scope reviews caught misleading host-authority consent copy and an environment-variable production fault injector. All four issues were remediated with focused regressions. Claude re-reviewed the complete local-target-bound branch/staged/unstaged/untracked diff and returned verbatim `No P1 or P2 findings.` for the final recorded fingerprint.
 
 ## Behavior Diff Notes
 
@@ -60,6 +60,8 @@
 - Repo registry `accessMode` remains the only repo grant authority, while OAuth authorization id owns bounded runtime continuity and revocation cleanup.
 - Current Bun engine requirements remain unchanged; `node-pty@^1.1.0` is the sole optional dependency addition and TTY requests fail with `PTY_UNAVAILABLE` when it cannot load.
 - Move rollback now has a dedicated injected mid-commit failure regression; background authorization cleanup catches rejected shutdown, reports only a sanitized error class, and has a race-idempotency regression.
+- OAuth consent now states that repo grants select openable workspaces but arbitrary shell can reach anything the local OS user can access, including outside granted repos; HTTP E2E locks that disclosure.
+- Patch rollback fault injection is now an internal in-memory test hook absent from server construction; no production environment variable can trigger it.
 
 ## Residual Risks / Follow-ups
 

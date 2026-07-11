@@ -4,13 +4,17 @@
 > **Plan**: plans/plan-20260712-0301-chatgpt-coding-mcp-integration.md
 > **Contract**: tasks/contracts/20260712-0301-chatgpt-coding-mcp-integration.contract.md
 > **Review**: tasks/reviews/20260712-0301-chatgpt-coding-mcp-integration.review.md
-> **Last Updated**: 2026-07-12 06:05
+> **Last Updated**: 2026-07-12 06:18
 > **Lifecycle**: notes
 
 ## Design Decisions
 
 - Created `codex/chatgpt-coding-mcp-integration` from `origin/main@788ba60` and replayed only `0b80ef4`, `47cbe50`, `2f3405d`, `443f3ea`, `2a9d490`, `c3a77d1`, and `f3b546d`. A branch-tree merge was rejected because the feature base predates the rollout-retirement cutover and would resurrect deleted base files that none of the seven commits actually changed.
 - While final verification was running, remote `main` advanced to `8e160323` through PR #54 (`refactor(adopt): cut over to transactional TypeScript planner`). Committed the already-reviewed coding fixes, merged the new main, and resolved the sole conflict in generated `tasks/current.md` by regenerating it rather than choosing either stale side. New main retirement of `migrate-project-template.sh` remains authoritative; integration verification now uses `bun src/cli/index.ts adopt --repo . --dry-run`.
+- During final contract closeout, remote `main` advanced again to `bb750141` through PR #53 (`feat(evals): add BDD² Phase E evaluation foundation`). Its only overlap was generated `tasks/current.md`; merged the commit intact, then regenerated current/handoff projections so the BDD² evaluation surface remains base authority and does not enter the coding MCP diff.
+- The latest-main strict workflow check hit a macOS `awk` `towc` conversion failure while reading the new UTF-8 BDD² PRD under `C.UTF-8`, then misclassified its populated Problem section as missing. Running the identical strict check with `LC_ALL=C` passed; the contract pins that locale only for this check rather than changing the independently merged PRD or widening the coding MCP implementation.
+- Final gate-scope Claude review caught that the OAuth consent page said arbitrary shell ran “in these repos,” which contradicted the accepted local-user-authority trust model. Reworded consent to distinguish workspace-selection grants from host-wide shell authority, mirrored that warning in operator/bridge docs, and added an HTTP E2E assertion so future copy cannot silently narrow the disclosed blast radius.
+- Consent-remediation review also flagged the rollback regression's environment-variable fault injector in the production patch loop. Removed the env-controlled branch and moved fault injection to an internal in-memory `CodingToolContext.testHooks` callback that the server never supplies; the same multi-file and move rollback assertions pass without a remotely or environmentally reachable production trigger.
 - Preserved current mainline removal of `McpPolicy.generalRepo`, rollout flags, environment rollout reads, and workflow-reader fallbacks. Coding remains a first-class `coding` profile with `workspaceCoder`, `codingShell`, five direct tools, explicit registry grant authority, and OAuth authorization-scoped runtime ownership.
 - Resolved generated `tasks/current.md` and `tasks/todos.md` conflicts to the integration side and deferred final `tasks/current.md` regeneration until after verification; neither stale branch snapshot is authoritative.
 - Kept `package.json`'s current Bun floor `>=1.1.35` and added only the accepted optional `node-pty@^1.1.0`; `bun install --frozen-lockfile` passed.

@@ -105,14 +105,15 @@ Integrate the already verified `codex/chatgpt-coding-mcp` commit series onto the
 
 ## Architecture and trace
 
-- P1: `origin/main` owns rollout retirement plus the transactional TypeScript adoption cutover; the seven feature commits own the coding profile, OAuth authorization-scoped runtime, tests, operator docs, and live acceptance artifacts; the isolated integration branch owns conflict resolution and PR delivery.
-- P2: `origin/main@788ba60` -> cherry-pick `0b80ef4`, `47cbe50`, `2f3405d`, `443f3ea`, `2a9d490`, `c3a77d1`, `f3b546d` in order -> resolve conflicts by retaining rollout retirement -> merge refreshed `origin/main@8e160323` so transactional adoption stays authoritative -> regenerate `tasks/current.md` and handoff projections -> verify -> push integration branch -> open draft PR to `main`.
+- P1: `origin/main` owns rollout retirement, the transactional TypeScript adoption cutover, and the independent BDD² evaluation foundation; the seven feature commits own the coding profile, OAuth authorization-scoped runtime, tests, operator docs, and live acceptance artifacts; the isolated integration branch owns conflict resolution and PR delivery.
+- P2: `origin/main@788ba60` -> cherry-pick `0b80ef4`, `47cbe50`, `2f3405d`, `443f3ea`, `2a9d490`, `c3a77d1`, `f3b546d` in order -> resolve conflicts by retaining rollout retirement -> merge refreshed `origin/main@8e160323` and then `origin/main@bb750141` so transactional adoption and BDD² evaluation stay authoritative -> regenerate `tasks/current.md` and handoff projections -> verify -> push integration branch -> open draft PR to `main`.
 - P3: cherry-pick the feature commits rather than merge the feature branch because the branch base predates `refactor(mcp): retire rollout controls (#52)`; a tree merge would resurrect deleted rollout code and stale archive state. No compatibility fallback, dual policy authority, or new abstraction is permitted.
 
 ## Scope
 
 - Replay only the seven named feature commits.
 - Merge the subsequently advanced `origin/main@8e160323` without changing its transactional adoption authority; regenerate derived projections after the merge.
+- Merge the subsequently advanced `origin/main@bb750141` without changing its independent BDD² evaluation authority; regenerate derived projections after the merge.
 - Resolve overlapping MCP policy/setup/server/tool/type paths so current mainline rollout retirement remains authoritative and the coding profile remains explicit, default-off, revision-bound, and worktree-first.
 - Merge `package.json` by preserving the current Bun engine floor and adding only the already-reviewed optional `node-pty` dependency; regenerate/validate `bun.lock` deterministically.
 - Preserve current main versions for removed rollout controls and any unrelated adoption/agent-fleet behavior.

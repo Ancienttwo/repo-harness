@@ -250,6 +250,8 @@ repo-harness mcp serve --repo "$HOME/Projects/my-repo" --transport http --host 1
 
 It exposes \`open_workspace\`, \`read\`, \`apply_patch\`, \`exec_command\`, and
 \`write_stdin\`. Bash has local-user authority and is not a filesystem sandbox.
+The repo grant selects which workspace can be opened; shell commands can access
+anything the local OS user can access on the machine, including outside that repo.
 It does not call local Codex or consume Codex quota. Read
 \`docs/reference-configs/chatgpt-coding-mcp.md\` before enabling it.
 

@@ -49,6 +49,10 @@ export interface CodingToolContext {
   workspaceManager: CodingWorkspaceManager;
   processManager: McpProcessSessionManager;
   codeGraphAdapter?: GeneralRepoCodeGraphAdapter;
+  /** @internal Test-only fault boundary; the MCP server never supplies this. */
+  testHooks?: {
+    afterPatchCommit?: (event: { commitCount: number; path: string }) => void;
+  };
 }
 
 interface PatchOperation {
@@ -523,8 +527,7 @@ function applyPatchTool(ctx: CodingToolContext, args: Record<string, unknown>): 
       committed.push(path);
       if (state.content !== null) renameSync(temporary.get(path)!, target.absolutePath);
       commitCount += 1;
-      const faultAfter = Number(process.env.REPO_HARNESS_MCP_CODING_PATCH_FAULT_AFTER ?? 0);
-      if (faultAfter > 0 && commitCount >= faultAfter) throw new Error('injected coding patch commit failure');
+      ctx.testHooks?.afterPatchCommit?.({ commitCount, path });
     }
   } catch (error) {
     for (const path of committed.reverse()) {

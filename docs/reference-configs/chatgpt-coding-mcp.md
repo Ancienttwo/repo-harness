@@ -14,8 +14,9 @@ and [Connect from ChatGPT](https://developers.openai.com/apps-sdk/deploy/connect
 The coding profile provides direct local-user-authority Bash. It does not invoke
 Codex or Claude, so it does not consume their agent quota. It is also not a
 filesystem sandbox: a command starts in the selected workspace but can access
-anything the local OS user can access. Use only on a personally controlled host
-and keep ChatGPT write confirmations enabled.
+anything the local OS user can access. The repo grant gates which workspace can
+be opened; it is not a shell access allowlist. Use only on a personally controlled
+host and keep ChatGPT write confirmations enabled.
 
 The profile is fail-closed until all of these are true:
 
