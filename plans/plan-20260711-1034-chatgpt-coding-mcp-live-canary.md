@@ -146,12 +146,16 @@ Stop the coding server and tunnel replica started by this slice, downgrade the c
 - [x] Create and connect an isolated ChatGPT developer-mode canary App with the dedicated repo as the only read-write grant.
 - [x] Run a fresh structured-App ChatGPT canary and classify the observed result without treating setup or model prose as invocation proof.
 - [x] Roll back the canary App, manual server/Tunnel processes, duplicated credentials, and ignored user config while preserving main WIP.
-- [ ] Obtain a real `Called tool` transcript and local read/patch/process evidence; blocked because the selected ChatGPT Pro conversation exposed the connected App in the composer and settings but did not expose `api_tool` to the model runtime.
+- [ ] Obtain the complete read/patch/process transcript; retest 2 produced a real `open_workspace` call, but ChatGPT issued `read` through another MCP session, causing `WORKSPACE_NOT_FOUND`, then blocked the retry with OpenAI safety checks.
 
 ## Observed Outcome
 
-- Classification: `surface_blocked`.
-- Fresh conversation: `https://chatgpt.com/c/6a51b1c4-22a0-83ea-b3fb-2ec13308e691`.
-- ChatGPT App settings showed the current OAuth connection and the exact five coding actions, including destructive/open-world annotations, but the structured-App conversation returned that the connected App and required `api_tool` interface were unavailable.
-- The loopback coding server received no MCP request during the conversation, so no managed worktree, patch, command session, or canary output file was created.
-- Rollback completed: the temporary App was deleted, manual server and Tunnel processes stopped, prior ignored config and launchd plist bytes restored, duplicated credential/backup copies removed, and the dirty main checkout remained on `main` with its original two WIP entries.
+- Classification: `surface_blocked` after a real partial invocation; the full acceptance sequence did not complete.
+- Fresh non-Pro conversation: `https://chatgpt.com/c/6a51d385-ca3c-83ea-909e-a523079301f5`.
+- The temporary split-DNS resolver move allowed normal public OAuth. ChatGPT connected, discovered the coding schema, and invoked `open_workspace`, creating worktree `cws_e0da6855-f199-4121-8ead-0f4a8b440a70`; its metadata-only audit proves the call was real.
+- ChatGPT's next `read` used another MCP session. The server correctly returned `WORKSPACE_NOT_FOUND: workspace_id is unknown or belongs to another MCP session`; OpenAI safety then blocked the retry. No patch, command session, poll, or canary output file was created.
+- Rollback completed: the disposable App was deleted, manual server and Tunnel processes stopped, prior ignored config and launchd plist bytes restored, the resolver was restored byte-for-byte, duplicated credential/backup copies were removed, and the dirty main checkout retained its original two WIP entries. The managed worktree remains as failure evidence.
+
+## Qualification Retest
+
+- Resumed by the user on 2026-07-11 to test the same canary on a non-Pro ChatGPT model surface without changing the endpoint, schema, grant, prompt, or product code.

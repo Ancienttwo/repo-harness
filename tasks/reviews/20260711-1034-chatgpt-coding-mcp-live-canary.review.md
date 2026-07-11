@@ -5,7 +5,7 @@
 > **Contract**: tasks/contracts/20260711-1034-chatgpt-coding-mcp-live-canary.contract.md
 > **Notes File**: tasks/notes/20260711-1034-chatgpt-coding-mcp-live-canary.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-07-11 11:04
+> **Last Updated**: 2026-07-11 13:29
 > **Recommendation**: fail
 > **Review Rubric Version**: 1
 > **Reviewed Diff Fingerprint**: 99556958f6401742c4b98e0941f82d3b2b6f53c16b42d7bcb226a8953c4cd12d
@@ -13,13 +13,13 @@
 
 ## Human Review Card
 
-- Verdict: `surface_blocked`; do not accept as `invocation_verified`
+- Verdict: `surface_blocked` after a real partial invocation; do not accept as complete `invocation_verified`
 - Change type: eval-only
 - Intended files changed: live-canary plan/contract/notes/review only
 - Actual files changed: `plans/plan-20260711-1034-chatgpt-coding-mcp-live-canary.md` and the matching contract/notes/review
 - Commands passed: feature-worktree typecheck and task-sync; local/public/OAuth/schema diagnostics; rollback byte comparison; process/listener and Git status checks; strict task-workflow passed after refreshing the handoff packet
-- External acceptance: unavailable because the selected ChatGPT Pro conversation had no App `api_tool` surface
-- Residual risks: another eligible ChatGPT model/account surface is still required for the real read/patch/process transcript; the host split-DNS override still makes local public-origin doctor probing fail
+- External acceptance: unavailable because the non-Pro retest created a workspace but did not preserve the MCP session for the following read
+- Residual risks: ChatGPT issued sequential coding calls under different MCP sessions, so workspace- and process-session-bound multi-call flows cannot complete
 - Reviewer action required: none for this blocked classifier; do not merge or mark the original coding MCP live acceptance complete
 - Rollback: temporary App deleted, foreground server/Tunnel stopped, copied credentials removed, ignored user config/plists restored byte-for-byte, canary repo retained clean
 
@@ -27,14 +27,14 @@
 
 - Selected route: eval-only live canary in isolated contract worktree
 - P1/P2/P3 evidence: P1 separated local runtime, ignored config, Cloudflare, OAuth, and ChatGPT App; P2 traced the live route through schema discovery to the model surface; P3 isolated the canary App/repo and stopped at the first externally controlled missing interface.
-- Root cause or plan evidence: App settings had the current five coding actions and OAuth connection, while the fresh structured-App conversation explicitly lacked `api_tool` and generated no server request.
+- Root cause or plan evidence: App settings had the current coding actions and OAuth connection; the non-Pro structured-App conversation created a real workspace, then its read failed because the workspace belonged to another MCP session.
 
 ## Verification Evidence
 
 - Waza `/check` run: manual Waza-style review recorded here; recommendation remains fail because the real invocation exit criterion did not pass.
 - Commands run: `bun run check:type`; `bash scripts/check-task-sync.sh`; `repo-harness run check-task-workflow --strict`; feature-worktree `mcp doctor --live`; Cloudflare-edge health/OAuth/MCP probes; rollback `cmp`; `ps`, `lsof`, and both Git status checks.
-- Manual checks: ChatGPT App settings exact coding schemas; structured App mention in a fresh normal Chat; final `surface_blocked` response; App deletion and process shutdown.
-- Supporting artifacts: this review, matching notes, and the preserved ChatGPT conversation.
+- Manual checks: ChatGPT App settings exact coding schemas; structured App mention in a fresh non-Pro Chat; real worktree/audit creation; cross-session read failure; App deletion; resolver/config restoration; process shutdown.
+- Supporting artifacts: this review, matching notes, preserved managed worktree/audit, and `https://chatgpt.com/c/6a51d385-ca3c-83ea-909e-a523079301f5`.
 - Implementation notes reviewed: yes
 - Run snapshot: `.ai/harness/checks/latest.json`
 
@@ -46,27 +46,27 @@
 > **External Started**:
 > **External Completed**:
 
-- P1 blockers: ChatGPT Pro did not expose the connected developer-mode App's `api_tool` interface in the fresh conversation, so no `Called tool` transcript exists.
-- P2 advisories: local split-DNS affects `doctor` public-origin probing but did not affect ChatGPT cloud OAuth/App discovery; keep these diagnoses separate.
-- Acceptance checklist: endpoint/schema/selection passed; invocation/read/patch/process/poll/readback did not run.
+- P1 blockers: ChatGPT created `open_workspace` and then called `read` from another MCP session; the server correctly rejected the workspace ID and OpenAI safety blocked the retry.
+- P2 advisories: temporary split-DNS removal solved local OAuth navigation and was fully restored; it is no longer the canary's first failing boundary.
+- Acceptance checklist: endpoint/schema/selection/open-workspace passed; read/patch/process/poll/readback did not complete.
 
 ## Behavior Diff Notes
 
 - No repo-harness product behavior changed. This slice only exercised the already implemented coding profile against live Cloudflare/OAuth/ChatGPT surfaces.
-- The live system reached App connection and exact action discovery. The first failing boundary is the selected conversation runtime, which declined to expose `api_tool` despite the structured App selection.
-- Because there was no tool call, the dedicated repo stayed clean and no process session or audit mutation was created.
+- The live system reached App connection, action discovery, and a real `open_workspace` invocation. The first failing boundary is ChatGPT's next tool call using a different MCP session than the workspace owner.
+- The dedicated source repo was restored clean. The managed worktree and metadata-only audit are preserved; no source patch or process ran.
 
 ## Residual Risks / Follow-ups
 
-- A fresh chat on a ChatGPT model/account surface known to support developer-mode App actions is still needed to obtain `invocation_verified`.
-- `/etc/resolver/repoharness.com` remains a host-level split-DNS false-negative source for `doctor --live`; it was intentionally not changed.
+- The product needs a design decision for ChatGPT sequential tool calls that do not preserve `Mcp-Session-Id`; any change must retain token/repo authorization and process-session isolation.
+- `/etc/resolver/repoharness.com` remains a host-level split-DNS false-negative source for `doctor --live`; it was temporarily moved under explicit authorization and restored byte-for-byte.
 - Pre-existing launchd MCP plists remain in their exact pre-canary stopped/stale state; this eval-only slice did not repair persistence.
 
 ## Scorecard
 
 | Dimension | Score | Notes |
 |-----------|-------|-------|
-| Functionality | 6/10 | Endpoint, OAuth, schema, and selection passed; the required real tool invocation did not. |
+| Functionality | 6/10 | Endpoint, OAuth, schema, selection, and open-workspace passed; cross-session read blocked the required multi-tool sequence. |
 | Security | 10/10 | Dedicated repo/App, explicit coding grant, no secret output, no unrelated Cloudflare mutation, exact rollback. |
 | Product depth | 8/10 | The canary reached the true model-tool boundary and produced a falsifiable classifier instead of setup-only evidence. |
 | Design quality | 9/10 | Disposable App and foreground processes isolated rollback from existing user state. |
@@ -74,15 +74,15 @@
 
 ## Failing Items
 
-- No visible `Called tool` event for `open_workspace` or any other coding action.
-- No ChatGPT-created worktree, patch file, long process, poll, readback, or matching audit evidence.
+- No complete visible `Called tool` sequence for read, patch, process, poll, and readback.
+- `open_workspace` created a real worktree/audit, but `read` failed with cross-session `WORKSPACE_NOT_FOUND`; no patch file or process output exists.
 - Contract manual acceptance and functionality score threshold therefore remain unmet.
 
 ## Retest Steps
 
-- Re-run: connect a disposable coding App on a ChatGPT model/account surface that exposes developer-mode App actions, select it structurally in a fresh normal Chat, and submit the same bounded five-tool sequence.
-- Re-check: require visible `Called tool` entries plus server-side request evidence and exact file contents before changing the classifier to `invocation_verified`.
+- Re-run only after resolving the workspace/process ownership contract for ChatGPT calls that arrive under different MCP sessions, then submit the same bounded five-tool sequence.
+- Re-check: require visible tool entries, server-side metadata-only audit, and exact file contents before changing the classifier to `invocation_verified`.
 
 ## Summary
 
-- The live canary safely proved Cloudflare, OAuth, App connection, and exact coding schema, but the selected ChatGPT Pro conversation did not expose the App's `api_tool` runtime. The correct outcome is `surface_blocked`, not product acceptance. Rollback completed and main WIP was preserved.
+- The live canary safely proved Cloudflare, OAuth, App connection, exact coding schema, and a real `open_workspace` call. It then exposed a concrete incompatibility: ChatGPT's next tool call used another MCP session, so `read` failed closed. The correct outcome remains `surface_blocked`, not product acceptance. Rollback completed and main WIP was preserved.

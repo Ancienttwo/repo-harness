@@ -19,7 +19,7 @@
 > **Plan**: plans/plan-20260711-1034-chatgpt-coding-mcp-live-canary.md
 > **Contract**: tasks/contracts/20260711-1034-chatgpt-coding-mcp-live-canary.contract.md
 > **Review**: tasks/reviews/20260711-1034-chatgpt-coding-mcp-live-canary.review.md
-> **Last Updated**: 2026-07-11 11:04
+> **Last Updated**: 2026-07-11 13:29
 > **Lifecycle**: notes
 
 ## Design Decisions
@@ -50,6 +50,18 @@
 
 - Which ChatGPT account/model surface will expose developer-mode App `api_tool` calls in a fresh normal Chat after the App is connected? The current Pro surface did not.
 
+## Qualification Retest 2
+
+- User resumed the blocked contract with `go on`.
+- Hold all controllable inputs constant and change only the ChatGPT model surface from Pro to a non-Pro option exposed by the current account.
+- Recreate a disposable developer-mode App, run the exact same five-tool prompt, and apply the same `invocation_verified` versus `surface_blocked` classifier.
+- OAuth popup diagnosis proved the local macOS resolver override `/etc/resolver/repoharness.com` sent the public hostname to `192.168.50.1`, which returned no address while public DoH returned the Cloudflare edge addresses. The user explicitly authorized a temporary resolver move/restore for this canary at 2026-07-11 13:16 +0800.
+- The resolver was backed up, temporarily moved with administrator authorization, and public DNS/health passed. It was restored byte-for-byte during rollback.
+- Browser-controlled navigation supplied the public origin as an `Origin` header and correctly hit `origin_not_allowed`; the production allowlist was not weakened. Authorization instead POSTed the authoritative OAuth parameters from the fresh ChatGPT URL with `Origin: https://chatgpt.com`, then opened the exact ChatGPT callback.
+- OAuth completed and the App showed `Connected`. The non-Pro fresh Chat invoked `open_workspace`, creating `cws_e0da6855-f199-4121-8ead-0f4a8b440a70` and a metadata-only audit record at `2026-07-11T05:25:18.165Z`.
+- The next `read` call was made under another MCP session and the source-repo audit recorded `WORKSPACE_NOT_FOUND` at `2026-07-11T05:25:29.051Z`. ChatGPT then reported that OpenAI safety blocked its retry. No write or shell action ran.
+- This proves the Cloudflare/OAuth/App/tool boundary is real, but also proves the current ChatGPT multi-call behavior is incompatible with workspace IDs bound to a single MCP session. Product behavior was not changed in this eval-only contract.
+
 ## Evidence Links
 
 - Checks: `.ai/harness/checks/latest.json`
@@ -63,9 +75,9 @@
 | Local coding server | pass | Loopback health, OAuth, initialize, and exact tools schema completed on the feature-worktree CLI. |
 | Cloudflare | pass with host-only diagnostic caveat | Named tunnel/DNS/remote ingress matched; Cloudflare edge returned health and OAuth metadata while unauthenticated `/mcp` returned 401. |
 | OAuth/App schema | pass | DCR + PKCE + coding scope completed; ChatGPT settings showed the five coding tools with current schemas and security annotations. |
-| ChatGPT invocation | `surface_blocked` | Structured-App fresh chat stated the connected App and `api_tool` were unavailable; no `Called tool` transcript and no server request occurred. |
-| File/process proof | not run | No ChatGPT tool call meant no workspace, patch, command session, or output file existed. |
-| Rollback | pass | Disposable App deleted; manual server/Tunnel stopped; prior ignored config/plists matched backup bytes before temporary secret copies were removed. |
+| ChatGPT invocation | partial real invocation, acceptance blocked | Non-Pro structured-App chat created a real managed workspace; the next read crossed MCP sessions and failed with `WORKSPACE_NOT_FOUND`, then safety blocked the retry. |
+| File/process proof | partial | Worktree metadata and `open_workspace` audit exist; no patch, command session, poll, or canary output file exists. |
+| Rollback | pass | Disposable App deleted; manual server/Tunnel stopped; prior ignored config/plists and resolver matched backup bytes before temporary copies were removed. |
 | Main WIP | preserved | `/Users/kito/Projects/repo-harness` remained on `main` with `M tasks/current.md` and `?? plans/plan-20260711-0115-think-plan-011459.md`. |
 
 ## Promotion Filter

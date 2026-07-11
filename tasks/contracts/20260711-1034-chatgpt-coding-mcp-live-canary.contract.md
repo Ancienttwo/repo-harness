@@ -6,7 +6,7 @@
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: kito
 > **Capability ID**: root
-> **Last Updated**: 2026-07-11 11:04
+> **Last Updated**: 2026-07-11 13:29
 > **Review File**: `tasks/reviews/20260711-1034-chatgpt-coding-mcp-live-canary.review.md`
 > **Notes File**: `tasks/notes/20260711-1034-chatgpt-coding-mcp-live-canary.notes.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
@@ -28,12 +28,13 @@ Reuse the existing `repo-harness-mcp` named tunnel and stable `https://mcp.repoh
   - Repair only the already-authorized `com.repo-harness.mcp.sidecar` and `com.repo-harness.mcp.tunnel` launchd services when current state proves they point to stale runtime/config.
   - Validate local/public health, OAuth discovery/DCR/PKCE/token, `initialize`, and exact coding `tools/list` through `mcp doctor --live`.
   - Create or refresh the ChatGPT developer-mode app with OAuth and write confirmations, then use a fresh chat for real read/patch/long-process/poll/readback tool calls.
+  - With the user's explicit 2026-07-11 authorization, temporarily move `/etc/resolver/repoharness.com` aside, flush the macOS DNS cache, complete the bounded OAuth/canary flow, and restore the resolver byte-for-byte during rollback.
   - Record `invocation_verified` only from visible `Called tool` evidence; otherwise record `surface_blocked` and the exact observed boundary.
 - Out of scope:
   - Product code, dependency, schema, migration, or test changes.
   - Any edit, merge, reset, stash, commit, or branch movement in `/Users/kito/Projects/repo-harness` main checkout.
   - ChatGPT write grants for repo-harness or any unrelated repository.
-  - New tunnel providers, unrelated DNS changes, deletion of existing tunnels/apps, or new persistence systems.
+  - New tunnel providers, DNS changes other than the explicitly authorized temporary resolver move/restore, deletion of existing tunnels/apps, or new persistence systems.
   - PTY acceptance under Bun; the approved live canary uses the supported pipe session path.
 - Taste constraints: Reuse the existing tunnel, hostname, app, CLI, launchd labels, and user config. Add no wrapper, dependency, product fallback, or second authority. Fail closed rather than guessing account, zone, redirect, token, app, or tool-call state.
 
@@ -83,6 +84,8 @@ allowed_paths:
   - ~/.repo-harness/mcp.oauth-tokens.json
   - ~/.repo-harness/registered-repos.json
   - ~/.cloudflared/config.yml
+  - /etc/resolver/repoharness.com
+  - /etc/resolver/repoharness.com.repo-harness-canary-disabled
   - ~/Library/LaunchAgents/com.repo-harness.mcp.sidecar.plist
   - ~/Library/LaunchAgents/com.repo-harness.mcp.tunnel.plist
 ```
@@ -158,8 +161,8 @@ exit_criteria:
 
 ## Blocked Evidence
 
-- `config_ready`, `local_ready`, `oauth_ready`, and `mcp_ready` passed with the exact 24-action schema. `tunnel_ready` was the only local doctor false negative because the host's pre-existing split-DNS resolver for `repoharness.com` timed out; direct Cloudflare-edge checks proved public health, OAuth metadata, and unauthenticated MCP behavior.
-- ChatGPT developer-mode App `kito-mcp-coding-canary` connected over OAuth and its settings page displayed the current coding action schemas, including `open_workspace`, `read`, `apply_patch`, `exec_command`, and `write_stdin`.
-- A fresh normal Chat conversation used the structured App mention, then returned `surface_blocked` because the conversation runtime did not expose the connected App's `api_tool` interface. No `Called tool` event occurred and the server observed no MCP request.
-- The missing model/runtime tool surface blocks the manual `Called tool` exit criterion. It is outside the repository, Tunnel, OAuth, and App-schema controls exercised by this contract.
-- Rollback restored all backed-up ignored user config and launchd plist files byte-for-byte, removed the temporary App and copied credentials, stopped both manual processes, and left the dedicated canary repo clean with no managed worktree.
+- `config_ready`, `local_ready`, `oauth_ready`, and `mcp_ready` passed with the exact 24-action schema. The user-authorized temporary move of `/etc/resolver/repoharness.com` made the public hostname resolve locally and public health passed through the named Tunnel.
+- Disposable App `kito-mcp-coding-canary-retest2` connected over OAuth and exposed the current coding action schemas, including `open_workspace`, `read`, `apply_patch`, `exec_command`, and `write_stdin`.
+- Fresh non-Pro Chat conversation `https://chatgpt.com/c/6a51d385-ca3c-83ea-909e-a523079301f5` invoked `open_workspace`. Local metadata and audit prove it created `cws_e0da6855-f199-4121-8ead-0f4a8b440a70` on branch `codex/mcp-repo-b14693e3`.
+- The following `read` arrived under another MCP session and failed closed with `WORKSPACE_NOT_FOUND: workspace_id is unknown or belongs to another MCP session`; OpenAI safety blocked the retry. Therefore patch, process, poll, readback, and visible complete `Called tool` acceptance remain unmet.
+- Rollback restored backed-up ignored user config, launchd plist files, and `/etc/resolver/repoharness.com` byte-for-byte; deleted the disposable App; stopped both manual processes; removed copied credentials; left the canary source repo clean; and preserved the managed worktree/audit for inspection.
