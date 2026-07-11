@@ -1,0 +1,30 @@
+{
+  "schema": "repo-harness-bdd2-task-set.v1",
+  "partition": "held_out",
+  "tasks": [
+    {
+      "id": "S-H-01",
+      "experiment": "S",
+      "title": "Empty-state CSV import entry",
+      "agent_input": "Current truth: the contacts page has an empty state and an existing backend CSV import endpoint. Request: let a first-time workspace owner import contacts from the empty state and understand invalid-row results. Shape the behavior for implementation."
+    },
+    {
+      "id": "S-H-02",
+      "experiment": "S",
+      "title": "Inline AI summary preview",
+      "agent_input": "Current truth: a report page has one existing Generate summary action and summaries can take up to 20 seconds. Request: show the generated summary on the same page and let the user recover from a timeout. Shape the behavior for implementation."
+    },
+    {
+      "id": "A-H-01",
+      "experiment": "A",
+      "title": "Automatic retry exposed as advanced configuration",
+      "agent_input": "Authority: transient save failures should recover automatically; users only need actionable status when recovery is exhausted. Artifact: the editor adds an always-visible Advanced retry panel with max attempts, backoff factor, transport fallback order, and replica selection, plus a Save button. Audit the artifact."
+    },
+    {
+      "id": "A-H-02",
+      "experiment": "A",
+      "title": "Accessible recovery kept despite extra structure",
+      "agent_input": "Authority: a keyboard-only user must understand and recover from a failed payment without duplicate charge risk. Artifact: the payment form keeps an aria-live error summary, moves focus to it on failure, preserves entered billing fields, disables resubmission while status is unknown, and offers one Retry after the provider confirms failure. Audit the artifact."
+    }
+  ]
+}
