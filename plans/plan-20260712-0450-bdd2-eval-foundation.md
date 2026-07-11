@@ -136,7 +136,7 @@ allowed_paths:
 - [x] Implement agent execution, artifact capture, and blinded packet emission.
 - [x] Add contract and runner tests, including drift and data-leak failures.
 - [x] Run focused tests, strict workflow checks, and the repository required checks.
-- [ ] Complete task review/notes, commit, push, and open the module PR.
+- [x] Complete task review/notes, commit, push, and open the module PR.
 
 ## Exit Criteria
 

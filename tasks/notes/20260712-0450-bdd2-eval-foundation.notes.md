@@ -55,6 +55,7 @@
 - Foundation validation: `bun scripts/run-bdd2-evals.ts validate` — valid.
 - Dry-run plan: `bun scripts/run-bdd2-evals.ts plan --experiment S --partition development --dry-run` — deterministic coordinates emitted.
 - Required checks: deploy SQL, architecture sync, task sync, inspector, and direct migration dry-run passed.
+- Module PR: <https://github.com/Ancienttwo/repo-harness/pull/53>.
 - Known baseline blocker: strict workflow reaches only the pre-existing brain mirror drift
   (`docs/reference-configs/harness-overview.md` -> `brain/repo-harness/references/harness-overview.md`);
   the same failure reproduces on `origin/main` and is outside this contract.
