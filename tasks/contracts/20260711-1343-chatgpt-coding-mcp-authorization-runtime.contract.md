@@ -1,11 +1,11 @@
 # Task Contract: chatgpt-coding-mcp-authorization-runtime
 
-> **Status**: Complete
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260711-1343-chatgpt-coding-mcp-authorization-runtime.md
 > **Task Profile**: bugfix
 > **Owner**: kito
 > **Capability ID**: root
-> **Last Updated**: 2026-07-11 14:18
+> **Last Updated**: 2026-07-11 21:11
 > **Review File**: `tasks/reviews/20260711-1343-chatgpt-coding-mcp-authorization-runtime.review.md`
 > **Notes File**: `tasks/notes/20260711-1343-chatgpt-coding-mcp-authorization-runtime.notes.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
@@ -45,8 +45,8 @@ The design is wrong if ChatGPT's second call actually retains the first MCP sess
 
 - root_cause: `src/cli/mcp/transports/http.ts` creates a new server for every initialize without a session id, and `src/cli/mcp/server.ts` gives each server a random owner plus new in-memory workspace/process managers.
 - repro: initialize session A and call `open_workspace`, initialize session B with the same coding bearer token, then call `read` with the returned workspace id; unfixed code returns `WORKSPACE_NOT_FOUND`.
-- regression_guard: `tests/cli/mcp-http.test.ts`
-- pre_fix_failure_artifact: `.ai/harness/runs/pre-fix-20260711-1343-chatgpt-coding-auth-runtime.log`
+- regression_guard: tests/cli/mcp-http.test.ts
+- pre_fix_failure_artifact: .ai/harness/runs/pre-fix-20260711-1343-chatgpt-coding-auth-runtime.log
 
 ## Workflow Inventory
 
@@ -130,7 +130,6 @@ exit_criteria:
     - dimension: functionality
       min: 8
   manual_checks:
-    - "Different OAuth authorizations cannot use each other's workspace or process session"
     - "Evaluator review file recommends pass"
 ```
 

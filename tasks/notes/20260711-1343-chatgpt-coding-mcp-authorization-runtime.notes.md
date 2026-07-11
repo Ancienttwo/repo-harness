@@ -4,7 +4,7 @@
 > **Plan**: plans/plan-20260711-1343-chatgpt-coding-mcp-authorization-runtime.md
 > **Contract**: tasks/contracts/20260711-1343-chatgpt-coding-mcp-authorization-runtime.contract.md
 > **Review**: tasks/reviews/20260711-1343-chatgpt-coding-mcp-authorization-runtime.review.md
-> **Last Updated**: 2026-07-11 14:18
+> **Last Updated**: 2026-07-11 20:58
 > **Lifecycle**: notes
 
 ## Root Cause Trace
@@ -38,3 +38,11 @@
 ## Open Questions
 
 - None. The authorization lifecycle boundary is decision-complete for this slice.
+
+## External Acceptance Closeout
+
+- The separately authorized post-fix live canary started at `2026-07-11T07:15:23.429Z` and completed at `2026-07-11T07:16:05.280Z` through the stable Cloudflare named Tunnel and a fresh ChatGPT developer-mode OAuth authorization.
+- One authorization successfully continued across fresh MCP transports in managed worktree `cws_155e096c-f7ee-4dfe-90d9-3d7aca50db4c`. Metadata-only audit records successful `open_workspace`, cross-transport `read`, atomic `apply_patch`, `exec_command` exit 0, and both final reads.
+- Exact file evidence matched the ChatGPT response: `docs/spec.md` ended with `canary-auth-runtime-ok`, and `canary/process.txt` contained `process-auth-runtime-ok`. This directly falsifies the pre-fix `WORKSPACE_NOT_FOUND` failure without relying on model prose.
+- The authorization-runtime external acceptance is therefore `pass`. The separate live-canary contract remains `surface_blocked` only at its stricter literal-transcript gate because the current ChatGPT Activity UI omitted some call rows and the conversation became empty after disposable-App deletion.
+- Rollback deleted the disposable App, stopped the foreground server and Tunnel replica, restored ignored config/plists/resolver byte-for-byte, returned the pre-existing launchd jobs to their stale `EX_CONFIG` state, preserved main WIP, and retained the managed worktree/audit as local evidence.

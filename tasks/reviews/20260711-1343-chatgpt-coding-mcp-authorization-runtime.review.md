@@ -5,7 +5,7 @@
 > **Contract**: tasks/contracts/20260711-1343-chatgpt-coding-mcp-authorization-runtime.contract.md
 > **Notes File**: tasks/notes/20260711-1343-chatgpt-coding-mcp-authorization-runtime.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-07-11 14:18
+> **Last Updated**: 2026-07-11 20:58
 > **Recommendation**: pass
 > **Review Rubric Version**: 1
 > **Reviewed Diff Fingerprint**: sha256:1b9a1f7c2b1ad1d6b756ba765f492a924bdfcd581387b943c82d76e4ad9e5955
@@ -18,8 +18,8 @@
 - Intended files changed: OAuth, MCP server/HTTP transport, focused tests, and matching workflow artifacts
 - Actual files changed: OAuth/server/HTTP runtime, ownership error text, focused tests, architecture/operator/research docs, and matching workflow artifacts
 - Commands passed: focused MCP suites, typecheck, full `bun test`, SQL order, architecture sync, task sync, strict workflow, project inspection, and self-migration dry-run
-- External acceptance: unavailable in this implementation slice
-- Residual risks: final ChatGPT/Cloudflare invocation acceptance has not yet been rerun against this commit; prior coding tokens must reauthorize because legacy tokens intentionally lack the new grant id
+- External acceptance: pass from the separately authorized post-fix ChatGPT/Cloudflare live canary
+- Residual risks: the current ChatGPT Activity UI does not provide a durable literal transcript for every call; prior coding tokens must reauthorize because legacy tokens intentionally lack the new grant id
 - Reviewer action required: none for the implementation slice
 - Rollback: revert to `443f3ea`
 
@@ -40,15 +40,15 @@
 
 ## External Acceptance Advice
 
-> **External Acceptance**: unavailable
-> **External Reviewer**:
-> **External Source**:
-> **External Started**:
-> **External Completed**:
+> **External Acceptance**: pass
+> **External Reviewer**: ChatGPT developer-mode live canary
+> **External Source**: tasks/reviews/20260711-1034-chatgpt-coding-mcp-live-canary.review.md
+> **External Started**: 2026-07-11T07:15:23.429Z
+> **External Completed**: 2026-07-11T07:16:05.280Z
 
-- P1 blockers: none in the implementation; live retest is excluded from this contract.
-- P2 advisories: a post-fix live canary remains the final external acceptance surface.
-- Acceptance checklist: local ChatGPT-style continuity and cross-grant isolation pass; live state remains untouched.
+- P1 blockers: none; the post-fix live sequence reused one OAuth authorization across fresh MCP transports and completed workspace read, patch, process execution, and final readback.
+- P2 advisories: the separate live-canary contract keeps its stricter literal-transcript classifier blocked because the current ChatGPT UI omitted some call rows and became empty after disposable-App deletion. That evidence-surface limitation does not falsify the authorization-runtime behavior proven by correlated local audit and exact file output.
+- Acceptance checklist: same-grant cross-transport continuity passed live; cross-grant isolation, refresh preservation, revoke cleanup, and legacy-token rejection passed focused regression tests; rollback restored all external state.
 
 ## Behavior Diff Notes
 
@@ -59,7 +59,7 @@
 
 ## Residual Risks / Follow-ups
 
-- A real ChatGPT canary is still required to change the external classifier from `surface_blocked` to `invocation_verified`.
+- Authorization-runtime external acceptance is complete. The separate live-canary contract still requires a durable literal `Called tool` transcript before changing its stricter classifier from `surface_blocked` to `invocation_verified`.
 - Runtime cleanup is asynchronous but idempotent; process-manager shutdown remains the final fail-closed process-tree boundary.
 
 ## Scorecard
@@ -78,9 +78,8 @@
 
 ## Retest Steps
 
-- Re-run the bounded live canary with fresh OAuth authorization and a fresh ChatGPT chat.
-- Re-check visible `Called tool` entries plus local patch/process/file evidence before changing the external classifier.
+- No authorization-runtime retest remains. If ChatGPT later exposes a durable complete tool transcript, re-run only the separate live-canary classifier using the same bounded prompt.
 
 ## Summary
 
-- The authorization-scoped runtime fixes ChatGPT's new-transport-per-call behavior and preserves the stricter repo-harness isolation model. All local and repository gates pass; external live acceptance remains a separate authorized slice.
+- The authorization-scoped runtime fixes ChatGPT's new-transport-per-call behavior and preserves the stricter repo-harness isolation model. Local, repository, and post-fix live functional acceptance all pass. The remaining `surface_blocked` label belongs only to the separate transcript-visibility contract.
