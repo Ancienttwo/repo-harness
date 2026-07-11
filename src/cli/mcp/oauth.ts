@@ -22,9 +22,10 @@ interface RefreshTokenRecord {
   expiresAt?: number;
 }
 
-type StoredAuthInfo = AuthInfo & {
+export type McpStoredAuthInfo = AuthInfo & {
   profile?: string;
   authorizationRevision?: number;
+  authorizationId?: string;
 };
 
 function nowSeconds(): number {
@@ -47,7 +48,7 @@ function normalizeScopes(scopes: string[] | undefined, profile = 'planner'): str
 }
 
 export class McpOAuthTokenStore implements OAuthRegisteredClientsStore {
-  private accessTokens = new Map<string, StoredAuthInfo>();
+  private accessTokens = new Map<string, McpStoredAuthInfo>();
   private refreshTokens = new Map<string, RefreshTokenRecord>();
   private clients = new Map<string, OAuthClientInformationFull>();
   private clock: () => number = nowSeconds;
@@ -109,11 +110,11 @@ export class McpOAuthTokenStore implements OAuthRegisteredClientsStore {
     return full;
   }
 
-  getAccessToken(token: string): StoredAuthInfo | undefined {
+  getAccessToken(token: string): McpStoredAuthInfo | undefined {
     return this.accessTokens.get(token);
   }
 
-  setAccessToken(token: string, info: StoredAuthInfo): void {
+  setAccessToken(token: string, info: McpStoredAuthInfo): void {
     this.accessTokens.set(token, info);
     this.flush();
   }
@@ -184,6 +185,7 @@ export function createMcpOAuthProvider(
     readonly refreshTokenTtlSeconds?: number;
     readonly profile?: string;
     readonly authorizationRevision?: number | (() => number);
+    readonly onAuthorizationRevoked?: (authorizationId: string) => void | Promise<void>;
   } = {},
 ): OAuthServerProvider {
   const authCodes = new Map<string, AuthorizationCodeRecord>();
@@ -194,6 +196,14 @@ export function createMcpOAuthProvider(
   const refreshTokenTtlSeconds = opts.refreshTokenTtlSeconds ?? 30 * 24 * 60 * 60;
   const profile = opts.profile ?? 'planner';
   const revisionOption = opts.authorizationRevision;
+  const notifyAuthorizationRevoked = (info: McpStoredAuthInfo | undefined): void => {
+    if (profile !== 'coding' || !info?.authorizationId) return;
+    try {
+      void Promise.resolve(opts.onAuthorizationRevoked?.(info.authorizationId)).catch(() => undefined);
+    } catch (_error) {
+      // Token revocation must not fail because runtime cleanup is already idempotent and retried by server lifecycle checks.
+    }
+  };
   const currentAuthorizationRevision: () => number = typeof revisionOption === 'function'
     ? revisionOption
     : () => revisionOption ?? 0;
@@ -268,6 +278,7 @@ export function createMcpOAuthProvider(
       const expiresAt = clock() + expiresIn;
       const scopes = normalizeScopes(stored.scopes, profile);
       const authorizationRevision = currentAuthorizationRevision();
+      const authorizationId = profile === 'coding' ? randomUUID() : undefined;
       store.setAccessToken(accessToken, {
         token: accessToken,
         clientId: client.client_id,
@@ -275,6 +286,7 @@ export function createMcpOAuthProvider(
         expiresAt,
         profile,
         authorizationRevision,
+        authorizationId,
       });
       const response: OAuthTokens = {
         access_token: accessToken,
@@ -303,7 +315,15 @@ export function createMcpOAuthProvider(
       const expiresIn = accessTokenTtlSeconds;
       const scopes = normalizeScopes(existing.scopes, profile);
       const authorizationRevision = currentAuthorizationRevision();
-      if ((existing.profile ?? 'planner') !== profile || (profile === 'coding' && existing.authorizationRevision !== authorizationRevision)) {
+      if (
+        (existing.profile ?? 'planner') !== profile ||
+        (profile === 'coding' && (
+          existing.authorizationRevision !== authorizationRevision ||
+          typeof existing.authorizationId !== 'string' ||
+          !existing.authorizationId.trim()
+        ))
+      ) {
+        notifyAuthorizationRevoked(existing);
         throw new InvalidGrantError('Refresh token authorization is stale');
       }
       store.setAccessToken(nextAccessToken, { ...existing, token: nextAccessToken, scopes, expiresAt: clock() + expiresIn, profile, authorizationRevision });
@@ -321,10 +341,16 @@ export function createMcpOAuthProvider(
       const info = store.getAccessToken(token);
       if (!info) throw new InvalidTokenError('Token not found');
       if ((info.profile ?? 'planner') !== profile) throw new InvalidTokenError('Token profile mismatch');
-      if (profile === 'coding' && (info.authorizationRevision !== currentAuthorizationRevision() || !info.scopes.includes('repo-harness.coding'))) {
+      if (profile === 'coding' && (
+        info.authorizationRevision !== currentAuthorizationRevision() ||
+        !info.scopes.includes('repo-harness.coding') ||
+        typeof info.authorizationId !== 'string' ||
+        !info.authorizationId.trim()
+      )) {
         const refreshToken = store.findRefreshTokenByAccessToken(token);
         if (refreshToken) store.deleteRefreshToken(refreshToken);
         store.deleteAccessToken(token);
+        notifyAuthorizationRevoked(info);
         throw new InvalidTokenError('Coding authorization is stale or missing');
       }
       if (info.expiresAt && info.expiresAt < clock()) {
@@ -339,13 +365,17 @@ export function createMcpOAuthProvider(
     async revokeToken(_client: OAuthClientInformationFull, request: OAuthTokenRevocationRequest): Promise<void> {
       const linkedAccessToken = store.getRefreshToken(request.token);
       if (linkedAccessToken) {
+        const info = store.getAccessToken(linkedAccessToken);
         store.deleteRefreshToken(request.token);
         store.deleteAccessToken(linkedAccessToken);
+        notifyAuthorizationRevoked(info);
         return;
       }
+      const info = store.getAccessToken(request.token);
       store.deleteAccessToken(request.token);
       const refreshToken = store.findRefreshTokenByAccessToken(request.token);
       if (refreshToken) store.deleteRefreshToken(refreshToken);
+      notifyAuthorizationRevoked(info);
     },
   };
 }

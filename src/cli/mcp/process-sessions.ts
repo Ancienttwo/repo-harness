@@ -764,7 +764,7 @@ export class McpProcessSessionManager {
   private getOwnedSession(ownerId: string, workspaceId: string | undefined, sessionId: number): ProcessSession {
     const session = this.sessions.get(sessionId);
     if (!session || session.ownerId !== ownerId || (workspaceId !== undefined && session.workspaceId !== workspaceId)) {
-      throw new McpProcessError('PROCESS_ACCESS_DENIED', 'process session is unavailable for this MCP session and workspace');
+      throw new McpProcessError('PROCESS_ACCESS_DENIED', 'process session is unavailable for this coding authorization and workspace');
     }
     return session;
   }

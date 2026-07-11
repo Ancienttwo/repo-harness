@@ -21,8 +21,8 @@ The profile is fail-closed until all of these are true:
 
 - user-scoped v3 config selects `coding` and has `coding.enabled: true`;
 - at least one adopted repo has an explicit `read_write` grant;
-- OAuth tokens contain `repo-harness.coding` and the current authorization
-  revision;
+- OAuth tokens contain `repo-harness.coding`, the current authorization
+  revision, and a server-issued coding authorization identity;
 - the server listens on loopback and the request Host matches the local or saved
   public endpoint.
 
@@ -125,8 +125,15 @@ an invocation.
   rollback-capable transaction.
 - `exec_command` starts pipe or requested PTY sessions. `write_stdin` polls,
   writes input, resizes PTY, or sends Ctrl-C.
-- MCP session close, expiry, timeout, and server shutdown terminate owned process
-  trees. A session id never crosses MCP session ownership.
+- ChatGPT may initialize a fresh MCP transport for each tool call. Workspace and
+  process ids remain usable across those transports only while they present
+  tokens from the same OAuth authorization grant; another grant cannot reuse a
+  workspace, process, or transport session id.
+- MCP DELETE and transport expiry close only the transport. OAuth revoke,
+  authorization revision or repo-access change, coding disable, 30-minute
+  authorization idle expiry, process timeout, and server shutdown terminate the
+  authorization runtime's process trees. Refresh-token rotation preserves the
+  same runtime identity.
 
 Managed worktrees are local state under `~/.repo-harness/`:
 

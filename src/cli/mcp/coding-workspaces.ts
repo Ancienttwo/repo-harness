@@ -404,7 +404,7 @@ export class CodingWorkspaceManager {
 
   get(workspaceId: string): CodingWorkspace {
     const workspace = this.workspaces.get(workspaceId);
-    if (!workspace) throw new CodingWorkspaceError('WORKSPACE_NOT_FOUND', 'workspace_id is unknown or belongs to another MCP session', { workspace_id: workspaceId });
+    if (!workspace) throw new CodingWorkspaceError('WORKSPACE_NOT_FOUND', 'workspace_id is unknown or unavailable for this coding authorization', { workspace_id: workspaceId });
     const repo = registeredRepo(workspace.repoId, this.env);
     if (realpathSync(repo.path) !== workspace.sourceRoot) {
       throw new CodingWorkspaceError('REPO_NOT_ALLOWED', 'workspace repo grant no longer matches its registered source', { repo_id: workspace.repoId });

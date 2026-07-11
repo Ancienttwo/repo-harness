@@ -26,20 +26,32 @@ export interface McpServerOptions {
   enableDevRunner?: boolean;
   devRunnerAgents?: string;
   devRunnerTimeoutMs?: number;
+  codingRuntime?: McpCodingRuntime | null;
 }
 
-const activeCodingContexts = new Set<McpToolContext>();
+export interface McpCodingRuntime {
+  readonly repoRoot: string;
+  readonly ownerId: string;
+  readonly workspaceManager: CodingWorkspaceManager;
+  readonly processManager: McpProcessSessionManager;
+  readonly codeGraphAdapter: ReturnType<typeof createCodeGraphCliAdapter>;
+}
 
-async function shutdownCodingContext(ctx: McpToolContext): Promise<void> {
-  const ownerId = ctx.sessionOwnerId;
-  if (ownerId) ctx.processManager?.terminateOwner(ownerId);
-  await ctx.processManager?.shutdown();
-  ctx.codingWorkspaceManager?.closeSession();
-  activeCodingContexts.delete(ctx);
+const activeCodingRuntimes = new Set<McpCodingRuntime>();
+const closedCodingRuntimes = new WeakSet<McpCodingRuntime>();
+const codingRuntimeForContext = new WeakMap<McpToolContext, McpCodingRuntime>();
+
+export async function shutdownMcpCodingRuntime(runtime: McpCodingRuntime): Promise<void> {
+  if (closedCodingRuntimes.has(runtime)) return;
+  closedCodingRuntimes.add(runtime);
+  activeCodingRuntimes.delete(runtime);
+  runtime.processManager.terminateOwner(runtime.ownerId);
+  await runtime.processManager.shutdown();
+  runtime.workspaceManager.closeSession();
 }
 
 export async function shutdownAllMcpCodingRuntimes(): Promise<void> {
-  await Promise.all(Array.from(activeCodingContexts, (ctx) => shutdownCodingContext(ctx)));
+  await Promise.all(Array.from(activeCodingRuntimes, (runtime) => shutdownMcpCodingRuntime(runtime)));
 }
 
 function parseBooleanSetting(value: string | undefined): boolean | undefined {
@@ -98,6 +110,66 @@ function uniqueRoots(rawRoots: string[]): string[] {
     roots.push(root);
   }
   return roots;
+}
+
+function buildCodingRuntime(
+  repoRoot: string,
+  policy: McpPolicy,
+  config: ReturnType<typeof loadMcpLocalConfig>,
+  ownerId: string,
+): McpCodingRuntime {
+  const codingEnv: NodeJS.ProcessEnv = { ...process.env };
+  if (config?.coding?.worktreeRoot) codingEnv.REPO_HARNESS_MCP_WORKTREE_ROOT = config.coding.worktreeRoot;
+  const workspaceManager = new CodingWorkspaceManager(codingEnv);
+  const configuredEnv = Object.fromEntries((config?.coding?.environmentAllowlist ?? [])
+    .map((key) => key.trim())
+    .filter((key) => key && process.env[key] !== undefined)
+    .map((key) => [key, process.env[key] as string]));
+  const codingProcessEnv = buildMcpProcessEnvironment({ baseEnv: codingEnv, configuredEnv });
+  const codeGraphAdapter = createCodeGraphCliAdapter({
+    env: codingProcessEnv,
+    allowRepoLocalBin: false,
+  });
+  let processManager!: McpProcessSessionManager;
+  processManager = new McpProcessSessionManager({
+    configuredEnv,
+    onComplete: (event) => recordCodingProcessCompletion({
+      repoRoot,
+      policy,
+      ownerId,
+      workspaceManager,
+      processManager,
+    }, event),
+  });
+  const runtime: McpCodingRuntime = {
+    repoRoot,
+    ownerId,
+    workspaceManager,
+    processManager,
+    codeGraphAdapter,
+  };
+  return runtime;
+}
+
+function attachCodingRuntime(ctx: McpToolContext, runtime: McpCodingRuntime): void {
+  if (runtime.repoRoot !== ctx.repoRoot) {
+    throw new Error('coding MCP runtime repo does not match the server repo');
+  }
+  ctx.sessionOwnerId = runtime.ownerId;
+  ctx.codingWorkspaceManager = runtime.workspaceManager;
+  ctx.processManager = runtime.processManager;
+  ctx.codeGraphAdapter = runtime.codeGraphAdapter;
+  codingRuntimeForContext.set(ctx, runtime);
+}
+
+export function createMcpCodingRuntime(opts: McpServerOptions, ownerId: string): McpCodingRuntime {
+  if (!ownerId.trim()) throw new Error('coding MCP runtime owner is required');
+  const ctx = createMcpToolContext({ ...opts, codingRuntime: null });
+  if (ctx.policy.profile !== 'coding') throw new Error('coding MCP runtime requires the coding profile');
+  const config = loadMcpLocalConfig(ctx.repoRoot);
+  const runtime = buildCodingRuntime(ctx.repoRoot, ctx.policy, config, ownerId);
+  activeCodingRuntimes.add(runtime);
+  return runtime;
 }
 
 export function createMcpToolContext(opts: McpServerOptions): McpToolContext {
@@ -172,38 +244,19 @@ export function createMcpToolContext(opts: McpServerOptions): McpToolContext {
     enableChatgptBrowser: opts.enableChatgptBrowser === true,
   };
   if (profile === 'coding') {
-    const codingEnv: NodeJS.ProcessEnv = { ...process.env };
-    if (config?.coding?.worktreeRoot) codingEnv.REPO_HARNESS_MCP_WORKTREE_ROOT = config.coding.worktreeRoot;
-    const workspaceManager = new CodingWorkspaceManager(codingEnv);
-    const ownerId = `mcp_${randomUUID()}`;
-    const configuredEnv = Object.fromEntries((config?.coding?.environmentAllowlist ?? [])
-      .map((key) => key.trim())
-      .filter((key) => key && process.env[key] !== undefined)
-      .map((key) => [key, process.env[key] as string]));
-    const codingProcessEnv = buildMcpProcessEnvironment({ baseEnv: codingEnv, configuredEnv });
-    ctx.sessionOwnerId = ownerId;
-    ctx.codingWorkspaceManager = workspaceManager;
-    ctx.codeGraphAdapter = createCodeGraphCliAdapter({
-      env: codingProcessEnv,
-      allowRepoLocalBin: false,
-    });
-    ctx.processManager = new McpProcessSessionManager({
-      configuredEnv,
-      onComplete: (event) => recordCodingProcessCompletion({
-        repoRoot,
-        policy,
-        ownerId,
-        workspaceManager,
-        processManager: ctx.processManager!,
-      }, event),
-    });
+    if (opts.codingRuntime !== null) {
+      const runtime = opts.codingRuntime ?? buildCodingRuntime(repoRoot, policy, config, `mcp_${randomUUID()}`);
+      attachCodingRuntime(ctx, runtime);
+    }
   }
   return ctx;
 }
 
 export function createRepoHarnessMcpServer(opts: McpServerOptions): Server {
   const ctx = createMcpToolContext(opts);
-  if (ctx.processManager) activeCodingContexts.add(ctx);
+  const codingRuntime = codingRuntimeForContext.get(ctx);
+  const ownsCodingRuntime = codingRuntime !== undefined && opts.codingRuntime === undefined;
+  if (codingRuntime) activeCodingRuntimes.add(codingRuntime);
   const server = new Server(
     { name: 'repo-harness-mcp', version: repoHarnessPackageVersion() },
     {
@@ -226,7 +279,7 @@ export function createRepoHarnessMcpServer(opts: McpServerOptions): Server {
   });
 
   server.onclose = () => {
-    void shutdownCodingContext(ctx);
+    if (ownsCodingRuntime && codingRuntime) void shutdownMcpCodingRuntime(codingRuntime);
   };
 
   return server;

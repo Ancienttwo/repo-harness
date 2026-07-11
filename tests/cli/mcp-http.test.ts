@@ -597,27 +597,36 @@ describe('mcp http transport', () => {
       expect(tokenJson).toMatchObject({ expires_in: 3600 });
       expect(tokenJson.scope.split(' ')).toEqual(['repo-harness', 'repo-harness.coding', 'offline_access']);
 
-      const headers: Record<string, string> = {
-        authorization: `Bearer ${tokenJson.access_token}`,
-        'content-type': 'application/json',
-        accept: 'application/json, text/event-stream',
+      const initializeSession = async (accessToken: string): Promise<Record<string, string>> => {
+        const nextHeaders: Record<string, string> = {
+          authorization: `Bearer ${accessToken}`,
+          'content-type': 'application/json',
+          accept: 'application/json, text/event-stream',
+        };
+        const initialized = await fetch(`http://127.0.0.1:${port}/mcp`, {
+          method: 'POST',
+          headers: nextHeaders,
+          body: initializeBody(),
+        });
+        expect(initialized.status).toBe(200);
+        nextHeaders['mcp-session-id'] = initialized.headers.get('mcp-session-id') ?? '';
+        await fetch(`http://127.0.0.1:${port}/mcp`, {
+          method: 'POST',
+          headers: nextHeaders,
+          body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }),
+        });
+        return nextHeaders;
       };
-      const initialized = await fetch(`http://127.0.0.1:${port}/mcp`, { method: 'POST', headers, body: initializeBody() });
-      expect(initialized.status).toBe(200);
-      const sessionId = initialized.headers.get('mcp-session-id') ?? '';
-      headers['mcp-session-id'] = sessionId;
-      await fetch(`http://127.0.0.1:${port}/mcp`, {
-        method: 'POST', headers,
-        body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }),
-      });
-      const call = async (id: number, method: string, params?: Record<string, unknown>) => {
+      let headers = await initializeSession(tokenJson.access_token);
+      const callWith = async (callHeaders: Record<string, string>, id: number, method: string, params?: Record<string, unknown>) => {
         const response = await fetch(`http://127.0.0.1:${port}/mcp`, {
-          method: 'POST', headers,
+          method: 'POST', headers: callHeaders,
           body: JSON.stringify({ jsonrpc: '2.0', id, method, ...(params ? { params } : {}) }),
         });
         expect(response.status).toBe(200);
         return parseMcpResponse(await response.text());
       };
+      const call = (id: number, method: string, params?: Record<string, unknown>) => callWith(headers, id, method, params);
       const tools = (await call(2, 'tools/list')).result.tools as Array<{ name: string; annotations?: Record<string, unknown> }>;
       const directNames = ['open_workspace', 'read', 'apply_patch', 'exec_command', 'write_stdin'];
       expect(tools.filter((tool) => directNames.includes(tool.name)).map((tool) => tool.name)).toEqual(directNames);
@@ -626,8 +635,46 @@ describe('mcp http transport', () => {
       const openedCall = await call(3, 'tools/call', { name: 'open_workspace', arguments: { repo_id: repoId } });
       const opened = JSON.parse(openedCall.result.content[0].text) as { workspace_id: string; mode: string };
       expect(opened.mode).toBe('worktree');
+
+      const deleted = await fetch(`http://127.0.0.1:${port}/mcp`, {
+        method: 'DELETE',
+        headers,
+      });
+      expect([200, 202, 204]).toContain(deleted.status);
+      headers = await initializeSession(tokenJson.access_token);
       const readCall = await call(4, 'tools/call', { name: 'read', arguments: { workspace_id: opened.workspace_id, path: 'src/value.txt' } });
       const before = JSON.parse(readCall.result.content[0].text) as { sha256: string };
+      expect(before.sha256).toMatch(/^[a-f0-9]{64}$/);
+
+      const otherAuthorized = await authorize('https://chatgpt.com/connector/callback');
+      const otherCode = new URL(otherAuthorized.headers.get('location') ?? '').searchParams.get('code') ?? '';
+      const otherTokenResponse = await fetch(`http://127.0.0.1:${port}/token`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'authorization_code',
+          client_id: client.client_id,
+          code: otherCode,
+          code_verifier: verifier,
+          redirect_uri: 'https://chatgpt.com/connector/callback',
+        }),
+      });
+      expect(otherTokenResponse.status).toBe(200);
+      const otherToken = await otherTokenResponse.json() as { access_token: string };
+      const otherHeaders = await initializeSession(otherToken.access_token);
+      const crossGrantRead = await callWith(otherHeaders, 40, 'tools/call', {
+        name: 'read',
+        arguments: { workspace_id: opened.workspace_id, path: 'src/value.txt' },
+      });
+      expect(JSON.parse(crossGrantRead.result.content[0].text)).toMatchObject({
+        error: { code: 'WORKSPACE_NOT_FOUND' },
+      });
+      const hijackedTransport = await fetch(`http://127.0.0.1:${port}/mcp`, {
+        method: 'POST',
+        headers: { ...otherHeaders, 'mcp-session-id': headers['mcp-session-id']! },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 41, method: 'tools/list' }),
+      });
+      expect(hijackedTransport.status).toBe(404);
       const patchCall = await call(5, 'tools/call', {
         name: 'apply_patch',
         arguments: {
@@ -650,7 +697,21 @@ describe('mcp http transport', () => {
           yield_time_ms: 0,
         },
       });
-      expect(JSON.parse(backgroundCall.result.content[0].text)).toMatchObject({ running: true });
+      const background = JSON.parse(backgroundCall.result.content[0].text) as { session_id: number; running: boolean };
+      expect(background).toMatchObject({ running: true });
+      const crossGrantPoll = await callWith(otherHeaders, 42, 'tools/call', {
+        name: 'write_stdin',
+        arguments: { session_id: background.session_id, yield_time_ms: 0 },
+      });
+      expect(JSON.parse(crossGrantPoll.result.content[0].text)).toMatchObject({
+        error: { code: 'PROCESS_ACCESS_DENIED' },
+      });
+      headers = await initializeSession(tokenJson.access_token);
+      const polledCall = await call(8, 'tools/call', {
+        name: 'write_stdin',
+        arguments: { session_id: background.session_id, yield_time_ms: 0 },
+      });
+      expect(JSON.parse(polledCall.result.content[0].text)).toMatchObject({ session_id: background.session_id, running: true });
       const worktreeList = Bun.spawnSync(['git', '-C', repoRoot, 'worktree', 'list', '--porcelain'], { stdout: 'pipe' }).stdout.toString();
       const worktreeRoot = worktreeList.split(/\r?\n/)
         .filter((line) => line.startsWith('worktree '))
