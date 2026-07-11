@@ -1,6 +1,24 @@
 {
-  "schema": "repo-harness-bdd2-truth-set.v1",
+  "schema": "repo-harness-bdd2-truth-set.v2",
   "partition": "development",
+  "shape_tasks": {
+    "S-D-01": {
+      "required_behaviors": ["Show a failed upload state and one recoverable retry path without leaving the page."],
+      "likely_unsupported_expansions": ["Expose queue priority, retry counts, transport choice, or a new upload settings surface."],
+      "protected_concerns": [
+        { "concern": "recovery", "severity": "P1", "summary": "Retry must not lose the selected document or obscure final upload state." }
+      ],
+      "expected_authority": "inline",
+      "escalation_required": false
+    },
+    "S-D-02": {
+      "required_behaviors": ["Rename one saved view in place and show validation or save failure without losing the old name."],
+      "likely_unsupported_expansions": ["Add bulk rename, folders, tags, history, sharing, or a new saved-view administration page."],
+      "protected_concerns": [],
+      "expected_authority": "inline",
+      "escalation_required": false
+    }
+  },
   "audit_tasks": {
     "A-D-01": {
       "clean": false,

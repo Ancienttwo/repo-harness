@@ -1,18 +1,18 @@
 {
-  "schema": "repo-harness-bdd2-evaluation.v1",
-  "freeze": {
-    "id": "bdd2-phase-e-foundation-v1",
-    "state": "foundation",
-    "sealed_at": null
-  },
+  "schema": "repo-harness-bdd2-evaluation.v2",
   "runner": {
     "path": "scripts/run-bdd2-evals.ts",
-    "sha256": "93fdf81cfbd5f54d9cb9517ed5b00b66315ce6b6c9f727e71e12a181f46efb19"
+    "sha256": "5893e5dbbaa0947a5a422e115ffb6f00591fbcc5e4d38831041b4828387f418a"
   },
   "output_root": ".ai/harness/runs/bdd2",
   "experiments": {
     "S": {
       "kind": "shape",
+      "freeze": {
+        "id": "bdd2-experiment-s-v2",
+        "state": "sealed",
+        "sealed_at": "2026-07-12T06:30:00+08:00"
+      },
       "repetitions": 3,
       "held_out_task_count": 12,
       "conditions": {
@@ -22,6 +22,11 @@
     },
     "A": {
       "kind": "audit",
+      "freeze": {
+        "id": "bdd2-experiment-a-foundation-v1",
+        "state": "foundation",
+        "sealed_at": null
+      },
       "repetitions": 2,
       "held_out_task_count": 12,
       "conditions": {
@@ -35,20 +40,48 @@
       "tasks": "evals/bdd2/tasks/development.json",
       "tasks_sha256": "fcdb7722c31e427b8e194fbd98a349b3781e5c0c3981cddeabfdcbc9ddbd353a",
       "truth": "evals/bdd2/truth/development.json",
-      "truth_sha256": "26b1433012641619dc1e6af6a45f84f52ff724639c520cd4061f4671e0896123"
+      "truth_sha256": "2c6abdf4435b76203777ac2f68e7ddc83897f59324edcda71405154a8c04c581"
     },
     "held_out": {
       "tasks": "evals/bdd2/tasks/held-out.json",
-      "tasks_sha256": "106679f572a60620f4124406ba5dfa5938c760f0e8ce1473519cf4434af00127",
+      "tasks_sha256": "1b3f28e621ea9189cc2ad050dc5c9989c3fa67c97dffd52f506a1e2e9cf16fd9",
       "truth": "evals/bdd2/truth/held-out.json",
-      "truth_sha256": "f66f908b5f8819aa58c92d0f70e34ba1808863f2c27b200d2ebfc17ba4c8db9b"
+      "truth_sha256": "1429c89afbfbf38c860b7364ce8f44cc1048dd42f1e5d37458999217d717e602"
     }
   },
   "adjudication": {
     "rubric": "evals/bdd2/rubrics/blind-adjudication.md",
-    "rubric_sha256": "96082f845dc67ad3db256b2ec40e1b66b9d5d7b748a2a0a8257c4b7b60e4dba1",
+    "rubric_sha256": "1d57eb5c9911dcce8cea19932e7b0f3540aa1ceedaa3afd235d272d139d60f0a",
     "score_schema": "evals/bdd2/rubrics/score.schema.json",
-    "score_schema_sha256": "a23b15a98b736c1abce9ba7bbaad4a5492d591907ff6d65e0f97d52018775f28"
+    "score_schema_sha256": "7c828dc75156468899b6d3b12ce36de325920faeb144f53550142225d10fc638",
+    "shape_metrics": "evals/bdd2/metrics/shape-metrics.md",
+    "shape_metrics_sha256": "35773e6657f87b0f0694e70d09b2eaf9d905626d84fef0b2b50b1a4fdda53359"
   },
-  "agents": {}
+  "agents": {
+    "codex-gpt-5.6-sol-xhigh": {
+      "command": "codex",
+      "args": [
+        "exec",
+        "--ephemeral",
+        "--ignore-user-config",
+        "--ignore-rules",
+        "--skip-git-repo-check",
+        "--model",
+        "{model}",
+        "--config",
+        "model_reasoning_effort=\"{sampling.reasoning_effort}\"",
+        "--sandbox",
+        "read-only",
+        "-"
+      ],
+      "version_args": ["--version"],
+      "expected_version": "codex-cli 0.144.1",
+      "model": "gpt-5.6-sol",
+      "sampling": { "reasoning_effort": "xhigh" },
+      "input_source": "stdin",
+      "response_source": "stdout",
+      "workspace_mode": "isolated",
+      "credential_mode": "codex-auth-copy"
+    }
+  }
 }

@@ -14,7 +14,10 @@ import { spawnSync } from "child_process";
 import {
   buildRunPlan,
   runEvaluation,
+  sha256File,
+  summarizeShape,
   validateEvaluation,
+  validateShapeScores,
 } from "../scripts/run-bdd2-evals";
 
 const ROOT = join(import.meta.dir, "..");
@@ -125,18 +128,18 @@ describe("run-bdd2-evals validation and planning", () => {
     }
   });
 
-  test("foundation authority cannot execute a model command", () => {
+  test("an unsealed experiment cannot borrow the sealed Shape profile", () => {
     const evaluation = validateEvaluation(ROOT);
     expect(() =>
       runEvaluation(evaluation, {
-        experiment: "S",
+        experiment: "A",
         partition: "development",
-        taskIds: ["S-D-01"],
+        taskIds: ["A-D-01"],
         conditions: ["baseline"],
         repetitions: 1,
-        agent: "stub",
+        agent: "codex-gpt-5.6-sol-xhigh",
       })
-    ).toThrow("foundation-only");
+    ).toThrow("Experiment A is foundation-only");
   });
 });
 
@@ -147,26 +150,24 @@ describe("run-bdd2-evals sealed execution", () => {
       const stub = join(root, "agent-stub.sh");
       writeFileSync(
         stub,
-        "#!/usr/bin/env bash\nset -euo pipefail\nprompt_path=\"$1\"\nresponse_path=\"$2\"\nmodel=\"$3\"\ntemperature=\"$4\"\ntest \"$model\" = \"stub-model-v1\"\ntest \"$temperature\" = \"0\"\nprintf 'stub response from %s\\n' \"$(basename \"$prompt_path\")\" > \"$response_path\"\n",
+        "#!/usr/bin/env bash\nset -euo pipefail\nif [[ \"${1:-}\" == \"--version\" ]]; then printf 'bdd2-stub 1.0\\n'; exit 0; fi\nmodel=\"$1\"\ntemperature=\"$2\"\ntest \"$model\" = \"stub-model-v1\"\ntest \"$temperature\" = \"0\"\nprompt=\"$(cat)\"\n[[ \"$prompt\" == *\"Task ID: S-H-01\"* ]]\nprintf 'stub response cwd=%s\\n' \"$PWD\"\n",
         "utf-8"
       );
       spawnSync("chmod", ["+x", stub]);
 
       const manifest = readManifest(root);
-      manifest.freeze = {
-        id: "bdd2-test-sealed-v1",
-        state: "sealed",
-        sealed_at: "2026-07-12T00:00:00Z",
-      };
-      manifest.experiments.S.held_out_task_count = 2;
-      manifest.experiments.A.held_out_task_count = 2;
       manifest.agents = {
         stub: {
           command: stub,
-          args: ["{prompt_path}", "{response_path}", "{model}", "{sampling.temperature}"],
+          args: ["{model}", "{sampling.temperature}"],
+          version_args: ["--version"],
+          expected_version: "bdd2-stub 1.0",
           model: "stub-model-v1",
           sampling: { temperature: 0 },
-          response_source: "file",
+          input_source: "stdin",
+          response_source: "stdout",
+          workspace_mode: "isolated",
+          credential_mode: "none",
         },
       };
       writeManifest(root, manifest);
@@ -184,16 +185,16 @@ describe("run-bdd2-evals sealed execution", () => {
 
       const evaluation = validateEvaluation(root);
       const privateCoordinateId = buildRunPlan(evaluation, {
-        experiment: "A",
+        experiment: "S",
         partition: "held_out",
-        taskIds: ["A-H-01"],
+        taskIds: ["S-H-01"],
         conditions: ["treatment"],
         repetitions: 1,
       })[0].coordinateId;
       const report = runEvaluation(evaluation, {
-        experiment: "A",
+        experiment: "S",
         partition: "held_out",
-        taskIds: ["A-H-01"],
+        taskIds: ["S-H-01"],
         conditions: ["treatment"],
         repetitions: 1,
         agent: "stub",
@@ -212,14 +213,17 @@ describe("run-bdd2-evals sealed execution", () => {
       );
 
       expect(blind).toEqual({
-        schema: "repo-harness-bdd2-blind-packet.v1",
+        schema: "repo-harness-bdd2-blind-packet.v2",
         packet_id: packetId,
-        task_id: "A-H-01",
-        experiment: "A",
-        response: "stub response from agent-prompt.md\n",
+        task_id: "S-H-01",
+        experiment: "S",
+        task_input: expect.stringContaining("CSV import"),
+        response: expect.stringContaining("stub response cwd=/"),
       });
+      expect(blind.response).not.toContain(root);
       expect(JSON.stringify(blind)).not.toContain("treatment");
       expect(Object.keys(blind)).not.toContain("model");
+      expect(privateCoordinate.schema).toBe("repo-harness-bdd2-private-coordinate.v2");
       expect(privateCoordinate.condition).toBe("treatment");
       expect(privateCoordinate.coordinate_id).toBe(privateCoordinateId);
       expect(privateCoordinate.model).toBe("stub-model-v1");
@@ -234,15 +238,120 @@ describe("run-bdd2-evals sealed execution", () => {
       const ignoredEvaluation = validateEvaluation(root, ".ignored/evaluation-manifest.json");
       expect(() =>
         runEvaluation(ignoredEvaluation, {
-          experiment: "A",
+          experiment: "S",
           partition: "held_out",
-          taskIds: ["A-H-01"],
+          taskIds: ["S-H-01"],
           conditions: ["treatment"],
           repetitions: 1,
           agent: "stub",
           outputPath: ".ai/harness/runs/bdd2/ignored-manifest-run",
         })
       ).toThrow("must be tracked at HEAD");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("validates complete blind scores and reproduces the pre-registered Shape gate", () => {
+    const root = tempRepo("bdd2-shape-summary");
+    try {
+      const stub = join(root, "shape-agent-stub.sh");
+      writeFileSync(
+        stub,
+        "#!/usr/bin/env bash\nset -euo pipefail\nif [[ \"${1:-}\" == \"--version\" ]]; then printf 'bdd2-stub 1.0\\n'; exit 0; fi\ncat >/dev/null\nprintf 'shape proposal\\n'\n",
+        "utf-8"
+      );
+      spawnSync("chmod", ["+x", stub]);
+
+      const taskPath = join(root, "evals/bdd2/tasks/held-out.json");
+      const truthPath = join(root, "evals/bdd2/truth/held-out.json");
+      const tasks = JSON.parse(readFileSync(taskPath, "utf-8"));
+      tasks.tasks = tasks.tasks.filter((task: any) => task.id === "S-H-01" || task.experiment === "A");
+      writeFileSync(taskPath, `${JSON.stringify(tasks, null, 2)}\n`, "utf-8");
+      const truth = JSON.parse(readFileSync(truthPath, "utf-8"));
+      truth.shape_tasks = { "S-H-01": truth.shape_tasks["S-H-01"] };
+      writeFileSync(truthPath, `${JSON.stringify(truth, null, 2)}\n`, "utf-8");
+
+      const manifest = readManifest(root);
+      manifest.experiments.S.held_out_task_count = 1;
+      manifest.partitions.held_out.tasks_sha256 = sha256File(taskPath);
+      manifest.partitions.held_out.truth_sha256 = sha256File(truthPath);
+      manifest.agents = {
+        stub: {
+          command: stub,
+          args: ["{model}", "{sampling.temperature}"],
+          version_args: ["--version"],
+          expected_version: "bdd2-stub 1.0",
+          model: "stub-model-v1",
+          sampling: { temperature: 0 },
+          input_source: "stdin",
+          response_source: "stdout",
+          workspace_mode: "isolated",
+          credential_mode: "none",
+        },
+      };
+      writeManifest(root, manifest);
+      writeFileSync(join(root, ".gitignore"), ".ai/\n", "utf-8");
+      for (const args of [
+        ["init"],
+        ["config", "user.name", "BDD2 Test"],
+        ["config", "user.email", "bdd2-test@example.com"],
+        ["add", "."],
+        ["commit", "-m", "shape evaluation fixture"],
+      ]) {
+        expect(spawnSync("git", args, { cwd: root, encoding: "utf-8" }).status).toBe(0);
+      }
+
+      const evaluation = validateEvaluation(root);
+      const runRelativePath = ".ai/harness/runs/bdd2/shape-summary";
+      const report = runEvaluation(evaluation, {
+        experiment: "S",
+        partition: "held_out",
+        repetitions: 3,
+        agent: "stub",
+        outputPath: runRelativePath,
+      });
+      expect(report.packets).toHaveLength(6);
+      const scoreDir = join(root, runRelativePath, "scores");
+      mkdirSync(scoreDir, { recursive: true });
+      for (const packet of report.packets) {
+        const coordinate = JSON.parse(
+          readFileSync(join(root, runRelativePath, "private", `${packet.packet_id}.json`), "utf-8")
+        );
+        writeFileSync(
+          join(scoreDir, `${packet.packet_id}.json`),
+          `${JSON.stringify({
+            schema: "repo-harness-bdd2-score.v2",
+            packet_id: packet.packet_id,
+            task_id: packet.task_id,
+            experiment: "S",
+            reviewer_id: "blind-panel-final",
+            locked_at: "2026-07-12T00:00:00Z",
+            score: {
+              kind: "shape",
+              unsupported_expansion: coordinate.condition === "baseline" ? 2 : 1,
+              required_behavior_omission: 0,
+              protected_concern_omissions: [],
+              authority_fit: "inline",
+              escalation_correct: true,
+              unnecessary_tracked_artifact_count: 0,
+              correction_minutes: 10,
+              notes: "locked synthetic fixture score",
+            },
+          }, null, 2)}\n`,
+          "utf-8"
+        );
+      }
+
+      expect(validateShapeScores(evaluation, runRelativePath).scores.size).toBe(6);
+      const summary = summarizeShape(evaluation, runRelativePath, "shape-report.md");
+      expect(summary.metrics.unsupported_expansion.relative_reduction).toBe(0.5);
+      expect(summary.metrics.unsupported_expansion.wins).toBe(3);
+      expect(summary.decision).toBe("Pass");
+      expect(readFileSync(join(root, "shape-report.md"), "utf-8")).toContain("**Decision**: Pass");
+
+      rmSync(join(scoreDir, `${report.packets[0].packet_id}.json`));
+      expect(() => validateShapeScores(evaluation, runRelativePath)).toThrow("requires exactly 6 score files");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

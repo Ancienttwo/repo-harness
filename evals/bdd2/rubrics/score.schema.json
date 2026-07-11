@@ -1,50 +1,43 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "repo-harness-bdd2-score.v1",
-  "title": "BDD2 blind adjudication score",
+  "$id": "repo-harness-bdd2-score.v2",
+  "title": "BDD2 locked blind Shape score",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema", "packet_id", "task_id", "experiment", "reviewer_id", "locked_at", "score"],
   "properties": {
-    "schema": { "const": "repo-harness-bdd2-score.v1" },
+    "schema": { "const": "repo-harness-bdd2-score.v2" },
     "packet_id": { "type": "string", "pattern": "^[a-f0-9]{32}$" },
     "task_id": { "type": "string", "minLength": 4 },
-    "experiment": { "enum": ["S", "A"] },
+    "experiment": { "const": "S" },
     "reviewer_id": { "type": "string", "minLength": 1 },
     "locked_at": { "type": "string", "format": "date-time" },
-    "score": {
-      "oneOf": [
-        { "$ref": "#/$defs/shapeScore" },
-        { "$ref": "#/$defs/auditScore" }
-      ]
-    }
+    "score": { "$ref": "#/$defs/shapeScore" }
   },
   "$defs": {
+    "protectedConcernOmission": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["concern", "severity", "summary"],
+      "properties": {
+        "concern": { "type": "string", "minLength": 1 },
+        "severity": { "enum": ["P0", "P1", "P2", "P3"] },
+        "summary": { "type": "string", "minLength": 1 }
+      }
+    },
     "shapeScore": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["kind", "unsupported_expansion", "required_behavior_omission", "protected_concern_omission", "authority_fit", "correction_minutes"],
+      "required": ["kind", "unsupported_expansion", "required_behavior_omission", "protected_concern_omissions", "authority_fit", "escalation_correct", "unnecessary_tracked_artifact_count", "correction_minutes", "notes"],
       "properties": {
         "kind": { "const": "shape" },
         "unsupported_expansion": { "type": "integer", "minimum": 0 },
         "required_behavior_omission": { "type": "integer", "minimum": 0 },
-        "protected_concern_omission": { "type": "integer", "minimum": 0 },
+        "protected_concern_omissions": { "type": "array", "items": { "$ref": "#/$defs/protectedConcernOmission" } },
         "authority_fit": { "enum": ["inline", "brief", "prd", "incorrect"] },
+        "escalation_correct": { "type": "boolean" },
+        "unnecessary_tracked_artifact_count": { "type": "integer", "minimum": 0 },
         "correction_minutes": { "type": "number", "minimum": 0 },
-        "notes": { "type": "string" }
-      }
-    },
-    "auditScore": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["kind", "finding_count", "true_positive_issue_ids", "false_positive_count", "severity_agreement", "correct_no_findings"],
-      "properties": {
-        "kind": { "const": "audit" },
-        "finding_count": { "type": "integer", "minimum": 0 },
-        "true_positive_issue_ids": { "type": "array", "uniqueItems": true, "items": { "type": "string" } },
-        "false_positive_count": { "type": "integer", "minimum": 0 },
-        "severity_agreement": { "type": "boolean" },
-        "correct_no_findings": { "type": "boolean" },
         "notes": { "type": "string" }
       }
     }

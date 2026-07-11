@@ -12,10 +12,11 @@ const ROOT = join(import.meta.dir, "..");
 describe("BDD2 Phase E evaluation contract", () => {
   const evaluation = validateEvaluation(ROOT);
 
-  test("foundation authority is valid but deliberately unsealed", () => {
-    expect(evaluation.manifest.schema).toBe("repo-harness-bdd2-evaluation.v1");
-    expect(evaluation.manifest.freeze.state).toBe("foundation");
-    expect(evaluation.manifest.agents).toEqual({});
+  test("Shape is independently sealed while Audit remains foundation-only", () => {
+    expect(evaluation.manifest.schema).toBe("repo-harness-bdd2-evaluation.v2");
+    expect(evaluation.manifest.experiments.S.freeze.state).toBe("sealed");
+    expect(evaluation.manifest.experiments.A.freeze.state).toBe("foundation");
+    expect(Object.keys(evaluation.manifest.agents)).toEqual(["codex-gpt-5.6-sol-xhigh"]);
   });
 
   test("development and held-out sets cover both independent hypotheses", () => {
@@ -23,6 +24,8 @@ describe("BDD2 Phase E evaluation contract", () => {
       expect(evaluation.tasks[partition].some((task) => task.experiment === "S")).toBe(true);
       expect(evaluation.tasks[partition].some((task) => task.experiment === "A")).toBe(true);
     }
+    expect(evaluation.tasks.held_out.filter((task) => task.experiment === "S")).toHaveLength(12);
+    expect(evaluation.tasks.held_out.filter((task) => task.experiment === "A")).toHaveLength(2);
   });
 
   test("agent packets contain treatment instructions and task input but no truth payload", () => {
