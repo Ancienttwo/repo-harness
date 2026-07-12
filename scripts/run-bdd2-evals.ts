@@ -454,7 +454,7 @@ function deliverAgentCredential(home: string, profile: AgentProfile): void {
   if (!existsSync(source)) fail("codex-auth-copy requested but host auth.json is unavailable");
   cpSync(source, join(home, "auth.json"));
 }
-function expandArg(template: string, values: Record<string, string>): string { return template.replace(/\{(workspace|model|sampling\.[^}]+)\}/g, (_, key: string) => values[key] ?? fail(`Unknown argument placeholder {${key}}`)) }
+function expandArg(template: string, values: Record<string, string>): string { return template.replace(/\{(repo|workspace|model|sampling\.[^}]+)\}/g, (_, key: string) => values[key] ?? fail(`Unknown argument placeholder {${key}}`)) }
 function ensureNewDirectory(path: string): void { if (existsSync(path)) fail(`Output path already exists: ${path}`); mkdirSync(path, { recursive: true }) }
 function assertWritePath(root: string, target: string): void { const resolved = resolve(target); if (resolved !== resolve(root) && !resolved.startsWith(`${resolve(root)}${sep}`)) fail("Output path escapes repository root"); let parent = dirname(resolved); while (!existsSync(parent)) parent = dirname(parent); if (!realpathSync(parent).startsWith(realpathSync(root))) fail("Output path resolves outside repository root"); if (existsSync(resolved) && lstatSync(resolved).isSymbolicLink()) fail("Output path must not be a symbolic link") }
 function writeJson(path: string, value: unknown): void { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`) }
@@ -497,7 +497,7 @@ export function runEvaluation(evaluation: ValidatedEvaluation, options: RunOptio
     if (coordinate.experiment === "I2") { rmSync(workspace, { recursive: true, force: true }); workspace = mkdtempSync(join(tmpdir(), "bdd2-e2-i2-")); const fixture = (experiment as PilotExperiment).fixture; cpSync(authorityPath(evaluation.repoRoot, fixture.path, "I2 fixture"), workspace, { recursive: true }); before = fileInventory(workspace); sourceTree = hashTree(workspace); if (sourceTree !== fixture.sha256) fail("I2 fresh fixture tree hash drift"); }
     try {
       deliverAgentCredential(home, profile);
-      const values: Record<string, string> = { model: profile.model, workspace }; for (const [key, value] of Object.entries(profile.sampling)) values[`sampling.${key}`] = String(value);
+      const values: Record<string, string> = { repo: evaluation.repoRoot, model: profile.model, workspace }; for (const [key, value] of Object.entries(profile.sampling)) values[`sampling.${key}`] = String(value);
       const result = spawnSync(profile.command, profile.args.map((arg) => expandArg(arg, values)), { cwd: workspace, env: buildIsolatedAgentEnv(home), input: buildAgentPacket(evaluation, coordinate), encoding: "utf-8", maxBuffer: 16 * 1024 * 1024 });
       if (result.status !== 0) fail(`Agent failed for ${coordinate.coordinateId}: ${result.stderr.trim()}`);
       const response = validateStructuredAgentResponse(JSON.parse(result.stdout), coordinate.experiment); const task = evaluation.tasks[coordinate.partition].find((entry) => entry.id === coordinate.taskId)!; const normalized = normalizeOutcome(task, response);
