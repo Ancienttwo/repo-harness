@@ -4,6 +4,7 @@ import { createHash, randomBytes } from "crypto";
 import { spawnSync } from "child_process";
 import {
   cpSync,
+  chmodSync,
   existsSync,
   lstatSync,
   mkdtempSync,
@@ -353,6 +354,7 @@ function validateAgentProfiles(repoRoot: string, manifest: EvaluationManifest, a
     assertStringArray(raw.args, `agents.${id}.args`, true); assertStringArray(raw.version_args, `agents.${id}.version_args`, true); assertRecord(raw.sampling, `agents.${id}.sampling`);
     if (raw.input_source !== "stdin" || raw.response_source !== "stdout" || raw.workspace_mode !== "isolated") fail(`agents.${id} must be stdin/stdout isolated`);
     if (raw.credential_mode !== "none" && raw.credential_mode !== "codex-auth-copy") fail(`agents.${id}.credential_mode invalid`);
+    if (raw.credential_mode === "codex-auth-copy" && (!isAbsolute(String(raw.command)) || !String(raw.command).endsWith(`${sep}codex`))) fail(`agents.${id}.codex-auth-copy requires an absolute codex executable`);
     if (raw.transport !== "model-transport-only") fail(`agents.${id}.transport must be model-transport-only`);
     assertRecord(raw.tools, `agents.${id}.tools`); assertExactKeys(raw.tools, ["browser", "web_search", "mcp", "external", "repository"], `agents.${id}.tools`);
     if (Object.values(raw.tools).some((value) => value !== false)) fail(`agents.${id} evaluated tools must all be disabled`);
@@ -453,8 +455,8 @@ export function buildIsolatedAgentEnv(home: string, source: NodeJS.ProcessEnv = 
 function deliverAgentCredential(home: string, profile: AgentProfile): void {
   if (profile.credential_mode !== "codex-auth-copy") return;
   const source = join(process.env.CODEX_HOME ?? join(homedir(), ".codex"), "auth.json");
-  if (!existsSync(source)) fail("codex-auth-copy requested but host auth.json is unavailable");
-  cpSync(source, join(home, "auth.json"));
+  if (!existsSync(source) || lstatSync(source).isSymbolicLink() || !lstatSync(source).isFile()) fail("codex-auth-copy requested but host auth.json is unavailable or unsafe");
+  const target = join(home, "auth.json"); cpSync(source, target); chmodSync(target, 0o600);
 }
 function expandArg(template: string, values: Record<string, string>): string { return template.replace(/\{(repo|response_schema|workspace|model|sampling\.[^}]+)\}/g, (_, key: string) => values[key] ?? fail(`Unknown argument placeholder {${key}}`)) }
 function ensureNewDirectory(path: string): void { if (existsSync(path)) fail(`Output path already exists: ${path}`); mkdirSync(path, { recursive: true }) }
@@ -573,7 +575,7 @@ export function validateScores(evaluation: ValidatedEvaluation, runRelativePath:
   const sourceTasks = validateTasks(JSON.parse(tasksAtSource.stdout), run.partition as PartitionId).tasks;
   const expectedCoordinateKeys = new Set(sourceTasks.filter((task) => task.experiment === run.experiment).flatMap((task) => (["control", "treatment"] as const).flatMap((condition) => Array.from({ length: sourceExperiment.repetitions }, (_, index) => `${task.id}:${condition}:${index + 1}`))));
   const packetIds = new Set<string>();
-  for (const [index, packet] of run.packets.entries()) { assertRecord(packet, `run.packets[${index}]`); const keys = Object.hasOwn(packet, "fixture_capture") ? ["packet_id", "task_id", "status", "full_response_sha256", "normalized_outcome_sha256", "fixture_capture"] : ["packet_id", "task_id", "status", "full_response_sha256", "normalized_outcome_sha256"]; assertExactKeys(packet, keys, `run.packets[${index}]`); if (typeof packet.packet_id !== "string" || !/^[a-f0-9]{32}$/.test(packet.packet_id) || packetIds.has(packet.packet_id)) fail("Run packet_id must be unique 32-hex"); packetIds.add(packet.packet_id); if (packet.status !== "success" || typeof packet.task_id !== "string" || !/^[a-f0-9]{64}$/.test(String(packet.full_response_sha256)) || !/^[a-f0-9]{64}$/.test(String(packet.normalized_outcome_sha256))) fail("Run packet metadata invalid"); }
+  for (const [index, packet] of run.packets.entries()) { assertRecord(packet, `run.packets[${index}]`); const captureRequired = run.experiment === "I2"; const hasCapture = Object.hasOwn(packet, "fixture_capture"); if (captureRequired !== hasCapture) fail("I2 packets require fixture_capture and non-I2 packets forbid it"); const keys = hasCapture ? ["packet_id", "task_id", "status", "full_response_sha256", "normalized_outcome_sha256", "fixture_capture"] : ["packet_id", "task_id", "status", "full_response_sha256", "normalized_outcome_sha256"]; assertExactKeys(packet, keys, `run.packets[${index}]`); if (typeof packet.packet_id !== "string" || !/^[a-f0-9]{32}$/.test(packet.packet_id) || packetIds.has(packet.packet_id)) fail("Run packet_id must be unique 32-hex"); packetIds.add(packet.packet_id); if (packet.status !== "success" || typeof packet.task_id !== "string" || !/^[a-f0-9]{64}$/.test(String(packet.full_response_sha256)) || !/^[a-f0-9]{64}$/.test(String(packet.normalized_outcome_sha256))) fail("Run packet metadata invalid"); if (hasCapture) { assertRecord(packet.fixture_capture, `run.packets[${index}].fixture_capture`); assertExactKeys(packet.fixture_capture, ["source_tree_sha256", "final_tree_sha256", "patch_sha256", "tests_sha256", "inventory_sha256"], `run.packets[${index}].fixture_capture`); if (Object.values(packet.fixture_capture).some((value) => typeof value !== "string" || !/^[a-f0-9]{64}$/.test(value))) fail("I2 fixture_capture hashes invalid"); } }
   const report = run as unknown as RunReport; const expected = sourceExperiment.held_out_task_count * 2 * sourceExperiment.repetitions; if (report.partition === "held_out" && report.packets.length !== expected) fail(`Run packet count must be exactly ${expected}`);
   let outcomeCount = 0; let evidenceCount = 0; let adjudicationCount = 0; const seenCoordinateKeys = new Set<string>();
   for (const packet of report.packets) {
