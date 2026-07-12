@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-12T14:10:24+0800 -->
+<!-- updated_at: 2026-07-12T15:40:08+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-07-12T14:10:24+0800
+> **Updated At**: 2026-07-12T15:40:08+0800
 > **Source Branch**: codex/upgrade-bun-1-3-14
-> **Source Commit**: 52a8415
+> **Source Commit**: 40d9881
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: bun-1-3-14-rebased-on-typescript7-main
+> **Reason**: bun-1-3-14-merged-latest-main
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -60,15 +60,22 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 6 changed/untracked path(s)
+- Summary: 13 changed/untracked path(s)
 
 ```
- M assets/templates/helpers/architecture-event.ts
- M plans/plan-20260712-1330-bun-1-3-14-runtime-upgrade.md
- M scripts/architecture-event.ts
- M src/cli/hook-entry.ts
- M tasks/contracts/20260712-1330-bun-1-3-14-runtime-upgrade.contract.md
- M tasks/notes/20260712-1330-bun-1-3-14-runtime-upgrade.notes.md
+M  .codex/agents/fast-worker.toml
+M  assets/reference-configs/external-tooling.md
+M  assets/templates/helpers/install-agent-fleet.sh
+M  docs/CHANGELOG.md
+M  docs/reference-configs/external-tooling.md
+A  plans/plan-20260711-0115-think-plan-011459.md
+M  plans/prds/20260712-0409-bdd2-shape-audit.prd.md
+A  plans/prds/20260712-BDD.prd.md
+M  scripts/install-agent-fleet.sh
+UU tasks/current.md
+A  tasks/notes/luna-xhigh-fast-worker.notes.md
+M  tests/bootstrap-files.test.ts
+M  tests/install-agent-fleet.test.ts
 ```
 
 ## Source Artifacts
