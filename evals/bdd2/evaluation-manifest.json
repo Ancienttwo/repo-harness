@@ -7,7 +7,7 @@
   "output_root": ".ai/harness/runs/bdd2",
   "source_corpus": {
     "path": "evals/bdd2/evidence/e3/source-corpus.json",
-    "sha256": "50e3f1819166815da1727ac940ebfffdc3c43244fec0c9c8a1a1813e9ffa205c"
+    "sha256": "c2878f175673e3fe59a6314b83be543b3365a14f80d43ce0139a2fc2507d67dd"
   },
   "source_tasks": {
     "path": "evals/bdd2/tasks/held-out-e2.json",

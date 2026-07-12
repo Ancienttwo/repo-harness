@@ -110,6 +110,11 @@
   source commit. The Test job now fetches full history, and an E3 contract test pins
   that requirement. The validator remains fail-closed; no shallow-history bypass or
   compatibility fallback was introduced.
+- The first CI retry proved the originally recorded E2 commit was the pre-rebase
+  object and therefore unreachable from the remote graph even with full history.
+  Provenance now names its reachable rebased-equivalent commit `0140509`, whose E2
+  manifest hash and `evals/bdd2` tree are identical to the original source; the
+  embedded 120 outputs and their hashes are unchanged.
 
 ## Evidence Links
 
