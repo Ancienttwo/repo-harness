@@ -284,10 +284,12 @@ describe("BDD2 Phase E evaluation contract", () => {
     expect(gate).toContain("Phase P authorization**: Not approved");
     expect(gate).not.toContain("Phase P authorization**: Approved");
 
-    for (const row of ["BDD2-E-03", "BDD2-E-04", "BDD2-E-05", "BDD2-E-06"]) {
+    for (const row of ["BDD2-E-03", "BDD2-E-04", "BDD2-E-05"]) {
       expect(sprint).toMatch(new RegExp(`\\| \\d+ \\| \\[x\\] \\| ${row}`));
     }
+    expect(sprint).toMatch(/\| 6 \| \[ \] \| BDD2-E-06/);
+    expect(sprint).toContain("row closes only after E-06 verification");
     expect(sprint).toContain("gated-not-run");
-    expect(sprint).toContain("Phase P remains unauthorized");
+    expect(sprint).toContain("Phase P remains unapproved");
   });
 });

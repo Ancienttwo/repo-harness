@@ -13,6 +13,9 @@
   but unverified because the shared E prerequisite never opened.
 - Resolve implementation pilot as `Defer`; running it would violate the protocol.
 - Stop current productization. No public skill/catalog/tool/hook is created.
+- Keep Sprint row E-06 and the final merge-dependent definition-of-done item open
+  until the decision PR has passed hosted checks and merged. E-03/E-04/E-05 are
+  already resolved; a pending E-06 review must not be projected as completed.
 
 ## Tradeoff
 
@@ -25,4 +28,3 @@ consumer.
 
 - None inside the approved Phase E protocol. Any rerun is a separately approved
   evaluation revision.
-
