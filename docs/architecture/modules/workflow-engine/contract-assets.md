@@ -13,6 +13,7 @@ Authoritative files:
 - `assets/workflow-contract.v1.json`: source contract.
 - `.ai/harness/workflow-contract.json`: self-host runtime copy.
 - `.ai/harness/policy.json`: self-host workflow policy and external tooling guidance.
+- `agents/fleet/*.md`: npm-packaged source authority for the managed Claude/Codex agent fleet.
 - `.ai/context/context-map.json`: progressive context loading contract.
 - `.ai/context/capabilities.json`: capability registry for longest-prefix ownership.
 - `scripts/capability-resolver.ts`: sole registry reader, validator, and longest-prefix matcher.
@@ -34,6 +35,7 @@ Type transformations:
 
 - JSON contract asset -> installed JSON manifest.
 - Shell policy template -> merged `.ai/harness/policy.json`.
+- Packaged agent Markdown -> byte-identical Claude files plus generated Codex TOML.
 - Selected blocks or capability registry -> context map and module/workstream ownership.
 
 Error paths:
@@ -133,6 +135,25 @@ self-migration dry-run.
   - `delegation_plan.role_profiles`: `{ parent, explorer, worker, verifier }` as derived above (`scripts/contract-run.ts:792-797`).
 - Regression coverage lives in `tests/contract-run.test.ts`: the preferred path, the `codex-subagent`/off-policy runner passthrough, the `main-thread` worker-fallback path (`sol-high` plus default effort `"high"`), the `codex-exec` passthrough, and an explicit `--effort xhigh` override sharing one scenario, `"runner metadata from the contract flows into the manifest"` (`tests/contract-run.test.ts:742-891`); invalid `--effort` rejection is `"invalid --effort value exits with usage error"` (`tests/contract-run.test.ts:893-897`).
 
+## 2026-07-12 Repo-owned Agent Fleet Authority Closeout
+
+- `agents/fleet/*.md` is the only authored fleet source and is shipped through
+  the existing npm `agents/` package surface. `.claude/agents/*.md` and
+  `.codex/agents/*.toml` are deterministic repo-local projections and goldens.
+- `.ai/harness/policy.json` declares `external_tooling.agent_fleet` with
+  `source: package:agents/fleet`. The retired `fable_agents` key, remote URLs,
+  network fetch, source override, and compatibility reader are absent.
+- Installer source validation completes for all managed roles before any target
+  mutation. Helper-path resolution supports only the declared source-checkout
+  and packaged-helper layouts; target-repo cwd never becomes an authority.
+- The four managed roles are explorer, deep-reasoner, fast-worker, and
+  gatekeeper. Claude receives source bytes; Codex receives the Sol/Luna family
+  projection with unchanged effort strings. Gatekeeper remains read-only in
+  both sandbox and prompt semantics.
+- The first 10x failure would be publishing helpers without their fleet source.
+  Tarball-content checks, temporary-HOME package smoke, helper parity, and
+  source/projection golden tests guard that distribution boundary.
+
 ## Workstream Ledger
 
 - `tasks/workstreams/workflow-engine/contract-assets/cleanup-script-policy.md`
@@ -141,3 +162,5 @@ self-migration dry-run.
 
 - Promote `bun scripts/capability-resolver.ts validate --format text` into the strict workflow gate after one more real architecture slice.
 - Keep optional long-form docs in default brain stubs; mirror valuable repo-authored docs only through manifest `sync.direction=repo-to-brain` entries.
+
+- `tasks/workstreams/workflow-engine/contract-assets/20260712-contract-assets.md`

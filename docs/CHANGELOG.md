@@ -6,27 +6,22 @@ All notable changes to this skill are documented here.
 
 ### Changed
 
-- Mapped the generated Codex `fast-worker` to GPT-5.6 Luna with `xhigh`
-  reasoning and `workspace-write` sandboxing, while keeping native
-  MultiAgentV2 role selection behind a runtime canary instead of treating
-  installed TOML as proof. The
-  installer now also rejects source files whose frontmatter role name does not
-  match the managed filename before deriving sandbox permissions, exits
-  non-zero for unresolved identity failure, and checks every installed managed
-  target for a mismatched declared identity before normal drift handling so a
-  corrected source automatically repairs stale vulnerable targets. Role-name
-  checks accept quoted YAML/TOML scalar forms plus bare or quoted TOML `name`
-  keys with legal indentation. Installed identity reads are structure-aware:
-  YAML requires one flat root mapping and TOML uses Bun's semantic parser with
-  exact managed-role comparison, preserving identity-correct or ambiguous local
-  drift across multiline strings, tables, YAML non-string scalars, and
-  comment-like string content. The package and installer now require Bun >=
+- Replaced the remote `Fable-agents` fleet dependency with the npm-packaged
+  `agents/fleet/*.md` authority. The installer now operates offline, validates
+  all four sources before mutation, projects explorer plus the existing three
+  roles to both hosts, preserves effort strings across the Sol/Luna family map,
+  and keeps gatekeeper read-only in both sandbox and prompt semantics.
+- Kept native MultiAgentV2 role selection behind a runtime canary instead of
+  treating installed TOML as runtime proof. Role identity checks remain
+  structure-aware, and a valid packaged source can repair a stale installed
+  target whose declared identity belongs to another managed role. The package
+  and installer require Bun >=
   1.1.35, the first supported runtime boundary for stdin execution plus semantic
   parsing of the generated multiline TOML agents, and reject older runtimes
   before creating user-level state. The Unix and Windows bootstrap installers
   now upgrade older Bun runtimes instead of trusting unenforced engine metadata,
-  and incomplete managed-role installation or remediation stays non-zero across
-  later retries until both host targets are available. The CLI's global
+  and incomplete source validation fails before any installed target mutation.
+  The CLI's global
   `install`, `init`, and mutating `update` paths bind setup subprocesses to the
   exact Bun executable they validate and enforce the same floor, closing direct
   `bunx`/`bun add`/`npx` entrypoints that bypass the top-level bootstrap scripts.

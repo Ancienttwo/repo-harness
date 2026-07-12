@@ -1,30 +1,45 @@
 import { describe, expect, test } from "bun:test";
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
-import { join } from "path";
+import { dirname, join } from "path";
 import { spawnSync } from "child_process";
 
 const ROOT = join(import.meta.dir, "..");
 const SCRIPT = join(ROOT, "scripts/install-agent-fleet.sh");
-const CLAUDE_SOURCE_DIR = join(ROOT, ".claude/agents");
+const FLEET_SOURCE_DIR = join(ROOT, "agents/fleet");
 const GOLDEN_CODEX_DIR = join(ROOT, ".codex/agents");
-const AGENTS = ["deep-reasoner", "fast-worker", "gatekeeper"];
-const CODEX_EXPECTATIONS: Record<string, { model: string; effort: string; descriptionLabel: string; sandboxMode?: string }> = {
+const AGENTS = ["explorer", "deep-reasoner", "fast-worker", "gatekeeper"];
+const CODEX_EXPECTATIONS: Record<
+  string,
+  { model: string; effort: string; descriptionLabel: string; sourceDescription: string; sandboxMode: string }
+> = {
+  explorer: {
+    model: "gpt-5.6-luna",
+    effort: "high",
+    descriptionLabel: "GPT-5.6 Luna at high reasoning",
+    sourceDescription: "Sonnet at high effort",
+    sandboxMode: "read-only",
+  },
   "deep-reasoner": {
     model: "gpt-5.6-sol",
-    effort: "xhigh",
-    descriptionLabel: "GPT-5.6 Sol at extra high reasoning",
+    effort: "max",
+    descriptionLabel: "GPT-5.6 Sol at max reasoning",
+    sourceDescription: "Opus at max effort",
+    sandboxMode: "read-only",
   },
   "fast-worker": {
     model: "gpt-5.6-luna",
-    effort: "xhigh",
-    descriptionLabel: "GPT-5.6 Luna at extra high reasoning",
+    effort: "max",
+    descriptionLabel: "GPT-5.6 Luna at max reasoning",
+    sourceDescription: "Sonnet at max effort",
     sandboxMode: "workspace-write",
   },
   gatekeeper: {
     model: "gpt-5.6-sol",
-    effort: "xhigh",
-    descriptionLabel: "GPT-5.6 Sol at extra high reasoning",
+    effort: "high",
+    descriptionLabel: "GPT-5.6 Sol at high reasoning",
+    sourceDescription: "Opus at high effort",
+    sandboxMode: "read-only",
   },
 };
 
@@ -49,14 +64,27 @@ function setupFakeHome(prefix: string) {
   return { root, home };
 }
 
+let runtimeSequence = 0;
+
+function prepareInstallerRuntime(home: string, sourceDir: string) {
+  const packageRoot = join(dirname(home), `package-runtime-${runtimeSequence++}`);
+  const runtimeScript = join(packageRoot, "scripts/install-agent-fleet.sh");
+  mkdirSync(join(packageRoot, "scripts"), { recursive: true });
+  mkdirSync(join(packageRoot, "agents"), { recursive: true });
+  cpSync(SCRIPT, runtimeScript);
+  chmodSync(runtimeScript, 0o755);
+  cpSync(sourceDir, join(packageRoot, "agents/fleet"), { recursive: true });
+  return { packageRoot, runtimeScript };
+}
+
 function runInstaller(home: string, sourceDir: string, args: string[] = []) {
-  return spawnSync("bash", [SCRIPT, ...args], {
+  const runtime = prepareInstallerRuntime(home, sourceDir);
+  return spawnSync("bash", [runtime.runtimeScript, ...args], {
     cwd: ROOT,
     encoding: "utf-8",
     env: {
       ...process.env,
       HOME: home,
-      REPO_HARNESS_FLEET_SOURCE_DIR: sourceDir,
     },
   });
 }
@@ -65,7 +93,7 @@ describe("install-agent-fleet", () => {
   test("fresh install writes claude .md byte-identical to source and codex .toml byte-identical to golden", () => {
     const { root, home } = setupFakeHome("install-agent-fleet-fresh");
     try {
-      const res = runInstaller(home, CLAUDE_SOURCE_DIR);
+      const res = runInstaller(home, FLEET_SOURCE_DIR);
       expect(res.status).toBe(0);
 
       for (const agent of AGENTS) {
@@ -73,7 +101,7 @@ describe("install-agent-fleet", () => {
         expect(res.stdout).toContain(`[fleet] codex/${agent}.toml: installed`);
 
         const installedClaude = readFileSync(join(home, ".claude/agents", `${agent}.md`), "utf-8");
-        const sourceClaude = readFileSync(join(CLAUDE_SOURCE_DIR, `${agent}.md`), "utf-8");
+        const sourceClaude = readFileSync(join(FLEET_SOURCE_DIR, `${agent}.md`), "utf-8");
         expect(installedClaude).toBe(sourceClaude);
 
         const installedCodex = readFileSync(join(home, ".codex/agents", `${agent}.toml`), "utf-8");
@@ -83,22 +111,19 @@ describe("install-agent-fleet", () => {
         expect(installedCodex).toContain(`model = "${expected.model}"`);
         expect(installedCodex).toContain(`model_reasoning_effort = "${expected.effort}"`);
         expect(installedCodex).toContain(expected.descriptionLabel);
-        if (expected.sandboxMode) {
-          expect(installedCodex).toContain(`sandbox_mode = "${expected.sandboxMode}"`);
-        }
-        expect(installedCodex).not.toContain("Opus 4.8 at max effort");
-        expect(installedCodex).not.toContain("Sonnet 5 at max effort");
+        expect(installedCodex).toContain(`sandbox_mode = "${expected.sandboxMode}"`);
+        expect(installedCodex).not.toContain(expected.sourceDescription);
       }
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
   });
 
-  test("idempotent re-run reports up-to-date for all 6 files", () => {
+  test("idempotent re-run reports up-to-date for all 8 files", () => {
     const { root, home } = setupFakeHome("install-agent-fleet-idempotent");
     try {
-      expect(runInstaller(home, CLAUDE_SOURCE_DIR).status).toBe(0);
-      const second = runInstaller(home, CLAUDE_SOURCE_DIR);
+      expect(runInstaller(home, FLEET_SOURCE_DIR).status).toBe(0);
+      const second = runInstaller(home, FLEET_SOURCE_DIR);
       expect(second.status).toBe(0);
       for (const agent of AGENTS) {
         expect(second.stdout).toContain(`[fleet] claude/${agent}.md: up-to-date`);
@@ -112,7 +137,7 @@ describe("install-agent-fleet", () => {
   test("local modification to an installed target is preserved and reported as drift", () => {
     const { root, home } = setupFakeHome("install-agent-fleet-drift");
     try {
-      expect(runInstaller(home, CLAUDE_SOURCE_DIR).status).toBe(0);
+      expect(runInstaller(home, FLEET_SOURCE_DIR).status).toBe(0);
       const target = join(home, ".codex/agents/gatekeeper.toml");
       const locallyEdited = [
         'developer_instructions = """escaped delimiter: \\"""',
@@ -127,7 +152,7 @@ describe("install-agent-fleet", () => {
       ].join("\n");
       writeFileSync(target, locallyEdited);
 
-      const second = runInstaller(home, CLAUDE_SOURCE_DIR);
+      const second = runInstaller(home, FLEET_SOURCE_DIR);
       expect(second.status).toBe(0);
       expect(second.stdout).toContain("[fleet] codex/gatekeeper.toml: drift");
       expect(readFileSync(target, "utf-8")).toBe(locallyEdited);
@@ -137,14 +162,14 @@ describe("install-agent-fleet", () => {
         .replace("name: gatekeeper", 'name: "gatekeeper" # local style')
         .replace("\n---\n", "\nmetadata:\n  name: fast-worker\n---\n")}\n# preserve-me\n`;
       writeFileSync(claudeTarget, quotedIdentityEdit);
-      const third = runInstaller(home, CLAUDE_SOURCE_DIR);
+      const third = runInstaller(home, FLEET_SOURCE_DIR);
       expect(third.status).toBe(0);
       expect(third.stdout).toContain("[fleet] claude/gatekeeper.md: drift");
       expect(readFileSync(claudeTarget, "utf-8")).toBe(quotedIdentityEdit);
 
       const ambiguousYamlIdentityEdit = quotedIdentityEdit.replace('name: "gatekeeper" # local style', "name: null");
       writeFileSync(claudeTarget, ambiguousYamlIdentityEdit);
-      const fourth = runInstaller(home, CLAUDE_SOURCE_DIR);
+      const fourth = runInstaller(home, FLEET_SOURCE_DIR);
       expect(fourth.status).toBe(0);
       expect(fourth.stdout).toContain("[fleet] claude/gatekeeper.md: drift");
       expect(readFileSync(claudeTarget, "utf-8")).toBe(ambiguousYamlIdentityEdit);
@@ -154,7 +179,7 @@ describe("install-agent-fleet", () => {
         "name: gatekeeper\nname: fast-worker",
       );
       writeFileSync(claudeTarget, duplicateYamlIdentityEdit);
-      const fifth = runInstaller(home, CLAUDE_SOURCE_DIR);
+      const fifth = runInstaller(home, FLEET_SOURCE_DIR);
       expect(fifth.status).toBe(0);
       expect(fifth.stdout).toContain("[fleet] claude/gatekeeper.md: drift");
       expect(readFileSync(claudeTarget, "utf-8")).toBe(duplicateYamlIdentityEdit);
@@ -166,11 +191,11 @@ describe("install-agent-fleet", () => {
   test("--force overwrites a drifted target back to generated content", () => {
     const { root, home } = setupFakeHome("install-agent-fleet-force");
     try {
-      expect(runInstaller(home, CLAUDE_SOURCE_DIR).status).toBe(0);
+      expect(runInstaller(home, FLEET_SOURCE_DIR).status).toBe(0);
       const target = join(home, ".codex/agents/gatekeeper.toml");
       writeFileSync(target, "corrupted\n");
 
-      const forced = runInstaller(home, CLAUDE_SOURCE_DIR, ["--force"]);
+      const forced = runInstaller(home, FLEET_SOURCE_DIR, ["--force"]);
       expect(forced.status).toBe(0);
       expect(forced.stdout).toContain("[fleet] codex/gatekeeper.toml: installed");
       expect(readFileSync(target, "utf-8")).toBe(readFileSync(join(GOLDEN_CODEX_DIR, "gatekeeper.toml"), "utf-8"));
@@ -179,27 +204,24 @@ describe("install-agent-fleet", () => {
     }
   });
 
-  test("invalid frontmatter (unmapped model/effort) fails closed for only that agent", () => {
+  test("invalid frontmatter fails the whole source preflight before any target mutation", () => {
     const { root, home } = setupFakeHome("install-agent-fleet-invalid");
     const badSourceDir = join(root, "bad-source");
     try {
       mkdirSync(badSourceDir, { recursive: true });
       for (const agent of AGENTS) {
-        cpSync(join(CLAUDE_SOURCE_DIR, `${agent}.md`), join(badSourceDir, `${agent}.md`));
+        cpSync(join(FLEET_SOURCE_DIR, `${agent}.md`), join(badSourceDir, `${agent}.md`));
       }
       const corrupted = readFileSync(join(badSourceDir, "fast-worker.md"), "utf-8").replace("effort: max", "effort: min");
       writeFileSync(join(badSourceDir, "fast-worker.md"), corrupted);
 
       const res = runInstaller(home, badSourceDir);
       expect(res.status).not.toBe(0);
-      expect(res.stdout).toContain("[fleet] claude/fast-worker.md: invalid");
-      expect(res.stdout).toContain("[fleet] codex/fast-worker.toml: invalid");
+      expect(res.stdout).toContain("[fleet] claude/fast-worker.md: source-invalid");
+      expect(res.stdout).toContain("[fleet] codex/fast-worker.toml: source-invalid");
       expect(existsSync(join(home, ".claude/agents/fast-worker.md"))).toBe(false);
       expect(existsSync(join(home, ".codex/agents/fast-worker.toml"))).toBe(false);
-
-      // Unaffected agents still install.
-      expect(res.stdout).toContain("[fleet] claude/deep-reasoner.md: installed");
-      expect(existsSync(join(home, ".claude/agents/deep-reasoner.md"))).toBe(true);
+      expect(existsSync(join(home, ".claude/agents/deep-reasoner.md"))).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -211,7 +233,7 @@ describe("install-agent-fleet", () => {
     try {
       mkdirSync(badSourceDir, { recursive: true });
       for (const agent of AGENTS) {
-        cpSync(join(CLAUDE_SOURCE_DIR, `${agent}.md`), join(badSourceDir, `${agent}.md`));
+        cpSync(join(FLEET_SOURCE_DIR, `${agent}.md`), join(badSourceDir, `${agent}.md`));
       }
       writeFileSync(
         join(badSourceDir, "fast-worker.md"),
@@ -230,10 +252,10 @@ describe("install-agent-fleet", () => {
 
       const res = runInstaller(home, badSourceDir);
       expect(res.status).not.toBe(0);
-      expect(res.stdout).toContain("[fleet] claude/fast-worker.md: invalid");
-      expect(res.stdout).toContain("[fleet] codex/fast-worker.toml: invalid");
+      expect(res.stdout).toContain("[fleet] claude/fast-worker.md: source-invalid");
+      expect(res.stdout).toContain("[fleet] codex/fast-worker.toml: source-invalid");
       expect(existsSync(join(home, ".codex/agents/fast-worker.toml"))).toBe(false);
-      expect(existsSync(join(home, ".codex/agents/deep-reasoner.toml"))).toBe(true);
+      expect(existsSync(join(home, ".codex/agents/deep-reasoner.toml"))).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -245,7 +267,7 @@ describe("install-agent-fleet", () => {
     try {
       mkdirSync(badSourceDir, { recursive: true });
       for (const agent of AGENTS) {
-        cpSync(join(CLAUDE_SOURCE_DIR, `${agent}.md`), join(badSourceDir, `${agent}.md`));
+        cpSync(join(FLEET_SOURCE_DIR, `${agent}.md`), join(badSourceDir, `${agent}.md`));
       }
       const corrupted = readFileSync(join(badSourceDir, "gatekeeper.md"), "utf-8")
         .replace("name: gatekeeper", "name: fast-worker")
@@ -263,15 +285,11 @@ describe("install-agent-fleet", () => {
 
       const res = runInstaller(home, badSourceDir);
       expect(res.status).not.toBe(0);
-      expect(res.stdout).toContain("[fleet] claude/gatekeeper.md: deactivated-invalid");
-      expect(res.stdout).toContain("[fleet] codex/gatekeeper.toml: deactivated-invalid");
-      expect(existsSync(join(home, ".claude/agents/gatekeeper.md"))).toBe(false);
-      expect(existsSync(join(home, ".codex/agents/gatekeeper.toml"))).toBe(false);
-
-      // The trusted fast-worker source still receives the intended write sandbox.
-      expect(readFileSync(join(home, ".codex/agents/fast-worker.toml"), "utf-8")).toContain(
-        'sandbox_mode = "workspace-write"',
-      );
+      expect(res.stdout).toContain("[fleet] claude/gatekeeper.md: source-invalid");
+      expect(res.stdout).toContain("[fleet] codex/gatekeeper.toml: source-invalid");
+      expect(readFileSync(join(home, ".claude/agents/gatekeeper.md"), "utf-8")).toBe(corrupted);
+      expect(readFileSync(join(home, ".codex/agents/gatekeeper.toml"), "utf-8")).toContain('"name" = "fast-worker"');
+      expect(existsSync(join(home, ".codex/agents/fast-worker.toml"))).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -284,7 +302,7 @@ describe("install-agent-fleet", () => {
       const installedCodexDir = join(home, ".codex/agents");
       mkdirSync(installedClaudeDir, { recursive: true });
       mkdirSync(installedCodexDir, { recursive: true });
-      const mismatchedClaude = readFileSync(join(CLAUDE_SOURCE_DIR, "gatekeeper.md"), "utf-8")
+      const mismatchedClaude = readFileSync(join(FLEET_SOURCE_DIR, "gatekeeper.md"), "utf-8")
         .replace(/^---\n([\s\S]*?)\n---/, (_match, frontmatter) => {
           const indented = String(frontmatter)
             .split("\n")
@@ -299,7 +317,7 @@ describe("install-agent-fleet", () => {
         "  'name' = \"fast-worker\"\nsandbox_mode = \"workspace-write\"\n",
       );
 
-      const res = runInstaller(home, CLAUDE_SOURCE_DIR);
+      const res = runInstaller(home, FLEET_SOURCE_DIR);
       expect(res.status).toBe(0);
       expect(res.stdout).toContain("[fleet] claude/gatekeeper.md: installed");
       expect(res.stdout).toContain("[fleet] codex/gatekeeper.toml: installed");
@@ -313,17 +331,17 @@ describe("install-agent-fleet", () => {
     }
   });
 
-  test("a stale mismatched target stays deactivated when its replacement source is invalid", () => {
+  test("an invalid source leaves a stale installed target untouched", () => {
     const { root, home } = setupFakeHome("install-agent-fleet-stale-role-invalid-source");
     const badSourceDir = join(root, "bad-source");
     try {
       mkdirSync(badSourceDir, { recursive: true });
       for (const agent of AGENTS) {
-        cpSync(join(CLAUDE_SOURCE_DIR, `${agent}.md`), join(badSourceDir, `${agent}.md`));
+        cpSync(join(FLEET_SOURCE_DIR, `${agent}.md`), join(badSourceDir, `${agent}.md`));
       }
       writeFileSync(
         join(badSourceDir, "gatekeeper.md"),
-        readFileSync(join(badSourceDir, "gatekeeper.md"), "utf-8").replace("effort: max", "effort: min"),
+        readFileSync(join(badSourceDir, "gatekeeper.md"), "utf-8").replace("effort: high", "effort: min"),
       );
       const installedCodexDir = join(home, ".codex/agents");
       mkdirSync(installedCodexDir, { recursive: true });
@@ -334,9 +352,9 @@ describe("install-agent-fleet", () => {
 
       const res = runInstaller(home, badSourceDir);
       expect(res.status).not.toBe(0);
-      expect(res.stdout).toContain("[fleet] codex/gatekeeper.toml: deactivated-invalid");
-      expect(existsSync(join(installedCodexDir, "gatekeeper.toml"))).toBe(false);
-      expect(existsSync(join(home, ".codex/agents/fast-worker.toml"))).toBe(true);
+      expect(res.stdout).toContain("[fleet] codex/gatekeeper.toml: source-invalid");
+      expect(readFileSync(join(installedCodexDir, "gatekeeper.toml"), "utf-8")).toContain('name = "fast-worker"');
+      expect(existsSync(join(home, ".codex/agents/fast-worker.toml"))).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -348,41 +366,40 @@ describe("install-agent-fleet", () => {
     try {
       mkdirSync(badSourceDir, { recursive: true });
       for (const agent of AGENTS) {
-        cpSync(join(CLAUDE_SOURCE_DIR, `${agent}.md`), join(badSourceDir, `${agent}.md`));
+        cpSync(join(FLEET_SOURCE_DIR, `${agent}.md`), join(badSourceDir, `${agent}.md`));
       }
       const mismatched = readFileSync(join(badSourceDir, "fast-worker.md"), "utf-8").replace(
-        "Sonnet 5 at max effort",
+        "Sonnet at max effort",
         "an unspecified model",
       );
       writeFileSync(join(badSourceDir, "fast-worker.md"), mismatched);
 
       const res = runInstaller(home, badSourceDir);
       expect(res.status).not.toBe(0);
-      expect(res.stdout).toContain("[fleet] claude/fast-worker.md: invalid");
-      expect(res.stdout).toContain("[fleet] codex/fast-worker.toml: invalid");
+      expect(res.stdout).toContain("[fleet] claude/fast-worker.md: source-invalid");
+      expect(res.stdout).toContain("[fleet] codex/fast-worker.toml: source-invalid");
       expect(existsSync(join(home, ".codex/agents/fast-worker.toml"))).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
   });
 
-  test("a missing upstream source for one agent reports fetch-failed for that agent while others still install", () => {
-    const { root, home } = setupFakeHome("install-agent-fleet-partial-fetch");
+  test("a missing packaged source fails the whole preflight before any target mutation", () => {
+    const { root, home } = setupFakeHome("install-agent-fleet-partial-source");
     const partialSourceDir = join(root, "partial-source");
     try {
       mkdirSync(partialSourceDir, { recursive: true });
-      cpSync(join(CLAUDE_SOURCE_DIR, "deep-reasoner.md"), join(partialSourceDir, "deep-reasoner.md"));
-      cpSync(join(CLAUDE_SOURCE_DIR, "gatekeeper.md"), join(partialSourceDir, "gatekeeper.md"));
+      cpSync(join(FLEET_SOURCE_DIR, "explorer.md"), join(partialSourceDir, "explorer.md"));
+      cpSync(join(FLEET_SOURCE_DIR, "deep-reasoner.md"), join(partialSourceDir, "deep-reasoner.md"));
+      cpSync(join(FLEET_SOURCE_DIR, "gatekeeper.md"), join(partialSourceDir, "gatekeeper.md"));
       // fast-worker.md deliberately absent from partialSourceDir.
 
       const res = runInstaller(home, partialSourceDir);
       expect(res.status).not.toBe(0);
-      expect(res.stdout).toContain("[fleet] claude/fast-worker.md: fetch-failed");
-      expect(res.stdout).toContain("[fleet] codex/fast-worker.toml: fetch-failed");
-      expect(res.stdout).toContain("[fleet] claude/deep-reasoner.md: installed");
-      expect(res.stdout).toContain("[fleet] claude/gatekeeper.md: installed");
+      expect(res.stdout).toContain("[fleet] claude/fast-worker.md: source-missing");
+      expect(res.stdout).toContain("[fleet] codex/fast-worker.toml: source-missing");
       expect(existsSync(join(home, ".claude/agents/fast-worker.md"))).toBe(false);
-      expect(existsSync(join(home, ".claude/agents/deep-reasoner.md"))).toBe(true);
+      expect(existsSync(join(home, ".claude/agents/deep-reasoner.md"))).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -396,20 +413,21 @@ describe("install-agent-fleet", () => {
       const res = runInstaller(home, emptySourceDir);
       expect(res.status).not.toBe(0);
       for (const agent of AGENTS) {
-        expect(res.stdout).toContain(`[fleet] claude/${agent}.md: fetch-failed`);
+        expect(res.stdout).toContain(`[fleet] claude/${agent}.md: source-missing`);
       }
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
   });
 
-  test("incomplete stale-target remediation stays non-zero across retries", () => {
+  test("missing packaged source leaves existing targets untouched across retries", () => {
     const { root, home } = setupFakeHome("install-agent-fleet-persistent-remediation-failure");
     const partialSourceDir = join(root, "partial-source");
     try {
       mkdirSync(partialSourceDir, { recursive: true });
-      cpSync(join(CLAUDE_SOURCE_DIR, "deep-reasoner.md"), join(partialSourceDir, "deep-reasoner.md"));
-      cpSync(join(CLAUDE_SOURCE_DIR, "fast-worker.md"), join(partialSourceDir, "fast-worker.md"));
+      cpSync(join(FLEET_SOURCE_DIR, "explorer.md"), join(partialSourceDir, "explorer.md"));
+      cpSync(join(FLEET_SOURCE_DIR, "deep-reasoner.md"), join(partialSourceDir, "deep-reasoner.md"));
+      cpSync(join(FLEET_SOURCE_DIR, "fast-worker.md"), join(partialSourceDir, "fast-worker.md"));
       const installedCodexDir = join(home, ".codex/agents");
       mkdirSync(installedCodexDir, { recursive: true });
       writeFileSync(
@@ -419,13 +437,13 @@ describe("install-agent-fleet", () => {
 
       const first = runInstaller(home, partialSourceDir);
       expect(first.status).not.toBe(0);
-      expect(first.stdout).toContain("[fleet] codex/gatekeeper.toml: deactivated-fetch-failed");
-      expect(existsSync(join(installedCodexDir, "gatekeeper.toml"))).toBe(false);
+      expect(first.stdout).toContain("[fleet] codex/gatekeeper.toml: source-missing");
+      expect(readFileSync(join(installedCodexDir, "gatekeeper.toml"), "utf-8")).toContain('name = "fast-worker"');
 
       const second = runInstaller(home, partialSourceDir);
       expect(second.status).not.toBe(0);
-      expect(second.stdout).toContain("[fleet] codex/gatekeeper.toml: fetch-failed");
-      expect(existsSync(join(installedCodexDir, "gatekeeper.toml"))).toBe(false);
+      expect(second.stdout).toContain("[fleet] codex/gatekeeper.toml: source-missing");
+      expect(readFileSync(join(installedCodexDir, "gatekeeper.toml"), "utf-8")).toContain('name = "fast-worker"');
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -434,7 +452,7 @@ describe("install-agent-fleet", () => {
   test("--help exits zero and does not create any HOME state", () => {
     const { root, home } = setupFakeHome("install-agent-fleet-help");
     try {
-      const res = runInstaller(home, CLAUDE_SOURCE_DIR, ["--help"]);
+      const res = runInstaller(home, FLEET_SOURCE_DIR, ["--help"]);
       expect(res.status).toBe(0);
       expect(res.stdout).toContain("Usage:");
       expect(existsSync(join(home, ".claude"))).toBe(false);
@@ -450,6 +468,10 @@ describe("install-agent-fleet", () => {
     expect(source).toContain('MIN_BUN_VERSION="1.1.35"');
     expect(source).toContain("Bun.TOML.parse(content)");
     expect(source).not.toContain("install-agent-fleet.sh requires node or bun");
+    expect(source).toContain('AGENT_FLEET_SOURCE_DIR="$package_root/agents/fleet"');
+    expect(source).not.toContain("REPO_HARNESS_FLEET_SOURCE_DIR");
+    expect(source).not.toContain('spawnSync("curl"');
+    expect(source).not.toMatch(/\bfable\b/i);
   });
 
   test("an unsupported Bun version fails before creating HOME state", () => {
@@ -470,7 +492,6 @@ describe("install-agent-fleet", () => {
           ...process.env,
           HOME: home,
           PATH: `${fakeBin}:/usr/bin:/bin`,
-          REPO_HARNESS_FLEET_SOURCE_DIR: CLAUDE_SOURCE_DIR,
         },
       });
       expect(res.status).not.toBe(0);
@@ -515,7 +536,6 @@ describe("install-agent-fleet", () => {
           ...process.env,
           HOME: home,
           PATH: `${fakeBin}:/usr/bin:/bin`,
-          REPO_HARNESS_FLEET_SOURCE_DIR: CLAUDE_SOURCE_DIR,
         },
       });
       expect(res.status).toBe(0);
@@ -537,7 +557,7 @@ describe("install-agent-fleet", () => {
         expect(installerSource).toContain(paragraph);
       }
 
-      const res = runInstaller(home, CLAUDE_SOURCE_DIR);
+      const res = runInstaller(home, FLEET_SOURCE_DIR);
       expect(res.status).toBe(0);
       for (const agent of AGENTS) {
         const toml = readFileSync(join(home, ".codex/agents", `${agent}.toml`), "utf-8");

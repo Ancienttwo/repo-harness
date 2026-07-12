@@ -34,11 +34,31 @@ if [[ -z "$RUNTIME_BIN" ]]; then
   exit 1
 fi
 
+helper_source="${REPO_HARNESS_HELPER_SOURCE_PATH:-$0}"
+helper_dir="$(cd "$(dirname "$helper_source")" && pwd)"
+case "$helper_dir" in
+  */assets/templates/helpers)
+    package_root="$(cd "$helper_dir/../../.." && pwd)"
+    ;;
+  */scripts)
+    package_root="$(cd "$helper_dir/.." && pwd)"
+    ;;
+  *)
+    echo "install-agent-fleet.sh cannot resolve repo-harness package root from helper path: $helper_source" >&2
+    exit 1
+    ;;
+esac
+AGENT_FLEET_SOURCE_DIR="$package_root/agents/fleet"
+if [[ ! -d "$AGENT_FLEET_SOURCE_DIR" ]]; then
+  echo "install-agent-fleet.sh missing packaged agent fleet source: $AGENT_FLEET_SOURCE_DIR" >&2
+  exit 1
+fi
+export REPO_HARNESS_AGENT_FLEET_SOURCE_DIR="$AGENT_FLEET_SOURCE_DIR"
+
 exec "$RUNTIME_BIN" - "$@" <<'NODE_EOF'
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { spawnSync } = require("child_process");
 
 const argv = process.argv.slice(2);
 let force = false;
@@ -63,11 +83,10 @@ for (let index = 0; index < argv.length; index += 1) {
 }
 
 const HOME = os.homedir();
-const MANAGED_AGENTS = ["deep-reasoner", "fast-worker", "gatekeeper"];
-const RAW_BASE = "https://raw.githubusercontent.com/Ancienttwo/Fable-agents/main/assets";
+const MANAGED_AGENTS = ["explorer", "deep-reasoner", "fast-worker", "gatekeeper"];
 const CLAUDE_TARGET_DIR = path.join(HOME, ".claude", "agents");
 const CODEX_TARGET_DIR = path.join(HOME, ".codex", "agents");
-const SOURCE_DIR_OVERRIDE = process.env.REPO_HARNESS_FLEET_SOURCE_DIR || "";
+const SOURCE_DIR = process.env.REPO_HARNESS_AGENT_FLEET_SOURCE_DIR;
 
 // Canonical anti-extras clause. Must stay byte-identical to the EXECUTION_BOUNDARY
 // constant in scripts/contract-run.ts (tests/install-agent-fleet.test.ts asserts
@@ -83,44 +102,37 @@ const EXECUTION_BOUNDARY = [
   "If the requested outcome cannot be completed without expanding scope, fail closed: stop, name the missing decision, and cite the exact file/section that blocks execution.",
 ].join("\n");
 
-// Only (opus, max) and (sonnet, max) are recognized. Each mapping also owns the
-// exact provider label rewritten in Codex metadata so the generated role never
-// claims to run a different model. Any mismatch is a fail-closed error.
+// Provider-native source tuples project deterministically to Codex-native labels.
+// Validation remains fail-closed; reasoning effort is carried through unchanged.
+const EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"];
+
+function buildFamilyEffortMap(sourceLabel, targetModel, targetLabel) {
+  const map = {};
+  for (const effort of EFFORT_LEVELS) {
+    map[effort] = {
+      model: targetModel,
+      effort,
+      sourceDescription: `${sourceLabel} at ${effort} effort`,
+      targetDescription: `${targetLabel} at ${effort} reasoning`,
+    };
+  }
+  return map;
+}
+
 const MODEL_EFFORT_MAP = {
-  opus: {
-    max: {
-      model: "gpt-5.6-sol",
-      effort: "xhigh",
-      sourceDescription: "Opus 4.8 at max effort",
-      targetDescription: "GPT-5.6 Sol at extra high reasoning",
-    },
-  },
-  sonnet: {
-    max: {
-      model: "gpt-5.6-luna",
-      effort: "xhigh",
-      sourceDescription: "Sonnet 5 at max effort",
-      targetDescription: "GPT-5.6 Luna at extra high reasoning",
-    },
-  },
+  opus: buildFamilyEffortMap("Opus", "gpt-5.6-sol", "GPT-5.6 Sol"),
+  sonnet: buildFamilyEffortMap("Sonnet", "gpt-5.6-luna", "GPT-5.6 Luna"),
+  haiku: buildFamilyEffortMap("Haiku", "gpt-5.6-luna", "GPT-5.6 Luna"),
 };
 
-function fetchSource(agent) {
-  if (SOURCE_DIR_OVERRIDE) {
-    const localPath = path.join(SOURCE_DIR_OVERRIDE, `${agent}.md`);
-    try {
-      return { ok: true, text: fs.readFileSync(localPath, "utf8") };
-    } catch (_error) {
-      return { ok: false, text: "" };
-    }
-  }
-
-  const url = `${RAW_BASE}/${agent}.md`;
-  const result = spawnSync("curl", ["-fsSL", "--max-time", "10", url], { encoding: "utf8" });
-  if (!result || result.status !== 0 || result.error || !result.stdout) {
+function readSource(agent) {
+  try {
+    const text = fs.readFileSync(path.join(SOURCE_DIR, `${agent}.md`), "utf8");
+    if (!text) return { ok: false, text: "" };
+    return { ok: true, text };
+  } catch (_error) {
     return { ok: false, text: "" };
   }
-  return { ok: true, text: result.stdout };
 }
 
 function parseRoleNameScalar(rawValue) {
@@ -210,7 +222,7 @@ function generateToml(agent, parsed, mapped) {
   lines.push(`model_reasoning_effort = ${tomlBasicString(mapped.effort)}`);
   if (agent === "fast-worker") {
     lines.push(`sandbox_mode = "workspace-write"`);
-  } else if (parsed.hasTools) {
+  } else {
     lines.push(`sandbox_mode = "read-only"`);
   }
   const developerInstructions = `${parsed.body}\n\n${EXECUTION_BOUNDARY}`;
@@ -272,64 +284,53 @@ function deactivateMismatchedTarget(targetPath, host, expectedAgent) {
   return true;
 }
 
-let anyProcessed = false;
-let anyTargetAlreadyPresent = false;
-let fleetFailure = false;
 const results = [];
+const prepared = [];
 
 for (const agent of MANAGED_AGENTS) {
-  const claudeTarget = path.join(CLAUDE_TARGET_DIR, `${agent}.md`);
-  const codexTarget = path.join(CODEX_TARGET_DIR, `${agent}.toml`);
-  if (fs.existsSync(claudeTarget) || fs.existsSync(codexTarget)) {
-    anyTargetAlreadyPresent = true;
-  }
-  const claudeDeactivated = deactivateMismatchedTarget(claudeTarget, "claude", agent);
-  const codexDeactivated = deactivateMismatchedTarget(codexTarget, "codex", agent);
-
-  const source = fetchSource(agent);
+  const source = readSource(agent);
   if (!source.ok) {
-    const roleUnavailable = !fs.existsSync(claudeTarget) || !fs.existsSync(codexTarget);
-    fleetFailure ||= roleUnavailable;
-    results.push({
-      host: "claude",
-      file: `${agent}.md`,
-      status: claudeDeactivated ? "deactivated-fetch-failed" : "fetch-failed",
-    });
-    results.push({
-      host: "codex",
-      file: `${agent}.toml`,
-      status: codexDeactivated ? "deactivated-fetch-failed" : "fetch-failed",
-    });
+    results.push({ host: "claude", file: `${agent}.md`, status: "source-missing" });
+    results.push({ host: "codex", file: `${agent}.toml`, status: "source-missing" });
     continue;
   }
 
   const parsed = parseFrontmatter(source.text);
   const validation = validateFrontmatter(parsed, agent);
   if (!validation.ok) {
-    const identityIssue = validation.kind === "identity-mismatch" || validation.kind === "identity-invalid";
-    const roleUnavailable = !fs.existsSync(claudeTarget) || !fs.existsSync(codexTarget);
-    fleetFailure ||= identityIssue || roleUnavailable;
-    const claudeStatus = claudeDeactivated ? "deactivated-invalid" : "invalid";
-    const codexStatus = codexDeactivated ? "deactivated-invalid" : "invalid";
-    results.push({ host: "claude", file: `${agent}.md`, status: claudeStatus });
-    results.push({ host: "codex", file: `${agent}.toml`, status: codexStatus });
+    results.push({ host: "claude", file: `${agent}.md`, status: "source-invalid" });
+    results.push({ host: "codex", file: `${agent}.toml`, status: "source-invalid" });
     continue;
   }
 
-  const claudeStatus = compareAndWrite(claudeTarget, source.text);
+  prepared.push({ agent, source: source.text, parsed, mapped: validation.mapped });
+}
+
+if (prepared.length !== MANAGED_AGENTS.length) {
+  for (const entry of results) console.log(`[fleet] ${entry.host}/${entry.file}: ${entry.status}`);
+  process.exit(1);
+}
+
+for (const { agent, source, parsed, mapped } of prepared) {
+  const claudeTarget = path.join(CLAUDE_TARGET_DIR, `${agent}.md`);
+  const codexTarget = path.join(CODEX_TARGET_DIR, `${agent}.toml`);
+  const claudeDeactivated = deactivateMismatchedTarget(claudeTarget, "claude", agent);
+  const codexDeactivated = deactivateMismatchedTarget(codexTarget, "codex", agent);
+  if (claudeDeactivated || codexDeactivated) {
+    results.push({ host: "fleet", file: agent, status: "stale-identity-deactivated" });
+  }
+
+  const claudeStatus = compareAndWrite(claudeTarget, source);
   results.push({ host: "claude", file: `${agent}.md`, status: claudeStatus });
 
-  const tomlContent = generateToml(agent, parsed, validation.mapped);
+  const tomlContent = generateToml(agent, parsed, mapped);
   const codexStatus = compareAndWrite(codexTarget, tomlContent);
   results.push({ host: "codex", file: `${agent}.toml`, status: codexStatus });
-
-  anyProcessed = true;
 }
 
 for (const entry of results) {
   console.log(`[fleet] ${entry.host}/${entry.file}: ${entry.status}`);
 }
 
-const totalFailure = !anyProcessed && !anyTargetAlreadyPresent;
-process.exit(totalFailure || fleetFailure ? 1 : 0);
+process.exit(0);
 NODE_EOF

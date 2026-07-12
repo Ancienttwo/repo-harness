@@ -37,7 +37,7 @@ Owns the workflow-engine-contract-assets capability boundary declared in .ai/con
 - Architecture domain: `workflow-engine`
 - Architecture capability: `contract-assets`
 - Architecture module: `docs/architecture/modules/workflow-engine/contract-assets.md`
-- Last architecture event: 2026-07-06T13:54:27+0800
+- Last architecture event: 2026-07-12T21:08:57+0800
 - Last changed path: `.ai/harness/policy.json`
 - Severity: high
 - Change type: workflow-surface
@@ -55,6 +55,10 @@ Owns the workflow-engine-contract-assets capability boundary declared in .ai/con
 
 ## Active Workstreams
 
+- `tasks/workstreams/workflow-engine/contract-assets/20260712-contract-assets.md`
+  - status: active
+  - current_slice: todo-01
+  - source_plan: (none)
 - `tasks/workstreams/workflow-engine/contract-assets/cleanup-script-policy.md`
   - status: completed
   - current_slice: todo-01

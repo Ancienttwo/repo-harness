@@ -35,10 +35,13 @@ describe("Bootstrap Script Contracts", () => {
   });
 
   test("Codex fleet subagent TOML definitions should exist with required keys", () => {
+    const packageManifest = JSON.parse(read("package.json"));
+    expect(packageManifest.files).toContain("agents/");
     const specs: Array<{ name: string; model: string; effort: string; sandboxMode?: string }> = [
-      { name: "deep-reasoner", model: "gpt-5.6-sol", effort: "xhigh" },
-      { name: "fast-worker", model: "gpt-5.6-luna", effort: "xhigh", sandboxMode: "workspace-write" },
-      { name: "gatekeeper", model: "gpt-5.6-sol", effort: "xhigh", sandboxMode: "read-only" },
+      { name: "explorer", model: "gpt-5.6-luna", effort: "high", sandboxMode: "read-only" },
+      { name: "deep-reasoner", model: "gpt-5.6-sol", effort: "max", sandboxMode: "read-only" },
+      { name: "fast-worker", model: "gpt-5.6-luna", effort: "max", sandboxMode: "workspace-write" },
+      { name: "gatekeeper", model: "gpt-5.6-sol", effort: "high", sandboxMode: "read-only" },
     ];
 
     for (const spec of specs) {
@@ -56,6 +59,7 @@ describe("Bootstrap Script Contracts", () => {
       expect(toml).toContain(
         "Execution boundary: implement exactly the Goal, In scope items, Allowed Paths, and Exit Criteria in this brief."
       );
+      expect(read(`agents/fleet/${spec.name}.md`)).toContain(`name: ${spec.name}`);
       if (spec.sandboxMode) {
         expect(toml).toContain(`sandbox_mode = "${spec.sandboxMode}"`);
       }

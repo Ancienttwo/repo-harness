@@ -33,6 +33,11 @@ harness dirs, deploy dirs, ignored runtime state, templates, hook libraries,
 workflow contract, policy, context map, brain manifest, and reference stubs,
 while archiving legacy content and preserving user-owned files.
 
+When policy requests automatic fleet installation, `pi_maybe_install_agent_fleet`
+reads only `external_tooling.agent_fleet.install_mode` and invokes the selected
+repo-harness helper. The helper resolves `agents/fleet` from its package/source
+path, never from the target repository or a network source.
+
 The helper projection route remains
 `assets/workflow-contract.v1.json#helpers.scripts` ->
 `scripts/sync-helper-sources.ts` -> `src/core/source-projection.ts` ->
@@ -95,6 +100,21 @@ helper resolution.
   ownership, helper installation, idempotency rules, or protected local runtime
   state.
 
+## 2026-07-12 Agent Fleet Policy Seed Closeout
+
+- `scripts/lib/project-init-lib.sh` and `scripts/ensure-task-workflow.sh` emit
+  the same `external_tooling.agent_fleet` seed with
+  `source: package:agents/fleet`; their deterministic helper projection carries
+  the same bytes into generated repos.
+- Downstream policy stays advisory by default while this self-host repo opts
+  into automatic installation. Dry-run remains read-only and never touches the
+  user-level Claude or Codex agent directories.
+- The cutover is intentionally one-way: no `fable_agents` alias, remote fetch,
+  source override, or legacy policy reader participates in inspection,
+  migration, or installation.
+
 ## Optimization Backlog
 
 - Reduce duplicated required-path lists that still exist across shell scripts.
+
+- `tasks/workstreams/workflow-engine/inspection-migration/20260712-inspection-migration.md`

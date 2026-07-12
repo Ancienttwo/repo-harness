@@ -9,7 +9,7 @@ skill routing lives in `docs/reference-configs/agentic-development-flow.md`.
 - Codex automation requires `health`, `check`, and `mermaid` from `~/.codex/skills`
 - `gbrain` supports knowledge capture, repo sync, and handoff retrieval
 - `CodeGraph` is required agent readiness for code navigation and impact tracing
-- `fable_agents` supplies the delegation loop's global agent definitions (`deep-reasoner`, `fast-worker`, `gatekeeper`) for both hosts
+- repo-harness's packaged `agent_fleet` supplies the delegation loop's global agent definitions (`explorer`, `deep-reasoner`, `fast-worker`, `gatekeeper`) for both hosts
 
 Waza is Codex-first in this contract. `~/.codex/skills` is the Codex runtime
 source, while `~/.agents/skills` is only the skills CLI staging/cache path used
@@ -467,41 +467,39 @@ bun add -g @colbymchenry/codegraph@latest && codegraph sync . && codegraph statu
 
 ## Agent Fleet
 
-`fable_agents` is the delegation loop's global agent-definitions dependency,
-managed the same way as `waza`, `hai_stack`, and `codegraph`: declared in
-`.ai/harness/policy.json` under `external_tooling.fable_agents`, detected by
-`check-agent-tooling.sh`, and installed on demand rather than vendored a
-second time into this repo or the npm package.
-
-The single upstream source is `Ancienttwo/Fable-agents`
-(`https://github.com/Ancienttwo/Fable-agents.git`,
-`raw_base: https://raw.githubusercontent.com/Ancienttwo/Fable-agents/main/assets`).
-The managed agent list defaults to `deep-reasoner`, `fast-worker`, and
-`gatekeeper`.
+`agent_fleet` is a repo-harness-owned package surface declared in
+`.ai/harness/policy.json` under `external_tooling.agent_fleet` and detected by
+`check-agent-tooling.sh`. The single authored source is
+`package:agents/fleet`; it ships inside the npm package and never requires a
+network fetch. The managed list is `explorer`, `deep-reasoner`, `fast-worker`,
+and `gatekeeper`.
 
 ### Two targets, one source
 
-- Claude Code: `~/.claude/agents/<agent>.md` — the upstream `.md` file is
-  installed as-is.
+- Claude Code: `~/.claude/agents/<agent>.md` — the packaged source `.md` file
+  is installed byte-for-byte.
 - Codex: `~/.codex/agents/<agent>.toml` — generated deterministically from the
-  same upstream `.md`; there is no second upstream copy for Codex.
+  same packaged `.md`; there is no second authored copy for Codex.
 
 ### `.md` -> `.toml` mapping
 
 The generator is fail-closed: it asserts `name`, `description`, `model`, and
-`effort` are present in the upstream frontmatter, and only recognizes the
-`(model, effort)` pairs below. Any other combination is an error, not a
-guessed mapping.
+`effort` are present in the packaged frontmatter, and only recognizes the
+family/effort pairs below. Any other combination is an error, not a guessed
+mapping.
 
-| Upstream frontmatter | Codex TOML |
-|---|---|
-| `model: opus`, `effort: max` | `model = "gpt-5.6-sol"`, `model_reasoning_effort = "xhigh"` |
-| `model: sonnet`, `effort: max` | `model = "gpt-5.6-luna"`, `model_reasoning_effort = "xhigh"` |
-| generated role is `fast-worker` | `sandbox_mode = "workspace-write"` |
-| `tools: [...]` present | `sandbox_mode = "read-only"` |
+| Source `model` | Codex `model` | Source `effort` | Codex `model_reasoning_effort` |
+|---|---|---|---|
+| `opus` | `gpt-5.6-sol` | `low`, `medium`, `high`, `xhigh`, `max` | same string, unchanged |
+| `sonnet`, `haiku` | `gpt-5.6-luna` | `low`, `medium`, `high`, `xhigh`, `max` | same string, unchanged |
+
+`fast-worker` receives `sandbox_mode = "workspace-write"`; every other role
+receives `sandbox_mode = "read-only"`. Current assignments are explorer
+(`sonnet/high`), deep-reasoner (`opus/max`), fast-worker (`sonnet/max`), and
+gatekeeper (`opus/high`). There is no Terra route and no implicit effort remap.
 
 The Codex generator also rewrites the exact upstream provider label in the
-description (`Opus 4.8 at max effort` or `Sonnet 5 at max effort`) to the
+description (for example, `Opus at max effort` or `Sonnet at high effort`) to the
 mapped GPT-5.6 model and reasoning level. A missing label fails closed so the
 installed metadata cannot claim a different model from the TOML settings.
 
@@ -510,7 +508,7 @@ themselves prove that every native MultiAgentV2 spawn surface selects a named
 role instead of inheriting the parent model; keep runtime selection claims
 behind a real subagent canary.
 
-`developer_instructions` is the upstream `.md` body plus the canonical
+`developer_instructions` is the packaged `.md` body plus the canonical
 EXECUTION_BOUNDARY anti-extras clause, kept byte-identical to the
 `EXECUTION_BOUNDARY` constant in `scripts/contract-run.ts` so every generated
 Codex agent carries the same boundary as the Claude worker prompts, the MCP
@@ -537,14 +535,12 @@ dry-run makes no writes to the global agent-fleet directories at all.
 repo-harness run install-agent-fleet
 ```
 
-`REPO_HARNESS_FLEET_SOURCE_DIR=<local dir>` overrides the upstream fetch with
-a local directory of `<agent>.md` files (used for offline installs and
-tests); otherwise each agent is fetched with
-`curl -fsSL --max-time 10 <raw_base>/<agent>.md`. Fetch and validation failures
-are isolated per agent so the remaining roles can still be processed, but the
-overall installer exits non-zero whenever a failure leaves either host's
-managed target unavailable. Missing, malformed, or mismatched source role
-identity is always fatal even when a prior installed target remains present.
+The installer resolves `agents/fleet` from its authoritative helper source path,
+not from the target repository's current working directory. There is no source
+override, curl path, remote fallback, or alternate authority. It validates all
+four source files before mutating any target; a missing, malformed, mismatched,
+or unmapped source makes the whole run fail closed and leaves installed files
+untouched.
 
 The installer requires Bun >= 1.1.35, matching repo-harness's package runtime
 contract and the first supported `Bun.TOML.parse` behavior for the generated
@@ -566,25 +562,28 @@ stale managed target can be deactivated.
 The installer is **never-clobber by default**: an existing target file that
 differs from the newly resolved content is reported as `drift` and left
 untouched. Pass `--force` to overwrite drifted files. Re-running with no
-upstream or local changes reports every file as `up-to-date`.
+packaged-source changes reports every file as `up-to-date`.
 
 ### Readiness
 
 `repo-harness run check-agent-tooling --host both --strict-readiness` reports
-`agent_fleet` alongside `codegraph`. With `--check-updates`, it also compares
-each installed Claude-side `.md` against the upstream hash and reports
-`drift`/`synced` per agent; the Codex `.toml` side is a generated artifact and
-is only checked for presence, not compared against upstream.
+`agent_fleet` alongside `codegraph`. With `--check-updates`, it compares each
+installed Claude-side `.md` against the packaged source hash and reports
+`drift`/`synced` per agent without network access. The Codex `.toml` side is a
+generated artifact and is checked for presence; installer golden tests prove
+the deterministic generation.
 
 ### Uninstall
 
-There is no uninstall command. Removing the fleet means deleting the six
+There is no uninstall command. Removing the fleet means deleting the eight
 managed files by hand:
 
 ```text
+~/.claude/agents/explorer.md
 ~/.claude/agents/deep-reasoner.md
 ~/.claude/agents/fast-worker.md
 ~/.claude/agents/gatekeeper.md
+~/.codex/agents/explorer.toml
 ~/.codex/agents/deep-reasoner.toml
 ~/.codex/agents/fast-worker.toml
 ~/.codex/agents/gatekeeper.toml

@@ -313,17 +313,16 @@ describe("create-project-dirs runtime smoke", () => {
       expect(policy.external_tooling.codegraph.readiness).toBe("required-for-agent-code-navigation");
       expect(policy.external_tooling.codegraph.hook_policy).toBe("do-not-block-hooks");
       expect(policy.external_tooling.codegraph.vendoring_policy).toBe("do-not-add-package-dependency");
-      expect(policy.external_tooling.fable_agents.source_repo).toBe("Ancienttwo/Fable-agents");
-      expect(policy.external_tooling.fable_agents.source_url).toBe("https://github.com/Ancienttwo/Fable-agents.git");
-      expect(policy.external_tooling.fable_agents.raw_base).toBe("https://raw.githubusercontent.com/Ancienttwo/Fable-agents/main/assets");
-      expect(policy.external_tooling.fable_agents.managed_agents).toEqual(["deep-reasoner", "fast-worker", "gatekeeper"]);
-      expect(policy.external_tooling.fable_agents.claude_target).toBe("~/.claude/agents");
-      expect(policy.external_tooling.fable_agents.codex_target).toBe("~/.codex/agents");
-      expect(policy.external_tooling.fable_agents.codex_generation).toBe("derive-toml-from-md");
-      expect(policy.external_tooling.fable_agents.install_mode).toBe("advisory");
-      expect(policy.external_tooling.fable_agents.conflict_policy).toBe("never-clobber-without-force");
-      expect(policy.external_tooling.fable_agents.install_command).toBe("repo-harness run install-agent-fleet");
-      expect(policy.external_tooling.fable_agents.vendoring_policy).toBe("do-not-vendor-agent-bodies");
+      expect(policy.external_tooling.agent_fleet.source).toBe("package:agents/fleet");
+      expect(policy.external_tooling.agent_fleet.managed_agents).toEqual(["explorer", "deep-reasoner", "fast-worker", "gatekeeper"]);
+      expect(policy.external_tooling.agent_fleet.claude_target).toBe("~/.claude/agents");
+      expect(policy.external_tooling.agent_fleet.codex_target).toBe("~/.codex/agents");
+      expect(policy.external_tooling.agent_fleet.codex_generation).toBe("derive-toml-from-md");
+      expect(policy.external_tooling.agent_fleet.install_mode).toBe("advisory");
+      expect(policy.external_tooling.agent_fleet.conflict_policy).toBe("never-clobber-without-force");
+      expect(policy.external_tooling.agent_fleet.install_command).toBe("repo-harness run install-agent-fleet");
+      expect(policy.external_tooling.agent_fleet.source_policy).toBe("repo-owned-single-authority");
+      expect(policy.external_tooling.fable_agents).toBeUndefined();
       expect(policy.minimal_change).toMatchObject({
         version: 1,
         mode: "advice",
@@ -733,7 +732,7 @@ describe("create-project-dirs runtime smoke", () => {
       mkdirSync(home, { recursive: true });
       writeFileSync(
         join(repoDir, ".ai", "harness", "policy.json"),
-        JSON.stringify({ external_tooling: { fable_agents: { install_mode: "advisory" } } }, null, 2)
+        JSON.stringify({ external_tooling: { agent_fleet: { install_mode: "advisory" } } }, null, 2)
       );
 
       const res = spawnSync(
@@ -763,18 +762,16 @@ describe("create-project-dirs runtime smoke", () => {
     const installerPath = join(ROOT, "scripts/install-agent-fleet.sh");
     const home = join(cwd, "fakehome");
     const repoDir = join(cwd, "repo");
-    const fixtureAgentsDir = join(cwd, "fixture-agents");
-    const managedAgents = ["deep-reasoner", "fast-worker", "gatekeeper"];
+    const managedAgents = ["explorer", "deep-reasoner", "fast-worker", "gatekeeper"];
     try {
       mkdirSync(join(repoDir, ".ai", "harness"), { recursive: true });
       mkdirSync(home, { recursive: true });
-      mkdirSync(fixtureAgentsDir, { recursive: true });
       writeFileSync(
         join(repoDir, ".ai", "harness", "policy.json"),
         JSON.stringify(
           {
             external_tooling: {
-              fable_agents: {
+              agent_fleet: {
                 install_mode: "auto-install-on-init",
                 managed_agents: managedAgents,
               },
@@ -784,22 +781,6 @@ describe("create-project-dirs runtime smoke", () => {
           2
         )
       );
-      for (const agent of managedAgents) {
-        writeFileSync(
-          join(fixtureAgentsDir, `${agent}.md`),
-          [
-            "---",
-            `name: ${agent}`,
-            `description: Fixture ${agent} on Sonnet 5 at max effort for the P4 apply-mode fleet install test.`,
-            "model: sonnet",
-            "effort: max",
-            "---",
-            `Fixture body for ${agent}.`,
-            "",
-          ].join("\n")
-        );
-      }
-
       const res = spawnSync(
         "bash",
         [
@@ -812,7 +793,7 @@ describe("create-project-dirs runtime smoke", () => {
         {
           cwd,
           encoding: "utf-8",
-          env: { ...process.env, HOME: home, REPO_HARNESS_FLEET_SOURCE_DIR: fixtureAgentsDir },
+          env: { ...process.env, HOME: home },
         }
       );
 

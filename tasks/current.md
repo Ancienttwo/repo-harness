@@ -58,8 +58,10 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Sprint: (none)
 ## Workstreams
 
+- `tasks/workstreams/workflow-engine/contract-assets/20260712-contract-assets.md`: status=active, current_slice=todo-01, source_plan=(none)
 - `tasks/workstreams/workflow-engine/contract-assets/cleanup-script-policy.md`: status=completed, current_slice=todo-01, source_plan=(none)
 - `tasks/workstreams/workflow-engine/inspection-migration/20260703-inspection-migration.md`: status=active, current_slice=completed-20260703-architecture-closeout, source_plan=(none)
+- `tasks/workstreams/workflow-engine/inspection-migration/20260712-inspection-migration.md`: status=active, current_slice=todo-01, source_plan=(none)
 ## Handoff
 
 - Exact Next Step: Clean up merged contract worktree codex/code-authority-foundation-v1. Command: repo-harness run contract-worktree cleanup --slug code-authority-foundation-v1 --target main

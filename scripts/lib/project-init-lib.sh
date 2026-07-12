@@ -1295,7 +1295,7 @@ pi_maybe_install_agent_fleet() {
     return 0
   fi
 
-  raw_install_mode="$(pi_workflow_contract_query_lines "$policy_file" "external_tooling.fable_agents.install_mode" 2>/dev/null || true)"
+  raw_install_mode="$(pi_workflow_contract_query_lines "$policy_file" "external_tooling.agent_fleet.install_mode" 2>/dev/null || true)"
 
   if [[ "$raw_install_mode" != "auto-install-on-init" ]]; then
     echo "- Agent fleet: install_mode=${raw_install_mode:-advisory}; run 'repo-harness run install-agent-fleet' to install the managed agent fleet."
@@ -2074,18 +2074,16 @@ pi_write_harness_policy() {
       "sync_mode": "stage-upstream-then-copy-to-codex",
       "host_drift_policy": "report-per-host-version-staging-and-upstream-drift"
     },
-    "fable_agents": {
-      "source_repo": "Ancienttwo/Fable-agents",
-      "source_url": "https://github.com/Ancienttwo/Fable-agents.git",
-      "raw_base": "https://raw.githubusercontent.com/Ancienttwo/Fable-agents/main/assets",
-      "managed_agents": ["deep-reasoner", "fast-worker", "gatekeeper"],
+    "agent_fleet": {
+      "source": "package:agents/fleet",
+      "managed_agents": ["explorer", "deep-reasoner", "fast-worker", "gatekeeper"],
       "claude_target": "~/.claude/agents",
       "codex_target": "~/.codex/agents",
       "codex_generation": "derive-toml-from-md",
       "install_mode": "advisory",
       "conflict_policy": "never-clobber-without-force",
       "install_command": "repo-harness run install-agent-fleet",
-      "vendoring_policy": "do-not-vendor-agent-bodies"
+      "source_policy": "repo-owned-single-authority"
     },
     "codex_automation_profile": {
       "required_skills": ["health", "check", "mermaid"],

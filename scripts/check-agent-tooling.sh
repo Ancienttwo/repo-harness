@@ -1,6 +1,27 @@
 #!/bin/bash
 set -euo pipefail
 
+helper_source="${REPO_HARNESS_HELPER_SOURCE_PATH:-$0}"
+helper_dir="$(cd "$(dirname "$helper_source")" && pwd)"
+case "$helper_dir" in
+  */assets/templates/helpers)
+    package_root="$(cd "$helper_dir/../../.." && pwd)"
+    ;;
+  */scripts)
+    package_root="$(cd "$helper_dir/.." && pwd)"
+    ;;
+  *)
+    echo "check-agent-tooling.sh cannot resolve repo-harness package root from helper path: $helper_source" >&2
+    exit 1
+    ;;
+esac
+AGENT_FLEET_SOURCE_DIR="$package_root/agents/fleet"
+if [[ ! -d "$AGENT_FLEET_SOURCE_DIR" ]]; then
+  echo "check-agent-tooling.sh missing packaged agent fleet source: $AGENT_FLEET_SOURCE_DIR" >&2
+  exit 1
+fi
+export REPO_HARNESS_AGENT_FLEET_SOURCE_DIR="$AGENT_FLEET_SOURCE_DIR"
+
 if command -v node >/dev/null 2>&1; then
   RUNTIME_BIN="$(command -v node)"
 elif command -v bun >/dev/null 2>&1; then
@@ -76,9 +97,10 @@ const WAZA_RAW_BASE_URL = "https://raw.githubusercontent.com/tw93/Waza/main";
 const WAZA_MANAGED_SKILLS = ["think", "hunt", "check", "health"];
 const WAZA_SHARED_RULES = ["anti-patterns.md", "chinese.md", "durable-context.md", "english.md"];
 const CODEX_AUTOMATION_SKILLS = ["health", "check", "mermaid"];
-const FABLE_AGENTS_RAW_BASE = "https://raw.githubusercontent.com/Ancienttwo/Fable-agents/main/assets";
-const FABLE_AGENTS_DEFAULT_MANAGED = ["deep-reasoner", "fast-worker", "gatekeeper"];
-const FABLE_AGENTS_INSTALL_COMMAND = "repo-harness run install-agent-fleet";
+const AGENT_FLEET_SOURCE_DIR = process.env.REPO_HARNESS_AGENT_FLEET_SOURCE_DIR;
+const AGENT_FLEET_SOURCE_LABEL = "package:agents/fleet";
+const AGENT_FLEET_DEFAULT_MANAGED = ["explorer", "deep-reasoner", "fast-worker", "gatekeeper"];
+const AGENT_FLEET_INSTALL_COMMAND = "repo-harness run install-agent-fleet";
 const CODEGRAPH_PACKAGE = "@colbymchenry/codegraph";
 const CODEGRAPH_GLOBAL_INSTALL_COMMAND = `bun add -g ${CODEGRAPH_PACKAGE} && repo-harness tools configure codegraph --target codex --location global`;
 const GBRAIN_INSTALL_COMMAND = "bun install -g github:garrytan/gbrain";
@@ -953,11 +975,11 @@ function detectCodexAutomationProfile() {
 
 function resolveManagedAgents() {
   const policy = readJson(path.join(REPO_ROOT, ".ai", "harness", "policy.json"));
-  const configured = policy?.external_tooling?.fable_agents?.managed_agents;
+  const configured = policy?.external_tooling?.agent_fleet?.managed_agents;
   if (Array.isArray(configured) && configured.length > 0 && configured.every((entry) => typeof entry === "string")) {
     return configured;
   }
-  return FABLE_AGENTS_DEFAULT_MANAGED;
+  return AGENT_FLEET_DEFAULT_MANAGED;
 }
 
 function agentFleetFileExtension(host) {
@@ -976,13 +998,13 @@ function inspectAgentFleetFile(host, agent) {
   };
 }
 
-function fetchAgentFleetUpstream(agent) {
-  const url = `${FABLE_AGENTS_RAW_BASE}/${agent}.md`;
-  const result = run("curl", ["-fsSL", "--max-time", "5", url], { timeoutMs: 7000 });
-  if (!result.ok || !result.stdout) {
-    return { status: "fetch-failed", url, hash: null };
+function readAgentFleetSource(agent) {
+  const sourcePath = path.join(AGENT_FLEET_SOURCE_DIR, `${agent}.md`);
+  const source = readFileHash(sourcePath);
+  if (!source.exists) {
+    return { status: "source-missing", path: sourcePath, hash: null };
   }
-  return { status: "fetched", url, hash: sha1(result.stdout) };
+  return { status: "read", path: sourcePath, hash: source.hash };
 }
 
 function detectAgentFleetHost(host, managedAgents) {
@@ -996,18 +1018,18 @@ function detectAgentFleetHost(host, managedAgents) {
   let updateReason = "Update checks were skipped.";
   const driftAgents = [];
   const syncedAgents = [];
-  const fetchFailedAgents = [];
+  const sourceMissingAgents = [];
 
   if (checkUpdates) {
     if (host === "claude") {
       for (const entry of files) {
         if (!entry.present) continue;
-        const upstream = fetchAgentFleetUpstream(entry.name);
-        if (upstream.status === "fetch-failed") {
-          fetchFailedAgents.push(entry.name);
+        const source = readAgentFleetSource(entry.name);
+        if (source.status === "source-missing") {
+          sourceMissingAgents.push(entry.name);
           continue;
         }
-        if (upstream.hash === entry.hash) {
+        if (source.hash === entry.hash) {
           syncedAgents.push(entry.name);
         } else {
           driftAgents.push(entry.name);
@@ -1016,20 +1038,20 @@ function detectAgentFleetHost(host, managedAgents) {
 
       if (driftAgents.length > 0) {
         updateStatus = "drift";
-        updateReason = `Local Claude agent definitions differ from upstream Fable-agents for: ${driftAgents.join(", ")}.`;
-      } else if (fetchFailedAgents.length > 0 && syncedAgents.length === 0) {
+        updateReason = `Installed Claude agent definitions differ from the packaged repo-harness fleet source for: ${driftAgents.join(", ")}.`;
+      } else if (sourceMissingAgents.length > 0) {
         updateStatus = "unknown";
-        updateReason = `Unable to fetch upstream Fable-agents files for: ${fetchFailedAgents.join(", ")}.`;
+        updateReason = `Packaged repo-harness fleet source is missing files for: ${sourceMissingAgents.join(", ")}.`;
       } else if (syncedAgents.length > 0) {
         updateStatus = "synced";
-        updateReason = "Local Claude agent definitions match upstream Fable-agents.";
+        updateReason = "Installed Claude agent definitions match the packaged repo-harness fleet source.";
       } else {
         updateStatus = "not-checked";
         updateReason = "No installed Claude agent definitions to compare.";
       }
     } else {
       updateStatus = "not-applicable";
-      updateReason = "Codex agent definitions are generated artifacts derived from the Claude .md source; readiness only checks presence, not upstream drift.";
+      updateReason = "Codex agent definitions are generated artifacts derived from the packaged repo-harness fleet source; readiness checks presence while installer golden tests prove generation.";
     }
   }
 
@@ -1043,7 +1065,7 @@ function detectAgentFleetHost(host, managedAgents) {
     update_reason: updateReason,
     drift_agents: driftAgents,
     synced_agents: syncedAgents,
-    fetch_failed_agents: fetchFailedAgents,
+    source_missing_agents: sourceMissingAgents,
   };
 }
 
@@ -1067,13 +1089,13 @@ function detectAgentFleet() {
     name: "agent_fleet",
     status,
     reason: status === "present"
-      ? "Detected all managed Fable agent definitions on the requested hosts."
+      ? "Detected all repo-harness managed agent definitions on the requested hosts."
       : status === "partial"
-        ? "Some managed Fable agent definitions are missing on the requested hosts."
-        : "No managed Fable agent definitions were found on the requested hosts.",
+        ? "Some repo-harness managed agent definitions are missing on the requested hosts."
+        : "No repo-harness managed agent definitions were found on the requested hosts.",
     managed_agents: managedAgents,
-    source: FABLE_AGENTS_RAW_BASE,
-    install_command: FABLE_AGENTS_INSTALL_COMMAND,
+    source: AGENT_FLEET_SOURCE_LABEL,
+    install_command: AGENT_FLEET_INSTALL_COMMAND,
     hosts,
   };
 }
