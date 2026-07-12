@@ -5,10 +5,10 @@
 > **Contract**: tasks/contracts/20260712-0301-chatgpt-coding-mcp-integration.contract.md
 > **Notes File**: tasks/notes/20260712-0301-chatgpt-coding-mcp-integration.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-07-12 16:14
+> **Last Updated**: 2026-07-12 16:33
 > **Recommendation**: pass
 > **Review Rubric Version**: 1
-> **Reviewed Diff Fingerprint**: sha256:1e6a5b7f9ad15420ad64763e4f0f008fe3d6c0c1c6884ee838d220727167225e
+> **Reviewed Diff Fingerprint**: sha256:7e7e1b8ba61af34461719b5c291ed096a6c993f65d76598407cf292b3f6bd2c0
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 ## Human Review Card
@@ -43,10 +43,10 @@
 > **External Acceptance**: pass
 > **External Reviewer**: Claude
 > **External Source**: claude-review
-> **External Started**: 2026-07-12T16:07:00+08:00
-> **External Completed**: 2026-07-12T16:13:00+08:00
+> **External Started**: 2026-07-12T16:31:00+08:00
+> **External Completed**: 2026-07-12T16:33:00+08:00
 > **Review Rubric Version**: 1
-> **Reviewed Diff Fingerprint**: sha256:1e6a5b7f9ad15420ad64763e4f0f008fe3d6c0c1c6884ee838d220727167225e
+> **Reviewed Diff Fingerprint**: sha256:7e7e1b8ba61af34461719b5c291ed096a6c993f65d76598407cf292b3f6bd2c0
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 - P1 blockers: none
