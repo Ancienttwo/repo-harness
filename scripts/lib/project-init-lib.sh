@@ -73,7 +73,6 @@ tasks/.current.md.tmp.*
 .repo-harness/chatgpt-browser.local.json
 .repo-harness/chatgpt-browser.tokens.json
 .codex/*
-.claude/.active-plan
 .claude/.plan-state/
 EOF_RUNTIME
 )
@@ -177,7 +176,7 @@ Complete this inventory before implementation. If any line is unknown, keep the 
 - Current checks: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope authority: `tasks/contracts/{{ARTIFACT_STEM}}.contract.md` `allowed_paths`
-- Concurrency rule: `.ai/harness/active-plan` selects the active plan for this worktree when present; `.ai/harness/active-worktree` records the owning worktree; `.claude/.active-plan` is a legacy fallback during transition. If another worktree already owns active work, open or switch to the matching worktree instead of serializing unrelated plans.
+- Concurrency rule: `.ai/harness/active-plan` selects the active plan for this worktree when present; `.ai/harness/active-worktree` records the owning worktree. If another worktree already owns active work, open or switch to the matching worktree instead of serializing unrelated plans.
 - Execution isolation: approved contract-level work projects through `repo-harness run plan-to-todo --plan {{PLAN_FILE}}` and may start `repo-harness run contract-worktree start --plan {{PLAN_FILE}}`.
 
 ## Approach
@@ -204,7 +203,7 @@ Complete this inventory before implementation. If any line is unknown, keep the 
 - Implementation notes file: `tasks/notes/{{ARTIFACT_STEM}}.notes.md`
 - Template: `.claude/templates/contract.template.md`
 - Verification command: `repo-harness run verify-contract --contract tasks/contracts/{{ARTIFACT_STEM}}.contract.md --strict`
-- Active plan rule: `.ai/harness/active-plan` is authoritative for this worktree when present; `.ai/harness/active-worktree` records the owning worktree; `.claude/.active-plan` is a legacy fallback during transition. Do not infer active execution from the latest non-archived plan.
+- Active plan rule: `.ai/harness/active-plan` is authoritative for this worktree when present; `.ai/harness/active-worktree` records the owning worktree. Do not infer active execution from the latest non-archived plan.
 
 ## Handoff
 
@@ -1810,12 +1809,11 @@ pi_write_harness_policy() {
   "version": 1,
   "active_plan": {
     "marker_file": ".ai/harness/active-plan",
-    "legacy_marker_file": ".claude/.active-plan",
     "directory": "plans",
     "archive_directory": "plans/archive",
     "glob": "plan-*.md",
     "active_worktree_marker_file": ".ai/harness/active-worktree",
-    "source_of_truth": "per-worktree explicit marker with active-worktree owner; legacy Claude marker fallback only"
+    "source_of_truth": "per-worktree explicit marker with active-worktree owner"
   },
   "tasks": {
     "todo_file": "tasks/todos.md",
@@ -1956,9 +1954,17 @@ pi_write_harness_policy() {
     "edit_plan_gate_modes": ["enforce", "advice", "off"],
     "rule": "pre-edit-guard blocks implementation edits (non-workflow paths) unless an active plan is Approved/Executing; prompt-layer plan gates are advisory routing only"
   },
+  "circuit_breakers": {
+    "guard_repeat": 2,
+    "review": { "lite": 1, "standard": 1, "strict": 2 },
+    "subagents": { "default": 2, "strict_explicit_contract": 3 },
+    "repair_loops": 2,
+    "cross_model_consults_default": 0
+  },
   "delegation": {
     "mode": "explicit",
-    "max_agents": 3,
+    "max_agents": 2,
+    "strict_max_agents": 3,
     "max_depth": 1,
     "allow_parallel_writers": false,
     "stop_fallback": true,
@@ -1997,6 +2003,7 @@ pi_write_harness_policy() {
     "auto_for_contract_tasks": true,
     "branch_prefix": "codex/",
     "base_branch": "main",
+    "review_base": "main",
     "worktree_dir_template": "../{{repo}}-wt-{{slug}}",
     "start_script": "repo-harness run contract-worktree start --plan <plan-file>",
     "finish_script": "repo-harness run contract-worktree finish",

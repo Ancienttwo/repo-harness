@@ -593,6 +593,34 @@ hook_structured_error() {
   esac
 
   run_id="$(hook_get_run_id)"
+  local state_version="unknown" profile="${WORKFLOW_PROFILE:-strict}" strong_boundary="false"
+  local circuit_payload circuit_output circuit_tripped="false"
+  if [[ -f ".ai/harness/state/effective.json" ]] && command -v jq >/dev/null 2>&1; then
+    state_version="$(jq -r '.state_version // "unknown"' .ai/harness/state/effective.json 2>/dev/null || printf unknown)"
+  fi
+  case "$guard" in
+    *Security*|*Secret*|ContractScopeGuard|OpsPrivateGuard|ExternalReferenceGuard|StrictWorktreeGuard|*Destructive*)
+      strong_boundary="true"
+      ;;
+  esac
+  if command -v jq >/dev/null 2>&1; then
+    circuit_payload="$(jq -nc \
+      --arg guard "$guard" --arg reason "$reason" --arg path "$fix" \
+      --arg state "$state_version" --arg fingerprint "$guard|$reason|$fix" \
+      --arg profile "$profile" --argjson strong "$strong_boundary" \
+      '{kind:"guard",guard:$guard,reason:$reason,pathOrAction:$path,stateVersion:$state,fingerprint:$fingerprint,profile:$profile,strongBoundary:$strong}')"
+    if [[ -n "${REPO_HARNESS_HOOK_CLI:-}" && -f "${REPO_HARNESS_HOOK_CLI:-}" ]] && command -v bun >/dev/null 2>&1; then
+      circuit_output="$(printf '%s' "$circuit_payload" | bun "$REPO_HARNESS_HOOK_CLI" circuit-breaker-record 2>/dev/null || true)"
+    elif command -v repo-harness-hook >/dev/null 2>&1; then
+      circuit_output="$(printf '%s' "$circuit_payload" | repo-harness-hook circuit-breaker-record 2>/dev/null || true)"
+    else
+      circuit_output=""
+    fi
+    circuit_tripped="$(printf '%s' "$circuit_output" | jq -r '.tripped // false' 2>/dev/null || printf false)"
+    if [[ "$circuit_tripped" == "true" ]]; then
+      printf '%s\n' "$circuit_output" >&2
+    fi
+  fi
   hook_append_failure_record "$guard" "$action" "$reason" "$fix" "$failure_class" "$run_id"
 
   # Claude Code shows stderr to the model when the hook exits 2.

@@ -7,6 +7,7 @@
  */
 
 import { Command } from 'commander';
+import { readFileSync } from 'fs';
 import { createInterface } from 'readline/promises';
 import { askConfirm } from './tty-prompt';
 import { runInstall, runUninstall, type InstallTargetSpec } from './commands/install';
@@ -25,9 +26,23 @@ import { buildDocsCommand } from './commands/docs';
 import { buildMcpCommand } from './commands/mcp';
 import { buildChatgptCommand } from './commands/chatgpt';
 import { buildRunCommand } from './commands/run';
+import { buildStateCommand } from './commands/state';
 import { formatSecurityScan, runSecurityScan } from './commands/security';
 import { runGlobalRuntimeSetup } from './commands/global-runtime';
+import {
+  applyInstallProfile,
+  installedProfileStatus,
+  assertInstallProfile,
+  planInstallProfile,
+  profileEnablesCodegraph,
+  profileEnablesExternalSkills,
+  readInstalledProfile,
+  rollbackInstallProfile,
+  type InstallProfile,
+} from './installer/install-profile';
 import { runPromptGuardDecideCli } from './commands/prompt-guard-decision';
+import { routePromptExplicitFirst } from './hook/prompt-router';
+import { recordCircuitAttempt, type CircuitAttempt } from './hook/circuit-breaker';
 import { runMinimalChangeCli } from './hook/minimal-change-cli';
 import { runReviewRubricCli } from './hook/review-rubric';
 import { runReviewFingerprintCli } from './hook/diff-fingerprint';
@@ -64,6 +79,7 @@ export const SUBCOMMANDS = [
   'docs',
   'mcp',
   'chatgpt',
+  'state',
 ] as const;
 export type Subcommand = (typeof SUBCOMMANDS)[number];
 
@@ -79,6 +95,8 @@ interface GlobalRuntimeCommandOptions {
   codegraph?: boolean;
   brainRoot?: string;
   json?: boolean;
+  profile?: string;
+  dryRun?: boolean;
 }
 
 /** Minimal duck-typed slice of `Command` so tests can fake option-value sourcing without constructing a real commander `Command`. */
@@ -109,8 +127,8 @@ export async function resolveOptionalRuntimeDeps(
   cmd: OptionSourceLookup | undefined,
   opts: ResolveOptionalRuntimeDepsOptions,
 ): Promise<{ externalSkills: boolean; codegraph: boolean }> {
-  let externalSkills = rawOpts.externalSkills !== false;
-  let codegraph = rawOpts.codegraph !== false;
+  let externalSkills = rawOpts.externalSkills === true;
+  let codegraph = rawOpts.codegraph === true;
   if (!opts.interactive) return { externalSkills, codegraph };
 
   const input = opts.input ?? process.stdin;
@@ -118,14 +136,14 @@ export async function resolveOptionalRuntimeDeps(
   const rl = createInterface({ input, output, terminal: false });
   try {
     if (cmd?.getOptionValueSource('externalSkills') !== 'cli') {
-      externalSkills = await askConfirm(
-        rl,
-        output,
-        'Install external skills (Waza /think /hunt /check /health, Mermaid, cross-review)?',
-      );
+      const answer = (await rl.question('Install external skills (Waza, Mermaid, cross-review)? [y/N]: ')).trim().toLowerCase();
+      output.write('\n');
+      externalSkills = answer === 'y' || answer === 'yes';
     }
     if (cmd?.getOptionValueSource('codegraph') !== 'cli') {
-      codegraph = await askConfirm(rl, output, 'Install CodeGraph CLI and configure its MCP server?');
+      const answer = (await rl.question('Install CodeGraph CLI and configure its MCP server? [y/N]: ')).trim().toLowerCase();
+      output.write('\n');
+      codegraph = answer === 'y' || answer === 'yes';
     }
   } finally {
     rl.close();
@@ -197,8 +215,39 @@ async function runGlobalRuntimeBootstrap(
   cmd?: OptionSourceLookup,
 ): Promise<never> {
   const target = assertTarget(rawOpts.target, commandName);
+  const profile = assertInstallProfile(rawOpts.profile ?? 'minimal');
+  const currentProfile = readInstalledProfile();
+  const profilePlan = planInstallProfile(profile, currentProfile);
+  if (rawOpts.dryRun === true) {
+    if (rawOpts.json === true) console.log(JSON.stringify(profilePlan, null, 2));
+    else {
+      console.log(`[profile] requested=${profile} current=${currentProfile?.profile ?? 'none'}`);
+      console.log(`[profile] install=${profilePlan.install.join(',') || '(none)'}`);
+      console.log(`[profile] skip=${profilePlan.skip.join(',') || '(none)'}`);
+      console.log(`[profile] remove=${profilePlan.remove.join(',') || '(none)'}`);
+    }
+    process.exit(0);
+  }
   const interactive = process.stdin.isTTY === true && process.stdout.isTTY === true && rawOpts.json !== true;
-  const { externalSkills, codegraph } = await resolveOptionalRuntimeDeps(rawOpts, cmd, { interactive });
+  const defaults = {
+    externalSkills: profileEnablesExternalSkills(profile),
+    codegraph: profileEnablesCodegraph(profile),
+  };
+  const selectedDefaults = {
+    externalSkills: cmd?.getOptionValueSource('externalSkills') === 'cli'
+      ? rawOpts.externalSkills !== false
+      : defaults.externalSkills,
+    codegraph: cmd?.getOptionValueSource('codegraph') === 'cli'
+      ? rawOpts.codegraph !== false
+      : defaults.codegraph,
+  };
+  const { externalSkills, codegraph } = interactive
+    ? await resolveOptionalRuntimeDeps({
+        ...rawOpts,
+        externalSkills: selectedDefaults.externalSkills,
+        codegraph: selectedDefaults.codegraph,
+      }, cmd, { interactive })
+    : selectedDefaults;
   const result = runGlobalRuntimeSetup({
     target,
     installCli: rawOpts.cli !== false,
@@ -207,10 +256,13 @@ async function runGlobalRuntimeBootstrap(
     externalSkills,
     codegraph,
     brainRoot: rawOpts.brainRoot,
+    profile,
   });
+  const installed = result.exitCode === 0 ? applyInstallProfile(profile).state : null;
   if (rawOpts.json === true) {
-    console.log(JSON.stringify(result, null, 2));
+    console.log(JSON.stringify({ ...result, profile_plan: profilePlan, installed_state: installed }, null, 2));
   } else {
+    console.log(`[profile] ${profile}`);
     for (const line of result.lines) console.log(line);
   }
   process.exit(result.exitCode);
@@ -451,6 +503,10 @@ export function buildProgram(): Command {
     .command('install')
     .description('Install the repo-harness global runtime; with --location, install only hook adapters')
     .option('--target <target>', `Target host: ${TARGET_HELP}`, 'both')
+    .option('--profile <profile>', 'Install profile: minimal|standard|product-planning|strict', 'minimal')
+    .option('--dry-run', 'Print install/skip/remove plan without writing')
+    .option('--state', 'Print effective installed profile state without writing')
+    .option('--rollback', 'Restore the previous installed profile state')
     .option('--location <location>', `Adapter-only install location: ${LOCATION_HELP}`)
     .option(
       '--delegation-mode <mode>',
@@ -463,8 +519,35 @@ export function buildProgram(): Command {
     .option('--no-codegraph', 'Skip CodeGraph CLI/MCP configuration')
     .option('--brain-root <path>', 'Brain vault root to persist for repo-harness brain commands')
     .option('--json', 'Output JSON instead of human-readable text')
-    .action(async (rawOpts: GlobalRuntimeCommandOptions & { location?: string; delegationMode?: string }, cmd: Command) => {
+    .action(async (rawOpts: GlobalRuntimeCommandOptions & { location?: string; delegationMode?: string; state?: boolean; rollback?: boolean }, cmd: Command) => {
       const target = assertTarget(rawOpts.target, 'install');
+      if (rawOpts.state === true) {
+        const state = readInstalledProfile();
+        console.log(JSON.stringify(state ? installedProfileStatus(state) : null, null, 2));
+        process.exit(state ? 0 : 1);
+      }
+      if (rawOpts.rollback === true) {
+        const current = readInstalledProfile();
+        if (!current?.previous) throw new Error('no previous install profile transaction to roll back');
+        const profile = current.previous.profile;
+        const result = runGlobalRuntimeSetup({
+          target,
+          installCli: false,
+          syncSkill: true,
+          hostAdapters: true,
+          externalSkills: profileEnablesExternalSkills(profile),
+          codegraph: profileEnablesCodegraph(profile),
+          profile,
+        });
+        const restored = result.exitCode === 0 ? rollbackInstallProfile() : null;
+        if (rawOpts.json === true) {
+          console.log(JSON.stringify({ ...result, restored_state: restored }, null, 2));
+        } else {
+          for (const line of result.lines) console.log(line);
+          if (restored) console.log(`[profile] restored=${restored.profile}`);
+        }
+        process.exit(result.exitCode);
+      }
       if (rawOpts.location === undefined) {
         await runGlobalRuntimeBootstrap('install', rawOpts, cmd);
         return;
@@ -481,6 +564,7 @@ export function buildProgram(): Command {
         target,
         location,
         delegationMode,
+        profile: assertInstallProfile(rawOpts.profile ?? 'minimal'),
       });
       for (const line of result.lines) console.log(line);
       process.exit(result.exitCode);
@@ -571,6 +655,35 @@ export function buildProgram(): Command {
   program.addCommand(buildMcpCommand());
   program.addCommand(buildChatgptCommand());
   program.addCommand(buildRunCommand());
+  program.addCommand(buildStateCommand());
+  program
+    .command('circuit-breaker-record', { hidden: true })
+    .description('Internal persistent workflow circuit breaker')
+    .action(() => {
+      try {
+        const attempt = JSON.parse(readFileSync(0, 'utf-8')) as CircuitAttempt;
+        console.log(JSON.stringify(recordCircuitAttempt(process.cwd(), attempt)));
+        process.exit(0);
+      } catch (error) {
+        console.error(`circuit-breaker-record: ${(error as Error).message}`);
+        process.exit(2);
+      }
+    });
+  program
+    .command('prompt-route', { hidden: true })
+    .description('Internal explicit-first prompt router')
+    .action(() => {
+      let prompt = '';
+      try {
+        const input = readFileSync(0, 'utf-8').trim();
+        const parsed = JSON.parse(input) as { prompt?: unknown };
+        if (typeof parsed.prompt === 'string') prompt = parsed.prompt;
+      } catch { /* malformed prompt bypasses advisory routing */ }
+      console.log(JSON.stringify(routePromptExplicitFirst(prompt, {
+        hasActiveTask: process.env.PROMPT_ROUTE_ACTIVE_TASK === '1',
+      })));
+      process.exit(0);
+    });
   program
     .command('prompt-guard-decide', { hidden: true })
     .description('Internal prompt-guard intent/state decision engine')

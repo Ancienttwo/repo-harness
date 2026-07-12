@@ -7,8 +7,8 @@
 ## P1 Map
 
 The root router is the human and agent entrypoint for this plugin. `SKILL.md`
-defines when the skill is used, compatibility aliases, and the four core paths:
-initialize, migrate, audit, and repair. `README.md` owns first-run operator
+defines when the skill is used and exactly five semantic actions: setup, plan,
+execute, verify, and handoff. Its body is capped at 2KB. `README.md` owns first-run operator
 guidance. `AGENTS.md` and `CLAUDE.md` define the self-hosted repo workflow for
 both Codex and Claude. `docs/spec.md` owns the stable product outcome.
 
@@ -20,8 +20,7 @@ Strong dependencies:
 
 Weak dependencies:
 
-- Compatibility name `repo-harness-skill`.
-- `repo-harness install` owns first-run global bootstrap: install the CLI, install user-level hook adapters, configure Waza, persist the brain root, and configure CodeGraph MCP. `repo-harness init` remains a compatibility alias.
+- `repo-harness install --profile <profile>` owns first-run global bootstrap; optional ecosystems are profile-selected and default off.
 - `repo-harness uninstall` removes repo-harness managed host adapters without deleting sibling hooks or third-party tools.
 - `repo-harness adopt` owns repo-local harness adoption and refresh.
 - gstack/gbrain policy references remain advisory; this self-host repo vendors CodeGraph as a dev dependency while downstream generated repos keep global MCP setup explicit unless policy opts in.
@@ -34,12 +33,11 @@ Out of scope:
 
 ## P2 Trace
 
-Concrete route: user asks for first-run host setup -> root `README.md` selects
-`repo-harness install` -> the command installs the current package as the global
-CLI, refreshes repo-harness skill aliases, installs user-level hook adapters,
-configures Waza `think`/`hunt`/`check`/`health`, writes the selected brain root
-to `~/.repo-harness/config.json`, and configures CodeGraph MCP for the selected
-host target.
+Concrete route: user explicitly asks for setup -> root `SKILL.md` selects setup
+-> `repo-harness install --profile minimal` plans CLI, effective state, guards,
+handoff, and adapters -> `--dry-run` lists install/skip/remove -> apply persists
+`~/.repo-harness/install-state.json`. Product planning and strict profiles add
+their explicit optional surfaces.
 
 Concrete route: user asks for an existing repo install -> root `SKILL.md`
 selects `repo-harness-init` semantics -> that action routes to
@@ -68,11 +66,11 @@ The root router is intentionally thin because the workflow has too many
 machine-checked invariants to keep correct in prose. The invariant is that
 policy lives in contracts, scripts, and tests; root docs only route and orient.
 
-At 10x command count, this layer would fail first through discoverability and
-duplicate wording. The current action-command split keeps root `SKILL.md`
-stable while letting new public commands stay independently reviewable.
+At 10x command count, this layer fails first through discovery overload. The
+five-action router and profile-bounded installed facades keep specialized CLI
+commands available without making them default model context.
 
 ## Optimization Backlog
 
-- Keep root `SKILL.md` under the existing line budget.
+- Keep the root router body at or below 2KB and default installed discovery at five actions or fewer.
 - If another public command is added, update `assets/skill-commands/manifest.json`, README, and `tests/action-command-skills.test.ts` in the same slice.

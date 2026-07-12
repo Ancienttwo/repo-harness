@@ -14,6 +14,8 @@ Authoritative files:
 - `.ai/harness/workflow-contract.json`: self-host runtime copy.
 - `.ai/harness/policy.json`: self-host workflow policy and external tooling guidance.
 - `agents/fleet/*.md`: npm-packaged source authority for the managed Claude/Codex agent fleet.
+- `repo-harness state resolve --json`: sole normalized runtime state entrypoint;
+  Markdown remains human authority and ignored JSON is an atomic read model.
 - `.ai/context/context-map.json`: progressive context loading contract.
 - `.ai/context/capabilities.json`: capability registry for longest-prefix ownership.
 - `scripts/capability-resolver.ts`: sole registry reader, validator, and longest-prefix matcher.
@@ -44,6 +46,10 @@ Error paths:
 - Capability orphan modules are caught by `capability-resolver.ts validate`.
 - Missing, malformed, or non-existent capability prefixes fail closed; the resolver does not synthesize authority from legacy context blocks or directory scans.
 - Brain manifest drift is caught by `scripts/check-brain-manifest.sh`; opted-in repo-to-brain mirror drift is caught by `scripts/sync-brain-docs.sh --check`.
+- Missing concrete risk targets for active execution fail closed. Checks,
+  review, handoff, and resume freshness bind exact content fingerprints.
+- `.claude/.active-plan` is not a steady-state reader or writer. The only
+  reader is the explicit `state migrate-legacy-active-plan` one-shot command.
 
 ## P3 Decision
 
@@ -52,6 +58,10 @@ themselves without a service. The invariant is that tracked contract files are
 durable truth, while `.ai/harness/checks/latest.json`, handoff packets, failure
 logs, architecture events, worktrees, and run snapshots are
 ignored runtime state.
+
+`state_version` is a monotonic counter owned under the Git worktree metadata;
+`state_revision` is the deterministic content hash. Deleting or corrupting the
+ignored effective-state cache cannot roll the version backward.
 
 At 10x generated repos, the first failure would be self-host behavior diverging
 from generated output. The smallest coherent guard is parity tests plus

@@ -88,11 +88,11 @@ class ClaudeTarget implements AgentTarget {
     return { installed, alreadyConfigured, configPath: filePath };
   }
 
-  install(loc: Location, _opts: InstallOptions): WriteResult {
+  install(loc: Location, opts: InstallOptions): WriteResult {
     const filePath = resolvePath(loc, process.cwd());
     const data = readJsonOrEmpty<SettingsFile>(filePath);
     const cleaned = stripManagedEntries(data.hooks);
-    const managed = buildManagedHooks('claude');
+    const managed = buildManagedHooks('claude', opts.profile);
     const merged = mergeHooks(cleaned, managed);
     const next: SettingsFile = { ...data, hooks: merged };
     const nextContent = formatJson(next);

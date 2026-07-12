@@ -9,21 +9,21 @@ function read(relPath: string): string {
 }
 
 describe("Bootstrap Script Contracts", () => {
-  test("SKILL.md should stay within 500-line budget", () => {
+  test("root SKILL stays a compact five-action router", () => {
     const skill = read("SKILL.md");
-    expect(skill.split("\n").length).toBeLessThanOrEqual(500);
+    const body = skill.replace(/^---\n[\s\S]*?\n---\n/u, "");
+    expect(Buffer.byteLength(body, "utf-8")).toBeLessThanOrEqual(2048);
+    expect(skill.split("\n").length).toBeLessThanOrEqual(80);
   });
 
-  test("router should advertise scaffold plus existing-repo maintenance paths", () => {
+  test("router exposes only the five default semantic actions", () => {
     const skill = read("SKILL.md");
-    expect(skill).toContain("1. **Scaffold**");
-    expect(skill).toContain("2. **Initialize**");
-    expect(skill).toContain("3. **Migrate**");
-    expect(skill).toContain("4. **Audit**");
-    expect(skill).toContain("5. **Repair**");
-    expect(skill).not.toContain("5. **Skill Factory**");
-    expect(skill).not.toContain("references/skill-factory-guide.md");
-    expect(existsSync(join(ROOT, "references/skill-factory-guide.md"))).toBe(false);
+    for (const [index, action] of ["setup", "plan", "execute", "verify", "handoff"].entries()) {
+      expect(skill).toContain(`${index + 1}. **${action}**`);
+    }
+    expect(skill).not.toContain("Core Plans (A-F)");
+    expect(skill).not.toContain("Custom Presets (G-K)");
+    expect(skill).not.toContain("## Hook");
   });
 
   test("Codex agent metadata should exist for user-level installation", () => {

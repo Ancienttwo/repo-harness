@@ -52,7 +52,9 @@ export interface WriteResult {
  * Phase 1A keeps the parameter shape but ships no flags so call sites
  * don't have to change later.
  */
-export interface InstallOptions {}
+export interface InstallOptions {
+  profile?: import('./install-profile').InstallProfile;
+}
 
 export interface AgentTarget {
   readonly id: TargetId;

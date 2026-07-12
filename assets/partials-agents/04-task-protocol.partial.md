@@ -25,7 +25,7 @@ RULES:
   - Research first for unfamiliar areas and persist findings in docs/researches/
   - Keep stable product intent in docs/spec.md
   - Plan with trade-offs in plans/plan-{timestamp}-{slug}.md
-  - Treat .ai/harness/active-plan as authoritative only for this worktree; .ai/harness/active-worktree records the owner; .claude/.active-plan is a legacy fallback during transition
+  - Treat .ai/harness/active-plan as authoritative only for this worktree; .ai/harness/active-worktree records the owner
   - Keep multiple active plans in parallel worktrees when tasks diverge; fill workflow inventory before implementation: active plan, owning worktree, contract, review, notes, deferred ledger, checks, runs, scope owner, switching rule, and worktree path
   - Process annotation notes before implementing
   - Project approved plans with `repo-harness run plan-to-todo` only after a concrete Promotion Gate; the execution checklist stays in the plan ## Task Breakdown, inline sprint rows stay inline, and only contract rows generate contract/review/notes artifacts
@@ -55,7 +55,7 @@ RULES:
 {{/IF}}
 
 ACTIVE_PLAN:
-  - .ai/harness/active-plan selects the current active plan only for its owning worktree; .ai/harness/active-worktree records that owner; .claude/.active-plan is a legacy fallback during transition
+  - .ai/harness/active-plan selects the current active plan only for its owning worktree; .ai/harness/active-worktree records that owner
 
 STATUS:
   ENUM: [Draft, Annotating, Approved, Executing, Archived]

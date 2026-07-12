@@ -16,6 +16,7 @@
  */
 
 import { routesForHost, type Route, type RouteHost } from '../hook/route-registry';
+import type { InstallProfile } from './install-profile';
 
 export const MANAGED_TAG = 'repo-harness hook';
 
@@ -50,9 +51,22 @@ export function isManagedEntry(entry: HookEntry): boolean {
   return entry.hooks.some((h) => typeof h?.command === 'string' && h.command.includes(MANAGED_TAG));
 }
 
-export function buildManagedHooks(host: HookHost): HooksByEvent {
+function routeInProfile(route: Route, profile: InstallProfile): boolean {
+  if (profile === 'strict') return true;
+  const key = `${route.event}.${route.routeId}`;
+  const minimal = new Set([
+    'SessionStart.default', 'PreToolUse.edit', 'PostToolUse.edit', 'PostToolUse.bash', 'Stop.default',
+  ]);
+  if (minimal.has(key)) return true;
+  if (profile === 'standard' || profile === 'product-planning') {
+    return key === 'UserPromptSubmit.default' || key === 'PostToolUse.always';
+  }
+  return false;
+}
+
+export function buildManagedHooks(host: HookHost, profile: InstallProfile = 'strict'): HooksByEvent {
   const out: HooksByEvent = {};
-  for (const route of routesForHost(host)) {
+  for (const route of routesForHost(host).filter((candidate) => routeInProfile(candidate, profile))) {
     if (!out[route.event]) out[route.event] = [];
     out[route.event].push(buildHookEntry(route, host));
   }

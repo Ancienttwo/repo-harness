@@ -54,6 +54,44 @@ if [[ "$FILE_PATH" == deploy/* ]]; then
   echo "  Keep deployment SQL directly under deploy/sql/ with 4-digit ascending prefixes."
 fi
 
+resolve_edit_workflow_profile() {
+  local source_cli output args
+  source_cli="$(cd "$SCRIPT_DIR/../.." 2>/dev/null && pwd)/src/cli/index.ts"
+  args=(state resolve --json --target-path "$FILE_PATH" --operation edit)
+  if [[ -n "${REPO_HARNESS_WORKFLOW_PROFILE:-}" ]]; then
+    args+=(--profile "$REPO_HARNESS_WORKFLOW_PROFILE")
+  fi
+  if [[ -n "${REPO_HARNESS_CLI:-}" && -f "${REPO_HARNESS_CLI:-}" ]] && command -v bun >/dev/null 2>&1; then
+    output="$(bun "$REPO_HARNESS_CLI" "${args[@]}" 2>/dev/null || true)"
+  elif command -v repo-harness >/dev/null 2>&1; then
+    output="$(repo-harness "${args[@]}" 2>/dev/null || true)"
+  elif [[ -f "$source_cli" ]] && command -v bun >/dev/null 2>&1; then
+    output="$(bun "$source_cli" "${args[@]}" 2>/dev/null || true)"
+  else
+    output=""
+  fi
+  [[ -n "$output" ]] || return 1
+  if command -v jq >/dev/null 2>&1; then
+    printf '%s' "$output" | jq -r '.workflow_profile // empty'
+  elif command -v bun >/dev/null 2>&1; then
+    STATE_JSON="$output" bun -e 'const s=JSON.parse(process.env.STATE_JSON); if (s.workflow_profile) console.log(s.workflow_profile)'
+  fi
+}
+
+WORKFLOW_PROFILE="$(resolve_edit_workflow_profile || true)"
+case "$WORKFLOW_PROFILE" in
+  lite|standard|strict) ;;
+  *)
+    echo "[WorkflowProfileGuard] Unable to resolve a deterministic workflow profile for $FILE_PATH"
+    hook_structured_error \
+      "WorkflowProfileGuard" \
+      "Deterministic workflow profile resolution failed for $FILE_PATH." \
+      "Run repo-harness state resolve --json --target-path '$FILE_PATH' --operation edit and resolve its blockers." \
+      "state_violation"
+    exit 2
+    ;;
+esac
+
 active_contract="$(workflow_active_contract || true)"
 if is_repo_scoped_path "$FILE_PATH" && [[ -n "$active_contract" && -f "$active_contract" ]]; then
   if ! workflow_contract_allows_path "$active_contract" "$FILE_PATH"; then
@@ -96,6 +134,7 @@ run_edit_plan_gate() {
   [[ "$mode" == "off" ]] && return 0
   is_repo_scoped_path "$FILE_PATH" || return 0
   is_workflow_surface_path "$FILE_PATH" && return 0
+  [[ "$WORKFLOW_PROFILE" == "lite" ]] && return 0
 
   if [[ ! -f "docs/spec.md" ]]; then
     echo "[SpecGuard] Implementation edit without docs/spec.md: $FILE_PATH"
@@ -146,6 +185,27 @@ run_edit_plan_gate() {
 }
 
 run_edit_plan_gate
+
+if [[ "$WORKFLOW_PROFILE" == "strict" ]] && is_repo_scoped_path "$FILE_PATH" && ! is_workflow_surface_path "$FILE_PATH"; then
+  if [[ -z "$active_contract" || ! -f "$active_contract" ]]; then
+    echo "[StrictContractGuard] Strict profile requires an active contract for $FILE_PATH"
+    hook_structured_error \
+      "StrictContractGuard" \
+      "Strict workflow edit to $FILE_PATH has no active contract." \
+      "Create the plan/contract worktree with repo-harness run plan-to-todo before editing." \
+      "missing_artifact"
+    exit 2
+  fi
+  if ! workflow_is_linked_worktree; then
+    echo "[StrictWorktreeGuard] Strict profile requires an isolated contract worktree for $FILE_PATH"
+    hook_structured_error \
+      "StrictWorktreeGuard" \
+      "Strict workflow edit to $FILE_PATH is not running in a linked contract worktree." \
+      "Start or enter the contract worktree before editing high-risk implementation paths." \
+      "state_violation"
+    exit 2
+  fi
+fi
 
 if [[ "$FILE_PATH" =~ ^plans/plan-.*\.md$ ]] && [[ -f "$FILE_PATH" || -n "$WRITE_PAYLOAD" ]]; then
   current_status=""

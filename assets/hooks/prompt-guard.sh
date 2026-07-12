@@ -131,7 +131,7 @@ active_plan_marker_problem() {
     fi
   fi
 
-  for marker_file in "$ACTIVE_PLAN_MARKER" "$LEGACY_ACTIVE_PLAN_MARKER"; do
+  for marker_file in "$ACTIVE_PLAN_MARKER"; do
     [[ -f "$marker_file" ]] || continue
     marker_plan="$(cat "$marker_file" 2>/dev/null | xargs)"
     if [[ -n "$marker_plan" && ! -f "$marker_plan" ]]; then
@@ -313,6 +313,57 @@ prompt_foreign_repo_root() {
 }
 
 # --- Decision engine invocation ---
+
+prompt_route_command() {
+  local source_cli source_hook_cli
+  source_cli="$(cd "$SCRIPT_DIR/../.." 2>/dev/null && pwd)/src/cli/index.ts"
+  source_hook_cli="$(cd "$SCRIPT_DIR/../.." 2>/dev/null && pwd)/src/cli/hook-entry.ts"
+  if [[ -n "${REPO_HARNESS_HOOK_CLI:-}" && -f "${REPO_HARNESS_HOOK_CLI:-}" ]] && command -v bun >/dev/null 2>&1; then
+    bun "$REPO_HARNESS_HOOK_CLI" prompt-route; return $?
+  fi
+  if [[ -f "$source_hook_cli" ]] && command -v bun >/dev/null 2>&1; then
+    bun "$source_hook_cli" prompt-route; return $?
+  fi
+  if command -v repo-harness-hook >/dev/null 2>&1; then
+    repo-harness-hook prompt-route; return $?
+  fi
+  if [[ -n "${REPO_HARNESS_CLI:-}" && -f "${REPO_HARNESS_CLI:-}" ]] && command -v bun >/dev/null 2>&1; then
+    bun "$REPO_HARNESS_CLI" prompt-route; return $?
+  fi
+  if command -v repo-harness >/dev/null 2>&1; then
+    repo-harness prompt-route; return $?
+  fi
+  if [[ -f "$source_cli" ]] && command -v bun >/dev/null 2>&1; then
+    bun "$source_cli" prompt-route; return $?
+  fi
+  return 127
+}
+
+prompt_route_explicit_first() {
+  local payload output
+  if command -v jq >/dev/null 2>&1; then
+    payload="$(jq -nc --arg prompt "$PROMPT_TEXT" '{prompt:$prompt}')"
+  else
+    payload="{\"prompt\":\"$(hook_json_escape "$PROMPT_TEXT")\"}"
+  fi
+  output="$(printf '%s' "$payload" | PROMPT_ROUTE_ACTIVE_TASK="$PROMPT_ROUTE_ACTIVE_TASK" prompt_route_command 2>/dev/null || true)"
+  output="$(printf '%s\n' "$output" | head -n1)"
+  if [[ "$output" != \{* ]]; then
+    # Missing router fails advisory-open; deterministic PreToolUse guards keep
+    # edit safety. Do not fall back to the retired all-prompt classifier.
+    PROMPT_ROUTE_KIND="bypass"
+    PROMPT_ROUTE_ACTION=""
+    return 0
+  fi
+  if command -v jq >/dev/null 2>&1; then
+    PROMPT_ROUTE_KIND="$(printf '%s' "$output" | jq -r '.kind // "bypass"')"
+    PROMPT_ROUTE_ACTION="$(printf '%s' "$output" | jq -r '.action // ""')"
+  else
+    PROMPT_ROUTE_JSON="$output" read -r PROMPT_ROUTE_KIND PROMPT_ROUTE_ACTION < <(
+      PROMPT_ROUTE_JSON="$output" bun -e 'const v=JSON.parse(process.env.PROMPT_ROUTE_JSON); console.log(`${v.kind ?? "bypass"} ${v.action ?? ""}`)'
+    )
+  fi
+}
 
 prompt_guard_decision_command() {
   local source_cli source_hook_cli
@@ -789,9 +840,18 @@ emit_waza_route_hint() {
     echo "[WazaRoute] Review/release intent detected. Default route: Waza /check."
     emit_review_rubric_prompt
     emit_review_fingerprint_prompt
-    emit_external_acceptance_prompt review
-    emit_cross_review_hint merge
+    if prompt_strict_workflow; then
+      emit_external_acceptance_prompt review
+      emit_cross_review_hint merge
+    fi
   fi
+}
+
+prompt_strict_workflow() {
+  local file
+  file="$(workflow_active_contract || true)"
+  [[ -n "$file" && -f "$file" ]] || return 1
+  grep -Eiq '^> \*\*Workflow Profile\*\*:[[:space:]]*strict[[:space:]]*$' "$file"
 }
 
 emit_review_rubric_prompt() {
@@ -820,6 +880,7 @@ emit_review_fingerprint_prompt() {
 # is delivered once by session-start-context.sh.
 emit_cross_review_hint() {
   local skill peer
+  prompt_strict_workflow || return 0
   if [ "${HOOK_HOST:-claude}" = "codex" ]; then
     skill="claude-review"; peer="Claude"
   else
@@ -1049,6 +1110,23 @@ PROMPT_TEXT="$(hook_get_prompt "${1:-}")"
 PROMPT_INTENT_TEXT="$(prompt_intent_text)"
 
 prompt_guard_refresh_state
+PROMPT_ROUTE_ACTIVE_TASK=0
+case "$prompt_guard_plan_state" in
+  approved|executing) PROMPT_ROUTE_ACTIVE_TASK=1 ;;
+esac
+export PROMPT_ROUTE_ACTIVE_TASK
+PROMPT_ROUTE_KIND="bypass"
+PROMPT_ROUTE_ACTION=""
+prompt_route_explicit_first
+if [[ "$PROMPT_ROUTE_KIND" == "bypass" ]]; then
+  exit 0
+fi
+# setup/handoff are explicit host/CLI actions with no prompt-text policy
+# decision. Their command handlers own behavior; deterministic edit guards
+# remain active if tools run afterward.
+if [[ "$PROMPT_ROUTE_KIND" == "explicit" && ( "$PROMPT_ROUTE_ACTION" == "setup" || "$PROMPT_ROUTE_ACTION" == "handoff" ) ]]; then
+  exit 0
+fi
 prompt_guard_engine_call
 
 if [[ "$PG_ENGINE_STATE" != "ok" ]]; then

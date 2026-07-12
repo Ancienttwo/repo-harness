@@ -33,6 +33,7 @@
   "scripts": {
     "benchmark:mcp-reader": "bun scripts/benchmark-general-repo-reader.ts",
     "benchmark:skills": "bun scripts/run-skill-evals.ts",
+    "benchmark:harness": "bun scripts/run-harness-profile-benchmark.ts",
     "test": "bun test",
     "test:coverage": "bun test --coverage",
     "check:type": "node node_modules/typescript/bin/tsc --noEmit",

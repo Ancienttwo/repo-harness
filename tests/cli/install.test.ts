@@ -22,6 +22,26 @@ function withTempHome(fn: (home: string) => void): void {
 }
 
 describe('install command (Phase 1B)', () => {
+  test('install profiles bound host route inventory', () => {
+    withTempHome((home) => {
+      runInstall({ target: 'codex', location: 'global', profile: 'minimal' });
+      let hooks = JSON.parse(fs.readFileSync(path.join(home, '.codex/hooks.json'), 'utf-8')).hooks;
+      expect(Object.values(hooks as Record<string, unknown[]>).flat()).toHaveLength(5);
+      expect(hooks.UserPromptSubmit).toBeUndefined();
+      expect(hooks.SubagentStart).toBeUndefined();
+
+      runInstall({ target: 'codex', location: 'global', profile: 'standard' });
+      hooks = JSON.parse(fs.readFileSync(path.join(home, '.codex/hooks.json'), 'utf-8')).hooks;
+      expect(Object.values(hooks as Record<string, unknown[]>).flat()).toHaveLength(7);
+      expect(hooks.UserPromptSubmit).toHaveLength(1);
+
+      runInstall({ target: 'codex', location: 'global', profile: 'strict' });
+      hooks = JSON.parse(fs.readFileSync(path.join(home, '.codex/hooks.json'), 'utf-8')).hooks;
+      expect(Object.values(hooks as Record<string, unknown[]>).flat()).toHaveLength(11);
+      expect(hooks.SubagentStart).toHaveLength(1);
+    });
+  });
+
   test('codex --location local errors with exit 2 (no project-local hook concept)', () => {
     withTempHome(() => {
       const result = runInstall({ target: 'codex', location: 'local' });

@@ -8,7 +8,7 @@
 
 ### Load On Demand
 - `docs/researches/`: deep codebase analysis and hidden contracts
-- `plans/plan-*.md`: timestamped plan catalog; use `.ai/harness/active-plan` only for its owning worktree, with `.ai/harness/active-worktree` recording that owner and `.claude/.active-plan` as a legacy fallback
+- `plans/plan-*.md`: timestamped plan catalog; use `.ai/harness/active-plan` only for its owning worktree, with `.ai/harness/active-worktree` recording that owner
 - `tasks/contracts/`: active sprint done definitions
 - `tasks/reviews/`: evaluator verdicts
 - `tasks/notes/`: task-local implementation decisions and tradeoffs

@@ -138,7 +138,7 @@ ensure_worktree_status_for_cleanup() {
 is_scaffold_path() {
   local path="$1"
   case "$path" in
-    tasks/todos.md|plans/plan-*.md|tasks/contracts/*.contract.md|tasks/reviews/*.review.md|tasks/notes/*.notes.md|.ai/harness/active-plan|.ai/harness/active-worktree|.claude/.active-plan|.ai/harness/worktrees/*.json)
+    tasks/todos.md|plans/plan-*.md|tasks/contracts/*.contract.md|tasks/reviews/*.review.md|tasks/notes/*.notes.md|.ai/harness/active-plan|.ai/harness/active-worktree|.ai/harness/worktrees/*.json)
       return 0
       ;;
   esac

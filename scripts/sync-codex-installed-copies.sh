@@ -31,6 +31,14 @@ if [[ -n "$CLAUDE_SKILLS_ROOT" ]]; then
   CLAUDE_SKILLS_ROOT="${CLAUDE_SKILLS_ROOT%/}"
 fi
 LINK_INSTALLED_COPIES="${AGENTIC_DEV_LINK_INSTALLED_COPIES:-}"
+INSTALL_PROFILE="${REPO_HARNESS_INSTALL_PROFILE:-minimal}"
+case "$INSTALL_PROFILE" in
+  minimal|standard|product-planning|strict) ;;
+  *)
+    echo "[sync-installed] invalid REPO_HARNESS_INSTALL_PROFILE: $INSTALL_PROFILE" >&2
+    exit 2
+    ;;
+esac
 if [[ -z "$LINK_INSTALLED_COPIES" && "$CODEX_SKILLS_ROOT_WAS_SET" -eq 0 ]]; then
   LINK_INSTALLED_COPIES=1
 fi
@@ -139,12 +147,46 @@ sync_claude_alias_copies() {
   echo "[sync-installed] Claude skill copy: $alias_dest"
 }
 
-# Register every assets/skill-commands/repo-harness-* facade as its own host
-# skill so they are discoverable alongside the umbrella repo-harness router.
-# Each facade dir is self-contained (SKILL.md only), so we link/copy the dir
-# directly. Names are managed: remove_managed_dest re-links cleanly on each
-# sync. A facade removed upstream leaves an orphan dest (parity with the
-# umbrella alias, which also does not garbage-collect renamed targets).
+profile_facades() {
+  case "$INSTALL_PROFILE" in
+    minimal) return 0 ;;
+    standard|product-planning|strict)
+      printf '%s\n' repo-harness-plan repo-harness-check repo-harness-handoff
+      ;;
+  esac
+}
+
+facade_selected() {
+  local wanted="$1"
+  profile_facades | grep -Fxq "$wanted"
+}
+
+remove_retired_owned_facades() {
+  local root="$1"
+  [[ -n "$root" && -d "$root" ]] || return 0
+  local dest name source target
+  for dest in "$root"/repo-harness-*/; do
+    dest="${dest%/}"
+    [[ -e "$dest" || -L "$dest" ]] || continue
+    name="$(basename "$dest")"
+    facade_selected "$name" && continue
+    source="$SOURCE_ROOT/assets/skill-commands/$name"
+    if [[ -L "$dest" ]]; then
+      target="$(readlink "$dest" 2>/dev/null || true)"
+      case "$target" in
+        "$SOURCE_ROOT"/assets/skill-commands/repo-harness-*) rm "$dest" ;;
+      esac
+    elif [[ -f "$dest/.repo-harness-owner.json" ]]; then
+      grep -Fq '"owner":"repo-harness"' "$dest/.repo-harness-owner.json" && rm -rf "$dest"
+    elif [[ -f "$dest/SKILL.md" && -f "$source/SKILL.md" ]] && cmp -s "$dest/SKILL.md" "$source/SKILL.md"; then
+      # One-shot migration for pre-owner-marker exact package copies.
+      rm -rf "$dest"
+    fi
+  done
+}
+
+# Keep default discovery bounded: the umbrella router plus at most three
+# common facades. Specialized capabilities remain CLI subcommands/references.
 sync_command_facades() {
   local root="$1"
   local mode="$2"
@@ -153,6 +195,7 @@ sync_command_facades() {
   fi
 
   mkdir -p "$root"
+  remove_retired_owned_facades "$root"
   local facade_src
   local synced=0
   for facade_src in "$SOURCE_ROOT"/assets/skill-commands/repo-harness-*/; do
@@ -160,6 +203,7 @@ sync_command_facades() {
     facade_src="${facade_src%/}"
     local name
     name="$(basename "$facade_src")"
+    facade_selected "$name" || continue
     local dest="$root/$name"
     remove_managed_dest "$dest"
     if [[ "$mode" == "link" ]]; then
@@ -168,6 +212,7 @@ sync_command_facades() {
       require_rsync_for_copy_mode
       mkdir -p "$dest"
       rsync -a --delete "${common_excludes[@]}" "$facade_src/" "$dest/"
+      printf '%s\n' '{"owner":"repo-harness","surface":"command-facade"}' > "$dest/.repo-harness-owner.json"
     fi
     synced=$((synced + 1))
   done

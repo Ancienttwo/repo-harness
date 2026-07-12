@@ -43,6 +43,7 @@ describe("Codex installed copy sync", () => {
         env: {
           ...process.env,
           AGENTIC_DEV_SOURCE_ROOT: source,
+          REPO_HARNESS_INSTALL_PROFILE: "standard",
           CODEX_SKILLS_ROOT: codexSkills,
           CLAUDE_SKILLS_ROOT: claudeSkills,
         },
@@ -95,6 +96,7 @@ describe("Codex installed copy sync", () => {
         env: {
           ...process.env,
           AGENTIC_DEV_SOURCE_ROOT: source,
+          REPO_HARNESS_INSTALL_PROFILE: "standard",
           AGENTIC_DEV_LINK_INSTALLED_COPIES: "1",
           CODEX_SKILLS_ROOT: codexSkills,
           CLAUDE_SKILLS_ROOT: claudeSkills,
@@ -111,6 +113,43 @@ describe("Codex installed copy sync", () => {
       expect(lstatSync(join(claudeSkills, "repo-harness-plan")).isSymbolicLink()).toBe(true);
       expect(existsSync(join(codexSkills, "repo-harness-plan", "SKILL.md"))).toBe(true);
       expect(result.stdout).toContain("command facades (link)");
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test("minimal profile removes only provably package-owned command facades", () => {
+    const tmp = join(tmpdir(), `repo-harness-installed-minimal-${Date.now()}`);
+    const source = join(tmp, "source");
+    const codexSkills = join(tmp, "codex-skills");
+    try {
+      mkdirSync(join(source, "assets", "skill-commands", "repo-harness-plan"), { recursive: true });
+      mkdirSync(codexSkills, { recursive: true });
+      writeFileSync(join(source, "SKILL.md"), "---\nname: repo-harness\n---\n");
+      writeFileSync(join(source, "assets", "skill-commands", "repo-harness-plan", "SKILL.md"), "---\nname: repo-harness-plan\n---\n");
+      writeFileSync(join(source, "assets", "skill-version.json"), "{}\n");
+      const owned = join(codexSkills, "repo-harness-plan");
+      const custom = join(codexSkills, "repo-harness-custom");
+      mkdirSync(owned, { recursive: true });
+      mkdirSync(custom, { recursive: true });
+      writeFileSync(join(owned, "SKILL.md"), "---\nname: repo-harness-plan\n---\n");
+      writeFileSync(join(custom, "SKILL.md"), "user-authored\n");
+
+      const result = spawnSync("bash", [join(ROOT, "scripts", "sync-codex-installed-copies.sh")], {
+        cwd: ROOT,
+        encoding: "utf-8",
+        env: {
+          ...process.env,
+          AGENTIC_DEV_SOURCE_ROOT: source,
+          AGENTIC_DEV_LINK_INSTALLED_COPIES: "1",
+          REPO_HARNESS_INSTALL_PROFILE: "minimal",
+          CODEX_SKILLS_ROOT: codexSkills,
+          CLAUDE_SKILLS_ROOT: "",
+        },
+      });
+      expect(result.status).toBe(0);
+      expect(existsSync(owned)).toBe(false);
+      expect(existsSync(custom)).toBe(true);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

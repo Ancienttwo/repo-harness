@@ -140,17 +140,18 @@ inspect_worktree_active_state() {
   local rel_worktree="$2"
   local marker plan_path plan_abs owner
 
-  for marker in ".ai/harness/active-plan" ".claude/.active-plan"; do
-    [[ -f "$worktree/$marker" ]] || continue
+  marker=".ai/harness/active-plan"
+  if [[ -f "$worktree/$marker" ]]; then
     plan_path="$(cat "$worktree/$marker" 2>/dev/null | xargs || true)"
-    [[ -n "$plan_path" ]] || continue
-    plan_abs="$(normalize_plan_path "$worktree" "$plan_path")"
-    if [[ -f "$plan_abs" ]]; then
-      append_unique_line "- ${rel_worktree}: ${plan_path}"
-    else
-      append_unique_line "- ${rel_worktree}: stale active-plan marker -> ${plan_path}"
+    if [[ -n "$plan_path" ]]; then
+      plan_abs="$(normalize_plan_path "$worktree" "$plan_path")"
+      if [[ -f "$plan_abs" ]]; then
+        append_unique_line "- ${rel_worktree}: ${plan_path}"
+      else
+        append_unique_line "- ${rel_worktree}: stale active-plan marker -> ${plan_path}"
+      fi
     fi
-  done
+  fi
 
   if [[ -f "$worktree/.ai/harness/active-worktree" ]]; then
     owner="$(cat "$worktree/.ai/harness/active-worktree" 2>/dev/null | xargs || true)"
@@ -180,16 +181,15 @@ collect_active_work_refs() {
 read_current_active_plan() {
   local marker plan_path plan_abs current_path
   current_path="$(pwd -P 2>/dev/null || pwd)"
-  for marker in ".ai/harness/active-plan" ".claude/.active-plan"; do
-    [[ -f "$marker" ]] || continue
-    plan_path="$(cat "$marker" 2>/dev/null | xargs || true)"
-    [[ -n "$plan_path" ]] || continue
-    plan_abs="$(normalize_plan_path "$current_path" "$plan_path")"
-    if [[ -f "$plan_abs" ]]; then
-      printf '%s' "$plan_path"
-      return 0
-    fi
-  done
+  marker=".ai/harness/active-plan"
+  [[ -f "$marker" ]] || return 1
+  plan_path="$(cat "$marker" 2>/dev/null | xargs || true)"
+  [[ -n "$plan_path" ]] || return 1
+  plan_abs="$(normalize_plan_path "$current_path" "$plan_path")"
+  if [[ -f "$plan_abs" ]]; then
+    printf '%s' "$plan_path"
+    return 0
+  fi
   return 1
 }
 

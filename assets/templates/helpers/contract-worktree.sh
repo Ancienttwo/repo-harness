@@ -72,7 +72,6 @@ normalize_slug() {
 }
 
 ACTIVE_PLAN_MARKER=".ai/harness/active-plan"
-LEGACY_ACTIVE_PLAN_MARKER=".claude/.active-plan"
 ACTIVE_WORKTREE_MARKER=".ai/harness/active-worktree"
 
 derive_slug_from_plan() {
@@ -241,9 +240,8 @@ marker_points_to_plan() {
 clear_primary_markers_for_transferred_plan() {
   local plan_file="$1"
 
-  if marker_points_to_plan "$ACTIVE_PLAN_MARKER" "$plan_file" \
-    || marker_points_to_plan "$LEGACY_ACTIVE_PLAN_MARKER" "$plan_file"; then
-    rm -f "$ACTIVE_PLAN_MARKER" "$LEGACY_ACTIVE_PLAN_MARKER" "$ACTIVE_WORKTREE_MARKER"
+  if marker_points_to_plan "$ACTIVE_PLAN_MARKER" "$plan_file"; then
+    rm -f "$ACTIVE_PLAN_MARKER" "$ACTIVE_WORKTREE_MARKER"
     echo "[ContractWorktree] Cleared primary active markers for transferred plan: $plan_file"
   fi
 }
@@ -354,7 +352,7 @@ status_worktree() {
 
 is_local_runtime_marker_path() {
   case "$1" in
-    .ai/harness/active-plan|.ai/harness/active-worktree|.claude/.active-plan)
+    .ai/harness/active-plan|.ai/harness/active-worktree)
       return 0
       ;;
   esac
@@ -413,7 +411,7 @@ clean_matching_untracked_target_files() {
 }
 
 clean_local_runtime_markers() {
-  rm -f .ai/harness/active-plan .ai/harness/active-worktree .claude/.active-plan
+  rm -f .ai/harness/active-plan .ai/harness/active-worktree
 }
 
 finish_transaction_dir=""
@@ -445,7 +443,6 @@ finish_transaction_begin() {
   finish_transaction_snapshot ".ai/harness/active-plan"
   finish_transaction_snapshot ".ai/harness/active-worktree"
   finish_transaction_snapshot ".ai/harness/sprint"
-  finish_transaction_snapshot ".claude/.active-plan"
   finish_transaction_snapshot ".claude/.plan-state"
 }
 

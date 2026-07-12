@@ -230,6 +230,10 @@ describe('init command global runtime bootstrap', () => {
         sourceRoot: source,
         cwd: repo,
         target: 'codex',
+        profile: 'strict',
+        externalSkills: true,
+        codegraph: true,
+        brainRoot: join(home, 'brain'),
         env: {
           ...process.env,
           HOME: home,
@@ -255,7 +259,7 @@ describe('init command global runtime bootstrap', () => {
       expect(existsSync(join(home, '.claude', 'skills', 'codex-review', 'SKILL.md'))).toBe(false);
       expect(readFileSync(bunxLog, 'utf-8')).not.toContain('feature-dev');
       expect(JSON.parse(readFileSync(join(home, '.repo-harness', 'config.json'), 'utf-8')).brainRoot).toBe(
-        join(home, 'Documents', 'brain'),
+        join(home, 'brain'),
       );
       expect(readFileSync(codegraphLog, 'utf-8')).toContain('codegraph install --target codex --location global --yes');
       // Regression guard: the Waza status probe inside check-agent-tooling.sh
@@ -624,8 +628,8 @@ describe('init command global runtime bootstrap', () => {
       expect(res.status).toBe(0);
       const result = JSON.parse(res.stdout);
       expect(readFileSync(bunLog, 'utf-8')).toContain('add -g repo-harness@latest');
-      expect(result.steps.find((step: { step: string }) => step.step === 'configure brain root')?.status).toBe('ok');
-      expect(existsSync(join(home, '.repo-harness', 'config.json'))).toBe(true);
+      expect(result.steps.find((step: { step: string }) => step.step === 'configure brain root')?.status).toBe('skipped');
+      expect(existsSync(join(home, '.repo-harness', 'config.json'))).toBe(false);
       expect(existsSync(join(repo, '.ai'))).toBe(false);
       expect(existsSync(join(repo, 'tasks'))).toBe(false);
       expect(existsSync(join(repo, 'plans'))).toBe(false);
@@ -736,7 +740,7 @@ describe('init command global runtime bootstrap', () => {
     expect(res.stdout).toContain('Deprecated: use repo-harness adopt --repo <path>');
   });
 
-  test('CLI install bootstraps non-interactively over piped (non-TTY) stdio with default-on optional deps', () => {
+  test('CLI install defaults non-interactively to the minimal profile without optional ecosystems', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-cli-install-non-tty-'));
     const home = join(tmp, 'home');
     const repo = join(tmp, 'repo');
@@ -779,9 +783,8 @@ describe('init command global runtime bootstrap', () => {
 
       expect(res.status).toBe(0);
       expect(res.stdout).toContain('install repo-harness CLI');
-      expect(readFileSync(bunxLog, 'utf-8')).toContain('skills add tw93/Waza');
-      expect(readFileSync(bunxLog, 'utf-8')).toContain('skills add BfdCampos/dotfiles');
-      expect(readFileSync(codegraphLog, 'utf-8')).toContain('codegraph install --target codex --location global --yes');
+      expect(existsSync(bunxLog)).toBe(false);
+      expect(existsSync(codegraphLog)).toBe(false);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
@@ -789,9 +792,9 @@ describe('init command global runtime bootstrap', () => {
 });
 
 describe('resolveOptionalRuntimeDeps (interactive optional-dep prompts)', () => {
-  test('non-interactive keeps default-on behavior regardless of flags omitted', async () => {
+  test('non-interactive defaults optional ecosystems off', async () => {
     const result = await resolveOptionalRuntimeDeps({ target: 'both' }, undefined, { interactive: false });
-    expect(result).toEqual({ externalSkills: true, codegraph: true });
+    expect(result).toEqual({ externalSkills: false, codegraph: false });
   });
 
   test('non-interactive still honors explicit --no-* flags without prompting', async () => {
@@ -828,7 +831,7 @@ describe('resolveOptionalRuntimeDeps (interactive optional-dep prompts)', () => 
     expect(outputChunks.join('')).toContain('Install CodeGraph CLI');
   });
 
-  test('interactive mode keeps the default-on outcome when the answer is blank (Enter)', async () => {
+  test('interactive mode keeps optional ecosystems off when the answer is blank', async () => {
     const input = new PassThrough();
     ['\n', '\n'].forEach((answer, index) => {
       setTimeout(() => input.write(answer), index * 5);
@@ -846,7 +849,7 @@ describe('resolveOptionalRuntimeDeps (interactive optional-dep prompts)', () => 
       output,
     });
 
-    expect(result).toEqual({ externalSkills: true, codegraph: true });
+    expect(result).toEqual({ externalSkills: false, codegraph: false });
   });
 
   test('interactive mode does not prompt for a flag explicitly passed on the CLI', async () => {

@@ -511,6 +511,55 @@ describe('hook command (Phase 1B)', () => {
     );
   });
 
+  test('SessionStart global budget emits zero for non-actionable context and dedupes actionable state', () => {
+    withTempRepo(
+      {
+        optIn: true,
+        scripts: {
+          'session-start-context.sh': '#!/bin/bash\necho "# Pending Plan Capture"\necho "continue captured plan"\n',
+          'minimal-change-context.sh': '#!/bin/bash\necho "generic static advice"\n',
+          'security-sentinel.sh': '#!/bin/bash\nexit 0\n',
+        },
+      },
+      (repoRoot) => {
+        const env = { ...process.env, HOOK_SESSION_ID: 'budget-session' };
+        const first = spawnSync(process.execPath, [HOOK_ENTRY, 'SessionStart', '--route', 'default'], {
+          cwd: repoRoot, encoding: 'utf-8', env,
+        });
+        expect(first.status).toBe(0);
+        const context = JSON.parse(first.stdout).hookSpecificOutput.additionalContext as string;
+        expect(context).toContain('# Pending Plan Capture');
+        expect(Buffer.byteLength(context, 'utf-8') / 4).toBeLessThanOrEqual(1500);
+
+        const second = spawnSync(process.execPath, [HOOK_ENTRY, 'SessionStart', '--route', 'default'], {
+          cwd: repoRoot, encoding: 'utf-8', env,
+        });
+        expect(second.status).toBe(0);
+        expect(second.stdout).toBe('');
+      },
+    );
+
+    withTempRepo(
+      {
+        optIn: true,
+        scripts: {
+          'session-start-context.sh': '#!/bin/bash\nexit 0\n',
+          'minimal-change-context.sh': '#!/bin/bash\necho "generic static advice"\n',
+          'security-sentinel.sh': '#!/bin/bash\nexit 0\n',
+        },
+      },
+      (repoRoot) => {
+        const idle = spawnSync(process.execPath, [HOOK_ENTRY, 'SessionStart', '--route', 'default'], {
+          cwd: repoRoot, encoding: 'utf-8', env: { ...process.env, HOOK_SESSION_ID: 'idle-session' },
+        });
+        expect(idle.status).toBe(0);
+        expect(idle.stdout).toBe('');
+        const evidence = JSON.parse(fs.readFileSync(path.join(repoRoot, '.ai/harness/state/session-context-budget.json'), 'utf-8'));
+        expect(evidence.estimated_tokens).toBe(0);
+      },
+    );
+  });
+
   test('Codex Stop with missing advisory script exits 0 without stdout', () => {
     withTempRepo({ optIn: true }, (repoRoot) => {
       const res = spawnSync(
@@ -552,12 +601,11 @@ describe('hook command (Phase 1B)', () => {
     );
   });
 
-  test('UserPromptSubmit route runs prompt-guard through the TS decision engine', () => {
+  test('UserPromptSubmit routes explicit execution without reviving implicit plan capture', () => {
     withTempRepo({ optIn: true }, (repoRoot) => {
       installAssetHooks(repoRoot);
       fs.mkdirSync(path.join(repoRoot, 'docs'), { recursive: true });
       fs.mkdirSync(path.join(repoRoot, 'plans'), { recursive: true });
-      fs.mkdirSync(path.join(repoRoot, '.claude'), { recursive: true });
       fs.writeFileSync(path.join(repoRoot, 'docs/spec.md'), '# Spec\n');
       const planPath = 'plans/plan-20260531-1200-demo.md';
       fs.writeFileSync(
@@ -572,7 +620,6 @@ describe('hook command (Phase 1B)', () => {
         ].join('\n') + '\n',
       );
       fs.writeFileSync(path.join(repoRoot, '.ai/harness/active-plan'), planPath);
-      fs.writeFileSync(path.join(repoRoot, '.claude/.active-plan'), planPath);
       fs.writeFileSync(path.join(repoRoot, '.ai/harness/active-worktree'), `${repoRoot}\n`);
 
       const res = spawnSync(
@@ -580,7 +627,7 @@ describe('hook command (Phase 1B)', () => {
         [HOOK_ENTRY, 'UserPromptSubmit', '--route', 'default'],
         {
           cwd: repoRoot,
-          input: JSON.stringify({ prompt: 'implement this plan' }),
+          input: JSON.stringify({ prompt: '/execute' }),
           encoding: 'utf-8',
           env: {
             ...process.env,
@@ -590,8 +637,8 @@ describe('hook command (Phase 1B)', () => {
       );
 
       expect(res.status).toBe(0);
-      expect(res.stdout).toContain('[PlanCaptureGate]');
-      expect(res.stdout).toContain('repo-harness run plan-to-todo --plan');
+      expect(res.stdout).toContain('[PlanStatusGuard]');
+      expect(res.stdout).not.toContain('[PlanCaptureGate]');
       expect(res.stderr).toBe('');
     });
   });
@@ -717,7 +764,7 @@ describe('hook command (Phase 1B)', () => {
       const parsed = JSON.parse(explicit.stdout);
       expect(parsed.hookSpecificOutput.hookEventName).toBe('UserPromptSubmit');
       expect(parsed.hookSpecificOutput.additionalContext).toContain('[repo-harness:delegation]');
-      expect(parsed.hookSpecificOutput.additionalContext).toContain('Spawn no more than 3 agents');
+      expect(parsed.hookSpecificOutput.additionalContext).toContain('Spawn no more than 2 agents');
       expect(parsed.hookSpecificOutput.additionalContext).toContain('authoritative execution brief');
       expect(parsed.hookSpecificOutput.additionalContext).toContain('MUST NOT silently succeed');
       expect(parsed.hookSpecificOutput.additionalContext).toContain(

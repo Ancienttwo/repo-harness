@@ -6,7 +6,7 @@
 
 ### 2. Annotation Cycle
 - Iterate plan updates directly in `plans/plan-*.md` via inline notes.
-- Treat `.ai/harness/active-plan` as authoritative for this worktree when present; `.ai/harness/active-worktree` records the owning worktree; `.claude/.active-plan` is a legacy fallback during transition.
+- Treat `.ai/harness/active-plan` as authoritative for this worktree when present; `.ai/harness/active-worktree` records the owning worktree.
 - Switch between concurrent plans with `repo-harness run switch-plan --plan <plan-file>`.
 - Fill the plan/contract workflow inventory before implementation.
 - Do not implement while plan status is `Draft` or `Annotating`.

@@ -13,7 +13,7 @@ PLAN_LOOP:
   SPEC_FILE: docs/spec.md
   PLAN_DIR: plans/
   PLAN_ARCHIVE: plans/archive/
-  ACTIVE_PLAN_RULE: .ai/harness/active-plan marker is scoped to this worktree; .ai/harness/active-worktree records the owner; legacy .claude/.active-plan is fallback only
+  ACTIVE_PLAN_RULE: .ai/harness/active-plan marker is scoped to this worktree; .ai/harness/active-worktree records the owner
   PLAN_SWITCH: repo-harness run switch-plan --plan <plan-file> | --list
   DEFERRED_LEDGER: tasks/todos.md
   TODO_ARCHIVE: tasks/archive/
@@ -51,7 +51,7 @@ PLAN_LOOP:
 Core rules (canonical source: see Workflow Orchestration section below):
 - `docs/spec.md` is product truth; `plans/` is execution truth.
 - `tasks/contracts/`, `tasks/reviews/`, and `tasks/notes/` are done gates; hooks are accelerators only.
-- Treat `.ai/harness/active-plan` as authoritative only for its owning worktree; `.ai/harness/active-worktree` records that owner; `.claude/.active-plan` is a legacy fallback during transition.
+- Treat `.ai/harness/active-plan` as authoritative only for its owning worktree; `.ai/harness/active-worktree` records that owner.
 - Require plan/contract workflow inventory before implementation: active plan, owning worktree, contract, review, notes, deferred ledger, checks, runs, scope owner, switching rule, and worktree path.
 - Mark done only with verification evidence.
 - Durable progress lives in `tasks/workstreams/`; release history belongs in `docs/CHANGELOG.md`.

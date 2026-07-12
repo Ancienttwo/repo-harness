@@ -1073,9 +1073,8 @@ set_plan_status "$plan_file" "Executing"
 if declare -F set_active_plan >/dev/null 2>&1; then
   set_active_plan "$plan_file"
 else
-  mkdir -p .ai/harness .claude
+  mkdir -p .ai/harness
   printf '%s' "$plan_file" > .ai/harness/active-plan
-  printf '%s' "$plan_file" > .claude/.active-plan
   pwd -P > .ai/harness/active-worktree
 fi
 

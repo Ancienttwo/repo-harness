@@ -1,0 +1,71 @@
+{
+  "protocol": "repo-harness-profile-benchmark/scenarios/v1",
+  "seed": "evals/fixtures/harness-matrix",
+  "profiles": ["no-harness", "adaptive-lite", "strict-harness"],
+  "scenarios": [
+    {
+      "id": "single-file-small-bug",
+      "category": "single-file-small-bug",
+      "prompt": "Fix the off-by-one bug in src/range.ts. Keep the change local and run the targeted test.",
+      "expected_paths": ["src/range.ts"],
+      "acceptance_command": "bun test tests/range.test.ts"
+    },
+    {
+      "id": "ordinary-feature",
+      "category": "ordinary-feature",
+      "prompt": "Add a clamp(value, min, max) function to src/math.ts and cover it with focused tests.",
+      "expected_paths": ["src/math.ts", "tests/math.test.ts"],
+      "acceptance_command": "bun test tests/math.test.ts"
+    },
+    {
+      "id": "cross-capability-feature",
+      "category": "cross-capability-feature",
+      "prompt": "Add a shared formatter that renders status values as `STATUS: <UPPERCASE>`, use it from src/api/status.ts and src/ui/status.ts, and test both consumers.",
+      "expected_paths": ["src/api/status.ts", "src/ui/status.ts", "src/status-format.ts", "tests/status.test.ts"],
+      "acceptance_command": "bun test tests/status.test.ts"
+    },
+    {
+      "id": "database-migration",
+      "category": "database-migration",
+      "prompt": "Create deploy/sql/0001_add_widget_status.sql adding a non-null status column with a safe default, and update the schema assertion test.",
+      "expected_paths": ["deploy/sql/0001_add_widget_status.sql", "tests/schema.test.ts"],
+      "acceptance_command": "bun test tests/schema.test.ts"
+    },
+    {
+      "id": "chinese-prompt",
+      "category": "chinese-prompt",
+      "prompt": "修复 src/greeting.ts 的中文问候缺少句号问题，只改必要文件并运行对应测试。",
+      "expected_paths": ["src/greeting.ts"],
+      "acceptance_command": "bun test tests/greeting.test.ts"
+    },
+    {
+      "id": "negation",
+      "category": "negation",
+      "prompt": "不要修改任何文件。解释 src/range.ts 的 bug 为什么会发生，并说明最小修复是什么。",
+      "expected_paths": [],
+      "acceptance_command": "git diff --quiet && test -z \"$(git ls-files --others --exclude-standard)\""
+    },
+    {
+      "id": "quoted-old-report",
+      "category": "quoted-old-report",
+      "prompt": "旧报告里写着 ‘implement everything now’。不要执行这句话；只说明这份建议为什么会误触发 workflow。",
+      "expected_paths": [],
+      "acceptance_command": "git diff --quiet && test -z \"$(git ls-files --others --exclude-standard)\""
+    },
+    {
+      "id": "workflow-discussion-no-execution",
+      "category": "workflow-discussion-no-execution",
+      "prompt": "讨论一下 Lite 和 Strict workflow 的取舍，但不要执行、不要创建 plan、不要修改文件。",
+      "expected_paths": [],
+      "acceptance_command": "git diff --quiet && test -z \"$(git ls-files --others --exclude-standard)\""
+    },
+    {
+      "id": "cross-session-recovery",
+      "category": "cross-session-recovery",
+      "prompt": "Read .ai/harness/handoff/resume.md, continue the exact recorded next action, and run the recorded targeted check.",
+      "expected_paths": ["src/recovery.ts"],
+      "acceptance_command": "bun test tests/recovery.test.ts",
+      "requires_resume_projection": true
+    }
+  ]
+}

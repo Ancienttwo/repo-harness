@@ -124,7 +124,18 @@ JSON_INPUT="$input" REPO_ROOT="${HOOK_REPO_ROOT:-$(pwd)}" bun -e '
     if (isDelegationDiscussion(prompt)) process.exit(0);
   }
 
-  const maxAgents = Number.isInteger(policyDelegation.max_agents) ? policyDelegation.max_agents : 3;
+  let strictContract = false;
+  try {
+    const plan = fs.readFileSync(path.join(repoRoot, ".ai", "harness", "active-plan"), "utf8").trim();
+    const match = /^plans\/plan-(.+)\.md$/.exec(plan);
+    if (match) {
+      const contract = fs.readFileSync(path.join(repoRoot, "tasks", "contracts", `${match[1]}.contract.md`), "utf8");
+      strictContract = /^> \*\*Workflow Profile\*\*:\s*strict\s*$/mi.test(contract);
+    }
+  } catch { strictContract = false; }
+  const defaultMax = Number.isInteger(policyDelegation.max_agents) ? policyDelegation.max_agents : 2;
+  const strictMax = Number.isInteger(policyDelegation.strict_max_agents) ? policyDelegation.strict_max_agents : 3;
+  const maxAgents = strictContract ? Math.min(strictMax, 3) : Math.min(defaultMax, 2);
   const maxDepth = Number.isInteger(policyDelegation.max_depth) ? policyDelegation.max_depth : 1;
   const preferredRunners =
     Array.isArray(policyDelegation.preferred_runners) && policyDelegation.preferred_runners.length

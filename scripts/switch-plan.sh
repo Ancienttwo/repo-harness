@@ -30,7 +30,6 @@ extract_status() {
 }
 
 ACTIVE_PLAN_MARKER=".ai/harness/active-plan"
-LEGACY_ACTIVE_PLAN_MARKER=".claude/.active-plan"
 ACTIVE_WORKTREE_MARKER=".ai/harness/active-worktree"
 
 read_active_plan_marker() {
@@ -49,15 +48,13 @@ read_active_plan_marker() {
 }
 
 get_active_plan() {
-  read_active_plan_marker "$ACTIVE_PLAN_MARKER" \
-    || read_active_plan_marker "$LEGACY_ACTIVE_PLAN_MARKER"
+  read_active_plan_marker "$ACTIVE_PLAN_MARKER"
 }
 
 write_active_plan_marker() {
   local plan_file="$1"
-  mkdir -p "$(dirname "$ACTIVE_PLAN_MARKER")" "$(dirname "$LEGACY_ACTIVE_PLAN_MARKER")" "$(dirname "$ACTIVE_WORKTREE_MARKER")"
+  mkdir -p "$(dirname "$ACTIVE_PLAN_MARKER")" "$(dirname "$ACTIVE_WORKTREE_MARKER")"
   printf '%s' "$plan_file" > "$ACTIVE_PLAN_MARKER"
-  printf '%s' "$plan_file" > "$LEGACY_ACTIVE_PLAN_MARKER"
   pwd -P > "$ACTIVE_WORKTREE_MARKER"
 }
 

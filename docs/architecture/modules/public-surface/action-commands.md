@@ -6,9 +6,10 @@
 
 ## P1 Map
 
-Command facades are thin compatibility skill wrappers stored under
-`assets/skill-commands/`. They expose user-facing verbs for hosts that discover
-skills, while the implementation authority remains in the `repo-harness` CLI,
+Command facades are on-demand skill wrappers stored under
+`assets/skill-commands/`. They remain a CLI/documentation catalog, while the
+default installed discovery surface is the root router plus at most
+`repo-harness-plan`, `repo-harness-check`, and `repo-harness-handoff`. The implementation authority remains in the `repo-harness` CLI,
 scripts, hooks, and contract files:
 
 - `repo-harness-plan`
@@ -31,8 +32,9 @@ scripts, hooks, and contract files:
 - `repo-harness-gptpro-setup`
 - `repo-harness-gptpro`
 
-The manifest at `assets/skill-commands/manifest.json` is the compatibility
-facade catalog. The root `SKILL.md` remains the router over the same engine.
+The manifest at `assets/skill-commands/manifest.json` is the on-demand facade
+catalog. `scripts/sync-codex-installed-copies.sh` owns profile selection and
+removes only symlinks, ownership-marked copies, or exact package copies.
 
 ## P2 Trace
 
@@ -66,10 +68,9 @@ steps while the CLI+hooks path owns execution. It preserves the invariant that
 `hooks-init`, `docs-init`, and `create-project-dirs` are internal steps, not
 public commands.
 
-At 10x commands, the first failure would be duplicate policy across command
-files. The smallest coherent guard is the manifest plus tests and architecture
-docs that assert command inventory, mutability defaults, and public boundaries
-from the same CLI-backed facade surface.
+At 10x commands, the first failure is discovery and routing duplication. The
+catalog may grow, but default installation remains bounded and specialized
+commands are loaded only after an explicit action.
 
 ## Optimization Backlog
 

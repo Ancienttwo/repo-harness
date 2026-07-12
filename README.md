@@ -282,23 +282,21 @@ npx -y repo-harness@latest install
 ### 2. Bootstrap the host runtime once
 
 ```bash
-repo-harness install
+repo-harness install --profile minimal
 ```
 
 `install` is the first-run global bootstrap path. It installs the current npm
 package as the global CLI, refreshes repo-harness skill aliases, installs
-user-level hook adapters, configures Waza runtime skills, persists a brain root
-under `~/.repo-harness/config.json`, and configures CodeGraph MCP. The command
-is idempotent: when the CLI is already installed from Bun's global package
-source, it skips the CLI reinstall and still refreshes the host runtime pieces.
-In an interactive terminal it asks Y/n before installing the external skills
-and CodeGraph pieces (Enter keeps today's default of installing both); non-TTY
-runs and `--json` stay unprompted with the same default-on behavior. Passing
-`--no-external-skills` or `--no-codegraph` explicitly also skips that item's
-prompt unprompted, which is the escape hatch for PTY-allocating CI (for example
-`docker run -t`). It does not apply repo-local workflow files to the current
-directory. `repo-harness init` remains a compatibility alias for existing
-scripts.
+user-level hook adapters, and records an explicit install profile. `minimal`
+is the interactive and non-interactive default; it does not install Waza,
+cross-review skills, a brain root, or CodeGraph. Use `standard`,
+`product-planning`, or `strict` only when those surfaces are wanted. The command
+is idempotent. `--dry-run --json` lists components to install, skip, and remove;
+`--state --json` reads the effective installed state; `--rollback` restores the
+previous profile transaction. See
+[`docs/reference-configs/install-profiles.md`](docs/reference-configs/install-profiles.md).
+
+It does not apply repo-local workflow files to the current directory.
 
 For an Agent-owned, read-only bootstrap audit, run `repo-harness setup check
 --json` or add `--check-updates` for version and adopted-repo refresh

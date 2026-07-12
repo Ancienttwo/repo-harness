@@ -178,7 +178,7 @@ read_active_plan() {
     workflow_active_plan || true
     return 0
   fi
-  for marker in ".ai/harness/active-plan" ".claude/.active-plan"; do
+  for marker in ".ai/harness/active-plan"; do
     if [[ -f "$marker" ]]; then
       plan="$(cat "$marker" 2>/dev/null | xargs)"
       if [[ -n "$plan" ]]; then
@@ -292,7 +292,7 @@ path_under_allowed_prefix() {
 
 ignore_changed_file_for_scope() {
   case "$1" in
-    .ai/harness/active-plan|.ai/harness/active-worktree|.claude/.active-plan)
+    .ai/harness/active-plan|.ai/harness/active-worktree)
       return 0
       ;;
   esac
@@ -415,6 +415,7 @@ worktree_path="$(pwd -P)"
 branch_name="$(git branch --show-current 2>/dev/null || true)"
 diff_base_ref="$(git_diff_base_ref || true)"
 diff_base_commit="$(git_diff_merge_base || true)"
+implementation_fingerprint="$(workflow_current_review_fingerprint_value 2>/dev/null || true)"
 changed_files=()
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   while IFS= read -r changed_file; do
@@ -574,6 +575,7 @@ if command -v jq >/dev/null 2>&1 && jq -e . "$contract_report" >/dev/null 2>&1; 
     --arg branch "$branch_name" \
     --arg diff_base_ref "$diff_base_ref" \
     --arg diff_base_commit "$diff_base_commit" \
+    --arg implementation_fingerprint "$implementation_fingerprint" \
     --argjson files_changed "$(git_changed_files_json)" \
     --argjson allowed_paths_check "$allowed_paths_check" \
     --argjson allowed_paths "$(allowed_paths_json "$contract_file")" \
@@ -599,6 +601,7 @@ if command -v jq >/dev/null 2>&1 && jq -e . "$contract_report" >/dev/null 2>&1; 
         ref: $diff_base_ref,
         merge_base: $diff_base_commit
       },
+      implementation_fingerprint: $implementation_fingerprint,
       commands: [
         {name: "verify-sprint", command: $command, status: $status, exit_code: $exit_code},
         {name: "verify-contract", command: $contract_command, status: $contract_status, exit_code: $contract_exit}
@@ -668,6 +671,7 @@ else
     "ref": "$(json_escape "$diff_base_ref")",
     "merge_base": "$(json_escape "$diff_base_commit")"
   },
+  "implementation_fingerprint": "$(json_escape "$implementation_fingerprint")",
   "commands": [
     {
       "name": "verify-sprint",

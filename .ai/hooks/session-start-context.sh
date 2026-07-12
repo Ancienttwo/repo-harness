@@ -558,14 +558,6 @@ if [[ -n "$context" ]]; then
   context="$(input_priority_context)"$'\n'"${context}"
 fi
 
-# Cross-review availability for Codex. The dispatcher swallows prompt-guard's
-# success stdout on Codex, so attach a short reminder only when SessionStart is
-# already injecting actionable context.
-if [[ "${HOOK_HOST:-}" == "codex" && -n "$context" ]]; then
-  cross_review_note="[CrossReview] High-risk diff/spec/test/debug only: run /claude-review when a second model view is worth the tokens."
-  context="${context}"$'\n'"${cross_review_note}"
-fi
-
 [[ -n "$context" ]] || exit 0
 
 if command -v jq >/dev/null 2>&1; then

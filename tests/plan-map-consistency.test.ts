@@ -132,17 +132,17 @@ describe("Plan map consistency", () => {
     expect(planMap.plans.J.defaultLsp).toBe("rust-analyzer-lsp");
   });
 
-  test("canonical plan labels should appear in docs", () => {
+  test("canonical plan labels live in on-demand stack docs, not the root router", () => {
     const skill = read("SKILL.md");
     const techStacks = read("references/tech-stacks.md");
 
     for (const plan of ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K"]) {
-      expect(skill).toContain(`Plan ${plan}`);
+      expect(skill).not.toContain(`Plan ${plan}`);
       expect(techStacks).toContain(`Plan ${plan}`);
     }
 
-    expect(skill).toContain("Core Plans (A-F)");
-    expect(skill).toContain("Custom Presets (G-K)");
+    expect(skill).not.toContain("Core Plans (A-F)");
+    expect(skill).not.toContain("Custom Presets (G-K)");
     expect(techStacks).toContain("Core Plans (A-F)");
     expect(techStacks).toContain("Custom Presets (G-K)");
   });

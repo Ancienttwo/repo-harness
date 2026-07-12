@@ -289,6 +289,13 @@ function defaultPolicy(documentationProfile: string): JsonObject {
       capability_registry_file: ".ai/context/capabilities.json",
       capability_match_rule: "longest-prefix; same-length ambiguity fails",
     },
+    worktree_strategy: {
+      base_branch: "main",
+      review_base: "main",
+      merge_back: {
+        target: "main",
+      },
+    },
     harness: {
       policy_file: ".ai/harness/policy.json",
       checks_file: ".ai/harness/checks/latest.json",

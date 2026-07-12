@@ -2,12 +2,11 @@
   "version": 1,
   "active_plan": {
     "marker_file": ".ai/harness/active-plan",
-    "legacy_marker_file": ".claude/.active-plan",
     "directory": "plans",
     "archive_directory": "plans/archive",
     "glob": "plan-*.md",
     "active_worktree_marker_file": ".ai/harness/active-worktree",
-    "source_of_truth": "per-worktree explicit marker with active-worktree owner; legacy Claude marker fallback only"
+    "source_of_truth": "per-worktree explicit marker with active-worktree owner"
   },
   "tasks": {
     "todo_file": "tasks/todos.md",
@@ -193,7 +192,8 @@
   },
   "delegation": {
     "mode": "explicit",
-    "max_agents": 3,
+    "max_agents": 2,
+    "strict_max_agents": 3,
     "max_depth": 1,
     "allow_parallel_writers": false,
     "stop_fallback": true,
@@ -255,6 +255,7 @@
     "auto_for_contract_tasks": true,
     "branch_prefix": "codex/",
     "base_branch": "main",
+    "review_base": "origin/main",
     "worktree_dir_template": "../{{repo}}-wt-{{slug}}",
     "start_script": "repo-harness run contract-worktree start --plan <plan-file>",
     "finish_script": "repo-harness run contract-worktree finish",
@@ -454,6 +455,13 @@
     ],
     "report_path": ".ai/harness/checks/minimal-change.latest.json",
     "event_dedupe": true
+  },
+  "circuit_breakers": {
+    "guard_repeat": 2,
+    "review": { "lite": 1, "standard": 1, "strict": 2 },
+    "subagents": { "default": 2, "strict_explicit_contract": 3 },
+    "repair_loops": 2,
+    "cross_model_consults_default": 0
   },
   "enforcement": {
     "worktree_guard": "warn-by-default",

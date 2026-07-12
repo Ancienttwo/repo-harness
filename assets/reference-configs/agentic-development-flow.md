@@ -87,7 +87,7 @@ work, or shared contracts, report the P1/P2/P3 evidence explicitly.
 ## Passive Plan Capture
 
 - Codex Plan mode and Waza `/think` do not need the user to remember `new-sprint` or `plan-to-todo`.
-- The agent should capture decision-complete work-package planning output with `repo-harness run capture-plan --artifact-level work-package`; the script sets `.ai/harness/active-plan`, writes `.ai/harness/active-worktree`, mirrors `.claude/.active-plan`, and writes a timestamped `plans/plan-*.md` artifact with a concrete Artifact Level and Promotion Gate. Use `--artifact-level checklist-row` when the captured output should only extend the active plan's `## Task Breakdown`.
+- The agent should capture decision-complete work-package planning output with `repo-harness run capture-plan --artifact-level work-package`; the script sets `.ai/harness/active-plan`, writes `.ai/harness/active-worktree`, and writes a timestamped `plans/plan-*.md` artifact with a concrete Artifact Level and Promotion Gate. Use `--artifact-level checklist-row` when the captured output should only extend the active plan's `## Task Breakdown`.
 - Planning capture is allowed before implementation. Contract, review, notes, and worktree artifacts are generated only after explicit implementation approval; `tasks/todos.md` is not a duplicate of plan tasks.
 - Current-status capture is separate from planning capture: `tasks/current.md` is regenerated from artifacts for orientation, not edited as a plan or task list.
 

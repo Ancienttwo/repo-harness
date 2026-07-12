@@ -85,7 +85,7 @@ safe_repo_file() {
 }
 
 active_plan() {
-  for marker_file in ".ai/harness/active-plan" ".claude/.active-plan"; do
+  for marker_file in ".ai/harness/active-plan"; do
     if [[ ! -f "$marker_file" ]]; then
       continue
     fi

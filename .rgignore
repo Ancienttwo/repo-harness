@@ -12,3 +12,4 @@ tasks/archive/
 .ai/harness/handoff/current.md
 .ai/harness/handoff/resume.md
 .ai/harness/runs/
+.ai/harness/state/

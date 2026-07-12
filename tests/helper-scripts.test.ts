@@ -166,9 +166,7 @@ function writeFixtureCapabilityRegistry(cwd: string): void {
 
 function writeActivePlan(cwd: string, planPath: string) {
   mkdirSync(join(cwd, ".ai/harness"), { recursive: true });
-  mkdirSync(join(cwd, ".claude"), { recursive: true });
   writeFileSync(join(cwd, ".ai/harness/active-plan"), planPath);
-  writeFileSync(join(cwd, ".claude/.active-plan"), planPath);
   writeFileSync(join(cwd, ".ai/harness/active-worktree"), `${realpathSync(cwd)}\n`);
 }
 
@@ -657,7 +655,7 @@ describe("Workflow helper scripts", () => {
       expect(plan).toContain("## Captured Planning Output");
       expect(plan).toContain("- [ ] Add capture helper");
       expect(readFileSync(join(cwd, ".ai/harness/active-plan"), "utf-8")).toBe(`plans/${plans[0]}`);
-      expect(readFileSync(join(cwd, ".claude/.active-plan"), "utf-8")).toBe(`plans/${plans[0]}`);
+      expect(existsSync(join(cwd, ".claude/.active-plan"))).toBe(false);
       expect(readFileSync(join(cwd, ".ai/harness/active-worktree"), "utf-8").trim()).toBe(cwd);
       expect(existsSync(join(cwd, ".ai/harness/planning/pending.json"))).toBe(false);
     } finally {
@@ -816,7 +814,7 @@ describe("Workflow helper scripts", () => {
     }
   });
 
-  test("switch-plan should prefer the host-neutral marker and mirror legacy marker", () => {
+  test("switch-plan should ignore and not rewrite the retired legacy marker", () => {
     const cwd = tmpWorkspace("helper-switch-plan-active-marker");
     try {
       copyHelpers(cwd);
@@ -825,7 +823,7 @@ describe("Workflow helper scripts", () => {
       writeFileSync(join(cwd, "plans/plan-20260327-2210-beta.md"), "# Plan: beta\n\n> **Status**: Draft\n");
       writeFileSync(join(cwd, ".ai/harness/active-plan"), "plans/plan-20260327-2200-alpha.md");
       mkdirSync(join(cwd, ".claude"), { recursive: true });
-      writeFileSync(join(cwd, ".claude/.active-plan"), "plans/plan-20260327-2210-beta.md");
+      writeFileSync(join(cwd, ".claude/.active-plan"), "plans/plan-20260327-2200-alpha.md");
 
       const list = run("bash", ["scripts/switch-plan.sh", "--list"], cwd);
       expect(list.status).toBe(0);
@@ -835,7 +833,7 @@ describe("Workflow helper scripts", () => {
       expect(switched.status).toBe(0);
       expect(switched.stdout).toContain("tasks/todos.md is a deferred-goal ledger");
       expect(readFileSync(join(cwd, ".ai/harness/active-plan"), "utf-8")).toBe("plans/plan-20260327-2210-beta.md");
-      expect(readFileSync(join(cwd, ".claude/.active-plan"), "utf-8")).toBe("plans/plan-20260327-2210-beta.md");
+      expect(readFileSync(join(cwd, ".claude/.active-plan"), "utf-8")).toBe("plans/plan-20260327-2200-alpha.md");
       expect(readFileSync(join(cwd, ".ai/harness/active-worktree"), "utf-8").trim()).toBe(cwd);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
@@ -1011,7 +1009,7 @@ describe("Workflow helper scripts", () => {
       expect(linkedPlans).toHaveLength(1);
       expect(existsSync(join(cwd, "plans", linkedPlans[0]))).toBe(false);
       expect(readFileSync(join(worktreePath, ".ai/harness/active-plan"), "utf-8")).toBe(`plans/${linkedPlans[0]}`);
-      expect(readFileSync(join(worktreePath, ".claude/.active-plan"), "utf-8")).toBe(`plans/${linkedPlans[0]}`);
+      expect(existsSync(join(worktreePath, ".claude/.active-plan"))).toBe(false);
       expect(readFileSync(join(worktreePath, ".ai/harness/active-worktree"), "utf-8").trim()).toBe(realpathSync(worktreePath));
     } finally {
       run("git", ["worktree", "remove", "--force", worktreePath], cwd);
@@ -3708,7 +3706,8 @@ describe("Workflow helper scripts", () => {
           "- [ ] Finish handoff",
         ].join("\n")
       );
-      writeFileSync(join(cwd, ".claude/.active-plan"), "plans/plan-20260327-2200-alpha.md");
+      writeFileSync(join(cwd, ".ai/harness/active-plan"), "plans/plan-20260327-2200-alpha.md");
+      writeFileSync(join(cwd, ".ai/harness/active-worktree"), `${realpathSync(cwd)}\n`);
       writeFileSync(
         join(cwd, "plans/sprints/20260327-alpha.sprint.md"),
         [
@@ -4236,7 +4235,6 @@ describe("Workflow helper scripts", () => {
       ).toBe(0);
 
       rmSync(join(cwd, ".ai/harness/active-plan"), { force: true });
-      rmSync(join(cwd, ".claude/.active-plan"), { force: true });
       rmSync(join(cwd, ".ai/harness/active-worktree"), { force: true });
       writeFileSync(join(cwd, ".ai/harness/handoff/current.md"), "# Harness Handoff\n\nNo active plan.\n");
       writeFileSync(

@@ -140,13 +140,11 @@ describe("Hook contracts", () => {
     expect(script).toContain("repo-harness run verify-contract");
     expect(script).toContain("HarnessMaintenance");
     expect(script).toContain("has_changes_glob");
-    expect(script).toContain("emit_cross_review_hint");
     expect(script).toContain("emit_external_acceptance_prompt");
     expect(script).toContain("[ExternalAcceptance]");
     expect(script).toContain("## External Acceptance Advice");
     expect(script).toContain("[CrossReview]");
-    expect(script).toContain("codex-review");
-    expect(script).toContain("claude-review");
+    expect(script).toContain("prompt_strict_workflow || return 0");
     expect(script).not.toContain("📋");
     expect(script).not.toContain("🧠");
     expect(script).not.toContain("📎");
@@ -169,14 +167,13 @@ describe("Hook contracts", () => {
     expect(intents).toContain("\\p{P}");
   });
 
-  test("session-start should gate the Codex-host cross-review availability note", () => {
+  test("session-start should not spend the global budget on cross-review availability", () => {
     const script = read("assets/hooks/session-start-context.sh");
-    expect(script).toContain("[CrossReview]");
+    expect(script).not.toContain("[CrossReview]");
     expect(script).toContain("Pending Plan Capture");
     expect(script).toContain("workflow_pending_orchestration_is_fresh");
-    expect(script).toContain("claude-review");
-    expect(script).toContain('"${HOOK_HOST:-}" == "codex" && -n "$context"');
-    expect(script).toContain("worth the tokens");
+    expect(script).not.toContain("claude-review");
+    expect(script).not.toContain("worth the tokens");
   });
 
   test("session-start owns throttled tooling update advisories", () => {

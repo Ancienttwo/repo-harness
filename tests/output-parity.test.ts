@@ -234,8 +234,8 @@ describe("Output Quality Gates", () => {
     expect(agents).toContain("new plans/plan-{timestamp}-{slug}.md");
     expect(claude).toContain(".ai/harness/active-plan");
     expect(claude).toContain(".ai/harness/active-worktree");
-    expect(claude).toContain(".claude/.active-plan");
-    expect(claude).toContain("legacy fallback");
+    expect(claude).not.toContain(".claude/.active-plan");
+    expect(claude).not.toContain("legacy fallback");
     expect(agents).toContain("workflow inventory before implementation");
     expect(claude).toContain("tasks/workstreams/");
     expect(claude).toContain("docs/CHANGELOG.md");

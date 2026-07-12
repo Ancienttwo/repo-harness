@@ -64,7 +64,6 @@ archive_transaction_begin() {
   archive_transaction_snapshot "tasks"
   archive_transaction_snapshot ".ai/harness/active-plan"
   archive_transaction_snapshot ".ai/harness/active-worktree"
-  archive_transaction_snapshot ".claude/.active-plan"
   archive_transaction_snapshot ".claude/.plan-state"
 }
 
@@ -434,9 +433,9 @@ else
   write_empty_deferred_ledger
 fi
 
-# Clear active-plan markers if they pointed to the archived plan
+# Clear the active-plan marker if it pointed to the archived plan
 cleared_active=0
-for marker_file in ".ai/harness/active-plan" ".claude/.active-plan"; do
+for marker_file in ".ai/harness/active-plan"; do
   if [[ ! -f "$marker_file" ]]; then
     continue
   fi

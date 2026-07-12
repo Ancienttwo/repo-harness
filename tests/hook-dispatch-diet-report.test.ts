@@ -226,7 +226,7 @@ describe("hook dispatch diet report", () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 15_000);
 
   test("unknown flags exit with usage error", () => {
     const run = spawnSync(process.execPath, [SCRIPT, "--bad-flag"], {

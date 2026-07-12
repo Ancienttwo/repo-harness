@@ -116,7 +116,7 @@ class CodexTarget implements AgentTarget {
     return { installed, alreadyConfigured, configPath: filePath };
   }
 
-  install(loc: Location, _opts: InstallOptions): WriteResult {
+  install(loc: Location, opts: InstallOptions): WriteResult {
     if (loc !== 'global') {
       throw new Error(
         'codexTarget.install: Codex has no project-local hook config; use --location global',
@@ -125,7 +125,7 @@ class CodexTarget implements AgentTarget {
     const filePath = globalConfigPath();
     const data = readJsonOrEmpty<HooksFile>(filePath);
     const cleaned = stripManagedEntries(data.hooks);
-    const managed = buildManagedHooks('codex');
+    const managed = buildManagedHooks('codex', opts.profile);
     const merged = mergeHooks(cleaned, managed);
     const next: HooksFile = { ...data, hooks: merged };
     const nextContent = formatJson(next);

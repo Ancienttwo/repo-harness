@@ -72,9 +72,7 @@ function initGitRepo(cwd: string) {
 
 function writeActivePlan(cwd: string, planPath: string) {
   mkdirSync(join(cwd, ".ai/harness"), { recursive: true });
-  mkdirSync(join(cwd, ".claude"), { recursive: true });
   writeFileSync(join(cwd, ".ai/harness/active-plan"), planPath);
-  writeFileSync(join(cwd, ".claude/.active-plan"), planPath);
   writeFileSync(join(cwd, ".ai/harness/active-worktree"), `${realpathSync(cwd)}\n`);
 }
 
@@ -211,7 +209,7 @@ describe("Claude Code hook protocol compliance", () => {
     }
   });
 
-  test("prompt-guard: PlanStatusGuard uses exit 2 with reason on stderr", () => {
+  test("pre-edit profile resolution fails closed with exit 2 and remediation", () => {
     const cwd = tmpWorkspace("hook-proto-plan-status");
     try {
       initGitRepo(cwd);
@@ -228,16 +226,17 @@ describe("Claude Code hook protocol compliance", () => {
       // Prompt layer is advisory for plan status; the edit-layer plan gate is
       // the blocking enforcement point.
       const promptRes = runHook("prompt-guard.sh", cwd, {
-        stdin: JSON.stringify({ user_message: "implement it all now" }),
+        stdin: JSON.stringify({ user_message: "/execute" }),
       });
       expect(promptRes.status).toBe(0);
       expect(promptRes.stdout).toContain("[PlanStatusGuard]");
 
       const res = runHook("pre-edit-guard.sh", cwd, {
         stdin: JSON.stringify({ tool_input: { file_path: "src/app.ts" } }),
+        env: { REPO_HARNESS_WORKFLOW_PROFILE: "standard" },
       });
       expect(res.status).toBe(2);
-      expect(res.stderr).toContain("[PlanStatusGuard]");
+      expect(res.stderr).toContain("[WorkflowProfileGuard]");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -257,7 +256,7 @@ describe("Claude Code hook protocol compliance", () => {
       writeActivePlan(cwd, "plans/plan-20260528-1400-demo.md");
 
       const res = runHook("prompt-guard.sh", cwd, {
-        stdin: JSON.stringify({ user_message: "mark done now" }),
+        stdin: JSON.stringify({ user_message: "done" }),
       });
       expect(res.status).toBe(2);
       expect(res.stderr).toContain("[ContractGuard]");

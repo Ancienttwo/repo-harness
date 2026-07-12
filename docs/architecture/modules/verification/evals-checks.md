@@ -20,11 +20,16 @@ Authoritative checks:
 - `repo-harness adopt --repo . --dry-run`
 - non-dry-run `bun run benchmark:skills --eval <slug>` runs when release or
   readiness evidence depends on skill effectiveness.
+- `bun scripts/run-harness-profile-benchmark.ts --execute` owns the 3x9
+  No Harness / Adaptive Lite / Strict comparison. No Harness uses an auth-only
+  isolated `CODEX_HOME` plus `--ignore-user-config --ignore-rules --ephemeral`.
 
 Non-authoritative smoke:
 
 - `bun run benchmark:skills --dry-run` only proves eval harness wiring. It is not
   skill-effectiveness evidence for release/readiness claims.
+- The profile benchmark without `--execute` is also non-authoritative and keeps
+  every provider-owned metric null rather than estimating it.
 
 ## P2 Trace
 

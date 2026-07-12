@@ -3,7 +3,9 @@ import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { execFileSync, spawnSync, type StdioOptions } from 'child_process';
 import { getRoute, type HookEvent, type RouteId } from './route-registry';
+import { budgetSessionContext, type SessionContextSection } from './session-context-budget';
 import { writeAllSync } from '../runtime/write-all-sync';
+import { createHash } from 'crypto';
 
 const OPT_IN_MARKER = '.ai/harness/workflow-contract.json';
 const POLICY_FILE = '.ai/harness/policy.json';
@@ -36,6 +38,32 @@ export interface RunHookResult {
   scriptsRun: string[];
   skippedScripts: string[];
   failedScript?: string;
+}
+
+function recordHookInvocation(
+  repoRoot: string,
+  input: { event: HookEvent; routeId: RouteId; script: string; startedAt: number; durationMs: number; exitCode: number; stdout: Buffer | string | null | undefined },
+): void {
+  try {
+    const output = input.stdout == null ? null : input.stdout.toString();
+    const record = {
+      protocol: 1,
+      ts: new Date(input.startedAt).toISOString(),
+      event: input.event,
+      route_id: input.routeId,
+      script: input.script,
+      duration_ms: input.durationMs,
+      exit_code: input.exitCode,
+      output_bytes: output === null ? null : Buffer.byteLength(output, 'utf-8'),
+      blocked: input.exitCode !== 0 || looksLikeHookDecisionJson(input.stdout) && output?.includes('"decision":"block"') === true,
+      fingerprint: `sha256:${createHash('sha256').update(`${input.event}\0${input.routeId}\0${input.script}\0${input.exitCode}\0${output ?? 'unavailable'}`).digest('hex')}`,
+    };
+    const metricsPath = path.join(repoRoot, '.ai/harness/runs/hook-invocations.jsonl');
+    fs.mkdirSync(path.join(repoRoot, '.ai/harness/runs'), { recursive: true });
+    fs.appendFileSync(metricsPath, `${JSON.stringify(record)}\n`, { mode: 0o600 });
+  } catch {
+    // Telemetry evidence is non-authoritative and must never alter hook safety.
+  }
 }
 
 function looksLikeHookDecisionJson(output: Buffer | string | null | undefined): boolean {
@@ -92,6 +120,68 @@ function extractSessionStartContext(output: Buffer | string | null | undefined):
     return text;
   }
   return text;
+}
+
+function effectiveStateSessionSection(repoRoot: string): SessionContextSection | null {
+  const cli = path.join(PACKAGE_ROOT, 'src', 'cli', 'index.ts');
+  if (!fs.existsSync(cli)) return null;
+  const resolved = spawnSync(process.execPath, [cli, 'state', 'resolve', '--json'], {
+    cwd: repoRoot,
+    encoding: 'utf-8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+    env: { ...process.env, HOOK_REPO_ROOT: repoRoot },
+  });
+  if (!resolved.stdout?.trim()) return null;
+  try {
+    const state = JSON.parse(resolved.stdout) as {
+      task_id?: unknown;
+      phase?: unknown;
+      state_version?: unknown;
+      state_revision?: unknown;
+      workflow_profile?: unknown;
+      next_action?: unknown;
+      blockers?: unknown;
+      allowed_paths?: unknown;
+      checks?: unknown;
+      authoritative_plan?: { path?: unknown } | null;
+      contract?: { path?: unknown } | null;
+      active_sprint?: { path?: unknown; freshness?: unknown } | null;
+      handoff?: { path?: unknown; freshness?: unknown } | null;
+      resume?: { path?: unknown; freshness?: unknown } | null;
+    };
+    const blockers = Array.isArray(state.blockers) ? state.blockers : [];
+    const actionable = typeof state.task_id === 'string' || blockers.length > 0 ||
+      (state.active_sprint?.path && state.active_sprint.freshness === 'fresh');
+    if (!actionable) return null;
+    const compact = {
+      task_id: state.task_id ?? null,
+      phase: state.phase ?? 'unknown',
+      state_version: state.state_version ?? null,
+      state_revision: state.state_revision ?? null,
+      workflow_profile: state.workflow_profile ?? null,
+      next_action: state.next_action ?? null,
+      blockers,
+      allowed_paths: Array.isArray(state.allowed_paths) ? state.allowed_paths : [],
+      checks: state.checks ?? null,
+      references: {
+        plan: state.authoritative_plan?.path ?? null,
+        contract: state.contract?.path ?? null,
+        sprint: state.active_sprint?.path ?? null,
+        handoff: state.handoff?.path ?? null,
+        resume: state.resume?.path ?? null,
+      },
+    };
+    return {
+      id: 'effective-state',
+      priority: 2,
+      content: `[HarnessState] ${JSON.stringify(compact)}`,
+      mandatory: true,
+      actionable: true,
+      reference: 'repo-harness state resolve --json',
+    };
+  } catch {
+    return null;
+  }
 }
 
 export function resolveRepoRoot(cwd: string): string | null {
@@ -247,7 +337,11 @@ export function runHook(opts: RunHookOptions): RunHookResult {
         ? 'upgrade the repo-harness CLI to restore packaged hooks, or set "hook_source": "repo" before syncing a full vendored hook runtime'
         : `run 'repo-harness adopt --repo ${repoRoot}' to sync pinned .ai/hooks`;
   const sessionStartCollectStdout = opts.event === 'SessionStart' && opts.stdio === undefined;
-  const sessionStartContexts: string[] = [];
+  const sessionStartContexts: SessionContextSection[] = [];
+  if (sessionStartCollectStdout) {
+    const stateSection = effectiveStateSessionSection(repoRoot);
+    if (stateSection) sessionStartContexts.push(stateSection);
+  }
   // Codex Desktop rejects Stop decision stdout at turn finalization, so collect
   // and suppress successful Stop output while preserving failure diagnostics.
   const codexStopSuppressSuccessOutput =
@@ -311,10 +405,20 @@ export function runHook(opts: RunHookOptions): RunHookResult {
     }
 
     scriptsRun.push(script);
+    const startedAt = Date.now();
     const child = spawnSync('bash', [scriptPath, ...(opts.args ?? [])], {
       cwd: repoRoot,
       stdio,
       env: { ...process.env, HOOK_REPO_ROOT: repoRoot },
+    });
+    recordHookInvocation(repoRoot, {
+      event: opts.event,
+      routeId: opts.routeId,
+      script,
+      startedAt,
+      durationMs: Date.now() - startedAt,
+      exitCode: child.status ?? (child.error ? 1 : 0),
+      stdout: child.stdout,
     });
 
     if (child.error) {
@@ -349,7 +453,21 @@ export function runHook(opts: RunHookOptions): RunHookResult {
 
     if (sessionStartCollectStdout && child.status === 0) {
       const context = extractSessionStartContext(child.stdout);
-      if (context) sessionStartContexts.push(context);
+      if (context) {
+        const securityBoundary = script === 'security-sentinel.sh';
+        const taskState = script === 'session-start-context.sh';
+        const scriptActionable = taskState && /^# (Pending Plan Capture|Capability Context Queue|Architecture Queue|Active Sprint)/m.test(context);
+        sessionStartContexts.push({
+          id: script,
+          priority: securityBoundary ? 2 : taskState ? 5 : 6,
+          content: context,
+          mandatory: securityBoundary,
+          actionable: securityBoundary || scriptActionable,
+          reference: taskState
+            ? 'repo-harness state resolve --json'
+            : 'repo-harness setup check --json',
+        });
+      }
     }
 
     if (
@@ -386,16 +504,29 @@ export function runHook(opts: RunHookOptions): RunHookResult {
   }
 
   if (sessionStartCollectStdout && skippedScripts.length > 0) {
-    sessionStartContexts.push(
-      `[repo-harness] hooks drift (source=${resolved.source}): missing ${skippedScripts.join(', ')}; ${syncHint}.`,
-    );
+    sessionStartContexts.push({
+      id: 'hooks-drift',
+      priority: 6,
+      content: `[repo-harness] hooks drift (source=${resolved.source}): missing ${skippedScripts.join(', ')}; ${syncHint}.`,
+      mandatory: false,
+      actionable: true,
+      reference: syncHint,
+    });
   }
 
   if (sessionStartCollectStdout && sessionStartContexts.length > 0) {
+    const sessionId = process.env.HOOK_SESSION_ID
+      ?? process.env.CODEX_SESSION_ID
+      ?? process.env.CLAUDE_SESSION_ID
+      ?? null;
+    const budgeted = budgetSessionContext(repoRoot, sessionStartContexts, sessionId);
+    if (!budgeted.context) {
+      return { exitCode: 0, reason: 'ok', repoRoot, scriptsRun, skippedScripts };
+    }
     writeAllSync(1, `${JSON.stringify({
       hookSpecificOutput: {
         hookEventName: 'SessionStart',
-        additionalContext: sessionStartContexts.join('\n'),
+        additionalContext: budgeted.context,
       },
     })}\n`);
   }

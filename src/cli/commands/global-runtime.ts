@@ -8,6 +8,7 @@ import { runInstall, type InstallTargetSpec } from "./install";
 import { compareVersions, readLatestPackageVersion } from "./doctor";
 import { configureCodegraph } from "../tools/codegraph";
 import { runProcess as runBoundedProcess } from "../../effects/process-runner";
+import type { InstallProfile } from "../installer/install-profile";
 
 export interface GlobalRuntimeOptions {
   sourceRoot?: string;
@@ -21,6 +22,7 @@ export interface GlobalRuntimeOptions {
   externalSkills?: boolean;
   codegraph?: boolean;
   brainRoot?: string;
+  profile?: InstallProfile;
 }
 
 export interface GlobalRuntimeStep {
@@ -390,7 +392,7 @@ function installCliFromPackedTarball(
   return withStepName(add, "install repo-harness CLI", `${detailPrefix}repaired=packed-tarball`);
 }
 
-function syncRuntimeSkill(sourceRoot: string, env?: NodeJS.ProcessEnv): GlobalRuntimeStep {
+function syncRuntimeSkill(sourceRoot: string, profile: InstallProfile, env?: NodeJS.ProcessEnv): GlobalRuntimeStep {
   const script = join(sourceRoot, "scripts", "sync-codex-installed-copies.sh");
   if (!existsSync(script)) {
     return {
@@ -400,13 +402,13 @@ function syncRuntimeSkill(sourceRoot: string, env?: NodeJS.ProcessEnv): GlobalRu
     };
   }
   return withStepName(
-    runProcess("bash", [script], sourceRoot, env),
+    runProcess("bash", [script], sourceRoot, { ...env, REPO_HARNESS_INSTALL_PROFILE: profile }),
     "sync repo-harness skill runtime",
   );
 }
 
-function installHostAdapters(target: InstallTargetSpec, env?: NodeJS.ProcessEnv): GlobalRuntimeStep {
-  const installed = withProcessEnv(env, () => runInstall({ target, location: "global" }));
+function installHostAdapters(target: InstallTargetSpec, profile: InstallProfile, env?: NodeJS.ProcessEnv): GlobalRuntimeStep {
+  const installed = withProcessEnv(env, () => runInstall({ target, location: "global", profile }));
   return {
     step: "install host adapters",
     status: installed.exitCode === 0 ? "ok" : "failed",
@@ -545,6 +547,7 @@ export function runGlobalRuntimeSetup(opts: GlobalRuntimeOptions = {}): GlobalRu
   const sourceRoot = opts.sourceRoot ?? defaultSourceRoot();
   const cwd = opts.cwd ?? process.cwd();
   const target = opts.target ?? "both";
+  const profile = opts.profile ?? "minimal";
   const bunExecutable = resolveBunExecutable(opts.env);
   const env = bindBunRuntimeEnv(commandEnv(sourceRoot, opts.env), bunExecutable);
   const steps: GlobalRuntimeStep[] = [];
@@ -565,13 +568,13 @@ export function runGlobalRuntimeSetup(opts: GlobalRuntimeOptions = {}): GlobalRu
   if (opts.installCli !== false) steps.push(installCli(sourceRoot, cwd, bunExecutable, env, opts.installSpec));
   else steps.push({ step: "install repo-harness CLI", status: "skipped", detail: "disabled" });
 
-  if (opts.syncSkill !== false) steps.push(syncRuntimeSkill(sourceRoot, env));
+  if (opts.syncSkill !== false) steps.push(syncRuntimeSkill(sourceRoot, profile, env));
   else steps.push({ step: "sync repo-harness skill runtime", status: "skipped", detail: "disabled" });
 
-  if (opts.hostAdapters !== false) steps.push(installHostAdapters(target, env));
+  if (opts.hostAdapters !== false) steps.push(installHostAdapters(target, profile, env));
   else steps.push({ step: "install host adapters", status: "skipped", detail: "disabled" });
 
-  if (opts.externalSkills !== false) {
+  if (opts.externalSkills === true) {
     const waza = installWazaSkills(sourceRoot, target, env);
     steps.push(waza);
     steps.push(waza.status === "ok"
@@ -585,9 +588,10 @@ export function runGlobalRuntimeSetup(opts: GlobalRuntimeOptions = {}): GlobalRu
     steps.push({ step: "cross-review skills", status: "skipped", detail: "disabled" });
   }
 
-  steps.push(configureBrain(opts.brainRoot, env));
+  if (opts.brainRoot || profile === 'product-planning') steps.push(configureBrain(opts.brainRoot, env));
+  else steps.push({ step: "configure brain root", status: "skipped", detail: "disabled by install profile" });
 
-  if (opts.codegraph !== false) {
+  if (opts.codegraph === true) {
     const ensure = ensureCodegraphCli(cwd, bunExecutable, env);
     steps.push(ensure);
     if (ensure.status === "ok") steps.push(configureCodegraphMcp(cwd, target, env));

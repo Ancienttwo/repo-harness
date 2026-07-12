@@ -181,7 +181,6 @@ get_latest_plan() {
 }
 
 ACTIVE_PLAN_MARKER=".ai/harness/active-plan"
-LEGACY_ACTIVE_PLAN_MARKER=".claude/.active-plan"
 ACTIVE_WORKTREE_MARKER=".ai/harness/active-worktree"
 
 # Records why get_active_plan returned empty. Empty string means the marker
@@ -235,20 +234,18 @@ get_active_plan() {
     return 1
   fi
 
-  read_active_plan_marker "$ACTIVE_PLAN_MARKER" \
-    || read_active_plan_marker "$LEGACY_ACTIVE_PLAN_MARKER"
+  read_active_plan_marker "$ACTIVE_PLAN_MARKER"
 }
 
 write_active_plan_marker() {
   local plan_file="$1"
-  mkdir -p "$(dirname "$ACTIVE_PLAN_MARKER")" "$(dirname "$LEGACY_ACTIVE_PLAN_MARKER")" "$(dirname "$ACTIVE_WORKTREE_MARKER")"
+  mkdir -p "$(dirname "$ACTIVE_PLAN_MARKER")" "$(dirname "$ACTIVE_WORKTREE_MARKER")"
   printf '%s' "$plan_file" > "$ACTIVE_PLAN_MARKER"
-  printf '%s' "$plan_file" > "$LEGACY_ACTIVE_PLAN_MARKER"
   pwd -P > "$ACTIVE_WORKTREE_MARKER"
 }
 
 clear_active_plan_marker() {
-  rm -f "$ACTIVE_PLAN_MARKER" "$LEGACY_ACTIVE_PLAN_MARKER" "$ACTIVE_WORKTREE_MARKER"
+  rm -f "$ACTIVE_PLAN_MARKER" "$ACTIVE_WORKTREE_MARKER"
 }
 
 set_active_plan() {
