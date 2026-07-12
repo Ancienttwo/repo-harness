@@ -693,7 +693,17 @@ export function runEvaluation(evaluation: ValidatedEvaluation, options: RunOptio
   if (experiment.freeze.state !== "sealed") fail(`Experiment ${options.experiment} is foundation-only; seal it before execution`);
   const profile = evaluation.manifest.agents[options.agent];
   if (!profile) fail(`Unknown frozen agent profile: ${options.agent}`);
-  const version = spawnSync(profile.command, profile.version_args, { encoding: "utf-8", env: process.env });
+  const versionHome = mkdtempSync(join(tmpdir(), "repo-harness-bdd2-version-"));
+  let version: ReturnType<typeof spawnSync>;
+  try {
+    version = spawnSync(profile.command, profile.version_args, {
+      cwd: versionHome,
+      encoding: "utf-8",
+      env: buildIsolatedAgentEnv(versionHome),
+    });
+  } finally {
+    rmSync(versionHome, { recursive: true, force: true });
+  }
   if (version.error) fail(`Cannot inspect agent command version: ${version.error.message}`);
   if (version.status !== 0) fail(`Agent version command failed with exit ${version.status}`);
   const actualVersion = `${version.stdout ?? ""}${version.stderr ?? ""}`.trim();

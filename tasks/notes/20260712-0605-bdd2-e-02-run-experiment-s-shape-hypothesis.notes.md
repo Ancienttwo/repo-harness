@@ -135,6 +135,11 @@
   provide a reproducible or secret-minimal execution envelope. S-v2 is retained as
   failed evidence only; current authority is an unsealed S-v3 foundation with no
   agent profile and a runner-level environment allowlist.
+- Final closeout review found that the agent `--version` probe still inherited
+  `process.env` even though the model invocation did not. The probe now runs in
+  its own temporary cwd/HOME with the same minimal allowlist, and the sealed-run
+  regression proves a caller secret cannot reach it. No compatibility path was
+  added; runner and durable evidence hashes were re-bound to the corrected code.
 - The tracked report now discloses all identified limits and keeps the decision at
   `Reshape`. The generated 72-row durable evidence is validated against held-out
   truth and reproduced byte-for-byte from local scores, private coordinates, and

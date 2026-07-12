@@ -180,7 +180,7 @@ describe("run-bdd2-evals sealed execution", () => {
       const stub = join(root, "agent-stub.sh");
       writeFileSync(
         stub,
-        "#!/usr/bin/env bash\nset -euo pipefail\nif [[ \"${1:-}\" == \"--version\" ]]; then printf 'bdd2-stub 1.0\\n'; exit 0; fi\nmodel=\"$1\"\ntemperature=\"$2\"\ntest \"$model\" = \"stub-model-v1\"\ntest \"$temperature\" = \"0\"\nprompt=\"$(cat)\"\n[[ \"$prompt\" == *\"Task ID: S-H-01\"* ]]\nprintf 'stub response cwd=%s\\n' \"$PWD\"\n",
+        "#!/usr/bin/env bash\nset -euo pipefail\nif [[ \"${1:-}\" == \"--version\" ]]; then test -z \"${BDD2_CALLER_SECRET:-}\"; test \"${HOME:-}\" = \"${CODEX_HOME:-}\"; printf 'bdd2-stub 1.0\\n'; exit 0; fi\nmodel=\"$1\"\ntemperature=\"$2\"\ntest \"$model\" = \"stub-model-v1\"\ntest \"$temperature\" = \"0\"\nprompt=\"$(cat)\"\n[[ \"$prompt\" == *\"Task ID: S-H-01\"* ]]\nprintf 'stub response cwd=%s\\n' \"$PWD\"\n",
         "utf-8"
       );
       spawnSync("chmod", ["+x", stub]);
@@ -226,15 +226,23 @@ describe("run-bdd2-evals sealed execution", () => {
         conditions: ["treatment"],
         repetitions: 1,
       })[0].coordinateId;
-      const report = runEvaluation(evaluation, {
-        experiment: "S",
-        partition: "held_out",
-        taskIds: ["S-H-01"],
-        conditions: ["treatment"],
-        repetitions: 1,
-        agent: "stub",
-        outputPath: ".ai/harness/runs/bdd2/test-run",
-      });
+      const previousCallerSecret = process.env.BDD2_CALLER_SECRET;
+      process.env.BDD2_CALLER_SECRET = "must-not-reach-version-probe";
+      let report;
+      try {
+        report = runEvaluation(evaluation, {
+          experiment: "S",
+          partition: "held_out",
+          taskIds: ["S-H-01"],
+          conditions: ["treatment"],
+          repetitions: 1,
+          agent: "stub",
+          outputPath: ".ai/harness/runs/bdd2/test-run",
+        });
+      } finally {
+        if (previousCallerSecret === undefined) delete process.env.BDD2_CALLER_SECRET;
+        else process.env.BDD2_CALLER_SECRET = previousCallerSecret;
+      }
 
       expect(report.packets).toHaveLength(1);
       const packetId = report.packets[0].packet_id;
