@@ -71,7 +71,7 @@ export interface AgentProfile {
 }
 
 export interface EvaluationManifest {
-  schema: "repo-harness-bdd2-evaluation.v2";
+  schema: "repo-harness-bdd2-evaluation.v3";
   runner: FileReference;
   output_root: string;
   experiments: Record<ExperimentId, ExperimentDefinition>;
@@ -79,10 +79,12 @@ export interface EvaluationManifest {
   adjudication: {
     rubric: string;
     rubric_sha256: string;
-    score_schema: string;
-    score_schema_sha256: string;
-    shape_metrics: string;
-    shape_metrics_sha256: string;
+    experiments: Record<ExperimentId, {
+      score_schema: string;
+      score_schema_sha256: string;
+      metrics: string;
+      metrics_sha256: string;
+    }>;
   };
   agents: Record<string, AgentProfile>;
 }
@@ -196,6 +198,70 @@ export interface LockedScore {
   reviewer_id: string;
   locked_at: string;
   score: ShapeScore;
+}
+
+export interface AuditFinding {
+  ref: string;
+  reported_severity: "P0" | "P1" | "P2" | "P3";
+  matched_truth_issue_id: string | null;
+  match_notes: string;
+}
+
+export interface AuditScore {
+  kind: "audit";
+  verdict: "pass" | "findings" | "inconclusive";
+  findings: AuditFinding[];
+  correction_minutes: number;
+  notes: string;
+}
+
+export interface LockedAuditScore {
+  schema: "repo-harness-bdd2-audit-score.v1";
+  packet_id: string;
+  task_id: string;
+  experiment: "A";
+  reviewer_id: string;
+  locked_at: string;
+  score: AuditScore;
+}
+
+export interface AuditSummary {
+  schema: "repo-harness-bdd2-audit-summary.v1";
+  source_commit: string;
+  run_manifest_sha256: string;
+  packet_count: number;
+  score_count: number;
+  metrics: Record<ConditionId, {
+    reported_findings: number;
+    true_positive_findings: number;
+    seeded_issues: number;
+    matched_seeded_issues: number;
+    severe_seeded_issues: number;
+    matched_severe_seeded_issues: number;
+    clean_outputs: number;
+    clean_false_positive_outputs: number;
+    correct_no_findings: number;
+    severity_agreements: number;
+    severity_matches: number;
+    severe_underestimations: number;
+    correction_minutes_median: number;
+    precision: number;
+    seeded_recall: number;
+    severe_seeded_recall: number;
+    clean_false_positive_rate: number;
+    correct_no_findings_rate: number;
+    severity_agreement_rate: number;
+  }>;
+  gates: {
+    precision: boolean;
+    seeded_recall: boolean;
+    severe_seeded_recall: boolean;
+    clean_false_positive_rate: boolean;
+    correct_no_findings_rate: boolean;
+    severity_agreement_rate: boolean;
+    no_severe_underestimation: boolean;
+  };
+  decision: "Pass" | "Kill";
 }
 
 export interface ShapeSummary {
@@ -395,6 +461,16 @@ function validateTruthSet(raw: unknown, partition: PartitionId, tasks: Evaluatio
     fail(`${partition} truth keys must match audit task ids exactly`);
   }
 
+  const auditIssueIds = new Set<string>();
+  const auditTaxonomies = new Set([
+    "PROTECTED_CONCERN_REGRESSION",
+    "MISSING_RECOVERY",
+    "JOURNEY_BREAK",
+    "AUTHORITY_DRIFT",
+    "BACKSTAGE_LEAK",
+    "UNNECESSARY_USER_DECISION",
+    "UNNECESSARY_USER_CONCEPT",
+  ]);
   for (const [taskId, candidate] of Object.entries(raw.audit_tasks)) {
     assertRecord(candidate, `${partition}.audit_tasks.${taskId}`);
     assertExactKeys(candidate, ["clean", "issues"], `${partition}.audit_tasks.${taskId}`);
@@ -410,6 +486,9 @@ function validateTruthSet(raw: unknown, partition: PartitionId, tasks: Evaluatio
       assertString(issue.id, `${taskId}.issues[${index}].id`);
       assertString(issue.taxonomy, `${taskId}.issues[${index}].taxonomy`);
       assertString(issue.summary, `${taskId}.issues[${index}].summary`);
+      if (auditIssueIds.has(issue.id)) fail(`Duplicate audit truth issue id: ${issue.id}`);
+      auditIssueIds.add(issue.id);
+      if (!auditTaxonomies.has(issue.taxonomy)) fail(`${taskId}.issues[${index}].taxonomy is invalid`);
       if (!["P0", "P1", "P2", "P3"].includes(String(issue.severity))) {
         fail(`${taskId}.issues[${index}].severity is invalid`);
       }
@@ -478,7 +557,7 @@ export function validateEvaluation(
   const raw = readJson(manifestPath);
   assertRecord(raw, "manifest");
   assertExactKeys(raw, ["schema", "runner", "output_root", "experiments", "partitions", "adjudication", "agents"], "manifest");
-  if (raw.schema !== "repo-harness-bdd2-evaluation.v2") fail("Unsupported evaluation manifest schema");
+  if (raw.schema !== "repo-harness-bdd2-evaluation.v3") fail("Unsupported evaluation manifest schema");
 
   const authorityPaths = [manifestPath, validateFileReference(absoluteRoot, raw.runner, "runner")];
   assertString(raw.output_root, "output_root");
@@ -534,21 +613,27 @@ export function validateEvaluation(
   if (new Set(allIds).size !== allIds.length) fail("Task ids must be unique across partitions");
 
   assertRecord(raw.adjudication, "adjudication");
-  assertExactKeys(raw.adjudication, ["rubric", "rubric_sha256", "score_schema", "score_schema_sha256", "shape_metrics", "shape_metrics_sha256"], "adjudication");
-  for (const key of ["rubric", "rubric_sha256", "score_schema", "score_schema_sha256", "shape_metrics", "shape_metrics_sha256"] as const) {
+  assertExactKeys(raw.adjudication, ["rubric", "rubric_sha256", "experiments"], "adjudication");
+  for (const key of ["rubric", "rubric_sha256"] as const) {
     assertString(raw.adjudication[key], `adjudication.${key}`);
   }
   const rubric = raw.adjudication.rubric as string;
   const rubricSha256 = raw.adjudication.rubric_sha256 as string;
-  const scoreSchema = raw.adjudication.score_schema as string;
-  const scoreSchemaSha256 = raw.adjudication.score_schema_sha256 as string;
-  const shapeMetrics = raw.adjudication.shape_metrics as string;
-  const shapeMetricsSha256 = raw.adjudication.shape_metrics_sha256 as string;
-  authorityPaths.push(
-    verifyHash(absoluteRoot, rubric, rubricSha256, "adjudication rubric"),
-    verifyHash(absoluteRoot, scoreSchema, scoreSchemaSha256, "adjudication score schema"),
-    verifyHash(absoluteRoot, shapeMetrics, shapeMetricsSha256, "shape metric specification")
-  );
+  authorityPaths.push(verifyHash(absoluteRoot, rubric, rubricSha256, "adjudication rubric"));
+  assertRecord(raw.adjudication.experiments, "adjudication.experiments");
+  assertExactKeys(raw.adjudication.experiments, ["S", "A"], "adjudication.experiments");
+  for (const experimentId of ["S", "A"] as const) {
+    const authority = raw.adjudication.experiments[experimentId];
+    assertRecord(authority, `adjudication.experiments.${experimentId}`);
+    assertExactKeys(authority, ["score_schema", "score_schema_sha256", "metrics", "metrics_sha256"], `adjudication.experiments.${experimentId}`);
+    for (const key of ["score_schema", "score_schema_sha256", "metrics", "metrics_sha256"] as const) {
+      assertString(authority[key], `adjudication.experiments.${experimentId}.${key}`);
+    }
+    authorityPaths.push(
+      verifyHash(absoluteRoot, String(authority.score_schema), String(authority.score_schema_sha256), `${experimentId} score schema`),
+      verifyHash(absoluteRoot, String(authority.metrics), String(authority.metrics_sha256), `${experimentId} metric specification`)
+    );
+  }
 
   assertRecord(raw.agents, "agents");
   const manifest = raw as unknown as EvaluationManifest;
@@ -1014,6 +1099,155 @@ export function validateShapeScores(
   return { runPath, run, scores, privateCoordinates };
 }
 
+interface ValidatedAuditScores {
+  runPath: string;
+  run: RunReport;
+  scores: Map<string, LockedAuditScore>;
+  privateCoordinates: Map<string, { task_id: string; condition: ConditionId; repetition: number }>;
+  truth: TruthSet;
+}
+
+function heldOutTruth(evaluation: ValidatedEvaluation): TruthSet {
+  return readJson(authorityPath(evaluation.repoRoot, evaluation.manifest.partitions.held_out.truth, "held-out truth")) as TruthSet;
+}
+
+function validateLockedAuditScore(
+  raw: unknown,
+  label: string,
+  truthTask: { clean: boolean; issues: TruthIssue[] }
+): LockedAuditScore {
+  assertRecord(raw, label);
+  assertExactKeys(raw, ["schema", "packet_id", "task_id", "experiment", "reviewer_id", "locked_at", "score"], label);
+  if (raw.schema !== "repo-harness-bdd2-audit-score.v1") fail(`${label}.schema mismatch`);
+  if (typeof raw.packet_id !== "string" || !/^[a-f0-9]{32}$/.test(raw.packet_id)) fail(`${label}.packet_id is invalid`);
+  assertString(raw.task_id, `${label}.task_id`);
+  if (raw.experiment !== "A") fail(`${label}.experiment must be A`);
+  assertString(raw.reviewer_id, `${label}.reviewer_id`);
+  assertString(raw.locked_at, `${label}.locked_at`);
+  if (Number.isNaN(Date.parse(raw.locked_at))) fail(`${label}.locked_at must be an ISO date-time`);
+  assertRecord(raw.score, `${label}.score`);
+  assertExactKeys(raw.score, ["kind", "verdict", "findings", "correction_minutes", "notes"], `${label}.score`);
+  if (raw.score.kind !== "audit") fail(`${label}.score.kind must be audit`);
+  if (!["pass", "findings", "inconclusive"].includes(String(raw.score.verdict))) fail(`${label}.score.verdict is invalid`);
+  if (!Array.isArray(raw.score.findings)) fail(`${label}.score.findings must be an array`);
+  if (raw.score.verdict === "pass" && raw.score.findings.length !== 0) fail(`${label} pass must contain zero findings`);
+  if (raw.score.verdict === "findings" && raw.score.findings.length === 0) fail(`${label} findings verdict must contain at least one finding`);
+  numberAtLeastZero(raw.score.correction_minutes, `${label}.score.correction_minutes`);
+  if (typeof raw.score.notes !== "string") fail(`${label}.score.notes must be a string`);
+  const findingRefs = new Set<string>();
+  const matchedTruthIds = new Set<string>();
+  const validTruthIds = new Set(truthTask.issues.map((issue) => issue.id));
+  for (const [index, finding] of raw.score.findings.entries()) {
+    const findingLabel = `${label}.score.findings[${index}]`;
+    assertRecord(finding, findingLabel);
+    assertExactKeys(finding, ["ref", "reported_severity", "matched_truth_issue_id", "match_notes"], findingLabel);
+    assertString(finding.ref, `${findingLabel}.ref`);
+    if (findingRefs.has(finding.ref)) fail(`${label} contains duplicate finding ref: ${finding.ref}`);
+    findingRefs.add(finding.ref);
+    if (!["P0", "P1", "P2", "P3"].includes(String(finding.reported_severity))) fail(`${findingLabel}.reported_severity is invalid`);
+    if (finding.matched_truth_issue_id !== null) {
+      assertString(finding.matched_truth_issue_id, `${findingLabel}.matched_truth_issue_id`);
+      if (!validTruthIds.has(finding.matched_truth_issue_id)) fail(`${findingLabel} references a truth issue outside this task`);
+      if (matchedTruthIds.has(finding.matched_truth_issue_id)) fail(`${label} matches one truth issue more than once`);
+      matchedTruthIds.add(finding.matched_truth_issue_id);
+    }
+    if (typeof finding.match_notes !== "string") fail(`${findingLabel}.match_notes must be a string`);
+  }
+  return raw as unknown as LockedAuditScore;
+}
+
+export function validateAuditScores(
+  evaluation: ValidatedEvaluation,
+  runRelativePath: string
+): ValidatedAuditScores {
+  const runPath = directoryInsideRepo(evaluation.repoRoot, runRelativePath, "run path");
+  const runRaw = readJson(resolve(runPath, "run.json"));
+  assertRecord(runRaw, "run report");
+  assertExactKeys(runRaw, ["schema", "freeze_id", "source_commit", "manifest_sha256", "agent", "model", "sampling", "experiment", "partition", "output_path", "packets"], "run report");
+  if (runRaw.schema !== "repo-harness-bdd2-run.v2" || runRaw.experiment !== "A" || runRaw.partition !== "held_out") {
+    fail("Audit scoring requires a held-out A v2 run");
+  }
+  const definition = evaluation.manifest.experiments.A;
+  if (runRaw.freeze_id !== definition.freeze.id) fail("Run freeze id does not match Audit authority");
+  if (typeof runRaw.source_commit !== "string" || !/^[a-f0-9]{40}$/.test(runRaw.source_commit)) fail("Run source commit is invalid");
+  if (runRaw.manifest_sha256 !== sha256File(evaluation.manifestPath)) fail("Run manifest hash does not match current authority");
+  const relativeRunPath = relative(evaluation.repoRoot, runPath).replace(/\\/g, "/");
+  if (runRaw.output_path !== relativeRunPath) fail("Run output path does not match its directory");
+  assertString(runRaw.agent, "run report.agent");
+  const profile = evaluation.manifest.agents[runRaw.agent];
+  if (!profile || runRaw.model !== profile.model || JSON.stringify(runRaw.sampling) !== JSON.stringify(profile.sampling)) {
+    fail("Run agent profile does not match current authority");
+  }
+  if (!Array.isArray(runRaw.packets)) fail("run report packets must be an array");
+  const auditTasks = evaluation.tasks.held_out.filter((task) => task.experiment === "A");
+  const expectedCoordinates = new Set<string>();
+  for (const task of auditTasks) {
+    for (const condition of ["baseline", "treatment"] as const) {
+      for (let repetition = 1; repetition <= definition.repetitions; repetition += 1) {
+        expectedCoordinates.add(`${task.id}\0${condition}\0${repetition}`);
+      }
+    }
+  }
+  if (runRaw.packets.length !== expectedCoordinates.size) fail(`Audit run requires exactly ${expectedCoordinates.size} packets, got ${runRaw.packets.length}`);
+  const run = runRaw as unknown as RunReport;
+  const packets = new Map<string, { task_id: string }>();
+  for (const [index, packet] of run.packets.entries()) {
+    assertRecord(packet as unknown, `run.packets[${index}]`);
+    const candidate = packet as unknown as Record<string, unknown>;
+    assertExactKeys(candidate, ["packet_id", "task_id", "status"], `run.packets[${index}]`);
+    if (typeof candidate.packet_id !== "string" || !/^[a-f0-9]{32}$/.test(candidate.packet_id)) fail(`run.packets[${index}].packet_id is invalid`);
+    assertString(candidate.task_id, `run.packets[${index}].task_id`);
+    if (candidate.status !== "success") fail(`run.packets[${index}] is not successful`);
+    const task = auditTasks.find((entry) => entry.id === candidate.task_id);
+    if (!task) fail(`run.packets[${index}] references an unknown Audit task`);
+    if (packets.has(candidate.packet_id)) fail(`Duplicate packet id in run: ${candidate.packet_id}`);
+    packets.set(candidate.packet_id, { task_id: candidate.task_id });
+    const blind = readJson(resolve(runPath, "blind", `${candidate.packet_id}.json`));
+    assertRecord(blind, `blind packet ${candidate.packet_id}`);
+    assertExactKeys(blind, ["schema", "packet_id", "task_id", "experiment", "task_input", "response"], `blind packet ${candidate.packet_id}`);
+    if (blind.schema !== "repo-harness-bdd2-blind-packet.v2" || blind.packet_id !== candidate.packet_id || blind.task_id !== candidate.task_id || blind.experiment !== "A") fail(`Blind packet identity mismatch: ${candidate.packet_id}`);
+    if (blind.task_input !== task.agent_input) fail(`Blind packet task input drift: ${candidate.packet_id}`);
+    assertString(blind.response, `blind packet ${candidate.packet_id}.response`);
+  }
+  const privateCoordinates = new Map<string, { task_id: string; condition: ConditionId; repetition: number }>();
+  const observedCoordinates = new Set<string>();
+  for (const packetId of packets.keys()) {
+    const raw = readJson(resolve(runPath, "private", `${packetId}.json`));
+    assertRecord(raw, `private coordinate ${packetId}`);
+    assertExactKeys(raw, ["schema", "packet_id", "coordinate_id", "task_id", "condition", "repetition", "prompt_sha256", "agent", "model", "sampling", "exit_code"], `private coordinate ${packetId}`);
+    if (raw.schema !== "repo-harness-bdd2-private-coordinate.v2" || raw.packet_id !== packetId || raw.task_id !== packets.get(packetId)?.task_id) fail(`Private coordinate identity mismatch: ${packetId}`);
+    if (raw.condition !== "baseline" && raw.condition !== "treatment") fail(`Private coordinate ${packetId}.condition is invalid`);
+    if (!Number.isInteger(raw.repetition) || Number(raw.repetition) < 1 || Number(raw.repetition) > definition.repetitions) fail(`Private coordinate ${packetId}.repetition is invalid`);
+    const coordinateKey = `${raw.task_id}\0${raw.condition}\0${raw.repetition}`;
+    if (!expectedCoordinates.has(coordinateKey) || observedCoordinates.has(coordinateKey)) fail(`Audit coordinate is missing, duplicated, or unexpected: ${packetId}`);
+    observedCoordinates.add(coordinateKey);
+    const expectedCoordinateId = privateCoordinateId([definition.freeze.id, "A", "held_out", String(raw.task_id), String(raw.condition), String(raw.repetition)]);
+    if (raw.coordinate_id !== expectedCoordinateId) fail(`Private coordinate id drift: ${packetId}`);
+    if (raw.prompt_sha256 !== definition.conditions[raw.condition].sha256) fail(`Private coordinate prompt hash drift: ${packetId}`);
+    if (raw.agent !== run.agent || raw.model !== run.model || JSON.stringify(raw.sampling) !== JSON.stringify(run.sampling) || raw.exit_code !== 0) fail(`Private coordinate agent metadata drift: ${packetId}`);
+    privateCoordinates.set(packetId, { task_id: String(raw.task_id), condition: raw.condition, repetition: Number(raw.repetition) });
+  }
+  if (observedCoordinates.size !== expectedCoordinates.size) fail(`Audit run is missing ${expectedCoordinates.size - observedCoordinates.size} coordinates`);
+  const truth = heldOutTruth(evaluation);
+  const scoreDir = directoryInsideRepo(evaluation.repoRoot, relative(evaluation.repoRoot, resolve(runPath, "scores")), "score directory");
+  const scoreFiles = readdirSync(scoreDir).filter((file) => file.endsWith(".json")).sort();
+  if (scoreFiles.length !== packets.size) fail(`Audit scoring requires exactly ${packets.size} score files, got ${scoreFiles.length}`);
+  const scores = new Map<string, LockedAuditScore>();
+  for (const file of scoreFiles) {
+    const raw = readJson(resolve(scoreDir, file));
+    assertRecord(raw, `score ${file}`);
+    assertString(raw.task_id, `score ${file}.task_id`);
+    const truthTask = truth.audit_tasks[raw.task_id];
+    if (!truthTask) fail(`Score references Audit truth outside held-out authority: ${raw.task_id}`);
+    const score = validateLockedAuditScore(raw, `score ${file}`, truthTask);
+    const packet = packets.get(score.packet_id);
+    if (!packet || packet.task_id !== score.task_id) fail(`Score identity mismatch for packet: ${score.packet_id}`);
+    if (scores.has(score.packet_id)) fail(`Duplicate score for packet: ${score.packet_id}`);
+    scores.set(score.packet_id, score);
+  }
+  return { runPath, run, scores, privateCoordinates, truth };
+}
+
 function gitFileAtCommit(repoRoot: string, commit: string, path: string): string {
   if (!/^[a-f0-9]{40}$/.test(commit)) fail("Historical source commit is invalid");
   if (isAbsolute(path) || path.split("/").includes("..")) fail(`Historical path is unsafe: ${path}`);
@@ -1052,10 +1286,10 @@ export function projectHistoricalShapeEvidence(
   const manifestText = gitFileAtCommit(absoluteRoot, runRaw.source_commit, DEFAULT_MANIFEST_PATH);
   if (sha256Text(manifestText) !== runRaw.manifest_sha256) fail("Historical run manifest hash mismatch");
   const historicalManifest = JSON.parse(manifestText) as any;
-  if (historicalManifest.schema !== "repo-harness-bdd2-evaluation.v2"
+  if (!["repo-harness-bdd2-evaluation.v2", "repo-harness-bdd2-evaluation.v3"].includes(historicalManifest.schema)
     || historicalManifest.experiments?.S?.freeze?.id !== runRaw.freeze_id
     || historicalManifest.experiments?.S?.freeze?.state !== "sealed") {
-    fail("Historical run does not match a sealed S-v2 authority");
+    fail("Historical run does not match a sealed Shape authority");
   }
   const heldOut = historicalManifest.partitions?.held_out;
   assertRecord(heldOut, "historical held-out partition");
@@ -1367,8 +1601,176 @@ export function summarizeShape(
   return summary;
 }
 
+export function projectAuditEvidence(
+  evaluation: ValidatedEvaluation,
+  runRelativePath: string,
+  outputRelativePath: string
+): Record<string, unknown> {
+  const validated = validateAuditScores(evaluation, runRelativePath);
+  const rows = [...validated.privateCoordinates.entries()].map(([packetId, coordinate]) => {
+    const score = validated.scores.get(packetId);
+    if (!score) fail(`Missing validated Audit score for packet: ${packetId}`);
+    const truthTask = validated.truth.audit_tasks[coordinate.task_id];
+    if (!truthTask) fail(`Missing Audit truth for task: ${coordinate.task_id}`);
+    const matched = score.score.findings.flatMap((finding) => finding.matched_truth_issue_id ? [finding.matched_truth_issue_id] : []);
+    return {
+      packet_id: packetId,
+      task_id: coordinate.task_id,
+      condition: coordinate.condition,
+      repetition: coordinate.repetition,
+      clean: truthTask.clean,
+      truth_issue_ids: truthTask.issues.map((issue) => issue.id),
+      verdict: score.score.verdict,
+      finding_count: score.score.findings.length,
+      matched_truth_issue_ids: matched,
+      false_positive_count: score.score.findings.length - matched.length,
+      correction_minutes: score.score.correction_minutes,
+      score_sha256: sha256File(resolve(validated.runPath, "scores", `${packetId}.json`)),
+      private_sha256: sha256File(resolve(validated.runPath, "private", `${packetId}.json`)),
+      blind_sha256: sha256File(resolve(validated.runPath, "blind", `${packetId}.json`)),
+    };
+  }).sort((left, right) => left.task_id.localeCompare(right.task_id)
+    || left.condition.localeCompare(right.condition)
+    || left.repetition - right.repetition);
+  const projection = {
+    schema: "repo-harness-bdd2-audit-evidence.v1",
+    projector_sha256: sha256File(SCRIPT_PATH),
+    source_commit: validated.run.source_commit,
+    run_manifest_sha256: validated.run.manifest_sha256,
+    packet_count: rows.length,
+    evidence_grade: "condition-blind-agent-panel-proxy",
+    rows,
+  };
+  const outputPath = resolve(evaluation.repoRoot, outputRelativePath);
+  assertWritePath(evaluation.repoRoot, outputPath);
+  writeJson(outputPath, projection);
+  return projection;
+}
+
+function auditRate(numerator: number, denominator: number, label: string, zeroValue?: number): number {
+  if (denominator === 0) {
+    if (zeroValue !== undefined) return zeroValue;
+    fail(`${label} denominator must be nonzero`);
+  }
+  return Number((numerator / denominator).toFixed(6));
+}
+
+function severityIndex(severity: "P0" | "P1" | "P2" | "P3"): number {
+  return ["P0", "P1", "P2", "P3"].indexOf(severity);
+}
+
+export function summarizeAudit(
+  evaluation: ValidatedEvaluation,
+  runRelativePath: string,
+  markdownOutput?: string
+): AuditSummary {
+  const validated = validateAuditScores(evaluation, runRelativePath);
+  const metrics = {} as AuditSummary["metrics"];
+  for (const condition of ["baseline", "treatment"] as const) {
+    const packetIds = [...validated.privateCoordinates.entries()]
+      .filter(([, coordinate]) => coordinate.condition === condition)
+      .map(([packetId]) => packetId);
+    let reportedFindings = 0;
+    let truePositiveFindings = 0;
+    let seededIssues = 0;
+    let matchedSeededIssues = 0;
+    let severeSeededIssues = 0;
+    let matchedSevereSeededIssues = 0;
+    let cleanOutputs = 0;
+    let cleanFalsePositiveOutputs = 0;
+    let correctNoFindings = 0;
+    let severityAgreements = 0;
+    let severityMatches = 0;
+    let severeUnderestimations = 0;
+    const correctionMinutes: number[] = [];
+    for (const packetId of packetIds) {
+      const coordinate = validated.privateCoordinates.get(packetId)!;
+      const score = validated.scores.get(packetId)!;
+      const truthTask = validated.truth.audit_tasks[coordinate.task_id];
+      const truthById = new Map(truthTask.issues.map((issue) => [issue.id, issue]));
+      reportedFindings += score.score.findings.length;
+      seededIssues += truthTask.issues.length;
+      severeSeededIssues += truthTask.issues.filter((issue) => issue.severity === "P0" || issue.severity === "P1").length;
+      correctionMinutes.push(score.score.correction_minutes);
+      if (truthTask.clean) {
+        cleanOutputs += 1;
+        if (score.score.findings.length > 0) cleanFalsePositiveOutputs += 1;
+        if (score.score.verdict === "pass" && score.score.findings.length === 0) correctNoFindings += 1;
+      }
+      for (const finding of score.score.findings) {
+        if (!finding.matched_truth_issue_id) continue;
+        const truthIssue = truthById.get(finding.matched_truth_issue_id);
+        if (!truthIssue) fail(`Validated Audit score lost truth match: ${finding.matched_truth_issue_id}`);
+        truePositiveFindings += 1;
+        matchedSeededIssues += 1;
+        if (truthIssue.severity === "P0" || truthIssue.severity === "P1") matchedSevereSeededIssues += 1;
+        severityMatches += 1;
+        const reportedIndex = severityIndex(finding.reported_severity);
+        const truthIndex = severityIndex(truthIssue.severity);
+        if (Math.abs(reportedIndex - truthIndex) <= 1) severityAgreements += 1;
+        if ((truthIssue.severity === "P0" || truthIssue.severity === "P1") && reportedIndex > truthIndex) severeUnderestimations += 1;
+      }
+    }
+    metrics[condition] = {
+      reported_findings: reportedFindings,
+      true_positive_findings: truePositiveFindings,
+      seeded_issues: seededIssues,
+      matched_seeded_issues: matchedSeededIssues,
+      severe_seeded_issues: severeSeededIssues,
+      matched_severe_seeded_issues: matchedSevereSeededIssues,
+      clean_outputs: cleanOutputs,
+      clean_false_positive_outputs: cleanFalsePositiveOutputs,
+      correct_no_findings: correctNoFindings,
+      severity_agreements: severityAgreements,
+      severity_matches: severityMatches,
+      severe_underestimations: severeUnderestimations,
+      correction_minutes_median: median(correctionMinutes),
+      precision: auditRate(truePositiveFindings, reportedFindings, `${condition} precision`, 1),
+      seeded_recall: auditRate(matchedSeededIssues, seededIssues, `${condition} seeded recall`),
+      severe_seeded_recall: auditRate(matchedSevereSeededIssues, severeSeededIssues, `${condition} severe seeded recall`),
+      clean_false_positive_rate: auditRate(cleanFalsePositiveOutputs, cleanOutputs, `${condition} clean false-positive rate`),
+      correct_no_findings_rate: auditRate(correctNoFindings, cleanOutputs, `${condition} correct no-findings rate`),
+      severity_agreement_rate: auditRate(severityAgreements, severityMatches, `${condition} severity agreement`, 1),
+    };
+  }
+  const treatment = metrics.treatment;
+  const gates = {
+    precision: treatment.precision >= 0.7,
+    seeded_recall: treatment.seeded_recall >= 0.8,
+    severe_seeded_recall: treatment.severe_seeded_recall === 1,
+    clean_false_positive_rate: treatment.clean_false_positive_rate <= 0.2,
+    correct_no_findings_rate: treatment.correct_no_findings_rate >= 0.8,
+    severity_agreement_rate: treatment.severity_agreement_rate >= 0.85,
+    no_severe_underestimation: treatment.severe_underestimations === 0,
+  };
+  const summary: AuditSummary = {
+    schema: "repo-harness-bdd2-audit-summary.v1",
+    source_commit: validated.run.source_commit,
+    run_manifest_sha256: validated.run.manifest_sha256,
+    packet_count: validated.run.packets.length,
+    score_count: validated.scores.size,
+    metrics,
+    gates,
+    decision: Object.values(gates).every(Boolean) ? "Pass" : "Kill",
+  };
+  writeJson(resolve(validated.runPath, "audit-summary.json"), summary);
+  if (markdownOutput) {
+    const outputPath = resolve(evaluation.repoRoot, markdownOutput);
+    assertWritePath(evaluation.repoRoot, outputPath);
+    const runPathForReport = relative(evaluation.repoRoot, validated.runPath).replace(/\\/g, "/");
+    const metricRows = (["baseline", "treatment"] as const).map((condition) => {
+      const item = metrics[condition];
+      return `| ${condition} | ${(item.precision * 100).toFixed(1)}% | ${(item.seeded_recall * 100).toFixed(1)}% | ${(item.severe_seeded_recall * 100).toFixed(1)}% | ${(item.clean_false_positive_rate * 100).toFixed(1)}% | ${(item.correct_no_findings_rate * 100).toFixed(1)}% | ${(item.severity_agreement_rate * 100).toFixed(1)}% | ${item.severe_underestimations} | ${item.correction_minutes_median} |`;
+    }).join("\n");
+    const gateRows = Object.entries(gates).map(([gate, passed]) => `| ${gate} | ${passed ? "PASS" : "FAIL"} |`).join("\n");
+    const markdown = `# BDD² Experiment A Report\n\n> **Decision**: ${summary.decision}\n> **Source commit**: \`${summary.source_commit}\`\n> **Raw evidence**: \`${runPathForReport}\` (ignored; local evaluation evidence)\n> **Packets / locked scores**: ${summary.packet_count} / ${summary.score_count}\n> **Evidence grade**: condition-blind Agent-panel proxy; this is not a human-panel claim.\n\n## Metrics\n\n| Condition | Precision | Seeded recall | P0/P1 recall | Clean FP | Correct no-findings | Severity agreement | P0/P1 underestimation | Median correction minutes |\n|---|---:|---:|---:|---:|---:|---:|---:|---:|\n${metricRows}\n\n## Treatment gates\n\n| Gate | Result |\n|---|---|\n${gateRows}\n\n## Decision rationale\n\nThe decision is computed from the frozen rules in \`evals/bdd2/metrics/audit-metrics.md\`; it is not manually overridden. Agent adjudication is proxy evidence and may share model-family biases with the evaluated outputs.\n`;
+    writeFileSync(outputPath, markdown, "utf-8");
+  }
+  return summary;
+}
+
 interface CliOptions {
-  command: "validate" | "plan" | "run" | "validate-scores" | "summarize-shape" | "project-shape-evidence";
+  command: "validate" | "plan" | "run" | "validate-scores" | "summarize-shape" | "project-shape-evidence" | "summarize-audit" | "project-audit-evidence";
   manifest: string;
   experiment?: ExperimentId;
   partition?: PartitionId;
@@ -1382,8 +1784,8 @@ interface CliOptions {
 
 export function parseCliArgs(args: string[]): CliOptions {
   const command = args[0];
-  if (!["validate", "plan", "run", "validate-scores", "summarize-shape", "project-shape-evidence"].includes(String(command))) {
-    fail("Usage: run-bdd2-evals.ts <validate|plan|run|validate-scores|summarize-shape|project-shape-evidence> [--manifest path] [--experiment S|A] [--partition development|held_out] [--task id] [--condition baseline|treatment] [--repetitions n] [--agent name] [--run path] [--output path] [--dry-run]");
+  if (!["validate", "plan", "run", "validate-scores", "summarize-shape", "project-shape-evidence", "summarize-audit", "project-audit-evidence"].includes(String(command))) {
+    fail("Usage: run-bdd2-evals.ts <validate|plan|run|validate-scores|summarize-shape|project-shape-evidence|summarize-audit|project-audit-evidence> [--manifest path] [--experiment S|A] [--partition development|held_out] [--task id] [--condition baseline|treatment] [--repetitions n] [--agent name] [--run path] [--output path] [--dry-run]");
   }
   const options: CliOptions = {
     command: command as CliOptions["command"],
@@ -1437,18 +1839,30 @@ export function main(args: string[] = process.argv.slice(2)): void {
     return;
   }
   const evaluation = validateEvaluation(REPO_ROOT, options.manifest);
+  if (options.command === "project-audit-evidence") {
+    if (!options.run) fail("project-audit-evidence requires --run");
+    if (!options.output) fail("project-audit-evidence requires --output");
+    console.log(JSON.stringify(projectAuditEvidence(evaluation, options.run, options.output), null, 2));
+    return;
+  }
   if (options.command === "validate") {
     console.log(JSON.stringify({ status: "valid", schema: evaluation.manifest.schema, experiments: Object.fromEntries(Object.entries(evaluation.manifest.experiments).map(([id, experiment]) => [id, { freeze: experiment.freeze, held_out_task_count: experiment.held_out_task_count }])), task_counts: { development: evaluation.tasks.development.length, held_out: evaluation.tasks.held_out.length } }, null, 2));
     return;
   }
-  if (options.command === "validate-scores" || options.command === "summarize-shape") {
-    if (options.experiment !== "S") fail(`${options.command} requires --experiment S`);
+  if (options.command === "validate-scores" || options.command === "summarize-shape" || options.command === "summarize-audit") {
+    if (options.command === "summarize-shape" && options.experiment !== "S") fail("summarize-shape requires --experiment S");
+    if (options.command === "summarize-audit" && options.experiment !== "A") fail("summarize-audit requires --experiment A");
+    if (options.command === "validate-scores" && options.experiment !== "S" && options.experiment !== "A") fail("validate-scores requires --experiment S or A");
     if (!options.run) fail(`${options.command} requires --run`);
     if (options.command === "validate-scores") {
-      const validated = validateShapeScores(evaluation, options.run);
+      const validated = options.experiment === "S"
+        ? validateShapeScores(evaluation, options.run)
+        : validateAuditScores(evaluation, options.run);
       console.log(JSON.stringify({ status: "valid", packets: validated.run.packets.length, scores: validated.scores.size }, null, 2));
-    } else {
+    } else if (options.command === "summarize-shape") {
       console.log(JSON.stringify(summarizeShape(evaluation, options.run, options.output), null, 2));
+    } else {
+      console.log(JSON.stringify(summarizeAudit(evaluation, options.run, options.output), null, 2));
     }
     return;
   }

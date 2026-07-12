@@ -12,15 +12,21 @@ const ROOT = join(import.meta.dir, "..");
 describe("BDD2 Phase E evaluation contract", () => {
   const evaluation = validateEvaluation(ROOT);
 
-  test("Shape v2 result is retained while current Shape and Audit authority remain foundation-only", () => {
-    expect(evaluation.manifest.schema).toBe("repo-harness-bdd2-evaluation.v2");
+  test("Shape result is retained while Audit has independent sealed authority", () => {
+    expect(evaluation.manifest.schema).toBe("repo-harness-bdd2-evaluation.v3");
     expect(evaluation.manifest.experiments.S.freeze).toEqual({
       id: "bdd2-experiment-s-reshape-foundation-v3",
       state: "foundation",
       sealed_at: null,
     });
-    expect(evaluation.manifest.experiments.A.freeze.state).toBe("foundation");
-    expect(Object.keys(evaluation.manifest.agents)).toEqual([]);
+    expect(evaluation.manifest.experiments.A.freeze).toEqual({
+      id: "bdd2-experiment-a-sealed-v1",
+      state: "sealed",
+      sealed_at: "2026-07-12T19:30:00+08:00",
+    });
+    expect(Object.keys(evaluation.manifest.agents)).toEqual(["codex-gpt-5.6-sol-xhigh"]);
+    expect(evaluation.manifest.adjudication.experiments.S.score_schema).toContain("shape-score.schema.json");
+    expect(evaluation.manifest.adjudication.experiments.A.score_schema).toContain("audit-score.schema.json");
     expect(readFileSync(join(ROOT, "evals/bdd2/reports/experiment-s.md"), "utf-8")).toContain(
       "cd9e0426d362614ba277e067633db2596c236491"
     );
@@ -32,7 +38,7 @@ describe("BDD2 Phase E evaluation contract", () => {
       expect(evaluation.tasks[partition].some((task) => task.experiment === "A")).toBe(true);
     }
     expect(evaluation.tasks.held_out.filter((task) => task.experiment === "S")).toHaveLength(12);
-    expect(evaluation.tasks.held_out.filter((task) => task.experiment === "A")).toHaveLength(2);
+    expect(evaluation.tasks.held_out.filter((task) => task.experiment === "A")).toHaveLength(12);
   });
 
   test("agent packets contain treatment instructions and task input but no truth payload", () => {
@@ -94,7 +100,8 @@ describe("BDD2 Phase E evaluation contract", () => {
       "source_commit",
     ]);
     expect(evidence.schema).toBe("repo-harness-bdd2-shape-evidence.v1");
-    expect(evidence.projector_sha256).toBe(currentManifest.runner.sha256);
+    expect(evidence.projector_sha256).toBe("0e386c1f834cea87b6f72b737559d57ffb847ed69d5628ed04fe9d35d65cb09b");
+    expect(evidence.projector_sha256).not.toBe(currentManifest.runner.sha256);
     expect(evidence.source_commit).toBe("cd9e0426d362614ba277e067633db2596c236491");
     expect(evidence.run_manifest_sha256).toBe("b64a343415fb47c31a8f7aecd29e47409c86c5da1409b6b19bafbdb08c6a2a5b");
     expect(evidence.packet_count).toBe(72);

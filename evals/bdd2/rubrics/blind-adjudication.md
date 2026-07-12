@@ -1,8 +1,10 @@
-# BDD² Blind Adjudication Rubric v2
+# BDD² Blind Adjudication Rubric v3
 
-Reviewers receive a task ID, the original task input, and one anonymized response.
-They must not receive the condition name, prompt path, run coordinate mapping, agent
-command, or another response for the same task until independent scoring is locked.
+Final scorers receive a task ID, the original task input, one anonymized response,
+and only that task's private truth needed for rubric matching. They must not receive
+the condition name, prompt path, run coordinate mapping, agent command, or another
+response for the same task until independent scoring is locked. This is
+condition-blind, truth-aware Agent adjudication, not human review evidence.
 
 ## Shape scoring
 
@@ -30,21 +32,30 @@ answer does not win unless it preserves required behavior and protected concerns
 
 ## Audit scoring
 
-Match each response finding to at most one truth-set issue. A finding is true positive
-only when its evidence and user consequence identify the seeded issue or a separately
-adjudicated real issue. Generic advice and unsupported preferences are false positives.
+Assign every distinct response finding a stable `ref`, then match it to zero or one
+truth-set issue for the same task. A seeded issue may be matched only once within a
+score. Duplicate matches are invalid, not extra true positives. A finding is a true
+positive only when its evidence and user consequence identify the seeded issue;
+generic advice, unsupported preferences, and unmatched findings are false positives.
 
 - precision = true-positive findings / all findings.
 - seeded recall = detected seeded issues / all seeded issues.
 - clean false-positive rate = clean fixtures with any false finding / clean fixtures.
 - correct no-findings rate = clean fixtures correctly reported as sound / clean fixtures.
-- severity agreement = same or adjacent human severity, with no P0/P1 underestimation.
+- severity agreement = same or adjacent truth severity in P0/P1/P2/P3 order, with
+  an independent hard failure for any P0/P1 underestimation.
+
+Use `pass` only with zero findings and `findings` only with at least one finding.
+Use `inconclusive` for an unresolved observation or authority boundary; it is kept in
+the denominator and never counts as a correct clean no-findings result. Missing truth
+issues are derived only after reveal and are never written into the blind score.
 
 ## Reviewer protocol
 
-1. Review only one self-contained blind packet at a time and score it using
-   `score.schema.json`; do not inspect repository truth, private mappings, sibling
-   outputs, or prompt files.
+1. Review only one self-contained packet at a time and score it using the
+   experiment-specific score schema. For Audit, the packet may include only the
+   same task's frozen truth issues for matching; do not inspect repository paths,
+   private coordinate mappings, sibling outputs, or prompt files.
 2. Lock the score before condition reveal or paired comparison.
 3. Resolve disagreements with a second reviewer who is also condition-blind.
 4. Record exclusions, ambiguity, and authority gaps; never silently discard a run.

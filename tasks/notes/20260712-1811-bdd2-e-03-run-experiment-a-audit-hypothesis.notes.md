@@ -1,0 +1,58 @@
+# Implementation Notes: bdd2-e-03-run-experiment-a-audit-hypothesis
+
+> **Status**: Active
+> **Plan**: plans/plan-20260712-1811-bdd2-e-03-run-experiment-a-audit-hypothesis.md
+> **Contract**: tasks/contracts/20260712-1811-bdd2-e-03-run-experiment-a-audit-hypothesis.contract.md
+> **Review**: tasks/reviews/20260712-1811-bdd2-e-03-run-experiment-a-audit-hypothesis.review.md
+> **Last Updated**: 2026-07-12 18:15
+> **Lifecycle**: notes
+
+## Design Decisions
+
+- Cut `evaluation-manifest` directly to v3 with per-experiment adjudication
+  authority. The old global Shape schema path is deleted; no v2 parser, alias, or
+  fallback remains.
+- Freeze six seeded and six clean held-out fixtures across web, CLI, and native UI
+  behavior. Private truth is exhaustive for this synthetic fixture set so unmatched
+  response findings count as false positives.
+- Blind scores record reviewer finding boundaries and at most one matched truth issue
+  per finding. Duplicate truth matches fail validation instead of inflating recall.
+- Final Audit scoring is condition-blind and truth-aware: a scorer receives one
+  response plus only that task's frozen issues, never condition/prompt/coordinate or
+  sibling outputs. This supports exact matching but remains Agent-panel proxy evidence.
+- `pass` with zero findings is the only correct no-findings outcome. `inconclusive`
+  preserves uncertainty but does not earn clean-fixture credit.
+- Reuse the source-commit coordinate envelope for both S and A. Extract shared code
+  only where the exact same invariant has two real consumers.
+
+## Deviations From Plan Or Spec
+
+- None recorded.
+
+## Tradeoffs Considered
+
+| Option | Decision | Reason |
+|--------|----------|--------|
+| One union score schema | Reject | Recreates shared authority and allows one experiment's evolution to drift the other. |
+| Per-experiment schemas and metrics | Choose | Matches independent hypotheses and fails closed before A sealing. |
+| Parse Agent output automatically | Reject | Free-text finding boundaries are semantic; blind adjudication records them explicitly. |
+| Generic benchmark service/database | Reject | Forty-eight outputs and flat evidence do not justify a runtime or dependency. |
+
+## Open Questions
+
+- None.
+
+## Evidence Links
+
+- Checks: `.ai/harness/checks/latest.json`
+- Run snapshots: `.ai/harness/runs/`
+
+## Promotion Filter
+
+Promote a candidate to `tasks/lessons.md`, `docs/researches/`, or harness asset files only when all three hold: hard to reverse, surprising without local context, and a real trade-off existed. If any one is missing, keep it in this notes file instead.
+
+## Promotion Candidates
+
+- Promote to `tasks/lessons.md` only after a repeated correction or failure pattern.
+- Promote to `docs/researches/` only when it is durable repo knowledge with evidence.
+- Promote to harness asset files only after verification across more than one task or fixture.

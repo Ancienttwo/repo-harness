@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "repo-harness-bdd2-audit-score.v1",
+  "title": "BDD2 locked blind Audit score",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "packet_id", "task_id", "experiment", "reviewer_id", "locked_at", "score"],
+  "properties": {
+    "schema": { "const": "repo-harness-bdd2-audit-score.v1" },
+    "packet_id": { "type": "string", "pattern": "^[a-f0-9]{32}$" },
+    "task_id": { "type": "string", "minLength": 4 },
+    "experiment": { "const": "A" },
+    "reviewer_id": { "type": "string", "minLength": 1 },
+    "locked_at": { "type": "string", "format": "date-time" },
+    "score": { "$ref": "#/$defs/auditScore" }
+  },
+  "$defs": {
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ref", "reported_severity", "matched_truth_issue_id", "match_notes"],
+      "properties": {
+        "ref": { "type": "string", "minLength": 1 },
+        "reported_severity": { "enum": ["P0", "P1", "P2", "P3"] },
+        "matched_truth_issue_id": { "type": ["string", "null"] },
+        "match_notes": { "type": "string" }
+      }
+    },
+    "auditScore": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "verdict", "findings", "correction_minutes", "notes"],
+      "properties": {
+        "kind": { "const": "audit" },
+        "verdict": { "enum": ["pass", "findings", "inconclusive"] },
+        "findings": { "type": "array", "items": { "$ref": "#/$defs/finding" } },
+        "correction_minutes": { "type": "number", "minimum": 0 },
+        "notes": { "type": "string" }
+      }
+    }
+  }
+}

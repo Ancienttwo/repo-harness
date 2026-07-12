@@ -116,6 +116,42 @@
         { "id": "A-H-01-I1", "severity": "P1", "taxonomy": "BACKSTAGE_LEAK", "summary": "Automatic recovery internals are exposed as default user decisions without authority." }
       ]
     },
-    "A-H-02": { "clean": true, "issues": [] }
+    "A-H-02": { "clean": true, "issues": [] },
+    "A-H-03": {
+      "clean": false,
+      "issues": [
+        { "id": "A-H-03-I1", "severity": "P1", "taxonomy": "PROTECTED_CONCERN_REGRESSION", "summary": "Removing accessibility labels and traits makes an irreversible action and its cancellation ambiguous to VoiceOver users." }
+      ]
+    },
+    "A-H-04": { "clean": true, "issues": [] },
+    "A-H-05": {
+      "clean": false,
+      "issues": [
+        { "id": "A-H-05-I1", "severity": "P1", "taxonomy": "MISSING_RECOVERY", "summary": "The artifact claims completion before asynchronous acknowledgement and provides no observable failure or safe retry path." }
+      ]
+    },
+    "A-H-06": { "clean": true, "issues": [] },
+    "A-H-07": {
+      "clean": false,
+      "issues": [
+        { "id": "A-H-07-I1", "severity": "P2", "taxonomy": "JOURNEY_BREAK", "summary": "A direct status lookup becomes a cross-surface journey that repeats context selection and withholds the required CLI exit result." }
+      ]
+    },
+    "A-H-08": { "clean": true, "issues": [] },
+    "A-H-09": {
+      "clean": false,
+      "issues": [
+        { "id": "A-H-09-I1", "severity": "P0", "taxonomy": "AUTHORITY_DRIFT", "summary": "The artifact expands a single-item confirmed delete into unauthorized bulk irreversible deletion without the approved confirmation boundary." }
+      ]
+    },
+    "A-H-10": { "clean": true, "issues": [] },
+    "A-H-11": {
+      "clean": false,
+      "issues": [
+        { "id": "A-H-11-I1", "severity": "P2", "taxonomy": "UNNECESSARY_USER_DECISION", "summary": "The artifact forces five implementation choices before the user can ask a question although none changes an authorized user outcome." },
+        { "id": "A-H-11-I2", "severity": "P2", "taxonomy": "UNNECESSARY_USER_CONCEPT", "summary": "Routing tier, context shard, planner topology, fallback chain, and queue priority become user-facing concepts without behavioral authority." }
+      ]
+    },
+    "A-H-12": { "clean": true, "issues": [] }
   }
 }
