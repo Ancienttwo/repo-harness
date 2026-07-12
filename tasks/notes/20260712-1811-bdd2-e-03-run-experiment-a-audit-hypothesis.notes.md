@@ -61,6 +61,22 @@
 - Pre-execution full CI on sealed authority: `bun run check:ci` passed with
   1,142 tests, one platform skip, zero failures, workflow checks, repository
   inspection, and packaged tarball smoke.
+- Frozen run: `.ai/harness/runs/bdd2/bdd2-e03-audit-a-v1` contains 48/48
+  successful outputs from source commit `9918283` and 48/48 validated locked scores.
+- Durable evidence: `evals/bdd2/reports/experiment-a-evidence.json`; a clean
+  re-projection from raw evidence compared byte-identical.
+- Decision report: `evals/bdd2/reports/experiment-a.md` records `Kill`. Treatment
+  passed overall/P0-P1 recall and severity agreement, but failed precision, clean
+  false-positive, correct no-findings, and P0/P1-underestimation gates.
+- Post-run review expanded the durable projection to v2 so severity agreement and
+  P0/P1 underestimation are reproducible without ignored scores. The explicit
+  historical Audit commands accept only the exact sealed v3 source authority;
+  current A authority is a non-runnable `bdd2-experiment-a-kill-foundation-v2`.
+- The historical Shape projector was narrowed back to v2-only authority. It does
+  not act as a future S-v3 compatibility reader; current Shape remains a separate
+  non-runnable foundation revision.
+- Run/output path guards now compare real paths and reject final output symlinks,
+  closing external read/write traversal through repository-relative paths.
 
 ## Promotion Filter
 

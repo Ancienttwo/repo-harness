@@ -733,6 +733,9 @@ function assertWritePath(repoRoot: string, targetPath: string): void {
   if (realAncestor !== realRoot && !realAncestor.startsWith(rootPrefix)) {
     fail(`Output path resolves outside repository root: ${targetPath}`);
   }
+  if (existsSync(targetPath) && lstatSync(targetPath).isSymbolicLink()) {
+    fail(`Output path must not be a symbolic link: ${targetPath}`);
+  }
 }
 
 function writeJson(path: string, value: unknown): void {
@@ -921,6 +924,10 @@ function directoryInsideRepo(repoRoot: string, relativePath: string, label: stri
   if (rel.startsWith("..") || isAbsolute(rel)) fail(`${label} must remain inside repository root`);
   if (!existsSync(path) || !lstatSync(path).isDirectory()) fail(`${label} is not a directory: ${relativePath}`);
   if (lstatSync(path).isSymbolicLink()) fail(`${label} must not be a symbolic link`);
+  const realRoot = realpathSync(repoRoot);
+  const realPath = realpathSync(path);
+  const rootPrefix = realRoot.endsWith(sep) ? realRoot : `${realRoot}${sep}`;
+  if (realPath !== realRoot && !realPath.startsWith(rootPrefix)) fail(`${label} resolves outside repository root`);
   return path;
 }
 
@@ -1179,9 +1186,16 @@ function validateAuditSourceAuthority(
   }
 }
 
-export function validateAuditScores(
+interface AuditValidationOptions {
+  expectedManifestSha256?: string;
+  skipSourceAuthority?: boolean;
+  truth?: TruthSet;
+}
+
+function validateAuditScoresWithAuthority(
   evaluation: ValidatedEvaluation,
-  runRelativePath: string
+  runRelativePath: string,
+  options: AuditValidationOptions = {}
 ): ValidatedAuditScores {
   const runPath = directoryInsideRepo(evaluation.repoRoot, runRelativePath, "run path");
   const runRaw = readJson(resolve(runPath, "run.json"));
@@ -1193,8 +1207,9 @@ export function validateAuditScores(
   const definition = evaluation.manifest.experiments.A;
   if (runRaw.freeze_id !== definition.freeze.id) fail("Run freeze id does not match Audit authority");
   if (typeof runRaw.source_commit !== "string" || !/^[a-f0-9]{40}$/.test(runRaw.source_commit)) fail("Run source commit is invalid");
-  if (runRaw.manifest_sha256 !== sha256File(evaluation.manifestPath)) fail("Run manifest hash does not match current authority");
-  validateAuditSourceAuthority(evaluation, runRaw.source_commit, runRaw.manifest_sha256);
+  const expectedManifestSha256 = options.expectedManifestSha256 ?? sha256File(evaluation.manifestPath);
+  if (runRaw.manifest_sha256 !== expectedManifestSha256) fail("Run manifest hash does not match selected authority");
+  if (!options.skipSourceAuthority) validateAuditSourceAuthority(evaluation, runRaw.source_commit, runRaw.manifest_sha256);
   const relativeRunPath = relative(evaluation.repoRoot, runPath).replace(/\\/g, "/");
   if (runRaw.output_path !== relativeRunPath) fail("Run output path does not match its directory");
   assertString(runRaw.agent, "run report.agent");
@@ -1257,7 +1272,7 @@ export function validateAuditScores(
     privateCoordinates.set(packetId, { task_id: String(raw.task_id), condition: raw.condition, repetition: Number(raw.repetition) });
   }
   if (observedCoordinates.size !== expectedCoordinates.size) fail(`Audit run is missing ${expectedCoordinates.size - observedCoordinates.size} coordinates`);
-  const truth = heldOutTruth(evaluation);
+  const truth = options.truth ?? heldOutTruth(evaluation);
   const scoreDir = directoryInsideRepo(evaluation.repoRoot, relative(evaluation.repoRoot, resolve(runPath, "scores")), "score directory");
   const scoreFiles = readdirSync(scoreDir).filter((file) => file.endsWith(".json")).sort();
   if (scoreFiles.length !== packets.size) fail(`Audit scoring requires exactly ${packets.size} score files, got ${scoreFiles.length}`);
@@ -1279,6 +1294,13 @@ export function validateAuditScores(
   return { runPath, run, scores, privateCoordinates, truth };
 }
 
+export function validateAuditScores(
+  evaluation: ValidatedEvaluation,
+  runRelativePath: string
+): ValidatedAuditScores {
+  return validateAuditScoresWithAuthority(evaluation, runRelativePath);
+}
+
 function gitFileAtCommit(repoRoot: string, commit: string, path: string): string {
   if (!/^[a-f0-9]{40}$/.test(commit)) fail("Historical source commit is invalid");
   if (isAbsolute(path) || path.split("/").includes("..")) fail(`Historical path is unsafe: ${path}`);
@@ -1293,6 +1315,110 @@ function gitFileAtCommit(repoRoot: string, commit: string, path: string): string
 
 function sha256Text(value: string): string {
   return createHash("sha256").update(value).digest("hex");
+}
+
+function historicalFileWithHash(
+  repoRoot: string,
+  commit: string,
+  path: unknown,
+  expectedSha256: unknown,
+  label: string
+): string {
+  assertString(path, `${label}.path`);
+  assertString(expectedSha256, `${label}.sha256`);
+  const text = gitFileAtCommit(repoRoot, commit, path);
+  if (sha256Text(text) !== expectedSha256) fail(`${label} hash mismatch at source commit`);
+  return text;
+}
+
+function historicalAuditEvaluation(
+  repoRoot: string,
+  runRelativePath: string
+): { evaluation: ValidatedEvaluation; truth: TruthSet; manifestSha256: string } {
+  const absoluteRoot = resolve(repoRoot);
+  const runPath = directoryInsideRepo(absoluteRoot, runRelativePath, "historical Audit run path");
+  const runRaw = readJson(resolve(runPath, "run.json"));
+  assertRecord(runRaw, "historical Audit run report");
+  assertString(runRaw.source_commit, "historical Audit source_commit");
+  assertString(runRaw.manifest_sha256, "historical Audit manifest_sha256");
+  if (runRaw.experiment !== "A" || runRaw.partition !== "held_out") fail("Historical Audit evidence requires a held-out A run");
+  const manifestText = gitFileAtCommit(absoluteRoot, runRaw.source_commit, DEFAULT_MANIFEST_PATH);
+  if (sha256Text(manifestText) !== runRaw.manifest_sha256) fail("Historical Audit manifest hash mismatch");
+  const raw = JSON.parse(manifestText) as unknown;
+  assertRecord(raw, "historical Audit manifest");
+  assertExactKeys(raw, ["schema", "runner", "output_root", "experiments", "partitions", "adjudication", "agents"], "historical Audit manifest");
+  if (raw.schema !== "repo-harness-bdd2-evaluation.v3") fail("Historical Audit requires an exact v3 source authority");
+  assertRecord(raw.runner, "historical Audit runner");
+  historicalFileWithHash(absoluteRoot, runRaw.source_commit, raw.runner.path, raw.runner.sha256, "historical Audit runner");
+  assertRecord(raw.experiments, "historical Audit experiments");
+  assertExactKeys(raw.experiments, ["S", "A"], "historical Audit experiments");
+  for (const experimentId of ["S", "A"] as const) {
+    const experiment = raw.experiments[experimentId];
+    assertRecord(experiment, `historical Audit experiments.${experimentId}`);
+    assertRecord(experiment.conditions, `historical Audit experiments.${experimentId}.conditions`);
+    for (const condition of ["baseline", "treatment"] as const) {
+      const prompt = experiment.conditions[condition];
+      assertRecord(prompt, `historical Audit ${experimentId}.${condition}`);
+      historicalFileWithHash(absoluteRoot, runRaw.source_commit, prompt.prompt, prompt.sha256, `historical Audit ${experimentId}.${condition}`);
+    }
+  }
+  const audit = raw.experiments.A;
+  assertRecord(audit, "historical Audit experiment A");
+  assertRecord(audit.freeze, "historical Audit freeze");
+  if (audit.freeze.state !== "sealed" || audit.freeze.id !== runRaw.freeze_id) fail("Historical Audit run does not match its sealed source authority");
+  assertRecord(raw.partitions, "historical Audit partitions");
+  assertExactKeys(raw.partitions, ["development", "held_out"], "historical Audit partitions");
+  const tasks = {} as Record<PartitionId, EvaluationTask[]>;
+  let heldOutTruth: TruthSet | undefined;
+  for (const partitionId of ["development", "held_out"] as const) {
+    const partition = raw.partitions[partitionId];
+    assertRecord(partition, `historical Audit partitions.${partitionId}`);
+    const taskText = historicalFileWithHash(absoluteRoot, runRaw.source_commit, partition.tasks, partition.tasks_sha256, `historical Audit ${partitionId} tasks`);
+    const truthText = historicalFileWithHash(absoluteRoot, runRaw.source_commit, partition.truth, partition.truth_sha256, `historical Audit ${partitionId} truth`);
+    const taskSet = validateTaskSet(JSON.parse(taskText), partitionId);
+    const truthSet = JSON.parse(truthText) as TruthSet;
+    validateTruthSet(truthSet, partitionId, taskSet.tasks);
+    tasks[partitionId] = taskSet.tasks;
+    if (partitionId === "held_out") heldOutTruth = truthSet;
+  }
+  if (!heldOutTruth) fail("Historical Audit held-out truth is missing");
+  assertRecord(raw.adjudication, "historical Audit adjudication");
+  historicalFileWithHash(absoluteRoot, runRaw.source_commit, raw.adjudication.rubric, raw.adjudication.rubric_sha256, "historical Audit rubric");
+  assertRecord(raw.adjudication.experiments, "historical Audit adjudication experiments");
+  for (const experimentId of ["S", "A"] as const) {
+    const authority = raw.adjudication.experiments[experimentId];
+    assertRecord(authority, `historical Audit adjudication.${experimentId}`);
+    historicalFileWithHash(absoluteRoot, runRaw.source_commit, authority.score_schema, authority.score_schema_sha256, `historical Audit ${experimentId} score schema`);
+    historicalFileWithHash(absoluteRoot, runRaw.source_commit, authority.metrics, authority.metrics_sha256, `historical Audit ${experimentId} metrics`);
+  }
+  assertRecord(raw.agents, "historical Audit agents");
+  const manifest = raw as unknown as EvaluationManifest;
+  validateAgentProfiles(manifest);
+  const actualAuditTasks = tasks.held_out.filter((task) => task.experiment === "A").length;
+  if (actualAuditTasks !== manifest.experiments.A.held_out_task_count) fail("Historical Audit held-out task count mismatch");
+  return {
+    evaluation: {
+      repoRoot: absoluteRoot,
+      manifestPath: resolve(absoluteRoot, DEFAULT_MANIFEST_PATH),
+      authorityPaths: [],
+      manifest,
+      tasks,
+    },
+    truth: heldOutTruth,
+    manifestSha256: runRaw.manifest_sha256,
+  };
+}
+
+export function validateHistoricalAuditScores(
+  repoRoot: string,
+  runRelativePath: string
+): ValidatedAuditScores {
+  const historical = historicalAuditEvaluation(repoRoot, runRelativePath);
+  return validateAuditScoresWithAuthority(historical.evaluation, runRelativePath, {
+    expectedManifestSha256: historical.manifestSha256,
+    skipSourceAuthority: true,
+    truth: historical.truth,
+  });
 }
 
 export function projectHistoricalShapeEvidence(
@@ -1317,7 +1443,7 @@ export function projectHistoricalShapeEvidence(
   const manifestText = gitFileAtCommit(absoluteRoot, runRaw.source_commit, DEFAULT_MANIFEST_PATH);
   if (sha256Text(manifestText) !== runRaw.manifest_sha256) fail("Historical run manifest hash mismatch");
   const historicalManifest = JSON.parse(manifestText) as any;
-  if (!["repo-harness-bdd2-evaluation.v2", "repo-harness-bdd2-evaluation.v3"].includes(historicalManifest.schema)
+  if (historicalManifest.schema !== "repo-harness-bdd2-evaluation.v2"
     || historicalManifest.experiments?.S?.freeze?.id !== runRaw.freeze_id
     || historicalManifest.experiments?.S?.freeze?.state !== "sealed") {
     fail("Historical run does not match a sealed Shape authority");
@@ -1632,29 +1758,50 @@ export function summarizeShape(
   return summary;
 }
 
-export function projectAuditEvidence(
-  evaluation: ValidatedEvaluation,
-  runRelativePath: string,
+function writeAuditEvidenceProjection(
+  repoRoot: string,
+  validated: ValidatedAuditScores,
   outputRelativePath: string
 ): Record<string, unknown> {
-  const validated = validateAuditScores(evaluation, runRelativePath);
   const rows = [...validated.privateCoordinates.entries()].map(([packetId, coordinate]) => {
     const score = validated.scores.get(packetId);
     if (!score) fail(`Missing validated Audit score for packet: ${packetId}`);
     const truthTask = validated.truth.audit_tasks[coordinate.task_id];
     if (!truthTask) fail(`Missing Audit truth for task: ${coordinate.task_id}`);
-    const matched = score.score.findings.flatMap((finding) => finding.matched_truth_issue_id ? [finding.matched_truth_issue_id] : []);
+    const truthById = new Map(truthTask.issues.map((issue) => [issue.id, issue]));
+    const findings = score.score.findings.map((finding) => {
+      const truthIssue = finding.matched_truth_issue_id ? truthById.get(finding.matched_truth_issue_id) : undefined;
+      const severityDistance = truthIssue ? Math.abs(severityIndex(finding.reported_severity) - severityIndex(truthIssue.severity)) : null;
+      const severeUnderestimation = Boolean(
+        truthIssue
+        && (truthIssue.severity === "P0" || truthIssue.severity === "P1")
+        && severityIndex(finding.reported_severity) > severityIndex(truthIssue.severity)
+      );
+      return {
+        ref: finding.ref,
+        reported_severity: finding.reported_severity,
+        matched_truth_issue_id: finding.matched_truth_issue_id,
+        truth_severity: truthIssue?.severity ?? null,
+        severity_distance: severityDistance,
+        severity_agreement: severityDistance === null ? null : severityDistance <= 1,
+        severe_underestimation: severeUnderestimation,
+      };
+    });
+    const matchedCount = findings.filter((finding) => finding.matched_truth_issue_id !== null).length;
     return {
       packet_id: packetId,
       task_id: coordinate.task_id,
       condition: coordinate.condition,
       repetition: coordinate.repetition,
       clean: truthTask.clean,
-      truth_issue_ids: truthTask.issues.map((issue) => issue.id),
+      truth_issues: truthTask.issues.map((issue) => ({ id: issue.id, severity: issue.severity, taxonomy: issue.taxonomy })),
       verdict: score.score.verdict,
+      findings,
       finding_count: score.score.findings.length,
-      matched_truth_issue_ids: matched,
-      false_positive_count: score.score.findings.length - matched.length,
+      matched_truth_issue_count: matchedCount,
+      false_positive_count: score.score.findings.length - matchedCount,
+      severity_agreement_count: findings.filter((finding) => finding.severity_agreement === true).length,
+      severe_underestimation_count: findings.filter((finding) => finding.severe_underestimation).length,
       correction_minutes: score.score.correction_minutes,
       score_sha256: sha256File(resolve(validated.runPath, "scores", `${packetId}.json`)),
       private_sha256: sha256File(resolve(validated.runPath, "private", `${packetId}.json`)),
@@ -1664,7 +1811,7 @@ export function projectAuditEvidence(
     || left.condition.localeCompare(right.condition)
     || left.repetition - right.repetition);
   const projection = {
-    schema: "repo-harness-bdd2-audit-evidence.v1",
+    schema: "repo-harness-bdd2-audit-evidence.v2",
     projector_sha256: sha256File(SCRIPT_PATH),
     source_commit: validated.run.source_commit,
     run_manifest_sha256: validated.run.manifest_sha256,
@@ -1672,10 +1819,34 @@ export function projectAuditEvidence(
     evidence_grade: "condition-blind-agent-panel-proxy",
     rows,
   };
-  const outputPath = resolve(evaluation.repoRoot, outputRelativePath);
-  assertWritePath(evaluation.repoRoot, outputPath);
+  const outputPath = resolve(repoRoot, outputRelativePath);
+  assertWritePath(repoRoot, outputPath);
   writeJson(outputPath, projection);
   return projection;
+}
+
+export function projectAuditEvidence(
+  evaluation: ValidatedEvaluation,
+  runRelativePath: string,
+  outputRelativePath: string
+): Record<string, unknown> {
+  return writeAuditEvidenceProjection(
+    evaluation.repoRoot,
+    validateAuditScores(evaluation, runRelativePath),
+    outputRelativePath
+  );
+}
+
+export function projectHistoricalAuditEvidence(
+  repoRoot: string,
+  runRelativePath: string,
+  outputRelativePath: string
+): Record<string, unknown> {
+  return writeAuditEvidenceProjection(
+    resolve(repoRoot),
+    validateHistoricalAuditScores(repoRoot, runRelativePath),
+    outputRelativePath
+  );
 }
 
 function auditRate(numerator: number, denominator: number, label: string, zeroValue?: number): number {
@@ -1690,12 +1861,25 @@ function severityIndex(severity: "P0" | "P1" | "P2" | "P3"): number {
   return ["P0", "P1", "P2", "P3"].indexOf(severity);
 }
 
-export function summarizeAudit(
-  evaluation: ValidatedEvaluation,
-  runRelativePath: string,
+export function evaluateAuditGates(
+  treatment: AuditSummary["metrics"][ConditionId]
+): AuditSummary["gates"] {
+  return {
+    precision: treatment.precision >= 0.7,
+    seeded_recall: treatment.seeded_recall >= 0.8,
+    severe_seeded_recall: treatment.severe_seeded_recall === 1,
+    clean_false_positive_rate: treatment.clean_false_positive_rate <= 0.2,
+    correct_no_findings_rate: treatment.correct_no_findings_rate >= 0.8,
+    severity_agreement_rate: treatment.severity_agreement_rate >= 0.85,
+    no_severe_underestimation: treatment.severe_underestimations === 0,
+  };
+}
+
+function summarizeValidatedAudit(
+  repoRoot: string,
+  validated: ValidatedAuditScores,
   markdownOutput?: string
 ): AuditSummary {
-  const validated = validateAuditScores(evaluation, runRelativePath);
   const metrics = {} as AuditSummary["metrics"];
   for (const condition of ["baseline", "treatment"] as const) {
     const packetIds = [...validated.privateCoordinates.entries()]
@@ -1765,15 +1949,7 @@ export function summarizeAudit(
     };
   }
   const treatment = metrics.treatment;
-  const gates = {
-    precision: treatment.precision >= 0.7,
-    seeded_recall: treatment.seeded_recall >= 0.8,
-    severe_seeded_recall: treatment.severe_seeded_recall === 1,
-    clean_false_positive_rate: treatment.clean_false_positive_rate <= 0.2,
-    correct_no_findings_rate: treatment.correct_no_findings_rate >= 0.8,
-    severity_agreement_rate: treatment.severity_agreement_rate >= 0.85,
-    no_severe_underestimation: treatment.severe_underestimations === 0,
-  };
+  const gates = evaluateAuditGates(treatment);
   const summary: AuditSummary = {
     schema: "repo-harness-bdd2-audit-summary.v1",
     source_commit: validated.run.source_commit,
@@ -1786,9 +1962,9 @@ export function summarizeAudit(
   };
   writeJson(resolve(validated.runPath, "audit-summary.json"), summary);
   if (markdownOutput) {
-    const outputPath = resolve(evaluation.repoRoot, markdownOutput);
-    assertWritePath(evaluation.repoRoot, outputPath);
-    const runPathForReport = relative(evaluation.repoRoot, validated.runPath).replace(/\\/g, "/");
+    const outputPath = resolve(repoRoot, markdownOutput);
+    assertWritePath(repoRoot, outputPath);
+    const runPathForReport = relative(repoRoot, validated.runPath).replace(/\\/g, "/");
     const metricRows = (["baseline", "treatment"] as const).map((condition) => {
       const item = metrics[condition];
       return `| ${condition} | ${(item.precision * 100).toFixed(1)}% | ${(item.seeded_recall * 100).toFixed(1)}% | ${(item.severe_seeded_recall * 100).toFixed(1)}% | ${(item.clean_false_positive_rate * 100).toFixed(1)}% | ${(item.correct_no_findings_rate * 100).toFixed(1)}% | ${(item.severity_agreement_rate * 100).toFixed(1)}% | ${item.severe_underestimations} | ${item.correction_minutes_median} |`;
@@ -1800,8 +1976,32 @@ export function summarizeAudit(
   return summary;
 }
 
+export function summarizeAudit(
+  evaluation: ValidatedEvaluation,
+  runRelativePath: string,
+  markdownOutput?: string
+): AuditSummary {
+  return summarizeValidatedAudit(
+    evaluation.repoRoot,
+    validateAuditScores(evaluation, runRelativePath),
+    markdownOutput
+  );
+}
+
+export function summarizeHistoricalAudit(
+  repoRoot: string,
+  runRelativePath: string,
+  markdownOutput?: string
+): AuditSummary {
+  return summarizeValidatedAudit(
+    resolve(repoRoot),
+    validateHistoricalAuditScores(repoRoot, runRelativePath),
+    markdownOutput
+  );
+}
+
 interface CliOptions {
-  command: "validate" | "plan" | "run" | "validate-scores" | "summarize-shape" | "project-shape-evidence" | "summarize-audit" | "project-audit-evidence";
+  command: "validate" | "plan" | "run" | "validate-scores" | "summarize-shape" | "project-shape-evidence" | "summarize-audit" | "project-audit-evidence" | "validate-historical-audit-scores" | "summarize-historical-audit" | "project-historical-audit-evidence";
   manifest: string;
   experiment?: ExperimentId;
   partition?: PartitionId;
@@ -1815,8 +2015,8 @@ interface CliOptions {
 
 export function parseCliArgs(args: string[]): CliOptions {
   const command = args[0];
-  if (!["validate", "plan", "run", "validate-scores", "summarize-shape", "project-shape-evidence", "summarize-audit", "project-audit-evidence"].includes(String(command))) {
-    fail("Usage: run-bdd2-evals.ts <validate|plan|run|validate-scores|summarize-shape|project-shape-evidence|summarize-audit|project-audit-evidence> [--manifest path] [--experiment S|A] [--partition development|held_out] [--task id] [--condition baseline|treatment] [--repetitions n] [--agent name] [--run path] [--output path] [--dry-run]");
+  if (!["validate", "plan", "run", "validate-scores", "summarize-shape", "project-shape-evidence", "summarize-audit", "project-audit-evidence", "validate-historical-audit-scores", "summarize-historical-audit", "project-historical-audit-evidence"].includes(String(command))) {
+    fail("Usage: run-bdd2-evals.ts <validate|plan|run|validate-scores|summarize-shape|project-shape-evidence|summarize-audit|project-audit-evidence|validate-historical-audit-scores|summarize-historical-audit|project-historical-audit-evidence> [--manifest path] [--experiment S|A] [--partition development|held_out] [--task id] [--condition baseline|treatment] [--repetitions n] [--agent name] [--run path] [--output path] [--dry-run]");
   }
   const options: CliOptions = {
     command: command as CliOptions["command"],
@@ -1867,6 +2067,23 @@ export function main(args: string[] = process.argv.slice(2)): void {
     if (!options.run) fail("project-shape-evidence requires --run");
     if (!options.output) fail("project-shape-evidence requires --output");
     console.log(JSON.stringify(projectHistoricalShapeEvidence(REPO_ROOT, options.run, options.output), null, 2));
+    return;
+  }
+  if (options.command === "validate-historical-audit-scores") {
+    if (!options.run) fail("validate-historical-audit-scores requires --run");
+    const validated = validateHistoricalAuditScores(REPO_ROOT, options.run);
+    console.log(JSON.stringify({ status: "valid", packets: validated.run.packets.length, scores: validated.scores.size }, null, 2));
+    return;
+  }
+  if (options.command === "project-historical-audit-evidence") {
+    if (!options.run) fail("project-historical-audit-evidence requires --run");
+    if (!options.output) fail("project-historical-audit-evidence requires --output");
+    console.log(JSON.stringify(projectHistoricalAuditEvidence(REPO_ROOT, options.run, options.output), null, 2));
+    return;
+  }
+  if (options.command === "summarize-historical-audit") {
+    if (!options.run) fail("summarize-historical-audit requires --run");
+    console.log(JSON.stringify(summarizeHistoricalAudit(REPO_ROOT, options.run, options.output), null, 2));
     return;
   }
   const evaluation = validateEvaluation(REPO_ROOT, options.manifest);

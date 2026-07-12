@@ -11,16 +11,21 @@ import {
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
+import { createHash } from "crypto";
 import {
   buildIsolatedAgentEnv,
   buildRunPlan,
+  evaluateAuditGates,
   projectAuditEvidence,
+  projectHistoricalAuditEvidence,
   projectHistoricalShapeEvidence,
   runEvaluation,
   sha256File,
   summarizeAudit,
+  summarizeHistoricalAudit,
   summarizeShape,
   validateAuditScores,
+  validateHistoricalAuditScores,
   validateEvaluation,
   validateShapeScores,
 } from "../scripts/run-bdd2-evals";
@@ -394,6 +399,43 @@ describe("run-bdd2-evals sealed execution", () => {
         );
       }
 
+      expect(() => projectHistoricalShapeEvidence(root, runRelativePath, "shape-evidence.json"))
+        .toThrow("Historical run does not match a sealed Shape authority");
+      const runJsonPath = join(root, runRelativePath, "run.json");
+      const currentRunText = readFileSync(runJsonPath, "utf-8");
+      const historicalManifest = structuredClone(manifest);
+      historicalManifest.schema = "repo-harness-bdd2-evaluation.v2";
+      historicalManifest.adjudication = {
+        rubric: manifest.adjudication.rubric,
+        rubric_sha256: manifest.adjudication.rubric_sha256,
+        score_schema: manifest.adjudication.experiments.S.score_schema,
+        score_schema_sha256: manifest.adjudication.experiments.S.score_schema_sha256,
+        shape_metrics: manifest.adjudication.experiments.S.metrics,
+        shape_metrics_sha256: manifest.adjudication.experiments.S.metrics_sha256,
+      };
+      const historicalManifestText = `${JSON.stringify(historicalManifest, null, 2)}\n`;
+      const blob = spawnSync("git", ["hash-object", "-w", "--stdin"], {
+        cwd: root,
+        encoding: "utf-8",
+        input: historicalManifestText,
+      }).stdout.trim();
+      const historicalIndex = join(root, "historical-shape.index");
+      const historicalEnv = { ...process.env, GIT_INDEX_FILE: historicalIndex };
+      expect(spawnSync("git", ["read-tree", "HEAD"], { cwd: root, env: historicalEnv }).status).toBe(0);
+      expect(spawnSync("git", ["update-index", "--add", "--cacheinfo", `100644,${blob},evals/bdd2/evaluation-manifest.json`], { cwd: root, env: historicalEnv }).status).toBe(0);
+      const tree = spawnSync("git", ["write-tree"], { cwd: root, env: historicalEnv, encoding: "utf-8" }).stdout.trim();
+      const historicalCommit = spawnSync("git", ["commit-tree", tree, "-p", "HEAD"], {
+        cwd: root,
+        env: historicalEnv,
+        encoding: "utf-8",
+        input: "historical v2 Shape authority\n",
+      }).stdout.trim();
+      rmSync(historicalIndex, { force: true });
+      const historicalRun = JSON.parse(currentRunText);
+      historicalRun.source_commit = historicalCommit;
+      historicalRun.manifest_sha256 = createHash("sha256").update(historicalManifestText).digest("hex");
+      writeFileSync(runJsonPath, `${JSON.stringify(historicalRun, null, 2)}\n`, "utf-8");
+
       const projected = projectHistoricalShapeEvidence(root, runRelativePath, "shape-evidence.json") as any;
       expect(projected.schema).toBe("repo-harness-bdd2-shape-evidence.v1");
       expect(projected.projector_sha256).toBe(sha256File(join(root, "scripts/run-bdd2-evals.ts")));
@@ -430,6 +472,7 @@ describe("run-bdd2-evals sealed execution", () => {
       expect(() => projectHistoricalShapeEvidence(root, runRelativePath, "shape-evidence.json"))
         .toThrow("Historical coordinate prompt hash drift");
       writeFileSync(firstPrivatePath, `${JSON.stringify(firstPrivate, null, 2)}\n`, "utf-8");
+      writeFileSync(runJsonPath, currentRunText, "utf-8");
 
       expect(validateShapeScores(evaluation, runRelativePath).scores.size).toBe(6);
       const summary = summarizeShape(evaluation, runRelativePath, "shape-report.md");
@@ -488,9 +531,28 @@ describe("run-bdd2-evals Audit adjudication", () => {
       truth.audit_tasks = { "A-H-02": truth.audit_tasks["A-H-02"], "A-H-09": truth.audit_tasks["A-H-09"] };
       writeFileSync(truthPath, `${JSON.stringify(truth, null, 2)}\n`, "utf-8");
       const manifest = readManifest(root);
+      manifest.experiments.A.freeze = {
+        id: "bdd2-test-a-sealed",
+        state: "sealed",
+        sealed_at: "2026-07-12T00:00:00Z",
+      };
       manifest.experiments.A.held_out_task_count = 2;
       manifest.partitions.held_out.tasks_sha256 = sha256File(taskPath);
       manifest.partitions.held_out.truth_sha256 = sha256File(truthPath);
+      manifest.agents = {
+        stub: {
+          command: "/bin/echo",
+          args: ["{model}", "{sampling.temperature}"],
+          version_args: ["--version"],
+          expected_version: "unused",
+          model: "stub-model-v1",
+          sampling: { temperature: 0 },
+          input_source: "stdin",
+          response_source: "stdout",
+          workspace_mode: "isolated",
+          credential_mode: "none",
+        },
+      };
       writeManifest(root, manifest);
       writeFileSync(join(root, ".gitignore"), ".ai/\naudit-evidence.json\n", "utf-8");
       for (const args of [
@@ -529,9 +591,9 @@ describe("run-bdd2-evals Audit adjudication", () => {
           condition: coordinate.condition,
           repetition: coordinate.repetition,
           prompt_sha256: evaluation.manifest.experiments.A.conditions[coordinate.condition].sha256,
-          agent: "codex-gpt-5.6-sol-xhigh",
-          model: "gpt-5.6-sol",
-          sampling: { reasoning_effort: "xhigh" },
+          agent: "stub",
+          model: "stub-model-v1",
+          sampling: { temperature: 0 },
           exit_code: 0,
         }, null, 2)}\n`, "utf-8");
         const isSeeded = coordinate.taskId === "A-H-09";
@@ -565,9 +627,9 @@ describe("run-bdd2-evals Audit adjudication", () => {
         freeze_id: evaluation.manifest.experiments.A.freeze.id,
         source_commit: sourceCommit,
         manifest_sha256: sha256File(join(root, "evals/bdd2/evaluation-manifest.json")),
-        agent: "codex-gpt-5.6-sol-xhigh",
-        model: "gpt-5.6-sol",
-        sampling: { reasoning_effort: "xhigh" },
+        agent: "stub",
+        model: "stub-model-v1",
+        sampling: { temperature: 0 },
         experiment: "A",
         partition: "held_out",
         output_path: runRelativePath,
@@ -576,6 +638,13 @@ describe("run-bdd2-evals Audit adjudication", () => {
       writeFileSync(runJsonPath, `${JSON.stringify(runJson, null, 2)}\n`, "utf-8");
 
       expect(validateAuditScores(evaluation, runRelativePath).scores.size).toBe(8);
+      const externalRunRoot = mkdtempSync(join(tmpdir(), "bdd2-audit-external-"));
+      cpSync(runPath, join(externalRunRoot, "run"), { recursive: true });
+      symlinkSync(externalRunRoot, join(root, "linked-run-parent"));
+      expect(() => validateAuditScores(evaluation, "linked-run-parent/run"))
+        .toThrow("resolves outside repository root");
+      rmSync(join(root, "linked-run-parent"));
+      rmSync(externalRunRoot, { recursive: true, force: true });
       writeFileSync(runJsonPath, `${JSON.stringify({ ...runJson, source_commit: "a".repeat(40) }, null, 2)}\n`, "utf-8");
       expect(() => validateAuditScores(evaluation, runRelativePath)).toThrow("Cannot read evals/bdd2/evaluation-manifest.json at source commit");
       writeFileSync(runJsonPath, `${JSON.stringify(runJson, null, 2)}\n`, "utf-8");
@@ -586,11 +655,37 @@ describe("run-bdd2-evals Audit adjudication", () => {
       const projection = projectAuditEvidence(evaluation, runRelativePath, "audit-evidence.json") as any;
       expect(projection.packet_count).toBe(8);
       expect(projection.evidence_grade).toBe("condition-blind-agent-panel-proxy");
+      const externalEvidence = join(tmpdir(), `bdd2-audit-evidence-${Date.now()}.json`);
+      writeFileSync(externalEvidence, "external\n", "utf-8");
+      symlinkSync(externalEvidence, join(root, "audit-evidence-link.json"));
+      expect(() => projectAuditEvidence(evaluation, runRelativePath, "audit-evidence-link.json"))
+        .toThrow("must not be a symbolic link");
+      rmSync(join(root, "audit-evidence-link.json"));
+      rmSync(externalEvidence, { force: true });
       const summary = summarizeAudit(evaluation, runRelativePath);
       expect(summary.decision).toBe("Pass");
       expect(Object.values(summary.gates).every(Boolean)).toBe(true);
       expect(summary.metrics.treatment.precision).toBe(1);
       expect(summary.metrics.treatment.correct_no_findings_rate).toBe(1);
+      const gateCases: Array<[keyof typeof summary.gates, Partial<typeof summary.metrics.treatment>]> = [
+        ["precision", { precision: 0.69 }],
+        ["seeded_recall", { seeded_recall: 0.79 }],
+        ["severe_seeded_recall", { severe_seeded_recall: 0.99 }],
+        ["clean_false_positive_rate", { clean_false_positive_rate: 0.21 }],
+        ["correct_no_findings_rate", { correct_no_findings_rate: 0.79 }],
+        ["severity_agreement_rate", { severity_agreement_rate: 0.84 }],
+        ["no_severe_underestimation", { severe_underestimations: 1 }],
+      ];
+      for (const [gate, mutation] of gateCases) {
+        const gates = evaluateAuditGates({ ...summary.metrics.treatment, ...mutation });
+        expect(gates[gate]).toBe(false);
+        expect(Object.values(gates).every(Boolean)).toBe(false);
+      }
+      expect(validateHistoricalAuditScores(root, runRelativePath).scores.size).toBe(8);
+      const historicalProjection = projectHistoricalAuditEvidence(root, runRelativePath, "historical-audit-evidence.json") as any;
+      expect(historicalProjection.schema).toBe("repo-harness-bdd2-audit-evidence.v2");
+      expect(historicalProjection.rows).toHaveLength(8);
+      expect(summarizeHistoricalAudit(root, runRelativePath).decision).toBe("Pass");
 
       const seededTreatment = coordinates.findIndex((coordinate) => coordinate.taskId === "A-H-09" && coordinate.condition === "treatment");
       const duplicatePath = join(runPath, "scores", `${(seededTreatment + 1).toString(16).padStart(32, "0")}.json`);

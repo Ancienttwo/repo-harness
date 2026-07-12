@@ -199,9 +199,9 @@ bun scripts/run-bdd2-evals.ts plan --experiment A --partition held_out --dry-run
 After execution and scoring:
 
 ```bash
-bun scripts/run-bdd2-evals.ts validate-scores --experiment A --run <run>
-bun scripts/run-bdd2-evals.ts project-audit-evidence --run <run> --output evals/bdd2/reports/experiment-a-evidence.json
-bun scripts/run-bdd2-evals.ts summarize-audit --run <run> --output evals/bdd2/reports/experiment-a.md
+bun scripts/run-bdd2-evals.ts validate-historical-audit-scores --run <run>
+bun scripts/run-bdd2-evals.ts project-historical-audit-evidence --run <run> --output evals/bdd2/reports/experiment-a-evidence.json
+bun scripts/run-bdd2-evals.ts summarize-historical-audit --run <run>
 repo-harness run verify-contract -- --contract tasks/contracts/20260712-1811-bdd2-e-03-run-experiment-a-audit-hypothesis.contract.md --read-only --strict
 bun run check:ci
 ```
@@ -223,9 +223,9 @@ Manual acceptance:
 - [x] Freeze Audit metric rules and implement score, coordinate, projection, and summary validation.
 - [x] Add focused happy-path and fail-closed regressions, then pass typecheck/validation.
 - [x] Seal A with the exact Codex profile at a clean committed HEAD.
-- [ ] Execute all 48 coordinates and retain ignored raw evidence.
-- [ ] Obtain and validate 48 condition-blind Agent-panel scores before reveal.
-- [ ] Generate durable evidence, metrics, Pass/Kill report, and evidence-grade disclosure.
+- [x] Execute all 48 coordinates and retain ignored raw evidence.
+- [x] Obtain and validate 48 condition-blind Agent-panel scores before reveal.
+- [x] Generate durable evidence, metrics, Pass/Kill report, and evidence-grade disclosure.
 - [ ] Run strict contract/full CI/external review, push, and open the E-03 module PR.
 
 ## Promotion Gate

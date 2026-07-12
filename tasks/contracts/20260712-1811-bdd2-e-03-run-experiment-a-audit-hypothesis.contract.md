@@ -163,7 +163,7 @@ exit_criteria:
     - bun test tests/run-bdd2-evals.test.ts tests/bdd2-evals-contract.test.ts
     - bun scripts/run-bdd2-evals.ts validate
     - bun scripts/run-bdd2-evals.ts plan --experiment A --partition held_out --dry-run
-    - bun scripts/run-bdd2-evals.ts validate-scores --experiment A --run .ai/harness/runs/bdd2/bdd2-e03-audit-a-v1
+    - bun scripts/run-bdd2-evals.ts validate-historical-audit-scores --run .ai/harness/runs/bdd2/bdd2-e03-audit-a-v1
     - repo-harness run check-task-workflow --strict
   qa_scores:
     - dimension: functionality

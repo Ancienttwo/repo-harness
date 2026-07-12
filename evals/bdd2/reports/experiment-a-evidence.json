@@ -1,0 +1,1918 @@
+{
+  "schema": "repo-harness-bdd2-audit-evidence.v2",
+  "projector_sha256": "dd5b33d7583684531f7e575696d3c6374d9874ecff6dc228fbe601ffd59dbb64",
+  "source_commit": "9918283b38ef6bf92adab64cfc2a3c11e9987c70",
+  "run_manifest_sha256": "bfe848d3f511d1e926b1989e1aa1fbd905bf27c2e620daa3424819d7f9d9d640",
+  "packet_count": 48,
+  "evidence_grade": "condition-blind-agent-panel-proxy",
+  "rows": [
+    {
+      "packet_id": "f34e0418eabf529a01f1cf63c1a7177c",
+      "task_id": "A-H-01",
+      "condition": "baseline",
+      "repetition": 1,
+      "clean": false,
+      "truth_issues": [
+        {
+          "id": "A-H-01-I1",
+          "severity": "P1",
+          "taxonomy": "BACKSTAGE_LEAK"
+        }
+      ],
+      "verdict": "findings",
+      "findings": [
+        {
+          "ref": "F1",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": "A-H-01-I1",
+          "truth_severity": "P1",
+          "severity_distance": 0,
+          "severity_agreement": true,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F2",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F3",
+          "reported_severity": "P2",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F4",
+          "reported_severity": "P2",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        }
+      ],
+      "finding_count": 4,
+      "matched_truth_issue_count": 1,
+      "false_positive_count": 3,
+      "severity_agreement_count": 1,
+      "severe_underestimation_count": 0,
+      "correction_minutes": 10,
+      "score_sha256": "44614045776aa1f38f0a92d6d10609357a9f400e6e909271c1d66584352c4fa3",
+      "private_sha256": "17c0cc50e8768c59fb1f4354b3d9358257475beb4fe3a2ab7664e85a940fd33b",
+      "blind_sha256": "b55302c8430f29afe91ac779a293aa64a64b85038252deac50e45b83b05a2701"
+    },
+    {
+      "packet_id": "bb4f2a3c0cefd12d62c7483e3093f324",
+      "task_id": "A-H-01",
+      "condition": "baseline",
+      "repetition": 2,
+      "clean": false,
+      "truth_issues": [
+        {
+          "id": "A-H-01-I1",
+          "severity": "P1",
+          "taxonomy": "BACKSTAGE_LEAK"
+        }
+      ],
+      "verdict": "findings",
+      "findings": [
+        {
+          "ref": "F1",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": "A-H-01-I1",
+          "truth_severity": "P1",
+          "severity_distance": 0,
+          "severity_agreement": true,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F2",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F3",
+          "reported_severity": "P2",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        }
+      ],
+      "finding_count": 3,
+      "matched_truth_issue_count": 1,
+      "false_positive_count": 2,
+      "severity_agreement_count": 1,
+      "severe_underestimation_count": 0,
+      "correction_minutes": 4,
+      "score_sha256": "ad5ffecde8443cb302b2ca9228024874ed45197f65263431d47b7277cd43be4b",
+      "private_sha256": "482c5cf653a5106183073386a091bc968582934c9f321fa3ba5ee9e1b188a5b1",
+      "blind_sha256": "dba7425634acbf964631662032f0eddf90c2a392d6fba585c0e71cb754f669e3"
+    },
+    {
+      "packet_id": "47cb5e50d6b2352a370bbfb67c0bc5b6",
+      "task_id": "A-H-01",
+      "condition": "treatment",
+      "repetition": 1,
+      "clean": false,
+      "truth_issues": [
+        {
+          "id": "A-H-01-I1",
+          "severity": "P1",
+          "taxonomy": "BACKSTAGE_LEAK"
+        }
+      ],
+      "verdict": "findings",
+      "findings": [
+        {
+          "ref": "F1",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": "A-H-01-I1",
+          "truth_severity": "P1",
+          "severity_distance": 0,
+          "severity_agreement": true,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F2",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F3",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        }
+      ],
+      "finding_count": 3,
+      "matched_truth_issue_count": 1,
+      "false_positive_count": 2,
+      "severity_agreement_count": 1,
+      "severe_underestimation_count": 0,
+      "correction_minutes": 5,
+      "score_sha256": "aff5ceec719ccccaf855a1865f069af7f217ead489c098201d7b95274ec32d26",
+      "private_sha256": "78cb74d014e8352b434976ab1b440c3682ba974779c291bf3821c563a8bf2717",
+      "blind_sha256": "82098507d96d92a1d7c86020d87704ed839f6343682f06b5262a88223a94f0c3"
+    },
+    {
+      "packet_id": "fc5c197fd6b7b1375accbb6f0da0d54b",
+      "task_id": "A-H-01",
+      "condition": "treatment",
+      "repetition": 2,
+      "clean": false,
+      "truth_issues": [
+        {
+          "id": "A-H-01-I1",
+          "severity": "P1",
+          "taxonomy": "BACKSTAGE_LEAK"
+        }
+      ],
+      "verdict": "findings",
+      "findings": [
+        {
+          "ref": "F1",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": "A-H-01-I1",
+          "truth_severity": "P1",
+          "severity_distance": 0,
+          "severity_agreement": true,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F2",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F3",
+          "reported_severity": "P2",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        }
+      ],
+      "finding_count": 3,
+      "matched_truth_issue_count": 1,
+      "false_positive_count": 2,
+      "severity_agreement_count": 1,
+      "severe_underestimation_count": 0,
+      "correction_minutes": 6,
+      "score_sha256": "fc2702231e7804455e8d2f8e818a51dc15d6284c88a82480afdf9e8b4ad79a5e",
+      "private_sha256": "564f42681dd8fe75c9fba2a533fb15ec66256c9ed41977d603f39744f11254df",
+      "blind_sha256": "264d454bddd55ea6dc9aa3b7dec5310e8578d3a62ff9f10c42d73be857e6f2bb"
+    },
+    {
+      "packet_id": "07c13807b7ff0641c38ec7286ffd5968",
+      "task_id": "A-H-02",
+      "condition": "baseline",
+      "repetition": 1,
+      "clean": true,
+      "truth_issues": [],
+      "verdict": "findings",
+      "findings": [
+        {
+          "ref": "F1",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F2",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        }
+      ],
+      "finding_count": 2,
+      "matched_truth_issue_count": 0,
+      "false_positive_count": 2,
+      "severity_agreement_count": 0,
+      "severe_underestimation_count": 0,
+      "correction_minutes": 8,
+      "score_sha256": "ed9d75dee8eb9b988970b8fcc8b5e5661225f49e4f27d31aaaa108d4244f59dc",
+      "private_sha256": "acc9767d26c594a7d191a68b4cff069fbed99a7a94ed4102c5113f4c7bc7486e",
+      "blind_sha256": "a36208afdb70fd38a1597c384c27d24e8cdaaa61760801e5fc14438ea24ae3ca"
+    },
+    {
+      "packet_id": "80b61a4f22cb5dd00624534ded33e4bd",
+      "task_id": "A-H-02",
+      "condition": "baseline",
+      "repetition": 2,
+      "clean": true,
+      "truth_issues": [],
+      "verdict": "findings",
+      "findings": [
+        {
+          "ref": "F1",
+          "reported_severity": "P0",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F2",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F3",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F4",
+          "reported_severity": "P2",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F5",
+          "reported_severity": "P2",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        }
+      ],
+      "finding_count": 5,
+      "matched_truth_issue_count": 0,
+      "false_positive_count": 5,
+      "severity_agreement_count": 0,
+      "severe_underestimation_count": 0,
+      "correction_minutes": 15,
+      "score_sha256": "8f9e30260dcbe0e313dc8a881e818b3a0d943de1a61103912249a3a50408afe6",
+      "private_sha256": "7d85dfefd70f9a4ee109b42848919e76ffc0ffd3f33de7232cebacb1990d682e",
+      "blind_sha256": "7a29f7cd678eb20d1eb85beef5ccb4109198640ec3ca5a6d11e5e40f68374c81"
+    },
+    {
+      "packet_id": "e0ee2cbbb37490d06c805c6ed2380f73",
+      "task_id": "A-H-02",
+      "condition": "treatment",
+      "repetition": 1,
+      "clean": true,
+      "truth_issues": [],
+      "verdict": "pass",
+      "findings": [],
+      "finding_count": 0,
+      "matched_truth_issue_count": 0,
+      "false_positive_count": 0,
+      "severity_agreement_count": 0,
+      "severe_underestimation_count": 0,
+      "correction_minutes": 0,
+      "score_sha256": "8e2051313f5343c06e46ee65a39398335e74c6df4225511a06477df165f1f6b6",
+      "private_sha256": "ea03803a91f00867542717ffb966ee49e66509f04b25d36c713044b90c28212a",
+      "blind_sha256": "59e4cd28bb04de876cf9830c42e36f74860791fa497bb963af753a0cf46226cd"
+    },
+    {
+      "packet_id": "cb6fa3eaf2cc921f830f1bb2c0d9ed01",
+      "task_id": "A-H-02",
+      "condition": "treatment",
+      "repetition": 2,
+      "clean": true,
+      "truth_issues": [],
+      "verdict": "pass",
+      "findings": [],
+      "finding_count": 0,
+      "matched_truth_issue_count": 0,
+      "false_positive_count": 0,
+      "severity_agreement_count": 0,
+      "severe_underestimation_count": 0,
+      "correction_minutes": 0,
+      "score_sha256": "aef41cfd137eba0a0ff5df77670cd66977c3bc7ec9a4ec76dd6d51ceee6fb4ad",
+      "private_sha256": "1a73ded28cf6cf48c5bb0250945a23d53d95e586db42212df6449e8dd3be864c",
+      "blind_sha256": "abe80a2f2ef817542094e1d68c7b754b88860f40280a06521c90dddfed91367a"
+    },
+    {
+      "packet_id": "7480ae9bd691c11e40a763a560a9a54d",
+      "task_id": "A-H-03",
+      "condition": "baseline",
+      "repetition": 1,
+      "clean": false,
+      "truth_issues": [
+        {
+          "id": "A-H-03-I1",
+          "severity": "P1",
+          "taxonomy": "PROTECTED_CONCERN_REGRESSION"
+        }
+      ],
+      "verdict": "findings",
+      "findings": [
+        {
+          "ref": "F1",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": "A-H-03-I1",
+          "truth_severity": "P1",
+          "severity_distance": 0,
+          "severity_agreement": true,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F2",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F3",
+          "reported_severity": "P2",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        }
+      ],
+      "finding_count": 3,
+      "matched_truth_issue_count": 1,
+      "false_positive_count": 2,
+      "severity_agreement_count": 1,
+      "severe_underestimation_count": 0,
+      "correction_minutes": 5,
+      "score_sha256": "91cc9f9f2a3575a0a34c32599ead5ff07df8d1ca1ad915197224408f24a83eb3",
+      "private_sha256": "95e985ef7e7b8f8c1f3c3bf4095570ac69d749073d0d746daa06e36d2bb268bc",
+      "blind_sha256": "17960e131a18a644dbd654d8b8e0999ddee9275394f77af3f60bbad0cfef5f4d"
+    },
+    {
+      "packet_id": "3c1b6634dcc12dd9b94a280134e12b76",
+      "task_id": "A-H-03",
+      "condition": "baseline",
+      "repetition": 2,
+      "clean": false,
+      "truth_issues": [
+        {
+          "id": "A-H-03-I1",
+          "severity": "P1",
+          "taxonomy": "PROTECTED_CONCERN_REGRESSION"
+        }
+      ],
+      "verdict": "findings",
+      "findings": [
+        {
+          "ref": "F1",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": "A-H-03-I1",
+          "truth_severity": "P1",
+          "severity_distance": 0,
+          "severity_agreement": true,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F2",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        }
+      ],
+      "finding_count": 2,
+      "matched_truth_issue_count": 1,
+      "false_positive_count": 1,
+      "severity_agreement_count": 1,
+      "severe_underestimation_count": 0,
+      "correction_minutes": 3,
+      "score_sha256": "52bb051cbc8ab628aa47f14294eebd9eee0b5ae2b3c7ff69e19b966f60a19b76",
+      "private_sha256": "77c8b41b8483564f9057e793c6f53ea1bdc2c7f2055d4b41a8c1c67f66cd365f",
+      "blind_sha256": "033f675ec75edc6635bde44ef10c22ad9ce984b16952b487ecd5228869da3878"
+    },
+    {
+      "packet_id": "66a93eecde4d706ca4d3cddeb4233a2d",
+      "task_id": "A-H-03",
+      "condition": "treatment",
+      "repetition": 1,
+      "clean": false,
+      "truth_issues": [
+        {
+          "id": "A-H-03-I1",
+          "severity": "P1",
+          "taxonomy": "PROTECTED_CONCERN_REGRESSION"
+        }
+      ],
+      "verdict": "findings",
+      "findings": [
+        {
+          "ref": "F1",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": "A-H-03-I1",
+          "truth_severity": "P1",
+          "severity_distance": 0,
+          "severity_agreement": true,
+          "severe_underestimation": false
+        }
+      ],
+      "finding_count": 1,
+      "matched_truth_issue_count": 1,
+      "false_positive_count": 0,
+      "severity_agreement_count": 1,
+      "severe_underestimation_count": 0,
+      "correction_minutes": 0,
+      "score_sha256": "09919169d635056fe4b88495cc7c900dcd5b87b4b2cdb485ec21022807c485ab",
+      "private_sha256": "b0349f327f1f58cee725c355c056585f873354ab03ec9fcf06e8748a57afd4e1",
+      "blind_sha256": "2c7315da53ce6d9da535b16404c58298519d9fd13ef3f8c1f75a1e3a969f2967"
+    },
+    {
+      "packet_id": "d4628fb7bc33d4daac5c33cdb72e555b",
+      "task_id": "A-H-03",
+      "condition": "treatment",
+      "repetition": 2,
+      "clean": false,
+      "truth_issues": [
+        {
+          "id": "A-H-03-I1",
+          "severity": "P1",
+          "taxonomy": "PROTECTED_CONCERN_REGRESSION"
+        }
+      ],
+      "verdict": "findings",
+      "findings": [
+        {
+          "ref": "F1",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": "A-H-03-I1",
+          "truth_severity": "P1",
+          "severity_distance": 0,
+          "severity_agreement": true,
+          "severe_underestimation": false
+        }
+      ],
+      "finding_count": 1,
+      "matched_truth_issue_count": 1,
+      "false_positive_count": 0,
+      "severity_agreement_count": 1,
+      "severe_underestimation_count": 0,
+      "correction_minutes": 0,
+      "score_sha256": "19665700102bdbad8300fad650c86f894afb1cb595d57f12067f785bb7c27202",
+      "private_sha256": "d1e13ba33bfe0835de033f5f67423d2b3797d0003f7b85f7b80d15f96174f86a",
+      "blind_sha256": "4802f1c993b1cb6ef8bd44ab25ccdbf2b04736dad60eab376579bbc62fb0482e"
+    },
+    {
+      "packet_id": "46c4d963d66e265be13b01c3e3270a64",
+      "task_id": "A-H-04",
+      "condition": "baseline",
+      "repetition": 1,
+      "clean": true,
+      "truth_issues": [],
+      "verdict": "inconclusive",
+      "findings": [],
+      "finding_count": 0,
+      "matched_truth_issue_count": 0,
+      "false_positive_count": 0,
+      "severity_agreement_count": 0,
+      "severe_underestimation_count": 0,
+      "correction_minutes": 2,
+      "score_sha256": "2baf3af0e3739f24b063c4060ae70e447947c37a80d61b16a90becaafba7418f",
+      "private_sha256": "7c21f2829511e014d3d9ae27d98a67a1b51a3cff1d50f9eba5b74d75b9e2e7ab",
+      "blind_sha256": "a6e02954a3fc2da8d51c138974f48b4ec88ef11d3c8eda39e40f61d8bea78bb6"
+    },
+    {
+      "packet_id": "8a4efc6db4c14d65b2e6b19e49cc888b",
+      "task_id": "A-H-04",
+      "condition": "baseline",
+      "repetition": 2,
+      "clean": true,
+      "truth_issues": [],
+      "verdict": "inconclusive",
+      "findings": [],
+      "finding_count": 0,
+      "matched_truth_issue_count": 0,
+      "false_positive_count": 0,
+      "severity_agreement_count": 0,
+      "severe_underestimation_count": 0,
+      "correction_minutes": 3,
+      "score_sha256": "e1c5c1ed95b791d9df27d9f296ca6346abe1d0809dc7839c948e174817e2c4fa",
+      "private_sha256": "13304efb8b6644c056f1daea052c55e6e9db978843eb9f81b11f0b46038c8468",
+      "blind_sha256": "81945823e436409bcc0a1aaa46983a55c1a6753b4c72c52277bd7a5c5c2204fa"
+    },
+    {
+      "packet_id": "8ec3a1ab4bc3e6bbed71bc9efa6079df",
+      "task_id": "A-H-04",
+      "condition": "treatment",
+      "repetition": 1,
+      "clean": true,
+      "truth_issues": [],
+      "verdict": "pass",
+      "findings": [],
+      "finding_count": 0,
+      "matched_truth_issue_count": 0,
+      "false_positive_count": 0,
+      "severity_agreement_count": 0,
+      "severe_underestimation_count": 0,
+      "correction_minutes": 0,
+      "score_sha256": "5d6b6241651a98f11e310175ac5679849f6bb7e32d4bd05eefd2aa757d34be3a",
+      "private_sha256": "65790b19ecf850b05402333a2bbe29570d38fd75fcd0d1ce11d25f5fdc0b6416",
+      "blind_sha256": "ca8bd09e4c853b3fad02850a6ce72df046a04f9c48154b3256e22bdb0a9a655d"
+    },
+    {
+      "packet_id": "fdc33ae3ecb028dadd897691c20edf08",
+      "task_id": "A-H-04",
+      "condition": "treatment",
+      "repetition": 2,
+      "clean": true,
+      "truth_issues": [],
+      "verdict": "pass",
+      "findings": [],
+      "finding_count": 0,
+      "matched_truth_issue_count": 0,
+      "false_positive_count": 0,
+      "severity_agreement_count": 0,
+      "severe_underestimation_count": 0,
+      "correction_minutes": 0,
+      "score_sha256": "0bc9c9e4435450cec0f6d9f8916db5920e7bc2f15b095c736895cbbf4469530e",
+      "private_sha256": "b7d05efad1b45b0d4f6102c541c2afcf2472fa6849677b10a945faf2ad767ad8",
+      "blind_sha256": "c097619b41045f1c3b66214f22a94c46780ca0fb5adb5782f12198cb1b616aa5"
+    },
+    {
+      "packet_id": "5775148e3020e89ecf6a4d433e314447",
+      "task_id": "A-H-05",
+      "condition": "baseline",
+      "repetition": 1,
+      "clean": false,
+      "truth_issues": [
+        {
+          "id": "A-H-05-I1",
+          "severity": "P1",
+          "taxonomy": "MISSING_RECOVERY"
+        }
+      ],
+      "verdict": "findings",
+      "findings": [
+        {
+          "ref": "F1",
+          "reported_severity": "P0",
+          "matched_truth_issue_id": "A-H-05-I1",
+          "truth_severity": "P1",
+          "severity_distance": 1,
+          "severity_agreement": true,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F2",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        }
+      ],
+      "finding_count": 2,
+      "matched_truth_issue_count": 1,
+      "false_positive_count": 1,
+      "severity_agreement_count": 1,
+      "severe_underestimation_count": 0,
+      "correction_minutes": 4,
+      "score_sha256": "6c967b756410ffa7fde57a516148d54e02a2e24d0680061a227a5b37ec23386f",
+      "private_sha256": "6a413bd51e9245fb6cffb35a9a2ce04e5233bcfccf9f17f7e5378dd27b475a35",
+      "blind_sha256": "a34a771138d245ec9d117fb5dd701a88df33633ca0bdfed89ead7c3f9ed76182"
+    },
+    {
+      "packet_id": "b8317742aa5510b9cef714482b34dfd6",
+      "task_id": "A-H-05",
+      "condition": "baseline",
+      "repetition": 2,
+      "clean": false,
+      "truth_issues": [
+        {
+          "id": "A-H-05-I1",
+          "severity": "P1",
+          "taxonomy": "MISSING_RECOVERY"
+        }
+      ],
+      "verdict": "findings",
+      "findings": [
+        {
+          "ref": "F1",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": "A-H-05-I1",
+          "truth_severity": "P1",
+          "severity_distance": 0,
+          "severity_agreement": true,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F2",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F3",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        }
+      ],
+      "finding_count": 3,
+      "matched_truth_issue_count": 1,
+      "false_positive_count": 2,
+      "severity_agreement_count": 1,
+      "severe_underestimation_count": 0,
+      "correction_minutes": 7,
+      "score_sha256": "c8f8ff06d15f5ab51d2a9dd64d47c177e63877f8b9d57ad7c85b0f710b3127be",
+      "private_sha256": "903b61cd9d4f70d618729d764d3b1403ffcd62c9da39366ebeb2e124123a39b9",
+      "blind_sha256": "1ac9d322251a7491f947e8848a36e381f85d88ca6a8a1fde298257e4faff4917"
+    },
+    {
+      "packet_id": "96f26d84926382c379a0bc4b31df4add",
+      "task_id": "A-H-05",
+      "condition": "treatment",
+      "repetition": 1,
+      "clean": false,
+      "truth_issues": [
+        {
+          "id": "A-H-05-I1",
+          "severity": "P1",
+          "taxonomy": "MISSING_RECOVERY"
+        }
+      ],
+      "verdict": "findings",
+      "findings": [
+        {
+          "ref": "F1",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": "A-H-05-I1",
+          "truth_severity": "P1",
+          "severity_distance": 0,
+          "severity_agreement": true,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F2",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        }
+      ],
+      "finding_count": 2,
+      "matched_truth_issue_count": 1,
+      "false_positive_count": 1,
+      "severity_agreement_count": 1,
+      "severe_underestimation_count": 0,
+      "correction_minutes": 3,
+      "score_sha256": "45344d31746fc3840fb7ef5237426e02343c41617669f5a5bd1d7c020a822162",
+      "private_sha256": "a56ce8e106d707ae0bab8836969640cad637aab14b0acec8c6d44da5e4c35c51",
+      "blind_sha256": "435dced1f30e1d1f06c54a9ce5294ca78ad3b6aecd5571d03e65b28199e80df1"
+    },
+    {
+      "packet_id": "8c06874c8e564374a122f703d2f33ecb",
+      "task_id": "A-H-05",
+      "condition": "treatment",
+      "repetition": 2,
+      "clean": false,
+      "truth_issues": [
+        {
+          "id": "A-H-05-I1",
+          "severity": "P1",
+          "taxonomy": "MISSING_RECOVERY"
+        }
+      ],
+      "verdict": "findings",
+      "findings": [
+        {
+          "ref": "F1",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": "A-H-05-I1",
+          "truth_severity": "P1",
+          "severity_distance": 0,
+          "severity_agreement": true,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F2",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        }
+      ],
+      "finding_count": 2,
+      "matched_truth_issue_count": 1,
+      "false_positive_count": 1,
+      "severity_agreement_count": 1,
+      "severe_underestimation_count": 0,
+      "correction_minutes": 2,
+      "score_sha256": "dec62ceaf43ae1293c2521967eab5b802cd7662357aa84e812365dffd9998fa4",
+      "private_sha256": "1e87af120d70276ce4a46dcd84b70a8c6886cafc7f918224a10f8312d47aa8bb",
+      "blind_sha256": "5d27a7566a62d89a357f96e5cc8f737b63acea18280f1c3afd542d446da545fa"
+    },
+    {
+      "packet_id": "232af32b5fc28efd3168d31a7ae2c40c",
+      "task_id": "A-H-06",
+      "condition": "baseline",
+      "repetition": 1,
+      "clean": true,
+      "truth_issues": [],
+      "verdict": "findings",
+      "findings": [
+        {
+          "ref": "F1",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F2",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F3",
+          "reported_severity": "P2",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        }
+      ],
+      "finding_count": 3,
+      "matched_truth_issue_count": 0,
+      "false_positive_count": 3,
+      "severity_agreement_count": 0,
+      "severe_underestimation_count": 0,
+      "correction_minutes": 10,
+      "score_sha256": "6130969d4056e9b95924444232edd0194e0c76aaf94867eefeb427012080ccef",
+      "private_sha256": "47b1833753f639fea68182e4534da651393d7d353a4104d425a8989572fcf9dc",
+      "blind_sha256": "cca1cc9fa9ba5b1bba2cdfa09a696b87a4cb1a2b9b3d1a99e2f2156f91b5f3b4"
+    },
+    {
+      "packet_id": "479771c38287c2c96eafc66c5d241006",
+      "task_id": "A-H-06",
+      "condition": "baseline",
+      "repetition": 2,
+      "clean": true,
+      "truth_issues": [],
+      "verdict": "findings",
+      "findings": [
+        {
+          "ref": "F1",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F2",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F3",
+          "reported_severity": "P2",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        }
+      ],
+      "finding_count": 3,
+      "matched_truth_issue_count": 0,
+      "false_positive_count": 3,
+      "severity_agreement_count": 0,
+      "severe_underestimation_count": 0,
+      "correction_minutes": 10,
+      "score_sha256": "f68983a1f2f1518bec67a73b758594334507093bd7645745e397294aa502da3e",
+      "private_sha256": "8298847d1ac61d155c03f03341d5edaf860d569d854d92eada597521a094aa65",
+      "blind_sha256": "244d87671f67a2b6f6bc786d1c51cd7d05a5ab8590bbb0f330fe89a42760449a"
+    },
+    {
+      "packet_id": "c784bab7a9f9d74f1ac5bcdf10186bbc",
+      "task_id": "A-H-06",
+      "condition": "treatment",
+      "repetition": 1,
+      "clean": true,
+      "truth_issues": [],
+      "verdict": "findings",
+      "findings": [
+        {
+          "ref": "F1",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F2",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        }
+      ],
+      "finding_count": 2,
+      "matched_truth_issue_count": 0,
+      "false_positive_count": 2,
+      "severity_agreement_count": 0,
+      "severe_underestimation_count": 0,
+      "correction_minutes": 3,
+      "score_sha256": "c8f35ec06ea5bcbc740d30da5c4938a8195325ebe3dd557c58cd21490d88045b",
+      "private_sha256": "604a84c39b337e0e9b26d1f9d105be948dfe85fa6de97a67084f40e64d4771f0",
+      "blind_sha256": "de1ace753022f5a93bcd373b2439dd2f8330ae54b21635e3a9e5717b481fbdda"
+    },
+    {
+      "packet_id": "633648e4899b88c1490d9e30ea5ea03a",
+      "task_id": "A-H-06",
+      "condition": "treatment",
+      "repetition": 2,
+      "clean": true,
+      "truth_issues": [],
+      "verdict": "findings",
+      "findings": [
+        {
+          "ref": "F1",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F2",
+          "reported_severity": "P2",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        }
+      ],
+      "finding_count": 2,
+      "matched_truth_issue_count": 0,
+      "false_positive_count": 2,
+      "severity_agreement_count": 0,
+      "severe_underestimation_count": 0,
+      "correction_minutes": 4,
+      "score_sha256": "aaadaf7e044125351f900a8a9664f6457ea4de149207e80b687572549e1a6f52",
+      "private_sha256": "0030e8d0a160711afda391f67b2b72b17f6135a16a18d5f086594b64c7e4d3c3",
+      "blind_sha256": "6cc25a1b72a5263552ff8476f6f4a4a2365feaf0263e2904e85f4a81eda9f290"
+    },
+    {
+      "packet_id": "e755c1a76354dd2f068275f8d968ec65",
+      "task_id": "A-H-07",
+      "condition": "baseline",
+      "repetition": 1,
+      "clean": false,
+      "truth_issues": [
+        {
+          "id": "A-H-07-I1",
+          "severity": "P2",
+          "taxonomy": "JOURNEY_BREAK"
+        }
+      ],
+      "verdict": "findings",
+      "findings": [
+        {
+          "ref": "F1",
+          "reported_severity": "P0",
+          "matched_truth_issue_id": "A-H-07-I1",
+          "truth_severity": "P2",
+          "severity_distance": 2,
+          "severity_agreement": false,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F2",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F3",
+          "reported_severity": "P2",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F4",
+          "reported_severity": "P2",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        }
+      ],
+      "finding_count": 4,
+      "matched_truth_issue_count": 1,
+      "false_positive_count": 3,
+      "severity_agreement_count": 0,
+      "severe_underestimation_count": 0,
+      "correction_minutes": 7,
+      "score_sha256": "9833a96b9e0b7165b3a287215ffa268d729226a7aa930e4203c9c65b07257409",
+      "private_sha256": "2d4495e8d52041ccc3b46e4d59c2fb551c9e791c81292e1ca1cc24799ede997c",
+      "blind_sha256": "1ccb27e1e083e4905a28055d1d0ded02f5bcaf0f426b0967dc67a782c7e53396"
+    },
+    {
+      "packet_id": "57a8edc82cd853ced37cd0bce91d55d7",
+      "task_id": "A-H-07",
+      "condition": "baseline",
+      "repetition": 2,
+      "clean": false,
+      "truth_issues": [
+        {
+          "id": "A-H-07-I1",
+          "severity": "P2",
+          "taxonomy": "JOURNEY_BREAK"
+        }
+      ],
+      "verdict": "findings",
+      "findings": [
+        {
+          "ref": "F1",
+          "reported_severity": "P0",
+          "matched_truth_issue_id": "A-H-07-I1",
+          "truth_severity": "P2",
+          "severity_distance": 2,
+          "severity_agreement": false,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F2",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F3",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F4",
+          "reported_severity": "P2",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        }
+      ],
+      "finding_count": 4,
+      "matched_truth_issue_count": 1,
+      "false_positive_count": 3,
+      "severity_agreement_count": 0,
+      "severe_underestimation_count": 0,
+      "correction_minutes": 7,
+      "score_sha256": "9922884ec9d1dd6725b00582fc37b474ab105eb14bf5d53539d3442be38ca2bd",
+      "private_sha256": "42b935f1cf84e727746f20b918a439cc29e3eb4854daa7f7a324c51f5ae4dc7e",
+      "blind_sha256": "dd688d9e1fda00cdb6bcc671988d3ce740d513a57dcc09ec533660b3f18c3ad6"
+    },
+    {
+      "packet_id": "11a72da554e29f72d9c2fc49fdcf9c8b",
+      "task_id": "A-H-07",
+      "condition": "treatment",
+      "repetition": 1,
+      "clean": false,
+      "truth_issues": [
+        {
+          "id": "A-H-07-I1",
+          "severity": "P2",
+          "taxonomy": "JOURNEY_BREAK"
+        }
+      ],
+      "verdict": "findings",
+      "findings": [
+        {
+          "ref": "F1",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": "A-H-07-I1",
+          "truth_severity": "P2",
+          "severity_distance": 1,
+          "severity_agreement": true,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F2",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F3",
+          "reported_severity": "P2",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        }
+      ],
+      "finding_count": 3,
+      "matched_truth_issue_count": 1,
+      "false_positive_count": 2,
+      "severity_agreement_count": 1,
+      "severe_underestimation_count": 0,
+      "correction_minutes": 7,
+      "score_sha256": "1a3644dbfc191d2130e0b225702e26f019cad696363fa1df91f0fcdf6b6bfdea",
+      "private_sha256": "11c1c1de384b9e76c6641a63f3f1c5e6caf7207295d841fb69d9a891a1c42233",
+      "blind_sha256": "8e80d02cfa2ae5aadd001f77438a6db5701511960a38ed7102b03bde743dd269"
+    },
+    {
+      "packet_id": "c05876f1bcf5d8325c71a51a756c0404",
+      "task_id": "A-H-07",
+      "condition": "treatment",
+      "repetition": 2,
+      "clean": false,
+      "truth_issues": [
+        {
+          "id": "A-H-07-I1",
+          "severity": "P2",
+          "taxonomy": "JOURNEY_BREAK"
+        }
+      ],
+      "verdict": "findings",
+      "findings": [
+        {
+          "ref": "F1",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": "A-H-07-I1",
+          "truth_severity": "P2",
+          "severity_distance": 1,
+          "severity_agreement": true,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F2",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F3",
+          "reported_severity": "P2",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        }
+      ],
+      "finding_count": 3,
+      "matched_truth_issue_count": 1,
+      "false_positive_count": 2,
+      "severity_agreement_count": 1,
+      "severe_underestimation_count": 0,
+      "correction_minutes": 6,
+      "score_sha256": "72d5d5aff956cc1bae353f0794c455eddbfa98142a639bc06630444f27461d0e",
+      "private_sha256": "0babdc1241692aa24043440194a438efbecf8088bc40eec8ad73c15355c2e589",
+      "blind_sha256": "a3e02217db53f789a84edb46bf893f84fa9ead63ce2cd0fe89a4796308735009"
+    },
+    {
+      "packet_id": "8515dc16eb34829e1489f18ea9c1c18e",
+      "task_id": "A-H-08",
+      "condition": "baseline",
+      "repetition": 1,
+      "clean": true,
+      "truth_issues": [],
+      "verdict": "pass",
+      "findings": [],
+      "finding_count": 0,
+      "matched_truth_issue_count": 0,
+      "false_positive_count": 0,
+      "severity_agreement_count": 0,
+      "severe_underestimation_count": 0,
+      "correction_minutes": 0,
+      "score_sha256": "a9d4f113d32a74871f51a10f9c7e98e1cba0f07fb4bd1ed935d3119fa91651f8",
+      "private_sha256": "21b11ca796ee65629a6db665acd65679a30e497265fea56f89604ac1097000f1",
+      "blind_sha256": "bd6aa630bee95f14fe7b00ad99f28f9d9552c5417d4716d10bc914f153d490be"
+    },
+    {
+      "packet_id": "faea6b55472d0ffdbd97712ba2cf794d",
+      "task_id": "A-H-08",
+      "condition": "baseline",
+      "repetition": 2,
+      "clean": true,
+      "truth_issues": [],
+      "verdict": "findings",
+      "findings": [
+        {
+          "ref": "F1",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        }
+      ],
+      "finding_count": 1,
+      "matched_truth_issue_count": 0,
+      "false_positive_count": 1,
+      "severity_agreement_count": 0,
+      "severe_underestimation_count": 0,
+      "correction_minutes": 2,
+      "score_sha256": "feb60b5cd733f05e33d452ee23d8df3625febb35da32499a39ca1b0beaabfa49",
+      "private_sha256": "8a35d3a94eff213d4d7d2aafd0c918fe05de6d7858891c584dcd368744bb99c5",
+      "blind_sha256": "9905d5bb0d95e103d02043a35245add3f6a9154ab74cc4dff3b5dd0e3c330ee9"
+    },
+    {
+      "packet_id": "6ee1f32111bfb2bf41e8deb7920726df",
+      "task_id": "A-H-08",
+      "condition": "treatment",
+      "repetition": 1,
+      "clean": true,
+      "truth_issues": [],
+      "verdict": "pass",
+      "findings": [],
+      "finding_count": 0,
+      "matched_truth_issue_count": 0,
+      "false_positive_count": 0,
+      "severity_agreement_count": 0,
+      "severe_underestimation_count": 0,
+      "correction_minutes": 0,
+      "score_sha256": "1985452b7c5aba40e6cfdb26058c7f3a8f9a66f079c5123e2db7c48a32098c00",
+      "private_sha256": "46ffab4ee4c958658cdd1dcad50ffe96878eafcc7ecc62be965bcc71415ecb99",
+      "blind_sha256": "57bb534e0225dcffb9a5b36132b238d4aa0da754063a6f08f063a32e2d8cb756"
+    },
+    {
+      "packet_id": "e1ef2e444221b877105e995a3a349347",
+      "task_id": "A-H-08",
+      "condition": "treatment",
+      "repetition": 2,
+      "clean": true,
+      "truth_issues": [],
+      "verdict": "pass",
+      "findings": [],
+      "finding_count": 0,
+      "matched_truth_issue_count": 0,
+      "false_positive_count": 0,
+      "severity_agreement_count": 0,
+      "severe_underestimation_count": 0,
+      "correction_minutes": 0,
+      "score_sha256": "85668a09c03e3c46bcbc5f3b5e81d24e29efc58fa90d0d924014be0565fcd99f",
+      "private_sha256": "b05b2c2ac69ce94fcaebaf97ecb456334d7e9819b593eee03bdb2c6ad2f9a3e4",
+      "blind_sha256": "b9e74dbdc0b0595426ce517aa88ca131a9920f672c2042eb1960001b6907cdaa"
+    },
+    {
+      "packet_id": "83f22f8d5a23da6075de7dd5af6a4bd2",
+      "task_id": "A-H-09",
+      "condition": "baseline",
+      "repetition": 1,
+      "clean": false,
+      "truth_issues": [
+        {
+          "id": "A-H-09-I1",
+          "severity": "P0",
+          "taxonomy": "AUTHORITY_DRIFT"
+        }
+      ],
+      "verdict": "findings",
+      "findings": [
+        {
+          "ref": "F1",
+          "reported_severity": "P0",
+          "matched_truth_issue_id": "A-H-09-I1",
+          "truth_severity": "P0",
+          "severity_distance": 0,
+          "severity_agreement": true,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F2",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F3",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F4",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        }
+      ],
+      "finding_count": 4,
+      "matched_truth_issue_count": 1,
+      "false_positive_count": 3,
+      "severity_agreement_count": 1,
+      "severe_underestimation_count": 0,
+      "correction_minutes": 7,
+      "score_sha256": "24f0e5e74769744142c61e1f3c4b6b41c56da781d94afdb2712c4f593c531103",
+      "private_sha256": "ade6da12156bce6ca734ef06b704571307d2f9c3e8070fa06329e1d63e58eccd",
+      "blind_sha256": "f75b8f5130a81d65458d1e33e5a701c0abdbda6e8870208bf89d6829d4965b27"
+    },
+    {
+      "packet_id": "621b8133cff81f9fb24e6b095737b615",
+      "task_id": "A-H-09",
+      "condition": "baseline",
+      "repetition": 2,
+      "clean": false,
+      "truth_issues": [
+        {
+          "id": "A-H-09-I1",
+          "severity": "P0",
+          "taxonomy": "AUTHORITY_DRIFT"
+        }
+      ],
+      "verdict": "findings",
+      "findings": [
+        {
+          "ref": "F1",
+          "reported_severity": "P0",
+          "matched_truth_issue_id": "A-H-09-I1",
+          "truth_severity": "P0",
+          "severity_distance": 0,
+          "severity_agreement": true,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F2",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F3",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        }
+      ],
+      "finding_count": 3,
+      "matched_truth_issue_count": 1,
+      "false_positive_count": 2,
+      "severity_agreement_count": 1,
+      "severe_underestimation_count": 0,
+      "correction_minutes": 5,
+      "score_sha256": "3975ce399450c445d5c5c3b4dc2609640fc973b2a4b47fd7070bc37d2e85c311",
+      "private_sha256": "60f64d580091a38b56d62fd33c3db34730a37721c9594009d91538f396c6aa26",
+      "blind_sha256": "594d0a225ff4ec41989772f2ad65ba3017f7c0aa900f8869ffdf38afeed256a8"
+    },
+    {
+      "packet_id": "6552ad378a119c9690841e5f0a88113b",
+      "task_id": "A-H-09",
+      "condition": "treatment",
+      "repetition": 1,
+      "clean": false,
+      "truth_issues": [
+        {
+          "id": "A-H-09-I1",
+          "severity": "P0",
+          "taxonomy": "AUTHORITY_DRIFT"
+        }
+      ],
+      "verdict": "findings",
+      "findings": [
+        {
+          "ref": "F1",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": "A-H-09-I1",
+          "truth_severity": "P0",
+          "severity_distance": 1,
+          "severity_agreement": true,
+          "severe_underestimation": true
+        },
+        {
+          "ref": "F2",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F3",
+          "reported_severity": "P2",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        }
+      ],
+      "finding_count": 3,
+      "matched_truth_issue_count": 1,
+      "false_positive_count": 2,
+      "severity_agreement_count": 1,
+      "severe_underestimation_count": 1,
+      "correction_minutes": 7,
+      "score_sha256": "28e9df55a63e60cf0420c27a2f760675a44bbc9ea01f7512db78014a71152917",
+      "private_sha256": "2c28410c993eaf87839bd092729cc1383090b8ab1bb510458fb21a7aa10603bf",
+      "blind_sha256": "405b985342236038f669ff7ae2abba13bfc85dcf0d4af4054da310b4a8fab08a"
+    },
+    {
+      "packet_id": "d518403c56f37fddc91fb316563b9126",
+      "task_id": "A-H-09",
+      "condition": "treatment",
+      "repetition": 2,
+      "clean": false,
+      "truth_issues": [
+        {
+          "id": "A-H-09-I1",
+          "severity": "P0",
+          "taxonomy": "AUTHORITY_DRIFT"
+        }
+      ],
+      "verdict": "findings",
+      "findings": [
+        {
+          "ref": "F1",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": "A-H-09-I1",
+          "truth_severity": "P0",
+          "severity_distance": 1,
+          "severity_agreement": true,
+          "severe_underestimation": true
+        },
+        {
+          "ref": "F2",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F3",
+          "reported_severity": "P2",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        }
+      ],
+      "finding_count": 3,
+      "matched_truth_issue_count": 1,
+      "false_positive_count": 2,
+      "severity_agreement_count": 1,
+      "severe_underestimation_count": 1,
+      "correction_minutes": 8,
+      "score_sha256": "1a400c896d333e960dbe17fa9ef8268651e74dc04436c6d12727aad083897495",
+      "private_sha256": "6168dc7e2fba80872c3183e09c9500446be110b952138c09d3236e4de83e7845",
+      "blind_sha256": "af68b9e71a9b115a1d09e3804738aad4c83863bf3fb51e31a7d05ca7483e6676"
+    },
+    {
+      "packet_id": "c0eec0b12d5e6cff36e8ad269b8c5583",
+      "task_id": "A-H-10",
+      "condition": "baseline",
+      "repetition": 1,
+      "clean": true,
+      "truth_issues": [],
+      "verdict": "inconclusive",
+      "findings": [],
+      "finding_count": 0,
+      "matched_truth_issue_count": 0,
+      "false_positive_count": 0,
+      "severity_agreement_count": 0,
+      "severe_underestimation_count": 0,
+      "correction_minutes": 3,
+      "score_sha256": "be6f6d1f539b11fba56748b41ac90328c517c8500e3176b96dc909d18e60bbb2",
+      "private_sha256": "f6cb8a6b0d79fc30ea856d6e936ebd516184f78d53b767c41ba24b0b413c9cab",
+      "blind_sha256": "a47573c9c9515ca9f4c407aae9a8afbaa7cc55922b9bdd30d46297cbf0512a07"
+    },
+    {
+      "packet_id": "34fb166b5c0e0c192a5d2b7d6c8e2c1e",
+      "task_id": "A-H-10",
+      "condition": "baseline",
+      "repetition": 2,
+      "clean": true,
+      "truth_issues": [],
+      "verdict": "findings",
+      "findings": [
+        {
+          "ref": "F1",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F2",
+          "reported_severity": "P2",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        }
+      ],
+      "finding_count": 2,
+      "matched_truth_issue_count": 0,
+      "false_positive_count": 2,
+      "severity_agreement_count": 0,
+      "severe_underestimation_count": 0,
+      "correction_minutes": 8,
+      "score_sha256": "023c5d7f4abe8be230447411fdfdad372cb94c506ee3cc9c48c5b0fe011d35d9",
+      "private_sha256": "8ba8325fed272754fcf162124b57cbecfe9a9f0d1faccfef59f64d75526d539d",
+      "blind_sha256": "54d3636ad9230b99089e756a2de86891048df3ffb1f3b922c939bbff78fcee0c"
+    },
+    {
+      "packet_id": "48a831a3b9c9d8457ac96d729dc9205d",
+      "task_id": "A-H-10",
+      "condition": "treatment",
+      "repetition": 1,
+      "clean": true,
+      "truth_issues": [],
+      "verdict": "findings",
+      "findings": [
+        {
+          "ref": "F1",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        }
+      ],
+      "finding_count": 1,
+      "matched_truth_issue_count": 0,
+      "false_positive_count": 1,
+      "severity_agreement_count": 0,
+      "severe_underestimation_count": 0,
+      "correction_minutes": 2,
+      "score_sha256": "a75cf536ee79cd78700ed477ba60d983e62957cd87154d9904b69516417be451",
+      "private_sha256": "740e25f92773ea90d02fe0d4a8cf6df5e57ba71c46a84d841dcd8898e722328e",
+      "blind_sha256": "b4479b032d2a2dcf304f316e5179a2624c1bedce1000bd69930f97afc7654279"
+    },
+    {
+      "packet_id": "1c60891a0d8759d3a2c04b2ab7193eda",
+      "task_id": "A-H-10",
+      "condition": "treatment",
+      "repetition": 2,
+      "clean": true,
+      "truth_issues": [],
+      "verdict": "pass",
+      "findings": [],
+      "finding_count": 0,
+      "matched_truth_issue_count": 0,
+      "false_positive_count": 0,
+      "severity_agreement_count": 0,
+      "severe_underestimation_count": 0,
+      "correction_minutes": 0,
+      "score_sha256": "f6f1c47fedb3e728247dc396b84c7f4ad367a25a56e73d202eccedca2b6ae6f6",
+      "private_sha256": "1a682142e994202bb053d792464b0d97dcf04cefb8697ccf2b255c766cc93f86",
+      "blind_sha256": "bf0283ee2a5c8cec2415312fa16ab70895ac7f9f1d8bbec6adeea294d7473c96"
+    },
+    {
+      "packet_id": "a1e21333c7be51a16c96c184d7eb62a7",
+      "task_id": "A-H-11",
+      "condition": "baseline",
+      "repetition": 1,
+      "clean": false,
+      "truth_issues": [
+        {
+          "id": "A-H-11-I1",
+          "severity": "P2",
+          "taxonomy": "UNNECESSARY_USER_DECISION"
+        }
+      ],
+      "verdict": "findings",
+      "findings": [
+        {
+          "ref": "F1",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": "A-H-11-I1",
+          "truth_severity": "P2",
+          "severity_distance": 1,
+          "severity_agreement": true,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F2",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F3",
+          "reported_severity": "P2",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F4",
+          "reported_severity": "P2",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        }
+      ],
+      "finding_count": 4,
+      "matched_truth_issue_count": 1,
+      "false_positive_count": 3,
+      "severity_agreement_count": 1,
+      "severe_underestimation_count": 0,
+      "correction_minutes": 10,
+      "score_sha256": "c70a37531e138f8a8c244d6625483b2df13e57878271b0eafd6c7a33d7fc8359",
+      "private_sha256": "7947dc133a5d4d1f083c7a490db2a52440ae06507e2bcf348b394fc2ce075006",
+      "blind_sha256": "2c8f5c565220e4a04be587b40045786e2cd6af057f8cdb786ce8d6f516898e5c"
+    },
+    {
+      "packet_id": "d59e297fed65dd1db7a645e818bf1d0d",
+      "task_id": "A-H-11",
+      "condition": "baseline",
+      "repetition": 2,
+      "clean": false,
+      "truth_issues": [
+        {
+          "id": "A-H-11-I1",
+          "severity": "P2",
+          "taxonomy": "UNNECESSARY_USER_DECISION"
+        }
+      ],
+      "verdict": "findings",
+      "findings": [
+        {
+          "ref": "F1",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": "A-H-11-I1",
+          "truth_severity": "P2",
+          "severity_distance": 1,
+          "severity_agreement": true,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F2",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F3",
+          "reported_severity": "P2",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F4",
+          "reported_severity": "P2",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F5",
+          "reported_severity": "P2",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        }
+      ],
+      "finding_count": 5,
+      "matched_truth_issue_count": 1,
+      "false_positive_count": 4,
+      "severity_agreement_count": 1,
+      "severe_underestimation_count": 0,
+      "correction_minutes": 8,
+      "score_sha256": "e9303184a15cf71a9f5883a72924c6d23901d0b4e62104f5eb4599f514162284",
+      "private_sha256": "05f37516317bd56eb19ad78f167cd68913044074b3cbfcf67dc1104e4fc9399b",
+      "blind_sha256": "ca0e40f60b54c0eeafa0f313c310b8651f7d5b97b2cb836af7d5bd7ff7bbc094"
+    },
+    {
+      "packet_id": "8eb449186279ae1635efa582131a964d",
+      "task_id": "A-H-11",
+      "condition": "treatment",
+      "repetition": 1,
+      "clean": false,
+      "truth_issues": [
+        {
+          "id": "A-H-11-I1",
+          "severity": "P2",
+          "taxonomy": "UNNECESSARY_USER_DECISION"
+        }
+      ],
+      "verdict": "findings",
+      "findings": [
+        {
+          "ref": "F1",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": "A-H-11-I1",
+          "truth_severity": "P2",
+          "severity_distance": 1,
+          "severity_agreement": true,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F2",
+          "reported_severity": "P2",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        }
+      ],
+      "finding_count": 2,
+      "matched_truth_issue_count": 1,
+      "false_positive_count": 1,
+      "severity_agreement_count": 1,
+      "severe_underestimation_count": 0,
+      "correction_minutes": 4,
+      "score_sha256": "7a4eb7eb6039a99582bdf87ee88dd62a7533bead275c64fb18ba6d15b676dbaf",
+      "private_sha256": "d052c0b59d1c2a189a92a58e9830135314d0b7a36037c1edb7acd9de53821499",
+      "blind_sha256": "59e8a5169ac412a48c34a416ed90bd88186cf6773808ab3c9e7bb9bfa6b5eb27"
+    },
+    {
+      "packet_id": "e363a6c140be8d6f2b5ef8c5f48c9666",
+      "task_id": "A-H-11",
+      "condition": "treatment",
+      "repetition": 2,
+      "clean": false,
+      "truth_issues": [
+        {
+          "id": "A-H-11-I1",
+          "severity": "P2",
+          "taxonomy": "UNNECESSARY_USER_DECISION"
+        }
+      ],
+      "verdict": "findings",
+      "findings": [
+        {
+          "ref": "F1",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": "A-H-11-I1",
+          "truth_severity": "P2",
+          "severity_distance": 1,
+          "severity_agreement": true,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F2",
+          "reported_severity": "P2",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        },
+        {
+          "ref": "F3",
+          "reported_severity": "P1",
+          "matched_truth_issue_id": null,
+          "truth_severity": null,
+          "severity_distance": null,
+          "severity_agreement": null,
+          "severe_underestimation": false
+        }
+      ],
+      "finding_count": 3,
+      "matched_truth_issue_count": 1,
+      "false_positive_count": 2,
+      "severity_agreement_count": 1,
+      "severe_underestimation_count": 0,
+      "correction_minutes": 5,
+      "score_sha256": "e84689b33ab54c67339bddac319a0942fe27dd0af9d1ab3e4276f4dd3334fd9b",
+      "private_sha256": "393bfda49408eacc10320422598ec5e8bc085be123e4bb316d91cc2016136b65",
+      "blind_sha256": "94f0c6e0151b92474cd56e3e85ef6543f3addb93960f08c5ad51b410c3c57346"
+    },
+    {
+      "packet_id": "1a0d1ed9fd919029e2e8489ab07d2317",
+      "task_id": "A-H-12",
+      "condition": "baseline",
+      "repetition": 1,
+      "clean": true,
+      "truth_issues": [],
+      "verdict": "pass",
+      "findings": [],
+      "finding_count": 0,
+      "matched_truth_issue_count": 0,
+      "false_positive_count": 0,
+      "severity_agreement_count": 0,
+      "severe_underestimation_count": 0,
+      "correction_minutes": 0,
+      "score_sha256": "663a058f0cf4c34be5d375ab4fb203aa07ef9454339456076d1a2484082aaf0c",
+      "private_sha256": "d59fc92a6410b28c13442cacdbfc4896f82bc31a31a7dcb468971ad953e2f43e",
+      "blind_sha256": "123b74fb2a9ea0d52da5d765e03fa22dbff7a744d826308013ff53d6ee55e2f4"
+    },
+    {
+      "packet_id": "28f2e7b663487b635381327651dbf621",
+      "task_id": "A-H-12",
+      "condition": "baseline",
+      "repetition": 2,
+      "clean": true,
+      "truth_issues": [],
+      "verdict": "inconclusive",
+      "findings": [],
+      "finding_count": 0,
+      "matched_truth_issue_count": 0,
+      "false_positive_count": 0,
+      "severity_agreement_count": 0,
+      "severe_underestimation_count": 0,
+      "correction_minutes": 2,
+      "score_sha256": "3f31fb8c3c762ece9f6d842c5ca0fc96f6e5f2d1971a32d277abb3d76687e4eb",
+      "private_sha256": "978d23d247ffe1e5353dd2c3352047279c39392c18c4a6a4af68da4e7287306e",
+      "blind_sha256": "68d7d4bea6b15d6d1eb4362b8fc85a891df3853a8e0111665dc50d8e2dbb79da"
+    },
+    {
+      "packet_id": "3309e1e94bb5d79ae0f169bdad1529dd",
+      "task_id": "A-H-12",
+      "condition": "treatment",
+      "repetition": 1,
+      "clean": true,
+      "truth_issues": [],
+      "verdict": "pass",
+      "findings": [],
+      "finding_count": 0,
+      "matched_truth_issue_count": 0,
+      "false_positive_count": 0,
+      "severity_agreement_count": 0,
+      "severe_underestimation_count": 0,
+      "correction_minutes": 0,
+      "score_sha256": "78aa854745c73231bd4ad739c5d5e212acc86ab509f708d93e5ac9cd8eb8309b",
+      "private_sha256": "bcc4ee13ca5d720bf93c2f3e2dd6e02fbb209d3793d10e41e7c9f85aaa286ee2",
+      "blind_sha256": "cfc0c59257d9153c1b357a7a8e9b6a2a38320deae902efcc196f33aaeb3035e9"
+    },
+    {
+      "packet_id": "e86806c63d85819b6ff978ef2c22cfb9",
+      "task_id": "A-H-12",
+      "condition": "treatment",
+      "repetition": 2,
+      "clean": true,
+      "truth_issues": [],
+      "verdict": "pass",
+      "findings": [],
+      "finding_count": 0,
+      "matched_truth_issue_count": 0,
+      "false_positive_count": 0,
+      "severity_agreement_count": 0,
+      "severe_underestimation_count": 0,
+      "correction_minutes": 0,
+      "score_sha256": "cb889fbb4c4c1c64a94d884836d1271ff325eb5e4885cd1655ad324042eed9e9",
+      "private_sha256": "70f21fbf19f7fb9c647bd972c9662d9c50aa3c46967d96b3059dd01e747e65b0",
+      "blind_sha256": "11854b65f18b64206aeabdc21da781c865f6af6c117d2b7f0c94b0b50e73c789"
+    }
+  ]
+}
