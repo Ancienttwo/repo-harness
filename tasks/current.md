@@ -1,25 +1,25 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-12T05:54:48+0800 -->
+<!-- updated_at: 2026-07-11T01:15:01+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: Active
-> **Updated At**: 2026-07-12T05:54:48+0800
-> **Source Branch**: codex/bdd2-eval-foundation
-> **Source Commit**: b80238f
+> **Status**: Idle
+> **Updated At**: 2026-07-11T01:15:01+0800
+> **Source Branch**: main
+> **Source Commit**: e020e01
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: BDD2 E-01 rebased on origin/main after PR review
+> **Reason**: ensure-task-workflow
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: Active
-- Active Plan: plans/plan-20260712-0450-bdd2-eval-foundation.md
-- Plan Status: Executing
+- Status: Idle
+- Active Plan: (none)
+- Plan Status: (none)
 - Next Task: (none)
 - Clear Note: (none)
 
@@ -31,14 +31,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- .: plans/plan-20260712-0450-bdd2-eval-foundation.md
-- .: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/bdd2-eval-foundation
-- /Users/kito/Projects/repo-harness-worktrees/chatgpt-coding-mcp-integration: plans/plan-20260712-0301-chatgpt-coding-mcp-integration.md
-- /Users/kito/Projects/repo-harness-worktrees/chatgpt-coding-mcp-integration: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/chatgpt-coding-mcp-integration
-- /Users/kito/Projects/repo-harness-worktrees/native-role-capability-gate: plans/plan-20260712-0219-native-role-capability-gate.md
-- /Users/kito/Projects/repo-harness-worktrees/native-role-capability-gate: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/native-role-capability-gate
-- /Users/kito/Projects/repo-harness-wt-codex-native-role-model-override: plans/plan-20260711-0219-codex-native-role-model-override.md
-- /Users/kito/Projects/repo-harness-wt-codex-native-role-model-override: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-codex-native-role-model-override
+- (none)
 ## Active Sprint
 
 - Sprint: (none)
@@ -48,7 +41,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/20260703-inspection-migration.md`: status=active, current_slice=completed-20260703-architecture-closeout, source_plan=(none)
 ## Handoff
 
-- Exact Next Step: Stage the completed module diff first; then External acceptance is unavailable; expected pass from Claude via claude-review. Run external acceptance via claude-review and record ## External Acceptance Advice in tasks/reviews/20260712-0450-bdd2-eval-foundation.review.md. Command: /check
+- Exact Next Step: (none)
 
 ## Checks
 
@@ -56,10 +49,12 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: clean
+- Summary: 3 changed/untracked path(s)
 
 ```
-(none)
+ M bun.lock
+ M package.json
+ M tests/capability-archcontext-export.test.ts
 ```
 
 ## Source Artifacts
