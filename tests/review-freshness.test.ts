@@ -77,11 +77,13 @@ describe('review freshness fingerprint', () => {
       mkdirSync(join(cwd, '.ai/harness/checks'), { recursive: true });
       mkdirSync(join(cwd, '.ai/harness/failures'), { recursive: true });
       mkdirSync(join(cwd, '.ai/harness/handoff'), { recursive: true });
+      mkdirSync(join(cwd, '.ai/harness/state'), { recursive: true });
       writeFileSync(join(cwd, 'tasks/reviews/demo.review.md'), '> **Recommendation**: pass\n');
       writeFileSync(join(cwd, '.ai/harness/active-plan'), 'plans/plan-demo.md\n');
       writeFileSync(join(cwd, '.ai/harness/checks/latest.json'), '{"status":"pass"}\n');
       writeFileSync(join(cwd, '.ai/harness/failures/latest.jsonl'), '{"guard":"demo"}\n');
       writeFileSync(join(cwd, '.ai/harness/handoff/current.md'), '# Handoff\n');
+      writeFileSync(join(cwd, '.ai/harness/state/effective.json'), '{}\n');
 
       const operationalOnly = buildImplementationDiffFingerprint(cwd);
       expect(operationalOnly.excluded_paths).toEqual([
@@ -89,6 +91,7 @@ describe('review freshness fingerprint', () => {
         '.ai/harness/checks/latest.json',
         '.ai/harness/failures/latest.jsonl',
         '.ai/harness/handoff/current.md',
+        '.ai/harness/state/effective.json',
         'tasks/reviews/demo.review.md',
       ]);
       expect(operationalOnly.paths).toEqual([]);

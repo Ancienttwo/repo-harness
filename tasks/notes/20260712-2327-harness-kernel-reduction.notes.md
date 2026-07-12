@@ -20,6 +20,11 @@
   repo policy may hold an explicit override, not competing installed state.
 - Use package-owned hash proof before deleting legacy host paths; modified or
   unknown content fails closed.
+- Live Codex benchmark evidence showed `apply_patch` sends the freeform patch as
+  `tool_input.command`, not `tool_input.file_path`. The edit guard now expands
+  every Add/Update/Delete/Move target and checks each path; `.ai/harness/state/`
+  is excluded from implementation fingerprints so the resolver cannot raise its
+  own next invocation's risk floor.
 
 ## Deviations From Plan Or Spec
 
