@@ -3,7 +3,7 @@
   "$id": "repo-harness-bdd2-agent-response.e2",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema", "outcome"],
+  "required": ["schema", "outcome", "evidence_use"],
   "properties": {
     "schema": {"const": "repo-harness-bdd2-agent-response.e2"},
     "outcome": {
@@ -32,6 +32,6 @@
     }
   },
   "$defs": {
-    "stringList": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true}
+    "stringList": {"type": "array", "items": {"type": "string"}}
   }
 }

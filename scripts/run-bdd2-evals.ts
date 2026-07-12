@@ -59,6 +59,7 @@ export interface AgentProfile {
   args: string[];
   version_args: string[];
   expected_version: string;
+  response_schema: FileReference;
   model: string;
   sampling: Record<string, string | number | boolean | null>;
   input_source: "stdin";
@@ -345,9 +346,9 @@ function validateTruth(raw: unknown, partition: PartitionId, tasks: EvaluationTa
   }
 }
 
-function validateAgentProfiles(manifest: EvaluationManifest): void {
+function validateAgentProfiles(repoRoot: string, manifest: EvaluationManifest, authority: string[]): void {
   for (const [id, raw] of Object.entries(manifest.agents)) {
-    assertRecord(raw, `agents.${id}`); assertExactKeys(raw, ["command", "args", "version_args", "expected_version", "model", "sampling", "input_source", "response_source", "workspace_mode", "credential_mode", "transport", "tools"], `agents.${id}`);
+    assertRecord(raw, `agents.${id}`); assertExactKeys(raw, ["command", "args", "version_args", "expected_version", "response_schema", "model", "sampling", "input_source", "response_source", "workspace_mode", "credential_mode", "transport", "tools"], `agents.${id}`);
     assertString(raw.command, `agents.${id}.command`); assertString(raw.expected_version, `agents.${id}.expected_version`); assertString(raw.model, `agents.${id}.model`);
     assertStringArray(raw.args, `agents.${id}.args`, true); assertStringArray(raw.version_args, `agents.${id}.version_args`, true); assertRecord(raw.sampling, `agents.${id}.sampling`);
     if (raw.input_source !== "stdin" || raw.response_source !== "stdout" || raw.workspace_mode !== "isolated") fail(`agents.${id} must be stdin/stdout isolated`);
@@ -356,6 +357,7 @@ function validateAgentProfiles(manifest: EvaluationManifest): void {
     assertRecord(raw.tools, `agents.${id}.tools`); assertExactKeys(raw.tools, ["browser", "web_search", "mcp", "external", "repository"], `agents.${id}.tools`);
     if (Object.values(raw.tools).some((value) => value !== false)) fail(`agents.${id} evaluated tools must all be disabled`);
     const templates = (raw.args as string[]).join("\n"); if (!templates.includes("{model}")) fail(`agents.${id}.args must apply {model}`);
+    authority.push(validateFileRef(repoRoot, raw.response_schema, `agents.${id}.response_schema`));
   }
 }
 
@@ -400,7 +402,7 @@ export function validateEvaluation(repoRoot: string = REPO_ROOT, manifestRelativ
   if (!Array.isArray(raw.historical_phase_e) || raw.historical_phase_e.length === 0) fail("historical_phase_e must freeze Phase E reports");
   for (const [index, ref] of raw.historical_phase_e.entries()) authority.push(validateFileRef(root, ref, `historical_phase_e[${index}]`));
   assertRecord(raw.agents, "agents"); const manifest = raw as unknown as EvaluationManifest;
-  if (Object.values(manifest.experiments).some((exp) => exp.freeze.state === "sealed")) { if (Object.keys(manifest.agents).length === 0) fail("Sealed E2 authority requires an agent profile"); validateAgentProfiles(manifest); }
+  if (Object.values(manifest.experiments).some((exp) => exp.freeze.state === "sealed")) { if (Object.keys(manifest.agents).length === 0) fail("Sealed E2 authority requires an agent profile"); validateAgentProfiles(root, manifest, authority); }
   return { repoRoot: root, manifestPath, authorityPaths: [...new Set(authority)], manifest, tasks };
 }
 
@@ -431,13 +433,13 @@ export function buildAgentPacket(evaluation: ValidatedEvaluation, coordinate: Ru
 }
 
 export function validateStructuredAgentResponse(raw: unknown, experiment: ExperimentId): StructuredAgentResponse {
-  assertRecord(raw, "agent response"); const adapter = experiment === "EB" || experiment === "EI";
-  assertExactKeys(raw, adapter ? ["schema", "outcome", "evidence_use"] : ["schema", "outcome"], "agent response"); if (raw.schema !== "repo-harness-bdd2-agent-response.e2") fail("agent response schema mismatch");
+  assertRecord(raw, "agent response");
+  assertExactKeys(raw, ["schema", "outcome", "evidence_use"], "agent response"); if (raw.schema !== "repo-harness-bdd2-agent-response.e2") fail("agent response schema mismatch");
   assertRecord(raw.outcome, "agent response.outcome"); assertExactKeys(raw.outcome, ["boundary_decision", "required_behaviors", "recovery_and_trust", "exposed_user_concepts", "excluded_behaviors", "authority"], "agent response.outcome");
   assertString(raw.outcome.boundary_decision, "agent response.outcome.boundary_decision");
   for (const key of ["required_behaviors", "recovery_and_trust", "exposed_user_concepts", "excluded_behaviors"] as const) assertStringArray(raw.outcome[key], `agent response.outcome.${key}`, true);
   if (raw.outcome.authority !== "inline" && raw.outcome.authority !== "prd") fail("agent response.outcome.authority invalid");
-  if (adapter) { assertRecord(raw.evidence_use, "agent response.evidence_use"); assertExactKeys(raw.evidence_use, ["adopted_claims", "adapted_claims", "avoided_claims", "unsupported_claims"], "agent response.evidence_use"); for (const key of ["adopted_claims", "adapted_claims", "avoided_claims", "unsupported_claims"] as const) assertStringArray(raw.evidence_use[key], `agent response.evidence_use.${key}`, true); }
+  assertRecord(raw.evidence_use, "agent response.evidence_use"); assertExactKeys(raw.evidence_use, ["adopted_claims", "adapted_claims", "avoided_claims", "unsupported_claims"], "agent response.evidence_use"); for (const key of ["adopted_claims", "adapted_claims", "avoided_claims", "unsupported_claims"] as const) assertStringArray(raw.evidence_use[key], `agent response.evidence_use.${key}`, true);
   return raw as unknown as StructuredAgentResponse;
 }
 export function normalizeOutcome(task: EvaluationTask, response: StructuredAgentResponse): Record<string, unknown> {
@@ -454,7 +456,7 @@ function deliverAgentCredential(home: string, profile: AgentProfile): void {
   if (!existsSync(source)) fail("codex-auth-copy requested but host auth.json is unavailable");
   cpSync(source, join(home, "auth.json"));
 }
-function expandArg(template: string, values: Record<string, string>): string { return template.replace(/\{(repo|workspace|model|sampling\.[^}]+)\}/g, (_, key: string) => values[key] ?? fail(`Unknown argument placeholder {${key}}`)) }
+function expandArg(template: string, values: Record<string, string>): string { return template.replace(/\{(repo|response_schema|workspace|model|sampling\.[^}]+)\}/g, (_, key: string) => values[key] ?? fail(`Unknown argument placeholder {${key}}`)) }
 function ensureNewDirectory(path: string): void { if (existsSync(path)) fail(`Output path already exists: ${path}`); mkdirSync(path, { recursive: true }) }
 function assertWritePath(root: string, target: string): void { const resolved = resolve(target); if (resolved !== resolve(root) && !resolved.startsWith(`${resolve(root)}${sep}`)) fail("Output path escapes repository root"); let parent = dirname(resolved); while (!existsSync(parent)) parent = dirname(parent); if (!realpathSync(parent).startsWith(realpathSync(root))) fail("Output path resolves outside repository root"); if (existsSync(resolved) && lstatSync(resolved).isSymbolicLink()) fail("Output path must not be a symbolic link") }
 function writeJson(path: string, value: unknown): void { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`) }
@@ -497,7 +499,7 @@ export function runEvaluation(evaluation: ValidatedEvaluation, options: RunOptio
     if (coordinate.experiment === "I2") { rmSync(workspace, { recursive: true, force: true }); workspace = mkdtempSync(join(tmpdir(), "bdd2-e2-i2-")); const fixture = (experiment as PilotExperiment).fixture; cpSync(authorityPath(evaluation.repoRoot, fixture.path, "I2 fixture"), workspace, { recursive: true }); before = fileInventory(workspace); sourceTree = hashTree(workspace); if (sourceTree !== fixture.sha256) fail("I2 fresh fixture tree hash drift"); }
     try {
       deliverAgentCredential(home, profile);
-      const values: Record<string, string> = { repo: evaluation.repoRoot, model: profile.model, workspace }; for (const [key, value] of Object.entries(profile.sampling)) values[`sampling.${key}`] = String(value);
+      const values: Record<string, string> = { repo: evaluation.repoRoot, response_schema: join(evaluation.repoRoot, profile.response_schema.path), model: profile.model, workspace }; for (const [key, value] of Object.entries(profile.sampling)) values[`sampling.${key}`] = String(value);
       const result = spawnSync(profile.command, profile.args.map((arg) => expandArg(arg, values)), { cwd: workspace, env: buildIsolatedAgentEnv(home), input: buildAgentPacket(evaluation, coordinate), encoding: "utf-8", maxBuffer: 16 * 1024 * 1024 });
       if (result.status !== 0) fail(`Agent failed for ${coordinate.coordinateId}: ${result.stderr.trim()}`);
       const response = validateStructuredAgentResponse(JSON.parse(result.stdout), coordinate.experiment); const task = evaluation.tasks[coordinate.partition].find((entry) => entry.id === coordinate.taskId)!; const normalized = normalizeOutcome(task, response);

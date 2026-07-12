@@ -63,7 +63,7 @@ function createFixture(options: { sealed?: boolean; i2Enabled?: boolean } = {}):
   json(join(root, "evals/bdd2/truth/development-e2.json"), { schema: "repo-harness-bdd2-truth-set.e2", partition: "development", tasks: truthFor(devTasks) });
 
   const stub = join(root, "agent-stub.sh");
-  write(stub, `#!/usr/bin/env bash\nset -euo pipefail\nif [[ "\${1:-}" == "--version" ]]; then printf 'e2-stub 1.0\\n'; exit 0; fi\nprompt="$(cat)"\nif [[ "$prompt" == *"EB public"* || "$prompt" == *"EI public"* ]]; then evidence=',"evidence_use":{"adopted_claims":[],"adapted_claims":[],"avoided_claims":[],"unsupported_claims":[]}}'; else evidence='}'; fi\nprintf '{"schema":"repo-harness-bdd2-agent-response.e2","outcome":{"boundary_decision":"minimal","required_behaviors":["complete"],"recovery_and_trust":[],"exposed_user_concepts":[],"excluded_behaviors":[],"authority":"inline"}%s\\n' "$evidence"\n`);
+  write(stub, `#!/usr/bin/env bash\nset -euo pipefail\nif [[ "\${1:-}" == "--version" ]]; then printf 'e2-stub 1.0\\n'; exit 0; fi\ncat >/dev/null\nprintf '{"schema":"repo-harness-bdd2-agent-response.e2","outcome":{"boundary_decision":"minimal","required_behaviors":["complete"],"recovery_and_trust":[],"exposed_user_concepts":[],"excluded_behaviors":[],"authority":"inline"},"evidence_use":{"adopted_claims":[],"adapted_claims":[],"avoided_claims":[],"unsupported_claims":[]}}\\n'\n`);
   spawnSync("chmod", ["+x", stub]);
   const state = options.sealed === false ? "foundation" : "sealed";
   const freeze = (id: string) => ({ id: `e2-${id}`, state, sealed_at: state === "sealed" ? "2026-07-12T16:00:00Z" : null });
@@ -85,7 +85,7 @@ function createFixture(options: { sealed?: boolean; i2Enabled?: boolean } = {}):
       held_out: { tasks: "evals/bdd2/tasks/held-out-e2.json", tasks_sha256: sha256File(join(root, "evals/bdd2/tasks/held-out-e2.json")), truth: "evals/bdd2/truth/held-out-e2.json", truth_sha256: sha256File(join(root, "evals/bdd2/truth/held-out-e2.json")) },
     },
     adjudication: { rubric: "evals/bdd2/rubrics/e2.md", rubric_sha256: sha256File(join(root, "evals/bdd2/rubrics/e2.md")), reviewers: { outcome: ["reviewer-one", "reviewer-two"], evidence: "evidence-reviewer", owner: "owner" }, correction_costs: { remove_surface: 2, restore_recovery: 3 }, experiments: experimentAuthority },
-    agents: { stub: { command: stub, args: ["{model}"], version_args: ["--version"], expected_version: "e2-stub 1.0", model: "stub-model", sampling: { temperature: 0 }, input_source: "stdin", response_source: "stdout", workspace_mode: "isolated", credential_mode: "none", transport: "model-transport-only", tools: { browser: false, web_search: false, mcp: false, external: false, repository: false } } },
+    agents: { stub: { command: stub, args: ["{model}"], version_args: ["--version"], expected_version: "e2-stub 1.0", response_schema: ref("evals/bdd2/rubrics/e2.md", root), model: "stub-model", sampling: { temperature: 0 }, input_source: "stdin", response_source: "stdout", workspace_mode: "isolated", credential_mode: "none", transport: "model-transport-only", tools: { browser: false, web_search: false, mcp: false, external: false, repository: false } } },
     historical_phase_e: [ref("evals/bdd2/reports/experiment-s.md", root), ref("evals/bdd2/reports/experiment-a.md", root), ref("evals/bdd2/reports/phase-e-gate.md", root)],
   };
   json(join(root, "evals/bdd2/evaluation-manifest.json"), manifest);
