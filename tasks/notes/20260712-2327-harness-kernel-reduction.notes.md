@@ -39,10 +39,11 @@
   raise every Adaptive edit to Strict, and fabricate Plan/Contract cost. The
   corrected Adaptive run produced zero artifacts for low-risk/local scenarios,
   five for the Standard cross-capability scenario, and five for migration.
-- Provider authority is independent from grader success. A completed structured
-  provider stream makes the run authoritative; deterministic grader failure is
-  reported as measured task failure. `--regrade-existing` can repair a grader
-  implementation bug but cannot alter provider usage or availability.
+- Structured provider usage and grader success remain separate evidence fields,
+  but a report is authoritative only when both pass. `--require-authoritative`
+  additionally requires task status and No Harness isolation. Regrade can repair
+  a deterministic grader implementation bug only while runner, manifest,
+  fixture, and workspace hashes still match; it cannot alter provider usage.
 
 ## Deviations From Plan Or Spec
 
@@ -55,10 +56,11 @@
 - The final report uses Claude for all 27 records because Codex exhausted its
   live account quota until 2026-07-18. This follows the planned single-provider
   fallback and does not mix models inside one comparison.
-- No Harness and Strict records came from the first live matrix. Adaptive was
-  rerun after correcting synthetic-main rebasing; all records use the same
-  scenario authority and Claude provider. Deterministic graders were rerun after
-  fixing raw Git porcelain path parsing.
+- The superseded report combined records from two temporary roots while grader
+  defects were repaired. It has been replaced, not amended: the final 27 records
+  come from one fresh command, one run ID, one source commit, one Claude version,
+  and one runner/manifest/fixture revision. No record was regraded into the final
+  report.
 
 ## Tradeoffs Considered
 

@@ -26,6 +26,10 @@ Authoritative checks:
   Codex home plus `--ignore-user-config --ignore-rules --ephemeral`, or Claude
   `--safe-mode`; every arm binds `HOME`/settings and `BUN_INSTALL` to its
   disposable run root.
+  `--require-authoritative` additionally requires every provider execution,
+  deterministic grader, task status, and No Harness isolation proof to pass.
+  The report binds one run ID to source commit, provider version, and
+  runner/manifest/fixture/workspace evidence hashes.
 
 Non-authoritative smoke:
 
@@ -82,7 +86,7 @@ lets small slices run focused tests while release/pre-merge runs the full gate.
 
 - Add capability registry validation to strict workflow checks once the new registry has one more real edit cycle.
 - Keep external tooling probes read-only unless a command explicitly targets tooling maintenance.
-- The 2026-07-13 Claude matrix passed 27/27 but measured Adaptive Lite at 540 s,
-  74 model calls, and 74 s of hooks versus Strict at 416 s, 52 calls, and 72 s
+- The 2026-07-13 Claude matrix passed 27/27 but measured Adaptive Lite at 496 s,
+  69 model calls, and 68 s of hooks versus Strict at 391 s, 55 calls, and 60 s
   of hooks. Optimize cold hook execution and Standard/Strict promotion cost
   before claiming a performance win; do not lower deterministic risk floors.
