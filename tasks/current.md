@@ -17,11 +17,11 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Current Focus
 
-- Status: Active
-- Active Plan: plans/plan-20260712-2151-harness-cost-baseline-slo.md
-- Plan Status: Executing
-- Next Task: Run focused and required checks, complete reviewer evidence, and close workflow artifacts without merging unrelated main work.
-- Clear Note: (none)
+- Status: ManualClearedWithActiveWork
+- Active Plan: (none)
+- Plan Status: (none)
+- Next Task: inspect active worktree marker(s)
+- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
 
 ## Mainline Snapshot Reading
 
@@ -31,8 +31,6 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- .: plans/plan-20260712-2151-harness-cost-baseline-slo.md
-- .: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/harness-cost-baseline-slo
 - /Users/kito/Projects/repo-harness: plans/plan-20260712-2103-agent-fleet-worker-routing-telemetry.md
 - /Users/kito/Projects/repo-harness: active-worktree owner -> /Users/kito/Projects/repo-harness
 - /Users/kito/Projects/repo-harness-worktrees/agent-fleet-specialists: plans/plan-20260712-2215-agent-fleet-specialists.md

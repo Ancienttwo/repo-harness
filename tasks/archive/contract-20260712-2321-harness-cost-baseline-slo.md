@@ -1,3 +1,9 @@
+> **Archived**: 2026-07-12 23:21
+> **Related Plan**: plans/archive/plan-20260712-2151-harness-cost-baseline-slo.md
+> **Outcome**: Superseded
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260712-2321
+
 # Task Contract: harness-cost-baseline-slo
 
 > **Status**: Active

@@ -1,6 +1,6 @@
 # Plan: Harness Cost Baseline and SLO
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260712-2151
 > **Slug**: harness-cost-baseline-slo
 > **Planning Source**: repo-harness-plan
