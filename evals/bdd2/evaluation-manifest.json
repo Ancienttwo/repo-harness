@@ -2,16 +2,16 @@
   "schema": "repo-harness-bdd2-evaluation.e2",
   "runner": {
     "path": "scripts/run-bdd2-evals.ts",
-    "sha256": "f09863d6d2bf40bed2ba6105776af724a7679d2252b0887fa23861a7f668ae32"
+    "sha256": "94cd4d750053a7255e6d7f8a07e7a05ef581256d245ce5b1f408ca06b8ca6c0c"
   },
   "output_root": ".ai/harness/runs/bdd2",
   "experiments": {
     "S2": {
       "kind": "inline-shape",
       "freeze": {
-        "id": "bdd2-e2-s2-r11",
+        "id": "bdd2-e2-s2-r12",
         "state": "sealed",
-        "sealed_at": "2026-07-13T02:35:00+08:00"
+        "sealed_at": "2026-07-13T02:55:00+08:00"
       },
       "repetitions": 3,
       "held_out_task_count": 12,
@@ -29,9 +29,9 @@
     "EB": {
       "kind": "browser-adapter",
       "freeze": {
-        "id": "bdd2-e2-eb-r11",
+        "id": "bdd2-e2-eb-r12",
         "state": "sealed",
-        "sealed_at": "2026-07-13T02:35:00+08:00"
+        "sealed_at": "2026-07-13T02:55:00+08:00"
       },
       "repetitions": 2,
       "held_out_task_count": 6,
@@ -117,15 +117,39 @@
               "sha256": "5aa5ac64125378e78e31d09c34f153e6fc03a6725fa09dd8a946078b78071fcc"
             }
           ]
+        },
+        "EB-D-01": {
+          "appendix": {
+            "path": "evals/bdd2/evidence/browser/EB-H-04.md",
+            "sha256": "ae627a6890a1a46019c5dfcb444b3dfdb88ba8dae37b847580c303b2f67a01ba"
+          },
+          "assets": [
+            {
+              "path": "evals/bdd2/evidence/browser/EB-H-04.png",
+              "sha256": "e13d66cf39b55fc1b24acafd041371421deba2e3f4cc6752f18cbfbcc128ca7d"
+            }
+          ]
+        },
+        "EB-D-02": {
+          "appendix": {
+            "path": "evals/bdd2/evidence/browser/EB-H-06.md",
+            "sha256": "d476022f3c6b543e7aa1548de4bba3f57a78d2bf2d91d0065dbf7d06949e233e"
+          },
+          "assets": [
+            {
+              "path": "evals/bdd2/evidence/browser/EB-H-06.png",
+              "sha256": "5aa5ac64125378e78e31d09c34f153e6fc03a6725fa09dd8a946078b78071fcc"
+            }
+          ]
         }
       }
     },
     "EI": {
       "kind": "imagegen-adapter",
       "freeze": {
-        "id": "bdd2-e2-ei-r11",
+        "id": "bdd2-e2-ei-r12",
         "state": "sealed",
-        "sealed_at": "2026-07-13T02:35:00+08:00"
+        "sealed_at": "2026-07-13T02:55:00+08:00"
       },
       "repetitions": 2,
       "held_out_task_count": 6,
@@ -211,15 +235,39 @@
               "sha256": "e38e239edf6d384586e56e35712370b10e5feb11451094e40634865ebe2b32e2"
             }
           ]
+        },
+        "EI-D-01": {
+          "appendix": {
+            "path": "evals/bdd2/evidence/imagegen/EI-H-01.md",
+            "sha256": "07d97fac5a7fcd22eb2ebe6627e577da3797a7de4fedec7eb0b6835cb7a5d941"
+          },
+          "assets": [
+            {
+              "path": "evals/bdd2/evidence/imagegen/EI-H-01.png",
+              "sha256": "2f5734de9f04fc31d1518c1a7f58bda0b2356581ded924bb2ae9e239d2b3fd7a"
+            }
+          ]
+        },
+        "EI-D-02": {
+          "appendix": {
+            "path": "evals/bdd2/evidence/imagegen/EI-H-05.md",
+            "sha256": "b47ddae05f4ecd505ab68baadf279bac42a408c38dcb9f0baf09b6dec439d1b5"
+          },
+          "assets": [
+            {
+              "path": "evals/bdd2/evidence/imagegen/EI-H-05.png",
+              "sha256": "630309557e402368f7eaec2e5ecb7b3395c9b10bd1ad3be057c33a1ce9a792b4"
+            }
+          ]
         }
       }
     },
     "I2": {
       "kind": "implementation-pilot",
       "freeze": {
-        "id": "bdd2-e2-i2-r11",
+        "id": "bdd2-e2-i2-r12",
         "state": "sealed",
-        "sealed_at": "2026-07-13T02:35:00+08:00"
+        "sealed_at": "2026-07-13T02:55:00+08:00"
       },
       "repetitions": 2,
       "held_out_task_count": 1,
