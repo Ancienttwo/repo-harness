@@ -8,7 +8,7 @@
 > **Last Updated**: 2026-07-13 05:20
 > **Recommendation**: pass
 > **Review Rubric Version**: 1
-> **Reviewed Diff Fingerprint**: sha256:526db749ab514c67307fadcaee70a16f8c2971ab5ff0b42815ab7ef30a003efb
+> **Reviewed Diff Fingerprint**: sha256:9796e83acfd81ba45ffff4a8397063197ce5771f6227179d7a9e1ccab4534fbc
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 ## Human Review Card
@@ -67,14 +67,15 @@
 > **External Source**: claude-review
 > **External Started**: 2026-07-13T04:03:00+0800
 > **External Completed**: 2026-07-13T05:17:00+0800
+> **Reviewed Diff Fingerprint**: sha256:9796e83acfd81ba45ffff4a8397063197ce5771f6227179d7a9e1ccab4534fbc
+> **Reviewed Scope**: branch+staged+unstaged+untracked
 
-- P1 blockers: none; five P1 authority findings across earlier rounds were fixed and
-  re-reviewed before this acceptance.
+- P1 blockers: none
 - P2 advisories: none; dead correction-cost authority, stdin regression coverage, and
   two rebased integration assertions were resolved.
 - Acceptance checklist: final E3 authority patch returned `No findings`; the separate
-  integration test-only review also returned `No findings` and confirmed no assertion
-  weakened the shipped runtime contract.
+  integration test-only review also returned `No findings`, confirmed no assertion
+  weakened the shipped runtime contract, and rechecked all five earlier P1 fixes.
 
 ## Behavior Diff Notes
 
