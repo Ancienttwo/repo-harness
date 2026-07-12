@@ -5,10 +5,10 @@
 > **Contract**: tasks/contracts/20260712-0301-chatgpt-coding-mcp-integration.contract.md
 > **Notes File**: tasks/notes/20260712-0301-chatgpt-coding-mcp-integration.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-07-12 14:24
+> **Last Updated**: 2026-07-12 14:43
 > **Recommendation**: pass
 > **Review Rubric Version**: 1
-> **Reviewed Diff Fingerprint**: sha256:e0064f90d549a617485730c602decc4050edb3eeb34ebf004e7c3ec6b5207dfa
+> **Reviewed Diff Fingerprint**: sha256:040eda715c0014c4c8d29a4dfc562e5c8cdd882c533b2779248fe22c984eee9f
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 ## Human Review Card
@@ -17,7 +17,7 @@
 - Change type: code-change
 - Intended files changed: seven accepted coding MCP commits plus bounded integration workflow artifacts.
 - Actual files changed: coding profile, OAuth/runtime/workspace/process/file tooling, truthful host-authority consent copy, setup/operator/research/architecture docs, focused tests, optional `node-pty`, and matching workflow evidence.
-- Commands passed: refreshed-main focused MCP suites, latest-main combined BDD²/MCP suites (74 pass / 1 platform skip / 0 fail), post-consent-fix HTTP/setup suites (31 pass / 0 fail / 324 expectations), post-fault-hook coding/HTTP suites (12 pass / 0 fail / 148 expectations), cross-platform revocation HTTP suite repeated three times (21 pass / 0 fail / 303 expectations), final coding/HTTP suites after `.ignore` hardening (13 pass / 0 fail / 152 expectations), final HTTP suite after exact-branch selection and termination-grace correction (7 pass / 0 fail / 103 expectations), frozen install, typecheck, deploy SQL order, architecture sync, task sync, strict workflow under the macOS-safe `LC_ALL=C` locale, project inspection, transactional `adopt --dry-run`, diff whitespace check, and the isolated CodeGraph file that hit the raw suite's default timeout. GitHub CI for head `29f5ea5` passed both Test jobs and all Ubuntu, macOS, and Windows MCP matrix jobs.
+- Commands passed: refreshed-main focused MCP suites, latest-main combined BDD²/MCP suites (74 pass / 1 platform skip / 0 fail), post-consent-fix HTTP/setup suites (31 pass / 0 fail / 324 expectations), post-fault-hook coding/HTTP suites (12 pass / 0 fail / 148 expectations), cross-platform revocation HTTP suite repeated three times (21 pass / 0 fail / 303 expectations), final coding/HTTP suites after `.ignore` hardening and dangling-symlink remediation (13 pass / 0 fail / 155 expectations), final HTTP suite after exact-branch selection and termination-grace correction (7 pass / 0 fail / 103 expectations), frozen install, typecheck, deploy SQL order, architecture sync, task sync, strict workflow under the macOS-safe `LC_ALL=C` locale, project inspection, transactional `adopt --dry-run`, diff whitespace check, and the isolated CodeGraph file that hit the raw suite's default timeout. GitHub CI for pre-merge head `29f5ea5` passed both Test jobs and all Ubuntu, macOS, and Windows MCP matrix jobs; current main `02079da` is integrated and requires a fresh PR-head run after push.
 - External acceptance: pass from Claude via `claude-review` against the exact current fingerprint; the preserved ChatGPT authorization-runtime live canary remains separate product-runtime evidence.
 - Residual risks: `node-pty` remains optional and PTY correctly fails closed when unavailable; the draft PR still needs human merge review against the moving main branch.
 - Reviewer action required: review the draft PR; do not merge automatically.
@@ -43,15 +43,15 @@
 > **External Acceptance**: pass
 > **External Reviewer**: Claude
 > **External Source**: claude-review
-> **External Started**: 2026-07-12T14:21:00+08:00
-> **External Completed**: 2026-07-12T14:24:00+08:00
+> **External Started**: 2026-07-12T14:39:00+08:00
+> **External Completed**: 2026-07-12T14:43:00+08:00
 > **Review Rubric Version**: 1
-> **Reviewed Diff Fingerprint**: sha256:e0064f90d549a617485730c602decc4050edb3eeb34ebf004e7c3ec6b5207dfa
+> **Reviewed Diff Fingerprint**: sha256:040eda715c0014c4c8d29a4dfc562e5c8cdd882c533b2779248fe22c984eee9f
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 - P1 blockers: none
 - P2 advisories: none from the final Claude re-review against latest main. The separate ChatGPT live-canary review still retains `surface_blocked` for its stricter literal `Called tool` transcript classifier; this integration does not claim `invocation_verified`.
-- Acceptance checklist: early reviews surfaced cleanup and move-rollback gaps, then gate-scope reviews caught misleading host-authority consent copy, an environment-variable production fault injector, Windows worktree path normalization, fail-open coding `.ignore` policy loading, and absolute Windows path disclosure in consent repo labels. All were remediated with focused regressions. After the local target branch advanced during final verification, Claude re-reviewed the unchanged complete product diff against the newly resolved target with read-only tools and returned verbatim `No P1 or P2 findings.` for the final recorded fingerprint.
+- Acceptance checklist: early reviews surfaced cleanup and move-rollback gaps, then gate-scope reviews caught misleading host-authority consent copy, an environment-variable production fault injector, Windows worktree path normalization, fail-open coding `.ignore` policy loading, absolute Windows path disclosure in consent repo labels, and a dangling `.ignore` symlink that `existsSync()` misclassified as absent. All were remediated with focused regressions. After current main was merged and the dangling-symlink fix landed, Claude re-reviewed the complete diff with read-only tools and returned verbatim `No P1 or P2 findings.` for the final recorded fingerprint.
 
 ## Behavior Diff Notes
 
@@ -63,13 +63,13 @@
 - OAuth consent now states that repo grants select openable workspaces but arbitrary shell can reach anything the local OS user can access, including outside granted repos; HTTP E2E locks that disclosure.
 - Patch rollback fault injection is now an internal in-memory test hook absent from server construction; no production environment variable can trigger it.
 - Authorization-revocation E2E now proves the exact opened worktree's background heartbeat stops instead of requiring POSIX signal-trap semantics unavailable under Windows `taskkill /T`; the stability assertion waits beyond the process manager's documented force-kill grace.
-- Existing coding `.ignore` policy must be a readable regular file; directory, symlink, or read failure returns `IGNORE_POLICY_UNAVAILABLE` rather than allowing file access.
+- Existing coding `.ignore` policy must be a readable regular file; directory, valid-target symlink, dangling symlink, or read failure returns `IGNORE_POLICY_UNAVAILABLE` rather than allowing file access.
 - OAuth consent repo labels use standard-library `path.basename()` and the E2E asserts the absolute local repo path is absent.
 
 ## Residual Risks / Follow-ups
 
 - Human merge review must re-check the draft PR if `main` advances before merge.
-- GitHub CI is green on the reviewed product head, including both independent Windows MCP matrix jobs; a later review-only evidence commit must preserve this fingerprint and be rechecked as the latest PR head.
+- The pre-merge product head is green, including both independent Windows MCP matrix jobs. The current-main merge plus dangling-symlink fix must receive the same fresh GitHub matrix before merge readiness is declared.
 - The literal ChatGPT Activity transcript limitation remains a separate acceptance-surface issue; it does not block the already verified functional authorization runtime.
 - One earlier strict-verifier attempt reported only its encapsulated full-suite command as failed and discarded the child log. The unchanged suite then passed in the foreground and in a second strict-verifier run; this is treated as a non-reproduced test-harness transient, not omitted evidence.
 
@@ -94,4 +94,4 @@
 
 ## Summary
 
-- The seven accepted coding MCP commits now coexist with current mainline rollout retirement on an isolated branch. Local and live evidence remain truthful, the reviewed product head is green across both complete GitHub CI runs, and the integration is ready for final draft PR review.
+- The accepted coding MCP series now coexists with current mainline rollout retirement on an isolated branch. Local and live evidence remain truthful, current main is integrated, and external review has no P1/P2; final merge readiness is conditional only on the fresh GitHub CI run triggered by pushing this head.
