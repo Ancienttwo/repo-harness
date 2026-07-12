@@ -25,9 +25,21 @@
 - Add one frozen metric specification because the summarizer consumes it and it
   prevents post-hoc gate arithmetic. Raw run evidence and scores remain ignored;
   only the aggregate decision report is tracked.
-- Human blind adjudication is a hard evidence boundary. Automated reviewer output
-  may be used for dry-run testing but cannot satisfy the Sprint owner or be relabeled
-  as human evidence.
+- The original protocol treated human blind adjudication as a hard evidence
+  boundary. Automated reviewer output could not satisfy that authority or be
+  relabeled as human evidence; the owner-authorized deviation below changes the
+  panel type while preserving that labeling constraint.
+
+## Protocol Deviation
+
+- After the completed 72-output run remained blocked for three consecutive turns
+  with 0/72 human scores, the owner explicitly replied `同意，继续` to the stated
+  option of changing the acceptance authority to Agent adjudication.
+- The reviewer authority is therefore changed to an owner-authorized, condition-blind
+  Agent panel. Prompts, tasks, model profile, frozen metric arithmetic, raw responses,
+  blind IDs, and private mappings remain unchanged.
+- This is proxy evidence, not human adjudication. Reports and reviews must retain
+  that label; no Phase P productization claim may silently cite it as human evidence.
 
 ## Deviations From Plan Or Spec
 
@@ -44,9 +56,9 @@
 
 ## Open Questions
 
-- Human acceptance boundary: 72 condition-blind locked scores are still required.
-  The implementation owner must not inspect private mappings or substitute model
-  scores for the Sprint's `human-blind-panel` owner.
+- Acceptance boundary: 72 owner-authorized condition-blind Agent scores are still
+  required. Review agents must not inspect private mappings, truth, prompts, sibling
+  batch scores, or the parent conversation.
 
 ## Evidence Links
 

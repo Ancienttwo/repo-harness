@@ -19,9 +19,9 @@
 - Actual files changed: matches contract allowed paths; raw evidence remains ignored
 - Commands passed: focused 12-test suite, TypeScript noEmit, manifest validation,
   72-coordinate held-out run and structural evidence checks
-- External acceptance: pending human blind scores
+- External acceptance: pending owner-authorized blind Agent scores
 - Residual risks: no Shape product claim is valid until all 72 locked scores pass validation
-- Reviewer action required: complete the reviewer-safe blind queue without reading private mappings
+- Reviewer action required: complete the reviewer-safe blind queue without reading private mappings; label results Agent-panel proxy evidence
 - Rollback: revert the E-02 branch; delete ignored raw run evidence
 
 ## Mode Evidence
@@ -50,7 +50,7 @@
 > **External Completed**:
 
 - P1 blockers:
-- 72 locked condition-blind human scores are not yet present.
+- 72 locked condition-blind owner-authorized Agent scores are not yet present.
 - P2 advisories:
 - Acceptance checklist: do not reveal `private/` until every score validates
 
@@ -61,7 +61,7 @@
 
 ## Residual Risks / Follow-ups
 
-- Human blind-panel availability is the only current acceptance blocker.
+- Owner-authorized blind Agent-panel scoring is the only current acceptance blocker.
 
 ## Scorecard
 
@@ -74,7 +74,7 @@
 
 ## Failing Items
 
-- Missing required human blind scores and aggregate decision report.
+- Missing required owner-authorized blind Agent scores and aggregate decision report.
 
 ## Retest Steps
 
@@ -84,4 +84,4 @@
 ## Summary
 
 - Authority and model run are complete. Review remains fail/pending by design until
-  human blind adjudication closes the pre-registered product gate.
+  owner-authorized blind Agent adjudication closes the proxy product gate.

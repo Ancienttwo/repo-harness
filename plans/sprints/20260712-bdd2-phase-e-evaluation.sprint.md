@@ -12,7 +12,7 @@ risk: high
 owners:
   product: kito
   engineering: Codex
-  reviewer: human-blind-panel
+  reviewer: owner-authorized-blind-agent-panel
 ```
 
 ## Sprint Goal

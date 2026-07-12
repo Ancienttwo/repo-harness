@@ -21,7 +21,7 @@
 
 Run the first independent BDD² product proof: 12 held-out Shape tasks under the
 same frozen model in baseline and treatment conditions, three repetitions per
-condition, followed by condition-blind human adjudication and a reproducible
+condition, followed by owner-authorized condition-blind Agent adjudication and a reproducible
 Pass / Reshape / Kill decision. This slice must not add a public BDD product
 surface or prepare Experiment A data as a hidden dependency.
 
@@ -42,7 +42,7 @@ surface or prepare Experiment A data as a hidden dependency.
   - P2 trace: committed per-experiment seal -> held-out S task -> baseline or
     treatment prompt -> stdin-only agent packet in an isolated temporary cwd ->
     raw response -> random blind packet containing task input and response but no
-    condition/truth -> locked human score -> private reveal -> pre-registered
+    condition/truth -> locked owner-authorized Agent score -> private reveal -> pre-registered
     paired aggregation -> recorded gate decision.
   - P3 decision rationale: replace the unused global-seal schema directly with a
     per-experiment seal because S and A are separate hypotheses and Sprint rows.
@@ -66,7 +66,7 @@ surface or prepare Experiment A data as a hidden dependency.
   directory outside the repository; blind packets include only task input and
   response, while private mappings retain condition and coordinate data.
 - Freeze the Shape aggregation specification before any held-out run.
-- Validate locked human score files and reproduce paired win/tie/loss,
+- Validate locked owner-authorized Agent score files and reproduce paired win/tie/loss,
   unsupported-expansion change, required/protected omission, correction-cost,
   artifact burden, and authority-fit metrics after reveal.
 - Execute exactly `12 × 2 × 3 = 72` successful held-out S coordinates from a
@@ -80,7 +80,8 @@ surface or prepare Experiment A data as a hidden dependency.
 - Browser or ImageGen adapter experiments and implementation pilot I.
 - Public `repo-harness-bdd` skill, product CLI/MCP tools, hooks, `/check`
   integration, Behavior Brief catalog/validator, sidecar, or lifecycle.
-- Model-generated scores presented as human adjudication.
+- Agent scores presented as human adjudication; the report must label the panel and
+  protocol deviation explicitly.
 - Retrofitting a generic benchmark framework or adding dependencies.
 
 ## Allowed Paths
@@ -136,7 +137,7 @@ allowed_paths:
 
 ### Blind scoring and aggregation
 
-- Human reviewers receive one self-contained random-ID packet at a time and lock
+- Blinded Agent reviewers receive one self-contained random-ID packet at a time and lock
   a v2 score before reveal. The score records unsupported expansion, required
   omissions, typed/severity-rated protected omissions, authority fit, tracked
   artifact burden, escalation correctness, and correction minutes.
@@ -162,7 +163,7 @@ allowed_paths:
 - **Verification boundary**: focused tests, manifest validation, clean-HEAD run,
   score validation, deterministic re-summary, strict workflow and repository
   checks.
-- **Review/acceptance boundary**: a human blind panel must supply locked scores;
+- **Review/acceptance boundary**: the owner-authorized blind Agent panel must supply locked scores;
   task review must verify no condition/truth leakage and accept the computed gate
   decision before PR completion.
 - **High-risk surface**: benchmark validity and a false productization decision.
@@ -196,7 +197,7 @@ allowed_paths:
       isolated cwd/stdin delivery, leakage prevention, score errors, and gate math.
 - [x] Commit the final authority, update every frozen hash, and verify a clean HEAD.
 - [x] Execute the 72-coordinate held-out Shape run with the frozen Codex profile.
-- [ ] Obtain condition-blind human scores without exposing the private mapping.
+- [ ] Obtain condition-blind owner-authorized Agent scores without exposing the private mapping.
 - [ ] Generate and verify the tracked Experiment S report and gate decision.
 - [ ] Complete review/notes/current/handoff, run required checks, commit, push, and
       open the E-02 module PR.
@@ -222,7 +223,7 @@ exit_criteria:
     - "successful run packets = 72"
     - "valid locked final scores = 72"
   manual_checks:
-    - "Human blind panel confirms scores were locked before condition reveal"
+    - "Owner-authorized blind Agent panel confirms scores were locked before condition reveal"
     - "Review confirms no Phase P product surface or Experiment A claim was introduced"
 ```
 
@@ -232,8 +233,8 @@ exit_criteria:
   or the selected S experiment is not independently sealed.
 - Stop if the agent can inspect the repository/truth partition or the reviewer can
   infer treatment identity from its packet.
-- Stop before result claims or PR completion if condition-blind human scores are
-  unavailable; model-generated adjudication must not be relabeled as human proof.
+- Stop before result claims or PR completion if condition-blind owner-authorized
+  Agent scores are unavailable; Agent adjudication must not be relabeled as human proof.
 - Stop dependent Phase E rows when the computed Shape gate records Kill.
 
 ## Rollback Surface

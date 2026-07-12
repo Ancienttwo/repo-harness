@@ -20,7 +20,7 @@ Phase E gate.
 
 ## Goal
 
-Produce 72 frozen held-out Shape outputs, condition-blind human scores, reproducible
+Produce 72 frozen held-out Shape outputs, owner-authorized condition-blind Agent scores, reproducible
 paired metrics, and an explicit Pass / Reshape / Kill decision without adding any
 Phase P product surface.
 
@@ -31,7 +31,8 @@ Phase P product surface.
   metrics; 72-output run; tracked report and decision.
 - Out of scope: Experiment A/E/I execution or claims; Browser/ImageGen; public BDD
   skill/CLI/MCP/hook/check integration; Brief catalog/validator/sidecar/lifecycle;
-  model scores represented as human evidence.
+  Agent scores represented as human evidence. Agent-panel results must remain
+  explicitly labeled proxy evidence.
 - Taste constraints: no dependencies, generic benchmark framework, compatibility
   parser, or second handwritten machine authority. Every new file must be a frozen
   authority or durable result with a named consumer.
@@ -43,7 +44,7 @@ Phase P product surface.
 - Stop if Goal, Scope, or Exit Criteria are internally contradictory.
 - Stop if selected S authority is not clean, tracked, hash-valid, and independently
   sealed, or if agent/reviewer packets can expose truth or condition identity.
-- Stop before result claims and PR completion when locked condition-blind human
+- Stop before result claims and PR completion when locked condition-blind owner-authorized Agent
   scores are unavailable.
 
 ## Falsifier
@@ -124,6 +125,9 @@ delegation:
     verifier:
       mode: read_only
       purpose: exit_criteria_review
+    blind_reviewer:
+      mode: write_evaluation_scores_only
+      purpose: owner_authorized_condition_blind_adjudication
   runner:
     preferred:
       - subagent
@@ -156,7 +160,7 @@ exit_criteria:
       min: 8
   manual_checks:
     - "72 successful held-out S packets and 72 valid locked final scores exist"
-    - "Human blind panel confirms scores were locked before reveal"
+    - "Owner-authorized blind Agent panel confirms scores were locked before reveal"
     - "Tracked report reproduces the pre-registered metrics and decision"
     - "Evaluator review file recommends pass and confirms no Phase P surface"
 ```
