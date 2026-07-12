@@ -21,7 +21,7 @@
     "S3": {
       "kind": "inline-shape",
       "source_experiment": "S2",
-      "freeze_id": "bdd2-e3-s3-r2",
+      "freeze_id": "bdd2-e3-s3-r3",
       "expected_rows": 72,
       "metrics": {
         "path": "evals/bdd2/metrics/phase-e3-scoring-metrics.md",
@@ -31,7 +31,7 @@
     "EB3": {
       "kind": "browser-adapter",
       "source_experiment": "EB",
-      "freeze_id": "bdd2-e3-eb3-r2",
+      "freeze_id": "bdd2-e3-eb3-r3",
       "expected_rows": 24,
       "metrics": {
         "path": "evals/bdd2/metrics/phase-e3-scoring-metrics.md",
@@ -115,7 +115,7 @@
     "EI3": {
       "kind": "imagegen-adapter",
       "source_experiment": "EI",
-      "freeze_id": "bdd2-e3-ei3-r2",
+      "freeze_id": "bdd2-e3-ei3-r3",
       "expected_rows": 24,
       "metrics": {
         "path": "evals/bdd2/metrics/phase-e3-scoring-metrics.md",
@@ -229,7 +229,7 @@
     "schemas": {
       "outcome": {
         "path": "evals/bdd2/rubrics/outcome-score-response-e3.schema.json",
-        "sha256": "69bad6112ff5d871ed383b870539495e4c5eed8d4ca4bdb3db5819dc31671550"
+        "sha256": "32975c1d550c661fb73ec4921c46c1dcb73abd39a3e73897106ff4967f0a2180"
       },
       "browser_evidence": {
         "path": "evals/bdd2/rubrics/browser-evidence-score-response-e3.schema.json",

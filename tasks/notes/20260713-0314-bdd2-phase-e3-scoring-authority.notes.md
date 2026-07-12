@@ -26,6 +26,10 @@
   the response schema used `const` without the provider-required explicit string
   `type`. The empty/partial ignored run was discarded and authority was resealed as
   revision r2 before held-out scoring. No score or decision existed under r1.
+- The r2 preflight exposed a second provider-schema restriction: `uniqueItems` is not
+  accepted in structured output schemas. Runtime validation already enforces unique
+  correction operations, so the unsupported JSON Schema keyword was removed and the
+  still-unscored authority was resealed as r3.
 
 ## Tradeoffs Considered
 

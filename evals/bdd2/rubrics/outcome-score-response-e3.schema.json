@@ -34,7 +34,6 @@
         "escalation_correct": {"type": "boolean"},
         "correction_operations": {
           "type": "array",
-          "uniqueItems": true,
           "items": {"type": "string", "minLength": 1}
         },
         "notes": {"type": "string", "minLength": 1}
