@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-12T23:58:38+0800 -->
+<!-- updated_at: 2026-07-13T04:58:54+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-07-12T23:58:38+0800
-> **Source Branch**: codex/chatgpt-coding-mcp-closeout
-> **Source Commit**: 53808ab
+> **Updated At**: 2026-07-13T04:58:54+0800
+> **Source Branch**: codex/bdd2-phase-e3
+> **Source Commit**: 2c8b351
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: chatgpt-coding-mcp-latest-main-verified
+> **Reason**: bdd2-sprint-complete
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -33,10 +33,6 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 - /Users/kito/Projects/repo-harness: plans/plan-20260712-2103-agent-fleet-worker-routing-telemetry.md
 - /Users/kito/Projects/repo-harness: active-worktree owner -> /Users/kito/Projects/repo-harness
-- /Users/kito/Projects/repo-harness-worktrees/agent-fleet-specialists: plans/plan-20260712-2215-agent-fleet-specialists.md
-- /Users/kito/Projects/repo-harness-worktrees/agent-fleet-specialists: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/agent-fleet-specialists
-- /Users/kito/Projects/repo-harness-worktrees/bdd2-audit-experiment: plans/plan-20260712-2319-bdd2-phase-e2-shape-adapter-evaluation.md
-- /Users/kito/Projects/repo-harness-worktrees/bdd2-audit-experiment: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/bdd2-audit-experiment
 - /Users/kito/Projects/repo-harness-worktrees/bdd2-eval-foundation: plans/plan-20260712-0450-bdd2-eval-foundation.md
 - /Users/kito/Projects/repo-harness-worktrees/bdd2-eval-foundation: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/bdd2-eval-foundation
 - /Users/kito/Projects/repo-harness-worktrees/bdd2-shape-experiment: plans/plan-20260712-0605-bdd2-e-02-run-experiment-s-shape-hypothesis.md
@@ -45,8 +41,6 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - /Users/kito/Projects/repo-harness-worktrees/harness-cost-baseline-slo: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/harness-cost-baseline-slo
 - /Users/kito/Projects/repo-harness-worktrees/native-role-capability-gate: plans/plan-20260712-0219-native-role-capability-gate.md
 - /Users/kito/Projects/repo-harness-worktrees/native-role-capability-gate: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/native-role-capability-gate
-- /Users/kito/Projects/repo-harness-worktrees/repo-owned-agent-fleet: plans/plan-20260712-2053-repo-owned-agent-fleet.md
-- /Users/kito/Projects/repo-harness-worktrees/repo-owned-agent-fleet: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/repo-owned-agent-fleet
 - /Users/kito/Projects/repo-harness-worktrees/upgrade-bun-1-3-14: plans/plan-20260712-1330-bun-1-3-14-runtime-upgrade.md
 - /Users/kito/Projects/repo-harness-worktrees/upgrade-bun-1-3-14: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/upgrade-bun-1-3-14
 - /Users/kito/Projects/repo-harness-wt-codex-native-role-model-override: plans/plan-20260711-0219-codex-native-role-model-override.md
@@ -70,16 +64,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Checks
 
-- status=fail, source=verify-sprint, exit_code=1, file=.ai/harness/checks/latest.json
+- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
 
 ## Git Status
 
 - Summary: 3 changed/untracked path(s)
 
 ```
- M src/effects/repo-registry.ts
- M tasks/archive/notes-20260712-2333-chatgpt-coding-mcp-integration.md
- M tests/cli/registry.test.ts
+ M plans/plan-20260713-0314-bdd2-phase-e3-scoring-authority.md
+ M tasks/contracts/20260713-0314-bdd2-phase-e3-scoring-authority.contract.md
+ M tasks/notes/20260713-0314-bdd2-phase-e3-scoring-authority.notes.md
 ```
 
 ## Source Artifacts
