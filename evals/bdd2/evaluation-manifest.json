@@ -2,7 +2,7 @@
   "schema": "repo-harness-bdd2-evaluation.v3",
   "runner": {
     "path": "scripts/run-bdd2-evals.ts",
-    "sha256": "141d2b8f8cbb01fa6b2cbe225dadd3d9d3dfb3e59ba29bf08cc6ffbba0a91e75"
+    "sha256": "166b806831b9a0357cbffef845c382f8300b876e76aefe2cddb6392df718a2e2"
   },
   "output_root": ".ai/harness/runs/bdd2",
   "experiments": {
@@ -25,7 +25,7 @@
       "freeze": {
         "id": "bdd2-experiment-a-sealed-v1",
         "state": "sealed",
-        "sealed_at": "2026-07-12T19:30:00+08:00"
+        "sealed_at": "2026-07-12T18:20:00+08:00"
       },
       "repetitions": 2,
       "held_out_task_count": 12,

@@ -1209,6 +1209,11 @@ export function validateAuditScores(
     if (blind.task_input !== task.agent_input) fail(`Blind packet task input drift: ${candidate.packet_id}`);
     assertString(blind.response, `blind packet ${candidate.packet_id}.response`);
   }
+  const expectedPacketFiles = [...packets.keys()].map((packetId) => `${packetId}.json`).sort();
+  for (const subdir of ["blind", "private"] as const) {
+    const actualFiles = readdirSync(resolve(runPath, subdir)).filter((file) => file.endsWith(".json")).sort();
+    if (actualFiles.join("\n") !== expectedPacketFiles.join("\n")) fail(`Audit ${subdir} packet files must match run packet ids exactly`);
+  }
   const privateCoordinates = new Map<string, { task_id: string; condition: ConditionId; repetition: number }>();
   const observedCoordinates = new Set<string>();
   for (const packetId of packets.keys()) {
@@ -1232,6 +1237,7 @@ export function validateAuditScores(
   const scoreDir = directoryInsideRepo(evaluation.repoRoot, relative(evaluation.repoRoot, resolve(runPath, "scores")), "score directory");
   const scoreFiles = readdirSync(scoreDir).filter((file) => file.endsWith(".json")).sort();
   if (scoreFiles.length !== packets.size) fail(`Audit scoring requires exactly ${packets.size} score files, got ${scoreFiles.length}`);
+  if (scoreFiles.join("\n") !== expectedPacketFiles.join("\n")) fail("Audit score files must match run packet ids exactly");
   const scores = new Map<string, LockedAuditScore>();
   for (const file of scoreFiles) {
     const raw = readJson(resolve(scoreDir, file));
@@ -1240,6 +1246,7 @@ export function validateAuditScores(
     const truthTask = truth.audit_tasks[raw.task_id];
     if (!truthTask) fail(`Score references Audit truth outside held-out authority: ${raw.task_id}`);
     const score = validateLockedAuditScore(raw, `score ${file}`, truthTask);
+    if (file !== `${score.packet_id}.json`) fail(`Audit score filename does not match packet id: ${file}`);
     const packet = packets.get(score.packet_id);
     if (!packet || packet.task_id !== score.task_id) fail(`Score identity mismatch for packet: ${score.packet_id}`);
     if (scores.has(score.packet_id)) fail(`Duplicate score for packet: ${score.packet_id}`);

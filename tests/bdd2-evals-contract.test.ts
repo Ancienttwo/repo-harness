@@ -22,7 +22,7 @@ describe("BDD2 Phase E evaluation contract", () => {
     expect(evaluation.manifest.experiments.A.freeze).toEqual({
       id: "bdd2-experiment-a-sealed-v1",
       state: "sealed",
-      sealed_at: "2026-07-12T19:30:00+08:00",
+      sealed_at: "2026-07-12T18:20:00+08:00",
     });
     expect(Object.keys(evaluation.manifest.agents)).toEqual(["codex-gpt-5.6-sol-xhigh"]);
     expect(evaluation.manifest.adjudication.experiments.S.score_schema).toContain("shape-score.schema.json");
