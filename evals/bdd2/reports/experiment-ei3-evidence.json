@@ -1,0 +1,1833 @@
+{
+  "schema": "repo-harness-bdd2-ei3-evidence.e3",
+  "freeze_id": "bdd2-e3-ei3-r5",
+  "source_commit": "1160b4d94494769829e96965adb52d97149d4e24",
+  "manifest_sha256": "baa58bd6be02b0d199153c37c16275e585e81d13bd3a5da65929c41e99e71c00",
+  "packet_count": 24,
+  "outcome_score_count": 48,
+  "evidence_score_count": 12,
+  "adjudication_count": 20,
+  "rows": [
+    {
+      "packet_id": "003eb4bd414c5f38890e5ad563a5daf5",
+      "task_id": "EI-H-01",
+      "condition": "treatment",
+      "repetition": 1,
+      "reviewer_1": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "003eb4bd414c5f38890e5ad563a5daf5",
+        "reviewer_id": "e3-outcome-reviewer-1",
+        "locked_at": "2026-07-12T19:52:11.325Z",
+        "response_sha256": "8025ae29f2c55fcd5337b44e0c7dc2518537128bf230f82622315138a7794e3e",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "defer",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [
+            {
+              "concern": "recovery",
+              "severity": "P1",
+              "summary": "Timeout recovery is not concretely specified; deferred output does not confirm timeout can’t be interpreted as success or lose report context."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "correction_operations": [
+            "Select and state the adapted low-fidelity direction instead of deferring.",
+            "Keep timeout/status and one bounded Retry inline on the same report page with preserved report content."
+          ],
+          "notes": "Matches boundary intent structure and avoids unsupported concepts, but it does not close the uncertainty despite prototype capability being sufficient."
+        }
+      },
+      "reviewer_2": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "003eb4bd414c5f38890e5ad563a5daf5",
+        "reviewer_id": "e3-outcome-reviewer-2",
+        "locked_at": "2026-07-12T19:52:40.806Z",
+        "response_sha256": "e65d0986a27d37c0fc5a634b8186b637d2b5fe8c5582f96793a83ceaa893938f",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "defer",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [
+            "Replace Defer with Adapt by selecting the chosen direction",
+            "State the direction explicitly while keeping all boundary constraints intact",
+            "Preserve exact report context, timeout, progress, and exactly one Retry"
+          ],
+          "notes": "The proposal aligns with the boundary (inline) and avoids forbidden concepts, but it withholds a resolution despite `prototype_can_close_uncertainty=true` and expected Adapt outcome, so the key required resolution is missing."
+        }
+      },
+      "adjudication": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "003eb4bd414c5f38890e5ad563a5daf5",
+        "reviewer_id": "e3-fresh-score-adjudicator",
+        "locked_at": "2026-07-12T19:53:03.557Z",
+        "response_sha256": "8a39705253de51d30b1629b412f024191423d065c7715c6e8c719c42aed88a4c",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "adapt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [
+            "Replace Defer with Adapt and name the selected low-fidelity direction.",
+            "Keep interaction inline on the same report page with report context preserved.",
+            "Ensure timeout/progress/status are visible and a single bounded Retry action is the only recovery control."
+          ],
+          "notes": "Truth indicates uncertainty can be closed: expected disposition is Adapt with inline timeout+progress+one Retry placement and no additional unsupported controls."
+        }
+      },
+      "evidence_score": {
+        "schema": "repo-harness-bdd2-locked-evidence-score.e3",
+        "packet_id": "003eb4bd414c5f38890e5ad563a5daf5",
+        "reviewer_id": "e3-imagegen-evidence-reviewer",
+        "locked_at": "2026-07-12T19:53:28.520Z",
+        "response_sha256": "5ac373b7f6d42eb2b7f6d480e34d48f28c71e773d933fd2a910c61c0956ed050",
+        "score": {
+          "question_bound": true,
+          "synthetic_labeled": true,
+          "falsifier_present": true,
+          "unsupported_assertion_count": 1,
+          "explicit_limitation_count": 5,
+          "user_validation_claim_count": 0,
+          "notes": "One claim asserts Direction A is a lower-friction candidate despite forbidden preference/usability inferences; explicit cannot-prove limitations are separated in unsupported_claims (5 items); no observed user-validation evidence is presented."
+        }
+      }
+    },
+    {
+      "packet_id": "101e622540a9d8b9a71109458794d003",
+      "task_id": "EI-H-02",
+      "condition": "treatment",
+      "repetition": 2,
+      "reviewer_1": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "101e622540a9d8b9a71109458794d003",
+        "reviewer_id": "e3-outcome-reviewer-1",
+        "locked_at": "2026-07-12T19:52:19.549Z",
+        "response_sha256": "9f4cf31bf4184b3ed2550230f038940f09f4c92abb4e9b4c2b4bfcfe56cd37e6",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "provisional_direction_a",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [
+            "Finalize only after implementation-level semantic verification for field-summary linkage, announcement, and focus behavior."
+          ],
+          "notes": "Outcome aligns with the required layout direction and avoids unsupported accessibility claims, but truth allows final closure only after behavioral evidence; the proposal’s provisional status correctly reflects that."
+        }
+      },
+      "reviewer_2": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "101e622540a9d8b9a71109458794d003",
+        "reviewer_id": "e3-outcome-reviewer-2",
+        "locked_at": "2026-07-12T19:52:52.537Z",
+        "response_sha256": "316fef96140ee6d85df5d2975469a4fa9983189cf545bd500cc9628930bd22f5",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "adapt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "accessibility",
+              "severity": "P1",
+              "summary": "The proposal keeps the synthetic visual link but does not add semantic/announcement verification to close focus-announcement uncertainty."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [
+            "Preserve direction A, but add explicit semantic accessibility verification (field-summary association + announcement/focus behavior) before claiming resolution of the uncertainty."
+          ],
+          "notes": "The normalized proposal stays in-scope (no wizard/steps/settings), retains form flow and values, and avoids unsupported claims, but it intentionally defers final closure while leaving the required announcement part of accessibility evidence unverified."
+        }
+      },
+      "adjudication": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "101e622540a9d8b9a71109458794d003",
+        "reviewer_id": "e3-fresh-score-adjudicator",
+        "locked_at": "2026-07-12T19:53:17.955Z",
+        "response_sha256": "65f049d55c958357aa55252da7522e092bd0cbad67c673f85f660266ad08fb97",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "adapt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [
+            "Keep direction A as the provisional layout resolution and finalize only after implementation-level validation confirms field-summary semantic linkage, announcement behavior, and focus sequencing."
+          ],
+          "notes": "The outcome stays within the authority and boundary: existing form flow, preserved values, and no wizard/steps. It correctly declines to claim synthetic accessibility success and is appropriately conservative until semantic evidence is collected."
+        }
+      },
+      "evidence_score": {
+        "schema": "repo-harness-bdd2-locked-evidence-score.e3",
+        "packet_id": "101e622540a9d8b9a71109458794d003",
+        "reviewer_id": "e3-imagegen-evidence-reviewer",
+        "locked_at": "2026-07-12T19:53:56.590Z",
+        "response_sha256": "7a1b4e6618c90dba8c9e07b5e4fca6a7dfe4481fae0a48a90f0bba901e22f4b4",
+        "score": {
+          "question_bound": true,
+          "synthetic_labeled": true,
+          "falsifier_present": true,
+          "unsupported_assertion_count": 0,
+          "explicit_limitation_count": 4,
+          "user_validation_claim_count": 0,
+          "notes": "Response is question-bound to the three directions, explicitly labels synthetic-material limits, and includes the retained falsifier; no unsupported assertions are advanced beyond synthetic bounds beyond the listed caveats."
+        }
+      }
+    },
+    {
+      "packet_id": "24db12c35bfbffa43b0c3f93c26021ae",
+      "task_id": "EI-H-03",
+      "condition": "control",
+      "repetition": 1,
+      "reviewer_1": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "24db12c35bfbffa43b0c3f93c26021ae",
+        "reviewer_id": "e3-outcome-reviewer-1",
+        "locked_at": "2026-07-12T19:53:20.030Z",
+        "response_sha256": "5c063288bfc51104fa37077e917c2cf2dcb8e5ab313f063719358722a533f97b",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "Proposal matches required boundary and required behaviors, keeps invalid concepts excluded, and aligns with evidence-led closure of the hierarchy uncertainty."
+        }
+      },
+      "reviewer_2": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "24db12c35bfbffa43b0c3f93c26021ae",
+        "reviewer_id": "e3-outcome-reviewer-2",
+        "locked_at": "2026-07-12T19:53:51.628Z",
+        "response_sha256": "acf60c60aad0c9e5ccddcc057c2e66d2a571bcd6e337ea3b907f64718fb6480b",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "Normalized outcome aligns with required boundary: single permanent saved-filter deletion, compact confirmation with Cancel default, explicit destructive Delete, named target selection, and explicit final-failure reporting; no forbidden concepts are introduced."
+        }
+      },
+      "adjudication": null,
+      "evidence_score": null
+    },
+    {
+      "packet_id": "2a843e7f8495d6b7f37fefc577f289cf",
+      "task_id": "EI-H-01",
+      "condition": "treatment",
+      "repetition": 2,
+      "reviewer_1": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "2a843e7f8495d6b7f37fefc577f289cf",
+        "reviewer_id": "e3-outcome-reviewer-1",
+        "locked_at": "2026-07-12T19:52:13.345Z",
+        "response_sha256": "d543b0278f66db44b8aae155b5eeb6721e87724fc68a25fcef127f0b4a64ecf6",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "Adapt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "The proposal selects direction A and keeps behavior on the report page with inline timeout/progress and a single Retry while preserving report context and excluding forbidden controls. However, it explicitly defers final uncertainty resolution despite evidence class being able to close it, so uncertainty is not fully closed."
+        }
+      },
+      "reviewer_2": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "2a843e7f8495d6b7f37fefc577f289cf",
+        "reviewer_id": "e3-outcome-reviewer-2",
+        "locked_at": "2026-07-12T19:52:44.810Z",
+        "response_sha256": "63cb85ef9927dc22ec0255a7b53c26354e9cec16992472b57edf67b4c9492b58",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "partial",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [
+            "Resolve the uncertainty now by committing the selected direction as final rather than deferring resolution until later evidence."
+          ],
+          "notes": "Core boundary behaviors are present (on report page, progress/timeout visibility, single safe Retry, preserved context) and no forbidden concepts are introduced; however, despite prototype evidence being capable of resolving the uncertainty, the proposal explicitly defers final resolution, so uncertainty is not fully closed."
+        }
+      },
+      "adjudication": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "2a843e7f8495d6b7f37fefc577f289cf",
+        "reviewer_id": "e3-fresh-score-adjudicator",
+        "locked_at": "2026-07-12T19:53:29.617Z",
+        "response_sha256": "e5bc556cca746762a89fbe56c7c2068a5139d1e9f64549e7820cf178567608e8",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "Adapt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [
+            "Resolve the uncertainty now by finalizing the direction decision in the outcome instead of deferring it."
+          ],
+          "notes": "Consistent with frozen truth on keeping behavior on the report page with inline progress/timeout and exactly one safe Retry while avoiding forbidden controls, but uncertainty remains open due to explicit deferral despite prototype evidence indicating it can be closed."
+        }
+      },
+      "evidence_score": {
+        "schema": "repo-harness-bdd2-locked-evidence-score.e3",
+        "packet_id": "2a843e7f8495d6b7f37fefc577f289cf",
+        "reviewer_id": "e3-imagegen-evidence-reviewer",
+        "locked_at": "2026-07-12T19:54:18.641Z",
+        "response_sha256": "c9640ccb2f99f8a63027b58847811207485d3e43450c21c0ead9e735c9966452",
+        "score": {
+          "question_bound": true,
+          "synthetic_labeled": true,
+          "falsifier_present": true,
+          "unsupported_assertion_count": 0,
+          "explicit_limitation_count": 2,
+          "user_validation_claim_count": 0,
+          "notes": "Response stays within the prototype uncertainty and boundary, explicitly labels synthetic limits, and includes the reopen-on-Usability retry falsifier. User-validation claims are absent because no observed user evidence is presented."
+        }
+      }
+    },
+    {
+      "packet_id": "3a7bcf0393d0722756895bf0ba1c6b14",
+      "task_id": "EI-H-04",
+      "condition": "control",
+      "repetition": 2,
+      "reviewer_1": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "3a7bcf0393d0722756895bf0ba1c6b14",
+        "reviewer_id": "e3-outcome-reviewer-1",
+        "locked_at": "2026-07-12T19:54:07.958Z",
+        "response_sha256": "ad34cb523aa4c4ac171afa8b0c0e6dfb2bdf0e18c9ca66e7573b6fc91e77abba",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "not_closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [
+            "resolve_information_hierarchy_uncertainty"
+          ],
+          "notes": "All required observable behaviors are present and no unsupported forbidden concepts were introduced, but the stated uncertainty remains open despite evidence class indicating it can be resolved."
+        }
+      },
+      "reviewer_2": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "3a7bcf0393d0722756895bf0ba1c6b14",
+        "reviewer_id": "e3-outcome-reviewer-2",
+        "locked_at": "2026-07-12T19:54:31.971Z",
+        "response_sha256": "cf815786a18e22c5cf37e4b1bc8ec1eaeb4ff727729a203136ee99899c2cc904",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "not_closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [
+            "Resolve the named information-hierarchy uncertainty by selecting a direction; a concrete choice is expected since the evidence class can close it."
+          ],
+          "notes": "Proposal matches required boundary behaviors and avoids forbidden concepts; only gap is leaving the hierarchy uncertainty open despite `prototype_can_close_uncertainty=true` and expected Adapt resolution."
+        }
+      },
+      "adjudication": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "3a7bcf0393d0722756895bf0ba1c6b14",
+        "reviewer_id": "e3-fresh-score-adjudicator",
+        "locked_at": "2026-07-12T19:54:55.745Z",
+        "response_sha256": "6da192cb9884f2274b836249efd1c80e50739720e0490cd99c27930c97ea8039",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "adapted",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [
+            "resolve_information_hierarchy_uncertainty",
+            "select_direction_to_keep_unsynced_state_and_conflict_recovery_legible_while_hiding_sync_internals"
+          ],
+          "notes": "Both reviewers left the named uncertainty open despite `prototype_can_close_uncertainty=true` and expected Adapt resolution; close it by choosing and applying the legible, offline-safe direction."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "44827636205cd914f89cb74bd33ca1af",
+      "task_id": "EI-H-06",
+      "condition": "control",
+      "repetition": 2,
+      "reviewer_1": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "44827636205cd914f89cb74bd33ca1af",
+        "reviewer_id": "e3-outcome-reviewer-1",
+        "locked_at": "2026-07-12T19:56:08.470Z",
+        "response_sha256": "83b0c290222335f443c0fdaafb93ada2cdd9fe432d6f4541be5c69957e69ce55",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "defer",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "Proposal keeps the required boundary behaviors: one explicit resend, masked verified destination, and observable resend result, while excluding automatic/implicit resend and unverified recipients. It aligns with the expected defer stance since no synthetic evidence can close trust uncertainty."
+        }
+      },
+      "reviewer_2": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "44827636205cd914f89cb74bd33ca1af",
+        "reviewer_id": "e3-outcome-reviewer-2",
+        "locked_at": "2026-07-12T19:56:31.493Z",
+        "response_sha256": "05b91837255fc07c41b7d8735ec50d68499d6a6d648d7639954de9192d168660",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "defer",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "Outcome fully preserves the required boundary: keeps single explicit resend, keeps verified/masked destination, and requires observable resend result. It correctly defers closing trust uncertainty per prototype limitation and does not introduce unsupported behaviors."
+        }
+      },
+      "adjudication": null,
+      "evidence_score": null
+    },
+    {
+      "packet_id": "4a31e3452f4763a11241750534e68e36",
+      "task_id": "EI-H-01",
+      "condition": "control",
+      "repetition": 2,
+      "reviewer_1": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "4a31e3452f4763a11241750534e68e36",
+        "reviewer_id": "e3-outcome-reviewer-1",
+        "locked_at": "2026-07-12T19:52:08.737Z",
+        "response_sha256": "b89832ffa41d184a0c052356b9123ac65c45caf8d810f3d2ca2eb7191919c3b5",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "uncertainty_not_closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "correction_operations": [
+            "Replace Defer decision with an explicit direction choice per truth that closes uncertainty.",
+            "Keep timeout and single Retry visible inline on the report page while minimizing additional decisions.",
+            "Do not add extra controls or behaviors beyond the stable boundary."
+          ],
+          "notes": "Proposal follows the stable boundary and avoids unsupported concepts (Model/Prompt/Queue/Fallback), and preserves required behaviors (report page, progress, timeout visibility, one safe Retry, report preservation). However, it fails the key judgment criterion by deferring despite prototype_can_close_uncertainty=true; expected disposition is Adapt/selected direction."
+        }
+      },
+      "reviewer_2": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "4a31e3452f4763a11241750534e68e36",
+        "reviewer_id": "e3-outcome-reviewer-2",
+        "locked_at": "2026-07-12T19:52:30.853Z",
+        "response_sha256": "87829656ff896dedfbad7d83cb589a690092e58da66baf4559a7dca9eb813ef7",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "defer",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "correction_operations": [
+            "Replace Defer with an explicit chosen direction; the truth allows/provides closure and expects Adapt.",
+            "Select the direction that keeps timeout status and one Retry inline while minimizing exposed decisions."
+          ],
+          "notes": "Behavior is otherwise aligned with stable boundary (same report page, progress/timeout visibility, single conservative Retry, preserve report, no model/prompt/queue/fallback controls), but it fails the expected uncertainty disposition by deferring instead of adapting to a concrete direction.}}"
+        }
+      },
+      "adjudication": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "4a31e3452f4763a11241750534e68e36",
+        "reviewer_id": "e3-fresh-score-adjudicator",
+        "locked_at": "2026-07-12T19:53:09.475Z",
+        "response_sha256": "db71c4da3975b2e1b5f3ae30ea73751580e116685cd4a59354e52ec564d8c054",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "uncertainty_not_closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "correction_operations": [
+            "Replace the Defer decision with a concrete chosen direction that Adapt closes the uncertainty.",
+            "Select the specific low-fidelity direction that keeps timeout status and one safe Retry inline on the report page with minimal exposed decisions.",
+            "Keep the current stable-boundary behaviors unchanged (same page, progress/timeout visibility, one Retry, report preservation) while removing any implied default deferral."
+          ],
+          "notes": "Frozen truth allows closure (prototype_can_close_uncertainty=true) and expects Adapt; the outcome remains incomplete because it defers and does not choose a direction."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "4d1dea1fb804aeca58f9152a9fea5684",
+      "task_id": "EI-H-04",
+      "condition": "control",
+      "repetition": 1,
+      "reviewer_1": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "4d1dea1fb804aeca58f9152a9fea5684",
+        "reviewer_id": "e3-outcome-reviewer-1",
+        "locked_at": "2026-07-12T19:54:02.252Z",
+        "response_sha256": "779357b149df3d9c755729034b0ad667eb38fb10813fa9f5c4f282965d1c8296",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "Adapt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "correction_operations": [
+            "Close the information-hierarchy/copy uncertainty and choose a concrete direction that keeps unsynced/conflict recovery legible while hiding sync internals."
+          ],
+          "notes": "Proposal aligns with required sync behaviors and avoids forbidden concepts, but does not close the unresolved uncertainty even though prototype_can_close_uncertainty is true."
+        }
+      },
+      "reviewer_2": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "4d1dea1fb804aeca58f9152a9fea5684",
+        "reviewer_id": "e3-outcome-reviewer-2",
+        "locked_at": "2026-07-12T19:54:37.106Z",
+        "response_sha256": "97c42199528b1372f3be7961b58ee45a7d5e3f3d72341f0b03339a47b924e40d",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "adapt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "correction_operations": [
+            "Close the information-hierarchy uncertainty now by choosing and specifying a concrete unsynced/conflict/reconnect display ordering/copy that preserves offline and recovery states while hiding sync internals."
+          ],
+          "notes": "Core required behaviors and boundary coverage are present, with no forbidden concepts introduced; only the unresolved info-hierarchy treatment conflicts with truth’s expectation that the uncertainty can be closed with this evidence class."
+        }
+      },
+      "adjudication": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "4d1dea1fb804aeca58f9152a9fea5684",
+        "reviewer_id": "e3-fresh-score-adjudicator",
+        "locked_at": "2026-07-12T19:55:00.449Z",
+        "response_sha256": "b523af6c3d592d4ea64e6d411f907c92998b3ad89cc735ec95b00bce2a7414a5",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "Adapt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [
+            "Select and close the information-hierarchy uncertainty by specifying a concrete user-facing layout/ordering/copy for unsynced, conflict-review, and reconnect states while keeping sync internals hidden."
+          ],
+          "notes": "Candidate behavior set matches required offline/unsynced/reconnect/conflict recovery boundaries and avoids forbidden concepts; primary gap is only unresolved info-hierarchy treatment, which should be concretely resolved as Adapt per truth."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "5d21b7ad5e3e38c8f1581aec642b2d56",
+      "task_id": "EI-H-06",
+      "condition": "treatment",
+      "repetition": 2,
+      "reviewer_1": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "5d21b7ad5e3e38c8f1581aec642b2d56",
+        "reviewer_id": "e3-outcome-reviewer-1",
+        "locked_at": "2026-07-12T19:56:17.612Z",
+        "response_sha256": "fdec3264a307175cab0c699b2993a83ed143978e2e3aeee825fbf2d7f8124c13",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "within_boundary",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "Outcome is consistent with the frozen boundary: explicit owner-initiated resend only, masked verified destination, and visible result are preserved; trust is explicitly deferred per truth. No protected/privacy risk behavior is introduced."
+        }
+      },
+      "reviewer_2": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "5d21b7ad5e3e38c8f1581aec642b2d56",
+        "reviewer_id": "e3-outcome-reviewer-2",
+        "locked_at": "2026-07-12T19:56:42.560Z",
+        "response_sha256": "2977f4ed8e874d087fd976aead14e3921f61eb77ed6bd281949974fb29691a4d",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "keep",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "Proposal matches required boundary (explicit owner action, masked verified destination, observable resend result) and correctly does not claim trust can be closed by synthetic evidence. No protected-concern omissions or unsupported trust/policy claims detected."
+        }
+      },
+      "adjudication": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "5d21b7ad5e3e38c8f1581aec642b2d56",
+        "reviewer_id": "e3-fresh-score-adjudicator",
+        "locked_at": "2026-07-12T19:57:00.836Z",
+        "response_sha256": "593fda8c3ce37603d0116969e27f4be0f320bc37c27620cc17928f4931770d1a",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "within_boundary",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "Synthetic output preserves all required in-boundary behaviors and keeps trust uncertainty unresolved. It does not introduce unsupported policy, recipient, or trust-claim expansions."
+        }
+      },
+      "evidence_score": {
+        "schema": "repo-harness-bdd2-locked-evidence-score.e3",
+        "packet_id": "5d21b7ad5e3e38c8f1581aec642b2d56",
+        "reviewer_id": "e3-imagegen-evidence-reviewer",
+        "locked_at": "2026-07-12T19:57:20.644Z",
+        "response_sha256": "a4e1c7e0411b51d7bfd2293111c2ece467e942afc875b3aeb7a15b5429d22e18",
+        "score": {
+          "question_bound": true,
+          "synthetic_labeled": true,
+          "falsifier_present": true,
+          "unsupported_assertion_count": 0,
+          "explicit_limitation_count": 6,
+          "user_validation_claim_count": 0,
+          "notes": "Response is boundary-safe, explicitly marks synthetic limits (including non-testable trust/consent/value/safety claims), includes the required falsifier (real-user/production consented evidence), and avoids asserting unsupported user-validated outcomes."
+        }
+      }
+    },
+    {
+      "packet_id": "6456c601f018b64ffd939b961df6dcdb",
+      "task_id": "EI-H-01",
+      "condition": "control",
+      "repetition": 1,
+      "reviewer_1": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "6456c601f018b64ffd939b961df6dcdb",
+        "reviewer_id": "e3-outcome-reviewer-1",
+        "locked_at": "2026-07-12T19:52:09.613Z",
+        "response_sha256": "75b494197a237d347847bd206d14dfa98f096a5b79462841046f0d3d954cedce",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "adapt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "Proposal aligns with required boundary, defers non-resolvable preference/usability decisions, and does not introduce forbidden concepts or omit any required protected-behavior item."
+        }
+      },
+      "reviewer_2": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "6456c601f018b64ffd939b961df6dcdb",
+        "reviewer_id": "e3-outcome-reviewer-2",
+        "locked_at": "2026-07-12T19:52:50.584Z",
+        "response_sha256": "405ede937deacff8d7726f427be2f78db22a80dd5d4c3a5a389ff512c9313e43",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "adapt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "Proposal satisfies required boundary behaviors and explicitly avoids unsupported model/prompt/queue/fallback concepts while selecting an inline direction."
+        }
+      },
+      "adjudication": null,
+      "evidence_score": null
+    },
+    {
+      "packet_id": "6a0f158affae0dd7f98f1dae732d4e2a",
+      "task_id": "EI-H-06",
+      "condition": "control",
+      "repetition": 1,
+      "reviewer_1": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "6a0f158affae0dd7f98f1dae732d4e2a",
+        "reviewer_id": "e3-outcome-reviewer-1",
+        "locked_at": "2026-07-12T19:55:31.606Z",
+        "response_sha256": "5c9bcd8b1e497e45367824ef83fed4f501ddfd8facf48b51017f7d66fa170596",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "within_boundary",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "Proposal aligns with the frozen truth: preserves explicit, user-initiated resend to the verified billing destination, includes masked destination and observable outcome, and does not add unsupported concepts or close an irresolvable uncertainty."
+        }
+      },
+      "reviewer_2": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "6a0f158affae0dd7f98f1dae732d4e2a",
+        "reviewer_id": "e3-outcome-reviewer-2",
+        "locked_at": "2026-07-12T19:56:06.530Z",
+        "response_sha256": "78a811a2609363acd9c127d4a1aed0cbecba77cb3a9b7c87f393e3fb4da73b57",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "defer",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "The proposal aligns with truth constraints: it keeps explicit user-initiated action, fixed verified destination, masked destination disclosure, and observable resend outcome, while explicitly deferring trust closure as expected for imagegen evidence limits."
+        }
+      },
+      "adjudication": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "6a0f158affae0dd7f98f1dae732d4e2a",
+        "reviewer_id": "e3-fresh-score-adjudicator",
+        "locked_at": "2026-07-12T19:56:41.009Z",
+        "response_sha256": "067c2ba80f85ba9cd8e6cf235d43a71184c7d164758f97c023072ee3152d26be",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "defer",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "Fresh adjudication selects defer: synthetic/adapter evidence cannot close trust uncertainty, and the normalized outcome preserves explicit user-initiated resend to the verified billing destination with masked recipient and observable result."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "6bcf4a29fab06a6c2b013f3de04c0dce",
+      "task_id": "EI-H-05",
+      "condition": "treatment",
+      "repetition": 2,
+      "reviewer_1": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "6bcf4a29fab06a6c2b013f3de04c0dce",
+        "reviewer_id": "e3-outcome-reviewer-1",
+        "locked_at": "2026-07-12T19:55:33.782Z",
+        "response_sha256": "a9b46f1f240c8b5c80a61419814d570affa172b95c02f6cc9e779d675aaee570",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "defer-boundary-preserved",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "Prediction honors the required boundary by preserving the existing command palette and adding no persistent/contextual bar, settings, or commands. Named uncertainty remains open as required because synthetic output cannot establish preference/frequency. No required behaviors or protected concerns are omitted."
+        }
+      },
+      "reviewer_2": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "6bcf4a29fab06a6c2b013f3de04c0dce",
+        "reviewer_id": "e3-outcome-reviewer-2",
+        "locked_at": "2026-07-12T19:56:08.885Z",
+        "response_sha256": "968e181d18325675053294e1abb966f1c193f096d424cd69dcaa1f8267375088",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "defer",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "The proposal correctly keeps the decision deferred and preserves the existing command palette boundary; no prohibited features (persistent/contextual shortcut surface, shortcut settings, or new commands) are added, and no truth-mandated behaviors are omitted."
+        }
+      },
+      "adjudication": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "6bcf4a29fab06a6c2b013f3de04c0dce",
+        "reviewer_id": "e3-fresh-score-adjudicator",
+        "locked_at": "2026-07-12T19:56:28.890Z",
+        "response_sha256": "a86514842edb9202bc2398cb733ddc26505d422ffe5009676c7d8c570776def7",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "defer-boundary-preserved",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "Boundary is preserved by keeping the existing command palette complete and avoiding new command/settings/properties. The decision remains deferred because behavioral evidence is required to resolve user-preference uncertainty."
+        }
+      },
+      "evidence_score": {
+        "schema": "repo-harness-bdd2-locked-evidence-score.e3",
+        "packet_id": "6bcf4a29fab06a6c2b013f3de04c0dce",
+        "reviewer_id": "e3-imagegen-evidence-reviewer",
+        "locked_at": "2026-07-12T19:56:49.320Z",
+        "response_sha256": "f5d0c27c3e695213f2d35aafe9660afba7d964e2bc42e05f75fe064753ae4576",
+        "score": {
+          "question_bound": true,
+          "synthetic_labeled": true,
+          "falsifier_present": true,
+          "unsupported_assertion_count": 0,
+          "explicit_limitation_count": 5,
+          "user_validation_claim_count": 0,
+          "notes": "Response is bound to the appendix, explicitly marks synthetic evidence, and includes the falsifier condition. No unsupported assertions were introduced; stated unknowns are explicit limitations."
+        }
+      }
+    },
+    {
+      "packet_id": "6cde4dc38c83f32a61ea9da951e70c76",
+      "task_id": "EI-H-04",
+      "condition": "treatment",
+      "repetition": 1,
+      "reviewer_1": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "6cde4dc38c83f32a61ea9da951e70c76",
+        "reviewer_id": "e3-outcome-reviewer-1",
+        "locked_at": "2026-07-12T19:54:23.987Z",
+        "response_sha256": "d2921038a82f7f399ec794e2554de7fa7b798d1eb08fa968fd6b1bd6f18b9d42",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "Adapt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [
+            "Remove deferred-close language and explicitly resolve the uncertainty by selecting the direction now, since evidence class can close it.",
+            "If uncertainty is unresolved, note the blocker as user-visible rationale rather than deferring boundary closure."
+          ],
+          "notes": "Outcome otherwise aligns with stable boundary and avoids unsupported concepts (manual sync, device list, quota, version history), while preserving data-integrity constraints."
+        }
+      },
+      "reviewer_2": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "6cde4dc38c83f32a61ea9da951e70c76",
+        "reviewer_id": "e3-outcome-reviewer-2",
+        "locked_at": "2026-07-12T19:54:51.666Z",
+        "response_sha256": "3769e3c1f17752f2bd7088a255d88c9fa6c1224ef275d848a8d7a61393c5cc5b",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "adapt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [
+            "Close named uncertainty now that evidence class is capable: explicitly adapt to the selected direction and remove deferred-until-future-criteria from the interaction boundary decision."
+          ],
+          "notes": "Outcome aligns with required boundary elements (offline editing, unsynced state visibility, reconnect recovery, conflict review, hidden sync internals), excludes forbidden concepts, and protects data-integrity intent. Main gap is keeping uncertainty unresolved despite the truth indicating it can be resolved."
+        }
+      },
+      "adjudication": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "6cde4dc38c83f32a61ea9da951e70c76",
+        "reviewer_id": "e3-fresh-score-adjudicator",
+        "locked_at": "2026-07-12T19:55:38.619Z",
+        "response_sha256": "416c2d4406800c20033b6f8ede04ba676226e8e631444dc9315cbf1b984b8864",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "Adapt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [
+            "Resolve the named uncertainty immediately by selecting the sync-information direction now (no deferred condition), since evidence class can close it.",
+            "Retain direction A as primary and keep the stable boundary, but remove deferred-closure rationale from the interaction decision."
+          ],
+          "notes": "Normalized outcome matches the frozen required boundary and excluded concepts and preserves protected data-integrity intent; the only canonical deficiency is keeping uncertainty open despite capability to close it now."
+        }
+      },
+      "evidence_score": {
+        "schema": "repo-harness-bdd2-locked-evidence-score.e3",
+        "packet_id": "6cde4dc38c83f32a61ea9da951e70c76",
+        "reviewer_id": "e3-imagegen-evidence-reviewer",
+        "locked_at": "2026-07-12T19:56:01.449Z",
+        "response_sha256": "007c6bb8e1ac7204431a4c611179ce07a4dfcb2df5055ea44f876218578e60ae",
+        "score": {
+          "question_bound": true,
+          "synthetic_labeled": true,
+          "falsifier_present": true,
+          "unsupported_assertion_count": 0,
+          "explicit_limitation_count": 2,
+          "user_validation_claim_count": 0,
+          "notes": "Claims align with the appendix resolution (Direction A, kept boundary, deferred uncertainty). Synthetic status is explicitly called out as non-evidence; two explicit unsupported limits are stated and correctly scoped to limitations. No synthetic presented as observed user validation is made."
+        }
+      }
+    },
+    {
+      "packet_id": "71e2281541875db7156da77cb96b3674",
+      "task_id": "EI-H-05",
+      "condition": "control",
+      "repetition": 2,
+      "reviewer_1": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "71e2281541875db7156da77cb96b3674",
+        "reviewer_id": "e3-outcome-reviewer-1",
+        "locked_at": "2026-07-12T19:54:55.975Z",
+        "response_sha256": "565b4860a7406c603ed9b696f4c858436794c1ef4fc9874c28fa675ecd0f391b",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "within-boundary",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "Proposal explicitly defers the preference uncertainty consistent with inability to resolve from synthetic evidence, preserves command palette scope, and avoids introducing forbidden or unsupported command/shortcut concepts."
+        }
+      },
+      "reviewer_2": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "71e2281541875db7156da77cb96b3674",
+        "reviewer_id": "e3-outcome-reviewer-2",
+        "locked_at": "2026-07-12T19:55:20.387Z",
+        "response_sha256": "308c06cf47092633c46ac719c21ab1a221141058cf955443bc3e2516e503246e",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "defer",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "Outcome stays within boundary by preserving existing command palette and rejecting command/setting/shortcut-surface additions. It does not claim prototype-driven evidence and correctly keeps preference resolution in deferred state."
+        }
+      },
+      "adjudication": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "71e2281541875db7156da77cb96b3674",
+        "reviewer_id": "e3-fresh-score-adjudicator",
+        "locked_at": "2026-07-12T19:55:43.526Z",
+        "response_sha256": "82fd7ab94095e105c214a53978a411a0e60727d7ca323739f4c741dbd5219feb",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "defer",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "Both reviewers align on deferral; selecting defer for boundary category matches truth expectation and the normalized decision that synthetic/prototype evidence cannot resolve preference uncertainty. No unsupported expansions or required-behavior omissions are present."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "73ac0b6582956c17d7b411bfb36f4987",
+      "task_id": "EI-H-06",
+      "condition": "treatment",
+      "repetition": 1,
+      "reviewer_1": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "73ac0b6582956c17d7b411bfb36f4987",
+        "reviewer_id": "e3-outcome-reviewer-1",
+        "locked_at": "2026-07-12T19:56:07.303Z",
+        "response_sha256": "4d11b6fa2783ab4ee43512f0d3f017241f63d71a79fe936ea4697cc185177e13",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "kept_stable_boundary",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "Proposal fully aligns with required boundary and required behaviors; it avoids synthetic trust claims and keeps explicit, masked, single-step resend behavior, matching defer disposition and privacy constraints."
+        }
+      },
+      "reviewer_2": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "73ac0b6582956c17d7b411bfb36f4987",
+        "reviewer_id": "e3-outcome-reviewer-2",
+        "locked_at": "2026-07-12T19:56:34.043Z",
+        "response_sha256": "45e2aac40b45a4c216273a827bad4e36d8158d80a5ec8e8bfa4bce2cf9184409",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "kept",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "The normalized outcome preserves the fixed stable boundary: explicit owner-initiated resend, masked verified destination, and visible resend outcome, while explicitly excluding automatic sends and policy/recipient configuration. It also correctly defers trust closure, matching the frozen evidence limits and expected disposition; no required behavior or protected privacy concern is omitted."
+        }
+      },
+      "adjudication": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "73ac0b6582956c17d7b411bfb36f4987",
+        "reviewer_id": "e3-fresh-score-adjudicator",
+        "locked_at": "2026-07-12T19:56:53.847Z",
+        "response_sha256": "d2b725ad48d0cf86b979b3d950c72f5528a1534ec63fb8ae8d175fcf8fc86cf8",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "kept_stable_boundary",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "Outcome cleanly tracks the frozen truth: keeps explicit owner-initiated single resend, masked verified destination, and observable result; excludes automatic/recipient/policy behaviors and does not claim trust can be established from synthetic output. Defer posture is correct."
+        }
+      },
+      "evidence_score": {
+        "schema": "repo-harness-bdd2-locked-evidence-score.e3",
+        "packet_id": "73ac0b6582956c17d7b411bfb36f4987",
+        "reviewer_id": "e3-imagegen-evidence-reviewer",
+        "locked_at": "2026-07-12T19:57:12.001Z",
+        "response_sha256": "4e74c194674e19a12f5805ae98186dd38cb91ae131751d719cb666e1d7a566c2",
+        "score": {
+          "question_bound": true,
+          "synthetic_labeled": true,
+          "falsifier_present": true,
+          "unsupported_assertion_count": 0,
+          "explicit_limitation_count": 3,
+          "user_validation_claim_count": 0,
+          "notes": "Response stays within fixed boundary (explicit user action, masked destination, visible result), labels synthetic evidence, includes required falsifier (real-user/production evidence), and lists only explicit limitations rather than unsupported assertions. No observed user-validation claims are made from the synthetic artifact."
+        }
+      }
+    },
+    {
+      "packet_id": "781d70b447b7f241de2c2915547cec2f",
+      "task_id": "EI-H-03",
+      "condition": "treatment",
+      "repetition": 2,
+      "reviewer_1": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "781d70b447b7f241de2c2915547cec2f",
+        "reviewer_id": "e3-outcome-reviewer-1",
+        "locked_at": "2026-07-12T19:54:13.530Z",
+        "response_sha256": "1a05de7863afc8e83be7f50a1581af6d72199bbf6d0fd3b146897265fa0578d5",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "compact_confirmation_hierarchy",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [
+            {
+              "concern": "data_integrity",
+              "severity": "P1",
+              "summary": "No omission: consequence/irreversibility and final-failure reporting are preserved."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [
+            "Remove the extra requirement to defer uncertainty resolution; mark uncertainty as closed once compact hierarchy evidence is shown, since the prototype can resolve it."
+          ],
+          "notes": "The proposal preserves all required boundary behaviors (named filter, permanent delete via existing compact flow, Cancel default, destructive Delete, and final failure), and introduces no forbidden concepts; only the uncertainty is left open despite evidence-closure being available."
+        }
+      },
+      "reviewer_2": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "781d70b447b7f241de2c2915547cec2f",
+        "reviewer_id": "e3-outcome-reviewer-2",
+        "locked_at": "2026-07-12T19:54:35.462Z",
+        "response_sha256": "88c69ea859c2d336e6bd24c48c6099418af519484e298f9309d7fa961f133473",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "Adapt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [
+            "Uncertainty was requested to remain open, but truth allows it to be closed by evidence; set uncertainty_closed to true."
+          ],
+          "notes": "Proposal aligns with required boundary behavior and forbids unsupported concepts; only drift is conservative deferral of uncertainty closure despite capability to resolve it."
+        }
+      },
+      "adjudication": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "781d70b447b7f241de2c2915547cec2f",
+        "reviewer_id": "e3-fresh-score-adjudicator",
+        "locked_at": "2026-07-12T19:55:06.920Z",
+        "response_sha256": "93f3c680216c3a82dedd9fb60766353c77066d777b828be850f0882c5c99be79",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "Adapt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [
+            "Set uncertainty_closed to true because the evidence supports closing the compact hierarchy uncertainty under this prototype.",
+            "Keep outcome as an Adapt on the existing compact confirmation flow while preserving required boundary behaviors only."
+          ],
+          "notes": "The proposal satisfies all required boundary behaviors, introduces no unsupported expansion or concepts, and preserves data-integrity-related consequence signaling with final-failure reporting. Main issue is uncertainty was left open despite prototype capability to close it; corrected by marking it closed."
+        }
+      },
+      "evidence_score": {
+        "schema": "repo-harness-bdd2-locked-evidence-score.e3",
+        "packet_id": "781d70b447b7f241de2c2915547cec2f",
+        "reviewer_id": "e3-imagegen-evidence-reviewer",
+        "locked_at": "2026-07-12T19:55:27.744Z",
+        "response_sha256": "1f5e3fec7ef05203a2f732e16b279796023ce5e4bd070ae86fbb736d954790de",
+        "score": {
+          "question_bound": true,
+          "synthetic_labeled": true,
+          "falsifier_present": true,
+          "unsupported_assertion_count": 0,
+          "explicit_limitation_count": 3,
+          "user_validation_claim_count": 0,
+          "notes": "Response aligns with compact-boundary constraints and preserves required behaviors while explicitly deferring closure pending live comprehension validation; no concrete unsupported evidence claims are made."
+        }
+      }
+    },
+    {
+      "packet_id": "7d229c107d97e89be4e5bf0c40426c09",
+      "task_id": "EI-H-04",
+      "condition": "treatment",
+      "repetition": 2,
+      "reviewer_1": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "7d229c107d97e89be4e5bf0c40426c09",
+        "reviewer_id": "e3-outcome-reviewer-1",
+        "locked_at": "2026-07-12T19:54:26.732Z",
+        "response_sha256": "3eab66c3c23ea308e77313200ba0bc73f4bc776a14cd3cad6c404fc68007a428",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "Adapt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [
+            "Close the uncertainty by selecting a final direction rather than deferring resolution.",
+            "Replace provisional language with a definitive direction decision aligned to the synthetic artifact resolution path."
+          ],
+          "notes": "Proposal stays within allowed behavioral boundary and avoids unsupported claims, but it intentionally leaves the uncertainty open despite the truth allowing closure."
+        }
+      },
+      "reviewer_2": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "7d229c107d97e89be4e5bf0c40426c09",
+        "reviewer_id": "e3-outcome-reviewer-2",
+        "locked_at": "2026-07-12T19:54:59.928Z",
+        "response_sha256": "765aa2182cf5bbb64ddd181eabcc0ea0fc7d3c342487ca0bff63533f07a862ec",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "adapt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "Proposal preserves all required boundary behaviors and avoids unsupported artifacts; it keeps uncertainty provisional despite evidence class being able to resolve it."
+        }
+      },
+      "adjudication": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "7d229c107d97e89be4e5bf0c40426c09",
+        "reviewer_id": "e3-fresh-score-adjudicator",
+        "locked_at": "2026-07-12T19:55:31.739Z",
+        "response_sha256": "07f4b53e2125a5bdbc6c3b476b9b75e6d1f8f5ba4df896a301659922b477ff9f",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "Adapt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "correction_operations": [
+            "Close the uncertainty by selecting a final direction instead of leaving it provisional.",
+            "Keep the provisional direction label only if explicitly marked as a temporary state; otherwise issue a definitive direction decision consistent with the truth’s adapt disposition."
+          ],
+          "notes": "Outcome stays within allowed behavior boundary and does not add unsupported artifacts, but it misses the synthetic-adapter resolution signal that uncertainty can and should be closed on this pass."
+        }
+      },
+      "evidence_score": {
+        "schema": "repo-harness-bdd2-locked-evidence-score.e3",
+        "packet_id": "7d229c107d97e89be4e5bf0c40426c09",
+        "reviewer_id": "e3-imagegen-evidence-reviewer",
+        "locked_at": "2026-07-12T19:56:01.592Z",
+        "response_sha256": "1142dd95cdc65573f71c932f21475e49a6d601c35df3dad945d788824198c616",
+        "score": {
+          "question_bound": true,
+          "synthetic_labeled": true,
+          "falsifier_present": true,
+          "unsupported_assertion_count": 0,
+          "explicit_limitation_count": 9,
+          "user_validation_claim_count": 0,
+          "notes": "The response is tightly scoped to the synthetic task prompt, marks synthetic-stimulus limits, includes falsifier/uncertainty language, and all boundary caveats are explicit non-evidence limitations rather than unsupported assertions."
+        }
+      }
+    },
+    {
+      "packet_id": "8281e26073271d6206dea54588a8434d",
+      "task_id": "EI-H-03",
+      "condition": "treatment",
+      "repetition": 1,
+      "reviewer_1": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "8281e26073271d6206dea54588a8434d",
+        "reviewer_id": "e3-outcome-reviewer-1",
+        "locked_at": "2026-07-12T19:53:40.109Z",
+        "response_sha256": "48f3dd12d667b0cb76d59d81af05b79a51c61b52a74c303093cd3e7b5abaeea3",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "within_stable_boundary_but_incomplete_resolution",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "correction_operations": [
+            "Resolve the hierarchy uncertainty from available prototype evidence instead of leaving it open for external behavioral evidence.",
+            "State the final compact hierarchy decision explicitly as Adapted behavior in the final outcome."
+          ],
+          "notes": "Core required behaviors are present and no unsupported forbidden workflows are introduced; however, the named uncertainty was left unresolved despite `prototype_can_close_uncertainty=true`, so closure/escalation handling is incomplete."
+        }
+      },
+      "reviewer_2": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "8281e26073271d6206dea54588a8434d",
+        "reviewer_id": "e3-outcome-reviewer-2",
+        "locked_at": "2026-07-12T19:54:06.893Z",
+        "response_sha256": "63bc43ef7fedb1c751eb67210674e6233214aba9bd26ed0a2f9f781a1f0d9d55",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [
+            "Resolve the compact hierarchy uncertainty now, selecting the direction that closes it now that prototype evidence can close the ambiguity; keeping uncertainty open is noncompliant"
+          ],
+          "notes": "The proposal largely tracks required behaviors and protected trust constraints. The only mismatch is not closing the named uncertainty even though the truth says the prototype can resolve it."
+        }
+      },
+      "adjudication": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "8281e26073271d6206dea54588a8434d",
+        "reviewer_id": "e3-fresh-score-adjudicator",
+        "locked_at": "2026-07-12T19:54:26.486Z",
+        "response_sha256": "acc7eacc184c7a530541c7c1cf24d7b946117dbc5d5db4ea492a1225e01ef981",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "within_stable_boundary_complete_resolution",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [
+            "Resolve the hierarchy uncertainty from prototype evidence and select a single compact destructive-confirmation direction.",
+            "Keep behavior strictly within existing one-step confirmation semantics while preserving named filter identity, irreversible consequence, Cancel default, Delete destructive action, and final failure reporting."
+          ],
+          "notes": "The frozen truth allows closure (`prototype_can_close_uncertainty=true`), requires Adapt disposition, and forbids expanded flows, so the fresh score should mark uncertainty closed and confirm a single in-boundary hierarchy choice with no unsupported additions."
+        }
+      },
+      "evidence_score": {
+        "schema": "repo-harness-bdd2-locked-evidence-score.e3",
+        "packet_id": "8281e26073271d6206dea54588a8434d",
+        "reviewer_id": "e3-imagegen-evidence-reviewer",
+        "locked_at": "2026-07-12T19:55:07.154Z",
+        "response_sha256": "dbb32710e331eaf28be0181794a7628f9467ef139f883c15baf2a81a2e4b1592",
+        "score": {
+          "question_bound": true,
+          "synthetic_labeled": true,
+          "falsifier_present": true,
+          "unsupported_assertion_count": 0,
+          "explicit_limitation_count": 4,
+          "user_validation_claim_count": 0,
+          "notes": "Response stays question-bound to the appendix, labels synthetic stimulus as non-evidentiary, and preserves the named falsifier. No assertions present synthetic evidence as observed user behavior; limitations are explicitly enumerated rather than treated as proof."
+        }
+      }
+    },
+    {
+      "packet_id": "8458beb9f930bfb7149896ddfb38a8ad",
+      "task_id": "EI-H-02",
+      "condition": "control",
+      "repetition": 1,
+      "reviewer_1": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "8458beb9f930bfb7149896ddfb38a8ad",
+        "reviewer_id": "e3-outcome-reviewer-1",
+        "locked_at": "2026-07-12T19:52:13.565Z",
+        "response_sha256": "5a5dad97c020ac8dde4c5ed6b6e5af3ed46296a2b038284c5d88a7c8c0bdba74",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "behavior",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "accessibility",
+              "severity": "P1",
+              "summary": "The proposal defers visual/layout direction and omits explicit focus/announcement semantics required to satisfy the protected accessibility concern."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [
+            "Select and state one concrete direction linking summary text, offending field focus, and announcement order within existing form flow.",
+            "Retain the caveat that visual hierarchy alone does not prove screen-reader/semantic correctness and preserve explicit semantic validation testing expectation."
+          ],
+          "notes": "Core required behaviors are mostly covered, but the named uncertainty is not resolved and the accessibility binding between summary and focus/announcement behavior is not specified."
+        }
+      },
+      "reviewer_2": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "8458beb9f930bfb7149896ddfb38a8ad",
+        "reviewer_id": "e3-outcome-reviewer-2",
+        "locked_at": "2026-07-12T19:52:40.355Z",
+        "response_sha256": "cced08b5b2f9c59a40cdf51e83054a324a1c81652a2a53c9a0ae73f72a4e063e",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "adapt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "accessibility",
+              "severity": "P1",
+              "summary": "No explicit handling of focus/announcement semantics was included, so the required semantic-side validation behavior is not preserved."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [
+            "Add explicit focus-and-announcement linkage for invalid-field summaries while keeping existing single form flow",
+            "Retain the caveat that visual validation proof alone is insufficient for accessibility/semantic acceptance"
+          ],
+          "notes": "Outcome aligns with most required boundary behavior (existing flow, invalid-field identification, summary-to-field mapping, value preservation) but misses the required accessibility behavior around focus/announcement and does not fully resolve the uncertainty around field-summary-focus direction."
+        }
+      },
+      "adjudication": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "8458beb9f930bfb7149896ddfb38a8ad",
+        "reviewer_id": "e3-fresh-score-adjudicator",
+        "locked_at": "2026-07-12T19:53:03.308Z",
+        "response_sha256": "01099b66f164688c10e29d6433292bba671dafe180a7bf3514bb6ffc1c21ec96",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "adapt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "accessibility",
+              "severity": "P1",
+              "summary": "No explicit focus/announcement semantics were specified for the invalid-field summary linkage, so the protected accessibility requirement is not satisfied."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [
+            "Pick one concrete direction within the existing form flow that explicitly links validation summary text to the specific offending field, including focus and announcement order.",
+            "Keep the semantic-test caveat that visual layout proof alone does not establish screen-reader/assistive-tech correctness."
+          ],
+          "notes": "The proposal meets core flow and value-preservation constraints but does not resolve the required accessibility semantics, so uncertainty at the uncertainty boundary remains open."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "946eb58a163cebb227394a6d02ca823b",
+      "task_id": "EI-H-05",
+      "condition": "treatment",
+      "repetition": 1,
+      "reviewer_1": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "946eb58a163cebb227394a6d02ca823b",
+        "reviewer_id": "e3-outcome-reviewer-1",
+        "locked_at": "2026-07-12T19:55:26.378Z",
+        "response_sha256": "bedbac7515c4c2116dfdf8082a3c69cfb8f36b3f13496e1f0d30ede3ec036561",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "defer",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "The normalized outcome preserves the command palette boundary, declines unsupported shortcut-surface directions, and correctly defers preference uncertainty; no required boundary behavior is omitted and no unsupported user concepts are introduced."
+        }
+      },
+      "reviewer_2": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "946eb58a163cebb227394a6d02ca823b",
+        "reviewer_id": "e3-outcome-reviewer-2",
+        "locked_at": "2026-07-12T19:55:55.145Z",
+        "response_sha256": "9bf8082e3681d7a53a56de68c5476af2b89ce10952e9a7d76c621b039f6abc0e",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "defer",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "Outcome aligns with the frozen truth: it keeps the existing command palette as the authoritative surface, adds no unsupported shortcut surface/settings/commands, and correctly chooses to defer since synthetic evidence cannot close the preference uncertainty."
+        }
+      },
+      "adjudication": null,
+      "evidence_score": {
+        "schema": "repo-harness-bdd2-locked-evidence-score.e3",
+        "packet_id": "946eb58a163cebb227394a6d02ca823b",
+        "reviewer_id": "e3-imagegen-evidence-reviewer",
+        "locked_at": "2026-07-12T19:56:26.330Z",
+        "response_sha256": "a263cc8008d90e56d05b13e42bfef0f46a52915650d8cc2a78c6ee575b92d360",
+        "score": {
+          "question_bound": true,
+          "synthetic_labeled": true,
+          "falsifier_present": true,
+          "unsupported_assertion_count": 0,
+          "explicit_limitation_count": 5,
+          "user_validation_claim_count": 0,
+          "notes": "Response stays within the frozen boundary, marks synthetic limits explicitly, and includes the required falsifier for observed-expert usage. It does not convert synthetic output into user-preference/frequency/usability/authority findings. Explicit limitations are the five cannot-prove claims that are clearly constrained as uncertain."
+        }
+      }
+    },
+    {
+      "packet_id": "956efb7e6987c86d914fdd6b95d3070c",
+      "task_id": "EI-H-02",
+      "condition": "control",
+      "repetition": 2,
+      "reviewer_1": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "956efb7e6987c86d914fdd6b95d3070c",
+        "reviewer_id": "e3-outcome-reviewer-1",
+        "locked_at": "2026-07-12T19:52:19.534Z",
+        "response_sha256": "190bff6ba0068f857560a043f3c3846a8ad54aeae3b555a0574c137f36306ee5",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "Under-closed despite resolvable uncertainty",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "accessibility",
+              "severity": "P1",
+              "summary": "Missing focus/announcement handling while defining the summary-to-field error linkage direction."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "correction_operations": [
+            "Set uncertainty as closed since prototype evidence can resolve the summary-field-focus direction.",
+            "Add explicit focus/announcement behavior that binds the invalid field summary to the target field while retaining existing form flow."
+          ],
+          "notes": "The proposal keeps core form constraints intact and avoids forbidden flow changes, but it incorrectly leaves the named uncertainty unresolved despite truth indicating it can be resolved."
+        }
+      },
+      "reviewer_2": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "956efb7e6987c86d914fdd6b95d3070c",
+        "reviewer_id": "e3-outcome-reviewer-2",
+        "locked_at": "2026-07-12T19:52:48.101Z",
+        "response_sha256": "d2de24203abc362710b4a40e9678f320db295fc9e4f4556075e059f2d3033328",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "deferred",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "accessibility",
+              "severity": "P1",
+              "summary": "No explicit focus/announcement behavior is specified despite accessibility requiring it, so visual summary-field linking cannot satisfy semantic behavior alone."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [
+            "Close the uncertainty by selecting and stating an accessible direction that visibly links summary and specific field error plus explicit focus/announcement behavior, while keeping the same form and submit flow.",
+            "Retain the semantic-test caveat: avoid inferring accessibility correctness from visuals alone and call for/require semantic validation."
+          ],
+          "notes": "The proposal aligns on core form preservation and field-error/value-retention requirements, but it misses the accessibility-bound focus/announcement requirement and leaves the uncertainty unresolved despite the truth indicating it can be closed."
+        }
+      },
+      "adjudication": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "956efb7e6987c86d914fdd6b95d3070c",
+        "reviewer_id": "e3-fresh-score-adjudicator",
+        "locked_at": "2026-07-12T19:53:17.454Z",
+        "response_sha256": "d2fb2cf5149f44dc89ee89b9aafd9db16740d488644c15d45338c6680220241f",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "Closed: select a concrete summary-to-field interaction direction based on prototype evidence",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "accessibility",
+              "severity": "P1",
+              "summary": "No explicit focus/announcement behavior is provided to guarantee semantic summary-to-field error binding for assistive tech; visuals alone are insufficient."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [
+            "Set the named uncertainty as closed by choosing the concrete layout/interaction direction that visually and semantically links the summary error and target field while preserving existing form flow and submit action.",
+            "Add explicit focus and announcement behavior for the invalid field when surfacing the summary error, and retain the caveat that semantic screen-reader correctness requires implementation-level validation beyond the prototype image."
+          ],
+          "notes": "The outcome must close the uncertainty via prototype-backed direction selection and must include accessibility behavior (focus/announcement) to bind summary and field semantics; other core constraints remain preserved."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "c58083dda9ad4119134c2e01cc3f0ee9",
+      "task_id": "EI-H-05",
+      "condition": "control",
+      "repetition": 1,
+      "reviewer_1": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "c58083dda9ad4119134c2e01cc3f0ee9",
+        "reviewer_id": "e3-outcome-reviewer-1",
+        "locked_at": "2026-07-12T19:55:05.185Z",
+        "response_sha256": "1b2d52f4befca416f5e6fdc792b698f5dbaabab18feaa04ef1abb868634158bf",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "within_boundary",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "Proposal matches frozen truth: keeps the existing command palette complete, avoids new commands/settings, does not claim user-preference resolution from synthetic evidence, and requests explicit user direction, so uncertainty correctly remains open and escalation is not needed."
+        }
+      },
+      "reviewer_2": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "c58083dda9ad4119134c2e01cc3f0ee9",
+        "reviewer_id": "e3-outcome-reviewer-2",
+        "locked_at": "2026-07-12T19:55:26.272Z",
+        "response_sha256": "519a9e3ab64292718250487c3216b8dfc4138d60326627758036ee0cc4cfcf11",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "compliant",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "Outcome keeps the command palette unchanged, forbids new commands/settings, and defers preference-resolution pending explicit user input, matching the frozen truth. No unsupported concepts are introduced and protected concerns are not violated."
+        }
+      },
+      "adjudication": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "c58083dda9ad4119134c2e01cc3f0ee9",
+        "reviewer_id": "e3-fresh-score-adjudicator",
+        "locked_at": "2026-07-12T19:55:54.725Z",
+        "response_sha256": "a3902b2f2c79c8188a3399c09fb763ec3534310abe4ef1142e7f0c71e05d834a",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "within_boundary",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "Outcome correctly keeps the command palette as-is, introduces no new commands or settings, and defers user-preference uncertainty in line with truth (no prototype-driven inference)."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "f38fb000f618a0077c30f0b1846855ae",
+      "task_id": "EI-H-03",
+      "condition": "control",
+      "repetition": 2,
+      "reviewer_1": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "f38fb000f618a0077c30f0b1846855ae",
+        "reviewer_id": "e3-outcome-reviewer-1",
+        "locked_at": "2026-07-12T19:53:31.434Z",
+        "response_sha256": "eb3963f1709f694cdb702c437d957bd613f5b1d1dbc012ad261ab1742e7b7d31",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [
+            {
+              "concern": "data_integrity",
+              "severity": "P0",
+              "summary": "No protected-concern omission; proposal includes permanent deletion, identity, Cancel default, destructive semantics, and final-failure reporting, matching the consequence-and-integrity requirement."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "Normalized outcome is aligned with the frozen truth: it preserves the required boundary elements without introducing forbidden concepts, while keeping behavior scoped to the existing compact confirmation pattern and requiring final failure visibility."
+        }
+      },
+      "reviewer_2": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "f38fb000f618a0077c30f0b1846855ae",
+        "reviewer_id": "e3-outcome-reviewer-2",
+        "locked_at": "2026-07-12T19:53:55.817Z",
+        "response_sha256": "167d7e84b108de0c617c0f61daeca3451a466a40d5a2e648c7e01f807460969a",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "Normalized proposal matches the frozen boundary, includes all required behaviors (identity, permanence, cancel default, destructive delete, final failure), and does not add forbidden concepts or omit the protected data-integrity concern."
+        }
+      },
+      "adjudication": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "f38fb000f618a0077c30f0b1846855ae",
+        "reviewer_id": "e3-fresh-score-adjudicator",
+        "locked_at": "2026-07-12T19:54:21.416Z",
+        "response_sha256": "38ee947c5f0af377771c903ec5e5aa0441b887d873cff4227e6032c97ecc974d",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "I accept the normalized proposal as a direct match to frozen truth: required boundary elements are present, no unsupported concepts are introduced, and protected data-integrity concern is addressed via irreversible/deletion semantics with explicit final-failure reporting."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "f466ff709e09e5d41baefb175466cbe3",
+      "task_id": "EI-H-02",
+      "condition": "treatment",
+      "repetition": 1,
+      "reviewer_1": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "f466ff709e09e5d41baefb175466cbe3",
+        "reviewer_id": "e3-outcome-reviewer-1",
+        "locked_at": "2026-07-12T19:52:18.793Z",
+        "response_sha256": "90bd51dc1a80e16a2c9a6276bb41365f7bc60ddfa0e0369048a3ef0dfeda5ae0",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "In-boundary adaptation with explicit semantic caveat",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "Proposal preserves the existing form/submission flow, avoids unsupported concepts, selects the requested direction (A), and retains the required accessibility-semantics verification caveat."
+        }
+      },
+      "reviewer_2": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "f466ff709e09e5d41baefb175466cbe3",
+        "reviewer_id": "e3-outcome-reviewer-2",
+        "locked_at": "2026-07-12T19:52:49.416Z",
+        "response_sha256": "48af68fae40f63479c5b28aefbfa656aeb181e23437baa5baf441bacae0795bc",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "The outcome stays within the fixed single-form boundary, excludes forbidden concepts, selects direction A with a preserved synthetic proof caveat, and retains all required recovery/accessibility-linked behaviors; no protected concern was omitted."
+        }
+      },
+      "adjudication": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "f466ff709e09e5d41baefb175466cbe3",
+        "reviewer_id": "e3-fresh-score-adjudicator",
+        "locked_at": "2026-07-12T19:53:20.897Z",
+        "response_sha256": "d1b8b9ba27f76c8f0e6d319cf30803fded20487c423cfcf6a3094926743c6535",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "In-boundary adaptation with explicit semantic caveat",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "Outcome stays on the existing form/submit boundary, selects direction A, preserves entered values and predictable focus/recovery flow, and retains the required semantic linkage/announcement verification caveat; no unsupported concepts are introduced."
+        }
+      },
+      "evidence_score": {
+        "schema": "repo-harness-bdd2-locked-evidence-score.e3",
+        "packet_id": "f466ff709e09e5d41baefb175466cbe3",
+        "reviewer_id": "e3-imagegen-evidence-reviewer",
+        "locked_at": "2026-07-12T19:53:44.243Z",
+        "response_sha256": "2f9cf1888378a1cb6dc579bfa6959929461d06e40dfd1d991302b730ebd5e557",
+        "score": {
+          "question_bound": true,
+          "synthetic_labeled": true,
+          "falsifier_present": true,
+          "unsupported_assertion_count": 0,
+          "explicit_limitation_count": 6,
+          "user_validation_claim_count": 0,
+          "notes": "No unsupported assertions were made; synthetic limitations are explicitly stated and used as constraints. User-evidence claims are not asserted from the image artifact, and closure remains deferred to implementation-level semantic/focus testing. Boundary and falsifier handling are present."
+        }
+      }
+    }
+  ],
+  "summary": {
+    "metrics": {
+      "closure": {
+        "wins": 1,
+        "losses": 3,
+        "ties": 8
+      },
+      "new_severe_pairs": 0,
+      "unsupported_expansion": {
+        "control": 0,
+        "treatment": 0
+      },
+      "unsupported_concepts": {
+        "control": 0,
+        "treatment": 0
+      },
+      "required_omissions": {
+        "control": 2,
+        "treatment": 0
+      },
+      "nonclosable_treatment_closures": 0,
+      "evidence_compliance": false
+    },
+    "decision": "Kill"
+  }
+}

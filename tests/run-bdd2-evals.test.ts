@@ -7,7 +7,6 @@ import {
   buildOutcomeReviewerPacket,
   canonicalJson,
   opaquePacketId,
-  sha256File,
   sha256Text,
   validateEvaluation,
   validateOutcomeScore,
@@ -69,7 +68,7 @@ function materializeScoreRun(experiment: "S3" | "EB3" | "EI3", disagreeFirst = f
     }
     return { packet_id: packetId, source_packet_id: row.source_packet_id, task_id: row.task_id, condition: row.condition, repetition: row.repetition, full_response_sha256: row.full_response_sha256, normalized_outcome_sha256: row.normalized_outcome_sha256, reviewer_score_sha256: [sha256Text(canonicalJson(scores[0])), sha256Text(canonicalJson(scores[1]))], adjudication_sha256: adjudicationSha, evidence_score_sha256: evidenceSha };
   });
-  write(join(root, "run.json"), { schema: "repo-harness-bdd2-score-run.e3", freeze_id: evaluation.manifest.experiments[experiment].freeze_id, source_commit: "d".repeat(40), manifest_sha256: sha256File(evaluation.manifestPath), experiment, output_path: relative(REPO_ROOT, root).replace(/\\/g, "/"), packets });
+  write(join(root, "run.json"), { schema: "repo-harness-bdd2-score-run.e3", freeze_id: evaluation.manifest.experiments[experiment].freeze_id, source_commit: "d".repeat(40), manifest_sha256: evaluation.manifest.experiments[experiment].score_manifest_sha256, experiment, output_path: relative(REPO_ROOT, root).replace(/\\/g, "/"), packets });
   return relative(REPO_ROOT, root).replace(/\\/g, "/");
 }
 

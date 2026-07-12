@@ -144,9 +144,9 @@ identity reuse, pre-reveal leakage, missing adjudication, or report mismatch.
 
 - [x] E3-01: Freeze E3 manifest, tracked source corpus, schemas, prompts, metrics, and
       direct-cut runner contract.
-- [ ] E3-02: Generate condition-blind score packets and execute complete S3, EB3, and
+- [x] E3-02: Generate condition-blind score packets and execute complete S3, EB3, and
       EI3 primary/evidence scoring with frozen adjudication.
-- [ ] E3-03: Reproduce immutable experiment decisions and conditionally run I3 from
+- [x] E3-03: Reproduce immutable experiment decisions and conditionally run I3 from
       four fresh fixture copies.
 - [ ] E3-04: Publish Phase E3 gate, update Sprint/PRD truth, run full checks and
       independent external review.
@@ -181,7 +181,7 @@ E2 evidence remains authoritative and unchanged.
 
 ## Task Breakdown
 - [x] E3-01: Freeze E3 authority and tracked source corpus.
-- [ ] E3-02: Execute corrected outcome/evidence scoring and adjudication.
-- [ ] E3-03: Publish S3/EB3/EI3 decisions and conditional I3 result.
+- [x] E3-02: Execute corrected outcome/evidence scoring and adjudication.
+- [x] E3-03: Publish S3/EB3/EI3 decisions and conditional I3 result.
 - [ ] E3-04: Complete verification, external review, and Sprint gate.
 - [ ] E3-05: Ship to main and close workflow artifacts without Phase P.

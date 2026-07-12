@@ -52,7 +52,19 @@
 
 ## Open Questions
 
-- None.
+- None. The E3 gate is terminal for the current treatments; any future BDD² direction
+  requires a new product thesis and new intervention, not another scoring revision.
+
+## Recorded Results
+
+- S3: `Kill` — 50% unsupported-expansion reduction, but four new paired P0/P1
+  protected-concern regressions.
+- EB3: `Kill` — five closure wins and zero losses, but below the six-win threshold and
+  with one unsupported retry-policy/feature-need inference.
+- EI3: `Kill` — one win, three losses, and one unsupported lower-friction assertion.
+- I3: `Defer — gated-not-run` because S3 and both adapters failed their gates.
+- Final authority freezes each tracked result and the original score-manifest hash;
+  raw ignored score runs remain independently validateable after closeout.
 
 ## Evidence Links
 

@@ -2,7 +2,7 @@
   "schema": "repo-harness-bdd2-evaluation.e3",
   "runner": {
     "path": "scripts/run-bdd2-evals.ts",
-    "sha256": "f919bd5ffb90308cbfdcd70e0b4dc428e93e4bcb5f35de3ae810b8b2f52a1af6"
+    "sha256": "65180fe48bb24fd09650508c91bc186a8ea9295938241bad0d794fdc31dbc848"
   },
   "output_root": ".ai/harness/runs/bdd2",
   "source_corpus": {
@@ -26,6 +26,17 @@
       "metrics": {
         "path": "evals/bdd2/metrics/phase-e3-scoring-metrics.md",
         "sha256": "1bf68dd351d1a6a216e9dcb63608f852b82dfe1294ec77f8d315f1594f9a3b9a"
+      },
+      "score_manifest_sha256": "9c1359f6c6d77d995eafcd2120780b18d65f2ee860aaa566442ec386cd9e902c",
+      "result": {
+        "evidence": {
+          "path": "evals/bdd2/reports/experiment-s3-evidence.json",
+          "sha256": "69f2c67e10ce71a326da978f4b96a3a54ade2ec5dcd0068c8911481257a2daed"
+        },
+        "report": {
+          "path": "evals/bdd2/reports/experiment-s3.md",
+          "sha256": "f5e01884213ecc2ee83a30a31bead1236682bde871b4c85c9c38c4d4c355b9fa"
+        }
       }
     },
     "EB3": {
@@ -110,6 +121,17 @@
             }
           ]
         }
+      },
+      "score_manifest_sha256": "baa58bd6be02b0d199153c37c16275e585e81d13bd3a5da65929c41e99e71c00",
+      "result": {
+        "evidence": {
+          "path": "evals/bdd2/reports/experiment-eb3-evidence.json",
+          "sha256": "490fee22656dfebd1f0336ef19080effa2c15521b541c32a4dd82037ff0a910f"
+        },
+        "report": {
+          "path": "evals/bdd2/reports/experiment-eb3.md",
+          "sha256": "8b79b0c2011c6e2dfb0f0f2724199aa54bcb44b6433a84919af4ff44cbadc5a0"
+        }
       }
     },
     "EI3": {
@@ -193,6 +215,17 @@
               "sha256": "e38e239edf6d384586e56e35712370b10e5feb11451094e40634865ebe2b32e2"
             }
           ]
+        }
+      },
+      "score_manifest_sha256": "baa58bd6be02b0d199153c37c16275e585e81d13bd3a5da65929c41e99e71c00",
+      "result": {
+        "evidence": {
+          "path": "evals/bdd2/reports/experiment-ei3-evidence.json",
+          "sha256": "42df1ae4ebfa9812f5dfd0ccfe403b2f72b458ac132b4c35a4e6e1602656292b"
+        },
+        "report": {
+          "path": "evals/bdd2/reports/experiment-ei3.md",
+          "sha256": "ca99b2868ed3f1a85ca1d7994d403a9fc66e7034c6037c98082ec3770d1d814c"
         }
       }
     }
@@ -381,14 +414,6 @@
     {
       "path": "evals/bdd2/reports/phase-e2-gate.md",
       "sha256": "9457bdc44f6014c6ebea922128fe4906fb85ca86c7d6b3fba45cc4e2cbe3b4e4"
-    },
-    {
-      "path": "evals/bdd2/reports/experiment-s3.md",
-      "sha256": "f5e01884213ecc2ee83a30a31bead1236682bde871b4c85c9c38c4d4c355b9fa"
-    },
-    {
-      "path": "evals/bdd2/reports/experiment-s3-evidence.json",
-      "sha256": "69f2c67e10ce71a326da978f4b96a3a54ade2ec5dcd0068c8911481257a2daed"
     }
   ]
 }

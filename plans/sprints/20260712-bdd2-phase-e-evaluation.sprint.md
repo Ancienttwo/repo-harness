@@ -2,7 +2,7 @@
 
 > **Status**: Done
 > **Source PRD**: `plans/prds/20260712-0409-bdd2-shape-audit.prd.md`
-> **Decision**: Phase E complete; Phase P productization is not approved.
+> **Decision**: Phase E/E2/E3 complete; Phase P productization is not approved.
 
 ```yaml
 sprint_id: 20260712-bdd2-phase-e-evaluation
@@ -39,6 +39,8 @@ P productization remains forbidden until the final recorded gate decision.
 | 4 | [x] | BDD2-E-04 — Run Experiment E: Browser and ImageGen adapter hypotheses | contract | Gated-not-run because S/A did not both pass; Browser=`Defer` and ImageGen=`Defer`, with no efficacy claim. | `evals/bdd2/reports/phase-e-gate.md` |
 | 5 | [x] | BDD2-E-05 — Run Experiment I: implementation pilot | contract | Gated-not-run because S/A did not both pass; implementation pilot=`Defer`. | `evals/bdd2/reports/phase-e-gate.md` |
 | 6 | [x] | BDD2-E-06 — Record Phase E gate decision | contract | Shape=`Reshape`, Audit=`Kill`, Browser/ImageGen/I=`Defer`; merged as PR #61 and Phase P remains unauthorized. | `plans/archive/plan-20260712-2213-bdd2-e-06-record-phase-e-gate-decision.md` |
+| 7 | [x] | BDD2-E2 — Independently evaluate inline Shape, Browser, and ImageGen | contract | 120 outputs completed under independent gates; scoring defects fail closed as `Reshape`; I2 gated-not-run. | `plans/plan-20260712-2319-bdd2-phase-e2-shape-adapter-evaluation.md` |
+| 8 | [x] | BDD2-E3 — Correct scoring authority and close the Sprint | contract | 240 primary scores, 24 evidence scores, and all required fresh adjudications completed; S3/EB3/EI3=`Kill`, I3 gated-not-run, Phase P not approved. | `plans/plan-20260713-0314-bdd2-phase-e3-scoring-authority.md` |
 
 ## Ordering and Stop Rules
 
@@ -64,6 +66,9 @@ P productization remains forbidden until the final recorded gate decision.
 - [x] The owner-approved frozen decision protocol has been applied without override
   and the E-06 closeout has merged;
   Phase P remains unapproved and no Phase P plan exists.
+- [x] E2 independently exercised Browser/ImageGen and E3 corrected its score authority
+  without changing historical output; the final Sprint gate kills all three current
+  product treatments and keeps I3/Phase P closed.
 
 ## Execution Log
 
@@ -74,3 +79,5 @@ P productization remains forbidden until the final recorded gate decision.
 | 2026-07-12 22:12 | BDD2-E-03 — Run Experiment A | `plans/plan-20260712-1811-bdd2-e-03-run-experiment-a-audit-hypothesis.md` | `Kill`, PR #60 |
 | 2026-07-12 22:13 | BDD2-E-04/E-05 prerequisite resolution | `evals/bdd2/reports/phase-e-gate.md` | gated-not-run; `Defer` |
 | 2026-07-12 22:41 | BDD2-E-06 — Record Phase E gate decision | `plans/archive/plan-20260712-2213-bdd2-e-06-record-phase-e-gate-decision.md` | merged PR #61; Phase E complete |
+| 2026-07-13 02:32 | BDD2-E2 — Independent Shape/adapter evaluation | `plans/plan-20260712-2319-bdd2-phase-e2-shape-adapter-evaluation.md` | S2/EB/EI=`Reshape`; I2 gated-not-run |
+| 2026-07-13 03:50 | BDD2-E3 — Corrected scoring authority | `plans/plan-20260713-0314-bdd2-phase-e3-scoring-authority.md` | S3/EB3/EI3=`Kill`; I3 gated-not-run; Sprint complete |

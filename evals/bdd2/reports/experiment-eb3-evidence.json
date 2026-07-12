@@ -1,0 +1,1980 @@
+{
+  "schema": "repo-harness-bdd2-eb3-evidence.e3",
+  "freeze_id": "bdd2-e3-eb3-r5",
+  "source_commit": "1160b4d94494769829e96965adb52d97149d4e24",
+  "manifest_sha256": "baa58bd6be02b0d199153c37c16275e585e81d13bd3a5da65929c41e99e71c00",
+  "packet_count": 24,
+  "outcome_score_count": 48,
+  "evidence_score_count": 12,
+  "adjudication_count": 20,
+  "rows": [
+    {
+      "packet_id": "16a9c328e61a0bd46baabcf7e13d6456",
+      "task_id": "EB-H-03",
+      "condition": "control",
+      "repetition": 1,
+      "reviewer_1": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "16a9c328e61a0bd46baabcf7e13d6456",
+        "reviewer_id": "e3-outcome-reviewer-1",
+        "locked_at": "2026-07-12T19:53:23.716Z",
+        "response_sha256": "96a4596c71a72b1980b0879b0d9ffc5239d8b3c6d393a7abb2246d5c6e32d960",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "disposition_mismatch",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "accessibility",
+              "severity": "P1",
+              "summary": "No explicit handling is provided for perceiving/operating expanded filter state; only optional same-page/date-range behavior is stated."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "correction_operations": [
+            "Change boundary_decision from Adopt to Adapt.",
+            "Explicitly preserve and test perceivable/operable expanded filter state while keeping name-first default behavior."
+          ],
+          "notes": "User-visible behavior is mostly consistent with name-first search and optional date-range clearing, but the outcome does not match the expected disposition and omits an explicit accessibility requirement for disclosure state."
+        }
+      },
+      "reviewer_2": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "16a9c328e61a0bd46baabcf7e13d6456",
+        "reviewer_id": "e3-outcome-reviewer-2",
+        "locked_at": "2026-07-12T19:53:45.385Z",
+        "response_sha256": "e04d784b3161e4e85717bafa4c2d0f5d8d55895b46a8b31a84b1b0a772cf9762",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "authority/mode mismatch",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "accessibility",
+              "severity": "P1",
+              "summary": "The proposal does not state that the advanced filter’s expanded state remains perceivable and operable."
+            }
+          ],
+          "authority_fit": false,
+          "escalation_correct": false,
+          "correction_operations": [
+            "Change boundary decision from Adopt to Adapt per expected disposition.",
+            "Add explicit statement that expanded disclosure state of the existing date-range filter remains accessible.",
+            "Keep focus on one-page, optional expert filter usage without introducing new concepts."
+          ],
+          "notes": "Main issues are boundary mismatch (Adopt vs required Adapt) and an accessibility-relevant omission around expanded-state visibility/operability."
+        }
+      },
+      "adjudication": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "16a9c328e61a0bd46baabcf7e13d6456",
+        "reviewer_id": "e3-fresh-score-adjudicator",
+        "locked_at": "2026-07-12T19:54:12.216Z",
+        "response_sha256": "763ab380bca788e2c9299578a134802b92e8bcc6e7139e284579a1fbc6bc16c6",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "disposition_mismatch",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "accessibility",
+              "severity": "P1",
+              "summary": "The result does not explicitly preserve the expanded date-range disclosure as perceivable and operable."
+            }
+          ],
+          "authority_fit": false,
+          "escalation_correct": false,
+          "correction_operations": [
+            "Change boundary_decision from Adopt to Adapt so outcome aligns with expected disposition.",
+            "Keep name search as the default primary path and retain the existing in-page date-range filter as optional.",
+            "State the expanded date-range disclosure requirement explicitly and ensure the filter clear action preserves primary query behavior with accessible disclosure/focus semantics."
+          ],
+          "notes": "The normalized outcome is directionally aligned with name-first behavior and one-page optional filtering, but it does not match the required disposition and omits the explicit accessibility expectation for progressive disclosure state. The unresolved uncertainty and omitted explicit accessibility handling keep this from being fully acceptable."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "189def7f238fffe1ca7a15db4bd1e648",
+      "task_id": "EB-H-04",
+      "condition": "control",
+      "repetition": 1,
+      "reviewer_1": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "189def7f238fffe1ca7a15db4bd1e648",
+        "reviewer_id": "e3-outcome-reviewer-1",
+        "locked_at": "2026-07-12T19:54:08.260Z",
+        "response_sha256": "bb47b1c105dd28ad56dcdf21bd1523067b5928ee7283ffb5d35e570dfb022555",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "partial",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [
+            "Broaden retry rule from a globally single retry to: allow a single retry for each later failure, with state shown inline on the row."
+          ],
+          "notes": "The proposal aligns with inline adjacency intent and required states, preserves identity, and keeps to Adapt authority. It is missing the explicit boundary requirement to allow retrying again after a later/future failure, making completeness partial."
+        }
+      },
+      "reviewer_2": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "189def7f238fffe1ca7a15db4bd1e648",
+        "reviewer_id": "e3-outcome-reviewer-2",
+        "locked_at": "2026-07-12T19:54:34.100Z",
+        "response_sha256": "0eb31fa76576377147ae7523c096965dc39989f8fb851a7e37a2b7be781d1ceb",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "partial_fit",
+          "unsupported_expansion": 1,
+          "unsupported_user_concepts": 1,
+          "required_behavior_omission": 2,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [
+            "Allow retrying again after later failures instead of enforcing a single retry maximum.",
+            "Make retry state and completion feedback explicitly remain adjacent to the existing row.",
+            "Ensure progress/completion messaging is tied to that in-row retry action and not redirected to a separate job-status surface."
+          ],
+          "notes": "Proposal matches inline authority and avoids job-history/orchestration surfaces, but introduces a one-retry constraint that conflicts with required behavior and surfaces a restrictive retry concept. It also does not clearly guarantee the row-adjacent retry/status feedback requirement."
+        }
+      },
+      "adjudication": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "189def7f238fffe1ca7a15db4bd1e648",
+        "reviewer_id": "e3-fresh-score-adjudicator",
+        "locked_at": "2026-07-12T19:54:58.441Z",
+        "response_sha256": "0ebc8e31e30d879629a426524e3a84efc3acf188ed2cf1fec69443648253730d",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "partial",
+          "unsupported_expansion": 1,
+          "unsupported_user_concepts": 1,
+          "required_behavior_omission": 2,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [
+            "Remove the global single-attempt retry cap; allow a retry for each later failure of the failed row (while remaining inline).",
+            "Keep retry progress and completion feedback anchored to the existing row and do not route users to a separate job-status/jobhistory surface."
+          ],
+          "notes": "The proposal matches inline adaptation and preserves row identity/state, but it hard-codes a single retry total and does not fully satisfy the per-later-failure retry and explicit in-row feedback requirements."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "1d0628c92948e213888243d2395740e2",
+      "task_id": "EB-H-05",
+      "condition": "treatment",
+      "repetition": 1,
+      "reviewer_1": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "1d0628c92948e213888243d2395740e2",
+        "reviewer_id": "e3-outcome-reviewer-1",
+        "locked_at": "2026-07-12T19:55:26.261Z",
+        "response_sha256": "d5f4bb77b42f2a5b1636033b334141677923b389a33213e3e70bfdd605169a35",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "within_boundary",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "Outcome conforms to expected Avoid decision: it keeps Import CSV as the single visible primary empty-state action, preserves invalid-row backend feedback, and does not introduce any unsupported concepts or behaviors."
+        }
+      },
+      "reviewer_2": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "1d0628c92948e213888243d2395740e2",
+        "reviewer_id": "e3-outcome-reviewer-2",
+        "locked_at": "2026-07-12T19:55:53.569Z",
+        "response_sha256": "ce865a458b040ceec6fd5f64407c35c05595801a1e779dd61b0840307a468d2c",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "in_boundary",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "Normalized outcome matches the frozen truth: avoids menu-driven complexity for the single authorized action, keeps Import CSV visible, and elevates invalid-row feedback as the error affordance without introducing forbidden concepts."
+        }
+      },
+      "adjudication": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "1d0628c92948e213888243d2395740e2",
+        "reviewer_id": "e3-fresh-score-adjudicator",
+        "locked_at": "2026-07-12T19:56:16.507Z",
+        "response_sha256": "05dbc24a3ee8850ceeeca2aa521d2d38819fe1d03a32f628e44886887c215536",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "within_boundary",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "The outcome matches the frozen truth and expected Avoid disposition: single visible Import CSV action is preserved for empty-state recovery, invalid-row backend feedback is retained as primary error affordance, and no unsupported import extensions are introduced."
+        }
+      },
+      "evidence_score": {
+        "schema": "repo-harness-bdd2-locked-evidence-score.e3",
+        "packet_id": "1d0628c92948e213888243d2395740e2",
+        "reviewer_id": "e3-browser-evidence-reviewer",
+        "locked_at": "2026-07-12T19:56:38.357Z",
+        "response_sha256": "e5bb151c975f52d1f590c6cd0910a3a6fdc4d5c7a3b6545444bf40f915ed3a7f",
+        "score": {
+          "provenance_complete": true,
+          "question_bound": true,
+          "privacy_reviewed": true,
+          "adopt_adapt_avoid_complete": true,
+          "unsupported_assertion_count": 0,
+          "explicit_limitation_count": 4,
+          "feature_need_inference_count": 0,
+          "notes": "No unsupported assertions detected in the response; it consistently avoids speculative conclusions. Explicit limitations are preserved (4 items matching provided `unsupported_claims`), and no inference of user feature need is made from the screenshot."
+        }
+      }
+    },
+    {
+      "packet_id": "2d42327e78da3064140bfe65a94823a0",
+      "task_id": "EB-H-03",
+      "condition": "control",
+      "repetition": 2,
+      "reviewer_1": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "2d42327e78da3064140bfe65a94823a0",
+        "reviewer_id": "e3-outcome-reviewer-1",
+        "locked_at": "2026-07-12T19:54:12.701Z",
+        "response_sha256": "5ece68dd7428de22c781917b748fd040aedc03a632cf3663c7ceab4a8486132f",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "deviation",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 2,
+          "protected_concern_omissions": [
+            {
+              "concern": "accessibility",
+              "severity": "P1",
+              "summary": "Outcome does not state that disclosure state is accessible and operable."
+            }
+          ],
+          "authority_fit": false,
+          "escalation_correct": false,
+          "correction_operations": [
+            "Set boundary_decision to Adapt",
+            "Explicitly keep optional date-range as progressively disclosed while remaining on same page",
+            "Add/accessibility requirement so expanded state and active filter remain perceivable and operable"
+          ],
+          "notes": "Normalized outcome captures core name/date-clear behavior but misses progressive disclosure/accessibility requirements and selects a different boundary than expected."
+        }
+      },
+      "reviewer_2": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "2d42327e78da3064140bfe65a94823a0",
+        "reviewer_id": "e3-outcome-reviewer-2",
+        "locked_at": "2026-07-12T19:54:41.589Z",
+        "response_sha256": "034df3b9a991541786c2fe2dac5048862a54eff0fc565862fd6f828529176215",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "boundary_mismatch",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "accessibility",
+              "severity": "P1",
+              "summary": "Expanded-state accessibility/perceivability and active filter operability are not explicitly preserved in the proposal."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "correction_operations": [
+            "Change boundary_decision from Adopt to Adapt to match expected disposition.",
+            "Add explicit requirement that existing date range remains progressively disclosed/expandable.",
+            "Explicitly include accessible disclosure state and active filter visibility/operability guarantees."
+          ],
+          "notes": "Core required behaviors mostly align, but the proposal misses the expected boundary adaptation and does not state accessibility requirements for expanded state."
+        }
+      },
+      "adjudication": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "2d42327e78da3064140bfe65a94823a0",
+        "reviewer_id": "e3-fresh-score-adjudicator",
+        "locked_at": "2026-07-12T19:55:13.567Z",
+        "response_sha256": "8933907389290901a8f4514236910023599fede4ffdcc8601f0d780de92faf04",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "boundary_mismatch",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "accessibility",
+              "severity": "P1",
+              "summary": "Outcome does not explicitly ensure the disclosure state and active date filter state remain perceivable and operable when expanded."
+            }
+          ],
+          "authority_fit": false,
+          "escalation_correct": false,
+          "correction_operations": [
+            "Set boundary_decision to Adapt to match expected disposition.",
+            "Keep the existing optional date-range control progressively disclosed on the same page without introducing a mandatory flow.",
+            "Explicitly require the expanded disclosure state to be accessible and active filter status visible and operable.",
+            "Ensure clearing the date range restores the primary name-first search path without extra required steps."
+          ],
+          "notes": "Primary outcome behavior generally aligns with name-first search and optional date-range retention, but it misses the expected adaptation boundary and accessibility guarantees for the progressive-disclosure control."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "2d6f1758b9f5b6c790e13a93880024cf",
+      "task_id": "EB-H-01",
+      "condition": "control",
+      "repetition": 2,
+      "reviewer_1": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "2d6f1758b9f5b6c790e13a93880024cf",
+        "reviewer_id": "e3-outcome-reviewer-1",
+        "locked_at": "2026-07-12T19:52:23.323Z",
+        "response_sha256": "238df1e25d261617a8e6432fe55f8d2383a1e483db017055613ebe87ea11e171",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "adapt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "The proposal is well-aligned with the frozen truth: it keeps existing field-level messages and form/value behavior, adds linked multi-error navigation for keyboard/screen-reader users, and avoids unsupported design/flow changes. Boundary wording differs only in label ('Adapt' vs expected 'Adopt') but still satisfies required constraints."
+        }
+      },
+      "reviewer_2": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "2d6f1758b9f5b6c790e13a93880024cf",
+        "reviewer_id": "e3-outcome-reviewer-2",
+        "locked_at": "2026-07-12T19:52:47.413Z",
+        "response_sha256": "115f9f735dc380070cd9872e8b2db505c70b5aa9414e5b6fcbf5c748b88015b1",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "Adapt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": false,
+          "escalation_correct": false,
+          "correction_operations": [
+            "Set boundary decision to Adopt per expected disposition.",
+            "Use browser-adapter authority/reference alignment (GOV.UK-style error-summary pattern) rather than inline authority."
+          ],
+          "notes": "Proposal captures all required user-visible behaviors (single submission/value retention + linked, focusable summary mapping with preserved field-level messages), but its authority/boundary classification mismatches the frozen truth (expects adopt/browser-adapter)."
+        }
+      },
+      "adjudication": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "2d6f1758b9f5b6c790e13a93880024cf",
+        "reviewer_id": "e3-fresh-score-adjudicator",
+        "locked_at": "2026-07-12T19:53:09.914Z",
+        "response_sha256": "f5771b9561692f9634f3503f4c95211424ad050f0840e3c4488d7e976a87753e",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "Adopt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": false,
+          "escalation_correct": false,
+          "correction_operations": [
+            "Set boundary decision to Adopt to match expected disposition.",
+            "Use browser-adapter/GOV.UK-style authority alignment for the error summary pattern instead of inline-only authority framing."
+          ],
+          "notes": "The normalized outcome addresses all required behaviors and no unsupported expansions, and preserves existing form behavior, but its authority and boundary classification diverge from frozen truth; corrections are required for full alignment."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "3d16e3628c6bab85b883c95ac878f9cd",
+      "task_id": "EB-H-02",
+      "condition": "treatment",
+      "repetition": 1,
+      "reviewer_1": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "3d16e3628c6bab85b883c95ac878f9cd",
+        "reviewer_id": "e3-outcome-reviewer-1",
+        "locked_at": "2026-07-12T19:52:19.533Z",
+        "response_sha256": "9f581de1701fd2cee4cbc9a92506edd719e2058d5ea00a0f43465e5f2a7303ef",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "Adapt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 2,
+          "protected_concern_omissions": [
+            {
+              "concern": "authorization",
+              "severity": "P1",
+              "summary": "Proposed flow does not explicitly require success state to depend on backend revoke confirmation (no explicit backend-failure/result handling requirement)."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "correction_operations": [
+            "Change disposition to Adopt.",
+            "Add explicit token naming in the confirmation text.",
+            "Make Cancel the default action and require backend success to report completion; include backend failure messaging."
+          ],
+          "notes": "Proposal aligns with warning/destructive affordance and avoids forbidden concepts, but leaves two required truth behaviors unaddressed (default-cancel semantics and explicit backend-failure completion behavior), and does not match the expected Adopt disposition."
+        }
+      },
+      "reviewer_2": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "3d16e3628c6bab85b883c95ac878f9cd",
+        "reviewer_id": "e3-outcome-reviewer-2",
+        "locked_at": "2026-07-12T19:52:51.786Z",
+        "response_sha256": "85178d0a6639c9cce27833627bcbeedfba646a26a2b8e6ce6ed25a25a8fb79c9",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "Adaptation instead of required adoption",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 2,
+          "protected_concern_omissions": [
+            {
+              "concern": "completion only on backend success / failure visibility",
+              "severity": "P1",
+              "summary": "The proposal omits backend-success gating and failure reporting, so confirmation completion semantics can be misrepresented despite authorization checks being acknowledged."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "correction_operations": [
+            "Set boundary decision to Adopt per expected disposition.",
+            "Add explicit Cancel-as-default confirmation behavior.",
+            "Report backend failure and only mark completion after successful revoke response."
+          ],
+          "notes": "Proposal aligns with no-new-user-concept constraints and irreversibility messaging but partially misses mandatory confirmation mechanics and backend completion handling."
+        }
+      },
+      "adjudication": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "3d16e3628c6bab85b883c95ac878f9cd",
+        "reviewer_id": "e3-fresh-score-adjudicator",
+        "locked_at": "2026-07-12T19:53:16.227Z",
+        "response_sha256": "9029c8d0be12a5566e441819203d7a90986126ae40b82381b2a38aa8a0e36839",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "Adapt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 2,
+          "protected_concern_omissions": [
+            {
+              "concern": "authorization",
+              "severity": "P1",
+              "summary": "Proposal does not require completion semantics to be tied to successful backend revoke response, so it can overstate completion before backend confirmation."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "correction_operations": [
+            "Set boundary decision to Adopt to match expected disposition.",
+            "Make Cancel the default action in confirmation and require explicit destructive confirmation.",
+            "Name the selected token and state permanence in confirmation copy.",
+            "Report backend revoke failure and only mark completion when backend revoke succeeds."
+          ],
+          "notes": "Primary gap is missing cancellation-default behavior and backend-success/failure completion semantics, with boundary decision not raised to expected Adopt despite otherwise matching authority and staying within supported concepts."
+        }
+      },
+      "evidence_score": {
+        "schema": "repo-harness-bdd2-locked-evidence-score.e3",
+        "packet_id": "3d16e3628c6bab85b883c95ac878f9cd",
+        "reviewer_id": "e3-browser-evidence-reviewer",
+        "locked_at": "2026-07-12T19:53:42.180Z",
+        "response_sha256": "c5ec98768e2bba8a57372d0269d5781c7a3f80a4687014d50a0eb67edaee07a5",
+        "score": {
+          "provenance_complete": true,
+          "question_bound": true,
+          "privacy_reviewed": false,
+          "adopt_adapt_avoid_complete": true,
+          "unsupported_assertion_count": 0,
+          "explicit_limitation_count": 3,
+          "feature_need_inference_count": 0,
+          "notes": "Response stays aligned to appendix authority and adopts/avoids claims appropriately; it does not introduce unsupported facts. Explicitly preserves three limitation statements (cannot prove destructive requirement, color-only signaling, or omission of consequence/recovery wording)."
+        }
+      }
+    },
+    {
+      "packet_id": "58466abf2144e13d68da45d7615bc67b",
+      "task_id": "EB-H-04",
+      "condition": "treatment",
+      "repetition": 2,
+      "reviewer_1": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "58466abf2144e13d68da45d7615bc67b",
+        "reviewer_id": "e3-outcome-reviewer-1",
+        "locked_at": "2026-07-12T19:54:08.339Z",
+        "response_sha256": "2367a81cd58ef0b5e785306339d54f752434a01fd920cb6e4aff0de08ac4e526",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "Adapt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [
+            "Preserve row-level affordance but allow another retry cycle after a later failure, while keeping filename and status state in-row."
+          ],
+          "notes": "The adaptation is mostly aligned with the frozen truth, including row-adjacent state, inline feedback states, and filename preservation. One required boundary item is incomplete because the proposal phrases retry as a single authorized retry and does not explicitly permit retry-after-later-failure. Evidence claims are correctly constrained to supported scope."
+        }
+      },
+      "reviewer_2": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "58466abf2144e13d68da45d7615bc67b",
+        "reviewer_id": "e3-outcome-reviewer-2",
+        "locked_at": "2026-07-12T19:54:41.833Z",
+        "response_sha256": "10909fc6a20e8c83a7c6983cdfde8c388cf7a11f4f8aa27a466a9ce832c091d9",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "Adapt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [
+            "Add explicit support for retry availability after a later retry-cycle failure while keeping scope single-row and bounded; avoid interpreting this as unlimited retries."
+          ],
+          "notes": "Proposal matches the inline Adapt disposition, keeps filename and adjacent row feedback, and avoids forbidden inferential expansions."
+        }
+      },
+      "adjudication": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "58466abf2144e13d68da45d7615bc67b",
+        "reviewer_id": "e3-fresh-score-adjudicator",
+        "locked_at": "2026-07-12T19:55:05.753Z",
+        "response_sha256": "e6c2e7b56020cf8fe72b7f1859462145ee7c5f302292d661b2a0bb97cc18b9c4",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "Adapt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [
+            "Allow one-row retry affordance to re-enable after a later failure within the same row context; keep scope single-row and bounded and do not imply unlimited retries."
+          ],
+          "notes": "The outcome largely fits the truth and keeps inline, row-adjacent feedback for retry state, preserves filename, and avoids forbidden extrapolations. One required behavior remains incomplete: explicitly allowing another retry after a subsequent failure."
+        }
+      },
+      "evidence_score": {
+        "schema": "repo-harness-bdd2-locked-evidence-score.e3",
+        "packet_id": "58466abf2144e13d68da45d7615bc67b",
+        "reviewer_id": "e3-browser-evidence-reviewer",
+        "locked_at": "2026-07-12T19:55:38.788Z",
+        "response_sha256": "03eba5f2c8b9a8442786ea4a61c969ca2043441e599964da47103202b6439840",
+        "score": {
+          "provenance_complete": true,
+          "question_bound": true,
+          "privacy_reviewed": true,
+          "adopt_adapt_avoid_complete": true,
+          "unsupported_assertion_count": 0,
+          "explicit_limitation_count": 4,
+          "feature_need_inference_count": 0,
+          "notes": "No unsupported factual claims found beyond the appendix; uncertainty handling is explicitly preserved for duration, retry-policy breadth, job architecture, and need for status page. No inferred feature demand from screenshot."
+        }
+      }
+    },
+    {
+      "packet_id": "5c31241177ae548468bb0d4b587c1e5b",
+      "task_id": "EB-H-02",
+      "condition": "control",
+      "repetition": 2,
+      "reviewer_1": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "5c31241177ae548468bb0d4b587c1e5b",
+        "reviewer_id": "e3-outcome-reviewer-1",
+        "locked_at": "2026-07-12T19:52:19.867Z",
+        "response_sha256": "ae45268b3bf58946a93b4e51405053a1c749cf7f5290bcef5db827f2c823c650",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "Adopt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 3,
+          "protected_concern_omissions": [
+            {
+              "concern": "authorization",
+              "severity": "P1",
+              "summary": "Outcome includes ownership enforcement but does not specify that completion/feedback is contingent on backend success and surfaced backend errors; it lacks explicit failure-reporting in flow completion."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [
+            "Name the selected token in the revoke confirmation surface.",
+            "Require cancel as the default path for the confirmation action.",
+            "Show and require handling of backend failure before marking completion."
+          ],
+          "notes": "Outcome matches Adopt intent and covers permanence/ownership and explicit confirmation, but omits token identification, default-cancel behavior, and backend-failure reporting required by truth."
+        }
+      },
+      "reviewer_2": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "5c31241177ae548468bb0d4b587c1e5b",
+        "reviewer_id": "e3-outcome-reviewer-2",
+        "locked_at": "2026-07-12T19:52:49.184Z",
+        "response_sha256": "8a85db08e5ca2268e43a14f5a639cd777f9bcf7ab5da252a86e26abbfc181b93",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "partial_adoption",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 3,
+          "protected_concern_omissions": [
+            {
+              "concern": "authorization",
+              "severity": "P1",
+              "summary": "Outcome covers ownership intent but does not require completion only after backend success; backend failure reporting is missing, so it could claim completion before confirmation from server."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [
+            "Add explicit token naming in confirmation.",
+            "Set cancel as the default action in the destructive confirmation surface.",
+            "Report backend revocation failures and only consider revocation complete after backend success."
+          ],
+          "notes": "Outcome aligns with Adopt decision and confirms irreversibility, but misses three required boundary behaviors: naming the token, making cancel the default, and explicitly reporting backend failures. No unsupported concept expansion detected."
+        }
+      },
+      "adjudication": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "5c31241177ae548468bb0d4b587c1e5b",
+        "reviewer_id": "e3-fresh-score-adjudicator",
+        "locked_at": "2026-07-12T19:53:19.623Z",
+        "response_sha256": "646474a82391d952b249037146176680822c4a2b49f419b1d291b1f73b63d41c",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "partial_adoption",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 3,
+          "protected_concern_omissions": [
+            {
+              "concern": "authorization",
+              "severity": "P1",
+              "summary": "Ownership is acknowledged, but completion handling can still imply success before backend confirmation if backend failures are not surfaced before finalizing the flow."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [
+            "Name the selected token in the revoke confirmation surface.",
+            "Set cancel as the default action for the confirmation choice.",
+            "Report backend revocation failures and only mark revoke as complete after successful backend confirmation."
+          ],
+          "notes": "Outcome aligns with adopt direction and permanence constraints, but misses three required boundary behaviors from the frozen truth: explicit token identification, default-cancel semantics, and explicit backend-failure reporting/gating."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "7b711309014df7a86383e86dc7b6a312",
+      "task_id": "EB-H-06",
+      "condition": "treatment",
+      "repetition": 1,
+      "reviewer_1": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "7b711309014df7a86383e86dc7b6a312",
+        "reviewer_id": "e3-outcome-reviewer-1",
+        "locked_at": "2026-07-12T19:56:08.286Z",
+        "response_sha256": "97d684c7a50deeb1ddafb18cce53c3f88fe641286432ae3bc36a44be5a69b919",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "Avoid",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "Proposal matches the required in-place single-item rename flow, includes validation and failure recovery semantics, and explicitly avoids dense-table/table-like interactions."
+        }
+      },
+      "reviewer_2": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "7b711309014df7a86383e86dc7b6a312",
+        "reviewer_id": "e3-outcome-reviewer-2",
+        "locked_at": "2026-07-12T19:56:33.834Z",
+        "response_sha256": "2494e88e3e3013b3311ddf3ad64397edcbd35830f28bffd28180b367957f0c6e",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "Avoid",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "The normalized outcome is aligned with the truth: it keeps the task in an avoid table-controls branch, focuses on short-list in-place single-item rename, validates input, and preserves state/name on save failure (including retry/cancel recovery). No unsupported table-oriented concepts are introduced."
+        }
+      },
+      "adjudication": null,
+      "evidence_score": {
+        "schema": "repo-harness-bdd2-locked-evidence-score.e3",
+        "packet_id": "7b711309014df7a86383e86dc7b6a312",
+        "reviewer_id": "e3-browser-evidence-reviewer",
+        "locked_at": "2026-07-12T19:56:54.933Z",
+        "response_sha256": "c56973521b219234f6b978eb130e3467d3a5d5ee8d6172371045b0b659d70253",
+        "score": {
+          "provenance_complete": true,
+          "question_bound": true,
+          "privacy_reviewed": true,
+          "adopt_adapt_avoid_complete": true,
+          "unsupported_assertion_count": 0,
+          "explicit_limitation_count": 2,
+          "feature_need_inference_count": 0,
+          "notes": "No unsupported assertions detected; all claims are constrained by the appendix/truth boundary. Explicit limitations are the two stated unknown/cannot-prove conditions in unsupported claims. No additional feature-need inferences were made from screenshot evidence beyond applying the known short-list/rich-table boundary."
+        }
+      }
+    },
+    {
+      "packet_id": "7c9bf3d8b39395e59c17636bd6969b32",
+      "task_id": "EB-H-01",
+      "condition": "treatment",
+      "repetition": 1,
+      "reviewer_1": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "7c9bf3d8b39395e59c17636bd6969b32",
+        "reviewer_id": "e3-outcome-reviewer-1",
+        "locked_at": "2026-07-12T19:52:18.577Z",
+        "response_sha256": "126e2a716a067a1e221a2170fecf7abb852c667c9188377f329cca751aafcc9a",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "Adopt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "Outcome matches the required boundary exactly: keeps field-level errors and adds a linked, keyboard/screen-reader-friendly summary while preserving values. It does not introduce forbidden concepts."
+        }
+      },
+      "reviewer_2": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "7c9bf3d8b39395e59c17636bd6969b32",
+        "reviewer_id": "e3-outcome-reviewer-2",
+        "locked_at": "2026-07-12T19:52:47.640Z",
+        "response_sha256": "160a5f61f6200f8e03692304d95778af73c931ef19861a524f40f4e246bd53eb",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "adopt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "Proposal matches expected-adopt pattern: linked page-level summary plus retained inline field errors, keyboard/screen-reader accessible navigation, and preserved entered data. No protected-concern or boundary violations detected."
+        }
+      },
+      "adjudication": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "7c9bf3d8b39395e59c17636bd6969b32",
+        "reviewer_id": "e3-fresh-score-adjudicator",
+        "locked_at": "2026-07-12T19:53:10.155Z",
+        "response_sha256": "1e298f9bbc21905034e0828d88337a803ac1a4edce95a55d614b251862fd7e10",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "Adopt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "Outcome aligns with the frozen truth: existing form behavior is retained, field-level errors stay in place, one linked page-level summary is added for multi-field failures, entered values are preserved, and keyboard/screen-reader access is explicitly required without any forbidden expansion."
+        }
+      },
+      "evidence_score": {
+        "schema": "repo-harness-bdd2-locked-evidence-score.e3",
+        "packet_id": "7c9bf3d8b39395e59c17636bd6969b32",
+        "reviewer_id": "e3-browser-evidence-reviewer",
+        "locked_at": "2026-07-12T19:53:34.713Z",
+        "response_sha256": "6553c9f41ec4014a43b5e29cec1b7a2428bb92cfd067f6507dd15bbba32fc567",
+        "score": {
+          "provenance_complete": true,
+          "question_bound": true,
+          "privacy_reviewed": true,
+          "adopt_adapt_avoid_complete": true,
+          "unsupported_assertion_count": 0,
+          "explicit_limitation_count": 3,
+          "feature_need_inference_count": 0,
+          "notes": "No unsupported conclusions identified; three explicit uncertainty/limitation statements are preserved and mapped to appendix constraints; no screenshot-based feature-need inference beyond explicitly bounded multi-field applicability."
+        }
+      }
+    },
+    {
+      "packet_id": "8e623b6658e9219b4b84199c6a3acc36",
+      "task_id": "EB-H-02",
+      "condition": "treatment",
+      "repetition": 2,
+      "reviewer_1": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "8e623b6658e9219b4b84199c6a3acc36",
+        "reviewer_id": "e3-outcome-reviewer-1",
+        "locked_at": "2026-07-12T19:52:11.835Z",
+        "response_sha256": "8ca58103260f7e75b63305ce64aa695e9687a51813754c2be9de51b6f25f12d3",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "Adapt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 3,
+          "protected_concern_omissions": [
+            {
+              "concern": "authorization",
+              "severity": "P1",
+              "summary": "The proposal does not preserve or surface the required completion constraint that success should only be confirmed after backend revoke succeeds while ensuring owner-restricted confirmation."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "correction_operations": [
+            "Set boundary disposition to Adopt (no adaptation for this expectation).",
+            "Include the token name in the confirmation content.",
+            "Make Cancel the default action in the destructive-confirm surface.",
+            "Only mark completion on backend success and report backend failure explicitly in the flow."
+          ],
+          "notes": "The proposal aligns on warning/pattern direction and does not add forbidden concepts, but it misses multiple required boundary behaviors and deviates from expected Adopt."
+        }
+      },
+      "reviewer_2": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "8e623b6658e9219b4b84199c6a3acc36",
+        "reviewer_id": "e3-outcome-reviewer-2",
+        "locked_at": "2026-07-12T19:52:48.749Z",
+        "response_sha256": "6e7fd293d565eb73f64160e0eb66d9f36f2db0fa21ef5590478abb6fc44ca6f7",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "Adapt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 3,
+          "protected_concern_omissions": [
+            {
+              "concern": "authorization",
+              "severity": "P1",
+              "summary": "Proposal does not explicitly require owner-only confirmation and does not tie completion reporting to backend revocation success."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "correction_operations": [
+            "Change disposition from Adapt to Adopt per truth.",
+            "Add explicit token-identifying text in the confirmation (token name).",
+            "Set Cancel as the default action in the confirmation surface.",
+            "Display backend failure states explicitly and only mark completion after successful revocation."
+          ],
+          "notes": "No forbidden expansions were introduced; concept scope remains minimal and recovery-only messaging is avoided. Main gaps are omitted token naming, cancel-default affordance, and backend failure handling, and the required disposition is not met."
+        }
+      },
+      "adjudication": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "8e623b6658e9219b4b84199c6a3acc36",
+        "reviewer_id": "e3-fresh-score-adjudicator",
+        "locked_at": "2026-07-12T19:53:18.229Z",
+        "response_sha256": "7e8e6c9cdfda91e3acd7f977959ec436ca79b8287fe93c46ee1f85187860b05b",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "Adapt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 3,
+          "protected_concern_omissions": [
+            {
+              "concern": "authorization",
+              "severity": "P1",
+              "summary": "The proposal does not make owner-only authorization and backend-complete confirmation explicit in the irreversible revoke flow."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "correction_operations": [
+            "Set boundary disposition to Adopt to match required permanent-revoke confirmation expectations.",
+            "Include the token name in confirmation copy and state revocation permanence in plain language.",
+            "Make Cancel the default action and use a single explicit destructive revoke action label.",
+            "Only mark completion after backend revocation succeeds and surface backend failure states clearly."
+          ],
+          "notes": "The outcome correctly avoids extra concepts and keeps scope aligned, but it remains a partial adaptation: token identification, default-cancel affordance, and backend-success-gated completion/error reporting are missing, and owner-only confirmation success constraints are not explicit."
+        }
+      },
+      "evidence_score": {
+        "schema": "repo-harness-bdd2-locked-evidence-score.e3",
+        "packet_id": "8e623b6658e9219b4b84199c6a3acc36",
+        "reviewer_id": "e3-browser-evidence-reviewer",
+        "locked_at": "2026-07-12T19:53:44.438Z",
+        "response_sha256": "e1973077092922e86ce2444d9ff943244deacd3bae43c4b98599028d39d2886e",
+        "score": {
+          "provenance_complete": true,
+          "question_bound": true,
+          "privacy_reviewed": true,
+          "adopt_adapt_avoid_complete": true,
+          "unsupported_assertion_count": 0,
+          "explicit_limitation_count": 3,
+          "feature_need_inference_count": 0,
+          "notes": "No unsupported assertions found; explicit uncertainty/limitations are preserved, and privacy handling is acknowledged."
+        }
+      }
+    },
+    {
+      "packet_id": "9f4618aa67066fd87f5946fe01fcd42f",
+      "task_id": "EB-H-05",
+      "condition": "treatment",
+      "repetition": 2,
+      "reviewer_1": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "9f4618aa67066fd87f5946fe01fcd42f",
+        "reviewer_id": "e3-outcome-reviewer-1",
+        "locked_at": "2026-07-12T19:55:18.891Z",
+        "response_sha256": "0d17ffc64b2ad1b9d528a1b40ce4b1f4075e5753d56cf27e311da0aa7a6713dc",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "Avoid",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "Proposal behavior matches the frozen truth: single visible Import CSV action, avoidance of dropdown-only one-action containers, and actionable invalid-row handling without hiding the authorized action."
+        }
+      },
+      "reviewer_2": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "9f4618aa67066fd87f5946fe01fcd42f",
+        "reviewer_id": "e3-outcome-reviewer-2",
+        "locked_at": "2026-07-12T19:55:43.301Z",
+        "response_sha256": "8f33def54030c645b5d9872d0b63a014054dd6d2228345acc46e84bb3b84d15f",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "Avoid",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "No unsupported additions; all truth-required boundary behaviors are preserved. Invalid-row integrity is maintained without hiding the primary action."
+        }
+      },
+      "adjudication": null,
+      "evidence_score": {
+        "schema": "repo-harness-bdd2-locked-evidence-score.e3",
+        "packet_id": "9f4618aa67066fd87f5946fe01fcd42f",
+        "reviewer_id": "e3-browser-evidence-reviewer",
+        "locked_at": "2026-07-12T19:56:06.801Z",
+        "response_sha256": "47d17124af8df043cb55f700d3ef19546627894eed7bb4dcd99eaa869282a708",
+        "score": {
+          "provenance_complete": true,
+          "question_bound": true,
+          "privacy_reviewed": false,
+          "adopt_adapt_avoid_complete": true,
+          "unsupported_assertion_count": 0,
+          "explicit_limitation_count": 2,
+          "feature_need_inference_count": 0,
+          "notes": "No unsupported claims identified against appendix/truth; two explicit limitations are preserved from lack-of-proof statements (discoverability and future-extensibility). Privacy was not explicitly addressed in the response text."
+        }
+      }
+    },
+    {
+      "packet_id": "ac0ae877ea209f53c0d176c38b101eb9",
+      "task_id": "EB-H-03",
+      "condition": "treatment",
+      "repetition": 1,
+      "reviewer_1": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "ac0ae877ea209f53c0d176c38b101eb9",
+        "reviewer_id": "e3-outcome-reviewer-1",
+        "locked_at": "2026-07-12T19:53:39.289Z",
+        "response_sha256": "bb5cd70d19166eb8cc8ce41cd316a8ccac5a7256ec5378092b9d6e4f475b4a33",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "adapted",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "Normalized proposal aligns with required adaptation behavior: keeps name search as primary, uses disclosure only for optional content, keeps filter state/clear controls visible outside collapsed regions, and avoids introducing forbidden concepts. Accessibility concern is addressed by preserving perceivable state and recovery path."
+        }
+      },
+      "reviewer_2": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "ac0ae877ea209f53c0d176c38b101eb9",
+        "reviewer_id": "e3-outcome-reviewer-2",
+        "locked_at": "2026-07-12T19:54:07.218Z",
+        "response_sha256": "959be824c11f25390f3bfc5013650a52516baf6983874cbffca1a46a17821859",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "aligned",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "Outcome keeps the required core behavior in view: name search remains primary, date-range filtering is treated as optional/secondary disclosure, and clear/state recovery is preserved outside collapsed content. No forbidden new concepts are introduced."
+        }
+      },
+      "adjudication": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "ac0ae877ea209f53c0d176c38b101eb9",
+        "reviewer_id": "e3-fresh-score-adjudicator",
+        "locked_at": "2026-07-12T19:54:31.320Z",
+        "response_sha256": "f003509360ddae20b6f3afdd26f5af918a4be323f19e576e5892688d2e3ad5c2",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "adapted",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "Outcome is consistent with Adapt: preserves required primary search behavior, applies disclosure only to optional secondary content, keeps active filter state and clear/recovery actions always visible, and introduces no unsupported concepts."
+        }
+      },
+      "evidence_score": {
+        "schema": "repo-harness-bdd2-locked-evidence-score.e3",
+        "packet_id": "ac0ae877ea209f53c0d176c38b101eb9",
+        "reviewer_id": "e3-browser-evidence-reviewer",
+        "locked_at": "2026-07-12T19:54:56.646Z",
+        "response_sha256": "852ba195fcb91b117160b0a611e86bc4cb973467404480e995b3cfc66b959d81",
+        "score": {
+          "provenance_complete": true,
+          "question_bound": true,
+          "privacy_reviewed": true,
+          "adopt_adapt_avoid_complete": true,
+          "unsupported_assertion_count": 0,
+          "explicit_limitation_count": 3,
+          "feature_need_inference_count": 0,
+          "notes": "No unsupported factual conclusions found; the response explicitly preserves three unsupported limitations (accordion necessity, advanced filter requirement, hiding selected state safety), and it stays aligned to Adapt disposition and required boundary constraints with no inferred feature-demand from screenshot."
+        }
+      }
+    },
+    {
+      "packet_id": "aeaf7256bc44e6ad1330e4dcf737b4c7",
+      "task_id": "EB-H-06",
+      "condition": "control",
+      "repetition": 1,
+      "reviewer_1": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "aeaf7256bc44e6ad1330e4dcf737b4c7",
+        "reviewer_id": "e3-outcome-reviewer-1",
+        "locked_at": "2026-07-12T19:55:34.101Z",
+        "response_sha256": "82560de7c525f249281b945a315e51c4157b66e8992550ef3960b21a30ed1900",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "Avoid",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "correction_operations": [
+            "Set boundary_decision to Avoid to match expected_disposition.",
+            "Explicitly exclude dense data-table behaviors (column configuration, sorting, batch actions, pagination, filters, selection, administration)."
+          ],
+          "notes": "The proposed outcome covers required rename flow, in-place behavior, validation, and failure-state handling, and does not introduce forbidden controls in its explicit behaviors. The only scoring issue is boundary mismatch: expected disposition is Avoid while boundary_decision is Adopt."
+        }
+      },
+      "reviewer_2": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "aeaf7256bc44e6ad1330e4dcf737b4c7",
+        "reviewer_id": "e3-outcome-reviewer-2",
+        "locked_at": "2026-07-12T19:56:00.536Z",
+        "response_sha256": "5bf80c7f15cc33a6c2cd30b826c7c49d74f0c0ea32bd403ca8cdb4225237bf7e",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "adopt_vs_expected_avoid",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": false,
+          "escalation_correct": false,
+          "correction_operations": [
+            "Set boundary_decision to Avoid to match expected_disposition.",
+            "Avoid adopting dense table-like controls and keep only the simple single-view in-place rename list flow.",
+            "Preserve existing name on save-failure behavior while keeping retry state."
+          ],
+          "notes": "Required rename validation and save-failure handling are present, but the decision is over-assertive (Adopt) despite the truth requiring Avoid for dense-table/bulk-table patterns; this is a boundary and escalation mismatch."
+        }
+      },
+      "adjudication": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "aeaf7256bc44e6ad1330e4dcf737b4c7",
+        "reviewer_id": "e3-fresh-score-adjudicator",
+        "locked_at": "2026-07-12T19:56:21.228Z",
+        "response_sha256": "78d2efdac9116ea4238ebe87718eb783f65f6f2fd5ad561fe6a475b13487fadb",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "Avoid",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [
+            "Set boundary_decision from Adopt to Avoid to match expected_disposition.",
+            "Exclude dense table-style controls (column configuration, sorting, batch actions, pagination, filters, selection, administration) and keep only the simple single-view in-place rename list flow.",
+            "Preserve prior saved-view state on rename save failure (keep old name active until persistence succeeds)."
+          ],
+          "notes": "Boundary is the only miss against truth: required rename flow, in-place behavior, name validation, and save-failure trust/recovery handling are present and align with protected concerns; dense-table patterns remain excluded."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "b76280637c2dfd73805495a9fd5e9168",
+      "task_id": "EB-H-06",
+      "condition": "control",
+      "repetition": 2,
+      "reviewer_1": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "b76280637c2dfd73805495a9fd5e9168",
+        "reviewer_id": "e3-outcome-reviewer-1",
+        "locked_at": "2026-07-12T19:55:40.912Z",
+        "response_sha256": "fe750c6ff59ba003abc1797cba9483e25d45760a37ae9f669cf3956711ae9665",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "boundary_mismatch",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "recovery",
+              "severity": "P1",
+              "summary": "Proposal preserves the attempted name/context on failure but does not require preserving the prior saved-view name."
+            }
+          ],
+          "authority_fit": false,
+          "escalation_correct": false,
+          "correction_operations": [
+            "Set boundary_decision to Avoid to match expected disposition for a simple list.",
+            "Add an explicit requirement to avoid dense data-table behavior (sorting, bulk selection, pagination, filters, overflow/admin actions).",
+            "Preserve and retain the prior saved-view name when rename save fails, while keeping retry path functional."
+          ],
+          "notes": "Core rename/list/validation behavior is present, but the boundary decision is incorrect and recovery semantics diverge on the required old-name preservation guarantee."
+        }
+      },
+      "reviewer_2": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "b76280637c2dfd73805495a9fd5e9168",
+        "reviewer_id": "e3-outcome-reviewer-2",
+        "locked_at": "2026-07-12T19:56:10.621Z",
+        "response_sha256": "2c9ec19135de35a2c46763d1665fa32bb2ab3d3e1baccb3a8aa8654aa9e3765c",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "boundary_mismatch",
+          "unsupported_expansion": 1,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "recovery",
+              "severity": "P1",
+              "summary": "Recovery behavior prioritizes preserving attempted input, but the frozen truth requires preserving the prior saved-view name on failed rename."
+            }
+          ],
+          "authority_fit": false,
+          "escalation_correct": false,
+          "correction_operations": [
+            "Set boundary_decision to Avoid to align with expected disposition against dense-table-style controls.",
+            "Remove any implied expansion toward dense table toolbar/bulk selection/sorting/overflow-style behavior.",
+            "Ensure failed rename preserves the existing saved-view name (while still allowing retry), not replacement or duplication."
+          ],
+          "notes": "Main mismatch is boundary: proposal adopts what truth says to avoid. Also misses the specific protected requirement to preserve prior saved-view name on failure."
+        }
+      },
+      "adjudication": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "b76280637c2dfd73805495a9fd5e9168",
+        "reviewer_id": "e3-fresh-score-adjudicator",
+        "locked_at": "2026-07-12T19:56:42.619Z",
+        "response_sha256": "e8ab09741ad7af32b674b82dd0e62be31874073039c7cb30699a7a2a8b841ce6",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "boundary_mismatch",
+          "unsupported_expansion": 1,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "recovery",
+              "severity": "P1",
+              "summary": "On rename failure, the prior saved-view name must be preserved; proposal only preserves attempted input/context."
+            }
+          ],
+          "authority_fit": false,
+          "escalation_correct": false,
+          "correction_operations": [
+            "Set boundary_decision to Avoid and align with expected simple-list scope.",
+            "Explicitly forbid dense data-table behaviors (sorting, bulk selection, pagination, filters, column configuration, overflow/admin actions).",
+            "On failed rename, keep and display the existing saved-view name while allowing retry with an explicit failure message."
+          ],
+          "notes": "Primary issues are boundary misclassification and failed-rename recovery semantics; required recovery guarantee from frozen truth is not met."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "ca27e004c94ef8beb3cf2d69860721e5",
+      "task_id": "EB-H-05",
+      "condition": "control",
+      "repetition": 2,
+      "reviewer_1": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "ca27e004c94ef8beb3cf2d69860721e5",
+        "reviewer_id": "e3-outcome-reviewer-1",
+        "locked_at": "2026-07-12T19:55:14.670Z",
+        "response_sha256": "90bc111c1a73e4eec408dba17279395828ec58cfc4dbdf8f4f4ca531ad9bf67f",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "mismatch_with_truth_disposition",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": false,
+          "escalation_correct": false,
+          "correction_operations": [
+            "Change boundary_decision from Adopt to Avoid.",
+            "Keep one visible Import CSV action and preserve explicit invalid-row failure visibility."
+          ],
+          "notes": "The proposal matches required user-facing behavior, but it applies the wrong boundary/disposition and does not satisfy the expected Avoid outcome."
+        }
+      },
+      "reviewer_2": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "ca27e004c94ef8beb3cf2d69860721e5",
+        "reviewer_id": "e3-outcome-reviewer-2",
+        "locked_at": "2026-07-12T19:55:40.422Z",
+        "response_sha256": "a89859b97053648fdcecde24546cc1ea3e125ed0a1d633229a7ef77eb394b213",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "mismatch",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "correction_operations": [
+            "Set boundary_decision to Avoid to align with expected_disposition for the uncertainty"
+          ],
+          "notes": "Required import behavior and invalid-row handling are captured and no forbidden concept is added, but the chosen boundary decision conflicts with the expected disposition."
+        }
+      },
+      "adjudication": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "ca27e004c94ef8beb3cf2d69860721e5",
+        "reviewer_id": "e3-fresh-score-adjudicator",
+        "locked_at": "2026-07-12T19:56:04.035Z",
+        "response_sha256": "e975b83ffef4b72ed1cf2cb2239e483a84b8636bd5d46f13680755d2d991fbf6",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "mismatch_with_truth_disposition",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [
+            "Set boundary_decision from Adopt to Avoid to align with expected_disposition/expected truth.",
+            "Retain single visible Import CSV action and explicit invalid-row validation-failure state."
+          ],
+          "notes": "Outcome is conceptually aligned with the truth, but requires boundary correction to Avoid for the uncertainty pattern; no unsupported expansions, omissions, or protected concerns are present."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "ca7be73da680d98fe1e20cb200a548bc",
+      "task_id": "EB-H-04",
+      "condition": "control",
+      "repetition": 2,
+      "reviewer_1": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "ca7be73da680d98fe1e20cb200a548bc",
+        "reviewer_id": "e3-outcome-reviewer-1",
+        "locked_at": "2026-07-12T19:53:58.518Z",
+        "response_sha256": "d565dd4c69d1998ee3606973ae9c87155dcd7579604a4286629f05c2b7b9cc78",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "mismatch: Adopt instead of Adapt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 2,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "correction_operations": [
+            "Set boundary decision to Adapt.",
+            "Make retry state explicitly adjacent to the existing row and avoid navigation to job-status pages.",
+            "Clarify that after a subsequent retry failure, retry can be offered again (one retry per failure)."
+          ],
+          "notes": "Core behavior aligns with preserving filename and status values, but it does not explicitly satisfy the adjacency requirement or the later-failure retry expectation, and the boundary decision does not match expected disposition."
+        }
+      },
+      "reviewer_2": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "ca7be73da680d98fe1e20cb200a548bc",
+        "reviewer_id": "e3-outcome-reviewer-2",
+        "locked_at": "2026-07-12T19:54:25.184Z",
+        "response_sha256": "3f7131b00e05e18efdf611dbb40aedf3c4d9ab4bee0905237a28cdda0226b073",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "partial",
+          "unsupported_expansion": 1,
+          "unsupported_user_concepts": 1,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "correction_operations": [
+            "Align retry policy with the truth requirement to allow retrying again after a later failure, instead of enforcing a one-retry cap.",
+            "Make adjacency explicit by stating retry controls/status remain inline on the existing row rather than only describing row-level scope. ",
+            "Match required disposition: propose Adapt rather than Adopt when behavior needs adjustment from the reference. "
+          ],
+          "notes": "The outcome mostly matches scoped, row-level inline recovery behavior and preserves filename/state visibility, but it over-constrains retrying by asserting exactly one retry and flags a boundary-decision mismatch versus the expected Adapt. This also introduces a potentially unsupported 'single-retry action' emphasis not present in the frozen boundary."
+        }
+      },
+      "adjudication": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "ca7be73da680d98fe1e20cb200a548bc",
+        "reviewer_id": "e3-fresh-score-adjudicator",
+        "locked_at": "2026-07-12T19:54:47.334Z",
+        "response_sha256": "13eb2b991694d15832225d6bb923d049cd2e065d5a11f6a2f42cc409d8c690e6",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "mismatch: expected Adapt",
+          "unsupported_expansion": 1,
+          "unsupported_user_concepts": 1,
+          "required_behavior_omission": 2,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "correction_operations": [
+            "Set boundary decision to Adapt.",
+            "Replace the exact one-retry cap with retry-once-per-failure behavior so a later failure can be retried again.",
+            "Make retry controls and progress/completion feedback explicitly adjacent to the existing export row (no separate job-status page).",
+            "Remove unsupported 'single-retry action' framing and keep all unsupported inference controls (history/orchestration/queue/background controls) out of scope."
+          ],
+          "notes": "Outcome aligns on filename preservation and row-level status visibility but overconstrains retry policy and omits the explicit adjacency requirement; these are the key divergences from the frozen truth and expected Adaptation boundary."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "d19f4e87163f1460d6af990e62cbed30",
+      "task_id": "EB-H-01",
+      "condition": "treatment",
+      "repetition": 2,
+      "reviewer_1": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "d19f4e87163f1460d6af990e62cbed30",
+        "reviewer_id": "e3-outcome-reviewer-1",
+        "locked_at": "2026-07-12T19:52:08.737Z",
+        "response_sha256": "e0c6812bdf538f5832ec59ca8f3c9018bf67ca2a841e17122230f6d8619cf8a1",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "Adopt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "Normalized outcome is consistent with the truth: adopt a linked multi-field error summary while retaining existing form behavior, field-level errors, and recovery context."
+        }
+      },
+      "reviewer_2": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "d19f4e87163f1460d6af990e62cbed30",
+        "reviewer_id": "e3-outcome-reviewer-2",
+        "locked_at": "2026-07-12T19:52:32.515Z",
+        "response_sha256": "b53e43f0170bacc2ac4750dceceb6404a272f9839be57b9836969cd07ce6a7f4",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "Adopt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "Proposal aligns with required adopt behavior and avoids forbidden concepts. It is appropriately scoped to multi-field validation failures, preserves field-level errors and entered values, and adds linked summary navigation for discoverability by keyboard/screen-reader users."
+        }
+      },
+      "adjudication": null,
+      "evidence_score": {
+        "schema": "repo-harness-bdd2-locked-evidence-score.e3",
+        "packet_id": "d19f4e87163f1460d6af990e62cbed30",
+        "reviewer_id": "e3-browser-evidence-reviewer",
+        "locked_at": "2026-07-12T19:52:57.294Z",
+        "response_sha256": "555948aa071e157dd987e127e87b26a6f1ca9e2d722c61318ab4f005425461ac",
+        "score": {
+          "provenance_complete": true,
+          "question_bound": true,
+          "privacy_reviewed": false,
+          "adopt_adapt_avoid_complete": true,
+          "unsupported_assertion_count": 0,
+          "explicit_limitation_count": 3,
+          "feature_need_inference_count": 0,
+          "notes": "No conclusions were found that exceed appendix/truth support; assertions are appropriately scoped to named uncertainty and required boundary. Explicit limitations are clearly preserved in `unsupported_claims`."
+        }
+      }
+    },
+    {
+      "packet_id": "d7d8f08215a423b8f9d7d007e4577587",
+      "task_id": "EB-H-05",
+      "condition": "control",
+      "repetition": 1,
+      "reviewer_1": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "d7d8f08215a423b8f9d7d007e4577587",
+        "reviewer_id": "e3-outcome-reviewer-1",
+        "locked_at": "2026-07-12T19:54:43.550Z",
+        "response_sha256": "090b50898cee536a30a73b1030d5afb1415629d0685aabd347ce085bd39c77a7",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "mismatch",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [
+            "Set boundary_decision to Avoid",
+            "Ensure the single Import CSV action is not placed in a dropdown per dense-action uncertainty"
+          ],
+          "notes": "Proposal aligns with required user-visible import behavior and invalid-row handling, with no forbidden import-channel expansion or missing required behavior, but it does not resolve the dropdown-facing uncertainty and its boundary decision is Adopt instead of expected Avoid."
+        }
+      },
+      "reviewer_2": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "d7d8f08215a423b8f9d7d007e4577587",
+        "reviewer_id": "e3-outcome-reviewer-2",
+        "locked_at": "2026-07-12T19:55:29.985Z",
+        "response_sha256": "715f3dfe6e309f13c420a59ed55cb63015d99e55527419fa09fedf14bf5fd595",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "boundary_decision_mismatch",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "correction_operations": [
+            "Set boundary_decision to Avoid to match expected disposition."
+          ],
+          "notes": "Outcome behavior matches the required import constraints and invalid-row trust handling, but the explicit boundary decision is misclassified as Adopt instead of expected Avoid."
+        }
+      },
+      "adjudication": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "d7d8f08215a423b8f9d7d007e4577587",
+        "reviewer_id": "e3-fresh-score-adjudicator",
+        "locked_at": "2026-07-12T19:56:00.713Z",
+        "response_sha256": "7552ecaf793dc824541349b7e0bd257b746f10999bf99edb2d856ca97f4fcebc",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "boundary_decision_mismatch",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "correction_operations": [
+            "Set boundary_decision to Avoid to match expected sparse-action disposition.",
+            "Keep Import CSV as a single visible primary action, not inside a dropdown."
+          ],
+          "notes": "The proposal correctly constrains import behavior to the CSV path and handles backend-invalid-row reporting, but misclassifies the uncertain dropdown decision, so authority fit is only partially met on boundary handling."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "e3bd0caf23350fbd34a4e38a33281718",
+      "task_id": "EB-H-04",
+      "condition": "treatment",
+      "repetition": 1,
+      "reviewer_1": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "e3bd0caf23350fbd34a4e38a33281718",
+        "reviewer_id": "e3-outcome-reviewer-1",
+        "locked_at": "2026-07-12T19:54:17.896Z",
+        "response_sha256": "1c515b8ac21916b8becb8b593b9403b8a8aec2feea09c44b6ea2f7af842de34f",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "Adapt",
+          "unsupported_expansion": 1,
+          "unsupported_user_concepts": 1,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [
+            "Remove the hard constraint of 'exactly one retry attempt' and allow retry again after subsequent failures while preserving in-row context and filename."
+          ],
+          "notes": "Overall behavior is mostly aligned with inline, row-local status requirements, preserves filename, and avoids extra orchestration surfaces, but it over-constrains retry policy with a one-retry limit not required by truth."
+        }
+      },
+      "reviewer_2": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "e3bd0caf23350fbd34a4e38a33281718",
+        "reviewer_id": "e3-outcome-reviewer-2",
+        "locked_at": "2026-07-12T19:54:50.491Z",
+        "response_sha256": "84cb1faf930f6f16367f2349d31a22377e870072eb16a7cf093ecde125c0ba6a",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "Adapt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "Proposal aligns with required inline, one-row authority: retry state stays on the failed row, filename is preserved, status transitions are in-place, and retry is adjacent. No forbidden artifacts (job history/orchestration/dashboard) are introduced, and the uncertainty about row-adjacent feedback is explicitly resolved."
+        }
+      },
+      "adjudication": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "e3bd0caf23350fbd34a4e38a33281718",
+        "reviewer_id": "e3-fresh-score-adjudicator",
+        "locked_at": "2026-07-12T19:55:14.495Z",
+        "response_sha256": "100f4f0855a919dcb3a278b132f7872b9851887620e8b71c8cd027eda262e9b8",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "Adapt",
+          "unsupported_expansion": 1,
+          "unsupported_user_concepts": 1,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [
+            "Remove the hard constraint of exactly one retry and permit retrying after subsequent failures while preserving inline, same-row status and filename continuity.",
+            "Retain one-row inline success/failure/running feedback and avoid introducing navigation to durable status surfaces for the single-row retry flow unless row-scope interaction is insufficient."
+          ],
+          "notes": "The normalized proposal aligns with inline, adjacent-row behavior and avoids forbidden orchestration surfaces, but it over-constrains retry policy by fixing a one-retry limit, which conflicts with frozen truth allowing retries after later failures."
+        }
+      },
+      "evidence_score": {
+        "schema": "repo-harness-bdd2-locked-evidence-score.e3",
+        "packet_id": "e3bd0caf23350fbd34a4e38a33281718",
+        "reviewer_id": "e3-browser-evidence-reviewer",
+        "locked_at": "2026-07-12T19:55:48.023Z",
+        "response_sha256": "8dd138312e63cdc74f2fc8b7faa6da241c71d1780b7e2ecb101aeb6b659a2716",
+        "score": {
+          "provenance_complete": true,
+          "question_bound": false,
+          "privacy_reviewed": false,
+          "adopt_adapt_avoid_complete": true,
+          "unsupported_assertion_count": 2,
+          "explicit_limitation_count": 2,
+          "feature_need_inference_count": 1,
+          "notes": "The response correctly frames inline-adjacent row feedback and avoids several overreach claims, but it adds unsupported retry-policy claims (exactly one retry and no further retries) not justified by the appendix/truth. It marks two explicit limitations and infers one supported screenshot-derived feature need (row-scoped in-place feedback), but does not explicitly state privacy review in the treatment itself."
+        }
+      }
+    },
+    {
+      "packet_id": "f2af78d317086d9f9a2c9e45f719fdf5",
+      "task_id": "EB-H-02",
+      "condition": "control",
+      "repetition": 1,
+      "reviewer_1": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "f2af78d317086d9f9a2c9e45f719fdf5",
+        "reviewer_id": "e3-outcome-reviewer-1",
+        "locked_at": "2026-07-12T19:52:12.723Z",
+        "response_sha256": "69896b5246a770074e8bdf3dbbe8e7b60747bd1f6c4c23e31b9189e10525fb87",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "Adopt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 3,
+          "protected_concern_omissions": [
+            {
+              "concern": "authorization",
+              "severity": "P1",
+              "summary": "Outcome omits required backend-success completion behavior; it does not state that completion state must wait for backend result and failure must be surfaced before claiming success."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [
+            "Name the token explicitly in the revoke confirmation surface.",
+            "Set cancel as the default action in the destructive-confirmation UI.",
+            "Report and display revoke failures when backend ownership/revoke request fails before completing the action."
+          ],
+          "notes": "Main gaps are missing token naming, default-cancel affordance, and explicit backend failure handling path."
+        }
+      },
+      "reviewer_2": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "f2af78d317086d9f9a2c9e45f719fdf5",
+        "reviewer_id": "e3-outcome-reviewer-2",
+        "locked_at": "2026-07-12T19:52:38.836Z",
+        "response_sha256": "55e3bb58a8110f59b138d51b84a3c737c50e1a5e281fce433549d3853f82113a",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "Adopt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 3,
+          "protected_concern_omissions": [
+            {
+              "concern": "authorization",
+              "severity": "P1",
+              "summary": "Proposal enforces backend ownership checks but does not state that completion/confirmation should be treated as successful only after backend revoke response."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [
+            "Add token naming in the confirmation content.",
+            "Make cancel the default/primary default action in the revoke confirmation.",
+            "Report backend revoke failure explicitly and only indicate completion after successful backend response."
+          ],
+          "notes": "Boundary fit is generally correct and no forbidden concept expansion is present, but key truth requirements are incomplete (name-token labeling, default-cancel affordance, and explicit backend failure handling)."
+        }
+      },
+      "adjudication": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "f2af78d317086d9f9a2c9e45f719fdf5",
+        "reviewer_id": "e3-fresh-score-adjudicator",
+        "locked_at": "2026-07-12T19:53:14.964Z",
+        "response_sha256": "5dae68a52ec037d3c0a8cc8559e0c35c71889e8a0fae94f5f95961702052ebf7",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "Adopt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 3,
+          "protected_concern_omissions": [
+            {
+              "concern": "authorization",
+              "severity": "P1",
+              "summary": "Outcome does not require completion/confirmation to be contingent on successful backend revoke result, and does not require explicit backend-failure reporting before indicating success."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [
+            "Add explicit token naming in the revoke confirmation content so the user can verify target token.",
+            "Set Cancel as the default/primary cancellation action in the destructive revoke confirmation surface.",
+            "Only mark revocation complete after backend success; surface and keep pending on backend failure."
+          ],
+          "notes": "The proposal aligns to Adopt with inline authority and ownership enforcement, but misses naming, default-cancel behavior, and backend-result-gated completion/failure reporting."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "f7f9e5d58db6e8f7fae95f9bf2170fd5",
+      "task_id": "EB-H-06",
+      "condition": "treatment",
+      "repetition": 2,
+      "reviewer_1": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "f7f9e5d58db6e8f7fae95f9bf2170fd5",
+        "reviewer_id": "e3-outcome-reviewer-1",
+        "locked_at": "2026-07-12T19:56:09.748Z",
+        "response_sha256": "17c1417e8268dc34ca139245eb0d86d71965413845c012f4b9b54554e424e4d4",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "Avoid",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "Proposal cleanly follows the avoid boundary and includes rename, validation, and failure-safe retry behavior without introducing forbidden table-management constructs."
+        }
+      },
+      "reviewer_2": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "f7f9e5d58db6e8f7fae95f9bf2170fd5",
+        "reviewer_id": "e3-outcome-reviewer-2",
+        "locked_at": "2026-07-12T19:56:30.674Z",
+        "response_sha256": "aabb4423fb1c15cc15771bec42c43d62b8edb834b9f4594337ca2ecc01847c24",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "Avoid",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "No measurable expansion or omissions versus frozen truth."
+        }
+      },
+      "adjudication": null,
+      "evidence_score": {
+        "schema": "repo-harness-bdd2-locked-evidence-score.e3",
+        "packet_id": "f7f9e5d58db6e8f7fae95f9bf2170fd5",
+        "reviewer_id": "e3-browser-evidence-reviewer",
+        "locked_at": "2026-07-12T19:56:49.076Z",
+        "response_sha256": "5537c9d0693b730bddae0cb2e69574794174b4527a04d53bfeef71fc56418db9",
+        "score": {
+          "provenance_complete": true,
+          "question_bound": true,
+          "privacy_reviewed": true,
+          "adopt_adapt_avoid_complete": true,
+          "unsupported_assertion_count": 0,
+          "explicit_limitation_count": 2,
+          "feature_need_inference_count": 0,
+          "notes": "No unsupported factual assertions identified; response consistently avoids unsupported additions and preserves explicit cannot-prove limits. Privacy context is acknowledged in appendix and treated appropriately."
+        }
+      }
+    },
+    {
+      "packet_id": "f980510e1477cae95306b3ac11f451e5",
+      "task_id": "EB-H-03",
+      "condition": "treatment",
+      "repetition": 2,
+      "reviewer_1": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "f980510e1477cae95306b3ac11f451e5",
+        "reviewer_id": "e3-outcome-reviewer-1",
+        "locked_at": "2026-07-12T19:53:45.808Z",
+        "response_sha256": "343f51324e8fcbba4fbd1f35db8a720a63c243e2719ac76ee1354c22f0da2fcc",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "adapt_within_expected_disposition",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "Proposal is aligned with the Adapt expectation: it preserves name search primacy, keeps existing date-range behavior clearable in one action, and explicitly requires filter state/recovery controls to stay visible, preventing hidden required controls while managing progressive disclosure of advanced explanations."
+        }
+      },
+      "reviewer_2": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "f980510e1477cae95306b3ac11f451e5",
+        "reviewer_id": "e3-outcome-reviewer-2",
+        "locked_at": "2026-07-12T19:54:15.176Z",
+        "response_sha256": "bc85970a77c4eb0b2568962649f9e5581a1fba5a59f735f3eff4f0c36172a1c6",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "matched_adapt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "Proposal aligns with the expected Adapt disposition: keeps name search primary, preserves clearable date-range behavior, keeps required filter state/controls visible, and applies progressive disclosure only to advanced explanations without adding forbidden concepts."
+        }
+      },
+      "adjudication": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "f980510e1477cae95306b3ac11f451e5",
+        "reviewer_id": "e3-fresh-score-adjudicator",
+        "locked_at": "2026-07-12T19:54:37.998Z",
+        "response_sha256": "e77d55371eae7d9992bb5d36a620282c27a367a95619f1e0ca62f32c3f49ed37",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "adapt_within_expected_disposition",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "correction_operations": [],
+          "notes": "Resolved boundary_category to a conservative Adapt-aligned fit: primary search stays primary, required filter state and clear/recovery controls remain visible, date-range behavior is preserved as one-action clearable, and no unsupported concepts are introduced."
+        }
+      },
+      "evidence_score": {
+        "schema": "repo-harness-bdd2-locked-evidence-score.e3",
+        "packet_id": "f980510e1477cae95306b3ac11f451e5",
+        "reviewer_id": "e3-browser-evidence-reviewer",
+        "locked_at": "2026-07-12T19:55:10.396Z",
+        "response_sha256": "b5ca51e20232c9f47a186bb801d124de0ced3ca21f92195e71a9bf3c59e66096",
+        "score": {
+          "provenance_complete": true,
+          "question_bound": true,
+          "privacy_reviewed": true,
+          "adopt_adapt_avoid_complete": true,
+          "unsupported_assertion_count": 0,
+          "explicit_limitation_count": 3,
+          "feature_need_inference_count": 0,
+          "notes": "Claims align with the appendix on adaptability boundaries and accessibility constraints; no unsupported factual conclusions were introduced. Explicit limitations are the three explicitly marked unknown/cannot-prove items. No inferences of new user feature needs were made from the screenshot."
+        }
+      }
+    },
+    {
+      "packet_id": "f9df11876903ba95f1d84ac3e5fc3c48",
+      "task_id": "EB-H-01",
+      "condition": "control",
+      "repetition": 1,
+      "reviewer_1": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "f9df11876903ba95f1d84ac3e5fc3c48",
+        "reviewer_id": "e3-outcome-reviewer-1",
+        "locked_at": "2026-07-12T19:52:19.291Z",
+        "response_sha256": "9d4a76dc83118cedbc7e772c365b1868795be885bff0abce810d21acd48135b3",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "adapt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "correction_operations": [
+            "Change boundary_decision from Adapt to Adopt to match the required disposition."
+          ],
+          "notes": "The proposal includes the required behaviors for linked multi-field error summary, value retention, preserving field-level errors, and keyboard/screen-reader navigation, with no added unsupported patterns. The only mismatch is authority/escalation semantics: expected disposition is Adopt, while the proposal reports Adapt."
+        }
+      },
+      "reviewer_2": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "f9df11876903ba95f1d84ac3e5fc3c48",
+        "reviewer_id": "e3-outcome-reviewer-2",
+        "locked_at": "2026-07-12T19:52:50.046Z",
+        "response_sha256": "2ab537a27994f43352741213f65ff67172232edfbca34cde74d67c40efa2d12c",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "adapt_mismatch",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": false,
+          "escalation_correct": false,
+          "correction_operations": [
+            "Set boundary decision to Adopt to match expected disposition for this task.",
+            "Align implementation authority to browser-adapter/GOV.UK-style error summary approach rather than inline-only approach."
+          ],
+          "notes": "Required behavior appears present for multi-field linked summary, preserved values, field-level errors, and keyboard/screen-reader navigation. Main deltas are authority/boundary mismatch with the frozen disposition."
+        }
+      },
+      "adjudication": {
+        "schema": "repo-harness-bdd2-locked-outcome-score.e3",
+        "packet_id": "f9df11876903ba95f1d84ac3e5fc3c48",
+        "reviewer_id": "e3-fresh-score-adjudicator",
+        "locked_at": "2026-07-12T19:53:17.195Z",
+        "response_sha256": "a295fb50fea3ac6e6c4b9dc287de621556dbd628058f666f159005c28683cc7c",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "adapt_mismatch",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": false,
+          "escalation_correct": false,
+          "correction_operations": [
+            "Change boundary_decision from Adapt to Adopt to match expected disposition.",
+            "Align implementation authority from inline to browser-adapter/GOV.UK-style error-summary approach while retaining existing form and inline field errors."
+          ],
+          "notes": "Core required behaviors are present (linked summary for multiple invalid fields, value retention, field-level errors preserved, keyboard and screen-reader jump support), with no unsupported additions. Remaining issues are rubric-alignment: authority is inline instead of browser-adapter, and boundary decision is Adapt instead of Adopt."
+        }
+      },
+      "evidence_score": null
+    }
+  ],
+  "summary": {
+    "metrics": {
+      "closure": {
+        "wins": 5,
+        "losses": 0,
+        "ties": 7
+      },
+      "new_severe_pairs": 0,
+      "unsupported_expansion": {
+        "control": 3,
+        "treatment": 1
+      },
+      "unsupported_concepts": {
+        "control": 2,
+        "treatment": 1
+      },
+      "required_omissions": {
+        "control": 13,
+        "treatment": 7
+      },
+      "evidence_compliance": false
+    },
+    "decision": "Kill"
+  }
+}

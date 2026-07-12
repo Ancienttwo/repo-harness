@@ -28,4 +28,11 @@ describe("BDD2 Phase E3 evaluation contract", () => {
     expect(evaluation.manifest.i3.prerequisite).toEqual({ shape: "Pass", any_adapter: "Pass" });
     expect(JSON.stringify(evaluation.manifest.i3)).not.toContain("S3_decision");
   });
+
+  test("final E3 reports are frozen into the current authority", () => {
+    const evaluation = validateEvaluation();
+    expect(evaluation.manifest.experiments.S3.result.report.path).toEndWith("experiment-s3.md");
+    expect(evaluation.manifest.experiments.EB3.result.report.path).toEndWith("experiment-eb3.md");
+    expect(evaluation.manifest.experiments.EI3.result.report.path).toEndWith("experiment-ei3.md");
+  });
 });
