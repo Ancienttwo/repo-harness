@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { createHash } from "crypto";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
-import { buildAgentPacket, buildRunPlan, validateEvaluation } from "../scripts/run-bdd2-evals";
+import { buildAgentPacket, buildRunPlan, validateEvaluation, verifyEvidenceProjection } from "../scripts/run-bdd2-evals";
 
 const ROOT = join(import.meta.dir, "..");
 const hash = (path: string) => createHash("sha256").update(readFileSync(join(ROOT, path))).digest("hex");
@@ -62,6 +62,9 @@ describe("BDD2 Phase E2 evaluation contract", () => {
     expect([eb.packet_count, eb.outcome_score_count, eb.evidence_score_count]).toEqual([24, 48, 12]);
     expect([ei.packet_count, ei.outcome_score_count, ei.evidence_score_count]).toEqual([24, 48, 12]);
     expect([s2.summary.recorded_decision, eb.summary.recorded_decision, ei.summary.recorded_decision]).toEqual(["Reshape", "Reshape", "Reshape"]);
+    expect(verifyEvidenceProjection(evaluation, "evals/bdd2/reports/experiment-s2-evidence.json")).toEqual({ experiment: "S2", rawDecision: "Kill", recordedDecision: "Reshape" });
+    expect(verifyEvidenceProjection(evaluation, "evals/bdd2/reports/experiment-eb-evidence.json")).toEqual({ experiment: "EB", rawDecision: "Kill", recordedDecision: "Reshape" });
+    expect(verifyEvidenceProjection(evaluation, "evals/bdd2/reports/experiment-ei-evidence.json")).toEqual({ experiment: "EI", rawDecision: "Kill", recordedDecision: "Reshape" });
     const gate = readFileSync(join(ROOT, "evals/bdd2/reports/phase-e2-gate.md"), "utf-8");
     expect(gate).toContain("I2 implementation pilot | 0/4 | Defer — gated-not-run");
     expect(gate).toContain("Phase P remains");

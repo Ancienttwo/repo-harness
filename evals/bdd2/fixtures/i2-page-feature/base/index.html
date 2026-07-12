@@ -29,7 +29,7 @@
       row.addEventListener("click", (event) => {
         const action = event.target.closest("[data-action]")?.dataset.action;
         if (!action) return;
-        // The bounded feature may handle its one public action here.
+        if (action === "retry") controller.retry();
         paint();
       });
 

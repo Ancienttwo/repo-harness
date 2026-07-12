@@ -2,16 +2,16 @@
   "schema": "repo-harness-bdd2-evaluation.e2",
   "runner": {
     "path": "scripts/run-bdd2-evals.ts",
-    "sha256": "d5bce2fd36a92a323ba550b37e0a3cc0beabdd4a682221b178ec9034ef6833ef"
+    "sha256": "91ec261a1cc98ff14ffdb218492a4745e83ac93918de1f46253d95463e80f982"
   },
   "output_root": ".ai/harness/runs/bdd2",
   "experiments": {
     "S2": {
       "kind": "inline-shape",
       "freeze": {
-        "id": "bdd2-e2-s2-r13",
+        "id": "bdd2-e2-s2-r15",
         "state": "sealed",
-        "sealed_at": "2026-07-13T03:15:00+08:00"
+        "sealed_at": "2026-07-13T03:45:00+08:00"
       },
       "repetitions": 3,
       "held_out_task_count": 12,
@@ -29,9 +29,9 @@
     "EB": {
       "kind": "browser-adapter",
       "freeze": {
-        "id": "bdd2-e2-eb-r13",
+        "id": "bdd2-e2-eb-r15",
         "state": "sealed",
-        "sealed_at": "2026-07-13T03:15:00+08:00"
+        "sealed_at": "2026-07-13T03:45:00+08:00"
       },
       "repetitions": 2,
       "held_out_task_count": 6,
@@ -123,9 +123,9 @@
     "EI": {
       "kind": "imagegen-adapter",
       "freeze": {
-        "id": "bdd2-e2-ei-r13",
+        "id": "bdd2-e2-ei-r15",
         "state": "sealed",
-        "sealed_at": "2026-07-13T03:15:00+08:00"
+        "sealed_at": "2026-07-13T03:45:00+08:00"
       },
       "repetitions": 2,
       "held_out_task_count": 6,
@@ -217,9 +217,9 @@
     "I2": {
       "kind": "implementation-pilot",
       "freeze": {
-        "id": "bdd2-e2-i2-r13",
+        "id": "bdd2-e2-i2-r15",
         "state": "sealed",
-        "sealed_at": "2026-07-13T03:15:00+08:00"
+        "sealed_at": "2026-07-13T03:45:00+08:00"
       },
       "repetitions": 2,
       "held_out_task_count": 1,
@@ -235,10 +235,10 @@
       },
       "fixture": {
         "path": "evals/bdd2/fixtures/i2-page-feature/base",
-        "sha256": "1b926c1a643960746f7cc0a4ef1bc1a04eb6b4d83439a030b02f22c1b1c678c4",
+        "sha256": "14ba65e2890175fa4cf284a7be004751090fb97f4b1dd486e16744bc788377cf",
         "acceptance": {
           "path": "evals/bdd2/fixtures/i2-page-feature/acceptance/run.mjs",
-          "sha256": "dcb245cc20b9952a5af25bf7fadfeeed7d673db51acdcf5da401bf43eb5b7b0e"
+          "sha256": "2ed95ba4758d2c844e78e32a3673c29173a0b102015eace9037740b04f7fac6d"
         },
         "acceptance_command": [
           "node",
@@ -252,6 +252,10 @@
           "EB": "NotRun",
           "EI": "NotRun"
         }
+      },
+      "treatment_context": {
+        "path": "evals/bdd2/evidence/i2/I2-H-01.md",
+        "sha256": "07a6028eaddd9855e5da7ecb39b6c3e6777dcac6da77bbfcae1960836984ee4b"
       }
     }
   },

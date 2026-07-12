@@ -2,7 +2,7 @@
   "schema": "repo-harness-bdd2-i2-fixture.e2",
   "id": "i2-failed-export-retry",
   "copy_root": "evals/bdd2/fixtures/i2-page-feature/base",
-  "hidden_acceptance_root": "evals/bdd2/fixtures/i2-page-feature/acceptance",
+  "runner_acceptance_root": "evals/bdd2/fixtures/i2-page-feature/acceptance",
   "acceptance_command": ["node", "evals/bdd2/fixtures/i2-page-feature/acceptance/run.mjs", "{workspace}"],
   "serve_command": ["python3", "-m", "http.server", "4173", "--directory", "{workspace}"],
   "writable_relative_paths": ["index.html", "app.js", "styles.css"],

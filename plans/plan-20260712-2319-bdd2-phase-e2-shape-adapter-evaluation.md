@@ -119,7 +119,7 @@ small page-feature implementation pilot run. Phase P remains unauthorized.
   remain outside this boundary.
 - **P2 concrete trace**: named page uncertainty -> pre-seal Browser/ImageGen capture
   -> content-hashed adapter artifact -> frozen baseline or inline Shape packet ->
-  no-network isolated agent output -> normalized outcome score plus separate evidence
+  model-transport-only isolated agent output -> normalized outcome score plus separate evidence
   compliance score -> private condition reveal -> independent hypothesis decision ->
   only `Shape=Pass AND at least one adapter=Pass` may open one implementation pilot
   -> pilot evidence may propose, but does not automatically approve, a minimal Phase

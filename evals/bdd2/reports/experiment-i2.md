@@ -8,6 +8,7 @@ I2 was not executed. Its frozen prerequisite requires `S2=Pass` and at least one
 authority defects made their efficacy decisions inconclusive. Running I2 would have
 violated the owner-approved conditional gate.
 
-The fixture and hidden acceptance test remain tracked evaluation material; no product
+The fixture and runner-withheld acceptance test remain tracked evaluation material.
+This is a prompt/process boundary, not an OS-level read-denial claim. No product
 code, public BDD skill, CLI/MCP surface, catalog, sidecar, lifecycle, hook, or Phase P
 implementation was created.

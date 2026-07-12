@@ -52,7 +52,7 @@
 |--------|----------|--------|
 | Keep old `Shape AND Audit` prerequisite | Reject | It caused two important adapter hypotheses to remain unrun. |
 | Run providers live inside Agent coordinates | Reject | It destroys reproducibility and expands the external-tool boundary beyond model transport. |
-| Pre-seal provider assets and inject them | Use | It tests evidence value while preserving a deterministic no-network run envelope. |
+| Pre-seal provider assets and inject them | Use | It tests evidence value while preserving a deterministic model-transport-only run envelope. |
 | Claim fully blind adapter review | Reject | Adapter artifacts are inherently inferable; normalized outcome scoring limits rather than hides this fact. |
 
 ## Open Questions

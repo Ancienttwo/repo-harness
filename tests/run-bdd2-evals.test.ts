@@ -30,6 +30,7 @@ function createFixture(options: { sealed?: boolean; i2Enabled?: boolean } = {}):
   for (const id of ["s2", "eb", "ei", "i2"]) for (const condition of ["control", "treatment"]) write(join(root, `evals/bdd2/prompts/${id}-${condition}.md`), `${id} ${condition}; return strict JSON\n`);
   for (const id of ["s2", "eb", "ei", "i2"]) { write(join(root, `evals/bdd2/rubrics/${id}.schema.json`), "{}\n"); write(join(root, `evals/bdd2/metrics/${id}.md`), `${id} metrics\n`); }
   write(join(root, "evals/bdd2/rubrics/e2.md"), "two reviewer rubric\n");
+  write(join(root, "evals/bdd2/evidence/i2.md"), "frozen inline I2 behavior card\n");
   for (const name of ["experiment-s.md", "experiment-a.md", "phase-e-gate.md"]) write(join(root, `evals/bdd2/reports/${name}`), `historical ${name}\n`);
   for (let index = 1; index <= 6; index += 1) {
     write(join(root, `evals/bdd2/evidence/eb-${index}.md`), `named uncertainty EB ${index}\nsource_url: https://example.test/${index}\nprivacy_review: pass\n`);
@@ -74,7 +75,7 @@ function createFixture(options: { sealed?: boolean; i2Enabled?: boolean } = {}):
     S2: { kind: "inline-shape", freeze: freeze("s2"), repetitions: 3, held_out_task_count: 12, conditions: conditions("s2") },
     EB: { kind: "browser-adapter", freeze: freeze("eb"), repetitions: 2, held_out_task_count: 6, conditions: conditions("eb"), appendices: appendices("eb", "EB") },
     EI: { kind: "imagegen-adapter", freeze: freeze("ei"), repetitions: 2, held_out_task_count: 6, conditions: conditions("ei"), appendices: appendices("ei", "EI") },
-    I2: { kind: "implementation-pilot", freeze: freeze("i2"), repetitions: 2, held_out_task_count: 1, conditions: conditions("i2"), fixture: { path: fixturePath, sha256: hashTree(join(root, fixturePath)), acceptance: ref("evals/bdd2/fixtures/page/package.json", root), acceptance_command: ["bun", "run", "test"] }, prerequisite: { shape: options.i2Enabled ? "Pass" : "NotRun", adapters: { EB: options.i2Enabled ? "Pass" : "NotRun", EI: "NotRun" } } },
+    I2: { kind: "implementation-pilot", freeze: freeze("i2"), repetitions: 2, held_out_task_count: 1, conditions: conditions("i2"), fixture: { path: fixturePath, sha256: hashTree(join(root, fixturePath)), acceptance: ref("evals/bdd2/fixtures/page/package.json", root), acceptance_command: ["bun", "run", "test"] }, treatment_context: ref("evals/bdd2/evidence/i2.md", root), prerequisite: { shape: options.i2Enabled ? "Pass" : "NotRun", adapters: { EB: options.i2Enabled ? "Pass" : "NotRun", EI: "NotRun" } } },
   };
   const experimentAuthority = Object.fromEntries((["S2", "EB", "EI", "I2"] as const).map((id) => [id, { score_schema: `evals/bdd2/rubrics/${id.toLowerCase()}.schema.json`, score_schema_sha256: sha256File(join(root, `evals/bdd2/rubrics/${id.toLowerCase()}.schema.json`)), metrics: `evals/bdd2/metrics/${id.toLowerCase()}.md`, metrics_sha256: sha256File(join(root, `evals/bdd2/metrics/${id.toLowerCase()}.md`)) }]));
   const manifest = {
@@ -144,7 +145,10 @@ describe("structured response, isolation, and I2 capture", () => {
   test("I2 creates four fresh identical fixture copies and captures patch, tests, tree, and inventory", () => {
     const root = createFixture({ i2Enabled: true });
     try {
-      const report = runEvaluation(validateEvaluation(root), { experiment: "I2", partition: "held_out", agent: "stub", outputPath: ".ai/harness/runs/bdd2/i2" });
+      const evaluation = validateEvaluation(root);
+      const treatment = buildRunPlan(evaluation, { experiment: "I2", partition: "held_out", conditions: ["treatment"], repetitions: 1 })[0];
+      expect(buildAgentPacket(evaluation, treatment)).toContain("frozen inline I2 behavior card");
+      const report = runEvaluation(evaluation, { experiment: "I2", partition: "held_out", agent: "stub", outputPath: ".ai/harness/runs/bdd2/i2" });
       expect(report.packets).toHaveLength(4); expect(new Set(report.packets.map((p) => p.fixture_capture?.source_tree_sha256)).size).toBe(1);
       for (const packet of report.packets) { expect(packet.fixture_capture?.patch_sha256).toMatch(/^[a-f0-9]{64}$/); const capture = JSON.parse(readFileSync(join(root, ".ai/harness/runs/bdd2/i2/pilot", `${packet.packet_id}.json`), "utf-8")); expect(capture.tests.exit_code).toBe(0); expect(capture.inventory.before).toEqual(capture.inventory.after); }
     } finally { rmSync(root, { recursive: true, force: true }); }

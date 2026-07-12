@@ -42,6 +42,8 @@ assert.deepEqual(completed.availableActions(), []);
 assert.equal(completed.retry().ok, false, "completed export cannot be retried");
 
 const combined = await Promise.all(entries.map((entry) => readFile(path.join(root, entry), "utf8"))).then((parts) => parts.join("\n").toLowerCase());
+const page = await readFile(path.join(root, "index.html"), "utf8");
+assert.match(page, /action\s*===\s*["']retry["'][\s\S]*controller\.retry\(\)/, "page click handler must invoke retry for the Retry action");
 for (const forbidden of ["queue priority", "worker pool", "provider selector", "retry settings", "job dashboard"]) {
   assert.equal(combined.includes(forbidden), false, `forbidden backstage surface: ${forbidden}`);
 }
