@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-12T15:12:10+0800 -->
+<!-- updated_at: 2026-07-12T15:58:19+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-07-12T15:12:10+0800
+> **Updated At**: 2026-07-12T15:58:19+0800
 > **Source Branch**: codex/chatgpt-coding-mcp-integration
-> **Source Commit**: 9f339c6
+> **Source Commit**: 66d96bd
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: chatgpt-coding-mcp-main-prd-repair
+> **Reason**: chatgpt-coding-mcp-latest-main-merge-closeout
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -56,17 +56,17 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Checks
 
-- status=fail, source=verify-sprint, exit_code=1, file=.ai/harness/checks/latest.json
+- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
 
 ## Git Status
 
 - Summary: 4 changed/untracked path(s)
 
 ```
- M plans/prds/20260712-0409-bdd2-shape-audit.prd.md
-RM plans/prds/20260712-BDD.prd.md -> plans/prds/20260712-1426-bdd2-v0.prd.md
- M tasks/contracts/20260712-0301-chatgpt-coding-mcp-integration.contract.md
- M tasks/notes/20260712-0301-chatgpt-coding-mcp-integration.notes.md
+R  plans/prds/20260712-1426-bdd2-v0.prd.md -> plans/archive/20260712-1426-bdd-v0.prd.md
+M  plans/prds/20260712-0409-bdd2-shape-audit.prd.md
+DD plans/prds/20260712-BDD.prd.md
+UU tasks/current.md
 ```
 
 ## Source Artifacts
