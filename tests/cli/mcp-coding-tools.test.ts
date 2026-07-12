@@ -165,12 +165,25 @@ describe('coding MCP workspace and file tools', () => {
     try {
       const opened = parse(await callCodingTool(state.ctx, 'open_workspace', { repo_id: state.repoId, mode: 'checkout' }));
       symlinkSync(join(outside, 'secret.txt'), join(state.repo, 'src/link.txt'));
+      symlinkSync(join(state.repo, '_ops'), join(state.repo, 'alias-ops'));
+      symlinkSync(join(state.repo, 'src'), join(state.repo, 'alias-src'));
 
       writeFileSync(join(state.repo, '.npmrc'), '//registry.example.test/:_authToken=secret\n');
       for (const path of ['../outside', '.env', '.npmrc', '_ops/secret.txt', 'ignored.txt', 'src/link.txt']) {
         const denied = parse(await callCodingTool(state.ctx, 'read', { workspace_id: opened.workspace_id, path }));
         expect(['INVALID_RELATIVE_PATH', 'PATH_DENIED', 'PATH_IGNORED', 'SYMLINK_ESCAPE']).toContain(denied.error.code);
       }
+      const intermediateRead = parse(await callCodingTool(state.ctx, 'read', {
+        workspace_id: opened.workspace_id,
+        path: 'alias-ops/secret.txt',
+      }));
+      expect(intermediateRead.error.code).toBe('SYMLINK_ESCAPE');
+      const intermediateWrite = parse(await callCodingTool(state.ctx, 'apply_patch', {
+        workspace_id: opened.workspace_id,
+        operations: [{ op: 'create', path: 'alias-src/new.txt', content: 'blocked\n' }],
+      }));
+      expect(intermediateWrite.error.code).toBe('SYMLINK_ESCAPE');
+      expect(existsSync(join(state.repo, 'src/new.txt'))).toBe(false);
       const refWrite = parse(await callCodingTool(state.ctx, 'apply_patch', {
         workspace_id: opened.workspace_id,
         operations: [{ op: 'replace', path: '_ref/reference.txt', expected_sha256: sha256('reference\n'), content: 'changed\n' }],

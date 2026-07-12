@@ -210,6 +210,22 @@ function canonicalRoot(root: string): string {
   return canonical;
 }
 
+function assertNoSymlinkComponents(root: string, relativePath: string): void {
+  let candidate = root;
+  for (const component of relativePath.split('/')) {
+    candidate = join(candidate, component);
+    try {
+      if (lstatSync(candidate).isSymbolicLink()) {
+        throw new CodingWorkspaceError('SYMLINK_ESCAPE', 'coding tools do not read or write through symlinks', { path: relativePath });
+      }
+    } catch (error) {
+      if (error instanceof CodingWorkspaceError) throw error;
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+      throw new CodingWorkspaceError('PATH_UNAVAILABLE', 'coding workspace path could not be inspected safely', { path: relativePath });
+    }
+  }
+}
+
 export interface ResolvedCodingPath {
   relativePath: string;
   absolutePath: string;
@@ -228,12 +244,12 @@ export function resolveCodingPath(
   assertCodingPathPolicy(root, relativePath, options.intent);
   const absolutePath = resolve(root, relativePath);
   if (!isPathInside(root, absolutePath)) throw new CodingWorkspaceError('PATH_OUTSIDE_REPO', 'path escapes the coding workspace', { path: relativePath });
+  assertNoSymlinkComponents(root, relativePath);
 
   if (existsSync(absolutePath)) {
-    const link = lstatSync(absolutePath);
-    if (link.isSymbolicLink()) throw new CodingWorkspaceError('SYMLINK_ESCAPE', 'coding tools do not read or write through symlinks', { path: relativePath });
     const canonicalPath = realpathSync(absolutePath);
     if (!isPathInside(root, canonicalPath)) throw new CodingWorkspaceError('SYMLINK_ESCAPE', 'path resolves outside the coding workspace', { path: relativePath });
+    assertCodingPathPolicy(root, toPosix(relative(root, canonicalPath)), options.intent);
     const stat = statSync(canonicalPath);
     const kind = stat.isDirectory() ? 'directory' : stat.isFile() ? 'file' : undefined;
     if (!kind) throw new CodingWorkspaceError('NOT_A_FILE', 'coding tools support regular files and directories only', { path: relativePath });
@@ -244,11 +260,11 @@ export function resolveCodingPath(
   if (!options.allowMissing) throw new CodingWorkspaceError('NOT_FOUND', 'path does not exist', { path: relativePath });
   const parent = dirname(absolutePath);
   if (!existsSync(parent)) throw new CodingWorkspaceError('PARENT_NOT_FOUND', 'parent directory does not exist', { path: relativePath });
-  const parentLink = lstatSync(parent);
-  if (parentLink.isSymbolicLink()) throw new CodingWorkspaceError('SYMLINK_ESCAPE', 'coding tools do not write through symlink parents', { path: relativePath });
   const canonicalParent = realpathSync(parent);
   if (!isPathInside(root, canonicalParent)) throw new CodingWorkspaceError('SYMLINK_ESCAPE', 'parent resolves outside the coding workspace', { path: relativePath });
-  return { relativePath, absolutePath, canonicalPath: join(canonicalParent, basename(absolutePath)), exists: false, kind: 'file' };
+  const canonicalPath = join(canonicalParent, basename(absolutePath));
+  assertCodingPathPolicy(root, toPosix(relative(root, canonicalPath)), options.intent);
+  return { relativePath, absolutePath, canonicalPath, exists: false, kind: 'file' };
 }
 
 function stateFile(env: NodeJS.ProcessEnv): CodingWorkspaceStateFile {
