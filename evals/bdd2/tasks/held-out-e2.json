@@ -1,0 +1,168 @@
+{
+  "schema": "repo-harness-bdd2-task-set.e2",
+  "partition": "held_out",
+  "tasks": [
+    {
+      "id": "S2-H-01",
+      "experiment": "S2",
+      "title": "Retry a failed caption generation",
+      "agent_input": "Current truth: the video page already shows caption-generation status, preserves the video, and the backend supports retrying one failed job. Request: let the owner retry after a transient failure and understand whether captions became available. Shape the minimum behavior; do not write code."
+    },
+    {
+      "id": "S2-H-02",
+      "experiment": "S2",
+      "title": "Explain one invalid required field accessibly",
+      "agent_input": "Current truth: the existing profile form validates display name on submit but only changes the field border color. Request: make the error understandable to keyboard and screen-reader users without redesigning the form. Shape the minimum behavior; do not write code."
+    },
+    {
+      "id": "S2-H-03",
+      "experiment": "S2",
+      "title": "Copy a masked recovery email",
+      "agent_input": "Current truth: the security page shows a masked verified recovery email and the backend returns only that masked value. Request: let the signed-in owner copy the masked address when contacting support. Shape the minimum behavior; do not write code."
+    },
+    {
+      "id": "S2-H-04",
+      "experiment": "S2",
+      "title": "Revoke one personal API token",
+      "agent_input": "Current truth: a signed-in user sees only their own tokens; revocation is permanent and backend authorization already enforces ownership. Request: revoke one token from its row. Shape the minimum behavior; do not write code."
+    },
+    {
+      "id": "S2-H-05",
+      "experiment": "S2",
+      "title": "Remove one unsent attachment",
+      "agent_input": "Current truth: a draft message lists selected attachments before send; removing one only detaches it from this unsent draft and does not delete the source file. Request: remove one selected attachment without losing the message text. Shape the minimum behavior; do not write code."
+    },
+    {
+      "id": "S2-H-06",
+      "experiment": "S2",
+      "title": "Download the authorized current table",
+      "agent_input": "Current truth: the customer table already enforces account access and the backend exports exactly the currently filtered rows, including names and work emails. Request: let an authorized analyst download the current table as CSV. Shape the minimum behavior; do not write code."
+    },
+    {
+      "id": "S2-H-07",
+      "experiment": "S2",
+      "title": "Recover one unsent offline comment",
+      "agent_input": "Current truth: the comment composer keeps the current unsent text in browser storage, shows connection state, and detects server conflicts. Request: preserve one comment through disconnect and let the user resume after reconnect without silent loss. Shape the minimum behavior; do not write code."
+    },
+    {
+      "id": "S2-H-08",
+      "experiment": "S2",
+      "title": "Announce asynchronous search results",
+      "agent_input": "Current truth: the existing people search updates the same results region after a short asynchronous request and keyboard focus stays in the search field. Request: make result count and no-results state understandable to screen-reader users. Shape the minimum behavior; do not write code."
+    },
+    {
+      "id": "S2-H-09",
+      "experiment": "S2",
+      "title": "Enable an unauthenticated download link",
+      "agent_input": "Current truth: files require workspace membership and there is no public principal, expiry, revocation, forwarding, or audit contract. Request: let an owner create an unauthenticated download link. Shape the minimum behavior; do not write code."
+    },
+    {
+      "id": "S2-H-10",
+      "experiment": "S2",
+      "title": "Add manager approval for publishing",
+      "agent_input": "Current truth: Author and Owner are the only roles and authors can publish directly; there is no manager role, approval state, delegation rule, or accessible pending-work queue. Request: require manager approval before publishing. Shape the minimum behavior; do not write code."
+    },
+    {
+      "id": "S2-H-11",
+      "experiment": "S2",
+      "title": "Change deletion retention from 30 days to immediate",
+      "agent_input": "Current truth: deleted projects remain recoverable for 30 days and existing user guidance promises that window; backups and compliance exports also assume it. Request: make project deletion immediate. Shape the minimum behavior; do not write code."
+    },
+    {
+      "id": "S2-H-12",
+      "experiment": "S2",
+      "title": "Change posted-ledger rounding rules",
+      "agent_input": "Current truth: posted invoices use line-level half-up rounding, historical reports reproduce that rule, and no migration or reversal contract exists. Request: switch all reporting to invoice-total bankers rounding. Shape the minimum behavior; do not write code."
+    },
+    {
+      "id": "EB-H-01",
+      "experiment": "EB",
+      "title": "Adopt an error summary for one invalid form",
+      "named_uncertainty": "Should a multi-field validation failure provide a page-level error summary that links users back to affected fields?",
+      "agent_input": "Current truth: the profile form submits once, keeps entered values, and already renders field-level text, but keyboard and screen-reader users lack a linked summary for multiple invalid fields. Decide the minimum pattern and state Adopt, Adapt, Avoid, or Defer."
+    },
+    {
+      "id": "EB-H-02",
+      "experiment": "EB",
+      "title": "Adopt a clear warning before one permanent revoke",
+      "named_uncertainty": "How should the irreversible action in a confirmation surface be distinguished without adding another user concept?",
+      "agent_input": "Current truth: users see only their own tokens; backend ownership checks already exist; revocation is permanent. Decide the minimum confirmation pattern and state Adopt, Adapt, Avoid, or Defer."
+    },
+    {
+      "id": "EB-H-03",
+      "experiment": "EB",
+      "title": "Adapt an accordion to one existing advanced filter",
+      "named_uncertainty": "Can rarely used advanced filter explanations be deferred without hiding required filter state?",
+      "agent_input": "Current truth: name search is primary; the same page already supports an optional date range used by expert analysts and can clear it in one action. Decide Adopt, Adapt, Avoid, or Defer."
+    },
+    {
+      "id": "EB-H-04",
+      "experiment": "EB",
+      "title": "Adapt inline loading to one retrying row",
+      "named_uncertainty": "Should a retrying row keep progress and completion feedback adjacent to the action instead of navigating to a job-status page?",
+      "agent_input": "Current truth: one failed export row preserves its filename, supports one retry, and can expose running/succeeded/failed state; no job history or orchestration surface is authorized. Decide Adopt, Adapt, Avoid, or Defer."
+    },
+    {
+      "id": "EB-H-05",
+      "experiment": "EB",
+      "title": "Avoid a dense dropdown for one novice action",
+      "named_uncertainty": "Should one primary novice action be placed inside a dropdown to leave room for hypothetical future actions?",
+      "agent_input": "Current truth: the empty contact list has one primary Import CSV action and the backend reports invalid rows; no other import action is authorized. Decide Adopt, Adapt, Avoid, or Defer."
+    },
+    {
+      "id": "EB-H-06",
+      "experiment": "EB",
+      "title": "Avoid dense data-table controls for a simple list",
+      "named_uncertainty": "Should a simple short list adopt a dense data-table toolbar, bulk selection, sorting, and overflow actions?",
+      "agent_input": "Current truth: saved views appear in a short existing list and the owner needs to rename one view in place with validation and save-failure recovery. Decide Adopt, Adapt, Avoid, or Defer."
+    },
+    {
+      "id": "EI-H-01",
+      "experiment": "EI",
+      "title": "Choose timeout recovery placement",
+      "named_uncertainty": "Which low-fidelity direction keeps timeout status and one safe Retry visible on the report page with the fewest decisions?",
+      "agent_input": "Stable boundary: remain on the report page; show progress, timeout, and one safe Retry; preserve the report; expose no model, prompt, queue, or fallback controls. Decide whether the synthetic directions close the uncertainty and state the selected direction or Defer."
+    },
+    {
+      "id": "EI-H-02",
+      "experiment": "EI",
+      "title": "Choose accessible inline validation structure",
+      "named_uncertainty": "Which direction connects one field error, summary, and focus order without adding a validation wizard?",
+      "agent_input": "Stable boundary: use the existing form and submit action; identify the invalid field in text; connect summary and field semantics; preserve entered values; add no steps or settings. Decide whether the synthetic directions close the layout uncertainty."
+    },
+    {
+      "id": "EI-H-03",
+      "experiment": "EI",
+      "title": "Choose compact destructive confirmation hierarchy",
+      "named_uncertainty": "Which compact hierarchy makes item identity, irreversible consequence, Cancel, and Delete legible without adding a deletion workflow?",
+      "agent_input": "Stable boundary: one permanent saved-filter deletion in the existing compact confirmation; name the filter; Cancel is default; Delete is destructive; report final failure. Decide whether the synthetic directions close the hierarchy uncertainty."
+    },
+    {
+      "id": "EI-H-04",
+      "experiment": "EI",
+      "title": "Choose offline-state information hierarchy",
+      "named_uncertainty": "Which direction keeps editing, unsynced status, and conflict recovery understandable without exposing sync internals?",
+      "agent_input": "Stable boundary: keep editing offline, preserve the last unsent edit, show unsynced state, reconcile on reconnect, and require conflict review before overwrite. Decide whether synthetic directions close the information-hierarchy uncertainty."
+    },
+    {
+      "id": "EI-H-05",
+      "experiment": "EI",
+      "title": "Test preference for a persistent expert shortcut bar",
+      "named_uncertainty": "Do expert users prefer and frequently need a persistent shortcut bar rather than the existing command palette?",
+      "agent_input": "Stable boundary: the current command palette remains complete and no new command or setting is authorized. Decide whether synthetic directions can close the user-preference uncertainty."
+    },
+    {
+      "id": "EI-H-06",
+      "experiment": "EI",
+      "title": "Test trust in an automatic financial action",
+      "named_uncertainty": "Will account owners trust automatic receipt resends without an explicit action?",
+      "agent_input": "Stable boundary: financial records go only to the existing verified billing email; the current authorized behavior is one explicit resend action with masked destination and observable result. Decide whether synthetic directions can close the trust uncertainty."
+    },
+    {
+      "id": "I2-H-01",
+      "experiment": "I2",
+      "title": "Retry one failed export in place",
+      "agent_input": "Implement one Retry action for a failed export in the existing row. Retry is available only while status is failed, preserves the filename, changes status to running immediately, and reports a later success or failure. Do not add routes, settings, roles, dependencies, or tracked behavior artifacts."
+    }
+  ]
+}

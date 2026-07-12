@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "repo-harness-bdd2-task-set.e2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "partition", "tasks"],
+  "properties": {
+    "schema": {"const": "repo-harness-bdd2-task-set.e2"},
+    "partition": {"enum": ["development", "held_out"]},
+    "tasks": {"type": "array", "items": {"oneOf": [{"$ref": "#/$defs/plainTask"}, {"$ref": "#/$defs/adapterTask"}]}}
+  },
+  "$defs": {
+    "plainTask": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "experiment", "title", "agent_input"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^(S2|I2)-[DH]-[0-9]{2}$"},
+        "experiment": {"enum": ["S2", "I2"]},
+        "title": {"type": "string", "minLength": 1},
+        "agent_input": {"type": "string", "minLength": 1}
+      }
+    },
+    "adapterTask": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "experiment", "title", "agent_input", "named_uncertainty"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^E[BI]-[DH]-[0-9]{2}$"},
+        "experiment": {"enum": ["EB", "EI"]},
+        "title": {"type": "string", "minLength": 1},
+        "agent_input": {"type": "string", "minLength": 1},
+        "named_uncertainty": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

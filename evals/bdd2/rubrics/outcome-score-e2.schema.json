@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "repo-harness-bdd2-outcome-score.e2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "packet_id", "task_id", "experiment", "reviewer_id", "normalized_outcome_sha256", "locked_at", "score"],
+  "properties": {
+    "schema": {"const": "repo-harness-bdd2-outcome-score.e2"},
+    "packet_id": {"type": "string", "pattern": "^[a-f0-9]{32}$"},
+    "task_id": {"type": "string", "pattern": "^(S2|EB|EI|I2)-[DH]-[0-9]{2}$"},
+    "experiment": {"enum": ["S2", "EB", "EI", "I2"]},
+    "reviewer_id": {"type": "string", "minLength": 1},
+    "normalized_outcome_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "locked_at": {"type": "string", "format": "date-time"},
+    "score": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uncertainty_closed", "boundary_category", "unsupported_expansion", "unsupported_user_concepts", "required_behavior_omission", "protected_concern_omissions", "authority_fit", "escalation_correct", "unnecessary_tracked_artifact_count", "correction_operations", "notes"],
+      "properties": {
+        "uncertainty_closed": {"type": "boolean"},
+        "boundary_category": {"type": "string", "minLength": 1},
+        "unsupported_expansion": {"type": "integer", "minimum": 0},
+        "unsupported_user_concepts": {"type": "integer", "minimum": 0},
+        "required_behavior_omission": {"type": "integer", "minimum": 0},
+        "protected_concern_omissions": {"type": "array", "items": {"$ref": "#/$defs/protectedConcern"}},
+        "authority_fit": {"type": "boolean"},
+        "escalation_correct": {"type": "boolean"},
+        "unnecessary_tracked_artifact_count": {"type": "integer", "minimum": 0},
+        "correction_operations": {"type": "array", "items": {"enum": ["remove_unsupported_behavior", "remove_user_decision", "restore_required_behavior", "restore_p0_p1_protected_concern", "restore_p2_p3_protected_concern", "correct_authority_tier", "correct_escalation_decision", "remove_tracked_behavior_artifact", "clarify_current_truth", "clarify_recovery_or_failure"]}},
+        "notes": {"type": "string"}
+      }
+    }
+  },
+  "$defs": {
+    "protectedConcern": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["concern", "severity", "summary"],
+      "properties": {
+        "concern": {"type": "string", "minLength": 1},
+        "severity": {"enum": ["P0", "P1", "P2", "P3"]},
+        "summary": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

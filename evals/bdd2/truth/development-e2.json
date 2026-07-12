@@ -1,0 +1,70 @@
+{
+  "schema": "repo-harness-bdd2-truth-set.e2",
+  "partition": "development",
+  "tasks": {
+    "S2-D-01": {
+      "kind": "inline-shape",
+      "risk_tags": ["recovery", "data_integrity"],
+      "required_behaviors": ["Keep recovery on the transcript page.", "Offer one retry only for the failed job and distinguish retrying, success, and failure.", "Preserve the uploaded audio."],
+      "unsupported_expansions": ["Transcript history", "Queue controls", "Retry policy settings", "A processing dashboard"],
+      "protected_concerns": [{"concern": "data_integrity", "severity": "P1", "summary": "Retry must not discard or replace the retained source audio."}],
+      "expected_authority": "inline",
+      "escalation_required": false
+    },
+    "S2-D-02": {
+      "kind": "inline-shape",
+      "risk_tags": ["privacy", "authorization"],
+      "required_behaviors": ["Stop implementation until the public principal, scope, expiry, revocation, forwarding, and audit boundary are approved."],
+      "unsupported_expansions": ["Invent password protection", "Invent analytics", "Invent social sharing", "Build a public portal"],
+      "protected_concerns": [{"concern": "privacy", "severity": "P0", "summary": "Unauthenticated access changes the workspace data boundary."}],
+      "expected_authority": "prd",
+      "escalation_required": true
+    },
+    "EB-D-01": {
+      "kind": "browser-adapter",
+      "reference_pattern": "Inline row recovery",
+      "forbidden_inference": "A reference screenshot cannot prove that this product needs history, bulk retry, queue controls, or a recovery dashboard.",
+      "expected_disposition": "Adopt",
+      "required_boundary": ["Inline retry on the failed row", "Observable running and final state"],
+      "unsupported_concepts": ["Recovery dashboard", "Queue controls", "Bulk retry"],
+      "protected_concerns": [{"concern": "recovery", "severity": "P1", "summary": "Retry must preserve input and expose final state."}],
+      "uncertainty_closable_by_browser": true
+    },
+    "EB-D-02": {
+      "kind": "browser-adapter",
+      "reference_pattern": "Multi-panel administration",
+      "forbidden_inference": "The existence of administration tabs cannot authorize new channels, schedules, roles, or policy controls.",
+      "expected_disposition": "Avoid",
+      "required_boundary": ["Use the existing weekly-digest toggle"],
+      "unsupported_concepts": ["Channels", "Schedules", "Roles", "Policy controls", "Administration tabs"],
+      "protected_concerns": [],
+      "uncertainty_closable_by_browser": true
+    },
+    "EI-D-01": {
+      "kind": "imagegen-adapter",
+      "forbidden_inference": "A generated layout cannot prove that users prefer it or that the timeout flow is usable.",
+      "prototype_can_close_uncertainty": true,
+      "expected_disposition": "Adapt",
+      "required_boundary": ["Visible timeout", "One safe Retry", "No implementation controls"],
+      "unsupported_concepts": ["Model selector", "Queue settings", "Prompt controls"],
+      "protected_concerns": [{"concern": "recovery", "severity": "P1", "summary": "Timeout cannot be presented as success and must preserve report state."}],
+      "expected_resolution": "Select the direction with inline timeout and one retry while retaining the stated evidence limitation."
+    },
+    "EI-D-02": {
+      "kind": "imagegen-adapter",
+      "forbidden_inference": "Generated prototypes cannot establish user demand, frequency, preference, or usability.",
+      "prototype_can_close_uncertainty": false,
+      "expected_disposition": "Defer",
+      "required_boundary": ["Keep the existing complete command palette"],
+      "unsupported_concepts": ["Persistent default shortcut surface", "Shortcut settings"],
+      "protected_concerns": [],
+      "expected_resolution": "Defer; prototypes cannot close a demand or preference uncertainty."
+    },
+    "I2-D-01": {
+      "kind": "implementation-pilot",
+      "fixture": "evals/bdd2/fixtures/i2-page-feature/fixture.json",
+      "required_acceptance": ["Retry exists only in failed state.", "Retry preserves filename and changes status to running.", "A later completion can become succeeded or failed.", "No new route, setting, role, dependency, or tracked behavior artifact."],
+      "protected_concerns": [{"concern": "recovery", "severity": "P1", "summary": "Retry must not report completion before the export result arrives."}]
+    }
+  }
+}

@@ -1,0 +1,240 @@
+{
+  "schema": "repo-harness-bdd2-truth-set.e2",
+  "partition": "held_out",
+  "tasks": {
+    "S2-H-01": {
+      "kind": "inline-shape",
+      "risk_tags": ["recovery"],
+      "required_behaviors": ["Keep retry on the video page.", "Offer Retry only for the failed caption job.", "Show retrying and final available-or-failed state while preserving the video."],
+      "unsupported_expansions": ["Caption job history", "Queue priority", "Retry policy", "Processing dashboard", "Provider selector"],
+      "protected_concerns": [{"concern": "recovery", "severity": "P1", "summary": "The retained video and final caption state must remain clear through retry."}],
+      "expected_authority": "inline",
+      "escalation_required": false
+    },
+    "S2-H-02": {
+      "kind": "inline-shape",
+      "risk_tags": ["accessibility"],
+      "required_behaviors": ["Identify the invalid field in text.", "Associate the error with the display-name input.", "Move or announce focus context after failed submit without losing entered values."],
+      "unsupported_expansions": ["Validation wizard", "Profile review page", "Custom accessibility settings", "Form redesign"],
+      "protected_concerns": [{"concern": "accessibility", "severity": "P1", "summary": "Color alone cannot communicate a blocking validation error."}],
+      "expected_authority": "inline",
+      "escalation_required": false
+    },
+    "S2-H-03": {
+      "kind": "inline-shape",
+      "risk_tags": ["privacy"],
+      "required_behaviors": ["Copy only the masked value already shown.", "Confirm that the masked value was copied without revealing the address."],
+      "unsupported_expansions": ["Reveal full email", "Edit recovery email", "Support ticket builder", "Security event history"],
+      "protected_concerns": [{"concern": "privacy", "severity": "P1", "summary": "The behavior must not reveal recovery-address characters unavailable in current truth."}],
+      "expected_authority": "inline",
+      "escalation_required": false
+    },
+    "S2-H-04": {
+      "kind": "inline-shape",
+      "risk_tags": ["authorization", "destructive"],
+      "required_behaviors": ["Name the token in an irreversible confirmation.", "Default to Cancel and revoke only after confirmation.", "Report backend success or failure without claiming early completion."],
+      "unsupported_expansions": ["Bulk revoke", "Token roles", "Rotation scheduler", "Organization token console", "Recovery history"],
+      "protected_concerns": [{"concern": "authorization", "severity": "P1", "summary": "Only the authenticated owner may revoke the token."}],
+      "expected_authority": "inline",
+      "escalation_required": false
+    },
+    "S2-H-05": {
+      "kind": "inline-shape",
+      "risk_tags": ["destructive", "data_integrity"],
+      "required_behaviors": ["Remove only the selected attachment from the unsent draft.", "Preserve message text and other attachments.", "Do not imply the source file was deleted."],
+      "unsupported_expansions": ["Trash", "File deletion", "Attachment library", "Bulk attachment manager", "Version history"],
+      "protected_concerns": [{"concern": "data_integrity", "severity": "P1", "summary": "Removing an attachment must not erase draft text, other attachments, or the source file."}],
+      "expected_authority": "inline",
+      "escalation_required": false
+    },
+    "S2-H-06": {
+      "kind": "inline-shape",
+      "risk_tags": ["privacy", "authorization"],
+      "required_behaviors": ["Expose one export action for the current authorized and filtered rows.", "Show file preparation and recoverable failure state.", "Preserve existing account authorization."],
+      "unsupported_expansions": ["Export templates", "Schedules", "Destinations", "Bulk account export", "Format builder", "Export center"],
+      "protected_concerns": [{"concern": "privacy", "severity": "P1", "summary": "CSV personal data must remain scoped to the account and current authorization."}],
+      "expected_authority": "inline",
+      "escalation_required": false
+    },
+    "S2-H-07": {
+      "kind": "inline-shape",
+      "risk_tags": ["recovery", "data_integrity"],
+      "required_behaviors": ["Keep editing during disconnect and show unsent state.", "Restore the stored comment after reconnect.", "Require conflict review before overwriting newer server text."],
+      "unsupported_expansions": ["Manual sync modes", "Storage quotas", "Device list", "Full version history", "Offline settings"],
+      "protected_concerns": [{"concern": "data_integrity", "severity": "P0", "summary": "An unsent comment cannot be silently lost or overwrite conflicting server content."}],
+      "expected_authority": "inline",
+      "escalation_required": false
+    },
+    "S2-H-08": {
+      "kind": "inline-shape",
+      "risk_tags": ["accessibility"],
+      "required_behaviors": ["Announce updated result count and no-results state in the existing results region.", "Keep keyboard focus in the search field unless the user moves it.", "Avoid announcing intermediate implementation state."],
+      "unsupported_expansions": ["Search wizard", "Accessibility settings", "New results route", "Saved search", "Filter builder"],
+      "protected_concerns": [{"concern": "accessibility", "severity": "P1", "summary": "Screen-reader users need an equivalent observable result without disruptive focus loss."}],
+      "expected_authority": "inline",
+      "escalation_required": false
+    },
+    "S2-H-09": {
+      "kind": "inline-shape",
+      "risk_tags": ["privacy", "authorization"],
+      "required_behaviors": ["Stop implementation until public identity, file scope, expiry, revocation, forwarding, audit, and owner responsibility are approved."],
+      "unsupported_expansions": ["Invent link passwords", "Invent download analytics", "Invent social sharing", "Public file portal", "Guest roles"],
+      "protected_concerns": [{"concern": "privacy", "severity": "P0", "summary": "An unauthenticated link crosses the existing membership access boundary."}],
+      "expected_authority": "prd",
+      "escalation_required": true
+    },
+    "S2-H-10": {
+      "kind": "inline-shape",
+      "risk_tags": ["authorization", "accessibility"],
+      "required_behaviors": ["Stop implementation until manager identity, permission scope, approval states, delegation, rejection, notifications, and accessible pending-work ownership are approved."],
+      "unsupported_expansions": ["Invent multiple manager tiers", "Approval analytics", "Group permissions", "Organization console", "Escalation schedules"],
+      "protected_concerns": [{"concern": "authorization", "severity": "P0", "summary": "A new role and publishing authority boundary require explicit product and security decisions."}],
+      "expected_authority": "prd",
+      "escalation_required": true
+    },
+    "S2-H-11": {
+      "kind": "inline-shape",
+      "risk_tags": ["destructive", "data_integrity", "recovery"],
+      "required_behaviors": ["Stop implementation until existing promises, recovery loss, backup and compliance effects, effective date, migration, and rollback are approved."],
+      "unsupported_expansions": ["Invent retention tiers", "Policy builder", "Per-project exceptions", "Purge scheduler", "Compliance dashboard"],
+      "protected_concerns": [{"concern": "data_integrity", "severity": "P0", "summary": "Immediate deletion removes an existing recovery guarantee and affects backups and compliance exports."}],
+      "expected_authority": "prd",
+      "escalation_required": true
+    },
+    "S2-H-12": {
+      "kind": "inline-shape",
+      "risk_tags": ["data_integrity", "destructive"],
+      "required_behaviors": ["Stop implementation until prospective versus retroactive scope, historical reproducibility, adjustment entries, migration, and rollback are approved."],
+      "unsupported_expansions": ["Per-report rounding choices", "Rounding settings suite", "Currency conversion", "Ledger rewrite tool", "Accounting dashboard"],
+      "protected_concerns": [{"concern": "data_integrity", "severity": "P0", "summary": "Changing posted financial interpretation without migration and reversal authority can corrupt historical reports."}],
+      "expected_authority": "prd",
+      "escalation_required": true
+    },
+    "EB-H-01": {
+      "kind": "browser-adapter",
+      "reference_pattern": "GOV.UK error summary",
+      "forbidden_inference": "The screenshot cannot authorize a validation wizard, new form steps, new fields, or a general design-system migration.",
+      "expected_disposition": "Adopt",
+      "required_boundary": ["Keep the existing form", "Retain field-level text", "Add one linked summary", "Preserve entered values and focus access"],
+      "unsupported_concepts": ["Validation wizard", "New form steps", "New fields", "Design-system migration"],
+      "protected_concerns": [{"concern": "accessibility", "severity": "P1", "summary": "Keyboard and screen-reader users must be able to locate and understand each invalid field."}],
+      "uncertainty_closable_by_browser": true
+    },
+    "EB-H-02": {
+      "kind": "browser-adapter",
+      "reference_pattern": "GOV.UK warning and destructive action",
+      "forbidden_inference": "The screenshot cannot authorize bulk revoke, typed confirmation, token rotation, recovery history, or an administration page.",
+      "expected_disposition": "Adopt",
+      "required_boundary": ["Name the token", "State permanence", "Cancel is default", "One destructive revoke", "Report backend failure"],
+      "unsupported_concepts": ["Bulk revoke", "Typed confirmation", "Rotation", "Recovery history", "Administration page"],
+      "protected_concerns": [{"concern": "authorization", "severity": "P1", "summary": "Only the authenticated token owner may confirm revocation, and completion cannot be claimed before backend success."}],
+      "uncertainty_closable_by_browser": true
+    },
+    "EB-H-03": {
+      "kind": "browser-adapter",
+      "reference_pattern": "Carbon accordion and progressive disclosure",
+      "forbidden_inference": "The reference cannot authorize new filters, saved searches, segment builders, multiple accordion sections, or analyst roles.",
+      "expected_disposition": "Adapt",
+      "required_boundary": ["Name search remains default", "Existing date range is progressively disclosed", "Expanded state is accessible", "Clear restores the primary query"],
+      "unsupported_concepts": ["New filters", "Saved search", "Segment builder", "Multiple new sections", "New role"],
+      "protected_concerns": [{"concern": "accessibility", "severity": "P1", "summary": "Disclosure state and the active filter must remain perceivable and operable."}],
+      "uncertainty_closable_by_browser": true
+    },
+    "EB-H-04": {
+      "kind": "browser-adapter",
+      "reference_pattern": "Carbon inline loading and adjacent status",
+      "forbidden_inference": "The reference cannot authorize duration claims, retry policy, background-job controls, queue priority, or a universal ban on status pages.",
+      "expected_disposition": "Adapt",
+      "required_boundary": ["Keep retry state adjacent to the existing row", "Preserve filename", "Show running, succeeded, or failed", "Allow retry again after a later failure"],
+      "unsupported_concepts": ["Duration claim", "Job history", "Retry policy", "Queue priority", "Background-job control", "Dashboard"],
+      "protected_concerns": [{"concern": "recovery", "severity": "P1", "summary": "Retry must preserve export identity and cannot claim success before completion."}],
+      "uncertainty_closable_by_browser": true
+    },
+    "EB-H-05": {
+      "kind": "browser-adapter",
+      "reference_pattern": "Atlassian dropdown and dense action menu",
+      "forbidden_inference": "The screenshot cannot authorize import sources, templates, mapping modes, history, schedules, or bulk administration.",
+      "expected_disposition": "Avoid",
+      "required_boundary": ["One visible Import CSV action", "Actionable invalid-row result"],
+      "unsupported_concepts": ["Import source menu", "Templates", "Mapping modes", "History", "Schedules", "Administration"],
+      "protected_concerns": [{"concern": "data_integrity", "severity": "P1", "summary": "Invalid rows must remain identifiable without hiding the authorized import action."}],
+      "uncertainty_closable_by_browser": true
+    },
+    "EB-H-06": {
+      "kind": "browser-adapter",
+      "reference_pattern": "Carbon data table and dense table controls",
+      "forbidden_inference": "The screenshot cannot authorize column configuration, sorting, batch actions, pagination, filters, selection, or view administration.",
+      "expected_disposition": "Avoid",
+      "required_boundary": ["Rename one saved view in place", "Validate name", "Preserve old name on save failure"],
+      "unsupported_concepts": ["Column configuration", "Sorting", "Batch actions", "Pagination", "Filters", "Selection", "Administration"],
+      "protected_concerns": [{"concern": "recovery", "severity": "P1", "summary": "A failed rename must preserve the prior saved-view name."}],
+      "uncertainty_closable_by_browser": true
+    },
+    "EI-H-01": {
+      "kind": "imagegen-adapter",
+      "forbidden_inference": "The generated directions cannot prove preference, usability, user value, or demand.",
+      "prototype_can_close_uncertainty": true,
+      "expected_disposition": "Adapt",
+      "expected_resolution": "Select the direction that keeps timeout and one Retry inline with the fewest exposed decisions.",
+      "required_boundary": ["Same report page", "Progress", "Timeout", "One safe Retry", "Preserve report"],
+      "unsupported_concepts": ["Model", "Prompt", "Queue", "Fallback settings"],
+      "protected_concerns": [{"concern": "recovery", "severity": "P1", "summary": "Timeout cannot look like success or discard report context."}]
+    },
+    "EI-H-02": {
+      "kind": "imagegen-adapter",
+      "forbidden_inference": "A generated visual does not prove screen-reader behavior; semantic acceptance still requires implementation tests.",
+      "prototype_can_close_uncertainty": true,
+      "expected_disposition": "Adapt",
+      "expected_resolution": "Select a direction that visibly connects summary and field error while preserving the single form flow; retain semantic-test caveat.",
+      "required_boundary": ["Existing form", "Text error", "Associated field", "Focus/announcement", "Preserved values"],
+      "unsupported_concepts": ["Wizard", "New step", "Validation settings"],
+      "protected_concerns": [{"concern": "accessibility", "severity": "P1", "summary": "Visual hierarchy cannot replace semantic field association and focus/announcement behavior."}]
+    },
+    "EI-H-03": {
+      "kind": "imagegen-adapter",
+      "forbidden_inference": "The prototype cannot authorize trash, bulk deletion, retention settings, or a typed-name requirement.",
+      "prototype_can_close_uncertainty": true,
+      "expected_disposition": "Adapt",
+      "expected_resolution": "Select the compact hierarchy that preserves identity, consequence, Cancel, and Delete without new workflow.",
+      "required_boundary": ["Name filter", "State permanence", "Cancel default", "Delete destructive", "Final failure"],
+      "unsupported_concepts": ["Trash", "Bulk delete", "Retention settings", "Typed confirmation"],
+      "protected_concerns": [{"concern": "data_integrity", "severity": "P1", "summary": "Permanent deletion requires consequence clarity and must not claim completion early."}]
+    },
+    "EI-H-04": {
+      "kind": "imagegen-adapter",
+      "forbidden_inference": "The prototype cannot prove reliability or authorize manual sync policy, device lists, quotas, or version history.",
+      "prototype_can_close_uncertainty": true,
+      "expected_disposition": "Adapt",
+      "expected_resolution": "Select the direction that keeps unsynced state and conflict recovery legible while hiding sync internals.",
+      "required_boundary": ["Continue editing", "Unsynced state", "Reconnect", "Conflict review"],
+      "unsupported_concepts": ["Manual sync", "Device list", "Quota", "Version history"],
+      "protected_concerns": [{"concern": "data_integrity", "severity": "P0", "summary": "Offline edits cannot be lost or overwrite newer server text without conflict review."}]
+    },
+    "EI-H-05": {
+      "kind": "imagegen-adapter",
+      "forbidden_inference": "Generated variants cannot establish preference, frequency, usability, or user demand.",
+      "prototype_can_close_uncertainty": false,
+      "expected_disposition": "Defer",
+      "expected_resolution": "Defer; only behavioral user evidence can establish preference and frequency.",
+      "required_boundary": ["Keep existing command palette complete"],
+      "unsupported_concepts": ["Persistent shortcut surface", "Shortcut settings", "New commands"],
+      "protected_concerns": []
+    },
+    "EI-H-06": {
+      "kind": "imagegen-adapter",
+      "forbidden_inference": "Generated screens cannot prove trust, consent, user value, or safe production behavior.",
+      "prototype_can_close_uncertainty": false,
+      "expected_disposition": "Defer",
+      "expected_resolution": "Defer; synthetic screens cannot establish trust or consent for automatic financial action.",
+      "required_boundary": ["One explicit resend action", "Masked verified destination", "Observable result"],
+      "unsupported_concepts": ["Automatic resend", "Editable recipient", "Delivery policy", "Trust claim"],
+      "protected_concerns": [{"concern": "privacy", "severity": "P1", "summary": "Financial records must go only to the verified destination after explicit owner action."}]
+    },
+    "I2-H-01": {
+      "kind": "implementation-pilot",
+      "fixture": "evals/bdd2/fixtures/i2-page-feature/fixture.json",
+      "required_acceptance": ["Retry exists only for failed export.", "Retry preserves filename and immediately changes status to running.", "Completion can become succeeded or failed.", "The row shows observable status and no internal orchestration controls.", "No route, setting, role, dependency, or tracked behavior artifact is added."],
+      "protected_concerns": [{"concern": "recovery", "severity": "P1", "summary": "Retry cannot report success before completion and cannot lose the export identity."}]
+    }
+  }
+}

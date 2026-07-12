@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "repo-harness-bdd2-evidence-score.e2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "packet_id", "reviewer_id", "appendix_sha256", "full_response_sha256", "locked_at", "score"],
+  "properties": {
+    "schema": {"const": "repo-harness-bdd2-evidence-score.e2"},
+    "packet_id": {"type": "string", "pattern": "^[a-f0-9]{32}$"},
+    "reviewer_id": {"type": "string", "minLength": 1},
+    "appendix_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "full_response_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "locked_at": {"type": "string", "format": "date-time"},
+    "score": {"oneOf": [{"$ref": "#/$defs/browserScore"}, {"$ref": "#/$defs/imagegenScore"}]}
+  },
+  "$defs": {
+    "browserScore": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provenance_complete", "question_bound", "privacy_reviewed", "adopt_adapt_avoid_complete", "unsupported_claim_count", "feature_need_inference_count", "notes"],
+      "properties": {
+        "provenance_complete": {"type": "boolean"},
+        "question_bound": {"type": "boolean"},
+        "privacy_reviewed": {"type": "boolean"},
+        "adopt_adapt_avoid_complete": {"type": "boolean"},
+        "unsupported_claim_count": {"type": "integer", "minimum": 0},
+        "feature_need_inference_count": {"type": "integer", "minimum": 0},
+        "notes": {"type": "string"}
+      }
+    },
+    "imagegenScore": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["question_bound", "synthetic_labeled", "falsifier_present", "unsupported_claim_count", "user_validation_claim_count", "notes"],
+      "properties": {
+        "question_bound": {"type": "boolean"},
+        "synthetic_labeled": {"type": "boolean"},
+        "falsifier_present": {"type": "boolean"},
+        "unsupported_claim_count": {"type": "integer", "minimum": 0},
+        "user_validation_claim_count": {"type": "integer", "minimum": 0},
+        "notes": {"type": "string"}
+      }
+    }
+  }
+}

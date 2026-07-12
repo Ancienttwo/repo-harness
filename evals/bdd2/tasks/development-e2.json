@@ -1,0 +1,52 @@
+{
+  "schema": "repo-harness-bdd2-task-set.e2",
+  "partition": "development",
+  "tasks": [
+    {
+      "id": "S2-D-01",
+      "experiment": "S2",
+      "title": "Retry one failed transcript",
+      "agent_input": "Current truth: the transcript page already shows one failed processing row and retains the uploaded audio. Request: let the owner retry that failed transcript on the same page and understand the final result. Shape the minimum behavior; do not write code."
+    },
+    {
+      "id": "S2-D-02",
+      "experiment": "S2",
+      "title": "Publish an unauthenticated workspace snapshot",
+      "agent_input": "Current truth: workspace snapshots are visible only to authenticated members and there is no public access, expiry, or revocation contract. Request: add a public snapshot link. Shape the minimum behavior; do not write code."
+    },
+    {
+      "id": "EB-D-01",
+      "experiment": "EB",
+      "title": "Place retry for one failed row",
+      "named_uncertainty": "Should recovery remain an inline row action or move to a separate recovery page?",
+      "agent_input": "Current truth: one import row can fail, its input remains available, and Retry is already supported by the backend. Decide the smallest visible recovery pattern and state Adopt, Adapt, Avoid, or Defer."
+    },
+    {
+      "id": "EB-D-02",
+      "experiment": "EB",
+      "title": "Compare an admin-heavy reference",
+      "named_uncertainty": "Can any part of a multi-panel administration pattern reduce ambiguity for one notification toggle?",
+      "agent_input": "Current truth: the settings page already lists notification types with a per-user on/off switch. Request: mute the weekly digest. Decide the smallest pattern and state Adopt, Adapt, Avoid, or Defer."
+    },
+    {
+      "id": "EI-D-01",
+      "experiment": "EI",
+      "title": "Show timeout recovery without exposing orchestration",
+      "named_uncertainty": "Which low-fidelity layout keeps timeout status and one safe Retry visible without adding advanced AI controls?",
+      "agent_input": "Stable boundary: keep the report page, visible progress, one timeout message, and one safe Retry; do not add model, queue, or prompt controls. Decide whether the supplied synthetic directions close the named interaction uncertainty."
+    },
+    {
+      "id": "EI-D-02",
+      "experiment": "EI",
+      "title": "Test demand for an expert shortcut",
+      "named_uncertainty": "Do expert users value a persistent keyboard-shortcut strip enough to show it by default?",
+      "agent_input": "Stable boundary: the existing command palette remains the complete path; no new command or setting is authorized. Decide whether the supplied synthetic directions can close the named uncertainty."
+    },
+    {
+      "id": "I2-D-01",
+      "experiment": "I2",
+      "title": "Retry one failed export in place",
+      "agent_input": "Implement one Retry action for a failed export in the existing row. Retry is available only while status is failed, preserves the filename, changes status to running immediately, and reports a later success or failure. Do not add routes, settings, roles, dependencies, or tracked behavior artifacts."
+    }
+  ]
+}

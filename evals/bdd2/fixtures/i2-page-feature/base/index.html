@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Exports</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Exports</h1>
+      <p>Download completed customer exports.</p>
+      <section id="export-row" aria-live="polite"></section>
+    </main>
+    <script type="module">
+      import { createExportController } from "./app.js";
+
+      const row = document.querySelector("#export-row");
+      const controller = createExportController({
+        id: "export-17",
+        filename: "customers-july.csv",
+        status: "failed"
+      });
+
+      const paint = () => {
+        row.innerHTML = controller.render();
+      };
+
+      row.addEventListener("click", (event) => {
+        const action = event.target.closest("[data-action]")?.dataset.action;
+        if (!action) return;
+        // The bounded feature may handle its one public action here.
+        paint();
+      });
+
+      paint();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "repo-harness-bdd2-truth-set.e2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "partition", "tasks"],
+  "properties": {
+    "schema": {"const": "repo-harness-bdd2-truth-set.e2"},
+    "partition": {"enum": ["development", "held_out"]},
+    "tasks": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "oneOf": [
+          {"$ref": "#/$defs/shapeTruth"},
+          {"$ref": "#/$defs/browserTruth"},
+          {"$ref": "#/$defs/imagegenTruth"},
+          {"$ref": "#/$defs/pilotTruth"}
+        ]
+      }
+    }
+  },
+  "$defs": {
+    "stringList": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "protectedConcern": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["concern", "severity", "summary"],
+      "properties": {
+        "concern": {"type": "string", "minLength": 1},
+        "severity": {"enum": ["P0", "P1", "P2", "P3"]},
+        "summary": {"type": "string", "minLength": 1}
+      }
+    },
+    "shapeTruth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "risk_tags", "required_behaviors", "unsupported_expansions", "protected_concerns", "expected_authority", "escalation_required"],
+      "properties": {
+        "kind": {"const": "inline-shape"},
+        "risk_tags": {"$ref": "#/$defs/stringList"},
+        "required_behaviors": {"$ref": "#/$defs/stringList"},
+        "unsupported_expansions": {"$ref": "#/$defs/stringList"},
+        "protected_concerns": {"type": "array", "items": {"$ref": "#/$defs/protectedConcern"}},
+        "expected_authority": {"enum": ["inline", "prd"]},
+        "escalation_required": {"type": "boolean"}
+      }
+    },
+    "browserTruth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "reference_pattern", "forbidden_inference", "expected_disposition", "required_boundary", "unsupported_concepts", "protected_concerns", "uncertainty_closable_by_browser"],
+      "properties": {
+        "kind": {"const": "browser-adapter"},
+        "reference_pattern": {"type": "string", "minLength": 1},
+        "forbidden_inference": {"type": "string", "minLength": 1},
+        "expected_disposition": {"enum": ["Adopt", "Adapt", "Avoid", "Defer"]},
+        "required_boundary": {"$ref": "#/$defs/stringList"},
+        "unsupported_concepts": {"$ref": "#/$defs/stringList"},
+        "protected_concerns": {"type": "array", "items": {"$ref": "#/$defs/protectedConcern"}},
+        "uncertainty_closable_by_browser": {"type": "boolean"}
+      }
+    },
+    "imagegenTruth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "forbidden_inference", "prototype_can_close_uncertainty", "expected_disposition", "expected_resolution", "required_boundary", "unsupported_concepts", "protected_concerns"],
+      "properties": {
+        "kind": {"const": "imagegen-adapter"},
+        "forbidden_inference": {"type": "string", "minLength": 1},
+        "prototype_can_close_uncertainty": {"type": "boolean"},
+        "expected_disposition": {"enum": ["Adopt", "Adapt", "Avoid", "Defer"]},
+        "expected_resolution": {"type": "string", "minLength": 1},
+        "required_boundary": {"$ref": "#/$defs/stringList"},
+        "unsupported_concepts": {"$ref": "#/$defs/stringList"},
+        "protected_concerns": {"type": "array", "items": {"$ref": "#/$defs/protectedConcern"}}
+      }
+    },
+    "pilotTruth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "fixture", "required_acceptance", "protected_concerns"],
+      "properties": {
+        "kind": {"const": "implementation-pilot"},
+        "fixture": {"type": "string", "pattern": "^evals/bdd2/fixtures/"},
+        "required_acceptance": {"$ref": "#/$defs/stringList"},
+        "protected_concerns": {"type": "array", "items": {"$ref": "#/$defs/protectedConcern"}}
+      }
+    }
+  }
+}

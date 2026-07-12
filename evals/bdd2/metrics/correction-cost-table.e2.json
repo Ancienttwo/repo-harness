@@ -1,0 +1,16 @@
+{
+  "schema": "repo-harness-bdd2-correction-cost.e2",
+  "unit": "points",
+  "operations": {
+    "remove_unsupported_behavior": 2,
+    "remove_user_decision": 2,
+    "restore_required_behavior": 3,
+    "restore_p0_p1_protected_concern": 8,
+    "restore_p2_p3_protected_concern": 4,
+    "correct_authority_tier": 3,
+    "correct_escalation_decision": 5,
+    "remove_tracked_behavior_artifact": 2,
+    "clarify_current_truth": 1,
+    "clarify_recovery_or_failure": 2
+  }
+}

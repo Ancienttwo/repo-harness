@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "repo-harness-bdd2-owner-adjudication.e2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "packet_id", "owner_id", "locked_at", "reason", "score"],
+  "properties": {
+    "schema": {"const": "repo-harness-bdd2-owner-adjudication.e2"},
+    "packet_id": {"type": "string", "pattern": "^[a-f0-9]{32}$"},
+    "owner_id": {"type": "string", "minLength": 1},
+    "locked_at": {"type": "string", "format": "date-time"},
+    "reason": {"type": "string", "minLength": 1},
+    "score": {"$ref": "repo-harness-bdd2-outcome-score.e2#/properties/score"}
+  }
+}

@@ -1,0 +1,30 @@
+:root {
+  color: #17202a;
+  background: #f7f8fa;
+  font-family: system-ui, sans-serif;
+}
+
+main {
+  width: min(42rem, calc(100% - 2rem));
+  margin: 4rem auto;
+}
+
+article {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  background: white;
+  border: 1px solid #d9dee7;
+  border-radius: 0.5rem;
+}
+
+.status {
+  margin-left: auto;
+  color: #596579;
+}
+
+button {
+  font: inherit;
+  padding: 0.45rem 0.8rem;
+}
