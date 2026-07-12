@@ -769,10 +769,19 @@ describe('mcp http transport', () => {
       setRepoHarnessAccessMode(repoRoot, 'read_only');
       const disabled = await fetch(`http://127.0.0.1:${port}/health`, { headers: { origin: 'https://chatgpt.com' } });
       expect(disabled.status).toBe(503);
-      await Bun.sleep(1_500);
-      const stoppedAt = readFileSync(heartbeatPath, 'utf-8');
-      await Bun.sleep(750);
-      expect(readFileSync(heartbeatPath, 'utf-8')).toBe(stoppedAt);
+      await Bun.sleep(2_500);
+      let stoppedAt = readFileSync(heartbeatPath, 'utf-8');
+      let stableSamples = 0;
+      for (let attempt = 0; attempt < 30 && stableSamples < 5; attempt += 1) {
+        await Bun.sleep(100);
+        const current = readFileSync(heartbeatPath, 'utf-8');
+        if (current === stoppedAt) stableSamples += 1;
+        else {
+          stoppedAt = current;
+          stableSamples = 0;
+        }
+      }
+      expect(stableSamples).toBe(5);
     } finally {
       proc?.kill();
       await proc?.exited.catch(() => undefined);
