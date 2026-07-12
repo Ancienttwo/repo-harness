@@ -68,10 +68,7 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 ```yaml
 allowed_paths:
   - .github/workflows/ci.yml
-  - assets/templates/helpers/architecture-event.ts
   - docs/researches/repo-harness 钩子时延与 LLM 提供商限流归因研究报告.md
-  - scripts/architecture-event.ts
-  - src/cli/hook-entry.ts
   - src/cli/hook/runtime.ts
   - src/cli/index.ts
   - plans/plan-20260712-1330-bun-1-3-14-runtime-upgrade.md

@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-12T13:56:06+0800 -->
+<!-- updated_at: 2026-07-12T14:10:24+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-07-12T13:56:06+0800
+> **Updated At**: 2026-07-12T14:10:24+0800
 > **Source Branch**: codex/upgrade-bun-1-3-14
-> **Source Commit**: 2e0ce88
+> **Source Commit**: 52a8415
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: bun-1-3-14-exit-boundary-complete
+> **Reason**: bun-1-3-14-rebased-on-typescript7-main
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -63,12 +63,12 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 6 changed/untracked path(s)
 
 ```
+ M assets/templates/helpers/architecture-event.ts
  M plans/plan-20260712-1330-bun-1-3-14-runtime-upgrade.md
- M src/cli/hook/runtime.ts
- M src/cli/index.ts
- M tasks/current.md
+ M scripts/architecture-event.ts
+ M src/cli/hook-entry.ts
+ M tasks/contracts/20260712-1330-bun-1-3-14-runtime-upgrade.contract.md
  M tasks/notes/20260712-1330-bun-1-3-14-runtime-upgrade.notes.md
- M tasks/reviews/20260712-1330-bun-1-3-14-runtime-upgrade.review.md
 ```
 
 ## Source Artifacts

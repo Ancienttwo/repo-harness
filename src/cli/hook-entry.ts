@@ -29,8 +29,6 @@ function parseCliArgs(argv: readonly string[]): { event: HookEvent; routeId: Rou
 }
 
 if (import.meta.main) {
-  // These branches exit immediately after writing. Keep the host protocol
-  // payload synchronous so Bun cannot terminate with bytes still buffered.
   const argv = process.argv.slice(2);
   if (argv[0] === 'minimal-change') {
     const { runMinimalChangeCli } = await import('./hook/minimal-change-cli');

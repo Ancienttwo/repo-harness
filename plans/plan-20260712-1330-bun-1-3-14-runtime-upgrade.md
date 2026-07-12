@@ -18,9 +18,9 @@
 - Selected route: direct bounded runtime upgrade
 - Routing reason: one CI baseline plus one cross-runtime output invariant; no independent research workstream required
 - Due diligence:
-  - P1 map: `.github/workflows/ci.yml` owns hosted Bun selection; `scripts/architecture-event.ts` and its template own generated architecture JSON; `src/cli/hook-entry.ts` and hook runtime own hook stdout/stderr delivery.
+  - P1 map: `.github/workflows/ci.yml` owns hosted Bun selection; current main already synchronizes architecture/helper and primary hook output; `src/cli/hook/runtime.ts` and `src/cli/index.ts` retain the missed exit-adjacent paths.
   - P2 trace: Bun 1.3.14 executes `architecture-event event-json`; buffered stdout followed by immediate `process.exit` emits 512 bytes, the shell adapter passes invalid JSON to `upsert-request`, and architecture/hook tests fail.
-  - P3 decision rationale: pin hosted CI to 1.3.14 and make only exit-adjacent output synchronous; preserve CLI contracts, schemas, and package compatibility floor.
+  - P3 decision rationale: pin hosted CI to 1.3.14 and close only the remaining exit-adjacent output gaps after rebasing onto main's TypeScript 7/output-hardening commit; preserve CLI contracts, schemas, and package compatibility floor.
 
 ## Workflow Inventory
 Complete this inventory before implementation. If any line is unknown, keep the plan in Draft and fill it before projection.
@@ -54,11 +54,8 @@ writes so all bytes are committed before process termination.
 | File | Action | Description |
 |------|--------|-------------|
 | `.github/workflows/ci.yml` | Update | Pin test and MCP matrix to Bun 1.3.14. |
-| `scripts/architecture-event.ts` | Update | Synchronously emit complete JSON before exit. |
-| `assets/templates/helpers/architecture-event.ts` | Update | Keep downstream helper projection byte-aligned. |
-| `src/cli/hook-entry.ts` | Update | Synchronously emit hook CLI result streams before exit. |
-| `src/cli/hook/runtime.ts` | Update | Preserve hook child output synchronously across the parent exit boundary. |
-| `src/cli/index.ts` | Update | Apply the same invariant to full-CLI hidden hook commands. |
+| `src/cli/hook/runtime.ts` | Update | Close the remaining unknown-route, missing-script, and child-spawn error writes. |
+| `src/cli/index.ts` | Update | Apply the same invariant to adopt dry-run and full-CLI hidden hook commands. |
 | `docs/researches/repo-harness 钩子时延与 LLM 提供商限流归因研究报告.md` | Update | Record the current CI Bun pin. |
 
 ### Code Snippets
@@ -110,7 +107,7 @@ command result -> synchronous fd 1/fd 2 write -> process exit -> complete caller
 ## Task Breakdown
 - [x] Reproduce Bun 1.3.14 exit-boundary output truncation.
 - [x] Pin hosted CI and MCP matrix to Bun 1.3.14.
-- [x] Make architecture and hook exit-boundary output synchronous.
-- [x] Synchronize helper template and runtime research current truth.
+- [x] Rebase onto main's TypeScript 7/output hardening and close the remaining runtime/index exit-boundary gaps.
+- [x] Synchronize runtime research current truth.
 - [x] Pass focused regression tests, typecheck, and the 1.3.14 full suite.
 - [x] Project workflow artifacts, run repository checks, commit, push, and open the upgrade PR.

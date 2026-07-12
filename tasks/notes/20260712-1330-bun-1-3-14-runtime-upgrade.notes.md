@@ -11,7 +11,7 @@
 
 - Keep `package.json#engines.bun` at `>=1.1.35`; the hosted verification baseline
   changes, but this PR does not claim older supported Bun releases are invalid.
-- Use `writeFileSync` on fd 1/fd 2 only where a process exits immediately. This
+- Use `writeSync` on fd 1/fd 2 only where a process exits immediately. This
   protects the output contract without adding flush timers, retries, or fallback parsers.
 - Mirror `architecture-event.ts` into the downstream helper template in the same change.
 
@@ -55,6 +55,12 @@
   synchronous output as well; there are now no direct buffered stdout/stderr
   writes left in `src/cli/index.ts`, `src/cli/hook-entry.ts`,
   `src/cli/hook/runtime.ts`, or `scripts/architecture-event.ts`.
+- Rebase note: main advanced through `dd0841d`, which already adopted `writeSync`
+  for architecture-event, hook-entry, required-missing-script, and hook relay
+  paths while upgrading TypeScript 7. This branch now keeps main's `writeSync`
+  authority and contributes only the missed runtime/index boundaries plus the
+  Bun 1.3.14 CI pin. Delayed-reader stress delivered exact 10MB and 100MB
+  `writeSync` payloads with exit 0.
 
 ## Promotion Filter
 
