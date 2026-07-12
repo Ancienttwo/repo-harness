@@ -101,6 +101,10 @@
   120 seconds. Free-form manual statements were also removed from `manual_checks`
   because that verifier supports only its evaluator-review check; the same invariants
   are enforced by E3 contract tests, hash validation, and the completed review card.
+- `check-task-workflow --strict` remains a required root closeout check and passes with
+  terminal markers cleared. It is not duplicated inside `verify-sprint`: that helper
+  temporarily requires the terminal plan marker in order to resolve the contract,
+  while the strict workflow check correctly rejects a terminal plan left active.
 
 ## Evidence Links
 

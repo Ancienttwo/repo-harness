@@ -181,7 +181,6 @@ exit_criteria:
     - bash scripts/check-deploy-sql-order.sh
     - bash scripts/check-architecture-sync.sh
     - bash scripts/check-task-sync.sh
-    - repo-harness run check-task-workflow --strict
     - bun scripts/inspect-project-state.ts --repo . --format text
     - bun src/cli/index.ts adopt --repo . --dry-run
   qa_scores:
