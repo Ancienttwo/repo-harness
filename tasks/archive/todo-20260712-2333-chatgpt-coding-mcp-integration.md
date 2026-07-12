@@ -1,7 +1,13 @@
+> **Archived**: 2026-07-12 23:33
+> **Related Plan**: plans/archive/plan-20260712-0301-chatgpt-coding-mcp-integration.md
+> **Outcome**: Completed
+> **Source Plan**: (none)
+> **Parent Run ID**: run-20260712-2333
+
 # Deferred Goal Ledger
 
 > **Status**: Backlog
-> **Updated**: (archive-workflow)
+> **Updated**: 2026-07-12 13:32
 > **Scope**: Medium/long-term goals deferred from active plan execution
 
 Current plan tasks live in the active plan's `## Task Breakdown`.

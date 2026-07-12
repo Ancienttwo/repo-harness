@@ -1,4 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+import { join, resolve } from 'path';
 import {
   ALL_TARGETS,
   getTarget,
@@ -52,4 +55,67 @@ describe('installer target registry', () => {
     expect(claudeTarget.describePaths('global')[0]).toMatch(/\/\.claude\/settings\.json$/);
     expect(claudeTarget.describePaths('local')[0]).toMatch(/\/\.claude\/settings\.json$/);
   });
+});
+
+describe('repo registration persistence', () => {
+  test('serializes concurrent registrations, access updates, and authorization revision bumps', async () => {
+    const fixtureRoot = mkdtempSync(join(tmpdir(), 'repo-harness-registry-concurrency-'));
+    const registryHome = join(fixtureRoot, 'home');
+    const startPath = join(fixtureRoot, 'start');
+    const registryModule = resolve(import.meta.dir, '../../src/effects/repo-registry.ts');
+    const workerCount = 10;
+    const bumpsPerWorker = 30;
+    const workerScript = `
+      import { existsSync } from 'fs';
+      const registry = await import(process.env.REGISTRY_MODULE);
+      while (!existsSync(process.env.START_PATH)) {
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
+      }
+      registry.registerRepoHarnessRepo(process.env.TEST_REPO, 'manual');
+      registry.setRepoHarnessAccessMode(process.env.TEST_REPO, 'read_write');
+      for (let index = 0; index < Number(process.env.BUMP_COUNT); index += 1) {
+        registry.bumpRepoHarnessAuthorizationRevision();
+      }
+    `;
+
+    try {
+      mkdirSync(registryHome, { recursive: true });
+      const repos = Array.from({ length: workerCount }, (_, index) => join(fixtureRoot, `repo-${index}`));
+      for (const repo of repos) {
+        mkdirSync(join(repo, '.ai', 'harness'), { recursive: true });
+        writeFileSync(join(repo, '.ai', 'harness', 'policy.json'), '{}\n');
+      }
+
+      const workers = repos.map((repo) => Bun.spawn(['bun', '-e', workerScript], {
+        cwd: resolve(import.meta.dir, '../..'),
+        env: {
+          ...process.env,
+          REPO_HARNESS_HOME: registryHome,
+          REGISTRY_MODULE: registryModule,
+          START_PATH: startPath,
+          TEST_REPO: repo,
+          BUMP_COUNT: String(bumpsPerWorker),
+        },
+        stdout: 'pipe',
+        stderr: 'pipe',
+      }));
+      writeFileSync(startPath, 'go\n');
+
+      const exitCodes = await Promise.all(workers.map((worker) => worker.exited));
+      const errors = await Promise.all(workers.map(async (worker) => new Response(worker.stderr).text()));
+      expect(exitCodes, errors.filter(Boolean).join('\n')).toEqual(Array(workerCount).fill(0));
+
+      const registryPath = join(registryHome, 'registered-repos.json');
+      expect(existsSync(registryPath)).toBe(true);
+      const registry = JSON.parse(readFileSync(registryPath, 'utf-8')) as {
+        authorizationRevision: number;
+        repos: Array<{ path: string; accessMode: string }>;
+      };
+      expect(registry.authorizationRevision).toBe(workerCount * (bumpsPerWorker + 1));
+      expect(registry.repos).toHaveLength(workerCount);
+      expect(registry.repos.every((repo) => repo.accessMode === 'read_write')).toBe(true);
+    } finally {
+      rmSync(fixtureRoot, { recursive: true, force: true });
+    }
+  }, 30_000);
 });

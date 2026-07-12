@@ -1,6 +1,6 @@
 # Plan: ChatGPT Coding MCP integration onto current main
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260712-0301
 > **Slug**: chatgpt-coding-mcp-integration
 > **Planning Source**: codex-plan
@@ -8,8 +8,8 @@
 > **Source Ref**: (none)
 > **Artifact Level**: work-package
 > **Promotion Reason**: merge_boundary
-> **Verification Boundary**: Seven-commit replay onto the rollout-retirement base, merge refresh onto current origin/main, focused and full required checks, and draft PR diff
-> **Rollback Surface**: Isolated integration branch/worktree and draft PR only; local main and source feature branch remain untouched
+> **Verification Boundary**: PR #55 squash merge `e519ab13b0da44bf272d75db1b9e0d7d56991654` on `main`, passing post-merge CI run `29187858965`, and preserved strict transcript classifier truth
+> **Rollback Surface**: Revert only the PR #55 squash commit if required; local main, the source feature branch, and external ChatGPT/OAuth/Tunnel state remain untouched
 > **Spec**: `docs/spec.md`
 > **Research**: See `docs/researches/`
 > **Task Contract**: `tasks/contracts/20260712-0301-chatgpt-coding-mcp-integration.contract.md`
@@ -81,8 +81,8 @@ See captured planning output.
 ## Promotion Gate
 
 - **Merge/PR unit**: Captured plan `plans/plan-20260712-0301-chatgpt-coding-mcp-integration.md` is the proposed mergeable execution unit; revise before execute if this is only a checklist step.
-- **Rollback surface**: Isolated integration branch/worktree and draft PR only; local main and source feature branch remain untouched
-- **Verification boundary**: Seven-commit replay onto current origin/main, focused and full required checks, and draft PR diff
+- **Rollback surface**: Revert only PR #55 squash commit `e519ab13b0da44bf272d75db1b9e0d7d56991654`; local main and source feature branch remain untouched
+- **Verification boundary**: Seven-commit replay, focused and full required checks, PR #55 merge, and passing post-merge `main` CI
 - **Review/acceptance boundary**: `tasks/reviews/20260712-0301-chatgpt-coding-mcp-integration.review.md` must record pass against the captured acceptance criteria.
 - **High-risk surface**: Risks named in captured planning output; keep the plan Draft if risk ownership is not concrete.
 - **Why not checklist row**: merge_boundary
@@ -93,7 +93,7 @@ See captured planning output.
 - **Verification evidence**: `.ai/harness/checks/latest.json`, `.ai/harness/runs/`, and the commands named in the captured planning output
 - **Evaluator rubric**: `tasks/reviews/20260712-0301-chatgpt-coding-mcp-integration.review.md` must record a passing Waza /check style recommendation
 - **Stop condition**: all task breakdown items are complete, sprint verification passes, and the review recommends pass
-- **Rollback surface**: Isolated integration branch/worktree and draft PR only; local main and source feature branch remain untouched
+- **Rollback surface**: Revert only PR #55 squash commit `e519ab13b0da44bf272d75db1b9e0d7d56991654`; local main and source feature branch remain untouched
 
 ## Captured Planning Output
 
@@ -106,7 +106,7 @@ Integrate the already verified `codex/chatgpt-coding-mcp` commit series onto the
 ## Architecture and trace
 
 - P1: `origin/main` owns rollout retirement, the transactional TypeScript adoption cutover, and the independent BDD² evaluation foundation; the seven feature commits own the coding profile, OAuth authorization-scoped runtime, tests, operator docs, and live acceptance artifacts; the isolated integration branch owns conflict resolution and PR delivery.
-- P2: `origin/main@788ba60` -> cherry-pick `0b80ef4`, `47cbe50`, `2f3405d`, `443f3ea`, `2a9d490`, `c3a77d1`, `f3b546d` in order -> resolve conflicts by retaining rollout retirement -> merge refreshed `origin/main@8e160323` and then `origin/main@bb750141` so transactional adoption and BDD² evaluation stay authoritative -> regenerate `tasks/current.md` and handoff projections -> verify -> push integration branch -> open draft PR to `main`.
+- P2: `origin/main@788ba60` -> cherry-pick `0b80ef4`, `47cbe50`, `2f3405d`, `443f3ea`, `2a9d490`, `c3a77d1`, `f3b546d` in order -> resolve conflicts by retaining rollout retirement -> merge refreshed `origin/main@8e160323` and then `origin/main@bb750141` so transactional adoption and BDD² evaluation stay authoritative -> regenerate `tasks/current.md` and handoff projections -> verify -> push integration branch -> open PR #55 -> squash-merge -> verify post-merge `main` CI.
 - P3: cherry-pick the feature commits rather than merge the feature branch because the branch base predates `refactor(mcp): retire rollout controls (#52)`; a tree merge would resurrect deleted rollout code and stale archive state. No compatibility fallback, dual policy authority, or new abstraction is permitted.
 
 ## Scope
@@ -120,32 +120,43 @@ Integrate the already verified `codex/chatgpt-coding-mcp` commit series onto the
 - Preserve the coding MCP implementation, authorization-runtime fix, focused tests, research/operator docs, and live-canary workflow evidence.
 - Regenerate derived `tasks/current.md` and handoff state from the integrated branch instead of choosing either stale side.
 - Run focused MCP suites, full `bun test`, typecheck, all current root required checks including transactional `adopt --dry-run`, strict contract/workflow verification, and package/install smoke proportionate to the dependency/installer diff.
-- Push `codex/chatgpt-coding-mcp-integration` and create one draft PR against `main` only after all gates pass.
+- Push `codex/chatgpt-coding-mcp-integration`, create PR #55 against `main` after all gates pass, then squash-merge and verify post-merge CI.
 
 ## Out of scope
 
 - Updating, stashing, committing, or cleaning the dirty local `main` checkout.
 - Reintroducing `scripts/mcp-rollout-gate.ts`, rollout flags, candidate-disabled policy, or other surfaces retired by current `origin/main`.
 - Changing the coding MCP public contract beyond conflict resolution required to preserve the already accepted behavior.
-- Merging the PR, publishing a release, modifying Cloudflare/ChatGPT Apps, or deleting preserved canary worktrees.
+- Publishing a release, modifying Cloudflare/ChatGPT Apps, or deleting preserved canary worktrees.
 
 ## Verification
 
 - The integration diff versus `origin/main` contains the intended coding MCP surface and contains no resurrection of retired rollout-control files or flags.
 - Focused OAuth/HTTP/policy/setup/coding/process tests pass, followed by full `bun test` and every root required check.
-- Authorization-runtime contract remains Fulfilled with review and External Acceptance pass; the separate literal-transcript live-canary classifier remains unchanged.
-- Local main retains exactly `M tasks/current.md` and `?? plans/plan-20260711-0115-think-plan-011459.md` with their pre-integration SHA-256 values.
-- Draft PR targets `main` from `codex/chatgpt-coding-mcp-integration`.
+- Authorization-runtime contract remains Fulfilled with review and External Acceptance pass; the separate literal-transcript live-canary classifier remains `surface_blocked` and is not reported as `invocation_verified`.
+- Every closeout mutation is scoped to the isolated integration worktree; the dirty local `main` checkout is never a mutation target and no local WIP is absorbed.
+- PR #55 is squash-merged into `main` as `e519ab13b0da44bf272d75db1b9e0d7d56991654`, and post-merge CI run `29187858965` passes.
 
 ## Rollback
 
-Delete the isolated integration worktree/branch before push, or close the draft PR and delete the remote integration branch after push. Do not alter the source feature branch, local main, or preserved canary worktrees.
+Revert only squash commit `e519ab13b0da44bf272d75db1b9e0d7d56991654` if the merged feature must be rolled back. Do not alter the source feature branch, dirty local `main`, external ChatGPT/OAuth/Tunnel state, or preserved canary worktrees.
 
 ## Annotations
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
+
+## Closeout Result
+
+- [PR #55](https://github.com/Ancienttwo/repo-harness/pull/55) was squash-merged into `main` as `e519ab13b0da44bf272d75db1b9e0d7d56991654`; [post-merge CI run `29187858965`](https://github.com/Ancienttwo/repo-harness/actions/runs/29187858965) passed.
+- The functional Coding MCP chain is accepted. The separate strict ChatGPT Activity transcript acceptance remains `surface_blocked`; this workflow does not claim `invocation_verified`.
+- No Tunnel, DNS, OAuth, ChatGPT App, source feature branch, or dirty local `main` state was changed during closeout.
+- The environment-key P1, 24-tool authority conflict, audit-log P1, and registry lost-update P1 are resolved with focused regressions. Gate-bound Claude re-review returned no P1; only the documented stale-lock availability, release-error masking, and literal Ctrl-C P2 advisories remain.
 
 ## Task Breakdown
 - [x] Capture the integration contract and preflight the seven-commit replay against current `origin/main`.
 - [x] Cherry-pick the seven commits in order and resolve conflicts without reviving retired rollout authority.
 - [x] Regenerate workflow projections and complete focused plus full verification.
-- [ ] Record review/notes, push the integration branch, and create a draft PR against `main`.
+- [x] Record review/notes, push the integration branch, merge PR #55, and verify passing post-merge `main` CI.
+- [x] Apply the authorized environment-key deny-policy remediation and focused regressions.
+- [x] Preserve the user-selected 24-tool Coding profile and correct the misleading five-tool-only documentation and policy assertion.
+- [x] Obtain explicit scope authorization, remediate audit persistence and registry lost updates, and pass current external acceptance.
+- [ ] Archive the fulfilled workflow artifacts after the final machine evidence refresh.

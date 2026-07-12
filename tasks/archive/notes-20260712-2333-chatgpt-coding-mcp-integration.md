@@ -1,14 +1,30 @@
+> **Archived**: 2026-07-12 23:33
+> **Related Plan**: plans/archive/plan-20260712-0301-chatgpt-coding-mcp-integration.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260712-2333
+
 # Implementation Notes: chatgpt-coding-mcp-integration
 
 > **Status**: Active
 > **Plan**: plans/plan-20260712-0301-chatgpt-coding-mcp-integration.md
 > **Contract**: tasks/contracts/20260712-0301-chatgpt-coding-mcp-integration.contract.md
 > **Review**: tasks/reviews/20260712-0301-chatgpt-coding-mcp-integration.review.md
-> **Last Updated**: 2026-07-12 14:10
+> **Last Updated**: 2026-07-12 22:53
 > **Lifecycle**: notes
 
 ## Design Decisions
 
+- The user selected the existing 24-tool Coding profile as product authority: 19 workflow/status tools remain available and exactly five direct coding tools are added. The runtime is unchanged; bridge/operator docs and the policy test now state and freeze that combined surface instead of claiming the profile exposes only five tools.
+- The gate-bound Claude re-review accepted the 24-tool authority correction but returned two new P1 blockers: `callCodingTool` can persist raw failure messages in the on-disk audit log, and unlocked registry read-modify-write operations can lose an authorization-revision bump under concurrent writers. It also retained the literal `0x03` `write_stdin` behavior as P2. These findings are recorded without override; neither P1 has been edited because the current bounded remediation scope covers only environment-key names and the 24-tool authority decision.
+- The user authorized expanding the contract to remediate both new P1s. The bounded design redacts error text before audit persistence and serializes the existing registry mutation boundary with focused regressions; literal `0x03` handling remains out of scope as a P2 advisory.
+- Coding failure audit entries now retain structured `operation` / `errorCode` metadata but no failure free text, because ordinary git stderr is not secret-pattern text and therefore cannot be made compliant by token redaction alone. Caller responses keep their existing redacted diagnostic behavior.
+- Registry mutation uses an adjacent `registered-repos.json.lock` created with exclusive-create semantics around every read-modify-write path. The lock is process-wide and cross-process, has a bounded 10-second wait, and fails closed on an unverifiable or dead-owner stale lock instead of automatically stealing security-relevant authority. Claude retained stale-lock availability and release-error masking as P2 advisories; neither reopens the lost-update P1.
+- The final environment-key filter conservatively denies any configured name containing `KEY`, `PASS`, or `AUTH`; focused tests cover underscore-delimited and compact forms, and direct reproduction returns `ENV_KEY_DENIED` for all eight cases.
+- The next Claude review cleared the environment-key class but found a separate pre-existing authority conflict: `buildMcpToolDefinitions(getMcpPolicy('coding'))` exposes 24 tools, including workflow planning writers, while bridge/docs surfaces say the Coding profile exposes only five direct tools. Runtime policy sets `workflowPlanner: true`, so resolving this requires a product decision between preserving the accepted combined planner+coding surface and narrowing runtime exposure; neither option is authorized by the environment-key remediation approval.
+- The user explicitly authorized expanding the closeout contract to fix the environment-key deny-policy P1, add focused regressions, then continue external acceptance and archive. Claude found the first segment-only remediation incomplete for compact names such as `APIKEY`, `PASSWD`, and `DBPASS`; the final bounded design adds `KEY`, `PASS`, and `AUTH` to the existing conservative substring denylist and documents the intentional fail-closed false-positive tradeoff. It does not inspect secret values or redesign environment configuration.
+- At the metadata-only checkpoint, archive stopped before mutation because the gate-bound Claude review of the target-branch diff found a P1: `DENIED_ENV_KEY_PARTS` / `deniedEnvironmentKey` in `src/cli/mcp/process-sessions.ts` missed common secret-shaped allowlist names such as `SSH_KEY`, `DB_PASS`, and `BASIC_AUTH`, while `docs/reference-configs/chatgpt-coding-mcp.md` promised that private-key/password/authorization-associated names are always rejected. Product remediation was outside that checkpoint's scope; the user subsequently authorized the bounded fix recorded above.
+- [PR #55](https://github.com/Ancienttwo/repo-harness/pull/55) was squash-merged into `main` as `e519ab13b0da44bf272d75db1b9e0d7d56991654`, and [post-merge CI run `29187858965`](https://github.com/Ancienttwo/repo-harness/actions/runs/29187858965) passed. Closeout changes only workflow metadata; the `archive-workflow` transaction owns the subsequent artifact relocation. The functional canary remains accepted while the stricter literal `Called tool` transcript classifier remains `surface_blocked`, never `invocation_verified`.
 - Created `codex/chatgpt-coding-mcp-integration` from `origin/main@788ba60` and replayed only `0b80ef4`, `47cbe50`, `2f3405d`, `443f3ea`, `2a9d490`, `c3a77d1`, and `f3b546d`. A branch-tree merge was rejected because the feature base predates the rollout-retirement cutover and would resurrect deleted base files that none of the seven commits actually changed.
 - While final verification was running, remote `main` advanced to `8e160323` through PR #54 (`refactor(adopt): cut over to transactional TypeScript planner`). Committed the already-reviewed coding fixes, merged the new main, and resolved the sole conflict in generated `tasks/current.md` by regenerating it rather than choosing either stale side. New main retirement of `migrate-project-template.sh` remains authoritative; integration verification now uses `bun src/cli/index.ts adopt --repo . --dry-run`.
 - During final contract closeout, remote `main` advanced again to `bb750141` through PR #53 (`feat(evals): add BDD² Phase E evaluation foundation`). Its only overlap was generated `tasks/current.md`; merged the commit intact, then regenerated current/handoff projections so the BDD² evaluation surface remains base authority and does not enter the coding MCP diff.
@@ -52,6 +68,13 @@
 
 ## Verification Evidence
 
+- Final gate-bound read-only Claude review returned no P1. It retained only two registry-lock P2 advisories (manual stale-lock recovery and release-error masking); the earlier literal `0x03` input advisory remains out of scope.
+- Registry concurrency regression passed four observed runs, including the combined focused suite: final revision was exactly 310 with all ten concurrent repos retained as `read_write`.
+- Final focused MCP/registry/skill suite passed 90 tests / 1040 expectations; typecheck and `git diff --check` passed.
+- The first final full-suite run passed 1143 tests with one platform skip but hit one transient CodeGraph binary probe failure (`spawnSync` status `null`). The direct binary probe and isolated CodeGraph file then passed three consecutive runs; the unchanged complete CI envelope rerun passed 1144 tests / 1 skip / 0 failures / 11309 expectations across 102 files.
+- Root checks passed: frozen install, typecheck, deploy SQL order, architecture sync, task sync, isolated-brain strict workflow after projecting repo-authored docs into the temporary vault, project inspection, transactional `adopt --dry-run`, and diff whitespace.
+- The packaged `repo-harness run verify-sprint` wrapper hit its fixed 120-second process timeout before the contract's full suite could finish. Running the source helper directly exposed one encapsulated full-suite transient on the first attempt; a second unchanged direct `verify-contract` run with the same isolated brain and `CODEGRAPH_NO_WATCHDOG=1` passed all 24 criteria and restored contract status `Fulfilled`. No override was used.
+- Direct read-only reproduction confirmed `buildMcpProcessEnvironment({ configuredEnv: { ... } })` returns `SSH_KEY`, `DB_PASS`, and `BASIC_AUTH` unchanged; the focused MCP process/HTTP/setup tests contain no regression for those names.
 - Contract brief preflight passed before replay.
 - `bun install --frozen-lockfile` passed with the merged Bun engine and optional PTY dependency.
 - Focused authority suite passed 97 tests / 1119 expectations across policy, setup, reader, stdio, base MCP tools, coding, process, HTTP, and OAuth files.

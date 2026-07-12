@@ -53,8 +53,9 @@ repo-harness mcp setup chatgpt --scope user --profile coding --grant-read-write 
 repo-harness mcp serve --repo "$HOME/Projects/my-repo" --transport http --host 127.0.0.1 --port 8765 --profile coding
 ```
 
-It exposes `open_workspace`, `read`, `apply_patch`, `exec_command`, and
-`write_stdin`. Bash has local-user authority and is not a filesystem sandbox.
+It retains the 19 workflow/status tools and adds `open_workspace`, `read`,
+`apply_patch`, `exec_command`, and `write_stdin`, for 24 tools total. Bash has
+local-user authority and is not a filesystem sandbox.
 The repo grant selects which workspace can be opened; shell commands can access
 anything the local OS user can access on the machine, including outside that repo.
 It does not call local Codex or consume Codex quota. Read
