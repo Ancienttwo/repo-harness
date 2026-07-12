@@ -676,7 +676,7 @@ describe('mcp http transport', () => {
       expect(tools.find((tool) => tool.name === 'exec_command')?.annotations).toMatchObject({ destructiveHint: true, openWorldHint: true });
 
       const openedCall = await call(3, 'tools/call', { name: 'open_workspace', arguments: { repo_id: repoId } });
-      const opened = JSON.parse(openedCall.result.content[0].text) as { workspace_id: string; mode: string };
+      const opened = JSON.parse(openedCall.result.content[0].text) as { workspace_id: string; mode: string; branch: string };
       expect(opened.mode).toBe('worktree');
 
       const deleted = await fetch(`http://127.0.0.1:${port}/mcp`, {
@@ -756,10 +756,11 @@ describe('mcp http transport', () => {
       });
       expect(JSON.parse(polledCall.result.content[0].text)).toMatchObject({ session_id: background.session_id, running: true });
       const worktreeList = Bun.spawnSync(['git', '-C', repoRoot, 'worktree', 'list', '--porcelain'], { stdout: 'pipe' }).stdout.toString();
-      const worktreeRoot = worktreeList.split(/\r?\n/)
-        .filter((line) => line.startsWith('worktree '))
-        .map((line) => line.slice('worktree '.length))
-        .find((path) => realpathSync(path) !== realpathSync(repoRoot));
+      const worktreeRoot = worktreeList.split(/\r?\n\r?\n/)
+        .map((block) => block.split(/\r?\n/))
+        .find((lines) => lines.includes(`branch refs/heads/${opened.branch}`))
+        ?.find((line) => line.startsWith('worktree '))
+        ?.slice('worktree '.length);
       expect(worktreeRoot).toBeTruthy();
       expect(realpathSync(worktreeRoot!)).not.toBe(realpathSync(repoRoot));
       const heartbeatPath = join(worktreeRoot!, 'authorization-heartbeat.txt');
