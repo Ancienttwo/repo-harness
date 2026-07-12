@@ -1059,53 +1059,146 @@ export function projectHistoricalShapeEvidence(
   }
   const heldOut = historicalManifest.partitions?.held_out;
   assertRecord(heldOut, "historical held-out partition");
+  assertString(heldOut.tasks, "historical held-out task path");
+  assertString(heldOut.tasks_sha256, "historical held-out task hash");
   assertString(heldOut.truth, "historical held-out truth path");
   assertString(heldOut.truth_sha256, "historical held-out truth hash");
+  const taskText = gitFileAtCommit(absoluteRoot, runRaw.source_commit, heldOut.tasks);
+  if (sha256Text(taskText) !== heldOut.tasks_sha256) fail("Historical held-out task hash mismatch");
+  const taskSet = validateTaskSet(JSON.parse(taskText), "held_out");
   const truthText = gitFileAtCommit(absoluteRoot, runRaw.source_commit, heldOut.truth);
   if (sha256Text(truthText) !== heldOut.truth_sha256) fail("Historical held-out truth hash mismatch");
   const truth = JSON.parse(truthText) as any;
-  assertRecord(truth.shape_tasks, "historical Shape truth");
+  validateTruthSet(truth, "held_out", taskSet.tasks);
+  const shapeTasks = taskSet.tasks.filter((task) => task.experiment === "S");
+  const shapeDefinition = historicalManifest.experiments.S;
+  if (!Number.isInteger(shapeDefinition.held_out_task_count)
+    || shapeTasks.length !== shapeDefinition.held_out_task_count) {
+    fail(`Historical Shape authority requires exactly ${shapeDefinition.held_out_task_count} held-out tasks, got ${shapeTasks.length}`);
+  }
+  if (!Number.isInteger(shapeDefinition.repetitions) || shapeDefinition.repetitions < 1) {
+    fail("Historical Shape repetitions must be a positive integer");
+  }
+  assertRecord(shapeDefinition.conditions, "historical Shape conditions");
+  for (const condition of ["baseline", "treatment"] as const) {
+    assertRecord(shapeDefinition.conditions[condition], `historical Shape ${condition} condition`);
+    assertString(shapeDefinition.conditions[condition].sha256, `historical Shape ${condition} prompt hash`);
+  }
+  assertRecord(historicalManifest.agents, "historical agents");
+  assertString(runRaw.agent, "historical run agent");
+  const historicalAgent = historicalManifest.agents[runRaw.agent];
+  assertRecord(historicalAgent, `historical agent ${runRaw.agent}`);
+  assertString(runRaw.model, "historical run model");
+  assertRecord(runRaw.sampling, "historical run sampling");
+  if (runRaw.model !== historicalAgent.model
+    || JSON.stringify(runRaw.sampling) !== JSON.stringify(historicalAgent.sampling)) {
+    fail("Historical run agent profile does not match source authority");
+  }
+  const relativeRunPath = relative(absoluteRoot, runPath).replace(/\\/g, "/");
+  if (runRaw.output_path !== relativeRunPath) fail("Historical run output path does not match its directory");
   if (!Array.isArray(runRaw.packets)) fail("Historical run packets must be an array");
-  const expectedCount = Number(historicalManifest.experiments.S.held_out_task_count)
-    * 2 * Number(historicalManifest.experiments.S.repetitions);
+  const expectedCoordinates = new Map<string, { coordinateId: string; promptSha256: string }>();
+  for (const task of shapeTasks) {
+    for (const condition of ["baseline", "treatment"] as const) {
+      for (let repetition = 1; repetition <= shapeDefinition.repetitions; repetition += 1) {
+        const key = `${task.id}\0${condition}\0${repetition}`;
+        expectedCoordinates.set(key, {
+          coordinateId: privateCoordinateId([
+            shapeDefinition.freeze.id,
+            "S",
+            "held_out",
+            task.id,
+            condition,
+            String(repetition),
+          ]),
+          promptSha256: shapeDefinition.conditions[condition].sha256,
+        });
+      }
+    }
+  }
+  const expectedCount = expectedCoordinates.size;
   if (runRaw.packets.length !== expectedCount) {
     fail(`Historical Shape run requires exactly ${expectedCount} packets, got ${runRaw.packets.length}`);
   }
   const scoreDir = directoryInsideRepo(absoluteRoot, relative(absoluteRoot, resolve(runPath, "scores")), "historical score directory");
   const privateDir = directoryInsideRepo(absoluteRoot, relative(absoluteRoot, resolve(runPath, "private")), "historical private directory");
+  const blindDir = directoryInsideRepo(absoluteRoot, relative(absoluteRoot, resolve(runPath, "blind")), "historical blind directory");
   const scoreFiles = readdirSync(scoreDir).filter((file) => file.endsWith(".json")).sort();
   if (scoreFiles.length !== expectedCount) fail(`Historical Shape evidence requires ${expectedCount} scores`);
   const packetIds = new Set<string>();
+  const observedCoordinates = new Set<string>();
   const rows: Record<string, unknown>[] = [];
   for (const packet of runRaw.packets) {
     assertRecord(packet as unknown, "historical run packet");
+    assertExactKeys(packet, ["packet_id", "task_id", "status"], "historical run packet");
     assertString(packet.packet_id, "historical packet id");
     assertString(packet.task_id, "historical packet task id");
-    if (packet.status !== "success" || packetIds.has(packet.packet_id)) fail(`Historical packet is invalid: ${packet.packet_id}`);
+    if (!/^[a-f0-9]{32}$/.test(packet.packet_id)
+      || packet.status !== "success"
+      || packetIds.has(packet.packet_id)) {
+      fail(`Historical packet is invalid: ${packet.packet_id}`);
+    }
     packetIds.add(packet.packet_id);
     const scorePath = resolve(scoreDir, `${packet.packet_id}.json`);
     const privatePath = resolve(privateDir, `${packet.packet_id}.json`);
+    const blindPath = resolve(blindDir, `${packet.packet_id}.json`);
     const score = validateLockedShapeScore(readJson(scorePath), `historical score ${packet.packet_id}`);
     const coordinate = readJson(privatePath);
+    const blind = readJson(blindPath);
     assertRecord(coordinate, `historical private coordinate ${packet.packet_id}`);
+    assertRecord(blind, `historical blind packet ${packet.packet_id}`);
     assertExactKeys(
       coordinate,
       ["schema", "packet_id", "coordinate_id", "task_id", "condition", "repetition", "prompt_sha256", "agent", "model", "sampling", "exit_code"],
       `historical private coordinate ${packet.packet_id}`
     );
+    assertExactKeys(
+      blind,
+      ["schema", "packet_id", "task_id", "experiment", "task_input", "response"],
+      `historical blind packet ${packet.packet_id}`
+    );
     if (coordinate.schema !== "repo-harness-bdd2-private-coordinate.v2"
       || coordinate.packet_id !== packet.packet_id
       || coordinate.task_id !== packet.task_id
       || score.packet_id !== packet.packet_id
-      || score.task_id !== packet.task_id) {
+      || score.task_id !== packet.task_id
+      || blind.schema !== "repo-harness-bdd2-blind-packet.v2"
+      || blind.packet_id !== packet.packet_id
+      || blind.task_id !== packet.task_id
+      || blind.experiment !== "S") {
       fail(`Historical score/private identity mismatch: ${packet.packet_id}`);
     }
     if (coordinate.condition !== "baseline" && coordinate.condition !== "treatment") {
       fail(`Historical coordinate condition is invalid: ${packet.packet_id}`);
     }
-    if (!Number.isInteger(coordinate.repetition) || Number(coordinate.repetition) < 1) {
+    if (!Number.isInteger(coordinate.repetition)
+      || Number(coordinate.repetition) < 1
+      || Number(coordinate.repetition) > shapeDefinition.repetitions) {
       fail(`Historical coordinate repetition is invalid: ${packet.packet_id}`);
     }
+    const coordinateKey = `${packet.task_id}\0${coordinate.condition}\0${coordinate.repetition}`;
+    const expectedCoordinate = expectedCoordinates.get(coordinateKey);
+    if (!expectedCoordinate || observedCoordinates.has(coordinateKey)) {
+      fail(`Historical coordinate is missing, duplicated, or unexpected: ${packet.packet_id}`);
+    }
+    observedCoordinates.add(coordinateKey);
+    if (coordinate.coordinate_id !== expectedCoordinate.coordinateId) {
+      fail(`Historical coordinate id drift: ${packet.packet_id}`);
+    }
+    if (coordinate.prompt_sha256 !== expectedCoordinate.promptSha256) {
+      fail(`Historical coordinate prompt hash drift: ${packet.packet_id}`);
+    }
+    if (coordinate.agent !== runRaw.agent
+      || coordinate.model !== runRaw.model
+      || JSON.stringify(coordinate.sampling) !== JSON.stringify(runRaw.sampling)
+      || coordinate.exit_code !== 0) {
+      fail(`Historical coordinate agent metadata drift: ${packet.packet_id}`);
+    }
+    const task = shapeTasks.find((candidate) => candidate.id === packet.task_id);
+    if (!task || blind.task_input !== task.agent_input) {
+      fail(`Historical blind packet task input drift: ${packet.packet_id}`);
+    }
+    assertString(blind.response, `historical blind packet ${packet.packet_id}.response`);
     const expectedAuthority = truth.shape_tasks[packet.task_id]?.expected_authority;
     if (!["inline", "brief", "prd"].includes(expectedAuthority)) fail(`Historical truth is missing for ${packet.task_id}`);
     rows.push({
@@ -1124,6 +1217,9 @@ export function projectHistoricalShapeEvidence(
       score_sha256: sha256File(scorePath),
       private_sha256: sha256File(privatePath),
     });
+  }
+  if (observedCoordinates.size !== expectedCoordinates.size) {
+    fail(`Historical Shape run is missing ${expectedCoordinates.size - observedCoordinates.size} coordinates`);
   }
   rows.sort((left, right) => String(left.task_id).localeCompare(String(right.task_id))
     || String(left.condition).localeCompare(String(right.condition))

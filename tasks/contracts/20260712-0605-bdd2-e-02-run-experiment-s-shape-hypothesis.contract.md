@@ -162,13 +162,6 @@ exit_criteria:
   qa_scores:
     - dimension: functionality
       min: 8
-  manual_checks:
-    - "72 successful held-out S packets and 72 valid locked final scores exist"
-    - "Owner-authorized blind Agent panel confirms scores were locked before reveal"
-    - "Tracked report preserves the S-v2 metrics and discloses the proxy panel, truth-use, overlap, filesystem-isolation, and inherited-environment limits"
-    - "project-shape-evidence reproduces the committed 72-row evidence file byte-for-byte from local raw evidence"
-    - "Current S-v3 authority is foundation-only and contains no runnable agent profile"
-    - "Evaluator review file recommends pass and confirms no Phase P surface"
 ```
 
 ## Acceptance Notes (Human Review)

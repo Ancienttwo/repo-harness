@@ -1,28 +1,28 @@
 # Task Review: bdd2-e-02-run-experiment-s-shape-hypothesis
 
-> **Status**: Pending
+> **Status**: Passed
 > **Plan**: plans/plan-20260712-0605-bdd2-e-02-run-experiment-s-shape-hypothesis.md
 > **Contract**: tasks/contracts/20260712-0605-bdd2-e-02-run-experiment-s-shape-hypothesis.contract.md
 > **Notes File**: tasks/notes/20260712-0605-bdd2-e-02-run-experiment-s-shape-hypothesis.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-07-12 14:00
-> **Recommendation**: fail
+> **Last Updated**: 2026-07-12 17:44
+> **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Diff Fingerprint**: pending
+> **Reviewed Diff Fingerprint**: sha256:c4607e6e3a49c9ab9d6a63689ebd1bc42731951f62c678e1cd6b66a72c5971e2
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 ## Human Review Card
 
-- Verdict: pending
+- Verdict: pass
 - Change type: eval-only
 - Intended files changed: frozen BDD² eval authority/runner/data/rubric/metrics plus workflow artifacts
 - Actual files changed: matches contract allowed paths; raw evidence remains ignored
-- Commands passed: repository-wide 1112-test suite, focused 12-test suite,
+- Commands passed: repository-wide 1118-test suite, focused 14-test suite,
   TypeScript noEmit, manifest/plan validation, score validation, deterministic
   re-summary, deploy SQL, architecture/task/workflow checks, and project inspection
-- External acceptance: owner authorized the Agent-panel protocol deviation; PR-level external review pending
+- External acceptance: Claude final targeted remediation rereview reported `No findings.`
 - Residual risks: Agent-panel proxy evidence is weaker than the original human-panel design and must not be cited as human evidence
-- Reviewer action required: inspect the deterministic report, protocol deviation, code diff, and full verification evidence
+- Reviewer action required: confirm hosted PR Test and MCP matrix checks
 - Rollback: revert the E-02 branch; delete ignored raw run evidence
 
 ## Mode Evidence
@@ -34,31 +34,43 @@
 
 ## Verification Evidence
 
-- Waza `/check` run:
+- Waza `/check` run: final `bun run check:ci` passed after the isolated-version-probe
+  and historical-coordinate remediation
 - Commands run: repository-wide `bun test`; `bunx tsc --noEmit --pretty false`;
   focused Bun tests; manifest validate/plan; one S-v2 real smoke; formal
   72-coordinate S run; score validation; deterministic re-summary; root required
   shell/workflow checks under Bun 1.3.14
-- Manual checks:
+- Manual checks: the historical projector reproduced the committed 72-row file
+  byte-for-byte after reconstructing the exact 12 × 2 × 3 source-commit coordinate
+  set; current S-v3/A authority remains foundation-only with no agent profile
 - Supporting artifacts: `.ai/harness/runs/bdd2/bdd2-e02-shape-s-v2/`
 - Implementation notes reviewed: yes; blind adjudication complete
 - Run snapshot: source commit `cd9e0426d362614ba277e067633db2596c236491`
-- Repository-wide result: 1112 passed, 1 platform skip, 0 failed. The retired
+- Repository-wide result: 1118 passed, 1 platform skip, 0 failed. The retired
   `scripts/migrate-project-template.sh` command is superseded by the transactional
   TypeScript adoption path; current project-state inspection reports no drift or
   required decision.
 
 ## External Acceptance Advice
 
-> **External Acceptance**: unavailable
-> **External Reviewer**:
-> **External Source**:
-> **External Started**:
-> **External Completed**:
+> **External Acceptance**: pass
+> **External Reviewer**: Anthropic Claude
+> **External Source**: claude-review exact-fingerprint review plus targeted P1 remediation rereview
+> **External Started**: 2026-07-12 17:20 +0800
+> **External Completed**: 2026-07-12 17:44 +0800
+> **Reviewed Diff Fingerprint**: sha256:c4607e6e3a49c9ab9d6a63689ebd1bc42731951f62c678e1cd6b66a72c5971e2
+> **Reviewed Scope**: branch+staged+unstaged+untracked
 
 - P1 blockers:
-- None in the Experiment S data path; PR-level review remains pending.
-- P2 advisories:
+- None.
+- Resolved P1: the historical projector previously counted packets/scores without
+  proving the frozen task × condition × repetition set. It now content-verifies
+  source-commit tasks/truth, reconstructs all coordinates, validates coordinate and
+  prompt hashes plus agent/blind metadata, and rejects duplicate/missing entries.
+- P2 advisory: the shared score schema remains Shape-only while Experiment A is
+  foundation-only. E-03 must cut to per-experiment score authority before A can be
+  sealed; E-02 intentionally adds no A compatibility branch.
+- Final targeted remediation rereview: `No findings.`
 - Acceptance checklist: 72/72 scores validated before reveal; report labels Agent-panel proxy evidence; decision remains `Reshape`
 
 ## Behavior Diff Notes
@@ -82,7 +94,7 @@
 
 ## Failing Items
 
-- PR-level external review and authoritative Linux CI are pending.
+- None locally. Hosted PR CI remains the merge gate.
 
 ## Retest Steps
 
@@ -95,5 +107,6 @@
 
 ## Summary
 
-- Authority, model run, Agent-panel adjudication, and `Reshape` decision are
-  complete. Final recommendation awaits authoritative PR CI and external review.
+- Pass. Authority, historical run provenance, Agent-panel adjudication,
+  `Reshape` decision, current foundation fail-closed state, durable evidence,
+  and external review are complete. Hosted PR CI remains the merge gate.

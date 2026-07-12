@@ -399,6 +399,37 @@ describe("run-bdd2-evals sealed execution", () => {
       expect(projected.rows).toHaveLength(6);
       expect(JSON.parse(readFileSync(join(root, "shape-evidence.json"), "utf-8"))).toEqual(projected);
 
+      const firstPacket = report.packets[0];
+      const secondPacket = report.packets[1];
+      const firstPrivatePath = join(root, runRelativePath, "private", `${firstPacket.packet_id}.json`);
+      const firstPrivate = JSON.parse(readFileSync(firstPrivatePath, "utf-8"));
+      const secondPrivate = JSON.parse(
+        readFileSync(join(root, runRelativePath, "private", `${secondPacket.packet_id}.json`), "utf-8")
+      );
+      writeFileSync(
+        firstPrivatePath,
+        `${JSON.stringify({
+          ...firstPrivate,
+          coordinate_id: secondPrivate.coordinate_id,
+          condition: secondPrivate.condition,
+          repetition: secondPrivate.repetition,
+          prompt_sha256: secondPrivate.prompt_sha256,
+        }, null, 2)}\n`,
+        "utf-8"
+      );
+      expect(() => projectHistoricalShapeEvidence(root, runRelativePath, "shape-evidence.json"))
+        .toThrow("Historical coordinate is missing, duplicated, or unexpected");
+
+      writeFileSync(firstPrivatePath, `${JSON.stringify(firstPrivate, null, 2)}\n`, "utf-8");
+      writeFileSync(
+        firstPrivatePath,
+        `${JSON.stringify({ ...firstPrivate, prompt_sha256: "0".repeat(64) }, null, 2)}\n`,
+        "utf-8"
+      );
+      expect(() => projectHistoricalShapeEvidence(root, runRelativePath, "shape-evidence.json"))
+        .toThrow("Historical coordinate prompt hash drift");
+      writeFileSync(firstPrivatePath, `${JSON.stringify(firstPrivate, null, 2)}\n`, "utf-8");
+
       expect(validateShapeScores(evaluation, runRelativePath).scores.size).toBe(6);
       const summary = summarizeShape(evaluation, runRelativePath, "shape-report.md");
       expect(summary.metrics.unsupported_expansion.relative_reduction).toBe(0.5);

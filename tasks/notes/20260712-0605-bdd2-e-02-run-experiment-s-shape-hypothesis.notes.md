@@ -85,7 +85,7 @@
 ## Verification Status
 
 - After merging current `main`, repository-wide `bun test` passes under Bun
-  1.3.14 with 1112 passed, 1 platform skip, and 0 failures. The mainline stdout
+  1.3.14 with 1118 passed, 1 platform skip, and 0 failures. The mainline stdout
   completion fix removed the earlier macOS truncation failure without widening
   E-02 scope.
 - E-02 focused tests, TypeScript no-emit, source-commit manifest/plan and 72/72
@@ -140,12 +140,24 @@
   its own temporary cwd/HOME with the same minimal allowlist, and the sealed-run
   regression proves a caller secret cannot reach it. No compatibility path was
   added; runner and durable evidence hashes were re-bound to the corrected code.
+- Exact-fingerprint review then found that the historical evidence projector
+  counted packets and scores without proving the complete source-commit
+  task × condition × repetition coordinate set. The projector now loads and
+  content-verifies the historical task and truth sets, reconstructs all expected
+  coordinates, rejects missing/duplicate/unexpected coordinates, validates
+  coordinate and prompt hashes plus agent metadata, and binds every score to its
+  blind response. Duplicate-coordinate and prompt-drift regressions cover the
+  failure boundary.
+- The same review noted that the current shared score schema is Shape-only. That
+  is acceptable only while Experiment A remains foundation-only and unrunnable;
+  E-03 must cut authority to per-experiment score schemas before sealing A. E-02
+  does not add an A compatibility branch or hidden A implementation.
 - The tracked report now discloses all identified limits and keeps the decision at
   `Reshape`. The generated 72-row durable evidence is validated against held-out
-  truth and reproduced byte-for-byte from local scores, private coordinates, and
-  the source-commit manifest. Kill-path and environment-allowlist regression
-  coverage are added without rewriting the S-v2 source commit, prompts, scores, or
-  raw outputs.
+  tasks/truth and reproduced byte-for-byte from local blind responses, scores,
+  private coordinates, and the source-commit manifest. Kill-path,
+  coordinate-integrity, and environment-allowlist regression coverage are added
+  without rewriting the S-v2 source commit, prompts, scores, or raw outputs.
 
 ## Promotion Filter
 

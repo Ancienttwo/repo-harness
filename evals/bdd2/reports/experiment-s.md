@@ -58,7 +58,10 @@ local provenance cache. The file binds the source-run manifest and projector has
 The CI `bun test` path recomputes the registered metrics and truth-aware 12/5 totals
 from that committed authority, checks this report projection, and verifies every
 expected tier against held-out truth. The explicit projector also reproduces it
-from local raw evidence and the source-commit manifest.
+from local raw evidence and the source-commit manifest. Before writing, it
+content-verifies the historical task and truth sets, reconstructs the complete
+12 × 2 × 3 coordinate set, rejects missing/duplicate/unexpected coordinates, and
+binds each coordinate, frozen prompt hash, score, and blind response.
 - Each packet had one final reviewer and no overlapping independent score, so
   inter-rater disagreement was not measured. The reviewer-safe queue omitted the
   private mapping, but blind and private directories remained under the same repo
