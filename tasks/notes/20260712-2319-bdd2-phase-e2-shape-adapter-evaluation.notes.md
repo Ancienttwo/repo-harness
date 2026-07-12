@@ -39,6 +39,12 @@
   revision `r2` with supported `gpt-5.4-mini`, medium reasoning, and the current
   `web_search="disabled"` config key. The failed development smoke remains ignored
   runtime evidence and is excluded from efficacy results.
+- The final `r7` authority completed 72 S2, 24 EB, and 24 EI outputs. After locked
+  scores were revealed, three scoring-semantics defects were observable: the owner
+  proxy aggregation rule was not frozen, declared unsupported claims were counted as
+  claims made, and tracked-artifact count was not derived from filesystem evidence.
+  Scores were not edited. All three hypotheses were recorded `Reshape` under the
+  fail-closed ambiguity rule; I2 was recorded `gated-not-run`.
 
 ## Tradeoffs Considered
 
@@ -51,7 +57,8 @@
 
 ## Open Questions
 
-- None.
+- A future E3 may test only corrected scoring authority. It is not part of this plan
+  and does not authorize Phase P.
 
 ## Evidence Links
 

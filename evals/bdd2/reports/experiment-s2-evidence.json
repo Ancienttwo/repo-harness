@@ -1,0 +1,4398 @@
+{
+  "schema": "repo-harness-bdd2-s2-evidence.e2",
+  "source_commit": "41d45df4e350c1c5e4f2d871e80a6a5ba9e24853",
+  "freeze_id": "bdd2-e2-s2-r7",
+  "manifest_sha256": "093aa1c763adbeae467166276d8c7a99262e83e056706570fdf2b05b15275a78",
+  "run_manifest_sha256": "d029a178ed28b0f3026ec95574924b741d23b18a5c6a6a3702f13c1023b35d7b",
+  "packet_count": 72,
+  "outcome_score_count": 144,
+  "evidence_score_count": 0,
+  "adjudication_count": 54,
+  "protocol_findings": [
+    "Owner adjudication used an unfrozen conservative-union algorithm rather than the frozen owner prompt.",
+    "Evidence compliance counted response.evidence_use.unsupported_claims declarations as unsupported claims made.",
+    "Reviewers did not share a stable operational definition of unnecessary tracked artifact for inline text output."
+  ],
+  "summary": {
+    "raw_gate_decision": "Kill",
+    "recorded_decision": "Reshape",
+    "reason": "Protocol-invalid owner aggregation and tracked-artifact semantics make the nominal gate non-authoritative.",
+    "metrics": {
+      "unsupported_expansion": {
+        "control": 1,
+        "treatment": 5,
+        "reduction": -4
+      },
+      "pairs": {
+        "wins": 1,
+        "losses": 5,
+        "ties": 30
+      },
+      "required_omissions": {
+        "control": 16,
+        "treatment": 19
+      },
+      "stable_new_omission_tasks": [
+        "S2-H-10"
+      ],
+      "new_severe_pairs": 7,
+      "treatment_artifact_count": 19,
+      "correction_median": {
+        "control": 0,
+        "treatment": 3
+      },
+      "authority_success_tasks": 9
+    }
+  },
+  "rows": [
+    {
+      "packet_id": "071fb00c8deff339e1ff9e8e1dc9dd13",
+      "task_id": "S2-H-11",
+      "condition": "control",
+      "repetition": 3,
+      "full_response_sha256": "002ff3bf1809e25e7ae60fdeea58a0d7c9e5a8b8d07280679955f336e01ded45",
+      "normalized_outcome_sha256": "116b9b9228e307fc4f7d90e029091589c484da2059ec4ee5aa827377fba3ca2a",
+      "reviewer_1": {
+        "sha256": "08b43e3b9fcc90741e4f8b3ce2cfbda86b7905cde893ccba38fd05f6cd886acb",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "inline-escalation",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": false,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_authority_tier",
+            "restore_required_behavior"
+          ],
+          "notes": "Escalates before implementation but is framed at inline authority; does not include the explicit stop condition for effective date/migration/rollback required by truth."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "0973a17485720cd78eed04391790f4c028109f5703c38d5ac17cbad621faaea9",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "authority_mismatch",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": false,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_authority_tier",
+            "restore_required_behavior"
+          ],
+          "notes": "Authority is inline instead of prd; otherwise escalates and avoids implementation guidance. Missing explicit stop condition against effective-date/migration/rollback approval details from private required behavior."
+        }
+      },
+      "adjudication": {
+        "sha256": "96864635fde6785a0372a7323f5d9360716357a4ce46021ae8bae0d775be6aa8",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "owner-conservative:inline-escalation|authority_mismatch",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": false,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_authority_tier",
+            "restore_required_behavior"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "14c6565c38cd619396974141c08b7be0",
+      "task_id": "S2-H-02",
+      "condition": "control",
+      "repetition": 3,
+      "full_response_sha256": "a1bab270e5435a0d8113edb1f95f44040829902b9bbc589e4a35cae02b8f0f04",
+      "normalized_outcome_sha256": "5457b575595172d0d301cae5fdbcc641d6e4e2b71be262109e09c29249419cda",
+      "reviewer_1": {
+        "sha256": "7955de3a411b3a5fbc743f127a1818dfdceb55ef2cbc7577f49059c980387787",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline-closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Fully aligned with inline scope and includes all required behaviors: text error identification, field association, focus/recovery path, and accessibility cue beyond color."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "cf4795204b49d511cb5a1b6d062901988faaad7f345fa530db5d48ca3edf54ec",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "in-scope-inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "All required accessibility behaviors are present and scoped correctly; no authority or escalation mismatch."
+        }
+      },
+      "adjudication": {
+        "sha256": "4dea43a01ae4fe39ebd4584fe69107d19243c1f31dc52a7a91743d6e3f6cd6bb",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "owner-conservative:inline-closed|in-scope-inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "184bbbb19de3f049044db790a840a2c0",
+      "task_id": "S2-H-10",
+      "condition": "control",
+      "repetition": 3,
+      "full_response_sha256": "13a60554cecd191b5b7d9b57a1fee3f5cbfe3169eef7f807ceda76d3d940a504",
+      "normalized_outcome_sha256": "4c61fdd3e1f4d61e8e9a4916e2cb74cd7eeeb3f7d96b945fa68a84efdd4d6eda",
+      "reviewer_1": {
+        "sha256": "7a19df5913c12fbdfa0ec4538e4648ff8e816be09d5433676da91a50757170fc",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "escalate",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Matches PRD authority and escalates. Keeps current Author/Owner publish behavior as-is and blocks premature changes."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "6a42dfeceb34034d1b0e0d0b643d6621c7e88d7f4e32ed121b947266f349b022",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "escalate",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Close to private truth: PRD boundary, no implementation, preserves current publish behavior until governance exists."
+        }
+      },
+      "adjudication": null,
+      "evidence_score": null
+    },
+    {
+      "packet_id": "18934bb39e6f7cc9c3dd7e87e0d86c77",
+      "task_id": "S2-H-05",
+      "condition": "control",
+      "repetition": 1,
+      "full_response_sha256": "83672fec1ff833ec6b887d853e4fc814a73b6275aeb21050557a2e50a6c76b45",
+      "normalized_outcome_sha256": "27ab854f53e017f30cd93310582429303dbfa8da815f8c4f436470e637ee1efe",
+      "reviewer_1": {
+        "sha256": "a69fb6d11bdb9329897a88493050980ce982db6275f3bf82b9ef4d72f4822fd1",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline-closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Matches all required behaviors and scope; no escalation needed."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "b8178bf772a8399f3d07ea5da7b2299863470eec6c45b9660ff00bdc1e0c1de4",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "closed-inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Matches inline authority and preserves draft body/detachment scope; no forbidden expansion or authority mismatch."
+        }
+      },
+      "adjudication": {
+        "sha256": "c5e9afef2ffd2c5792438358674cd61c8364386b72c9bf1cb524135625161baf",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "owner-conservative:inline-closed|closed-inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "1fd4175a57a74ea3af9ce4681bbe1e98",
+      "task_id": "S2-H-03",
+      "condition": "treatment",
+      "repetition": 2,
+      "full_response_sha256": "e0b402100b4bbae05b1dd141139cf1493570dc9565ee616163cf3ce73e7fdde4",
+      "normalized_outcome_sha256": "100e953dfb35661c906c5cc40c7573c9855ed4798df902da9dabc1eac7c8a54d",
+      "reviewer_1": {
+        "sha256": "804daa1dbd70456dfec3dd61f6e7a4ad243394366c597970d87a9780a13c6077",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Aligned with truth: copies displayed masked value only, confirms copy, no unmasking, no backend change. No protected omission or authority/escalation issues."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "93e1175c1a84a802cf1b51dea81c80301c5782b045d5ce7be97cd7b7dc8e08b3",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "No unsupported scope additions; required masked-copy and confirmation behavior is present."
+        }
+      },
+      "adjudication": null,
+      "evidence_score": null
+    },
+    {
+      "packet_id": "2211765c09be8e3d6400c3c842034cff",
+      "task_id": "S2-H-08",
+      "condition": "treatment",
+      "repetition": 3,
+      "full_response_sha256": "969f266fd0fcd727b9bf396bccc9f2eaae33ba2cf6e0b4b91d76e5c91c30f1e0",
+      "normalized_outcome_sha256": "3cbfc8428317c39377a85e2e9b42495cb462b16074c6ec8fdba548ae42d1d66d",
+      "reviewer_1": {
+        "sha256": "beece4f81437a978c0a017c4c3d9fabddba087704201053ea2dc34ec6f3937aa",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Boundary and authority are correctly kept inline. Required count/no-results, existing-region announcement, focus retention, and no-stale update behavior are present."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "149920287441511e7de69d3d2702f812ac32b5f196d483c6c1b67bc39573939f",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Fully consistent with inline scope; required count/no-results and focus behavior are present; no forbidden expansion is introduced."
+        }
+      },
+      "adjudication": null,
+      "evidence_score": null
+    },
+    {
+      "packet_id": "23714bfc21483007ff595e5c7044001d",
+      "task_id": "S2-H-12",
+      "condition": "control",
+      "repetition": 2,
+      "full_response_sha256": "8ea68751d90902ad0cbc7cc5e9bbb750fc94d49c50165f96f01c6dbd5bb6258e",
+      "normalized_outcome_sha256": "da8ac2fe78d7451ca129b066d5c7e6506bf865b7ba37321367b1425be99c46bd",
+      "reviewer_1": {
+        "sha256": "46a9278f1ef32b7f9d42ff83ba1b162a08c5891623be865b6acac50067dd55c5",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "authority_escalation_declared_wrong_level",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": false,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 1,
+          "correction_operations": [
+            "correct_authority_tier",
+            "remove_tracked_behavior_artifact"
+          ],
+          "notes": "Correctly escalates and captures minimum scope, but authority is inline not PRD and it adds a report-mode marker artifact not required by truth."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "2a2ecfdd76cfc0f0cc0ad2374fd408a7fb68f8df0bd2e6bc74d5aca7465327f9",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "open-escalation",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": false,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 1,
+          "correction_operations": [
+            "correct_authority_tier",
+            "remove_tracked_behavior_artifact"
+          ],
+          "notes": "Escalation intent is present, but declared authority is inline instead of PRD. Extra tracked artifact (mode marker/metadata/footnotes) is not required by truth and should be removed."
+        }
+      },
+      "adjudication": {
+        "sha256": "9ccfdd89d8833b4d21ca639ce5cc4ba333f349e3d369a13a15052d68a422e0b2",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "owner-conservative:authority_escalation_declared_wrong_level|open-escalation",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": false,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 1,
+          "correction_operations": [
+            "correct_authority_tier",
+            "remove_tracked_behavior_artifact"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "2614d8bf2c443274fd7cfd4b4624f540",
+      "task_id": "S2-H-03",
+      "condition": "treatment",
+      "repetition": 1,
+      "full_response_sha256": "43b03be70bece92f37a885f5a15123bfdab796529df6d833b08d951f234174ff",
+      "normalized_outcome_sha256": "93d161518b3ff305b73460d8418d6d8c8125118f642251479fe34c742bfdf553",
+      "reviewer_1": {
+        "sha256": "091202780b702b73c71d2ec3da1ccc6ee141d74a5a1de172842e754e868e9c67",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Aligned with truth and boundary. Implements single in-context copy action, exact masked value copy, and fallback messaging without expanding truth or access scope."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "d9002e448b573f8f0830e6c60b396b8c6eb55a2e760383d57e5f783195ca76c5",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Scope stayed minimal and inline; explicit fallback/error and copy-success confirmation satisfy truth and privacy constraint."
+        }
+      },
+      "adjudication": null,
+      "evidence_score": null
+    },
+    {
+      "packet_id": "2802a33acfd97999927255452516dfa3",
+      "task_id": "S2-H-07",
+      "condition": "control",
+      "repetition": 2,
+      "full_response_sha256": "54eaa42c2d93d9cc7c5dbc9e12a619ae0e0179e24c11f51d3e58ceef31626cff",
+      "normalized_outcome_sha256": "0e54d48ec17b5eecf43f538201b7dee5af05127c16bd02a7b5ea7678e2d13955",
+      "reviewer_1": {
+        "sha256": "e1aadf5b2f3f2e5c558f5156771273f53f8ca483f504ff526f9afd0d11e73bc1",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Boundary and authority align; required recover/restore/conflict safety is present; no unsupported expansion."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "f2c24e3f0b5538714644b9889173fa151280ccf74fa26cd6d479597bde472e6a",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Matches required scope: preserve one unsent draft, restore on reconnect, and preserve/guard conflict flow. No authority/escalation drift."
+        }
+      },
+      "adjudication": null,
+      "evidence_score": null
+    },
+    {
+      "packet_id": "2a1124a53434779fc683dfad8688767c",
+      "task_id": "S2-H-08",
+      "condition": "control",
+      "repetition": 2,
+      "full_response_sha256": "97192139235c9f180981a24512eb60e95ee2fb753658a9e7148dcf4567e41192",
+      "normalized_outcome_sha256": "f3be51cb46836765f9cfa4e4bf01beff58a6c2cae25fe2bd448f348c8ca8e0b3",
+      "reviewer_1": {
+        "sha256": "ea9c8c31bea5950809aec7b6f18803712b2520ce8a95c3f0af115d083ef1896b",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Compliant with inline scope and truth; includes automatic, final-only announcement behavior without focus changes."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "d92ebe3a9ea82dd6e9e6de60128ae5aa2d720e6460e85a72ce8140f4c9365154",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Matches private truth closely; clear no-escalation inline boundary and all required behaviors covered."
+        }
+      },
+      "adjudication": null,
+      "evidence_score": null
+    },
+    {
+      "packet_id": "3a39ea68ba398c42eb9c4ac5865f3246",
+      "task_id": "S2-H-10",
+      "condition": "control",
+      "repetition": 2,
+      "full_response_sha256": "b5d8e683103c3f2cd92cfb9d14d33fee51b876ce21ca508ad58e107ea7a86348",
+      "normalized_outcome_sha256": "1299683e1c6977165f2c9547dc3e4b23969f7e7c46fd5abfb43ce7e8cf938a4e",
+      "reviewer_1": {
+        "sha256": "a2878073b1cb82cb451e34e2bb6412341ce64d61a5516b3a2c0f2d82c123a1ef",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "escalate",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "PRD authority, escalates, and preserves existing publish behavior until manager model is defined. No explicit forbidden surface added."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "9496d6ba159b8b6e8bf22362f6e84bbafcea41b0ec79cbd5f15b6bee6a6f0250",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "escalate",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 2,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "authorization",
+              "severity": "P0",
+              "summary": "Defines a concrete manager-gated publish journey before required role/permission/governance details are finalized."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 1,
+          "correction_operations": [
+            "remove_unsupported_behavior",
+            "restore_required_behavior",
+            "remove_tracked_behavior_artifact"
+          ],
+          "notes": "Escalates correctly but adds concrete publish-request/policy behavior before the required stop condition is fully enforced."
+        }
+      },
+      "adjudication": {
+        "sha256": "e161ff2262acda9fcecbf7c421584b1eca7bea8e47e4c2c6dc184fcfbc636d28",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "escalate",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 2,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "authorization",
+              "severity": "P0",
+              "summary": "Defines a concrete manager-gated publish journey before required role/permission/governance details are finalized."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 1,
+          "correction_operations": [
+            "remove_unsupported_behavior",
+            "restore_required_behavior",
+            "remove_tracked_behavior_artifact"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "3c94a0242edbbdd4c8d7e11e1bc80f63",
+      "task_id": "S2-H-07",
+      "condition": "treatment",
+      "repetition": 2,
+      "full_response_sha256": "7d57ec4f61f578450a43a15474f1b978975e1b3d889408e7b287f5a86eb94c3c",
+      "normalized_outcome_sha256": "920d02a0a493077356ff1f2e5cb39f7d361b985d98a3c486f46eeb4a6efc6ecc",
+      "reviewer_1": {
+        "sha256": "36355f5a347b9c70cb33cd44d62e51edbced7d4bff71525c44fc667cf356f009",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Within inline scope and required behaviors are covered; no forbidden expansion."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "ea5046908afb9e2c0d07992416e38af2aa3b40fec402af8ffc7fd659fde33f30",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Conforms to truth with clear offline-resume and conflict-preservation behavior; no unauthorized surface changes."
+        }
+      },
+      "adjudication": null,
+      "evidence_score": null
+    },
+    {
+      "packet_id": "42e53efb2f8d7daefdc2e771e0395dae",
+      "task_id": "S2-H-04",
+      "condition": "control",
+      "repetition": 3,
+      "full_response_sha256": "1d62c1fa8a897aae198868b6c24c08b6d1b9938a337d4a4e60a1fbb9ee5d9d89",
+      "normalized_outcome_sha256": "1df4a22026744f0537eabaac55a5009ee4d4d9edb335d109ea1596d2128cdc4f",
+      "reviewer_1": {
+        "sha256": "7b664950667edde79a3b732890ca46fe8eaadd2f69555580901a74c08fd28db8",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 2,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior"
+          ],
+          "notes": "Misses required irreversible confirmation flow details: no explicit token-name confirmation and no explicit default-cancel-before-revoke."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "5111a11fec7deceb034166f927598092bad302adfb1520c6004bf7c19f1cf0e0",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 2,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior"
+          ],
+          "notes": "Omits explicit irreversible confirmation workflow and default-cancel-before-apply behavior; remaining required protections and ownership boundary are present."
+        }
+      },
+      "adjudication": {
+        "sha256": "2e1759f7fe7f12e4e2033f3b897a4973d1f0ea5a46528f7a88dbf6427e66fb26",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 2,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "467db0b47ace83f2d94ba7df6deeaadf",
+      "task_id": "S2-H-02",
+      "condition": "control",
+      "repetition": 2,
+      "full_response_sha256": "2d44b31d511666e836578288beb965fe2e8ce4e340828f731bda8491c2f206d7",
+      "normalized_outcome_sha256": "e2b02687b5f1c893657bfc2fabb63070dfcb346885f69dfde4a887ddd6980431",
+      "reviewer_1": {
+        "sha256": "200e75f8da3635e62816b102afb0b3b917b0ac7d8e8384d424bb685461abe9cd",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline-closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Within current-boundary behavior; required accessibility/error/linkage requirements are all covered including explicit focus retention and text/announcement."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "3d43ab123cdd89877b0155ecd08298f1dc013611078dfe7adf5ce08d2bb846d7",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "in-scope-inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Meets all truth requirements and keeps behavior within inline profile-form boundaries."
+        }
+      },
+      "adjudication": {
+        "sha256": "e7f27fe13a4e70612373087c7fe88d2481a52cc2d5a63a8197f99a7d164f75ab",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "owner-conservative:inline-closed|in-scope-inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "4e285941d3cccbccbe5023f14caf94ea",
+      "task_id": "S2-H-05",
+      "condition": "control",
+      "repetition": 2,
+      "full_response_sha256": "20805fd72d3d0abf6dc2bb3b9f4aa42344e2a707649f6046286567d13acca53e",
+      "normalized_outcome_sha256": "038d878b86ac485ff01cdf82f0bdc03c7383f6d5f7887083f70a335cc60dcdf3",
+      "reviewer_1": {
+        "sha256": "3710497965ac68e83f2d31dd07c97179676ce738c55365ac6955f47c52dcad5f",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline-closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Fully aligned with truth, recovery wording is within local-compose scope and safe."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "f2cc0755304ddb2885485be431eba409e7d0743143cac6127770c365fdb5c820",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "closed-inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Falls within current truth and inline boundary; required attachment-only detachment and text/other-attachment preservation are present."
+        }
+      },
+      "adjudication": {
+        "sha256": "5228f6e2b93807712897b7f4b3798ad574388412d09559a36cad2f12679397d6",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "owner-conservative:inline-closed|closed-inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "4f6ecf43eb45315810d88603a2abad3b",
+      "task_id": "S2-H-04",
+      "condition": "treatment",
+      "repetition": 2,
+      "full_response_sha256": "8e0e6d785a872ee53ee3ec5a73855f758ef318020a0cb4bd5f3d0d00a30fc6f7",
+      "normalized_outcome_sha256": "9609d6f8aa88a28298978def21abf5f48d856371b371bd4f08d6929ccc704bba",
+      "reviewer_1": {
+        "sha256": "fb4ae2279ac65a2ad087f3b5c14cbc9a1213c9d88128099dd4c53ab8d37a1b3a",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 2,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior"
+          ],
+          "notes": "Outcome is mostly aligned but omits explicit irreversible confirmation naming plus default-cancel gating; it instead downplays adding new confirmation, which does not satisfy the required truth."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "ccaaae73dd77af589812b067c3a09d743cc9110d4fdea9e28f944b1f8953774f",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 2,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior"
+          ],
+          "notes": "Directly conflicts with required safety by stating no new confirmation requirement; also lacks explicit token-named confirmation and cancel-gated execution."
+        }
+      },
+      "adjudication": {
+        "sha256": "8f5197f0128f4494be7e06acc80816eb45e795ba4a0906a1c82511432945de69",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 2,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "58c1ff61789d06ac660863155ad77aff",
+      "task_id": "S2-H-09",
+      "condition": "control",
+      "repetition": 2,
+      "full_response_sha256": "69731cc837638ac72c98970bfcfb9dd6baf151e21a7a54d8182d99041b497c52",
+      "normalized_outcome_sha256": "857c1bf7ada057960fee560c5abf653ea6b6ebefdca81b4574139378b4af32b0",
+      "reviewer_1": {
+        "sha256": "f224dc48b7eaa36fe426dec34d30943e6ef5c4e6b6c02b67a3b3eb282b82fd0b",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Escalates at `prd` boundary and avoids introducing forbidden expansion categories; no clear protected-concern gap."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "93d7180dcdc9ac9f2e15cc5b5c8b240838427aec1e03872b3e3d963c5c6e707b",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "escalated-without-gate",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior"
+          ],
+          "notes": "Escalates to PRD but adds full link-generation/download behavior despite private truth requiring implementation stop until broader governance terms are approved."
+        }
+      },
+      "adjudication": {
+        "sha256": "1420fcf1ff5351b9bac2572dc8d2f7739e6a4693d9b1ae5ea9eb31df686130c3",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "owner-conservative:closed|escalated-without-gate",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "5a127e3b499e5d02d133caf34d4d3f99",
+      "task_id": "S2-H-01",
+      "condition": "control",
+      "repetition": 1,
+      "full_response_sha256": "884636309829c5fe5ed496556f8bf394437f93708a2bd2d32e96dd1b60d06242",
+      "normalized_outcome_sha256": "fb739557ff0fe018024706a758865be3555e6898f9fd5853882efe9d902ba02f",
+      "reviewer_1": {
+        "sha256": "cc5eeae60afb756cf0b253e4d735c8846c7b38cc79532218dd538c47b3ae73a0",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "All required behaviors are explicitly included; no prohibited expansion surface is introduced; inline authority is respected."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "36c53ca72b97a3c193a8fad56243d3b6c90592413c2bdc56d0c981fd2d889a03",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline-boundary-sufficient",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "All required in-scope behaviors are present; owner-only retry affordance, one-job retry path, preserve video/page context, and explicit outcomes for success/failure are covered."
+        }
+      },
+      "adjudication": {
+        "sha256": "4fcd96a6ea8fb33776e755bb4cccc8208ee604d40436d3a78ad1a3cc7748a397",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "owner-conservative:closed|inline-boundary-sufficient",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "5e05a42b96fa1c15cd9b78060157f61b",
+      "task_id": "S2-H-01",
+      "condition": "treatment",
+      "repetition": 3,
+      "full_response_sha256": "57f3e97a5e8b74409149e3b33eaf920130bb8f5bee5602dc38b7ed3540bc34ad",
+      "normalized_outcome_sha256": "cca34254355ae405472278fc2dd310149056cda0b63a2dfcc0af426c4c1d0c0b",
+      "reviewer_1": {
+        "sha256": "68b6a27dae7b3b40640841fca755c2b67b9807ac04bcb328de0ca2c9fc914714",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Fully aligned with private truth and scope constraints; inline boundary, no role/persistence/route expansion."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "e239e81aa4e15a655c818a18b3698c3a0e5e3fcc9e8415160a71512ce56249c6",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline-boundary-sufficient",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Clean and tightly scoped; stays on existing video page, owner-only retry control, retry-in-progress, and terminal outcomes are fully captured."
+        }
+      },
+      "adjudication": {
+        "sha256": "8cc7686c3d0a8ffc4d112b166edcda62e5e4c562bff72bfa059d3c357dc94bb7",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "owner-conservative:closed|inline-boundary-sufficient",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "61c116f5cc9d0f9a1c47bc102ebcdccf",
+      "task_id": "S2-H-06",
+      "condition": "control",
+      "repetition": 3,
+      "full_response_sha256": "42897a776643147f78c999360add460a7c23bd5783129d1a7ac239278bffe5e7",
+      "normalized_outcome_sha256": "5fd762dcdd3ed61d3ffab8bc9f03e2d2682ec5428f05e28141a0df66878a177a",
+      "reviewer_1": {
+        "sha256": "d52c854023daa50c788d5bef194f84575b9770979dc33284b1b1781534131f67",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "authority_mismatch_escalation",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": false,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_authority_tier",
+            "correct_escalation_decision"
+          ],
+          "notes": "Uses PRD authority and escalates despite inline-only scope; behavior itself aligns with required privacy/auth/export semantics."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "3d8c0b7c3a48102e0959801f677868ba00bd1371ac28812908aef5efff227373",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "authority-prd-escalation-mismatch",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": false,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_authority_tier",
+            "correct_escalation_decision",
+            "restore_required_behavior",
+            "clarify_recovery_or_failure"
+          ],
+          "notes": "Authority is incorrectly set to PRD and escalated despite inline expectation. Required behavior is otherwise complete, but lacks an explicit preparation/loading state for file generation."
+        }
+      },
+      "adjudication": {
+        "sha256": "c41434496c832d16be807c5d35dcf860ea07234603c67775abf8b4c42aafabe6",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "owner-conservative:authority_mismatch_escalation|authority-prd-escalation-mismatch",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": false,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_authority_tier",
+            "correct_escalation_decision",
+            "restore_required_behavior",
+            "clarify_recovery_or_failure"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "6251d86012a495c35387d31fedbbb8e4",
+      "task_id": "S2-H-01",
+      "condition": "treatment",
+      "repetition": 2,
+      "full_response_sha256": "e2100825ec0551490c576b074a3c7b2ac555a919f2bcdb7a15203838d6ab6959",
+      "normalized_outcome_sha256": "9a598a39559cdc783f75692ffc5a59a6c4fed51d780f1b42f027f9e7e29db6ad",
+      "reviewer_1": {
+        "sha256": "1776a9e20f8d7b0ebc364ccb56ada942ead67beb17b29f7af0b09e187bd8a37e",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Meets required in-place retry, status, and preservation outcomes; no blocked expansion from the listed unsupported set is introduced."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "86a827249de3fad13d231512799272d9e72e55c1f48ddf3ab66d258c0266bc91",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "inline-with-policy-ambiguity",
+          "unsupported_expansion": 1,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "remove_unsupported_behavior",
+            "clarify_recovery_or_failure"
+          ],
+          "notes": "Adds explicit allowance for repeated retry attempt after failed retry path, which is a retry-policy expansion not supported by the minimum truth contract."
+        }
+      },
+      "adjudication": {
+        "sha256": "1370e634a7a2b1ec9e71eb60708ebfd5d9a3d0063c0a5a296caf56f451fe154b",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "owner-conservative:closed|inline-with-policy-ambiguity",
+          "unsupported_expansion": 1,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "remove_unsupported_behavior",
+            "clarify_recovery_or_failure"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "649daa115f4be56be22264ce3bb58d75",
+      "task_id": "S2-H-04",
+      "condition": "control",
+      "repetition": 1,
+      "full_response_sha256": "4445704697c3895288fe91e64efe3c8de992a7ccfa969ca6f97029b3ebb9a361",
+      "normalized_outcome_sha256": "00c0142c84982c8da1e020c77b62a68d56ff58adda92b777d47d68184a1a82e5",
+      "reviewer_1": {
+        "sha256": "14f1d464de9508640d3e05351e7160dacc5e0706609d88e7f068e921bcbb1bca",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 2,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior"
+          ],
+          "notes": "Good boundary and ownership handling, but lacks explicit irreversible confirmation with token naming and explicit default cancel path before execute."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "5e481aeb2a66456033857b066d3fa98f1cf19c82690ee38faa353976ae4b3809",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 2,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior"
+          ],
+          "notes": "No explicit irreversible confirm/cancel step and no explicit token naming in confirmation; success/failure behavior and ownership expectations are otherwise within boundary."
+        }
+      },
+      "adjudication": {
+        "sha256": "d8c21345c704412054c4f4de574fda0c8f09a5e7823653cbf64d672e286567e9",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 2,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "67850941d732ef60ed00702ce0cfadb3",
+      "task_id": "S2-H-11",
+      "condition": "control",
+      "repetition": 2,
+      "full_response_sha256": "5b924a2692bdeab933d6c942d2b0f5b7b8615cfb8d5cd996bd4054a44ceabae0",
+      "normalized_outcome_sha256": "3b77aec31839bc0c59864b740bc04135e5d1d149cf564f0a96e5c14ae6250b41",
+      "reviewer_1": {
+        "sha256": "ff0561044fad3eb190c051dd46340dd9a66e6fb0018c6b2b48e3f36e7f92ccc6",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "closed-prd-escalation",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior"
+          ],
+          "notes": "Authority and escalation are aligned, but required guard remains incomplete: no explicit requirement to hold implementation until recovery-loss, backup/compliance effects, effective date, migration, and rollback are approved."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "980795d240f2591c6de83dc73b6e84621a25869fa19ab3bd5b84c84e3c40e658",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "implementation_scope_violation",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 1,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "data_integrity",
+              "severity": "P0",
+              "summary": "Immediate-deletion behavior is specified without preserving the current contract-change gate and risk-control preconditions required before implementation."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 3,
+          "correction_operations": [
+            "restore_required_behavior",
+            "remove_unsupported_behavior",
+            "remove_tracked_behavior_artifact",
+            "restore_p0_p1_protected_concern"
+          ],
+          "notes": "Specifies immediate deletion and UX/error behavior directly, which violates the required hold before approval and required-risk controls."
+        }
+      },
+      "adjudication": {
+        "sha256": "72430de96cf48c265191f71af5cf97dec2c7bcdeacb0195d373266a8abda3429",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "owner-conservative:closed-prd-escalation|implementation_scope_violation",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 1,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "data_integrity",
+              "severity": "P0",
+              "summary": "Immediate-deletion behavior is specified without preserving the current contract-change gate and risk-control preconditions required before implementation."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 3,
+          "correction_operations": [
+            "restore_required_behavior",
+            "remove_unsupported_behavior",
+            "remove_tracked_behavior_artifact",
+            "restore_p0_p1_protected_concern"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "6b67a15db854bed8d08436d1f9153cb9",
+      "task_id": "S2-H-11",
+      "condition": "treatment",
+      "repetition": 1,
+      "full_response_sha256": "d5d112ca4c8a9b783c338b4a9b0aeca9f55704768bb4696b89d7580a5be00178",
+      "normalized_outcome_sha256": "38999da4780b2a41b9d7ecc1afd5eabfa7782730f7e6c912e3191a4766b884e5",
+      "reviewer_1": {
+        "sha256": "f1f8a212af3c3f6c4fd6c21183e865660c1e2a74d8d077c7c2079c6e8fbc9698",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "closed-prd-escalation",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "data_integrity",
+              "severity": "P0",
+              "summary": "Acknowledges changing recovery contract and failure behavior, but does not explicitly preserve/restore the required truth point that backups and compliance export assumptions are part of the protected-impact set before changing behavior."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior",
+            "restore_p0_p1_protected_concern"
+          ],
+          "notes": "PRD boundary is acceptable, yet it omits an explicit truth-level callout about backup/compliance impact and the required implementation stop condition."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "75e9dda26145b10fd454dfa46c8cae3e37d2a12ba51a917a3f7c4780c8595529",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "implementation_scope_violation",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 1,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "data_integrity",
+              "severity": "P0",
+              "summary": "Defines irreversible deletion journey and success/failure behavior without re-stating required gating on promises, backup/compliance impact, migration, and rollback approval."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 3,
+          "correction_operations": [
+            "restore_required_behavior",
+            "remove_unsupported_behavior",
+            "clarify_recovery_or_failure",
+            "restore_p0_p1_protected_concern"
+          ],
+          "notes": "Adds PRD-level implementation details for immediate deletion before required contract, migration, and rollback decisions are approved."
+        }
+      },
+      "adjudication": {
+        "sha256": "466f9e5180d7035743dfd9deed1414d2079e75daff02bada8256035fabf0350a",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "owner-conservative:closed-prd-escalation|implementation_scope_violation",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 1,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "data_integrity",
+              "severity": "P0",
+              "summary": "Acknowledges changing recovery contract and failure behavior, but does not explicitly preserve/restore the required truth point that backups and compliance export assumptions are part of the protected-impact set before changing behavior."
+            },
+            {
+              "concern": "data_integrity",
+              "severity": "P0",
+              "summary": "Defines irreversible deletion journey and success/failure behavior without re-stating required gating on promises, backup/compliance impact, migration, and rollback approval."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 3,
+          "correction_operations": [
+            "restore_required_behavior",
+            "restore_p0_p1_protected_concern",
+            "remove_unsupported_behavior",
+            "clarify_recovery_or_failure"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "6bd013294ae084ad3b13b7a688b23a73",
+      "task_id": "S2-H-12",
+      "condition": "control",
+      "repetition": 3,
+      "full_response_sha256": "d7511a54f70e7f58e83a817fccb2609810709d64448c7a689ab0c55442a27e0b",
+      "normalized_outcome_sha256": "fb3e2a4368a2968ff10531f4be107ffcfb5339e09cde67c22d9f56a487288d6a",
+      "reviewer_1": {
+        "sha256": "6100e1e66a1e5b03cfd4c2dbc301c495ce21d3531e4059b44f009a62e9fa5394",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "authority_escalation_declared_wrong_level",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": false,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_authority_tier"
+          ],
+          "notes": "Escalation intent is present and required behaviors are present, but authority is inline instead of PRD."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "ed4abb54eb77a5965de29affeb7158f3e19e50cd3ef77a974282539da4b1024d",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "open-authority",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": false,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_authority_tier"
+          ],
+          "notes": "Escalation language is present and appropriate to the risk, but outcome authority is inline rather than PRD."
+        }
+      },
+      "adjudication": {
+        "sha256": "3e6e68252bc430a0ea5b7a29b5a4310ab3ccd8dddc3ab24813b409ef79e10e99",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "owner-conservative:authority_escalation_declared_wrong_level|open-authority",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": false,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_authority_tier"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "6dd6ce9f226d9a7a0c07d8b7b49ee55b",
+      "task_id": "S2-H-04",
+      "condition": "control",
+      "repetition": 2,
+      "full_response_sha256": "97ce5cf25e68a0d7f084e1666c617cbe97547e805ab2b5496b5c5f9a363d3fdc",
+      "normalized_outcome_sha256": "5de23ae17cefb4634b18aaa4280671b043d21f334fff1f2d8d325eee615cc44c",
+      "reviewer_1": {
+        "sha256": "a2b36d4a6b490c06a60976892a392b04bf6a794e29d8d134eb8b2515f1805e76",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 2,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior"
+          ],
+          "notes": "Includes robust failure handling and immutability, but does not define required irreversible confirmation naming and explicit cancel/default guard."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "56cadd72f05548d6ac368dcd3ab666acc70b4c7a2a675603721bc2f80112c0dc",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 2,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior"
+          ],
+          "notes": "Makes confirmation optional rather than required and does not require token naming before execution; otherwise stays in-scope and preserves auth/permanence model."
+        }
+      },
+      "adjudication": {
+        "sha256": "b0d1a815da477fd50975282a0bc081dfeda79eb68a6be75e086ae0c0d480715e",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 2,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "7175cfba52b0fcc70cadb8bb60060da5",
+      "task_id": "S2-H-03",
+      "condition": "control",
+      "repetition": 2,
+      "full_response_sha256": "2770e4bee94daaf63fbd71351b5c8d5423d770476f0a0919d004e809f3a46214",
+      "normalized_outcome_sha256": "c835ba8dce315c2a0bb8eaa5e4955da6552f7817403fd0b77c213936ac1ee722",
+      "reviewer_1": {
+        "sha256": "4cff9f3a5b11bcca94170740ce9741eb5687e02ca0ae8a8159e862551357851e",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Satisfies required behaviors; preserves owner-only scope, masked-only copy, confirmation, and no backend/persistence expansion. Mentions support tickets as destination only, not a ticket builder surface."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "3dcd9bab4f7b3e742d74e79d3b6b003c36efa9fd135e9290bb39a1f40277a449",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Authority/escalation correct and behavior aligned to owner-only masked value copy; no privacy expansion."
+        }
+      },
+      "adjudication": null,
+      "evidence_score": null
+    },
+    {
+      "packet_id": "7272af358ca4c383f25c6f8dd85e9a14",
+      "task_id": "S2-H-08",
+      "condition": "treatment",
+      "repetition": 1,
+      "full_response_sha256": "d48e01619e6c90f0f891a57e40d29660c5909331044f89998e4673ee4b80a6ef",
+      "normalized_outcome_sha256": "abb13b41a36fae23634147a0a297a6f59bb40cdbef976a5f0cd2335692e19886",
+      "reviewer_1": {
+        "sha256": "c0e223fc626bd2011d0c54c51058eff8a14ccb343230c8d97acedcef88ab6025",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline",
+          "unsupported_expansion": 1,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "remove_unsupported_behavior"
+          ],
+          "notes": "Includes MAY use a dedicated live region, which conflicts with the truth-bound requirement to announce in the existing results region."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "1226e902a287ef8f9a382b834b2a9a4ddf5f9dc9605a77d5560f06c150c37bc7",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 1,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "remove_unsupported_behavior"
+          ],
+          "notes": "Primary risk is optional dedicated live-region path, which can deviate from required ‘existing results region’ behavior; remove/replace with strict same-region announcement."
+        }
+      },
+      "adjudication": {
+        "sha256": "8643477af9698380c970158fa38b8dfb8573f1d956142f589622c4e2620465fb",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "inline",
+          "unsupported_expansion": 1,
+          "unsupported_user_concepts": 1,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "remove_unsupported_behavior"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "787f459678d4e8d8b04ec1f9a8925c12",
+      "task_id": "S2-H-06",
+      "condition": "control",
+      "repetition": 1,
+      "full_response_sha256": "8bb42c128c13a5000c74cab98b6f6b25e6ed1f3612284f1c97041d7775e948cc",
+      "normalized_outcome_sha256": "a76cad6e68afdc96f25eef102e740599eb069fdda950679f80789abfcd509eb3",
+      "reviewer_1": {
+        "sha256": "8ee0b3472232fe7d238bb18864dc0a19dd5742752e33bc54683f14a794694d0e",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Conforms to inline authority/boundary and preserves current filtered export + authorization semantics with retryable failure and no extra scope expansion."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "c3e2926599ff5364356dc89f3ebef1d48b4915db6f223eddd3ab34035ee30b28",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior",
+            "clarify_recovery_or_failure"
+          ],
+          "notes": "Fits inline boundary. Covers action/scope/retry/auth patterns; misses explicit file-preparation state."
+        }
+      },
+      "adjudication": {
+        "sha256": "f23fe8d829533825e7f2b813354a664f6a32c3975c86fecc2aface6884394d9e",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "owner-conservative:closed|inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior",
+            "clarify_recovery_or_failure"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "7a8a6c44011e09f8d272628ec00028a0",
+      "task_id": "S2-H-03",
+      "condition": "control",
+      "repetition": 3,
+      "full_response_sha256": "e7140e98dde6c56a734462288dc1fc9bd6a78215aab992ec2dfe8f3949e9b7de",
+      "normalized_outcome_sha256": "ac074014d6a2c5bcca229f8e3a4df7bd1ec0750f487b87563a8aec2a7f5fa797",
+      "reviewer_1": {
+        "sha256": "5f87cf35b9889a01e9e7e920f29b1ab7aa3c81dec5be1be10b7d54ccf4f421d1",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Meets truth with inline scope and exact masked-copy behavior. Includes permissible fallback and guard for absence of masked email; no privacy expansion."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "8a9b4183ed06aabc8727f1793dcdd3c45ea41e16af659a7ce9ecf74202602625",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "No unsupported behavior changes; includes privacy-safe masked-copy and explicit failure handling without extra data use."
+        }
+      },
+      "adjudication": null,
+      "evidence_score": null
+    },
+    {
+      "packet_id": "7c4233ca399e5e08d8204f2f8346b370",
+      "task_id": "S2-H-01",
+      "condition": "control",
+      "repetition": 2,
+      "full_response_sha256": "5a1a9eec1755fffc62b7d5bf140ea028d0da71c85e8367717b82655d7ddab68f",
+      "normalized_outcome_sha256": "8b24192c8a36fc27f13275d2defe8422375c138d319744f9330611b4ecebabd5",
+      "reviewer_1": {
+        "sha256": "039901a9f40849b7f76ab308f4a4007673f2e183eb5a6447005ac5519deec12f",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Covers all required behaviors and keeps to existing video page/owner retry flow with no migration, role, or route changes."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "2cb5f4c698769b90f38bfb3a1b0b5d63cc350346ae2db88cfaf2689fab7d67b1",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline-boundary-sufficient",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Meets private-truth scope with no extra workflows, preserves video and status context, and explicit success/failure outcomes and retry gating."
+        }
+      },
+      "adjudication": {
+        "sha256": "96a7d308d06ce7ac819cb116b22ae81aefad3ad674f3c26f18db5f2b95254bfd",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "owner-conservative:closed|inline-boundary-sufficient",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "7cf41ce5696c7e214c8140c2cfbc1af4",
+      "task_id": "S2-H-04",
+      "condition": "treatment",
+      "repetition": 3,
+      "full_response_sha256": "bebb99dba06a5a1990b809181d1d15f7b1782c6caf866df190e9ae95855133f1",
+      "normalized_outcome_sha256": "401439f345f66a5a5f87324abe6e3500bd107f5c8965e60b89df5a2be262fc87",
+      "reviewer_1": {
+        "sha256": "59a23807ad5e07e5fae6834ae925521386f829deb62aa6d6ff71b4c2f8252775",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior"
+          ],
+          "notes": "Provides confirmation and cancel-on-dismiss semantics; missing explicit requirement to name the token in the confirmation text."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "97e11755221ce52cdca2c1c2e02d921d37cd880ad792f13795621bff878223e3",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior"
+          ],
+          "notes": "Includes confirm/cancel and backend completion reporting; likely missing explicit requirement to name the target token in the confirmation message."
+        }
+      },
+      "adjudication": {
+        "sha256": "293c8230d1829c8a2828af66357f55d82978954c8627416b81ae25d094111378",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "8113df269cd979f20f0316a69f89bcf1",
+      "task_id": "S2-H-04",
+      "condition": "treatment",
+      "repetition": 1,
+      "full_response_sha256": "cf43e1439593b60ad60994ef99e7f6515bbcbdc67011717d43d64e977fcdc8af",
+      "normalized_outcome_sha256": "9109756ae2dba32895dedab8e1ece8913fa10a7008dd5b644bf95aed4d8af5b5",
+      "reviewer_1": {
+        "sha256": "0d6b8f50ba69748a9b908ba29c44e2e5ece7b7322ab6f86e9e3eb209771d8a46",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 2,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior"
+          ],
+          "notes": "No boundary or escalation issues, but omits the two explicit required confirmation constraints: token naming in the irreversible confirmation and default-to-cancel guard before revocation."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "ba50b0dc313dec09c676c359c9604bfffd9021daba24dbc12bdc9a51c00ecc7d",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 2,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior"
+          ],
+          "notes": "No explicit irreversible confirmation step or named-token confirmation is specified; other parts mostly match inline scope and ownership boundary."
+        }
+      },
+      "adjudication": {
+        "sha256": "4f373d73dd916e7e8df3808d5ce94fd16991ec0ce8f9f6619ed389e6bfb71bc3",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 2,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "86137129f2a1426dcad2de2bac5de6c8",
+      "task_id": "S2-H-10",
+      "condition": "treatment",
+      "repetition": 3,
+      "full_response_sha256": "87d6d930ce4a67ee10d8177a3199761c586aa765c5bfd7dfa52c2d8a012511b1",
+      "normalized_outcome_sha256": "2c768aec6719f68584ea6d3f1bab6444f543f8e76b16722ed512581a5da7d8bf",
+      "reviewer_1": {
+        "sha256": "07341c9e23b67cfb9a836906080e31c04a6d21492c67d816857ff1dcc1301e73",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "implement-before-gov",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 2,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "authorization",
+              "severity": "P0",
+              "summary": "Implements pending/approval publish semantics before required manager role/permission, state, delegation, and ownership details are formally approved."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 3,
+          "correction_operations": [
+            "remove_unsupported_behavior",
+            "restore_required_behavior",
+            "restore_p0_p1_protected_concern",
+            "remove_tracked_behavior_artifact"
+          ],
+          "notes": "Introduces concrete pending/decision flow and blocked publish transitions despite required stop condition."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "4e0c618190d1dfaddd17ee21d0b279e0df58a9c4e207cb68e4f44d0ced2b9832",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "escalate",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 3,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "authorization",
+              "severity": "P0",
+              "summary": "Prescribes auth-boundary behavior changes (pending/denied states) before explicit approval model is approved."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 2,
+          "correction_operations": [
+            "remove_unsupported_behavior",
+            "restore_required_behavior",
+            "remove_tracked_behavior_artifact",
+            "clarify_recovery_or_failure",
+            "restore_p0_p1_protected_concern"
+          ],
+          "notes": "Over-implements manager approval path and observable pending/denial states contrary to required freeze/stoppage policy."
+        }
+      },
+      "adjudication": {
+        "sha256": "5cb4b633723e66d960149bb9e3bea2cd805ebdada3011225a82b4a65fc2b491e",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "owner-conservative:implement-before-gov|escalate",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 3,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "authorization",
+              "severity": "P0",
+              "summary": "Implements pending/approval publish semantics before required manager role/permission, state, delegation, and ownership details are formally approved."
+            },
+            {
+              "concern": "authorization",
+              "severity": "P0",
+              "summary": "Prescribes auth-boundary behavior changes (pending/denied states) before explicit approval model is approved."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 3,
+          "correction_operations": [
+            "remove_unsupported_behavior",
+            "restore_required_behavior",
+            "restore_p0_p1_protected_concern",
+            "remove_tracked_behavior_artifact",
+            "clarify_recovery_or_failure"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "86f1d480e995913a6e7f441107320983",
+      "task_id": "S2-H-01",
+      "condition": "control",
+      "repetition": 3,
+      "full_response_sha256": "25adcc26cbc87b38e25ae38f1649b18f46b17c898a9705a5a9f151639d44d80b",
+      "normalized_outcome_sha256": "6e85132b366e85d7b6fe371e39dec172000ace930ef22feef7862a8847ee7c55",
+      "reviewer_1": {
+        "sha256": "90ef074435d82cb1f6a8611d326f475a3fbcccb12b04418dd6dbfa8163c87a66",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Within trust/recovery expectations and preserves video/status context while adding no forbidden scope; inline authority remains correct."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "7551b3a63a02b1ebd8fcc79e92aaa5ef234d0b5fecc34d71a17052d9eaea5900",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline-boundary-sufficient",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Meets required behaviors and boundaries; extra recovery detail is implementation-safe and not in conflict with private truth."
+        }
+      },
+      "adjudication": {
+        "sha256": "6da5f005421f8c01b505ee8eb01dcf065141bf700f15da876710d6e6f1ba29c5",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "owner-conservative:closed|inline-boundary-sufficient",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "93e4276647479370c79d33ac5e760e51",
+      "task_id": "S2-H-08",
+      "condition": "control",
+      "repetition": 1,
+      "full_response_sha256": "b7096522919d133f30fdec97b5f3c2b9852795c9e6b00baff077f02561abe22a",
+      "normalized_outcome_sha256": "1e5048938248d05234072232da6d8f8ea8c779c4f2964d24dbef85062973875e",
+      "reviewer_1": {
+        "sha256": "7c671ac70e2a1dbc5b99c35a6778d8d106c617d344edb45f6a6536a24f0a4f99",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Fits inline boundary; preserves existing region/result flow and focus behavior; required behaviors are covered."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "ab2de8cdc5c682f1240e43cee782ce891acd6b2078121326159b494e3494138f",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "No material mismatch; behavior remains bounded to existing search flow with focus stability and screen-reader summary/no-results requirements met."
+        }
+      },
+      "adjudication": null,
+      "evidence_score": null
+    },
+    {
+      "packet_id": "9659495f8a6ea096f822863e98a74a6a",
+      "task_id": "S2-H-05",
+      "condition": "control",
+      "repetition": 3,
+      "full_response_sha256": "4a38f5ee5717135b1d442d3e3df4394eb02df693b56e843e293cd4754c617e3f",
+      "normalized_outcome_sha256": "cbcd8688a9ede88a16b8c81c9085cf219faceba7f656b177102809ae74f7fc67",
+      "reviewer_1": {
+        "sha256": "3b9fb7f3d4a4078fd068e4578d9592731da7d5183430283b4d5ffca5dddc9d4a",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline-closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "No requirement omissions; scope stays within unsent draft attachment detachment."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "267dabf83b43bac0555377bc30b3e521b44ec3fe351ef61c98e1e32e14bac727",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "closed-inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Behavior is consistent with minimal in-scope draft edit semantics; no unsupported authority or migration expansion."
+        }
+      },
+      "adjudication": {
+        "sha256": "e30c27cfb1d94fc15ce539d54353fb0f77603f58bac1a3934e7efe2eedd4a5bf",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "owner-conservative:inline-closed|closed-inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "9758beed3d578641eba4b19f7bb8c0b2",
+      "task_id": "S2-H-05",
+      "condition": "treatment",
+      "repetition": 1,
+      "full_response_sha256": "12f15946d1c525dfc7d68aaca22ccd59ce00ef4cf8cc1b18ccbfdbf1fdf553e7",
+      "normalized_outcome_sha256": "d64fd5ab181ea31c8c12b5c8030278670570437b0c299c91db95f223b36ab129",
+      "reviewer_1": {
+        "sha256": "3023117a16cd96fdecc12549c797f7a0e2401c4439bd321418bc53e39f8212f4",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline-closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "All required items present; added non-required idempotency note is benign."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "62e3e89c2fd69e2b8cf4000d85528bb5235335da719e2cb8c2c586f4676fe4ee",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "closed-inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "In-scope, explicit inline boundary, and preserves text/state while removing only selected draft attachment."
+        }
+      },
+      "adjudication": {
+        "sha256": "5031781a4491283d602e1beb136cc1ffe240a2b4193f3f1a22a1ae2e3e504d9b",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "owner-conservative:inline-closed|closed-inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "978858293e299fe4ec965f23d9f0298b",
+      "task_id": "S2-H-02",
+      "condition": "treatment",
+      "repetition": 2,
+      "full_response_sha256": "3c00471f405c3b5e1df76db924de566254d9875836450b12f5b105633509b4df",
+      "normalized_outcome_sha256": "828bbd0e084517a24d71620c31a5e391d19ee097c1f526779b2896cea9da23a8",
+      "reviewer_1": {
+        "sha256": "68474400c2dd6e66d2dced45c18aa2d130207310e4d95906d8dbe3bca22f54a2",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline-closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior"
+          ],
+          "notes": "Missing the explicit private-truth requirement that entered values are retained after failed submit (no data loss); add this recovery guarantee."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "2cba5c9bbb3638dbb4f48c5b2e7e9937bfa37c43bf682a4779c149641b0c6a7b",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "in-scope-inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Fits inline authority with required text/error + focus/announcement behavior and no forbidden scope additions."
+        }
+      },
+      "adjudication": {
+        "sha256": "8fb4de55370318c836e1e29989834324df3a3476142bda86ec22ef120a6aae16",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "owner-conservative:inline-closed|in-scope-inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "983f32cf5915a9c5fd35a1a3aea8fe46",
+      "task_id": "S2-H-06",
+      "condition": "treatment",
+      "repetition": 2,
+      "full_response_sha256": "54330bc2ce423366465720cc9bdfd4e37a8a0de5151d9137a94712b93e0d8f3b",
+      "normalized_outcome_sha256": "481d4fa18d9bf1eb16a3e71d396ed586f519a8a9ae3fe2910ec3111892af36e5",
+      "reviewer_1": {
+        "sha256": "d901e10f27516a3828951883be4e966515e6b8a810259c073dca079ca3420da3",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Inline scope, export action, filtered-row fidelity, recovery behavior, and existing authorization boundaries are all represented without forbidden expansions."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "29f3acbce8222241b4ca043bb339ff6de2eae55bb142200b2adfa8bae2f3eb83",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior",
+            "clarify_recovery_or_failure"
+          ],
+          "notes": "Meets core requirements and auth constraints; does not explicitly require a preparation/loading state before failure/success outcomes."
+        }
+      },
+      "adjudication": {
+        "sha256": "2e23fbab5ecab2a9de0ff0e859e735b7faba2e9c44e7a7c215a61a3d67867bea",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "owner-conservative:closed|inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior",
+            "clarify_recovery_or_failure"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "996914fa0bef50fc51ec6f138b8e55f4",
+      "task_id": "S2-H-07",
+      "condition": "control",
+      "repetition": 3,
+      "full_response_sha256": "b0ce339999d88eb4ea500134d5fd73c9cd713fbef9a1a79f2dffce3f6f22b45e",
+      "normalized_outcome_sha256": "902ff0b8282a96cb71d738dd1ba288ac252fccb5d1477c8baf75d33607601e53",
+      "reviewer_1": {
+        "sha256": "afe8227933222f6dae00d2bed18fb96de26d0b0f5f500e29b8573eeb200d6909",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Fits inline boundary; one-draft resume and conflict-safety preserved; no required items missing."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "b2a17d0ca436861639490681d54ae6dff7a1a8f12ee1b7cb745a1d7ed539cc7b",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Covers keep-unsent, restore, and conflict-safety requirements while staying within composer-local behavior and inline authority."
+        }
+      },
+      "adjudication": null,
+      "evidence_score": null
+    },
+    {
+      "packet_id": "99a721d2cee441c6ac4f05cd72f2039e",
+      "task_id": "S2-H-12",
+      "condition": "control",
+      "repetition": 1,
+      "full_response_sha256": "2143e1ba7a2f9496844efa686a984a0bb85809aaced6d02254bdf525a3b2330b",
+      "normalized_outcome_sha256": "94ffcea6315b699fa08b3636abe4b395565843d9596572ed058975b8d73dff46",
+      "reviewer_1": {
+        "sha256": "682fed0398bdce99e2c834b68a17d632ddc1884c373305f60026398eb7538036",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "authority_escalation_declared_wrong_level",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": false,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_authority_tier"
+          ],
+          "notes": "Boundary is escalated and scope constraints are covered, but authority remains inline where PRD is required."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "90d411e0a905c402bba572f593f53b6755e77dd57ef3f6aa5040f287bc1554bb",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "open-authority",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": false,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_authority_tier"
+          ],
+          "notes": "Boundary escalation decision is consistent with truth risk posture, but authority is not set to PRD."
+        }
+      },
+      "adjudication": {
+        "sha256": "3e5cc24c28e386a088809e21de0d67f7dec3f5c5830866be417e1a3aa17897b1",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "owner-conservative:authority_escalation_declared_wrong_level|open-authority",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": false,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_authority_tier"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "9d3b2d1705f5e40f47410b81cc85b5c6",
+      "task_id": "S2-H-06",
+      "condition": "treatment",
+      "repetition": 3,
+      "full_response_sha256": "34e2b22f57202702e3c509753ad63b8de7076a2edc26777c7b156f6943295e9d",
+      "normalized_outcome_sha256": "d347847f98e1abb0af1f0fd1dfa006305892ca56318b5394b982b582f836ff03",
+      "reviewer_1": {
+        "sha256": "468bb573666b1b3fe0aae80b768c7d138b1a4232ae5862caf48a42a391a9912f",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Inline and closed boundary, preserves existing access model, and matches filtered-export requirements with retryable failure handling."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "acfe7b266ce672150a28beefa1403c0c8f6d2c0d534affa6b805bad706df0061",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior",
+            "clarify_recovery_or_failure"
+          ],
+          "notes": "Inline and aligned on scope/auth/scope constraints. Recovery is addressed, but file-preparation UX is not explicit."
+        }
+      },
+      "adjudication": {
+        "sha256": "0cd0d92003e0d09353d6ca202a3f4cb31778229b1e9b96b1055c99d174955fec",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "owner-conservative:closed|inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior",
+            "clarify_recovery_or_failure"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "9fdf8907dceeac79c252d034ec2e8f9e",
+      "task_id": "S2-H-06",
+      "condition": "control",
+      "repetition": 2,
+      "full_response_sha256": "5445d812463269e37c585820b2e641607e2246a4da1bb4dc90d30700ccf6b712",
+      "normalized_outcome_sha256": "41bb1728ac7abf6bc9c19a0c58935924ae43edc609b2c0f15d35758b95c39b64",
+      "reviewer_1": {
+        "sha256": "8452ed35c2f83e76bdca2773eecd4622a715c5531242086452eee520c9e0e194",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "authority_mismatch_escalation",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": false,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_authority_tier",
+            "correct_escalation_decision"
+          ],
+          "notes": "Declares PRD escalation for a boundary that matches inline truth; behavior is otherwise within required constraints."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "4cebd9af04e263cc300eaacdb476c94ec32446cc885d3e657349a84d6283f330",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "authority-prd-escalation-mismatch",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": false,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_authority_tier",
+            "correct_escalation_decision",
+            "restore_required_behavior",
+            "clarify_recovery_or_failure"
+          ],
+          "notes": "Unnecessary PRD escalation conflicts with expected inline authority. Otherwise behavior alignment is good, with only missing explicit preparation state for export."
+        }
+      },
+      "adjudication": {
+        "sha256": "8806cab4c49268a68c0359bfacb5a16aa04b108c7a3a796387a0febc2103f162",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "owner-conservative:authority_mismatch_escalation|authority-prd-escalation-mismatch",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": false,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_authority_tier",
+            "correct_escalation_decision",
+            "restore_required_behavior",
+            "clarify_recovery_or_failure"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "a20a67e76a449d2e7efc22b8cc584057",
+      "task_id": "S2-H-03",
+      "condition": "control",
+      "repetition": 1,
+      "full_response_sha256": "4e3dc28b1c88d2d9910cb63664261d21f60b897634e5bb548e6c6409f64af7ee",
+      "normalized_outcome_sha256": "067750f53fc10b82e05aa520861a93a0a4bc80a6514fb585fec7637284ac232e",
+      "reviewer_1": {
+        "sha256": "6ea5ed91db55357e9d8e2c84ddf54eb5613ee9f5f645d43c5d54934ca90ce684",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Compliant: owner-only in-context control, masked string copy, uses existing API response, confirms success, no unmasking or data-contract changes."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "a1e27809173122e8de91027a4b8ae79e98a20e00ea9b3fcd5f345ab2f09f17ca",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Meets truth requirements and authority; no backend/data-surface expansion beyond existing masked value."
+        }
+      },
+      "adjudication": null,
+      "evidence_score": null
+    },
+    {
+      "packet_id": "a9689619737a6dc5fbb86131886c29e0",
+      "task_id": "S2-H-05",
+      "condition": "treatment",
+      "repetition": 3,
+      "full_response_sha256": "4a2a124e50dec9c0eafcdfc66a8b9f1b30dc2b68dc0fdd7e0e6e775d5e766456",
+      "normalized_outcome_sha256": "cd8a110434c4c69e39fec623d3f781d6f6bd01057166569d7c7f4f489394fb4a",
+      "reviewer_1": {
+        "sha256": "4c19cac66b77c0ebcf7ab9d06680e3045b861fe79a86bc23e519230e814a0927",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline-closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Conservative and correctly scoped; no unsupported surface additions."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "1a437bc58359ad30acaf2c5bccd8e4b03358104ba3b8ea2074d0381d4d70a84d",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "closed-inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Meets required outcomes with clear inline-only scope and no source-file deletion or draft-field mutation."
+        }
+      },
+      "adjudication": {
+        "sha256": "ff0d17cd7ea3b61285c877baac1d3513f86d88d217bfd85feed05ff753bfb97a",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "owner-conservative:inline-closed|closed-inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "b045626455f4f4c8ad73ebc408234178",
+      "task_id": "S2-H-11",
+      "condition": "treatment",
+      "repetition": 3,
+      "full_response_sha256": "50a3dea0b708ab4cda33e063b73e1b98ce4bc017e0cf46f6608bb3da5c9b1bdd",
+      "normalized_outcome_sha256": "81131144b4e7e876b6bbd6af9b3c8ddf89ecbde5d138b3dee2582533545d0329",
+      "reviewer_1": {
+        "sha256": "de50a1902a7db66547491d39ae160735b3e09a53e0cb750f02acba4a4ce77a46",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "closed-prd-escalation",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 1,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior",
+            "remove_unsupported_behavior"
+          ],
+          "notes": "Closed-at-authority boundary, but adds an explicit recovery attempt/error path to support/export backup recovery outside app that is not in truth-required minimum behavior; also misses full required stop-implementation condition."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "ad2d057d1ed99d4475816ea862a06d5fb8b22fa70e56afb07fd0059fe8e6fc3f",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "implementation_scope_violation",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 1,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "data_integrity",
+              "severity": "P0",
+              "summary": "Moves to permanent-delete outcomes without preserving the required pre-implementation approvals for changing recovery and compliance assumptions."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 3,
+          "correction_operations": [
+            "restore_required_behavior",
+            "remove_unsupported_behavior",
+            "remove_tracked_behavior_artifact",
+            "restore_p0_p1_protected_concern"
+          ],
+          "notes": "Implements and constrains behavior for immediate deletion, including support/restore and auditing details, instead of enforcing the required boundary hold."
+        }
+      },
+      "adjudication": {
+        "sha256": "c6373b25d206871957630b0be2b92ad8aab3b0a2d0fe88ca4e5d7b4914e7175b",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "owner-conservative:closed-prd-escalation|implementation_scope_violation",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 1,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "data_integrity",
+              "severity": "P0",
+              "summary": "Moves to permanent-delete outcomes without preserving the required pre-implementation approvals for changing recovery and compliance assumptions."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 3,
+          "correction_operations": [
+            "restore_required_behavior",
+            "remove_unsupported_behavior",
+            "remove_tracked_behavior_artifact",
+            "restore_p0_p1_protected_concern"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "b0b8cc2bc069c18d94b7570159ebe307",
+      "task_id": "S2-H-03",
+      "condition": "treatment",
+      "repetition": 3,
+      "full_response_sha256": "bf06973ef48618e7c9f0d53496a3dbdbb970a34d1d8ca040cb962a862ae0959c",
+      "normalized_outcome_sha256": "ec6eb2d43da383d5c91efe7329f3496d13683ec523729bd06e85037f272cddbd",
+      "reviewer_1": {
+        "sha256": "cb8cfdb2ae0b3b82b92df6af6ef53bc43762b127ffb4ade05019948f58baab67",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Satisfies required behavior and boundary limits. Handles denied clipboard with inline error and non-blocking manual-copy continuation; no new routes/roles/backend surface changes."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "78c7195aa06a419f7b6154e4783b6e5a5d883f8f63a5e18882c84d09167d3e7d",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Keeps strictly in-scope and privacy-safe; includes required inline confirmation and graceful failure path."
+        }
+      },
+      "adjudication": null,
+      "evidence_score": null
+    },
+    {
+      "packet_id": "bc2249084cb15444189165ff2b341c64",
+      "task_id": "S2-H-06",
+      "condition": "treatment",
+      "repetition": 1,
+      "full_response_sha256": "2406b202714ae55b9a95f3e2dbbe7378f8e1b846e552bfc074aa649484f04215",
+      "normalized_outcome_sha256": "8ceac461a8a0ce30a08fef4245ea96dfa77c64ab8302035e1a8672c3b7343ede",
+      "reviewer_1": {
+        "sha256": "fc86a003826f15c36f345887c3fd9fdd6087eac8d7305a654920eda74a4ce661",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Inline, one-click current-view CSV export, filtered-row fidelity, unchanged auth model, and no forbidden feature expansion."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "8892f8b7563d4530fa44076ec5c0f63a897c946f8ea6646283b91fdd289209ff",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior",
+            "clarify_recovery_or_failure"
+          ],
+          "notes": "Inline and mostly aligned; includes success/failure and recoverability guidance. Missing explicit file-preparation feedback before completion."
+        }
+      },
+      "adjudication": {
+        "sha256": "d8d66c37d2f9fd68775f64f36ef2d17e5d65c8f1b70953b4a74bf97dff28b703",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "owner-conservative:closed|inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior",
+            "clarify_recovery_or_failure"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "bcfb294a793845253430929737fd9a27",
+      "task_id": "S2-H-08",
+      "condition": "control",
+      "repetition": 3,
+      "full_response_sha256": "c787ddb30805597742ca17dab3d62a8226fe1661076dca52b875dfa63ea73962",
+      "normalized_outcome_sha256": "cf14e7c748393df3ea5a5772c4f5f58294d93c9abd0927f21cba849271436f8f",
+      "reviewer_1": {
+        "sha256": "3894b18f8f1417c1b7eda606ba9049b6d423ebcc2f4147a9e3babc6124924e11",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Compliant with required outcomes; failure/unknown-result messaging is extra but not contradictory to private truth."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "6e9aef0cf26b8b94369c8d0628c768bc6224e56f4af552d4356520c51c88e89a",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Consistent with private truth; includes only recovery clarifications around timing/errors that do not alter bounded scope."
+        }
+      },
+      "adjudication": null,
+      "evidence_score": null
+    },
+    {
+      "packet_id": "bebbef7b7bac6947f4ee89554032e5b3",
+      "task_id": "S2-H-12",
+      "condition": "treatment",
+      "repetition": 3,
+      "full_response_sha256": "10080def7c9f4036af104837b5a257f817c0a2eac0e8ebc4f121def1bb96bfec",
+      "normalized_outcome_sha256": "4f4037fe0a4e324a4177d71614acf5c9504ca03f12f5c37c343aeb91a5bac715",
+      "reviewer_1": {
+        "sha256": "ebb1a26218b0095e2edd643ff47ae2a5a1e233e011627d355a4f818b8460b278",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "correct_authority_with_partial_recovery_expansion",
+          "unsupported_expansion": 1,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 1,
+          "correction_operations": [
+            "clarify_recovery_or_failure",
+            "remove_tracked_behavior_artifact"
+          ],
+          "notes": "Uses PRD authority and escalates correctly, but adds non-matching recovery behavior (continue rendering with warning on rounded-failure) instead of explicit error state."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "0ce24beaf6e0113682d54e423fa17ae014864dc73c797975cff50a02d7bf5305",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 1,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 1,
+          "correction_operations": [
+            "remove_unsupported_behavior",
+            "remove_tracked_behavior_artifact"
+          ],
+          "notes": "Authority/escalation alignment is correct, but it adds extra recovery behavior (row-level warning on rounding-path failure) and a run/export note that is outside truth-required scope."
+        }
+      },
+      "adjudication": {
+        "sha256": "20d736a67528b3fe86773831fcda45b2ec5cb4a9aeec519a43fc8d0edb921e23",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "owner-conservative:correct_authority_with_partial_recovery_expansion|closed",
+          "unsupported_expansion": 1,
+          "unsupported_user_concepts": 1,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 1,
+          "correction_operations": [
+            "clarify_recovery_or_failure",
+            "remove_tracked_behavior_artifact",
+            "remove_unsupported_behavior"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "c0a94a6d1024c0adf9fddecade3592bd",
+      "task_id": "S2-H-02",
+      "condition": "treatment",
+      "repetition": 3,
+      "full_response_sha256": "57de9bb0fb93ff11353aee1f988dc2661e05aeffa62035a3e8794cdeeb9d45b9",
+      "normalized_outcome_sha256": "bc449a3127184d13cb84395dfbe7b34615c767d961951b4cebfe1fd8b6ee9fbd",
+      "reviewer_1": {
+        "sha256": "c839ef1dc95343acbe70d7a83298a68196f8f2f5b87c698ea398e00da2e79d8f",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline-closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Satisfies required set with explicit field association, focus strategy, screen-reader announcement, and preservation of form state language."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "79fdb5f9a9c4d0d46891e5fef1eedaca3eaf9bde570b0c44f10d8bb1c3fbb48c",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "in-scope-inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Includes all required behaviors plus explicit non-color and ARIA association; no unsupported expansion evident."
+        }
+      },
+      "adjudication": {
+        "sha256": "a35e61fb075859f97e7b7f73f504ba40ec61485611e1d2d003945f5d60d027c0",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "owner-conservative:inline-closed|in-scope-inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "c0cd6195779288c838c302f3e97b5887",
+      "task_id": "S2-H-12",
+      "condition": "treatment",
+      "repetition": 2,
+      "full_response_sha256": "a4e0d6b7c8cece07189eb7315fd6d4b259731018f8a091211e33a2026f36dfdd",
+      "normalized_outcome_sha256": "9638559ca2634323a4232169ca281b4f5e1bab30ba79aa1e49f9cfa43370fee2",
+      "reviewer_1": {
+        "sha256": "1ecde685c14905cad7033ef8ea5f7076543de4688c3dcee0b9d375d5e5318ce5",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "correct_authority_with_unsupported_fallback",
+          "unsupported_expansion": 1,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [
+            {
+              "concern": "data_integrity",
+              "severity": "P0",
+              "summary": "Failure-path fallback to legacy line-level rounding with warning can produce mixed results and undermines the required explicit-error recovery boundary for financial integrity."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 1,
+          "correction_operations": [
+            "clarify_recovery_or_failure",
+            "restore_p0_p1_protected_concern",
+            "remove_tracked_behavior_artifact"
+          ],
+          "notes": "PRD/escalation alignment is present, but behavior adds unsupported fallback to prior rounding method and omits the required P0 data-integrity recovery posture."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "8829dc9cb2ef44720189717f03395db42ab34c38a29c2106f052bd12aa1d90ce",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 1,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 1,
+          "correction_operations": [
+            "remove_unsupported_behavior",
+            "remove_tracked_behavior_artifact"
+          ],
+          "notes": "PRD escalation is correct, but adds fallback-to-half-up behavior with warning and explicit bad-output capture that are unsupported scope artifacts."
+        }
+      },
+      "adjudication": {
+        "sha256": "3f6977865f54b122529be29778a2a549096afb783866a7c56323007f124723b2",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "owner-conservative:correct_authority_with_unsupported_fallback|closed",
+          "unsupported_expansion": 1,
+          "unsupported_user_concepts": 1,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [
+            {
+              "concern": "data_integrity",
+              "severity": "P0",
+              "summary": "Failure-path fallback to legacy line-level rounding with warning can produce mixed results and undermines the required explicit-error recovery boundary for financial integrity."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 1,
+          "correction_operations": [
+            "clarify_recovery_or_failure",
+            "restore_p0_p1_protected_concern",
+            "remove_tracked_behavior_artifact",
+            "remove_unsupported_behavior"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "c36f039940aa0c93d3e7e25e702857d8",
+      "task_id": "S2-H-10",
+      "condition": "control",
+      "repetition": 1,
+      "full_response_sha256": "5b0ec3bf177d3468f9e00c312e24827d3caa46799532cf86ad375aacf82ab357",
+      "normalized_outcome_sha256": "6161958c26e589769087a8136d701a6634c449bf76ac8645e5a109c00591c408",
+      "reviewer_1": {
+        "sha256": "b79b66502177430a9901b0340ba98d2e6b8b6abbe83173dbc9e1b7458ad9e8e6",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "escalate",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Fully aligned with private truth: no behavior change, no manager role/permission implementation, preserve direct publish until contract-approved migration point."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "9ae6e1f4a4f6105ee0df2a0107ac3b1161c1f3e502f30021cd02c65a770b9033",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "escalate",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Best match: escalates, preserves current flow, and gates any change behind explicit governance approval."
+        }
+      },
+      "adjudication": null,
+      "evidence_score": null
+    },
+    {
+      "packet_id": "c72308edb80fbe233d96584095d88e16",
+      "task_id": "S2-H-01",
+      "condition": "treatment",
+      "repetition": 1,
+      "full_response_sha256": "86b590c17787e53d91a58fd85e840f77dbf33054a23458149f02dbc5da8b6e5a",
+      "normalized_outcome_sha256": "a14e762837c05a3cc4f468062af9f42640259a63f775b2956e990b4f43c543fe",
+      "reviewer_1": {
+        "sha256": "5f5c7ed33b5cfff2ae4c1d2462746bf266242ca691889e4e74c6a4a479732432",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Conforms to private truth: on-page owner retry path, retry progress, final availability/failure outcome, and preserved video context."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "526efbcabe411f3f4c403107bd79b484dba03219a37e1a495997d575712377c8",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline-boundary-sufficient",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Consistent with boundary and required scope; clear owner-only in-page retry, status progression, and preserved video/content context."
+        }
+      },
+      "adjudication": {
+        "sha256": "2f38cf8f0c87ce0065e4dece590d64c2838ae91143e5e4627a86d258dfb74c75",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "owner-conservative:closed|inline-boundary-sufficient",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "cbd3b259e7d1caf526de1d3953339d56",
+      "task_id": "S2-H-09",
+      "condition": "treatment",
+      "repetition": 2,
+      "full_response_sha256": "9423b0980418aa399b007b602f4d20bae3a7c5f08d24db4dda0cfd4a7fd36ed9",
+      "normalized_outcome_sha256": "e10992c664ede18ad3bff60e371507f5e3670cf75d1206a0ffaf4a3299cae361",
+      "reviewer_1": {
+        "sha256": "ee3964e7db1863c5657066b30c47ba5e7ec72583863c7de8eb44334f275db15f",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Proper PRD escalation and no additions from unsupported list; recovery messaging remains non-revealing."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "8e6b49dac3c81d0b0f1139699cb3e3594f4bab905f12ad8adf6ab6313b05f919",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "escalated-without-gate",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior"
+          ],
+          "notes": "Contains PRD escalation and deferment language, but still defines owner link generation and download semantics that private truth forbids before PRD approval."
+        }
+      },
+      "adjudication": {
+        "sha256": "f9bdda76c6d83cdbbb0eaadb876dd4c5c30c6ac5b6cab44f2c386385a0201b1c",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "owner-conservative:closed|escalated-without-gate",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "cbed0ed28c694b113fa5ff49d389251d",
+      "task_id": "S2-H-12",
+      "condition": "treatment",
+      "repetition": 1,
+      "full_response_sha256": "04f6f79fe165a963732835bfe7345f6582d920a3097c0d8104921c26b3eff2ff",
+      "normalized_outcome_sha256": "014402e0722d6011356bc5f99d688a2c7ee37750c8f3a371feb55b4f5b4ad89b",
+      "reviewer_1": {
+        "sha256": "e36c1b7999b5df81837bdefb2561087a066f1335597723164d59622573d9585c",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "insufficient_authority_and_no_escalation",
+          "unsupported_expansion": 1,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "data_integrity",
+              "severity": "P0",
+              "summary": "Declares no open escalation while changing report semantics across historical rows, omitting the required PRD gate for historical scope/rollback risk control."
+            }
+          ],
+          "authority_fit": false,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 1,
+          "correction_operations": [
+            "correct_authority_tier",
+            "correct_escalation_decision",
+            "restore_required_behavior",
+            "restore_p0_p1_protected_concern",
+            "remove_tracked_behavior_artifact"
+          ],
+          "notes": "Fails the required stop-before-implementation/PRD-gate condition and introduces historical-coverage claims and warning behavior without the required authority or rollback/migration control."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "6d7d9732909eef254ee92209f2338a12f5191753b3a964a89cfb2dddc57f5d1f",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "open-escalation",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 2,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "data_integrity",
+              "severity": "P0",
+              "summary": "By declaring no migration/contract changes and applying behavior to historical rows without migration/reproducibility controls, it bypasses the required pre-implementation protection around historical-report integrity."
+            }
+          ],
+          "authority_fit": false,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 1,
+          "correction_operations": [
+            "correct_authority_tier",
+            "correct_escalation_decision",
+            "restore_required_behavior",
+            "restore_p0_p1_protected_concern",
+            "remove_unsupported_behavior",
+            "remove_tracked_behavior_artifact"
+          ],
+          "notes": "Fails closed-loop boundary: declares no unresolved escalation despite mandatory PRD-level escalation. It also omits the required stop-before-implementation posture for scope/rollback/adjustment approvals and introduces unsupported historical and failure-handling behavior."
+        }
+      },
+      "adjudication": {
+        "sha256": "a4a31c41dd3bca395165ed7b35695182c29f08dc14c67a6456ba33d483776bdf",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "owner-conservative:insufficient_authority_and_no_escalation|open-escalation",
+          "unsupported_expansion": 1,
+          "unsupported_user_concepts": 2,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "data_integrity",
+              "severity": "P0",
+              "summary": "Declares no open escalation while changing report semantics across historical rows, omitting the required PRD gate for historical scope/rollback risk control."
+            },
+            {
+              "concern": "data_integrity",
+              "severity": "P0",
+              "summary": "By declaring no migration/contract changes and applying behavior to historical rows without migration/reproducibility controls, it bypasses the required pre-implementation protection around historical-report integrity."
+            }
+          ],
+          "authority_fit": false,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 1,
+          "correction_operations": [
+            "correct_authority_tier",
+            "correct_escalation_decision",
+            "restore_required_behavior",
+            "restore_p0_p1_protected_concern",
+            "remove_tracked_behavior_artifact",
+            "remove_unsupported_behavior"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "d158051dcc72f0dfec8e84a40d2c2be9",
+      "task_id": "S2-H-02",
+      "condition": "treatment",
+      "repetition": 1,
+      "full_response_sha256": "493ced8075e3eb26aabc95a1ca0f903241711460f4aefff927dfabbfadd4338b",
+      "normalized_outcome_sha256": "6ddf7c51638e6242fd04aeeddaaadecc74f51a8d231f81e7588871af760f1ec7",
+      "reviewer_1": {
+        "sha256": "8645bfabfa67b977dab791e0ef8b41f1ca8f294522549b4bf0b3fd2a4bc3e58e",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline-closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Matches private truth boundaries and required behaviors; includes keyboard and screen-reader recovery path and no-loss semantics."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "e1163a4a3acd278b89f308bade72089b40f5894e5cf479d8e06ec74eff6c6bad",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "in-scope-inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Boundary and authority are correct; required field-text, association, and focus/repair flow are covered."
+        }
+      },
+      "adjudication": {
+        "sha256": "a92302c3ed54d4cb367ff10a9fa2083b177f627324579640e56e0d4373fe4c43",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "owner-conservative:inline-closed|in-scope-inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "d8e36c32f6d6150487d97c61bce2e084",
+      "task_id": "S2-H-07",
+      "condition": "control",
+      "repetition": 1,
+      "full_response_sha256": "541eae817aa02e29f0c2a8524734b56e1ac8d4e308e1cbf30f282b5c71f9482d",
+      "normalized_outcome_sha256": "ca6014f43d852b1ef2e2b3731206fb65889a58c80c5272d62cd01c14976d1dc6",
+      "reviewer_1": {
+        "sha256": "50cf6897bbdc72c279ba3ba907e86fafb580e2ea28c69f7b393e096c5855c4f1",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "inline",
+          "unsupported_expansion": 1,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "remove_unsupported_behavior"
+          ],
+          "notes": "Includes storage quota as a recoverability concept, which is explicitly outside supported scope."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "31ca0b1139ff3fb363715ae3e121cf485371aed26bd68b6c41054971bc0adba6",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Within allowed boundary and required behaviors. Explicit failure signaling for restore failure is acceptable and not conflicting with truth."
+        }
+      },
+      "adjudication": {
+        "sha256": "3b385b94468a233e8583c71f02187ac04628e67c544f376d5632445618c6b53b",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "inline",
+          "unsupported_expansion": 1,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "remove_unsupported_behavior"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "d9e57e90469abf5fc6d9ce8549135a52",
+      "task_id": "S2-H-10",
+      "condition": "treatment",
+      "repetition": 1,
+      "full_response_sha256": "6756833c6d61c51a4a51aa3b56379bd56cb032e68ecacb1c77a7dbc22c1b4a6e",
+      "normalized_outcome_sha256": "1199c991c6a0456861f3dfb0b04b0298e99d2c17cfc162fbb9884f68f17574c0",
+      "reviewer_1": {
+        "sha256": "610d9e888bf4e0e5afb0fdb00dd3a6a8682390233e78eaf69c5a0c188b3dd8cd",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "implement-before-gov",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 2,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "authorization",
+              "severity": "P0",
+              "summary": "Defines user-visible manager-gated publish outcomes before required governance inputs (identity, scope, delegation, notifications, pending-work ownership) are approved."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 2,
+          "correction_operations": [
+            "remove_unsupported_behavior",
+            "restore_required_behavior",
+            "restore_p0_p1_protected_concern",
+            "remove_tracked_behavior_artifact"
+          ],
+          "notes": "Implements publish blocking, pending/approval/rejection outcomes, and edit-after-block behavior despite explicit requirement to halt implementation."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "b6382cd8d780f57e6b2a08dc87320e8a48871a584f5180b145d085941bc3c2fe",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "escalate",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 2,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "authorization",
+              "severity": "P0",
+              "summary": "Implements an approval state machine and non-public outcome states before product/security contract prerequisites are approved."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 2,
+          "correction_operations": [
+            "remove_unsupported_behavior",
+            "restore_required_behavior",
+            "remove_tracked_behavior_artifact",
+            "restore_p0_p1_protected_concern"
+          ],
+          "notes": "Moves beyond authority freeze by defining final publish statuses (awaiting/denied) and transitions."
+        }
+      },
+      "adjudication": {
+        "sha256": "f5a8d40e7387df6e322a142bbed2852cc18860000144c464bfc0868e1ca7a5c6",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "owner-conservative:implement-before-gov|escalate",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 2,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "authorization",
+              "severity": "P0",
+              "summary": "Defines user-visible manager-gated publish outcomes before required governance inputs (identity, scope, delegation, notifications, pending-work ownership) are approved."
+            },
+            {
+              "concern": "authorization",
+              "severity": "P0",
+              "summary": "Implements an approval state machine and non-public outcome states before product/security contract prerequisites are approved."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 2,
+          "correction_operations": [
+            "remove_unsupported_behavior",
+            "restore_required_behavior",
+            "restore_p0_p1_protected_concern",
+            "remove_tracked_behavior_artifact"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "e3a4aad13dd1e2e2b82952d53a158be5",
+      "task_id": "S2-H-08",
+      "condition": "treatment",
+      "repetition": 2,
+      "full_response_sha256": "19efe166f6b491ba3f0878b0a6843b41617cb0edb34302b07e00fa2c40647ecc",
+      "normalized_outcome_sha256": "6b405335507e00b6bdbf12f6b9fcdf0fe034e9b41a05e4a7559cace1a0641302",
+      "reviewer_1": {
+        "sha256": "c428ddc37affc5d3a4b1a61843590f93a70f138762655dff1ed47e0f103aa66a",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Clean inline outcome with explicit count/no-results announcements and unchanged focus behavior; no boundary breaches detected."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "1dd1ab44a3b79101d881bdb36eade4fc0b0775e7b026765710b3fb4967e28118",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Meets required behaviors and boundary; excludes extra authority/UX changes and preserves existing focus model."
+        }
+      },
+      "adjudication": null,
+      "evidence_score": null
+    },
+    {
+      "packet_id": "e3e9126e1ad32f2362cbb518f0434c5e",
+      "task_id": "S2-H-11",
+      "condition": "control",
+      "repetition": 1,
+      "full_response_sha256": "404bfdb4e54a5033f00bbb8808fec565e3735cc7abcfcbe916a3d064f6af52ce",
+      "normalized_outcome_sha256": "83f2df9b9cbbcc9bb6dc1e831317e87f12e1ad4f209b609a3add767f83e245c7",
+      "reviewer_1": {
+        "sha256": "cbbe63fa86f7c26866952c5171b1abc6504e01baa7301481acc16543ad99b936",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "inline-escalation",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": false,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_authority_tier",
+            "restore_required_behavior"
+          ],
+          "notes": "Escalation intent is present but outcome authority is inline rather than PRD; required explicit freeze condition (effective date/migration/rollback approvals before implementation) is not fully included."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "e61abce17d4a45496bcfae0f4101ded407f1c148f9ae986457eeb5205ab63bf2",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "authority_mismatch",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 1,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "data_integrity",
+              "severity": "P0",
+              "summary": "Authority is inline and outcome drives behavior change; misses required prd-gated requirement to stop and align on effective-date, migration, and rollback decisions."
+            }
+          ],
+          "authority_fit": false,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 2,
+          "correction_operations": [
+            "correct_authority_tier",
+            "restore_required_behavior",
+            "remove_unsupported_behavior",
+            "restore_p0_p1_protected_concern"
+          ],
+          "notes": "Escalation language is present but still presents implementation behavior in an inline tier, so private boundary is not closed."
+        }
+      },
+      "adjudication": {
+        "sha256": "e97b3dd9fa3642ba939ce71a11183709fd6882edb47077d29a7d51d4aeebda49",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "owner-conservative:inline-escalation|authority_mismatch",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 1,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "data_integrity",
+              "severity": "P0",
+              "summary": "Authority is inline and outcome drives behavior change; misses required prd-gated requirement to stop and align on effective-date, migration, and rollback decisions."
+            }
+          ],
+          "authority_fit": false,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 2,
+          "correction_operations": [
+            "correct_authority_tier",
+            "restore_required_behavior",
+            "remove_unsupported_behavior",
+            "restore_p0_p1_protected_concern"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "e43c8c06a992785b05fd11bfc5985dbf",
+      "task_id": "S2-H-09",
+      "condition": "control",
+      "repetition": 3,
+      "full_response_sha256": "b22eb2126c7a025a9709cfd8432abae465fb94f4cbb9d5de5bc01ff4311b296b",
+      "normalized_outcome_sha256": "6abe5eff4dba85a6c817a44ce15fd29970a97075c338dcc933959883df068f79",
+      "reviewer_1": {
+        "sha256": "84d602d59175c5a9784afd53fec6fd50047e8a0850f0d65263df9bf037a2c9dd",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "authority-mismatch",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": false,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_authority_tier"
+          ],
+          "notes": "Escalation is present but authority is `inline` instead of required `prd`."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "b7662915764fdcf7d873db8042c199125b06b917c94fe00153b00d107d414e18",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "authority-mismatch",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": false,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_authority_tier",
+            "restore_required_behavior"
+          ],
+          "notes": "Sets authority inline while expected authority is PRD, and does not honor the required stop-before-implementation behavior."
+        }
+      },
+      "adjudication": {
+        "sha256": "5dbb1363f732e487c0c258d228a023c04d1093f478f6466cc8512ba886083602",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "authority-mismatch",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": false,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_authority_tier",
+            "restore_required_behavior"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "e6976c6113866e3dd28736589b35bbb6",
+      "task_id": "S2-H-09",
+      "condition": "treatment",
+      "repetition": 3,
+      "full_response_sha256": "b502b47408de6abe29ad66759380026aa93654b1370295b1daa4aa307199f98b",
+      "normalized_outcome_sha256": "e28cc89165530ba0f0237c44032f0f87bb614ec7f73f1e20eb60433bd4be5e53",
+      "reviewer_1": {
+        "sha256": "3c09dc0310480a4a4e3808aaa14f1e84c1c3d0dd469942034fab8cbd10520f52",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "PRD escalation with scoped requirements and no unsupported-expansion concepts."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "a760b37a47f56b14e7a70c0b84c62bfdc7ce7da21254251b41e1f45fb20fab13",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "escalated-without-gate",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior"
+          ],
+          "notes": "Correctly escalates boundary but still prescribes implementation behaviors; required_behavior from truth is to stop pending approval of identity/scope/revocation/etc."
+        }
+      },
+      "adjudication": {
+        "sha256": "dfd30472a9604c05fa59c0a26fd44219fe894b87e798fc26b41c1d898cb2644d",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "owner-conservative:closed|escalated-without-gate",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "ea314d01922542bcb7bdbb4e5afb0c2e",
+      "task_id": "S2-H-09",
+      "condition": "treatment",
+      "repetition": 1,
+      "full_response_sha256": "9a27cc89a89bfa373a881f31bbf523a3ed265dcdb139565360e975a3c65c8878",
+      "normalized_outcome_sha256": "ad6f9741527c7f0a773d792daf74e60d6dfd102af622da2693cf8d4fc16d3a5b",
+      "reviewer_1": {
+        "sha256": "1b303960023d3f75476fdd3b042fde44649d77f16920a850f1feac06e6107e85",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Aligned to escalation boundary with owner-only and non-revealing failure posture."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "451e0cd59ec66b29f48a469496dcca990c68f07e5dc3d2a5362363334a242bfb",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "missing-explicit-escalation",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_escalation_decision",
+            "restore_required_behavior"
+          ],
+          "notes": "Authority is PRD but explicit escalation decision is not stated; still defines the full feature path despite required stop requirement."
+        }
+      },
+      "adjudication": {
+        "sha256": "291ace79846483e1e91b497e7c313b62057c2af6cf529d1ff7661d15e4dc97fc",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "owner-conservative:closed|missing-explicit-escalation",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_escalation_decision",
+            "restore_required_behavior"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "ecd7b05f3046f6d56c63d7922c9f90d9",
+      "task_id": "S2-H-09",
+      "condition": "control",
+      "repetition": 1,
+      "full_response_sha256": "09a0a79bb68beac58120edc906714bb64a5d94a0de6bdd07d93310caefb81551",
+      "normalized_outcome_sha256": "4e8ebfde8fcbbdd9a427142aadb03d13118561ce1341ba60f83cf24480c14db0",
+      "reviewer_1": {
+        "sha256": "b94e25f934bf2bbd927dce26078a0e7cbb183f8b79a5f24c8a9b1e1d9dd17296",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Escalates appropriately and stays within allowed behavior envelope; no P0 omission detected."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "cd40042b50d3aa52495e17ddf5dfc43f98d00607c3fc551050a7bd5d69f476be",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "escalated-without-gate",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior"
+          ],
+          "notes": "Escalates but includes and structures implementation behavior; private truth requires halting implementation until public identity/scope/revocation/forwarding/audit responsibilities are approved."
+        }
+      },
+      "adjudication": {
+        "sha256": "ca5d3e628e605bd18ed595d7a6b14c9283f37150d37ec1f61d139b9850cc7184",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "owner-conservative:closed|escalated-without-gate",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "f2bd25a90c192ee047290fa9e8c55e06",
+      "task_id": "S2-H-11",
+      "condition": "treatment",
+      "repetition": 2,
+      "full_response_sha256": "29910cb296c7cf413f180930edfca4826df5180a724da66d9092f083022b2f94",
+      "normalized_outcome_sha256": "8a6c3b30b31a7dab80ae3cc9c6de04a4c58bf0452c5577cf13b008841bda77c8",
+      "reviewer_1": {
+        "sha256": "f9964b19f8176181651c78939820d18c232fd18945e8f0bf6d0caef0b9f9b395",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "closed-prd-escalation",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior"
+          ],
+          "notes": "Authority/escalation fit the contract, but required-behavior gate is under-specified; it does not fully state the stop rule including recovery-loss, backup/compliance impact, effective date, migration, and rollback approvals."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "6b95139d204fae29f0339abc81d753dd9919aa8ee34da99df18b5b0270f50f20",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "implementation_scope_violation",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 1,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "data_integrity",
+              "severity": "P0",
+              "summary": "Specifies terminal immediate-delete flow but does not preserve the required precondition that promises, backup/compliance effects, migration, and rollback approval are completed first."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 3,
+          "correction_operations": [
+            "restore_required_behavior",
+            "remove_unsupported_behavior",
+            "remove_tracked_behavior_artifact",
+            "restore_p0_p1_protected_concern"
+          ],
+          "notes": "Although labeled PRD, it converts to actionable immediate-deletion requirements instead of a closed-boundary, approval-gated outcome."
+        }
+      },
+      "adjudication": {
+        "sha256": "f17b0df12c3ff07b1b28d907729165f8f6c9892b145d56f540af160b35a3975c",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "owner-conservative:closed-prd-escalation|implementation_scope_violation",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 1,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "data_integrity",
+              "severity": "P0",
+              "summary": "Specifies terminal immediate-delete flow but does not preserve the required precondition that promises, backup/compliance effects, migration, and rollback approval are completed first."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 3,
+          "correction_operations": [
+            "restore_required_behavior",
+            "remove_unsupported_behavior",
+            "remove_tracked_behavior_artifact",
+            "restore_p0_p1_protected_concern"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "f46187cc857352604019680bcd994530",
+      "task_id": "S2-H-02",
+      "condition": "control",
+      "repetition": 1,
+      "full_response_sha256": "52a491224829add09dc8a8a94bb6381b6bc3273e9039da55f081c03fdcb09261",
+      "normalized_outcome_sha256": "028dbe4ba2d36aa1ca88154beb43d5da20e9baf43d132090b516320348c1de43",
+      "reviewer_1": {
+        "sha256": "9ae96079d4037ba2650c69fdf5fede3d1aaa0035721718aacad57492faa3b7fb",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline-closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Inline-only outcome with full required behavior coverage and explicit non-color, linked, announced, focusable error handling."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "90e776776c1c72c7596be61e124f4c69ae503ad1e2eac88b980380a91260e74d",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "in-scope-inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "All truth-required elements are satisfied and does not overstep inline scope or authority."
+        }
+      },
+      "adjudication": {
+        "sha256": "ae6b4e4d5dda7ac3fa60874f227227f0b33a03564cb0876fe2f28078a68261ec",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "owner-conservative:inline-closed|in-scope-inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "f48560087c0c29cd77f4efb55502a736",
+      "task_id": "S2-H-07",
+      "condition": "treatment",
+      "repetition": 1,
+      "full_response_sha256": "074a5f8005ba31483351996536d7fe0342cdfb5fe28781af37b1855f2171c260",
+      "normalized_outcome_sha256": "0016a26a910cbdab36d0747487a33387ae56005a0dcc0d578a6c210e7d762335",
+      "reviewer_1": {
+        "sha256": "bde99fb96957c8b3c476d62f6bc3879e591109e4bce882c7c70a6a017af6377d",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Boundary is correctly constrained to inline composer resume; required restore, non-silent draft continuity, and conflict safety are present."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "12f757b51107183609d5dbc2625d63d8a4240a013da3b969dc7ddf0f0394caa9",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Meets required continuity and no-silent-loss constraints; additional explicit resume UX is in-scope and consistent with minimal local behavior."
+        }
+      },
+      "adjudication": null,
+      "evidence_score": null
+    },
+    {
+      "packet_id": "f4b2b13ec10ab4c821ec6c5f947a0fc8",
+      "task_id": "S2-H-05",
+      "condition": "treatment",
+      "repetition": 2,
+      "full_response_sha256": "947826998776c084dc0d53601cbf0d2307bd242b7dbbf341a02bf199a735b20d",
+      "normalized_outcome_sha256": "dae4e94892f708c6c1947c2fb1c737f1fba810f78ef1e67cabc1bdd7f78e3ae9",
+      "reviewer_1": {
+        "sha256": "1692d045ae9e76503d1d299a101ab0726e7a195eec5ba48c81b350fed285a1a1",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline-closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Fits inline authority and required truth behaviors; no protection/escalation mismatches."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "0e39bcde3b45638ea63c09106eb5d05b543e24f84bd99f7a71ecbdd5f7e1c88b",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "closed-inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Correctly constrains behavior to unsent draft attachment detachment with no role/permission/public/surface expansion."
+        }
+      },
+      "adjudication": {
+        "sha256": "21a78e64483d6ff97e4d66a5b144eb2f90cf6e202bae042da49ccdfb1618eb76",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "owner-conservative:inline-closed|closed-inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "fb10c6d5bfe20a302924bb96a39cc662",
+      "task_id": "S2-H-07",
+      "condition": "treatment",
+      "repetition": 3,
+      "full_response_sha256": "b10cab6c09e20a418a491ccad7e615df243cd7d496e088813ea1c841f595be2d",
+      "normalized_outcome_sha256": "bf1678ea4ebe0855b72f7cbf4b9757be721d8942dcb9d92be17ab5b2fccba9a0",
+      "reviewer_1": {
+        "sha256": "a6c751906daed33118a04e8ad1b784b87a8653c720c71cda5069d5935088fce8",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Inline scope and authority are correct; required draft continuity and no-silent-loss behavior are present, with explicit status visibility."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "5926120254961d23691c9ceabb537380357077fffb080b5a9dbca044f2844365",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "inline",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Aligned with truth: one-comment resume path, offline continuity, and conflict-preserving behavior remain intact without boundary escalation."
+        }
+      },
+      "adjudication": null,
+      "evidence_score": null
+    },
+    {
+      "packet_id": "fb38451397b7372d288f2a4a97978786",
+      "task_id": "S2-H-10",
+      "condition": "treatment",
+      "repetition": 2,
+      "full_response_sha256": "a36119718f576eae9b19fb15371dda41919d1d4d94e035780ee13e5edd7c771d",
+      "normalized_outcome_sha256": "b5050b4df3bd4d2772513b6d18e536cb8e156d2f2521e3b5e2558c417ee265bc",
+      "reviewer_1": {
+        "sha256": "29ee461b8e3b0c2a1dcd268cd3059c0993a0e115e68f0ff4a49d713f88845dd9",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "conditional-implementation",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 2,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "authorization",
+              "severity": "P0",
+              "summary": "Moves to concrete in-context pending/blocked-publish behavior before full prerequisite authorization contract (including pending-work ownership and notification/delegation decisions) is approved."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 2,
+          "correction_operations": [
+            "remove_unsupported_behavior",
+            "restore_required_behavior",
+            "restore_p0_p1_protected_concern",
+            "remove_tracked_behavior_artifact"
+          ],
+          "notes": "Despite escalation framing, it specifies blocked/awaiting manager behavior and required state transitions, which oversteps the current truth stop condition."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "918858158334f6eba606251082fb72c8b4c0a6a096d44508f8763532ec51b4b1",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "escalate",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 2,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "authorization",
+              "severity": "P0",
+              "summary": "Assumes manager approval decision point and enforces approval flow before formal role/state/notification contract is approved."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 2,
+          "correction_operations": [
+            "remove_unsupported_behavior",
+            "restore_required_behavior",
+            "remove_tracked_behavior_artifact",
+            "restore_p0_p1_protected_concern",
+            "clarify_recovery_or_failure"
+          ],
+          "notes": "Still specifies concrete gate/enforcement and logging behavior now, which violates the required stop-until-governance rule."
+        }
+      },
+      "adjudication": {
+        "sha256": "5920f3ce799f63c4c751abc029a32cde3f8523af33ae30fb819ca6f3197446a0",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "owner-conservative:conditional-implementation|escalate",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 2,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "authorization",
+              "severity": "P0",
+              "summary": "Moves to concrete in-context pending/blocked-publish behavior before full prerequisite authorization contract (including pending-work ownership and notification/delegation decisions) is approved."
+            },
+            {
+              "concern": "authorization",
+              "severity": "P0",
+              "summary": "Assumes manager approval decision point and enforces approval flow before formal role/state/notification contract is approved."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 2,
+          "correction_operations": [
+            "remove_unsupported_behavior",
+            "restore_required_behavior",
+            "restore_p0_p1_protected_concern",
+            "remove_tracked_behavior_artifact",
+            "clarify_recovery_or_failure"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    }
+  ]
+}

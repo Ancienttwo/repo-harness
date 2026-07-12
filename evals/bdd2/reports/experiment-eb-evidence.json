@@ -1,0 +1,1926 @@
+{
+  "schema": "repo-harness-bdd2-eb-evidence.e2",
+  "source_commit": "41d45df4e350c1c5e4f2d871e80a6a5ba9e24853",
+  "freeze_id": "bdd2-e2-eb-r7",
+  "manifest_sha256": "093aa1c763adbeae467166276d8c7a99262e83e056706570fdf2b05b15275a78",
+  "run_manifest_sha256": "e4aa2e513f55881f0114e4cd18e76d7d6738a1b526c847759d46bb603aaf7f64",
+  "packet_count": 24,
+  "outcome_score_count": 48,
+  "evidence_score_count": 12,
+  "adjudication_count": 24,
+  "protocol_findings": [
+    "Owner adjudication used an unfrozen conservative-union algorithm rather than the frozen owner prompt.",
+    "Evidence compliance counted response.evidence_use.unsupported_claims declarations as unsupported claims made.",
+    "Reviewers did not share a stable operational definition of unnecessary tracked artifact for inline text output."
+  ],
+  "summary": {
+    "raw_gate_decision": "Kill",
+    "recorded_decision": "Reshape",
+    "reason": "Evidence compliance scorer misclassified declared limitations as unsupported claims; non-frozen owner aggregation prevents a valid efficacy decision.",
+    "metrics": {
+      "closure": {
+        "wins": 8,
+        "losses": 2,
+        "ties": 2
+      },
+      "new_severe_pairs": 0,
+      "unsupported_expansion": {
+        "control": 0,
+        "treatment": 4
+      },
+      "unsupported_concepts": {
+        "control": 0,
+        "treatment": 3
+      },
+      "required_omissions": {
+        "control": 14,
+        "treatment": 10
+      },
+      "evidence_compliance": false
+    }
+  },
+  "rows": [
+    {
+      "packet_id": "064d5aade3188271b41ddd110dba062e",
+      "task_id": "EB-H-05",
+      "condition": "treatment",
+      "repetition": 1,
+      "full_response_sha256": "1103bdc13b0b9116c48713469470635c4020d850453a5c70e1011c0ee94d470c",
+      "normalized_outcome_sha256": "0d64fa1808fe7ba8eb5ea7efbba27192b668608693248a2315d3542d244f50e6",
+      "reviewer_1": {
+        "sha256": "f45d509c5bcc1b86565ad077349967edda611d31eb4fd673f640b74008f7b0c1",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Expected disposition avoided and uncertainty resolved. Both boundary requirements are present and no forbidden concepts are introduced."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "4a68100459bacd85706c41b48431012cf04c6db90d467bdb6e230a280d790cff",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "met",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Avoid disposition is explicit and consistent. Both required boundaries are represented: Import CSV remains visible and invalid-row feedback is preserved as primary recovery signal. No forbidden-inferred concepts are introduced."
+        }
+      },
+      "adjudication": {
+        "sha256": "35e152f3e3f10171386c75ccff6d802461fa643b7e0897715453da2c80d4f0e4",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "owner-conservative:closed|met",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": {
+        "sha256": "48b9a7c98d10bb005dec58c5c938b876f89b3de70da78c1dc7bc1d58d15ee22d",
+        "score": {
+          "provenance_complete": true,
+          "question_bound": true,
+          "privacy_reviewed": true,
+          "adopt_adapt_avoid_complete": true,
+          "unsupported_claim_count": 4,
+          "feature_need_inference_count": 0,
+          "notes": "Deterministic output-specific compliance review against frozen appendix metadata and evidence_use claims."
+        }
+      }
+    },
+    {
+      "packet_id": "0cb9efba7fbb9eb108476053c7cbbe89",
+      "task_id": "EB-H-01",
+      "condition": "treatment",
+      "repetition": 2,
+      "full_response_sha256": "e21ff21696480f54828bdb9fe829630f3a6bf13293712120d9340effe687e4ba",
+      "normalized_outcome_sha256": "24f3174bd44c4043041d305e2e59c04b18dc2bd16a2d0fbc49a36ca46ebc99b2",
+      "reviewer_1": {
+        "sha256": "df2d5d84854ae119ad16e0d4b9fd310889237abc7f9ef4ac99e9f7546e6f95ca",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Matches expected Adopt and boundaries: linked summary only for multi-field failures, keeps existing form behavior/messages, preserves values and assistive recovery path without forbidden inferences."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "9a17528f77a1d008ce2cc0286e9be243f9861f724762bdd4c40528d5a3d37631",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "pass",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "All required behaviors are present and aligned to Adopt: linked page-level summary for multi-field errors, per-field mapping, field-level errors retained, and keyboard/screen-reader-oriented navigation preserved within the stated boundary."
+        }
+      },
+      "adjudication": {
+        "sha256": "64ec1273c82444beb733e684fa86b4568e947da859f9f37e0dac13bdb927d7a7",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "owner-conservative:closed|pass",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": {
+        "sha256": "4f1a6b3605ac77f781891be0f15953a4c13f3903dcd76b4177572969929d7d17",
+        "score": {
+          "provenance_complete": true,
+          "question_bound": true,
+          "privacy_reviewed": true,
+          "adopt_adapt_avoid_complete": true,
+          "unsupported_claim_count": 3,
+          "feature_need_inference_count": 0,
+          "notes": "Deterministic output-specific compliance review against frozen appendix metadata and evidence_use claims."
+        }
+      }
+    },
+    {
+      "packet_id": "105d4897f7e521c90d178437f21415a7",
+      "task_id": "EB-H-03",
+      "condition": "control",
+      "repetition": 2,
+      "full_response_sha256": "0ad0c87da4a2c9888f023dad44b0758b0ba60efded3cd9fa44cbd01e3369fd00",
+      "normalized_outcome_sha256": "2177374c32b981de5d831064e74027afff3eaffce235141da5f1ab42196f48de",
+      "reviewer_1": {
+        "sha256": "0438f3c0e1dce18fcb642fc3acdd31a091b79f6afc3dab9951b40e6b2fce39c3",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "failed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 2,
+          "protected_concern_omissions": [
+            {
+              "concern": "accessibility",
+              "severity": "P1",
+              "summary": "No explicit preservation of disclosure-state visibility/operability guarantees required by boundary."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_escalation_decision",
+            "restore_required_behavior",
+            "restore_p0_p1_protected_concern",
+            "clarify_current_truth"
+          ],
+          "notes": "Boundary decision is `Adopt` vs expected `Adapt`; does not state progressive disclosure or expanded-state accessibility required by private truth."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "a34a605f5b0c9b189d1725fcf13d93568ee679d901080873e5fd24f9204e3a74",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "disposition_mismatch_missing_boundary_elements",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 2,
+          "protected_concern_omissions": [
+            {
+              "concern": "accessibility",
+              "severity": "P1",
+              "summary": "No explicit guarantee that disclosure/active filter state remains perceivable and operable when optional controls are hidden."
+            }
+          ],
+          "authority_fit": false,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_authority_tier",
+            "restore_required_behavior",
+            "restore_p0_p1_protected_concern"
+          ],
+          "notes": "Boundary decision is Adopt, but expected outcome is Adapt. Lacks explicit preservation of progressive disclosure and accessible expanded-state visibility requirements."
+        }
+      },
+      "adjudication": {
+        "sha256": "7dd56943331b3faff86eed2d13837a783964ffa211f51fb2ca07aec2857e8283",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "owner-conservative:failed|disposition_mismatch_missing_boundary_elements",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 2,
+          "protected_concern_omissions": [
+            {
+              "concern": "accessibility",
+              "severity": "P1",
+              "summary": "No explicit preservation of disclosure-state visibility/operability guarantees required by boundary."
+            },
+            {
+              "concern": "accessibility",
+              "severity": "P1",
+              "summary": "No explicit guarantee that disclosure/active filter state remains perceivable and operable when optional controls are hidden."
+            }
+          ],
+          "authority_fit": false,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_escalation_decision",
+            "restore_required_behavior",
+            "restore_p0_p1_protected_concern",
+            "clarify_current_truth",
+            "correct_authority_tier"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "1a0c113084973a5fca5047a3cf6aff98",
+      "task_id": "EB-H-04",
+      "condition": "control",
+      "repetition": 2,
+      "full_response_sha256": "b7821cf8ecbe00cbb9b428d597246ef176158c1b81517ebcf37c702554de36d3",
+      "normalized_outcome_sha256": "2946c6ce7705d7ed41a711dd33f32289021a3934601b3f82e28d3494e664b190",
+      "reviewer_1": {
+        "sha256": "1972b24c47b0268608b3317ab6fd786db1a3bc21431fe9fb7681c3b3fad75c91",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "open",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_escalation_decision",
+            "restore_required_behavior"
+          ],
+          "notes": "Expected disposition is Adapt, but packet outputs Adopt. Row-adjacent retry-state requirement is not explicitly stated; status/retry is row-level but not explicitly anchored to the existing row context per the required boundary."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "93ff977fd6762e5ad25dc128b0eb49a666a16609b130ab3eab64e0d329de9738",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "partial",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_authority_tier",
+            "restore_required_behavior",
+            "clarify_current_truth"
+          ],
+          "notes": "Disposition is Adopt not Adapt, so decision is off-target; missing explicit allowance for retrying after a later failure."
+        }
+      },
+      "adjudication": {
+        "sha256": "26242bac939ba08b3ed0057e1c5a2d1f2dfb669f1504efe71207bc3b309be703",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "owner-conservative:open|partial",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_escalation_decision",
+            "restore_required_behavior",
+            "correct_authority_tier",
+            "clarify_current_truth"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "31878a0aafdedc2091cadd157d5c6b65",
+      "task_id": "EB-H-06",
+      "condition": "control",
+      "repetition": 2,
+      "full_response_sha256": "b54ac772d96c0eca97e6dfe0116d8e68b89c0aa2b6bc48a64252c1534d3c19a7",
+      "normalized_outcome_sha256": "ba258455137e2ca10474d54876305639c2df6f080fefab5c6b251d15be2865f9",
+      "reviewer_1": {
+        "sha256": "c58b3896446276eec93cdb2f41142b548eee8462776650c86e6d6e7e697e35fe",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "Avoid violated",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "recovery",
+              "severity": "P1",
+              "summary": "Failed rename handling preserves attempted input, not the prior saved-view name."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_escalation_decision",
+            "restore_p0_p1_protected_concern"
+          ],
+          "notes": "Boundary decision is Adopt while required disposition is Avoid. Required recovery intent (preserve prior saved-view name on failure) is not explicitly satisfied."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "daa8ecefaf0af1f46b3bf89661dbbadb8546468d4c02af5640152c907a0e75fd",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "expected-avoid-mismatch",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "recovery",
+              "severity": "P1",
+              "summary": "Failed rename recovery does not explicitly preserve prior saved-view name before persistence."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_escalation_decision",
+            "restore_required_behavior",
+            "restore_p0_p1_protected_concern"
+          ],
+          "notes": "Boundary decision is Adopt while the required disposition is Avoid. Core required behaviors are mostly present, but save-failure preservation is weaker than required."
+        }
+      },
+      "adjudication": {
+        "sha256": "35f34084c58d229552b2595435fc1c83b9e78baf56c60336c7f6a99a9d02e127",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "owner-conservative:Avoid violated|expected-avoid-mismatch",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "recovery",
+              "severity": "P1",
+              "summary": "Failed rename handling preserves attempted input, not the prior saved-view name."
+            },
+            {
+              "concern": "recovery",
+              "severity": "P1",
+              "summary": "Failed rename recovery does not explicitly preserve prior saved-view name before persistence."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_escalation_decision",
+            "restore_p0_p1_protected_concern",
+            "restore_required_behavior"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "507b359949c7ce9b19b4ef00f39f2cde",
+      "task_id": "EB-H-04",
+      "condition": "treatment",
+      "repetition": 1,
+      "full_response_sha256": "31fd0e5bebf4a2e53b62c54da12861116ad12da3f05d8da92bd64eef8674fe0b",
+      "normalized_outcome_sha256": "c6a7cc89f4355b5ba61a268dad7cf04149170b4ccdece5c1e1b1c24645340e69",
+      "reviewer_1": {
+        "sha256": "ad8a26c96352d6c3b41cde8f6f1c9a28fcf9c1193db130dae15e921a422b40a9",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "open",
+          "unsupported_expansion": 2,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "remove_unsupported_behavior"
+          ],
+          "notes": "Adds duration-based branching and fallback to durable status navigation; both are unsupported concepts under the truth’s boundary constraints. Core boundaries (adjacency, filename preservation, states, single retry) remain present."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "3d81271aee192f70c3b4a7032317fa1886d1d5614c6f8e84b2fdcbf8e75aa91f",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "partial",
+          "unsupported_expansion": 1,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior",
+            "remove_unsupported_behavior",
+            "clarify_current_truth"
+          ],
+          "notes": "Adds a duration-based branching condition and fallback path and still constrains retries to one only, which conflicts with required retry-on-later-failure behavior."
+        }
+      },
+      "adjudication": {
+        "sha256": "47cb60bd7ed62e8ec8e62dfe02fb7b9134fce23afa7b6182bbfad8ad71de7e2d",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "owner-conservative:open|partial",
+          "unsupported_expansion": 2,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "remove_unsupported_behavior",
+            "restore_required_behavior",
+            "clarify_current_truth"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": {
+        "sha256": "f18b08250178264a0fcaf15fe3da9fc69d5f95e61f40cdb1dae6b4876a45d09a",
+        "score": {
+          "provenance_complete": true,
+          "question_bound": true,
+          "privacy_reviewed": true,
+          "adopt_adapt_avoid_complete": true,
+          "unsupported_claim_count": 2,
+          "feature_need_inference_count": 0,
+          "notes": "Deterministic output-specific compliance review against frozen appendix metadata and evidence_use claims."
+        }
+      }
+    },
+    {
+      "packet_id": "5930e673a1ebf4004e0c101bf2ebc17c",
+      "task_id": "EB-H-06",
+      "condition": "treatment",
+      "repetition": 2,
+      "full_response_sha256": "fcd2813335675e89c1efde04c85dc0dc1c4d63e621330da596f677f5ca2b90e5",
+      "normalized_outcome_sha256": "9edd5d4746545696b76cf51bac84be0a46502918b81ba06678a5c7c532ecaed8",
+      "reviewer_1": {
+        "sha256": "6c2398e0b50a64170d31191dcdb2178824b19d2af9ff2c3507898ce89921f2c3",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "Avoid aligned",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "recovery",
+              "severity": "P1",
+              "summary": "Recovery requirement asks to preserve the prior saved-view name; outcome preserves edited value only."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_p0_p1_protected_concern"
+          ],
+          "notes": "Disposition matches expected Avoid and forbidden concepts are explicitly excluded. Save-failure recovery is present but does not satisfy preservation of prior name as required."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "d08be83cf647e422b000a3fe6dac46a723a2bd669f97745a04e40036bd3e65b1",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "avoid-aligned",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Matches expected Avoid and omits all unsupported table-style concepts. Recovery path is explicit and non-destructive with retry, so no protected-concern omissions found."
+        }
+      },
+      "adjudication": {
+        "sha256": "9b7ce2ceaf1cb8d97f9be5017dae039be00c50ad7649b2c89083ada9fe7c8f37",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "owner-conservative:Avoid aligned|avoid-aligned",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "recovery",
+              "severity": "P1",
+              "summary": "Recovery requirement asks to preserve the prior saved-view name; outcome preserves edited value only."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_p0_p1_protected_concern"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": {
+        "sha256": "1804c4e68284b90afad0bd298732a9fdbe96722e7a5d170f75a4fc0e09ef5fab",
+        "score": {
+          "provenance_complete": true,
+          "question_bound": true,
+          "privacy_reviewed": true,
+          "adopt_adapt_avoid_complete": true,
+          "unsupported_claim_count": 2,
+          "feature_need_inference_count": 0,
+          "notes": "Deterministic output-specific compliance review against frozen appendix metadata and evidence_use claims."
+        }
+      }
+    },
+    {
+      "packet_id": "601f00592879e2fca8064046a5ba380d",
+      "task_id": "EB-H-02",
+      "condition": "control",
+      "repetition": 1,
+      "full_response_sha256": "f41035112ae0d0d4f7cb93f2e2315f83f6931c028a379bdd4b66471a279b88a5",
+      "normalized_outcome_sha256": "df624d37400afcdc958d362c46e5d0b216eb83c1185e7f8e6c7b4e1fde9a16b6",
+      "reviewer_1": {
+        "sha256": "7ea19062646246bc0384d1dbf7e7bff45af179c5e76f808a047ec86f6bfb4457",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "partial",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 3,
+          "protected_concern_omissions": [
+            {
+              "concern": "authorization",
+              "severity": "P1",
+              "summary": "Missing explicit requirement to only treat revoke complete after backend success/failure handling."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior",
+            "clarify_current_truth",
+            "clarify_recovery_or_failure",
+            "restore_p0_p1_protected_concern"
+          ],
+          "notes": "Adopt is correct and no forbidden capabilities are introduced, but key boundary items are missing: token naming in confirm, default-cancel expectation, and backend failure reporting."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "9c199951fe455ecb5a8e79a7fd6d1739b8094da966e1b56782fc638ffbfbf6eb",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "adopt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 3,
+          "protected_concern_omissions": [
+            {
+              "concern": "authorization",
+              "severity": "P1",
+              "summary": "No explicit backend-failure or post-revocation failure handling condition before considering action complete."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior",
+            "restore_p0_p1_protected_concern",
+            "clarify_recovery_or_failure"
+          ],
+          "notes": "Uses adoption and no forbidden expansion, but misses token naming, default-cancel behavior, and explicit backend-failure reporting in required boundary."
+        }
+      },
+      "adjudication": {
+        "sha256": "a8eff883af25683b3a07cf23a33bab2288266d7663004b879f17a5ece37000b7",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "owner-conservative:partial|adopt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 3,
+          "protected_concern_omissions": [
+            {
+              "concern": "authorization",
+              "severity": "P1",
+              "summary": "Missing explicit requirement to only treat revoke complete after backend success/failure handling."
+            },
+            {
+              "concern": "authorization",
+              "severity": "P1",
+              "summary": "No explicit backend-failure or post-revocation failure handling condition before considering action complete."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior",
+            "clarify_current_truth",
+            "clarify_recovery_or_failure",
+            "restore_p0_p1_protected_concern"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "657c0531afe2c45f4cb510eb7722d3b6",
+      "task_id": "EB-H-06",
+      "condition": "control",
+      "repetition": 1,
+      "full_response_sha256": "b268b8bbf2504264061d5e34cb50c2c4397d76076768a2221f495136c1dee430",
+      "normalized_outcome_sha256": "af2ee968b9aa54fc12973382e38e961fd2318cc0dc8278822d747fcdadc7694e",
+      "reviewer_1": {
+        "sha256": "197cace3863d595ac10a515fd94f838a2e2eeb530f3fc64d64cc92c62266e6cb",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "Avoid violated",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "recovery",
+              "severity": "P1",
+              "summary": "Failure path keeps in-progress input, but does not state preservation of the previous saved-view name on failed save."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_escalation_decision",
+            "restore_p0_p1_protected_concern"
+          ],
+          "notes": "Decision is Adopt despite expected Avoid. Required recovery invariant is underspecified (only in-flow input retention)."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "57651c686e238c80a7cc4ab4df592692f200082aa4fecb2714bba97e35153b87",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "expected-avoid-mismatch",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "recovery",
+              "severity": "P1",
+              "summary": "No explicit statement that a failed save preserves the prior saved-view name."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_escalation_decision",
+            "restore_required_behavior",
+            "restore_p0_p1_protected_concern"
+          ],
+          "notes": "Adopt is incorrect for this uncertainty. Required rename/retry behaviors are mostly present, but explicit prior-name recovery on failure is not stated."
+        }
+      },
+      "adjudication": {
+        "sha256": "487e9b3858f43f7cb4ebe1495dad29beaef51f2235c6092b14cf8b7dccd74c1d",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "owner-conservative:Avoid violated|expected-avoid-mismatch",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "recovery",
+              "severity": "P1",
+              "summary": "Failure path keeps in-progress input, but does not state preservation of the previous saved-view name on failed save."
+            },
+            {
+              "concern": "recovery",
+              "severity": "P1",
+              "summary": "No explicit statement that a failed save preserves the prior saved-view name."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_escalation_decision",
+            "restore_p0_p1_protected_concern",
+            "restore_required_behavior"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "6792920fad90d4c11379f4af05f5c4f1",
+      "task_id": "EB-H-05",
+      "condition": "control",
+      "repetition": 2,
+      "full_response_sha256": "fa4ce24200506b66cd02b94a32acfe78d037121c2d06f0d1c3f9fb913146af32",
+      "normalized_outcome_sha256": "cb8d77f9ecf463d4c025f47fb208180ab925b900699a55586d13650cb626f533",
+      "reviewer_1": {
+        "sha256": "68d2701cf7747da3116537da28b8ea8120eb9f21751692a3273e74010bbee124",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "disposition_mismatch",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_escalation_decision"
+          ],
+          "notes": "Boundary decision is Adap[t] but expected outcome is Avoid; substantive boundary content still otherwise matches truth."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "3f8514fe05c5b84bc559d34424dceb2f55a5af7faf5e8d2fa5ee81dfd541cf75",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "disposition_mismatch",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "clarify_current_truth"
+          ],
+          "notes": "Behavior content aligns with required UI/error constraints, but declared boundary_decision is Adopt instead of expected Avoid, so uncertainty is not resolved to expected disposition."
+        }
+      },
+      "adjudication": {
+        "sha256": "839359b704a3ba9fe35592fae0ee1b7be9b9e55943ce8ee312960f4f1a5814ad",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "disposition_mismatch",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_escalation_decision",
+            "clarify_current_truth"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "6f2261e17e67b495b81ca63c98f2cc9d",
+      "task_id": "EB-H-02",
+      "condition": "control",
+      "repetition": 2,
+      "full_response_sha256": "323a663b06890de94d6c502d4ec5e1769628589eac7ed5488ffef98c675b32fb",
+      "normalized_outcome_sha256": "61f0423a379e82c8277ce9428a07d94af83ec7917e860aa0a0819de02e745a20",
+      "reviewer_1": {
+        "sha256": "d40ed0c37582ef05e1ab3dd5c7451efed4464717a2f25958d577bfab88209314",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "partial",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 3,
+          "protected_concern_omissions": [
+            {
+              "concern": "authorization",
+              "severity": "P1",
+              "summary": "Does not explicitly require completion/result state to be contingent on backend outcome."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior",
+            "clarify_current_truth",
+            "clarify_recovery_or_failure",
+            "restore_p0_p1_protected_concern"
+          ],
+          "notes": "Boundary stays on the expected adoption path and keeps scope/correctness, but omits token-specific naming, cancel-by-default behavior, and explicit backend-failure reporting."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "6c6faf290f7024a5a481775aa88bd7639679a1debd9ec7bb054036413f70d92a",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "adopt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 3,
+          "protected_concern_omissions": [
+            {
+              "concern": "authorization",
+              "severity": "P1",
+              "summary": "Does not specify backend-failure/reporting flow before treating revoke as completed."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior",
+            "restore_p0_p1_protected_concern",
+            "clarify_recovery_or_failure"
+          ],
+          "notes": "Clearer destructive confirmation wording is present, but still missing required naming of token, default cancel posture, and backend failure handling."
+        }
+      },
+      "adjudication": {
+        "sha256": "5eded378b88b986d4184943a96b1b9f39121f81fb9053860341789298a67f9c7",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "owner-conservative:partial|adopt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 3,
+          "protected_concern_omissions": [
+            {
+              "concern": "authorization",
+              "severity": "P1",
+              "summary": "Does not explicitly require completion/result state to be contingent on backend outcome."
+            },
+            {
+              "concern": "authorization",
+              "severity": "P1",
+              "summary": "Does not specify backend-failure/reporting flow before treating revoke as completed."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior",
+            "clarify_current_truth",
+            "clarify_recovery_or_failure",
+            "restore_p0_p1_protected_concern"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "8008f94fdd5bad23dfebd7e0352e544c",
+      "task_id": "EB-H-04",
+      "condition": "control",
+      "repetition": 1,
+      "full_response_sha256": "0eb37f1c3c65c0dcb0deb9a676b27b566db8cc0ba227484678e36aa58d48f03c",
+      "normalized_outcome_sha256": "7142bbf93f5e6bc496a6810f89bf8a901f4e643d3cbeb882a0d33c253d23b1b6",
+      "reviewer_1": {
+        "sha256": "14e6ed63b6620f389b0bebfe8b27b790d93dc909d2ce37b6102b2f6813ecb114",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Matches expected disposition and boundaries: inline/row-scoped behavior, filename preservation, row state (running/succeeded/failed), and single-retry handling are present without unsupported additions."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "b6662751a86a164592010fe66f2870cb3044ddb2e8513a75cfe574235a43114b",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "partial",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior",
+            "clarify_current_truth"
+          ],
+          "notes": "Explicitly limits retries to a single attempt and does not support retrying again after a later failure."
+        }
+      },
+      "adjudication": {
+        "sha256": "4c66c3e4b77396bd02a87523589fc22936653b12e839d70725f88ab5c51a66c0",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "owner-conservative:closed|partial",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior",
+            "clarify_current_truth"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "8e8ec54a4f4f714be7608fbc5f05b34b",
+      "task_id": "EB-H-03",
+      "condition": "control",
+      "repetition": 1,
+      "full_response_sha256": "ac645026e61c937c45e61b112e486a3b33b8abe170d84866c824276a38086cc3",
+      "normalized_outcome_sha256": "bffabd938c45c047651c9cad553d8e205238decd30bf6793766aa961a1ccd0c3",
+      "reviewer_1": {
+        "sha256": "f01fb94e19441adb9c73c59e267334c25056c76cc54cc93a6ab59d7c43663f17",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "failed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 2,
+          "protected_concern_omissions": [
+            {
+              "concern": "accessibility",
+              "severity": "P1",
+              "summary": "No explicit requirement that filter disclosure state and active state remain perceivable/operable."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_escalation_decision",
+            "restore_required_behavior",
+            "restore_p0_p1_protected_concern",
+            "clarify_current_truth"
+          ],
+          "notes": "Boundary decision is `Adopt` not `Adapt`; missing required progressive disclosure/accessibility constraints for the date-range disclosure path."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "6c42dd1d2f660287f198f48c3299b37770af4d1c45fad5fc476c71e2c9453bcd",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "disposition_mismatch_missing_boundary_elements",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 2,
+          "protected_concern_omissions": [
+            {
+              "concern": "accessibility",
+              "severity": "P1",
+              "summary": "Does not explicitly preserve perceivable/operable disclosure-state guarantees for active filter status."
+            }
+          ],
+          "authority_fit": false,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_authority_tier",
+            "restore_required_behavior",
+            "restore_p0_p1_protected_concern"
+          ],
+          "notes": "Expected decision is Adapt; outcome uses Adopt. Missing explicit handling for progressive disclosure and accessible expanded/filter-state visibility."
+        }
+      },
+      "adjudication": {
+        "sha256": "830fa31ab94ef7050eea8f2b31bafbafa5f63d98b709b537928000f99fba2fd0",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "owner-conservative:failed|disposition_mismatch_missing_boundary_elements",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 2,
+          "protected_concern_omissions": [
+            {
+              "concern": "accessibility",
+              "severity": "P1",
+              "summary": "No explicit requirement that filter disclosure state and active state remain perceivable/operable."
+            },
+            {
+              "concern": "accessibility",
+              "severity": "P1",
+              "summary": "Does not explicitly preserve perceivable/operable disclosure-state guarantees for active filter status."
+            }
+          ],
+          "authority_fit": false,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_escalation_decision",
+            "restore_required_behavior",
+            "restore_p0_p1_protected_concern",
+            "clarify_current_truth",
+            "correct_authority_tier"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "989154d2437b88f676946022df5c6aa4",
+      "task_id": "EB-H-01",
+      "condition": "treatment",
+      "repetition": 1,
+      "full_response_sha256": "19de56c1a0af38eb86b3e3e0e5cf03a4fe27db2250054a49b80e9f679f64d844",
+      "normalized_outcome_sha256": "c17d95254d6aaf7f81e1f16e7c6bec4b609538240bea8695cb670da8c4e48d88",
+      "reviewer_1": {
+        "sha256": "315c56b32bd55789481acddd04a5787a3425483aa0474c4116ffec1fa9751e5f",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Matches expected Adopt; adds additive linked summary for multi-field errors and retains inline errors/value retention with keyboard/screen-reader accessibility."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "ec26509918c5c85d136b38e18c5b827fed5b4def633cbe701b7ec40333955ef5",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "pass",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Clean adopt decision with no forbidden inferences; required boundary items and protected accessibility concern are explicitly covered, including focusable/ordered linked summary and retained values."
+        }
+      },
+      "adjudication": {
+        "sha256": "e9ae6f4537d9c0f5b14f700b6aa87bcf3d7c20cafe78fe49f752f867cbd8d88f",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "owner-conservative:closed|pass",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": {
+        "sha256": "f96f451fb14ee1c7da3f98f71b956beed5a858cc0616a3af6eabde702b31b09f",
+        "score": {
+          "provenance_complete": true,
+          "question_bound": true,
+          "privacy_reviewed": true,
+          "adopt_adapt_avoid_complete": true,
+          "unsupported_claim_count": 3,
+          "feature_need_inference_count": 0,
+          "notes": "Deterministic output-specific compliance review against frozen appendix metadata and evidence_use claims."
+        }
+      }
+    },
+    {
+      "packet_id": "a050853638fe6c540bfbe1a3e44aa762",
+      "task_id": "EB-H-05",
+      "condition": "control",
+      "repetition": 1,
+      "full_response_sha256": "602e45828e8a91c7a8e5302e248a1170923f1853d0e830266127b1f21bd33d22",
+      "normalized_outcome_sha256": "84d0eb7c9d56fd3894bc67e69a59ece8cfc0ece23456ea497be0fb3ca8f2869d",
+      "reviewer_1": {
+        "sha256": "5ebb1efebcb57d911161c08c103faaa2ef2b12a8eaee6993d74aa2f69fd7e35d",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "disposition_mismatch",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_escalation_decision"
+          ],
+          "notes": "Boundary decision is Adopt rather than expected Avoid; required boundary and data-integrity handling are otherwise present."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "6a55b73c0883c11b489b965232066fb35f1cb248889dad1d25b1e80da1dbc16c",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "disposition_mismatch",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "clarify_current_truth"
+          ],
+          "notes": "Core required behavior is present and no unsupported feature inferences appear, but boundary decision is wrong (Adopt vs expected Avoid), so uncertainty is not considered closed."
+        }
+      },
+      "adjudication": {
+        "sha256": "1386261a7474d76bd914dbc6887682d0401a560f8ef78da71c2907c8f62171d4",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "disposition_mismatch",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_escalation_decision",
+            "clarify_current_truth"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "b0d0794d8c691abd8331b6faa6350ba6",
+      "task_id": "EB-H-02",
+      "condition": "treatment",
+      "repetition": 1,
+      "full_response_sha256": "32dd4a11a49aa6bba6f5b3ba6ac001aa90d713abe1720a4ca1bf92b06245ebc2",
+      "normalized_outcome_sha256": "bc564e2b46e29eff6a869040497803a60f895b5f3275dfb92b54ff686cd3367a",
+      "reviewer_1": {
+        "sha256": "ade5b6fe3092ac1231a4a9096e79ab57ea721826ad4c49fb574d2db218f5cac0",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "adaptation",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 3,
+          "protected_concern_omissions": [
+            {
+              "concern": "authorization",
+              "severity": "P1",
+              "summary": "No explicit requirement that completion is claimed only after backend confirmation/failure handling."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_escalation_decision",
+            "restore_required_behavior",
+            "clarify_current_truth",
+            "clarify_recovery_or_failure",
+            "restore_p0_p1_protected_concern"
+          ],
+          "notes": "Contains useful design guidance but is marked Adapt instead of expected Adopt; boundary still lacks token naming, cancel default semantics, and backend failure reporting."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "332b6ebbcad4a9df9494a5f44f226012b128b7c85a5873d3f3bbbfa6edf9d27e",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "adapt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 2,
+          "protected_concern_omissions": [
+            {
+              "concern": "authorization",
+              "severity": "P1",
+              "summary": "Keeps ownership context but omits explicit completion/claim behavior tied to backend success signaling."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_escalation_decision",
+            "restore_required_behavior",
+            "restore_p0_p1_protected_concern",
+            "clarify_recovery_or_failure"
+          ],
+          "notes": "Resolves the uncertainty without adding a new concept, but expected disposition is Adopt; still misses default-cancel and backend-failure completion requirement."
+        }
+      },
+      "adjudication": {
+        "sha256": "0d950a12356d89c0e23e810f58fca2f4d4551dfbb33fd0d81ee2cc3dc8eb74c0",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "owner-conservative:adaptation|adapt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 3,
+          "protected_concern_omissions": [
+            {
+              "concern": "authorization",
+              "severity": "P1",
+              "summary": "No explicit requirement that completion is claimed only after backend confirmation/failure handling."
+            },
+            {
+              "concern": "authorization",
+              "severity": "P1",
+              "summary": "Keeps ownership context but omits explicit completion/claim behavior tied to backend success signaling."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_escalation_decision",
+            "restore_required_behavior",
+            "clarify_current_truth",
+            "clarify_recovery_or_failure",
+            "restore_p0_p1_protected_concern"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": {
+        "sha256": "553f6935efd3403f578817ab991c24e918215d7efefb196339b085a4e132f751",
+        "score": {
+          "provenance_complete": true,
+          "question_bound": true,
+          "privacy_reviewed": true,
+          "adopt_adapt_avoid_complete": true,
+          "unsupported_claim_count": 1,
+          "feature_need_inference_count": 0,
+          "notes": "Deterministic output-specific compliance review against frozen appendix metadata and evidence_use claims."
+        }
+      }
+    },
+    {
+      "packet_id": "b22ca62b45e6be9c9a590a7a9ded50ab",
+      "task_id": "EB-H-06",
+      "condition": "treatment",
+      "repetition": 1,
+      "full_response_sha256": "ccd20ff9debe57ed01988bd03cc77e83efa1e7d56b069a91260d175a2c144215",
+      "normalized_outcome_sha256": "2444a34866fab207dcb8b208562355be45988399e6531b9b2a4b209131ff1b8b",
+      "reviewer_1": {
+        "sha256": "11fe92eba8bc659f3ced4bfc7232bb2453fc0f8b6dfcb4717d6cd9ef0faeb198",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "Avoid aligned",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Avoid posture is consistent and required boundary items are covered, including in-place single rename, validation, and failure-safe preservation/retry."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "c3222a0fb7dfbb16ec4f8218de06233e05b1e2b8617d34f06d31e6826772caf7",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "avoid-aligned",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Expected Avoid is respected and dense/unsupported table interactions are explicitly avoided. Includes required in-place single-item rename, validation-before-save, and failure-state preservation/retry behavior."
+        }
+      },
+      "adjudication": {
+        "sha256": "7b0b3fb09b1b254a305a28074030bc9ccffe788375257118dc596140421343c5",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "owner-conservative:Avoid aligned|avoid-aligned",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": {
+        "sha256": "1eb9e5ef484a6b73992187bfa4d53011cda6cdc7510847e24dd8456e53e8219b",
+        "score": {
+          "provenance_complete": true,
+          "question_bound": true,
+          "privacy_reviewed": true,
+          "adopt_adapt_avoid_complete": true,
+          "unsupported_claim_count": 2,
+          "feature_need_inference_count": 0,
+          "notes": "Deterministic output-specific compliance review against frozen appendix metadata and evidence_use claims."
+        }
+      }
+    },
+    {
+      "packet_id": "d7c0df99771f1f4901e943c642cd8af4",
+      "task_id": "EB-H-04",
+      "condition": "treatment",
+      "repetition": 2,
+      "full_response_sha256": "7f046ba2eaad08f9eeb7d5dd59d0b9aa9fcd18446c617fd3bff039f841fdcbaa",
+      "normalized_outcome_sha256": "0dffb65734aac1723a95c33a469748bac0b66e88b4b4ffc673ad3273c78b10bc",
+      "reviewer_1": {
+        "sha256": "7fc5cfefe167ee8fb464a709fc0404a8810eb6af8e933e0e94cf7ee02b4a8a81",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "open",
+          "unsupported_expansion": 2,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "remove_unsupported_behavior"
+          ],
+          "notes": "Includes long-running/row-scope fallback logic with explicit duration-based switch to durable status, which is outside authorized inference set. Required row-adjacent retry-state, filename persistence, state visibility, and single-retry handling remain present."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "846aa5734973e920a9b4df5a64f80d3c511e6d081857c9e09b94996a320e6d12",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "partial",
+          "unsupported_expansion": 1,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior",
+            "remove_unsupported_behavior",
+            "clarify_current_truth"
+          ],
+          "notes": "Includes duration/ scope-based fallback and bounds retry to a single authorized retry, omitting required behavior that allows retry again after a later failure."
+        }
+      },
+      "adjudication": {
+        "sha256": "dc5b478e41c57262d522f844898662ac5f376fcd6a7e5796eb1558ba6841bd16",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "owner-conservative:open|partial",
+          "unsupported_expansion": 2,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "remove_unsupported_behavior",
+            "restore_required_behavior",
+            "clarify_current_truth"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": {
+        "sha256": "4276de6e321ae7ed0b00f874457f1c025ae1c7c9b7e39efe83a7e4dc57bc7886",
+        "score": {
+          "provenance_complete": true,
+          "question_bound": true,
+          "privacy_reviewed": true,
+          "adopt_adapt_avoid_complete": true,
+          "unsupported_claim_count": 1,
+          "feature_need_inference_count": 0,
+          "notes": "Deterministic output-specific compliance review against frozen appendix metadata and evidence_use claims."
+        }
+      }
+    },
+    {
+      "packet_id": "eab212a3ecc525da6625212c83db8bfa",
+      "task_id": "EB-H-05",
+      "condition": "treatment",
+      "repetition": 2,
+      "full_response_sha256": "f6cb3c3d994cd82dfcf2a144f1f6ef3685a6120ef909e40ab73d4341b1861272",
+      "normalized_outcome_sha256": "e7dbba9f75aa2726c81d72c9a440117a690a386d3a34a670925ebb045e4b612d",
+      "reviewer_1": {
+        "sha256": "bc85b15d1b8d6316b6a68311478a9a27864086db8efcb89f76fb1598a15f01d4",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Expected Avoid decision taken; required visible single Import CSV action and invalid-row handling are both covered without unsupported concepts."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "31966b5c1744d35a2921e08e8ace4790935416662da9d80598c69021dc3517bf",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "met",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Avoid decision matches expected disposition and keeps scope to single visible Import CSV action with invalid-row failure preserved in place. No protected concerns or forbidden-inferred concepts are violated."
+        }
+      },
+      "adjudication": {
+        "sha256": "20e0bd90d8e4c13abcd9855c81a63753ed9469264b58b8fd63c31c1e3c57f0ea",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "owner-conservative:closed|met",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": {
+        "sha256": "2586abc13b1295aa293328a6b1b8534f9b3a6b756f43bc741efe7045f6418bbb",
+        "score": {
+          "provenance_complete": true,
+          "question_bound": true,
+          "privacy_reviewed": true,
+          "adopt_adapt_avoid_complete": true,
+          "unsupported_claim_count": 2,
+          "feature_need_inference_count": 0,
+          "notes": "Deterministic output-specific compliance review against frozen appendix metadata and evidence_use claims."
+        }
+      }
+    },
+    {
+      "packet_id": "ede815fe56e1584af4483646de1dcd4a",
+      "task_id": "EB-H-02",
+      "condition": "treatment",
+      "repetition": 2,
+      "full_response_sha256": "0d68b6b56f078358d0f0888dc6390988cc610037d61b714ac0006bfffa3ef491",
+      "normalized_outcome_sha256": "2b85196171537a1173e7df4ec7d3462f379ad1929c3a3ab0a64f7e2bb665c1ea",
+      "reviewer_1": {
+        "sha256": "1f027724848082913ccb2b2b8a33a30ed8e7e192ba926e065251b8738d2bf499",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "adaptation",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 3,
+          "protected_concern_omissions": [
+            {
+              "concern": "authorization",
+              "severity": "P1",
+              "summary": "Needs explicit tie-in that completion is only acknowledged after backend authorization/revoke success."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_escalation_decision",
+            "restore_required_behavior",
+            "clarify_current_truth",
+            "clarify_recovery_or_failure",
+            "restore_p0_p1_protected_concern"
+          ],
+          "notes": "Reasonable irreversible warning treatment, but not aligned to expected disposition; also misses token-name mention, default-cancel requirement, and backend failure state reporting."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "f35dc75575152086c5277e184dea42b1fe452c0a9462f6b72b23e6a1a1691491",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "adapt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 3,
+          "protected_concern_omissions": [
+            {
+              "concern": "authorization",
+              "severity": "P1",
+              "summary": "No explicit requirement to treat completion as backend-success-bound or to handle/report backend failures."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_escalation_decision",
+            "restore_required_behavior",
+            "restore_p0_p1_protected_concern",
+            "clarify_recovery_or_failure"
+          ],
+          "notes": "No forbidden concepts introduced, but not fully aligned with boundary truth: lacks token naming, explicit default cancel, and backend failure reporting."
+        }
+      },
+      "adjudication": {
+        "sha256": "2339fd721d223caef214f426b80c4cce9adff596f65eedec63bc4057f4428fe1",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "owner-conservative:adaptation|adapt",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 3,
+          "protected_concern_omissions": [
+            {
+              "concern": "authorization",
+              "severity": "P1",
+              "summary": "Needs explicit tie-in that completion is only acknowledged after backend authorization/revoke success."
+            },
+            {
+              "concern": "authorization",
+              "severity": "P1",
+              "summary": "No explicit requirement to treat completion as backend-success-bound or to handle/report backend failures."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_escalation_decision",
+            "restore_required_behavior",
+            "clarify_current_truth",
+            "clarify_recovery_or_failure",
+            "restore_p0_p1_protected_concern"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": {
+        "sha256": "4e447db57080296ced5745cdc59a0f84659400061b3c5c7f23053e6573cf5322",
+        "score": {
+          "provenance_complete": true,
+          "question_bound": true,
+          "privacy_reviewed": true,
+          "adopt_adapt_avoid_complete": true,
+          "unsupported_claim_count": 3,
+          "feature_need_inference_count": 0,
+          "notes": "Deterministic output-specific compliance review against frozen appendix metadata and evidence_use claims."
+        }
+      }
+    },
+    {
+      "packet_id": "f3b77a8c42346df9a15358556e79d07d",
+      "task_id": "EB-H-03",
+      "condition": "treatment",
+      "repetition": 2,
+      "full_response_sha256": "5aa1021edeffb4aab26a70737c1d04208962e9054885e690d2790f8bfcb990a7",
+      "normalized_outcome_sha256": "08d3b45bb251882ab8520145614df6b23a29af3f0d343ec590b1c37ddb522a9d",
+      "reviewer_1": {
+        "sha256": "0e4c1cafe0605631b0c6f62d7cf8d03775e608ea402df629bc4e8ec05b666977",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "partial",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 2,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior"
+          ],
+          "notes": "Escalation matches expected and avoids forbidden inferences, but wording does not explicitly state progressive disclosure for existing date-range; also introduces extra concepts beyond stated truth exposure (advanced explanation/state visibility framing)."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "e9cc3f6de65f10aa3eb835df1ea90736a13884bc153ee5d52720691015c22f1c",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "aligned",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Matches expected Adapt. Keeps name search primary, optional date-range control, and visible filter state/clear path outside collapse; no forbidden filter-role extensions."
+        }
+      },
+      "adjudication": {
+        "sha256": "3e94ece0ddd9e1bb8c22069eefbc4fc2281594e467d71db4759ca0fa6b1d97ac",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "owner-conservative:partial|aligned",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 2,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": {
+        "sha256": "ffae374286bf4b4475546e59236700ed6afbba5e0b198266087b01bbf8c02cae",
+        "score": {
+          "provenance_complete": true,
+          "question_bound": true,
+          "privacy_reviewed": true,
+          "adopt_adapt_avoid_complete": true,
+          "unsupported_claim_count": 3,
+          "feature_need_inference_count": 0,
+          "notes": "Deterministic output-specific compliance review against frozen appendix metadata and evidence_use claims."
+        }
+      }
+    },
+    {
+      "packet_id": "f3bfca21667675eb68e961eea72636e6",
+      "task_id": "EB-H-01",
+      "condition": "control",
+      "repetition": 1,
+      "full_response_sha256": "900a77a3ffea2f00a374c4bdd8f02d5bb10cae94ad01e9aee2543d043ce320c6",
+      "normalized_outcome_sha256": "3f9dff605d5b059abbd0412b482f568a9ac0ba4a8ffd7f8273198b0af9b0f69b",
+      "reviewer_1": {
+        "sha256": "012156760f687140e90f4c0859ff092569ff0d9dda786d0cd24ece78e17e9636",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "open",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_escalation_decision"
+          ],
+          "notes": "Content meets content boundary but boundary_decision is Adapt not expected Adopt for this closable uncertainty."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "f4fd9a5276d18f5ecd3c89c084855dcdfd0c486ff71d54ea6b682fa1d7681c7b",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "partial",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_escalation_decision"
+          ],
+          "notes": "Behavioral content is largely compliant, but boundary decision is Adapt despite expected disposition Adopt, so the named uncertainty is not closed to required outcome."
+        }
+      },
+      "adjudication": {
+        "sha256": "cd5dabd42fe9ec84681ce4b51c4029e8610fc82c3cff2a471f160bd9994373ec",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "owner-conservative:open|partial",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_escalation_decision"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "f690d63f994c1acdde457f22c3ea4e23",
+      "task_id": "EB-H-03",
+      "condition": "treatment",
+      "repetition": 1,
+      "full_response_sha256": "1ef884267060ae1488ee0413d734b9bbb71a4f447f4a053cf13fc6612e578d80",
+      "normalized_outcome_sha256": "974e3acd5e80a1816ec902a4dd832aee1eceb97b570c70e989878e07a60cec8e",
+      "reviewer_1": {
+        "sha256": "c1b7661bf4f47649bab47a3e16266cc03d87db741c5584d3cd3b651375462a17",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 1,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Matches expected disposition and respects forbidden inferences; preserves name-first flow, keeps date-range optional, and keeps state/clear actions outside collapsed regions. Minor extra user-concept wording present but no boundary violations detected."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "6850182306d9eb4f12e43f50d8ef44ab9257f9bf22602fcc11e26be25118fc49",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "aligned",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Meets expected Adapt with explicit constraints against hiding required state and preserving name-first flow and one-action recovery; no unsupported-inference concepts added."
+        }
+      },
+      "adjudication": {
+        "sha256": "00848b6a278ccf6b3f8dcecf099b8e715c79cdb0694c25b26b8459b2348fb966",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "owner-conservative:closed|aligned",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 1,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": {
+        "sha256": "4ab9e2ba3a9f06f3c3f9a51fadb74aae1f6d4d22119c609a8bfa79edd56580b0",
+        "score": {
+          "provenance_complete": true,
+          "question_bound": true,
+          "privacy_reviewed": true,
+          "adopt_adapt_avoid_complete": true,
+          "unsupported_claim_count": 3,
+          "feature_need_inference_count": 0,
+          "notes": "Deterministic output-specific compliance review against frozen appendix metadata and evidence_use claims."
+        }
+      }
+    },
+    {
+      "packet_id": "fc4486eddf1dc6e2bd185c318ba8b2bd",
+      "task_id": "EB-H-01",
+      "condition": "control",
+      "repetition": 2,
+      "full_response_sha256": "f5899744ce75ab8c4f68026cb4b3699d7e80beffee753ea23179e91c577a759e",
+      "normalized_outcome_sha256": "75f69115fe117af851107b7f398538381154d8cc383f36d9f85b1562e1e5340d",
+      "reviewer_1": {
+        "sha256": "0fa0dffaa4440806d8b1cd26fc1f2536a7be0a8dff12ee5eef1c96b64b20e09d",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "open",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_escalation_decision"
+          ],
+          "notes": "Required behavior is present, but decision is Adapt rather than expected Adopt; otherwise scope and constraints are respected."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "2d73f749e7b0ecf125f9d2780c14d02d9fe18fe9d7309ddfc45d8522072948cb",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "partial",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_escalation_decision"
+          ],
+          "notes": "Core requirements are present and no unsupported concepts are introduced, but the selected disposition is Adapt rather than expected Adopt, so the uncertainty decision is not resolved as required."
+        }
+      },
+      "adjudication": {
+        "sha256": "99f77013f68e09a77bc6ba492a41d509d32c41cb67017987e3bd90e9f88244ea",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "owner-conservative:open|partial",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_escalation_decision"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    }
+  ]
+}

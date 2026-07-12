@@ -1,0 +1,1698 @@
+{
+  "schema": "repo-harness-bdd2-ei-evidence.e2",
+  "source_commit": "41d45df4e350c1c5e4f2d871e80a6a5ba9e24853",
+  "freeze_id": "bdd2-e2-ei-r7",
+  "manifest_sha256": "093aa1c763adbeae467166276d8c7a99262e83e056706570fdf2b05b15275a78",
+  "run_manifest_sha256": "dd398e06e05ece51f1625db73a0381fc34e797579ff67153b7484e9774dcd7b2",
+  "packet_count": 24,
+  "outcome_score_count": 48,
+  "evidence_score_count": 12,
+  "adjudication_count": 23,
+  "protocol_findings": [
+    "Owner adjudication used an unfrozen conservative-union algorithm rather than the frozen owner prompt.",
+    "Evidence compliance counted response.evidence_use.unsupported_claims declarations as unsupported claims made.",
+    "Reviewers did not share a stable operational definition of unnecessary tracked artifact for inline text output."
+  ],
+  "summary": {
+    "raw_gate_decision": "Kill",
+    "recorded_decision": "Reshape",
+    "reason": "Evidence compliance scorer misclassified declared limitations as unsupported claims; non-frozen owner aggregation prevents a valid efficacy decision.",
+    "metrics": {
+      "closure": {
+        "wins": 0,
+        "losses": 3,
+        "ties": 9
+      },
+      "new_severe_pairs": 0,
+      "unsupported_expansion": {
+        "control": 0,
+        "treatment": 1
+      },
+      "unsupported_concepts": {
+        "control": 0,
+        "treatment": 2
+      },
+      "required_omissions": {
+        "control": 2,
+        "treatment": 2
+      },
+      "nonclosable_treatment_closures": 0,
+      "evidence_compliance": false
+    }
+  },
+  "rows": [
+    {
+      "packet_id": "1c3526ff4b744e22a9162199e3999739",
+      "task_id": "EI-H-03",
+      "condition": "control",
+      "repetition": 2,
+      "full_response_sha256": "fd4074c029a50ec56820a91be26c247b294a870f0d0f80e33d42812cec47f2a0",
+      "normalized_outcome_sha256": "b62dd9b4869dee2901223e0934da39fb924081f1f2f7cc84a195d34cc6260830",
+      "reviewer_1": {
+        "sha256": "e50cb726b320f3e8f00e318fcbeed8fdd80728405f34d625f16ab0456b4a685c",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Matches all required boundary items: named filter, permanence framing via destructive delete, default-cancel hierarchy, compact flow, and explicit final failure. No unsupported concept additions."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "b9a6f69c42f57a25068e62843e32b5f81a4fd83feabd1c7f8c8bb4ef291f31cb",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "aligned-closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Captures all required boundary elements and no unsupported additions."
+        }
+      },
+      "adjudication": {
+        "sha256": "a115fa4f0897f4acbd790a550868b349cfecd7629208212d4fa08f66328e8bee",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "owner-conservative:closed|aligned-closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "23133784cbec2fcd78312cd5f1cb5082",
+      "task_id": "EI-H-01",
+      "condition": "treatment",
+      "repetition": 2,
+      "full_response_sha256": "77f4bbfcc5082838b150953ad698e791b7afc087d42426d8296390c8a0ba825a",
+      "normalized_outcome_sha256": "8a99adb5ffbf7127372d9a4587861bf10be3387fb1a887595bdf27eefd74b25f",
+      "reviewer_1": {
+        "sha256": "0b7a43a6026ab3b0d2ca34d0bf2b0530f8ec17aa0788cace22923d50236055c1",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Resolution is declared (direction A) and core boundary behaviors are present: same report page, progress/timeout visibility, one retry, and report preservation."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "982738f541518a09eb7fa7c68d8ac7d22e730386e484728686d1e096d759d05e",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "deferred",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_escalation_decision"
+          ],
+          "notes": "Direction A is selected, but the outcome explicitly defers final uncertainty resolution; private truth expects adaptation now (prototype can close uncertainty)."
+        }
+      },
+      "adjudication": {
+        "sha256": "d50c12a7ab5e782ea64e1e968f5d27500ea4dd367445aaa1054d92902b91faee",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "owner-conservative:closed|deferred",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_escalation_decision"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": {
+        "sha256": "2733709bec6099d681d57b6b23dbf7357f4b113f271c6982c4f8317086ebccf0",
+        "score": {
+          "question_bound": true,
+          "synthetic_labeled": true,
+          "falsifier_present": true,
+          "unsupported_claim_count": 2,
+          "user_validation_claim_count": 1,
+          "notes": "Deterministic output-specific compliance review against synthetic label, falsifier, and evidence_use claims."
+        }
+      }
+    },
+    {
+      "packet_id": "2c4c5b02482e314585ae3e76810077d0",
+      "task_id": "EI-H-03",
+      "condition": "treatment",
+      "repetition": 2,
+      "full_response_sha256": "d0f4013b62548ddd6c0cf67358d95854a1bd9e9ca701af3e558290ccc3f1723c",
+      "normalized_outcome_sha256": "e3d992e789d391482e101eae5624706a499f2e669096ebd0d8ba010b2dfe4351",
+      "reviewer_1": {
+        "sha256": "51a529988a5000ea8b2a5a4956f5f4c8eec99f358f77ee62427eeee69b056622",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "open",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Core required boundary behaviors are present, but outcome explicitly keeps uncertainty unresolved pending additional evidence."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "6520c672c85671d303a18e3295b4484f7a2fa900563dfc0c677ee07e12b0e79f",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "adapted-open",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_escalation_decision"
+          ],
+          "notes": "Behavior matches boundary, but keeps uncertainty open without a truth-based blocker despite prototype_closable=true."
+        }
+      },
+      "adjudication": {
+        "sha256": "916670dcd0d118c70d8db164c82907f6eefe7e515d34a661a7e6541b59f8ce37",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "owner-conservative:open|adapted-open",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_escalation_decision"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": {
+        "sha256": "ce66cde6e11e6c2fbf4ea4f083112b510a592d2b55853d54b038b1e0139dc2d8",
+        "score": {
+          "question_bound": true,
+          "synthetic_labeled": true,
+          "falsifier_present": true,
+          "unsupported_claim_count": 3,
+          "user_validation_claim_count": 0,
+          "notes": "Deterministic output-specific compliance review against synthetic label, falsifier, and evidence_use claims."
+        }
+      }
+    },
+    {
+      "packet_id": "3128662379ff38b2b78a13a691f40e42",
+      "task_id": "EI-H-06",
+      "condition": "treatment",
+      "repetition": 2,
+      "full_response_sha256": "02088211a18656a8b0d23e11142a0310cf881edbb7a5655fcf058f04a64e9f05",
+      "normalized_outcome_sha256": "e0792bc813e36d534ece463417c481dcee16d9bccb9e91cf2227ff072630d3d2",
+      "reviewer_1": {
+        "sha256": "48a4e4081f38f2c622bb6d0a27c84d01fab639e316ea4935e7be7b12cf257ac7",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "defer",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Aligned with truth: keeps explicit resend-only flow, masked verified destination, and observable result; does not claim trust closure."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "2d3ec757223b1b651a8f0b154fe3659a26404dbd08619d58e088e3c229b96bce",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "kept_fixed_boundary",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Defers trust uncertainty, keeps explicit user-initiated resend, masked verified destination, and observable result."
+        }
+      },
+      "adjudication": {
+        "sha256": "4380152e7f27b95aad629b340a8ffba142e954a7108191a38af5fe7f429364ea",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "owner-conservative:defer|kept_fixed_boundary",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": {
+        "sha256": "7bb193d64aae504ecc538e9a7fa933f7977de1b128e8a4c1444c54e5ff6036dd",
+        "score": {
+          "question_bound": true,
+          "synthetic_labeled": true,
+          "falsifier_present": true,
+          "unsupported_claim_count": 3,
+          "user_validation_claim_count": 0,
+          "notes": "Deterministic output-specific compliance review against synthetic label, falsifier, and evidence_use claims."
+        }
+      }
+    },
+    {
+      "packet_id": "5070591ac3740a05b8ee576ac09af4ae",
+      "task_id": "EI-H-03",
+      "condition": "control",
+      "repetition": 1,
+      "full_response_sha256": "43238be32820ddc7651a70540a25c0435f013973fd359e38d124f9d052086e2c",
+      "normalized_outcome_sha256": "453d8895469660fea58d34ee609e99b89b50c424692cc352fccef7be2385f388",
+      "reviewer_1": {
+        "sha256": "b9385894bfa6a6394510f91b5a64bb45fae0981563ecc912163cf67a0d66e57b",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Core boundary is fully retained: single compact deletion flow, named target, cancel-default, destructive non-recoverable delete, and final failure reporting. No unsupported concepts surfaced."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "dc0e86652ded28ba781eb256f598f756c63529b1f2d379602a3c622fe71057bb",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "aligned-closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Fully aligns with required permanence/identity/Cancel/Delete/final-failure and avoids unsupported concepts."
+        }
+      },
+      "adjudication": {
+        "sha256": "0c95141f31e68d676f1512ff30eb2bae08f037abeabd4ae7f8ae5e13b299cdc0",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "owner-conservative:closed|aligned-closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "50efc611883040700525d4f478f51992",
+      "task_id": "EI-H-03",
+      "condition": "treatment",
+      "repetition": 1,
+      "full_response_sha256": "c9a6bfed2a33bd9813cc19288a440f7ef8bb23226fcff97e4212112997d3600d",
+      "normalized_outcome_sha256": "bc2ea0880b7f07ef246515dc6e7db721065efd34c958b623b6401ac58ee32aa3",
+      "reviewer_1": {
+        "sha256": "94d0b43a9601a96ac4a56f4ba7ca1461c6e4933b0240b736dea7e42b8b0d65ec",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "open",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Required boundary behaviors are present, but packet leaves named uncertainty explicitly open pending real behavioral evidence."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "b379f53ef9b4d7b1cc50c03d3ee59871b758b2f510433dee49d38ebb09e9a136",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "adapted-open",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_escalation_decision"
+          ],
+          "notes": "Boundary semantics are correct, but uncertainty remains open even though closable in this prototype context."
+        }
+      },
+      "adjudication": {
+        "sha256": "694115d6108ff7c20d310ac3691675a3acebcb1d4bbee97e14d1b127d0b305c3",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "owner-conservative:open|adapted-open",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_escalation_decision"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": {
+        "sha256": "838def26510af63f7bd4bec8e3bd4da348b530a98baff68ecccfc7214abcd25c",
+        "score": {
+          "question_bound": true,
+          "synthetic_labeled": true,
+          "falsifier_present": true,
+          "unsupported_claim_count": 4,
+          "user_validation_claim_count": 0,
+          "notes": "Deterministic output-specific compliance review against synthetic label, falsifier, and evidence_use claims."
+        }
+      }
+    },
+    {
+      "packet_id": "50fc2457a456427ff00c97587f01e77f",
+      "task_id": "EI-H-04",
+      "condition": "treatment",
+      "repetition": 2,
+      "full_response_sha256": "bb5d2432f4d369406296b55606558aaa0ec995ef1af2822c8a92c774dac2d4d4",
+      "normalized_outcome_sha256": "70aa5efe4ddd9ea04cbd2d6b79f7cd0fcc4be9027d7821659244c106146281f5",
+      "reviewer_1": {
+        "sha256": "046f6daa7e9517ab373435021babe4dd28a4143613e847ea9412946d176f3aa3",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "adapt-not-closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "clarify_current_truth"
+          ],
+          "notes": "Matches required boundary and avoids forbidden concepts, but fails scoring criterion: explicit uncertainty remains unresolved despite prototype_can_close_uncertainty=true."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "32af77e7915ce8d9f25edb35b7cff09e322983371eb5a4cd124faa7c30e06ec1",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "open",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Outcome preserves all required boundary behaviors and omits unsupported concepts. Uncertainty is intentionally not closed, which is consistent with this packet."
+        }
+      },
+      "adjudication": {
+        "sha256": "5fa2a9bd6bedc05d59670d47a9e6bda77454d586e561cfaa6742cc478805dd17",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "owner-conservative:adapt-not-closed|open",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "clarify_current_truth"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": {
+        "sha256": "999a62ff035bd7f11665561736d6897c048a772d5815ee8fdbceb9d94968ea35",
+        "score": {
+          "question_bound": true,
+          "synthetic_labeled": true,
+          "falsifier_present": true,
+          "unsupported_claim_count": 3,
+          "user_validation_claim_count": 1,
+          "notes": "Deterministic output-specific compliance review against synthetic label, falsifier, and evidence_use claims."
+        }
+      }
+    },
+    {
+      "packet_id": "5556016c39152c79aac308a9f5bff6e8",
+      "task_id": "EI-H-02",
+      "condition": "control",
+      "repetition": 2,
+      "full_response_sha256": "22030e4741be0e52ba78247b7fed4c3ef2ca9843ee4da53de706d8797a85ea4c",
+      "normalized_outcome_sha256": "02c58d8c0039701284ea763a6c160b0fc74140f8bdaf945537ea5ca48114bbc4",
+      "reviewer_1": {
+        "sha256": "d23c89b724fa773328970d555b070fbf5cd0fecfa7efa03a9a6cb73b73a15622",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "not_closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "accessibility",
+              "severity": "P1",
+              "summary": "Does not state focus/announcement-safe linkage behavior; only defers layout-related decisions."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior",
+            "restore_p0_p1_protected_concern",
+            "correct_escalation_decision",
+            "clarify_current_truth"
+          ],
+          "notes": "Misses required directional resolution (A) and keeps uncertainty deferred despite closable condition."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "fb08ef7ab5f7976498489541e44e30566c45a8973ed165429194db65e68de77b",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "not_closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "accessibility",
+              "severity": "P1",
+              "summary": "No explicit requirement to preserve announcement/focus behavior beyond generic deferral language."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_escalation_decision",
+            "clarify_current_truth",
+            "restore_required_behavior",
+            "restore_p0_p1_protected_concern"
+          ],
+          "notes": "Says uncertainty is not closed because no prototype/evidence, which conflicts with truth stating closure is possible; lacks the announced direction-resolution outcome and explicit focus/announcement preservation."
+        }
+      },
+      "adjudication": {
+        "sha256": "705391cc42674d60be93f5a2bd42125e06293294c9c5b255553a37fc6147131f",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "not_closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "accessibility",
+              "severity": "P1",
+              "summary": "Does not state focus/announcement-safe linkage behavior; only defers layout-related decisions."
+            },
+            {
+              "concern": "accessibility",
+              "severity": "P1",
+              "summary": "No explicit requirement to preserve announcement/focus behavior beyond generic deferral language."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior",
+            "restore_p0_p1_protected_concern",
+            "correct_escalation_decision",
+            "clarify_current_truth"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "63d5e50b90f54e5d454867791837fd55",
+      "task_id": "EI-H-01",
+      "condition": "control",
+      "repetition": 2,
+      "full_response_sha256": "d3fbcf3fbc0e878ee563d09e3c3512524443ac6cc6deda3174ded3330c0d2362",
+      "normalized_outcome_sha256": "216fb7587b65dad6b7921e9688989441430218c3ec9ee62168e0a263bdc792b3",
+      "reviewer_1": {
+        "sha256": "3ab41a7f06f3559770970a57a38bea72d279545b120c3c3a84728b5524746466",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "deferred",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_escalation_decision",
+            "clarify_current_truth"
+          ],
+          "notes": "Explicitly defers on the named uncertainty even though the truth allows closure in-prototype; this leaves closure undecided."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "ba311e8e8869d73745fee2bb138a7089b01624f94b1e96732258571ca4b2c241",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "deferred",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_escalation_decision"
+          ],
+          "notes": "Explicitly defers to later context even though truth allows closure in this prototype. Required boundary behaviors are otherwise aligned."
+        }
+      },
+      "adjudication": {
+        "sha256": "9885cca1bc894cab2e1e7dce8fe50f1f712106b0ad4798d982014869d27a63a0",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "deferred",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_escalation_decision",
+            "clarify_current_truth"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "69bb8a9d67488e6e8550dc7bb0c24249",
+      "task_id": "EI-H-04",
+      "condition": "control",
+      "repetition": 2,
+      "full_response_sha256": "36f4ca1340f2915ab7e5958a590da39c1416242fd8bc94df67506e9cb449f421",
+      "normalized_outcome_sha256": "8d16439a55149054437d4437ccf6706d4bbcb2cd85bce90f4e260e0c56ad1efd",
+      "reviewer_1": {
+        "sha256": "cd73677cbee34820513c5cbb8cb3584467d7a32d8b4943714e0f2f2198fc5037",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "adapt-not-closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "clarify_current_truth"
+          ],
+          "notes": "Required core boundary behaviors are present and no forbidden additions are introduced, but uncertainty is intentionally deferred despite evidence-closure being allowed."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "2443cbffc7718115c4dba0d5bc89266277b18f51565b484de07566cda588b42d",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "open",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Core sync/recovery constraints are intact and no forbidden policy claims are introduced. Uncertainty is left unresolved as stated."
+        }
+      },
+      "adjudication": {
+        "sha256": "e8419e1e81a86e2326d6298caed23e4548b3a5d386e892b4607527be58a6345d",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "owner-conservative:adapt-not-closed|open",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "clarify_current_truth"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "7b545afb8bee623e5b88ee93359e717c",
+      "task_id": "EI-H-06",
+      "condition": "control",
+      "repetition": 2,
+      "full_response_sha256": "65b093e41680bd68b4d0f8535571dc0a0fc3ed508597e4a0d1954636c3fd5a6e",
+      "normalized_outcome_sha256": "386df4b449adcef841fd3d9bfdc65fdb88fc0b13009316d60178ef49fa1b5fe5",
+      "reviewer_1": {
+        "sha256": "4be74137b58ced8488e3e6a6665ac35a833f1e48fa2d6102d67357e987dbd6d2",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "defer",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Aligned with truth: defers uncertainty and preserves required boundary controls without unsupported claim of trust resolution."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "404d098ccd6f9002ddfafed48f456004933544d36f9be0e6c6f5ab74a3629191",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "kept_fixed_boundary",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Defers as required and aligns with required boundary constraints without adding unsupported behavior."
+        }
+      },
+      "adjudication": {
+        "sha256": "586ab7864e75463c90fcdca5e701224b15b85153125c258ade9bf6e80dd999a6",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "owner-conservative:defer|kept_fixed_boundary",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "83831bb1e769d951ce18ac347203350d",
+      "task_id": "EI-H-05",
+      "condition": "control",
+      "repetition": 2,
+      "full_response_sha256": "125ee99f20beff47c99e3965ded1b186aa448015095a0c3a87e62aa6e622b21f",
+      "normalized_outcome_sha256": "e82b17919109419da6f9d4b1760f548b8f28ee40ca9299697a5eae5e869d64b1",
+      "reviewer_1": {
+        "sha256": "436901baf93c21750817d24125b0ca177218dfb43158b4780ca4249d0f81f650",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "deferred",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Aligned: keeps uncertainty open and matches expected boundary and non-inference constraint."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "cce679de6ffce8e51158144ac116813166ed9e4001d4ce1e98b001e0f63514c0",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "defer (prototype cannot close)",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Aligns with truth: does not claim closure, keeps boundary fixed, and avoids synthetic inference."
+        }
+      },
+      "adjudication": {
+        "sha256": "79525c261ce5e54a1f2c36a47bd4557a119575fe7fd62940ef0ca53248b83512",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "owner-conservative:deferred|defer (prototype cannot close)",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "886df97ea2048a2d1825629c18444cee",
+      "task_id": "EI-H-04",
+      "condition": "control",
+      "repetition": 1,
+      "full_response_sha256": "e20669f40655311b5e6e107b175bfcdb71c859ed61032222b57c8eceea555c2f",
+      "normalized_outcome_sha256": "c27f2925cb3f4ec0cf69aa70fcfb8178eab8f5cf5179a66f864c614f78187998",
+      "reviewer_1": {
+        "sha256": "a1113cb27106d24df95338a6e9ffd199c48bfd3d140f2d3070e507427ab17b01",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "adapt-not-closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "clarify_current_truth"
+          ],
+          "notes": "Core boundary preserved and forbidden concepts avoided; still does not close the synthetic hierarchy uncertainty, which is expected to be closable per truth."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "c88aad31fb60f201aac11784abf0c17eb3c72910a9f73b2c5fd9253a0daf33b7",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "open",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Keeps required boundary behavior (offline, unsynced visibility, reconnect recovery, conflict review) and avoids unsupported inferences. Information-hierarchy uncertainty remains open by design."
+        }
+      },
+      "adjudication": {
+        "sha256": "610479a5952d3c2f75ac58ae632d137461eda162ca176f96ebfe45bcf7441030",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "owner-conservative:adapt-not-closed|open",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "clarify_current_truth"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "9c1591fcbf81653bdb2ef137f6e9b695",
+      "task_id": "EI-H-01",
+      "condition": "treatment",
+      "repetition": 1,
+      "full_response_sha256": "3f5a91d54fb7ec2bbd8c47004eaf8297a768c7b3f6df55537cda538bbcb619aa",
+      "normalized_outcome_sha256": "a5e3fd890e80b83fb6e5468dd399b8143e5579d7577a5a2a7a7dea08bf6742e3",
+      "reviewer_1": {
+        "sha256": "a277c9d05c4130984e0cfda7292258921c4afa79ecd42720eec426f52add4b2c",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "deferred",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_escalation_decision",
+            "clarify_current_truth"
+          ],
+          "notes": "Again defers despite prototype can close; required boundary behaviors are otherwise present."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "8757f6af08954aa7482d2abe7e91c4d19da8106d6d0b6ef3c3305495933fc753",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "deferred",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_escalation_decision"
+          ],
+          "notes": "Correctly keeps to report-page safety constraints but declines closure on placement/discoverability despite can-close uncertainty being true."
+        }
+      },
+      "adjudication": {
+        "sha256": "5dd6cccb10898f6cf9ba84e7c10036d19eca32f0ee7ab9f9cae449e6903ff5cf",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "deferred",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_escalation_decision",
+            "clarify_current_truth"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": {
+        "sha256": "fa827e80ff3109ac491feb8e182028b6cde4eec02115cdb52e99583843fbd2eb",
+        "score": {
+          "question_bound": true,
+          "synthetic_labeled": true,
+          "falsifier_present": true,
+          "unsupported_claim_count": 5,
+          "user_validation_claim_count": 1,
+          "notes": "Deterministic output-specific compliance review against synthetic label, falsifier, and evidence_use claims."
+        }
+      }
+    },
+    {
+      "packet_id": "9d05ffe74fe819d88235a68954111d8b",
+      "task_id": "EI-H-02",
+      "condition": "treatment",
+      "repetition": 1,
+      "full_response_sha256": "735e25ea6a444c541893d0ccff6bbe1e0e18d42344e8e2c090fdb02f4f526ff7",
+      "normalized_outcome_sha256": "b23c13aadb30a06164cf486d3029fb47c152e1e23a59d4f57049ddb0703e4050",
+      "reviewer_1": {
+        "sha256": "bac236921eb3ca51d63e56a3b8f9cf8fe049e7a7998cd047b129f846d21e56a8",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "not_closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Tracks the expected direction A with caveat, and preserves required flow and recovery semantics."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "542cf4d8aae49386724ae893516856c62f731877e8646fbc0c1c750ab6e9dc70",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "not_closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "accessibility",
+              "severity": "P1",
+              "summary": "Keeps validation of focus/announcement semantics to implementation and avoids synthetic proof claims, but does not explicitly state preserved announcement behavior at boundary."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_escalation_decision",
+            "clarify_current_truth",
+            "restore_required_behavior",
+            "restore_p0_p1_protected_concern"
+          ],
+          "notes": "Reasonable direction selection (A) and flow constraints, but treats closure as deferred despite prototype being sufficient in truth; still missing explicit boundary requirement on announcement behavior."
+        }
+      },
+      "adjudication": {
+        "sha256": "b910c9935c59c9887a8b07829bec419444d4b7908f619fea0fce8984608ba1ec",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "not_closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "accessibility",
+              "severity": "P1",
+              "summary": "Keeps validation of focus/announcement semantics to implementation and avoids synthetic proof claims, but does not explicitly state preserved announcement behavior at boundary."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_escalation_decision",
+            "clarify_current_truth",
+            "restore_required_behavior",
+            "restore_p0_p1_protected_concern"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": {
+        "sha256": "eded2d523792103d986365dbebf7c927997771239a9232010d721e8f2deaa8bf",
+        "score": {
+          "question_bound": true,
+          "synthetic_labeled": true,
+          "falsifier_present": true,
+          "unsupported_claim_count": 2,
+          "user_validation_claim_count": 1,
+          "notes": "Deterministic output-specific compliance review against synthetic label, falsifier, and evidence_use claims."
+        }
+      }
+    },
+    {
+      "packet_id": "a63a6e1eb3f6eb44117cdbba255c299d",
+      "task_id": "EI-H-02",
+      "condition": "control",
+      "repetition": 1,
+      "full_response_sha256": "23d42fe7e9d4bc741162a1b8ae840b8db06a912b1e17029f4adea991b27d5ea5",
+      "normalized_outcome_sha256": "0312d0cd41683e5c095cb69c97ce937b60c85cb816d3f7b2a04898ebf5f359d6",
+      "reviewer_1": {
+        "sha256": "c30d97524e867d171929c7bb0feecb33ab110c1860f19799abef54c6e7ca9345",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "not_closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "accessibility",
+              "severity": "P1",
+              "summary": "No explicit handling or verification of focus/announcement semantics, only defers layout/usability behavior."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior",
+            "restore_p0_p1_protected_concern",
+            "correct_escalation_decision"
+          ],
+          "notes": "Does not resolve the layout direction; leaves focus/announcement concerns unhandled beyond deferral."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "4f8b18cf296af4325af352afa72397b1b084323b53d5f985955dbb9e18627a73",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "not_closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "accessibility",
+              "severity": "P1",
+              "summary": "Does not commit to the required focus/announcement behavior and instead leaves layout/usability specifics open."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_escalation_decision",
+            "clarify_current_truth",
+            "restore_required_behavior",
+            "restore_p0_p1_protected_concern"
+          ],
+          "notes": "Aligns with boundary constraints and required data/error linkage, but does not select a direction for the uncertainty despite truth indicating this is closable; focus/announcement boundary not satisfied."
+        }
+      },
+      "adjudication": {
+        "sha256": "12d0ca72aa1d01c7dceac2bb83fc48c6b7eb830d1c224c548cc54f9839daeb80",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "not_closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "accessibility",
+              "severity": "P1",
+              "summary": "No explicit handling or verification of focus/announcement semantics, only defers layout/usability behavior."
+            },
+            {
+              "concern": "accessibility",
+              "severity": "P1",
+              "summary": "Does not commit to the required focus/announcement behavior and instead leaves layout/usability specifics open."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_required_behavior",
+            "restore_p0_p1_protected_concern",
+            "correct_escalation_decision",
+            "clarify_current_truth"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "b0e6ef18b02fa9274fbdb8f6f6307ec5",
+      "task_id": "EI-H-02",
+      "condition": "treatment",
+      "repetition": 2,
+      "full_response_sha256": "7778ea4c44dec8a8c99f8ea5a9b552c6a47cd726a125e47905db19875195caf7",
+      "normalized_outcome_sha256": "56250c086e14be70b6011d03f16d846f6f51b16f7d93ca76560ded8bfa551079",
+      "reviewer_1": {
+        "sha256": "98b6a479b7dcda9e56272b5f84acb8bde318511d551115a60de4eda5ee6e4715",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "not_closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "accessibility",
+              "severity": "P1",
+              "summary": "Mentions focus order but not announcement/semantic-focus behavior explicitly."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_p0_p1_protected_concern"
+          ],
+          "notes": "Selects direction A as provisional resolution and preserves flow, but lacks explicit announcement semantic requirement."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "e7e4e8b3fd145df94282a62c9a58d8b115114dd54c7ed27e093c5cae20505c6d",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "not_closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "accessibility",
+              "severity": "P1",
+              "summary": "Claims synthetic/layout-based provisional direction with caveat but does not explicitly satisfy required announcement behavior."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "correct_escalation_decision",
+            "clarify_current_truth",
+            "restore_required_behavior",
+            "restore_p0_p1_protected_concern"
+          ],
+          "notes": "Selects direction A appropriately, but labels closure as incomplete; should still close per truth with caveated semantic verification and explicit focus/announcement preservation."
+        }
+      },
+      "adjudication": {
+        "sha256": "40d03b2c9089424e13f00a5e49949249fc4f6e444d1e2a11aceab61e001f5ecc",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "not_closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 1,
+          "protected_concern_omissions": [
+            {
+              "concern": "accessibility",
+              "severity": "P1",
+              "summary": "Mentions focus order but not announcement/semantic-focus behavior explicitly."
+            },
+            {
+              "concern": "accessibility",
+              "severity": "P1",
+              "summary": "Claims synthetic/layout-based provisional direction with caveat but does not explicitly satisfy required announcement behavior."
+            }
+          ],
+          "authority_fit": true,
+          "escalation_correct": false,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "restore_p0_p1_protected_concern",
+            "correct_escalation_decision",
+            "clarify_current_truth",
+            "restore_required_behavior"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": {
+        "sha256": "3a247a49bb59f4a088e8be9b060e83dd3dd82c5b9de00c25e5e8f82f7e1357ed",
+        "score": {
+          "question_bound": true,
+          "synthetic_labeled": true,
+          "falsifier_present": true,
+          "unsupported_claim_count": 3,
+          "user_validation_claim_count": 1,
+          "notes": "Deterministic output-specific compliance review against synthetic label, falsifier, and evidence_use claims."
+        }
+      }
+    },
+    {
+      "packet_id": "b75d8acad73d89442ab2289e0a8a71b2",
+      "task_id": "EI-H-06",
+      "condition": "control",
+      "repetition": 1,
+      "full_response_sha256": "0b6607f675a21201502dbda2fbacce9a00361afe72e856891824b5d7a6512cbc",
+      "normalized_outcome_sha256": "06a4f994ffb23e51be4a01a5460218f61095a0894e596ba489bccb17bf5e6619",
+      "reviewer_1": {
+        "sha256": "940b2f6a3f1bb75a5b45106d32b30103d3fc5cf8a4f94e2e598a963fdecd6163",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "defer",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Aligned with truth; adds extra recovery details but remains within explicit-user-initiated resend and fixed verified destination boundary."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "0edcac63dc849a0042029f306ce7ad6ab249f9c7832e34034c9f645e819dc348",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "kept_fixed_boundary",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Defers trust closure and preserves explicit action, fixed destination, masking, and visible resend outcome; no boundary violations."
+        }
+      },
+      "adjudication": {
+        "sha256": "a8753e13fe50624764b4aed17c3623f119ad6ffcd8375eceab314f291b32802f",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "owner-conservative:defer|kept_fixed_boundary",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "c56d16bd1d1feefa70d44a572c020e27",
+      "task_id": "EI-H-04",
+      "condition": "treatment",
+      "repetition": 1,
+      "full_response_sha256": "591bc6ab24015d9166703f619f269f7da37f9571581370edc0466bcb7a777d59",
+      "normalized_outcome_sha256": "5fc68853577c275d5e04d945454742f1997bc30ec2e0ad111f81d0cdc5731b64",
+      "reviewer_1": {
+        "sha256": "18c48011afdb959a8eb53241c1fef1428f7a7e74f433cba33d60f3129d8fc424",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "adapt-not-closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "clarify_current_truth"
+          ],
+          "notes": "Behavior aligns with required boundary and explicitly avoids forbidden inferences, but still defers closure despite explicit permission for uncertainty closure; needs final resolution of direction and closure status."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "8cb759ddbe692a7f6680882be6daf5548c427fc8527de4b7536a27ab370a6af0",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "open",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Core behaviors and data-integrity protections are preserved; excluded concepts correctly avoided. Uncertainty is explicitly deferred despite prototypical closability being possible."
+        }
+      },
+      "adjudication": {
+        "sha256": "96a2d05e05cbfaac6801646fecf0b7adfb245b914c461e4cd8d81ad9e95117b0",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "owner-conservative:adapt-not-closed|open",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [
+            "clarify_current_truth"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": {
+        "sha256": "1e886cccda2ecff089778fd7e8462146c0c081a311dfd24941a3f5eb916ecacb",
+        "score": {
+          "question_bound": true,
+          "synthetic_labeled": true,
+          "falsifier_present": true,
+          "unsupported_claim_count": 2,
+          "user_validation_claim_count": 1,
+          "notes": "Deterministic output-specific compliance review against synthetic label, falsifier, and evidence_use claims."
+        }
+      }
+    },
+    {
+      "packet_id": "c5c79fae11e559fbd981d9720e464b36",
+      "task_id": "EI-H-05",
+      "condition": "treatment",
+      "repetition": 2,
+      "full_response_sha256": "a13349a4d8b39ee0aed7b971d3ea75382f5f6de32c3afd052e7e3ef4875078c6",
+      "normalized_outcome_sha256": "26d7a5549cfe4b2000989a41962a0f82e85570ac2c583c779ce4534214045461",
+      "reviewer_1": {
+        "sha256": "e5960264033eb388b9bfa49a65b808e6733785feea7bf4d4f9c15899bfa29944",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "deferred",
+          "unsupported_expansion": 1,
+          "unsupported_user_concepts": 2,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 1,
+          "correction_operations": [
+            "remove_unsupported_behavior"
+          ],
+          "notes": "Contains hypothesis framing around Direction A/B shortcut bars, which introduces unsupported shortcut-surface concepts instead of remaining strictly boundary-safe; defer intent is correct."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "a07169e4c8ec73b1b9eb5c7f6eaed095c44765aa6b9cd962484ea01434003416",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "defer (prototype cannot close)",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Conveys explicit defer with existing palette boundary; hypothetical directions are clearly framed for comparison only."
+        }
+      },
+      "adjudication": {
+        "sha256": "f9e52f7ff136af8d42e86b28003fc1007dc99d783d46d32dced1b52c052dfa06",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "owner-conservative:deferred|defer (prototype cannot close)",
+          "unsupported_expansion": 1,
+          "unsupported_user_concepts": 2,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 1,
+          "correction_operations": [
+            "remove_unsupported_behavior"
+          ],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": {
+        "sha256": "9bf2d822e21a7893acf91b33d487a09d719aec77d7460ade26ac22cd211866b1",
+        "score": {
+          "question_bound": true,
+          "synthetic_labeled": true,
+          "falsifier_present": true,
+          "unsupported_claim_count": 5,
+          "user_validation_claim_count": 1,
+          "notes": "Deterministic output-specific compliance review against synthetic label, falsifier, and evidence_use claims."
+        }
+      }
+    },
+    {
+      "packet_id": "c7c29edb593ed706eabb5a51118da88d",
+      "task_id": "EI-H-06",
+      "condition": "treatment",
+      "repetition": 1,
+      "full_response_sha256": "b5958d6b73ed32b211a890550059f718e250fab173e4e4fc8ca302fc9ec892dd",
+      "normalized_outcome_sha256": "a9210a51a572d03ae6585920549d28007130adc61f0972a85dba5db7331b99c8",
+      "reviewer_1": {
+        "sha256": "2639479b1c2e076bd87179e6d84bc0fcdaf6f37c790e257d5cc1739e75fda8bd",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "defer",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Aligned with truth: explicitly keeps boundary fixed and does not infer trust from synthetic output."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "c7926bafec544281186bf930e3aa9c349d7cbf0d87a04eb8e04596da9d6386b3",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "kept_fixed_boundary",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Defers trust resolution; maintains stable boundary and required controls; no unsupported expansion of payment/resend behavior."
+        }
+      },
+      "adjudication": {
+        "sha256": "8a1d1dedcb890e4dab57f7c6ce6e02d97430a84a5ac51e8c547deab3b359caff",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "owner-conservative:defer|kept_fixed_boundary",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": {
+        "sha256": "9aa00865d193d24dfed8053d2fab86a87d77cd2061d95b1abfe4cc29c4386c4e",
+        "score": {
+          "question_bound": true,
+          "synthetic_labeled": true,
+          "falsifier_present": true,
+          "unsupported_claim_count": 3,
+          "user_validation_claim_count": 0,
+          "notes": "Deterministic output-specific compliance review against synthetic label, falsifier, and evidence_use claims."
+        }
+      }
+    },
+    {
+      "packet_id": "ce3b53cddc6f47bef98878c595b2102a",
+      "task_id": "EI-H-05",
+      "condition": "control",
+      "repetition": 1,
+      "full_response_sha256": "8cee6899af363d95c02a0d6634dd88ff5064b1d27e5becf6a6b7551af6ff20e3",
+      "normalized_outcome_sha256": "eced76562e0bc219d626c351942adef7e6e3ad21ed912c9e27bfefc21f56ff35",
+      "reviewer_1": {
+        "sha256": "a8b393baa0ba9e6ebba359fcf37f6d59854fab3fa96a36c49a8a3adda312e56b",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "deferred",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Strictly aligned: does not claim closure, preserves boundary, and avoids unsupported inference."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "39a62d2b717eb4d882f2a9b67f9cc0001cda3a68a421fadcbc579e4c1c20371a",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "defer (prototype cannot close)",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Directly matches required disposition: keep boundary unchanged and defer until user/behavioral evidence is available."
+        }
+      },
+      "adjudication": {
+        "sha256": "0de9f4f1bb4b41268ae82c70734d9cf1b49715735ead52b7f79f28a6da982b18",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "owner-conservative:deferred|defer (prototype cannot close)",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": null
+    },
+    {
+      "packet_id": "d62c349fd870a4c96c327c9d843fbe8c",
+      "task_id": "EI-H-05",
+      "condition": "treatment",
+      "repetition": 1,
+      "full_response_sha256": "06b8d63ac00c78864ccba7f264b7596927f7d7f95e339f98eb49a5bb719b594d",
+      "normalized_outcome_sha256": "5e1886782a35fbb36a37da1cc0277e84a5a7417733cea91a2160cec84dbab2d6",
+      "reviewer_1": {
+        "sha256": "0c091c75a8c0a82f53169e5ba9fb075d6a3dab6b01eb6b66c1fde03befa93151",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "deferred",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Aligned with truth on defer and boundary protection; no evidence-based closure or unauthorized surface is introduced."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "3ab50e40d142a80c629860ebd3bc75590519dd9c3cadb34a47babd2868f793be",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "defer (prototype cannot close)",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Boundary is respected and no new command surface/settings are introduced; decision remains deferred."
+        }
+      },
+      "adjudication": {
+        "sha256": "8a303bba51c4d23623ab162d763741d107a0a3d8bf13997775666e929764d12d",
+        "score": {
+          "uncertainty_closed": false,
+          "boundary_category": "owner-conservative:deferred|defer (prototype cannot close)",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Codex owner proxy selected the conservative union before condition reveal; no human attribution."
+        }
+      },
+      "evidence_score": {
+        "sha256": "a738bfcca2c5d4385bc85e0ca9bd9e6dcdaa24082c8ceae3f9e5efb5d2ac432a",
+        "score": {
+          "question_bound": true,
+          "synthetic_labeled": true,
+          "falsifier_present": true,
+          "unsupported_claim_count": 5,
+          "user_validation_claim_count": 0,
+          "notes": "Deterministic output-specific compliance review against synthetic label, falsifier, and evidence_use claims."
+        }
+      }
+    },
+    {
+      "packet_id": "f5eab09bc7aad19fb1dca735ae920262",
+      "task_id": "EI-H-01",
+      "condition": "control",
+      "repetition": 1,
+      "full_response_sha256": "587756cb9b7748a21310fcc554624b71aabd420d66dac1edf8583ba8a49f8f3d",
+      "normalized_outcome_sha256": "5cff15b71e8e092547beaafbb0461a1868bf20251249a0e9b43f9c69ab703138",
+      "reviewer_1": {
+        "sha256": "835bf6044eb21a07d407be1d188f5a5ba0220d0f4495e04b7749843fa5a22d5d",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Selects a single-flow inline report-page recovery with one safe Retry and preservation constraints; no prohibited concepts are introduced."
+        }
+      },
+      "reviewer_2": {
+        "sha256": "90d7d8f8c20341bf5cb2d34b739b6621c3a39f1d6949892f3efbec4ec8665d54",
+        "score": {
+          "uncertainty_closed": true,
+          "boundary_category": "closed",
+          "unsupported_expansion": 0,
+          "unsupported_user_concepts": 0,
+          "required_behavior_omission": 0,
+          "protected_concern_omissions": [],
+          "authority_fit": true,
+          "escalation_correct": true,
+          "unnecessary_tracked_artifact_count": 0,
+          "correction_operations": [],
+          "notes": "Selects inline report-page recovery direction and preserves report/progress/timeout/retry constraints; deferred items are non-boundary trust/usability details, not required boundary behavior."
+        }
+      },
+      "adjudication": null,
+      "evidence_score": null
+    }
+  ]
+}

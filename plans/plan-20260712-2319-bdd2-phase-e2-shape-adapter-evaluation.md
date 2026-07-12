@@ -362,11 +362,11 @@ No other product, skill, CLI, MCP, hook, catalog, sidecar, or `/check` path is a
       manifest, unseen datasets, pre-sealed provider artifacts, two-layer scoring,
       metric functions, reviewer separation, fixture workspace, and
       human-adjudication protocol.
-- [ ] E2-02: execute and adjudicate all 72 S2 outputs; publish `Pass / Reshape / Kill`
+- [x] E2-02: execute and adjudicate all 72 S2 outputs; publish `Pass / Reshape / Kill`
       without changing thresholds after reveal.
-- [ ] E2-03: execute and adjudicate all 24 EB decisions and all 24 EI decisions;
+- [x] E2-03: execute and adjudicate all 24 EB decisions and all 24 EI decisions;
       publish independent adapter decisions even if S2 does not pass.
-- [ ] E2-04: if and only if S2 and at least one adapter pass, execute the two-condition
+- [x] E2-04: if and only if S2 and at least one adapter pass, execute the two-condition
       page-feature pilot and publish its bounded result; otherwise record gated-not-run.
 - [ ] E2-05: record one Phase E2 gate report, preserve Phase E history, run focused and
       repository workflow checks, obtain external review, and stop before Phase P.
@@ -419,7 +419,7 @@ product runtime remain unchanged; no data migration or compatibility rollback ex
 
 ## Task Breakdown
 - [x] E2-01: revise the PRD evaluation section and freeze the fail-closed E2 authority, unseen datasets, pre-sealed provider artifacts, two-layer scoring, fixture workspace, metrics, and human-adjudication protocol.
-- [ ] E2-02: execute and adjudicate all 72 S2 outputs, then publish `Pass / Reshape / Kill` without post-reveal threshold changes.
-- [ ] E2-03: execute and adjudicate all 24 EB and 24 EI decisions, then publish independent adapter decisions regardless of the S2 outcome.
-- [ ] E2-04: only when S2 and at least one adapter pass, execute the two-condition page-feature pilot; otherwise record it as gated-not-run.
+- [x] E2-02: execute and adjudicate all 72 S2 outputs, then publish `Pass / Reshape / Kill` without post-reveal threshold changes.
+- [x] E2-03: execute and adjudicate all 24 EB and 24 EI decisions, then publish independent adapter decisions regardless of the S2 outcome.
+- [x] E2-04: only when S2 and at least one adapter pass, execute the two-condition page-feature pilot; otherwise record it as gated-not-run.
 - [ ] E2-05: publish the Phase E2 gate report, preserve Phase E history, run focused and repository checks plus external review, and stop before Phase P.

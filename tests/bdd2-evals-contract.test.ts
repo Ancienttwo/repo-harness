@@ -53,4 +53,17 @@ describe("BDD2 Phase E2 evaluation contract", () => {
       expect(existsSync(join(ROOT, path))).toBe(false);
     }
   });
+
+  test("Phase E2 gate records complete upstream runs and a fail-closed I2 defer", () => {
+    const s2 = JSON.parse(readFileSync(join(ROOT, "evals/bdd2/reports/experiment-s2-evidence.json"), "utf-8"));
+    const eb = JSON.parse(readFileSync(join(ROOT, "evals/bdd2/reports/experiment-eb-evidence.json"), "utf-8"));
+    const ei = JSON.parse(readFileSync(join(ROOT, "evals/bdd2/reports/experiment-ei-evidence.json"), "utf-8"));
+    expect([s2.packet_count, s2.outcome_score_count]).toEqual([72, 144]);
+    expect([eb.packet_count, eb.outcome_score_count, eb.evidence_score_count]).toEqual([24, 48, 12]);
+    expect([ei.packet_count, ei.outcome_score_count, ei.evidence_score_count]).toEqual([24, 48, 12]);
+    expect([s2.summary.recorded_decision, eb.summary.recorded_decision, ei.summary.recorded_decision]).toEqual(["Reshape", "Reshape", "Reshape"]);
+    const gate = readFileSync(join(ROOT, "evals/bdd2/reports/phase-e2-gate.md"), "utf-8");
+    expect(gate).toContain("I2 implementation pilot | 0/4 | Defer — gated-not-run");
+    expect(gate).toContain("Phase P remains");
+  });
 });
