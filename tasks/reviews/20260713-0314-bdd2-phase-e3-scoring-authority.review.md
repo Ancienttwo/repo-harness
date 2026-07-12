@@ -5,10 +5,10 @@
 > **Contract**: tasks/contracts/20260713-0314-bdd2-phase-e3-scoring-authority.contract.md
 > **Notes File**: tasks/notes/20260713-0314-bdd2-phase-e3-scoring-authority.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-07-13 05:20
+> **Last Updated**: 2026-07-13 06:06
 > **Recommendation**: pass
 > **Review Rubric Version**: 1
-> **Reviewed Diff Fingerprint**: sha256:604a9ef91220e5b21acc8590250cca0635efcb4b461434ebf8e2d72d9a9fbe3a
+> **Reviewed Diff Fingerprint**: sha256:f00e24c01c6de16f937086c7ee6d71dfc0f0fb30766d4511e1406a3a9b1612af
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 ## Human Review Card
@@ -18,7 +18,7 @@
 - Intended files changed: E3 evaluation authority, tracked corpus, prompts/schemas,
   deterministic reports, PRD/Sprint/workflow closeout, and verification-only mainline
   integration repairs.
-- Actual files changed: 30 files against `origin/main`; no public BDD skill, CLI/MCP,
+- Actual files changed: 33 files against `origin/main`; no public BDD skill, CLI/MCP,
   hook behavior, catalog, sidecar, lifecycle, generic linter, or Phase P surface.
 - Commands passed: focused E3/integration tests, TypeScript, all three deterministic
   decision reproductions, full `bun test`, root required checks, and Claude cross-review.
@@ -66,8 +66,8 @@
 > **External Reviewer**: Claude
 > **External Source**: claude-review
 > **External Started**: 2026-07-13T04:03:00+0800
-> **External Completed**: 2026-07-13T05:17:00+0800
-> **Reviewed Diff Fingerprint**: sha256:604a9ef91220e5b21acc8590250cca0635efcb4b461434ebf8e2d72d9a9fbe3a
+> **External Completed**: 2026-07-13T06:05:00+0800
+> **Reviewed Diff Fingerprint**: sha256:f00e24c01c6de16f937086c7ee6d71dfc0f0fb30766d4511e1406a3a9b1612af
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 - P1 blockers: none
@@ -77,6 +77,8 @@
   integration test-only review also returned `No findings`, confirmed no assertion
   weakened the shipped runtime contract, rechecked all five earlier P1 fixes, and the
   full-history CI plus reachable-rebased-provenance follow-ups returned `No findings`.
+  The final CI HOME-isolation follow-up resolved one notes-only P2 and then returned
+  `No findings`.
 
 ## Behavior Diff Notes
 
