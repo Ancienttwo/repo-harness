@@ -28,16 +28,22 @@ import { buildChatgptCommand } from './commands/chatgpt';
 import { buildRunCommand } from './commands/run';
 import { buildStateCommand } from './commands/state';
 import { formatSecurityScan, runSecurityScan } from './commands/security';
-import { runGlobalRuntimeSetup } from './commands/global-runtime';
+import { runGlobalRuntimeSetup, type GlobalRuntimeOptions, type GlobalRuntimeResult } from './commands/global-runtime';
 import {
   applyInstallProfile,
+  beginInstallHostTransaction,
+  commitInstallHostTransaction,
+  installProfileHostMutationPaths,
   installedProfileStatus,
   assertInstallProfile,
   planInstallProfile,
   profileEnablesCodegraph,
   profileEnablesExternalSkills,
+  prepareInstallProfileSwitch,
   readInstalledProfile,
+  rollbackInstallHostTransaction,
   rollbackInstallProfile,
+  type InstalledProfileState,
   type InstallProfile,
 } from './installer/install-profile';
 import { runPromptGuardDecideCli } from './commands/prompt-guard-decision';
@@ -209,6 +215,38 @@ export async function resolveDelegationMode(
   }
 }
 
+function runTransactionalProfileProjection(
+  profile: InstallProfile,
+  options: GlobalRuntimeOptions,
+  commitState: (transaction: ReturnType<typeof beginInstallHostTransaction>) => InstalledProfileState,
+): { result: GlobalRuntimeResult; state: InstalledProfileState | null } {
+  const transaction = beginInstallHostTransaction(installProfileHostMutationPaths(options.env), options.env);
+  let result: GlobalRuntimeResult;
+  try {
+    prepareInstallProfileSwitch(profile, options.env);
+    result = runGlobalRuntimeSetup(options);
+  } catch (error) {
+    rollbackInstallHostTransaction(transaction);
+    throw error;
+  }
+  if (result.exitCode !== 0) {
+    rollbackInstallHostTransaction(transaction);
+    return { result, state: null };
+  }
+  try {
+    const state = commitState(transaction);
+    commitInstallHostTransaction(transaction);
+    return { result, state };
+  } catch (error) {
+    try {
+      rollbackInstallHostTransaction(transaction);
+    } catch (rollbackError) {
+      throw new AggregateError([error, rollbackError], `install profile ${profile} failed and compensation was incomplete`);
+    }
+    throw error;
+  }
+}
+
 async function runGlobalRuntimeBootstrap(
   commandName: 'init' | 'install',
   rawOpts: GlobalRuntimeCommandOptions,
@@ -248,7 +286,7 @@ async function runGlobalRuntimeBootstrap(
         codegraph: selectedDefaults.codegraph,
       }, cmd, { interactive })
     : selectedDefaults;
-  const result = runGlobalRuntimeSetup({
+  const transaction = runTransactionalProfileProjection(profile, {
     target,
     installCli: rawOpts.cli !== false,
     syncSkill: rawOpts.syncSkill !== false,
@@ -257,8 +295,9 @@ async function runGlobalRuntimeBootstrap(
     codegraph,
     brainRoot: rawOpts.brainRoot,
     profile,
-  });
-  const installed = result.exitCode === 0 ? applyInstallProfile(profile).state : null;
+  }, (transaction) => applyInstallProfile(profile, process.env, new Date(), transaction).state);
+  const result = transaction.result;
+  const installed = transaction.state;
   if (rawOpts.json === true) {
     console.log(JSON.stringify({ ...result, profile_plan: profilePlan, installed_state: installed }, null, 2));
   } else {
@@ -530,7 +569,7 @@ export function buildProgram(): Command {
         const current = readInstalledProfile();
         if (!current?.previous) throw new Error('no previous install profile transaction to roll back');
         const profile = current.previous.profile;
-        const result = runGlobalRuntimeSetup({
+        const transaction = runTransactionalProfileProjection(profile, {
           target,
           installCli: false,
           syncSkill: true,
@@ -538,8 +577,9 @@ export function buildProgram(): Command {
           externalSkills: profileEnablesExternalSkills(profile),
           codegraph: profileEnablesCodegraph(profile),
           profile,
-        });
-        const restored = result.exitCode === 0 ? rollbackInstallProfile() : null;
+        }, (transaction) => rollbackInstallProfile(process.env, transaction));
+        const result = transaction.result;
+        const restored = transaction.state;
         if (rawOpts.json === true) {
           console.log(JSON.stringify({ ...result, restored_state: restored }, null, 2));
         } else {

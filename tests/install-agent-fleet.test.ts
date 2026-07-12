@@ -167,7 +167,7 @@ describe("install-agent-fleet", () => {
       writeFileSync(target, locallyEdited);
 
       const second = runInstaller(home, FLEET_SOURCE_DIR);
-      expect(second.status).toBe(0);
+      expect(second.status).not.toBe(0);
       expect(second.stdout).toContain("[fleet] codex/gatekeeper.toml: drift");
       expect(readFileSync(target, "utf-8")).toBe(locallyEdited);
 
@@ -177,14 +177,14 @@ describe("install-agent-fleet", () => {
         .replace("\n---\n", "\nmetadata:\n  name: fast-worker\n---\n")}\n# preserve-me\n`;
       writeFileSync(claudeTarget, quotedIdentityEdit);
       const third = runInstaller(home, FLEET_SOURCE_DIR);
-      expect(third.status).toBe(0);
+      expect(third.status).not.toBe(0);
       expect(third.stdout).toContain("[fleet] claude/gatekeeper.md: drift");
       expect(readFileSync(claudeTarget, "utf-8")).toBe(quotedIdentityEdit);
 
       const ambiguousYamlIdentityEdit = quotedIdentityEdit.replace('name: "gatekeeper" # local style', "name: null");
       writeFileSync(claudeTarget, ambiguousYamlIdentityEdit);
       const fourth = runInstaller(home, FLEET_SOURCE_DIR);
-      expect(fourth.status).toBe(0);
+      expect(fourth.status).not.toBe(0);
       expect(fourth.stdout).toContain("[fleet] claude/gatekeeper.md: drift");
       expect(readFileSync(claudeTarget, "utf-8")).toBe(ambiguousYamlIdentityEdit);
 
@@ -194,7 +194,7 @@ describe("install-agent-fleet", () => {
       );
       writeFileSync(claudeTarget, duplicateYamlIdentityEdit);
       const fifth = runInstaller(home, FLEET_SOURCE_DIR);
-      expect(fifth.status).toBe(0);
+      expect(fifth.status).not.toBe(0);
       expect(fifth.stdout).toContain("[fleet] claude/gatekeeper.md: drift");
       expect(readFileSync(claudeTarget, "utf-8")).toBe(duplicateYamlIdentityEdit);
     } finally {
@@ -309,7 +309,7 @@ describe("install-agent-fleet", () => {
     }
   });
 
-  test("a corrected source repairs stale installed targets with mismatched role identities", () => {
+  test("a corrected source refuses stale installed targets with mismatched role identities", () => {
     const { root, home } = setupFakeHome("install-agent-fleet-stale-role-identity");
     try {
       const installedClaudeDir = join(home, ".claude/agents");
@@ -332,14 +332,11 @@ describe("install-agent-fleet", () => {
       );
 
       const res = runInstaller(home, FLEET_SOURCE_DIR);
-      expect(res.status).toBe(0);
-      expect(res.stdout).toContain("[fleet] claude/gatekeeper.md: installed");
-      expect(res.stdout).toContain("[fleet] codex/gatekeeper.toml: installed");
-      expect(readFileSync(join(installedClaudeDir, "gatekeeper.md"), "utf-8")).toContain("name: gatekeeper");
-      const repairedCodex = readFileSync(join(installedCodexDir, "gatekeeper.toml"), "utf-8");
-      expect(repairedCodex).toContain('name = "gatekeeper"');
-      expect(repairedCodex).toContain('sandbox_mode = "read-only"');
-      expect(repairedCodex).not.toContain('name = "fast-worker"');
+      expect(res.status).not.toBe(0);
+      expect(res.stdout).toContain("[fleet] claude/gatekeeper.md: drift");
+      expect(res.stdout).toContain("[fleet] codex/gatekeeper.toml: drift");
+      expect(readFileSync(join(installedClaudeDir, "gatekeeper.md"), "utf-8")).toBe(mismatchedClaude);
+      expect(readFileSync(join(installedCodexDir, "gatekeeper.toml"), "utf-8")).toContain('"fast-worker"');
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -480,7 +477,7 @@ describe("install-agent-fleet", () => {
     const source = readFileSync(SCRIPT, "utf-8");
     expect(source).toContain("install-agent-fleet.sh requires bun");
     expect(source).toContain('MIN_BUN_VERSION="1.1.35"');
-    expect(source).toContain("Bun.TOML.parse(content)");
+    expect(source).toContain("Bun.TOML.parse(");
     expect(source).not.toContain("install-agent-fleet.sh requires node or bun");
     expect(source).toContain('AGENT_FLEET_SOURCE_DIR="$package_root/agents/fleet"');
     expect(source).not.toContain("REPO_HARNESS_FLEET_SOURCE_DIR");

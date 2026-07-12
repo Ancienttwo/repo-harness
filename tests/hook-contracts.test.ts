@@ -146,6 +146,8 @@ describe("Hook contracts", () => {
     expect(script).toContain("[CrossReview]");
     expect(script).toContain("prompt_strict_workflow && review_profile=\"strict\"");
     expect(script).toContain("if prompt_strict_workflow; then");
+    expect(script).toContain("hook_circuit_record cross-model-consult CrossModelLimit");
+    expect(script).toContain('if prompt_strict_workflow; then risk="true"; consult_profile="strict"; fi');
     expect(script).not.toContain("📋");
     expect(script).not.toContain("🧠");
     expect(script).not.toContain("📎");

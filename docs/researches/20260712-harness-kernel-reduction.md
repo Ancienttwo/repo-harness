@@ -68,8 +68,8 @@ Strict (five artifacts), which accounts for all ten Adaptive artifacts.
 
 This matrix proves behavior and measures cost; it does **not** prove a cost win.
 On this provider/sample, No Harness was fastest and smallest. Adaptive Lite used
-fewer input+output tokens than Strict but more model calls, duration, hooks, and
-hook time; it is not a general performance win. The result must remain visible
+1,169 more input+output tokens than Strict and also more model calls, duration,
+hooks, and hook time; it is not a performance win. The result must remain visible
 rather than being normalized away: the next optimization target is hook cold
 path and Standard/Strict artifact construction cost, not weaker safety gates.
 

@@ -319,7 +319,7 @@ describe('install command (Phase 1B)', () => {
     });
   });
 
-  test('CLI install without --location runs the full runtime bootstrap path', () => {
+  test('CLI install without required profile components fails closed and compensates adapters', () => {
     withTempHome((home) => {
       const install = spawnSync(
         'bun',
@@ -339,10 +339,10 @@ describe('install command (Phase 1B)', () => {
           encoding: 'utf-8',
         },
       );
-      expect(install.status).toBe(0);
-      expect(install.stdout).toContain('[runtime] ok: install host adapters');
-      expect(install.stdout).toContain('[codex] created');
-      expect(fs.existsSync(path.join(home, '.codex/hooks.json'))).toBe(true);
+      expect(install.status).not.toBe(0);
+      expect(`${install.stdout}\n${install.stderr}`).toContain('install profile projection is incomplete');
+      expect(fs.existsSync(path.join(home, '.codex/hooks.json'))).toBe(false);
+      expect(fs.existsSync(path.join(home, '.repo-harness/install-state.json'))).toBe(false);
     });
   });
 });

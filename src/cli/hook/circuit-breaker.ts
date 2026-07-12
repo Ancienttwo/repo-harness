@@ -1,5 +1,13 @@
 import { createHash, randomUUID } from 'crypto';
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs';
+import {
+  closeSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from 'fs';
 import { dirname, join } from 'path';
 import type { WorkflowProfile } from './workflow-profile';
 
@@ -40,6 +48,17 @@ interface PersistedCircuitState {
 }
 
 const STATE_PATH = '.ai/harness/state/circuit-breaker.json';
+const LOCK_PATH = `${STATE_PATH}.lock`;
+const LOCK_TIMEOUT_MS = 2_000;
+const LOCK_POLL_MS = 5;
+const LOCK_WAIT = new Int32Array(new SharedArrayBuffer(4));
+
+interface CircuitLockOwner {
+  protocol: 1;
+  pid: number;
+  token: string;
+  acquired_at: string;
+}
 
 export function circuitLimit(attempt: CircuitAttempt): number {
   switch (attempt.kind) {
@@ -77,6 +96,83 @@ function writeState(repoRoot: string, state: PersistedCircuitState): void {
   renameSync(temp, target);
 }
 
+function readLockOwner(lockPath: string): CircuitLockOwner | null {
+  try {
+    const parsed = JSON.parse(readFileSync(lockPath, 'utf-8')) as Partial<CircuitLockOwner>;
+    return parsed.protocol === 1
+      && Number.isInteger(parsed.pid)
+      && (parsed.pid ?? 0) > 0
+      && typeof parsed.token === 'string'
+      && parsed.token.length > 0
+      && typeof parsed.acquired_at === 'string'
+      ? parsed as CircuitLockOwner
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function processIsAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== 'ESRCH';
+  }
+}
+
+function acquireLock(repoRoot: string): { lockPath: string; token: string } {
+  const lockPath = join(repoRoot, LOCK_PATH);
+  mkdirSync(dirname(lockPath), { recursive: true });
+  const token = randomUUID();
+  const owner: CircuitLockOwner = {
+    protocol: 1,
+    pid: process.pid,
+    token,
+    acquired_at: new Date().toISOString(),
+  };
+  const deadline = Date.now() + LOCK_TIMEOUT_MS;
+
+  while (true) {
+    let descriptor: number | null = null;
+    try {
+      descriptor = openSync(lockPath, 'wx', 0o600);
+      writeFileSync(descriptor, `${JSON.stringify(owner)}\n`);
+      closeSync(descriptor);
+      return { lockPath, token };
+    } catch (error) {
+      if (descriptor !== null) {
+        try { closeSync(descriptor); } catch { /* descriptor already closed */ }
+        try { unlinkSync(lockPath); } catch { /* another process will observe/recover it */ }
+      }
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+    }
+
+    const observed = readLockOwner(lockPath);
+    if (Date.now() >= deadline) {
+      // Never reclaim a stale-looking wx lock in-process. With only portable
+      // filesystem primitives, read/verify/unlink has a TOCTOU window where a
+      // concurrent reclaimer can delete a newly acquired lock. A crashed owner
+      // therefore fails closed and requires explicit operator cleanup.
+      const ownerDetail = observed
+        ? `${processIsAlive(observed.pid) ? 'live' : 'stale'} owner pid ${observed.pid}`
+        : 'unresolved owner';
+      throw new Error(
+        `circuit breaker lock contention (${ownerDetail}); attempt denied after ${LOCK_TIMEOUT_MS}ms`,
+      );
+    }
+    Atomics.wait(LOCK_WAIT, 0, 0, LOCK_POLL_MS);
+  }
+}
+
+function releaseLock(lockPath: string, token: string): void {
+  const owner = readLockOwner(lockPath);
+  if (!owner || owner.token !== token || owner.pid !== process.pid) {
+    throw new Error('circuit breaker lock ownership changed before release; attempt denied');
+  }
+  unlinkSync(lockPath);
+}
+
 export function recordCircuitAttempt(
   repoRoot: string,
   attempt: CircuitAttempt,
@@ -97,17 +193,23 @@ export function recordCircuitAttempt(
     if (typeof value !== 'string' || !value.trim()) throw new Error(`${field} is required`);
   }
   const key = keyFor(attempt);
-  const previous = readState(repoRoot);
   const limit = circuitLimit(attempt);
-  const repeatCount = Math.min((previous?.entries[key]?.count ?? 0) + 1, limit + 1);
-  writeState(repoRoot, {
-    protocol: 1,
-    entries: {
-      ...(previous?.entries ?? {}),
-      [key]: { count: repeatCount, token: randomUUID() },
-    },
-    updated_at: now.toISOString(),
-  });
+  const lock = acquireLock(repoRoot);
+  let repeatCount: number;
+  try {
+    const previous = readState(repoRoot);
+    repeatCount = Math.min((previous?.entries[key]?.count ?? 0) + 1, limit + 1);
+    writeState(repoRoot, {
+      protocol: 1,
+      entries: {
+        ...(previous?.entries ?? {}),
+        [key]: { count: repeatCount, token: randomUUID() },
+      },
+      updated_at: now.toISOString(),
+    });
+  } finally {
+    releaseLock(lock.lockPath, lock.token);
+  }
   const allowed = repeatCount <= limit;
   const strongBoundary = attempt.strongBoundary === true;
   return {

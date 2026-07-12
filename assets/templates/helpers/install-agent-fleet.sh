@@ -255,36 +255,6 @@ function compareAndWrite(targetPath, content) {
   return "drift";
 }
 
-function readTomlRootRoleName(content) {
-  try {
-    const parsed = Bun.TOML.parse(content);
-    return typeof parsed.name === "string" && MANAGED_AGENTS.includes(parsed.name) ? parsed.name : undefined;
-  } catch (_error) {
-    return undefined;
-  }
-}
-
-function readInstalledRoleName(targetPath, host) {
-  let content;
-  try {
-    content = fs.readFileSync(targetPath, "utf8");
-  } catch (_error) {
-    return undefined;
-  }
-  if (host === "claude") {
-    const parsedName = parseFrontmatter(content)?.name;
-    return typeof parsedName === "string" && MANAGED_AGENTS.includes(parsedName) ? parsedName : undefined;
-  }
-  return readTomlRootRoleName(content);
-}
-
-function deactivateMismatchedTarget(targetPath, host, expectedAgent) {
-  const installedRoleName = readInstalledRoleName(targetPath, host);
-  if (!installedRoleName || installedRoleName === expectedAgent) return false;
-  fs.rmSync(targetPath, { force: true });
-  return true;
-}
-
 const results = [];
 const prepared = [];
 
@@ -315,16 +285,11 @@ if (prepared.length !== MANAGED_AGENTS.length) {
 for (const { agent, source, parsed, mapped } of prepared) {
   const claudeTarget = path.join(CLAUDE_TARGET_DIR, `${agent}.md`);
   const codexTarget = path.join(CODEX_TARGET_DIR, `${agent}.toml`);
-  const claudeDeactivated = deactivateMismatchedTarget(claudeTarget, "claude", agent);
-  const codexDeactivated = deactivateMismatchedTarget(codexTarget, "codex", agent);
-  if (claudeDeactivated || codexDeactivated) {
-    results.push({ host: "fleet", file: agent, status: "stale-identity-deactivated" });
-  }
-
   const claudeStatus = compareAndWrite(claudeTarget, source);
   results.push({ host: "claude", file: `${agent}.md`, status: claudeStatus });
 
   const tomlContent = generateToml(agent, parsed, mapped);
+  Bun.TOML.parse(tomlContent);
   const codexStatus = compareAndWrite(codexTarget, tomlContent);
   results.push({ host: "codex", file: `${agent}.toml`, status: codexStatus });
 }
@@ -333,5 +298,5 @@ for (const entry of results) {
   console.log(`[fleet] ${entry.host}/${entry.file}: ${entry.status}`);
 }
 
-process.exit(0);
+process.exit(results.some((entry) => entry.status === "drift") ? 1 : 0);
 NODE_EOF

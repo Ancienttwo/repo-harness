@@ -1,8 +1,16 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { spawnSync } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import { circuitLimit, recordCircuitAttempt, type CircuitAttempt } from '../src/cli/hook/circuit-breaker';
 
 function attempt(overrides: Partial<CircuitAttempt> = {}): CircuitAttempt {
@@ -61,6 +69,93 @@ describe('workflow circuit breakers', () => {
     expect(decision.allowed).toBe(false);
     expect(decision.explicit_override_command).toBeNull();
     expect(decision.required_action).toContain('security boundary');
+  }));
+
+  test('serializes concurrent process attempts without losing cap increments', async () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'repo-harness-circuit-concurrent-'));
+    try {
+      const processCount = 12;
+      const readyDir = join(cwd, 'ready');
+      const goPath = join(cwd, 'go');
+      const modulePath = join(import.meta.dir, '../src/cli/hook/circuit-breaker.ts');
+      mkdirSync(readyDir, { recursive: true });
+
+      const runs = Array.from({ length: processCount }, (_, index) => new Promise<{
+        status: number | null;
+        stdout: string;
+        stderr: string;
+      }>((resolve, reject) => {
+        const script = [
+          `import { existsSync, writeFileSync } from ${JSON.stringify('fs')};`,
+          `import { recordCircuitAttempt } from ${JSON.stringify(modulePath)};`,
+          `writeFileSync(${JSON.stringify(join(readyDir, String(index)))}, '');`,
+          'const wait = new Int32Array(new SharedArrayBuffer(4));',
+          `while (!existsSync(${JSON.stringify(goPath)})) Atomics.wait(wait, 0, 0, 2);`,
+          `const decision = recordCircuitAttempt(${JSON.stringify(cwd)}, ${JSON.stringify(attempt())});`,
+          'process.stdout.write(JSON.stringify(decision));',
+        ].join('\n');
+        const child = spawn(process.execPath, ['-e', script], { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+        let stdout = '';
+        let stderr = '';
+        child.stdout.setEncoding('utf-8');
+        child.stderr.setEncoding('utf-8');
+        child.stdout.on('data', (chunk: string) => { stdout += chunk; });
+        child.stderr.on('data', (chunk: string) => { stderr += chunk; });
+        child.once('error', reject);
+        child.once('close', (status) => resolve({ status, stdout, stderr }));
+      }));
+
+      const readyDeadline = Date.now() + 10_000;
+      while (readdirSync(readyDir).length < processCount && Date.now() < readyDeadline) {
+        await Bun.sleep(10);
+      }
+      const readyCount = readdirSync(readyDir).length;
+      writeFileSync(goPath, 'go\n');
+      const results = await Promise.all(runs);
+
+      expect(readyCount).toBe(processCount);
+      for (const result of results) {
+        expect(result.status, result.stderr).toBe(0);
+      }
+      const decisions = results.map((result) => JSON.parse(result.stdout) as {
+        allowed: boolean;
+        repeat_count: number;
+        limit: number;
+      });
+      expect(decisions.filter((decision) => decision.allowed)).toHaveLength(2);
+      expect(decisions.filter((decision) => !decision.allowed)).toHaveLength(processCount - 2);
+      expect(decisions.every((decision) => decision.limit === 2)).toBe(true);
+      expect(decisions.filter((decision) => decision.repeat_count === 1)).toHaveLength(1);
+      expect(decisions.filter((decision) => decision.repeat_count === 2)).toHaveLength(1);
+      expect(decisions.filter((decision) => decision.repeat_count === 3)).toHaveLength(processCount - 2);
+      expect(existsSync(join(cwd, '.ai/harness/state/circuit-breaker.json.lock'))).toBe(false);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test('never reclaims stale or live owner locks without an atomic ownership primitive', () => withRepo((cwd) => {
+    const stateDir = join(cwd, '.ai/harness/state');
+    const lockPath = join(stateDir, 'circuit-breaker.json.lock');
+    mkdirSync(stateDir, { recursive: true });
+    writeFileSync(lockPath, JSON.stringify({
+      protocol: 1,
+      pid: 2_147_483_647,
+      token: 'dead-owner',
+      acquired_at: new Date().toISOString(),
+    }));
+    expect(() => recordCircuitAttempt(cwd, attempt())).toThrow(/lock contention \(stale owner pid .*attempt denied/);
+    expect(existsSync(lockPath)).toBe(true);
+
+    rmSync(lockPath);
+    writeFileSync(lockPath, JSON.stringify({
+      protocol: 1,
+      pid: process.pid,
+      token: 'live-owner',
+      acquired_at: new Date().toISOString(),
+    }));
+    expect(() => recordCircuitAttempt(cwd, attempt())).toThrow(/lock contention \(live owner pid .*attempt denied/);
+    expect(existsSync(lockPath)).toBe(true);
   }));
 
   test('real hook callers block guard, subagent, and repair attempts over their limits', () => withRepo((cwd) => {

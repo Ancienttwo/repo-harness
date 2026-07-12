@@ -343,7 +343,12 @@ export function syncCrossReviewSkills(
       continue;
     }
     if (existsSync(dest)) {
-      rmSync(dest, { recursive: true, force: true });
+      steps.push({
+        step,
+        status: "failed",
+        detail: `refusing to overwrite unowned or modified skill at ${dest}`,
+      });
+      continue;
     }
     cpSync(source, dest, { recursive: true });
     steps.push({ step, status: "ok", detail: `synced ${dest}` });

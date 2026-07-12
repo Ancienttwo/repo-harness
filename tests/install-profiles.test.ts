@@ -5,35 +5,76 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import {
   applyInstallProfile,
+  beginInstallHostTransaction,
+  commitInstallHostTransaction,
+  installProfileHostMutationPaths,
   installedProfileStatus,
   planInstallProfile,
   profileEnablesCodegraph,
+  prepareInstallProfileSwitch,
   readInstalledProfile,
+  rollbackInstallHostTransaction,
   rollbackInstallProfile,
 } from '../src/cli/installer/install-profile';
+import { buildManagedHooks } from '../src/cli/installer/managed-entries';
 
 const ROOT = join(import.meta.dir, '..');
 const CLI = join(ROOT, 'src/cli/index.ts');
 
 function withHome(run: (env: NodeJS.ProcessEnv) => void): void {
   const home = mkdtempSync(join(tmpdir(), 'repo-harness-profile-'));
-  try { run({ ...process.env, HOME: home }); } finally { rmSync(home, { recursive: true, force: true }); }
+  try { run({ ...process.env, HOME: home, BUN_INSTALL: join(home, '.bun') }); } finally { rmSync(home, { recursive: true, force: true }); }
 }
 
-function writeManagedHostSurfaces(env: NodeJS.ProcessEnv): { canonical: string; source: string } {
+function writePath(path: string, content = ''): void {
+  mkdirSync(join(path, '..'), { recursive: true });
+  writeFileSync(path, content);
+}
+
+function writeManagedHostSurfaces(
+  env: NodeJS.ProcessEnv,
+  profile: 'minimal' | 'standard' | 'product-planning' | 'strict' = 'minimal',
+): { canonical: string; source: string } {
   const home = env.HOME!;
   const source = join(home, 'package-source');
   const canonical = join(home, '.codex', 'skills', 'repo-harness');
   mkdirSync(source, { recursive: true });
   mkdirSync(join(home, '.codex', 'skills'), { recursive: true });
   mkdirSync(join(home, '.codex'), { recursive: true });
-  writeFileSync(join(source, 'SKILL.md'), '# managed\n');
+  writePath(join(source, 'SKILL.md'), '# managed\n');
+  for (const relative of [
+    'src/cli/commands/state.ts',
+    'assets/hooks/pre-edit-guard.sh',
+    'scripts/contract-worktree.sh',
+    'assets/skill-commands/repo-harness-handoff/SKILL.md',
+  ]) writePath(join(source, relative), '# managed\n');
+  if (profile !== 'minimal') {
+    writePath(join(source, 'src/cli/hook/workflow-profile.ts'), '// managed\n');
+    writePath(join(source, 'src/cli/tools/codegraph.ts'), '// managed\n');
+  }
+  if (profile === 'product-planning') {
+    for (const command of ['prd', 'sprint', 'goal']) {
+      writePath(join(source, `assets/skill-commands/repo-harness-${command}/SKILL.md`), '# managed\n');
+    }
+    for (const skill of ['think', 'hunt', 'check', 'health', 'mermaid']) {
+      writePath(join(home, '.codex', 'skills', skill, 'SKILL.md'), '# external\n');
+    }
+  }
+  if (profile === 'strict') {
+    writePath(join(source, 'scripts/contract-run.ts'), '// managed\n');
+    writePath(join(source, 'scripts/verify-sprint.sh'), '# managed\n');
+    writePath(join(source, 'scripts/ship-worktrees.sh'), '# managed\n');
+    writePath(join(home, '.bun', 'bin', 'codegraph'), '#!/bin/sh\n');
+    for (const agent of ['explorer', 'deep-reasoner', 'fast-worker', 'gatekeeper', 'root-cause-prover', 'harness-evaluator']) {
+      writePath(join(home, '.codex', 'agents', `${agent}.toml`), '# managed\n');
+    }
+    writePath(join(home, '.codex', 'skills', 'claude-review', 'SKILL.md'), '# external\n');
+  }
+  writePath(join(home, '.bun', 'bin', 'repo-harness'), '#!/bin/sh\n');
   symlinkSync(source, canonical);
   writeFileSync(join(home, '.codex', 'hooks.json'), JSON.stringify({
     theme: 'user-owned',
-    hooks: {
-      SessionStart: [{ hooks: [{ type: 'command', command: ': repo-harness-managed-hook-v1; repo-harness hook', timeout: 30 }] }],
-    },
+    hooks: buildManagedHooks('codex', profile),
   }));
   return { canonical, source };
 }
@@ -47,6 +88,7 @@ describe('install profiles', () => {
   }));
 
   test('apply is idempotent', () => withHome((env) => {
+    writeManagedHostSurfaces(env, 'standard');
     const first = applyInstallProfile('standard', env, new Date('2026-01-01T00:00:00Z'));
     const second = applyInstallProfile('standard', env, new Date('2026-01-02T00:00:00Z'));
     expect(second.plan.install).toEqual([]);
@@ -56,6 +98,7 @@ describe('install profiles', () => {
   }));
 
   test('switch lists removals and rollback restores the previous profile', () => withHome((env) => {
+    writeManagedHostSurfaces(env, 'strict');
     applyInstallProfile('strict', env, new Date('2026-01-01T00:00:00Z'));
     const switched = applyInstallProfile('minimal', env, new Date('2026-01-02T00:00:00Z'));
     expect(switched.plan.remove).toContain('agent-fleet');
@@ -64,7 +107,7 @@ describe('install profiles', () => {
   }));
 
   test('state is machine readable and rejects implicit legacy defaults', () => withHome((env) => {
-    writeManagedHostSurfaces(env);
+    writeManagedHostSurfaces(env, 'product-planning');
     const applied = applyInstallProfile('product-planning', env);
     const persisted = JSON.parse(readFileSync(applied.plan.state_path, 'utf-8'));
     expect(persisted.profile).toBe('product-planning');
@@ -73,25 +116,27 @@ describe('install profiles', () => {
     expect(persisted.ownership_manifest.every((entry: { authority: string; path: string; type: string; content_hash: string | null }) => (
       entry.authority === 'repo-harness-install-transaction'
       && entry.path.startsWith(env.HOME!)
-      && ['symlink', 'managed-file'].includes(entry.type)
-      && (entry.type !== 'managed-file' || entry.content_hash?.startsWith('sha256:') === true)
+      && ['symlink', 'managed-file', 'directory-copy'].includes(entry.type)
+      && (entry.type === 'symlink' || entry.content_hash?.startsWith('sha256:') === true)
     ))).toBe(true);
-    expect(installedProfileStatus(applied.state).drift.status).toBe('consistent');
+    expect(persisted.ownership_manifest.some((entry: { path: string }) => entry.path === join(env.HOME!, '.bun', 'bin', 'repo-harness'))).toBe(false);
+    expect(persisted.ownership_manifest.some((entry: { path: string }) => entry.path === join(env.HOME!, '.codex', 'skills', 'repo-harness'))).toBe(false);
+    expect(installedProfileStatus(applied.state, env).drift.status).toBe('consistent');
   }));
 
   test('status detects actual managed host surface drift', () => withHome((env) => {
     const { canonical } = writeManagedHostSurfaces(env);
     const applied = applyInstallProfile('minimal', env);
-    expect(installedProfileStatus(applied.state).drift.status).toBe('consistent');
+    expect(installedProfileStatus(applied.state, env).drift.status).toBe('consistent');
 
     rmSync(canonical);
     const foreign = join(env.HOME!, 'foreign-source');
     mkdirSync(foreign);
     symlinkSync(foreign, canonical);
 
-    const drift = installedProfileStatus(applied.state).drift;
+    const drift = installedProfileStatus(applied.state, env).drift;
     expect(drift.status).toBe('drift');
-    expect(drift.surface_drift).toContain(canonical);
+    expect(drift.missing_components).toContain('effective-state');
   }));
 
   test('managed adapter ownership hashes only package entries and preserves sibling edits', () => withHome((env) => {
@@ -101,21 +146,28 @@ describe('install profiles', () => {
     const config = JSON.parse(readFileSync(adapter, 'utf-8'));
     config.theme = 'changed-by-user';
     writeFileSync(adapter, JSON.stringify(config));
-    expect(installedProfileStatus(applied.state).drift.status).toBe('consistent');
+    expect(installedProfileStatus(applied.state, env).drift.status).toBe('consistent');
 
     config.hooks.SessionStart[0].hooks[0].command = ': repo-harness-managed-hook-v1; changed';
     writeFileSync(adapter, JSON.stringify(config));
-    expect(installedProfileStatus(applied.state).drift.surface_drift).toContain(adapter);
+    expect(installedProfileStatus(applied.state, env).drift.surface_drift).toContain(adapter);
   }));
 
-  test('profile state without real managed surfaces reports ownership gaps', () => withHome((env) => {
+  test('adapter probe requires the complete profile route projection', () => withHome((env) => {
+    writeManagedHostSurfaces(env, 'minimal');
     const applied = applyInstallProfile('minimal', env);
-    expect(applied.state.ownership_manifest).toEqual([]);
-    expect(installedProfileStatus(applied.state).drift).toMatchObject({
-      status: 'drift',
-      ownership_gaps: applied.state.components,
-    });
-    expect(existsSync(applied.plan.state_path)).toBe(true);
+    const adapter = join(env.HOME!, '.codex', 'hooks.json');
+    const config = JSON.parse(readFileSync(adapter, 'utf-8'));
+    delete config.hooks.PreToolUse;
+    writeFileSync(adapter, JSON.stringify(config));
+    const status = installedProfileStatus(applied.state, env);
+    expect(status.component_probes['host-adapters'].status).toBe('missing');
+    expect(status.drift.missing_components).toContain('host-adapters');
+  }));
+
+  test('profile state is not committed without a complete host projection', () => withHome((env) => {
+    expect(() => applyInstallProfile('minimal', env)).toThrow('install profile projection is incomplete');
+    expect(existsSync(join(env.HOME!, '.repo-harness', 'install-state.json'))).toBe(false);
   }));
 
   test('legacy component-only ownership migrates to no ownership claim', () => withHome((env) => {
@@ -138,7 +190,193 @@ describe('install profiles', () => {
     const migrated = readInstalledProfile(env)!;
     expect(migrated.profile).toBe('minimal');
     expect(migrated.ownership_manifest).toEqual([]);
-    expect(installedProfileStatus(migrated).drift.status).toBe('drift');
+    expect(installedProfileStatus(migrated, env).drift.status).toBe('drift');
+  }));
+
+  test('component probes do not infer strict capabilities from the canonical skill alone', () => withHome((env) => {
+    writeManagedHostSurfaces(env, 'standard');
+    const standard = applyInstallProfile('standard', env).state;
+    const forged = { ...standard, profile: 'strict' as const, components: [
+      ...standard.components,
+      'agent-fleet' as const,
+      'verifier' as const,
+      'cross-model-acceptance' as const,
+      'release-deployment-gates' as const,
+    ] };
+    const status = installedProfileStatus(forged, env);
+    expect(status.component_probes['agent-fleet'].status).toBe('missing');
+    expect(status.component_probes['verifier'].status).toBe('missing');
+    expect(status.component_probes['cross-model-acceptance'].status).toBe('missing');
+    expect(status.component_probes['release-deployment-gates'].status).toBe('missing');
+    expect(status.drift.status).toBe('drift');
+  }));
+
+  test('planning probe does not treat staging-only skills as host discovery', () => withHome((env) => {
+    writeManagedHostSurfaces(env, 'standard');
+    const standard = applyInstallProfile('standard', env).state;
+    for (const skill of ['think', 'hunt', 'check', 'health', 'mermaid']) {
+      writePath(join(env.HOME!, '.agents', 'skills', skill, 'SKILL.md'), '# staging only\n');
+    }
+    const status = installedProfileStatus({
+      ...standard,
+      profile: 'product-planning',
+      components: [...standard.components, 'planning-integrations'],
+    }, env);
+    expect(status.component_probes['planning-integrations'].status).toBe('missing');
+    expect(status.drift.missing_components).toContain('planning-integrations');
+  }));
+
+  test('host transaction restores prior bytes and removes later mutations', () => withHome((env) => {
+    writeManagedHostSurfaces(env);
+    const adapter = join(env.HOME!, '.codex', 'hooks.json');
+    const before = readFileSync(adapter);
+    const statePath = join(env.HOME!, '.repo-harness', 'install-state.json');
+    const lockPath = join(env.HOME!, '.agents', '.skill-lock.json');
+    writePath(statePath, '{"previous":"state"}\n');
+    writePath(lockPath, '{"previous":"lock"}\n');
+    const transaction = beginInstallHostTransaction(installProfileHostMutationPaths(env), env);
+    writeFileSync(adapter, '{"partially":"mutated"}\n');
+    writeFileSync(statePath, '{"next":"state"}\n');
+    writeFileSync(lockPath, '{"next":"lock"}\n');
+    const created = join(env.HOME!, '.codex', 'skills', 'repo-harness-plan');
+    mkdirSync(created, { recursive: true });
+    writeFileSync(join(created, 'SKILL.md'), '# partial\n');
+    rollbackInstallHostTransaction(transaction);
+    expect(readFileSync(adapter)).toEqual(before);
+    expect(readFileSync(statePath, 'utf-8')).toBe('{"previous":"state"}\n');
+    expect(readFileSync(lockPath, 'utf-8')).toBe('{"previous":"lock"}\n');
+    expect(existsSync(created)).toBe(false);
+  }));
+
+  test('failed install compensates earlier host writes and never commits state', () => withHome((env) => {
+    const bin = join(env.HOME!, 'fake-bin');
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(join(bin, 'bun'), '#!/bin/sh\nif [ "$1" = "--version" ]; then echo 1.2.0; exit 0; fi\nexit 0\n', { mode: 0o755 });
+    writeFileSync(join(bin, 'bunx'), '#!/bin/sh\nmkdir -p "$HOME/.agents"\nprintf "{\\"partial\\":true}\\n" > "$HOME/.agents/.skill-lock.json"\nexit 19\n', { mode: 0o755 });
+    const adapter = join(env.HOME!, '.codex', 'hooks.json');
+    mkdirSync(join(env.HOME!, '.codex'), { recursive: true });
+    const before = '{"theme":"user-owned"}\n';
+    writeFileSync(adapter, before);
+    const failed = spawnSync(process.execPath, [CLI, 'install', '--profile', 'product-planning', '--target', 'codex', '--json'], {
+      cwd: ROOT,
+      env: {
+        ...env,
+        PATH: `${bin}:/bin:/usr/bin`,
+        BUN_INSTALL: join(env.HOME!, '.bun'),
+        REPO_HARNESS_BUN_EXECUTABLE: join(bin, 'bun'),
+      },
+      encoding: 'utf-8',
+    });
+    expect(failed.status).not.toBe(0);
+    expect(readFileSync(adapter, 'utf-8')).toBe(before);
+    expect(existsSync(join(env.HOME!, '.codex', 'skills', 'repo-harness'))).toBe(false);
+    expect(existsSync(join(env.HOME!, '.agents', '.skill-lock.json'))).toBe(false);
+    expect(readInstalledProfile(env)).toBeNull();
+  }));
+
+  test('committing a host transaction only discards its backups', () => withHome((env) => {
+    const path = join(env.HOME!, 'surface');
+    writeFileSync(path, 'before');
+    const transaction = beginInstallHostTransaction([path], env);
+    writeFileSync(path, 'after');
+    commitInstallHostTransaction(transaction);
+    expect(readFileSync(path, 'utf-8')).toBe('after');
+    expect(existsSync(transaction.backup_root)).toBe(false);
+  }));
+
+  test('profile switch removes only transaction-owned optional surfaces and skill lock entries', () => withHome((env) => {
+    const first = beginInstallHostTransaction(installProfileHostMutationPaths(env), env);
+    writeManagedHostSurfaces(env, 'strict');
+    const codexConfig = join(env.HOME!, '.codex', 'config.toml');
+    writePath(codexConfig, 'default_mode_request_user_input = true\n\n[mcp_servers.codegraph]\ncommand = "codegraph"\nargs = ["mcp"]\n');
+    const lock = join(env.HOME!, '.agents', '.skill-lock.json');
+    writePath(join(env.HOME!, '.agents', 'skills', 'claude-review', 'SKILL.md'), '# owned staging skill\n');
+    writePath(lock, `${JSON.stringify({ version: 3, skills: {
+      'claude-review': { source: 'repo-harness' },
+      'user-skill': { source: 'user/repo' },
+    } }, null, 2)}\n`);
+    const strict = applyInstallProfile('strict', env, new Date('2026-01-01T00:00:00Z'), first);
+    commitInstallHostTransaction(first);
+    expect(strict.state.ownership_manifest.some(({ components }) => components.includes('agent-fleet'))).toBe(true);
+    expect(strict.state.ownership_manifest.some(({ components }) => components.includes('cross-model-acceptance'))).toBe(true);
+    expect(strict.state.ownership_manifest.some(({ managed_marker }) => managed_marker === 'codegraph-config-projection')).toBe(true);
+
+    const second = beginInstallHostTransaction(installProfileHostMutationPaths(env), env);
+    prepareInstallProfileSwitch('minimal', env);
+    writeFileSync(join(env.HOME!, '.codex', 'hooks.json'), JSON.stringify({
+      hooks: buildManagedHooks('codex', 'minimal'),
+    }));
+    const minimal = applyInstallProfile('minimal', env, new Date('2026-01-02T00:00:00Z'), second);
+    commitInstallHostTransaction(second);
+
+    expect(existsSync(join(env.HOME!, '.codex', 'agents', 'explorer.toml'))).toBe(false);
+    expect(existsSync(join(env.HOME!, '.codex', 'skills', 'claude-review'))).toBe(false);
+    expect(readFileSync(codexConfig, 'utf-8')).toContain('default_mode_request_user_input = true');
+    expect(readFileSync(codexConfig, 'utf-8')).not.toContain('[mcp_servers.codegraph]');
+    const lockState = JSON.parse(readFileSync(lock, 'utf-8'));
+    expect(lockState.skills['claude-review']).toBeUndefined();
+    expect(lockState.skills['user-skill']).toEqual({ source: 'user/repo' });
+    expect(installedProfileStatus(minimal.state, env).drift.status).toBe('consistent');
+  }));
+
+  test('reinstall refreshes ownership for an already-owned CodeGraph projection', () => withHome((env) => {
+    const first = beginInstallHostTransaction(installProfileHostMutationPaths(env), env);
+    writeManagedHostSurfaces(env, 'strict');
+    const config = join(env.HOME!, '.codex', 'config.toml');
+    writePath(config, '[mcp_servers.codegraph]\ncommand = "codegraph"\nargs = ["serve"]\n');
+    const initial = applyInstallProfile('strict', env, new Date('2026-01-01T00:00:00Z'), first);
+    commitInstallHostTransaction(first);
+    const original = initial.state.ownership_manifest.find(({ managed_marker }) => (
+      managed_marker === 'codegraph-config-projection'
+    ));
+    expect(original).toBeDefined();
+
+    const second = beginInstallHostTransaction(installProfileHostMutationPaths(env), env);
+    writeFileSync(config, '[mcp_servers.codegraph]\ncommand = "codegraph"\nargs = ["serve", "--mcp"]\n');
+    const refreshed = applyInstallProfile('strict', env, new Date('2026-01-02T00:00:00Z'), second);
+    commitInstallHostTransaction(second);
+    const next = refreshed.state.ownership_manifest.find(({ managed_marker }) => (
+      managed_marker === 'codegraph-config-projection'
+    ));
+    expect(next).toBeDefined();
+    expect(next?.content_hash).not.toBe(original?.content_hash);
+    expect(installedProfileStatus(refreshed.state, env).drift.status).toBe('consistent');
+  }));
+
+  test('downgrade preserves a user-owned staging skill registry when only host links are transaction-owned', () => withHome((env) => {
+    const { source } = writeManagedHostSurfaces(env, 'standard');
+    for (const command of ['prd', 'sprint', 'goal']) {
+      writePath(join(source, `assets/skill-commands/repo-harness-${command}/SKILL.md`), '# planning\n');
+    }
+    const names = ['think', 'hunt', 'check', 'health', 'mermaid'];
+    for (const name of names) writePath(join(env.HOME!, '.agents', 'skills', name, 'SKILL.md'), `# ${name}\n`);
+    const lock = join(env.HOME!, '.agents', '.skill-lock.json');
+    writePath(lock, `${JSON.stringify({ version: 3, skills: {
+      think: { source: 'user/waza' },
+      mermaid: { source: 'user/mermaid' },
+    } }, null, 2)}\n`);
+
+    const first = beginInstallHostTransaction(installProfileHostMutationPaths(env), env);
+    for (const name of names) {
+      const destination = join(env.HOME!, '.codex', 'skills', name);
+      rmSync(destination, { recursive: true, force: true });
+      symlinkSync(join(env.HOME!, '.agents', 'skills', name), destination);
+    }
+    const planning = applyInstallProfile('product-planning', env, new Date('2026-01-01T00:00:00Z'), first);
+    commitInstallHostTransaction(first);
+    expect(planning.state.ownership_manifest.some(({ path }) => path.endsWith('/.codex/skills/think'))).toBe(true);
+
+    const second = beginInstallHostTransaction(installProfileHostMutationPaths(env), env);
+    prepareInstallProfileSwitch('minimal', env);
+    writeFileSync(join(env.HOME!, '.codex', 'hooks.json'), JSON.stringify({ hooks: buildManagedHooks('codex', 'minimal') }));
+    applyInstallProfile('minimal', env, new Date('2026-01-02T00:00:00Z'), second);
+    commitInstallHostTransaction(second);
+
+    expect(existsSync(join(env.HOME!, '.agents', 'skills', 'think', 'SKILL.md'))).toBe(true);
+    expect(JSON.parse(readFileSync(lock, 'utf-8')).skills).toEqual({
+      think: { source: 'user/waza' },
+      mermaid: { source: 'user/mermaid' },
+    });
   }));
 
   test('Standard CodeGraph stays conditional while Strict enables it', () => withHome((env) => {
@@ -155,6 +393,7 @@ describe('install profiles', () => {
     expect(JSON.parse(dryRun.stdout).requested_profile).toBe('strict');
     expect(readInstalledProfile(env)).toBeNull();
 
+    writeManagedHostSurfaces(env);
     applyInstallProfile('minimal', env);
     const state = spawnSync(process.execPath, [CLI, 'install', '--state', '--json'], {
       cwd: ROOT, env, encoding: 'utf-8',

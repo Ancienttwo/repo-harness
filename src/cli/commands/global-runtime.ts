@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync } from "fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, symlinkSync } from "fs";
 import { homedir } from "os";
 import { delimiter, dirname, join, resolve, sep } from "path";
 import { fileURLToPath } from "url";
@@ -416,25 +416,73 @@ function installHostAdapters(target: InstallTargetSpec, profile: InstallProfile,
   };
 }
 
+function installAgentFleet(sourceRoot: string, env?: NodeJS.ProcessEnv): GlobalRuntimeStep {
+  const script = join(sourceRoot, 'scripts', 'install-agent-fleet.sh');
+  if (!existsSync(script)) {
+    return { step: 'install agent fleet', status: 'failed', detail: `script not found: ${script}` };
+  }
+  return withStepName(runProcess('bash', [script], sourceRoot, env), 'install agent fleet');
+}
+
 function installWazaSkills(sourceRoot: string, target: InstallTargetSpec, env?: NodeJS.ProcessEnv): GlobalRuntimeStep {
   const agents = hostAgents(target);
-  const step = runProcess(
-    "bunx",
-    [
-      "skills",
-      "add",
-      "tw93/Waza",
-      "-g",
-      "-a",
-      ...agents,
-      "-s",
-      ...WAZA_SKILLS,
-      "-y",
-    ],
-    sourceRoot,
-    env,
-  );
-  return withStepName(step, "configure Waza skills", `target=${target}`);
+  const skillsRoot = join(homeDir(env), '.agents', 'skills');
+  const missing = WAZA_SKILLS.filter((skill) => !existsSync(join(skillsRoot, skill, 'SKILL.md')));
+  if (missing.length > 0) {
+    const step = runProcess(
+      "bunx",
+      [
+        "skills",
+        "add",
+        "tw93/Waza",
+        "-g",
+        "-a",
+        ...agents,
+        "-s",
+        ...missing,
+        "-y",
+      ],
+      sourceRoot,
+      env,
+    );
+    if (step.status === 'failed') {
+      return withStepName(step, "configure Waza skills", `target=${target}; missing=${missing.join(',')}`);
+    }
+  }
+  return projectStagedSkills(WAZA_SKILLS, target, env, 'configure Waza skills');
+}
+
+function projectStagedSkills(
+  skills: readonly string[],
+  target: InstallTargetSpec,
+  env: NodeJS.ProcessEnv | undefined,
+  step: string,
+): GlobalRuntimeStep {
+  const home = homeDir(env);
+  const roots = hostIds(target).map((host) => join(home, host === 'codex' ? '.codex' : '.claude', 'skills'));
+  const projected: string[] = [];
+  for (const skill of skills) {
+    const source = join(home, '.agents', 'skills', skill);
+    if (!existsSync(join(source, 'SKILL.md'))) {
+      return { step, status: 'failed', detail: `staging skill missing after install: ${source}` };
+    }
+    for (const root of roots) {
+      const destination = join(root, skill);
+      mkdirSync(root, { recursive: true });
+      if (existsSync(destination)) {
+        try {
+          if (realpathSync(destination) === realpathSync(source)) {
+            projected.push(destination);
+            continue;
+          }
+        } catch { /* the fail-closed error below owns unreadable projections */ }
+        return { step, status: 'failed', detail: `refusing to overwrite unowned host skill ${destination}` };
+      }
+      symlinkSync(source, destination, 'dir');
+      projected.push(destination);
+    }
+  }
+  return { step, status: 'ok', detail: `projected ${projected.length} host skills` };
 }
 
 function syncWazaSharedRules(target: InstallTargetSpec, env?: NodeJS.ProcessEnv): GlobalRuntimeStep {
@@ -458,7 +506,15 @@ function syncWazaSharedRules(target: InstallTargetSpec, env?: NodeJS.ProcessEnv)
         missing.push(rule);
         continue;
       }
-      copyFileSync(source, join(destDir, rule));
+      const destination = join(destDir, rule);
+      if (existsSync(destination) && readFileSync(destination, 'utf-8') !== readFileSync(source, 'utf-8')) {
+        return {
+          step: 'sync Waza shared rules',
+          status: 'failed',
+          detail: `refusing to overwrite unowned rule ${destination}`,
+        };
+      }
+      copyFileSync(source, destination);
       synced.push(`${host}:${rule}`);
     }
   }
@@ -471,24 +527,28 @@ function syncWazaSharedRules(target: InstallTargetSpec, env?: NodeJS.ProcessEnv)
 }
 
 function installMermaidSkill(sourceRoot: string, target: InstallTargetSpec, env?: NodeJS.ProcessEnv): GlobalRuntimeStep {
-  const agents = hostAgents(target);
-  const step = runProcess(
-    "bunx",
-    [
-      "skills",
-      "add",
-      "BfdCampos/dotfiles",
-      "-g",
-      "-a",
-      ...agents,
-      "-s",
-      "mermaid",
-      "-y",
-    ],
-    sourceRoot,
-    env,
-  );
-  return withStepName(step, "configure Mermaid skill", `target=${target}`);
+  const installed = join(homeDir(env), '.agents', 'skills', 'mermaid', 'SKILL.md');
+  if (!existsSync(installed)) {
+    const agents = hostAgents(target);
+    const step = runProcess(
+      "bunx",
+      [
+        "skills",
+        "add",
+        "BfdCampos/dotfiles",
+        "-g",
+        "-a",
+        ...agents,
+        "-s",
+        "mermaid",
+        "-y",
+      ],
+      sourceRoot,
+      env,
+    );
+    if (step.status === 'failed') return withStepName(step, "configure Mermaid skill", `target=${target}`);
+  }
+  return projectStagedSkills(['mermaid'], target, env, 'configure Mermaid skill');
 }
 
 function configureBrain(root: string | undefined, env?: NodeJS.ProcessEnv): GlobalRuntimeStep {
@@ -573,6 +633,9 @@ export function runGlobalRuntimeSetup(opts: GlobalRuntimeOptions = {}): GlobalRu
 
   if (opts.hostAdapters !== false) steps.push(installHostAdapters(target, profile, env));
   else steps.push({ step: "install host adapters", status: "skipped", detail: "disabled" });
+
+  if (profile === 'strict') steps.push(installAgentFleet(sourceRoot, env));
+  else steps.push({ step: 'install agent fleet', status: 'skipped', detail: 'disabled by install profile' });
 
   if (opts.externalSkills === true) {
     const waza = installWazaSkills(sourceRoot, target, env);

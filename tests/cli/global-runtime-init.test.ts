@@ -26,6 +26,10 @@ function setupFakeSource(root: string): void {
     join(root, 'scripts', 'sync-codex-installed-copies.sh'),
     '#!/bin/bash\nset -euo pipefail\necho "sync runtime link=${AGENTIC_DEV_LINK_INSTALLED_COPIES:-unset}"\n',
   );
+  writeExecutable(
+    join(root, 'scripts', 'install-agent-fleet.sh'),
+    '#!/bin/bash\nset -euo pipefail\necho "fleet installed"\n',
+  );
 }
 
 function writeFakeCodegraph(fakeBin: string, logFile: string): void {
@@ -224,7 +228,7 @@ describe('init command global runtime bootstrap', () => {
       // scripts/check-agent-tooling.sh (for repo-agnostic tooling detection),
       // which also calls `bunx skills ls -g --json` for Waza status. This one
       // fake bunx answers both, so the read-only probe never hits the network.
-      writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunxLog}"\nexit 0\n`);
+      writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunxLog}"\nif [[ "\${1:-}" == "skills" && "\${2:-}" == "add" ]]; then if [[ " $* " == *" tw93/Waza "* ]]; then names='think hunt check health'; else names='mermaid'; fi; for skill in $names; do mkdir -p "$HOME/.agents/skills/$skill"; printf '# %s\\n' "$skill" > "$HOME/.agents/skills/$skill/SKILL.md"; done; fi\nexit 0\n`);
 
       const result = runGlobalRuntimeSetup({
         sourceRoot: source,
@@ -347,6 +351,47 @@ describe('init command global runtime bootstrap', () => {
       expect(bunCommands[3]).toBe(`add -g ${join(home, '.repo-harness', 'packages', 'repo-harness-9.9.9.tgz')}`);
       expect(existsSync(join(home, '.repo-harness', 'packages', 'repo-harness-9.9.9.tgz'))).toBe(true);
       expect(readFileSync(npmLog, 'utf-8')).toContain('pack --json --pack-destination');
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test('product-planning refuses a partial unowned host skill projection', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-global-partial-skill-'));
+    const home = join(tmp, 'home');
+    const repo = join(tmp, 'repo');
+    const fakeBin = join(tmp, 'bin');
+    try {
+      mkdirSync(home, { recursive: true });
+      mkdirSync(repo, { recursive: true });
+      mkdirSync(fakeBin, { recursive: true });
+      for (const skill of ['think', 'hunt', 'check', 'health', 'mermaid']) {
+        mkdirSync(join(home, '.agents', 'skills', skill), { recursive: true });
+        writeFileSync(join(home, '.agents', 'skills', skill, 'SKILL.md'), `# ${skill}\n`);
+      }
+      mkdirSync(join(home, '.codex', 'skills', 'think'), { recursive: true });
+      writeFileSync(join(home, '.codex', 'skills', 'think', 'SKILL.md'), '# think\n');
+      writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.3.14; exit 0; fi\nexit 0\n');
+
+      const result = runGlobalRuntimeSetup({
+        sourceRoot: ROOT,
+        cwd: repo,
+        target: 'codex',
+        profile: 'product-planning',
+        installCli: false,
+        syncSkill: false,
+        hostAdapters: false,
+        externalSkills: true,
+        codegraph: false,
+        brainRoot: join(home, 'brain'),
+        env: { ...process.env, HOME: home, PATH: `${fakeBin}:${process.env.PATH ?? ''}` },
+      });
+
+      expect(result.exitCode).toBe(1);
+      expect(result.steps.find(({ step }) => step === 'configure Waza skills')).toMatchObject({
+        status: 'failed',
+        detail: expect.stringContaining('refusing to overwrite unowned host skill'),
+      });
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
@@ -600,7 +645,7 @@ describe('init command global runtime bootstrap', () => {
       mkdirSync(home, { recursive: true });
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
-      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.3.14; fi\nexit 0\n`);
+      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.3.14; exit 0; fi\nexit 0\n`);
 
       const res = spawnSync(
         process.execPath,
@@ -753,7 +798,7 @@ describe('init command global runtime bootstrap', () => {
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
       writeFakeCodegraph(fakeBin, codegraphLog);
-      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.3.14; fi\nexit 0\n`);
+      writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.3.14; exit 0; fi\nif [[ " $* " == *" add -g "* ]]; then mkdir -p "$HOME/.bun/bin"; printf '#!/bin/sh\\n' > "$HOME/.bun/bin/repo-harness"; chmod +x "$HOME/.bun/bin/repo-harness"; fi\nexit 0\n`);
       writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunxLog}"\nexit 0\n`);
 
       // spawnSync's stdio pipes are never a TTY (isTTY is undefined), so this
@@ -765,7 +810,7 @@ describe('init command global runtime bootstrap', () => {
       // resolve to the fake shim and never actually run the CLI script.
       const res = spawnSync(
         process.execPath,
-        [CLI, 'install', '--target', 'codex', '--no-sync-skill', '--no-hooks'],
+        [CLI, 'install', '--target', 'codex'],
         {
           cwd: repo,
           encoding: 'utf-8',
@@ -774,6 +819,7 @@ describe('init command global runtime bootstrap', () => {
           env: {
             ...process.env,
             HOME: home,
+            BUN_INSTALL: join(home, '.bun'),
             PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
             REPO_HARNESS_BUN_EXECUTABLE: join(fakeBin, 'bun'),
             AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: '0',
