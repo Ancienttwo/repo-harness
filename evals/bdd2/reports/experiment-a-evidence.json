@@ -1,6 +1,6 @@
 {
   "schema": "repo-harness-bdd2-audit-evidence.v2",
-  "projector_sha256": "dd5b33d7583684531f7e575696d3c6374d9874ecff6dc228fbe601ffd59dbb64",
+  "projector_sha256": "932e44df6be466e59600d7e3ceb5b81b1f1c41df9c25d92c9fa05849bc3ca5f5",
   "source_commit": "9918283b38ef6bf92adab64cfc2a3c11e9987c70",
   "run_manifest_sha256": "bfe848d3f511d1e926b1989e1aa1fbd905bf27c2e620daa3424819d7f9d9d640",
   "packet_count": 48,

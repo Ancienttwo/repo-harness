@@ -638,6 +638,17 @@ describe("run-bdd2-evals Audit adjudication", () => {
       writeFileSync(runJsonPath, `${JSON.stringify(runJson, null, 2)}\n`, "utf-8");
 
       expect(validateAuditScores(evaluation, runRelativePath).scores.size).toBe(8);
+      const firstBlindPath = join(runPath, "blind", `${packets[0].packet_id}.json`);
+      const firstBlindText = readFileSync(firstBlindPath, "utf-8");
+      const externalBlind = join(tmpdir(), `bdd2-audit-blind-${Date.now()}.json`);
+      writeFileSync(externalBlind, firstBlindText, "utf-8");
+      rmSync(firstBlindPath);
+      symlinkSync(externalBlind, firstBlindPath);
+      expect(() => validateAuditScores(evaluation, runRelativePath))
+        .toThrow("must be a regular non-symlink file");
+      rmSync(firstBlindPath);
+      writeFileSync(firstBlindPath, firstBlindText, "utf-8");
+      rmSync(externalBlind, { force: true });
       const externalRunRoot = mkdtempSync(join(tmpdir(), "bdd2-audit-external-"));
       cpSync(runPath, join(externalRunRoot, "run"), { recursive: true });
       symlinkSync(externalRunRoot, join(root, "linked-run-parent"));
@@ -681,6 +692,15 @@ describe("run-bdd2-evals Audit adjudication", () => {
         expect(gates[gate]).toBe(false);
         expect(Object.values(gates).every(Boolean)).toBe(false);
       }
+      const summaryPath = join(runPath, "audit-summary.json");
+      const externalSummary = join(tmpdir(), `bdd2-audit-summary-${Date.now()}.json`);
+      rmSync(summaryPath);
+      writeFileSync(externalSummary, "external\n", "utf-8");
+      symlinkSync(externalSummary, summaryPath);
+      expect(() => summarizeAudit(evaluation, runRelativePath))
+        .toThrow("Output path must not be a symbolic link");
+      rmSync(summaryPath);
+      rmSync(externalSummary, { force: true });
       expect(validateHistoricalAuditScores(root, runRelativePath).scores.size).toBe(8);
       const historicalProjection = projectHistoricalAuditEvidence(root, runRelativePath, "historical-audit-evidence.json") as any;
       expect(historicalProjection.schema).toBe("repo-harness-bdd2-audit-evidence.v2");

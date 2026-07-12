@@ -931,6 +931,17 @@ function directoryInsideRepo(repoRoot: string, relativePath: string, label: stri
   return path;
 }
 
+function regularFileInsideRepo(repoRoot: string, path: string, label: string): string {
+  if (!existsSync(path) || lstatSync(path).isSymbolicLink() || !lstatSync(path).isFile()) {
+    fail(`${label} must be a regular non-symlink file`);
+  }
+  const realRoot = realpathSync(repoRoot);
+  const realPath = realpathSync(path);
+  const rootPrefix = realRoot.endsWith(sep) ? realRoot : `${realRoot}${sep}`;
+  if (!realPath.startsWith(rootPrefix)) fail(`${label} resolves outside repository root`);
+  return path;
+}
+
 function integerAtLeastZero(value: unknown, label: string): number {
   if (!Number.isInteger(value) || Number(value) < 0) fail(`${label} must be a non-negative integer`);
   return Number(value);
@@ -1012,7 +1023,7 @@ export function validateShapeScores(
   runRelativePath: string
 ): ValidatedShapeScores {
   const runPath = directoryInsideRepo(evaluation.repoRoot, runRelativePath, "run path");
-  const runRaw = readJson(resolve(runPath, "run.json"));
+  const runRaw = readJson(regularFileInsideRepo(evaluation.repoRoot, resolve(runPath, "run.json"), "Shape run report"));
   assertRecord(runRaw, "run report");
   assertExactKeys(
     runRaw,
@@ -1048,7 +1059,7 @@ export function validateShapeScores(
     if (!task) fail(`run.packets[${index}] references an unknown Shape task`);
     if (packets.has(candidate.packet_id)) fail(`Duplicate packet id in run: ${candidate.packet_id}`);
     packets.set(candidate.packet_id, { task_id: candidate.task_id });
-    const blind = readJson(resolve(runPath, "blind", `${candidate.packet_id}.json`));
+    const blind = readJson(regularFileInsideRepo(evaluation.repoRoot, resolve(runPath, "blind", `${candidate.packet_id}.json`), `blind packet ${candidate.packet_id}`));
     assertRecord(blind, `blind packet ${candidate.packet_id}`);
     assertExactKeys(blind, ["schema", "packet_id", "task_id", "experiment", "task_input", "response"], `blind packet ${candidate.packet_id}`);
     if (blind.schema !== "repo-harness-bdd2-blind-packet.v2" || blind.packet_id !== candidate.packet_id || blind.task_id !== candidate.task_id || blind.experiment !== "S") {
@@ -1074,7 +1085,7 @@ export function validateShapeScores(
 
   const privateCoordinates = new Map<string, { task_id: string; condition: ConditionId; repetition: number }>();
   for (const packetId of packets.keys()) {
-    const raw = readJson(resolve(runPath, "private", `${packetId}.json`));
+    const raw = readJson(regularFileInsideRepo(evaluation.repoRoot, resolve(runPath, "private", `${packetId}.json`), `private coordinate ${packetId}`));
     assertRecord(raw, `private coordinate ${packetId}`);
     assertExactKeys(
       raw,
@@ -1198,7 +1209,7 @@ function validateAuditScoresWithAuthority(
   options: AuditValidationOptions = {}
 ): ValidatedAuditScores {
   const runPath = directoryInsideRepo(evaluation.repoRoot, runRelativePath, "run path");
-  const runRaw = readJson(resolve(runPath, "run.json"));
+  const runRaw = readJson(regularFileInsideRepo(evaluation.repoRoot, resolve(runPath, "run.json"), "Audit run report"));
   assertRecord(runRaw, "run report");
   assertExactKeys(runRaw, ["schema", "freeze_id", "source_commit", "manifest_sha256", "agent", "model", "sampling", "experiment", "partition", "output_path", "packets"], "run report");
   if (runRaw.schema !== "repo-harness-bdd2-run.v2" || runRaw.experiment !== "A" || runRaw.partition !== "held_out") {
@@ -1241,7 +1252,7 @@ function validateAuditScoresWithAuthority(
     if (!task) fail(`run.packets[${index}] references an unknown Audit task`);
     if (packets.has(candidate.packet_id)) fail(`Duplicate packet id in run: ${candidate.packet_id}`);
     packets.set(candidate.packet_id, { task_id: candidate.task_id });
-    const blind = readJson(resolve(runPath, "blind", `${candidate.packet_id}.json`));
+    const blind = readJson(regularFileInsideRepo(evaluation.repoRoot, resolve(runPath, "blind", `${candidate.packet_id}.json`), `blind packet ${candidate.packet_id}`));
     assertRecord(blind, `blind packet ${candidate.packet_id}`);
     assertExactKeys(blind, ["schema", "packet_id", "task_id", "experiment", "task_input", "response"], `blind packet ${candidate.packet_id}`);
     if (blind.schema !== "repo-harness-bdd2-blind-packet.v2" || blind.packet_id !== candidate.packet_id || blind.task_id !== candidate.task_id || blind.experiment !== "A") fail(`Blind packet identity mismatch: ${candidate.packet_id}`);
@@ -1256,7 +1267,7 @@ function validateAuditScoresWithAuthority(
   const privateCoordinates = new Map<string, { task_id: string; condition: ConditionId; repetition: number }>();
   const observedCoordinates = new Set<string>();
   for (const packetId of packets.keys()) {
-    const raw = readJson(resolve(runPath, "private", `${packetId}.json`));
+    const raw = readJson(regularFileInsideRepo(evaluation.repoRoot, resolve(runPath, "private", `${packetId}.json`), `private coordinate ${packetId}`));
     assertRecord(raw, `private coordinate ${packetId}`);
     assertExactKeys(raw, ["schema", "packet_id", "coordinate_id", "task_id", "condition", "repetition", "prompt_sha256", "agent", "model", "sampling", "exit_code"], `private coordinate ${packetId}`);
     if (raw.schema !== "repo-harness-bdd2-private-coordinate.v2" || raw.packet_id !== packetId || raw.task_id !== packets.get(packetId)?.task_id) fail(`Private coordinate identity mismatch: ${packetId}`);
@@ -1279,7 +1290,8 @@ function validateAuditScoresWithAuthority(
   if (scoreFiles.join("\n") !== expectedPacketFiles.join("\n")) fail("Audit score files must match run packet ids exactly");
   const scores = new Map<string, LockedAuditScore>();
   for (const file of scoreFiles) {
-    const raw = readJson(resolve(scoreDir, file));
+    const scorePath = regularFileInsideRepo(evaluation.repoRoot, resolve(scoreDir, file), `score ${file}`);
+    const raw = readJson(scorePath);
     assertRecord(raw, `score ${file}`);
     assertString(raw.task_id, `score ${file}.task_id`);
     const truthTask = truth.audit_tasks[raw.task_id];
@@ -1337,7 +1349,7 @@ function historicalAuditEvaluation(
 ): { evaluation: ValidatedEvaluation; truth: TruthSet; manifestSha256: string } {
   const absoluteRoot = resolve(repoRoot);
   const runPath = directoryInsideRepo(absoluteRoot, runRelativePath, "historical Audit run path");
-  const runRaw = readJson(resolve(runPath, "run.json"));
+  const runRaw = readJson(regularFileInsideRepo(absoluteRoot, resolve(runPath, "run.json"), "historical Audit run report"));
   assertRecord(runRaw, "historical Audit run report");
   assertString(runRaw.source_commit, "historical Audit source_commit");
   assertString(runRaw.manifest_sha256, "historical Audit manifest_sha256");
@@ -1803,9 +1815,9 @@ function writeAuditEvidenceProjection(
       severity_agreement_count: findings.filter((finding) => finding.severity_agreement === true).length,
       severe_underestimation_count: findings.filter((finding) => finding.severe_underestimation).length,
       correction_minutes: score.score.correction_minutes,
-      score_sha256: sha256File(resolve(validated.runPath, "scores", `${packetId}.json`)),
-      private_sha256: sha256File(resolve(validated.runPath, "private", `${packetId}.json`)),
-      blind_sha256: sha256File(resolve(validated.runPath, "blind", `${packetId}.json`)),
+      score_sha256: sha256File(regularFileInsideRepo(repoRoot, resolve(validated.runPath, "scores", `${packetId}.json`), `score ${packetId}`)),
+      private_sha256: sha256File(regularFileInsideRepo(repoRoot, resolve(validated.runPath, "private", `${packetId}.json`), `private coordinate ${packetId}`)),
+      blind_sha256: sha256File(regularFileInsideRepo(repoRoot, resolve(validated.runPath, "blind", `${packetId}.json`), `blind packet ${packetId}`)),
     };
   }).sort((left, right) => left.task_id.localeCompare(right.task_id)
     || left.condition.localeCompare(right.condition)
@@ -1960,7 +1972,9 @@ function summarizeValidatedAudit(
     gates,
     decision: Object.values(gates).every(Boolean) ? "Pass" : "Kill",
   };
-  writeJson(resolve(validated.runPath, "audit-summary.json"), summary);
+  const summaryPath = resolve(validated.runPath, "audit-summary.json");
+  assertWritePath(repoRoot, summaryPath);
+  writeJson(summaryPath, summary);
   if (markdownOutput) {
     const outputPath = resolve(repoRoot, markdownOutput);
     assertWritePath(repoRoot, outputPath);

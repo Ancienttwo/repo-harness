@@ -75,8 +75,9 @@
 - The historical Shape projector was narrowed back to v2-only authority. It does
   not act as a future S-v3 compatibility reader; current Shape remains a separate
   non-runnable foundation revision.
-- Run/output path guards now compare real paths and reject final output symlinks,
-  closing external read/write traversal through repository-relative paths.
+- Run/output path guards now compare real paths, require regular non-symlink packet
+  leaves, and reject final output/summary symlinks, closing external read/write
+  traversal through repository-relative paths.
 
 ## Promotion Filter
 
