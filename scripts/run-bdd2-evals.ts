@@ -489,7 +489,7 @@ export function runEvaluation(evaluation: ValidatedEvaluation, options: RunOptio
   assertAuthorityTrackedAtHead(evaluation);
   const profile = evaluation.manifest.agents[options.agent]; if (!profile) fail(`Unknown agent profile: ${options.agent}`);
   const versionHome = mkdtempSync(join(tmpdir(), "bdd2-e2-version-")); const env = buildIsolatedAgentEnv(versionHome);
-  try { const version = spawnSync(profile.command, profile.version_args, { encoding: "utf-8", env }); if (version.status !== 0 || version.stdout.trim() !== profile.expected_version) fail("Agent version mismatch"); } finally { rmSync(versionHome, { recursive: true, force: true }); }
+  try { const version = spawnSync(profile.command, profile.version_args, { encoding: "utf-8", env }); if (version.error || version.status !== 0 || typeof version.stdout !== "string" || version.stdout.trim() !== profile.expected_version) fail(`Agent version mismatch${version.error ? `: ${version.error.message}` : ""}`); } finally { rmSync(versionHome, { recursive: true, force: true }); }
   const outputRelative = options.outputPath ?? join(evaluation.manifest.output_root, `${options.experiment.toLowerCase()}-${Date.now()}`); const output = resolve(evaluation.repoRoot, outputRelative); assertWritePath(evaluation.repoRoot, output); ensureNewDirectory(output);
   for (const dir of ["full", "normalized", "private", "pilot"]) mkdirSync(join(output, dir));
   const packets: RunReport["packets"] = []; const used = new Set<string>();
@@ -501,8 +501,9 @@ export function runEvaluation(evaluation: ValidatedEvaluation, options: RunOptio
       deliverAgentCredential(home, profile);
       const values: Record<string, string> = { repo: evaluation.repoRoot, response_schema: join(evaluation.repoRoot, profile.response_schema.path), model: profile.model, workspace }; for (const [key, value] of Object.entries(profile.sampling)) values[`sampling.${key}`] = String(value);
       const result = spawnSync(profile.command, profile.args.map((arg) => expandArg(arg, values)), { cwd: workspace, env: buildIsolatedAgentEnv(home), input: buildAgentPacket(evaluation, coordinate), encoding: "utf-8", maxBuffer: 16 * 1024 * 1024 });
-      if (result.status !== 0) fail(`Agent failed for ${coordinate.coordinateId}: ${result.stderr.trim()}`);
-      const response = validateStructuredAgentResponse(JSON.parse(result.stdout), coordinate.experiment); const task = evaluation.tasks[coordinate.partition].find((entry) => entry.id === coordinate.taskId)!; const normalized = normalizeOutcome(task, response);
+      if (result.error || result.status !== 0 || typeof result.stdout !== "string") fail(`Agent failed for ${coordinate.coordinateId}: ${result.error?.message ?? (typeof result.stderr === "string" ? result.stderr.trim() : "no process output")}`);
+      let parsedResponse: unknown; try { parsedResponse = JSON.parse(result.stdout); } catch (error) { fail(`Agent returned invalid JSON for ${coordinate.coordinateId}: ${error instanceof Error ? error.message : String(error)}`); }
+      const response = validateStructuredAgentResponse(parsedResponse, coordinate.experiment); const task = evaluation.tasks[coordinate.partition].find((entry) => entry.id === coordinate.taskId)!; const normalized = normalizeOutcome(task, response);
       const fullText = canonicalJson(response); const normalizedText = canonicalJson(normalized); writeFileSync(join(output, "full", `${packetId}.json`), fullText); writeFileSync(join(output, "normalized", `${packetId}.json`), normalizedText);
       let fixtureCapture: RunReport["packets"][number]["fixture_capture"];
       if (coordinate.experiment === "I2") {
@@ -573,7 +574,7 @@ export function validateScores(evaluation: ValidatedEvaluation, runRelativePath:
   const expectedCoordinateKeys = new Set(sourceTasks.filter((task) => task.experiment === run.experiment).flatMap((task) => (["control", "treatment"] as const).flatMap((condition) => Array.from({ length: sourceExperiment.repetitions }, (_, index) => `${task.id}:${condition}:${index + 1}`))));
   const packetIds = new Set<string>();
   for (const [index, packet] of run.packets.entries()) { assertRecord(packet, `run.packets[${index}]`); const keys = Object.hasOwn(packet, "fixture_capture") ? ["packet_id", "task_id", "status", "full_response_sha256", "normalized_outcome_sha256", "fixture_capture"] : ["packet_id", "task_id", "status", "full_response_sha256", "normalized_outcome_sha256"]; assertExactKeys(packet, keys, `run.packets[${index}]`); if (typeof packet.packet_id !== "string" || !/^[a-f0-9]{32}$/.test(packet.packet_id) || packetIds.has(packet.packet_id)) fail("Run packet_id must be unique 32-hex"); packetIds.add(packet.packet_id); if (packet.status !== "success" || typeof packet.task_id !== "string" || !/^[a-f0-9]{64}$/.test(String(packet.full_response_sha256)) || !/^[a-f0-9]{64}$/.test(String(packet.normalized_outcome_sha256))) fail("Run packet metadata invalid"); }
-  const report = run as unknown as RunReport; const expected = evaluation.manifest.experiments[report.experiment].held_out_task_count * 2 * evaluation.manifest.experiments[report.experiment].repetitions; if (report.partition === "held_out" && report.packets.length !== expected) fail(`Run packet count must be exactly ${expected}`);
+  const report = run as unknown as RunReport; const expected = sourceExperiment.held_out_task_count * 2 * sourceExperiment.repetitions; if (report.partition === "held_out" && report.packets.length !== expected) fail(`Run packet count must be exactly ${expected}`);
   let outcomeCount = 0; let evidenceCount = 0; let adjudicationCount = 0; const seenCoordinateKeys = new Set<string>();
   for (const packet of report.packets) {
     const normalizedPath = join(runRoot, "normalized", `${packet.packet_id}.json`); if (sha256File(normalizedPath) !== packet.normalized_outcome_sha256) fail("Normalized outcome hash drift");
