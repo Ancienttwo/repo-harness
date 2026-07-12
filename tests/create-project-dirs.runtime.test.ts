@@ -314,7 +314,14 @@ describe("create-project-dirs runtime smoke", () => {
       expect(policy.external_tooling.codegraph.hook_policy).toBe("do-not-block-hooks");
       expect(policy.external_tooling.codegraph.vendoring_policy).toBe("do-not-add-package-dependency");
       expect(policy.external_tooling.agent_fleet.source).toBe("package:agents/fleet");
-      expect(policy.external_tooling.agent_fleet.managed_agents).toEqual(["explorer", "deep-reasoner", "fast-worker", "gatekeeper"]);
+      expect(policy.external_tooling.agent_fleet.managed_agents).toEqual([
+        "explorer",
+        "deep-reasoner",
+        "fast-worker",
+        "gatekeeper",
+        "root-cause-prover",
+        "harness-evaluator",
+      ]);
       expect(policy.external_tooling.agent_fleet.claude_target).toBe("~/.claude/agents");
       expect(policy.external_tooling.agent_fleet.codex_target).toBe("~/.codex/agents");
       expect(policy.external_tooling.agent_fleet.codex_generation).toBe("derive-toml-from-md");
@@ -762,7 +769,7 @@ describe("create-project-dirs runtime smoke", () => {
     const installerPath = join(ROOT, "scripts/install-agent-fleet.sh");
     const home = join(cwd, "fakehome");
     const repoDir = join(cwd, "repo");
-    const managedAgents = ["explorer", "deep-reasoner", "fast-worker", "gatekeeper"];
+    const managedAgents = ["explorer", "deep-reasoner", "fast-worker", "gatekeeper", "root-cause-prover", "harness-evaluator"];
     try {
       mkdirSync(join(repoDir, ".ai", "harness"), { recursive: true });
       mkdirSync(home, { recursive: true });

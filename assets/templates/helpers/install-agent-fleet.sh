@@ -83,7 +83,8 @@ for (let index = 0; index < argv.length; index += 1) {
 }
 
 const HOME = os.homedir();
-const MANAGED_AGENTS = ["explorer", "deep-reasoner", "fast-worker", "gatekeeper"];
+const MANAGED_AGENTS = ["explorer", "deep-reasoner", "fast-worker", "gatekeeper", "root-cause-prover", "harness-evaluator"];
+const WRITABLE_AGENTS = new Set(["fast-worker", "root-cause-prover", "harness-evaluator"]);
 const CLAUDE_TARGET_DIR = path.join(HOME, ".claude", "agents");
 const CODEX_TARGET_DIR = path.join(HOME, ".codex", "agents");
 const SOURCE_DIR = process.env.REPO_HARNESS_AGENT_FLEET_SOURCE_DIR;
@@ -220,7 +221,7 @@ function generateToml(agent, parsed, mapped) {
   lines.push(`description = ${tomlBasicString(description)}`);
   lines.push(`model = ${tomlBasicString(mapped.model)}`);
   lines.push(`model_reasoning_effort = ${tomlBasicString(mapped.effort)}`);
-  if (agent === "fast-worker") {
+  if (WRITABLE_AGENTS.has(agent)) {
     lines.push(`sandbox_mode = "workspace-write"`);
   } else {
     lines.push(`sandbox_mode = "read-only"`);

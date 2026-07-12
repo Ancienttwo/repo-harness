@@ -8,7 +8,7 @@ const ROOT = join(import.meta.dir, "..");
 const SCRIPT = join(ROOT, "scripts/install-agent-fleet.sh");
 const FLEET_SOURCE_DIR = join(ROOT, "agents/fleet");
 const GOLDEN_CODEX_DIR = join(ROOT, ".codex/agents");
-const AGENTS = ["explorer", "deep-reasoner", "fast-worker", "gatekeeper"];
+const AGENTS = ["explorer", "deep-reasoner", "fast-worker", "gatekeeper", "root-cause-prover", "harness-evaluator"];
 const CODEX_EXPECTATIONS: Record<
   string,
   { model: string; effort: string; descriptionLabel: string; sourceDescription: string; sandboxMode: string }
@@ -40,6 +40,20 @@ const CODEX_EXPECTATIONS: Record<
     descriptionLabel: "GPT-5.6 Sol at high reasoning",
     sourceDescription: "Opus at high effort",
     sandboxMode: "read-only",
+  },
+  "root-cause-prover": {
+    model: "gpt-5.6-sol",
+    effort: "high",
+    descriptionLabel: "GPT-5.6 Sol at high reasoning",
+    sourceDescription: "Opus at high effort",
+    sandboxMode: "workspace-write",
+  },
+  "harness-evaluator": {
+    model: "gpt-5.6-sol",
+    effort: "high",
+    descriptionLabel: "GPT-5.6 Sol at high reasoning",
+    sourceDescription: "Opus at high effort",
+    sandboxMode: "workspace-write",
   },
 };
 
@@ -119,7 +133,7 @@ describe("install-agent-fleet", () => {
     }
   });
 
-  test("idempotent re-run reports up-to-date for all 8 files", () => {
+  test("idempotent re-run reports up-to-date for all 12 files", () => {
     const { root, home } = setupFakeHome("install-agent-fleet-idempotent");
     try {
       expect(runInstaller(home, FLEET_SOURCE_DIR).status).toBe(0);
@@ -472,6 +486,8 @@ describe("install-agent-fleet", () => {
     expect(source).not.toContain("REPO_HARNESS_FLEET_SOURCE_DIR");
     expect(source).not.toContain('spawnSync("curl"');
     expect(source).not.toMatch(/\bfable\b/i);
+    expect(source).toContain('const WRITABLE_AGENTS = new Set(["fast-worker", "root-cause-prover", "harness-evaluator"]);');
+    expect(source).toContain("if (WRITABLE_AGENTS.has(agent))");
   });
 
   test("an unsupported Bun version fails before creating HOME state", () => {

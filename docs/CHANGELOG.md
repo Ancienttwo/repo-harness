@@ -6,10 +6,16 @@ All notable changes to this skill are documented here.
 
 ### Changed
 
+- Expanded the repo-owned agent fleet from four to six roles with
+  `root-cause-prover` for bounded pre-fix bug evidence and
+  `harness-evaluator` for existing skill/adoption evaluation in disposable
+  state. Migration auditing is an evaluator profile, BDD2 remains an explicit
+  forbidden authority, and native Explore stays an informal host capability
+  rather than a prompt-inheritance or alias surface.
 - Replaced the remote `Fable-agents` fleet dependency with the npm-packaged
   `agents/fleet/*.md` authority. The installer now operates offline, validates
-  all four sources before mutation, projects explorer plus the existing three
-  roles to both hosts, preserves effort strings across the Sol/Luna family map,
+  all six sources before mutation, projects the managed fleet to both hosts,
+  preserves effort strings across the Sol/Luna family map,
   and keeps gatekeeper read-only in both sandbox and prompt semantics.
 - Kept native MultiAgentV2 role selection behind a runtime canary instead of
   treating installed TOML as runtime proof. Role identity checks remain
