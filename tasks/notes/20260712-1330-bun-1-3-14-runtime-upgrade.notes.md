@@ -67,6 +67,10 @@
   synchronous write even though the stress probes completed. `writeAllSync`
   now loops over byte offsets; its focused test simulates partial progress and
   the zero-progress failure path.
+- Contract verification uses focused tests that complete inside the helper
+  runner's 120-second ceiling. The 1,115-test full suite remains authoritative
+  under `bun run check:ci` and hosted PR CI rather than being duplicated inside
+  `verify-contract`.
 
 ## Promotion Filter
 

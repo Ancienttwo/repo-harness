@@ -134,9 +134,8 @@ exit_criteria:
   tests_pass:
     - path: tests/write-all-sync.test.ts
     - path: tests/architecture-queue.test.ts
-    - path: tests/hook-runtime.test.ts
+    - path: tests/cli/hook.test.ts
   commands_succeed:
-    - bun test
     - bunx tsc --noEmit --pretty false
     - bun scripts/sync-helper-sources.ts --check
     - bash scripts/check-deploy-sql-order.sh
