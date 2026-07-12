@@ -12,11 +12,18 @@ const ROOT = join(import.meta.dir, "..");
 describe("BDD2 Phase E evaluation contract", () => {
   const evaluation = validateEvaluation(ROOT);
 
-  test("Shape is independently sealed while Audit remains foundation-only", () => {
+  test("Shape v2 result is retained while current Shape and Audit authority remain foundation-only", () => {
     expect(evaluation.manifest.schema).toBe("repo-harness-bdd2-evaluation.v2");
-    expect(evaluation.manifest.experiments.S.freeze.state).toBe("sealed");
+    expect(evaluation.manifest.experiments.S.freeze).toEqual({
+      id: "bdd2-experiment-s-reshape-foundation-v3",
+      state: "foundation",
+      sealed_at: null,
+    });
     expect(evaluation.manifest.experiments.A.freeze.state).toBe("foundation");
-    expect(Object.keys(evaluation.manifest.agents)).toEqual(["codex-gpt-5.6-sol-xhigh"]);
+    expect(Object.keys(evaluation.manifest.agents)).toEqual([]);
+    expect(readFileSync(join(ROOT, "evals/bdd2/reports/experiment-s.md"), "utf-8")).toContain(
+      "cd9e0426d362614ba277e067633db2596c236491"
+    );
   });
 
   test("development and held-out sets cover both independent hypotheses", () => {
@@ -71,22 +78,42 @@ describe("BDD2 Phase E evaluation contract", () => {
     expect(report).toContain("on reviewer compliance rather than an OS");
     expect(report).toContain("Phase P, Experiment E, and Experiment I remain");
 
-    const mismatchRows = report
-      .split("\n")
-      .filter((line) => /^\| S-H-\d+ \| (baseline|treatment) \|/.test(line))
-      .map((line) => line.split("|").map((cell) => cell.trim()));
-    const baseline = mismatchRows.filter((cells) => cells[2] === "baseline").length;
-    const treatment = mismatchRows.filter((cells) => cells[2] === "treatment").length;
-    expect(mismatchRows).toHaveLength(17);
+    const audit = JSON.parse(
+      readFileSync(join(ROOT, "evals/bdd2/reports/experiment-s-authority-audit.json"), "utf-8")
+    );
+    const truth = JSON.parse(readFileSync(join(ROOT, "evals/bdd2/truth/held-out.json"), "utf-8")).shape_tasks;
+    expect(audit.schema).toBe("repo-harness-bdd2-shape-authority-audit.v1");
+    expect(audit.source_commit).toBe("cd9e0426d362614ba277e067633db2596c236491");
+    expect(audit.run_manifest_sha256).toBe("b64a343415fb47c31a8f7aecd29e47409c86c5da1409b6b19bafbdb08c6a2a5b");
+    expect(audit.rows).toHaveLength(17);
+    expect(new Set(audit.rows.map((row: any) => row.packet_id)).size).toBe(17);
+    for (const row of audit.rows) {
+      expect(Object.keys(row).sort()).toEqual([
+        "condition",
+        "expected_authority",
+        "packet_id",
+        "repetition",
+        "reviewer_label",
+        "task_id",
+      ]);
+      expect(row.expected_authority).toBe(truth[row.task_id].expected_authority);
+      expect(row.reviewer_label === "incorrect" || row.reviewer_label !== row.expected_authority).toBe(true);
+    }
+    const baseline = audit.rows.filter((row: any) => row.condition === "baseline").length;
+    const treatment = audit.rows.filter((row: any) => row.condition === "treatment").length;
     expect({ baseline, treatment }).toEqual({ baseline: 12, treatment: 5 });
     expect(report).toContain(`mismatches are therefore ${baseline} baseline versus ${treatment} treatment`);
+    expect(report).toContain("22/36 pairs (61.1%) were ties");
+    expect(report).toContain("inherited the invoking process environment");
+    expect(report).toContain("bdd2-experiment-s-reshape-foundation-v3");
 
     const plan = readFileSync(
       join(ROOT, "plans/plan-20260712-0605-bdd2-e-02-run-experiment-s-shape-hypothesis.md"),
       "utf-8"
     );
     expect(plan).not.toContain("--output evals/bdd2/reports/experiment-s.md");
-    expect(plan).toContain("--output <ignored-run-path>/experiment-s.generated.md");
+    expect(plan).toContain("source-commit `validate`, `run`,");
+    expect(plan).toContain("Current S-v3 authority is foundation-only");
   });
 
   const localShapeRun = join(ROOT, ".ai/harness/runs/bdd2/bdd2-e02-shape-s-v2");
@@ -105,10 +132,10 @@ describe("BDD2 Phase E evaluation contract", () => {
             : [];
         })
         .sort();
-      const reportRows = readFileSync(join(ROOT, "evals/bdd2/reports/experiment-s.md"), "utf-8")
-        .split("\n")
-        .filter((line) => /^\| S-H-\d+ \| (baseline|treatment) \|/.test(line))
-        .map((line) => line.split("|").slice(1, 6).map((cell) => cell.trim()).join("|"))
+      const reportRows = JSON.parse(
+        readFileSync(join(ROOT, "evals/bdd2/reports/experiment-s-authority-audit.json"), "utf-8")
+      ).rows
+        .map((row: any) => `${row.task_id}|${row.condition}|${row.repetition}|${row.reviewer_label}|${row.expected_authority}`)
         .sort();
       expect(reportRows).toEqual(rawRows);
     });

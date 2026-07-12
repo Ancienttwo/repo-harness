@@ -8,7 +8,7 @@
 > **Source Ref**: sprint:plans/sprints/20260712-bdd2-phase-e-evaluation.sprint.md#BDD2-E-02 — Run Experiment S: shape hypothesis
 > **Artifact Level**: work-package
 > **Promotion Reason**: merge_boundary
-> **Verification Boundary**: Frozen authority tests, one clean-HEAD 72-coordinate run, blind-score validation, aggregate metric reproduction, strict workflow checks, and PR review.
+> **Verification Boundary**: Source-commit validation of the 72-coordinate S-v2 run, durable result/audit projection, fail-closed S-v3 foundation authority, strict workflow checks, and PR review.
 > **Rollback Surface**: Revert branch `codex/bdd2-shape-experiment`; raw ignored run evidence can be removed independently because no product runtime or data migration changes.
 > **Spec**: `docs/spec.md`
 > **PRD**: `plans/prds/20260712-0409-bdd2-shape-audit.prd.md`
@@ -72,7 +72,11 @@ surface or prepare Experiment A data as a hidden dependency.
 - Execute exactly `12 × 2 × 3 = 72` successful held-out S coordinates from a
   clean committed HEAD and retain raw evidence under the ignored run surface.
 - Record a tracked Experiment S report and Pass / Reshape / Kill decision only
-  after condition-blind human scoring is complete.
+  after the authorized condition-blind scoring protocol is complete and its
+  evidence grade is explicit.
+- If post-run review invalidates a frozen execution boundary, preserve the source
+  commit and result as failed evidence, cut current authority to a new unsealed
+  revision, and add no compatibility reader for the retired run.
 
 ## Out of Scope
 
@@ -95,6 +99,7 @@ allowed_paths:
   - evals/bdd2/rubrics/score.schema.json
   - evals/bdd2/metrics/shape-metrics.md
   - evals/bdd2/reports/experiment-s.md
+  - evals/bdd2/reports/experiment-s-authority-audit.json
   - scripts/run-bdd2-evals.ts
   - tests/run-bdd2-evals.test.ts
   - tests/bdd2-evals-contract.test.ts
@@ -135,6 +140,18 @@ allowed_paths:
   `gpt-5.6-sol`, reasoning effort `xhigh`, ephemeral mode, ignored user config,
   no repository requirement/rules, and read-only sandbox.
 
+### Post-run authority invalidation
+
+- External review found that S-v2 isolated HOME/cwd but inherited the caller's full
+  process environment. That makes the causal comparison non-reproducible and could
+  expose unrelated secrets or host toggles to the Agent subprocess.
+- The tracked S-v2 report and its source commit remain immutable failure evidence.
+  Current authority is `bdd2-experiment-s-reshape-foundation-v3`, has no runnable
+  agent profile, and uses a minimal environment allowlist in the runner.
+- Current validation intentionally rejects the historical S-v2 run rather than
+  synthesizing a compatibility path. A future revision must seal and rerun from
+  the corrected authority.
+
 ### Blind scoring and aggregation
 
 - Blinded Agent reviewers receive one self-contained random-ID packet at a time and lock
@@ -174,9 +191,9 @@ allowed_paths:
 ## Evidence Contract
 
 - **State/progress path**: this plan, its contract/notes/review, and Sprint row 2.
-- **Verification evidence**: focused Bun tests; `validate`, `plan`, `run`,
-  `validate-scores`, and `summarize-shape` outputs; clean HEAD/source commit;
-  ignored raw run directory; tracked aggregate report; strict workflow checks.
+- **Verification evidence**: focused Bun tests; source-commit `validate`, `run`,
+  `validate-scores`, and `summarize-shape` outputs; current foundation `validate`;
+  ignored raw run directory; tracked aggregate/audit reports; strict workflow checks.
 - **Evaluator rubric**: PRD Experiment S metrics plus proof that packets and
   execution workspace exclude condition/truth identity.
 - **Stop condition**: 72 successful coordinates, all blind scores locked and
@@ -199,6 +216,9 @@ allowed_paths:
 - [x] Execute the 72-coordinate held-out Shape run with the frozen Codex profile.
 - [x] Obtain condition-blind owner-authorized Agent scores without exposing the private mapping.
 - [x] Generate and verify the tracked Experiment S report and gate decision.
+- [x] Invalidate S-v2 as causal evidence after external review found inherited
+      process environment; cut current authority to unsealed S-v3 with an env allowlist.
+- [x] Add a machine-readable truth-aware authority audit and Kill-path regression coverage.
 - [ ] Complete review/notes/current/handoff, run required checks, commit, push, and open the E-02 module PR.
 
 ## Exit Criteria
@@ -208,14 +228,13 @@ exit_criteria:
   files_exist:
     - evals/bdd2/metrics/shape-metrics.md
     - evals/bdd2/reports/experiment-s.md
+    - evals/bdd2/reports/experiment-s-authority-audit.json
     - tasks/contracts/20260712-0605-bdd2-e-02-run-experiment-s-shape-hypothesis.contract.md
     - tasks/reviews/20260712-0605-bdd2-e-02-run-experiment-s-shape-hypothesis.review.md
   commands_succeed:
     - bun test tests/run-bdd2-evals.test.ts tests/bdd2-evals-contract.test.ts
     - bun scripts/run-bdd2-evals.ts validate
     - bun scripts/run-bdd2-evals.ts plan --experiment S --partition held_out --dry-run
-    - bun scripts/run-bdd2-evals.ts validate-scores --experiment S --run <ignored-run-path>
-    - bun scripts/run-bdd2-evals.ts summarize-shape --experiment S --run <ignored-run-path> --output <ignored-run-path>/experiment-s.generated.md
     - repo-harness run check-task-workflow --strict
   numeric_assertions:
     - "held-out S task count = 12"
@@ -223,7 +242,8 @@ exit_criteria:
     - "valid locked final scores = 72"
   manual_checks:
     - "Owner-authorized blind Agent panel confirms scores were locked before condition reveal"
-    - "Tracked report preserves the generated metric core and discloses truth-use, reviewer-overlap, and filesystem-isolation limits"
+    - "Tracked report preserves the S-v2 metric core and discloses truth-use, reviewer-overlap, filesystem-isolation, and inherited-environment limits"
+    - "Current S-v3 authority is foundation-only and has no runnable agent profile"
     - "Review confirms no Phase P product surface or Experiment A claim was introduced"
 ```
 

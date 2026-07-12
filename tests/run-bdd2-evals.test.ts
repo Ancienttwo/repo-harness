@@ -12,6 +12,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
 import {
+  buildIsolatedAgentEnv,
   buildRunPlan,
   runEvaluation,
   sha256File,
@@ -43,6 +44,32 @@ function writeManifest(root: string, manifest: unknown): void {
 }
 
 describe("run-bdd2-evals validation and planning", () => {
+  test("isolated agent environment drops caller secrets and config toggles", () => {
+    const env = buildIsolatedAgentEnv("/tmp/bdd2-home", {
+      PATH: "/usr/bin:/bin",
+      OPENAI_API_KEY: "must-not-leak",
+      HTTPS_PROXY: "must-not-leak",
+      CODEX_CONFIG: "must-not-leak",
+    });
+    expect(Object.keys(env).sort()).toEqual([
+      "CODEX_HOME",
+      "HOME",
+      "LANG",
+      "LC_ALL",
+      "NO_COLOR",
+      "PATH",
+      "TERM",
+      "TMPDIR",
+    ]);
+    expect(env.HOME).toBe("/tmp/bdd2-home");
+    expect(env.CODEX_HOME).toBe("/tmp/bdd2-home");
+    expect(env.PATH).toBe("/usr/bin:/bin");
+    expect(env).not.toHaveProperty("OPENAI_API_KEY");
+    expect(env).not.toHaveProperty("HTTPS_PROXY");
+    expect(env).not.toHaveProperty("CODEX_CONFIG");
+    expect(() => buildIsolatedAgentEnv("/tmp/bdd2-home", {})).toThrow("requires an explicit PATH");
+  });
+
   test("builds stable opaque coordinates", () => {
     const evaluation = validateEvaluation(ROOT);
     const options = {
@@ -128,18 +155,20 @@ describe("run-bdd2-evals validation and planning", () => {
     }
   });
 
-  test("an unsealed experiment cannot borrow the sealed Shape profile", () => {
+  test("foundation experiments cannot execute before a new revision is sealed", () => {
     const evaluation = validateEvaluation(ROOT);
-    expect(() =>
-      runEvaluation(evaluation, {
-        experiment: "A",
-        partition: "development",
-        taskIds: ["A-D-01"],
-        conditions: ["baseline"],
-        repetitions: 1,
-        agent: "codex-gpt-5.6-sol-xhigh",
-      })
-    ).toThrow("Experiment A is foundation-only");
+    for (const [experiment, taskId] of [["S", "S-D-01"], ["A", "A-D-01"]] as const) {
+      expect(() =>
+        runEvaluation(evaluation, {
+          experiment,
+          partition: "development",
+          taskIds: [taskId],
+          conditions: ["baseline"],
+          repetitions: 1,
+          agent: "codex-gpt-5.6-sol-xhigh",
+        })
+      ).toThrow(`Experiment ${experiment} is foundation-only`);
+    }
   });
 });
 
@@ -156,6 +185,11 @@ describe("run-bdd2-evals sealed execution", () => {
       spawnSync("chmod", ["+x", stub]);
 
       const manifest = readManifest(root);
+      manifest.experiments.S.freeze = {
+        id: "bdd2-test-s-sealed",
+        state: "sealed",
+        sealed_at: "2026-07-12T00:00:00Z",
+      };
       manifest.agents = {
         stub: {
           command: stub,
@@ -273,6 +307,11 @@ describe("run-bdd2-evals sealed execution", () => {
       writeFileSync(truthPath, `${JSON.stringify(truth, null, 2)}\n`, "utf-8");
 
       const manifest = readManifest(root);
+      manifest.experiments.S.freeze = {
+        id: "bdd2-test-s-sealed",
+        state: "sealed",
+        sealed_at: "2026-07-12T00:00:00Z",
+      };
       manifest.experiments.S.held_out_task_count = 1;
       manifest.partitions.held_out.tasks_sha256 = sha256File(taskPath);
       manifest.partitions.held_out.truth_sha256 = sha256File(truthPath);

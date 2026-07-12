@@ -745,6 +745,7 @@ export function runEvaluation(evaluation: ValidatedEvaluation, options: RunOptio
       args,
       cwd: "isolated-temporary-directory",
       home: "isolated-temporary-directory",
+      environment: "minimal-allowlist",
       input_source: "stdin",
       credential_mode: profile.credential_mode,
     });
@@ -764,7 +765,7 @@ export function runEvaluation(evaluation: ValidatedEvaluation, options: RunOptio
       result = spawnSync(profile.command, args, {
         cwd: isolatedWorkspace,
         encoding: "utf-8",
-        env: { ...process.env, HOME: isolatedHome, CODEX_HOME: isolatedHome },
+        env: buildIsolatedAgentEnv(isolatedHome),
         input: agentPacket,
         maxBuffer: 16 * 1024 * 1024,
       });
@@ -835,6 +836,24 @@ function integerAtLeastZero(value: unknown, label: string): number {
 function numberAtLeastZero(value: unknown, label: string): number {
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0) fail(`${label} must be a non-negative finite number`);
   return value;
+}
+
+export function buildIsolatedAgentEnv(
+  isolatedHome: string,
+  sourceEnv: Record<string, string | undefined> = process.env
+): Record<string, string> {
+  const path = sourceEnv.PATH;
+  if (!path) fail("Agent execution requires an explicit PATH");
+  return {
+    CODEX_HOME: isolatedHome,
+    HOME: isolatedHome,
+    LANG: "C.UTF-8",
+    LC_ALL: "C.UTF-8",
+    NO_COLOR: "1",
+    PATH: path,
+    TERM: "dumb",
+    TMPDIR: tmpdir(),
+  };
 }
 
 function validateLockedShapeScore(raw: unknown, label: string): LockedScore {

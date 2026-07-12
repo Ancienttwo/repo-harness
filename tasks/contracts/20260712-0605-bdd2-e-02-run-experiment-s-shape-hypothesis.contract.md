@@ -85,6 +85,7 @@ allowed_paths:
   - evals/bdd2/rubrics/score.schema.json
   - evals/bdd2/metrics/shape-metrics.md
   - evals/bdd2/reports/experiment-s.md
+  - evals/bdd2/reports/experiment-s-authority-audit.json
   - scripts/run-bdd2-evals.ts
   - tests/run-bdd2-evals.test.ts
   - tests/bdd2-evals-contract.test.ts
@@ -144,6 +145,7 @@ exit_criteria:
   files_exist:
     - evals/bdd2/metrics/shape-metrics.md
     - evals/bdd2/reports/experiment-s.md
+    - evals/bdd2/reports/experiment-s-authority-audit.json
   artifacts_exist:
     - .ai/harness/checks/latest.json
     - tasks/notes/20260712-0605-bdd2-e-02-run-experiment-s-shape-hypothesis.notes.md
@@ -161,16 +163,18 @@ exit_criteria:
   manual_checks:
     - "72 successful held-out S packets and 72 valid locked final scores exist"
     - "Owner-authorized blind Agent panel confirms scores were locked before reveal"
-    - "Tracked report reproduces the pre-registered metrics and decision and discloses the proxy panel, truth-use, overlap, and filesystem-isolation limits"
+    - "Tracked report preserves the S-v2 metrics and discloses the proxy panel, truth-use, overlap, filesystem-isolation, and inherited-environment limits"
+    - "Current S-v3 authority is foundation-only and contains no runnable agent profile"
     - "Evaluator review file recommends pass and confirms no Phase P surface"
 ```
 
 ## Acceptance Notes (Human Review)
 
-- Functional behavior: independent S seal, isolated 72-coordinate run, blind score
-  validation, deterministic aggregation, and explicit gate decision.
+- Functional behavior: historical S-v2 run and decision remain traceable to their
+  source commit; current S-v3 authority is fail-closed after the inherited-env flaw.
 - Edge cases: zero baseline denominator, missing/duplicate/mismatched scores,
-  unsealed A, command-version drift, dirty/untracked authority, agent failure.
+  stable/new severe omissions, unsealed S/A, caller-secret environment leakage,
+  command-version drift, dirty/untracked authority, and agent failure.
 - Regression risks: breaking the E-01 foundation contract is intentional only at
   the unused schema boundary; focused tests must prove the direct v2 cutover.
 

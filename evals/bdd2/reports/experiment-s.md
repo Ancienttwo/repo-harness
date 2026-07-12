@@ -52,47 +52,37 @@ computed decision.
   mismatches are therefore 12 baseline versus 5 treatment, not the reviewer-coded
   7 versus 1 shown in the generated metric section.
 
-| Task | Condition | Repetition | Reviewer label | Expected tier |
-|---|---|---:|---|---|
-| S-H-03 | baseline | 1 | inline | prd |
-| S-H-03 | baseline | 2 | inline | prd |
-| S-H-03 | baseline | 3 | inline | prd |
-| S-H-03 | treatment | 1 | inline | prd |
-| S-H-03 | treatment | 2 | inline | prd |
-| S-H-03 | treatment | 3 | inline | prd |
-| S-H-04 | baseline | 1 | incorrect | prd |
-| S-H-06 | baseline | 1 | incorrect | prd |
-| S-H-06 | baseline | 2 | incorrect | prd |
-| S-H-08 | baseline | 1 | brief | inline |
-| S-H-08 | baseline | 2 | brief | inline |
-| S-H-08 | baseline | 3 | incorrect | inline |
-| S-H-10 | baseline | 2 | incorrect | prd |
-| S-H-11 | baseline | 1 | incorrect | inline |
-| S-H-11 | baseline | 3 | incorrect | inline |
-| S-H-11 | treatment | 3 | prd | inline |
-| S-H-12 | treatment | 1 | incorrect | inline |
-
-The table is the durable post-reveal projection of the ignored score/private
-mapping evidence. The contract test parses its rows and derives the 12/5 totals;
-the local reproduction reads the same score and private-coordinate files and joins
-them with `truth/held-out.json#shape_tasks.*.expected_authority`.
+`evals/bdd2/reports/experiment-s-authority-audit.json` is the machine-readable
+post-reveal projection of the ignored score/private-mapping evidence. The contract
+test validates each row against held-out truth, derives the 12/5 totals, and checks
+this report projection. When local raw evidence exists, the same test also verifies
+every packet row against its score and private coordinate.
 - Each packet had one final reviewer and no overlapping independent score, so
   inter-rater disagreement was not measured. The reviewer-safe queue omitted the
   private mapping, but blind and private directories remained under the same repo
   run root; filesystem isolation depended on reviewer compliance rather than an OS
   boundary.
+- The S-v2 runner inherited the invoking process environment into every Agent
+  subprocess. HOME and CODEX_HOME were isolated, but API keys, proxy variables,
+  and host toggles were neither filtered nor frozen. No output leak was observed,
+  but the causal comparison is not reproducible and must not be treated as valid
+  product evidence.
 
 These limits do not turn the computed `Reshape` into `Pass` or `Kill`: authority
 fit is not a decision gate, and the tracked-artifact gate already fails. They do
-prevent using Experiment S as productization evidence. A new Shape revision must
-define truth-aware adjudication, reviewer overlap, and an enforceable reviewer
-filesystem boundary before rerunning.
+prevent using Experiment S as productization evidence. Current authority has been
+cut to the unsealed `bdd2-experiment-s-reshape-foundation-v3` revision with an
+explicit subprocess environment allowlist and no runnable agent profile. A future
+Shape revision must additionally define truth-aware adjudication, reviewer overlap,
+and an enforceable reviewer filesystem boundary before sealing and rerunning.
 
 ## Final decision interpretation
 
 The treatment reduced unsupported expansion from 48 to 2, removed the 23 baseline
 required-behavior omissions, and introduced no scored P0/P1 protected-concern
-regression. It nevertheless created one unnecessary tracked artifact, so the
+regression. The paired signal is less broad than the total reduction suggests:
+22/36 pairs (61.1%) were ties, with 12 wins and 2 losses. The treatment nevertheless
+created one unnecessary tracked artifact, so the
 pre-registered gate returns `Reshape`. The post-run evidence limits above reinforce
 that conservative outcome. Phase P, Experiment E, and Experiment I remain
 unauthorized; Experiment A retains its independent evaluation boundary.

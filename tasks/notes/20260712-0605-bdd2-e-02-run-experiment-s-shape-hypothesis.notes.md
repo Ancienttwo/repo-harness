@@ -84,8 +84,9 @@
   1.3.14 with 1112 passed, 1 platform skip, and 0 failures. The mainline stdout
   completion fix removed the earlier macOS truncation failure without widening
   E-02 scope.
-- E-02 focused tests, TypeScript no-emit, manifest/plan validation, 72/72 score
-  validation, deterministic metric-core re-summary, deploy SQL ordering,
+- E-02 focused tests, TypeScript no-emit, source-commit manifest/plan and 72/72
+  score validation, deterministic metric-core re-summary, current foundation
+  validation, deploy SQL ordering,
   architecture sync, task sync, strict workflow, and project-state inspection pass.
 - `scripts/migrate-project-template.sh` was retired by the mainline transactional
   TypeScript adoption cutover, so the stale shell command is no longer a runnable
@@ -105,6 +106,7 @@
 - Reviewer-safe queue: `.ai/harness/runs/bdd2/bdd2-e02-shape-s-v2-blind-review/`
   — 72 randomized packets plus frozen rubric/schema, with no private mapping.
 - Tracked aggregate report: `evals/bdd2/reports/experiment-s.md`.
+- Tracked truth-aware audit: `evals/bdd2/reports/experiment-s-authority-audit.json`.
 
 ## External Review Resolution
 
@@ -122,11 +124,17 @@
   not by an OS-enforced filesystem boundary. These are evidence-grade limitations,
   not facts that can be repaired after reveal without creating a new experiment
   revision.
-- The tracked report now discloses all three limits and keeps the decision at
-  `Reshape`. Its mismatch table is counted by the tracked contract test and, when
-  ignored local run evidence exists, reproduced byte-for-byte from scores, private
-  coordinates, and held-out truth. Kill-path regression coverage is also added
-  without changing the frozen runner, manifest, prompts, scores, or raw outputs.
+- A later cross-model pass found that S-v2 inherited all caller environment
+  variables into the Agent subprocess. Isolated HOME/CODEX_HOME therefore did not
+  provide a reproducible or secret-minimal execution envelope. S-v2 is retained as
+  failed evidence only; current authority is an unsealed S-v3 foundation with no
+  agent profile and a runner-level environment allowlist.
+- The tracked report now discloses all identified limits and keeps the decision at
+  `Reshape`. The machine-readable authority audit is validated against held-out
+  truth and, when ignored local run evidence exists, reproduced byte-for-byte from
+  scores and private coordinates. Kill-path and environment-allowlist regression
+  coverage are added without rewriting the S-v2 source commit, prompts, scores, or
+  raw outputs.
 
 ## Promotion Filter
 
