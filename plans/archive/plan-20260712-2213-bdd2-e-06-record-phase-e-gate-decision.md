@@ -1,6 +1,6 @@
 # Plan: BDD² E-06 — Record Phase E Gate Decision
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260712-2213
 > **Slug**: bdd2-e-06-record-phase-e-gate-decision
 > **Planning Source**: sprint-gate
@@ -57,7 +57,12 @@ mark prerequisite-gated rows as deliberately not run, and leave Phase P unauthor
 - [x] Apply frozen prerequisite rules to E-04 and E-05.
 - [x] Record one evidence-backed decision per hypothesis.
 - [x] Synchronize the Sprint completion projection.
-- [ ] Complete strict verification, external acceptance, hosted checks, and merge the E-06 PR.
+- [x] Complete strict verification, external acceptance, hosted checks, and merge the E-06 PR.
+
+## Closeout
+
+- PR #61 merged at 2026-07-12 22:41 +0800 after both Test jobs and all six MCP
+  path-matrix jobs passed. Phase E is complete and Phase P remains unauthorized.
 
 ## Promotion Gate
 

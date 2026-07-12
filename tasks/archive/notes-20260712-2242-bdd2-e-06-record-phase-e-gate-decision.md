@@ -1,10 +1,16 @@
+> **Archived**: 2026-07-12 22:42
+> **Related Plan**: plans/archive/plan-20260712-2213-bdd2-e-06-record-phase-e-gate-decision.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260712-2242
+
 # Implementation Notes: bdd2-e-06-record-phase-e-gate-decision
 
-> **Status**: Active
+> **Status**: Completed
 > **Plan**: plans/plan-20260712-2213-bdd2-e-06-record-phase-e-gate-decision.md
 > **Contract**: tasks/contracts/20260712-2213-bdd2-e-06-record-phase-e-gate-decision.contract.md
 > **Review**: tasks/reviews/20260712-2213-bdd2-e-06-record-phase-e-gate-decision.review.md
-> **Last Updated**: 2026-07-12 22:13
+> **Last Updated**: 2026-07-12 22:42
 
 ## Decisions
 
@@ -16,6 +22,8 @@
 - Keep Sprint row E-06 and the final merge-dependent definition-of-done item open
   until the decision PR has passed hosted checks and merged. E-03/E-04/E-05 are
   already resolved; a pending E-06 review must not be projected as completed.
+- PR #61 passed hosted Test and MCP path-matrix checks and merged. Sprint row E-06
+  and the final definition-of-done item are now complete.
 
 ## Tradeoff
 

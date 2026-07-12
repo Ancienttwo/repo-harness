@@ -1,27 +1,27 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-12T22:16:19+0800 -->
+<!-- updated_at: 2026-07-12T22:44:18+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: Active
-> **Updated At**: 2026-07-12T22:16:19+0800
-> **Source Branch**: codex/bdd2-phase-e-gate
-> **Source Commit**: 4c3612a
+> **Status**: ManualClearedWithActiveWork
+> **Updated At**: 2026-07-12T22:44:18+0800
+> **Source Branch**: codex/bdd2-phase-e-closeout
+> **Source Commit**: ba35326
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: bdd2-e06-phase-e-gate
+> **Reason**: bdd2-phase-e-complete
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: Active
-- Active Plan: plans/plan-20260712-2213-bdd2-e-06-record-phase-e-gate-decision.md
-- Plan Status: Executing
-- Next Task: Complete strict verification, external acceptance, hosted checks, and merge the E-06 PR.
-- Clear Note: (none)
+- Status: ManualClearedWithActiveWork
+- Active Plan: (none)
+- Plan Status: (none)
+- Next Task: inspect active worktree marker(s)
+- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
 
 ## Mainline Snapshot Reading
 
@@ -31,10 +31,10 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- .: plans/plan-20260712-2213-bdd2-e-06-record-phase-e-gate-decision.md
-- .: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/bdd2-audit-experiment
 - /Users/kito/Projects/repo-harness: plans/plan-20260712-2103-agent-fleet-worker-routing-telemetry.md
 - /Users/kito/Projects/repo-harness: active-worktree owner -> /Users/kito/Projects/repo-harness
+- /Users/kito/Projects/repo-harness-worktrees/agent-fleet-specialists: plans/plan-20260712-2215-agent-fleet-specialists.md
+- /Users/kito/Projects/repo-harness-worktrees/agent-fleet-specialists: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/agent-fleet-specialists
 - /Users/kito/Projects/repo-harness-worktrees/bdd2-eval-foundation: plans/plan-20260712-0450-bdd2-eval-foundation.md
 - /Users/kito/Projects/repo-harness-worktrees/bdd2-eval-foundation: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/bdd2-eval-foundation
 - /Users/kito/Projects/repo-harness-worktrees/bdd2-shape-experiment: plans/plan-20260712-0605-bdd2-e-02-run-experiment-s-shape-hypothesis.md
@@ -62,7 +62,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/20260703-inspection-migration.md`: status=active, current_slice=completed-20260703-architecture-closeout, source_plan=(none)
 ## Handoff
 
-- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Run strict contract/full CI/external review, push, and open the E-03 module PR.
+- Exact Next Step: Clean up merged contract worktree codex/code-authority-foundation-v1. Command: repo-harness run contract-worktree cleanup --slug code-authority-foundation-v1 --target main
 
 ## Checks
 
@@ -70,15 +70,22 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 6 changed/untracked path(s)
+- Summary: 13 changed/untracked path(s)
 
 ```
+ D plans/plan-20260712-2213-bdd2-e-06-record-phase-e-gate-decision.md
  M plans/sprints/20260712-bdd2-phase-e-evaluation.sprint.md
-?? evals/bdd2/reports/phase-e-gate.md
-?? plans/plan-20260712-2213-bdd2-e-06-record-phase-e-gate-decision.md
-?? tasks/contracts/20260712-2213-bdd2-e-06-record-phase-e-gate-decision.contract.md
-?? tasks/notes/20260712-2213-bdd2-e-06-record-phase-e-gate-decision.notes.md
-?? tasks/reviews/20260712-2213-bdd2-e-06-record-phase-e-gate-decision.review.md
+ D tasks/contracts/20260712-2213-bdd2-e-06-record-phase-e-gate-decision.contract.md
+ M tasks/current.md
+ D tasks/notes/20260712-2213-bdd2-e-06-record-phase-e-gate-decision.notes.md
+ D tasks/reviews/20260712-2213-bdd2-e-06-record-phase-e-gate-decision.review.md
+ M tasks/todos.md
+ M tests/bdd2-evals-contract.test.ts
+?? plans/archive/plan-20260712-2213-bdd2-e-06-record-phase-e-gate-decision.md
+?? tasks/archive/contract-20260712-2242-bdd2-e-06-record-phase-e-gate-decision.md
+?? tasks/archive/notes-20260712-2242-bdd2-e-06-record-phase-e-gate-decision.md
+?? tasks/archive/review-20260712-2242-bdd2-e-06-record-phase-e-gate-decision.md
+?? tasks/archive/todo-20260712-2242-bdd2-e-06-record-phase-e-gate-decision.md
 ```
 
 ## Source Artifacts
