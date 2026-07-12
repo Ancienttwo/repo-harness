@@ -68,10 +68,7 @@ function createFixture(options: { sealed?: boolean; i2Enabled?: boolean } = {}):
   const state = options.sealed === false ? "foundation" : "sealed";
   const freeze = (id: string) => ({ id: `e2-${id}`, state, sealed_at: state === "sealed" ? "2026-07-12T16:00:00Z" : null });
   const conditions = (id: string) => ({ control: { prompt: `evals/bdd2/prompts/${id}-control.md`, sha256: sha256File(join(root, `evals/bdd2/prompts/${id}-control.md`)) }, treatment: { prompt: `evals/bdd2/prompts/${id}-treatment.md`, sha256: sha256File(join(root, `evals/bdd2/prompts/${id}-treatment.md`)) } });
-  const appendices = (id: "eb" | "ei", prefix: "EB" | "EI") => ({
-    ...Object.fromEntries(Array.from({ length: 6 }, (_, i) => [`${prefix}-H-${String(i + 1).padStart(2, "0")}`, { appendix: ref(`evals/bdd2/evidence/${id}-${i + 1}.md`, root), assets: [ref(`evals/bdd2/evidence/${id}-${i + 1}.png`, root)] }])),
-    [`${prefix}-D-01`]: { appendix: ref(`evals/bdd2/evidence/${id}-1.md`, root), assets: [ref(`evals/bdd2/evidence/${id}-1.png`, root)] },
-  });
+  const appendices = (id: "eb" | "ei", prefix: "EB" | "EI") => Object.fromEntries(Array.from({ length: 6 }, (_, i) => [`${prefix}-H-${String(i + 1).padStart(2, "0")}`, { appendix: ref(`evals/bdd2/evidence/${id}-${i + 1}.md`, root), assets: [ref(`evals/bdd2/evidence/${id}-${i + 1}.png`, root)] }]));
   const fixturePath = "evals/bdd2/fixtures/page";
   const experiments = {
     S2: { kind: "inline-shape", freeze: freeze("s2"), repetitions: 3, held_out_task_count: 12, conditions: conditions("s2") },

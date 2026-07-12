@@ -385,8 +385,8 @@ export function validateEvaluation(repoRoot: string = REPO_ROOT, manifestRelativ
       const count = tasks.held_out.filter((task) => task.experiment === id).length;
       if (count !== experiment.held_out_task_count) fail(`Sealed ${id} requires exactly ${experiment.held_out_task_count} held-out tasks, got ${count}`);
       if (id === "EB" || id === "EI") {
-        const taskIds = [...tasks.development, ...tasks.held_out].filter((task) => task.experiment === id).map((task) => task.id).sort();
-        if (Object.keys(experiment.appendices as object).sort().join("\n") !== taskIds.join("\n")) fail(`${id} appendices must match all development and held-out task ids exactly`);
+        const taskIds = tasks.held_out.filter((task) => task.experiment === id).map((task) => task.id).sort();
+        if (Object.keys(experiment.appendices as object).sort().join("\n") !== taskIds.join("\n")) fail(`${id} appendices must match held-out task ids exactly`);
       }
     }
   }
