@@ -5,10 +5,10 @@
 > **Contract**: tasks/contracts/20260712-0301-chatgpt-coding-mcp-integration.contract.md
 > **Notes File**: tasks/notes/20260712-0301-chatgpt-coding-mcp-integration.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-07-12 12:50
+> **Last Updated**: 2026-07-12 13:13
 > **Recommendation**: pass
 > **Review Rubric Version**: 1
-> **Reviewed Diff Fingerprint**: sha256:3f02e713e88c7c40a78099bdd35d522e333e035fe4304e2eff2e223c26b7fa0e
+> **Reviewed Diff Fingerprint**: sha256:9511e37660eb0bdc5199e4775fda6aadb77d975c2a56a58a63fcf3d8efdb9e0e
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 ## Human Review Card
@@ -17,7 +17,7 @@
 - Change type: code-change
 - Intended files changed: seven accepted coding MCP commits plus bounded integration workflow artifacts.
 - Actual files changed: coding profile, OAuth/runtime/workspace/process/file tooling, truthful host-authority consent copy, setup/operator/research/architecture docs, focused tests, optional `node-pty`, and matching workflow evidence.
-- Commands passed: refreshed-main focused MCP suites, latest-main combined BDD²/MCP suites (74 pass / 1 platform skip / 0 fail), post-consent-fix HTTP/setup suites (31 pass / 0 fail / 324 expectations), post-fault-hook coding/HTTP suites (12 pass / 0 fail / 148 expectations), cross-platform revocation HTTP suite repeated three times (21 pass / 0 fail / 303 expectations), final coding/HTTP suites after `.ignore` hardening (13 pass / 0 fail / 152 expectations), frozen install, typecheck, deploy SQL order, architecture sync, task sync, strict workflow under the macOS-safe `LC_ALL=C` locale, project inspection, transactional `adopt --dry-run`, diff whitespace check, and the isolated CodeGraph file that hit the raw suite's default timeout.
+- Commands passed: refreshed-main focused MCP suites, latest-main combined BDD²/MCP suites (74 pass / 1 platform skip / 0 fail), post-consent-fix HTTP/setup suites (31 pass / 0 fail / 324 expectations), post-fault-hook coding/HTTP suites (12 pass / 0 fail / 148 expectations), cross-platform revocation HTTP suite repeated three times (21 pass / 0 fail / 303 expectations), final coding/HTTP suites after `.ignore` hardening (13 pass / 0 fail / 152 expectations), final HTTP suite after canonical path and consent-label fixes (7 pass / 0 fail / 103 expectations), frozen install, typecheck, deploy SQL order, architecture sync, task sync, strict workflow under the macOS-safe `LC_ALL=C` locale, project inspection, transactional `adopt --dry-run`, diff whitespace check, and the isolated CodeGraph file that hit the raw suite's default timeout.
 - External acceptance: pass from Claude via `claude-review` against the exact current fingerprint; the preserved ChatGPT authorization-runtime live canary remains separate product-runtime evidence.
 - Residual risks: `node-pty` remains optional and PTY correctly fails closed when unavailable; the draft PR still needs human merge review against the moving main branch.
 - Reviewer action required: review the draft PR; do not merge automatically.
@@ -43,15 +43,15 @@
 > **External Acceptance**: pass
 > **External Reviewer**: Claude
 > **External Source**: claude-review
-> **External Started**: 2026-07-12T12:47:20+08:00
-> **External Completed**: 2026-07-12T12:50:20+08:00
+> **External Started**: 2026-07-12T13:11:15+08:00
+> **External Completed**: 2026-07-12T13:13:45+08:00
 > **Review Rubric Version**: 1
-> **Reviewed Diff Fingerprint**: sha256:3f02e713e88c7c40a78099bdd35d522e333e035fe4304e2eff2e223c26b7fa0e
+> **Reviewed Diff Fingerprint**: sha256:9511e37660eb0bdc5199e4775fda6aadb77d975c2a56a58a63fcf3d8efdb9e0e
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 - P1 blockers: none
 - P2 advisories: none from the final Claude re-review against latest main. The separate ChatGPT live-canary review still retains `surface_blocked` for its stricter literal `Called tool` transcript classifier; this integration does not claim `invocation_verified`.
-- Acceptance checklist: early reviews surfaced cleanup and move-rollback gaps, then gate-scope reviews caught misleading host-authority consent copy, an environment-variable production fault injector, a Windows-only trap assertion, and fail-open coding `.ignore` policy loading. All were remediated with focused regressions. Claude re-reviewed the complete committed local-target-bound branch/staged/unstaged/untracked diff with read-only tools and returned verbatim `No P1 or P2 findings.` for the final recorded fingerprint.
+- Acceptance checklist: early reviews surfaced cleanup and move-rollback gaps, then gate-scope reviews caught misleading host-authority consent copy, an environment-variable production fault injector, Windows worktree path normalization, fail-open coding `.ignore` policy loading, and absolute Windows path disclosure in consent repo labels. All were remediated with focused regressions. Claude re-reviewed the complete committed local-target-bound branch/staged/unstaged/untracked diff with read-only tools and returned verbatim `No P1 or P2 findings.` for the final recorded fingerprint.
 
 ## Behavior Diff Notes
 
@@ -64,6 +64,7 @@
 - Patch rollback fault injection is now an internal in-memory test hook absent from server construction; no production environment variable can trigger it.
 - Authorization-revocation E2E now proves the background process heartbeat stops instead of requiring POSIX signal-trap semantics unavailable under Windows `taskkill /T`.
 - Existing coding `.ignore` policy must be a readable regular file; directory, symlink, or read failure returns `IGNORE_POLICY_UNAVAILABLE` rather than allowing file access.
+- OAuth consent repo labels use standard-library `path.basename()` and the E2E asserts the absolute local repo path is absent.
 
 ## Residual Risks / Follow-ups
 
