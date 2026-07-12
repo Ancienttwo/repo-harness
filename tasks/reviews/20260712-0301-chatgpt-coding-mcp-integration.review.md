@@ -5,10 +5,10 @@
 > **Contract**: tasks/contracts/20260712-0301-chatgpt-coding-mcp-integration.contract.md
 > **Notes File**: tasks/notes/20260712-0301-chatgpt-coding-mcp-integration.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-07-12 14:43
+> **Last Updated**: 2026-07-12 15:34
 > **Recommendation**: pass
 > **Review Rubric Version**: 1
-> **Reviewed Diff Fingerprint**: sha256:040eda715c0014c4c8d29a4dfc562e5c8cdd882c533b2779248fe22c984eee9f
+> **Reviewed Diff Fingerprint**: sha256:b659dfd05f1c8956136fba944ee11cc5b4f58722ab93087fa0e0b4f3a071d1bd
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 ## Human Review Card
@@ -17,7 +17,7 @@
 - Change type: code-change
 - Intended files changed: seven accepted coding MCP commits plus bounded integration workflow artifacts.
 - Actual files changed: coding profile, OAuth/runtime/workspace/process/file tooling, truthful host-authority consent copy, setup/operator/research/architecture docs, focused tests, optional `node-pty`, and matching workflow evidence.
-- Commands passed: refreshed-main focused MCP suites, latest-main combined BDD²/MCP suites (74 pass / 1 platform skip / 0 fail), post-consent-fix HTTP/setup suites (31 pass / 0 fail / 324 expectations), post-fault-hook coding/HTTP suites (12 pass / 0 fail / 148 expectations), cross-platform revocation HTTP suite repeated three times (21 pass / 0 fail / 303 expectations), final coding/HTTP suites after `.ignore` hardening and dangling-symlink remediation (13 pass / 0 fail / 155 expectations), final HTTP suite after exact-branch selection and termination-grace correction (7 pass / 0 fail / 103 expectations), frozen install, typecheck, deploy SQL order, architecture sync, task sync, strict workflow under the macOS-safe `LC_ALL=C` locale, project inspection, transactional `adopt --dry-run`, diff whitespace check, and the isolated CodeGraph file that hit the raw suite's default timeout. GitHub CI for pre-merge head `29f5ea5` passed both Test jobs and all Ubuntu, macOS, and Windows MCP matrix jobs; current main `02079da` is integrated and requires a fresh PR-head run after push.
+- Commands passed: refreshed-main focused MCP suites, latest-main combined BDD²/MCP suites (74 pass / 1 platform skip / 0 fail), post-consent-fix HTTP/setup suites (31 pass / 0 fail / 324 expectations), post-fault-hook coding/HTTP suites (12 pass / 0 fail / 148 expectations), cross-platform revocation HTTP suite repeated three times (21 pass / 0 fail / 303 expectations), final coding/HTTP suites after `.ignore` hardening and dangling-symlink remediation (13 pass / 0 fail / 155 expectations), final HTTP suite after exact-branch selection and termination-grace correction (7 pass / 0 fail / 103 expectations), frozen install, typecheck, deploy SQL order, architecture sync, task sync, strict workflow under the macOS-safe `LC_ALL=C` locale, project inspection, transactional `adopt --dry-run`, diff whitespace check, and the isolated CodeGraph file that hit the raw suite's default timeout. After the incoming BDD² V0 PRD catalog repair, strict contract verification passed all 23 criteria. GitHub CI for pre-merge head `29f5ea5` passed both Test jobs and all Ubuntu, macOS, and Windows MCP matrix jobs; current main `02079da` is integrated and requires a fresh PR-head run after push.
 - External acceptance: pass from Claude via `claude-review` against the exact current fingerprint; the preserved ChatGPT authorization-runtime live canary remains separate product-runtime evidence.
 - Residual risks: `node-pty` remains optional and PTY correctly fails closed when unavailable; the draft PR still needs human merge review against the moving main branch.
 - Reviewer action required: review the draft PR; do not merge automatically.
@@ -32,7 +32,7 @@
 ## Verification Evidence
 
 - Waza `/check` run: manual Waza-style diff, authority, security, and regression review completed; no P1/P2 findings remain.
-- Commands run: original-base focused MCP suite (97 pass / 1119 expectations); two independent original-base `bun test` passes (each 1158 pass / 1 skip / 0 fail / 11695 expectations); refreshed-main focused MCP suite (98 pass / 0 fail / 1127 expectations); latest-main combined BDD²/MCP suite (74 pass / 1 skip / 0 fail / 680 expectations); `bun install --frozen-lockfile`; `bun run check:type`; every current root required check; isolated-brain strict workflow; `git diff --check`; refreshed-main raw `bun test` (1121 pass / 1 skip / one default-timeout-only failure); isolated timed-out file recheck (2 pass / 0 fail / 13 expectations); latest-main strict contract verification passed all 23 criteria using the complete 180-second CI envelope; PR #55 head `29f5ea5` passed both Test jobs and both complete Ubuntu/macOS/Windows MCP matrix runs (`29181916810`, `29181917950`).
+- Commands run: original-base focused MCP suite (97 pass / 1119 expectations); two independent original-base `bun test` passes (each 1158 pass / 1 skip / 0 fail / 11695 expectations); refreshed-main focused MCP suite (98 pass / 0 fail / 1127 expectations); latest-main combined BDD²/MCP suite (74 pass / 1 skip / 0 fail / 680 expectations); `bun install --frozen-lockfile`; `bun run check:type`; every current root required check; isolated-brain strict workflow; `git diff --check`; refreshed-main raw `bun test` (1121 pass / 1 skip / one default-timeout-only failure); isolated timed-out file recheck (2 pass / 0 fail / 13 expectations); current-main strict contract verification passed all 23 criteria using the complete 180-second CI envelope; PR #55 head `29f5ea5` passed both Test jobs and both complete Ubuntu/macOS/Windows MCP matrix runs (`29181916810`, `29181917950`).
 - Manual checks: confirmed retired rollout files remain absent, rollout/generalRepo runtime fields are absent, coding exposes exactly five direct tools, and local main preflight hashes are checked again before push.
 - Supporting artifacts: integration plan, contract, notes, Claude external acceptance bound to the current fingerprint, existing ChatGPT coding MCP live-canary review, and `.ai/harness/checks/latest.json` after final verification.
 - Implementation notes reviewed: yes.
@@ -43,15 +43,15 @@
 > **External Acceptance**: pass
 > **External Reviewer**: Claude
 > **External Source**: claude-review
-> **External Started**: 2026-07-12T14:39:00+08:00
-> **External Completed**: 2026-07-12T14:43:00+08:00
+> **External Started**: 2026-07-12T15:31:00+08:00
+> **External Completed**: 2026-07-12T15:34:00+08:00
 > **Review Rubric Version**: 1
-> **Reviewed Diff Fingerprint**: sha256:040eda715c0014c4c8d29a4dfc562e5c8cdd882c533b2779248fe22c984eee9f
+> **Reviewed Diff Fingerprint**: sha256:b659dfd05f1c8956136fba944ee11cc5b4f58722ab93087fa0e0b4f3a071d1bd
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 - P1 blockers: none
 - P2 advisories: none from the final Claude re-review against latest main. The separate ChatGPT live-canary review still retains `surface_blocked` for its stricter literal `Called tool` transcript classifier; this integration does not claim `invocation_verified`.
-- Acceptance checklist: early reviews surfaced cleanup and move-rollback gaps, then gate-scope reviews caught misleading host-authority consent copy, an environment-variable production fault injector, Windows worktree path normalization, fail-open coding `.ignore` policy loading, absolute Windows path disclosure in consent repo labels, and a dangling `.ignore` symlink that `existsSync()` misclassified as absent. All were remediated with focused regressions. After current main was merged and the dangling-symlink fix landed, Claude re-reviewed the complete diff with read-only tools and returned verbatim `No P1 or P2 findings.` for the final recorded fingerprint.
+- Acceptance checklist: early reviews surfaced cleanup and move-rollback gaps, then gate-scope reviews caught misleading host-authority consent copy, an environment-variable production fault injector, Windows worktree path normalization, fail-open coding `.ignore` policy loading, absolute Windows path disclosure in consent repo labels, and a dangling `.ignore` symlink that `existsSync()` misclassified as absent. All were remediated with focused regressions. The incoming main PRD failure was repaired only by timestamped rename, Draft status, and two reference updates. Claude re-reviewed the complete current-main diff with read-only tools and returned verbatim `No P1 or P2 findings.` for the final recorded fingerprint.
 
 ## Behavior Diff Notes
 
