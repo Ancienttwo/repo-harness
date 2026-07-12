@@ -35,10 +35,10 @@ P productization remains forbidden until the final recorded gate decision.
 |---:|---|---|---|---|---|
 | 1 | [x] | BDD2-E-01 — Freeze evaluation authority and build reproducible runner foundation | contract | Manifest/hash drift fails closed; agent packets exclude truth and treatment identity; deterministic stub runs pass; no Phase P surface is added. | `plans/plan-20260712-0450-bdd2-eval-foundation.md` |
 | 2 | [x] | BDD2-E-02 — Run Experiment S: shape hypothesis | contract | 12 held-out tasks × 2 conditions × 3 runs complete; blind adjudication reports unsupported expansion and required/protected omission; decision is `Reshape` in merged PR #59. | `plans/plan-20260712-0605-bdd2-e-02-run-experiment-s-shape-hypothesis.md` |
-| 3 | [ ] | BDD2-E-03 — Run Experiment A: audit hypothesis | contract | 12 seeded/clean held-out fixtures × 2 conditions × 2 runs complete; precision, recall, clean false-positive, severity agreement, and correct no-findings are reported with a pass/kill decision. | `plans/plan-20260712-1811-bdd2-e-03-run-experiment-a-audit-hypothesis.md` |
-| 4 | [ ] | BDD2-E-04 — Run Experiment E: Browser and ImageGen adapter hypotheses | contract | Starts only after S and A pass; Browser and ImageGen run as separate 6 × 2 × 2 comparisons; provenance, synthetic-evidence labeling, uncertainty closure, reviewer disagreement, and unsupported concepts are reported independently. | gated by E-02 and E-03 |
-| 5 | [ ] | BDD2-E-05 — Run Experiment I: implementation pilot | contract | Starts only after S and A pass; 6 held-out tasks × 3 conditions × 2 runs complete; every new severe acceptance failure, protected-concern regression, surface delta, correction time, and later deletion is reported. | gated by E-02 and E-03 |
-| 6 | [ ] | BDD2-E-06 — Record Phase E gate decision | contract | One evidence-backed Proceed / Reshape / Defer / Kill decision is recorded per hypothesis; Phase P scope is authorized only for hypotheses that passed their pre-registered threshold. | gated by all applicable rows |
+| 3 | [x] | BDD2-E-03 — Run Experiment A: audit hypothesis | contract | 48/48 outputs and scores completed; decision `Kill` in merged PR #60. | `plans/plan-20260712-1811-bdd2-e-03-run-experiment-a-audit-hypothesis.md` |
+| 4 | [x] | BDD2-E-04 — Run Experiment E: Browser and ImageGen adapter hypotheses | contract | Gated-not-run because S/A did not both pass; Browser=`Defer` and ImageGen=`Defer`, with no efficacy claim. | `evals/bdd2/reports/phase-e-gate.md` |
+| 5 | [x] | BDD2-E-05 — Run Experiment I: implementation pilot | contract | Gated-not-run because S/A did not both pass; implementation pilot=`Defer`. | `evals/bdd2/reports/phase-e-gate.md` |
+| 6 | [ ] | BDD2-E-06 — Record Phase E gate decision | contract | Decision artifact is complete; row closes only after E-06 verification, external acceptance, hosted checks, and merge. | `plans/plan-20260712-2213-bdd2-e-06-record-phase-e-gate-decision.md` |
 
 ## Ordering and Stop Rules
 
@@ -55,16 +55,22 @@ P productization remains forbidden until the final recorded gate decision.
 
 ## Definition of Done
 
-- [ ] All applicable experiment rows have immutable run coordinates and raw
+- [x] All applicable experiment rows have immutable run coordinates and raw
   evidence under ignored `.ai/harness/runs/bdd2/`.
-- [ ] Blind adjudication and aggregate reports contain every PRD metric, including
+- [x] Blind adjudication and aggregate reports contain every PRD metric, including
   negative and protected-concern measures.
-- [ ] Development and held-out material are separated and leakage checks pass.
-- [ ] Every dependent gate records why it proceeded or stopped.
-- [ ] A human-approved Phase E decision exists before any Phase P plan is created.
+- [x] Development and held-out material are separated and leakage checks pass.
+- [x] Every dependent gate records why it proceeded or stopped.
+- [ ] The owner-approved frozen decision protocol has been applied without override
+  and the E-06 closeout has merged;
+  Phase P remains unapproved and no Phase P plan exists.
 
 ## Execution Log
 
 | When | Task | Plan | Result |
 |------|------|------|--------|
 | 2026-07-12 06:05 | BDD2-E-01 — Freeze evaluation authority and build reproducible runner foundation | `plans/plan-20260712-0450-bdd2-eval-foundation.md` | done |
+| 2026-07-12 17:56 | BDD2-E-02 — Run Experiment S | `plans/plan-20260712-0605-bdd2-e-02-run-experiment-s-shape-hypothesis.md` | `Reshape`, PR #59 |
+| 2026-07-12 22:12 | BDD2-E-03 — Run Experiment A | `plans/plan-20260712-1811-bdd2-e-03-run-experiment-a-audit-hypothesis.md` | `Kill`, PR #60 |
+| 2026-07-12 22:13 | BDD2-E-04/E-05 prerequisite resolution | `evals/bdd2/reports/phase-e-gate.md` | gated-not-run; `Defer` |
+| 2026-07-12 22:13 | BDD2-E-06 — Record Phase E gate decision | `plans/plan-20260712-2213-bdd2-e-06-record-phase-e-gate-decision.md` | decision drafted; merge gate pending |

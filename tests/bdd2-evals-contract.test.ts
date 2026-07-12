@@ -267,4 +267,29 @@ describe("BDD2 Phase E evaluation contract", () => {
     expect(report).toContain("underestimated the seeded P0 bulk-purge issue as");
     expect(report).toContain("Audit productization is not authorized");
   });
+
+  test("Phase E closes gated hypotheses without authorizing productization", () => {
+    const gate = readFileSync(join(ROOT, "evals/bdd2/reports/phase-e-gate.md"), "utf-8");
+    const sprint = readFileSync(
+      join(ROOT, "plans/sprints/20260712-bdd2-phase-e-evaluation.sprint.md"),
+      "utf-8"
+    );
+
+    expect(gate).toContain("| Shape / Behavior Card | **Reshape** |");
+    expect(gate).toContain("| Behavior audit | **Kill** |");
+    expect(gate).toContain("| Browser Evidence Adapter | **Defer** |");
+    expect(gate).toContain("| ImageGen Prototype Adapter | **Defer** |");
+    expect(gate).toContain("| Implementation pilot | **Defer** |");
+    expect(gate).toContain("Browser/ImageGen: 0 runs by design");
+    expect(gate).toContain("Phase P authorization**: Not approved");
+    expect(gate).not.toContain("Phase P authorization**: Approved");
+
+    for (const row of ["BDD2-E-03", "BDD2-E-04", "BDD2-E-05"]) {
+      expect(sprint).toMatch(new RegExp(`\\| \\d+ \\| \\[x\\] \\| ${row}`));
+    }
+    expect(sprint).toMatch(/\| 6 \| \[ \] \| BDD2-E-06/);
+    expect(sprint).toContain("row closes only after E-06 verification");
+    expect(sprint).toContain("gated-not-run");
+    expect(sprint).toContain("Phase P remains unapproved");
+  });
 });
