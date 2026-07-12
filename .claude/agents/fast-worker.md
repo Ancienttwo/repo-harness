@@ -1,6 +1,6 @@
 ---
 name: fast-worker
-description: Fast execution worker on Sonnet 5 at max effort. Use for well-scoped implementation, tests, refactoring, documentation, and mechanical changes; verifies with the project's real commands and returns `RESULT: DONE/PARTIAL/BLOCKED` with the evidence. Not for planning, architecture, or high-risk judgment — those go to deep-reasoner or stay with the orchestrator.
+description: Fast execution worker on Sonnet at max effort. Use for well-scoped implementation, tests, refactoring, documentation, and mechanical changes; verifies with the project's real commands and returns `RESULT: DONE/PARTIAL/BLOCKED` with the evidence. Not for planning, architecture, or high-risk judgment — those go to deep-reasoner or stay with the orchestrator.
 model: sonnet
 effort: max
 ---

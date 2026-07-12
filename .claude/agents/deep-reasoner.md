@@ -1,6 +1,6 @@
 ---
 name: deep-reasoner
-description: Architecture research and judgment executor on Opus 4.8 at max effort. Use for architecture proposals, complex multi-step reasoning, and high-risk analysis — design trade-offs, risky migrations, security-sensitive choices; returns `RECOMMENDATION: <one-line> — confidence: HIGH/MEDIUM/LOW` with the reasoning, and the orchestrator confirms the final framework. Not for routine execution; use fast-worker for that.
+description: Architecture research and judgment executor on Opus at max effort. Use for architecture proposals, complex multi-step reasoning, and high-risk analysis — design trade-offs, risky migrations, security-sensitive choices; returns `RECOMMENDATION: <one-line> — confidence: HIGH/MEDIUM/LOW` with the reasoning, and the orchestrator confirms the final framework. Not for routine execution; use fast-worker for that.
 model: opus
 effort: max
 ---
