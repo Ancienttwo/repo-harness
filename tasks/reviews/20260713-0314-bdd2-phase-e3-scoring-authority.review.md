@@ -5,10 +5,10 @@
 > **Contract**: tasks/contracts/20260713-0314-bdd2-phase-e3-scoring-authority.contract.md
 > **Notes File**: tasks/notes/20260713-0314-bdd2-phase-e3-scoring-authority.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-07-13 06:23
+> **Last Updated**: 2026-07-13 06:32
 > **Recommendation**: pass
 > **Review Rubric Version**: 1
-> **Reviewed Diff Fingerprint**: sha256:85e5077bc747fa0a2bb23eed0d202be16abf09284c677c58c8a71e6c933aef34
+> **Reviewed Diff Fingerprint**: sha256:c9eec50aba075c66c7f166f7b659cedd38959eca85f4718b67f7303550ed5b15
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 ## Human Review Card
@@ -18,7 +18,7 @@
 - Intended files changed: E3 evaluation authority, tracked corpus, prompts/schemas,
   deterministic reports, PRD/Sprint/workflow closeout, and verification-only mainline
   integration repairs.
-- Actual files changed: 33 files against `origin/main`; no public BDD skill, CLI/MCP,
+- Actual files changed: 36 files against `origin/main`; no public BDD skill, CLI/MCP,
   hook behavior, catalog, sidecar, lifecycle, generic linter, or Phase P surface.
 - Commands passed: focused E3/integration tests, TypeScript, all three deterministic
   decision reproductions, full `bun test`, root required checks, and Claude cross-review.
@@ -66,8 +66,8 @@
 > **External Reviewer**: Claude
 > **External Source**: claude-review
 > **External Started**: 2026-07-13T04:03:00+0800
-> **External Completed**: 2026-07-13T06:22:00+0800
-> **Reviewed Diff Fingerprint**: sha256:85e5077bc747fa0a2bb23eed0d202be16abf09284c677c58c8a71e6c933aef34
+> **External Completed**: 2026-07-13T06:29:00+0800
+> **Reviewed Diff Fingerprint**: sha256:c9eec50aba075c66c7f166f7b659cedd38959eca85f4718b67f7303550ed5b15
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 - P1 blockers: none
@@ -80,7 +80,8 @@
   The final CI HOME-isolation follow-up resolved one notes-only P2 and then returned
   `No findings`; binding the source-tree circuit entry then resolved the runner-only
   failure and its corrected three-call scope also returned `No findings`. The final
-  benchmark dry-run provider-isolation repair returned `No findings` as well.
+  benchmark dry-run provider-isolation repair and deterministic profile-resolver
+  failure fixture both returned `No findings` as well.
 
 ## Behavior Diff Notes
 
