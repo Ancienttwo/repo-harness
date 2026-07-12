@@ -15,6 +15,7 @@ import {
 import { createMcpToolContext } from '../../src/cli/mcp/server';
 import { repoHarnessPackageVersion } from '../../src/cli/mcp/version';
 import { assertChatGptMcpContract } from '../helpers/chatgpt-mcp-contract';
+import { readRegisteredRepoHarnessRepos, setRepoHarnessAccessMode } from '../../src/effects/repo-registry';
 
 const CLI = join(import.meta.dir, '../..', 'src/cli/index.ts');
 
@@ -268,7 +269,7 @@ describe('mcp setup', () => {
           endpoint: 'https://repo-harness-mcp.example.com/mcp',
         });
         const doctor = JSON.parse(runMcpDoctor({ repo: repoRoot, json: true }).lines[0]);
-        expect(doctor.mcp.configVersion).toBe(2);
+        expect(doctor.mcp.configVersion).toBe(3);
         expect(doctor.mcp.configVersionOk).toBe(true);
         expect(doctor.mcp.permissions.allowedRootCount).toBe(1);
         expect(doctor.mcp.permissions.allowedRoots).toEqual([
@@ -289,6 +290,120 @@ describe('mcp setup', () => {
         expect(human).toContain('Allowed roots: ok:');
       } finally {
         rmSync(externalRoot, { recursive: true, force: true });
+      }
+    });
+  });
+
+  test('coding setup is user-scoped, requires an explicit grant, and fails closed after permission downgrade', () => {
+    withTmpRepo((repoRoot) => {
+      const userState = mkdtempSync(join(tmpdir(), 'repo-harness-coding-setup-'));
+      const previousHome = process.env.REPO_HARNESS_HOME;
+      try {
+        process.env.REPO_HARNESS_HOME = userState;
+        expect(() => runMcpSetupChatgpt({ repo: repoRoot, scope: 'repo', profile: 'coding', grantReadWrite: [repoRoot] }))
+          .toThrow('requires --scope user');
+        expect(() => runMcpSetupChatgpt({ repo: repoRoot, scope: 'user', profile: 'coding' }))
+          .toThrow('requires at least one explicit --grant-read-write');
+        expect(() => runMcpSetupChatgpt({ repo: repoRoot, scope: 'user', profile: 'CODING' }))
+          .toThrow('invalid MCP profile');
+
+        const setup = runMcpSetupChatgpt({
+          repo: repoRoot,
+          scope: 'user',
+          profile: 'coding',
+          grantReadWrite: [repoRoot],
+          endpoint: 'https://coding.example.com/mcp',
+        });
+        expect(setup.lines.join('\n')).toContain('Profile: coding');
+        const config = JSON.parse(readFileSync(join(userState, 'mcp.local.json'), 'utf-8'));
+        expect(config).toMatchObject({
+          version: 3,
+          scope: 'user',
+          profile: 'coding',
+          capabilities: { workspaceReader: false, workflowPlanner: true, workspaceCoder: true },
+          coding: { enabled: true, environmentAllowlist: [] },
+          authorizationRevision: 1,
+        });
+        expect(readRegisteredRepoHarnessRepos({ adoptedOnly: true })[0]).toMatchObject({ accessMode: 'read_write' });
+        const ctx = createMcpToolContext({ repo: repoRoot, profile: 'coding' });
+        expect(ctx.policy.profile).toBe('coding');
+        expect(ctx.codingWorkspaceManager).toBeDefined();
+        expect(ctx.processManager).toBeDefined();
+
+        const downgraded = setRepoHarnessAccessMode(repoRoot, 'read_only');
+        expect(downgraded.authorizationRevision).toBe(2);
+        expect(() => createMcpToolContext({ repo: repoRoot, profile: 'coding' })).toThrow('explicit read_write grant');
+
+        expect(setRepoHarnessAccessMode(repoRoot, 'read_write').authorizationRevision).toBe(3);
+        runMcpSetupChatgpt({ repo: repoRoot, scope: 'user', profile: 'planner' });
+        const disabled = JSON.parse(readFileSync(join(userState, 'mcp.local.json'), 'utf-8'));
+        expect(disabled).toMatchObject({ profile: 'planner', authorizationRevision: 4, coding: { enabled: false } });
+        expect(() => createMcpToolContext({ repo: repoRoot, profile: 'coding' })).toThrow('coding MCP is disabled');
+      } finally {
+        if (previousHome === undefined) delete process.env.REPO_HARNESS_HOME;
+        else process.env.REPO_HARNESS_HOME = previousHome;
+        rmSync(userState, { recursive: true, force: true });
+      }
+    });
+  });
+
+  test('rerunning setup atomically migrates v1 and v2 local config to v3', () => {
+    for (const version of [1, 2] as const) {
+      withTmpRepo((repoRoot) => {
+        const configPath = join(repoRoot, '.repo-harness/mcp.local.json');
+        mkdirSync(join(repoRoot, '.repo-harness'), { recursive: true });
+        writeFileSync(configPath, `${JSON.stringify({
+          version,
+          repo: repoRoot,
+          server: { host: '127.0.0.1', port: 8877, transport: 'http' },
+          auth: { mode: 'oauth' },
+          chatgpt: { serverName: `legacy-v${version}`, endpoint: 'https://legacy.example.com/mcp' },
+          capabilities: version === 1 ? { reader: true } : { workspaceReader: true },
+          profile: 'planner',
+        }, null, 2)}\n`);
+        runMcpSetupChatgpt({ repo: repoRoot });
+        const migrated = JSON.parse(readFileSync(configPath, 'utf-8'));
+        expect(migrated).toMatchObject({
+          version: 3,
+          server: { port: 8877 },
+          chatgpt: { serverName: `legacy-v${version}`, endpoint: 'https://legacy.example.com/mcp' },
+          profile: 'planner',
+        });
+        expect(migrated.capabilities.reader).toBeUndefined();
+        expect(migrated.capabilities.workspaceReader).toBe(true);
+      });
+    }
+  });
+
+  test('active user coding config takes precedence over a legacy repo-scoped planner config', () => {
+    withTmpRepo((repoRoot) => {
+      const userState = mkdtempSync(join(tmpdir(), 'repo-harness-coding-priority-'));
+      const previousHome = process.env.REPO_HARNESS_HOME;
+      try {
+        process.env.REPO_HARNESS_HOME = userState;
+        mkdirSync(join(repoRoot, '.repo-harness'), { recursive: true });
+        writeFileSync(join(repoRoot, '.repo-harness/mcp.local.json'), `${JSON.stringify({
+          version: 2,
+          scope: 'repo',
+          repo: repoRoot,
+          profile: 'planner',
+          auth: { mode: 'oauth' },
+          capabilities: { workflowPlanner: true, workspaceReader: true },
+        }, null, 2)}\n`);
+        runMcpSetupChatgpt({
+          repo: repoRoot,
+          scope: 'user',
+          profile: 'coding',
+          grantReadWrite: [repoRoot],
+          endpoint: 'https://coding.example.com/mcp',
+        });
+        const ctx = createMcpToolContext({ repo: repoRoot, profile: 'coding' });
+        expect(ctx.policy.profile).toBe('coding');
+        expect(ctx.policy.capabilities.workspaceCoder).toBe(true);
+      } finally {
+        if (previousHome === undefined) delete process.env.REPO_HARNESS_HOME;
+        else process.env.REPO_HARNESS_HOME = previousHome;
+        rmSync(userState, { recursive: true, force: true });
       }
     });
   });

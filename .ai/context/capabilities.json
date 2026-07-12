@@ -143,6 +143,33 @@
       ]
     },
     {
+      "id": "runtime-harness-mcp-sidecar",
+      "domain": "runtime-harness",
+      "name": "mcp-sidecar",
+      "prefixes": [
+        "src/cli/mcp",
+        "src/cli/commands/mcp.ts",
+        "src/cli/chatgpt-browser/file-policy.ts",
+        "src/effects/repo-registry.ts",
+        "docs/repo-harness-chatgpt-mcp-setup.md",
+        "docs/reference-configs/chatgpt-coding-mcp.md",
+        "docs/researches/20260711-devspace-chatgpt-local-control.md",
+        ".agents/skills/repo-harness-chatgpt-bridge"
+      ],
+      "contract_files": {
+        "agents": "AGENTS.md",
+        "claude": "CLAUDE.md"
+      },
+      "architecture_module": "docs/architecture/modules/runtime-harness/mcp-sidecar.md",
+      "workstream_dir": "tasks/workstreams/runtime-harness/mcp-sidecar",
+      "lsp_profile": "typescript-lsp",
+      "verification_hints": [
+        "bun test tests/cli/mcp*.test.ts",
+        "bun run check:type",
+        "repo-harness mcp doctor --repo . --live"
+      ]
+    },
+    {
       "id": "verification-codegraph-readiness",
       "domain": "verification",
       "name": "codegraph-readiness",

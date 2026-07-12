@@ -62,8 +62,9 @@ const BROWSER_READ_POLICY: McpPolicy = {
     workflowPlanner: false,
     workflowExecutor: false,
     agentRunner: false,
+    workspaceCoder: false,
   },
-  execution: { fixedWorkflowCheck: false, codexRunner: false, agentRunner: false, allowedAgents: [], runnerTimeoutMs: 0 },
+  execution: { fixedWorkflowCheck: false, codexRunner: false, agentRunner: false, codingShell: false, allowedAgents: [], runnerTimeoutMs: 0 },
 };
 
 const BROWSER_CLI_OUTPUT_POLICY: McpPolicy = {
@@ -77,8 +78,9 @@ const BROWSER_CLI_OUTPUT_POLICY: McpPolicy = {
     workflowPlanner: false,
     workflowExecutor: false,
     agentRunner: false,
+    workspaceCoder: false,
   },
-  execution: { fixedWorkflowCheck: false, codexRunner: false, agentRunner: false, allowedAgents: [], runnerTimeoutMs: 0 },
+  execution: { fixedWorkflowCheck: false, codexRunner: false, agentRunner: false, codingShell: false, allowedAgents: [], runnerTimeoutMs: 0 },
 };
 
 const BROWSER_MCP_OUTPUT_POLICY: McpPolicy = {
@@ -98,8 +100,9 @@ const BROWSER_MCP_OUTPUT_POLICY: McpPolicy = {
     workflowPlanner: false,
     workflowExecutor: false,
     agentRunner: false,
+    workspaceCoder: false,
   },
-  execution: { fixedWorkflowCheck: false, codexRunner: false, agentRunner: false, allowedAgents: [], runnerTimeoutMs: 0 },
+  execution: { fixedWorkflowCheck: false, codexRunner: false, agentRunner: false, codingShell: false, allowedAgents: [], runnerTimeoutMs: 0 },
 };
 
 function isProbablyBinary(bytes: Buffer): boolean {

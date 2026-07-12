@@ -17,11 +17,23 @@ import { spawnSync } from "child_process";
 
 const ROOT = join(import.meta.dir, "..");
 
+const FIXTURE_AUTHORITY_ENV_KEYS = [
+  "REPO_HARNESS_TARGET_REPO_ROOT",
+  "REPO_HARNESS_HELPER_SOURCE_PATH",
+  "REPO_HARNESS_SOURCE_ROOT",
+] as const;
+
+function fixtureEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const isolated = { ...process.env };
+  for (const key of FIXTURE_AUTHORITY_ENV_KEYS) delete isolated[key];
+  return { ...isolated, ...env };
+}
+
 function run(script: string, args: string[], cwd: string, env: NodeJS.ProcessEnv = {}) {
   return spawnSync("bash", [script, ...args], {
     cwd,
     encoding: "utf-8",
-    env: { ...process.env, ...env },
+    env: fixtureEnv(env),
   });
 }
 
@@ -29,7 +41,7 @@ function runProcess(command: string, args: string[], cwd: string, env: NodeJS.Pr
   return spawnSync(command, args, {
     cwd,
     encoding: "utf-8",
-    env: { ...process.env, ...env },
+    env: fixtureEnv(env),
   });
 }
 
