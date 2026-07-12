@@ -5,10 +5,10 @@
 > **Contract**: tasks/contracts/20260712-1330-bun-1-3-14-runtime-upgrade.contract.md
 > **Notes File**: tasks/notes/20260712-1330-bun-1-3-14-runtime-upgrade.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-07-12 16:07
+> **Last Updated**: 2026-07-12 16:33
 > **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Diff Fingerprint**: sha256:40384e745319d831932dcf2ef938bfbff93708c8ad0c1910df695bd05bf0deef
+> **Reviewed Diff Fingerprint**: sha256:44b1d68ab3334d4246585fac05b4cff70fe4cec21bfc10da517c8f21d67621e4
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 ## Human Review Card
@@ -51,8 +51,8 @@
 > **External Reviewer**: Claude
 > **External Source**: claude-review
 > **External Started**: 2026-07-12 15:54 +0800
-> **External Completed**: 2026-07-12 16:07 +0800
-> **Reviewed Diff Fingerprint**: sha256:40384e745319d831932dcf2ef938bfbff93708c8ad0c1910df695bd05bf0deef
+> **External Completed**: 2026-07-12 16:33 +0800
+> **Reviewed Diff Fingerprint**: sha256:44b1d68ab3334d4246585fac05b4cff70fe4cec21bfc10da517c8f21d67621e4
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 - P1 blockers: none
@@ -60,7 +60,10 @@
   regression coverage was missing, and the prior fingerprint was stale. The
   implementation now loops until all bytes are written, tests partial and
   zero-progress writes, and binds this review to the current fingerprint.
-- Final rereview: `No findings.`
+- Final exact implementation-diff rereview bound to the recorded fingerprint:
+  `No findings.`
+- Final contract-only closeout rereview after the 120-second verifier-boundary
+  correction: `No findings.`
 - Acceptance checklist: Test and macOS/Linux/Windows MCP matrix pass; full local
   suite passes; architecture and hook output payloads are complete.
 
