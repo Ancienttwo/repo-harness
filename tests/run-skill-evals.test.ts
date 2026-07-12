@@ -21,6 +21,8 @@ import {
   formatIterationName,
   initBenchmarkGitRepo,
   runDisposableAdoptionProfile,
+  parseClaudeStructuredOutput,
+  parseCodexStructuredOutput,
   runSkillEvals,
 } from "../scripts/run-skill-evals";
 
@@ -56,10 +58,10 @@ for arg in "$@"; do
 done
 if [[ "$disable" -eq 0 && -L ".claude/skills/repo-harness" ]]; then
   printf "\\n- claude with skill\\n" >> AGENTS.md
-  echo "claude with skill: $prompt"
+  printf '{"type":"result","result":"claude with skill: %s","session_id":"claude-session","model":"claude-test","num_turns":2,"total_cost_usd":0.125,"usage":{"input_tokens":101,"cache_read_input_tokens":11,"cache_creation_input_tokens":7,"output_tokens":23}}\\n' "$prompt"
 else
   printf "\\n- claude baseline\\n" >> AGENTS.md
-  echo "claude without skill: $prompt"
+  printf '{"type":"result","result":"claude without skill: %s","session_id":"claude-session","model":"claude-test","num_turns":2,"total_cost_usd":0.125,"usage":{"input_tokens":101,"cache_read_input_tokens":11,"cache_creation_input_tokens":7,"output_tokens":23}}\\n' "$prompt"
 fi
 `
   );
@@ -87,7 +89,8 @@ else
 fi
 printf "%s\\n" "$HOME" > .observed-home
 printf "%s\\n" "\${REPO_HARNESS_SOURCE_ROOT:-}" > .observed-source-root
-echo "codex executed"
+printf '{"type":"thread.started","thread_id":"codex-thread"}\\n'
+printf '{"type":"turn.completed","usage":{"input_tokens":201,"cached_input_tokens":21,"output_tokens":34}}\\n'
 `
   );
 
@@ -171,6 +174,89 @@ describe("run-skill-evals helpers", () => {
     } finally {
       rmSync(boundary, { recursive: true, force: true });
     }
+  });
+
+  test("parses provider-authoritative Claude single-result usage", () => {
+    const evidence = parseClaudeStructuredOutput(
+      JSON.stringify({
+        type: "result",
+        result: "done",
+        session_id: "session-1",
+        model: "claude-test",
+        num_turns: 3,
+        total_cost_usd: 0.25,
+        usage: {
+          input_tokens: 120,
+          cache_read_input_tokens: 20,
+          cache_creation_input_tokens: 9,
+          output_tokens: 30,
+        },
+      })
+    );
+
+    expect(evidence).toMatchObject({
+      usageAuthority: "structured_cli",
+      usageUnavailableReason: null,
+      inputTokens: 120,
+      cachedInputTokens: 20,
+      cacheCreationInputTokens: 9,
+      outputTokens: 30,
+      totalCostUsd: 0.25,
+      turnCount: 3,
+      model: "claude-test",
+      sessionId: "session-1",
+      finalResponse: "done",
+    });
+  });
+
+  test("parses provider-authoritative Codex JSONL usage", () => {
+    const evidence = parseCodexStructuredOutput(
+      [
+        JSON.stringify({ type: "thread.started", thread_id: "thread-1" }),
+        JSON.stringify({
+          type: "turn.completed",
+          usage: { input_tokens: 220, cached_input_tokens: 40, output_tokens: 50 },
+        }),
+      ].join("\n")
+    );
+
+    expect(evidence).toMatchObject({
+      usageAuthority: "structured_cli",
+      usageUnavailableReason: null,
+      inputTokens: 220,
+      cachedInputTokens: 40,
+      cacheCreationInputTokens: null,
+      outputTokens: 50,
+      totalCostUsd: null,
+      turnCount: null,
+      sessionId: "thread-1",
+    });
+  });
+
+  test("fails closed on missing or malformed structured usage", () => {
+    const missing = parseClaudeStructuredOutput(
+      JSON.stringify({ type: "result", result: "still captured" })
+    );
+    const malformed = parseCodexStructuredOutput(
+      '{"type":"thread.started","thread_id":"thread-1"}\nnot-json\n'
+    );
+
+    expect(missing).toMatchObject({
+      usageAuthority: "unavailable",
+      usageUnavailableReason: "missing_structured_usage",
+      inputTokens: null,
+      cachedInputTokens: null,
+      cacheCreationInputTokens: null,
+      outputTokens: null,
+      finalResponse: "still captured",
+    });
+    expect(malformed).toMatchObject({
+      usageAuthority: "unavailable",
+      usageUnavailableReason: "malformed_structured_output",
+      inputTokens: null,
+      cachedInputTokens: null,
+      outputTokens: null,
+    });
   });
 });
 
@@ -487,6 +573,8 @@ describe("run-skill-evals execution", () => {
       expect(summary).toContain("effectiveness_authority | authoritative");
       expect(summary).toContain("## claude / with_skill");
       expect(summary).toContain("## codex / without_skill");
+      expect(summary).toContain("without_skill` is a skill-disabled baseline");
+      expect(summary).toContain("it is not a host-isolated No Harness profile");
       expect(summary).toContain("repair-agents-task-sync");
       expect(summary).toContain("graders pass");
 
@@ -498,6 +586,22 @@ describe("run-skill-evals execution", () => {
       expect(claudeWithSkill?.graderStatus).toBe("passed");
       expect(claudeWithSkill?.graderSummary.total).toBeGreaterThan(0);
       expect(claudeWithSkill?.graderReportPath).not.toBeNull();
+      expect(claudeWithSkill?.usageAuthority).toBe("structured_cli");
+      expect(claudeWithSkill?.inputTokens).toBe(101);
+      expect(claudeWithSkill?.cachedInputTokens).toBe(11);
+      expect(claudeWithSkill?.cacheCreationInputTokens).toBe(7);
+      expect(claudeWithSkill?.outputTokens).toBe(23);
+      expect(claudeWithSkill?.totalCostUsd).toBe(0.125);
+      expect(claudeWithSkill?.turnCount).toBe(2);
+      expect(claudeWithSkill?.sessionId).toBe("claude-session");
+      expect(claudeWithSkill?.changedFileCount).toBe(claudeWithSkill?.changedFiles.length);
+      expect(claudeWithSkill?.modelCallCount).toBeNull();
+      expect(claudeWithSkill?.subagentCallCount).toBeNull();
+      expect(claudeWithSkill?.artifactCount).toBeNull();
+      expect(readFileSync(claudeWithSkill!.stdoutPath, "utf-8")).toContain('"type":"result"');
+      expect(readFileSync(claudeWithSkill!.finalResponsePath, "utf-8")).toContain(
+        "claude with skill"
+      );
       expect(existsSync(join(claudeWithSkill!.workspacePath, ".claude/skills/repo-harness"))).toBe(
         true
       );
@@ -506,10 +610,95 @@ describe("run-skill-evals execution", () => {
         (record) => record.agent === "codex" && record.profile === "with_skill"
       );
       expect(codexWithSkill).toBeDefined();
+      expect(codexWithSkill?.usageAuthority).toBe("structured_cli");
+      expect(codexWithSkill?.inputTokens).toBe(201);
+      expect(codexWithSkill?.cachedInputTokens).toBe(21);
+      expect(codexWithSkill?.cacheCreationInputTokens).toBeNull();
+      expect(codexWithSkill?.outputTokens).toBe(34);
+      expect(codexWithSkill?.totalCostUsd).toBeNull();
+      expect(codexWithSkill?.turnCount).toBeNull();
+      expect(codexWithSkill?.sessionId).toBe("codex-thread");
+      expect(readFileSync(codexWithSkill!.stdoutPath, "utf-8")).toContain(
+        '"type":"turn.completed"'
+      );
       expect(readFileSync(join(codexWithSkill!.workspacePath, "AGENTS.md"), "utf-8")).toContain(
         "Benchmark Skill Wrapper"
       );
       expect(readFileSync(codexWithSkill!.finalResponsePath, "utf-8")).toContain("codex with skill");
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("keeps agent and grader status when structured usage is malformed", () => {
+    const tempDir = tempPath("benchmark-malformed-usage");
+    const stubDir = join(tempDir, "bin");
+    mkdirSync(stubDir, { recursive: true });
+    const commandPath = join(stubDir, "codex-malformed-stub.sh");
+    const summaryPath = join(tempDir, "benchmark.md");
+    const workspaceRoot = join(tempDir, "workspace");
+    const configPath = join(tempDir, "benchmark.config.json");
+    const evalsPath = join(tempDir, "evals.json");
+
+    writeExecutable(
+      commandPath,
+      `#!/usr/bin/env bash
+set -euo pipefail
+output=""
+prev=""
+for arg in "$@"; do
+  if [[ "$prev" == "-o" ]]; then
+    output="$arg"
+  fi
+  prev="$arg"
+done
+printf "skill response survives malformed usage\\n" > "$output"
+printf '{"type":"thread.started","thread_id":"thread-malformed"}\\n'
+printf 'not-json\\n'
+`
+    );
+    writeEvalManifest(evalsPath);
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        workspaceRoot,
+        summaryPath,
+        agents: {
+          claude: { command: commandPath, args: [] },
+          codex: { command: commandPath, args: [] },
+        },
+        profiles: { with_skill: { skillPath: ROOT }, without_skill: {} },
+      }) + "\n",
+      "utf-8"
+    );
+
+    try {
+      const report = runSkillEvals({
+        repoRoot: ROOT,
+        configPath,
+        evalsPath,
+        agent: "codex",
+        profile: "without_skill",
+        evalFilters: ["repair-agents-task-sync"],
+        now: new Date("2026-03-06T01:02:03Z"),
+      });
+
+      expect(report.records).toHaveLength(1);
+      expect(report.records[0]).toMatchObject({
+        status: "success",
+        agentStatus: "success",
+        graderStatus: "passed",
+        usageAuthority: "unavailable",
+        usageUnavailableReason: "malformed_structured_output",
+        inputTokens: null,
+        cachedInputTokens: null,
+        cacheCreationInputTokens: null,
+        outputTokens: null,
+      });
+      expect(readFileSync(report.records[0].stdoutPath, "utf-8")).toContain("not-json");
+      expect(readFileSync(report.records[0].finalResponsePath, "utf-8")).toContain(
+        "skill response survives malformed usage"
+      );
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }

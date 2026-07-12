@@ -114,9 +114,40 @@ export interface RunMetadata {
   gitDiffPath: string;
   diffStat: string;
   changedFiles: string[];
+  changedFileCount: number;
   finalResponseExcerpt: string;
-  model?: string | null;
-  sessionId?: string | null;
+  usageAuthority: "structured_cli" | "unavailable";
+  usageUnavailableReason:
+    | "dry_run"
+    | "malformed_structured_output"
+    | "missing_structured_usage"
+    | "malformed_structured_usage"
+    | null;
+  inputTokens: number | null;
+  cachedInputTokens: number | null;
+  cacheCreationInputTokens: number | null;
+  outputTokens: number | null;
+  totalCostUsd: number | null;
+  turnCount: number | null;
+  modelCallCount: number | null;
+  subagentCallCount: number | null;
+  artifactCount: number | null;
+  model: string | null;
+  sessionId: string | null;
+}
+
+export interface ProviderStructuredEvidence {
+  usageAuthority: RunMetadata["usageAuthority"];
+  usageUnavailableReason: RunMetadata["usageUnavailableReason"];
+  inputTokens: number | null;
+  cachedInputTokens: number | null;
+  cacheCreationInputTokens: number | null;
+  outputTokens: number | null;
+  totalCostUsd: number | null;
+  turnCount: number | null;
+  model: string | null;
+  sessionId: string | null;
+  finalResponse: string | null;
 }
 
 export interface IterationReport {
@@ -418,6 +449,10 @@ function formatRatio(value: number | null): string {
   return `${(value * 100).toFixed(1)}%`;
 }
 
+function formatNullableNumber(value: number | null): string {
+  return value === null ? "n/a" : String(value);
+}
+
 function copyPathIntoWorkspace(sourcePath: string, destinationRoot: string): void {
   if (!existsSync(sourcePath)) {
     throw new Error(`Fixture path does not exist: ${sourcePath}`);
@@ -640,7 +675,7 @@ function buildClaudeCommand(
   repoRoot: string,
   profile: ProfileName
 ): CommandSpec {
-  const args = [...(config.args ?? []), "-p", "--output-format", "text", "--no-session-persistence"];
+  const args = [...(config.args ?? []), "-p", "--output-format", "json", "--no-session-persistence"];
   if (profile === "with_skill") {
     args.push("--permission-mode", "bypassPermissions", "--add-dir", repoRoot);
   } else {
@@ -671,6 +706,7 @@ function buildCodexCommand(
     "--dangerously-bypass-approvals-and-sandbox",
     "-o",
     finalResponsePath,
+    "--json",
   ];
   if (profile === "with_skill") {
     args.push("--add-dir", repoRoot);
@@ -702,6 +738,163 @@ export function buildAgentCommand(
 function writeTextFile(path: string, content: string): void {
   ensureDir(dirname(path));
   writeFileSync(path, content, "utf-8");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function optionalString(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
+function optionalNonNegativeNumber(value: unknown): number | null | undefined {
+  if (value === undefined) return null;
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return undefined;
+  return value;
+}
+
+function optionalNonNegativeInteger(value: unknown): number | null | undefined {
+  const parsed = optionalNonNegativeNumber(value);
+  if (parsed === undefined || parsed === null) return parsed;
+  return Number.isInteger(parsed) ? parsed : undefined;
+}
+
+function unavailableStructuredEvidence(
+  reason: Exclude<RunMetadata["usageUnavailableReason"], null>,
+  finalResponse: string | null = null
+): ProviderStructuredEvidence {
+  return {
+    usageAuthority: "unavailable",
+    usageUnavailableReason: reason,
+    inputTokens: null,
+    cachedInputTokens: null,
+    cacheCreationInputTokens: null,
+    outputTokens: null,
+    totalCostUsd: null,
+    turnCount: null,
+    model: null,
+    sessionId: null,
+    finalResponse,
+  };
+}
+
+function parseProviderUsage(
+  usage: unknown,
+  cachedField: "cache_read_input_tokens" | "cached_input_tokens",
+  cacheCreationField: "cache_creation_input_tokens" | null,
+  extras: {
+    totalCostUsd?: unknown;
+    turnCount?: unknown;
+    model?: unknown;
+    sessionId?: unknown;
+    finalResponse?: string | null;
+  } = {}
+): ProviderStructuredEvidence {
+  if (usage === undefined || usage === null) {
+    return unavailableStructuredEvidence("missing_structured_usage", extras.finalResponse ?? null);
+  }
+  if (!isRecord(usage)) {
+    return unavailableStructuredEvidence("malformed_structured_usage", extras.finalResponse ?? null);
+  }
+
+  const inputTokens = optionalNonNegativeInteger(usage.input_tokens);
+  const cachedInputTokens = optionalNonNegativeInteger(usage[cachedField]);
+  const cacheCreationInputTokens = cacheCreationField === null
+    ? null
+    : optionalNonNegativeInteger(usage[cacheCreationField]);
+  const outputTokens = optionalNonNegativeInteger(usage.output_tokens);
+  const totalCostUsd = optionalNonNegativeNumber(extras.totalCostUsd);
+  const turnCount = optionalNonNegativeInteger(extras.turnCount);
+
+  if (
+    inputTokens === undefined ||
+    cachedInputTokens === undefined ||
+    cacheCreationInputTokens === undefined ||
+    outputTokens === undefined ||
+    totalCostUsd === undefined ||
+    turnCount === undefined ||
+    inputTokens === null ||
+    outputTokens === null
+  ) {
+    return unavailableStructuredEvidence("malformed_structured_usage", extras.finalResponse ?? null);
+  }
+
+  return {
+    usageAuthority: "structured_cli",
+    usageUnavailableReason: null,
+    inputTokens,
+    cachedInputTokens,
+    cacheCreationInputTokens,
+    outputTokens,
+    totalCostUsd,
+    turnCount,
+    model: optionalString(extras.model),
+    sessionId: optionalString(extras.sessionId),
+    finalResponse: extras.finalResponse ?? null,
+  };
+}
+
+export function parseClaudeStructuredOutput(stdout: string): ProviderStructuredEvidence {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stdout);
+  } catch {
+    return unavailableStructuredEvidence("malformed_structured_output");
+  }
+
+  if (!isRecord(parsed) || parsed.type !== "result") {
+    return unavailableStructuredEvidence("malformed_structured_output");
+  }
+
+  const finalResponse = optionalString(parsed.result);
+  return parseProviderUsage(
+    parsed.usage,
+    "cache_read_input_tokens",
+    "cache_creation_input_tokens",
+    {
+      totalCostUsd: parsed.total_cost_usd,
+      turnCount: parsed.num_turns,
+      model: parsed.model,
+      sessionId: parsed.session_id,
+      finalResponse,
+    },
+  );
+}
+
+export function parseCodexStructuredOutput(stdout: string): ProviderStructuredEvidence {
+  const lines = stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length === 0) {
+    return unavailableStructuredEvidence("malformed_structured_output");
+  }
+
+  const events: Record<string, unknown>[] = [];
+  for (const line of lines) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      return unavailableStructuredEvidence("malformed_structured_output");
+    }
+    if (!isRecord(parsed) || typeof parsed.type !== "string") {
+      return unavailableStructuredEvidence("malformed_structured_output");
+    }
+    events.push(parsed);
+  }
+
+  const threadStarted = events.find((event) => event.type === "thread.started");
+  const turnCompleted = [...events].reverse().find((event) => event.type === "turn.completed");
+  if (!turnCompleted) {
+    return unavailableStructuredEvidence("missing_structured_usage");
+  }
+
+  return parseProviderUsage(turnCompleted.usage, "cached_input_tokens", null, {
+    model: turnCompleted.model,
+    sessionId: threadStarted?.thread_id,
+  });
 }
 
 function excerpt(content: string, maxLength = 220): string {
@@ -818,6 +1011,7 @@ function buildRunMetadata(params: {
   changedFiles: string[];
   diffStat: string;
   finalResponse: string;
+  structuredEvidence: ProviderStructuredEvidence;
 }): RunMetadata {
   return {
     agent: params.agent,
@@ -864,9 +1058,21 @@ function buildRunMetadata(params: {
     gitDiffPath: params.gitDiffPath,
     diffStat: params.diffStat,
     changedFiles: params.changedFiles,
+    changedFileCount: params.changedFiles.length,
     finalResponseExcerpt: excerpt(params.finalResponse),
-    model: null,
-    sessionId: null,
+    usageAuthority: params.structuredEvidence.usageAuthority,
+    usageUnavailableReason: params.structuredEvidence.usageUnavailableReason,
+    inputTokens: params.structuredEvidence.inputTokens,
+    cachedInputTokens: params.structuredEvidence.cachedInputTokens,
+    cacheCreationInputTokens: params.structuredEvidence.cacheCreationInputTokens,
+    outputTokens: params.structuredEvidence.outputTokens,
+    totalCostUsd: params.structuredEvidence.totalCostUsd,
+    turnCount: params.structuredEvidence.turnCount,
+    modelCallCount: null,
+    subagentCallCount: null,
+    artifactCount: null,
+    model: params.structuredEvidence.model,
+    sessionId: params.structuredEvidence.sessionId,
   };
 }
 
@@ -916,6 +1122,7 @@ function runSingleEval(params: {
   let stderr = "";
   let graderReport: GraderReport | null = null;
   let graderReportPath: string | null = null;
+  let structuredEvidence = unavailableStructuredEvidence("dry_run");
   const startedAt = Date.now();
 
   if (dryRun) {
@@ -929,6 +1136,13 @@ function runSingleEval(params: {
     stderr = result.stderr;
     writeTextFile(stdoutPath, stdout);
     writeTextFile(stderrPath, stderr);
+    structuredEvidence =
+      agent === "claude"
+        ? parseClaudeStructuredOutput(stdout)
+        : parseCodexStructuredOutput(stdout);
+    if (agent === "claude" && structuredEvidence.finalResponse !== null) {
+      writeTextFile(finalResponsePath, structuredEvidence.finalResponse);
+    }
     if (!existsSync(finalResponsePath)) {
       writeTextFile(finalResponsePath, stdout.trim().length > 0 ? stdout : "(no final response captured)\n");
     }
@@ -974,6 +1188,7 @@ function runSingleEval(params: {
     changedFiles: gitArtifacts.changedFiles,
     diffStat: gitArtifacts.diffStat,
     finalResponse,
+    structuredEvidence,
   });
 
   writeTextFile(metadataPath, `${JSON.stringify(metadata, null, 2)}\n`);
@@ -1016,6 +1231,8 @@ export function buildBenchmarkSummary(report: IterationReport, repoRoot: string)
       ? "Effectiveness evidence is non-authoritative because dry_run_ratio is above 30%."
       : "Effectiveness evidence is authoritative for this benchmark run.",
     "",
+    "`without_skill` is a skill-disabled baseline; it is not a host-isolated No Harness profile.",
+    "",
     "## Command Matrix",
     "",
     "| Agent | Profile | Command |",
@@ -1031,7 +1248,9 @@ export function buildBenchmarkSummary(report: IterationReport, repoRoot: string)
       );
       if (records.length === 0) continue;
 
-      lines.push(`## ${agent} / ${profile}`, "", "| Eval | Status | Exit / Graders | Duration | Changed Files | Raw Artifacts |", "| --- | --- | --- | ---: | ---: | --- |");
+      const profileLabel =
+        profile === "without_skill" ? `${profile} (skill-disabled baseline)` : profile;
+      lines.push(`## ${agent} / ${profileLabel}`, "", "| Eval | Status | Exit / Graders | Duration | Input / Cached / Output Tokens | Changed Files | Raw Artifacts |", "| --- | --- | --- | ---: | --- | ---: | --- |");
       for (const record of records) {
         const runLink = relativeLink(repoRoot, record.workspacePath);
         const graderCell =
@@ -1041,7 +1260,7 @@ export function buildBenchmarkSummary(report: IterationReport, repoRoot: string)
               ? "graders pass"
               : `graders fail (${record.graderSummary.failed})`;
         lines.push(
-          `| ${record.evalSlug} | ${record.status} | ${record.exitCode ?? "n/a"} / ${graderCell} | ${record.durationMs}ms | ${record.changedFiles.length} | [workspace](${runLink}) |`
+          `| ${record.evalSlug} | ${record.status} | ${record.exitCode ?? "n/a"} / ${graderCell} | ${record.durationMs}ms | ${formatNullableNumber(record.inputTokens)} / ${formatNullableNumber(record.cachedInputTokens)} / ${formatNullableNumber(record.outputTokens)} | ${record.changedFileCount} | [workspace](${runLink}) |`
         );
       }
       lines.push("");
@@ -1054,6 +1273,9 @@ export function buildBenchmarkSummary(report: IterationReport, repoRoot: string)
         lines.push(`- Diff summary: ${record.diffStat.length > 0 ? record.diffStat : "no diff captured"}`);
         lines.push(`- Agent status: ${record.agentStatus} (exit ${record.exitCode ?? "n/a"})`);
         lines.push(`- Graders: ${record.graderStatus} (${record.graderSummary.total - record.graderSummary.failed}/${record.graderSummary.total} passed)`);
+        lines.push(`- Usage authority: ${record.usageAuthority}${record.usageUnavailableReason ? ` (${record.usageUnavailableReason})` : ""}`);
+        lines.push(`- Provider usage: input=${formatNullableNumber(record.inputTokens)}, cached_input=${formatNullableNumber(record.cachedInputTokens)}, cache_creation_input=${formatNullableNumber(record.cacheCreationInputTokens)}, output=${formatNullableNumber(record.outputTokens)}, cost_usd=${formatNullableNumber(record.totalCostUsd)}, turns=${formatNullableNumber(record.turnCount)}`);
+        lines.push(`- Unavailable counters: model_calls=${formatNullableNumber(record.modelCallCount)}, subagent_calls=${formatNullableNumber(record.subagentCallCount)}, workflow_artifacts=${formatNullableNumber(record.artifactCount)}`);
         lines.push(`- Final response excerpt: ${record.finalResponseExcerpt.length > 0 ? record.finalResponseExcerpt : "(empty)"}`);
         lines.push("- Expectations:");
         for (const expectation of record.expectations) {

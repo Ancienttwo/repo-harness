@@ -96,6 +96,55 @@ Required v1 fields:
 
 `repo-harness run check-task-workflow --strict` validates the latest trace shape when a non-empty latest checks file exists. `repo-harness run harness-trace-grade --run <trace> --strict` applies the local graders used for workflow regression checks: active plan resolves, contract profile is valid, Human Review Card passes, command evidence exists, and changed files stay inside allowed paths.
 
+## Harness Cost Evidence and SLOs
+
+Harness cost reports separate measured values from unavailable telemetry. A
+metric is authoritative only when its named source exposes that value directly;
+missing values stay `null` with an unavailable authority marker. Reports must
+not derive model calls from turns, subagents from tool-name text, billing tokens
+from byte counts, or live hook latency from host tool duration.
+
+The two current evidence owners are:
+
+- `scripts/hook-dispatch-diet-report.ts` for static route topology and
+  synthetic subprocess probes. Probe distributions include sample count, total,
+  p50, p95, p99, and max latency. The SessionStart probe also records UTF-8
+  output/context bytes. Its context token value is an estimate labeled
+  `utf8_bytes_div_4`; it is a context-budget indicator, not provider billing
+  usage.
+- `scripts/run-skill-evals.ts` for end-to-end benchmark duration, changed-file
+  evidence, graders, and provider-structured usage. Claude single-result JSON
+  and Codex JSONL are parsed independently. Raw output remains an artifact, and
+  absent or malformed usage makes only the usage fields unavailable; it does
+  not rewrite agent exit or grader status.
+
+Current SLOs:
+
+- Synthetic hook phase p95: at most 250 ms per probe.
+- Estimated actionable SessionStart context: at most 1,500 tokens using the
+  explicitly labeled byte heuristic.
+- Inert SessionStart: zero additional context bytes.
+- Full, non-dry-run benchmark on a supported structured CLI: token usage should
+  have `structured_cli` authority. A CLI that does not expose structured usage
+  is reported as unavailable rather than silently passing with zero tokens.
+
+Claude cache reads and cache creation tokens remain separate provider fields;
+neither is folded into input tokens. Codex cached input remains its own field,
+while cache creation stays `null` because the Codex JSONL contract does not
+expose it.
+
+The benchmark profile named `without_skill` is a **skill-disabled baseline**.
+It does not prove that user-level hooks, global host configuration, or every
+installed Skill is absent, so reports must not label it “No Harness.” A true No
+Harness comparison requires a separately approved host-isolation contract.
+
+The following remain unavailable until their authoritative runtime exposes
+structured evidence: live hook invocation count and wall-time distribution,
+repeated guard fingerprints, real time-to-first-edit, provider request/model
+call count, native subagent count, and workflow artifact count without an
+explicit artifact-path contract. Adding hot-path hook spans is a separate
+architecture slice, not part of the synthetic baseline.
+
 ## Capability Context
 
 - Do not infer agent context boundaries from physical layout globs such as `apps/*`, `packages/*`, or `services/*`.
