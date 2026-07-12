@@ -934,6 +934,14 @@ function numberAtLeastZero(value: unknown, label: string): number {
   return value;
 }
 
+function assertIsoDateTime(value: unknown, label: string): void {
+  assertString(value, label);
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value)
+    || Number.isNaN(Date.parse(value))) {
+    fail(`${label} must be an ISO date-time`);
+  }
+}
+
 export function buildIsolatedAgentEnv(
   isolatedHome: string,
   sourceEnv: Record<string, string | undefined> = process.env
@@ -960,8 +968,7 @@ function validateLockedShapeScore(raw: unknown, label: string): LockedScore {
   assertString(raw.task_id, `${label}.task_id`);
   if (raw.experiment !== "S") fail(`${label}.experiment must be S`);
   assertString(raw.reviewer_id, `${label}.reviewer_id`);
-  assertString(raw.locked_at, `${label}.locked_at`);
-  if (Number.isNaN(Date.parse(raw.locked_at))) fail(`${label}.locked_at must be an ISO date-time`);
+  assertIsoDateTime(raw.locked_at, `${label}.locked_at`);
   assertRecord(raw.score, `${label}.score`);
   assertExactKeys(
     raw.score,
@@ -1123,8 +1130,7 @@ function validateLockedAuditScore(
   assertString(raw.task_id, `${label}.task_id`);
   if (raw.experiment !== "A") fail(`${label}.experiment must be A`);
   assertString(raw.reviewer_id, `${label}.reviewer_id`);
-  assertString(raw.locked_at, `${label}.locked_at`);
-  if (Number.isNaN(Date.parse(raw.locked_at))) fail(`${label}.locked_at must be an ISO date-time`);
+  assertIsoDateTime(raw.locked_at, `${label}.locked_at`);
   assertRecord(raw.score, `${label}.score`);
   assertExactKeys(raw.score, ["kind", "verdict", "findings", "correction_minutes", "notes"], `${label}.score`);
   if (raw.score.kind !== "audit") fail(`${label}.score.kind must be audit`);
@@ -1156,6 +1162,23 @@ function validateLockedAuditScore(
   return raw as unknown as LockedAuditScore;
 }
 
+function validateAuditSourceAuthority(
+  evaluation: ValidatedEvaluation,
+  sourceCommit: string,
+  runManifestSha256: string
+): void {
+  const manifestText = gitFileAtCommit(evaluation.repoRoot, sourceCommit, DEFAULT_MANIFEST_PATH);
+  if (sha256Text(manifestText) !== runManifestSha256) fail("Audit source-commit manifest hash mismatch");
+  for (const currentPath of evaluation.authorityPaths) {
+    if (currentPath === evaluation.manifestPath) continue;
+    const relativePath = relative(evaluation.repoRoot, currentPath).replace(/\\/g, "/");
+    const sourceText = gitFileAtCommit(evaluation.repoRoot, sourceCommit, relativePath);
+    if (sha256Text(sourceText) !== sha256File(currentPath)) {
+      fail(`Audit source-commit authority drift: ${relativePath}`);
+    }
+  }
+}
+
 export function validateAuditScores(
   evaluation: ValidatedEvaluation,
   runRelativePath: string
@@ -1171,6 +1194,7 @@ export function validateAuditScores(
   if (runRaw.freeze_id !== definition.freeze.id) fail("Run freeze id does not match Audit authority");
   if (typeof runRaw.source_commit !== "string" || !/^[a-f0-9]{40}$/.test(runRaw.source_commit)) fail("Run source commit is invalid");
   if (runRaw.manifest_sha256 !== sha256File(evaluation.manifestPath)) fail("Run manifest hash does not match current authority");
+  validateAuditSourceAuthority(evaluation, runRaw.source_commit, runRaw.manifest_sha256);
   const relativeRunPath = relative(evaluation.repoRoot, runPath).replace(/\\/g, "/");
   if (runRaw.output_path !== relativeRunPath) fail("Run output path does not match its directory");
   assertString(runRaw.agent, "run report.agent");

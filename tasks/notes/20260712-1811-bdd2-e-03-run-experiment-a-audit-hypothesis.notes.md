@@ -24,6 +24,11 @@
   preserves uncertainty but does not earn clean-fixture credit.
 - Reuse the source-commit coordinate envelope for both S and A. Extract shared code
   only where the exact same invariant has two real consumers.
+- Audit score validation reconstructs every hashed authority path from the recorded
+  source commit and compares it with the already validated current authority before
+  accepting scores or projecting evidence.
+- The shared ISO date-time assertion serves both existing Shape and new Audit locked
+  scores so runtime validation matches both frozen JSON schemas.
 
 ## Deviations From Plan Or Spec
 
@@ -31,6 +36,10 @@
   response because Codex reported an account usage limit with a 20:14 reset time.
   That partial ignored directory is excluded and removed; no model/profile/threshold
   change and no coordinate reuse is permitted on retry.
+- A read-only authority review found two P1 blockers before execution: an
+  unreconstructible Audit `source_commit` and duplicate primary truth for A-H-11.
+  Both were corrected and covered before resealing; its P2 timestamp and Kill-gate
+  test gaps were corrected in the same authority revision.
 
 ## Tradeoffs Considered
 

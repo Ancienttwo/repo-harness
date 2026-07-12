@@ -492,6 +492,17 @@ describe("run-bdd2-evals Audit adjudication", () => {
       manifest.partitions.held_out.tasks_sha256 = sha256File(taskPath);
       manifest.partitions.held_out.truth_sha256 = sha256File(truthPath);
       writeManifest(root, manifest);
+      writeFileSync(join(root, ".gitignore"), ".ai/\naudit-evidence.json\n", "utf-8");
+      for (const args of [
+        ["init"],
+        ["config", "user.name", "BDD2 Test"],
+        ["config", "user.email", "bdd2-test@example.com"],
+        ["add", "."],
+        ["commit", "-m", "sealed Audit authority fixture"],
+      ]) {
+        expect(spawnSync("git", args, { cwd: root, encoding: "utf-8" }).status).toBe(0);
+      }
+      const sourceCommit = spawnSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf-8" }).stdout.trim();
       const evaluation = validateEvaluation(root);
       const runRelativePath = ".ai/harness/runs/bdd2/audit-summary";
       const runPath = join(root, runRelativePath);
@@ -548,10 +559,11 @@ describe("run-bdd2-evals Audit adjudication", () => {
           },
         }, null, 2)}\n`, "utf-8");
       }
-      writeFileSync(join(runPath, "run.json"), `${JSON.stringify({
+      const runJsonPath = join(runPath, "run.json");
+      const runJson = {
         schema: "repo-harness-bdd2-run.v2",
         freeze_id: evaluation.manifest.experiments.A.freeze.id,
-        source_commit: "a".repeat(40),
+        source_commit: sourceCommit,
         manifest_sha256: sha256File(join(root, "evals/bdd2/evaluation-manifest.json")),
         agent: "codex-gpt-5.6-sol-xhigh",
         model: "gpt-5.6-sol",
@@ -560,9 +572,17 @@ describe("run-bdd2-evals Audit adjudication", () => {
         partition: "held_out",
         output_path: runRelativePath,
         packets,
-      }, null, 2)}\n`, "utf-8");
+      };
+      writeFileSync(runJsonPath, `${JSON.stringify(runJson, null, 2)}\n`, "utf-8");
 
       expect(validateAuditScores(evaluation, runRelativePath).scores.size).toBe(8);
+      writeFileSync(runJsonPath, `${JSON.stringify({ ...runJson, source_commit: "a".repeat(40) }, null, 2)}\n`, "utf-8");
+      expect(() => validateAuditScores(evaluation, runRelativePath)).toThrow("Cannot read evals/bdd2/evaluation-manifest.json at source commit");
+      writeFileSync(runJsonPath, `${JSON.stringify(runJson, null, 2)}\n`, "utf-8");
+      const extraPrivatePath = join(runPath, "private", `${"f".repeat(32)}.json`);
+      writeFileSync(extraPrivatePath, "{}\n", "utf-8");
+      expect(() => validateAuditScores(evaluation, runRelativePath)).toThrow("private packet files must match run packet ids exactly");
+      rmSync(extraPrivatePath);
       const projection = projectAuditEvidence(evaluation, runRelativePath, "audit-evidence.json") as any;
       expect(projection.packet_count).toBe(8);
       expect(projection.evidence_grade).toBe("condition-blind-agent-panel-proxy");
@@ -575,6 +595,19 @@ describe("run-bdd2-evals Audit adjudication", () => {
       const seededTreatment = coordinates.findIndex((coordinate) => coordinate.taskId === "A-H-09" && coordinate.condition === "treatment");
       const duplicatePath = join(runPath, "scores", `${(seededTreatment + 1).toString(16).padStart(32, "0")}.json`);
       const duplicate = JSON.parse(readFileSync(duplicatePath, "utf-8"));
+      const validScoreText = readFileSync(duplicatePath, "utf-8");
+      duplicate.locked_at = "2026-07-12";
+      writeFileSync(duplicatePath, `${JSON.stringify(duplicate, null, 2)}\n`, "utf-8");
+      expect(() => validateAuditScores(evaluation, runRelativePath)).toThrow("locked_at must be an ISO date-time");
+      writeFileSync(duplicatePath, validScoreText, "utf-8");
+      const underestimated = JSON.parse(validScoreText);
+      underestimated.score.findings[0].reported_severity = "P2";
+      writeFileSync(duplicatePath, `${JSON.stringify(underestimated, null, 2)}\n`, "utf-8");
+      const killed = summarizeAudit(evaluation, runRelativePath);
+      expect(killed.decision).toBe("Kill");
+      expect(killed.gates.no_severe_underestimation).toBe(false);
+      writeFileSync(duplicatePath, validScoreText, "utf-8");
+      Object.assign(duplicate, JSON.parse(validScoreText));
       duplicate.score.findings.push({ ref: "F2", reported_severity: "P0", matched_truth_issue_id: "A-H-09-I1", match_notes: "duplicate" });
       writeFileSync(duplicatePath, `${JSON.stringify(duplicate, null, 2)}\n`, "utf-8");
       expect(() => validateAuditScores(evaluation, runRelativePath)).toThrow("matches one truth issue more than once");
