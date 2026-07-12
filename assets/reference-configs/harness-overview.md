@@ -128,22 +128,35 @@ Current SLOs:
   have `structured_cli` authority. A CLI that does not expose structured usage
   is reported as unavailable rather than silently passing with zero tokens.
 
+The SessionStart budget is global across the aggregated context payload, not a
+per-hook allowance. Duplicate sections are identified from both content and
+behavioral metadata (`priority`, `mandatory`, `actionable`, and `reference`).
+When the budget is pressured, structured harness-state fields are compacted in
+a deterministic priority order while preserving the critical workflow state.
+If all mandatory critical state cannot fit, aggregation returns a structured
+fail-closed overflow result naming every affected section instead of silently
+discarding an earlier mandatory section.
+
 Claude cache reads and cache creation tokens remain separate provider fields;
 neither is folded into input tokens. Codex cached input remains its own field,
 while cache creation stays `null` because the Codex JSONL contract does not
 expose it.
 
-The benchmark profile named `without_skill` is a **skill-disabled baseline**.
-It does not prove that user-level hooks, global host configuration, or every
-installed Skill is absent, so reports must not label it “No Harness.” A true No
-Harness comparison requires a separately approved host-isolation contract.
+`scripts/run-skill-evals.ts` owns the isolated 3-by-9 matrix: **No Harness**,
+**Adaptive Lite**, and **Strict**, each across nine scenarios and three runs.
+No Harness uses a disposable host home with repo-harness adapters and managed
+Skills absent; the harness profiles install into separate disposable homes.
+Every authoritative run binds the report to the tested source commit, requires
+structured provider usage, records actual hook invocation count and cumulative
+hook wall time from hot-path spans, and grades changed files plus the explicit
+workflow-artifact path contract. The checked-in report is
+`evals/harness/reports/profile-comparison.{json,md}`; it is replaced only by a
+complete authoritative matrix, never by a partial or dry-run result.
 
-The following remain unavailable until their authoritative runtime exposes
-structured evidence: live hook invocation count and wall-time distribution,
-repeated guard fingerprints, real time-to-first-edit, provider request/model
-call count, native subagent count, and workflow artifact count without an
-explicit artifact-path contract. Adding hot-path hook spans is a separate
-architecture slice, not part of the synthetic baseline.
+Provider request/model-call count, native subagent count, and true
+time-to-first-edit remain unavailable when the provider CLI does not expose
+them as structured fields. Reports retain `null` plus the authority reason
+rather than inferring those values from turns, tool names, or timestamps.
 
 ## Capability Context
 

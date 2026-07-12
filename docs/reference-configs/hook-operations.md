@@ -70,7 +70,7 @@ Common guards:
 - `PlanStatusGuard` (edit layer): implementation edit attempted with no active approved plan, or the plan is in the wrong state; the prompt layer emits the same guard name as advisory guidance only.
 - `ContractGuard`: the approved plan has not been projected into contract/review/notes scaffolding.
 - `ContractGuard`: completion was claimed without passing contract verification.
-- `WorktreeGuard`: writes were attempted from the wrong worktree.
+- `WorktreeGuard`: writes were attempted from the wrong worktree. Circuit-breaker updates lock the complete read-modify-write, wait at most two seconds, and fail closed; they never reclaim a stale-looking lock because unlinking can race a live owner. After verifying no hook process is active, an operator may remove `.ai/harness/state/circuit-breaker.json.lock` and retry.
 
 ## Architecture Drift Hooks
 
