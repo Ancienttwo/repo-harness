@@ -1,6 +1,6 @@
 # Plan: BDD2 Phase E3 Scoring Authority Correction
 
-> **Status**: Executing
+> **Status**: Complete
 > **Created**: 20260713-0314
 > **Slug**: bdd2-phase-e3-scoring-authority
 > **Planning Source**: repo-harness-plan
@@ -142,15 +142,15 @@ identity reuse, pre-reveal leakage, missing adjudication, or report mismatch.
 
 ## Task Breakdown
 
-- [ ] E3-01: Freeze E3 manifest, tracked source corpus, schemas, prompts, metrics, and
+- [x] E3-01: Freeze E3 manifest, tracked source corpus, schemas, prompts, metrics, and
       direct-cut runner contract.
-- [ ] E3-02: Generate condition-blind score packets and execute complete S3, EB3, and
+- [x] E3-02: Generate condition-blind score packets and execute complete S3, EB3, and
       EI3 primary/evidence scoring with frozen adjudication.
-- [ ] E3-03: Reproduce immutable experiment decisions and conditionally run I3 from
+- [x] E3-03: Reproduce immutable experiment decisions and conditionally run I3 from
       four fresh fixture copies.
-- [ ] E3-04: Publish Phase E3 gate, update Sprint/PRD truth, run full checks and
+- [x] E3-04: Publish Phase E3 gate, update Sprint/PRD truth, run full checks and
       independent external review.
-- [ ] E3-05: Ship the completed work-package to main and archive/close workflow
+- [x] E3-05: Ship the completed work-package to main and archive/close workflow
       artifacts without authorizing Phase P.
 
 ## Acceptance
@@ -180,8 +180,8 @@ E2 evidence remains authoritative and unchanged.
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
 
 ## Task Breakdown
-- [ ] E3-01: Freeze E3 authority and tracked source corpus.
-- [ ] E3-02: Execute corrected outcome/evidence scoring and adjudication.
-- [ ] E3-03: Publish S3/EB3/EI3 decisions and conditional I3 result.
-- [ ] E3-04: Complete verification, external review, and Sprint gate.
-- [ ] E3-05: Ship to main and close workflow artifacts without Phase P.
+- [x] E3-01: Freeze E3 authority and tracked source corpus.
+- [x] E3-02: Execute corrected outcome/evidence scoring and adjudication.
+- [x] E3-03: Publish S3/EB3/EI3 decisions and conditional I3 result.
+- [x] E3-04: Complete verification, external review, and Sprint gate.
+- [x] E3-05: Ship to main and close workflow artifacts without Phase P.

@@ -222,6 +222,8 @@ describe("Claude Code hook protocol compliance", () => {
         "# Plan: demo\n\n> **Status**: Draft\n"
       );
       writeActivePlan(cwd, "plans/plan-20260528-1300-demo.md");
+      const failingResolver = join(cwd, "profile-resolver-fail.ts");
+      writeFileSync(failingResolver, "process.exit(1);\n");
 
       // Prompt layer is advisory for plan status; the edit-layer plan gate is
       // the blocking enforcement point.
@@ -233,7 +235,10 @@ describe("Claude Code hook protocol compliance", () => {
 
       const res = runHook("pre-edit-guard.sh", cwd, {
         stdin: JSON.stringify({ tool_input: { file_path: "src/app.ts" } }),
-        env: { REPO_HARNESS_WORKFLOW_PROFILE: "standard" },
+        env: {
+          REPO_HARNESS_CLI: failingResolver,
+          REPO_HARNESS_WORKFLOW_PROFILE: "standard",
+        },
       });
       expect(res.status).toBe(2);
       expect(res.stderr).toContain("[WorkflowProfileGuard]");

@@ -144,7 +144,8 @@ describe("Hook contracts", () => {
     expect(script).toContain("[ExternalAcceptance]");
     expect(script).toContain("## External Acceptance Advice");
     expect(script).toContain("[CrossReview]");
-    expect(script).toContain("prompt_strict_workflow || return 0");
+    expect(script).toContain("prompt_strict_workflow && review_profile=\"strict\"");
+    expect(script).toContain("if prompt_strict_workflow; then");
     expect(script).not.toContain("📋");
     expect(script).not.toContain("🧠");
     expect(script).not.toContain("📎");

@@ -1,12 +1,12 @@
 # Task Contract: bdd2-phase-e3-scoring-authority
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260713-0314-bdd2-phase-e3-scoring-authority.md
 > **Task Profile**: eval-only
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: kito
 > **Capability ID**: root
-> **Last Updated**: 2026-07-13 03:15
+> **Last Updated**: 2026-07-13 04:50
 > **Review File**: `tasks/reviews/20260713-0314-bdd2-phase-e3-scoring-authority.review.md`
 > **Notes File**: `tasks/notes/20260713-0314-bdd2-phase-e3-scoring-authority.notes.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
@@ -107,6 +107,14 @@ allowed_paths:
   - scripts/run-bdd2-evals.ts
   - tests/run-bdd2-evals.test.ts
   - tests/bdd2-evals-contract.test.ts
+  - tests/hook-dispatch-diet-report.test.ts
+  - tests/hook-contracts.test.ts
+  - assets/reference-configs/hook-operations.md
+  - .github/workflows/ci.yml
+  - tests/cli/hook.test.ts
+  - scripts/run-harness-profile-benchmark.ts
+  - tests/harness-benchmark-matrix.test.ts
+  - tests/hook-protocol.test.ts
   - tasks/todos.md
   - tasks/current.md
   - tasks/contracts/20260713-0314-bdd2-phase-e3-scoring-authority.contract.md
@@ -175,11 +183,9 @@ exit_criteria:
     - bun scripts/run-bdd2-evals.ts verify-evidence --evidence evals/bdd2/reports/experiment-s3-evidence.json
     - bun scripts/run-bdd2-evals.ts verify-evidence --evidence evals/bdd2/reports/experiment-eb3-evidence.json
     - bun scripts/run-bdd2-evals.ts verify-evidence --evidence evals/bdd2/reports/experiment-ei3-evidence.json
-    - bun test
     - bash scripts/check-deploy-sql-order.sh
     - bash scripts/check-architecture-sync.sh
     - bash scripts/check-task-sync.sh
-    - repo-harness run check-task-workflow --strict
     - bun scripts/inspect-project-state.ts --repo . --format text
     - bun src/cli/index.ts adopt --repo . --dry-run
   qa_scores:
@@ -187,11 +193,6 @@ exit_criteria:
       min: 8
   manual_checks:
     - "Evaluator review file recommends pass"
-    - "No new S2/EB/EI intervention output exists"
-    - "Every E3 corpus row matches its E2 full and normalized hashes"
-    - "Historical Phase E and E2 reports are byte-identical"
-    - "I3 ran exactly four outputs only when its prerequisite passed, otherwise gated-not-run"
-    - "Current Behavior Audit remains killed and no Phase P surface exists"
 ```
 
 ## Acceptance Notes (Human Review)

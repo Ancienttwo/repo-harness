@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "repo-harness-bdd2-outcome-score-response.e3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "packet_id", "score"],
+  "properties": {
+    "schema": {"type": "string", "const": "repo-harness-bdd2-outcome-score-response.e3"},
+    "packet_id": {"type": "string", "minLength": 32, "maxLength": 32},
+    "score": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uncertainty_closed", "boundary_category", "unsupported_expansion", "unsupported_user_concepts", "required_behavior_omission", "protected_concern_omissions", "authority_fit", "escalation_correct", "correction_operations", "notes"],
+      "properties": {
+        "uncertainty_closed": {"type": "boolean"},
+        "boundary_category": {"type": "string", "minLength": 1},
+        "unsupported_expansion": {"type": "integer", "minimum": 0},
+        "unsupported_user_concepts": {"type": "integer", "minimum": 0},
+        "required_behavior_omission": {"type": "integer", "minimum": 0},
+        "protected_concern_omissions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["concern", "severity", "summary"],
+            "properties": {
+              "concern": {"type": "string", "minLength": 1},
+              "severity": {"type": "string", "enum": ["P0", "P1", "P2", "P3"]},
+              "summary": {"type": "string", "minLength": 1}
+            }
+          }
+        },
+        "authority_fit": {"type": "boolean"},
+        "escalation_correct": {"type": "boolean"},
+        "correction_operations": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1}
+        },
+        "notes": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}
