@@ -6,10 +6,10 @@ All notable changes to this skill are documented here.
 
 ### Changed
 
-- Mapped the generated Codex `fast-worker` to GPT-5.6 Sol with `high`
-  reasoning and `workspace-write` sandboxing, while keeping Terra/medium for
-  read-heavy explorer work and keeping native MultiAgentV2 role selection
-  behind a runtime canary instead of treating installed TOML as proof. The
+- Mapped the generated Codex `fast-worker` to GPT-5.6 Luna with `xhigh`
+  reasoning and `workspace-write` sandboxing, while keeping native
+  MultiAgentV2 role selection behind a runtime canary instead of treating
+  installed TOML as proof. The
   installer now also rejects source files whose frontmatter role name does not
   match the managed filename before deriving sandbox permissions, exits
   non-zero for unresolved identity failure, and checks every installed managed

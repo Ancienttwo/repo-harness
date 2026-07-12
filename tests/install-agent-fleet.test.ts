@@ -16,9 +16,9 @@ const CODEX_EXPECTATIONS: Record<string, { model: string; effort: string; descri
     descriptionLabel: "GPT-5.6 Sol at extra high reasoning",
   },
   "fast-worker": {
-    model: "gpt-5.6-sol",
-    effort: "high",
-    descriptionLabel: "GPT-5.6 Sol at high reasoning",
+    model: "gpt-5.6-luna",
+    effort: "xhigh",
+    descriptionLabel: "GPT-5.6 Luna at extra high reasoning",
     sandboxMode: "workspace-write",
   },
   gatekeeper: {

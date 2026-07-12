@@ -37,7 +37,7 @@ describe("Bootstrap Script Contracts", () => {
   test("Codex fleet subagent TOML definitions should exist with required keys", () => {
     const specs: Array<{ name: string; model: string; effort: string; sandboxMode?: string }> = [
       { name: "deep-reasoner", model: "gpt-5.6-sol", effort: "xhigh" },
-      { name: "fast-worker", model: "gpt-5.6-sol", effort: "high", sandboxMode: "workspace-write" },
+      { name: "fast-worker", model: "gpt-5.6-luna", effort: "xhigh", sandboxMode: "workspace-write" },
       { name: "gatekeeper", model: "gpt-5.6-sol", effort: "xhigh", sandboxMode: "read-only" },
     ];
 

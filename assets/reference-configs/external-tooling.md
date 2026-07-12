@@ -496,7 +496,7 @@ guessed mapping.
 | Upstream frontmatter | Codex TOML |
 |---|---|
 | `model: opus`, `effort: max` | `model = "gpt-5.6-sol"`, `model_reasoning_effort = "xhigh"` |
-| `model: sonnet`, `effort: max` | `model = "gpt-5.6-sol"`, `model_reasoning_effort = "high"` |
+| `model: sonnet`, `effort: max` | `model = "gpt-5.6-luna"`, `model_reasoning_effort = "xhigh"` |
 | generated role is `fast-worker` | `sandbox_mode = "workspace-write"` |
 | `tools: [...]` present | `sandbox_mode = "read-only"` |
 

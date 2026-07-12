@@ -1,7 +1,7 @@
 name = "fast-worker"
-description = "Fast execution worker on GPT-5.6 Sol at high reasoning. Use for well-scoped implementation, tests, refactoring, documentation, and mechanical changes; verifies with the project's real commands and returns `RESULT: DONE/PARTIAL/BLOCKED` with the evidence. Not for planning, architecture, or high-risk judgment — those go to deep-reasoner or stay with the orchestrator."
-model = "gpt-5.6-sol"
-model_reasoning_effort = "high"
+description = "Fast execution worker on GPT-5.6 Luna at extra high reasoning. Use for well-scoped implementation, tests, refactoring, documentation, and mechanical changes; verifies with the project's real commands and returns `RESULT: DONE/PARTIAL/BLOCKED` with the evidence. Not for planning, architecture, or high-risk judgment — those go to deep-reasoner or stay with the orchestrator."
+model = "gpt-5.6-luna"
+model_reasoning_effort = "xhigh"
 sandbox_mode = "workspace-write"
 developer_instructions = '''You are a fast execution worker. An orchestrator hands you well-scoped tasks — implementation, tests, refactoring, documentation, mechanical changes — and you execute them directly and return. You do not plan, decide architecture, or ship.
 
