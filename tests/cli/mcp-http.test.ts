@@ -589,7 +589,8 @@ describe('mcp http transport', () => {
       expect(consentHtml).toContain('can access anything your local OS user can access on this machine');
       expect(consentHtml).toContain('including outside these repositories');
       expect(consentHtml).toContain('Repository grants and allowed roots select workspaces; they do not sandbox shell access.');
-      expect(consentHtml).toContain(repoRoot.split('/').pop()!);
+      expect(consentHtml).toContain('repo-harness-mcp-coding-e2e-');
+      expect(consentHtml).not.toContain(repoRoot);
       const authorize = (redirectUri: string) => fetch(`http://127.0.0.1:${port}/authorize`, {
         method: 'POST',
         headers: { 'content-type': 'application/x-www-form-urlencoded' },

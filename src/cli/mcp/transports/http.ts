@@ -7,6 +7,7 @@ import { redirectUriMatches } from '@modelcontextprotocol/sdk/server/auth/handle
 import { InvalidScopeError, InvalidTokenError } from '@modelcontextprotocol/sdk/server/auth/errors.js';
 import type { OAuthClientInformationFull } from '@modelcontextprotocol/sdk/shared/auth.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { basename } from 'path';
 import {
   createMcpCodingRuntime,
   createMcpToolContext,
@@ -650,7 +651,7 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
     const oauthRateLimit = rateLimitMiddleware({ windowMs: 60_000, maxRequests: 120 });
     app.use(['/authorize', '/token', '/revoke', '/register'], oauthRateLimit);
     app.use('/authorize', express.urlencoded({ extended: false, limit: '10kb' }));
-    app.use('/authorize', requirePassphrase(oauthPassphrase ?? '', { coding, repoNames: readWriteRepos.map((repo) => repo.path.split('/').pop() ?? repo.id) }));
+    app.use('/authorize', requirePassphrase(oauthPassphrase ?? '', { coding, repoNames: readWriteRepos.map((repo) => basename(repo.path)) }));
     app.use('/authorize', oauthAuthorizationHandler(oauthProvider, allowedRedirectHosts));
     app.use('/token', tokenHandler({ provider: oauthProvider }));
     app.use('/revoke', revocationHandler({ provider: oauthProvider }));
