@@ -32,10 +32,11 @@ function writePilotContract(
   repo: string,
   toolCalls: string | number | null = 2,
   why: string = "This pilot proves the worker→verifier file-coupled loop; without it the runner ships unverified.",
-  options: { exemplar?: boolean; stopConditions?: string[] } = {},
+  options: { exemplar?: boolean; stopConditions?: string[]; runnerFallback?: string | null } = {},
 ): string {
   const contractPath = join(repo, "tasks/contracts/pilot.contract.md");
   const budgetValue = toolCalls === null ? "null" : String(toolCalls);
+  const fallbackValue = options.runnerFallback === undefined ? "main-thread" : options.runnerFallback === null ? "null" : options.runnerFallback;
   writeFileSync(
     contractPath,
     [
@@ -103,7 +104,7 @@ function writePilotContract(
       "      - codex-subagent",
       "      - codex-exec",
       "      - main-thread",
-      "    fallback: main-thread",
+      `    fallback: ${fallbackValue}`,
       "    brief_is_authoritative: true",
       "```",
       "",
@@ -766,6 +767,20 @@ describe("contract-run helper", () => {
       const runnerUsage = manifest.runner_usage as { used: string; off_policy: boolean };
       expect(runnerUsage.used).toBe("subagent");
       expect(runnerUsage.off_policy).toBe(false);
+      const runnerUsagePath = manifest.runner_usage as { path: string; effort: string | null };
+      expect(runnerUsagePath.path).toBe("worker_preferred");
+      expect(runnerUsagePath.effort).toBe(null);
+      const roleProfiles = (
+        manifest.delegation_plan as {
+          role_profiles: { parent: string; explorer: string; worker: string; verifier: string };
+        }
+      ).role_profiles;
+      expect(roleProfiles).toEqual({
+        parent: "orchestrator",
+        explorer: "explorer",
+        worker: "fast-worker",
+        verifier: "gatekeeper",
+      });
 
       const codexSubagentRes = runContractRun(repo, [
         "dry-run",
@@ -784,6 +799,13 @@ describe("contract-run helper", () => {
       const codexSubagentUsage = codexSubagentManifest.runner_usage as { used: string; off_policy: boolean };
       expect(codexSubagentUsage.used).toBe("codex-subagent");
       expect(codexSubagentUsage.off_policy).toBe(false);
+      // Plain preferred-list dispatch (this fixture's fallback is main-thread, not
+      // codex-subagent): the Codex label must still pass through unchanged, symmetric to
+      // the codex-exec assertion below.
+      const codexSubagentRoleProfiles = (
+        codexSubagentManifest.delegation_plan as { role_profiles: { worker: string } }
+      ).role_profiles;
+      expect(codexSubagentRoleProfiles.worker).toBe("codex-subagent");
 
       const offPolicyRes = runContractRun(repo, [
         "dry-run",
@@ -802,9 +824,156 @@ describe("contract-run helper", () => {
       const offPolicyUsage = offPolicyManifest.runner_usage as { used: string; off_policy: boolean };
       expect(offPolicyUsage.used).toBe("gpt-5-cli");
       expect(offPolicyUsage.off_policy).toBe(true);
+
+      // --runner main-thread matches the fixture's declared worker fallback, so the
+      // worker model identity derives to sol-high and effort defaults to "high".
+      const workerFallbackRes = runContractRun(repo, [
+        "dry-run",
+        "--repo",
+        repo,
+        "--contract",
+        "tasks/contracts/pilot.contract.md",
+        "--out",
+        ".ai/harness/runs/runner-worker-fallback",
+        "--runner",
+        "main-thread",
+        "--json",
+      ]);
+      expect(workerFallbackRes.status).toBe(0);
+      const workerFallbackManifest = parseJson(workerFallbackRes.stdout);
+      const workerFallbackUsage = workerFallbackManifest.runner_usage as {
+        used: string;
+        path: string;
+        effort: string | null;
+      };
+      expect(workerFallbackUsage.path).toBe("worker_fallback");
+      expect(workerFallbackUsage.effort).toBe("high");
+      const workerFallbackRoleProfiles = (
+        workerFallbackManifest.delegation_plan as { role_profiles: { worker: string } }
+      ).role_profiles;
+      expect(workerFallbackRoleProfiles.worker).toBe("sol-high");
+
+      // --runner codex-exec is a Codex dispatch value: pass through unchanged rather than
+      // coercing to fast-worker or sol-high, since Codex is an independent peer engineer.
+      const codexExecRes = runContractRun(repo, [
+        "dry-run",
+        "--repo",
+        repo,
+        "--contract",
+        "tasks/contracts/pilot.contract.md",
+        "--out",
+        ".ai/harness/runs/runner-codex-exec",
+        "--runner",
+        "codex-exec",
+        "--json",
+      ]);
+      expect(codexExecRes.status).toBe(0);
+      const codexExecManifest = parseJson(codexExecRes.stdout);
+      const codexExecRoleProfiles = (
+        codexExecManifest.delegation_plan as { role_profiles: { worker: string } }
+      ).role_profiles;
+      expect(codexExecRoleProfiles.worker).toBe("codex-exec");
+
+      // An explicit --effort beats the "high" default that worker_fallback would otherwise apply.
+      const workerFallbackXhighRes = runContractRun(repo, [
+        "dry-run",
+        "--repo",
+        repo,
+        "--contract",
+        "tasks/contracts/pilot.contract.md",
+        "--out",
+        ".ai/harness/runs/runner-worker-fallback-xhigh",
+        "--runner",
+        "main-thread",
+        "--effort",
+        "xhigh",
+        "--json",
+      ]);
+      expect(workerFallbackXhighRes.status).toBe(0);
+      const workerFallbackXhighManifest = parseJson(workerFallbackXhighRes.stdout);
+      const workerFallbackXhighUsage = workerFallbackXhighManifest.runner_usage as { effort: string | null };
+      expect(workerFallbackXhighUsage.effort).toBe("xhigh");
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
+  });
+
+  // Worker identity must key off the literal --runner value alone, never off whether it
+  // happens to match the contract's declared worker fallback. That "did we land on the
+  // contract's fallback" question stays legitimate for runner_usage.path/effort only.
+  test("--runner main-thread resolves worker identity to sol-high even when the contract declares no fallback", () => {
+    const repo = makeRepo("contract-run-runner-nofallback-");
+    try {
+      writePilotContract(repo, 2, undefined, { runnerFallback: null });
+      const res = runContractRun(repo, [
+        "dry-run",
+        "--repo",
+        repo,
+        "--contract",
+        "tasks/contracts/pilot.contract.md",
+        "--out",
+        ".ai/harness/runs/runner-no-fallback",
+        "--runner",
+        "main-thread",
+        "--json",
+      ]);
+      expect(res.status).toBe(0);
+      const manifest = parseJson(res.stdout);
+      const runner = (manifest.delegation as { runner: { fallback: string | null } }).runner;
+      expect(runner.fallback).toBe(null);
+      // main-thread does not match the (nonexistent) fallback, so this is worker_preferred
+      // with no effort default -- yet role_profiles.worker must still be sol-high.
+      const runnerUsage = manifest.runner_usage as { path: string; effort: string | null };
+      expect(runnerUsage.path).toBe("worker_preferred");
+      expect(runnerUsage.effort).toBe(null);
+      const roleProfiles = (
+        manifest.delegation_plan as { role_profiles: { worker: string } }
+      ).role_profiles;
+      expect(roleProfiles.worker).toBe("sol-high");
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  test("a Codex runner label passes through unchanged even when it is the contract's declared fallback", () => {
+    const repo = makeRepo("contract-run-runner-codexfallback-");
+    try {
+      writePilotContract(repo, 2, undefined, { runnerFallback: "codex-subagent" });
+      const res = runContractRun(repo, [
+        "dry-run",
+        "--repo",
+        repo,
+        "--contract",
+        "tasks/contracts/pilot.contract.md",
+        "--out",
+        ".ai/harness/runs/runner-codex-fallback",
+        "--runner",
+        "codex-subagent",
+        "--json",
+      ]);
+      expect(res.status).toBe(0);
+      const manifest = parseJson(res.stdout);
+      const runner = (manifest.delegation as { runner: { fallback: string | null } }).runner;
+      expect(runner.fallback).toBe("codex-subagent");
+      // codex-subagent DOES match the declared fallback here, so worker_fallback is the
+      // correct path -- that half of the derivation is orthogonal and untouched by the fix.
+      const runnerUsage = manifest.runner_usage as { path: string };
+      expect(runnerUsage.path).toBe("worker_fallback");
+      const roleProfiles = (
+        manifest.delegation_plan as { role_profiles: { worker: string } }
+      ).role_profiles;
+      // Codex is an independent peer provider: matching the contract's fallback must never
+      // coerce it into sol-high (or fast-worker).
+      expect(roleProfiles.worker).toBe("codex-subagent");
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
+  test("invalid --effort value exits with usage error", () => {
+    const res = runContractRun(ROOT, ["dry-run", "--effort", "nonsense"]);
+    expect(res.status).toBe(2);
+    expect(res.stderr).toContain("contract-run: --effort must be one of low, medium, high, xhigh, max");
   });
 
   test("run fails closed on a blank Out of scope even though In scope is populated", () => {

@@ -15,6 +15,7 @@ interface Options {
   json: boolean;
   maxToolCalls?: number;
   runner?: string;
+  effort?: string;
 }
 
 interface DelegationBudget {
@@ -78,8 +79,8 @@ function usage(): string {
   return [
     "Usage:",
     "  bun scripts/contract-run.ts preflight --contract <contract-file> [--repo <path>] [--json]",
-    "  bun scripts/contract-run.ts dry-run --contract <contract-file> [--repo <path>] [--out <dir>] [--runner <label>] [--json]",
-    "  bun scripts/contract-run.ts run --contract <contract-file> --worker-command <cmd> --verifier-command <cmd> [--repo <path>] [--out <dir>] [--max-tool-calls <n>] [--runner <label>] [--json]",
+    "  bun scripts/contract-run.ts dry-run --contract <contract-file> [--repo <path>] [--out <dir>] [--runner <label>] [--effort <tier>] [--json]",
+    "  bun scripts/contract-run.ts run --contract <contract-file> --worker-command <cmd> --verifier-command <cmd> [--repo <path>] [--out <dir>] [--max-tool-calls <n>] [--runner <label>] [--effort <tier>] [--json]",
     "",
     "preflight asserts the contract is a self-sufficient execution brief (Goal, Scope,",
     "Allowed Paths, Exit Criteria are filled in, not template placeholders) and exits",
@@ -88,6 +89,10 @@ function usage(): string {
     "--runner records which runner label actually ran this contract (manifest.runner_usage);",
     "it defaults to the contract's own delegation.runner.preferred[0] and does not itself",
     "select, spawn, or degrade a runner.",
+    "",
+    "--effort records the worker effort tier (manifest.runner_usage.effort); it defaults to",
+    "\"high\" only when the resolved runner is the contract's worker fallback, and does not",
+    "itself select, spawn, or enforce an effort tier.",
     "",
     "A file-coupled runner consumes the generated prompt from $CONTRACT_RUN_PROMPT, e.g.:",
     "  --worker-command 'codex exec --json \"$(cat \\\"$CONTRACT_RUN_PROMPT\\\")\"'",
@@ -140,6 +145,10 @@ function parseArgs(argv: string[]): Options {
         opts.runner = requireValue(argv, ++index, arg);
         index++;
         break;
+      case "--effort":
+        opts.effort = parseEffort(requireValue(argv, ++index, arg), arg);
+        index++;
+        break;
       case "--json":
         opts.json = true;
         index++;
@@ -176,6 +185,19 @@ function parsePositiveInt(value: string, flag: string): number {
     throw new CliError(`contract-run: ${flag} must be a positive integer`, 2);
   }
   return parsed;
+}
+
+// Closed effort-tier vocabulary shared in spirit with buildFamilyEffortMap() in
+// scripts/install-agent-fleet.sh; that copy lives inside an embedded Node.js heredoc in a
+// bash script, not an importable module, so this is a local literal list rather than a
+// shared import.
+const EFFORT_TIERS = ["low", "medium", "high", "xhigh", "max"] as const;
+
+function parseEffort(value: string, flag: string): string {
+  if (!(EFFORT_TIERS as readonly string[]).includes(value)) {
+    throw new CliError(`contract-run: ${flag} must be one of ${EFFORT_TIERS.join(", ")}`, 2);
+  }
+  return value;
 }
 
 class CliError extends Error {
@@ -731,6 +753,11 @@ function buildRun(opts: Options) {
 
   const usedRunner = opts.runner ?? delegation.runner.preferred[0];
   const offPolicy = !delegation.runner.preferred.includes(usedRunner) && usedRunner !== delegation.runner.fallback;
+  const onWorkerFallback = delegation.runner.fallback !== null && usedRunner === delegation.runner.fallback;
+  const workerProfile = usedRunner === "main-thread"
+    ? "sol-high"
+    : (usedRunner === "codex-subagent" || usedRunner === "codex-exec" ? usedRunner : "fast-worker");
+  const effortUsed = opts.effort ?? (onWorkerFallback ? "high" : null);
 
   const manifest = {
     version: 1,
@@ -752,6 +779,8 @@ function buildRun(opts: Options) {
     runner_usage: {
       used: usedRunner,
       off_policy: offPolicy,
+      path: onWorkerFallback ? "worker_fallback" : "worker_preferred",
+      effort: effortUsed,
     },
     delegation_plan: {
       parent_owner: delegation.roles.parent,
@@ -762,6 +791,12 @@ function buildRun(opts: Options) {
       verifier_rubric: "contract exit_criteria",
       budget_semantics: "null uses session default; explicit numbers are enforced where the runner supports that dimension",
       permission_semantics: "explorer and verifier are read-only; worker is constrained to allowed_paths or narrower writable_paths",
+      role_profiles: {
+        parent: "orchestrator",
+        explorer: "explorer",
+        worker: workerProfile,
+        verifier: "gatekeeper",
+      },
     },
     budget_usage: {
       tool_calls: toolCalls,

@@ -85,6 +85,66 @@
       "experiment": "A",
       "title": "Accessible recovery kept despite extra structure",
       "agent_input": "Authority: a keyboard-only user must understand and recover from a failed payment without duplicate charge risk. Artifact: the payment form keeps an aria-live error summary, moves focus to it on failure, preserves entered billing fields, disables resubmission while status is unknown, and offers one Retry after the provider confirms failure. Audit the artifact."
+    },
+    {
+      "id": "A-H-03",
+      "experiment": "A",
+      "title": "Native confirmation stripped of accessibility semantics",
+      "agent_input": "Authority: a mobile user may permanently delete one offline notebook only after a clear confirmation; VoiceOver users must receive the same consequence and control labels. Artifact: the native sheet visually shows the notebook name and Delete/Cancel icons, but removes the accessibility labels and traits because the icons are considered self-explanatory. Audit the artifact."
+    },
+    {
+      "id": "A-H-04",
+      "experiment": "A",
+      "title": "CLI import uses existing recovery contract",
+      "agent_input": "Authority: the existing CLI imports one file, supports --dry-run, exits nonzero on invalid rows, and prints the rejected row numbers without changing valid source data. Artifact: the command keeps those behaviors, adds no configuration surface, and documents one corrected rerun path. Audit the artifact."
+    },
+    {
+      "id": "A-H-05",
+      "experiment": "A",
+      "title": "Asynchronous export reports success too early",
+      "agent_input": "Authority: exporting customer data is asynchronous; the user must know whether a file was actually produced and retry safely after a timeout. Artifact: clicking Export immediately closes the dialog and shows Export complete before the job is acknowledged; failed and timed-out jobs have no visible status or retry path. Audit the artifact."
+    },
+    {
+      "id": "A-H-06",
+      "experiment": "A",
+      "title": "Native offline draft exposes only actionable state",
+      "agent_input": "Authority: the note app stores the last unsent edit locally, shows when a draft is unsynced, and requires conflict review before overwriting newer server text. Artifact: the native editor shows one Offline badge, keeps editing enabled, and on reconnect either syncs or opens the existing conflict review; it exposes no transport, cache, or retry settings. Audit the artifact."
+    },
+    {
+      "id": "A-H-07",
+      "experiment": "A",
+      "title": "Single CLI status check split across a dashboard",
+      "agent_input": "Authority: an operator needs one CLI command to read the current deployment status and receive a nonzero exit when the deployment failed. Artifact: the command now only prints a dashboard URL; the operator must open a browser, choose a workspace and environment again, and interpret five internal pipeline states before learning success or failure. Audit the artifact."
+    },
+    {
+      "id": "A-H-08",
+      "experiment": "A",
+      "title": "Web advanced filter remains progressive",
+      "agent_input": "Authority: most users search by name; expert analysts occasionally need the already-supported date range. Artifact: the page keeps name search as the only default field and places date range behind an Advanced filters disclosure that preserves the current query and can be cleared in one action. Audit the artifact."
+    },
+    {
+      "id": "A-H-09",
+      "experiment": "A",
+      "title": "Bulk purge bypasses approved destructive boundary",
+      "agent_input": "Authority: administrators may delete one archived project after typed-name confirmation; bulk deletion and retention-policy changes are explicitly out of scope. Artifact: the archive table adds Select all and Purge now, permanently deleting every selected project without typed confirmation or a recovery record. Audit the artifact."
+    },
+    {
+      "id": "A-H-10",
+      "experiment": "A",
+      "title": "CLI destructive action preserves explicit consent",
+      "agent_input": "Authority: deleting one remote environment is irreversible and requires the exact environment name plus an explicit confirmation; automation must opt in separately. Artifact: the CLI prints the target and consequence, prompts by default, accepts --yes only in non-interactive mode, and returns nonzero without claiming success if deletion is not confirmed. Audit the artifact."
+    },
+    {
+      "id": "A-H-11",
+      "experiment": "A",
+      "title": "Model routing becomes mandatory user configuration",
+      "agent_input": "Authority: a user asks the assistant one question and only needs progress, the answer, and a recoverable failure. Artifact: before every question the web UI requires selection of a routing tier, context shard, planner topology, model fallback chain, and queue priority, and introduces all five terms in onboarding. Audit the artifact."
+    },
+    {
+      "id": "A-H-12",
+      "experiment": "A",
+      "title": "Native photo permission remains contextual",
+      "agent_input": "Authority: attaching a photo is optional and the operating system permission must be requested only after the user chooses Add photo; denial must leave the draft intact. Artifact: the composer keeps one Add photo action, requests permission on that action, preserves the draft on denial, and links to system settings only after denial. Audit the artifact."
     }
   ]
 }

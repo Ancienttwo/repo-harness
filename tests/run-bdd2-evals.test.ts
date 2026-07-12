@@ -11,13 +11,21 @@ import {
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
+import { createHash } from "crypto";
 import {
   buildIsolatedAgentEnv,
   buildRunPlan,
+  evaluateAuditGates,
+  projectAuditEvidence,
+  projectHistoricalAuditEvidence,
   projectHistoricalShapeEvidence,
   runEvaluation,
   sha256File,
+  summarizeAudit,
+  summarizeHistoricalAudit,
   summarizeShape,
+  validateAuditScores,
+  validateHistoricalAuditScores,
   validateEvaluation,
   validateShapeScores,
 } from "../scripts/run-bdd2-evals";
@@ -156,20 +164,18 @@ describe("run-bdd2-evals validation and planning", () => {
     }
   });
 
-  test("foundation experiments cannot execute before a new revision is sealed", () => {
+  test("foundation Shape cannot execute before a new revision is sealed", () => {
     const evaluation = validateEvaluation(ROOT);
-    for (const [experiment, taskId] of [["S", "S-D-01"], ["A", "A-D-01"]] as const) {
-      expect(() =>
-        runEvaluation(evaluation, {
-          experiment,
-          partition: "development",
-          taskIds: [taskId],
-          conditions: ["baseline"],
-          repetitions: 1,
-          agent: "codex-gpt-5.6-sol-xhigh",
-        })
-      ).toThrow(`Experiment ${experiment} is foundation-only`);
-    }
+    expect(() =>
+      runEvaluation(evaluation, {
+        experiment: "S",
+        partition: "development",
+        taskIds: ["S-D-01"],
+        conditions: ["baseline"],
+        repetitions: 1,
+        agent: "codex-gpt-5.6-sol-xhigh",
+      })
+    ).toThrow("Experiment S is foundation-only");
   });
 });
 
@@ -393,6 +399,57 @@ describe("run-bdd2-evals sealed execution", () => {
         );
       }
 
+      expect(() => projectHistoricalShapeEvidence(root, runRelativePath, "shape-evidence.json"))
+        .toThrow("Historical run does not match a sealed Shape authority");
+      const runJsonPath = join(root, runRelativePath, "run.json");
+      const currentRunText = readFileSync(runJsonPath, "utf-8");
+      const historicalManifest = structuredClone(manifest);
+      historicalManifest.schema = "repo-harness-bdd2-evaluation.v2";
+      historicalManifest.adjudication = {
+        rubric: manifest.adjudication.rubric,
+        rubric_sha256: manifest.adjudication.rubric_sha256,
+        score_schema: manifest.adjudication.experiments.S.score_schema,
+        score_schema_sha256: manifest.adjudication.experiments.S.score_schema_sha256,
+        shape_metrics: manifest.adjudication.experiments.S.metrics,
+        shape_metrics_sha256: manifest.adjudication.experiments.S.metrics_sha256,
+      };
+      const commitHistoricalManifest = (value: typeof historicalManifest, label: string) => {
+        const text = `${JSON.stringify(value, null, 2)}\n`;
+        const blob = spawnSync("git", ["hash-object", "-w", "--stdin"], {
+          cwd: root,
+          encoding: "utf-8",
+          input: text,
+        }).stdout.trim();
+        const historicalIndex = join(root, `historical-shape-${label}.index`);
+        const historicalEnv = { ...process.env, GIT_INDEX_FILE: historicalIndex };
+        expect(spawnSync("git", ["read-tree", "HEAD"], { cwd: root, env: historicalEnv }).status).toBe(0);
+        expect(spawnSync("git", ["update-index", "--add", "--cacheinfo", `100644,${blob},evals/bdd2/evaluation-manifest.json`], { cwd: root, env: historicalEnv }).status).toBe(0);
+        const tree = spawnSync("git", ["write-tree"], { cwd: root, env: historicalEnv, encoding: "utf-8" }).stdout.trim();
+        const commit = spawnSync("git", ["commit-tree", tree, "-p", "HEAD"], {
+          cwd: root,
+          env: historicalEnv,
+          encoding: "utf-8",
+          input: `historical v2 Shape authority ${label}\n`,
+        }).stdout.trim();
+        rmSync(historicalIndex, { force: true });
+        return { commit, text };
+      };
+      const historicalRun = JSON.parse(currentRunText);
+
+      const invalidRunnerManifest = structuredClone(historicalManifest);
+      invalidRunnerManifest.runner.sha256 = "0".repeat(64);
+      const invalidRunnerAuthority = commitHistoricalManifest(invalidRunnerManifest, "invalid-runner");
+      historicalRun.source_commit = invalidRunnerAuthority.commit;
+      historicalRun.manifest_sha256 = createHash("sha256").update(invalidRunnerAuthority.text).digest("hex");
+      writeFileSync(runJsonPath, `${JSON.stringify(historicalRun, null, 2)}\n`, "utf-8");
+      expect(() => projectHistoricalShapeEvidence(root, runRelativePath, "shape-evidence.json"))
+        .toThrow("historical Shape runner hash mismatch at source commit");
+
+      const historicalAuthority = commitHistoricalManifest(historicalManifest, "valid");
+      historicalRun.source_commit = historicalAuthority.commit;
+      historicalRun.manifest_sha256 = createHash("sha256").update(historicalAuthority.text).digest("hex");
+      writeFileSync(runJsonPath, `${JSON.stringify(historicalRun, null, 2)}\n`, "utf-8");
+
       const projected = projectHistoricalShapeEvidence(root, runRelativePath, "shape-evidence.json") as any;
       expect(projected.schema).toBe("repo-harness-bdd2-shape-evidence.v1");
       expect(projected.projector_sha256).toBe(sha256File(join(root, "scripts/run-bdd2-evals.ts")));
@@ -429,6 +486,7 @@ describe("run-bdd2-evals sealed execution", () => {
       expect(() => projectHistoricalShapeEvidence(root, runRelativePath, "shape-evidence.json"))
         .toThrow("Historical coordinate prompt hash drift");
       writeFileSync(firstPrivatePath, `${JSON.stringify(firstPrivate, null, 2)}\n`, "utf-8");
+      writeFileSync(runJsonPath, currentRunText, "utf-8");
 
       expect(validateShapeScores(evaluation, runRelativePath).scores.size).toBe(6);
       const summary = summarizeShape(evaluation, runRelativePath, "shape-report.md");
@@ -468,6 +526,220 @@ describe("run-bdd2-evals sealed execution", () => {
 
       rmSync(join(scoreDir, `${report.packets[0].packet_id}.json`));
       expect(() => validateShapeScores(evaluation, runRelativePath)).toThrow("requires exactly 6 score files");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("run-bdd2-evals Audit adjudication", () => {
+  test("validates exact coordinates, projects evidence, and applies every Pass gate", () => {
+    const root = tempRepo("bdd2-audit-score");
+    try {
+      const taskPath = join(root, "evals/bdd2/tasks/held-out.json");
+      const truthPath = join(root, "evals/bdd2/truth/held-out.json");
+      const tasks = JSON.parse(readFileSync(taskPath, "utf-8"));
+      tasks.tasks = tasks.tasks.filter((task: any) => task.experiment === "S" || ["A-H-02", "A-H-09"].includes(task.id));
+      writeFileSync(taskPath, `${JSON.stringify(tasks, null, 2)}\n`, "utf-8");
+      const truth = JSON.parse(readFileSync(truthPath, "utf-8"));
+      truth.audit_tasks = { "A-H-02": truth.audit_tasks["A-H-02"], "A-H-09": truth.audit_tasks["A-H-09"] };
+      writeFileSync(truthPath, `${JSON.stringify(truth, null, 2)}\n`, "utf-8");
+      const manifest = readManifest(root);
+      manifest.experiments.A.freeze = {
+        id: "bdd2-test-a-sealed",
+        state: "sealed",
+        sealed_at: "2026-07-12T00:00:00Z",
+      };
+      manifest.experiments.A.held_out_task_count = 2;
+      manifest.partitions.held_out.tasks_sha256 = sha256File(taskPath);
+      manifest.partitions.held_out.truth_sha256 = sha256File(truthPath);
+      manifest.agents = {
+        stub: {
+          command: "/bin/echo",
+          args: ["{model}", "{sampling.temperature}"],
+          version_args: ["--version"],
+          expected_version: "unused",
+          model: "stub-model-v1",
+          sampling: { temperature: 0 },
+          input_source: "stdin",
+          response_source: "stdout",
+          workspace_mode: "isolated",
+          credential_mode: "none",
+        },
+      };
+      writeManifest(root, manifest);
+      writeFileSync(join(root, ".gitignore"), ".ai/\naudit-evidence.json\n", "utf-8");
+      for (const args of [
+        ["init"],
+        ["config", "user.name", "BDD2 Test"],
+        ["config", "user.email", "bdd2-test@example.com"],
+        ["add", "."],
+        ["commit", "-m", "sealed Audit authority fixture"],
+      ]) {
+        expect(spawnSync("git", args, { cwd: root, encoding: "utf-8" }).status).toBe(0);
+      }
+      const sourceCommit = spawnSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf-8" }).stdout.trim();
+      const evaluation = validateEvaluation(root);
+      const runRelativePath = ".ai/harness/runs/bdd2/audit-summary";
+      const runPath = join(root, runRelativePath);
+      for (const subdir of ["blind", "private", "scores"]) mkdirSync(join(runPath, subdir), { recursive: true });
+      const coordinates = buildRunPlan(evaluation, { experiment: "A", partition: "held_out" });
+      const packets: Array<{ packet_id: string; task_id: string; status: "success" }> = [];
+      for (const [index, coordinate] of coordinates.entries()) {
+        const packetId = (index + 1).toString(16).padStart(32, "0");
+        packets.push({ packet_id: packetId, task_id: coordinate.taskId, status: "success" });
+        const task = evaluation.tasks.held_out.find((entry) => entry.id === coordinate.taskId)!;
+        writeFileSync(join(runPath, "blind", `${packetId}.json`), `${JSON.stringify({
+          schema: "repo-harness-bdd2-blind-packet.v2",
+          packet_id: packetId,
+          task_id: coordinate.taskId,
+          experiment: "A",
+          task_input: task.agent_input,
+          response: "synthetic blind audit response",
+        }, null, 2)}\n`, "utf-8");
+        writeFileSync(join(runPath, "private", `${packetId}.json`), `${JSON.stringify({
+          schema: "repo-harness-bdd2-private-coordinate.v2",
+          packet_id: packetId,
+          coordinate_id: coordinate.coordinateId,
+          task_id: coordinate.taskId,
+          condition: coordinate.condition,
+          repetition: coordinate.repetition,
+          prompt_sha256: evaluation.manifest.experiments.A.conditions[coordinate.condition].sha256,
+          agent: "stub",
+          model: "stub-model-v1",
+          sampling: { temperature: 0 },
+          exit_code: 0,
+        }, null, 2)}\n`, "utf-8");
+        const isSeeded = coordinate.taskId === "A-H-09";
+        const isTreatment = coordinate.condition === "treatment";
+        const findings = isTreatment && isSeeded
+          ? [
+              { ref: "F1", reported_severity: "P0", matched_truth_issue_id: "A-H-09-I1", match_notes: "direct match" },
+            ]
+          : !isTreatment && !isSeeded
+            ? [{ ref: "F1", reported_severity: "P3", matched_truth_issue_id: null, match_notes: "baseline false positive" }]
+            : [];
+        writeFileSync(join(runPath, "scores", `${packetId}.json`), `${JSON.stringify({
+          schema: "repo-harness-bdd2-audit-score.v1",
+          packet_id: packetId,
+          task_id: coordinate.taskId,
+          experiment: "A",
+          reviewer_id: "blind-agent-panel-final",
+          locked_at: "2026-07-12T12:00:00Z",
+          score: {
+            kind: "audit",
+            verdict: findings.length > 0 ? "findings" : isTreatment || !isSeeded ? "pass" : "inconclusive",
+            findings,
+            correction_minutes: isTreatment ? 1 : 5,
+            notes: "locked synthetic Audit score",
+          },
+        }, null, 2)}\n`, "utf-8");
+      }
+      const runJsonPath = join(runPath, "run.json");
+      const runJson = {
+        schema: "repo-harness-bdd2-run.v2",
+        freeze_id: evaluation.manifest.experiments.A.freeze.id,
+        source_commit: sourceCommit,
+        manifest_sha256: sha256File(join(root, "evals/bdd2/evaluation-manifest.json")),
+        agent: "stub",
+        model: "stub-model-v1",
+        sampling: { temperature: 0 },
+        experiment: "A",
+        partition: "held_out",
+        output_path: runRelativePath,
+        packets,
+      };
+      writeFileSync(runJsonPath, `${JSON.stringify(runJson, null, 2)}\n`, "utf-8");
+
+      expect(validateAuditScores(evaluation, runRelativePath).scores.size).toBe(8);
+      const firstBlindPath = join(runPath, "blind", `${packets[0].packet_id}.json`);
+      const firstBlindText = readFileSync(firstBlindPath, "utf-8");
+      const externalBlind = join(tmpdir(), `bdd2-audit-blind-${Date.now()}.json`);
+      writeFileSync(externalBlind, firstBlindText, "utf-8");
+      rmSync(firstBlindPath);
+      symlinkSync(externalBlind, firstBlindPath);
+      expect(() => validateAuditScores(evaluation, runRelativePath))
+        .toThrow("must be a regular non-symlink file");
+      rmSync(firstBlindPath);
+      writeFileSync(firstBlindPath, firstBlindText, "utf-8");
+      rmSync(externalBlind, { force: true });
+      const externalRunRoot = mkdtempSync(join(tmpdir(), "bdd2-audit-external-"));
+      cpSync(runPath, join(externalRunRoot, "run"), { recursive: true });
+      symlinkSync(externalRunRoot, join(root, "linked-run-parent"));
+      expect(() => validateAuditScores(evaluation, "linked-run-parent/run"))
+        .toThrow("resolves outside repository root");
+      rmSync(join(root, "linked-run-parent"));
+      rmSync(externalRunRoot, { recursive: true, force: true });
+      writeFileSync(runJsonPath, `${JSON.stringify({ ...runJson, source_commit: "a".repeat(40) }, null, 2)}\n`, "utf-8");
+      expect(() => validateAuditScores(evaluation, runRelativePath)).toThrow("Cannot read evals/bdd2/evaluation-manifest.json at source commit");
+      writeFileSync(runJsonPath, `${JSON.stringify(runJson, null, 2)}\n`, "utf-8");
+      const extraPrivatePath = join(runPath, "private", `${"f".repeat(32)}.json`);
+      writeFileSync(extraPrivatePath, "{}\n", "utf-8");
+      expect(() => validateAuditScores(evaluation, runRelativePath)).toThrow("private packet files must match run packet ids exactly");
+      rmSync(extraPrivatePath);
+      const projection = projectAuditEvidence(evaluation, runRelativePath, "audit-evidence.json") as any;
+      expect(projection.packet_count).toBe(8);
+      expect(projection.evidence_grade).toBe("condition-blind-agent-panel-proxy");
+      const externalEvidence = join(tmpdir(), `bdd2-audit-evidence-${Date.now()}.json`);
+      writeFileSync(externalEvidence, "external\n", "utf-8");
+      symlinkSync(externalEvidence, join(root, "audit-evidence-link.json"));
+      expect(() => projectAuditEvidence(evaluation, runRelativePath, "audit-evidence-link.json"))
+        .toThrow("must not be a symbolic link");
+      rmSync(join(root, "audit-evidence-link.json"));
+      rmSync(externalEvidence, { force: true });
+      const summary = summarizeAudit(evaluation, runRelativePath);
+      expect(summary.decision).toBe("Pass");
+      expect(Object.values(summary.gates).every(Boolean)).toBe(true);
+      expect(summary.metrics.treatment.precision).toBe(1);
+      expect(summary.metrics.treatment.correct_no_findings_rate).toBe(1);
+      const gateCases: Array<[keyof typeof summary.gates, Partial<typeof summary.metrics.treatment>]> = [
+        ["precision", { precision: 0.69 }],
+        ["seeded_recall", { seeded_recall: 0.79 }],
+        ["severe_seeded_recall", { severe_seeded_recall: 0.99 }],
+        ["clean_false_positive_rate", { clean_false_positive_rate: 0.21 }],
+        ["correct_no_findings_rate", { correct_no_findings_rate: 0.79 }],
+        ["severity_agreement_rate", { severity_agreement_rate: 0.84 }],
+        ["no_severe_underestimation", { severe_underestimations: 1 }],
+      ];
+      for (const [gate, mutation] of gateCases) {
+        const gates = evaluateAuditGates({ ...summary.metrics.treatment, ...mutation });
+        expect(gates[gate]).toBe(false);
+        expect(Object.values(gates).every(Boolean)).toBe(false);
+      }
+      const summaryPath = join(runPath, "audit-summary.json");
+      const externalSummary = join(tmpdir(), `bdd2-audit-summary-${Date.now()}.json`);
+      rmSync(summaryPath);
+      writeFileSync(externalSummary, "external\n", "utf-8");
+      symlinkSync(externalSummary, summaryPath);
+      expect(() => summarizeAudit(evaluation, runRelativePath))
+        .toThrow("Output path must not be a symbolic link");
+      rmSync(summaryPath);
+      rmSync(externalSummary, { force: true });
+      expect(validateHistoricalAuditScores(root, runRelativePath).scores.size).toBe(8);
+      const historicalProjection = projectHistoricalAuditEvidence(root, runRelativePath, "historical-audit-evidence.json") as any;
+      expect(historicalProjection.schema).toBe("repo-harness-bdd2-audit-evidence.v2");
+      expect(historicalProjection.rows).toHaveLength(8);
+      expect(summarizeHistoricalAudit(root, runRelativePath).decision).toBe("Pass");
+
+      const seededTreatment = coordinates.findIndex((coordinate) => coordinate.taskId === "A-H-09" && coordinate.condition === "treatment");
+      const duplicatePath = join(runPath, "scores", `${(seededTreatment + 1).toString(16).padStart(32, "0")}.json`);
+      const duplicate = JSON.parse(readFileSync(duplicatePath, "utf-8"));
+      const validScoreText = readFileSync(duplicatePath, "utf-8");
+      duplicate.locked_at = "2026-07-12";
+      writeFileSync(duplicatePath, `${JSON.stringify(duplicate, null, 2)}\n`, "utf-8");
+      expect(() => validateAuditScores(evaluation, runRelativePath)).toThrow("locked_at must be an ISO date-time");
+      writeFileSync(duplicatePath, validScoreText, "utf-8");
+      const underestimated = JSON.parse(validScoreText);
+      underestimated.score.findings[0].reported_severity = "P2";
+      writeFileSync(duplicatePath, `${JSON.stringify(underestimated, null, 2)}\n`, "utf-8");
+      const killed = summarizeAudit(evaluation, runRelativePath);
+      expect(killed.decision).toBe("Kill");
+      expect(killed.gates.no_severe_underestimation).toBe(false);
+      writeFileSync(duplicatePath, validScoreText, "utf-8");
+      Object.assign(duplicate, JSON.parse(validScoreText));
+      duplicate.score.findings.push({ ref: "F2", reported_severity: "P0", matched_truth_issue_id: "A-H-09-I1", match_notes: "duplicate" });
+      writeFileSync(duplicatePath, `${JSON.stringify(duplicate, null, 2)}\n`, "utf-8");
+      expect(() => validateAuditScores(evaluation, runRelativePath)).toThrow("matches one truth issue more than once");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

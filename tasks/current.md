@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-12T23:33:53+0800 -->
+<!-- updated_at: 2026-07-12T23:35:51+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-07-12T23:33:53+0800
+> **Updated At**: 2026-07-12T23:35:51+0800
 > **Source Branch**: codex/chatgpt-coding-mcp-closeout
-> **Source Commit**: e070d18
+> **Source Commit**: f7db295
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: chatgpt-coding-mcp-archived
+> **Reason**: chatgpt-coding-mcp-latest-main-merge
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -68,31 +68,42 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 22 changed/untracked path(s)
+- Summary: 33 changed/untracked path(s)
 
 ```
- M .agents/skills/repo-harness-chatgpt-bridge/SKILL.md
- M .agents/skills/repo-harness-chatgpt-bridge/references/workflow.md
- M docs/reference-configs/chatgpt-coding-mcp.md
- M docs/repo-harness-chatgpt-mcp-setup.md
- D plans/plan-20260712-0301-chatgpt-coding-mcp-integration.md
- M src/cli/mcp/coding-tools.ts
- M src/cli/mcp/process-sessions.ts
- M src/effects/repo-registry.ts
- D tasks/contracts/20260712-0301-chatgpt-coding-mcp-integration.contract.md
- M tasks/current.md
- D tasks/notes/20260712-0301-chatgpt-coding-mcp-integration.notes.md
- D tasks/reviews/20260712-0301-chatgpt-coding-mcp-integration.review.md
- M tasks/todos.md
- M tests/cli/mcp-coding-tools.test.ts
- M tests/cli/mcp-policy.test.ts
- M tests/cli/mcp-process-sessions.test.ts
- M tests/cli/registry.test.ts
-?? plans/archive/plan-20260712-0301-chatgpt-coding-mcp-integration.md
-?? tasks/archive/contract-20260712-2333-chatgpt-coding-mcp-integration.md
-?? tasks/archive/notes-20260712-2333-chatgpt-coding-mcp-integration.md
-?? tasks/archive/review-20260712-2333-chatgpt-coding-mcp-integration.md
-?? tasks/archive/todo-20260712-2333-chatgpt-coding-mcp-integration.md
+M  .ai/context/capabilities.json
+M  assets/templates/helpers/contract-run.ts
+M  docs/architecture/modules/workflow-engine/contract-assets.md
+M  evals/bdd2/evaluation-manifest.json
+A  evals/bdd2/metrics/audit-metrics.md
+A  evals/bdd2/reports/experiment-a-evidence.json
+A  evals/bdd2/reports/experiment-a.md
+A  evals/bdd2/reports/phase-e-gate.md
+A  evals/bdd2/rubrics/audit-score.schema.json
+M  evals/bdd2/rubrics/blind-adjudication.md
+R  evals/bdd2/rubrics/score.schema.json -> evals/bdd2/rubrics/shape-score.schema.json
+M  evals/bdd2/tasks/held-out.json
+M  evals/bdd2/truth/held-out.json
+A  plans/archive/plan-20260712-2213-bdd2-e-06-record-phase-e-gate-decision.md
+A  plans/plan-20260712-1811-bdd2-e-03-run-experiment-a-audit-hypothesis.md
+A  plans/plan-20260712-2103-agent-fleet-worker-routing-telemetry.md
+M  plans/sprints/20260712-bdd2-phase-e-evaluation.sprint.md
+M  scripts/contract-run.ts
+M  scripts/run-bdd2-evals.ts
+A  tasks/archive/contract-20260712-2242-bdd2-e-06-record-phase-e-gate-decision.md
+A  tasks/archive/notes-20260712-2242-bdd2-e-06-record-phase-e-gate-decision.md
+A  tasks/archive/review-20260712-2242-bdd2-e-06-record-phase-e-gate-decision.md
+A  tasks/archive/todo-20260712-2242-bdd2-e-06-record-phase-e-gate-decision.md
+A  tasks/contracts/20260712-1811-bdd2-e-03-run-experiment-a-audit-hypothesis.contract.md
+A  tasks/contracts/20260712-2103-agent-fleet-worker-routing-telemetry.contract.md
+UU tasks/current.md
+A  tasks/notes/20260712-1811-bdd2-e-03-run-experiment-a-audit-hypothesis.notes.md
+A  tasks/notes/20260712-2103-agent-fleet-worker-routing-telemetry.notes.md
+A  tasks/reviews/20260712-1811-bdd2-e-03-run-experiment-a-audit-hypothesis.review.md
+A  tasks/reviews/20260712-2103-agent-fleet-worker-routing-telemetry.review.md
+M  tests/bdd2-evals-contract.test.ts
+M  tests/contract-run.test.ts
+M  tests/run-bdd2-evals.test.ts
 ```
 
 ## Source Artifacts
