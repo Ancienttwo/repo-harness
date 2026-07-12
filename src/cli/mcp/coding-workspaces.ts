@@ -146,6 +146,10 @@ function readIgnoreRules(root: string): IgnoreRule[] {
   const path = join(root, '.ignore');
   if (!existsSync(path)) return [];
   try {
+    const policy = lstatSync(path);
+    if (!policy.isFile() || policy.isSymbolicLink()) {
+      throw new Error('repository .ignore policy is not a regular file');
+    }
     return readFileSync(path, 'utf-8')
       .split(/\r?\n/)
       .map((line) => line.trim())
@@ -164,7 +168,7 @@ function readIgnoreRules(root: string): IgnoreRule[] {
       })
       .filter((rule) => rule.pattern.length > 0);
   } catch {
-    return [];
+    throw new CodingWorkspaceError('IGNORE_POLICY_UNAVAILABLE', 'repository .ignore policy could not be read safely');
   }
 }
 

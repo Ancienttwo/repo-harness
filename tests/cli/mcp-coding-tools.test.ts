@@ -195,6 +195,32 @@ describe('coding MCP workspace and file tools', () => {
     }
   });
 
+  test('fails closed when repository ignore policy is not a regular file', async () => {
+    const state = fixture();
+    const outside = temporary('repo-harness-coding-ignore-outside-');
+    try {
+      const opened = parse(await callCodingTool(state.ctx, 'open_workspace', { repo_id: state.repoId, mode: 'checkout' }));
+      rmSync(join(state.repo, '.ignore'));
+      mkdirSync(join(state.repo, '.ignore'));
+      const directoryPolicy = parse(await callCodingTool(state.ctx, 'read', {
+        workspace_id: opened.workspace_id,
+        path: 'src/a.txt',
+      }));
+      expect(directoryPolicy.error.code).toBe('IGNORE_POLICY_UNAVAILABLE');
+
+      rmSync(join(state.repo, '.ignore'), { recursive: true });
+      writeFileSync(join(outside, 'ignore-policy'), 'src/a.txt\n');
+      symlinkSync(join(outside, 'ignore-policy'), join(state.repo, '.ignore'));
+      const symlinkPolicy = parse(await callCodingTool(state.ctx, 'read', {
+        workspace_id: opened.workspace_id,
+        path: 'src/a.txt',
+      }));
+      expect(symlinkPolicy.error.code).toBe('IGNORE_POLICY_UNAVAILABLE');
+    } finally {
+      await state.processManager.shutdown();
+    }
+  });
+
   test('does not follow root instruction symlinks or execute a granted repo local CodeGraph binary', async () => {
     const state = fixture();
     const outside = temporary('repo-harness-coding-instruction-outside-');
