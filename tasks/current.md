@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-12T23:35:51+0800 -->
+<!-- updated_at: 2026-07-12T23:58:38+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-07-12T23:35:51+0800
+> **Updated At**: 2026-07-12T23:58:38+0800
 > **Source Branch**: codex/chatgpt-coding-mcp-closeout
-> **Source Commit**: f7db295
+> **Source Commit**: 53808ab
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: chatgpt-coding-mcp-latest-main-merge
+> **Reason**: chatgpt-coding-mcp-latest-main-verified
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -35,6 +35,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - /Users/kito/Projects/repo-harness: active-worktree owner -> /Users/kito/Projects/repo-harness
 - /Users/kito/Projects/repo-harness-worktrees/agent-fleet-specialists: plans/plan-20260712-2215-agent-fleet-specialists.md
 - /Users/kito/Projects/repo-harness-worktrees/agent-fleet-specialists: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/agent-fleet-specialists
+- /Users/kito/Projects/repo-harness-worktrees/bdd2-audit-experiment: plans/plan-20260712-2319-bdd2-phase-e2-shape-adapter-evaluation.md
+- /Users/kito/Projects/repo-harness-worktrees/bdd2-audit-experiment: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/bdd2-audit-experiment
 - /Users/kito/Projects/repo-harness-worktrees/bdd2-eval-foundation: plans/plan-20260712-0450-bdd2-eval-foundation.md
 - /Users/kito/Projects/repo-harness-worktrees/bdd2-eval-foundation: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/bdd2-eval-foundation
 - /Users/kito/Projects/repo-harness-worktrees/bdd2-shape-experiment: plans/plan-20260712-0605-bdd2-e-02-run-experiment-s-shape-hypothesis.md
@@ -68,42 +70,12 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 33 changed/untracked path(s)
+- Summary: 3 changed/untracked path(s)
 
 ```
-M  .ai/context/capabilities.json
-M  assets/templates/helpers/contract-run.ts
-M  docs/architecture/modules/workflow-engine/contract-assets.md
-M  evals/bdd2/evaluation-manifest.json
-A  evals/bdd2/metrics/audit-metrics.md
-A  evals/bdd2/reports/experiment-a-evidence.json
-A  evals/bdd2/reports/experiment-a.md
-A  evals/bdd2/reports/phase-e-gate.md
-A  evals/bdd2/rubrics/audit-score.schema.json
-M  evals/bdd2/rubrics/blind-adjudication.md
-R  evals/bdd2/rubrics/score.schema.json -> evals/bdd2/rubrics/shape-score.schema.json
-M  evals/bdd2/tasks/held-out.json
-M  evals/bdd2/truth/held-out.json
-A  plans/archive/plan-20260712-2213-bdd2-e-06-record-phase-e-gate-decision.md
-A  plans/plan-20260712-1811-bdd2-e-03-run-experiment-a-audit-hypothesis.md
-A  plans/plan-20260712-2103-agent-fleet-worker-routing-telemetry.md
-M  plans/sprints/20260712-bdd2-phase-e-evaluation.sprint.md
-M  scripts/contract-run.ts
-M  scripts/run-bdd2-evals.ts
-A  tasks/archive/contract-20260712-2242-bdd2-e-06-record-phase-e-gate-decision.md
-A  tasks/archive/notes-20260712-2242-bdd2-e-06-record-phase-e-gate-decision.md
-A  tasks/archive/review-20260712-2242-bdd2-e-06-record-phase-e-gate-decision.md
-A  tasks/archive/todo-20260712-2242-bdd2-e-06-record-phase-e-gate-decision.md
-A  tasks/contracts/20260712-1811-bdd2-e-03-run-experiment-a-audit-hypothesis.contract.md
-A  tasks/contracts/20260712-2103-agent-fleet-worker-routing-telemetry.contract.md
-UU tasks/current.md
-A  tasks/notes/20260712-1811-bdd2-e-03-run-experiment-a-audit-hypothesis.notes.md
-A  tasks/notes/20260712-2103-agent-fleet-worker-routing-telemetry.notes.md
-A  tasks/reviews/20260712-1811-bdd2-e-03-run-experiment-a-audit-hypothesis.review.md
-A  tasks/reviews/20260712-2103-agent-fleet-worker-routing-telemetry.review.md
-M  tests/bdd2-evals-contract.test.ts
-M  tests/contract-run.test.ts
-M  tests/run-bdd2-evals.test.ts
+ M src/effects/repo-registry.ts
+ M tasks/archive/notes-20260712-2333-chatgpt-coding-mcp-integration.md
+ M tests/cli/registry.test.ts
 ```
 
 ## Source Artifacts

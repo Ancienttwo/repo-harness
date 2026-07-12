@@ -15,6 +15,8 @@
 
 ## Design Decisions
 
+- Post-archive delivery validation against latest `origin/main` found one additional lock-acquisition P1: an owner-metadata write or initial descriptor-close failure after exclusive lock creation could leave the new lock behind. The acquisition path now best-effort closes and removes only that just-created lock before rethrowing the original error. A deterministic `EIO` regression proves the lock is absent after failure and a subsequent revision bump succeeds; the existing concurrent-writer regression remains green.
+- The final latest-base Claude review returned no P1. It retained four P2 advisories: fail-closed manual stale-lock recovery, release-error outcome masking, the explicitly selected 24-tool profile authority, and a test diagnostic-message API nit. These advisories did not expand the approved delivery scope.
 - The user selected the existing 24-tool Coding profile as product authority: 19 workflow/status tools remain available and exactly five direct coding tools are added. The runtime is unchanged; bridge/operator docs and the policy test now state and freeze that combined surface instead of claiming the profile exposes only five tools.
 - The gate-bound Claude re-review accepted the 24-tool authority correction but returned two new P1 blockers: `callCodingTool` can persist raw failure messages in the on-disk audit log, and unlocked registry read-modify-write operations can lose an authorization-revision bump under concurrent writers. It also retained the literal `0x03` `write_stdin` behavior as P2. These findings are recorded without override; neither P1 has been edited because the current bounded remediation scope covers only environment-key names and the 24-tool authority decision.
 - The user authorized expanding the contract to remediate both new P1s. The bounded design redacts error text before audit persistence and serializes the existing registry mutation boundary with focused regressions; literal `0x03` handling remains out of scope as a P2 advisory.
@@ -68,6 +70,7 @@
 
 ## Verification Evidence
 
+- After merging the latest `origin/main`, the focused MCP/registry/skill suite passed 90 tests / 1040 expectations and typecheck passed. The lock-acquisition regression then passed three consecutive focused runs, the final Claude review returned P2-only, and the complete latest-main CI envelope passed 1151 tests / 1 platform skip / 0 failures / 11418 expectations across 102 files.
 - Final gate-bound read-only Claude review returned no P1. It retained only two registry-lock P2 advisories (manual stale-lock recovery and release-error masking); the earlier literal `0x03` input advisory remains out of scope.
 - Registry concurrency regression passed four observed runs, including the combined focused suite: final revision was exactly 310 with all ten concurrent repos retained as `read_write`.
 - Final focused MCP/registry/skill suite passed 90 tests / 1040 expectations; typecheck and `git diff --check` passed.

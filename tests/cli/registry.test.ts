@@ -58,6 +58,69 @@ describe('installer target registry', () => {
 });
 
 describe('repo registration persistence', () => {
+  test('removes its newly created lock when owner metadata persistence fails', async () => {
+    const fixtureRoot = mkdtempSync(join(tmpdir(), 'repo-harness-registry-lock-failure-'));
+    const registryHome = join(fixtureRoot, 'home');
+    const registryModule = resolve(import.meta.dir, '../../src/effects/repo-registry.ts');
+    const workerScript = `
+      import { mock } from 'bun:test';
+      import * as actualFs from 'node:fs';
+      const originalWriteFileSync = actualFs.writeFileSync.bind(actualFs);
+      const originalExistsSync = actualFs.existsSync.bind(actualFs);
+      let failOwnerWrite = true;
+      mock.module('fs', () => ({
+        ...actualFs,
+        writeFileSync(target, ...args) {
+          if (typeof target === 'number' && failOwnerWrite) {
+            failOwnerWrite = false;
+            const error = new Error('injected owner metadata write failure');
+            error.code = 'EIO';
+            throw error;
+          }
+          return originalWriteFileSync(target, ...args);
+        },
+      }));
+      const registry = await import(process.env.REGISTRY_MODULE + '?lock-failure');
+      let firstError = '';
+      try {
+        registry.bumpRepoHarnessAuthorizationRevision();
+      } catch (error) {
+        firstError = error instanceof Error ? error.message : String(error);
+      }
+      const lockPath = registry.repoHarnessRegisteredReposPath() + '.lock';
+      const lockExistsAfterFailure = originalExistsSync(lockPath);
+      const revision = registry.bumpRepoHarnessAuthorizationRevision();
+      process.stdout.write(JSON.stringify({ firstError, lockExistsAfterFailure, revision }));
+    `;
+
+    try {
+      mkdirSync(registryHome, { recursive: true });
+      const worker = Bun.spawn(['bun', '-e', workerScript], {
+        cwd: resolve(import.meta.dir, '../..'),
+        env: {
+          ...process.env,
+          REPO_HARNESS_HOME: registryHome,
+          REGISTRY_MODULE: registryModule,
+        },
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+      const [exitCode, output, errorOutput] = await Promise.all([
+        worker.exited,
+        new Response(worker.stdout).text(),
+        new Response(worker.stderr).text(),
+      ]);
+      expect(exitCode, errorOutput).toBe(0);
+      expect(JSON.parse(output)).toEqual({
+        firstError: 'injected owner metadata write failure',
+        lockExistsAfterFailure: false,
+        revision: 1,
+      });
+    } finally {
+      rmSync(fixtureRoot, { recursive: true, force: true });
+    }
+  });
+
   test('serializes concurrent registrations, access updates, and authorization revision bumps', async () => {
     const fixtureRoot = mkdtempSync(join(tmpdir(), 'repo-harness-registry-concurrency-'));
     const registryHome = join(fixtureRoot, 'home');

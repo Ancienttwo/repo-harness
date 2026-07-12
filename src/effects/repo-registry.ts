@@ -182,8 +182,19 @@ function acquireRegistryMutationLock(registryPath: string): () => void {
       const descriptor = openSync(lockPath, 'wx', 0o600);
       try {
         writeFileSync(descriptor, `${JSON.stringify(owner)}\n`, { encoding: 'utf-8' });
-      } finally {
         closeSync(descriptor);
+      } catch (error) {
+        try {
+          closeSync(descriptor);
+        } catch {
+          // Best effort: the descriptor may already have been closed by a failed close.
+        }
+        try {
+          unlinkSync(lockPath);
+        } catch {
+          // Preserve the acquisition error; a later attempt will fail closed on any leftover lock.
+        }
+        throw error;
       }
       return () => {
         const current = JSON.parse(readFileSync(lockPath, 'utf-8')) as Partial<RegistryLockOwner>;
