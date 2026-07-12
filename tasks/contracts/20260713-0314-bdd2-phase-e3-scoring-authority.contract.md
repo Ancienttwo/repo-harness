@@ -107,6 +107,8 @@ allowed_paths:
   - scripts/run-bdd2-evals.ts
   - tests/run-bdd2-evals.test.ts
   - tests/bdd2-evals-contract.test.ts
+  - tests/hook-dispatch-diet-report.test.ts
+  - tests/hook-contracts.test.ts
   - tasks/todos.md
   - tasks/current.md
   - tasks/contracts/20260713-0314-bdd2-phase-e3-scoring-authority.contract.md

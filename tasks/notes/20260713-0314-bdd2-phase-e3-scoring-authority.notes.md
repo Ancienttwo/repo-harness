@@ -85,6 +85,13 @@
   its sole P2 was missing regression coverage for early child-stdin closure. The JSON
   transport boundary is now directly testable, and the new test forces an early
   close with a large input to prove rejection instead of an unhandled process error.
+- Rebasing onto the current `origin/main` exposed two pre-existing harness-kernel test
+  assertions outside the E3 diff: the CLI diet smoke required non-empty SessionStart
+  context even though inert zero-context is an explicit passing contract, and the
+  prompt-guard test pinned a retired call-site spelling rather than the live Strict
+  routing branches. The verification-boundary closeout widens only to those two tests
+  and aligns their assertions with the already-shipped runtime behavior; no hook or
+  product behavior changed.
 
 ## Evidence Links
 

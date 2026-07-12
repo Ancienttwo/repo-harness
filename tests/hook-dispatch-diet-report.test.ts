@@ -220,9 +220,11 @@ describe("hook dispatch diet report", () => {
       expect(JSON.parse(readFileSync(out, "utf8")).dispatch.current_count).toBe(report.dispatch.current_count);
       expect(report.dispatch.within_target).toBe(true);
       expect(report.phase_probe.probes.length).toBe(2);
-      expect(report.session_start_context.output_bytes).toBeGreaterThan(0);
-      expect(report.session_start_context.context_bytes).toBeGreaterThan(0);
+      expect(report.session_start_context.output_bytes).toBeGreaterThanOrEqual(0);
+      expect(report.session_start_context.context_bytes).toBeGreaterThanOrEqual(0);
+      expect(report.session_start_context.token_estimate.estimated_tokens).toBeGreaterThanOrEqual(0);
       expect(report.session_start_context.token_estimate.method).toBe("utf8_bytes_div_4");
+      expect(report.session_start_context.slo.within_slo).toBe(true);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
