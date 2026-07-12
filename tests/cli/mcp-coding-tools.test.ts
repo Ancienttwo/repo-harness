@@ -216,6 +216,14 @@ describe('coding MCP workspace and file tools', () => {
         path: 'src/a.txt',
       }));
       expect(symlinkPolicy.error.code).toBe('IGNORE_POLICY_UNAVAILABLE');
+
+      rmSync(join(state.repo, '.ignore'));
+      symlinkSync(join(outside, 'missing-ignore-policy'), join(state.repo, '.ignore'));
+      const danglingSymlinkPolicy = parse(await callCodingTool(state.ctx, 'read', {
+        workspace_id: opened.workspace_id,
+        path: 'src/a.txt',
+      }));
+      expect(danglingSymlinkPolicy.error.code).toBe('IGNORE_POLICY_UNAVAILABLE');
     } finally {
       await state.processManager.shutdown();
     }

@@ -144,12 +144,17 @@ function denyGlobMatches(pattern: string, relativePath: string): boolean {
 
 function readIgnoreRules(root: string): IgnoreRule[] {
   const path = join(root, '.ignore');
-  if (!existsSync(path)) return [];
+  let policy: ReturnType<typeof lstatSync>;
   try {
-    const policy = lstatSync(path);
-    if (!policy.isFile() || policy.isSymbolicLink()) {
-      throw new Error('repository .ignore policy is not a regular file');
-    }
+    policy = lstatSync(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw new CodingWorkspaceError('IGNORE_POLICY_UNAVAILABLE', 'repository .ignore policy could not be read safely');
+  }
+  if (!policy.isFile() || policy.isSymbolicLink()) {
+    throw new CodingWorkspaceError('IGNORE_POLICY_UNAVAILABLE', 'repository .ignore policy could not be read safely');
+  }
+  try {
     return readFileSync(path, 'utf-8')
       .split(/\r?\n/)
       .map((line) => line.trim())
