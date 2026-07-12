@@ -5,10 +5,10 @@
 > **Contract**: tasks/contracts/20260712-0605-bdd2-e-02-run-experiment-s-shape-hypothesis.contract.md
 > **Notes File**: tasks/notes/20260712-0605-bdd2-e-02-run-experiment-s-shape-hypothesis.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-07-12 17:44
+> **Last Updated**: 2026-07-12 17:55
 > **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Diff Fingerprint**: sha256:c4607e6e3a49c9ab9d6a63689ebd1bc42731951f62c678e1cd6b66a72c5971e2
+> **Reviewed Diff Fingerprint**: sha256:abae000e34423e563361cd5d267105f506e8158a74c5cbad40662eaeedc24512
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 ## Human Review Card
@@ -17,7 +17,7 @@
 - Change type: eval-only
 - Intended files changed: frozen BDD² eval authority/runner/data/rubric/metrics plus workflow artifacts
 - Actual files changed: matches contract allowed paths; raw evidence remains ignored
-- Commands passed: repository-wide 1118-test suite, focused 14-test suite,
+- Commands passed: repository-wide 1141-test suite, focused 14-test suite,
   TypeScript noEmit, manifest/plan validation, score validation, deterministic
   re-summary, deploy SQL, architecture/task/workflow checks, and project inspection
 - External acceptance: Claude final targeted remediation rereview reported `No findings.`
@@ -46,7 +46,7 @@
 - Supporting artifacts: `.ai/harness/runs/bdd2/bdd2-e02-shape-s-v2/`
 - Implementation notes reviewed: yes; blind adjudication complete
 - Run snapshot: source commit `cd9e0426d362614ba277e067633db2596c236491`
-- Repository-wide result: 1118 passed, 1 platform skip, 0 failed. The retired
+- Repository-wide result: 1141 passed, 1 platform skip, 0 failed. The retired
   `scripts/migrate-project-template.sh` command is superseded by the transactional
   TypeScript adoption path; current project-state inspection reports no drift or
   required decision.
@@ -55,10 +55,10 @@
 
 > **External Acceptance**: pass
 > **External Reviewer**: Anthropic Claude
-> **External Source**: claude-review exact-fingerprint review plus targeted P1 remediation rereview
+> **External Source**: claude-review exact-fingerprint review, targeted P1 remediation rereview, and final base-merge attestation
 > **External Started**: 2026-07-12 17:20 +0800
-> **External Completed**: 2026-07-12 17:44 +0800
-> **Reviewed Diff Fingerprint**: sha256:c4607e6e3a49c9ab9d6a63689ebd1bc42731951f62c678e1cd6b66a72c5971e2
+> **External Completed**: 2026-07-12 17:55 +0800
+> **Reviewed Diff Fingerprint**: sha256:abae000e34423e563361cd5d267105f506e8158a74c5cbad40662eaeedc24512
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 - P1 blockers:
@@ -70,7 +70,7 @@
 - P2 advisory: the shared score schema remains Shape-only while Experiment A is
   foundation-only. E-03 must cut to per-experiment score authority before A can be
   sealed; E-02 intentionally adds no A compatibility branch.
-- Final targeted remediation rereview: `No findings.`
+- Final targeted remediation rereview and post-merge attestation: `No findings.`
 - Acceptance checklist: 72/72 scores validated before reveal; report labels Agent-panel proxy evidence; decision remains `Reshape`
 
 ## Behavior Diff Notes

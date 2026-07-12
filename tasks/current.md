@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-12T17:46:09+0800 -->
+<!-- updated_at: 2026-07-12T17:54:08+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-07-12T17:46:09+0800
+> **Updated At**: 2026-07-12T17:54:08+0800
 > **Source Branch**: codex/bdd2-shape-experiment
-> **Source Commit**: e66418b
+> **Source Commit**: f33db11
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: bdd2-e02-merged-e519ab1
+> **Reason**: bdd2-e02-verified-on-e519ab1
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -62,49 +62,10 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 54 changed/untracked path(s)
+- Summary: clean
 
 ```
-M  .agents/skills/repo-harness-chatgpt-bridge/SKILL.md
-M  .agents/skills/repo-harness-chatgpt-bridge/references/chatgpt-connector-manual.md
-M  .agents/skills/repo-harness-chatgpt-bridge/references/workflow.md
-M  .ai/context/capabilities.json
-M  bun.lock
-M  docs/architecture/domains/runtime-harness.md
-M  docs/architecture/index.md
-A  docs/architecture/modules/runtime-harness/mcp-sidecar.md
-A  docs/reference-configs/chatgpt-coding-mcp.md
-M  docs/repo-harness-chatgpt-mcp-setup.md
-A  docs/researches/20260711-devspace-chatgpt-local-control.md
-M  docs/spec.md
-M  package.json
-A  plans/archive/plan-20260711-0137-chatgpt-coding-mcp.md
-A  plans/plan-20260711-1034-chatgpt-coding-mcp-live-canary.md
-A  plans/plan-20260711-1343-chatgpt-coding-mcp-authorization-runtime.md
-A  plans/plan-20260712-0301-chatgpt-coding-mcp-integration.md
-M  src/cli/chatgpt-browser/file-policy.ts
-M  src/cli/commands/mcp.ts
-M  src/cli/mcp/auth.ts
-M  src/cli/mcp/codegraph-adapter.ts
-A  src/cli/mcp/coding-tools.ts
-A  src/cli/mcp/coding-workspaces.ts
-M  src/cli/mcp/instructions.ts
-M  src/cli/mcp/oauth.ts
-M  src/cli/mcp/policy.ts
-A  src/cli/mcp/process-sessions.ts
-M  src/cli/mcp/server.ts
-M  src/cli/mcp/setup.ts
-M  src/cli/mcp/tools.ts
-M  src/cli/mcp/transports/http.ts
-M  src/cli/mcp/types.ts
-M  src/effects/repo-registry.ts
-A  tasks/archive/contract-20260711-0609-chatgpt-coding-mcp.md
-A  tasks/archive/notes-20260711-0609-chatgpt-coding-mcp.md
-A  tasks/archive/review-20260711-0609-chatgpt-coding-mcp.md
-A  tasks/archive/todo-20260711-0609-chatgpt-coding-mcp.md
-A  tasks/contracts/20260711-1034-chatgpt-coding-mcp-live-canary.contract.md
-A  tasks/contracts/20260711-1343-chatgpt-coding-mcp-authorization-runtime.contract.md
-A  tasks/contracts/20260712-0301-chatgpt-coding-mcp-integration.contract.md
+(none)
 ```
 
 ## Source Artifacts

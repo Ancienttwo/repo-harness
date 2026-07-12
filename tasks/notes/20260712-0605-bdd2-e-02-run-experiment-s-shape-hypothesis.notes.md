@@ -85,7 +85,7 @@
 ## Verification Status
 
 - After merging current `main`, repository-wide `bun test` passes under Bun
-  1.3.14 with 1118 passed, 1 platform skip, and 0 failures. The mainline stdout
+  1.3.14 with 1141 passed, 1 platform skip, and 0 failures. The mainline stdout
   completion fix removed the earlier macOS truncation failure without widening
   E-02 scope.
 - E-02 focused tests, TypeScript no-emit, source-commit manifest/plan and 72/72
