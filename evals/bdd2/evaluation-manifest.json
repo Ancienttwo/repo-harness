@@ -2,7 +2,7 @@
   "schema": "repo-harness-bdd2-evaluation.e3",
   "runner": {
     "path": "scripts/run-bdd2-evals.ts",
-    "sha256": "b96328ce619406c541aa1d9d34dbb050a439c813f61d2b378db2a72a48432d07"
+    "sha256": "74078ffd49974d4a026b999f88ce2f72cf6047d7ed3660170e05214c4c98e877"
   },
   "output_root": ".ai/harness/runs/bdd2",
   "source_corpus": {
@@ -21,7 +21,7 @@
     "S3": {
       "kind": "inline-shape",
       "source_experiment": "S2",
-      "freeze_id": "bdd2-e3-s3-r3",
+      "freeze_id": "bdd2-e3-s3-r4",
       "expected_rows": 72,
       "metrics": {
         "path": "evals/bdd2/metrics/phase-e3-scoring-metrics.md",
@@ -31,7 +31,7 @@
     "EB3": {
       "kind": "browser-adapter",
       "source_experiment": "EB",
-      "freeze_id": "bdd2-e3-eb3-r3",
+      "freeze_id": "bdd2-e3-eb3-r4",
       "expected_rows": 24,
       "metrics": {
         "path": "evals/bdd2/metrics/phase-e3-scoring-metrics.md",
@@ -115,7 +115,7 @@
     "EI3": {
       "kind": "imagegen-adapter",
       "source_experiment": "EI",
-      "freeze_id": "bdd2-e3-ei3-r3",
+      "freeze_id": "bdd2-e3-ei3-r4",
       "expected_rows": 24,
       "metrics": {
         "path": "evals/bdd2/metrics/phase-e3-scoring-metrics.md",
@@ -290,7 +290,8 @@
       "external": false,
       "repository": false
     },
-    "max_concurrency": 8
+    "max_concurrency": 8,
+    "max_attempts": 3
   },
   "i3": {
     "prerequisite": {

@@ -30,6 +30,11 @@
   accepted in structured output schemas. Runtime validation already enforces unique
   correction operations, so the unsupported JSON Schema keyword was removed and the
   still-unscored authority was resealed as r3.
+- The r3 S3 run produced only an incomplete, unrevealed score directory before one
+  model response echoed the wrong opaque packet id. The incomplete run had no run
+  manifest or decision and was discarded. R4 freezes a maximum of three attempts for
+  model responses; only a schema-valid response with the exact packet id can become a
+  locked score.
 
 ## Tradeoffs Considered
 
