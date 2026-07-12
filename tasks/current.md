@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-12T15:48:06+0800 -->
+<!-- updated_at: 2026-07-12T16:08:34+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-07-12T15:48:06+0800
-> **Source Branch**: codex/fix-bdd-v0-prd-contract
-> **Source Commit**: 02079da
+> **Updated At**: 2026-07-12T16:08:34+0800
+> **Source Branch**: codex/upgrade-bun-1-3-14
+> **Source Commit**: 9ef4be4
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: archive-retained-bdd-v0
+> **Reason**: bun-1-3-14-final-review-pass
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -18,9 +18,9 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 ## Current Focus
 
 - Status: Active
-- Active Plan: (none)
-- Plan Status: (none)
-- Next Task: inspect active worktree marker(s)
+- Active Plan: plans/plan-20260712-1330-bun-1-3-14-runtime-upgrade.md
+- Plan Status: Executing
+- Next Task: (none)
 - Clear Note: (none)
 
 ## Mainline Snapshot Reading
@@ -31,6 +31,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
+- .: plans/plan-20260712-1330-bun-1-3-14-runtime-upgrade.md
+- .: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/upgrade-bun-1-3-14
 - /Users/kito/Projects/repo-harness-worktrees/bdd2-eval-foundation: plans/plan-20260712-0450-bdd2-eval-foundation.md
 - /Users/kito/Projects/repo-harness-worktrees/bdd2-eval-foundation: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/bdd2-eval-foundation
 - /Users/kito/Projects/repo-harness-worktrees/bdd2-shape-experiment: plans/plan-20260712-0605-bdd2-e-02-run-experiment-s-shape-hypothesis.md
@@ -39,8 +41,6 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - /Users/kito/Projects/repo-harness-worktrees/chatgpt-coding-mcp-integration: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/chatgpt-coding-mcp-integration
 - /Users/kito/Projects/repo-harness-worktrees/native-role-capability-gate: plans/plan-20260712-0219-native-role-capability-gate.md
 - /Users/kito/Projects/repo-harness-worktrees/native-role-capability-gate: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/native-role-capability-gate
-- /Users/kito/Projects/repo-harness-worktrees/upgrade-bun-1-3-14: plans/plan-20260712-1330-bun-1-3-14-runtime-upgrade.md
-- /Users/kito/Projects/repo-harness-worktrees/upgrade-bun-1-3-14: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/upgrade-bun-1-3-14
 - /Users/kito/Projects/repo-harness-wt-codex-native-role-model-override: plans/plan-20260711-0219-codex-native-role-model-override.md
 - /Users/kito/Projects/repo-harness-wt-codex-native-role-model-override: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-codex-native-role-model-override
 ## Active Sprint
@@ -52,19 +52,28 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/20260703-inspection-migration.md`: status=active, current_slice=completed-20260703-architecture-closeout, source_plan=(none)
 ## Handoff
 
-- Exact Next Step: (none)
+- Exact Next Step: Stage the completed module diff first; then run /check until tasks/reviews/20260712-1330-bun-1-3-14-runtime-upgrade.review.md records Recommendation: pass. Command: /check
 
 ## Checks
 
-- status=(none), source=(none), file=.ai/harness/checks/latest.json
+- status=(none), source=(none), exit_code=(none), file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 2 changed/untracked path(s)
+- Summary: 11 changed/untracked path(s)
 
 ```
-R  plans/prds/20260712-BDD.prd.md -> plans/archive/20260712-1426-bdd-v0.prd.md
- M plans/prds/20260712-0409-bdd2-shape-audit.prd.md
+ M assets/templates/helpers/architecture-event.ts
+ M plans/plan-20260712-1330-bun-1-3-14-runtime-upgrade.md
+ M scripts/architecture-event.ts
+ M src/cli/hook-entry.ts
+ M src/cli/hook/runtime.ts
+ M src/cli/index.ts
+ M tasks/contracts/20260712-1330-bun-1-3-14-runtime-upgrade.contract.md
+ M tasks/notes/20260712-1330-bun-1-3-14-runtime-upgrade.notes.md
+ M tasks/reviews/20260712-1330-bun-1-3-14-runtime-upgrade.review.md
+?? src/cli/runtime/write-all-sync.ts
+?? tests/write-all-sync.test.ts
 ```
 
 ## Source Artifacts

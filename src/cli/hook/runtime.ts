@@ -3,6 +3,7 @@ import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { execFileSync, spawnSync, type StdioOptions } from 'child_process';
 import { getRoute, type HookEvent, type RouteId } from './route-registry';
+import { writeAllSync } from '../runtime/write-all-sync';
 
 const OPT_IN_MARKER = '.ai/harness/workflow-contract.json';
 const POLICY_FILE = '.ai/harness/policy.json';
@@ -229,7 +230,7 @@ export function runHook(opts: RunHookOptions): RunHookResult {
 
   const route = getRoute(opts.event, opts.routeId);
   if (!route) {
-    process.stderr.write(
+    writeAllSync(2,
       `${commandName}: unknown route ${opts.event}.${opts.routeId}\n`,
     );
     return { exitCode: 2, reason: 'unknown-route', repoRoot, scriptsRun, skippedScripts };
@@ -289,14 +290,14 @@ export function runHook(opts: RunHookOptions): RunHookResult {
     const scriptPath = path.join(hooksDir, script);
     if (!fs.existsSync(scriptPath)) {
       if (isSoftMissingScript(opts.event, opts.routeId, script)) {
-        process.stderr.write(
+        writeAllSync(2,
           `${commandName}: skipping missing script ${scriptPath} (route ${opts.event}.${opts.routeId}); ${syncHint}\n`,
         );
         skippedScripts.push(script);
         continue;
       }
 
-      fs.writeSync(2,
+      writeAllSync(2,
         `${commandName}: script not found at ${scriptPath} (route ${opts.event}.${opts.routeId})\n`,
       );
       return {
@@ -317,7 +318,7 @@ export function runHook(opts: RunHookOptions): RunHookResult {
     });
 
     if (child.error) {
-      process.stderr.write(
+      writeAllSync(2,
         `${commandName}: failed to run ${scriptPath}: ${child.error.message}\n`,
       );
       return {
@@ -335,7 +336,7 @@ export function runHook(opts: RunHookOptions): RunHookResult {
       child.status === 0 &&
       looksLikeHookDecisionJson(child.stdout)
     ) {
-      fs.writeSync(1, child.stdout);
+      writeAllSync(1, child.stdout);
     }
 
     if (
@@ -343,7 +344,7 @@ export function runHook(opts: RunHookOptions): RunHookResult {
       child.status === 0 &&
       looksLikeHookAdditionalContextJson(child.stdout, opts.event)
     ) {
-      fs.writeSync(1, child.stdout);
+      writeAllSync(1, child.stdout);
     }
 
     if (sessionStartCollectStdout && child.status === 0) {
@@ -356,7 +357,7 @@ export function runHook(opts: RunHookOptions): RunHookResult {
       child.status !== 0 &&
       child.stderr
     ) {
-      fs.writeSync(2, child.stderr);
+      writeAllSync(2, child.stderr);
     }
 
     if (
@@ -369,7 +370,7 @@ export function runHook(opts: RunHookOptions): RunHookResult {
       child.status !== 0 &&
       child.stdout
     ) {
-      fs.writeSync(2, child.stdout);
+      writeAllSync(2, child.stdout);
     }
 
     if (child.status !== 0) {
@@ -391,7 +392,7 @@ export function runHook(opts: RunHookOptions): RunHookResult {
   }
 
   if (sessionStartCollectStdout && sessionStartContexts.length > 0) {
-    fs.writeSync(1, `${JSON.stringify({
+    writeAllSync(1, `${JSON.stringify({
       hookSpecificOutput: {
         hookEventName: 'SessionStart',
         additionalContext: sessionStartContexts.join('\n'),
