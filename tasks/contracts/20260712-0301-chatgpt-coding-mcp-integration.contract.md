@@ -17,7 +17,7 @@ The coding MCP feature and its authorization-runtime repair passed local, reposi
 
 ## Goal
 
-Replay the seven accepted coding MCP commits onto the rollout-retirement base, merge the subsequently advanced `origin/main` through `02079da`, preserve current main authorities while keeping the complete default-off coding profile and OAuth authorization-scoped runtime intact, repair only the invalid BDD² V0 PRD catalog envelope required for strict workflow validity, pass all focused and root verification gates, and publish one draft PR from `codex/chatgpt-coding-mcp-integration` to `main` without modifying the local main checkout.
+Replay the seven accepted coding MCP commits onto the rollout-retirement base, merge subsequently advanced `origin/main` through `3bf28a7`, preserve current main authorities while keeping the complete default-off coding profile and OAuth authorization-scoped runtime intact, pass all focused and root verification gates, refresh the existing PR #55, then mark it ready and squash-merge it into `main` without absorbing unrelated worktree state.
 
 ## Scope
 
@@ -26,15 +26,16 @@ Replay the seven accepted coding MCP commits onto the rollout-retirement base, m
   - Merge refreshed `origin/main@8e160323` and preserve its transactional TypeScript adoption cutover; regenerate derived current/handoff state rather than carrying the retired migration helper contract forward.
   - Merge refreshed `origin/main@bb750141` and preserve its independent BDD² evaluation foundation; regenerate derived current/handoff state rather than carrying either stale snapshot forward.
   - Merge refreshed `origin/main@02079da`; rename its BDD² V0 PRD to the required timestamped catalog shape, add only the missing `Draft` status metadata, and update its two direct references. Do not rewrite the PRD body or otherwise change BDD² product intent.
+  - Merge refreshed `origin/main@3bf28a7` and preserve PR #58's newer BDD² authority: the retained V0 lives under `plans/archive/`, its reference points there, and the integration branch's temporary catalog repair must disappear from the final diff.
   - Preserve current mainline removal of MCP rollout controls, candidate flags, and retired policy/type fields while layering the accepted coding-only profile, workspace/file/process tools, OAuth grant identity, docs, tests, and evidence.
   - Preserve the current Bun engine floor and add only the already-reviewed optional `node-pty` dependency; keep the lockfile deterministic.
   - Regenerate `tasks/current.md` and handoff/resume projections from the integrated state rather than selecting either stale side.
   - Run the focused MCP suites, full test suite, all root required checks, contract verification, and install/lockfile verification.
-  - Push only the integration branch and create one draft PR against `main` after all gates pass.
+  - Push only the integration branch, reuse PR #55, require fresh green CI and a clean mergeability result, mark the PR ready, and squash-merge it into `main` after all gates pass. Preserve the local integration branch/worktree for post-merge inspection; do not publish or tag a release.
 - Out of scope:
   - Updating, stashing, committing, cleaning, or switching `/Users/kito/Projects/repo-harness` local main or its two WIP paths.
   - Reintroducing `scripts/mcp-rollout-gate.ts`, rollout flags, candidate-disabled semantics, or any policy surface retired by current `origin/main`.
-  - Changing the accepted coding MCP public interface, adding compatibility fallbacks, merging the draft PR, publishing a release, or changing Cloudflare/ChatGPT external state.
+  - Changing the accepted coding MCP public interface, adding compatibility fallbacks, publishing a release, tagging a version, deleting the integration worktree/branch, or changing Cloudflare/ChatGPT external state.
   - Redesigning, approving, implementing, or otherwise expanding the incoming BDD² V0 PRD.
 - Taste constraints: replay commit patches rather than merge the stale branch tree; one current mainline policy authority, one OAuth authorization identity authority, no dual schemas, no unrelated cleanup.
 
@@ -87,6 +88,7 @@ allowed_paths:
   - docs/researches/20260711-devspace-chatgpt-local-control.md
   - docs/spec.md
   - plans/archive/plan-20260711-0137-chatgpt-coding-mcp.md
+  - plans/archive/20260712-1426-bdd-v0.prd.md
   - plans/plan-20260711-1034-chatgpt-coding-mcp-live-canary.md
   - plans/plan-20260711-1343-chatgpt-coding-mcp-authorization-runtime.md
   - plans/plan-20260712-0301-chatgpt-coding-mcp-integration.md
@@ -199,5 +201,5 @@ exit_criteria:
 
 ## Rollback Point
 
-- Commit / checkpoint: initial integration base `788ba60cca5e0072febc19833002a3ffe497b0a1`, refreshed main commits `8e160323872751ffbc105a760b06fed0db1f8cb8` and `bb750141553868a7eb675ed9e4e671cdc122fe26`, source feature head `f3b546dc8ff9bb357f20d709aca51809cb3e3ad0`; local main WIP hashes `ef3558e089fbf2f054b60c9f8cca6e8dc01fb0dee9984df3e575cbe3e7c3c12b` and `4c3aeda0ca8b82fa95da5c91cf2bc829ba8eddeb62f99e5468678fcc20e6a786`.
-- Revert strategy: abort the active cherry-pick before commit, or delete the isolated integration branch/worktree before push; after push close the draft PR and delete only the integration branch. Never alter the source feature branch or local main.
+- Commit / checkpoint: initial integration base `788ba60cca5e0072febc19833002a3ffe497b0a1`, refreshed main through `3bf28a7f1274ae7300b2e2088b2889a84b26a2c5`, source feature head `f3b546dc8ff9bb357f20d709aca51809cb3e3ad0`; local main WIP hashes `ef3558e089fbf2f054b60c9f8cca6e8dc01fb0dee9984df3e575cbe3e7c3c12b` and `4c3aeda0ca8b82fa95da5c91cf2bc829ba8eddeb62f99e5468678fcc20e6a786`.
+- Revert strategy: before merge, close PR #55 and preserve the isolated integration branch/worktree; after squash merge, revert only the PR #55 squash commit if required. Never alter the source feature branch or absorb unrelated worktrees.
