@@ -387,6 +387,41 @@ describe('init command global runtime bootstrap', () => {
     }
   });
 
+  test('product-planning marketplace skills do not install the Strict-only cross-review capability', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-global-planning-no-cross-review-'));
+    const home = join(tmp, 'home');
+    const repo = join(tmp, 'repo');
+    const fakeBin = join(tmp, 'bin');
+    try {
+      mkdirSync(home, { recursive: true });
+      mkdirSync(repo, { recursive: true });
+      mkdirSync(fakeBin, { recursive: true });
+      writeExecutable(join(fakeBin, 'bunx'), '#!/bin/bash\nexit 0\n');
+
+      const result = runGlobalRuntimeSetup({
+        sourceRoot: ROOT,
+        cwd: repo,
+        target: 'claude',
+        profile: 'product-planning',
+        installCli: false,
+        syncSkill: false,
+        hostAdapters: false,
+        externalSkills: true,
+        codegraph: false,
+        brainRoot: join(home, 'brain'),
+        env: { ...process.env, HOME: home, BUN_INSTALL: join(home, '.bun'), PATH: `${fakeBin}:${process.env.PATH ?? ''}` },
+      });
+
+      expect(result.steps.find((step) => step.step === 'cross-review skills')).toMatchObject({
+        status: 'skipped',
+        detail: 'disabled by install profile',
+      });
+      expect(existsSync(join(home, '.claude', 'skills', 'codex-review'))).toBe(false);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   test('product-planning refuses a partial unowned host skill projection', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-global-partial-skill-'));
     const home = join(tmp, 'home');

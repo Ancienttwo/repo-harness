@@ -649,7 +649,7 @@ export function runGlobalRuntimeSetup(opts: GlobalRuntimeOptions = {}): GlobalRu
     steps.push({ step: "configure Mermaid skill", status: "skipped", detail: "disabled" });
   }
 
-  if (profile === 'strict' || opts.externalSkills === true) {
+  if (profile === 'strict') {
     steps.push(...syncCrossReviewSkills(sourceRoot, target, env));
   } else {
     steps.push({ step: "cross-review skills", status: "skipped", detail: "disabled by install profile" });
