@@ -1,6 +1,6 @@
 # Task Contract: chatgpt-coding-mcp-integration
 
-> **Status**: Fulfilled
+> **Status**: Partial
 > **Plan**: plans/plan-20260712-0301-chatgpt-coding-mcp-integration.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
@@ -45,7 +45,7 @@ Replay the seven accepted coding MCP commits onto the rollout-retirement base, m
 - Stop if an Exit Criteria command cannot be run in this environment.
 - Stop if Goal, Scope, or Exit Criteria are internally contradictory.
 - Stop if a conflict cannot preserve current rollout retirement and the accepted coding profile simultaneously without a new product decision.
-- Stop before push or PR creation if the local main WIP hashes differ from the recorded preflight values.
+- Stop before merge if the user-owned plan hash differs from the recorded preflight value. The generated `tasks/current.md` hash may advance only through an explicitly integrated main commit and its new value must be recorded before merge.
 
 ## Falsifier
 
@@ -201,5 +201,5 @@ exit_criteria:
 
 ## Rollback Point
 
-- Commit / checkpoint: initial integration base `788ba60cca5e0072febc19833002a3ffe497b0a1`, refreshed main through `3bf28a7f1274ae7300b2e2088b2889a84b26a2c5`, source feature head `f3b546dc8ff9bb357f20d709aca51809cb3e3ad0`; local main WIP hashes `ef3558e089fbf2f054b60c9f8cca6e8dc01fb0dee9984df3e575cbe3e7c3c12b` and `4c3aeda0ca8b82fa95da5c91cf2bc829ba8eddeb62f99e5468678fcc20e6a786`.
+- Commit / checkpoint: initial integration base `788ba60cca5e0072febc19833002a3ffe497b0a1`, refreshed main through `3bf28a7f1274ae7300b2e2088b2889a84b26a2c5`, source feature head `f3b546dc8ff9bb357f20d709aca51809cb3e3ad0`; local main generated-current hash after PR #58 `2ed794055cbd2ced1b7c5cbf1f1ff954401b1192d84ae4dc60ccafc4ffec5226`; preserved user-owned plan hash `4c3aeda0ca8b82fa95da5c91cf2bc829ba8eddeb62f99e5468678fcc20e6a786`.
 - Revert strategy: before merge, close PR #55 and preserve the isolated integration branch/worktree; after squash merge, revert only the PR #55 squash commit if required. Never alter the source feature branch or absorb unrelated worktrees.
