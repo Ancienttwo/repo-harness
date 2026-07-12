@@ -171,4 +171,34 @@ describe("two-layer reviewer authority", () => {
       expect(() => validateScores(evaluation, report.output_path)).toThrow("requires output-specific evidence-use score");
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
+
+  test("score validation rejects stale authority, malformed packet ids, and spoofed private conditions before file lookup", () => {
+    const root = createFixture();
+    try {
+      const evaluation = validateEvaluation(root);
+      const report = runEvaluation(evaluation, { experiment: "EB", partition: "development", taskIds: ["EB-D-01"], conditions: ["control"], repetitions: 1, agent: "stub", outputPath: ".ai/harness/runs/bdd2/integrity" });
+      const runRoot = join(root, report.output_path);
+      const runPath = join(runRoot, "run.json");
+      const originalRun = readFileSync(runPath, "utf-8");
+      const run = JSON.parse(originalRun);
+
+      run.freeze_id = "stale-freeze";
+      json(runPath, run);
+      expect(() => validateScores(evaluation, report.output_path)).toThrow("freeze does not match");
+
+      write(runPath, originalRun);
+      const malformed = JSON.parse(originalRun);
+      malformed.packets[0].packet_id = "../escape";
+      json(runPath, malformed);
+      expect(() => validateScores(evaluation, report.output_path)).toThrow("unique 32-hex");
+
+      write(runPath, originalRun);
+      const packet = report.packets[0];
+      const privatePath = join(runRoot, "private", `${packet.packet_id}.json`);
+      const coordinate = JSON.parse(readFileSync(privatePath, "utf-8"));
+      coordinate.condition = "not-treatment";
+      json(privatePath, coordinate);
+      expect(() => validateScores(evaluation, report.output_path)).toThrow("Private coordinate authority mismatch");
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
 });
