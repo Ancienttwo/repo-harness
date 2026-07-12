@@ -256,13 +256,13 @@ export function assertDisposableRootBoundary(params: {
   if (repoRoot === sourceRoot || isInside(sourceRoot, repoRoot)) {
     throw new Error("Disposable evaluation refuses the source checkout as repo");
   }
-  if (realHome && repoRoot === realHome) {
+  if (realHome && (repoRoot === realHome || isInside(realHome, repoRoot) || isInside(repoRoot, realHome))) {
     throw new Error("Disposable evaluation refuses the real HOME as repo");
   }
   if (home === sourceRoot || isInside(sourceRoot, home)) {
     throw new Error("Disposable evaluation refuses the source checkout as HOME");
   }
-  if (realHome && home === realHome) {
+  if (realHome && (home === realHome || isInside(realHome, home) || isInside(home, realHome))) {
     throw new Error("Disposable evaluation refuses the real HOME");
   }
   if (dirname(repoRoot) !== dirname(home) || repoRoot === home) {

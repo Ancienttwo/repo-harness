@@ -10,8 +10,8 @@ import {
   symlinkSync,
   writeFileSync,
 } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
+import { homedir, tmpdir } from "os";
+import { dirname, join } from "path";
 import { spawnSync } from "child_process";
 import {
   assertDisposableEvaluationBoundary,
@@ -309,6 +309,32 @@ describe("run-skill-evals execution", () => {
         .toThrow("refuses the real HOME as repo");
     } finally {
       rmSync(boundary, { recursive: true, force: true });
+    }
+  });
+
+  test("blocks a disposable repo/HOME pair nested inside the real HOME tree", () => {
+    const boundary = mkdtempSync(join(homedir(), ".repo-harness-real-home-boundary-"));
+    const repo = join(boundary, "repo");
+    const home = join(boundary, "home");
+    mkdirSync(repo, { recursive: true });
+    mkdirSync(home, { recursive: true });
+    try {
+      expect(() => assertDisposableRootBoundary({ repoRoot: repo, home }))
+        .toThrow("refuses the real HOME as repo");
+    } finally {
+      rmSync(boundary, { recursive: true, force: true });
+    }
+  });
+
+  test("blocks a disposable HOME that is an ancestor containing the real HOME", () => {
+    const realHome = realpathSync(process.env.HOME!);
+    const ancestorHome = dirname(realHome);
+    const repo = tempPath("benchmark-ancestor-repo");
+    try {
+      expect(() => assertDisposableRootBoundary({ repoRoot: repo, home: ancestorHome }))
+        .toThrow("refuses the real HOME");
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
     }
   });
 

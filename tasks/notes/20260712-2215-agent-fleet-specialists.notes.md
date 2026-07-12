@@ -4,7 +4,7 @@
 > **Plan**: plans/plan-20260712-2215-agent-fleet-specialists.md
 > **Contract**: tasks/contracts/20260712-2215-agent-fleet-specialists.contract.md
 > **Review**: tasks/reviews/20260712-2215-agent-fleet-specialists.review.md
-> **Last Updated**: 2026-07-13 00:19
+> **Last Updated**: 2026-07-13 01:52
 > **Lifecycle**: notes
 
 ## Design Decisions
@@ -56,6 +56,93 @@
 - Final standalone Claude acceptance (23:56:00-00:01:03 CST): `No P1 or P2 findings.`
 - Actual HOME closeout: after commit `8444092`, `scripts/install-agent-fleet.sh --force` installed six Claude Markdown and six Codex TOML projections. All 12 files compared byte-identical to repo authority; readiness reports both hosts `present` with no missing roles. The temporary rollback backup was removed only after exact readback succeeded.
 - Architecture queue: pending 0; contract-assets and inspection-migration modules/workstreams record the six-role closeout; root request archived as no architecture change.
+- Post-review rebase (2026-07-13): rebased onto worktree
+  `codex/repo-owned-agent-fleet`'s new tip (`git rebase --onto 63dbd86 443039c
+  codex/agent-fleet-specialists`, replaying only this branch's own `9ad9262`
+  commit), which itself sits on `origin/main` `7b6ba87` (10 commits ahead of
+  the prior stack base `4c3612a`). New HEAD: `682cfc9`. Conflicts were limited
+  to `tasks/current.md` and `tasks/todos.md`
+  (`docs/architecture/modules/workflow-engine/contract-assets.md` auto-merged
+  cleanly, keeping all three dated 2026-07-12 closeout sections); resolved the
+  same way as the upstream worktree — keeping the already-resolved, more
+  complete `origin/main`-derived snapshot/handoff/git-status block and the
+  newer `(archive-workflow)` ledger marker, since this branch's own conflicting
+  rows were confirmed duplicate (relative-path self-reference) or already
+  represented via the absolute-path entry carried over from the upstream
+  worktree's resolution. Full contract exit-criteria re-run after rebase: full
+  suite 1157 pass / 1 skip / 0 fail (11543 expect() calls, 509.24s); focused
+  four-file suite 58 pass / 0 fail; `tests/run-skill-evals.test.ts` 12 pass / 0
+  fail; `bun run check:type` clean; `check:hooks`/`check:helpers` OK; all three
+  `cmp` helper-parity checks identical; `npm pack --dry-run --json` lists all
+  six `agents/fleet/*.md`; deploy-sql/architecture-sync/task-sync all pass;
+  `inspect-project-state` reports no drift signals; `adopt --dry-run` plans 18
+  operations with no errors.
+- Known external caveat (unresolved, out of contract scope): `repo-harness run
+  check-task-workflow --strict` currently fails its brain-doc-sync sub-check.
+  The rebase itself does not fire the PostEdit brain-sync hook (content lands
+  via `git checkout`), so the two in-scope repo-to-brain entries this
+  contract's allowed paths actually own
+  (`docs/reference-configs/agentic-development-flow.md` and
+  `docs/reference-configs/external-tooling.md`) needed a manual
+  `bash scripts/sync-brain-docs.sh --changed <path>` per file, confirmed with
+  `--dry-run` first so only those two entries were written. A third entry,
+  `docs/reference-configs/harness-overview.md`, is in neither this contract's
+  nor `repo-owned-agent-fleet`'s `allowed_paths`; its external brain-vault
+  mirror (`~/Library/Mobile Documents/com~apple~CloudDocs/brain/repo-harness/
+  references/harness-overview.md`, a single machine-global file shared by every
+  worktree, not part of this git repository) currently holds an unmerged
+  "Harness Cost Evidence and SLOs" section that exists only on the unrelated,
+  separate `harness-cost-baseline-slo` worktree/branch — confirmed absent from
+  `origin/main` and from this branch. That worktree's own session appears to be
+  actively syncing its in-progress content to the same shared vault: even the
+  two in-scope entries were re-verified reverted to a third, even-older
+  pre-`explorer`-role state minutes after this session synced them, evidencing
+  live concurrent writers outside this task's control. Overwriting the vault to
+  force a pass would either destroy that other worktree's unmerged
+  contribution or require absorbing unrelated, unmerged content into this
+  branch — both out of bounds. This is an environmental/multi-session race on
+  a non-git, cross-worktree singleton, not a defect in this branch; re-run
+  `repo-harness run check-task-workflow --strict` once that concurrent activity
+  quiesces.
+- Real-HOME boundary hardening (2026-07-13 01:52 CST): an independent Codex
+  review found `assertDisposableRootBoundary`
+  (`scripts/run-skill-evals.ts:242-277`) rejected the source checkout as
+  repo/HOME with both an exact-match and a descendant check
+  (`isInside(sourceRoot, X)`), but rejected the real HOME with only an
+  exact-match check (`repoRoot === realHome` / `home === realHome`). A
+  disposable repo/HOME pair nested inside the real HOME tree (for example
+  `$HOME/scratch/repo` and `$HOME/scratch/home`) passed every existing check —
+  including the later sibling-directory check, since both are still siblings
+  under one parent — and was silently accepted as disposable. Proved
+  concretely before fixing: a fully-formed disposable repo (with real `.git`
+  and `package.json`) nested under the real `$HOME` was accepted with no
+  throw at all (`bun -e` probe against the unfixed function printed `NO
+  THROW — accepted as disposable`). Fixed by extending both real-HOME
+  conditionals to the same descendant pattern already used for the source
+  checkout: `realHome && (repoRoot === realHome || isInside(realHome,
+  repoRoot) || isInside(repoRoot, realHome))`, and symmetrically for `home`.
+  The added `isInside(repoRoot, realHome)` / `isInside(home, realHome)` arm
+  additionally closes the reverse direction (disposable repo/HOME as an
+  *ancestor* containing real HOME, e.g. `home = dirname(realHome)`): this is a
+  real gap, not a speculative one, because `runDisposableAdoptionProfile` and
+  the skills profile run fully unsandboxed subprocesses
+  (`--dangerously-bypass-approvals-and-sandbox`) with `cwd`/`HOME` pinned to
+  these exact values, and unlike `repoRoot`, `home` has no required-file gate
+  at all, so a path bug that lands `home` on `dirname(realHome)` (`/Users` on
+  this machine) would otherwise pass silently. The sibling-directory check,
+  the source-checkout checks, and the required-file checks were left
+  untouched; no new dependency was added. Two regression tests were added to
+  `tests/run-skill-evals.test.ts`: one constructs a real repo/HOME pair under
+  `os.homedir()` (descendant case), one passes
+  `dirname(realpathSync(process.env.HOME))` as `home` (ancestor case). Both
+  fail on the unfixed code for the wrong reason (one falls through to the
+  unrelated "repo is incomplete: missing .git" message, the other to the
+  unrelated sibling-directory message — confirming the real-HOME check itself
+  was never firing) and pass once the fix is restored. Verification:
+  `bun test tests/run-skill-evals.test.ts` (14 pass / 0 fail, up from the
+  prior 12); `bun run check:type` (clean); full `bun test` (1159 pass / 1
+  skip / 0 fail, 11545 `expect()` calls across 102 files, 471.94s — up from
+  1157 pass / 11543 expect() only because of the two added tests).
 
 ## Promotion Filter
 

@@ -1,12 +1,12 @@
 # Task Contract: agent-fleet-specialists
 
-> **Status**: Fulfilled
+> **Status**: Partial
 > **Plan**: plans/plan-20260712-2215-agent-fleet-specialists.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: kito
 > **Capability ID**: workflow-engine-contract-assets
-> **Last Updated**: 2026-07-12 22:16
+> **Last Updated**: 2026-07-13 01:52
 > **Review File**: `tasks/reviews/20260712-2215-agent-fleet-specialists.review.md`
 > **Notes File**: `tasks/notes/20260712-2215-agent-fleet-specialists.notes.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
@@ -188,7 +188,7 @@ exit_criteria:
 ## Acceptance Notes (Human Review)
 
 - Functional behavior: exactly six roles install from `agents/fleet`; root-cause output matches the existing evidence fields; evaluator invokes existing surfaces; formal explorer routing uses the repo persona.
-- Edge cases: any missing/malformed sixth source aborts before HOME mutation; only fast-worker, root-cause-prover, and harness-evaluator generate workspace-write; evaluator blocks outside disposable state; native Explore is never wrapped or aliased.
+- Edge cases: any missing/malformed sixth source aborts before HOME mutation; only fast-worker, root-cause-prover, and harness-evaluator generate workspace-write; evaluator blocks outside disposable state; native Explore is never wrapped or aliased. Post-review fix (2026-07-13): `assertDisposableRootBoundary` now also rejects a disposable repo/HOME that is a descendant of, or an ancestor containing, the real HOME (previously only an exact-match real-HOME was rejected, so `$HOME/scratch/{repo,home}` silently passed as disposable); see notes file for full evidence.
 - Regression risks: stale policy seeds, omitted package sources, real HOME drift, accidental BDD2 or parallel worker-routing changes.
 
 ## Rollback Point
