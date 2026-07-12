@@ -81,6 +81,10 @@
   exact tracked appendix hash before their evidence scores are accepted. The same
   patch handles model-transport `stdin` errors without crashing the concurrent batch
   and removes a redundant path-only test.
+- The final narrow re-review found no remaining provenance or appendix-binding issue;
+  its sole P2 was missing regression coverage for early child-stdin closure. The JSON
+  transport boundary is now directly testable, and the new test forces an early
+  close with a large input to prove rejection instead of an unhandled process error.
 
 ## Evidence Links
 

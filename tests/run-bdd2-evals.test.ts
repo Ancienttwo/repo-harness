@@ -7,6 +7,7 @@ import {
   buildOutcomeReviewerPacket,
   canonicalJson,
   opaquePacketId,
+  runJsonProcess,
   sha256File,
   sha256Text,
   validateEvaluation,
@@ -145,6 +146,10 @@ describe("BDD2 Phase E3 authority", () => {
   test("adapter evidence coordinates remain bound to the reviewed appendix", () => {
     const manifest = materializeAuthorityMutation((corpus) => { const row = corpus.rows.find((item: any) => item.experiment === "EB3" && item.condition === "treatment"); row.appendix_sha256 = "f".repeat(64); });
     expect(() => validateEvaluation(REPO_ROOT, manifest)).toThrow("corpus appendix authority mismatch");
+  });
+
+  test("model transport rejects when the child closes stdin early", async () => {
+    await expect(runJsonProcess("/bin/sh", ["-c", "exec 0<&-; sleep 0.05; exit 7"], REPO_ROOT, { PATH: process.env.PATH ?? "/usr/bin:/bin" }, "x".repeat(8 * 1024 * 1024))).rejects.toThrow();
   });
 
   test("complete score runs require fresh adjudication only on disagreement", () => {
