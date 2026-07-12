@@ -5,9 +5,9 @@
 > **Contract**: tasks/contracts/20260712-0605-bdd2-e-02-run-experiment-s-shape-hypothesis.contract.md
 > **Notes File**: tasks/notes/20260712-0605-bdd2-e-02-run-experiment-s-shape-hypothesis.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-07-12 06:08
+> **Last Updated**: 2026-07-12 14:00
 > **Recommendation**: fail
-> **Review Rubric Version**: 1
+> **Review Rubric Version**: 2
 > **Reviewed Diff Fingerprint**: pending
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
@@ -17,10 +17,9 @@
 - Change type: eval-only
 - Intended files changed: frozen BDD² eval authority/runner/data/rubric/metrics plus workflow artifacts
 - Actual files changed: matches contract allowed paths; raw evidence remains ignored
-- Commands passed: focused 12-test suite, TypeScript noEmit, manifest/plan
-  validation, score validation, deterministic re-summary, deploy SQL,
-  architecture/task/workflow checks, project inspection, migration dry-run, and
-  agent-tooling check
+- Commands passed: repository-wide 1112-test suite, focused 12-test suite,
+  TypeScript noEmit, manifest/plan validation, score validation, deterministic
+  re-summary, deploy SQL, architecture/task/workflow checks, and project inspection
 - External acceptance: owner authorized the Agent-panel protocol deviation; PR-level external review pending
 - Residual risks: Agent-panel proxy evidence is weaker than the original human-panel design and must not be cited as human evidence
 - Reviewer action required: inspect the deterministic report, protocol deviation, code diff, and full verification evidence
@@ -36,19 +35,18 @@
 ## Verification Evidence
 
 - Waza `/check` run:
-- Commands run: `bunx tsc --noEmit --pretty false`; focused Bun tests; manifest
-  validate/plan; one S-v2 real smoke; formal 72-coordinate S run; score validation;
-  deterministic re-summary; root required shell/workflow checks; repository-wide
-  Bun test under local 1.3.14 and CI-pinned 1.3.10
+- Commands run: repository-wide `bun test`; `bunx tsc --noEmit --pretty false`;
+  focused Bun tests; manifest validate/plan; one S-v2 real smoke; formal
+  72-coordinate S run; score validation; deterministic re-summary; root required
+  shell/workflow checks under Bun 1.3.14
 - Manual checks:
 - Supporting artifacts: `.ai/harness/runs/bdd2/bdd2-e02-shape-s-v2/`
 - Implementation notes reviewed: yes; blind adjudication complete
 - Run snapshot: source commit `cd9e0426d362614ba277e067633db2596c236491`
-- Repository-wide check exception: unchanged `scripts/architecture-event.ts` emits
-  a truncated 512-byte JSON payload on this macOS host because stdout is followed
-  immediately by process exit. The resulting unrelated architecture-queue and
-  hook-runtime failures reproduce under Bun 1.3.14 and CI-pinned 1.3.10; PR Linux
-  CI is required before acceptance.
+- Repository-wide result: 1112 passed, 1 platform skip, 0 failed. The retired
+  `scripts/migrate-project-template.sh` command is superseded by the transactional
+  TypeScript adoption path; current project-state inspection reports no drift or
+  required decision.
 
 ## External Acceptance Advice
 

@@ -78,19 +78,21 @@
   product decisions and tightening adjacent-capability handling before rerun. It
   does not authorize Phase P productization.
 
-## Verification Exception
+## Verification Status
 
-- E-02 focused tests, TypeScript, manifest/plan validation, 72/72 score validation,
-  deterministic re-summary, deploy SQL, architecture sync, task sync, strict
-  workflow, project-state inspection, migration dry-run, and agent-tooling checks
-  pass.
-- The repository-wide `bun test` is not green on this macOS host under either the
-  installed Bun 1.3.14 or the CI-pinned Bun 1.3.10. The unchanged
-  `scripts/architecture-event.ts` calls `process.stdout.write(value)` immediately
-  followed by `process.exit(0)`; both local Bun builds emit only 512 bytes of the
-  event JSON, causing unrelated architecture-queue and hook-runtime tests to fail.
-  GitHub CI remains the authoritative Linux check for the PR; this slice does not
-  widen scope to repair that pre-existing runtime incompatibility.
+- After merging current `main`, repository-wide `bun test` passes under Bun
+  1.3.14 with 1112 passed, 1 platform skip, and 0 failures. The mainline stdout
+  completion fix removed the earlier macOS truncation failure without widening
+  E-02 scope.
+- E-02 focused tests, TypeScript no-emit, manifest/plan validation, 72/72 score
+  validation, deterministic re-summary, deploy SQL ordering, architecture sync,
+  task sync, strict workflow, and project-state inspection pass.
+- `scripts/migrate-project-template.sh` was retired by the mainline transactional
+  TypeScript adoption cutover, so the stale shell command is no longer a runnable
+  verification surface. Current `inspect-project-state` reports no drift or
+  required decision. The agent-tooling diagnostic completed with host-level Waza,
+  gbrain, and CodeGraph advisories that do not affect this already-completed
+  evaluation run.
 
 ## Evidence Links
 
