@@ -1,81 +1,112 @@
 # Task Review: bdd2-phase-e2-shape-adapter-evaluation
 
-> **Status**: In Review
+> **Status**: Complete
 > **Plan**: plans/plan-20260712-2319-bdd2-phase-e2-shape-adapter-evaluation.md
 > **Contract**: tasks/contracts/20260712-2319-bdd2-phase-e2-shape-adapter-evaluation.contract.md
 > **Notes File**: tasks/notes/20260712-2319-bdd2-phase-e2-shape-adapter-evaluation.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-07-12 23:37
-> **Recommendation**: fail
+> **Last Updated**: 2026-07-13 02:20
+> **Recommendation**: pass
 > **Review Rubric Version**: 1
-> **Reviewed Diff Fingerprint**: pending
+> **Reviewed Diff Fingerprint**: sha256:dae58747de290fe2adb1b2084e24333c02893fe07e01e4019baeedc886527da1
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 ## Human Review Card
 
-- Verdict: pending
-- Change type: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | frontend
-- Intended files changed:
-- Actual files changed:
-- Commands passed:
-- External acceptance: unavailable
-- Residual risks:
-- Reviewer action required: inspect diff and card
-- Rollback:
+- Verdict: pass
+- Change type: eval-only
+- Intended files changed: frozen E2 authority, prompts, held-out task/truth sets,
+  Browser/ImageGen evidence, deterministic runner, score/report projections, tests,
+  and workflow closeout artifacts.
+- Actual files changed: the approved BDD² E2 evaluation/workflow paths only; no
+  public skill, CLI/MCP product tool, hook, catalog, sidecar, Audit treatment, or
+  Phase P surface was added.
+- Commands passed: focused tests (15 pass), full `bun test` (1145 pass, 1 skip),
+  TypeScript, E2 authority validation, S2/EB/EI evidence reproduction, deploy SQL,
+  architecture sync, task sync, project inspection, and adopt dry-run.
+- External acceptance: pass
+- Residual risks: E2 efficacy remains inconclusive because frozen scoring semantics
+  were defective; model transport is isolated at the Agent profile rather than an
+  OS-level no-egress boundary; the unrelated external Brain mirror remains drifted.
+- Reviewer action required: none for this work-package; Phase P remains prohibited.
+- Rollback: revert the E2 commits and delete ignored E2 raw runs; Phase E history and
+  product runtime remain unchanged.
 
 ## Mode Evidence
 
-- Selected route:
-- P1/P2/P3 evidence:
-- Root cause or plan evidence:
+- Selected route: product-discovery-evaluation
+- P1/P2/P3 evidence: P1 isolated evaluation authority from product runtime; P2 traced
+  frozen task/truth/evidence through Agent output, two-reviewer scores, owner
+  adjudication, deterministic evidence projection, and gate report; P3 retained the
+  adapters and inline Shape as hypotheses while failing closed on post-reveal scoring
+  ambiguity and refusing Phase P.
+- Root cause or plan evidence: `phase-e-gate.md` showed Audit should remain killed and
+  the former `Shape AND Audit` prerequisite prevented independent adapter evidence.
 
 ## Verification Evidence
 
-- Waza `/check` run:
-- Commands run:
-- Manual checks:
-- Supporting artifacts:
-- Implementation notes reviewed:
-- Run snapshot:
+- Waza `/check` run: equivalent repository and contract checks run directly.
+- Commands run: `bun test tests/run-bdd2-evals.test.ts tests/bdd2-evals-contract.test.ts`;
+  `bun test`; `bunx tsc --noEmit`; `bun scripts/run-bdd2-evals.ts validate`;
+  `verify-evidence` for S2, EB, and EI; root required checks.
+- Manual checks: exact output/score/adjudication cardinalities, frozen source
+  provenance, historical Phase E byte preservation, I2 gating, no current Audit, and
+  no Phase P/public product surface.
+- Supporting artifacts: `evals/bdd2/reports/experiment-{s2,eb,ei}-evidence.json`,
+  `evals/bdd2/reports/experiment-{s2,eb,ei,i2}.md`, and
+  `evals/bdd2/reports/phase-e2-gate.md`.
+- Implementation notes reviewed: yes.
+- Run snapshot: ignored `.ai/harness/runs/bdd2/e2-{s2,eb,ei}` plus reviewer runs.
 
 ## External Acceptance Advice
 
-> **External Acceptance**: unavailable
-> **External Reviewer**:
-> **External Source**:
-> **External Started**:
-> **External Completed**:
+> **External Acceptance**: pass
+> **External Reviewer**: Claude Code 2.1.207
+> **External Source**: claude-review read-only branch review at commit `4eead59`
+> **External Started**: 2026-07-13
+> **External Completed**: 2026-07-13
 
-- P1 blockers:
-- P2 advisories:
-- Acceptance checklist:
+- P1 blockers: none.
+- P2 advisories: none blocking. The final review returned `No findings`; residual
+  parser assumptions are covered by balanced-handler regression tests and remain
+  bounded to the synthetic I2 acceptance fixture.
+- Acceptance checklist: scope, evidence integrity, historical preservation, I2 gate,
+  no Audit resurrection, no Phase P, and rollback boundary all pass.
 
 ## Behavior Diff Notes
 
-- ...
+- S2, EB, and EI are each recorded `Reshape`, not promoted or deleted.
+- I2 is correctly `gated-not-run` because neither prerequisite branch passed.
+- Browser screenshots and ImageGen prototypes remain tracked, hashed evaluation
+  inputs; they are not treated as user-demand evidence or a product catalog.
 
 ## Residual Risks / Follow-ups
 
-- ...
+- A future E3 may correct only the frozen score authority and rerun evaluation. It
+  requires a separate work-package and cannot authorize Phase P implicitly.
+- `repo-harness run check-task-workflow --strict` has one unrelated external Brain
+  mirror drift (`external-tooling.md`); the E2-local handoff freshness issue was fixed.
 
 ## Scorecard
 
 | Dimension | Score | Notes |
 |-----------|-------|-------|
-| Functionality | 0/10 | |
-| Product depth | 0/10 | |
-| Design quality | 0/10 | |
-| Code quality | 0/10 | |
+| Functionality | 9/10 | All required E2 coordinates, scores, reports, gates, and reproductions exist. |
+| Product depth | 9/10 | Independent adapter value was tested without turning evidence into requirement authority. |
+| Design quality | 9/10 | Direct current authority, frozen provenance, and fail-closed ambiguity preserve the intended boundary. |
+| Code quality | 9/10 | Integrity checks, focused regression coverage, full suite, and cross-model review pass. |
 
 ## Failing Items
 
-- ...
+- None in the E2 work-package.
 
 ## Retest Steps
 
-- Re-run:
-- Re-check:
+- Re-run: focused tests, `validate`, and three `verify-evidence` commands.
+- Re-check: compare `phase-e2-gate.md` with the four experiment reports and confirm
+  Phase E report hashes remain unchanged.
 
 ## Summary
 
-- ...
+- Approve Phase E2 evaluation closeout. Preserve Shape, Browser, and ImageGen as
+  reshaped hypotheses; keep Audit killed, I2 deferred, and Phase P unapproved.

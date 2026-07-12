@@ -1,10 +1,10 @@
 # Implementation Notes: bdd2-phase-e2-shape-adapter-evaluation
 
-> **Status**: Active
+> **Status**: Complete
 > **Plan**: plans/plan-20260712-2319-bdd2-phase-e2-shape-adapter-evaluation.md
 > **Contract**: tasks/contracts/20260712-2319-bdd2-phase-e2-shape-adapter-evaluation.contract.md
 > **Review**: tasks/reviews/20260712-2319-bdd2-phase-e2-shape-adapter-evaluation.review.md
-> **Last Updated**: 2026-07-12 23:37
+> **Last Updated**: 2026-07-13 02:20
 > **Lifecycle**: notes
 
 ## Design Decisions
@@ -45,6 +45,10 @@
   claims made, and tracked-artifact count was not derived from filesystem evidence.
   Scores were not edited. All three hypotheses were recorded `Reshape` under the
   fail-closed ambiguity rule; I2 was recorded `gated-not-run`.
+- Independent Codex reviews exposed score-bundle provenance, source-commit,
+  credential-boundary, evidence-reproduction, and I2 acceptance-parser weaknesses.
+  Each finding was repaired without changing held-out scores or decisions. A final
+  cross-model Claude Code review of commit `4eead59` returned `No findings`.
 
 ## Tradeoffs Considered
 
@@ -59,6 +63,9 @@
 
 - A future E3 may test only corrected scoring authority. It is not part of this plan
   and does not authorize Phase P.
+- `check-task-workflow --strict` still reports the pre-existing external Brain mirror
+  drift for `docs/reference-configs/external-tooling.md`. This slice does not own or
+  mutate that external vault; all E2-local workflow checks pass.
 
 ## Evidence Links
 

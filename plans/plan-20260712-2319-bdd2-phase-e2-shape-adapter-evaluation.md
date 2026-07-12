@@ -1,6 +1,6 @@
 # Plan: BDD2 Phase E2 Shape and Adapter Evaluation
 
-> **Status**: Executing
+> **Status**: Complete
 > **Created**: 20260712-2319
 > **Slug**: bdd2-phase-e2-shape-adapter-evaluation
 > **Planning Source**: repo-harness-plan
@@ -368,7 +368,7 @@ No other product, skill, CLI, MCP, hook, catalog, sidecar, or `/check` path is a
       publish independent adapter decisions even if S2 does not pass.
 - [x] E2-04: if and only if S2 and at least one adapter pass, execute the two-condition
       page-feature pilot and publish its bounded result; otherwise record gated-not-run.
-- [ ] E2-05: record one Phase E2 gate report, preserve Phase E history, run focused and
+- [x] E2-05: record one Phase E2 gate report, preserve Phase E history, run focused and
       repository workflow checks, obtain external review, and stop before Phase P.
 
 ## Verification
@@ -422,4 +422,4 @@ product runtime remain unchanged; no data migration or compatibility rollback ex
 - [x] E2-02: execute and adjudicate all 72 S2 outputs, then publish `Pass / Reshape / Kill` without post-reveal threshold changes.
 - [x] E2-03: execute and adjudicate all 24 EB and 24 EI decisions, then publish independent adapter decisions regardless of the S2 outcome.
 - [x] E2-04: only when S2 and at least one adapter pass, execute the two-condition page-feature pilot; otherwise record it as gated-not-run.
-- [ ] E2-05: publish the Phase E2 gate report, preserve Phase E history, run focused and repository checks plus external review, and stop before Phase P.
+- [x] E2-05: publish the Phase E2 gate report, preserve Phase E history, run focused and repository checks plus external review, and stop before Phase P.

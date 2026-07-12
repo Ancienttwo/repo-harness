@@ -1,7 +1,7 @@
 # Deferred Goal Ledger
 
 > **Status**: Backlog
-> **Updated**: 2026-07-12 23:37
+> **Updated**: 2026-07-13 02:20
 > **Scope**: Medium/long-term goals deferred from active plan execution
 
 Current plan tasks live in the active plan's `## Task Breakdown`.
@@ -12,3 +12,4 @@ Do not duplicate that execution checklist here. Record only work intentionally d
 | Goal | Why Deferred | Tradeoff | Revisit Trigger |
 |------|--------------|----------|-----------------|
 | Interactive `codex` `/agent` check confirming the six `.codex/agents/*.toml` load on cli 0.141.0 | No automatable introspection surface on this codex-cli version (C2 smoke inconclusive, not failing) | Fleet TOMLs are schema-valid but end-to-end recognition unproven | First interactive Codex session in this repo |
+| BDD² E3 scoring-authority correction experiment | Phase E2 exposed three evaluator-semantics defects after reveal, so scores are immutable and Phase P remains unauthorized | S2, Browser, and ImageGen remain `Reshape`; corrected efficacy is unknown, but the adapters and inline Shape are preserved as evaluation candidates | Owner starts a new evaluation-only work-package freezing owner adjudication, unsupported-claim semantics, and filesystem-derived artifact counting before any new held-out run |
