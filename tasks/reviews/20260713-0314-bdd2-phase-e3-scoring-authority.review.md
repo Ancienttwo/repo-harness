@@ -8,7 +8,7 @@
 > **Last Updated**: 2026-07-13 05:20
 > **Recommendation**: pass
 > **Review Rubric Version**: 1
-> **Reviewed Diff Fingerprint**: sha256:2f1456f599722828b0acbbbc3d07e2cf29b3659e4bb30d9210aaae61bdef736a
+> **Reviewed Diff Fingerprint**: sha256:604a9ef91220e5b21acc8590250cca0635efcb4b461434ebf8e2d72d9a9fbe3a
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 ## Human Review Card
@@ -67,7 +67,7 @@
 > **External Source**: claude-review
 > **External Started**: 2026-07-13T04:03:00+0800
 > **External Completed**: 2026-07-13T05:17:00+0800
-> **Reviewed Diff Fingerprint**: sha256:2f1456f599722828b0acbbbc3d07e2cf29b3659e4bb30d9210aaae61bdef736a
+> **Reviewed Diff Fingerprint**: sha256:604a9ef91220e5b21acc8590250cca0635efcb4b461434ebf8e2d72d9a9fbe3a
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 - P1 blockers: none
@@ -76,7 +76,7 @@
 - Acceptance checklist: final E3 authority patch returned `No findings`; the separate
   integration test-only review also returned `No findings`, confirmed no assertion
   weakened the shipped runtime contract, rechecked all five earlier P1 fixes, and the
-  full-history CI follow-up returned `No findings`.
+  full-history CI plus reachable-rebased-provenance follow-ups returned `No findings`.
 
 ## Behavior Diff Notes
 
