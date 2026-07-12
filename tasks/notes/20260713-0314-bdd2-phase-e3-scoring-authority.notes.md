@@ -117,7 +117,7 @@
   embedded 120 outputs and their hashes are unchanged.
 - Once CI advanced past E3, it exposed an ambient-HOME dependency in the existing
   SubagentStart hook test. That test now uses an isolated HOME for the trigger and
-  both context calls, and asserts trigger/context failure text directly. Runtime
+  both context calls, and surfaces trigger/context stderr as assertion context. Runtime
   behavior is unchanged; the test no longer depends on runner-level harness config.
 
 ## Evidence Links
