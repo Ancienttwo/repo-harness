@@ -172,13 +172,25 @@ function copyAuthOnly(hostRoot: string): void {
 }
 
 function projectHarness(profile: BenchmarkProfile, workspace: string, hostRoot: string, scenario: HarnessScenario): void {
-  if (profile === 'no-harness') return;
-  const env = { ...process.env, HOME: hostRoot, CODEX_HOME: join(hostRoot, '.codex') };
+  if (profile === 'no-harness') {
+    if (scenario.requires_resume_projection) {
+      writeResumeProjection(workspace);
+      run('git', ['add', '.'], workspace);
+      run('git', ['commit', '-m', 'benchmark recovery input'], workspace);
+    }
+    return;
+  }
+  const env = {
+    ...process.env,
+    HOME: hostRoot,
+    CODEX_HOME: join(hostRoot, '.codex'),
+    PATH: `${join(hostRoot, '.bun/bin')}:${process.env.PATH ?? ''}`,
+  };
   run(process.execPath, [join(ROOT, 'src/cli/index.ts'), 'adopt', '--repo', workspace, '--no-codegraph', '--mode', 'standard'], ROOT, env);
   const installProfile = profile === 'adaptive-lite' ? 'standard' : 'strict';
   run(process.execPath, [
     join(ROOT, 'src/cli/index.ts'), 'install', '--profile', installProfile, '--target', 'codex',
-    '--no-cli', '--no-external-skills', '--no-codegraph', '--json',
+    '--no-external-skills', '--no-codegraph', '--json',
   ], ROOT, env);
   if (profile === 'strict-harness') writeStrictArtifacts(workspace, scenario);
   if (scenario.requires_resume_projection) writeResumeProjection(workspace);
@@ -246,7 +258,13 @@ async function executeRun(profile: BenchmarkProfile, scenario: HarnessScenario, 
   let firstEdit: number | null = null;
   const processHandle = Bun.spawn(command, {
     cwd: workspace,
-    env: { ...process.env, HOME: hostRoot, CODEX_HOME: join(hostRoot, '.codex'), HOOK_SESSION_ID: `${profile}-${scenario.id}` },
+    env: {
+      ...process.env,
+      HOME: hostRoot,
+      CODEX_HOME: join(hostRoot, '.codex'),
+      PATH: `${join(hostRoot, '.bun/bin')}:${process.env.PATH ?? ''}`,
+      HOOK_SESSION_ID: `${profile}-${scenario.id}`,
+    },
     stdout: 'pipe', stderr: 'pipe', stdin: 'ignore',
   });
   const poll = setInterval(() => {
