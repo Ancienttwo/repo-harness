@@ -154,6 +154,31 @@ self-migration dry-run.
   Tarball-content checks, temporary-HOME package smoke, helper parity, and
   source/projection golden tests guard that distribution boundary.
 
+## 2026-07-12 Agent Fleet Specialist Roles Closeout
+
+- The packaged fleet has six managed identities. `root-cause-prover` produces
+  the existing bugfix gate's four evidence fields without changing gate
+  semantics; `harness-evaluator` invokes existing skill/adoption evaluation
+  surfaces and treats migration audit as a profile rather than another agent.
+- The Codex writable-role set is closed and explicit: `fast-worker`,
+  `root-cause-prover`, and `harness-evaluator`. Every other projection is
+  read-only. Harness-evaluator's workspace-write is valid only inside a
+  complete disposable repo/HOME; skills uses the runner's enforcing mode and adoption uses one
+  guarded invocation that injects the validated roots into both existing commands. Both reject source or real
+  HOME in either argument position. The task contract's
+  allowed paths and isolated worktree remain the authority that prevents the
+  diagnosis role from turning evidence work into a production fix.
+- Native Explore remains host-owned informal capability. Formal explorer work
+  resolves to the complete repo-owned persona; no alias, wrapper, inherited
+  prompt, incremental merge, or second authored authority participates.
+- BDD2 remains an independent sealed evaluation authority. The harness
+  evaluator must fail closed on `evals/bdd2/**` or
+  `scripts/run-bdd2-evals.ts`, and this work-package does not modify either.
+- The first 10x failure would be adding persona names without updating package,
+  policy seeds, projections, readiness, and HOME installation together. Exact
+  six-role lists, all-source preflight, tarball assertions, and temporary-HOME
+  smokes protect that boundary.
+
 ## Workstream Ledger
 
 - `tasks/workstreams/workflow-engine/contract-assets/cleanup-script-policy.md`
@@ -164,3 +189,5 @@ self-migration dry-run.
 - Keep optional long-form docs in default brain stubs; mirror valuable repo-authored docs only through manifest `sync.direction=repo-to-brain` entries.
 
 - `tasks/workstreams/workflow-engine/contract-assets/20260712-contract-assets.md`
+
+- `tasks/workstreams/workflow-engine/contract-assets/agent-fleet-specialists.md`

@@ -15,6 +15,12 @@ root prompt concise; this file owns the detailed routing.
 | Implemented diff, pre-merge, release follow-through | Waza `/check` | Review findings, safe fixes, verification, and shipment state |
 | Architecture diagram or system-flow diagram | Markdown Mermaid first, `mermaid` for human HTML | Semantic Mermaid in architecture docs plus optional rendered HTML grounded in repo context |
 
+### Agent Fleet Routing
+
+- Informal, non-contract code discovery may use a host-native Explore capability when the host provides one. Its built-in prompt is host-owned and not a repo authority.
+- Formal contract `explorer` delegation uses the complete repo-owned `explorer` persona from `agents/fleet/explorer.md`, including its CodeGraph-first evidence contract and execution boundary.
+- Do not add an `explore` alias or wrapper, and do not claim prompt inheritance, incremental merge, or behavioral equivalence between native Explore and the fleet persona. The repo never reads the native prompt; every managed persona is a complete authored source with deterministic host projections.
+
 ## repo-harness Command Surface
 
 Use these CLI-backed command facades when the work is about installing,

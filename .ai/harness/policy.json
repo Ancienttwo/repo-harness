@@ -352,7 +352,9 @@
         "explorer",
         "deep-reasoner",
         "fast-worker",
-        "gatekeeper"
+        "gatekeeper",
+        "root-cause-prover",
+        "harness-evaluator"
       ],
       "claude_target": "~/.claude/agents",
       "codex_target": "~/.codex/agents",

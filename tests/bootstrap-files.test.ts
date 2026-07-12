@@ -42,6 +42,8 @@ describe("Bootstrap Script Contracts", () => {
       { name: "deep-reasoner", model: "gpt-5.6-sol", effort: "max", sandboxMode: "read-only" },
       { name: "fast-worker", model: "gpt-5.6-luna", effort: "max", sandboxMode: "workspace-write" },
       { name: "gatekeeper", model: "gpt-5.6-sol", effort: "high", sandboxMode: "read-only" },
+      { name: "root-cause-prover", model: "gpt-5.6-sol", effort: "high", sandboxMode: "workspace-write" },
+      { name: "harness-evaluator", model: "gpt-5.6-sol", effort: "high", sandboxMode: "workspace-write" },
     ];
 
     for (const spec of specs) {
@@ -64,6 +66,29 @@ describe("Bootstrap Script Contracts", () => {
         expect(toml).toContain(`sandbox_mode = "${spec.sandboxMode}"`);
       }
     }
+
+    expect(existsSync(join(ROOT, "agents/fleet/explore.md"))).toBe(false);
+    const rootCause = read("agents/fleet/root-cause-prover.md");
+    for (const field of ["root_cause", "repro", "regression_guard", "pre_fix_failure_artifact"]) {
+      expect(rootCause).toContain(field);
+    }
+    expect(rootCause).toContain("DIAGNOSIS: CONFIRMED");
+    expect(rootCause).toContain("Never edit production source");
+    expect(rootCause).toContain("pipeline is forbidden");
+
+    const evaluator = read("agents/fleet/harness-evaluator.md");
+    expect(evaluator).toContain("EVAL: PASS");
+    expect(evaluator).toContain("evals/bdd2/**");
+    expect(evaluator).toContain("scripts/run-bdd2-evals.ts");
+    expect(evaluator).toContain("fail closed");
+    expect(evaluator).toContain("disposable clone/worktree");
+    expect(evaluator).toContain("--run-adoption-profile");
+    expect(evaluator).toContain("Workspace-write is disposable-only");
+
+    const routing = read("docs/reference-configs/agentic-development-flow.md");
+    expect(routing).toContain("host-native Explore");
+    expect(routing).toContain("Formal contract");
+    expect(routing).toContain("prompt inheritance");
   });
 
   test("repo root should include routing docs and self-host hook implementation", () => {

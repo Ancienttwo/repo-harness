@@ -113,8 +113,23 @@ helper resolution.
   source override, or legacy policy reader participates in inspection,
   migration, or installation.
 
+## 2026-07-12 Six-role Fleet Seed Closeout
+
+- `scripts/lib/project-init-lib.sh` and `scripts/ensure-task-workflow.sh` now
+  seed the same six-role `external_tooling.agent_fleet.managed_agents` list as
+  the self-host policy and packaged tooling default.
+- The two additions are `root-cause-prover` and `harness-evaluator`;
+  migration auditing is represented inside the evaluator persona and does not
+  add an inspection parser, adoption operation, compatibility key, or second
+  policy authority.
+- Downstream advisory installation and self-host automatic installation keep
+  their existing behavior. Missing or malformed packaged persona sources still
+  fail before any user-level agent target is mutated.
+
 ## Optimization Backlog
 
 - Reduce duplicated required-path lists that still exist across shell scripts.
 
 - `tasks/workstreams/workflow-engine/inspection-migration/20260712-inspection-migration.md`
+
+- `tasks/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`

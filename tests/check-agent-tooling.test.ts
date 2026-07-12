@@ -17,7 +17,7 @@ const ROOT = join(import.meta.dir, "..");
 const SCRIPT = join(ROOT, "scripts/check-agent-tooling.sh");
 const WAZA_SKILLS = ["think", "hunt", "check", "health"];
 const WAZA_RULES = ["anti-patterns.md", "chinese.md", "durable-context.md", "english.md"];
-const MANAGED_AGENTS = ["explorer", "deep-reasoner", "fast-worker", "gatekeeper"];
+const MANAGED_AGENTS = ["explorer", "deep-reasoner", "fast-worker", "gatekeeper", "root-cause-prover", "harness-evaluator"];
 const FLEET_SOURCE_DIR = join(ROOT, "agents/fleet");
 
 function writeExecutable(filePath: string, content: string) {
@@ -849,7 +849,12 @@ describe("check-agent-tooling", () => {
       expect(report.tools.agent_fleet.status).toBe("partial");
       expect(report.tools.agent_fleet.hosts.claude.status).toBe("partial");
       expect(report.tools.agent_fleet.hosts.claude.installed_agents).toEqual(["deep-reasoner", "fast-worker"]);
-      expect(report.tools.agent_fleet.hosts.claude.missing_agents).toEqual(["explorer", "gatekeeper"]);
+      expect(report.tools.agent_fleet.hosts.claude.missing_agents).toEqual([
+        "explorer",
+        "gatekeeper",
+        "root-cause-prover",
+        "harness-evaluator",
+      ]);
       expect(res.stderr).toContain("Agent fleet readiness is partial");
       expect(res.stderr.toLowerCase()).toContain("fleet");
     } finally {
@@ -936,7 +941,13 @@ describe("check-agent-tooling", () => {
       const claude = report.tools.agent_fleet.hosts.claude;
       expect(claude.update_status).toBe("drift");
       expect(claude.drift_agents).toEqual(["fast-worker"]);
-      expect(claude.synced_agents).toEqual(["explorer", "deep-reasoner", "gatekeeper"]);
+      expect(claude.synced_agents).toEqual([
+        "explorer",
+        "deep-reasoner",
+        "gatekeeper",
+        "root-cause-prover",
+        "harness-evaluator",
+      ]);
       expect(claude.source_missing_agents).toEqual([]);
       const codex = report.tools.agent_fleet.hosts.codex;
       expect(codex.update_status).toBe("not-applicable");

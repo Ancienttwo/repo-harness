@@ -9,7 +9,7 @@ skill routing lives in `docs/reference-configs/agentic-development-flow.md`.
 - Codex automation requires `health`, `check`, and `mermaid` from `~/.codex/skills`
 - `gbrain` supports knowledge capture, repo sync, and handoff retrieval
 - `CodeGraph` is required agent readiness for code navigation and impact tracing
-- repo-harness's packaged `agent_fleet` supplies the delegation loop's global agent definitions (`explorer`, `deep-reasoner`, `fast-worker`, `gatekeeper`) for both hosts
+- repo-harness's packaged `agent_fleet` supplies the delegation loop's global agent definitions (`explorer`, `deep-reasoner`, `fast-worker`, `gatekeeper`, `root-cause-prover`, `harness-evaluator`) for both hosts
 
 Waza is Codex-first in this contract. `~/.codex/skills` is the Codex runtime
 source, while `~/.agents/skills` is only the skills CLI staging/cache path used
@@ -472,7 +472,7 @@ bun add -g @colbymchenry/codegraph@latest && codegraph sync . && codegraph statu
 `check-agent-tooling.sh`. The single authored source is
 `package:agents/fleet`; it ships inside the npm package and never requires a
 network fetch. The managed list is `explorer`, `deep-reasoner`, `fast-worker`,
-and `gatekeeper`.
+`gatekeeper`, `root-cause-prover`, and `harness-evaluator`.
 
 ### Two targets, one source
 
@@ -493,10 +493,22 @@ mapping.
 | `opus` | `gpt-5.6-sol` | `low`, `medium`, `high`, `xhigh`, `max` | same string, unchanged |
 | `sonnet`, `haiku` | `gpt-5.6-luna` | `low`, `medium`, `high`, `xhigh`, `max` | same string, unchanged |
 
-`fast-worker` receives `sandbox_mode = "workspace-write"`; every other role
-receives `sandbox_mode = "read-only"`. Current assignments are explorer
-(`sonnet/high`), deep-reasoner (`opus/max`), fast-worker (`sonnet/max`), and
-gatekeeper (`opus/high`). There is no Terra route and no implicit effort remap.
+`fast-worker`, `root-cause-prover`, and `harness-evaluator` receive
+`sandbox_mode = "workspace-write"`; every other role receives
+`sandbox_mode = "read-only"`. Current assignments are explorer
+(`sonnet/high`), deep-reasoner (`opus/max`), fast-worker (`sonnet/max`),
+gatekeeper (`opus/high`), root-cause-prover (`opus/high`), and
+harness-evaluator (`opus/high`). Root-cause-prover's prompt further limits
+writes to bugfix evidence inside the active contract's allowed paths;
+harness-evaluator runs existing skill/adoption surfaces only when both repo and
+HOME pass the runner's disposable boundary: skills uses `--require-disposable`,
+while adoption uses one `--run-adoption-profile` invocation that injects the
+validated repo/HOME into inspector and adopt dry-run. Guarded skills overrides
+the ordinary sibling workspace default with a repo-internal workspace, and both
+profiles scrub inherited repo-harness source/helper overrides. The guard rejects source
+checkout and real HOME in either argument position; the role returns BLOCKED
+when the guard fails and must not access the independent `evals/bdd2/**` authority. There is no
+Terra route and no implicit effort remap.
 
 The Codex generator also rewrites the exact upstream provider label in the
 description (for example, `Opus at max effort` or `Sonnet at high effort`) to the
@@ -538,7 +550,7 @@ repo-harness run install-agent-fleet
 The installer resolves `agents/fleet` from its authoritative helper source path,
 not from the target repository's current working directory. There is no source
 override, curl path, remote fallback, or alternate authority. It validates all
-four source files before mutating any target; a missing, malformed, mismatched,
+six source files before mutating any target; a missing, malformed, mismatched,
 or unmapped source makes the whole run fail closed and leaves installed files
 untouched.
 
