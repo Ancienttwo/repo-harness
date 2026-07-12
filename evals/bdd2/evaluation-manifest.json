@@ -2,16 +2,16 @@
   "schema": "repo-harness-bdd2-evaluation.e2",
   "runner": {
     "path": "scripts/run-bdd2-evals.ts",
-    "sha256": "de89f3cc9d7795892909a986249908b2bfb11fe4b699a2e1c41dcd0c7332f826"
+    "sha256": "1bf9aee1c9f515a87ce4dbe091a4420924798182ee268a7fa5c6747334e28f04"
   },
   "output_root": ".ai/harness/runs/bdd2",
   "experiments": {
     "S2": {
       "kind": "inline-shape",
       "freeze": {
-        "id": "bdd2-e2-s2-r8",
+        "id": "bdd2-e2-s2-r9",
         "state": "sealed",
-        "sealed_at": "2026-07-13T01:45:00+08:00"
+        "sealed_at": "2026-07-13T02:05:00+08:00"
       },
       "repetitions": 3,
       "held_out_task_count": 12,
@@ -29,9 +29,9 @@
     "EB": {
       "kind": "browser-adapter",
       "freeze": {
-        "id": "bdd2-e2-eb-r8",
+        "id": "bdd2-e2-eb-r9",
         "state": "sealed",
-        "sealed_at": "2026-07-13T01:45:00+08:00"
+        "sealed_at": "2026-07-13T02:05:00+08:00"
       },
       "repetitions": 2,
       "held_out_task_count": 6,
@@ -123,9 +123,9 @@
     "EI": {
       "kind": "imagegen-adapter",
       "freeze": {
-        "id": "bdd2-e2-ei-r8",
+        "id": "bdd2-e2-ei-r9",
         "state": "sealed",
-        "sealed_at": "2026-07-13T01:45:00+08:00"
+        "sealed_at": "2026-07-13T02:05:00+08:00"
       },
       "repetitions": 2,
       "held_out_task_count": 6,
@@ -217,9 +217,9 @@
     "I2": {
       "kind": "implementation-pilot",
       "freeze": {
-        "id": "bdd2-e2-i2-r8",
+        "id": "bdd2-e2-i2-r9",
         "state": "sealed",
-        "sealed_at": "2026-07-13T01:45:00+08:00"
+        "sealed_at": "2026-07-13T02:05:00+08:00"
       },
       "repetitions": 2,
       "held_out_task_count": 1,
