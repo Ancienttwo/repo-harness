@@ -16,7 +16,7 @@ import {
   writeFileSync,
 } from "fs";
 import { tmpdir } from "os";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "path";
 import { fileURLToPath } from "url";
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
@@ -440,8 +440,9 @@ function validateAgentProfiles(manifest: EvaluationManifest): void {
     if (raw.credential_mode !== "none" && raw.credential_mode !== "codex-auth-copy") {
       fail(`agents.${agent}.credential_mode is invalid`);
     }
-    if (raw.credential_mode === "codex-auth-copy" && raw.command !== "codex") {
-      fail(`agents.${agent}.credential_mode codex-auth-copy requires command codex`);
+    if (raw.credential_mode === "codex-auth-copy"
+      && (!isAbsolute(String(raw.command)) || basename(String(raw.command)) !== "codex")) {
+      fail(`agents.${agent}.credential_mode codex-auth-copy requires an absolute codex executable path`);
     }
     assertRecord(raw.sampling, `agents.${agent}.sampling`);
     for (const [key, value] of Object.entries(raw.sampling)) {
@@ -1003,6 +1004,133 @@ export function validateShapeScores(
   return { runPath, run, scores, privateCoordinates };
 }
 
+function gitFileAtCommit(repoRoot: string, commit: string, path: string): string {
+  if (!/^[a-f0-9]{40}$/.test(commit)) fail("Historical source commit is invalid");
+  if (isAbsolute(path) || path.split("/").includes("..")) fail(`Historical path is unsafe: ${path}`);
+  const result = spawnSync("git", ["show", `${commit}:${path}`], {
+    cwd: repoRoot,
+    encoding: "utf-8",
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  if (result.status !== 0) fail(`Cannot read ${path} at source commit ${commit}`);
+  return result.stdout ?? "";
+}
+
+function sha256Text(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+export function projectHistoricalShapeEvidence(
+  repoRoot: string,
+  runRelativePath: string,
+  outputRelativePath: string
+): Record<string, unknown> {
+  const absoluteRoot = resolve(repoRoot);
+  const runPath = directoryInsideRepo(absoluteRoot, runRelativePath, "historical run path");
+  const runRaw = readJson(resolve(runPath, "run.json"));
+  assertRecord(runRaw, "historical run report");
+  assertExactKeys(
+    runRaw,
+    ["schema", "freeze_id", "source_commit", "manifest_sha256", "agent", "model", "sampling", "experiment", "partition", "output_path", "packets"],
+    "historical run report"
+  );
+  if (runRaw.schema !== "repo-harness-bdd2-run.v2" || runRaw.experiment !== "S" || runRaw.partition !== "held_out") {
+    fail("Historical Shape evidence requires a held-out S v2 run");
+  }
+  assertString(runRaw.source_commit, "historical run source_commit");
+  assertString(runRaw.manifest_sha256, "historical run manifest_sha256");
+  const manifestText = gitFileAtCommit(absoluteRoot, runRaw.source_commit, DEFAULT_MANIFEST_PATH);
+  if (sha256Text(manifestText) !== runRaw.manifest_sha256) fail("Historical run manifest hash mismatch");
+  const historicalManifest = JSON.parse(manifestText) as any;
+  if (historicalManifest.schema !== "repo-harness-bdd2-evaluation.v2"
+    || historicalManifest.experiments?.S?.freeze?.id !== runRaw.freeze_id
+    || historicalManifest.experiments?.S?.freeze?.state !== "sealed") {
+    fail("Historical run does not match a sealed S-v2 authority");
+  }
+  const heldOut = historicalManifest.partitions?.held_out;
+  assertRecord(heldOut, "historical held-out partition");
+  assertString(heldOut.truth, "historical held-out truth path");
+  assertString(heldOut.truth_sha256, "historical held-out truth hash");
+  const truthText = gitFileAtCommit(absoluteRoot, runRaw.source_commit, heldOut.truth);
+  if (sha256Text(truthText) !== heldOut.truth_sha256) fail("Historical held-out truth hash mismatch");
+  const truth = JSON.parse(truthText) as any;
+  assertRecord(truth.shape_tasks, "historical Shape truth");
+  if (!Array.isArray(runRaw.packets)) fail("Historical run packets must be an array");
+  const expectedCount = Number(historicalManifest.experiments.S.held_out_task_count)
+    * 2 * Number(historicalManifest.experiments.S.repetitions);
+  if (runRaw.packets.length !== expectedCount) {
+    fail(`Historical Shape run requires exactly ${expectedCount} packets, got ${runRaw.packets.length}`);
+  }
+  const scoreDir = directoryInsideRepo(absoluteRoot, relative(absoluteRoot, resolve(runPath, "scores")), "historical score directory");
+  const privateDir = directoryInsideRepo(absoluteRoot, relative(absoluteRoot, resolve(runPath, "private")), "historical private directory");
+  const scoreFiles = readdirSync(scoreDir).filter((file) => file.endsWith(".json")).sort();
+  if (scoreFiles.length !== expectedCount) fail(`Historical Shape evidence requires ${expectedCount} scores`);
+  const packetIds = new Set<string>();
+  const rows: Record<string, unknown>[] = [];
+  for (const packet of runRaw.packets) {
+    assertRecord(packet as unknown, "historical run packet");
+    assertString(packet.packet_id, "historical packet id");
+    assertString(packet.task_id, "historical packet task id");
+    if (packet.status !== "success" || packetIds.has(packet.packet_id)) fail(`Historical packet is invalid: ${packet.packet_id}`);
+    packetIds.add(packet.packet_id);
+    const scorePath = resolve(scoreDir, `${packet.packet_id}.json`);
+    const privatePath = resolve(privateDir, `${packet.packet_id}.json`);
+    const score = validateLockedShapeScore(readJson(scorePath), `historical score ${packet.packet_id}`);
+    const coordinate = readJson(privatePath);
+    assertRecord(coordinate, `historical private coordinate ${packet.packet_id}`);
+    assertExactKeys(
+      coordinate,
+      ["schema", "packet_id", "coordinate_id", "task_id", "condition", "repetition", "prompt_sha256", "agent", "model", "sampling", "exit_code"],
+      `historical private coordinate ${packet.packet_id}`
+    );
+    if (coordinate.schema !== "repo-harness-bdd2-private-coordinate.v2"
+      || coordinate.packet_id !== packet.packet_id
+      || coordinate.task_id !== packet.task_id
+      || score.packet_id !== packet.packet_id
+      || score.task_id !== packet.task_id) {
+      fail(`Historical score/private identity mismatch: ${packet.packet_id}`);
+    }
+    if (coordinate.condition !== "baseline" && coordinate.condition !== "treatment") {
+      fail(`Historical coordinate condition is invalid: ${packet.packet_id}`);
+    }
+    if (!Number.isInteger(coordinate.repetition) || Number(coordinate.repetition) < 1) {
+      fail(`Historical coordinate repetition is invalid: ${packet.packet_id}`);
+    }
+    const expectedAuthority = truth.shape_tasks[packet.task_id]?.expected_authority;
+    if (!["inline", "brief", "prd"].includes(expectedAuthority)) fail(`Historical truth is missing for ${packet.task_id}`);
+    rows.push({
+      packet_id: packet.packet_id,
+      task_id: packet.task_id,
+      condition: coordinate.condition,
+      repetition: coordinate.repetition,
+      unsupported_expansion: score.score.unsupported_expansion,
+      required_behavior_omission: score.score.required_behavior_omission,
+      protected_p0_p1_count: score.score.protected_concern_omissions.filter((item) => item.severity === "P0" || item.severity === "P1").length,
+      authority_fit: score.score.authority_fit,
+      expected_authority: expectedAuthority,
+      escalation_correct: score.score.escalation_correct,
+      unnecessary_tracked_artifact_count: score.score.unnecessary_tracked_artifact_count,
+      correction_minutes: score.score.correction_minutes,
+      score_sha256: sha256File(scorePath),
+      private_sha256: sha256File(privatePath),
+    });
+  }
+  rows.sort((left, right) => String(left.task_id).localeCompare(String(right.task_id))
+    || String(left.condition).localeCompare(String(right.condition))
+    || Number(left.repetition) - Number(right.repetition));
+  const projection = {
+    schema: "repo-harness-bdd2-shape-evidence.v1",
+    source_commit: runRaw.source_commit,
+    run_manifest_sha256: runRaw.manifest_sha256,
+    packet_count: expectedCount,
+    rows,
+  };
+  const outputPath = resolve(absoluteRoot, outputRelativePath);
+  assertWritePath(absoluteRoot, outputPath);
+  writeJson(outputPath, projection);
+  return projection;
+}
+
 function median(values: number[]): number {
   if (values.length === 0) fail("Cannot calculate median of an empty list");
   const sorted = [...values].sort((a, b) => a - b);
@@ -1133,7 +1261,7 @@ export function summarizeShape(
 }
 
 interface CliOptions {
-  command: "validate" | "plan" | "run" | "validate-scores" | "summarize-shape";
+  command: "validate" | "plan" | "run" | "validate-scores" | "summarize-shape" | "project-shape-evidence";
   manifest: string;
   experiment?: ExperimentId;
   partition?: PartitionId;
@@ -1147,8 +1275,8 @@ interface CliOptions {
 
 export function parseCliArgs(args: string[]): CliOptions {
   const command = args[0];
-  if (!["validate", "plan", "run", "validate-scores", "summarize-shape"].includes(String(command))) {
-    fail("Usage: run-bdd2-evals.ts <validate|plan|run|validate-scores|summarize-shape> [--manifest path] [--experiment S|A] [--partition development|held_out] [--task id] [--condition baseline|treatment] [--repetitions n] [--agent name] [--run path] [--output path] [--dry-run]");
+  if (!["validate", "plan", "run", "validate-scores", "summarize-shape", "project-shape-evidence"].includes(String(command))) {
+    fail("Usage: run-bdd2-evals.ts <validate|plan|run|validate-scores|summarize-shape|project-shape-evidence> [--manifest path] [--experiment S|A] [--partition development|held_out] [--task id] [--condition baseline|treatment] [--repetitions n] [--agent name] [--run path] [--output path] [--dry-run]");
   }
   const options: CliOptions = {
     command: command as CliOptions["command"],
@@ -1195,6 +1323,12 @@ function requiredPlanOptions(options: CliOptions): PlanOptions {
 
 export function main(args: string[] = process.argv.slice(2)): void {
   const options = parseCliArgs(args);
+  if (options.command === "project-shape-evidence") {
+    if (!options.run) fail("project-shape-evidence requires --run");
+    if (!options.output) fail("project-shape-evidence requires --output");
+    console.log(JSON.stringify(projectHistoricalShapeEvidence(REPO_ROOT, options.run, options.output), null, 2));
+    return;
+  }
   const evaluation = validateEvaluation(REPO_ROOT, options.manifest);
   if (options.command === "validate") {
     console.log(JSON.stringify({ status: "valid", schema: evaluation.manifest.schema, experiments: Object.fromEntries(Object.entries(evaluation.manifest.experiments).map(([id, experiment]) => [id, { freeze: experiment.freeze, held_out_task_count: experiment.held_out_task_count }])), task_counts: { development: evaluation.tasks.development.length, held_out: evaluation.tasks.held_out.length } }, null, 2));

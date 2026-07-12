@@ -86,8 +86,12 @@
 
 ## Retest Steps
 
-- Re-run: `bun scripts/run-bdd2-evals.ts validate-scores --experiment S --run .ai/harness/runs/bdd2/bdd2-e02-shape-s-v2`
-- Re-check: rerun summarization and compare the generated metrics with `evals/bdd2/reports/experiment-s.md`.
+- Current authority: `bun scripts/run-bdd2-evals.ts validate` must report both S-v3
+  and A as foundation-only with no runnable agent profile.
+- Historical evidence: run `project-shape-evidence` with the recorded S-v2 run and
+  `evals/bdd2/reports/experiment-s-evidence.json` output; it must reproduce the
+  committed file byte-for-byte. The retired S-v2 run is intentionally not accepted
+  as current authority; no compatibility validation path exists.
 
 ## Summary
 

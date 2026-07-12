@@ -85,7 +85,7 @@ allowed_paths:
   - evals/bdd2/rubrics/score.schema.json
   - evals/bdd2/metrics/shape-metrics.md
   - evals/bdd2/reports/experiment-s.md
-  - evals/bdd2/reports/experiment-s-authority-audit.json
+  - evals/bdd2/reports/experiment-s-evidence.json
   - scripts/run-bdd2-evals.ts
   - tests/run-bdd2-evals.test.ts
   - tests/bdd2-evals-contract.test.ts
@@ -145,7 +145,7 @@ exit_criteria:
   files_exist:
     - evals/bdd2/metrics/shape-metrics.md
     - evals/bdd2/reports/experiment-s.md
-    - evals/bdd2/reports/experiment-s-authority-audit.json
+    - evals/bdd2/reports/experiment-s-evidence.json
   artifacts_exist:
     - .ai/harness/checks/latest.json
     - tasks/notes/20260712-0605-bdd2-e-02-run-experiment-s-shape-hypothesis.notes.md
@@ -164,6 +164,7 @@ exit_criteria:
     - "72 successful held-out S packets and 72 valid locked final scores exist"
     - "Owner-authorized blind Agent panel confirms scores were locked before reveal"
     - "Tracked report preserves the S-v2 metrics and discloses the proxy panel, truth-use, overlap, filesystem-isolation, and inherited-environment limits"
+    - "project-shape-evidence reproduces the committed 72-row evidence file byte-for-byte from local raw evidence"
     - "Current S-v3 authority is foundation-only and contains no runnable agent profile"
     - "Evaluator review file recommends pass and confirms no Phase P surface"
 ```

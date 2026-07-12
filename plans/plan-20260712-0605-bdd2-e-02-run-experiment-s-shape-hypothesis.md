@@ -99,7 +99,7 @@ allowed_paths:
   - evals/bdd2/rubrics/score.schema.json
   - evals/bdd2/metrics/shape-metrics.md
   - evals/bdd2/reports/experiment-s.md
-  - evals/bdd2/reports/experiment-s-authority-audit.json
+  - evals/bdd2/reports/experiment-s-evidence.json
   - scripts/run-bdd2-evals.ts
   - tests/run-bdd2-evals.test.ts
   - tests/bdd2-evals-contract.test.ts
@@ -193,7 +193,8 @@ allowed_paths:
 - **State/progress path**: this plan, its contract/notes/review, and Sprint row 2.
 - **Verification evidence**: focused Bun tests; source-commit `validate`, `run`,
   `validate-scores`, and `summarize-shape` outputs; current foundation `validate`;
-  ignored raw run directory; tracked aggregate/audit reports; strict workflow checks.
+  ignored raw run directory; tracked aggregate report and generated 72-row evidence
+  projection; strict workflow checks.
 - **Evaluator rubric**: PRD Experiment S metrics plus proof that packets and
   execution workspace exclude condition/truth identity.
 - **Stop condition**: 72 successful coordinates, all blind scores locked and
@@ -218,7 +219,8 @@ allowed_paths:
 - [x] Generate and verify the tracked Experiment S report and gate decision.
 - [x] Invalidate S-v2 as causal evidence after external review found inherited
       process environment; cut current authority to unsealed S-v3 with an env allowlist.
-- [x] Add a machine-readable truth-aware authority audit and Kill-path regression coverage.
+- [x] Add a generated 72-row score/private evidence projection, truth-aware audit,
+      and Kill-path regression coverage.
 - [ ] Complete review/notes/current/handoff, run required checks, commit, push, and open the E-02 module PR.
 
 ## Exit Criteria
@@ -228,7 +230,7 @@ exit_criteria:
   files_exist:
     - evals/bdd2/metrics/shape-metrics.md
     - evals/bdd2/reports/experiment-s.md
-    - evals/bdd2/reports/experiment-s-authority-audit.json
+    - evals/bdd2/reports/experiment-s-evidence.json
     - tasks/contracts/20260712-0605-bdd2-e-02-run-experiment-s-shape-hypothesis.contract.md
     - tasks/reviews/20260712-0605-bdd2-e-02-run-experiment-s-shape-hypothesis.review.md
   commands_succeed:
@@ -243,6 +245,7 @@ exit_criteria:
   manual_checks:
     - "Owner-authorized blind Agent panel confirms scores were locked before condition reveal"
     - "Tracked report preserves the S-v2 metric core and discloses truth-use, reviewer-overlap, filesystem-isolation, and inherited-environment limits"
+    - "project-shape-evidence reproduces the committed 72-row evidence file byte-for-byte from the local raw run"
     - "Current S-v3 authority is foundation-only and has no runnable agent profile"
     - "Review confirms no Phase P product surface or Experiment A claim was introduced"
 ```

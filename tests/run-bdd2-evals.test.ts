@@ -14,6 +14,7 @@ import { spawnSync } from "child_process";
 import {
   buildIsolatedAgentEnv,
   buildRunPlan,
+  projectHistoricalShapeEvidence,
   runEvaluation,
   sha256File,
   summarizeShape,
@@ -383,6 +384,11 @@ describe("run-bdd2-evals sealed execution", () => {
           "utf-8"
         );
       }
+
+      const projected = projectHistoricalShapeEvidence(root, runRelativePath, "shape-evidence.json") as any;
+      expect(projected.schema).toBe("repo-harness-bdd2-shape-evidence.v1");
+      expect(projected.rows).toHaveLength(6);
+      expect(JSON.parse(readFileSync(join(root, "shape-evidence.json"), "utf-8"))).toEqual(projected);
 
       expect(validateShapeScores(evaluation, runRelativePath).scores.size).toBe(6);
       const summary = summarizeShape(evaluation, runRelativePath, "shape-report.md");

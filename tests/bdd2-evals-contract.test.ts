@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, readdirSync, readFileSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import {
   buildAgentPacket,
@@ -78,31 +78,81 @@ describe("BDD2 Phase E evaluation contract", () => {
     expect(report).toContain("on reviewer compliance rather than an OS");
     expect(report).toContain("Phase P, Experiment E, and Experiment I remain");
 
-    const audit = JSON.parse(
-      readFileSync(join(ROOT, "evals/bdd2/reports/experiment-s-authority-audit.json"), "utf-8")
+    const evidence = JSON.parse(
+      readFileSync(join(ROOT, "evals/bdd2/reports/experiment-s-evidence.json"), "utf-8")
     );
     const truth = JSON.parse(readFileSync(join(ROOT, "evals/bdd2/truth/held-out.json"), "utf-8")).shape_tasks;
-    expect(audit.schema).toBe("repo-harness-bdd2-shape-authority-audit.v1");
-    expect(audit.source_commit).toBe("cd9e0426d362614ba277e067633db2596c236491");
-    expect(audit.run_manifest_sha256).toBe("b64a343415fb47c31a8f7aecd29e47409c86c5da1409b6b19bafbdb08c6a2a5b");
-    expect(audit.rows).toHaveLength(17);
-    expect(new Set(audit.rows.map((row: any) => row.packet_id)).size).toBe(17);
-    for (const row of audit.rows) {
+    expect(evidence.schema).toBe("repo-harness-bdd2-shape-evidence.v1");
+    expect(evidence.source_commit).toBe("cd9e0426d362614ba277e067633db2596c236491");
+    expect(evidence.run_manifest_sha256).toBe("b64a343415fb47c31a8f7aecd29e47409c86c5da1409b6b19bafbdb08c6a2a5b");
+    expect(evidence.packet_count).toBe(72);
+    expect(evidence.rows).toHaveLength(72);
+    expect(new Set(evidence.rows.map((row: any) => row.packet_id)).size).toBe(72);
+    for (const row of evidence.rows) {
       expect(Object.keys(row).sort()).toEqual([
+        "authority_fit",
         "condition",
+        "correction_minutes",
+        "escalation_correct",
         "expected_authority",
         "packet_id",
+        "private_sha256",
+        "protected_p0_p1_count",
         "repetition",
-        "reviewer_label",
+        "required_behavior_omission",
+        "score_sha256",
         "task_id",
+        "unnecessary_tracked_artifact_count",
+        "unsupported_expansion",
       ]);
       expect(row.expected_authority).toBe(truth[row.task_id].expected_authority);
-      expect(row.reviewer_label === "incorrect" || row.reviewer_label !== row.expected_authority).toBe(true);
     }
-    const baseline = audit.rows.filter((row: any) => row.condition === "baseline").length;
-    const treatment = audit.rows.filter((row: any) => row.condition === "treatment").length;
-    expect({ baseline, treatment }).toEqual({ baseline: 12, treatment: 5 });
-    expect(report).toContain(`mismatches are therefore ${baseline} baseline versus ${treatment} treatment`);
+    const baselineRows = evidence.rows.filter((row: any) => row.condition === "baseline");
+    const treatmentRows = evidence.rows.filter((row: any) => row.condition === "treatment");
+    const sum = (rows: any[], key: string) => rows.reduce((total, row) => total + row[key], 0);
+    expect(sum(baselineRows, "unsupported_expansion")).toBe(48);
+    expect(sum(treatmentRows, "unsupported_expansion")).toBe(2);
+    expect(sum(baselineRows, "required_behavior_omission")).toBe(23);
+    expect(sum(treatmentRows, "required_behavior_omission")).toBe(0);
+    expect(sum(treatmentRows, "unnecessary_tracked_artifact_count")).toBe(1);
+
+    const pairs = new Map<string, any>();
+    for (const row of evidence.rows) {
+      const key = `${row.task_id}:${row.repetition}`;
+      const pair = pairs.get(key) ?? {};
+      pair[row.condition] = row;
+      pairs.set(key, pair);
+    }
+    let wins = 0;
+    let ties = 0;
+    let losses = 0;
+    let newSevere = 0;
+    const requiredIncreases = new Map<string, number>();
+    for (const pair of pairs.values()) {
+      if (pair.treatment.unsupported_expansion < pair.baseline.unsupported_expansion) wins += 1;
+      else if (pair.treatment.unsupported_expansion > pair.baseline.unsupported_expansion) losses += 1;
+      else ties += 1;
+      if (pair.treatment.protected_p0_p1_count > pair.baseline.protected_p0_p1_count) newSevere += 1;
+      if (pair.treatment.required_behavior_omission > pair.baseline.required_behavior_omission) {
+        requiredIncreases.set(pair.treatment.task_id, (requiredIncreases.get(pair.treatment.task_id) ?? 0) + 1);
+      }
+    }
+    expect({ wins, ties, losses }).toEqual({ wins: 12, ties: 22, losses: 2 });
+    expect(newSevere).toBe(0);
+    expect([...requiredIncreases.values()].some((count) => count >= 2)).toBe(false);
+    const median = (rows: any[]) => {
+      const values = rows.map((row) => row.correction_minutes).sort((a, b) => a - b);
+      return (values[17] + values[18]) / 2;
+    };
+    expect({ baseline: median(baselineRows), treatment: median(treatmentRows) }).toEqual({ baseline: 10, treatment: 0 });
+
+    const truthMismatches = evidence.rows.filter(
+      (row: any) => row.authority_fit === "incorrect" || row.authority_fit !== row.expected_authority
+    );
+    const baselineMismatches = truthMismatches.filter((row: any) => row.condition === "baseline").length;
+    const treatmentMismatches = truthMismatches.filter((row: any) => row.condition === "treatment").length;
+    expect({ baseline: baselineMismatches, treatment: treatmentMismatches }).toEqual({ baseline: 12, treatment: 5 });
+    expect(report).toContain(`mismatches are therefore ${baselineMismatches} baseline versus ${treatmentMismatches} treatment`);
     expect(report).toContain("22/36 pairs (61.1%) were ties");
     expect(report).toContain("inherited the invoking process environment");
     expect(report).toContain("bdd2-experiment-s-reshape-foundation-v3");
@@ -115,31 +165,4 @@ describe("BDD2 Phase E evaluation contract", () => {
     expect(plan).toContain("source-commit `validate`, `run`,");
     expect(plan).toContain("Current S-v3 authority is foundation-only");
   });
-
-  const localShapeRun = join(ROOT, ".ai/harness/runs/bdd2/bdd2-e02-shape-s-v2");
-  if (existsSync(join(localShapeRun, "scores"))) {
-    test("local raw Shape evidence reproduces the tracked truth-aware mismatch table", () => {
-      const truth = JSON.parse(readFileSync(join(ROOT, "evals/bdd2/truth/held-out.json"), "utf-8")).shape_tasks;
-      const rawRows = readdirSync(join(localShapeRun, "scores"))
-        .filter((file) => file.endsWith(".json"))
-        .flatMap((file) => {
-          const score = JSON.parse(readFileSync(join(localShapeRun, "scores", file), "utf-8"));
-          const coordinate = JSON.parse(readFileSync(join(localShapeRun, "private", file), "utf-8"));
-          const expected = truth[coordinate.task_id].expected_authority;
-          const label = score.score.authority_fit;
-          return label === "incorrect" || label !== expected
-            ? [`${coordinate.task_id}|${coordinate.condition}|${coordinate.repetition}|${label}|${expected}`]
-            : [];
-        })
-        .sort();
-      const reportRows = JSON.parse(
-        readFileSync(join(ROOT, "evals/bdd2/reports/experiment-s-authority-audit.json"), "utf-8")
-      ).rows
-        .map((row: any) => `${row.task_id}|${row.condition}|${row.repetition}|${row.reviewer_label}|${row.expected_authority}`)
-        .sort();
-      expect(reportRows).toEqual(rawRows);
-    });
-  } else {
-    test.skip("local raw Shape evidence reproduces the tracked truth-aware mismatch table", () => {});
-  }
 });

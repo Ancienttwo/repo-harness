@@ -52,11 +52,12 @@ computed decision.
   mismatches are therefore 12 baseline versus 5 treatment, not the reviewer-coded
   7 versus 1 shown in the generated metric section.
 
-`evals/bdd2/reports/experiment-s-authority-audit.json` is the machine-readable
-post-reveal projection of the ignored score/private-mapping evidence. The contract
-test validates each row against held-out truth, derives the 12/5 totals, and checks
-this report projection. When local raw evidence exists, the same test also verifies
-every packet row against its score and private coordinate.
+`evals/bdd2/reports/experiment-s-evidence.json` is the generated, machine-readable
+post-reveal projection of all 72 score/private-coordinate pairs. The contract test
+recomputes the registered metrics and truth-aware 12/5 totals from that committed
+evidence, checks this report projection, and verifies every expected tier against
+held-out truth. The explicit projector also reproduces the file from local raw
+evidence and its source-commit manifest.
 - Each packet had one final reviewer and no overlapping independent score, so
   inter-rater disagreement was not measured. The reviewer-safe queue omitted the
   private mapping, but blind and private directories remained under the same repo

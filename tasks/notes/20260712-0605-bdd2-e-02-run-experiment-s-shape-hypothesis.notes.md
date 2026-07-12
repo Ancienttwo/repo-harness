@@ -106,7 +106,7 @@
 - Reviewer-safe queue: `.ai/harness/runs/bdd2/bdd2-e02-shape-s-v2-blind-review/`
   — 72 randomized packets plus frozen rubric/schema, with no private mapping.
 - Tracked aggregate report: `evals/bdd2/reports/experiment-s.md`.
-- Tracked truth-aware audit: `evals/bdd2/reports/experiment-s-authority-audit.json`.
+- Tracked score/private projection: `evals/bdd2/reports/experiment-s-evidence.json`.
 
 ## External Review Resolution
 
@@ -130,9 +130,9 @@
   failed evidence only; current authority is an unsealed S-v3 foundation with no
   agent profile and a runner-level environment allowlist.
 - The tracked report now discloses all identified limits and keeps the decision at
-  `Reshape`. The machine-readable authority audit is validated against held-out
-  truth and, when ignored local run evidence exists, reproduced byte-for-byte from
-  scores and private coordinates. Kill-path and environment-allowlist regression
+  `Reshape`. The generated 72-row evidence projection is validated against held-out
+  truth and reproduced byte-for-byte from local scores, private coordinates, and
+  the source-commit manifest. Kill-path and environment-allowlist regression
   coverage are added without rewriting the S-v2 source commit, prompts, scores, or
   raw outputs.
 
