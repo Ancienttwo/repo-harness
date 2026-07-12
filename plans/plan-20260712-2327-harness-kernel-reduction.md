@@ -200,14 +200,3 @@ Stop only after verified full completion or a blocker that requires a new user d
 
 ## Annotations
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
-
-## Task Breakdown
-- [x] WP1 Effective state and deterministic risk profiles.
-- [x] WP2 Explicit-first routing cutover.
-- [x] WP3 Global SessionStart budget and dedupe.
-- [x] WP4 Circuit breakers and profile-aware orchestration caps.
-- [x] WP5 Transactional install profiles and installed-state authority.
-- [x] WP6 Root Skill and five-action discovery cutover.
-- [x] WP7 Live hook evidence and streaming benchmark runner.
-- [x] WP8 Nine scenarios and isolated three-profile benchmark projections.
-- [ ] WP9 Full matrix, durable reports, migrations, architecture, external acceptance and closeout.

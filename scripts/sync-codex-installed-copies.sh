@@ -99,29 +99,132 @@ create_symlink_or_explain() {
   exit 1
 }
 
-sync_copy() {
+hash_stream() {
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 | awk '{print "sha256:" $1}'
+    return 0
+  fi
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum | awk '{print "sha256:" $1}'
+    return 0
+  fi
+  echo "[sync-installed] SHA-256 capability is required to verify managed copies." >&2
+  return 1
+}
+
+managed_tree_hash() {
+  local root="$1"
+  {
+    while IFS= read -r entry; do
+      local rel
+      rel="${entry#"$root"/}"
+      if [[ -L "$entry" ]]; then
+        printf 'L\0%s\0%s\0' "$rel" "$(readlink "$entry")"
+      elif [[ -f "$entry" ]]; then
+        printf 'F\0%s\0' "$rel"
+        cat "$entry"
+        printf '\0'
+      fi
+    done < <(find "$root" \( -type f -o -type l \) ! -name '.repo-harness-owner.json' -print | LC_ALL=C sort)
+  } | hash_stream
+}
+
+json_escape() {
+  local value="$1"
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  printf '%s' "$value"
+}
+
+write_owner_marker() {
   local dest="$1"
-  require_rsync_for_copy_mode
-  remove_managed_dest "$dest"
-  mkdir -p "$dest"
-  rsync -a --delete "${common_excludes[@]}" "$SOURCE_ROOT/" "$dest/"
+  local surface="$2"
+  local content_hash
+  content_hash="$(managed_tree_hash "$dest")"
+  printf '{"owner":"repo-harness","surface":"%s","content_hash":"%s"}\n' \
+    "$(json_escape "$surface")" "$(json_escape "$content_hash")" \
+    > "$dest/.repo-harness-owner.json"
+}
+
+refuse_unowned_dest() {
+  local dest="$1"
+  local reason="$2"
+  echo "[sync-installed] Refusing to replace or remove $dest: $reason." >&2
+  echo "[sync-installed] Preserve or move the unowned surface, then rerun." >&2
+  return 1
+}
+
+assert_managed_dest() {
+  local dest="$1"
+  local expected_source="$2"
+  local expected_surface="$3"
+
+  if [[ ! -e "$dest" && ! -L "$dest" ]]; then
+    return 0
+  fi
+
+  if [[ -L "$dest" ]]; then
+    local target
+    target="$(readlink "$dest" 2>/dev/null || true)"
+    [[ "$target" == "$expected_source" ]] \
+      || refuse_unowned_dest "$dest" "symlink target is not the expected package source"
+    return $?
+  fi
+
+  [[ -d "$dest" ]] || {
+    refuse_unowned_dest "$dest" "path is neither a managed directory nor an expected symlink"
+    return 1
+  }
+  [[ ! -d "$dest/_ops" ]] || {
+    refuse_unowned_dest "$dest" "directory contains _ops/ local state"
+    return 1
+  }
+
+  local marker="$dest/.repo-harness-owner.json"
+  if [[ -f "$marker" ]]; then
+    grep -Fq '"owner":"repo-harness"' "$marker" \
+      || { refuse_unowned_dest "$dest" "ownership marker has an unknown owner"; return 1; }
+    grep -Fq "\"surface\":\"$expected_surface\"" "$marker" \
+      || { refuse_unowned_dest "$dest" "ownership marker has an unexpected surface type"; return 1; }
+    local expected_hash actual_hash
+    expected_hash="$(sed -n 's/.*"content_hash":"\([^"]*\)".*/\1/p' "$marker")"
+    [[ -n "$expected_hash" ]] \
+      || { refuse_unowned_dest "$dest" "ownership marker has no content hash"; return 1; }
+    actual_hash="$(managed_tree_hash "$dest")"
+    [[ "$actual_hash" == "$expected_hash" ]] \
+      || { refuse_unowned_dest "$dest" "managed copy content has drifted"; return 1; }
+    return 0
+  fi
+
+  if [[ -d "$expected_source" ]] && diff -qr "$dest" "$expected_source" >/dev/null 2>&1; then
+    # One-shot migration for an exact package copy created before owner markers.
+    return 0
+  fi
+
+  refuse_unowned_dest "$dest" "directory has no valid owner marker and is not an exact package copy"
 }
 
 remove_managed_dest() {
   local dest="$1"
+  local expected_source="$2"
+  local expected_surface="$3"
+  assert_managed_dest "$dest" "$expected_source" "$expected_surface" || exit 1
   if [[ -L "$dest" ]]; then
     rm "$dest"
-    return 0
-  fi
-
-  if [[ -e "$dest" ]]; then
-    if [[ -d "$dest/_ops" ]]; then
-      echo "[sync-installed] Refusing to replace $dest because it contains _ops/ local state." >&2
-      echo "[sync-installed] Move or archive that directory first, then rerun." >&2
-      exit 1
-    fi
+  elif [[ -e "$dest" ]]; then
     rm -rf "$dest"
   fi
+}
+
+sync_copy() {
+  local dest="$1"
+  local source="${2:-$SOURCE_ROOT}"
+  local surface="${3:-canonical-skill}"
+  require_rsync_for_copy_mode
+  remove_managed_dest "$dest" "$source" "$surface"
+  mkdir -p "$dest"
+  rsync -a --delete "${common_excludes[@]}" "$source/" "$dest/"
+  write_owner_marker "$dest" "$surface"
 }
 
 sync_claude_alias_links() {
@@ -131,7 +234,7 @@ sync_claude_alias_links() {
 
   mkdir -p "$CLAUDE_SKILLS_ROOT"
   local alias_dest="$CLAUDE_SKILLS_ROOT/repo-harness"
-  remove_managed_dest "$alias_dest"
+  remove_managed_dest "$alias_dest" "$SOURCE_ROOT" canonical-skill
   create_symlink_or_explain "$SOURCE_ROOT" "$alias_dest"
   echo "[sync-installed] Claude skill alias: $alias_dest -> $SOURCE_ROOT"
 }
@@ -143,7 +246,7 @@ sync_claude_alias_copies() {
 
   mkdir -p "$CLAUDE_SKILLS_ROOT"
   local alias_dest="$CLAUDE_SKILLS_ROOT/repo-harness"
-  sync_copy "$alias_dest"
+  sync_copy "$alias_dest" "$SOURCE_ROOT" canonical-skill
   echo "[sync-installed] Claude skill copy: $alias_dest"
 }
 
@@ -161,27 +264,35 @@ facade_selected() {
   profile_facades | grep -Fxq "$wanted"
 }
 
+preflight_skill_root() {
+  local root="$1"
+  [[ -n "$root" ]] || return 0
+  assert_managed_dest "$root/repo-harness" "$SOURCE_ROOT" canonical-skill || exit 1
+  [[ -d "$root" ]] || return 0
+
+  local dest name source
+  for dest in "$root"/repo-harness-*; do
+    [[ -e "$dest" || -L "$dest" ]] || continue
+    name="$(basename "$dest")"
+    source="$SOURCE_ROOT/assets/skill-commands/$name"
+    [[ -d "$source" ]] \
+      || { refuse_unowned_dest "$dest" "no package facade source exists for $name"; exit 1; }
+    assert_managed_dest "$dest" "$source" command-facade || exit 1
+  done
+}
+
 remove_retired_owned_facades() {
   local root="$1"
   [[ -n "$root" && -d "$root" ]] || return 0
   local dest name source target
-  for dest in "$root"/repo-harness-*/; do
-    dest="${dest%/}"
+  for dest in "$root"/repo-harness-*; do
     [[ -e "$dest" || -L "$dest" ]] || continue
     name="$(basename "$dest")"
     facade_selected "$name" && continue
     source="$SOURCE_ROOT/assets/skill-commands/$name"
-    if [[ -L "$dest" ]]; then
-      target="$(readlink "$dest" 2>/dev/null || true)"
-      case "$target" in
-        "$SOURCE_ROOT"/assets/skill-commands/repo-harness-*) rm "$dest" ;;
-      esac
-    elif [[ -f "$dest/.repo-harness-owner.json" ]]; then
-      grep -Fq '"owner":"repo-harness"' "$dest/.repo-harness-owner.json" && rm -rf "$dest"
-    elif [[ -f "$dest/SKILL.md" && -f "$source/SKILL.md" ]] && cmp -s "$dest/SKILL.md" "$source/SKILL.md"; then
-      # One-shot migration for pre-owner-marker exact package copies.
-      rm -rf "$dest"
-    fi
+    [[ -d "$source" ]] \
+      || { refuse_unowned_dest "$dest" "no package facade source exists for $name"; exit 1; }
+    remove_managed_dest "$dest" "$source" command-facade
   done
 }
 
@@ -205,24 +316,27 @@ sync_command_facades() {
     name="$(basename "$facade_src")"
     facade_selected "$name" || continue
     local dest="$root/$name"
-    remove_managed_dest "$dest"
+    remove_managed_dest "$dest" "$facade_src" command-facade
     if [[ "$mode" == "link" ]]; then
       create_symlink_or_explain "$facade_src" "$dest"
     else
       require_rsync_for_copy_mode
       mkdir -p "$dest"
       rsync -a --delete "${common_excludes[@]}" "$facade_src/" "$dest/"
-      printf '%s\n' '{"owner":"repo-harness","surface":"command-facade"}' > "$dest/.repo-harness-owner.json"
+      write_owner_marker "$dest" command-facade
     fi
     synced=$((synced + 1))
   done
   echo "[sync-installed] command facades ($mode): $synced into $root"
 }
 
+preflight_skill_root "$CODEX_SKILLS_ROOT"
+preflight_skill_root "$CLAUDE_SKILLS_ROOT"
+
 canonical_dest="$CODEX_SKILLS_ROOT/repo-harness"
 if [[ "$LINK_INSTALLED_COPIES" == "1" ]]; then
   mkdir -p "$CODEX_SKILLS_ROOT"
-  remove_managed_dest "$canonical_dest"
+  remove_managed_dest "$canonical_dest" "$SOURCE_ROOT" canonical-skill
   create_symlink_or_explain "$SOURCE_ROOT" "$canonical_dest"
   echo "[sync-installed] canonical skill link: $canonical_dest -> $SOURCE_ROOT"
 

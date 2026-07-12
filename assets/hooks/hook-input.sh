@@ -588,6 +588,35 @@ hook_append_failure_record() {
     >> "$log_file"
 }
 
+hook_circuit_record() {
+  local kind="$1" guard="$2" reason="$3" path_action="$4" fingerprint="$5"
+  local profile="${6:-}" explicit_high_risk="${7:-false}" risk_consult="${8:-false}" user_consult="${9:-false}" strong="${10:-false}"
+  local state_version="unknown" payload output
+  if [[ -f ".ai/harness/state/effective.json" ]] && command -v jq >/dev/null 2>&1; then
+    state_version="$(jq -r '.state_version // "unknown"' .ai/harness/state/effective.json 2>/dev/null || printf unknown)"
+    [[ -n "$profile" ]] || profile="$(jq -r '.workflow_profile // empty' .ai/harness/state/effective.json 2>/dev/null || true)"
+  fi
+  case "$profile" in
+    lite|standard|strict) ;;
+    *) [[ "$kind" == "guard" ]] && profile="strict" || profile="standard" ;;
+  esac
+  command -v jq >/dev/null 2>&1 || return 2
+  payload="$(jq -nc \
+    --arg kind "$kind" --arg guard "$guard" --arg reason "$reason" --arg path "$path_action" \
+    --arg state "$state_version" --arg fingerprint "$fingerprint" --arg profile "$profile" \
+    --argjson high "$explicit_high_risk" --argjson risk "$risk_consult" --argjson user "$user_consult" --argjson strong "$strong" \
+    '{kind:$kind,guard:$guard,reason:$reason,pathOrAction:$path,stateVersion:$state,fingerprint:$fingerprint,profile:$profile,explicitHighRiskContract:$high,riskTriggeredConsult:$risk,userRequestedConsult:$user,strongBoundary:$strong}')"
+  if [[ -n "${REPO_HARNESS_HOOK_CLI:-}" && -f "${REPO_HARNESS_HOOK_CLI:-}" ]] && command -v bun >/dev/null 2>&1; then
+    output="$(printf '%s' "$payload" | bun "$REPO_HARNESS_HOOK_CLI" circuit-breaker-record 2>/dev/null)" || return 2
+  elif command -v repo-harness-hook >/dev/null 2>&1; then
+    output="$(printf '%s' "$payload" | repo-harness-hook circuit-breaker-record 2>/dev/null)" || return 2
+  else
+    return 2
+  fi
+  printf '%s\n' "$output"
+  [[ "$(printf '%s' "$output" | jq -r '.allowed // false')" == "true" ]]
+}
+
 hook_structured_error() {
   local guard="$1"
   local reason="$2"
@@ -612,35 +641,25 @@ hook_structured_error() {
   esac
 
   run_id="$(hook_get_run_id)"
-  local state_version="unknown" profile="${WORKFLOW_PROFILE:-strict}" strong_boundary="false"
-  local circuit_payload circuit_output circuit_tripped="false"
-  if [[ -f ".ai/harness/state/effective.json" ]] && command -v jq >/dev/null 2>&1; then
-    state_version="$(jq -r '.state_version // "unknown"' .ai/harness/state/effective.json 2>/dev/null || printf unknown)"
-  fi
+  local profile="${WORKFLOW_PROFILE:-}" strong_boundary="false"
+  local circuit_output="" circuit_tripped="false"
   case "$guard" in
     *Security*|*Secret*|ContractScopeGuard|OpsPrivateGuard|ExternalReferenceGuard|StrictWorktreeGuard|*Destructive*)
       strong_boundary="true"
       ;;
   esac
   if command -v jq >/dev/null 2>&1; then
-    circuit_payload="$(jq -nc \
-      --arg guard "$guard" --arg reason "$reason" --arg path "$fix" \
-      --arg state "$state_version" --arg fingerprint "$guard|$reason|$fix" \
-      --arg profile "$profile" --argjson strong "$strong_boundary" \
-      '{kind:"guard",guard:$guard,reason:$reason,pathOrAction:$path,stateVersion:$state,fingerprint:$fingerprint,profile:$profile,strongBoundary:$strong}')"
-    if [[ -n "${REPO_HARNESS_HOOK_CLI:-}" && -f "${REPO_HARNESS_HOOK_CLI:-}" ]] && command -v bun >/dev/null 2>&1; then
-      circuit_output="$(printf '%s' "$circuit_payload" | bun "$REPO_HARNESS_HOOK_CLI" circuit-breaker-record 2>/dev/null || true)"
-    elif command -v repo-harness-hook >/dev/null 2>&1; then
-      circuit_output="$(printf '%s' "$circuit_payload" | repo-harness-hook circuit-breaker-record 2>/dev/null || true)"
-    else
-      circuit_output=""
-    fi
+    circuit_output="$(hook_circuit_record guard "$guard" "$reason" "$fix" "$guard|$reason|$fix" "$profile" false false false "$strong_boundary" || true)"
     circuit_tripped="$(printf '%s' "$circuit_output" | jq -r '.tripped // false' 2>/dev/null || printf false)"
-    if [[ "$circuit_tripped" == "true" ]]; then
-      printf '%s\n' "$circuit_output" >&2
-    fi
   fi
   hook_append_failure_record "$guard" "$action" "$reason" "$fix" "$failure_class" "$run_id"
+
+  # After the limit, emit only the terminal structured action. The caller still
+  # exits non-zero, so strong boundaries never fail open.
+  if [[ "$circuit_tripped" == "true" ]]; then
+    printf '%s\n' "$circuit_output"
+    return 0
+  fi
 
   # Claude Code shows stderr to the model when the hook exits 2.
   # Mirror reason/fix there so callers that pair this with `exit 2` produce a

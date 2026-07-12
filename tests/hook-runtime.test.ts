@@ -1773,6 +1773,39 @@ describe("Hook runtime behavior", () => {
     }
   });
 
+  test("stop-orchestrator: Lite refreshes compact handoff without review orchestration", () => {
+    const cwd = tmpWorkspace("lite-stop");
+    try {
+      initGitRepo(cwd);
+      installHooks(cwd);
+      mkdirSync(join(cwd, ".ai/harness/state"), { recursive: true });
+      writeFileSync(join(cwd, ".ai/harness/state/effective.json"), JSON.stringify({
+        workflow_profile: "lite",
+        state_version: 1,
+      }));
+      mkdirSync(join(cwd, ".ai/harness/checks"), { recursive: true });
+      writeFileSync(join(cwd, ".ai/harness/checks/minimal-change.latest.json"), JSON.stringify({
+        version: 1,
+        mode: "advice",
+        verdict: "review",
+        findings: [{ tag: "review", path: "src/a.ts", question: "review me" }],
+        report_path: ".ai/harness/checks/minimal-change.latest.json",
+      }));
+
+      const res = runHook("stop-orchestrator.sh", cwd, {
+        stdin: JSON.stringify({ hook_event_name: "Stop", stop_hook_active: false }),
+      });
+      expect(res.status).toBe(0);
+      expect(res.stdout).toBe("");
+      expect(res.stderr).toContain("[FinalizeHandoff]");
+      const handoff = readFileSync(join(cwd, ".ai/harness/handoff/current.md"), "utf-8");
+      expect(handoff).not.toContain("Minimal Change Review");
+      expect(existsSync(join(cwd, ".ai/harness/handoff/resume.md"))).toBe(true);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   test("changelog-guard: warns when unreleased section is empty on release command", () => {
     const cwd = tmpWorkspace("changelog-guard");
     try {

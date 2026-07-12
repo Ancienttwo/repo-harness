@@ -34,7 +34,9 @@ scripts, hooks, and contract files:
 
 The manifest at `assets/skill-commands/manifest.json` is the on-demand facade
 catalog. `scripts/sync-codex-installed-copies.sh` owns profile selection and
-removes only symlinks, ownership-marked copies, or exact package copies.
+removes only exact package-target symlinks, content-hash-verified owned copies,
+or byte-identical package copies. Unknown and modified surfaces fail closed
+before the transaction mutates any managed destination.
 
 ## P2 Trace
 

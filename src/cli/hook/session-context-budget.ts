@@ -24,7 +24,7 @@ export interface SessionContextBudgetEvidence {
   readonly deduped: boolean;
   readonly actionable: boolean;
   readonly included_sections: readonly string[];
-  readonly dropped_sections: readonly { id: string; reason: 'no-actionable-state' | 'budget' }[];
+  readonly dropped_sections: readonly { id: string; reason: 'no-actionable-state' | 'budget' | 'mandatory-compacted' }[];
   readonly within_budget: boolean;
 }
 
@@ -115,21 +115,22 @@ export function budgetSessionContext(
   }
 
   const included: string[] = [];
-  const dropped: Array<{ id: string; reason: 'budget' }> = [];
+  const dropped: Array<{ id: string; reason: 'budget' | 'mandatory-compacted' }> = [];
   const chunks: string[] = [];
   for (const section of normalized) {
     const next = [...chunks, section.content].join('\n');
-    if (section.mandatory || estimatedTokens(next) <= SESSION_CONTEXT_TOKEN_BUDGET) {
+    if (estimatedTokens(next) <= SESSION_CONTEXT_TOKEN_BUDGET) {
       chunks.push(section.content);
       included.push(section.id);
       continue;
     }
-    dropped.push({ id: section.id, reason: 'budget' });
+    dropped.push({ id: section.id, reason: section.mandatory ? 'mandatory-compacted' : 'budget' });
     const reference = section.reference?.trim();
-    if (reference) {
-      const withReference = [...chunks, `[ContextRef:${section.id}] ${reference}`].join('\n');
+    if (reference || section.mandatory) {
+      const compact = `[ContextRef:${section.id}] ${reference || 'repo-harness state resolve --json'} content_hash=${hash(section.content)} estimated_tokens=${estimatedTokens(section.content)}`;
+      const withReference = [...chunks, compact].join('\n');
       if (estimatedTokens(withReference) <= SESSION_CONTEXT_TOKEN_BUDGET) {
-        chunks.push(`[ContextRef:${section.id}] ${reference}`);
+        chunks.push(compact);
       }
     }
   }

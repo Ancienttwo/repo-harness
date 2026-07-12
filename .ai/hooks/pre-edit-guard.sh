@@ -134,7 +134,7 @@ fi
 # editable without an active plan; everything else is an implementation edit.
 is_workflow_surface_path() {
   case "$1" in
-    plans/*|tasks/*|docs/*|.ai/*|.claude/*|.codex/*|.github/*) return 0 ;;
+    plans/*|tasks/*|docs/*|.ai/*|.claude/*|.codex/*) return 0 ;;
     *.md|*.markdown) return 0 ;;
     *) return 1 ;;
   esac

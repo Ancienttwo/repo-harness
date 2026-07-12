@@ -4,7 +4,7 @@
  *
  *   { matcher?: string, hooks: [{ type: 'command', command: string }] }
  *
- * The `MANAGED_TAG` substring inside each command string identifies entries
+ * The `MANAGED_TAG` prefix inside each command string identifies entries
  * the repo-harness installer wrote, so install can be idempotent and uninstall
  * can remove only its own entries (leaving sibling user hooks intact —
  * verified for Claude in Phase 0: `~/.claude/settings.json` already had a
@@ -18,7 +18,9 @@
 import { routesForHost, type Route, type RouteHost } from '../hook/route-registry';
 import type { InstallProfile } from './install-profile';
 
-export const MANAGED_TAG = 'repo-harness hook';
+export const MANAGED_TAG = 'repo-harness-managed-hook-v1';
+const LEGACY_MANAGED_PREFIX = 'repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; export HOOK_REPO_ROOT="$repo";';
+const LEGACY_DIRECT_MANAGED = /^HOOK_HOST=(?:codex|claude) repo-harness hook (?:SessionStart|PreToolUse|PostToolUse|UserPromptSubmit|SubagentStart|SubagentStop|Stop) --route (?:default|edit|subagent|bash|always|delegation|context|quality)$/;
 
 export interface HookCommand {
   type: 'command';
@@ -35,7 +37,7 @@ export type HooksByEvent = Record<string, HookEntry[]>;
 export type HookHost = RouteHost;
 
 export function buildHookCommand(route: Route, host: HookHost): string {
-  return `repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; export HOOK_REPO_ROOT="$repo"; if command -v repo-harness-hook >/dev/null 2>&1; then HOOK_HOST=${host} exec repo-harness-hook ${route.event} --route ${route.routeId}; fi; command -v repo-harness >/dev/null 2>&1 || exit 0; HOOK_HOST=${host} exec repo-harness hook ${route.event} --route ${route.routeId}`;
+  return `: ${MANAGED_TAG}; repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; export HOOK_REPO_ROOT="$repo"; if command -v repo-harness-hook >/dev/null 2>&1; then HOOK_HOST=${host} exec repo-harness-hook ${route.event} --route ${route.routeId}; fi; command -v repo-harness >/dev/null 2>&1 || exit 0; HOOK_HOST=${host} exec repo-harness hook ${route.event} --route ${route.routeId}`;
 }
 
 export function buildHookEntry(route: Route, host: HookHost): HookEntry {
@@ -48,7 +50,14 @@ export function buildHookEntry(route: Route, host: HookHost): HookEntry {
 
 export function isManagedEntry(entry: HookEntry): boolean {
   if (!entry || !Array.isArray(entry.hooks)) return false;
-  return entry.hooks.some((h) => typeof h?.command === 'string' && h.command.includes(MANAGED_TAG));
+  return entry.hooks.some((h) => {
+    if (typeof h?.command !== 'string') return false;
+    if (h.command.startsWith(`: ${MANAGED_TAG}; `)) return true;
+    if (LEGACY_DIRECT_MANAGED.test(h.command)) return true;
+    return h.command.startsWith(LEGACY_MANAGED_PREFIX)
+      && h.command.includes('repo-harness-hook ')
+      && h.command.includes('exec repo-harness hook ');
+  });
 }
 
 function routeInProfile(route: Route, profile: InstallProfile): boolean {

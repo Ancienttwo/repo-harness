@@ -7,7 +7,9 @@ import {
   claudeBenchmarkCommand,
   codexBenchmarkCommand,
   isolatedHarnessEnvironment,
+  isAuthoritativeCompletedRecord,
   loadHarnessScenarioManifest,
+  noHarnessIsolation,
   parsePorcelainPaths,
   runHarnessProfileBenchmark,
 } from '../scripts/run-harness-profile-benchmark';
@@ -51,6 +53,26 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
       'src/range.ts',
       'deploy/sql/0001.sql',
     ]);
+  });
+
+  test('proves Claude No Harness isolation from its structured init event', () => {
+    const init = JSON.stringify({
+      type: 'system', subtype: 'init', skills: [], plugins: [], mcp_servers: [], slash_commands: [],
+    });
+    expect(noHarnessIsolation('claude', 'no-harness', init, 0)).toBe('passed');
+    expect(noHarnessIsolation('claude', 'no-harness', JSON.stringify({
+      type: 'system', subtype: 'init', skills: ['leak'], plugins: [], mcp_servers: [], slash_commands: [],
+    }), 0)).toBe('failed');
+    expect(noHarnessIsolation('claude', 'no-harness', init, 1)).toBe('failed');
+  });
+
+  test('authoritative completion rejects provider success when the grader failed', () => {
+    const record = {
+      profile: 'adaptive-lite', provider_exit_code: 0, usage_authority: 'structured-provider',
+      status: 'failed', grader_acceptance: 'failed', no_harness_isolation: 'not_applicable',
+    } as unknown as Parameters<typeof isAuthoritativeCompletedRecord>[0];
+    expect(isAuthoritativeCompletedRecord(record)).toBe(false);
+    expect(isAuthoritativeCompletedRecord({ ...record, status: 'passed', grader_acceptance: 'passed' })).toBe(true);
   });
 
   test('dry-run emits all required metrics as null/unavailable rather than estimates', async () => {

@@ -35,9 +35,7 @@ export interface CircuitDecision {
 
 interface PersistedCircuitState {
   protocol: 1;
-  key: string;
-  count: number;
-  token: string;
+  entries: Record<string, { count: number; token: string }>;
   updated_at: string;
 }
 
@@ -65,7 +63,7 @@ function keyFor(attempt: CircuitAttempt): string {
 function readState(repoRoot: string): PersistedCircuitState | null {
   try {
     const parsed = JSON.parse(readFileSync(join(repoRoot, STATE_PATH), 'utf-8')) as PersistedCircuitState;
-    return parsed.protocol === 1 ? parsed : null;
+    return parsed.protocol === 1 && parsed.entries && typeof parsed.entries === 'object' ? parsed : null;
   } catch {
     return null;
   }
@@ -84,17 +82,32 @@ export function recordCircuitAttempt(
   attempt: CircuitAttempt,
   now = new Date(),
 ): CircuitDecision {
+  if (!['guard', 'review', 'subagent', 'repair', 'cross-model-consult'].includes(attempt.kind)) {
+    throw new Error(`invalid circuit kind: ${String(attempt.kind)}`);
+  }
+  if (!['lite', 'standard', 'strict'].includes(attempt.profile)) {
+    throw new Error(`invalid workflow profile: ${String(attempt.profile)}`);
+  }
+  for (const [field, value] of Object.entries({
+    guard: attempt.guard,
+    reason: attempt.reason,
+    pathOrAction: attempt.pathOrAction,
+    fingerprint: attempt.fingerprint,
+  })) {
+    if (typeof value !== 'string' || !value.trim()) throw new Error(`${field} is required`);
+  }
   const key = keyFor(attempt);
   const previous = readState(repoRoot);
-  const repeatCount = previous?.key === key ? previous.count + 1 : 1;
+  const limit = circuitLimit(attempt);
+  const repeatCount = Math.min((previous?.entries[key]?.count ?? 0) + 1, limit + 1);
   writeState(repoRoot, {
     protocol: 1,
-    key,
-    count: repeatCount,
-    token: randomUUID(),
+    entries: {
+      ...(previous?.entries ?? {}),
+      [key]: { count: repeatCount, token: randomUUID() },
+    },
     updated_at: now.toISOString(),
   });
-  const limit = circuitLimit(attempt);
   const allowed = repeatCount <= limit;
   const strongBoundary = attempt.strongBoundary === true;
   return {
@@ -107,11 +120,13 @@ export function recordCircuitAttempt(
     state_version: attempt.stateVersion,
     repeat_count: repeatCount,
     limit,
-    required_action: strongBoundary
-      ? 'change the blocked path/action or resolve the security boundary manually'
-      : 'change state or run an explicit manual action',
-    explicit_override_command: strongBoundary
-      ? null
-      : `repo-harness run circuit-override --guard ${JSON.stringify(attempt.guard)} --state-version ${JSON.stringify(attempt.stateVersion)}`,
+    required_action: !allowed
+      ? strongBoundary
+        ? 'terminal: stop repeating this action; change the blocked path/action or resolve the security boundary manually'
+        : 'terminal: stop automatic retries; change state or wait for an explicit user decision'
+      : 'continue within the bounded attempt limit',
+    // There is intentionally no runtime override command. Strong boundaries
+    // stay fail-closed and weak-boundary recovery requires a real state change.
+    explicit_override_command: null,
   };
 }

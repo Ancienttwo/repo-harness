@@ -15,18 +15,22 @@ routes, then commits the restored state only if that runtime transaction passes.
 
 Non-interactive and blank interactive choices default to `minimal`; external
 skills and CodeGraph are not implicitly installed. Profile switching removes
-only package-owned surfaces. Unknown user-authored skills and config siblings
-are preserved.
+only package-owned surfaces. Unknown or modified canonical/facade directories
+fail closed before mutation; user-authored content is preserved.
 
 Migration from the old broad discovery surface is one-shot and fail closed:
-the sync removes only a package-target symlink, an ownership-marked copy, or a
-copy whose `SKILL.md` exactly matches the package source. There is no runtime
+the sync removes only an exact package-target symlink, a content-hash-verified
+ownership-marked copy, or a byte-identical package directory. There is no runtime
 fallback to the old install default.
 
-The state file carries a component-level ownership manifest. Switch and rollback
-remove or rewrite only repo-harness-managed routes, exact package copies, and
-package-owned links; pre-existing or modified external Skills remain untouched
-and are not claimed as active profile components. Repository changes remain
+The state file records each real managed surface with its absolute path, surface
+type, content hash, explicit managed marker, and symlink target where relevant.
+For shared host config files the hash covers only repo-harness-owned hook entries,
+so user-owned sibling settings may change without creating false drift. `--state`
+verifies those host surfaces instead of trusting component labels alone.
+Switch and rollback remove or rewrite only repo-harness-managed routes, exact
+package copies, and package-owned links; pre-existing or modified external Skills
+remain untouched and are not claimed as active profile components. Repository changes remain
 under the normal adoption transaction and Git rollback boundaries; secrets and
 provider state are never included.
 

@@ -96,6 +96,7 @@ describe('install command (Phase 1B)', () => {
           const hook = entry.hooks[0];
           const cmd = hook.command;
           expect(cmd).toContain('git rev-parse --show-toplevel');
+          expect(cmd).toContain('repo-harness-managed-hook-v1');
           expect(cmd).toContain('export HOOK_REPO_ROOT="$repo"');
           expect(cmd).toContain('command -v repo-harness-hook');
           expect(cmd).toContain('exec repo-harness-hook ');
@@ -206,18 +207,22 @@ describe('install command (Phase 1B)', () => {
         filePath,
         `${JSON.stringify({
           hooks: {
-            PreToolUse: [{ hooks: [{ type: 'command', command: 'rtk hook claude' }] }],
+            PreToolUse: [
+              { hooks: [{ type: 'command', command: 'rtk hook claude' }] },
+              { hooks: [{ type: 'command', command: 'echo repo-harness hook is documented' }] },
+            ],
           },
         }, null, 2)}\n`,
       );
       runInstall({ target: 'claude', location: 'global' });
       const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
       const pre = data.hooks.PreToolUse as { hooks: { command: string }[] }[];
-      // 1 sibling + 2 managed
-      expect(pre.length).toBe(3);
+      // 2 siblings + 2 managed
+      expect(pre.length).toBe(4);
       expect(pre[0].hooks[0].command).toBe('rtk hook claude');
-      expect(pre[1].hooks[0].command).toContain('repo-harness hook PreToolUse');
+      expect(pre[1].hooks[0].command).toBe('echo repo-harness hook is documented');
       expect(pre[2].hooks[0].command).toContain('repo-harness hook PreToolUse');
+      expect(pre[3].hooks[0].command).toContain('repo-harness hook PreToolUse');
     });
   });
 

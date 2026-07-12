@@ -131,4 +131,14 @@ describe('risk-based runtime profile enforcement', () => {
       expect(multi.stderr).toContain('OpsPrivateGuard');
     } finally { rmSync(cwd, { recursive: true, force: true }); }
   });
+
+  test('release workflows under .github remain Strict implementation surfaces', () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'profile-github-release-')));
+    try {
+      initRepo(cwd);
+      const result = preEdit(cwd, '.github/workflows/release.yml');
+      expect(result.status).toBe(2);
+      expect(result.stderr).toMatch(/SpecGuard|PlanStatusGuard|StrictContractGuard/);
+    } finally { rmSync(cwd, { recursive: true, force: true }); }
+  });
 });

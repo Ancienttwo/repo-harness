@@ -74,10 +74,14 @@ The full 3x9 matrix and all preserved safety regressions must pass.
 ## Falsifier
 
 The direction is wrong if Lite reduces ceremony but weakens any deterministic
-security/scope/worktree boundary, or if the authoritative 3x9 matrix shows Lite
-does not reduce context/calls/duration without lowering grader success. The cheapest
-proof is the focused risk/profile plus SessionStart budget suite followed by one
-isolated scenario across all three profiles before running the full matrix.
+security/scope/worktree boundary, violates a source quantitative gate, creates a
+full Plan/Contract/External Acceptance chain for a low-risk task, or lowers
+grader success. The matrix must report context/calls/duration truthfully, but the
+source Goal defines no comparative cost threshold; measured provider variance
+or a cost regression is an optimization finding, not permission to invent a new
+completion gate or weaken safety. The cheapest proof is the focused risk/profile
+plus SessionStart budget suite followed by one isolated scenario across all
+three profiles before running the full matrix.
 
 ## Root Cause Evidence
 

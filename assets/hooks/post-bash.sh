@@ -163,6 +163,10 @@ fi
 
 if [[ "$EXIT_CODE" != "0" ]]; then
   if [[ "$failure_signal" == "true" ]]; then
+    if ! repair_circuit="$(hook_circuit_record repair RepairLimit 'automatic repair loop cap' "$COMMAND_TEXT" "repair|$COMMAND_TEXT" "${WORKFLOW_PROFILE:-}")"; then
+      [[ -n "$repair_circuit" ]] && printf '%s\n' "$repair_circuit" >&2
+      exit 2
+    fi
     echo "[PostBash] Tests failed. Reminder: failure = rewrite module, not patching."
   fi
 fi

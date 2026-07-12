@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, lstatSync, mkdirSync, rmSync, writeFileSync } from "fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
@@ -118,7 +118,7 @@ describe("Codex installed copy sync", () => {
     }
   });
 
-  test("minimal profile removes only provably package-owned command facades", () => {
+  test("minimal profile removes an exact package-owned command facade", () => {
     const tmp = join(tmpdir(), `repo-harness-installed-minimal-${Date.now()}`);
     const source = join(tmp, "source");
     const codexSkills = join(tmp, "codex-skills");
@@ -129,11 +129,8 @@ describe("Codex installed copy sync", () => {
       writeFileSync(join(source, "assets", "skill-commands", "repo-harness-plan", "SKILL.md"), "---\nname: repo-harness-plan\n---\n");
       writeFileSync(join(source, "assets", "skill-version.json"), "{}\n");
       const owned = join(codexSkills, "repo-harness-plan");
-      const custom = join(codexSkills, "repo-harness-custom");
       mkdirSync(owned, { recursive: true });
-      mkdirSync(custom, { recursive: true });
       writeFileSync(join(owned, "SKILL.md"), "---\nname: repo-harness-plan\n---\n");
-      writeFileSync(join(custom, "SKILL.md"), "user-authored\n");
 
       const result = spawnSync("bash", [join(ROOT, "scripts", "sync-codex-installed-copies.sh")], {
         cwd: ROOT,
@@ -149,7 +146,110 @@ describe("Codex installed copy sync", () => {
       });
       expect(result.status).toBe(0);
       expect(existsSync(owned)).toBe(false);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test("unknown facade fails closed before changing any managed surface", () => {
+    const tmp = join(tmpdir(), `repo-harness-installed-unknown-${Date.now()}`);
+    const source = join(tmp, "source");
+    const codexSkills = join(tmp, "codex-skills");
+    const canonical = join(codexSkills, "repo-harness");
+    const custom = join(codexSkills, "repo-harness-custom");
+    try {
+      mkdirSync(join(source, "assets", "skill-commands", "repo-harness-plan"), { recursive: true });
+      mkdirSync(custom, { recursive: true });
+      writeFileSync(join(source, "SKILL.md"), "source\n");
+      writeFileSync(join(source, "assets", "skill-commands", "repo-harness-plan", "SKILL.md"), "plan\n");
+      writeFileSync(join(custom, "SKILL.md"), "user-authored\n");
+
+      const result = spawnSync("bash", [join(ROOT, "scripts", "sync-codex-installed-copies.sh")], {
+        cwd: ROOT,
+        encoding: "utf-8",
+        env: {
+          ...process.env,
+          AGENTIC_DEV_SOURCE_ROOT: source,
+          AGENTIC_DEV_LINK_INSTALLED_COPIES: "1",
+          REPO_HARNESS_INSTALL_PROFILE: "minimal",
+          CODEX_SKILLS_ROOT: codexSkills,
+          CLAUDE_SKILLS_ROOT: "",
+        },
+      });
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain("Refusing to replace or remove");
+      expect(result.stderr).toContain("no package facade source exists");
       expect(existsSync(custom)).toBe(true);
+      expect(existsSync(canonical)).toBe(false);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test("modified owner-marked canonical copy fails closed and is preserved", () => {
+    const tmp = join(tmpdir(), `repo-harness-installed-drift-${Date.now()}`);
+    const source = join(tmp, "source");
+    const codexSkills = join(tmp, "codex-skills");
+    const canonical = join(codexSkills, "repo-harness");
+    try {
+      mkdirSync(source, { recursive: true });
+      mkdirSync(codexSkills, { recursive: true });
+      writeFileSync(join(source, "SKILL.md"), "source\n");
+      const env = {
+        ...process.env,
+        AGENTIC_DEV_SOURCE_ROOT: source,
+        AGENTIC_DEV_LINK_INSTALLED_COPIES: "0",
+        REPO_HARNESS_INSTALL_PROFILE: "minimal",
+        CODEX_SKILLS_ROOT: codexSkills,
+        CLAUDE_SKILLS_ROOT: "",
+      };
+
+      const installed = spawnSync("bash", [join(ROOT, "scripts", "sync-codex-installed-copies.sh")], {
+        cwd: ROOT, encoding: "utf-8", env,
+      });
+      expect(installed.status).toBe(0);
+      expect(readFileSync(join(canonical, ".repo-harness-owner.json"), "utf-8")).toContain('"content_hash":"sha256:');
+      writeFileSync(join(canonical, "LOCAL.md"), "unowned modification\n");
+
+      const retry = spawnSync("bash", [join(ROOT, "scripts", "sync-codex-installed-copies.sh")], {
+        cwd: ROOT, encoding: "utf-8", env,
+      });
+      expect(retry.status).toBe(1);
+      expect(retry.stderr).toContain("managed copy content has drifted");
+      expect(readFileSync(join(canonical, "LOCAL.md"), "utf-8")).toBe("unowned modification\n");
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test("unknown canonical directory fails closed without rm -rf", () => {
+    const tmp = join(tmpdir(), `repo-harness-installed-canonical-${Date.now()}`);
+    const source = join(tmp, "source");
+    const codexSkills = join(tmp, "codex-skills");
+    const canonical = join(codexSkills, "repo-harness");
+    try {
+      mkdirSync(source, { recursive: true });
+      mkdirSync(canonical, { recursive: true });
+      writeFileSync(join(source, "SKILL.md"), "package\n");
+      writeFileSync(join(canonical, "SKILL.md"), "user-authored\n");
+
+      const result = spawnSync("bash", [join(ROOT, "scripts", "sync-codex-installed-copies.sh")], {
+        cwd: ROOT,
+        encoding: "utf-8",
+        env: {
+          ...process.env,
+          AGENTIC_DEV_SOURCE_ROOT: source,
+          AGENTIC_DEV_LINK_INSTALLED_COPIES: "1",
+          REPO_HARNESS_INSTALL_PROFILE: "minimal",
+          CODEX_SKILLS_ROOT: codexSkills,
+          CLAUDE_SKILLS_ROOT: "",
+        },
+      });
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain("no valid owner marker");
+      expect(readFileSync(join(canonical, "SKILL.md"), "utf-8")).toBe("user-authored\n");
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

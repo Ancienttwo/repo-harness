@@ -837,13 +837,19 @@ emit_waza_route_hint() {
   fi
 
   if pg_fact REVIEW_RELEASE; then
+    local review_circuit review_profile="standard"
+    prompt_strict_workflow && review_profile="strict"
+    if ! review_circuit="$(hook_circuit_record review ReviewLimit 'automatic review routing cap' /check review-route "$review_profile")"; then
+      [[ -n "$review_circuit" ]] && printf '%s\n' "$review_circuit" >&2
+      return 0
+    fi
     echo "[WazaRoute] Review/release intent detected. Default route: Waza /check."
     emit_review_rubric_prompt
     emit_review_fingerprint_prompt
     if prompt_strict_workflow; then
       emit_external_acceptance_prompt review
-      emit_cross_review_hint merge
     fi
+    emit_cross_review_hint merge
   fi
 }
 
@@ -879,8 +885,12 @@ emit_review_fingerprint_prompt() {
 # so this primarily surfaces on the Claude host; the Codex-side availability note
 # is delivered once by session-start-context.sh.
 emit_cross_review_hint() {
-  local skill peer
-  prompt_strict_workflow || return 0
+  local skill peer consult_circuit risk="false" user="${REPO_HARNESS_USER_REQUESTED_CROSS_MODEL:-false}" consult_profile="standard"
+  if prompt_strict_workflow; then risk="true"; consult_profile="strict"; fi
+  if ! consult_circuit="$(hook_circuit_record cross-model-consult CrossModelLimit 'cross-model consultation cap' "${1:-review}" cross-model-consult "$consult_profile" false "$risk" "$user" false)"; then
+    [[ -n "$consult_circuit" ]] && printf '%s\n' "$consult_circuit" >&2
+    return 0
+  fi
   if [ "${HOOK_HOST:-claude}" = "codex" ]; then
     skill="claude-review"; peer="Claude"
   else

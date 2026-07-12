@@ -404,6 +404,34 @@ refresh_handoff() {
   echo "[FinalizeHandoff] Refreshed $(workflow_handoff_file)." >&2
 }
 
+stop_workflow_profile() {
+  local effective_state=".ai/harness/state/effective.json"
+  local install_state="${HOME:-}/.repo-harness/install-state.json"
+  if [[ -f "$effective_state" ]]; then
+    if command -v jq >/dev/null 2>&1; then
+      jq -r '.workflow_profile // empty' "$effective_state" 2>/dev/null
+      return 0
+    fi
+    if command -v bun >/dev/null 2>&1; then
+      bun -e 'const s=require(process.argv[1]); if (["lite","standard","strict"].includes(s.workflow_profile)) console.log(s.workflow_profile)' "$effective_state" 2>/dev/null
+      return 0
+    fi
+  fi
+  if [[ -n "${HOME:-}" && -f "$install_state" ]]; then
+    local installed=""
+    if command -v jq >/dev/null 2>&1; then
+      installed="$(jq -r '.profile // empty' "$install_state" 2>/dev/null || true)"
+    elif command -v bun >/dev/null 2>&1; then
+      installed="$(bun -e 'const s=require(process.argv[1]); if (typeof s.profile === "string") console.log(s.profile)' "$install_state" 2>/dev/null || true)"
+    fi
+    case "$installed" in
+      minimal) printf 'lite\n' ;;
+      standard|product-planning) printf 'standard\n' ;;
+      strict) printf 'strict\n' ;;
+    esac
+  fi
+}
+
 should_run_plan_completeness_gate() {
   local stop_active="$1"
   local last_message="$2"
@@ -429,6 +457,13 @@ if [[ "$stop_hook_active" == "true" ]]; then
 fi
 
 refresh_handoff
+
+# Lite's complete Stop path is compact handoff only. Review freshness,
+# minimal-change review, plan capture, and delegation fallback belong to the
+# Standard/Strict orchestration envelopes, not brief -> edit -> targeted test.
+if [[ "$(stop_workflow_profile || true)" == "lite" ]]; then
+  exit 0
+fi
 
 minimal_change_refresh_review
 minimal_change_append_handoff

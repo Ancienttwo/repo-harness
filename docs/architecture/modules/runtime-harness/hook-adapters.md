@@ -69,7 +69,9 @@ state as spawned, and injects role/evidence/final-response requirements.
 `SubagentStop.quality` runs `subagent-stop-quality.sh` and forwards valid
 decision JSON only when the final report is clearly incomplete, with one retry
 keyed by session/run identity, subagent identity, and message hash.
-`Stop.default` runs `stop-orchestrator.sh` and refreshes handoff state. Codex
+`Stop.default` runs `stop-orchestrator.sh` and refreshes handoff state. Lite
+terminates after that compact recovery write; Standard/Strict may additionally
+run review freshness, plan completeness, and delegation fallback. Codex
 suppresses Stop decision JSON because current Codex Desktop rejects that
 turn-finalization stdout as an unsupported content type; Claude can still
 consume the direct `stop-orchestrator.sh` decision JSON path. These Codex

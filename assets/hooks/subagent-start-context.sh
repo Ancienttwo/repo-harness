@@ -14,6 +14,21 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 hook_read_stdin_once
 
+subagent_profile=""
+explicit_high_risk="false"
+if [[ -f .ai/harness/state/effective.json ]] && command -v jq >/dev/null 2>&1; then
+  subagent_profile="$(jq -r '.workflow_profile // empty' .ai/harness/state/effective.json 2>/dev/null || true)"
+fi
+active_contract="$(cat .ai/harness/active-plan 2>/dev/null | sed 's#plans/plan-#tasks/contracts/#; s#\.md$#.contract.md#' || true)"
+if [[ -f "$active_contract" ]] && grep -Eiq '^> \*\*(Workflow Profile|Risk)\*\*:[[:space:]]*(strict|high)[[:space:]]*$' "$active_contract"; then
+  subagent_profile="strict"
+  explicit_high_risk="true"
+fi
+if ! subagent_circuit="$(hook_circuit_record subagent SubagentLimit 'bounded subagent spawn cap' spawn-subagent subagent-spawn "$subagent_profile" "$explicit_high_risk" false false false)"; then
+  [[ -n "$subagent_circuit" ]] && printf '%s\n' "$subagent_circuit" >&2
+  exit 2
+fi
+
 JSON_INPUT="$HOOK_STDIN_JSON" REPO_ROOT="${HOOK_REPO_ROOT:-$(pwd)}" bun -e '
   const fs = require("fs");
   const path = require("path");

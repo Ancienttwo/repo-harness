@@ -37,4 +37,16 @@ describe('global SessionStart context budget', () => {
     const persisted = JSON.parse(readFileSync(join(cwd, '.ai/harness/state/session-context-budget.json'), 'utf-8'));
     expect(persisted).toEqual(result.evidence);
   }));
+
+  test('compacts an oversized mandatory section instead of exceeding the hard budget', () => withRepo((cwd) => {
+    const result = budgetSessionContext(cwd, [{
+      id: 'effective-state', priority: 2, content: `BLOCKERS=${'x'.repeat(20_000)}`,
+      mandatory: true, actionable: true, reference: 'repo-harness state resolve --json',
+    }], 'session-oversized');
+    expect(result.evidence.estimated_tokens).toBeLessThanOrEqual(SESSION_CONTEXT_TOKEN_BUDGET);
+    expect(result.evidence.within_budget).toBe(true);
+    expect(result.context).toContain('[ContextRef:effective-state]');
+    expect(result.context).toContain('content_hash=sha256:');
+    expect(result.evidence.dropped_sections).toEqual([{ id: 'effective-state', reason: 'mandatory-compacted' }]);
+  }));
 });

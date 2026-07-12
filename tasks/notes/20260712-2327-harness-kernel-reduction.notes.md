@@ -46,6 +46,12 @@
 
 ## Deviations From Plan Or Spec
 
+- The captured contract initially treated any Lite cost result above Strict as
+  a falsifier. That comparison threshold does not exist in the attached source's
+  Quantitative gates and made completion depend on one noisy provider sample.
+  The falsifier is corrected to the actual source gates: no safety regression,
+  no full artifact chain for low-risk Lite, and no grader regression. Cost
+  regressions remain mandatory reported findings and optimization targets.
 - The final report uses Claude for all 27 records because Codex exhausted its
   live account quota until 2026-07-18. This follows the planned single-provider
   fallback and does not mix models inside one comparison.
