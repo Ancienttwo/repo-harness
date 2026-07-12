@@ -137,6 +137,16 @@ describe("BDD2 Phase E3 authority", () => {
     expect(() => validateEvaluation(REPO_ROOT, manifest)).toThrow("provenance invalid");
   });
 
+  test("source corpus provenance must resolve to the sealed historical manifest", () => {
+    const manifest = materializeAuthorityMutation((corpus) => { corpus.sources[0].source_commit = "f".repeat(40); });
+    expect(() => validateEvaluation(REPO_ROOT, manifest)).toThrow("source corpus commit is unavailable");
+  });
+
+  test("adapter evidence coordinates remain bound to the reviewed appendix", () => {
+    const manifest = materializeAuthorityMutation((corpus) => { const row = corpus.rows.find((item: any) => item.experiment === "EB3" && item.condition === "treatment"); row.appendix_sha256 = "f".repeat(64); });
+    expect(() => validateEvaluation(REPO_ROOT, manifest)).toThrow("corpus appendix authority mismatch");
+  });
+
   test("complete score runs require fresh adjudication only on disagreement", () => {
     const evaluation = validateEvaluation();
     const run = materializeScoreRun("EB3", true);

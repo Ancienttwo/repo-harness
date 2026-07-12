@@ -75,6 +75,12 @@
   match the reviewers' free-form correction descriptions. The dead cost table was
   removed instead of inventing a post-hoc metric; correction descriptions remain
   diagnostic and do not affect the sealed gate.
+- Cross-model re-review then found two remaining provenance gaps. Corpus provenance
+  now resolves each source commit, hashes the historical E2 manifest from Git, and
+  verifies its sealed freeze id. Adapter treatment coordinates also must match the
+  exact tracked appendix hash before their evidence scores are accepted. The same
+  patch handles model-transport `stdin` errors without crashing the concurrent batch
+  and removes a redundant path-only test.
 
 ## Evidence Links
 
