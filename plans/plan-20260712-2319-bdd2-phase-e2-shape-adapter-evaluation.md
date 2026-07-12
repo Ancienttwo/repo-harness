@@ -358,7 +358,7 @@ No other product, skill, CLI, MCP, hook, catalog, sidecar, or `/check` path is a
 
 ## Task Breakdown
 
-- [ ] E2-01: revise the PRD evaluation section and freeze a new fail-closed E2
+- [x] E2-01: revise the PRD evaluation section and freeze a new fail-closed E2
       manifest, unseen datasets, pre-sealed provider artifacts, two-layer scoring,
       metric functions, reviewer separation, fixture workspace, and
       human-adjudication protocol.
@@ -418,7 +418,7 @@ product runtime remain unchanged; no data migration or compatibility rollback ex
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
 
 ## Task Breakdown
-- [ ] E2-01: revise the PRD evaluation section and freeze the fail-closed E2 authority, unseen datasets, pre-sealed provider artifacts, two-layer scoring, fixture workspace, metrics, and human-adjudication protocol.
+- [x] E2-01: revise the PRD evaluation section and freeze the fail-closed E2 authority, unseen datasets, pre-sealed provider artifacts, two-layer scoring, fixture workspace, metrics, and human-adjudication protocol.
 - [ ] E2-02: execute and adjudicate all 72 S2 outputs, then publish `Pass / Reshape / Kill` without post-reveal threshold changes.
 - [ ] E2-03: execute and adjudicate all 24 EB and 24 EI decisions, then publish independent adapter decisions regardless of the S2 outcome.
 - [ ] E2-04: only when S2 and at least one adapter pass, execute the two-condition page-feature pilot; otherwise record it as gated-not-run.
