@@ -58,6 +58,9 @@
 
 - Checks: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
+- Pre-execution full CI on sealed authority: `bun run check:ci` passed with
+  1,142 tests, one platform skip, zero failures, workflow checks, repository
+  inspection, and packaged tarball smoke.
 
 ## Promotion Filter
 
