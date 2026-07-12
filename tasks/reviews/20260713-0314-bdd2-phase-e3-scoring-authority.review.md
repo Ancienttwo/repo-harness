@@ -8,7 +8,7 @@
 > **Last Updated**: 2026-07-13 05:20
 > **Recommendation**: pass
 > **Review Rubric Version**: 1
-> **Reviewed Diff Fingerprint**: sha256:7e3d52cff9c505183fe010a33b3fcab1ca0c43f7b910913edcca147282705f37
+> **Reviewed Diff Fingerprint**: sha256:526db749ab514c67307fadcaee70a16f8c2971ab5ff0b42815ab7ef30a003efb
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 ## Human Review Card
@@ -52,7 +52,7 @@
   - `repo-harness run check-task-workflow --strict` — pass.
   - `bun scripts/inspect-project-state.ts --repo . --format text` — no drift.
   - `bun src/cli/index.ts adopt --repo . --dry-run` — pass.
-  - `repo-harness run verify-contract --contract tasks/contracts/20260713-0314-bdd2-phase-e3-scoring-authority.contract.md --strict` — 25/25 pass, Fulfilled.
+  - `repo-harness run verify-contract --contract tasks/contracts/20260713-0314-bdd2-phase-e3-scoring-authority.contract.md --strict` — 24/24 pass, Fulfilled.
 - Manual checks: historical Phase E/E2 refs hash-valid; no new intervention output;
   I3 gated-not-run; Behavior Audit remains killed; no Phase P product surface.
 - Supporting artifacts: `evals/bdd2/reports/phase-e3-gate.md` and three tracked E3
