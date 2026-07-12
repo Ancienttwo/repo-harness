@@ -387,6 +387,7 @@ describe("run-bdd2-evals sealed execution", () => {
 
       const projected = projectHistoricalShapeEvidence(root, runRelativePath, "shape-evidence.json") as any;
       expect(projected.schema).toBe("repo-harness-bdd2-shape-evidence.v1");
+      expect(projected.projector_sha256).toBe(sha256File(join(root, "scripts/run-bdd2-evals.ts")));
       expect(projected.rows).toHaveLength(6);
       expect(JSON.parse(readFileSync(join(root, "shape-evidence.json"), "utf-8"))).toEqual(projected);
 

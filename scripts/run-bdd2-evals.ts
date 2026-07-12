@@ -1120,6 +1120,7 @@ export function projectHistoricalShapeEvidence(
     || Number(left.repetition) - Number(right.repetition));
   const projection = {
     schema: "repo-harness-bdd2-shape-evidence.v1",
+    projector_sha256: sha256File(SCRIPT_PATH),
     source_commit: runRaw.source_commit,
     run_manifest_sha256: runRaw.manifest_sha256,
     packet_count: expectedCount,

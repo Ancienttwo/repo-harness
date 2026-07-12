@@ -1,5 +1,6 @@
 {
   "schema": "repo-harness-bdd2-shape-evidence.v1",
+  "projector_sha256": "13c7dc4f6eb7cbd6801a00b3dd3f9acd8db92cdbaba253c0b6b21957889fd916",
   "source_commit": "cd9e0426d362614ba277e067633db2596c236491",
   "run_manifest_sha256": "b64a343415fb47c31a8f7aecd29e47409c86c5da1409b6b19bafbdb08c6a2a5b",
   "packet_count": 72,

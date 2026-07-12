@@ -81,8 +81,20 @@ describe("BDD2 Phase E evaluation contract", () => {
     const evidence = JSON.parse(
       readFileSync(join(ROOT, "evals/bdd2/reports/experiment-s-evidence.json"), "utf-8")
     );
+    const currentManifest = JSON.parse(
+      readFileSync(join(ROOT, "evals/bdd2/evaluation-manifest.json"), "utf-8")
+    );
     const truth = JSON.parse(readFileSync(join(ROOT, "evals/bdd2/truth/held-out.json"), "utf-8")).shape_tasks;
+    expect(Object.keys(evidence).sort()).toEqual([
+      "packet_count",
+      "projector_sha256",
+      "rows",
+      "run_manifest_sha256",
+      "schema",
+      "source_commit",
+    ]);
     expect(evidence.schema).toBe("repo-harness-bdd2-shape-evidence.v1");
+    expect(evidence.projector_sha256).toBe(currentManifest.runner.sha256);
     expect(evidence.source_commit).toBe("cd9e0426d362614ba277e067633db2596c236491");
     expect(evidence.run_manifest_sha256).toBe("b64a343415fb47c31a8f7aecd29e47409c86c5da1409b6b19bafbdb08c6a2a5b");
     expect(evidence.packet_count).toBe(72);

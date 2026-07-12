@@ -8,7 +8,7 @@
 > **Source Ref**: sprint:plans/sprints/20260712-bdd2-phase-e-evaluation.sprint.md#BDD2-E-02 — Run Experiment S: shape hypothesis
 > **Artifact Level**: work-package
 > **Promotion Reason**: merge_boundary
-> **Verification Boundary**: Source-commit validation of the 72-coordinate S-v2 run, durable result/audit projection, fail-closed S-v3 foundation authority, strict workflow checks, and PR review.
+> **Verification Boundary**: Source-commit validation of the 72-coordinate S-v2 run, generated durable scored-coordinate authority, fail-closed S-v3 foundation authority, strict workflow checks, and PR review.
 > **Rollback Surface**: Revert branch `codex/bdd2-shape-experiment`; raw ignored run evidence can be removed independently because no product runtime or data migration changes.
 > **Spec**: `docs/spec.md`
 > **PRD**: `plans/prds/20260712-0409-bdd2-shape-audit.prd.md`
@@ -193,8 +193,8 @@ allowed_paths:
 - **State/progress path**: this plan, its contract/notes/review, and Sprint row 2.
 - **Verification evidence**: focused Bun tests; source-commit `validate`, `run`,
   `validate-scores`, and `summarize-shape` outputs; current foundation `validate`;
-  ignored raw run directory; tracked aggregate report and generated 72-row evidence
-  projection; strict workflow checks.
+  ignored raw provenance cache; tracked aggregate report and generated 72-row
+  scored-coordinate authority; strict workflow checks.
 - **Evaluator rubric**: PRD Experiment S metrics plus proof that packets and
   execution workspace exclude condition/truth identity.
 - **Stop condition**: 72 successful coordinates, all blind scores locked and
@@ -219,7 +219,7 @@ allowed_paths:
 - [x] Generate and verify the tracked Experiment S report and gate decision.
 - [x] Invalidate S-v2 as causal evidence after external review found inherited
       process environment; cut current authority to unsealed S-v3 with an env allowlist.
-- [x] Add a generated 72-row score/private evidence projection, truth-aware audit,
+- [x] Add a generated 72-row scored-coordinate authority, truth-aware audit,
       and Kill-path regression coverage.
 - [ ] Complete review/notes/current/handoff, run required checks, commit, push, and open the E-02 module PR.
 
