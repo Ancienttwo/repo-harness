@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-12T22:44:18+0800 -->
+<!-- updated_at: 2026-07-12T23:58:38+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-07-12T22:44:18+0800
-> **Source Branch**: codex/bdd2-phase-e-closeout
-> **Source Commit**: ba35326
+> **Updated At**: 2026-07-12T23:58:38+0800
+> **Source Branch**: codex/chatgpt-coding-mcp-closeout
+> **Source Commit**: 53808ab
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: bdd2-phase-e-complete
+> **Reason**: chatgpt-coding-mcp-latest-main-verified
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -35,13 +35,13 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - /Users/kito/Projects/repo-harness: active-worktree owner -> /Users/kito/Projects/repo-harness
 - /Users/kito/Projects/repo-harness-worktrees/agent-fleet-specialists: plans/plan-20260712-2215-agent-fleet-specialists.md
 - /Users/kito/Projects/repo-harness-worktrees/agent-fleet-specialists: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/agent-fleet-specialists
+- /Users/kito/Projects/repo-harness-worktrees/bdd2-audit-experiment: plans/plan-20260712-2319-bdd2-phase-e2-shape-adapter-evaluation.md
+- /Users/kito/Projects/repo-harness-worktrees/bdd2-audit-experiment: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/bdd2-audit-experiment
 - /Users/kito/Projects/repo-harness-worktrees/bdd2-eval-foundation: plans/plan-20260712-0450-bdd2-eval-foundation.md
 - /Users/kito/Projects/repo-harness-worktrees/bdd2-eval-foundation: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/bdd2-eval-foundation
 - /Users/kito/Projects/repo-harness-worktrees/bdd2-shape-experiment: plans/plan-20260712-0605-bdd2-e-02-run-experiment-s-shape-hypothesis.md
 - /Users/kito/Projects/repo-harness-worktrees/bdd2-shape-experiment: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/bdd2-shape-experiment
-- /Users/kito/Projects/repo-harness-worktrees/chatgpt-coding-mcp-integration: plans/plan-20260712-0301-chatgpt-coding-mcp-integration.md
-- /Users/kito/Projects/repo-harness-worktrees/chatgpt-coding-mcp-integration: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/chatgpt-coding-mcp-integration
-- /Users/kito/Projects/repo-harness-worktrees/harness-cost-baseline-slo: plans/plan-20260712-2151-harness-cost-baseline-slo.md
+- /Users/kito/Projects/repo-harness-worktrees/harness-cost-baseline-slo: plans/plan-20260712-2327-harness-kernel-reduction.md
 - /Users/kito/Projects/repo-harness-worktrees/harness-cost-baseline-slo: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/harness-cost-baseline-slo
 - /Users/kito/Projects/repo-harness-worktrees/native-role-capability-gate: plans/plan-20260712-0219-native-role-capability-gate.md
 - /Users/kito/Projects/repo-harness-worktrees/native-role-capability-gate: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/native-role-capability-gate
@@ -70,22 +70,12 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 13 changed/untracked path(s)
+- Summary: 3 changed/untracked path(s)
 
 ```
- D plans/plan-20260712-2213-bdd2-e-06-record-phase-e-gate-decision.md
- M plans/sprints/20260712-bdd2-phase-e-evaluation.sprint.md
- D tasks/contracts/20260712-2213-bdd2-e-06-record-phase-e-gate-decision.contract.md
- M tasks/current.md
- D tasks/notes/20260712-2213-bdd2-e-06-record-phase-e-gate-decision.notes.md
- D tasks/reviews/20260712-2213-bdd2-e-06-record-phase-e-gate-decision.review.md
- M tasks/todos.md
- M tests/bdd2-evals-contract.test.ts
-?? plans/archive/plan-20260712-2213-bdd2-e-06-record-phase-e-gate-decision.md
-?? tasks/archive/contract-20260712-2242-bdd2-e-06-record-phase-e-gate-decision.md
-?? tasks/archive/notes-20260712-2242-bdd2-e-06-record-phase-e-gate-decision.md
-?? tasks/archive/review-20260712-2242-bdd2-e-06-record-phase-e-gate-decision.md
-?? tasks/archive/todo-20260712-2242-bdd2-e-06-record-phase-e-gate-decision.md
+ M src/effects/repo-registry.ts
+ M tasks/archive/notes-20260712-2333-chatgpt-coding-mcp-integration.md
+ M tests/cli/registry.test.ts
 ```
 
 ## Source Artifacts

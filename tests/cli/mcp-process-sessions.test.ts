@@ -45,6 +45,40 @@ async function pollUntilComplete(
 }
 
 describe('McpProcessSessionManager', () => {
+  test('rejects secret-shaped configured environment key names', () => {
+    for (const key of [
+      'SSH_KEY',
+      'DB_PASS',
+      'BASIC_AUTH',
+      'SSHKEY',
+      'APIKEY',
+      'PASSWD',
+      'DBPASS',
+      'BASICAUTH',
+    ]) {
+      try {
+        buildMcpProcessEnvironment({ baseEnv: {}, configuredEnv: { [key]: 'must-not-leak' } });
+        throw new Error(`expected ${key} to be denied`);
+      } catch (error) {
+        expect(error).toBeInstanceOf(McpProcessError);
+        expect((error as McpProcessError).code).toBe('ENV_KEY_DENIED');
+      }
+    }
+
+    expect(buildMcpProcessEnvironment({
+      baseEnv: {},
+      configuredEnv: {
+        MONITOR_MODE: 'safe',
+        COLOR_SCHEME: 'safe',
+        WRITER_NAME: 'safe',
+      },
+    })).toMatchObject({
+      MONITOR_MODE: 'safe',
+      COLOR_SCHEME: 'safe',
+      WRITER_NAME: 'safe',
+    });
+  });
+
   test('fails fast instead of hanging when node-pty runs under Bun', async () => {
     if (!process.versions.bun) return;
     await withTempRoot(async (root) => {

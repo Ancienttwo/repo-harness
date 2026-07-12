@@ -641,7 +641,7 @@ export async function callCodingTool(ctx: CodingToolContext, name: string, args:
   } catch (error) {
     const code = error instanceof CodingWorkspaceError || error instanceof McpProcessError ? error.code : 'TOOL_FAILED';
     const message = error instanceof Error ? error.message : String(error);
-    audit(workspace, ctx, name, code === 'TOOL_FAILED' ? 'failed' : 'blocked', args, { operation: name, errorCode: code, error: message });
+    audit(workspace, ctx, name, code === 'TOOL_FAILED' ? 'failed' : 'blocked', args, { operation: name, errorCode: code });
     return errorResult(code, message, error instanceof CodingWorkspaceError ? error.details : undefined);
   }
 }

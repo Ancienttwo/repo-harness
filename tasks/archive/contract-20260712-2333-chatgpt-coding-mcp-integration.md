@@ -1,3 +1,9 @@
+> **Archived**: 2026-07-12 23:33
+> **Related Plan**: plans/archive/plan-20260712-0301-chatgpt-coding-mcp-integration.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260712-2333
+
 # Task Contract: chatgpt-coding-mcp-integration
 
 > **Status**: Fulfilled
@@ -6,7 +12,7 @@
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: kito
 > **Capability ID**: root
-> **Last Updated**: 2026-07-12 06:18
+> **Last Updated**: 2026-07-12 22:53
 > **Review File**: `tasks/reviews/20260712-0301-chatgpt-coding-mcp-integration.review.md`
 > **Notes File**: `tasks/notes/20260712-0301-chatgpt-coding-mcp-integration.notes.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
@@ -17,11 +23,14 @@ The coding MCP feature and its authorization-runtime repair passed local, reposi
 
 ## Goal
 
-Replay the seven accepted coding MCP commits onto the rollout-retirement base, merge subsequently advanced `origin/main` through `6b51e31`, preserve current main authorities while keeping the complete default-off coding profile and OAuth authorization-scoped runtime intact, pass all focused and root verification gates, refresh the existing PR #55, then mark it ready and squash-merge it into `main` without absorbing unrelated worktree state.
+Replay the seven accepted coding MCP commits onto the rollout-retirement base, merge subsequently advanced `origin/main` through `6b51e31`, preserve current main authorities while keeping the complete default-off coding profile and OAuth authorization-scoped runtime intact, pass all focused and root verification gates, refresh the existing PR #55, mark it ready and squash-merge it into `main`, then close the post-merge environment-key deny-policy P1 and archive the workflow without absorbing unrelated worktree state.
 
 ## Scope
 
 - In scope:
+  - Apply the user-authorized post-merge closeout remediation: conservatively reject configured Coding MCP environment names containing `KEY`, `PASS`, or `AUTH`, add focused regressions for underscore-delimited and compact secret-shaped names, rerun external acceptance, and archive only after the P1 is cleared.
+  - Preserve the user-selected 24-tool Coding profile surface (19 workflow/status tools plus five direct coding tools), correct bridge/operator documentation that incorrectly said only five tools were exposed, and add an exact tool-count regression without narrowing runtime behavior.
+  - Apply the user-authorized external-review remediation: redact coding-tool failure text before audit persistence, serialize shared registry mutations so concurrent writers cannot lose an authorization-revision bump, add focused failure/concurrency regressions, and rerun external acceptance before archive.
   - Cherry-pick `0b80ef4`, `47cbe50`, `2f3405d`, `443f3ea`, `2a9d490`, `c3a77d1`, and `f3b546d` in order onto `origin/main@788ba60`.
   - Merge refreshed `origin/main@8e160323` and preserve its transactional TypeScript adoption cutover; regenerate derived current/handoff state rather than carrying the retired migration helper contract forward.
   - Merge refreshed `origin/main@bb750141` and preserve its independent BDD² evaluation foundation; regenerate derived current/handoff state rather than carrying either stale snapshot forward.
@@ -34,6 +43,7 @@ Replay the seven accepted coding MCP commits onto the rollout-retirement base, m
   - Run the focused MCP suites, full test suite, all root required checks, contract verification, and install/lockfile verification.
   - Push only the integration branch, reuse PR #55, require fresh green CI and a clean mergeability result, mark the PR ready, and squash-merge it into `main` after all gates pass. Preserve the local integration branch/worktree for post-merge inspection; do not publish or tag a release.
 - Out of scope:
+  - Redesigning the environment policy, adding secret-value inspection, changing the public Coding MCP tool contract, changing literal Ctrl-C input semantics, or broadening remediation beyond the three explicitly authorized P1 classes and their focused regressions.
   - Updating, stashing, committing, cleaning, or switching `/Users/kito/Projects/repo-harness` local main or its two WIP paths.
   - Reintroducing `scripts/mcp-rollout-gate.ts`, rollout flags, candidate-disabled semantics, or any policy surface retired by current `origin/main`.
   - Changing the accepted coding MCP public interface, adding compatibility fallbacks, publishing a release, tagging a version, deleting the integration worktree/branch, or changing Cloudflare/ChatGPT external state.
@@ -121,6 +131,7 @@ allowed_paths:
   - tests/cli/mcp-oauth.test.ts
   - tests/cli/mcp-policy.test.ts
   - tests/cli/mcp-process-sessions.test.ts
+  - tests/cli/registry.test.ts
   - tests/cli/mcp-setup.test.ts
 ```
 
@@ -174,6 +185,7 @@ exit_criteria:
     - path: tests/cli/mcp-oauth.test.ts
     - path: tests/cli/mcp-policy.test.ts
     - path: tests/cli/mcp-process-sessions.test.ts
+    - path: tests/cli/registry.test.ts
     - path: tests/cli/mcp-setup.test.ts
   commands_succeed:
     - bun install --frozen-lockfile

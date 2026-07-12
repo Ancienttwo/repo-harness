@@ -16,7 +16,7 @@ This Skill has four modes:
 1. Setup mode: configure local MCP server files, ChatGPT guide, or Codex MCP config.
 2. Planning handoff mode: preserve the chain idea -> PRD -> checklist Sprint -> Codex Goal.
 3. Execution mode: local Codex reads `.ai/harness/handoff/codex-goal.md` and executes the referenced checklist Sprint.
-4. Direct coding mode: an explicitly enabled `coding` profile opens a granted repo workspace and uses the five guarded coding/process tools without invoking Codex.
+4. Direct coding mode: an explicitly enabled `coding` profile retains the workflow/status tool surface and adds five guarded coding/process tools without invoking Codex.
 
 ## First Reads
 
@@ -76,7 +76,7 @@ Never do these through planner, executor, or orchestrator MCP profiles:
 
 MCP prepares `.ai/harness/handoff/codex-goal.md`; the local Codex host owns `/goal` execution.
 
-Coding exception: the user may explicitly run user-scoped setup with `--profile coding --grant-read-write <repo>`. That profile exposes only `open_workspace`, `read`, `apply_patch`, `exec_command`, and `write_stdin` for direct coding, is revision-bound to explicit repo grants, defaults to managed worktrees, and runs Bash with local-user authority. It must remain off by default; shell is not a filesystem sandbox. It still hard-denies secret paths, `.git/**`, `.env*`, `_ops/**`, writable `_ref/**`, traversal, and symlink escapes.
+Coding exception: the user may explicitly run user-scoped setup with `--profile coding --grant-read-write <repo>`. That profile retains the 19 workflow/status tools and adds exactly five direct coding tools: `open_workspace`, `read`, `apply_patch`, `exec_command`, and `write_stdin`. It is revision-bound to explicit repo grants, defaults to managed worktrees, and runs Bash with local-user authority. It must remain off by default; shell is not a filesystem sandbox. It still hard-denies secret paths, `.git/**`, `.env*`, `_ops/**`, writable `_ref/**`, traversal, and symlink escapes.
 
 Exception: if the user explicitly enables the local `orchestrator` dev runner setting, MCP may expose `run_agent_goal`. That tool must stay local-only, timeout-bounded, audited, limited to the fixed `.ai/harness/handoff/codex-goal.md`, and limited to user-allowed agents such as `codex` or `claude`. It is not arbitrary shell and must not be exposed through an untrusted tunnel.
 

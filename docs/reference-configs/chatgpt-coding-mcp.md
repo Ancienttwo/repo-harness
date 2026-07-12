@@ -119,6 +119,10 @@ an invocation.
 
 ## Tools and workspace lifecycle
 
+- The profile retains 19 workflow/status tools and adds exactly five direct
+  coding tools, for 24 tools total. The direct tools are the five listed below;
+  workflow planning and handoff tools remain available under their existing
+  path policy.
 - `open_workspace({repo_id, mode?, base_ref?})` defaults to a managed worktree;
   `mode: "checkout"` is explicit.
 - `read` accepts workspace-relative paths and returns a SHA-256 revision.
@@ -153,7 +157,9 @@ Reads obey `.ignore` and secret denies. Writes additionally reject `.git/**`,
 symlink escapes. Process environments inherit only basic OS keys. Extra key
 names must appear in ignored `coding.environmentAllowlist`; names associated
 with MCP, Tunnel, OAuth, Codex, Claude, tokens, secrets, passwords, credentials,
-cookies, and private/API keys are always rejected.
+cookies, and private/API keys are always rejected. The name filter is
+conservative: any configured key containing `KEY`, `PASS`, or `AUTH` is denied,
+including compact forms such as `APIKEY`, `PASSWD`, and `BASICAUTH`.
 
 `node-pty` is optional. Under Bun 1.3.x its event delivery is unreliable, so a
 PTY request returns `PTY_UNAVAILABLE` instead of hanging or silently changing to

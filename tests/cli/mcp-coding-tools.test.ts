@@ -362,4 +362,52 @@ describe('coding MCP workspace and file tools', () => {
       await state.processManager.shutdown();
     }
   });
+
+  test('does not persist raw unexpected failure text in the coding audit log', async () => {
+    const state = fixture();
+    const rawFailure = [
+      'fatal: git worktree add failed with stderr from origin',
+      'Authorization: Bearer audit-secret-token',
+      '-----BEGIN PRIVATE KEY-----',
+      'audit-private-key-material',
+      '-----END PRIVATE KEY-----',
+    ].join('\n');
+    try {
+      const opened = parse(await callCodingTool(state.ctx, 'open_workspace', { repo_id: state.repoId, mode: 'checkout' }));
+      state.ctx.testHooks = {
+        afterPatchCommit: () => {
+          throw new CodingWorkspaceError('GIT_COMMAND_FAILED', rawFailure);
+        },
+      };
+
+      const failed = parse(await callCodingTool(state.ctx, 'apply_patch', {
+        workspace_id: opened.workspace_id,
+        operations: [{
+          op: 'replace',
+          path: 'src/a.txt',
+          expected_sha256: sha256('alpha\n'),
+          content: 'changed\n',
+        }],
+      }));
+      expect(failed.error).toMatchObject({ code: 'GIT_COMMAND_FAILED' });
+      expect(failed.error.message).toContain('fatal: git worktree add failed with stderr from origin');
+      expect(failed.error.message).toContain('Authorization: Bearer [REDACTED]');
+      expect(failed.error.message).toContain('[PRIVATE KEY REDACTED]');
+      expect(failed.error.message).not.toContain('audit-secret-token');
+      expect(failed.error.message).not.toContain('audit-private-key-material');
+
+      const audit = readFileSync(join(state.repo, '.ai/harness/mcp/audit.log'), 'utf-8')
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line) as Record<string, unknown>);
+      const failureAudit = audit.reverse().find((entry) => entry.tool === 'apply_patch' && entry.errorCode === 'GIT_COMMAND_FAILED');
+      expect(failureAudit).toMatchObject({ status: 'blocked', errorCode: 'GIT_COMMAND_FAILED' });
+      expect(failureAudit?.error).toBeUndefined();
+      expect(JSON.stringify(failureAudit)).not.toContain('fatal: git worktree add failed with stderr from origin');
+      expect(JSON.stringify(failureAudit)).not.toContain('audit-secret-token');
+      expect(JSON.stringify(failureAudit)).not.toContain('audit-private-key-material');
+    } finally {
+      await state.processManager.shutdown();
+    }
+  });
 });
