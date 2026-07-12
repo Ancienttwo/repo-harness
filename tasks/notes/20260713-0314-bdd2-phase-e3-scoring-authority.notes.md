@@ -35,6 +35,11 @@
   manifest or decision and was discarded. R4 freezes a maximum of three attempts for
   model responses; only a schema-valid response with the exact packet id can become a
   locked score.
+- S3 completed validly under r4. The first EB3/EI3 attempts then failed before a
+  complete adapter score run because the runner parsed the Markdown appendix as JSON.
+  Partial adapter directories had no run manifest or decision and were discarded.
+  The adapter-only authority was resealed as r5 with the frozen appendix delivered as
+  text; the completed S3 r4 evidence remains immutable.
 
 ## Tradeoffs Considered
 

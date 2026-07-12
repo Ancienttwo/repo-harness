@@ -2,7 +2,7 @@
   "schema": "repo-harness-bdd2-evaluation.e3",
   "runner": {
     "path": "scripts/run-bdd2-evals.ts",
-    "sha256": "74078ffd49974d4a026b999f88ce2f72cf6047d7ed3660170e05214c4c98e877"
+    "sha256": "f919bd5ffb90308cbfdcd70e0b4dc428e93e4bcb5f35de3ae810b8b2f52a1af6"
   },
   "output_root": ".ai/harness/runs/bdd2",
   "source_corpus": {
@@ -31,7 +31,7 @@
     "EB3": {
       "kind": "browser-adapter",
       "source_experiment": "EB",
-      "freeze_id": "bdd2-e3-eb3-r4",
+      "freeze_id": "bdd2-e3-eb3-r5",
       "expected_rows": 24,
       "metrics": {
         "path": "evals/bdd2/metrics/phase-e3-scoring-metrics.md",
@@ -115,7 +115,7 @@
     "EI3": {
       "kind": "imagegen-adapter",
       "source_experiment": "EI",
-      "freeze_id": "bdd2-e3-ei3-r4",
+      "freeze_id": "bdd2-e3-ei3-r5",
       "expected_rows": 24,
       "metrics": {
         "path": "evals/bdd2/metrics/phase-e3-scoring-metrics.md",
@@ -381,6 +381,14 @@
     {
       "path": "evals/bdd2/reports/phase-e2-gate.md",
       "sha256": "9457bdc44f6014c6ebea922128fe4906fb85ca86c7d6b3fba45cc4e2cbe3b4e4"
+    },
+    {
+      "path": "evals/bdd2/reports/experiment-s3.md",
+      "sha256": "f5e01884213ecc2ee83a30a31bead1236682bde871b4c85c9c38c4d4c355b9fa"
+    },
+    {
+      "path": "evals/bdd2/reports/experiment-s3-evidence.json",
+      "sha256": "69f2c67e10ce71a326da978f4b96a3a54ade2ec5dcd0068c8911481257a2daed"
     }
   ]
 }
