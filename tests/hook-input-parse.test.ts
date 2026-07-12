@@ -79,5 +79,25 @@ for (const source of [HOOK_INPUT_ASSET, HOOK_INPUT_LIVE]) {
       expect(res.stdout).toBe("fallback");
       expect(res.stderr).not.toContain("[HookInput]");
     });
+
+    test("extracts every Codex apply_patch target path", () => {
+      const command = [
+        "*** Begin Patch",
+        "*** Update File: src/a.ts",
+        "@@",
+        "+a",
+        "*** Add File: deploy/sql/0001_demo.sql",
+        "+select 1;",
+        "*** End Patch",
+      ].join("\n");
+      const cmd = ["set -u", `source '${source}'`, "hook_get_apply_patch_paths"].join("; ");
+      const res = spawnSync("bash", ["-c", cmd], {
+        input: JSON.stringify({ tool_input: { command } }),
+        encoding: "utf-8",
+        env: { ...process.env, HOOK_REPO_ROOT: ROOT },
+      });
+      expect(res.status).toBe(0);
+      expect(res.stdout.trim().split("\n")).toEqual(["src/a.ts", "deploy/sql/0001_demo.sql"]);
+    });
   });
 }

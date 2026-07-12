@@ -36,6 +36,15 @@ function preEdit(cwd: string, path: string, extraEnv: NodeJS.ProcessEnv = {}) {
   });
 }
 
+function preApplyPatch(cwd: string, patch: string) {
+  return spawnSync('bash', [HOOK], {
+    cwd,
+    input: JSON.stringify({ tool_name: 'apply_patch', tool_input: { command: patch } }),
+    encoding: 'utf-8',
+    env: { ...process.env, HOOK_REPO_ROOT: cwd, REPO_HARNESS_CLI: CLI },
+  });
+}
+
 describe('risk-based runtime profile enforcement', () => {
   test('Lite allows brief-edit-test flow without Plan or Contract', () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'profile-lite-')));
@@ -95,5 +104,31 @@ describe('risk-based runtime profile enforcement', () => {
       expect(allowed.status).toBe(0);
       expect(allowed.stdout).toContain('TDD Guard');
     } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  test('Codex apply_patch expands every target path and blocks high-risk or private writes', () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'profile-apply-patch-')));
+    try {
+      initRepo(cwd);
+      const migration = preApplyPatch(cwd, [
+        '*** Begin Patch',
+        '*** Add File: deploy/sql/0001_demo.sql',
+        '+select 1;',
+        '*** End Patch',
+      ].join('\n'));
+      expect(migration.status).toBe(2);
+      expect(migration.stderr).toMatch(/SpecGuard|PlanStatusGuard|StrictContractGuard/);
+
+      const multi = preApplyPatch(cwd, [
+        '*** Begin Patch',
+        '*** Add File: src/safe.ts',
+        '+export const safe = true;',
+        '*** Add File: _ops/secret.txt',
+        '+private',
+        '*** End Patch',
+      ].join('\n'));
+      expect(multi.status).toBe(2);
+      expect(multi.stderr).toContain('OpsPrivateGuard');
+    } finally { rmSync(cwd, { recursive: true, force: true }); }
   });
 });

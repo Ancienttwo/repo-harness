@@ -245,6 +245,25 @@ hook_get_file_path() {
   hook_normalize_file_path "$arg"
 }
 
+# Codex apply_patch exposes the freeform patch at tool_input.command instead of
+# a single file_path. Emit every touched path so the edit guard can enforce the
+# same deterministic boundary for multi-file patches.
+hook_get_apply_patch_paths() {
+  local command=""
+  command="$(hook_json_get '.tool_input.command' '')"
+  [[ -n "$command" ]] || return 0
+
+  while IFS= read -r path || [[ -n "$path" ]]; do
+    [[ -n "$path" ]] || continue
+    hook_normalize_file_path "$path"
+    printf '\n'
+  done < <(
+    printf '%s\n' "$command" | sed -nE \
+      -e 's/^\*\*\* (Add|Update|Delete) File: (.+)$/\2/p' \
+      -e 's/^\*\*\* Move to: (.+)$/\1/p'
+  )
+}
+
 hook_get_prompt() {
   local arg="${1:-}"
   local parsed=""
@@ -405,7 +424,7 @@ hook_get_write_payload() {
   local arg="${1:-}"
   local parsed=""
 
-  for path in '.tool_input.content' '.tool_input.new_string' '.tool_input.text'; do
+  for path in '.tool_input.content' '.tool_input.new_string' '.tool_input.text' '.tool_input.command'; do
     parsed="$(hook_json_get "$path" '')"
     if [[ -n "$parsed" ]]; then
       printf '%s' "$parsed"

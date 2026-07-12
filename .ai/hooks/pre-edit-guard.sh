@@ -11,6 +11,31 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
 . "$SCRIPT_DIR/lib/workflow-state.sh"
 
+if [[ "${REPO_HARNESS_APPLY_PATCH_PATH_EXPANDED:-0}" != "1" ]]; then
+  APPLY_PATCH_COMMAND="$(hook_json_get '.tool_input.command' '')"
+  if [[ -n "$APPLY_PATCH_COMMAND" ]]; then
+    APPLY_PATCH_PATHS="$(hook_get_apply_patch_paths | sed '/^[[:space:]]*$/d')"
+    if [[ -z "$APPLY_PATCH_PATHS" ]]; then
+      hook_structured_error \
+        "ApplyPatchScopeGuard" \
+        "Codex apply_patch input did not expose a parseable target path." \
+        "Use a standard *** Add/Update/Delete File patch header so every target can be checked before the write." \
+        "state_violation"
+      exit 2
+    fi
+    while IFS= read -r expanded_path || [[ -n "$expanded_path" ]]; do
+      [[ -n "$expanded_path" ]] || continue
+      expanded_payload="{\"tool_input\":{\"file_path\":\"$(hook_json_escape "$expanded_path")\",\"command\":\"$(hook_json_escape "$APPLY_PATCH_COMMAND")\"}}"
+      set +e
+      printf '%s' "$expanded_payload" | REPO_HARNESS_APPLY_PATCH_PATH_EXPANDED=1 bash "$0"
+      expanded_status=$?
+      set -e
+      [[ "$expanded_status" -eq 0 ]] || exit "$expanded_status"
+    done <<< "$APPLY_PATCH_PATHS"
+    exit 0
+  fi
+fi
+
 FILE_PATH="$(hook_get_file_path "${1:-}")"
 WRITE_PAYLOAD="$(hook_get_write_payload "${1:-}")"
 [[ -z "$FILE_PATH" ]] && exit 0
@@ -109,7 +134,7 @@ fi
 # editable without an active plan; everything else is an implementation edit.
 is_workflow_surface_path() {
   case "$1" in
-    plans/*|tasks/*|docs/*|deploy/*|.ai/*|.claude/*|.codex/*|.github/*) return 0 ;;
+    plans/*|tasks/*|docs/*|.ai/*|.claude/*|.codex/*|.github/*) return 0 ;;
     *.md|*.markdown) return 0 ;;
     *) return 1 ;;
   esac
