@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-12T15:40:08+0800 -->
+<!-- updated_at: 2026-07-12T15:47:45+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-07-12T15:40:08+0800
+> **Updated At**: 2026-07-12T15:47:45+0800
 > **Source Branch**: codex/upgrade-bun-1-3-14
-> **Source Commit**: 40d9881
+> **Source Commit**: 86e5f9b
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: bun-1-3-14-merged-latest-main
@@ -52,7 +52,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/20260703-inspection-migration.md`: status=active, current_slice=completed-20260703-architecture-closeout, source_plan=(none)
 ## Handoff
 
-- Exact Next Step: Stage the completed module diff first; then External reviewer is Claude; expected Codex. Run external acceptance via codex-review and record ## External Acceptance Advice in tasks/reviews/20260712-1330-bun-1-3-14-runtime-upgrade.review.md. Command: /check
+- Exact Next Step: Stage the completed module diff first; then External acceptance fingerprint sha256:48567fcce4683884338b327f0057dd2d03c3b89a71ce2198da273b89fd21037c is stale for current implementation diff sha256:758ed3a5b732a5eaedb74340859c23fdd72453dd5106ef072ceea28a42a79f4e; rerun peer acceptance. Run external acceptance via claude-review and record ## External Acceptance Advice in tasks/reviews/20260712-1330-bun-1-3-14-runtime-upgrade.review.md. Command: /check
 
 ## Checks
 
@@ -60,22 +60,10 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 13 changed/untracked path(s)
+- Summary: 1 changed/untracked path(s)
 
 ```
-M  .codex/agents/fast-worker.toml
-M  assets/reference-configs/external-tooling.md
-M  assets/templates/helpers/install-agent-fleet.sh
-M  docs/CHANGELOG.md
-M  docs/reference-configs/external-tooling.md
-A  plans/plan-20260711-0115-think-plan-011459.md
-M  plans/prds/20260712-0409-bdd2-shape-audit.prd.md
-A  plans/prds/20260712-BDD.prd.md
-M  scripts/install-agent-fleet.sh
-UU tasks/current.md
-A  tasks/notes/luna-xhigh-fast-worker.notes.md
-M  tests/bootstrap-files.test.ts
-M  tests/install-agent-fleet.test.ts
+ M tasks/current.md
 ```
 
 ## Source Artifacts
