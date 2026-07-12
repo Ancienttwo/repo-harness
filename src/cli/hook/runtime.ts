@@ -296,7 +296,7 @@ export function runHook(opts: RunHookOptions): RunHookResult {
         continue;
       }
 
-      process.stderr.write(
+      fs.writeSync(2,
         `${commandName}: script not found at ${scriptPath} (route ${opts.event}.${opts.routeId})\n`,
       );
       return {
@@ -335,7 +335,7 @@ export function runHook(opts: RunHookOptions): RunHookResult {
       child.status === 0 &&
       looksLikeHookDecisionJson(child.stdout)
     ) {
-      process.stdout.write(child.stdout);
+      fs.writeSync(1, child.stdout);
     }
 
     if (
@@ -343,7 +343,7 @@ export function runHook(opts: RunHookOptions): RunHookResult {
       child.status === 0 &&
       looksLikeHookAdditionalContextJson(child.stdout, opts.event)
     ) {
-      process.stdout.write(child.stdout);
+      fs.writeSync(1, child.stdout);
     }
 
     if (sessionStartCollectStdout && child.status === 0) {
@@ -356,7 +356,7 @@ export function runHook(opts: RunHookOptions): RunHookResult {
       child.status !== 0 &&
       child.stderr
     ) {
-      process.stderr.write(child.stderr);
+      fs.writeSync(2, child.stderr);
     }
 
     if (
@@ -369,7 +369,7 @@ export function runHook(opts: RunHookOptions): RunHookResult {
       child.status !== 0 &&
       child.stdout
     ) {
-      process.stderr.write(child.stdout);
+      fs.writeSync(2, child.stdout);
     }
 
     if (child.status !== 0) {
@@ -391,7 +391,7 @@ export function runHook(opts: RunHookOptions): RunHookResult {
   }
 
   if (sessionStartCollectStdout && sessionStartContexts.length > 0) {
-    process.stdout.write(`${JSON.stringify({
+    fs.writeSync(1, `${JSON.stringify({
       hookSpecificOutput: {
         hookEventName: 'SessionStart',
         additionalContext: sessionStartContexts.join('\n'),

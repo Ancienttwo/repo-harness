@@ -402,7 +402,7 @@ root_terminal_plan_count() {
 markdown_section_has_content() {
   local file="$1"
   local section="$2"
-  awk -v section="$section" '
+  LC_ALL=C awk -v section="$section" '
     $0 ~ "^## " section "[[:space:]]*$" { in_section = 1; next }
     in_section && /^## / { exit }
     !in_section { next }
@@ -437,7 +437,7 @@ sprint_ready_error() {
     missing=1
   else
     local row_errors
-    row_errors="$(awk -F '|' '
+    row_errors="$(LC_ALL=C awk -F '|' '
       /^## Backlog[[:space:]]*$/ { in_section = 1; next }
       in_section && /^## / { exit }
       !in_section { next }

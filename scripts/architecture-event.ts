@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, writeSync } from "fs";
 import { dirname, resolve } from "path";
 
 type Args = {
@@ -93,7 +93,7 @@ function readStdin(): string {
 }
 
 function print(value: string): never {
-  process.stdout.write(value);
+  writeSync(1, value);
   process.exit(0);
 }
 

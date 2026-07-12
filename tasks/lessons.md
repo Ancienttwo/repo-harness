@@ -12,6 +12,12 @@
 
 ## Active Lessons
 
+- Date: 2026-07-12
+- Triggered by correction: the TypeScript 7 upgrade verification exposed truncated JSON from Bun CLI helpers, which cascaded into architecture-queue parse failures and `unknown` review fingerprints.
+- Mistake pattern: writing buffered output with `process.stdout.write` or `process.stderr.write` and immediately calling `process.exit`, allowing Bun to terminate before the pipe was fully flushed.
+- Prevention rule: CLI paths that explicitly terminate must synchronously write authoritative output with `fs.writeSync` before `process.exit`; keep regression coverage at the consuming JSON and hook-protocol boundaries.
+- Where to apply next time: Bun CLI entrypoints and helper commands that return machine-readable output through pipes.
+
 - Date: 2026-07-11
 - Triggered by correction: external ship review showed that `install-agent-fleet.sh` granted `workspace-write` from the parsed frontmatter `name`, so a mismatched `gatekeeper.md` declaring `name: fast-worker` crossed the intended privilege boundary.
 - Mistake pattern: deriving permissions from self-declared source metadata without first binding that metadata to the trusted managed identity selected by the installer loop.
