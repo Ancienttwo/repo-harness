@@ -735,7 +735,7 @@ describe('mcp http transport', () => {
         name: 'exec_command',
         arguments: {
           workspace_id: opened.workspace_id,
-          cmd: "trap 'printf terminated > authorization-revoked.txt; exit 0' TERM; while :; do sleep 0.1; done",
+          cmd: "i=0; while :; do i=$((i + 1)); printf '%s' \"$i\" > authorization-heartbeat.txt; sleep 0.1; done",
           yield_time_ms: 0,
         },
       });
@@ -760,13 +760,16 @@ describe('mcp http transport', () => {
         .map((line) => line.slice('worktree '.length))
         .find((path) => path !== realpathSync(repoRoot));
       expect(worktreeRoot).toBeTruthy();
+      const heartbeatPath = join(worktreeRoot!, 'authorization-heartbeat.txt');
+      for (let attempt = 0; attempt < 40 && !existsSync(heartbeatPath); attempt += 1) await Bun.sleep(100);
+      expect(existsSync(heartbeatPath)).toBe(true);
       setRepoHarnessAccessMode(repoRoot, 'read_only');
-      for (let attempt = 0; attempt < 40 && !existsSync(join(worktreeRoot!, 'authorization-revoked.txt')); attempt += 1) {
-        await Bun.sleep(100);
-      }
-      expect(readFileSync(join(worktreeRoot!, 'authorization-revoked.txt'), 'utf-8')).toBe('terminated');
       const disabled = await fetch(`http://127.0.0.1:${port}/health`, { headers: { origin: 'https://chatgpt.com' } });
       expect(disabled.status).toBe(503);
+      await Bun.sleep(1_500);
+      const stoppedAt = readFileSync(heartbeatPath, 'utf-8');
+      await Bun.sleep(750);
+      expect(readFileSync(heartbeatPath, 'utf-8')).toBe(stoppedAt);
     } finally {
       proc?.kill();
       await proc?.exited.catch(() => undefined);
