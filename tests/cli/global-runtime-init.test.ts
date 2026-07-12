@@ -356,6 +356,37 @@ describe('init command global runtime bootstrap', () => {
     }
   });
 
+  test('strict installs bundled cross-review capability when external marketplace skills are disabled', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-global-strict-cross-review-'));
+    const home = join(tmp, 'home');
+    const repo = join(tmp, 'repo');
+    try {
+      mkdirSync(home, { recursive: true });
+      mkdirSync(repo, { recursive: true });
+
+      const result = runGlobalRuntimeSetup({
+        sourceRoot: ROOT,
+        cwd: repo,
+        target: 'claude',
+        profile: 'strict',
+        installCli: false,
+        syncSkill: false,
+        hostAdapters: false,
+        externalSkills: false,
+        codegraph: false,
+        env: { ...process.env, HOME: home, BUN_INSTALL: join(home, '.bun') },
+      });
+
+      expect(result.exitCode).toBe(0);
+      expect(result.steps.find((step) => step.step === 'configure Waza skills')?.status).toBe('skipped');
+      expect(result.steps.find((step) => step.step === 'cross-review skill codex-review')?.status).toBe('ok');
+      expect(existsSync(join(home, '.claude', 'skills', 'codex-review', 'SKILL.md'))).toBe(true);
+      expect(existsSync(join(home, '.agents', 'skills', 'think'))).toBe(false);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   test('product-planning refuses a partial unowned host skill projection', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-global-partial-skill-'));
     const home = join(tmp, 'home');

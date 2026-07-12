@@ -18,6 +18,10 @@ skills and CodeGraph are not implicitly installed. Profile switching removes
 only package-owned surfaces. Unknown or modified canonical/facade directories
 fail closed before mutation; user-authored content is preserved.
 
+Strict always projects the package-bundled cross-review Skill required by its
+acceptance component. `--no-external-skills` disables marketplace Waza and
+Mermaid installation, but does not disable this bundled strict capability.
+
 Migration from the old broad discovery surface is one-shot and fail closed:
 the sync removes only an exact package-target symlink, a content-hash-verified
 ownership-marked copy, or a byte-identical package directory. There is no runtime

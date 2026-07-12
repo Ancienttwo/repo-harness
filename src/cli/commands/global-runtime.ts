@@ -644,11 +644,15 @@ export function runGlobalRuntimeSetup(opts: GlobalRuntimeOptions = {}): GlobalRu
       ? syncWazaSharedRules(target, env)
       : { step: "sync Waza shared rules", status: "skipped", detail: "Waza install failed" });
     steps.push(installMermaidSkill(sourceRoot, target, env));
-    steps.push(...syncCrossReviewSkills(sourceRoot, target, env));
   } else {
     steps.push({ step: "configure Waza skills", status: "skipped", detail: "disabled" });
     steps.push({ step: "configure Mermaid skill", status: "skipped", detail: "disabled" });
-    steps.push({ step: "cross-review skills", status: "skipped", detail: "disabled" });
+  }
+
+  if (profile === 'strict' || opts.externalSkills === true) {
+    steps.push(...syncCrossReviewSkills(sourceRoot, target, env));
+  } else {
+    steps.push({ step: "cross-review skills", status: "skipped", detail: "disabled by install profile" });
   }
 
   if (opts.brainRoot || profile === 'product-planning') steps.push(configureBrain(opts.brainRoot, env));
