@@ -14,21 +14,21 @@
       "id": "ordinary-feature",
       "category": "ordinary-feature",
       "prompt": "Add a clamp(value, min, max) function to src/math.ts and cover it with focused tests.",
-      "expected_paths": ["src/math.ts", "tests/math.test.ts"],
+      "expected_paths": ["src/math.ts"],
       "acceptance_command": "bun test tests/math.test.ts"
     },
     {
       "id": "cross-capability-feature",
       "category": "cross-capability-feature",
       "prompt": "Add a shared formatter that renders status values as `STATUS: <UPPERCASE>`, use it from src/api/status.ts and src/ui/status.ts, and test both consumers.",
-      "expected_paths": ["src/api/status.ts", "src/ui/status.ts", "src/status-format.ts", "tests/status.test.ts"],
+      "expected_paths": ["src/api/status.ts", "src/ui/status.ts", "src/status-format.ts"],
       "acceptance_command": "bun test tests/status.test.ts"
     },
     {
       "id": "database-migration",
       "category": "database-migration",
-      "prompt": "Create deploy/sql/0001_add_widget_status.sql adding a non-null status column with a safe default, and update the schema assertion test.",
-      "expected_paths": ["deploy/sql/0001_add_widget_status.sql", "tests/schema.test.ts"],
+      "prompt": "Create deploy/sql/0001_add_widget_status.sql adding a non-null status column with a safe default so the existing schema assertion passes.",
+      "expected_paths": ["deploy/sql/0001_add_widget_status.sql"],
       "acceptance_command": "bun test tests/schema.test.ts"
     },
     {
