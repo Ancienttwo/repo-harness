@@ -1,0 +1,50 @@
+# Implementation Notes: bun-1-3-14-runtime-upgrade
+
+> **Status**: Active
+> **Plan**: plans/plan-20260712-1330-bun-1-3-14-runtime-upgrade.md
+> **Contract**: tasks/contracts/20260712-1330-bun-1-3-14-runtime-upgrade.contract.md
+> **Review**: tasks/reviews/20260712-1330-bun-1-3-14-runtime-upgrade.review.md
+> **Last Updated**: 2026-07-12 13:32
+> **Lifecycle**: notes
+
+## Design Decisions
+
+- Keep `package.json#engines.bun` at `>=1.1.35`; the hosted verification baseline
+  changes, but this PR does not claim older supported Bun releases are invalid.
+- Use `writeFileSync` on fd 1/fd 2 only where a process exits immediately. This
+  protects the output contract without adding flush timers, retries, or fallback parsers.
+- Mirror `architecture-event.ts` into the downstream helper template in the same change.
+
+## Deviations From Plan Or Spec
+
+- None recorded.
+
+## Tradeoffs Considered
+
+| Option | Decision | Reason |
+|--------|----------|--------|
+| Keep CI on 1.3.10 | Reject | Avoids the symptom but leaves stable-runtime drift. |
+| Upgrade pin only | Reject | Reproduces truncated architecture and hook payloads. |
+| Synchronous exit-boundary writes | Choose | Smallest deterministic fix for the shared invariant. |
+
+## Open Questions
+
+- None.
+
+## Evidence Links
+
+- Checks: `.ai/harness/checks/latest.json`
+- Run snapshots: `.ai/harness/runs/`
+- Direct proof: Bun 1.3.14 emitted 512 bytes before the fix and 527 bytes after it
+  for the same pretty event JSON.
+- Regression proof: 1,111 pass / 1 skip / 0 fail across 99 files on Bun 1.3.14.
+
+## Promotion Filter
+
+Promote a candidate to `tasks/lessons.md`, `docs/researches/`, or harness asset files only when all three hold: hard to reverse, surprising without local context, and a real trade-off existed. If any one is missing, keep it in this notes file instead.
+
+## Promotion Candidates
+
+- Promote to `tasks/lessons.md` only after a repeated correction or failure pattern.
+- Promote to `docs/researches/` only when it is durable repo knowledge with evidence.
+- Promote to harness asset files only after verification across more than one task or fixture.

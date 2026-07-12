@@ -93,6 +93,8 @@ function readStdin(): string {
 }
 
 function print(value: string): never {
+  // Bun may terminate before a buffered stream write drains when exit follows
+  // immediately. This helper is the process boundary, so commit bytes first.
   writeSync(1, value);
   process.exit(0);
 }

@@ -229,7 +229,7 @@ export function runHook(opts: RunHookOptions): RunHookResult {
 
   const route = getRoute(opts.event, opts.routeId);
   if (!route) {
-    process.stderr.write(
+    fs.writeSync(2,
       `${commandName}: unknown route ${opts.event}.${opts.routeId}\n`,
     );
     return { exitCode: 2, reason: 'unknown-route', repoRoot, scriptsRun, skippedScripts };
@@ -289,7 +289,7 @@ export function runHook(opts: RunHookOptions): RunHookResult {
     const scriptPath = path.join(hooksDir, script);
     if (!fs.existsSync(scriptPath)) {
       if (isSoftMissingScript(opts.event, opts.routeId, script)) {
-        process.stderr.write(
+        fs.writeSync(2,
           `${commandName}: skipping missing script ${scriptPath} (route ${opts.event}.${opts.routeId}); ${syncHint}\n`,
         );
         skippedScripts.push(script);
@@ -317,7 +317,7 @@ export function runHook(opts: RunHookOptions): RunHookResult {
     });
 
     if (child.error) {
-      process.stderr.write(
+      fs.writeSync(2,
         `${commandName}: failed to run ${scriptPath}: ${child.error.message}\n`,
       );
       return {
