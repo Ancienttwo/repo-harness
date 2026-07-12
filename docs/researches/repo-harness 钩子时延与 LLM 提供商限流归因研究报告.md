@@ -12,7 +12,7 @@
 
 ## 仓库形态与可复现实验基线
 
-`repo-harness` 并不是传统“先编译再运行”的 Node 包。`package.json` 的 `bin` 直接把 `repo-harness` 指向 `src/cli/index.ts`，把 `repo-harness-hook` 指向 `src/cli/hook-entry.ts`；同时 `engines` 要求 Bun，说明它依赖 **Bun 直接执行 TypeScript 入口**。仓库脚本也没有单独的 `build` 脚本，维护者常规验证更接近“安装依赖 + typecheck + tests + 各种检查脚本”。CI 里明确使用 Bun 1.3.10，并执行 `bun install --frozen-lockfile` 与 `bun test`。
+`repo-harness` 并不是传统“先编译再运行”的 Node 包。`package.json` 的 `bin` 直接把 `repo-harness` 指向 `src/cli/index.ts`，把 `repo-harness-hook` 指向 `src/cli/hook-entry.ts`；同时 `engines` 要求 Bun，说明它依赖 **Bun 直接执行 TypeScript 入口**。仓库脚本也没有单独的 `build` 脚本，维护者常规验证更接近“安装依赖 + typecheck + tests + 各种检查脚本”。CI 里明确使用 Bun 1.3.14，并执行 `bun install --frozen-lockfile` 与 `bun test`。
 
 因此，在 Linux x86_64 + Bun 环境下，最接近维护者路径的复现实验基线可以写成下面这样：
 

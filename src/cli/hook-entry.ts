@@ -11,7 +11,7 @@ import { runHook as runHookRuntime, type RunHookOptions, type RunHookResult } fr
 import { runPromptGuardDecideCli } from './commands/prompt-guard-decision';
 import { runStateSnapshotCli } from './hook/state-snapshot';
 import type { HookEvent, RouteId } from './hook/route-registry';
-import { writeSync } from 'fs';
+import { writeAllSync } from './runtime/write-all-sync';
 
 export type RunHookEntryOptions = RunHookOptions;
 export type RunHookEntryResult = RunHookResult;
@@ -33,24 +33,24 @@ if (import.meta.main) {
   if (argv[0] === 'minimal-change') {
     const { runMinimalChangeCli } = await import('./hook/minimal-change-cli');
     const result = runMinimalChangeCli(argv.slice(1));
-    if (result.stdout) writeSync(1, result.stdout);
-    if (result.stderr) writeSync(2, result.stderr);
+    if (result.stdout) writeAllSync(1, result.stdout);
+    if (result.stderr) writeAllSync(2, result.stderr);
     process.exit(result.exitCode);
   }
 
   if (argv[0] === 'review-rubric') {
     const { runReviewRubricCli } = await import('./hook/review-rubric');
     const result = runReviewRubricCli(argv.slice(1));
-    if (result.stdout) writeSync(1, result.stdout);
-    if (result.stderr) writeSync(2, result.stderr);
+    if (result.stdout) writeAllSync(1, result.stdout);
+    if (result.stderr) writeAllSync(2, result.stderr);
     process.exit(result.exitCode);
   }
 
   if (argv[0] === 'review-fingerprint') {
     const { runReviewFingerprintCli } = await import('./hook/diff-fingerprint');
     const result = runReviewFingerprintCli(argv.slice(1));
-    if (result.stdout) writeSync(1, result.stdout);
-    if (result.stderr) writeSync(2, result.stderr);
+    if (result.stdout) writeAllSync(1, result.stdout);
+    if (result.stderr) writeAllSync(2, result.stderr);
     process.exit(result.exitCode);
   }
 
@@ -61,14 +61,14 @@ if (import.meta.main) {
 
   if (argv[0] === 'state-snapshot') {
     const result = runStateSnapshotCli(argv.slice(1));
-    if (result.stdout) writeSync(1, result.stdout);
-    if (result.stderr) writeSync(2, result.stderr);
+    if (result.stdout) writeAllSync(1, result.stdout);
+    if (result.stderr) writeAllSync(2, result.stderr);
     process.exit(result.exitCode);
   }
 
   const parsed = parseCliArgs(argv);
   if (!parsed) {
-    writeSync(2, 'repo-harness-hook: usage: repo-harness-hook <event> --route <route>\n');
+    writeAllSync(2, 'repo-harness-hook: usage: repo-harness-hook <event> --route <route>\n');
     process.exit(2);
   }
   const result = runHookEntry(parsed);

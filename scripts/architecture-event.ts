@@ -92,8 +92,21 @@ function readStdin(): string {
   }
 }
 
+function writeAllSync(fd: number, value: string): void {
+  const buffer = Buffer.from(value);
+  let offset = 0;
+  while (offset < buffer.byteLength) {
+    const remaining = buffer.byteLength - offset;
+    const written = writeSync(fd, buffer, offset, remaining);
+    if (!Number.isInteger(written) || written <= 0 || written > remaining) {
+      throw new Error(`invalid synchronous write progress ${written} at byte ${offset}`);
+    }
+    offset += written;
+  }
+}
+
 function print(value: string): never {
-  writeSync(1, value);
+  writeAllSync(1, value);
   process.exit(0);
 }
 

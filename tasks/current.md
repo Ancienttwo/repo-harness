@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-12T15:37:16+0800 -->
+<!-- updated_at: 2026-07-12T16:41:45+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-07-12T15:37:16+0800
+> **Updated At**: 2026-07-12T16:41:45+0800
 > **Source Branch**: codex/bdd2-shape-experiment
-> **Source Commit**: b24e768
+> **Source Commit**: a60d5e7
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: bdd2-e02-local-verified
+> **Reason**: bdd2-e02-merged-latest-main
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -60,14 +60,24 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 5 changed/untracked path(s)
+- Summary: 15 changed/untracked path(s)
 
 ```
- M plans/plan-20260712-0605-bdd2-e-02-run-experiment-s-shape-hypothesis.md
- M plans/prds/20260712-0409-bdd2-shape-audit.prd.md
-R  plans/prds/20260712-BDD.prd.md -> plans/prds/20260712-1426-bdd-v0.prd.md
- M tasks/contracts/20260712-0605-bdd2-e-02-run-experiment-s-shape-hypothesis.contract.md
- M tasks/notes/20260712-0605-bdd2-e-02-run-experiment-s-shape-hypothesis.notes.md
+M  .github/workflows/ci.yml
+M  assets/templates/helpers/architecture-event.ts
+M  "docs/researches/repo-harness \351\222\251\345\255\220\346\227\266\345\273\266\344\270\216 LLM \346\217\220\344\276\233\345\225\206\351\231\220\346\265\201\345\275\222\345\233\240\347\240\224\347\251\266\346\212\245\345\221\212.md"
+A  plans/plan-20260712-1330-bun-1-3-14-runtime-upgrade.md
+M  scripts/architecture-event.ts
+M  src/cli/hook-entry.ts
+M  src/cli/hook/runtime.ts
+M  src/cli/index.ts
+A  src/cli/runtime/write-all-sync.ts
+A  tasks/contracts/20260712-1330-bun-1-3-14-runtime-upgrade.contract.md
+UU tasks/current.md
+A  tasks/notes/20260712-1330-bun-1-3-14-runtime-upgrade.notes.md
+A  tasks/reviews/20260712-1330-bun-1-3-14-runtime-upgrade.review.md
+UU tasks/todos.md
+A  tests/write-all-sync.test.ts
 ```
 
 ## Source Artifacts
