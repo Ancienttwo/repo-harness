@@ -160,6 +160,7 @@ Extend the two existing evidence owners rather than create a telemetry subsystem
 - `scripts/run-skill-evals.ts`: structured provider parsers, nullable usage metadata, summary fields, skill-disabled label.
 - `tests/run-skill-evals.test.ts`: Claude JSON, Codex JSONL, malformed/missing usage, preserved final-response and grader behavior.
 - `docs/reference-configs/harness-overview.md`: evidence authority, metric semantics, and SLO thresholds.
+- `assets/reference-configs/harness-overview.md`: byte-identical product-source projection required by the brain manifest.
 - Current plan/contract/review/notes/current-status/handoff artifacts required by repo workflow.
 
 ## Verification
@@ -170,6 +171,7 @@ Extend the two existing evidence owners rather than create a telemetry subsystem
 - `bash scripts/check-deploy-sql-order.sh`
 - `bash scripts/check-architecture-sync.sh`
 - `bash scripts/check-task-sync.sh`
+- `cmp docs/reference-configs/harness-overview.md assets/reference-configs/harness-overview.md`
 - `repo-harness run check-task-workflow --strict`
 - `bun scripts/inspect-project-state.ts --repo . --format text`
 - `bun src/cli/index.ts adopt --repo . --dry-run`

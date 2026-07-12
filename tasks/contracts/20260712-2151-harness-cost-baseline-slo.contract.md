@@ -88,6 +88,7 @@ allowed_paths:
   - tests/hook-dispatch-diet-report.test.ts
   - tests/run-skill-evals.test.ts
   - docs/reference-configs/harness-overview.md
+  - assets/reference-configs/harness-overview.md
   - plans/plan-20260712-2151-harness-cost-baseline-slo.md
   - tasks/todos.md
   - tasks/current.md
@@ -140,6 +141,7 @@ exit_criteria:
     - tests/hook-dispatch-diet-report.test.ts
     - tests/run-skill-evals.test.ts
     - docs/reference-configs/harness-overview.md
+    - assets/reference-configs/harness-overview.md
   artifacts_exist:
     - .ai/harness/checks/latest.json
     - tasks/notes/20260712-2151-harness-cost-baseline-slo.notes.md
@@ -151,6 +153,7 @@ exit_criteria:
     - bun scripts/hook-dispatch-diet-report.ts --repo . --out /tmp/harness-cost-baseline.json --iterations 20 --baseline-ms 250 --json
     - bun run check:type
     - grep -n "Harness Cost Evidence and SLOs" docs/reference-configs/harness-overview.md
+    - cmp docs/reference-configs/harness-overview.md assets/reference-configs/harness-overview.md
   manual_checks:
     - "Evaluator review file recommends pass"
 ```

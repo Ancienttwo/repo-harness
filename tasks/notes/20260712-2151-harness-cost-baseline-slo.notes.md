@@ -23,7 +23,16 @@
 
 ## Deviations From Plan Or Spec
 
-- None recorded.
+- The first independent review found that the documented phase SLO named p95
+  while the implementation gated on max, SessionStart SLO failure did not fail
+  the CLI, Claude cache-creation tokens were omitted, an inert empty
+  SessionStart response was treated as unavailable, and the captured plan had a
+  duplicate Task Breakdown. All five were corrected before closeout; the final
+  rereview reported no remaining findings.
+- Strict workflow verification exposed that `harness-overview.md` is also a
+  brain-manifest product-source projection. The contract was widened only to
+  mirror the same bytes into `assets/reference-configs/harness-overview.md`;
+  no additional behavior or runtime surface was added.
 
 ## Tradeoffs Considered
 
@@ -38,11 +47,26 @@
 - A later contract may add hot-path runtime spans only if this baseline shows
   that synthetic probes and provider usage are insufficient for a concrete
   routing decision.
+- Final external-acceptance binding is blocked by local repository state rather
+  than the implementation: the shared local `main` is dirty and behind
+  `origin/main`, while `verify-sprint` resolves its fingerprint against local
+  `main`. Claude reviewed the intended `origin/main` diff with P2 advisories
+  only, but the second review against the gate's 89-file stale-main diff hit the
+  Claude session limit. Do not substitute the reviewed `origin/main`
+  fingerprint for the unreviewed local-main fingerprint.
 
 ## Evidence Links
 
 - Checks: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
+- Synthetic 20-iteration baseline: state-snapshot p95 72.51 ms,
+  prompt-guard decision p95 38.29 ms, SessionStart 1,883 bytes / estimated
+  471 tokens; all configured SLOs passed.
+- Provider schema smoke: Claude exposed input, cache-read, cache-creation,
+  output, cost, turns, and session fields; Codex JSONL exposed thread/session
+  and input, cached-input, and output usage while preserving final output.
+- Repository suite: 1,152 passed, one platform skip, zero failed after rebase
+  onto `origin/main` `4c3612a`.
 
 ## Promotion Filter
 
