@@ -43,7 +43,11 @@
 
 ## Deviations From Plan Or Spec
 
-- None recorded.
+- Latest `main` briefly tracked the user-retained V0 as
+  `plans/prds/20260712-BDD.prd.md`, which failed the canonical PRD filename gate.
+  The independent base repair preserved it unchanged at
+  `plans/archive/20260712-1426-bdd-v0.prd.md`; E-02 consumes that mainline path and
+  adds no parser exception or filename compatibility alias.
 
 ## Tradeoffs Considered
 

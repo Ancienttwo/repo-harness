@@ -78,6 +78,8 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 
 ```yaml
 allowed_paths:
+  - plans/prds/20260712-0409-bdd2-shape-audit.prd.md
+  - plans/archive/20260712-1426-bdd-v0.prd.md
   - evals/bdd2/evaluation-manifest.json
   - evals/bdd2/tasks/held-out.json
   - evals/bdd2/truth/held-out.json

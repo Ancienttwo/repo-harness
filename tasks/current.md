@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-12T15:28:47+0800 -->
+<!-- updated_at: 2026-07-12T15:37:16+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-07-12T15:28:47+0800
+> **Updated At**: 2026-07-12T15:37:16+0800
 > **Source Branch**: codex/bdd2-shape-experiment
-> **Source Commit**: 61ba3c2
+> **Source Commit**: b24e768
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: bdd2-e02-post-main-merge
+> **Reason**: bdd2-e02-local-verified
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -60,13 +60,14 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 4 changed/untracked path(s)
+- Summary: 5 changed/untracked path(s)
 
 ```
-A  plans/plan-20260711-0115-think-plan-011459.md
-M  plans/prds/20260712-0409-bdd2-shape-audit.prd.md
-A  plans/prds/20260712-BDD.prd.md
-UU tasks/current.md
+ M plans/plan-20260712-0605-bdd2-e-02-run-experiment-s-shape-hypothesis.md
+ M plans/prds/20260712-0409-bdd2-shape-audit.prd.md
+R  plans/prds/20260712-BDD.prd.md -> plans/prds/20260712-1426-bdd-v0.prd.md
+ M tasks/contracts/20260712-0605-bdd2-e-02-run-experiment-s-shape-hypothesis.contract.md
+ M tasks/notes/20260712-0605-bdd2-e-02-run-experiment-s-shape-hypothesis.notes.md
 ```
 
 ## Source Artifacts

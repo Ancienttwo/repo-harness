@@ -92,6 +92,8 @@ surface or prepare Experiment A data as a hidden dependency.
 
 ```yaml
 allowed_paths:
+  - plans/prds/20260712-0409-bdd2-shape-audit.prd.md
+  - plans/archive/20260712-1426-bdd-v0.prd.md
   - evals/bdd2/evaluation-manifest.json
   - evals/bdd2/tasks/held-out.json
   - evals/bdd2/truth/held-out.json
@@ -221,6 +223,8 @@ allowed_paths:
       process environment; cut current authority to unsealed S-v3 with an env allowlist.
 - [x] Add a generated 72-row scored-coordinate authority, truth-aware audit,
       and Kill-path regression coverage.
+- [x] Preserve the user-retained V0 by normalizing its tracked filename to the
+      canonical PRD timestamp format and updating the V1 source link.
 - [ ] Complete review/notes/current/handoff, run required checks, commit, push, and open the E-02 module PR.
 
 ## Exit Criteria
