@@ -112,6 +112,8 @@ allowed_paths:
   - assets/reference-configs/hook-operations.md
   - .github/workflows/ci.yml
   - tests/cli/hook.test.ts
+  - scripts/run-harness-profile-benchmark.ts
+  - tests/harness-benchmark-matrix.test.ts
   - tasks/todos.md
   - tasks/current.md
   - tasks/contracts/20260713-0314-bdd2-phase-e3-scoring-authority.contract.md

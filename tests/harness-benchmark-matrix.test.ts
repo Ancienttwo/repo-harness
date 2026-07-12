@@ -84,6 +84,7 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
       });
       expect(report.records).toHaveLength(27);
       expect(report.authoritative).toBe(false);
+      expect(report.provider_version).toBe('unavailable');
       expect(report.records.every((record) => record.input_tokens === null && record.grader_acceptance === 'unavailable')).toBe(true);
       expect(JSON.parse(readFileSync(reportPath, 'utf-8')).records).toHaveLength(27);
       expect(readFileSync(reportPath.replace(/\.json$/, '.md'), 'utf-8')).toContain('non-authoritative');

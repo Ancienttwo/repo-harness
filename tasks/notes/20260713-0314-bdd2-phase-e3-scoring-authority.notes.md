@@ -121,6 +121,10 @@
   and surfaces trigger/context stderr as assertion context. Runtime behavior is
   unchanged; the test no longer depends on runner-level harness config or a globally
   installed `repo-harness-hook` binary.
+- The now-unblocked CI run also exposed that the existing benchmark dry-run queried
+  the selected provider's `--version`, contradicting its no-execution contract and
+  failing on runners without Codex. Dry-run reports now record provider version as
+  `unavailable`; execute mode remains the only path that invokes the provider.
 
 ## Evidence Links
 

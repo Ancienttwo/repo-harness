@@ -624,7 +624,9 @@ export async function runHarnessProfileBenchmark(options: CliOptions) {
     source_commit: run('git', ['rev-parse', 'HEAD'], ROOT),
     runner_sha256: hashFile(resolve(import.meta.dir, 'run-harness-profile-benchmark.ts')),
     manifest_sha256: hashFile(options.manifest), fixture_sha256: hashTree(seed),
-    provider_version: run(provider, ['--version'], ROOT), profiles, scenario_count: selected.length,
+    provider_version: options.execute ? run(provider, ['--version'], ROOT) : 'unavailable',
+    profiles,
+    scenario_count: selected.length,
     records,
   };
   writeHarnessBenchmarkReport(report, options.report);
