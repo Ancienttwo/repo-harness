@@ -27,7 +27,10 @@
 
 ## Deviations From Plan Or Spec
 
-- None recorded.
+- The first execution attempt stopped on its first coordinate before producing a
+  response because Codex reported an account usage limit with a 20:14 reset time.
+  That partial ignored directory is excluded and removed; no model/profile/threshold
+  change and no coordinate reuse is permitted on retry.
 
 ## Tradeoffs Considered
 

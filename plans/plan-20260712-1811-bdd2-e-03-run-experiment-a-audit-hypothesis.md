@@ -222,7 +222,7 @@ Manual acceptance:
 - [x] Complete and validate the six-seeded/six-clean held-out Audit fixture set.
 - [x] Freeze Audit metric rules and implement score, coordinate, projection, and summary validation.
 - [x] Add focused happy-path and fail-closed regressions, then pass typecheck/validation.
-- [ ] Seal A with the exact Codex profile at a clean committed HEAD.
+- [x] Seal A with the exact Codex profile at a clean committed HEAD.
 - [ ] Execute all 48 coordinates and retain ignored raw evidence.
 - [ ] Obtain and validate 48 condition-blind Agent-panel scores before reveal.
 - [ ] Generate durable evidence, metrics, Pass/Kill report, and evidence-grade disclosure.
