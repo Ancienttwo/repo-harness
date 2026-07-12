@@ -20,9 +20,12 @@ Authoritative checks:
 - `repo-harness adopt --repo . --dry-run`
 - non-dry-run `bun run benchmark:skills --eval <slug>` runs when release or
   readiness evidence depends on skill effectiveness.
-- `bun scripts/run-harness-profile-benchmark.ts --execute` owns the 3x9
-  No Harness / Adaptive Lite / Strict comparison. No Harness uses an auth-only
-  isolated `CODEX_HOME` plus `--ignore-user-config --ignore-rules --ephemeral`.
+- `bun scripts/run-harness-profile-benchmark.ts --execute --provider
+  <codex|claude>` owns the 3x9 No Harness / Adaptive Lite / Strict comparison.
+  Each report uses exactly one provider. No Harness uses an auth-only isolated
+  Codex home plus `--ignore-user-config --ignore-rules --ephemeral`, or Claude
+  `--safe-mode`; every arm binds `HOME`/settings and `BUN_INSTALL` to its
+  disposable run root.
 
 Non-authoritative smoke:
 
@@ -30,6 +33,9 @@ Non-authoritative smoke:
   skill-effectiveness evidence for release/readiness claims.
 - The profile benchmark without `--execute` is also non-authoritative and keeps
   every provider-owned metric null rather than estimating it.
+- `--regrade-existing` may recompute deterministic acceptance against retained
+  run workspaces after a grader bug fix. It cannot change provider streams or
+  make an unavailable usage record authoritative.
 
 ## P2 Trace
 
@@ -76,3 +82,7 @@ lets small slices run focused tests while release/pre-merge runs the full gate.
 
 - Add capability registry validation to strict workflow checks once the new registry has one more real edit cycle.
 - Keep external tooling probes read-only unless a command explicitly targets tooling maintenance.
+- The 2026-07-13 Claude matrix passed 27/27 but measured Adaptive Lite at 540 s,
+  74 model calls, and 74 s of hooks versus Strict at 416 s, 52 calls, and 72 s
+  of hooks. Optimize cold hook execution and Standard/Strict promotion cost
+  before claiming a performance win; do not lower deterministic risk floors.

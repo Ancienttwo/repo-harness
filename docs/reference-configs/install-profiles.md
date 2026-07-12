@@ -29,3 +29,8 @@ package-owned links; pre-existing or modified external Skills remain untouched
 and are not claimed as active profile components. Repository changes remain
 under the normal adoption transaction and Git rollback boundaries; secrets and
 provider state are never included.
+
+Install and benchmark transactions must also bind `BUN_INSTALL` to the selected
+host home. Setting `HOME` alone does not isolate Bun global installation when a
+caller already exports `BUN_INSTALL`; an inherited real path would mutate the
+operator's global package instead of the disposable profile runtime.

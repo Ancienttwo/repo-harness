@@ -258,6 +258,15 @@ flowchart TD
   RepoHooks -.-> ExecutionOwner
 ```
 
+The adapter fallback is presence-based, not exit-code-based. If
+`repo-harness-hook` exists, the adapter `exec`s it and preserves its final exit
+status; it falls back to the full CLI only when the hook-only binary is absent.
+The hook entrypoint captures the host payload once and replays the identical
+bytes to every script in a multi-script route. Without both rules, the first
+script can consume stdin and a later guard can see an empty payload, or a
+blocking hook can accidentally fall through into a second invocation and allow
+the action.
+
 ## P3 Decision
 
 The shared `.ai/hooks` layer exists to avoid maintaining separate Claude and
