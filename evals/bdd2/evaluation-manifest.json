@@ -9,9 +9,9 @@
     "S2": {
       "kind": "inline-shape",
       "freeze": {
-        "id": "bdd2-e2-s2-r6",
+        "id": "bdd2-e2-s2-r7",
         "state": "sealed",
-        "sealed_at": "2026-07-13T00:52:00+08:00"
+        "sealed_at": "2026-07-13T00:57:00+08:00"
       },
       "repetitions": 3,
       "held_out_task_count": 12,
@@ -29,9 +29,9 @@
     "EB": {
       "kind": "browser-adapter",
       "freeze": {
-        "id": "bdd2-e2-eb-r6",
+        "id": "bdd2-e2-eb-r7",
         "state": "sealed",
-        "sealed_at": "2026-07-13T00:52:00+08:00"
+        "sealed_at": "2026-07-13T00:57:00+08:00"
       },
       "repetitions": 2,
       "held_out_task_count": 6,
@@ -123,9 +123,9 @@
     "EI": {
       "kind": "imagegen-adapter",
       "freeze": {
-        "id": "bdd2-e2-ei-r6",
+        "id": "bdd2-e2-ei-r7",
         "state": "sealed",
-        "sealed_at": "2026-07-13T00:52:00+08:00"
+        "sealed_at": "2026-07-13T00:57:00+08:00"
       },
       "repetitions": 2,
       "held_out_task_count": 6,
@@ -217,9 +217,9 @@
     "I2": {
       "kind": "implementation-pilot",
       "freeze": {
-        "id": "bdd2-e2-i2-r6",
+        "id": "bdd2-e2-i2-r7",
         "state": "sealed",
-        "sealed_at": "2026-07-13T00:52:00+08:00"
+        "sealed_at": "2026-07-13T00:57:00+08:00"
       },
       "repetitions": 2,
       "held_out_task_count": 1,
@@ -346,7 +346,7 @@
       "expected_version": "codex-cli 0.144.1",
       "response_schema": {
         "path": "evals/bdd2/rubrics/agent-response-e2.schema.json",
-        "sha256": "0073828f3dbd435077c9c11363f3fa2c6da01ac08da99500412630e25e152040"
+        "sha256": "97769400c05f4c9cc2459d2ca8c17b537dd272931cafb5815c6db3a237cdc9a0"
       },
       "model": "gpt-5.3-codex-spark",
       "sampling": {

@@ -5,7 +5,7 @@
   "additionalProperties": false,
   "required": ["schema", "outcome", "evidence_use"],
   "properties": {
-    "schema": {"const": "repo-harness-bdd2-agent-response.e2"},
+    "schema": {"type": "string", "const": "repo-harness-bdd2-agent-response.e2"},
     "outcome": {
       "type": "object",
       "additionalProperties": false,
@@ -16,7 +16,7 @@
         "recovery_and_trust": {"$ref": "#/$defs/stringList"},
         "exposed_user_concepts": {"$ref": "#/$defs/stringList"},
         "excluded_behaviors": {"$ref": "#/$defs/stringList"},
-        "authority": {"enum": ["inline", "prd"]}
+        "authority": {"type": "string", "enum": ["inline", "prd"]}
       }
     },
     "evidence_use": {
