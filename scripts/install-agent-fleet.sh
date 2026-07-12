@@ -97,10 +97,10 @@ const MODEL_EFFORT_MAP = {
   },
   sonnet: {
     max: {
-      model: "gpt-5.6-sol",
-      effort: "high",
+      model: "gpt-5.6-luna",
+      effort: "xhigh",
       sourceDescription: "Sonnet 5 at max effort",
-      targetDescription: "GPT-5.6 Sol at high reasoning",
+      targetDescription: "GPT-5.6 Luna at extra high reasoning",
     },
   },
 };

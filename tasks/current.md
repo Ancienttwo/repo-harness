@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-12T06:47:46+0800 -->
+<!-- updated_at: 2026-07-12T14:34:01+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-07-12T06:47:46+0800
+> **Updated At**: 2026-07-12T14:34:01+0800
 > **Source Branch**: codex/chatgpt-coding-mcp-integration
-> **Source Commit**: e8cc3f4
+> **Source Commit**: af4f811
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: chatgpt-coding-mcp-review-remediation-final
+> **Reason**: chatgpt-coding-mcp-latest-main-integration
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -39,6 +39,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - /Users/kito/Projects/repo-harness-worktrees/bdd2-shape-experiment: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/bdd2-shape-experiment
 - /Users/kito/Projects/repo-harness-worktrees/native-role-capability-gate: plans/plan-20260712-0219-native-role-capability-gate.md
 - /Users/kito/Projects/repo-harness-worktrees/native-role-capability-gate: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/native-role-capability-gate
+- /Users/kito/Projects/repo-harness-worktrees/upgrade-bun-1-3-14: plans/plan-20260712-1330-bun-1-3-14-runtime-upgrade.md
+- /Users/kito/Projects/repo-harness-worktrees/upgrade-bun-1-3-14: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/upgrade-bun-1-3-14
 - /Users/kito/Projects/repo-harness-wt-codex-native-role-model-override: plans/plan-20260711-0219-codex-native-role-model-override.md
 - /Users/kito/Projects/repo-harness-wt-codex-native-role-model-override: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-codex-native-role-model-override
 ## Active Sprint
@@ -58,22 +60,31 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 13 changed/untracked path(s)
+- Summary: 22 changed/untracked path(s)
 
 ```
- M .agents/skills/repo-harness-chatgpt-bridge/references/chatgpt-connector-manual.md
- M docs/reference-configs/chatgpt-coding-mcp.md
- M docs/repo-harness-chatgpt-mcp-setup.md
- M plans/plan-20260712-0301-chatgpt-coding-mcp-integration.md
- M src/cli/mcp/coding-tools.ts
- M src/cli/mcp/setup.ts
- M src/cli/mcp/transports/http.ts
- M tasks/contracts/20260712-0301-chatgpt-coding-mcp-integration.contract.md
- M tasks/current.md
- M tasks/notes/20260712-0301-chatgpt-coding-mcp-integration.notes.md
- M tasks/reviews/20260712-0301-chatgpt-coding-mcp-integration.review.md
- M tests/cli/mcp-coding-tools.test.ts
- M tests/cli/mcp-http.test.ts
+M  .codex/agents/fast-worker.toml
+M  assets/reference-configs/external-tooling.md
+M  assets/templates/helpers/architecture-event.ts
+M  assets/templates/helpers/check-task-workflow.sh
+M  assets/templates/helpers/install-agent-fleet.sh
+M  bun.lock
+M  docs/CHANGELOG.md
+M  docs/reference-configs/external-tooling.md
+M  package.json
+A  plans/plan-20260711-0115-think-plan-011459.md
+M  plans/prds/20260712-0409-bdd2-shape-audit.prd.md
+A  plans/prds/20260712-BDD.prd.md
+M  scripts/architecture-event.ts
+M  scripts/check-task-workflow.sh
+M  scripts/install-agent-fleet.sh
+M  src/cli/hook-entry.ts
+M  src/cli/hook/runtime.ts
+UU tasks/current.md
+M  tasks/lessons.md
+A  tasks/notes/luna-xhigh-fast-worker.notes.md
+M  tests/bootstrap-files.test.ts
+M  tests/install-agent-fleet.test.ts
 ```
 
 ## Source Artifacts
