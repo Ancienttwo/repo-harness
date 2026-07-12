@@ -38,6 +38,23 @@
 - Direct proof: Bun 1.3.14 emitted 512 bytes before the fix and 527 bytes after it
   for the same pretty event JSON.
 - Regression proof: 1,111 pass / 1 skip / 0 fail across 99 files on Bun 1.3.14.
+- Hosted proof: PR #56 Test plus macOS/Linux/Windows MCP matrix passed on Bun 1.3.14.
+- Claude review challenged remaining `console.log/error + process.exit()` paths.
+  Byte probes at 527, 10,000, and 1,000,000 characters were complete for both
+  streams; the 85,428-byte `adopt --dry-run --json` payload parsed successfully,
+  and `prompt-guard-decide` emitted its complete six-byte result. Those paths use
+  Bun's synchronous console implementation and do not reproduce the buffered
+  `process.stdout.write()` failure, so no broader rewrite was made.
+- A second exact-diff Claude review found three direct `process.stderr.write`
+  branches still inside `runHook` (unknown route, soft-missing script, required
+  missing script). Those branches return to callers that immediately exit, so
+  they were converted to the same synchronous fd-2 invariant. The complete
+  `tests/cli/hook.test.ts` suite passed 35/35 afterward.
+- The follow-up review then found the remaining `adopt --dry-run` direct
+  `process.stdout.write(plan.output)` exit boundary. It was converted to fd-1
+  synchronous output as well; there are now no direct buffered stdout/stderr
+  writes left in `src/cli/index.ts`, `src/cli/hook-entry.ts`,
+  `src/cli/hook/runtime.ts`, or `scripts/architecture-event.ts`.
 
 ## Promotion Filter
 

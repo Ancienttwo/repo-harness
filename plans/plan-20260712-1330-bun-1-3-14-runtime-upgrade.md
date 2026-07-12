@@ -113,4 +113,4 @@ command result -> synchronous fd 1/fd 2 write -> process exit -> complete caller
 - [x] Make architecture and hook exit-boundary output synchronous.
 - [x] Synchronize helper template and runtime research current truth.
 - [x] Pass focused regression tests, typecheck, and the 1.3.14 full suite.
-- [ ] Project workflow artifacts, run repository checks, commit, push, and open the upgrade PR.
+- [x] Project workflow artifacts, run repository checks, commit, push, and open the upgrade PR.
