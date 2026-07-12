@@ -9,9 +9,9 @@
     "S2": {
       "kind": "inline-shape",
       "freeze": {
-        "id": "bdd2-e2-s2-r16",
+        "id": "bdd2-e2-s2-r17",
         "state": "sealed",
-        "sealed_at": "2026-07-13T04:10:00+08:00"
+        "sealed_at": "2026-07-13T04:25:00+08:00"
       },
       "repetitions": 3,
       "held_out_task_count": 12,
@@ -29,9 +29,9 @@
     "EB": {
       "kind": "browser-adapter",
       "freeze": {
-        "id": "bdd2-e2-eb-r16",
+        "id": "bdd2-e2-eb-r17",
         "state": "sealed",
-        "sealed_at": "2026-07-13T04:10:00+08:00"
+        "sealed_at": "2026-07-13T04:25:00+08:00"
       },
       "repetitions": 2,
       "held_out_task_count": 6,
@@ -123,9 +123,9 @@
     "EI": {
       "kind": "imagegen-adapter",
       "freeze": {
-        "id": "bdd2-e2-ei-r16",
+        "id": "bdd2-e2-ei-r17",
         "state": "sealed",
-        "sealed_at": "2026-07-13T04:10:00+08:00"
+        "sealed_at": "2026-07-13T04:25:00+08:00"
       },
       "repetitions": 2,
       "held_out_task_count": 6,
@@ -217,9 +217,9 @@
     "I2": {
       "kind": "implementation-pilot",
       "freeze": {
-        "id": "bdd2-e2-i2-r16",
+        "id": "bdd2-e2-i2-r17",
         "state": "sealed",
-        "sealed_at": "2026-07-13T04:10:00+08:00"
+        "sealed_at": "2026-07-13T04:25:00+08:00"
       },
       "repetitions": 2,
       "held_out_task_count": 1,
@@ -238,7 +238,7 @@
         "sha256": "14ba65e2890175fa4cf284a7be004751090fb97f4b1dd486e16744bc788377cf",
         "acceptance": {
           "path": "evals/bdd2/fixtures/i2-page-feature/acceptance/run.mjs",
-          "sha256": "521c2da99f7481e19fb55cf9f8756252fbf138194b46e75518fd7cb67254805d"
+          "sha256": "854322639039505a066a8fdcfd1aa2d9e4816b329f096c93811bcbe664f043e2"
         },
         "acceptance_command": [
           "node",

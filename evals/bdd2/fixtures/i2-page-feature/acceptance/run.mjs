@@ -43,10 +43,38 @@ assert.equal(completed.retry().ok, false, "completed export cannot be retried");
 
 const combined = await Promise.all(entries.map((entry) => readFile(path.join(root, entry), "utf8"))).then((parts) => parts.join("\n").toLowerCase());
 const page = await readFile(path.join(root, "index.html"), "utf8");
-const clickHandler = page.match(/row\.addEventListener\(["']click["'],\s*\(event\)\s*=>\s*\{([\s\S]*?)\n\s*\}\);/)?.[1] ?? "";
-assert.match(clickHandler, /if\s*\(action\s*===\s*["']retry["']\)\s*controller\.retry\(\)/, "live click handler must invoke retry for the Retry action");
+const clickHandler = extractArrowBlock(page, /row\.addEventListener\(["']click["']/);
+assert.match(clickHandler, /if\s*\(\s*action\s*===\s*["']retry["']\s*\)\s*(?:\{\s*)?controller\.retry\(\)\s*;?/, "live click handler must invoke retry for the Retry action");
+assert.match(extractArrowBlock(`row.addEventListener("click", (event) => { if (action === "retry") { controller.retry(); } });`, /row\.addEventListener\(["']click["']/), /controller\.retry/, "balanced parser accepts a braced retry branch");
+assert.match(extractArrowBlock(`row.addEventListener("click", (event) => { setTimeout(() => { paint(); }); if (action === "retry") controller.retry(); });`, /row\.addEventListener\(["']click["']/), /controller\.retry/, "balanced parser ignores nested callback closers");
 for (const forbidden of ["queue priority", "worker pool", "provider selector", "retry settings", "job dashboard"]) {
   assert.equal(combined.includes(forbidden), false, `forbidden backstage surface: ${forbidden}`);
 }
 
 console.log("I2 acceptance passed");
+
+function extractArrowBlock(source, marker) {
+  const match = marker.exec(source);
+  if (!match) return "";
+  const arrow = source.indexOf("=>", match.index + match[0].length);
+  const start = arrow < 0 ? -1 : source.indexOf("{", arrow + 2);
+  if (start < 0) return "";
+  let depth = 0;
+  let quote = "";
+  let escaped = false;
+  let lineComment = false;
+  let blockComment = false;
+  for (let index = start; index < source.length; index += 1) {
+    const char = source[index];
+    const next = source[index + 1] ?? "";
+    if (lineComment) { if (char === "\n") lineComment = false; continue; }
+    if (blockComment) { if (char === "*" && next === "/") { blockComment = false; index += 1; } continue; }
+    if (quote) { if (escaped) escaped = false; else if (char === "\\") escaped = true; else if (char === quote) quote = ""; continue; }
+    if (char === "/" && next === "/") { lineComment = true; index += 1; continue; }
+    if (char === "/" && next === "*") { blockComment = true; index += 1; continue; }
+    if (char === '"' || char === "'" || char === "`") { quote = char; continue; }
+    if (char === "{") depth += 1;
+    if (char === "}" && --depth === 0) return source.slice(start + 1, index);
+  }
+  return "";
+}
