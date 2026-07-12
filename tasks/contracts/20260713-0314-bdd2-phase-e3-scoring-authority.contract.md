@@ -111,6 +111,7 @@ allowed_paths:
   - tests/hook-contracts.test.ts
   - assets/reference-configs/hook-operations.md
   - .github/workflows/ci.yml
+  - tests/cli/hook.test.ts
   - tasks/todos.md
   - tasks/current.md
   - tasks/contracts/20260713-0314-bdd2-phase-e3-scoring-authority.contract.md

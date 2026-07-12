@@ -115,6 +115,10 @@
   Provenance now names its reachable rebased-equivalent commit `0140509`, whose E2
   manifest hash and `evals/bdd2` tree are identical to the original source; the
   embedded 120 outputs and their hashes are unchanged.
+- Once CI advanced past E3, it exposed an ambient-HOME dependency in the existing
+  SubagentStart hook test. That test now uses an isolated HOME for the trigger and
+  both context calls, and asserts trigger/context failure text directly. Runtime
+  behavior is unchanged; the test no longer depends on runner-level harness config.
 
 ## Evidence Links
 
