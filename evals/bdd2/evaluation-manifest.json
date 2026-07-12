@@ -1,49 +1,41 @@
 {
-  "schema": "repo-harness-bdd2-evaluation.e2",
+  "schema": "repo-harness-bdd2-evaluation.e3",
   "runner": {
     "path": "scripts/run-bdd2-evals.ts",
-    "sha256": "2bbaec13a4a76d49f391f65b75f9bdbea6d7196ec9fad91341eeabff743d7742"
+    "sha256": "b96328ce619406c541aa1d9d34dbb050a439c813f61d2b378db2a72a48432d07"
   },
   "output_root": ".ai/harness/runs/bdd2",
+  "source_corpus": {
+    "path": "evals/bdd2/evidence/e3/source-corpus.json",
+    "sha256": "50e3f1819166815da1727ac940ebfffdc3c43244fec0c9c8a1a1813e9ffa205c"
+  },
+  "source_tasks": {
+    "path": "evals/bdd2/tasks/held-out-e2.json",
+    "sha256": "049edd504484bb3262b4d28a4b6f0d324a4f7bfdc856f61520611282e2c4c720"
+  },
+  "source_truth": {
+    "path": "evals/bdd2/truth/held-out-e2.json",
+    "sha256": "1572d9234b47a906267e2cf41a4b6c728e299a11ff221f2333d9a450e91ae1ca"
+  },
   "experiments": {
-    "S2": {
+    "S3": {
       "kind": "inline-shape",
-      "freeze": {
-        "id": "bdd2-e2-s2-r17",
-        "state": "sealed",
-        "sealed_at": "2026-07-13T04:25:00+08:00"
-      },
-      "repetitions": 3,
-      "held_out_task_count": 12,
-      "conditions": {
-        "control": {
-          "prompt": "evals/bdd2/prompts/shape-v2-baseline.md",
-          "sha256": "70763c18290d55b5a86b2c90e6aa130bd0a7cebb0ccbce2e45c32c15e7369f3c"
-        },
-        "treatment": {
-          "prompt": "evals/bdd2/prompts/shape-v2-treatment.md",
-          "sha256": "ed43651307f71130da69219b91c6dc59813d25293c8e71d96dd4a2e8a62130e9"
-        }
+      "source_experiment": "S2",
+      "freeze_id": "bdd2-e3-s3-r1",
+      "expected_rows": 72,
+      "metrics": {
+        "path": "evals/bdd2/metrics/phase-e3-scoring-metrics.md",
+        "sha256": "1bf68dd351d1a6a216e9dcb63608f852b82dfe1294ec77f8d315f1594f9a3b9a"
       }
     },
-    "EB": {
+    "EB3": {
       "kind": "browser-adapter",
-      "freeze": {
-        "id": "bdd2-e2-eb-r17",
-        "state": "sealed",
-        "sealed_at": "2026-07-13T04:25:00+08:00"
-      },
-      "repetitions": 2,
-      "held_out_task_count": 6,
-      "conditions": {
-        "control": {
-          "prompt": "evals/bdd2/prompts/browser-adapter-baseline.md",
-          "sha256": "6229bef8c916a79a8b43ce971d248d8d3e02f2fc318ad5bdd722ccd2da1356aa"
-        },
-        "treatment": {
-          "prompt": "evals/bdd2/prompts/browser-adapter-treatment.md",
-          "sha256": "758140d2000b85b5050c63c84e007ff2cc5e81f63a7145dd5035cbf4bd3d3d99"
-        }
+      "source_experiment": "EB",
+      "freeze_id": "bdd2-e3-eb3-r1",
+      "expected_rows": 24,
+      "metrics": {
+        "path": "evals/bdd2/metrics/phase-e3-scoring-metrics.md",
+        "sha256": "1bf68dd351d1a6a216e9dcb63608f852b82dfe1294ec77f8d315f1594f9a3b9a"
       },
       "appendices": {
         "EB-H-01": {
@@ -120,24 +112,14 @@
         }
       }
     },
-    "EI": {
+    "EI3": {
       "kind": "imagegen-adapter",
-      "freeze": {
-        "id": "bdd2-e2-ei-r17",
-        "state": "sealed",
-        "sealed_at": "2026-07-13T04:25:00+08:00"
-      },
-      "repetitions": 2,
-      "held_out_task_count": 6,
-      "conditions": {
-        "control": {
-          "prompt": "evals/bdd2/prompts/imagegen-adapter-baseline.md",
-          "sha256": "f8003ea1d5393532327024470d2057463adee0a1b6c7d85f8187070595a70f15"
-        },
-        "treatment": {
-          "prompt": "evals/bdd2/prompts/imagegen-adapter-treatment.md",
-          "sha256": "53425f2f5057419f906939c8f589d501a35f56502fcb24d266c9e4287a6c398a"
-        }
+      "source_experiment": "EI",
+      "freeze_id": "bdd2-e3-ei3-r1",
+      "expected_rows": 24,
+      "metrics": {
+        "path": "evals/bdd2/metrics/phase-e3-scoring-metrics.md",
+        "sha256": "1bf68dd351d1a6a216e9dcb63608f852b82dfe1294ec77f8d315f1594f9a3b9a"
       },
       "appendices": {
         "EI-H-01": {
@@ -213,76 +195,50 @@
           ]
         }
       }
-    },
-    "I2": {
-      "kind": "implementation-pilot",
-      "freeze": {
-        "id": "bdd2-e2-i2-r17",
-        "state": "sealed",
-        "sealed_at": "2026-07-13T04:25:00+08:00"
-      },
-      "repetitions": 2,
-      "held_out_task_count": 1,
-      "conditions": {
-        "control": {
-          "prompt": "evals/bdd2/prompts/implementation-pilot-baseline.md",
-          "sha256": "83800a459d16d6d9d18ce43435f96666e0da661388af874814212f8cf9773ea7"
-        },
-        "treatment": {
-          "prompt": "evals/bdd2/prompts/implementation-pilot-treatment.md",
-          "sha256": "54ba901cfaf3ee88717e807215583c0dfc156f4343f4d417e543349c75328bed"
-        }
-      },
-      "fixture": {
-        "path": "evals/bdd2/fixtures/i2-page-feature/base",
-        "sha256": "14ba65e2890175fa4cf284a7be004751090fb97f4b1dd486e16744bc788377cf",
-        "acceptance": {
-          "path": "evals/bdd2/fixtures/i2-page-feature/acceptance/run.mjs",
-          "sha256": "854322639039505a066a8fdcfd1aa2d9e4816b329f096c93811bcbe664f043e2"
-        },
-        "acceptance_command": [
-          "node",
-          "{acceptance}",
-          "{workspace}"
-        ]
-      },
-      "prerequisite": {
-        "shape": "NotRun",
-        "adapters": {
-          "EB": "NotRun",
-          "EI": "NotRun"
-        }
-      },
-      "treatment_context": {
-        "path": "evals/bdd2/evidence/i2/I2-H-01.md",
-        "sha256": "07a6028eaddd9855e5da7ecb39b6c3e6777dcac6da77bbfcae1960836984ee4b"
-      }
-    }
-  },
-  "partitions": {
-    "development": {
-      "tasks": "evals/bdd2/tasks/development-e2.json",
-      "tasks_sha256": "069ba7deeee4dcd1a575c2ddfaf057317152e72afd8cee5dec5776e8d253f70a",
-      "truth": "evals/bdd2/truth/development-e2.json",
-      "truth_sha256": "21a08f3605fbc2a27992394be76e1c198e3e54068a7d5e2aeae66e92b3420983"
-    },
-    "held_out": {
-      "tasks": "evals/bdd2/tasks/held-out-e2.json",
-      "tasks_sha256": "049edd504484bb3262b4d28a4b6f0d324a4f7bfdc856f61520611282e2c4c720",
-      "truth": "evals/bdd2/truth/held-out-e2.json",
-      "truth_sha256": "1572d9234b47a906267e2cf41a4b6c728e299a11ff221f2333d9a450e91ae1ca"
     }
   },
   "adjudication": {
-    "rubric": "evals/bdd2/rubrics/e2-adjudication.md",
-    "rubric_sha256": "987e7bb054f317046f47e08876c12e7937e24ee56c414700fcd77234eea42205",
+    "resolution": "fresh-adjudicator-score-on-canonical-disagreement",
     "reviewers": {
       "outcome": [
-        "e2-outcome-reviewer-1",
-        "e2-outcome-reviewer-2"
+        "e3-outcome-reviewer-1",
+        "e3-outcome-reviewer-2"
       ],
-      "evidence": "e2-evidence-reviewer",
-      "owner": "codex-owner-proxy"
+      "adjudicator": "e3-fresh-score-adjudicator",
+      "browser_evidence": "e3-browser-evidence-reviewer",
+      "imagegen_evidence": "e3-imagegen-evidence-reviewer"
+    },
+    "prompts": {
+      "outcome": {
+        "path": "evals/bdd2/prompts/outcome-reviewer-e3.md",
+        "sha256": "dc1c28e1ee28476c61cd26c7e1ad549e1d3ea4ce800ffc5318fb3ce57afc99bd"
+      },
+      "adjudicator": {
+        "path": "evals/bdd2/prompts/outcome-adjudicator-e3.md",
+        "sha256": "da18800223fb1c900fcbf8e2c2a779a8ae3a16def08de978cab46725a2233290"
+      },
+      "browser_evidence": {
+        "path": "evals/bdd2/prompts/browser-evidence-reviewer-e3.md",
+        "sha256": "d715c5bc74acb9559c0a2dab9b54689362a5028eac5ead5b8563c285109d3a86"
+      },
+      "imagegen_evidence": {
+        "path": "evals/bdd2/prompts/imagegen-evidence-reviewer-e3.md",
+        "sha256": "ae13de5769aea1e2b7240dfe75b452a0c45b7830ced7674f71bb3bc0c3de69a5"
+      }
+    },
+    "schemas": {
+      "outcome": {
+        "path": "evals/bdd2/rubrics/outcome-score-response-e3.schema.json",
+        "sha256": "ca74d302eeceeb981a2d1ec42582baf381e6e728d5463c8d16a3e597c1258b28"
+      },
+      "browser_evidence": {
+        "path": "evals/bdd2/rubrics/browser-evidence-score-response-e3.schema.json",
+        "sha256": "f7446e3efc5957556e3cc6cd1d931bbc31f2629646e05377647c74a5329d2e42"
+      },
+      "imagegen_evidence": {
+        "path": "evals/bdd2/rubrics/imagegen-evidence-score-response-e3.schema.json",
+        "sha256": "b07b9587022b95e3be5ad634e7d8591c7d9a4c450f6db1502f911280315127a3"
+      }
     },
     "correction_costs": {
       "remove_unsupported_behavior": 2,
@@ -295,93 +251,135 @@
       "remove_tracked_behavior_artifact": 2,
       "clarify_current_truth": 1,
       "clarify_recovery_or_failure": 2
+    }
+  },
+  "model_profile": {
+    "command": "/Users/kito/.local/bin/codex",
+    "args": [
+      "exec",
+      "--ignore-user-config",
+      "--ignore-rules",
+      "--ephemeral",
+      "--skip-git-repo-check",
+      "--sandbox",
+      "workspace-write",
+      "-m",
+      "{model}",
+      "-c",
+      "model_reasoning_effort=\"{sampling.reasoning_effort}\"",
+      "-c",
+      "web_search=\"disabled\"",
+      "--output-schema",
+      "{response_schema}",
+      "-"
+    ],
+    "version_args": [
+      "--version"
+    ],
+    "expected_version": "codex-cli 0.144.1",
+    "model": "gpt-5.3-codex-spark",
+    "sampling": {
+      "reasoning_effort": "medium"
     },
-    "experiments": {
-      "S2": {
-        "score_schema": "evals/bdd2/rubrics/outcome-score-e2.schema.json",
-        "score_schema_sha256": "ad29a2136dea24ed6cdee3b2914627f0f4079ebb0daf321af46cad28e7516945",
-        "metrics": "evals/bdd2/metrics/shape-v2-metrics.md",
-        "metrics_sha256": "d3327f4a5cdb680e36c8a303463441ef01511c3e4f1b86dd1321a0a68456222f"
-      },
-      "EB": {
-        "score_schema": "evals/bdd2/rubrics/outcome-score-e2.schema.json",
-        "score_schema_sha256": "ad29a2136dea24ed6cdee3b2914627f0f4079ebb0daf321af46cad28e7516945",
-        "metrics": "evals/bdd2/metrics/browser-adapter-metrics.md",
-        "metrics_sha256": "74e4537765bb8b3f1fe5efac99479052a16d2e5e1e1bda2df00bea88e986351d"
-      },
-      "EI": {
-        "score_schema": "evals/bdd2/rubrics/outcome-score-e2.schema.json",
-        "score_schema_sha256": "ad29a2136dea24ed6cdee3b2914627f0f4079ebb0daf321af46cad28e7516945",
-        "metrics": "evals/bdd2/metrics/imagegen-adapter-metrics.md",
-        "metrics_sha256": "829b38767c4c68d636d144fb1a3fe7f95fa15dbda6f9bceb24cc33dd29b39fcc"
-      },
-      "I2": {
-        "score_schema": "evals/bdd2/rubrics/outcome-score-e2.schema.json",
-        "score_schema_sha256": "ad29a2136dea24ed6cdee3b2914627f0f4079ebb0daf321af46cad28e7516945",
-        "metrics": "evals/bdd2/metrics/implementation-pilot-metrics.md",
-        "metrics_sha256": "e3336296cbea3506ac2a870d7534c73c011893c52a5f34d2d91bf1e182126085"
-      }
-    }
+    "credential_mode": "codex-auth-copy",
+    "transport": "model-transport-only",
+    "tools": {
+      "browser": false,
+      "web_search": false,
+      "mcp": false,
+      "external": false,
+      "repository": false
+    },
+    "max_concurrency": 8
   },
-  "agents": {
-    "codex": {
-      "command": "/Users/kito/.local/bin/codex",
-      "args": [
-        "exec",
-        "--ignore-user-config",
-        "--ignore-rules",
-        "--ephemeral",
-        "--skip-git-repo-check",
-        "--sandbox",
-        "workspace-write",
-        "-m",
-        "{model}",
-        "-c",
-        "model_reasoning_effort=\"{sampling.reasoning_effort}\"",
-        "-c",
-        "web_search=\"disabled\"",
-        "--output-schema",
-        "{response_schema}",
-        "-"
-      ],
-      "version_args": [
-        "--version"
-      ],
-      "expected_version": "codex-cli 0.144.1",
-      "response_schema": {
-        "path": "evals/bdd2/rubrics/agent-response-e2.schema.json",
-        "sha256": "97769400c05f4c9cc2459d2ca8c17b537dd272931cafb5815c6db3a237cdc9a0"
-      },
-      "model": "gpt-5.3-codex-spark",
-      "sampling": {
-        "reasoning_effort": "medium"
-      },
-      "input_source": "stdin",
-      "response_source": "stdout",
-      "workspace_mode": "isolated",
-      "credential_mode": "codex-auth-copy",
-      "transport": "model-transport-only",
-      "tools": {
-        "browser": false,
-        "web_search": false,
-        "mcp": false,
-        "external": false,
-        "repository": false
-      }
-    }
+  "i3": {
+    "prerequisite": {
+      "shape": "Pass",
+      "any_adapter": "Pass"
+    },
+    "fixture": {
+      "path": "evals/bdd2/fixtures/i2-page-feature/fixture.json",
+      "sha256": "74f1936b1d279e29072a9062bfd48732076e1039c99dba54f31909bcf1d3cfa7"
+    },
+    "acceptance": {
+      "path": "evals/bdd2/fixtures/i2-page-feature/acceptance/run.mjs",
+      "sha256": "854322639039505a066a8fdcfd1aa2d9e4816b329f096c93811bcbe664f043e2"
+    },
+    "acceptance_command": [
+      "node",
+      "{acceptance}",
+      "{workspace}"
+    ],
+    "baseline_prompt": {
+      "path": "evals/bdd2/prompts/implementation-pilot-baseline.md",
+      "sha256": "83800a459d16d6d9d18ce43435f96666e0da661388af874814212f8cf9773ea7"
+    },
+    "treatment_prompt": {
+      "path": "evals/bdd2/prompts/implementation-pilot-treatment.md",
+      "sha256": "54ba901cfaf3ee88717e807215583c0dfc156f4343f4d417e543349c75328bed"
+    },
+    "treatment_context": {
+      "path": "evals/bdd2/evidence/i2/I2-H-01.md",
+      "sha256": "07a6028eaddd9855e5da7ecb39b6c3e6777dcac6da77bbfcae1960836984ee4b"
+    },
+    "response_schema": {
+      "path": "evals/bdd2/rubrics/agent-response-e2.schema.json",
+      "sha256": "97769400c05f4c9cc2459d2ca8c17b537dd272931cafb5815c6db3a237cdc9a0"
+    },
+    "repetitions": 2
   },
-  "historical_phase_e": [
+  "historical_reports": [
     {
       "path": "evals/bdd2/reports/experiment-s.md",
       "sha256": "467cf6f9df52639a88403a31edd9d0e73ab84c0a2b2b9983b3d7a8b1d1dd7287"
+    },
+    {
+      "path": "evals/bdd2/reports/experiment-s-evidence.json",
+      "sha256": "a1c78d3135571ff32af43bedf420be57e00fd3fe21273d04661235f1a65de114"
     },
     {
       "path": "evals/bdd2/reports/experiment-a.md",
       "sha256": "c0f9fc92f4d566ece7a3699744bd97951612a7e909707aef52197a2a039ef02a"
     },
     {
+      "path": "evals/bdd2/reports/experiment-a-evidence.json",
+      "sha256": "d071f4f67230bd180407ec0f4c0dcdc90d5cd6c7e11bb01dbeac537135be6c97"
+    },
+    {
       "path": "evals/bdd2/reports/phase-e-gate.md",
       "sha256": "688d61398c8e5b4c314575159b28aee659e97b47e083601a6738a20620a9a47c"
+    },
+    {
+      "path": "evals/bdd2/reports/experiment-s2.md",
+      "sha256": "9400032be258a25361d32452b87678b56a3b4d1e6b146a4933a1d71c74b0639e"
+    },
+    {
+      "path": "evals/bdd2/reports/experiment-s2-evidence.json",
+      "sha256": "8c8e933fdd97305c90ebcbc9aa0e04820c21e3e9973fa26b77a8cd49d66cee1c"
+    },
+    {
+      "path": "evals/bdd2/reports/experiment-eb.md",
+      "sha256": "95a396b8ed0628d4df6af768f461baa50414713ace0f0b8d6b87c787d5d7dd06"
+    },
+    {
+      "path": "evals/bdd2/reports/experiment-eb-evidence.json",
+      "sha256": "2b28ade15f197a865792cb59920962964554b93d0be26eae12e98b16591c3541"
+    },
+    {
+      "path": "evals/bdd2/reports/experiment-ei.md",
+      "sha256": "fcee576d7ff9eec5fb11a84524cc208e64cddb2861cbf03f20b0c00ac91c6224"
+    },
+    {
+      "path": "evals/bdd2/reports/experiment-ei-evidence.json",
+      "sha256": "d4da01b7179e82ec989addbb2bf2c48b0d630ddc9078d6f835ae72f0c38dd5ff"
+    },
+    {
+      "path": "evals/bdd2/reports/experiment-i2.md",
+      "sha256": "36c47dd465244de2d0f37aecb02e382f45f141edf00cd7ac6291ca0040ff697f"
+    },
+    {
+      "path": "evals/bdd2/reports/phase-e2-gate.md",
+      "sha256": "9457bdc44f6014c6ebea922128fe4906fb85ca86c7d6b3fba45cc4e2cbe3b4e4"
     }
   ]
 }

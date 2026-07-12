@@ -142,7 +142,7 @@ identity reuse, pre-reveal leakage, missing adjudication, or report mismatch.
 
 ## Task Breakdown
 
-- [ ] E3-01: Freeze E3 manifest, tracked source corpus, schemas, prompts, metrics, and
+- [x] E3-01: Freeze E3 manifest, tracked source corpus, schemas, prompts, metrics, and
       direct-cut runner contract.
 - [ ] E3-02: Generate condition-blind score packets and execute complete S3, EB3, and
       EI3 primary/evidence scoring with frozen adjudication.
@@ -180,7 +180,7 @@ E2 evidence remains authoritative and unchanged.
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
 
 ## Task Breakdown
-- [ ] E3-01: Freeze E3 authority and tracked source corpus.
+- [x] E3-01: Freeze E3 authority and tracked source corpus.
 - [ ] E3-02: Execute corrected outcome/evidence scoring and adjudication.
 - [ ] E3-03: Publish S3/EB3/EI3 decisions and conditional I3 result.
 - [ ] E3-04: Complete verification, external review, and Sprint gate.

@@ -9,7 +9,16 @@
 
 ## Design Decisions
 
-- ...
+- E3 is a direct current-authority cut; the runner accepts only the E3 manifest.
+- The tracked E3 corpus contains 120 redacted E2 full/normalized responses plus their
+  original hashes, while ignored E2 runs remain provenance input rather than required
+  clean-checkout state.
+- Proposal-only outcome scores cannot judge filesystem artifacts. I3, if enabled,
+  derives artifact delta only from before/after inventories.
+- Primary disagreement resolution is a frozen fresh holistic adjudicator score. It
+  never unions, averages, or mechanically selects primary fields.
+- Evidence compliance counts unsupported assertions as violations and records explicit
+  limitations separately without penalizing them.
 
 ## Deviations From Plan Or Spec
 
@@ -19,7 +28,10 @@
 
 | Option | Decision | Reason |
 |--------|----------|--------|
-| ... | ... | ... |
+| Regenerate E2 intervention outputs | Reject | The defect was scoring authority, not the frozen intervention. |
+| Reuse old owner-proxy scores | Reject | Their aggregation semantics were not sealed. |
+| Rescore frozen output with fresh isolated reviewers | Use | Corrects only the invalid layer while preserving intervention evidence. |
+| Keep E2 and E3 parsers active | Reject | Current authority must remain singular and fail closed. |
 
 ## Open Questions
 

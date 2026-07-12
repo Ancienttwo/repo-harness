@@ -1,10 +1,10 @@
 #!/usr/bin/env bun
 
-import { createHash, randomBytes } from "crypto";
-import { spawnSync } from "child_process";
+import { createHash } from "crypto";
+import { spawn, spawnSync } from "child_process";
 import {
-  cpSync,
   chmodSync,
+  cpSync,
   existsSync,
   lstatSync,
   mkdtempSync,
@@ -13,7 +13,6 @@ import {
   realpathSync,
   readdirSync,
   rmSync,
-  statSync,
   writeFileSync,
 } from "fs";
 import { homedir, tmpdir } from "os";
@@ -24,614 +23,232 @@ const SCRIPT_PATH = fileURLToPath(import.meta.url);
 export const REPO_ROOT = resolve(dirname(SCRIPT_PATH), "..");
 export const DEFAULT_MANIFEST_PATH = "evals/bdd2/evaluation-manifest.json";
 
-export type ExperimentId = "S2" | "EB" | "EI" | "I2";
-export type PartitionId = "development" | "held_out";
+export type ExperimentId = "S3" | "EB3" | "EI3";
+export type SourceExperimentId = "S2" | "EB" | "EI";
 export type ConditionId = "control" | "treatment";
-export type FreezeState = "foundation" | "sealed";
-export type ExperimentKind = "inline-shape" | "browser-adapter" | "imagegen-adapter" | "implementation-pilot";
 
 export interface FileReference { path: string; sha256: string }
-interface AppendixReference { appendix: FileReference; assets: FileReference[] }
-interface PromptReference { prompt: string; sha256: string }
-interface FreezeReference { id: string; state: FreezeState; sealed_at: string | null }
-
-interface CommonExperiment {
-  kind: ExperimentKind;
-  freeze: FreezeReference;
-  repetitions: number;
-  held_out_task_count: number;
-  conditions: Record<ConditionId, PromptReference>;
+interface PromptReference { path: string; sha256: string }
+interface ExperimentAuthority {
+  kind: "inline-shape" | "browser-adapter" | "imagegen-adapter";
+  source_experiment: SourceExperimentId;
+  freeze_id: string;
+  expected_rows: number;
+  metrics: FileReference;
+  appendices?: Record<string, { appendix: FileReference; assets: FileReference[] }>;
 }
-
-interface ShapeExperiment extends CommonExperiment { kind: "inline-shape" }
-interface AdapterExperiment extends CommonExperiment {
-  kind: "browser-adapter" | "imagegen-adapter";
-  appendices: Record<string, AppendixReference>;
-}
-interface PilotExperiment extends CommonExperiment {
-  kind: "implementation-pilot";
-  fixture: FileReference & { acceptance: FileReference; acceptance_command: string[] };
-  treatment_context: FileReference;
-  prerequisite: { shape: "Pass" | "NotRun"; adapters: { EB: "Pass" | "Fail" | "NotRun"; EI: "Pass" | "Fail" | "NotRun" } };
-}
-export type ExperimentDefinition = ShapeExperiment | AdapterExperiment | PilotExperiment;
-
-export interface AgentProfile {
+interface ModelProfile {
   command: string;
   args: string[];
   version_args: string[];
   expected_version: string;
-  response_schema: FileReference;
   model: string;
   sampling: Record<string, string | number | boolean | null>;
-  input_source: "stdin";
-  response_source: "stdout";
-  workspace_mode: "isolated";
-  credential_mode: "none" | "codex-auth-copy";
+  credential_mode: "codex-auth-copy";
   transport: "model-transport-only";
   tools: { browser: false; web_search: false; mcp: false; external: false; repository: false };
+  max_concurrency: number;
 }
-
-interface AdjudicationAuthority {
-  score_schema: string;
-  score_schema_sha256: string;
-  metrics: string;
-  metrics_sha256: string;
-}
-
 export interface EvaluationManifest {
-  schema: "repo-harness-bdd2-evaluation.e2";
+  schema: "repo-harness-bdd2-evaluation.e3";
   runner: FileReference;
   output_root: string;
-  experiments: { S2: ShapeExperiment; EB: AdapterExperiment; EI: AdapterExperiment; I2: PilotExperiment };
-  partitions: Record<PartitionId, { tasks: string; tasks_sha256: string; truth: string; truth_sha256: string }>;
+  source_corpus: FileReference;
+  source_tasks: FileReference;
+  source_truth: FileReference;
+  experiments: Record<ExperimentId, ExperimentAuthority>;
   adjudication: {
-    rubric: string;
-    rubric_sha256: string;
-    reviewers: { outcome: [string, string]; evidence: string; owner: string };
+    resolution: "fresh-adjudicator-score-on-canonical-disagreement";
+    reviewers: { outcome: [string, string]; adjudicator: string; browser_evidence: string; imagegen_evidence: string };
+    prompts: { outcome: PromptReference; adjudicator: PromptReference; browser_evidence: PromptReference; imagegen_evidence: PromptReference };
+    schemas: { outcome: FileReference; browser_evidence: FileReference; imagegen_evidence: FileReference };
     correction_costs: Record<string, number>;
-    experiments: Record<ExperimentId, AdjudicationAuthority>;
   };
-  agents: Record<string, AgentProfile>;
-  historical_phase_e: FileReference[];
+  model_profile: ModelProfile;
+  i3: {
+    prerequisite: { shape: "Pass"; any_adapter: "Pass" };
+    fixture: FileReference;
+    acceptance: FileReference;
+    acceptance_command: string[];
+    baseline_prompt: FileReference;
+    treatment_prompt: FileReference;
+    treatment_context: FileReference;
+    response_schema: FileReference;
+    repetitions: 2;
+  };
+  historical_reports: FileReference[];
 }
 
-export interface EvaluationTask {
-  id: string;
+export interface CorpusRow {
+  source_packet_id: string;
   experiment: ExperimentId;
-  title: string;
-  agent_input: string;
-  named_uncertainty?: string;
-}
-interface TaskSet { schema: "repo-harness-bdd2-task-set.e2"; partition: PartitionId; tasks: EvaluationTask[] }
-
-export interface ProtectedConcern { concern: string; severity: "P0" | "P1" | "P2" | "P3"; summary: string }
-interface TruthEntry {
-  kind: ExperimentKind;
-  risk_tags?: string[];
-  required_behaviors?: string[];
-  unsupported_expansions?: string[];
-  protected_concerns: ProtectedConcern[];
-  expected_authority?: "inline" | "prd";
-  escalation_required?: boolean;
-  reference_pattern?: string;
-  forbidden_inference?: string;
-  expected_disposition?: "Adopt" | "Adapt" | "Avoid" | "Defer";
-  required_boundary?: string[];
-  unsupported_concepts?: string[];
-  uncertainty_closable_by_browser?: boolean;
-  prototype_can_close_uncertainty?: boolean;
-  expected_resolution?: string;
-  fixture?: string;
-  required_acceptance?: string[];
-}
-interface TruthSet { schema: "repo-harness-bdd2-truth-set.e2"; partition: PartitionId; tasks: Record<string, TruthEntry> }
-
-export interface ValidatedEvaluation {
-  repoRoot: string;
-  manifestPath: string;
-  authorityPaths: string[];
-  manifest: EvaluationManifest;
-  tasks: Record<PartitionId, EvaluationTask[]>;
-}
-
-export interface PlanOptions {
-  experiment: ExperimentId;
-  partition: PartitionId;
-  taskIds?: string[];
-  conditions?: ConditionId[];
-  repetitions?: number;
-}
-export interface RunCoordinate {
-  coordinateId: string;
-  experiment: ExperimentId;
-  partition: PartitionId;
-  taskId: string;
+  source_experiment: SourceExperimentId;
+  task_id: string;
   condition: ConditionId;
   repetition: number;
-  promptPath: string;
+  appendix_sha256: string | null;
+  full_response_sha256: string;
+  normalized_outcome_sha256: string;
+  full_response: Record<string, unknown>;
+  normalized_outcome: Record<string, unknown>;
 }
-export interface RunOptions extends PlanOptions { agent: string; outputPath?: string; now?: Date }
-
-export interface StructuredAgentResponse {
-  schema: "repo-harness-bdd2-agent-response.e2";
-  outcome: {
-    boundary_decision: string;
-    required_behaviors: string[];
-    recovery_and_trust: string[];
-    exposed_user_concepts: string[];
-    excluded_behaviors: string[];
-    authority: "inline" | "prd";
-  };
-  evidence_use?: {
-    adopted_claims: string[];
-    adapted_claims: string[];
-    avoided_claims: string[];
-    unsupported_claims: string[];
-  };
+interface SourceCorpus {
+  schema: "repo-harness-bdd2-source-corpus.e3";
+  sources: Array<{ source_experiment: SourceExperimentId; freeze_id: string; source_commit: string; run_manifest_sha256: string; packet_count: number }>;
+  rows: CorpusRow[];
 }
-
-export interface RunReport {
-  schema: "repo-harness-bdd2-run.e2";
+interface ProtectedConcern { concern: string; severity: "P0" | "P1" | "P2" | "P3"; summary: string }
+export interface OutcomeScore {
+  uncertainty_closed: boolean;
+  boundary_category: string;
+  unsupported_expansion: number;
+  unsupported_user_concepts: number;
+  required_behavior_omission: number;
+  protected_concern_omissions: ProtectedConcern[];
+  authority_fit: boolean;
+  escalation_correct: boolean;
+  correction_operations: string[];
+  notes: string;
+}
+interface LockedOutcomeScore { schema: "repo-harness-bdd2-locked-outcome-score.e3"; packet_id: string; reviewer_id: string; locked_at: string; response_sha256: string; score: OutcomeScore }
+interface LockedEvidenceScore { schema: "repo-harness-bdd2-locked-evidence-score.e3"; packet_id: string; reviewer_id: string; locked_at: string; response_sha256: string; score: Record<string, unknown> }
+interface ScoreRun {
+  schema: "repo-harness-bdd2-score-run.e3";
   freeze_id: string;
   source_commit: string;
   manifest_sha256: string;
-  agent: string;
-  model: string;
-  sampling: Record<string, string | number | boolean | null>;
   experiment: ExperimentId;
-  partition: PartitionId;
   output_path: string;
-  packets: Array<{
-    packet_id: string;
-    task_id: string;
-    status: "success";
-    full_response_sha256: string;
-    normalized_outcome_sha256: string;
-    fixture_capture?: { source_tree_sha256: string; final_tree_sha256: string; patch_sha256: string; tests_sha256: string; inventory_sha256: string };
-  }>;
+  packets: Array<{ packet_id: string; source_packet_id: string; task_id: string; condition: ConditionId; repetition: number; full_response_sha256: string; normalized_outcome_sha256: string; reviewer_score_sha256: [string, string]; adjudication_sha256: string | null; evidence_score_sha256: string | null }>;
 }
 
 function fail(message: string): never { throw new Error(message) }
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value) }
 function assertRecord(value: unknown, label: string): asserts value is Record<string, unknown> { if (!isRecord(value)) fail(`${label} must be an object`) }
 function assertString(value: unknown, label: string): asserts value is string { if (typeof value !== "string" || value.length === 0) fail(`${label} must be a non-empty string`) }
-function assertExactKeys(value: Record<string, unknown>, keys: string[], label: string): void {
-  const actual = Object.keys(value).sort(); const expected = [...keys].sort();
-  if (actual.join("\n") !== expected.join("\n")) fail(`${label} keys must be exactly [${expected.join(", ")}], got [${actual.join(", ")}]`);
-}
+function assertStringArray(value: unknown, label: string, allowEmpty = false): asserts value is string[] { if (!Array.isArray(value) || (!allowEmpty && value.length === 0) || value.some((item) => typeof item !== "string" || item.length === 0)) fail(`${label} must be ${allowEmpty ? "a" : "a non-empty"} string array`) }
+function assertExactKeys(value: Record<string, unknown>, keys: string[], label: string): void { const actual = Object.keys(value).sort(); const expected = [...keys].sort(); if (actual.join("\n") !== expected.join("\n")) fail(`${label} keys must be exactly [${expected.join(", ")}], got [${actual.join(", ")}]`) }
 function readJson(path: string): unknown { try { return JSON.parse(readFileSync(path, "utf-8")) } catch (error) { fail(`Cannot read JSON ${path}: ${error instanceof Error ? error.message : String(error)}`) } }
+function writeJson(path: string, value: unknown): void { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`) }
 export function sha256Text(value: string): string { return createHash("sha256").update(value).digest("hex") }
 export function sha256File(path: string): string { return createHash("sha256").update(readFileSync(path)).digest("hex") }
-function stable(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(stable);
-  if (isRecord(value)) return Object.fromEntries(Object.keys(value).sort().map((key) => [key, stable(value[key])]));
-  return value;
-}
+function stable(value: unknown): unknown { if (Array.isArray(value)) return value.map(stable); if (isRecord(value)) return Object.fromEntries(Object.keys(value).sort().map((key) => [key, stable(value[key])])); return value }
 export function canonicalJson(value: unknown): string { return `${JSON.stringify(stable(value))}\n` }
 
 function authorityPath(repoRoot: string, relativePath: string, label: string): string {
-  assertString(relativePath, label);
-  if (isAbsolute(relativePath)) fail(`${label} must be repository-relative`);
-  const path = resolve(repoRoot, relativePath); const prefix = `${resolve(repoRoot)}${sep}`;
-  if (path !== resolve(repoRoot) && !path.startsWith(prefix)) fail(`${label} escapes repository root`);
-  if (!existsSync(path)) fail(`${label} does not exist: ${relativePath}`);
-  if (lstatSync(path).isSymbolicLink()) fail(`${label} must not be a symbolic link`);
-  const real = realpathSync(path); const realRoot = realpathSync(repoRoot);
-  if (real !== realRoot && !real.startsWith(`${realRoot}${sep}`)) fail(`${label} resolves outside repository root`);
-  return path;
+  assertString(relativePath, label); if (isAbsolute(relativePath)) fail(`${label} must be repository-relative`);
+  const path = resolve(repoRoot, relativePath); const root = resolve(repoRoot); if (path !== root && !path.startsWith(`${root}${sep}`)) fail(`${label} escapes repository root`);
+  if (!existsSync(path) || lstatSync(path).isSymbolicLink()) fail(`${label} is missing or a symlink: ${relativePath}`);
+  const real = realpathSync(path); const realRoot = realpathSync(root); if (real !== realRoot && !real.startsWith(`${realRoot}${sep}`)) fail(`${label} resolves outside repository root`); return path;
 }
-function verifyHash(repoRoot: string, reference: FileReference, label: string): string {
-  if (!/^[a-f0-9]{64}$/.test(reference.sha256)) fail(`${label} sha256 is not frozen`);
-  const path = authorityPath(repoRoot, reference.path, label);
-  const actual = lstatSync(path).isDirectory() ? hashTree(path) : sha256File(path);
-  if (actual !== reference.sha256) fail(`${label} sha256 drift: expected ${reference.sha256}, got ${actual}`);
-  return path;
-}
-function validateFileRef(repoRoot: string, raw: unknown, label: string): string {
+function validateRef(repoRoot: string, raw: unknown, label: string): string {
   assertRecord(raw, label); assertExactKeys(raw, ["path", "sha256"], label); assertString(raw.path, `${label}.path`); assertString(raw.sha256, `${label}.sha256`);
-  return verifyHash(repoRoot, raw as unknown as FileReference, label);
+  if (!/^[a-f0-9]{64}$/.test(raw.sha256)) fail(`${label}.sha256 invalid`); const path = authorityPath(repoRoot, raw.path, label); const actual = sha256File(path); if (actual !== raw.sha256) fail(`${label} hash drift: expected ${raw.sha256}, got ${actual}`); return path;
 }
 function validatePromptRef(repoRoot: string, raw: unknown, label: string): string {
-  assertRecord(raw, label); assertExactKeys(raw, ["prompt", "sha256"], label); assertString(raw.prompt, `${label}.prompt`); assertString(raw.sha256, `${label}.sha256`);
-  return verifyHash(repoRoot, { path: raw.prompt, sha256: raw.sha256 }, label);
+  assertRecord(raw, label); assertExactKeys(raw, ["path", "sha256"], label); return validateRef(repoRoot, raw, label);
 }
-function assertStringArray(value: unknown, label: string, allowEmpty = false): asserts value is string[] {
-  if (!Array.isArray(value) || (!allowEmpty && value.length === 0) || value.some((item) => typeof item !== "string" || item.length === 0)) fail(`${label} must be ${allowEmpty ? "a" : "a non-empty"} string array`);
+function parseTasks(path: string): Record<string, Record<string, unknown>> {
+  const raw = readJson(path); assertRecord(raw, "source tasks"); if (raw.schema !== "repo-harness-bdd2-task-set.e2" || raw.partition !== "held_out" || !Array.isArray(raw.tasks)) fail("source tasks identity mismatch");
+  return Object.fromEntries(raw.tasks.map((item, index) => { assertRecord(item, `source tasks[${index}]`); assertString(item.id, `source tasks[${index}].id`); return [item.id, item] }));
 }
-function expectedKind(id: ExperimentId): ExperimentKind { return { S2: "inline-shape", EB: "browser-adapter", EI: "imagegen-adapter", I2: "implementation-pilot" }[id] as ExperimentKind }
-
-function validateFreeze(raw: unknown, label: string): void {
-  assertRecord(raw, label); assertExactKeys(raw, ["id", "state", "sealed_at"], label); assertString(raw.id, `${label}.id`);
-  if (raw.state !== "foundation" && raw.state !== "sealed") fail(`${label}.state is invalid`);
-  if (raw.state === "foundation" && raw.sealed_at !== null) fail(`${label} foundation cannot have sealed_at`);
-  if (raw.state === "sealed") { assertString(raw.sealed_at, `${label}.sealed_at`); if (Number.isNaN(Date.parse(raw.sealed_at))) fail(`${label}.sealed_at must be ISO date-time`); }
+function parseTruth(path: string): Record<string, Record<string, unknown>> {
+  const raw = readJson(path); assertRecord(raw, "source truth"); if (raw.schema !== "repo-harness-bdd2-truth-set.e2" || raw.partition !== "held_out") fail("source truth identity mismatch"); assertRecord(raw.tasks, "source truth.tasks"); return raw.tasks as Record<string, Record<string, unknown>>;
 }
-
-function validateExperiment(repoRoot: string, id: ExperimentId, raw: unknown, authority: string[]): void {
-  assertRecord(raw, `experiments.${id}`);
-  const common = ["kind", "freeze", "repetitions", "held_out_task_count", "conditions"];
-  const extra = id === "EB" || id === "EI" ? ["appendices"] : id === "I2" ? ["fixture", "treatment_context", "prerequisite"] : [];
-  assertExactKeys(raw, [...common, ...extra], `experiments.${id}`);
-  if (raw.kind !== expectedKind(id)) fail(`experiments.${id}.kind mismatch`);
-  validateFreeze(raw.freeze, `experiments.${id}.freeze`);
-  const expectedRepetitions = id === "S2" ? 3 : 2;
-  const expectedCount = id === "S2" ? 12 : id === "I2" ? 1 : 6;
-  if (raw.repetitions !== expectedRepetitions) fail(`${id} repetitions must be exactly ${expectedRepetitions}`);
-  if (raw.held_out_task_count !== expectedCount) fail(`${id} held_out_task_count must be exactly ${expectedCount}`);
-  assertRecord(raw.conditions, `experiments.${id}.conditions`); assertExactKeys(raw.conditions, ["control", "treatment"], `experiments.${id}.conditions`);
-  authority.push(validatePromptRef(repoRoot, raw.conditions.control, `${id} control prompt`), validatePromptRef(repoRoot, raw.conditions.treatment, `${id} treatment prompt`));
-  if (id === "EB" || id === "EI") {
-    assertRecord(raw.appendices, `experiments.${id}.appendices`);
-    for (const [taskId, bundle] of Object.entries(raw.appendices)) {
-      assertRecord(bundle, `${id} appendix ${taskId}`);
-      assertExactKeys(bundle, ["appendix", "assets"], `${id} appendix ${taskId}`);
-      authority.push(validateFileRef(repoRoot, bundle.appendix, `${id} appendix ${taskId} metadata`));
-      if (!Array.isArray(bundle.assets) || bundle.assets.length === 0) fail(`${id} appendix ${taskId}.assets must be a non-empty array`);
-      for (const [index, asset] of bundle.assets.entries()) authority.push(validateFileRef(repoRoot, asset, `${id} appendix ${taskId} asset[${index}]`));
-    }
-  }
-  if (id === "I2") {
-    assertRecord(raw.fixture, "experiments.I2.fixture"); assertExactKeys(raw.fixture, ["path", "sha256", "acceptance", "acceptance_command"], "experiments.I2.fixture");
-    assertStringArray(raw.fixture.acceptance_command, "experiments.I2.fixture.acceptance_command");
-    authority.push(verifyHash(repoRoot, { path: String(raw.fixture.path), sha256: String(raw.fixture.sha256) }, "I2 fixture"));
-    authority.push(validateFileRef(repoRoot, raw.fixture.acceptance, "I2 hidden acceptance"));
-    authority.push(validateFileRef(repoRoot, raw.treatment_context, "I2 treatment context"));
-    assertRecord(raw.prerequisite, "experiments.I2.prerequisite"); assertExactKeys(raw.prerequisite, ["shape", "adapters"], "experiments.I2.prerequisite");
-    if (raw.prerequisite.shape !== "Pass" && raw.prerequisite.shape !== "NotRun") fail("I2 prerequisite.shape is invalid");
-    assertRecord(raw.prerequisite.adapters, "experiments.I2.prerequisite.adapters"); assertExactKeys(raw.prerequisite.adapters, ["EB", "EI"], "experiments.I2.prerequisite.adapters");
-    for (const adapter of ["EB", "EI"] as const) if (!["Pass", "Fail", "NotRun"].includes(String(raw.prerequisite.adapters[adapter]))) fail(`I2 prerequisite.adapters.${adapter} is invalid`);
-  }
-}
-
-function validateTasks(raw: unknown, partition: PartitionId): TaskSet {
-  assertRecord(raw, `${partition} task set`); assertExactKeys(raw, ["schema", "partition", "tasks"], `${partition} task set`);
-  if (raw.schema !== "repo-harness-bdd2-task-set.e2" || raw.partition !== partition || !Array.isArray(raw.tasks)) fail(`${partition} task set identity mismatch`);
-  const ids = new Set<string>();
-  const tasks = raw.tasks.map((entry, index): EvaluationTask => {
-    const label = `${partition}.tasks[${index}]`; assertRecord(entry, label); assertString(entry.id, `${label}.id`); assertString(entry.title, `${label}.title`); assertString(entry.agent_input, `${label}.agent_input`);
-    if (!["S2", "EB", "EI", "I2"].includes(String(entry.experiment))) fail(`${label}.experiment is invalid`);
-    const adapter = entry.experiment === "EB" || entry.experiment === "EI";
-    assertExactKeys(entry, adapter ? ["id", "experiment", "title", "agent_input", "named_uncertainty"] : ["id", "experiment", "title", "agent_input"], label);
-    if (adapter) assertString(entry.named_uncertainty, `${label}.named_uncertainty`);
-    if (ids.has(entry.id)) fail(`Duplicate task id: ${entry.id}`); ids.add(entry.id);
-    return entry as unknown as EvaluationTask;
+function validateCorpus(path: string, experiments: Record<ExperimentId, ExperimentAuthority>): SourceCorpus {
+  const raw = readJson(path); assertRecord(raw, "source corpus"); assertExactKeys(raw, ["schema", "sources", "rows"], "source corpus"); if (raw.schema !== "repo-harness-bdd2-source-corpus.e3" || !Array.isArray(raw.sources) || !Array.isArray(raw.rows)) fail("source corpus identity mismatch");
+  const rows = raw.rows.map((item, index): CorpusRow => {
+    assertRecord(item, `corpus.rows[${index}]`); assertExactKeys(item, ["source_packet_id", "experiment", "source_experiment", "task_id", "condition", "repetition", "appendix_sha256", "full_response_sha256", "normalized_outcome_sha256", "full_response", "normalized_outcome"], `corpus.rows[${index}]`);
+    if (!Object.hasOwn(experiments, String(item.experiment)) || !["S2", "EB", "EI"].includes(String(item.source_experiment))) fail(`corpus.rows[${index}] experiment invalid`);
+    const experiment = experiments[item.experiment as ExperimentId]; if (experiment.source_experiment !== item.source_experiment) fail(`corpus.rows[${index}] source experiment mismatch`);
+    assertString(item.source_packet_id, `corpus.rows[${index}].source_packet_id`); assertString(item.task_id, `corpus.rows[${index}].task_id`); if (!/^[a-f0-9]{64}$/.test(String(item.full_response_sha256)) || !/^[a-f0-9]{64}$/.test(String(item.normalized_outcome_sha256))) fail(`corpus.rows[${index}] response hash invalid`);
+    if (item.condition !== "control" && item.condition !== "treatment") fail(`corpus.rows[${index}] condition invalid`); if (!Number.isInteger(item.repetition) || Number(item.repetition) < 1) fail(`corpus.rows[${index}] repetition invalid`); assertRecord(item.full_response, `corpus.rows[${index}].full_response`); assertRecord(item.normalized_outcome, `corpus.rows[${index}].normalized_outcome`);
+    if (sha256Text(canonicalJson(item.full_response)) !== item.full_response_sha256 || sha256Text(canonicalJson(item.normalized_outcome)) !== item.normalized_outcome_sha256) fail(`corpus.rows[${index}] embedded response hash drift`);
+    return item as unknown as CorpusRow;
   });
-  return { schema: "repo-harness-bdd2-task-set.e2", partition, tasks };
+  const sourceIds = new Set<string>(); for (const row of rows) { if (sourceIds.has(row.source_packet_id)) fail("source corpus packet ids must be unique"); sourceIds.add(row.source_packet_id) }
+  for (const id of ["S3", "EB3", "EI3"] as const) { const selected = rows.filter((row) => row.experiment === id); if (selected.length !== experiments[id].expected_rows) fail(`${id} corpus rows must be exactly ${experiments[id].expected_rows}`); const keys = new Set(selected.map((row) => `${row.task_id}:${row.condition}:${row.repetition}`)); if (keys.size !== selected.length) fail(`${id} corpus coordinates must be unique`) }
+  return { schema: "repo-harness-bdd2-source-corpus.e3", sources: raw.sources as SourceCorpus["sources"], rows };
 }
 
-function validateTruth(raw: unknown, partition: PartitionId, tasks: EvaluationTask[]): void {
-  assertRecord(raw, `${partition} truth`); assertExactKeys(raw, ["schema", "partition", "tasks"], `${partition} truth`);
-  if (raw.schema !== "repo-harness-bdd2-truth-set.e2" || raw.partition !== partition) fail(`${partition} truth identity mismatch`);
-  assertRecord(raw.tasks, `${partition}.truth.tasks`);
-  if (Object.keys(raw.tasks).sort().join("\n") !== tasks.map((task) => task.id).sort().join("\n")) fail(`${partition} truth keys must match task ids exactly`);
-  for (const task of tasks) {
-    const entry = raw.tasks[task.id]; assertRecord(entry, `${partition}.truth.${task.id}`);
-    const keys = task.experiment === "S2"
-      ? ["kind", "risk_tags", "required_behaviors", "unsupported_expansions", "protected_concerns", "expected_authority", "escalation_required"]
-      : task.experiment === "EB"
-        ? ["kind", "reference_pattern", "forbidden_inference", "expected_disposition", "required_boundary", "unsupported_concepts", "protected_concerns", "uncertainty_closable_by_browser"]
-        : task.experiment === "EI"
-          ? ["kind", "forbidden_inference", "prototype_can_close_uncertainty", "expected_disposition", "expected_resolution", "required_boundary", "unsupported_concepts", "protected_concerns"]
-          : ["kind", "fixture", "required_acceptance", "protected_concerns"];
-    assertExactKeys(entry, keys, `${partition}.truth.${task.id}`);
-    if (entry.kind !== expectedKind(task.experiment)) fail(`${partition}.truth.${task.id}.kind mismatch`);
-    if (task.experiment === "S2") {
-      assertStringArray(entry.risk_tags, `${task.id}.risk_tags`);
-      assertStringArray(entry.required_behaviors, `${task.id}.required_behaviors`);
-      assertStringArray(entry.unsupported_expansions, `${task.id}.unsupported_expansions`, true);
-      if (entry.expected_authority !== "inline" && entry.expected_authority !== "prd") fail(`${task.id}.expected_authority invalid`);
-      if (typeof entry.escalation_required !== "boolean" || (entry.expected_authority === "prd") !== entry.escalation_required) fail(`${task.id} authority/escalation mismatch`);
-    } else if (task.experiment === "EB") {
-      assertString(entry.reference_pattern, `${task.id}.reference_pattern`);
-      assertString(entry.forbidden_inference, `${task.id}.forbidden_inference`);
-      if (!["Adopt", "Adapt", "Avoid", "Defer"].includes(String(entry.expected_disposition))) fail(`${task.id}.expected_disposition invalid`);
-      assertStringArray(entry.required_boundary, `${task.id}.required_boundary`);
-      assertStringArray(entry.unsupported_concepts, `${task.id}.unsupported_concepts`, true);
-      if (typeof entry.uncertainty_closable_by_browser !== "boolean") fail(`${task.id}.uncertainty_closable_by_browser must be boolean`);
-    } else if (task.experiment === "EI") {
-      assertString(entry.forbidden_inference, `${task.id}.forbidden_inference`);
-      if (typeof entry.prototype_can_close_uncertainty !== "boolean") fail(`${task.id}.prototype_can_close_uncertainty must be boolean`);
-      if (!["Adopt", "Adapt", "Avoid", "Defer"].includes(String(entry.expected_disposition))) fail(`${task.id}.expected_disposition invalid`);
-      assertString(entry.expected_resolution, `${task.id}.expected_resolution`);
-      assertStringArray(entry.required_boundary, `${task.id}.required_boundary`);
-      assertStringArray(entry.unsupported_concepts, `${task.id}.unsupported_concepts`, true);
-    } else {
-      assertString(entry.fixture, `${task.id}.fixture`);
-      assertStringArray(entry.required_acceptance, `${task.id}.required_acceptance`);
-    }
-    if (!Array.isArray(entry.protected_concerns)) fail(`${task.id}.protected_concerns must be an array`);
-    for (const [index, concern] of entry.protected_concerns.entries()) {
-      assertRecord(concern, `${task.id}.protected_concerns[${index}]`); assertExactKeys(concern, ["concern", "severity", "summary"], `${task.id}.protected_concerns[${index}]`);
-      assertString(concern.concern, `${task.id}.protected_concerns[${index}].concern`); assertString(concern.summary, `${task.id}.protected_concerns[${index}].summary`);
-      if (!["P0", "P1", "P2", "P3"].includes(String(concern.severity))) fail(`${task.id}.protected_concerns[${index}].severity invalid`);
-    }
-  }
+export interface ValidatedEvaluation { repoRoot: string; manifestPath: string; manifest: EvaluationManifest; corpus: SourceCorpus; tasks: Record<string, Record<string, unknown>>; truth: Record<string, Record<string, unknown>>; authorityPaths: string[] }
+export function validateEvaluation(repoRoot = REPO_ROOT, manifestRelativePath = DEFAULT_MANIFEST_PATH): ValidatedEvaluation {
+  const root = resolve(repoRoot); const manifestPath = authorityPath(root, manifestRelativePath, "manifest"); const raw = readJson(manifestPath); assertRecord(raw, "manifest");
+  assertExactKeys(raw, ["schema", "runner", "output_root", "source_corpus", "source_tasks", "source_truth", "experiments", "adjudication", "model_profile", "i3", "historical_reports"], "manifest"); if (raw.schema !== "repo-harness-bdd2-evaluation.e3") fail("Unsupported current evaluation manifest schema; no E2 compatibility fallback");
+  const authority = [manifestPath, validateRef(root, raw.runner, "runner"), validateRef(root, raw.source_corpus, "source_corpus"), validateRef(root, raw.source_tasks, "source_tasks"), validateRef(root, raw.source_truth, "source_truth")]; assertString(raw.output_root, "output_root");
+  assertRecord(raw.experiments, "experiments"); assertExactKeys(raw.experiments, ["S3", "EB3", "EI3"], "experiments");
+  for (const id of ["S3", "EB3", "EI3"] as const) { const exp = raw.experiments[id]; assertRecord(exp, `experiments.${id}`); const adapter = id !== "S3"; assertExactKeys(exp, adapter ? ["kind", "source_experiment", "freeze_id", "expected_rows", "metrics", "appendices"] : ["kind", "source_experiment", "freeze_id", "expected_rows", "metrics"], `experiments.${id}`); assertString(exp.freeze_id, `${id}.freeze_id`); if (exp.source_experiment !== ({ S3: "S2", EB3: "EB", EI3: "EI" } as const)[id]) fail(`${id}.source_experiment invalid`); if (exp.kind !== ({ S3: "inline-shape", EB3: "browser-adapter", EI3: "imagegen-adapter" } as const)[id]) fail(`${id}.kind invalid`); const expected = id === "S3" ? 72 : 24; if (exp.expected_rows !== expected) fail(`${id}.expected_rows must be ${expected}`); authority.push(validateRef(root, exp.metrics, `${id}.metrics`)); if (adapter) { assertRecord(exp.appendices, `${id}.appendices`); for (const [taskId, bundle] of Object.entries(exp.appendices)) { assertRecord(bundle, `${id}.appendices.${taskId}`); assertExactKeys(bundle, ["appendix", "assets"], `${id}.appendices.${taskId}`); authority.push(validateRef(root, bundle.appendix, `${id}.${taskId}.appendix`)); if (!Array.isArray(bundle.assets) || bundle.assets.length === 0) fail(`${id}.${taskId}.assets must be non-empty`); for (const asset of bundle.assets) authority.push(validateRef(root, asset, `${id}.${taskId}.asset`)) } } }
+  assertRecord(raw.adjudication, "adjudication"); assertExactKeys(raw.adjudication, ["resolution", "reviewers", "prompts", "schemas", "correction_costs"], "adjudication"); if (raw.adjudication.resolution !== "fresh-adjudicator-score-on-canonical-disagreement") fail("adjudication resolution invalid");
+  assertRecord(raw.adjudication.reviewers, "adjudication.reviewers"); assertExactKeys(raw.adjudication.reviewers, ["outcome", "adjudicator", "browser_evidence", "imagegen_evidence"], "adjudication.reviewers"); if (!Array.isArray(raw.adjudication.reviewers.outcome) || raw.adjudication.reviewers.outcome.length !== 2) fail("exactly two outcome reviewers required"); const roles = [...raw.adjudication.reviewers.outcome, raw.adjudication.reviewers.adjudicator, raw.adjudication.reviewers.browser_evidence, raw.adjudication.reviewers.imagegen_evidence]; if (roles.some((role) => typeof role !== "string" || !role) || new Set(roles).size !== roles.length) fail("reviewer roles must be distinct non-empty ids");
+  assertRecord(raw.adjudication.prompts, "adjudication.prompts"); assertExactKeys(raw.adjudication.prompts, ["outcome", "adjudicator", "browser_evidence", "imagegen_evidence"], "adjudication.prompts"); for (const key of ["outcome", "adjudicator", "browser_evidence", "imagegen_evidence"] as const) authority.push(validatePromptRef(root, raw.adjudication.prompts[key], `adjudication.prompts.${key}`));
+  assertRecord(raw.adjudication.schemas, "adjudication.schemas"); assertExactKeys(raw.adjudication.schemas, ["outcome", "browser_evidence", "imagegen_evidence"], "adjudication.schemas"); for (const key of ["outcome", "browser_evidence", "imagegen_evidence"] as const) authority.push(validateRef(root, raw.adjudication.schemas[key], `adjudication.schemas.${key}`));
+  assertRecord(raw.adjudication.correction_costs, "adjudication.correction_costs"); if (Object.keys(raw.adjudication.correction_costs).length === 0 || Object.values(raw.adjudication.correction_costs).some((value) => typeof value !== "number" || value < 0)) fail("correction_costs invalid");
+  assertRecord(raw.model_profile, "model_profile"); assertExactKeys(raw.model_profile, ["command", "args", "version_args", "expected_version", "model", "sampling", "credential_mode", "transport", "tools", "max_concurrency"], "model_profile"); assertString(raw.model_profile.command, "model_profile.command"); assertString(raw.model_profile.expected_version, "model_profile.expected_version"); assertString(raw.model_profile.model, "model_profile.model"); assertStringArray(raw.model_profile.args, "model_profile.args"); assertStringArray(raw.model_profile.version_args, "model_profile.version_args", true); assertRecord(raw.model_profile.sampling, "model_profile.sampling"); if (raw.model_profile.credential_mode !== "codex-auth-copy" || raw.model_profile.transport !== "model-transport-only" || !Number.isInteger(raw.model_profile.max_concurrency) || Number(raw.model_profile.max_concurrency) < 1 || Number(raw.model_profile.max_concurrency) > 16) fail("model_profile isolation/concurrency invalid"); assertRecord(raw.model_profile.tools, "model_profile.tools"); assertExactKeys(raw.model_profile.tools, ["browser", "web_search", "mcp", "external", "repository"], "model_profile.tools"); if (Object.values(raw.model_profile.tools).some((value) => value !== false)) fail("model_profile tools must all be disabled");
+  assertRecord(raw.i3, "i3"); assertExactKeys(raw.i3, ["prerequisite", "fixture", "acceptance", "acceptance_command", "baseline_prompt", "treatment_prompt", "treatment_context", "response_schema", "repetitions"], "i3"); assertRecord(raw.i3.prerequisite, "i3.prerequisite"); if (raw.i3.prerequisite.shape !== "Pass" || raw.i3.prerequisite.any_adapter !== "Pass" || raw.i3.repetitions !== 2) fail("i3 prerequisite/repetitions invalid"); for (const key of ["fixture", "acceptance", "baseline_prompt", "treatment_prompt", "treatment_context", "response_schema"] as const) authority.push(validateRef(root, raw.i3[key], `i3.${key}`)); assertStringArray(raw.i3.acceptance_command, "i3.acceptance_command");
+  if (!Array.isArray(raw.historical_reports) || raw.historical_reports.length < 12) fail("historical_reports must freeze Phase E and E2 reports"); for (const [index, ref] of raw.historical_reports.entries()) authority.push(validateRef(root, ref, `historical_reports[${index}]`));
+  const manifest = raw as unknown as EvaluationManifest; const tasks = parseTasks(authorityPath(root, manifest.source_tasks.path, "source_tasks")); const truth = parseTruth(authorityPath(root, manifest.source_truth.path, "source_truth")); const corpus = validateCorpus(authorityPath(root, manifest.source_corpus.path, "source_corpus"), manifest.experiments);
+  for (const row of corpus.rows) { const task = tasks[row.task_id]; if (!task || !truth[row.task_id] || task.experiment !== row.source_experiment) fail(`corpus row ${row.source_packet_id} task/truth mismatch`); const normalizedTask = row.normalized_outcome.task; assertRecord(normalizedTask, `corpus ${row.source_packet_id}.normalized.task`); if (normalizedTask.id !== row.task_id) fail(`corpus row ${row.source_packet_id} normalized task mismatch`) }
+  return { repoRoot: root, manifestPath, manifest, corpus, tasks, truth, authorityPaths: [...new Set(authority)] };
 }
 
-function validateAgentProfiles(repoRoot: string, manifest: EvaluationManifest, authority: string[]): void {
-  for (const [id, raw] of Object.entries(manifest.agents)) {
-    assertRecord(raw, `agents.${id}`); assertExactKeys(raw, ["command", "args", "version_args", "expected_version", "response_schema", "model", "sampling", "input_source", "response_source", "workspace_mode", "credential_mode", "transport", "tools"], `agents.${id}`);
-    assertString(raw.command, `agents.${id}.command`); assertString(raw.expected_version, `agents.${id}.expected_version`); assertString(raw.model, `agents.${id}.model`);
-    assertStringArray(raw.args, `agents.${id}.args`, true); assertStringArray(raw.version_args, `agents.${id}.version_args`, true); assertRecord(raw.sampling, `agents.${id}.sampling`);
-    if (raw.input_source !== "stdin" || raw.response_source !== "stdout" || raw.workspace_mode !== "isolated") fail(`agents.${id} must be stdin/stdout isolated`);
-    if (raw.credential_mode !== "none" && raw.credential_mode !== "codex-auth-copy") fail(`agents.${id}.credential_mode invalid`);
-    if (raw.credential_mode === "codex-auth-copy" && (!isAbsolute(String(raw.command)) || !String(raw.command).endsWith(`${sep}codex`))) fail(`agents.${id}.codex-auth-copy requires an absolute codex executable`);
-    if (raw.transport !== "model-transport-only") fail(`agents.${id}.transport must be model-transport-only`);
-    assertRecord(raw.tools, `agents.${id}.tools`); assertExactKeys(raw.tools, ["browser", "web_search", "mcp", "external", "repository"], `agents.${id}.tools`);
-    if (Object.values(raw.tools).some((value) => value !== false)) fail(`agents.${id} evaluated tools must all be disabled`);
-    const templates = (raw.args as string[]).join("\n"); if (!templates.includes("{model}")) fail(`agents.${id}.args must apply {model}`);
-    authority.push(validateFileRef(repoRoot, raw.response_schema, `agents.${id}.response_schema`));
-  }
+export function opaquePacketId(freezeId: string, sourcePacketId: string): string { return sha256Text(`${freezeId}\0${sourcePacketId}\0score`).slice(0, 32) }
+function publicNormalizedOutcome(row: CorpusRow): Record<string, unknown> { const normalized = structuredClone(row.normalized_outcome); assertRecord(normalized.task, "normalized task"); delete normalized.task.id; return normalized }
+export function buildOutcomeReviewerPacket(evaluation: ValidatedEvaluation, row: CorpusRow): Record<string, unknown> { return { schema: "repo-harness-bdd2-outcome-review-packet.e3", packet_id: opaquePacketId(evaluation.manifest.experiments[row.experiment].freeze_id, row.source_packet_id), normalized_outcome: publicNormalizedOutcome(row), truth: evaluation.truth[row.task_id] } }
+export function buildAdjudicatorPacket(evaluation: ValidatedEvaluation, row: CorpusRow, primary: [LockedOutcomeScore, LockedOutcomeScore]): Record<string, unknown> { return { ...buildOutcomeReviewerPacket(evaluation, row), schema: "repo-harness-bdd2-outcome-adjudication-packet.e3", primary_scores: primary.map((score) => ({ reviewer_id: score.reviewer_id, score: score.score })) } }
+function buildEvidencePacket(evaluation: ValidatedEvaluation, row: CorpusRow): Record<string, unknown> { const exp = evaluation.manifest.experiments[row.experiment]; if (row.experiment !== "EB3" && row.experiment !== "EI3") fail("evidence packet requires adapter row"); const bundle = exp.appendices?.[row.task_id]; if (!bundle || row.appendix_sha256 !== bundle.appendix.sha256) fail("adapter appendix authority mismatch"); return { schema: `repo-harness-bdd2-${row.experiment === "EB3" ? "browser" : "imagegen"}-evidence-review-packet.e3`, packet_id: opaquePacketId(exp.freeze_id, row.source_packet_id), full_response: row.full_response, truth: evaluation.truth[row.task_id], appendix: readJson(authorityPath(evaluation.repoRoot, bundle.appendix.path, "adapter appendix")) } }
+
+export function validateOutcomeScore(raw: unknown, label = "outcome score"): OutcomeScore {
+  assertRecord(raw, label); assertExactKeys(raw, ["uncertainty_closed", "boundary_category", "unsupported_expansion", "unsupported_user_concepts", "required_behavior_omission", "protected_concern_omissions", "authority_fit", "escalation_correct", "correction_operations", "notes"], label); if (typeof raw.uncertainty_closed !== "boolean" || typeof raw.authority_fit !== "boolean" || typeof raw.escalation_correct !== "boolean") fail(`${label} booleans invalid`); assertString(raw.boundary_category, `${label}.boundary_category`); assertString(raw.notes, `${label}.notes`); for (const key of ["unsupported_expansion", "unsupported_user_concepts", "required_behavior_omission"] as const) if (!Number.isInteger(raw[key]) || Number(raw[key]) < 0) fail(`${label}.${key} invalid`); assertStringArray(raw.correction_operations, `${label}.correction_operations`, true); if (new Set(raw.correction_operations).size !== raw.correction_operations.length) fail(`${label}.correction_operations must be unique`); if (!Array.isArray(raw.protected_concern_omissions)) fail(`${label}.protected_concern_omissions must be array`); for (const concern of raw.protected_concern_omissions) { assertRecord(concern, `${label}.protected_concern`); assertExactKeys(concern, ["concern", "severity", "summary"], `${label}.protected_concern`); assertString(concern.concern, `${label}.concern`); assertString(concern.summary, `${label}.summary`); if (!["P0", "P1", "P2", "P3"].includes(String(concern.severity))) fail(`${label}.severity invalid`) } return raw as unknown as OutcomeScore;
+}
+function outcomeDisagrees(a: OutcomeScore, b: OutcomeScore): boolean { const stripNotes = (score: OutcomeScore) => ({ ...score, notes: "" }); return canonicalJson(stripNotes(a)) !== canonicalJson(stripNotes(b)) }
+function validateModelResponse(raw: unknown, schema: string, packetId: string): Record<string, unknown> { assertRecord(raw, "model response"); assertExactKeys(raw, ["schema", "packet_id", "score"], "model response"); if (raw.schema !== schema || raw.packet_id !== packetId) fail("model response identity mismatch"); assertRecord(raw.score, "model response.score"); return raw.score }
+function validateEvidenceScore(score: Record<string, unknown>, experiment: ExperimentId): void {
+  const browser = experiment === "EB3"; const keys = browser ? ["provenance_complete", "question_bound", "privacy_reviewed", "adopt_adapt_avoid_complete", "unsupported_assertion_count", "explicit_limitation_count", "feature_need_inference_count", "notes"] : ["question_bound", "synthetic_labeled", "falsifier_present", "unsupported_assertion_count", "explicit_limitation_count", "user_validation_claim_count", "notes"]; assertExactKeys(score, keys, "evidence score"); assertString(score.notes, "evidence score.notes"); for (const [key, value] of Object.entries(score)) { if (key.endsWith("_count") && (!Number.isInteger(value) || Number(value) < 0)) fail(`evidence score.${key} invalid`); if (!key.endsWith("_count") && key !== "notes" && typeof value !== "boolean") fail(`evidence score.${key} invalid`) }
 }
 
-export function validateEvaluation(repoRoot: string = REPO_ROOT, manifestRelativePath: string = DEFAULT_MANIFEST_PATH): ValidatedEvaluation {
-  const root = resolve(repoRoot); const manifestPath = authorityPath(root, manifestRelativePath, "manifest"); const raw = readJson(manifestPath);
-  assertRecord(raw, "manifest"); assertExactKeys(raw, ["schema", "runner", "output_root", "experiments", "partitions", "adjudication", "agents", "historical_phase_e"], "manifest");
-  if (raw.schema !== "repo-harness-bdd2-evaluation.e2") fail("Unsupported current evaluation manifest schema; Phase E v3 has no current-authority fallback");
-  const authority = [manifestPath, validateFileRef(root, raw.runner, "runner")]; assertString(raw.output_root, "output_root");
-  assertRecord(raw.experiments, "experiments"); assertExactKeys(raw.experiments, ["S2", "EB", "EI", "I2"], "experiments");
-  for (const id of ["S2", "EB", "EI", "I2"] as const) validateExperiment(root, id, raw.experiments[id], authority);
-  assertRecord(raw.partitions, "partitions"); assertExactKeys(raw.partitions, ["development", "held_out"], "partitions");
-  const tasks = {} as Record<PartitionId, EvaluationTask[]>;
-  for (const partition of ["development", "held_out"] as const) {
-    const value = raw.partitions[partition]; assertRecord(value, `partitions.${partition}`); assertExactKeys(value, ["tasks", "tasks_sha256", "truth", "truth_sha256"], `partitions.${partition}`);
-    const taskPath = verifyHash(root, { path: String(value.tasks), sha256: String(value.tasks_sha256) }, `${partition} tasks`);
-    const truthPath = verifyHash(root, { path: String(value.truth), sha256: String(value.truth_sha256) }, `${partition} truth`); authority.push(taskPath, truthPath);
-    const taskSet = validateTasks(readJson(taskPath), partition); validateTruth(readJson(truthPath), partition, taskSet.tasks); tasks[partition] = taskSet.tasks;
-  }
-  const ids = [...tasks.development, ...tasks.held_out].map((task) => task.id); if (new Set(ids).size !== ids.length) fail("E2 task ids must be unique across partitions");
-  for (const id of ["S2", "EB", "EI", "I2"] as const) {
-    const experiment = raw.experiments[id] as Record<string, unknown>; const freeze = experiment.freeze as Record<string, unknown>;
-    if (freeze.state === "sealed") {
-      const count = tasks.held_out.filter((task) => task.experiment === id).length;
-      if (count !== experiment.held_out_task_count) fail(`Sealed ${id} requires exactly ${experiment.held_out_task_count} held-out tasks, got ${count}`);
-      if (id === "EB" || id === "EI") {
-        const taskIds = tasks.held_out.filter((task) => task.experiment === id).map((task) => task.id).sort();
-        if (Object.keys(experiment.appendices as object).sort().join("\n") !== taskIds.join("\n")) fail(`${id} appendices must match held-out task ids exactly`);
-      }
-    }
-  }
-  assertRecord(raw.adjudication, "adjudication"); assertExactKeys(raw.adjudication, ["rubric", "rubric_sha256", "reviewers", "correction_costs", "experiments"], "adjudication");
-  authority.push(verifyHash(root, { path: String(raw.adjudication.rubric), sha256: String(raw.adjudication.rubric_sha256) }, "adjudication rubric"));
-  assertRecord(raw.adjudication.reviewers, "adjudication.reviewers"); assertExactKeys(raw.adjudication.reviewers, ["outcome", "evidence", "owner"], "adjudication.reviewers");
-  const outcome = raw.adjudication.reviewers.outcome; if (!Array.isArray(outcome) || outcome.length !== 2 || outcome.some((v) => typeof v !== "string" || !v) || outcome[0] === outcome[1]) fail("Exactly two distinct locked outcome reviewers are required");
-  assertString(raw.adjudication.reviewers.evidence, "adjudication.reviewers.evidence"); assertString(raw.adjudication.reviewers.owner, "adjudication.reviewers.owner");
-  assertRecord(raw.adjudication.correction_costs, "adjudication.correction_costs"); if (Object.keys(raw.adjudication.correction_costs).length === 0 || Object.values(raw.adjudication.correction_costs).some((v) => typeof v !== "number" || v < 0)) fail("correction_costs must be a non-empty non-negative operation table");
-  assertRecord(raw.adjudication.experiments, "adjudication.experiments"); assertExactKeys(raw.adjudication.experiments, ["S2", "EB", "EI", "I2"], "adjudication.experiments");
-  for (const id of ["S2", "EB", "EI", "I2"] as const) {
-    const value = raw.adjudication.experiments[id]; assertRecord(value, `adjudication.experiments.${id}`); assertExactKeys(value, ["score_schema", "score_schema_sha256", "metrics", "metrics_sha256"], `adjudication.experiments.${id}`);
-    authority.push(verifyHash(root, { path: String(value.score_schema), sha256: String(value.score_schema_sha256) }, `${id} score schema`), verifyHash(root, { path: String(value.metrics), sha256: String(value.metrics_sha256) }, `${id} metrics`));
-  }
-  if (!Array.isArray(raw.historical_phase_e) || raw.historical_phase_e.length === 0) fail("historical_phase_e must freeze Phase E reports");
-  for (const [index, ref] of raw.historical_phase_e.entries()) authority.push(validateFileRef(root, ref, `historical_phase_e[${index}]`));
-  assertRecord(raw.agents, "agents"); const manifest = raw as unknown as EvaluationManifest;
-  if (Object.values(manifest.experiments).some((exp) => exp.freeze.state === "sealed")) { if (Object.keys(manifest.agents).length === 0) fail("Sealed E2 authority requires an agent profile"); validateAgentProfiles(root, manifest, authority); }
-  return { repoRoot: root, manifestPath, authorityPaths: [...new Set(authority)], manifest, tasks };
+function buildIsolatedEnv(home: string): Record<string, string> { if (!process.env.PATH) fail("model transport requires PATH"); return { HOME: home, CODEX_HOME: home, PATH: process.env.PATH, TMPDIR: home, LANG: process.env.LANG ?? "C.UTF-8", LC_ALL: process.env.LC_ALL ?? "C.UTF-8", TERM: "dumb", NO_COLOR: "1" } }
+function deliverCredential(home: string): void { const source = join(process.env.CODEX_HOME ?? join(homedir(), ".codex"), "auth.json"); if (!existsSync(source) || lstatSync(source).isSymbolicLink() || !lstatSync(source).isFile()) fail("codex auth unavailable or unsafe"); const target = join(home, "auth.json"); cpSync(source, target); chmodSync(target, 0o600) }
+function expandArg(template: string, values: Record<string, string>): string { return template.replace(/\{(response_schema|model|sampling\.[^}]+)\}/g, (_, key: string) => values[key] ?? fail(`unknown model arg placeholder {${key}}`)) }
+async function runModel(evaluation: ValidatedEvaluation, schemaRef: FileReference, promptRef: PromptReference, packet: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const profile = evaluation.manifest.model_profile; const home = mkdtempSync(join(tmpdir(), "bdd2-e3-home-")); const workspace = mkdtempSync(join(tmpdir(), "bdd2-e3-workspace-"));
+  try { deliverCredential(home); const values: Record<string, string> = { response_schema: resolve(evaluation.repoRoot, schemaRef.path), model: profile.model }; for (const [key, value] of Object.entries(profile.sampling)) values[`sampling.${key}`] = String(value); const args = profile.args.map((arg) => expandArg(arg, values)); const instruction = readFileSync(resolve(evaluation.repoRoot, promptRef.path), "utf-8").trim(); const input = `${instruction}\n\n## Frozen review packet\n\n${JSON.stringify(packet)}\n`;
+    return await new Promise((resolvePromise, reject) => { const child = spawn(profile.command, args, { cwd: workspace, env: buildIsolatedEnv(home), stdio: ["pipe", "pipe", "pipe"] }); let stdout = "", stderr = ""; child.stdout.setEncoding("utf8"); child.stderr.setEncoding("utf8"); child.stdout.on("data", (chunk) => { stdout += chunk }); child.stderr.on("data", (chunk) => { stderr += chunk }); child.on("error", reject); child.on("close", (code) => { if (code !== 0) { reject(new Error(`model failed (${code}): ${stderr.trim()}`)); return } try { resolvePromise(JSON.parse(stdout)) } catch (error) { reject(new Error(`model returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`)) } }); child.stdin.end(input) })
+  } finally { rmSync(home, { recursive: true, force: true }); rmSync(workspace, { recursive: true, force: true }) }
+}
+async function mapLimit<T>(items: T[], limit: number, fn: (item: T, index: number) => Promise<void>): Promise<void> { let next = 0; const workers = Array.from({ length: Math.min(limit, items.length) }, async () => { while (true) { const index = next++; if (index >= items.length) return; await fn(items[index], index) } }); await Promise.all(workers) }
+function cleanHead(root: string): string { const status = spawnSync("git", ["status", "--porcelain", "--untracked-files=all"], { cwd: root, encoding: "utf8" }); if (status.status !== 0 || status.stdout.trim()) fail("sealed E3 scoring requires clean Git HEAD"); const head = spawnSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }); if (head.status !== 0) fail("cannot resolve Git HEAD"); return head.stdout.trim() }
+function assertAuthorityTracked(evaluation: ValidatedEvaluation): void { for (const path of evaluation.authorityPaths) { const rel = relative(evaluation.repoRoot, path).replace(/\\/g, "/"); const result = spawnSync("git", ["ls-files", "--error-unmatch", rel], { cwd: evaluation.repoRoot, encoding: "utf8" }); if (result.status !== 0) fail(`sealed E3 authority must be tracked: ${rel}`) } }
+
+export async function scoreExperiment(evaluation: ValidatedEvaluation, experiment: ExperimentId, outputRelative?: string): Promise<ScoreRun> {
+  const sourceCommit = cleanHead(evaluation.repoRoot); assertAuthorityTracked(evaluation); const profile = evaluation.manifest.model_profile; const version = spawnSync(profile.command, profile.version_args, { encoding: "utf8" }); if (version.status !== 0 || version.stdout.trim() !== profile.expected_version) fail(`model CLI version mismatch: ${version.stdout.trim()}`);
+  const outputPath = outputRelative ?? join(evaluation.manifest.output_root, `e3/${experiment.toLowerCase()}-${Date.now()}`); const output = resolve(evaluation.repoRoot, outputPath); if (!output.startsWith(`${resolve(evaluation.repoRoot)}${sep}`) || existsSync(output)) fail("score output path invalid or exists"); for (const dir of ["scores/outcome", "adjudications", "scores/evidence", "private"]) mkdirSync(join(output, dir), { recursive: true });
+  const rows = evaluation.corpus.rows.filter((row) => row.experiment === experiment); const packetRecords = new Map<string, ScoreRun["packets"][number]>();
+  await mapLimit(rows, profile.max_concurrency, async (row) => { const packetId = opaquePacketId(evaluation.manifest.experiments[experiment].freeze_id, row.source_packet_id); const reviewPacket = buildOutcomeReviewerPacket(evaluation, row); const locked: LockedOutcomeScore[] = [];
+    for (const reviewerId of evaluation.manifest.adjudication.reviewers.outcome) { const raw = await runModel(evaluation, evaluation.manifest.adjudication.schemas.outcome, evaluation.manifest.adjudication.prompts.outcome, reviewPacket); const score = validateOutcomeScore(validateModelResponse(raw, "repo-harness-bdd2-outcome-score-response.e3", packetId)); const responseSha = sha256Text(canonicalJson(raw)); const value: LockedOutcomeScore = { schema: "repo-harness-bdd2-locked-outcome-score.e3", packet_id: packetId, reviewer_id: reviewerId, locked_at: new Date().toISOString(), response_sha256: responseSha, score }; writeJson(join(output, "scores/outcome", packetId, `${reviewerId}.json`), value); locked.push(value) }
+    let adjudicationSha: string | null = null; if (outcomeDisagrees(locked[0].score, locked[1].score)) { const raw = await runModel(evaluation, evaluation.manifest.adjudication.schemas.outcome, evaluation.manifest.adjudication.prompts.adjudicator, buildAdjudicatorPacket(evaluation, row, locked as [LockedOutcomeScore, LockedOutcomeScore])); const score = validateOutcomeScore(validateModelResponse(raw, "repo-harness-bdd2-outcome-score-response.e3", packetId)); const value: LockedOutcomeScore = { schema: "repo-harness-bdd2-locked-outcome-score.e3", packet_id: packetId, reviewer_id: evaluation.manifest.adjudication.reviewers.adjudicator, locked_at: new Date().toISOString(), response_sha256: sha256Text(canonicalJson(raw)), score }; writeJson(join(output, "adjudications", `${packetId}.json`), value); adjudicationSha = sha256Text(canonicalJson(value)) }
+    let evidenceSha: string | null = null; if (row.condition === "treatment" && (experiment === "EB3" || experiment === "EI3")) { const browser = experiment === "EB3"; const raw = await runModel(evaluation, browser ? evaluation.manifest.adjudication.schemas.browser_evidence : evaluation.manifest.adjudication.schemas.imagegen_evidence, browser ? evaluation.manifest.adjudication.prompts.browser_evidence : evaluation.manifest.adjudication.prompts.imagegen_evidence, buildEvidencePacket(evaluation, row)); const score = validateModelResponse(raw, `repo-harness-bdd2-${browser ? "browser" : "imagegen"}-evidence-score-response.e3`, packetId); validateEvidenceScore(score, experiment); const value: LockedEvidenceScore = { schema: "repo-harness-bdd2-locked-evidence-score.e3", packet_id: packetId, reviewer_id: browser ? evaluation.manifest.adjudication.reviewers.browser_evidence : evaluation.manifest.adjudication.reviewers.imagegen_evidence, locked_at: new Date().toISOString(), response_sha256: sha256Text(canonicalJson(raw)), score }; writeJson(join(output, "scores/evidence", `${packetId}.json`), value); evidenceSha = sha256Text(canonicalJson(value)) }
+    writeJson(join(output, "private", `${packetId}.json`), { schema: "repo-harness-bdd2-private-score-coordinate.e3", packet_id: packetId, source_packet_id: row.source_packet_id, task_id: row.task_id, condition: row.condition, repetition: row.repetition }); packetRecords.set(packetId, { packet_id: packetId, source_packet_id: row.source_packet_id, task_id: row.task_id, condition: row.condition, repetition: row.repetition, full_response_sha256: row.full_response_sha256, normalized_outcome_sha256: row.normalized_outcome_sha256, reviewer_score_sha256: [sha256Text(canonicalJson(locked[0])), sha256Text(canonicalJson(locked[1]))], adjudication_sha256: adjudicationSha, evidence_score_sha256: evidenceSha }) });
+  const run: ScoreRun = { schema: "repo-harness-bdd2-score-run.e3", freeze_id: evaluation.manifest.experiments[experiment].freeze_id, source_commit: sourceCommit, manifest_sha256: sha256File(evaluation.manifestPath), experiment, output_path: relative(evaluation.repoRoot, output).replace(/\\/g, "/"), packets: [...packetRecords.values()].sort((a, b) => a.packet_id.localeCompare(b.packet_id)) }; writeJson(join(output, "run.json"), run); return run;
 }
 
-function coordinateId(parts: string[]): string { return sha256Text(parts.join("\0")).slice(0, 16) }
-export function isI2Enabled(experiment: PilotExperiment): boolean { return experiment.prerequisite.shape === "Pass" && (experiment.prerequisite.adapters.EB === "Pass" || experiment.prerequisite.adapters.EI === "Pass") }
-export function buildRunPlan(evaluation: ValidatedEvaluation, options: PlanOptions): RunCoordinate[] {
-  if (!Object.hasOwn(evaluation.manifest.experiments, options.experiment)) fail(`Unknown E2 experiment: ${options.experiment}`);
-  const experiment = evaluation.manifest.experiments[options.experiment]; if (options.experiment === "I2" && !isI2Enabled(experiment as PilotExperiment)) fail("I2 is gated-not-run until S2 and at least one adapter pass");
-  const candidates = evaluation.tasks[options.partition].filter((task) => task.experiment === options.experiment);
-  const wanted = new Set(options.taskIds ?? []); const selected = wanted.size === 0 ? candidates : candidates.filter((task) => wanted.has(task.id));
-  if (selected.length === 0 || (wanted.size > 0 && selected.length !== wanted.size)) fail("No tasks selected or task ids mismatch the experiment");
-  const conditions = options.conditions ?? ["control", "treatment"]; if (conditions.length === 0 || new Set(conditions).size !== conditions.length || conditions.some((c) => c !== "control" && c !== "treatment")) fail("conditions must contain unique control and/or treatment");
-  const repetitions = options.repetitions ?? experiment.repetitions; if (!Number.isInteger(repetitions) || repetitions < 1 || repetitions > experiment.repetitions) fail(`repetitions must be 1..${experiment.repetitions}`);
-  return selected.sort((a, b) => a.id.localeCompare(b.id)).flatMap((task) => conditions.flatMap((condition) => Array.from({ length: repetitions }, (_, index) => ({
-    coordinateId: coordinateId([experiment.freeze.id, options.experiment, options.partition, task.id, condition, String(index + 1)]), experiment: options.experiment, partition: options.partition, taskId: task.id, condition, repetition: index + 1, promptPath: experiment.conditions[condition].prompt,
-  }))));
+function lockedOutcome(path: string, packetId: string, reviewerId: string): LockedOutcomeScore { const raw = readJson(path); assertRecord(raw, "locked outcome score"); assertExactKeys(raw, ["schema", "packet_id", "reviewer_id", "locked_at", "response_sha256", "score"], "locked outcome score"); if (raw.schema !== "repo-harness-bdd2-locked-outcome-score.e3" || raw.packet_id !== packetId || raw.reviewer_id !== reviewerId || Number.isNaN(Date.parse(String(raw.locked_at))) || !/^[a-f0-9]{64}$/.test(String(raw.response_sha256))) fail("locked outcome score authority mismatch"); return { ...(raw as unknown as LockedOutcomeScore), score: validateOutcomeScore(raw.score) } }
+export function validateScoreRun(evaluation: ValidatedEvaluation, runRelativePath: string): { outcomeScoreCount: number; evidenceScoreCount: number; adjudicationCount: number } {
+  const root = authorityPath(evaluation.repoRoot, runRelativePath, "score run"); const raw = readJson(join(root, "run.json")); assertRecord(raw, "score run"); if (raw.schema !== "repo-harness-bdd2-score-run.e3" || !Object.hasOwn(evaluation.manifest.experiments, String(raw.experiment)) || !Array.isArray(raw.packets)) fail("score run identity mismatch"); const run = raw as unknown as ScoreRun; const experiment = evaluation.manifest.experiments[run.experiment]; if (run.freeze_id !== experiment.freeze_id || run.manifest_sha256 !== sha256File(evaluation.manifestPath) || run.output_path !== relative(evaluation.repoRoot, root).replace(/\\/g, "/")) fail("score run authority mismatch"); const corpus = new Map(evaluation.corpus.rows.filter((row) => row.experiment === run.experiment).map((row) => [row.source_packet_id, row])); if (run.packets.length !== experiment.expected_rows) fail("score run packet count mismatch"); let outcomes = 0, evidence = 0, adjudications = 0; const seen = new Set<string>();
+  for (const packet of run.packets) { const row = corpus.get(packet.source_packet_id); if (!row || seen.has(row.source_packet_id) || packet.packet_id !== opaquePacketId(experiment.freeze_id, row.source_packet_id) || packet.task_id !== row.task_id || packet.condition !== row.condition || packet.repetition !== row.repetition || packet.full_response_sha256 !== row.full_response_sha256 || packet.normalized_outcome_sha256 !== row.normalized_outcome_sha256) fail("score packet/corpus mismatch"); seen.add(row.source_packet_id); const scores = evaluation.manifest.adjudication.reviewers.outcome.map((id) => lockedOutcome(join(root, "scores/outcome", packet.packet_id, `${id}.json`), packet.packet_id, id)); for (const [index, score] of scores.entries()) if (sha256Text(canonicalJson(score)) !== packet.reviewer_score_sha256[index]) fail("reviewer score hash mismatch"); outcomes += 2; const disagreement = outcomeDisagrees(scores[0].score, scores[1].score); const adjudicationPath = join(root, "adjudications", `${packet.packet_id}.json`); if (disagreement) { if (!existsSync(adjudicationPath)) fail("disagreement requires fresh adjudicator score"); const score = lockedOutcome(adjudicationPath, packet.packet_id, evaluation.manifest.adjudication.reviewers.adjudicator); if (sha256Text(canonicalJson(score)) !== packet.adjudication_sha256) fail("adjudication hash mismatch"); adjudications += 1 } else if (existsSync(adjudicationPath) || packet.adjudication_sha256 !== null) fail("agreement forbids adjudication"); const evidenceRequired = row.condition === "treatment" && (run.experiment === "EB3" || run.experiment === "EI3"); const evidencePath = join(root, "scores/evidence", `${packet.packet_id}.json`); if (evidenceRequired) { const value = readJson(evidencePath); assertRecord(value, "locked evidence score"); assertExactKeys(value, ["schema", "packet_id", "reviewer_id", "locked_at", "response_sha256", "score"], "locked evidence score"); const expectedReviewer = run.experiment === "EB3" ? evaluation.manifest.adjudication.reviewers.browser_evidence : evaluation.manifest.adjudication.reviewers.imagegen_evidence; if (value.schema !== "repo-harness-bdd2-locked-evidence-score.e3" || value.packet_id !== packet.packet_id || value.reviewer_id !== expectedReviewer || Number.isNaN(Date.parse(String(value.locked_at)))) fail("evidence score authority mismatch"); assertRecord(value.score, "evidence score body"); validateEvidenceScore(value.score, run.experiment); if (sha256Text(canonicalJson(value)) !== packet.evidence_score_sha256) fail("evidence score hash mismatch"); evidence += 1 } else if (existsSync(evidencePath) || packet.evidence_score_sha256 !== null) fail("non-treatment row forbids evidence score") }
+  return { outcomeScoreCount: outcomes, evidenceScoreCount: evidence, adjudicationCount: adjudications };
 }
 
-export function buildAgentPacket(evaluation: ValidatedEvaluation, coordinate: RunCoordinate): string {
-  const task = evaluation.tasks[coordinate.partition].find((entry) => entry.id === coordinate.taskId); if (!task) fail(`Missing task ${coordinate.taskId}`);
-  const prompt = readFileSync(authorityPath(evaluation.repoRoot, coordinate.promptPath, "condition prompt"), "utf-8").trim();
-  let appendix = "";
-  if ((coordinate.experiment === "EB" || coordinate.experiment === "EI") && coordinate.condition === "treatment") {
-    const experiment = evaluation.manifest.experiments[coordinate.experiment] as AdapterExperiment; const ref = experiment.appendices[coordinate.taskId]; if (!ref) fail(`Missing task-specific ${coordinate.experiment} appendix for ${coordinate.taskId}`);
-    appendix = `\n\n## Frozen task-specific adapter appendix\n\n${readFileSync(authorityPath(evaluation.repoRoot, ref.appendix.path, "adapter appendix"), "utf-8").trim()}`;
-  }
-  if (coordinate.experiment === "I2" && coordinate.condition === "treatment") { const pilot = evaluation.manifest.experiments.I2; appendix = `\n\n## Frozen I2 treatment context\n\n${readFileSync(authorityPath(evaluation.repoRoot, pilot.treatment_context.path, "I2 treatment context"), "utf-8").trim()}`; }
-  return `${prompt}\n\n## Public task context\n\nTask ID: ${task.id}\n\n${task.agent_input.trim()}${appendix}\n`;
+interface EffectiveRow { packet_id: string; task_id: string; condition: ConditionId; repetition: number; reviewer_1: LockedOutcomeScore; reviewer_2: LockedOutcomeScore; adjudication: LockedOutcomeScore | null; evidence_score: LockedEvidenceScore | null; score: OutcomeScore }
+function effectiveRows(evaluation: ValidatedEvaluation, runRoot: string, run: ScoreRun): EffectiveRow[] { return run.packets.map((packet) => { const ids = evaluation.manifest.adjudication.reviewers.outcome; const one = lockedOutcome(join(runRoot, "scores/outcome", packet.packet_id, `${ids[0]}.json`), packet.packet_id, ids[0]); const two = lockedOutcome(join(runRoot, "scores/outcome", packet.packet_id, `${ids[1]}.json`), packet.packet_id, ids[1]); const adjudication = outcomeDisagrees(one.score, two.score) ? lockedOutcome(join(runRoot, "adjudications", `${packet.packet_id}.json`), packet.packet_id, evaluation.manifest.adjudication.reviewers.adjudicator) : null; const evidencePath = join(runRoot, "scores/evidence", `${packet.packet_id}.json`); const evidence = existsSync(evidencePath) ? readJson(evidencePath) as LockedEvidenceScore : null; return { packet_id: packet.packet_id, task_id: packet.task_id, condition: packet.condition, repetition: packet.repetition, reviewer_1: one, reviewer_2: two, adjudication, evidence_score: evidence, score: adjudication?.score ?? one.score } }) }
+function computeDecision(evaluation: ValidatedEvaluation, experiment: ExperimentId, rows: EffectiveRow[]): { metrics: Record<string, unknown>; decision: "Pass" | "Reshape" | "Kill" } {
+  const sum = (set: EffectiveRow[], key: "unsupported_expansion" | "unsupported_user_concepts" | "required_behavior_omission") => set.reduce((total, row) => total + row.score[key], 0); const severe = (row: EffectiveRow) => row.score.protected_concern_omissions.filter((item) => item.severity === "P0" || item.severity === "P1").length; const pairs = new Map<string, { control?: EffectiveRow; treatment?: EffectiveRow }>(); for (const row of rows) { const key = `${row.task_id}:${row.repetition}`, pair = pairs.get(key) ?? {}; if (pair[row.condition]) fail("duplicate effective coordinate"); pair[row.condition] = row; pairs.set(key, pair) } let wins = 0, losses = 0, ties = 0, newSevere = 0; for (const pair of pairs.values()) { if (!pair.control || !pair.treatment) fail("incomplete effective pair"); if (experiment === "S3") { if (pair.treatment.score.unsupported_expansion < pair.control.score.unsupported_expansion) wins++; else if (pair.treatment.score.unsupported_expansion > pair.control.score.unsupported_expansion) losses++; else ties++ } else { if (!pair.control.score.uncertainty_closed && pair.treatment.score.uncertainty_closed) wins++; else if (pair.control.score.uncertainty_closed && !pair.treatment.score.uncertainty_closed) losses++; else ties++ } if (severe(pair.treatment) > severe(pair.control)) newSevere++ }
+  const control = rows.filter((row) => row.condition === "control"), treatment = rows.filter((row) => row.condition === "treatment"); if (experiment === "S3") { const base = sum(control, "unsupported_expansion"), treated = sum(treatment, "unsupported_expansion"), reduction = base === 0 ? (treated === 0 ? 0 : null) : (base - treated) / base; const stableTasks = [...new Set(treatment.map((row) => row.task_id))].filter((taskId) => [...pairs.values()].filter((pair) => pair.treatment?.task_id === taskId && pair.control && pair.treatment.score.required_behavior_omission > pair.control.score.required_behavior_omission).length >= 2); const authority = [...new Set(treatment.map((row) => row.task_id))].filter((taskId) => treatment.filter((row) => row.task_id === taskId && row.score.authority_fit && row.score.escalation_correct).length >= 2).length; const metrics = { unsupported_expansion: { control: base, treatment: treated, reduction }, pairs: { wins, losses, ties }, required_omissions: { control: sum(control, "required_behavior_omission"), treatment: sum(treatment, "required_behavior_omission") }, stable_new_omission_tasks: stableTasks, new_severe_pairs: newSevere, authority_success_tasks: authority }; const pass = reduction !== null && reduction >= .3 && wins > losses && sum(treatment, "required_behavior_omission") <= sum(control, "required_behavior_omission") && stableTasks.length === 0 && newSevere === 0 && authority >= 10; const kill = reduction === null || reduction < .15 || losses > wins || stableTasks.length > 0 || newSevere > 0 || authority < 8; return { metrics, decision: pass ? "Pass" : kill ? "Kill" : "Reshape" } }
+  const evidence = treatment.map((row) => { if (!row.evidence_score) fail("adapter treatment missing evidence score"); return row.evidence_score.score }); const compliance = evidence.every((score) => experiment === "EB3" ? score.provenance_complete === true && score.question_bound === true && score.privacy_reviewed === true && score.adopt_adapt_avoid_complete === true && score.unsupported_assertion_count === 0 && score.feature_need_inference_count === 0 : score.question_bound === true && score.synthetic_labeled === true && score.falsifier_present === true && score.unsupported_assertion_count === 0 && score.user_validation_claim_count === 0); const nonclose = experiment === "EI3" ? treatment.filter((row) => ["EI-H-05", "EI-H-06"].includes(row.task_id) && row.score.uncertainty_closed).length : 0; const metrics = { closure: { wins, losses, ties }, new_severe_pairs: newSevere, unsupported_expansion: { control: sum(control, "unsupported_expansion"), treatment: sum(treatment, "unsupported_expansion") }, unsupported_concepts: { control: sum(control, "unsupported_user_concepts"), treatment: sum(treatment, "unsupported_user_concepts") }, required_omissions: { control: sum(control, "required_behavior_omission"), treatment: sum(treatment, "required_behavior_omission") }, ...(experiment === "EI3" ? { nonclosable_treatment_closures: nonclose } : {}), evidence_compliance: compliance }; const pass = wins >= 6 && losses <= 2 && newSevere === 0 && sum(treatment, "unsupported_expansion") <= sum(control, "unsupported_expansion") && sum(treatment, "unsupported_user_concepts") <= sum(control, "unsupported_user_concepts") && sum(treatment, "required_behavior_omission") <= sum(control, "required_behavior_omission") && compliance && nonclose === 0; const kill = newSevere > 0 || losses > 4 || !compliance || nonclose > 0 || (sum(treatment, "unsupported_expansion") > sum(control, "unsupported_expansion") && sum(treatment, "unsupported_user_concepts") > sum(control, "unsupported_user_concepts")); return { metrics, decision: pass ? "Pass" : kill ? "Kill" : "Reshape" };
 }
+export function projectEvidence(evaluation: ValidatedEvaluation, runRelativePath: string, evidenceRelativePath: string, reportRelativePath: string): { experiment: ExperimentId; decision: string } { validateScoreRun(evaluation, runRelativePath); const runRoot = resolve(evaluation.repoRoot, runRelativePath); const run = readJson(join(runRoot, "run.json")) as ScoreRun; const rows = effectiveRows(evaluation, runRoot, run); const result = computeDecision(evaluation, run.experiment, rows); const evidence = { schema: `repo-harness-bdd2-${run.experiment.toLowerCase()}-evidence.e3`, freeze_id: run.freeze_id, source_commit: run.source_commit, manifest_sha256: run.manifest_sha256, packet_count: rows.length, outcome_score_count: rows.length * 2, evidence_score_count: rows.filter((row) => row.evidence_score !== null).length, adjudication_count: rows.filter((row) => row.adjudication !== null).length, rows: rows.map(({ score: _score, ...row }) => row), summary: { metrics: result.metrics, decision: result.decision } }; const evidencePath = resolve(evaluation.repoRoot, evidenceRelativePath), reportPath = resolve(evaluation.repoRoot, reportRelativePath); if (!evidencePath.startsWith(`${evaluation.repoRoot}${sep}`) || !reportPath.startsWith(`${evaluation.repoRoot}${sep}`)) fail("projection path escapes repo"); writeJson(evidencePath, evidence); const label = { S3: "Inline Shape", EB3: "Browser Evidence Adapter", EI3: "ImageGen Prototype Adapter" }[run.experiment]; writeFileSync(reportPath, `# Experiment ${run.experiment} — ${label}\n\n> **Decision**: ${result.decision}\n> **Outputs reused**: ${rows.length} immutable E2 outputs\n> **Primary outcome scores**: ${rows.length * 2}\n> **Fresh adjudications**: ${rows.filter((row) => row.adjudication).length}\n> **Evidence scores**: ${rows.filter((row) => row.evidence_score).length}\n> **Evidence projection**: \`${evidenceRelativePath.split("/").pop()}\`\n\nE3 changed only the pre-sealed scoring authority. No intervention output or historical\nPhase E/E2 score was modified. The decision above is reproduced from the tracked\nevidence projection and the frozen Phase E3 metrics.\n`); return { experiment: run.experiment, decision: result.decision } }
+export function verifyEvidenceProjection(evaluation: ValidatedEvaluation, evidenceRelativePath: string): { experiment: ExperimentId; decision: string } { const raw = readJson(authorityPath(evaluation.repoRoot, evidenceRelativePath, "E3 evidence")); assertRecord(raw, "E3 evidence"); const match = String(raw.schema).match(/^repo-harness-bdd2-(s3|eb3|ei3)-evidence\.e3$/); if (!match || !Array.isArray(raw.rows) || !isRecord(raw.summary)) fail("E3 evidence identity mismatch"); const experiment = match[1].toUpperCase() as ExperimentId; const rows = raw.rows.map((item, index): EffectiveRow => { assertRecord(item, `evidence.rows[${index}]`); const one = item.reviewer_1 as unknown as LockedOutcomeScore, two = item.reviewer_2 as unknown as LockedOutcomeScore, adjudication = item.adjudication as LockedOutcomeScore | null, evidence = item.evidence_score as LockedEvidenceScore | null; return { packet_id: String(item.packet_id), task_id: String(item.task_id), condition: item.condition as ConditionId, repetition: Number(item.repetition), reviewer_1: one, reviewer_2: two, adjudication, evidence_score: evidence, score: adjudication?.score ?? one.score } }); const result = computeDecision(evaluation, experiment, rows); if (canonicalJson(result.metrics) !== canonicalJson(raw.summary.metrics) || result.decision !== raw.summary.decision || raw.packet_count !== rows.length || raw.outcome_score_count !== rows.length * 2 || raw.evidence_score_count !== rows.filter((row) => row.evidence_score).length || raw.adjudication_count !== rows.filter((row) => row.adjudication).length) fail("E3 evidence projection drift"); return { experiment, decision: result.decision } }
 
-export function validateStructuredAgentResponse(raw: unknown, experiment: ExperimentId): StructuredAgentResponse {
-  assertRecord(raw, "agent response");
-  assertExactKeys(raw, ["schema", "outcome", "evidence_use"], "agent response"); if (raw.schema !== "repo-harness-bdd2-agent-response.e2") fail("agent response schema mismatch");
-  assertRecord(raw.outcome, "agent response.outcome"); assertExactKeys(raw.outcome, ["boundary_decision", "required_behaviors", "recovery_and_trust", "exposed_user_concepts", "excluded_behaviors", "authority"], "agent response.outcome");
-  assertString(raw.outcome.boundary_decision, "agent response.outcome.boundary_decision");
-  for (const key of ["required_behaviors", "recovery_and_trust", "exposed_user_concepts", "excluded_behaviors"] as const) assertStringArray(raw.outcome[key], `agent response.outcome.${key}`, true);
-  if (raw.outcome.authority !== "inline" && raw.outcome.authority !== "prd") fail("agent response.outcome.authority invalid");
-  assertRecord(raw.evidence_use, "agent response.evidence_use"); assertExactKeys(raw.evidence_use, ["adopted_claims", "adapted_claims", "avoided_claims", "unsupported_claims"], "agent response.evidence_use"); for (const key of ["adopted_claims", "adapted_claims", "avoided_claims", "unsupported_claims"] as const) assertStringArray(raw.evidence_use[key], `agent response.evidence_use.${key}`, true);
-  return raw as unknown as StructuredAgentResponse;
-}
-export function normalizeOutcome(task: EvaluationTask, response: StructuredAgentResponse): Record<string, unknown> {
-  return stable({ schema: "repo-harness-bdd2-normalized-outcome.e2", task: { id: task.id, title: task.title, agent_input: task.agent_input, ...(task.named_uncertainty ? { named_uncertainty: task.named_uncertainty } : {}) }, outcome: response.outcome }) as Record<string, unknown>;
-}
-
-export function buildIsolatedAgentEnv(home: string, source: NodeJS.ProcessEnv = process.env): Record<string, string> {
-  if (!source.PATH) fail("Model-transport-only agent requires an explicit PATH");
-  return { HOME: home, CODEX_HOME: home, PATH: source.PATH, TMPDIR: home, LANG: source.LANG ?? "C.UTF-8", LC_ALL: source.LC_ALL ?? "C.UTF-8", TERM: source.TERM ?? "dumb", NO_COLOR: "1" };
-}
-function deliverAgentCredential(home: string, profile: AgentProfile): void {
-  if (profile.credential_mode !== "codex-auth-copy") return;
-  const source = join(process.env.CODEX_HOME ?? join(homedir(), ".codex"), "auth.json");
-  if (!existsSync(source) || lstatSync(source).isSymbolicLink() || !lstatSync(source).isFile()) fail("codex-auth-copy requested but host auth.json is unavailable or unsafe");
-  const target = join(home, "auth.json"); cpSync(source, target); chmodSync(target, 0o600);
-}
-function expandArg(template: string, values: Record<string, string>): string { return template.replace(/\{(repo|response_schema|workspace|model|sampling\.[^}]+)\}/g, (_, key: string) => values[key] ?? fail(`Unknown argument placeholder {${key}}`)) }
-function ensureNewDirectory(path: string): void { if (existsSync(path)) fail(`Output path already exists: ${path}`); mkdirSync(path, { recursive: true }) }
-function assertWritePath(root: string, target: string): void { const resolved = resolve(target); if (resolved !== resolve(root) && !resolved.startsWith(`${resolve(root)}${sep}`)) fail("Output path escapes repository root"); let parent = dirname(resolved); while (!existsSync(parent)) parent = dirname(parent); if (!realpathSync(parent).startsWith(realpathSync(root))) fail("Output path resolves outside repository root"); if (existsSync(resolved) && lstatSync(resolved).isSymbolicLink()) fail("Output path must not be a symbolic link") }
-function writeJson(path: string, value: unknown): void { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`) }
-function cleanHeadCommit(root: string): string {
-  const result = spawnSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf-8" });
-  if (result.status !== 0) fail("Cannot resolve source commit");
-  const status = spawnSync("git", ["status", "--porcelain", "--untracked-files=all"], { cwd: root, encoding: "utf-8" });
-  if (status.status !== 0 || status.stdout.trim().length > 0) fail("Sealed E2 execution requires a clean Git HEAD");
-  return result.stdout.trim();
-}
-function assertAuthorityTrackedAtHead(evaluation: ValidatedEvaluation): void {
-  for (const path of evaluation.authorityPaths) {
-    const repositoryPath = relative(evaluation.repoRoot, path).replace(/\\/g, "/");
-    const result = spawnSync("git", ["ls-tree", "-r", "--name-only", "HEAD", "--", repositoryPath], { cwd: evaluation.repoRoot, encoding: "utf-8" });
-    const tracked = result.stdout.split("\n").filter(Boolean);
-    const present = lstatSync(path).isDirectory()
-      ? tracked.some((entry) => entry.startsWith(`${repositoryPath}/`))
-      : tracked.includes(repositoryPath);
-    if (result.status !== 0 || !present) fail(`Sealed E2 authority must be tracked at HEAD: ${repositoryPath}`);
-  }
-}
-function listFiles(root: string, current = root): string[] { return readdirSync(current, { withFileTypes: true }).flatMap((entry) => { const path = join(current, entry.name); if (entry.isSymbolicLink()) fail(`Fixture contains symlink: ${relative(root, path)}`); return entry.isDirectory() ? listFiles(root, path) : [relative(root, path).replace(/\\/g, "/")]; }).sort() }
-function fileInventory(root: string): Array<{ path: string; sha256: string; bytes: number }> { return listFiles(root).map((path) => ({ path, sha256: sha256File(join(root, path)), bytes: statSync(join(root, path)).size })) }
-export function hashTree(root: string): string { return sha256Text(canonicalJson(fileInventory(root))) }
-function patchInventory(before: Array<{ path: string; sha256: string }>, after: Array<{ path: string; sha256: string }>): Record<string, unknown> { const a = new Map(before.map((v) => [v.path, v.sha256])); const b = new Map(after.map((v) => [v.path, v.sha256])); return { added: [...b.keys()].filter((p) => !a.has(p)).sort(), removed: [...a.keys()].filter((p) => !b.has(p)).sort(), changed: [...b.keys()].filter((p) => a.has(p) && a.get(p) !== b.get(p)).sort() }; }
-
-export function runEvaluation(evaluation: ValidatedEvaluation, options: RunOptions): RunReport {
-  const experiment = evaluation.manifest.experiments[options.experiment]; if (experiment.freeze.state !== "sealed") fail(`${options.experiment} is foundation-only`);
-  const sourceCommit = cleanHeadCommit(evaluation.repoRoot);
-  assertAuthorityTrackedAtHead(evaluation);
-  const profile = evaluation.manifest.agents[options.agent]; if (!profile) fail(`Unknown agent profile: ${options.agent}`);
-  const versionHome = mkdtempSync(join(tmpdir(), "bdd2-e2-version-")); const env = buildIsolatedAgentEnv(versionHome);
-  try { const version = spawnSync(profile.command, profile.version_args, { encoding: "utf-8", env }); if (version.error || version.status !== 0 || typeof version.stdout !== "string" || version.stdout.trim() !== profile.expected_version) fail(`Agent version mismatch${version.error ? `: ${version.error.message}` : ""}`); } finally { rmSync(versionHome, { recursive: true, force: true }); }
-  const outputRelative = options.outputPath ?? join(evaluation.manifest.output_root, `${options.experiment.toLowerCase()}-${Date.now()}`); const output = resolve(evaluation.repoRoot, outputRelative); assertWritePath(evaluation.repoRoot, output); ensureNewDirectory(output);
-  for (const dir of ["full", "normalized", "private", "pilot"]) mkdirSync(join(output, dir));
-  const packets: RunReport["packets"] = []; const used = new Set<string>();
-  for (const coordinate of buildRunPlan(evaluation, options)) {
-    let packetId = ""; do packetId = randomBytes(16).toString("hex"); while (used.has(packetId)); used.add(packetId);
-    const home = mkdtempSync(join(tmpdir(), "bdd2-e2-home-")); let workspace = mkdtempSync(join(tmpdir(), "bdd2-e2-workspace-")); let before: ReturnType<typeof fileInventory> = []; let sourceTree = "";
-    try {
-      if (coordinate.experiment === "I2") { rmSync(workspace, { recursive: true, force: true }); workspace = mkdtempSync(join(tmpdir(), "bdd2-e2-i2-")); const fixture = (experiment as PilotExperiment).fixture; cpSync(authorityPath(evaluation.repoRoot, fixture.path, "I2 fixture"), workspace, { recursive: true }); before = fileInventory(workspace); sourceTree = hashTree(workspace); if (sourceTree !== fixture.sha256) fail("I2 fresh fixture tree hash drift"); }
-      deliverAgentCredential(home, profile);
-      const values: Record<string, string> = { repo: evaluation.repoRoot, response_schema: join(evaluation.repoRoot, profile.response_schema.path), model: profile.model, workspace }; for (const [key, value] of Object.entries(profile.sampling)) values[`sampling.${key}`] = String(value);
-      const result = spawnSync(profile.command, profile.args.map((arg) => expandArg(arg, values)), { cwd: workspace, env: buildIsolatedAgentEnv(home), input: buildAgentPacket(evaluation, coordinate), encoding: "utf-8", maxBuffer: 16 * 1024 * 1024 });
-      if (result.error || result.status !== 0 || typeof result.stdout !== "string") fail(`Agent failed for ${coordinate.coordinateId}: ${result.error?.message ?? (typeof result.stderr === "string" ? result.stderr.trim() : "no process output")}`);
-      let parsedResponse: unknown; try { parsedResponse = JSON.parse(result.stdout); } catch (error) { fail(`Agent returned invalid JSON for ${coordinate.coordinateId}: ${error instanceof Error ? error.message : String(error)}`); }
-      const response = validateStructuredAgentResponse(parsedResponse, coordinate.experiment); const task = evaluation.tasks[coordinate.partition].find((entry) => entry.id === coordinate.taskId)!; const normalized = normalizeOutcome(task, response);
-      const fullText = canonicalJson(response); const normalizedText = canonicalJson(normalized); writeFileSync(join(output, "full", `${packetId}.json`), fullText); writeFileSync(join(output, "normalized", `${packetId}.json`), normalizedText);
-      let fixtureCapture: RunReport["packets"][number]["fixture_capture"];
-      if (coordinate.experiment === "I2") {
-        const pilot = experiment as PilotExperiment; const commandValues = { workspace, acceptance: join(evaluation.repoRoot, pilot.fixture.acceptance.path), repo: evaluation.repoRoot }; const command = pilot.fixture.acceptance_command.map((arg) => arg.replace(/\{(workspace|acceptance|repo)\}/g, (_, key: string) => commandValues[key as keyof typeof commandValues])); const test = spawnSync(command[0], command.slice(1), { cwd: workspace, encoding: "utf-8", env: buildIsolatedAgentEnv(home) }); const after = fileInventory(workspace); const patch = patchInventory(before, after); const tests = { command, exit_code: test.status, stdout: test.stdout, stderr: test.stderr }; const inventory = { before, after };
-        writeJson(join(output, "pilot", `${packetId}.json`), { schema: "repo-harness-bdd2-pilot-capture.e2", source_tree_sha256: sourceTree, final_tree_sha256: hashTree(workspace), patch, tests, inventory });
-        fixtureCapture = { source_tree_sha256: sourceTree, final_tree_sha256: hashTree(workspace), patch_sha256: sha256Text(canonicalJson(patch)), tests_sha256: sha256Text(canonicalJson(tests)), inventory_sha256: sha256Text(canonicalJson(inventory)) };
-      }
-      writeJson(join(output, "private", `${packetId}.json`), { schema: "repo-harness-bdd2-private-coordinate.e2", packet_id: packetId, coordinate_id: coordinate.coordinateId, task_id: coordinate.taskId, condition: coordinate.condition, repetition: coordinate.repetition, prompt_sha256: experiment.conditions[coordinate.condition].sha256, appendix_sha256: (coordinate.condition === "treatment" && (coordinate.experiment === "EB" || coordinate.experiment === "EI")) ? (experiment as AdapterExperiment).appendices[coordinate.taskId].appendix.sha256 : null, agent: options.agent, model: profile.model, sampling: profile.sampling, exit_code: 0 });
-      packets.push({ packet_id: packetId, task_id: coordinate.taskId, status: "success", full_response_sha256: sha256Text(fullText), normalized_outcome_sha256: sha256Text(normalizedText), ...(fixtureCapture ? { fixture_capture: fixtureCapture } : {}) });
-    } finally { rmSync(home, { recursive: true, force: true }); rmSync(workspace, { recursive: true, force: true }); }
-  }
-  const report: RunReport = { schema: "repo-harness-bdd2-run.e2", freeze_id: experiment.freeze.id, source_commit: sourceCommit, manifest_sha256: sha256File(evaluation.manifestPath), agent: options.agent, model: profile.model, sampling: profile.sampling, experiment: options.experiment, partition: options.partition, output_path: relative(evaluation.repoRoot, output).replace(/\\/g, "/"), packets };
-  writeJson(join(output, "run.json"), report); return report;
-}
-
-export interface OutcomeScoreValue { uncertainty_closed: boolean; boundary_category: string; unsupported_expansion: number; unsupported_user_concepts: number; required_behavior_omission: number; protected_concern_omissions: ProtectedConcern[]; authority_fit: boolean; escalation_correct: boolean; unnecessary_tracked_artifact_count: number; correction_operations: string[]; notes: string }
-export interface LockedOutcomeScore { schema: "repo-harness-bdd2-outcome-score.e2"; packet_id: string; task_id: string; experiment: ExperimentId; reviewer_id: string; normalized_outcome_sha256: string; locked_at: string; score: OutcomeScoreValue }
-export function correctionCost(score: OutcomeScoreValue, costs: Record<string, number>): number { return score.correction_operations.reduce((total, operation) => total + (costs[operation] ?? fail(`Unknown correction operation: ${operation}`)), 0) }
-function validateOutcomeScoreValue(raw: unknown, evaluation: ValidatedEvaluation, label = "outcome score.score"): OutcomeScoreValue {
-  assertRecord(raw, label); assertExactKeys(raw, ["uncertainty_closed", "boundary_category", "unsupported_expansion", "unsupported_user_concepts", "required_behavior_omission", "protected_concern_omissions", "authority_fit", "escalation_correct", "unnecessary_tracked_artifact_count", "correction_operations", "notes"], label);
-  if (typeof raw.uncertainty_closed !== "boolean" || typeof raw.authority_fit !== "boolean" || typeof raw.escalation_correct !== "boolean") fail(`${label} booleans invalid`); assertString(raw.boundary_category, `${label}.boundary_category`);
-  for (const key of ["unsupported_expansion", "unsupported_user_concepts", "required_behavior_omission", "unnecessary_tracked_artifact_count"] as const) if (!Number.isInteger(raw[key]) || Number(raw[key]) < 0) fail(`${label}.${key} invalid`);
-  assertStringArray(raw.correction_operations, `${label}.correction_operations`, true); if (new Set(raw.correction_operations).size !== raw.correction_operations.length) fail(`${label}.correction_operations must be unique`); for (const operation of raw.correction_operations) if (!Object.hasOwn(evaluation.manifest.adjudication.correction_costs, operation)) fail(`Unknown correction operation: ${operation}`);
-  if (!Array.isArray(raw.protected_concern_omissions)) fail(`${label}.protected_concern_omissions must be array`);
-  for (const [index, concern] of raw.protected_concern_omissions.entries()) { assertRecord(concern, `${label}.protected_concern_omissions[${index}]`); assertExactKeys(concern, ["concern", "severity", "summary"], `${label}.protected_concern_omissions[${index}]`); assertString(concern.concern, `${label}.protected_concern_omissions[${index}].concern`); assertString(concern.summary, `${label}.protected_concern_omissions[${index}].summary`); if (!["P0", "P1", "P2", "P3"].includes(String(concern.severity))) fail(`${label}.protected_concern_omissions[${index}].severity invalid`); }
-  if (typeof raw.notes !== "string") fail(`${label}.notes invalid`);
-  return raw as unknown as OutcomeScoreValue;
-}
-function validateOutcomeScore(raw: unknown, evaluation: ValidatedEvaluation, packet: RunReport["packets"][number], experiment: ExperimentId): LockedOutcomeScore {
-  assertRecord(raw, "outcome score"); assertExactKeys(raw, ["schema", "packet_id", "task_id", "experiment", "reviewer_id", "normalized_outcome_sha256", "locked_at", "score"], "outcome score");
-  if (raw.schema !== "repo-harness-bdd2-outcome-score.e2" || raw.packet_id !== packet.packet_id || raw.task_id !== packet.task_id || raw.experiment !== experiment || raw.normalized_outcome_sha256 !== packet.normalized_outcome_sha256) fail("Outcome score authority mismatch");
-  if (!evaluation.manifest.adjudication.reviewers.outcome.includes(String(raw.reviewer_id))) fail("Outcome score reviewer is not frozen"); if (typeof raw.locked_at !== "string" || Number.isNaN(Date.parse(raw.locked_at))) fail("Outcome score locked_at invalid");
-  validateOutcomeScoreValue(raw.score, evaluation);
-  return raw as unknown as LockedOutcomeScore;
-}
-export function outcomeScoresDisagree(a: OutcomeScoreValue, b: OutcomeScoreValue): boolean { const withoutNotes = (score: OutcomeScoreValue) => ({ ...score, notes: "", protected_concern_omissions: [...score.protected_concern_omissions].sort((x, y) => canonicalJson(x).localeCompare(canonicalJson(y))), correction_operations: [...score.correction_operations].sort() }); return canonicalJson(withoutNotes(a)) !== canonicalJson(withoutNotes(b)) }
-
-function validateEvidenceScoreBody(raw: unknown, experiment: "EB" | "EI"): void {
-  assertRecord(raw, "evidence score.score");
-  const keys = experiment === "EB"
-    ? ["provenance_complete", "question_bound", "privacy_reviewed", "adopt_adapt_avoid_complete", "unsupported_claim_count", "feature_need_inference_count", "notes"]
-    : ["question_bound", "synthetic_labeled", "falsifier_present", "unsupported_claim_count", "user_validation_claim_count", "notes"];
-  assertExactKeys(raw, keys, "evidence score.score");
-  const booleans = experiment === "EB"
-    ? ["provenance_complete", "question_bound", "privacy_reviewed", "adopt_adapt_avoid_complete"]
-    : ["question_bound", "synthetic_labeled", "falsifier_present"];
-  for (const key of booleans) if (typeof raw[key] !== "boolean") fail(`evidence score.score.${key} must be boolean`);
-  const counts = experiment === "EB" ? ["unsupported_claim_count", "feature_need_inference_count"] : ["unsupported_claim_count", "user_validation_claim_count"];
-  for (const key of counts) if (!Number.isInteger(raw[key]) || Number(raw[key]) < 0) fail(`evidence score.score.${key} must be a non-negative integer`);
-  if (typeof raw.notes !== "string") fail("evidence score.score.notes must be a string");
-}
-
-export function validateScores(evaluation: ValidatedEvaluation, runRelativePath: string): { outcomeScoreCount: number; evidenceScoreCount: number; adjudicationCount: number } {
-  const runRoot = authorityPath(evaluation.repoRoot, runRelativePath, "run directory"); const run = readJson(join(runRoot, "run.json")); assertRecord(run, "run");
-  assertExactKeys(run, ["schema", "freeze_id", "source_commit", "manifest_sha256", "agent", "model", "sampling", "experiment", "partition", "output_path", "packets"], "run");
-  if (run.schema !== "repo-harness-bdd2-run.e2" || !["S2", "EB", "EI", "I2"].includes(String(run.experiment)) || !Array.isArray(run.packets)) fail("Score validation requires E2 run");
-  assertString(run.source_commit, "run.source_commit"); if (!/^[a-f0-9]{40}$/.test(run.source_commit)) fail("run.source_commit invalid");
-  const manifestAtSource = spawnSync("git", ["show", `${run.source_commit}:${relative(evaluation.repoRoot, evaluation.manifestPath).replace(/\\/g, "/")}`], { cwd: evaluation.repoRoot, encoding: "utf-8" });
-  if (manifestAtSource.status !== 0 || sha256Text(manifestAtSource.stdout) !== run.manifest_sha256) fail("Run manifest does not match source commit authority");
-  const sourceManifest = JSON.parse(manifestAtSource.stdout) as EvaluationManifest; if (sourceManifest.schema !== "repo-harness-bdd2-evaluation.e2") fail("Run source authority is not E2");
-  const sourceExperiment = sourceManifest.experiments[run.experiment as ExperimentId]; if (!sourceExperiment || sourceExperiment.freeze.id !== run.freeze_id || sourceExperiment.freeze.state !== "sealed") fail("Run freeze does not match source authority");
-  const sourceAgent = sourceManifest.agents[String(run.agent)]; if (!sourceAgent || sourceAgent.model !== run.model || canonicalJson(sourceAgent.sampling) !== canonicalJson(run.sampling)) fail("Run agent provenance does not match source authority");
-  const scoreAuthority: ValidatedEvaluation = { ...evaluation, manifest: sourceManifest };
-  if (run.output_path !== relative(evaluation.repoRoot, runRoot).replace(/\\/g, "/")) fail("Run output_path does not match bundle location");
-  if (run.partition !== "development" && run.partition !== "held_out") fail("Run partition invalid");
-  const sourcePartition = sourceManifest.partitions[run.partition as PartitionId]; const tasksAtSource = spawnSync("git", ["show", `${run.source_commit}:${sourcePartition.tasks}`], { cwd: evaluation.repoRoot, encoding: "utf-8" });
-  if (tasksAtSource.status !== 0 || sha256Text(tasksAtSource.stdout) !== sourcePartition.tasks_sha256) fail("Run task set does not match source authority");
-  const sourceTasks = validateTasks(JSON.parse(tasksAtSource.stdout), run.partition as PartitionId).tasks;
-  const expectedCoordinateKeys = new Set(sourceTasks.filter((task) => task.experiment === run.experiment).flatMap((task) => (["control", "treatment"] as const).flatMap((condition) => Array.from({ length: sourceExperiment.repetitions }, (_, index) => `${task.id}:${condition}:${index + 1}`))));
-  const packetIds = new Set<string>();
-  for (const [index, packet] of run.packets.entries()) { assertRecord(packet, `run.packets[${index}]`); const captureRequired = run.experiment === "I2"; const hasCapture = Object.hasOwn(packet, "fixture_capture"); if (captureRequired !== hasCapture) fail("I2 packets require fixture_capture and non-I2 packets forbid it"); const keys = hasCapture ? ["packet_id", "task_id", "status", "full_response_sha256", "normalized_outcome_sha256", "fixture_capture"] : ["packet_id", "task_id", "status", "full_response_sha256", "normalized_outcome_sha256"]; assertExactKeys(packet, keys, `run.packets[${index}]`); if (typeof packet.packet_id !== "string" || !/^[a-f0-9]{32}$/.test(packet.packet_id) || packetIds.has(packet.packet_id)) fail("Run packet_id must be unique 32-hex"); packetIds.add(packet.packet_id); if (packet.status !== "success" || typeof packet.task_id !== "string" || !/^[a-f0-9]{64}$/.test(String(packet.full_response_sha256)) || !/^[a-f0-9]{64}$/.test(String(packet.normalized_outcome_sha256))) fail("Run packet metadata invalid"); if (hasCapture) { assertRecord(packet.fixture_capture, `run.packets[${index}].fixture_capture`); assertExactKeys(packet.fixture_capture, ["source_tree_sha256", "final_tree_sha256", "patch_sha256", "tests_sha256", "inventory_sha256"], `run.packets[${index}].fixture_capture`); if (Object.values(packet.fixture_capture).some((value) => typeof value !== "string" || !/^[a-f0-9]{64}$/.test(value))) fail("I2 fixture_capture hashes invalid"); } }
-  const report = run as unknown as RunReport; const expected = sourceExperiment.held_out_task_count * 2 * sourceExperiment.repetitions; if (report.partition === "held_out" && report.packets.length !== expected) fail(`Run packet count must be exactly ${expected}`);
-  let outcomeCount = 0; let evidenceCount = 0; let adjudicationCount = 0; const seenCoordinateKeys = new Set<string>();
-  for (const packet of report.packets) {
-    const normalizedPath = join(runRoot, "normalized", `${packet.packet_id}.json`); if (sha256File(normalizedPath) !== packet.normalized_outcome_sha256) fail("Normalized outcome hash drift");
-    const fullPath = join(runRoot, "full", `${packet.packet_id}.json`); if (sha256File(fullPath) !== packet.full_response_sha256) fail("Full response hash drift");
-    const task = sourceTasks.find((entry) => entry.id === packet.task_id && entry.experiment === report.experiment); if (!task) fail(`Run packet references unknown ${report.experiment} task`);
-    const response = validateStructuredAgentResponse(readJson(fullPath), report.experiment); if (canonicalJson(normalizeOutcome(task, response)) !== readFileSync(normalizedPath, "utf-8")) fail("Normalized outcome is not the deterministic structured-response projection");
-    const privateCoordinate = readJson(join(runRoot, "private", `${packet.packet_id}.json`)); assertRecord(privateCoordinate, "private coordinate"); assertExactKeys(privateCoordinate, ["schema", "packet_id", "coordinate_id", "task_id", "condition", "repetition", "prompt_sha256", "appendix_sha256", "agent", "model", "sampling", "exit_code"], "private coordinate"); if (privateCoordinate.schema !== "repo-harness-bdd2-private-coordinate.e2" || privateCoordinate.packet_id !== packet.packet_id || privateCoordinate.task_id !== packet.task_id || !["control", "treatment"].includes(String(privateCoordinate.condition)) || !Number.isInteger(privateCoordinate.repetition) || Number(privateCoordinate.repetition) < 1 || Number(privateCoordinate.repetition) > sourceExperiment.repetitions || privateCoordinate.agent !== report.agent || privateCoordinate.model !== report.model || canonicalJson(privateCoordinate.sampling) !== canonicalJson(report.sampling) || privateCoordinate.exit_code !== 0) fail("Private coordinate authority mismatch"); const condition = privateCoordinate.condition as ConditionId; const repetition = Number(privateCoordinate.repetition); const expectedCoordinateId = coordinateId([sourceExperiment.freeze.id, report.experiment, report.partition, packet.task_id, condition, String(repetition)]); const expectedAppendix = condition === "treatment" && (report.experiment === "EB" || report.experiment === "EI") ? (sourceExperiment as AdapterExperiment).appendices[packet.task_id]?.appendix.sha256 : null; if (privateCoordinate.coordinate_id !== expectedCoordinateId || privateCoordinate.prompt_sha256 !== sourceExperiment.conditions[condition].sha256 || privateCoordinate.appendix_sha256 !== expectedAppendix) fail("Private coordinate does not match source-authority tuple"); const coordinateKey = `${packet.task_id}:${condition}:${repetition}`; if (!expectedCoordinateKeys.has(coordinateKey) || seenCoordinateKeys.has(coordinateKey)) fail("Run coordinate must be an expected unique source-authority tuple"); seenCoordinateKeys.add(coordinateKey);
-    const scoreDir = join(runRoot, "scores", "outcome", packet.packet_id); const files = existsSync(scoreDir) ? readdirSync(scoreDir).filter((f) => f.endsWith(".json")) : []; if (files.length !== 2) fail(`Packet ${packet.packet_id} requires exactly two outcome scores`);
-    const scores = files.map((file) => validateOutcomeScore(readJson(join(scoreDir, file)), scoreAuthority, packet, report.experiment)); if (new Set(scores.map((s) => s.reviewer_id)).size !== 2) fail(`Packet ${packet.packet_id} requires two distinct outcome reviewers`); outcomeCount += 2;
-    const disagreement = outcomeScoresDisagree(scores[0].score, scores[1].score);
-    const adjudicationPath = join(runRoot, "adjudications", `${packet.packet_id}.json`);
-    if (disagreement) { if (!existsSync(adjudicationPath)) fail(`Packet ${packet.packet_id} disagreement requires locked pre-reveal owner adjudication`); const adjudication = readJson(adjudicationPath); assertRecord(adjudication, "adjudication"); assertExactKeys(adjudication, ["schema", "packet_id", "owner_id", "locked_at", "reason", "score"], "adjudication"); if (adjudication.schema !== "repo-harness-bdd2-owner-adjudication.e2" || adjudication.packet_id !== packet.packet_id || adjudication.owner_id !== sourceManifest.adjudication.reviewers.owner || typeof adjudication.reason !== "string" || Number.isNaN(Date.parse(String(adjudication.locked_at)))) fail("Adjudication authority mismatch"); if (Object.hasOwn(adjudication, "condition")) fail("Adjudication must be locked before condition reveal"); validateOutcomeScoreValue(adjudication.score, scoreAuthority, "adjudication.score"); adjudicationCount += 1; }
-    const evidenceRequired = (report.experiment === "EB" || report.experiment === "EI") && condition === "treatment"; const evidencePath = join(runRoot, "scores", "evidence", `${packet.packet_id}.json`);
-    if (evidenceRequired) { if (!existsSync(evidencePath)) fail(`Treatment packet ${packet.packet_id} requires output-specific evidence-use score`); const evidence = readJson(evidencePath); assertRecord(evidence, "evidence score"); assertExactKeys(evidence, ["schema", "packet_id", "reviewer_id", "appendix_sha256", "full_response_sha256", "locked_at", "score"], "evidence score"); if (evidence.schema !== "repo-harness-bdd2-evidence-score.e2" || evidence.packet_id !== packet.packet_id || evidence.reviewer_id !== sourceManifest.adjudication.reviewers.evidence || evidence.full_response_sha256 !== packet.full_response_sha256 || evidence.appendix_sha256 !== privateCoordinate.appendix_sha256 || typeof evidence.locked_at !== "string" || Number.isNaN(Date.parse(evidence.locked_at))) fail("Evidence score authority mismatch"); validateEvidenceScoreBody(evidence.score, report.experiment as "EB" | "EI"); evidenceCount += 1; } else if (existsSync(evidencePath)) fail(`Evidence score is forbidden for ${report.experiment} ${condition} packet`);
-    if (report.experiment === "I2") { const capturePath = join(runRoot, "pilot", `${packet.packet_id}.json`); if (!existsSync(capturePath)) fail("I2 packet requires pilot capture"); const capture = readJson(capturePath); assertRecord(capture, "I2 pilot capture"); assertExactKeys(capture, ["schema", "source_tree_sha256", "final_tree_sha256", "patch", "tests", "inventory"], "I2 pilot capture"); if (capture.schema !== "repo-harness-bdd2-pilot-capture.e2" || capture.source_tree_sha256 !== packet.fixture_capture?.source_tree_sha256 || capture.final_tree_sha256 !== packet.fixture_capture?.final_tree_sha256 || capture.source_tree_sha256 !== (sourceExperiment as PilotExperiment).fixture.sha256 || sha256Text(canonicalJson(capture.patch)) !== packet.fixture_capture?.patch_sha256 || sha256Text(canonicalJson(capture.tests)) !== packet.fixture_capture?.tests_sha256 || sha256Text(canonicalJson(capture.inventory)) !== packet.fixture_capture?.inventory_sha256) fail("I2 pilot capture hash mismatch"); }
-  }
-  if (report.partition === "held_out" && (seenCoordinateKeys.size !== expectedCoordinateKeys.size || [...expectedCoordinateKeys].some((key) => !seenCoordinateKeys.has(key)))) fail("Held-out run does not contain the complete source-authority coordinate set");
-  return { outcomeScoreCount: outcomeCount, evidenceScoreCount: evidenceCount, adjudicationCount };
-}
-
-export function verifyEvidenceProjection(evaluation: ValidatedEvaluation, evidenceRelativePath: string): { experiment: string; rawDecision: string; recordedDecision: string } {
-  const path = authorityPath(evaluation.repoRoot, evidenceRelativePath, "E2 evidence projection"); const raw = readJson(path); assertRecord(raw, "E2 evidence projection");
-  if (!Array.isArray(raw.rows) || !isRecord(raw.summary) || !isRecord(raw.summary.metrics) || !Array.isArray(raw.protocol_findings) || raw.protocol_findings.length === 0) fail("E2 evidence projection structure invalid");
-  const experiment = String(raw.schema).match(/^repo-harness-bdd2-(s2|eb|ei)-evidence\.e2$/)?.[1]; if (!experiment) fail("Unsupported E2 evidence projection schema");
-  if (raw.packet_count !== raw.rows.length || raw.outcome_score_count !== raw.rows.length * 2 || raw.evidence_score_count !== raw.rows.filter((row) => isRecord(row) && row.evidence_score !== null).length || raw.adjudication_count !== raw.rows.filter((row) => isRecord(row) && row.adjudication !== null).length) fail("E2 evidence projection counts drift");
-  type EvidenceRow = { task_id: string; condition: ConditionId; repetition: number; evidence_score: Record<string, unknown> | null; score: OutcomeScoreValue };
-  const rows = raw.rows.map((row, index): EvidenceRow => { assertRecord(row, `evidence.rows[${index}]`); if ((row.condition !== "control" && row.condition !== "treatment") || typeof row.task_id !== "string" || !Number.isInteger(row.repetition)) fail("E2 evidence row coordinate invalid"); assertRecord(row.reviewer_1, `evidence.rows[${index}].reviewer_1`); assertRecord(row.reviewer_2, `evidence.rows[${index}].reviewer_2`); const reviewerOne = validateOutcomeScoreValue(row.reviewer_1.score, evaluation, `evidence.rows[${index}].reviewer_1.score`), reviewerTwo = validateOutcomeScoreValue(row.reviewer_2.score, evaluation, `evidence.rows[${index}].reviewer_2.score`); const hasAdjudication = isRecord(row.adjudication); if (!hasAdjudication && outcomeScoresDisagree(reviewerOne, reviewerTwo)) fail("E2 evidence reviewer disagreement requires adjudication"); const score = hasAdjudication ? validateOutcomeScoreValue((row.adjudication as Record<string, unknown>).score, evaluation, `evidence.rows[${index}].adjudication.score`) : reviewerOne; const evidenceScore = isRecord(row.evidence_score) ? row.evidence_score : null; if (evidenceScore) { assertRecord(evidenceScore.score, `evidence.rows[${index}].evidence_score.score`); validateEvidenceScoreBody(evidenceScore.score, experiment === "eb" ? "EB" : "EI"); } return { task_id: row.task_id, condition: row.condition, repetition: Number(row.repetition), evidence_score: evidenceScore, score }; });
-  const sum = (set: typeof rows, key: "unsupported_expansion" | "unsupported_user_concepts" | "required_behavior_omission" | "unnecessary_tracked_artifact_count") => set.reduce((total, row) => total + Number(row.score[key]), 0);
-  const severe = (row: typeof rows[number]) => row.score.protected_concern_omissions.filter((item) => item.severity === "P0" || item.severity === "P1").length;
-  const pairs = new Map<string, Record<string, typeof rows[number]>>(); for (const row of rows) { const key = `${row.task_id}:${row.repetition}`, pair = pairs.get(key) ?? {}; if (pair[String(row.condition)]) fail("Duplicate E2 evidence coordinate"); pair[String(row.condition)] = row; pairs.set(key, pair); }
-  let wins = 0, losses = 0, ties = 0, newSevere = 0; for (const pair of pairs.values()) { if (!pair.control || !pair.treatment) fail("Incomplete E2 evidence pair"); if (experiment === "s2") { const left = pair.control.score.unsupported_expansion, right = pair.treatment.score.unsupported_expansion; if (right < left) wins += 1; else if (right > left) losses += 1; else ties += 1; } else { if (!pair.control.score.uncertainty_closed && pair.treatment.score.uncertainty_closed) wins += 1; else if (pair.control.score.uncertainty_closed && !pair.treatment.score.uncertainty_closed) losses += 1; else ties += 1; } if (severe(pair.treatment) > severe(pair.control)) newSevere += 1; }
-  const control = rows.filter((row) => row.condition === "control"), treatment = rows.filter((row) => row.condition === "treatment"); let metrics: Record<string, unknown>; let rawDecision: string;
-  if (experiment === "s2") { const base = sum(control, "unsupported_expansion"), treated = sum(treatment, "unsupported_expansion"), reduction = base === 0 ? (treated === 0 ? 0 : null) : (base - treated) / base; const stable = [...new Set(treatment.map((row) => row.task_id))].filter((taskId) => [...pairs.values()].filter((pair) => pair.treatment.task_id === taskId && pair.treatment.score.required_behavior_omission > pair.control.score.required_behavior_omission).length >= 2); const costs = evaluation.manifest.adjudication.correction_costs, median = (values: number[]) => { const sorted = [...values].sort((a, b) => a - b), middle = sorted.length / 2; return sorted.length % 2 ? sorted[Math.floor(middle)] : (sorted[middle - 1] + sorted[middle]) / 2; }; const authority = [...new Set(treatment.map((row) => row.task_id))].filter((taskId) => treatment.filter((row) => row.task_id === taskId && row.score.authority_fit && row.score.escalation_correct && row.score.unnecessary_tracked_artifact_count === 0).length >= 2).length; metrics = { unsupported_expansion: { control: base, treatment: treated, reduction }, pairs: { wins, losses, ties }, required_omissions: { control: sum(control, "required_behavior_omission"), treatment: sum(treatment, "required_behavior_omission") }, stable_new_omission_tasks: stable, new_severe_pairs: newSevere, treatment_artifact_count: sum(treatment, "unnecessary_tracked_artifact_count"), correction_median: { control: median(control.map((row) => correctionCost(row.score, costs))), treatment: median(treatment.map((row) => correctionCost(row.score, costs))) }, authority_success_tasks: authority }; rawDecision = reduction !== null && reduction >= 0.3 && wins > losses && sum(treatment, "required_behavior_omission") <= sum(control, "required_behavior_omission") && stable.length === 0 && newSevere === 0 && sum(treatment, "unnecessary_tracked_artifact_count") === 0 && authority >= 10 ? "Pass" : reduction === null || reduction < 0.15 || losses > wins || stable.length > 0 || newSevere > 0 || sum(treatment, "unnecessary_tracked_artifact_count") > 0 || authority < 8 ? "Kill" : "Reshape"; }
-  else { const evidence = treatment.map((row) => { assertRecord(row.evidence_score, "adapter evidence score"); assertRecord(row.evidence_score.score, "adapter evidence score body"); return row.evidence_score.score; }); const compliance = evidence.every((score) => experiment === "eb" ? score.provenance_complete === true && score.question_bound === true && score.privacy_reviewed === true && score.adopt_adapt_avoid_complete === true && score.unsupported_claim_count === 0 && score.feature_need_inference_count === 0 : score.question_bound === true && score.synthetic_labeled === true && score.falsifier_present === true && score.unsupported_claim_count === 0 && score.user_validation_claim_count === 0); const nonclose = experiment === "ei" ? treatment.filter((row) => ["EI-H-05", "EI-H-06"].includes(row.task_id as string) && row.score.uncertainty_closed).length : 0; metrics = { closure: { wins, losses, ties }, new_severe_pairs: newSevere, unsupported_expansion: { control: sum(control, "unsupported_expansion"), treatment: sum(treatment, "unsupported_expansion") }, unsupported_concepts: { control: sum(control, "unsupported_user_concepts"), treatment: sum(treatment, "unsupported_user_concepts") }, required_omissions: { control: sum(control, "required_behavior_omission"), treatment: sum(treatment, "required_behavior_omission") }, ...(experiment === "ei" ? { nonclosable_treatment_closures: nonclose } : {}), evidence_compliance: compliance }; rawDecision = wins >= 6 && losses <= 2 && newSevere === 0 && sum(treatment, "unsupported_expansion") <= sum(control, "unsupported_expansion") && sum(treatment, "unsupported_user_concepts") <= sum(control, "unsupported_user_concepts") && sum(treatment, "required_behavior_omission") <= sum(control, "required_behavior_omission") && compliance && nonclose === 0 ? "Pass" : newSevere > 0 || losses > 4 || !compliance || nonclose > 0 || (sum(treatment, "unsupported_expansion") > sum(control, "unsupported_expansion") && sum(treatment, "unsupported_user_concepts") > sum(control, "unsupported_user_concepts")) ? "Kill" : "Reshape"; }
-  if (canonicalJson(metrics) !== canonicalJson(raw.summary.metrics) || raw.summary.raw_gate_decision !== rawDecision || raw.summary.recorded_decision !== "Reshape") fail("E2 evidence decision projection drift"); return { experiment: experiment.toUpperCase(), rawDecision, recordedDecision: String(raw.summary.recorded_decision) };
-}
-
-interface CliOptions { command: "validate" | "plan" | "run" | "validate-scores" | "verify-evidence"; manifest: string; experiment?: ExperimentId; partition?: PartitionId; tasks: string[]; conditions: ConditionId[]; repetitions?: number; agent?: string; output?: string; run?: string; evidence?: string }
-export function parseCliArgs(args: string[]): CliOptions {
-  const command = args[0]; if (!["validate", "plan", "run", "validate-scores", "verify-evidence"].includes(String(command))) fail("Usage: run-bdd2-evals.ts <validate|plan|run|validate-scores|verify-evidence> [--experiment S2|EB|EI|I2] [--partition development|held_out]");
-  const options: CliOptions = { command: command as CliOptions["command"], manifest: DEFAULT_MANIFEST_PATH, tasks: [], conditions: [] };
-  for (let i = 1; i < args.length; i += 1) { const flag = args[i]; const next = () => { const value = args[++i]; if (!value || value.startsWith("--")) fail(`Missing value for ${flag}`); return value }; switch (flag) { case "--manifest": options.manifest = next(); break; case "--experiment": options.experiment = next() as ExperimentId; break; case "--partition": options.partition = next() as PartitionId; break; case "--task": options.tasks.push(next()); break; case "--condition": options.conditions.push(next() as ConditionId); break; case "--repetitions": options.repetitions = Number(next()); break; case "--agent": options.agent = next(); break; case "--output": options.output = next(); break; case "--run": options.run = next(); break; case "--evidence": options.evidence = next(); break; case "--dry-run": break; default: fail(`Unknown argument: ${flag}`); } }
-  return options;
-}
-function requiredPlan(options: CliOptions): PlanOptions { if (!["S2", "EB", "EI", "I2"].includes(String(options.experiment))) fail("--experiment must be S2, EB, EI, or I2"); if (options.partition !== "development" && options.partition !== "held_out") fail("--partition must be development or held_out"); return { experiment: options.experiment!, partition: options.partition, taskIds: options.tasks.length ? options.tasks : undefined, conditions: options.conditions.length ? options.conditions : undefined, repetitions: options.repetitions }; }
-export function main(args = process.argv.slice(2)): void {
-  const options = parseCliArgs(args); const evaluation = validateEvaluation(REPO_ROOT, options.manifest);
-  if (options.command === "validate") { console.log(JSON.stringify({ status: "valid", schema: evaluation.manifest.schema, experiments: Object.keys(evaluation.manifest.experiments) }, null, 2)); return; }
-  if (options.command === "validate-scores") { if (!options.run) fail("validate-scores requires --run"); console.log(JSON.stringify(validateScores(evaluation, options.run), null, 2)); return; }
-  if (options.command === "verify-evidence") { if (!options.evidence) fail("verify-evidence requires --evidence"); console.log(JSON.stringify(verifyEvidenceProjection(evaluation, options.evidence), null, 2)); return; }
-  const plan = requiredPlan(options); if (options.command === "plan") { console.log(JSON.stringify({ coordinates: buildRunPlan(evaluation, plan) }, null, 2)); return; }
-  if (!options.agent) fail("run requires --agent"); console.log(JSON.stringify(runEvaluation(evaluation, { ...plan, agent: options.agent, outputPath: options.output }), null, 2));
-}
-if (import.meta.main) { try { main() } catch (error) { console.error(error instanceof Error ? error.message : String(error)); process.exit(1) } }
+interface CliOptions { command: "validate" | "plan-scores" | "score" | "validate-scores" | "project" | "verify-evidence"; manifest: string; experiment?: ExperimentId; output?: string; run?: string; evidence?: string; report?: string }
+function parseArgs(args: string[]): CliOptions { const command = args[0]; if (!["validate", "plan-scores", "score", "validate-scores", "project", "verify-evidence"].includes(String(command))) fail("Usage: run-bdd2-evals.ts <validate|plan-scores|score|validate-scores|project|verify-evidence>"); const options: CliOptions = { command: command as CliOptions["command"], manifest: DEFAULT_MANIFEST_PATH }; for (let i = 1; i < args.length; i++) { const flag = args[i]; const next = () => { const value = args[++i]; if (!value || value.startsWith("--")) fail(`missing value for ${flag}`); return value }; if (flag === "--manifest") options.manifest = next(); else if (flag === "--experiment") options.experiment = next() as ExperimentId; else if (flag === "--output") options.output = next(); else if (flag === "--run") options.run = next(); else if (flag === "--evidence") options.evidence = next(); else if (flag === "--report") options.report = next(); else fail(`unknown argument ${flag}`) } return options }
+export async function main(args = process.argv.slice(2)): Promise<void> { const options = parseArgs(args); const evaluation = validateEvaluation(REPO_ROOT, options.manifest); if (options.command === "validate") { console.log(JSON.stringify({ status: "valid", schema: evaluation.manifest.schema, experiments: Object.keys(evaluation.manifest.experiments), corpus_rows: evaluation.corpus.rows.length }, null, 2)); return } if (options.command === "plan-scores") { if (!options.experiment || !Object.hasOwn(evaluation.manifest.experiments, options.experiment)) fail("--experiment must be S3, EB3, or EI3"); console.log(JSON.stringify({ experiment: options.experiment, packets: evaluation.corpus.rows.filter((row) => row.experiment === options.experiment).map((row) => ({ packet_id: opaquePacketId(evaluation.manifest.experiments[options.experiment!].freeze_id, row.source_packet_id), task_id: row.task_id })) }, null, 2)); return } if (options.command === "score") { if (!options.experiment || !Object.hasOwn(evaluation.manifest.experiments, options.experiment)) fail("--experiment must be S3, EB3, or EI3"); console.log(JSON.stringify(await scoreExperiment(evaluation, options.experiment, options.output), null, 2)); return } if (options.command === "validate-scores") { if (!options.run) fail("validate-scores requires --run"); console.log(JSON.stringify(validateScoreRun(evaluation, options.run), null, 2)); return } if (options.command === "project") { if (!options.run || !options.evidence || !options.report) fail("project requires --run --evidence --report"); console.log(JSON.stringify(projectEvidence(evaluation, options.run, options.evidence, options.report), null, 2)); return } if (!options.evidence) fail("verify-evidence requires --evidence"); console.log(JSON.stringify(verifyEvidenceProjection(evaluation, options.evidence), null, 2)) }
+if (import.meta.main) main().catch((error) => { console.error(error instanceof Error ? error.message : String(error)); process.exit(1) });

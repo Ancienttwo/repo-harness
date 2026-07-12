@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "repo-harness-bdd2-browser-evidence-score-response.e3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "packet_id", "score"],
+  "properties": {
+    "schema": {"const": "repo-harness-bdd2-browser-evidence-score-response.e3"},
+    "packet_id": {"type": "string", "minLength": 32, "maxLength": 32},
+    "score": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provenance_complete", "question_bound", "privacy_reviewed", "adopt_adapt_avoid_complete", "unsupported_assertion_count", "explicit_limitation_count", "feature_need_inference_count", "notes"],
+      "properties": {
+        "provenance_complete": {"type": "boolean"},
+        "question_bound": {"type": "boolean"},
+        "privacy_reviewed": {"type": "boolean"},
+        "adopt_adapt_avoid_complete": {"type": "boolean"},
+        "unsupported_assertion_count": {"type": "integer", "minimum": 0},
+        "explicit_limitation_count": {"type": "integer", "minimum": 0},
+        "feature_need_inference_count": {"type": "integer", "minimum": 0},
+        "notes": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}
