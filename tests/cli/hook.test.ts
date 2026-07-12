@@ -1029,7 +1029,12 @@ describe('hook command (Phase 1B)', () => {
             cwd: repoRoot,
             input: JSON.stringify({ session_id: 'session-1', prompt: '/parallel split explorer and reviewer' }),
             encoding: 'utf-8',
-            env: { ...process.env, HOME: home, HOOK_HOST: 'codex' },
+            env: {
+              ...process.env,
+              HOME: home,
+              HOOK_HOST: 'codex',
+              REPO_HARNESS_HOOK_CLI: HOOK_ENTRY,
+            },
           },
         );
         expect(trigger.status, trigger.stderr).toBe(0);
@@ -1041,7 +1046,12 @@ describe('hook command (Phase 1B)', () => {
             cwd: repoRoot,
             input: JSON.stringify({ hook_event_name: 'SubagentStart', session_id: 'session-2' }),
             encoding: 'utf-8',
-            env: { ...process.env, HOME: home, HOOK_HOST: 'codex' },
+            env: {
+              ...process.env,
+              HOME: home,
+              HOOK_HOST: 'codex',
+              REPO_HARNESS_HOOK_CLI: HOOK_ENTRY,
+            },
           },
         );
         expect(start.status, start.stderr).toBe(0);
@@ -1064,7 +1074,12 @@ describe('hook command (Phase 1B)', () => {
             cwd: repoRoot,
             input: JSON.stringify({ hook_event_name: 'SubagentStart', session_id: 'session-1' }),
             encoding: 'utf-8',
-            env: { ...process.env, HOME: home, HOOK_HOST: 'codex' },
+            env: {
+              ...process.env,
+              HOME: home,
+              HOOK_HOST: 'codex',
+              REPO_HARNESS_HOOK_CLI: HOOK_ENTRY,
+            },
           },
         );
         expect(matchingStart.status, matchingStart.stderr).toBe(0);

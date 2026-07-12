@@ -117,8 +117,10 @@
   embedded 120 outputs and their hashes are unchanged.
 - Once CI advanced past E3, it exposed an ambient-HOME dependency in the existing
   SubagentStart hook test. That test now uses an isolated HOME for the trigger and
-  both context calls, and surfaces trigger/context stderr as assertion context. Runtime
-  behavior is unchanged; the test no longer depends on runner-level harness config.
+  both context calls, binds the source-tree hook entry used by the circuit breaker,
+  and surfaces trigger/context stderr as assertion context. Runtime behavior is
+  unchanged; the test no longer depends on runner-level harness config or a globally
+  installed `repo-harness-hook` binary.
 
 ## Evidence Links
 
