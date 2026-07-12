@@ -10,8 +10,8 @@
       "kind": "inline-shape",
       "freeze": {
         "id": "bdd2-e2-s2",
-        "state": "foundation",
-        "sealed_at": null
+        "state": "sealed",
+        "sealed_at": "2026-07-13T00:45:00+08:00"
       },
       "repetitions": 3,
       "held_out_task_count": 12,
@@ -30,8 +30,8 @@
       "kind": "browser-adapter",
       "freeze": {
         "id": "bdd2-e2-eb",
-        "state": "foundation",
-        "sealed_at": null
+        "state": "sealed",
+        "sealed_at": "2026-07-13T00:45:00+08:00"
       },
       "repetitions": 2,
       "held_out_task_count": 6,
@@ -124,8 +124,8 @@
       "kind": "imagegen-adapter",
       "freeze": {
         "id": "bdd2-e2-ei",
-        "state": "foundation",
-        "sealed_at": null
+        "state": "sealed",
+        "sealed_at": "2026-07-13T00:45:00+08:00"
       },
       "repetitions": 2,
       "held_out_task_count": 6,
@@ -218,8 +218,8 @@
       "kind": "implementation-pilot",
       "freeze": {
         "id": "bdd2-e2-i2",
-        "state": "foundation",
-        "sealed_at": null
+        "state": "sealed",
+        "sealed_at": "2026-07-13T00:45:00+08:00"
       },
       "repetitions": 2,
       "held_out_task_count": 1,
