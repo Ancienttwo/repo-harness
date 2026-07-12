@@ -5,10 +5,10 @@
 > **Contract**: tasks/contracts/20260712-1330-bun-1-3-14-runtime-upgrade.contract.md
 > **Notes File**: tasks/notes/20260712-1330-bun-1-3-14-runtime-upgrade.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-07-12 13:57
+> **Last Updated**: 2026-07-12 14:05
 > **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Diff Fingerprint**: sha256:221cc7a954a0ea5466549c682b9b8d43ed3d288670dbae7606da30131324424e
+> **Reviewed Diff Fingerprint**: sha256:4d99f84676891bd4e921e6392f3dbbbfa0be826ae4b9937ff6d46b4516ea6ab9
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 ## Human Review Card
@@ -39,7 +39,8 @@
   `bun scripts/sync-helper-sources.ts --check`; direct event JSON byte count
 - Manual checks: both workflow pins equal 1.3.14; package engine floor unchanged;
   source/template helper copies match; console-output challenge disproved by
-  complete 527/10,000/1,000,000-character probes and valid 85,428-byte adopt JSON
+  complete 527/10,000/1,000,000-character probes and valid 85,428-byte adopt JSON;
+  delayed-reader pipe stress delivered 10MB and 100MB synchronous writes exactly
 - Supporting artifacts: full-suite terminal result, `.ai/harness/checks/latest.json`
 - Implementation notes reviewed: yes
 - Run snapshot: Bun 1.3.14, 1,111 pass / 1 skip / 0 fail
@@ -50,13 +51,14 @@
 > **External Reviewer**: Claude
 > **External Source**: claude-review
 > **External Started**: 2026-07-12 13:42 +0800
-> **External Completed**: 2026-07-12 13:57 +0800
-> **Reviewed Diff Fingerprint**: sha256:221cc7a954a0ea5466549c682b9b8d43ed3d288670dbae7606da30131324424e
+> **External Completed**: 2026-07-12 14:05 +0800
+> **Reviewed Diff Fingerprint**: sha256:4d99f84676891bd4e921e6392f3dbbbfa0be826ae4b9937ff6d46b4516ea6ab9
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 - P1 blockers: none
-- P2 advisories: none. Claude's final exact-diff rereview reported `No findings`
-  after the missed `runHook` stderr and `adopt --dry-run` stdout boundaries were fixed.
+- P2 advisories: none. Claude's final clean committed-diff rereview retracted the
+  speculative `EAGAIN` concern after 100MB delayed-reader pipe proof and reported
+  `No findings`.
 - Acceptance checklist: Test and macOS/Linux/Windows MCP matrix pass; full local
   suite passes; architecture and hook output payloads are complete.
 
