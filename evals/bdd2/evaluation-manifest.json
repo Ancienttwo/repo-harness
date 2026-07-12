@@ -46,7 +46,7 @@
       "tasks": "evals/bdd2/tasks/held-out.json",
       "tasks_sha256": "2b519c49e422be3f9831ae015e49d4a1c0ec201b7a315bc05df5a9c33f9bd0d6",
       "truth": "evals/bdd2/truth/held-out.json",
-      "truth_sha256": "b0d172a4a7c682f68e5a88c1317e9111c7e7ace82ca0bbfb1a8b4b628d7cc0be"
+      "truth_sha256": "7baa52f038b523415caf8cacf4a39f439c4849212895e068c149e9d7d022ab04"
     }
   },
   "adjudication": {

@@ -148,8 +148,7 @@
     "A-H-11": {
       "clean": false,
       "issues": [
-        { "id": "A-H-11-I1", "severity": "P2", "taxonomy": "UNNECESSARY_USER_DECISION", "summary": "The artifact forces five implementation choices before the user can ask a question although none changes an authorized user outcome." },
-        { "id": "A-H-11-I2", "severity": "P2", "taxonomy": "UNNECESSARY_USER_CONCEPT", "summary": "Routing tier, context shard, planner topology, fallback chain, and queue priority become user-facing concepts without behavioral authority." }
+        { "id": "A-H-11-I1", "severity": "P2", "taxonomy": "UNNECESSARY_USER_DECISION", "summary": "The artifact forces five implementation choices and their internal concepts before the user can ask a question although none changes an authorized user outcome; concept exposure is a secondary dimension of this one primary finding." }
       ]
     },
     "A-H-12": { "clean": true, "issues": [] }
