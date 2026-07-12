@@ -49,16 +49,16 @@ structured usage and every deterministic grader passed (27/27). The benchmark
 runner isolated each harness install under a disposable `HOME`/settings and
 `BUN_INSTALL`; No Harness additionally proved zero hooks and an empty structured
 Claude init inventory for Skills, plugins, MCP servers, and slash commands. All
-27 records share run ID `36252e77-376f-48d8-bbbf-fe0faac53c2d`, source commit
-`82374549`, provider version `2.1.207`, and the runner/manifest/fixture hashes
+27 records share run ID `0fadcb29-ae98-4082-8525-f62d3d2670cd`, source commit
+`2061e6d1`, provider version `2.1.207`, and the runner/manifest/fixture hashes
 recorded in the JSON and Markdown reports. The initial Codex attempt exhausted
 its account quota, so it is not mixed into this report.
 
 | Profile | Success | Input | Cached input | Output | Model calls | Duration | Hook calls | Hook time | Hook bytes | Guard blocks | Artifacts |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| No Harness | 9/9 | 35,123 | 1,259,651 | 11,396 | 56 | 220 s | 0 | 0 s | 0 | 0 | 0 |
-| Adaptive Lite | 9/9 | 78,110 | 1,334,196 | 19,351 | 69 | 496 s | 181 | 68 s | 34,131 | 4 | 10 |
-| Strict Harness | 9/9 | 81,586 | 900,414 | 14,706 | 55 | 391 s | 147 | 60 s | 29,868 | 0 | 0 |
+| No Harness | 9/9 | 33,767 | 1,180,955 | 10,535 | 51 | 215 s | 0 | 0 s | 0 | 0 | 0 |
+| Adaptive Lite | 9/9 | 108,763 | 1,369,913 | 21,922 | 73 | 500 s | 186 | 60 s | 34,369 | 4 | 10 |
+| Strict Harness | 9/9 | 81,399 | 842,148 | 13,386 | 54 | 360 s | 148 | 49 s | 29,973 | 0 | 0 |
 
 Cross-session recovery passed in all three profiles. Adaptive Lite produced no
 workflow artifacts for the small bug, ordinary feature, Chinese prompt,
@@ -68,19 +68,24 @@ Strict (five artifacts), which accounts for all ten Adaptive artifacts.
 
 This matrix proves behavior and measures cost; it does **not** prove a cost win.
 On this provider/sample, No Harness was fastest and smallest. Adaptive Lite used
-1,169 more input+output tokens than Strict and also more model calls, duration,
+35,900 more input+output tokens than Strict and also more model calls, duration,
 hooks, and hook time; it is not a performance win. The result must remain visible
 rather than being normalized away: the next optimization target is hook cold
 path and Standard/Strict artifact construction cost, not weaker safety gates.
 
-Two runner defects were found by the live matrix and fixed before the durable
-report: inherited `BUN_INSTALL` could overwrite the real global package, and
+Three defects were found by live matrix execution and fixed before the durable
+report: inherited `BUN_INSTALL` could overwrite the real global package,
 the adapter fallback could consume stdin twice and turn a blocking hook into an
-allow. The runtime now replays one captured host payload to every script, the
+allow, and Strict plus `--no-external-skills` could omit its required bundled
+cross-review capability. The runtime now replays one captured host payload to
+every script, the
 adapter `exec`s the hook-only binary so its exit code is final, and the benchmark
 rebases its synthetic `main` after harness projection so adoption files do not
 inflate risk classification. Tracked-file grader paths are parsed from raw Git
 porcelain without trimming its leading status column. `--require-authoritative`
 now requires provider usage, grader success, task success, and No Harness
 isolation. Regrade refuses changed runner, manifest, fixture, or workspace
-evidence instead of rebinding mutable evidence to current code.
+evidence instead of rebinding mutable evidence to current code. Strict now
+projects the bundled cross-review Skill independently of marketplace Waza and
+Mermaid selection, so its installed-state probe and declared component set stay
+consistent.

@@ -34,6 +34,11 @@
   adapter retried the full CLI whenever the hook-only binary returned nonzero.
   The entrypoint now captures/replays one payload and the adapter fallback is
   based only on binary absence, so a guard's first nonzero status is final.
+- The first post-hardening full matrix failed before Strict execution because
+  `--no-external-skills` skipped the bundled cross-review Skill while the Strict
+  profile truthfully required `cross-model-acceptance`. Bundled strict capability
+  projection is now independent of optional marketplace Waza/Mermaid selection;
+  a focused regression proves Strict remains complete without enabling either.
 - Benchmark harness projection must become the synthetic `main` baseline before
   the task starts. Otherwise adoption files appear as task implementation diff,
   raise every Adaptive edit to Strict, and fabricate Plan/Contract cost. The
@@ -61,6 +66,9 @@
   come from one fresh command, one run ID, one source commit, one Claude version,
   and one runner/manifest/fixture revision. No record was regraded into the final
   report.
+- The final report was regenerated after the concurrency, context-budget, and
+  install-ownership review fixes. All 27 records use run ID
+  `0fadcb29-ae98-4082-8525-f62d3d2670cd` and source commit `2061e6d1`.
 
 ## Tradeoffs Considered
 
