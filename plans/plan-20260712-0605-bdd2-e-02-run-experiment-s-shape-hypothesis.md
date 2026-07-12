@@ -215,7 +215,7 @@ exit_criteria:
     - bun scripts/run-bdd2-evals.ts validate
     - bun scripts/run-bdd2-evals.ts plan --experiment S --partition held_out --dry-run
     - bun scripts/run-bdd2-evals.ts validate-scores --experiment S --run <ignored-run-path>
-    - bun scripts/run-bdd2-evals.ts summarize-shape --run <ignored-run-path> --output evals/bdd2/reports/experiment-s.md
+    - bun scripts/run-bdd2-evals.ts summarize-shape --experiment S --run <ignored-run-path> --output <ignored-run-path>/experiment-s.generated.md
     - repo-harness run check-task-workflow --strict
   numeric_assertions:
     - "held-out S task count = 12"
@@ -223,6 +223,7 @@ exit_criteria:
     - "valid locked final scores = 72"
   manual_checks:
     - "Owner-authorized blind Agent panel confirms scores were locked before condition reveal"
+    - "Tracked report preserves the generated metric core and discloses truth-use, reviewer-overlap, and filesystem-isolation limits"
     - "Review confirms no Phase P product surface or Experiment A claim was introduced"
 ```
 

@@ -59,4 +59,16 @@ describe("BDD2 Phase E evaluation contract", () => {
     expect(manifest).not.toContain("hook");
     expect(manifest).not.toContain("sidecar");
   });
+
+  test("tracked Shape report discloses proxy-evidence limits", () => {
+    const report = readFileSync(join(ROOT, "evals/bdd2/reports/experiment-s.md"), "utf-8");
+    expect(report).toContain("Agent-panel proxy");
+    expect(report).toContain("evidence, not human adjudication");
+    expect(report).toContain("Truth-aware authority");
+    expect(report).toContain("mismatches are therefore 12 baseline versus 5 treatment");
+    expect(report).toContain("inter-rater disagreement was not measured");
+    expect(report).toContain("filesystem isolation depended");
+    expect(report).toContain("on reviewer compliance rather than an OS");
+    expect(report).toContain("Phase P, Experiment E, and Experiment I remain");
+  });
 });

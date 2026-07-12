@@ -85,8 +85,8 @@
   completion fix removed the earlier macOS truncation failure without widening
   E-02 scope.
 - E-02 focused tests, TypeScript no-emit, manifest/plan validation, 72/72 score
-  validation, deterministic re-summary, deploy SQL ordering, architecture sync,
-  task sync, strict workflow, and project-state inspection pass.
+  validation, deterministic metric-core re-summary, deploy SQL ordering,
+  architecture sync, task sync, strict workflow, and project-state inspection pass.
 - `scripts/migrate-project-template.sh` was retired by the mainline transactional
   TypeScript adoption cutover, so the stale shell command is no longer a runnable
   verification surface. Current `inspect-project-state` reports no drift or
@@ -105,6 +105,26 @@
 - Reviewer-safe queue: `.ai/harness/runs/bdd2/bdd2-e02-shape-s-v2-blind-review/`
   — 72 randomized packets plus frozen rubric/schema, with no private mapping.
 - Tracked aggregate report: `evals/bdd2/reports/experiment-s.md`.
+
+## External Review Resolution
+
+- Claude's first independent review correctly found that the frozen Shape
+  summarizer validates the truth file but does not consume it when aggregating
+  reviewer scores. This was a frozen protocol choice for blind scoring, but no
+  truth-aware adjudication stage followed it.
+- A post-reveal deterministic comparison found nine selected authority tiers that
+  differ from `truth/held-out.json#shape_tasks.*.expected_authority`, beyond the
+  eight scores explicitly marked `incorrect`. Truth-aware authority mismatches are
+  12 baseline versus 5 treatment; the generated 7 versus 1 figure is retained only
+  as the reviewer-coded metric and is labeled as such in the report.
+- The review also confirmed that the Agent panel had one score per packet with no
+  overlap, and that reviewer delivery excluded private mappings by convention but
+  not by an OS-enforced filesystem boundary. These are evidence-grade limitations,
+  not facts that can be repaired after reveal without creating a new experiment
+  revision.
+- The tracked report now discloses all three limits and keeps the decision at
+  `Reshape`. Kill-path regression coverage is added without changing the frozen
+  runner, manifest, prompts, scores, or raw outputs.
 
 ## Promotion Filter
 

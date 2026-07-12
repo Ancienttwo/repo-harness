@@ -161,7 +161,7 @@ exit_criteria:
   manual_checks:
     - "72 successful held-out S packets and 72 valid locked final scores exist"
     - "Owner-authorized blind Agent panel confirms scores were locked before reveal"
-    - "Tracked report reproduces the pre-registered metrics and decision"
+    - "Tracked report reproduces the pre-registered metrics and decision and discloses the proxy panel, truth-use, overlap, and filesystem-isolation limits"
     - "Evaluator review file recommends pass and confirms no Phase P surface"
 ```
 

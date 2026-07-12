@@ -314,10 +314,12 @@ describe("run-bdd2-evals sealed execution", () => {
       expect(report.packets).toHaveLength(6);
       const scoreDir = join(root, runRelativePath, "scores");
       mkdirSync(scoreDir, { recursive: true });
+      const coordinates = new Map<string, any>();
       for (const packet of report.packets) {
         const coordinate = JSON.parse(
           readFileSync(join(root, runRelativePath, "private", `${packet.packet_id}.json`), "utf-8")
         );
+        coordinates.set(packet.packet_id, coordinate);
         writeFileSync(
           join(scoreDir, `${packet.packet_id}.json`),
           `${JSON.stringify({
@@ -349,6 +351,35 @@ describe("run-bdd2-evals sealed execution", () => {
       expect(summary.metrics.unsupported_expansion.wins).toBe(3);
       expect(summary.decision).toBe("Pass");
       expect(readFileSync(join(root, "shape-report.md"), "utf-8")).toContain("**Decision**: Pass");
+
+      const rewriteScores = (mutate: (score: any, coordinate: any) => void) => {
+        for (const packet of report.packets) {
+          const path = join(scoreDir, `${packet.packet_id}.json`);
+          const locked = JSON.parse(readFileSync(path, "utf-8"));
+          mutate(locked.score, coordinates.get(packet.packet_id));
+          writeFileSync(path, `${JSON.stringify(locked, null, 2)}\n`, "utf-8");
+        }
+      };
+
+      rewriteScores((score, coordinate) => {
+        score.unsupported_expansion = coordinate.condition === "baseline" ? 0 : 1;
+      });
+      const zeroBaseline = summarizeShape(evaluation, runRelativePath);
+      expect(zeroBaseline.metrics.unsupported_expansion.relative_reduction).toBeNull();
+      expect(zeroBaseline.decision).toBe("Kill");
+
+      rewriteScores((score, coordinate) => {
+        score.unsupported_expansion = coordinate.condition === "baseline" ? 2 : 1;
+        const newSevereOmission = coordinate.condition === "treatment" && coordinate.repetition <= 2;
+        score.required_behavior_omission = newSevereOmission ? 1 : 0;
+        score.protected_concern_omissions = newSevereOmission
+          ? [{ concern: "recovery", severity: "P1", summary: "missing recovery" }]
+          : [];
+      });
+      const regression = summarizeShape(evaluation, runRelativePath);
+      expect(regression.metrics.required_behavior_omission.stable_new_task_ids).toEqual(["S-H-01"]);
+      expect(regression.metrics.protected_concern.new_treatment_p0_p1_pairs).toBe(2);
+      expect(regression.decision).toBe("Kill");
 
       rmSync(join(scoreDir, `${report.packets[0].packet_id}.json`));
       expect(() => validateShapeScores(evaluation, runRelativePath)).toThrow("requires exactly 6 score files");
