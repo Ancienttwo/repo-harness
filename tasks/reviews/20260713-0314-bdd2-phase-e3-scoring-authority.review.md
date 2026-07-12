@@ -5,10 +5,10 @@
 > **Contract**: tasks/contracts/20260713-0314-bdd2-phase-e3-scoring-authority.contract.md
 > **Notes File**: tasks/notes/20260713-0314-bdd2-phase-e3-scoring-authority.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-07-13 06:17
+> **Last Updated**: 2026-07-13 06:23
 > **Recommendation**: pass
 > **Review Rubric Version**: 1
-> **Reviewed Diff Fingerprint**: sha256:0b0bdef89e594a22563ec29d8be4595471ce15746fda27266fe744f5aa4568f5
+> **Reviewed Diff Fingerprint**: sha256:85e5077bc747fa0a2bb23eed0d202be16abf09284c677c58c8a71e6c933aef34
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 ## Human Review Card
@@ -66,8 +66,8 @@
 > **External Reviewer**: Claude
 > **External Source**: claude-review
 > **External Started**: 2026-07-13T04:03:00+0800
-> **External Completed**: 2026-07-13T06:16:00+0800
-> **Reviewed Diff Fingerprint**: sha256:0b0bdef89e594a22563ec29d8be4595471ce15746fda27266fe744f5aa4568f5
+> **External Completed**: 2026-07-13T06:22:00+0800
+> **Reviewed Diff Fingerprint**: sha256:85e5077bc747fa0a2bb23eed0d202be16abf09284c677c58c8a71e6c933aef34
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 - P1 blockers: none
@@ -79,7 +79,8 @@
   full-history CI plus reachable-rebased-provenance follow-ups returned `No findings`.
   The final CI HOME-isolation follow-up resolved one notes-only P2 and then returned
   `No findings`; binding the source-tree circuit entry then resolved the runner-only
-  failure and its corrected three-call scope also returned `No findings`.
+  failure and its corrected three-call scope also returned `No findings`. The final
+  benchmark dry-run provider-isolation repair returned `No findings` as well.
 
 ## Behavior Diff Notes
 
