@@ -39,8 +39,8 @@ Complete this inventory before implementation. If any line is unknown, keep the 
 ## Approach
 ### Strategy
 Upgrade both hosted Bun setup points to 1.3.14, synchronize the documented current
-runtime truth, and replace exit-adjacent buffered writes with synchronous descriptor
-writes so all bytes are committed before process termination.
+runtime truth, and replace exit-adjacent buffered writes with a synchronous descriptor
+write loop so all bytes are committed before process termination.
 
 ### Trade-offs
 | Option | Pros | Cons | Decision |
@@ -55,7 +55,12 @@ writes so all bytes are committed before process termination.
 |------|--------|-------------|
 | `.github/workflows/ci.yml` | Update | Pin test and MCP matrix to Bun 1.3.14. |
 | `src/cli/hook/runtime.ts` | Update | Close the remaining unknown-route, missing-script, and child-spawn error writes. |
+| `src/cli/hook-entry.ts` | Update | Use the complete-write invariant for hidden hook CLI payloads. |
 | `src/cli/index.ts` | Update | Apply the same invariant to adopt dry-run and full-CLI hidden hook commands. |
+| `src/cli/runtime/write-all-sync.ts` | Add | Loop on synchronous fd writes until the complete payload is committed. |
+| `scripts/architecture-event.ts` | Update | Preserve complete exit-adjacent architecture output. |
+| `assets/templates/helpers/architecture-event.ts` | Update | Keep the distributed helper projection byte-identical. |
+| `tests/write-all-sync.test.ts` | Add | Simulate partial writes and zero-progress failure. |
 | `docs/researches/repo-harness 钩子时延与 LLM 提供商限流归因研究报告.md` | Update | Record the current CI Bun pin. |
 
 ### Code Snippets

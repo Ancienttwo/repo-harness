@@ -11,8 +11,10 @@
 
 - Keep `package.json#engines.bun` at `>=1.1.35`; the hosted verification baseline
   changes, but this PR does not claim older supported Bun releases are invalid.
-- Use `writeSync` on fd 1/fd 2 only where a process exits immediately. This
-  protects the output contract without adding flush timers, retries, or fallback parsers.
+- Use a synchronous fd 1/fd 2 write loop where a process exits immediately. A
+  single `writeSync` can legally report a partial write, so the shared helper
+  advances by the returned byte count and fails on zero progress. This protects
+  the output contract without flush timers, retries, or fallback parsers.
 - Mirror `architecture-event.ts` into the downstream helper template in the same change.
 
 ## Deviations From Plan Or Spec
@@ -37,7 +39,7 @@
 - Run snapshots: `.ai/harness/runs/`
 - Direct proof: Bun 1.3.14 emitted 512 bytes before the fix and 527 bytes after it
   for the same pretty event JSON.
-- Regression proof: 1,111 pass / 1 skip / 0 fail across 99 files on Bun 1.3.14.
+- Regression proof: 1,115 pass / 1 skip / 0 fail across 100 files on Bun 1.3.14.
 - Hosted proof: PR #56 Test plus macOS/Linux/Windows MCP matrix passed on Bun 1.3.14.
 - Claude review challenged remaining `console.log/error + process.exit()` paths.
   Byte probes at 527, 10,000, and 1,000,000 characters were complete for both
@@ -61,6 +63,10 @@
   authority and contributes only the missed runtime/index boundaries plus the
   Bun 1.3.14 CI pin. Delayed-reader stress delivered exact 10MB and 100MB
   `writeSync` payloads with exit 0.
+- Final Claude acceptance found that the API contract still permits a partial
+  synchronous write even though the stress probes completed. `writeAllSync`
+  now loops over byte offsets; its focused test simulates partial progress and
+  the zero-progress failure path.
 
 ## Promotion Filter
 

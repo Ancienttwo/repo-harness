@@ -69,8 +69,13 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 allowed_paths:
   - .github/workflows/ci.yml
   - docs/researches/repo-harness 钩子时延与 LLM 提供商限流归因研究报告.md
+  - assets/templates/helpers/architecture-event.ts
+  - scripts/architecture-event.ts
+  - src/cli/hook-entry.ts
   - src/cli/hook/runtime.ts
   - src/cli/index.ts
+  - src/cli/runtime/write-all-sync.ts
+  - tests/write-all-sync.test.ts
   - plans/plan-20260712-1330-bun-1-3-14-runtime-upgrade.md
   - tasks/current.md
   - tasks/todos.md
@@ -127,6 +132,7 @@ exit_criteria:
     - .ai/harness/checks/latest.json
     - tasks/notes/20260712-1330-bun-1-3-14-runtime-upgrade.notes.md
   tests_pass:
+    - path: tests/write-all-sync.test.ts
     - path: tests/architecture-queue.test.ts
     - path: tests/hook-runtime.test.ts
   commands_succeed:

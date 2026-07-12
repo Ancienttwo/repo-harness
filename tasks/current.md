@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-12T15:53:33+0800 -->
+<!-- updated_at: 2026-07-12T16:08:34+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-07-12T15:53:33+0800
+> **Updated At**: 2026-07-12T16:08:34+0800
 > **Source Branch**: codex/upgrade-bun-1-3-14
-> **Source Commit**: 98eb51b
+> **Source Commit**: 9ef4be4
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: bun-1-3-14-merged-prd-base-repair
+> **Reason**: bun-1-3-14-final-review-pass
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -52,7 +52,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/20260703-inspection-migration.md`: status=active, current_slice=completed-20260703-architecture-closeout, source_plan=(none)
 ## Handoff
 
-- Exact Next Step: Stage the completed module diff first; then External acceptance fingerprint sha256:48567fcce4683884338b327f0057dd2d03c3b89a71ce2198da273b89fd21037c is stale for current implementation diff sha256:2fd56fc72019dc614b34884b04d61f1b9f3ef344ec64f603b1931e8be17a1e43; rerun peer acceptance. Run external acceptance via claude-review and record ## External Acceptance Advice in tasks/reviews/20260712-1330-bun-1-3-14-runtime-upgrade.review.md. Command: /check
+- Exact Next Step: Stage the completed module diff first; then run /check until tasks/reviews/20260712-1330-bun-1-3-14-runtime-upgrade.review.md records Recommendation: pass. Command: /check
 
 ## Checks
 
@@ -60,12 +60,20 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 3 changed/untracked path(s)
+- Summary: 11 changed/untracked path(s)
 
 ```
-R  plans/prds/20260712-BDD.prd.md -> plans/archive/20260712-1426-bdd-v0.prd.md
-M  plans/prds/20260712-0409-bdd2-shape-audit.prd.md
-UU tasks/current.md
+ M assets/templates/helpers/architecture-event.ts
+ M plans/plan-20260712-1330-bun-1-3-14-runtime-upgrade.md
+ M scripts/architecture-event.ts
+ M src/cli/hook-entry.ts
+ M src/cli/hook/runtime.ts
+ M src/cli/index.ts
+ M tasks/contracts/20260712-1330-bun-1-3-14-runtime-upgrade.contract.md
+ M tasks/notes/20260712-1330-bun-1-3-14-runtime-upgrade.notes.md
+ M tasks/reviews/20260712-1330-bun-1-3-14-runtime-upgrade.review.md
+?? src/cli/runtime/write-all-sync.ts
+?? tests/write-all-sync.test.ts
 ```
 
 ## Source Artifacts
