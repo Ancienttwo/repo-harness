@@ -368,6 +368,10 @@ export function runHook(opts: RunHookOptions): RunHookResult {
     !codexDecisionStdout &&
     !codexAdditionalContextStdout &&
     opts.stdio === undefined;
+  const captureAndReplayHostOutput =
+    process.env.HOOK_HOST !== 'codex' &&
+    opts.event !== 'SessionStart' &&
+    opts.stdio === undefined;
   const stdio: StdioOptions = sessionStartCollectStdout
     ? ['inherit', 'pipe', 'inherit']
     : codexStopSuppressSuccessOutput
@@ -378,6 +382,8 @@ export function runHook(opts: RunHookOptions): RunHookResult {
     ? ['inherit', 'pipe', 'inherit']
     : codexQuietStdout
     ? ['inherit', 'pipe', 'inherit']
+    : captureAndReplayHostOutput
+    ? ['inherit', 'pipe', 'pipe']
     : (opts.stdio ?? 'inherit');
 
   for (const script of route.scripts) {
@@ -420,6 +426,10 @@ export function runHook(opts: RunHookOptions): RunHookResult {
       exitCode: child.status ?? (child.error ? 1 : 0),
       stdout: child.stdout,
     });
+    if (captureAndReplayHostOutput) {
+      if (child.stdout) writeAllSync(1, child.stdout);
+      if (child.stderr) writeAllSync(2, child.stderr);
+    }
 
     if (child.error) {
       writeAllSync(2,

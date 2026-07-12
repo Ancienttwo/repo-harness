@@ -12,6 +12,8 @@ const DEFAULT_MANIFEST = join(ROOT, 'evals/harness/scenarios.json');
 const DEFAULT_REPORT = join(ROOT, 'evals/harness/reports/profile-comparison.json');
 export const BENCHMARK_PROFILES = ['no-harness', 'adaptive-lite', 'strict-harness'] as const;
 export type BenchmarkProfile = (typeof BENCHMARK_PROFILES)[number];
+export const BENCHMARK_PROVIDERS = ['codex', 'claude'] as const;
+export type BenchmarkProvider = (typeof BENCHMARK_PROVIDERS)[number];
 
 export interface HarnessScenario {
   id: string;
@@ -60,6 +62,7 @@ export interface BenchmarkRunRecord {
 
 interface CliOptions {
   execute: boolean;
+  provider?: BenchmarkProvider;
   requireAuthoritative?: boolean;
   profile?: BenchmarkProfile[];
   scenario: string[];
@@ -70,6 +73,7 @@ interface CliOptions {
 function parseArgs(argv: string[]): CliOptions {
   const options: CliOptions = {
     execute: false,
+    provider: 'codex',
     requireAuthoritative: false,
     profile: [],
     scenario: [],
@@ -89,6 +93,10 @@ function parseArgs(argv: string[]): CliOptions {
         throw new Error(`invalid profile: ${value}`);
       }
       if (value !== 'all') options.profile!.push(value as BenchmarkProfile);
+    } else if (arg === '--provider') {
+      const value = argv[++index] ?? '';
+      if (!BENCHMARK_PROVIDERS.includes(value as BenchmarkProvider)) throw new Error(`invalid provider: ${value}`);
+      options.provider = value as BenchmarkProvider;
     } else if (arg === '--scenario') {
       const value = argv[++index] ?? '';
       if (value !== 'all') options.scenario.push(value);
@@ -163,7 +171,7 @@ function writeResumeProjection(workspace: string): void {
   ].join('\n'));
 }
 
-function copyAuthOnly(hostRoot: string): void {
+function copyCodexAuthOnly(hostRoot: string): void {
   const sourceHome = process.env.CODEX_HOME ?? join(process.env.HOME ?? '', '.codex');
   const source = join(sourceHome, 'auth.json');
   if (!existsSync(source)) throw new Error(`Codex auth unavailable: ${source}`);
@@ -171,7 +179,13 @@ function copyAuthOnly(hostRoot: string): void {
   cpSync(source, join(hostRoot, '.codex/auth.json'));
 }
 
-function projectHarness(profile: BenchmarkProfile, workspace: string, hostRoot: string, scenario: HarnessScenario): void {
+function projectHarness(
+  profile: BenchmarkProfile,
+  provider: BenchmarkProvider,
+  workspace: string,
+  hostRoot: string,
+  scenario: HarnessScenario,
+): void {
   if (profile === 'no-harness') {
     if (scenario.requires_resume_projection) {
       writeResumeProjection(workspace);
@@ -189,7 +203,7 @@ function projectHarness(profile: BenchmarkProfile, workspace: string, hostRoot: 
   run(process.execPath, [join(ROOT, 'src/cli/index.ts'), 'adopt', '--repo', workspace, '--no-codegraph', '--mode', 'standard'], ROOT, env);
   const installProfile = profile === 'adaptive-lite' ? 'standard' : 'strict';
   run(process.execPath, [
-    join(ROOT, 'src/cli/index.ts'), 'install', '--profile', installProfile, '--target', 'codex',
+    join(ROOT, 'src/cli/index.ts'), 'install', '--profile', installProfile, '--target', provider,
     '--no-external-skills', '--no-codegraph', '--json',
   ], ROOT, env);
   if (profile === 'strict-harness') writeStrictArtifacts(workspace, scenario);
@@ -204,6 +218,33 @@ export function codexBenchmarkCommand(profile: BenchmarkProfile, workspace: stri
   else args.push('--dangerously-bypass-hook-trust');
   args.push(prompt);
   return ['codex', ...args];
+}
+
+export function claudeBenchmarkCommand(
+  profile: BenchmarkProfile,
+  hostRoot: string,
+  prompt: string,
+): string[] {
+  const args = [
+    '-p', '--output-format', 'stream-json', '--verbose', '--include-hook-events',
+    '--permission-mode', 'bypassPermissions', '--no-session-persistence', '--disable-slash-commands',
+  ];
+  if (profile === 'no-harness') args.push('--safe-mode');
+  else args.push('--setting-sources', 'project', '--settings', join(hostRoot, '.claude/settings.json'));
+  args.push(prompt);
+  return ['claude', ...args];
+}
+
+function benchmarkCommand(
+  provider: BenchmarkProvider,
+  profile: BenchmarkProfile,
+  workspace: string,
+  hostRoot: string,
+  prompt: string,
+): string[] {
+  return provider === 'claude'
+    ? claudeBenchmarkCommand(profile, hostRoot, prompt)
+    : codexBenchmarkCommand(profile, workspace, prompt);
 }
 
 function percentile(values: number[], quantile: number): number | null {
@@ -247,21 +288,63 @@ function providerUsage(jsonl: string): Pick<BenchmarkRunRecord, 'usage_authority
   };
 }
 
-async function executeRun(profile: BenchmarkProfile, scenario: HarnessScenario, seed: string, root: string): Promise<BenchmarkRunRecord> {
+function claudeProviderUsage(jsonl: string): Pick<BenchmarkRunRecord, 'usage_authority' | 'provider_unavailable_reason' | 'input_tokens' | 'cached_input_tokens' | 'output_tokens' | 'model_call_count' | 'subagent_call_count'> {
+  let result: {
+    subtype?: unknown;
+    is_error?: unknown;
+    result?: unknown;
+    num_turns?: unknown;
+    usage?: Record<string, unknown>;
+  } | null = null;
+  let subagents = 0;
+  for (const line of jsonl.split('\n')) {
+    try {
+      const event = JSON.parse(line) as {
+        type?: unknown;
+        subtype?: unknown;
+        is_error?: unknown;
+        result?: unknown;
+        num_turns?: unknown;
+        usage?: Record<string, unknown>;
+        message?: { content?: Array<{ type?: unknown; name?: unknown }> };
+      };
+      if (event.type === 'result') result = event;
+      if (event.type === 'assistant') {
+        subagents += event.message?.content?.filter((item) => item.type === 'tool_use' && item.name === 'Task').length ?? 0;
+      }
+    } catch { /* provider stderr/non-JSON does not create authority */ }
+  }
+  const number = (key: string): number | null => typeof result?.usage?.[key] === 'number' ? result.usage[key] as number : null;
+  const rawInput = number('input_tokens');
+  const cacheCreation = number('cache_creation_input_tokens');
+  const input = rawInput === null ? null : rawInput + (cacheCreation ?? 0);
+  const ok = result?.subtype === 'success' && result.is_error === false && result.usage;
+  return {
+    usage_authority: ok ? 'structured-provider' : 'unavailable',
+    provider_unavailable_reason: ok ? null : typeof result?.result === 'string' ? result.result : 'missing_structured_usage',
+    input_tokens: ok ? input : null,
+    cached_input_tokens: ok ? number('cache_read_input_tokens') : null,
+    output_tokens: ok ? number('output_tokens') : null,
+    model_call_count: ok && typeof result?.num_turns === 'number' ? result.num_turns : null,
+    subagent_call_count: ok ? subagents : null,
+  };
+}
+
+async function executeRun(provider: BenchmarkProvider, profile: BenchmarkProfile, scenario: HarnessScenario, seed: string, root: string): Promise<BenchmarkRunRecord> {
   const runRoot = join(root, profile, scenario.id);
   const workspace = prepareWorkspace(seed, runRoot);
   const hostRoot = join(runRoot, 'host');
-  copyAuthOnly(hostRoot);
-  projectHarness(profile, workspace, hostRoot, scenario);
-  const command = codexBenchmarkCommand(profile, workspace, scenario.prompt);
+  if (provider === 'codex') copyCodexAuthOnly(hostRoot);
+  projectHarness(profile, provider, workspace, hostRoot, scenario);
+  const command = benchmarkCommand(provider, profile, workspace, hostRoot, scenario.prompt);
   const started = Date.now();
   let firstEdit: number | null = null;
   const processHandle = Bun.spawn(command, {
     cwd: workspace,
     env: {
       ...process.env,
-      HOME: hostRoot,
-      CODEX_HOME: join(hostRoot, '.codex'),
+      HOME: provider === 'codex' ? hostRoot : process.env.HOME,
+      CODEX_HOME: provider === 'codex' ? join(hostRoot, '.codex') : process.env.CODEX_HOME,
       PATH: `${join(hostRoot, '.bun/bin')}:${process.env.PATH ?? ''}`,
       HOOK_SESSION_ID: `${profile}-${scenario.id}`,
     },
@@ -306,7 +389,9 @@ async function executeRun(profile: BenchmarkProfile, scenario: HarnessScenario, 
   const graderPassed = grader.status === 0 && expectedPathsPassed;
   return {
     profile, scenario_id: scenario.id, workspace, command, status: exitCode === 0 && graderPassed ? 'passed' : 'failed',
-    provider_exit_code: exitCode, ...providerUsage(stdout), time_to_first_edit_ms: firstEdit,
+    provider_exit_code: exitCode,
+    ...(provider === 'claude' ? claudeProviderUsage(stdout) : providerUsage(stdout)),
+    time_to_first_edit_ms: firstEdit,
     total_duration_ms: duration, hook_invocation_count: hooks.length,
     hook_total_duration_ms: hookDurations.reduce((sum, value) => sum + value, 0),
     hook_p50_ms: percentile(hookDurations, 0.5), hook_p95_ms: percentile(hookDurations, 0.95), hook_p99_ms: percentile(hookDurations, 0.99),
@@ -317,10 +402,10 @@ async function executeRun(profile: BenchmarkProfile, scenario: HarnessScenario, 
   };
 }
 
-function dryRunRecord(profile: BenchmarkProfile, scenario: HarnessScenario, seed: string, root: string): BenchmarkRunRecord {
+function dryRunRecord(provider: BenchmarkProvider, profile: BenchmarkProfile, scenario: HarnessScenario, seed: string, root: string): BenchmarkRunRecord {
   const workspace = join(root, profile, scenario.id, 'workspace');
   return {
-    profile, scenario_id: scenario.id, workspace, command: codexBenchmarkCommand(profile, workspace, scenario.prompt), status: 'dry-run',
+    profile, scenario_id: scenario.id, workspace, command: benchmarkCommand(provider, profile, workspace, join(root, profile, scenario.id, 'host'), scenario.prompt), status: 'dry-run',
     provider_exit_code: null, usage_authority: 'unavailable', provider_unavailable_reason: 'dry-run', input_tokens: null, cached_input_tokens: null, output_tokens: null,
     model_call_count: null, subagent_call_count: null, time_to_first_edit_ms: null, total_duration_ms: null,
     hook_invocation_count: 0, hook_total_duration_ms: 0, hook_p50_ms: null, hook_p95_ms: null, hook_p99_ms: null,
@@ -331,6 +416,7 @@ function dryRunRecord(profile: BenchmarkProfile, scenario: HarnessScenario, seed
 
 export async function runHarnessProfileBenchmark(options: CliOptions) {
   const manifest = loadHarnessScenarioManifest(options.manifest);
+  const provider = options.provider ?? 'codex';
   const selected = options.scenario.length > 0
     ? manifest.scenarios.filter((scenario) => options.scenario.includes(scenario.id))
     : manifest.scenarios;
@@ -341,13 +427,17 @@ export async function runHarnessProfileBenchmark(options: CliOptions) {
   for (const profile of profiles) {
     for (const scenario of selected) {
       records.push(options.execute
-        ? await executeRun(profile, scenario, seed, runRoot)
-        : dryRunRecord(profile, scenario, seed, runRoot));
+        ? await executeRun(provider, profile, scenario, seed, runRoot)
+        : dryRunRecord(provider, profile, scenario, seed, runRoot));
     }
   }
+  const authoritative = options.execute && records.every((record) =>
+    record.status === 'passed'
+    && record.usage_authority === 'structured-provider'
+    && record.grader_acceptance === 'passed');
   const report = {
     protocol: 'repo-harness-profile-benchmark/report/v1', generated_at: new Date().toISOString(),
-    authoritative: options.execute, manifest: options.manifest, profiles, scenario_count: selected.length,
+    authoritative, provider, manifest: options.manifest, profiles, scenario_count: selected.length,
     records,
   };
   mkdirSync(dirname(options.report), { recursive: true });
@@ -364,7 +454,7 @@ export async function runHarnessProfileBenchmark(options: CliOptions) {
   });
   writeFileSync(markdownPath, [
     '# Harness Profile Benchmark', '',
-    `> **Authority**: ${options.execute ? 'live provider execution' : 'dry-run; non-authoritative'}`,
+    `> **Authority**: ${authoritative ? `live ${provider} provider execution` : 'incomplete/dry-run; non-authoritative'}`,
     `> **Generated**: ${report.generated_at}`, '',
     '| Profile | Passed | Known tokens | Avg duration ms | Recovery |',
     '|---|---:|---:|---:|---|', ...rows, '',

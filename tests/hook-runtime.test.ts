@@ -2491,7 +2491,7 @@ describe("Hook runtime behavior", () => {
     }
   });
 
-  test("pre-edit-guard: protects _ref and private _ops paths while allowing deploy assets", () => {
+  test("pre-edit-guard: protects private paths and upgrades deploy assets to Strict", () => {
     const cwd = tmpWorkspace("ops-ref-guard");
     try {
       initGitRepo(cwd);
@@ -2516,13 +2516,14 @@ describe("Hook runtime behavior", () => {
       const opsRes = runHook("pre-edit-guard.sh", cwd, {
         stdin: JSON.stringify({ tool_input: { file_path: "deploy/scripts/release.sh" } }),
       });
-      expect(opsRes.status).toBe(0);
+      expect(opsRes.status).toBe(2);
       expect(opsRes.stdout).toContain("[DeployAsset]");
+      expect(opsRes.stderr).toMatch(/SpecGuard|PlanStatusGuard|StrictContractGuard/);
 
       const exampleRes = runHook("pre-edit-guard.sh", cwd, {
         stdin: JSON.stringify({ tool_input: { file_path: "deploy/env/.env.example" } }),
       });
-      expect(exampleRes.status).toBe(0);
+      expect(exampleRes.status).toBe(2);
       expect(exampleRes.stdout).toContain("[DeployAsset]");
     } finally {
       rmSync(cwd, { recursive: true, force: true });

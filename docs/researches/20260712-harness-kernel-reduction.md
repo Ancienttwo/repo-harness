@@ -31,7 +31,8 @@ authorities.
 ## Reproducible evidence
 
 - Scenario authority: `evals/harness/scenarios.json`.
-- Runner: `bun scripts/run-harness-profile-benchmark.ts --execute`.
+- Runner: `bun scripts/run-harness-profile-benchmark.ts --execute --provider
+  codex` (or `--provider claude`; one report always uses one provider).
 - Reports: `evals/harness/reports/profile-comparison.json` and `.md`.
 - Focused contracts: `tests/harness-runtime-profiles.test.ts`,
   `tests/runtime-profile-enforcement.test.ts`,

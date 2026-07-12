@@ -25,6 +25,10 @@
   every Add/Update/Delete/Move target and checks each path; `.ai/harness/state/`
   is excluded from implementation fingerprints so the resolver cannot raise its
   own next invocation's risk floor.
+- The benchmark runner accepts an explicit `--provider codex|claude`; profile
+  comparisons never mix providers inside one report. Codex exhausted its live
+  account quota after repeated real matrix attempts, so Claude is the bounded
+  same-matrix fallback rather than synthetic evidence.
 
 ## Deviations From Plan Or Spec
 

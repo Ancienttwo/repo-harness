@@ -4,6 +4,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import {
   BENCHMARK_PROFILES,
+  claudeBenchmarkCommand,
   codexBenchmarkCommand,
   loadHarnessScenarioManifest,
   runHarnessProfileBenchmark,
@@ -27,6 +28,12 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
     const lite = codexBenchmarkCommand('adaptive-lite', '/tmp/work', 'task');
     expect(lite).not.toContain('--ignore-user-config');
     expect(lite).toContain('--dangerously-bypass-hook-trust');
+    const claudeNoHarness = claudeBenchmarkCommand('no-harness', '/tmp/host', 'task');
+    expect(claudeNoHarness).toContain('--safe-mode');
+    expect(claudeNoHarness).toContain('--disable-slash-commands');
+    const claudeLite = claudeBenchmarkCommand('adaptive-lite', '/tmp/host', 'task');
+    expect(claudeLite).toContain('/tmp/host/.claude/settings.json');
+    expect(claudeLite).not.toContain('--safe-mode');
   });
 
   test('dry-run emits all required metrics as null/unavailable rather than estimates', async () => {
@@ -40,7 +47,7 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
       expect(report.authoritative).toBe(false);
       expect(report.records.every((record) => record.input_tokens === null && record.grader_acceptance === 'unavailable')).toBe(true);
       expect(JSON.parse(readFileSync(reportPath, 'utf-8')).records).toHaveLength(27);
-      expect(readFileSync(reportPath.replace(/\.json$/, '.md'), 'utf-8')).toContain('dry-run; non-authoritative');
+      expect(readFileSync(reportPath.replace(/\.json$/, '.md'), 'utf-8')).toContain('non-authoritative');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });
