@@ -6,6 +6,7 @@ import {
   BENCHMARK_PROFILES,
   claudeBenchmarkCommand,
   codexBenchmarkCommand,
+  isolatedHarnessEnvironment,
   loadHarnessScenarioManifest,
   runHarnessProfileBenchmark,
 } from '../scripts/run-harness-profile-benchmark';
@@ -34,6 +35,14 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
     const claudeLite = claudeBenchmarkCommand('adaptive-lite', '/tmp/host', 'task');
     expect(claudeLite).toContain('/tmp/host/.claude/settings.json');
     expect(claudeLite).not.toContain('--safe-mode');
+  });
+
+  test('binds Bun global installs to the disposable benchmark host', () => {
+    const env = isolatedHarnessEnvironment('/tmp/benchmark-host');
+    expect(env.HOME).toBe('/tmp/benchmark-host');
+    expect(env.CODEX_HOME).toBe('/tmp/benchmark-host/.codex');
+    expect(env.BUN_INSTALL).toBe('/tmp/benchmark-host/.bun');
+    expect(env.PATH?.split(':')[0]).toBe('/tmp/benchmark-host/.bun/bin');
   });
 
   test('dry-run emits all required metrics as null/unavailable rather than estimates', async () => {

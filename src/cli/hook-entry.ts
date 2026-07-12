@@ -105,6 +105,13 @@ if (import.meta.main) {
     writeAllSync(2, 'repo-harness-hook: usage: repo-harness-hook <event> --route <route>\n');
     process.exit(2);
   }
-  const result = runHookEntry(parsed);
+  const { readFileSync } = await import('fs');
+  let input: Buffer | undefined;
+  try {
+    input = readFileSync(0);
+  } catch {
+    input = undefined;
+  }
+  const result = runHookEntry({ ...parsed, input });
   process.exit(result.exitCode);
 }

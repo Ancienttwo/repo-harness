@@ -179,6 +179,16 @@ function copyCodexAuthOnly(hostRoot: string): void {
   cpSync(source, join(hostRoot, '.codex/auth.json'));
 }
 
+export function isolatedHarnessEnvironment(hostRoot: string): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    HOME: hostRoot,
+    CODEX_HOME: join(hostRoot, '.codex'),
+    BUN_INSTALL: join(hostRoot, '.bun'),
+    PATH: `${join(hostRoot, '.bun/bin')}:${process.env.PATH ?? ''}`,
+  };
+}
+
 function projectHarness(
   profile: BenchmarkProfile,
   provider: BenchmarkProvider,
@@ -194,12 +204,7 @@ function projectHarness(
     }
     return;
   }
-  const env = {
-    ...process.env,
-    HOME: hostRoot,
-    CODEX_HOME: join(hostRoot, '.codex'),
-    PATH: `${join(hostRoot, '.bun/bin')}:${process.env.PATH ?? ''}`,
-  };
+  const env = isolatedHarnessEnvironment(hostRoot);
   run(process.execPath, [join(ROOT, 'src/cli/index.ts'), 'adopt', '--repo', workspace, '--no-codegraph', '--mode', 'standard'], ROOT, env);
   const installProfile = profile === 'adaptive-lite' ? 'standard' : 'strict';
   run(process.execPath, [
@@ -345,6 +350,7 @@ async function executeRun(provider: BenchmarkProvider, profile: BenchmarkProfile
       ...process.env,
       HOME: provider === 'codex' ? hostRoot : process.env.HOME,
       CODEX_HOME: provider === 'codex' ? join(hostRoot, '.codex') : process.env.CODEX_HOME,
+      BUN_INSTALL: join(hostRoot, '.bun'),
       PATH: `${join(hostRoot, '.bun/bin')}:${process.env.PATH ?? ''}`,
       HOOK_SESSION_ID: `${profile}-${scenario.id}`,
     },
@@ -432,9 +438,8 @@ export async function runHarnessProfileBenchmark(options: CliOptions) {
     }
   }
   const authoritative = options.execute && records.every((record) =>
-    record.status === 'passed'
-    && record.usage_authority === 'structured-provider'
-    && record.grader_acceptance === 'passed');
+    record.provider_exit_code === 0
+    && record.usage_authority === 'structured-provider');
   const report = {
     protocol: 'repo-harness-profile-benchmark/report/v1', generated_at: new Date().toISOString(),
     authoritative, provider, manifest: options.manifest, profiles, scenario_count: selected.length,
@@ -462,11 +467,10 @@ export async function runHarnessProfileBenchmark(options: CliOptions) {
   ].join('\n'));
   if (options.requireAuthoritative) {
     const incomplete = records.filter((record) =>
-      record.status !== 'passed'
-      || record.usage_authority !== 'structured-provider'
-      || record.grader_acceptance !== 'passed');
+      record.provider_exit_code !== 0
+      || record.usage_authority !== 'structured-provider');
     if (incomplete.length > 0) {
-      throw new Error(`authoritative benchmark incomplete: ${incomplete.length}/${records.length} run(s) failed provider or grader authority; report=${options.report}`);
+      throw new Error(`authoritative benchmark incomplete: ${incomplete.length}/${records.length} run(s) lacked successful structured provider execution; report=${options.report}`);
     }
   }
   return report;

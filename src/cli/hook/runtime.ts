@@ -22,6 +22,8 @@ export interface RunHookOptions {
   hooksDir?: string;
   /** Diagnostic command name for stderr messages. */
   commandName?: string;
+  /** Host event payload, replayed unchanged to every script on the route. */
+  input?: string | Buffer;
 }
 
 export interface RunHookResult {
@@ -372,19 +374,20 @@ export function runHook(opts: RunHookOptions): RunHookResult {
     process.env.HOOK_HOST !== 'codex' &&
     opts.event !== 'SessionStart' &&
     opts.stdio === undefined;
-  const stdio: StdioOptions = sessionStartCollectStdout
-    ? ['inherit', 'pipe', 'inherit']
+  const childStdin: StdioOptions[0] = opts.input === undefined ? 'inherit' : 'pipe';
+  const stdio = (sessionStartCollectStdout
+    ? [childStdin, 'pipe', 'inherit']
     : codexStopSuppressSuccessOutput
-    ? ['inherit', 'pipe', 'pipe']
+    ? [childStdin, 'pipe', 'pipe']
     : codexDecisionStdout
-    ? ['inherit', 'pipe', 'pipe']
+    ? [childStdin, 'pipe', 'pipe']
     : codexAdditionalContextStdout
-    ? ['inherit', 'pipe', 'inherit']
+    ? [childStdin, 'pipe', 'inherit']
     : codexQuietStdout
-    ? ['inherit', 'pipe', 'inherit']
+    ? [childStdin, 'pipe', 'inherit']
     : captureAndReplayHostOutput
-    ? ['inherit', 'pipe', 'pipe']
-    : (opts.stdio ?? 'inherit');
+    ? [childStdin, 'pipe', 'pipe']
+    : (opts.stdio ?? 'inherit')) as StdioOptions;
 
   for (const script of route.scripts) {
     const scriptPath = path.join(hooksDir, script);
@@ -415,6 +418,7 @@ export function runHook(opts: RunHookOptions): RunHookResult {
     const child = spawnSync('bash', [scriptPath, ...(opts.args ?? [])], {
       cwd: repoRoot,
       stdio,
+      input: opts.input,
       env: { ...process.env, HOOK_REPO_ROOT: repoRoot },
     });
     recordHookInvocation(repoRoot, {

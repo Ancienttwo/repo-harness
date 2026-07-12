@@ -98,8 +98,8 @@ describe('install command (Phase 1B)', () => {
           expect(cmd).toContain('git rev-parse --show-toplevel');
           expect(cmd).toContain('export HOOK_REPO_ROOT="$repo"');
           expect(cmd).toContain('command -v repo-harness-hook');
-          expect(cmd).toContain('repo-harness-hook ');
-          expect(cmd).toContain('&& exit 0');
+          expect(cmd).toContain('exec repo-harness-hook ');
+          expect(cmd).not.toContain('&& exit 0');
           expect(cmd).toContain('command -v repo-harness');
           expect(cmd).toContain('HOOK_HOST=codex');
           expect(cmd).toContain('exec repo-harness hook ');

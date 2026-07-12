@@ -35,7 +35,7 @@ export type HooksByEvent = Record<string, HookEntry[]>;
 export type HookHost = RouteHost;
 
 export function buildHookCommand(route: Route, host: HookHost): string {
-  return `repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; export HOOK_REPO_ROOT="$repo"; if command -v repo-harness-hook >/dev/null 2>&1; then HOOK_HOST=${host} repo-harness-hook ${route.event} --route ${route.routeId} && exit 0; fi; command -v repo-harness >/dev/null 2>&1 || exit 0; HOOK_HOST=${host} exec repo-harness hook ${route.event} --route ${route.routeId}`;
+  return `repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; export HOOK_REPO_ROOT="$repo"; if command -v repo-harness-hook >/dev/null 2>&1; then HOOK_HOST=${host} exec repo-harness-hook ${route.event} --route ${route.routeId}; fi; command -v repo-harness >/dev/null 2>&1 || exit 0; HOOK_HOST=${host} exec repo-harness hook ${route.event} --route ${route.routeId}`;
 }
 
 export function buildHookEntry(route: Route, host: HookHost): HookEntry {

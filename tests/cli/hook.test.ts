@@ -194,6 +194,31 @@ describe('hook command (Phase 1B)', () => {
     );
   });
 
+  test('replays the same host payload to every script on a multi-script route', () => {
+    withTempRepo(
+      {
+        optIn: true,
+        scripts: {
+          'worktree-guard.sh': '#!/bin/bash\ncat > .first-payload\n',
+          'pre-edit-guard.sh': '#!/bin/bash\ncat > .second-payload\n',
+        },
+      },
+      (repoRoot) => {
+        const payload = JSON.stringify({ tool_input: { file_path: 'deploy/sql/0001.sql' } });
+        const result = runHook({
+          event: 'PreToolUse',
+          routeId: 'edit',
+          cwd: repoRoot,
+          stdio: 'ignore',
+          input: payload,
+        });
+        expect(result.exitCode).toBe(0);
+        expect(fs.readFileSync(path.join(repoRoot, '.first-payload'), 'utf-8')).toBe(payload);
+        expect(fs.readFileSync(path.join(repoRoot, '.second-payload'), 'utf-8')).toBe(payload);
+      },
+    );
+  });
+
   test('opt-in + required route partial missing → exits 3 after existing script runs', () => {
     withTempRepo(
       {
