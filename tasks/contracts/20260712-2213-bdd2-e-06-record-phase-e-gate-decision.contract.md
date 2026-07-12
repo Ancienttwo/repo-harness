@@ -1,6 +1,6 @@
 # Task Contract: bdd2-e-06-record-phase-e-gate-decision
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260712-2213-bdd2-e-06-record-phase-e-gate-decision.md
 > **Task Profile**: eval-only
 > **Owner**: kito
