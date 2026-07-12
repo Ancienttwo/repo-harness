@@ -31,6 +31,8 @@
 
 The decision is computed from the pre-registered rules in `evals/bdd2/metrics/shape-metrics.md`; it is not manually overridden in this report.
 
+<!-- generated-core-end -->
+
 ## Evidence grade and protocol deviation
 
 The metric and gate sections above are the deterministic output of the frozen
@@ -49,6 +51,31 @@ computed decision.
   addition to eight scores explicitly labeled `incorrect`. Truth-aware authority
   mismatches are therefore 12 baseline versus 5 treatment, not the reviewer-coded
   7 versus 1 shown in the generated metric section.
+
+| Task | Condition | Repetition | Reviewer label | Expected tier |
+|---|---|---:|---|---|
+| S-H-03 | baseline | 1 | inline | prd |
+| S-H-03 | baseline | 2 | inline | prd |
+| S-H-03 | baseline | 3 | inline | prd |
+| S-H-03 | treatment | 1 | inline | prd |
+| S-H-03 | treatment | 2 | inline | prd |
+| S-H-03 | treatment | 3 | inline | prd |
+| S-H-04 | baseline | 1 | incorrect | prd |
+| S-H-06 | baseline | 1 | incorrect | prd |
+| S-H-06 | baseline | 2 | incorrect | prd |
+| S-H-08 | baseline | 1 | brief | inline |
+| S-H-08 | baseline | 2 | brief | inline |
+| S-H-08 | baseline | 3 | incorrect | inline |
+| S-H-10 | baseline | 2 | incorrect | prd |
+| S-H-11 | baseline | 1 | incorrect | inline |
+| S-H-11 | baseline | 3 | incorrect | inline |
+| S-H-11 | treatment | 3 | prd | inline |
+| S-H-12 | treatment | 1 | incorrect | inline |
+
+The table is the durable post-reveal projection of the ignored score/private
+mapping evidence. The contract test parses its rows and derives the 12/5 totals;
+the local reproduction reads the same score and private-coordinate files and joins
+them with `truth/held-out.json#shape_tasks.*.expected_authority`.
 - Each packet had one final reviewer and no overlapping independent score, so
   inter-rater disagreement was not measured. The reviewer-safe queue omitted the
   private mapping, but blind and private directories remained under the same repo

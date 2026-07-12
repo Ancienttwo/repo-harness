@@ -123,8 +123,10 @@
   not facts that can be repaired after reveal without creating a new experiment
   revision.
 - The tracked report now discloses all three limits and keeps the decision at
-  `Reshape`. Kill-path regression coverage is added without changing the frozen
-  runner, manifest, prompts, scores, or raw outputs.
+  `Reshape`. Its mismatch table is counted by the tracked contract test and, when
+  ignored local run evidence exists, reproduced byte-for-byte from scores, private
+  coordinates, and held-out truth. Kill-path regression coverage is also added
+  without changing the frozen runner, manifest, prompts, scores, or raw outputs.
 
 ## Promotion Filter
 
