@@ -92,6 +92,10 @@
   routing branches. The verification-boundary closeout widens only to those two tests
   and aligns their assertions with the already-shipped runtime behavior; no hook or
   product behavior changed.
+- The same rebase exposed one missing deterministic projection from the harness-kernel
+  merge: `docs/reference-configs/hook-operations.md` had advanced while its packaged
+  asset copy had not. The asset was mirrored byte-for-byte so the existing brain and
+  adoption drift gates pass; this is projection repair, not a new BDD² behavior.
 
 ## Evidence Links
 
