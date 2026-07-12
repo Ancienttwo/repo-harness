@@ -105,6 +105,11 @@
   terminal markers cleared. It is not duplicated inside `verify-sprint`: that helper
   temporarily requires the terminal plan marker in order to resolve the contract,
   while the strict workflow check correctly rejects a terminal plan left active.
+- GitHub CI initially failed the new source-provenance gate because the Test job used
+  the checkout action's shallow default and therefore could not resolve the sealed E2
+  source commit. The Test job now fetches full history, and an E3 contract test pins
+  that requirement. The validator remains fail-closed; no shallow-history bypass or
+  compatibility fallback was introduced.
 
 ## Evidence Links
 

@@ -110,6 +110,7 @@ allowed_paths:
   - tests/hook-dispatch-diet-report.test.ts
   - tests/hook-contracts.test.ts
   - assets/reference-configs/hook-operations.md
+  - .github/workflows/ci.yml
   - tasks/todos.md
   - tasks/current.md
   - tasks/contracts/20260713-0314-bdd2-phase-e3-scoring-authority.contract.md

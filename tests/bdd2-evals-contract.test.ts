@@ -35,4 +35,10 @@ describe("BDD2 Phase E3 evaluation contract", () => {
     expect(verifyEvidenceProjection(evaluation, evaluation.manifest.experiments.EB3.result.evidence.path)).toEqual({ experiment: "EB3", decision: "Kill" });
     expect(verifyEvidenceProjection(evaluation, evaluation.manifest.experiments.EI3.result.evidence.path)).toEqual({ experiment: "EI3", decision: "Kill" });
   });
+
+  test("authoritative evaluation CI checks out the historical source commit", () => {
+    const workflow = readFileSync(join(REPO_ROOT, ".github/workflows/ci.yml"), "utf8");
+    const testJob = workflow.slice(workflow.indexOf("  test:"), workflow.indexOf("  mcp-path-matrix:"));
+    expect(testJob).toContain("fetch-depth: 0");
+  });
 });
