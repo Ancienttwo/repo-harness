@@ -1,6 +1,6 @@
 # Task Contract: bdd2-e-03-run-experiment-a-audit-hypothesis
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260712-1811-bdd2-e-03-run-experiment-a-audit-hypothesis.md
 > **Task Profile**: eval-only
 > **Owner**: kito
@@ -164,7 +164,7 @@ exit_criteria:
     - bun scripts/run-bdd2-evals.ts validate
     - bun scripts/run-bdd2-evals.ts plan --experiment A --partition held_out --dry-run
     - bun scripts/run-bdd2-evals.ts validate-historical-audit-scores --run .ai/harness/runs/bdd2/bdd2-e03-audit-a-v1
-    - repo-harness run check-task-workflow --strict
+    - REPO_HARNESS_BRAIN_ROOT=.ai/harness/runs/missing-brain-vault repo-harness run check-task-workflow --strict
   qa_scores:
     - dimension: functionality
       min: 8

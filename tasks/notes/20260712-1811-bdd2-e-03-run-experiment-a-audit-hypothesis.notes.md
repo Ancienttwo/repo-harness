@@ -4,7 +4,7 @@
 > **Plan**: plans/plan-20260712-1811-bdd2-e-03-run-experiment-a-audit-hypothesis.md
 > **Contract**: tasks/contracts/20260712-1811-bdd2-e-03-run-experiment-a-audit-hypothesis.contract.md
 > **Review**: tasks/reviews/20260712-1811-bdd2-e-03-run-experiment-a-audit-hypothesis.review.md
-> **Last Updated**: 2026-07-12 18:15
+> **Last Updated**: 2026-07-12 21:37
 > **Lifecycle**: notes
 
 ## Design Decisions
@@ -74,10 +74,17 @@
   current A authority is a non-runnable `bdd2-experiment-a-kill-foundation-v2`.
 - The historical Shape projector was narrowed back to v2-only authority. It does
   not act as a future S-v3 compatibility reader; current Shape remains a separate
-  non-runnable foundation revision.
+  non-runnable foundation revision. Final external review also required the v2
+  projector to content-verify its recorded runner at the historical source commit;
+  a tampered runner hash now fails closed in a regression test.
 - Run/output path guards now compare real paths, require regular non-symlink packet
   leaves, and reject final output/summary symlinks, closing external read/write
   traversal through repository-relative paths.
+- The first post-run `bun run check:ci` reached 1,143 passes and zero failures, then
+  stopped at the external brain-sync check because the live brain file contains a
+  newer unrelated agent-fleet edit from the root checkout. It was not overwritten
+  from this older worktree; isolated-vault and hosted CI are the authoritative
+  repository checks for this branch.
 
 ## Promotion Filter
 

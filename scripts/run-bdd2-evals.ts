@@ -1460,6 +1460,14 @@ export function projectHistoricalShapeEvidence(
     || historicalManifest.experiments?.S?.freeze?.state !== "sealed") {
     fail("Historical run does not match a sealed Shape authority");
   }
+  assertRecord(historicalManifest.runner, "historical Shape runner");
+  historicalFileWithHash(
+    absoluteRoot,
+    runRaw.source_commit,
+    historicalManifest.runner.path,
+    historicalManifest.runner.sha256,
+    "historical Shape runner"
+  );
   const heldOut = historicalManifest.partitions?.held_out;
   assertRecord(heldOut, "historical held-out partition");
   assertString(heldOut.tasks, "historical held-out task path");

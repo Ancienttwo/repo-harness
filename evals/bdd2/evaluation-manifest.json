@@ -2,7 +2,7 @@
   "schema": "repo-harness-bdd2-evaluation.v3",
   "runner": {
     "path": "scripts/run-bdd2-evals.ts",
-    "sha256": "932e44df6be466e59600d7e3ceb5b81b1f1c41df9c25d92c9fa05849bc3ca5f5"
+    "sha256": "21ce729f11552bcdc7847c9a4d33f39e223ef41fc566d0dd86d9963d12efd1bd"
   },
   "output_root": ".ai/harness/runs/bdd2",
   "experiments": {

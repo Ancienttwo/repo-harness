@@ -413,27 +413,41 @@ describe("run-bdd2-evals sealed execution", () => {
         shape_metrics: manifest.adjudication.experiments.S.metrics,
         shape_metrics_sha256: manifest.adjudication.experiments.S.metrics_sha256,
       };
-      const historicalManifestText = `${JSON.stringify(historicalManifest, null, 2)}\n`;
-      const blob = spawnSync("git", ["hash-object", "-w", "--stdin"], {
-        cwd: root,
-        encoding: "utf-8",
-        input: historicalManifestText,
-      }).stdout.trim();
-      const historicalIndex = join(root, "historical-shape.index");
-      const historicalEnv = { ...process.env, GIT_INDEX_FILE: historicalIndex };
-      expect(spawnSync("git", ["read-tree", "HEAD"], { cwd: root, env: historicalEnv }).status).toBe(0);
-      expect(spawnSync("git", ["update-index", "--add", "--cacheinfo", `100644,${blob},evals/bdd2/evaluation-manifest.json`], { cwd: root, env: historicalEnv }).status).toBe(0);
-      const tree = spawnSync("git", ["write-tree"], { cwd: root, env: historicalEnv, encoding: "utf-8" }).stdout.trim();
-      const historicalCommit = spawnSync("git", ["commit-tree", tree, "-p", "HEAD"], {
-        cwd: root,
-        env: historicalEnv,
-        encoding: "utf-8",
-        input: "historical v2 Shape authority\n",
-      }).stdout.trim();
-      rmSync(historicalIndex, { force: true });
+      const commitHistoricalManifest = (value: typeof historicalManifest, label: string) => {
+        const text = `${JSON.stringify(value, null, 2)}\n`;
+        const blob = spawnSync("git", ["hash-object", "-w", "--stdin"], {
+          cwd: root,
+          encoding: "utf-8",
+          input: text,
+        }).stdout.trim();
+        const historicalIndex = join(root, `historical-shape-${label}.index`);
+        const historicalEnv = { ...process.env, GIT_INDEX_FILE: historicalIndex };
+        expect(spawnSync("git", ["read-tree", "HEAD"], { cwd: root, env: historicalEnv }).status).toBe(0);
+        expect(spawnSync("git", ["update-index", "--add", "--cacheinfo", `100644,${blob},evals/bdd2/evaluation-manifest.json`], { cwd: root, env: historicalEnv }).status).toBe(0);
+        const tree = spawnSync("git", ["write-tree"], { cwd: root, env: historicalEnv, encoding: "utf-8" }).stdout.trim();
+        const commit = spawnSync("git", ["commit-tree", tree, "-p", "HEAD"], {
+          cwd: root,
+          env: historicalEnv,
+          encoding: "utf-8",
+          input: `historical v2 Shape authority ${label}\n`,
+        }).stdout.trim();
+        rmSync(historicalIndex, { force: true });
+        return { commit, text };
+      };
       const historicalRun = JSON.parse(currentRunText);
-      historicalRun.source_commit = historicalCommit;
-      historicalRun.manifest_sha256 = createHash("sha256").update(historicalManifestText).digest("hex");
+
+      const invalidRunnerManifest = structuredClone(historicalManifest);
+      invalidRunnerManifest.runner.sha256 = "0".repeat(64);
+      const invalidRunnerAuthority = commitHistoricalManifest(invalidRunnerManifest, "invalid-runner");
+      historicalRun.source_commit = invalidRunnerAuthority.commit;
+      historicalRun.manifest_sha256 = createHash("sha256").update(invalidRunnerAuthority.text).digest("hex");
+      writeFileSync(runJsonPath, `${JSON.stringify(historicalRun, null, 2)}\n`, "utf-8");
+      expect(() => projectHistoricalShapeEvidence(root, runRelativePath, "shape-evidence.json"))
+        .toThrow("historical Shape runner hash mismatch at source commit");
+
+      const historicalAuthority = commitHistoricalManifest(historicalManifest, "valid");
+      historicalRun.source_commit = historicalAuthority.commit;
+      historicalRun.manifest_sha256 = createHash("sha256").update(historicalAuthority.text).digest("hex");
       writeFileSync(runJsonPath, `${JSON.stringify(historicalRun, null, 2)}\n`, "utf-8");
 
       const projected = projectHistoricalShapeEvidence(root, runRelativePath, "shape-evidence.json") as any;
