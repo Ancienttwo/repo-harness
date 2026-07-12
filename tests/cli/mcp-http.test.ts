@@ -758,8 +758,9 @@ describe('mcp http transport', () => {
       const worktreeRoot = worktreeList.split(/\r?\n/)
         .filter((line) => line.startsWith('worktree '))
         .map((line) => line.slice('worktree '.length))
-        .find((path) => path !== realpathSync(repoRoot));
+        .find((path) => realpathSync(path) !== realpathSync(repoRoot));
       expect(worktreeRoot).toBeTruthy();
+      expect(realpathSync(worktreeRoot!)).not.toBe(realpathSync(repoRoot));
       const heartbeatPath = join(worktreeRoot!, 'authorization-heartbeat.txt');
       for (let attempt = 0; attempt < 40 && !existsSync(heartbeatPath); attempt += 1) await Bun.sleep(100);
       expect(existsSync(heartbeatPath)).toBe(true);
