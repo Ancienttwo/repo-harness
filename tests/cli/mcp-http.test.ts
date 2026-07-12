@@ -736,7 +736,7 @@ describe('mcp http transport', () => {
         name: 'exec_command',
         arguments: {
           workspace_id: opened.workspace_id,
-          cmd: "i=0; while :; do i=$((i + 1)); printf '%s' \"$i\" > authorization-heartbeat.txt; sleep 0.1; done",
+          cmd: 'while true; do printf . >> authorization-heartbeat.txt; sleep 0.1; done',
           yield_time_ms: 0,
         },
       });
