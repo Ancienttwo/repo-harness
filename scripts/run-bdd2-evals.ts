@@ -3,14 +3,20 @@
 import { createHash, randomBytes } from "crypto";
 import { spawnSync } from "child_process";
 import {
+  chmodSync,
+  copyFileSync,
   existsSync,
   lstatSync,
+  mkdtempSync,
   mkdirSync,
   readFileSync,
   realpathSync,
+  readdirSync,
+  rmSync,
   writeFileSync,
 } from "fs";
-import { dirname, isAbsolute, relative, resolve, sep } from "path";
+import { tmpdir } from "os";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "path";
 import { fileURLToPath } from "url";
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
@@ -34,6 +40,11 @@ interface FileReference {
 
 interface ExperimentDefinition {
   kind: "shape" | "audit";
+  freeze: {
+    id: string;
+    state: FreezeState;
+    sealed_at: string | null;
+  };
   repetitions: number;
   held_out_task_count: number;
   conditions: Record<ConditionId, PromptReference>;
@@ -49,18 +60,18 @@ interface PartitionDefinition {
 export interface AgentProfile {
   command: string;
   args: string[];
+  version_args: string[];
+  expected_version: string;
   model: string;
   sampling: Record<string, string | number | boolean | null>;
-  response_source: "stdout" | "file";
+  input_source: "stdin";
+  response_source: "stdout";
+  workspace_mode: "isolated";
+  credential_mode: "none" | "codex-auth-copy";
 }
 
 export interface EvaluationManifest {
-  schema: "repo-harness-bdd2-evaluation.v1";
-  freeze: {
-    id: string;
-    state: FreezeState;
-    sealed_at: string | null;
-  };
+  schema: "repo-harness-bdd2-evaluation.v2";
   runner: FileReference;
   output_root: string;
   experiments: Record<ExperimentId, ExperimentDefinition>;
@@ -70,6 +81,8 @@ export interface EvaluationManifest {
     rubric_sha256: string;
     score_schema: string;
     score_schema_sha256: string;
+    shape_metrics: string;
+    shape_metrics_sha256: string;
   };
   agents: Record<string, AgentProfile>;
 }
@@ -95,8 +108,19 @@ interface TruthIssue {
 }
 
 interface TruthSet {
-  schema: "repo-harness-bdd2-truth-set.v1";
+  schema: "repo-harness-bdd2-truth-set.v2";
   partition: PartitionId;
+  shape_tasks: Record<string, {
+    required_behaviors: string[];
+    likely_unsupported_expansions: string[];
+    protected_concerns: Array<{
+      concern: string;
+      severity: "P0" | "P1" | "P2" | "P3";
+      summary: string;
+    }>;
+    expected_authority: "inline" | "brief" | "prd";
+    escalation_required: boolean;
+  }>;
   audit_tasks: Record<string, { clean: boolean; issues: TruthIssue[] }>;
 }
 
@@ -133,7 +157,7 @@ export interface RunOptions extends PlanOptions {
 }
 
 export interface RunReport {
-  schema: "repo-harness-bdd2-run.v1";
+  schema: "repo-harness-bdd2-run.v2";
   freeze_id: string;
   source_commit: string;
   manifest_sha256: string;
@@ -144,6 +168,68 @@ export interface RunReport {
   partition: PartitionId;
   output_path: string;
   packets: Array<{ packet_id: string; task_id: string; status: "success" }>;
+}
+
+export interface ProtectedConcernOmission {
+  concern: string;
+  severity: "P0" | "P1" | "P2" | "P3";
+  summary: string;
+}
+
+export interface ShapeScore {
+  kind: "shape";
+  unsupported_expansion: number;
+  required_behavior_omission: number;
+  protected_concern_omissions: ProtectedConcernOmission[];
+  authority_fit: "inline" | "brief" | "prd" | "incorrect";
+  escalation_correct: boolean;
+  unnecessary_tracked_artifact_count: number;
+  correction_minutes: number;
+  notes: string;
+}
+
+export interface LockedScore {
+  schema: "repo-harness-bdd2-score.v2";
+  packet_id: string;
+  task_id: string;
+  experiment: "S";
+  reviewer_id: string;
+  locked_at: string;
+  score: ShapeScore;
+}
+
+export interface ShapeSummary {
+  schema: "repo-harness-bdd2-shape-summary.v1";
+  source_commit: string;
+  run_manifest_sha256: string;
+  packet_count: number;
+  score_count: number;
+  metrics: {
+    unsupported_expansion: {
+      baseline_total: number;
+      treatment_total: number;
+      relative_reduction: number | null;
+      wins: number;
+      ties: number;
+      losses: number;
+    };
+    required_behavior_omission: {
+      baseline_total: number;
+      treatment_total: number;
+      stable_new_task_ids: string[];
+    };
+    protected_concern: { new_treatment_p0_p1_pairs: number };
+    correction_minutes: {
+      baseline_median: number;
+      treatment_median: number;
+      relative_increase: number | null;
+    };
+    artifact_burden: { treatment_unnecessary_tracked_artifacts: number };
+    authority_fit: { baseline_incorrect: number; treatment_incorrect: number };
+    escalation: { baseline_incorrect: number; treatment_incorrect: number };
+  };
+  gates: Record<string, boolean>;
+  decision: "Pass" | "Reshape" | "Kill";
 }
 
 function fail(message: string): never {
@@ -257,10 +343,51 @@ function validateTaskSet(raw: unknown, partition: PartitionId): TaskSet {
 
 function validateTruthSet(raw: unknown, partition: PartitionId, tasks: EvaluationTask[]): void {
   assertRecord(raw, `${partition} truth set`);
-  assertExactKeys(raw, ["schema", "partition", "audit_tasks"], `${partition} truth set`);
-  if (raw.schema !== "repo-harness-bdd2-truth-set.v1") fail(`${partition} truth schema mismatch`);
+  assertExactKeys(raw, ["schema", "partition", "shape_tasks", "audit_tasks"], `${partition} truth set`);
+  if (raw.schema !== "repo-harness-bdd2-truth-set.v2") fail(`${partition} truth schema mismatch`);
   if (raw.partition !== partition) fail(`${partition} truth partition mismatch`);
+  assertRecord(raw.shape_tasks, `${partition}.shape_tasks`);
   assertRecord(raw.audit_tasks, `${partition}.audit_tasks`);
+
+  const shapeTaskIds = new Set(tasks.filter((task) => task.experiment === "S").map((task) => task.id));
+  const shapeTruthIds = new Set(Object.keys(raw.shape_tasks));
+  if ([...shapeTaskIds].sort().join("\n") !== [...shapeTruthIds].sort().join("\n")) {
+    fail(`${partition} truth keys must match shape task ids exactly`);
+  }
+  for (const [taskId, candidate] of Object.entries(raw.shape_tasks)) {
+    assertRecord(candidate, `${partition}.shape_tasks.${taskId}`);
+    assertExactKeys(
+      candidate,
+      ["required_behaviors", "likely_unsupported_expansions", "protected_concerns", "expected_authority", "escalation_required"],
+      `${partition}.shape_tasks.${taskId}`
+    );
+    for (const key of ["required_behaviors", "likely_unsupported_expansions"] as const) {
+      if (!Array.isArray(candidate[key]) || candidate[key].length === 0 || candidate[key].some((value) => typeof value !== "string" || value.length === 0)) {
+        fail(`${partition}.shape_tasks.${taskId}.${key} must be a non-empty string array`);
+      }
+    }
+    if (!Array.isArray(candidate.protected_concerns)) {
+      fail(`${partition}.shape_tasks.${taskId}.protected_concerns must be an array`);
+    }
+    for (const [index, concern] of candidate.protected_concerns.entries()) {
+      assertRecord(concern, `${taskId}.protected_concerns[${index}]`);
+      assertExactKeys(concern, ["concern", "severity", "summary"], `${taskId}.protected_concerns[${index}]`);
+      assertString(concern.concern, `${taskId}.protected_concerns[${index}].concern`);
+      assertString(concern.summary, `${taskId}.protected_concerns[${index}].summary`);
+      if (!["P0", "P1", "P2", "P3"].includes(String(concern.severity))) {
+        fail(`${taskId}.protected_concerns[${index}].severity is invalid`);
+      }
+    }
+    if (!["inline", "brief", "prd"].includes(String(candidate.expected_authority))) {
+      fail(`${partition}.shape_tasks.${taskId}.expected_authority is invalid`);
+    }
+    if (typeof candidate.escalation_required !== "boolean") {
+      fail(`${partition}.shape_tasks.${taskId}.escalation_required must be boolean`);
+    }
+    if ((candidate.expected_authority === "prd") !== candidate.escalation_required) {
+      fail(`${partition}.shape_tasks.${taskId} PRD authority must match escalation_required`);
+    }
+  }
 
   const auditTaskIds = new Set(tasks.filter((task) => task.experiment === "A").map((task) => task.id));
   const truthIds = new Set(Object.keys(raw.audit_tasks));
@@ -293,14 +420,29 @@ function validateTruthSet(raw: unknown, partition: PartitionId, tasks: Evaluatio
 function validateAgentProfiles(manifest: EvaluationManifest): void {
   for (const [agent, raw] of Object.entries(manifest.agents)) {
     assertRecord(raw, `agents.${agent}`);
-    assertExactKeys(raw, ["command", "args", "model", "sampling", "response_source"], `agents.${agent}`);
+    assertExactKeys(
+      raw,
+      ["command", "args", "version_args", "expected_version", "model", "sampling", "input_source", "response_source", "workspace_mode", "credential_mode"],
+      `agents.${agent}`
+    );
     assertString(raw.command, `agents.${agent}.command`);
+    assertString(raw.expected_version, `agents.${agent}.expected_version`);
     assertString(raw.model, `agents.${agent}.model`);
     if (!Array.isArray(raw.args) || raw.args.some((entry) => typeof entry !== "string")) {
       fail(`agents.${agent}.args must be an array of strings`);
     }
-    if (raw.response_source !== "stdout" && raw.response_source !== "file") {
-      fail(`agents.${agent}.response_source must be stdout or file`);
+    if (!Array.isArray(raw.version_args) || raw.version_args.some((entry) => typeof entry !== "string")) {
+      fail(`agents.${agent}.version_args must be an array of strings`);
+    }
+    if (raw.input_source !== "stdin" || raw.response_source !== "stdout" || raw.workspace_mode !== "isolated") {
+      fail(`agents.${agent} must use stdin, stdout, and isolated workspace mode`);
+    }
+    if (raw.credential_mode !== "none" && raw.credential_mode !== "codex-auth-copy") {
+      fail(`agents.${agent}.credential_mode is invalid`);
+    }
+    if (raw.credential_mode === "codex-auth-copy"
+      && (!isAbsolute(String(raw.command)) || basename(String(raw.command)) !== "codex")) {
+      fail(`agents.${agent}.credential_mode codex-auth-copy requires an absolute codex executable path`);
     }
     assertRecord(raw.sampling, `agents.${agent}.sampling`);
     for (const [key, value] of Object.entries(raw.sampling)) {
@@ -309,11 +451,8 @@ function validateAgentProfiles(manifest: EvaluationManifest): void {
       }
     }
     const templates = (raw.args as string[]).join("\n");
-    for (const required of ["{prompt_path}", "{model}"]) {
+    for (const required of ["{model}"]) {
       if (!templates.includes(required)) fail(`agents.${agent}.args must apply ${required}`);
-    }
-    if (raw.response_source === "file" && !templates.includes("{response_path}")) {
-      fail(`agents.${agent}.args must apply {response_path} for file responses`);
     }
     for (const key of Object.keys(raw.sampling)) {
       if (!templates.includes(`{sampling.${key}}`)) {
@@ -323,7 +462,7 @@ function validateAgentProfiles(manifest: EvaluationManifest): void {
     for (const placeholder of templates.matchAll(/\{([^}]+)\}/g)) {
       const name = placeholder[1];
       const knownSampling = name.startsWith("sampling.") && Object.hasOwn(raw.sampling, name.slice("sampling.".length));
-      if (!["prompt_path", "response_path", "workspace", "model"].includes(name) && !knownSampling) {
+      if (name !== "model" && !knownSampling) {
         fail(`agents.${agent}.args contains unknown placeholder {${name}}`);
       }
     }
@@ -338,13 +477,9 @@ export function validateEvaluation(
   const manifestPath = authorityPath(absoluteRoot, manifestRelativePath, "manifest");
   const raw = readJson(manifestPath);
   assertRecord(raw, "manifest");
-  assertExactKeys(raw, ["schema", "freeze", "runner", "output_root", "experiments", "partitions", "adjudication", "agents"], "manifest");
-  if (raw.schema !== "repo-harness-bdd2-evaluation.v1") fail("Unsupported evaluation manifest schema");
+  assertExactKeys(raw, ["schema", "runner", "output_root", "experiments", "partitions", "adjudication", "agents"], "manifest");
+  if (raw.schema !== "repo-harness-bdd2-evaluation.v2") fail("Unsupported evaluation manifest schema");
 
-  assertRecord(raw.freeze, "freeze");
-  assertExactKeys(raw.freeze, ["id", "state", "sealed_at"], "freeze");
-  assertString(raw.freeze.id, "freeze.id");
-  if (raw.freeze.state !== "foundation" && raw.freeze.state !== "sealed") fail("freeze.state must be foundation or sealed");
   const authorityPaths = [manifestPath, validateFileReference(absoluteRoot, raw.runner, "runner")];
   assertString(raw.output_root, "output_root");
   assertRecord(raw.experiments, "experiments");
@@ -352,8 +487,20 @@ export function validateEvaluation(
   for (const experimentId of ["S", "A"] as const) {
     const experiment = raw.experiments[experimentId];
     assertRecord(experiment, `experiments.${experimentId}`);
-    assertExactKeys(experiment, ["kind", "repetitions", "held_out_task_count", "conditions"], `experiments.${experimentId}`);
+    assertExactKeys(experiment, ["kind", "freeze", "repetitions", "held_out_task_count", "conditions"], `experiments.${experimentId}`);
     if (experiment.kind !== (experimentId === "S" ? "shape" : "audit")) fail(`experiments.${experimentId}.kind mismatch`);
+    assertRecord(experiment.freeze, `experiments.${experimentId}.freeze`);
+    assertExactKeys(experiment.freeze, ["id", "state", "sealed_at"], `experiments.${experimentId}.freeze`);
+    assertString(experiment.freeze.id, `experiments.${experimentId}.freeze.id`);
+    if (experiment.freeze.state !== "foundation" && experiment.freeze.state !== "sealed") {
+      fail(`experiments.${experimentId}.freeze.state must be foundation or sealed`);
+    }
+    if (experiment.freeze.state === "foundation" && experiment.freeze.sealed_at !== null) {
+      fail(`Foundation experiment ${experimentId} cannot contain seal time`);
+    }
+    if (experiment.freeze.state === "sealed") {
+      assertString(experiment.freeze.sealed_at, `experiments.${experimentId}.freeze.sealed_at`);
+    }
     if (!Number.isInteger(experiment.repetitions) || Number(experiment.repetitions) < 1) fail(`experiments.${experimentId}.repetitions must be positive`);
     if (!Number.isInteger(experiment.held_out_task_count) || Number(experiment.held_out_task_count) < 1) fail(`experiments.${experimentId}.held_out_task_count must be positive`);
     assertRecord(experiment.conditions, `experiments.${experimentId}.conditions`);
@@ -387,30 +534,31 @@ export function validateEvaluation(
   if (new Set(allIds).size !== allIds.length) fail("Task ids must be unique across partitions");
 
   assertRecord(raw.adjudication, "adjudication");
-  assertExactKeys(raw.adjudication, ["rubric", "rubric_sha256", "score_schema", "score_schema_sha256"], "adjudication");
-  for (const key of ["rubric", "rubric_sha256", "score_schema", "score_schema_sha256"] as const) {
+  assertExactKeys(raw.adjudication, ["rubric", "rubric_sha256", "score_schema", "score_schema_sha256", "shape_metrics", "shape_metrics_sha256"], "adjudication");
+  for (const key of ["rubric", "rubric_sha256", "score_schema", "score_schema_sha256", "shape_metrics", "shape_metrics_sha256"] as const) {
     assertString(raw.adjudication[key], `adjudication.${key}`);
   }
   const rubric = raw.adjudication.rubric as string;
   const rubricSha256 = raw.adjudication.rubric_sha256 as string;
   const scoreSchema = raw.adjudication.score_schema as string;
   const scoreSchemaSha256 = raw.adjudication.score_schema_sha256 as string;
+  const shapeMetrics = raw.adjudication.shape_metrics as string;
+  const shapeMetricsSha256 = raw.adjudication.shape_metrics_sha256 as string;
   authorityPaths.push(
     verifyHash(absoluteRoot, rubric, rubricSha256, "adjudication rubric"),
-    verifyHash(absoluteRoot, scoreSchema, scoreSchemaSha256, "adjudication score schema")
+    verifyHash(absoluteRoot, scoreSchema, scoreSchemaSha256, "adjudication score schema"),
+    verifyHash(absoluteRoot, shapeMetrics, shapeMetricsSha256, "shape metric specification")
   );
 
   assertRecord(raw.agents, "agents");
   const manifest = raw as unknown as EvaluationManifest;
-  if (manifest.freeze.state === "foundation") {
-    if (manifest.freeze.sealed_at !== null || Object.keys(manifest.agents).length !== 0) {
-      fail("Foundation freeze cannot contain seal time or agents");
-    }
+  const sealedExperiments = (["S", "A"] as const).filter((experimentId) => manifest.experiments[experimentId].freeze.state === "sealed");
+  if (sealedExperiments.length === 0) {
+    if (Object.keys(manifest.agents).length !== 0) fail("Foundation-only manifest cannot contain agent profiles");
   } else {
-    assertString(manifest.freeze.sealed_at, "freeze.sealed_at");
-    if (Object.keys(manifest.agents).length === 0) fail("Sealed freeze requires at least one agent profile");
+    if (Object.keys(manifest.agents).length === 0) fail("A sealed experiment requires at least one agent profile");
     validateAgentProfiles(manifest);
-    for (const experimentId of ["S", "A"] as const) {
+    for (const experimentId of sealedExperiments) {
       const actual = tasks.held_out.filter((task) => task.experiment === experimentId).length;
       const expected = manifest.experiments[experimentId].held_out_task_count;
       if (actual !== expected) fail(`Sealed experiment ${experimentId} requires exactly ${expected} held-out tasks, got ${actual}`);
@@ -457,7 +605,7 @@ export function buildRunPlan(evaluation: ValidatedEvaluation, options: PlanOptio
     for (const condition of conditions) {
       for (let repetition = 1; repetition <= repetitions; repetition += 1) {
         coordinates.push({
-          coordinateId: privateCoordinateId([evaluation.manifest.freeze.id, options.experiment, options.partition, task.id, condition, String(repetition)]),
+          coordinateId: privateCoordinateId([experiment.freeze.id, options.experiment, options.partition, task.id, condition, String(repetition)]),
           experiment: options.experiment,
           partition: options.partition,
           taskId: task.id,
@@ -541,23 +689,41 @@ function assertAuthorityTrackedAtHead(repoRoot: string, authorityPaths: string[]
 }
 
 export function runEvaluation(evaluation: ValidatedEvaluation, options: RunOptions): RunReport {
-  if (evaluation.manifest.freeze.state !== "sealed") fail("Evaluation manifest is foundation-only; seal commit, model, and agent profiles before execution");
+  const experiment = evaluation.manifest.experiments[options.experiment];
+  if (experiment.freeze.state !== "sealed") fail(`Experiment ${options.experiment} is foundation-only; seal it before execution`);
   const profile = evaluation.manifest.agents[options.agent];
   if (!profile) fail(`Unknown frozen agent profile: ${options.agent}`);
+  const versionHome = mkdtempSync(join(tmpdir(), "repo-harness-bdd2-version-"));
+  let version: ReturnType<typeof spawnSync>;
+  try {
+    version = spawnSync(profile.command, profile.version_args, {
+      cwd: versionHome,
+      encoding: "utf-8",
+      env: buildIsolatedAgentEnv(versionHome),
+    });
+  } finally {
+    rmSync(versionHome, { recursive: true, force: true });
+  }
+  if (version.error) fail(`Cannot inspect agent command version: ${version.error.message}`);
+  if (version.status !== 0) fail(`Agent version command failed with exit ${version.status}`);
+  const actualVersion = `${version.stdout ?? ""}${version.stderr ?? ""}`.trim();
+  if (actualVersion !== profile.expected_version) {
+    fail(`Agent command version drift: expected ${profile.expected_version}, got ${actualVersion}`);
+  }
   const sourceCommit = cleanHeadCommit(evaluation.repoRoot);
   assertAuthorityTrackedAtHead(evaluation.repoRoot, evaluation.authorityPaths);
   const plan = buildRunPlan(evaluation, options);
   const outputPath = options.outputPath
     ? resolve(evaluation.repoRoot, options.outputPath)
-    : resolve(evaluation.repoRoot, evaluation.manifest.output_root, evaluation.manifest.freeze.id, timestamp(options.now ?? new Date()));
+    : resolve(evaluation.repoRoot, evaluation.manifest.output_root, experiment.freeze.id, timestamp(options.now ?? new Date()));
   const rel = relative(evaluation.repoRoot, outputPath);
   if (rel.startsWith("..") || isAbsolute(rel)) fail("Output path must remain inside repository root");
   assertWritePath(evaluation.repoRoot, outputPath);
   ensureNewDirectory(outputPath);
 
   const report: RunReport = {
-    schema: "repo-harness-bdd2-run.v1",
-    freeze_id: evaluation.manifest.freeze.id,
+    schema: "repo-harness-bdd2-run.v2",
+    freeze_id: experiment.freeze.id,
     source_commit: sourceCommit,
     manifest_sha256: sha256File(evaluation.manifestPath),
     agent: options.agent,
@@ -573,43 +739,70 @@ export function runEvaluation(evaluation: ValidatedEvaluation, options: RunOptio
   for (const coordinate of plan) {
     const packetRoot = resolve(outputPath, "packets", coordinate.coordinateId);
     const promptPath = resolve(packetRoot, "agent-prompt.md");
-    const responsePath = resolve(packetRoot, "response.md");
     const stderrPath = resolve(packetRoot, "stderr.txt");
     mkdirSync(packetRoot, { recursive: true });
-    writeFileSync(promptPath, buildAgentPacket(evaluation, coordinate), "utf-8");
+    const agentPacket = buildAgentPacket(evaluation, coordinate);
+    writeFileSync(promptPath, agentPacket, "utf-8");
 
     const values = {
-      prompt_path: promptPath,
-      response_path: responsePath,
-      workspace: evaluation.repoRoot,
       model: profile.model,
       ...Object.fromEntries(
         Object.entries(profile.sampling).map(([key, value]) => [`sampling.${key}`, String(value)])
       ),
     };
     const args = profile.args.map((arg) => expandArg(arg, values));
-    writeJson(resolve(packetRoot, "command.json"), { command: profile.command, args, cwd: evaluation.repoRoot });
-    const result = spawnSync(profile.command, args, { cwd: evaluation.repoRoot, encoding: "utf-8", env: process.env });
+    writeJson(resolve(packetRoot, "command.json"), {
+      command: profile.command,
+      args,
+      cwd: "isolated-temporary-directory",
+      home: "isolated-temporary-directory",
+      environment: "minimal-allowlist",
+      input_source: "stdin",
+      credential_mode: profile.credential_mode,
+    });
+    const isolatedWorkspace = mkdtempSync(join(tmpdir(), "repo-harness-bdd2-agent-"));
+    const isolatedHome = mkdtempSync(join(tmpdir(), "repo-harness-bdd2-home-"));
+    let result;
+    try {
+      if (profile.credential_mode === "codex-auth-copy") {
+        const sourceHome = process.env.CODEX_HOME || (process.env.HOME ? join(process.env.HOME, ".codex") : "");
+        if (!sourceHome) fail("Cannot resolve Codex auth source home");
+        const authSource = resolve(sourceHome, "auth.json");
+        if (!existsSync(authSource) || lstatSync(authSource).isSymbolicLink()) fail("Codex auth source must be a regular auth.json file");
+        const authTarget = resolve(isolatedHome, "auth.json");
+        copyFileSync(authSource, authTarget);
+        chmodSync(authTarget, 0o600);
+      }
+      result = spawnSync(profile.command, args, {
+        cwd: isolatedWorkspace,
+        encoding: "utf-8",
+        env: buildIsolatedAgentEnv(isolatedHome),
+        input: agentPacket,
+        maxBuffer: 16 * 1024 * 1024,
+      });
+    } finally {
+      rmSync(isolatedWorkspace, { recursive: true, force: true });
+      rmSync(isolatedHome, { recursive: true, force: true });
+    }
     writeFileSync(stderrPath, result.stderr ?? "", "utf-8");
     if (result.error) fail(`Agent command failed to start for ${coordinate.coordinateId}: ${result.error.message}`);
     if (result.status !== 0) fail(`Agent command failed for ${coordinate.coordinateId} with exit ${result.status}`);
-
-    if (profile.response_source === "stdout") {
-      writeFileSync(responsePath, result.stdout ?? "", "utf-8");
-    } else if (!existsSync(responsePath)) {
-      fail(`Agent response file missing for ${coordinate.coordinateId}`);
-    }
-    const response = readFileSync(responsePath, "utf-8");
+    const response = result.stdout ?? "";
+    if (response.trim().length === 0) fail(`Agent response is empty for ${coordinate.coordinateId}`);
+    writeFileSync(resolve(packetRoot, "response.md"), response, "utf-8");
+    const task = evaluation.tasks[coordinate.partition].find((candidate) => candidate.id === coordinate.taskId);
+    if (!task) fail(`Task missing for coordinate: ${coordinate.taskId}`);
     const blindPacketId = randomBlindPacketId(blindPacketIds);
     writeJson(resolve(outputPath, "blind", `${blindPacketId}.json`), {
-      schema: "repo-harness-bdd2-blind-packet.v1",
+      schema: "repo-harness-bdd2-blind-packet.v2",
       packet_id: blindPacketId,
       task_id: coordinate.taskId,
       experiment: coordinate.experiment,
+      task_input: task.agent_input,
       response,
     });
     writeJson(resolve(outputPath, "private", `${blindPacketId}.json`), {
-      schema: "repo-harness-bdd2-private-coordinate.v1",
+      schema: "repo-harness-bdd2-private-coordinate.v2",
       packet_id: blindPacketId,
       coordinate_id: coordinate.coordinateId,
       task_id: coordinate.taskId,
@@ -628,8 +821,554 @@ export function runEvaluation(evaluation: ValidatedEvaluation, options: RunOptio
   return report;
 }
 
+interface ValidatedShapeScores {
+  runPath: string;
+  run: RunReport;
+  scores: Map<string, LockedScore>;
+  privateCoordinates: Map<string, { task_id: string; condition: ConditionId; repetition: number }>;
+}
+
+function directoryInsideRepo(repoRoot: string, relativePath: string, label: string): string {
+  assertString(relativePath, label);
+  if (isAbsolute(relativePath)) fail(`${label} must be repository-relative`);
+  const path = resolve(repoRoot, relativePath);
+  const rel = relative(repoRoot, path);
+  if (rel.startsWith("..") || isAbsolute(rel)) fail(`${label} must remain inside repository root`);
+  if (!existsSync(path) || !lstatSync(path).isDirectory()) fail(`${label} is not a directory: ${relativePath}`);
+  if (lstatSync(path).isSymbolicLink()) fail(`${label} must not be a symbolic link`);
+  return path;
+}
+
+function integerAtLeastZero(value: unknown, label: string): number {
+  if (!Number.isInteger(value) || Number(value) < 0) fail(`${label} must be a non-negative integer`);
+  return Number(value);
+}
+
+function numberAtLeastZero(value: unknown, label: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) fail(`${label} must be a non-negative finite number`);
+  return value;
+}
+
+export function buildIsolatedAgentEnv(
+  isolatedHome: string,
+  sourceEnv: Record<string, string | undefined> = process.env
+): Record<string, string> {
+  const path = sourceEnv.PATH;
+  if (!path) fail("Agent execution requires an explicit PATH");
+  return {
+    CODEX_HOME: isolatedHome,
+    HOME: isolatedHome,
+    LANG: "C.UTF-8",
+    LC_ALL: "C.UTF-8",
+    NO_COLOR: "1",
+    PATH: path,
+    TERM: "dumb",
+    TMPDIR: tmpdir(),
+  };
+}
+
+function validateLockedShapeScore(raw: unknown, label: string): LockedScore {
+  assertRecord(raw, label);
+  assertExactKeys(raw, ["schema", "packet_id", "task_id", "experiment", "reviewer_id", "locked_at", "score"], label);
+  if (raw.schema !== "repo-harness-bdd2-score.v2") fail(`${label}.schema mismatch`);
+  if (typeof raw.packet_id !== "string" || !/^[a-f0-9]{32}$/.test(raw.packet_id)) fail(`${label}.packet_id is invalid`);
+  assertString(raw.task_id, `${label}.task_id`);
+  if (raw.experiment !== "S") fail(`${label}.experiment must be S`);
+  assertString(raw.reviewer_id, `${label}.reviewer_id`);
+  assertString(raw.locked_at, `${label}.locked_at`);
+  if (Number.isNaN(Date.parse(raw.locked_at))) fail(`${label}.locked_at must be an ISO date-time`);
+  assertRecord(raw.score, `${label}.score`);
+  assertExactKeys(
+    raw.score,
+    ["kind", "unsupported_expansion", "required_behavior_omission", "protected_concern_omissions", "authority_fit", "escalation_correct", "unnecessary_tracked_artifact_count", "correction_minutes", "notes"],
+    `${label}.score`
+  );
+  if (raw.score.kind !== "shape") fail(`${label}.score.kind must be shape`);
+  integerAtLeastZero(raw.score.unsupported_expansion, `${label}.score.unsupported_expansion`);
+  integerAtLeastZero(raw.score.required_behavior_omission, `${label}.score.required_behavior_omission`);
+  integerAtLeastZero(raw.score.unnecessary_tracked_artifact_count, `${label}.score.unnecessary_tracked_artifact_count`);
+  numberAtLeastZero(raw.score.correction_minutes, `${label}.score.correction_minutes`);
+  if (!["inline", "brief", "prd", "incorrect"].includes(String(raw.score.authority_fit))) {
+    fail(`${label}.score.authority_fit is invalid`);
+  }
+  if (typeof raw.score.escalation_correct !== "boolean") fail(`${label}.score.escalation_correct must be boolean`);
+  if (typeof raw.score.notes !== "string") fail(`${label}.score.notes must be a string`);
+  if (!Array.isArray(raw.score.protected_concern_omissions)) {
+    fail(`${label}.score.protected_concern_omissions must be an array`);
+  }
+  for (const [index, concern] of raw.score.protected_concern_omissions.entries()) {
+    assertRecord(concern, `${label}.score.protected_concern_omissions[${index}]`);
+    assertExactKeys(concern, ["concern", "severity", "summary"], `${label}.score.protected_concern_omissions[${index}]`);
+    assertString(concern.concern, `${label}.score.protected_concern_omissions[${index}].concern`);
+    assertString(concern.summary, `${label}.score.protected_concern_omissions[${index}].summary`);
+    if (!["P0", "P1", "P2", "P3"].includes(String(concern.severity))) {
+      fail(`${label}.score.protected_concern_omissions[${index}].severity is invalid`);
+    }
+  }
+  return raw as unknown as LockedScore;
+}
+
+export function validateShapeScores(
+  evaluation: ValidatedEvaluation,
+  runRelativePath: string
+): ValidatedShapeScores {
+  const runPath = directoryInsideRepo(evaluation.repoRoot, runRelativePath, "run path");
+  const runRaw = readJson(resolve(runPath, "run.json"));
+  assertRecord(runRaw, "run report");
+  assertExactKeys(
+    runRaw,
+    ["schema", "freeze_id", "source_commit", "manifest_sha256", "agent", "model", "sampling", "experiment", "partition", "output_path", "packets"],
+    "run report"
+  );
+  if (runRaw.schema !== "repo-harness-bdd2-run.v2" || runRaw.experiment !== "S" || runRaw.partition !== "held_out") {
+    fail("Shape scoring requires a held-out S v2 run");
+  }
+  if (runRaw.freeze_id !== evaluation.manifest.experiments.S.freeze.id) fail("Run freeze id does not match Shape authority");
+  if (typeof runRaw.source_commit !== "string" || !/^[a-f0-9]{40}$/.test(runRaw.source_commit)) fail("Run source commit is invalid");
+  if (runRaw.manifest_sha256 !== sha256File(evaluation.manifestPath)) fail("Run manifest hash does not match current authority");
+  const relativeRunPath = relative(evaluation.repoRoot, runPath).replace(/\\/g, "/");
+  if (runRaw.output_path !== relativeRunPath) fail("Run output path does not match its directory");
+  assertString(runRaw.agent, "run report.agent");
+  const profile = evaluation.manifest.agents[runRaw.agent];
+  if (!profile || runRaw.model !== profile.model || JSON.stringify(runRaw.sampling) !== JSON.stringify(profile.sampling)) {
+    fail("Run agent profile does not match current authority");
+  }
+  if (!Array.isArray(runRaw.packets)) fail("run report packets must be an array");
+  const expectedCount = evaluation.manifest.experiments.S.held_out_task_count * 2 * evaluation.manifest.experiments.S.repetitions;
+  if (runRaw.packets.length !== expectedCount) fail(`Shape run requires exactly ${expectedCount} packets, got ${runRaw.packets.length}`);
+  const run = runRaw as unknown as RunReport;
+  const packets = new Map<string, { task_id: string }>();
+  for (const [index, packet] of run.packets.entries()) {
+    assertRecord(packet as unknown, `run.packets[${index}]`);
+    const candidate = packet as unknown as Record<string, unknown>;
+    assertExactKeys(candidate, ["packet_id", "task_id", "status"], `run.packets[${index}]`);
+    if (typeof candidate.packet_id !== "string" || !/^[a-f0-9]{32}$/.test(candidate.packet_id)) fail(`run.packets[${index}].packet_id is invalid`);
+    assertString(candidate.task_id, `run.packets[${index}].task_id`);
+    if (candidate.status !== "success") fail(`run.packets[${index}] is not successful`);
+    const task = evaluation.tasks.held_out.find((entry) => entry.id === candidate.task_id && entry.experiment === "S");
+    if (!task) fail(`run.packets[${index}] references an unknown Shape task`);
+    if (packets.has(candidate.packet_id)) fail(`Duplicate packet id in run: ${candidate.packet_id}`);
+    packets.set(candidate.packet_id, { task_id: candidate.task_id });
+    const blind = readJson(resolve(runPath, "blind", `${candidate.packet_id}.json`));
+    assertRecord(blind, `blind packet ${candidate.packet_id}`);
+    assertExactKeys(blind, ["schema", "packet_id", "task_id", "experiment", "task_input", "response"], `blind packet ${candidate.packet_id}`);
+    if (blind.schema !== "repo-harness-bdd2-blind-packet.v2" || blind.packet_id !== candidate.packet_id || blind.task_id !== candidate.task_id || blind.experiment !== "S") {
+      fail(`Blind packet identity mismatch: ${candidate.packet_id}`);
+    }
+    assertString(blind.task_input, `blind packet ${candidate.packet_id}.task_input`);
+    assertString(blind.response, `blind packet ${candidate.packet_id}.response`);
+    if (blind.task_input !== task.agent_input) fail(`Blind packet task input drift: ${candidate.packet_id}`);
+  }
+
+  const scoreDir = directoryInsideRepo(evaluation.repoRoot, relative(evaluation.repoRoot, resolve(runPath, "scores")), "score directory");
+  const scoreFiles = readdirSync(scoreDir).filter((file) => file.endsWith(".json")).sort();
+  if (scoreFiles.length !== packets.size) fail(`Shape scoring requires exactly ${packets.size} score files, got ${scoreFiles.length}`);
+  const scores = new Map<string, LockedScore>();
+  for (const file of scoreFiles) {
+    const score = validateLockedShapeScore(readJson(resolve(scoreDir, file)), `score ${file}`);
+    const packet = packets.get(score.packet_id);
+    if (!packet) fail(`Score references unknown packet: ${score.packet_id}`);
+    if (packet.task_id !== score.task_id) fail(`Score task mismatch for packet: ${score.packet_id}`);
+    if (scores.has(score.packet_id)) fail(`Duplicate score for packet: ${score.packet_id}`);
+    scores.set(score.packet_id, score);
+  }
+
+  const privateCoordinates = new Map<string, { task_id: string; condition: ConditionId; repetition: number }>();
+  for (const packetId of packets.keys()) {
+    const raw = readJson(resolve(runPath, "private", `${packetId}.json`));
+    assertRecord(raw, `private coordinate ${packetId}`);
+    assertExactKeys(
+      raw,
+      ["schema", "packet_id", "coordinate_id", "task_id", "condition", "repetition", "prompt_sha256", "agent", "model", "sampling", "exit_code"],
+      `private coordinate ${packetId}`
+    );
+    if (raw.schema !== "repo-harness-bdd2-private-coordinate.v2" || raw.packet_id !== packetId) {
+      fail(`Private coordinate identity mismatch: ${packetId}`);
+    }
+    assertString(raw.task_id, `private coordinate ${packetId}.task_id`);
+    if (raw.task_id !== packets.get(packetId)?.task_id) fail(`Private coordinate task mismatch: ${packetId}`);
+    if (raw.condition !== "baseline" && raw.condition !== "treatment") fail(`Private coordinate ${packetId}.condition is invalid`);
+    if (!Number.isInteger(raw.repetition) || Number(raw.repetition) < 1 || Number(raw.repetition) > evaluation.manifest.experiments.S.repetitions) {
+      fail(`Private coordinate ${packetId}.repetition is invalid`);
+    }
+    const expectedCoordinateId = privateCoordinateId([
+      evaluation.manifest.experiments.S.freeze.id,
+      "S",
+      "held_out",
+      raw.task_id,
+      raw.condition,
+      String(raw.repetition),
+    ]);
+    if (raw.coordinate_id !== expectedCoordinateId) fail(`Private coordinate id drift: ${packetId}`);
+    const expectedPromptHash = evaluation.manifest.experiments.S.conditions[raw.condition].sha256;
+    if (raw.prompt_sha256 !== expectedPromptHash) fail(`Private coordinate prompt hash drift: ${packetId}`);
+    if (raw.agent !== run.agent || raw.model !== run.model || JSON.stringify(raw.sampling) !== JSON.stringify(run.sampling) || raw.exit_code !== 0) {
+      fail(`Private coordinate agent metadata drift: ${packetId}`);
+    }
+    privateCoordinates.set(packetId, {
+      task_id: raw.task_id,
+      condition: raw.condition,
+      repetition: Number(raw.repetition),
+    });
+  }
+  return { runPath, run, scores, privateCoordinates };
+}
+
+function gitFileAtCommit(repoRoot: string, commit: string, path: string): string {
+  if (!/^[a-f0-9]{40}$/.test(commit)) fail("Historical source commit is invalid");
+  if (isAbsolute(path) || path.split("/").includes("..")) fail(`Historical path is unsafe: ${path}`);
+  const result = spawnSync("git", ["show", `${commit}:${path}`], {
+    cwd: repoRoot,
+    encoding: "utf-8",
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  if (result.status !== 0) fail(`Cannot read ${path} at source commit ${commit}`);
+  return result.stdout ?? "";
+}
+
+function sha256Text(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+export function projectHistoricalShapeEvidence(
+  repoRoot: string,
+  runRelativePath: string,
+  outputRelativePath: string
+): Record<string, unknown> {
+  const absoluteRoot = resolve(repoRoot);
+  const runPath = directoryInsideRepo(absoluteRoot, runRelativePath, "historical run path");
+  const runRaw = readJson(resolve(runPath, "run.json"));
+  assertRecord(runRaw, "historical run report");
+  assertExactKeys(
+    runRaw,
+    ["schema", "freeze_id", "source_commit", "manifest_sha256", "agent", "model", "sampling", "experiment", "partition", "output_path", "packets"],
+    "historical run report"
+  );
+  if (runRaw.schema !== "repo-harness-bdd2-run.v2" || runRaw.experiment !== "S" || runRaw.partition !== "held_out") {
+    fail("Historical Shape evidence requires a held-out S v2 run");
+  }
+  assertString(runRaw.source_commit, "historical run source_commit");
+  assertString(runRaw.manifest_sha256, "historical run manifest_sha256");
+  const manifestText = gitFileAtCommit(absoluteRoot, runRaw.source_commit, DEFAULT_MANIFEST_PATH);
+  if (sha256Text(manifestText) !== runRaw.manifest_sha256) fail("Historical run manifest hash mismatch");
+  const historicalManifest = JSON.parse(manifestText) as any;
+  if (historicalManifest.schema !== "repo-harness-bdd2-evaluation.v2"
+    || historicalManifest.experiments?.S?.freeze?.id !== runRaw.freeze_id
+    || historicalManifest.experiments?.S?.freeze?.state !== "sealed") {
+    fail("Historical run does not match a sealed S-v2 authority");
+  }
+  const heldOut = historicalManifest.partitions?.held_out;
+  assertRecord(heldOut, "historical held-out partition");
+  assertString(heldOut.tasks, "historical held-out task path");
+  assertString(heldOut.tasks_sha256, "historical held-out task hash");
+  assertString(heldOut.truth, "historical held-out truth path");
+  assertString(heldOut.truth_sha256, "historical held-out truth hash");
+  const taskText = gitFileAtCommit(absoluteRoot, runRaw.source_commit, heldOut.tasks);
+  if (sha256Text(taskText) !== heldOut.tasks_sha256) fail("Historical held-out task hash mismatch");
+  const taskSet = validateTaskSet(JSON.parse(taskText), "held_out");
+  const truthText = gitFileAtCommit(absoluteRoot, runRaw.source_commit, heldOut.truth);
+  if (sha256Text(truthText) !== heldOut.truth_sha256) fail("Historical held-out truth hash mismatch");
+  const truth = JSON.parse(truthText) as any;
+  validateTruthSet(truth, "held_out", taskSet.tasks);
+  const shapeTasks = taskSet.tasks.filter((task) => task.experiment === "S");
+  const shapeDefinition = historicalManifest.experiments.S;
+  if (!Number.isInteger(shapeDefinition.held_out_task_count)
+    || shapeTasks.length !== shapeDefinition.held_out_task_count) {
+    fail(`Historical Shape authority requires exactly ${shapeDefinition.held_out_task_count} held-out tasks, got ${shapeTasks.length}`);
+  }
+  if (!Number.isInteger(shapeDefinition.repetitions) || shapeDefinition.repetitions < 1) {
+    fail("Historical Shape repetitions must be a positive integer");
+  }
+  assertRecord(shapeDefinition.conditions, "historical Shape conditions");
+  for (const condition of ["baseline", "treatment"] as const) {
+    assertRecord(shapeDefinition.conditions[condition], `historical Shape ${condition} condition`);
+    assertString(shapeDefinition.conditions[condition].sha256, `historical Shape ${condition} prompt hash`);
+  }
+  assertRecord(historicalManifest.agents, "historical agents");
+  assertString(runRaw.agent, "historical run agent");
+  const historicalAgent = historicalManifest.agents[runRaw.agent];
+  assertRecord(historicalAgent, `historical agent ${runRaw.agent}`);
+  assertString(runRaw.model, "historical run model");
+  assertRecord(runRaw.sampling, "historical run sampling");
+  if (runRaw.model !== historicalAgent.model
+    || JSON.stringify(runRaw.sampling) !== JSON.stringify(historicalAgent.sampling)) {
+    fail("Historical run agent profile does not match source authority");
+  }
+  const relativeRunPath = relative(absoluteRoot, runPath).replace(/\\/g, "/");
+  if (runRaw.output_path !== relativeRunPath) fail("Historical run output path does not match its directory");
+  if (!Array.isArray(runRaw.packets)) fail("Historical run packets must be an array");
+  const expectedCoordinates = new Map<string, { coordinateId: string; promptSha256: string }>();
+  for (const task of shapeTasks) {
+    for (const condition of ["baseline", "treatment"] as const) {
+      for (let repetition = 1; repetition <= shapeDefinition.repetitions; repetition += 1) {
+        const key = `${task.id}\0${condition}\0${repetition}`;
+        expectedCoordinates.set(key, {
+          coordinateId: privateCoordinateId([
+            shapeDefinition.freeze.id,
+            "S",
+            "held_out",
+            task.id,
+            condition,
+            String(repetition),
+          ]),
+          promptSha256: shapeDefinition.conditions[condition].sha256,
+        });
+      }
+    }
+  }
+  const expectedCount = expectedCoordinates.size;
+  if (runRaw.packets.length !== expectedCount) {
+    fail(`Historical Shape run requires exactly ${expectedCount} packets, got ${runRaw.packets.length}`);
+  }
+  const scoreDir = directoryInsideRepo(absoluteRoot, relative(absoluteRoot, resolve(runPath, "scores")), "historical score directory");
+  const privateDir = directoryInsideRepo(absoluteRoot, relative(absoluteRoot, resolve(runPath, "private")), "historical private directory");
+  const blindDir = directoryInsideRepo(absoluteRoot, relative(absoluteRoot, resolve(runPath, "blind")), "historical blind directory");
+  const scoreFiles = readdirSync(scoreDir).filter((file) => file.endsWith(".json")).sort();
+  if (scoreFiles.length !== expectedCount) fail(`Historical Shape evidence requires ${expectedCount} scores`);
+  const packetIds = new Set<string>();
+  const observedCoordinates = new Set<string>();
+  const rows: Record<string, unknown>[] = [];
+  for (const packet of runRaw.packets) {
+    assertRecord(packet as unknown, "historical run packet");
+    assertExactKeys(packet, ["packet_id", "task_id", "status"], "historical run packet");
+    assertString(packet.packet_id, "historical packet id");
+    assertString(packet.task_id, "historical packet task id");
+    if (!/^[a-f0-9]{32}$/.test(packet.packet_id)
+      || packet.status !== "success"
+      || packetIds.has(packet.packet_id)) {
+      fail(`Historical packet is invalid: ${packet.packet_id}`);
+    }
+    packetIds.add(packet.packet_id);
+    const scorePath = resolve(scoreDir, `${packet.packet_id}.json`);
+    const privatePath = resolve(privateDir, `${packet.packet_id}.json`);
+    const blindPath = resolve(blindDir, `${packet.packet_id}.json`);
+    const score = validateLockedShapeScore(readJson(scorePath), `historical score ${packet.packet_id}`);
+    const coordinate = readJson(privatePath);
+    const blind = readJson(blindPath);
+    assertRecord(coordinate, `historical private coordinate ${packet.packet_id}`);
+    assertRecord(blind, `historical blind packet ${packet.packet_id}`);
+    assertExactKeys(
+      coordinate,
+      ["schema", "packet_id", "coordinate_id", "task_id", "condition", "repetition", "prompt_sha256", "agent", "model", "sampling", "exit_code"],
+      `historical private coordinate ${packet.packet_id}`
+    );
+    assertExactKeys(
+      blind,
+      ["schema", "packet_id", "task_id", "experiment", "task_input", "response"],
+      `historical blind packet ${packet.packet_id}`
+    );
+    if (coordinate.schema !== "repo-harness-bdd2-private-coordinate.v2"
+      || coordinate.packet_id !== packet.packet_id
+      || coordinate.task_id !== packet.task_id
+      || score.packet_id !== packet.packet_id
+      || score.task_id !== packet.task_id
+      || blind.schema !== "repo-harness-bdd2-blind-packet.v2"
+      || blind.packet_id !== packet.packet_id
+      || blind.task_id !== packet.task_id
+      || blind.experiment !== "S") {
+      fail(`Historical score/private identity mismatch: ${packet.packet_id}`);
+    }
+    if (coordinate.condition !== "baseline" && coordinate.condition !== "treatment") {
+      fail(`Historical coordinate condition is invalid: ${packet.packet_id}`);
+    }
+    if (!Number.isInteger(coordinate.repetition)
+      || Number(coordinate.repetition) < 1
+      || Number(coordinate.repetition) > shapeDefinition.repetitions) {
+      fail(`Historical coordinate repetition is invalid: ${packet.packet_id}`);
+    }
+    const coordinateKey = `${packet.task_id}\0${coordinate.condition}\0${coordinate.repetition}`;
+    const expectedCoordinate = expectedCoordinates.get(coordinateKey);
+    if (!expectedCoordinate || observedCoordinates.has(coordinateKey)) {
+      fail(`Historical coordinate is missing, duplicated, or unexpected: ${packet.packet_id}`);
+    }
+    observedCoordinates.add(coordinateKey);
+    if (coordinate.coordinate_id !== expectedCoordinate.coordinateId) {
+      fail(`Historical coordinate id drift: ${packet.packet_id}`);
+    }
+    if (coordinate.prompt_sha256 !== expectedCoordinate.promptSha256) {
+      fail(`Historical coordinate prompt hash drift: ${packet.packet_id}`);
+    }
+    if (coordinate.agent !== runRaw.agent
+      || coordinate.model !== runRaw.model
+      || JSON.stringify(coordinate.sampling) !== JSON.stringify(runRaw.sampling)
+      || coordinate.exit_code !== 0) {
+      fail(`Historical coordinate agent metadata drift: ${packet.packet_id}`);
+    }
+    const task = shapeTasks.find((candidate) => candidate.id === packet.task_id);
+    if (!task || blind.task_input !== task.agent_input) {
+      fail(`Historical blind packet task input drift: ${packet.packet_id}`);
+    }
+    assertString(blind.response, `historical blind packet ${packet.packet_id}.response`);
+    const expectedAuthority = truth.shape_tasks[packet.task_id]?.expected_authority;
+    if (!["inline", "brief", "prd"].includes(expectedAuthority)) fail(`Historical truth is missing for ${packet.task_id}`);
+    rows.push({
+      packet_id: packet.packet_id,
+      task_id: packet.task_id,
+      condition: coordinate.condition,
+      repetition: coordinate.repetition,
+      unsupported_expansion: score.score.unsupported_expansion,
+      required_behavior_omission: score.score.required_behavior_omission,
+      protected_p0_p1_count: score.score.protected_concern_omissions.filter((item) => item.severity === "P0" || item.severity === "P1").length,
+      authority_fit: score.score.authority_fit,
+      expected_authority: expectedAuthority,
+      escalation_correct: score.score.escalation_correct,
+      unnecessary_tracked_artifact_count: score.score.unnecessary_tracked_artifact_count,
+      correction_minutes: score.score.correction_minutes,
+      score_sha256: sha256File(scorePath),
+      private_sha256: sha256File(privatePath),
+    });
+  }
+  if (observedCoordinates.size !== expectedCoordinates.size) {
+    fail(`Historical Shape run is missing ${expectedCoordinates.size - observedCoordinates.size} coordinates`);
+  }
+  rows.sort((left, right) => String(left.task_id).localeCompare(String(right.task_id))
+    || String(left.condition).localeCompare(String(right.condition))
+    || Number(left.repetition) - Number(right.repetition));
+  const projection = {
+    schema: "repo-harness-bdd2-shape-evidence.v1",
+    projector_sha256: sha256File(SCRIPT_PATH),
+    source_commit: runRaw.source_commit,
+    run_manifest_sha256: runRaw.manifest_sha256,
+    packet_count: expectedCount,
+    rows,
+  };
+  const outputPath = resolve(absoluteRoot, outputRelativePath);
+  assertWritePath(absoluteRoot, outputPath);
+  writeJson(outputPath, projection);
+  return projection;
+}
+
+function median(values: number[]): number {
+  if (values.length === 0) fail("Cannot calculate median of an empty list");
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle];
+}
+
+function ratioChange(baseline: number, treatment: number): number | null {
+  if (baseline === 0) return treatment === 0 ? 0 : null;
+  return Number(((treatment - baseline) / baseline).toFixed(6));
+}
+
+export function summarizeShape(
+  evaluation: ValidatedEvaluation,
+  runRelativePath: string,
+  markdownOutput?: string
+): ShapeSummary {
+  const validated = validateShapeScores(evaluation, runRelativePath);
+  const pairs = new Map<string, Partial<Record<ConditionId, ShapeScore>>>();
+  for (const [packetId, coordinate] of validated.privateCoordinates) {
+    const score = validated.scores.get(packetId)?.score;
+    if (!score) fail(`Missing validated score for packet: ${packetId}`);
+    const key = `${coordinate.task_id}\0${coordinate.repetition}`;
+    const pair = pairs.get(key) ?? {};
+    if (pair[coordinate.condition]) fail(`Duplicate ${coordinate.condition} score for ${coordinate.task_id} repetition ${coordinate.repetition}`);
+    pair[coordinate.condition] = score;
+    pairs.set(key, pair);
+  }
+
+  const baselineScores: ShapeScore[] = [];
+  const treatmentScores: ShapeScore[] = [];
+  let wins = 0;
+  let ties = 0;
+  let losses = 0;
+  let newTreatmentP0P1Pairs = 0;
+  const requiredIncreases = new Map<string, number>();
+  for (const [key, pair] of pairs) {
+    if (!pair.baseline || !pair.treatment) fail(`Incomplete baseline/treatment pair: ${key.replace("\0", " repetition ")}`);
+    baselineScores.push(pair.baseline);
+    treatmentScores.push(pair.treatment);
+    if (pair.treatment.unsupported_expansion < pair.baseline.unsupported_expansion) wins += 1;
+    else if (pair.treatment.unsupported_expansion > pair.baseline.unsupported_expansion) losses += 1;
+    else ties += 1;
+    const taskId = key.split("\0")[0];
+    if (pair.treatment.required_behavior_omission > pair.baseline.required_behavior_omission) {
+      requiredIncreases.set(taskId, (requiredIncreases.get(taskId) ?? 0) + 1);
+    }
+    const severe = (score: ShapeScore): number => score.protected_concern_omissions.filter((item) => item.severity === "P0" || item.severity === "P1").length;
+    if (severe(pair.treatment) > severe(pair.baseline)) newTreatmentP0P1Pairs += 1;
+  }
+  const baselineUnsupported = baselineScores.reduce((sum, score) => sum + score.unsupported_expansion, 0);
+  const treatmentUnsupported = treatmentScores.reduce((sum, score) => sum + score.unsupported_expansion, 0);
+  const unsupportedChange = ratioChange(baselineUnsupported, treatmentUnsupported);
+  const relativeReduction = unsupportedChange === null ? null : -unsupportedChange;
+  const baselineRequired = baselineScores.reduce((sum, score) => sum + score.required_behavior_omission, 0);
+  const treatmentRequired = treatmentScores.reduce((sum, score) => sum + score.required_behavior_omission, 0);
+  const stableNewTaskIds = [...requiredIncreases.entries()].filter(([, count]) => count >= 2).map(([taskId]) => taskId).sort();
+  const baselineCorrection = median(baselineScores.map((score) => score.correction_minutes));
+  const treatmentCorrection = median(treatmentScores.map((score) => score.correction_minutes));
+  const correctionIncrease = ratioChange(baselineCorrection, treatmentCorrection);
+  const treatmentUnnecessaryTrackedArtifacts = treatmentScores.reduce((sum, score) => sum + score.unnecessary_tracked_artifact_count, 0);
+  const gates = {
+    unsupported_reduction_target: relativeReduction !== null && relativeReduction >= 0.3,
+    unsupported_wins_exceed_losses: wins > losses,
+    required_omissions_not_higher: treatmentRequired <= baselineRequired,
+    no_stable_new_required_omission: stableNewTaskIds.length === 0,
+    no_new_p0_p1_protected_omission: newTreatmentP0P1Pairs === 0,
+    correction_cost_target: correctionIncrease !== null && correctionIncrease <= 0.2,
+    zero_treatment_unnecessary_tracked_artifacts: treatmentUnnecessaryTrackedArtifacts === 0,
+  };
+  const kill = relativeReduction === null
+    || relativeReduction < 0.15
+    || losses > wins
+    || stableNewTaskIds.length > 0
+    || newTreatmentP0P1Pairs > 0
+    || correctionIncrease === null
+    || correctionIncrease > 0.3;
+  const decision: ShapeSummary["decision"] = Object.values(gates).every(Boolean) ? "Pass" : kill ? "Kill" : "Reshape";
+  const summary: ShapeSummary = {
+    schema: "repo-harness-bdd2-shape-summary.v1",
+    source_commit: validated.run.source_commit,
+    run_manifest_sha256: validated.run.manifest_sha256,
+    packet_count: validated.run.packets.length,
+    score_count: validated.scores.size,
+    metrics: {
+      unsupported_expansion: {
+        baseline_total: baselineUnsupported,
+        treatment_total: treatmentUnsupported,
+        relative_reduction: relativeReduction,
+        wins,
+        ties,
+        losses,
+      },
+      required_behavior_omission: {
+        baseline_total: baselineRequired,
+        treatment_total: treatmentRequired,
+        stable_new_task_ids: stableNewTaskIds,
+      },
+      protected_concern: { new_treatment_p0_p1_pairs: newTreatmentP0P1Pairs },
+      correction_minutes: {
+        baseline_median: baselineCorrection,
+        treatment_median: treatmentCorrection,
+        relative_increase: correctionIncrease,
+      },
+      artifact_burden: { treatment_unnecessary_tracked_artifacts: treatmentUnnecessaryTrackedArtifacts },
+      authority_fit: {
+        baseline_incorrect: baselineScores.filter((score) => score.authority_fit === "incorrect").length,
+        treatment_incorrect: treatmentScores.filter((score) => score.authority_fit === "incorrect").length,
+      },
+      escalation: {
+        baseline_incorrect: baselineScores.filter((score) => !score.escalation_correct).length,
+        treatment_incorrect: treatmentScores.filter((score) => !score.escalation_correct).length,
+      },
+    },
+    gates,
+    decision,
+  };
+  writeJson(resolve(validated.runPath, "shape-summary.json"), summary);
+  if (markdownOutput) {
+    const outputPath = resolve(evaluation.repoRoot, markdownOutput);
+    assertWritePath(evaluation.repoRoot, outputPath);
+    const runPathForReport = relative(evaluation.repoRoot, validated.runPath).replace(/\\/g, "/");
+    const gateRows = Object.entries(gates).map(([gate, passed]) => `| ${gate} | ${passed ? "PASS" : "FAIL"} |`).join("\n");
+    const markdown = `# BDD² Experiment S Report\n\n> **Decision**: ${decision}\n> **Source commit**: \`${summary.source_commit}\`\n> **Raw evidence**: \`${runPathForReport}\` (ignored; local evaluation evidence)\n> **Packets / locked scores**: ${summary.packet_count} / ${summary.score_count}\n\n## Metrics\n\n- Unsupported expansion: baseline ${baselineUnsupported}, treatment ${treatmentUnsupported}, relative reduction ${relativeReduction === null ? "undefined" : `${(relativeReduction * 100).toFixed(1)}%`}; paired W/T/L ${wins}/${ties}/${losses}.\n- Required behavior omission: baseline ${baselineRequired}, treatment ${treatmentRequired}; stable new treatment tasks: ${stableNewTaskIds.length === 0 ? "none" : stableNewTaskIds.join(", ")}.\n- New treatment P0/P1 protected-omission pairs: ${newTreatmentP0P1Pairs}.\n- Correction minutes median: baseline ${baselineCorrection}, treatment ${treatmentCorrection}, relative increase ${correctionIncrease === null ? "undefined" : `${(correctionIncrease * 100).toFixed(1)}%`}.\n- Treatment unnecessary tracked artifacts: ${treatmentUnnecessaryTrackedArtifacts}.\n- Incorrect authority fit: baseline ${summary.metrics.authority_fit.baseline_incorrect}, treatment ${summary.metrics.authority_fit.treatment_incorrect}.\n- Incorrect escalation: baseline ${summary.metrics.escalation.baseline_incorrect}, treatment ${summary.metrics.escalation.treatment_incorrect}.\n\n## Gates\n\n| Gate | Result |\n|---|---|\n${gateRows}\n\n## Decision rationale\n\nThe decision is computed from the pre-registered rules in \`evals/bdd2/metrics/shape-metrics.md\`; it is not manually overridden in this report.\n`;
+    writeFileSync(outputPath, markdown, "utf-8");
+  }
+  return summary;
+}
+
 interface CliOptions {
-  command: "validate" | "plan" | "run";
+  command: "validate" | "plan" | "run" | "validate-scores" | "summarize-shape" | "project-shape-evidence";
   manifest: string;
   experiment?: ExperimentId;
   partition?: PartitionId;
@@ -638,14 +1377,20 @@ interface CliOptions {
   repetitions?: number;
   agent?: string;
   output?: string;
+  run?: string;
 }
 
 export function parseCliArgs(args: string[]): CliOptions {
   const command = args[0];
-  if (command !== "validate" && command !== "plan" && command !== "run") {
-    fail("Usage: run-bdd2-evals.ts <validate|plan|run> [--manifest path] [--experiment S|A] [--partition development|held_out] [--task id] [--condition baseline|treatment] [--repetitions n] [--agent name] [--output path] [--dry-run]");
+  if (!["validate", "plan", "run", "validate-scores", "summarize-shape", "project-shape-evidence"].includes(String(command))) {
+    fail("Usage: run-bdd2-evals.ts <validate|plan|run|validate-scores|summarize-shape|project-shape-evidence> [--manifest path] [--experiment S|A] [--partition development|held_out] [--task id] [--condition baseline|treatment] [--repetitions n] [--agent name] [--run path] [--output path] [--dry-run]");
   }
-  const options: CliOptions = { command, manifest: DEFAULT_MANIFEST_PATH, tasks: [], conditions: [] };
+  const options: CliOptions = {
+    command: command as CliOptions["command"],
+    manifest: DEFAULT_MANIFEST_PATH,
+    tasks: [],
+    conditions: [],
+  };
   for (let index = 1; index < args.length; index += 1) {
     const flag = args[index];
     const next = (): string => {
@@ -663,6 +1408,7 @@ export function parseCliArgs(args: string[]): CliOptions {
       case "--repetitions": options.repetitions = Number(next()); break;
       case "--agent": options.agent = next(); break;
       case "--output": options.output = next(); break;
+      case "--run": options.run = next(); break;
       case "--dry-run": break;
       default: fail(`Unknown argument: ${flag}`);
     }
@@ -684,14 +1430,32 @@ function requiredPlanOptions(options: CliOptions): PlanOptions {
 
 export function main(args: string[] = process.argv.slice(2)): void {
   const options = parseCliArgs(args);
+  if (options.command === "project-shape-evidence") {
+    if (!options.run) fail("project-shape-evidence requires --run");
+    if (!options.output) fail("project-shape-evidence requires --output");
+    console.log(JSON.stringify(projectHistoricalShapeEvidence(REPO_ROOT, options.run, options.output), null, 2));
+    return;
+  }
   const evaluation = validateEvaluation(REPO_ROOT, options.manifest);
   if (options.command === "validate") {
-    console.log(JSON.stringify({ status: "valid", schema: evaluation.manifest.schema, freeze: evaluation.manifest.freeze, task_counts: { development: evaluation.tasks.development.length, held_out: evaluation.tasks.held_out.length } }, null, 2));
+    console.log(JSON.stringify({ status: "valid", schema: evaluation.manifest.schema, experiments: Object.fromEntries(Object.entries(evaluation.manifest.experiments).map(([id, experiment]) => [id, { freeze: experiment.freeze, held_out_task_count: experiment.held_out_task_count }])), task_counts: { development: evaluation.tasks.development.length, held_out: evaluation.tasks.held_out.length } }, null, 2));
+    return;
+  }
+  if (options.command === "validate-scores" || options.command === "summarize-shape") {
+    if (options.experiment !== "S") fail(`${options.command} requires --experiment S`);
+    if (!options.run) fail(`${options.command} requires --run`);
+    if (options.command === "validate-scores") {
+      const validated = validateShapeScores(evaluation, options.run);
+      console.log(JSON.stringify({ status: "valid", packets: validated.run.packets.length, scores: validated.scores.size }, null, 2));
+    } else {
+      console.log(JSON.stringify(summarizeShape(evaluation, options.run, options.output), null, 2));
+    }
     return;
   }
   const planOptions = requiredPlanOptions(options);
   if (options.command === "plan") {
-    console.log(JSON.stringify({ freeze_id: evaluation.manifest.freeze.id, freeze_state: evaluation.manifest.freeze.state, coordinates: buildRunPlan(evaluation, planOptions) }, null, 2));
+    const experiment = evaluation.manifest.experiments[planOptions.experiment];
+    console.log(JSON.stringify({ freeze_id: experiment.freeze.id, freeze_state: experiment.freeze.state, coordinates: buildRunPlan(evaluation, planOptions) }, null, 2));
     return;
   }
   if (!options.agent) fail("run requires --agent");

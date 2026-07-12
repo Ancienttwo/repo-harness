@@ -1,6 +1,114 @@
 {
-  "schema": "repo-harness-bdd2-truth-set.v1",
+  "schema": "repo-harness-bdd2-truth-set.v2",
   "partition": "held_out",
+  "shape_tasks": {
+    "S-H-01": {
+      "required_behaviors": ["Expose one import action in the existing empty state.", "Summarize valid and invalid rows with actionable correction guidance."],
+      "likely_unsupported_expansions": ["Add import history, mapping templates, scheduled imports, queue settings, or a separate import dashboard."],
+      "protected_concerns": [
+        { "concern": "data_integrity", "severity": "P1", "summary": "Invalid rows must not be silently accepted or hide which contacts were imported." }
+      ],
+      "expected_authority": "inline",
+      "escalation_required": false
+    },
+    "S-H-02": {
+      "required_behaviors": ["Keep summary generation on the report page with visible progress.", "On timeout, preserve the report state and offer one bounded retry or later retry path."],
+      "likely_unsupported_expansions": ["Add model selection, prompt settings, generation history, queue priority, or an AI administration page."],
+      "protected_concerns": [
+        { "concern": "recovery", "severity": "P1", "summary": "A timeout must not look like success or force navigation away from the report." }
+      ],
+      "expected_authority": "inline",
+      "escalation_required": false
+    },
+    "S-H-03": {
+      "required_behaviors": ["Name the filter in a destructive confirmation, default to cancel, and remove it only after confirmed success."],
+      "likely_unsupported_expansions": ["Add trash, retention settings, deletion history, bulk delete, or a filter administration page without authority."],
+      "protected_concerns": [
+        { "concern": "data_integrity", "severity": "P1", "summary": "Permanent deletion requires consequence clarity and must not report completion before success." }
+      ],
+      "expected_authority": "prd",
+      "escalation_required": true
+    },
+    "S-H-04": {
+      "required_behaviors": ["Stop lightweight shaping and require decisions for public access scope, revocation, discovery, and permission ownership."],
+      "likely_unsupported_expansions": ["Invent password controls, expiration, analytics, social sharing, or a complete public portal before the permission contract exists."],
+      "protected_concerns": [
+        { "concern": "privacy", "severity": "P0", "summary": "A public link changes the report access boundary and cannot be implemented without an explicit permission and revocation contract." }
+      ],
+      "expected_authority": "prd",
+      "escalation_required": true
+    },
+    "S-H-05": {
+      "required_behaviors": ["Use the existing weekly-digest control, persist the user's change, and show the saved state or failure."],
+      "likely_unsupported_expansions": ["Add channels, schedules, quiet hours, digest builders, team policy, or a new notification center."],
+      "protected_concerns": [],
+      "expected_authority": "inline",
+      "escalation_required": false
+    },
+    "S-H-06": {
+      "required_behaviors": ["Stop lightweight shaping until guest scope, role permissions, invitation lifecycle, revocation, and data visibility are approved."],
+      "likely_unsupported_expansions": ["Invent multiple guest roles, approval chains, group sharing, public access, or an admin console."],
+      "protected_concerns": [
+        { "concern": "authorization", "severity": "P0", "summary": "A new external actor and permission boundary require explicit product and security authority." }
+      ],
+      "expected_authority": "prd",
+      "escalation_required": true
+    },
+    "S-H-07": {
+      "required_behaviors": ["Provide an alt-text field in the existing upload flow and distinguish meaningful from decorative images without blocking recovery."],
+      "likely_unsupported_expansions": ["Add an asset library, AI caption settings, translation workflow, SEO scoring, or a new accessibility dashboard."],
+      "protected_concerns": [
+        { "concern": "accessibility", "severity": "P1", "summary": "The behavior must let screen-reader users receive an equivalent description for meaningful images." }
+      ],
+      "expected_authority": "inline",
+      "escalation_required": false
+    },
+    "S-H-08": {
+      "required_behaviors": ["Keep editing available while offline, show unsynced state, reconcile after reconnect, and surface conflicts instead of overwriting silently."],
+      "likely_unsupported_expansions": ["Add manual sync strategy, storage quotas, device lists, full version history, or an offline settings center."],
+      "protected_concerns": [
+        { "concern": "data_integrity", "severity": "P0", "summary": "Unsynced edits must not be silently lost or overwrite newer server content without conflict handling." }
+      ],
+      "expected_authority": "inline",
+      "escalation_required": false
+    },
+    "S-H-09": {
+      "required_behaviors": ["Offer one resend action for a completed charge, confirm the masked verified destination, and report success or retryable failure."],
+      "likely_unsupported_expansions": ["Add editable recipients, receipt templates, delivery logs, bulk resend, or a billing communications center."],
+      "protected_concerns": [
+        { "concern": "privacy", "severity": "P1", "summary": "The UI must not expose the full billing email or allow sending financial records to an unverified address." }
+      ],
+      "expected_authority": "inline",
+      "escalation_required": false
+    },
+    "S-H-10": {
+      "required_behaviors": ["Stop implementation until effective time, historical grouping, scheduled digest behavior, defaults, and migration/rollback are approved."],
+      "likely_unsupported_expansions": ["Invent per-report overrides, locale settings, business calendars, multiple timezones, or a reporting settings suite."],
+      "protected_concerns": [
+        { "concern": "migration", "severity": "P1", "summary": "Changing reporting timezone alters persistent data interpretation and requires an explicit migration and rollback decision." }
+      ],
+      "expected_authority": "prd",
+      "escalation_required": true
+    },
+    "S-H-11": {
+      "required_behaviors": ["Expose one export action for the current report, preserve existing authorization, communicate file creation state, and make download failure recoverable."],
+      "likely_unsupported_expansions": ["Add export templates, schedules, destinations, format builders, bulk exports, or a data-export center."],
+      "protected_concerns": [
+        { "concern": "privacy", "severity": "P1", "summary": "Export must retain account authorization and clearly handles a file containing customer personal data." }
+      ],
+      "expected_authority": "inline",
+      "escalation_required": false
+    },
+    "S-H-12": {
+      "required_behaviors": ["Offer cancel only while running, distinguish request from confirmed cancellation, and state when compute charging actually stops."],
+      "likely_unsupported_expansions": ["Add queue management, priority, resource controls, retry policy, job orchestration, or an operations dashboard."],
+      "protected_concerns": [
+        { "concern": "cost_control", "severity": "P1", "summary": "The product must not claim charging stopped before backend cancellation is confirmed." }
+      ],
+      "expected_authority": "inline",
+      "escalation_required": false
+    }
+  },
   "audit_tasks": {
     "A-H-01": {
       "clean": false,

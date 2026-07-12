@@ -15,6 +15,66 @@
       "agent_input": "Current truth: a report page has one existing Generate summary action and summaries can take up to 20 seconds. Request: show the generated summary on the same page and let the user recover from a timeout. Shape the behavior for implementation."
     },
     {
+      "id": "S-H-03",
+      "experiment": "S",
+      "title": "Delete one saved filter",
+      "agent_input": "Current truth: saved filters are listed on the search page, deletion is permanent, and there is no restore history. Request: let the filter owner delete one saved filter from that list. Shape the behavior for implementation."
+    },
+    {
+      "id": "S-H-04",
+      "experiment": "S",
+      "title": "Create a public report link",
+      "agent_input": "Current truth: reports are private to workspace members and the backend has no public-link permission model or revocation contract. Request: add a Share publicly action to a report. Shape the behavior for implementation."
+    },
+    {
+      "id": "S-H-05",
+      "experiment": "S",
+      "title": "Mute one notification type",
+      "agent_input": "Current truth: the notification settings page already lists each notification type with an on/off control persisted per user. Request: let a user mute weekly digest notifications from that existing list. Shape the behavior for implementation."
+    },
+    {
+      "id": "S-H-06",
+      "experiment": "S",
+      "title": "Invite an external collaborator",
+      "agent_input": "Current truth: only workspace members can open projects, roles are Owner and Member, and no guest permission boundary exists. Request: let an owner invite an external collaborator to one project. Shape the behavior for implementation."
+    },
+    {
+      "id": "S-H-07",
+      "experiment": "S",
+      "title": "Add alt text while uploading an image",
+      "agent_input": "Current truth: the editor has one image upload dialog and published images currently have empty alt text. Request: let an author provide alt text during upload so screen-reader users can understand meaningful images. Shape the behavior for implementation."
+    },
+    {
+      "id": "S-H-08",
+      "experiment": "S",
+      "title": "Recover an offline draft",
+      "agent_input": "Current truth: the note editor auto-saves to the server, clearly shows connection state, and keeps the last unsent edit in browser storage. Request: when the connection drops, preserve the edit and let the user continue after reconnecting without silent data loss. Shape the behavior for implementation."
+    },
+    {
+      "id": "S-H-09",
+      "experiment": "S",
+      "title": "Resend one payment receipt",
+      "agent_input": "Current truth: the billing history page shows completed charges and the backend can resend a receipt only to the verified billing email already on the account. Request: let the account owner resend one receipt from its row. Shape the behavior for implementation."
+    },
+    {
+      "id": "S-H-10",
+      "experiment": "S",
+      "title": "Change workspace reporting timezone",
+      "agent_input": "Current truth: all workspace reports and scheduled digests currently use UTC, historical grouping follows that timezone, and there is no migration rule. Request: let an owner change the workspace reporting timezone. Shape the behavior for implementation."
+    },
+    {
+      "id": "S-H-11",
+      "experiment": "S",
+      "title": "Export one customer report",
+      "agent_input": "Current truth: a customer report page already enforces account access and the backend can produce a CSV containing customer names and email addresses. Request: let an authorized analyst export the current report. Shape the behavior for implementation."
+    },
+    {
+      "id": "S-H-12",
+      "experiment": "S",
+      "title": "Cancel one long-running analysis",
+      "agent_input": "Current truth: the analysis page shows one running job, compute charges stop only after backend cancellation is confirmed, and completed work cannot be cancelled. Request: let the job owner cancel the running analysis and understand whether charging has stopped. Shape the behavior for implementation."
+    },
+    {
       "id": "A-H-01",
       "experiment": "A",
       "title": "Automatic retry exposed as advanced configuration",

@@ -1,4 +1,4 @@
-# BDD² Blind Adjudication Rubric v1
+# BDD² Blind Adjudication Rubric v2
 
 Reviewers receive a task ID, the original task input, and one anonymized response.
 They must not receive the condition name, prompt path, run coordinate mapping, agent
@@ -13,9 +13,16 @@ commitment, role, or exposed state that changes what the user must understand or
   current truth, the request, a protected concern, or a necessary recovery path.
 - `required_behavior_omission`: missing behavior needed for the stated outcome,
   result comprehension, consequence control, or recovery.
-- `protected_concern_omission`: missing security, privacy, data integrity,
-  accessibility, recovery, migration, rollback, or test behavior that applies.
+- `protected_concern_omissions`: each missing applicable security, privacy, data
+  integrity, accessibility, recovery, migration, rollback, cost-control, or test
+  behavior, with consequence-based P0-P3 severity.
 - `authority_fit`: `inline`, `brief`, `prd`, or `incorrect`.
+- `escalation_correct`: whether the proposal correctly stops for a PRD-level
+  commitment, role, permission, semantic, migration, or irreversible boundary.
+- `unnecessary_tracked_artifact_count`: number of new tracked
+  behavior/requirements artifacts beyond the correctly selected authority tier. A
+  required PRD escalation does not count; an unnecessary Brief/PRD for an inline
+  task does. Implementation files do not count.
 - `correction_minutes`: reviewer estimate from first output to acceptable proposal.
 
 Record paired preference only after both anonymized outputs are scored. A shorter
@@ -35,8 +42,12 @@ adjudicated real issue. Generic advice and unsupported preferences are false pos
 
 ## Reviewer protocol
 
-1. Score independently using `score.schema.json`.
+1. Review only one self-contained blind packet at a time and score it using
+   `score.schema.json`; do not inspect repository truth, private mappings, sibling
+   outputs, or prompt files.
 2. Lock the score before condition reveal or paired comparison.
 3. Resolve disagreements with a second reviewer who is also condition-blind.
 4. Record exclusions, ambiguity, and authority gaps; never silently discard a run.
-5. Keep raw scores and the reveal mapping separate until adjudication is complete.
+5. Keep raw scores and the reveal mapping separate until all required packet scores
+   are present and schema-valid. One locked final score file is required per packet;
+   record any second-review resolution in `notes`.

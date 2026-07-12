@@ -12,7 +12,7 @@ risk: high
 owners:
   product: kito
   engineering: Codex
-  reviewer: human-blind-panel
+  reviewer: owner-authorized-blind-agent-panel
 ```
 
 ## Sprint Goal
@@ -33,7 +33,7 @@ P productization remains forbidden until the final recorded gate decision.
 
 | # | Status | Task | Mode | Acceptance | Plan |
 |---:|---|---|---|---|---|
-| 1 | [ ] | BDD2-E-01 — Freeze evaluation authority and build reproducible runner foundation | contract | Manifest/hash drift fails closed; agent packets exclude truth and treatment identity; deterministic stub runs pass; no Phase P surface is added. | `plans/plan-20260712-0450-bdd2-eval-foundation.md` |
+| 1 | [x] | BDD2-E-01 — Freeze evaluation authority and build reproducible runner foundation | contract | Manifest/hash drift fails closed; agent packets exclude truth and treatment identity; deterministic stub runs pass; no Phase P surface is added. | `plans/plan-20260712-0450-bdd2-eval-foundation.md` |
 | 2 | [ ] | BDD2-E-02 — Run Experiment S: shape hypothesis | contract | 12 held-out tasks × 2 conditions × 3 runs complete; blind adjudication reports unsupported expansion and required/protected omission; pass/kill decision is recorded. | capture after E-01 merge |
 | 3 | [ ] | BDD2-E-03 — Run Experiment A: audit hypothesis | contract | 12 seeded/clean held-out fixtures × 2 conditions × 2 runs complete; precision, recall, clean false-positive, severity agreement, and correct no-findings are reported with a pass/kill decision. | capture after E-01 merge |
 | 4 | [ ] | BDD2-E-04 — Run Experiment E: Browser and ImageGen adapter hypotheses | contract | Starts only after S and A pass; Browser and ImageGen run as separate 6 × 2 × 2 comparisons; provenance, synthetic-evidence labeling, uncertainty closure, reviewer disagreement, and unsupported concepts are reported independently. | gated by E-02 and E-03 |
@@ -62,3 +62,9 @@ P productization remains forbidden until the final recorded gate decision.
 - [ ] Development and held-out material are separated and leakage checks pass.
 - [ ] Every dependent gate records why it proceeded or stopped.
 - [ ] A human-approved Phase E decision exists before any Phase P plan is created.
+
+## Execution Log
+
+| When | Task | Plan | Result |
+|------|------|------|--------|
+| 2026-07-12 06:05 | BDD2-E-01 — Freeze evaluation authority and build reproducible runner foundation | `plans/plan-20260712-0450-bdd2-eval-foundation.md` | done |
