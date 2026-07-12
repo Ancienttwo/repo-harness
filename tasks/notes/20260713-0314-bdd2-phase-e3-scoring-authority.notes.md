@@ -96,6 +96,11 @@
   merge: `docs/reference-configs/hook-operations.md` had advanced while its packaged
   asset copy had not. The asset was mirrored byte-for-byte so the existing brain and
   adoption drift gates pass; this is projection repair, not a new BDD² behavior.
+- Contract closeout keeps the 1216-pass full `bun test` as root/review evidence rather
+  than re-running it inside the generic helper, whose process boundary is capped at
+  120 seconds. Free-form manual statements were also removed from `manual_checks`
+  because that verifier supports only its evaluator-review check; the same invariants
+  are enforced by E3 contract tests, hash validation, and the completed review card.
 
 ## Evidence Links
 

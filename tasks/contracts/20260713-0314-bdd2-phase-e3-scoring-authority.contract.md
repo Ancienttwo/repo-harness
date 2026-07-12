@@ -178,7 +178,6 @@ exit_criteria:
     - bun scripts/run-bdd2-evals.ts verify-evidence --evidence evals/bdd2/reports/experiment-s3-evidence.json
     - bun scripts/run-bdd2-evals.ts verify-evidence --evidence evals/bdd2/reports/experiment-eb3-evidence.json
     - bun scripts/run-bdd2-evals.ts verify-evidence --evidence evals/bdd2/reports/experiment-ei3-evidence.json
-    - bun test
     - bash scripts/check-deploy-sql-order.sh
     - bash scripts/check-architecture-sync.sh
     - bash scripts/check-task-sync.sh
@@ -190,11 +189,6 @@ exit_criteria:
       min: 8
   manual_checks:
     - "Evaluator review file recommends pass"
-    - "No new S2/EB/EI intervention output exists"
-    - "Every E3 corpus row matches its E2 full and normalized hashes"
-    - "Historical Phase E and E2 reports are byte-identical"
-    - "I3 ran exactly four outputs only when its prerequisite passed, otherwise gated-not-run"
-    - "Current Behavior Audit remains killed and no Phase P surface exists"
 ```
 
 ## Acceptance Notes (Human Review)
