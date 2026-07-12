@@ -8,6 +8,7 @@ import {
   codexBenchmarkCommand,
   isolatedHarnessEnvironment,
   loadHarnessScenarioManifest,
+  parsePorcelainPaths,
   runHarnessProfileBenchmark,
 } from '../scripts/run-harness-profile-benchmark';
 
@@ -43,6 +44,13 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
     expect(env.CODEX_HOME).toBe('/tmp/benchmark-host/.codex');
     expect(env.BUN_INSTALL).toBe('/tmp/benchmark-host/.bun');
     expect(env.PATH?.split(':')[0]).toBe('/tmp/benchmark-host/.bun/bin');
+  });
+
+  test('preserves porcelain leading status columns when extracting paths', () => {
+    expect(parsePorcelainPaths(' M src/range.ts\n?? deploy/sql/0001.sql\n')).toEqual([
+      'src/range.ts',
+      'deploy/sql/0001.sql',
+    ]);
   });
 
   test('dry-run emits all required metrics as null/unavailable rather than estimates', async () => {

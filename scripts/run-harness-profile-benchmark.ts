@@ -60,8 +60,20 @@ export interface BenchmarkRunRecord {
   grader_acceptance: 'passed' | 'failed' | 'unavailable';
 }
 
+export interface HarnessBenchmarkReport {
+  protocol: 'repo-harness-profile-benchmark/report/v1';
+  generated_at: string;
+  authoritative: boolean;
+  provider: BenchmarkProvider;
+  manifest: string;
+  profiles: BenchmarkProfile[];
+  scenario_count: number;
+  records: BenchmarkRunRecord[];
+}
+
 interface CliOptions {
   execute: boolean;
+  regradeExisting?: boolean;
   provider?: BenchmarkProvider;
   requireAuthoritative?: boolean;
   profile?: BenchmarkProfile[];
@@ -73,6 +85,7 @@ interface CliOptions {
 function parseArgs(argv: string[]): CliOptions {
   const options: CliOptions = {
     execute: false,
+    regradeExisting: false,
     provider: 'codex',
     requireAuthoritative: false,
     profile: [],
@@ -84,6 +97,7 @@ function parseArgs(argv: string[]): CliOptions {
     const arg = argv[index];
     if (arg === '--execute') options.execute = true;
     else if (arg === '--dry-run') options.execute = false;
+    else if (arg === '--regrade-existing') options.regradeExisting = true;
     else if (arg === '--require-authoritative') {
       options.requireAuthoritative = true;
       options.execute = true;
@@ -217,6 +231,11 @@ function projectHarness(
   run('git', ['commit', '--allow-empty', '-m', `benchmark ${profile} projection`], workspace, env);
 }
 
+export function rebaselineBenchmarkMain(workspace: string, env: NodeJS.ProcessEnv = process.env): void {
+  const base = join(dirname(workspace), 'base');
+  run('git', ['reset', '--hard', 'benchmark'], base, env);
+}
+
 export function codexBenchmarkCommand(profile: BenchmarkProfile, workspace: string, prompt: string): string[] {
   const args = ['exec', '--json', '--ephemeral', '--sandbox', 'workspace-write', '--cd', workspace];
   if (profile === 'no-harness') args.push('--ignore-user-config', '--ignore-rules');
@@ -258,9 +277,14 @@ function percentile(values: number[], quantile: number): number | null {
   return sorted[Math.ceil(quantile * sorted.length) - 1] ?? sorted[sorted.length - 1];
 }
 
+export function parsePorcelainPaths(output: string): string[] {
+  return output.split(/\r?\n/u).filter(Boolean).map((line) => line.slice(3));
+}
+
 function changedFiles(workspace: string): string[] {
-  const output = run('git', ['status', '--porcelain=v1', '-uall'], workspace);
-  return output ? output.split('\n').filter(Boolean).map((line) => line.slice(3)) : [];
+  const result = spawnSync('git', ['status', '--porcelain=v1', '-uall'], { cwd: workspace, encoding: 'utf-8' });
+  if (result.status !== 0) throw new Error(result.stderr || result.stdout || 'git status failed');
+  return parsePorcelainPaths(result.stdout);
 }
 
 function readHookMetrics(workspace: string) {
@@ -341,6 +365,11 @@ async function executeRun(provider: BenchmarkProvider, profile: BenchmarkProfile
   const hostRoot = join(runRoot, 'host');
   if (provider === 'codex') copyCodexAuthOnly(hostRoot);
   projectHarness(profile, provider, workspace, hostRoot, scenario);
+  rebaselineBenchmarkMain(workspace, {
+    ...process.env,
+    BUN_INSTALL: join(hostRoot, '.bun'),
+    PATH: `${join(hostRoot, '.bun/bin')}:${process.env.PATH ?? ''}`,
+  });
   const command = benchmarkCommand(provider, profile, workspace, hostRoot, scenario.prompt);
   const started = Date.now();
   let firstEdit: number | null = null;
@@ -420,6 +449,53 @@ function dryRunRecord(provider: BenchmarkProvider, profile: BenchmarkProfile, sc
   };
 }
 
+function writeHarnessBenchmarkReport(report: HarnessBenchmarkReport, reportPath: string): void {
+  mkdirSync(dirname(reportPath), { recursive: true });
+  writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
+  const markdownPath = reportPath.endsWith('.json') ? reportPath.replace(/\.json$/, '.md') : `${reportPath}.md`;
+  const rows = BENCHMARK_PROFILES.map((profile) => {
+    const profileRecords = report.records.filter((record) => record.profile === profile);
+    const passed = profileRecords.filter((record) => record.status === 'passed').length;
+    const durations = profileRecords.map((record) => record.total_duration_ms).filter((value): value is number => value !== null);
+    const tokens = profileRecords.map((record) => record.input_tokens === null || record.output_tokens === null ? null : record.input_tokens + record.output_tokens);
+    const knownTokens = tokens.filter((value): value is number => value !== null);
+    const recovery = profileRecords.find((record) => record.scenario_id === 'cross-session-recovery');
+    return `| ${profile} | ${passed}/${profileRecords.length} | ${knownTokens.length ? knownTokens.reduce((a, b) => a + b, 0) : 'unavailable'} | ${durations.length ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length) : 'unavailable'} | ${recovery?.grader_acceptance ?? 'unavailable'} |`;
+  });
+  writeFileSync(markdownPath, [
+    '# Harness Profile Benchmark', '',
+    `> **Authority**: ${report.authoritative ? `live ${report.provider} provider execution` : 'incomplete/dry-run; non-authoritative'}`,
+    `> **Generated**: ${report.generated_at}`, '',
+    '| Profile | Passed | Known tokens | Avg duration ms | Recovery |',
+    '|---|---:|---:|---:|---|', ...rows, '',
+    'Provider-owned fields remain `null` when the structured provider stream does not supply them. See the JSON report for per-run hook, guard, artifact, and grader evidence.', '',
+  ].join('\n'));
+}
+
+export function regradeHarnessBenchmarkReport(reportPath: string): HarnessBenchmarkReport {
+  const report = JSON.parse(readFileSync(reportPath, 'utf-8')) as HarnessBenchmarkReport;
+  if (report.protocol !== 'repo-harness-profile-benchmark/report/v1') throw new Error('invalid benchmark report protocol');
+  const manifest = loadHarnessScenarioManifest(report.manifest);
+  const scenarios = new Map(manifest.scenarios.map((scenario) => [scenario.id, scenario]));
+  for (const record of report.records) {
+    const scenario = scenarios.get(record.scenario_id);
+    if (!scenario) throw new Error(`scenario missing while regrading: ${record.scenario_id}`);
+    const grader = spawnSync('bash', ['-lc', scenario.acceptance_command], { cwd: record.workspace, encoding: 'utf-8' });
+    const changed = changedFiles(record.workspace);
+    const expectedPathsPassed = scenario.expected_paths.length === 0
+      ? changed.length === 0
+      : scenario.expected_paths.every((path) => changed.includes(path));
+    const graderPassed = grader.status === 0 && expectedPathsPassed;
+    record.grader_acceptance = graderPassed ? 'passed' : 'failed';
+    record.status = record.provider_exit_code === 0 && graderPassed ? 'passed' : 'failed';
+  }
+  report.generated_at = new Date().toISOString();
+  report.authoritative = report.records.every((record) =>
+    record.provider_exit_code === 0 && record.usage_authority === 'structured-provider');
+  writeHarnessBenchmarkReport(report, reportPath);
+  return report;
+}
+
 export async function runHarnessProfileBenchmark(options: CliOptions) {
   const manifest = loadHarnessScenarioManifest(options.manifest);
   const provider = options.provider ?? 'codex';
@@ -440,31 +516,12 @@ export async function runHarnessProfileBenchmark(options: CliOptions) {
   const authoritative = options.execute && records.every((record) =>
     record.provider_exit_code === 0
     && record.usage_authority === 'structured-provider');
-  const report = {
+  const report: HarnessBenchmarkReport = {
     protocol: 'repo-harness-profile-benchmark/report/v1', generated_at: new Date().toISOString(),
     authoritative, provider, manifest: options.manifest, profiles, scenario_count: selected.length,
     records,
   };
-  mkdirSync(dirname(options.report), { recursive: true });
-  writeFileSync(options.report, `${JSON.stringify(report, null, 2)}\n`);
-  const markdownPath = options.report.endsWith('.json') ? options.report.replace(/\.json$/, '.md') : `${options.report}.md`;
-  const rows = BENCHMARK_PROFILES.map((profile) => {
-    const profileRecords = records.filter((record) => record.profile === profile);
-    const passed = profileRecords.filter((record) => record.status === 'passed').length;
-    const durations = profileRecords.map((record) => record.total_duration_ms).filter((value): value is number => value !== null);
-    const tokens = profileRecords.map((record) => record.input_tokens === null || record.output_tokens === null ? null : record.input_tokens + record.output_tokens);
-    const knownTokens = tokens.filter((value): value is number => value !== null);
-    const recovery = profileRecords.find((record) => record.scenario_id === 'cross-session-recovery');
-    return `| ${profile} | ${passed}/${profileRecords.length} | ${knownTokens.length ? knownTokens.reduce((a, b) => a + b, 0) : 'unavailable'} | ${durations.length ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length) : 'unavailable'} | ${recovery?.grader_acceptance ?? 'unavailable'} |`;
-  });
-  writeFileSync(markdownPath, [
-    '# Harness Profile Benchmark', '',
-    `> **Authority**: ${authoritative ? `live ${provider} provider execution` : 'incomplete/dry-run; non-authoritative'}`,
-    `> **Generated**: ${report.generated_at}`, '',
-    '| Profile | Passed | Known tokens | Avg duration ms | Recovery |',
-    '|---|---:|---:|---:|---|', ...rows, '',
-    'Provider-owned fields remain `null` when the structured provider stream does not supply them. See the JSON report for per-run hook, guard, artifact, and grader evidence.', '',
-  ].join('\n'));
+  writeHarnessBenchmarkReport(report, options.report);
   if (options.requireAuthoritative) {
     const incomplete = records.filter((record) =>
       record.provider_exit_code !== 0
@@ -478,7 +535,10 @@ export async function runHarnessProfileBenchmark(options: CliOptions) {
 
 if (import.meta.main) {
   const options = parseArgs(process.argv.slice(2));
-  runHarnessProfileBenchmark(options)
+  const execution = options.regradeExisting
+    ? Promise.resolve(regradeHarnessBenchmarkReport(options.report))
+    : runHarnessProfileBenchmark(options);
+  execution
     .then((report) => console.log(`profile benchmark: ${report.records.length} runs -> ${options.report}`))
     .catch((error) => { console.error((error as Error).message); process.exit(1); });
 }
