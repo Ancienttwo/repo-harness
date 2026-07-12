@@ -227,6 +227,30 @@ describe('mcp policy and paths', () => {
       rmSync(tmp, { recursive: true, force: true });
     }
   });
+
+  test('coding is an isolated opt-in profile with exactly five direct coding tools and no legacy reader schemas', () => {
+    const coding = getMcpPolicy('coding');
+    const definitions = buildMcpToolDefinitions(coding);
+    const codingNames = ['open_workspace', 'read', 'apply_patch', 'exec_command', 'write_stdin'];
+    expect(coding.capabilities).toMatchObject({
+      workflowPlanner: true,
+      workspaceReader: false,
+      workspaceCoder: true,
+    });
+    expect(coding.execution).toMatchObject({ codingShell: true, agentRunner: false, codexRunner: false });
+    expect(definitions.filter((tool) => codingNames.includes(tool.name)).map((tool) => tool.name)).toEqual(codingNames);
+    expect(new Set(definitions.map((tool) => tool.name)).size).toBe(definitions.length);
+    expect(definitions.find((tool) => tool.name === 'exec_command')?.annotations).toMatchObject({
+      destructiveHint: true,
+      openWorldHint: true,
+    });
+
+    for (const profile of ['planner', 'executor', 'orchestrator'] as const) {
+      const legacyNames = buildMcpToolDefinitions(getMcpPolicy(profile)).map((tool) => tool.name);
+      expect(legacyNames).not.toContain('exec_command');
+      expect(legacyNames).not.toContain('write_stdin');
+    }
+  });
 });
 
 describe('mcp redaction and audit', () => {

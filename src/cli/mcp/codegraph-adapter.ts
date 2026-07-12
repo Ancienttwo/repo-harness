@@ -1,7 +1,7 @@
 import { spawnSync } from 'child_process';
 import { createHash } from 'crypto';
-import { existsSync } from 'fs';
-import { join } from 'path';
+import { existsSync, realpathSync } from 'fs';
+import { delimiter, isAbsolute, join, relative, resolve } from 'path';
 
 export interface CodeGraphIndexedFile {
   path: string;
@@ -78,8 +78,35 @@ function unavailable(message: string, latencyMs = 0, retryable = true): CodeGrap
   };
 }
 
-function codegraphBin(repoRoot: string, env: NodeJS.ProcessEnv): string {
-  if (env.REPO_HARNESS_CODEGRAPH_BIN) return env.REPO_HARNESS_CODEGRAPH_BIN;
+function isPathInside(root: string, candidate: string): boolean {
+  const relationship = relative(root, candidate);
+  return relationship === '' || (!isAbsolute(relationship) && relationship !== '..' && !relationship.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`));
+}
+
+function canonicalIfPresent(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return resolve(path);
+  }
+}
+
+function codegraphExecutionEnv(repoRoot: string, env: NodeJS.ProcessEnv, allowRepoLocalBin: boolean): NodeJS.ProcessEnv {
+  if (allowRepoLocalBin) return env;
+  const canonicalRoot = canonicalIfPresent(repoRoot);
+  const safePath = (env.PATH ?? '')
+    .split(delimiter)
+    .filter((entry) => entry && isAbsolute(entry) && !isPathInside(canonicalRoot, canonicalIfPresent(entry)))
+    .join(delimiter);
+  return { ...env, PATH: safePath };
+}
+
+function codegraphBin(repoRoot: string, env: NodeJS.ProcessEnv, allowRepoLocalBin: boolean): string {
+  if (env.REPO_HARNESS_CODEGRAPH_BIN) {
+    const explicit = env.REPO_HARNESS_CODEGRAPH_BIN;
+    if (allowRepoLocalBin || !isAbsolute(explicit) || !isPathInside(canonicalIfPresent(repoRoot), canonicalIfPresent(explicit))) return explicit;
+  }
+  if (!allowRepoLocalBin) return 'codegraph';
   const repoLocal = join(repoRoot, 'node_modules', '.bin', 'codegraph');
   if (existsSync(repoLocal)) return repoLocal;
   const cwdLocal = join(process.cwd(), 'node_modules', '.bin', 'codegraph');
@@ -112,16 +139,17 @@ function revisionFor(files: CodeGraphIndexedFile[]): string {
   return `index_${sha256(JSON.stringify(stable)).slice(0, 16)}`;
 }
 
-function discoverCodeGraphRepo(repoRoot: string, env: NodeJS.ProcessEnv, timeoutMs: number): CodeGraphRepoSnapshot {
+function discoverCodeGraphRepo(repoRoot: string, env: NodeJS.ProcessEnv, timeoutMs: number, allowRepoLocalBin = true): CodeGraphRepoSnapshot {
   const start = Date.now();
   if (!existsSync(join(repoRoot, '.codegraph'))) {
     return unavailable('CodeGraph index is not initialized for this repo', 0, false);
   }
 
-  const bin = codegraphBin(repoRoot, env);
+  const executionEnv = codegraphExecutionEnv(repoRoot, env, allowRepoLocalBin);
+  const bin = codegraphBin(repoRoot, executionEnv, allowRepoLocalBin);
   const result = spawnSync(bin, ['files', '--path', repoRoot, '--format', 'flat', '--json'], {
     cwd: repoRoot,
-    env,
+    env: executionEnv,
     encoding: 'utf-8',
     timeout: timeoutMs,
     maxBuffer: MAX_STDOUT_BYTES,
@@ -189,13 +217,15 @@ function discoverCodeGraphRepo(repoRoot: string, env: NodeJS.ProcessEnv, timeout
 export function createCodeGraphCliAdapter(opts: {
   env?: NodeJS.ProcessEnv;
   timeoutMs?: number;
+  allowRepoLocalBin?: boolean;
 } = {}): GeneralRepoCodeGraphAdapter {
   const env = opts.env ?? process.env;
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const allowRepoLocalBin = opts.allowRepoLocalBin !== false;
 
   return {
     discoverRepo(repoRoot: string): CodeGraphRepoSnapshot {
-      return discoverCodeGraphRepo(repoRoot, env, timeoutMs);
+      return discoverCodeGraphRepo(repoRoot, env, timeoutMs, allowRepoLocalBin);
     },
     refreshRepo(repoRoot: string, opts: { paths?: string[] } = {}): CodeGraphRefreshResult {
       const start = Date.now();
@@ -216,10 +246,11 @@ export function createCodeGraphCliAdapter(opts: {
         };
       }
 
-      const bin = codegraphBin(repoRoot, env);
+      const executionEnv = codegraphExecutionEnv(repoRoot, env, allowRepoLocalBin);
+      const bin = codegraphBin(repoRoot, executionEnv, allowRepoLocalBin);
       const result = spawnSync(bin, ['sync', repoRoot], {
         cwd: repoRoot,
-        env,
+        env: executionEnv,
         encoding: 'utf-8',
         timeout: Math.max(timeoutMs, 30_000),
         maxBuffer: MAX_STDOUT_BYTES,
@@ -262,7 +293,7 @@ export function createCodeGraphCliAdapter(opts: {
         };
       }
 
-      const snapshot = discoverCodeGraphRepo(repoRoot, env, timeoutMs);
+      const snapshot = discoverCodeGraphRepo(repoRoot, env, timeoutMs, allowRepoLocalBin);
       return {
         available: snapshot.available,
         refreshed: snapshot.available,

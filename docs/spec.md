@@ -20,10 +20,16 @@ trace, review, and handoff.
 - Reviewers who need a concise human review card plus machine evidence before
   accepting agent-authored changes.
 
+An optional local MCP sidecar can expose the same file-backed workflow contract
+to ChatGPT. Its default profiles remain workflow-scoped; a separate, user-owned
+`coding` profile may directly edit and run Bash only for explicitly granted
+repos.
+
 ## Non-Goals
 
-- `repo-harness` is not an agent gateway, product runtime, database service, or
-  MCP server.
+- `repo-harness` is not a hosted agent gateway, hosted product runtime, or
+  database service. The MCP sidecar remains a loopback local process behind an
+  operator-managed tunnel.
 - It does not replace the target repository's build, test, deploy, or release
   authority.
 - It does not vendor unified helper scripts into downstream repositories; the
@@ -46,6 +52,8 @@ trace, review, and handoff.
   override, and latest trace evidence are required before closeout.
 - Worktree isolation protects unrelated dirty state; agents must not absorb
   unrelated changes from the target tree.
+- Direct coding MCP is default-off, user-scoped, OAuth profile/revision-bound,
+  worktree-first, and explicit that local-user Bash is not a filesystem sandbox.
 
 ## Workflow Surfaces
 

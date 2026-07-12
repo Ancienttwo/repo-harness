@@ -6,7 +6,7 @@ import { dirname, join, resolve } from 'path';
 export type McpConfigScope = 'repo' | 'user';
 
 export interface McpLocalConfig {
-  version: 1 | 2;
+  version: 1 | 2 | 3;
   scope?: McpConfigScope;
   repo?: string;
   server?: {
@@ -18,6 +18,7 @@ export interface McpLocalConfig {
     mode?: string;
     tokenFile?: string;
     oauthFile?: string;
+    allowedRedirectHosts?: string[];
   };
   chatgpt?: {
     serverName?: string;
@@ -28,6 +29,7 @@ export interface McpLocalConfig {
     workflowPlanner?: boolean;
     workflowExecutor?: boolean;
     agentRunner?: boolean;
+    workspaceCoder?: boolean;
     /** @deprecated v2 uses workspaceReader; accepted only for older local configs. */
     reader?: boolean;
   };
@@ -38,6 +40,12 @@ export interface McpLocalConfig {
     legacyFullDiskReadDetected?: boolean;
   };
   profile?: string;
+  authorizationRevision?: number;
+  coding?: {
+    enabled?: boolean;
+    environmentAllowlist?: string[];
+    worktreeRoot?: string;
+  };
   devMode?: {
     agentRunner?: boolean;
     allowedAgents?: string[];
@@ -77,7 +85,7 @@ export function parseMcpLocalConfig(value: unknown): McpLocalConfig {
   }
   const raw = value as Record<string, unknown>;
   const version = raw.version === undefined ? 1 : raw.version;
-  if (version !== 1 && version !== 2) {
+  if (version !== 1 && version !== 2 && version !== 3) {
     throw new Error(`unsupported MCP local config version: ${String(version)}`);
   }
   const config = raw as unknown as McpLocalConfig;
@@ -89,6 +97,15 @@ export function parseMcpLocalConfig(value: unknown): McpLocalConfig {
   }
   if (config.permissions?.discoveryRoots !== undefined && !Array.isArray(config.permissions.discoveryRoots)) {
     throw new Error('MCP local config permissions.discoveryRoots must be an array');
+  }
+  if (config.auth?.allowedRedirectHosts !== undefined && !Array.isArray(config.auth.allowedRedirectHosts)) {
+    throw new Error('MCP local config auth.allowedRedirectHosts must be an array');
+  }
+  if (config.coding?.environmentAllowlist !== undefined && !Array.isArray(config.coding.environmentAllowlist)) {
+    throw new Error('MCP local config coding.environmentAllowlist must be an array');
+  }
+  if (config.authorizationRevision !== undefined && (!Number.isInteger(config.authorizationRevision) || config.authorizationRevision < 0)) {
+    throw new Error('MCP local config authorizationRevision must be a non-negative integer');
   }
   return {
     ...config,
@@ -107,14 +124,18 @@ function readMcpLocalConfig(path: string): McpLocalConfig | null {
 
 export function resolveMcpConfigScope(repoRoot: string, requested?: McpConfigScope): McpConfigScope {
   if (requested) return requested;
+  const userConfig = readMcpLocalConfig(mcpLocalConfigPath(repoRoot, 'user'));
+  if (userConfig?.profile === 'coding' && userConfig.coding?.enabled === true) return 'user';
   if (existsSync(mcpLocalConfigPath(repoRoot, 'repo'))) return 'repo';
-  if (existsSync(mcpLocalConfigPath(repoRoot, 'user'))) return 'user';
+  if (userConfig) return 'user';
   return 'repo';
 }
 
 export function loadMcpLocalConfig(repoRoot: string, scope?: McpConfigScope): McpLocalConfig | null {
   if (scope) return readMcpLocalConfig(mcpLocalConfigPath(repoRoot, scope));
-  return readMcpLocalConfig(mcpLocalConfigPath(repoRoot, 'repo')) ?? readMcpLocalConfig(mcpLocalConfigPath(repoRoot, 'user'));
+  const userConfig = readMcpLocalConfig(mcpLocalConfigPath(repoRoot, 'user'));
+  if (userConfig?.profile === 'coding' && userConfig.coding?.enabled === true) return userConfig;
+  return readMcpLocalConfig(mcpLocalConfigPath(repoRoot, 'repo')) ?? userConfig;
 }
 
 export function readMcpBearerToken(repoRoot: string, scope?: McpConfigScope): string | null {
