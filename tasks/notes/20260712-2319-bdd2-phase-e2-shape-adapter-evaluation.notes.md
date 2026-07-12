@@ -34,7 +34,11 @@
 
 ## Deviations From Plan Or Spec
 
-- None recorded.
+- Provider preflight after the first seal rejected `gpt-5.6` for ChatGPT-account
+  Codex transport before any held-out coordinate ran. Authority was re-sealed as
+  revision `r2` with supported `gpt-5.4-mini`, medium reasoning, and the current
+  `web_search="disabled"` config key. The failed development smoke remains ignored
+  runtime evidence and is excluded from efficacy results.
 
 ## Tradeoffs Considered
 

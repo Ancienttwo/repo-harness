@@ -9,7 +9,7 @@
     "S2": {
       "kind": "inline-shape",
       "freeze": {
-        "id": "bdd2-e2-s2",
+        "id": "bdd2-e2-s2-r2",
         "state": "sealed",
         "sealed_at": "2026-07-13T00:45:00+08:00"
       },
@@ -29,7 +29,7 @@
     "EB": {
       "kind": "browser-adapter",
       "freeze": {
-        "id": "bdd2-e2-eb",
+        "id": "bdd2-e2-eb-r2",
         "state": "sealed",
         "sealed_at": "2026-07-13T00:45:00+08:00"
       },
@@ -123,7 +123,7 @@
     "EI": {
       "kind": "imagegen-adapter",
       "freeze": {
-        "id": "bdd2-e2-ei",
+        "id": "bdd2-e2-ei-r2",
         "state": "sealed",
         "sealed_at": "2026-07-13T00:45:00+08:00"
       },
@@ -217,7 +217,7 @@
     "I2": {
       "kind": "implementation-pilot",
       "freeze": {
-        "id": "bdd2-e2-i2",
+        "id": "bdd2-e2-i2-r2",
         "state": "sealed",
         "sealed_at": "2026-07-13T00:45:00+08:00"
       },
@@ -335,16 +335,16 @@
         "-c",
         "model_reasoning_effort=\"{sampling.reasoning_effort}\"",
         "-c",
-        "features.web_search=false",
+          "web_search=\"disabled\"",
         "-"
       ],
       "version_args": [
         "--version"
       ],
       "expected_version": "codex-cli 0.144.1",
-      "model": "gpt-5.6",
+        "model": "gpt-5.4-mini",
       "sampling": {
-        "reasoning_effort": "high"
+          "reasoning_effort": "medium"
       },
       "input_source": "stdin",
       "response_source": "stdout",
