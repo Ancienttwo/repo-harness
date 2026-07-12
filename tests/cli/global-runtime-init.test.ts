@@ -396,7 +396,23 @@ describe('init command global runtime bootstrap', () => {
       mkdirSync(home, { recursive: true });
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
-      writeExecutable(join(fakeBin, 'bunx'), '#!/bin/bash\nexit 0\n');
+      writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.3.14; exit 0; fi\nexit 0\n');
+      writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash
+if [[ "\${1:-}" == "skills" && "\${2:-}" == "add" ]]; then
+  if [[ " $* " == *" tw93/Waza "* ]]; then
+    names='think hunt check health'
+    mkdir -p "$HOME/.agents/rules"
+    for rule in anti-patterns.md chinese.md durable-context.md english.md; do printf '# rule\\n' > "$HOME/.agents/rules/$rule"; done
+  else
+    names='mermaid'
+  fi
+  for skill in $names; do
+    mkdir -p "$HOME/.agents/skills/$skill"
+    printf '# %s\\n' "$skill" > "$HOME/.agents/skills/$skill/SKILL.md"
+  done
+fi
+exit 0
+`);
 
       const result = runGlobalRuntimeSetup({
         sourceRoot: ROOT,
@@ -412,10 +428,13 @@ describe('init command global runtime bootstrap', () => {
         env: { ...process.env, HOME: home, BUN_INSTALL: join(home, '.bun'), PATH: `${fakeBin}:${process.env.PATH ?? ''}` },
       });
 
+      expect(result.exitCode).toBe(0);
       expect(result.steps.find((step) => step.step === 'cross-review skills')).toMatchObject({
         status: 'skipped',
         detail: 'disabled by install profile',
       });
+      expect(existsSync(join(home, '.claude', 'skills', 'think', 'SKILL.md'))).toBe(true);
+      expect(existsSync(join(home, '.claude', 'skills', 'mermaid', 'SKILL.md'))).toBe(true);
       expect(existsSync(join(home, '.claude', 'skills', 'codex-review'))).toBe(false);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
