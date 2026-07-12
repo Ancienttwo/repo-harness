@@ -1,6 +1,6 @@
 # Task Contract: chatgpt-coding-mcp-integration
 
-> **Status**: Fulfilled
+> **Status**: Partial
 > **Plan**: plans/plan-20260712-0301-chatgpt-coding-mcp-integration.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
