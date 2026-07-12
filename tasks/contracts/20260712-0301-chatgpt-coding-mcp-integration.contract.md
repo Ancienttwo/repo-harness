@@ -1,6 +1,6 @@
 # Task Contract: chatgpt-coding-mcp-integration
 
-> **Status**: Fulfilled
+> **Status**: Partial
 > **Plan**: plans/plan-20260712-0301-chatgpt-coding-mcp-integration.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
@@ -13,11 +13,11 @@
 
 ## Why
 
-The coding MCP feature and its authorization-runtime repair passed local, repository, and live functional acceptance on a branch that predates the current mainline MCP rollout-retirement cutover. Merging that branch tree wholesale would resurrect deleted rollout-control authority and stale workflow state; skipping integration leaves the accepted feature unavailable on current main. The integration must preserve both authorities without weakening either.
+The coding MCP feature and its authorization-runtime repair passed local, repository, and live functional acceptance on a branch that predates the current mainline MCP rollout-retirement cutover. Merging that branch tree wholesale would resurrect deleted rollout-control authority and stale workflow state; skipping integration leaves the accepted feature unavailable on current main. The integration must preserve both authorities without weakening either. Current main later advanced to `02079da` with a BDD² V0 PRD whose catalog filename and missing Draft status make main's own strict workflow and CI fail; integrating current main therefore also requires the smallest catalog repair before this contract can become green.
 
 ## Goal
 
-Replay the seven accepted coding MCP commits onto the rollout-retirement base, merge the subsequently advanced transactional-adoption `origin/main`, preserve both current main authorities while keeping the complete default-off coding profile and OAuth authorization-scoped runtime intact, pass all focused and root verification gates, and publish one draft PR from `codex/chatgpt-coding-mcp-integration` to `main` without modifying the dirty local main checkout.
+Replay the seven accepted coding MCP commits onto the rollout-retirement base, merge the subsequently advanced `origin/main` through `02079da`, preserve current main authorities while keeping the complete default-off coding profile and OAuth authorization-scoped runtime intact, repair only the invalid BDD² V0 PRD catalog envelope required for strict workflow validity, pass all focused and root verification gates, and publish one draft PR from `codex/chatgpt-coding-mcp-integration` to `main` without modifying the local main checkout.
 
 ## Scope
 
@@ -25,6 +25,7 @@ Replay the seven accepted coding MCP commits onto the rollout-retirement base, m
   - Cherry-pick `0b80ef4`, `47cbe50`, `2f3405d`, `443f3ea`, `2a9d490`, `c3a77d1`, and `f3b546d` in order onto `origin/main@788ba60`.
   - Merge refreshed `origin/main@8e160323` and preserve its transactional TypeScript adoption cutover; regenerate derived current/handoff state rather than carrying the retired migration helper contract forward.
   - Merge refreshed `origin/main@bb750141` and preserve its independent BDD² evaluation foundation; regenerate derived current/handoff state rather than carrying either stale snapshot forward.
+  - Merge refreshed `origin/main@02079da`; rename its BDD² V0 PRD to the required timestamped catalog shape, add only the missing `Draft` status metadata, and update its two direct references. Do not rewrite the PRD body or otherwise change BDD² product intent.
   - Preserve current mainline removal of MCP rollout controls, candidate flags, and retired policy/type fields while layering the accepted coding-only profile, workspace/file/process tools, OAuth grant identity, docs, tests, and evidence.
   - Preserve the current Bun engine floor and add only the already-reviewed optional `node-pty` dependency; keep the lockfile deterministic.
   - Regenerate `tasks/current.md` and handoff/resume projections from the integrated state rather than selecting either stale side.
@@ -34,6 +35,7 @@ Replay the seven accepted coding MCP commits onto the rollout-retirement base, m
   - Updating, stashing, committing, cleaning, or switching `/Users/kito/Projects/repo-harness` local main or its two WIP paths.
   - Reintroducing `scripts/mcp-rollout-gate.ts`, rollout flags, candidate-disabled semantics, or any policy surface retired by current `origin/main`.
   - Changing the accepted coding MCP public interface, adding compatibility fallbacks, merging the draft PR, publishing a release, or changing Cloudflare/ChatGPT external state.
+  - Redesigning, approving, implementing, or otherwise expanding the incoming BDD² V0 PRD.
 - Taste constraints: replay commit patches rather than merge the stale branch tree; one current mainline policy authority, one OAuth authorization identity authority, no dual schemas, no unrelated cleanup.
 
 ## Stop Conditions
@@ -88,6 +90,9 @@ allowed_paths:
   - plans/plan-20260711-1034-chatgpt-coding-mcp-live-canary.md
   - plans/plan-20260711-1343-chatgpt-coding-mcp-authorization-runtime.md
   - plans/plan-20260712-0301-chatgpt-coding-mcp-integration.md
+  - plans/prds/20260712-0409-bdd2-shape-audit.prd.md
+  - plans/prds/20260712-BDD.prd.md
+  - plans/prds/20260712-1426-bdd2-v0.prd.md
   - tasks/todos.md
   - tasks/current.md
   - tasks/archive/contract-20260711-0609-chatgpt-coding-mcp.md

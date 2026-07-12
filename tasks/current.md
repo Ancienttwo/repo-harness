@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-12T14:34:01+0800 -->
+<!-- updated_at: 2026-07-12T15:12:10+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-07-12T14:34:01+0800
+> **Updated At**: 2026-07-12T15:12:10+0800
 > **Source Branch**: codex/chatgpt-coding-mcp-integration
-> **Source Commit**: af4f811
+> **Source Commit**: 9f339c6
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: chatgpt-coding-mcp-latest-main-integration
+> **Reason**: chatgpt-coding-mcp-main-prd-repair
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -60,31 +60,13 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 22 changed/untracked path(s)
+- Summary: 4 changed/untracked path(s)
 
 ```
-M  .codex/agents/fast-worker.toml
-M  assets/reference-configs/external-tooling.md
-M  assets/templates/helpers/architecture-event.ts
-M  assets/templates/helpers/check-task-workflow.sh
-M  assets/templates/helpers/install-agent-fleet.sh
-M  bun.lock
-M  docs/CHANGELOG.md
-M  docs/reference-configs/external-tooling.md
-M  package.json
-A  plans/plan-20260711-0115-think-plan-011459.md
-M  plans/prds/20260712-0409-bdd2-shape-audit.prd.md
-A  plans/prds/20260712-BDD.prd.md
-M  scripts/architecture-event.ts
-M  scripts/check-task-workflow.sh
-M  scripts/install-agent-fleet.sh
-M  src/cli/hook-entry.ts
-M  src/cli/hook/runtime.ts
-UU tasks/current.md
-M  tasks/lessons.md
-A  tasks/notes/luna-xhigh-fast-worker.notes.md
-M  tests/bootstrap-files.test.ts
-M  tests/install-agent-fleet.test.ts
+ M plans/prds/20260712-0409-bdd2-shape-audit.prd.md
+RM plans/prds/20260712-BDD.prd.md -> plans/prds/20260712-1426-bdd2-v0.prd.md
+ M tasks/contracts/20260712-0301-chatgpt-coding-mcp-integration.contract.md
+ M tasks/notes/20260712-0301-chatgpt-coding-mcp-integration.notes.md
 ```
 
 ## Source Artifacts
