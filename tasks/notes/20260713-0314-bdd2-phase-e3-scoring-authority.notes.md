@@ -125,6 +125,10 @@
   the selected provider's `--version`, contradicting its no-execution contract and
   failing on runners without Codex. Dry-run reports now record provider version as
   `unavailable`; execute mode remains the only path that invokes the provider.
+- The next CI segment exposed a profile-resolution failure test whose outcome varied
+  with a globally installed `repo-harness` binary. It now binds an explicit failing
+  source resolver, so `WorkflowProfileGuard` is the deterministic first failure on
+  every host rather than sometimes being preempted by `PlanStatusGuard`.
 
 ## Evidence Links
 
