@@ -10,6 +10,7 @@ import { Command } from 'commander';
 import { createInterface } from 'readline/promises';
 import { askConfirm } from './tty-prompt';
 import { runInstall, runUninstall, type InstallTargetSpec } from './commands/install';
+import { writeAllSync } from './runtime/write-all-sync';
 import { configuredDelegationMode, type DelegationMode } from './commands/delegation-mode';
 import { runInit, type InitBrainMode } from './commands/init';
 import { runHook } from './commands/hook';
@@ -419,7 +420,7 @@ export function buildProgram(): Command {
           json: rawOpts.json === true,
           explicitRepo: rawOpts.repo !== undefined,
         });
-        process.stdout.write(plan.output);
+        writeAllSync(1, plan.output);
         process.exit(plan.exitCode);
       }
       const common = {
@@ -584,9 +585,10 @@ export function buildProgram(): Command {
     .allowExcessArguments(true)
     .description('Internal minimal-change hook context renderer')
     .action((args: string[]) => {
+      // Hidden hook commands exit immediately; commit protocol bytes first.
       const result = runMinimalChangeCli(args);
-      if (result.stdout) process.stdout.write(result.stdout);
-      if (result.stderr) process.stderr.write(result.stderr);
+      if (result.stdout) writeAllSync(1, result.stdout);
+      if (result.stderr) writeAllSync(2, result.stderr);
       process.exit(result.exitCode);
     });
   program
@@ -597,8 +599,8 @@ export function buildProgram(): Command {
     .description('Internal review rubric renderer')
     .action((args: string[]) => {
       const result = runReviewRubricCli(args);
-      if (result.stdout) process.stdout.write(result.stdout);
-      if (result.stderr) process.stderr.write(result.stderr);
+      if (result.stdout) writeAllSync(1, result.stdout);
+      if (result.stderr) writeAllSync(2, result.stderr);
       process.exit(result.exitCode);
     });
   program
@@ -609,8 +611,8 @@ export function buildProgram(): Command {
     .description('Internal review freshness fingerprint renderer')
     .action((args: string[]) => {
       const result = runReviewFingerprintCli(args);
-      if (result.stdout) process.stdout.write(result.stdout);
-      if (result.stderr) process.stderr.write(result.stderr);
+      if (result.stdout) writeAllSync(1, result.stdout);
+      if (result.stderr) writeAllSync(2, result.stderr);
       process.exit(result.exitCode);
     });
 

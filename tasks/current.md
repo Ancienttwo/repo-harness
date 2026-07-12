@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-12T15:59:33+0800 -->
+<!-- updated_at: 2026-07-12T16:44:11+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-07-12T15:59:33+0800
+> **Updated At**: 2026-07-12T16:44:11+0800
 > **Source Branch**: codex/chatgpt-coding-mcp-integration
-> **Source Commit**: e87d4eb
+> **Source Commit**: cc2c6aa
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: chatgpt-coding-mcp-main-3bf28a7-integration
+> **Reason**: chatgpt-coding-mcp-main-6b51e31-integration
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -43,6 +43,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - /Users/kito/Projects/repo-harness-worktrees/upgrade-bun-1-3-14: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/upgrade-bun-1-3-14
 - /Users/kito/Projects/repo-harness-wt-codex-native-role-model-override: plans/plan-20260711-0219-codex-native-role-model-override.md
 - /Users/kito/Projects/repo-harness-wt-codex-native-role-model-override: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-codex-native-role-model-override
+- /Users/kito/Projects/repo-harness/.claude/worktrees/agent-ae14c20f2b5dac4a3: plans/plan-20260712-1642-adaptive-lite-hook-routing.md
+- /Users/kito/Projects/repo-harness/.claude/worktrees/agent-ae14c20f2b5dac4a3: active-worktree owner -> /Users/kito/Projects/repo-harness/.claude/worktrees/agent-ae14c20f2b5dac4a3
 ## Active Sprint
 
 - Sprint: (none)
@@ -56,14 +58,28 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Checks
 
-- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
+- status=fail, source=verify-sprint, exit_code=1, file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 1 changed/untracked path(s)
+- Summary: 15 changed/untracked path(s)
 
 ```
- M tasks/contracts/20260712-0301-chatgpt-coding-mcp-integration.contract.md
+M  .github/workflows/ci.yml
+M  assets/templates/helpers/architecture-event.ts
+M  "docs/researches/repo-harness \351\222\251\345\255\220\346\227\266\345\273\266\344\270\216 LLM \346\217\220\344\276\233\345\225\206\351\231\220\346\265\201\345\275\222\345\233\240\347\240\224\347\251\266\346\212\245\345\221\212.md"
+A  plans/plan-20260712-1330-bun-1-3-14-runtime-upgrade.md
+M  scripts/architecture-event.ts
+M  src/cli/hook-entry.ts
+M  src/cli/hook/runtime.ts
+M  src/cli/index.ts
+A  src/cli/runtime/write-all-sync.ts
+A  tasks/contracts/20260712-1330-bun-1-3-14-runtime-upgrade.contract.md
+UU tasks/current.md
+A  tasks/notes/20260712-1330-bun-1-3-14-runtime-upgrade.notes.md
+A  tasks/reviews/20260712-1330-bun-1-3-14-runtime-upgrade.review.md
+M  tasks/todos.md
+A  tests/write-all-sync.test.ts
 ```
 
 ## Source Artifacts
