@@ -101,6 +101,7 @@
         ".ai/context/capabilities.json",
         "scripts/capability-resolver.ts",
         "scripts/capability-config.ts",
+        "scripts/contract-run.ts",
         "src/cli/commands/capability-context.ts",
         "assets/templates",
         "assets/reference-configs",
