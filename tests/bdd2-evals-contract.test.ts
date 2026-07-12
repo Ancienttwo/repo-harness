@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "fs";
 import { join } from "path";
-import { REPO_ROOT, sha256File, validateEvaluation } from "../scripts/run-bdd2-evals";
+import { REPO_ROOT, sha256File, validateEvaluation, verifyEvidenceProjection } from "../scripts/run-bdd2-evals";
 
 describe("BDD2 Phase E3 evaluation contract", () => {
   test("historical Phase E and E2 reports remain frozen", () => {
@@ -34,5 +34,12 @@ describe("BDD2 Phase E3 evaluation contract", () => {
     expect(evaluation.manifest.experiments.S3.result.report.path).toEndWith("experiment-s3.md");
     expect(evaluation.manifest.experiments.EB3.result.report.path).toEndWith("experiment-eb3.md");
     expect(evaluation.manifest.experiments.EI3.result.report.path).toEndWith("experiment-ei3.md");
+  });
+
+  test("tracked E3 evidence reproduces every terminal decision", () => {
+    const evaluation = validateEvaluation();
+    expect(verifyEvidenceProjection(evaluation, evaluation.manifest.experiments.S3.result.evidence.path)).toEqual({ experiment: "S3", decision: "Kill" });
+    expect(verifyEvidenceProjection(evaluation, evaluation.manifest.experiments.EB3.result.evidence.path)).toEqual({ experiment: "EB3", decision: "Kill" });
+    expect(verifyEvidenceProjection(evaluation, evaluation.manifest.experiments.EI3.result.evidence.path)).toEqual({ experiment: "EI3", decision: "Kill" });
   });
 });

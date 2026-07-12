@@ -4,7 +4,7 @@
 > **Plan**: plans/plan-20260713-0314-bdd2-phase-e3-scoring-authority.md
 > **Contract**: tasks/contracts/20260713-0314-bdd2-phase-e3-scoring-authority.contract.md
 > **Review**: tasks/reviews/20260713-0314-bdd2-phase-e3-scoring-authority.review.md
-> **Last Updated**: 2026-07-13 03:15
+> **Last Updated**: 2026-07-13 04:28
 > **Lifecycle**: notes
 
 ## Design Decisions
@@ -65,6 +65,16 @@
 - I3: `Defer — gated-not-run` because S3 and both adapters failed their gates.
 - Final authority freezes each tracked result and the original score-manifest hash;
   raw ignored score runs remain independently validateable after closeout.
+- Final cross-model review found three merge-blocking authority gaps: credential
+  delivery did not reassert an absolute Codex binary, normalized outcomes were only
+  self-hashed rather than re-derived, and tracked terminal evidence was not exercised
+  by `bun test`. E3 now fails closed on the Codex command, reconstructs every
+  normalized outcome from its frozen full response plus source task, structurally
+  validates source provenance, and reproduces all three `Kill` decisions in tests.
+- The same review identified unused numeric correction-cost authority that did not
+  match the reviewers' free-form correction descriptions. The dead cost table was
+  removed instead of inventing a post-hoc metric; correction descriptions remain
+  diagnostic and do not affect the sealed gate.
 
 ## Evidence Links
 

@@ -2,7 +2,7 @@
   "schema": "repo-harness-bdd2-evaluation.e3",
   "runner": {
     "path": "scripts/run-bdd2-evals.ts",
-    "sha256": "65180fe48bb24fd09650508c91bc186a8ea9295938241bad0d794fdc31dbc848"
+    "sha256": "6bec42bf0c8a20f6e7a4fa937652075aafd1a095dc757b4d729dd3c328657fb9"
   },
   "output_root": ".ai/harness/runs/bdd2",
   "source_corpus": {
@@ -272,18 +272,6 @@
         "path": "evals/bdd2/rubrics/imagegen-evidence-score-response-e3.schema.json",
         "sha256": "50ce7b20c11a77eae65289978761ff5406cb90ccf33dc8ad805ca06a01275754"
       }
-    },
-    "correction_costs": {
-      "remove_unsupported_behavior": 2,
-      "remove_user_decision": 2,
-      "restore_required_behavior": 3,
-      "restore_p0_p1_protected_concern": 8,
-      "restore_p2_p3_protected_concern": 4,
-      "correct_authority_tier": 3,
-      "correct_escalation_decision": 5,
-      "remove_tracked_behavior_artifact": 2,
-      "clarify_current_truth": 1,
-      "clarify_recovery_or_failure": 2
     }
   },
   "model_profile": {

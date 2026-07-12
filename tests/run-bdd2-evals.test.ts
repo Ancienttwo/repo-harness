@@ -7,6 +7,7 @@ import {
   buildOutcomeReviewerPacket,
   canonicalJson,
   opaquePacketId,
+  sha256File,
   sha256Text,
   validateEvaluation,
   validateOutcomeScore,
@@ -36,6 +37,13 @@ function neutralScore(overrides: Partial<OutcomeScore> = {}): OutcomeScore {
     notes: "frozen score",
     ...overrides,
   };
+}
+
+function materializeAuthorityMutation(mutateCorpus: (corpus: any) => void): string {
+  const root = join(REPO_ROOT, ".ai/harness/runs/bdd2", `test-e3-authority-${Date.now()}-${Math.random().toString(16).slice(2)}`); created.push(root);
+  const corpus = JSON.parse(readFileSync(join(REPO_ROOT, "evals/bdd2/evidence/e3/source-corpus.json"), "utf8")); mutateCorpus(corpus); write(join(root, "source-corpus.json"), corpus);
+  const manifest = JSON.parse(readFileSync(join(REPO_ROOT, "evals/bdd2/evaluation-manifest.json"), "utf8")); manifest.source_corpus = { path: relative(REPO_ROOT, join(root, "source-corpus.json")).replace(/\\/g, "/"), sha256: sha256File(join(root, "source-corpus.json")) }; write(join(root, "manifest.json"), manifest);
+  return relative(REPO_ROOT, join(root, "manifest.json")).replace(/\\/g, "/");
 }
 
 function materializeScoreRun(experiment: "S3" | "EB3" | "EI3", disagreeFirst = false): string {
@@ -107,6 +115,26 @@ describe("BDD2 Phase E3 authority", () => {
 
   test("score schema excludes proposal-only artifacts", () => {
     expect(() => validateOutcomeScore({ ...neutralScore(), unnecessary_tracked_artifact_count: 1 })).toThrow("keys must be exactly");
+  });
+
+  test("frozen authority rejects a non-codex credential recipient", () => {
+    const manifest = JSON.parse(readFileSync(join(REPO_ROOT, "evals/bdd2/evaluation-manifest.json"), "utf8"));
+    manifest.model_profile.command = "/usr/bin/env";
+    const root = join(REPO_ROOT, ".ai/harness/runs/bdd2", `test-e3-manifest-${Date.now()}`); created.push(root); write(join(root, "manifest.json"), manifest);
+    expect(() => validateEvaluation(REPO_ROOT, relative(REPO_ROOT, join(root, "manifest.json")))).toThrow("absolute codex CLI path");
+  });
+
+  test("source corpus cannot replace the deterministic normalized projection", () => {
+    const manifest = materializeAuthorityMutation((corpus) => {
+      corpus.rows[0].normalized_outcome.outcome.boundary_decision = "Kill";
+      corpus.rows[0].normalized_outcome_sha256 = sha256Text(canonicalJson(corpus.rows[0].normalized_outcome));
+    });
+    expect(() => validateEvaluation(REPO_ROOT, manifest)).toThrow("normalized outcome is not the deterministic full-response projection");
+  });
+
+  test("source corpus provenance is structurally validated", () => {
+    const manifest = materializeAuthorityMutation((corpus) => { corpus.sources[0].packet_count = "72"; });
+    expect(() => validateEvaluation(REPO_ROOT, manifest)).toThrow("provenance invalid");
   });
 
   test("complete score runs require fresh adjudication only on disagreement", () => {
