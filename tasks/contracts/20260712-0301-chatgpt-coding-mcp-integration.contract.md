@@ -1,6 +1,6 @@
 # Task Contract: chatgpt-coding-mcp-integration
 
-> **Status**: Fulfilled
+> **Status**: Partial
 > **Plan**: plans/plan-20260712-0301-chatgpt-coding-mcp-integration.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
@@ -17,7 +17,7 @@ The coding MCP feature and its authorization-runtime repair passed local, reposi
 
 ## Goal
 
-Replay the seven accepted coding MCP commits onto the rollout-retirement base, merge subsequently advanced `origin/main` through `3bf28a7`, preserve current main authorities while keeping the complete default-off coding profile and OAuth authorization-scoped runtime intact, pass all focused and root verification gates, refresh the existing PR #55, then mark it ready and squash-merge it into `main` without absorbing unrelated worktree state.
+Replay the seven accepted coding MCP commits onto the rollout-retirement base, merge subsequently advanced `origin/main` through `6b51e31`, preserve current main authorities while keeping the complete default-off coding profile and OAuth authorization-scoped runtime intact, pass all focused and root verification gates, refresh the existing PR #55, then mark it ready and squash-merge it into `main` without absorbing unrelated worktree state.
 
 ## Scope
 
@@ -27,6 +27,7 @@ Replay the seven accepted coding MCP commits onto the rollout-retirement base, m
   - Merge refreshed `origin/main@bb750141` and preserve its independent BDD² evaluation foundation; regenerate derived current/handoff state rather than carrying either stale snapshot forward.
   - Merge refreshed `origin/main@02079da`; rename its BDD² V0 PRD to the required timestamped catalog shape, add only the missing `Draft` status metadata, and update its two direct references. Do not rewrite the PRD body or otherwise change BDD² product intent.
   - Merge refreshed `origin/main@3bf28a7` and preserve PR #58's newer BDD² authority: the retained V0 lives under `plans/archive/`, its reference points there, and the integration branch's temporary catalog repair must disappear from the final diff.
+  - Merge refreshed `origin/main@6b51e31` and preserve PR #56's Bun 1.3.14 CI/runtime baseline and source-projection changes without introducing coding-MCP-specific compatibility paths.
   - Preserve current mainline removal of MCP rollout controls, candidate flags, and retired policy/type fields while layering the accepted coding-only profile, workspace/file/process tools, OAuth grant identity, docs, tests, and evidence.
   - Preserve the current Bun engine floor and add only the already-reviewed optional `node-pty` dependency; keep the lockfile deterministic.
   - Regenerate `tasks/current.md` and handoff/resume projections from the integrated state rather than selecting either stale side.
@@ -201,5 +202,5 @@ exit_criteria:
 
 ## Rollback Point
 
-- Commit / checkpoint: initial integration base `788ba60cca5e0072febc19833002a3ffe497b0a1`, refreshed main through `3bf28a7f1274ae7300b2e2088b2889a84b26a2c5`, source feature head `f3b546dc8ff9bb357f20d709aca51809cb3e3ad0`; local main generated-current hash after PR #58 `2ed794055cbd2ced1b7c5cbf1f1ff954401b1192d84ae4dc60ccafc4ffec5226`; preserved user-owned plan hash `4c3aeda0ca8b82fa95da5c91cf2bc829ba8eddeb62f99e5468678fcc20e6a786`.
+- Commit / checkpoint: initial integration base `788ba60cca5e0072febc19833002a3ffe497b0a1`, refreshed main through `6b51e31d067e3718ca772231f51026cf5d2e4ab7`, source feature head `f3b546dc8ff9bb357f20d709aca51809cb3e3ad0`; local main generated-current hash after PR #56 `f5d30528c2bb225aadcb0171a7183e550b577ea563019b1b0b73cc47a0f0f735`; preserved user-owned plan hash `4c3aeda0ca8b82fa95da5c91cf2bc829ba8eddeb62f99e5468678fcc20e6a786`.
 - Revert strategy: before merge, close PR #55 and preserve the isolated integration branch/worktree; after squash merge, revert only the PR #55 squash commit if required. Never alter the source feature branch or absorb unrelated worktrees.
