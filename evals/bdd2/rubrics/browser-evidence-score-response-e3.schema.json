@@ -5,7 +5,7 @@
   "additionalProperties": false,
   "required": ["schema", "packet_id", "score"],
   "properties": {
-    "schema": {"const": "repo-harness-bdd2-browser-evidence-score-response.e3"},
+    "schema": {"type": "string", "const": "repo-harness-bdd2-browser-evidence-score-response.e3"},
     "packet_id": {"type": "string", "minLength": 32, "maxLength": 32},
     "score": {
       "type": "object",

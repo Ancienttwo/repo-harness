@@ -5,7 +5,7 @@
   "additionalProperties": false,
   "required": ["schema", "packet_id", "score"],
   "properties": {
-    "schema": {"const": "repo-harness-bdd2-outcome-score-response.e3"},
+    "schema": {"type": "string", "const": "repo-harness-bdd2-outcome-score-response.e3"},
     "packet_id": {"type": "string", "minLength": 32, "maxLength": 32},
     "score": {
       "type": "object",
@@ -25,7 +25,7 @@
             "required": ["concern", "severity", "summary"],
             "properties": {
               "concern": {"type": "string", "minLength": 1},
-              "severity": {"enum": ["P0", "P1", "P2", "P3"]},
+              "severity": {"type": "string", "enum": ["P0", "P1", "P2", "P3"]},
               "summary": {"type": "string", "minLength": 1}
             }
           }

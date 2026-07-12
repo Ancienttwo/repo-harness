@@ -21,7 +21,7 @@
     "S3": {
       "kind": "inline-shape",
       "source_experiment": "S2",
-      "freeze_id": "bdd2-e3-s3-r1",
+      "freeze_id": "bdd2-e3-s3-r2",
       "expected_rows": 72,
       "metrics": {
         "path": "evals/bdd2/metrics/phase-e3-scoring-metrics.md",
@@ -31,7 +31,7 @@
     "EB3": {
       "kind": "browser-adapter",
       "source_experiment": "EB",
-      "freeze_id": "bdd2-e3-eb3-r1",
+      "freeze_id": "bdd2-e3-eb3-r2",
       "expected_rows": 24,
       "metrics": {
         "path": "evals/bdd2/metrics/phase-e3-scoring-metrics.md",
@@ -115,7 +115,7 @@
     "EI3": {
       "kind": "imagegen-adapter",
       "source_experiment": "EI",
-      "freeze_id": "bdd2-e3-ei3-r1",
+      "freeze_id": "bdd2-e3-ei3-r2",
       "expected_rows": 24,
       "metrics": {
         "path": "evals/bdd2/metrics/phase-e3-scoring-metrics.md",
@@ -229,15 +229,15 @@
     "schemas": {
       "outcome": {
         "path": "evals/bdd2/rubrics/outcome-score-response-e3.schema.json",
-        "sha256": "ca74d302eeceeb981a2d1ec42582baf381e6e728d5463c8d16a3e597c1258b28"
+        "sha256": "69bad6112ff5d871ed383b870539495e4c5eed8d4ca4bdb3db5819dc31671550"
       },
       "browser_evidence": {
         "path": "evals/bdd2/rubrics/browser-evidence-score-response-e3.schema.json",
-        "sha256": "f7446e3efc5957556e3cc6cd1d931bbc31f2629646e05377647c74a5329d2e42"
+        "sha256": "261c9588e53363789a326c6b5025344155514c01f39e6eac9a292135a10e2b9b"
       },
       "imagegen_evidence": {
         "path": "evals/bdd2/rubrics/imagegen-evidence-score-response-e3.schema.json",
-        "sha256": "b07b9587022b95e3be5ad634e7d8591c7d9a4c450f6db1502f911280315127a3"
+        "sha256": "50ce7b20c11a77eae65289978761ff5406cb90ccf33dc8ad805ca06a01275754"
       }
     },
     "correction_costs": {

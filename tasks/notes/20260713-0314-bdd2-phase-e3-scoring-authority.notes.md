@@ -22,7 +22,10 @@
 
 ## Deviations From Plan Or Spec
 
-- None recorded.
+- The first S3 transport attempt was rejected before any score was returned because
+  the response schema used `const` without the provider-required explicit string
+  `type`. The empty/partial ignored run was discarded and authority was resealed as
+  revision r2 before held-out scoring. No score or decision existed under r1.
 
 ## Tradeoffs Considered
 
