@@ -197,10 +197,9 @@ allowed_paths:
       isolated cwd/stdin delivery, leakage prevention, score errors, and gate math.
 - [x] Commit the final authority, update every frozen hash, and verify a clean HEAD.
 - [x] Execute the 72-coordinate held-out Shape run with the frozen Codex profile.
-- [ ] Obtain condition-blind owner-authorized Agent scores without exposing the private mapping.
-- [ ] Generate and verify the tracked Experiment S report and gate decision.
-- [ ] Complete review/notes/current/handoff, run required checks, commit, push, and
-      open the E-02 module PR.
+- [x] Obtain condition-blind owner-authorized Agent scores without exposing the private mapping.
+- [x] Generate and verify the tracked Experiment S report and gate decision.
+- [ ] Complete review/notes/current/handoff, run required checks, commit, push, and open the E-02 module PR.
 
 ## Exit Criteria
 

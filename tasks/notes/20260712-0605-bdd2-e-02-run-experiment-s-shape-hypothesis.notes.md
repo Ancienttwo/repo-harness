@@ -56,9 +56,41 @@
 
 ## Open Questions
 
-- Acceptance boundary: 72 owner-authorized condition-blind Agent scores are still
-  required. Review agents must not inspect private mappings, truth, prompts, sibling
-  batch scores, or the parent conversation.
+- None for E-02. The recorded decision is `Reshape`; a future Shape prompt revision
+  and rerun is a separate authority revision, not an edit to this result.
+
+## Experiment S Result
+
+- Panel: three condition-blind Agent reviewers with `fork_turns=none`, 24 unique
+  packets each and non-overlapping score directories; 72/72 scores validated before
+  reveal.
+- Decision: `Reshape`.
+- Unsupported expansion: 48 baseline vs 2 treatment, 95.8% reduction; paired
+  win/tie/loss 12/22/2.
+- Required behavior omission: 23 baseline vs 0 treatment; no stable new omission.
+- New treatment P0/P1 protected omission: 0.
+- Correction-time median: 10 minutes baseline vs 0 treatment.
+- Failed gate: one unnecessary tracked artifact. `S-H-12` repetition 1 escalated
+  an already-resolved cancellation/charging contract to PRD.
+- Remaining treatment expansions: `S-H-08` repetitions 1 and 2 required continued
+  offline editing beyond the supplied request/current truth.
+- Conclusion: the evidence supports narrowing the escalation trigger to unresolved
+  product decisions and tightening adjacent-capability handling before rerun. It
+  does not authorize Phase P productization.
+
+## Verification Exception
+
+- E-02 focused tests, TypeScript, manifest/plan validation, 72/72 score validation,
+  deterministic re-summary, deploy SQL, architecture sync, task sync, strict
+  workflow, project-state inspection, migration dry-run, and agent-tooling checks
+  pass.
+- The repository-wide `bun test` is not green on this macOS host under either the
+  installed Bun 1.3.14 or the CI-pinned Bun 1.3.10. The unchanged
+  `scripts/architecture-event.ts` calls `process.stdout.write(value)` immediately
+  followed by `process.exit(0)`; both local Bun builds emit only 512 bytes of the
+  event JSON, causing unrelated architecture-queue and hook-runtime tests to fail.
+  GitHub CI remains the authoritative Linux check for the PR; this slice does not
+  widen scope to repair that pre-existing runtime incompatibility.
 
 ## Evidence Links
 
@@ -70,6 +102,7 @@
   leakage in agent stderr.
 - Reviewer-safe queue: `.ai/harness/runs/bdd2/bdd2-e02-shape-s-v2-blind-review/`
   — 72 randomized packets plus frozen rubric/schema, with no private mapping.
+- Tracked aggregate report: `evals/bdd2/reports/experiment-s.md`.
 
 ## Promotion Filter
 

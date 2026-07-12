@@ -17,11 +17,13 @@
 - Change type: eval-only
 - Intended files changed: frozen BDD² eval authority/runner/data/rubric/metrics plus workflow artifacts
 - Actual files changed: matches contract allowed paths; raw evidence remains ignored
-- Commands passed: focused 12-test suite, TypeScript noEmit, manifest validation,
-  72-coordinate held-out run and structural evidence checks
-- External acceptance: pending owner-authorized blind Agent scores
-- Residual risks: no Shape product claim is valid until all 72 locked scores pass validation
-- Reviewer action required: complete the reviewer-safe blind queue without reading private mappings; label results Agent-panel proxy evidence
+- Commands passed: focused 12-test suite, TypeScript noEmit, manifest/plan
+  validation, score validation, deterministic re-summary, deploy SQL,
+  architecture/task/workflow checks, project inspection, migration dry-run, and
+  agent-tooling check
+- External acceptance: owner authorized the Agent-panel protocol deviation; PR-level external review pending
+- Residual risks: Agent-panel proxy evidence is weaker than the original human-panel design and must not be cited as human evidence
+- Reviewer action required: inspect the deterministic report, protocol deviation, code diff, and full verification evidence
 - Rollback: revert the E-02 branch; delete ignored raw run evidence
 
 ## Mode Evidence
@@ -35,11 +37,18 @@
 
 - Waza `/check` run:
 - Commands run: `bunx tsc --noEmit --pretty false`; focused Bun tests; manifest
-  validate/plan; one S-v2 real smoke; formal 72-coordinate S run; structural jq checks
+  validate/plan; one S-v2 real smoke; formal 72-coordinate S run; score validation;
+  deterministic re-summary; root required shell/workflow checks; repository-wide
+  Bun test under local 1.3.14 and CI-pinned 1.3.10
 - Manual checks:
 - Supporting artifacts: `.ai/harness/runs/bdd2/bdd2-e02-shape-s-v2/`
-- Implementation notes reviewed: yes, pending final blind adjudication
+- Implementation notes reviewed: yes; blind adjudication complete
 - Run snapshot: source commit `cd9e0426d362614ba277e067633db2596c236491`
+- Repository-wide check exception: unchanged `scripts/architecture-event.ts` emits
+  a truncated 512-byte JSON payload on this macOS host because stdout is followed
+  immediately by process exit. The resulting unrelated architecture-queue and
+  hook-runtime failures reproduce under Bun 1.3.14 and CI-pinned 1.3.10; PR Linux
+  CI is required before acceptance.
 
 ## External Acceptance Advice
 
@@ -50,38 +59,39 @@
 > **External Completed**:
 
 - P1 blockers:
-- 72 locked condition-blind owner-authorized Agent scores are not yet present.
+- None in the Experiment S data path; PR-level review remains pending.
 - P2 advisories:
-- Acceptance checklist: do not reveal `private/` until every score validates
+- Acceptance checklist: 72/72 scores validated before reveal; report labels Agent-panel proxy evidence; decision remains `Reshape`
 
 ## Behavior Diff Notes
 
-- 72 responses exist and remain unscored by the implementation owner. No
-  Pass/Reshape/Kill claim is recorded yet.
+- 72 responses and 72 locked Agent-panel scores produced the deterministic
+  `Reshape` report. The implementation owner did not score packets.
 
 ## Residual Risks / Follow-ups
 
-- Owner-authorized blind Agent-panel scoring is the only current acceptance blocker.
+- Agent-panel proxy evidence remains a known evidence-grade limitation; no Phase P
+  productization is authorized from this E-02 result.
 
 ## Scorecard
 
 | Dimension | Score | Notes |
 |-----------|-------|-------|
-| Functionality | 7/10 | Runner and 72-output evidence complete; score gate pending. |
+| Functionality | 9/10 | Runner, 72 outputs, 72 scores, aggregate report, and decision complete. |
 | Product depth | 8/10 | Independent hypothesis, omission counter-metrics, and kill rules preserved. |
 | Design quality | 8/10 | Per-experiment seal and isolated HOME/cwd prevent two concrete leakage modes. |
 | Code quality | 8/10 | Dependency-free exact schemas and deterministic aggregation tests pass. |
 
 ## Failing Items
 
-- Missing required owner-authorized blind Agent scores and aggregate decision report.
+- PR-level external review and authoritative Linux CI are pending.
 
 ## Retest Steps
 
 - Re-run: `bun scripts/run-bdd2-evals.ts validate-scores --experiment S --run .ai/harness/runs/bdd2/bdd2-e02-shape-s-v2`
-- Re-check: summarize only after the 72-file score set validates.
+- Re-check: rerun summarization and compare the generated metrics with `evals/bdd2/reports/experiment-s.md`.
 
 ## Summary
 
-- Authority and model run are complete. Review remains fail/pending by design until
-  owner-authorized blind Agent adjudication closes the proxy product gate.
+- Authority, model run, Agent-panel adjudication, and `Reshape` decision are
+  complete. Final recommendation awaits authoritative PR CI and external review.

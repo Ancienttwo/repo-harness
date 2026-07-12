@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-12T07:23:43+0800 -->
+<!-- updated_at: 2026-07-12T12:55:31+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-07-12T07:23:43+0800
+> **Updated At**: 2026-07-12T12:55:31+0800
 > **Source Branch**: codex/bdd2-shape-experiment
-> **Source Commit**: cd9e042
+> **Source Commit**: 94bd580
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: bdd2-e02-awaiting-blind-panel
+> **Reason**: bdd2-e02-reshape-decision
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -20,7 +20,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Status: Active
 - Active Plan: plans/plan-20260712-0605-bdd2-e-02-run-experiment-s-shape-hypothesis.md
 - Plan Status: Executing
-- Next Task: Obtain condition-blind human scores without exposing the private mapping.
+- Next Task: Complete review/notes/current/handoff, run required checks, commit, push, and
 - Clear Note: (none)
 
 ## Mainline Snapshot Reading
@@ -50,7 +50,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/20260703-inspection-migration.md`: status=active, current_slice=completed-20260703-architecture-closeout, source_plan=(none)
 ## Handoff
 
-- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Commit the final authority, update every frozen hash, and verify a clean HEAD.
+- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Obtain condition-blind human scores without exposing the private mapping.
 
 ## Checks
 
@@ -58,12 +58,13 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 3 changed/untracked path(s)
+- Summary: 4 changed/untracked path(s)
 
 ```
  M plans/plan-20260712-0605-bdd2-e-02-run-experiment-s-shape-hypothesis.md
  M tasks/notes/20260712-0605-bdd2-e-02-run-experiment-s-shape-hypothesis.notes.md
  M tasks/reviews/20260712-0605-bdd2-e-02-run-experiment-s-shape-hypothesis.review.md
+?? evals/bdd2/reports/
 ```
 
 ## Source Artifacts
