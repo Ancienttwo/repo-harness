@@ -5,10 +5,10 @@
 > **Contract**: tasks/contracts/20260712-2327-harness-kernel-reduction.contract.md
 > **Notes File**: tasks/notes/20260712-2327-harness-kernel-reduction.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-07-13 14:13
+> **Last Updated**: 2026-07-13 15:27
 > **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Diff Fingerprint**: sha256:6333799ca7e94298065de614c98408be828ec47ea921b88fcbee762155e03d1a
+> **Reviewed Diff Fingerprint**: sha256:d03cb529ef02a4c9dd62a6d861410ba2cca13216a30a05987ea133c17811ae1a
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 ## Human Review Card
@@ -42,11 +42,11 @@
 
 > **External Acceptance**: pass
 > **External Reviewer**: Codex + Claude
-> **External Source**: native-subagent/fix_circuit_lock + claude-cli/fixture-timeout-task-sync-deltas
+> **External Source**: native-subagent/fix_circuit_lock + claude-cli/fixture-timeout-task-sync-main-integration
 > **External Started**: 2026-07-13T06:30:00+0800
-> **External Completed**: 2026-07-13T14:13:00+0800
+> **External Completed**: 2026-07-13T15:27:00+0800
 > **Review Rubric Version**: 2
-> **Reviewed Diff Fingerprint**: sha256:6333799ca7e94298065de614c98408be828ec47ea921b88fcbee762155e03d1a
+> **Reviewed Diff Fingerprint**: sha256:d03cb529ef02a4c9dd62a6d861410ba2cca13216a30a05987ea133c17811ae1a
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 - P1 blockers: none. Earlier findings covering unsafe lock reclaim, mandatory-context loss, incomplete transaction compensation, and stale report provenance were fixed and re-reviewed.
