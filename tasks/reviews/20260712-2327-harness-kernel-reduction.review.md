@@ -8,7 +8,7 @@
 > **Last Updated**: 2026-07-13 12:08
 > **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Diff Fingerprint**: sha256:dbad6095c8967f17b2f45085caf1228609ea6b5d154ed2435d43312a5e3f5254
+> **Reviewed Diff Fingerprint**: sha256:6910db4b5f7033cc273348c58b8ce9ffcfae9413cff2aadbfc571dea484805c2
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 ## Human Review Card
@@ -46,7 +46,7 @@
 > **External Started**: 2026-07-13T06:30:00+0800
 > **External Completed**: 2026-07-13T12:08:00+0800
 > **Review Rubric Version**: 2
-> **Reviewed Diff Fingerprint**: sha256:dbad6095c8967f17b2f45085caf1228609ea6b5d154ed2435d43312a5e3f5254
+> **Reviewed Diff Fingerprint**: sha256:6910db4b5f7033cc273348c58b8ce9ffcfae9413cff2aadbfc571dea484805c2
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 - P1 blockers: none. Earlier findings covering unsafe lock reclaim, mandatory-context loss, incomplete transaction compensation, and stale report provenance were fixed and re-reviewed.
