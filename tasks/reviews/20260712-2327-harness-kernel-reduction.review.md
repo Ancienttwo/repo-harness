@@ -42,7 +42,7 @@
 
 > **External Acceptance**: pass
 > **External Reviewer**: Claude
-> **External Source**: native-subagent/fix_circuit_lock + claude-cli/fixture-timeout-task-sync-main-integration-final-runtime-isolation-benchmark-prompt-final-evidence-scoped-source-fingerprint
+> **External Source**: claude-review
 > **External Started**: 2026-07-13T06:30:00+0800
 > **External Completed**: 2026-07-14T00:41:49+0800
 > **Review Rubric Version**: 2
