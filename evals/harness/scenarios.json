@@ -20,7 +20,7 @@
     {
       "id": "cross-capability-feature",
       "category": "cross-capability-feature",
-      "prompt": "This cross-capability implementation is approved. Follow the required Standard workflow and create its required workflow artifacts without asking for further approval; then add src/status-format.ts with a shared formatter that renders status values as `STATUS: <UPPERCASE>`, use it from src/api/status.ts and src/ui/status.ts, and run the focused consumer test.",
+      "prompt": "This cross-capability implementation is approved. Follow the workflow profile selected by the environment and create only the artifacts that profile requires, without asking for further approval. Stay inside the benchmark workspace: do not search the host filesystem, inspect installed package internals, or write host memory. Add src/status-format.ts with a shared formatter that renders status values as `STATUS: <UPPERCASE>`, use it from src/api/status.ts and src/ui/status.ts, run the focused consumer test and any required completion gates, then stop without unrelated full-suite or cleanup work.",
       "expected_paths": ["src/api/status.ts", "src/ui/status.ts", "src/status-format.ts"],
       "acceptance_command": "bun test tests/status.test.ts"
     },

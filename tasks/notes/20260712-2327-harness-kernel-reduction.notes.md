@@ -188,6 +188,20 @@
   those repo-harness-specific paths before the exclusion could apply. Adding a
   general policy surface for that hypothetical case would create a second
   configuration authority for a single consumer.
+- The eighth verifier passed every focused suite, the full `bun test`, typecheck,
+  deploy/architecture/task-sync checks, inspector, and adoption dry-run. One
+  Strict cross-capability provider run became non-authoritative after the model
+  completed its implementation and grader path but then searched the entire
+  host filesystem for package internals for more than eleven minutes. The
+  operator terminated that isolated provider tool/process; the report honestly
+  records exit 143, unavailable provider usage, and `authoritative=false`.
+  Root cause was an internally contradictory scenario instruction: it required
+  `Standard` workflow even inside the explicitly Strict arm and left the stop
+  boundary implicit. The scenario now tells every arm to follow the profile
+  selected by its environment, stay inside the disposable workspace, and stop
+  after its focused test plus required completion gates. This preserves the
+  task and acceptance command while removing host archaeology from the measured
+  workload; no product safety or quantitative gate changed.
 - Before the next retry, `origin/main` advanced to PR67 (`4e3e76a2`). The branch
   rebased cleanly; an external git review found zero overlap with the new
   configurable deploy-SQL policy and verified its scripts, policy, Skill, and

@@ -22,6 +22,11 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
     expect(manifest.profiles).toEqual([...BENCHMARK_PROFILES]);
     expect(manifest.scenarios).toHaveLength(9);
     expect(new Set(manifest.scenarios.map((scenario) => scenario.category)).size).toBe(9);
+    const crossCapability = manifest.scenarios.find((scenario) => scenario.category === 'cross-capability-feature');
+    expect(crossCapability?.prompt).toContain('workflow profile selected by the environment');
+    expect(crossCapability?.prompt).toContain('Stay inside the benchmark workspace');
+    expect(crossCapability?.prompt).toContain('then stop without unrelated full-suite or cleanup work');
+    expect(crossCapability?.prompt).not.toContain('required Standard workflow');
   });
 
   test('No Harness command isolates user config and rules; harness arms do not', () => {
