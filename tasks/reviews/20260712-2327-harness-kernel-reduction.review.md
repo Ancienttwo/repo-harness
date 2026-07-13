@@ -49,7 +49,8 @@
 > **Reviewed Diff Fingerprint**: sha256:f563c9ba1428f675a9c7714f665811d94caaa32d2fb537dbe074166e797297d7
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
-- P1 blockers: none. Earlier findings covering unsafe lock reclaim, mandatory-context loss, incomplete transaction compensation, and stale report provenance were fixed and re-reviewed.
+- P1 blockers: none
+- Earlier P1 findings covering unsafe lock reclaim, mandatory-context loss, incomplete transaction compensation, and stale report provenance were fixed and re-reviewed.
 - P2 advisories: one accepted residual. The product helper excludes only the exact self-host report pair from task-sync; a downstream repo would have to create those repo-harness-specific paths before the narrow exclusion could apply. A general policy/second authority is not justified for that hypothetical single consumer. Earlier ownership/profile-exclusion and test-fixture findings were fixed and re-reviewed.
 - Latest timeout-delta review: pass. The 30-second bound is test-only and now applies per-test only to the four process/lock cases; the five pure unit tests retain Bun's 5-second default. Production lock timeout and every guard/review/subagent/repair/consult cap remain unchanged.
 - Latest task-sync delta review: pass. The exclusion names only the two generated report files, exact byte/provenance binding remains fail-closed, and regressions prove neither source changes nor sibling report files can hide behind it. Both P2 advisories were closed before this fingerprint was recorded.
