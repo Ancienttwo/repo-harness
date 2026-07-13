@@ -4,7 +4,7 @@
 > **Plan**: plans/plan-20260712-2327-harness-kernel-reduction.md
 > **Contract**: tasks/contracts/20260712-2327-harness-kernel-reduction.contract.md
 > **Review**: tasks/reviews/20260712-2327-harness-kernel-reduction.review.md
-> **Last Updated**: 2026-07-12 23:28
+> **Last Updated**: 2026-07-13 08:05
 > **Lifecycle**: notes
 
 ## Design Decisions
@@ -66,9 +66,25 @@
   come from one fresh command, one run ID, one source commit, one Claude version,
   and one runner/manifest/fixture revision. No record was regraded into the final
   report.
-- The final report was regenerated after the concurrency, context-budget, and
-  install-ownership review fixes. All 27 records use run ID
-  `0fadcb29-ae98-4082-8525-f62d3d2670cd` and source commit `2061e6d1`.
+- A post-fix retry truthfully failed one Adaptive cross-capability grader when
+  the provider stopped at the expected Standard Plan gate rather than creating
+  the authorized artifacts. That non-authoritative attempt was retained in Git
+  history, not promoted as final evidence; the next clean full matrix passed.
+- The final report was regenerated after the concurrency, context-budget,
+  install-ownership, and profile-exclusion review fixes. All 27 records use run
+  ID `04a5e4b3-ba68-475e-b84a-ad6262179c5d` and source commit `09df8386`.
+- Closeout exposed an evidence self-invalidation loop: `verify-contract` must
+  regenerate the tracked authoritative matrix, while review freshness treated
+  those two generated reports as implementation. They now share the established
+  operational-evidence exclusion used by checks/runs; report source commit,
+  runner/manifest/fixture hashes, provider usage, graders, and external review
+  remain the integrity boundary. A regression proves report-only regeneration
+  cannot stale an otherwise unchanged implementation review.
+- Native independent review found and drove closure of concurrency, critical
+  context preservation, transaction compensation, ownership, Strict projection,
+  and product-planning exclusion defects. Its final pass found no P1/P2. The
+  separate Claude review command timed out without a recoverable verdict, so it
+  is recorded as unavailable rather than silently counted as acceptance.
 
 ## Tradeoffs Considered
 

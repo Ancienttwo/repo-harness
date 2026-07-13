@@ -152,6 +152,10 @@ hook wall time from hot-path spans, and grades changed files plus the explicit
 workflow-artifact path contract. The checked-in report is
 `evals/harness/reports/profile-comparison.{json,md}`; it is replaced only by a
 complete authoritative matrix, never by a partial or dry-run result.
+The two generated comparison files are verification evidence, so regenerating
+them is excluded from implementation review freshness just like checks and run
+cache; their own source commit, input hashes, provider authority, graders, and
+external acceptance remain the evidence-integrity boundary.
 
 Provider request/model-call count, native subagent count, and true
 time-to-first-edit remain unavailable when the provider CLI does not expose

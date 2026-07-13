@@ -106,6 +106,28 @@ describe('review freshness fingerprint', () => {
     }
   });
 
+  test('excludes regenerated authoritative harness reports from review freshness', () => {
+    const repo = tmpRepo('repo-harness-review-freshness-report');
+    try {
+      mkdirSync(join(repo, 'evals', 'harness', 'reports'), { recursive: true });
+      writeFileSync(join(repo, 'evals', 'harness', 'reports', 'profile-comparison.json'), '{"run":1}\n');
+      writeFileSync(join(repo, 'evals', 'harness', 'reports', 'profile-comparison.md'), '# Run 1\n');
+      const before = buildImplementationDiffFingerprint(repo, { baseRef: 'HEAD' });
+
+      writeFileSync(join(repo, 'evals', 'harness', 'reports', 'profile-comparison.json'), '{"run":2}\n');
+      writeFileSync(join(repo, 'evals', 'harness', 'reports', 'profile-comparison.md'), '# Run 2\n');
+      const after = buildImplementationDiffFingerprint(repo, { baseRef: 'HEAD' });
+
+      expect(after.fingerprint).toBe(before.fingerprint);
+      expect(after.excluded_paths).toEqual([
+        'evals/harness/reports/profile-comparison.json',
+        'evals/harness/reports/profile-comparison.md',
+      ]);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
   test('includes untracked file content in the fingerprint', () => {
     const cwd = tmpRepo('repo-harness-review-freshness-untracked');
     try {

@@ -49,16 +49,16 @@ structured usage and every deterministic grader passed (27/27). The benchmark
 runner isolated each harness install under a disposable `HOME`/settings and
 `BUN_INSTALL`; No Harness additionally proved zero hooks and an empty structured
 Claude init inventory for Skills, plugins, MCP servers, and slash commands. All
-27 records share run ID `0fadcb29-ae98-4082-8525-f62d3d2670cd`, source commit
-`2061e6d1`, provider version `2.1.207`, and the runner/manifest/fixture hashes
+27 records share run ID `04a5e4b3-ba68-475e-b84a-ad6262179c5d`, source commit
+`09df8386`, provider version `2.1.207`, and the runner/manifest/fixture hashes
 recorded in the JSON and Markdown reports. The initial Codex attempt exhausted
 its account quota, so it is not mixed into this report.
 
 | Profile | Success | Input | Cached input | Output | Model calls | Duration | Hook calls | Hook time | Hook bytes | Guard blocks | Artifacts |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| No Harness | 9/9 | 33,767 | 1,180,955 | 10,535 | 51 | 215 s | 0 | 0 s | 0 | 0 | 0 |
-| Adaptive Lite | 9/9 | 108,763 | 1,369,913 | 21,922 | 73 | 500 s | 186 | 60 s | 34,369 | 4 | 10 |
-| Strict Harness | 9/9 | 81,399 | 842,148 | 13,386 | 54 | 360 s | 148 | 49 s | 29,973 | 0 | 0 |
+| No Harness | 9/9 | 34,064 | 1,231,835 | 10,819 | 53 | 215 s | 0 | 0 s | 0 | 0 | 0 |
+| Adaptive Lite | 9/9 | 79,208 | 1,304,582 | 20,206 | 68 | 517 s | 180 | 57 s | 34,054 | 4 | 10 |
+| Strict Harness | 9/9 | 70,883 | 751,894 | 12,513 | 49 | 354 s | 141 | 48 s | 29,658 | 0 | 0 |
 
 Cross-session recovery passed in all three profiles. Adaptive Lite produced no
 workflow artifacts for the small bug, ordinary feature, Chinese prompt,
@@ -68,7 +68,7 @@ Strict (five artifacts), which accounts for all ten Adaptive artifacts.
 
 This matrix proves behavior and measures cost; it does **not** prove a cost win.
 On this provider/sample, No Harness was fastest and smallest. Adaptive Lite used
-35,900 more input+output tokens than Strict and also more model calls, duration,
+16,018 more input+output tokens than Strict and also more model calls, duration,
 hooks, and hook time; it is not a performance win. The result must remain visible
 rather than being normalized away: the next optimization target is hook cold
 path and Standard/Strict artifact construction cost, not weaker safety gates.
@@ -89,3 +89,11 @@ evidence instead of rebinding mutable evidence to current code. Strict now
 projects the bundled cross-review Skill independently of marketplace Waza and
 Mermaid selection, so its installed-state probe and declared component set stay
 consistent.
+
+The closeout verifier also exposed a workflow-level cycle: executing the matrix
+rewrites its two tracked reports, which previously changed the implementation
+fingerprint during the same verification. Those generated reports are now
+classified with checks/runs as operational evidence for review freshness. Their
+own commit and content hashes, structured provider authority, deterministic
+graders, and external acceptance continue to fail closed; product source,
+runner, manifest, fixtures, and documentation remain fingerprinted normally.

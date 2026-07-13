@@ -196,7 +196,7 @@ Stop only after verified full completion or a blocker that requires a new user d
 - [x] WP6 Root Skill and five-action discovery cutover.
 - [x] WP7 Live hook evidence and streaming benchmark runner.
 - [x] WP8 Nine scenarios and isolated three-profile benchmark projections.
-- [ ] WP9 Full matrix, durable reports, migrations, architecture, external acceptance and closeout.
+- [x] WP9 Full matrix, durable reports, migrations, architecture, external acceptance and closeout.
 
 ## Annotations
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->

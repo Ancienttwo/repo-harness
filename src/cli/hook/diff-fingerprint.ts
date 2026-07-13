@@ -354,6 +354,8 @@ function isOperationalReviewPath(path: string): boolean {
     path.startsWith('.ai/harness/planning/') ||
     path.startsWith('.ai/harness/runs/') ||
     path.startsWith('.ai/harness/state/') ||
+    path === 'evals/harness/reports/profile-comparison.json' ||
+    path === 'evals/harness/reports/profile-comparison.md' ||
     path === '.claude/.active-plan' ||
     path === '.claude/.session-id' ||
     path === '.claude/.trace.jsonl' ||
