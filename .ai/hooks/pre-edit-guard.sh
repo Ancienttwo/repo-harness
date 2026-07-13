@@ -80,12 +80,34 @@ if [[ "$FILE_PATH" == deploy/* ]]; then
 fi
 
 resolve_edit_workflow_profile() {
-  local source_cli output args
+  local source_cli output args target_paths patch_command patch_paths path
   source_cli="$(cd "$SCRIPT_DIR/../.." 2>/dev/null && pwd)/src/cli/index.ts"
-  args=(state resolve --json --target-path "$FILE_PATH" --operation edit)
+
+  # A recursive apply_patch expansion still carries the original patch command
+  # in its payload (see the expansion loop above). Re-extract the full batch
+  # path set so every recursive check evaluates the same atomic action's full
+  # pending write scope instead of only its own single expanded path — batch
+  # siblings are not yet on disk, so the diff-merge in state-snapshot.ts can't
+  # see them on its own. Non-patch edits keep the single-path call untouched.
+  target_paths=()
+  patch_command=""
+  if [[ "${REPO_HARNESS_APPLY_PATCH_PATH_EXPANDED:-0}" == "1" ]]; then
+    patch_command="$(hook_json_get '.tool_input.command' '')"
+  fi
+  if [[ -n "$patch_command" ]]; then
+    patch_paths="$(hook_get_apply_patch_paths | sed '/^[[:space:]]*$/d')"
+    while IFS= read -r path || [[ -n "$path" ]]; do
+      [[ -n "$path" ]] || continue
+      target_paths+=("$path")
+    done <<< "$patch_paths"
+  fi
+  [[ "${#target_paths[@]}" -gt 0 ]] || target_paths=("$FILE_PATH")
+
+  args=(state resolve --json)
   if [[ -n "${REPO_HARNESS_WORKFLOW_PROFILE:-}" ]]; then
     args+=(--profile "$REPO_HARNESS_WORKFLOW_PROFILE")
   fi
+  args+=(--operation edit --target-path "${target_paths[@]}")
   if [[ -n "${REPO_HARNESS_CLI:-}" && -f "${REPO_HARNESS_CLI:-}" ]] && command -v bun >/dev/null 2>&1; then
     output="$(bun "$REPO_HARNESS_CLI" "${args[@]}" 2>/dev/null || true)"
   elif command -v repo-harness >/dev/null 2>&1; then
