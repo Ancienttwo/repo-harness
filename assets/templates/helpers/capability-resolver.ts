@@ -166,6 +166,13 @@ export function readRegistry(repo: string): CapabilityRegistry {
     throw new Error(`malformed capability registry: ${DEFAULT_REGISTRY}: expected an object`);
   }
   const registry = parsed as Partial<CapabilityRegistry>;
+  // Canonical version gate: this exact `!== 1` check is mirrored (not
+  // shared -- this file's throw-based, git-shelling-out load path is not a
+  // fit for the harness's own hot edit-guard path) by
+  // src/cli/hook/state-snapshot.ts's capabilityIdsForPaths(), which has a
+  // reciprocal comment pointing back here. Keep both in sync; drift is
+  // caught by tests/effective-state.test.ts's "registry validation parity
+  // with capability-resolver.ts" describe block.
   if (registry.version !== 1) {
     throw new Error(`malformed capability registry: ${DEFAULT_REGISTRY}: version must be 1`);
   }
@@ -182,6 +189,13 @@ export function readRegistry(repo: string): CapabilityRegistry {
   return registry as CapabilityRegistry;
 }
 
+// The id-non-empty and prefixes-non-empty rules below are mirrored (not
+// shared) by src/cli/hook/state-snapshot.ts's capabilityIdsForPaths(), which
+// has a reciprocal comment pointing back here -- that resolver only mirrors
+// these two fields' rules, not the other required-string/contract_files
+// checks below, since it has no use for them. Keep the id/prefixes rules in
+// sync; drift is caught by tests/effective-state.test.ts's "registry
+// validation parity with capability-resolver.ts" describe block.
 function validateCapability(capability: Capability, repo: string): string[] {
   const errors: string[] = [];
   const requiredStrings: Array<[keyof Capability, string]> = [

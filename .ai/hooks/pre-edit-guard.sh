@@ -80,27 +80,64 @@ if [[ "$FILE_PATH" == deploy/* ]]; then
 fi
 
 resolve_edit_workflow_profile() {
-  local source_cli output args
+  local source_cli output args target_paths patch_command patch_paths path cli_status
   source_cli="$(cd "$SCRIPT_DIR/../.." 2>/dev/null && pwd)/src/cli/index.ts"
-  args=(state resolve --json --target-path "$FILE_PATH" --operation edit)
+
+  # A recursive apply_patch expansion still carries the original patch command
+  # in its payload (see the expansion loop above). Re-extract the full batch
+  # path set so every recursive check evaluates the same atomic action's full
+  # pending write scope instead of only its own single expanded path — batch
+  # siblings are not yet on disk, so the diff-merge in state-snapshot.ts can't
+  # see them on its own. Non-patch edits keep the single-path call untouched.
+  target_paths=()
+  patch_command=""
+  if [[ "${REPO_HARNESS_APPLY_PATCH_PATH_EXPANDED:-0}" == "1" ]]; then
+    patch_command="$(hook_json_get '.tool_input.command' '')"
+  fi
+  if [[ -n "$patch_command" ]]; then
+    patch_paths="$(hook_get_apply_patch_paths | sed '/^[[:space:]]*$/d')"
+    while IFS= read -r path || [[ -n "$path" ]]; do
+      [[ -n "$path" ]] || continue
+      target_paths+=("$path")
+    done <<< "$patch_paths"
+  fi
+  [[ "${#target_paths[@]}" -gt 0 ]] || target_paths=("$FILE_PATH")
+
+  # --field workflow_profile is a pure output projection on top of the same
+  # resolver (src/cli/commands/state.ts): it prints just the resolved profile
+  # instead of the full JSON document, so this needs exactly one Bun cold
+  # start instead of one to resolve state plus a second `bun -e` just to
+  # parse `workflow_profile` back out of the JSON it already produced.
+  args=(state resolve --json --field workflow_profile)
   if [[ -n "${REPO_HARNESS_WORKFLOW_PROFILE:-}" ]]; then
     args+=(--profile "$REPO_HARNESS_WORKFLOW_PROFILE")
   fi
+  args+=(--operation edit --target-path "${target_paths[@]}")
+  # The CLI's real exit code is the authoritative blocked/ok signal (state.ts
+  # exits non-zero whenever `blockers` is non-empty, e.g. an invalid capability
+  # registry) -- it must be captured, not discarded, or a blocker that still
+  # happens to leave a resolvable profile value on stdout (registry corruption
+  # alongside an otherwise-valid risk floor) silently bypasses every downstream
+  # guard. set +e/-e brackets the call so a non-zero exit here does not trip
+  # this script's own `set -e` before the status can be read (same idiom as
+  # the apply_patch recursion above).
+  set +e
   if [[ -n "${REPO_HARNESS_CLI:-}" && -f "${REPO_HARNESS_CLI:-}" ]] && command -v bun >/dev/null 2>&1; then
-    output="$(bun "$REPO_HARNESS_CLI" "${args[@]}" 2>/dev/null || true)"
+    output="$(bun "$REPO_HARNESS_CLI" "${args[@]}" 2>/dev/null)"
+    cli_status=$?
   elif command -v repo-harness >/dev/null 2>&1; then
-    output="$(repo-harness "${args[@]}" 2>/dev/null || true)"
+    output="$(repo-harness "${args[@]}" 2>/dev/null)"
+    cli_status=$?
   elif [[ -f "$source_cli" ]] && command -v bun >/dev/null 2>&1; then
-    output="$(bun "$source_cli" "${args[@]}" 2>/dev/null || true)"
+    output="$(bun "$source_cli" "${args[@]}" 2>/dev/null)"
+    cli_status=$?
   else
     output=""
+    cli_status=1
   fi
-  [[ -n "$output" ]] || return 1
-  if command -v jq >/dev/null 2>&1; then
-    printf '%s' "$output" | jq -r '.workflow_profile // empty'
-  elif command -v bun >/dev/null 2>&1; then
-    STATE_JSON="$output" bun -e 'const s=JSON.parse(process.env.STATE_JSON); if (s.workflow_profile) console.log(s.workflow_profile)'
-  fi
+  set -e
+  [[ "$cli_status" -eq 0 && -n "$output" ]] || return 1
+  printf '%s' "$output"
 }
 
 WORKFLOW_PROFILE="$(resolve_edit_workflow_profile || true)"
@@ -132,6 +169,11 @@ fi
 
 # Workflow surfaces (plans, tasks, docs, harness state, markdown) stay
 # editable without an active plan; everything else is an implementation edit.
+# Canonical source: src/cli/hook/diff-fingerprint.ts's
+# WORKFLOW_SURFACE_DIR_PREFIXES / WORKFLOW_SURFACE_EXTENSIONS
+# (isWorkflowSurfacePath / isImplementationSurfacePath). This case list must
+# stay in the same shape as that TS source; `bun run check:hooks`
+# (scripts/sync-hook-sources.ts) fails on drift between the two.
 is_workflow_surface_path() {
   case "$1" in
     plans/*|tasks/*|docs/*|.ai/*|.claude/*|.codex/*) return 0 ;;

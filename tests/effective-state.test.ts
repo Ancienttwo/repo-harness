@@ -29,6 +29,18 @@ function write(cwd: string, path: string, content: string): void {
   writeFileSync(join(cwd, path), content);
 }
 
+// Commits a fixture write so it lands on HEAD instead of staying an
+// uncommitted diff. Needed for files (like .ai/context/capabilities.json)
+// that the resolver itself might otherwise pick up as an "observed target
+// path" via buildImplementationDiffFingerprint's branch/status scan --
+// polluting the very capability-mapping input the test is trying to control.
+function commitFixture(cwd: string, message: string): void {
+  for (const args of [['add', '.'], ['commit', '-m', message]]) {
+    const git = spawnSync('git', args, { cwd, encoding: 'utf-8' });
+    if (git.status !== 0) throw new Error(git.stderr);
+  }
+}
+
 function withRepo(fn: (cwd: string) => void): void {
   const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-effective-')));
   try {
@@ -330,6 +342,387 @@ describe('effective state resolver', () => {
       const state = resolveFixtureState(cwd);
       expect(state.task_id).toBe('20260712-2327-effective-fixture');
       expect(() => readFileSync(join(cwd, '.ai/harness/state/effective.lock'), 'utf-8')).toThrow();
+    });
+  });
+
+  test('--field workflow_profile prints only the resolved profile value, matching the full JSON field', () => {
+    withRepo((cwd) => {
+      const full = resolveFixtureState(cwd);
+      const fieldOutput = spawnSync(process.execPath, [
+        CLI, 'state', 'resolve', '--json', '--field', 'workflow_profile',
+        '--target-path', 'src/feature.ts', '--operation', 'feature',
+      ], { cwd, encoding: 'utf-8' });
+      expect(fieldOutput.status).toBe(0);
+      expect(fieldOutput.stdout).toBe(`${full.workflow_profile}\n`);
+      expect(fieldOutput.stdout).not.toContain('{');
+      expect(fieldOutput.stderr).toBe('');
+    });
+  });
+
+  test('--field prints nothing for a null field and still preserves the blocked exit code', () => {
+    withRepo((cwd) => {
+      const fieldOutput = spawnSync(process.execPath, [
+        CLI, 'state', 'resolve', '--json', '--field', 'workflow_profile',
+      ], { cwd, encoding: 'utf-8' });
+      expect(fieldOutput.status).toBe(1);
+      expect(fieldOutput.stdout).toBe('');
+    });
+  });
+
+  test('--field serializes a non-string field as JSON while still suppressing the full document', () => {
+    withRepo((cwd) => {
+      const full = resolveFixtureState(cwd);
+      const fieldOutput = spawnSync(process.execPath, [
+        CLI, 'state', 'resolve', '--json', '--field', 'blockers',
+        '--target-path', 'src/feature.ts', '--operation', 'feature',
+      ], { cwd, encoding: 'utf-8' });
+      expect(fieldOutput.status).toBe(0);
+      expect(JSON.parse(fieldOutput.stdout)).toEqual(full.blockers);
+    });
+  });
+
+  test('--field on an unknown field name reports an error and exits non-zero, listing legal fields', () => {
+    withRepo((cwd) => {
+      const fieldOutput = spawnSync(process.execPath, [
+        CLI, 'state', 'resolve', '--json', '--field', 'not_a_real_field',
+        '--target-path', 'src/feature.ts', '--operation', 'feature',
+      ], { cwd, encoding: 'utf-8' });
+      expect(fieldOutput.status).toBe(2);
+      expect(fieldOutput.stdout).toBe('');
+      expect(fieldOutput.stderr).toContain('not_a_real_field');
+      expect(fieldOutput.stderr).toContain('workflow_profile');
+    });
+  });
+
+  test('--field suppresses the printed value when blockers are present, even though the field itself resolved a value', () => {
+    withRepo((cwd) => {
+      // missing_contract fires (Executing plan, no contract file yet) while
+      // workflow_profile still resolves a real, non-null value ('standard')
+      // -- the CLI must not print a value a caller could mistake for
+      // trustworthy when the exit code already signals "blocked".
+      rmSync(join(cwd, CONTRACT));
+      const full = resolveFixtureState(cwd);
+      expect(full.blockers).toContain('missing_contract');
+      expect(full.workflow_profile).not.toBeNull();
+
+      const fieldOutput = spawnSync(process.execPath, [
+        CLI, 'state', 'resolve', '--json', '--field', 'workflow_profile',
+        '--target-path', 'src/feature.ts', '--operation', 'feature',
+      ], { cwd, encoding: 'utf-8' });
+      expect(fieldOutput.status).toBe(1);
+      expect(fieldOutput.stdout).toBe('');
+    });
+  });
+
+  function setContractProfile(cwd: string, profile: string): void {
+    const current = readFileSync(join(cwd, CONTRACT), 'utf-8');
+    write(cwd, CONTRACT, current.replace(
+      /^> \*\*Workflow Profile\*\*: .*$/m,
+      `> **Workflow Profile**: ${profile}`,
+    ));
+  }
+
+  test('guidance encodes the ceremony bound per resolved profile: lite zero, standard capped, strict full', () => {
+    withRepo((cwd) => {
+      // Lite: no strict category, no cross-capability, no medium scope, not
+      // an explicit "feature" operation -- riskFloor is lite, and an
+      // explicit override to lite matches it exactly.
+      setContractProfile(cwd, 'lite');
+      const lite = resolveEffectiveState(cwd, Date.now(), {
+        targetPaths: ['src/feature.ts'],
+        operationKind: 'edit',
+      });
+      expect(lite.workflow_profile).toBe('lite');
+      expect(lite.guidance).toBe(
+        'brief -> edit -> targeted test; do not author plan, contract, notes, todos, or checks files (zero ceremony)',
+      );
+
+      // Standard: restore the fixture's default contract override + feature operation.
+      setContractProfile(cwd, 'standard');
+      const standard = resolveFixtureState(cwd);
+      expect(standard.workflow_profile).toBe('standard');
+      expect(standard.guidance).toBe(
+        'at most one active plan artifact; no contract, notes, or todos scaffolding beyond it',
+      );
+
+      // Strict: raising the override is always allowed (raise-only floor).
+      setContractProfile(cwd, 'strict');
+      const strict = resolveFixtureState(cwd);
+      expect(strict.workflow_profile).toBe('strict');
+      expect(strict.guidance).toBe('full envelope: plan, contract, notes, and checks as required');
+    });
+  });
+
+  test('guidance is null when the risk floor cannot resolve a profile', () => {
+    withRepo((cwd) => {
+      const state = resolveEffectiveState(cwd);
+      expect(state.workflow_profile).toBeNull();
+      expect(state.guidance).toBeNull();
+    });
+  });
+
+  describe('capability registry resolution (Phase C1)', () => {
+    test('a repo that never declared a registry keeps no-signal behavior with no blocker', () => {
+      withRepo((cwd) => {
+        const state = resolveFixtureState(cwd);
+        expect(state.blockers).not.toContain('capability_registry:invalid');
+        expect(state.profile_reasons).not.toContain('capability:registry:invalid');
+        expect(state.profile_reasons).toContain('capability:registry:absent');
+      });
+    });
+
+    test('a declared-but-missing registry fails closed with a structured blocker', () => {
+      withRepo((cwd) => {
+        write(cwd, '.ai/harness/policy.json', JSON.stringify({
+          context: { capability_registry_file: '.ai/context/capabilities.json' },
+        }));
+        const state = resolveFixtureState(cwd);
+        expect(state.blockers).toContain('capability_registry:invalid');
+        expect(state.profile_reasons).toContain('capability:registry:invalid');
+        expect(state.phase).toBe('blocked');
+      });
+    });
+
+    test('corrupt registry JSON fails closed with a structured blocker instead of a silent capabilityCount=0', () => {
+      withRepo((cwd) => {
+        write(cwd, '.ai/context/capabilities.json', '{not json');
+        const state = resolveFixtureState(cwd);
+        expect(state.blockers).toContain('capability_registry:invalid');
+      });
+    });
+
+    test('a declared registry file that is zero-byte or otherwise unreadable already fails closed the same as missing (locks in existing behavior; external acceptance verified this was not actually a gap)', () => {
+      withRepo((cwd) => {
+        write(cwd, '.ai/harness/policy.json', JSON.stringify({
+          context: { capability_registry_file: '.ai/context/capabilities.json' },
+        }));
+        // readFileSync on a zero-byte file returns '' (does not throw), and
+        // '' is falsy in JS -- capabilityIdsForPaths' `if (!text)` branch
+        // already treats a present-but-empty file identically to a missing
+        // one, so a declared registry that is zero-byte already resolves
+        // 'invalid' today. This test locks that in explicitly rather than
+        // only covering the "file does not exist at all" case above.
+        write(cwd, '.ai/context/capabilities.json', '');
+        const state = resolveFixtureState(cwd);
+        expect(state.blockers).toContain('capability_registry:invalid');
+        expect(state.profile_reasons).toContain('capability:registry:invalid');
+      });
+    });
+
+    test('malformed entries inside an otherwise-parseable registry are counted and fail closed instead of silently dropped', () => {
+      withRepo((cwd) => {
+        write(cwd, '.ai/context/capabilities.json', JSON.stringify({
+          version: 1,
+          capabilities: [
+            { id: 'good-cap', prefixes: ['src/good'] },
+            { id: 'bad-entry-no-prefixes' },
+            'just a string',
+            { prefixes: ['src/no-id'] },
+            { id: 'mixed-cap', prefixes: ['src/mixed', 42, 'src/mixed2'] },
+          ],
+        }));
+        commitFixture(cwd, 'seed malformed registry');
+        const state = resolveEffectiveState(cwd, Date.now(), {
+          targetPaths: ['src/no-id/x.ts'],
+          operationKind: 'edit',
+        });
+        // 4 malformed entries: missing prefixes, non-object string element,
+        // missing id, and mixed-cap (keeps its 2 valid prefixes for matching
+        // purposes, but still counts as malformed since it also dropped one
+        // non-string prefix element -- partial recovery of the good part
+        // does not un-flag the entry).
+        expect(state.profile_reasons).toContain('capability:registry:malformed-entries:4');
+        expect(state.blockers).toContain('capability_registry:invalid');
+        expect(state.phase).toBe('blocked');
+      });
+    });
+
+    test('a corrupt policy.json is treated as "not declared" (absent, no blocker) -- intentionally aligned with every other policy.json reader in this file, not fixed', () => {
+      withRepo((cwd) => {
+        // policyPath/policyString/loadMinimalChangePolicy all catch a corrupt
+        // or missing policy.json and fall back to a default; none of them
+        // fail closed. Making policyDeclaresCapabilityRegistry the one
+        // exception would invent a new, inconsistent authority for exactly
+        // the case the dispatch says to avoid ("别造新权威"). Locks in the
+        // current, deliberate behavior.
+        write(cwd, '.ai/harness/policy.json', 'not json{{{');
+        const state = resolveFixtureState(cwd);
+        expect(state.blockers).not.toContain('capability_registry:invalid');
+        expect(state.profile_reasons).toContain('capability:registry:absent');
+      });
+    });
+
+    test('a non-array capabilities field fails closed with a structured blocker', () => {
+      withRepo((cwd) => {
+        write(cwd, '.ai/context/capabilities.json', JSON.stringify({ capabilities: 'oops' }));
+        const state = resolveFixtureState(cwd);
+        expect(state.blockers).toContain('capability_registry:invalid');
+      });
+    });
+
+    test('a valid registry with no matching prefix produces no blocker but records the unmapped reason', () => {
+      withRepo((cwd) => {
+        write(cwd, '.ai/context/capabilities.json', JSON.stringify({
+          version: 1,
+          capabilities: [{ id: 'other-capability', prefixes: ['src/other'] }],
+        }));
+        commitFixture(cwd, 'seed registry');
+        const state = resolveEffectiveState(cwd, Date.now(), {
+          targetPaths: ['src/feature.ts'],
+          operationKind: 'edit',
+        });
+        expect(state.blockers).not.toContain('capability_registry:invalid');
+        expect(state.profile_reasons).toContain('capability:unmapped:1');
+      });
+    });
+
+    test('an unmapped implementation path contributes one cross-capability bucket without lowering the floor', () => {
+      withRepo((cwd) => {
+        write(cwd, '.ai/context/capabilities.json', JSON.stringify({
+          version: 1,
+          capabilities: [{ id: 'mapped-capability', prefixes: ['src/mapped'] }],
+        }));
+        commitFixture(cwd, 'seed registry');
+        const state = resolveEffectiveState(cwd, Date.now(), {
+          targetPaths: ['src/mapped/a.ts', 'src/unmapped/b.ts'],
+          operationKind: 'edit',
+        });
+        expect(state.profile_reasons).toContain('capability:unmapped:1');
+        expect(state.risk_floor).toBe('standard');
+        expect(state.blockers).not.toContain('capability_registry:invalid');
+      });
+    });
+
+    test('workflow-surface-only target paths never reach capability resolution as implementation paths (Phase C2)', () => {
+      withRepo((cwd) => {
+        write(cwd, '.ai/context/capabilities.json', JSON.stringify({
+          version: 1,
+          capabilities: [{ id: 'docs-capability', prefixes: ['docs'] }],
+        }));
+        commitFixture(cwd, 'seed registry');
+        const state = resolveEffectiveState(cwd, Date.now(), {
+          targetPaths: ['docs/a.md', 'docs/b.md'],
+          operationKind: 'edit',
+        });
+        expect(state.profile_reasons).not.toContain('capability:unmapped:1');
+        expect(state.profile_signals?.capabilityCount).toBe(0);
+      });
+    });
+  });
+
+  // Round 2 external acceptance: capabilityIdsForPaths previously marked a
+  // registry 'valid' even when version !== 1, an entry's id was an empty
+  // string, or an entry's prefixes was an empty array -- all three are
+  // rejected by the canonical registry validator (scripts/capability-
+  // resolver.ts, projected to assets/templates/helpers/capability-
+  // resolver.ts), so a malformed registry of exactly this shape silently
+  // bypassed the capability_registry:invalid blocker. This describe block
+  // proves both sides agree on accept/reject for the same fixture, using the
+  // real, independently-shipped canonical script (copied into the fixture
+  // repo, not imported) rather than trusting the two implementations stay in
+  // sync by inspection alone.
+  describe('registry validation parity with capability-resolver.ts (Round 2 external acceptance)', () => {
+    function installCanonicalValidator(cwd: string): void {
+      mkdirSync(join(cwd, 'scripts'), { recursive: true });
+      writeFileSync(join(cwd, 'scripts/capability-resolver.ts'), readFileSync(join(ROOT, 'scripts/capability-resolver.ts')));
+    }
+
+    function runCanonicalValidate(cwd: string): { status: number | null; stdout: string; errors: string[] } {
+      const result = spawnSync('bun', ['scripts/capability-resolver.ts', 'validate', '--repo', '.', '--format', 'json'], {
+        cwd,
+        encoding: 'utf-8',
+      });
+      let errors: string[] = [];
+      try {
+        errors = (JSON.parse(result.stdout) as { errors?: string[] }).errors ?? [];
+      } catch {
+        // readRegistry() throws before producing any JSON for a structural
+        // failure (e.g. version !== 1); the CLI still exits non-zero with a
+        // plain-text message on stderr/stdout, which is what this parity
+        // check actually asserts -- the errors array is only populated when
+        // readRegistry() succeeded and validateRegistry() ran.
+      }
+      return { status: result.status, stdout: result.stdout, errors };
+    }
+
+    const validCapability = {
+      id: 'good-cap',
+      domain: 'good-domain',
+      name: 'good-name',
+      prefixes: ['src/good'],
+      contract_files: { agents: 'src/good/AGENTS.md', claude: 'src/good/CLAUDE.md' },
+      architecture_module: 'docs/architecture/modules/good/good.md',
+      workstream_dir: 'tasks/workstreams/good/good',
+      lsp_profile: 'typescript-lsp',
+      verification_hints: ['bun test'],
+    };
+
+    function seedRegistry(cwd: string, version: unknown, capability: Record<string, unknown>): void {
+      write(cwd, 'src/good/f.ts', 'export const good = true;\n');
+      write(cwd, '.ai/context/capabilities.json', JSON.stringify({ version, capabilities: [capability] }));
+      installCanonicalValidator(cwd);
+      commitFixture(cwd, 'seed registry parity fixture');
+    }
+
+    test('a fully valid registry passes both state resolution and capability-resolver.ts validate', () => {
+      withRepo((cwd) => {
+        seedRegistry(cwd, 1, validCapability);
+        const state = resolveEffectiveState(cwd, Date.now(), {
+          targetPaths: ['src/good/f.ts'],
+          operationKind: 'edit',
+        });
+        expect(state.blockers).not.toContain('capability_registry:invalid');
+
+        const canonical = runCanonicalValidate(cwd);
+        expect(canonical.status).toBe(0);
+        expect(canonical.errors).toEqual([]);
+      });
+    });
+
+    test('version !== 1 fails closed on both sides', () => {
+      withRepo((cwd) => {
+        seedRegistry(cwd, 2, validCapability);
+        const state = resolveEffectiveState(cwd, Date.now(), {
+          targetPaths: ['src/good/f.ts'],
+          operationKind: 'edit',
+        });
+        expect(state.blockers).toContain('capability_registry:invalid');
+
+        const canonical = runCanonicalValidate(cwd);
+        expect(canonical.status).not.toBe(0);
+      });
+    });
+
+    test('an empty (post-trim) id fails closed on both sides', () => {
+      withRepo((cwd) => {
+        seedRegistry(cwd, 1, { ...validCapability, id: '  ' });
+        const state = resolveEffectiveState(cwd, Date.now(), {
+          targetPaths: ['src/good/f.ts'],
+          operationKind: 'edit',
+        });
+        expect(state.blockers).toContain('capability_registry:invalid');
+        expect(state.profile_reasons).toContain('capability:registry:malformed-entries:1');
+
+        const canonical = runCanonicalValidate(cwd);
+        expect(canonical.status).not.toBe(0);
+        expect(canonical.errors.some((error) => error.includes('id is required'))).toBe(true);
+      });
+    });
+
+    test('empty prefixes fails closed on both sides', () => {
+      withRepo((cwd) => {
+        seedRegistry(cwd, 1, { ...validCapability, prefixes: [] });
+        const state = resolveEffectiveState(cwd, Date.now(), {
+          targetPaths: ['src/good/f.ts'],
+          operationKind: 'edit',
+        });
+        expect(state.blockers).toContain('capability_registry:invalid');
+        expect(state.profile_reasons).toContain('capability:registry:malformed-entries:1');
+
+        const canonical = runCanonicalValidate(cwd);
+        expect(canonical.status).not.toBe(0);
+        expect(canonical.errors.some((error) => error.includes('prefixes must contain at least one path'))).toBe(true);
+      });
     });
   });
 });

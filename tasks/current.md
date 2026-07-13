@@ -1,27 +1,27 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-14T01:42:25+0800 -->
+<!-- updated_at: 2026-07-14T02:50:06+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: Active
-> **Updated At**: 2026-07-14T01:42:25+0800
-> **Source Branch**: main
-> **Source Commit**: a82b52b7
+> **Status**: ManualClearedWithActiveWork
+> **Updated At**: 2026-07-14T02:50:06+0800
+> **Source Branch**: codex/harness-kernel-optimization-phase2
+> **Source Commit**: 5ab3e81e
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: manual
+> **Reason**: archive-workflow
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: Active
+- Status: ManualClearedWithActiveWork
 - Active Plan: (none)
 - Plan Status: (none)
 - Next Task: inspect active worktree marker(s)
-- Clear Note: (none)
+- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
 
 ## Mainline Snapshot Reading
 
@@ -31,20 +31,10 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- /Users/kito/Projects/repo-harness-worktrees/bdd2-eval-foundation: plans/plan-20260712-0450-bdd2-eval-foundation.md
-- /Users/kito/Projects/repo-harness-worktrees/bdd2-eval-foundation: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/bdd2-eval-foundation
-- /Users/kito/Projects/repo-harness-worktrees/bdd2-shape-experiment: plans/plan-20260712-0605-bdd2-e-02-run-experiment-s-shape-hypothesis.md
-- /Users/kito/Projects/repo-harness-worktrees/bdd2-shape-experiment: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/bdd2-shape-experiment
-- /Users/kito/Projects/repo-harness-worktrees/harness-cost-baseline-slo: plans/plan-20260712-2327-harness-kernel-reduction.md
-- /Users/kito/Projects/repo-harness-worktrees/harness-cost-baseline-slo: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/harness-cost-baseline-slo
-- /Users/kito/Projects/repo-harness-worktrees/upgrade-bun-1-3-14: plans/plan-20260712-1330-bun-1-3-14-runtime-upgrade.md
-- /Users/kito/Projects/repo-harness-worktrees/upgrade-bun-1-3-14: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/upgrade-bun-1-3-14
-- /Users/kito/Projects/repo-harness-wt-bdd3-ea1-typed-browser-evidence-authority: plans/plan-20260713-1336-bdd3-ea1-typed-browser-evidence-authority.md
-- /Users/kito/Projects/repo-harness-wt-bdd3-ea1-typed-browser-evidence-authority: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-bdd3-ea1-typed-browser-evidence-authority
+- /Users/kito/Projects/repo-harness-worktrees/harness-cost-baseline-slo-closeout: plans/plan-20260712-2327-harness-kernel-reduction.md
+- /Users/kito/Projects/repo-harness-worktrees/harness-cost-baseline-slo-closeout: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/harness-cost-baseline-slo-closeout
 - /Users/kito/Projects/repo-harness-wt-codex-native-role-model-override: plans/plan-20260711-0219-codex-native-role-model-override.md
 - /Users/kito/Projects/repo-harness-wt-codex-native-role-model-override: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-codex-native-role-model-override
-- /Users/kito/Projects/repo-harness-wt-harness-kernel-optimization-phase2: plans/plan-20260713-1202-harness-kernel-optimization-phase2.md
-- /Users/kito/Projects/repo-harness-wt-harness-kernel-optimization-phase2: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-harness-kernel-optimization-phase2
 - /Users/kito/Projects/repo-harness/.claude/worktrees/agent-ae14c20f2b5dac4a3: plans/plan-20260712-1642-adaptive-lite-hook-routing.md
 - /Users/kito/Projects/repo-harness/.claude/worktrees/agent-ae14c20f2b5dac4a3: active-worktree owner -> /Users/kito/Projects/repo-harness/.claude/worktrees/agent-ae14c20f2b5dac4a3
 ## Active Sprint
@@ -60,18 +50,27 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`: status=completed, current_slice=completed-20260713-policy-seed, source_plan=plans/plan-20260712-2215-agent-fleet-specialists.md
 ## Handoff
 
-- Exact Next Step: Clean up merged contract worktree codex/code-authority-foundation-v1. Command: repo-harness run contract-worktree cleanup --slug code-authority-foundation-v1 --target main
+- Exact Next Step: Review/checks pass; finish and fast-forward merge this contract worktree. Command: repo-harness run contract-worktree finish
 
 ## Checks
 
-- status=(none), source=(none), exit_code=(none), file=.ai/harness/checks/latest.json
+- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: clean
+- Summary: 10 changed/untracked path(s)
 
 ```
-(none)
+ D plans/plan-20260713-1202-harness-kernel-optimization-phase2.md
+ D tasks/contracts/20260713-1202-harness-kernel-optimization-phase2.contract.md
+ D tasks/notes/20260713-1202-harness-kernel-optimization-phase2.notes.md
+ D tasks/reviews/20260713-1202-harness-kernel-optimization-phase2.review.md
+ M tasks/todos.md
+?? plans/archive/plan-20260713-1202-harness-kernel-optimization-phase2.md
+?? tasks/archive/contract-20260714-0250-harness-kernel-optimization-phase2.md
+?? tasks/archive/notes-20260714-0250-harness-kernel-optimization-phase2.md
+?? tasks/archive/review-20260714-0250-harness-kernel-optimization-phase2.md
+?? tasks/archive/todo-20260714-0250-harness-kernel-optimization-phase2.md
 ```
 
 ## Source Artifacts

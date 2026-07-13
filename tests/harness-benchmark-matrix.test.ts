@@ -55,10 +55,27 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
     expect(env.PATH?.split(':')[0]).toBe('/tmp/benchmark-host/.bun/bin');
   });
 
-  test('preserves porcelain leading status columns when extracting paths', () => {
-    expect(parsePorcelainPaths(' M src/range.ts\n?? deploy/sql/0001.sql\n')).toEqual([
+  test('parses NUL-delimited porcelain entries, stripping the leading XY status columns', () => {
+    expect(parsePorcelainPaths(' M src/range.ts\0?? deploy/sql/0001.sql\0')).toEqual([
       'src/range.ts',
       'deploy/sql/0001.sql',
+    ]);
+  });
+
+  test('takes only the new path for a rename entry, consuming its paired source token', () => {
+    // git status --porcelain=v1 -z renders a rename as two NUL-delimited
+    // tokens: "R  <new path>" followed by "<old path>" alone (no XY prefix on
+    // the second token). Only the new path should be counted -- treating
+    // both as separate artifacts would double-count a single rename.
+    expect(parsePorcelainPaths('R  plans/plan-b.md\0plans/plan-a.md\0?? tasks/todos.md\0')).toEqual([
+      'plans/plan-b.md',
+      'tasks/todos.md',
+    ]);
+  });
+
+  test('preserves a path containing spaces and an embedded arrow-like substring, which -z leaves unquoted and unmangled', () => {
+    expect(parsePorcelainPaths(' M docs/notes -> old name.md\0')).toEqual([
+      'docs/notes -> old name.md',
     ]);
   });
 
@@ -95,6 +112,24 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
       expect(report.records.every((record) => record.input_tokens === null && record.grader_acceptance === 'unavailable')).toBe(true);
       expect(JSON.parse(readFileSync(reportPath, 'utf-8')).records).toHaveLength(27);
       expect(readFileSync(reportPath.replace(/\.json$/, '.md'), 'utf-8')).toContain('non-authoritative');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  test('every record carries an artifact_files path list consistent with its artifact_files_created count', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'harness-matrix-test-'));
+    try {
+      const reportPath = join(dir, 'report.json');
+      const report = await runHarnessProfileBenchmark({
+        execute: false, scenario: [], manifest: join(ROOT, 'evals/harness/scenarios.json'), report: reportPath,
+      });
+      expect(report.records.every((record) => Array.isArray(record.artifact_files))).toBe(true);
+      expect(report.records.every((record) => record.artifact_files.length === record.artifact_files_created)).toBe(true);
+      // Dry-run never touches a workspace, so the path list is empty, not estimated.
+      expect(report.records.every((record) => record.artifact_files.length === 0)).toBe(true);
+      const persisted = JSON.parse(readFileSync(reportPath, 'utf-8')) as { records: Array<{ artifact_files: unknown }> };
+      expect(persisted.records.every((record) => Array.isArray(record.artifact_files))).toBe(true);
+      const markdown = readFileSync(reportPath.replace(/\.json$/, '.md'), 'utf-8');
+      expect(markdown).toContain('## Artifact Files');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });

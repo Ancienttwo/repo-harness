@@ -15,6 +15,10 @@ import {
   writeProjectionFileAtomic,
   type ProjectionFileRecord,
 } from "../src/core/source-projection";
+import {
+  WORKFLOW_SURFACE_DIR_PREFIXES,
+  WORKFLOW_SURFACE_EXTENSIONS,
+} from "../src/cli/hook/diff-fingerprint";
 
 type Mode = "check" | "write";
 
@@ -99,6 +103,60 @@ function markerText(marker: ProjectionMarker): string {
   return `${JSON.stringify(marker, null, 2)}\n`;
 }
 
+// Phase C2: assets/hooks/pre-edit-guard.sh's is_workflow_surface_path() case
+// list is a hand-authored shell projection of the canonical TS source
+// (src/cli/hook/diff-fingerprint.ts's WORKFLOW_SURFACE_DIR_PREFIXES /
+// WORKFLOW_SURFACE_EXTENSIONS). There is no automatic fix for a mismatch --
+// unlike file-content projection, this check always fails closed in both
+// --check and --write, naming which side to edit.
+//
+// Exported as a pure function of the shell source text (rather than only a
+// no-arg wrapper that reads the real file) so a drift scenario -- e.g. a
+// third case arm added to the shell function that the TS side never declared
+// -- can be unit tested directly without mutating the real, checked-in
+// assets/hooks/pre-edit-guard.sh on disk.
+export function workflowSurfaceParityErrors(source: string): string[] {
+  const functionMatch = /is_workflow_surface_path\(\)\s*\{([\s\S]*?)\n\}/.exec(source);
+  if (!functionMatch) {
+    return ["assets/hooks/pre-edit-guard.sh: is_workflow_surface_path() function not found"];
+  }
+  const patternLines = [...functionMatch[1].matchAll(/^\s*([^\s)\n][^)\n]*)\)\s*return 0\s*;;\s*$/gm)]
+    .map((match) => match[1]);
+
+  const expectedDirPattern = WORKFLOW_SURFACE_DIR_PREFIXES.map((prefix) => `${prefix}*`).join("|");
+  const expectedExtPattern = WORKFLOW_SURFACE_EXTENSIONS.map((ext) => `*${ext}`).join("|");
+
+  const errors: string[] = [];
+  // Guards against a case list that grew (or shrank) a "return 0" pattern
+  // line without the TS canonical source changing to match -- comparing only
+  // patternLines[0]/[1] by index would silently accept an extra, undeclared
+  // pattern line appended after the two expected ones.
+  if (patternLines.length !== 2) {
+    errors.push(
+      `is_workflow_surface_path drift: expected exactly 2 "return 0" case pattern lines (directory prefixes, extensions), found ${patternLines.length}: ${JSON.stringify(patternLines)}`,
+    );
+  }
+  if (patternLines[0] !== expectedDirPattern) {
+    errors.push(
+      `is_workflow_surface_path drift: directory prefixes expected "${expectedDirPattern}" got "${patternLines[0] ?? "<missing>"}"`,
+    );
+  }
+  if (patternLines[1] !== expectedExtPattern) {
+    errors.push(
+      `is_workflow_surface_path drift: extensions expected "${expectedExtPattern}" got "${patternLines[1] ?? "<missing>"}"`,
+    );
+  }
+  return errors;
+}
+
+function checkWorkflowSurfaceParity(): string[] {
+  const guardPath = join(CANONICAL_ROOT, "pre-edit-guard.sh");
+  if (!existsSync(guardPath)) {
+    return ["missing assets/hooks/pre-edit-guard.sh: cannot check is_workflow_surface_path parity"];
+  }
+  return workflowSurfaceParityErrors(readFileSync(guardPath, "utf-8"));
+}
+
 function main(): void {
   const mode = parseMode(process.argv.slice(2));
   const manifest = readManifest();
@@ -133,6 +191,15 @@ function main(): void {
   if (errors.length > 0) {
     for (const error of errors) process.stderr.write(`[hooks] ${error}\n`);
     process.stderr.write("[hooks] Edit assets/hooks/projection.json to classify drift, or remove the unclassified target file deliberately.\n");
+    process.exit(1);
+  }
+
+  const parityErrors = checkWorkflowSurfaceParity();
+  if (parityErrors.length > 0) {
+    for (const error of parityErrors) process.stderr.write(`[hooks] ${error}\n`);
+    process.stderr.write(
+      "[hooks] Keep assets/hooks/pre-edit-guard.sh's is_workflow_surface_path() case list in sync with src/cli/hook/diff-fingerprint.ts's WORKFLOW_SURFACE_DIR_PREFIXES / WORKFLOW_SURFACE_EXTENSIONS.\n",
+    );
     process.exit(1);
   }
 
@@ -205,10 +272,15 @@ function main(): void {
   );
 }
 
-try {
-  main();
-} catch (error) {
-  const message = error instanceof Error ? error.message : String(error);
-  process.stderr.write(`[hooks] ${message}\n`);
-  process.exit(1);
+// Guarded so importing this module (e.g. to unit test workflowSurfaceParityErrors)
+// never runs main()/process.exit() as an import side effect; only running the
+// script directly (`bun scripts/sync-hook-sources.ts`) triggers it.
+if (import.meta.main) {
+  try {
+    main();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    process.stderr.write(`[hooks] ${message}\n`);
+    process.exit(1);
+  }
 }

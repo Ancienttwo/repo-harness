@@ -336,6 +336,20 @@ function captureOwnedPath(
   };
 }
 
+/**
+ * A facade is canonical when the package still ships its source directory,
+ * checked through the host's already-synced canonical `repo-harness` skill
+ * copy (the same evidence source `canonicalEvidence` uses elsewhere in this
+ * file). A host-present, owner-marked facade whose canonical source has
+ * been retired from the package gets an empty component set in
+ * discoverManagedSurfaces below instead of being folded into the generic
+ * adaptive-workflow/planning-integrations bucket, so the ownership manifest
+ * stops representing a retired facade as a profile-desired surface.
+ */
+function facadeIsCanonical(root: string, name: string): boolean {
+  return existsSync(join(root, 'repo-harness', 'assets', 'skill-commands', name, 'SKILL.md'));
+}
+
 function discoverManagedSurfaces(
   profile: InstallProfile,
   env: NodeJS.ProcessEnv,
@@ -360,7 +374,9 @@ function discoverManagedSurfaces(
         ? desired.filter((component) => component === 'handoff')
         : name === 'repo-harness-check'
           ? desired.filter((component) => component === 'scope-worktree-check-guards' || component === 'verifier')
-          : desired.filter((component) => component === 'adaptive-workflow' || component === 'planning-integrations');
+          : facadeIsCanonical(root, name)
+            ? desired.filter((component) => component === 'adaptive-workflow' || component === 'planning-integrations')
+            : [];
       const facade = captureDirectoryOrLink(join(root, name), facadeComponents);
       if (facade) surfaces.push(facade);
     }
@@ -417,7 +433,7 @@ export function installProfileStatePath(env: NodeJS.ProcessEnv = process.env): s
 export function installProfileHostMutationPaths(env: NodeJS.ProcessEnv = process.env): readonly string[] {
   const home = env.HOME ?? homedir();
   const bunRoot = env.BUN_INSTALL ?? join(home, '.bun');
-  const skills = ['repo-harness', 'repo-harness-plan', 'repo-harness-check', 'repo-harness-handoff'];
+  const skills = ['repo-harness', 'repo-harness-plan', 'repo-harness-check', 'repo-harness-handoff', 'repo-harness-gptpro'];
   const externalSkills = ['think', 'hunt', 'check', 'health', 'mermaid', 'codex-review', 'claude-review'];
   const agents = ['explorer', 'deep-reasoner', 'fast-worker', 'gatekeeper', 'root-cause-prover', 'harness-evaluator'];
   const paths = [

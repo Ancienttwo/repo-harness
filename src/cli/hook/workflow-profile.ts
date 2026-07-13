@@ -19,6 +19,17 @@ export type WorkflowOperationKind =
 
 export interface WorkflowProfileInput {
   targetPaths?: readonly string[];
+  /**
+   * Additional paths to include in strict-category token detection only
+   * (never in targetPathCount/medium-scope counting). Callers that filter
+   * targetPaths down to an implementation-surface subset (Phase C2) still
+   * want the pre-filter raw batch scanned for strict tokens here, since a
+   * workflow-surface path (docs/*, *.md, ...) can legitimately carry a real
+   * strict-category signal (e.g. docs/auth/runbook.md) that must not be lost
+   * just because it is administrative/ceremony content. Always unioned with
+   * targetPaths for the scan; omit when there is no separate raw set.
+   */
+  strictScanPaths?: readonly string[];
   capabilityIds?: readonly string[];
   capabilityCount?: number;
   operationKind?: WorkflowOperationKind;
@@ -231,7 +242,13 @@ export function resolveWorkflowProfile(input: WorkflowProfileInput): WorkflowPro
   }
 
   const capabilityCount = Math.max(declaredCapabilityCount, capabilityIds.length);
-  const strictCategories = strictCategoriesFor(targetPaths, capabilityIds, operationKind);
+  // Strict-token detection deliberately scans the union of targetPaths (the
+  // filtered, medium-scope-counted set) and strictScanPaths (the caller's
+  // raw pre-filter set, if any) -- see WorkflowProfileInput.strictScanPaths.
+  // targetPathCount/mediumScope/crossCapability below stay on the filtered
+  // targetPaths only; only the strict-category scan widens.
+  const strictScanPaths = uniqueNonEmpty([...(input.targetPaths ?? []), ...(input.strictScanPaths ?? [])]);
+  const strictCategories = strictCategoriesFor(strictScanPaths, capabilityIds, operationKind);
   const crossCapability = capabilityCount > 1 || operationKind === 'cross-capability';
   const mediumScope = targetPaths.length >= MEDIUM_TARGET_PATH_COUNT || operationKind === 'multi-file';
 

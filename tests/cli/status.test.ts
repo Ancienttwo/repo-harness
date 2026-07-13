@@ -5,6 +5,7 @@ import * as os from 'os';
 import { execSync } from 'child_process';
 import { runStatus, formatStatus } from '../../src/cli/commands/status';
 import { runInstall } from '../../src/cli/commands/install';
+import { installProfileStatePath } from '../../src/cli/installer/install-profile';
 
 function withTempHome(fn: (home: string) => void): void {
   const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'repo-harness-status-')));
@@ -109,6 +110,126 @@ describe('status command (Phase 1C)', () => {
       const parsed = JSON.parse(json);
       expect(parsed.cli).toBeDefined();
       expect(parsed.routes.total).toBe(11);
+    });
+  });
+
+  test('installedProfile reports not recorded when install-state.json is absent', () => {
+    withTempHome(() => {
+      const r = runStatus();
+      expect(r.installedProfile).toEqual({ recorded: false });
+      const text = formatStatus(r, false);
+      expect(text).toContain('Installed profile:');
+      expect(text).toContain('(not recorded)');
+    });
+  });
+
+  test('installedProfile reads back profile + components from install-state.json', () => {
+    withTempHome(() => {
+      const statePath = installProfileStatePath(process.env);
+      fs.mkdirSync(path.dirname(statePath), { recursive: true });
+      fs.writeFileSync(statePath, JSON.stringify({
+        protocol: 1,
+        profile: 'standard',
+        components: ['cli', 'effective-state', 'host-adapters', 'adaptive-workflow'],
+        transaction_id: 'test-txn',
+        applied_at: '2026-01-01T00:00:00.000Z',
+        ownership_manifest: [],
+        previous: null,
+      }));
+
+      const r = runStatus();
+      expect(r.installedProfile).toEqual({
+        recorded: true,
+        profile: 'standard',
+        components: ['cli', 'effective-state', 'host-adapters', 'adaptive-workflow'],
+      });
+
+      const text = formatStatus(r, false);
+      expect(text).toContain('profile: standard');
+      expect(text).toContain('components: cli, effective-state, host-adapters, adaptive-workflow');
+    });
+  });
+
+  test('installedProfile reports invalid (not not-recorded) when install-state.json is corrupt JSON', () => {
+    // A corrupt install is a materially different diagnostic signal than
+    // "never installed" -- conflating them (as this test used to assert)
+    // hides a broken host install behind text that reads as "just run
+    // install", when actually something needs repairing.
+    withTempHome(() => {
+      const statePath = installProfileStatePath(process.env);
+      fs.mkdirSync(path.dirname(statePath), { recursive: true });
+      fs.writeFileSync(statePath, '{not valid json');
+
+      const r = runStatus();
+      expect(r.installedProfile.recorded).toBe('invalid');
+      expect(r.installedProfile).not.toEqual({ recorded: false });
+      const text = formatStatus(r, false);
+      expect(text).toContain('(invalid)');
+      expect(text).not.toContain('(not recorded)');
+    });
+  });
+
+  test('installedProfile reports invalid when protocol/profile/ownership_manifest fails readInstalledProfile validation', () => {
+    withTempHome(() => {
+      const statePath = installProfileStatePath(process.env);
+      fs.mkdirSync(path.dirname(statePath), { recursive: true });
+      fs.writeFileSync(statePath, JSON.stringify({
+        protocol: 1,
+        profile: 'not-a-real-profile',
+        components: [],
+        transaction_id: 'test-txn',
+        applied_at: '2026-01-01T00:00:00.000Z',
+        ownership_manifest: [],
+        previous: null,
+      }));
+
+      const r = runStatus();
+      expect(r.installedProfile.recorded).toBe('invalid');
+    });
+  });
+
+  test('installedProfile reports invalid instead of crashing when a syntactically valid install-state.json is missing components', () => {
+    // readInstalledProfile validates protocol/profile/ownership_manifest but
+    // not components -- formatStatus's `.components.join(', ')` used to throw
+    // a TypeError on this input instead of reporting a diagnosable state.
+    withTempHome(() => {
+      const statePath = installProfileStatePath(process.env);
+      fs.mkdirSync(path.dirname(statePath), { recursive: true });
+      fs.writeFileSync(statePath, JSON.stringify({
+        protocol: 1,
+        profile: 'standard',
+        transaction_id: 'test-txn',
+        applied_at: '2026-01-01T00:00:00.000Z',
+        ownership_manifest: [],
+        previous: null,
+      }));
+
+      const r = runStatus();
+      expect(r.installedProfile.recorded).toBe('invalid');
+      if (r.installedProfile.recorded === 'invalid') {
+        expect(r.installedProfile.error).toContain('components');
+      }
+      expect(() => formatStatus(r, false)).not.toThrow();
+    });
+  });
+
+  test('installedProfile reports invalid instead of crashing when components is a non-array value', () => {
+    withTempHome(() => {
+      const statePath = installProfileStatePath(process.env);
+      fs.mkdirSync(path.dirname(statePath), { recursive: true });
+      fs.writeFileSync(statePath, JSON.stringify({
+        protocol: 1,
+        profile: 'standard',
+        components: 'cli,effective-state',
+        transaction_id: 'test-txn',
+        applied_at: '2026-01-01T00:00:00.000Z',
+        ownership_manifest: [],
+        previous: null,
+      }));
+
+      const r = runStatus();
+      expect(r.installedProfile.recorded).toBe('invalid');
+      expect(() => formatStatus(r, false)).not.toThrow();
     });
   });
 });

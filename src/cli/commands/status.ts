@@ -15,6 +15,12 @@ import { ROUTES, routesForHost } from '../hook/route-registry';
 import { isManagedEntry, type HooksByEvent } from '../installer/managed-entries';
 import { readJsonOrEmpty } from '../installer/shared';
 import type { Location } from '../installer/types';
+import {
+  installProfileStatePath,
+  readInstalledProfile,
+  type InstallComponent,
+  type InstallProfile,
+} from '../installer/install-profile';
 
 function packageVersion(): string {
   const packagePath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'package.json');
@@ -50,6 +56,15 @@ export interface StatusReport {
     optInMarker: string;
   };
   routes: { total: number; byEvent: Record<string, number> };
+  installedProfile:
+    | { recorded: true; profile: InstallProfile; components: readonly InstallComponent[] }
+    | { recorded: false }
+    // install-state.json exists but fails validation (readInstalledProfile's
+    // own protocol/profile/ownership checks, or a components field that is
+    // missing/not an array) -- a genuinely corrupt install, which must stay
+    // distinguishable from "never installed" (recorded: false) for a status
+    // command whose purpose is diagnosing install state.
+    | { recorded: 'invalid'; error: string; path: string };
 }
 
 function resolveRepoRoot(cwd: string): string | null {
@@ -75,6 +90,29 @@ function countManagedEntries(filePath: string): number {
     return count;
   } catch {
     return 0;
+  }
+}
+
+function readInstalledProfileForStatus(): StatusReport['installedProfile'] {
+  const statePath = installProfileStatePath();
+  try {
+    const state = readInstalledProfile();
+    if (!state) return { recorded: false };
+    if (!Array.isArray(state.components)) {
+      return {
+        recorded: 'invalid',
+        error: `installed profile state has a malformed components field (expected an array): ${statePath}`,
+        path: statePath,
+      };
+    }
+    return { recorded: true, profile: state.profile, components: state.components };
+  } catch (error) {
+    // install-state.json exists but readInstalledProfile's own validation
+    // (protocol, profile enum, ownership_manifest shape) rejected it: a
+    // genuinely corrupt install, not "never installed" -- report it as such
+    // rather than crashing or silently conflating the two on a read-only
+    // status command.
+    return { recorded: 'invalid', error: (error as Error).message, path: statePath };
   }
 }
 
@@ -113,7 +151,13 @@ export function runStatus(cwd: string = process.cwd()): StatusReport {
     repo.optIn = fs.existsSync(path.join(repoRoot, OPT_IN_MARKER));
   }
 
-  return { cli: { version: CLI_VERSION }, targets, repo, routes: { total: ROUTES.length, byEvent } };
+  return {
+    cli: { version: CLI_VERSION },
+    targets,
+    repo,
+    routes: { total: ROUTES.length, byEvent },
+    installedProfile: readInstalledProfileForStatus(),
+  };
 }
 
 export function formatStatus(report: StatusReport, asJson = false): string {
@@ -135,6 +179,16 @@ export function formatStatus(report: StatusReport, asJson = false): string {
   lines.push(`  ${report.routes.total} total`);
   for (const [event, count] of Object.entries(report.routes.byEvent)) {
     lines.push(`    ${event}: ${count}`);
+  }
+  lines.push('');
+  lines.push('Installed profile:');
+  if (report.installedProfile.recorded === true) {
+    lines.push(`  profile: ${report.installedProfile.profile}`);
+    lines.push(`  components: ${report.installedProfile.components.join(', ') || '(none)'}`);
+  } else if (report.installedProfile.recorded === 'invalid') {
+    lines.push(`  (invalid): ${report.installedProfile.error}`);
+  } else {
+    lines.push('  (not recorded)');
   }
   lines.push('');
   lines.push('Current repo:');
