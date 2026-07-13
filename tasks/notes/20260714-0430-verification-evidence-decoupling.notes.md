@@ -38,6 +38,24 @@
   instead and verified it would have passed pre-fix (reintroduced the old
   fallback block in a scratch copy, confirmed exit 0, confirmed exit 1
   with the fix) so it has real discriminating power.
+- Slice 4: the dispatch said delete "the arm's temp directory," which read
+  literally as the whole `runRoot` (`base/` + `workspace/` + `host/`).
+  Before implementing, checked what `--regrade-existing`
+  (`regradeHarnessBenchmarkReport`) needs: it re-runs the scenario's
+  acceptance command with `cwd: record.workspace` and diffs
+  `changedFiles(record.workspace)`, and
+  `docs/architecture/modules/verification/evals-checks.md:40` already
+  documents this as operating "against retained run workspaces" -- an
+  existing, committed architectural invariant, not a speculative concern.
+  Also `workspace` is a git worktree of `base` (`git worktree add`), so it
+  shares `base`'s object store; deleting `base` would corrupt `workspace`
+  even if `workspace`'s own directory were left alone. Only `host` (the
+  isolated HOME/BUN_INSTALL/CODEX_HOME toolchain root) is: (a) never
+  referenced by any field on `BenchmarkRunRecord`, and (b) never read again
+  by `executeRun` after the provider process exits. Deleted only `host`,
+  named it via an exported `cleanupArmHostRoot()` so the mechanism itself
+  is unit-testable (the alternative, running `executeRun` end-to-end,
+  requires a real provider process this task must not invoke).
 - Slice 2: `scripts/verify-sprint.sh` projects into
   `assets/templates/helpers/verify-sprint.sh` via
   `scripts/sync-helper-sources.ts` (checked by
