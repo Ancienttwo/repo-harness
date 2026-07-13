@@ -70,6 +70,12 @@
   the provider stopped at the expected Standard Plan gate rather than creating
   the authorized artifacts. That non-authoritative attempt was retained in Git
   history, not promoted as final evidence; the next clean full matrix passed.
+- The final verifier reproduced that same provider hesitation: the scenario
+  requested implementation but did not state whether creating Standard workflow
+  artifacts was approved, so Claude stopped at the correct Plan gate. The
+  scenario now states approval and requires Standard artifacts explicitly. This
+  removes authorization ambiguity without relaxing the gate or changing the
+  expected product edit and grader.
 - The final report was regenerated after the concurrency, context-budget,
   install-ownership, and profile-exclusion review fixes. All 27 records use run
   ID `04a5e4b3-ba68-475e-b84a-ad6262179c5d` and source commit `09df8386`.

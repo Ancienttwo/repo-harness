@@ -20,7 +20,7 @@
     {
       "id": "cross-capability-feature",
       "category": "cross-capability-feature",
-      "prompt": "Add src/status-format.ts with a shared formatter that renders status values as `STATUS: <UPPERCASE>`, use it from src/api/status.ts and src/ui/status.ts, and run the focused consumer test.",
+      "prompt": "This cross-capability implementation is approved. Follow the required Standard workflow and create its required workflow artifacts without asking for further approval; then add src/status-format.ts with a shared formatter that renders status values as `STATUS: <UPPERCASE>`, use it from src/api/status.ts and src/ui/status.ts, and run the focused consumer test.",
       "expected_paths": ["src/api/status.ts", "src/ui/status.ts", "src/status-format.ts"],
       "acceptance_command": "bun test tests/status.test.ts"
     },

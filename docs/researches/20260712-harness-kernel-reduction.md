@@ -101,3 +101,10 @@ The final verifier separately hashes the actual report pair into structured
 checks, and every checks consumer recomputes that hash before accepting the
 snapshot, so evidence mutation after verification fails without reviving the
 implementation-review cycle.
+
+Repeated live runs also showed the cross-capability prompt was ambiguous about
+authorization to create Standard workflow artifacts: the provider could either
+proceed or correctly stop at the Plan gate. The scenario now explicitly marks
+the implementation approved and requires the Standard artifacts, while keeping
+the same three product paths and focused grader. This makes the matrix test the
+profile behavior instead of provider willingness to infer approval.
