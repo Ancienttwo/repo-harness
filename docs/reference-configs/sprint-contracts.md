@@ -83,6 +83,8 @@ Both `verify-contract.sh` and `contract-run.ts` implement this check independent
 
 `verify-contract.sh --read-only` is read-only for contract state writes only: it does not rewrite the contract `> **Status**:` line. It still executes `tests_pass` with Bun and `commands_succeed` in a non-login Bash with `BASH_ENV` unset so hook-driven done gates can verify the same exit criteria as an explicit maintainer run without sourcing host shell profiles. Do not put mutating commands in `commands_succeed` unless the contract deliberately treats that side effect as part of verification.
 
+A verifier consumes already-produced evidence; it must not become the producer of expensive, runtime-heavy evidence (for example, a full multi-provider/multi-profile benchmark matrix). An authoritative matrix or similarly expensive one-time evidence run belongs outside `commands_succeed`: the author runs it once on a clean checkout before merge and commits the resulting tracked report (for example `evals/harness/reports/profile-comparison.json`/`.md`); the contract then verifies that report's bytes and provenance, not a live re-run.
+
 ## Status Rules
 
 - `Pending`: drafted but not approved for execution
