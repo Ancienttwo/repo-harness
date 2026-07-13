@@ -50,7 +50,22 @@
 
 ## Deviations From Plan Or Spec
 
-- None recorded.
+- Slice 3: the plan expected to remove a live `benchmark:harness
+  --require-authoritative` example and a duplicate tests_pass/
+  commands_succeed authority from the contract templates. Audited
+  `.claude/templates/contract.template.md`,
+  `assets/templates/contract.template.md`,
+  `docs/reference-configs/sprint-contracts.md`, and
+  `docs/reference-configs/contract-brief-example.md` -- neither pattern
+  exists in any of them, and `git log` on those four paths shows the
+  prior "harness kernel optimization phase 2" merge never touched them
+  either, so they were never contaminated. The only place the live-matrix
+  example exists is the archived
+  `tasks/contracts/20260712-2327-harness-kernel-reduction.contract.md:202`,
+  which is explicitly out of scope (historical record; the plan itself
+  says no active contract instance needs migration). Made no template
+  edit for that part; only added the new invariant paragraph (the part
+  that was genuinely missing).
 
 ## Tradeoffs Considered
 
