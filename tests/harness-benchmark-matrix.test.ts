@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import {
@@ -7,6 +7,7 @@ import {
   benchmarkRunLayout,
   claudeBenchmarkCommand,
   codexBenchmarkCommand,
+  hashTree,
   isolatedHarnessEnvironment,
   isAuthoritativeCompletedRecord,
   isCompleteBenchmarkMatrix,
@@ -175,6 +176,19 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
     expect(new Set(layout.map((arm) => arm.workspace)).size).toBe(27);
     expect(new Set(layout.map((arm) => arm.home)).size).toBe(27);
     expect(layout.every((arm) => !arm.workspace.includes('/profile-base/') && !arm.home.includes('/profile-base/'))).toBe(true);
+  });
+
+  test('tree evidence hashes directory symlinks as link targets without following them', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'harness-tree-symlink-'));
+    try {
+      mkdirSync(join(dir, 'target-a'));
+      mkdirSync(join(dir, 'target-b'));
+      symlinkSync('target-a', join(dir, 'current'));
+      const first = hashTree(dir);
+      rmSync(join(dir, 'current'));
+      symlinkSync('target-b', join(dir, 'current'));
+      expect(hashTree(dir)).not.toBe(first);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
   test('every record carries an artifact_files path list consistent with its artifact_files_created count', async () => {

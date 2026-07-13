@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import {
-  constants, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync,
+  constants, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync,
   statSync, writeFileSync,
 } from 'fs';
 import { tmpdir } from 'os';
@@ -212,14 +212,16 @@ function hashFile(path: string): string {
   return sha256(readFileSync(path));
 }
 
-function hashTree(root: string): string {
+export function hashTree(root: string): string {
   const entries: string[] = [];
   const visit = (dir: string): void => {
     for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
       const absolute = join(dir, entry.name);
       const path = relative(root, absolute).replaceAll('\\', '/');
       if (entry.isDirectory()) visit(absolute);
-      else entries.push(`${path}\0${statSync(absolute).mode & 0o777}\0${hashFile(absolute)}`);
+      else if (entry.isSymbolicLink()) {
+        entries.push(`${path}\0symlink\0${readlinkSync(absolute, { encoding: 'buffer' }).toString('hex')}`);
+      } else entries.push(`${path}\0${statSync(absolute).mode & 0o777}\0${hashFile(absolute)}`);
     }
   };
   visit(root);

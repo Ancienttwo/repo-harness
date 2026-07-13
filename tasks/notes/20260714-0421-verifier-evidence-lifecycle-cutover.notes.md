@@ -46,6 +46,7 @@
 - Deterministic integration: `tests/hook-runtime.test.ts`, `tests/helper-scripts.test.ts`, `tests/archive-evidence-gates.test.ts`, `tests/effective-state.test.ts`
 - Fixed-budget contract pass reached all 14 machine criteria in 13.8s; the only two remaining contract failures were the intentionally pending review `qa_scores` and `manual_checks` gates.
 - Full `bun test --max-concurrency 4`: 1388 pass, 1 skip, 1 timeout failure. The sole failure is the pre-existing `tests/check-agent-tooling.test.ts` six-case loop with an explicit 15s timeout; it timed out again in isolation at 15.0s (`spawnSync.status=null`). No changed implementation path is in that test or its helper. This is disclosed rather than widened in this contract.
+- First authoritative producer attempt stopped before profile preparation/provider execution with `EISDIR` while hashing a generated profile HOME containing a directory symlink. `hashTree` now hashes raw symlink targets without following them, with a regression test. That failed subject produced no report or provider arm; the successful matrix must run against the post-fix subject.
 
 ## Promotion Filter
 
