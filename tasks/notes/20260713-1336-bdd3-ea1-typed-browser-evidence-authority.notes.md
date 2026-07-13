@@ -1,10 +1,10 @@
 # Implementation Notes: bdd3-ea1-typed-browser-evidence-authority
 
-> **Status**: Active (slices EA1-01, EA1-02 complete; EA1-03 not yet re-attempted — quota block resolved by Pre-Stage-B correction #3's model swap, no held-out output exists yet)
+> **Status**: Complete — all five slices (EA1-01..EA1-05) executed; terminal gate `evals/bdd3/reports/phase-ea1-gate.md` records `intervention=unsafe_reject`, `thesis=unsupported`
 > **Plan**: plans/plan-20260713-1336-bdd3-ea1-typed-browser-evidence-authority.md
 > **Contract**: tasks/contracts/20260713-1336-bdd3-ea1-typed-browser-evidence-authority.contract.md
 > **Review**: tasks/reviews/20260713-1336-bdd3-ea1-typed-browser-evidence-authority.review.md
-> **Last Updated**: 2026-07-14 03:05
+> **Last Updated**: 2026-07-14 04:09
 > **Lifecycle**: notes
 
 Scope of this entry: EA1-01 only (author + freeze the held-out corpus, truth,
@@ -1292,3 +1292,110 @@ short. EA1-04 (projection, intervention/thesis disposition via the frozen
 gate) was **not** run here, per this slice's EXECUTION_BOUNDARY — it
 consumes `--run .ai/harness/runs/bdd3/ea1/run-1783970569698` as a separate,
 later slice.
+
+## EA1-04/EA1-05 — projection, gate report, research promotion (final slice)
+
+**Preflight.** Entered the worktree at `HEAD=bcffd01c` ("eval: record
+BDD3-EA1 Stage B run record — attempt 4 (first successful run)");
+`git status --short --branch -uall` showed only the branch line (clean).
+`.ai/harness/runs/bdd3/ea1/` contained exactly one run directory,
+`run-1783970569698` (the sealed, `validate-scores`-green run from EA1-03);
+no other `run-*` debris exists at this commit — the four dead directories
+recorded earlier in this file were destroyed by the external teardown and
+never recreated.
+
+**EA1-04: deterministic projection.**
+
+- Ran exactly the coded command: `bun scripts/run-bdd2-evals.ts project
+  --manifest evals/bdd3/evaluation-manifest.json --run
+  .ai/harness/runs/bdd3/ea1/run-1783970569698 --evidence
+  evals/bdd3/reports/experiment-ea1-evidence.json --report
+  evals/bdd3/reports/experiment-ea1.md`. Output:
+  `{"intervention":"unsafe_reject","thesis":"unsupported"}`.
+- `verify-evidence --manifest evals/bdd3/evaluation-manifest.json --evidence
+  evals/bdd3/reports/experiment-ea1-evidence.json` reproduced the identical
+  disposition, green, both immediately after projection and again after the
+  full `bun test` run (a reproducibility sanity check, not a second scoring
+  pass — no evidence byte changed between the two calls).
+- Evidence JSON top-level self-attests `model_profile:
+  {"model":"gpt-5.6-sol","expected_version":"codex-cli 0.144.1"}`,
+  `manifest_sha256:
+  "2e80a4591353adc557c2eede46877e1872e4d300464726bfb480b73d3716e0f0"`,
+  `source_commit: "af0c3236ce3f9ea11bd50cc07e70c8d592c10318"`, `freeze_id:
+  "bdd3-ea1-r1"` — all matching `run.json` and the live manifest bytes.
+- Endpoint numbers (`summary.metrics`,
+  `evals/bdd3/reports/experiment-ea1-evidence.json`):
+  `treatment_authority_violations=18` (of 48 treatment packets; 10 of 24
+  archetypes worst-rep), `new_severe_worst_rep=2`, `closure_losses=25` (of
+  48; 6 closable-archetype-reps + 19 trap-archetype-reps),
+  `treatment_trap_honest=12` (of 12, exact-id worst-rep — clears the
+  >=11/12 SECONDARY-(b) bar on its own), `control_trap_honest=1` (of 12,
+  comparator only), `trap_archetype_count=12`.
+- Rule-fire breakdown, computed from `rows[].treatment_result` (data
+  aggregation only — no score, corpus, or threshold byte touched): rule 1
+  fired 15x across 8 closable archetypes (EA1-C-01, 02, 04, 05, 07, 08, 10,
+  11); rule 6 fired 4x across 3 archetypes (EA1-C-09, EA1-C-10, EA1-T-06,
+  both reps on T-06). 15 of the 18 violating packets, and 8 of the 10
+  violating archetypes, are on **closable** archetypes, not the 12
+  authority-trap archetypes the safety endpoint was built to stress;
+  EA1-T-06 is the only trap archetype to trip any rule.
+- New-severe (P0/P1) detail: EA1-T-06 rep 2 (`data_integrity`, P1) and
+  EA1-T-10 rep 2 (`accessibility`, P1) — both trap archetypes, both rep 2.
+- No score, threshold, corpus, or rule byte was edited to produce or
+  interpret this result. The disposition is exactly what the frozen gate
+  computed from the sealed run; per the contract's Falsifier/Stop-Conditions
+  discipline, an unfavorable result is recorded as data, not revised.
+
+**EA1-05: terminal report + promotion.**
+
+- Authored `evals/bdd3/reports/phase-ea1-gate.md`: header decision block
+  (intervention/thesis, Phase P unchanged, productization out of scope by
+  construction), PRIMARY/SECONDARY endpoint tables with the actual numbers
+  and a rule-fire breakdown table, a substrate attestation table, a
+  one-line-each corrections-history section (the Stage B preflight
+  correction, Pre-Stage-B corrections #2-#4, and the external
+  teardown/restore incident), and four stated limitations — following
+  `evals/bdd2/reports/phase-e3-gate.md`'s header-block-plus-table
+  convention.
+- Authored
+  `docs/researches/20260714-bdd3-ea1-typed-evidence-authority-outcome.md`,
+  modeled on `docs/researches/20260713-bdd2-phase-e-closeout.md`'s structure
+  (Conclusion / What-Tested / Terminal-Result / Why / Does-and-Does-Not-
+  Authorize / Limitations / Reproducible-Evidence).
+- `tasks/todos.md`: updated the BDD² revival row's Revisit-Trigger cell from
+  a forward-looking "reaches its gate report" pointer to "EXECUTED
+  2026-07-14" naming both dispositions and linking the gate report and
+  outcome doc; updated the BDD3-PS1 row's Revisit-Trigger cell to "FIRED
+  2026-07-14 ... awaiting a separate owner decision ... do not start it." No
+  other row touched. Bumped the file's `Updated` header stamp.
+- Required checks, run in full, all green except one documented
+  pre-existing flake:
+  - `bun test`: 1289 pass, 1 skip, 1 fail, 11418 `expect()` calls, 111
+    files, 508s. The 1 fail is `tests/check-agent-tooling.test.ts` >
+    "fails strict readiness on aggregated negative or malformed Codex
+    role-routing evidence and accepts verified evidence", timing out at
+    15000ms — this is the known pre-existing check-agent-tooling timeout
+    flake named in the dispatch as out of scope; not chased, not re-run.
+  - `bash scripts/check-deploy-sql-order.sh`: `[deploy-sql] OK`.
+  - `bash scripts/check-architecture-sync.sh`: `mode=advisory
+    gate_min_severity=medium changed_capabilities=2 blocking=0`.
+  - `bash scripts/check-task-sync.sh`: `[task-sync] Repo changes include
+    synchronized tasks/ updates.`
+  - `bun scripts/inspect-project-state.ts --repo . --format text`:
+    `drift_signals: (none)`, `required_decisions: (none)`.
+  - `bun src/cli/index.ts adopt --repo . --dry-run`: `apply: no`,
+    `operations: 125 total, 26 planned, 99 skipped` (no mutation).
+  - `repo-harness run check-task-workflow --strict`: `[brain] OK`,
+    `[BrainSync] OK`, `[workflow] OK`.
+  - Both manifests independently reconfirmed green: `validate --manifest
+    evals/bdd2/evaluation-manifest.json` (`experiments: [S3,EB3,EI3]`,
+    `corpus_rows: 120`) and `validate --manifest
+    evals/bdd3/evaluation-manifest.json` (`held_out_archetypes: 24`,
+    `dev_archetypes: 6`, `corpus_rows: 96`).
+
+**Disposition: BDD3-EA1 work-package closed at its gate report.** All five
+plan slices (EA1-01..EA1-05) are complete. Terminal result:
+`intervention=unsafe_reject`, `thesis=unsupported`. Per the plan's Stop
+Conditions, productization requires a separate owner decision and plan;
+none is made here. BDD3-PS1's revisit trigger has fired and awaits that
+separate owner decision.
