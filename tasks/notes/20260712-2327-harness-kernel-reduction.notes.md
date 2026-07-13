@@ -151,6 +151,14 @@
   byte-identical to main, the model-negative assertion applies only to the
   return-channel guard, and report-byte tampering still fails in both jq and
   no-jq checks paths. Corrected verdict: PASS, no P1/P2.
+- The fourth verifier again passed every contract command except strict workflow
+  sync. During the hour-long run, the shared `main` worktree locally fast-forwarded
+  three unpushed gstack-removal commits and re-synced the global brain vault;
+  `origin/main` remained `f248e76f`, which is the Goal's declared integration
+  authority. Rebasing onto unpublished local-main WIP would pull unrelated
+  `AGENTS.md`/`CLAUDE.md` changes outside this contract and fail allowed-paths.
+  Therefore this branch stays based on `origin/main` and reprojects its three
+  manifest-owned docs to the brain immediately before the next verifier.
 
 ## Tradeoffs Considered
 
