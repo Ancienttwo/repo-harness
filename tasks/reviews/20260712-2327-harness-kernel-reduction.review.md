@@ -5,10 +5,10 @@
 > **Contract**: tasks/contracts/20260712-2327-harness-kernel-reduction.contract.md
 > **Notes File**: tasks/notes/20260712-2327-harness-kernel-reduction.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-07-13 12:08
+> **Last Updated**: 2026-07-13 13:09
 > **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Diff Fingerprint**: sha256:6910db4b5f7033cc273348c58b8ce9ffcfae9413cff2aadbfc571dea484805c2
+> **Reviewed Diff Fingerprint**: sha256:cc0dd349baf62b448e3dc3bf25eca0316f3ae6023ea91012ae06cf087a5ecf3f
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 ## Human Review Card
@@ -42,15 +42,16 @@
 
 > **External Acceptance**: pass
 > **External Reviewer**: Codex + Claude
-> **External Source**: native-subagent/fix_circuit_lock + claude-cli/fixture-delta
+> **External Source**: native-subagent/fix_circuit_lock + claude-cli/fixture-and-timeout-deltas
 > **External Started**: 2026-07-13T06:30:00+0800
-> **External Completed**: 2026-07-13T12:08:00+0800
+> **External Completed**: 2026-07-13T13:09:00+0800
 > **Review Rubric Version**: 2
-> **Reviewed Diff Fingerprint**: sha256:6910db4b5f7033cc273348c58b8ce9ffcfae9413cff2aadbfc571dea484805c2
+> **Reviewed Diff Fingerprint**: sha256:cc0dd349baf62b448e3dc3bf25eca0316f3ae6023ea91012ae06cf087a5ecf3f
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 - P1 blockers: none. Earlier findings covering unsafe lock reclaim, mandatory-context loss, incomplete transaction compensation, and stale report provenance were fixed and re-reviewed.
 - P2 advisories: none. Earlier ownership/profile-exclusion and test-fixture findings were fixed and re-reviewed.
+- Latest timeout-delta review: pass. The 30-second bound is test-only; production lock timeout and every guard/review/subagent/repair/consult cap remain unchanged. Its sole wording advisory (2 seconds, not 4) was corrected before this fingerprint was recorded.
 - Acceptance checklist: pass — final report `authoritative=true`, source commit matches the clean execution HEAD, 3 profiles x 9 scenarios are present, all structured provider/grader/isolation evidence and all 27 acceptance commands pass, and focused Strict/product-planning exclusions pass. The reviewer verified that explicit benchmark authorization changes only the scenario input and leaves the product Plan gate unchanged. Final re-review also verified separate report-byte binding in structured checks across jq and no-jq paths, with missing, legacy, invalid, and mismatched evidence failing closed. The original full-scope Claude command timed out; a later targeted Claude review independently passed the fixture-only checks-schema delta and confirmed `not_applicable` cannot mask reports that exist.
 
 ## Behavior Diff Notes
