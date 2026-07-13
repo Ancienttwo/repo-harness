@@ -5,10 +5,10 @@
 > **Contract**: tasks/contracts/20260712-2327-harness-kernel-reduction.contract.md
 > **Notes File**: tasks/notes/20260712-2327-harness-kernel-reduction.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-07-14 01:01
+> **Last Updated**: 2026-07-14 02:12
 > **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Diff Fingerprint**: sha256:2c64c771f48b00275bce8c55eab18d0b9ae41f6badc05bbea07c8e3fa6e0bbd8
+> **Reviewed Diff Fingerprint**: sha256:ddde31a9be20658159c2297b6a6c47d553ae985be3dcee55cfe01e6c4abcc2f8
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 ## Human Review Card
@@ -16,9 +16,9 @@
 - Verdict: pass
 - Change type: code-change
 - Intended files changed: existing state/routing/context/circuit/install/Skill/benchmark owners, their deterministic projections, focused tests, durable docs, and this workflow package.
-- Actual files changed: contract-allowed owners only; the branch is rebased cleanly onto current `origin/main` `1fb93863`. This session issued no push, merge, deploy, secret, or shared-main mutation.
-- Commands passed: authoritative Claude 3x9 matrix 27/27; full suite 1256 pass / 1 skip / 0 fail; focused contract suites; typecheck; deploy, architecture, task-sync, inspector, adopt dry-run, state, and profile dry-runs.
-- External acceptance: pass — independent native Codex review covered the full implementation and authoritative matrix. Claude's final full-scope review found no P1, drove the file-wide timeout correction, identified the expected fingerprint refresh, and left one accepted exact-path task-sync residual; bounded follow-ups over runtime isolation, benchmark prompt, and the final report/notes evidence all reported no P1/P2.
+- Actual files changed: contract-allowed owners only; the branch is rebased cleanly onto current local `main` `4f7a675c`. This session issued no push, merge, deploy, secret, or shared-main mutation.
+- Commands passed: authoritative Claude 3x9 matrix 27/27; full suite 1269 pass / 1 skip / 0 fail; focused contract suites; typecheck; deploy, architecture, task-sync, inspector, adopt dry-run, state, and profile dry-runs.
+- External acceptance: pass — independent native Codex review covered the full implementation and authoritative matrix. Claude's final full-scope review and exact post-rebase follow-up found no P1/P2, including for the benchmark brain-authority isolation that retains Claude authentication while pinning repo-harness mutable state to the disposable host.
 - Residual risks: Adaptive Lite used fewer tokens than Strict but more elapsed provider time and hooks in this one-provider sample; benchmark workspace retention also needs deliberate cleanup after the report no longer needs regrading. Neither weakens a safety or completion gate.
 - Reviewer action required: none.
 - Rollback: revert the ordered work-package commits; install rollback uses owned-surface compensation and never deletes unowned host content.
@@ -44,9 +44,9 @@
 > **External Reviewer**: Claude
 > **External Source**: claude-review
 > **External Started**: 2026-07-13T06:30:00+0800
-> **External Completed**: 2026-07-14T01:01:11+0800
+> **External Completed**: 2026-07-14T02:12:00+0800
 > **Review Rubric Version**: 2
-> **Reviewed Diff Fingerprint**: sha256:2c64c771f48b00275bce8c55eab18d0b9ae41f6badc05bbea07c8e3fa6e0bbd8
+> **Reviewed Diff Fingerprint**: sha256:ddde31a9be20658159c2297b6a6c47d553ae985be3dcee55cfe01e6c4abcc2f8
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 - P1 blockers: none
@@ -61,6 +61,7 @@
 - Latest final-evidence review: pass. Claude independently recomputed all profile aggregates from run `02b23ab9-5546-402f-8d08-73477c1b8e95`, matched the Markdown projection, verified 27 structured provider/grader records and all nine No Harness isolation results, and confirmed the post-review commit changes only reports and notes. No P1/P2.
 - Latest scoped-source-fingerprint review: pass. The source checkout's hook CLI is selected inside both freshness command substitutions (initial evidence and external acceptance), so contract commands and hook-runtime fixtures do not inherit `HOOK_REPO_ROOT`. Downstream/package behavior is unchanged when source authority is absent; self-host/template copies match; focused tests pass. No P1/P2 after rebinding this reviewed fingerprint.
 - Latest origin integration review: pass. The branch rebased cleanly onto `origin/main` `1fb93863`; the `319f80e0..origin/main` gstack-removal range has zero path intersection and no semantic dependency with the remaining branch diff. Claude verified the current wrapper, report binding, external-acceptance shape, and post-rebase focused suites; its only P1 was the stale fingerprint corrected by this binding.
+- Latest benchmark authority review: pass. Claude verified that the provider keeps the real `HOME` only for authentication while the pre-existing first-precedence `REPO_HARNESS_BRAIN_ROOT` pins brain mirror writes to the disposable host. A live Adaptive Lite scenario preserved all three real brain mirror hashes, and the exact post-rebase follow-up on local `main` `4f7a675c` found no P1/P2.
 - Acceptance checklist: pass — final report `authoritative=true`, source commit matches the clean execution HEAD, 3 profiles x 9 scenarios are present, all structured provider/grader/isolation evidence and all 27 acceptance commands pass, and focused Strict/product-planning exclusions pass. The reviewer verified that explicit benchmark authorization changes only the scenario input and leaves the product Plan gate unchanged. Final re-review also verified separate report-byte binding in structured checks across jq and no-jq paths, with missing, legacy, invalid, and mismatched evidence failing closed. The original full-scope Claude command timed out; a later targeted Claude review independently passed the fixture-only checks-schema delta and confirmed `not_applicable` cannot mask reports that exist.
 
 ## Behavior Diff Notes
