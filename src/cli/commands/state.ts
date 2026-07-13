@@ -12,12 +12,23 @@ export function buildStateCommand(): Command {
     .option('--target-path <path...>', 'Concrete target path(s) for deterministic risk resolution')
     .option('--operation <kind>', 'Deterministic operation kind')
     .option('--profile <profile>', 'Explicit workflow profile override; may only raise the risk floor')
-    .action((opts: { targetPath?: string[]; operation?: string; profile?: string }) => {
+    .option(
+      '--field <name>',
+      'Print only this top-level field of the resolved state (e.g. workflow_profile) instead of the full JSON document; a pure output projection, the resolver is unchanged',
+    )
+    .action((opts: { targetPath?: string[]; operation?: string; profile?: string; field?: string }) => {
       const effective = resolveEffectiveState(process.cwd(), Date.now(), {
         targetPaths: opts.targetPath,
         operationKind: opts.operation as WorkflowOperationKind | undefined,
         explicitOverride: opts.profile as WorkflowProfile | undefined,
       });
+      if (opts.field) {
+        const value = (effective as unknown as Record<string, unknown>)[opts.field];
+        if (value !== undefined && value !== null) {
+          console.log(typeof value === 'string' ? value : JSON.stringify(value));
+        }
+        process.exit(effective.blockers.length > 0 ? 1 : 0);
+      }
       console.log(JSON.stringify(effective, null, 2));
       process.exit(effective.blockers.length > 0 ? 1 : 0);
     });

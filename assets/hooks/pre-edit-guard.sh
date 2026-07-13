@@ -103,7 +103,12 @@ resolve_edit_workflow_profile() {
   fi
   [[ "${#target_paths[@]}" -gt 0 ]] || target_paths=("$FILE_PATH")
 
-  args=(state resolve --json)
+  # --field workflow_profile is a pure output projection on top of the same
+  # resolver (src/cli/commands/state.ts): it prints just the resolved profile
+  # instead of the full JSON document, so this needs exactly one Bun cold
+  # start instead of one to resolve state plus a second `bun -e` just to
+  # parse `workflow_profile` back out of the JSON it already produced.
+  args=(state resolve --json --field workflow_profile)
   if [[ -n "${REPO_HARNESS_WORKFLOW_PROFILE:-}" ]]; then
     args+=(--profile "$REPO_HARNESS_WORKFLOW_PROFILE")
   fi
@@ -118,11 +123,7 @@ resolve_edit_workflow_profile() {
     output=""
   fi
   [[ -n "$output" ]] || return 1
-  if command -v jq >/dev/null 2>&1; then
-    printf '%s' "$output" | jq -r '.workflow_profile // empty'
-  elif command -v bun >/dev/null 2>&1; then
-    STATE_JSON="$output" bun -e 'const s=JSON.parse(process.env.STATE_JSON); if (s.workflow_profile) console.log(s.workflow_profile)'
-  fi
+  printf '%s' "$output"
 }
 
 WORKFLOW_PROFILE="$(resolve_edit_workflow_profile || true)"

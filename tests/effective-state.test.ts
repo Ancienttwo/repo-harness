@@ -332,4 +332,51 @@ describe('effective state resolver', () => {
       expect(() => readFileSync(join(cwd, '.ai/harness/state/effective.lock'), 'utf-8')).toThrow();
     });
   });
+
+  test('--field workflow_profile prints only the resolved profile value, matching the full JSON field', () => {
+    withRepo((cwd) => {
+      const full = resolveFixtureState(cwd);
+      const fieldOutput = spawnSync(process.execPath, [
+        CLI, 'state', 'resolve', '--json', '--field', 'workflow_profile',
+        '--target-path', 'src/feature.ts', '--operation', 'feature',
+      ], { cwd, encoding: 'utf-8' });
+      expect(fieldOutput.status).toBe(0);
+      expect(fieldOutput.stdout).toBe(`${full.workflow_profile}\n`);
+      expect(fieldOutput.stdout).not.toContain('{');
+      expect(fieldOutput.stderr).toBe('');
+    });
+  });
+
+  test('--field prints nothing for a null field and still preserves the blocked exit code', () => {
+    withRepo((cwd) => {
+      const fieldOutput = spawnSync(process.execPath, [
+        CLI, 'state', 'resolve', '--json', '--field', 'workflow_profile',
+      ], { cwd, encoding: 'utf-8' });
+      expect(fieldOutput.status).toBe(1);
+      expect(fieldOutput.stdout).toBe('');
+    });
+  });
+
+  test('--field serializes a non-string field as JSON while still suppressing the full document', () => {
+    withRepo((cwd) => {
+      const full = resolveFixtureState(cwd);
+      const fieldOutput = spawnSync(process.execPath, [
+        CLI, 'state', 'resolve', '--json', '--field', 'blockers',
+        '--target-path', 'src/feature.ts', '--operation', 'feature',
+      ], { cwd, encoding: 'utf-8' });
+      expect(fieldOutput.status).toBe(0);
+      expect(JSON.parse(fieldOutput.stdout)).toEqual(full.blockers);
+    });
+  });
+
+  test('--field on an unknown field name prints nothing and still resolves the full state underneath', () => {
+    withRepo((cwd) => {
+      const fieldOutput = spawnSync(process.execPath, [
+        CLI, 'state', 'resolve', '--json', '--field', 'not_a_real_field',
+        '--target-path', 'src/feature.ts', '--operation', 'feature',
+      ], { cwd, encoding: 'utf-8' });
+      expect(fieldOutput.status).toBe(0);
+      expect(fieldOutput.stdout).toBe('');
+    });
+  });
 });
