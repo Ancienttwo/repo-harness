@@ -95,7 +95,8 @@ lets small slices run focused tests while release/pre-merge runs the full gate.
   provider commit or fast-forward remains visible final content instead of
   disappearing from a `git status`-only view. Authoritative execution fails
   fast on the first invalid arm and terminates its in-flight sibling group.
-- Workspace overlays are full `--no-hardlinks` clones with `origin` removed;
+- Workspace overlays are full `--no-hardlinks` clones whose `origin` is replaced
+  by a bare repository owned by that arm;
   HOME overlays rebase absolute cache symlinks from the profile base to the arm
   copy. Provider-local merge/push/install behavior therefore cannot write back
   through Git remotes, shared object inodes, or copied absolute links.

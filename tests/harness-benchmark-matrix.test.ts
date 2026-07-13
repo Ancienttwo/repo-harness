@@ -102,7 +102,7 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
-  test('workspace overlays share neither mutable Git objects nor an origin back to the profile base', () => {
+  test('workspace overlays share no mutable Git objects and push only to an arm-owned origin', () => {
     const dir = mkdtempSync(join(tmpdir(), 'harness-workspace-overlay-'));
     const source = join(dir, 'source');
     const target = join(dir, 'target');
@@ -115,11 +115,20 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
       writeFileSync(join(source, 'seed.txt'), 'seed\n');
       expect(git(source, 'add', '.').exitCode).toBe(0);
       expect(git(source, 'commit', '-qm', 'seed').exitCode).toBe(0);
+      const sourceHead = git(source, 'rev-parse', 'HEAD').stdout.toString().trim();
       cloneImmutableWorkspaceBase(source, target);
-      expect(git(target, 'remote').stdout.toString().trim()).toBe('');
+      const armOrigin = join(dir, 'origin.git');
+      expect(git(target, 'remote', 'get-url', 'origin').stdout.toString().trim()).toBe(armOrigin);
       const object = git(source, 'rev-parse', 'HEAD:seed.txt').stdout.toString().trim();
       expect(statSync(join(source, '.git/objects', object.slice(0, 2), object.slice(2))).ino)
         .not.toBe(statSync(join(target, '.git/objects', object.slice(0, 2), object.slice(2))).ino);
+      writeFileSync(join(target, 'arm.txt'), 'arm-only\n');
+      expect(git(target, 'add', '.').exitCode).toBe(0);
+      expect(git(target, 'commit', '-qm', 'arm change').exitCode).toBe(0);
+      expect(git(target, 'push', '-q').exitCode).toBe(0);
+      expect(git(source, 'rev-parse', 'HEAD').stdout.toString().trim()).toBe(sourceHead);
+      expect(git(armOrigin, 'rev-parse', 'main').stdout.toString().trim())
+        .toBe(git(target, 'rev-parse', 'HEAD').stdout.toString().trim());
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 

@@ -578,7 +578,10 @@ export function rebaseAbsoluteSymlinks(sourceRoot: string, targetRoot: string): 
 
 export function cloneImmutableWorkspaceBase(source: string, target: string): void {
   run('git', ['clone', '--local', '--no-hardlinks', '--quiet', source, target], dirname(target));
-  run('git', ['remote', 'remove', 'origin'], target);
+  const armOrigin = join(dirname(target), 'origin.git');
+  run('git', ['init', '--bare', '--quiet', armOrigin], dirname(target));
+  run('git', ['remote', 'set-url', 'origin', armOrigin], target);
+  run('git', ['push', '--quiet', '--set-upstream', 'origin', 'main'], target);
 }
 
 function createRunOverlay(base: PreparedProfileBase, layout: BenchmarkRunLayout, scenario: HarnessScenario): void {

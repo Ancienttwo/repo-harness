@@ -364,7 +364,7 @@ benchmark-authoritative/<subject-sha256>
 - benchmark report schema v2 绑定 input subject、provenance 与 JSON/Markdown bytes，setup 从 27 次降到 3 个 immutable profile bases，仍保留 27 个 writable isolated overlays；
 - 首次 post-fix matrix 实跑暴露 producer 仍串行且没有自有 deadline：55 分钟只完成 20/27，当前 arm 已运行 8 分钟。该次运行按 50 分钟 hard limit 终止；producer 随后固定为 two-arm pool、50 分钟绝对 deadline 和 detached process-group termination，成本边界不再只存在于文档；
 - bounded producer 的下一次实跑在 12/27 暴露 grader 只看 `git status`：provider 已完成 focused test、提交实现并 fast-forward，但已提交 final content 因工作树干净被误判缺少 expected paths。arm 现在记录 pre-provider baseline revision，grader/report 对 baseline 到最终 `HEAD` 与 working tree 取并集；authoritative 模式首个失败即 fail-fast 并回收并行 sibling，不再继续消耗不可能成功的矩阵；
-- 随后的 isolation 实跑又证明 `git clone --local` 保留 `origin` 会让 provider 的本地 finish/push 路径把新 objects 写回 profile-base；copied Bun cache 中的 absolute symlink 也仍指向 base HOME。最终 overlay 使用 `--no-hardlinks`、删除 `origin`，并把 base-HOME absolute links 重写到 arm HOME；immutable-base assertion 的任何异常也进入同一 fail-fast process-group cleanup；
+- 随后的 isolation 实跑又证明 `git clone --local` 保留指向 base 的 `origin` 会让 provider 的 finish/push 路径把新 objects 写回 profile-base；而完全删除 remote 又会破坏 strict worktree finish，使已完成的 child-worktree deliverable 无法落回 primary workspace。最终 overlay 使用 `--no-hardlinks`，把 `origin` 换成 arm-owned bare repo，并将 base-HOME absolute links 重写到 arm HOME；provider 保留完整本地 workflow 语义，但没有任何反向写 base 的 authority；
 - 最终 verifier 只消费已存在的 authoritative report，不重新启动 matrix。
 
 上文“本次调研保持只读”描述的是最初审计 pass；实现、确定性验证、最终一次 matrix 与外部验收由其后的 work-package 单独记录。
