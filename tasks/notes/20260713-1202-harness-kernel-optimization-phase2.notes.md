@@ -4,8 +4,88 @@
 > **Plan**: plans/plan-20260713-1202-harness-kernel-optimization-phase2.md
 > **Contract**: tasks/contracts/20260713-1202-harness-kernel-optimization-phase2.contract.md
 > **Review**: tasks/reviews/20260713-1202-harness-kernel-optimization-phase2.review.md
-> **Last Updated**: 2026-07-13 14:21
+> **Last Updated**: 2026-07-13 15:20
 > **Lifecycle**: notes
+
+## Live Benchmark Regrade (Phase B closeout)
+
+Ran `bun scripts/run-harness-profile-benchmark.ts --execute --provider claude` against commit `900854f` (B1 `38d7a37` + B2 `5e6742a` both included). Result: `run_id f6684c28-82a1-48a0-a005-87bcff1cb53c`, `authoritative: true`, 27/27 `status: passed`, 27/27 `grader_acceptance: passed`, `no_harness_isolation` 9 `passed` / 18 `not_applicable` (expected — only meaningful on the `no-harness` arm). Replaced `evals/harness/reports/profile-comparison.{json,md}`.
+
+### Falsifier check: final answer (from the live report's `artifact_files`, not inference)
+
+B1's new field settles this conclusively. Every path in every non-zero `artifact_files` list in the new authoritative report is under `plans/` or `tasks/`; none under `.ai/harness/`:
+- `adaptive-lite/cross-capability-feature` (5): `tasks/current.md`, `plans/plan-20260713-1437-shared-status-formatter.md`, `tasks/contracts/...contract.md`, `tasks/notes/...notes.md`, `tasks/reviews/...review.md`
+- `adaptive-lite/database-migration` (5): `tasks/todos.md`, `plans/plan-20260713-1443-add-widget-status.md`, `tasks/contracts/...`, `tasks/notes/...`, `tasks/reviews/...`
+- `strict-harness/cross-capability-feature` (2): `tasks/contracts/20000101-0000-benchmark.contract.md`, `tasks/notes/20000101-0000-benchmark.notes.md` (completing the pre-seeded envelope)
+- `no-harness/cross-capability-feature` (1): `tasks/todo.md` — see confound analysis below; this is prompt-driven, not harness-driven (no-harness has zero hooks/guidance and still creates it).
+
+**Falsifier not triggered — confirmed, not just inferred.** The B2 premise (ceremony is agent-authored `plans|tasks` workflow ceremony, not `.ai/harness/runs|checks` hook spill) is correct.
+
+### Success Criteria 1-4: measured vs threshold (same-run ratios from the new report)
+
+| # | Check | Threshold | Measured | Verdict |
+|---|-------|-----------|----------|---------|
+| 1 | Aggregate Lite `task_artifacts` (9 scenarios) | ≤2 | **10** | FAIL |
+| 1 | Max `task_artifacts` on any non-planning scenario | ≤1 | **5** (cross-capability-feature, database-migration; all other 7 scenarios = 0) | FAIL |
+| 1 | `cross-capability-feature` Lite/Strict `total_duration_ms` ratio | ≤1.4x | **2.397x** (410640/171295) | FAIL |
+| 1 | `database-migration` Lite/Strict `total_duration_ms` ratio | ≤1.4x | **4.033x** (138870/34433) | FAIL |
+| 2 | Aggregate Lite `model_call_count` | ≤ Strict+4 = 73 | **96** (Strict=69) | FAIL |
+| 2 | Aggregate Lite/Strict `total_duration_ms` ratio | ≤1.10x | **1.741x** (858503/493008) | FAIL |
+| 3 | Aggregate Lite/No-Harness `known_tokens` ratio | ≤1.85x | **2.408x** (163539/67905) | FAIL |
+| 3 | Aggregate Lite `hook_total_duration_ms` | ≤57500 (0.85x of 67600) | **102817** | FAIL |
+| 3 | Hook-diet phase-probe p95 | ≤250ms baseline | **555.53ms** (`state-snapshot` probe) | FAIL (pre-existing, see below) |
+| 3 | `script_invocation_count` not increased | ≤ prior (15) | **15** (unchanged) | PASS |
+| 4 | Matrix pass rate | 27/27 | **27/27** | PASS |
+| 4 | No scenario regresses >10% vs prior same-profile duration (except the 2 intentional) | — | Many regress >10%, including several `no-harness` scenarios up to +131% | FAIL, but see noise caveat below |
+
+**Headline: Criteria 1-3 all fail on their aggregate numbers.** But the failures are not evenly distributed — root-caused below, they concentrate almost entirely in the two scenarios the plan itself already flagged as structurally unable to stay Lite.
+
+### Root cause: why the aggregate numbers didn't move despite `guidance` working correctly
+
+Verified `guidance` is live and correct, not inert: probed `state resolve --json` directly (no `--target-path`, matching exactly how `effectiveStateSessionSection` calls it at real SessionStart) against a fresh zero-signal repo — `workflow_profile` defaults to `"lite"` (operationKind defaults to `'inspect'` when there's no diff and no active plan, which does **not** hit the zero-signal early-return in `resolveWorkflowProfile`, so it falls through to the normal `lite` default), and `guidance` correctly renders `"brief -> edit -> targeted test; ... (zero ceremony)"`. So every Lite benchmark scenario's agent *did* see the zero-ceremony instruction at session start. The two "blowup" scenarios still produced full ceremony anyway, for two separate, verified, structural reasons — neither is a bug in B1/B2:
+
+1. **`cross-capability-feature`'s prompt text itself instructs artifact creation**, independent of any harness signal: `evals/harness/scenarios.json`'s prompt reads *"This cross-capability implementation is approved. **Follow the required Standard workflow and create its required workflow artifacts** without asking for further approval; then add src/status-format.ts..."* Confirmed this isn't harness-driven: the **`no-harness`** arm (zero hooks, zero guidance, `--safe-mode`) for this exact scenario still created `tasks/todo.md` on its own. A SessionStart guidance field cannot out-compete an explicit, contradicting instruction inside the task prompt itself.
+2. **`database-migration`'s target path structurally re-promotes to Strict mid-session**, after SessionStart. Verified directly: `state resolve --json --target-path deploy/sql/0001_add_widget_status.sql --operation edit` (run inside the actual benchmarked workspace, against the live B1+B2 code via the workspace's `repo-harness` symlink, which resolves to this worktree's `src/cli/index.ts`) returns `workflow_profile: "strict"`. The scenario's own prompt is *"Create deploy/sql/0001_add_widget_status.sql..."* — the moment the agent's first edit targets that path, `pre-edit-guard.sh`'s **existing, unchanged** deterministic risk floor promotes it to Strict, and the **existing, unchanged** StrictContractGuard then requires a contract to exist before the edit is allowed at all. The agent has no path to completing the task without authoring the ceremony once it touches this file — this is the risk floor and guard doing exactly what Phase A1/pre-existing code says they should do; B2 was explicitly forbidden from touching either (`workflow-profile.ts` floor rules, guard blocking logic). The plan's own Evidence Baseline already predicted this: *"under real adaptive routing the deterministic floor would promote them anyway (cross-capability-feature -> standard, database-migration -> strict)"* — but Success Criterion 1's numeric targets (≤1.4x, ≤1 artifact) were still set against these same two scenarios, which the plan's own causal model says can't stay Lite.
+
+**Quantified concentration** (computed from the new report, not estimated):
+- Criterion 2's Lite-vs-Strict gap: 96% of the `model_call_count` gap (26 of 27 calls) and 94% of the `total_duration_ms` gap (343782 of 365495 ms) come from just these two scenarios. **Excluding them, the other 7 scenarios' Lite/Strict duration ratio is 1.0756 — inside the ≤1.10 threshold.**
+- Criterion 3's token ratio: excluding the two scenarios, Lite/No-Harness `known_tokens` ratio is **1.3338** on the other 7 — inside the ≤1.85 threshold, and better than the plan's cited old baseline (2.10).
+- Criterion 1's non-planning-scenario check: all 7 non-confounded scenarios sit at exactly **0** artifacts (not just ≤1).
+
+So on the 7 scenarios where B2's mechanism can actually act (no prompt override, no strict-category target path), it appears to work — Criteria 2 and 3's core convergence/floor ratios pass on that subset. The aggregate failure is concentrated in exactly the two scenarios that are, by the plan's own analysis, not reachable by a SessionStart-time guidance nudge.
+
+### `hook_total_duration_ms` and the >10% regression check: noise caveat
+
+`hook_total_duration_ms` is an absolute-ms threshold (not a same-run ratio), so it's exposed to cross-run system-load variance in a way Criteria 1-3's other checks aren't. Evidence this matters today: found a **second, unrelated** `run-harness-profile-benchmark.ts` process running concurrently on this machine (different worktree, `repo-harness-worktrees/harness-cost-baseline-slo`, PID 43091, started 14:17, overlapping most of this run's 14:25-15:02 window) — real resource contention on a shared host. Consistent with that: Lite's hook **call count** actually *decreased* (297 -> 257, matching A1/A2's intent — fewer redundant invocations), but **per-call average latency increased** (338.6ms -> 400.1ms, +18%) across *both* Lite and Strict (Strict: 335.1ms -> 377.4ms, +13%) — a uniform slowdown across profiles points at environment, not a Lite-specific regression. The `no-harness` profile's per-scenario durations (which use zero repo hooks and can't be affected by anything in this diff) swung as much as +131% between the old and new runs, which is the clearest available signal that today's absolute-timing comparisons carry heavy measurement noise. The hook-diet phase-probe's own p95 miss (555ms on the `state-snapshot` probe, threshold 250ms) is the *same* pre-existing, already-documented-in-this-file environmental condition from Phase A's notes above (cold Bun/OS cache on this dev host; that probe's command was untouched by A1/A2/B1/B2) — it did not get worse (615ms -> 555ms, if anything slightly better) and is not new.
+
+Given this, the `hook_total_duration_ms` and >10%-regression absolute-ms checks are real measured failures on the numbers as they stand, but the evidence points to shared-host contention as a material confound for the *absolute* magnitude (not for the *same-run ratio* checks in Criteria 1-3, which are relatively insulated from a uniform slowdown since both numerator and denominator inflate together).
+
+### Old vs new aggregate comparison (context, not a formal criterion)
+
+The previously-committed report (`evals/harness/reports/profile-comparison.json` at `HEAD~1`, this branch's last committed version before this rerun) has `run_id d2a2fdcb`, `source_commit 7b11d293` — a commit neither an ancestor nor descendant of this branch's `c0eb404`/`ce33b7e` (checked via `git merge-base --is-ancestor` both directions); its exact provenance relative to Phase 1/Phase A isn't reconstructable from this worktree's history, so treat this as "prior recorded state," not a controlled pre/post-B2 comparison:
+
+| Profile | Metric | Old | New |
+|---|---|---:|---:|
+| no-harness | known_tokens | 75103 | 67905 |
+| no-harness | total_duration_ms | 555372 | 439547 |
+| no-harness | task_artifacts | 0 | 1 |
+| no-harness | model_call_count | 70 | 54 |
+| adaptive-lite | known_tokens | 206900 | 163539 |
+| adaptive-lite | total_duration_ms | 982132 | 858503 |
+| adaptive-lite | task_artifacts | 9 | 10 |
+| adaptive-lite | model_call_count | 116 | 96 |
+| adaptive-lite | hook_total_duration_ms | 100578 | 102817 |
+| strict-harness | known_tokens | 178311 | 128633 |
+| strict-harness | total_duration_ms | 801443 | 493008 |
+| strict-harness | task_artifacts | 4 | 2 |
+| strict-harness | model_call_count | 100 | 69 |
+| strict-harness | hook_total_duration_ms | 77413 | 64162 |
+
+All three profiles improved on most absolute metrics simultaneously (including `no-harness`, which uses zero harness code), which is further evidence of a favorable-conditions/noise effect layered on top of any real code change, not proof of a Lite-specific win. The one metric that got worse is `adaptive-lite`'s `hook_total_duration_ms` (100578 -> 102817), addressed in the noise caveat above.
+
+### Verdict recommendation
+
+B1 (instrumentation) and B2 (guidance mechanism) are both implemented correctly, tested, and verified to functionally do what the plan specified — confirmed by direct probing, not just by the aggregate benchmark numbers. Success Criteria 1-3 fail on their literal aggregate thresholds. The evidence strongly indicates this is a **success-criteria/scenario-design mismatch** rather than a B1/B2 defect: both "blowup" scenarios were already predicted by the plan's own Evidence Baseline to promote past Lite under real adaptive routing, for reasons (prompt-instructed ceremony; mid-session floor promotion via an unrelated, unchanged, correctly-functioning guard) that a SessionStart-time-only guidance field cannot address by construction — changing that would mean delivering guidance at edit-time too (e.g., via `pre-edit-guard.sh`), which is a materially different design than what B2 scoped, and out of this dispatch's authority to decide unilaterally. Not rerunning further per instruction; reporting PARTIAL with full evidence for the parent to decide whether to revise the two scenarios, revise the criteria, or pursue the edit-time-delivery design as a follow-up.
 
 ## Design Decisions
 
@@ -76,12 +156,13 @@ Every matched path across all four workspaces is under `plans/` or `tasks/`; non
 
 ## Open Questions
 
-- None.
+- Parent decision needed: Success Criteria 1-3 fail in aggregate, concentrated almost entirely in `cross-capability-feature` and `database-migration` (see "Live Benchmark Regrade" above for the full root-cause evidence: prompt-instructed ceremony for the first, mid-session floor promotion to Strict for the second — both outside a SessionStart-only guidance field's reach). Three live options, none taken unilaterally here: (a) revise those two scenario prompts/targets so the benchmark measures genuinely-Lite-eligible tasks, (b) revise Success Criterion 1's thresholds to exclude or separately bucket scenarios the deterministic floor is expected to promote, or (c) extend `guidance` delivery to edit-time (`pre-edit-guard.sh`) as a follow-up so a mid-session promotion also carries the ceremony bound — a materially larger design than B2's scope.
 
 ## Evidence Links
 
 - Checks: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
+- Benchmark report: `evals/harness/reports/profile-comparison.json` (run `f6684c28-82a1-48a0-a005-87bcff1cb53c`, source commit `900854f`)
 
 ## Promotion Filter
 
