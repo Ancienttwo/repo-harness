@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-13T20:07:31+0800 -->
+<!-- updated_at: 2026-07-14T01:42:25+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-07-13T20:07:31+0800
+> **Updated At**: 2026-07-14T01:42:25+0800
 > **Source Branch**: main
-> **Source Commit**: 488b497d
+> **Source Commit**: a82b52b7
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: post-acceptance-merge
+> **Reason**: manual
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -60,18 +60,18 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`: status=completed, current_slice=completed-20260713-policy-seed, source_plan=plans/plan-20260712-2215-agent-fleet-specialists.md
 ## Handoff
 
-- Exact Next Step: Clean up merged contract worktree codex/agent-fleet-routing-closeout. Command: repo-harness run contract-worktree cleanup --slug agent-fleet-routing-closeout --target main
+- Exact Next Step: Clean up merged contract worktree codex/code-authority-foundation-v1. Command: repo-harness run contract-worktree cleanup --slug code-authority-foundation-v1 --target main
 
 ## Checks
 
-- status=(none), source=(none), file=.ai/harness/checks/latest.json
+- status=(none), source=(none), exit_code=(none), file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 1 changed/untracked path(s)
+- Summary: clean
 
 ```
-?? assets/agents/
+(none)
 ```
 
 ## Source Artifacts
