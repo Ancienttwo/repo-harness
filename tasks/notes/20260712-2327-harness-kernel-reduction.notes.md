@@ -167,6 +167,12 @@
   command resolve the current workflow contract and pass. The next self-host
   verifier therefore carries that explicit source authority instead of mutating
   the shared global install during concurrent repo work.
+- With explicit source authority, the sixth verifier cleared strict workflow and
+  every other contract command; only its plain `bun test` invocation failed
+  under concurrent full-suite/benchmark activity. An immediate isolated replay
+  of the same full suite passed 1,256 tests with one platform skip and zero
+  failures. No code or gate was weakened; the next retry is deferred until the
+  other repo-wide test/benchmark processes have exited.
 
 ## Tradeoffs Considered
 
