@@ -173,6 +173,10 @@
   of the same full suite passed 1,256 tests with one platform skip and zero
   failures. No code or gate was weakened; the next retry is deferred until the
   other repo-wide test/benchmark processes have exited.
+- Before the next retry, `origin/main` advanced to PR67 (`4e3e76a2`). The branch
+  rebased cleanly; an external git review found zero overlap with the new
+  configurable deploy-SQL policy and verified its scripts, policy, Skill, and
+  tests remain byte-identical. Verdict PASS, no P1/P2.
 
 ## Tradeoffs Considered
 
