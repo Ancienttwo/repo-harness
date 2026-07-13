@@ -1,6 +1,6 @@
 # Task Contract: bdd3-ea1-typed-browser-evidence-authority
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260713-1336-bdd3-ea1-typed-browser-evidence-authority.md
 > **Task Profile**: eval-only
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
