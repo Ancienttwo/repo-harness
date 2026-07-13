@@ -29,6 +29,18 @@ function write(cwd: string, path: string, content: string): void {
   writeFileSync(join(cwd, path), content);
 }
 
+// Commits a fixture write so it lands on HEAD instead of staying an
+// uncommitted diff. Needed for files (like .ai/context/capabilities.json)
+// that the resolver itself might otherwise pick up as an "observed target
+// path" via buildImplementationDiffFingerprint's branch/status scan --
+// polluting the very capability-mapping input the test is trying to control.
+function commitFixture(cwd: string, message: string): void {
+  for (const args of [['add', '.'], ['commit', '-m', message]]) {
+    const git = spawnSync('git', args, { cwd, encoding: 'utf-8' });
+    if (git.status !== 0) throw new Error(git.stderr);
+  }
+}
+
 function withRepo(fn: (cwd: string) => void): void {
   const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-effective-')));
   try {
@@ -424,6 +436,78 @@ describe('effective state resolver', () => {
       const state = resolveEffectiveState(cwd);
       expect(state.workflow_profile).toBeNull();
       expect(state.guidance).toBeNull();
+    });
+  });
+
+  describe('capability registry resolution (Phase C1)', () => {
+    test('a repo that never declared a registry keeps no-signal behavior with no blocker', () => {
+      withRepo((cwd) => {
+        const state = resolveFixtureState(cwd);
+        expect(state.blockers).not.toContain('capability_registry:invalid');
+        expect(state.profile_reasons).not.toContain('capability:registry:invalid');
+        expect(state.profile_reasons).toContain('capability:registry:absent');
+      });
+    });
+
+    test('a declared-but-missing registry fails closed with a structured blocker', () => {
+      withRepo((cwd) => {
+        write(cwd, '.ai/harness/policy.json', JSON.stringify({
+          context: { capability_registry_file: '.ai/context/capabilities.json' },
+        }));
+        const state = resolveFixtureState(cwd);
+        expect(state.blockers).toContain('capability_registry:invalid');
+        expect(state.profile_reasons).toContain('capability:registry:invalid');
+        expect(state.phase).toBe('blocked');
+      });
+    });
+
+    test('corrupt registry JSON fails closed with a structured blocker instead of a silent capabilityCount=0', () => {
+      withRepo((cwd) => {
+        write(cwd, '.ai/context/capabilities.json', '{not json');
+        const state = resolveFixtureState(cwd);
+        expect(state.blockers).toContain('capability_registry:invalid');
+      });
+    });
+
+    test('a non-array capabilities field fails closed with a structured blocker', () => {
+      withRepo((cwd) => {
+        write(cwd, '.ai/context/capabilities.json', JSON.stringify({ capabilities: 'oops' }));
+        const state = resolveFixtureState(cwd);
+        expect(state.blockers).toContain('capability_registry:invalid');
+      });
+    });
+
+    test('a valid registry with no matching prefix produces no blocker but records the unmapped reason', () => {
+      withRepo((cwd) => {
+        write(cwd, '.ai/context/capabilities.json', JSON.stringify({
+          version: 1,
+          capabilities: [{ id: 'other-capability', prefixes: ['src/other'] }],
+        }));
+        commitFixture(cwd, 'seed registry');
+        const state = resolveEffectiveState(cwd, Date.now(), {
+          targetPaths: ['src/feature.ts'],
+          operationKind: 'edit',
+        });
+        expect(state.blockers).not.toContain('capability_registry:invalid');
+        expect(state.profile_reasons).toContain('capability:unmapped:1');
+      });
+    });
+
+    test('an unmapped implementation path contributes one cross-capability bucket without lowering the floor', () => {
+      withRepo((cwd) => {
+        write(cwd, '.ai/context/capabilities.json', JSON.stringify({
+          version: 1,
+          capabilities: [{ id: 'mapped-capability', prefixes: ['src/mapped'] }],
+        }));
+        commitFixture(cwd, 'seed registry');
+        const state = resolveEffectiveState(cwd, Date.now(), {
+          targetPaths: ['src/mapped/a.ts', 'src/unmapped/b.ts'],
+          operationKind: 'edit',
+        });
+        expect(state.profile_reasons).toContain('capability:unmapped:1');
+        expect(state.risk_floor).toBe('standard');
+        expect(state.blockers).not.toContain('capability_registry:invalid');
+      });
     });
   });
 });
