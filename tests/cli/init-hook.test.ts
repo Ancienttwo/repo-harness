@@ -73,6 +73,7 @@ function baseStatusReport(overrides: Partial<StatusReport['targets'][number]> = 
         Stop: 1,
       },
     },
+    installedProfile: { recorded: false },
   };
 }
 

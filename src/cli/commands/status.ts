@@ -15,6 +15,7 @@ import { ROUTES, routesForHost } from '../hook/route-registry';
 import { isManagedEntry, type HooksByEvent } from '../installer/managed-entries';
 import { readJsonOrEmpty } from '../installer/shared';
 import type { Location } from '../installer/types';
+import { readInstalledProfile, type InstallComponent, type InstallProfile } from '../installer/install-profile';
 
 function packageVersion(): string {
   const packagePath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'package.json');
@@ -50,6 +51,9 @@ export interface StatusReport {
     optInMarker: string;
   };
   routes: { total: number; byEvent: Record<string, number> };
+  installedProfile:
+    | { recorded: true; profile: InstallProfile; components: readonly InstallComponent[] }
+    | { recorded: false };
 }
 
 function resolveRepoRoot(cwd: string): string | null {
@@ -75,6 +79,18 @@ function countManagedEntries(filePath: string): number {
     return count;
   } catch {
     return 0;
+  }
+}
+
+function readInstalledProfileForStatus(): StatusReport['installedProfile'] {
+  try {
+    const state = readInstalledProfile();
+    if (!state) return { recorded: false };
+    return { recorded: true, profile: state.profile, components: state.components };
+  } catch {
+    // Missing, corrupt, or invalid install-state.json: report as not recorded
+    // rather than crashing a read-only status command.
+    return { recorded: false };
   }
 }
 
@@ -113,7 +129,13 @@ export function runStatus(cwd: string = process.cwd()): StatusReport {
     repo.optIn = fs.existsSync(path.join(repoRoot, OPT_IN_MARKER));
   }
 
-  return { cli: { version: CLI_VERSION }, targets, repo, routes: { total: ROUTES.length, byEvent } };
+  return {
+    cli: { version: CLI_VERSION },
+    targets,
+    repo,
+    routes: { total: ROUTES.length, byEvent },
+    installedProfile: readInstalledProfileForStatus(),
+  };
 }
 
 export function formatStatus(report: StatusReport, asJson = false): string {
@@ -135,6 +157,14 @@ export function formatStatus(report: StatusReport, asJson = false): string {
   lines.push(`  ${report.routes.total} total`);
   for (const [event, count] of Object.entries(report.routes.byEvent)) {
     lines.push(`    ${event}: ${count}`);
+  }
+  lines.push('');
+  lines.push('Installed profile:');
+  if (report.installedProfile.recorded) {
+    lines.push(`  profile: ${report.installedProfile.profile}`);
+    lines.push(`  components: ${report.installedProfile.components.join(', ') || '(none)'}`);
+  } else {
+    lines.push('  (not recorded)');
   }
   lines.push('');
   lines.push('Current repo:');
