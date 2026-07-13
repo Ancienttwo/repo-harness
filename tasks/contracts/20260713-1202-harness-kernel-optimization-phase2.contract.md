@@ -79,7 +79,7 @@ allowed_paths:
   - scripts/run-harness-profile-benchmark.ts
   - scripts/run-skill-evals.ts
   - scripts/sync-codex-installed-copies.sh
-  - scripts/check-hook-parity.sh
+  - scripts/sync-hook-sources.ts
   - SKILL.md
   - docs/CHANGELOG.md
   - docs/architecture/
