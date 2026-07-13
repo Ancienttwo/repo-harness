@@ -2,7 +2,7 @@
   "schema": "repo-harness-bdd3-evaluation.ea1",
   "runner": {
     "path": "scripts/run-bdd2-evals.ts",
-    "sha256": "b5bbc3a0df5f30a3602c0c79e248379448eb0e09252354d1a0d646243a673fd1"
+    "sha256": "d6e856e47954fd1106e5f6c424c9114cdeef3cae90739ad044de89aa2cacf8e4"
   },
   "output_root": ".ai/harness/runs/bdd3",
   "experiment": {
@@ -11,11 +11,11 @@
     "held_out": {
       "tasks": {
         "path": "evals/bdd3/tasks/held-out-ea1.json",
-        "sha256": "dd3507c70a48c0b05b56fad8ffd9364fe35e451cb23d58fff24a18ec05267760"
+        "sha256": "d3001b4f5f2fda480f3cf987a92c81aad22b867178b71c8b19fec9c8d25a07b6"
       },
       "truth": {
         "path": "evals/bdd3/truth/held-out-ea1.json",
-        "sha256": "b9f0a208d873904203881387572dc2f2b91130a2449c37c6d03cbf8f3d2ba2cd"
+        "sha256": "cd41e85b0578315fb89ac6e51e4f6ac0cc5705e9d60d69e4596a1fe1040aa762"
       },
       "archetype_count": 24,
       "closable_count": 12,
@@ -26,11 +26,11 @@
     "dev": {
       "tasks": {
         "path": "evals/bdd3/tasks/dev-ea1.json",
-        "sha256": "bc438983e179df79d00a748d968cb8c1e78525ca06e811417771ff6bd218164c"
+        "sha256": "c942818300e54b707adf5bddd7cfd82dd400926886a3022de60e3f5a17ee1c1b"
       },
       "truth": {
         "path": "evals/bdd3/truth/dev-ea1.json",
-        "sha256": "b65e1490b7950e4e702e6261fcc87f53f9d835c290db1da63ff40b9c8c9b9ec3"
+        "sha256": "22f335720c5debd8153236965c213e6c0876a55ae3d18314ff446f6f6ad025db"
       },
       "archetype_count": 6
     },
@@ -163,7 +163,7 @@
       },
       "validator_rules": {
         "path": "evals/bdd3/rubrics/validator-rules.md",
-        "sha256": "abfe7fdd00b99f2241ff85f65a55f71dba29df4551e55d7b93fb6da404a5fb28"
+        "sha256": "b42896bd63330ff35590f3ac27929e9b1863ceeebb0715b1a268143b36860c36"
       },
       "control_response_schema": {
         "path": "evals/bdd2/rubrics/agent-response-e2.schema.json",
@@ -181,11 +181,11 @@
     "prompts": {
       "control": {
         "path": "evals/bdd3/prompts/ea1-control.md",
-        "sha256": "74f4c108e4f3b8734dd630b97cb77d5cceb30cf5e4674d7aceac922e53a19c7b"
+        "sha256": "5f59fc4a9cb0904446c7e73b6790fd6a4c6baca94edebe7a53a2247bdfd327c1"
       },
       "treatment": {
         "path": "evals/bdd3/prompts/ea1-treatment.md",
-        "sha256": "f9e1fff0dc54ac7be58298b73e260745c97ab6dc53c02541fb1400f380228d55"
+        "sha256": "21317a0b0fe55e3cdcdfae09e81093d7f34d2c6b74fa73431c3d38cf2c8a4db8"
       },
       "control_evidence_reviewer": {
         "path": "evals/bdd3/prompts/ea1-control-evidence-reviewer.md",
@@ -202,7 +202,7 @@
     },
     "metrics": {
       "path": "evals/bdd3/metrics/phase-ea1-scoring-metrics.md",
-      "sha256": "faa1bed21037db17ba18076164cdbdae4b40d71959c89088e8ce292f2aca0fa9"
+      "sha256": "f05a23005f2ecd32777ed77476153146a8a9d6e657790e394c50ff810c8cb482"
     },
     "adjudication": {
       "resolution": "fresh-adjudicator-score-on-canonical-disagreement",

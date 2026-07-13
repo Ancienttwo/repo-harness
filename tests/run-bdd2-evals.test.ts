@@ -15,6 +15,7 @@ import {
   validateScoreRun,
   applyEa1ValidatorRules,
   validateTypedEvidencePacket,
+  assertEa1NotEstablishedVocabulary,
   validateEa1Evaluation,
   validateEa1ScoreRun,
   projectEa1Evidence,
@@ -316,6 +317,36 @@ describe("BDD3 EA1 typed-packet validator (Step 0 falsifier)", () => {
     expect(() => validateTypedEvidencePacket({ ...packet, need_basis: { source: "invented" } })).toThrow("need_basis.source invalid");
     expect(() => validateTypedEvidencePacket({ ...packet, decision: { ...packet.decision, disposition: "Maybe" } })).toThrow("decision.disposition invalid");
   });
+
+  // Pre-Stage-B correction #2, item 5: packet validation fails closed on a
+  // not_established entry outside the archetype's element_vocabulary and its
+  // protected-concern tags, so a Stage B packet cannot silently spoil the
+  // trap-honesty measurement with a non-vocabulary string.
+  describe("assertEa1NotEstablishedVocabulary (Pre-Stage-B correction #2)", () => {
+    const vocabulary = [
+      { id: "snooze_affordance", description: "A snooze action letting the user defer the notification instead of dismissing it." },
+      { id: "dismiss_action", description: "The existing Dismiss action that clears the notification now." },
+    ];
+    const truthNoConcern = { protected_concerns: [] as { concern: string; severity: "P0" | "P1" | "P2" | "P3"; summary: string }[] };
+    const truthWithAccessibility = { protected_concerns: [{ concern: "accessibility", severity: "P1" as const, summary: "Non-visual distinction is unresolved." }] };
+
+    test("accepts entries that are exact element_vocabulary ids", () => {
+      expect(() => assertEa1NotEstablishedVocabulary(["snooze_affordance"], truthNoConcern, vocabulary)).not.toThrow();
+    });
+
+    test("accepts the archetype's own protected-concern tag alongside a vocabulary id", () => {
+      expect(() => assertEa1NotEstablishedVocabulary(["snooze_affordance", "accessibility"], truthWithAccessibility, vocabulary)).not.toThrow();
+    });
+
+    test("rejects a non-vocabulary, non-protected-concern string, fail closed", () => {
+      expect(() => assertEa1NotEstablishedVocabulary(["snooze_feature_need"], truthNoConcern, vocabulary)).toThrow("not a recognized element_vocabulary id or protected concern");
+      expect(() => assertEa1NotEstablishedVocabulary(["The named uncertainty remains unestablished by the supplied evidence."], truthNoConcern, vocabulary)).toThrow("not a recognized element_vocabulary id or protected concern");
+    });
+
+    test("rejects a protected-concern tag when the archetype does not carry that concern", () => {
+      expect(() => assertEa1NotEstablishedVocabulary(["accessibility"], truthNoConcern, vocabulary)).toThrow("not a recognized element_vocabulary id or protected concern");
+    });
+  });
 });
 
 describe("BDD3 EA1 evaluation authority", () => {
@@ -357,6 +388,22 @@ describe("BDD3 EA1 evaluation authority", () => {
     manifestRaw.experiment.held_out.tasks = { path: relative(REPO_ROOT, join(root, "held-out-ea1.json")).replace(/\\/g, "/"), sha256: sha256File(join(root, "held-out-ea1.json")) };
     write(join(root, "manifest.json"), manifestRaw);
     expect(() => validateEa1Evaluation(REPO_ROOT, relative(REPO_ROOT, join(root, "manifest.json")))).toThrow(/must have exactly 3 archetypes/);
+  });
+
+  test("Pre-Stage-B correction #2: every archetype's truth.not_established_required values are drawn 1:1 from that archetype's own element_vocabulary ids", () => {
+    const evaluation = validateEa1Evaluation(REPO_ROOT, EA1_MANIFEST);
+    let trapCount = 0;
+    for (const [id, truth] of Object.entries(evaluation.heldOutTruth)) {
+      const vocabIds = new Set(evaluation.heldOutTasks[id].element_vocabulary.map((item) => item.id));
+      expect(evaluation.heldOutTasks[id].element_vocabulary.length).toBeGreaterThan(0);
+      for (const tag of truth.not_established_required) expect(vocabIds.has(tag)).toBe(true);
+      if (!truth.closable) { expect(truth.not_established_required.length).toBeGreaterThan(0); trapCount += 1 }
+    }
+    expect(trapCount).toBe(12);
+    for (const [id, truth] of Object.entries(evaluation.devTruth)) {
+      const vocabIds = new Set(evaluation.devTasks[id].element_vocabulary.map((item) => item.id));
+      for (const tag of truth.not_established_required) expect(vocabIds.has(tag)).toBe(true);
+    }
   });
 
   test("a hash-mismatched validator-rules file fails validate closed", () => {
@@ -442,12 +489,18 @@ describe("BDD3 EA1 score-run validation and evidence projection (fixture round t
     expect(reportText).toContain("pass");
   });
 
-  test("trap honesty accepts explicit descriptive non-closure without hidden truth-tag spelling", () => {
+  // Pre-Stage-B correction #2 supersedes the prior "Stage B preflight
+  // correction" leniency: a purely descriptive not_established entry is not
+  // an element_vocabulary id, so it no longer counts as trap-honest even
+  // though it is non-empty. Every one of the 12 trap archetypes fails trap
+  // honesty (0/12, below the 11/12 bar), so SECONDARY falls short while
+  // PRIMARY stays clean -- intervention reshapes rather than passing.
+  test("trap honesty requires the exact element_vocabulary id, not a descriptive paraphrase", () => {
     const evaluation = validateEa1Evaluation(REPO_ROOT, EA1_MANIFEST);
     const run = materializeEa1ScoreRun("descriptive");
     const evidenceRel = `${run}/evidence-descriptive.json`; const reportRel = `${run}/report-descriptive.md`;
     const projected = projectEa1Evidence(evaluation, run, evidenceRel, reportRel);
-    expect(projected).toEqual({ intervention: "pass", thesis: "supported" });
+    expect(projected).toEqual({ intervention: "reshape", thesis: "unresolved" });
     expect(verifyEa1EvidenceProjection(evaluation, evidenceRel)).toEqual(projected);
   });
 

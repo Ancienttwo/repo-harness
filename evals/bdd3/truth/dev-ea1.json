@@ -12,7 +12,7 @@
       "required_boundary": ["Keep the existing one-at-a-time mark-as-read action working as-is"],
       "unsupported_concepts": ["Bulk mark-as-read", "Select-all control"],
       "protected_concerns": [],
-      "not_established_required": ["bulk_read_feature_need"]
+      "not_established_required": ["bulk_mark_as_read"]
     },
     "EA1-D-02": {
       "kind": "typed-evidence-authority",
@@ -24,7 +24,7 @@
       "required_boundary": ["Keep the existing manual-refresh behavior working as-is"],
       "unsupported_concepts": ["Auto-refresh interval", "Background polling"],
       "protected_concerns": [],
-      "not_established_required": ["auto_refresh_policy"]
+      "not_established_required": ["auto_refresh_interval"]
     },
     "EA1-D-03": {
       "kind": "typed-evidence-authority",
@@ -36,7 +36,7 @@
       "required_boundary": ["Keep the existing Cancel/Confirm buttons working as-is until non-visual labeling is verified"],
       "unsupported_concepts": ["Verified screen-reader labeling"],
       "protected_concerns": [{"concern": "accessibility", "severity": "P1", "summary": "Non-visual differentiation of the two actions is unresolved and must not be asserted from a screenshot."}],
-      "not_established_required": ["accessibility"]
+      "not_established_required": ["button_label_distinction"]
     },
     "EA1-D-04": {
       "kind": "typed-evidence-authority",

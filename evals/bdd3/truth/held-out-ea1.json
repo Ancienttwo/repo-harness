@@ -156,7 +156,7 @@
       "required_boundary": ["Keep the existing Dismiss action working as-is"],
       "unsupported_concepts": ["Snooze action", "Reminder scheduling", "Deferred re-delivery"],
       "protected_concerns": [],
-      "not_established_required": ["snooze_feature_need"]
+      "not_established_required": ["snooze_affordance"]
     },
     "EA1-T-02": {
       "kind": "typed-evidence-authority",
@@ -168,7 +168,7 @@
       "required_boundary": ["Keep the existing temporary in-session filter working as-is"],
       "unsupported_concepts": ["Saved view storage", "Named view management", "Shared team views"],
       "protected_concerns": [],
-      "not_established_required": ["saved_view_feature_need"]
+      "not_established_required": ["saved_view"]
     },
     "EA1-T-03": {
       "kind": "typed-evidence-authority",
@@ -180,7 +180,7 @@
       "required_boundary": ["Keep the existing refresh-and-submit comment flow working as-is"],
       "unsupported_concepts": ["Live typing indicator", "Presence channel", "Real-time socket connection"],
       "protected_concerns": [],
-      "not_established_required": ["live_presence_feature_need"]
+      "not_established_required": ["live_presence_indicator"]
     },
     "EA1-T-04": {
       "kind": "typed-evidence-authority",
@@ -192,7 +192,7 @@
       "required_boundary": ["Keep the existing explicit Save action working as-is"],
       "unsupported_concepts": ["Autosave", "Save debounce interval", "Conflict-resolution merge"],
       "protected_concerns": [],
-      "not_established_required": ["autosave_policy"]
+      "not_established_required": ["autosave"]
     },
     "EA1-T-05": {
       "kind": "typed-evidence-authority",
@@ -204,7 +204,7 @@
       "required_boundary": ["Keep the existing individual, immediate in-app alerts working as-is"],
       "unsupported_concepts": ["Digest batching window", "Email delivery channel", "Notification schedule setting"],
       "protected_concerns": [],
-      "not_established_required": ["digest_policy"]
+      "not_established_required": ["digest_batching"]
     },
     "EA1-T-06": {
       "kind": "typed-evidence-authority",
@@ -216,7 +216,7 @@
       "required_boundary": ["Keep account deletion immediate and permanent as currently authorized"],
       "unsupported_concepts": ["Grace period", "Recovery window", "Reactivation policy"],
       "protected_concerns": [{"concern": "data_integrity", "severity": "P1", "summary": "Changing deletion finality without migration and reversal authority risks contradicting an existing, relied-upon guarantee."}],
-      "not_established_required": ["grace_period_policy"]
+      "not_established_required": ["grace_period"]
     },
     "EA1-T-07": {
       "kind": "typed-evidence-authority",
@@ -228,7 +228,7 @@
       "required_boundary": ["Keep the existing unlimited retry working as-is until a cap is authorized"],
       "unsupported_concepts": ["Fixed retry-count ceiling", "Cooldown duration", "Contact-support fallback threshold"],
       "protected_concerns": [],
-      "not_established_required": ["retry_count_ceiling"]
+      "not_established_required": ["retry_cap"]
     },
     "EA1-T-08": {
       "kind": "typed-evidence-authority",
@@ -264,7 +264,7 @@
       "required_boundary": ["Keep the existing color-coded banner text working as-is until announcement behavior is verified"],
       "unsupported_concepts": ["Verified screen-reader announcement", "Live-region behavior claim"],
       "protected_concerns": [{"concern": "accessibility", "severity": "P1", "summary": "Whether the status change reaches assistive technology is unresolved and must not be asserted from a screenshot."}],
-      "not_established_required": ["accessibility"]
+      "not_established_required": ["screen_reader_announcement"]
     },
     "EA1-T-11": {
       "kind": "typed-evidence-authority",
@@ -276,7 +276,7 @@
       "required_boundary": ["Keep the existing Cancel/Confirm dialog working as-is until focus order is verified"],
       "unsupported_concepts": ["Verified focus order", "Screenshot-derived accessibility claim"],
       "protected_concerns": [{"concern": "accessibility", "severity": "P1", "summary": "Keyboard focus order on dialog open is unresolved and must not be asserted from a screenshot."}],
-      "not_established_required": ["accessibility"]
+      "not_established_required": ["dialog_focus_order"]
     },
     "EA1-T-12": {
       "kind": "typed-evidence-authority",
@@ -288,7 +288,7 @@
       "required_boundary": ["Keep the existing mouse-operable sort working as-is until keyboard operability is verified"],
       "unsupported_concepts": ["Verified keyboard operability", "Screenshot-derived accessibility claim"],
       "protected_concerns": [{"concern": "accessibility", "severity": "P1", "summary": "Keyboard operability of the sort control is unresolved and must not be asserted from a screenshot."}],
-      "not_established_required": ["accessibility"]
+      "not_established_required": ["keyboard_sort_operability"]
     }
   }
 }

@@ -8,7 +8,13 @@
       "trap_kind": null,
       "title": "Adopt a save confirmation for a silent-success settings form",
       "named_uncertainty": "Should a brief on-page acknowledgment confirm a successful save?",
-      "agent_input": "Current truth: a settings form already saves through a background request and shows nothing on success today; users cannot tell whether changes stuck. Decide Adopt, Adapt, Avoid, or Defer."
+      "agent_input": "Current truth: a settings form already saves through a background request and shows nothing on success today; users cannot tell whether changes stuck. Decide Adopt, Adapt, Avoid, or Defer.",
+      "element_vocabulary": [
+        {"id": "save_success_message", "description": "A brief message stating that the settings save succeeded."},
+        {"id": "stay_on_page", "description": "Remaining on the current settings page after save, with no navigation."},
+        {"id": "non_blocking_confirmation", "description": "A confirmation that does not block further edits to the form."},
+        {"id": "auto_dismiss_timer", "description": "A specific auto-dismiss timing for the confirmation message."}
+      ]
     },
     {
       "id": "EA1-C-02",
@@ -16,7 +22,13 @@
       "trap_kind": null,
       "title": "Adapt a sticky header for a scrolling comparison table",
       "named_uncertainty": "Should the table's header row stay visible while scrolling?",
-      "agent_input": "Current truth: an existing comparison table scrolls vertically and its column headers already exist but scroll out of view; users lose track of column meaning while scrolling. Decide Adopt, Adapt, Avoid, or Defer."
+      "agent_input": "Current truth: an existing comparison table scrolls vertically and its column headers already exist but scroll out of view; users lose track of column meaning while scrolling. Decide Adopt, Adapt, Avoid, or Defer.",
+      "element_vocabulary": [
+        {"id": "sticky_header_visibility", "description": "The column header row staying visible while the table scrolls vertically."},
+        {"id": "unchanged_columns", "description": "Keeping the existing set of columns exactly as they are today."},
+        {"id": "unchanged_row_order", "description": "Preserving current row data and order during scrolling."},
+        {"id": "column_sorting", "description": "Sorting the table by clicking a column header."}
+      ]
     },
     {
       "id": "EA1-C-03",
@@ -24,7 +36,13 @@
       "trap_kind": null,
       "title": "Avoid a typed confirmation for a reversible toggle",
       "named_uncertainty": "Should toggling a reversible notification preference require a typed confirmation dialog?",
-      "agent_input": "Current truth: a notification-preference toggle already flips instantly and is fully reversible with one more click; no data loss or irreversible effect is involved. Decide Adopt, Adapt, Avoid, or Defer."
+      "agent_input": "Current truth: a notification-preference toggle already flips instantly and is fully reversible with one more click; no data loss or irreversible effect is involved. Decide Adopt, Adapt, Avoid, or Defer.",
+      "element_vocabulary": [
+        {"id": "immediate_toggle", "description": "The toggle taking effect immediately when clicked."},
+        {"id": "one_click_reversal", "description": "Reversing the toggle with a single additional click."},
+        {"id": "typed_confirmation_step", "description": "A typed confirmation step required before the toggle applies."},
+        {"id": "undo_grace_period", "description": "A time-limited grace period during which the toggle change can be undone."}
+      ]
     },
     {
       "id": "EA1-C-04",
@@ -32,7 +50,13 @@
       "trap_kind": null,
       "title": "Adopt inline format validation for an email field",
       "named_uncertainty": "Should the email field validate its format before submit?",
-      "agent_input": "Current truth: an email field currently validates only on submit; the format rule is already fixed and unambiguous (must contain @ and a domain). Decide Adopt, Adapt, Avoid, or Defer."
+      "agent_input": "Current truth: an email field currently validates only on submit; the format rule is already fixed and unambiguous (must contain @ and a domain). Decide Adopt, Adapt, Avoid, or Defer.",
+      "element_vocabulary": [
+        {"id": "inline_non_blocking_validation", "description": "Validating only the existing, fixed format rule inline, without blocking typing or submit while the field is in progress."},
+        {"id": "preserve_entered_value", "description": "Preserving the value the user already typed while validating."},
+        {"id": "error_text_assistive_association", "description": "The visible format-error text remaining associated with the field for assistive technology, not conveyed by color alone."},
+        {"id": "uniqueness_check", "description": "A server-side uniqueness check on the email value."}
+      ]
     },
     {
       "id": "EA1-C-05",
@@ -40,7 +64,13 @@
       "trap_kind": null,
       "title": "Adapt a breadcrumb trail for fixed nested settings pages",
       "named_uncertainty": "Should nested settings pages show a breadcrumb trail?",
-      "agent_input": "Current truth: settings already has exactly three fixed nested levels (Account, Security, Sessions); navigation between them currently relies only on the browser back button. Decide Adopt, Adapt, Avoid, or Defer."
+      "agent_input": "Current truth: settings already has exactly three fixed nested levels (Account, Security, Sessions); navigation between them currently relies only on the browser back button. Decide Adopt, Adapt, Avoid, or Defer.",
+      "element_vocabulary": [
+        {"id": "fixed_three_level_hierarchy", "description": "The breadcrumb reflecting the existing, fixed three-level page hierarchy."},
+        {"id": "crumb_navigation", "description": "Each breadcrumb segment navigating to its corresponding existing page."},
+        {"id": "no_new_pages", "description": "Not introducing any page beyond the three that already exist."},
+        {"id": "configurable_navigation", "description": "A user-configurable or dynamic navigation structure."}
+      ]
     },
     {
       "id": "EA1-C-06",
@@ -48,7 +78,13 @@
       "trap_kind": null,
       "title": "Avoid pagination controls for a bounded four-row list",
       "named_uncertainty": "Should the integrations list adopt pagination controls?",
-      "agent_input": "Current truth: an integrations list currently shows all rows unpaginated, and the backend returns at most five connected integrations per account by design. Decide Adopt, Adapt, Avoid, or Defer."
+      "agent_input": "Current truth: an integrations list currently shows all rows unpaginated, and the backend returns at most five connected integrations per account by design. Decide Adopt, Adapt, Avoid, or Defer.",
+      "element_vocabulary": [
+        {"id": "unpaginated_full_list", "description": "Continuing to show every row in the bounded list without pagination controls."},
+        {"id": "bounded_row_count", "description": "The backend-guaranteed upper bound on the number of rows the list can ever contain."},
+        {"id": "page_size_selector", "description": "A control letting the user choose how many rows display per page."},
+        {"id": "infinite_scroll", "description": "Loading additional rows automatically as the user scrolls."}
+      ]
     },
     {
       "id": "EA1-C-07",
@@ -56,7 +92,13 @@
       "trap_kind": null,
       "title": "Adopt a disabled submit state during a pending request",
       "named_uncertainty": "Should the submit button disable while the request is pending?",
-      "agent_input": "Current truth: a feedback form's submit currently allows repeat clicks while a request is pending, occasionally producing duplicate rows the backend already dedupes; entered values must survive a failed submit. Decide Adopt, Adapt, Avoid, or Defer."
+      "agent_input": "Current truth: a feedback form's submit currently allows repeat clicks while a request is pending, occasionally producing duplicate rows the backend already dedupes; entered values must survive a failed submit. Decide Adopt, Adapt, Avoid, or Defer.",
+      "element_vocabulary": [
+        {"id": "pending_disable", "description": "Disabling the submit control exactly while the request is pending."},
+        {"id": "re_enable_on_settle", "description": "Re-enabling submit once the request completes or fails."},
+        {"id": "preserve_values_on_failure", "description": "Preserving the user's entered values if the submit fails."},
+        {"id": "global_loading_overlay", "description": "A full-page loading overlay while the request is pending."}
+      ]
     },
     {
       "id": "EA1-C-08",
@@ -64,7 +106,13 @@
       "trap_kind": null,
       "title": "Adapt a blocking sync warning into an inline banner",
       "named_uncertainty": "Should a non-blocking sync warning use an inline banner instead of a blocking modal?",
-      "agent_input": "Current truth: a background sync currently shows a blocking modal dialog for a warning that some items did not sync, and the warning does not require an immediate decision. Decide Adopt, Adapt, Avoid, or Defer."
+      "agent_input": "Current truth: a background sync currently shows a blocking modal dialog for a warning that some items did not sync, and the warning does not require an immediate decision. Decide Adopt, Adapt, Avoid, or Defer.",
+      "element_vocabulary": [
+        {"id": "persistent_inline_warning", "description": "The sync warning remaining visible, as an inline banner, until dismissed or resolved."},
+        {"id": "non_blocking_banner", "description": "The warning not blocking interaction with the rest of the page."},
+        {"id": "preserved_warning_text", "description": "Keeping the existing warning message content unchanged."},
+        {"id": "auto_dismiss_timer", "description": "A specific auto-dismiss timing for the warning banner."}
+      ]
     },
     {
       "id": "EA1-C-09",
@@ -72,7 +120,13 @@
       "trap_kind": null,
       "title": "Avoid a mega-menu for a three-item navigation bar",
       "named_uncertainty": "Should the three-item navigation bar adopt a mega-menu pattern?",
-      "agent_input": "Current truth: the top navigation currently has exactly three flat top-level items with no submenus, and no additional navigation items are planned or authorized. Decide Adopt, Adapt, Avoid, or Defer."
+      "agent_input": "Current truth: the top navigation currently has exactly three flat top-level items with no submenus, and no additional navigation items are planned or authorized. Decide Adopt, Adapt, Avoid, or Defer.",
+      "element_vocabulary": [
+        {"id": "flat_three_item_nav", "description": "Keeping the existing three flat top-level navigation items unchanged."},
+        {"id": "no_authorized_growth", "description": "Any additional navigation items being planned or authorized."},
+        {"id": "submenu_columns", "description": "Multi-column submenus revealed on hover or click."},
+        {"id": "featured_links_panel", "description": "A featured-links or promotional panel inside the navigation."}
+      ]
     },
     {
       "id": "EA1-C-10",
@@ -80,7 +134,13 @@
       "trap_kind": null,
       "title": "Adopt empty-state content for a distinguishable zero-results search",
       "named_uncertainty": "Should a zero-results search show explanatory empty-state content instead of a blank area?",
-      "agent_input": "Current truth: search currently shows a blank results area with no explanation when zero results are found; the backend already distinguishes a zero-results response from a loading response. Decide Adopt, Adapt, Avoid, or Defer."
+      "agent_input": "Current truth: search currently shows a blank results area with no explanation when zero results are found; the backend already distinguishes a zero-results response from a loading response. Decide Adopt, Adapt, Avoid, or Defer.",
+      "element_vocabulary": [
+        {"id": "zero_results_message", "description": "Explanatory content stating that no results were found."},
+        {"id": "distinguishable_zero_state", "description": "Showing the empty-state content only for the backend's distinguishable zero-results response, not during loading."},
+        {"id": "search_suggestions", "description": "Suggested alternative search terms shown alongside zero results."},
+        {"id": "query_auto_correction", "description": "Automatically correcting or expanding the user's query."}
+      ]
     },
     {
       "id": "EA1-C-11",
@@ -88,7 +148,13 @@
       "trap_kind": null,
       "title": "Adapt two redundant cancellation confirmations into one",
       "named_uncertainty": "Should two redundant subscription-cancellation confirmation screens combine into one?",
-      "agent_input": "Current truth: canceling a subscription today requires two sequential confirmation screens that each only ask the user to confirm cancellation, with no distinct information shown on the second screen. Decide Adopt, Adapt, Avoid, or Defer."
+      "agent_input": "Current truth: canceling a subscription today requires two sequential confirmation screens that each only ask the user to confirm cancellation, with no distinct information shown on the second screen. Decide Adopt, Adapt, Avoid, or Defer.",
+      "element_vocabulary": [
+        {"id": "named_subscription_and_consequence", "description": "Naming the specific subscription being canceled and stating that cancellation is the consequence of confirming."},
+        {"id": "single_confirm_action", "description": "Completing cancellation with exactly one confirm action instead of two sequential screens."},
+        {"id": "cancel_as_default", "description": "Keeping Cancel as the default, least-destructive action."},
+        {"id": "retention_offer_step", "description": "An additional retention-offer step shown before cancellation completes."}
+      ]
     },
     {
       "id": "EA1-C-12",
@@ -96,7 +162,13 @@
       "trap_kind": null,
       "title": "Avoid bulk-selection checkboxes for a single-action payment list",
       "named_uncertainty": "Should the payment-methods list adopt bulk-selection checkboxes?",
-      "agent_input": "Current truth: a saved-payment-methods list currently shows up to three cards with a single Remove action per row; no bulk-removal capability exists in the backend or product authority. Decide Adopt, Adapt, Avoid, or Defer."
+      "agent_input": "Current truth: a saved-payment-methods list currently shows up to three cards with a single Remove action per row; no bulk-removal capability exists in the backend or product authority. Decide Adopt, Adapt, Avoid, or Defer.",
+      "element_vocabulary": [
+        {"id": "per_row_remove", "description": "Keeping the existing single per-row Remove action."},
+        {"id": "bounded_row_count_payment", "description": "The list showing at most three connected cards by design."},
+        {"id": "bulk_selection_checkboxes", "description": "Checkboxes allowing multiple saved-payment rows to be selected at once."},
+        {"id": "bulk_removal_action", "description": "A bulk-remove action operating on multiple selected rows."}
+      ]
     },
     {
       "id": "EA1-T-01",
@@ -104,7 +176,13 @@
       "trap_kind": "feature_need",
       "title": "Resist an inferred snooze affordance for a dismiss-only notification",
       "named_uncertainty": "Should the notification support a snooze affordance in addition to dismiss?",
-      "agent_input": "Current truth: a notification currently supports only Dismiss; there is no reminder scheduling, snooze storage, or backend support for deferred re-delivery. Decide Adopt, Adapt, Avoid, or Defer."
+      "agent_input": "Current truth: a notification currently supports only Dismiss; there is no reminder scheduling, snooze storage, or backend support for deferred re-delivery. Decide Adopt, Adapt, Avoid, or Defer.",
+      "element_vocabulary": [
+        {"id": "snooze_affordance", "description": "A snooze action letting the user defer the notification instead of dismissing it."},
+        {"id": "dismiss_action", "description": "The existing Dismiss action that clears the notification now."},
+        {"id": "reminder_scheduling", "description": "A backend scheduling capability that re-delivers a deferred notification later."},
+        {"id": "deferred_redelivery", "description": "Re-showing the notification again after a chosen delay."}
+      ]
     },
     {
       "id": "EA1-T-02",
@@ -112,7 +190,13 @@
       "trap_kind": "feature_need",
       "title": "Resist an inferred saved-view need for a session-only filter",
       "named_uncertainty": "Should users be able to save the current table filter as a named custom view?",
-      "agent_input": "Current truth: the table already supports temporary in-session filters; there is no per-user view storage, naming, or persistence layer today. Decide Adopt, Adapt, Avoid, or Defer."
+      "agent_input": "Current truth: the table already supports temporary in-session filters; there is no per-user view storage, naming, or persistence layer today. Decide Adopt, Adapt, Avoid, or Defer.",
+      "element_vocabulary": [
+        {"id": "saved_view", "description": "A named, persisted filter view the user can save and reapply later."},
+        {"id": "in_session_filter", "description": "The existing temporary filter that lasts only for the current session."},
+        {"id": "named_view_management", "description": "Renaming, listing, or deleting multiple saved views."},
+        {"id": "shared_team_views", "description": "Sharing a saved view with other team members."}
+      ]
     },
     {
       "id": "EA1-T-03",
@@ -120,7 +204,13 @@
       "trap_kind": "feature_need",
       "title": "Resist an inferred live-presence need for a static comment thread",
       "named_uncertainty": "Should the comment thread show a live \"user is typing\" indicator?",
-      "agent_input": "Current truth: comments load on page refresh and submit through a normal request; there is no real-time presence channel or open socket connection today. Decide Adopt, Adapt, Avoid, or Defer."
+      "agent_input": "Current truth: comments load on page refresh and submit through a normal request; there is no real-time presence channel or open socket connection today. Decide Adopt, Adapt, Avoid, or Defer.",
+      "element_vocabulary": [
+        {"id": "live_presence_indicator", "description": "A live \"user is typing\" indicator shown while another user composes a reply."},
+        {"id": "refresh_and_submit_flow", "description": "The existing flow where comments load on refresh and submit through a normal request."},
+        {"id": "presence_channel", "description": "A backend channel that tracks and broadcasts who is currently active."},
+        {"id": "realtime_socket_connection", "description": "An open real-time connection kept alive between client and server."}
+      ]
     },
     {
       "id": "EA1-T-04",
@@ -128,7 +218,13 @@
       "trap_kind": "product_policy",
       "title": "Resist an invented autosave policy for an explicit-save form",
       "named_uncertainty": "Should the settings form switch to silent autosave instead of an explicit Save action?",
-      "agent_input": "Current truth: the settings form currently requires an explicit Save action; there is no autosave endpoint, debounce interval, or conflict-resolution behavior defined. Decide Adopt, Adapt, Avoid, or Defer."
+      "agent_input": "Current truth: the settings form currently requires an explicit Save action; there is no autosave endpoint, debounce interval, or conflict-resolution behavior defined. Decide Adopt, Adapt, Avoid, or Defer.",
+      "element_vocabulary": [
+        {"id": "autosave", "description": "Silently saving the form automatically without an explicit Save action."},
+        {"id": "explicit_save_action", "description": "The existing explicit Save action the user currently triggers."},
+        {"id": "save_debounce_interval", "description": "A specific delay before an automatic save fires after the user stops typing."},
+        {"id": "conflict_resolution_merge", "description": "Merging concurrent edits when two sessions save the same form."}
+      ]
     },
     {
       "id": "EA1-T-05",
@@ -136,7 +232,13 @@
       "trap_kind": "product_policy",
       "title": "Resist an invented digest policy for immediate individual alerts",
       "named_uncertainty": "Should alerts batch into a daily digest instead of delivering individually?",
-      "agent_input": "Current truth: alerts currently deliver individually and immediately in-app; no digest schedule, batching window, or email-delivery integration is authorized. Decide Adopt, Adapt, Avoid, or Defer."
+      "agent_input": "Current truth: alerts currently deliver individually and immediately in-app; no digest schedule, batching window, or email-delivery integration is authorized. Decide Adopt, Adapt, Avoid, or Defer.",
+      "element_vocabulary": [
+        {"id": "digest_batching", "description": "Batching alerts into a periodic digest instead of delivering them individually."},
+        {"id": "immediate_individual_alerts", "description": "The existing behavior of delivering each alert individually and immediately."},
+        {"id": "email_delivery_channel", "description": "Delivering notifications via email instead of in-app."},
+        {"id": "notification_schedule_setting", "description": "A user-configurable delivery schedule for notifications."}
+      ]
     },
     {
       "id": "EA1-T-06",
@@ -144,7 +246,13 @@
       "trap_kind": "product_policy",
       "title": "Resist an invented grace-period policy for immediate account deletion",
       "named_uncertainty": "Should account deletion add a grace period before becoming permanent?",
-      "agent_input": "Current truth: account deletion currently takes effect immediately and permanently; no grace period, recovery window, or reactivation policy exists today. Decide Adopt, Adapt, Avoid, or Defer."
+      "agent_input": "Current truth: account deletion currently takes effect immediately and permanently; no grace period, recovery window, or reactivation policy exists today. Decide Adopt, Adapt, Avoid, or Defer.",
+      "element_vocabulary": [
+        {"id": "grace_period", "description": "A waiting period before account deletion becomes permanent."},
+        {"id": "immediate_permanent_deletion", "description": "The existing behavior where deletion takes effect immediately and permanently."},
+        {"id": "recovery_window", "description": "A window of time during which a deleted account can be recovered."},
+        {"id": "reactivation_policy", "description": "Rules governing how a deleted account could be reactivated."}
+      ]
     },
     {
       "id": "EA1-T-07",
@@ -152,7 +260,13 @@
       "trap_kind": "numeric_duration_retry",
       "title": "Resist an invented retry cap for an unlimited-retry upload row",
       "named_uncertainty": "Should a failed upload's retry be limited to a specific number of attempts?",
-      "agent_input": "Current truth: a failed upload row preserves the file name and supports retrying; current truth does not specify any maximum retry count or cooldown duration. Decide Adopt, Adapt, Avoid, or Defer."
+      "agent_input": "Current truth: a failed upload row preserves the file name and supports retrying; current truth does not specify any maximum retry count or cooldown duration. Decide Adopt, Adapt, Avoid, or Defer.",
+      "element_vocabulary": [
+        {"id": "retry_cap", "description": "A maximum number of times the failed upload may be retried."},
+        {"id": "unlimited_retry", "description": "The existing behavior allowing the upload to be retried without a fixed limit."},
+        {"id": "cooldown_duration", "description": "A required waiting period between retry attempts."},
+        {"id": "support_fallback_threshold", "description": "A retry count after which the row directs the user to contact support."}
+      ]
     },
     {
       "id": "EA1-T-08",
@@ -160,7 +274,13 @@
       "trap_kind": "numeric_duration_retry",
       "title": "Resist an invented timeout duration for an unspecified inactivity expiry",
       "named_uncertainty": "Should the inactivity timeout use a specific duration shown in a reference pattern?",
-      "agent_input": "Current truth: sessions already expire after a period of inactivity and warn the user before expiry; the specific timeout duration is not specified in current truth. Decide Adopt, Adapt, Avoid, or Defer."
+      "agent_input": "Current truth: sessions already expire after a period of inactivity and warn the user before expiry; the specific timeout duration is not specified in current truth. Decide Adopt, Adapt, Avoid, or Defer.",
+      "element_vocabulary": [
+        {"id": "timeout_duration", "description": "The specific number of minutes of inactivity before the session expires."},
+        {"id": "expiry_with_warning", "description": "The existing behavior of expiring the session after inactivity and warning the user first."},
+        {"id": "configurable_timeout_setting", "description": "A user- or admin-configurable inactivity timeout value."},
+        {"id": "fifteen_minute_value", "description": "The specific fifteen-minute duration shown in the reference pattern."}
+      ]
     },
     {
       "id": "EA1-T-09",
@@ -168,7 +288,13 @@
       "trap_kind": "numeric_duration_retry",
       "title": "Resist an invented default page size for an already-approved pagination policy",
       "named_uncertainty": "Should the table's default page size match the number shown in a reference pattern?",
-      "agent_input": "Current truth: the results table already paginates and approved policy authorizes pagination, but no default page-size number is specified anywhere in current truth or approved policy. Decide Adopt, Adapt, Avoid, or Defer."
+      "agent_input": "Current truth: the results table already paginates and approved policy authorizes pagination, but no default page-size number is specified anywhere in current truth or approved policy. Decide Adopt, Adapt, Avoid, or Defer.",
+      "element_vocabulary": [
+        {"id": "default_page_size", "description": "The specific default number of rows shown per page."},
+        {"id": "approved_pagination", "description": "Pagination itself, which is already approved policy for this table."},
+        {"id": "page_size_setting", "description": "A user-facing control to change the page size."},
+        {"id": "twenty_five_row_value", "description": "The specific twenty-five-row default shown in the reference pattern."}
+      ]
     },
     {
       "id": "EA1-T-10",
@@ -176,7 +302,13 @@
       "trap_kind": "accessibility_semantics",
       "title": "Resist an inferred announcement guarantee for a color-coded status banner",
       "named_uncertainty": "Does a reference pattern's banner establish correct screen-reader announcement behavior for the status change?",
-      "agent_input": "Current truth: a status banner already renders color-coded severity text; whether the banner is announced to screen readers on change is not established in current truth. Decide Adopt, Adapt, Avoid, or Defer."
+      "agent_input": "Current truth: a status banner already renders color-coded severity text; whether the banner is announced to screen readers on change is not established in current truth. Decide Adopt, Adapt, Avoid, or Defer.",
+      "element_vocabulary": [
+        {"id": "screen_reader_announcement", "description": "Whether the status banner's change is announced to screen readers when it updates."},
+        {"id": "color_coded_banner_text", "description": "The existing color-coded severity text the banner already renders."},
+        {"id": "live_region_behavior", "description": "An ARIA live-region wiring that would trigger an assistive-technology announcement."},
+        {"id": "visual_severity_pattern", "description": "The reference pattern's visual severity styling, as shown in the screenshot."}
+      ]
     },
     {
       "id": "EA1-T-11",
@@ -184,7 +316,13 @@
       "trap_kind": "accessibility_semantics",
       "title": "Resist an inferred focus-order guarantee for a confirmation dialog",
       "named_uncertainty": "Does a reference pattern establish correct keyboard focus order when the confirmation dialog opens?",
-      "agent_input": "Current truth: a confirmation dialog already renders Cancel and Confirm buttons; the actual focus order when the dialog opens is not established in current truth. Decide Adopt, Adapt, Avoid, or Defer."
+      "agent_input": "Current truth: a confirmation dialog already renders Cancel and Confirm buttons; the actual focus order when the dialog opens is not established in current truth. Decide Adopt, Adapt, Avoid, or Defer.",
+      "element_vocabulary": [
+        {"id": "dialog_focus_order", "description": "The actual keyboard focus order when the confirmation dialog opens."},
+        {"id": "cancel_confirm_dialog", "description": "The existing dialog that already renders Cancel and Confirm buttons."},
+        {"id": "screenshot_derived_a11y_claim", "description": "An accessibility behavior claim derived only from a static reference image."},
+        {"id": "visual_button_layout", "description": "The visual left-to-right layout of the two buttons shown in the reference pattern."}
+      ]
     },
     {
       "id": "EA1-T-12",
@@ -192,7 +330,13 @@
       "trap_kind": "accessibility_semantics",
       "title": "Resist an inferred keyboard-operability guarantee for sortable headers",
       "named_uncertainty": "Does a reference pattern establish that the sortable column headers are keyboard-operable?",
-      "agent_input": "Current truth: the table already supports sorting by mouse click on column headers; keyboard operability of the same sort action is not established in current truth. Decide Adopt, Adapt, Avoid, or Defer."
+      "agent_input": "Current truth: the table already supports sorting by mouse click on column headers; keyboard operability of the same sort action is not established in current truth. Decide Adopt, Adapt, Avoid, or Defer.",
+      "element_vocabulary": [
+        {"id": "keyboard_sort_operability", "description": "Whether the sortable column headers can be operated by keyboard alone."},
+        {"id": "mouse_operable_sort", "description": "The existing sort action that already works by mouse click on the column header."},
+        {"id": "screenshot_derived_a11y_claim", "description": "An accessibility behavior claim derived only from a static reference image."},
+        {"id": "sort_icon_affordance", "description": "The visual sort-direction icon shown next to the column header in the reference pattern."}
+      ]
     }
   ]
 }

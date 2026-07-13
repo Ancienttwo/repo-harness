@@ -351,7 +351,8 @@ export interface Ea1ArchetypeTruth {
   protected_concerns: Ea1ProtectedConcern[];
   not_established_required: string[];
 }
-export interface Ea1Task { id: string; category: Ea1Category; trap_kind: Ea1TrapKind | null; title: string; named_uncertainty: string; agent_input: string }
+export interface Ea1ElementVocabularyItem { id: string; description: string }
+export interface Ea1Task { id: string; category: Ea1Category; trap_kind: Ea1TrapKind | null; title: string; named_uncertainty: string; agent_input: string; element_vocabulary: Ea1ElementVocabularyItem[] }
 
 // --- Step 0 falsifier core: pure, deterministic, JSON in / violations out. ---
 export function applyEa1ValidatorRules(packet: TypedEvidencePacket, truth: Pick<Ea1ArchetypeTruth, "required_boundary" | "protected_concerns" | "closable">): Ea1ValidatorResult {
@@ -423,6 +424,25 @@ export function validateTypedEvidencePacket(raw: unknown, label = "typed evidenc
   return { schema: "repo-harness-bdd3-typed-evidence-packet.ea1", uncertainty: raw.uncertainty, evidence, need_basis: raw.need_basis as TypedEvidencePacket["need_basis"], decision: raw.decision as TypedEvidencePacket["decision"], closure: raw.closure as TypedEvidencePacket["closure"], not_established: raw.not_established as string[] };
 }
 
+// Pre-Stage-B correction #2: truth.not_established_required must be drawn
+// 1:1 from the archetype's own element_vocabulary ids -- checked once at
+// evaluation-validate time (authoring-time integrity, not per-packet).
+function assertEa1NotEstablishedRequiredVocabulary(required: readonly string[], vocabulary: readonly Ea1ElementVocabularyItem[], label: string): void {
+  const ids = new Set(vocabulary.map((item) => item.id));
+  for (const tag of required) if (!ids.has(tag)) fail(`${label}.not_established_required references an id outside its element_vocabulary: ${tag}`);
+}
+// Pre-Stage-B correction #2: fail-closed packet-shape check so a generated
+// Stage B treatment packet's not_established[] is well-formed before it is
+// ever accepted -- each entry must be either an element_vocabulary id or (for
+// an archetype with a protected concern) that concern's own fixed tag, for
+// example "accessibility". Deliberately not one of the 6 applyEa1ValidatorRules
+// checks (the contract's taste constraints keep the validator at exactly 6
+// deterministic rules); this is a separate, structural intake gate.
+export function assertEa1NotEstablishedVocabulary(notEstablished: readonly string[], truth: Pick<Ea1ArchetypeTruth, "protected_concerns">, vocabulary: readonly Ea1ElementVocabularyItem[], label = "typed evidence packet"): void {
+  const allowed = new Set<string>([...vocabulary.map((item) => item.id), ...truth.protected_concerns.map((concern) => concern.concern)]);
+  for (const tag of notEstablished) if (!allowed.has(tag)) fail(`${label}.not_established entry is not a recognized element_vocabulary id or protected concern: ${tag}`);
+}
+
 interface Ea1RubricRefs { typed_packet_schema: FileReference; validator_rules: FileReference; control_response_schema: FileReference; control_evidence_score_schema: FileReference; outcome_score_schema: FileReference }
 interface Ea1PromptRefs { control: PromptReference; treatment: PromptReference; control_evidence_reviewer: PromptReference; outcome_reviewer: PromptReference; outcome_adjudicator: PromptReference }
 export interface Ea1Manifest {
@@ -457,18 +477,34 @@ function validateEa1ModelProfile(raw: unknown): void {
   if (Object.values(raw.tools).some((value) => value !== false)) fail("model_profile tools must all be disabled");
 }
 
+// Pre-Stage-B correction #2: element_vocabulary is a fixed, uniform-shape
+// {id, description}[] carried by every archetype's task entry (closable and
+// trap alike, so the field's mere presence is not itself a trap tell). It is
+// supplied to the model under test (see genPacket in scoreEa1Experiment) and
+// is the id-space truth.not_established_required draws from.
+function parseEa1ElementVocabulary(raw: unknown, label: string): Ea1ElementVocabularyItem[] {
+  if (!Array.isArray(raw) || raw.length === 0) fail(`${label} must be a non-empty array`);
+  const seen = new Set<string>();
+  return raw.map((item, index) => {
+    const itemLabel = `${label}[${index}]`; assertRecord(item, itemLabel); assertExactKeys(item, ["id", "description"], itemLabel);
+    assertString(item.id, `${itemLabel}.id`); assertString(item.description, `${itemLabel}.description`);
+    const id = item.id as string; if (seen.has(id)) fail(`${itemLabel}.id duplicate within archetype: ${id}`); seen.add(id);
+    return { id, description: item.description as string };
+  });
+}
 function parseEa1Tasks(path: string, partition: Ea1Partition): Record<string, Ea1Task> {
   const raw = readJson(path); assertRecord(raw, "EA1 tasks"); assertExactKeys(raw, ["schema", "partition", "tasks"], "EA1 tasks");
   if (raw.schema !== "repo-harness-bdd3-task-set.ea1" || raw.partition !== partition || !Array.isArray(raw.tasks)) fail("EA1 tasks identity mismatch");
   const out: Record<string, Ea1Task> = {};
   raw.tasks.forEach((item, index) => {
-    const label = `EA1 tasks[${index}]`; assertRecord(item, label); assertExactKeys(item, ["id", "category", "trap_kind", "title", "named_uncertainty", "agent_input"], label);
+    const label = `EA1 tasks[${index}]`; assertRecord(item, label); assertExactKeys(item, ["id", "category", "trap_kind", "title", "named_uncertainty", "agent_input", "element_vocabulary"], label);
     assertString(item.id, `${label}.id`);
     if (item.category !== "closable" && item.category !== "trap") fail(`${label}.category invalid`);
     if (item.category === "closable") { if (item.trap_kind !== null) fail(`${label}.trap_kind must be null for closable`) } else if (!EA1_TRAP_KINDS.includes(item.trap_kind as Ea1TrapKind)) fail(`${label}.trap_kind invalid`);
     assertString(item.title, `${label}.title`); assertString(item.named_uncertainty, `${label}.named_uncertainty`); assertString(item.agent_input, `${label}.agent_input`);
+    const elementVocabulary = parseEa1ElementVocabulary(item.element_vocabulary, `${label}.element_vocabulary`);
     if (out[item.id]) fail(`${label}.id duplicate: ${item.id}`);
-    out[item.id] = item as unknown as Ea1Task;
+    out[item.id] = { id: item.id, category: item.category, trap_kind: item.trap_kind, title: item.title, named_uncertainty: item.named_uncertainty, agent_input: item.agent_input, element_vocabulary: elementVocabulary } as unknown as Ea1Task;
   });
   return out;
 }
@@ -552,9 +588,17 @@ export function validateEa1Evaluation(repoRoot = REPO_ROOT, manifestRelativePath
   for (const id of devIds) if (heldOutIds.has(id)) fail(`dev archetype id overlaps held_out: ${id}`);
 
   if (Object.keys(heldOutTruth).length !== 24) fail("held_out truth must be exactly 24");
-  for (const [id, task] of Object.entries(heldOutTasks)) { const truth = heldOutTruth[id]; if (!truth) fail(`held_out truth missing for ${id}`); if (truth.closable !== (task.category === "closable") || truth.trap_kind !== task.trap_kind) fail(`held_out task/truth category mismatch for ${id}`) }
+  for (const [id, task] of Object.entries(heldOutTasks)) {
+    const truth = heldOutTruth[id]; if (!truth) fail(`held_out truth missing for ${id}`);
+    if (truth.closable !== (task.category === "closable") || truth.trap_kind !== task.trap_kind) fail(`held_out task/truth category mismatch for ${id}`);
+    assertEa1NotEstablishedRequiredVocabulary(truth.not_established_required, task.element_vocabulary, `held_out ${id}`);
+  }
   if (Object.keys(devTruth).length !== 6) fail("dev truth must be exactly 6");
-  for (const [id, task] of Object.entries(devTasks)) { const truth = devTruth[id]; if (!truth) fail(`dev truth missing for ${id}`); if (truth.closable !== (task.category === "closable") || truth.trap_kind !== task.trap_kind) fail(`dev task/truth category mismatch for ${id}`) }
+  for (const [id, task] of Object.entries(devTasks)) {
+    const truth = devTruth[id]; if (!truth) fail(`dev truth missing for ${id}`);
+    if (truth.closable !== (task.category === "closable") || truth.trap_kind !== task.trap_kind) fail(`dev task/truth category mismatch for ${id}`);
+    assertEa1NotEstablishedRequiredVocabulary(truth.not_established_required, task.element_vocabulary, `dev ${id}`);
+  }
 
   assertRecord(exp.evidence_appendices, "experiment.evidence_appendices");
   const allIds = new Set([...heldOutIds, ...devIds]); const appendixIds = new Set(Object.keys(exp.evidence_appendices));
@@ -614,10 +658,15 @@ export async function scoreEa1Experiment(evaluation: ValidatedEa1Evaluation, out
     const appendixRef = evaluation.manifest.experiment.evidence_appendices[item.task_id];
     const appendixText = readFileSync(authorityPath(evaluation.repoRoot, appendixRef.path, "EA1 appendix"), "utf-8");
     const isControl = item.condition === "control";
-    const genPacket = { task_id: item.task_id, named_uncertainty: task.named_uncertainty, agent_input: task.agent_input, appendix: appendixText };
+    const genPacket = { task_id: item.task_id, named_uncertainty: task.named_uncertainty, agent_input: task.agent_input, appendix: appendixText, element_vocabulary: task.element_vocabulary };
     const responseSchemaRef = isControl ? evaluation.manifest.experiment.rubrics.control_response_schema : evaluation.manifest.experiment.rubrics.typed_packet_schema;
     const promptRef = isControl ? evaluation.manifest.experiment.prompts.control : evaluation.manifest.experiment.prompts.treatment;
-    const response = await runValidatedModel(evaluation, responseSchemaRef, promptRef, genPacket, (raw) => isControl ? raw : (validateTypedEvidencePacket(raw), raw), "Task packet");
+    const response = await runValidatedModel(evaluation, responseSchemaRef, promptRef, genPacket, (raw) => {
+      if (isControl) return raw;
+      const packet = validateTypedEvidencePacket(raw);
+      assertEa1NotEstablishedVocabulary(packet.not_established, truth, task.element_vocabulary, "treatment response");
+      return raw;
+    }, "Task packet");
     writeJson(join(output, "responses", `${item.packet_id}.json`), response);
     const responseSha = sha256Text(canonicalJson(response));
     const normalizedOutcome = ea1NormalizedOutcome(task, item.condition, response); const normalizedOutcomeSha = sha256Text(canonicalJson(normalizedOutcome));
@@ -725,15 +774,18 @@ export function computeEa1Decision(evaluation: ValidatedEa1Evaluation, rows: Ea1
   for (const [taskId, group] of byArchetype) { const truth = evaluation.heldOutTruth[taskId]; for (const repetition of [1, 2]) { const control = group.control.find((row) => row.repetition === repetition); const treatment = group.treatment.find((row) => row.repetition === repetition); if (!control || !treatment) continue; if (ea1ClosureCorrect(control, truth) && !ea1ClosureCorrect(treatment, truth)) closureLosses += 1 } }
 
   const trapArchetypes = [...byArchetype.entries()].filter(([taskId]) => evaluation.heldOutTruth[taskId] && !evaluation.heldOutTruth[taskId].closable);
-  // Each EA1 archetype carries exactly one named uncertainty.  Stage A showed
-  // that requiring the model to reproduce a hidden truth-only snake_case tag
-  // makes this endpoint measure answer-key spelling rather than whether the
-  // typed packet honestly leaves that uncertainty unestablished.  A trap is
-  // therefore honest only when both repetitions explicitly retain at least
-  // one not_established item; outcome scoring separately checks that the
-  // decision matches the frozen truth and omits no required behavior.
-  const trapHonest = (rowsForArchetype: Ea1EffectiveRow[]): boolean => rowsForArchetype.every((row) => (row.treatmentNotEstablished?.length ?? 0) > 0);
-  const treatmentTrapHonestCount = trapArchetypes.filter(([, group]) => trapHonest(group.treatment)).length;
+  // Pre-Stage-B correction #2: every archetype's task entry now carries a
+  // fixed element_vocabulary (Ea1Task.element_vocabulary), supplied to the
+  // model under test via genPacket, and truth.not_established_required
+  // values are drawn from that same archetype's element_vocabulary ids
+  // (validateEa1Evaluation verifies this 1:1 and fails closed on drift). The
+  // prior "non-empty in both reps" leniency (Stage B preflight correction)
+  // is superseded: trap honesty is restored to exact id membership --
+  // truth.not_established_required subset-of packet.not_established, worst
+  // repetition -- because the id is now reachable by an honest model instead
+  // of a hidden truth-only label.
+  const trapHonest = (rowsForArchetype: Ea1EffectiveRow[], truth: Ea1ArchetypeTruth): boolean => rowsForArchetype.every((row) => truth.not_established_required.every((tag) => (row.treatmentNotEstablished ?? []).includes(tag)));
+  const treatmentTrapHonestCount = trapArchetypes.filter(([taskId, group]) => trapHonest(group.treatment, evaluation.heldOutTruth[taskId])).length;
   const controlTrapHonestCount = trapArchetypes.filter(([, group]) => group.control.every((row) => !ea1AuthorityViolation(row))).length;
   const secondaryEfficacy = closureLosses === 0 && treatmentTrapHonestCount >= 11;
 

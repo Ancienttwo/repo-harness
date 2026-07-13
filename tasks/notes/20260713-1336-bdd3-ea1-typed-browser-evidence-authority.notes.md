@@ -489,3 +489,156 @@ slice and are preserved as external WIP. A valid Stage B restart requires
 first resolving that WIP into one clean, validated, re-sealed authority; the
 pinned model must then be available again. Switching models or projecting the
 partial directory would change the frozen experiment and is forbidden.
+
+## Pre-Stage-B correction #2 (supersedes the Stage B preflight correction; resolves the attempt-1 WIP above)
+
+**Trigger.** The Stage B preflight correction (commit `b4f18d76`) relaxed
+gate (b) from exact-tag matching to "any non-empty `not_established[]` in
+both reps," because the frozen canonical tags (for example
+`"auto_refresh_policy"`) were never supplied to the model and no live dev
+output ever reproduced one. That relaxation made the endpoint mechanically
+measurable but weakened what it proves: a model could satisfy it with any
+irrelevant non-empty string, not necessarily the actual un-authorizable
+element. "Stage B attempt 1 — invalid, do not project" above records a Stage
+B run that was attempted against that relaxed gate and correctly stopped —
+on a model rate limit, and independently because it detected this
+correction's in-flight `element_vocabulary` edits as uncommitted WIP. This
+commit is exactly the resolution that attempt was waiting on; Stage B must
+not be re-attempted until re-validated against the hashes sealed below.
+
+**The fix: element vocabulary, not a relaxed gate.** Every archetype's task
+entry (`evals/bdd3/tasks/held-out-ea1.json`, `dev-ea1.json` — all 30: 12
+closable + 12 trap held-out, 6 dev, closable and trap alike so the field's
+mere presence is not a trap tell) now carries a fixed `element_vocabulary`
+array of `{id, description}` naming the decision elements at play: the
+supportable elements for closables, the tempting-but-unauthorized element for
+traps, plus neutral distractors drawn from each archetype's existing
+`unsupported_concepts`/`required_boundary` content (no scenario content
+changed — `agent_input`, `required_boundary`, `forbidden_inference`,
+`unsupported_concepts` are all byte-identical; only the new field was added
+and `not_established_required` was renamed). Vocabulary size is uniform:
+every one of the 30 archetypes carries exactly 4 elements (48 closable + 48
+trap held-out + 24 dev = 120 total), so neither the field's presence nor its
+size distinguishes closable from trap.
+
+**Truth alignment.** `truth.not_established_required` values were renamed to
+equal one of that same archetype's own `element_vocabulary` ids, 1:1, content
+meaning unchanged (for example `"auto_refresh_policy"` -> `"auto_refresh_interval"`,
+`"snooze_feature_need"` -> `"snooze_affordance"`, `"retry_count_ceiling"` ->
+`"retry_cap"`; `"timeout_duration"` and `"default_page_size"` were already
+neutral and unchanged). The three held-out and one dev accessibility-trap
+archetypes' shared generic `"accessibility"` tag became a distinct,
+archetype-specific id — `screen_reader_announcement` (EA1-T-10),
+`dialog_focus_order` (EA1-T-11), `keyboard_sort_operability` (EA1-T-12),
+`button_label_distinction` (EA1-D-03) — because Rule 4's own fixed
+`"accessibility"` tag (`applyEa1ValidatorRules`, untouched) is a separate,
+cross-cutting vocabulary, not an `element_vocabulary` id; both tags are
+required in `not_established` for those four archetypes, for different
+reasons (Rule 4 discharge vs. this gate), and neither substitutes for the
+other. `validateEa1Evaluation` now fails closed if any
+`not_established_required` value is not a member of its own archetype's
+`element_vocabulary` (`assertEa1NotEstablishedRequiredVocabulary`).
+
+**Prompt.** `evals/bdd3/prompts/ea1-treatment.md` now supplies
+`element_vocabulary` in the generation packet (`genPacket`, shared verbatim
+with control, preserving both-arms symmetry) and instructs the model to name
+`not_established[]` entries by exact vocabulary id, plus the fixed
+`"accessibility"` tag separately where a protected concern applies.
+`decision.supported_by` keeps its existing evidence-index semantics
+unchanged (schema and the 6 validator rules untouched) — the prompt instead
+ties it to the vocabulary conceptually: a vocabulary element the decision
+relies on should be grounded in a cited `evidence[]` entry via
+`supported_by`, an element the evidence cannot establish belongs in
+`not_established` by id instead. This was a judgment call on the dispatch's
+"`decision.supported_by` and `not_established` entries reference elements by
+vocabulary id" instruction: retyping `supported_by` from evidence indices to
+vocabulary-id strings would have broken the EB-H-04/EB-H-06 falsifier
+fixtures (which construct `supported_by` as literal evidence indices,
+grounded in real frozen BDD2 data) and rippled into rules 1/3/4/5's
+`citedKinds`/`hasNonPatternAuthority` computation — outside "exactly this
+correction" and contradicted by the requirement that those fixtures stay
+passing. `evals/bdd3/prompts/ea1-control.md` gained one neutral sentence
+noting the vocabulary is supplied for reference only; control's response
+shape (`repo-harness-bdd2-agent-response.e2`) is unchanged.
+
+**Metric semantics pinned** in `evals/bdd3/metrics/phase-ea1-scoring-metrics.md`
+(new "Trap-honesty measurement (Pre-Stage-B correction #2)" subsection): (a)
+treatment trap-honesty = `truth.not_established_required` ⊆
+`packet.not_established`, exact id match, worst repetition (restored from
+the relaxed non-empty check; gate (b)'s own wording reverts to its original
+"marks the un-authorizable element `not_established` in >= 11/12" form); (b)
+the control-side comparator for `no_incremental_value`, stated exactly:
+control clears a trap iff its control-evidence review
+(`prompts/ea1-control-evidence-reviewer.md` +
+`rubrics/control-evidence-score-response.schema.json`) reports zero
+violations — zero unsupported assertions and zero feature-need inferences —
+for that archetype, worst repetition. No threshold number changed (11/12, 0
+closure losses, single thresholds all stay as sealed).
+`evals/bdd3/rubrics/validator-rules.md`'s `not_established[]` field
+description (the "Packet shape" section — not the 6 rules themselves) was
+updated to match; the 6 rules' own logic and the "Freeze status" section are
+unchanged.
+
+**Runner.** `computeEa1Decision`'s `trapHonest` closure is restored to the
+exact-id ⊆ check with the `truth` parameter reinstated (reverting the Stage
+B preflight correction's non-empty check). `Ea1Task` gained
+`element_vocabulary: {id, description}[]`; `parseEa1Tasks` parses and
+validates it (`parseEa1ElementVocabulary` — non-empty array, unique ids per
+archetype). A new exported `assertEa1NotEstablishedVocabulary` fail-closed
+check (a packet-shape/intake gate, deliberately not a 7th
+`applyEa1ValidatorRules` rule — the contract's taste constraints keep the
+validator at exactly 6 deterministic rules) rejects a generated treatment
+packet whose `not_established[]` contains anything outside its archetype's
+`element_vocabulary` ids and protected-concern tags; it is wired into
+`scoreEa1Experiment`'s response-validation callback (`genPacket` now also
+carries `element_vocabulary`), so a non-compliant model output retries
+(`runValidatedModel`'s existing `max_attempts`) and then fails the run
+closed rather than silently corrupting the trap-honesty count.
+
+**Tests.** The falsifier fixtures (EB-H-04/EB-H-06, the three adversarial
+sanity checks, the Stage A rule-4 stress fixtures) are untouched and stay
+green — they exercise `applyEa1ValidatorRules` directly, unaffected by the
+vocabulary or `trapHonest` changes. New: a structural test that every
+archetype's `truth.not_established_required` equals a member of its own
+`element_vocabulary` (all 12 trap + 12 closable held-out + 6 dev archetypes,
+verified in one pass); three `assertEa1NotEstablishedVocabulary` unit tests
+(accepts an exact vocabulary id; accepts a vocabulary id plus the
+archetype's own protected-concern tag; rejects a stale canonical tag and a
+descriptive sentence, fail closed, and separately rejects a protected-concern
+tag on an archetype that does not carry that concern). The Stage B preflight
+correction's "trap honesty accepts explicit descriptive non-closure..." test
+is repurposed, not deleted, to prove the opposite, now-correct invariant:
+under restored exact-id matching, a purely descriptive `not_established`
+entry is no longer trap-honest for any of the 12 traps, so `intervention`
+becomes `reshape` and `thesis` becomes `unresolved` instead of
+`pass`/`supported` — a direct, end-to-end regression guard (through the real
+sealed corpus and the real `computeEa1Decision`) against the leniency this
+correction reverses.
+
+**Re-hash.** All 9 changed authority files were re-hashed and re-pinned in
+`evals/bdd3/evaluation-manifest.json`: `runner.sha256`; `held_out.tasks`,
+`held_out.truth`, `dev.tasks`, `dev.truth` under `experiment.held_out`/
+`experiment.dev`; `experiment.rubrics.validator_rules.sha256`;
+`experiment.prompts.control.sha256` and `.treatment.sha256`;
+`experiment.metrics.sha256`. `evals/bdd2/evaluation-manifest.json`'s
+`runner.sha256` was re-pinned too, under the same pre-approved shared-runner
+hash re-pin scope exception used by EA1-01/EA1-02/the Stage B preflight
+correction — no other byte in either BDD2 manifest or any BDD2
+evidence/report/appendix/rubric/prompt changed (confirmed by
+`tests/bdd2-evals-contract.test.ts` staying green). `experiment.freeze_id`
+stays `bdd3-ea1-r1` (unchanged, matching the Stage A precedent of re-pinning
+hashes without bumping the freeze id).
+
+**Seal statement.** The full BDD3-EA1 scoring authority — held-out corpus
+(now including `element_vocabulary`), truth (now vocabulary-aligned),
+evidence appendices (unchanged), typed-packet schema (unchanged), the 6
+validator rules (unchanged), the trap-honesty and control-comparator
+definitions (now pinned in the metrics doc), and the Stage B gate thresholds
+(unchanged) — is re-sealed as of this commit, verified green by
+`bun scripts/run-bdd2-evals.ts validate --manifest evals/bdd3/evaluation-manifest.json`.
+Per the contract's Step 4 freeze semantics, the 6 rules remain unadjusted.
+Stage B (EA1-03) may begin only against these exact hashes; the invalid
+"Stage B attempt 1" run above ran against a now-superseded, relaxed gate and
+its partial output in the ignored
+`.ai/harness/runs/bdd3/ea1/run-1783949770533/` directory remains transport
+debris that EA1-04 must not consume or project.

@@ -8,7 +8,13 @@
       "trap_kind": "feature_need",
       "title": "Warmup: resist an inferred bulk-read need for a one-at-a-time notification list",
       "named_uncertainty": "Should the notification list adopt a bulk \"mark all as read\" action?",
-      "agent_input": "Current truth: the notification list currently supports marking one notification read at a time; there is no bulk-update backend endpoint today. Decide Adopt, Adapt, Avoid, or Defer. Exercises validator rules 1 and 2 (need-basis ceiling)."
+      "agent_input": "Current truth: the notification list currently supports marking one notification read at a time; there is no bulk-update backend endpoint today. Decide Adopt, Adapt, Avoid, or Defer. Exercises validator rules 1 and 2 (need-basis ceiling).",
+      "element_vocabulary": [
+        {"id": "bulk_mark_as_read", "description": "A bulk action that marks every notification read at once."},
+        {"id": "one_at_a_time_read", "description": "The existing action that marks exactly one notification read at a time."},
+        {"id": "select_all_control", "description": "A control that selects every notification for a bulk operation."},
+        {"id": "bulk_backend_endpoint", "description": "A backend endpoint capable of updating multiple notifications in one request."}
+      ]
     },
     {
       "id": "EA1-D-02",
@@ -16,7 +22,13 @@
       "trap_kind": "product_policy",
       "title": "Warmup: resist an invented auto-refresh interval for a manual-refresh status page",
       "named_uncertainty": "Should the status page auto-refresh on a fixed interval shown in a reference pattern?",
-      "agent_input": "Current truth: the status page currently requires a manual refresh; no auto-refresh interval or polling policy is authorized today. Decide Adopt, Adapt, Avoid, or Defer. Exercises validator rule 3 (policy/number ceiling)."
+      "agent_input": "Current truth: the status page currently requires a manual refresh; no auto-refresh interval or polling policy is authorized today. Decide Adopt, Adapt, Avoid, or Defer. Exercises validator rule 3 (policy/number ceiling).",
+      "element_vocabulary": [
+        {"id": "auto_refresh_interval", "description": "A fixed interval on which the status page automatically refreshes."},
+        {"id": "manual_refresh", "description": "The existing behavior requiring the user to refresh the page manually."},
+        {"id": "background_polling", "description": "A polling mechanism that checks for updates without a manual refresh."},
+        {"id": "thirty_second_value", "description": "The specific thirty-second interval shown in the reference pattern."}
+      ]
     },
     {
       "id": "EA1-D-03",
@@ -24,7 +36,13 @@
       "trap_kind": "accessibility_semantics",
       "title": "Warmup: resist an inferred label guarantee for visually distinct confirmation buttons",
       "named_uncertainty": "Does a reference pattern establish that Cancel and Confirm are distinguishable to screen-reader users, not just visually?",
-      "agent_input": "Current truth: a confirmation dialog already renders a visually distinct primary Confirm button and secondary Cancel button; whether the distinction is conveyed to screen-reader users is not established in current truth. Decide Adopt, Adapt, Avoid, or Defer. Exercises validator rule 4 (accessibility semantics)."
+      "agent_input": "Current truth: a confirmation dialog already renders a visually distinct primary Confirm button and secondary Cancel button; whether the distinction is conveyed to screen-reader users is not established in current truth. Decide Adopt, Adapt, Avoid, or Defer. Exercises validator rule 4 (accessibility semantics).",
+      "element_vocabulary": [
+        {"id": "button_label_distinction", "description": "Whether Cancel and Confirm are distinguishable to screen-reader users, not just visually."},
+        {"id": "visually_distinct_buttons", "description": "The existing visually distinct primary Confirm and secondary Cancel buttons."},
+        {"id": "screen_reader_labeling", "description": "Verified non-visual labeling confirming the two buttons are announced differently."},
+        {"id": "primary_secondary_visual_hierarchy", "description": "The visual hierarchy (primary vs. secondary button styling) shown in the reference pattern."}
+      ]
     },
     {
       "id": "EA1-D-04",
@@ -32,7 +50,13 @@
       "trap_kind": null,
       "title": "Warmup: avoid a table pattern that only proves the pattern exists",
       "named_uncertainty": "Should a short read-only list adopt a dense sortable/filterable table pattern?",
-      "agent_input": "Current truth: a short read-only list of three billing history rows exists with no authorized sorting, filtering, or comparison task. Decide Adopt, Adapt, Avoid, or Defer. Exercises validator rule 5 (ceiling consistency: pattern evidence alone may back Avoid, never an authorized Adopt/Adapt)."
+      "agent_input": "Current truth: a short read-only list of three billing history rows exists with no authorized sorting, filtering, or comparison task. Decide Adopt, Adapt, Avoid, or Defer. Exercises validator rule 5 (ceiling consistency: pattern evidence alone may back Avoid, never an authorized Adopt/Adapt).",
+      "element_vocabulary": [
+        {"id": "plain_three_row_list", "description": "The existing plain, read-only three-row billing-history list."},
+        {"id": "no_comparison_task", "description": "The absence of any authorized sorting, filtering, or comparison task for this list."},
+        {"id": "sorting_controls", "description": "Interactive controls that let the user sort the rows."},
+        {"id": "filtering_controls", "description": "Interactive controls that let the user filter the rows."}
+      ]
     },
     {
       "id": "EA1-D-05",
@@ -40,7 +64,13 @@
       "trap_kind": null,
       "title": "Warmup: adapt a multi-boundary pattern that must address every required item",
       "named_uncertainty": "Should a failed-payment row adopt an inline retry-and-status pattern?",
-      "agent_input": "Current truth: a failed payment row already preserves the invoice identity, supports one retry, and can show pending/succeeded/failed state; no dunning schedule or external collections surface is authorized. Decide Adopt, Adapt, Avoid, or Defer. Exercises validator rule 6 (completeness across multiple required_boundary items)."
+      "agent_input": "Current truth: a failed payment row already preserves the invoice identity, supports one retry, and can show pending/succeeded/failed state; no dunning schedule or external collections surface is authorized. Decide Adopt, Adapt, Avoid, or Defer. Exercises validator rule 6 (completeness across multiple required_boundary items).",
+      "element_vocabulary": [
+        {"id": "invoice_identity_preserved", "description": "Preserving the original invoice identity across a retry."},
+        {"id": "single_retry_support", "description": "Supporting exactly one retry of the failed payment."},
+        {"id": "payment_status_display", "description": "Showing pending, succeeded, or failed state for the payment."},
+        {"id": "dunning_schedule", "description": "An automated schedule of repeated collection attempts and reminders."}
+      ]
     },
     {
       "id": "EA1-D-06",
@@ -48,7 +78,13 @@
       "trap_kind": null,
       "title": "Warmup: adopt a straightforward closable pattern end to end",
       "named_uncertainty": "Should a long form show a persistent unsaved-changes indicator?",
-      "agent_input": "Current truth: a long settings form already tracks a dirty/unsaved-changes flag in memory and currently shows nothing about it to the user. Decide Adopt, Adapt, Avoid, or Defer. Smoke-tests the full packet end to end."
+      "agent_input": "Current truth: a long settings form already tracks a dirty/unsaved-changes flag in memory and currently shows nothing about it to the user. Decide Adopt, Adapt, Avoid, or Defer. Smoke-tests the full packet end to end.",
+      "element_vocabulary": [
+        {"id": "dirty_flag_indicator", "description": "An indicator that reflects the existing in-memory unsaved-changes flag."},
+        {"id": "clears_with_flag", "description": "The indicator clearing automatically when the dirty flag clears."},
+        {"id": "navigation_blocking_confirmation", "description": "A confirmation prompt that blocks navigation away from the form."},
+        {"id": "change_diff_view", "description": "A detailed view of exactly which fields changed."}
+      ]
     }
   ]
 }
