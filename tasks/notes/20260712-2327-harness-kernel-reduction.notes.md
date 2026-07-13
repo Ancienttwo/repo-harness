@@ -136,6 +136,14 @@
   the independently reviewed reference run from the volatile final verifier run.
   The latter is accepted by exact report-byte and provenance binding, not by
   copying changing token totals into implementation review metadata.
+- The third final verifier passed the matrix and every contract command through
+  task-sync, proving that evidence exclusion fix. It then failed only because
+  `main/origin/main` advanced during the run to native-role capability changes
+  whose three registered reference docs had not yet been mirrored into the
+  default brain vault. Direct strict workflow check reproduced only that
+  `[BrainSync]` drift. The new main also overlaps this work-package's hook,
+  report, notes, review, circuit-test, and task-sync surfaces, so it must be
+  integrated and audited before the verifier can be retried.
 
 ## Tradeoffs Considered
 
