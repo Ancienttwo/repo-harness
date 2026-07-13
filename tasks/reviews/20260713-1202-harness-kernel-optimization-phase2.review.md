@@ -8,7 +8,7 @@
 > **Last Updated**: 2026-07-14 01:35
 > **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Diff Fingerprint**: sha256:938d251806d8e2061e08ee6400e6a3ecef953b59bd27187a21097286c9f00b36
+> **Reviewed Diff Fingerprint**: sha256:bc10ac308a60f87024c1ee74a89dd56726513d0a6f60e49b3eee9fc00f2e66d5
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 ## Human Review Card
@@ -45,11 +45,12 @@
 > **External Source**: codex-review
 > **External Started**: 2026-07-13 23:35
 > **External Completed**: 2026-07-14 01:30
-> **Reviewed Diff Fingerprint**: sha256:938d251806d8e2061e08ee6400e6a3ecef953b59bd27187a21097286c9f00b36
+> **Reviewed Diff Fingerprint**: sha256:bc10ac308a60f87024c1ee74a89dd56726513d0a6f60e49b3eee9fc00f2e66d5
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 - P1 blockers: none
-- Acceptance history: round 1 (session 019f5c15) 4 P1 + 4 P2 -> fixed/adjudicated in a629bafe, 86bba78c, f16eef81; round 2 (session 019f5c1b via 019f5c5e) 1 P1 + 1 P2 -> fixed in 5e47fc3c; round 3 (session 019f5c90) VERDICT: pass, zero findings.
+- Acceptance history: round 1 (session 019f5c15) 4 P1 + 4 P2 -> fixed/adjudicated in a629bafe, 86bba78c, f16eef81; round 2 (session 019f5c1b via 019f5c5e) 1 P1 + 1 P2 -> fixed in 5e47fc3c; round 3 (session 019f5c90) VERDICT: pass, zero findings against code state 5e47fc3c.
+- Post-acceptance delta: workflow bookkeeping only (d080e009 acceptance record, ebde0659 contract allowed-paths amendment for comment-only cross-references); `git diff 5e47fc3c..HEAD --name-only` shows exactly the contract and this review file, zero code change since the accepted state.
 - P2 advisories: Phase B aggregate criteria miss (adjudicated, deferred follow-up recorded); `artifactCount` in run-skill-evals.ts shares the structurally-null pattern E3 removed (flagged in notes, not in scope).
 - Acceptance checklist: scope-traced diff, re-run verification, spot-checked implementations, fail-closed semantics preserved, no test fakery.
 
