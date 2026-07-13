@@ -46,10 +46,11 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
     expect(claudeLite).not.toContain('--safe-mode');
   });
 
-  test('binds Bun global installs to the disposable benchmark host', () => {
+  test('binds mutable harness authorities to the disposable benchmark host', () => {
     const env = isolatedHarnessEnvironment('/tmp/benchmark-host');
     expect(env.HOME).toBe('/tmp/benchmark-host');
     expect(env.CODEX_HOME).toBe('/tmp/benchmark-host/.codex');
+    expect(env.REPO_HARNESS_BRAIN_ROOT).toBe('/tmp/benchmark-host/brain');
     expect(env.BUN_INSTALL).toBe('/tmp/benchmark-host/.bun');
     expect(env.PATH?.split(':')[0]).toBe('/tmp/benchmark-host/.bun/bin');
   });

@@ -270,6 +270,7 @@ export function isolatedHarnessEnvironment(hostRoot: string): NodeJS.ProcessEnv 
     ...process.env,
     HOME: hostRoot,
     CODEX_HOME: join(hostRoot, '.codex'),
+    REPO_HARNESS_BRAIN_ROOT: join(hostRoot, 'brain'),
     BUN_INSTALL: join(hostRoot, '.bun'),
     PATH: `${join(hostRoot, '.bun/bin')}:${process.env.PATH ?? ''}`,
   };
@@ -448,11 +449,12 @@ async function executeRun(provider: BenchmarkProvider, profile: BenchmarkProfile
   const processHandle = Bun.spawn(command, {
     cwd: workspace,
     env: {
-      ...process.env,
+      ...isolatedHarnessEnvironment(hostRoot),
+      // Claude keeps the real HOME only for its host authentication. Every
+      // repo-harness-owned mutable authority remains pinned to the disposable
+      // benchmark host by isolatedHarnessEnvironment.
       HOME: provider === 'codex' ? hostRoot : process.env.HOME,
       CODEX_HOME: provider === 'codex' ? join(hostRoot, '.codex') : process.env.CODEX_HOME,
-      BUN_INSTALL: join(hostRoot, '.bun'),
-      PATH: `${join(hostRoot, '.bun/bin')}:${process.env.PATH ?? ''}`,
       HOOK_SESSION_ID: `${profile}-${scenario.id}`,
     },
     stdout: 'pipe', stderr: 'pipe', stdin: 'ignore',

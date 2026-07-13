@@ -240,6 +240,13 @@
   established `REPO_HARNESS_SOURCE_ROOT` helper authority. Isolated hook-runtime
   and workflow-state tests pass with that exact environment. No runtime hook
   policy or safety boundary changed.
+- The post-rebase authoritative verifier exposed one remaining host-side
+  effect: Claude needs the real `HOME` for authentication, so benchmark hook
+  processes resolved the user's configured brain vault and could overwrite
+  repo-to-brain mirrors before `check-task-workflow --strict`. The provider
+  environment now pins `REPO_HARNESS_BRAIN_ROOT` to the disposable per-run host
+  while retaining Claude's authentication `HOME`; this removes the mutable
+  authority leak without copying credentials or adding a fallback path.
 
 ## Tradeoffs Considered
 
