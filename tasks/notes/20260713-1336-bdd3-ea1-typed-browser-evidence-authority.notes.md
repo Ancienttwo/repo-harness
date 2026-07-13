@@ -1,10 +1,10 @@
 # Implementation Notes: bdd3-ea1-typed-browser-evidence-authority
 
-> **Status**: Active (slices EA1-01, EA1-02 complete; EA1-03 blocked before a valid Stage B run)
+> **Status**: Active (slices EA1-01, EA1-02 complete; EA1-03 not yet re-attempted — quota block resolved by Pre-Stage-B correction #3's model swap, no held-out output exists yet)
 > **Plan**: plans/plan-20260713-1336-bdd3-ea1-typed-browser-evidence-authority.md
 > **Contract**: tasks/contracts/20260713-1336-bdd3-ea1-typed-browser-evidence-authority.contract.md
 > **Review**: tasks/reviews/20260713-1336-bdd3-ea1-typed-browser-evidence-authority.review.md
-> **Last Updated**: 2026-07-14 00:53
+> **Last Updated**: 2026-07-14 01:20
 > **Lifecycle**: notes
 
 Scope of this entry: EA1-01 only (author + freeze the held-out corpus, truth,
@@ -713,3 +713,173 @@ not independently confirmed). EA1-04 must not be attempted — there is no
 the quota window opens; the sealed authority does not expire, only the
 transport quota does, so re-running `validate` first is a sanity check, not
 a requirement, unless the manifest has changed in the interim.
+
+## Pre-Stage-B correction #3 (generation-model substrate swap)
+
+**Trigger.** Dispatched by the orchestrator as an explicit pre-Stage-B
+correction: `gpt-5.3-codex-spark` remains capped account-wide (reset not
+before Jul 20th, 2026 3:01 AM, per "Stage B run record — attempt 2" above,
+reproduced identically across two independent sessions three hours apart).
+Zero held-out output exists at the commit this correction started from
+(`4290b4718c072addaa15bb8fd5593cf83ffc5929`) — confirmed independently here,
+not only asserted by the dispatch: all four dead run directories under
+`.ai/harness/runs/bdd3/ea1/` (`run-1783949770533` from attempt 1,
+`run-1783961180897`/`run-1783961348478`/`run-1783961410892` from attempt 2's
+three sub-attempts) contain no `run.json`, and none was touched by this
+correction. The dispatch attributes the swap decision to the repo owner
+("kito", the contract's `Owner` field); this notes entry records that
+provenance the same way "Gate 1 corrections (b)" above records
+"Orchestrator-confirmed design decision" — as the decision's stated source,
+not as something this execution slice independently obtained a human
+signature for.
+
+**Why not a Claude route.** The dispatch's context states Claude routes were
+rejected as an alternative because the sealed runner's transport is
+structurally Codex-only, not just conventionally so. Confirmed by reading
+`validateEa1ModelProfile`/`validateEvaluation`
+(`scripts/run-bdd2-evals.ts:213`, `:471`): `model_profile.command` must be an
+absolute path whose final segment is literally `/codex`
+(`!raw.command.endsWith("/codex")` fails closed), and `credential_mode` must
+equal the literal string `"codex-auth-copy"`. A non-Codex CLI cannot satisfy
+either check, so this was never a live option within the current schema —
+not a preference call.
+
+**Was switching models actually forbidden here?** "Stage B attempt 1 —
+invalid, do not project" above states flatly: "Switching models... would
+change the frozen experiment and is forbidden." Read in full context, that
+sentence closes a paragraph about restarting from a run that had *already*
+partially executed (45 responses written) while frozen authority files
+simultaneously had uncommitted concurrent edits — the two valid paths named
+immediately before it are "resolve the WIP" and "the pinned model must then
+be available again"; switching is named as the forbidden third option
+because it would silently swap the transport under a run already
+in flight, mixing models across the 96-coordinate dataset. That
+precondition does not hold here: no held-out coordinate has ever been
+generated (verified above), so there is no in-flight run and no
+mixed-model contamination risk — every one of the 96 outputs will be
+generated under one consistent model regardless of which model that is.
+Independently, `model_profile` is not part of the manifest's hash-sealed
+authority chain at all: `validateEa1ModelProfile` only requires
+`model_profile.model` to be a non-empty string (`scripts/run-bdd2-evals.ts:472`),
+and the `authority` array `validateEa1Evaluation` builds for hash-tracking
+(`runner`, `held_out.tasks/truth`, `dev.tasks/truth`, `evidence_appendices`,
+`rubrics`, `prompts`, `metrics`, `historical_reports`, the manifest file
+itself) never includes `model_profile` — unlike every prior correction in
+this file (Stage A, the Stage B preflight correction, Pre-Stage-B correction
+#2), which all touched sealed corpus/truth/appendix/rule/prompt/metric
+content and required a hash re-pin, this correction touches none of that
+scientific content and requires none (confirmed below: `validate` passes
+with zero hash changes). The forbidding sentence's premise (an in-flight
+run, silently routed around) does not match this correction's premise (zero
+output, fully documented before any generation starts) — recorded here
+explicitly rather than silently assumed, per this file's own practice of
+naming design-decision reasoning rather than skipping it.
+
+**Slug resolution — evidenced, not guessed.** The dispatch's context named
+the target only as "the GPT-5.6 codex-CLI model." `codex --help` and
+`~/.codex/config.toml` do not enumerate the model catalog; the codex client's
+own local cache does: `~/.codex/models_cache.json`
+(`fetched_at: 2026-07-13T17:10:11.834080Z`, `client_version: 0.144.0`, a real
+timestamped API-response cache, same-day fresh) lists exactly 8 models,
+including the already-known-real `gpt-5.3-codex-spark` (confirming the cache
+is the correct authority to trust) alongside three GPT-5.6-generation
+entries with no separate "-codex" variant for this generation in the cache:
+
+| slug | display_name | default_reasoning_level | supported_reasoning_levels |
+|---|---|---|---|
+| `gpt-5.6-sol` | GPT-5.6-Sol | medium | low, medium, high, xhigh, max, ultra |
+| `gpt-5.6-terra` | GPT-5.6-Terra | medium | low, medium, high, xhigh, max, ultra |
+| `gpt-5.6-luna` | GPT-5.6-Luna | medium | low, medium, high, xhigh, max |
+
+All three support the pinned `sampling.reasoning_effort: "medium"` value
+identically, so the choice among them does not turn on sampling
+compatibility. `gpt-5.6-sol` was selected: it is the first-listed GPT-5.6
+entry (immediately after the prior generation's `gpt-5.5`) and it is the
+owner's own live interactive default in `~/.codex/config.toml`
+(`model = "gpt-5.6-sol"`, same-day timestamp) — the strongest available
+independent corroboration of intent beyond the dispatch text itself. Note
+that this same `config.toml` also sets `base_url =
+"http://127.0.0.1:15721/v1"` (a local proxy); this did not by itself confirm
+`gpt-5.6-sol` resolves correctly through the isolated transport, because the
+manifest's `model_profile.args` passes `--ignore-user-config`, which does not
+load `config.toml` (`codex exec --help`: "`--ignore-user-config` Do not load
+`$CODEX_HOME/config.toml`; auth still uses `CODEX_HOME`") — the isolated
+runner path never sees that proxy `base_url` regardless. That gap is exactly
+why a live smoke call through the real isolated shape, not just a docs/cache
+reading, was required before touching the manifest.
+
+**Smoke test.** A scratchpad driver
+(`/private/tmp/.../scratchpad/bdd3-smoke/smoke.sh`, not part of this commit)
+reimplemented `buildIsolatedEnv`/`deliverCredential`/`expandArg`
+(`scripts/run-bdd2-evals.ts:236-238`) verbatim in shape — same isolated
+`mkdtemp` HOME/CODEX_HOME/TMPDIR, same `auth.json` copy at mode `0600`, same
+`codex exec --ignore-user-config --ignore-rules --ephemeral
+--skip-git-repo-check --sandbox workspace-write -m "{model}" -c
+model_reasoning_effort="medium" -c web_search="disabled" --output-schema
+{schema} -` argv shape, same stdin-delivered instruction+packet input
+convention — substituting a trivial one-field schema (`{"ok": {"type":
+"boolean", "const": true}}`) and a one-line non-evaluation prompt instead of
+a real packet, run from cwd = an isolated empty workspace dir exactly like
+`runModel`'s `workspace` mkdtemp. Result against `gpt-5.6-sol`:
+
+```
+exit_code=0 elapsed_s=19
+stdout: {"ok":true}
+stderr (banner): OpenAI Codex v0.144.1 / model: gpt-5.6-sol / provider: openai /
+  sandbox: workspace-write [workdir, /tmp, $TMPDIR] / reasoning effort: medium
+tokens used: 9,373
+```
+
+Clean single-attempt success: valid JSON on stdout matching the schema
+exactly (the same `JSON.parse(stdout)` contract `runJsonProcess` requires),
+zero transport/schema errors, real non-zero token usage confirming a live
+call actually reached the model (not a cached/local response), no cap or
+rejection message. Quota headroom confirmed; no second or third candidate
+slug (`gpt-5.6-terra`, `gpt-5.6-luna`) was needed.
+
+**Manifest edit.** Exactly one field changed in
+`evals/bdd3/evaluation-manifest.json`: `model_profile.model`
+(`"gpt-5.3-codex-spark"` -> `"gpt-5.6-sol"`). Confirmed by `git diff`: 1 file
+changed, 1 insertion, 1 deletion. `model_profile.expected_version` stays
+`"codex-cli 0.144.1"` (same CLI binary and version, confirmed unchanged by
+`codex --version` throughout this correction);
+`model_profile.sampling.reasoning_effort` stays `"medium"` (valid for
+`gpt-5.6-sol`, confirmed above and by the smoke call's own banner line); no
+other `model_profile` field (`command`, `args`, `credential_mode`,
+`transport`, `tools`, `max_concurrency`, `max_attempts`) needed to change, and
+none did. `evals/bdd2/evaluation-manifest.json` was not touched — its
+`model_profile.model` stays pinned to `gpt-5.3-codex-spark`, the model that
+actually generated its real, completed S3/EB3/EI3 runs; freezing a
+historical manifest to the model that produced its evidence is the correct
+invariant, not an oversight to fix in step with this correction. No corpus,
+truth, appendix, schema, rule, prompt, or metrics byte changed in either
+manifest's authority; `validate` confirms no hash mismatch:
+
+```
+{
+  "status": "valid",
+  "schema": "repo-harness-bdd3-evaluation.ea1",
+  "experiment": "EA1",
+  "held_out_archetypes": 24,
+  "dev_archetypes": 6,
+  "expected_rows": 96,
+  "corpus_rows": 96
+}
+```
+
+**Seal statement.** The frozen scoring authority for BDD3-EA1 — held-out
+corpus, truth, evidence appendices, typed-packet schema, the 6 validator
+rules, the trap-honesty/control-comparator definitions, and the Stage B gate
+thresholds — is unchanged and remains sealed under the exact hashes pinned
+by Pre-Stage-B correction #2; this correction re-opens and re-seals only the
+execution-transport configuration (`model_profile.model`), which the
+manifest schema itself treats as outside the hash-pinned authority chain
+(see "Was switching models actually forbidden here?" above). Stage B
+(EA1-03) may begin against this exact manifest state — `gpt-5.6-sol` at
+`reasoning_effort=medium` — once quota allows a full 96-coordinate run; the
+account-wide cap on `gpt-5.3-codex-spark` no longer blocks this contract
+since that model is no longer the pinned transport. The three prior dead
+`run-*` directories (one from attempt 1, three from attempt 2) remain
+untouched, undeleted, as evidence; none has a `run.json`, so none is
+consumable by EA1-04 regardless of which model produced the eventual valid
+run.

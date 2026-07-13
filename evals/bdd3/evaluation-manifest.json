@@ -241,7 +241,7 @@
       "--version"
     ],
     "expected_version": "codex-cli 0.144.1",
-    "model": "gpt-5.3-codex-spark",
+    "model": "gpt-5.6-sol",
     "sampling": {
       "reasoning_effort": "medium"
     },
