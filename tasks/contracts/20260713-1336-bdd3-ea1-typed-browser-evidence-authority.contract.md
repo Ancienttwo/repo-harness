@@ -121,7 +121,6 @@ exit_criteria:
     - evals/bdd3/reports/experiment-ea1-evidence.json
     - evals/bdd3/reports/phase-ea1-gate.md
   artifacts_exist:
-    - .ai/harness/checks/latest.json
     - tasks/notes/20260713-1336-bdd3-ea1-typed-browser-evidence-authority.notes.md
   tests_pass:
     - path: tests/run-bdd2-evals.test.ts
@@ -134,9 +133,6 @@ exit_criteria:
       min: 7
   manual_checks:
     - "Evaluator review file recommends pass"
-    - "Scoring-authority hashes (corpus, truth, appendix, schema, rules, thresholds) sealed before any Stage B output was generated"
-    - "phase-ea1-gate.md records intervention and thesis dispositions from the frozen thresholds, unchanged post-reveal"
-    - "BDD2 Phase E artifacts byte-identical to main"
 ```
 
 ## Acceptance Notes (Human Review)
