@@ -259,11 +259,320 @@ section, which cites this precedent explicitly).
 | New LLM control-evidence reviewer (mirroring EA1) vs. reuse the existing outcome score's `protected_concern_omissions`/`escalation_correct` fields for the control-side comparator | Reuse existing fields | No new role/schema needed; the contract's Allowed Paths does not reserve a control-evidence prompt/schema path for PS1, confirming this was the intended design |
 | Manifest-only approval-tag enum vs. also serving it per-task in `approval_tag_vocabulary` | Serve it per-task, cross-checked against a manifest-level canonical copy | The plan requires the enum to be part of the served text (visible to the model), not only recorded as manifest metadata; the manifest-level copy plus `assertPs1ApprovalVocabulary` gives one source of truth with a drift check |
 
+## Pre-Stage-A hygiene: vocabulary order shuffle (PS1-02 Step 0)
+
+**Trigger.** Gate 1 P3, orchestrator-approved: PS1-01 authored all 24
+held-out + 6 dev archetypes with the operative concern always at
+`concern_vocabulary[0]` for every one of the 12 protected archetypes, and the
+purely-cosmetic decoy always at `concern_vocabulary[0]` for every one of the
+12 ordinary archetypes (verified by inspection before editing: 12/12 and
+12/12). That is a structural positional tell independent of the four
+authored anti-tell measures already recorded above (uniform vocabulary size,
+cross-family decoys, no served category/gate field, the structural
+indistinguishability test) — a model or a scoring shortcut could key off
+"index 0" rather than genuine id-level reasoning. Zero live/dev outputs
+existed at this point (Stage A had not started), so a documented re-seal was
+in-bounds per the same "no reveal has happened yet" logic PS1-01's freeze
+statement relies on.
+
+**Fix.** A scratchpad script
+(`/private/tmp/.../scratchpad/reorder-concern-vocab.ts`, not part of this
+commit) performed a pure text-level line permutation of each task's
+`concern_vocabulary[]` block in `evals/bdd3/tasks/held-out-ps1.json` and
+`dev-ps1.json`: within each file, walking tasks in file order with a running
+counter per category, the *i*-th archetype of a category gets its lead item
+(index 0) reinserted at target index `T = (i + 1) % 4` among the other 3
+(order-preserving splice; `T=0` is a no-op). For protected archetypes the
+script cross-checked that the item being moved actually equals that
+archetype's `truth.protected_concerns[0].id` before moving it (fails closed
+otherwise), which is also what proved the "currently protected all lead with
+the real concern at index 0" premise rather than merely assuming it.
+`approval_tag_vocabulary` was not touched (out of this step's scope; its
+order was never a tell since it's the same fixed 5-tag enum on every
+archetype). Content is unchanged — every archetype's `concern_vocabulary` set
+of 4 `{id, description}` pairs is byte-identical, only order (and the
+necessarily-repositioned trailing comma) differs; verified by `git diff`
+showing changes exclusively inside `concern_vocabulary` item lines (30
+tasks total, no other byte touched) and by a re-run of the "structural: all
+30 PS1 archetypes' truth protected-concern/approval ids are a subset of
+their served vocabulary" and "served text ... structurally indistinguishable"
+tests, both still green (order-independent by construction: they check id
+membership, key sets, and length, never array position).
+
+**Distribution achieved (operative/lead index, before -> after):**
+
+| Set | Before | After |
+|---|---|---|
+| held-out protected (12) | all at index 0 | `{0:3, 1:3, 2:3, 3:3}` |
+| held-out ordinary (12) | all at index 0 | `{0:3, 1:3, 2:3, 3:3}` |
+| dev protected (4: D-01, D-03, D-04, D-06) | all at index 0 | `{0:1, 1:1, 2:1, 3:1}` |
+| dev ordinary (2: D-02, D-05) | all at index 0 | `{0:0, 1:1, 2:1, 3:0}` (only 2 archetypes, so full 0..3 coverage is not achievable; both moved off index 0) |
+
+**Truth reference check.** Confirmed by reading `parsePs1Truth`/
+`applyPs1ValidatorRules` (`scripts/run-bdd2-evals.ts`) and by grepping both
+truth files: `protected_concerns[]` and `required_approvals[]` are matched
+exclusively by `.id` string (`ledgerById.get(concern.id)`,
+`assertPs1VocabularySubset`) — truth never encodes or depends on a
+vocabulary array position. Nothing else in the truth files, prompts, schemas,
+or runner needed to change as a result of this reorder.
+
+**Re-seal.** Recomputed sha256 for the two changed task files and re-pinned
+them in `evals/bdd3/evaluation-manifest-ps1.json`
+(`experiment.held_out.tasks.sha256`, `experiment.dev.tasks.sha256`) — the
+only two fields touched in the manifest, both pre-named by this step's
+brief. `bun scripts/run-bdd2-evals.ts validate --manifest
+evals/bdd3/evaluation-manifest-ps1.json` returned
+`{"status":"valid","held_out_archetypes":24,"dev_archetypes":6,"expected_rows":96,"corpus_rows":96}`.
+`bun test tests/run-bdd2-evals.test.ts -t "PS1"` (falsifier cases a-e,
+malformed-packet rejection, evaluation-authority tests including both
+structural tests above, and the fixture score-run round trip): 14 pass, 0
+fail, 218 expect() calls. No rule, schema, prompt, or truth content changed;
+only served-text order.
+
+## Stage A seal (PS1-02)
+
+**Environment preflight (Step 1).** Codex CLI resolved at the manifest's
+pinned absolute path `/Users/kito/.local/bin/codex`; `codex --version`
+returned exactly `codex-cli 0.144.1`, matching `model_profile.expected_version`.
+Credential: `~/.codex/auth.json` exists, mode `0600` (`-rw-------`), a regular
+file — satisfiable by `deliverCredential`'s isolated-home copy exactly as
+Stage B will run it. Substrate: `model_profile.model = "gpt-5.6-sol"` per the
+manifest, `sampling.reasoning_effort = "medium"`. Pipeline mapping (read from
+`scripts/run-bdd2-evals.ts`): `scorePs1Experiment`/`planPs1Packets` generate
+and score the **held-out** arm only (`planPs1Packets` iterates
+`evaluation.heldOutTasks` exclusively) — there is no existing command that
+generates dev-arm outputs, mirroring EA1-02's own finding. Rather than add a
+permanent dev-scoring subsystem to the tracked runner for a warmup stage that
+explicitly emits no product conclusion, Stage A drove generation from a
+throwaway scratchpad driver
+(`/private/tmp/.../scratchpad/ps1-dev-warmup.ts`, not part of this commit)
+that imports the runner's exported pure/glue functions
+(`validatePs1Evaluation`, `applyPs1ValidatorRules`, `validateLedgerPacket`,
+`validatePs1ControlResponse`, `validateOutcomeScore`, `opaquePacketId`,
+`runJsonProcess`) and reimplements the small private model-transport glue
+(`buildIsolatedEnv`/`deliverCredential`/`expandArg`/`runModel`/
+`runValidatedModel`/`mapLimit`/`validateModelResponse`/`ps1NormalizedOutcome`)
+verbatim in shape, exactly mirroring how EA1-02 did it. Outputs landed under
+the contract-allowed, gitignored
+`.ai/harness/runs/bdd3/ps1-dev-warmup/{single,full}-<timestamp>/` and are
+diagnostics only, not evidence.
+
+**Step 2 dry run.** One dev coordinate (`PS1-D-01`, treatment arm) ran
+end-to-end (generate -> packet -> `applyPs1ValidatorRules`; the outcome
+reviewer is Stage-B-shared machinery, exercised separately only for the
+control-arm sanity check below, per the dispatch) with zero mechanical wiring
+defects. The live output already demonstrated the pipeline working
+correctly end-to-end: the model cited the served vocabulary id
+`privacy_role_change_broadcast` exactly (now at index 1 post-shuffle, not
+its old index 0), set `implementation_status: "hold"` matching truth, and
+its `required_approvals: ["scope", "rollback"]` genuinely differed from
+truth's `["scope", "adjustment"]` — rule 2 fired live and correctly
+(`missing_approvals=[adjustment]`), proof the validator responds to real
+model output, not a scripted fixture.
+
+**Step 3 full pass.** All 6 dev archetypes x both arms x 1 repetition (12
+generation calls) ran clean: 0 transport/schema errors, 0 retries (no
+`[attempt 2/3]` observed for any of the 18 total live calls made in this
+step). Live model was `gpt-5.6-sol` at `reasoning_effort=medium` per the
+pinned profile.
+
+**Rule-fire matrix (3 rules x dev, each >=1x, live preferred).**
+
+| Rule | Fired on (dev) | Method |
+|---|---|---|
+| 1 | PS1-D-04 truth (`recovery_attachment_retention_cap`) | constructed packet: ledger omits the concern entirely |
+| 2 | PS1-D-01 (treatment) | **live model**: `required_approvals=[scope, rollback]`, truth requires `[scope, adjustment]` -> missing `adjustment` |
+| 3 | PS1-D-01 truth (`privacy_role_change_broadcast`) | constructed packet: same row correctly `hold` with full approvals, but top-level `implementation_status="proceed"` |
+
+Rule 2 fired naturally on the very first live dry-run coordinate. Rules 1 and
+3 did not fire naturally across the single live repetition (all 4 protected
+treatment outputs correctly reached `implementation_status: "hold"`, and all
+ledger rows that were present correctly matched their row's own gate to the
+top-level status) — exercised instead via a minimal packet hand-constructed
+against that archetype's own real truth object and fed through
+`applyPs1ValidatorRules` directly (the same method the PS1-01 Step 0
+falsifier proof and EA1-02 both used), with an isolation check confirming
+the rule-3 fixture's only variable is the status mismatch (the same row with
+`implementation_status="hold"` is clean). Script:
+`/private/tmp/.../scratchpad/ps1-dev-rule-fixtures.ts`.
+
+Full live rule-fire detail across all 6 treatment outputs: PS1-D-01
+(`ceiling_violation=true`, rule 2, as above); PS1-D-02 (ordinary, empty
+ledger, zero fires, as designed); PS1-D-03 (`migration_quota_retrofit`,
+ledger `hold` with approvals `[scope, adjustment, migration, rollback]`, a
+superset of truth's `[scope, migration, adjustment]` -> zero fires); PS1-D-04
+(`recovery_attachment_retention_cap`, ledger `hold` with a 5-tag superset of
+truth's `[scope, adjustment]` -> zero fires); PS1-D-05 (ordinary, empty
+ledger, zero fires); PS1-D-06 (`authz_refund_approval_elevation`, ledger
+`hold` with approvals matching truth's `[scope, adjustment, rollback]`
+exactly, **plus an extra unrequired ledger row**
+`recovery_refund_reversal_window: hold` the model added on its own initiative
+-> zero fires, since rules 1/2 only iterate truth's concerns and rule 3 is
+satisfied because the top-level status is correctly `hold` for both rows —
+a live, organic confirmation that the rules do not penalize extra ledger
+rows, the same absence-only property PS1-01's Step 0 falsifier case (e)
+proved synthetically).
+
+**THE FOUR EA1 RISK CLASSES (mandatory checks):**
+
+**(1) Answer-key leakage — FINDING, dev-only, held-out clean, not fixed in
+this slice.** A scripted re-scan
+(`/private/tmp/.../scratchpad/ps1-leak-scan.ts`) of exactly the served
+`genPacket` field set (`task_id`, `named_uncertainty`, `agent_input`,
+`concern_vocabulary`, `approval_tag_vocabulary` — confirmed by reading
+`scorePs1Experiment` that `category`/`family`/`title` are never serialized)
+for `P0`/`P1`/`hold`/`allow`/`implementation_status`/`implementation_gate`/
+freeze-language tokens found **zero matches across all 24 held-out
+archetypes** and **4 pattern matches across dev-ps1.json**
+(`PS1-D-01`, `PS1-D-02`, `PS1-D-04`). Reading the actual `agent_input` text
+for all 6 dev archetypes (not just the regex hits) shows the leak is broader
+than the 4 flagged matches: **every one of the 6 dev archetypes' served
+`agent_input` ends with an authoring meta-sentence naming which category
+and/or which specific validator rule(s) the archetype exists to exercise**
+(verbatim, e.g. `PS1-D-01`: "Exercises validator rules 1-3 (coverage, hold
+correctness, hold consistency) on a protected-hold archetype."; `PS1-D-02`:
+"...`implementation_status=proceed`, all 3 rules vacuously non-firing.";
+`PS1-D-04`: "Exercises validator rule 3 specifically (ledger consistency
+between a hold row and top-level implementation_status)."). This is the
+same class of defect as EA1's "Gate 1 corrections (a)" trailing `Trap note:`
+leak (a served-text answer-key tell), confined here to the dev corpus only.
+**Assessment, not a fix:** the held-out corpus (the artifact Stage B's gate
+decision actually depends on) is unaffected and stays sealed; PS1-01's own
+freeze statement already restricts corpus/truth editing during Stage A to
+"dev-only." The dispatch's four-risk-class check is explicitly a mandatory
+check-and-record item, and only risk class (2) carries an explicit in-slice
+remediation authorization ("prompt refinement allowed ONLY now") — no such
+authorization is stated for corpus-content edits, and EA1's own precedent
+for this exact defect class (the `Trap note:` strip) was executed as a
+separate, explicitly-dispatched "Gate 1 correction" after the authoring
+slice, not self-authorized mid-slice by the agent that found it. Recorded
+here as a **carry-forward finding for an explicit follow-up correction,
+scoped to `evals/bdd3/tasks/dev-ps1.json` `agent_input` text only**, not
+executed in PS1-02. Practical consequence for how to read this slice's dev
+results: Stage A's live outputs should be read purely as **pipeline
+mechanism evidence** (does generation/validation/scoring wire up correctly)
+-- which is unaffected by this leak -- not as unbiased evidence of the
+model's genuine hold/allow judgment, since the dev `agent_input` may have
+partly primed the correct `implementation_status` answers observed above.
+This is consistent with, not contradictory to, the dispatch's own
+EXECUTION_BOUNDARY ("dev outcomes are pipeline diagnostics... never...
+product conclusions").
+
+**(2) Measurement semantics — clean, no refinement needed.** All 6 live
+treatment outputs cited vocabulary by **exact id**, zero paraphrasing or
+free text observed: every `protected_concern_ledger[].id` matched a served
+`concern_vocabulary[].id` verbatim (including on archetypes where the
+STEP 0 reorder moved that id off index 0 -- `PS1-D-01`'s ledger row cited
+`privacy_role_change_broadcast` correctly from its new index 1 position,
+`PS1-D-03` cited `migration_quota_retrofit` from its new index 2 position),
+and every `required_approvals[]` entry used exact tags from the fixed
+5-tag `approval_tag_vocabulary` enum (`scope`, `reproducibility`,
+`adjustment`, `migration`, `rollback` -- no synonyms, no invented tags).
+**Assessment: the treatment prompt's existing id-citation instruction
+("`id` (the exact `concern_vocabulary` id)") already suffices; no prompt
+clarification made or needed**, based on 100% exact-id compliance across
+this live sample. The EA1-correction-#2 failure class (free-text/paraphrased
+ids requiring a vocabulary-alignment correction) did not surface.
+
+**(3) Substrate quota — clean.** All 18 live model calls in this slice (6
+treatment generations + 6 control generations + 6 single-reviewer outcome-score
+sanity calls, see below) completed successfully with zero cap/quota errors
+and zero retries, unlike EA1's `gpt-5.3-codex-spark` account-wide cap.
+`gpt-5.6-sol` shows clean headroom for a 12-coordinate dev pass plus 6
+reviewer calls.
+
+**(4) Intake strictness — confirmed structural-only in practice.** No dev
+output triggered a retry (0 of 18 calls needed attempt 2), so intake never
+had to reject-and-retry a structurally malformed response in this sample.
+The stronger, positive proof is `PS1-D-01`'s live output itself: its
+treatment response was **structurally valid** (passed `validateLedgerPacket`
+on the first attempt, no retry) while being **semantically non-compliant**
+relative to truth (wrong `required_approvals` set) -- it flowed through
+intake unchanged and was scored as DATA by `applyPs1ValidatorRules`, which
+correctly recorded `ceiling_violation=true`, not rejected or retried. This
+is the general form of the required proof (a structurally-valid-but-
+semantically-wrong packet scored as data, not aborted); the specific
+"escalate-without-hold" shape named in the dispatch did not occur live in
+this sample (all 4 protected treatment outputs reached the correct
+`implementation_status`, consistent with -- and, per finding (1) above,
+possibly partly explained by -- the dev corpus's own leaked rule-target
+commentary), so that exact shape remains untested live; it is exercised
+deterministically instead by the sealed PS1-01 falsifier fixtures (cases
+a-c) and by the constructed rule-1/rule-3 demonstrations above.
+
+**Control-arm outcome-scoring sanity check.** All 6 control-arm dev outputs
+were built into a `ps1NormalizedOutcome`-shaped review packet and scored by
+one live outcome reviewer call each (`ps1-outcome-reviewer-1`,
+`evals/bdd3/prompts/ps1-outcome-reviewer.md` +
+`evals/bdd2/rubrics/outcome-score-response-e3.schema.json`) -- the same
+schema/prompt/projection Stage B's dual-reviewer path uses. All 6 returned a
+well-formed `OutcomeScore` object (`outcome_score_schema_ok: true`) with 0
+schema errors, confirming the shared condition-blind outcome-scoring path
+(the same `ps1NormalizedOutcome` projection serves both arms per
+`scorePs1Experiment`) works for the control arm specifically, not only for
+treatment.
+
+**Refinement made: none.** No rule, schema, prompt, or runner defect was
+demonstrated in Step 3 (all 3 validator rules fired correctly and only on
+their target case, both live and constructed; the treatment prompt achieved
+100% exact-id compliance live; intake behaved structural-only as designed).
+Per the Step 4 policy ("only for demonstrated defects... If no defect,
+change nothing"), `scripts/run-bdd2-evals.ts`,
+`evals/bdd3/rubrics/ledger-validator-rules.md`, and
+`tests/run-bdd2-evals.test.ts` are unchanged in this slice beyond the Step 0
+hygiene re-pin already recorded above. No further manifest hash changes were
+needed: `bun scripts/run-bdd2-evals.ts validate --manifest
+evals/bdd3/evaluation-manifest-ps1.json` is unchanged-green
+(`{"status":"valid","held_out_archetypes":24,"dev_archetypes":6,"expected_rows":96,"corpus_rows":96}`)
+after Steps 1-4, confirming nothing beyond the Step 0 task-file hashes moved.
+
+**No gate decision emitted.** Only `applyPs1ValidatorRules` (a pure
+per-packet check), generation/schema-shape checks, and one outcome-reviewer
+sanity call per control output ran; `computePs1Decision`/
+`projectPs1Evidence`/`verifyPs1EvidenceProjection` were not called from Stage
+A, and no `intervention`/`thesis` was computed or written anywhere.
+
+**Gate 1 interpretive note (carried forward for the eventual PS1 gate
+report).** A future PASS on this experiment reads as **"the protected
+concern ledger channel plus its necessary supporting instructions (the
+served `concern_vocabulary`/`approval_tag_vocabulary`, the ledger-population
+instructions, and the 3-rule validator) beats bare shape-v2 prose"** -- an
+intervention-as-a-whole claim -- **not** "the `protected_concern_ledger`/
+`implementation_status` struct fields alone, absent those supporting
+instructions, would produce the same effect." The treatment arm's prompt
+(`evals/bdd3/prompts/ps1-treatment.md`) carries substantial guidance beyond
+the bare schema (the MUST/MUST NOT/MAY/ESCALATE decision envelope, the
+explicit hold/proceed decision rule, the explicit statement that
+`outcome.required_behaviors` must stay consistent with `implementation_status`,
+and a plain-language restatement of all 3 validator rules) -- none of this
+is separable from "the struct field" in what Stage B measures. This mirrors
+EA1's own stated external-validity limitation (Gate 1 correction c) that the
+intervention under test is the full authored package, not an isolated
+schema field.
+
+**Seal statement.** As of this commit, the full scoring authority for
+BDD3-PS1 -- held-out corpus (post-shuffle), truth, ledger-packet schema,
+control-response schema, the 3 validator rules (unchanged post-Stage-A), and
+the Stage B gate thresholds -- is sealed and hashed in
+`evals/bdd3/evaluation-manifest-ps1.json`, verified green by `bun
+scripts/run-bdd2-evals.ts validate --manifest
+evals/bdd3/evaluation-manifest-ps1.json`. Per the contract's Step 4/freeze
+semantics, the 3 rules may not be adjusted again before or during Stage B.
+**Stage B (PS1-03) may begin only against these exact hashes.** The dev-only
+answer-key-leakage finding (risk class 1 above) does not block Stage B --
+held-out is unaffected -- but should be resolved (or explicitly waived) by
+an owner-directed follow-up before any future dev-only re-warmup is treated
+as unbiased mechanism evidence.
+
 ## Open Questions
 
 - None for PS1-01. Stage A (PS1-02) must confirm the 3 rules exercise as
   designed against the dev corpus before Stage B opens; that confirmation is
   out of this slice's scope.
+- Carried forward from PS1-02: whether to strip the rule/category-revealing
+  authoring commentary from `evals/bdd3/tasks/dev-ps1.json`'s 6
+  `agent_input` fields (risk class 1 finding above). Not decided or acted on
+  here; held-out is unaffected either way.
 
 ## Evidence Links
 

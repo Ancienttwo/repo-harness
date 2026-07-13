@@ -11,7 +11,7 @@
     "held_out": {
       "tasks": {
         "path": "evals/bdd3/tasks/held-out-ps1.json",
-        "sha256": "b4ed50f9bec84450b26ee64d0c200ec342d1cbc5743d71edc5c0337bb8e62fd1"
+        "sha256": "e1c783aa2a87ecf62fe138504233ee4a823e8883ec8ffdea7e0e86e4ba49439e"
       },
       "truth": {
         "path": "evals/bdd3/truth/held-out-ps1.json",
@@ -26,7 +26,7 @@
     "dev": {
       "tasks": {
         "path": "evals/bdd3/tasks/dev-ps1.json",
-        "sha256": "4f464e4736a0f01f5e5c7a1cf044c56b348d59e1258dbe9a1d65900d74d97739"
+        "sha256": "363faf6198757659e9221d68df59ecbf34fda6be2d19d6d84802d5e9c0e52bd1"
       },
       "truth": {
         "path": "evals/bdd3/truth/dev-ps1.json",
