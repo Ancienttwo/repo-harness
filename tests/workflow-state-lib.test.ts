@@ -1,10 +1,22 @@
 import { describe, test, expect } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "fs";
+import {
+  chmodSync,
+  copyFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
 
 const ROOT = join(import.meta.dir, "..");
+const HELPER_DIR = join(ROOT, "assets", "templates", "helpers");
 
 describe("workflow-state shared library", () => {
   test("exports the shared workflow helper functions", () => {
@@ -254,6 +266,101 @@ describe("workflow-state shared library", () => {
       const legacy = check();
       expect(legacy.status).toBe(1);
       expect(legacy.stdout).toContain("invalid or legacy benchmark evidence status");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("a Human Review Card pass cannot rescue a canonical external-acceptance failure", () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "workflow-external-acceptance-no-fallback-")));
+    try {
+      mkdirSync(join(cwd, "scripts"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/contracts"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/reviews"), { recursive: true });
+      mkdirSync(join(cwd, "docs"), { recursive: true });
+      for (const file of readdirSync(HELPER_DIR).filter((name) => name.endsWith(".sh") || name.endsWith(".ts"))) {
+        copyFileSync(join(HELPER_DIR, file), join(cwd, "scripts", file));
+      }
+      for (const file of readdirSync(join(cwd, "scripts"))) {
+        if (file.endsWith(".sh")) chmodSync(join(cwd, "scripts", file), 0o755);
+      }
+
+      writeFileSync(join(cwd, "docs/spec.md"), "# Product Spec\n");
+      writeFileSync(
+        join(cwd, "tasks/contracts/demo.contract.md"),
+        [
+          "# Task Contract: demo",
+          "",
+          "> **Status**: Active",
+          "> **Task Profile**: code-change",
+          "",
+          "```yaml",
+          "allowed_paths:",
+          "  - docs",
+          "  - tasks",
+          "exit_criteria:",
+          "  files_exist:",
+          "    - docs/spec.md",
+          "```",
+          "",
+        ].join("\n"),
+      );
+      // Canonical "## External Acceptance Advice" reports unavailable (no
+      // manual override), while the "## Human Review Card"'s own "External
+      // acceptance" field independently claims pass. Only the canonical
+      // section is authoritative; the Card field is a display projection.
+      writeFileSync(
+        join(cwd, "tasks/reviews/demo.review.md"),
+        [
+          "# Task Review: demo",
+          "",
+          "> **Recommendation**: pass",
+          "",
+          "## Human Review Card",
+          "",
+          "- Verdict: pass",
+          "- Change type: code-change",
+          "- Intended files changed: fixture",
+          "- Actual files changed: fixture",
+          "- Commands passed: fixture",
+          "- External acceptance: pass",
+          "- Residual risks: (none)",
+          "- Reviewer action required: approve fixture closeout",
+          "- Rollback: revert fixture branch",
+          "",
+          "## External Acceptance Advice",
+          "",
+          "> **External Acceptance**: unavailable",
+          "> **External Reviewer**:",
+          "> **External Source**:",
+          "> **External Started**:",
+          "> **External Completed**:",
+          "",
+          "- P1 blockers: unavailable",
+          "- P2 advisories: unavailable",
+          "- Acceptance checklist: unavailable",
+          "",
+        ].join("\n"),
+      );
+
+      const res = spawnSync("bash", ["scripts/verify-sprint.sh"], {
+        cwd,
+        encoding: "utf-8",
+        env: { ...process.env, HOOK_HOST: "claude" },
+      });
+      expect(res.status).toBe(1);
+      expect(res.stderr).toContain("Sprint verification failed");
+
+      const checks = JSON.parse(readFileSync(join(cwd, ".ai/harness/checks/latest.json"), "utf-8"));
+      expect(checks.status).toBe("fail");
+      expect(checks.failure_class).toBe("external_acceptance");
+      expect(checks.contract.status).toBe("pass");
+      expect(checks.review.status).toBe("pass");
+      // The Card's own claim is still projected into the trace for display...
+      expect(checks.review.card.external_acceptance).toBe("pass");
+      // ...but it never rescues the canonical gate, which stays fail-closed.
+      expect(checks.external_acceptance.status).toBe("missing");
+      expect(["pass", "manual_override", "not_required"]).not.toContain(checks.external_acceptance.status);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

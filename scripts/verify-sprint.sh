@@ -515,17 +515,11 @@ if declare -F workflow_external_acceptance_status >/dev/null 2>&1; then
   external_row="$(workflow_source_authority_call workflow_external_acceptance_status "$review_file")"
   IFS=$'\t' read -r external_status external_reviewer external_source external_message <<< "$external_row"
 fi
-card_external_status="$(normalize_status_token "$review_card_external")"
-case "$external_status" in
-  missing|unavailable|"")
-    case "$card_external_status" in
-      pass|manual_override|not_required)
-        external_status="$card_external_status"
-        external_message="Human Review Card external acceptance: $review_card_external"
-        ;;
-    esac
-    ;;
-esac
+# Canonical external acceptance is the sole authority. When it is missing,
+# unavailable, or the helper is not declared, external_status stays at its
+# fail-closed default above -- the Human Review Card's "External acceptance"
+# field is a display projection (still reported in the trace as
+# review_card_external) and must never resurrect a canonical failure.
 
 status="fail"
 exit_code=1
