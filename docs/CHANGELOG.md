@@ -4,6 +4,10 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Added optional `.ai/harness/policy.json#operations.deploy_sql` authority for established alternate SQL roots, naming modes, and invariant files. Generated policies keep the existing `deploy/sql/` plus `ordered4` default when the object is absent, and hooks, deploy guidance, and scaffolds now describe the same precedence.
+
 ### Changed
 
 - Expanded the repo-owned agent fleet from four to six roles with

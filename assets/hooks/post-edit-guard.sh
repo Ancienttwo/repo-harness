@@ -122,7 +122,7 @@ DIRNAME=$(dirname "$FILE_PATH")
 if [[ "$FILE_PATH" == deploy/* ]]; then
   echo "[DeployAsset] Deployment operations asset changed: $FILE_PATH"
   echo "  Confirm secrets, real env files, provider state, artifacts, logs, and scratch files remain in ignored _ops/ before committing."
-  echo "  Keep deployment SQL directly under deploy/sql/ with 4-digit ascending prefixes."
+  echo "  Follow operations.deploy_sql in .ai/harness/policy.json when configured; otherwise keep SQL directly under deploy/sql/ with 4-digit ascending prefixes."
 fi
 
 if [[ "$BASENAME" == "package.json" && "$DIRNAME" =~ (^|/)packages/([^/]+) ]]; then
