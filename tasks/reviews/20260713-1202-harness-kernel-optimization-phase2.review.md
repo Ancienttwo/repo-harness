@@ -5,10 +5,10 @@
 > **Contract**: tasks/contracts/20260713-1202-harness-kernel-optimization-phase2.contract.md
 > **Notes File**: tasks/notes/20260713-1202-harness-kernel-optimization-phase2.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-07-13 16:05
+> **Last Updated**: 2026-07-14 01:35
 > **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Diff Fingerprint**: sha256:2c70e7ada2431727d9ff6df2f4ac1b64f41d353f76ee1d2af7921dcc74cc5d9c
+> **Reviewed Diff Fingerprint**: sha256:938d251806d8e2061e08ee6400e6a3ecef953b59bd27187a21097286c9f00b36
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 ## Human Review Card
@@ -17,8 +17,8 @@
 - Change type: code-change
 - Intended files changed: plan phases A1/A2 (pre-edit guard batch scope + single-field state resolve), B1/B2 (benchmark artifact_files instrumentation + profile-bound ceremony guidance), C1/C2/C3 (capability-registry hardening, implementation-surface predicate unification, gate-semantics doc), D1 (facade retirement plumbing + gptpro profile wiring; 20→≤5 deletion re-sequenced out per the plan's own clause), E1-E4 (CHANGELOG, phase-1 review verification, dead schema fields, installed-profile readback), plus this workflow package.
 - Actual files changed: 31 paths, all inside contract `allowed_paths` (one path legitimized by in-flight contract amendment `0544dfd2`); every changed file traces to a plan phase; no cross-goal entanglement. Base `c604e3b`, HEAD `7655d610`, 12 ordered commits, no push/merge/deploy/secret mutation from this worktree.
-- Commands passed: full suite 1299 pass / 1 skip / 0 fail (110 files); typecheck clean; check:hooks projection OK (25 files) incl. new surface-predicate drift check; deploy-sql order, architecture-sync (blocking=0), task-sync, inspector, adopt dry-run all exit 0; authoritative live 3x9 matrix 27/27 (run f6684c28, source commit 900854ff, evidence hashes recorded).
-- External acceptance: override — accepted on internal read-only gatekeeper review (full re-verification + four implementation spot-checks, zero side effects); cross-model Codex review available pre-merge on owner request.
+- Commands passed: full suite 1325 pass / 1 skip / 0 fail; typecheck clean; check:hooks projection OK (25 files) incl. new surface-predicate drift check; deploy-sql order, architecture-sync (blocking=0), task-sync, inspector, adopt dry-run all exit 0; authoritative live 3x9 matrix 27/27 (run f6684c28, source commit 900854ff, evidence hashes recorded).
+- External acceptance: pass — three-round cross-model Codex review (gpt-5.6-sol, read-only codex exec): round 1 found 4 P1 + 4 P2 (all verified, fixed, or adjudicated with recorded tradeoffs), round 2 narrowed to 1 P1 + 1 P2 (fixed), round 3 VERDICT: pass with zero findings.
 - Residual risks: Phase B aggregate Success Criteria 1-3 miss their thresholds; adjudicated as documented partial, not a defect — the miss concentrates entirely in two scenarios that are prompt-instructed ceremony or legitimately floor-promoted past lite mid-session, while the true-lite bucket meets the ratios (1.076x duration vs strict, 1.334x tokens vs no-harness, 0 ceremony artifacts). Promotion-time envelope projection (B3), criteria re-bucketing, scenario prompt fix, and the 20→≤5 facade deletion are recorded as deferred follow-ups in `tasks/todos.md`.
 - Reviewer action required: none.
 - Rollback: revert the ordered phase commits; `sync:hooks`/`check:hooks` restore hook parity; benchmark reports are evidence-only and restore from git; D1 retirement paths never delete unowned or modified host content.
@@ -40,13 +40,16 @@
 
 ## External Acceptance Advice
 
-> **External Acceptance**: override
-> **External Reviewer**: internal gatekeeper (read-only acceptance review)
-> **External Source**: gate re-verification of all required checks + spot-checks; cross-model Codex review offered to owner as pre-merge option
-> **External Started**: 2026-07-13 15:40
-> **External Completed**: 2026-07-13 15:52
+> **External Acceptance**: pass
+> **External Reviewer**: Codex
+> **External Source**: codex-review
+> **External Started**: 2026-07-13 23:35
+> **External Completed**: 2026-07-14 01:30
+> **Reviewed Diff Fingerprint**: sha256:938d251806d8e2061e08ee6400e6a3ecef953b59bd27187a21097286c9f00b36
+> **Reviewed Scope**: branch+staged+unstaged+untracked
 
-- P1 blockers: none found.
+- P1 blockers: none
+- Acceptance history: round 1 (session 019f5c15) 4 P1 + 4 P2 -> fixed/adjudicated in a629bafe, 86bba78c, f16eef81; round 2 (session 019f5c1b via 019f5c5e) 1 P1 + 1 P2 -> fixed in 5e47fc3c; round 3 (session 019f5c90) VERDICT: pass, zero findings.
 - P2 advisories: Phase B aggregate criteria miss (adjudicated, deferred follow-up recorded); `artifactCount` in run-skill-evals.ts shares the structurally-null pattern E3 removed (flagged in notes, not in scope).
 - Acceptance checklist: scope-traced diff, re-run verification, spot-checked implementations, fail-closed semantics preserved, no test fakery.
 
