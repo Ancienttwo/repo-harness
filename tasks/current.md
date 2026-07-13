@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-14T04:51:33+0800 -->
+<!-- updated_at: 2026-07-14T05:14:25+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-07-14T04:51:33+0800
-> **Source Branch**: main
-> **Source Commit**: 22161477
+> **Updated At**: 2026-07-14T05:14:25+0800
+> **Source Branch**: codex/bdd3-ps1-inception
+> **Source Commit**: e9fa1b77
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: manual
@@ -18,9 +18,9 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 ## Current Focus
 
 - Status: Active
-- Active Plan: (none)
-- Plan Status: (none)
-- Next Task: inspect active worktree marker(s)
+- Active Plan: plans/plan-20260714-0512-bdd3-ps1-protected-shape-ledger.md
+- Plan Status: Approved
+- Next Task: PS1-01: Author and freeze the held-out corpus (24 archetypes = 12 protected-hold + 12 ordinary-change), truth set (per-archetype concern-id vocabulary + shared approval-tag enum; served text never carries the gate answer), ledger-packet schema, 3 coverage rules, and Stage B thresholds; hash the full scoring authority BEFORE any reveal; PS1 manifest separate from EA1's. Verification: all hashes validate from a clean checkout; runner validation passes on PS1 coordinates; EA1 manifest and BDD2 artifacts byte-identical.
 - Clear Note: (none)
 
 ## Mainline Snapshot Reading
@@ -31,6 +31,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
+- .: plans/plan-20260714-0512-bdd3-ps1-protected-shape-ledger.md
+- .: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/bdd3-ps1-inception
 - /Users/kito/Projects/repo-harness-worktrees/harness-cost-baseline-slo-closeout: plans/plan-20260712-2327-harness-kernel-reduction.md
 - /Users/kito/Projects/repo-harness-worktrees/harness-cost-baseline-slo-closeout: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/harness-cost-baseline-slo-closeout
 - /Users/kito/Projects/repo-harness-worktrees/harness-cost-baseline-slo-final: plans/plan-20260712-2327-harness-kernel-reduction.md
@@ -56,18 +58,19 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`: status=completed, current_slice=completed-20260713-policy-seed, source_plan=plans/plan-20260712-2215-agent-fleet-specialists.md
 ## Handoff
 
-- Exact Next Step: Clean up merged contract worktree codex/codex-native-role-model-override. Command: repo-harness run contract-worktree cleanup --slug codex-native-role-model-override --target main
+- Exact Next Step: (none)
 
 ## Checks
 
-- status=(none), source=(none), exit_code=(none), file=.ai/harness/checks/latest.json
+- status=(none), source=(none), file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 1 changed/untracked path(s)
+- Summary: 2 changed/untracked path(s)
 
 ```
-?? docs/researches/20260714-gpt-review.md
+ M tasks/todos.md
+?? plans/plan-20260714-0512-bdd3-ps1-protected-shape-ledger.md
 ```
 
 ## Source Artifacts
