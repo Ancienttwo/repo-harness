@@ -20,6 +20,7 @@ import {
   readProjectionFile,
   writeProjectionFileAtomic,
 } from "../src/core/source-projection";
+import { workflowSurfaceParityErrors } from "../scripts/sync-hook-sources";
 
 const ROOT = join(import.meta.dir, "..");
 const ASSETS_HOOKS = join(ROOT, "assets/hooks");
@@ -203,6 +204,63 @@ describe("hook source projection", () => {
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
+  });
+
+  test("workflowSurfaceParityErrors accepts the real checked-in is_workflow_surface_path() shape", () => {
+    const source = readFileSync(join(ASSETS_HOOKS, "pre-edit-guard.sh"), "utf-8");
+    expect(workflowSurfaceParityErrors(source)).toEqual([]);
+  });
+
+  function guardSourceWithCaseLines(caseLines: readonly string[]): string {
+    return [
+      "is_workflow_surface_path() {",
+      '  case "$1" in',
+      ...caseLines,
+      "    *) return 1 ;;",
+      "  esac",
+      "}",
+    ].join("\n");
+  }
+
+  test("workflowSurfaceParityErrors passes for exactly the two expected case pattern lines", () => {
+    const source = guardSourceWithCaseLines([
+      "    plans/*|tasks/*|docs/*|.ai/*|.claude/*|.codex/*) return 0 ;;",
+      "    *.md|*.markdown) return 0 ;;",
+    ]);
+    expect(workflowSurfaceParityErrors(source)).toEqual([]);
+  });
+
+  test("workflowSurfaceParityErrors catches an undeclared third case pattern appended after the two expected lines (regression: index-only comparison missed this)", () => {
+    // Before this fix, workflowSurfaceParityErrors (then inline in
+    // checkWorkflowSurfaceParity) only compared patternLines[0] and
+    // patternLines[1] against the expected directory/extension patterns.
+    // Both still match exactly here -- a third "return 0" arm appended after
+    // them was invisible to that comparison, so a hand-added shell-side
+    // exemption with no TS-side counterpart passed --check silently.
+    const source = guardSourceWithCaseLines([
+      "    plans/*|tasks/*|docs/*|.ai/*|.claude/*|.codex/*) return 0 ;;",
+      "    *.md|*.markdown) return 0 ;;",
+      "    bogus/*) return 0 ;;",
+    ]);
+    const errors = workflowSurfaceParityErrors(source);
+    expect(errors.length).toBeGreaterThan(0);
+    expect(errors.some((error) => error.includes("expected exactly 2"))).toBe(true);
+    expect(errors.some((error) => error.includes("found 3"))).toBe(true);
+  });
+
+  test("workflowSurfaceParityErrors still catches drift in either of the two expected lines", () => {
+    const source = guardSourceWithCaseLines([
+      "    plans/*|tasks/*) return 0 ;;",
+      "    *.md|*.markdown) return 0 ;;",
+    ]);
+    const errors = workflowSurfaceParityErrors(source);
+    expect(errors.some((error) => error.includes("directory prefixes expected"))).toBe(true);
+  });
+
+  test("workflowSurfaceParityErrors reports a missing function distinctly", () => {
+    expect(workflowSurfaceParityErrors("#!/bin/bash\necho no function here\n")).toEqual([
+      "assets/hooks/pre-edit-guard.sh: is_workflow_surface_path() function not found",
+    ]);
   });
 
   test("projection writes reject symlinked roots, symlinked parents, and repo escapes", () => {

@@ -109,12 +109,13 @@ function markerText(marker: ProjectionMarker): string {
 // WORKFLOW_SURFACE_EXTENSIONS). There is no automatic fix for a mismatch --
 // unlike file-content projection, this check always fails closed in both
 // --check and --write, naming which side to edit.
-function checkWorkflowSurfaceParity(): string[] {
-  const guardPath = join(CANONICAL_ROOT, "pre-edit-guard.sh");
-  if (!existsSync(guardPath)) {
-    return ["missing assets/hooks/pre-edit-guard.sh: cannot check is_workflow_surface_path parity"];
-  }
-  const source = readFileSync(guardPath, "utf-8");
+//
+// Exported as a pure function of the shell source text (rather than only a
+// no-arg wrapper that reads the real file) so a drift scenario -- e.g. a
+// third case arm added to the shell function that the TS side never declared
+// -- can be unit tested directly without mutating the real, checked-in
+// assets/hooks/pre-edit-guard.sh on disk.
+export function workflowSurfaceParityErrors(source: string): string[] {
   const functionMatch = /is_workflow_surface_path\(\)\s*\{([\s\S]*?)\n\}/.exec(source);
   if (!functionMatch) {
     return ["assets/hooks/pre-edit-guard.sh: is_workflow_surface_path() function not found"];
@@ -126,6 +127,15 @@ function checkWorkflowSurfaceParity(): string[] {
   const expectedExtPattern = WORKFLOW_SURFACE_EXTENSIONS.map((ext) => `*${ext}`).join("|");
 
   const errors: string[] = [];
+  // Guards against a case list that grew (or shrank) a "return 0" pattern
+  // line without the TS canonical source changing to match -- comparing only
+  // patternLines[0]/[1] by index would silently accept an extra, undeclared
+  // pattern line appended after the two expected ones.
+  if (patternLines.length !== 2) {
+    errors.push(
+      `is_workflow_surface_path drift: expected exactly 2 "return 0" case pattern lines (directory prefixes, extensions), found ${patternLines.length}: ${JSON.stringify(patternLines)}`,
+    );
+  }
   if (patternLines[0] !== expectedDirPattern) {
     errors.push(
       `is_workflow_surface_path drift: directory prefixes expected "${expectedDirPattern}" got "${patternLines[0] ?? "<missing>"}"`,
@@ -137,6 +147,14 @@ function checkWorkflowSurfaceParity(): string[] {
     );
   }
   return errors;
+}
+
+function checkWorkflowSurfaceParity(): string[] {
+  const guardPath = join(CANONICAL_ROOT, "pre-edit-guard.sh");
+  if (!existsSync(guardPath)) {
+    return ["missing assets/hooks/pre-edit-guard.sh: cannot check is_workflow_surface_path parity"];
+  }
+  return workflowSurfaceParityErrors(readFileSync(guardPath, "utf-8"));
 }
 
 function main(): void {
@@ -254,10 +272,15 @@ function main(): void {
   );
 }
 
-try {
-  main();
-} catch (error) {
-  const message = error instanceof Error ? error.message : String(error);
-  process.stderr.write(`[hooks] ${message}\n`);
-  process.exit(1);
+// Guarded so importing this module (e.g. to unit test workflowSurfaceParityErrors)
+// never runs main()/process.exit() as an import side effect; only running the
+// script directly (`bun scripts/sync-hook-sources.ts`) triggers it.
+if (import.meta.main) {
+  try {
+    main();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    process.stderr.write(`[hooks] ${message}\n`);
+    process.exit(1);
+  }
 }

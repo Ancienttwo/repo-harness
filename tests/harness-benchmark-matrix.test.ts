@@ -48,10 +48,27 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
     expect(env.PATH?.split(':')[0]).toBe('/tmp/benchmark-host/.bun/bin');
   });
 
-  test('preserves porcelain leading status columns when extracting paths', () => {
-    expect(parsePorcelainPaths(' M src/range.ts\n?? deploy/sql/0001.sql\n')).toEqual([
+  test('parses NUL-delimited porcelain entries, stripping the leading XY status columns', () => {
+    expect(parsePorcelainPaths(' M src/range.ts\0?? deploy/sql/0001.sql\0')).toEqual([
       'src/range.ts',
       'deploy/sql/0001.sql',
+    ]);
+  });
+
+  test('takes only the new path for a rename entry, consuming its paired source token', () => {
+    // git status --porcelain=v1 -z renders a rename as two NUL-delimited
+    // tokens: "R  <new path>" followed by "<old path>" alone (no XY prefix on
+    // the second token). Only the new path should be counted -- treating
+    // both as separate artifacts would double-count a single rename.
+    expect(parsePorcelainPaths('R  plans/plan-b.md\0plans/plan-a.md\0?? tasks/todos.md\0')).toEqual([
+      'plans/plan-b.md',
+      'tasks/todos.md',
+    ]);
+  });
+
+  test('preserves a path containing spaces and an embedded arrow-like substring, which -z leaves unquoted and unmangled', () => {
+    expect(parsePorcelainPaths(' M docs/notes -> old name.md\0')).toEqual([
+      'docs/notes -> old name.md',
     ]);
   });
 

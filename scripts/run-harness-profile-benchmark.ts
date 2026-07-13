@@ -350,12 +350,36 @@ function percentile(values: number[], quantile: number): number | null {
   return sorted[Math.ceil(quantile * sorted.length) - 1] ?? sorted[sorted.length - 1];
 }
 
+// Parses `git status --porcelain=v1 -z` output: NUL-delimited entries of
+// `XY path`, with rename/copy entries (X or Y === 'R'/'C') followed by a
+// separate NUL token carrying the source path. -z is required for
+// correctness, not just convenience: the newline-delimited (non -z) format
+// quotes paths containing special characters and renders renames as a single
+// `old -> new` line, which a fixed `.slice(3)` cannot parse back into a real
+// path -- only the new path is kept for a rename, since that is the file's
+// current, artifact-relevant location (counting both old and new would
+// double-count one rename as two artifacts).
 export function parsePorcelainPaths(output: string): string[] {
-  return output.split(/\r?\n/u).filter(Boolean).map((line) => line.slice(3));
+  const tokens = output.split('\0').filter((token) => token.length > 0);
+  const paths: string[] = [];
+  for (let index = 0; index < tokens.length; index += 1) {
+    const entry = tokens[index];
+    if (entry.length < 3) continue;
+    const xy = entry.slice(0, 2);
+    const path = entry.slice(3);
+    if (!path) continue;
+    paths.push(path);
+    if (xy[0] === 'R' || xy[0] === 'C' || xy[1] === 'R' || xy[1] === 'C') {
+      // Consume the paired source-path token so it is never mis-read as the
+      // next status entry.
+      index += 1;
+    }
+  }
+  return paths;
 }
 
 function changedFiles(workspace: string): string[] {
-  const result = spawnSync('git', ['status', '--porcelain=v1', '-uall'], { cwd: workspace, encoding: 'utf-8' });
+  const result = spawnSync('git', ['status', '--porcelain=v1', '-uall', '-z'], { cwd: workspace, encoding: 'utf-8' });
   if (result.status !== 0) throw new Error(result.stderr || result.stdout || 'git status failed');
   return parsePorcelainPaths(result.stdout);
 }
