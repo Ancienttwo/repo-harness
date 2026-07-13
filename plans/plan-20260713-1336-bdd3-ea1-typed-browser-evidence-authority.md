@@ -1,6 +1,6 @@
 # Plan: BDD3-EA1 Typed Browser Evidence Authority (eval-only)
 
-> **Status**: Approved
+> **Status**: Executing
 > **Created**: 20260713-1336
 > **Slug**: bdd3-ea1-typed-browser-evidence-authority
 > **Planning Source**: codex-plan-or-waza-think
