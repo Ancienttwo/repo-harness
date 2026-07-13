@@ -60,6 +60,17 @@ decision:
 
 Source: `evals/bdd2/reports/phase-e3-gate.md`.
 
+**Corpus-structure note**: EB3's and EI3's 12 "paired comparisons" each are 6
+unique task archetypes (`EB-H-01`..`EB-H-06`, `EI-H-01`..`EI-H-06`) x 2
+conditions x 2 repetitions, not 12 independent tasks. S3's 72 reused outputs
+are 12 unique archetypes (`S2-H-01`..`S2-H-12`) x 2 conditions x 3
+repetitions. Unique archetypes, not pairs, are the honest unit of
+independent evidence; reading EB3/EI3 as n=12 or S3 as n=36 overstates
+coverage by the repetition factor. Source: `evals/bdd2/evaluation-manifest.json`,
+`evals/bdd2/reports/experiment-s3-evidence.json`,
+`evals/bdd2/reports/experiment-eb3-evidence.json`,
+`evals/bdd2/reports/experiment-ei3-evidence.json`.
+
 ## Why Each Treatment Died
 
 ### S3 — Inline Shape (Kill)
@@ -85,6 +96,18 @@ screenshot-derived feature-need claim, regardless of the win/loss count — an
 evidence-compliance hard-kill. Source: `evals/bdd2/metrics/browser-adapter-metrics.md`
 (EB gate), `evals/bdd2/reports/experiment-eb3-evidence.json` (`summary.metrics`),
 `evals/bdd2/reports/experiment-eb3.md`.
+
+**Kill-attribution note**: the paragraph above and the terminal gate report
+(`evals/bdd2/reports/phase-e3-gate.md`) state the missed win threshold and
+the evidence-compliance failure conjunctively. Under the frozen EB3/EI3 gate
+ladder (`evals/bdd2/metrics/phase-e3-scoring-metrics.md:22-29`, "Otherwise
+Reshape"), evidence-compliance failure was the sole active Kill trigger:
+`new_severe_pairs: 0` and `losses: 0` do not reach any other Kill threshold,
+so an evidence-compliant 5-0-7 would have fallen through to Reshape, not
+Kill — the missed >=6-win threshold only blocked Pass. This attribution is
+an inference from the frozen trigger list, not a restated gate output;
+recorded here so later readers do not over-weight the "missed by one win"
+framing above.
 
 ### EI3 — ImageGen Prototype Adapter (Kill)
 

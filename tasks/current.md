@@ -1,27 +1,27 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-13T12:51:45+0800 -->
+<!-- updated_at: 2026-07-13T13:42:57+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-07-13T12:51:45+0800
-> **Source Branch**: detached
-> **Source Commit**: c604e3b
+> **Status**: Active
+> **Updated At**: 2026-07-13T13:42:57+0800
+> **Source Branch**: codex/bdd3-ea1-inception
+> **Source Commit**: 0cbfab4
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: rebase-agent-fleet-closeout
+> **Reason**: manual
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: ManualClearedWithActiveWork
-- Active Plan: (none)
-- Plan Status: (none)
-- Next Task: inspect active worktree marker(s)
-- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
+- Status: Active
+- Active Plan: plans/plan-20260713-1336-bdd3-ea1-typed-browser-evidence-authority.md
+- Plan Status: Approved
+- Next Task: EA1-01: Author and freeze the held-out corpus (24 archetypes = 12 closable + 12 authority-trap), truth set, and the single frozen evidence appendix served identically to both arms; freeze and hash the full scoring authority (typed-packet schema + 6 validator rules + Stage B thresholds) BEFORE any reveal. Verification: all hashes validate from a clean checkout; runner validation passes on EA1 coordinates.
+- Clear Note: (none)
 
 ## Mainline Snapshot Reading
 
@@ -31,6 +31,10 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
+- .: plans/plan-20260713-1336-bdd3-ea1-typed-browser-evidence-authority.md
+- .: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/bdd3-ea1-inception
+- /private/tmp/repo-harness-remove-gstack: plans/plan-20260713-1305-remove-gstack-core.md
+- /private/tmp/repo-harness-remove-gstack: active-worktree owner -> /private/tmp/repo-harness-remove-gstack
 - /Users/kito/Projects/repo-harness-worktrees/bdd2-eval-foundation: plans/plan-20260712-0450-bdd2-eval-foundation.md
 - /Users/kito/Projects/repo-harness-worktrees/bdd2-eval-foundation: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/bdd2-eval-foundation
 - /Users/kito/Projects/repo-harness-worktrees/bdd2-shape-experiment: plans/plan-20260712-0605-bdd2-e-02-run-experiment-s-shape-hypothesis.md
@@ -60,24 +64,21 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`: status=completed, current_slice=completed-20260713-policy-seed, source_plan=plans/plan-20260712-2215-agent-fleet-specialists.md
 ## Handoff
 
-- Exact Next Step: Clean up merged contract worktree codex/agent-fleet-routing-closeout. Command: repo-harness run contract-worktree cleanup --slug agent-fleet-routing-closeout --target main
+- Exact Next Step: (none)
 
 ## Checks
 
-- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
+- status=(none), source=(none), file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 7 changed/untracked path(s)
+- Summary: 4 changed/untracked path(s)
 
 ```
-R  plans/plan-20260712-2103-agent-fleet-worker-routing-telemetry.md -> plans/archive/plan-20260712-2103-agent-fleet-worker-routing-telemetry.md
-R  tasks/contracts/20260712-2103-agent-fleet-worker-routing-telemetry.contract.md -> tasks/archive/contract-20260713-1239-agent-fleet-worker-routing-telemetry.md
-R  tasks/notes/20260712-2103-agent-fleet-worker-routing-telemetry.notes.md -> tasks/archive/notes-20260713-1239-agent-fleet-worker-routing-telemetry.md
-R  tasks/reviews/20260712-2103-agent-fleet-worker-routing-telemetry.review.md -> tasks/archive/review-20260713-1239-agent-fleet-worker-routing-telemetry.md
-A  tasks/archive/todo-20260713-1239-agent-fleet-worker-routing-telemetry.md
-UU tasks/current.md
-M  tasks/todos.md
+ M docs/researches/20260713-bdd2-phase-e-closeout.md
+ M tasks/todos.md
+?? docs/researches/20260713-bdd3-ea1-direction-adjudication.md
+?? plans/plan-20260713-1336-bdd3-ea1-typed-browser-evidence-authority.md
 ```
 
 ## Source Artifacts
