@@ -49,26 +49,26 @@ structured usage and every deterministic grader passed (27/27). The benchmark
 runner isolated each harness install under a disposable `HOME`/settings and
 `BUN_INSTALL`; No Harness additionally proved zero hooks and an empty structured
 Claude init inventory for Skills, plugins, MCP servers, and slash commands. All
-27 records share run ID `04a5e4b3-ba68-475e-b84a-ad6262179c5d`, source commit
-`09df8386`, provider version `2.1.207`, and the runner/manifest/fixture hashes
+27 records share run ID `d2a2fdcb-bda9-41af-bd46-411e5d412097`, source commit
+`7b11d293`, provider version `2.1.207`, and the runner/manifest/fixture hashes
 recorded in the JSON and Markdown reports. The initial Codex attempt exhausted
 its account quota, so it is not mixed into this report.
 
 | Profile | Success | Input | Cached input | Output | Model calls | Duration | Hook calls | Hook time | Hook bytes | Guard blocks | Artifacts |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| No Harness | 9/9 | 34,064 | 1,231,835 | 10,819 | 53 | 215 s | 0 | 0 s | 0 | 0 | 0 |
-| Adaptive Lite | 9/9 | 79,208 | 1,304,582 | 20,206 | 68 | 517 s | 180 | 57 s | 34,054 | 4 | 10 |
-| Strict Harness | 9/9 | 70,883 | 751,894 | 12,513 | 49 | 354 s | 141 | 48 s | 29,658 | 0 | 0 |
+| No Harness | 9/9 | 58,287 | 1,708,317 | 16,816 | 70 | 555 s | 0 | 0 s | 0 | 0 | 0 |
+| Adaptive Lite | 9/9 | 157,344 | 4,120,629 | 49,556 | 116 | 982 s | 297 | 101 s | 38,800 | 4 | 9 |
+| Strict Harness | 9/9 | 137,354 | 2,856,833 | 40,957 | 100 | 801 s | 231 | 77 s | 34,285 | 1 | 4 |
 
 Cross-session recovery passed in all three profiles. Adaptive Lite produced no
 workflow artifacts for the small bug, ordinary feature, Chinese prompt,
 negation, quoted report, workflow discussion, or recovery cases. It promoted
-the cross-capability feature to Standard (five artifacts) and the migration to
-Strict (five artifacts), which accounts for all ten Adaptive artifacts.
+the cross-capability feature to Standard (four artifacts) and the migration to
+Strict (five artifacts), which accounts for all nine Adaptive artifacts.
 
 This matrix proves behavior and measures cost; it does **not** prove a cost win.
 On this provider/sample, No Harness was fastest and smallest. Adaptive Lite used
-16,018 more input+output tokens than Strict and also more model calls, duration,
+28,589 more input+output tokens than Strict and also more model calls, duration,
 hooks, and hook time; it is not a performance win. The result must remain visible
 rather than being normalized away: the next optimization target is hook cold
 path and Standard/Strict artifact construction cost, not weaker safety gates.

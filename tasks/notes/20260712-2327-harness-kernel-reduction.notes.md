@@ -76,9 +76,10 @@
   scenario now states approval and requires Standard artifacts explicitly. This
   removes authorization ambiguity without relaxing the gate or changing the
   expected product edit and grader.
-- The final report was regenerated after the concurrency, context-budget,
-  install-ownership, and profile-exclusion review fixes. All 27 records use run
-  ID `04a5e4b3-ba68-475e-b84a-ad6262179c5d` and source commit `09df8386`.
+- The final accepted reference report was regenerated after the concurrency,
+  context-budget, install-ownership, profile-exclusion, and scenario-authorization
+  fixes. All 27 records use run ID `d2a2fdcb-bda9-41af-bd46-411e5d412097`
+  and source commit `7b11d293`.
 - Closeout exposed an evidence self-invalidation loop: `verify-contract` must
   regenerate the tracked authoritative matrix, while review freshness treated
   those two generated reports as implementation. They now share the established
