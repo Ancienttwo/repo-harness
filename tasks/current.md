@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-13T14:07:24+0800 -->
+<!-- updated_at: 2026-07-13T15:38:55+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-07-13T14:07:24+0800
-> **Source Branch**: codex/native-role-capability-gate
-> **Source Commit**: 87f0cd1
+> **Updated At**: 2026-07-13T15:38:55+0800
+> **Source Branch**: codex/pr67-deploy-sql-policy-fix
+> **Source Commit**: 8b4181a2
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: manual
+> **Reason**: pr67-local-verification-complete
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -18,9 +18,9 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 ## Current Focus
 
 - Status: Active
-- Active Plan: plans/plan-20260712-0219-native-role-capability-gate.md
+- Active Plan: plans/plan-20260713-1413-pr67-deploy-sql-policy-fix.md
 - Plan Status: Executing
-- Next Task: Close the worktree: it is rebased onto and matches `origin/main` (`7b6ba87`) directly, independent of the primary checkout's local `main`; run `verify-sprint` against this branch to evaluate the diff basis before merge.
+- Next Task: Complete review artifacts, update PR #67 with force-with-lease, and confirm remote CI/mergeability.
 - Clear Note: (none)
 
 ## Mainline Snapshot Reading
@@ -31,8 +31,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- .: plans/plan-20260712-0219-native-role-capability-gate.md
-- .: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/native-role-capability-gate
+- .: plans/plan-20260713-1413-pr67-deploy-sql-policy-fix.md
+- .: active-worktree owner -> /private/tmp/repo-harness-pr67-deploy-sql-fix
 - /private/tmp/repo-harness-remove-gstack: plans/plan-20260713-1305-remove-gstack-core.md
 - /private/tmp/repo-harness-remove-gstack: active-worktree owner -> /private/tmp/repo-harness-remove-gstack
 - /Users/kito/Projects/repo-harness-worktrees/bdd2-eval-foundation: plans/plan-20260712-0450-bdd2-eval-foundation.md
@@ -62,7 +62,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`: status=completed, current_slice=completed-20260713-policy-seed, source_plan=plans/plan-20260712-2215-agent-fleet-specialists.md
 ## Handoff
 
-- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Close the worktree: it is rebased onto and matches `origin/main` (`7b6ba87`) directly, independent of the primary checkout's local `main`; run `verify-sprint` against this branch to evaluate the diff basis before merge.
+- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Complete review artifacts, update PR #67 with force-with-lease, and confirm remote CI/mergeability.
 
 ## Checks
 
@@ -70,10 +70,17 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: clean
+- Summary: 8 changed/untracked path(s)
 
 ```
-(none)
+ M assets/templates/helpers/check-deploy-sql-order.sh
+ M plans/plan-20260713-1413-pr67-deploy-sql-policy-fix.md
+ M scripts/check-deploy-sql-order.sh
+ M tasks/contracts/20260713-1413-pr67-deploy-sql-policy-fix.contract.md
+ M tasks/current.md
+ M tasks/notes/20260713-1413-pr67-deploy-sql-policy-fix.notes.md
+ M tasks/reviews/20260713-1413-pr67-deploy-sql-policy-fix.review.md
+ M tests/helper-scripts.test.ts
 ```
 
 ## Source Artifacts

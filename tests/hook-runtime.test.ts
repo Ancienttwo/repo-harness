@@ -2552,6 +2552,7 @@ describe("Hook runtime behavior", () => {
       });
       expect(opsRes.status).toBe(2);
       expect(opsRes.stdout).toContain("[DeployAsset]");
+      expect(opsRes.stdout).toContain("operations.deploy_sql");
       expect(opsRes.stderr).toMatch(/SpecGuard|PlanStatusGuard|StrictContractGuard/);
 
       const exampleRes = runHook("pre-edit-guard.sh", cwd, {
@@ -2607,6 +2608,13 @@ describe("Hook runtime behavior", () => {
       });
       expect(docRes.status).toBe(0);
       expect(docRes.stdout).toContain("[DocDrift]");
+
+      const deployRes = runHook("post-edit-guard.sh", cwd, {
+        stdin: JSON.stringify({ tool_input: { file_path: "deploy/sql/0001_init.sql" } }),
+      });
+      expect(deployRes.status).toBe(0);
+      expect(deployRes.stdout).toContain("[DeployAsset]");
+      expect(deployRes.stdout).toContain("operations.deploy_sql");
 
       writeFileSync(
         join(cwd, "tasks/todos.md"),
