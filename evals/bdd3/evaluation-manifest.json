@@ -85,75 +85,75 @@
       },
       "EA1-T-01": {
         "path": "evals/bdd3/evidence/ea1/EA1-T-01.md",
-        "sha256": "a837cf767541ee23f1b8efc81843e7e37b8c4e8694334a122bcedc0a4a45d770"
+        "sha256": "5d8a906cfc135c212fd441954d34e40e65421ff50c71a798fdca1c317f7ffc2b"
       },
       "EA1-T-02": {
         "path": "evals/bdd3/evidence/ea1/EA1-T-02.md",
-        "sha256": "1d05cba5650a618520b2b2e0debe95f8615b2ccc209f9e32ada6ea07fd7d4239"
+        "sha256": "831904f8c70b39d708e3038f61ebf61ed5955e21e46234642052c7bf48fdd3b2"
       },
       "EA1-T-03": {
         "path": "evals/bdd3/evidence/ea1/EA1-T-03.md",
-        "sha256": "0b7af903d65ac9238bc8d1ccd410344b3ac627be161caedc08ed7794a496a610"
+        "sha256": "6494629657abdd4ca02ab42e018149058512d2191d3b3f4b81369fd2cab77f25"
       },
       "EA1-T-04": {
         "path": "evals/bdd3/evidence/ea1/EA1-T-04.md",
-        "sha256": "d08beb9999409befa5f39e784589db0f79dd0e07493eb31a2e15b07f797a326d"
+        "sha256": "fefdce2f0f84db4d13a2f71963315d814dba9a63a5c6544c02e8a450aaa29b19"
       },
       "EA1-T-05": {
         "path": "evals/bdd3/evidence/ea1/EA1-T-05.md",
-        "sha256": "6a23b4307fcf0a27c8c0664d1457d2ef2c59ed933ba2e68fa15617fe0e54b35c"
+        "sha256": "c7a45277f3c67ba055a6e193a78c7f438ea68d300ae2fa1c6518dd6ac20b0e5b"
       },
       "EA1-T-06": {
         "path": "evals/bdd3/evidence/ea1/EA1-T-06.md",
-        "sha256": "5ba95d9715de39719e5eb5eb98da03c5dc48f4b93ce9773ae7347f42cd090275"
+        "sha256": "841417ec59215c9da07703f09fb66abca122a90a20ec835adff62daa13f7afe6"
       },
       "EA1-T-07": {
         "path": "evals/bdd3/evidence/ea1/EA1-T-07.md",
-        "sha256": "e3eb8245477819eeddc6124984a13272aa758b000187f679eecc408780cfd13b"
+        "sha256": "52d02aa2bb596f7926c69bd17807bc2454f3253a597a4a6dfc3f1b43ca13e101"
       },
       "EA1-T-08": {
         "path": "evals/bdd3/evidence/ea1/EA1-T-08.md",
-        "sha256": "959fb433cb8beb02baeda540463db4c71b775b69f97db99b2585717b5b69a7bc"
+        "sha256": "0b8c41dead4215b0116780a718e49a8ab405af218d0fb9319634cf9de0e16fa5"
       },
       "EA1-T-09": {
         "path": "evals/bdd3/evidence/ea1/EA1-T-09.md",
-        "sha256": "247c3e1cfc7c08c2a66c4477894c05902f7bdd0b05b1721388fee979c414bb44"
+        "sha256": "b099e4bc337896b970b31b0d94614f06596d289be921b3f1f0cc794aef8b3c0e"
       },
       "EA1-T-10": {
         "path": "evals/bdd3/evidence/ea1/EA1-T-10.md",
-        "sha256": "d579292645fc778b150d7dce1d223f5b2550e64adb4d026ad5af88310b663008"
+        "sha256": "dcb7495ebf6f04de2b58685ad0d84d9e346e31646d92aef1b75b03628dcbf6c6"
       },
       "EA1-T-11": {
         "path": "evals/bdd3/evidence/ea1/EA1-T-11.md",
-        "sha256": "2b24c22d86347a16d682c69653a11ac4c3df6a85c6843069540afdded2807749"
+        "sha256": "849e9924c637b9f36f2c0e0b1802e79ad1a94849db97ee99b6ee88096b9a9c9e"
       },
       "EA1-T-12": {
         "path": "evals/bdd3/evidence/ea1/EA1-T-12.md",
-        "sha256": "7851f37156d9e734dcd756e31eb7d7000220b2c197ae435da15cbcee6007998a"
+        "sha256": "e2002b4341392ab35cb0e9d3dcdd31cd1ccf75760a2d6bffca1f0b51d69b12c5"
       },
       "EA1-D-01": {
         "path": "evals/bdd3/evidence/ea1/EA1-D-01.md",
-        "sha256": "dd2be08155219c547ef340d359e485e8aff4ce9ee49e24d8fea6e70ff8614247"
+        "sha256": "7161ac34578b41bc8b668b36f1d6d87867ec8929a617004e5e82a814f684a039"
       },
       "EA1-D-02": {
         "path": "evals/bdd3/evidence/ea1/EA1-D-02.md",
-        "sha256": "0c9a919ea1e8586e1890d2c8eb25134c8f3d1b25fbb81046d61463f0e64e67aa"
+        "sha256": "984b85b57c0707409deee195e7737403fd88343979caa15f7fd1d13522e83900"
       },
       "EA1-D-03": {
         "path": "evals/bdd3/evidence/ea1/EA1-D-03.md",
-        "sha256": "8dc26a184dc8a730515778841858faba0a46fc1dc73cacf7d5fe7a6d7c7871a1"
+        "sha256": "3d87618e9004f97e2d679e4e432a866d80c80acd0c4f9989f4d204313f57c890"
       },
       "EA1-D-04": {
         "path": "evals/bdd3/evidence/ea1/EA1-D-04.md",
-        "sha256": "8049a3d19ee5131e352126123a6882aef6e30afe5506b0df7f9fc37b6c99696d"
+        "sha256": "6b75bb27939808f6c97730db703229b2cd7cf4c2c2593b7f8083d0e3a0adb1b8"
       },
       "EA1-D-05": {
         "path": "evals/bdd3/evidence/ea1/EA1-D-05.md",
-        "sha256": "50ccc338cf4366f8d30357c00e6fa13d00bea1b9485745d3a4e9e0934ae7b2c9"
+        "sha256": "325a43cdc0b4d1d7f4b6d6f5ce3af565b0fb12ff6e58613efe1ef037ee417d32"
       },
       "EA1-D-06": {
         "path": "evals/bdd3/evidence/ea1/EA1-D-06.md",
-        "sha256": "374249cdfe64337829db1b016cf2464f4ab84aec88a5d0c64094ffa26b93016a"
+        "sha256": "a033d5a33cd808f37cd844ed62fb862f081f3df2cf40d008ea7846139941996f"
       }
     },
     "rubrics": {

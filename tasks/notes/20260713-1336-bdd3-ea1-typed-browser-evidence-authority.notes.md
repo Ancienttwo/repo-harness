@@ -241,3 +241,49 @@ Promote a candidate to `tasks/lessons.md`, `docs/researches/`, or harness asset 
 - Promote to `tasks/lessons.md` only after a repeated correction or failure pattern.
 - Promote to `docs/researches/` only when it is durable repo knowledge with evidence.
 - Promote to harness asset files only after verification across more than one task or fixture.
+
+## Gate 1 corrections
+
+**a. Leak finding and fix.** The quality gate found every trap appendix
+(`evals/bdd3/evidence/ea1/EA1-T-01.md`..`EA1-T-12.md`, line 11) and every dev
+appendix (`EA1-D-01.md`..`EA1-D-06.md`, line 11) ended with a `Trap note:`
+line naming the correct conclusion. The runner serves appendix files verbatim
+to the model under test on both arms (`buildEvidencePacket`'s
+`appendix_text: readFileSync(...)`), so this leaked the answer key directly
+into the packet and, independently, structurally labeled traps vs. closables
+by line count alone (11 lines vs. 10). Stage B had not run, so content+hash
+correction was in-bounds. Fix: stripped the `Trap note:` line — and only that
+line, no other byte touched, confirmed by per-file diff — from all 18 files;
+all 30 appendices (12 closable + 12 trap + 6 dev) are now uniformly 10 lines
+with no structural tell. Recomputed sha256 for the 18 modified files and
+re-pinned only those 18 entries in `evals/bdd3/evaluation-manifest.json`'s
+`experiment.evidence_appendices`; the 12 closable entries are untouched.
+
+**b. Orchestrator-confirmed design decision.** The intended contrast is
+"typed packet + deterministic validator vs. equivalent prose guidance," not
+"typed packet vs. no guidance." Control keeps its prose anti-inference lines
+because BDD2's EB-H-04 leak occurred despite prose warnings — prose is the
+incumbent EA1 has to beat, not a strawman. If prose suffices to hold the
+ceiling, `no_incremental_value` is the honest thesis disposition, not a
+design flaw to route around.
+
+**c. Carry-forward for the final gate report.** Frozen-text evidence
+appendices pre-digest the authority ceiling relative to raw screenshots — a
+human already extracted "observed pattern" / "supports" / "cannot prove" from
+the source design system, which is strictly easier evidence than an
+unprocessed image. Record this as a stated external-validity limitation in
+`phase-ea1-gate.md`: EA1's result speaks to typed-packet-vs-prose under
+pre-digested evidence, and generalizing to raw-screenshot evidence is a
+separate, untested claim.
+
+**d. Stage A stress requirement.** Stage A (EA1-02) must specifically stress
+validator rule 4's `hasNonPatternAuthority` escape path using `EA1-D-03`: an
+accessibility-trap packet that cites unrelated `current_truth` evidence
+(satisfying `hasNonPatternAuthority`) must not be able to dodge both
+`ceiling_violation` and the `not_established` requirement just because *some*
+non-pattern citation is present. Rule 4 (`scripts/run-bdd2-evals.ts:374`) is
+gated by `!hasNonPatternAuthority`, so a packet with any
+`current_truth`/`approved_policy`/`user_evidence` citation — even one
+irrelevant to the accessibility concern — currently skips the rule 4 check
+entirely; Stage A needs a concrete dev-archetype run confirming this isn't an
+exploitable gap before the held-out corpus is scored.
