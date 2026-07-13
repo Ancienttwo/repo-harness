@@ -6,6 +6,7 @@ import {
   BENCHMARK_MAX_CONCURRENCY,
   BENCHMARK_PROFILES,
   BENCHMARK_WALL_TIME_BUDGET_MS,
+  benchmarkChangedFiles,
   benchmarkRunLayout,
   claudeBenchmarkCommand,
   codexBenchmarkCommand,
@@ -47,6 +48,18 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
     expect(peak).toBe(BENCHMARK_MAX_CONCURRENCY);
   });
 
+  test('bounded arm pool stops scheduling new work after the first failure', async () => {
+    const started: number[] = [];
+    const execution = mapWithConcurrency([0, 1, 2, 3], BENCHMARK_MAX_CONCURRENCY, async (value) => {
+      started.push(value);
+      if (value === 1) throw new Error('arm failed');
+      await Bun.sleep(20);
+      return value;
+    });
+    await expect(execution).rejects.toThrow('arm failed');
+    expect(started).toEqual([0, 1]);
+  });
+
   test('provider deadline terminates a detached process group instead of orphaning its child', async () => {
     const started = Date.now();
     const result = await runBoundedProviderProcess(
@@ -61,6 +74,30 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
     const childPid = Number(result.stdout.trim());
     expect(Number.isInteger(childPid)).toBe(true);
     expect(() => process.kill(childPid, 0)).toThrow();
+  });
+
+  test('final-content detection includes provider commits made after the arm baseline', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'harness-committed-final-content-'));
+    const git = (...args: string[]) => {
+      const result = Bun.spawnSync(['git', ...args], { cwd: dir, stdout: 'pipe', stderr: 'pipe' });
+      expect(result.exitCode).toBe(0);
+      return result.stdout.toString().trim();
+    };
+    try {
+      git('init', '-q');
+      git('config', 'user.name', 'Benchmark Test');
+      git('config', 'user.email', 'benchmark@example.com');
+      mkdirSync(join(dir, 'src'));
+      writeFileSync(join(dir, 'src/status.ts'), 'export const status = "old";\n');
+      git('add', '.');
+      git('commit', '-qm', 'seed');
+      const baseline = git('rev-parse', 'HEAD');
+      writeFileSync(join(dir, 'src/status.ts'), 'export const status = "new";\n');
+      git('add', '.');
+      git('commit', '-qm', 'provider implementation');
+      expect(git('status', '--porcelain')).toBe('');
+      expect(benchmarkChangedFiles(dir, baseline)).toEqual(['src/status.ts']);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
   test('manifest contains the exact 3x9 matrix', () => {
@@ -139,6 +176,7 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
   test('authoritative completion rejects provider success when the grader failed', () => {
     const record = {
       profile: 'adaptive-lite', provider_exit_code: 0, usage_authority: 'structured-provider',
+      baseline_revision: '0'.repeat(40),
       status: 'failed', grader_acceptance: 'failed', no_harness_isolation: 'not_applicable',
     } as unknown as Parameters<typeof isAuthoritativeCompletedRecord>[0];
     expect(isAuthoritativeCompletedRecord(record)).toBe(false);
@@ -157,6 +195,7 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
       expect(report.authoritative).toBe(false);
       expect(report.provider_version).toBe('unavailable');
       expect(report.records.every((record) => record.input_tokens === null && record.grader_acceptance === 'unavailable')).toBe(true);
+      expect(report.records.every((record) => record.baseline_revision === null)).toBe(true);
       expect(JSON.parse(readFileSync(reportPath, 'utf-8')).records).toHaveLength(27);
       expect(readFileSync(reportPath.replace(/\.json$/, '.md'), 'utf-8')).toContain('non-authoritative');
     } finally { rmSync(dir, { recursive: true, force: true }); }

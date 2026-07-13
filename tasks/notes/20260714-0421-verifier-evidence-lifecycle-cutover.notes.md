@@ -4,7 +4,7 @@
 > **Plan**: plans/plan-20260714-0421-verifier-evidence-lifecycle-cutover.md
 > **Contract**: tasks/contracts/20260714-0421-verifier-evidence-lifecycle-cutover.contract.md
 > **Review**: tasks/reviews/20260714-0421-verifier-evidence-lifecycle-cutover.review.md
-> **Last Updated**: 2026-07-14 06:28
+> **Last Updated**: 2026-07-14 06:48
 > **Lifecycle**: notes
 
 ## Design Decisions
@@ -18,6 +18,7 @@
 - Benchmark schema v2 subject binds runner, scenario manifest, fixture set, install inputs, and provider invocation schema. Final JSON/Markdown bytes are bound by a sidecar whose own SHA-256 is the acceptance evidence key.
 - Benchmark setup occurs once per profile into three immutable bases. Each of nine scenarios receives its own local Git clone and reflink/copy HOME overlay, so 27 runtime arms remain isolated without 27 installs.
 - Producer cost is a code invariant as well as an SLO: execution uses exactly two concurrent arms under one fixed 50-minute absolute deadline. Every provider owns a detached process group; deadline expiry sends SIGTERM and then SIGKILL after 500 ms. Neither limit is configurable through policy or environment.
+- Arm final-content authority is baseline-relative, not worktree-status-relative. Each executed record stores the pre-provider 40-hex revision; grading, artifact enumeration, and workspace evidence combine `baseline..HEAD` with uncommitted/untracked state. This preserves provider commits and fast-forwards as evidence. Authoritative mode fails fast on the first invalid arm and terminates any active sibling process group.
 
 ## Deviations From Plan Or Spec
 
@@ -49,6 +50,7 @@
 - Full `bun test --max-concurrency 4`: 1388 pass, 1 skip, 1 timeout failure. The sole failure is the pre-existing `tests/check-agent-tooling.test.ts` six-case loop with an explicit 15s timeout; it timed out again in isolation at 15.0s (`spawnSync.status=null`). No changed implementation path is in that test or its helper. This is disclosed rather than widened in this contract.
 - First authoritative producer attempt stopped before profile preparation/provider execution with `EISDIR` while hashing a generated profile HOME containing a directory symlink. `hashTree` now hashes raw symlink targets without following them, with a regression test. That failed subject produced no report or provider arm; the successful matrix must run against the post-fix subject.
 - Second producer attempt ran the 27 arms sequentially and had no producer-owned deadline. At 55m41s it had persisted 20 completed arm evidence directories and was stuck 8m13s into `strict-harness/cross-capability-feature`; the final report had not been rewritten. It was terminated at the documented 50-minute hard boundary rather than allowed to become another unbounded wait. The pressure point was the serial `for` loop plus an unbounded `Bun.spawn`, not profile setup. The replacement uses a two-worker ordered pool and the same absolute deadline for all provider processes; focused regression proves the concurrency ceiling, result order, 50-minute constant, and descendant cleanup on timeout.
+- Third producer attempt proved the two-worker pool (11 arms passed before the first heavy completion) and exposed a distinct grader false negative at `adaptive-lite/cross-capability-feature`: provider structured result was success, focused test was 1/1 pass, and commit `8c15d44` contained all three expected `src/` paths, but the main benchmark workspace had a mostly clean `git status` after fast-forward. The old grader therefore set `expectedPathsPassed=false`. Baseline-relative detection against the captured input commit returns the expected `src/api/status.ts`, `src/status-format.ts`, and `src/ui/status.ts` plus required workflow artifacts. Regression coverage now commits a fixture change and proves it remains visible from a clean worktree. This failed run produced no final report; it was stopped immediately after the terminal failed arm, and both detached sibling groups were explicitly reclaimed. Producer SIGINT/SIGTERM/SIGHUP handling now performs the same group cleanup automatically.
 
 ## Promotion Filter
 

@@ -18,6 +18,7 @@ export type BenchmarkProvider = (typeof BENCHMARK_PROVIDERS)[number];
 export const BENCHMARK_WALL_TIME_BUDGET_MS = 50 * 60 * 1000;
 export const BENCHMARK_MAX_CONCURRENCY = 2;
 const BENCHMARK_TERMINATION_GRACE_MS = 500;
+const ACTIVE_PROVIDER_PROCESS_GROUPS = new Set<number>();
 
 const PROVIDER_INVOCATION_SCHEMA = {
   codex: {
@@ -60,6 +61,7 @@ export interface BenchmarkRunRecord {
   profile_base_id: string;
   workspace: string;
   home: string;
+  baseline_revision: string | null;
   command: string[];
   status: 'dry-run' | 'passed' | 'failed';
   provider_exit_code: number | null;
@@ -228,6 +230,21 @@ function signalProcessGroup(pid: number, signal: NodeJS.Signals): void {
   }
 }
 
+async function terminateActiveProviderGroups(): Promise<void> {
+  const pids = [...ACTIVE_PROVIDER_PROCESS_GROUPS];
+  for (const pid of pids) signalProcessGroup(pid, 'SIGTERM');
+  await Bun.sleep(BENCHMARK_TERMINATION_GRACE_MS);
+  for (const pid of pids) signalProcessGroup(pid, 'SIGKILL');
+}
+
+function installProducerSignalCleanup(): void {
+  for (const [signal, exitCode] of [['SIGINT', 130], ['SIGTERM', 143], ['SIGHUP', 129]] as const) {
+    process.once(signal, () => {
+      void terminateActiveProviderGroups().finally(() => process.exit(exitCode));
+    });
+  }
+}
+
 export async function runBoundedProviderProcess(
   command: string[],
   cwd: string,
@@ -239,6 +256,7 @@ export async function runBoundedProviderProcess(
   const processHandle = Bun.spawn(command, {
     cwd, env, stdout: 'pipe', stderr: 'pipe', stdin: 'ignore', detached: true,
   });
+  ACTIVE_PROVIDER_PROCESS_GROUPS.add(processHandle.pid);
   const stdoutPromise = new Response(processHandle.stdout).text();
   const stderrPromise = new Response(processHandle.stderr).text();
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -261,6 +279,7 @@ export async function runBoundedProviderProcess(
   const [stdout, stderr, exitCode] = await Promise.all([
     stdoutPromise, stderrPromise, processHandle.exited,
   ]);
+  ACTIVE_PROVIDER_PROCESS_GROUPS.delete(processHandle.pid);
   return { stdout, stderr, exitCode, signalCode: processHandle.signalCode, timedOut };
 }
 
@@ -341,8 +360,8 @@ export function benchmarkSubject(root: string, manifestPath: string, seed: strin
   };
 }
 
-function workspaceEvidenceHash(workspace: string): string {
-  const paths = changedFiles(workspace);
+function workspaceEvidenceHash(workspace: string, baselineRevision?: string): string {
+  const paths = benchmarkChangedFiles(workspace, baselineRevision);
   const entries = paths.map((path) => {
     const absolute = join(workspace, path);
     if (!existsSync(absolute)) return `${path}\0deleted`;
@@ -367,7 +386,9 @@ export function noHarnessIsolation(provider: BenchmarkProvider, profile: Benchma
 }
 
 export function isAuthoritativeCompletedRecord(record: BenchmarkRunRecord): boolean {
-  return record.provider_exit_code === 0
+  return typeof record.baseline_revision === 'string'
+    && /^[a-f0-9]{40}$/.test(record.baseline_revision)
+    && record.provider_exit_code === 0
     && record.usage_authority === 'structured-provider'
     && record.status === 'passed'
     && record.grader_acceptance === 'passed'
@@ -617,10 +638,19 @@ export function parsePorcelainPaths(output: string): string[] {
   return paths;
 }
 
-function changedFiles(workspace: string): string[] {
-  const result = spawnSync('git', ['status', '--porcelain=v1', '-uall', '-z'], { cwd: workspace, encoding: 'utf-8' });
-  if (result.status !== 0) throw new Error(result.stderr || result.stdout || 'git status failed');
-  return parsePorcelainPaths(result.stdout);
+export function benchmarkChangedFiles(workspace: string, baselineRevision?: string): string[] {
+  const status = spawnSync('git', ['status', '--porcelain=v1', '-uall', '-z'], { cwd: workspace, encoding: 'utf-8' });
+  if (status.status !== 0) throw new Error(status.stderr || status.stdout || 'git status failed');
+  const paths = new Set(parsePorcelainPaths(status.stdout));
+  if (baselineRevision) {
+    const committed = spawnSync(
+      'git', ['diff', '--name-only', '--no-renames', '-z', baselineRevision, '--'],
+      { cwd: workspace, encoding: 'utf-8' },
+    );
+    if (committed.status !== 0) throw new Error(committed.stderr || committed.stdout || 'git baseline diff failed');
+    for (const path of committed.stdout.split('\0').filter(Boolean)) paths.add(path);
+  }
+  return [...paths].sort();
 }
 
 function readHookMetrics(workspace: string) {
@@ -707,6 +737,7 @@ async function executeRun(
   createRunOverlay(base, layout, scenario);
   const workspace = realpathSync(layout.workspace);
   const hostRoot = realpathSync(layout.home);
+  const baselineRevision = run('git', ['rev-parse', 'HEAD'], workspace);
   const command = benchmarkCommand(provider, base.profile, workspace, hostRoot, scenario.prompt);
   const started = Date.now();
   let firstEdit: number | null = null;
@@ -720,7 +751,7 @@ async function executeRun(
       HOOK_SESSION_ID: `${base.profile}-${scenario.id}`,
     }, deadlineMs);
   const poll = setInterval(() => {
-    if (firstEdit === null && changedFiles(workspace).length > 0) firstEdit = Date.now() - started;
+    if (firstEdit === null && benchmarkChangedFiles(workspace, baselineRevision).length > 0) firstEdit = Date.now() - started;
   }, 50);
   const providerResult = await providerPromise;
   const { stdout, stderr, exitCode } = providerResult;
@@ -732,7 +763,7 @@ async function executeRun(
   const grader = spawnSync('bash', ['-lc', scenario.acceptance_command], { cwd: workspace, encoding: 'utf-8' });
   writeFileSync(join(runRoot, 'grader.stdout.txt'), grader.stdout ?? '');
   writeFileSync(join(runRoot, 'grader.stderr.txt'), grader.stderr ?? '');
-  const changed = changedFiles(workspace);
+  const changed = benchmarkChangedFiles(workspace, baselineRevision);
   const expectedPathsPassed = scenario.expected_paths.length === 0
     ? changed.length === 0
     : scenario.expected_paths.every((path) => changed.includes(path));
@@ -755,10 +786,11 @@ async function executeRun(
   }
   const artifactFiles = changed.filter((path) => /^(plans|tasks|\.ai\/harness)\//.test(path));
   const graderPassed = grader.status === 0 && expectedPathsPassed;
-  const workspaceHash = workspaceEvidenceHash(workspace);
+  const workspaceHash = workspaceEvidenceHash(workspace, baselineRevision);
   return {
     run_id: `${reportRunId}:${base.profile}:${scenario.id}`,
     profile: base.profile, scenario_id: scenario.id, profile_base_id: base.id, workspace, home: hostRoot,
+    baseline_revision: baselineRevision,
     command, status: exitCode === 0 && graderPassed ? 'passed' : 'failed',
     provider_exit_code: exitCode,
     ...(provider === 'claude' ? claudeProviderUsage(stdout) : providerUsage(stdout)),
@@ -785,6 +817,7 @@ function dryRunRecord(provider: BenchmarkProvider, scenario: HarnessScenario, la
   return {
     run_id: `${reportRunId}:${profile}:${scenario.id}`,
     profile, scenario_id: scenario.id, profile_base_id: layout.profile_base_id, workspace, home,
+    baseline_revision: null,
     command: benchmarkCommand(provider, profile, workspace, home, scenario.prompt), status: 'dry-run',
     provider_exit_code: null, usage_authority: 'unavailable', provider_unavailable_reason: 'dry-run', input_tokens: null, cached_input_tokens: null, output_tokens: null,
     model_call_count: null, subagent_call_count: null, time_to_first_edit_ms: null, total_duration_ms: null,
@@ -944,11 +977,12 @@ export function regradeHarnessBenchmarkReport(reportPath: string): HarnessBenchm
   for (const record of report.records) {
     const scenario = scenarios.get(record.scenario_id);
     if (!scenario) throw new Error(`scenario missing while regrading: ${record.scenario_id}`);
-    if (!record.evidence_hashes.workspace || workspaceEvidenceHash(record.workspace) !== record.evidence_hashes.workspace) {
+    if (!record.baseline_revision || !record.evidence_hashes.workspace
+      || workspaceEvidenceHash(record.workspace, record.baseline_revision) !== record.evidence_hashes.workspace) {
       throw new Error(`workspace evidence changed; refusing regrade: ${record.run_id}`);
     }
     const grader = spawnSync('bash', ['-lc', scenario.acceptance_command], { cwd: record.workspace, encoding: 'utf-8' });
-    const changed = changedFiles(record.workspace);
+    const changed = benchmarkChangedFiles(record.workspace, record.baseline_revision);
     const expectedPathsPassed = scenario.expected_paths.length === 0
       ? changed.length === 0
       : scenario.expected_paths.every((path) => changed.includes(path));
@@ -1002,6 +1036,10 @@ export async function runHarnessProfileBenchmark(options: CliOptions) {
       const record = await executeRun(provider, base, scenario, arm, reportRunId, deadlineMs);
       assertProfileBaseImmutable(base);
       process.stdout.write(`benchmark arm ${index + 1}/${layout.length}: ${arm.profile}/${arm.scenario_id} -> ${record.status}\n`);
+      if (options.requireAuthoritative && !isAuthoritativeCompletedRecord(record)) {
+        await terminateActiveProviderGroups();
+        throw new Error(`authoritative benchmark arm failed: ${arm.profile}/${arm.scenario_id}; evidence=${dirname(arm.workspace)}`);
+      }
       return record;
     }
     return dryRunRecord(provider, scenario, arm, reportRunId);
@@ -1052,6 +1090,7 @@ export async function runHarnessProfileBenchmark(options: CliOptions) {
 }
 
 if (import.meta.main) {
+  installProducerSignalCleanup();
   const options = parseArgs(process.argv.slice(2));
   const execution = options.regradeExisting
     ? Promise.resolve(regradeHarnessBenchmarkReport(options.report))

@@ -90,6 +90,11 @@ lets small slices run focused tests while release/pre-merge runs the full gate.
   deadline; provider arms are detached process groups and deadline expiry sends
   termination to the whole group, so producer cost cannot silently exceed its
   declared evidence SLO or orphan provider descendants.
+- Each arm records its pre-provider baseline revision. Grading and workspace
+  evidence compare that baseline to final `HEAD` plus the working tree, so a
+  provider commit or fast-forward remains visible final content instead of
+  disappearing from a `git status`-only view. Authoritative execution fails
+  fast on the first invalid arm and terminates its in-flight sibling group.
 - At 10x scale the first failure would be evidence-production latency, not the
   verifier. Keeping production explicit and verification bounded prevents a
   closeout gate from becoming an unbounded job runner.
