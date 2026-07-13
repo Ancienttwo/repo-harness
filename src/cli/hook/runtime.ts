@@ -142,6 +142,7 @@ function effectiveStateSessionSection(repoRoot: string): SessionContextSection |
       state_revision?: unknown;
       workflow_profile?: unknown;
       next_action?: unknown;
+      guidance?: unknown;
       blockers?: unknown;
       allowed_paths?: unknown;
       checks?: unknown;
@@ -162,6 +163,7 @@ function effectiveStateSessionSection(repoRoot: string): SessionContextSection |
       state_revision: state.state_revision ?? null,
       workflow_profile: state.workflow_profile ?? null,
       next_action: state.next_action ?? null,
+      guidance: state.guidance ?? null,
       blockers,
       allowed_paths: Array.isArray(state.allowed_paths) ? state.allowed_paths : [],
       checks: state.checks ?? null,

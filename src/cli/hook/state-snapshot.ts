@@ -84,6 +84,7 @@ export interface EffectiveState {
   readonly profile_signals: WorkflowProfileSignals | null;
   readonly allowed_paths: readonly string[];
   readonly next_action: string | null;
+  readonly guidance: string | null;
   readonly blockers: readonly string[];
   readonly stale_sources: readonly string[];
   readonly conflicting_sources: readonly string[];
@@ -126,6 +127,18 @@ const EVIDENCE_LABELS = [
   'Stop condition',
   'Rollback surface',
 ] as const;
+
+// Ceremony bound per resolved workflow profile. Lite gets zero ceremony
+// (brief -> edit -> targeted test; no plan/contract/notes/todos/checks
+// authorship); Standard caps at the single active-plan artifact; Strict's
+// envelope is unchanged. This is a text layer surfaced to the agent via
+// `guidance` -- it does not alter resolveWorkflowProfile's risk floor or any
+// guard's blocking logic.
+const CEREMONY_GUIDANCE: Readonly<Record<WorkflowProfile, string>> = {
+  lite: 'brief -> edit -> targeted test; do not author plan, contract, notes, todos, or checks files (zero ceremony)',
+  standard: 'at most one active plan artifact; no contract, notes, or todos scaffolding beyond it',
+  strict: 'full envelope: plan, contract, notes, and checks as required',
+};
 
 function repoPath(cwd: string, relPath: string): string {
   return join(cwd, relPath);
@@ -875,6 +888,7 @@ function resolveEffectiveStateUnlocked(
   const phase = blockers.length > 0
     ? 'blocked'
     : planPath ? planStatus : 'idle';
+  const guidance = riskResolution.ok ? CEREMONY_GUIDANCE[riskResolution.profile] : null;
 
   const state: EffectiveState = {
     protocol: 1,
@@ -895,6 +909,7 @@ function resolveEffectiveStateUnlocked(
     profile_signals: riskResolution.ok ? riskResolution.signals : null,
     allowed_paths: parseAllowedPaths(contractText),
     next_action: nextAction,
+    guidance,
     blockers,
     stale_sources: Array.from(new Set(staleSources)).sort(),
     conflicting_sources: Array.from(new Set(conflictingSources)).sort(),

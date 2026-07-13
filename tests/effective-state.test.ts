@@ -379,4 +379,51 @@ describe('effective state resolver', () => {
       expect(fieldOutput.stdout).toBe('');
     });
   });
+
+  function setContractProfile(cwd: string, profile: string): void {
+    const current = readFileSync(join(cwd, CONTRACT), 'utf-8');
+    write(cwd, CONTRACT, current.replace(
+      /^> \*\*Workflow Profile\*\*: .*$/m,
+      `> **Workflow Profile**: ${profile}`,
+    ));
+  }
+
+  test('guidance encodes the ceremony bound per resolved profile: lite zero, standard capped, strict full', () => {
+    withRepo((cwd) => {
+      // Lite: no strict category, no cross-capability, no medium scope, not
+      // an explicit "feature" operation -- riskFloor is lite, and an
+      // explicit override to lite matches it exactly.
+      setContractProfile(cwd, 'lite');
+      const lite = resolveEffectiveState(cwd, Date.now(), {
+        targetPaths: ['src/feature.ts'],
+        operationKind: 'edit',
+      });
+      expect(lite.workflow_profile).toBe('lite');
+      expect(lite.guidance).toBe(
+        'brief -> edit -> targeted test; do not author plan, contract, notes, todos, or checks files (zero ceremony)',
+      );
+
+      // Standard: restore the fixture's default contract override + feature operation.
+      setContractProfile(cwd, 'standard');
+      const standard = resolveFixtureState(cwd);
+      expect(standard.workflow_profile).toBe('standard');
+      expect(standard.guidance).toBe(
+        'at most one active plan artifact; no contract, notes, or todos scaffolding beyond it',
+      );
+
+      // Strict: raising the override is always allowed (raise-only floor).
+      setContractProfile(cwd, 'strict');
+      const strict = resolveFixtureState(cwd);
+      expect(strict.workflow_profile).toBe('strict');
+      expect(strict.guidance).toBe('full envelope: plan, contract, notes, and checks as required');
+    });
+  });
+
+  test('guidance is null when the risk floor cannot resolve a profile', () => {
+    withRepo((cwd) => {
+      const state = resolveEffectiveState(cwd);
+      expect(state.workflow_profile).toBeNull();
+      expect(state.guidance).toBeNull();
+    });
+  });
 });
