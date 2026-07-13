@@ -59,6 +59,7 @@ export interface BenchmarkRunRecord {
   guard_block_count: number;
   repeated_guard_fingerprint_count: number;
   artifact_files_created: number;
+  artifact_files: string[];
   profile_projection_artifact_files: number;
   grader_acceptance: 'passed' | 'failed' | 'unavailable';
   no_harness_isolation: 'passed' | 'failed' | 'not_applicable' | 'unavailable';
@@ -492,7 +493,7 @@ async function executeRun(provider: BenchmarkProvider, profile: BenchmarkProfile
     const parsed = JSON.parse(readFileSync(contextEvidence, 'utf-8')) as { estimated_tokens?: unknown };
     if (typeof parsed.estimated_tokens === 'number') contextTokens = parsed.estimated_tokens;
   }
-  const artifacts = changed.filter((path) => /^(plans|tasks|\.ai\/harness)\//.test(path)).length;
+  const artifactFiles = changed.filter((path) => /^(plans|tasks|\.ai\/harness)\//.test(path));
   const graderPassed = grader.status === 0 && expectedPathsPassed;
   const workspaceHash = workspaceEvidenceHash(workspace);
   return {
@@ -506,7 +507,7 @@ async function executeRun(provider: BenchmarkProvider, profile: BenchmarkProfile
     hook_p50_ms: percentile(hookDurations, 0.5), hook_p95_ms: percentile(hookDurations, 0.95), hook_p99_ms: percentile(hookDurations, 0.99),
     hook_output_bytes: knownOutputBytes, session_start_context_tokens: contextTokens,
     guard_block_count: hooks.filter((entry) => entry.blocked).length,
-    repeated_guard_fingerprint_count: repeated, artifact_files_created: artifacts,
+    repeated_guard_fingerprint_count: repeated, artifact_files_created: artifactFiles.length, artifact_files: artifactFiles,
     profile_projection_artifact_files: profile === 'strict-harness' ? 2 : 0,
     grader_acceptance: graderPassed ? 'passed' : 'failed',
     no_harness_isolation: noHarnessIsolation(provider, profile, stdout, hooks.length),
@@ -527,7 +528,7 @@ function dryRunRecord(provider: BenchmarkProvider, profile: BenchmarkProfile, sc
     model_call_count: null, subagent_call_count: null, time_to_first_edit_ms: null, total_duration_ms: null,
     hook_invocation_count: 0, hook_total_duration_ms: 0, hook_p50_ms: null, hook_p95_ms: null, hook_p99_ms: null,
     hook_output_bytes: null, session_start_context_tokens: null, guard_block_count: 0,
-    repeated_guard_fingerprint_count: 0, artifact_files_created: 0, profile_projection_artifact_files: profile === 'strict-harness' ? 2 : 0,
+    repeated_guard_fingerprint_count: 0, artifact_files_created: 0, artifact_files: [], profile_projection_artifact_files: profile === 'strict-harness' ? 2 : 0,
     grader_acceptance: 'unavailable', no_harness_isolation: 'unavailable',
     evidence_hashes: { provider_stream: null, provider_stderr: null, grader_stdout: null, grader_stderr: null, workspace: null },
   };
@@ -548,6 +549,9 @@ function writeHarnessBenchmarkReport(report: HarnessBenchmarkReport, reportPath:
     const projectionArtifacts = profileRecords.reduce((sum, record) => sum + record.profile_projection_artifact_files, 0);
     return `| ${profile} | ${passed}/${profileRecords.length} | ${knownTokens.length ? knownTokens.reduce((a, b) => a + b, 0) : 'unavailable'} | ${durations.length ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length) : 'unavailable'} | ${taskArtifacts} | ${projectionArtifacts} | ${recovery?.grader_acceptance ?? 'unavailable'} |`;
   });
+  const artifactLines = report.records
+    .filter((record) => record.artifact_files.length > 0)
+    .map((record) => `- ${record.profile}/${record.scenario_id}: ${record.artifact_files.join(', ')}`);
   writeFileSync(markdownPath, [
     '# Harness Profile Benchmark', '',
     `> **Authority**: ${report.authoritative ? `live ${report.provider} provider execution` : 'incomplete/dry-run; non-authoritative'}`,
@@ -559,6 +563,9 @@ function writeHarnessBenchmarkReport(report: HarnessBenchmarkReport, reportPath:
     '| Profile | Passed | Known tokens | Avg duration ms | Task artifacts | Projection artifacts | Recovery |',
     '|---|---:|---:|---:|---:|---:|---|', ...rows, '',
     'Projection artifacts are the pre-run profile envelope (for example Strict Plan/Contract inputs); task artifacts are files created by the provider during the measured task. Provider-owned fields remain `null` when the structured provider stream does not supply them. See the JSON report for per-run hook, guard, evidence-hash, artifact, isolation, and grader evidence.', '',
+    '## Artifact Files', '',
+    'Per-run paths backing each `artifact_files_created` count, for auditing whether they land under `plans/`, `tasks/`, or `.ai/harness/` (note: `.ai/harness/runs/` and `.ai/harness/checks/*.latest.*` are gitignored and never appear here, since this list is sourced from `git status`).', '',
+    artifactLines.length > 0 ? artifactLines.join('\n') : '(none)', '',
   ].join('\n'));
 }
 

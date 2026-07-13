@@ -90,4 +90,22 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
       expect(readFileSync(reportPath.replace(/\.json$/, '.md'), 'utf-8')).toContain('non-authoritative');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
+
+  test('every record carries an artifact_files path list consistent with its artifact_files_created count', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'harness-matrix-test-'));
+    try {
+      const reportPath = join(dir, 'report.json');
+      const report = await runHarnessProfileBenchmark({
+        execute: false, scenario: [], manifest: join(ROOT, 'evals/harness/scenarios.json'), report: reportPath,
+      });
+      expect(report.records.every((record) => Array.isArray(record.artifact_files))).toBe(true);
+      expect(report.records.every((record) => record.artifact_files.length === record.artifact_files_created)).toBe(true);
+      // Dry-run never touches a workspace, so the path list is empty, not estimated.
+      expect(report.records.every((record) => record.artifact_files.length === 0)).toBe(true);
+      const persisted = JSON.parse(readFileSync(reportPath, 'utf-8')) as { records: Array<{ artifact_files: unknown }> };
+      expect(persisted.records.every((record) => Array.isArray(record.artifact_files))).toBe(true);
+      const markdown = readFileSync(reportPath.replace(/\.json$/, '.md'), 'utf-8');
+      expect(markdown).toContain('## Artifact Files');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
 });
