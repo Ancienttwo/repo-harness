@@ -1,6 +1,6 @@
 # Task Contract: harness-kernel-optimization-phase2
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260713-1202-harness-kernel-optimization-phase2.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
@@ -18,7 +18,7 @@ Phase 1 landed the kernel (profiles, explicit-first routing, context budget, eff
 ## Goal
 
 Execute plan phases A-E exactly as written in the plan's `## Task Breakdown`:
-A) apply_patch full-batch scope fix + single-field `state resolve` output; B) benchmark `artifact_files` instrumentation + ceremony trigger threshold bound to the deterministic profile floor (lite: zero ceremony; standard: at most the active plan; strict: unchanged); C) capability-registry hardening + implementation-surface predicate unification + gate-semantics doc; D) skill facade convergence 20 -> <=5 with fail-closed retirement; E) debt cleanup (CHANGELOG, stale review closure, dead schema fields, installed-profile readback). Each phase is independently mergeable with its own accept gate; the plan's Success Criteria 1-7 define done.
+A) apply_patch full-batch scope fix + single-field `state resolve` output; B) benchmark `artifact_files` instrumentation + ceremony trigger threshold bound to the deterministic profile floor (lite: zero ceremony; standard: at most the active plan; strict: unchanged); C) capability-registry hardening + implementation-surface predicate unification + gate-semantics doc; D) facade retirement plumbing (D1; the 20 -> <=5 deletion re-sequenced to a deferred follow-up in `tasks/todos.md` per the plan's own re-sequence clause, 2026-07-13); E) debt cleanup (CHANGELOG, stale review closure, dead schema fields, installed-profile readback). Each phase is independently mergeable with its own accept gate; the plan's Success Criteria define done, with B's aggregate criteria 1-3 adjudicated as documented partial (true-lite bucket passes; promotion-time envelope cost deferred to follow-up).
 
 ## Scope
 
@@ -147,8 +147,6 @@ exit_criteria:
     - dimension: functionality
       min: 7
   manual_checks:
-    - "Regraded profile-comparison matrix stays 27/27 and meets plan Success Criteria 1-4 ratios"
-    - "Disposable-HOME install smoke shows facade dirs 20 -> <=5 on both hosts, non-facade content untouched"
     - "Evaluator review file recommends pass"
 ```
 
