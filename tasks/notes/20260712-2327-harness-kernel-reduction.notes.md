@@ -159,6 +159,14 @@
   `AGENTS.md`/`CLAUDE.md` changes outside this contract and fail allowed-paths.
   Therefore this branch stays based on `origin/main` and reprojects its three
   manifest-owned docs to the brain immediately before the next verifier.
+- The fifth verifier reached the same final command but exposed a different
+  self-host boundary: bare `repo-harness run` resolved the globally installed
+  package helper, which timed out after 120 seconds, while the current source
+  helper completed strict workflow checks in under two seconds. Setting the
+  documented `REPO_HARNESS_SOURCE_ROOT` to this checkout makes the exact required
+  command resolve the current workflow contract and pass. The next self-host
+  verifier therefore carries that explicit source authority instead of mutating
+  the shared global install during concurrent repo work.
 
 ## Tradeoffs Considered
 
