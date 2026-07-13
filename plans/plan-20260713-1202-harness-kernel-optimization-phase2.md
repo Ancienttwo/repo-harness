@@ -236,6 +236,10 @@ The SessionStart renderer (`assets/hooks/session-start-context.sh`) renders the 
 
 ### Phase D — Skill facade convergence (P1)
 
+> **Re-sequenced 2026-07-13 (plan's own "What Would Change the Plan" clause fired).** The pre-delete audit found facade names wired far deeper than the two predicted sites: README + 4 translations, `docs/reference-configs/agentic-development-flow.md` + `assets/` mirror, `docs/architecture/modules/public-surface/{action-commands,root-router}.md`, ~15 eval scenarios in `evals/evals.json` + fixtures, full content-contract tests (`tests/action-command-skills.test.ts`, `tests/evals-contract.test.ts`), a third dangling recommendation (`prompt-guard.sh:749` names `repo-harness-autoplan`), and kept-facade cross-references; the `references/` deliverable also sits outside this contract's allowed_paths. **This work-package now ships only D1 (retirement plumbing); the actual 20 -> <=5 deletion + content/eval/doc migration is deferred to a dedicated follow-up work-package recorded in `tasks/todos.md`.**
+>
+> **D1 scope (in current allowed_paths, independently valuable):** (1) `scripts/sync-codex-installed-copies.sh` — `preflight_skill_root()` / `remove_retired_owned_facades()` currently exit 1 when an owner-marked host facade dir's package source no longer exists; change to retire (remove) owner-marked dirs whose canonical source is gone, preserve + report user-modified/unmarked content. (2) `src/cli/installer/install-profile.ts` `discoverManagedSurfaces()` — distinguish per-facade retired state (host-present, owner-marked, canonical-absent) from the generic component buckets so retirement is per-facade. (3) Wire `repo-harness-gptpro` into the `product-planning`/`strict` facade sync sets (today only plan/check/handoff are carried by any profile — decision recorded here). (4) Disposable-HOME smoke test of the retirement path (source-gone owner-marked dir removed; modified dir preserved + reported) without deleting any real facade. The original convergence design below is retained as the spec for the follow-up work-package.
+
 Keep as standalone host-advertised skill dirs only:
 
 | Keep (≤5) | Why |
