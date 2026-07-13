@@ -8,7 +8,7 @@
 > **Last Updated**: 2026-07-13 08:08
 > **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Diff Fingerprint**: sha256:69ce437338615a11fa63bea33b3dc477bf8c1b3f03a710a8722a63683608f99a
+> **Reviewed Diff Fingerprint**: sha256:fc3c1914a8162d3c8748dcb5897d318ea8c8ffa72ebf700960b57d6037aeb948
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 ## Human Review Card
@@ -46,12 +46,12 @@
 > **External Started**: 2026-07-13T06:30:00+0800
 > **External Completed**: 2026-07-13T08:04:00+0800
 > **Review Rubric Version**: 2
-> **Reviewed Diff Fingerprint**: sha256:69ce437338615a11fa63bea33b3dc477bf8c1b3f03a710a8722a63683608f99a
+> **Reviewed Diff Fingerprint**: sha256:fc3c1914a8162d3c8748dcb5897d318ea8c8ffa72ebf700960b57d6037aeb948
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 - P1 blockers: none. Earlier findings covering unsafe lock reclaim, mandatory-context loss, incomplete transaction compensation, and stale report provenance were fixed and re-reviewed.
 - P2 advisories: none. Earlier ownership/profile-exclusion and test-fixture findings were fixed and re-reviewed.
-- Acceptance checklist: pass — final report `authoritative=true`, source commit matches the clean execution HEAD, 3 profiles x 9 scenarios are present, all structured provider/grader/isolation evidence passes, and focused Strict/product-planning exclusions pass. A separate Claude review command timed out without a verdict and is truthfully recorded as unavailable; it is not counted toward acceptance.
+- Acceptance checklist: pass — final report `authoritative=true`, source commit matches the clean execution HEAD, 3 profiles x 9 scenarios are present, all structured provider/grader/isolation evidence passes, and focused Strict/product-planning exclusions pass. Final re-review also verified separate report-byte binding in structured checks across jq and no-jq paths, with legacy/invalid status fail closed. A separate Claude review command timed out without a verdict and is truthfully recorded as unavailable; it is not counted toward acceptance.
 
 ## Behavior Diff Notes
 
