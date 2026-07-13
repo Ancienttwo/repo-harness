@@ -1,6 +1,6 @@
 # Plan: PR 67 Deploy SQL Policy Fix
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260713-1413
 > **Slug**: pr67-deploy-sql-policy-fix
 > **Planning Source**: waza-think
@@ -156,7 +156,7 @@ See captured planning output.
 - [x] Harden deploy-SQL policy parsing, file enumeration, invariant checks, and CLI behavior with regression tests.
 - [x] Synchronize policy-owned hook, skill, template, and deploy guidance surfaces without adding a new authority.
 - [x] Run focused, full, workflow, architecture, adoption, and installed-package verification after rebasing onto the current remote main.
-- [ ] Complete review artifacts, update PR #67 with force-with-lease, and confirm remote CI/mergeability.
+- [x] Complete review artifacts, update PR #67 with force-with-lease, and confirm remote CI/mergeability.
 
 ## Annotations
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->

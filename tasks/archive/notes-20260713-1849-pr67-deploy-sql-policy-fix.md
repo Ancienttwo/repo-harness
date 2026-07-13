@@ -1,10 +1,16 @@
+> **Archived**: 2026-07-13 18:49
+> **Related Plan**: plans/archive/plan-20260713-1413-pr67-deploy-sql-policy-fix.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260713-1849
+
 # Implementation Notes: pr67-deploy-sql-policy-fix
 
 > **Status**: Active
 > **Plan**: plans/plan-20260713-1413-pr67-deploy-sql-policy-fix.md
 > **Contract**: tasks/contracts/20260713-1413-pr67-deploy-sql-policy-fix.contract.md
 > **Review**: tasks/reviews/20260713-1413-pr67-deploy-sql-policy-fix.review.md
-> **Last Updated**: 2026-07-13 15:32
+> **Last Updated**: 2026-07-13 17:28
 > **Lifecycle**: notes
 
 ## Design Decisions
@@ -50,6 +56,7 @@
 - Installed configured-root smoke: a freshly packed `repo-harness-0.9.2.tgz` accepted a `timestamp14` root plus required invariant through `repo-harness run check-deploy-sql-order --root deploy/sql`.
 - Post-rebase full CI-equivalent verification passed `REPO_HARNESS_BRAIN_ROOT=/private/tmp/repo-harness-pr67-ci-no-vault bash scripts/check-ci.sh`, including full tests, type/projection/workflow checks, inspection, adoption dry-run, package dry-run, and tarball install smoke.
 - The first strict contract run passed all 26 automatable criteria and failed only because the contract had modeled the GitHub PR state as an unsupported machine `manual_checks` entry. That entry was removed from the machine verifier; remote mergeability and checks remain mandatory in the plan/review acceptance boundary and are verified through GitHub after push.
+- PR #67 was merged at `2026-07-13T09:19:22Z` as merge commit `4e3e76a29409199c8073a42001285d23927f1676`. Remote `main` resolved to that exact commit, and post-merge GitHub Actions run `29238650018` completed successfully across the Test job plus Linux, macOS, and Windows MCP path matrices.
 
 ## Promotion Filter
 

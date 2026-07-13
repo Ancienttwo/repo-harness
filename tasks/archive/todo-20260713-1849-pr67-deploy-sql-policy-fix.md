@@ -1,7 +1,13 @@
+> **Archived**: 2026-07-13 18:49
+> **Related Plan**: plans/archive/plan-20260713-1413-pr67-deploy-sql-policy-fix.md
+> **Outcome**: Completed
+> **Source Plan**: (none)
+> **Parent Run ID**: run-20260713-1849
+
 # Deferred Goal Ledger
 
 > **Status**: Backlog
-> **Updated**: (archive-workflow)
+> **Updated**: 2026-07-13 00:47
 > **Scope**: Medium/long-term goals deferred from active plan execution
 
 Current plan tasks live in the active plan's `## Task Breakdown`.

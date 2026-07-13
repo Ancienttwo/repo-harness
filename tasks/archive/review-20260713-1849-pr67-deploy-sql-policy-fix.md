@@ -1,3 +1,9 @@
+> **Archived**: 2026-07-13 18:49
+> **Related Plan**: plans/archive/plan-20260713-1413-pr67-deploy-sql-policy-fix.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260713-1849
+
 # Task Review: pr67-deploy-sql-policy-fix
 
 > **Status**: Done
@@ -5,10 +11,10 @@
 > **Contract**: tasks/contracts/20260713-1413-pr67-deploy-sql-policy-fix.contract.md
 > **Notes File**: tasks/notes/20260713-1413-pr67-deploy-sql-policy-fix.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-07-13 15:40
+> **Last Updated**: 2026-07-13 18:03
 > **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Diff Fingerprint**: sha256:40d9477e92f20076528aed9a1b701ba42f76fb03374180bc311ad9008f07dce1
+> **Reviewed Diff Fingerprint**: sha256:7365d39031c25370629d9611d2ef1b9da6dfe1faecf53146c672a2db9aa6c67c
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 ## Human Review Card
@@ -16,9 +22,9 @@
 - Verdict: pass
 - Change type: code-change
 - Intended files changed: deploy-SQL checker and packaged mirror, policy/guidance projections, focused regression tests, architecture truth, and this work-package's workflow artifacts.
-- Actual files changed: 32 contract-allowed paths; one target commit on `origin/main` `f248e76f`; neither unrelated commit `3bf58a8` nor stale PR head `0bfbb657` is an ancestor.
+- Actual files changed: 32 contract-allowed implementation paths plus this workflow closeout; PR #67 merged to remote `main` as `4e3e76a2`; neither unrelated commit `3bf58a8` nor stale PR head `0bfbb657` entered its ancestry.
 - Commands passed: focused six-file suite 224/224; deploy-SQL focused set 7/7; typecheck; source/helper and hook projection parity; deploy/architecture/task/workflow checks; inspection and adoption dry-run; package tarball install with configured-root runtime smoke; shell syntax and `git diff --check`.
-- External acceptance: independent security/correctness and architecture/integration reviewers both pass the exact rubric-v2 fingerprint with no P1 blockers.
+- External acceptance: native security/correctness and architecture/integration reviewers found no implementation blocker; gate-compatible Claude acceptance passed against the exact closeout fingerprint with no P1/P2 findings.
 - Residual risks: the NUL-safe sorter buffers the deploy path list in memory and a force-killed process may leave safe `mktemp` files; neither affects repo-scale correctness.
 - Reviewer action required: none before repository/remote gates.
 - Rollback: revert the rebuilt commit or, before merge only, restore the recorded remote PR head using force-with-lease.
@@ -36,23 +42,24 @@
 - Manual checks: exact newline directory-symlink bypass now exits 1; fake find, fake Bun sorter, unavailable `TMPDIR`, and malformed non-NUL snapshot all fail closed; source/package bytes match; PR #68 native-role hook content remains identical to base.
 - Supporting artifacts: plan, contract, notes, review, current-status projection, architecture modules, `.ai/harness/checks/latest.json`, and ignored run snapshots.
 - Implementation notes reviewed: yes.
-- Run snapshot: pending final `verify-contract` / `verify-sprint` refresh.
+- Run snapshot: contract verification passed 26/26 and marked the contract Fulfilled; the latest `verify-sprint` correctly remains red until gate-compatible Claude acceptance is recorded for this fingerprint.
 
 ## External Acceptance Advice
 
 > **External Acceptance**: pass
-> **External Reviewer**: Codex security/correctness + architecture/integration
-> **External Source**: native-subagents/pr67_security+pr67_architecture
-> **External Started**: 2026-07-13T15:07:00+0800
-> **External Completed**: 2026-07-13T15:40:00+0800
+> **External Reviewer**: Claude
+> **External Source**: claude-review
+> **External Started**: 2026-07-13T17:38:00+0800
+> **External Completed**: 2026-07-13T18:03:00+0800
 > **Review Rubric Version**: 2
-> **Reviewed Diff Fingerprint**: sha256:40d9477e92f20076528aed9a1b701ba42f76fb03374180bc311ad9008f07dce1
+> **Reviewed Diff Fingerprint**: sha256:7365d39031c25370629d9611d2ef1b9da6dfe1faecf53146c672a2db9aa6c67c
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
-- P1 blockers: none. Earlier rounds found regex-metacharacter invariant forgery, directory-symlink omission, masked `find` failure, overwritten invalid `--root`, stale-base integration, and newline-delimited path splitting; all were fixed and re-reviewed against this fingerprint.
-- P2 advisories: security reviewer noted that `mktemp`, Bun-sorter failure, and malformed-NUL failure probes are manual rather than dedicated automated fixtures. All probes fail closed; existing fake-find and exact newline-symlink regressions cover the observed bypass, so this does not block acceptance.
-- Acceptance checklist: pass — NUL-safe enumeration and literal invariant matching close the reproduced bypasses; configured single-root and multi-root coverage semantics match tests; `operations.deploy_sql` is the only alternate-layout authority; source/package and hook projections are current; PR #68 base behavior is preserved; scope contains one target commit and only contract-allowed paths.
-- Freshness delta: both reviewers re-read the final `40d9...` projection after plan/contract/notes evidence updates and a canonical handoff/current-status refresh. They confirmed implementation/test bytes unchanged, Current Focus and Handoff now agree on the guarded push, and returned no P1/P2. The GitHub remote gate remains pending by design until push.
+- P1 blockers: none
+- P2 advisories: none. Claude's exact final output was `No P1/P2 findings.` followed by `PASS`.
+- Acceptance checklist: pass — Claude re-reviewed the combined closeout diff after the reviewer identity, fingerprint authority, and stale remote-gate narrative were corrected.
+- Freshness delta: the staged closeout-only plan/contract/notes edits produce `sha256:7365d3...` against the gate target `main=4e3e76a2`; the review file is excluded from that implementation fingerprint by design.
+- Remote acceptance: PR #67 reached `MERGED` at merge commit `4e3e76a2`; post-merge main CI run `29238650018` completed with all four jobs successful.
 
 ## Behavior Diff Notes
 
@@ -83,8 +90,8 @@
 ## Retest Steps
 
 - Re-run: `repo-harness run verify-contract --contract tasks/contracts/20260713-1413-pr67-deploy-sql-policy-fix.contract.md --strict` with the CI-equivalent isolated Brain root, followed by `repo-harness run verify-sprint`.
-- Re-check: guarded PR branch update, remote GitHub checks, mergeability, and exact remote head.
+- Re-check: final workflow fingerprint, `verify-sprint`, archive transaction, and post-archive strict workflow projection.
 
 ## Summary
 
-- PASS for fingerprint `sha256:40d9477e92f20076528aed9a1b701ba42f76fb03374180bc311ad9008f07dce1`; local contract criteria are green and the remaining gate is the guarded PR update plus remote GitHub checks/mergeability.
+- PASS for the implementation; PR #67 is merged and post-merge main CI is green. Complete current-fingerprint Claude acceptance, rerun `verify-sprint`, then archive only if the machine gate is green.
