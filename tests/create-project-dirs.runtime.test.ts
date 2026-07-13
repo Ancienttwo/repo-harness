@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
@@ -265,7 +265,9 @@ describe("create-project-dirs runtime smoke", () => {
       expect(workflowContract.artifacts.requiredDirectories).not.toContain("scripts");
       expect(workflowContract.artifacts.requiredDirectories).toContain("docs/architecture/domains");
       expect(workflowContract.artifacts.requiredDirectories).toContain("docs/architecture/modules");
-      expect(workflowContract.agenticDevelopment.routing.complexEngineeringPlan).toBe("gstack:plan-eng-review");
+      expect(workflowContract.agenticDevelopment.routing.productDiscovery).toBe("parent-agent:geju");
+      expect(workflowContract.agenticDevelopment.routing.complexEngineeringPlan).toBe("parent-agent:geju");
+      expect(workflowContract.agenticDevelopment.routing.designPlan).toBe("parent-agent:geju");
       expect(workflowContract.agenticDevelopment.routing.smallOrMediumPlan).toBe("waza:think");
       const contextMap = JSON.parse(readFileSync(join(cwd, ".ai/context/context-map.json"), "utf-8"));
       expect(contextMap.root_context_files).not.toContain("docs/researches/");
@@ -281,7 +283,6 @@ describe("create-project-dirs runtime smoke", () => {
       expect(policy.harness.helper_compat_dir).toBeUndefined();
       expect(policy.sprints.helper_script).toBe("repo-harness run sprint-backlog");
       expect(policy.external_tooling.routing).toEqual({
-        complex: "gstack",
         simple: "waza",
         knowledge: "gbrain",
       });
@@ -365,9 +366,9 @@ describe("create-project-dirs runtime smoke", () => {
       expect(policy.information_lifecycle.external_knowledge.drift_check).toBe("repo-harness run check-brain-manifest");
       expect(policy.information_lifecycle.external_knowledge.sync_script).toBe("repo-harness run sync-brain-docs");
       expect(policy.agentic_development.routing).toEqual({
-        product_discovery: "gstack:office-hours",
-        complex_engineering_plan: "gstack:plan-eng-review",
-        design_plan: "gstack:plan-design-review",
+        product_discovery: "parent-agent:geju",
+        complex_engineering_plan: "parent-agent:geju",
+        design_plan: "parent-agent:geju",
         small_or_medium_plan: "waza:think",
         bug_or_regression: "waza:hunt",
         post_implementation_review: "waza:check",
@@ -377,6 +378,9 @@ describe("create-project-dirs runtime smoke", () => {
         "P2_DATA_FLOW_TRACE",
         "P3_DESIGN_DECISION",
       ]);
+      expect(policy.agentic_development.due_diligence.explicit_report_required_for).toContain(
+        "complex_engineering_plan",
+      );
       expect(policy.context.functional_block_selector.script).toBe("repo-harness run select-agent-context-blocks");
       expect(policy.context.capability_registry_file).toBe(".ai/context/capabilities.json");
       expect(policy.context.capability_resolver).toBe("repo-harness run capability-resolver");
@@ -695,6 +699,196 @@ describe("create-project-dirs runtime smoke", () => {
       expect(existsSync(join(cwd, ".ai/context/context-map.json"))).toBe(true);
       expect(existsSync(join(cwd, ".ai/harness/policy.json"))).toBe(true);
       expect(existsSync(join(cwd, ".ai/harness/context-budget/latest.json"))).toBe(false);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, RUNTIME_SMOKE_TIMEOUT_MS);
+
+  test("project init directly replaces managed planning routes in an existing policy", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "stale-planning-policy-"));
+    const libPath = join(ROOT, "scripts/lib/project-init-lib.sh");
+
+    try {
+      mkdirSync(join(cwd, ".ai/harness"), { recursive: true });
+      writeFileSync(
+        join(cwd, ".ai/harness/policy.json"),
+        JSON.stringify(
+          {
+            external_tooling: {
+              routing: { complex: "gstack", simple: "waza", knowledge: "gbrain" },
+            },
+            agentic_development: {
+              routing: {
+                product_discovery: "gstack:office-hours",
+                complex_engineering_plan: "gstack:plan-eng-review",
+                design_plan: "gstack:plan-design-review",
+              },
+              due_diligence: {
+                explicit_report_required_for: ["plan-eng-review", "shared_contract"],
+              },
+            },
+          },
+          null,
+          2,
+        ),
+      );
+
+      const res = spawnSync(
+        "bash",
+        ["-lc", [`source '${libPath}'`, 'pi_write_harness_policy "$PWD" apply'].join("\n")],
+        { cwd, encoding: "utf-8" },
+      );
+
+      expect(res.status).toBe(0);
+      const policy = JSON.parse(readFileSync(join(cwd, ".ai/harness/policy.json"), "utf-8"));
+      expect(policy.external_tooling.routing).toEqual({ simple: "waza", knowledge: "gbrain" });
+      expect(policy.agentic_development.routing).toMatchObject({
+        product_discovery: "parent-agent:geju",
+        complex_engineering_plan: "parent-agent:geju",
+        design_plan: "parent-agent:geju",
+      });
+      expect(policy.agentic_development.due_diligence.explicit_report_required_for).toEqual([
+        "complex_engineering_plan",
+        "shared_contract",
+      ]);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, RUNTIME_SMOKE_TIMEOUT_MS);
+
+  test("project init preserves mixed custom routes while cutting the declared legacy provider", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "custom-planning-policy-"));
+    const libPath = join(ROOT, "scripts/lib/project-init-lib.sh");
+
+    try {
+      mkdirSync(join(cwd, ".ai/harness"), { recursive: true });
+      writeFileSync(
+        join(cwd, ".ai/harness/policy.json"),
+        JSON.stringify(
+          {
+            external_tooling: {
+              routing: { complex: "retired-provider", simple: "waza", knowledge: "gbrain" },
+            },
+            agentic_development: {
+              routing: {
+                product_discovery: "custom:product-discovery",
+                complex_engineering_plan: "retired-provider:architecture-review",
+                design_plan: "custom:design-review",
+              },
+              due_diligence: {
+                explicit_report_required_for: ["architecture-review", "shared_contract", "database_migration"],
+              },
+            },
+          },
+          null,
+          2,
+        ),
+      );
+
+      const res = spawnSync(
+        "bash",
+        ["-lc", [`source '${libPath}'`, 'pi_write_harness_policy "$PWD" apply'].join("\n")],
+        { cwd, encoding: "utf-8" },
+      );
+
+      expect(res.status).toBe(0);
+      const policy = JSON.parse(readFileSync(join(cwd, ".ai/harness/policy.json"), "utf-8"));
+      expect(policy.external_tooling.routing).toEqual({ simple: "waza", knowledge: "gbrain" });
+      expect(policy.agentic_development.routing).toMatchObject({
+        product_discovery: "custom:product-discovery",
+        complex_engineering_plan: "parent-agent:geju",
+        design_plan: "custom:design-review",
+      });
+      expect(policy.agentic_development.due_diligence.explicit_report_required_for).toEqual([
+        "complex_engineering_plan",
+        "shared_contract",
+        "database_migration",
+      ]);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, RUNTIME_SMOKE_TIMEOUT_MS);
+
+  test("Python-only policy merge matches the primary runtime migration", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "python-policy-merge-"));
+    const libPath = join(ROOT, "scripts/lib/project-init-lib.sh");
+    const fakeBin = join(cwd, "bin");
+    const defaultsPath = join(cwd, "defaults.json");
+    const currentPath = join(cwd, "current.json");
+    const primaryOutput = join(cwd, "primary.json");
+    const pythonOutput = join(cwd, "python.json");
+
+    try {
+      const python = spawnSync("python3", ["-c", "import sys; print(sys.executable)"], { encoding: "utf-8" });
+      expect(python.status).toBe(0);
+      expect(python.stdout.trim()).not.toBe("");
+      mkdirSync(fakeBin, { recursive: true });
+      symlinkSync(python.stdout.trim(), join(fakeBin, "python3"));
+
+      writeFileSync(
+        defaultsPath,
+        JSON.stringify({
+          external_tooling: { routing: { simple: "waza", knowledge: "gbrain" } },
+          agentic_development: {
+            routing: {
+              product_discovery: "parent-agent:geju",
+              complex_engineering_plan: "parent-agent:geju",
+              design_plan: "parent-agent:geju",
+            },
+            due_diligence: { explicit_report_required_for: ["complex_engineering_plan"] },
+          },
+        }),
+      );
+      writeFileSync(
+        currentPath,
+        JSON.stringify({
+          external_tooling: {
+            routing: { complex: "retired-provider", simple: "waza", knowledge: "gbrain" },
+          },
+          agentic_development: {
+            routing: {
+              product_discovery: "retired-provider:discovery-review",
+              complex_engineering_plan: "retired-provider:architecture-review",
+              design_plan: "custom:design-review",
+            },
+            due_diligence: {
+              explicit_report_required_for: ["discovery-review", "architecture-review", "database_migration"],
+            },
+          },
+        }),
+      );
+
+      const primary = spawnSync(
+        "/bin/bash",
+        ["--noprofile", "--norc", "-c", `source '${libPath}'\npi_merge_json_defaults '${defaultsPath}' '${currentPath}' '${primaryOutput}'`],
+        { cwd, encoding: "utf-8" },
+      );
+      expect(primary.status).toBe(0);
+
+      const pythonOnly = spawnSync(
+        "/bin/bash",
+        ["--noprofile", "--norc", "-c", `source '${libPath}'\npi_merge_json_defaults '${defaultsPath}' '${currentPath}' '${pythonOutput}'`],
+        {
+          cwd,
+          encoding: "utf-8",
+          env: { HOME: cwd, PATH: fakeBin },
+        },
+      );
+      expect(pythonOnly.status).toBe(0);
+      expect(readFileSync(pythonOutput, "utf-8")).toBe(readFileSync(primaryOutput, "utf-8"));
+
+      const policy = JSON.parse(readFileSync(pythonOutput, "utf-8"));
+      expect(policy.external_tooling.routing).toEqual({ simple: "waza", knowledge: "gbrain" });
+      expect(policy.agentic_development.routing).toMatchObject({
+        product_discovery: "parent-agent:geju",
+        complex_engineering_plan: "parent-agent:geju",
+        design_plan: "custom:design-review",
+      });
+      expect(policy.agentic_development.due_diligence.explicit_report_required_for).toEqual([
+        "product_discovery",
+        "complex_engineering_plan",
+        "database_migration",
+      ]);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

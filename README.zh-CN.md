@@ -182,18 +182,18 @@ flowchart TD
 
 ## 长周期产品 Loop
 
-Greenfield 和 Brownfield 工作先把 discovery 和工程计划前置在 Claude-Fable
-中完成，不要直接让 Codex 从原始聊天长期滚动：
+Greenfield 和 Brownfield 工作先由 parent agent 完成 discovery 和工程计划判断，
+不要直接让 Codex 从原始聊天长期滚动：
 
-1. 在 Claude-Fable 里用 gstack `office-hours` 做产品 discovery，或用
-   `plan-eng-review` 做工程方案评审。输出应当是锁定产品意图、架构、风险和
-   evidence contract 的开发文档。
+1. contract 产生前，parent agent 先调用 `geju` 打开格局，再用自身的 repo/runtime
+   能力完成 P1/P2/P3，并把确认后的产品意图、架构、风险、falsifier 和 evidence
+   contract 冻结进开发文档。
 2. 把这些文档转成 `plans/prds/` 下的 PRD Sprint，并为每个 execution
    slice 写清有序 backlog 和详细 sub-plan。
 3. 创建 Codex Goal，目标指向该 sprint 文件。repo-harness 之后就可以按既有
    plan -> contract -> worktree -> verification flow 逐项投射和执行。
 
-这个交接让长周期 loop 更精准：Claude-Fable 负责前置判断，PRD Sprint 是 durable
+这个交接让长周期 loop 更精准：parent agent 负责前置判断，PRD Sprint 是 durable
 source of truth，Codex Goal mode 只围绕具体 sprint 恢复和推进，而不是反复重新解释原始聊天。
 
 ## 前 5 分钟
@@ -313,7 +313,7 @@ bun test
 - `Host hook adapters are user-level:`：提醒安装 global adapters，并信任 `~/.codex/hooks.json`
 - `Workflow migration:`：repo-local harness surfaces 的创建或刷新计划
 - `Helper runtime:`：应用后会得到的操作工具链
-- `--- External Tooling ---`：gstack/Waza/gbrain 路由以及 advisory 安装/更新提示
+- `--- External Tooling ---`：parent/Geju planning 指引，以及 Waza/gbrain readiness 和 advisory 安装/更新提示
 
 如果 dry-run 输出不对，先停在这里，阅读
 [`docs/reference-configs/hook-operations.md`](docs/reference-configs/hook-operations.md)。
@@ -476,9 +476,8 @@ decision rationale 的要求，来自他的贡献与启发。
 和 `health` 这些核心 skill 构成了 `repo-harness` 的日常 planning、bug hunt
 和 verification 节奏。
 
-感谢 [Garry Tan](https://x.com/garrytan) 创作 gstack 和 gbrain；它们影响了
-product discovery、plan/design review、release 文档、knowledge sync 和
-handoff retrieval 的工作流设计。
+感谢 [Garry Tan](https://x.com/garrytan) 创作 gbrain；它影响了 release 文档、
+knowledge sync 和 handoff retrieval 的工作流设计。
 
 感谢 [Peter Steinberger](https://x.com/steipete) 创作 Oracle（`@steipete/oracle`，MIT）；它是
 `chatgpt-browser` 默认的 GPT Pro / ChatGPT Web 浏览器 consult 引擎，Oracle provider

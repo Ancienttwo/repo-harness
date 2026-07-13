@@ -49,9 +49,9 @@
   },
   "agenticDevelopment": {
     "routing": {
-      "productDiscovery": "gstack:office-hours",
-      "complexEngineeringPlan": "gstack:plan-eng-review",
-      "designPlan": "gstack:plan-design-review",
+      "productDiscovery": "parent-agent:geju",
+      "complexEngineeringPlan": "parent-agent:geju",
+      "designPlan": "parent-agent:geju",
       "smallOrMediumPlan": "waza:think",
       "bugOrRegression": "waza:hunt",
       "postImplementationReview": "waza:check"
@@ -63,7 +63,7 @@
         "P3_DESIGN_DECISION"
       ],
       "explicitReportRequiredFor": [
-        "plan-eng-review",
+        "complex_engineering_plan",
         "hunt",
         "risky_refactor",
         "deployment",

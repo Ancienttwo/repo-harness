@@ -1221,7 +1221,7 @@ pi_external_tooling_gbrain_mcp() {
 
 pi_external_tooling_defaults_summary() {
   cat <<'EOF_EXTERNAL_TOOLING_DEFAULTS'
-- Policy defaults: routing complex->gstack, simple->waza, knowledge->gbrain
+- Policy defaults: parent-agent + geju owns product/complex/design planning; external routing keeps simple->waza and knowledge->gbrain
 - Hosts: claude-code, codex
 - Mode: agent-readiness-required
 - Detection: init-migrate
@@ -2054,7 +2054,6 @@ pi_write_harness_policy() {
   },
   "external_tooling": {
     "routing": {
-      "complex": "gstack",
       "simple": "waza",
       "knowledge": "gbrain"
     },
@@ -2132,16 +2131,16 @@ pi_write_harness_policy() {
   },
   "agentic_development": {
     "routing": {
-      "product_discovery": "gstack:office-hours",
-      "complex_engineering_plan": "gstack:plan-eng-review",
-      "design_plan": "gstack:plan-design-review",
+      "product_discovery": "parent-agent:geju",
+      "complex_engineering_plan": "parent-agent:geju",
+      "design_plan": "parent-agent:geju",
       "small_or_medium_plan": "waza:think",
       "bug_or_regression": "waza:hunt",
       "post_implementation_review": "waza:check"
     },
     "due_diligence": {
       "levels": ["P1_GLOBAL_ARCHITECTURE", "P2_DATA_FLOW_TRACE", "P3_DESIGN_DECISION"],
-      "explicit_report_required_for": ["plan-eng-review", "hunt", "risky_refactor", "deployment", "auth_payment_data", "shared_contract"]
+      "explicit_report_required_for": ["complex_engineering_plan", "hunt", "risky_refactor", "deployment", "auth_payment_data", "shared_contract"]
     }
   },
   "minimal_change": {
@@ -2606,6 +2605,37 @@ try {
 }
 
 const merged = mergeDefaults(defaultsJson, currentJson);
+const externalTooling = isPlainObject(merged.external_tooling) ? merged.external_tooling : {};
+const externalRouting = isPlainObject(externalTooling.routing) ? externalTooling.routing : {};
+const retiredComplexProvider = typeof externalRouting.complex === "string" ? externalRouting.complex : null;
+delete externalRouting.complex;
+externalTooling.routing = externalRouting;
+merged.external_tooling = externalTooling;
+
+const agenticDevelopment = isPlainObject(merged.agentic_development) ? merged.agentic_development : {};
+const planningRouting = isPlainObject(agenticDevelopment.routing) ? agenticDevelopment.routing : {};
+const retiredReportLabels = new Map();
+if (retiredComplexProvider) {
+  const retiredPrefix = `${retiredComplexProvider}:`;
+  for (const key of ["product_discovery", "complex_engineering_plan", "design_plan"]) {
+    const route = planningRouting[key];
+    if (typeof route === "string" && route.startsWith(retiredPrefix)) {
+      retiredReportLabels.set(route.slice(retiredPrefix.length), key);
+      planningRouting[key] = "parent-agent:geju";
+    }
+  }
+}
+agenticDevelopment.routing = planningRouting;
+const dueDiligence = isPlainObject(agenticDevelopment.due_diligence) ? agenticDevelopment.due_diligence : {};
+if (retiredReportLabels.size > 0 && Array.isArray(dueDiligence.explicit_report_required_for)) {
+  dueDiligence.explicit_report_required_for = [
+    ...new Set(dueDiligence.explicit_report_required_for.map((entry) => (
+      typeof entry === "string" ? (retiredReportLabels.get(entry) ?? entry) : entry
+    ))),
+  ];
+}
+agenticDevelopment.due_diligence = dueDiligence;
+merged.agentic_development = agenticDevelopment;
 fs.writeFileSync(outputPath, JSON.stringify(merged, null, 2) + "\n");
 ' "$defaults_file" "$current_file" "$output_file"
     return $?
@@ -2647,6 +2677,34 @@ except Exception:
     current_json = {}
 
 merged = merge_defaults(defaults_json, current_json)
+external_tooling = merged.get("external_tooling") if isinstance(merged.get("external_tooling"), dict) else {}
+external_routing = external_tooling.get("routing") if isinstance(external_tooling.get("routing"), dict) else {}
+retired_complex_provider = external_routing.get("complex") if isinstance(external_routing.get("complex"), str) else None
+external_routing.pop("complex", None)
+external_tooling["routing"] = external_routing
+merged["external_tooling"] = external_tooling
+
+agentic_development = merged.get("agentic_development") if isinstance(merged.get("agentic_development"), dict) else {}
+planning_routing = agentic_development.get("routing") if isinstance(agentic_development.get("routing"), dict) else {}
+retired_report_labels = {}
+if retired_complex_provider:
+    retired_prefix = f"{retired_complex_provider}:"
+    for key in ("product_discovery", "complex_engineering_plan", "design_plan"):
+        route = planning_routing.get(key)
+        if isinstance(route, str) and route.startswith(retired_prefix):
+            retired_report_labels[route[len(retired_prefix):]] = key
+            planning_routing[key] = "parent-agent:geju"
+agentic_development["routing"] = planning_routing
+due_diligence = agentic_development.get("due_diligence") if isinstance(agentic_development.get("due_diligence"), dict) else {}
+if retired_report_labels and isinstance(due_diligence.get("explicit_report_required_for"), list):
+    migrated_due_diligence = []
+    for entry in due_diligence["explicit_report_required_for"]:
+        migrated_entry = retired_report_labels.get(entry, entry) if isinstance(entry, str) else entry
+        if migrated_entry not in migrated_due_diligence:
+            migrated_due_diligence.append(migrated_entry)
+    due_diligence["explicit_report_required_for"] = migrated_due_diligence
+agentic_development["due_diligence"] = due_diligence
+merged["agentic_development"] = agentic_development
 with open(output_path, "w", encoding="utf-8") as handle:
     json.dump(merged, handle, indent=2)
     handle.write("\n")

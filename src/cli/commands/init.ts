@@ -57,7 +57,7 @@ export interface GlobalContextOptions {
  * Cross-review skills bundled in this package under `assets/skills/<skill>` and
  * installed host-aware: `codex-review` (Claude host) lets a Claude session get an
  * independent Codex review; `claude-review` (Codex host) lets a Codex session get
- * an independent Claude review. They are self-contained (no gstack runtime), so
+ * an independent Claude review. They are self-contained (no external planning-provider runtime), so
  * init bootstraps them as workflow-owned runtime skills alongside Waza and
  * Mermaid, not as an unrelated plugin marketplace stack.
  */

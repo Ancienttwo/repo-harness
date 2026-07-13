@@ -123,7 +123,6 @@ const HOSTS = {
     label: "Claude Code",
     agentLabel: "Claude Code",
     skillsDir: path.join(HOME, ".claude", "skills"),
-    gstackDir: path.join(HOME, ".claude", "skills", "gstack"),
     configPath: path.join(HOME, ".claude", "settings.json"),
     agentsDir: path.join(HOME, ".claude", "agents"),
   },
@@ -131,7 +130,6 @@ const HOSTS = {
     label: "Codex",
     agentLabel: "Codex",
     skillsDir: path.join(HOME, ".codex", "skills"),
-    gstackDir: path.join(HOME, ".codex", "skills", "gstack"),
     configPath: path.join(HOME, ".codex", "config.toml"),
     agentsDir: path.join(HOME, ".codex", "agents"),
   },
@@ -391,140 +389,6 @@ function inspectDirectorySync(localDir, stagingDir) {
     missing_files: diff.missing,
     extra_files: diff.extra,
     changed_files: diff.changed,
-  };
-}
-
-function summarizeStatus(hostStatuses) {
-  const values = Object.values(hostStatuses);
-  const presentCount = values.filter((entry) => entry.present).length;
-  if (presentCount === 0) return "missing";
-  if (presentCount === values.length) return "present";
-  return "partial";
-}
-
-function detectRepoGstackTeamMode() {
-  const claudeMd = readText(path.join(REPO_ROOT, "CLAUDE.md"));
-  const settings = readText(path.join(REPO_ROOT, ".claude", "settings.json"));
-  const hookPath = path.join(REPO_ROOT, ".claude", "hooks", "check-gstack.sh");
-
-  if (settings.includes("check-gstack.sh") || fs.existsSync(hookPath) || claudeMd.includes("## gstack (REQUIRED")) {
-    return {
-      status: "required",
-      reason: "Repo has gstack enforcement traces (required CLAUDE.md section or check-gstack hook).",
-    };
-  }
-
-  if (claudeMd.includes("## gstack")) {
-    return {
-      status: "optional",
-      reason: "Repo has a gstack guidance section in CLAUDE.md but no enforcement hook.",
-    };
-  }
-
-  return {
-    status: "not-detected",
-    reason: "No repo-local gstack team-mode traces detected in CLAUDE.md or the shared .ai/hooks/ layer.",
-  };
-}
-
-function detectGstack() {
-  const hostStatuses = {};
-
-  for (const host of SELECTED_HOSTS) {
-    const meta = HOSTS[host];
-    const present = fs.existsSync(meta.gstackDir);
-    const versionFile = path.join(meta.gstackDir, "VERSION");
-    const gitDir = path.join(meta.gstackDir, ".git");
-    const version = present && fs.existsSync(versionFile) ? readText(versionFile).trim() : "";
-    let updateStatus = checkUpdates ? "unknown" : "not-checked";
-    let origin = "";
-    let head = "";
-    let remoteHead = "";
-    let updateReason = "";
-
-    if (present && checkUpdates && fs.existsSync(gitDir)) {
-      const originResult = run("git", ["-C", meta.gstackDir, "remote", "get-url", "origin"], { timeoutMs: 1000 });
-      if (originResult.ok) {
-        origin = originResult.stdout.trim();
-      }
-
-      const headResult = run("git", ["-C", meta.gstackDir, "rev-parse", "HEAD"], { timeoutMs: 1000 });
-      if (headResult.ok) {
-        head = headResult.stdout.trim();
-      }
-
-      const remoteResult = run("git", ["-C", meta.gstackDir, "ls-remote", "--symref", "origin", "HEAD"], { timeoutMs: 1500 });
-      if (remoteResult.ok) {
-        const match = remoteResult.stdout.match(/^([0-9a-f]+)\s+HEAD$/m);
-        remoteHead = match ? match[1] : "";
-      }
-
-      if (head && remoteHead) {
-        updateStatus = head === remoteHead ? "up-to-date" : "update-available";
-        updateReason = head === remoteHead
-          ? "Local gstack matches origin/HEAD."
-          : "Local gstack HEAD differs from origin/HEAD."
-      } else if (origin || head) {
-        updateStatus = "unknown";
-        updateReason = remoteResult.timed_out
-          ? "Timed out while checking gstack origin/HEAD."
-          : "Unable to resolve both local and remote HEAD for gstack."
-      }
-    } else if (present) {
-      updateStatus = checkUpdates ? "unknown" : "not-checked";
-      updateReason = fs.existsSync(gitDir)
-        ? "Update checks were skipped."
-        : "gstack install is present but not a full git checkout in this host path.";
-    }
-
-    hostStatuses[host] = {
-      label: meta.label,
-      present,
-      path: meta.gstackDir,
-      version: version || null,
-      origin: origin || null,
-      head: head || null,
-      remote_head: remoteHead || null,
-      update_status: updateStatus,
-      reason: present
-        ? (updateReason || `Detected gstack at ${meta.gstackDir}.`)
-        : `Missing gstack at ${meta.gstackDir}.`,
-      install_command: host === "claude"
-        ? "git clone --depth 1 https://github.com/garrytan/gstack.git ~/.claude/skills/gstack && cd ~/.claude/skills/gstack && ./setup"
-        : `${fs.existsSync(HOSTS.claude.gstackDir) ? "cd ~/.claude/skills/gstack" : "git clone --depth 1 https://github.com/garrytan/gstack.git ~/.claude/skills/gstack && cd ~/.claude/skills/gstack"} && ./setup --host codex`,
-      upgrade_command: host === "claude"
-        ? "cd ~/.claude/skills/gstack && git pull && ./setup"
-        : "cd ~/.claude/skills/gstack && git pull && ./setup --host codex",
-    };
-  }
-
-  const repoTeamMode = detectRepoGstackTeamMode();
-  const status = summarizeStatus(hostStatuses);
-  const selectedMeta = Object.values(hostStatuses);
-  const installCommand = SELECTED_HOSTS.length === 2
-    ? "git clone --depth 1 https://github.com/garrytan/gstack.git ~/.claude/skills/gstack && cd ~/.claude/skills/gstack && ./setup && ./setup --host codex"
-    : selectedMeta[0].install_command;
-  const upgradeCommand = SELECTED_HOSTS.length === 2
-    ? "cd ~/.claude/skills/gstack && git pull && ./setup && ./setup --host codex"
-    : selectedMeta[0].upgrade_command;
-
-  return {
-    name: "gstack",
-    status,
-    reason: status === "present"
-      ? `Detected gstack in all requested hosts (${SELECTED_HOSTS.join(", ")}).`
-      : status === "partial"
-        ? `Detected gstack in ${selectedMeta.filter((entry) => entry.present).length}/${selectedMeta.length} requested hosts.`
-        : "gstack is missing from all requested hosts.",
-    hosts: hostStatuses,
-    repo_team_mode: repoTeamMode,
-    install_command: installCommand,
-    upgrade_command: upgradeCommand,
-    impact: {
-      complex_tasks: status === "present" ? "full" : status === "partial" ? "degraded" : "missing",
-      simple_tasks: "unaffected",
-      knowledge_tasks: "unaffected",
-    },
   };
 }
 
@@ -1801,7 +1665,6 @@ const report = {
   check_updates: checkUpdates,
   runtime_capabilities: detectRuntimeCapabilities(wazaReport),
   tools: {
-    gstack: detectGstack(),
     waza: wazaReport,
     codex_automation_profile: detectCodexAutomationProfile(),
     agent_fleet: detectAgentFleet(),
@@ -1837,20 +1700,6 @@ function printText(result) {
     console.log(`  - ${capability.name}: ${capability.status} (${required})${pathBits}`);
     console.log(`    owner=${capability.owner}; required_for=${capability.required_for}`);
   }
-  console.log("");
-
-  const gstack = result.tools.gstack;
-  console.log(`gstack [${gstack.status}]`);
-  for (const host of SELECTED_HOSTS) {
-    const entry = gstack.hosts[host];
-    const versionBits = entry.version ? ` v${entry.version}` : "";
-    const updateBits = entry.update_status && entry.update_status !== "not-checked" ? `, ${entry.update_status}` : "";
-    console.log(`  - ${entry.label}: ${entry.present ? "present" : "missing"}${versionBits}${updateBits}`);
-  }
-  console.log(`  - Team mode: ${gstack.repo_team_mode.status} (${gstack.repo_team_mode.reason})`);
-  console.log(`  - Impact: complex=${gstack.impact.complex_tasks}`);
-  console.log(`  - Install: ${gstack.install_command}`);
-  console.log(`  - Upgrade: ${gstack.upgrade_command}`);
   console.log("");
 
   const waza = result.tools.waza;

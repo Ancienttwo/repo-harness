@@ -140,7 +140,7 @@
       "title": "External Tooling",
       "batch": 5,
       "questions": [
-        "Use layered routing for complex/gstack, simple/Waza, and knowledge/gbrain workflows",
+        "Use parent-agent + geju for product/complex/design planning, Waza for simple workflows, and gbrain for knowledge workflows",
         "Default host coverage: Claude Code + Codex",
         "Enable gbrain knowledge-layer guidance while leaving MCP disabled by default"
       ],

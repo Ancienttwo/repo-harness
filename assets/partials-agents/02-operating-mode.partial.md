@@ -28,7 +28,7 @@
 - External reference cache: `_ref/` is an occasional ignored external checkout cache, read/refresh-only comparison material, and must stay out of commits; decisions based on it must cite repo+commit/tag+path in notes or research.
 - Deployment operations workspace: `deploy/` is commit-ready for runbooks, submission materials, release checklists, helper scripts, ordered SQL files under `deploy/sql/`, and env examples.
 - Local operations state: `_ops/` is ignored and private for secrets, real env files, provider state, artifacts, logs, and scratch files; do not commit or agent-edit `_ops/*`.
-- Agentic skill routing: product discovery -> gstack `office-hours`; complex engineering plans -> gstack `plan-eng-review`; design plans -> gstack `plan-design-review`; daily small/medium planning, bug hunts, and checks -> Waza `/think`, `/hunt`, `/check`.
+- Agentic skill routing: product discovery and complex/design planning -> parent agent with `geju` pre-contract framing and parent-owned P1/P2/P3; daily small/medium planning, bug hunts, and checks -> Waza `/think`, `/hunt`, `/check`.
 - Knowledge sync and handoff retrieval -> `gbrain`.
 - Codex automation profile: required `health`, `check`, and `mermaid` from `~/.codex/skills`; do not vendor skill bodies.
 - CodeGraph readiness: required for agent code navigation; keep `.codegraph/` ignored and use `codegraph sync/context/query/callers/callees/impact` for P1/P2 discovery.

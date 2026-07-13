@@ -41,9 +41,6 @@ function isAllowedRuntimeReference(file: string, line: string): boolean {
   if (file === "README.zh-CN.md" && /~\/\.claude\/skills\/repo-harness/.test(line)) {
     return true;
   }
-  if (file === "docs/reference-configs/external-tooling.md" && /~\/\.claude\/skills\/gstack/.test(line)) {
-    return true;
-  }
   return false;
 }
 
@@ -204,6 +201,7 @@ describe("README DX contract", () => {
       expect(localized).not.toContain("0.5.0");
       expect(localized).not.toContain("0.2.1");
       expect(localized).not.toContain("bun run benchmark:skills --dry-run");
+      expect(localized.toLowerCase()).not.toContain("gstack");
     }
   });
 

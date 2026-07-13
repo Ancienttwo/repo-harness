@@ -314,6 +314,33 @@ function defaultPolicy(documentationProfile: string): JsonObject {
       reference_stub_marker: "<!-- repo-harness: reference-config-stub v1 -->",
       reference_resolver: "repo-harness docs path <doc-id>",
     },
+    external_tooling: {
+      routing: {
+        simple: "waza",
+        knowledge: "gbrain",
+      },
+    },
+    agentic_development: {
+      routing: {
+        product_discovery: "parent-agent:geju",
+        complex_engineering_plan: "parent-agent:geju",
+        design_plan: "parent-agent:geju",
+        small_or_medium_plan: "waza:think",
+        bug_or_regression: "waza:hunt",
+        post_implementation_review: "waza:check",
+      },
+      due_diligence: {
+        levels: ["P1_GLOBAL_ARCHITECTURE", "P2_DATA_FLOW_TRACE", "P3_DESIGN_DECISION"],
+        explicit_report_required_for: [
+          "complex_engineering_plan",
+          "hunt",
+          "risky_refactor",
+          "deployment",
+          "auth_payment_data",
+          "shared_contract",
+        ],
+      },
+    },
     upgrade: {
       strategy_version: 1,
       remove_only_ownership: "known_generated",
@@ -649,6 +676,37 @@ export function planStandardAdoption(opts: StandardPlanOptions): { operations: A
   const documentationProfile = opts.env?.REPO_HARNESS_DOCUMENTATION_PROFILE ?? "minimal-agentic";
   const policyCurrent = jsonFile(opts.repoRoot, ".ai/harness/policy.json");
   const policy = deepMergeDefaults(defaultPolicy(documentationProfile), policyCurrent);
+  const externalTooling = isObject(policy.external_tooling) ? policy.external_tooling : {};
+  const externalRouting = isObject(externalTooling.routing) ? externalTooling.routing : {};
+  const retiredComplexProvider = typeof externalRouting.complex === "string" ? externalRouting.complex : null;
+  delete externalRouting.complex;
+  externalTooling.routing = externalRouting;
+  policy.external_tooling = externalTooling;
+
+  const agenticDevelopment = isObject(policy.agentic_development) ? policy.agentic_development : {};
+  const planningRouting = isObject(agenticDevelopment.routing) ? agenticDevelopment.routing : {};
+  const retiredReportLabels = new Map<string, string>();
+  if (retiredComplexProvider) {
+    const retiredPrefix = `${retiredComplexProvider}:`;
+    for (const key of ["product_discovery", "complex_engineering_plan", "design_plan"] as const) {
+      const route = planningRouting[key];
+      if (typeof route === "string" && route.startsWith(retiredPrefix)) {
+        retiredReportLabels.set(route.slice(retiredPrefix.length), key);
+        planningRouting[key] = "parent-agent:geju";
+      }
+    }
+  }
+  agenticDevelopment.routing = planningRouting;
+  const dueDiligence = isObject(agenticDevelopment.due_diligence) ? agenticDevelopment.due_diligence : {};
+  if (retiredReportLabels.size > 0 && Array.isArray(dueDiligence.explicit_report_required_for)) {
+    dueDiligence.explicit_report_required_for = [
+      ...new Set(dueDiligence.explicit_report_required_for.map((entry) => (
+        typeof entry === "string" ? (retiredReportLabels.get(entry) ?? entry) : entry
+      ))),
+    ];
+  }
+  agenticDevelopment.due_diligence = dueDiligence;
+  policy.agentic_development = agenticDevelopment;
 
   for (const path of opts.mode === "minimal" ? MINIMAL_DIRS : STANDARD_DIRS) {
     operations.push(mkdirOperation(opts.repoRoot, path, "Ensure canonical repo-harness workflow directory exists"));

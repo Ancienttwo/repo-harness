@@ -6,6 +6,11 @@ All notable changes to this skill are documented here.
 
 ### Changed
 
+- Removed gstack from active planning routes, generated policy, readiness
+  detection, and install/update guidance. Product discovery and complex/design
+  planning now stay with the parent agent: `geju` opens the pre-contract frame,
+  the parent completes P1/P2/P3, and the accepted result is frozen directly
+  into the plan and contract without an alias, fallback, or compatibility path.
 - Expanded the repo-owned agent fleet from four to six roles with
   `root-cause-prover` for bounded pre-fix bug evidence and
   `harness-evaluator` for existing skill/adoption evaluation in disposable

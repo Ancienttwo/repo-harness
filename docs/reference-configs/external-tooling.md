@@ -3,7 +3,6 @@
 Generated repos route external tooling by host/runtime shape. Task-level
 skill routing lives in `docs/reference-configs/agentic-development-flow.md`.
 
-- `gstack` supplies `office-hours`, `plan-eng-review`, and `plan-design-review`
 - `Waza` supplies `/think`, `/hunt`, and `/check` for daily small/medium work
 - `hai-stack` supplies `geju` for live, pre-contract exploration; only its frozen output enters a contract
 - Codex automation requires `health`, `check`, and `mermaid` from `~/.codex/skills`
@@ -47,15 +46,14 @@ the current adopted repo's dry-run adoption plan has pending operations.
 
 The cross-review skills are **harness-owned and self-contained** — their source
 lives in `assets/skills/<skill>/` and they wrap the peer CLI (`codex exec` /
-`claude -p`) in a read-only sandbox with no gstack dependency, so installing them
+`claude -p`) in a read-only sandbox with no external planning-provider runtime, so installing them
 is a workflow-owned runtime concern, not an unrelated toolchain. They install
 host-aware during `repo-harness install`/`init` and explicit external-skill refreshes:
 `codex-review` only into `~/.claude/skills` (a Claude session asking
 Codex for an independent review) and `claude-review` only into `~/.codex/skills`
-(a Codex session asking Claude). When gstack is present, its `/codex` and
-`gstack-claude` skills are a more featureful superset; the harness skills are the
-zero-dependency baseline that always ships with `init` and the peer acceptance
-gate surface for `## External Acceptance Advice`.
+(a Codex session asking Claude). The harness skills are the self-contained
+baseline that always ships with `init` and the peer acceptance gate surface for
+`## External Acceptance Advice`.
 
 The review scope is the current reviewable diff, not just committed branch
 history: branch diff against the default base, staged changes, unstaged tracked
@@ -83,7 +81,6 @@ Supported flags:
 
 The detector intentionally avoids side-effecting commands. It does not run:
 
-- `gstack setup`
 - `npx skills check`
 - `npx skills update`
 - `gbrain serve`
@@ -101,22 +98,6 @@ silently drift. Network failures are reported as `unknown`; the detector never
 updates skills.
 
 ## Install
-
-### gstack
-
-Claude Code:
-
-```bash
-git clone --depth 1 https://github.com/garrytan/gstack.git ~/.claude/skills/gstack
-cd ~/.claude/skills/gstack && ./setup
-```
-
-Codex:
-
-```bash
-test -d ~/.claude/skills/gstack || git clone --depth 1 https://github.com/garrytan/gstack.git ~/.claude/skills/gstack
-cd ~/.claude/skills/gstack && ./setup --host codex
-```
 
 ### Waza
 
@@ -410,20 +391,6 @@ control. Treat this as activation and DX isolation, not a complete security
 boundary for untrusted repositories.
 
 ## Update
-
-### gstack
-
-Claude Code:
-
-```bash
-cd ~/.claude/skills/gstack && git pull && ./setup
-```
-
-Codex:
-
-```bash
-cd ~/.claude/skills/gstack && git pull && ./setup --host codex
-```
 
 ### Waza
 

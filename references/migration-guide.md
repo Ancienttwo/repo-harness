@@ -30,10 +30,11 @@ tasks-first harness. The canonical public entrypoint is `repo-harness adopt`.
 - `assets/skill-hooks.json` is a deprecated zero-overhead extension point, not the Codex/Claude harness runtime path.
 - Plan G/H default package manager is `uv`.
 - Default generated docs use the `minimal-agentic` profile: `docs/spec.md`, `docs/architecture/index.md`, `tasks/`, `.ai/harness/`, and selected `docs/reference-configs/` are the required contract. Optional long docs require evidence or explicit user request.
-- `.ai/harness/policy.json` now carries an `external_tooling` profile:
-  - `complex -> gstack`
-  - `simple -> Waza`
-  - `knowledge -> gbrain`
+- `.ai/harness/policy.json` now keeps product and complex/design planning parent-owned:
+  - pre-contract framing -> `geju`
+  - architecture and plan decision -> parent-agent P1/P2/P3
+  - simple -> Waza
+  - knowledge -> gbrain
   - hosts: `claude-code`, `codex`
   - mode: `guidance-only`
   - detection: `init-migrate`
@@ -65,7 +66,7 @@ repo-harness adopt --repo /path/to/project
 10. Injects `check:task-sync`, `check:context-files`, and `check:task-workflow` into `package.json` when present.
 11. Returns a structured transaction manifest and explicit post-apply registry, CodeGraph, handoff, and strict workflow steps.
 12. Keeps downstream `.ai/hooks/` as a lib-only central-first surface unless policy explicitly pins `hook_source` to `repo`.
-13. Never auto-installs or auto-upgrades gstack/Waza/gbrain, never starts `gbrain serve`, and never enables MCP automatically.
+13. Never auto-installs or auto-upgrades Waza/gbrain, never starts `gbrain serve`, and never enables MCP automatically.
 
 ## External Tooling Safety Contract
 
@@ -73,9 +74,6 @@ Use `bash scripts/check-agent-tooling.sh` for advisory checks only.
 
 The detector is intentionally read-only. It may call:
 
-- `git -C <gstack-dir> remote get-url origin`
-- `git -C <gstack-dir> rev-parse HEAD`
-- `git -C <gstack-dir> ls-remote --symref origin HEAD`
 - `npx -y skills ls -g --json`
 - GitHub raw URL fetches for upstream Waza `SKILL.md` files and shared `rules/` files when `--check-updates` is set
 - `gbrain doctor --json`
@@ -84,8 +82,6 @@ The detector is intentionally read-only. It may call:
 
 The migration flow must not treat these as probes:
 
-- `gstack setup`
-- `gstack setup --help`
 - `npx skills update`
 - `npx skills check`
 - `gbrain serve`

@@ -105,6 +105,9 @@ describe("repo-harness action command skills", () => {
       expect(readCommand(command)).toContain("Does not edit");
     }
     expect(readCommand("repo-harness-plan")).toContain("repo-harness run capture-plan");
+    expect(readCommand("repo-harness-plan")).toContain("invoke `geju` before a contract exists");
+    expect(readCommand("repo-harness-plan")).toContain("parent agent then completes P1/P2/P3");
+    expect(readCommand("repo-harness-plan").toLowerCase()).not.toContain("gstack");
   });
 
   test("autoplan runs full workflow with bounded self-review and delegates ship", () => {

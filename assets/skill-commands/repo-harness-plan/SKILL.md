@@ -13,9 +13,10 @@ Use this command when the user wants a decision-complete plan for repo-harness w
 1. Confirm the working repo with `pwd` or `git rev-parse --show-toplevel`.
 2. Run `bun scripts/inspect-project-state.ts --repo <repo> --format text` when the target repo has this engine available.
 3. Read repo-local `AGENTS.md`, `CLAUDE.md`, `tasks/todos.md`, and `.ai/harness/policy.json` when present.
-4. Before recommending implementation, write a workflow inventory: active plan path, expected contract/review/notes files, `tasks/todos.md`, `.ai/harness/checks/latest.json`, `.ai/harness/runs/`, allowed-path owner, and the plan switching or worktree isolation rule.
-5. Produce one recommended plan and name the next action command: `repo-harness-init`, `repo-harness-scaffold`, `repo-harness-migrate`, `repo-harness-upgrade`, `repo-harness-repair`, or `repo-harness-check`.
-6. When the plan is decision-complete, capture it with `repo-harness run capture-plan --slug <slug> --title <title>` so the repo has a file-backed `plans/plan-*.md` artifact.
+4. For product discovery and complex/design or architecture planning, invoke `geju` before a contract exists to establish the thesis, direction, falsifier, and cheapest proof point. The parent agent then completes P1/P2/P3 with its own repo/runtime capabilities; no external planning provider owns or blocks this lifecycle.
+5. Before recommending implementation, write a workflow inventory: active plan path, expected contract/review/notes files, `tasks/todos.md`, `.ai/harness/checks/latest.json`, `.ai/harness/runs/`, allowed-path owner, and the plan switching or worktree isolation rule.
+6. Produce one recommended plan and name the next action command: `repo-harness-init`, `repo-harness-scaffold`, `repo-harness-migrate`, `repo-harness-upgrade`, `repo-harness-repair`, or `repo-harness-check`.
+7. When the plan is decision-complete, capture it with `repo-harness run capture-plan --slug <slug> --title <title>` so the repo has a file-backed `plans/plan-*.md` artifact.
 
 ## Delegation Brief
 

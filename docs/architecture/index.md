@@ -32,7 +32,7 @@ Out of scope:
 
 - Product application scaffolds after their first generated skeleton.
 - `_ref/` external reference checkouts and `_ops/` private operations state.
-- Installing, upgrading, or enabling external host tools such as Waza, gstack, gbrain, or MCP servers. This self-host repo may vendor CodeGraph as a dev dependency, but generated downstream repos keep CodeGraph host setup explicit unless local policy opts in.
+- Installing, upgrading, or enabling external host tools such as Waza, `geju`, gbrain, or MCP servers. This self-host repo may vendor CodeGraph as a dev dependency, but generated downstream repos keep CodeGraph host setup explicit unless local policy opts in.
 - Vendoring external skill bodies such as `mermaid`.
 
 ## Umbrella Hierarchy

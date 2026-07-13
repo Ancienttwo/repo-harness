@@ -174,20 +174,20 @@ flowchart TD
 ## Longues boucles produit
 
 Pour le travail Greenfield comme Brownfield, avancez la discovery et le jugement
-d'engineering plan dans Claude-Fable avant de demander à Codex de boucler sur
+d'engineering plan dans le parent agent avant de demander à Codex de boucler sur
 l'exécution :
 
-1. Dans Claude-Fable, utilisez gstack `office-hours` pour la product discovery ou
-   `plan-eng-review` pour la review du plan d'ingénierie. La sortie doit être les
-   development documents qui verrouillent l'intention produit, l'architecture,
-   les risques et l'evidence contract.
+1. Avant la création d'un contract, le parent agent invoque `geju` pour ouvrir le
+   cadre, puis réalise P1/P2/P3 avec ses propres capacités repo/runtime. Il fige
+   l'intention produit, l'architecture, les risques, le falsifier et l'evidence
+   contract acceptés dans les development documents.
 2. Transformez ces documents en PRD Sprint sous `plans/prds/`, avec un backlog
    ordonné et des sub-plans détaillés pour chaque execution slice.
 3. Créez un Codex Goal qui pointe vers ce fichier de sprint. repo-harness peut
    ensuite projeter chaque sprint item dans le flow normal plan -> contract ->
    worktree -> verification.
 
-Ce handoff rend les longues boucles plus précises : Claude-Fable porte le
+Ce handoff rend les longues boucles plus précises : le parent agent porte le
 jugement large en amont, le PRD Sprint devient la durable source of truth, et
 Codex Goal mode reprend sur un sprint concret au lieu de réinterpréter le chat
 initial.
@@ -276,7 +276,7 @@ La commande doit se terminer par `=== Migration Report ===` et inclure :
 - `Host hook adapters are user-level:` : rappel d'installer les global adapters, et de faire confiance à `~/.codex/hooks.json`
 - `Workflow migration:` : le plan de création ou de rafraîchissement des repo-local harness surfaces
 - `Helper runtime:` : la chaîne d'outils opérationnels obtenue après application
-- `--- External Tooling ---` : le routing gstack/Waza/gbrain ainsi que les conseils d'installation/mise à jour advisory
+- `--- External Tooling ---` : le guide de planning parent/Geju, la readiness Waza/gbrain et les conseils d'installation/mise à jour advisory
 
 Si la sortie du dry-run est incorrecte, arrêtez-vous ici et lisez
 [`docs/reference-configs/hook-operations.md`](docs/reference-configs/hook-operations.md).
@@ -440,9 +440,8 @@ Merci à [TW93](https://x.com/HiTw93), auteur de Waza. Les skills centraux
 `think`, `hunt`, `check` et `health` structurent le rythme quotidien de planning,
 bug hunt et verification de `repo-harness`.
 
-Merci à [Garry Tan](https://x.com/garrytan), auteur de gstack et gbrain. Ils ont
-influencé le workflow de product discovery, plan/design review, release
-documentation, knowledge sync et handoff retrieval.
+Merci à [Garry Tan](https://x.com/garrytan), auteur de gbrain. Il a influencé le
+workflow de release documentation, knowledge sync et handoff retrieval.
 
 Merci à [Peter Steinberger](https://x.com/steipete), auteur d'Oracle
 (`@steipete/oracle`, MIT). C'est le moteur de consult navigateur GPT Pro /

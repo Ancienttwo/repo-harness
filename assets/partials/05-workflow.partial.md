@@ -36,14 +36,12 @@ PLAN_LOOP:
 
 ### Agentic Skill Routing
 
-- Product discovery, early demand shaping, or "is this worth building" -> gstack `office-hours`.
-- Complex engineering plans, architecture lock-in, or cross-module refactors -> gstack `plan-eng-review`.
-- UI/UX or design-system plans -> gstack `plan-design-review`.
+- Product discovery, early demand shaping, complex engineering plans, architecture lock-in, cross-module refactors, and UI/UX or design-system plans -> parent agent. Invoke `geju` before a contract exists to open the frame, then complete P1/P2/P3 with the parent agent's own capabilities and freeze the accepted direction into the plan and contract.
 - Small or medium feature plans -> Waza `/think`.
 - Bugs, regressions, crashes, errors, or failing tests -> Waza `/hunt`.
 - Implemented diffs, pre-merge checks, or release follow-through -> Waza `/check`.
 - Architecture diagrams or system-flow diagrams -> Markdown Mermaid first, `mermaid` for optional human HTML.
-- Use P1/P2/P3 as the shared due-diligence protocol; report it explicitly for `plan-eng-review`, `/hunt`, risky refactors, deployments, auth/payment/data work, and shared contracts.
+- Use P1/P2/P3 as the shared due-diligence protocol; report it explicitly for complex engineering or architecture planning, `/hunt`, risky refactors, deployments, auth/payment/data work, and shared contracts.
 - Hooks may emit advisory Waza `/check` and `/health` route hints, but must not auto-run skills or vendor skill bodies.
 
 ### Task Management Protocol

@@ -120,9 +120,12 @@ describe("workflow contract manifest", () => {
     expect(contract.documentation?.referenceConfigs?.packageDirectory).toBe("assets/reference-configs");
     expect(contract.documentation?.referenceConfigs?.resolverCommand).toBe("repo-harness docs path <doc-id>");
     expect(contract.documentation?.referenceConfigs?.stubMarker).toBe("<!-- repo-harness: reference-config-stub v1 -->");
-    expect(contract.agenticDevelopment?.routing.complexEngineeringPlan).toBe("gstack:plan-eng-review");
+    expect(contract.agenticDevelopment?.routing.productDiscovery).toBe("parent-agent:geju");
+    expect(contract.agenticDevelopment?.routing.complexEngineeringPlan).toBe("parent-agent:geju");
+    expect(contract.agenticDevelopment?.routing.designPlan).toBe("parent-agent:geju");
     expect(contract.agenticDevelopment?.routing.bugOrRegression).toBe("waza:hunt");
     expect(contract.agenticDevelopment?.dueDiligence.levels).toContain("P2_DATA_FLOW_TRACE");
+    expect(contract.agenticDevelopment?.dueDiligence.explicitReportRequiredFor).toContain("complex_engineering_plan");
     expect(contract.documents.currentStatus).toBe("tasks/current.md");
     expect(contract.adoptionTemplates?.files?.spec.document).toBe("spec");
     expect(contract.adoptionTemplates?.files?.spec.lines.join("\n")).toContain("{{repoName}}");

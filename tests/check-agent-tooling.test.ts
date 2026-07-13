@@ -275,13 +275,12 @@ function writeFakeCurl(fakeBin: string, version: string, logFile?: string) {
 }
 
 describe("check-agent-tooling", () => {
-  test("reports gstack and Waza presence while keeping gbrain manual-only when MCP is disabled", () => {
+  test("reports active tooling without the retired planning provider", () => {
     const envRoot = setupFakeEnvironment("check-agent-tooling");
     try {
-      mkdirSync(join(envRoot.home, ".claude", "skills", "gstack"), { recursive: true });
-      mkdirSync(join(envRoot.home, ".codex", "skills", "gstack"), { recursive: true });
       mkdirSync(join(envRoot.home, ".agents", "skills"), { recursive: true });
-      writeFileSync(join(envRoot.home, ".claude", "skills", "gstack", "VERSION"), "1.2.3\n");
+      mkdirSync(join(envRoot.home, ".claude"), { recursive: true });
+      mkdirSync(join(envRoot.home, ".codex"), { recursive: true });
       writeFileSync(join(envRoot.home, ".claude", "settings.json"), "{}\n");
       writeFileSync(join(envRoot.home, ".codex", "config.toml"), "[mcp_servers.codegraph]\ncommand = \"codegraph\"\n# no gbrain mcp\n");
       writeWazaBundle(join(envRoot.home, ".agents", "skills"), "3.0.0");
@@ -291,6 +290,7 @@ describe("check-agent-tooling", () => {
       writeSkill(join(envRoot.home, ".codex", "skills"), "mermaid", "1.0.0");
       symlinkClaudeWazaToAgents(envRoot.home);
       writeWazaLock(envRoot.home);
+
       writeFakeBunx(envRoot.fakeBin);
       writeFakeGbrain(envRoot.fakeBin);
       writeFakeCodeGraph(envRoot.fakeBin);
@@ -316,8 +316,7 @@ describe("check-agent-tooling", () => {
       expect(report.runtime_capabilities.skills_cli.status).toBe("available");
       expect(report.runtime_capabilities.rsync.required).toBe(false);
       expect(report.runtime_capabilities.symlink.required_for).toContain("copy mode remains the fallback");
-      expect(report.tools.gstack.status).toBe("present");
-      expect(report.tools.gstack.hosts.claude.version).toBe("1.2.3");
+      expect(report.tools).not.toHaveProperty("gstack");
       expect(report.tools.waza.status).toBe("present");
       expect(report.tools.waza.source_repo).toBe("tw93/Waza");
       expect(report.tools.waza.primary_host).toBe("codex");
@@ -351,6 +350,20 @@ describe("check-agent-tooling", () => {
       expect(report.tools.codegraph.mcp_hosts.codex.status).toBe("configured");
       expect(report.tools.codegraph.project_index.status).toBe("up-to-date");
       expect(report.tools.codegraph.impact.code_navigation).toBe("missing");
+
+      const textRes = spawnSync("bash", [SCRIPT, "--host", "both"], {
+        cwd: ROOT,
+        encoding: "utf-8",
+        env: {
+          ...process.env,
+          HOME: envRoot.home,
+          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: "0",
+        },
+      });
+      expect(textRes.status).toBe(0);
+      expect(textRes.stdout.toLowerCase()).not.toContain("gstack");
+      expect(textRes.stdout).toContain("Waza [present]");
     } finally {
       rmSync(envRoot.root, { recursive: true, force: true });
     }
@@ -469,10 +482,9 @@ describe("check-agent-tooling", () => {
     const envRoot = setupFakeEnvironment("check-agent-tooling-updates");
     const logFile = join(envRoot.root, "tool.log");
     try {
-      mkdirSync(join(envRoot.home, ".claude", "skills", "gstack", ".git"), { recursive: true });
-      mkdirSync(join(envRoot.home, ".codex", "skills", "gstack", ".git"), { recursive: true });
       mkdirSync(join(envRoot.home, ".agents", "skills"), { recursive: true });
-      writeFileSync(join(envRoot.home, ".claude", "skills", "gstack", "VERSION"), "1.2.3\n");
+      mkdirSync(join(envRoot.home, ".claude"), { recursive: true });
+      mkdirSync(join(envRoot.home, ".codex"), { recursive: true });
       writeFileSync(join(envRoot.home, ".claude", "settings.json"), "{}\n");
       writeFileSync(join(envRoot.home, ".codex", "config.toml"), "[mcp_servers.codegraph]\ncommand = \"codegraph\"\n# no gbrain mcp\n");
       writeWazaBundle(join(envRoot.home, ".agents", "skills"), "3.0.0");
@@ -487,16 +499,10 @@ describe("check-agent-tooling", () => {
         join(envRoot.fakeBin, "git"),
         [
           "#!/bin/bash",
-          "set -euo pipefail",
           `echo "git $*" >> "${logFile}"`,
-          "case \"$*\" in",
-          "  *\"remote get-url origin\"*) echo 'https://github.com/garrytan/gstack.git' ;;",
-          "  *\"rev-parse HEAD\"*) echo 'abc123' ;;",
-          "  *\"ls-remote --symref origin HEAD\"*) printf 'ref: refs/heads/main\\tHEAD\\nabc123\\tHEAD\\n' ;;",
-          "  *) exit 1 ;;",
-          "esac",
+          "exit 1",
           "",
-        ].join("\n")
+        ].join("\n"),
       );
 
       writeExecutable(
@@ -541,10 +547,7 @@ describe("check-agent-tooling", () => {
       expect(res.status).toBe(0);
       const report = JSON.parse(res.stdout);
       const log = readFileSync(logFile, "utf-8");
-      expect(log).toContain("git -C");
-      expect(log).toContain("remote get-url origin");
-      expect(log).toContain("rev-parse HEAD");
-      expect(log).toContain("ls-remote --symref origin HEAD");
+      expect(log).not.toContain("git ");
       expect(log).toContain("curl -fsSL --max-time 5 https://raw.githubusercontent.com/tw93/Waza/main/skills/check/SKILL.md");
       expect(log).toContain("curl -fsSL --max-time 5 https://raw.githubusercontent.com/tw93/Waza/main/rules/durable-context.md");
       expect(log).toContain("gbrain doctor --json --fast");

@@ -44,7 +44,8 @@ describe("AGENTS Target Assembly", () => {
     expect(output).toContain(".ai/harness/policy.json");
     expect(output).toContain(".ai/context/context-map.json");
     expect(output).toContain("Agentic skill routing");
-    expect(output).toContain("gstack `plan-eng-review`");
+    expect(output).toContain("parent agent with `geju` pre-contract framing and parent-owned P1/P2/P3");
+    expect(output.toLowerCase()).not.toContain("gstack");
     expect(output).toContain("Waza `/think`, `/hunt`, `/check`");
     expect(output).toContain(".ai/harness/active-plan as authoritative only for this worktree");
     expect(output).toContain("repo-harness run new-spec");
@@ -80,8 +81,10 @@ describe("AGENTS Target Assembly", () => {
     expect(agents.toLowerCase()).toContain("single source of truth");
     expect(claude).toContain("RECOVERY: hybrid");
     expect(agents).toContain("Recovery profile: `hybrid`.");
-    expect(claude).toContain("gstack `plan-eng-review`");
-    expect(agents).toContain("gstack `plan-eng-review`");
+    expect(claude).toContain("use `geju` for pre-contract framing");
+    expect(agents).toContain("parent agent with `geju` pre-contract framing and parent-owned P1/P2/P3");
+    expect(claude.toLowerCase()).not.toContain("gstack");
+    expect(agents.toLowerCase()).not.toContain("gstack");
   });
 
   test("should render cloudflare section for both targets when enabled by plan", () => {

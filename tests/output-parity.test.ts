@@ -225,7 +225,8 @@ describe("Output Quality Gates", () => {
     expect(agents).toContain("tasks/reviews/");
     expect(claude).toContain("Self-Improvement Loop");
     expect(agents).toContain("Self-Improvement Loop");
-    expect(agents).toContain("gstack");
+    expect(agents).toContain("parent agent with `geju` pre-contract framing and parent-owned P1/P2/P3");
+    expect(agents.toLowerCase()).not.toContain("gstack");
     expect(agents).toContain("repo-harness run check-agent-tooling --host both --check-updates");
     expect(agents).toContain("repo-harness run check-task-sync");
     expect(agents).toContain("repo-harness run check-task-workflow --strict");

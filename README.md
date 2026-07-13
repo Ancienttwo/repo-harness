@@ -213,13 +213,13 @@ flowchart TD
 
 ## Long-Running Product Loops
 
-For Greenfield and Brownfield work, front-load discovery and engineering-plan
-judgment in Claude-Fable before asking Codex to loop on execution:
+For Greenfield and Brownfield work, keep discovery and engineering-plan
+judgment with the parent agent before asking Codex to loop on execution:
 
-1. In Claude-Fable, use gstack `office-hours` for product discovery or
-   `plan-eng-review` for engineering plan review. The output should be the
-   development documents that lock product intent, architecture, risks, and the
-   evidence contract.
+1. Before a contract exists, the parent agent invokes `geju` to open the frame,
+   then completes P1/P2/P3 with its own repo/runtime capabilities. It freezes the
+   accepted product intent, architecture, risks, falsifier, and evidence contract
+   into the development documents.
 2. Turn those documents into an upper-layer PRD under `plans/prds/`, then into
    an ordered sprint backlog under `plans/sprints/` with detailed sub-plans for
    each execution slice.
@@ -227,7 +227,7 @@ judgment in Claude-Fable before asking Codex to loop on execution:
    project each sprint item through the normal plan -> contract -> worktree ->
    verification flow.
 
-That handoff keeps long-running loops precise: Claude-Fable owns the broad
+That handoff keeps long-running loops precise: the parent agent owns the broad
 front-loaded judgment, the PRD remains the upper source of truth, the sprint
 backlog is the durable execution queue, and Codex Goal mode resumes against a
 concrete sprint instead of reinterpreting the original chat.
@@ -375,7 +375,7 @@ The command should end with `=== Migration Report ===` and summarize:
 - `Host hook adapters are user-level:` to remind the user to install global adapters and trust `~/.codex/hooks.json`
 - `Workflow migration:` to show the repo-local harness surfaces it will create or refresh
 - `Helper runtime:` to show `.ai/harness/scripts/*` implementations and `scripts/*` compatibility wrappers after apply
-- `--- External Tooling ---` to show default gstack/Waza/gbrain routing plus advisory install/update hints
+- `--- External Tooling ---` to show parent/Geju planning guidance plus Waza/gbrain readiness and advisory install/update hints
 
 If the dry-run output looks wrong, stop there and inspect
 [`docs/reference-configs/hook-operations.md`](docs/reference-configs/hook-operations.md)
@@ -653,7 +653,7 @@ are not ordinary bundled product dependencies.
 | --- | --- | --- |
 | [Hylarucoder](https://x.com/hylarucoder) / Geju | P1/P2/P3 due-diligence method and Geju practice that shaped the planning, tracing, and decision-rationale discipline in this workflow | Methodology contribution and acknowledgement; not a bundled dependency |
 | Waza by [TW93](https://x.com/HiTw93), including `think`, `hunt`, `check`, and `health` | Daily planning, bug hunts, verification, health checks, and Codex-first skill sync | Installed through the skills CLI into host skill roots |
-| gstack skills and `gbrain` by [Garry Tan](https://x.com/garrytan) | Product discovery, plan review, design review, post-ship documentation hygiene, knowledge sync, handoff retrieval, and long-form repo memory | External operator workflow plus optional external CLI/index; advisory by default |
+| `gbrain` by [Garry Tan](https://x.com/garrytan) | Post-ship documentation hygiene, knowledge sync, handoff retrieval, and long-form repo memory | Optional external CLI/index; advisory by default |
 | `mermaid` | Human-readable architecture and system-flow diagrams when Mermaid is not enough | Runtime-referenced skill, not vendored into generated repos |
 | CodeGraph (`@colbymchenry/codegraph`) | Symbol-aware navigation, impact tracing, and readiness checks for this self-host repo | Dev dependency in this repo; generated repos stay global-MCP-first unless policy opts in |
 | [Oracle](https://github.com/steipete/oracle) by [Peter Steinberger](https://x.com/steipete) (`@steipete/oracle`, MIT) | Default GPT Pro / ChatGPT Web browser consult engine that the `chatgpt-browser` Oracle provider shells out to for `gptpro` consults | Externally-resolved binary (`--oracle-bin`, `REPO_HARNESS_ORACLE_BIN`, `node_modules/.bin`, or `PATH`); never auto-downloaded, and a missing binary is a hard `ORACLE_NOT_INSTALLED` failure |

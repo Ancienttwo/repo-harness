@@ -370,11 +370,11 @@ describe('init-hook command', () => {
         statusReport: baseStatusReport(),
         doctorReport: baseDoctorReport(),
         toolingReport: baseToolingReport({
-          gstack: {
-            name: 'gstack',
+          planner: {
+            name: 'planner',
             status: 'missing',
-            reason: 'gstack is missing from all requested hosts.',
-            install_command: 'install-gstack',
+            reason: 'planner is missing from all requested hosts.',
+            install_command: 'install-planner',
           },
           codegraph: {
             name: 'codegraph',
@@ -386,8 +386,8 @@ describe('init-hook command', () => {
         }),
       });
 
-      expect(report.checks.find((entry) => entry.id === 'tooling.gstack')?.status).toBe('needs_agent');
-      expect(report.agent_actions.find((entry) => entry.id === 'tooling.gstack.repair')?.command).toBe('install-gstack');
+      expect(report.checks.find((entry) => entry.id === 'tooling.planner')?.status).toBe('needs_agent');
+      expect(report.agent_actions.find((entry) => entry.id === 'tooling.planner.repair')?.command).toBe('install-planner');
       expect(report.agent_actions.find((entry) => entry.id === 'tooling.codegraph.update')?.command).toBe(
         'upgrade-codegraph',
       );

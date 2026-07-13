@@ -105,7 +105,7 @@ describe("Bootstrap Script Contracts", () => {
     expect(claude).toContain(".ai/hooks/");
     expect(claude).toContain("agentic-development-flow.md");
     expect(claude).toContain("external-tooling.md");
-    expect(claude).toContain("gstack");
+    expect(claude).toContain("geju");
     expect(agents).toContain("tasks/todos.md");
     expect(agents).toContain("repo-harness run check-task-workflow --strict");
     expect(agents).toContain("check-agent-tooling.sh --host both --check-updates");
@@ -310,7 +310,7 @@ describe("Bootstrap Script Contracts", () => {
     expect(contract.artifacts.requiredDirectories).toContain("tasks/notes");
     expect(contract.artifacts.requiredDirectories).toContain("tasks/workstreams");
     expect(contract.artifacts.requiredDirectories).toContain(".ai/harness/triage");
-    expect(contract.agenticDevelopment.routing.productDiscovery).toBe("gstack:office-hours");
+    expect(contract.agenticDevelopment.routing.productDiscovery).toBe("parent-agent:geju");
     expect(sharedLib).not.toContain(".skill-factory-state.json");
     expect(sharedLib).not.toContain(".memory-context.json");
     expect(sharedLib).not.toContain(".memory-snapshot.json");

@@ -62,6 +62,101 @@ describe("canonical adoption plan", () => {
     }
   });
 
+  test("standard adoption directly replaces managed planning routes", () => {
+    const repo = tempRepo();
+    try {
+      mkdirSync(join(repo, ".ai", "harness"), { recursive: true });
+      writeFileSync(
+        join(repo, ".ai", "harness", "policy.json"),
+        JSON.stringify(
+          {
+            external_tooling: {
+              routing: {
+                complex: "gstack",
+                simple: "waza",
+                knowledge: "gbrain",
+              },
+            },
+            agentic_development: {
+              routing: {
+                product_discovery: "gstack:office-hours",
+                complex_engineering_plan: "gstack:plan-eng-review",
+                design_plan: "gstack:plan-design-review",
+              },
+              due_diligence: {
+                explicit_report_required_for: ["plan-eng-review", "shared_contract"],
+              },
+            },
+          },
+          null,
+          2,
+        ),
+      );
+
+      const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "standard", apply: true }));
+      expect(apply.ok).toBe(true);
+      const policy = JSON.parse(readFileSync(join(repo, ".ai", "harness", "policy.json"), "utf-8"));
+      expect(policy.external_tooling.routing).toEqual({ simple: "waza", knowledge: "gbrain" });
+      expect(policy.agentic_development.routing).toMatchObject({
+        product_discovery: "parent-agent:geju",
+        complex_engineering_plan: "parent-agent:geju",
+        design_plan: "parent-agent:geju",
+      });
+      expect(policy.agentic_development.due_diligence.explicit_report_required_for).toEqual([
+        "complex_engineering_plan",
+        "shared_contract",
+      ]);
+    } finally {
+      cleanup(repo);
+    }
+  });
+
+  test("standard adoption preserves mixed custom routes while cutting the declared legacy provider", () => {
+    const repo = tempRepo();
+    try {
+      mkdirSync(join(repo, ".ai", "harness"), { recursive: true });
+      writeFileSync(
+        join(repo, ".ai", "harness", "policy.json"),
+        JSON.stringify(
+          {
+            external_tooling: {
+              routing: { complex: "retired-provider", simple: "waza", knowledge: "gbrain" },
+            },
+            agentic_development: {
+              routing: {
+                product_discovery: "custom:product-discovery",
+                complex_engineering_plan: "retired-provider:architecture-review",
+                design_plan: "custom:design-review",
+              },
+              due_diligence: {
+                explicit_report_required_for: ["architecture-review", "shared_contract", "database_migration"],
+              },
+            },
+          },
+          null,
+          2,
+        ),
+      );
+
+      const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "standard", apply: true }));
+      expect(apply.ok).toBe(true);
+      const policy = JSON.parse(readFileSync(join(repo, ".ai", "harness", "policy.json"), "utf-8"));
+      expect(policy.external_tooling.routing).toEqual({ simple: "waza", knowledge: "gbrain" });
+      expect(policy.agentic_development.routing).toMatchObject({
+        product_discovery: "custom:product-discovery",
+        complex_engineering_plan: "parent-agent:geju",
+        design_plan: "custom:design-review",
+      });
+      expect(policy.agentic_development.due_diligence.explicit_report_required_for).toEqual([
+        "complex_engineering_plan",
+        "shared_contract",
+        "database_migration",
+      ]);
+    } finally {
+      cleanup(repo);
+    }
+  });
+
   test("planner archives legacy workflow artifacts while preserving private _ops material and custom files", () => {
     const repo = tempRepo();
     try {

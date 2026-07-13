@@ -46,7 +46,7 @@
 - Treat `_ops/` as ignored local operations state for secrets, real env files, provider state, artifacts, logs, and scratch files; do not commit or agent-edit `_ops/*`.
 - Treat contract-level execution as worktree-first: `repo-harness run plan-to-todo --plan <approved-plan>` starts a linked `codex/<slug>` worktree when policy enables it, and `repo-harness run contract-worktree finish` merges back only after Waza `/check` and sprint verification pass.
 - Capture decision-complete Codex Plan mode, Waza `/think`, or `repo-harness-plan` outputs with `repo-harness run capture-plan --slug <slug> --title <title>` so planning becomes a `plans/` artifact before implementation.
-- Route product discovery to gstack `office-hours`, complex engineering plans to gstack `plan-eng-review`, design plans to gstack `plan-design-review`, and daily small/medium planning, bug hunts, and checks to Waza `/think`, `/hunt`, and `/check`.
+- Route product discovery and complex/design planning to the parent agent: use `geju` for pre-contract framing, complete P1/P2/P3 with the parent agent's own capabilities, and freeze the accepted direction into the plan and contract. Route daily small/medium planning, bug hunts, and checks to Waza `/think`, `/hunt`, and `/check`.
 - Route knowledge sync and handoff retrieval to `gbrain`.
 - Register valuable repo-authored docs in `.ai/harness/brain-manifest.json` with `sync.direction=repo-to-brain`; `repo-harness run sync-brain-docs` and the PostEdit hook mirror only those explicit entries into the default brain vault.
 - Codex automation profile is runtime-referenced, not vendored: required skills are `health`, `check`, and `mermaid` from `~/.codex/skills`.

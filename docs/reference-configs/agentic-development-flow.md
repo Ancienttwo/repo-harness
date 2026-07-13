@@ -7,13 +7,19 @@ root prompt concise; this file owns the detailed routing.
 
 | Work type | Default route | Output |
 |-----------|---------------|--------|
-| Product discovery, demand reality, "is this worth building" | gstack `office-hours` | Product direction or design doc before engineering planning |
-| Complex engineering plan, architecture lock-in, cross-module refactor | gstack `plan-eng-review` | Approved execution plan with architecture, data flow, edge cases, and tests |
-| UI/UX or design-system plan | gstack `plan-design-review` | Design critique and plan fixes before implementation |
+| Product discovery, demand reality, "is this worth building" | Parent agent with `geju` pre-contract framing | Product direction or design doc before engineering planning |
+| Complex engineering plan, architecture lock-in, cross-module refactor | Parent agent with `geju`, then parent-owned P1/P2/P3 | Approved execution plan with architecture, data flow, edge cases, and tests |
+| UI/UX or design-system plan | Parent agent with `geju`, then parent-owned P1/P2/P3 | Design critique and plan fixes before implementation |
 | Small or medium feature/fix plan | Waza `/think` | Concise approved plan, then implementation on request |
 | Bug, regression, error, crash, failing test | Waza `/hunt` | Root cause sentence with evidence before any fix |
 | Implemented diff, pre-merge, release follow-through | Waza `/check` | Review findings, safe fixes, verification, and shipment state |
 | Architecture diagram or system-flow diagram | Markdown Mermaid first, `mermaid` for human HTML | Semantic Mermaid in architecture docs plus optional rendered HTML grounded in repo context |
+
+### Parent Agent Planning Ownership
+
+- The parent agent owns discovery, architecture judgment, design judgment, plan synthesis, approval framing, and contract capture. Do not hand that lifecycle to an external planning provider.
+- Invoke `geju` only before a contract exists to challenge inherited constraints and establish a thesis, direction, falsifier, and cheapest proof point.
+- The parent agent must then complete P1/P2/P3 with its own repo and runtime capabilities, reconcile the evidence, and freeze the accepted result into the plan and contract. After capture, the file-backed contract is authoritative.
 
 ### Agent Fleet Routing
 
@@ -61,7 +67,7 @@ P1/P2/P3 is the shared due-diligence protocol underneath the routing.
 - `P3_DESIGN_DECISION`: explain why the current shape exists, which invariant must stay true, and why the chosen change is the smallest coherent one.
 
 For small tasks, keep P1/P2/P3 internal and report only the result. For
-`plan-eng-review`, `/hunt`, risky refactors, deployments, auth/payment/data
+complex engineering or architecture planning, `/hunt`, risky refactors, deployments, auth/payment/data
 work, or shared contracts, report the P1/P2/P3 evidence explicitly.
 
 ## Daily Flow
@@ -93,9 +99,9 @@ work, or shared contracts, report the P1/P2/P3 evidence explicitly.
 
 ## Boundaries
 
-- Do not route large architecture decisions through Waza `/think` by default.
-- Do not use gstack plan review for routine local edits where `/think` or direct execution is enough.
+- Do not route large architecture decisions through Waza `/think` by default; the parent agent owns them and uses `geju` before contract capture.
+- Do not invoke `geju` for routine local edits where `/think` or direct execution is enough.
 - Hooks may emit advisory Waza `/check` and `/health` route hints on prompt submit. Review/release prompts emit a host-aware `[ExternalAcceptance]` prompt telling the main agent to run the peer reviewer in parallel and paste `## External Acceptance Advice` into the review file; done/finish gates block only on that recorded evidence. Hooks must not mutate files or auto-run peer CLIs based on semantic intent. `[CrossReview]` remains a lightweight debug/spec/test advisory. Plan capture is an agent action after a planning mode produces a concrete plan.
-- Keep `office-hours` for product-demand shaping; use `plan-eng-review` when engineering execution needs to be locked.
+- Keep one planning lifecycle owner: the parent agent opens the frame with `geju`, completes P1/P2/P3, and locks engineering execution in the file-backed plan and contract.
 - Treat subagent and parallel-agent execution as a main-agent decision based on task breadth, context impact, raw-log volume, and callable tools. Do not ask the user for spawn confirmation; if no runner is callable or spawning is not worth the context cost, complete the same P1/P2/P3 trace in the main thread and persist evidence-backed conclusions in `docs/researches/`.
 - Do not turn `tasks/current.md` into a hand-written kanban or memo. Use plans, workstreams, notes, reviews, checks, and handoff files as the authoritative surfaces.

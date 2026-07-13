@@ -23,7 +23,7 @@ Weak dependencies:
 - `repo-harness install --profile <profile>` owns first-run global bootstrap; optional ecosystems are profile-selected and default off.
 - `repo-harness uninstall` removes repo-harness managed host adapters without deleting sibling hooks or third-party tools.
 - `repo-harness adopt` owns repo-local harness adoption and refresh.
-- gstack/gbrain policy references remain advisory; this self-host repo vendors CodeGraph as a dev dependency while downstream generated repos keep global MCP setup explicit unless policy opts in.
+- `geju` is a pre-contract framing skill and gbrain remains advisory; this self-host repo vendors CodeGraph as a dev dependency while downstream generated repos keep global MCP setup explicit unless policy opts in.
 
 Out of scope:
 
@@ -46,6 +46,13 @@ the command runs `inspect-project-state.ts --repo <repo> --format text` -> if no
 legacy state is found, `repo-harness adopt --repo <repo>`
 installs or refreshes the workflow -> repo-local checks verify the target repo.
 
+Concrete route: user asks for product discovery or a complex/design architecture
+plan -> the parent agent invokes `geju` before a contract exists -> the parent
+completes P1 architecture mapping, P2 concrete tracing, and P3 design judgment
+with its own repo/runtime capabilities -> it reconciles the evidence and freezes
+the accepted thesis, falsifier, and execution boundary into the file-backed plan
+and contract. The captured contract, not a live planning provider, owns execution.
+
 For global bootstrap, the input source of truth is the selected host target and
 brain root, not the current directory. For repo-local adoption, the source of
 truth is the target repo path, not the user's wording. The first repo-local type
@@ -65,6 +72,11 @@ Error paths:
 The root router is intentionally thin because the workflow has too many
 machine-checked invariants to keep correct in prose. The invariant is that
 policy lives in contracts, scripts, and tests; root docs only route and orient.
+
+Planning has one lifecycle owner: the parent agent. `geju` expands the design
+space before capture, while P1/P2/P3 and the final plan remain parent-owned.
+This removes a host-dependent external planning gate without weakening the
+file-backed approval, scope, review, or verification boundaries.
 
 At 10x command count, this layer fails first through discovery overload. The
 five-action router and profile-bounded installed facades keep specialized CLI
