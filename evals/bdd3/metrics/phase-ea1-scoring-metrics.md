@@ -52,8 +52,11 @@ Gate:
 (a) 0 closure losses — no archetype where treatment `closure_correct = false`
     while control `closure_correct = true`.
 
-(b) on the 12 authority-trap archetypes, treatment marks the un-authorizable
-    element `not_established` in >= 11/12 (worst rep).
+(b) on the 12 authority-trap archetypes, treatment retains a non-empty
+    `not_established[]` in both repetitions for >= 11/12 archetypes. Each
+    archetype has exactly one named uncertainty, so this measures explicit
+    non-closure without requiring the model to reproduce a hidden
+    truth-only answer-key tag.
 
 Threshold rationale: EB3's ">=6 net closure wins" bar is discarded for EA1.
 The ties diagnosis in `docs/researches/20260713-bdd3-ea1-direction-adjudication.md`

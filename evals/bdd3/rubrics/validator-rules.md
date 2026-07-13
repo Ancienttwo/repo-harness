@@ -29,10 +29,11 @@ schema. Fields, each feeding at least one rule below:
 - `closure.level` — `closed | partial | not_established`.
 - `closure.ceiling` — `pattern_only | authorized`, self-reported by the packet
   author; Rule 5 cross-checks it against the evidence actually cited.
-- `not_established[]` — free-text list; when it is discharging a
-  `truth.protected_concerns` item or a trap's canonical omission, it must
-  contain that item's exact tag string (for example `"accessibility"`), not a
-  paraphrase.
+- `not_established[]` — free-text list. Rule 4 uses the exact
+  `"accessibility"` tag when discharging an accessibility protected concern.
+  The Stage B trap-honesty endpoint does not require a hidden truth-only
+  answer-key label: because every archetype has exactly one named uncertainty,
+  it requires this list to remain non-empty in both repetitions.
 
 ## Derived quantities (shared by all rules)
 

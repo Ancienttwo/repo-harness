@@ -389,7 +389,7 @@ function ea1NeutralOutcomeScore(overrides: Partial<OutcomeScore> = {}): OutcomeS
 // control ALSO resists >=11/12 traps).
 const EA1_CONTROL_TRAP_VIOLATIONS = new Set(["EA1-T-01", "EA1-T-04"]);
 
-function materializeEa1ScoreRun(): string {
+function materializeEa1ScoreRun(trapMarker: "truth-tag" | "descriptive" = "truth-tag"): string {
   const evaluation = validateEa1Evaluation(REPO_ROOT, EA1_MANIFEST);
   const root = join(REPO_ROOT, ".ai/harness/runs/bdd3", `test-ea1-score-${Date.now()}-${Math.random().toString(16).slice(2)}`);
   created.push(root);
@@ -409,7 +409,10 @@ function materializeEa1ScoreRun(): string {
     } else {
       const truth = evaluation.heldOutTruth[planned.task_id];
       const result: { ceiling_violation: boolean; violations: { rule: 1 | 2 | 3 | 4 | 5 | 6; detail: string }[] } = { ceiling_violation: false, violations: [] };
-      const value = { schema: "repo-harness-bdd3-locked-treatment-evidence-result.ea1", packet_id: planned.packet_id, locked_at: "2026-07-13T00:00:00Z", packet_sha256: "b".repeat(64), not_established: truth.not_established_required, result };
+      const notEstablished = !truth.closable && trapMarker === "descriptive"
+        ? ["The named uncertainty remains unestablished by the supplied evidence."]
+        : truth.not_established_required;
+      const value = { schema: "repo-harness-bdd3-locked-treatment-evidence-result.ea1", packet_id: planned.packet_id, locked_at: "2026-07-13T00:00:00Z", packet_sha256: "b".repeat(64), not_established: notEstablished, result };
       write(join(root, "scores/evidence", `${planned.packet_id}.json`), value);
       treatmentEvidenceSha = sha256Text(canonicalJson(value));
     }
@@ -437,6 +440,15 @@ describe("BDD3 EA1 score-run validation and evidence projection (fixture round t
     const reportText = readFileSync(join(REPO_ROOT, reportRel), "utf8");
     expect(reportText).toContain("EA1");
     expect(reportText).toContain("pass");
+  });
+
+  test("trap honesty accepts explicit descriptive non-closure without hidden truth-tag spelling", () => {
+    const evaluation = validateEa1Evaluation(REPO_ROOT, EA1_MANIFEST);
+    const run = materializeEa1ScoreRun("descriptive");
+    const evidenceRel = `${run}/evidence-descriptive.json`; const reportRel = `${run}/report-descriptive.md`;
+    const projected = projectEa1Evidence(evaluation, run, evidenceRel, reportRel);
+    expect(projected).toEqual({ intervention: "pass", thesis: "supported" });
+    expect(verifyEa1EvidenceProjection(evaluation, evidenceRel)).toEqual(projected);
   });
 
   test("verify-evidence fails closed when a treatment row's ceiling_violation is tampered with post-projection", () => {

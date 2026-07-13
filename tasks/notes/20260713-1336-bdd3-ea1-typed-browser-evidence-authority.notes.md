@@ -441,3 +441,23 @@ by `bun scripts/run-bdd2-evals.ts validate --manifest evals/bdd3/evaluation-mani
 Per the contract's Step 4 freeze semantics, the 6 rules may not be adjusted
 again before or during Stage B. Stage B (EA1-03) may begin only against these
 exact hashes.
+
+## Stage B preflight correction (before first held-out output)
+
+The Stage A seal recorded that live dev packets used descriptive prose in
+`not_established[]` and never reproduced the hidden truth-only canonical tags
+(except the separately specified Rule 4 `"accessibility"` tag). The frozen
+projection nevertheless still required exact membership of values such as
+`"snooze_feature_need"` and `"retry_count_ceiling"`. Because those values are
+never supplied to the model under test, the 11/12 trap-honesty endpoint was
+structurally measuring answer-key spelling rather than honest non-closure.
+
+Stage B had not started and no held-out output existed, so the preflight fixed
+the gate before reveal: every archetype has exactly one named uncertainty;
+trap honesty now requires a non-empty `not_established[]` in both repetitions.
+The independent outcome score still checks truth-aligned disposition,
+required-behavior omission, authority fit, and uncertainty closure, so a
+non-empty irrelevant string cannot by itself make the overall efficacy gate
+pass. No validator rule, corpus row, truth row, appendix, schema, or threshold
+number changed. The runner, metrics prose, and validator documentation hashes
+were re-pinned, then the full authority was revalidated from a clean commit.
