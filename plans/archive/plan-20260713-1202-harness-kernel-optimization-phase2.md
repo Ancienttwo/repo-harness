@@ -1,6 +1,6 @@
 # Plan: Harness Kernel Optimization Phase 2
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260713-1202
 > **Slug**: harness-kernel-optimization-phase2
 > **Planning Source**: waza-think
