@@ -1,4 +1,4 @@
-import { describe, expect, setDefaultTimeout, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import {
   existsSync,
   mkdirSync,
@@ -12,11 +12,6 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { spawn, spawnSync } from 'child_process';
 import { circuitLimit, recordCircuitAttempt, type CircuitAttempt } from '../src/cli/hook/circuit-breaker';
-
-// The real-hook cases intentionally spawn several Bun + shell processes and
-// exercise a 2-second fail-closed lock timeout. Keep the assertion bound finite
-// without letting ordinary CI host contention trip Bun's 5-second default.
-setDefaultTimeout(30_000);
 
 function attempt(overrides: Partial<CircuitAttempt> = {}): CircuitAttempt {
   return {
@@ -137,7 +132,7 @@ describe('workflow circuit breakers', () => {
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, 30_000);
 
   test('never reclaims stale or live owner locks without an atomic ownership primitive', () => withRepo((cwd) => {
     const stateDir = join(cwd, '.ai/harness/state');
@@ -161,7 +156,7 @@ describe('workflow circuit breakers', () => {
     }));
     expect(() => recordCircuitAttempt(cwd, attempt())).toThrow(/lock contention \(live owner pid .*attempt denied/);
     expect(existsSync(lockPath)).toBe(true);
-  }));
+  }), 30_000);
 
   test('real hook callers block guard, subagent, and repair attempts over their limits', () => withRepo((cwd) => {
     const root = join(import.meta.dir, '..');
@@ -224,7 +219,7 @@ describe('workflow circuit breakers', () => {
       expect(result.status).toBe(index < 3 ? 0 : 2);
       if (index === 3) expect(result.stderr).toContain('"limit":2');
     }
-  }));
+  }), 30_000);
 
   test('review and default-zero cross-model caps execute in the prompt runtime', () => withRepo((cwd) => {
     const root = join(import.meta.dir, '..');
@@ -287,5 +282,5 @@ describe('workflow circuit breakers', () => {
     expect(strictThird.stdout).not.toContain('[WazaRoute] Review/release intent detected.');
     expect(strictThird.stderr).toContain('"guard":"ReviewLimit"');
     expect(strictThird.stderr).toContain('"limit":2');
-  }));
+  }), 30_000);
 });

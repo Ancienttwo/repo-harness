@@ -173,6 +173,21 @@
   of the same full suite passed 1,256 tests with one platform skip and zero
   failures. No code or gate was weakened; the next retry is deferred until the
   other repo-wide test/benchmark processes have exited.
+- The seventh verifier isolated the remaining full-suite failure to three
+  package-default helper-runner tests inheriting the deliberate self-host
+  `REPO_HARNESS_SOURCE_ROOT`. Their assertions expected package authority while
+  the ambient override correctly selected source authority. Package-default
+  fixtures now explicitly unset that variable; source-override tests keep their
+  explicit roots. This changes test isolation only, not helper resolution.
+- A final Claude review confirmed that isolation follows the production helper
+  authority chain and does not mask a runtime defect. Its circuit-test advisory
+  was applied by moving the 30-second test bound from the entire file to only
+  the four process/lock cases that need it. Its downstream task-sync advisory is
+  accepted as a narrow residual: the exact two report paths are self-host
+  operational evidence, while downstream repositories would need to create
+  those repo-harness-specific paths before the exclusion could apply. Adding a
+  general policy surface for that hypothetical case would create a second
+  configuration authority for a single consumer.
 - Before the next retry, `origin/main` advanced to PR67 (`4e3e76a2`). The branch
   rebased cleanly; an external git review found zero overlap with the new
   configurable deploy-SQL policy and verified its scripts, policy, Skill, and

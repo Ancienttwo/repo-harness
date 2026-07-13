@@ -8,6 +8,10 @@ import { resolveHelper, runHelper } from "../../src/cli/runtime/helper-runner";
 const ROOT = join(import.meta.dir, "..", "..");
 const CLI = join(ROOT, "src/cli/index.ts");
 
+function packageRuntimeEnv(): NodeJS.ProcessEnv {
+  return { ...process.env, REPO_HARNESS_SOURCE_ROOT: undefined };
+}
+
 function writeSourceHelper(tmp: string, fileName: string, content: string): string {
   const sourceRoot = join(tmp, "source-root");
   mkdirSync(join(sourceRoot, "assets"), { recursive: true });
@@ -75,7 +79,7 @@ describe("run command", () => {
   test("resolves bundled helpers from the package by default", () => {
     const tmp = mkdtempSync(join(tmpdir(), "repo-harness-run-package-"));
     try {
-      const resolved = resolveHelper("check-task-workflow", tmp);
+      const resolved = resolveHelper("check-task-workflow", tmp, packageRuntimeEnv());
 
       expect(resolved?.source).toBe("package");
       expect(resolved?.fileName).toBe("check-task-workflow.sh");
@@ -136,7 +140,7 @@ describe("run command", () => {
       const status = spawnSync("bun", [CLI, "run", "sprint-backlog", "status"], {
         cwd: tmp,
         encoding: "utf-8",
-        env: process.env,
+        env: packageRuntimeEnv(),
       });
 
       expect(status.status).toBe(0);
@@ -146,7 +150,7 @@ describe("run command", () => {
       const next = spawnSync("bun", [CLI, "run", "sprint-backlog", "next"], {
         cwd: tmp,
         encoding: "utf-8",
-        env: process.env,
+        env: packageRuntimeEnv(),
       });
 
       expect(next.status).toBe(0);
@@ -163,7 +167,7 @@ describe("run command", () => {
       writeFileSync(join(tmp, ".ai/harness/policy.json"), JSON.stringify({ harness: { helper_source: "repo" } }, null, 2));
       writeFileSync(join(tmp, ".ai/harness/scripts/check-task-workflow.sh"), "#!/bin/bash\necho repo\n");
 
-      const resolved = resolveHelper("check-task-workflow", tmp);
+      const resolved = resolveHelper("check-task-workflow", tmp, packageRuntimeEnv());
 
       expect(resolved?.source).toBe("package");
       expect(resolved?.path).toContain("assets/templates/helpers/check-task-workflow.sh");
@@ -269,6 +273,7 @@ describe("run command", () => {
         helper: "workstream-sync",
         cwd: tmp,
         args: ["ensure", "--block", "apps/extension", "--slug", "extension-runtime-closure"],
+        env: packageRuntimeEnv(),
         stdio: "pipe",
       });
 
