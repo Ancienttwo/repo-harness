@@ -4,7 +4,7 @@
 > **Plan**: plans/plan-20260714-0421-verifier-evidence-lifecycle-cutover.md
 > **Contract**: tasks/contracts/20260714-0421-verifier-evidence-lifecycle-cutover.contract.md
 > **Review**: tasks/reviews/20260714-0421-verifier-evidence-lifecycle-cutover.review.md
-> **Last Updated**: 2026-07-14 05:12
+> **Last Updated**: 2026-07-14 06:28
 > **Lifecycle**: notes
 
 ## Design Decisions
@@ -17,6 +17,7 @@
 - The absolute verifier deadline is fixed at 600000 ms and shared across all declared tests/commands. Each child gets a detached process group; timeout sends SIGTERM then SIGKILL and records duration/timeout/exit/signal.
 - Benchmark schema v2 subject binds runner, scenario manifest, fixture set, install inputs, and provider invocation schema. Final JSON/Markdown bytes are bound by a sidecar whose own SHA-256 is the acceptance evidence key.
 - Benchmark setup occurs once per profile into three immutable bases. Each of nine scenarios receives its own local Git clone and reflink/copy HOME overlay, so 27 runtime arms remain isolated without 27 installs.
+- Producer cost is a code invariant as well as an SLO: execution uses exactly two concurrent arms under one fixed 50-minute absolute deadline. Every provider owns a detached process group; deadline expiry sends SIGTERM and then SIGKILL after 500 ms. Neither limit is configurable through policy or environment.
 
 ## Deviations From Plan Or Spec
 
@@ -47,6 +48,7 @@
 - Fixed-budget contract pass reached all 14 machine criteria in 13.8s; the only two remaining contract failures were the intentionally pending review `qa_scores` and `manual_checks` gates.
 - Full `bun test --max-concurrency 4`: 1388 pass, 1 skip, 1 timeout failure. The sole failure is the pre-existing `tests/check-agent-tooling.test.ts` six-case loop with an explicit 15s timeout; it timed out again in isolation at 15.0s (`spawnSync.status=null`). No changed implementation path is in that test or its helper. This is disclosed rather than widened in this contract.
 - First authoritative producer attempt stopped before profile preparation/provider execution with `EISDIR` while hashing a generated profile HOME containing a directory symlink. `hashTree` now hashes raw symlink targets without following them, with a regression test. That failed subject produced no report or provider arm; the successful matrix must run against the post-fix subject.
+- Second producer attempt ran the 27 arms sequentially and had no producer-owned deadline. At 55m41s it had persisted 20 completed arm evidence directories and was stuck 8m13s into `strict-harness/cross-capability-feature`; the final report had not been rewritten. It was terminated at the documented 50-minute hard boundary rather than allowed to become another unbounded wait. The pressure point was the serial `for` loop plus an unbounded `Bun.spawn`, not profile setup. The replacement uses a two-worker ordered pool and the same absolute deadline for all provider processes; focused regression proves the concurrency ceiling, result order, 50-minute constant, and descendant cleanup on timeout.
 
 ## Promotion Filter
 

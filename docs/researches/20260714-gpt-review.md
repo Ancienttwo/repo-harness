@@ -362,6 +362,7 @@ benchmark-authoritative/<subject-sha256>
 - review freshness 已切到 normalized final-content subject，target revision 仅作为 provenance/overlap evidence；
 - canonical `## External Acceptance Advice` 是唯一验收 authority，Human Review Card 和 manual override 不再放行；
 - benchmark report schema v2 绑定 input subject、provenance 与 JSON/Markdown bytes，setup 从 27 次降到 3 个 immutable profile bases，仍保留 27 个 writable isolated overlays；
+- 首次 post-fix matrix 实跑暴露 producer 仍串行且没有自有 deadline：55 分钟只完成 20/27，当前 arm 已运行 8 分钟。该次运行按 50 分钟 hard limit 终止；producer 随后固定为 two-arm pool、50 分钟绝对 deadline 和 detached process-group termination，成本边界不再只存在于文档；
 - 最终 verifier 只消费已存在的 authoritative report，不重新启动 matrix。
 
 上文“本次调研保持只读”描述的是最初审计 pass；实现、确定性验证、最终一次 matrix 与外部验收由其后的 work-package 单独记录。

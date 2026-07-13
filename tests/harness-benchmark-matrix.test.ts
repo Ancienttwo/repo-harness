@@ -3,7 +3,9 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from 'os';
 import { join } from 'path';
 import {
+  BENCHMARK_MAX_CONCURRENCY,
   BENCHMARK_PROFILES,
+  BENCHMARK_WALL_TIME_BUDGET_MS,
   benchmarkRunLayout,
   claudeBenchmarkCommand,
   codexBenchmarkCommand,
@@ -12,10 +14,12 @@ import {
   isAuthoritativeCompletedRecord,
   isCompleteBenchmarkMatrix,
   loadHarnessScenarioManifest,
+  mapWithConcurrency,
   noHarnessIsolation,
   parsePorcelainPaths,
   prepareBenchmarkProfiles,
   reportByteBindingPath,
+  runBoundedProviderProcess,
   runHarnessProfileBenchmark,
   validateHarnessBenchmarkReport,
   validateHarnessBenchmarkReportByteBinding,
@@ -24,6 +28,41 @@ import {
 const ROOT = join(import.meta.dir, '..');
 
 describe('No Harness / Lite / Strict benchmark authority', () => {
+  test('fixes producer cost at two concurrent arms and a 50 minute absolute budget', () => {
+    expect(BENCHMARK_MAX_CONCURRENCY).toBe(2);
+    expect(BENCHMARK_WALL_TIME_BUDGET_MS).toBe(50 * 60 * 1000);
+  });
+
+  test('bounded arm pool preserves matrix order and never exceeds the fixed concurrency', async () => {
+    let active = 0;
+    let peak = 0;
+    const result = await mapWithConcurrency([0, 1, 2, 3, 4], BENCHMARK_MAX_CONCURRENCY, async (value) => {
+      active += 1;
+      peak = Math.max(peak, active);
+      await Bun.sleep((5 - value) * 5);
+      active -= 1;
+      return value * 2;
+    });
+    expect(result).toEqual([0, 2, 4, 6, 8]);
+    expect(peak).toBe(BENCHMARK_MAX_CONCURRENCY);
+  });
+
+  test('provider deadline terminates a detached process group instead of orphaning its child', async () => {
+    const started = Date.now();
+    const result = await runBoundedProviderProcess(
+      ['bash', '-lc', 'sleep 30 & child=$!; echo "$child"; wait "$child"'],
+      ROOT,
+      process.env,
+      Date.now() + 100,
+    );
+    expect(result.timedOut).toBe(true);
+    expect(result.signalCode).not.toBeNull();
+    expect(Date.now() - started).toBeLessThan(2000);
+    const childPid = Number(result.stdout.trim());
+    expect(Number.isInteger(childPid)).toBe(true);
+    expect(() => process.kill(childPid, 0)).toThrow();
+  });
+
   test('manifest contains the exact 3x9 matrix', () => {
     const manifest = loadHarnessScenarioManifest(join(ROOT, 'evals/harness/scenarios.json'));
     expect(manifest.profiles).toEqual([...BENCHMARK_PROFILES]);

@@ -15,6 +15,9 @@ export const BENCHMARK_PROFILES = ['no-harness', 'adaptive-lite', 'strict-harnes
 export type BenchmarkProfile = (typeof BENCHMARK_PROFILES)[number];
 export const BENCHMARK_PROVIDERS = ['codex', 'claude'] as const;
 export type BenchmarkProvider = (typeof BENCHMARK_PROVIDERS)[number];
+export const BENCHMARK_WALL_TIME_BUDGET_MS = 50 * 60 * 1000;
+export const BENCHMARK_MAX_CONCURRENCY = 2;
+const BENCHMARK_TERMINATION_GRACE_MS = 500;
 
 const PROVIDER_INVOCATION_SCHEMA = {
   codex: {
@@ -144,6 +147,14 @@ interface CliOptions {
   report: string;
 }
 
+interface ProviderProcessResult {
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+  signalCode: NodeJS.Signals | null;
+  timedOut: boolean;
+}
+
 function parseArgs(argv: string[]): CliOptions {
   const options: CliOptions = {
     execute: false,
@@ -206,6 +217,77 @@ function run(command: string, args: string[], cwd: string, env: NodeJS.ProcessEn
 
 function sha256(value: string | Buffer): string {
   return `sha256:${createHash('sha256').update(value).digest('hex')}`;
+}
+
+function signalProcessGroup(pid: number, signal: NodeJS.Signals): void {
+  try {
+    if (process.platform === 'win32') process.kill(pid, signal);
+    else process.kill(-pid, signal);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
+  }
+}
+
+export async function runBoundedProviderProcess(
+  command: string[],
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+  deadlineMs: number,
+): Promise<ProviderProcessResult> {
+  const remainingMs = deadlineMs - Date.now();
+  if (remainingMs <= 0) throw new Error('benchmark wall-clock budget exhausted before provider start');
+  const processHandle = Bun.spawn(command, {
+    cwd, env, stdout: 'pipe', stderr: 'pipe', stdin: 'ignore', detached: true,
+  });
+  const stdoutPromise = new Response(processHandle.stdout).text();
+  const stderrPromise = new Response(processHandle.stderr).text();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const outcome = await Promise.race([
+    processHandle.exited.then(() => 'exited' as const),
+    new Promise<'timed-out'>((resolveTimeout) => {
+      timer = setTimeout(() => resolveTimeout('timed-out'), remainingMs);
+    }),
+  ]);
+  if (timer) clearTimeout(timer);
+  const timedOut = outcome === 'timed-out';
+  if (timedOut) {
+    signalProcessGroup(processHandle.pid, 'SIGTERM');
+    await Bun.sleep(BENCHMARK_TERMINATION_GRACE_MS);
+    // The group leader may exit before a descendant that ignored SIGTERM.
+    // Always address the original process group after the grace period; ESRCH
+    // means the whole group is already gone.
+    signalProcessGroup(processHandle.pid, 'SIGKILL');
+  }
+  const [stdout, stderr, exitCode] = await Promise.all([
+    stdoutPromise, stderrPromise, processHandle.exited,
+  ]);
+  return { stdout, stderr, exitCode, signalCode: processHandle.signalCode, timedOut };
+}
+
+export async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  mapper: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  if (!Number.isInteger(concurrency) || concurrency < 1) throw new Error('benchmark concurrency must be a positive integer');
+  const results = new Array<R>(items.length);
+  let cursor = 0;
+  let failure: unknown;
+  const worker = async (): Promise<void> => {
+    while (failure === undefined) {
+      const index = cursor;
+      cursor += 1;
+      if (index >= items.length) return;
+      try {
+        results[index] = await mapper(items[index], index);
+      } catch (error) {
+        failure = error;
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => worker()));
+  if (failure !== undefined) throw failure;
+  return results;
 }
 
 function hashFile(path: string): string {
@@ -619,6 +701,7 @@ async function executeRun(
   scenario: HarnessScenario,
   layout: BenchmarkRunLayout,
   reportRunId: string,
+  deadlineMs: number,
 ): Promise<BenchmarkRunRecord> {
   const runRoot = dirname(layout.workspace);
   createRunOverlay(base, layout, scenario);
@@ -627,9 +710,7 @@ async function executeRun(
   const command = benchmarkCommand(provider, base.profile, workspace, hostRoot, scenario.prompt);
   const started = Date.now();
   let firstEdit: number | null = null;
-  const processHandle = Bun.spawn(command, {
-    cwd: workspace,
-    env: {
+  const providerPromise = runBoundedProviderProcess(command, workspace, {
       ...isolatedHarnessEnvironment(hostRoot),
       // Claude keeps the real HOME only for its host authentication. Every
       // repo-harness-owned mutable authority remains pinned to the disposable
@@ -637,15 +718,12 @@ async function executeRun(
       HOME: provider === 'codex' ? hostRoot : process.env.HOME,
       CODEX_HOME: provider === 'codex' ? join(hostRoot, '.codex') : process.env.CODEX_HOME,
       HOOK_SESSION_ID: `${base.profile}-${scenario.id}`,
-    },
-    stdout: 'pipe', stderr: 'pipe', stdin: 'ignore',
-  });
+    }, deadlineMs);
   const poll = setInterval(() => {
     if (firstEdit === null && changedFiles(workspace).length > 0) firstEdit = Date.now() - started;
   }, 50);
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(processHandle.stdout).text(), new Response(processHandle.stderr).text(), processHandle.exited,
-  ]);
+  const providerResult = await providerPromise;
+  const { stdout, stderr, exitCode } = providerResult;
   clearInterval(poll);
   const duration = Date.now() - started;
   mkdirSync(runRoot, { recursive: true });
@@ -891,6 +969,7 @@ export function regradeHarnessBenchmarkReport(reportPath: string): HarnessBenchm
 }
 
 export async function runHarnessProfileBenchmark(options: CliOptions) {
+  const deadlineMs = Date.now() + BENCHMARK_WALL_TIME_BUDGET_MS;
   if (options.execute && run('git', ['status', '--porcelain=v1', '-uall'], ROOT) !== '') {
     throw new Error('authoritative benchmark requires a clean source checkout');
   }
@@ -914,18 +993,25 @@ export async function runHarnessProfileBenchmark(options: CliOptions) {
     ? prepareBenchmarkProfiles(profiles, (profile) => prepareProfileBase(profile, provider, seed, runRoot, reportRunId))
     : new Map<BenchmarkProfile, PreparedProfileBase>();
   const scenarios = new Map(selected.map((scenario) => [scenario.id, scenario]));
-  for (const arm of layout) {
+  const executeArm = async (arm: BenchmarkRunLayout, index: number): Promise<BenchmarkRunRecord> => {
     const scenario = scenarios.get(arm.scenario_id);
     if (!scenario) throw new Error(`benchmark scenario missing from layout: ${arm.scenario_id}`);
     if (options.execute) {
       const base = preparedBases.get(arm.profile);
       if (!base) throw new Error(`benchmark profile base missing: ${arm.profile}`);
-      records.push(await executeRun(provider, base, scenario, arm, reportRunId));
+      const record = await executeRun(provider, base, scenario, arm, reportRunId, deadlineMs);
       assertProfileBaseImmutable(base);
-    } else {
-      records.push(dryRunRecord(provider, scenario, arm, reportRunId));
+      process.stdout.write(`benchmark arm ${index + 1}/${layout.length}: ${arm.profile}/${arm.scenario_id} -> ${record.status}\n`);
+      return record;
     }
-  }
+    return dryRunRecord(provider, scenario, arm, reportRunId);
+  };
+  records.push(...await mapWithConcurrency(
+    layout,
+    options.execute ? BENCHMARK_MAX_CONCURRENCY : 1,
+    executeArm,
+  ));
+  if (Date.now() > deadlineMs) throw new Error('benchmark wall-clock budget exhausted after provider execution');
   const completeMatrix = JSON.stringify(profiles) === JSON.stringify(BENCHMARK_PROFILES)
     && isCompleteBenchmarkMatrix(records, selected);
   const authoritative = options.execute && completeMatrix && records.every(isAuthoritativeCompletedRecord);

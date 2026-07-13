@@ -86,6 +86,10 @@ lets small slices run focused tests while release/pre-merge runs the full gate.
   binds runner/scenario/fixture/install/provider-schema inputs; its sidecar binds
   the final JSON and Markdown bytes. Three immutable profile bases feed 27
   isolated writable overlays, preserving the 3x9 matrix with three setup passes.
+  Execution uses a fixed two-arm pool and a non-configurable 50-minute absolute
+  deadline; provider arms are detached process groups and deadline expiry sends
+  termination to the whole group, so producer cost cannot silently exceed its
+  declared evidence SLO or orphan provider descendants.
 - At 10x scale the first failure would be evidence-production latency, not the
   verifier. Keeping production explicit and verification bounded prevents a
   closeout gate from becoming an unbounded job runner.
