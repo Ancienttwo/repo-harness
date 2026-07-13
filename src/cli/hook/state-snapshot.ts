@@ -514,13 +514,25 @@ function capabilityIdsForPaths(cwd: string, paths: readonly string[]): Capabilit
       ? { ids: [], registryStatus: 'invalid', unmappedPaths: [...paths], malformedEntryCount: 0 }
       : { ids: [], registryStatus: 'absent', unmappedPaths: [], malformedEntryCount: 0 };
   }
-  let parsed: { capabilities?: unknown };
+  let parsed: { version?: unknown; capabilities?: unknown };
   try {
-    parsed = JSON.parse(text) as { capabilities?: unknown };
+    parsed = JSON.parse(text) as { version?: unknown; capabilities?: unknown };
   } catch {
     return { ids: [], registryStatus: 'invalid', unmappedPaths: [...paths], malformedEntryCount: 0 };
   }
-  if (!Array.isArray(parsed.capabilities)) {
+  // Shape/version gate mirrored from the canonical capability registry
+  // validator's load-time check, readRegistry() in
+  // scripts/capability-resolver.ts (`if (registry.version !== 1) throw`;
+  // projected byte-for-byte to assets/templates/helpers/capability-resolver.ts
+  // by `bun run sync:helpers` -- edit scripts/capability-resolver.ts, never
+  // the projected copy). A registry declaring any version other than exactly
+  // 1 is untrustworthy as a whole, independent of any individual entry's
+  // shape. scripts/capability-resolver.ts carries a reciprocal comment
+  // pointing back here so an edit to either rule is easy to find the other
+  // side of; tests/effective-state.test.ts's "registry validation parity
+  // with capability-resolver.ts" describe block fails if the two sides
+  // diverge on what counts as invalid.
+  if (!Array.isArray(parsed.capabilities) || parsed.version !== 1) {
     return { ids: [], registryStatus: 'invalid', unmappedPaths: [...paths], malformedEntryCount: 0 };
   }
   let malformedEntryCount = 0;
@@ -531,7 +543,19 @@ function capabilityIdsForPaths(cwd: string, paths: readonly string[]): Capabilit
       continue;
     }
     const candidate = raw as { id?: unknown; prefixes?: unknown };
-    if (typeof candidate.id !== 'string' || !Array.isArray(candidate.prefixes)) {
+    // Mirrors capability-resolver.ts's validateCapability(): id must be a
+    // non-empty (post-trim) string and prefixes a non-empty array. Only
+    // these two fields' rules are mirrored -- the other required fields
+    // validateCapability checks (domain, name, contract_files,
+    // architecture_module, workstream_dir, lsp_profile) are outside what
+    // path-to-capability resolution here actually consumes, and mirroring
+    // them would reject registries on grounds this resolver has no use for.
+    if (
+      typeof candidate.id !== 'string' ||
+      candidate.id.trim() === '' ||
+      !Array.isArray(candidate.prefixes) ||
+      candidate.prefixes.length === 0
+    ) {
       malformedEntryCount += 1;
       continue;
     }

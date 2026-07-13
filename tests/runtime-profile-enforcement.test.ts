@@ -422,4 +422,41 @@ describe('pre-edit-guard.sh fails closed on any state-resolve blocker (guard gap
       expect(result.stderr).toContain('WorkflowProfileGuard');
     } finally { rmSync(cwd, { recursive: true, force: true }); }
   });
+
+  // Round 2 external acceptance: the test above alone does not isolate the
+  // guard's own exit-code check from state.ts's --field blocker-suppression
+  // fix. If ONLY pre-edit-guard.sh's `set +e`/capture-$?/`set -e` change were
+  // reverted (keeping state.ts's --field change, which makes a blocked
+  // resolution print an empty value), the guard's *pre-existing*
+  // `[[ -n "$output" ]] || return 1` check would already reject empty output
+  // on its own -- the test above would still pass for the wrong reason. This
+  // substitutes REPO_HARNESS_CLI with a fake, deterministic script that
+  // prints a fully legal, non-empty profile value ("lite") regardless of its
+  // exit code, completely decoupled from whatever state.ts actually does, so
+  // rejection can only be attributed to the guard's own $? check.
+  test('a fake CLI that prints a legal profile value but exits non-zero is still rejected (isolates the guard exit-code check from the --field change)', () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'profile-fake-cli-reject-')));
+    try {
+      initRepo(cwd);
+      const fakeCli = join(cwd, 'fake-cli.ts');
+      writeFileSync(fakeCli, "#!/usr/bin/env bun\nconsole.log('lite');\nprocess.exit(1);\n");
+
+      const result = preEdit(cwd, 'src/feature.ts', { REPO_HARNESS_CLI: fakeCli });
+      expect(result.status).toBe(2);
+      expect(result.stderr).toContain('WorkflowProfileGuard');
+    } finally { rmSync(cwd, { recursive: true, force: true }); }
+  });
+
+  test('the same fake-CLI mechanism is accepted when it exits 0, proving only the exit code drives rejection above, not the substitution itself', () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'profile-fake-cli-accept-')));
+    try {
+      initRepo(cwd);
+      const fakeCli = join(cwd, 'fake-cli.ts');
+      writeFileSync(fakeCli, "#!/usr/bin/env bun\nconsole.log('lite');\nprocess.exit(0);\n");
+
+      const result = preEdit(cwd, 'src/feature.ts', { REPO_HARNESS_CLI: fakeCli });
+      expect(result.status).toBe(0);
+      expect(result.stdout).not.toContain('WorkflowProfileGuard');
+    } finally { rmSync(cwd, { recursive: true, force: true }); }
+  });
 });

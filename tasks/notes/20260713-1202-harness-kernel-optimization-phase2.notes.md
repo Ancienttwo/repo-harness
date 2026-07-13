@@ -364,3 +364,34 @@ Fix: switched to `git status --porcelain=v1 -uall -z` and rewrote `parsePorcelai
 - `bun scripts/inspect-project-state.ts --repo . --format text`: clean, no drift signals.
 - `bun src/cli/index.ts adopt --repo . --dry-run`: clean (125 operations, 20 planned / 105 skipped, consistent with a self-hosted repo already at the target state).
 - `repo-harness run check-task-workflow --strict`: same pre-existing `external-tooling.md` BrainSync noise documented three times already in this file (Phase C/D/E) — reconfirmed via `git status --short docs/reference-configs/` (clean) and `git log` (only old, unrelated commits touch that file); skipped per the standing instruction.
+
+## Round 2
+
+Second Codex external-acceptance pass on the Round 1 fixes found 1 P1 + 1 P2, both narrow. Verified both live before fixing.
+
+### P1: capabilityIdsForPaths still accepted version != 1, empty id, empty prefixes as `registryStatus: 'valid'`
+
+Verified live: a registry with `version: 2` (otherwise well-formed), and separately an entry with `id: ""` or `prefixes: []`, all three resolved `workflow_profile` normally with **no** `capability_registry:invalid` blocker before this fix — confirmed against the canonical registry validator (`scripts/capability-resolver.ts`'s `readRegistry()`/`validateCapability()`, projected to `assets/templates/helpers/capability-resolver.ts`), which rejects all three (`version !== 1` throws at load time; empty `id`/empty `prefixes` are explicit `validateCapability` errors). A malformed registry of exactly this shape bypassed the round-1 `capability_registry:invalid` blocker entirely.
+
+Fix, in `capabilityIdsForPaths` (`src/cli/hook/state-snapshot.ts`): the whole-registry version gate now checks `parsed.version !== 1` alongside the existing `!Array.isArray(parsed.capabilities)` check (either makes the whole registry `invalid`, matching "version 不对则整体 invalid"). The per-entry gate now also rejects `id.trim() === ''` and `prefixes.length === 0` (previously only checked `typeof id !== 'string'` and `Array.isArray(prefixes)`, which both empty-string and empty-array pass) — routed through the existing round-1 `malformedEntryCount`/escalate-to-`invalid` mechanism, no new severity tier.
+
+**Sharing vs. mirroring**: considered importing `readRegistry`/`validateCapability` directly from `scripts/capability-resolver.ts` instead of mirroring the three rules. Rejected: `readRegistry()` is throw-based (state-snapshot.ts needs a non-throwing, structured `registryStatus` result to preserve partial-match behavior for the entries that *are* well-formed), and `repoRoot()`'s path resolution shells out to `git rev-parse --show-toplevel` on every call — injecting a git subprocess spawn into the hot edit-guard path this branch's own Phase A existed to reduce. `validateCapability` also validates five more fields (`domain`, `name`, `contract_files`, `architecture_module`, `workstream_dir`, `lsp_profile`) that path-to-capability resolution has no use for; importing it wholesale would reject registries on grounds this resolver doesn't care about. Mirrored the three rules instead, with a comment in each file pointing at the other (`state-snapshot.ts`'s `capabilityIdsForPaths` <-> `scripts/capability-resolver.ts`'s `readRegistry`/`validateCapability`) naming the parity test that would fail on drift.
+
+**Parity test** (not just an inspection claim): `tests/effective-state.test.ts`, new describe block "registry validation parity with capability-resolver.ts (Round 2 external acceptance)". Copies the real `scripts/capability-resolver.ts` into each fixture repo (same pattern `tests/capability-resolver.test.ts` already uses) and asserts, for a fully-valid control plus each of the three counter-examples (`version: 2`; `id: '  '`; `prefixes: []`), that `resolveEffectiveState`'s `blockers` and `bun scripts/capability-resolver.ts validate`'s exit code agree on accept/reject for the identical fixture file on disk — proving actual behavioral parity against the shipped artifact, not just that the two source files' comments cross-reference each other. All 4 pass; live-verified all 3 counter-examples reject on both sides and the control passes both before writing the assertions.
+
+### P2: the Round 1 guard exit-code test was not independent of the `--field` blocker-suppression change
+
+Codex's point, verified by direct experiment: temporarily reverted only `pre-edit-guard.sh`'s `cli_status` check (back to `[[ -n "$output" ]] || return 1`, dropping `$cli_status -eq 0`) while leaving `state.ts`'s `--field` blocker-suppression fix in place, then reran the Round 1 regression test ("a declared-but-corrupt capability registry blocks..."). It **still passed** — because the suppressed (now-empty) `--field` output already satisfies the guard's *pre-existing* `-n "$output"` check on its own, so that test cannot distinguish "the exit-code check works" from "the CLI just doesn't print anything when blocked." This confirms the finding: the test was not independent.
+
+Fix: added two tests to the same describe block in `tests/runtime-profile-enforcement.test.ts`, substituting `REPO_HARNESS_CLI` (already an override point the guard checks first, and already exercised via `extraEnv` in existing tests in this file) with a fake, deterministic bun script that prints a fully legal profile value (`lite`) regardless of state.ts's actual behavior:
+- exits 1 -> guard must still reject (isolates the `cli_status` check specifically, since output is non-empty).
+- exits 0 -> guard must accept (proves the fake-substitution mechanism itself isn't just "any unrecognized script gets rejected" — only the exit code matters).
+
+**Verified the isolation claim experimentally, not just by inspection**: reran both new tests with the same temporary `cli_status`-check revert used above. The reject-case test correctly **failed** (guard incorrectly accepted a non-zero-exit fake CLI once the exit-code check was gone), proving it actually depends on that specific line, then restored the real fix and reconfirmed all tests pass (`git diff` against the restored file was empty, confirming an exact restore).
+
+### Full verification (Round 2)
+
+- `bun test`: 1325 pass / 1 skip / 0 fail (was 1319/1/0 after Round 1; +6 net: 4 registry-validation-parity tests, 2 fake-CLI guard tests).
+- `bun run check:type`: clean.
+- `bun run check:hooks`: clean (25 files).
+- `bun run check:helpers`: clean (46 helpers; re-projected via `bun run sync:helpers` after editing `scripts/capability-resolver.ts`'s comments).

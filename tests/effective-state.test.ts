@@ -609,4 +609,120 @@ describe('effective state resolver', () => {
       });
     });
   });
+
+  // Round 2 external acceptance: capabilityIdsForPaths previously marked a
+  // registry 'valid' even when version !== 1, an entry's id was an empty
+  // string, or an entry's prefixes was an empty array -- all three are
+  // rejected by the canonical registry validator (scripts/capability-
+  // resolver.ts, projected to assets/templates/helpers/capability-
+  // resolver.ts), so a malformed registry of exactly this shape silently
+  // bypassed the capability_registry:invalid blocker. This describe block
+  // proves both sides agree on accept/reject for the same fixture, using the
+  // real, independently-shipped canonical script (copied into the fixture
+  // repo, not imported) rather than trusting the two implementations stay in
+  // sync by inspection alone.
+  describe('registry validation parity with capability-resolver.ts (Round 2 external acceptance)', () => {
+    function installCanonicalValidator(cwd: string): void {
+      mkdirSync(join(cwd, 'scripts'), { recursive: true });
+      writeFileSync(join(cwd, 'scripts/capability-resolver.ts'), readFileSync(join(ROOT, 'scripts/capability-resolver.ts')));
+    }
+
+    function runCanonicalValidate(cwd: string): { status: number | null; stdout: string; errors: string[] } {
+      const result = spawnSync('bun', ['scripts/capability-resolver.ts', 'validate', '--repo', '.', '--format', 'json'], {
+        cwd,
+        encoding: 'utf-8',
+      });
+      let errors: string[] = [];
+      try {
+        errors = (JSON.parse(result.stdout) as { errors?: string[] }).errors ?? [];
+      } catch {
+        // readRegistry() throws before producing any JSON for a structural
+        // failure (e.g. version !== 1); the CLI still exits non-zero with a
+        // plain-text message on stderr/stdout, which is what this parity
+        // check actually asserts -- the errors array is only populated when
+        // readRegistry() succeeded and validateRegistry() ran.
+      }
+      return { status: result.status, stdout: result.stdout, errors };
+    }
+
+    const validCapability = {
+      id: 'good-cap',
+      domain: 'good-domain',
+      name: 'good-name',
+      prefixes: ['src/good'],
+      contract_files: { agents: 'src/good/AGENTS.md', claude: 'src/good/CLAUDE.md' },
+      architecture_module: 'docs/architecture/modules/good/good.md',
+      workstream_dir: 'tasks/workstreams/good/good',
+      lsp_profile: 'typescript-lsp',
+      verification_hints: ['bun test'],
+    };
+
+    function seedRegistry(cwd: string, version: unknown, capability: Record<string, unknown>): void {
+      write(cwd, 'src/good/f.ts', 'export const good = true;\n');
+      write(cwd, '.ai/context/capabilities.json', JSON.stringify({ version, capabilities: [capability] }));
+      installCanonicalValidator(cwd);
+      commitFixture(cwd, 'seed registry parity fixture');
+    }
+
+    test('a fully valid registry passes both state resolution and capability-resolver.ts validate', () => {
+      withRepo((cwd) => {
+        seedRegistry(cwd, 1, validCapability);
+        const state = resolveEffectiveState(cwd, Date.now(), {
+          targetPaths: ['src/good/f.ts'],
+          operationKind: 'edit',
+        });
+        expect(state.blockers).not.toContain('capability_registry:invalid');
+
+        const canonical = runCanonicalValidate(cwd);
+        expect(canonical.status).toBe(0);
+        expect(canonical.errors).toEqual([]);
+      });
+    });
+
+    test('version !== 1 fails closed on both sides', () => {
+      withRepo((cwd) => {
+        seedRegistry(cwd, 2, validCapability);
+        const state = resolveEffectiveState(cwd, Date.now(), {
+          targetPaths: ['src/good/f.ts'],
+          operationKind: 'edit',
+        });
+        expect(state.blockers).toContain('capability_registry:invalid');
+
+        const canonical = runCanonicalValidate(cwd);
+        expect(canonical.status).not.toBe(0);
+      });
+    });
+
+    test('an empty (post-trim) id fails closed on both sides', () => {
+      withRepo((cwd) => {
+        seedRegistry(cwd, 1, { ...validCapability, id: '  ' });
+        const state = resolveEffectiveState(cwd, Date.now(), {
+          targetPaths: ['src/good/f.ts'],
+          operationKind: 'edit',
+        });
+        expect(state.blockers).toContain('capability_registry:invalid');
+        expect(state.profile_reasons).toContain('capability:registry:malformed-entries:1');
+
+        const canonical = runCanonicalValidate(cwd);
+        expect(canonical.status).not.toBe(0);
+        expect(canonical.errors.some((error) => error.includes('id is required'))).toBe(true);
+      });
+    });
+
+    test('empty prefixes fails closed on both sides', () => {
+      withRepo((cwd) => {
+        seedRegistry(cwd, 1, { ...validCapability, prefixes: [] });
+        const state = resolveEffectiveState(cwd, Date.now(), {
+          targetPaths: ['src/good/f.ts'],
+          operationKind: 'edit',
+        });
+        expect(state.blockers).toContain('capability_registry:invalid');
+        expect(state.profile_reasons).toContain('capability:registry:malformed-entries:1');
+
+        const canonical = runCanonicalValidate(cwd);
+        expect(canonical.status).not.toBe(0);
+        expect(canonical.errors.some((error) => error.includes('prefixes must contain at least one path'))).toBe(true);
+      });
+    });
+  });
 });
