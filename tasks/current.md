@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-13T19:55:35+0800 -->
+<!-- updated_at: 2026-07-13T20:07:31+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-07-13T19:55:35+0800
+> **Updated At**: 2026-07-13T20:07:31+0800
 > **Source Branch**: main
-> **Source Commit**: d65e45b1
+> **Source Commit**: 488b497d
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: merge-origin-main
+> **Reason**: post-acceptance-merge
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -64,50 +64,14 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Checks
 
-- status=(none), source=(none), exit_code=(none), file=.ai/harness/checks/latest.json
+- status=(none), source=(none), file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 37 changed/untracked path(s)
+- Summary: 1 changed/untracked path(s)
 
 ```
-M  .ai/harness/policy.json
-M  .ai/hooks/.projection.json
-M  .ai/hooks/post-edit-guard.sh
-M  .ai/hooks/pre-edit-guard.sh
-M  AGENTS.md
-M  CLAUDE.md
-M  assets/hooks/post-edit-guard.sh
-M  assets/hooks/pre-edit-guard.sh
-M  assets/partials-agents/02-operating-mode.partial.md
-M  assets/partials/04-project-structure.partial.md
-M  assets/skill-commands/repo-harness-deploy/SKILL.md
-M  assets/templates/helpers/check-deploy-sql-order.sh
-M  assets/templates/helpers/ensure-task-workflow.sh
-M  deploy/README.md
-M  docs/CHANGELOG.md
-M  docs/architecture/modules/verification/evals-checks.md
-M  docs/architecture/modules/workflow-engine/contract-assets.md
-A  plans/archive/plan-20260713-1413-pr67-deploy-sql-policy-fix.md
-M  scripts/check-deploy-sql-order.sh
-M  scripts/create-project-dirs.sh
-M  scripts/ensure-task-workflow.sh
-M  scripts/init-project.sh
-M  scripts/lib/project-init-lib.sh
-A  tasks/archive/contract-20260713-1849-pr67-deploy-sql-policy-fix.md
-A  tasks/archive/notes-20260713-1849-pr67-deploy-sql-policy-fix.md
-A  tasks/archive/review-20260713-1849-pr67-deploy-sql-policy-fix.md
-A  tasks/archive/todo-20260713-1849-pr67-deploy-sql-policy-fix.md
-UU tasks/current.md
-M  tests/action-command-skills.test.ts
-UU tests/bootstrap-files.test.ts
-M  tests/create-project-dirs.runtime.test.ts
-M  tests/helper-scripts.test.ts
-M  tests/hook-runtime.test.ts
 ?? assets/agents/
-?? docs/architecture/requests/root.md
-?? docs/architecture/requests/workflow-engine-contract-assets.md
-?? docs/architecture/requests/workflow-engine-inspection-migration.md
 ```
 
 ## Source Artifacts
