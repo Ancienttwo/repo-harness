@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import {
   cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync,
-  statSync, writeFileSync,
+  rmSync, statSync, writeFileSync,
 } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join, relative, resolve } from 'path';
@@ -457,6 +457,22 @@ function claudeProviderUsage(jsonl: string): Pick<BenchmarkRunRecord, 'usage_aut
   };
 }
 
+// hostRoot (BUN_INSTALL, CODEX_HOME, brain root) is a disposable per-arm
+// toolchain install -- it is never read again after the provider process
+// exits and its path never enters BenchmarkRunRecord. Removing it once per
+// arm bounds a matrix run's peak disk footprint to one arm's installs
+// instead of accumulating every arm's (the ENOSPC failure mode). `base`/
+// `workspace` are deliberately left alone: `workspace` is a git worktree of
+// `base` and shares its object store, so deleting `base` would corrupt
+// `workspace`; `workspace` itself is the retained evidence
+// regradeHarnessBenchmarkReport re-grades against (see
+// docs/architecture/modules/verification/evals-checks.md's
+// --regrade-existing note). Exported so tests can verify this in isolation
+// without spawning a real provider process.
+export function cleanupArmHostRoot(hostRoot: string): void {
+  rmSync(hostRoot, { recursive: true, force: true });
+}
+
 async function executeRun(provider: BenchmarkProvider, profile: BenchmarkProfile, scenario: HarnessScenario, seed: string, root: string, reportRunId: string): Promise<BenchmarkRunRecord> {
   const runRoot = join(root, profile, scenario.id);
   const workspace = prepareWorkspace(seed, runRoot);
@@ -522,6 +538,7 @@ async function executeRun(provider: BenchmarkProvider, profile: BenchmarkProfile
   const artifactFiles = changed.filter((path) => /^(plans|tasks|\.ai\/harness)\//.test(path));
   const graderPassed = grader.status === 0 && expectedPathsPassed;
   const workspaceHash = workspaceEvidenceHash(workspace);
+  cleanupArmHostRoot(hostRoot);
   return {
     run_id: `${reportRunId}:${profile}:${scenario.id}`,
     profile, scenario_id: scenario.id, workspace, command, status: exitCode === 0 && graderPassed ? 'passed' : 'failed',
