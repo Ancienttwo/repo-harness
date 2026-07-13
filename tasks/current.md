@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-13T15:54:21+0800 -->
+<!-- updated_at: 2026-07-13T15:55:12+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-07-13T15:54:21+0800
+> **Updated At**: 2026-07-13T15:55:12+0800
 > **Source Branch**: codex/remove-gstack-core
-> **Source Commit**: de70bc2b
+> **Source Commit**: 86335563
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: archive-workflow
+> **Reason**: remove-gstack-core-closeout
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -60,7 +60,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`: status=completed, current_slice=completed-20260713-policy-seed, source_plan=plans/plan-20260712-2215-agent-fleet-specialists.md
 ## Handoff
 
-- Exact Next Step: Stage the completed module diff first; then resolve check evidence: Structured checks are not passing in .ai/harness/checks/latest.json (status=fail). Command: /check
+- Exact Next Step: Clean up merged contract worktree codex/agent-fleet-routing-closeout. Command: repo-harness run contract-worktree cleanup --slug agent-fleet-routing-closeout --target main
 
 ## Checks
 
@@ -68,19 +68,10 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 10 changed/untracked path(s)
+- Summary: clean
 
 ```
- D plans/plan-20260713-1305-remove-gstack-core.md
- D tasks/contracts/20260713-1305-remove-gstack-core.contract.md
- D tasks/notes/20260713-1305-remove-gstack-core.notes.md
- D tasks/reviews/20260713-1305-remove-gstack-core.review.md
- M tasks/todos.md
-?? plans/archive/plan-20260713-1305-remove-gstack-core.md
-?? tasks/archive/contract-20260713-1554-remove-gstack-core.md
-?? tasks/archive/notes-20260713-1554-remove-gstack-core.md
-?? tasks/archive/review-20260713-1554-remove-gstack-core.md
-?? tasks/archive/todo-20260713-1554-remove-gstack-core.md
+(none)
 ```
 
 ## Source Artifacts
