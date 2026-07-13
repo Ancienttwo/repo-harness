@@ -22,9 +22,9 @@ const CODEX_EXPECTATIONS: Record<
   },
   "deep-reasoner": {
     model: "gpt-5.6-sol",
-    effort: "max",
-    descriptionLabel: "GPT-5.6 Sol at max reasoning",
-    sourceDescription: "Opus at max effort",
+    effort: "xhigh",
+    descriptionLabel: "GPT-5.6 Sol at xhigh reasoning",
+    sourceDescription: "Opus at xhigh effort",
     sandboxMode: "read-only",
   },
   "fast-worker": {
@@ -36,9 +36,9 @@ const CODEX_EXPECTATIONS: Record<
   },
   gatekeeper: {
     model: "gpt-5.6-sol",
-    effort: "high",
-    descriptionLabel: "GPT-5.6 Sol at high reasoning",
-    sourceDescription: "Opus at high effort",
+    effort: "xhigh",
+    descriptionLabel: "GPT-5.6 Sol at xhigh reasoning",
+    sourceDescription: "Opus at xhigh effort",
     sandboxMode: "read-only",
   },
   "root-cause-prover": {
@@ -352,7 +352,7 @@ describe("install-agent-fleet", () => {
       }
       writeFileSync(
         join(badSourceDir, "gatekeeper.md"),
-        readFileSync(join(badSourceDir, "gatekeeper.md"), "utf-8").replace("effort: high", "effort: min"),
+        readFileSync(join(badSourceDir, "gatekeeper.md"), "utf-8").replace("effort: xhigh", "effort: min"),
       );
       const installedCodexDir = join(home, ".codex/agents");
       mkdirSync(installedCodexDir, { recursive: true });
