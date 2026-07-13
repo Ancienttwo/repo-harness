@@ -267,11 +267,15 @@ export function buildDiffFingerprint(input: DiffFingerprintInput, ctx: Fingerpri
   const statusHash = hashText(status);
   const untrackedHash = untrackedContentHash(input.repoRoot, paths, ctx);
 
+  // base_ref/base_rev are intentionally excluded from the hashed payload:
+  // they identify the resolved base tip, not diff content, so hashing them
+  // would churn the fingerprint on every unrelated advance of the base
+  // branch. They stay on the returned object below as non-hashed metadata,
+  // symmetric with how head_rev is handled in
+  // buildImplementationDiffFingerprint.
   const fingerprint = hashJson({
     version: 1,
     purpose: input.purpose ?? 'diff',
-    base_ref: baseRef,
-    base_rev: baseRev,
     paths,
     policy_version: input.policyVersion,
     staged_diff_hash: stagedDiffHash,
@@ -486,17 +490,18 @@ export function buildImplementationDiffFingerprint(
     );
   }
 
+  // base_ref/base_rev and head_rev are intentionally excluded from the
+  // hashed payload. Committed implementation content is already captured by
+  // branch_diff_hash (base...HEAD over implementation paths), which moves
+  // only when the actual diff content changes (e.g. a rebase that shifts
+  // context lines). Hashing the resolved base/HEAD revs directly would churn
+  // the fingerprint on every unrelated base-branch advance or
+  // operational-only commit (review/check artifacts) and falsely stale the
+  // review. Both stay on the returned object below as non-hashed metadata.
   const fingerprint = hashJson({
     version: 1,
     purpose: 'implementation-review-freshness',
     scope: IMPLEMENTATION_FINGERPRINT_SCOPE,
-    base_ref: diff.base_ref,
-    base_rev: diff.base_rev,
-    // head_rev is intentionally excluded from the hashed payload: committed
-    // implementation content is already captured by branch_diff_hash (base...HEAD
-    // over implementation paths). Hashing raw HEAD would make an operational-only
-    // commit (review/check artifacts) churn the fingerprint and falsely stale the
-    // review.
     paths: diff.paths,
     branch_diff_hash: branchDiffHash,
     staged_diff_hash: diff.staged_diff_hash,
