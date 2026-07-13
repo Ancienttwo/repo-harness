@@ -5,10 +5,10 @@
 > **Contract**: tasks/contracts/20260712-2327-harness-kernel-reduction.contract.md
 > **Notes File**: tasks/notes/20260712-2327-harness-kernel-reduction.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-07-13 18:18
+> **Last Updated**: 2026-07-13 20:03
 > **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Diff Fingerprint**: sha256:5d838d4b71cb812066a27d6f56965b38a2ac3e5b754eefca11be04698584bee6
+> **Reviewed Diff Fingerprint**: sha256:918778628354edce2dfcfbad0d1c4e0453807fb04485219c520b18698546bc4c
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 ## Human Review Card
@@ -16,9 +16,9 @@
 - Verdict: pass
 - Change type: code-change
 - Intended files changed: existing state/routing/context/circuit/install/Skill/benchmark owners, their deterministic projections, focused tests, durable docs, and this workflow package.
-- Actual files changed: contract-allowed owners only; the branch was rebased onto `0cf69cf` with the single test-assertion conflict preserving both sides. `origin/main` later advanced externally to the resulting `b4acb00`; this session issued no push, merge, deploy, secret, or shared-main mutation.
+- Actual files changed: contract-allowed owners only; the branch is rebased cleanly onto current `origin/main` `319f80e0`. This session issued no push, merge, deploy, secret, or shared-main mutation.
 - Commands passed: authoritative Claude 3x9 matrix 27/27; full suite 1234 pass / 1 skip / 0 fail; focused contract suites; typecheck; deploy, architecture, task-sync, inspector, adopt dry-run, state, and profile dry-runs.
-- External acceptance: pass — independent native Codex review covered the full implementation and authoritative matrix; a bounded Claude review covered the later checks-fixture schema delta. Both reported no P1/P2.
+- External acceptance: pass — independent native Codex review covered the full implementation and authoritative matrix. Claude's final full-scope review found no P1, drove the file-wide timeout correction, identified the expected fingerprint refresh, and left one accepted exact-path task-sync residual; its bounded follow-up over the corrected runtime-isolation delta reported no P1/P2.
 - Residual risks: measured Adaptive Lite cost remains higher than Strict on this provider sample; this is an optimization result, not a safety or completion failure.
 - Reviewer action required: none.
 - Rollback: revert the ordered work-package commits; install rollback uses owned-surface compensation and never deletes unowned host content.
@@ -42,19 +42,20 @@
 
 > **External Acceptance**: pass
 > **External Reviewer**: Codex + Claude
-> **External Source**: native-subagent/fix_circuit_lock + claude-cli/fixture-timeout-task-sync-main-integration
+> **External Source**: native-subagent/fix_circuit_lock + claude-cli/fixture-timeout-task-sync-main-integration-final-runtime-isolation
 > **External Started**: 2026-07-13T06:30:00+0800
-> **External Completed**: 2026-07-13T18:18:00+0800
+> **External Completed**: 2026-07-13T20:03:49+0800
 > **Review Rubric Version**: 2
-> **Reviewed Diff Fingerprint**: sha256:5d838d4b71cb812066a27d6f56965b38a2ac3e5b754eefca11be04698584bee6
+> **Reviewed Diff Fingerprint**: sha256:918778628354edce2dfcfbad0d1c4e0453807fb04485219c520b18698546bc4c
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 - P1 blockers: none. Earlier findings covering unsafe lock reclaim, mandatory-context loss, incomplete transaction compensation, and stale report provenance were fixed and re-reviewed.
-- P2 advisories: none. Earlier ownership/profile-exclusion and test-fixture findings were fixed and re-reviewed.
-- Latest timeout-delta review: pass. The 30-second bound is test-only; production lock timeout and every guard/review/subagent/repair/consult cap remain unchanged. Its sole wording advisory (2 seconds, not 4) was corrected before this fingerprint was recorded.
+- P2 advisories: one accepted residual. The product helper excludes only the exact self-host report pair from task-sync; a downstream repo would have to create those repo-harness-specific paths before the narrow exclusion could apply. A general policy/second authority is not justified for that hypothetical single consumer. Earlier ownership/profile-exclusion and test-fixture findings were fixed and re-reviewed.
+- Latest timeout-delta review: pass. The 30-second bound is test-only and now applies per-test only to the four process/lock cases; the five pure unit tests retain Bun's 5-second default. Production lock timeout and every guard/review/subagent/repair/consult cap remain unchanged.
 - Latest task-sync delta review: pass. The exclusion names only the two generated report files, exact byte/provenance binding remains fail-closed, and regressions prove neither source changes nor sibling report files can hide behind it. Both P2 advisories were closed before this fingerprint was recorded.
 - Latest main integration review: pass. Git proves native-role commit `f248e76f` is an ancestor; its SubagentStart routing files and scoped return-channel assertions are unchanged by this branch. Exact report-byte mismatch remains fail-closed in both jq and no-jq checks paths. No P1/P2.
 - Latest origin integration review: pass. PR67 `4e3e76a2` is an ancestor and has no changed-file overlap with this branch; its configurable deploy-SQL policy, helpers, Skill, and tests remain byte-identical. No P1/P2.
+- Latest runtime-isolation review: pass. Package-default fixtures explicitly clear the ambient self-host source override at both direct and spawned helper boundaries, while explicit source-authority and fail-closed tests remain intact. The branch rebased cleanly onto `319f80e0`; the bounded follow-up reported no P1/P2.
 - Acceptance checklist: pass — final report `authoritative=true`, source commit matches the clean execution HEAD, 3 profiles x 9 scenarios are present, all structured provider/grader/isolation evidence and all 27 acceptance commands pass, and focused Strict/product-planning exclusions pass. The reviewer verified that explicit benchmark authorization changes only the scenario input and leaves the product Plan gate unchanged. Final re-review also verified separate report-byte binding in structured checks across jq and no-jq paths, with missing, legacy, invalid, and mismatched evidence failing closed. The original full-scope Claude command timed out; a later targeted Claude review independently passed the fixture-only checks-schema delta and confirmed `not_applicable` cannot mask reports that exist.
 
 ## Behavior Diff Notes
