@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import {
   constants, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync,
-  statSync, writeFileSync,
+  statSync, symlinkSync, unlinkSync, writeFileSync,
 } from 'fs';
 import { tmpdir } from 'os';
 import { basename, dirname, join, relative, resolve } from 'path';
@@ -559,12 +559,35 @@ function assertProfileBaseImmutable(base: PreparedProfileBase): void {
   }
 }
 
+export function rebaseAbsoluteSymlinks(sourceRoot: string, targetRoot: string): void {
+  const visit = (dir: string): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const absolute = join(dir, entry.name);
+      if (entry.isDirectory()) visit(absolute);
+      else if (entry.isSymbolicLink()) {
+        const linkTarget = readlinkSync(absolute);
+        if (linkTarget === sourceRoot || linkTarget.startsWith(`${sourceRoot}/`)) {
+          unlinkSync(absolute);
+          symlinkSync(`${targetRoot}${linkTarget.slice(sourceRoot.length)}`, absolute);
+        }
+      }
+    }
+  };
+  visit(targetRoot);
+}
+
+export function cloneImmutableWorkspaceBase(source: string, target: string): void {
+  run('git', ['clone', '--local', '--no-hardlinks', '--quiet', source, target], dirname(target));
+  run('git', ['remote', 'remove', 'origin'], target);
+}
+
 function createRunOverlay(base: PreparedProfileBase, layout: BenchmarkRunLayout, scenario: HarnessScenario): void {
   mkdirSync(dirname(layout.workspace), { recursive: true });
-  run('git', ['clone', '--local', '--quiet', base.workspace, layout.workspace], dirname(layout.workspace));
+  cloneImmutableWorkspaceBase(base.workspace, layout.workspace);
   run('git', ['config', 'user.email', 'benchmark@example.com'], layout.workspace);
   run('git', ['config', 'user.name', 'Benchmark'], layout.workspace);
   cpSync(base.home, layout.home, { recursive: true, mode: constants.COPYFILE_FICLONE });
+  rebaseAbsoluteSymlinks(base.home, layout.home);
   if (base.profile === 'strict-harness') writeStrictArtifacts(layout.workspace, scenario);
   if (scenario.requires_resume_projection) writeResumeProjection(layout.workspace);
   run('git', ['add', '.'], layout.workspace);
@@ -1028,21 +1051,25 @@ export async function runHarnessProfileBenchmark(options: CliOptions) {
     : new Map<BenchmarkProfile, PreparedProfileBase>();
   const scenarios = new Map(selected.map((scenario) => [scenario.id, scenario]));
   const executeArm = async (arm: BenchmarkRunLayout, index: number): Promise<BenchmarkRunRecord> => {
-    const scenario = scenarios.get(arm.scenario_id);
-    if (!scenario) throw new Error(`benchmark scenario missing from layout: ${arm.scenario_id}`);
-    if (options.execute) {
-      const base = preparedBases.get(arm.profile);
-      if (!base) throw new Error(`benchmark profile base missing: ${arm.profile}`);
-      const record = await executeRun(provider, base, scenario, arm, reportRunId, deadlineMs);
-      assertProfileBaseImmutable(base);
-      process.stdout.write(`benchmark arm ${index + 1}/${layout.length}: ${arm.profile}/${arm.scenario_id} -> ${record.status}\n`);
-      if (options.requireAuthoritative && !isAuthoritativeCompletedRecord(record)) {
-        await terminateActiveProviderGroups();
-        throw new Error(`authoritative benchmark arm failed: ${arm.profile}/${arm.scenario_id}; evidence=${dirname(arm.workspace)}`);
+    try {
+      const scenario = scenarios.get(arm.scenario_id);
+      if (!scenario) throw new Error(`benchmark scenario missing from layout: ${arm.scenario_id}`);
+      if (options.execute) {
+        const base = preparedBases.get(arm.profile);
+        if (!base) throw new Error(`benchmark profile base missing: ${arm.profile}`);
+        const record = await executeRun(provider, base, scenario, arm, reportRunId, deadlineMs);
+        assertProfileBaseImmutable(base);
+        process.stdout.write(`benchmark arm ${index + 1}/${layout.length}: ${arm.profile}/${arm.scenario_id} -> ${record.status}\n`);
+        if (options.requireAuthoritative && !isAuthoritativeCompletedRecord(record)) {
+          throw new Error(`authoritative benchmark arm failed: ${arm.profile}/${arm.scenario_id}; evidence=${dirname(arm.workspace)}`);
+        }
+        return record;
       }
-      return record;
+      return dryRunRecord(provider, scenario, arm, reportRunId);
+    } catch (error) {
+      if (options.requireAuthoritative) await terminateActiveProviderGroups();
+      throw error;
     }
-    return dryRunRecord(provider, scenario, arm, reportRunId);
   };
   records.push(...await mapWithConcurrency(
     layout,

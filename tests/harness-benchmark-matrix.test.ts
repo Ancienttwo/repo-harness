@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, statSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import {
@@ -9,6 +9,7 @@ import {
   benchmarkChangedFiles,
   benchmarkRunLayout,
   claudeBenchmarkCommand,
+  cloneImmutableWorkspaceBase,
   codexBenchmarkCommand,
   hashTree,
   isolatedHarnessEnvironment,
@@ -19,6 +20,7 @@ import {
   noHarnessIsolation,
   parsePorcelainPaths,
   prepareBenchmarkProfiles,
+  rebaseAbsoluteSymlinks,
   reportByteBindingPath,
   runBoundedProviderProcess,
   runHarnessProfileBenchmark,
@@ -97,6 +99,42 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
       git('commit', '-qm', 'provider implementation');
       expect(git('status', '--porcelain')).toBe('');
       expect(benchmarkChangedFiles(dir, baseline)).toEqual(['src/status.ts']);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  test('workspace overlays share neither mutable Git objects nor an origin back to the profile base', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'harness-workspace-overlay-'));
+    const source = join(dir, 'source');
+    const target = join(dir, 'target');
+    const git = (cwd: string, ...args: string[]) => Bun.spawnSync(['git', ...args], { cwd, stdout: 'pipe', stderr: 'pipe' });
+    try {
+      mkdirSync(source);
+      expect(git(source, 'init', '-q').exitCode).toBe(0);
+      expect(git(source, 'config', 'user.name', 'Benchmark Test').exitCode).toBe(0);
+      expect(git(source, 'config', 'user.email', 'benchmark@example.com').exitCode).toBe(0);
+      writeFileSync(join(source, 'seed.txt'), 'seed\n');
+      expect(git(source, 'add', '.').exitCode).toBe(0);
+      expect(git(source, 'commit', '-qm', 'seed').exitCode).toBe(0);
+      cloneImmutableWorkspaceBase(source, target);
+      expect(git(target, 'remote').stdout.toString().trim()).toBe('');
+      const object = git(source, 'rev-parse', 'HEAD:seed.txt').stdout.toString().trim();
+      expect(statSync(join(source, '.git/objects', object.slice(0, 2), object.slice(2))).ino)
+        .not.toBe(statSync(join(target, '.git/objects', object.slice(0, 2), object.slice(2))).ino);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  test('HOME overlays rebase absolute cache symlinks away from the immutable profile base', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'harness-home-overlay-'));
+    const source = join(dir, 'source');
+    const target = join(dir, 'target');
+    try {
+      mkdirSync(join(source, 'cache'), { recursive: true });
+      writeFileSync(join(source, 'cache/package.json'), '{}\n');
+      symlinkSync(join(source, 'cache'), join(source, 'current'));
+      cpSync(source, target, { recursive: true });
+      rebaseAbsoluteSymlinks(source, target);
+      expect(readlinkSync(join(target, 'current'))).toBe(join(target, 'cache'));
+      expect(readlinkSync(join(source, 'current'))).toBe(join(source, 'cache'));
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
