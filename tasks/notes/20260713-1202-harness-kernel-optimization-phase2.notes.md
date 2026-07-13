@@ -4,7 +4,7 @@
 > **Plan**: plans/plan-20260713-1202-harness-kernel-optimization-phase2.md
 > **Contract**: tasks/contracts/20260713-1202-harness-kernel-optimization-phase2.contract.md
 > **Review**: tasks/reviews/20260713-1202-harness-kernel-optimization-phase2.review.md
-> **Last Updated**: 2026-07-13 21:59
+> **Last Updated**: 2026-07-13 22:21
 > **Lifecycle**: notes
 
 ## Live Benchmark Regrade (Phase B closeout)
@@ -244,3 +244,34 @@ Split by mechanism, not by scenario, matching each test file's existing scope. `
 ### Known environmental noise (repeat of the Phase C pattern)
 
 `repo-harness run check-task-workflow --strict` exits 1 with `[BrainSync] Entry external-tooling brain file differs from source: docs/reference-configs/external-tooling.md -> brain/repo-harness/references/external-tooling.md`. Same class of noise already documented above under Phase C (a different local session mutating the shared brain vault outside this worktree): `git status --short docs/reference-configs/` shows zero changes from this worktree, and that path is nowhere in D1's diff. Skipped per the coordinator's instruction. All other required checks pass clean: full `bun test` (1296 pass / 1 skip / 0 fail on a clean isolated run — one run mid-session showed a single flaky, unrelated `tests/scaffold-parity.test.ts` failure that reproduces on neither the pre-D1 stashed state nor two isolated reruns of that file alone, consistent with the shared-host contention already documented earlier in this file), `bun run check:type` (clean), `bash scripts/check-architecture-sync.sh` (exit 0), `bash scripts/check-task-sync.sh` (exit 0), `bun src/cli/index.ts adopt --repo . --dry-run` (clean plan output, no errors).
+
+## Phase E — Gap Cleanup
+
+### E1: CHANGELOG entry grounding
+
+Both new `[Unreleased]` entries are grounded in verified sources, not invented. The phase-1 entry follows `plans/plan-20260712-2327-harness-kernel-reduction.md`'s own Required Outcomes (P0-B/C/D, P1-A/C, P2) and Task Breakdown (WP1-9, all `[x]`), cross-checked against `git log 640b0918^..c604e3b` (31 commits, anchored by `640b0918 feat: implement adaptive harness kernel profiles`) and the review file's `Recommendation: pass` closeout — not reverse-engineered from terse commit subjects alone. The phase-2 entry follows this branch's own commit log (`git log c604e3b..HEAD`): A1 `c0eb4045`, A2 `ce33b7e5`, B1 `38d7a37c`, B2 `5e6742ae`, C1 `5d76f282`, C2/C3 `9df34a46`, D1 `87a6f1f9`.
+
+### E2: phase-1 review artifact — already closed, no action taken
+
+The dispatch's premise (`tasks/reviews/20260712-2327-harness-kernel-reduction.review.md` is an all-zero template at `Recommendation: fail`) was accurate when the plan's Evidence Baseline section was originally written, but is **stale at this task's execution time**. Verified: `git show c604e3b:tasks/reviews/20260712-2327-harness-kernel-reduction.review.md` — this worktree's own base commit, before any Phase 2 commit — already shows `Status: Done`, `Recommendation: pass`, a full Scorecard, `Failing Items: None`, and `Summary: PASS`, byte-identical in shape to the file's current content. `git log --follow` on the file shows its last edit was `12e44fa3 review: bind committed closeout diff`, part of phase-1's own closeout commit range (visible in the `git log 640b0918^..c604e3b` list above: `9b3b1e77 review: accept complete harness kernel reduction`, `b4acb00e review: record clean full-suite closeout`, `a28d757f review: bind external main advancement`, `12e44fa3 review: bind committed closeout diff`) — unrelated to this branch. This matches `docs/architecture/modules/verification/evals-checks.md:89-92`'s closeout note (the "Optimize cold hook execution..." backlog entry, which is exactly what became this phase-2 plan) and the review's own evidence (27/27 matrix, external Codex+Claude acceptance, no P1/P2 findings).
+
+Checked the repo's actual review-closure convention before deciding anything: `tasks/reviews/archive/` does not exist (`find` errors — not present, not just empty), and `tasks/reviews/` holds dozens of other closed reviews (`20260601-0139-tgz-pick-wt.review.md`, `20260610-1822-central-hook-runtime.review.md`, and ~15 more) sitting flat with `Status: Done` — never archived. So this file is already in the exact shape of every other closed review in this repo; "archive to `tasks/reviews/archive/`" was never this repo's actual convention (the contract's `allowed_paths` entry for that directory was evidently defensive, added in case it turned out to be needed).
+
+**Decision: no file touched, no code/doc commit for the review artifact itself.** Per the dispatch's own instruction ("不要伪造一份事后评分"), fabricating a redundant close action on an already-correctly-closed, already-verified-pass review would be actively wrong, not merely unnecessary — it is not a template, so there is nothing to archive and no score to write that isn't already there for real. This notes entry is E2's actual deliverable.
+
+### E3: `artifactCount` left alone — same shape, out of named scope
+
+`artifactCount` (`scripts/run-skill-evals.ts:134,1073` and the same "Unavailable counters" report line) is structurally always-null for the identical reason as the two deleted fields — set once at construction (`artifactCount: null`), never assigned anywhere else. It was not named in the dispatch's scope (only `modelCallCount`/`subagentCallCount`), so it was left untouched per EXECUTION_BOUNDARY (absent requirements are forbidden design space). Flagging here rather than silently leaving it undiscovered: a future cleanup pass could fold `artifactCount` into the same deletion once the plan owner confirms it isn't reserved for a metric not yet wired.
+
+### E4: write-chain verification — no gap found; readback added, no write-path change
+
+Traced every caller of the write path (`applyInstallProfile` -> `writeState`, `src/cli/installer/install-profile.ts:827-885`):
+
+- `repo-harness init` (`src/cli/index.ts:319-332`) has no `--location` escape hatch; always calls `runGlobalRuntimeBootstrap('init', ...)` -> `applyInstallProfile`. Always writes (barring `--dry-run`).
+- `repo-harness install` without `--location` (`src/cli/index.ts:591-594`) takes the same `runGlobalRuntimeBootstrap('install', ...)` path. Always writes.
+- `repo-harness install --location <global|local>` (`src/cli/index.ts:595-610`) is a documented, deliberately narrower "adapter-only" path (see `install.ts`'s own header docblock) that calls `runInstall()` directly — hook adapter files only, no CLI/codegraph/skill-sync/profile projection. It does **not** call `applyInstallProfile`, and it must not: `applyInstallProfile` asserts `installedProfileStatus(...).drift.status === 'consistent'` over the full component set for the requested profile, which an adapter-only install never satisfies (would throw `install profile projection is incomplete for <profile>: missing=...`). Writing profile state here would both crash and misrepresent what is actually on the host as a complete profile install.
+- `repo-harness adopt` (`src/cli/index.ts:418+`) has zero references to `InstallProfile`/`applyInstallProfile` (confirmed by grep across `src/cli/commands/adopt-plan.ts` and the command wiring). This is explicit, documented product behavior, not an oversight: its own `--interactive`/`--brain-mode` option help text states "public adopt is repo-local and does not configure user-level runtime state" / "adopt does not perform user-level brain sync."
+
+Conclusion: the write already covers every entrypoint that performs a full profile install; nothing is missing, so no write-path code changed. The dev-host symptom the dispatch cited ("routes installed but the file is absent") is consistent with that host having been set up via the adapter-only `--location` path, or via an install that predates the `install-state.json` feature — expected given this design, not a code defect. Only the `status` readback (E4 step 2) was implemented.
+
+Labeling decision: displayed the new section as `components:` rather than the plan text's literal word "routes" (`repo-harness status` "installed profile + routes"). This codebase's own vocabulary already gives "routes" a precise, different meaning — `ROUTES`/`routesForHost()`, the hook-event registry, already shown in `status`'s existing "Routes:" section, and unaffected by which profile is installed. `InstalledProfileState.components: InstallComponent[]` is what is actually recorded per profile; labeling the new section "components" reuses the real field name and avoids colliding with the existing "Routes:" section's established meaning in the same command's output.
