@@ -619,7 +619,7 @@ workflow_next_action() {
 
     external_status="$(workflow_external_acceptance_status "$review_file")"
     IFS=$'\t' read -r external_state external_reviewer external_source external_message <<< "$external_status"
-    if [[ "$external_state" != "pass" && "$external_state" != "manual_override" ]]; then
+    if [[ "$external_state" != "pass" ]]; then
       expected_source="$(workflow_external_acceptance_expected_source)"
       printf 'check\t/check\tStage the completed module diff first; then %s Run external acceptance via %s and record ## External Acceptance Advice in %s.\n' "${external_message:-External acceptance is missing.}" "$expected_source" "$review_file"
       return 0
@@ -1292,7 +1292,7 @@ workflow_review_metadata_field() {
   awk -v field="$field" '
     # Top-of-file metadata only: stop at the first section heading so a
     # section-level "> **<field>**:" line (e.g. the External Acceptance section
-    # carries its own Reviewed Diff Fingerprint) can never be read as a top-level
+    # carries its own Reviewed Subject SHA256) can never be read as a top-level
     # value when the real header omits it.
     /^## / { exit }
     index($0, "> **" field "**:") == 1 {
@@ -1304,8 +1304,12 @@ workflow_review_metadata_field() {
   ' "$review_file"
 }
 
-workflow_review_fingerprint() {
-  workflow_review_metadata_field "${1:-}" "Reviewed Diff Fingerprint"
+workflow_review_subject() {
+  workflow_review_metadata_field "${1:-}" "Reviewed Subject SHA256"
+}
+
+workflow_review_target_revision() {
+  workflow_review_metadata_field "${1:-}" "Reviewed Target Revision"
 }
 
 workflow_review_rubric_version() {
@@ -1314,7 +1318,7 @@ workflow_review_rubric_version() {
 
 # Classify the top-of-file Review Rubric Version. Echoes one of:
 #   absent     - no rubric line at all (a genuine pre-rubric legacy artifact)
-#   1 or 2     - a supported rubric version (1 = legacy, 2 = current)
+#   2          - the current supported rubric version
 #   malformed  - a rubric line is present but is not a supported version
 #                (non-numeric, 0, an unsupported number, or quote/space garbage)
 # A present-but-unsupported rubric means the artifact claims a schema this gate
@@ -1330,7 +1334,7 @@ workflow_review_rubric_class() {
   trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
   if [[ -z "$trimmed" ]]; then
     printf 'absent'
-  elif [[ "$trimmed" == "1" || "$trimmed" == "2" ]]; then
+  elif [[ "$trimmed" == "2" ]]; then
     printf '%s' "$trimmed"
   else
     printf 'malformed'
@@ -1380,69 +1384,82 @@ workflow_json_field() {
   fi
 }
 
-workflow_current_review_fingerprint_json() {
-  # Bind the fingerprint to the resolved target branch so base_rev tracks the
-  # target tip; without --base the CLI falls back to HEAD, making the branch diff
-  # HEAD...HEAD (empty) and blinding the gate to target movement.
+workflow_current_review_subject_json() {
+  # The target ref selects the implementation path set and supplies overlap
+  # metadata. The subject hash itself is normalized final content and therefore
+  # does not churn when the target advances on unrelated paths.
   local target
   target="$(workflow_target_branch)"
-  workflow_hook_cli_json review-fingerprint --base "$target" --format json 2>/dev/null || true
+  workflow_hook_cli_json review-subject --target "$target" --format json 2>/dev/null || true
 }
 
-workflow_current_review_fingerprint_value() {
-  local json status fingerprint
-  json="$(workflow_current_review_fingerprint_json)"
+workflow_current_review_subject_value() {
+  local json status subject
+  json="$(workflow_current_review_subject_json)"
   status="$(workflow_json_field "$json" "status")"
   [[ "$status" == "ok" ]] || return 1
-  fingerprint="$(workflow_json_field "$json" "fingerprint")"
-  [[ -n "$fingerprint" ]] || return 1
-  printf '%s' "$fingerprint"
+  subject="$(workflow_json_field "$json" "review_subject_sha256")"
+  [[ -n "$subject" ]] || return 1
+  printf '%s' "$subject"
+}
+
+workflow_current_review_target_revision() {
+  local json status target_rev
+  json="$(workflow_current_review_subject_json)"
+  status="$(workflow_json_field "$json" "status")"
+  [[ "$status" == "ok" ]] || return 1
+  target_rev="$(workflow_json_field "$json" "target_rev")"
+  [[ -n "$target_rev" ]] || return 1
+  printf '%s' "$target_rev"
 }
 
 workflow_review_freshness_status() {
   local review_file="${1:-}"
-  local reviewed rubric_class current_json current_status current_fingerprint current_scope
+  local reviewed reviewed_target rubric_class current_json current_status current_fingerprint current_scope current_target overlap_count
 
-  reviewed="$(workflow_review_fingerprint "$review_file" | xargs || true)"
+  reviewed="$(workflow_review_subject "$review_file" | xargs || true)"
+  reviewed_target="$(workflow_review_target_revision "$review_file" | xargs || true)"
   rubric_class="$(workflow_review_rubric_class "$review_file")"
   if [[ "$rubric_class" == "malformed" ]]; then
     # A malformed/unsupported rubric claims a schema this gate cannot evaluate;
     # fail closed at the freshness stage instead of treating it as legacy.
-    printf 'malformed_schema\t-\tReview Rubric Version is malformed or unsupported; rerun /check to record the review under a supported rubric, or record a Manual Override.\n'
+    printf 'malformed_schema\t-\tReview Rubric Version is malformed or unsupported; rerun /check under rubric v2.\n'
     return 0
   fi
   if [[ -z "$reviewed" || "$reviewed" == "pending" || "$reviewed" == "unknown" ]]; then
-    # A supported rubric (v1+) with no concrete fingerprint was never bound to the
-    # diff: fail closed (`missing`). An `absent` rubric stays on the advisory legacy
-    # path here — the external-acceptance gate is the authority that requires a
-    # supported rubric (a rubric-less review fails external acceptance), so absent
-    # is still blocked at every Done/finish/verify gate that enforces external.
-    if [[ "$rubric_class" != "absent" ]]; then
-      printf 'missing\t-\tReview fingerprint is missing for rubric v%s; rerun /check and peer acceptance to record the current Reviewed Diff Fingerprint.\n' "$rubric_class"
-      return 0
-    fi
-    printf 'legacy_missing\t-\tReview fingerprint is missing; rerun /check to refresh the review metadata.\n'
+    printf 'missing\t-\tReview subject is missing for rubric v%s; rerun /check and peer acceptance to record the current Reviewed Subject SHA256.\n' "$rubric_class"
     return 0
   fi
   if ! [[ "$reviewed" =~ ^sha256:[0-9a-f]{64}$ ]]; then
-    printf 'malformed\t%s\tReview fingerprint is malformed; rerun /check and peer acceptance.\n' "$reviewed"
+    printf 'malformed\t%s\tReview subject is malformed; rerun /check and peer acceptance.\n' "$reviewed"
+    return 0
+  fi
+  if ! [[ "$reviewed_target" =~ ^[0-9a-f]{40,64}$ ]]; then
+    printf 'malformed\t%s\tReviewed Target Revision is missing or malformed; rerun /check and peer acceptance.\n' "${reviewed_target:--}"
     return 0
   fi
 
-  current_json="$(workflow_current_review_fingerprint_json)"
+  current_json="$(workflow_current_review_subject_json)"
   current_status="$(workflow_json_field "$current_json" "status")"
-  current_fingerprint="$(workflow_json_field "$current_json" "fingerprint")"
+  current_fingerprint="$(workflow_json_field "$current_json" "review_subject_sha256")"
   current_scope="$(workflow_json_field "$current_json" "scope")"
+  current_target="$(workflow_json_field "$current_json" "target_rev")"
+  overlap_count="$(workflow_json_field "$current_json" "target_overlap_count")"
   if [[ "$current_status" != "ok" || -z "$current_fingerprint" ]]; then
-    printf 'unknown\t-\tCurrent implementation diff fingerprint is unknown; rerun /check after git state is readable.\n'
+    printf 'unknown\t-\tCurrent review subject is unknown; rerun /check after repository content is readable.\n'
     return 0
   fi
   if [[ "$reviewed" != "$current_fingerprint" ]]; then
-    printf 'stale\t%s\tReview is stale for current implementation diff fingerprint %s; rerun /check and peer acceptance.\n' "$reviewed" "$current_fingerprint"
+    printf 'stale\t%s\tReview is stale for current review subject %s; rerun /check and peer acceptance.\n' "$reviewed" "$current_fingerprint"
     return 0
   fi
 
-  printf 'pass\t%s\tReview fingerprint is fresh for %s.\n' "$reviewed" "${current_scope:-branch+staged+unstaged+untracked}"
+  if [[ "$reviewed_target" != "$current_target" && "${overlap_count:-0}" -gt 0 ]]; then
+    printf 'stale\t%s\tTarget revision advanced across %s reviewed path(s); rerun /check and peer acceptance.\n' "$reviewed" "$overlap_count"
+    return 0
+  fi
+
+  printf 'pass\t%s\tReview subject is fresh for %s.\n' "$reviewed" "${current_scope:-normalized-final-content}"
 }
 
 workflow_external_acceptance_expected_reviewer() {
@@ -1501,7 +1518,7 @@ workflow_external_acceptance_field() {
 workflow_external_acceptance_status() {
   local review_file="${1:-}"
   local expected_reviewer="${2:-}"
-  local expected_source section acceptance reviewer source p1_blockers manual_override
+  local expected_source section acceptance reviewer source p1_blockers
   local acceptance_lc reviewer_lc source_lc expected_reviewer_lc expected_source_lc p1_lc
 
   expected_reviewer="${expected_reviewer:-$(workflow_external_acceptance_expected_reviewer)}"
@@ -1527,18 +1544,6 @@ workflow_external_acceptance_status() {
       head -n 1 |
       sed -E 's/[[:space:]]+$//'
   )"
-  manual_override="$(
-    printf '%s\n' "$section" |
-      sed -nE 's/^-?[[:space:]]*Manual Override:[[:space:]]*([^[:space:]].*)[[:space:]]*$/\1/p' |
-      head -n 1 |
-      sed -E 's/[[:space:]]+$//'
-  )"
-
-  if [[ -n "$manual_override" ]]; then
-    printf 'manual_override\t%s\t%s\tManual override recorded for external acceptance: %s\n' "${reviewer:--}" "${source:--}" "$manual_override"
-    return 0
-  fi
-
   acceptance_lc="$(printf '%s' "$acceptance" | tr '[:upper:]' '[:lower:]')"
   reviewer_lc="$(printf '%s' "$reviewer" | tr '[:upper:]' '[:lower:]')"
   source_lc="$(printf '%s' "$source" | tr '[:upper:]' '[:lower:]')"
@@ -1571,41 +1576,63 @@ workflow_external_acceptance_status() {
   # Diff Fingerprint and scope; otherwise a stale F1 acceptance keeps satisfying the
   # gate after the implementation moves to F2, because the top-of-file fingerprint
   # is agent-editable. An absent or malformed rubric fails closed here — external
-  # acceptance is the authority that requires a supported rubric; Manual Override
-  # above is the only escape for a genuine pre-rubric legacy artifact.
-  local rubric_class section_fp section_scope current_fp
+  # acceptance is the authority that requires the current rubric.
+  local rubric_class section_fp section_scope section_target section_benchmark current_json current_fp current_target current_benchmark overlap_count
   rubric_class="$(workflow_review_rubric_class "$review_file")"
   case "$rubric_class" in
     absent)
-      # An absent rubric cannot be proven to predate the rubric (it may have been
-      # stripped to skip binding), so fail closed. Manual Override above is the
-      # escape hatch for a genuine pre-rubric legacy artifact.
-      printf 'fail\t%s\t%s\tReview Rubric Version is missing; rerun peer acceptance under a supported rubric or record a Manual Override.\n' "${reviewer:--}" "${source:--}"
+      printf 'fail\t%s\t%s\tReview Rubric Version is missing; rerun peer acceptance under rubric v2.\n' "${reviewer:--}" "${source:--}"
       return 0
       ;;
     malformed)
       # An unsupported rubric must not silently disable the binding check.
-      printf 'fail\t%s\t%s\tReview Rubric Version is malformed or unsupported; rerun peer acceptance under a supported rubric or record a Manual Override.\n' "${reviewer:--}" "${source:--}"
+      printf 'fail\t%s\t%s\tReview Rubric Version is malformed or unsupported; rerun peer acceptance under rubric v2.\n' "${reviewer:--}" "${source:--}"
       return 0
       ;;
     *)
-      section_fp="$(workflow_external_acceptance_field "$section" "Reviewed Diff Fingerprint" | xargs || true)"
-      section_scope="$(workflow_external_acceptance_field "$section" "Reviewed Scope" | xargs || true)"
-      current_fp="$(workflow_current_review_fingerprint_value || true)"
+      section_fp="$(workflow_external_acceptance_field "$section" "Reviewed Subject SHA256" | xargs || true)"
+      section_scope="$(workflow_external_acceptance_field "$section" "Reviewed Subject Scope" | xargs || true)"
+      section_target="$(workflow_external_acceptance_field "$section" "Reviewed Target Revision" | xargs || true)"
+      section_benchmark="$(workflow_external_acceptance_field "$section" "Benchmark Evidence SHA256" | xargs || true)"
+      current_json="$(workflow_current_review_subject_json)"
+      current_fp="$(workflow_json_field "$current_json" "review_subject_sha256")"
+      current_target="$(workflow_json_field "$current_json" "target_rev")"
+      overlap_count="$(workflow_json_field "$current_json" "target_overlap_count")"
       if [[ -z "$current_fp" ]]; then
-        printf 'fail\t%s\t%s\tCurrent implementation diff fingerprint is unknown; rerun peer acceptance after git state is readable.\n' "${reviewer:--}" "${source:--}"
+        printf 'fail\t%s\t%s\tCurrent review subject is unknown; rerun peer acceptance after repository content is readable.\n' "${reviewer:--}" "${source:--}"
         return 0
       fi
       if ! [[ "$section_fp" =~ ^sha256:[0-9a-f]{64}$ ]]; then
-        printf 'fail\t%s\t%s\tExternal acceptance is missing a valid Reviewed Diff Fingerprint for rubric v%s; rerun peer acceptance for the current diff.\n' "${reviewer:--}" "${source:--}" "$rubric_class"
+        printf 'fail\t%s\t%s\tExternal acceptance is missing a valid Reviewed Subject SHA256 for rubric v%s; rerun peer acceptance for the current subject.\n' "${reviewer:--}" "${source:--}" "$rubric_class"
         return 0
       fi
       if [[ "$section_fp" != "$current_fp" ]]; then
-        printf 'fail\t%s\t%s\tExternal acceptance fingerprint %s is stale for current implementation diff %s; rerun peer acceptance.\n' "${reviewer:--}" "${source:--}" "$section_fp" "$current_fp"
+        printf 'fail\t%s\t%s\tExternal acceptance subject %s is stale for current review subject %s; rerun peer acceptance.\n' "${reviewer:--}" "${source:--}" "$section_fp" "$current_fp"
         return 0
       fi
-      if [[ "$section_scope" != "branch+staged+unstaged+untracked" ]]; then
-        printf 'fail\t%s\t%s\tExternal acceptance scope is %s; expected branch+staged+unstaged+untracked.\n' "${reviewer:--}" "${source:--}" "${section_scope:-missing}"
+      if [[ "$section_scope" != "normalized-final-content" ]]; then
+        printf 'fail\t%s\t%s\tExternal acceptance scope is %s; expected normalized-final-content.\n' "${reviewer:--}" "${source:--}" "${section_scope:-missing}"
+        return 0
+      fi
+      if ! [[ "$section_target" =~ ^[0-9a-f]{40,64}$ ]]; then
+        printf 'fail\t%s\t%s\tExternal acceptance is missing a valid Reviewed Target Revision.\n' "${reviewer:--}" "${source:--}"
+        return 0
+      fi
+      if [[ "$section_target" != "$current_target" && "${overlap_count:-0}" -gt 0 ]]; then
+        printf 'fail\t%s\t%s\tTarget revision advanced across %s reviewed path(s); rerun peer acceptance.\n' "${reviewer:--}" "${source:--}" "$overlap_count"
+        return 0
+      fi
+      current_benchmark="$(workflow_benchmark_evidence_fingerprint 2>/dev/null || true)"
+      if [[ -e "evals/harness/reports/profile-comparison.json" || -e "evals/harness/reports/profile-comparison.md" || -e "evals/harness/reports/profile-comparison.sha256.json" ]]; then
+        if [[ -z "$current_benchmark" ]]; then
+          printf 'fail\t%s\t%s\tCurrent benchmark evidence is present but invalid.\n' "${reviewer:--}" "${source:--}"
+          return 0
+        fi
+      else
+        current_benchmark="not-applicable"
+      fi
+      if [[ "$section_benchmark" != "$current_benchmark" ]]; then
+        printf 'fail\t%s\t%s\tExternal acceptance benchmark evidence is stale: %s != %s.\n' "${reviewer:--}" "${source:--}" "${section_benchmark:-missing}" "$current_benchmark"
         return 0
       fi
       ;;
@@ -1621,44 +1648,45 @@ workflow_external_acceptance_pass() {
 
   row="$(workflow_external_acceptance_status "$review_file" "$expected_reviewer")"
   status="${row%%$'\t'*}"
-  [[ "$status" == "pass" || "$status" == "manual_override" ]]
+  [[ "$status" == "pass" ]]
+}
+
+workflow_benchmark_evidence_json() {
+  local json_path="evals/harness/reports/profile-comparison.json"
+  local validator=""
+  if [[ ! -e "$json_path" && ! -e "evals/harness/reports/profile-comparison.md" && ! -e "evals/harness/reports/profile-comparison.sha256.json" ]]; then
+    return 0
+  fi
+  for candidate in \
+    "${HOOK_REPO_ROOT:-}/scripts/validate-harness-profile-benchmark.ts" \
+    "scripts/validate-harness-profile-benchmark.ts" \
+    ".ai/harness/scripts/validate-harness-profile-benchmark.ts"; do
+    if [[ -n "$candidate" && -f "$candidate" ]]; then validator="$candidate"; break; fi
+  done
+  [[ -n "$validator" ]] || return 1
+  command -v bun >/dev/null 2>&1 || return 1
+  bun "$validator" --report "$json_path" --require-authoritative --format json 2>/dev/null
 }
 
 workflow_benchmark_evidence_fingerprint() {
-  local json_path="evals/harness/reports/profile-comparison.json"
-  local md_path="evals/harness/reports/profile-comparison.md"
-  local runtime=""
-  if [[ ! -e "$json_path" && ! -e "$md_path" ]]; then
-    return 0
-  fi
-  if [[ ! -f "$json_path" || ! -f "$md_path" ]]; then
-    return 1
-  fi
-  if command -v node >/dev/null 2>&1; then runtime="node"
-  elif command -v bun >/dev/null 2>&1; then runtime="bun"
-  else return 1
-  fi
-  "$runtime" - "$json_path" "$md_path" <<'JS_EOF'
-const fs = require('fs');
-const crypto = require('crypto');
-const paths = process.argv.slice(2);
-const hash = crypto.createHash('sha256');
-for (const path of paths) {
-  hash.update(path);
-  hash.update(Buffer.from([0]));
-  hash.update(fs.readFileSync(path));
-  hash.update(Buffer.from([0]));
+  local json
+  json="$(workflow_benchmark_evidence_json || true)"
+  workflow_json_field "$json" "report_evidence_sha256"
 }
-process.stdout.write(`sha256:${hash.digest('hex')}`);
-JS_EOF
+
+workflow_benchmark_subject_sha256() {
+  local json
+  json="$(workflow_benchmark_evidence_json || true)"
+  workflow_json_field "$json" "benchmark_subject_sha256"
 }
 
 workflow_benchmark_evidence_checks_match() {
   local checks_file="$1"
-  local evidence_status="" evidence_recorded="" evidence_current="" runtime="" row=""
+  local evidence_status="" evidence_recorded="" subject_recorded="" evidence_current="" subject_current="" runtime="" row=""
   if command -v jq >/dev/null 2>&1; then
     evidence_status="$(jq -r '.benchmark_evidence.status // empty' "$checks_file" 2>/dev/null || true)"
-    evidence_recorded="$(jq -r '.benchmark_evidence.fingerprint // empty' "$checks_file" 2>/dev/null || true)"
+    evidence_recorded="$(jq -r '.benchmark_evidence.report_sha256 // empty' "$checks_file" 2>/dev/null || true)"
+    subject_recorded="$(jq -r '.benchmark_evidence.benchmark_subject_sha256 // empty' "$checks_file" 2>/dev/null || true)"
   else
     if command -v node >/dev/null 2>&1; then runtime="node"
     elif command -v bun >/dev/null 2>&1; then runtime="bun"
@@ -1669,17 +1697,18 @@ workflow_benchmark_evidence_checks_match() {
     row="$("$runtime" - "$checks_file" <<'JS_EOF' 2>/dev/null || true
 const fs = require('fs');
 const value = JSON.parse(fs.readFileSync(process.argv[2], 'utf8')).benchmark_evidence || {};
-process.stdout.write(`${typeof value.status === 'string' ? value.status : ''}\t${typeof value.fingerprint === 'string' ? value.fingerprint : ''}`);
+process.stdout.write(`${typeof value.status === 'string' ? value.status : ''}\t${typeof value.report_sha256 === 'string' ? value.report_sha256 : ''}\t${typeof value.benchmark_subject_sha256 === 'string' ? value.benchmark_subject_sha256 : ''}`);
 JS_EOF
 )"
-    IFS=$'\t' read -r evidence_status evidence_recorded <<< "$row"
+    IFS=$'\t' read -r evidence_status evidence_recorded subject_recorded <<< "$row"
   fi
 
   evidence_current="$(workflow_benchmark_evidence_fingerprint 2>/dev/null || true)"
+  subject_current="$(workflow_benchmark_subject_sha256 2>/dev/null || true)"
   case "$evidence_status" in
     present)
-      if [[ -z "$evidence_recorded" || -z "$evidence_current" || "$evidence_current" != "$evidence_recorded" ]]; then
-        echo "Structured checks are stale for benchmark evidence (recorded=${evidence_recorded:-missing}, current=${evidence_current:-unavailable})."
+      if [[ -z "$evidence_recorded" || -z "$subject_recorded" || -z "$evidence_current" || -z "$subject_current" || "$evidence_current" != "$evidence_recorded" || "$subject_current" != "$subject_recorded" ]]; then
+        echo "Structured checks are stale for benchmark evidence (report=${evidence_recorded:-missing}/${evidence_current:-unavailable}, subject=${subject_recorded:-missing}/${subject_current:-unavailable})."
         return 1
       fi
       ;;

@@ -584,7 +584,7 @@ finish_worktree() {
   if declare -F workflow_external_acceptance_status >/dev/null 2>&1; then
     external_status="$(workflow_external_acceptance_status "$review_file")"
     IFS=$'\t' read -r external_state external_reviewer external_source external_message <<< "$external_status"
-    if [[ "$external_state" != "pass" && "$external_state" != "manual_override" ]]; then
+    if [[ "$external_state" != "pass" ]]; then
       echo "contract-worktree: external acceptance gate failed: ${external_message:-missing external acceptance}" >&2
       echo "contract-worktree: record ## External Acceptance Advice in $review_file via $(workflow_external_acceptance_expected_source) before finish" >&2
       exit 1

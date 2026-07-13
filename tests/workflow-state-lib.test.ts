@@ -43,20 +43,20 @@ describe("workflow-state shared library", () => {
     expect(helper).not.toContain("^\\> \\*\\*Recommendation\\*\\*:[[:space:]]*pass");
   });
 
-  test("verify-sprint scopes source-authority hook resolution to fingerprinting", () => {
+  test("verify-sprint scopes source-authority hook resolution to review subjects", () => {
     for (const path of [
       join(ROOT, "scripts", "verify-sprint.sh"),
       join(ROOT, "assets", "templates", "helpers", "verify-sprint.sh"),
     ]) {
       const helper = readFileSync(path, "utf-8");
       expect(helper).toContain('HOOK_REPO_ROOT="$REPO_HARNESS_SOURCE_ROOT" "$callback" "$@"');
-      expect(helper).toContain('workflow_source_authority_call workflow_current_review_fingerprint_value');
+      expect(helper).toContain('workflow_source_authority_call workflow_current_review_subject_value');
       expect(helper).toContain('workflow_source_authority_call workflow_external_acceptance_status "$review_file"');
       expect(helper).not.toContain('export HOOK_REPO_ROOT="$REPO_HARNESS_SOURCE_ROOT"');
     }
   });
 
-  test("external acceptance parser enforces reviewer, source, blockers, manual override, and a supported rubric", () => {
+  test("external acceptance parser enforces reviewer, source, blockers, and rubric v2 without override fallback", () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), "workflow-external-acceptance-")));
     try {
       writeFileSync(
@@ -129,17 +129,16 @@ describe("workflow-state shared library", () => {
       // A rubric-less review can no longer pass external acceptance (it cannot be
       // proven legacy); the happy pass path is covered end-to-end in
       // hook-runtime.test.ts where a real fingerprint binding is available.
-      expect(res.stdout).toContain("fail\tClaude\tclaude-review\tReview Rubric Version is missing; rerun peer acceptance under a supported rubric or record a Manual Override.");
+      expect(res.stdout).toContain("fail\tClaude\tclaude-review\tReview Rubric Version is missing; rerun peer acceptance under rubric v2.");
       // P1 blockers are checked before the rubric, so this still reports blockers.
       expect(res.stdout).toContain("fail\tClaude\tclaude-review\tExternal acceptance has P1 blockers: release regression");
-      // Manual Override is honoured before the rubric check, so override still wins.
-      expect(res.stdout).toContain("manual_override\t-\tclaude-review\tManual override recorded for external acceptance");
+      expect(res.stdout).toContain("fail\t-\tclaude-review\tExternal acceptance is unavailable");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
   });
 
-  test("workflow_review_rubric_class accepts both the legacy (1) and current (2) rubric versions and still rejects unsupported ones", () => {
+  test("workflow_review_rubric_class accepts only current rubric v2", () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), "workflow-rubric-class-")));
     try {
       writeFileSync(
@@ -183,13 +182,13 @@ describe("workflow-state shared library", () => {
 
       expect(res.status).toBe(0);
       const lines = res.stdout.split("\n").filter((line) => line.length > 0);
-      expect(lines).toEqual(["1", "2", "malformed", "absent"]);
+      expect(lines).toEqual(["malformed", "2", "malformed", "absent"]);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
   });
 
-  test("workflow_checks_pass binds regenerated harness report bytes independently of implementation freshness", () => {
+  test("workflow checks reject legacy byte-only benchmark evidence", () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), "workflow-benchmark-evidence-")));
     try {
       mkdirSync(join(cwd, "evals/harness/reports"), { recursive: true });
@@ -200,49 +199,24 @@ describe("workflow-state shared library", () => {
         ["-lc", 'source "$WORKFLOW_STATE"; workflow_benchmark_evidence_fingerprint'],
         { cwd, encoding: "utf-8", env: { ...process.env, WORKFLOW_STATE: join(ROOT, "assets/hooks/lib/workflow-state.sh") } },
       );
-      expect(fingerprint.status).toBe(0);
-      expect(fingerprint.stdout).toMatch(/^sha256:[0-9a-f]{64}$/);
+      expect(fingerprint.status).toBe(1);
+      expect(fingerprint.stdout).toBe("");
       writeFileSync(join(cwd, "checks.json"), JSON.stringify({
         status: "pass",
         source: "verify-sprint",
         exit_code: 0,
         contract: { file: "tasks/contracts/demo.contract.md" },
         review: { file: "tasks/reviews/demo.review.md" },
-        benchmark_evidence: { status: "present", fingerprint: fingerprint.stdout },
+        benchmark_evidence: { status: "present", report_sha256: "sha256:" + "0".repeat(64), benchmark_subject_sha256: "sha256:" + "1".repeat(64) },
       }));
       const check = () => spawnSync(
         "bash",
         ["-c", 'source "$WORKFLOW_STATE"; workflow_checks_pass checks.json tasks/contracts/demo.contract.md tasks/reviews/demo.review.md'],
         { cwd, encoding: "utf-8", env: { ...process.env, WORKFLOW_STATE: join(ROOT, "assets/hooks/lib/workflow-state.sh") } },
       );
-      expect(check().status).toBe(0);
-
-      const noJqBin = join(cwd, "no-jq-bin");
-      mkdirSync(noJqBin);
-      symlinkSync(process.execPath, join(noJqBin, "bun"));
-      symlinkSync("/usr/bin/grep", join(noJqBin, "grep"));
-      const noJqCheck = () => spawnSync(
-        "/bin/bash",
-        ["-c", 'source "$WORKFLOW_STATE"; workflow_checks_pass checks.json tasks/contracts/demo.contract.md tasks/reviews/demo.review.md'],
-        {
-          cwd,
-          encoding: "utf-8",
-          env: {
-            ...process.env,
-            PATH: noJqBin,
-            WORKFLOW_STATE: join(ROOT, "assets/hooks/lib/workflow-state.sh"),
-          },
-        },
-      );
-      expect(noJqCheck().status).toBe(0);
-
-      writeFileSync(join(cwd, "evals/harness/reports/profile-comparison.json"), '{"authoritative":false}\n');
       const stale = check();
       expect(stale.status).toBe(1);
       expect(stale.stdout).toContain("Structured checks are stale for benchmark evidence");
-      const staleWithoutJq = noJqCheck();
-      expect(staleWithoutJq.status).toBe(1);
-      expect(staleWithoutJq.stdout).toContain("Structured checks are stale for benchmark evidence");
 
       writeFileSync(join(cwd, "checks.json"), JSON.stringify({
         status: "pass",

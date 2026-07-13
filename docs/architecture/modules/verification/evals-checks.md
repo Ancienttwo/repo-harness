@@ -1,7 +1,7 @@
 # Architecture Module: verification/evals-checks
 
 > **Capability ID**: `verification-evals-checks`
-> **Matched Prefixes**: `tests`, `evals`, `scripts/run-skill-evals.ts`, `scripts/check-task-workflow.sh`, `scripts/check-task-sync.sh`, `scripts/check-agent-tooling.sh`, `scripts/check-brain-manifest.sh`, `scripts/sync-brain-docs.sh`
+> **Matched Prefixes**: `tests`, `evals`, `scripts/run-skill-evals.ts`, `scripts/run-harness-profile-benchmark.ts`, `scripts/validate-harness-profile-benchmark.ts`, `scripts/run-bounded-verifier-command.ts`, `scripts/verify-contract.sh`, `scripts/verify-sprint.sh`, `scripts/check-task-workflow.sh`, `scripts/check-task-sync.sh`, `scripts/check-agent-tooling.sh`, `scripts/check-brain-manifest.sh`, `scripts/sync-brain-docs.sh`
 > **Local Contracts**: `AGENTS.md`, `CLAUDE.md`
 
 ## P1 Map
@@ -71,6 +71,24 @@ installable copies must not drift silently.
 
 At 10x repo size, the first failure would be full-test cost. The current split
 lets small slices run focused tests while release/pre-merge runs the full gate.
+
+## 2026-07-14 Verifier Evidence Lifecycle Cutover
+
+- `verify-contract.sh` is a bounded evidence consumer: one fixed 600-second
+  deadline covers all declared tests and commands, each child runs in its own
+  process group, and timeout terminates descendants while preserving duration,
+  signal, exit, and timeout evidence.
+- Verifier-owned command lists reject benchmark/provider production, adoption,
+  evidence producers, and substantive install before execution. `verify-sprint`
+  invokes contract verification read-only and validates an already-produced
+  authoritative benchmark report without launching the matrix.
+- The profile benchmark owns schema v2 evidence production. Its content subject
+  binds runner/scenario/fixture/install/provider-schema inputs; its sidecar binds
+  the final JSON and Markdown bytes. Three immutable profile bases feed 27
+  isolated writable overlays, preserving the 3x9 matrix with three setup passes.
+- At 10x scale the first failure would be evidence-production latency, not the
+  verifier. Keeping production explicit and verification bounded prevents a
+  closeout gate from becoming an unbounded job runner.
 
 ## 2026-06-12 Architecture Queue Closeout
 

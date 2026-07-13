@@ -1,10 +1,10 @@
 #!/usr/bin/env bun
 import {
-  cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync,
+  constants, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync,
   statSync, writeFileSync,
 } from 'fs';
 import { tmpdir } from 'os';
-import { dirname, join, relative, resolve } from 'path';
+import { basename, dirname, join, relative, resolve } from 'path';
 import { spawnSync } from 'child_process';
 import { createHash, randomUUID } from 'crypto';
 
@@ -15,6 +15,24 @@ export const BENCHMARK_PROFILES = ['no-harness', 'adaptive-lite', 'strict-harnes
 export type BenchmarkProfile = (typeof BENCHMARK_PROFILES)[number];
 export const BENCHMARK_PROVIDERS = ['codex', 'claude'] as const;
 export type BenchmarkProvider = (typeof BENCHMARK_PROVIDERS)[number];
+
+const PROVIDER_INVOCATION_SCHEMA = {
+  codex: {
+    common: ['exec', '--json', '--ephemeral', '--sandbox', 'workspace-write'],
+    no_harness: ['--ignore-user-config', '--ignore-rules'],
+    harness: ['--dangerously-bypass-hook-trust'],
+  },
+  claude: {
+    common: [
+      '-p', '--output-format', 'stream-json', '--verbose', '--include-hook-events',
+      '--permission-mode', 'bypassPermissions', '--no-session-persistence', '--disable-slash-commands',
+    ],
+    no_harness: ['--safe-mode'],
+    harness: ['--setting-sources', 'project'],
+  },
+} as const;
+
+const INSTALL_PROFILE_INPUTS = ['package.json', 'src/cli', 'assets'] as const;
 
 export interface HarnessScenario {
   id: string;
@@ -36,7 +54,9 @@ export interface BenchmarkRunRecord {
   run_id: string;
   profile: BenchmarkProfile;
   scenario_id: string;
+  profile_base_id: string;
   workspace: string;
+  home: string;
   command: string[];
   status: 'dry-run' | 'passed' | 'failed';
   provider_exit_code: number | null;
@@ -73,20 +93,44 @@ export interface BenchmarkRunRecord {
 }
 
 export interface HarnessBenchmarkReport {
-  protocol: 'repo-harness-profile-benchmark/report/v1';
+  protocol: 'repo-harness-profile-benchmark/report/v2';
   generated_at: string;
   run_id: string;
   authoritative: boolean;
   provider: BenchmarkProvider;
   manifest: string;
   source_commit: string;
+  benchmark_subject_sha256: string;
   runner_sha256: string;
-  manifest_sha256: string;
-  fixture_sha256: string;
+  scenario_manifest_sha256: string;
+  fixture_set_sha256: string;
+  install_profile_inputs_sha256: string;
+  provider_invocation_schema_sha256: string;
+  report_byte_binding: string;
   provider_version: string;
   profiles: BenchmarkProfile[];
   scenario_count: number;
   records: BenchmarkRunRecord[];
+  provenance: {
+    producer: 'repo-harness-profile-benchmark';
+    profile_base_count: number;
+    arm_count: number;
+    profile_bases: Array<{
+      id: string;
+      profile: BenchmarkProfile;
+      workspace_sha256: string | null;
+      home_sha256: string | null;
+    }>;
+  };
+}
+
+export interface HarnessBenchmarkReportByteBinding {
+  protocol: 'repo-harness-profile-benchmark/report-bytes/v1';
+  benchmark_subject_sha256: string;
+  files: {
+    json: { path: string; bytes: number; sha256: string };
+    markdown: { path: string; bytes: number; sha256: string };
+  };
 }
 
 interface CliOptions {
@@ -182,6 +226,37 @@ function hashTree(root: string): string {
   return sha256(entries.join('\0'));
 }
 
+function hashPathSet(root: string, paths: readonly string[]): string {
+  const entries = paths.map((path) => {
+    const absolute = join(root, path);
+    if (!existsSync(absolute)) throw new Error(`benchmark subject input missing: ${path}`);
+    return `${path}\0${statSync(absolute).isDirectory() ? hashTree(absolute) : hashFile(absolute)}`;
+  });
+  return sha256(entries.join('\0'));
+}
+
+export function benchmarkSubject(root: string, manifestPath: string, seed: string) {
+  const runnerSha256 = hashFile(resolve(import.meta.dir, 'run-harness-profile-benchmark.ts'));
+  const scenarioManifestSha256 = hashFile(manifestPath);
+  const fixtureSetSha256 = hashTree(seed);
+  const installProfileInputsSha256 = hashPathSet(root, INSTALL_PROFILE_INPUTS);
+  const providerInvocationSchemaSha256 = sha256(JSON.stringify(PROVIDER_INVOCATION_SCHEMA));
+  return {
+    benchmark_subject_sha256: sha256(JSON.stringify({
+      runner_sha256: runnerSha256,
+      scenario_manifest_sha256: scenarioManifestSha256,
+      fixture_set_sha256: fixtureSetSha256,
+      install_profile_inputs_sha256: installProfileInputsSha256,
+      provider_invocation_schema_sha256: providerInvocationSchemaSha256,
+    })),
+    runner_sha256: runnerSha256,
+    scenario_manifest_sha256: scenarioManifestSha256,
+    fixture_set_sha256: fixtureSetSha256,
+    install_profile_inputs_sha256: installProfileInputsSha256,
+    provider_invocation_schema_sha256: providerInvocationSchemaSha256,
+  };
+}
+
 function workspaceEvidenceHash(workspace: string): string {
   const paths = changedFiles(workspace);
   const entries = paths.map((path) => {
@@ -215,18 +290,72 @@ export function isAuthoritativeCompletedRecord(record: BenchmarkRunRecord): bool
     && (record.profile !== 'no-harness' || record.no_harness_isolation === 'passed');
 }
 
-function prepareWorkspace(seed: string, destination: string): string {
-  const base = join(destination, 'base');
-  const workspace = join(destination, 'workspace');
-  mkdirSync(base, { recursive: true });
-  cpSync(seed, base, { recursive: true });
-  run('git', ['init', '-b', 'main'], base);
-  run('git', ['config', 'user.email', 'benchmark@example.com'], base);
-  run('git', ['config', 'user.name', 'Benchmark'], base);
-  run('git', ['add', '.'], base);
-  run('git', ['commit', '-m', 'benchmark seed'], base);
-  run('git', ['worktree', 'add', '-b', 'benchmark', workspace], base);
-  return realpathSync(workspace);
+export function isCompleteBenchmarkMatrix(
+  records: readonly BenchmarkRunRecord[],
+  scenarios: readonly HarnessScenario[],
+): boolean {
+  if (scenarios.length !== 9 || records.length !== BENCHMARK_PROFILES.length * scenarios.length) return false;
+  const expected = new Set(BENCHMARK_PROFILES.flatMap((profile) => (
+    scenarios.map((scenario) => `${profile}\0${scenario.id}`)
+  )));
+  for (const record of records) {
+    if (!expected.delete(`${record.profile}\0${record.scenario_id}`)) return false;
+  }
+  return expected.size === 0;
+}
+
+interface PreparedProfileBase {
+  id: string;
+  profile: BenchmarkProfile;
+  workspace: string;
+  home: string;
+  workspaceSha256: string;
+  homeSha256: string;
+}
+
+export interface BenchmarkRunLayout {
+  profile: BenchmarkProfile;
+  scenario_id: string;
+  profile_base_id: string;
+  workspace: string;
+  home: string;
+}
+
+export function benchmarkRunLayout(
+  root: string,
+  profiles: readonly BenchmarkProfile[],
+  scenarios: readonly HarnessScenario[],
+  reportRunId: string,
+): BenchmarkRunLayout[] {
+  return profiles.flatMap((profile) => scenarios.map((scenario) => ({
+    profile,
+    scenario_id: scenario.id,
+    profile_base_id: `${reportRunId}:${profile}:base`,
+    workspace: join(root, profile, scenario.id, 'workspace'),
+    home: join(root, profile, scenario.id, 'home'),
+  })));
+}
+
+export function prepareBenchmarkProfiles<T>(
+  profiles: readonly BenchmarkProfile[],
+  prepare: (profile: BenchmarkProfile) => T,
+): Map<BenchmarkProfile, T> {
+  const prepared = new Map<BenchmarkProfile, T>();
+  for (const profile of profiles) {
+    if (prepared.has(profile)) throw new Error(`duplicate benchmark profile: ${profile}`);
+    prepared.set(profile, prepare(profile));
+  }
+  return prepared;
+}
+
+function initializeBenchmarkWorkspace(seed: string, workspace: string): void {
+  mkdirSync(dirname(workspace), { recursive: true });
+  cpSync(seed, workspace, { recursive: true });
+  run('git', ['init', '-b', 'main'], workspace);
+  run('git', ['config', 'user.email', 'benchmark@example.com'], workspace);
+  run('git', ['config', 'user.name', 'Benchmark'], workspace);
+  run('git', ['add', '.'], workspace);
+  run('git', ['commit', '-m', 'benchmark seed'], workspace);
 }
 
 function writeStrictArtifacts(workspace: string, scenario: HarnessScenario): void {
@@ -277,21 +406,13 @@ export function isolatedHarnessEnvironment(hostRoot: string): NodeJS.ProcessEnv 
   };
 }
 
-function projectHarness(
+function projectHarnessBase(
   profile: BenchmarkProfile,
   provider: BenchmarkProvider,
   workspace: string,
   hostRoot: string,
-  scenario: HarnessScenario,
 ): void {
-  if (profile === 'no-harness') {
-    if (scenario.requires_resume_projection) {
-      writeResumeProjection(workspace);
-      run('git', ['add', '.'], workspace);
-      run('git', ['commit', '-m', 'benchmark recovery input'], workspace);
-    }
-    return;
-  }
+  if (profile === 'no-harness') return;
   const env = isolatedHarnessEnvironment(hostRoot);
   run(process.execPath, [join(ROOT, 'src/cli/index.ts'), 'adopt', '--repo', workspace, '--no-codegraph', '--mode', 'standard'], ROOT, env);
   const installProfile = profile === 'adaptive-lite' ? 'standard' : 'strict';
@@ -299,21 +420,57 @@ function projectHarness(
     join(ROOT, 'src/cli/index.ts'), 'install', '--profile', installProfile, '--target', provider,
     '--no-external-skills', '--no-codegraph', '--json',
   ], ROOT, env);
-  if (profile === 'strict-harness') writeStrictArtifacts(workspace, scenario);
-  if (scenario.requires_resume_projection) writeResumeProjection(workspace);
   run('git', ['add', '.'], workspace, env);
-  run('git', ['commit', '--allow-empty', '-m', `benchmark ${profile} projection`], workspace, env);
+  run('git', ['commit', '--allow-empty', '-m', `benchmark ${profile} base`], workspace, env);
 }
 
-export function rebaselineBenchmarkMain(workspace: string, env: NodeJS.ProcessEnv = process.env): void {
-  const base = join(dirname(workspace), 'base');
-  run('git', ['reset', '--hard', 'benchmark'], base, env);
+function prepareProfileBase(
+  profile: BenchmarkProfile,
+  provider: BenchmarkProvider,
+  seed: string,
+  root: string,
+  reportRunId: string,
+): PreparedProfileBase {
+  const baseRoot = join(root, profile, 'profile-base');
+  const workspace = join(baseRoot, 'workspace');
+  const home = join(baseRoot, 'home');
+  initializeBenchmarkWorkspace(seed, workspace);
+  mkdirSync(home, { recursive: true });
+  if (provider === 'codex') copyCodexAuthOnly(home);
+  projectHarnessBase(profile, provider, workspace, home);
+  return {
+    id: `${reportRunId}:${profile}:base`,
+    profile,
+    workspace: realpathSync(workspace),
+    home: realpathSync(home),
+    workspaceSha256: hashTree(workspace),
+    homeSha256: hashTree(home),
+  };
+}
+
+function assertProfileBaseImmutable(base: PreparedProfileBase): void {
+  if (hashTree(base.workspace) !== base.workspaceSha256 || hashTree(base.home) !== base.homeSha256) {
+    throw new Error(`benchmark profile base mutated: ${base.profile}`);
+  }
+}
+
+function createRunOverlay(base: PreparedProfileBase, layout: BenchmarkRunLayout, scenario: HarnessScenario): void {
+  mkdirSync(dirname(layout.workspace), { recursive: true });
+  run('git', ['clone', '--local', '--quiet', base.workspace, layout.workspace], dirname(layout.workspace));
+  run('git', ['config', 'user.email', 'benchmark@example.com'], layout.workspace);
+  run('git', ['config', 'user.name', 'Benchmark'], layout.workspace);
+  cpSync(base.home, layout.home, { recursive: true, mode: constants.COPYFILE_FICLONE });
+  if (base.profile === 'strict-harness') writeStrictArtifacts(layout.workspace, scenario);
+  if (scenario.requires_resume_projection) writeResumeProjection(layout.workspace);
+  run('git', ['add', '.'], layout.workspace);
+  run('git', ['commit', '--allow-empty', '-m', `benchmark ${base.profile} ${scenario.id} input`], layout.workspace);
+  assertProfileBaseImmutable(base);
 }
 
 export function codexBenchmarkCommand(profile: BenchmarkProfile, workspace: string, prompt: string): string[] {
-  const args = ['exec', '--json', '--ephemeral', '--sandbox', 'workspace-write', '--cd', workspace];
-  if (profile === 'no-harness') args.push('--ignore-user-config', '--ignore-rules');
-  else args.push('--dangerously-bypass-hook-trust');
+  const args: string[] = [...PROVIDER_INVOCATION_SCHEMA.codex.common, '--cd', workspace];
+  if (profile === 'no-harness') args.push(...PROVIDER_INVOCATION_SCHEMA.codex.no_harness);
+  else args.push(...PROVIDER_INVOCATION_SCHEMA.codex.harness);
   args.push(prompt);
   return ['codex', ...args];
 }
@@ -323,12 +480,9 @@ export function claudeBenchmarkCommand(
   hostRoot: string,
   prompt: string,
 ): string[] {
-  const args = [
-    '-p', '--output-format', 'stream-json', '--verbose', '--include-hook-events',
-    '--permission-mode', 'bypassPermissions', '--no-session-persistence', '--disable-slash-commands',
-  ];
-  if (profile === 'no-harness') args.push('--safe-mode');
-  else args.push('--setting-sources', 'project', '--settings', join(hostRoot, '.claude/settings.json'));
+  const args: string[] = [...PROVIDER_INVOCATION_SCHEMA.claude.common];
+  if (profile === 'no-harness') args.push(...PROVIDER_INVOCATION_SCHEMA.claude.no_harness);
+  else args.push(...PROVIDER_INVOCATION_SCHEMA.claude.harness, '--settings', join(hostRoot, '.claude/settings.json'));
   args.push(prompt);
   return ['claude', ...args];
 }
@@ -457,18 +611,18 @@ function claudeProviderUsage(jsonl: string): Pick<BenchmarkRunRecord, 'usage_aut
   };
 }
 
-async function executeRun(provider: BenchmarkProvider, profile: BenchmarkProfile, scenario: HarnessScenario, seed: string, root: string, reportRunId: string): Promise<BenchmarkRunRecord> {
-  const runRoot = join(root, profile, scenario.id);
-  const workspace = prepareWorkspace(seed, runRoot);
-  const hostRoot = join(runRoot, 'host');
-  if (provider === 'codex') copyCodexAuthOnly(hostRoot);
-  projectHarness(profile, provider, workspace, hostRoot, scenario);
-  rebaselineBenchmarkMain(workspace, {
-    ...process.env,
-    BUN_INSTALL: join(hostRoot, '.bun'),
-    PATH: `${join(hostRoot, '.bun/bin')}:${process.env.PATH ?? ''}`,
-  });
-  const command = benchmarkCommand(provider, profile, workspace, hostRoot, scenario.prompt);
+async function executeRun(
+  provider: BenchmarkProvider,
+  base: PreparedProfileBase,
+  scenario: HarnessScenario,
+  layout: BenchmarkRunLayout,
+  reportRunId: string,
+): Promise<BenchmarkRunRecord> {
+  const runRoot = dirname(layout.workspace);
+  createRunOverlay(base, layout, scenario);
+  const workspace = realpathSync(layout.workspace);
+  const hostRoot = realpathSync(layout.home);
+  const command = benchmarkCommand(provider, base.profile, workspace, hostRoot, scenario.prompt);
   const started = Date.now();
   let firstEdit: number | null = null;
   const processHandle = Bun.spawn(command, {
@@ -480,7 +634,7 @@ async function executeRun(provider: BenchmarkProvider, profile: BenchmarkProfile
       // benchmark host by isolatedHarnessEnvironment.
       HOME: provider === 'codex' ? hostRoot : process.env.HOME,
       CODEX_HOME: provider === 'codex' ? join(hostRoot, '.codex') : process.env.CODEX_HOME,
-      HOOK_SESSION_ID: `${profile}-${scenario.id}`,
+      HOOK_SESSION_ID: `${base.profile}-${scenario.id}`,
     },
     stdout: 'pipe', stderr: 'pipe', stdin: 'ignore',
   });
@@ -523,8 +677,9 @@ async function executeRun(provider: BenchmarkProvider, profile: BenchmarkProfile
   const graderPassed = grader.status === 0 && expectedPathsPassed;
   const workspaceHash = workspaceEvidenceHash(workspace);
   return {
-    run_id: `${reportRunId}:${profile}:${scenario.id}`,
-    profile, scenario_id: scenario.id, workspace, command, status: exitCode === 0 && graderPassed ? 'passed' : 'failed',
+    run_id: `${reportRunId}:${base.profile}:${scenario.id}`,
+    profile: base.profile, scenario_id: scenario.id, profile_base_id: base.id, workspace, home: hostRoot,
+    command, status: exitCode === 0 && graderPassed ? 'passed' : 'failed',
     provider_exit_code: exitCode,
     ...(provider === 'claude' ? claudeProviderUsage(stdout) : providerUsage(stdout)),
     time_to_first_edit_ms: firstEdit,
@@ -534,9 +689,9 @@ async function executeRun(provider: BenchmarkProvider, profile: BenchmarkProfile
     hook_output_bytes: knownOutputBytes, session_start_context_tokens: contextTokens,
     guard_block_count: hooks.filter((entry) => entry.blocked).length,
     repeated_guard_fingerprint_count: repeated, artifact_files_created: artifactFiles.length, artifact_files: artifactFiles,
-    profile_projection_artifact_files: profile === 'strict-harness' ? 2 : 0,
+    profile_projection_artifact_files: base.profile === 'strict-harness' ? 2 : 0,
     grader_acceptance: graderPassed ? 'passed' : 'failed',
-    no_harness_isolation: noHarnessIsolation(provider, profile, stdout, hooks.length),
+    no_harness_isolation: noHarnessIsolation(provider, base.profile, stdout, hooks.length),
     evidence_hashes: {
       provider_stream: sha256(stdout), provider_stderr: sha256(stderr),
       grader_stdout: sha256(grader.stdout ?? ''), grader_stderr: sha256(grader.stderr ?? ''),
@@ -545,11 +700,12 @@ async function executeRun(provider: BenchmarkProvider, profile: BenchmarkProfile
   };
 }
 
-function dryRunRecord(provider: BenchmarkProvider, profile: BenchmarkProfile, scenario: HarnessScenario, seed: string, root: string, reportRunId: string): BenchmarkRunRecord {
-  const workspace = join(root, profile, scenario.id, 'workspace');
+function dryRunRecord(provider: BenchmarkProvider, scenario: HarnessScenario, layout: BenchmarkRunLayout, reportRunId: string): BenchmarkRunRecord {
+  const { profile, workspace, home } = layout;
   return {
     run_id: `${reportRunId}:${profile}:${scenario.id}`,
-    profile, scenario_id: scenario.id, workspace, command: benchmarkCommand(provider, profile, workspace, join(root, profile, scenario.id, 'host'), scenario.prompt), status: 'dry-run',
+    profile, scenario_id: scenario.id, profile_base_id: layout.profile_base_id, workspace, home,
+    command: benchmarkCommand(provider, profile, workspace, home, scenario.prompt), status: 'dry-run',
     provider_exit_code: null, usage_authority: 'unavailable', provider_unavailable_reason: 'dry-run', input_tokens: null, cached_input_tokens: null, output_tokens: null,
     model_call_count: null, subagent_call_count: null, time_to_first_edit_ms: null, total_duration_ms: null,
     hook_invocation_count: 0, hook_total_duration_ms: 0, hook_p50_ms: null, hook_p95_ms: null, hook_p99_ms: null,
@@ -560,10 +716,64 @@ function dryRunRecord(provider: BenchmarkProvider, profile: BenchmarkProfile, sc
   };
 }
 
+function markdownReportPath(reportPath: string): string {
+  return reportPath.endsWith('.json') ? reportPath.replace(/\.json$/, '.md') : `${reportPath}.md`;
+}
+
+export function reportByteBindingPath(reportPath: string): string {
+  return reportPath.endsWith('.json') ? reportPath.replace(/\.json$/, '.sha256.json') : `${reportPath}.sha256.json`;
+}
+
+function writeReportByteBinding(report: HarnessBenchmarkReport, reportPath: string): HarnessBenchmarkReportByteBinding {
+  const markdownPath = markdownReportPath(reportPath);
+  const jsonBytes = readFileSync(reportPath);
+  const markdownBytes = readFileSync(markdownPath);
+  const binding: HarnessBenchmarkReportByteBinding = {
+    protocol: 'repo-harness-profile-benchmark/report-bytes/v1',
+    benchmark_subject_sha256: report.benchmark_subject_sha256,
+    files: {
+      json: { path: basename(reportPath), bytes: jsonBytes.byteLength, sha256: sha256(jsonBytes) },
+      markdown: { path: basename(markdownPath), bytes: markdownBytes.byteLength, sha256: sha256(markdownBytes) },
+    },
+  };
+  writeFileSync(reportByteBindingPath(reportPath), `${JSON.stringify(binding, null, 2)}\n`);
+  return binding;
+}
+
+export function validateHarnessBenchmarkReportByteBinding(
+  reportPath: string,
+  expectedSubject?: string,
+): HarnessBenchmarkReportByteBinding {
+  const bindingPath = reportByteBindingPath(reportPath);
+  if (!existsSync(bindingPath)) throw new Error(`benchmark report byte binding missing: ${bindingPath}`);
+  const binding = JSON.parse(readFileSync(bindingPath, 'utf-8')) as HarnessBenchmarkReportByteBinding;
+  if (binding.protocol !== 'repo-harness-profile-benchmark/report-bytes/v1') {
+    throw new Error('invalid benchmark report byte binding protocol');
+  }
+  if (!binding.benchmark_subject_sha256 || (expectedSubject && binding.benchmark_subject_sha256 !== expectedSubject)) {
+    throw new Error('benchmark report byte binding subject mismatch');
+  }
+  const markdownPath = markdownReportPath(reportPath);
+  const expected = [
+    ['json', reportPath, binding.files?.json],
+    ['markdown', markdownPath, binding.files?.markdown],
+  ] as const;
+  for (const [label, path, entry] of expected) {
+    if (!entry || entry.path !== basename(path) || !Number.isInteger(entry.bytes) || entry.bytes < 0 || !entry.sha256) {
+      throw new Error(`invalid benchmark ${label} byte binding`);
+    }
+    const bytes = readFileSync(path);
+    if (entry.bytes !== bytes.byteLength || entry.sha256 !== sha256(bytes)) {
+      throw new Error(`benchmark ${label} report bytes changed`);
+    }
+  }
+  return binding;
+}
+
 function writeHarnessBenchmarkReport(report: HarnessBenchmarkReport, reportPath: string): void {
   mkdirSync(dirname(reportPath), { recursive: true });
   writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
-  const markdownPath = reportPath.endsWith('.json') ? reportPath.replace(/\.json$/, '.md') : `${reportPath}.md`;
+  const markdownPath = markdownReportPath(reportPath);
   const rows = BENCHMARK_PROFILES.map((profile) => {
     const profileRecords = report.records.filter((record) => record.profile === profile);
     const passed = profileRecords.filter((record) => record.status === 'passed').length;
@@ -583,9 +793,11 @@ function writeHarnessBenchmarkReport(report: HarnessBenchmarkReport, reportPath:
     `> **Authority**: ${report.authoritative ? `live ${report.provider} provider execution` : 'incomplete/dry-run; non-authoritative'}`,
     `> **Generated**: ${report.generated_at}`,
     `> **Run ID**: ${report.run_id}`,
+    `> **Benchmark subject**: ${report.benchmark_subject_sha256}`,
     `> **Source commit**: ${report.source_commit}`,
     `> **Provider version**: ${report.provider_version}`,
-    `> **Hashes**: runner=${report.runner_sha256}; manifest=${report.manifest_sha256}; fixture=${report.fixture_sha256}`, '',
+    `> **Hashes**: runner=${report.runner_sha256}; scenarios=${report.scenario_manifest_sha256}; fixtures=${report.fixture_set_sha256}; install=${report.install_profile_inputs_sha256}; provider-schema=${report.provider_invocation_schema_sha256}`,
+    `> **Profile bases / arms**: ${report.provenance.profile_base_count} / ${report.provenance.arm_count}`, '',
     '| Profile | Passed | Known tokens | Avg duration ms | Task artifacts | Projection artifacts | Recovery |',
     '|---|---:|---:|---:|---:|---:|---|', ...rows, '',
     'Projection artifacts are the pre-run profile envelope (for example Strict Plan/Contract inputs); task artifacts are files created by the provider during the measured task. Provider-owned fields remain `null` when the structured provider stream does not supply them. See the JSON report for per-run hook, guard, evidence-hash, artifact, isolation, and grader evidence.', '',
@@ -593,18 +805,61 @@ function writeHarnessBenchmarkReport(report: HarnessBenchmarkReport, reportPath:
     'Per-run paths backing each `artifact_files_created` count, for auditing whether they land under `plans/`, `tasks/`, or `.ai/harness/` (note: `.ai/harness/runs/` and `.ai/harness/checks/*.latest.*` are gitignored and never appear here, since this list is sourced from `git status`).', '',
     artifactLines.length > 0 ? artifactLines.join('\n') : '(none)', '',
   ].join('\n'));
+  writeReportByteBinding(report, reportPath);
+}
+
+export function validateHarnessBenchmarkReport(
+  reportPath: string,
+  requireAuthoritative = false,
+): HarnessBenchmarkReport {
+  const report = JSON.parse(readFileSync(reportPath, 'utf-8')) as HarnessBenchmarkReport;
+  if (report.protocol !== 'repo-harness-profile-benchmark/report/v2') throw new Error('invalid benchmark report protocol');
+  if (!BENCHMARK_PROVIDERS.includes(report.provider) || JSON.stringify(report.profiles) !== JSON.stringify(BENCHMARK_PROFILES)) {
+    throw new Error('invalid benchmark report provider or profiles');
+  }
+  if (!/^[a-f0-9]{40}$/.test(report.source_commit)) throw new Error('invalid benchmark source commit metadata');
+  if (report.report_byte_binding !== basename(reportByteBindingPath(reportPath))) {
+    throw new Error('benchmark report byte binding path mismatch');
+  }
+  validateHarnessBenchmarkReportByteBinding(reportPath, report.benchmark_subject_sha256);
+  const manifestPath = resolve(ROOT, report.manifest);
+  if (relative(ROOT, manifestPath).startsWith('..')) throw new Error('benchmark manifest path escapes repository');
+  const manifest = loadHarnessScenarioManifest(manifestPath);
+  const currentSubject = benchmarkSubject(ROOT, manifestPath, resolve(ROOT, manifest.seed));
+  for (const [field, value] of Object.entries(currentSubject)) {
+    if (report[field as keyof HarnessBenchmarkReport] !== value) throw new Error(`benchmark subject changed at ${field}`);
+  }
+  if (report.scenario_count !== manifest.scenarios.length || !isCompleteBenchmarkMatrix(report.records, manifest.scenarios)) {
+    throw new Error('benchmark report is not the complete unique 3x9 matrix');
+  }
+  if (report.provenance?.producer !== 'repo-harness-profile-benchmark'
+    || report.provenance.profile_base_count !== 3
+    || report.provenance.arm_count !== 27
+    || report.provenance.profile_bases.length !== 3) {
+    throw new Error('benchmark provenance counts are invalid');
+  }
+  const bases = new Map(report.provenance.profile_bases.map((base) => [base.profile, base]));
+  if (bases.size !== 3 || BENCHMARK_PROFILES.some((profile) => !bases.has(profile))) {
+    throw new Error('benchmark profile base provenance is invalid');
+  }
+  if (new Set(report.records.map((record) => record.workspace)).size !== 27
+    || new Set(report.records.map((record) => record.home)).size !== 27
+    || report.records.some((record) => bases.get(record.profile)?.id !== record.profile_base_id)) {
+    throw new Error('benchmark arm isolation provenance is invalid');
+  }
+  const provenanceComplete = report.provenance.profile_bases.every((base) => (
+    typeof base.workspace_sha256 === 'string' && typeof base.home_sha256 === 'string'
+  ));
+  const authoritative = provenanceComplete && report.records.every(isAuthoritativeCompletedRecord);
+  if (report.authoritative !== authoritative) throw new Error('benchmark authoritative flag does not match evidence');
+  if (requireAuthoritative && !authoritative) throw new Error('benchmark report is not authoritative');
+  return report;
 }
 
 export function regradeHarnessBenchmarkReport(reportPath: string): HarnessBenchmarkReport {
-  const report = JSON.parse(readFileSync(reportPath, 'utf-8')) as HarnessBenchmarkReport;
-  if (report.protocol !== 'repo-harness-profile-benchmark/report/v1') throw new Error('invalid benchmark report protocol');
-  if (hashFile(resolve(import.meta.dir, 'run-harness-profile-benchmark.ts')) !== report.runner_sha256) {
-    throw new Error('benchmark runner hash changed; provider evidence cannot be regraded');
-  }
+  const report = validateHarnessBenchmarkReport(reportPath);
   const manifestPath = resolve(ROOT, report.manifest);
-  if (hashFile(manifestPath) !== report.manifest_sha256) throw new Error('benchmark manifest hash changed; provider evidence cannot be regraded');
   const manifest = loadHarnessScenarioManifest(manifestPath);
-  if (hashTree(resolve(ROOT, manifest.seed)) !== report.fixture_sha256) throw new Error('benchmark fixture hash changed; provider evidence cannot be regraded');
   const scenarios = new Map(manifest.scenarios.map((scenario) => [scenario.id, scenario]));
   for (const record of report.records) {
     const scenario = scenarios.get(record.scenario_id);
@@ -624,7 +879,11 @@ export function regradeHarnessBenchmarkReport(reportPath: string): HarnessBenchm
     record.evidence_hashes.grader_stderr = sha256(grader.stderr ?? '');
   }
   report.generated_at = new Date().toISOString();
-  report.authoritative = report.records.every(isAuthoritativeCompletedRecord);
+  report.authoritative = isCompleteBenchmarkMatrix(report.records, manifest.scenarios)
+    && report.provenance.profile_base_count === 3
+    && report.provenance.arm_count === 27
+    && report.provenance.profile_bases.every((base) => base.workspace_sha256 && base.home_sha256)
+    && report.records.every(isAuthoritativeCompletedRecord);
   writeHarnessBenchmarkReport(report, reportPath);
   return report;
 }
@@ -643,24 +902,55 @@ export async function runHarnessProfileBenchmark(options: CliOptions) {
   const reportRunId = randomUUID();
   const records: BenchmarkRunRecord[] = [];
   const profiles = (options.profile?.length ?? 0) > 0 ? options.profile! : [...BENCHMARK_PROFILES];
-  for (const profile of profiles) {
-    for (const scenario of selected) {
-      records.push(options.execute
-        ? await executeRun(provider, profile, scenario, seed, runRoot, reportRunId)
-        : dryRunRecord(provider, profile, scenario, seed, runRoot, reportRunId));
+  if (options.requireAuthoritative && (
+    JSON.stringify(profiles) !== JSON.stringify(BENCHMARK_PROFILES) || selected.length !== 9
+  )) {
+    throw new Error('authoritative benchmark requires the complete 3x9 matrix');
+  }
+  const layout = benchmarkRunLayout(runRoot, profiles, selected, reportRunId);
+  const preparedBases = options.execute
+    ? prepareBenchmarkProfiles(profiles, (profile) => prepareProfileBase(profile, provider, seed, runRoot, reportRunId))
+    : new Map<BenchmarkProfile, PreparedProfileBase>();
+  const scenarios = new Map(selected.map((scenario) => [scenario.id, scenario]));
+  for (const arm of layout) {
+    const scenario = scenarios.get(arm.scenario_id);
+    if (!scenario) throw new Error(`benchmark scenario missing from layout: ${arm.scenario_id}`);
+    if (options.execute) {
+      const base = preparedBases.get(arm.profile);
+      if (!base) throw new Error(`benchmark profile base missing: ${arm.profile}`);
+      records.push(await executeRun(provider, base, scenario, arm, reportRunId));
+      assertProfileBaseImmutable(base);
+    } else {
+      records.push(dryRunRecord(provider, scenario, arm, reportRunId));
     }
   }
-  const authoritative = options.execute && records.every(isAuthoritativeCompletedRecord);
+  const completeMatrix = JSON.stringify(profiles) === JSON.stringify(BENCHMARK_PROFILES)
+    && isCompleteBenchmarkMatrix(records, selected);
+  const authoritative = options.execute && completeMatrix && records.every(isAuthoritativeCompletedRecord);
+  const subject = benchmarkSubject(ROOT, options.manifest, seed);
   const report: HarnessBenchmarkReport = {
-    protocol: 'repo-harness-profile-benchmark/report/v1', generated_at: new Date().toISOString(),
+    protocol: 'repo-harness-profile-benchmark/report/v2', generated_at: new Date().toISOString(),
     run_id: reportRunId, authoritative, provider, manifest: relative(ROOT, options.manifest).replaceAll('\\', '/'),
     source_commit: run('git', ['rev-parse', 'HEAD'], ROOT),
-    runner_sha256: hashFile(resolve(import.meta.dir, 'run-harness-profile-benchmark.ts')),
-    manifest_sha256: hashFile(options.manifest), fixture_sha256: hashTree(seed),
+    ...subject,
+    report_byte_binding: basename(reportByteBindingPath(options.report)),
     provider_version: options.execute ? run(provider, ['--version'], ROOT) : 'unavailable',
     profiles,
     scenario_count: selected.length,
     records,
+    provenance: {
+      producer: 'repo-harness-profile-benchmark',
+      profile_base_count: profiles.length,
+      arm_count: layout.length,
+      profile_bases: profiles.map((profile) => {
+        const base = preparedBases.get(profile);
+        return {
+          id: `${reportRunId}:${profile}:base`, profile,
+          workspace_sha256: base?.workspaceSha256 ?? null,
+          home_sha256: base?.homeSha256 ?? null,
+        };
+      }),
+    },
   };
   writeHarnessBenchmarkReport(report, options.report);
   if (options.requireAuthoritative) {
@@ -668,6 +958,7 @@ export async function runHarnessProfileBenchmark(options: CliOptions) {
     if (incomplete.length > 0) {
       throw new Error(`authoritative benchmark incomplete: ${incomplete.length}/${records.length} run(s) lacked successful structured provider execution; report=${options.report}`);
     }
+    validateHarnessBenchmarkReport(options.report, true);
   }
   return report;
 }

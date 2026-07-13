@@ -1,17 +1,23 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, rmSync } from 'fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import {
   BENCHMARK_PROFILES,
+  benchmarkRunLayout,
   claudeBenchmarkCommand,
   codexBenchmarkCommand,
   isolatedHarnessEnvironment,
   isAuthoritativeCompletedRecord,
+  isCompleteBenchmarkMatrix,
   loadHarnessScenarioManifest,
   noHarnessIsolation,
   parsePorcelainPaths,
+  prepareBenchmarkProfiles,
+  reportByteBindingPath,
   runHarnessProfileBenchmark,
+  validateHarnessBenchmarkReport,
+  validateHarnessBenchmarkReportByteBinding,
 } from '../scripts/run-harness-profile-benchmark';
 
 const ROOT = join(import.meta.dir, '..');
@@ -107,12 +113,68 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
         execute: false, scenario: [], manifest: join(ROOT, 'evals/harness/scenarios.json'), report: reportPath,
       });
       expect(report.records).toHaveLength(27);
+      expect(report.protocol).toBe('repo-harness-profile-benchmark/report/v2');
       expect(report.authoritative).toBe(false);
       expect(report.provider_version).toBe('unavailable');
       expect(report.records.every((record) => record.input_tokens === null && record.grader_acceptance === 'unavailable')).toBe(true);
       expect(JSON.parse(readFileSync(reportPath, 'utf-8')).records).toHaveLength(27);
       expect(readFileSync(reportPath.replace(/\.json$/, '.md'), 'utf-8')).toContain('non-authoritative');
     } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  test('binds the report to benchmark subject components, provenance, and exact report bytes', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'harness-matrix-test-'));
+    try {
+      const reportPath = join(dir, 'report.json');
+      const report = await runHarnessProfileBenchmark({
+        execute: false, scenario: [], manifest: join(ROOT, 'evals/harness/scenarios.json'), report: reportPath,
+      });
+      const hashes = [
+        report.benchmark_subject_sha256,
+        report.runner_sha256,
+        report.scenario_manifest_sha256,
+        report.fixture_set_sha256,
+        report.install_profile_inputs_sha256,
+        report.provider_invocation_schema_sha256,
+      ];
+      expect(hashes.every((hash) => /^sha256:[a-f0-9]{64}$/.test(hash))).toBe(true);
+      expect(report.source_commit).toMatch(/^[a-f0-9]{40}$/);
+      expect(report.provenance.producer).toBe('repo-harness-profile-benchmark');
+      expect(report.provenance.profile_base_count).toBe(3);
+      expect(report.provenance.arm_count).toBe(27);
+      expect(report.provenance.profile_bases.map((base) => base.profile)).toEqual([...BENCHMARK_PROFILES]);
+      expect(report.provenance.profile_bases.every((base) => base.workspace_sha256 === null && base.home_sha256 === null)).toBe(true);
+      expect(isCompleteBenchmarkMatrix(report.records, loadHarnessScenarioManifest(join(ROOT, 'evals/harness/scenarios.json')).scenarios)).toBe(true);
+      expect(isCompleteBenchmarkMatrix([...report.records.slice(0, 26), report.records[0]], loadHarnessScenarioManifest(join(ROOT, 'evals/harness/scenarios.json')).scenarios)).toBe(false);
+      expect(report.report_byte_binding).toBe('report.sha256.json');
+      expect(validateHarnessBenchmarkReport(reportPath).benchmark_subject_sha256).toBe(report.benchmark_subject_sha256);
+      expect(() => validateHarnessBenchmarkReport(reportPath, true)).toThrow('benchmark report is not authoritative');
+      const binding = validateHarnessBenchmarkReportByteBinding(reportPath, report.benchmark_subject_sha256);
+      expect(binding.files.json.path).toBe('report.json');
+      expect(binding.files.markdown.path).toBe('report.md');
+      expect(readFileSync(reportByteBindingPath(reportPath), 'utf-8')).toContain(report.benchmark_subject_sha256);
+
+      writeFileSync(reportPath.replace(/\.json$/, '.md'), '# replaced\n');
+      expect(() => validateHarnessBenchmarkReportByteBinding(reportPath, report.benchmark_subject_sha256))
+        .toThrow('benchmark markdown report bytes changed');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  test('prepares one immutable base per profile and plans 27 isolated writable arm overlays', () => {
+    const manifest = loadHarnessScenarioManifest(join(ROOT, 'evals/harness/scenarios.json'));
+    const prepared: string[] = [];
+    const bases = prepareBenchmarkProfiles(BENCHMARK_PROFILES, (profile) => {
+      prepared.push(profile);
+      return `${profile}-base`;
+    });
+    const layout = benchmarkRunLayout('/tmp/benchmark-run', BENCHMARK_PROFILES, manifest.scenarios, 'run-1');
+    expect(prepared).toEqual([...BENCHMARK_PROFILES]);
+    expect(bases.size).toBe(3);
+    expect(layout).toHaveLength(27);
+    expect(new Set(layout.map((arm) => arm.profile_base_id)).size).toBe(3);
+    expect(new Set(layout.map((arm) => arm.workspace)).size).toBe(27);
+    expect(new Set(layout.map((arm) => arm.home)).size).toBe(27);
+    expect(layout.every((arm) => !arm.workspace.includes('/profile-base/') && !arm.home.includes('/profile-base/'))).toBe(true);
   });
 
   test('every record carries an artifact_files path list consistent with its artifact_files_created count', async () => {

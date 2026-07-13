@@ -31,27 +31,24 @@ export interface DiffFingerprint {
   readonly fingerprint: string;
 }
 
-export const IMPLEMENTATION_FINGERPRINT_SCOPE = 'branch+staged+unstaged+untracked';
+export const REVIEW_SUBJECT_SCOPE = 'normalized-final-content';
 
-export interface ImplementationDiffFingerprint {
-  readonly version: 1;
+export interface ReviewSubject {
+  readonly version: 2;
   readonly status: 'ok' | 'unknown';
-  readonly scope: typeof IMPLEMENTATION_FINGERPRINT_SCOPE;
-  readonly base_ref: string;
-  readonly base_rev: string;
+  readonly scope: typeof REVIEW_SUBJECT_SCOPE;
+  readonly target_ref: string;
+  readonly target_rev: string;
   readonly head_rev: string;
   readonly paths: readonly string[];
   readonly excluded_paths: readonly string[];
-  readonly branch_diff_hash: string;
-  readonly staged_diff_hash: string;
-  readonly unstaged_diff_hash: string;
-  readonly status_hash: string;
-  readonly untracked_hash: string;
-  readonly fingerprint: string;
+  readonly target_overlap_paths: readonly string[];
+  readonly target_overlap_count: number;
+  readonly review_subject_sha256: string;
   readonly reason?: string;
 }
 
-export interface ReviewFingerprintCliResult {
+export interface ReviewSubjectCliResult {
   readonly exitCode: number;
   readonly stdout: string;
   readonly stderr: string;
@@ -388,6 +385,7 @@ function isOperationalReviewPath(path: string): boolean {
     path.startsWith('.ai/harness/state/') ||
     path === 'evals/harness/reports/profile-comparison.json' ||
     path === 'evals/harness/reports/profile-comparison.md' ||
+    path === 'evals/harness/reports/profile-comparison.sha256.json' ||
     path === '.claude/.active-plan' ||
     path === '.claude/.session-id' ||
     path === '.claude/.trace.jsonl' ||
@@ -395,47 +393,92 @@ function isOperationalReviewPath(path: string): boolean {
   );
 }
 
-function unknownImplementationFingerprint(
-  baseRef: string,
-  baseRev: string,
+function unknownReviewSubject(
+  targetRef: string,
+  targetRev: string,
   headRev: string,
   reason: string,
-): ImplementationDiffFingerprint {
+): ReviewSubject {
   return Object.freeze({
-    version: 1 as const,
+    version: 2 as const,
     status: 'unknown' as const,
-    scope: IMPLEMENTATION_FINGERPRINT_SCOPE,
-    base_ref: baseRef,
-    base_rev: baseRev,
+    scope: REVIEW_SUBJECT_SCOPE,
+    target_ref: targetRef,
+    target_rev: targetRev,
     head_rev: headRev,
     paths: [],
     excluded_paths: [],
-    branch_diff_hash: hashUnknown('branch-diff'),
-    staged_diff_hash: hashUnknown('staged-diff'),
-    unstaged_diff_hash: hashUnknown('unstaged-diff'),
-    status_hash: hashUnknown('status'),
-    untracked_hash: hashUnknown('untracked'),
-    fingerprint: 'unknown',
+    target_overlap_paths: [],
+    target_overlap_count: 0,
+    review_subject_sha256: 'unknown',
     reason,
   });
 }
 
-export function buildImplementationDiffFingerprint(
+function normalizedFinalContent(
   repoRoot: string,
-  opts: { baseRef?: string } = {},
-): ImplementationDiffFingerprint {
-  const baseRef = opts.baseRef ?? 'HEAD';
+  paths: readonly string[],
+  ctx: FingerprintCtx,
+): Array<Record<string, unknown>> {
+  const entries: Array<Record<string, unknown>> = [];
+  for (const path of paths) {
+    const absolute = join(repoRoot, path);
+    try {
+      const stat = lstatSync(absolute);
+      if (stat.isSymbolicLink()) {
+        entries.push({
+          path,
+          type: 'symlink',
+          mode: '120000',
+          target_hex: readlinkSync(absolute, { encoding: 'buffer' }).toString('hex'),
+        });
+      } else if (stat.isFile()) {
+        entries.push({
+          path,
+          type: 'file',
+          mode: (stat.mode & 0o111) !== 0 ? '100755' : '100644',
+          sha256: createHash('sha256').update(readFileSync(absolute)).digest('hex'),
+        });
+      } else if (stat.isDirectory()) {
+        const stage = gitRun(repoRoot, ['ls-files', '--stage', '--', path]);
+        const match = stage.ok ? stage.text.match(/^160000 ([0-9a-f]{40,64}) [0-3]\t/) : null;
+        if (match) entries.push({ path, type: 'gitlink', mode: '160000', oid: match[1] });
+        else {
+          ctx.degraded = true;
+          entries.push({ path, type: 'unsupported' });
+        }
+      } else {
+        ctx.degraded = true;
+        entries.push({ path, type: 'unsupported' });
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        entries.push({ path, type: 'deleted' });
+      } else {
+        ctx.degraded = true;
+        entries.push({ path, type: 'unreadable' });
+      }
+    }
+  }
+  return entries;
+}
+
+export function buildReviewSubject(
+  repoRoot: string,
+  opts: { targetRef?: string } = {},
+): ReviewSubject {
+  const targetRef = opts.targetRef ?? 'HEAD';
   const ctx: FingerprintCtx = { degraded: false };
   const headRes = gitRun(repoRoot, ['rev-parse', '--verify', 'HEAD']);
-  const baseRes = gitRun(repoRoot, ['rev-parse', '--verify', baseRef]);
+  const targetRes = gitRun(repoRoot, ['rev-parse', '--verify', targetRef]);
   const headRev = headRes.text.trim();
-  const baseRev = baseRes.text.trim();
-  if (!headRes.ok || !baseRes.ok || !headRev || !baseRev) {
-    return unknownImplementationFingerprint(
-      baseRef,
-      baseRev || baseRef,
+  const targetRev = targetRes.text.trim();
+  if (!headRes.ok || !targetRes.ok || !headRev || !targetRev) {
+    return unknownReviewSubject(
+      targetRef,
+      targetRev || targetRef,
       headRev || 'unknown',
-      'base or HEAD could not be resolved',
+      'target or HEAD could not be resolved',
     );
   }
 
@@ -443,91 +486,60 @@ export function buildImplementationDiffFingerprint(
   if (!statusRes.ok) ctx.degraded = true;
   const statusParsed = parseStatusZ(splitNul(statusRes.buf, ctx));
 
-  const branchRes = gitRunBuffer(repoRoot, ['diff', '--name-status', '--find-renames', '-z', `${baseRef}...HEAD`]);
+  const branchRes = gitRunBuffer(repoRoot, ['diff', '--name-status', '--find-renames', '-z', `${targetRef}...HEAD`]);
   if (!branchRes.ok) ctx.degraded = true;
   const branchPaths = parseNameStatusZ(splitNul(branchRes.buf, ctx));
 
   const allPaths = uniqueSorted([...branchPaths, ...statusParsed.all]);
   const excludedPaths = allPaths.filter(isOperationalReviewPath);
   const implementationPaths = allPaths.filter((path) => !isOperationalReviewPath(path));
-  const diff = buildDiffFingerprint(
-    {
-      repoRoot,
-      baseRef,
-      paths: implementationPaths,
-      policyVersion: 1,
-      purpose: 'implementation-review-freshness',
-    },
-    ctx,
-  );
-  const branchDiffHash = implementationPaths.length > 0
-    ? hashGitPatch(
-        repoRoot,
-        [
-          'diff',
-          '--no-ext-diff',
-          '--binary',
-          '--find-renames',
-          `${baseRef}...HEAD`,
-          '--',
-          ...implementationPaths,
-        ],
-        'branch-diff',
-        ctx,
-      )
-    : hashEmptyGitPatch();
+  const mergeBaseRes = gitRun(repoRoot, ['merge-base', 'HEAD', targetRef]);
+  if (!mergeBaseRes.ok || !mergeBaseRes.text.trim()) ctx.degraded = true;
+  const targetChangedRes = mergeBaseRes.ok
+    ? gitRunBuffer(repoRoot, ['diff', '--name-status', '--find-renames', '-z', `${mergeBaseRes.text.trim()}..${targetRef}`])
+    : { ok: false, buf: Buffer.alloc(0) };
+  if (!targetChangedRes.ok) ctx.degraded = true;
+  const targetChangedPaths = parseNameStatusZ(splitNul(targetChangedRes.buf, ctx));
+  const implementationSet = new Set(implementationPaths);
+  const targetOverlapPaths = targetChangedPaths.filter((path) => implementationSet.has(path));
+  const content = normalizedFinalContent(repoRoot, implementationPaths, ctx);
 
   if (ctx.degraded) {
-    return unknownImplementationFingerprint(
-      diff.base_ref,
-      diff.base_rev,
+    return unknownReviewSubject(
+      targetRef,
+      targetRev,
       headRev,
-      'implementation diff could not be fully observed',
+      'review subject could not be fully observed',
     );
   }
 
-  const fingerprint = hashJson({
-    version: 1,
-    purpose: 'implementation-review-freshness',
-    scope: IMPLEMENTATION_FINGERPRINT_SCOPE,
-    base_ref: diff.base_ref,
-    base_rev: diff.base_rev,
-    // head_rev is intentionally excluded from the hashed payload: committed
-    // implementation content is already captured by branch_diff_hash (base...HEAD
-    // over implementation paths). Hashing raw HEAD would make an operational-only
-    // commit (review/check artifacts) churn the fingerprint and falsely stale the
-    // review.
-    paths: diff.paths,
-    branch_diff_hash: branchDiffHash,
-    staged_diff_hash: diff.staged_diff_hash,
-    unstaged_diff_hash: diff.unstaged_diff_hash,
-    status_hash: diff.status_hash,
-    untracked_hash: diff.untracked_hash,
+  const reviewSubjectSha256 = hashJson({
+    version: 2,
+    purpose: 'review-subject',
+    scope: REVIEW_SUBJECT_SCOPE,
+    content,
   });
 
   return Object.freeze({
-    version: 1 as const,
+    version: 2 as const,
     status: 'ok' as const,
-    scope: IMPLEMENTATION_FINGERPRINT_SCOPE,
-    base_ref: diff.base_ref,
-    base_rev: diff.base_rev,
+    scope: REVIEW_SUBJECT_SCOPE,
+    target_ref: targetRef,
+    target_rev: targetRev,
     head_rev: headRev,
-    paths: diff.paths,
+    paths: implementationPaths,
     excluded_paths: excludedPaths,
-    branch_diff_hash: branchDiffHash,
-    staged_diff_hash: diff.staged_diff_hash,
-    unstaged_diff_hash: diff.unstaged_diff_hash,
-    status_hash: diff.status_hash,
-    untracked_hash: diff.untracked_hash,
-    fingerprint,
+    target_overlap_paths: targetOverlapPaths,
+    target_overlap_count: targetOverlapPaths.length,
+    review_subject_sha256: reviewSubjectSha256,
   });
 }
 
-function reviewFingerprintUsage(): ReviewFingerprintCliResult {
+function reviewSubjectUsage(): ReviewSubjectCliResult {
   return {
     exitCode: 0,
     stdout: '',
-    stderr: 'repo-harness-hook review-fingerprint [--base <ref>] [--format json]\n',
+    stderr: 'repo-harness-hook review-subject [--target <ref>] [--format json]\n',
   };
 }
 
@@ -536,30 +548,29 @@ function argValue(argv: readonly string[], flag: string): string | undefined {
   return index >= 0 ? argv[index + 1] : undefined;
 }
 
-export function runReviewFingerprintCli(
+export function runReviewSubjectCli(
   argv: readonly string[],
   opts: { cwd?: string } = {},
-): ReviewFingerprintCliResult {
-  const allowed = new Set(['--base', '--format']);
+): ReviewSubjectCliResult {
+  const allowed = new Set(['--target', '--format']);
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
-    if (!allowed.has(arg)) return reviewFingerprintUsage();
+    if (!allowed.has(arg)) return reviewSubjectUsage();
     index += 1;
-    if (index >= argv.length) return reviewFingerprintUsage();
+    if (index >= argv.length) return reviewSubjectUsage();
   }
 
   const format = argValue(argv, '--format') ?? 'json';
-  if (format !== 'json') return reviewFingerprintUsage();
+  if (format !== 'json') return reviewSubjectUsage();
 
-  // The runtime (workflow_current_review_fingerprint_json) passes the resolved
-  // target branch via --base so base_rev tracks the target tip. When --base is
-  // absent this falls back to HEAD for direct/diagnostic use only.
-  const fingerprint = buildImplementationDiffFingerprint(opts.cwd ?? process.cwd(), {
-    baseRef: argValue(argv, '--base') ?? 'HEAD',
+  // The runtime passes the resolved target branch as metadata and for changed-path
+  // discovery. The normalized content subject does not hash the target revision.
+  const subject = buildReviewSubject(opts.cwd ?? process.cwd(), {
+    targetRef: argValue(argv, '--target') ?? 'HEAD',
   });
   return {
     exitCode: 0,
-    stdout: `${JSON.stringify(fingerprint)}\n`,
+    stdout: `${JSON.stringify(subject)}\n`,
     stderr: '',
   };
 }

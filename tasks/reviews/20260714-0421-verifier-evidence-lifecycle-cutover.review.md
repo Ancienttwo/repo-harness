@@ -1,11 +1,11 @@
-# Task Review: {{TASK_SLUG}}
+# Task Review: verifier-evidence-lifecycle-cutover
 
 > **Status**: Pending
-> **Plan**: {{PLAN_FILE}}
-> **Contract**: {{CONTRACT_FILE}}
-> **Notes File**: {{NOTES_FILE}}
-> **Checks File**: {{CHECKS_FILE}}
-> **Last Updated**: {{TIMESTAMP}}
+> **Plan**: plans/plan-20260714-0421-verifier-evidence-lifecycle-cutover.md
+> **Contract**: tasks/contracts/20260714-0421-verifier-evidence-lifecycle-cutover.contract.md
+> **Notes File**: tasks/notes/20260714-0421-verifier-evidence-lifecycle-cutover.notes.md
+> **Checks File**: .ai/harness/checks/latest.json
+> **Last Updated**: 2026-07-14 04:22
 > **Recommendation**: fail
 > **Review Rubric Version**: 2
 > **Reviewed Subject SHA256**: pending
@@ -19,6 +19,7 @@
 - Intended files changed:
 - Actual files changed:
 - Commands passed:
+- External acceptance: unavailable
 - Residual risks:
 - Reviewer action required: inspect diff and card
 - Rollback:

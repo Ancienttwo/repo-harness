@@ -13,7 +13,7 @@ import {
 import { createHash } from 'crypto';
 import { execFileSync } from 'child_process';
 import { join } from 'path';
-import { buildImplementationDiffFingerprint, isImplementationSurfacePath } from './diff-fingerprint';
+import { buildReviewSubject, isImplementationSurfacePath } from './diff-fingerprint';
 import {
   resolveWorkflowProfile,
   type WorkflowOperationKind,
@@ -91,7 +91,8 @@ export interface EffectiveState {
   readonly source_hashes: Readonly<Record<string, string>>;
   readonly review: EffectiveStateSource & {
     readonly recommendation: string | null;
-    readonly recorded_fingerprint: string | null;
+    readonly recorded_subject_sha256: string | null;
+    readonly recorded_target_revision: string | null;
   };
   readonly external_acceptance: EffectiveStateSource & {
     readonly status: string | null;
@@ -825,9 +826,9 @@ function resolveEffectiveStateUnlocked(
       policyString(cwd, '.worktree_strategy.base_branch', 'main'),
     ),
   );
-  const implementation = buildImplementationDiffFingerprint(cwd, { baseRef: targetBranch });
+  const reviewSubject = buildReviewSubject(cwd, { targetRef: targetBranch });
   const explicitTargetPaths = options.risk?.targetPaths ?? [];
-  const implementationDiffPaths = implementation.status === 'ok' ? implementation.paths : [];
+  const implementationDiffPaths = reviewSubject.status === 'ok' ? reviewSubject.paths : [];
   const rawTargetPaths = Array.from(new Set([...explicitTargetPaths, ...implementationDiffPaths])).sort();
   const hasRawTargetPaths = rawTargetPaths.length > 0;
 
@@ -906,32 +907,38 @@ function resolveEffectiveStateUnlocked(
   const reviewPath = planPath ? deriveReviewPath(cwd, planPath, contractText) : null;
   const reviewText = readText(cwd, reviewPath);
   const recommendation = reviewText ? markdownHeader(reviewText, 'Recommendation') : null;
-  const recordedFingerprint = reviewText ? markdownHeader(reviewText, 'Reviewed Diff Fingerprint') : null;
+  const recordedSubject = reviewText ? markdownHeader(reviewText, 'Reviewed Subject SHA256') : null;
+  const recordedTarget = reviewText ? markdownHeader(reviewText, 'Reviewed Target Revision') : null;
   const externalStatus = reviewText ? markdownHeader(reviewText, 'External Acceptance') : null;
-  const externalFingerprint = reviewText
-    ? markdownSectionHeader(reviewText, 'External Acceptance Advice', 'Reviewed Diff Fingerprint')
+  const externalSubject = reviewText
+    ? markdownSectionHeader(reviewText, 'External Acceptance Advice', 'Reviewed Subject SHA256')
+    : null;
+  const externalTarget = reviewText
+    ? markdownSectionHeader(reviewText, 'External Acceptance Advice', 'Reviewed Target Revision')
     : null;
   let reviewFreshness: FreshnessState = reviewPath ? 'missing' : 'not_applicable';
-  const implementationFingerprint = implementation.status === 'ok' ? implementation.fingerprint : null;
+  const reviewSubjectSha256 = reviewSubject.status === 'ok' ? reviewSubject.review_subject_sha256 : null;
   if (reviewText) {
-    if (!recordedFingerprint || recordedFingerprint === 'pending' || !/^sha256:[0-9a-f]{64}$/.test(recordedFingerprint)) {
+    if (!recordedSubject || recordedSubject === 'pending' || !/^sha256:[0-9a-f]{64}$/.test(recordedSubject)
+      || !recordedTarget || !/^[0-9a-f]{40,64}$/.test(recordedTarget)) {
       reviewFreshness = 'stale';
     } else {
-      reviewFreshness = implementation.status === 'ok'
-        ? implementation.fingerprint === recordedFingerprint ? 'fresh' : 'stale'
+      reviewFreshness = reviewSubject.status === 'ok'
+        ? reviewSubject.review_subject_sha256 === recordedSubject
+          && (reviewSubject.target_rev === recordedTarget || reviewSubject.target_overlap_count === 0)
+          ? 'fresh' : 'stale'
         : 'unavailable';
     }
   }
   if (reviewFreshness === 'stale') staleSources.push('review');
-  if (reviewText && externalStatus !== 'pass' && externalStatus !== 'manual_override') {
+  if (reviewText && externalStatus !== 'pass') {
     staleSources.push('external_acceptance');
   }
   const externalFreshness: FreshnessState = !reviewText
     ? reviewFreshness
-    : externalStatus === 'manual_override'
-      ? reviewFreshness
-      : externalStatus === 'pass' && implementation.status === 'ok' &&
-          externalFingerprint === implementation.fingerprint
+    : externalStatus === 'pass' && reviewSubject.status === 'ok' &&
+        externalSubject === reviewSubject.review_subject_sha256 &&
+        (externalTarget === reviewSubject.target_rev || reviewSubject.target_overlap_count === 0)
         ? 'fresh'
         : 'stale';
   if (externalFreshness === 'stale' && !staleSources.includes('external_acceptance')) {
@@ -942,22 +949,17 @@ function resolveEffectiveStateUnlocked(
   let checksStatus: string | null = null;
   let checksPlan: string | null = null;
   let checksFingerprint: string | null = null;
-  let checksBaseRef: string | null = null;
   if (checksText) {
     try {
       const checks = JSON.parse(checksText) as {
         status?: unknown;
         active_plan?: unknown;
-        diff_base?: { ref?: unknown };
-        implementation_fingerprint?: unknown;
+        review_subject_sha256?: unknown;
       };
       checksStatus = typeof checks.status === 'string' ? checks.status : null;
       checksPlan = typeof checks.active_plan === 'string' ? checks.active_plan : null;
-      checksBaseRef = typeof checks.diff_base?.ref === 'string'
-        ? checks.diff_base.ref
-        : null;
-      checksFingerprint = typeof checks.implementation_fingerprint === 'string'
-        ? checks.implementation_fingerprint
+      checksFingerprint = typeof checks.review_subject_sha256 === 'string'
+        ? checks.review_subject_sha256
         : null;
     } catch {
       staleSources.push('checks');
@@ -965,8 +967,8 @@ function resolveEffectiveStateUnlocked(
   }
   const checksFreshness: FreshnessState = !checksText
     ? 'missing'
-    : checksPlan && planPath && checksPlan === planPath && implementation.status === 'ok' &&
-        checksBaseRef === targetBranch && checksFingerprint === implementation.fingerprint
+    : checksPlan && planPath && checksPlan === planPath && reviewSubject.status === 'ok' &&
+        checksFingerprint === reviewSubject.review_subject_sha256
       ? 'fresh'
       : 'stale';
   if (checksFreshness === 'stale' && !staleSources.includes('checks')) staleSources.push('checks');
@@ -983,7 +985,7 @@ function resolveEffectiveStateUnlocked(
     active_worktree: sourceHash(cwd, ACTIVE_WORKTREE_MARKER),
     plan: planPath ? sourceHash(cwd, planPath) : sha256('missing:plan'),
     contract: contractPath ? sourceHash(cwd, contractPath) : sha256('missing:contract'),
-    implementation_diff: implementationFingerprint ?? sha256('unavailable:implementation-diff'),
+    review_subject: reviewSubjectSha256 ?? sha256('unavailable:review-subject'),
   });
 
   const handoffText = readText(cwd, HANDOFF_PATH);
@@ -1062,7 +1064,7 @@ function resolveEffectiveStateUnlocked(
   const sourceHashes = Object.fromEntries(
     Array.from(new Set(sourcePaths)).sort().map((path) => [path, sourceHash(cwd, path)]),
   );
-  if (implementationFingerprint) sourceHashes['implementation_diff'] = implementationFingerprint;
+  if (reviewSubjectSha256) sourceHashes['review_subject'] = reviewSubjectSha256;
   sourceHashes['authority_revision'] = authorityRevision;
   const stateRevision = contentRevision(sourceHashes);
   const stateVersion = monotonicStateVersion(cwd, stateRevision, options.allocateVersion);
@@ -1103,7 +1105,8 @@ function resolveEffectiveStateUnlocked(
       path: reviewPath,
       freshness: reviewFreshness,
       recommendation,
-      recorded_fingerprint: recordedFingerprint,
+      recorded_subject_sha256: recordedSubject,
+      recorded_target_revision: recordedTarget,
     },
     external_acceptance: {
       path: reviewPath,

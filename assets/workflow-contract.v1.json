@@ -96,6 +96,8 @@
       "refresh-current-status.sh",
       "prepare-handoff.sh",
       "verify-contract.sh",
+      "run-bounded-verifier-command.ts",
+      "validate-harness-profile-benchmark.ts",
       "summarize-failures.sh",
       "verify-sprint.sh",
       "harness-trace-grade.sh",

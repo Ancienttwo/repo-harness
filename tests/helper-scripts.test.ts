@@ -138,7 +138,7 @@ function writeValidSprintChecks(cwd: string) {
         generated_at: "2026-03-04T14:10:00+0000",
         contract: { file: "tasks/contracts/demo.contract.md", status: "pass", exit_code: 0 },
         review: { file: "tasks/reviews/demo.review.md", status: "pass" },
-        benchmark_evidence: { status: "not_applicable", fingerprint: "" },
+        benchmark_evidence: { status: "not_applicable", report_sha256: "", benchmark_subject_sha256: "" },
       },
       null,
       2
@@ -233,7 +233,30 @@ function promotionGate(): string {
   ].join("\n");
 }
 
-function externalAcceptanceAdvice(reviewer = "Codex", source = "codex-review", manualOverride?: string): string {
+function currentReviewBinding(cwd: string): { subject: string; targetRevision: string } {
+  if (run("git", ["rev-parse", "--is-inside-work-tree"], cwd).status !== 0) {
+    initGitRepo(cwd);
+    commitAll(cwd, "fixture review baseline");
+  }
+  const result = run("bun", [join(ROOT, "src/cli/hook-entry.ts"), "review-subject", "--target", "main", "--format", "json"], cwd);
+  expect(result.status).toBe(0);
+  const parsed = JSON.parse(result.stdout);
+  expect(parsed.status).toBe("ok");
+  return { subject: parsed.review_subject_sha256, targetRevision: parsed.target_rev };
+}
+
+function reviewSubjectMetadata(cwd: string): string {
+  const binding = currentReviewBinding(cwd);
+  return [
+    "> **Review Rubric Version**: 2",
+    `> **Reviewed Subject SHA256**: ${binding.subject}`,
+    "> **Reviewed Subject Scope**: normalized-final-content",
+    `> **Reviewed Target Revision**: ${binding.targetRevision}`,
+  ].join("\n");
+}
+
+function externalAcceptanceAdvice(reviewer = "Codex", source = "codex-review", cwd?: string): string {
+  const binding = cwd ? currentReviewBinding(cwd) : null;
   return [
     "## External Acceptance Advice",
     "",
@@ -242,16 +265,17 @@ function externalAcceptanceAdvice(reviewer = "Codex", source = "codex-review", m
     `> **External Source**: ${source}`,
     "> **External Started**: 2026-03-04T14:05:00+0800",
     "> **External Completed**: 2026-03-04T14:06:00+0800",
+    ...(binding ? [
+      "> **Review Rubric Version**: 2",
+      `> **Reviewed Subject SHA256**: ${binding.subject}`,
+      "> **Reviewed Subject Scope**: normalized-final-content",
+      `> **Reviewed Target Revision**: ${binding.targetRevision}`,
+      "> **Benchmark Evidence SHA256**: not-applicable",
+    ] : []),
     "",
     "- P1 blockers: none",
     "- P2 advisories: none",
     "- Acceptance checklist: pass",
-    // These integration fixtures exercise script orchestration, not fingerprint
-    // binding. A rubric-less review can no longer pass external acceptance, so a
-    // Manual Override (honoured before the rubric check) keeps them on a passing
-    // external-acceptance path without computing a per-worktree fingerprint. The
-    // genuine rubric+fingerprint pass path is covered in hook-runtime.test.ts.
-    ...(manualOverride ? [`Manual Override: ${manualOverride}`] : []),
   ].join("\n");
 }
 
@@ -264,7 +288,6 @@ function humanReviewCard(verdict = "pass", externalAcceptance = "pass"): string 
     "- Intended files changed: fixture",
     "- Actual files changed: fixture",
     "- Commands passed: fixture",
-    `- External acceptance: ${externalAcceptance}`,
     "- Residual risks: (none)",
     "- Reviewer action required: approve fixture closeout",
     "- Rollback: revert fixture branch",
@@ -374,7 +397,7 @@ describe("Workflow helper scripts", () => {
         "module pointer updated",
       ], cwd);
 
-      expect(res.status).toBe(0);
+      expect(res.status, `${res.stdout}\n${res.stderr}`).toBe(0);
       expect(res.stdout).toContain("[ArchitectureArchive] Archived docs/architecture/requests/20260522-apps-web-account.md");
       expect(existsSync(requestPath)).toBe(false);
 
@@ -1583,6 +1606,8 @@ describe("Workflow helper scripts", () => {
           "",
           "> **Recommendation**: pass",
           "",
+          reviewSubjectMetadata(worktreePath),
+          "",
           humanReviewCard("pass", "unavailable"),
           "",
           "## Scorecard",
@@ -1597,7 +1622,10 @@ describe("Workflow helper scripts", () => {
         ].join("\n")
       );
 
-      const missingExternal = run("bash", ["scripts/contract-worktree.sh", "finish"], worktreePath, { HOOK_HOST: "claude" });
+      const missingExternal = run("bash", ["scripts/contract-worktree.sh", "finish"], worktreePath, {
+        HOOK_HOST: "claude",
+        REPO_HARNESS_HOOK_CLI: join(ROOT, "src/cli/hook-entry.ts"),
+      });
       expect(missingExternal.status).toBe(1);
       expect(missingExternal.stderr).toContain("external acceptance gate failed");
       expect(missingExternal.stderr).toContain("External acceptance section is missing");
@@ -1609,6 +1637,8 @@ describe("Workflow helper scripts", () => {
           "",
           "> **Recommendation**: pass",
           "",
+          reviewSubjectMetadata(worktreePath),
+          "",
           humanReviewCard("pass", "unavailable"),
           "",
           "## Scorecard",
@@ -1620,13 +1650,16 @@ describe("Workflow helper scripts", () => {
           "## Verification Evidence",
           "- Unit test and typecheck covered by verify-sprint.",
           "",
-          externalAcceptanceAdvice("Codex", "codex-review", "peer review recorded out-of-band for this fixture"),
+          externalAcceptanceAdvice("Codex", "codex-review", worktreePath),
           "",
         ].join("\n")
       );
 
-      const finish = run("bash", ["scripts/contract-worktree.sh", "finish"], worktreePath, { HOOK_HOST: "claude" });
-      expect(finish.status).toBe(0);
+      const finish = run("bash", ["scripts/contract-worktree.sh", "finish"], worktreePath, {
+        HOOK_HOST: "claude",
+        REPO_HARNESS_HOOK_CLI: join(ROOT, "src/cli/hook-entry.ts"),
+      });
+      expect(finish.status, `${finish.stdout}\n${finish.stderr}`).toBe(0);
       expect(finish.stdout).toContain("[ArchitectureSync] mode=strict");
       expect(finish.stdout).toContain("Sprint verification passed");
       expect(finish.stdout).toContain("Archiving completed workflow before merge");
@@ -1758,6 +1791,8 @@ describe("Workflow helper scripts", () => {
           "",
           "> **Recommendation**: pass",
           "",
+          reviewSubjectMetadata(worktreePath),
+          "",
           humanReviewCard("pass", "unavailable"),
           "",
           "## Scorecard",
@@ -1769,17 +1804,18 @@ describe("Workflow helper scripts", () => {
           "## Verification Evidence",
           "- Unit test and typecheck covered by verify-sprint.",
           "",
-          externalAcceptanceAdvice("Codex", "codex-review", "peer review recorded out-of-band for this fixture"),
+          externalAcceptanceAdvice("Codex", "codex-review", worktreePath),
           "",
         ].join("\n")
       );
 
       const ship = run("bash", ["scripts/ship-worktrees.sh"], worktreePath, {
         HOOK_HOST: "claude",
+        REPO_HARNESS_HOOK_CLI: join(ROOT, "src/cli/hook-entry.ts"),
         GH_LOG: ghLog,
         PATH: `${fakeBin}:${process.env.PATH}`,
       });
-      expect(ship.status).toBe(0);
+      expect(ship.status, `${ship.stdout}\n${ship.stderr}`).toBe(0);
       expect(ship.stdout).toContain("contract-worktree.sh finish --no-merge");
       expect(ship.stdout).toContain("[ArchitectureSync] mode=advisory");
       expect(ship.stdout).toContain("PR already exists for codex/demo after create failure");
@@ -1884,7 +1920,7 @@ describe("Workflow helper scripts", () => {
       );
       writeFileSync(
         join(worktreePath, "tasks/reviews/demo.review.md"),
-        ["# Task Review: demo", "", "> **Recommendation**: pass", "", humanReviewCard(), "", externalAcceptanceAdvice("Codex", "codex-review", "peer review recorded out-of-band for this fixture"), ""].join("\n")
+        ["# Task Review: demo", "", "> **Recommendation**: pass", "", reviewSubjectMetadata(worktreePath), "", humanReviewCard(), "", externalAcceptanceAdvice("Codex", "codex-review", worktreePath), ""].join("\n")
       );
       writeValidSprintChecks(worktreePath);
       const res = runHook(
@@ -3285,11 +3321,17 @@ describe("Workflow helper scripts", () => {
       );
       writeFileSync(
         join(cwd, "tasks/reviews/demo.review.md"),
-        ["# Task Review: demo", "", "> **Recommendation**: pass", "", humanReviewCard(), "", externalAcceptanceAdvice("Codex", "codex-review", "peer review recorded out-of-band for this fixture"), ""].join("\n")
+        ["# Task Review: demo", "", "> **Recommendation**: pass", reviewSubjectMetadata(cwd), "", humanReviewCard(), "", externalAcceptanceAdvice("Codex", "codex-review", cwd), ""].join("\n")
       );
 
-      const res = run("bash", ["scripts/verify-sprint.sh"], cwd, { HOOK_HOST: "claude" });
-      expect(res.status).toBe(0);
+      const res = run("bash", ["scripts/verify-sprint.sh"], cwd, {
+        HOOK_HOST: "claude",
+        REPO_HARNESS_HOOK_CLI: join(ROOT, "src/cli/hook-entry.ts"),
+      });
+      expect(
+        res.status,
+        `${res.stdout}\n${res.stderr}\n${readFileSync(join(cwd, ".ai/harness/checks/latest.json"), "utf-8")}`,
+      ).toBe(0);
       expect(res.stdout).toContain("Sprint verification passed");
       const checks = JSON.parse(readFileSync(join(cwd, ".ai/harness/checks/latest.json"), "utf-8"));
       expect(checks.schema).toBe("repo-harness-run-trace.v1");
@@ -3308,10 +3350,10 @@ describe("Workflow helper scripts", () => {
       expect(checks.review.card.verdict).toBe("pass");
       expect(checks.review.card.change_type).toBe("code-change");
       expect(checks.review.card.rollback).toBe("revert fixture branch");
-      expect(checks.external_acceptance.status).toBe("manual_override");
+      expect(checks.external_acceptance.status).toBe("pass");
       expect(checks.external_acceptance.reviewer).toBe("Codex");
       expect(checks.external_acceptance.source).toBe("codex-review");
-      expect(checks.benchmark_evidence).toEqual({ status: "not_applicable", fingerprint: "" });
+      expect(checks.benchmark_evidence).toEqual({ status: "not_applicable", report_sha256: "", benchmark_subject_sha256: "" });
       expect(checks.allowed_paths_check.status).toBe("pass");
       expect(checks.run_file).toMatch(/^\.ai\/harness\/runs\/.+-demo\.json$/);
       expect(existsSync(join(cwd, checks.run_file))).toBe(true);
@@ -3364,11 +3406,11 @@ describe("Workflow helper scripts", () => {
             "",
           ].join("\n")
         );
+        writeFileSync(join(cwd, "tasks/notes/demo.notes.md"), notesBody);
         writeFileSync(
           join(cwd, "tasks/reviews/demo.review.md"),
-          ["# Task Review: demo", "", "> **Recommendation**: pass", "", humanReviewCard(), "", externalAcceptanceAdvice("Codex", "codex-review", "peer review recorded out-of-band for this fixture"), ""].join("\n")
+          ["# Task Review: demo", "", "> **Recommendation**: pass", reviewSubjectMetadata(cwd), "", humanReviewCard(), "", externalAcceptanceAdvice("Codex", "codex-review", cwd), ""].join("\n")
         );
-        writeFileSync(join(cwd, "tasks/notes/demo.notes.md"), notesBody);
       };
 
       const boilerplatePromotionCandidates = [
@@ -3399,11 +3441,23 @@ describe("Workflow helper scripts", () => {
       setup(baseline, boilerplateNotes);
       setup(withCandidate, notesWithCandidate);
 
-      const baselineRes = run("bash", ["scripts/verify-sprint.sh"], baseline, { HOOK_HOST: "claude" });
-      const candidateRes = run("bash", ["scripts/verify-sprint.sh"], withCandidate, { HOOK_HOST: "claude" });
+      const baselineRes = run("bash", ["scripts/verify-sprint.sh"], baseline, {
+        HOOK_HOST: "claude",
+        REPO_HARNESS_HOOK_CLI: join(ROOT, "src/cli/hook-entry.ts"),
+      });
+      const candidateRes = run("bash", ["scripts/verify-sprint.sh"], withCandidate, {
+        HOOK_HOST: "claude",
+        REPO_HARNESS_HOOK_CLI: join(ROOT, "src/cli/hook-entry.ts"),
+      });
 
-      expect(baselineRes.status).toBe(0);
-      expect(candidateRes.status).toBe(0);
+      expect(
+        baselineRes.status,
+        `${baselineRes.stdout}\n${baselineRes.stderr}\n${readFileSync(join(baseline, ".ai/harness/checks/latest.json"), "utf-8")}`,
+      ).toBe(0);
+      expect(
+        candidateRes.status,
+        `${candidateRes.stdout}\n${candidateRes.stderr}\n${readFileSync(join(withCandidate, ".ai/harness/checks/latest.json"), "utf-8")}`,
+      ).toBe(0);
       expect(candidateRes.status).toBe(baselineRes.status);
       expect(baselineRes.stdout).toContain("Sprint verification passed");
       expect(candidateRes.stdout).toContain("Sprint verification passed");
@@ -3455,7 +3509,7 @@ describe("Workflow helper scripts", () => {
       );
       writeFileSync(
         join(cwd, "tasks/reviews/demo.review.md"),
-        ["# Task Review: demo", "", "> **Recommendation**: pass", "", humanReviewCard("pass", "pass").replace("- Change type: code-change", "- Change type: docs-only"), "", externalAcceptanceAdvice("Codex", "codex-review", "peer review recorded out-of-band for this fixture"), ""].join("\n")
+        ["# Task Review: demo", "", "> **Recommendation**: pass", reviewSubjectMetadata(cwd), "", humanReviewCard("pass", "pass").replace("- Change type: code-change", "- Change type: docs-only"), "", externalAcceptanceAdvice("Codex", "codex-review", cwd), ""].join("\n")
       );
 
       initGitRepo(cwd);
@@ -3464,8 +3518,16 @@ describe("Workflow helper scripts", () => {
       mkdirSync(join(cwd, "src"), { recursive: true });
       writeFileSync(join(cwd, "src/outside.ts"), "export const outside = true;\n");
       commitAll(cwd, "change outside allowed paths");
+      writeFileSync(
+        join(cwd, "tasks/reviews/demo.review.md"),
+        ["# Task Review: demo", "", "> **Recommendation**: pass", reviewSubjectMetadata(cwd), "", humanReviewCard("pass", "pass").replace("- Change type: code-change", "- Change type: docs-only"), "", externalAcceptanceAdvice("Codex", "codex-review", cwd), ""].join("\n")
+      );
 
-      const res = run("bash", ["scripts/verify-sprint.sh"], cwd, { REPO_HARNESS_DIFF_BASE: "main", HOOK_HOST: "claude" });
+      const res = run("bash", ["scripts/verify-sprint.sh"], cwd, {
+        REPO_HARNESS_DIFF_BASE: "main",
+        HOOK_HOST: "claude",
+        REPO_HARNESS_HOOK_CLI: join(ROOT, "src/cli/hook-entry.ts"),
+      });
       expect(res.status).toBe(1);
       const checks = JSON.parse(readFileSync(join(cwd, ".ai/harness/checks/latest.json"), "utf-8"));
       expect(checks.status).toBe("fail");

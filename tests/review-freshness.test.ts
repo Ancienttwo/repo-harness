@@ -4,9 +4,9 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { spawnSync } from 'child_process';
 import {
-  IMPLEMENTATION_FINGERPRINT_SCOPE,
-  buildImplementationDiffFingerprint,
-  runReviewFingerprintCli,
+  REVIEW_SUBJECT_SCOPE,
+  buildReviewSubject,
+  runReviewSubjectCli,
   splitNul,
 } from '../src/cli/hook/diff-fingerprint';
 
@@ -27,7 +27,7 @@ function runGit(cwd: string, args: readonly string[]): void {
 }
 
 // A repo with an explicit `main` target and a checked-out `feature` branch, for
-// exercising target-bound fingerprint behaviour.
+// exercising target metadata without binding the content subject to ancestry.
 function tmpFeatureRepo(prefix: string): string {
   const cwd = mkdtempSync(join(tmpdir(), `${prefix}-`));
   runGit(cwd, ['init', '-b', 'main']);
@@ -40,7 +40,7 @@ function tmpFeatureRepo(prefix: string): string {
   return cwd;
 }
 
-describe('review freshness fingerprint', () => {
+describe('review subject', () => {
   test('is stable across checkout roots for the same repository diff', () => {
     const source = tmpRepo('repo-harness-review-freshness-source');
     const cloneParent = mkdtempSync(join(tmpdir(), 'repo-harness-review-freshness-clone-parent-'));
@@ -54,24 +54,24 @@ describe('review freshness fingerprint', () => {
         writeFileSync(join(cwd, 'src/new.ts'), 'export const demo = true;\n');
       }
 
-      const first = buildImplementationDiffFingerprint(source);
-      const second = buildImplementationDiffFingerprint(clone);
+      const first = buildReviewSubject(source);
+      const second = buildReviewSubject(clone);
 
       expect(first.status).toBe('ok');
-      expect(first.scope).toBe(IMPLEMENTATION_FINGERPRINT_SCOPE);
+      expect(first.scope).toBe(REVIEW_SUBJECT_SCOPE);
       expect(first.paths).toEqual(['README.md', 'src/new.ts']);
       expect(second.paths).toEqual(first.paths);
-      expect(second.fingerprint).toBe(first.fingerprint);
+      expect(second.review_subject_sha256).toBe(first.review_subject_sha256);
     } finally {
       rmSync(source, { recursive: true, force: true });
       rmSync(cloneParent, { recursive: true, force: true });
     }
   });
 
-  test('excludes review and check artifacts from the implementation fingerprint', () => {
+  test('excludes review and check artifacts from the review subject', () => {
     const cwd = tmpRepo('repo-harness-review-freshness-exclude');
     try {
-      const clean = buildImplementationDiffFingerprint(cwd);
+      const clean = buildReviewSubject(cwd);
 
       mkdirSync(join(cwd, 'tasks/reviews'), { recursive: true });
       mkdirSync(join(cwd, '.ai/harness/checks'), { recursive: true });
@@ -85,7 +85,7 @@ describe('review freshness fingerprint', () => {
       writeFileSync(join(cwd, '.ai/harness/handoff/current.md'), '# Handoff\n');
       writeFileSync(join(cwd, '.ai/harness/state/effective.json'), '{}\n');
 
-      const operationalOnly = buildImplementationDiffFingerprint(cwd);
+      const operationalOnly = buildReviewSubject(cwd);
       expect(operationalOnly.excluded_paths).toEqual([
         '.ai/harness/active-plan',
         '.ai/harness/checks/latest.json',
@@ -95,12 +95,12 @@ describe('review freshness fingerprint', () => {
         'tasks/reviews/demo.review.md',
       ]);
       expect(operationalOnly.paths).toEqual([]);
-      expect(operationalOnly.fingerprint).toBe(clean.fingerprint);
+      expect(operationalOnly.review_subject_sha256).toBe(clean.review_subject_sha256);
 
       writeFileSync(join(cwd, 'README.md'), '# Demo\n\nimplementation change\n');
-      const implementationChange = buildImplementationDiffFingerprint(cwd);
+      const implementationChange = buildReviewSubject(cwd);
       expect(implementationChange.paths).toEqual(['README.md']);
-      expect(implementationChange.fingerprint).not.toBe(clean.fingerprint);
+      expect(implementationChange.review_subject_sha256).not.toBe(clean.review_subject_sha256);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -112,49 +112,52 @@ describe('review freshness fingerprint', () => {
       mkdirSync(join(repo, 'evals', 'harness', 'reports'), { recursive: true });
       writeFileSync(join(repo, 'evals', 'harness', 'reports', 'profile-comparison.json'), '{"run":1}\n');
       writeFileSync(join(repo, 'evals', 'harness', 'reports', 'profile-comparison.md'), '# Run 1\n');
-      const before = buildImplementationDiffFingerprint(repo, { baseRef: 'HEAD' });
+      writeFileSync(join(repo, 'evals', 'harness', 'reports', 'profile-comparison.sha256.json'), '{"binding":1}\n');
+      const before = buildReviewSubject(repo, { targetRef: 'HEAD' });
 
       writeFileSync(join(repo, 'evals', 'harness', 'reports', 'profile-comparison.json'), '{"run":2}\n');
       writeFileSync(join(repo, 'evals', 'harness', 'reports', 'profile-comparison.md'), '# Run 2\n');
-      const after = buildImplementationDiffFingerprint(repo, { baseRef: 'HEAD' });
+      writeFileSync(join(repo, 'evals', 'harness', 'reports', 'profile-comparison.sha256.json'), '{"binding":2}\n');
+      const after = buildReviewSubject(repo, { targetRef: 'HEAD' });
 
-      expect(after.fingerprint).toBe(before.fingerprint);
+      expect(after.review_subject_sha256).toBe(before.review_subject_sha256);
       expect(after.excluded_paths).toEqual([
         'evals/harness/reports/profile-comparison.json',
         'evals/harness/reports/profile-comparison.md',
+        'evals/harness/reports/profile-comparison.sha256.json',
       ]);
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
   });
 
-  test('includes untracked file content in the fingerprint', () => {
+  test('includes untracked file content in the subject', () => {
     const cwd = tmpRepo('repo-harness-review-freshness-untracked');
     try {
       mkdirSync(join(cwd, 'src'), { recursive: true });
       writeFileSync(join(cwd, 'src/new.ts'), 'export const value = 1;\n');
-      const first = buildImplementationDiffFingerprint(cwd);
+      const first = buildReviewSubject(cwd);
 
       writeFileSync(join(cwd, 'src/new.ts'), 'export const value = 2;\n');
-      const second = buildImplementationDiffFingerprint(cwd);
+      const second = buildReviewSubject(cwd);
 
       expect(first.paths).toEqual(['src/new.ts']);
       expect(second.paths).toEqual(['src/new.ts']);
-      expect(second.fingerprint).not.toBe(first.fingerprint);
+      expect(second.review_subject_sha256).not.toBe(first.review_subject_sha256);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
   });
 
-  test('binds the fingerprint to the target branch tip so advancing the target restales the review', () => {
+  test('keeps the content subject stable when the target advances on unrelated paths', () => {
     const cwd = tmpFeatureRepo('repo-harness-review-freshness-target');
     try {
       writeFileSync(join(cwd, 'impl.ts'), 'export const a = 1;\n');
       runGit(cwd, ['add', 'impl.ts']);
       runGit(cwd, ['commit', '-m', 'feature work']);
 
-      const beforeTarget = buildImplementationDiffFingerprint(cwd, { baseRef: 'main' });
-      const beforeHead = buildImplementationDiffFingerprint(cwd); // unbound HEAD default
+      const beforeTarget = buildReviewSubject(cwd, { targetRef: 'main' });
+      const beforeHead = buildReviewSubject(cwd); // unbound HEAD default
 
       // Advance the target branch without touching the feature branch.
       runGit(cwd, ['checkout', 'main']);
@@ -163,15 +166,55 @@ describe('review freshness fingerprint', () => {
       runGit(cwd, ['commit', '-m', 'target advance']);
       runGit(cwd, ['checkout', 'feature']);
 
-      const afterTarget = buildImplementationDiffFingerprint(cwd, { baseRef: 'main' });
-      const afterHead = buildImplementationDiffFingerprint(cwd);
+      const afterTarget = buildReviewSubject(cwd, { targetRef: 'main' });
+      const afterHead = buildReviewSubject(cwd);
 
       expect(beforeTarget.status).toBe('ok');
-      // Target-bound fingerprint moves with the target tip.
-      expect(afterTarget.fingerprint).not.toBe(beforeTarget.fingerprint);
-      // The unbound HEAD default is blind to the target move — the exact gap the
-      // runtime closes by passing --base <target>.
-      expect(afterHead.fingerprint).toBe(beforeHead.fingerprint);
+      expect(afterTarget.review_subject_sha256).toBe(beforeTarget.review_subject_sha256);
+      expect(afterTarget.target_rev).not.toBe(beforeTarget.target_rev);
+      expect(afterTarget.target_overlap_count).toBe(0);
+      expect(afterHead.review_subject_sha256).toBe(beforeHead.review_subject_sha256);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test('reports target overlap without folding target revision into the content subject', () => {
+    const cwd = tmpFeatureRepo('repo-harness-review-freshness-overlap');
+    try {
+      writeFileSync(join(cwd, 'impl.ts'), 'export const value = "feature";\n');
+      runGit(cwd, ['add', 'impl.ts']);
+      runGit(cwd, ['commit', '-m', 'feature work']);
+      const before = buildReviewSubject(cwd, { targetRef: 'main' });
+
+      runGit(cwd, ['checkout', 'main']);
+      writeFileSync(join(cwd, 'impl.ts'), 'export const value = "target";\n');
+      runGit(cwd, ['add', 'impl.ts']);
+      runGit(cwd, ['commit', '-m', 'overlapping target work']);
+      runGit(cwd, ['checkout', 'feature']);
+
+      const after = buildReviewSubject(cwd, { targetRef: 'main' });
+      expect(after.review_subject_sha256).toBe(before.review_subject_sha256);
+      expect(after.target_overlap_paths).toEqual(['impl.ts']);
+      expect(after.target_overlap_count).toBe(1);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test('represents deletion as normalized final content', () => {
+    const cwd = tmpFeatureRepo('repo-harness-review-freshness-delete');
+    try {
+      runGit(cwd, ['checkout', 'main']);
+      writeFileSync(join(cwd, 'remove.ts'), 'export const removed = true;\n');
+      runGit(cwd, ['add', 'remove.ts']);
+      runGit(cwd, ['commit', '-m', 'add removable file']);
+      runGit(cwd, ['checkout', '-B', 'feature', 'main']);
+      const before = buildReviewSubject(cwd, { targetRef: 'main' });
+      rmSync(join(cwd, 'remove.ts'));
+      const after = buildReviewSubject(cwd, { targetRef: 'main' });
+      expect(after.paths).toEqual(['remove.ts']);
+      expect(after.review_subject_sha256).not.toBe(before.review_subject_sha256);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -183,12 +226,12 @@ describe('review freshness fingerprint', () => {
       mkdirSync(join(cwd, 'src'), { recursive: true });
       const big = join(cwd, 'src/big.bin');
       writeFileSync(big, Buffer.alloc(2 * 1024 * 1024, 0x41));
-      const first = buildImplementationDiffFingerprint(cwd, { baseRef: 'main' });
+      const first = buildReviewSubject(cwd, { targetRef: 'main' });
       // Same size, different content: the old metadata-only path was blind to this.
       writeFileSync(big, Buffer.alloc(2 * 1024 * 1024, 0x42));
-      const second = buildImplementationDiffFingerprint(cwd, { baseRef: 'main' });
+      const second = buildReviewSubject(cwd, { targetRef: 'main' });
       expect(first.status).toBe('ok');
-      expect(second.fingerprint).not.toBe(first.fingerprint);
+      expect(second.review_subject_sha256).not.toBe(first.review_subject_sha256);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -200,12 +243,12 @@ describe('review freshness fingerprint', () => {
       mkdirSync(join(cwd, 'src'), { recursive: true });
       const unicodePath = join(cwd, 'src/变更.ts');
       writeFileSync(unicodePath, 'AAAA');
-      const first = buildImplementationDiffFingerprint(cwd, { baseRef: 'main' });
+      const first = buildReviewSubject(cwd, { targetRef: 'main' });
       writeFileSync(unicodePath, 'BBBB'); // same length, different content
-      const second = buildImplementationDiffFingerprint(cwd, { baseRef: 'main' });
+      const second = buildReviewSubject(cwd, { targetRef: 'main' });
       expect(first.status).toBe('ok');
       expect(first.paths).toContain('src/变更.ts');
-      expect(second.fingerprint).not.toBe(first.fingerprint);
+      expect(second.review_subject_sha256).not.toBe(first.review_subject_sha256);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -214,9 +257,9 @@ describe('review freshness fingerprint', () => {
   test('fails closed with status unknown when git state is unreadable', () => {
     const nonRepo = mkdtempSync(join(tmpdir(), 'repo-harness-review-freshness-nonrepo-'));
     try {
-      const fp = buildImplementationDiffFingerprint(nonRepo, { baseRef: 'main' });
+      const fp = buildReviewSubject(nonRepo, { targetRef: 'main' });
       expect(fp.status).toBe('unknown');
-      expect(fp.fingerprint).toBe('unknown');
+      expect(fp.review_subject_sha256).toBe('unknown');
     } finally {
       rmSync(nonRepo, { recursive: true, force: true });
     }
@@ -228,16 +271,16 @@ describe('review freshness fingerprint', () => {
       writeFileSync(join(cwd, 'impl.ts'), 'export const a = 1;\n');
       runGit(cwd, ['add', 'impl.ts']);
       runGit(cwd, ['commit', '-m', 'feature work']);
-      const before = buildImplementationDiffFingerprint(cwd, { baseRef: 'main' });
+      const before = buildReviewSubject(cwd, { targetRef: 'main' });
 
       mkdirSync(join(cwd, 'tasks/reviews'), { recursive: true });
       writeFileSync(join(cwd, 'tasks/reviews/demo.review.md'), '> **Recommendation**: pass\n');
       runGit(cwd, ['add', 'tasks/reviews/demo.review.md']);
       runGit(cwd, ['commit', '-m', 'record review evidence']);
-      const after = buildImplementationDiffFingerprint(cwd, { baseRef: 'main' });
+      const after = buildReviewSubject(cwd, { targetRef: 'main' });
 
       expect(before.status).toBe('ok');
-      expect(after.fingerprint).toBe(before.fingerprint);
+      expect(after.review_subject_sha256).toBe(before.review_subject_sha256);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -252,12 +295,12 @@ describe('review freshness fingerprint', () => {
       // nothing, so the file's content was silently excluded from the hash.
       const magicPath = join(cwd, ':(icase)noop.ts');
       writeFileSync(magicPath, 'v1');
-      const first = buildImplementationDiffFingerprint(cwd, { baseRef: 'main' });
+      const first = buildReviewSubject(cwd, { targetRef: 'main' });
       writeFileSync(magicPath, 'v2-changed');
-      const second = buildImplementationDiffFingerprint(cwd, { baseRef: 'main' });
+      const second = buildReviewSubject(cwd, { targetRef: 'main' });
       expect(first.status).toBe('ok');
       expect(first.paths).toContain(':(icase)noop.ts');
-      expect(second.fingerprint).not.toBe(first.fingerprint);
+      expect(second.review_subject_sha256).not.toBe(first.review_subject_sha256);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -274,13 +317,13 @@ describe('review freshness fingerprint', () => {
       runGit(cwd, ['add', 'a.txt', 'b.txt']);
       runGit(cwd, ['commit', '-m', 'targets']);
       symlinkSync('a.txt', join(cwd, 'link'));
-      const first = buildImplementationDiffFingerprint(cwd, { baseRef: 'main' });
+      const first = buildReviewSubject(cwd, { targetRef: 'main' });
       rmSync(join(cwd, 'link'));
       symlinkSync('b.txt', join(cwd, 'link'));
-      const second = buildImplementationDiffFingerprint(cwd, { baseRef: 'main' });
+      const second = buildReviewSubject(cwd, { targetRef: 'main' });
       expect(first.status).toBe('ok');
       expect(first.paths).toContain('link');
-      expect(second.fingerprint).not.toBe(first.fingerprint);
+      expect(second.review_subject_sha256).not.toBe(first.review_subject_sha256);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -294,13 +337,13 @@ describe('review freshness fingerprint', () => {
       // one value (a fingerprint collision); the raw-byte hash must keep them
       // distinct. (The link name stays ascii, so only the target is non-utf-8.)
       symlinkSync(Buffer.from([0x74, 0x61, 0xff]), join(cwd, 'link'));
-      const first = buildImplementationDiffFingerprint(cwd, { baseRef: 'main' });
+      const first = buildReviewSubject(cwd, { targetRef: 'main' });
       rmSync(join(cwd, 'link'));
       symlinkSync(Buffer.from([0x74, 0x61, 0xfe]), join(cwd, 'link'));
-      const second = buildImplementationDiffFingerprint(cwd, { baseRef: 'main' });
+      const second = buildReviewSubject(cwd, { targetRef: 'main' });
       expect(first.status).toBe('ok');
       expect(first.paths).toContain('link');
-      expect(second.fingerprint).not.toBe(first.fingerprint);
+      expect(second.review_subject_sha256).not.toBe(first.review_subject_sha256);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -312,13 +355,13 @@ describe('review freshness fingerprint', () => {
       const script = join(cwd, 'script.sh');
       writeFileSync(script, '#!/bin/sh\necho hi\n');
       chmodSync(script, 0o644);
-      const first = buildImplementationDiffFingerprint(cwd, { baseRef: 'main' });
+      const first = buildReviewSubject(cwd, { targetRef: 'main' });
       // The executable bit becomes the committed blob mode (100755 vs 100644),
       // so a chmod with no content change is a real implementation diff.
       chmodSync(script, 0o755);
-      const second = buildImplementationDiffFingerprint(cwd, { baseRef: 'main' });
+      const second = buildReviewSubject(cwd, { targetRef: 'main' });
       expect(first.status).toBe('ok');
-      expect(second.fingerprint).not.toBe(first.fingerprint);
+      expect(second.review_subject_sha256).not.toBe(first.review_subject_sha256);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -339,10 +382,10 @@ describe('review freshness fingerprint', () => {
   });
 
   test('CLI is fail-open for malformed arguments', () => {
-    const result = runReviewFingerprintCli(['--format', 'text']);
+    const result = runReviewSubjectCli(['--format', 'text']);
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toBe('');
-    expect(result.stderr).toContain('repo-harness-hook review-fingerprint');
+    expect(result.stderr).toContain('repo-harness-hook review-subject');
   });
 });
