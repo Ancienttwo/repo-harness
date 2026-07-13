@@ -1,3 +1,9 @@
+> **Archived**: 2026-07-13 15:54
+> **Related Plan**: plans/archive/plan-20260713-1305-remove-gstack-core.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260713-1554
+
 # Implementation Notes: remove-gstack-core
 
 > **Status**: Active

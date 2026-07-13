@@ -1,6 +1,6 @@
 # Plan: Remove gstack From Core Workflow
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260713-1305
 > **Slug**: remove-gstack-core
 > **Planning Source**: repo-harness-plan

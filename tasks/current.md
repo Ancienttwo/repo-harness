@@ -1,27 +1,27 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-13T14:07:24+0800 -->
+<!-- updated_at: 2026-07-13T15:54:21+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: Active
-> **Updated At**: 2026-07-13T14:07:24+0800
-> **Source Branch**: codex/native-role-capability-gate
-> **Source Commit**: 87f0cd1
+> **Status**: ManualClearedWithActiveWork
+> **Updated At**: 2026-07-13T15:54:21+0800
+> **Source Branch**: codex/remove-gstack-core
+> **Source Commit**: de70bc2b
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: manual
+> **Reason**: archive-workflow
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: Active
-- Active Plan: plans/plan-20260712-0219-native-role-capability-gate.md
-- Plan Status: Executing
-- Next Task: Close the worktree: it is rebased onto and matches `origin/main` (`7b6ba87`) directly, independent of the primary checkout's local `main`; run `verify-sprint` against this branch to evaluate the diff basis before merge.
-- Clear Note: (none)
+- Status: ManualClearedWithActiveWork
+- Active Plan: (none)
+- Plan Status: (none)
+- Next Task: inspect active worktree marker(s)
+- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
 
 ## Mainline Snapshot Reading
 
@@ -31,10 +31,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- .: plans/plan-20260712-0219-native-role-capability-gate.md
-- .: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/native-role-capability-gate
-- /private/tmp/repo-harness-remove-gstack: plans/plan-20260713-1305-remove-gstack-core.md
-- /private/tmp/repo-harness-remove-gstack: active-worktree owner -> /private/tmp/repo-harness-remove-gstack
+- /private/tmp/repo-harness-pr67-deploy-sql-fix: plans/plan-20260713-1413-pr67-deploy-sql-policy-fix.md
+- /private/tmp/repo-harness-pr67-deploy-sql-fix: active-worktree owner -> /private/tmp/repo-harness-pr67-deploy-sql-fix
 - /Users/kito/Projects/repo-harness-worktrees/bdd2-eval-foundation: plans/plan-20260712-0450-bdd2-eval-foundation.md
 - /Users/kito/Projects/repo-harness-worktrees/bdd2-eval-foundation: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/bdd2-eval-foundation
 - /Users/kito/Projects/repo-harness-worktrees/bdd2-shape-experiment: plans/plan-20260712-0605-bdd2-e-02-run-experiment-s-shape-hypothesis.md
@@ -62,18 +60,27 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`: status=completed, current_slice=completed-20260713-policy-seed, source_plan=plans/plan-20260712-2215-agent-fleet-specialists.md
 ## Handoff
 
-- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Close the worktree: it is rebased onto and matches `origin/main` (`7b6ba87`) directly, independent of the primary checkout's local `main`; run `verify-sprint` against this branch to evaluate the diff basis before merge.
+- Exact Next Step: Stage the completed module diff first; then resolve check evidence: Structured checks are not passing in .ai/harness/checks/latest.json (status=fail). Command: /check
 
 ## Checks
 
-- status=(none), source=(none), exit_code=(none), file=.ai/harness/checks/latest.json
+- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: clean
+- Summary: 10 changed/untracked path(s)
 
 ```
-(none)
+ D plans/plan-20260713-1305-remove-gstack-core.md
+ D tasks/contracts/20260713-1305-remove-gstack-core.contract.md
+ D tasks/notes/20260713-1305-remove-gstack-core.notes.md
+ D tasks/reviews/20260713-1305-remove-gstack-core.review.md
+ M tasks/todos.md
+?? plans/archive/plan-20260713-1305-remove-gstack-core.md
+?? tasks/archive/contract-20260713-1554-remove-gstack-core.md
+?? tasks/archive/notes-20260713-1554-remove-gstack-core.md
+?? tasks/archive/review-20260713-1554-remove-gstack-core.md
+?? tasks/archive/todo-20260713-1554-remove-gstack-core.md
 ```
 
 ## Source Artifacts
