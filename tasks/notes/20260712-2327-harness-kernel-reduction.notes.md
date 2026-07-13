@@ -144,6 +144,13 @@
   `[BrainSync]` drift. The new main also overlaps this work-package's hook,
   report, notes, review, circuit-test, and task-sync surfaces, so it must be
   integrated and audited before the verifier can be retried.
+- The branch was then rebased onto `f248e76f`. The three registered reference
+  docs were synced through the explicit repo-to-brain manifest, handoff/resume
+  were refreshed, and strict workflow validation passed. A git-enabled external
+  re-review proved `f248e76f` is an ancestor, native role-routing files are
+  byte-identical to main, the model-negative assertion applies only to the
+  return-channel guard, and report-byte tampering still fails in both jq and
+  no-jq checks paths. Corrected verdict: PASS, no P1/P2.
 
 ## Tradeoffs Considered
 
