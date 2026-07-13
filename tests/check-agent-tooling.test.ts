@@ -1007,7 +1007,7 @@ describe("check-agent-tooling", () => {
         rmSync(envRoot.root, { recursive: true, force: true });
       }
     }
-  }, 15000);
+  }, 30000);
 
   test("aggregates every sibling observation and retains the last completed negative canary across an empty reset", () => {
     const envRoot = setupFakeEnvironment("check-agent-tooling-role-aggregate");

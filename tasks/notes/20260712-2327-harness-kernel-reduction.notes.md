@@ -247,6 +247,13 @@
   environment now pins `REPO_HARNESS_BRAIN_ROOT` to the disposable per-run host
   while retaining Claude's authentication `HOME`; this removes the mutable
   authority leak without copying credentials or adding a fallback path.
+- After the accepted branch was externally integrated into `main`, the merged
+  upstream suite contained a six-case role-routing readiness test with the same
+  15-second timeout as its single-probe neighbors. The six serialized process
+  probes reproducibly required about 18 seconds even when run alone, so the
+  test-specific timeout is now 30 seconds. Production probe bounds are
+  unchanged; this only makes the aggregate regression's wall-clock allowance
+  proportional to its six required cases.
 
 ## Tradeoffs Considered
 
