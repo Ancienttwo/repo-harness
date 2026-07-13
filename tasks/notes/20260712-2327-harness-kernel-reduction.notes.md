@@ -100,6 +100,18 @@
   original full-scope Claude review command timed out without a recoverable
   verdict; a later bounded Claude review of the fixture-only schema delta passed
   with no P1/P2 and confirmed the product fail-closed path remained intact.
+- Before final verification the isolated branch was rebased from `941555e` onto
+  current `main`/`origin/main` `0cf69cf`. `git range-diff` showed 13 commits
+  identical and one expected conflict in `tests/hook-contracts.test.ts`; the
+  resolution keeps both main's Strict review-routing assertions and this branch's
+  cross-model circuit assertions, all backed by existing runtime strings. The
+  bounded Claude integration review became stuck in CodeGraph MCP and was
+  interrupted after ten minutes without a verdict; it is not counted as a pass.
+- At 12:08 local `main` fast-forwarded via an external `git pull --tags origin
+  main` from `0cf69cf` to this branch's `b4acb00`; `git ls-remote` confirmed the
+  remote already pointed there. This session issued no push, merge, deploy, or
+  main-worktree mutation. Final reporting therefore distinguishes our actions
+  from the externally advanced branch state.
 
 ## Tradeoffs Considered
 

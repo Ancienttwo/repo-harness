@@ -5,10 +5,10 @@
 > **Contract**: tasks/contracts/20260712-2327-harness-kernel-reduction.contract.md
 > **Notes File**: tasks/notes/20260712-2327-harness-kernel-reduction.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-07-13 10:18
+> **Last Updated**: 2026-07-13 12:08
 > **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Diff Fingerprint**: sha256:49ea4cc52258ce01a2c5a206184d3ff1a78a1749a134eead958018c175ea3f4a
+> **Reviewed Diff Fingerprint**: sha256:dbad6095c8967f17b2f45085caf1228609ea6b5d154ed2435d43312a5e3f5254
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 ## Human Review Card
@@ -16,7 +16,7 @@
 - Verdict: pass
 - Change type: code-change
 - Intended files changed: existing state/routing/context/circuit/install/Skill/benchmark owners, their deterministic projections, focused tests, durable docs, and this workflow package.
-- Actual files changed: contract-allowed owners only; no new dependency, service, database, compatibility fallback, push, merge, deploy, secret, or shared-main edit.
+- Actual files changed: contract-allowed owners only; the branch was rebased onto `0cf69cf` with the single test-assertion conflict preserving both sides. `origin/main` later advanced externally to the resulting `b4acb00`; this session issued no push, merge, deploy, secret, or shared-main mutation.
 - Commands passed: authoritative Claude 3x9 matrix 27/27; full suite 1234 pass / 1 skip / 0 fail; focused contract suites; typecheck; deploy, architecture, task-sync, inspector, adopt dry-run, state, and profile dry-runs.
 - External acceptance: pass — independent native Codex review covered the full implementation and authoritative matrix; a bounded Claude review covered the later checks-fixture schema delta. Both reported no P1/P2.
 - Residual risks: measured Adaptive Lite cost remains higher than Strict on this provider sample; this is an optimization result, not a safety or completion failure.
@@ -44,9 +44,9 @@
 > **External Reviewer**: Codex + Claude
 > **External Source**: native-subagent/fix_circuit_lock + claude-cli/fixture-delta
 > **External Started**: 2026-07-13T06:30:00+0800
-> **External Completed**: 2026-07-13T10:18:00+0800
+> **External Completed**: 2026-07-13T12:08:00+0800
 > **Review Rubric Version**: 2
-> **Reviewed Diff Fingerprint**: sha256:49ea4cc52258ce01a2c5a206184d3ff1a78a1749a134eead958018c175ea3f4a
+> **Reviewed Diff Fingerprint**: sha256:dbad6095c8967f17b2f45085caf1228609ea6b5d154ed2435d43312a5e3f5254
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 - P1 blockers: none. Earlier findings covering unsafe lock reclaim, mandatory-context loss, incomplete transaction compensation, and stale report provenance were fixed and re-reviewed.
@@ -83,6 +83,7 @@
 
 - Re-run: contract-focused suites, `bun test`, required root checks, and authoritative 3x9 matrix.
 - Re-check: report provenance, No Harness isolation, context maximum, profile ownership/status, and review fingerprint freshness.
+- Re-check: `git range-diff 941555e..178be3 0cf69cf..HEAD` and the combined Strict review/cross-model assertions after rebasing.
 
 ## Summary
 
