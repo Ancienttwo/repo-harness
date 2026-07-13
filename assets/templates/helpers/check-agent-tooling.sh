@@ -1069,6 +1069,258 @@ function detectAgentFleetHost(host, managedAgents) {
   };
 }
 
+function detectCodexNativeRoleRouting() {
+  if (!SELECTED_HOSTS.includes("codex")) {
+    return {
+      status: "not-applicable",
+      reason: "Codex was not selected for this tooling report.",
+      evidence_path: null,
+    };
+  }
+
+  const stateRoot = path.join(REPO_ROOT, ".ai", "harness", "delegation");
+  const statePath = path.join(stateRoot, "latest.json");
+  if (!fs.existsSync(statePath)) {
+    return {
+      status: "unverified",
+      reason: "No repo-scoped SubagentStart role/model evidence has been recorded.",
+      evidence_path: statePath,
+      observations: [],
+    };
+  }
+
+  const state = readJson(statePath);
+  if (!state || typeof state !== "object") {
+    return {
+      status: "invalid",
+      reason: "The repo-scoped delegation evidence file is not valid JSON.",
+      evidence_path: statePath,
+      observations: [],
+    };
+  }
+
+  const routingState = state.native_role_routing;
+  if (routingState === undefined) {
+    return {
+      status: "unverified",
+      reason: "The latest delegation state predates native role/model evidence capture.",
+      evidence_path: statePath,
+      observations: [],
+    };
+  }
+  if (!routingState || typeof routingState !== "object") {
+    return {
+      status: "invalid",
+      reason: "The native role/model evidence state is malformed.",
+      evidence_path: statePath,
+      observations: [],
+    };
+  }
+
+  function resolveEvidenceDirectory(relative) {
+    if (typeof relative !== "string" || !relative.trim() || path.isAbsolute(relative)) return null;
+    const stateRootStat = fs.lstatSync(stateRoot);
+    if (stateRootStat.isSymbolicLink() || !stateRootStat.isDirectory()) return null;
+    const root = fs.realpathSync(stateRoot);
+    const resolved = path.resolve(root, relative);
+    if (resolved === root || !resolved.startsWith(`${root}${path.sep}`)) return null;
+    let current = root;
+    for (const segment of path.relative(root, resolved).split(path.sep)) {
+      current = path.join(current, segment);
+      if (!fs.existsSync(current)) return { path: resolved, exists: false };
+      const stat = fs.lstatSync(current);
+      if (stat.isSymbolicLink() || !stat.isDirectory()) return null;
+      const canonical = fs.realpathSync(current);
+      if (!canonical.startsWith(`${root}${path.sep}`)) return null;
+    }
+    return { path: current, exists: true };
+  }
+
+  const currentEvidence = resolveEvidenceDirectory(routingState.evidence_dir);
+  if (!currentEvidence) {
+    return {
+      status: "invalid",
+      reason: "The native role/model evidence directory is missing or unsafe.",
+      evidence_path: statePath,
+      observations: [],
+    };
+  }
+
+  function observationFiles(directory) {
+    if (!fs.existsSync(directory)) return [];
+    try {
+      const stat = fs.lstatSync(directory);
+      if (stat.isSymbolicLink() || !stat.isDirectory()) return null;
+      const entries = fs.readdirSync(directory, { withFileTypes: true })
+        .filter((entry) => entry.name.endsWith(".json"));
+      if (entries.some((entry) => !entry.isFile())) return null;
+      return entries.map((entry) => path.join(directory, entry.name)).sort();
+    } catch {
+      return null;
+    }
+  }
+
+  function latestRecordedDirectory() {
+    const resolvedRoot = resolveEvidenceDirectory("role-routing");
+    if (!resolvedRoot || !resolvedRoot.exists) return null;
+    const routingRoot = resolvedRoot.path;
+    try {
+      const entries = fs.readdirSync(routingRoot, { withFileTypes: true });
+      if (entries.some((entry) => !entry.isDirectory())) return { invalid: true };
+      const candidates = entries
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => path.join(routingRoot, entry.name))
+        .map((directory) => ({ directory, files: observationFiles(directory) }))
+        .filter((entry) => entry.files === null || entry.files.length > 0);
+      if (candidates.some((entry) => entry.files === null)) return { invalid: true };
+      const ranked = candidates
+        .map((entry) => ({
+          ...entry,
+          latestMtime: Math.max(...entry.files.map((file) => fs.statSync(file).mtimeMs)),
+        }))
+        .sort((left, right) => right.latestMtime - left.latestMtime || left.directory.localeCompare(right.directory));
+      return ranked[0] || null;
+    } catch {
+      return { invalid: true };
+    }
+  }
+
+  let evidenceDir = currentEvidence.path;
+  let files = observationFiles(evidenceDir);
+  if (files === null) {
+    return {
+      status: "invalid",
+      reason: "The native role/model evidence directory cannot be read safely.",
+      evidence_path: evidenceDir,
+      observations: [],
+    };
+  }
+  if (files.length === 0) {
+    const previous = latestRecordedDirectory();
+    if (previous?.invalid) {
+      return {
+        status: "invalid",
+        reason: "Stored native role/model evidence contains an unsafe entry.",
+        evidence_path: path.join(stateRoot, "role-routing"),
+        observations: [],
+      };
+    }
+    if (previous) {
+      evidenceDir = previous.directory;
+      files = previous.files;
+    }
+  }
+  if (files.length === 0) {
+    return {
+      status: "unverified",
+      reason: "No authoritative SubagentStart role/model observation has been recorded.",
+      evidence_path: evidenceDir,
+      observations: [],
+    };
+  }
+
+  const bounded = (value, pattern) => typeof value === "string"
+    && value.length > 0
+    && value.length <= 128
+    && !/[\u0000-\u001f\u007f]/.test(value)
+    && pattern.test(value);
+  const validDate = (value) => typeof value === "string" && Number.isFinite(Date.parse(value));
+  function configDigestMatches(observation) {
+    if (!/^[a-f0-9]{64}$/.test(observation.config_sha256 || "")) return false;
+    const roots = [path.join(REPO_ROOT, ".codex", "agents")];
+    const codexHome = process.env.CODEX_HOME || (process.env.HOME ? path.join(process.env.HOME, ".codex") : "");
+    if (codexHome) roots.push(path.join(codexHome, "agents"));
+    try {
+      const stat = fs.lstatSync(observation.config_path);
+      if (stat.isSymbolicLink() || !stat.isFile()) return false;
+      const canonicalFile = fs.realpathSync(observation.config_path);
+      const withinAllowedRoot = roots.some((root) => {
+        if (!fs.existsSync(root)) return false;
+        const rootStat = fs.lstatSync(root);
+        if (rootStat.isSymbolicLink() || !rootStat.isDirectory()) return false;
+        const canonicalRoot = fs.realpathSync(root);
+        return canonicalFile.startsWith(`${canonicalRoot}${path.sep}`);
+      });
+      if (!withinAllowedRoot) return false;
+      const currentDigest = crypto.createHash("sha256").update(fs.readFileSync(canonicalFile)).digest("hex");
+      return currentDigest === observation.config_sha256;
+    } catch {
+      return false;
+    }
+  }
+  const observations = [];
+  for (const file of files) {
+    const observation = readJson(file);
+    const commonValid = observation
+      && typeof observation === "object"
+      && observation.schema_version === 1
+      && observation.required === true
+      && ["verified", "unavailable", "mismatch", "unverified", "invalid"].includes(observation.status)
+      && typeof observation.reason === "string"
+      && observation.reason.trim().length > 0
+      && observation.reason.length <= 512
+      && !/[\u0000-\u001f\u007f]/.test(observation.reason)
+      && bounded(observation.agent_id, /^[A-Za-z0-9._:-]+$/)
+      && bounded(observation.turn_id, /^[A-Za-z0-9._:-]+$/)
+      && validDate(observation.checked_at);
+    let semanticValid = commonValid;
+    if (semanticValid && ["verified", "mismatch"].includes(observation.status)) {
+      semanticValid = bounded(observation.agent_type, /^[A-Za-z0-9_-]+$/)
+        && observation.agent_type !== "default"
+        && bounded(observation.observed_model, /^[A-Za-z0-9._-]+$/)
+        && bounded(observation.configured_model, /^[A-Za-z0-9._-]+$/)
+        && typeof observation.config_path === "string"
+        && path.isAbsolute(observation.config_path)
+        && configDigestMatches(observation)
+        && (observation.status === "verified"
+          ? observation.observed_model === observation.configured_model
+          : observation.observed_model !== observation.configured_model);
+    } else if (semanticValid && observation.status === "unavailable") {
+      semanticValid = observation.agent_type === "default"
+        && bounded(observation.observed_model, /^[A-Za-z0-9._-]+$/)
+        && observation.configured_model === null
+        && observation.config_path === null
+        && observation.config_sha256 === null;
+    } else if (semanticValid && observation.status === "unverified") {
+      const agentTypeValid = observation.agent_type === null
+        || bounded(observation.agent_type, /^[A-Za-z0-9_-]+$/);
+      const observedModelValid = observation.observed_model === null
+        || bounded(observation.observed_model, /^[A-Za-z0-9._-]+$/);
+      semanticValid = agentTypeValid
+        && observedModelValid
+        && (observation.agent_type === null || observation.observed_model === null)
+        && observation.configured_model === null
+        && observation.config_path === null
+        && observation.config_sha256 === null;
+    }
+    if (!semanticValid) {
+      return {
+        status: "invalid",
+        reason: "A native role/model observation is structurally or semantically invalid.",
+        evidence_path: evidenceDir,
+        observations: [],
+      };
+    }
+    observations.push({ ...observation, evidence_path: file });
+  }
+
+  const precedence = ["invalid", "mismatch", "unavailable", "unverified", "verified"];
+  const status = precedence.find((candidate) => observations.some((entry) => entry.status === candidate)) || "invalid";
+  const counts = Object.fromEntries(precedence.map((candidate) => [
+    candidate,
+    observations.filter((entry) => entry.status === candidate).length,
+  ]));
+  const reason = observations.length === 1
+    ? observations[0].reason
+    : `Aggregated ${observations.length} child observations: ${precedence.map((key) => `${key}=${counts[key]}`).join(", ")}.`;
+  return {
+    status,
+    reason,
+    evidence_path: evidenceDir,
+    observations,
+  };
+}
+
 function detectAgentFleet() {
   const managedAgents = resolveManagedAgents();
   const hosts = {};
@@ -1096,6 +1348,7 @@ function detectAgentFleet() {
     managed_agents: managedAgents,
     source: AGENT_FLEET_SOURCE_LABEL,
     install_command: AGENT_FLEET_INSTALL_COMMAND,
+    native_role_routing: detectCodexNativeRoleRouting(),
     hosts,
   };
 }
@@ -1564,6 +1817,13 @@ if (strictReadiness && ["missing", "partial"].includes(report.tools.codegraph.st
 if (strictReadiness && ["missing", "partial"].includes(report.tools.agent_fleet.status)) {
   strictFailures.push(`Agent fleet readiness is ${report.tools.agent_fleet.status}: ${report.tools.agent_fleet.reason}`);
 }
+if (
+  strictReadiness
+  && ["unavailable", "mismatch", "invalid"].includes(report.tools.agent_fleet.native_role_routing.status)
+) {
+  const routing = report.tools.agent_fleet.native_role_routing;
+  strictFailures.push(`Codex native role routing is ${routing.status}: ${routing.reason}`);
+}
 
 function printText(result) {
   console.log("External Tooling Report");
@@ -1662,6 +1922,9 @@ function printText(result) {
     }
   }
   console.log(`  - Install: ${agentFleet.install_command}`);
+  if (SELECTED_HOSTS.includes("codex")) {
+    console.log(`  - Codex native role routing: ${agentFleet.native_role_routing.status} (${agentFleet.native_role_routing.reason})`);
+  }
   console.log("");
 
   const gbrain = result.tools.gbrain;

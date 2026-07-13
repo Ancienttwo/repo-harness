@@ -520,6 +520,31 @@ themselves prove that every native MultiAgentV2 spawn surface selects a named
 role instead of inheriting the parent model; keep runtime selection claims
 behind a real subagent canary.
 
+For Codex, repo-harness keeps configuration readiness and runtime routing
+readiness separate:
+
+- `UserPromptSubmit.delegation` initializes
+  `.ai/harness/delegation/latest.json` with
+  `native_role_routing.status = "unverified"` and a repo-scoped evidence
+  directory for that delegation.
+- `SubagentStart.context` consumes Codex's official `agent_type` and `model`
+  fields plus `turn_id` and `agent_id`. It enumerates project custom-agent TOML
+  files first, then user files, parses them with `Bun.TOML.parse`, selects by
+  the schema-authoritative `name`, and writes one atomic observation per child
+  without reading Codex transcripts. The filename is only a convention; an
+  unrelated valid profile may inherit its model, while the selected profile
+  must pin one before repo-harness can verify model routing.
+- `check-agent-tooling.sh` deterministically aggregates every child observation
+  in the current delegation. An empty current delegation retains the latest
+  completed canary instead of erasing negative evidence. Each verified or
+  mismatched observation carries the selected TOML SHA-256, so later config
+  drift invalidates stale evidence. `--strict-readiness`
+  fails after `unavailable`, `mismatch`, `invalid`, or structurally malformed
+  evidence; only a genuinely absent canary remains advisory `unverified`.
+
+SubagentStart does not expose `model_reasoning_effort`, so repo-harness never
+claims that per-role reasoning effort is verified from this gate.
+
 `developer_instructions` is the packaged `.md` body plus the canonical
 EXECUTION_BOUNDARY anti-extras clause, kept byte-identical to the
 `EXECUTION_BOUNDARY` constant in `scripts/contract-run.ts` so every generated

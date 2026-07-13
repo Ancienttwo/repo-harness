@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-13T13:59:44+0800 -->
+<!-- updated_at: 2026-07-13T14:07:24+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-07-13T13:59:44+0800
-> **Source Branch**: main
-> **Source Commit**: 63b3b6a
+> **Updated At**: 2026-07-13T14:07:24+0800
+> **Source Branch**: codex/native-role-capability-gate
+> **Source Commit**: 87f0cd1
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: manual
@@ -18,9 +18,9 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 ## Current Focus
 
 - Status: Active
-- Active Plan: (none)
-- Plan Status: (none)
-- Next Task: inspect active worktree marker(s)
+- Active Plan: plans/plan-20260712-0219-native-role-capability-gate.md
+- Plan Status: Executing
+- Next Task: Close the worktree: it is rebased onto and matches `origin/main` (`7b6ba87`) directly, independent of the primary checkout's local `main`; run `verify-sprint` against this branch to evaluate the diff basis before merge.
 - Clear Note: (none)
 
 ## Mainline Snapshot Reading
@@ -31,18 +31,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
+- .: plans/plan-20260712-0219-native-role-capability-gate.md
+- .: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/native-role-capability-gate
 - /private/tmp/repo-harness-remove-gstack: plans/plan-20260713-1305-remove-gstack-core.md
 - /private/tmp/repo-harness-remove-gstack: active-worktree owner -> /private/tmp/repo-harness-remove-gstack
 - /Users/kito/Projects/repo-harness-worktrees/bdd2-eval-foundation: plans/plan-20260712-0450-bdd2-eval-foundation.md
 - /Users/kito/Projects/repo-harness-worktrees/bdd2-eval-foundation: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/bdd2-eval-foundation
 - /Users/kito/Projects/repo-harness-worktrees/bdd2-shape-experiment: plans/plan-20260712-0605-bdd2-e-02-run-experiment-s-shape-hypothesis.md
 - /Users/kito/Projects/repo-harness-worktrees/bdd2-shape-experiment: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/bdd2-shape-experiment
-- /Users/kito/Projects/repo-harness-worktrees/bdd3-ea1-inception: plans/plan-20260713-1336-bdd3-ea1-typed-browser-evidence-authority.md
-- /Users/kito/Projects/repo-harness-worktrees/bdd3-ea1-inception: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/bdd3-ea1-inception
 - /Users/kito/Projects/repo-harness-worktrees/harness-cost-baseline-slo: plans/plan-20260712-2327-harness-kernel-reduction.md
 - /Users/kito/Projects/repo-harness-worktrees/harness-cost-baseline-slo: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/harness-cost-baseline-slo
-- /Users/kito/Projects/repo-harness-worktrees/native-role-capability-gate: plans/plan-20260712-0219-native-role-capability-gate.md
-- /Users/kito/Projects/repo-harness-worktrees/native-role-capability-gate: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/native-role-capability-gate
 - /Users/kito/Projects/repo-harness-worktrees/upgrade-bun-1-3-14: plans/plan-20260712-1330-bun-1-3-14-runtime-upgrade.md
 - /Users/kito/Projects/repo-harness-worktrees/upgrade-bun-1-3-14: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/upgrade-bun-1-3-14
 - /Users/kito/Projects/repo-harness-wt-codex-native-role-model-override: plans/plan-20260711-0219-codex-native-role-model-override.md
@@ -64,7 +62,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`: status=completed, current_slice=completed-20260713-policy-seed, source_plan=plans/plan-20260712-2215-agent-fleet-specialists.md
 ## Handoff
 
-- Exact Next Step: Clean up merged contract worktree codex/agent-fleet-routing-closeout. Command: repo-harness run contract-worktree cleanup --slug agent-fleet-routing-closeout --target main
+- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Close the worktree: it is rebased onto and matches `origin/main` (`7b6ba87`) directly, independent of the primary checkout's local `main`; run `verify-sprint` against this branch to evaluate the diff basis before merge.
 
 ## Checks
 
@@ -72,13 +70,10 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 4 changed/untracked path(s)
+- Summary: clean
 
 ```
-?? assets/agents/
-?? docs/architecture/requests/root.md
-?? docs/architecture/requests/workflow-engine-contract-assets.md
-?? docs/architecture/requests/workflow-engine-inspection-migration.md
+(none)
 ```
 
 ## Source Artifacts

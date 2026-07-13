@@ -314,7 +314,7 @@ delegation_state_paths_json() {
     function firstString(input, keys) {
       for (const key of keys) {
         const value = input?.[key];
-        if (typeof value === "string" && value.trim()) return value;
+        if (typeof value === "string" && value.trim()) return value.trim();
       }
       return "";
     }
@@ -328,6 +328,9 @@ delegation_state_paths_json() {
     }
 
     function delegationScope(input) {
+      const turnId = firstString(input, ["turn_id"]);
+      if (turnId) return { source: "turn_id", id: `turn-${sanitize(turnId)}` };
+
       const runId = firstString(input, ["run_id"]);
       if (runId) return { source: "run_id", id: `run-${sanitize(runId)}` };
 
@@ -389,13 +392,194 @@ delegation_mark_fallback_used() {
 
   DELEGATION_STATE_PATHS="$state_paths" bun -e '
     const fs = require("fs");
+    const crypto = require("crypto");
+
+    function sleepMs(durationMs) {
+      if (durationMs <= 0) return;
+      try {
+        const view = new Int32Array(new SharedArrayBuffer(4));
+        Atomics.wait(view, 0, 0, durationMs);
+      } catch {
+        const until = Date.now() + durationMs;
+        while (Date.now() < until) {
+          // Busy-wait fallback for a runtime where Atomics.wait is unavailable.
+        }
+      }
+    }
+
+    // A single lock FILE (not a directory) at a fixed sibling path, created
+    // with the O_CREAT | O_EXCL | O_WRONLY (wx) flag: fs.writeFileSync with
+    // { flag: wx } is one call that atomically creates and opens the path,
+    // throwing EEXIST synchronously when the path already exists, and this
+    // same call writes the small owner-marker JSON payload as part of that
+    // same successful open. There is no intermediate state where the lock
+    // exists but has no readable owner yet, unlike the previous mkdir-plus-
+    // separate-marker-file design. This assumes the marker payload stays small
+    // and this hook always runs against a local or tmpfs-backed filesystem, so
+    // that lock existence and lock content are effectively one fact
+    // established by a single syscall; it does not attempt to solve the
+    // general case of multi-writer torn writes for a larger payload or a
+    // networked filesystem.
+    function tryCreateLockFile(lockPath) {
+      const token = crypto.randomBytes(8).toString("hex");
+      try {
+        fs.writeFileSync(
+          lockPath,
+          JSON.stringify({ pid: process.pid, token: token, acquired_at: new Date().toISOString() }),
+          { flag: "wx" },
+        );
+        return { created: true, token: token };
+      } catch (error) {
+        if (error && typeof error === "object" && error.code === "EEXIST") return { created: false, token: null };
+        throw error;
+      }
+    }
+
+    // No reclaim is attempted here, on purpose. Five independent review rounds
+    // each found a new TOCTOU race one layer deeper in a progressively more
+    // careful reclaim mechanism: no lock at all, then an mkdir-based lock on
+    // only one writer site, then the same lock on both writer sites but with
+    // no ownership check, then an ownership token whose own mkdir-plus-marker
+    // write was not atomic, then a single wx-locked file whose own stale-
+    // reclaim step let two concurrent reclaimers race each other, and finally
+    // a reclaim-marker gate whose own stale-marker cleanup could delete a
+    // brand-new legitimate marker belonging to a different process. Every fix closed the
+    // previously reported race and opened an equivalent one nested one layer
+    // deeper in the mechanism protecting the previous fix. That pattern is a
+    // decisive signal, not a coincidence: safely reclaiming a lock from a
+    // possibly-crashed holder using only bare filesystem primitives (no
+    // flock, no new dependency) cannot be made fully correct through
+    // incremental patching. So this lock does not try. A lock left behind by
+    // a crashed holder simply stays held until it is removed by hand (for
+    // example, rm .ai/harness/delegation/latest.json.lock). That is an
+    // accepted tradeoff, not an oversight: SubagentStart and UserPromptSubmit
+    // hooks are short-lived, and this lock only guards the shared latest.json
+    // convenience pointer -- the isolated per-turn state write always
+    // succeeds no matter what this lock decides. The bounded retry loop
+    // below still exists so ordinary, brief contention (two hooks racing a
+    // normal, soon-to-be-released lock) resolves quickly, and a wedged lock
+    // degrades to skipping the guarded write instead of hanging the hook.
+    function acquireLock(lockPath, options) {
+      const totalTimeoutMs = (options && options.totalTimeoutMs) || 2000;
+      const retryDelayMs = (options && options.retryDelayMs) || 25;
+      const deadline = Date.now() + totalTimeoutMs;
+      for (;;) {
+        let attempt;
+        try {
+          attempt = tryCreateLockFile(lockPath);
+        } catch {
+          return { acquired: false, token: null };
+        }
+        if (attempt.created) return { acquired: true, token: attempt.token };
+        if (Date.now() >= deadline) return { acquired: false, token: null };
+        sleepMs(retryDelayMs);
+      }
+    }
+
+    // Release re-reads the lock file and only unlinks it when the content
+    // token still matches the token returned by this exact acquireLock call,
+    // so a lock that has since been legitimately released and re-acquired by
+    // a different holder is never removed by a caller that no longer owns
+    // it. The read and the unlink are still two separate steps, not one
+    // atomic syscall -- POSIX has no portable delete-only-if-content-matches
+    // primitive for a plain path without a file-descriptor-based lock such as
+    // flock, which this hook deliberately avoids to stay dependency-free.
+    // Since this lock is never reclaimed (see acquireLock above), the only
+    // way this token check can ever see a mismatch is a legitimate release-
+    // then-reacquire by a different holder in between, or the same accepted,
+    // extremely low-probability PID-reuse/torn-write edge case already
+    // documented for tryCreateLockFile above -- not a new gap introduced here.
+    function releaseLock(lockPath, token) {
+      let owner;
+      try {
+        owner = JSON.parse(fs.readFileSync(lockPath, "utf8"));
+      } catch {
+        // No readable content at this path: this call cannot prove it still
+        // owns the lock, so leave it alone rather than remove a lock it may
+        // not own.
+        return;
+      }
+      if (!owner || owner.token !== token) {
+        // A different holder now owns this lock (already released and
+        // re-acquired by a different call); do not touch a lock this call no
+        // longer owns.
+        return;
+      }
+      try {
+        fs.unlinkSync(lockPath);
+      } catch {
+        // Already gone: released by a different invocation.
+      }
+    }
+
     const paths = JSON.parse(process.env.DELEGATION_STATE_PATHS || "{}");
     const state = JSON.parse(fs.readFileSync(paths.statePath, "utf8"));
     state.fallback_used = true;
     state.fallback_used_at = new Date().toISOString();
     state.updated_at = state.fallback_used_at;
-    fs.writeFileSync(paths.statePath, `${JSON.stringify(state, null, 2)}\n`);
-    fs.writeFileSync(paths.latestPath, `${JSON.stringify(state, null, 2)}\n`);
+    if (paths.latestPath === paths.statePath) {
+      // Unscoped case: statePath IS the shared latest.json pointer (see
+      // delegation_state_paths_json above), not an isolated per-turn file,
+      // so this single write is itself a shared-pointer write. It must go
+      // through the same lock-guarded, in-lock scope_id re-check as the
+      // scoped branch below instead of writing unconditionally. Skipping
+      // the lock here (treating this as a redundant self-write) was the
+      // actual bug: it let an unlocked write reach latest.json whenever no
+      // scope had been claimed yet.
+      const latestLockPath = `${paths.latestPath}.lock`;
+      const latestLock = acquireLock(latestLockPath);
+      if (latestLock.acquired) {
+        try {
+          const currentLatest = JSON.parse(fs.readFileSync(paths.latestPath, "utf8"));
+          if (currentLatest && currentLatest.scope_id === state.scope_id) {
+            fs.writeFileSync(paths.statePath, `${JSON.stringify(state, null, 2)}\n`);
+          }
+        } finally {
+          releaseLock(latestLockPath, latestLock.token);
+        }
+      }
+      // If the lock could not be acquired within the bounded retry window,
+      // skip this write rather than risk a hung hook: a skipped write is
+      // safe, a hung hook is not.
+    } else {
+      // Scoped case: statePath belongs only to this invocation (see
+      // delegation_state_paths_json above) and is always safe to write
+      // unconditionally; only the shared latestPath write below needs the
+      // lock.
+      fs.writeFileSync(paths.statePath, `${JSON.stringify(state, null, 2)}\n`);
+      // Mutual-exclusion guard: subagent-start-context.sh and
+      // codex-delegation-advisor.sh both serialize their own latest.json
+      // writes through this same lock. This call is a third writer of the
+      // same shared pointer, so it must hold the identical lock too, or a
+      // fresher pointer committed by either of those two scripts while this
+      // call is running could be silently clobbered back to this stale
+      // fallback state. The per-turn statePath write above is always scoped
+      // to this invocation alone and is safe regardless.
+      //
+      // This call resolves paths and reads state before acquiring this
+      // lock, so a newer delegation scope can also be committed in that
+      // gap, not only while the lock is held afterward. Re-read
+      // latest.json inside the lock and only write when its current
+      // scope_id still matches the scope this invocation resolved,
+      // mirroring the identical in-lock re-check subagent-start-context.sh
+      // already uses, so a fresher pointer committed in that gap is never
+      // rolled back to this stale fallback state.
+      const latestLockPath = `${paths.latestPath}.lock`;
+      const latestLock = acquireLock(latestLockPath);
+      if (latestLock.acquired) {
+        try {
+          const currentLatest = JSON.parse(fs.readFileSync(paths.latestPath, "utf8"));
+          if (currentLatest && currentLatest.scope_id === state.scope_id) {
+            fs.writeFileSync(paths.latestPath, `${JSON.stringify(state, null, 2)}\n`);
+          }
+        } finally {
+          releaseLock(latestLockPath, latestLock.token);
+        }
+      }
+      // If the lock could not be acquired within the bounded retry window,
+      // skip the latestPath write rather than risk a hung hook: a skipped
+      // write is safe, a hung hook is not.
+    }
   ' >/dev/null 2>&1 || true
 }
 
