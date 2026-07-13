@@ -1114,3 +1114,181 @@ record — attempt 2"; `run-1783966219184`, now destroyed by the external
 teardown; and sub-attempt 2's destroyed, unrecorded state) stopped before
 writing a `run.json`, and this correction generated no new held-out output.
 Stage B (EA1-03) may begin only against the hashes re-pinned here.
+
+## Stage B run record — attempt 4 (EA1-03 dispatch, first successful run)
+
+**Preflight (all green before any invocation).** `git rev-parse HEAD` =
+`af0c3236ce3f9ea11bd50cc07e70c8d592c10318`, `git status --short --branch
+-uall` showed only the branch line (clean). `bun scripts/run-bdd2-evals.ts
+validate --manifest evals/bdd3/evaluation-manifest.json` returned
+`{"status":"valid","held_out_archetypes":24,"dev_archetypes":6,"expected_rows":96,"corpus_rows":96}`.
+Codex CLI at the manifest's pinned absolute path (`/Users/kito/.local/bin/codex`,
+resolving to `.../packages/standalone/releases/0.144.1-aarch64-apple-darwin/bin/codex`)
+returned exactly `codex-cli 0.144.1`; `~/.codex/auth.json` present, mode `0600`,
+regular file. No stray `run-bdd2-evals`/`codex exec` process found before
+launch. The dispatch stated the owner had confirmed the previously
+interfering external-teardown session (see Pre-Stage-B correction #4 above)
+was stopped; this slice took that as given and verified the clean
+preflight state itself, not the ownership claim independently.
+
+**Invocation.** `bun scripts/run-bdd2-evals.ts score --manifest
+evals/bdd3/evaluation-manifest.json --experiment EA1`, launched via a
+background shell with stdout+stderr redirected to a scratchpad log file
+plus an `EXIT_CODE=$?` marker appended on completion (no `nohup`/`disown`),
+with a quiet stall-watch armed in parallel (polled the run directory's file
+count every 30s; would fire only on 10+ minutes of zero growth while the
+process was still alive, otherwise exits silently once the `EXIT_CODE=`
+marker appears — so a normal completion produces exactly one terminal
+report, not a duplicate). It exited silently, confirming no stall occurred.
+Recorded for the file: `--experiment EA1` is accepted by `parseArgs` as a
+recognized flag but is inert on this manifest — `main()` calls
+`peekManifestSchema` first, and since
+`evals/bdd3/evaluation-manifest.json`'s schema is
+`repo-harness-bdd3-evaluation.ea1`, dispatch routes to `runEa1Cli`, whose
+`score` branch calls `scoreEa1Experiment(evaluation, options.output)`
+directly and never reads `options.experiment` (confirmed by reading
+`scripts/run-bdd2-evals.ts` lines 857-871). The flag is harmless exactly as
+coded, not functionally load-bearing for this manifest.
+
+**Result: succeeded on the first sub-attempt.** Unlike every prior Stage B
+attempt recorded in this file (attempt 1, attempt 2's three sub-attempts,
+and correction #4's two destroyed sub-attempts), this run completed
+end-to-end with exit code 0 and no re-invocation was needed. Run directory
+`.ai/harness/runs/bdd3/ea1/run-1783970569698` (`run-<Date.now() at start>`,
+per `scoreEa1Experiment`'s own naming). Wall-clock window: approximately
+2026-07-13T19:22:49Z (start, read off the run-directory timestamp) to
+approximately 2026-07-13T19:49:29Z (completion, from the log file's and
+`run.json`'s mtimes) — roughly 26m40s for the full 96-coordinate pass at
+`max_concurrency=8`; this is a proxy from filesystem timestamps, not an
+instrumented duration.
+
+`run.json` self-attests: `source_commit` =
+`af0c3236ce3f9ea11bd50cc07e70c8d592c10318` (matches preflight HEAD, and
+`git rev-parse HEAD` still returned this exact value after the run —
+unmoved throughout); `manifest_sha256` =
+`2e80a4591353adc557c2eede46877e1872e4d300464726bfb480b73d3716e0f0`,
+independently verified to equal a live `shasum -a 256` of
+`evals/bdd3/evaluation-manifest.json` taken after the run (tree still
+clean, HEAD unmoved, so current bytes = committed bytes = what was hashed
+at score time); `model_profile` =
+`{"model":"gpt-5.6-sol","expected_version":"codex-cli 0.144.1"}`, matching
+both the manifest's pinned profile and the live `codex --version` check
+above.
+
+**Integrity facts (counted directly from the run directory, then
+cross-checked by `validate-scores`):**
+
+| Artifact | Count | Expected |
+|---|---|---|
+| `responses/*.json` | 96 | 96 (24 archetypes x 2 conditions x 2 repetitions) |
+| `scores/outcome/<packet>/<reviewer>.json` | 192 | 192 (96 x 2 reviewers) |
+| `adjudications/*.json` | 65 | on canonical disagreement only |
+| `scores/evidence/*.json`, control-evidence schema | 48 | 48 (one per control packet) |
+| `scores/evidence/*.json`, treatment-evidence-result schema | 48 | 48 (one per treatment packet) |
+| `private/*.json` | 96 | 96 |
+
+`bun scripts/run-bdd2-evals.ts validate-scores --manifest
+evals/bdd3/evaluation-manifest.json --run
+.ai/harness/runs/bdd3/ea1/run-1783970569698` returned green with matching
+counts:
+
+```json
+{
+  "outcomeScoreCount": 192,
+  "controlEvidenceScoreCount": 48,
+  "treatmentEvidenceResultCount": 48,
+  "adjudicationCount": 65
+}
+```
+
+`validateEa1ScoreRun` fails closed on any reviewer-score hash mismatch,
+disagreement/adjudication inconsistency, corpus/packet mapping drift, or
+freeze/manifest-hash mismatch (`scripts/run-bdd2-evals.ts`, mirroring the E3
+`validateScoreRun` shape at lines 273-277) — a clean return means all of
+those held, not merely that the files exist. The adjudication rate (65/96,
+~68%) is recorded here as data only; interpreting it is EA1-04's job, not
+this slice's.
+
+**Treatment packet stats, recorded as data (no interpretation, no score
+edits).** All 48 treatment packets passed generation and the relaxed
+structural intake gate (`assertEa1NotEstablishedVocabulary`, Pre-Stage-B
+correction #4) — the run reached 96/96 responses and exited 0, which is
+only possible if no packet exhausted `model_profile.max_attempts` (3),
+since that path calls `fail()` and aborts the entire run (as correction
+#4's sub-attempt 1 demonstrated at 86/96). A full-log grep for
+`error|retry|usage limit|traceback|exception` returned zero matches,
+consistent with a clean pass; this does not rule out an individual attempt
+failing once and succeeding on retry within a packet, since
+`runValidatedModel` does not log intermediate attempt failures, only a
+final exhaustion. `scores/evidence/*.json` schema breakdown confirms the
+expected even split: 48 `repo-harness-bdd3-locked-control-evidence-score.ea1`
+(LLM-judged) + 48 `repo-harness-bdd3-locked-treatment-evidence-result.ea1`
+(deterministic `applyEa1ValidatorRules` output, zero model calls per the
+both-arms design). No per-rule firing breakdown was computed here — that
+aggregation is projection/gate work (EA1-04), out of this slice's boundary.
+
+**LIVE blindness spot-check, 3 real packets (1 control + 2 treatment,
+spanning both closable and trap archetypes).** Packets inspected:
+`00ea54fe070ddbc1a87656180eff7f76` (EA1-T-06, control, rep 2),
+`11c653bc805d03a0def6d71943059a95` (EA1-C-08, treatment, rep 1),
+`23fd72b3d3e69d9a06f77a7417541818` (EA1-T-03, treatment, rep 1). Method:
+read each packet's real `responses/<id>.json`, cross-referenced against the
+real sealed `held-out-ea1` task/truth entries, and checked field membership
+against `scoreEa1Experiment`'s own `reviewPacket`/`ea1NormalizedOutcome`
+construction (`scripts/run-bdd2-evals.ts` around lines 618-635, 671) rather
+than assuming it. Findings:
+
+- `reviewPacket` is exactly `{schema, packet_id, normalized_outcome,
+  truth}` — 4 top-level keys, structurally incapable of carrying a
+  condition label, provider/model name, URL, raw appendix text, or a
+  sibling packet's output; confirmed by reading the construction site
+  directly (no such field is ever assigned there).
+- `normalized_outcome` = `{schema, task: {title, agent_input,
+  named_uncertainty}, outcome: {...}}`. None of the 3 archetypes'
+  `title`/`agent_input`/`named_uncertainty` contain a URL (checked
+  programmatically: no `http`/`www.` substring in any of the three).
+  `outcome` carries the response's own claims (necessary for an outcome
+  judge to work at all), never the raw `appendix_text` field — that field
+  exists only in the separate generation/`control_evidence_review`
+  packets, never in `reviewPacket`.
+- `truth` sent to the reviewer is a 4-key subset (`expected_disposition`,
+  `required_boundary`, `unsupported_concepts`, `protected_concerns`) of the
+  real 10-key truth object. The 6 withheld keys — `kind`, `closable`,
+  `trap_kind`, `reference_pattern`, `forbidden_inference`,
+  `not_established_required` — are exactly the trap-identity and
+  answer-key fields; confirmed absent from all 3 real truth entries' subset
+  extraction. So the outcome reviewer is blind to trap identity, not
+  merely to condition.
+- No sibling output: `reviewPacket` never references another packet_id or
+  another condition/repetition's response.
+
+This is a structural-plus-3-sample field-level check, not an exhaustive
+audit of all 96 packets — consistent with this slice's spot-check mandate.
+
+**Anomaly recorded as data (not fixed — no score edits ever, per this
+slice's boundary).** The control response for EA1-T-06 rep 2
+(`00ea54fe070ddbc1a87656180eff7f76`) has a stray trailing fragment inside
+one `excluded_behaviors` string: `"Do not invent a grace-period duration,
+retry rule, or reactivation policy.], "` — the model appears to have
+echoed a fragment of list-closing syntax into the string content itself.
+This is a content oddity, not a structural violation: the response still
+matches its generation-time schema (`repo-harness-bdd2-agent-response.e2`)
+closely enough that generation did not fail closed, and `validate-scores`
+returned clean for this packet's full chain (both reviewer scores, its
+adjudication). Left byte-for-byte as generated, per this slice's "no score
+edits ever" boundary; noted here as data for EA1-04/the gate report to
+weigh, not adjudicated by this slice.
+
+**Authority stayed sealed throughout.** `git status --short --branch -uall`
+returned only the branch line both before and after the run;
+`git rev-parse HEAD` stayed `af0c3236ce3f9ea11bd50cc07e70c8d592c10318` for
+the entire dispatch. No authority file (corpus, truth, appendices, schema,
+rules, thresholds, prompts, or `model_profile`) was edited.
+
+**Disposition: EA1-03 complete.** This is the first Stage B run in this
+contract's history to produce a valid `run.json` and pass `validate-scores`
+— every prior attempt (1 through the correction-#4 sub-attempts) stopped
+short. EA1-04 (projection, intervention/thesis disposition via the frozen
+gate) was **not** run here, per this slice's EXECUTION_BOUNDARY — it
+consumes `--run .ai/harness/runs/bdd3/ea1/run-1783970569698` as a separate,
+later slice.
