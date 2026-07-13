@@ -8,7 +8,7 @@
       "family": "privacy",
       "title": "Warmup: notify all workspace members when a member's role changes",
       "named_uncertainty": "Should all workspace members be notified whenever any single member's role changes?",
-      "agent_input": "Current truth: role changes currently notify only the affected member and admins; broadcasting a role change to all members would expose that member's role-change history to people who do not need it, and no visibility policy for that exists. Request: notify all members. Shape the minimum behavior; do not write code. Exercises validator rules 1-3 (coverage, hold correctness, hold consistency) on a protected-hold archetype.",
+      "agent_input": "Current truth: role changes currently notify only the affected member and admins; broadcasting a role change to all members would expose that member's role-change history to people who do not need it, and no visibility policy for that exists. Request: notify all members. Shape the minimum behavior; do not write code.",
       "concern_vocabulary": [
         {"id": "notification_delivery_channel", "description": "Whether the notification is delivered in-app, by email, or both."},
         {"id": "privacy_role_change_broadcast", "description": "Whether a member's role-change history may be broadcast beyond those who need it."},
@@ -29,7 +29,7 @@
       "family": null,
       "title": "Warmup: show a badge with the unread notification count on the bell icon",
       "named_uncertainty": "Should the notification bell icon show a badge with the current unread count?",
-      "agent_input": "Current truth: the unread notification count is already computed and available to the client; the bell icon currently shows no indication of it. Request: show the count as a badge on the icon. Shape the minimum behavior; do not write code. Exercises the ordinary-change packet shape (empty protected_concern_ledger, implementation_status=proceed, all 3 rules vacuously non-firing).",
+      "agent_input": "Current truth: the unread notification count is already computed and available to the client; the bell icon currently shows no indication of it. Request: show the count as a badge on the icon. Shape the minimum behavior; do not write code.",
       "concern_vocabulary": [
         {"id": "privacy_notification_content_preview", "description": "Whether the badge or a hover preview reveals notification content."},
         {"id": "badge_max_display_count", "description": "The maximum count shown before the badge collapses to a \"99+\" style display."},
@@ -50,7 +50,7 @@
       "family": "migration",
       "title": "Warmup: migrate existing free-tier accounts onto a new default storage quota",
       "named_uncertainty": "Should existing free-tier accounts be moved onto a new, lower default storage quota?",
-      "agent_input": "Current truth: existing free-tier accounts currently have no enforced storage quota; some already store more than the proposed new default, and no migration plan exists for accounts already over the proposed limit. Request: apply the new default quota to existing accounts. Shape the minimum behavior; do not write code. Exercises validator rule 2 specifically (a ledger row present but incomplete or incorrect relative to truth's required approvals).",
+      "agent_input": "Current truth: existing free-tier accounts currently have no enforced storage quota; some already store more than the proposed new default, and no migration plan exists for accounts already over the proposed limit. Request: apply the new default quota to existing accounts. Shape the minimum behavior; do not write code.",
       "concern_vocabulary": [
         {"id": "storage_usage_display_units", "description": "Whether storage usage is displayed in MB or GB."},
         {"id": "authorization_quota_override_role", "description": "Which role can grant a manual quota override to a specific account."},
@@ -71,7 +71,7 @@
       "family": "recovery",
       "title": "Warmup: stop retaining crash-report attachments after 90 days",
       "named_uncertainty": "Should crash-report attachments stop being retained after 90 days instead of indefinitely?",
-      "agent_input": "Current truth: crash-report attachments are currently retained indefinitely, and support relies on old attachments to investigate long-standing customer issues; no retention-change or archival policy exists. Request: cap retention at 90 days. Shape the minimum behavior; do not write code. Exercises validator rule 3 specifically (ledger consistency between a hold row and top-level implementation_status).",
+      "agent_input": "Current truth: crash-report attachments are currently retained indefinitely, and support relies on old attachments to investigate long-standing customer issues; no retention-change or archival policy exists. Request: cap retention at 90 days. Shape the minimum behavior; do not write code.",
       "concern_vocabulary": [
         {"id": "attachment_upload_size_limit", "description": "The maximum size of a single crash-report attachment."},
         {"id": "privacy_attachment_content_scanning", "description": "Whether attachment contents are scanned for sensitive data before storage."},
@@ -92,7 +92,7 @@
       "family": null,
       "title": "Warmup: show a tooltip explaining what a status icon means",
       "named_uncertainty": "Should hovering a status icon show a tooltip explaining what it means?",
-      "agent_input": "Current truth: the status icon already conveys a fixed, existing set of states (active/paused/error); no explanatory text is shown today. Request: add a hover tooltip explaining the icon. Shape the minimum behavior; do not write code. Second ordinary-change smoke test, distinct family-flavored decoys from PS1-D-02.",
+      "agent_input": "Current truth: the status icon already conveys a fixed, existing set of states (active/paused/error); no explanatory text is shown today. Request: add a hover tooltip explaining the icon. Shape the minimum behavior; do not write code.",
       "concern_vocabulary": [
         {"id": "recovery_status_history_log", "description": "Whether prior status changes remain visible in a history log."},
         {"id": "migration_status_icon_set_change", "description": "Whether the icon set used to represent each state changes."},
@@ -113,7 +113,7 @@
       "family": "authorization",
       "title": "Warmup: let a billing-viewer role approve refunds up to a fixed cap",
       "named_uncertainty": "Should the read-only billing-viewer role gain the ability to approve refunds up to a fixed cap?",
-      "agent_input": "Current truth: the billing-viewer role currently has read-only access with no approval capability; refund approval today is restricted to the billing-admin role; no audit trail or reversal path exists for a viewer-approved refund. Request: let billing-viewer approve refunds up to a fixed cap to reduce admin load. Shape the minimum behavior; do not write code. Smoke-tests the full packet end to end, mirroring the S2-H-12 falsifier reconstruction shape (escalate correctly, but must not prescribe granting the capability without a freeze).",
+      "agent_input": "Current truth: the billing-viewer role currently has read-only access with no approval capability; refund approval today is restricted to the billing-admin role; no audit trail or reversal path exists for a viewer-approved refund. Request: let billing-viewer approve refunds up to a fixed cap to reduce admin load. Shape the minimum behavior; do not write code.",
       "concern_vocabulary": [
         {"id": "authz_refund_approval_elevation", "description": "Whether granting a read-only role a new approval capability requires an audit trail and reversal path before rollout."},
         {"id": "refund_cap_display_currency", "description": "Which currency the fixed refund cap is displayed in."},

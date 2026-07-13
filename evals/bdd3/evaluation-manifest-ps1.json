@@ -26,7 +26,7 @@
     "dev": {
       "tasks": {
         "path": "evals/bdd3/tasks/dev-ps1.json",
-        "sha256": "363faf6198757659e9221d68df59ecbf34fda6be2d19d6d84802d5e9c0e52bd1"
+        "sha256": "5ec8c251ebe99031cd01888a6ce3542cab2a0631c96d6af14100b63314451163"
       },
       "truth": {
         "path": "evals/bdd3/truth/dev-ps1.json",

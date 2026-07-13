@@ -4,7 +4,7 @@
 > **Plan**: plans/plan-20260714-0512-bdd3-ps1-protected-shape-ledger.md
 > **Contract**: tasks/contracts/20260714-0512-bdd3-ps1-protected-shape-ledger.contract.md
 > **Review**: tasks/reviews/20260714-0512-bdd3-ps1-protected-shape-ledger.review.md
-> **Last Updated**: 2026-07-14 05:31
+> **Last Updated**: 2026-07-14 07:18
 > **Lifecycle**: notes
 
 ## Falsifier proof (Step 0, done before any corpus file was authored)
@@ -564,15 +564,91 @@ held-out is unaffected -- but should be resolved (or explicitly waived) by
 an owner-directed follow-up before any future dev-only re-warmup is treated
 as unbiased mechanism evidence.
 
+## pre-Stage-B hygiene: dev meta-commentary strip (PS1-03 Step 0)
+
+**Trigger.** Gate/Stage-A finding (risk class 1, "Answer-key leakage",
+recorded above under Stage A seal), orchestrator-approved for this slice: all
+6 dev archetypes' served `agent_input` ended with an authoring meta-sentence
+naming the specific validator rule(s) and/or packet-shape category the
+archetype exists to exercise (e.g. `PS1-D-01`: "...Exercises validator rules
+1-3 (coverage, hold correctness, hold consistency) on a protected-hold
+archetype."; `PS1-D-06`: "...mirroring the S2-H-12 falsifier reconstruction
+shape (escalate correctly, but must not prescribe granting the capability
+without a freeze)." -- the latter names the expected hold/escalate answer
+outright). Held-out was already clean (confirmed again below) and zero Stage
+B outputs existed at trigger time (`.ai/harness/runs/bdd3/` carried only the
+gitignored `ps1-dev-warmup/` diagnostics directory, no `ps1/run-*`), so this
+is a pre-reveal authority edit, same "no reveal has happened yet" logic
+PS1-01's and PS1-02's Step 0 re-seals both rely on.
+
+**Fix.** Deleted the trailing meta-sentence from each of the 6 dev
+archetypes' `agent_input` string in `evals/bdd3/tasks/dev-ps1.json`, stopping
+exactly at the shared, non-meta instruction boundary every archetype
+(dev and held-out alike) already ends generation instructions on: "...Shape
+the minimum behavior; do not write code." Nothing else in any archetype
+changed -- scenario content (`Current truth: ...` / `Request: ...`),
+`named_uncertainty`, `concern_vocabulary`, and `approval_tag_vocabulary` are
+byte-identical; `git diff --stat` shows exactly 6 lines changed (12
++/- across old/new) in `evals/bdd3/tasks/dev-ps1.json`, nothing else.
+
+**Verification (grep proof across served fields of BOTH task files).** Built
+the actual served-field projection per archetype
+(`{task_id, named_uncertainty, agent_input, concern_vocabulary,
+approval_tag_vocabulary}`, i.e. exactly `scorePs1Experiment`'s own
+`genPacket` shape, `scripts/run-bdd2-evals.ts:1157`) via `jq`, then searched
+the prose-bearing fields (excluding each archetype's own self-referential
+`task_id`, which is expected/served by design) for meta-word patterns:
+`validator rules?`, numbered rule references (`rule [123]`, `rules 1-3`),
+`vacuously`, `falsifier`, `warmup`, `smoke test`, `protected-hold`,
+`ordinary-change`, `hold correctness`, `hold consistency`, cross-references
+to another archetype's own id (`PS1-[DH]-\d{2}`), `S2-H-12`, and the bare
+taxonomy words `archetype(s)`/`categor(y|ies)`. Zero hits in both
+`dev-ps1.json` and `held-out-ps1.json` post-fix. (An earlier, cruder pass
+using a bare `\brules?\b` word-boundary matched a false positive in
+`held-out-ps1.json` -- `PS1-H-10`'s decoy concern
+`data_integrity_form_validation_rules`, "Whether the form's existing
+field-validation rules change." -- ordinary in-scenario product language
+about a web form's validation rules, unrelated to the PS1 experiment's own
+rule-numbering; inspected and confirmed benign, held-out left untouched, and
+the check regex narrowed to the numbered/compound meta-shapes above to avoid
+re-flagging ordinary prose.) This also re-confirms, independently of the
+Stage A finding record, that held-out was never affected by this leak class.
+
+**Re-seal.** Recomputed sha256 for the one changed file
+(`shasum -a 256 evals/bdd3/tasks/dev-ps1.json` ->
+`5ec8c251ebe99031cd01888a6ce3542cab2a0631c96d6af14100b63314451163`) and
+re-pinned it in `evals/bdd3/evaluation-manifest-ps1.json`
+(`experiment.dev.tasks.sha256`) -- the only field touched in the manifest.
+`bun scripts/run-bdd2-evals.ts validate --manifest
+evals/bdd3/evaluation-manifest-ps1.json` ->
+`{"status":"valid","held_out_archetypes":24,"dev_archetypes":6,"expected_rows":96,"corpus_rows":96}`.
+`bun test tests/run-bdd2-evals.test.ts -t "PS1"` (falsifier cases a-e,
+malformed-packet rejection, evaluation-authority tests including the
+truth/vocabulary-subset structural test and the protected/ordinary
+indistinguishability test, and the fixture score-run round trip): 14 pass, 0
+fail, 218 expect() calls -- identical counts to PS1-02's Step 0 re-seal,
+confirming nothing rule/schema/test-shaped moved, only served-text content
+(order-independent-by-construction tests stay green on a content change for
+the same reason they stayed green on PS1-02's order-only change: they assert
+id membership, key sets, and length, never literal string content).
+
+**Held-out unaffected, unedited.** This step touched only
+`evals/bdd3/tasks/dev-ps1.json` and the one dev-tasks hash field in the
+manifest. `evals/bdd3/tasks/held-out-ps1.json`,
+`evals/bdd3/truth/held-out-ps1.json`, and every other sealed authority file
+(rules, schemas, prompts, metrics, thresholds) are byte-unchanged, matching
+this slice's EXECUTION_BOUNDARY (step-0 hygiene fix only, no other authority
+edits).
+
 ## Open Questions
 
 - None for PS1-01. Stage A (PS1-02) must confirm the 3 rules exercise as
   designed against the dev corpus before Stage B opens; that confirmation is
   out of this slice's scope.
-- Carried forward from PS1-02: whether to strip the rule/category-revealing
-  authoring commentary from `evals/bdd3/tasks/dev-ps1.json`'s 6
-  `agent_input` fields (risk class 1 finding above). Not decided or acted on
-  here; held-out is unaffected either way.
+- Resolved in PS1-03 Step 0 (above): the rule/category-revealing authoring
+  commentary carried forward from PS1-02's risk-class-1 finding was stripped
+  from `evals/bdd3/tasks/dev-ps1.json`'s 6 `agent_input` fields; held-out was
+  confirmed unaffected both before and after the fix.
 
 ## Evidence Links
 
