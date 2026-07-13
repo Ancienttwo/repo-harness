@@ -5,10 +5,10 @@
 > **Contract**: tasks/contracts/20260712-2327-harness-kernel-reduction.contract.md
 > **Notes File**: tasks/notes/20260712-2327-harness-kernel-reduction.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-07-13 20:03
+> **Last Updated**: 2026-07-13 21:14
 > **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Diff Fingerprint**: sha256:918778628354edce2dfcfbad0d1c4e0453807fb04485219c520b18698546bc4c
+> **Reviewed Diff Fingerprint**: sha256:4a8a43ef4574fd8fef8f169b4478d3019ea29d83be766a167cc40faef53e98e6
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 ## Human Review Card
@@ -42,11 +42,11 @@
 
 > **External Acceptance**: pass
 > **External Reviewer**: Codex + Claude
-> **External Source**: native-subagent/fix_circuit_lock + claude-cli/fixture-timeout-task-sync-main-integration-final-runtime-isolation
+> **External Source**: native-subagent/fix_circuit_lock + claude-cli/fixture-timeout-task-sync-main-integration-final-runtime-isolation-benchmark-prompt
 > **External Started**: 2026-07-13T06:30:00+0800
-> **External Completed**: 2026-07-13T20:03:49+0800
+> **External Completed**: 2026-07-13T21:14:02+0800
 > **Review Rubric Version**: 2
-> **Reviewed Diff Fingerprint**: sha256:918778628354edce2dfcfbad0d1c4e0453807fb04485219c520b18698546bc4c
+> **Reviewed Diff Fingerprint**: sha256:4a8a43ef4574fd8fef8f169b4478d3019ea29d83be766a167cc40faef53e98e6
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 - P1 blockers: none. Earlier findings covering unsafe lock reclaim, mandatory-context loss, incomplete transaction compensation, and stale report provenance were fixed and re-reviewed.
@@ -56,6 +56,7 @@
 - Latest main integration review: pass. Git proves native-role commit `f248e76f` is an ancestor; its SubagentStart routing files and scoped return-channel assertions are unchanged by this branch. Exact report-byte mismatch remains fail-closed in both jq and no-jq checks paths. No P1/P2.
 - Latest origin integration review: pass. PR67 `4e3e76a2` is an ancestor and has no changed-file overlap with this branch; its configurable deploy-SQL policy, helpers, Skill, and tests remain byte-identical. No P1/P2.
 - Latest runtime-isolation review: pass. Package-default fixtures explicitly clear the ambient self-host source override at both direct and spawned helper boundaries, while explicit source-authority and fail-closed tests remain intact. The branch rebased cleanly onto `319f80e0`; the bounded follow-up reported no P1/P2.
+- Latest benchmark-prompt review: pass. The cross-capability task now conditionally follows a profile only when the environment defines one, so the bare arm implements directly while Adaptive/Strict keep their selected workflow. All arms receive identical task text and unchanged expected paths/grader; workspace and stop bounds remove only unrelated host/package archaeology. Claude's first review P2 was fixed and the exact follow-up reported no P1/P2.
 - Acceptance checklist: pass — final report `authoritative=true`, source commit matches the clean execution HEAD, 3 profiles x 9 scenarios are present, all structured provider/grader/isolation evidence and all 27 acceptance commands pass, and focused Strict/product-planning exclusions pass. The reviewer verified that explicit benchmark authorization changes only the scenario input and leaves the product Plan gate unchanged. Final re-review also verified separate report-byte binding in structured checks across jq and no-jq paths, with missing, legacy, invalid, and mismatched evidence failing closed. The original full-scope Claude command timed out; a later targeted Claude review independently passed the fixture-only checks-schema delta and confirmed `not_applicable` cannot mask reports that exist.
 
 ## Behavior Diff Notes
