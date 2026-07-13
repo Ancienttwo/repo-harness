@@ -158,6 +158,18 @@ describe("check-task-sync helper", () => {
     }
   });
 
+  test("does not broaden the operational exclusion to sibling report files", () => {
+    const cwd = setupRepo();
+    try {
+      writeFileSync(join(cwd, "evals", "harness", "reports", "other.json"), "{}\n");
+      const res = run(cwd, ["bash", "scripts/check-task-sync.sh"]);
+      expect(res.status).toBe(1);
+      expect(res.stdout).toContain("without tasks/ synchronization");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   test("fails when only legacy docs/PROGRESS.md changed", () => {
     const cwd = setupRepo();
     try {

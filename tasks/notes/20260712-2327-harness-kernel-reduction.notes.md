@@ -130,6 +130,12 @@
   exactly those two independently byte-bound report paths. A regression proves
   report-only regeneration is non-substantive and a report cannot hide an
   unsynchronized source change; no broader evals or docs path is excluded.
+- A targeted external review passed the task-sync change with no P1. Its two P2
+  advisories were closed: a sibling-report regression now pins the exclusion to
+  exactly the JSON/Markdown pair, and durable review/research wording separates
+  the independently reviewed reference run from the volatile final verifier run.
+  The latter is accepted by exact report-byte and provenance binding, not by
+  copying changing token totals into implementation review metadata.
 
 ## Tradeoffs Considered
 

@@ -43,7 +43,7 @@ authorities.
 
 ## Authoritative 3x9 result
 
-The durable report was executed with one live Claude provider over the same nine
+The independently reviewed reference report was executed with one live Claude provider over the same nine
 scenario authorities for all three profiles. Every provider stream supplied
 structured usage and every deterministic grader passed (27/27). The benchmark
 runner isolated each harness install under a disposable `HOME`/settings and
@@ -51,7 +51,10 @@ runner isolated each harness install under a disposable `HOME`/settings and
 Claude init inventory for Skills, plugins, MCP servers, and slash commands. All
 27 records share run ID `d2a2fdcb-bda9-41af-bd46-411e5d412097`, source commit
 `7b11d293`, provider version `2.1.207`, and the runner/manifest/fixture hashes
-recorded in the JSON and Markdown reports. The initial Codex attempt exhausted
+recorded in that run's JSON and Markdown reports. Final verification may
+regenerate the tracked report with a newer run; the verifier binds the exact
+current report bytes and provenance independently of implementation review
+freshness. The initial Codex attempt exhausted
 its account quota, so it is not mixed into this report.
 
 | Profile | Success | Input | Cached input | Output | Model calls | Duration | Hook calls | Hook time | Hook bytes | Guard blocks | Artifacts |
