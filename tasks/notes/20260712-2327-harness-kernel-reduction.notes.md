@@ -212,6 +212,24 @@
   rebased cleanly; an external git review found zero overlap with the new
   configurable deploy-SQL policy and verified its scripts, policy, Skill, and
   tests remain byte-identical. Verdict PASS, no P1/P2.
+- The final clean-checkout live matrix completed all 27 Claude runs under source
+  commit `242e1f50d1e26d08230babb4314ffa77d3384068`. Run
+  `02b23ab9-5546-402f-8d08-73477c1b8e95` is authoritative: every profile passed
+  9/9 scenarios with structured provider usage, deterministic grader acceptance,
+  and No Harness isolation where applicable. Aggregate measured input/output
+  tokens were 49,176/14,640 for No Harness, 81,369/20,017 for Adaptive Lite,
+  and 94,046/19,370 for Strict; total provider durations were 441,749 ms,
+  555,466 ms, and 474,371 ms respectively. Adaptive Lite recorded 199 hook
+  invocations and 65,245 ms total hook time; Strict recorded 151 and 51,168 ms;
+  No Harness recorded zero hooks. Maximum measured SessionStart context was 713
+  tokens for Adaptive Lite and 870 for Strict, both below the 1,500-token gate.
+- Before that successful run, 286 abandoned disposable benchmark roots from
+  interrupted/retried matrices exhausted the local temp volume and caused one
+  install to fail with `ENOSPC`. Only directories matching the benchmark-owned
+  `repo-harness-profile-benchmark-*` prefix were removed; no repository or host
+  configuration was touched. The successful evidence root is retained because
+  report regrading binds its workspace hashes. This is an operational retention
+  cost, not a correctness exception in the authoritative report.
 
 ## Tradeoffs Considered
 
