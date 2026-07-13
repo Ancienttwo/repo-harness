@@ -1,6 +1,6 @@
 # Plan: Agent Fleet Worker Role Fallback & Routing Telemetry
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260712-2103
 > **Slug**: agent-fleet-worker-routing-telemetry
 > **Planning Source**: repo-harness-plan

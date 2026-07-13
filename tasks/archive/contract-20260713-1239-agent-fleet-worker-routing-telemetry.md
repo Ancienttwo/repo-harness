@@ -1,12 +1,18 @@
+> **Archived**: 2026-07-13 12:39
+> **Related Plan**: plans/archive/plan-20260712-2103-agent-fleet-worker-routing-telemetry.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260713-1239
+
 # Task Contract: agent-fleet-worker-routing-telemetry
 
-> **Status**: Partial
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260712-2103-agent-fleet-worker-routing-telemetry.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: kito
 > **Capability ID**: workflow-engine-contract-assets
-> **Last Updated**: 2026-07-12 21:36
+> **Last Updated**: 2026-07-13 12:37
 > **Review File**: `tasks/reviews/20260712-2103-agent-fleet-worker-routing-telemetry.review.md`
 > **Notes File**: `tasks/notes/20260712-2103-agent-fleet-worker-routing-telemetry.notes.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`

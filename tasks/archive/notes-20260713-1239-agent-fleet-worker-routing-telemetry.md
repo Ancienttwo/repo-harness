@@ -1,10 +1,16 @@
+> **Archived**: 2026-07-13 12:39
+> **Related Plan**: plans/archive/plan-20260712-2103-agent-fleet-worker-routing-telemetry.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260713-1239
+
 # Implementation Notes: agent-fleet-worker-routing-telemetry
 
-> **Status**: Active
+> **Status**: Closed
 > **Plan**: plans/plan-20260712-2103-agent-fleet-worker-routing-telemetry.md
 > **Contract**: tasks/contracts/20260712-2103-agent-fleet-worker-routing-telemetry.contract.md
 > **Review**: tasks/reviews/20260712-2103-agent-fleet-worker-routing-telemetry.review.md
-> **Last Updated**: 2026-07-12 21:36
+> **Last Updated**: 2026-07-13 12:37
 > **Lifecycle**: notes
 
 ## Design Decisions

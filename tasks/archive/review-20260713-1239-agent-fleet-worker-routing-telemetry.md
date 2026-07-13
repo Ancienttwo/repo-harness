@@ -1,3 +1,9 @@
+> **Archived**: 2026-07-13 12:39
+> **Related Plan**: plans/archive/plan-20260712-2103-agent-fleet-worker-routing-telemetry.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260713-1239
+
 # Task Review: agent-fleet-worker-routing-telemetry
 
 > **Status**: Pass
@@ -5,10 +11,10 @@
 > **Contract**: tasks/contracts/20260712-2103-agent-fleet-worker-routing-telemetry.contract.md
 > **Notes File**: tasks/notes/20260712-2103-agent-fleet-worker-routing-telemetry.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-07-12 22:12
+> **Last Updated**: 2026-07-13 12:37
 > **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Diff Fingerprint**: sha256:92e4279ae748b9dc1abdffb0551771771d0010890781aec195409ae29a977d6b
+> **Reviewed Diff Fingerprint**: sha256:b18694325f138a581f67bf6cabd3fc83c232b508126d131ce6006de79b13bb95
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 ## Human Review Card
@@ -43,23 +49,23 @@
   ```
 - Manual checks: orchestrator independently traced the `workerProfile` derivation logic across 6 concrete scenarios before dispatching the fix, then re-read the fixed source directly (`grep -n "workerProfile|onWorkerFallback" scripts/contract-run.ts assets/templates/helpers/contract-run.ts`) to confirm the applied fix matches byte-for-byte in both source and mirror.
 - Supporting artifacts: `.ai/harness/runs/` (contract-run dry-run manifests from test fixtures).
-- Implementation notes reviewed: scaffold only, not filled in (non-blocking — see Residual Risks/Follow-ups).
+- Implementation notes reviewed: populated design decisions, deviations, tradeoffs, and promotion filter are consistent with the accepted implementation.
 - Run snapshot: n/a (no `run`-mode dispatch against a live contract for this task itself; verification was via `dry-run` fixtures in the test suite).
 
 ## External Acceptance Advice
 
 > **External Acceptance**: pass
-> **External Reviewer**: Codex
-> **External Source**: codex-review
-> **External Started**: 2026-07-12T21:42:10+0800
-> **External Completed**: 2026-07-12T21:49:00+0800
+> **External Reviewer**: Claude
+> **External Source**: claude-review
+> **External Started**: 2026-07-13T12:31:40+0800
+> **External Completed**: 2026-07-13T12:36:25+0800
 > **Review Rubric Version**: 2
-> **Reviewed Diff Fingerprint**: sha256:e28534291ff869d6b86f7da6f82339c8ac4e1accd564e78be0690ff5d54c686f (initial pass, pre-fix)
+> **Reviewed Diff Fingerprint**: sha256:b18694325f138a581f67bf6cabd3fc83c232b508126d131ce6006de79b13bb95
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
-- P1 blockers (initial pass — since resolved): `scripts/contract-run.ts:756` (`workerProfile` derived from `onWorkerFallback` instead of the resolved dispatch label directly) — `fallback: null` + `--runner main-thread` incorrectly produced `fast-worker` instead of `sol-high`; a Codex label declared as the contract's `fallback` incorrectly produced `sol-high` instead of passing through unchanged. Fixed by decoupling `workerProfile` from `onWorkerFallback`: `workerProfile` now keys purely on `usedRunner === "main-thread"` / Codex-label checks, while `onWorkerFallback` continues to govern only `runner_usage.path`/`effort`. Independently re-traced and confirmed correct by the orchestrator; new regression tests added for both failure scenarios plus a third gatekeeper-identified coverage gap (`codex-subagent` plain-dispatch pass-through, symmetric to the existing `codex-exec` assertion). Full suite re-verified green (1118/1/0) after the fix.
-- P2 advisories: none from Codex's pass.
-- Acceptance checklist: pass (post-fix; initial pass was fail, resolved same cycle).
+- P1 blockers: none
+- P2 advisories: Claude identified stale closeout evidence and a non-terminal plan. The evidence issue is resolved by this Claude-bound acceptance record; `archive-workflow --outcome Completed` is the authority that terminalizes and archives the plan after the fresh gate passes.
+- Acceptance checklist: pass after binding the current closeout diff to Claude review; focused contract tests, type check, architecture sync, task sync, and helper projection are green in the isolated worktree.
 
 ## Behavior Diff Notes
 
@@ -71,8 +77,8 @@
 
 ## Residual Risks / Follow-ups
 
-1. `tasks/notes/20260712-2103-agent-fleet-worker-routing-telemetry.notes.md` is still template scaffold. Exit criteria only requires the file to exist (it does), so non-blocking, but the fallback-equality-vs-literal-dispatch design decision (and the P1 it caused) is exactly the kind of non-obvious tradeoff this file exists to capture. Recommend filling one line before archive, not required to ship.
-2. `check-architecture-sync.sh` WARN lists pending requests for capabilities untouched by this task (`workflow-engine-inspection-migration`, `root`) — these belong to separate pre-existing WIP from an earlier session slice; left untouched, correctly out of this task's scope.
+1. No implementation blocker remains. The non-obvious fallback-equality-vs-literal-dispatch decision is recorded in the populated implementation notes.
+2. The primary worktree still contains pending architecture requests owned by separate harness-kernel WIP. This closeout runs in an isolated clean worktree so those requests are neither indexed nor absorbed.
 
 ## Scorecard
 
