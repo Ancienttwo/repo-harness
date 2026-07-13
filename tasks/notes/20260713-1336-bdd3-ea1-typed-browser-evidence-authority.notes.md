@@ -4,7 +4,7 @@
 > **Plan**: plans/plan-20260713-1336-bdd3-ea1-typed-browser-evidence-authority.md
 > **Contract**: tasks/contracts/20260713-1336-bdd3-ea1-typed-browser-evidence-authority.contract.md
 > **Review**: tasks/reviews/20260713-1336-bdd3-ea1-typed-browser-evidence-authority.review.md
-> **Last Updated**: 2026-07-13 21:20
+> **Last Updated**: 2026-07-14 00:53
 > **Lifecycle**: notes
 
 Scope of this entry: EA1-01 only (author + freeze the held-out corpus, truth,
@@ -642,3 +642,74 @@ Stage B (EA1-03) may begin only against these exact hashes; the invalid
 its partial output in the ignored
 `.ai/harness/runs/bdd3/ea1/run-1783949770533/` directory remains transport
 debris that EA1-04 must not consume or project.
+
+## Stage B run record — attempt 2 (EA1-03 dispatch)
+
+**Preflight (all green before any invocation).** `git rev-parse HEAD` =
+`4290b4718c072addaa15bb8fd5593cf83ffc5929`, `git status --short --branch
+-uall` showed only the branch line (clean). `bun scripts/run-bdd2-evals.ts
+validate --manifest evals/bdd3/evaluation-manifest.json` returned
+`{"status":"valid", "held_out_archetypes":24, "dev_archetypes":6,
+"expected_rows":96, "corpus_rows":96}`. `codex --version` at the manifest's
+pinned absolute path (`/Users/kito/.local/bin/codex`) returned exactly
+`codex-cli 0.144.1` (`model_profile.expected_version`); `~/.codex/auth.json`
+present. The pre-existing debris
+`.ai/harness/runs/bdd3/ea1/run-1783949770533/` (45 responses, no
+`run.json`, "Stage B attempt 1" above) was left untouched throughout.
+
+**No resume path exists, confirmed by reading the runner
+(`scoreEa1Experiment`, `scripts/run-bdd2-evals.ts:648-708`).** The function
+always requires its output directory not to already exist
+(`existsSync(output)` fails closed) and always replans and reprocesses the
+full 96-packet set from scratch via `mapLimit` at `model_profile.max_concurrency`
+(8) — there is no flag or on-disk-partial-state detection to continue an
+interrupted run. Per the dispatch's own instruction, a full clean
+re-invocation into a fresh run directory is therefore the only valid retry
+shape; that is what was done, three times:
+
+| Sub-attempt | Run directory | Started | Failed | Packet surfacing the terminal error | Responses written |
+|---|---|---|---|---|---|
+| 1 | `.ai/harness/runs/bdd3/ea1/run-1783961180897` | 00:46:20 | ~00:47:12 | EA1-C-08 (treatment) | 0 |
+| 2 | `.ai/harness/runs/bdd3/ea1/run-1783961348478` | 00:49:08 | ~00:49:56 | EA1-T-07 (control) | 0 |
+| 3 | `.ai/harness/runs/bdd3/ea1/run-1783961410892` | 00:50:10 | ~00:51:08 | EA1-T-09 (control) | 0 |
+
+All three failed within roughly a minute of launch, each after the
+surfacing packet's model call exhausted `model_profile.max_attempts` (3)
+with the byte-identical transport error:
+
+```text
+ERROR: You've hit your usage limit for GPT-5.3-Codex-Spark. Switch to
+another model now, or try again at Jul 20th, 2026 3:01 AM.
+```
+
+— the same reset timestamp already recorded under "Stage B attempt 1" from a
+separate session roughly three hours earlier (21:41-21:43 on 2026-07-13).
+Two independent sessions hitting the identical fixed reset time confirms
+this is a scheduled account-wide usage cap for `gpt-5.3-codex-spark`, not
+transient per-request throttling that clears with spacing — no sub-attempt
+wrote a single `responses/*.json`, `run.json`, or partial score file (all
+three sub-attempt directories contain only the six empty subdirectories
+`scoreEa1Experiment` pre-creates). `validate-scores` was not run:
+`validateEa1ScoreRun` reads `<run>/run.json` first and none of the three
+directories has one, so there is nothing to validate.
+
+**Authority stayed sealed throughout.** `git status --short --branch -uall`
+returned only the branch line after every sub-attempt; `git rev-parse HEAD`
+stayed `4290b4718c072addaa15bb8fd5593cf83ffc5929` for the entire dispatch. No
+authority file (corpus, truth, appendices, schema, rules, thresholds,
+prompts, or `model_profile`) was edited to route around the cap — the
+dispatch's EXECUTION_BOUNDARY forbids it, and doing so would also invalidate
+the sealed hashes. All three dead sub-attempt directories are gitignored
+(`.ai/harness/runs/`) and left in place, undeleted, as evidence alongside the
+untouched `run-1783949770533` debris.
+
+**Disposition: EA1-03 remains incomplete, blocked on an external quota, not
+a code or authority defect.** No held-out output exists at this commit.
+Earliest possible retry per the transport's own stated reset is not before
+**Jul 20th, 2026 3:01 AM** (verbatim as reported by the codex CLI; timezone
+not independently confirmed). EA1-04 must not be attempted — there is no
+`run.json` to project. Re-run `bun scripts/run-bdd2-evals.ts score
+--manifest evals/bdd3/evaluation-manifest.json` fresh (no `--output`) once
+the quota window opens; the sealed authority does not expire, only the
+transport quota does, so re-running `validate` first is a sanity check, not
+a requirement, unless the manifest has changed in the interim.
