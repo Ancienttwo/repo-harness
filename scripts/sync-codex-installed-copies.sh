@@ -253,8 +253,11 @@ sync_claude_alias_copies() {
 profile_facades() {
   case "$INSTALL_PROFILE" in
     minimal) return 0 ;;
-    standard|product-planning|strict)
+    standard)
       printf '%s\n' repo-harness-plan repo-harness-check repo-harness-handoff
+      ;;
+    product-planning|strict)
+      printf '%s\n' repo-harness-plan repo-harness-check repo-harness-handoff repo-harness-gptpro
       ;;
   esac
 }
@@ -275,8 +278,12 @@ preflight_skill_root() {
     [[ -e "$dest" || -L "$dest" ]] || continue
     name="$(basename "$dest")"
     source="$SOURCE_ROOT/assets/skill-commands/$name"
-    [[ -d "$source" ]] \
-      || { refuse_unowned_dest "$dest" "no package facade source exists for $name"; exit 1; }
+    # A facade whose canonical source no longer exists in the package is a
+    # legitimate retirement candidate, not a preflight failure, as long as
+    # the host copy is still a clean, owner-marked, unmodified copy.
+    # assert_managed_dest proves that from the marker + content hash alone
+    # and does not require $source to exist for that branch; unmarked or
+    # drifted content still fails closed here exactly as before.
     assert_managed_dest "$dest" "$source" command-facade || exit 1
   done
 }
@@ -284,14 +291,19 @@ preflight_skill_root() {
 remove_retired_owned_facades() {
   local root="$1"
   [[ -n "$root" && -d "$root" ]] || return 0
-  local dest name source target
+  local dest name source
   for dest in "$root"/repo-harness-*; do
     [[ -e "$dest" || -L "$dest" ]] || continue
     name="$(basename "$dest")"
     facade_selected "$name" && continue
     source="$SOURCE_ROOT/assets/skill-commands/$name"
-    [[ -d "$source" ]] \
-      || { refuse_unowned_dest "$dest" "no package facade source exists for $name"; exit 1; }
+    if [[ ! -d "$source" ]]; then
+      echo "[sync-installed] retiring $dest: canonical facade source no longer exists in the package"
+    fi
+    # remove_managed_dest asserts ownership first (fail-closed on an unowned
+    # or modified copy) and only removes a proven, unmodified managed copy;
+    # this now covers both "not selected by this profile" and "retired from
+    # the package" the same safe way.
     remove_managed_dest "$dest" "$source" command-facade
   done
 }

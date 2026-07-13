@@ -179,7 +179,10 @@ describe("Codex installed copy sync", () => {
 
       expect(result.status).toBe(1);
       expect(result.stderr).toContain("Refusing to replace or remove");
-      expect(result.stderr).toContain("no package facade source exists");
+      // No source (never shipped) and no owner marker: this cannot be
+      // proven a legitimate retirement candidate, so it still fails closed
+      // exactly like any other unowned directory.
+      expect(result.stderr).toContain("no valid owner marker");
       expect(existsSync(custom)).toBe(true);
       expect(existsSync(canonical)).toBe(false);
     } finally {
@@ -218,6 +221,142 @@ describe("Codex installed copy sync", () => {
       expect(retry.status).toBe(1);
       expect(retry.stderr).toContain("managed copy content has drifted");
       expect(readFileSync(join(canonical, "LOCAL.md"), "utf-8")).toBe("unowned modification\n");
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test("wires repo-harness-gptpro into product-planning and strict but not standard or minimal", () => {
+    const tmp = join(tmpdir(), `repo-harness-installed-gptpro-profile-${Date.now()}`);
+    const source = join(tmp, "source");
+    try {
+      for (const name of ["repo-harness-plan", "repo-harness-check", "repo-harness-handoff", "repo-harness-gptpro"]) {
+        mkdirSync(join(source, "assets", "skill-commands", name), { recursive: true });
+        writeFileSync(join(source, "assets", "skill-commands", name, "SKILL.md"), `---\nname: ${name}\n---\n`);
+      }
+      writeFileSync(join(source, "SKILL.md"), "---\nname: repo-harness\n---\n");
+
+      for (const [profile, expectCoreFacades, expectGptpro] of [
+        ["minimal", false, false],
+        ["standard", true, false],
+        ["product-planning", true, true],
+        ["strict", true, true],
+      ] as const) {
+        const codexSkills = join(tmp, `codex-skills-${profile}`);
+        mkdirSync(codexSkills, { recursive: true });
+        const result = spawnSync("bash", [join(ROOT, "scripts", "sync-codex-installed-copies.sh")], {
+          cwd: ROOT,
+          encoding: "utf-8",
+          env: {
+            ...process.env,
+            AGENTIC_DEV_SOURCE_ROOT: source,
+            REPO_HARNESS_INSTALL_PROFILE: profile,
+            CODEX_SKILLS_ROOT: codexSkills,
+            CLAUDE_SKILLS_ROOT: "",
+          },
+        });
+        expect(result.status).toBe(0);
+        expect(existsSync(join(codexSkills, "repo-harness-plan", "SKILL.md"))).toBe(expectCoreFacades);
+        expect(existsSync(join(codexSkills, "repo-harness-gptpro", "SKILL.md"))).toBe(expectGptpro);
+      }
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test("retires an owner-marked facade once its canonical source and profile selection are both gone", () => {
+    const tmp = join(tmpdir(), `repo-harness-installed-retire-${Date.now()}`);
+    const source = join(tmp, "source");
+    const codexSkills = join(tmp, "codex-skills");
+    const claudeSkills = join(tmp, "claude-skills");
+    const gptproSource = join(source, "assets", "skill-commands", "repo-harness-gptpro");
+    try {
+      for (const name of ["repo-harness-plan", "repo-harness-check", "repo-harness-handoff"]) {
+        mkdirSync(join(source, "assets", "skill-commands", name), { recursive: true });
+        writeFileSync(join(source, "assets", "skill-commands", name, "SKILL.md"), `---\nname: ${name}\n---\n`);
+      }
+      mkdirSync(gptproSource, { recursive: true });
+      mkdirSync(codexSkills, { recursive: true });
+      mkdirSync(claudeSkills, { recursive: true });
+      writeFileSync(join(source, "SKILL.md"), "---\nname: repo-harness\n---\n");
+      writeFileSync(join(gptproSource, "SKILL.md"), "---\nname: repo-harness-gptpro\n---\n");
+
+      const baseEnv = {
+        ...process.env,
+        AGENTIC_DEV_SOURCE_ROOT: source,
+        CODEX_SKILLS_ROOT: codexSkills,
+        CLAUDE_SKILLS_ROOT: claudeSkills,
+      };
+
+      // Phase 1: product-planning legitimately installs and marks
+      // repo-harness-gptpro on both hosts.
+      const bootstrap = spawnSync("bash", [join(ROOT, "scripts", "sync-codex-installed-copies.sh")], {
+        cwd: ROOT, encoding: "utf-8", env: { ...baseEnv, REPO_HARNESS_INSTALL_PROFILE: "product-planning" },
+      });
+      expect(bootstrap.status).toBe(0);
+      const gptproDest = join(codexSkills, "repo-harness-gptpro");
+      expect(existsSync(join(gptproDest, ".repo-harness-owner.json"))).toBe(true);
+
+      // Phase 2: the package retires repo-harness-gptpro's canonical
+      // source, and the host moves to a profile that never selects it.
+      rmSync(gptproSource, { recursive: true, force: true });
+      const retire = spawnSync("bash", [join(ROOT, "scripts", "sync-codex-installed-copies.sh")], {
+        cwd: ROOT, encoding: "utf-8", env: { ...baseEnv, REPO_HARNESS_INSTALL_PROFILE: "standard" },
+      });
+
+      expect(retire.status).toBe(0);
+      expect(existsSync(gptproDest)).toBe(false);
+      expect(retire.stdout).toContain("retiring");
+      expect(retire.stdout).toContain(gptproDest);
+      // Selected, still-canonical facades on the same host are untouched.
+      expect(existsSync(join(codexSkills, "repo-harness-plan", "SKILL.md"))).toBe(true);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test("preserves and reports a modified facade even after its canonical source is removed", () => {
+    const tmp = join(tmpdir(), `repo-harness-installed-retire-drift-${Date.now()}`);
+    const source = join(tmp, "source");
+    const codexSkills = join(tmp, "codex-skills");
+    const claudeSkills = join(tmp, "claude-skills");
+    const gptproSource = join(source, "assets", "skill-commands", "repo-harness-gptpro");
+    try {
+      for (const name of ["repo-harness-plan", "repo-harness-check", "repo-harness-handoff"]) {
+        mkdirSync(join(source, "assets", "skill-commands", name), { recursive: true });
+        writeFileSync(join(source, "assets", "skill-commands", name, "SKILL.md"), `---\nname: ${name}\n---\n`);
+      }
+      mkdirSync(gptproSource, { recursive: true });
+      mkdirSync(codexSkills, { recursive: true });
+      mkdirSync(claudeSkills, { recursive: true });
+      writeFileSync(join(source, "SKILL.md"), "---\nname: repo-harness\n---\n");
+      writeFileSync(join(gptproSource, "SKILL.md"), "---\nname: repo-harness-gptpro\n---\n");
+
+      const baseEnv = {
+        ...process.env,
+        AGENTIC_DEV_SOURCE_ROOT: source,
+        CODEX_SKILLS_ROOT: codexSkills,
+        CLAUDE_SKILLS_ROOT: claudeSkills,
+      };
+
+      const bootstrap = spawnSync("bash", [join(ROOT, "scripts", "sync-codex-installed-copies.sh")], {
+        cwd: ROOT, encoding: "utf-8", env: { ...baseEnv, REPO_HARNESS_INSTALL_PROFILE: "product-planning" },
+      });
+      expect(bootstrap.status).toBe(0);
+      const gptproDest = join(codexSkills, "repo-harness-gptpro");
+
+      // The package retires the source AND a user hand-edits the host copy.
+      rmSync(gptproSource, { recursive: true, force: true });
+      writeFileSync(join(gptproDest, "SKILL.md"), "---\nname: repo-harness-gptpro\n---\nuser edit\n");
+
+      const retry = spawnSync("bash", [join(ROOT, "scripts", "sync-codex-installed-copies.sh")], {
+        cwd: ROOT, encoding: "utf-8", env: { ...baseEnv, REPO_HARNESS_INSTALL_PROFILE: "standard" },
+      });
+
+      expect(retry.status).toBe(1);
+      expect(retry.stderr).toContain("managed copy content has drifted");
+      expect(existsSync(gptproDest)).toBe(true);
+      expect(readFileSync(join(gptproDest, "SKILL.md"), "utf-8")).toContain("user edit");
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

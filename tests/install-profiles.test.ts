@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { spawnSync } from 'child_process';
+import { createHash } from 'crypto';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import {
@@ -29,6 +30,23 @@ function withHome(run: (env: NodeJS.ProcessEnv) => void): void {
 function writePath(path: string, content = ''): void {
   mkdirSync(join(path, '..'), { recursive: true });
   writeFileSync(path, content);
+}
+
+// Mirrors install-profile.ts's internal hashManagedTree for a
+// single-file directory (its own algorithm is not exported), so tests can
+// construct a facade whose owner marker is provably unmodified without
+// running an actual install/sync.
+function writeMarkedFacade(dest: string, skillMdContent: string): void {
+  writePath(join(dest, 'SKILL.md'), skillMdContent);
+  const hash = createHash('sha256');
+  hash.update('F\0SKILL.md\0');
+  hash.update(Buffer.from(skillMdContent));
+  hash.update('\0');
+  writeFileSync(join(dest, '.repo-harness-owner.json'), JSON.stringify({
+    owner: 'repo-harness',
+    surface: 'command-facade',
+    content_hash: `sha256:${hash.digest('hex')}`,
+  }));
 }
 
 function writeManagedHostSurfaces(
@@ -121,6 +139,30 @@ describe('install profiles', () => {
     ))).toBe(true);
     expect(persisted.ownership_manifest.some((entry: { path: string }) => entry.path === join(env.HOME!, '.bun', 'bin', 'repo-harness'))).toBe(false);
     expect(persisted.ownership_manifest.some((entry: { path: string }) => entry.path === join(env.HOME!, '.codex', 'skills', 'repo-harness'))).toBe(false);
+    expect(installedProfileStatus(applied.state, env).drift.status).toBe('consistent');
+  }));
+
+  test('discoverManagedSurfaces empties the component set for a facade retired from the canonical package', () => withHome((env) => {
+    const { source } = writeManagedHostSurfaces(env, 'standard');
+    const codexSkills = join(env.HOME!, '.codex', 'skills');
+
+    // Canonical control: repo-harness-plan is still shipped by the package
+    // (source gets it here), so it keeps the existing adaptive-workflow
+    // bucket.
+    writePath(join(source, 'assets', 'skill-commands', 'repo-harness-plan', 'SKILL.md'), '# managed\n');
+    writeMarkedFacade(join(codexSkills, 'repo-harness-plan'), '# managed\n');
+
+    // Retired: physically present on host (e.g. left over from a broader
+    // sync), but the package no longer ships its source directory at all.
+    const retiredDest = join(codexSkills, 'repo-harness-retired-demo');
+    writeMarkedFacade(retiredDest, '---\nname: repo-harness-retired-demo\n---\n');
+
+    const applied = applyInstallProfile('standard', env, new Date('2026-01-01T00:00:00Z'));
+    const planSurface = applied.state.ownership_manifest.find(({ path }) => path === join(codexSkills, 'repo-harness-plan'));
+    const retiredSurface = applied.state.ownership_manifest.find(({ path }) => path === retiredDest);
+    expect(planSurface?.components).toEqual(['adaptive-workflow']);
+    expect(retiredSurface).toBeDefined();
+    expect(retiredSurface?.components).toEqual([]);
     expect(installedProfileStatus(applied.state, env).drift.status).toBe('consistent');
   }));
 
