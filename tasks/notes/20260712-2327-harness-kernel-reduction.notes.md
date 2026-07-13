@@ -122,6 +122,14 @@
   2-second fail-closed lock timeout plus multiple Bun/shell spawns. During the
   verifier, `main/origin/main` again advanced externally (to `0cbfab4`), so the
   review must be rebound after integrating that target before the next retry.
+- The second final verifier passed every contract command except task-sync. This
+  was deterministic, not a flaky gate: the contract regenerates the two tracked
+  benchmark reports before `check-task-sync.sh`, while the contract status does
+  not change until all commands finish, so the working tree temporarily held
+  operational evidence without a `tasks/` edit. The task-sync owner now ignores
+  exactly those two independently byte-bound report paths. A regression proves
+  report-only regeneration is non-substantive and a report cannot hide an
+  unsynchronized source change; no broader evals or docs path is excluded.
 
 ## Tradeoffs Considered
 
