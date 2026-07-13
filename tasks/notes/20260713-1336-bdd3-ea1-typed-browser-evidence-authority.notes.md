@@ -1,6 +1,6 @@
 # Implementation Notes: bdd3-ea1-typed-browser-evidence-authority
 
-> **Status**: Active (slices EA1-01, EA1-02 complete; EA1-03..05 remain)
+> **Status**: Active (slices EA1-01, EA1-02 complete; EA1-03 blocked before a valid Stage B run)
 > **Plan**: plans/plan-20260713-1336-bdd3-ea1-typed-browser-evidence-authority.md
 > **Contract**: tasks/contracts/20260713-1336-bdd3-ea1-typed-browser-evidence-authority.contract.md
 > **Review**: tasks/reviews/20260713-1336-bdd3-ea1-typed-browser-evidence-authority.review.md
@@ -461,3 +461,31 @@ non-empty irrelevant string cannot by itself make the overall efficacy gate
 pass. No validator rule, corpus row, truth row, appendix, schema, or threshold
 number changed. The runner, metrics prose, and validator documentation hashes
 were re-pinned, then the full authority was revalidated from a clean commit.
+
+## Stage B attempt 1 — invalid, do not project
+
+The confirmatory command started from clean commit
+`b4f18d76be20fcea3290bb7c8147c318a018ed73` with the pinned
+`codex-cli 0.144.1` / `gpt-5.3-codex-spark` profile. It stopped before
+`run.json` was written after the transport exhausted all three attempts with:
+
+```text
+You've hit your usage limit for GPT-5.3-Codex-Spark.
+Switch to another model now, or try again at Jul 20th, 2026 3:01 AM.
+```
+
+The ignored incomplete directory is
+`.ai/harness/runs/bdd3/ea1/run-1783949770533/`. At stop it contained 45
+responses, 82 primary outcome-score files, 38 evidence-score files, 31
+adjudications, and 38 private completed coordinates, but no `run.json`.
+It is transport debris, not evaluation evidence; EA1-03 remains incomplete
+and EA1-04 must not consume or project it.
+
+The run also lost its clean-authority invariant while in flight: six frozen
+authority files acquired concurrent uncommitted `element_vocabulary` edits
+between 21:41 and 21:43 (`ea1-control.md`, `ea1-treatment.md`, both task sets,
+and both truth sets). These edits were not made or staged by this execution
+slice and are preserved as external WIP. A valid Stage B restart requires
+first resolving that WIP into one clean, validated, re-sealed authority; the
+pinned model must then be available again. Switching models or projecting the
+partial directory would change the frozen experiment and is forbidden.
