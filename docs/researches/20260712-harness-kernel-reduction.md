@@ -97,3 +97,7 @@ classified with checks/runs as operational evidence for review freshness. Their
 own commit and content hashes, structured provider authority, deterministic
 graders, and external acceptance continue to fail closed; product source,
 runner, manifest, fixtures, and documentation remain fingerprinted normally.
+The final verifier separately hashes the actual report pair into structured
+checks, and every checks consumer recomputes that hash before accepting the
+snapshot, so evidence mutation after verification fails without reviving the
+implementation-review cycle.

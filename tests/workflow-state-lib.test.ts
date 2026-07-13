@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
@@ -171,6 +171,76 @@ describe("workflow-state shared library", () => {
       expect(res.status).toBe(0);
       const lines = res.stdout.split("\n").filter((line) => line.length > 0);
       expect(lines).toEqual(["1", "2", "malformed", "absent"]);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("workflow_checks_pass binds regenerated harness report bytes independently of implementation freshness", () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "workflow-benchmark-evidence-")));
+    try {
+      mkdirSync(join(cwd, "evals/harness/reports"), { recursive: true });
+      writeFileSync(join(cwd, "evals/harness/reports/profile-comparison.json"), '{"authoritative":true}\n');
+      writeFileSync(join(cwd, "evals/harness/reports/profile-comparison.md"), '# Authoritative\n');
+      const fingerprint = spawnSync(
+        "bash",
+        ["-lc", 'source "$WORKFLOW_STATE"; workflow_benchmark_evidence_fingerprint'],
+        { cwd, encoding: "utf-8", env: { ...process.env, WORKFLOW_STATE: join(ROOT, "assets/hooks/lib/workflow-state.sh") } },
+      );
+      expect(fingerprint.status).toBe(0);
+      expect(fingerprint.stdout).toMatch(/^sha256:[0-9a-f]{64}$/);
+      writeFileSync(join(cwd, "checks.json"), JSON.stringify({
+        status: "pass",
+        source: "verify-sprint",
+        exit_code: 0,
+        contract: { file: "tasks/contracts/demo.contract.md" },
+        review: { file: "tasks/reviews/demo.review.md" },
+        benchmark_evidence: { status: "present", fingerprint: fingerprint.stdout },
+      }));
+      const check = () => spawnSync(
+        "bash",
+        ["-c", 'source "$WORKFLOW_STATE"; workflow_checks_pass checks.json tasks/contracts/demo.contract.md tasks/reviews/demo.review.md'],
+        { cwd, encoding: "utf-8", env: { ...process.env, WORKFLOW_STATE: join(ROOT, "assets/hooks/lib/workflow-state.sh") } },
+      );
+      expect(check().status).toBe(0);
+
+      const noJqBin = join(cwd, "no-jq-bin");
+      mkdirSync(noJqBin);
+      symlinkSync(process.execPath, join(noJqBin, "bun"));
+      symlinkSync("/usr/bin/grep", join(noJqBin, "grep"));
+      const noJqCheck = () => spawnSync(
+        "/bin/bash",
+        ["-c", 'source "$WORKFLOW_STATE"; workflow_checks_pass checks.json tasks/contracts/demo.contract.md tasks/reviews/demo.review.md'],
+        {
+          cwd,
+          encoding: "utf-8",
+          env: {
+            ...process.env,
+            PATH: noJqBin,
+            WORKFLOW_STATE: join(ROOT, "assets/hooks/lib/workflow-state.sh"),
+          },
+        },
+      );
+      expect(noJqCheck().status).toBe(0);
+
+      writeFileSync(join(cwd, "evals/harness/reports/profile-comparison.json"), '{"authoritative":false}\n');
+      const stale = check();
+      expect(stale.status).toBe(1);
+      expect(stale.stdout).toContain("Structured checks are stale for benchmark evidence");
+      const staleWithoutJq = noJqCheck();
+      expect(staleWithoutJq.status).toBe(1);
+      expect(staleWithoutJq.stdout).toContain("Structured checks are stale for benchmark evidence");
+
+      writeFileSync(join(cwd, "checks.json"), JSON.stringify({
+        status: "pass",
+        source: "verify-sprint",
+        exit_code: 0,
+        contract: { file: "tasks/contracts/demo.contract.md" },
+        review: { file: "tasks/reviews/demo.review.md" },
+      }));
+      const legacy = check();
+      expect(legacy.status).toBe(1);
+      expect(legacy.stdout).toContain("invalid or legacy benchmark evidence status");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

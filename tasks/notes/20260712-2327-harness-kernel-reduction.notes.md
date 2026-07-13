@@ -78,8 +78,10 @@
   those two generated reports as implementation. They now share the established
   operational-evidence exclusion used by checks/runs; report source commit,
   runner/manifest/fixture hashes, provider usage, graders, and external review
-  remain the integrity boundary. A regression proves report-only regeneration
-  cannot stale an otherwise unchanged implementation review.
+  remain the semantic integrity boundary. `verify-sprint` now records a separate
+  fingerprint over the actual JSON and Markdown bytes, and checks freshness
+  recomputes it. Regressions prove report regeneration does not stale the
+  implementation review while post-verification tampering does stale checks.
 - Native independent review found and drove closure of concurrency, critical
   context preservation, transaction compensation, ownership, Strict projection,
   and product-planning exclusion defects. Its final pass found no P1/P2. The

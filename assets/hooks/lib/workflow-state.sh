@@ -1624,6 +1624,78 @@ workflow_external_acceptance_pass() {
   [[ "$status" == "pass" || "$status" == "manual_override" ]]
 }
 
+workflow_benchmark_evidence_fingerprint() {
+  local json_path="evals/harness/reports/profile-comparison.json"
+  local md_path="evals/harness/reports/profile-comparison.md"
+  local runtime=""
+  if [[ ! -e "$json_path" && ! -e "$md_path" ]]; then
+    return 0
+  fi
+  if [[ ! -f "$json_path" || ! -f "$md_path" ]]; then
+    return 1
+  fi
+  if command -v node >/dev/null 2>&1; then runtime="node"
+  elif command -v bun >/dev/null 2>&1; then runtime="bun"
+  else return 1
+  fi
+  "$runtime" - "$json_path" "$md_path" <<'JS_EOF'
+const fs = require('fs');
+const crypto = require('crypto');
+const paths = process.argv.slice(2);
+const hash = crypto.createHash('sha256');
+for (const path of paths) {
+  hash.update(path);
+  hash.update(Buffer.from([0]));
+  hash.update(fs.readFileSync(path));
+  hash.update(Buffer.from([0]));
+}
+process.stdout.write(`sha256:${hash.digest('hex')}`);
+JS_EOF
+}
+
+workflow_benchmark_evidence_checks_match() {
+  local checks_file="$1"
+  local evidence_status="" evidence_recorded="" evidence_current="" runtime="" row=""
+  if command -v jq >/dev/null 2>&1; then
+    evidence_status="$(jq -r '.benchmark_evidence.status // empty' "$checks_file" 2>/dev/null || true)"
+    evidence_recorded="$(jq -r '.benchmark_evidence.fingerprint // empty' "$checks_file" 2>/dev/null || true)"
+  else
+    if command -v node >/dev/null 2>&1; then runtime="node"
+    elif command -v bun >/dev/null 2>&1; then runtime="bun"
+    else
+      echo "Cannot validate benchmark evidence without jq, node, or bun."
+      return 1
+    fi
+    row="$("$runtime" - "$checks_file" <<'JS_EOF' 2>/dev/null || true
+const fs = require('fs');
+const value = JSON.parse(fs.readFileSync(process.argv[2], 'utf8')).benchmark_evidence || {};
+process.stdout.write(`${typeof value.status === 'string' ? value.status : ''}\t${typeof value.fingerprint === 'string' ? value.fingerprint : ''}`);
+JS_EOF
+)"
+    IFS=$'\t' read -r evidence_status evidence_recorded <<< "$row"
+  fi
+
+  evidence_current="$(workflow_benchmark_evidence_fingerprint 2>/dev/null || true)"
+  case "$evidence_status" in
+    present)
+      if [[ -z "$evidence_recorded" || -z "$evidence_current" || "$evidence_current" != "$evidence_recorded" ]]; then
+        echo "Structured checks are stale for benchmark evidence (recorded=${evidence_recorded:-missing}, current=${evidence_current:-unavailable})."
+        return 1
+      fi
+      ;;
+    not_applicable)
+      if [[ -n "$evidence_current" || -e "evals/harness/reports/profile-comparison.json" || -e "evals/harness/reports/profile-comparison.md" ]]; then
+        echo "Structured checks did not bind the benchmark evidence now present."
+        return 1
+      fi
+      ;;
+    *)
+      echo "Structured checks have invalid or legacy benchmark evidence status: ${evidence_status:-missing}."
+      return 1
+      ;;
+  esac
+}
+
 workflow_checks_pass() {
   local checks_file="${1:-}"
   local contract_file="${2:-}"
@@ -1662,6 +1734,7 @@ workflow_checks_pass() {
       echo "Structured checks are stale for review ${check_review:-missing}; expected $review_file."
       return 1
     fi
+    workflow_benchmark_evidence_checks_match "$checks_file" || return 1
     return 0
   fi
 
@@ -1685,6 +1758,7 @@ workflow_checks_pass() {
     echo "Structured checks do not reference current review $review_file."
     return 1
   fi
+  workflow_benchmark_evidence_checks_match "$checks_file" || return 1
 }
 
 workflow_contract_allows_path() {

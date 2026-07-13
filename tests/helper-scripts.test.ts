@@ -137,6 +137,7 @@ function writeValidSprintChecks(cwd: string) {
         generated_at: "2026-03-04T14:10:00+0000",
         contract: { file: "tasks/contracts/demo.contract.md", status: "pass", exit_code: 0 },
         review: { file: "tasks/reviews/demo.review.md", status: "pass" },
+        benchmark_evidence: { status: "not_applicable", fingerprint: "" },
       },
       null,
       2
@@ -3309,6 +3310,7 @@ describe("Workflow helper scripts", () => {
       expect(checks.external_acceptance.status).toBe("manual_override");
       expect(checks.external_acceptance.reviewer).toBe("Codex");
       expect(checks.external_acceptance.source).toBe("codex-review");
+      expect(checks.benchmark_evidence).toEqual({ status: "not_applicable", fingerprint: "" });
       expect(checks.allowed_paths_check.status).toBe("pass");
       expect(checks.run_file).toMatch(/^\.ai\/harness\/runs\/.+-demo\.json$/);
       expect(existsSync(join(cwd, checks.run_file))).toBe(true);

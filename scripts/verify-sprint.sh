@@ -446,6 +446,18 @@ if [[ -n "$contract_output" ]]; then
   printf '%s\n' "$contract_output"
 fi
 
+benchmark_evidence_fingerprint=""
+benchmark_evidence_status="not_applicable"
+if declare -F workflow_benchmark_evidence_fingerprint >/dev/null 2>&1; then
+  benchmark_evidence_fingerprint="$(workflow_benchmark_evidence_fingerprint 2>/dev/null || true)"
+  if [[ -n "$benchmark_evidence_fingerprint" ]]; then
+    benchmark_evidence_status="present"
+  elif [[ -e "evals/harness/reports/profile-comparison.json" || -e "evals/harness/reports/profile-comparison.md" ]]; then
+    benchmark_evidence_status="invalid"
+    contract_exit=1
+  fi
+fi
+
 review_status="fail"
 review_message="Task review recommends pass and Human Review Card verdict is pass."
 review_card_verdict=""
@@ -576,6 +588,8 @@ if command -v jq >/dev/null 2>&1 && jq -e . "$contract_report" >/dev/null 2>&1; 
     --arg diff_base_ref "$diff_base_ref" \
     --arg diff_base_commit "$diff_base_commit" \
     --arg implementation_fingerprint "$implementation_fingerprint" \
+    --arg benchmark_evidence_status "$benchmark_evidence_status" \
+    --arg benchmark_evidence_fingerprint "$benchmark_evidence_fingerprint" \
     --argjson files_changed "$(git_changed_files_json)" \
     --argjson allowed_paths_check "$allowed_paths_check" \
     --argjson allowed_paths "$(allowed_paths_json "$contract_file")" \
@@ -602,6 +616,10 @@ if command -v jq >/dev/null 2>&1 && jq -e . "$contract_report" >/dev/null 2>&1; 
         merge_base: $diff_base_commit
       },
       implementation_fingerprint: $implementation_fingerprint,
+      benchmark_evidence: {
+        status: $benchmark_evidence_status,
+        fingerprint: $benchmark_evidence_fingerprint
+      },
       commands: [
         {name: "verify-sprint", command: $command, status: $status, exit_code: $exit_code},
         {name: "verify-contract", command: $contract_command, status: $contract_status, exit_code: $contract_exit}
@@ -672,6 +690,10 @@ else
     "merge_base": "$(json_escape "$diff_base_commit")"
   },
   "implementation_fingerprint": "$(json_escape "$implementation_fingerprint")",
+  "benchmark_evidence": {
+    "status": "$(json_escape "$benchmark_evidence_status")",
+    "fingerprint": "$(json_escape "$benchmark_evidence_fingerprint")"
+  },
   "commands": [
     {
       "name": "verify-sprint",
