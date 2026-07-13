@@ -202,6 +202,12 @@
   after its focused test plus required completion gates. This preserves the
   task and acceptance command while removing host archaeology from the measured
   workload; no product safety or quantitative gate changed.
+- Claude's prompt-delta review found one P2 in the first correction: the bare
+  No Harness arm has no selected workflow profile, so unconditional
+  "follow the selected profile" wording could bias that baseline toward profile
+  discovery work. The final shared prompt is conditional: follow a profile only
+  when the environment defines one; otherwise implement directly. All three
+  arms still receive identical task text and unchanged expected paths/grader.
 - Before the next retry, `origin/main` advanced to PR67 (`4e3e76a2`). The branch
   rebased cleanly; an external git review found zero overlap with the new
   configurable deploy-SQL policy and verified its scripts, policy, Skill, and

@@ -23,7 +23,8 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
     expect(manifest.scenarios).toHaveLength(9);
     expect(new Set(manifest.scenarios.map((scenario) => scenario.category)).size).toBe(9);
     const crossCapability = manifest.scenarios.find((scenario) => scenario.category === 'cross-capability-feature');
-    expect(crossCapability?.prompt).toContain('workflow profile selected by the environment');
+    expect(crossCapability?.prompt).toContain('If the environment defines a workflow profile');
+    expect(crossCapability?.prompt).toContain('otherwise implement directly');
     expect(crossCapability?.prompt).toContain('Stay inside the benchmark workspace');
     expect(crossCapability?.prompt).toContain('then stop without unrelated full-suite or cleanup work');
     expect(crossCapability?.prompt).not.toContain('required Standard workflow');
