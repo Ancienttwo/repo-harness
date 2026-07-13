@@ -119,7 +119,7 @@
   immediately passed except for that 10.5-second timed case; state resolution
   and task sync also passed on direct replay. The circuit suite now uses a
   bounded 30-second default because its real-hook case deliberately exercises a
-  4-second fail-closed lock timeout plus multiple Bun/shell spawns. During the
+  2-second fail-closed lock timeout plus multiple Bun/shell spawns. During the
   verifier, `main/origin/main` again advanced externally (to `0cbfab4`), so the
   review must be rebound after integrating that target before the next retry.
 
