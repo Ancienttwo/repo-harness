@@ -12,6 +12,7 @@ import {
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
+import { createHash } from "crypto";
 
 const ROOT = join(import.meta.dir, "..");
 const SCRIPT = join(ROOT, "scripts/check-agent-tooling.sh");
@@ -19,6 +20,10 @@ const WAZA_SKILLS = ["think", "hunt", "check", "health"];
 const WAZA_RULES = ["anti-patterns.md", "chinese.md", "durable-context.md", "english.md"];
 const MANAGED_AGENTS = ["explorer", "deep-reasoner", "fast-worker", "gatekeeper", "root-cause-prover", "harness-evaluator"];
 const FLEET_SOURCE_DIR = join(ROOT, "agents/fleet");
+
+function sha256File(filePath: string) {
+  return createHash("sha256").update(readFileSync(filePath)).digest("hex");
+}
 
 function writeExecutable(filePath: string, content: string) {
   writeFileSync(filePath, content);
@@ -899,6 +904,172 @@ describe("check-agent-tooling", () => {
       expect(report.tools.agent_fleet.hosts.codex.installed_agents).toEqual(MANAGED_AGENTS);
       expect(report.tools.agent_fleet.source).toBe("package:agents/fleet");
       expect(report.tools.agent_fleet.install_command).toBe("repo-harness run install-agent-fleet");
+      expect(report.tools.agent_fleet.native_role_routing.status).toBe("unverified");
+    } finally {
+      rmSync(envRoot.root, { recursive: true, force: true });
+    }
+  }, 15000);
+
+  test("fails strict readiness on aggregated negative or malformed Codex role-routing evidence and accepts verified evidence", () => {
+    for (const testCase of [
+      { evidenceStatus: "unavailable", reportedStatus: "unavailable", exitCode: 2 },
+      { evidenceStatus: "mismatch", reportedStatus: "mismatch", exitCode: 2 },
+      { evidenceStatus: "malformed-verified", reportedStatus: "invalid", exitCode: 2 },
+      { evidenceStatus: "malformed-unverified", reportedStatus: "invalid", exitCode: 2 },
+      { evidenceStatus: "verified-config-drift", reportedStatus: "invalid", exitCode: 2 },
+      { evidenceStatus: "verified", reportedStatus: "verified", exitCode: 0 },
+    ]) {
+      const envRoot = setupFakeEnvironment(`check-agent-tooling-role-${testCase.evidenceStatus}`);
+      try {
+        mkdirSync(join(envRoot.home, ".codex", "agents"), { recursive: true });
+        writeFileSync(
+          join(envRoot.home, ".codex", "config.toml"),
+          "[mcp_servers.codegraph]\ncommand = \"codegraph\"\n",
+        );
+        for (const agent of MANAGED_AGENTS) {
+          copyFileSync(
+            join(ROOT, ".codex", "agents", `${agent}.toml`),
+            join(envRoot.home, ".codex", "agents", `${agent}.toml`),
+          );
+        }
+        const delegationRoot = join(envRoot.root, ".ai", "harness", "delegation");
+        const evidenceDir = join(delegationRoot, "role-routing", "fixture-current");
+        mkdirSync(evidenceDir, { recursive: true });
+        writeFileSync(
+          join(delegationRoot, "latest.json"),
+          `${JSON.stringify({
+            native_role_routing: {
+              required: true,
+              status: "unverified",
+              reason: "awaiting observations",
+              evidence_dir: "role-routing/fixture-current",
+            },
+          }, null, 2)}\n`,
+        );
+        const semanticStatus = testCase.evidenceStatus === "malformed-verified" || testCase.evidenceStatus === "verified-config-drift"
+          ? "verified"
+          : testCase.evidenceStatus === "malformed-unverified"
+            ? "unverified"
+            : testCase.evidenceStatus;
+        writeFileSync(
+          join(evidenceDir, "agent-a.json"),
+          `${JSON.stringify({
+            schema_version: 1,
+            required: true,
+            status: semanticStatus,
+            reason: `fixture ${testCase.evidenceStatus}`,
+            agent_id: "agent-a",
+            turn_id: "turn-a",
+            agent_type: semanticStatus === "unavailable" ? "default" : "fast-worker",
+            observed_model: semanticStatus === "mismatch" ? "gpt-5.6-terra" : "gpt-5.6-sol",
+            configured_model: semanticStatus === "unavailable" ? null : "gpt-5.6-sol",
+            config_path: testCase.evidenceStatus === "malformed-verified"
+              ? null
+              : semanticStatus === "unavailable"
+                ? null
+                : join(envRoot.home, ".codex", "agents", "fast-worker.toml"),
+            config_sha256: semanticStatus === "unavailable" || testCase.evidenceStatus === "malformed-verified"
+              ? null
+              : sha256File(join(envRoot.home, ".codex", "agents", "fast-worker.toml")),
+            checked_at: "2026-07-12T00:00:00.000Z",
+          }, null, 2)}\n`,
+        );
+        if (testCase.evidenceStatus === "verified-config-drift") {
+          const configPath = join(envRoot.home, ".codex", "agents", "fast-worker.toml");
+          writeFileSync(configPath, `${readFileSync(configPath, "utf8")}# drift\n`);
+        }
+        writeFakeCodeGraph(envRoot.fakeBin);
+
+        const res = spawnSync("bash", [SCRIPT, "--json", "--host", "codex", "--strict-readiness"], {
+          cwd: envRoot.root,
+          encoding: "utf-8",
+          env: {
+            ...process.env,
+            HOME: envRoot.home,
+            PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+            AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: "0",
+          },
+        });
+
+        expect(res.status).toBe(testCase.exitCode);
+        const report = JSON.parse(res.stdout);
+        expect(report.tools.agent_fleet.status).toBe("present");
+        expect(report.tools.agent_fleet.native_role_routing.status).toBe(testCase.reportedStatus);
+        if (testCase.exitCode === 2) {
+          expect(res.stderr).toContain(`Codex native role routing is ${testCase.reportedStatus}`);
+        } else {
+          expect(res.stderr).not.toContain("Codex native role routing is");
+        }
+      } finally {
+        rmSync(envRoot.root, { recursive: true, force: true });
+      }
+    }
+  }, 15000);
+
+  test("aggregates every sibling observation and retains the last completed negative canary across an empty reset", () => {
+    const envRoot = setupFakeEnvironment("check-agent-tooling-role-aggregate");
+    try {
+      mkdirSync(join(envRoot.home, ".codex", "agents"), { recursive: true });
+      writeFileSync(join(envRoot.home, ".codex", "config.toml"), "[mcp_servers.codegraph]\ncommand = \"codegraph\"\n");
+      for (const agent of MANAGED_AGENTS) {
+        copyFileSync(join(ROOT, ".codex", "agents", `${agent}.toml`), join(envRoot.home, ".codex", "agents", `${agent}.toml`));
+      }
+      const delegationRoot = join(envRoot.root, ".ai", "harness", "delegation");
+      const previousDir = join(delegationRoot, "role-routing", "previous");
+      mkdirSync(previousDir, { recursive: true });
+      const base = {
+        schema_version: 1,
+        required: true,
+        turn_id: "turn-a",
+        checked_at: "2026-07-12T00:00:00.000Z",
+      };
+      writeFileSync(join(previousDir, "negative.json"), `${JSON.stringify({
+        ...base,
+        status: "unavailable",
+        reason: "default child",
+        agent_id: "agent-negative",
+        agent_type: "default",
+        observed_model: "gpt-5.6-sol",
+        configured_model: null,
+        config_path: null,
+        config_sha256: null,
+      })}\n`);
+      writeFileSync(join(previousDir, "verified.json"), `${JSON.stringify({
+        ...base,
+        status: "verified",
+        reason: "verified child",
+        agent_id: "agent-verified",
+        agent_type: "fast-worker",
+        observed_model: "gpt-5.6-sol",
+        configured_model: "gpt-5.6-sol",
+        config_path: join(envRoot.home, ".codex", "agents", "fast-worker.toml"),
+        config_sha256: sha256File(join(envRoot.home, ".codex", "agents", "fast-worker.toml")),
+      })}\n`);
+      mkdirSync(join(delegationRoot, "role-routing", "empty-current"), { recursive: true });
+      writeFileSync(join(delegationRoot, "latest.json"), `${JSON.stringify({
+        native_role_routing: {
+          required: true,
+          status: "unverified",
+          reason: "awaiting observations",
+          evidence_dir: "role-routing/empty-current",
+        },
+      })}\n`);
+      writeFakeCodeGraph(envRoot.fakeBin);
+
+      const res = spawnSync("bash", [SCRIPT, "--json", "--host", "codex", "--strict-readiness"], {
+        cwd: envRoot.root,
+        encoding: "utf-8",
+        env: {
+          ...process.env,
+          HOME: envRoot.home,
+          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: "0",
+        },
+      });
+      expect(res.status).toBe(2);
+      const report = JSON.parse(res.stdout);
+      expect(report.tools.agent_fleet.native_role_routing.status).toBe("unavailable");
+      expect(report.tools.agent_fleet.native_role_routing.observations).toHaveLength(2);
     } finally {
       rmSync(envRoot.root, { recursive: true, force: true });
     }

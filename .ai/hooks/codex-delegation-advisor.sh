@@ -32,12 +32,15 @@ JSON_INPUT="$input" REPO_ROOT="${HOOK_REPO_ROOT:-$(pwd)}" bun -e '
   function firstString(input, keys) {
     for (const key of keys) {
       const value = input?.[key];
-      if (typeof value === "string" && value.trim()) return value;
+      if (typeof value === "string" && value.trim()) return value.trim();
     }
     return "";
   }
 
   function delegationScope(input) {
+    const turnId = firstString(input, ["turn_id"]);
+    if (turnId) return { source: "turn_id", id: `turn-${sanitize(turnId)}` };
+
     const runId = firstString(input, ["run_id"]);
     if (runId) return { source: "run_id", id: `run-${sanitize(runId)}` };
 
@@ -66,6 +69,127 @@ JSON_INPUT="$input" REPO_ROOT="${HOOK_REPO_ROOT:-$(pwd)}" bun -e '
       return mode === "auto" || mode === "explicit" ? mode : null;
     } catch {
       return null;
+    }
+  }
+
+  function sleepMs(durationMs) {
+    if (durationMs <= 0) return;
+    try {
+      const view = new Int32Array(new SharedArrayBuffer(4));
+      Atomics.wait(view, 0, 0, durationMs);
+    } catch {
+      const until = Date.now() + durationMs;
+      while (Date.now() < until) {
+        // Busy-wait fallback for a runtime where Atomics.wait is unavailable.
+      }
+    }
+  }
+
+  // A single lock FILE (not a directory) at a fixed sibling path, created
+  // with the O_CREAT | O_EXCL | O_WRONLY (wx) flag: fs.writeFileSync with
+  // { flag: wx } is one call that atomically creates and opens the path,
+  // throwing EEXIST synchronously when the path already exists, and this
+  // same call writes the small owner-marker JSON payload as part of that
+  // same successful open. There is no intermediate state where the lock
+  // exists but has no readable owner yet, unlike the previous mkdir-plus-
+  // separate-marker-file design. This assumes the marker payload stays small
+  // and this hook always runs against a local or tmpfs-backed filesystem, so
+  // that lock existence and lock content are effectively one fact
+  // established by a single syscall; it does not attempt to solve the
+  // general case of multi-writer torn writes for a larger payload or a
+  // networked filesystem. This lock file is the same shared path
+  // subagent-start-context.sh acquires around its own latest.json
+  // read-compare-write, so the two scripts serialize against each other on
+  // the same shared pointer.
+  function tryCreateLockFile(lockPath) {
+    const token = crypto.randomBytes(8).toString("hex");
+    try {
+      fs.writeFileSync(
+        lockPath,
+        JSON.stringify({ pid: process.pid, token: token, acquired_at: new Date().toISOString() }),
+        { flag: "wx" },
+      );
+      return { created: true, token: token };
+    } catch (error) {
+      if (error && typeof error === "object" && error.code === "EEXIST") return { created: false, token: null };
+      throw error;
+    }
+  }
+
+  // No reclaim is attempted here, on purpose. Five independent review rounds
+  // each found a new TOCTOU race one layer deeper in a progressively more
+  // careful reclaim mechanism: no lock at all, then an mkdir-based lock on
+  // only one writer site, then the same lock on both writer sites but with
+  // no ownership check, then an ownership token whose own mkdir-plus-marker
+  // write was not atomic, then a single wx-locked file whose own stale-
+  // reclaim step let two concurrent reclaimers race each other, and finally
+  // a reclaim-marker gate whose own stale-marker cleanup could delete a
+  // brand-new legitimate marker belonging to a different process. Every fix closed the
+  // previously reported race and opened an equivalent one nested one layer
+  // deeper in the mechanism protecting the previous fix. That pattern is a
+  // decisive signal, not a coincidence: safely reclaiming a lock from a
+  // possibly-crashed holder using only bare filesystem primitives (no
+  // flock, no new dependency) cannot be made fully correct through
+  // incremental patching. So this lock does not try. A lock left behind by
+  // a crashed holder simply stays held until it is removed by hand (for
+  // example, rm .ai/harness/delegation/latest.json.lock). That is an
+  // accepted tradeoff, not an oversight: SubagentStart and UserPromptSubmit
+  // hooks are short-lived, and this lock only guards the shared latest.json
+  // convenience pointer -- the isolated per-turn state write always
+  // succeeds no matter what this lock decides. The bounded retry loop
+  // below still exists so ordinary, brief contention (two hooks racing a
+  // normal, soon-to-be-released lock) resolves quickly, and a wedged lock
+  // degrades to skipping the guarded write instead of hanging the hook.
+  function acquireLock(lockPath, options) {
+    const totalTimeoutMs = (options && options.totalTimeoutMs) || 2000;
+    const retryDelayMs = (options && options.retryDelayMs) || 25;
+    const deadline = Date.now() + totalTimeoutMs;
+    for (;;) {
+      let attempt;
+      try {
+        attempt = tryCreateLockFile(lockPath);
+      } catch {
+        return { acquired: false, token: null };
+      }
+      if (attempt.created) return { acquired: true, token: attempt.token };
+      if (Date.now() >= deadline) return { acquired: false, token: null };
+      sleepMs(retryDelayMs);
+    }
+  }
+
+  // Release re-reads the lock file and only unlinks it when the content
+  // token still matches the token returned by this exact acquireLock call,
+  // so a lock that has since been legitimately released and re-acquired by
+  // a different holder is never removed by a caller that no longer owns
+  // it. The read and the unlink are still two separate steps, not one
+  // atomic syscall -- POSIX has no portable delete-only-if-content-matches
+  // primitive for a plain path without a file-descriptor-based lock such as
+  // flock, which this hook deliberately avoids to stay dependency-free.
+  // Since this lock is never reclaimed (see acquireLock above), the only
+  // way this token check can ever see a mismatch is a legitimate release-
+  // then-reacquire by a different holder in between, or the same accepted,
+  // extremely low-probability PID-reuse/torn-write edge case already
+  // documented for tryCreateLockFile above -- not a new gap introduced here.
+  function releaseLock(lockPath, token) {
+    let owner;
+    try {
+      owner = JSON.parse(fs.readFileSync(lockPath, "utf8"));
+    } catch {
+      // No readable content at this path: this call cannot prove it still
+      // owns the lock, so leave it alone rather than remove a lock it may
+      // not own.
+      return;
+    }
+    if (!owner || owner.token !== token) {
+      // A different holder now owns this lock (already released and
+      // re-acquired by a different call); do not touch a lock this call no
+      // longer owns.
+      return;
+    }
+    try {
+      fs.unlinkSync(lockPath);
+    } catch {
+      // Already gone: released by a different invocation.
     }
   }
 
@@ -152,8 +276,10 @@ JSON_INPUT="$input" REPO_ROOT="${HOOK_REPO_ROOT:-$(pwd)}" bun -e '
   const now = new Date();
   const scope = delegationScope(input);
   const relativeStateFile = scope ? path.join("turns", `${scope.id}.json`) : "latest.json";
+  const promptHash = crypto.createHash("sha1").update(prompt).digest("hex");
+  const evidenceScope = `${scope?.id || "unscoped"}-${promptHash.slice(0, 16)}`;
   const state = {
-    version: 1,
+    version: 2,
     eligible: true,
     explicit,
     spawned: false,
@@ -163,10 +289,16 @@ JSON_INPUT="$input" REPO_ROOT="${HOOK_REPO_ROOT:-$(pwd)}" bun -e '
     max_depth: maxDepth,
     allow_parallel_writers: false,
     stop_fallback: explicit,
+    native_role_routing: {
+      required: true,
+      status: "unverified",
+      reason: "No authoritative SubagentStart role/model evidence has been recorded for this delegation.",
+      evidence_dir: path.join("role-routing", evidenceScope),
+    },
     preferred_runners: preferredRunners,
     fallback_runner: fallbackRunner,
     trigger: explicit ? trigger.name : "auto-mode",
-    prompt_hash: crypto.createHash("sha1").update(prompt).digest("hex"),
+    prompt_hash: promptHash,
     scope_source: scope?.source || "unscoped",
     scope_id: scope?.id || "",
     state_file: relativeStateFile,
@@ -179,7 +311,28 @@ JSON_INPUT="$input" REPO_ROOT="${HOOK_REPO_ROOT:-$(pwd)}" bun -e '
     fs.mkdirSync(path.dirname(statePath), { recursive: true });
     fs.writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`);
   }
-  fs.writeFileSync(path.join(stateDir, "latest.json"), `${JSON.stringify(state, null, 2)}\n`);
+  // Mutual-exclusion guard: this call always establishes a brand-new current
+  // delegation, so unlike subagent-start-context.sh there is no scope compare
+  // to make here. But subagent-start-context.sh can be mid-flight in its own
+  // read-compare-write critical section for an older turn when this advisor
+  // call lands, so this write still needs the same lock: without it, this
+  // fresh pointer could be silently overwritten by that older invocation
+  // committing its own (by-then-stale) decision right after this write. The
+  // per-turn statePath write above is always scoped to this call alone and is
+  // safe regardless.
+  const latestPath = path.join(stateDir, "latest.json");
+  const latestLockPath = `${latestPath}.lock`;
+  const latestLock = acquireLock(latestLockPath);
+  if (latestLock.acquired) {
+    try {
+      fs.writeFileSync(latestPath, `${JSON.stringify(state, null, 2)}\n`);
+    } finally {
+      releaseLock(latestLockPath, latestLock.token);
+    }
+  }
+  // If the lock could not be acquired within the bounded retry window, skip
+  // the shared latest.json write rather than risk a hung hook: a skipped
+  // pointer update is safe, a hung hook is not.
 
   const context = [
     "[repo-harness:delegation]",
@@ -206,6 +359,8 @@ JSON_INPUT="$input" REPO_ROOT="${HOOK_REPO_ROOT:-$(pwd)}" bun -e '
     "- Reconcile contradictory findings in the parent.",
     "- Close completed agent threads.",
     "- Do not spawn for a trivial or strictly sequential task.",
+    "- The role labels above describe responsibilities only; they do not prove that Codex selected a same-name custom-agent profile or its configured model.",
+    "- Treat native children as inherited-model until the SubagentStart hook records matching non-default agent_type and model evidence. If it records unavailable or mismatch, report runner degradation and use the contract runner fallback instead of claiming role-specific routing.",
     "",
     "Execution boundary: implement exactly the Goal, In scope items, Allowed Paths, and Exit Criteria in this brief. Treat absent requirements as forbidden design space, not as permission to improve.",
     "",
