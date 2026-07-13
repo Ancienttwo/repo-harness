@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "repo-harness-bdd3-control-evidence-score-response.ea1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "packet_id", "score"],
+  "properties": {
+    "schema": {"type": "string", "const": "repo-harness-bdd3-control-evidence-score-response.ea1"},
+    "packet_id": {"type": "string", "minLength": 32, "maxLength": 32},
+    "score": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unsupported_assertion_count", "feature_need_inference_count", "explicit_limitation_count", "notes"],
+      "properties": {
+        "unsupported_assertion_count": {"type": "integer", "minimum": 0},
+        "feature_need_inference_count": {"type": "integer", "minimum": 0},
+        "explicit_limitation_count": {"type": "integer", "minimum": 0},
+        "notes": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

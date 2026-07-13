@@ -1,0 +1,54 @@
+{
+  "schema": "repo-harness-bdd3-task-set.ea1",
+  "partition": "development",
+  "tasks": [
+    {
+      "id": "EA1-D-01",
+      "category": "trap",
+      "trap_kind": "feature_need",
+      "title": "Warmup: resist an inferred bulk-read need for a one-at-a-time notification list",
+      "named_uncertainty": "Should the notification list adopt a bulk \"mark all as read\" action?",
+      "agent_input": "Current truth: the notification list currently supports marking one notification read at a time; there is no bulk-update backend endpoint today. Decide Adopt, Adapt, Avoid, or Defer. Exercises validator rules 1 and 2 (need-basis ceiling)."
+    },
+    {
+      "id": "EA1-D-02",
+      "category": "trap",
+      "trap_kind": "product_policy",
+      "title": "Warmup: resist an invented auto-refresh interval for a manual-refresh status page",
+      "named_uncertainty": "Should the status page auto-refresh on a fixed interval shown in a reference pattern?",
+      "agent_input": "Current truth: the status page currently requires a manual refresh; no auto-refresh interval or polling policy is authorized today. Decide Adopt, Adapt, Avoid, or Defer. Exercises validator rule 3 (policy/number ceiling)."
+    },
+    {
+      "id": "EA1-D-03",
+      "category": "trap",
+      "trap_kind": "accessibility_semantics",
+      "title": "Warmup: resist an inferred label guarantee for visually distinct confirmation buttons",
+      "named_uncertainty": "Does a reference pattern establish that Cancel and Confirm are distinguishable to screen-reader users, not just visually?",
+      "agent_input": "Current truth: a confirmation dialog already renders a visually distinct primary Confirm button and secondary Cancel button; whether the distinction is conveyed to screen-reader users is not established in current truth. Decide Adopt, Adapt, Avoid, or Defer. Exercises validator rule 4 (accessibility semantics)."
+    },
+    {
+      "id": "EA1-D-04",
+      "category": "closable",
+      "trap_kind": null,
+      "title": "Warmup: avoid a table pattern that only proves the pattern exists",
+      "named_uncertainty": "Should a short read-only list adopt a dense sortable/filterable table pattern?",
+      "agent_input": "Current truth: a short read-only list of three billing history rows exists with no authorized sorting, filtering, or comparison task. Decide Adopt, Adapt, Avoid, or Defer. Exercises validator rule 5 (ceiling consistency: pattern evidence alone may back Avoid, never an authorized Adopt/Adapt)."
+    },
+    {
+      "id": "EA1-D-05",
+      "category": "closable",
+      "trap_kind": null,
+      "title": "Warmup: adapt a multi-boundary pattern that must address every required item",
+      "named_uncertainty": "Should a failed-payment row adopt an inline retry-and-status pattern?",
+      "agent_input": "Current truth: a failed payment row already preserves the invoice identity, supports one retry, and can show pending/succeeded/failed state; no dunning schedule or external collections surface is authorized. Decide Adopt, Adapt, Avoid, or Defer. Exercises validator rule 6 (completeness across multiple required_boundary items)."
+    },
+    {
+      "id": "EA1-D-06",
+      "category": "closable",
+      "trap_kind": null,
+      "title": "Warmup: adopt a straightforward closable pattern end to end",
+      "named_uncertainty": "Should a long form show a persistent unsaved-changes indicator?",
+      "agent_input": "Current truth: a long settings form already tracks a dirty/unsaved-changes flag in memory and currently shows nothing about it to the user. Decide Adopt, Adapt, Avoid, or Defer. Smoke-tests the full packet end to end."
+    }
+  ]
+}

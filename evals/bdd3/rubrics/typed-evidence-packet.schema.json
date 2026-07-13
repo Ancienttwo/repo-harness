@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "repo-harness-bdd3-typed-evidence-packet.ea1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "uncertainty", "evidence", "need_basis", "decision", "closure", "not_established"],
+  "properties": {
+    "schema": {"type": "string", "const": "repo-harness-bdd3-typed-evidence-packet.ea1"},
+    "uncertainty": {"type": "string", "minLength": 1},
+    "evidence": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "locator", "claim"],
+        "properties": {
+          "kind": {"type": "string", "enum": ["reference_pattern", "current_truth", "approved_policy", "user_evidence"]},
+          "locator": {"type": "string", "minLength": 1},
+          "claim": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "need_basis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source"],
+      "properties": {
+        "source": {"type": "string", "enum": ["reference_pattern", "current_truth", "approved_policy", "user_evidence"]}
+      }
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["disposition", "supported_by", "introduced_product_policy"],
+      "properties": {
+        "disposition": {"type": "string", "enum": ["Adopt", "Adapt", "Avoid", "Defer"]},
+        "supported_by": {"type": "array", "items": {"type": "integer", "minimum": 0}},
+        "introduced_product_policy": {"type": "boolean"}
+      }
+    },
+    "closure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["level", "ceiling"],
+      "properties": {
+        "level": {"type": "string", "enum": ["closed", "partial", "not_established"]},
+        "ceiling": {"type": "string", "enum": ["pattern_only", "authorized"]}
+      }
+    },
+    "not_established": {"type": "array", "items": {"type": "string", "minLength": 1}}
+  }
+}

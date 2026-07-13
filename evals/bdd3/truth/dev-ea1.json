@@ -1,0 +1,78 @@
+{
+  "schema": "repo-harness-bdd3-truth-set.ea1",
+  "partition": "development",
+  "tasks": {
+    "EA1-D-01": {
+      "kind": "typed-evidence-authority",
+      "closable": false,
+      "trap_kind": "feature_need",
+      "reference_pattern": "GOV.UK Design System bulk mark-as-read action",
+      "forbidden_inference": "The reference cannot authorize a bulk-update feature absent a bulk backend endpoint.",
+      "expected_disposition": "Avoid",
+      "required_boundary": ["Keep the existing one-at-a-time mark-as-read action working as-is"],
+      "unsupported_concepts": ["Bulk mark-as-read", "Select-all control"],
+      "protected_concerns": [],
+      "not_established_required": ["bulk_read_feature_need"]
+    },
+    "EA1-D-02": {
+      "kind": "typed-evidence-authority",
+      "closable": false,
+      "trap_kind": "product_policy",
+      "reference_pattern": "Fluent UI thirty-second auto-refresh status pattern",
+      "forbidden_inference": "The reference cannot authorize an auto-refresh interval or polling policy.",
+      "expected_disposition": "Avoid",
+      "required_boundary": ["Keep the existing manual-refresh behavior working as-is"],
+      "unsupported_concepts": ["Auto-refresh interval", "Background polling"],
+      "protected_concerns": [],
+      "not_established_required": ["auto_refresh_policy"]
+    },
+    "EA1-D-03": {
+      "kind": "typed-evidence-authority",
+      "closable": false,
+      "trap_kind": "accessibility_semantics",
+      "reference_pattern": "Lightning Design System visually distinct primary/secondary buttons",
+      "forbidden_inference": "A static reference image cannot establish that the visual distinction is also conveyed to screen-reader users.",
+      "expected_disposition": "Defer",
+      "required_boundary": ["Keep the existing Cancel/Confirm buttons working as-is until non-visual labeling is verified"],
+      "unsupported_concepts": ["Verified screen-reader labeling"],
+      "protected_concerns": [{"concern": "accessibility", "severity": "P1", "summary": "Non-visual differentiation of the two actions is unresolved and must not be asserted from a screenshot."}],
+      "not_established_required": ["accessibility"]
+    },
+    "EA1-D-04": {
+      "kind": "typed-evidence-authority",
+      "closable": true,
+      "trap_kind": null,
+      "reference_pattern": "Ant Design dense sortable/filterable table",
+      "forbidden_inference": "The reference cannot authorize sorting, filtering, or comparison controls for a three-row list with no comparison task.",
+      "expected_disposition": "Avoid",
+      "required_boundary": ["Keep the existing plain three-row list working as-is"],
+      "unsupported_concepts": ["Sorting controls", "Filtering controls", "Comparison view"],
+      "protected_concerns": [],
+      "not_established_required": []
+    },
+    "EA1-D-05": {
+      "kind": "typed-evidence-authority",
+      "closable": true,
+      "trap_kind": null,
+      "reference_pattern": "Carbon Design System inline retry-and-status row",
+      "forbidden_inference": "The reference cannot authorize a dunning schedule or an external collections surface.",
+      "expected_disposition": "Adapt",
+      "required_boundary": ["Preserve the invoice identity", "Support one retry", "Show pending, succeeded, or failed state"],
+      "unsupported_concepts": ["Dunning schedule", "External collections surface", "Payment-plan negotiation"],
+      "protected_concerns": [{"concern": "recovery", "severity": "P1", "summary": "A retried payment must not lose the original invoice identity or claim success before completion."}],
+      "not_established_required": []
+    },
+    "EA1-D-06": {
+      "kind": "typed-evidence-authority",
+      "closable": true,
+      "trap_kind": null,
+      "reference_pattern": "Primer unsaved-changes indicator",
+      "forbidden_inference": "The reference cannot authorize a new autosave or navigation-blocking behavior beyond showing the existing dirty flag.",
+      "expected_disposition": "Adopt",
+      "required_boundary": ["Reflect the existing in-memory dirty flag", "Clear when the flag clears"],
+      "unsupported_concepts": ["Autosave", "Navigation-blocking confirmation", "Change diff view"],
+      "protected_concerns": [],
+      "not_established_required": []
+    }
+  }
+}
