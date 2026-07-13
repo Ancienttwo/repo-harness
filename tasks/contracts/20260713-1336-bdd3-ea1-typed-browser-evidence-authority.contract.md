@@ -63,6 +63,7 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 allowed_paths:
   - plans/plan-20260713-1336-bdd3-ea1-typed-browser-evidence-authority.md
   - evals/bdd3/
+  - evals/bdd2/evaluation-manifest.json # runner.sha256 field only: shared-runner hash re-pin; all other BDD2 bytes stay frozen
   - scripts/run-bdd2-evals.ts
   - tests/run-bdd2-evals.test.ts
   - tests/bdd2-evals-contract.test.ts
