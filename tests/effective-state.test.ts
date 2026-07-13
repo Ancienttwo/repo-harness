@@ -381,13 +381,35 @@ describe('effective state resolver', () => {
     });
   });
 
-  test('--field on an unknown field name prints nothing and still resolves the full state underneath', () => {
+  test('--field on an unknown field name reports an error and exits non-zero, listing legal fields', () => {
     withRepo((cwd) => {
       const fieldOutput = spawnSync(process.execPath, [
         CLI, 'state', 'resolve', '--json', '--field', 'not_a_real_field',
         '--target-path', 'src/feature.ts', '--operation', 'feature',
       ], { cwd, encoding: 'utf-8' });
-      expect(fieldOutput.status).toBe(0);
+      expect(fieldOutput.status).toBe(2);
+      expect(fieldOutput.stdout).toBe('');
+      expect(fieldOutput.stderr).toContain('not_a_real_field');
+      expect(fieldOutput.stderr).toContain('workflow_profile');
+    });
+  });
+
+  test('--field suppresses the printed value when blockers are present, even though the field itself resolved a value', () => {
+    withRepo((cwd) => {
+      // missing_contract fires (Executing plan, no contract file yet) while
+      // workflow_profile still resolves a real, non-null value ('standard')
+      // -- the CLI must not print a value a caller could mistake for
+      // trustworthy when the exit code already signals "blocked".
+      rmSync(join(cwd, CONTRACT));
+      const full = resolveFixtureState(cwd);
+      expect(full.blockers).toContain('missing_contract');
+      expect(full.workflow_profile).not.toBeNull();
+
+      const fieldOutput = spawnSync(process.execPath, [
+        CLI, 'state', 'resolve', '--json', '--field', 'workflow_profile',
+        '--target-path', 'src/feature.ts', '--operation', 'feature',
+      ], { cwd, encoding: 'utf-8' });
+      expect(fieldOutput.status).toBe(1);
       expect(fieldOutput.stdout).toBe('');
     });
   });
@@ -466,6 +488,67 @@ describe('effective state resolver', () => {
         write(cwd, '.ai/context/capabilities.json', '{not json');
         const state = resolveFixtureState(cwd);
         expect(state.blockers).toContain('capability_registry:invalid');
+      });
+    });
+
+    test('a declared registry file that is zero-byte or otherwise unreadable already fails closed the same as missing (locks in existing behavior; external acceptance verified this was not actually a gap)', () => {
+      withRepo((cwd) => {
+        write(cwd, '.ai/harness/policy.json', JSON.stringify({
+          context: { capability_registry_file: '.ai/context/capabilities.json' },
+        }));
+        // readFileSync on a zero-byte file returns '' (does not throw), and
+        // '' is falsy in JS -- capabilityIdsForPaths' `if (!text)` branch
+        // already treats a present-but-empty file identically to a missing
+        // one, so a declared registry that is zero-byte already resolves
+        // 'invalid' today. This test locks that in explicitly rather than
+        // only covering the "file does not exist at all" case above.
+        write(cwd, '.ai/context/capabilities.json', '');
+        const state = resolveFixtureState(cwd);
+        expect(state.blockers).toContain('capability_registry:invalid');
+        expect(state.profile_reasons).toContain('capability:registry:invalid');
+      });
+    });
+
+    test('malformed entries inside an otherwise-parseable registry are counted and fail closed instead of silently dropped', () => {
+      withRepo((cwd) => {
+        write(cwd, '.ai/context/capabilities.json', JSON.stringify({
+          version: 1,
+          capabilities: [
+            { id: 'good-cap', prefixes: ['src/good'] },
+            { id: 'bad-entry-no-prefixes' },
+            'just a string',
+            { prefixes: ['src/no-id'] },
+            { id: 'mixed-cap', prefixes: ['src/mixed', 42, 'src/mixed2'] },
+          ],
+        }));
+        commitFixture(cwd, 'seed malformed registry');
+        const state = resolveEffectiveState(cwd, Date.now(), {
+          targetPaths: ['src/no-id/x.ts'],
+          operationKind: 'edit',
+        });
+        // 4 malformed entries: missing prefixes, non-object string element,
+        // missing id, and mixed-cap (keeps its 2 valid prefixes for matching
+        // purposes, but still counts as malformed since it also dropped one
+        // non-string prefix element -- partial recovery of the good part
+        // does not un-flag the entry).
+        expect(state.profile_reasons).toContain('capability:registry:malformed-entries:4');
+        expect(state.blockers).toContain('capability_registry:invalid');
+        expect(state.phase).toBe('blocked');
+      });
+    });
+
+    test('a corrupt policy.json is treated as "not declared" (absent, no blocker) -- intentionally aligned with every other policy.json reader in this file, not fixed', () => {
+      withRepo((cwd) => {
+        // policyPath/policyString/loadMinimalChangePolicy all catch a corrupt
+        // or missing policy.json and fall back to a default; none of them
+        // fail closed. Making policyDeclaresCapabilityRegistry the one
+        // exception would invent a new, inconsistent authority for exactly
+        // the case the dispatch says to avoid ("别造新权威"). Locks in the
+        // current, deliberate behavior.
+        write(cwd, '.ai/harness/policy.json', 'not json{{{');
+        const state = resolveFixtureState(cwd);
+        expect(state.blockers).not.toContain('capability_registry:invalid');
+        expect(state.profile_reasons).toContain('capability:registry:absent');
       });
     });
 

@@ -56,7 +56,11 @@ function patchFromFiles(files: readonly string[]): string {
 
 function resolveStateDirect(cwd: string, targetPaths: readonly string[], extraArgs: readonly string[] = []): {
   status: number | null;
-  json: { workflow_profile: string | null; blockers: string[]; profile_signals: { targetPathCount: number } | null };
+  json: {
+    workflow_profile: string | null;
+    blockers: string[];
+    profile_signals: { targetPathCount: number; strictCategories: string[] } | null;
+  };
 } {
   const result = spawnSync(process.execPath, [
     CLI, 'state', 'resolve', '--json',
@@ -107,7 +111,15 @@ describe('risk-based runtime profile enforcement', () => {
       const plan = 'plans/plan-20260712-0000-strict.md';
       const contract = 'tasks/contracts/20260712-0000-strict.contract.md';
       writeFileSync(join(worktree, plan), [
-        '# Strict', '', '> **Status**: Executing', `> **Task Contract**: ${contract}`, '',
+        // Status is deliberately not "Executing"/"Approved": either would also
+        // trip the state resolver's own `missing_contract` blocker (plan
+        // approved/executing with no contract file yet), which now fails
+        // pre-edit-guard.sh closed via the generic WorkflowProfileGuard
+        // before ever reaching the StrictContractGuard check this test wants
+        // to isolate. A status outside {Draft, Annotating, Approved,
+        // Executing} still passes PlanStatusGuard (only Draft/Annotating
+        // block) without also tripping missing_contract.
+        '# Strict', '', '> **Status**: InProgress', `> **Task Contract**: ${contract}`, '',
         '## Evidence Contract', '- **State/progress path**: plan', '- **Verification evidence**: test',
         '- **Evaluator rubric**: review', '- **Stop condition**: pass', '- **Rollback surface**: revert', '',
       ].join('\n'));
@@ -239,7 +251,14 @@ describe('apply_patch batch-scope resolves the full pending write scope (guard g
       writeFileSync(join(cwd, 'docs/spec.md'), '# Spec\n');
       const plan = 'plans/plan-20260713-1300-batch-strict.md';
       writeFileSync(join(cwd, plan), [
-        '# Batch Strict', '', '> **Status**: Executing', '',
+        // Status "InProgress" (not Executing/Approved), same reasoning as the
+        // "Strict high-risk paths" fixture above: avoids the state
+        // resolver's own missing_contract blocker so this test's specific
+        // assertion (src/plain1.ts named by StrictContractGuard, proving the
+        // batch-scope strict-token leak) is reachable and unambiguous, not
+        // masked by an unrelated, coincidental blocker that would fire
+        // regardless of whether the batch-scope fix under test works at all.
+        '# Batch Strict', '', '> **Status**: InProgress', '',
         '## Evidence Contract', '- **State/progress path**: plan', '- **Verification evidence**: test',
         '- **Evaluator rubric**: review', '- **Stop condition**: pass', '- **Rollback surface**: revert', '',
       ].join('\n'));
@@ -333,6 +352,74 @@ describe('implementation-surface predicate excludes workflow-surface paths from 
       expect(result.status).toBe(0);
       expect(result.stdout).not.toContain('PlanStatusGuard');
       expect(result.stdout).not.toContain('SpecGuard');
+    } finally { rmSync(cwd, { recursive: true, force: true }); }
+  });
+
+  test('l) a workflow-surface strict-token path batched with a plain implementation file still resolves strict (guard gap regression, external acceptance)', () => {
+    // docs/auth/runbook.md is workflow surface (excluded from medium-scope
+    // counting), but its "auth" token must still be scanned via
+    // strictScanPaths -- otherwise a batch that touches auth-related docs
+    // alongside ordinary implementation code would silently resolve lite and
+    // skip the StrictContractGuard that src/plain.ts should trip.
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'profile-docs-auth-strict-leak-')));
+    try {
+      initRepo(cwd);
+      const direct = resolveStateDirect(cwd, ['docs/auth/runbook.md', 'src/plain.ts']);
+      expect(direct.json.workflow_profile).toBe('strict');
+      expect(direct.json.profile_signals?.targetPathCount).toBe(1);
+    } finally { rmSync(cwd, { recursive: true, force: true }); }
+  });
+
+  test('m) a single deploy-named workflow-surface path (deploy/notes.md) resolves strict on its own -- locked semantics', () => {
+    // deploy/notes.md is workflow surface (matches the *.md extension
+    // exclusion, so it never counts toward medium-scope/targetPathCount), but
+    // strictScanPaths scans the raw pre-filter set uniformly -- there is no
+    // separate carve-out for extension-excluded vs dir-prefix-excluded
+    // workflow-surface paths, since introducing one would reintroduce a
+    // second, narrower classification the C2 predicate exists to avoid. A
+    // "deploy" token anywhere in the raw batch is treated as a legitimate
+    // strict signal (raise-only bias, consistent with this repo's accepted
+    // over-promotion tradeoff for mechanical/administrative batches), even
+    // when the sole matching path is a note file rather than executable
+    // deploy config. See tasks/notes/20260713-1202-harness-kernel-optimization-phase2.notes.md
+    // "Codex External Acceptance Round 1" for the explicit decision record.
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'profile-deploy-notes-strict-')));
+    try {
+      initRepo(cwd);
+      const direct = resolveStateDirect(cwd, ['deploy/notes.md']);
+      expect(direct.json.workflow_profile).toBe('strict');
+      expect(direct.json.profile_signals?.targetPathCount).toBe(0);
+      expect(direct.json.profile_signals?.strictCategories).toEqual(['deploy']);
+    } finally { rmSync(cwd, { recursive: true, force: true }); }
+  });
+});
+
+describe('pre-edit-guard.sh fails closed on any state-resolve blocker (guard gap regression, external acceptance)', () => {
+  test('a declared-but-corrupt capability registry blocks an otherwise-lite edit instead of silently passing through', () => {
+    // Verifies the C1 fail-closed blocker (capability_registry:invalid)
+    // actually reaches pre-edit-guard.sh's enforcement: before this fix the
+    // guard captured stdout without checking $?, so a corrupt registry's
+    // still-resolvable workflow_profile value (lite) was treated as valid and
+    // the edit proceeded despite the blocker.
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'profile-registry-corrupt-guard-')));
+    try {
+      initRepo(cwd);
+      writeFileSync(join(cwd, '.ai/harness/policy.json'), JSON.stringify({
+        hook_source: 'repo',
+        worktree_strategy: { review_base: 'main', base_branch: 'main' },
+        context: { capability_registry_file: '.ai/context/capabilities.json' },
+      }, null, 2));
+      mkdirSync(join(cwd, '.ai/context'), { recursive: true });
+      writeFileSync(join(cwd, '.ai/context/capabilities.json'), '{not json');
+
+      const before = resolveStateDirect(cwd, ['src/feature.ts']);
+      expect(before.json.workflow_profile).toBe('lite');
+      expect(before.json.blockers).toContain('capability_registry:invalid');
+      expect(before.status).toBe(1);
+
+      const result = preEdit(cwd, 'src/feature.ts');
+      expect(result.status).toBe(2);
+      expect(result.stderr).toContain('WorkflowProfileGuard');
     } finally { rmSync(cwd, { recursive: true, force: true }); }
   });
 });

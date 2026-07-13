@@ -80,7 +80,7 @@ if [[ "$FILE_PATH" == deploy/* ]]; then
 fi
 
 resolve_edit_workflow_profile() {
-  local source_cli output args target_paths patch_command patch_paths path
+  local source_cli output args target_paths patch_command patch_paths path cli_status
   source_cli="$(cd "$SCRIPT_DIR/../.." 2>/dev/null && pwd)/src/cli/index.ts"
 
   # A recursive apply_patch expansion still carries the original patch command
@@ -113,16 +113,30 @@ resolve_edit_workflow_profile() {
     args+=(--profile "$REPO_HARNESS_WORKFLOW_PROFILE")
   fi
   args+=(--operation edit --target-path "${target_paths[@]}")
+  # The CLI's real exit code is the authoritative blocked/ok signal (state.ts
+  # exits non-zero whenever `blockers` is non-empty, e.g. an invalid capability
+  # registry) -- it must be captured, not discarded, or a blocker that still
+  # happens to leave a resolvable profile value on stdout (registry corruption
+  # alongside an otherwise-valid risk floor) silently bypasses every downstream
+  # guard. set +e/-e brackets the call so a non-zero exit here does not trip
+  # this script's own `set -e` before the status can be read (same idiom as
+  # the apply_patch recursion above).
+  set +e
   if [[ -n "${REPO_HARNESS_CLI:-}" && -f "${REPO_HARNESS_CLI:-}" ]] && command -v bun >/dev/null 2>&1; then
-    output="$(bun "$REPO_HARNESS_CLI" "${args[@]}" 2>/dev/null || true)"
+    output="$(bun "$REPO_HARNESS_CLI" "${args[@]}" 2>/dev/null)"
+    cli_status=$?
   elif command -v repo-harness >/dev/null 2>&1; then
-    output="$(repo-harness "${args[@]}" 2>/dev/null || true)"
+    output="$(repo-harness "${args[@]}" 2>/dev/null)"
+    cli_status=$?
   elif [[ -f "$source_cli" ]] && command -v bun >/dev/null 2>&1; then
-    output="$(bun "$source_cli" "${args[@]}" 2>/dev/null || true)"
+    output="$(bun "$source_cli" "${args[@]}" 2>/dev/null)"
+    cli_status=$?
   else
     output=""
+    cli_status=1
   fi
-  [[ -n "$output" ]] || return 1
+  set -e
+  [[ "$cli_status" -eq 0 && -n "$output" ]] || return 1
   printf '%s' "$output"
 }
 

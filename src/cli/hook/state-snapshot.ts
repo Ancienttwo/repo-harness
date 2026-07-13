@@ -448,6 +448,7 @@ export interface CapabilityResolution {
   readonly ids: readonly string[];
   readonly registryStatus: CapabilityRegistryStatus;
   readonly unmappedPaths: readonly string[];
+  readonly malformedEntryCount: number;
 }
 
 const CAPABILITY_REGISTRY_PATH = '.ai/context/capabilities.json';
@@ -476,44 +477,75 @@ function policyDeclaresCapabilityRegistry(cwd: string): boolean {
   }
 }
 
-// Structured, fail-closed capability registry resolution (Phase C1). Never
-// silently collapses a broken or unmapped registry to capabilityCount=0:
-// - registryStatus 'invalid' (corrupt JSON, non-array capabilities, or a
-//   declared-but-missing registry file) is surfaced as a blocker by the
-//   caller, naming the repair action above.
+// Structured, fail-closed capability registry resolution (Phase C1, extended
+// C1-hardening). Never silently collapses a broken or unmapped registry to
+// capabilityCount=0:
+// - registryStatus 'invalid' (corrupt JSON, non-array capabilities, a
+//   declared-but-missing registry file, or -- see below -- one or more
+//   malformed entries inside an otherwise-parseable registry) is surfaced as
+//   a blocker by the caller, naming the repair action above.
 // - registryStatus 'absent' (never declared) preserves today's no-signal
 //   behavior with an explicit reason recorded by the caller.
 // - unmapped implementation paths are returned so the caller can fold them
 //   into the cross-capability signal as one additional bucket, and record a
 //   stable `capability:unmapped:<n>` reason -- an unmapped path never
-//   silently lowers the floor.
+//   silently lowers the floor. This bucketing is deliberate and unchanged: a
+//   repo that has only partially adopted the registry (some real paths just
+//   not mapped yet) is a normal, expected state, not a corruption.
+//
+// A malformed entry (not an object, missing string `id`, missing/non-array
+// `prefixes`) or a malformed prefix value (non-string) inside an otherwise
+// well-formed `capabilities` array is different in kind from "unmapped": the
+// registry itself is internally damaged, so a path that *would* have mapped
+// through that entry silently falls into the generic unmapped bucket instead
+// -- which can understate capabilityCount and suppress a genuine
+// cross-capability floor raise (two real, distinct capabilities each losing
+// their entry to malformation collapse into the single unmapped bucket
+// instead of counting as 2). Once a repo has committed to a capabilities
+// array at all, a malformed element in it is data-integrity damage to an
+// adopted registry -- the same class of problem as corrupt JSON, not a
+// "never adopted" absence -- so malformedEntryCount > 0 escalates
+// registryStatus to 'invalid' (fail closed) rather than only recording a
+// reason and continuing with the partial match set.
 function capabilityIdsForPaths(cwd: string, paths: readonly string[]): CapabilityResolution {
   const text = readText(cwd, CAPABILITY_REGISTRY_PATH);
   if (!text) {
     return policyDeclaresCapabilityRegistry(cwd)
-      ? { ids: [], registryStatus: 'invalid', unmappedPaths: [...paths] }
-      : { ids: [], registryStatus: 'absent', unmappedPaths: [] };
+      ? { ids: [], registryStatus: 'invalid', unmappedPaths: [...paths], malformedEntryCount: 0 }
+      : { ids: [], registryStatus: 'absent', unmappedPaths: [], malformedEntryCount: 0 };
   }
   let parsed: { capabilities?: unknown };
   try {
     parsed = JSON.parse(text) as { capabilities?: unknown };
   } catch {
-    return { ids: [], registryStatus: 'invalid', unmappedPaths: [...paths] };
+    return { ids: [], registryStatus: 'invalid', unmappedPaths: [...paths], malformedEntryCount: 0 };
   }
   if (!Array.isArray(parsed.capabilities)) {
-    return { ids: [], registryStatus: 'invalid', unmappedPaths: [...paths] };
+    return { ids: [], registryStatus: 'invalid', unmappedPaths: [...paths], malformedEntryCount: 0 };
+  }
+  let malformedEntryCount = 0;
+  const validEntries: Array<{ id: string; prefixes: readonly string[] }> = [];
+  for (const raw of parsed.capabilities) {
+    if (!raw || typeof raw !== 'object') {
+      malformedEntryCount += 1;
+      continue;
+    }
+    const candidate = raw as { id?: unknown; prefixes?: unknown };
+    if (typeof candidate.id !== 'string' || !Array.isArray(candidate.prefixes)) {
+      malformedEntryCount += 1;
+      continue;
+    }
+    const validPrefixes = candidate.prefixes.filter((prefix): prefix is string => typeof prefix === 'string');
+    if (validPrefixes.length !== candidate.prefixes.length) malformedEntryCount += 1;
+    if (validPrefixes.length > 0) validEntries.push({ id: candidate.id, prefixes: validPrefixes });
   }
   const matches = new Set<string>();
   const unmapped: string[] = [];
   for (const path of paths) {
     let bestLength = -1;
     let best: string[] = [];
-    for (const raw of parsed.capabilities) {
-      if (!raw || typeof raw !== 'object') continue;
-      const candidate = raw as { id?: unknown; prefixes?: unknown };
-      if (typeof candidate.id !== 'string' || !Array.isArray(candidate.prefixes)) continue;
+    for (const candidate of validEntries) {
       for (const prefix of candidate.prefixes) {
-        if (typeof prefix !== 'string') continue;
         const normalized = prefix.replace(/\/$/, '');
         if (path !== normalized && !path.startsWith(`${normalized}/`)) continue;
         if (normalized.length > bestLength) {
@@ -530,7 +562,12 @@ function capabilityIdsForPaths(cwd: string, paths: readonly string[]): Capabilit
       for (const id of best) matches.add(id);
     }
   }
-  return { ids: [...matches].sort(), registryStatus: 'valid', unmappedPaths: unmapped };
+  return {
+    ids: [...matches].sort(),
+    registryStatus: malformedEntryCount > 0 ? 'invalid' : 'valid',
+    unmappedPaths: unmapped,
+    malformedEntryCount,
+  };
 }
 
 function deriveReviewPath(cwd: string, planPath: string, contractText: string | null): string | null {
@@ -788,7 +825,7 @@ function resolveEffectiveStateUnlocked(
   // from the implementation-surface path set (capabilityIdsForPaths' contract
   // is stated in terms of "implementation paths").
   const capabilityResolution: CapabilityResolution | null = options.risk?.capabilityIds
-    ? { ids: options.risk.capabilityIds, registryStatus: 'valid', unmappedPaths: [] }
+    ? { ids: options.risk.capabilityIds, registryStatus: 'valid', unmappedPaths: [], malformedEntryCount: 0 }
     : hasRawTargetPaths
       ? capabilityIdsForPaths(cwd, implementationTargetPaths)
       : null;
@@ -810,6 +847,13 @@ function resolveEffectiveStateUnlocked(
   const contractOverride = contractText ? markdownHeader(contractText, 'Workflow Profile') : null;
   const riskResolution = resolveWorkflowProfile({
     targetPaths: observedTargetPaths,
+    // C2 filters workflow-surface paths (docs/*, *.md, ...) out of
+    // observedTargetPaths before medium-scope/cross-capability counting, but
+    // a workflow-surface path can still carry a real strict-category token
+    // (e.g. docs/auth/runbook.md) -- strictScanPaths carries the pre-filter
+    // raw batch so resolveWorkflowProfile's strict-token scan sees it, while
+    // targetPathCount/mediumScope/crossCapability stay on the filtered set.
+    strictScanPaths: rawTargetPaths,
     capabilityIds: observedCapabilityIds,
     capabilityCount: declaredCapabilityCount,
     operationKind: options.risk?.operationKind ?? (
@@ -827,6 +871,9 @@ function resolveEffectiveStateUnlocked(
     capabilityReasons.push('capability:registry:absent');
   } else if (capabilityResolution?.registryStatus === 'invalid') {
     capabilityReasons.push('capability:registry:invalid');
+  }
+  if (capabilityResolution && capabilityResolution.malformedEntryCount > 0) {
+    capabilityReasons.push(`capability:registry:malformed-entries:${capabilityResolution.malformedEntryCount}`);
   }
   if (unmappedCapabilityCount > 0) {
     capabilityReasons.push(`capability:unmapped:${unmappedCapabilityCount}`);

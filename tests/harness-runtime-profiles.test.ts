@@ -94,11 +94,15 @@ describe('workflow runtime profile risk floor', () => {
     expect(result.reasons).toContain(`risk-floor:strict:${category}`);
   });
 
-  // Every strict-category target path above is also, independently, an
-  // implementation-surface path (Phase C2) -- proof that the workflow-surface
-  // exclusion used for medium-scope counting can never suppress a real strict
-  // signal, because strict categories live outside plans/tasks/docs/.ai/
-  // .claude/.codex in practice.
+  // Every strict-category target path above also happens to be an
+  // implementation-surface path -- true for these specific fixtures, but NOT
+  // a general invariant of STRICT_CATEGORY_TOKENS' matching logic (a pure
+  // token scan with no workflow-surface awareness at all): a strict token can
+  // just as easily appear inside a workflow-surface path, e.g.
+  // docs/auth/runbook.md. See the "workflow-surface path carrying a strict
+  // token" test below for the real fix -- resolveWorkflowProfile's
+  // strictScanPaths input, not this predicate, is what keeps a workflow-
+  // surface-excluded strict signal from being silently dropped.
   test.each([
     'src/auth/session.ts',
     'apps/web/billing/checkout.ts',
@@ -111,6 +115,31 @@ describe('workflow runtime profile risk floor', () => {
   ])('every strict-category target path is also an implementation surface: %s', (targetPath) => {
     expect(isWorkflowSurfacePath(targetPath)).toBe(false);
     expect(isImplementationSurfacePath(targetPath)).toBe(true);
+  });
+
+  test('a workflow-surface path carrying a strict token still raises the floor via strictScanPaths, even though it is excluded from medium-scope counting', () => {
+    expect(isWorkflowSurfacePath('docs/auth/runbook.md')).toBe(true);
+    expect(isImplementationSurfacePath('docs/auth/runbook.md')).toBe(false);
+    const result = resolveWorkflowProfile({
+      targetPaths: ['src/plain.ts'],
+      strictScanPaths: ['docs/auth/runbook.md', 'src/plain.ts'],
+      operationKind: 'edit',
+    });
+    expect(result).toMatchObject({ ok: true, profile: 'strict', riskFloor: 'strict' });
+    expect(result.reasons).toContain('risk-floor:strict:auth');
+    if (!result.ok) throw new Error('expected an ok resolution');
+    // Medium-scope/targetPathCount still reflect only the filtered set (1),
+    // not the wider strict-scan set (2) -- strictScanPaths widens strict
+    // detection only.
+    expect(result.signals.targetPathCount).toBe(1);
+  });
+
+  test('strictScanPaths is additive: omitting it keeps targetPaths-only strict detection unchanged', () => {
+    expect(resolveWorkflowProfile({ targetPaths: ['src/plain.ts'], operationKind: 'edit' })).toMatchObject({
+      ok: true,
+      profile: 'lite',
+      riskFloor: 'lite',
+    });
   });
 
   test('applies the same deterministic risk signals to capability ids', () => {
