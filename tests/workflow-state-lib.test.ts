@@ -49,7 +49,9 @@ describe("workflow-state shared library", () => {
       join(ROOT, "assets", "templates", "helpers", "verify-sprint.sh"),
     ]) {
       const helper = readFileSync(path, "utf-8");
-      expect(helper).toContain('HOOK_REPO_ROOT="$REPO_HARNESS_SOURCE_ROOT" workflow_current_review_fingerprint_value');
+      expect(helper).toContain('HOOK_REPO_ROOT="$REPO_HARNESS_SOURCE_ROOT" "$callback" "$@"');
+      expect(helper).toContain('workflow_source_authority_call workflow_current_review_fingerprint_value');
+      expect(helper).toContain('workflow_source_authority_call workflow_external_acceptance_status "$review_file"');
       expect(helper).not.toContain('export HOOK_REPO_ROOT="$REPO_HARNESS_SOURCE_ROOT"');
     }
   });

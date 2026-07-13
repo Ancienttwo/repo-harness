@@ -415,16 +415,19 @@ worktree_path="$(pwd -P)"
 branch_name="$(git branch --show-current 2>/dev/null || true)"
 diff_base_ref="$(git_diff_base_ref || true)"
 diff_base_commit="$(git_diff_merge_base || true)"
-if [[ -n "${REPO_HARNESS_SOURCE_ROOT:-}" && -f "${REPO_HARNESS_SOURCE_ROOT}/src/cli/hook-entry.ts" ]]; then
-  # Source-authority verification must fingerprint with the same checkout's
-  # hook CLI. Scope the override to this lookup so contract commands and their
-  # fixture subprocesses do not inherit a forced HOOK_REPO_ROOT.
-  implementation_fingerprint="$(
-    HOOK_REPO_ROOT="$REPO_HARNESS_SOURCE_ROOT" workflow_current_review_fingerprint_value 2>/dev/null || true
-  )"
-else
-  implementation_fingerprint="$(workflow_current_review_fingerprint_value 2>/dev/null || true)"
-fi
+workflow_source_authority_call() {
+  local callback="$1"
+  shift
+  if [[ -n "${REPO_HARNESS_SOURCE_ROOT:-}" && -f "${REPO_HARNESS_SOURCE_ROOT}/src/cli/hook-entry.ts" ]]; then
+    HOOK_REPO_ROOT="$REPO_HARNESS_SOURCE_ROOT" "$callback" "$@"
+  else
+    "$callback" "$@"
+  fi
+}
+# Source-authority verification must use the same checkout's hook CLI for every
+# freshness lookup. Each caller below runs in command substitution, so contract
+# commands and fixture subprocesses never inherit the temporary HOOK_REPO_ROOT.
+implementation_fingerprint="$(workflow_source_authority_call workflow_current_review_fingerprint_value 2>/dev/null || true)"
 changed_files=()
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   while IFS= read -r changed_file; do
@@ -509,7 +512,7 @@ external_reviewer=""
 external_source=""
 external_message="External acceptance status is unavailable."
 if declare -F workflow_external_acceptance_status >/dev/null 2>&1; then
-  external_row="$(workflow_external_acceptance_status "$review_file")"
+  external_row="$(workflow_source_authority_call workflow_external_acceptance_status "$review_file")"
   IFS=$'\t' read -r external_status external_reviewer external_source external_message <<< "$external_row"
 fi
 card_external_status="$(normalize_status_token "$review_card_external")"

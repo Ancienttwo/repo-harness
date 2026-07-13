@@ -235,10 +235,11 @@
   later checks because the invocation exported `HOOK_REPO_ROOT` to the whole
   verifier process. That forced hook-runtime fixtures to dispatch through the
   self-host checkout instead of their isolated fixture hooks. The verifier now
-  scopes the source-root override to the single review-fingerprint lookup; child
-  contract commands inherit only the established `REPO_HARNESS_SOURCE_ROOT`
-  helper authority. Isolated hook-runtime and workflow-state tests pass with
-  that exact environment. No runtime hook policy or safety boundary changed.
+  scopes the source-root override to review-fingerprint lookups, including the
+  external-acceptance freshness check; child contract commands inherit only the
+  established `REPO_HARNESS_SOURCE_ROOT` helper authority. Isolated hook-runtime
+  and workflow-state tests pass with that exact environment. No runtime hook
+  policy or safety boundary changed.
 
 ## Tradeoffs Considered
 
