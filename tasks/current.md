@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-13T12:20:37+0800 -->
+<!-- updated_at: 2026-07-13T12:30:44+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-07-13T12:20:37+0800
-> **Source Branch**: codex/bdd2-closeout
-> **Source Commit**: 0cf69cf
+> **Updated At**: 2026-07-13T12:30:44+0800
+> **Source Branch**: main
+> **Source Commit**: 6575b0c
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: manual
@@ -18,9 +18,9 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 ## Current Focus
 
 - Status: Active
-- Active Plan: (none)
-- Plan Status: (none)
-- Next Task: inspect active worktree marker(s)
+- Active Plan: plans/plan-20260713-1202-harness-kernel-optimization-phase2.md
+- Plan Status: Draft
+- Next Task: (none)
 - Clear Note: (none)
 
 ## Mainline Snapshot Reading
@@ -31,8 +31,10 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- /Users/kito/Projects/repo-harness: plans/plan-20260713-1202-harness-kernel-optimization-phase2.md
-- /Users/kito/Projects/repo-harness: active-worktree owner -> /Users/kito/Projects/repo-harness
+- .: plans/plan-20260713-1202-harness-kernel-optimization-phase2.md
+- .: active-worktree owner -> /Users/kito/Projects/repo-harness
+- /private/tmp/repo-harness-agent-fleet-routing-closeout: plans/plan-20260712-2103-agent-fleet-worker-routing-telemetry.md
+- /private/tmp/repo-harness-agent-fleet-routing-closeout: active-worktree owner -> /private/tmp/repo-harness-agent-fleet-routing-closeout
 - /Users/kito/Projects/repo-harness-worktrees/bdd2-eval-foundation: plans/plan-20260712-0450-bdd2-eval-foundation.md
 - /Users/kito/Projects/repo-harness-worktrees/bdd2-eval-foundation: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/bdd2-eval-foundation
 - /Users/kito/Projects/repo-harness-worktrees/bdd2-shape-experiment: plans/plan-20260712-0605-bdd2-e-02-run-experiment-s-shape-hypothesis.md
@@ -60,20 +62,22 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`: status=completed, current_slice=completed-20260713-policy-seed, source_plan=plans/plan-20260712-2215-agent-fleet-specialists.md
 ## Handoff
 
-- Exact Next Step: (none)
+- Exact Next Step: Stage the completed module diff first; then run /check and record a sprint review before finishing this worktree. Command: /check
 
 ## Checks
 
-- status=(none), source=(none), file=.ai/harness/checks/latest.json
+- status=(none), source=(none), exit_code=(none), file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 3 changed/untracked path(s)
+- Summary: 5 changed/untracked path(s)
 
 ```
- M tasks/lessons.md
- M tasks/todos.md
-?? docs/researches/20260713-bdd2-phase-e-closeout.md
+?? assets/agents/
+?? docs/architecture/requests/root.md
+?? docs/architecture/requests/workflow-engine-contract-assets.md
+?? docs/architecture/requests/workflow-engine-inspection-migration.md
+?? plans/plan-20260713-1202-harness-kernel-optimization-phase2.md
 ```
 
 ## Source Artifacts
