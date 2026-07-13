@@ -89,11 +89,17 @@
   fingerprint over the actual JSON and Markdown bytes, and checks freshness
   recomputes it. Regressions prove report regeneration does not stale the
   implementation review while post-verification tampering does stale checks.
+- The first clean-state full-suite retry exposed three non-benchmark fixture
+  writers that still emitted the pre-binding checks schema. They now emit the
+  producer's explicit `benchmark_evidence.status=not_applicable`; missing legacy
+  status remains fail-closed, while any present report still requires an exact
+  byte fingerprint. The two affected suites pass 76/76 after the fixture repair.
 - Native independent review found and drove closure of concurrency, critical
   context preservation, transaction compensation, ownership, Strict projection,
   and product-planning exclusion defects. Its final pass found no P1/P2. The
-  separate Claude review command timed out without a recoverable verdict, so it
-  is recorded as unavailable rather than silently counted as acceptance.
+  original full-scope Claude review command timed out without a recoverable
+  verdict; a later bounded Claude review of the fixture-only schema delta passed
+  with no P1/P2 and confirmed the product fail-closed path remained intact.
 
 ## Tradeoffs Considered
 

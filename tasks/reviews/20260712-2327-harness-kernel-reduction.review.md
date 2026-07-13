@@ -5,10 +5,10 @@
 > **Contract**: tasks/contracts/20260712-2327-harness-kernel-reduction.contract.md
 > **Notes File**: tasks/notes/20260712-2327-harness-kernel-reduction.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-07-13 10:03
+> **Last Updated**: 2026-07-13 10:18
 > **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Diff Fingerprint**: sha256:23d508a603bb55c8b7febf28dcaec266039c554c3324cb8e2d1ee9da73c991ac
+> **Reviewed Diff Fingerprint**: sha256:49ea4cc52258ce01a2c5a206184d3ff1a78a1749a134eead958018c175ea3f4a
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 ## Human Review Card
@@ -18,7 +18,7 @@
 - Intended files changed: existing state/routing/context/circuit/install/Skill/benchmark owners, their deterministic projections, focused tests, durable docs, and this workflow package.
 - Actual files changed: contract-allowed owners only; no new dependency, service, database, compatibility fallback, push, merge, deploy, secret, or shared-main edit.
 - Commands passed: authoritative Claude 3x9 matrix 27/27; full suite 1232 pass / 1 skip / 0 fail; focused contract suites; typecheck; deploy, architecture, task-sync, inspector, adopt dry-run, state, and profile dry-runs.
-- External acceptance: pass — independent native Codex reviewer found and verified closure of all P1/P2 findings; final pass reported none.
+- External acceptance: pass — independent native Codex review covered the full implementation and authoritative matrix; a bounded Claude review covered the later checks-fixture schema delta. Both reported no P1/P2.
 - Residual risks: measured Adaptive Lite cost remains higher than Strict on this provider sample; this is an optimization result, not a safety or completion failure.
 - Reviewer action required: none.
 - Rollback: revert the ordered work-package commits; install rollback uses owned-surface compensation and never deletes unowned host content.
@@ -41,17 +41,17 @@
 ## External Acceptance Advice
 
 > **External Acceptance**: pass
-> **External Reviewer**: Codex
-> **External Source**: native-subagent/fix_circuit_lock
+> **External Reviewer**: Codex + Claude
+> **External Source**: native-subagent/fix_circuit_lock + claude-cli/fixture-delta
 > **External Started**: 2026-07-13T06:30:00+0800
-> **External Completed**: 2026-07-13T10:03:00+0800
+> **External Completed**: 2026-07-13T10:18:00+0800
 > **Review Rubric Version**: 2
-> **Reviewed Diff Fingerprint**: sha256:23d508a603bb55c8b7febf28dcaec266039c554c3324cb8e2d1ee9da73c991ac
+> **Reviewed Diff Fingerprint**: sha256:49ea4cc52258ce01a2c5a206184d3ff1a78a1749a134eead958018c175ea3f4a
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 - P1 blockers: none. Earlier findings covering unsafe lock reclaim, mandatory-context loss, incomplete transaction compensation, and stale report provenance were fixed and re-reviewed.
 - P2 advisories: none. Earlier ownership/profile-exclusion and test-fixture findings were fixed and re-reviewed.
-- Acceptance checklist: pass — final report `authoritative=true`, source commit matches the clean execution HEAD, 3 profiles x 9 scenarios are present, all structured provider/grader/isolation evidence and all 27 acceptance commands pass, and focused Strict/product-planning exclusions pass. The reviewer verified that explicit benchmark authorization changes only the scenario input and leaves the product Plan gate unchanged. Final re-review also verified separate report-byte binding in structured checks across jq and no-jq paths, with missing, legacy, invalid, and mismatched evidence failing closed. A separate Claude review command timed out without a verdict and is truthfully recorded as unavailable; it is not counted toward acceptance.
+- Acceptance checklist: pass — final report `authoritative=true`, source commit matches the clean execution HEAD, 3 profiles x 9 scenarios are present, all structured provider/grader/isolation evidence and all 27 acceptance commands pass, and focused Strict/product-planning exclusions pass. The reviewer verified that explicit benchmark authorization changes only the scenario input and leaves the product Plan gate unchanged. Final re-review also verified separate report-byte binding in structured checks across jq and no-jq paths, with missing, legacy, invalid, and mismatched evidence failing closed. The original full-scope Claude command timed out; a later targeted Claude review independently passed the fixture-only checks-schema delta and confirmed `not_applicable` cannot mask reports that exist.
 
 ## Behavior Diff Notes
 

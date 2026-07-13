@@ -79,6 +79,7 @@ function writeValidSprintChecks(cwd: string) {
         generated_at: "2026-03-04T14:10:00+0000",
         contract: { file: "tasks/contracts/demo.contract.md", status: "pass", exit_code: 0 },
         review: { file: "tasks/reviews/demo.review.md", status: "pass" },
+        benchmark_evidence: { status: "not_applicable", fingerprint: null },
       },
       null,
       2

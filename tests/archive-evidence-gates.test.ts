@@ -128,7 +128,7 @@ function writeWorkflowReview(cwd: string, recommendation: string, external = "un
 function writeWorkflowChecks(cwd: string): void {
   writeFileSync(
     join(cwd, ".ai/harness/checks/latest.json"),
-    '{"status":"pass","source":"verify-sprint","exit_code":0,"contract":{"file":"tasks/contracts/20260711-1200-demo.contract.md"},"review":{"file":"tasks/reviews/20260711-1200-demo.review.md"}}\n',
+    '{"status":"pass","source":"verify-sprint","exit_code":0,"contract":{"file":"tasks/contracts/20260711-1200-demo.contract.md"},"review":{"file":"tasks/reviews/20260711-1200-demo.review.md"},"benchmark_evidence":{"status":"not_applicable","fingerprint":null}}\n',
   );
 }
 
@@ -369,7 +369,7 @@ describe("archive evidence gates", () => {
       writeFileSync(join(primary, ".ai/harness/active-plan"), plan);
       writeFileSync(
         join(primary, ".ai/harness/checks/latest.json"),
-        `{"status":"pass","source":"verify-sprint","exit_code":0,"contract":{"file":"${contract}"},"review":{"file":"${review}"}}\n`,
+        `{"status":"pass","source":"verify-sprint","exit_code":0,"contract":{"file":"${contract}"},"review":{"file":"${review}"},"benchmark_evidence":{"status":"not_applicable","fingerprint":null}}\n`,
       );
 
       expect(runProcess("git", ["add", "."], primary).status).toBe(0);
