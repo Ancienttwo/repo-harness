@@ -17,7 +17,7 @@
 - Change type: code-change
 - Intended files changed: existing state/routing/context/circuit/install/Skill/benchmark owners, their deterministic projections, focused tests, durable docs, and this workflow package.
 - Actual files changed: contract-allowed owners only; no new dependency, service, database, compatibility fallback, push, merge, deploy, secret, or shared-main edit.
-- Commands passed: authoritative Claude 3x9 matrix 27/27; full suite 1232 pass / 1 skip / 0 fail; focused contract suites; typecheck; deploy, architecture, task-sync, inspector, adopt dry-run, state, and profile dry-runs.
+- Commands passed: authoritative Claude 3x9 matrix 27/27; full suite 1234 pass / 1 skip / 0 fail; focused contract suites; typecheck; deploy, architecture, task-sync, inspector, adopt dry-run, state, and profile dry-runs.
 - External acceptance: pass — independent native Codex review covered the full implementation and authoritative matrix; a bounded Claude review covered the later checks-fixture schema delta. Both reported no P1/P2.
 - Residual risks: measured Adaptive Lite cost remains higher than Strict on this provider sample; this is an optimization result, not a safety or completion failure.
 - Reviewer action required: none.
