@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import {
   existsSync,
   mkdirSync,
@@ -12,6 +12,11 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { spawn, spawnSync } from 'child_process';
 import { circuitLimit, recordCircuitAttempt, type CircuitAttempt } from '../src/cli/hook/circuit-breaker';
+
+// The real-hook cases intentionally spawn several Bun + shell processes and
+// exercise a 4-second fail-closed lock timeout. Keep the assertion bound finite
+// without letting ordinary CI host contention trip Bun's 5-second default.
+setDefaultTimeout(30_000);
 
 function attempt(overrides: Partial<CircuitAttempt> = {}): CircuitAttempt {
   return {
