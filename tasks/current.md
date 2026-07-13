@@ -1,26 +1,26 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-13T15:38:55+0800 -->
+<!-- updated_at: 2026-07-13T18:50:46+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: Active
-> **Updated At**: 2026-07-13T15:38:55+0800
-> **Source Branch**: codex/pr67-deploy-sql-policy-fix
-> **Source Commit**: 8b4181a2
+> **Status**: Idle
+> **Updated At**: 2026-07-13T18:50:46+0800
+> **Source Branch**: codex/pr67-workflow-closeout-final
+> **Source Commit**: e87bac72
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: pr67-local-verification-complete
+> **Reason**: workflow-archive-committed
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: Active
-- Active Plan: plans/plan-20260713-1413-pr67-deploy-sql-policy-fix.md
-- Plan Status: Executing
-- Next Task: Complete review artifacts, update PR #67 with force-with-lease, and confirm remote CI/mergeability.
+- Status: Idle
+- Active Plan: (none)
+- Plan Status: (none)
+- Next Task: (none)
 - Clear Note: (none)
 
 ## Mainline Snapshot Reading
@@ -31,24 +31,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- .: plans/plan-20260713-1413-pr67-deploy-sql-policy-fix.md
-- .: active-worktree owner -> /private/tmp/repo-harness-pr67-deploy-sql-fix
-- /private/tmp/repo-harness-remove-gstack: plans/plan-20260713-1305-remove-gstack-core.md
-- /private/tmp/repo-harness-remove-gstack: active-worktree owner -> /private/tmp/repo-harness-remove-gstack
-- /Users/kito/Projects/repo-harness-worktrees/bdd2-eval-foundation: plans/plan-20260712-0450-bdd2-eval-foundation.md
-- /Users/kito/Projects/repo-harness-worktrees/bdd2-eval-foundation: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/bdd2-eval-foundation
-- /Users/kito/Projects/repo-harness-worktrees/bdd2-shape-experiment: plans/plan-20260712-0605-bdd2-e-02-run-experiment-s-shape-hypothesis.md
-- /Users/kito/Projects/repo-harness-worktrees/bdd2-shape-experiment: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/bdd2-shape-experiment
-- /Users/kito/Projects/repo-harness-worktrees/harness-cost-baseline-slo: plans/plan-20260712-2327-harness-kernel-reduction.md
-- /Users/kito/Projects/repo-harness-worktrees/harness-cost-baseline-slo: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/harness-cost-baseline-slo
-- /Users/kito/Projects/repo-harness-worktrees/upgrade-bun-1-3-14: plans/plan-20260712-1330-bun-1-3-14-runtime-upgrade.md
-- /Users/kito/Projects/repo-harness-worktrees/upgrade-bun-1-3-14: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/upgrade-bun-1-3-14
-- /Users/kito/Projects/repo-harness-wt-codex-native-role-model-override: plans/plan-20260711-0219-codex-native-role-model-override.md
-- /Users/kito/Projects/repo-harness-wt-codex-native-role-model-override: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-codex-native-role-model-override
-- /Users/kito/Projects/repo-harness-wt-harness-kernel-optimization-phase2: plans/plan-20260713-1202-harness-kernel-optimization-phase2.md
-- /Users/kito/Projects/repo-harness-wt-harness-kernel-optimization-phase2: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-harness-kernel-optimization-phase2
-- /Users/kito/Projects/repo-harness/.claude/worktrees/agent-ae14c20f2b5dac4a3: plans/plan-20260712-1642-adaptive-lite-hook-routing.md
-- /Users/kito/Projects/repo-harness/.claude/worktrees/agent-ae14c20f2b5dac4a3: active-worktree owner -> /Users/kito/Projects/repo-harness/.claude/worktrees/agent-ae14c20f2b5dac4a3
+- (none)
 ## Active Sprint
 
 - Sprint: (none)
@@ -62,25 +45,18 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`: status=completed, current_slice=completed-20260713-policy-seed, source_plan=plans/plan-20260712-2215-agent-fleet-specialists.md
 ## Handoff
 
-- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Complete review artifacts, update PR #67 with force-with-lease, and confirm remote CI/mergeability.
+- Exact Next Step: (none)
 
 ## Checks
 
-- status=(none), source=(none), exit_code=(none), file=.ai/harness/checks/latest.json
+- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 8 changed/untracked path(s)
+- Summary: clean
 
 ```
- M assets/templates/helpers/check-deploy-sql-order.sh
- M plans/plan-20260713-1413-pr67-deploy-sql-policy-fix.md
- M scripts/check-deploy-sql-order.sh
- M tasks/contracts/20260713-1413-pr67-deploy-sql-policy-fix.contract.md
- M tasks/current.md
- M tasks/notes/20260713-1413-pr67-deploy-sql-policy-fix.notes.md
- M tasks/reviews/20260713-1413-pr67-deploy-sql-policy-fix.review.md
- M tests/helper-scripts.test.ts
+(none)
 ```
 
 ## Source Artifacts
