@@ -80,6 +80,8 @@ allowed_paths:
   - scripts/run-skill-evals.ts
   - scripts/sync-codex-installed-copies.sh
   - scripts/sync-hook-sources.ts
+  - scripts/capability-resolver.ts
+  - assets/templates/helpers/capability-resolver.ts
   - SKILL.md
   - docs/CHANGELOG.md
   - docs/architecture/
