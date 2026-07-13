@@ -4,6 +4,55 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Replaced global Strict cognitive choreography with a risk-aware harness
+  kernel. Deterministic `lite`/`standard`/`strict` workflow profiles are now
+  computed from a single risk floor (target-path scope, cross-capability
+  signals, and strict-category path tokens); explicit-first prompt routing
+  lets ordinary prompts bypass workflow classification entirely, while only
+  explicit or active-task requests route through a workflow action. A single
+  global SessionStart context budget (<=1,500 estimated tokens) applies
+  deterministic critical-field compaction and structured fail-closed
+  overflow instead of per-producer truncation. One effective-state resolver
+  — `repo-harness state resolve --json` — carries task, profile, version,
+  authority, hashes, freshness, next-action, and blockers, and is injected
+  into sessions as the `[HarnessState]` block. Five categories of circuit
+  breakers (guard repeat, review, subagent, repair, and cross-model) now
+  bound orchestration loops with fail-closed limits. Host runtime install is
+  now transactional, with `minimal`/`standard`/`product-planning`/`strict`
+  install profiles (`repo-harness install --profile <profile>`) each
+  carrying a deterministic plan/apply, idempotent switching, rollback, and
+  installed-state status.
+- Added `repo-harness state resolve --field <name>` to project a single
+  resolved field from the effective-state resolver in one call, removing a
+  redundant parse subprocess from the PreToolUse edit guard. The profile
+  benchmark report now records per-run `artifact_files` paths alongside the
+  existing artifact count, and SessionStart guidance binds ceremony
+  expectations (authoring plan/contract/notes files) to the resolved
+  workflow profile: lite sessions get zero ceremony, standard sessions get
+  at most the single active-plan artifact, and strict is unchanged.
+
+### Fixed
+
+- Closed a guard gap where a batched `apply_patch` never showed the
+  deterministic risk floor its full pending scope: each recursive per-file
+  check now resolves against every path in the batch, so a medium-scope
+  batch (four or more implementation paths) or a batch containing one
+  strict-category path promotes standard/strict for every path in the same
+  atomic action, instead of the bypass where sequential per-file checks
+  never saw siblings not yet on disk. Hardened the capability-registry and
+  implementation-surface inputs that feed the same risk floor: an absent,
+  corrupt, or non-array capability registry now returns a structured,
+  fail-closed reason instead of silently collapsing to zero capabilities,
+  and one implementation-surface predicate now owns medium-scope path
+  counting (shared by the TS resolver and a projected shell case list) so a
+  docs-only batch can no longer inflate the internally resolved profile.
+- Fixed skill-facade retirement to remove an owner-marked host copy whose
+  canonical package source is gone, instead of refusing the whole sync when
+  any single facade was dropped from the package; `repo-harness-gptpro` now
+  installs under the `product-planning` and `strict` profiles.
+
 ### Changed
 
 - Expanded the repo-owned agent fleet from four to six roles with
