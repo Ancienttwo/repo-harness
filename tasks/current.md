@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-13T18:50:06+0800 -->
+<!-- updated_at: 2026-07-13T18:50:46+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Idle
-> **Updated At**: 2026-07-13T18:50:06+0800
+> **Updated At**: 2026-07-13T18:50:46+0800
 > **Source Branch**: codex/pr67-workflow-closeout-final
-> **Source Commit**: 4e3e76a2
+> **Source Commit**: e87bac72
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: workflow-archive
+> **Reason**: workflow-archive-committed
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -45,7 +45,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`: status=completed, current_slice=completed-20260713-policy-seed, source_plan=plans/plan-20260712-2215-agent-fleet-specialists.md
 ## Handoff
 
-- Exact Next Step: Clean up merged contract worktree codex/pr67-workflow-closeout-final. Command: repo-harness run contract-worktree cleanup --slug pr67-workflow-closeout-final --target main
+- Exact Next Step: (none)
 
 ## Checks
 
@@ -53,20 +53,10 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 11 changed/untracked path(s)
+- Summary: clean
 
 ```
-MD plans/plan-20260713-1413-pr67-deploy-sql-policy-fix.md
-MD tasks/contracts/20260713-1413-pr67-deploy-sql-policy-fix.contract.md
- M tasks/current.md
-MD tasks/notes/20260713-1413-pr67-deploy-sql-policy-fix.notes.md
-MD tasks/reviews/20260713-1413-pr67-deploy-sql-policy-fix.review.md
- M tasks/todos.md
-?? plans/archive/plan-20260713-1413-pr67-deploy-sql-policy-fix.md
-?? tasks/archive/contract-20260713-1849-pr67-deploy-sql-policy-fix.md
-?? tasks/archive/notes-20260713-1849-pr67-deploy-sql-policy-fix.md
-?? tasks/archive/review-20260713-1849-pr67-deploy-sql-policy-fix.md
-?? tasks/archive/todo-20260713-1849-pr67-deploy-sql-policy-fix.md
+(none)
 ```
 
 ## Source Artifacts
