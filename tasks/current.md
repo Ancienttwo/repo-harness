@@ -1,27 +1,27 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-13T04:58:54+0800 -->
+<!-- updated_at: 2026-07-13T12:20:37+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-07-13T04:58:54+0800
-> **Source Branch**: codex/bdd2-phase-e3
-> **Source Commit**: 2c8b351
+> **Status**: Active
+> **Updated At**: 2026-07-13T12:20:37+0800
+> **Source Branch**: codex/bdd2-closeout
+> **Source Commit**: 0cf69cf
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: bdd2-sprint-complete
+> **Reason**: manual
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: ManualClearedWithActiveWork
+- Status: Active
 - Active Plan: (none)
 - Plan Status: (none)
 - Next Task: inspect active worktree marker(s)
-- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
+- Clear Note: (none)
 
 ## Mainline Snapshot Reading
 
@@ -31,7 +31,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- /Users/kito/Projects/repo-harness: plans/plan-20260712-2103-agent-fleet-worker-routing-telemetry.md
+- /Users/kito/Projects/repo-harness: plans/plan-20260713-1202-harness-kernel-optimization-phase2.md
 - /Users/kito/Projects/repo-harness: active-worktree owner -> /Users/kito/Projects/repo-harness
 - /Users/kito/Projects/repo-harness-worktrees/bdd2-eval-foundation: plans/plan-20260712-0450-bdd2-eval-foundation.md
 - /Users/kito/Projects/repo-harness-worktrees/bdd2-eval-foundation: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/bdd2-eval-foundation
@@ -60,20 +60,20 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`: status=completed, current_slice=completed-20260713-policy-seed, source_plan=plans/plan-20260712-2215-agent-fleet-specialists.md
 ## Handoff
 
-- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Run focused and required checks, complete reviewer evidence, and close workflow artifacts without merging unrelated main work.
+- Exact Next Step: (none)
 
 ## Checks
 
-- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
+- status=(none), source=(none), file=.ai/harness/checks/latest.json
 
 ## Git Status
 
 - Summary: 3 changed/untracked path(s)
 
 ```
- M plans/plan-20260713-0314-bdd2-phase-e3-scoring-authority.md
- M tasks/contracts/20260713-0314-bdd2-phase-e3-scoring-authority.contract.md
- M tasks/notes/20260713-0314-bdd2-phase-e3-scoring-authority.notes.md
+ M tasks/lessons.md
+ M tasks/todos.md
+?? docs/researches/20260713-bdd2-phase-e-closeout.md
 ```
 
 ## Source Artifacts
