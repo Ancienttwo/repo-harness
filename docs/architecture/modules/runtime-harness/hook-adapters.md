@@ -326,6 +326,68 @@ per-host implementation trees or loading non-hook command modules.
   dependency, persistence location, or new runtime boundary, so no architecture
   snapshot or rendered diagram is required.
 
+## 2026-07-13 Threshold Input Hardening (Phase C)
+
+- **Capability registry resolution (C1).** `capabilityIdsForPaths` in
+  `src/cli/hook/state-snapshot.ts` returns a structured
+  `{ ids, registryStatus, unmappedPaths }` instead of silently collapsing
+  every failure mode to an empty array. `registryStatus: 'invalid'` (corrupt
+  JSON, a non-array `capabilities` field, or a registry the repo declared via
+  `.ai/harness/policy.json`'s `.context.capability_registry_file` but whose
+  file is missing) fails closed with a `capability_registry:invalid` blocker
+  in `EffectiveState.blockers` -- repair by rerunning
+  `repo-harness run check-task-workflow` (which scaffolds a missing registry
+  file) or hand-fixing corrupt JSON at `.ai/context/capabilities.json`.
+  `registryStatus: 'absent'` (a repo that never declared the registry)
+  preserves today's no-signal behavior, with an explicit
+  `capability:registry:absent` reason recorded in `profile_reasons`. Unmapped
+  implementation paths never silently drop out of the cross-capability
+  signal: they count as one additional capability bucket
+  (`capability:unmapped:<n>` reason), so an unmapped path can only raise,
+  never lower, the resolved floor.
+- **Implementation-surface predicate unification (C2).**
+  `isImplementationSurfacePath()` / `isWorkflowSurfacePath()` in
+  `src/cli/hook/diff-fingerprint.ts` is now the single source for "what
+  counts toward medium-scope, cross-capability, and strict-token signals" --
+  workflow-surface paths (`plans/`, `tasks/`, `docs/`, `.ai/`, `.claude/`,
+  `.codex/`, and any `*.md` / `*.markdown` file) are excluded from the
+  `targetPaths`, `capabilityIds`, and `capabilityCount` that
+  `resolveEffectiveStateUnlocked` passes into `resolveWorkflowProfile`.
+  Before this fix, a docs-only session could internally resolve `standard`
+  (or trip cross-capability) purely from plan/task/doc paths, even though
+  `pre-edit-guard.sh`'s own `is_workflow_surface_path` gate already exempted
+  those same paths from the plan/strict enforcement gates -- harmless while
+  gates were the only consumer of the resolved profile, but wrong once the
+  2026-07-13 ceremony-guidance change (`CEREMONY_GUIDANCE` in
+  `state-snapshot.ts`) started keying ceremony text off that profile. Strict
+  path-token categories (auth/payment/deploy/migration/schema/release/
+  public-api) are unaffected: those categories are always implementation
+  paths in practice, so the exclusion never suppresses a real strict signal
+  (locked by `tests/harness-runtime-profiles.test.ts`). The shell's
+  `is_workflow_surface_path()` case list in `assets/hooks/pre-edit-guard.sh`
+  remains a hand-authored projection of the same TS source;
+  `scripts/sync-hook-sources.ts` (`bun run check:hooks`) now fails closed on
+  drift between the two case lists instead of letting them diverge silently.
+- **Standard gate semantics (C3, decision record).**
+  `.guards.edit_plan_gate` (`enforce | advice | off`, default `enforce`,
+  read by `pre-edit-guard.sh`'s `edit_plan_gate_mode()`) is a
+  **gate-response-mode knob only**. It controls whether `run_edit_plan_gate`
+  blocks (`enforce`), warns (`advice`), or no-ops (`off`) when an
+  implementation edit lacks `docs/spec.md` or an active/approved plan. It
+  does **not** touch how the risk floor itself is computed:
+  `resolveWorkflowProfile()` in `src/cli/hook/workflow-profile.ts` takes no
+  policy input and cannot be configured to raise or lower a floor -- the
+  product distinction is "computed standard" (the deterministic floor
+  `resolveWorkflowProfile` derives from target-path, capability, and
+  operation-kind signals) versus "enforced standard" (whether the plan gate
+  actually blocks an edit at that floor); policy changes only the latter.
+  The Strict contract/worktree guard (`pre-edit-guard.sh`'s
+  `StrictContractGuard` / `StrictWorktreeGuard` block, immediately after
+  `run_edit_plan_gate` returns) is independent of `.guards.edit_plan_gate`
+  entirely: its condition checks `$WORKFLOW_PROFILE == "strict"` directly and
+  never calls `edit_plan_gate_mode` or reads that policy key, so it cannot be
+  relaxed by the gate-response knob.
+
 ## Optimization Backlog
 
 - Keep `repo-harness init` and migration from regenerating repo-local `.claude/settings.json` / `.codex/hooks.json` adapters.

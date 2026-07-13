@@ -4,6 +4,7 @@ import {
   type WorkflowOperationKind,
   type WorkflowProfileInput,
 } from '../src/cli/hook/workflow-profile';
+import { isImplementationSurfacePath, isWorkflowSurfacePath } from '../src/cli/hook/diff-fingerprint';
 
 describe('workflow runtime profile risk floor', () => {
   test('keeps a low-risk local edit in lite', () => {
@@ -91,6 +92,25 @@ describe('workflow runtime profile risk floor', () => {
     const result = resolveWorkflowProfile({ targetPaths: [targetPath] });
     expect(result).toMatchObject({ ok: true, profile: 'strict', riskFloor: 'strict' });
     expect(result.reasons).toContain(`risk-floor:strict:${category}`);
+  });
+
+  // Every strict-category target path above is also, independently, an
+  // implementation-surface path (Phase C2) -- proof that the workflow-surface
+  // exclusion used for medium-scope counting can never suppress a real strict
+  // signal, because strict categories live outside plans/tasks/docs/.ai/
+  // .claude/.codex in practice.
+  test.each([
+    'src/auth/session.ts',
+    'apps/web/billing/checkout.ts',
+    'src/security/policy.ts',
+    'db/schema.sql',
+    'deploy/sql/migrations/001.sql',
+    'deploy/worker.ts',
+    '.github/release/config.yml',
+    'src/api/v1/users.ts',
+  ])('every strict-category target path is also an implementation surface: %s', (targetPath) => {
+    expect(isWorkflowSurfacePath(targetPath)).toBe(false);
+    expect(isImplementationSurfacePath(targetPath)).toBe(true);
   });
 
   test('applies the same deterministic risk signals to capability ids', () => {
@@ -209,5 +229,57 @@ describe('workflow runtime profile risk floor', () => {
       code: 'INVALID_RISK_INPUT',
       reasons: ['risk-floor:invalid-explicit-profile'],
     });
+  });
+});
+
+describe('workflow-surface path predicate (Phase C2 resolver layer)', () => {
+  test.each([
+    'plans/plan-20260101-0000-example.md',
+    'plans/',
+    'tasks/todos.md',
+    'tasks/contracts/x.contract.md',
+    'docs/architecture/index.md',
+    'docs/spec.md',
+    '.ai/harness/policy.json',
+    '.ai/context/capabilities.json',
+    '.claude/settings.json',
+    '.codex/hooks.json',
+    'README.md',
+    'notes.markdown',
+  ])('treats %s as workflow surface, not implementation surface', (path) => {
+    expect(isWorkflowSurfacePath(path)).toBe(true);
+    expect(isImplementationSurfacePath(path)).toBe(false);
+  });
+
+  test.each([
+    'src/cli/hook/workflow-profile.ts',
+    'src/cli/hook/state-snapshot.ts',
+    'deploy/sql/0001_demo.sql',
+    'scripts/run-harness-profile-benchmark.ts',
+    'tests/harness-runtime-profiles.test.ts',
+    '.github/workflows/release.yml',
+    'package.json',
+  ])('treats %s as implementation surface', (path) => {
+    expect(isWorkflowSurfacePath(path)).toBe(false);
+    expect(isImplementationSurfacePath(path)).toBe(true);
+  });
+
+  test('a 4-docs batch has zero implementation-surface paths (drives the lite outcome downstream)', () => {
+    const docs = ['docs/a.md', 'docs/b.md', 'docs/c.md', 'docs/d.md'];
+    expect(docs.filter(isImplementationSurfacePath)).toEqual([]);
+  });
+
+  test('3 docs plus 1 src file counts exactly one implementation-surface path', () => {
+    const mixed = ['docs/a.md', 'docs/b.md', 'docs/c.md', 'src/only.ts'];
+    expect(mixed.filter(isImplementationSurfacePath)).toEqual(['src/only.ts']);
+  });
+
+  test('a mixed workflow+implementation batch counts only the implementation paths', () => {
+    const mixed = ['docs/a.md', 'tasks/todos.md', 'plans/plan-fixture.md', 'src/a.ts', 'src/b.ts', 'src/c.ts', 'src/d.ts'];
+    expect(mixed.filter(isImplementationSurfacePath)).toEqual(['src/a.ts', 'src/b.ts', 'src/c.ts', 'src/d.ts']);
+  });
+
+  test('a single deploy path stays an implementation surface independent of any workflow-surface siblings', () => {
+    expect(isImplementationSurfacePath('deploy/sql/0002_migration.sql')).toBe(true);
   });
 });

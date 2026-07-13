@@ -280,3 +280,59 @@ describe('apply_patch batch-scope resolves the full pending write scope (guard g
     } finally { rmSync(cwd, { recursive: true, force: true }); }
   });
 });
+
+describe('implementation-surface predicate excludes workflow-surface paths from medium-scope (guard gap regression, C2)', () => {
+  test('g) a 4-file docs-only batch resolves lite, not standard', () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'profile-docs-lite-')));
+    try {
+      initRepo(cwd);
+      const docs = ['docs/a.md', 'docs/b.md', 'docs/c.md', 'docs/d.md'];
+      const direct = resolveStateDirect(cwd, docs);
+      expect(direct.json.workflow_profile).toBe('lite');
+      expect(direct.json.profile_signals?.targetPathCount).toBe(0);
+      expect(direct.json.blockers).toEqual([]);
+    } finally { rmSync(cwd, { recursive: true, force: true }); }
+  });
+
+  test('h) 3 docs files plus 1 src file counts only the implementation path and resolves lite', () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'profile-mixed-lite-')));
+    try {
+      initRepo(cwd);
+      const mixed = ['docs/a.md', 'docs/b.md', 'docs/c.md', 'src/only.ts'];
+      const direct = resolveStateDirect(cwd, mixed);
+      expect(direct.json.workflow_profile).toBe('lite');
+      expect(direct.json.profile_signals?.targetPathCount).toBe(1);
+    } finally { rmSync(cwd, { recursive: true, force: true }); }
+  });
+
+  test('i) a batch mixing workflow-surface and implementation paths counts only the implementation paths toward standard', () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'profile-mixed-standard-')));
+    try {
+      initRepo(cwd);
+      const mixed = ['docs/a.md', 'tasks/todos.md', 'plans/plan-fixture.md', ...FOUR_NORMAL_FILES];
+      const direct = resolveStateDirect(cwd, mixed);
+      expect(direct.json.profile_signals?.targetPathCount).toBe(4);
+      expect(direct.json.workflow_profile).toBe('standard');
+    } finally { rmSync(cwd, { recursive: true, force: true }); }
+  });
+
+  test('j) a single deploy/sql path still resolves strict after the workflow-surface exclusion', () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'profile-deploy-strict-')));
+    try {
+      initRepo(cwd);
+      const direct = resolveStateDirect(cwd, ['deploy/sql/0001_demo.sql']);
+      expect(direct.json.workflow_profile).toBe('strict');
+    } finally { rmSync(cwd, { recursive: true, force: true }); }
+  });
+
+  test('k) a docs-only apply_patch batch passes without a Plan gate and resolves lite ceremony guidance', () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'profile-docs-apply-patch-')));
+    try {
+      initRepo(cwd);
+      const result = preApplyPatch(cwd, patchFromFiles(['docs/a.md', 'docs/b.md', 'docs/c.md', 'docs/d.md']));
+      expect(result.status).toBe(0);
+      expect(result.stdout).not.toContain('PlanStatusGuard');
+      expect(result.stdout).not.toContain('SpecGuard');
+    } finally { rmSync(cwd, { recursive: true, force: true }); }
+  });
+});

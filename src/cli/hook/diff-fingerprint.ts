@@ -341,6 +341,38 @@ function parseNameStatusZ(tokens: readonly string[]): string[] {
   return uniqueSorted(paths);
 }
 
+// Canonical source for "workflow surface" -- ceremony/administrative paths
+// that stay editable without an active plan and never inflate the risk
+// floor's medium-scope, cross-capability, or strict-token counters (Phase C2,
+// docs/architecture/modules/runtime-harness/hook-adapters.md). This must stay
+// byte-identical in shape to assets/hooks/pre-edit-guard.sh's
+// is_workflow_surface_path() case list; scripts/sync-hook-sources.ts --check
+// (bun run check:hooks) fails on drift between the two.
+// Exported (not just used locally) so scripts/sync-hook-sources.ts can build
+// the expected shell case-pattern from these same values and fail --check on
+// drift, instead of maintaining a second hand-copied list.
+export const WORKFLOW_SURFACE_DIR_PREFIXES = Object.freeze([
+  'plans/', 'tasks/', 'docs/', '.ai/', '.claude/', '.codex/',
+]);
+export const WORKFLOW_SURFACE_EXTENSIONS = Object.freeze(['.md', '.markdown']);
+
+export function isWorkflowSurfacePath(path: string): boolean {
+  return (
+    WORKFLOW_SURFACE_DIR_PREFIXES.some((prefix) => path.startsWith(prefix)) ||
+    WORKFLOW_SURFACE_EXTENSIONS.some((ext) => path.endsWith(ext))
+  );
+}
+
+// The single predicate that owns "what counts toward medium-scope": every
+// non-workflow-surface path. Strict path-token categories (auth/payment/
+// deploy/migration/...) are unaffected by this exclusion in practice -- those
+// categories are implementation concerns that live outside plans/tasks/docs/
+// .ai/.claude/.codex, so filtering workflow-surface paths out never suppresses
+// a real strict signal (see tests/harness-runtime-profiles.test.ts).
+export function isImplementationSurfacePath(path: string): boolean {
+  return !isWorkflowSurfacePath(path);
+}
+
 function isOperationalReviewPath(path: string): boolean {
   return (
     /^tasks\/reviews\/[^/]+\.review\.md$/.test(path) ||

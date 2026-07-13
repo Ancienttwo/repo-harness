@@ -13,7 +13,7 @@ import {
 import { createHash } from 'crypto';
 import { execFileSync } from 'child_process';
 import { join } from 'path';
-import { buildImplementationDiffFingerprint } from './diff-fingerprint';
+import { buildImplementationDiffFingerprint, isImplementationSurfacePath } from './diff-fingerprint';
 import {
   resolveWorkflowProfile,
   type WorkflowOperationKind,
@@ -483,10 +483,10 @@ function policyDeclaresCapabilityRegistry(cwd: string): boolean {
 //   caller, naming the repair action above.
 // - registryStatus 'absent' (never declared) preserves today's no-signal
 //   behavior with an explicit reason recorded by the caller.
-// - unmapped paths are returned so the caller can fold them into the
-//   cross-capability signal as one additional bucket, and record a stable
-//   `capability:unmapped:<n>` reason -- an unmapped path never silently
-//   lowers the floor.
+// - unmapped implementation paths are returned so the caller can fold them
+//   into the cross-capability signal as one additional bucket, and record a
+//   stable `capability:unmapped:<n>` reason -- an unmapped path never
+//   silently lowers the floor.
 function capabilityIdsForPaths(cwd: string, paths: readonly string[]): CapabilityResolution {
   const text = readText(cwd, CAPABILITY_REGISTRY_PATH);
   if (!text) {
@@ -766,28 +766,44 @@ function resolveEffectiveStateUnlocked(
   );
   const implementation = buildImplementationDiffFingerprint(cwd, { baseRef: targetBranch });
   const explicitTargetPaths = options.risk?.targetPaths ?? [];
-  const implementationPaths = implementation.status === 'ok' ? implementation.paths : [];
-  const combinedTargetPaths = Array.from(new Set([...explicitTargetPaths, ...implementationPaths])).sort();
-  const observedTargetPaths = combinedTargetPaths.length > 0 ? combinedTargetPaths : undefined;
+  const implementationDiffPaths = implementation.status === 'ok' ? implementation.paths : [];
+  const rawTargetPaths = Array.from(new Set([...explicitTargetPaths, ...implementationDiffPaths])).sort();
+  const hasRawTargetPaths = rawTargetPaths.length > 0;
+
+  // C2: medium-scope, cross-capability, and strict-token signals count only
+  // implementation surfaces. Workflow-surface paths (plans/tasks/docs/.ai/
+  // .claude/.codex + markdown) are ceremony/administrative edits that stay
+  // editable without an active plan (pre-edit-guard.sh's
+  // is_workflow_surface_path already exempts them from the plan/strict
+  // gates); counting them toward the risk floor previously inflated a
+  // docs-only session's internally resolved profile even though the gates
+  // themselves stayed silent about it -- and once ceremony guidance keys off
+  // the resolved profile (Phase B2), the inflated profile surfaces the wrong
+  // guidance.
+  const implementationTargetPaths = rawTargetPaths.filter(isImplementationSurfacePath);
+  const observedTargetPaths = hasRawTargetPaths ? implementationTargetPaths : undefined;
 
   // C1: structured, fail-closed capability registry resolution. A registry
   // the caller declared explicitly is trusted as-is; otherwise resolve it
-  // from the observed target paths.
+  // from the implementation-surface path set (capabilityIdsForPaths' contract
+  // is stated in terms of "implementation paths").
   const capabilityResolution: CapabilityResolution | null = options.risk?.capabilityIds
     ? { ids: options.risk.capabilityIds, registryStatus: 'valid', unmappedPaths: [] }
-    : observedTargetPaths
-      ? capabilityIdsForPaths(cwd, observedTargetPaths)
+    : hasRawTargetPaths
+      ? capabilityIdsForPaths(cwd, implementationTargetPaths)
       : null;
   const observedCapabilityIds = capabilityResolution?.ids;
   const unmappedCapabilityCount = capabilityResolution?.unmappedPaths.length ?? 0;
-  // capabilityCount is explicit (never left undefined) whenever we actually
-  // resolved a registry, so resolveWorkflowProfile's signals-unavailable
-  // fail-closed branch (INVALID_RISK_INPUT, targetPaths/capabilityIds/
-  // capabilityCount ALL empty or undefined) keeps firing only for the
-  // genuinely unknown case -- no target paths and no capability info at all.
+  // capabilityCount is always an explicit number (never left undefined) once
+  // there are any raw target paths, so an all-workflow-surface batch (whose
+  // implementationTargetPaths is empty) resolves the deterministic "known,
+  // zero implementation surface" lite floor instead of tripping
+  // resolveWorkflowProfile's signals-unavailable fail-closed branch -- that
+  // branch exists for the genuinely unknown case (no target paths at all),
+  // which stays untouched below.
   const declaredCapabilityCount = options.risk?.capabilityCount ?? (
-    observedCapabilityIds
-      ? observedCapabilityIds.length + (unmappedCapabilityCount > 0 ? 1 : 0)
+    hasRawTargetPaths
+      ? (observedCapabilityIds?.length ?? 0) + (unmappedCapabilityCount > 0 ? 1 : 0)
       : undefined
   );
 

@@ -15,6 +15,10 @@ import {
   writeProjectionFileAtomic,
   type ProjectionFileRecord,
 } from "../src/core/source-projection";
+import {
+  WORKFLOW_SURFACE_DIR_PREFIXES,
+  WORKFLOW_SURFACE_EXTENSIONS,
+} from "../src/cli/hook/diff-fingerprint";
 
 type Mode = "check" | "write";
 
@@ -99,6 +103,42 @@ function markerText(marker: ProjectionMarker): string {
   return `${JSON.stringify(marker, null, 2)}\n`;
 }
 
+// Phase C2: assets/hooks/pre-edit-guard.sh's is_workflow_surface_path() case
+// list is a hand-authored shell projection of the canonical TS source
+// (src/cli/hook/diff-fingerprint.ts's WORKFLOW_SURFACE_DIR_PREFIXES /
+// WORKFLOW_SURFACE_EXTENSIONS). There is no automatic fix for a mismatch --
+// unlike file-content projection, this check always fails closed in both
+// --check and --write, naming which side to edit.
+function checkWorkflowSurfaceParity(): string[] {
+  const guardPath = join(CANONICAL_ROOT, "pre-edit-guard.sh");
+  if (!existsSync(guardPath)) {
+    return ["missing assets/hooks/pre-edit-guard.sh: cannot check is_workflow_surface_path parity"];
+  }
+  const source = readFileSync(guardPath, "utf-8");
+  const functionMatch = /is_workflow_surface_path\(\)\s*\{([\s\S]*?)\n\}/.exec(source);
+  if (!functionMatch) {
+    return ["assets/hooks/pre-edit-guard.sh: is_workflow_surface_path() function not found"];
+  }
+  const patternLines = [...functionMatch[1].matchAll(/^\s*([^\s)\n][^)\n]*)\)\s*return 0\s*;;\s*$/gm)]
+    .map((match) => match[1]);
+
+  const expectedDirPattern = WORKFLOW_SURFACE_DIR_PREFIXES.map((prefix) => `${prefix}*`).join("|");
+  const expectedExtPattern = WORKFLOW_SURFACE_EXTENSIONS.map((ext) => `*${ext}`).join("|");
+
+  const errors: string[] = [];
+  if (patternLines[0] !== expectedDirPattern) {
+    errors.push(
+      `is_workflow_surface_path drift: directory prefixes expected "${expectedDirPattern}" got "${patternLines[0] ?? "<missing>"}"`,
+    );
+  }
+  if (patternLines[1] !== expectedExtPattern) {
+    errors.push(
+      `is_workflow_surface_path drift: extensions expected "${expectedExtPattern}" got "${patternLines[1] ?? "<missing>"}"`,
+    );
+  }
+  return errors;
+}
+
 function main(): void {
   const mode = parseMode(process.argv.slice(2));
   const manifest = readManifest();
@@ -133,6 +173,15 @@ function main(): void {
   if (errors.length > 0) {
     for (const error of errors) process.stderr.write(`[hooks] ${error}\n`);
     process.stderr.write("[hooks] Edit assets/hooks/projection.json to classify drift, or remove the unclassified target file deliberately.\n");
+    process.exit(1);
+  }
+
+  const parityErrors = checkWorkflowSurfaceParity();
+  if (parityErrors.length > 0) {
+    for (const error of parityErrors) process.stderr.write(`[hooks] ${error}\n`);
+    process.stderr.write(
+      "[hooks] Keep assets/hooks/pre-edit-guard.sh's is_workflow_surface_path() case list in sync with src/cli/hook/diff-fingerprint.ts's WORKFLOW_SURFACE_DIR_PREFIXES / WORKFLOW_SURFACE_EXTENSIONS.\n",
+    );
     process.exit(1);
   }
 

@@ -509,5 +509,21 @@ describe('effective state resolver', () => {
         expect(state.blockers).not.toContain('capability_registry:invalid');
       });
     });
+
+    test('workflow-surface-only target paths never reach capability resolution as implementation paths (Phase C2)', () => {
+      withRepo((cwd) => {
+        write(cwd, '.ai/context/capabilities.json', JSON.stringify({
+          version: 1,
+          capabilities: [{ id: 'docs-capability', prefixes: ['docs'] }],
+        }));
+        commitFixture(cwd, 'seed registry');
+        const state = resolveEffectiveState(cwd, Date.now(), {
+          targetPaths: ['docs/a.md', 'docs/b.md'],
+          operationKind: 'edit',
+        });
+        expect(state.profile_reasons).not.toContain('capability:unmapped:1');
+        expect(state.profile_signals?.capabilityCount).toBe(0);
+      });
+    });
   });
 });
