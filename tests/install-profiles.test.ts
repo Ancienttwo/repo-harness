@@ -268,6 +268,15 @@ describe('install profiles', () => {
     expect(status.drift.missing_components).toContain('planning-integrations');
   }));
 
+  test('mutation-path rollback coverage includes all four command facades on both hosts', () => withHome((env) => {
+    const paths = installProfileHostMutationPaths(env);
+    for (const host of ['.codex', '.claude']) {
+      for (const facade of ['repo-harness-plan', 'repo-harness-check', 'repo-harness-handoff', 'repo-harness-gptpro']) {
+        expect(paths).toContain(join(env.HOME!, host, 'skills', facade));
+      }
+    }
+  }));
+
   test('host transaction restores prior bytes and removes later mutations', () => withHome((env) => {
     writeManagedHostSurfaces(env);
     const adapter = join(env.HOME!, '.codex', 'hooks.json');
