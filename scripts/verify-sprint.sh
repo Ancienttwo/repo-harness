@@ -415,7 +415,16 @@ worktree_path="$(pwd -P)"
 branch_name="$(git branch --show-current 2>/dev/null || true)"
 diff_base_ref="$(git_diff_base_ref || true)"
 diff_base_commit="$(git_diff_merge_base || true)"
-implementation_fingerprint="$(workflow_current_review_fingerprint_value 2>/dev/null || true)"
+if [[ -n "${REPO_HARNESS_SOURCE_ROOT:-}" && -f "${REPO_HARNESS_SOURCE_ROOT}/src/cli/hook-entry.ts" ]]; then
+  # Source-authority verification must fingerprint with the same checkout's
+  # hook CLI. Scope the override to this lookup so contract commands and their
+  # fixture subprocesses do not inherit a forced HOOK_REPO_ROOT.
+  implementation_fingerprint="$(
+    HOOK_REPO_ROOT="$REPO_HARNESS_SOURCE_ROOT" workflow_current_review_fingerprint_value 2>/dev/null || true
+  )"
+else
+  implementation_fingerprint="$(workflow_current_review_fingerprint_value 2>/dev/null || true)"
+fi
 changed_files=()
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   while IFS= read -r changed_file; do

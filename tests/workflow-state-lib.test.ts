@@ -43,6 +43,17 @@ describe("workflow-state shared library", () => {
     expect(helper).not.toContain("^\\> \\*\\*Recommendation\\*\\*:[[:space:]]*pass");
   });
 
+  test("verify-sprint scopes source-authority hook resolution to fingerprinting", () => {
+    for (const path of [
+      join(ROOT, "scripts", "verify-sprint.sh"),
+      join(ROOT, "assets", "templates", "helpers", "verify-sprint.sh"),
+    ]) {
+      const helper = readFileSync(path, "utf-8");
+      expect(helper).toContain('HOOK_REPO_ROOT="$REPO_HARNESS_SOURCE_ROOT" workflow_current_review_fingerprint_value');
+      expect(helper).not.toContain('export HOOK_REPO_ROOT="$REPO_HARNESS_SOURCE_ROOT"');
+    }
+  });
+
   test("external acceptance parser enforces reviewer, source, blockers, manual override, and a supported rubric", () => {
     const cwd = realpathSync(mkdtempSync(join(tmpdir(), "workflow-external-acceptance-")));
     try {

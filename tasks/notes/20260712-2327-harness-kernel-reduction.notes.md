@@ -212,7 +212,7 @@
   rebased cleanly; an external git review found zero overlap with the new
   configurable deploy-SQL policy and verified its scripts, policy, Skill, and
   tests remain byte-identical. Verdict PASS, no P1/P2.
-- The final clean-checkout live matrix completed all 27 Claude runs under source
+- An independently reviewed clean-checkout live matrix completed all 27 Claude runs under source
   commit `242e1f50d1e26d08230babb4314ffa77d3384068`. Run
   `02b23ab9-5546-402f-8d08-73477c1b8e95` is authoritative: every profile passed
   9/9 scenarios with structured provider usage, deterministic grader acceptance,
@@ -230,6 +230,15 @@
   configuration was touched. The successful evidence root is retained because
   report regrading binds its workspace hashes. This is an operational retention
   cost, not a correctness exception in the authoritative report.
+- The first post-evidence sprint verifier also completed a fresh authoritative
+  27/27 matrix (`43651986-e956-43a5-b9f0-6398c08f56d4`) but then failed four
+  later checks because the invocation exported `HOOK_REPO_ROOT` to the whole
+  verifier process. That forced hook-runtime fixtures to dispatch through the
+  self-host checkout instead of their isolated fixture hooks. The verifier now
+  scopes the source-root override to the single review-fingerprint lookup; child
+  contract commands inherit only the established `REPO_HARNESS_SOURCE_ROOT`
+  helper authority. Isolated hook-runtime and workflow-state tests pass with
+  that exact environment. No runtime hook policy or safety boundary changed.
 
 ## Tradeoffs Considered
 
