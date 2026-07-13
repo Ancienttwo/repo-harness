@@ -4,7 +4,7 @@
 > **Plan**: plans/plan-20260713-1336-bdd3-ea1-typed-browser-evidence-authority.md
 > **Contract**: tasks/contracts/20260713-1336-bdd3-ea1-typed-browser-evidence-authority.contract.md
 > **Review**: tasks/reviews/20260713-1336-bdd3-ea1-typed-browser-evidence-authority.review.md
-> **Last Updated**: 2026-07-14 01:20
+> **Last Updated**: 2026-07-14 02:03
 > **Lifecycle**: notes
 
 Scope of this entry: EA1-01 only (author + freeze the held-out corpus, truth,
@@ -883,3 +883,105 @@ since that model is no longer the pinned transport. The three prior dead
 untouched, undeleted, as evidence; none has a `run.json`, so none is
 consumable by EA1-04 regardless of which model produced the eventual valid
 run.
+
+## Stage B prep: substrate provenance (gate P2/P3)
+
+**Trigger.** The pre-merge acceptance gate on `codex/bdd3-ea1-typed-browser-evidence-authority`
+found two blockers, both in `scoreEa1Experiment`/`validateEa1ScoreRun`/
+`projectEa1Evidence`/`verifyEa1EvidenceProjection` (`scripts/run-bdd2-evals.ts`):
+P2, the `Ea1ScoreRun` `run.json` record carried no generation substrate, so a
+completed run could not self-attest which model produced it; P3,
+`experiment.score_manifest_sha256` in the EA1 manifest was an inert static
+constant (never recomputed after authoring, already stale relative to the
+manifest's own later edits), giving a false sense of a sealed authority hash.
+Scoped to exactly these two findings; Stage B (EA1-03) was explicitly not run
+in this correction and no held-out output exists yet.
+
+**P2 fix.** `Ea1ScoreRun` gained `model_profile: { model: string;
+expected_version: string }`. `scoreEa1Experiment` populates it from `profile.model`/
+`profile.expected_version` — the same `profile = evaluation.manifest.model_profile`
+already used earlier in that function to invoke the isolated Codex transport, and
+whose `expected_version` is independently confirmed against the live CLI's
+`--version` output in the same call (`scoreEa1Experiment`, `scripts/run-bdd2-evals.ts`
+around `:650`) — so the recorded value is the actual substrate in effect at score
+time, not a copy of manifest config that could drift from what really ran.
+`validateEa1ScoreRun` requires `run.model_profile` to be present with exactly
+`{model, expected_version}` keys, both non-empty strings (`assertRecord` +
+`assertExactKeys` + `assertString`, mirroring the file's existing
+`validateEa1ModelProfile` pattern of validating shape on the raw parsed JSON
+before casting to the typed interface). `projectEa1Evidence` carries
+`run.model_profile` through verbatim into the top-level `model_profile` field of
+the published `experiment-ea1-evidence.json`, so the final artifact — not just
+the intermediate run directory — self-attests the generation substrate.
+`verifyEa1EvidenceProjection` requires the evidence file's own `model_profile` to
+be present with the same exact-non-empty-string shape (added to its
+`assertExactKeys` top-level key list too, so an evidence file missing the field
+fails closed with a "keys must be exactly" mismatch naming `model_profile`).
+
+**P3 fix.** `score_manifest_sha256` was removed entirely: from the `Ea1Manifest`
+experiment type, from `validateEa1Evaluation`'s `assertExactKeys` key list and its
+regex-shape check, and from the `experiment` object in
+`evals/bdd3/evaluation-manifest.json` itself (the field was the JSON's own last
+property before the file's closing `adjudication` brace; removed cleanly with no
+trailing-comma breakage, confirmed by re-parsing). All three EA1 call sites that
+previously read the static field now compute the manifest hash live via
+`sha256File(evaluation.manifestPath)` at the moment of use — `scoreEa1Experiment`
+when writing `run.json`, `validateEa1ScoreRun` and `verifyEa1EvidenceProjection`
+when checking authority — mirroring E3's own live-write pattern
+(`scoreExperiment`, `scripts/run-bdd2-evals.ts` around `:269`,
+`manifest_sha256: sha256File(evaluation.manifestPath)`), rather than trusting a
+stored value that can silently go stale the moment any other manifest byte
+changes after it was computed. This is a strictly stronger invariant than the
+removed static field ever provided: it now detects manifest drift between
+scoring and verification instead of silently passing against a frozen number.
+Fail-closed check: `grep -n "score_manifest_sha256" scripts/run-bdd2-evals.ts`
+after the edit shows only the pre-existing, untouched E3 `ExperimentAuthority`
+occurrences (lines `38`, `208`, `274`, `291` — S3/EB3/EI3's own separate static
+field, explicitly out of this contract's scope and byte-unchanged); no EA1 code
+path still reads `.score_manifest_sha256`, confirmed both by that grep and by
+`bun run check:type` passing clean (removing the field from the `Ea1Manifest`
+type would have turned any missed read site into a compile error).
+
+**Runner hash re-pin.** Editing `scripts/run-bdd2-evals.ts` changed its own
+sha256, which both BDD2 and BDD3 manifests pin under `runner.sha256`. Re-pinned
+in both `evals/bdd3/evaluation-manifest.json` and `evals/bdd2/evaluation-manifest.json`
+(`b5f76e619a05231935e247bd64870c6bd99ff6449c642baef7123a22b8df0392`), under the
+same pre-approved shared-runner hash re-pin exception used by every prior
+correction in this file (EA1-01, Stage A, the Stage B preflight correction,
+Pre-Stage-B corrections #2 and #3). `git diff -- evals/bdd2/evaluation-manifest.json`
+confirms exactly one line changed (the `runner.sha256` value) — no other BDD2
+byte touched.
+
+**Tests.** `materializeEa1ScoreRun` (`tests/run-bdd2-evals.test.ts`) now writes a
+`model_profile` field (sourced from the fixture evaluation's own manifest) and a
+live-computed `manifest_sha256` into its fixture `run.json`, matching what
+`scoreEa1Experiment` now writes for real. The existing round-trip test
+("validates a fixture score run and projects a reproducible disposition") gained
+two assertions: `run.json`'s `model_profile` equals the manifest's
+`model_profile.model`/`expected_version`, and the projected evidence JSON's
+`model_profile` equals `run.json`'s (end-to-end substrate carry-through). Two new
+fail-closed tests: `validateEa1ScoreRun` rejects a `run.json` with `model_profile`
+deleted; `verifyEa1EvidenceProjection` rejects a projected evidence file with
+`model_profile` deleted. The Step 0 falsifier fixtures (EB-H-04/EB-H-06
+reconstruction), the three adversarial sanity checks, and the Stage A rule-4
+stress fixtures are untouched, per this correction's execution boundary.
+
+**Verification.** `bun run check:type` clean. `bun scripts/run-bdd2-evals.ts
+validate --manifest evals/bdd3/evaluation-manifest.json` and `--manifest
+evals/bdd2/evaluation-manifest.json` both green (`"status": "valid"`, 24
+held-out + 6 dev archetypes, 96 corpus rows for EA1; 3 experiments, 120 corpus
+rows for E3 — unchanged from before this correction). `bun test`: full repo
+suite green (`1288 pass, 1 skip, 0 fail`, `Ran 1289 tests across 111 files`; the
+1 skip is pre-existing and unrelated to this change). Scoped rerun of
+`tests/run-bdd2-evals.test.ts` + `tests/bdd2-evals-contract.test.ts`: `40 pass, 0
+fail`; the two new `model_profile`-filtered tests and the extended round-trip
+test (now 8 `expect()` calls, up from 6) confirmed individually via `bun test
+-t`.
+
+**Not done here (explicitly out of scope).** Stage B (EA1-03) was not run; no
+held-out output or `run.json` exists at this commit. `evals/bdd3/reports/
+experiment-ea1.md`, `experiment-ea1-evidence.json`, and `phase-ea1-gate.md`
+still do not exist. E3's own `score_manifest_sha256` (`ExperimentAuthority`,
+S3/EB3/EI3) was left exactly as-is — this correction's mandate was the EA1 gate
+findings only, and E3/BDD2 Phase E artifacts must stay byte-identical to main
+per the contract's manual-check requirement.

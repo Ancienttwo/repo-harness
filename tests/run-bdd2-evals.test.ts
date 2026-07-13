@@ -465,7 +465,7 @@ function materializeEa1ScoreRun(trapMarker: "truth-tag" | "descriptive" = "truth
     }
     return { packet_id: planned.packet_id, task_id: planned.task_id, condition: planned.condition, repetition: planned.repetition, response_sha256: "b".repeat(64), normalized_outcome_sha256: "e".repeat(64), reviewer_score_sha256: [sha256Text(canonicalJson(scores[0])), sha256Text(canonicalJson(scores[1]))] as [string, string], adjudication_sha256: null, control_evidence_score_sha256: controlEvidenceSha, treatment_evidence_result_sha256: treatmentEvidenceSha };
   });
-  write(join(root, "run.json"), { schema: "repo-harness-bdd3-score-run.ea1", freeze_id: evaluation.manifest.experiment.freeze_id, source_commit: "f".repeat(40), manifest_sha256: evaluation.manifest.experiment.score_manifest_sha256, output_path: relative(REPO_ROOT, root).replace(/\\/g, "/"), packets: records });
+  write(join(root, "run.json"), { schema: "repo-harness-bdd3-score-run.ea1", freeze_id: evaluation.manifest.experiment.freeze_id, source_commit: "f".repeat(40), manifest_sha256: sha256File(evaluation.manifestPath), model_profile: { model: evaluation.manifest.model_profile.model, expected_version: evaluation.manifest.model_profile.expected_version }, output_path: relative(REPO_ROOT, root).replace(/\\/g, "/"), packets: records });
   return relative(REPO_ROOT, root).replace(/\\/g, "/");
 }
 
@@ -476,10 +476,20 @@ describe("BDD3 EA1 score-run validation and evidence projection (fixture round t
     const counts = validateEa1ScoreRun(evaluation, run);
     expect(counts).toEqual({ outcomeScoreCount: 192, controlEvidenceScoreCount: 48, treatmentEvidenceResultCount: 48, adjudicationCount: 0 });
 
+    // Gate P2: run.json self-attests the generation substrate (the actual
+    // model/expected_version in effect at score time, read from the manifest).
+    const runRaw = JSON.parse(readFileSync(join(REPO_ROOT, run, "run.json"), "utf8"));
+    expect(runRaw.model_profile).toEqual({ model: evaluation.manifest.model_profile.model, expected_version: evaluation.manifest.model_profile.expected_version });
+
     const evidenceRel = `${run}/evidence.json`; const reportRel = `${run}/report.md`;
     const projected = projectEa1Evidence(evaluation, run, evidenceRel, reportRel);
     expect(projected.intervention).toBe("pass");
     expect(projected.thesis).toBe("supported");
+
+    // Gate P2: projection carries the substrate string through into the
+    // evidence JSON so the final artifact self-attests too.
+    const evidenceRaw = JSON.parse(readFileSync(join(REPO_ROOT, evidenceRel), "utf8"));
+    expect(evidenceRaw.model_profile).toEqual(runRaw.model_profile);
 
     const verified = verifyEa1EvidenceProjection(evaluation, evidenceRel);
     expect(verified).toEqual(projected);
@@ -516,5 +526,31 @@ describe("BDD3 EA1 score-run validation and evidence projection (fixture round t
     treatmentRow.treatment_result.violations = [{ rule: 3, detail: "tampered for test" }];
     writeFileSync(evidencePath, `${JSON.stringify(evidence, null, 2)}\n`);
     expect(() => verifyEa1EvidenceProjection(evaluation, evidenceRel)).toThrow("EA1 evidence projection drift");
+  });
+
+  // Gate P2: run.json must self-attest the generation substrate; a run.json
+  // missing model_profile (e.g. produced before this correction) fails closed.
+  test("validateEa1ScoreRun rejects a run.json missing the model_profile substrate fields", () => {
+    const evaluation = validateEa1Evaluation(REPO_ROOT, EA1_MANIFEST);
+    const run = materializeEa1ScoreRun();
+    const runPath = join(REPO_ROOT, run, "run.json");
+    const runRaw = JSON.parse(readFileSync(runPath, "utf8"));
+    delete runRaw.model_profile;
+    writeFileSync(runPath, `${JSON.stringify(runRaw, null, 2)}\n`);
+    expect(() => validateEa1ScoreRun(evaluation, run)).toThrow("model_profile");
+  });
+
+  // Gate P2: the projected evidence artifact must self-attest the same
+  // substrate; an evidence file missing model_profile fails closed too.
+  test("verifyEa1EvidenceProjection rejects an evidence file missing the model_profile substrate fields", () => {
+    const evaluation = validateEa1Evaluation(REPO_ROOT, EA1_MANIFEST);
+    const run = materializeEa1ScoreRun();
+    const evidenceRel = `${run}/evidence-missing-substrate.json`; const reportRel = `${run}/report-missing-substrate.md`;
+    projectEa1Evidence(evaluation, run, evidenceRel, reportRel);
+    const evidencePath = join(REPO_ROOT, evidenceRel);
+    const evidenceRaw = JSON.parse(readFileSync(evidencePath, "utf8"));
+    delete evidenceRaw.model_profile;
+    writeFileSync(evidencePath, `${JSON.stringify(evidenceRaw, null, 2)}\n`);
+    expect(() => verifyEa1EvidenceProjection(evaluation, evidenceRel)).toThrow("model_profile");
   });
 });

@@ -459,7 +459,6 @@ export interface Ea1Manifest {
     prompts: Ea1PromptRefs;
     metrics: FileReference;
     adjudication: { resolution: "fresh-adjudicator-score-on-canonical-disagreement"; reviewers: { outcome: [string, string]; adjudicator: string; control_evidence: string } };
-    score_manifest_sha256: string;
   };
   model_profile: ModelProfile;
   historical_reports: FileReference[];
@@ -539,9 +538,8 @@ export function validateEa1Evaluation(repoRoot = REPO_ROOT, manifestRelativePath
   if (raw.schema !== "repo-harness-bdd3-evaluation.ea1") fail("Unsupported EA1 evaluation manifest schema");
   const authority = [manifestPath, validateRef(root, raw.runner, "runner")]; assertString(raw.output_root, "output_root");
   assertRecord(raw.experiment, "experiment"); const exp = raw.experiment;
-  assertExactKeys(exp, ["kind", "freeze_id", "held_out", "dev", "evidence_appendices", "rubrics", "prompts", "metrics", "adjudication", "score_manifest_sha256"], "experiment");
+  assertExactKeys(exp, ["kind", "freeze_id", "held_out", "dev", "evidence_appendices", "rubrics", "prompts", "metrics", "adjudication"], "experiment");
   if (exp.kind !== "typed-evidence-authority") fail("experiment.kind invalid"); assertString(exp.freeze_id, "experiment.freeze_id");
-  if (!/^[a-f0-9]{64}$/.test(String(exp.score_manifest_sha256))) fail("experiment.score_manifest_sha256 invalid");
 
   assertRecord(exp.held_out, "experiment.held_out"); assertExactKeys(exp.held_out, ["tasks", "truth", "archetype_count", "closable_count", "trap_count", "repetitions", "expected_rows"], "experiment.held_out");
   const heldOutTasksPath = validateRef(root, exp.held_out.tasks, "held_out.tasks"); const heldOutTruthPath = validateRef(root, exp.held_out.truth, "held_out.truth"); authority.push(heldOutTasksPath, heldOutTruthPath);
@@ -641,7 +639,7 @@ interface Ea1ControlEvidenceScoreBody { unsupported_assertion_count: number; fea
 interface Ea1LockedControlEvidenceScore { schema: "repo-harness-bdd3-locked-control-evidence-score.ea1"; packet_id: string; reviewer_id: string; locked_at: string; response_sha256: string; score: Ea1ControlEvidenceScoreBody }
 interface Ea1LockedTreatmentEvidenceResult { schema: "repo-harness-bdd3-locked-treatment-evidence-result.ea1"; packet_id: string; locked_at: string; packet_sha256: string; not_established: string[]; result: Ea1ValidatorResult }
 interface Ea1ScoreRunPacket { packet_id: string; task_id: string; condition: Ea1Condition; repetition: number; response_sha256: string; normalized_outcome_sha256: string; reviewer_score_sha256: [string, string]; adjudication_sha256: string | null; control_evidence_score_sha256: string | null; treatment_evidence_result_sha256: string | null }
-interface Ea1ScoreRun { schema: "repo-harness-bdd3-score-run.ea1"; freeze_id: string; source_commit: string; manifest_sha256: string; output_path: string; packets: Ea1ScoreRunPacket[] }
+interface Ea1ScoreRun { schema: "repo-harness-bdd3-score-run.ea1"; freeze_id: string; source_commit: string; manifest_sha256: string; model_profile: { model: string; expected_version: string }; output_path: string; packets: Ea1ScoreRunPacket[] }
 
 function validateEa1ControlEvidenceScore(score: Record<string, unknown>): void { assertExactKeys(score, ["unsupported_assertion_count", "feature_need_inference_count", "explicit_limitation_count", "notes"], "control evidence score"); for (const key of ["unsupported_assertion_count", "feature_need_inference_count", "explicit_limitation_count"] as const) if (!Number.isInteger(score[key]) || Number(score[key]) < 0) fail(`control evidence score.${key} invalid`); assertString(score.notes, "control evidence score.notes") }
 
@@ -703,7 +701,7 @@ export async function scoreEa1Experiment(evaluation: ValidatedEa1Evaluation, out
     records.set(item.packet_id, { packet_id: item.packet_id, task_id: item.task_id, condition: item.condition, repetition: item.repetition, response_sha256: responseSha, normalized_outcome_sha256: normalizedOutcomeSha, reviewer_score_sha256: [sha256Text(canonicalJson(locked[0])), sha256Text(canonicalJson(locked[1]))], adjudication_sha256: adjudicationSha, control_evidence_score_sha256: controlEvidenceSha, treatment_evidence_result_sha256: treatmentEvidenceSha });
   });
 
-  const run: Ea1ScoreRun = { schema: "repo-harness-bdd3-score-run.ea1", freeze_id: evaluation.manifest.experiment.freeze_id, source_commit: sourceCommit, manifest_sha256: evaluation.manifest.experiment.score_manifest_sha256, output_path: relative(evaluation.repoRoot, output).replace(/\\/g, "/"), packets: [...records.values()].sort((a, b) => a.packet_id.localeCompare(b.packet_id)) };
+  const run: Ea1ScoreRun = { schema: "repo-harness-bdd3-score-run.ea1", freeze_id: evaluation.manifest.experiment.freeze_id, source_commit: sourceCommit, manifest_sha256: sha256File(evaluation.manifestPath), model_profile: { model: profile.model, expected_version: profile.expected_version }, output_path: relative(evaluation.repoRoot, output).replace(/\\/g, "/"), packets: [...records.values()].sort((a, b) => a.packet_id.localeCompare(b.packet_id)) };
   writeJson(join(output, "run.json"), run); return run;
 }
 
@@ -712,8 +710,9 @@ function ea1LockedOutcome(path: string, packetId: string, reviewerId: string): E
 export function validateEa1ScoreRun(evaluation: ValidatedEa1Evaluation, runRelativePath: string): { outcomeScoreCount: number; controlEvidenceScoreCount: number; treatmentEvidenceResultCount: number; adjudicationCount: number } {
   const root = authorityPath(evaluation.repoRoot, runRelativePath, "EA1 score run"); const raw = readJson(join(root, "run.json")); assertRecord(raw, "EA1 score run");
   if (raw.schema !== "repo-harness-bdd3-score-run.ea1" || !Array.isArray(raw.packets)) fail("EA1 score run identity mismatch");
+  assertRecord(raw.model_profile, "EA1 score run.model_profile"); assertExactKeys(raw.model_profile, ["model", "expected_version"], "EA1 score run.model_profile"); assertString(raw.model_profile.model, "EA1 score run.model_profile.model"); assertString(raw.model_profile.expected_version, "EA1 score run.model_profile.expected_version");
   const run = raw as unknown as Ea1ScoreRun;
-  if (run.freeze_id !== evaluation.manifest.experiment.freeze_id || run.manifest_sha256 !== evaluation.manifest.experiment.score_manifest_sha256 || run.output_path !== relative(evaluation.repoRoot, root).replace(/\\/g, "/")) fail("EA1 score run authority mismatch");
+  if (run.freeze_id !== evaluation.manifest.experiment.freeze_id || run.manifest_sha256 !== sha256File(evaluation.manifestPath) || run.output_path !== relative(evaluation.repoRoot, root).replace(/\\/g, "/")) fail("EA1 score run authority mismatch");
   const planned = new Map(planEa1Packets(evaluation).map((item) => [item.packet_id, item]));
   if (run.packets.length !== planned.size) fail("EA1 score run packet count mismatch");
   let outcomes = 0, controlEvidence = 0, treatmentEvidence = 0, adjudications = 0; const seen = new Set<string>();
@@ -807,7 +806,7 @@ export function projectEa1Evidence(evaluation: ValidatedEa1Evaluation, runRelati
   const adjudicationCount = run.packets.filter((packet) => packet.adjudication_sha256 !== null).length;
   const controlEvidenceCount = run.packets.filter((packet) => packet.control_evidence_score_sha256 !== null).length;
   const treatmentEvidenceCount = run.packets.filter((packet) => packet.treatment_evidence_result_sha256 !== null).length;
-  const evidence = { schema: "repo-harness-bdd3-ea1-evidence.ea1", freeze_id: run.freeze_id, source_commit: run.source_commit, manifest_sha256: run.manifest_sha256, packet_count: rows.length, outcome_score_count: rows.length * 2, adjudication_count: adjudicationCount, control_evidence_score_count: controlEvidenceCount, treatment_evidence_result_count: treatmentEvidenceCount, rows: rows.map((row) => ({ packet_id: row.packet_id, task_id: row.task_id, condition: row.condition, repetition: row.repetition, outcome_score: row.score, control_evidence: row.controlEvidence, treatment_result: row.treatmentResult, treatment_not_established: row.treatmentNotEstablished })), summary: { metrics: result.metrics, intervention: result.intervention, thesis: result.thesis } };
+  const evidence = { schema: "repo-harness-bdd3-ea1-evidence.ea1", freeze_id: run.freeze_id, source_commit: run.source_commit, manifest_sha256: run.manifest_sha256, model_profile: run.model_profile, packet_count: rows.length, outcome_score_count: rows.length * 2, adjudication_count: adjudicationCount, control_evidence_score_count: controlEvidenceCount, treatment_evidence_result_count: treatmentEvidenceCount, rows: rows.map((row) => ({ packet_id: row.packet_id, task_id: row.task_id, condition: row.condition, repetition: row.repetition, outcome_score: row.score, control_evidence: row.controlEvidence, treatment_result: row.treatmentResult, treatment_not_established: row.treatmentNotEstablished })), summary: { metrics: result.metrics, intervention: result.intervention, thesis: result.thesis } };
   const evidencePath = resolve(evaluation.repoRoot, evidenceRelativePath), reportPath = resolve(evaluation.repoRoot, reportRelativePath);
   if (!evidencePath.startsWith(`${evaluation.repoRoot}${sep}`) || !reportPath.startsWith(`${evaluation.repoRoot}${sep}`)) fail("EA1 projection path escapes repo");
   writeJson(evidencePath, evidence);
@@ -817,9 +816,10 @@ export function projectEa1Evidence(evaluation: ValidatedEa1Evaluation, runRelati
 
 export function verifyEa1EvidenceProjection(evaluation: ValidatedEa1Evaluation, evidenceRelativePath: string): { intervention: string; thesis: string } {
   const raw = readJson(authorityPath(evaluation.repoRoot, evidenceRelativePath, "EA1 evidence")); assertRecord(raw, "EA1 evidence");
-  assertExactKeys(raw, ["schema", "freeze_id", "source_commit", "manifest_sha256", "packet_count", "outcome_score_count", "adjudication_count", "control_evidence_score_count", "treatment_evidence_result_count", "rows", "summary"], "EA1 evidence");
+  assertExactKeys(raw, ["schema", "freeze_id", "source_commit", "manifest_sha256", "model_profile", "packet_count", "outcome_score_count", "adjudication_count", "control_evidence_score_count", "treatment_evidence_result_count", "rows", "summary"], "EA1 evidence");
   if (raw.schema !== "repo-harness-bdd3-ea1-evidence.ea1" || !Array.isArray(raw.rows) || !isRecord(raw.summary)) fail("EA1 evidence identity mismatch");
-  if (raw.freeze_id !== evaluation.manifest.experiment.freeze_id || raw.manifest_sha256 !== evaluation.manifest.experiment.score_manifest_sha256) fail("EA1 evidence/manifest authority mismatch");
+  assertRecord(raw.model_profile, "EA1 evidence.model_profile"); assertExactKeys(raw.model_profile, ["model", "expected_version"], "EA1 evidence.model_profile"); assertString(raw.model_profile.model, "EA1 evidence.model_profile.model"); assertString(raw.model_profile.expected_version, "EA1 evidence.model_profile.expected_version");
+  if (raw.freeze_id !== evaluation.manifest.experiment.freeze_id || raw.manifest_sha256 !== sha256File(evaluation.manifestPath)) fail("EA1 evidence/manifest authority mismatch");
   const planned = new Map(planEa1Packets(evaluation).map((item) => [item.packet_id, item])); const seen = new Set<string>();
   const rows = raw.rows.map((item, index): Ea1EffectiveRow => {
     const label = `evidence.rows[${index}]`; assertRecord(item, label);

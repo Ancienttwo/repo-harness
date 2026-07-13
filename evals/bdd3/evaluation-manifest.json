@@ -2,7 +2,7 @@
   "schema": "repo-harness-bdd3-evaluation.ea1",
   "runner": {
     "path": "scripts/run-bdd2-evals.ts",
-    "sha256": "d6e856e47954fd1106e5f6c424c9114cdeef3cae90739ad044de89aa2cacf8e4"
+    "sha256": "b5f76e619a05231935e247bd64870c6bd99ff6449c642baef7123a22b8df0392"
   },
   "output_root": ".ai/harness/runs/bdd3",
   "experiment": {
@@ -214,8 +214,7 @@
         "adjudicator": "ea1-fresh-score-adjudicator",
         "control_evidence": "ea1-control-evidence-reviewer"
       }
-    },
-    "score_manifest_sha256": "fef553aa2992e12d8eb83368524735c0972777324b701aa427b4881dc473426c"
+    }
   },
   "model_profile": {
     "command": "/Users/kito/.local/bin/codex",
