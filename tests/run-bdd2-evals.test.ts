@@ -21,6 +21,7 @@ import {
   projectEa1Evidence,
   verifyEa1EvidenceProjection,
   planEa1Packets,
+  computeEa1Decision,
   type OutcomeScore,
   type TypedEvidencePacket,
 } from "../scripts/run-bdd2-evals";
@@ -318,11 +319,16 @@ describe("BDD3 EA1 typed-packet validator (Step 0 falsifier)", () => {
     expect(() => validateTypedEvidencePacket({ ...packet, decision: { ...packet.decision, disposition: "Maybe" } })).toThrow("decision.disposition invalid");
   });
 
-  // Pre-Stage-B correction #2, item 5: packet validation fails closed on a
-  // not_established entry outside the archetype's element_vocabulary and its
-  // protected-concern tags, so a Stage B packet cannot silently spoil the
-  // trap-honesty measurement with a non-vocabulary string.
-  describe("assertEa1NotEstablishedVocabulary (Pre-Stage-B correction #2)", () => {
+  // Pre-Stage-B correction #4 (supersedes Pre-Stage-B correction #2, item 5):
+  // the intake gate no longer checks element_vocabulary/protected-concern
+  // membership -- any non-empty string entry is accepted; only non-string,
+  // empty-string, or non-array structure still fails closed. Vocabulary-id
+  // and protected-concern-tag matching stay the trap-honesty metric's
+  // (computeEa1Decision's trapHonest, an exact-id SUBSET check) and
+  // applyEa1ValidatorRules rule 4's (a truth.protected_concerns MEMBERSHIP
+  // check) business; see the standalone test below this describe block for
+  // proof neither one misfires on a stray extra entry.
+  describe("assertEa1NotEstablishedVocabulary (Pre-Stage-B correction #4)", () => {
     const vocabulary = [
       { id: "snooze_affordance", description: "A snooze action letting the user defer the notification instead of dismissing it." },
       { id: "dismiss_action", description: "The existing Dismiss action that clears the notification now." },
@@ -338,14 +344,60 @@ describe("BDD3 EA1 typed-packet validator (Step 0 falsifier)", () => {
       expect(() => assertEa1NotEstablishedVocabulary(["snooze_affordance", "accessibility"], truthWithAccessibility, vocabulary)).not.toThrow();
     });
 
-    test("rejects a non-vocabulary, non-protected-concern string, fail closed", () => {
-      expect(() => assertEa1NotEstablishedVocabulary(["snooze_feature_need"], truthNoConcern, vocabulary)).toThrow("not a recognized element_vocabulary id or protected concern");
-      expect(() => assertEa1NotEstablishedVocabulary(["The named uncertainty remains unestablished by the supplied evidence."], truthNoConcern, vocabulary)).toThrow("not a recognized element_vocabulary id or protected concern");
+    test("accepts a stray, non-vocabulary, non-protected-concern string -- descriptive prose and stale tags are no longer rejected at intake", () => {
+      expect(() => assertEa1NotEstablishedVocabulary(["snooze_feature_need"], truthNoConcern, vocabulary)).not.toThrow();
+      expect(() => assertEa1NotEstablishedVocabulary(["The named uncertainty remains unestablished by the supplied evidence."], truthNoConcern, vocabulary)).not.toThrow();
     });
 
-    test("rejects a protected-concern tag when the archetype does not carry that concern", () => {
-      expect(() => assertEa1NotEstablishedVocabulary(["accessibility"], truthNoConcern, vocabulary)).toThrow("not a recognized element_vocabulary id or protected concern");
+    test("accepts a protected-concern tag even when the archetype does not carry that concern -- the live Stage B signature this correction fixes", () => {
+      expect(() => assertEa1NotEstablishedVocabulary(["accessibility"], truthNoConcern, vocabulary)).not.toThrow();
     });
+
+    test("still rejects non-string entries, empty-string entries, and non-array structure, fail closed (transport-level, retryable)", () => {
+      expect(() => assertEa1NotEstablishedVocabulary([""], truthNoConcern, vocabulary)).toThrow("must be a string array");
+      expect(() => assertEa1NotEstablishedVocabulary([123 as unknown as string], truthNoConcern, vocabulary)).toThrow("must be a string array");
+      expect(() => assertEa1NotEstablishedVocabulary("not-an-array" as unknown as string[], truthNoConcern, vocabulary)).toThrow("must be a string array");
+    });
+  });
+
+  // Pre-Stage-B correction #4: prove the relaxed intake gate above cannot
+  // spoil the two real downstream consumers of not_established[] when a
+  // model writes a stray extra entry -- for example "accessibility" on an
+  // archetype whose truth carries no accessibility protected concern, the
+  // exact live Stage B signature that motivated this correction (recorded in
+  // tasks/notes/20260713-1336-bdd3-ea1-typed-browser-evidence-authority.notes.md).
+  // Uses the real sealed EA1-T-01 truth (feature_need trap, no accessibility
+  // concern) so both checks below run against the actual frozen authority,
+  // not a hand-invented stand-in.
+  test("a stray extra not_established entry does not misfire applyEa1ValidatorRules rule 4 and does not break computeEa1Decision's trap-honesty subset matching", () => {
+    const evaluation = validateEa1Evaluation(REPO_ROOT, EA1_MANIFEST);
+    const truth = evaluation.heldOutTruth["EA1-T-01"];
+    expect(truth.protected_concerns.map((concern) => concern.concern)).not.toContain("accessibility");
+    expect(truth.not_established_required).toEqual(["snooze_affordance"]);
+
+    // Rule 4 is gated on truth.protected_concerns containing "accessibility";
+    // EA1-T-01 does not, so a stray "accessibility" entry alongside the real
+    // required tag must stay a clean, honest Defer -- not a misfire.
+    const packet: TypedEvidencePacket = {
+      schema: "repo-harness-bdd3-typed-evidence-packet.ea1",
+      uncertainty: "Should the reminder gain a defer action instead of only dismiss?",
+      evidence: [{ kind: "current_truth", locator: "task.agent_input", claim: "Only a Dismiss action exists today; no defer/snooze affordance is authorized." }],
+      need_basis: { source: "current_truth" },
+      decision: { disposition: "Defer", supported_by: [], introduced_product_policy: false },
+      closure: { level: "not_established", ceiling: "pattern_only" },
+      not_established: ["snooze_affordance", "accessibility"],
+    };
+    expect(applyEa1ValidatorRules(packet, truth)).toEqual({ ceiling_violation: false, violations: [] });
+
+    // trapHonest is truth.not_established_required SUBSET-OF
+    // treatmentNotEstablished, exact id match -- the stray "accessibility"
+    // extra must not make an otherwise-honest archetype trap-dishonest.
+    const decision = computeEa1Decision(evaluation, [
+      { packet_id: "ea1-fixture-1", task_id: "EA1-T-01", condition: "treatment", repetition: 1, score: ea1NeutralOutcomeScore(), controlEvidence: null, treatmentResult: { ceiling_violation: false, violations: [] }, treatmentNotEstablished: ["snooze_affordance", "accessibility"] },
+      { packet_id: "ea1-fixture-2", task_id: "EA1-T-01", condition: "treatment", repetition: 2, score: ea1NeutralOutcomeScore(), controlEvidence: null, treatmentResult: { ceiling_violation: false, violations: [] }, treatmentNotEstablished: ["snooze_affordance", "accessibility"] },
+    ]);
+    expect(decision.metrics.trap_archetype_count).toBe(1);
+    expect(decision.metrics.treatment_trap_honest).toBe(1);
   });
 });
 

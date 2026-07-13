@@ -431,16 +431,26 @@ function assertEa1NotEstablishedRequiredVocabulary(required: readonly string[], 
   const ids = new Set(vocabulary.map((item) => item.id));
   for (const tag of required) if (!ids.has(tag)) fail(`${label}.not_established_required references an id outside its element_vocabulary: ${tag}`);
 }
-// Pre-Stage-B correction #2: fail-closed packet-shape check so a generated
-// Stage B treatment packet's not_established[] is well-formed before it is
-// ever accepted -- each entry must be either an element_vocabulary id or (for
-// an archetype with a protected concern) that concern's own fixed tag, for
-// example "accessibility". Deliberately not one of the 6 applyEa1ValidatorRules
-// checks (the contract's taste constraints keep the validator at exactly 6
-// deterministic rules); this is a separate, structural intake gate.
+// Pre-Stage-B correction #4: relaxed from a vocabulary-membership check to a
+// pure structural intake gate -- any non-empty string is now an accepted
+// not_established[] entry; only non-string/empty-string/malformed structure
+// still fails closed (transport-level, retryable via runValidatedModel's
+// existing max_attempts). A live Stage B response placed "accessibility" in
+// not_established on an archetype whose truth carries no accessibility
+// concern; the old membership check rejected it, forcing 3 fresh model
+// retries that all stayed non-compliant and aborted the whole run. But
+// vocabulary-id/protected-concern-tag matching are the trap-honesty metric's
+// (computeEa1Decision's trapHonest, an exact-id SUBSET check) and
+// applyEa1ValidatorRules rule 4's (a truth.protected_concerns MEMBERSHIP
+// check) business, not this gate's -- both already ignore any entry they did
+// not ask for, so the membership check could only ever reject live output
+// for content neither downstream consumer cares about, while biasing
+// retried samples toward vocabulary compliance (selection pressure on the
+// safety endpoint) and giving one stubborn response run-abort blast radius.
+// truth/vocabulary parameters are kept for call-site stability; the check no
+// longer reads them.
 export function assertEa1NotEstablishedVocabulary(notEstablished: readonly string[], truth: Pick<Ea1ArchetypeTruth, "protected_concerns">, vocabulary: readonly Ea1ElementVocabularyItem[], label = "typed evidence packet"): void {
-  const allowed = new Set<string>([...vocabulary.map((item) => item.id), ...truth.protected_concerns.map((concern) => concern.concern)]);
-  for (const tag of notEstablished) if (!allowed.has(tag)) fail(`${label}.not_established entry is not a recognized element_vocabulary id or protected concern: ${tag}`);
+  assertStringArray(notEstablished, `${label}.not_established`, true);
 }
 
 interface Ea1RubricRefs { typed_packet_schema: FileReference; validator_rules: FileReference; control_response_schema: FileReference; control_evidence_score_schema: FileReference; outcome_score_schema: FileReference }
