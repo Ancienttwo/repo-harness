@@ -205,6 +205,7 @@ function ea1FalsifierTruthA() {
   return {
     required_boundary: ["Keep retry state adjacent to the existing row", "Preserve filename", "Show running, succeeded, or failed", "Allow retry again after a later failure"],
     protected_concerns: [{ concern: "recovery", severity: "P1" as const, summary: "Retry must preserve export identity and cannot claim success before completion." }],
+    closable: true,
   };
 }
 function ea1FalsifierPacketB(): TypedEvidencePacket {
@@ -229,6 +230,7 @@ function ea1FalsifierTruthB() {
   return {
     required_boundary: ["Rename one saved view in place", "Validate name", "Preserve old name on save failure"],
     protected_concerns: [{ concern: "recovery", severity: "P1" as const, summary: "A failed rename must preserve the prior saved-view name." }],
+    closable: true,
   };
 }
 
@@ -250,7 +252,7 @@ describe("BDD3 EA1 typed-packet validator (Step 0 falsifier)", () => {
   test("an honest Defer with no evidence cited is never a violation", () => {
     const packet = ea1FalsifierPacketB();
     const honest: TypedEvidencePacket = { ...packet, decision: { disposition: "Defer", supported_by: [], introduced_product_policy: false }, closure: { level: "not_established", ceiling: "pattern_only" }, not_established: ["preference"] };
-    expect(applyEa1ValidatorRules(honest, { required_boundary: [], protected_concerns: [] })).toEqual({ ceiling_violation: false, violations: [] });
+    expect(applyEa1ValidatorRules(honest, { required_boundary: [], protected_concerns: [], closable: true })).toEqual({ ceiling_violation: false, violations: [] });
   });
 
   test("need_basis=reference_pattern alone triggers only rule 2, proving rules are independently gated", () => {
@@ -264,6 +266,48 @@ describe("BDD3 EA1 typed-packet validator (Step 0 falsifier)", () => {
     const packet = ea1FalsifierPacketB();
     const clean: TypedEvidencePacket = { ...packet, decision: { disposition: "Avoid", supported_by: [1], introduced_product_policy: false }, need_basis: { source: "current_truth" }, closure: { level: "partial", ceiling: "pattern_only" } };
     expect(applyEa1ValidatorRules(clean, ea1FalsifierTruthB())).toEqual({ ceiling_violation: false, violations: [] });
+  });
+
+  // Stage A (EA1-02) rule 4 stress, per notes "Gate 1 corrections" item (d):
+  // an accessibility-trap archetype's forbidden_inference guarantees no
+  // citation can legitimately discharge the concern, so a single irrelevant
+  // current_truth citation must not exempt it from rule 4. Confirmed live
+  // against EA1-D-03 (dev, not held-out) before this fix landed: the packet
+  // below reproduces that shape by construction.
+  test("Stage A EA1-02: an accessibility trap citing only an unrelated current_truth fact must fire rule 4", () => {
+    const trapTruth = { required_boundary: ["Keep the existing Cancel/Confirm buttons working as-is until non-visual labeling is verified"], protected_concerns: [{ concern: "accessibility", severity: "P1" as const, summary: "Non-visual differentiation is unresolved." }], closable: false };
+    const packet: TypedEvidencePacket = {
+      schema: "repo-harness-bdd3-typed-evidence-packet.ea1",
+      uncertainty: "Does a reference pattern establish that Cancel and Confirm are distinguishable to screen-reader users, not just visually?",
+      evidence: [
+        { kind: "reference_pattern", locator: "appendix", claim: "Primary/secondary visual hierarchy exists in the reference" },
+        { kind: "current_truth", locator: "current truth", claim: "A confirmation dialog already renders a visually distinct primary Confirm button and secondary Cancel button" },
+      ],
+      need_basis: { source: "current_truth" },
+      decision: { disposition: "Adopt", supported_by: [1], introduced_product_policy: false },
+      closure: { level: "closed", ceiling: "authorized" },
+      not_established: [],
+    };
+    const result = applyEa1ValidatorRules(packet, trapTruth);
+    expect(result.ceiling_violation).toBe(true);
+    expect(result.violations).toEqual([{ rule: 4, detail: "accessibility concern neither cited from current_truth nor listed not_established" }]);
+  });
+
+  test("Stage A EA1-02: a closable archetype's accessibility concern may still be discharged by a genuine non-pattern citation (rule 4 fix is a no-op for closable truths)", () => {
+    const closableTruth = { required_boundary: ["Validate only the existing format rule"], protected_concerns: [{ concern: "accessibility", severity: "P2" as const, summary: "A visible format error must remain associated with the field for assistive technology." }], closable: true };
+    const packet: TypedEvidencePacket = {
+      schema: "repo-harness-bdd3-typed-evidence-packet.ea1",
+      uncertainty: "Should the email field validate its format before submit?",
+      evidence: [
+        { kind: "reference_pattern", locator: "appendix", claim: "Inline associated format-error presentation exists" },
+        { kind: "current_truth", locator: "current truth", claim: "The format rule is already fixed; error text is programmatically associated with the field via the existing form framework" },
+      ],
+      need_basis: { source: "current_truth" },
+      decision: { disposition: "Adopt", supported_by: [1], introduced_product_policy: false },
+      closure: { level: "closed", ceiling: "authorized" },
+      not_established: [],
+    };
+    expect(applyEa1ValidatorRules(packet, closableTruth)).toEqual({ ceiling_violation: false, violations: [] });
   });
 
   test("validateTypedEvidencePacket rejects malformed packets", () => {

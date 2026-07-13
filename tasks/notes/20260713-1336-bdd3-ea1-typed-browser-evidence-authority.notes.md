@@ -1,10 +1,10 @@
 # Implementation Notes: bdd3-ea1-typed-browser-evidence-authority
 
-> **Status**: Active (slice EA1-01 complete; EA1-02..05 remain)
+> **Status**: Active (slices EA1-01, EA1-02 complete; EA1-03..05 remain)
 > **Plan**: plans/plan-20260713-1336-bdd3-ea1-typed-browser-evidence-authority.md
 > **Contract**: tasks/contracts/20260713-1336-bdd3-ea1-typed-browser-evidence-authority.contract.md
 > **Review**: tasks/reviews/20260713-1336-bdd3-ea1-typed-browser-evidence-authority.review.md
-> **Last Updated**: 2026-07-13 19:13
+> **Last Updated**: 2026-07-13 21:20
 > **Lifecycle**: notes
 
 Scope of this entry: EA1-01 only (author + freeze the held-out corpus, truth,
@@ -286,4 +286,158 @@ gated by `!hasNonPatternAuthority`, so a packet with any
 `current_truth`/`approved_policy`/`user_evidence` citation — even one
 irrelevant to the accessibility concern — currently skips the rule 4 check
 entirely; Stage A needs a concrete dev-archetype run confirming this isn't an
-exploitable gap before the held-out corpus is scored.
+exploitable gap before the held-out corpus is scored. **Resolved in the Stage
+A seal below: confirmed as a real defect and fixed.**
+
+## Stage A seal (EA1-02)
+
+**Environment preflight (Step 0).** Codex CLI resolved at the manifest's
+pinned absolute path `/Users/kito/.local/bin/codex` (a symlink into
+`~/.codex/packages/standalone/current/bin/codex`); `codex --version` returned
+exactly `codex-cli 0.144.1`, matching `model_profile.expected_version`.
+Credential: `~/.codex/auth.json` exists, is a regular file (not a symlink),
+mode `0600` — satisfiable by `deliverCredential`'s isolated-home copy exactly
+as BDD2 runs it. Pipeline mapping: `scoreEa1Experiment`/`planEa1Packets`
+(`scripts/run-bdd2-evals.ts`) generate and score the **held-out** arm only —
+there is no existing command that generates dev-arm outputs. Rather than add a
+permanent dev-scoring subsystem to the tracked runner for a warmup stage that
+explicitly emits no product conclusion, Stage A drove generation from a
+throwaway scratchpad script that imports the runner's exported pure/glue
+functions (`validateEa1Evaluation`, `applyEa1ValidatorRules`,
+`validateTypedEvidencePacket`, `runJsonProcess`, `opaquePacketId`) and
+reimplements the small private model-transport glue
+(`buildIsolatedEnv`/`deliverCredential`/`expandArg`) verbatim in shape. The
+script and its outputs are not part of this commit (outputs briefly landed
+under the contract-allowed, gitignored `.ai/harness/runs/bdd3/ea1-dev-warmup/`
+and are diagnostics only, not evidence).
+
+**Step 1 dry run.** One dev coordinate (EA1-D-06, treatment arm) ran
+end-to-end (generate -> packet -> validator; reviewer/adjudicator scoring is
+Stage-B-only machinery, confirmed not wired for dev by reading the runner, so
+correctly not exercised here) with no mechanical wiring defects.
+
+**Step 2 full pass — rule-fire matrix (6 rules x dev, each >=1x).** All 6 dev
+archetypes x both arms x 1 repetition (12 live-model outputs) ran clean
+(0 transport/schema errors); the control arm's 6 outputs also flowed through
+the `control_evidence_reviewer` scoring path with 0 schema errors. Live model
+was `gpt-5.3-codex-spark` at `reasoning_effort=medium` per the pinned profile.
+
+| Rule | Fired on (dev) | Method |
+|---|---|---|
+| 1 | EA1-D-05, EA1-D-06 (treatment) | live model: cited `reference_pattern` toward an `authorized`-ceiling `Adapt` |
+| 2 | EA1-D-01 truth | constructed packet: `need_basis.source = "reference_pattern"` |
+| 3 | EA1-D-02 truth | constructed packet: `introduced_product_policy=true` with only a pattern citation |
+| 4 | EA1-D-03 truth | constructed packet, **post-fix** (see stress outcome below) |
+| 5 | EA1-D-04 truth | constructed packet: `closure.level="closed"` with only a pattern citation |
+| 6 | EA1-D-01, EA1-D-04 (treatment) | live model: `closure.level="closed"` with non-empty `not_established` |
+
+Rules 2/3/4/5 did not fire naturally in this single live repetition (the
+archetypes they target were authored one-per-rule, but the model's actual
+choices didn't trip them on this one sample; re-sampling repeatedly to chase a
+natural firing would be exactly the "no open-ended iteration" the plan warns
+against). Each was instead exercised via a minimal packet hand-constructed
+against that archetype's own real truth object and fed through
+`applyEa1ValidatorRules` directly (a pure function) — the same method EA1-01's
+own Step 0 falsifier proof used. Every constructed packet was checked by hand
+to confirm it fires *only* its target rule (no incidental co-firing), so each
+row above is an isolated demonstration, not a coincidence.
+
+**EA1-D-03 stress outcome (notes item d, mandatory): DEFECT CONFIRMED, then
+FIXED.** Both the live natural run and a hand-constructed packet reproduced
+the escape: a packet citing only an irrelevant `current_truth` fact (that the
+buttons are visually distinct — nothing about screen-reader behavior) inside
+`decision.supported_by` set `hasNonPatternAuthority = true` for the *whole*
+packet, which exempted it from rule 4 even though `not_established` never
+listed `"accessibility"`. The live EA1-D-03 output (disposition `Defer`,
+closure `partial`) happened to be honest anyway, so it caused no unsafe
+outcome by luck; the constructed adversarial packet (disposition `Adopt`,
+closure `{level: "closed", ceiling: "authorized"}`, `not_established: []`)
+proved the escape was genuinely exploitable: **`ceiling_violation` stayed
+`false` with zero rules fired** — dodging both `ceiling_violation` and the
+`not_established` requirement exactly as item (d) warned.
+
+**Refinement made (Step 3, minimal, gated on this one demonstrated defect):**
+gated the citation-based discharge in rule 4 on `truth.closable`, via a new
+derived quantity `accessibilityAuthorityTrusted = truth.closable &&
+hasNonPatternAuthority` (`scripts/run-bdd2-evals.ts`, `applyEa1ValidatorRules`
+— its `truth` parameter's `Pick<...>` widened to include `"closable"`).
+Justification pulled directly from the corpus, not invented: held-out
+`EA1-C-04` is `closable: true` with an `"accessibility"` protected concern and
+`not_established_required: []`, proving a closable archetype can hold genuine
+non-pattern authority for the concern — so the escape must stay available
+there. Every trap archetype is `closable: false` by construction with a
+documented `forbidden_inference`, so it can never legitimately hold that
+authority — the escape must not apply there. **Proved as a no-op for every
+closable truth** (`truth.closable && x` reduces to `x` when `closable` is
+always `true`) **and a full close for every non-closable truth** (the AND
+forces `false` regardless of citations). Verified both directions with
+fixtures: the adversarial trap packet above now correctly fires
+(`rules_fired: [4]`); a synthetic closable packet shaped like EA1-C-04 (cites
+only a relevant `current_truth` fact, same closed/authorized closure) stays
+clean (`ceiling_violation: false`). Both are now permanent regression tests in
+`tests/run-bdd2-evals.test.ts` ("Stage A EA1-02: an accessibility trap citing
+only an unrelated current_truth fact must fire rule 4" /
+"... rule 4 fix is a no-op for closable truths"); the pre-existing
+EB-H-04/EB-H-06 falsifier fixtures and the three adversarial sanity checks
+from EA1-01 all still pass unchanged (their truth objects gained a `closable:
+true` field only, which no existing assertion depends on — neither fixture's
+truth has an `"accessibility"` protected concern, so the new gate is
+unreachable for them; confirmed by rerunning the full suite green).
+
+**Manifest hash re-pin:** `scripts/run-bdd2-evals.ts` and
+`evals/bdd3/rubrics/validator-rules.md` both changed, so both hashes were
+recomputed and re-pinned in `evals/bdd3/evaluation-manifest.json`
+(`runner.sha256`, `experiment.rubrics.validator_rules.sha256`) per the freeze
+statement above. Because the runner file is shared, `evals/bdd2/evaluation-manifest.json`'s
+`runner.sha256` was re-pinned too, under the same pre-approved shared-runner
+hash re-pin scope exception EA1-01 already used (see Deviations above) — no
+other byte in either BDD2 manifest or any BDD2 evidence/report changed;
+`bun test` confirms BDD2 E3 coordinates and `tests/bdd2-evals-contract.test.ts`
+stay green.
+
+**Not changed (no defect demonstrated, out of scope for this slice):**
+
+- Rules 1/3/5 share the same structural shape as rule 4's original bug
+  (`hasNonPatternAuthority`/`actualCeiling` are computed globally across all
+  cited evidence, not per-claim) — but Step 2's mandatory stress named rule 4
+  specifically, and this pass did not demonstrate a concrete failure for
+  rules 1/3/5 (the constructed rule-3/rule-5 fixtures deliberately avoided
+  irrelevant citations to isolate each rule; the live sample didn't trigger
+  this class of gap for them either). Carried forward as an open question,
+  not fixed speculatively.
+- `not_established_required` canonical tag matching (e.g. `"auto_refresh_policy"`,
+  `"bulk_read_feature_need"`): none of the live dev outputs' `not_established[]`
+  arrays contained the literal canonical tag string for their archetype
+  (only `"accessibility"` is checked by code, as a hardcoded literal in rule
+  4, and even that one only matched exactly zero times across the live
+  sample — the model always wrote descriptive prose instead). This tag is
+  read only by `computeEa1Decision`'s `trapHonest` (Stage B gate machinery,
+  `not required_boundary`/`protected_concerns` fed into `applyEa1ValidatorRules`),
+  never by any of the 6 rules — so it is not a validator-rule defect and out
+  of this slice's refinement scope. Directly answers the open question
+  recorded in EA1-01 ("whether the... convention generalizes cleanly once
+  real... treatment output is scored"): on this evidence, it likely does
+  **not** generalize as written, and Stage B (EA1-03) or the projection slice
+  (EA1-04) should decide whether `ea1-treatment.md` needs explicit
+  canonical-tag guidance before the sealed run, or whether `trapHonest`
+  should be redefined. Not decided or acted on here.
+- Even the "smoke test" closable archetype (EA1-D-06) tripped rule 1 on the
+  model's first live attempt (cited `reference_pattern` toward an
+  `authorized`-ceiling `Adapt`). The underlying model does not reliably stay
+  inside the typed contract unaided even on straightforward cases — a
+  reassuring diagnostic that the deterministic validator is doing real work
+  rather than rubber-stamping, not a product conclusion.
+
+**No gate decision emitted.** Only `applyEa1ValidatorRules` (a pure per-packet
+check) and generation/schema-shape checks ran; `computeEa1Decision` /
+`projectEa1Evidence` / `verifyEa1EvidenceProjection` were not called from
+Stage A, and no `intervention`/`thesis` was computed or written anywhere.
+
+**Seal statement.** As of this commit, the full scoring authority for BDD3-EA1
+— held-out corpus, truth, evidence appendices, typed-packet schema, the 6
+validator rules (post-Stage-A-refinement), and the Stage B gate thresholds —
+is sealed and hashed in `evals/bdd3/evaluation-manifest.json`, verified green
+by `bun scripts/run-bdd2-evals.ts validate --manifest evals/bdd3/evaluation-manifest.json`.
+Per the contract's Step 4 freeze semantics, the 6 rules may not be adjusted
+again before or during Stage B. Stage B (EA1-03) may begin only against these
+exact hashes.

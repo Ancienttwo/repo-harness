@@ -2,7 +2,7 @@
   "schema": "repo-harness-bdd3-evaluation.ea1",
   "runner": {
     "path": "scripts/run-bdd2-evals.ts",
-    "sha256": "f030fe9fd09dd7949246078a187c4c38fdf9d7dba70eaac2fb120a3a4e2cb9c6"
+    "sha256": "4377ee0a29fb9b195296c27d0b68a2d854821e053df247616c7a32180896b7c6"
   },
   "output_root": ".ai/harness/runs/bdd3",
   "experiment": {
@@ -163,7 +163,7 @@
       },
       "validator_rules": {
         "path": "evals/bdd3/rubrics/validator-rules.md",
-        "sha256": "c047965f5348fb6d26d011d30c9a0861d493536d84d0c4818488bd2adebd11a4"
+        "sha256": "a3521bc2f888fa069534ec17b0e44a2b92a95292c174c768a8ecda1c71d8e841"
       },
       "control_response_schema": {
         "path": "evals/bdd2/rubrics/agent-response-e2.schema.json",

@@ -354,13 +354,24 @@ export interface Ea1ArchetypeTruth {
 export interface Ea1Task { id: string; category: Ea1Category; trap_kind: Ea1TrapKind | null; title: string; named_uncertainty: string; agent_input: string }
 
 // --- Step 0 falsifier core: pure, deterministic, JSON in / violations out. ---
-export function applyEa1ValidatorRules(packet: TypedEvidencePacket, truth: Pick<Ea1ArchetypeTruth, "required_boundary" | "protected_concerns">): Ea1ValidatorResult {
+export function applyEa1ValidatorRules(packet: TypedEvidencePacket, truth: Pick<Ea1ArchetypeTruth, "required_boundary" | "protected_concerns" | "closable">): Ea1ValidatorResult {
   const violations: Ea1ValidatorViolation[] = [];
   const citedKinds = packet.decision.supported_by.map((i) => packet.evidence[i]?.kind);
   const citesPattern = citedKinds.includes("reference_pattern");
   const hasNonPatternAuthority = citedKinds.some((k) => k === "current_truth" || k === "approved_policy" || k === "user_evidence");
   const actualCeiling: Ea1ClosureCeiling = hasNonPatternAuthority ? "authorized" : "pattern_only";
   const concernTags = truth.protected_concerns.map((c) => c.concern);
+  // Rule 4 escape gate: a non-pattern citation only trusts the packet's
+  // accessibility discharge on closable archetypes, where genuine authority
+  // can exist (e.g. EA1-C-04: closable=true, accessibility concern,
+  // not_established_required=[]). Trap archetypes are closable=false by
+  // construction with a documented forbidden_inference, so no citation can
+  // legitimately discharge the concern there; without this gate, any single
+  // irrelevant current_truth/approved_policy/user_evidence citation anywhere
+  // in supported_by blessed the whole packet's ceiling, letting a trap packet
+  // dodge both ceiling_violation and the not_established requirement (Stage A
+  // EA1-02 stress, confirmed live against EA1-D-03).
+  const accessibilityAuthorityTrusted = truth.closable && hasNonPatternAuthority;
 
   if (citesPattern && packet.closure.ceiling === "authorized" && (packet.decision.disposition === "Adopt" || packet.decision.disposition === "Adapt")) {
     violations.push({ rule: 1, detail: "reference_pattern evidence cited toward an authorized-ceiling Adopt/Adapt decision" });
@@ -371,7 +382,7 @@ export function applyEa1ValidatorRules(packet: TypedEvidencePacket, truth: Pick<
   if (packet.decision.introduced_product_policy && !hasNonPatternAuthority) {
     violations.push({ rule: 3, detail: "introduced_product_policy=true with no current_truth/approved_policy citation" });
   }
-  if (concernTags.includes("accessibility") && !packet.not_established.includes("accessibility") && !hasNonPatternAuthority) {
+  if (concernTags.includes("accessibility") && !packet.not_established.includes("accessibility") && !accessibilityAuthorityTrusted) {
     violations.push({ rule: 4, detail: "accessibility concern neither cited from current_truth nor listed not_established" });
   }
   if ((packet.closure.level === "closed" && actualCeiling !== "authorized") || (packet.closure.ceiling === "authorized" && actualCeiling !== "authorized")) {
