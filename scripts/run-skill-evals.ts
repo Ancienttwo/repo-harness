@@ -129,8 +129,6 @@ export interface RunMetadata {
   outputTokens: number | null;
   totalCostUsd: number | null;
   turnCount: number | null;
-  modelCallCount: number | null;
-  subagentCallCount: number | null;
   artifactCount: number | null;
   model: string | null;
   sessionId: string | null;
@@ -1068,8 +1066,6 @@ function buildRunMetadata(params: {
     outputTokens: params.structuredEvidence.outputTokens,
     totalCostUsd: params.structuredEvidence.totalCostUsd,
     turnCount: params.structuredEvidence.turnCount,
-    modelCallCount: null,
-    subagentCallCount: null,
     artifactCount: null,
     model: params.structuredEvidence.model,
     sessionId: params.structuredEvidence.sessionId,
@@ -1275,7 +1271,7 @@ export function buildBenchmarkSummary(report: IterationReport, repoRoot: string)
         lines.push(`- Graders: ${record.graderStatus} (${record.graderSummary.total - record.graderSummary.failed}/${record.graderSummary.total} passed)`);
         lines.push(`- Usage authority: ${record.usageAuthority}${record.usageUnavailableReason ? ` (${record.usageUnavailableReason})` : ""}`);
         lines.push(`- Provider usage: input=${formatNullableNumber(record.inputTokens)}, cached_input=${formatNullableNumber(record.cachedInputTokens)}, cache_creation_input=${formatNullableNumber(record.cacheCreationInputTokens)}, output=${formatNullableNumber(record.outputTokens)}, cost_usd=${formatNullableNumber(record.totalCostUsd)}, turns=${formatNullableNumber(record.turnCount)}`);
-        lines.push(`- Unavailable counters: model_calls=${formatNullableNumber(record.modelCallCount)}, subagent_calls=${formatNullableNumber(record.subagentCallCount)}, workflow_artifacts=${formatNullableNumber(record.artifactCount)}`);
+        lines.push(`- Unavailable counters: workflow_artifacts=${formatNullableNumber(record.artifactCount)}`);
         lines.push(`- Final response excerpt: ${record.finalResponseExcerpt.length > 0 ? record.finalResponseExcerpt : "(empty)"}`);
         lines.push("- Expectations:");
         for (const expectation of record.expectations) {

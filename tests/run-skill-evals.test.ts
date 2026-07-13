@@ -595,8 +595,6 @@ describe("run-skill-evals execution", () => {
       expect(claudeWithSkill?.turnCount).toBe(2);
       expect(claudeWithSkill?.sessionId).toBe("claude-session");
       expect(claudeWithSkill?.changedFileCount).toBe(claudeWithSkill?.changedFiles.length);
-      expect(claudeWithSkill?.modelCallCount).toBeNull();
-      expect(claudeWithSkill?.subagentCallCount).toBeNull();
       expect(claudeWithSkill?.artifactCount).toBeNull();
       expect(readFileSync(claudeWithSkill!.stdoutPath, "utf-8")).toContain('"type":"result"');
       expect(readFileSync(claudeWithSkill!.finalResponsePath, "utf-8")).toContain(
