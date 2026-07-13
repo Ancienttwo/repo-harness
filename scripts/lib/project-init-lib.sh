@@ -1851,7 +1851,7 @@ pi_write_harness_policy() {
     "private_dir": "_ops",
     "tracked": ["deploy/README.md", "deploy/scripts/", "deploy/submissions/", "deploy/runbooks/", "deploy/release-checklists/", "deploy/sql/", "deploy/*.md", "deploy/env/.env.example"],
     "ignored": ["_ops/"],
-    "rule": "commit deployment runbooks, submission materials, release checklists, helper scripts, ordered SQL files, and env examples under deploy/; keep deploy SQL in deploy/sql/ with 4-digit ascending prefixes; keep keys, tokens, real env values, provider state, artifacts, logs, and scratch files in ignored _ops/ only"
+    "rule": "commit deployment runbooks, submission materials, release checklists, helper scripts, ordered SQL files, and env examples under deploy/; when operations.deploy_sql is absent, keep deploy SQL directly under deploy/sql/ with ordered4 names (4-digit ascending prefixes); when operations.deploy_sql is present, its roots, naming modes, and invariant_file are the sole alternate SQL-layout authority; keep keys, tokens, real env values, provider state, artifacts, logs, and scratch files in ignored _ops/ only"
   },
   "context": {
     "profile": "$(pi_context_profile)",

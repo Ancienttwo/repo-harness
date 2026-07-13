@@ -38,6 +38,9 @@ describe("create-project-dirs runtime smoke", () => {
       expect(existsSync(join(cwd, "deploy/runbooks/.gitkeep"))).toBe(true);
       expect(existsSync(join(cwd, "deploy/release-checklists/.gitkeep"))).toBe(true);
       expect(existsSync(join(cwd, "deploy/sql/.gitkeep"))).toBe(true);
+      const deployReadme = readFileSync(join(cwd, "deploy/README.md"), "utf-8");
+      expect(deployReadme).toContain("operations.deploy_sql");
+      expect(deployReadme).toContain("direct children of `deploy/sql/`");
       expect(existsSync(join(cwd, "tasks/contracts"))).toBe(true);
       expect(existsSync(join(cwd, "tasks/notes"))).toBe(true);
       expect(existsSync(join(cwd, ".claude/templates/contract.template.md"))).toBe(true);
@@ -360,6 +363,8 @@ describe("create-project-dirs runtime smoke", () => {
       expect(policy.operations.tracked).toContain("deploy/scripts/");
       expect(policy.operations.tracked).toContain("deploy/sql/");
       expect(policy.operations.ignored).toContain("_ops/");
+      expect(policy.operations.deploy_sql).toBeUndefined();
+      expect(policy.operations.rule).toContain("operations.deploy_sql");
       expect(policy.information_lifecycle.notes.dir).toBe("tasks/notes");
       expect(policy.information_lifecycle.evidence.snapshots_dir).toBe(".ai/harness/runs");
       expect(policy.information_lifecycle.external_knowledge.manifest_file).toBe(".ai/harness/brain-manifest.json");

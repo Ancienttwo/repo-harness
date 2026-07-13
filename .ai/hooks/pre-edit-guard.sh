@@ -76,7 +76,7 @@ fi
 if [[ "$FILE_PATH" == deploy/* ]]; then
   echo "[DeployAsset] Deployment operations asset detected: $FILE_PATH"
   echo "  deploy/ is trackable for runbooks, submission materials, release checklists, scripts, ordered SQL, and env examples."
-  echo "  Keep deployment SQL directly under deploy/sql/ with 4-digit ascending prefixes."
+  echo "  Follow operations.deploy_sql in .ai/harness/policy.json when configured; otherwise keep SQL directly under deploy/sql/ with 4-digit ascending prefixes."
 fi
 
 resolve_edit_workflow_profile() {

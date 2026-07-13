@@ -56,6 +56,7 @@ exit codes, `full_test_count`, `dry_run_ratio`, `grader_pass_rate`,
 
 Error paths:
 
+- `check-deploy-sql-order.sh` reads optional `.ai/harness/policy.json#operations.deploy_sql`; a valid override selects its roots, naming modes, and invariant file, while absence selects direct `deploy/sql/` children with `ordered4` names. Malformed or unsafe configured paths fail closed instead of falling back to the default layout.
 - `check-task-sync.sh` fails when substantive repo changes lack `tasks/` synchronization.
 - `check-task-workflow.sh --strict` fails for missing contract files, legacy docs, missing JSON runtime, broken deploy SQL order, or brain manifest drift.
 - Skill eval evidence is non-authoritative when it is missing or dry-run-heavy;

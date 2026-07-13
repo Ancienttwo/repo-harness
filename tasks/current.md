@@ -1,27 +1,27 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-13T15:55:12+0800 -->
+<!-- updated_at: 2026-07-13T19:55:35+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-07-13T15:55:12+0800
-> **Source Branch**: codex/remove-gstack-core
-> **Source Commit**: 86335563
+> **Status**: Active
+> **Updated At**: 2026-07-13T19:55:35+0800
+> **Source Branch**: main
+> **Source Commit**: d65e45b1
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: remove-gstack-core-closeout
+> **Reason**: merge-origin-main
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: ManualClearedWithActiveWork
+- Status: Active
 - Active Plan: (none)
 - Plan Status: (none)
 - Next Task: inspect active worktree marker(s)
-- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
+- Clear Note: (none)
 
 ## Mainline Snapshot Reading
 
@@ -31,8 +31,6 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- /private/tmp/repo-harness-pr67-deploy-sql-fix: plans/plan-20260713-1413-pr67-deploy-sql-policy-fix.md
-- /private/tmp/repo-harness-pr67-deploy-sql-fix: active-worktree owner -> /private/tmp/repo-harness-pr67-deploy-sql-fix
 - /Users/kito/Projects/repo-harness-worktrees/bdd2-eval-foundation: plans/plan-20260712-0450-bdd2-eval-foundation.md
 - /Users/kito/Projects/repo-harness-worktrees/bdd2-eval-foundation: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/bdd2-eval-foundation
 - /Users/kito/Projects/repo-harness-worktrees/bdd2-shape-experiment: plans/plan-20260712-0605-bdd2-e-02-run-experiment-s-shape-hypothesis.md
@@ -41,6 +39,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - /Users/kito/Projects/repo-harness-worktrees/harness-cost-baseline-slo: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/harness-cost-baseline-slo
 - /Users/kito/Projects/repo-harness-worktrees/upgrade-bun-1-3-14: plans/plan-20260712-1330-bun-1-3-14-runtime-upgrade.md
 - /Users/kito/Projects/repo-harness-worktrees/upgrade-bun-1-3-14: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/upgrade-bun-1-3-14
+- /Users/kito/Projects/repo-harness-wt-bdd3-ea1-typed-browser-evidence-authority: plans/plan-20260713-1336-bdd3-ea1-typed-browser-evidence-authority.md
+- /Users/kito/Projects/repo-harness-wt-bdd3-ea1-typed-browser-evidence-authority: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-bdd3-ea1-typed-browser-evidence-authority
 - /Users/kito/Projects/repo-harness-wt-codex-native-role-model-override: plans/plan-20260711-0219-codex-native-role-model-override.md
 - /Users/kito/Projects/repo-harness-wt-codex-native-role-model-override: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-codex-native-role-model-override
 - /Users/kito/Projects/repo-harness-wt-harness-kernel-optimization-phase2: plans/plan-20260713-1202-harness-kernel-optimization-phase2.md
@@ -64,14 +64,50 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Checks
 
-- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
+- status=(none), source=(none), exit_code=(none), file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: clean
+- Summary: 37 changed/untracked path(s)
 
 ```
-(none)
+M  .ai/harness/policy.json
+M  .ai/hooks/.projection.json
+M  .ai/hooks/post-edit-guard.sh
+M  .ai/hooks/pre-edit-guard.sh
+M  AGENTS.md
+M  CLAUDE.md
+M  assets/hooks/post-edit-guard.sh
+M  assets/hooks/pre-edit-guard.sh
+M  assets/partials-agents/02-operating-mode.partial.md
+M  assets/partials/04-project-structure.partial.md
+M  assets/skill-commands/repo-harness-deploy/SKILL.md
+M  assets/templates/helpers/check-deploy-sql-order.sh
+M  assets/templates/helpers/ensure-task-workflow.sh
+M  deploy/README.md
+M  docs/CHANGELOG.md
+M  docs/architecture/modules/verification/evals-checks.md
+M  docs/architecture/modules/workflow-engine/contract-assets.md
+A  plans/archive/plan-20260713-1413-pr67-deploy-sql-policy-fix.md
+M  scripts/check-deploy-sql-order.sh
+M  scripts/create-project-dirs.sh
+M  scripts/ensure-task-workflow.sh
+M  scripts/init-project.sh
+M  scripts/lib/project-init-lib.sh
+A  tasks/archive/contract-20260713-1849-pr67-deploy-sql-policy-fix.md
+A  tasks/archive/notes-20260713-1849-pr67-deploy-sql-policy-fix.md
+A  tasks/archive/review-20260713-1849-pr67-deploy-sql-policy-fix.md
+A  tasks/archive/todo-20260713-1849-pr67-deploy-sql-policy-fix.md
+UU tasks/current.md
+M  tests/action-command-skills.test.ts
+UU tests/bootstrap-files.test.ts
+M  tests/create-project-dirs.runtime.test.ts
+M  tests/helper-scripts.test.ts
+M  tests/hook-runtime.test.ts
+?? assets/agents/
+?? docs/architecture/requests/root.md
+?? docs/architecture/requests/workflow-engine-contract-assets.md
+?? docs/architecture/requests/workflow-engine-inspection-migration.md
 ```
 
 ## Source Artifacts

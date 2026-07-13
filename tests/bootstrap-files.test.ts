@@ -106,9 +106,13 @@ describe("Bootstrap Script Contracts", () => {
     expect(claude).toContain("agentic-development-flow.md");
     expect(claude).toContain("external-tooling.md");
     expect(claude).toContain("geju");
+    expect(claude).not.toContain("gstack");
+    expect(claude).toContain("operations.deploy_sql");
     expect(agents).toContain("tasks/todos.md");
     expect(agents).toContain("repo-harness run check-task-workflow --strict");
     expect(agents).toContain("check-agent-tooling.sh --host both --check-updates");
+    expect(agents).toContain("operations.deploy_sql");
+    expect(agents).toContain("operations.deploy_sql");
   });
 
   test("repo package should expose workflow verification scripts", () => {

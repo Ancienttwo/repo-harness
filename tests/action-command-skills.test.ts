@@ -196,6 +196,8 @@ describe("repo-harness action command skills", () => {
     expect(deploy).toContain("check-deploy-sql-order.sh");
     expect(deploy).toContain("Does not publish or deploy");
     expect(deploy).toContain("_ops/");
+    expect(deploy).toContain("operations.deploy_sql");
+    expect(deploy).toContain("otherwise `deploy/sql/`");
   });
 
   test("check command reports skill eval authority instead of accepting dry-run evidence", () => {
