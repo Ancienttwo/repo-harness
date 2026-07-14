@@ -47,9 +47,21 @@
   `bun run check:hooks` also pass in the combined verification command.
 - Product/self-host projection: `bun scripts/sync-hook-sources.ts --write`
   produced digest
-  `sha256:4cab1f9b006f3ef04ebea1c57e1375e2df804b80acd42ccf6baf339f227f60a1`;
+  `sha256:3a786c7c55b5749e3ec4deae07b91bd3e5b57046ea824d94786cfdd2bc1c8d37`
+  after merging `origin/main` at `82cbfc33`;
   `cmp assets/hooks/codex-delegation-advisor.sh .ai/hooks/codex-delegation-advisor.sh`
   passes.
+- Final focused verification after the merge: 74 tests pass across
+  `tests/cli/hook.test.ts` and `tests/hook-contracts.test.ts`; `check:type`,
+  `check:hooks`, architecture sync, task sync, strict task workflow, and diff
+  checks pass. The first post-merge typecheck attempt failed only because the
+  isolated worktree had no `node_modules`; linking the unchanged dependency
+  tree from the main checkout fixed the environment and the command passed.
+- The first strict contract run hit the CLI's 120-second wrapper timeout after
+  `tests_pass` had already run the 67-second hook suite because the contract
+  redundantly declared the same suite again under `commands_succeed`. The
+  duplicate command was removed; `tests_pass` remains the single machine
+  authority for those two files.
 - Operator mitigation: `repo-harness install --target codex --location global
   --delegation-mode explicit --json` updated
   `~/.repo-harness/config.json`; readback reports `delegation.mode=explicit`.

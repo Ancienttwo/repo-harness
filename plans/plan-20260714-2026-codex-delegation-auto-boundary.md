@@ -173,14 +173,7 @@ Preserve the existing hook route, delegation modes, contract authority, and expl
 - [x] Implement the contract-aware deterministic emission boundary and synchronize hook projections.
 - [x] Update the narrow runtime documentation and architecture invariant.
 - [x] Apply the local explicit-mode mitigation and record operator state without committing global config.
-- [ ] Run focused verification, complete review evidence, and prepare the branch for closeout.
+- [x] Run focused verification, complete review evidence, and prepare the branch for closeout.
 
 ## Annotations
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
-
-## Task Breakdown
-- [ ] Record the current auto-mode misrouting with focused failing tests.
-- [ ] Implement the contract-aware deterministic emission boundary and synchronize hook projections.
-- [ ] Update the narrow runtime documentation and architecture invariant.
-- [ ] Apply the local explicit-mode mitigation and record operator state without committing global config.
-- [ ] Run focused verification, complete review evidence, and prepare the branch for closeout.

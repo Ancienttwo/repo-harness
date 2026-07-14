@@ -1,6 +1,6 @@
 # Task Contract: codex-delegation-auto-boundary
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260714-2026-codex-delegation-auto-boundary.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
@@ -150,7 +150,6 @@ exit_criteria:
     - path: tests/cli/hook.test.ts
     - path: tests/hook-contracts.test.ts
   commands_succeed:
-    - bun test tests/cli/hook.test.ts tests/hook-contracts.test.ts
     - bun run check:type
     - bun run check:hooks
     - bash scripts/check-task-sync.sh
@@ -165,11 +164,17 @@ exit_criteria:
 
 ## Acceptance Notes (Human Review)
 
-- Functional behavior:
-- Edge cases:
-- Regression risks:
+- Functional behavior: auto mode is silent without a valid active contract and
+  only emits contract-bound context for deterministic execute/verify routes;
+  explicit delegation without a contract emits permission-only context.
+- Edge cases: missing, malformed, or path-traversing active-plan markers fail
+  closed; runtime supplies the canonical prompt-router entrypoint when the host
+  environment does not.
+- Regression risks: prompt-router availability now gates auto delegation; the
+  advisor deliberately emits nothing if that authority cannot be invoked.
 
 ## Rollback Point
 
-- Commit / checkpoint:
-- Revert strategy:
+- Commit / checkpoint: `6f659a72 fix: bound Codex auto delegation context`
+- Revert strategy: revert the implementation commit; the operator-level
+  `delegation.mode=explicit` mitigation remains safe independently.
