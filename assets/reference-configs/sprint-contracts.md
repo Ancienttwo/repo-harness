@@ -85,6 +85,8 @@ Both `verify-contract.sh` and `contract-run.ts` implement this check independent
 
 Verification is an evidence consumer. `commands_succeed` must not launch profile benchmarks/providers, `adopt`, evidence-producer scripts, or substantive installs; the verifier rejects those command shapes before execution. Produce expensive evidence explicitly, validate its subject/provenance/bytes, then let `verify-sprint` consume that frozen artifact through `verify-contract --read-only`.
 
+A verifier consumes already-produced evidence; it must not become the producer of expensive, runtime-heavy evidence (for example, a full multi-provider/multi-profile benchmark matrix). An authoritative matrix or similarly expensive one-time evidence run belongs outside `commands_succeed`: the author runs it once on a clean checkout before merge and commits the resulting tracked report (for example `evals/harness/reports/profile-comparison.json`/`.md`); the contract then verifies that report's bytes and provenance, not a live re-run.
+
 ## Status Rules
 
 - `Pending`: drafted but not approved for execution
@@ -100,8 +102,34 @@ Verification is an evidence consumer. `commands_succeed` must not launch profile
 - `tasks/notes/<plan-stem>.notes.md` captures task-local decisions and should be archived or promoted deliberately, not left as hidden long-term memory.
 - Closeout is promote-then-archive: durable truths move into `docs/architecture/`, `docs/researches/`, `docs/spec.md`, or `tasks/lessons.md` before `archive-workflow.sh` moves fulfilled plan/contract/review/notes/todo artifacts into `plans/archive/` and `tasks/archive/`.
 
+### Manual Check Evidence
+
+`exit_criteria.manual_checks` remains a scalar list of exact requirements. The built-in
+`Evaluator review file recommends pass` criterion continues to read the review
+recommendation directly. Every other manual criterion must have one exact matching item
+under the coupled review's `## Manual Check Evidence` section:
+
+```markdown
+- [x] Paid tenant can reopen the saved view after refresh
+  - Evidence: Chrome run 20260710-1130, screenshot artifacts/refresh.png
+```
+
+The checkbox must be checked and `Evidence:` must contain a concrete observation,
+command result, screenshot/artifact path, or reviewer note. Missing, unchecked,
+text-mismatched, empty, or placeholder-only evidence fails closed. A summary elsewhere
+in the review does not satisfy this gate; copy the contract requirement exactly so the
+evaluator never guesses semantic equivalence.
+
 ## Worktree Lifecycle
 
 - When `.ai/harness/policy.json` has `worktree_strategy.auto_for_contract_tasks: true`, `repo-harness run plan-to-todo --plan <approved-plan>` starts a linked `codex/<slug>` worktree instead of mutating the primary tree.
+- `contract-worktree start` records the exact source `HEAD` as `base_commit` in
+  `.ai/harness/worktrees/<slug>.json`. `verify-sprint` uses that immutable commit as its
+  default branch diff base, so later base-branch or `origin/main` drift cannot add
+  pre-task commits to `allowed_paths` evaluation. Explicit `REPO_HARNESS_DIFF_BASE`,
+  `HARNESS_DIFF_BASE`, and CI `GITHUB_BASE_REF` values retain precedence. Legacy
+  metadata without `base_commit` first resolves the last reachable commit before its
+  recorded `started_at`, then falls back to the recorded `base_branch`; the next fresh
+  worktree start records immutable provenance.
 - Execute the sprint in that linked worktree. The primary worktree remains a merge target and must stay clean before merge-back.
 - After implementation, run Waza `/check` so the review file recommends pass, record canonical passing `## External Acceptance Advice` from the peer reviewer for the current review subject and benchmark evidence, then run `repo-harness run contract-worktree finish`. Human Review Card remains the reading summary but is not an acceptance authority. The finish command gates on canonical acceptance before `repo-harness run verify-sprint`, commits the branch, and fast-forwards the target branch only when the target worktree is clean.

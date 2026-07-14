@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import {
@@ -11,6 +11,7 @@ import {
   benchmarkRunLayout,
   claudeBenchmarkCommand,
   cloneImmutableWorkspaceBase,
+  cleanupArmHostRoot,
   codexBenchmarkCommand,
   hashTree,
   isolatedHarnessEnvironment,
@@ -357,5 +358,55 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
       const markdown = readFileSync(reportPath.replace(/\.json$/, '.md'), 'utf-8');
       expect(markdown).toContain('## Artifact Files');
     } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  test('cleanupArmHostRoot removes only the disposable host install, never base/workspace', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'harness-matrix-cleanup-test-'));
+    try {
+      const base = join(dir, 'base');
+      const workspace = join(dir, 'workspace');
+      const host = join(dir, 'host');
+      mkdirSync(join(base, '.git'), { recursive: true });
+      mkdirSync(workspace, { recursive: true });
+      mkdirSync(join(host, '.bun/bin'), { recursive: true });
+      writeFileSync(join(host, '.bun/bin/bun'), 'stub-toolchain-binary');
+      writeFileSync(join(workspace, 'evidence.txt'), 'kept for regrade');
+
+      cleanupArmHostRoot(host);
+
+      expect(existsSync(host)).toBe(false);
+      // base and workspace share a git object store (workspace is a git
+      // worktree of base); regradeHarnessBenchmarkReport re-grades against
+      // the retained workspace, so cleanup must never touch either.
+      expect(existsSync(base)).toBe(true);
+      expect(existsSync(workspace)).toBe(true);
+      expect(readFileSync(join(workspace, 'evidence.txt'), 'utf-8')).toBe('kept for regrade');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  test('cleanupArmHostRoot is a no-op when the host root was never created', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'harness-matrix-cleanup-noop-test-'));
+    try {
+      const host = join(dir, 'host');
+      expect(existsSync(host)).toBe(false);
+      expect(() => cleanupArmHostRoot(host)).not.toThrow();
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  test('executeRun calls cleanupArmHostRoot after extracting arm results, before returning the record', () => {
+    const source = readFileSync(join(ROOT, 'scripts/run-harness-profile-benchmark.ts'), 'utf-8');
+    const executeRunStart = source.indexOf('async function executeRun(');
+    const executeRunEnd = source.indexOf('\nfunction dryRunRecord(');
+    expect(executeRunStart).toBeGreaterThan(-1);
+    expect(executeRunEnd).toBeGreaterThan(executeRunStart);
+    const executeRunBody = source.slice(executeRunStart, executeRunEnd);
+    expect(executeRunBody).toContain('cleanupArmHostRoot(hostRoot);');
+    // Cleanup must run after every result-extraction read (grader, hooks,
+    // context tokens, changed files, workspace hash) and before the return
+    // statement, so it never races a read it would invalidate.
+    const cleanupIndex = executeRunBody.indexOf('cleanupArmHostRoot(hostRoot);');
+    const returnIndex = executeRunBody.indexOf('\n  return {');
+    expect(executeRunBody.indexOf('workspaceEvidenceHash(workspace, baselineRevision)')).toBeLessThan(cleanupIndex);
+    expect(cleanupIndex).toBeLessThan(returnIndex);
   });
 });

@@ -23,6 +23,12 @@ describe("canonical adoption plan", () => {
     try {
       const plan = planAdoption({ repoRoot: repo, mode: "standard" });
       expect(plan.operations.some((operation) => operation.path === ".ai/harness/policy.json")).toBe(true);
+      const policyOperation = plan.operations.find((operation) => operation.path === ".ai/harness/policy.json");
+      if (!policyOperation || policyOperation.kind !== "writeFile") {
+        throw new Error("expected a writeFile operation for .ai/harness/policy.json");
+      }
+      const generatedPolicy = JSON.parse(policyOperation.content);
+      expect(generatedPolicy.agentic_development.routing.design_options_choice).toBe("convention:design-options");
       expect(plan.operations.some((operation) => operation.path === ".ai/context/capabilities.json")).toBe(true);
       expect(plan.operations.some((operation) => operation.path === "deploy/README.md")).toBe(true);
       expect(plan.operations.some((operation) => operation.path === ".ai/hooks/README.md")).toBe(true);

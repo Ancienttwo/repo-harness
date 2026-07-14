@@ -304,6 +304,77 @@ review_recommends_pass() {
   grep -Eq '^> \*\*Recommendation\*\*:[[:space:]]*pass[[:space:]]*$' "$review_file"
 }
 
+review_manual_check_evidence() {
+  local review_file="$1"
+  local manual_check="$2"
+  [[ -n "$review_file" && -f "$review_file" ]] || {
+    printf 'missing\t'
+    return 0
+  }
+
+  awk -v wanted="$manual_check" '
+    function trim(s) {
+      gsub(/^[[:space:]]+/, "", s)
+      gsub(/[[:space:]]+$/, "", s)
+      return s
+    }
+    /^##[[:space:]]+Manual Check Evidence[[:space:]]*$/ {
+      in_section = 1
+      next
+    }
+    in_section && /^##[[:space:]]+/ {
+      exit
+    }
+    !in_section {
+      next
+    }
+    /^[[:space:]]*-[[:space:]]*\[[xX ]\][[:space:]]*/ {
+      if (found) {
+        exit
+      }
+      candidate = $0
+      checked = (candidate ~ /^[[:space:]]*-[[:space:]]*\[[xX]\]/)
+      sub(/^[[:space:]]*-[[:space:]]*\[[xX ]\][[:space:]]*/, "", candidate)
+      if (trim(candidate) == wanted) {
+        found = 1
+        selected_checked = checked
+      }
+      next
+    }
+    found && /^[[:space:]]*-[[:space:]]*Evidence:[[:space:]]*/ {
+      evidence = $0
+      sub(/^[[:space:]]*-[[:space:]]*Evidence:[[:space:]]*/, "", evidence)
+      evidence = trim(evidence)
+    }
+    END {
+      if (!found) {
+        printf "missing\t"
+      } else if (!selected_checked) {
+        printf "unchecked\t%s", evidence
+      } else if (evidence == "") {
+        printf "missing_evidence\t"
+      } else {
+        printf "checked\t%s", evidence
+      }
+    }
+  ' "$review_file"
+}
+
+is_concrete_manual_evidence() {
+  local evidence="$1"
+  local normalized
+  evidence="$(printf '%s' "$evidence" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+  [[ -n "$evidence" ]] || return 1
+  [[ "$evidence" != *"{{"*"}}"* ]] || return 1
+  normalized="$(printf '%s' "$evidence" | tr '[:upper:]' '[:lower:]')"
+  case "$normalized" in
+    pending|pending:*|todo|todo:*|tbd|tbd:*|unavailable|unavailable:*|unknown|unknown:*|n/a|n/a:*|na|none|none:*|not\ run|not\ run:*|not\ executed|not\ executed:*|not\ available|not\ available:*|...|"concrete observation, command output, screenshot path, or reviewer note")
+      return 1
+      ;;
+  esac
+  return 0
+}
+
 review_score() {
   local review_file="$1"
   local dimension="$2"
@@ -920,7 +991,30 @@ if ((${#manual_checks[@]})); then
         fi
         ;;
       *)
-        fail "manual_checks" "$check" "manual_checks unsupported: $check"
+        evidence_row="$(review_manual_check_evidence "$review_file" "$check")"
+        evidence_status="${evidence_row%%$'\t'*}"
+        evidence=""
+        if [[ "$evidence_row" == *$'\t'* ]]; then
+          evidence="${evidence_row#*$'\t'}"
+        fi
+        case "$evidence_status" in
+          checked)
+            if is_concrete_manual_evidence "$evidence"; then
+              pass "manual_checks" "$check" "manual_checks: exact checked evidence recorded for $check"
+            else
+              fail "manual_checks" "$check" "manual_checks evidence is placeholder-only: $check"
+            fi
+            ;;
+          unchecked)
+            fail "manual_checks" "$check" "manual_checks evidence is unchecked: $check"
+            ;;
+          missing_evidence)
+            fail "manual_checks" "$check" "manual_checks checked item has no evidence: $check"
+            ;;
+          *)
+            fail "manual_checks" "$check" "manual_checks exact evidence item is missing: $check"
+            ;;
+        esac
         ;;
     esac
   done

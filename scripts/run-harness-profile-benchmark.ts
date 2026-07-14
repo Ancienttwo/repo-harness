@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import {
   constants, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync,
-  statSync, symlinkSync, unlinkSync, writeFileSync,
+  rmSync, statSync, symlinkSync, unlinkSync, writeFileSync,
 } from 'fs';
 import { tmpdir } from 'os';
 import { basename, dirname, join, relative, resolve } from 'path';
@@ -766,6 +766,13 @@ function claudeProviderUsage(jsonl: string): Pick<BenchmarkRunRecord, 'usage_aut
   };
 }
 
+// Each arm home is a disposable toolchain/config overlay. The retained
+// workspace is the regrade authority; deleting the home after all result
+// extraction bounds peak disk use without changing benchmark semantics.
+export function cleanupArmHostRoot(hostRoot: string): void {
+  rmSync(hostRoot, { recursive: true, force: true });
+}
+
 async function executeRun(
   provider: BenchmarkProvider,
   base: PreparedProfileBase,
@@ -828,6 +835,7 @@ async function executeRun(
   const artifactFiles = changed.filter((path) => /^(plans|tasks|\.ai\/harness)\//.test(path));
   const graderPassed = grader.status === 0 && expectedPathsPassed;
   const workspaceHash = workspaceEvidenceHash(workspace, baselineRevision);
+  cleanupArmHostRoot(hostRoot);
   return {
     run_id: `${reportRunId}:${base.profile}:${scenario.id}`,
     profile: base.profile, scenario_id: scenario.id, profile_base_id: base.id, workspace, home: hostRoot,

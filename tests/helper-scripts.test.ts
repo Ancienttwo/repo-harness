@@ -18,6 +18,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
 import { ROOT_CAUSE_FIXTURE_CASES } from "./fixtures/root-cause/expected-results";
+import { defaultPolicy } from "../src/core/adoption/standard-plan";
 
 const ROOT = join(import.meta.dir, "..");
 const HELPER_DIR = join(ROOT, "assets/templates/helpers");
@@ -1478,6 +1479,10 @@ describe("Workflow helper scripts", () => {
       writeFileSync(join(cwd, "tasks/todos.md"), "# Primary Todo\n\n- [ ] keep primary clean\n");
       initGitRepo(cwd);
       commitAll(cwd, "init workflow");
+      expect(run("git", ["checkout", "-b", "integration/task-base"], cwd).status).toBe(0);
+      writeFileSync(join(cwd, "integration-base.txt"), "task base is ahead of main\n");
+      commitAll(cwd, "integration task base");
+      const taskBase = run("git", ["rev-parse", "HEAD"], cwd).stdout.trim();
 
       writeFileSync(
         join(cwd, "plans/plan-20260304-1440-demo.md"),
@@ -1509,7 +1514,10 @@ describe("Workflow helper scripts", () => {
       expect(worktreeTodo).toContain("**Status**: Backlog");
       expect(worktreeTodo).not.toContain("- [ ] Step one");
       expect(existsSync(join(worktreePath, ".ai/harness/planning"))).toBe(true);
-      expect(readFileSync(join(worktreePath, ".ai/harness/worktrees/demo.json"), "utf-8")).toContain('"branch": "codex/demo"');
+      const metadata = JSON.parse(readFileSync(join(worktreePath, ".ai/harness/worktrees/demo.json"), "utf-8"));
+      expect(metadata.branch).toBe("codex/demo");
+      expect(metadata.base_commit).toBe(taskBase);
+      expect(metadata.base_commit).not.toBe(run("git", ["rev-parse", "main"], cwd).stdout.trim());
     } finally {
       run("git", ["worktree", "remove", "--force", worktreePath], cwd);
       rmSync(worktreePath, { recursive: true, force: true });
@@ -2734,6 +2742,134 @@ describe("Workflow helper scripts", () => {
     }
   });
 
+  test("verify-contract should pass an exact checked manual criterion with concrete review evidence", () => {
+    const cwd = tmpWorkspace("helper-verify-contract-manual-evidence-pass");
+    const requirement = "Architecture queue reports pending=0 and blocking=0";
+    try {
+      mkdirSync(join(cwd, "tasks/reviews"), { recursive: true });
+      copyHelpers(cwd);
+      writeFileSync(
+        join(cwd, "task.contract.md"),
+        [
+          "# Task Contract: manual evidence",
+          "",
+          "> **Status**: Pending",
+          "> **Review File**: `tasks/reviews/manual.review.md`",
+          "",
+          "```yaml",
+          "exit_criteria:",
+          "  manual_checks:",
+          `    - "${requirement}"`,
+          "```",
+          "",
+        ].join("\n")
+      );
+      writeFileSync(
+        join(cwd, "tasks/reviews/manual.review.md"),
+        [
+          "# Task Review: manual evidence",
+          "",
+          "> **Recommendation**: pass",
+          "",
+          "## Manual Check Evidence",
+          "",
+          `- [x] ${requirement}`,
+          "  - Evidence: repo-harness run architecture-queue status returned pending=0 blocking=0",
+          "",
+        ].join("\n")
+      );
+
+      const res = run("bash", ["scripts/verify-contract.sh", "--contract", "task.contract.md", "--strict"], cwd);
+      expect(res.status).toBe(0);
+      expect(res.stdout).toContain(`exact checked evidence recorded for ${requirement}`);
+      expect(readFileSync(join(cwd, "task.contract.md"), "utf-8")).toContain("> **Status**: Fulfilled");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  for (const fixture of [
+    {
+      name: "unchecked",
+      evidenceLines: (requirement: string) => [
+        `- [ ] ${requirement}`,
+        "  - Evidence: command was observed",
+      ],
+      expected: "manual_checks evidence is unchecked",
+    },
+    {
+      name: "missing evidence",
+      evidenceLines: (requirement: string) => [`- [x] ${requirement}`],
+      expected: "manual_checks checked item has no evidence",
+    },
+    {
+      name: "mismatched requirement",
+      evidenceLines: () => [
+        "- [x] Architecture queue is probably clear",
+        "  - Evidence: command was observed",
+      ],
+      expected: "manual_checks exact evidence item is missing",
+    },
+    {
+      name: "placeholder evidence",
+      evidenceLines: (requirement: string) => [`- [x] ${requirement}`, "  - Evidence: pending"],
+      expected: "manual_checks evidence is placeholder-only",
+    },
+    {
+      name: "unavailable evidence",
+      evidenceLines: (requirement: string) => [
+        `- [x] ${requirement}`,
+        "  - Evidence: unavailable: browser connection was not established",
+      ],
+      expected: "manual_checks evidence is placeholder-only",
+    },
+  ]) {
+    test(`verify-contract should fail closed for ${fixture.name} manual evidence`, () => {
+      const cwd = tmpWorkspace("helper-verify-contract-manual-evidence-fail");
+      const requirement = "Architecture queue reports pending=0 and blocking=0";
+      try {
+        mkdirSync(join(cwd, "tasks/reviews"), { recursive: true });
+        copyHelpers(cwd);
+        writeFileSync(
+          join(cwd, "task.contract.md"),
+          [
+            "# Task Contract: manual evidence",
+            "",
+            "> **Status**: Pending",
+            "> **Review File**: `tasks/reviews/manual.review.md`",
+            "",
+            "```yaml",
+            "exit_criteria:",
+            "  manual_checks:",
+            `    - "${requirement}"`,
+            "```",
+            "",
+          ].join("\n")
+        );
+        writeFileSync(
+          join(cwd, "tasks/reviews/manual.review.md"),
+          [
+            "# Task Review: manual evidence",
+            "",
+            "> **Recommendation**: pass",
+            "",
+            "## Manual Check Evidence",
+            "",
+            ...fixture.evidenceLines(requirement),
+            "",
+          ].join("\n")
+        );
+
+        const res = run("bash", ["scripts/verify-contract.sh", "--contract", "task.contract.md", "--strict"], cwd);
+        expect(res.status).toBe(1);
+        expect(res.stdout).toContain(fixture.expected);
+        expect(readFileSync(join(cwd, "task.contract.md"), "utf-8")).toContain("> **Status**: Partial");
+      } finally {
+        rmSync(cwd, { recursive: true, force: true });
+      }
+    });
+  }
+
   test("verify-contract should fail strict mode and set status to Partial", () => {
     const cwd = tmpWorkspace("helper-verify-contract-fail");
     try {
@@ -3541,6 +3677,143 @@ describe("Workflow helper scripts", () => {
     }
   });
 
+  test("verify-sprint should scope the default branch diff from immutable contract-worktree metadata", () => {
+    const cwd = tmpWorkspace("helper-verify-sprint-task-baseline");
+    try {
+      mkdirSync(join(cwd, ".ai/hooks/lib"), { recursive: true });
+      mkdirSync(join(cwd, "plans"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/contracts"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/reviews"), { recursive: true });
+      mkdirSync(join(cwd, "docs"), { recursive: true });
+      copyHelpers(cwd);
+      copyFileSync(
+        join(ROOT, "assets/hooks/lib/workflow-state.sh"),
+        join(cwd, ".ai/hooks/lib/workflow-state.sh")
+      );
+      writeFileSync(join(cwd, ".gitignore"), ".ai/harness/worktrees/\n.ai/harness/checks/latest.json\n.ai/harness/runs/\n");
+      writeFileSync(join(cwd, "README.md"), "# baseline\n");
+      initGitRepo(cwd);
+      commitAll(cwd, "remote main baseline");
+      const remoteMain = run("git", ["rev-parse", "HEAD"], cwd).stdout.trim();
+      expect(run("git", ["update-ref", "refs/remotes/origin/main", remoteMain], cwd).status).toBe(0);
+
+      writeFileSync(join(cwd, "plans/preexisting-on-local-main.md"), "# Pre-existing local plan\n");
+      writeFileSync(join(cwd, "plans/plan-20260304-1603-demo.md"), "# Plan: demo\n\n> **Status**: Executing\n");
+      writeActivePlan(cwd, "plans/plan-20260304-1603-demo.md");
+      writeFileSync(
+        join(cwd, "tasks/contracts/demo.contract.md"),
+        [
+          "# Task Contract: demo",
+          "",
+          "> **Status**: Active",
+          "> **Task Profile**: code-change",
+          "",
+          "```yaml",
+          "allowed_paths:",
+          "  - docs",
+          "  - tasks",
+          "exit_criteria:",
+          "  files_exist:",
+          "    - docs/task-change.md",
+          "```",
+          "",
+        ].join("\n")
+      );
+      writeFileSync(
+        join(cwd, "tasks/reviews/demo.review.md"),
+        [
+          "# Task Review: demo",
+          "",
+          "> **Recommendation**: pass",
+          "",
+          humanReviewCard(),
+          "",
+          externalAcceptanceAdvice("Codex", "codex-review", "fixture acceptance"),
+          "",
+        ].join("\n")
+      );
+      commitAll(cwd, "local task baseline");
+      const taskBase = run("git", ["rev-parse", "HEAD"], cwd).stdout.trim();
+      expect(run("git", ["checkout", "-b", "feature/task-baseline"], cwd).status).toBe(0);
+
+      writeFileSync(join(cwd, "docs/task-change.md"), "# Task change\n");
+      expect(run("git", ["add", "."], cwd).status).toBe(0);
+      expect(
+        run("git", ["commit", "-m", "task change"], cwd, {
+          GIT_AUTHOR_DATE: "2030-01-01T00:00:00+0000",
+          GIT_COMMITTER_DATE: "2030-01-01T00:00:00+0000",
+        }).status
+      ).toBe(0);
+      mkdirSync(join(cwd, ".ai/harness/worktrees"), { recursive: true });
+      writeFileSync(
+        join(cwd, ".ai/harness/worktrees/demo.json"),
+        JSON.stringify(
+          {
+            slug: "demo",
+            branch: "feature/task-baseline",
+            worktree: realpathSync(cwd),
+            base_branch: "main",
+            base_commit: taskBase,
+          },
+          null,
+          2
+        ) + "\n"
+      );
+
+      // These two runs assert on the contract-worktree metadata fallback path, which sits
+      // below REPO_HARNESS_DIFF_BASE/HARNESS_DIFF_BASE/GITHUB_BASE_REF in git_diff_base_ref()'s
+      // priority order. Clear all three so an ambient CI value (e.g. GITHUB_BASE_REF=main on
+      // GitHub Actions PR runs) can't short-circuit past metadata and break the assertions below.
+      const metadataFallbackEnv = {
+        HOOK_HOST: "claude",
+        GITHUB_BASE_REF: undefined,
+        REPO_HARNESS_DIFF_BASE: undefined,
+        HARNESS_DIFF_BASE: undefined,
+      };
+      const baselineRes = run("bash", ["scripts/verify-sprint.sh"], cwd, metadataFallbackEnv);
+      expect(baselineRes.status).toBe(0);
+      const baselineChecks = JSON.parse(readFileSync(join(cwd, ".ai/harness/checks/latest.json"), "utf-8"));
+      expect(baselineChecks.diff_base.ref).toBe(taskBase);
+      expect(baselineChecks.diff_base.merge_base).toBe(taskBase);
+      expect(baselineChecks.files_changed).toContain("docs/task-change.md");
+      expect(baselineChecks.files_changed).not.toContain("plans/preexisting-on-local-main.md");
+      expect(baselineChecks.allowed_paths_check.status).toBe("pass");
+
+      writeFileSync(
+        join(cwd, ".ai/harness/worktrees/demo.json"),
+        JSON.stringify(
+          {
+            slug: "demo",
+            branch: "feature/task-baseline",
+            worktree: realpathSync(cwd),
+            base_branch: "origin/main",
+            started_at: new Date().toISOString(),
+          },
+          null,
+          2
+        ) + "\n"
+      );
+      const legacyMetadataRes = run("bash", ["scripts/verify-sprint.sh"], cwd, metadataFallbackEnv);
+      expect(legacyMetadataRes.status).toBe(0);
+      const legacyMetadataChecks = JSON.parse(
+        readFileSync(join(cwd, ".ai/harness/checks/latest.json"), "utf-8")
+      );
+      expect(legacyMetadataChecks.diff_base.ref).toBe(taskBase);
+      expect(legacyMetadataChecks.allowed_paths_check.status).toBe("pass");
+
+      const overrideRes = run("bash", ["scripts/verify-sprint.sh"], cwd, {
+        HOOK_HOST: "claude",
+        REPO_HARNESS_DIFF_BASE: "origin/main",
+      });
+      expect(overrideRes.status).toBe(1);
+      const overrideChecks = JSON.parse(readFileSync(join(cwd, ".ai/harness/checks/latest.json"), "utf-8"));
+      expect(overrideChecks.diff_base.ref).toBe("origin/main");
+      expect(overrideChecks.allowed_paths_check.outside).toContain("plans/preexisting-on-local-main.md");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   test("verify-sprint should fail when Human Review Card change type mismatches task_profile", () => {
     const cwd = tmpWorkspace("helper-verify-sprint-card-profile");
     try {
@@ -4031,6 +4304,15 @@ describe("Workflow helper scripts", () => {
       expect(todo).toContain("**Status**: Backlog");
       expect(existsSync(join(cwd, ".claude/templates/spec.template.md"))).toBe(true);
       expect(existsSync(join(cwd, ".claude/templates/review.template.md"))).toBe(true);
+
+      // Parity guard: ensure-task-workflow.sh's ensure_auxiliary_files fallback writer (this
+      // fresh cwd has no pre-existing .ai/harness/policy.json, so it just fired) is a third,
+      // independently hardcoded source for agentic_development.routing alongside
+      // scripts/lib/project-init-lib.sh and src/core/adoption/standard-plan.ts. Assert it stays
+      // identical to the TS default so it cannot silently diverge again.
+      const fallbackPolicy = JSON.parse(readFileSync(join(cwd, ".ai/harness/policy.json"), "utf-8"));
+      const tsDefaultPolicy = defaultPolicy("minimal-agentic") as Record<string, any>;
+      expect(fallbackPolicy.agentic_development.routing).toEqual(tsDefaultPolicy.agentic_development.routing);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

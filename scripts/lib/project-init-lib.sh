@@ -410,6 +410,15 @@ PI_TEMPLATE_REVIEW=$(cat <<'EOF_TEMPLATE_REVIEW'
 - Manual checks:
 - Supporting artifacts:
 
+## Manual Check Evidence
+
+Copy each non-built-in contract `manual_checks` requirement exactly. Check it only after
+the observation is complete and replace the placeholder with concrete command output,
+screenshot/artifact path, or reviewer observation.
+
+- [ ] Exact manual_checks requirement
+  - Evidence: concrete observation, command output, screenshot path, or reviewer note
+
 ## External Acceptance Advice
 
 > **External Acceptance**: unavailable
@@ -2142,6 +2151,7 @@ pi_write_harness_policy() {
       "product_discovery": "parent-agent:geju",
       "complex_engineering_plan": "parent-agent:geju",
       "design_plan": "parent-agent:geju",
+      "design_options_choice": "convention:design-options",
       "small_or_medium_plan": "waza:think",
       "bug_or_regression": "waza:hunt",
       "post_implementation_review": "waza:check"

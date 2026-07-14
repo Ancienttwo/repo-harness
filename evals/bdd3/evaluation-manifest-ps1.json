@@ -1,0 +1,165 @@
+{
+  "schema": "repo-harness-bdd3-evaluation.ps1",
+  "runner": {
+    "path": "scripts/run-bdd2-evals.ts",
+    "sha256": "fa1b458737bd6b62cbe33e03d89f685a60d41a822171767cc32fa341e03f5b4e"
+  },
+  "output_root": ".ai/harness/runs/bdd3",
+  "experiment": {
+    "kind": "protected-shape-ledger",
+    "freeze_id": "bdd3-ps1-r1",
+    "held_out": {
+      "tasks": {
+        "path": "evals/bdd3/tasks/held-out-ps1.json",
+        "sha256": "e1c783aa2a87ecf62fe138504233ee4a823e8883ec8ffdea7e0e86e4ba49439e"
+      },
+      "truth": {
+        "path": "evals/bdd3/truth/held-out-ps1.json",
+        "sha256": "04a165c20ba0066cb9796a7ecb96352115465965823f5ada7debca10253f2f31"
+      },
+      "archetype_count": 24,
+      "protected_count": 12,
+      "ordinary_count": 12,
+      "repetitions": 2,
+      "expected_rows": 96
+    },
+    "dev": {
+      "tasks": {
+        "path": "evals/bdd3/tasks/dev-ps1.json",
+        "sha256": "5ec8c251ebe99031cd01888a6ce3542cab2a0631c96d6af14100b63314451163"
+      },
+      "truth": {
+        "path": "evals/bdd3/truth/dev-ps1.json",
+        "sha256": "1a0991163534b70b6ad00c89c357fe8e22df6c0e4d336bfc39a6078496b4bcf4"
+      },
+      "archetype_count": 6
+    },
+    "rubrics": {
+      "ledger_packet_schema": {
+        "path": "evals/bdd3/rubrics/ledger-packet.schema.json",
+        "sha256": "6c65bcd4b63c3e240f07130fe21a4f16cd55761e738b0a07c67435e627a8188c"
+      },
+      "control_response_schema": {
+        "path": "evals/bdd3/rubrics/ps1-control-response.schema.json",
+        "sha256": "8a8f9b74344ee263c27dc15751191fa2a09200d8d759eec932224009f024497f"
+      },
+      "validator_rules": {
+        "path": "evals/bdd3/rubrics/ledger-validator-rules.md",
+        "sha256": "090559b37aae86fe69db34e80d07a4825d75481558553b9b3bf6ef322a34c5eb"
+      },
+      "outcome_score_schema": {
+        "path": "evals/bdd2/rubrics/outcome-score-response-e3.schema.json",
+        "sha256": "32975c1d550c661fb73ec4921c46c1dcb73abd39a3e73897106ff4967f0a2180"
+      }
+    },
+    "prompts": {
+      "control": {
+        "path": "evals/bdd3/prompts/ps1-control.md",
+        "sha256": "4cabf8e57b1f6134c689f97403389b762f1be9039c81c01a0cf08da2ef5de211"
+      },
+      "treatment": {
+        "path": "evals/bdd3/prompts/ps1-treatment.md",
+        "sha256": "e17ceacb5ed5d5cc4e3d5943903e83b9b5815386bea2657f70bca40e27e5439e"
+      },
+      "outcome_reviewer": {
+        "path": "evals/bdd3/prompts/ps1-outcome-reviewer.md",
+        "sha256": "91a6e0684141ee75b5e68ea062c744eae5775f3fa392ad38c0440de4cc7359f7"
+      },
+      "outcome_adjudicator": {
+        "path": "evals/bdd2/prompts/outcome-adjudicator-e3.md",
+        "sha256": "da18800223fb1c900fcbf8e2c2a779a8ae3a16def08de978cab46725a2233290"
+      }
+    },
+    "metrics": {
+      "path": "evals/bdd3/metrics/phase-ps1-scoring-metrics.md",
+      "sha256": "acbe644ec71bf7f3dbc864ddc0627e6d7e5f5f8fa6fc125b69db7e57192dbf40"
+    },
+    "adjudication": {
+      "resolution": "fresh-adjudicator-score-on-canonical-disagreement",
+      "reviewers": {
+        "outcome": [
+          "ps1-outcome-reviewer-1",
+          "ps1-outcome-reviewer-2"
+        ],
+        "adjudicator": "ps1-fresh-score-adjudicator"
+      }
+    },
+    "approval_tags": [
+      {"id": "scope", "description": "Which prospective vs. retroactive range of existing data or behavior the change applies to is explicitly agreed."},
+      {"id": "reproducibility", "description": "Historical outputs generated under the prior method remain reproducible where required."},
+      {"id": "adjustment", "description": "A defined process exists for correcting or adjusting affected records after the change takes effect."},
+      {"id": "migration", "description": "A migration plan for existing data or state under the new behavior is authorized."},
+      {"id": "rollback", "description": "A rollback path back to the prior behavior is authorized and defined."}
+    ]
+  },
+  "model_profile": {
+    "command": "/Users/kito/.local/bin/codex",
+    "args": [
+      "exec",
+      "--ignore-user-config",
+      "--ignore-rules",
+      "--ephemeral",
+      "--skip-git-repo-check",
+      "--sandbox",
+      "workspace-write",
+      "-m",
+      "{model}",
+      "-c",
+      "model_reasoning_effort=\"{sampling.reasoning_effort}\"",
+      "-c",
+      "web_search=\"disabled\"",
+      "--output-schema",
+      "{response_schema}",
+      "-"
+    ],
+    "version_args": [
+      "--version"
+    ],
+    "expected_version": "codex-cli 0.144.1",
+    "model": "gpt-5.6-sol",
+    "sampling": {
+      "reasoning_effort": "medium"
+    },
+    "credential_mode": "codex-auth-copy",
+    "transport": "model-transport-only",
+    "tools": {
+      "browser": false,
+      "web_search": false,
+      "mcp": false,
+      "external": false,
+      "repository": false
+    },
+    "max_concurrency": 8,
+    "max_attempts": 3
+  },
+  "historical_reports": [
+    {
+      "path": "docs/researches/20260714-bdd3-ea1-typed-evidence-authority-outcome.md",
+      "sha256": "50e164e1b7796014f9c7ef4d1ceebad550a8a3fb29dd19d48a315de7d84c7430"
+    },
+    {
+      "path": "evals/bdd3/reports/phase-ea1-gate.md",
+      "sha256": "2d9ca60f6d25ca43435f5aaefdc03ce7f052b31d1c4431d66b2a84de3809f978"
+    },
+    {
+      "path": "evals/bdd3/reports/experiment-ea1-evidence.json",
+      "sha256": "531143dd6d4cb5252108c7087d49de418f969a1360eaf4a2ad70b11a697295c2"
+    },
+    {
+      "path": "evals/bdd2/reports/experiment-s3-evidence.json",
+      "sha256": "69f2c67e10ce71a326da978f4b96a3a54ade2ec5dcd0068c8911481257a2daed"
+    },
+    {
+      "path": "evals/bdd2/tasks/held-out-e2.json",
+      "sha256": "049edd504484bb3262b4d28a4b6f0d324a4f7bfdc856f61520611282e2c4c720"
+    },
+    {
+      "path": "evals/bdd2/truth/held-out-e2.json",
+      "sha256": "1572d9234b47a906267e2cf41a4b6c728e299a11ff221f2333d9a450e91ae1ca"
+    },
+    {
+      "path": "evals/bdd2/evidence/e3/source-corpus.json",
+      "sha256": "c2878f175673e3fe59a6314b83be543b3365a14f80d43ce0139a2fc2507d67dd"
+    }
+  ]
+}

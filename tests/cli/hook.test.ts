@@ -1412,6 +1412,54 @@ describe('hook command (Phase 1B)', () => {
     }
   });
 
+  test('Codex SubagentStart never claims reasoning-effort routing is verified', () => {
+    withTempRepo({ optIn: true }, (repoRoot) => {
+      installAssetHooks(repoRoot);
+      fs.mkdirSync(path.join(repoRoot, '.codex/agents'), { recursive: true });
+      fs.writeFileSync(
+        path.join(repoRoot, '.codex/agents/custom-fast.toml'),
+        'name = "fast-worker"\ndescription = "Bounded worker"\ndeveloper_instructions = "Stay in scope."\nmodel = "gpt-5.6-sol"\n',
+      );
+      spawnSync(
+        process.execPath,
+        [CLI, 'hook', 'UserPromptSubmit', '--route', 'delegation'],
+        {
+          cwd: repoRoot,
+          input: JSON.stringify({ session_id: 'session-role', prompt: '/delegate use fast-worker' }),
+          encoding: 'utf-8',
+          env: { ...process.env, HOOK_HOST: 'codex', REPO_HARNESS_HOOK_CLI: HOOK_ENTRY },
+        },
+      );
+
+      const start = spawnSync(
+        process.execPath,
+        [CLI, 'hook', 'SubagentStart', '--route', 'context'],
+        {
+          cwd: repoRoot,
+          input: JSON.stringify({
+            hook_event_name: 'SubagentStart',
+            session_id: 'session-role',
+            turn_id: 'turn-role',
+            agent_id: 'agent-verified',
+            agent_type: 'fast-worker',
+            model: 'gpt-5.6-sol',
+          }),
+          encoding: 'utf-8',
+          env: { ...process.env, HOOK_HOST: 'codex', REPO_HARNESS_HOOK_CLI: HOOK_ENTRY },
+        },
+      );
+
+      expect(start.status).toBe(0);
+      const parsed = JSON.parse(start.stdout);
+      const context = parsed.hookSpecificOutput.additionalContext;
+      expect(context).toContain('[repo-harness:native-role-routing] verified');
+      expect(context).toContain(
+        'Custom-agent model routing is verified for this child; reasoning-effort routing remains unverified because SubagentStart does not expose it.',
+      );
+      expect(context).not.toMatch(/reasoning-effort routing is verified/);
+    });
+  });
+
   test('Codex SubagentStart keeps independent sibling observations and rejects malformed authoritative fields', () => {
     withTempRepo({ optIn: true }, (repoRoot) => {
       installAssetHooks(repoRoot);

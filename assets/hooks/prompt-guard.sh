@@ -1383,4 +1383,6 @@ fi
 if pg_fact BDD_FEATURE_ADVICE; then
   echo "[BDD] Feature intent detected. Define Given-When-Then acceptance scenarios first."
   echo "  检测到新功能请求：先定义 Given-When-Then 验收场景。"
+  echo "[UXFeatureGuard] For user-visible behavior, first freeze rules/non-goals, separate instruction from payload, and inventory existing UI/domain reuse targets."
+  echo "  Read: repo-harness docs show ux-feature-guard (fail loudly; no parallel authority or compatibility fallback)."
 fi
