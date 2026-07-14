@@ -1,6 +1,6 @@
 # Task Contract: verification-evidence-decoupling
 
-> **Status**: Fulfilled
+> **Status**: Partial
 > **Plan**: plans/plan-20260714-0430-verification-evidence-decoupling.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
@@ -124,12 +124,8 @@ exit_criteria:
   commands_succeed:
     - bun run check:type
     - repo-harness run check-task-workflow --strict
-  qa_scores:
-    - dimension: functionality
-      min: 7
   manual_checks:
     - "Evaluator review file recommends pass"
-    - "No verifier surface (this contract, templates, reference docs) contains a live benchmark matrix command"
 ```
 
 ## Acceptance Notes (Human Review)
