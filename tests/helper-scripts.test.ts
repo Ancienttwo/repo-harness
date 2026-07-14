@@ -3726,9 +3726,11 @@ describe("Workflow helper scripts", () => {
           "",
           "> **Recommendation**: pass",
           "",
+          reviewSubjectMetadata(cwd),
+          "",
           humanReviewCard(),
           "",
-          externalAcceptanceAdvice("Codex", "codex-review", "fixture acceptance"),
+          externalAcceptanceAdvice("Codex", "codex-review", cwd),
           "",
         ].join("\n")
       );
@@ -3744,6 +3746,21 @@ describe("Workflow helper scripts", () => {
           GIT_COMMITTER_DATE: "2030-01-01T00:00:00+0000",
         }).status
       ).toBe(0);
+      writeFileSync(
+        join(cwd, "tasks/reviews/demo.review.md"),
+        [
+          "# Task Review: demo",
+          "",
+          "> **Recommendation**: pass",
+          "",
+          reviewSubjectMetadata(cwd),
+          "",
+          humanReviewCard(),
+          "",
+          externalAcceptanceAdvice("Codex", "codex-review", cwd),
+          "",
+        ].join("\n")
+      );
       mkdirSync(join(cwd, ".ai/harness/worktrees"), { recursive: true });
       writeFileSync(
         join(cwd, ".ai/harness/worktrees/demo.json"),
@@ -3766,12 +3783,16 @@ describe("Workflow helper scripts", () => {
       // GitHub Actions PR runs) can't short-circuit past metadata and break the assertions below.
       const metadataFallbackEnv = {
         HOOK_HOST: "claude",
+        REPO_HARNESS_HOOK_CLI: join(ROOT, "src/cli/hook-entry.ts"),
         GITHUB_BASE_REF: undefined,
         REPO_HARNESS_DIFF_BASE: undefined,
         HARNESS_DIFF_BASE: undefined,
       };
       const baselineRes = run("bash", ["scripts/verify-sprint.sh"], cwd, metadataFallbackEnv);
-      expect(baselineRes.status).toBe(0);
+      expect(
+        baselineRes.status,
+        `${baselineRes.stdout}\n${baselineRes.stderr}\n${readFileSync(join(cwd, ".ai/harness/checks/latest.json"), "utf-8")}`,
+      ).toBe(0);
       const baselineChecks = JSON.parse(readFileSync(join(cwd, ".ai/harness/checks/latest.json"), "utf-8"));
       expect(baselineChecks.diff_base.ref).toBe(taskBase);
       expect(baselineChecks.diff_base.merge_base).toBe(taskBase);
