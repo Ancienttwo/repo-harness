@@ -18,6 +18,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
 import { ROOT_CAUSE_FIXTURE_CASES } from "./fixtures/root-cause/expected-results";
+import { defaultPolicy } from "../src/core/adoption/standard-plan";
 
 const ROOT = join(import.meta.dir, "..");
 const HELPER_DIR = join(ROOT, "assets/templates/helpers");
@@ -4241,6 +4242,15 @@ describe("Workflow helper scripts", () => {
       expect(todo).toContain("**Status**: Backlog");
       expect(existsSync(join(cwd, ".claude/templates/spec.template.md"))).toBe(true);
       expect(existsSync(join(cwd, ".claude/templates/review.template.md"))).toBe(true);
+
+      // Parity guard: ensure-task-workflow.sh's ensure_auxiliary_files fallback writer (this
+      // fresh cwd has no pre-existing .ai/harness/policy.json, so it just fired) is a third,
+      // independently hardcoded source for agentic_development.routing alongside
+      // scripts/lib/project-init-lib.sh and src/core/adoption/standard-plan.ts. Assert it stays
+      // identical to the TS default so it cannot silently diverge again.
+      const fallbackPolicy = JSON.parse(readFileSync(join(cwd, ".ai/harness/policy.json"), "utf-8"));
+      const tsDefaultPolicy = defaultPolicy("minimal-agentic") as Record<string, any>;
+      expect(fallbackPolicy.agentic_development.routing).toEqual(tsDefaultPolicy.agentic_development.routing);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
