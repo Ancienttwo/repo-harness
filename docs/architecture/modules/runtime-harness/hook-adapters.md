@@ -388,6 +388,25 @@ per-host implementation trees or loading non-hook command modules.
   never calls `edit_plan_gate_mode` or reads that policy key, so it cannot be
   relaxed by the gate-response knob.
 
+## 2026-07-14 Delegation Fork Isolation Closeout
+
+- `codex-delegation-advisor.sh` adds one dispatch rule to the bounded
+  delegation contract: every `spawn_agent` call that selects an `agent_type`
+  must pass `fork_turns="none"`. The Codex default is `fork_turns="all"`,
+  which copies the full parent conversation into the child — verified
+  empirically on codex-cli 0.144.1 (two default-parameter spawns reproduced
+  parent-only secret tokens in the child; the binary's `spawn_agent` tool
+  description states the `all` default). A named-role child must work from
+  its self-contained packet and the contract brief, both for cross-model
+  context isolation and to stop paying the full parent history on every
+  spawn.
+- Fork control is a per-spawn tool argument only; no `config.toml` key can
+  pin it globally, so this advisory dispatch contract is the enforcement
+  surface.
+- This changes route advisory text only. It does not add a hook route, host
+  adapter, dependency, persistence location, or new runtime boundary, so no
+  architecture snapshot or rendered diagram is required.
+
 ## Optimization Backlog
 
 - Keep `repo-harness init` and migration from regenerating repo-local `.claude/settings.json` / `.codex/hooks.json` adapters.
