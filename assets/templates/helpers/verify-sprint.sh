@@ -524,7 +524,7 @@ fi
 status="fail"
 exit_code=1
 case "$external_status" in
-  pass|manual_override|not_required)
+  pass|manual_override)
     external_gate="pass"
     ;;
   *)

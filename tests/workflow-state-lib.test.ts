@@ -360,9 +360,28 @@ describe("workflow-state shared library", () => {
       expect(checks.review.card.external_acceptance).toBe("pass");
       // ...but it never rescues the canonical gate, which stays fail-closed.
       expect(checks.external_acceptance.status).toBe("missing");
-      expect(["pass", "manual_override", "not_required"]).not.toContain(checks.external_acceptance.status);
+      expect(["pass", "manual_override"]).not.toContain(checks.external_acceptance.status);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("verify-sprint external acceptance gate only accepts statuses canonical can actually produce", () => {
+    // workflow_external_acceptance_status only ever prints "missing", "fail",
+    // "manual_override", or "pass" (grep .ai/hooks/lib/workflow-state.sh); it
+    // has no code path that emits "not_required". The gate case statement must
+    // not carry a literal for a status the canonical helper can never return —
+    // that literal is dead source text, not a reachable acceptance path, and a
+    // future author reading "pass|manual_override|not_required" could mistake
+    // it for a real profile-based bypass. Assert both the live script and its
+    // template mirror only accept the two statuses canonical can produce.
+    for (const path of [
+      join(ROOT, "scripts", "verify-sprint.sh"),
+      join(ROOT, "assets", "templates", "helpers", "verify-sprint.sh"),
+    ]) {
+      const helper = readFileSync(path, "utf-8");
+      expect(helper).toContain('  pass|manual_override)\n    external_gate="pass"');
+      expect(helper).not.toContain("not_required");
     }
   });
 });
