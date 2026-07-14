@@ -99,6 +99,23 @@ Error paths:
 - Worktree guard warns by default and blocks only when marker policy is enabled.
 - Runtime write failures should produce structured warnings or failure logs without corrupting the repo contract.
 
+## 2026-07-14 Review Subject and Acceptance Authority Cutover
+
+- `src/cli/hook/diff-fingerprint.ts` now builds review subject schema v2 from
+  normalized final path/content/mode/deletion state. Target revision is
+  provenance metadata; only target movement overlapping reviewed paths forces
+  re-acceptance.
+- Review Rubric v2 is the sole active schema. Both the top review metadata and
+  canonical `## External Acceptance Advice` bind the current
+  `Reviewed Subject SHA256`, normalized-final-content scope, target revision,
+  and current benchmark evidence SHA-256.
+- Human Review Card remains the reviewer-facing summary but has no external
+  acceptance semantics. Missing, malformed, stale, non-pass, or noncanonical
+  acceptance fails closed; there is no manual-override or legacy rubric path.
+- At 10x review volume the first failure would be churn from unrelated target
+  ancestry. Content subjects preserve real-change invalidation without that
+  false-stale cost.
+
 ## Semantic Diagram
 
 ### Complete Hook Workflow

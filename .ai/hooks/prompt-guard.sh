@@ -845,7 +845,7 @@ emit_waza_route_hint() {
     fi
     echo "[WazaRoute] Review/release intent detected. Default route: Waza /check."
     emit_review_rubric_prompt
-    emit_review_fingerprint_prompt
+    emit_review_subject_prompt
     if prompt_strict_workflow; then
       emit_external_acceptance_prompt review
     fi
@@ -867,15 +867,17 @@ emit_review_rubric_prompt() {
   printf '%s\n' "$rubric"
 }
 
-emit_review_fingerprint_prompt() {
-  local fingerprint review_file
-  fingerprint="$(workflow_current_review_fingerprint_value || true)"
+emit_review_subject_prompt() {
+  local subject target_rev review_file
+  subject="$(workflow_current_review_subject_value || true)"
+  target_rev="$(workflow_current_review_target_revision || true)"
   review_file="$(workflow_active_review || true)"
-  echo "[ReviewFreshness] Current implementation diff fingerprint: ${fingerprint:-unknown}"
+  echo "[ReviewFreshness] Current review subject: ${subject:-unknown}"
   echo "[ReviewFreshness] Record these review metadata lines in ${review_file:-tasks/reviews/<slug>.review.md}:"
   echo "> **Review Rubric Version**: 2"
-  echo "> **Reviewed Diff Fingerprint**: ${fingerprint:-unknown}"
-  echo "> **Reviewed Scope**: branch+staged+unstaged+untracked"
+  echo "> **Reviewed Subject SHA256**: ${subject:-unknown}"
+  echo "> **Reviewed Subject Scope**: normalized-final-content"
+  echo "> **Reviewed Target Revision**: ${target_rev:-unknown}"
 }
 
 # Cross-review advisory: nudge the agent to consider an independent second
@@ -908,7 +910,7 @@ emit_cross_review_hint() {
 
 emit_external_acceptance_prompt() {
   local mode="${1:-review}"
-  local expected_reviewer expected_source command active_plan_local contract_file_local review_file checks_file rubric fingerprint
+  local expected_reviewer expected_source command active_plan_local contract_file_local review_file checks_file rubric subject target_rev benchmark_evidence
 
   expected_reviewer="$(workflow_external_acceptance_expected_reviewer)"
   expected_source="$(workflow_external_acceptance_expected_source "$expected_reviewer")"
@@ -923,7 +925,10 @@ emit_external_acceptance_prompt() {
   review_file="$(workflow_active_review || true)"
   checks_file="$(workflow_checks_file)"
   rubric="$(review_rubric_prompt || true)"
-  fingerprint="$(workflow_current_review_fingerprint_value || true)"
+  subject="$(workflow_current_review_subject_value || true)"
+  target_rev="$(workflow_current_review_target_revision || true)"
+  benchmark_evidence="$(workflow_benchmark_evidence_fingerprint 2>/dev/null || true)"
+  benchmark_evidence="${benchmark_evidence:-not-applicable}"
 
   echo "[ExternalAcceptance] Review/release intent detected. Start peer acceptance in parallel with local /check."
   echo "[ExternalAcceptance] Mode: $mode"
@@ -931,9 +936,9 @@ emit_external_acceptance_prompt() {
   echo "[ExternalAcceptance] Current contract: ${contract_file_local:-"(none)"}"
   echo "[ExternalAcceptance] Current review: ${review_file:-tasks/reviews/<slug>.review.md}"
   echo "[ExternalAcceptance] Current checks: $checks_file"
-  echo "[ExternalAcceptance] Current diff fingerprint: ${fingerprint:-unknown}"
+  echo "[ExternalAcceptance] Current review subject: ${subject:-unknown}"
   echo "[ExternalAcceptance] Peer reviewer: $expected_reviewer via $command"
-  echo "[ExternalAcceptance] Diff scope for peer: branch diff against target, staged diff, unstaged diff, and untracked files."
+  echo "[ExternalAcceptance] Subject scope for peer: normalized final content for implementation paths; target revision is overlap metadata."
   cat <<EOF_EXTERNAL_ACCEPTANCE
 [ExternalAcceptance] Prompt to send with $command:
 Review the current sprint for acceptance only. Do not run /check. Do not edit files. Do not write files. Inspect the diff scope, contract, review evidence, checks evidence, and Review Rubric v2, then return only a Markdown block that can be pasted into ${review_file:-tasks/reviews/<slug>.review.md}.
@@ -947,14 +952,16 @@ ${rubric:-[ReviewRubric] Deep Diff Review Rubric v2 unavailable; use severity or
 > **External Started**: YYYY-MM-DDTHH:MM:SS+0800
 > **External Completed**: YYYY-MM-DDTHH:MM:SS+0800
 > **Review Rubric Version**: 2
-> **Reviewed Diff Fingerprint**: ${fingerprint:-unknown}
-> **Reviewed Scope**: branch+staged+unstaged+untracked
+> **Reviewed Subject SHA256**: ${subject:-unknown}
+> **Reviewed Subject Scope**: normalized-final-content
+> **Reviewed Target Revision**: ${target_rev:-unknown}
+> **Benchmark Evidence SHA256**: $benchmark_evidence
 
 - P1 blockers: none
 - P2 advisories:
 - Acceptance checklist: pass
 
-If the peer CLI is unavailable, record **External Acceptance**: unavailable and include the failure reason. That does not satisfy the completion gate unless a Manual Override: line with a concrete reason is also recorded.
+If the peer CLI is unavailable, record **External Acceptance**: unavailable and include the failure reason. That does not satisfy the completion gate unless a canonical pass is recorded.
 EOF_EXTERNAL_ACCEPTANCE
 }
 
@@ -1253,7 +1260,7 @@ if [ "$done_intent" -eq 1 ]; then
   fi
 
   review_freshness="$(workflow_review_freshness_status "$review_file")"
-  IFS=$'\t' read -r review_freshness_state review_fingerprint review_freshness_message <<< "$review_freshness"
+  IFS=$'\t' read -r review_freshness_state review_subject review_freshness_message <<< "$review_freshness"
   case "$review_freshness_state" in
     pass)
       ;;
@@ -1267,7 +1274,7 @@ if [ "$done_intent" -eq 1 ]; then
       hook_structured_error \
         "ReviewFreshnessGuard" \
         "$review_freshness_message" \
-        "Rerun Waza /check and peer acceptance so $review_file records the current Reviewed Diff Fingerprint." \
+        "Rerun Waza /check and peer acceptance so $review_file records the current Reviewed Subject SHA256." \
         "quality_gate"
       exit 2
       ;;
@@ -1275,7 +1282,7 @@ if [ "$done_intent" -eq 1 ]; then
 
   external_status="$(workflow_external_acceptance_status "$review_file")"
   IFS=$'\t' read -r external_state external_reviewer external_source external_message <<< "$external_status"
-  if [ "$external_state" != "pass" ] && [ "$external_state" != "manual_override" ]; then
+  if [ "$external_state" != "pass" ]; then
     echo "[ExternalAcceptanceGuard] ${external_message:-External acceptance is missing.}"
     hook_structured_error \
       "ExternalAcceptanceGuard" \

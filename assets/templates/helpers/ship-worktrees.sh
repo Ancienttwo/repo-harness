@@ -253,7 +253,7 @@ review_recommends_pass_fallback() {
 
 external_acceptance_pass_fallback() {
   local review_file="$1"
-  grep -Eq '^> \*\*External Acceptance\*\*:[[:space:]]*(pass|manual_override)([[:space:]]*)$' "$review_file" \
+  grep -Eq '^> \*\*External Acceptance\*\*:[[:space:]]*pass([[:space:]]*)$' "$review_file" \
     && grep -Eq '^-?[[:space:]]*P1 blockers:[[:space:]]*none([[:space:]]*)$' "$review_file"
 }
 

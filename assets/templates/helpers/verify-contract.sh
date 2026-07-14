@@ -1,6 +1,19 @@
 #!/bin/bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VERIFICATION_BUDGET_MS=600000
+
+now_ms() {
+  if command -v node >/dev/null 2>&1; then
+    node -e 'process.stdout.write(String(Date.now()))'
+  elif command -v bun >/dev/null 2>&1; then
+    bun -e 'process.stdout.write(String(Date.now()))'
+  else
+    printf '%s000' "$(date +%s)"
+  fi
+}
+
 usage() {
   cat <<'USAGE_EOF'
 Usage: scripts/verify-contract.sh --contract <contract-file> [--strict] [--quiet] [--read-only] [--report-file <path>]
@@ -418,10 +431,18 @@ append_result() {
   local target="$2"
   local passed="$3"
   local message="$4"
+  local duration_ms="${5:-null}"
+  local timed_out="${6:-false}"
+  local exit_code="${7:-null}"
+  local signal="${8:-null}"
   RESULT_KINDS+=("$kind")
   RESULT_TARGETS+=("$target")
   RESULT_PASSED+=("$passed")
   RESULT_MESSAGES+=("$message")
+  RESULT_DURATIONS+=("$duration_ms")
+  RESULT_TIMED_OUT+=("$timed_out")
+  RESULT_EXIT_CODES+=("$exit_code")
+  RESULT_SIGNALS+=("$signal")
 }
 
 log_check() {
@@ -454,6 +475,36 @@ fail() {
   log_check "FAIL" "$message"
 }
 
+record_timed_result() {
+  local kind="$1" target="$2" passed="$3" message="$4" duration_ms="$5" timed_out="$6" exit_code="$7" signal="${8:-null}"
+  total=$((total + 1))
+  if [[ "$passed" != "true" ]]; then failed=$((failed + 1)); fi
+  append_result "$kind" "$target" "$passed" "$message" "$duration_ms" "$timed_out" "$exit_code" "$signal"
+  if [[ "$passed" == "true" ]]; then log_check "PASS" "$message"; else log_check "FAIL" "$message"; fi
+}
+
+is_evidence_producer_command() {
+  local cmd="$1"
+  case "$cmd" in
+    *benchmark:harness*|*run-harness-profile-benchmark*|*" codex exec "*|codex\ exec\ *|*" claude -p "*|claude\ -p\ *) return 0 ;;
+  esac
+  if [[ "$cmd" =~ (^|[[:space:]])adopt([[:space:]]|$) ]]; then return 0; fi
+  if [[ "$cmd" =~ (^|[[:space:]])install([[:space:]]|$) && "$cmd" != *"--dry-run"* ]]; then return 0; fi
+  return 1
+}
+
+run_bounded() {
+  local log_path="$1" result_path="$2"
+  shift 2
+  local runner="$SCRIPT_DIR/run-bounded-verifier-command.ts"
+  [[ -f "$runner" ]] || return 127
+  "$bun_bin" "$runner" \
+    --deadline-ms "$verification_deadline_ms" \
+    --log "$log_path" \
+    --result "$result_path" \
+    -- "$@"
+}
+
 write_report() {
   local report_path="$1"
   local idx
@@ -473,6 +524,9 @@ write_report() {
     printf '  "strict": %s,\n' "$([[ "$strict" -eq 1 ]] && echo true || echo false)"
     printf '  "read_only": %s,\n' "$([[ "$read_only" -eq 1 ]] && echo true || echo false)"
     printf '  "executes_contract_commands": %s,\n' "$([[ "$executes_contract_commands" -eq 1 ]] && echo true || echo false)"
+    printf '  "budget_ms": %s,\n' "$VERIFICATION_BUDGET_MS"
+    printf '  "total_duration_ms": %s,\n' "$(( $(now_ms) - verification_started_ms ))"
+    printf '  "timed_out": %s,\n' "$([[ "$verification_budget_exhausted" -eq 1 ]] && echo true || echo false)"
     printf '  "total": %s,\n' "$total"
     printf '  "failed": %s,\n' "$failed"
     echo '  "results": ['
@@ -480,11 +534,15 @@ write_report() {
       if [[ "$idx" -gt 0 ]]; then
         echo ","
       fi
-      printf '    {"kind":"%s","target":"%s","passed":%s,"message":"%s"}' \
+      printf '    {"kind":"%s","target":"%s","passed":%s,"message":"%s","duration_ms":%s,"timed_out":%s,"exit_code":%s,"signal":%s}' \
         "$(json_escape "${RESULT_KINDS[$idx]}")" \
         "$(json_escape "${RESULT_TARGETS[$idx]}")" \
         "${RESULT_PASSED[$idx]}" \
-        "$(json_escape "${RESULT_MESSAGES[$idx]}")"
+        "$(json_escape "${RESULT_MESSAGES[$idx]}")" \
+        "${RESULT_DURATIONS[$idx]}" \
+        "${RESULT_TIMED_OUT[$idx]}" \
+        "${RESULT_EXIT_CODES[$idx]}" \
+        "${RESULT_SIGNALS[$idx]}"
     done
     echo
     echo "  ]"
@@ -545,6 +603,9 @@ fi
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
+verification_started_ms="$(now_ms)"
+verification_deadline_ms="$((verification_started_ms + VERIFICATION_BUDGET_MS))"
+verification_budget_exhausted=0
 
 if [[ ! -f "$contract_file" ]]; then
   echo "[ContractVerify] Contract file not found: $contract_file" >&2
@@ -590,6 +651,10 @@ if [[ -z "$yaml_block" ]]; then
   RESULT_TARGETS=()
   RESULT_PASSED=()
   RESULT_MESSAGES=()
+  RESULT_DURATIONS=()
+  RESULT_TIMED_OUT=()
+  RESULT_EXIT_CODES=()
+  RESULT_SIGNALS=()
   write_report "$report_file"
   if [[ "$quiet" -eq 0 ]]; then
     echo "[ContractVerify] No YAML exit criteria block found in $contract_file"
@@ -748,6 +813,10 @@ RESULT_KINDS=()
 RESULT_TARGETS=()
 RESULT_PASSED=()
 RESULT_MESSAGES=()
+RESULT_DURATIONS=()
+RESULT_TIMED_OUT=()
+RESULT_EXIT_CODES=()
+RESULT_SIGNALS=()
 
 case "$task_profile" in
   "")
@@ -816,33 +885,83 @@ if ((${#artifacts_exist[@]})); then
   done
 fi
 
+if [[ "$executes_contract_commands" -eq 1 ]]; then
+  bun_bin="$(resolve_bun_bin || true)"
+else
+  bun_bin=""
+fi
+
 if ((${#tests_pass[@]})); then
+  test_index=0
   for path in "${tests_pass[@]}"; do
     if [[ ! -f "$path" ]]; then
       fail "tests_pass" "$path" "tests_pass file missing: $path"
       continue
     fi
 
-    bun_bin="$(resolve_bun_bin || true)"
     if [[ -z "$bun_bin" ]]; then
       fail "tests_pass" "$path" "tests_pass cannot run (bun not found): $path"
       continue
     fi
 
-    if "$bun_bin" test "$path" >"$tmp_dir/contract-test.log" 2>&1; then
-      pass "tests_pass" "$path" "tests_pass: $path"
+    result_path="$tmp_dir/test-${test_index}.json"
+    log_path="$tmp_dir/test-${test_index}.log"
+    set +e
+    run_bounded "$log_path" "$result_path" "$bun_bin" test "$path"
+    bounded_exit=$?
+    set -e
+    bounded_duration="$(sed -nE 's/.*"duration_ms":([0-9]+).*/\1/p' "$result_path" 2>/dev/null || true)"
+    bounded_timed_out="$(sed -nE 's/.*"timed_out":(true|false).*/\1/p' "$result_path" 2>/dev/null || true)"
+    bounded_signal="$(sed -nE 's/.*"signal":("[^"]*"|null).*/\1/p' "$result_path" 2>/dev/null || true)"
+    bounded_duration="${bounded_duration:-0}"
+    bounded_timed_out="${bounded_timed_out:-false}"
+    bounded_signal="${bounded_signal:-null}"
+    if [[ "$bounded_exit" -eq 0 ]]; then
+      record_timed_result "tests_pass" "$path" true "tests_pass: $path (${bounded_duration}ms)" "$bounded_duration" false 0 "$bounded_signal"
     else
-      fail "tests_pass" "$path" "tests_pass: $path"
+      record_timed_result "tests_pass" "$path" false "tests_pass: $path (${bounded_duration}ms, exit=$bounded_exit)" "$bounded_duration" "$bounded_timed_out" "$bounded_exit" "$bounded_signal"
+    fi
+    test_index=$((test_index + 1))
+    if [[ "$bounded_timed_out" == "true" ]]; then
+      verification_budget_exhausted=1
+      break
     fi
   done
 fi
 
-if ((${#commands_succeed[@]})); then
+if ((${#commands_succeed[@]})) && [[ "$verification_budget_exhausted" -eq 0 ]]; then
+  command_index=0
   for cmd in "${commands_succeed[@]}"; do
-    if env -u BASH_ENV bash --noprofile --norc -c "$cmd" >"$tmp_dir/contract-command.log" 2>&1; then
-      pass "commands_succeed" "$cmd" "commands_succeed: $cmd"
+    if is_evidence_producer_command "$cmd"; then
+      record_timed_result "commands_succeed" "$cmd" false "commands_succeed forbidden evidence producer: $cmd" 0 false 126
+      command_index=$((command_index + 1))
+      continue
+    fi
+    if [[ -z "$bun_bin" ]]; then
+      fail "commands_succeed" "$cmd" "commands_succeed cannot run bounded (bun not found): $cmd"
+      continue
+    fi
+    result_path="$tmp_dir/command-${command_index}.json"
+    log_path="$tmp_dir/command-${command_index}.log"
+    set +e
+    run_bounded "$log_path" "$result_path" env -u BASH_ENV bash --noprofile --norc -c "$cmd"
+    bounded_exit=$?
+    set -e
+    bounded_duration="$(sed -nE 's/.*"duration_ms":([0-9]+).*/\1/p' "$result_path" 2>/dev/null || true)"
+    bounded_timed_out="$(sed -nE 's/.*"timed_out":(true|false).*/\1/p' "$result_path" 2>/dev/null || true)"
+    bounded_signal="$(sed -nE 's/.*"signal":("[^"]*"|null).*/\1/p' "$result_path" 2>/dev/null || true)"
+    bounded_duration="${bounded_duration:-0}"
+    bounded_timed_out="${bounded_timed_out:-false}"
+    bounded_signal="${bounded_signal:-null}"
+    if [[ "$bounded_exit" -eq 0 ]]; then
+      record_timed_result "commands_succeed" "$cmd" true "commands_succeed: $cmd (${bounded_duration}ms)" "$bounded_duration" false 0 "$bounded_signal"
     else
-      fail "commands_succeed" "$cmd" "commands_succeed: $cmd"
+      record_timed_result "commands_succeed" "$cmd" false "commands_succeed: $cmd (${bounded_duration}ms, exit=$bounded_exit)" "$bounded_duration" "$bounded_timed_out" "$bounded_exit" "$bounded_signal"
+    fi
+    command_index=$((command_index + 1))
+    if [[ "$bounded_timed_out" == "true" ]]; then
+      verification_budget_exhausted=1
+      break
     fi
   done
 fi
@@ -952,7 +1071,11 @@ if [[ "$total" -eq 0 ]]; then
   next_status="Pending"
 elif [[ "$failed" -gt 0 ]]; then
   next_status="Partial"
-  failure_class="contract_failure"
+  if [[ "$verification_budget_exhausted" -eq 1 ]]; then
+    failure_class="verification_budget"
+  else
+    failure_class="contract_failure"
+  fi
 fi
 
 if [[ "$read_only" -eq 0 ]]; then

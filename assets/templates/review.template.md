@@ -7,9 +7,10 @@
 > **Checks File**: {{CHECKS_FILE}}
 > **Last Updated**: {{TIMESTAMP}}
 > **Recommendation**: fail
-> **Review Rubric Version**: 1
-> **Reviewed Diff Fingerprint**: pending
-> **Reviewed Scope**: branch+staged+unstaged+untracked
+> **Review Rubric Version**: 2
+> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject Scope**: normalized-final-content
+> **Reviewed Target Revision**: pending
 
 ## Human Review Card
 
@@ -18,7 +19,6 @@
 - Intended files changed:
 - Actual files changed:
 - Commands passed:
-- External acceptance: unavailable
 - Residual risks:
 - Reviewer action required: inspect diff and card
 - Rollback:
@@ -54,6 +54,11 @@ screenshot/artifact path, or reviewer observation.
 > **External Source**:
 > **External Started**:
 > **External Completed**:
+> **Review Rubric Version**: 2
+> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject Scope**: normalized-final-content
+> **Reviewed Target Revision**: pending
+> **Benchmark Evidence SHA256**: pending
 
 - P1 blockers:
 - P2 advisories:

@@ -104,8 +104,8 @@ completed_archive_gate() {
   done
 
   contract_status="$(awk '/^> \*\*Status\*\*:/ {sub(/^.*> \*\*Status\*\*:[[:space:]]*/, ""); gsub(/\r/, ""); print; exit}' "$contract_file" | xargs)"
-  if [[ "$contract_status" != "Fulfilled" ]]; then
-    echo "archive-workflow: Completed requires contract status Fulfilled, got ${contract_status:-missing}: $contract_file" >&2
+  if [[ "$contract_status" != "Active" && "$contract_status" != "Fulfilled" ]]; then
+    echo "archive-workflow: Completed requires a verified Active or Fulfilled contract, got ${contract_status:-missing}: $contract_file" >&2
     return 1
   fi
 
@@ -122,7 +122,7 @@ completed_archive_gate() {
 
   external_row="$(workflow_external_acceptance_status "$review_file")"
   IFS=$'\t' read -r external_state external_reviewer external_source external_message <<< "$external_row"
-  if [[ "$external_state" != "pass" && "$external_state" != "manual_override" ]]; then
+  if [[ "$external_state" != "pass" ]]; then
     echo "archive-workflow: Completed external acceptance gate failed: ${external_message:-missing external acceptance}" >&2
     return 1
   fi
@@ -132,6 +132,24 @@ completed_archive_gate() {
     return 1
   fi
   REPO_HARNESS_TARGET_REPO_ROOT="$PWD" bash "$helper_dir/check-architecture-sync.sh"
+
+  if [[ "$contract_status" == "Active" ]]; then
+    local status_tmp
+    status_tmp="$(mktemp)"
+    awk '
+      BEGIN { updated = 0 }
+      {
+        if (!updated && $0 ~ /^> \*\*Status\*\*:/) {
+          print "> **Status**: Fulfilled"
+          updated = 1
+          next
+        }
+        print
+      }
+    ' "$contract_file" > "$status_tmp"
+    cat "$status_tmp" > "$contract_file"
+    rm -f "$status_tmp"
+  fi
 }
 
 usage() {

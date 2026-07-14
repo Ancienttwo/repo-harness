@@ -19,7 +19,7 @@
     "card": {
       "verdict": "pass",
       "change_type": "ledger-closeout",
-      "external_acceptance": "manual_override",
+      "external_acceptance": "pass",
       "rollback": "revert fixture ledger-closeout branch"
     }
   },
@@ -29,12 +29,12 @@
     {"name": "check-task-workflow", "command": "bash scripts/check-task-workflow.sh --strict", "status": "pass", "exit_code": 0}
   ],
   "guards": [
-    {"name": "external_acceptance", "status": "manual_override"},
+    {"name": "external_acceptance", "status": "pass"},
     {"name": "allowed_paths", "status": "pass"}
   ],
   "handoffs": [],
   "external_acceptance": {
-    "status": "manual_override"
+    "status": "pass"
   },
   "files_changed": ["plans/sprints/fixture.sprint.md", "tasks/reviews/fixture.review.md"],
   "allowed_paths_check": {

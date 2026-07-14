@@ -26,7 +26,12 @@ const FIXTURE_AUTHORITY_ENV_KEYS = [
 function fixtureEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const isolated = { ...process.env };
   for (const key of FIXTURE_AUTHORITY_ENV_KEYS) delete isolated[key];
-  return { ...isolated, ...env };
+  return {
+    ...isolated,
+    HOOK_HOST: "codex",
+    REPO_HARNESS_HOOK_CLI: join(ROOT, "src/cli/hook-entry.ts"),
+    ...env,
+  };
 }
 
 function run(script: string, args: string[], cwd: string, env: NodeJS.ProcessEnv = {}) {
@@ -107,19 +112,62 @@ function writeWorkflowContract(cwd: string, status: string): void {
   );
 }
 
+function ensureReviewBaseline(cwd: string): void {
+  if (runProcess("git", ["rev-parse", "--verify", "HEAD"], cwd).status === 0) return;
+  expect(runProcess("git", ["init", "-b", "main"], cwd).status).toBe(0);
+  expect(runProcess("git", ["config", "user.name", "Archive Test"], cwd).status).toBe(0);
+  expect(runProcess("git", ["config", "user.email", "archive@test.local"], cwd).status).toBe(0);
+  expect(runProcess("git", ["add", "."], cwd).status).toBe(0);
+  expect(runProcess("git", ["commit", "-m", "fixture review baseline"], cwd).status).toBe(0);
+}
+
+function currentReviewBinding(cwd: string): { subject: string; targetRevision: string } {
+  ensureReviewBaseline(cwd);
+  const result = runProcess(
+    "bun",
+    [join(ROOT, "src/cli/hook-entry.ts"), "review-subject", "--target", "main", "--format", "json"],
+    cwd,
+  );
+  expect(result.status).toBe(0);
+  const parsed = JSON.parse(result.stdout);
+  expect(parsed.status).toBe("ok");
+  return {
+    subject: parsed.review_subject_sha256,
+    targetRevision: parsed.target_rev,
+  };
+}
+
 function writeWorkflowReview(cwd: string, recommendation: string, external = "unavailable"): void {
-  const manualOverride = external === "manual_override";
+  const binding = currentReviewBinding(cwd);
   writeFileSync(
     join(cwd, "tasks/reviews/20260711-1200-demo.review.md"),
     [
       "# Task Review: demo",
       "",
       `> **Recommendation**: ${recommendation}`,
+      "> **Review Rubric Version**: 2",
+      `> **Reviewed Subject SHA256**: ${binding.subject}`,
+      "> **Reviewed Subject Scope**: normalized-final-content",
+      `> **Reviewed Target Revision**: ${binding.targetRevision}`,
       "",
       "## External Acceptance Advice",
       "",
-      `> **External Acceptance**: ${manualOverride ? "unavailable" : external}`,
-      ...(manualOverride ? ["- Manual Override: focused local verification is authoritative for this fixture"] : []),
+      `> **External Acceptance**: ${external}`,
+      ...(external === "pass" ? [
+        "> **External Reviewer**: Claude",
+        "> **External Source**: claude-review",
+        "> **External Started**: 2026-07-14T04:00:00+0800",
+        "> **External Completed**: 2026-07-14T04:01:00+0800",
+        "> **Review Rubric Version**: 2",
+        `> **Reviewed Subject SHA256**: ${binding.subject}`,
+        "> **Reviewed Subject Scope**: normalized-final-content",
+        `> **Reviewed Target Revision**: ${binding.targetRevision}`,
+        "> **Benchmark Evidence SHA256**: not-applicable",
+        "",
+        "- P1 blockers: none",
+        "- P2 advisories: none",
+        "- Acceptance checklist: pass",
+      ] : []),
       "",
     ].join("\n"),
   );
@@ -128,7 +176,7 @@ function writeWorkflowReview(cwd: string, recommendation: string, external = "un
 function writeWorkflowChecks(cwd: string): void {
   writeFileSync(
     join(cwd, ".ai/harness/checks/latest.json"),
-    '{"status":"pass","source":"verify-sprint","exit_code":0,"contract":{"file":"tasks/contracts/20260711-1200-demo.contract.md"},"review":{"file":"tasks/reviews/20260711-1200-demo.review.md"},"benchmark_evidence":{"status":"not_applicable","fingerprint":null}}\n',
+    '{"status":"pass","source":"verify-sprint","exit_code":0,"contract":{"file":"tasks/contracts/20260711-1200-demo.contract.md"},"review":{"file":"tasks/reviews/20260711-1200-demo.review.md"},"benchmark_evidence":{"status":"not_applicable","report_sha256":"","benchmark_subject_sha256":""}}\n',
   );
 }
 
@@ -343,7 +391,6 @@ describe("archive evidence gates", () => {
           "## External Acceptance Advice",
           "",
           "> **External Acceptance**: unavailable",
-          "- Manual Override: deterministic transaction fixture",
           "",
         ].join("\n"),
       );
@@ -369,11 +416,14 @@ describe("archive evidence gates", () => {
       writeFileSync(join(primary, ".ai/harness/active-plan"), plan);
       writeFileSync(
         join(primary, ".ai/harness/checks/latest.json"),
-        `{"status":"pass","source":"verify-sprint","exit_code":0,"contract":{"file":"${contract}"},"review":{"file":"${review}"},"benchmark_evidence":{"status":"not_applicable","fingerprint":null}}\n`,
+        `{"status":"pass","source":"verify-sprint","exit_code":0,"contract":{"file":"${contract}"},"review":{"file":"${review}"},"benchmark_evidence":{"status":"not_applicable","report_sha256":"","benchmark_subject_sha256":""}}\n`,
       );
 
       expect(runProcess("git", ["add", "."], primary).status).toBe(0);
       expect(runProcess("git", ["commit", "-m", "fixture"], primary).status).toBe(0);
+      writeWorkflowReview(primary, "pass", "pass");
+      expect(runProcess("git", ["add", review], primary).status).toBe(0);
+      expect(runProcess("git", ["commit", "-m", "record canonical acceptance"], primary).status).toBe(0);
       expect(runProcess("git", ["worktree", "add", "-b", "codex/demo", linked], primary).status).toBe(0);
 
       const planBefore = readFileSync(join(linked, plan), "utf-8");
@@ -410,7 +460,7 @@ describe("archive evidence gates", () => {
       writeWorkflowReview(cwd, "fail");
       result = archiveWorkflow(cwd);
       expect(result.status).toBe(1);
-      expect(result.stderr).toContain("contract status Fulfilled");
+      expect(result.stderr).toContain("verified Active or Fulfilled contract");
 
       writeWorkflowContract(cwd, "Fulfilled");
       result = archiveWorkflow(cwd);
@@ -427,7 +477,7 @@ describe("archive evidence gates", () => {
       expect(result.status).toBe(1);
       expect(result.stderr).toContain("external acceptance gate failed");
 
-      writeWorkflowReview(cwd, "pass", "manual_override");
+      writeWorkflowReview(cwd, "pass", "pass");
       result = archiveWorkflow(cwd, "Completed", { ARCH_FRESHNESS_FAIL: "1" });
       expect(result.status).toBe(19);
       expect(result.stderr).toContain("architecture freshness failed");
@@ -445,7 +495,7 @@ describe("archive evidence gates", () => {
     withTempRepo("archive-workflow-refresh", (cwd) => {
       installWorkflowArchiveFixture(cwd);
       writeWorkflowContract(cwd, "Fulfilled");
-      writeWorkflowReview(cwd, "pass", "manual_override");
+      writeWorkflowReview(cwd, "pass", "pass");
       writeWorkflowChecks(cwd);
 
       const planBefore = readFileSync(join(cwd, "plans/plan-20260711-1200-demo.md"), "utf-8");
