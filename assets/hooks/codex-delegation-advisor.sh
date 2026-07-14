@@ -19,6 +19,7 @@ JSON_INPUT="$input" REPO_ROOT="${HOOK_REPO_ROOT:-$(pwd)}" bun -e '
   const fs = require("fs");
   const path = require("path");
   const crypto = require("crypto");
+  const { spawnSync } = require("child_process");
 
   function sanitize(value) {
     return String(value || "")
@@ -67,6 +68,43 @@ JSON_INPUT="$input" REPO_ROOT="${HOOK_REPO_ROOT:-$(pwd)}" bun -e '
       const parsed = JSON.parse(raw);
       const mode = parsed && parsed.delegation && parsed.delegation.mode;
       return mode === "auto" || mode === "explicit" ? mode : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function activeContractPath(repoRoot) {
+    try {
+      const plan = fs.readFileSync(path.join(repoRoot, ".ai", "harness", "active-plan"), "utf8").trim();
+      const match = /^plans\/plan-([a-zA-Z0-9][a-zA-Z0-9._-]*)\.md$/.exec(plan);
+      if (!match) return null;
+      const planPath = path.join(repoRoot, plan);
+      const contract = `tasks/contracts/${match[1]}.contract.md`;
+      const contractPath = path.join(repoRoot, contract);
+      if (!fs.statSync(planPath).isFile() || !fs.statSync(contractPath).isFile()) return null;
+      const content = fs.readFileSync(contractPath, "utf8");
+      if (!/^> \*\*Status\*\*:\s*(Active|Ready|Executing)\s*$/mi.test(content)) return null;
+      return { plan, contract, content };
+    } catch {
+      return null;
+    }
+  }
+
+  function promptRoute(prompt, hasActiveTask) {
+    const hookCli = process.env.REPO_HARNESS_HOOK_CLI;
+    if (!hookCli) return null;
+    const result = spawnSync(process.execPath, [hookCli, "prompt-route"], {
+      input: JSON.stringify({ prompt }),
+      encoding: "utf8",
+      stdio: ["pipe", "pipe", "ignore"],
+      env: {
+        ...process.env,
+        PROMPT_ROUTE_ACTIVE_TASK: hasActiveTask ? "1" : "0",
+      },
+    });
+    if (result.status !== 0 || !result.stdout?.trim()) return null;
+    try {
+      return JSON.parse(result.stdout);
     } catch {
       return null;
     }
@@ -243,20 +281,24 @@ JSON_INPUT="$input" REPO_ROOT="${HOOK_REPO_ROOT:-$(pwd)}" bun -e '
   const effectiveDelegationMode = globalDelegationMode || (policyDelegation.mode === "auto" ? "auto" : "explicit");
 
   const explicit = Boolean(trigger);
+  const activeContract = activeContractPath(repoRoot);
+  let contractBound = false;
   if (!explicit) {
     if (effectiveDelegationMode !== "auto") process.exit(0);
     if (isDelegationDiscussion(prompt)) process.exit(0);
+    if (!activeContract) process.exit(0);
+    const route = promptRoute(prompt, true);
+    const executionRoute = route?.kind === "active-task"
+      || (route?.kind === "explicit" && (route.action === "execute" || route.action === "verify"));
+    if (!executionRoute) process.exit(0);
+    contractBound = true;
+  } else {
+    contractBound = Boolean(activeContract);
   }
 
-  let strictContract = false;
-  try {
-    const plan = fs.readFileSync(path.join(repoRoot, ".ai", "harness", "active-plan"), "utf8").trim();
-    const match = /^plans\/plan-(.+)\.md$/.exec(plan);
-    if (match) {
-      const contract = fs.readFileSync(path.join(repoRoot, "tasks", "contracts", `${match[1]}.contract.md`), "utf8");
-      strictContract = /^> \*\*Workflow Profile\*\*:\s*strict\s*$/mi.test(contract);
-    }
-  } catch { strictContract = false; }
+  const strictContract = Boolean(
+    activeContract && /^> \*\*Workflow Profile\*\*:\s*strict\s*$/mi.test(activeContract.content),
+  );
   const defaultMax = Number.isInteger(policyDelegation.max_agents) ? policyDelegation.max_agents : 2;
   const strictMax = Number.isInteger(policyDelegation.strict_max_agents) ? policyDelegation.strict_max_agents : 3;
   const maxAgents = strictContract ? Math.min(strictMax, 3) : Math.min(defaultMax, 2);
@@ -334,19 +376,7 @@ JSON_INPUT="$input" REPO_ROOT="${HOOK_REPO_ROOT:-$(pwd)}" bun -e '
   // the shared latest.json write rather than risk a hung hook: a skipped
   // pointer update is safe, a hung hook is not.
 
-  const context = [
-    "[repo-harness:delegation]",
-    "",
-    explicit
-      ? "The current user prompt explicitly enabled bounded delegation."
-      : "Repo policy delegation.mode=auto is standing user authorization for bounded delegation, selected by the user at install time. This satisfies the user-authorization requirement for native subagents (spawn_agent) when the dispatch conditions below are met.",
-    "",
-    "Treat the active task contract (tasks/contracts/<active-plan-stem>.contract.md) as the authoritative execution brief: Goal, Scope, Allowed Paths, and Exit Criteria. Do not re-derive scope from this conversation.",
-    "",
-    `Runner preference (policy delegation.preferred_runners): ${preferredRunners.join(", ")}. Native subagent (spawn_agent) is the preferred parallelism accelerator that consumes the contract brief. When spawn_agent is unavailable, sandboxed, or unreliable, degrade to ${fallbackRunner || "main-thread"} on the SAME contract via contract-run. Runner-availability degradation MUST be recorded in the contract-run manifest and MUST NOT silently succeed; it is a runner-availability fallback, not a product-semantics change.`,
-    "",
-    "If this task contains at least two independent, bounded workstreams, dispatch per the contract before doing the corresponding work in the parent; otherwise run it sequentially.",
-    "",
+  const sharedRules = [
     "Rules:",
     `- Spawn no more than ${maxAgents} agents.`,
     "- Use explorer for read-only code mapping.",
@@ -362,6 +392,34 @@ JSON_INPUT="$input" REPO_ROOT="${HOOK_REPO_ROOT:-$(pwd)}" bun -e '
     "- Do not spawn for a trivial or strictly sequential task.",
     "- The role labels above describe responsibilities only; they do not prove that Codex selected a same-name custom-agent profile or its configured model.",
     "- Treat native children as inherited-model until the SubagentStart hook records matching non-default agent_type and model evidence. If it records unavailable or mismatch, report runner degradation and use the contract runner fallback instead of claiming role-specific routing.",
+  ];
+
+  const permissionContext = [
+    "[repo-harness:delegation]",
+    "",
+    "The current user prompt explicitly enabled bounded delegation. This is permission only; it does not instruct continuation, verification, or execution and does not override the current user prompt.",
+    "",
+    "No active task contract was resolved. Scope remains the current user prompt; do not invent implementation, verification, or workflow work.",
+    "",
+    `Runner preference (policy delegation.preferred_runners): ${preferredRunners.join(", ")}. Delegate only when the current prompt contains at least two independent bounded workstreams; otherwise run sequentially.`,
+    "",
+    ...sharedRules,
+  ].join("\n");
+
+  const contractContext = [
+    "[repo-harness:delegation]",
+    "",
+    explicit
+      ? "The current user prompt explicitly enabled bounded delegation."
+      : "Repo policy delegation.mode=auto is standing user authorization for bounded delegation, selected by the user at install time. This satisfies the user-authorization requirement for native subagents (spawn_agent) when the dispatch conditions below are met.",
+    "",
+    `Treat the active task contract (${activeContract?.contract}) as the authoritative execution brief: Goal, Scope, Allowed Paths, and Exit Criteria. Do not re-derive scope from this conversation.`,
+    "",
+    `Runner preference (policy delegation.preferred_runners): ${preferredRunners.join(", ")}. Native subagent (spawn_agent) is the preferred parallelism accelerator that consumes the contract brief. When spawn_agent is unavailable, sandboxed, or unreliable, degrade to ${fallbackRunner || "main-thread"} on the SAME contract via contract-run. Runner-availability degradation MUST be recorded in the contract-run manifest and MUST NOT silently succeed; it is a runner-availability fallback, not a product-semantics change.`,
+    "",
+    "If this task contains at least two independent, bounded workstreams, dispatch per the contract before doing the corresponding work in the parent; otherwise run it sequentially.",
+    "",
+    ...sharedRules,
     "",
     "Execution boundary: implement exactly the Goal, In scope items, Allowed Paths, and Exit Criteria in this brief. Treat absent requirements as forbidden design space, not as permission to improve.",
     "",
@@ -371,6 +429,8 @@ JSON_INPUT="$input" REPO_ROOT="${HOOK_REPO_ROOT:-$(pwd)}" bun -e '
     "",
     "If the requested outcome cannot be completed without expanding scope, fail closed: stop, name the missing decision, and cite the exact file/section that blocks execution.",
   ].join("\n");
+
+  const context = contractBound ? contractContext : permissionContext;
 
   process.stdout.write(`${JSON.stringify({
     hookSpecificOutput: {
