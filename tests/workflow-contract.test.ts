@@ -196,6 +196,21 @@ describe("workflow contract manifest", () => {
     expect(legacyRootHelpers?.paths).toContain("scripts/check-task-workflow.sh");
   });
 
+  test("helper descriptions should cover the helper inventory 1:1 with non-empty text", () => {
+    const raw = JSON.parse(readFileSync(join(ROOT, "assets/workflow-contract.v1.json"), "utf-8")) as {
+      helpers: { scripts: string[]; descriptions?: Record<string, unknown> };
+    };
+    const scriptIds = raw.helpers.scripts.map((fileName) => fileName.replace(/\.(sh|ts)$/, ""));
+    const descriptions = raw.helpers.descriptions ?? {};
+
+    expect(Object.keys(descriptions).sort()).toEqual([...scriptIds].sort());
+    for (const id of scriptIds) {
+      const description = descriptions[id];
+      expect(typeof description).toBe("string");
+      expect((description as string).trim().length).toBeGreaterThan(0);
+    }
+  });
+
   test("source root resolver accepts only the explicit source-checkout authority", () => {
     const tmp = mkdtempSync(join(tmpdir(), "workflow-contract-source-root-"));
     const sourceRoot = join(tmp, "source-root");

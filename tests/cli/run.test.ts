@@ -3,7 +3,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wr
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
-import { resolveHelper, runHelper } from "../../src/cli/runtime/helper-runner";
+import { listHelpers, resolveHelper, runHelper } from "../../src/cli/runtime/helper-runner";
 
 const ROOT = join(import.meta.dir, "..", "..");
 const CLI = join(ROOT, "src/cli/index.ts");
@@ -130,6 +130,61 @@ describe("run command", () => {
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
+  });
+
+  test("listHelpers fails closed for missing, malformed, and mismatched descriptions", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "repo-harness-run-descriptions-invalid-"));
+    try {
+      const sourceRoot = join(tmp, "source-root");
+      mkdirSync(join(sourceRoot, "assets"), { recursive: true });
+      const env = { REPO_HARNESS_SOURCE_ROOT: sourceRoot };
+      const contractPath = join(sourceRoot, "assets", "workflow-contract.v1.json");
+
+      writeFileSync(contractPath, `${JSON.stringify({ helpers: { scripts: ["known.sh"] } })}\n`);
+      expect(() => listHelpers(env)).toThrow("helpers.descriptions must be an object");
+
+      writeFileSync(
+        contractPath,
+        `${JSON.stringify({
+          helpers: { scripts: ["known.sh"], descriptions: { known: "Do the known thing", ghost: "Unknown helper" } },
+        })}\n`,
+      );
+      expect(() => listHelpers(env)).toThrow('helpers.descriptions has unknown helper id "ghost"');
+
+      writeFileSync(
+        contractPath,
+        `${JSON.stringify({ helpers: { scripts: ["known.sh"], descriptions: { known: "   " } } })}\n`,
+      );
+      expect(() => listHelpers(env)).toThrow("must be a non-empty string");
+
+      writeFileSync(
+        contractPath,
+        `${JSON.stringify({ helpers: { scripts: ["known.sh"], descriptions: {} } })}\n`,
+      );
+      expect(() => listHelpers(env)).toThrow('helpers.descriptions is missing entry for helper id "known"');
+
+      writeFileSync(
+        contractPath,
+        `${JSON.stringify({ helpers: { scripts: ["known.sh"], descriptions: { known: "Do the known thing" } } })}\n`,
+      );
+      expect(listHelpers(env)).toEqual([{ id: "known", description: "Do the known thing" }]);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test("run --help enumerates bundled helpers with one-line descriptions from the contract", () => {
+    const res = spawnSync("bun", [CLI, "run", "--help"], {
+      cwd: ROOT,
+      encoding: "utf-8",
+      env: packageRuntimeEnv(),
+    });
+
+    expect(res.status).toBe(0);
+    expect(res.stdout).toContain("Helpers:");
+    expect(res.stdout).toMatch(
+      /check-task-workflow\s+Check workflow contract and policy compliance for the current repo/,
+    );
   });
 
   test("package sprint-backlog helper resolves the target repo root from runHelper", () => {

@@ -1,5 +1,21 @@
 import { Command } from 'commander';
-import { listHelperIds, runHelper } from '../runtime/helper-runner';
+import { listHelperIds, listHelpers, runHelper } from '../runtime/helper-runner';
+
+function renderHelpersSection(): string {
+  let helpers: ReturnType<typeof listHelpers>;
+  try {
+    helpers = listHelpers();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return ['', 'Helpers:', `  (unable to list helpers: ${message})`].join('\n');
+  }
+
+  if (helpers.length === 0) return '';
+
+  const width = Math.max(...helpers.map((helper) => helper.id.length));
+  const lines = helpers.map((helper) => `  ${helper.id.padEnd(width)}  ${helper.description}`);
+  return ['', 'Helpers:', ...lines].join('\n');
+}
 
 export function buildRunCommand(): Command {
   const run = new Command('run')
@@ -18,6 +34,8 @@ export function buildRunCommand(): Command {
       }
       process.exit(result.exitCode);
     });
+
+  run.addHelpText('after', renderHelpersSection);
 
   return run;
 }

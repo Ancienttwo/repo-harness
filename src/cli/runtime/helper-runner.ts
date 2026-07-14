@@ -37,6 +37,11 @@ export interface RunHelperResult {
   stderr?: string;
 }
 
+export interface HelperDescriptor {
+  id: string;
+  description: string;
+}
+
 function helperId(fileName: string): string {
   const ext = extname(fileName);
   return ext ? fileName.slice(0, -ext.length) : fileName;
@@ -110,6 +115,59 @@ function readContractHelpers(contractPath: string): string[] {
   return [...fileNames];
 }
 
+function readContractHelperDescriptions(
+  contractPath: string,
+  fileNames: readonly string[],
+): Record<string, string> {
+  let source: string;
+  try {
+    source = readFileSync(contractPath, 'utf-8');
+  } catch {
+    throw new Error(`helper contract not found: ${contractPath}`);
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(source);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw helperContractError(contractPath, `malformed JSON: ${message}`);
+  }
+
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw helperContractError(contractPath, 'root must be an object');
+  }
+  const helpers = (parsed as { helpers?: unknown }).helpers;
+  if (typeof helpers !== 'object' || helpers === null || Array.isArray(helpers)) {
+    throw helperContractError(contractPath, 'helpers must be an object');
+  }
+  const descriptions = (helpers as { descriptions?: unknown }).descriptions;
+  if (typeof descriptions !== 'object' || descriptions === null || Array.isArray(descriptions)) {
+    throw helperContractError(contractPath, 'helpers.descriptions must be an object');
+  }
+
+  const ids = fileNames.map(helperId);
+  const idSet = new Set(ids);
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(descriptions as Record<string, unknown>)) {
+    if (!idSet.has(key)) {
+      throw helperContractError(contractPath, `helpers.descriptions has unknown helper id ${JSON.stringify(key)}`);
+    }
+    if (typeof value !== 'string' || value.trim().length === 0) {
+      throw helperContractError(contractPath, `helpers.descriptions.${key} must be a non-empty string`);
+    }
+    result[key] = value;
+  }
+
+  for (const id of ids) {
+    if (!(id in result)) {
+      throw helperContractError(contractPath, `helpers.descriptions is missing entry for helper id ${JSON.stringify(id)}`);
+    }
+  }
+
+  return result;
+}
+
 function resolveHelperRuntime(env: NodeJS.ProcessEnv): HelperRuntime {
   const sourceRoot = env.REPO_HARNESS_SOURCE_ROOT?.trim();
   if (sourceRoot) {
@@ -137,6 +195,16 @@ export function listHelperFiles(env: NodeJS.ProcessEnv = process.env): string[] 
 
 export function listHelperIds(env: NodeJS.ProcessEnv = process.env): string[] {
   return listHelperFiles(env).map(helperId);
+}
+
+export function listHelpers(env: NodeJS.ProcessEnv = process.env): HelperDescriptor[] {
+  const runtime = resolveHelperRuntime(env);
+  const fileNames = readContractHelpers(runtime.contractPath);
+  const descriptions = readContractHelperDescriptions(runtime.contractPath, fileNames);
+  return fileNames.map((fileName) => {
+    const id = helperId(fileName);
+    return { id, description: descriptions[id] };
+  });
 }
 
 function resolveHelperFileName(helper: string, files: readonly string[]): string | null {

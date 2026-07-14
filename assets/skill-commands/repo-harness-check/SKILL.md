@@ -11,13 +11,7 @@ Use this command when the user asks whether the harness, migration, or release s
 ## Protocol
 
 1. Confirm the repo path and report dirty-worktree boundaries.
-2. Run the required checks through the global/package helper runtime. This self-host source repo may also use root `scripts/` for source-only maintenance commands.
-   - `bun test`
-   - `repo-harness run check-deploy-sql-order`
-   - `repo-harness run check-task-sync`
-   - `repo-harness run check-task-workflow --strict`
-   - `repo-harness run inspect-project-state --repo . --format text`
-   - `repo-harness adopt --repo . --dry-run`
+2. Read the canonical required-check list from the target repo's root agent context (`CLAUDE.md` for Claude, `AGENTS.md` for Codex) `## Required Checks` section, then run every command listed there through the global/package helper runtime. This self-host source repo may also use root `scripts/` for source-only maintenance commands. Example only, not a fixed list: `bun test`. If `## Required Checks` is missing or empty, report that as the first blocking finding instead of substituting a default list.
 3. Run advisory readiness when available:
    - `repo-harness run check-agent-tooling --host both --json`
 4. Treat missing CodeGraph or missing Codex `health`/`check`/`mermaid` as hard failures.
@@ -50,3 +44,4 @@ For a `bugfix` contract, confirm `## Root Cause Evidence` states a testable `roo
 - Does not silently ignore CodeGraph readiness failures, advisory tooling hangs, or skipped checks.
 - Does not claim skill-effectiveness authority from dry-run benchmark output.
 - Does not claim release readiness if source repo and installed runtime copy are out of sync.
+- Does not maintain its own copy of the required-check list; the target repo's root `## Required Checks` section is the single source of truth.

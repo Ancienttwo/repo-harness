@@ -31,21 +31,21 @@ Owns the workflow-engine-contract-assets capability boundary declared in .ai/con
 <!-- BEGIN ARCHITECTURE CONTRACT -->
 ## Architecture Contract
 
-- Functional block: `.ai/harness/policy.json`
+- Functional block: `assets/workflow-contract.v1.json`
 - Capability ID: `workflow-engine-contract-assets`
-- Matched prefix: `.ai/harness/policy.json`
+- Matched prefix: `assets/workflow-contract.v1.json`
 - Architecture domain: `workflow-engine`
 - Architecture capability: `contract-assets`
 - Architecture module: `docs/architecture/modules/workflow-engine/contract-assets.md`
-- Last architecture event: 2026-07-12T22:27:17+0800
-- Last changed path: `.ai/harness/policy.json`
+- Last architecture event: 2026-07-14T19:52:25+0800
+- Last changed path: `assets/workflow-contract.v1.json`
 - Severity: high
 - Change type: workflow-surface
 - Module responsibility: Keep this block aligned with the local boundary described by surrounding human-owned context.
-- Entrypoints: `.ai/harness/policy.json`
+- Entrypoints: `assets/workflow-contract.v1.json`
 - Allowed dependencies: Follow root `AGENTS.md` / `CLAUDE.md` and this local contract.
 - Forbidden dependencies: Do not cross sibling app/service/package boundaries without an architecture snapshot or explicit plan.
-- Runtime path: `.ai/harness/policy.json`
+- Runtime path: `assets/workflow-contract.v1.json`
 - LSP/tooling profile: `typescript-lsp`
 - Verification: Use root required checks plus local commands recorded in this capability contract.
 - Latest snapshot: `(none yet)`
@@ -60,8 +60,8 @@ Owns the workflow-engine-contract-assets capability boundary declared in .ai/con
   - current_slice: todo-01
   - source_plan: (none)
 - `tasks/workstreams/workflow-engine/contract-assets/agent-fleet-specialists.md`
-  - status: active
-  - current_slice: specialist-roles
+  - status: completed
+  - current_slice: completed-20260713-specialist-roles
   - source_plan: plans/plan-20260712-2215-agent-fleet-specialists.md
 - `tasks/workstreams/workflow-engine/contract-assets/cleanup-script-policy.md`
   - status: completed
