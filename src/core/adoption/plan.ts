@@ -4,6 +4,7 @@ import type { AdoptionPlan } from "./operations";
 import { summarizeOperations } from "./summary";
 import { withRollbackMetadata } from "./rollback";
 import { planStandardAdoption } from "./standard-plan";
+import { isRepoHarnessSourceCheckout } from "./source-checkout";
 
 export interface PlanAdoptionOptions {
   readonly repoRoot: string;
@@ -21,6 +22,23 @@ export interface PlanAdoptionOptions {
 export function planAdoption(opts: PlanAdoptionOptions): AdoptionPlan {
   const repoRoot = resolve(opts.repoRoot);
   const mode = opts.mode ?? "standard";
+  if (mode === "standard" && isRepoHarnessSourceCheckout(repoRoot)) {
+    const operations: AdoptionPlan["operations"] = [];
+    return {
+      protocol: 1,
+      command: "adopt",
+      repoRoot,
+      mode,
+      apply: opts.apply === true,
+      operations,
+      summary: summarizeOperations(operations),
+      warnings: [{
+        code: "self-host-source-noop",
+        message: "The repo-harness source checkout owns its workflow surfaces; downstream adopt is not applicable.",
+        risk: "low",
+      }],
+    };
+  }
   const planned = planStandardAdoption({ repoRoot, mode, env: opts.env });
   const operations = planned.operations.map(withRollbackMetadata);
 

@@ -4,6 +4,7 @@ import { spawnSync } from "child_process";
 import { tmpdir } from "os";
 import { join } from "path";
 import { planAdoption } from "../../src/core/adoption/plan";
+import { isRepoHarnessSourceCheckout } from "../../src/core/adoption/source-checkout";
 import { applyAdoptionPlan, rollbackAdoptionTransaction } from "../../src/effects/fs-transaction";
 
 const ROOT = join(import.meta.dir, "..", "..");
@@ -41,9 +42,27 @@ describe("canonical adoption plan", () => {
   });
 
   test("self-host source planning never schedules its canonical scripts for generated-runtime cleanup", () => {
+    expect(isRepoHarnessSourceCheckout(ROOT)).toBe(true);
     const plan = planAdoption({ repoRoot: ROOT, mode: "standard" });
-    expect(plan.operations.some((operation) => operation.kind === "remove" && operation.path?.startsWith("scripts/"))).toBe(false);
-    expect(plan.operations.some((operation) => operation.kind === "gitUntrack" && operation.path?.startsWith("scripts/"))).toBe(false);
+    expect(plan.summary.plannedTotal).toBe(0);
+    expect(plan.operations).toEqual([]);
+    expect(plan.warnings).toEqual([
+      {
+        code: "self-host-source-noop",
+        message: "The repo-harness source checkout owns its workflow surfaces; downstream adopt is not applicable.",
+        risk: "low",
+      },
+    ]);
+  });
+
+  test("source checkout detection requires the complete canonical package shape", () => {
+    const repo = tempRepo();
+    try {
+      writeFileSync(join(repo, "package.json"), JSON.stringify({ name: "repo-harness" }));
+      expect(isRepoHarnessSourceCheckout(repo)).toBe(false);
+    } finally {
+      cleanup(repo);
+    }
   });
 
   test("standard apply installs state, hooks, templates, package scripts, and a recoverable manifest", () => {

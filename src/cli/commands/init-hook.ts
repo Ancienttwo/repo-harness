@@ -17,6 +17,7 @@ import { runDoctor, type CheckStatus, type DoctorReport } from './doctor';
 import { runStatus, type StatusReport } from './status';
 import type { InstallTargetSpec } from './install';
 import { planAdoption } from '../../core/adoption/plan';
+import { isRepoHarnessSourceCheckout } from '../../core/adoption/source-checkout';
 
 export type InitHookTarget = InstallTargetSpec;
 export type InitHookStatus = 'ok' | 'attention' | 'blocked';
@@ -260,6 +261,16 @@ function adoptionRefreshCheck(
       status: 'na',
       source: 'status',
       detail: `repo is not repo-harness adopted (${report.repo.optInMarker} missing)`,
+    };
+  }
+
+  if (isRepoHarnessSourceCheckout(report.repo.repoRoot)) {
+    return {
+      id,
+      title,
+      status: 'na',
+      source: 'status',
+      detail: 'self-host source checkout owns its workflow surfaces; downstream adopt refresh is not applicable',
     };
   }
 

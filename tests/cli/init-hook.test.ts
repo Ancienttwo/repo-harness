@@ -336,6 +336,29 @@ describe('init-hook command', () => {
     });
   });
 
+  test('does not recommend downstream adopt refresh for the repo-harness source checkout', () => {
+    withTempHome((home) => {
+      mkdirSync(join(home, '.codex'), { recursive: true });
+      writeFileSync(join(home, '.codex', 'AGENTS.md'), '# Global Working Rules\n');
+
+      const report = runInitHook({
+        cwd: ROOT,
+        sourceRoot: join(home, '.bun', 'install', 'global', 'node_modules', 'repo-harness'),
+        target: 'codex',
+        checkUpdates: true,
+        env: { ...process.env, HOME: home },
+        statusReport: statusReportForRepo(ROOT),
+        doctorReport: baseDoctorReport(),
+        toolingReport: baseToolingReport(),
+      });
+
+      const check = report.checks.find((entry) => entry.id === 'repo.adopt-refresh');
+      expect(check?.status).toBe('na');
+      expect(check?.detail).toContain('self-host source checkout');
+      expect(report.agent_actions.find((entry) => entry.id === 'repo.adopt-refresh')).toBeUndefined();
+    });
+  });
+
   test('does not ask Agents to refresh adoption for non-adopted repos', () => {
     withTempHome((home, repo) => {
       mkdirSync(join(home, '.codex'), { recursive: true });

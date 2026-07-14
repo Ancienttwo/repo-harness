@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { spawnSync } from "child_process";
+import { tmpdir } from "os";
 import { join } from "path";
 
 const ROOT = join(import.meta.dir, "..");
@@ -206,15 +207,21 @@ describe("README DX contract", () => {
   });
 
   test("dry-run keeps the canonical adoption-plan onboarding signal", () => {
-    const res = spawnSync("bun", ["src/cli/index.ts", "adopt", "--repo", ".", "--dry-run"], {
-      cwd: ROOT,
-      encoding: "utf-8",
-    });
+    const repo = mkdtempSync(join(tmpdir(), "repo-harness-readme-dx-"));
+    try {
+      writeFileSync(join(repo, "package.json"), JSON.stringify({ name: "readme-dx-fixture", private: true }));
+      const res = spawnSync("bun", ["src/cli/index.ts", "adopt", "--repo", repo, "--dry-run"], {
+        cwd: ROOT,
+        encoding: "utf-8",
+      });
 
-    expect(res.status).toBe(0);
-    expect(res.stdout).toContain("[adopt-plan] repo:");
-    expect(res.stdout).toContain("[adopt-plan] operations:");
-    expect(res.stdout).toContain("writeFile:");
+      expect(res.status).toBe(0);
+      expect(res.stdout).toContain(`[adopt-plan] repo: ${repo}`);
+      expect(res.stdout).toContain("[adopt-plan] operations:");
+      expect(res.stdout).toContain("writeFile:");
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
   }, 15000);
 
   test("runtime red-flag scan uses an explicit allowlist for install examples and legacy aliases", () => {
