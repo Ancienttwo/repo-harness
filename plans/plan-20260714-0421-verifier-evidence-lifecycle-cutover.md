@@ -135,7 +135,7 @@ work-package
 - [x] Cut benchmark validity to benchmark subject/provenance and refactor setup to three profile bases plus 27 isolated overlays.
 - [x] Update product source projections, contracts/templates, docs, workflow artifacts, and regression tests.
 - [x] Run deterministic verification under the fixed budget.
-- [ ] Run exactly one final authoritative 3x9 matrix for the frozen benchmark subject.
+- [x] Run exactly one final authoritative 3x9 matrix for the frozen benchmark subject.
 - [ ] Obtain one external acceptance and run artifact-only final closeout.
 
 ## Evidence Contract
@@ -169,5 +169,5 @@ Implement exactly the Goal, In Scope, Allowed Paths, and Exit Criteria in the li
 - [x] Cut benchmark validity to benchmark subject/provenance and refactor setup to three profile bases plus 27 isolated overlays.
 - [x] Update product source projections, contracts/templates, docs, workflow artifacts, and regression tests.
 - [x] Run deterministic verification under the fixed budget.
-- [ ] Run exactly one final authoritative 3x9 matrix for the frozen benchmark subject.
+- [x] Run exactly one final authoritative 3x9 matrix for the frozen benchmark subject.
 - [ ] Obtain one external acceptance and run artifact-only final closeout.
