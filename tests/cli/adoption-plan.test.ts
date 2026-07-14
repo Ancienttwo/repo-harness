@@ -77,6 +77,7 @@ describe("canonical adoption plan", () => {
         JSON.stringify(
           {
             external_tooling: {
+              gbrain: { mcp: "candidate-disabled" },
               routing: {
                 complex: "gstack",
                 simple: "waza",
@@ -102,7 +103,8 @@ describe("canonical adoption plan", () => {
       const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "standard", apply: true }));
       expect(apply.ok).toBe(true);
       const policy = JSON.parse(readFileSync(join(repo, ".ai", "harness", "policy.json"), "utf-8"));
-      expect(policy.external_tooling.routing).toEqual({ simple: "waza", knowledge: "gbrain" });
+      expect(policy.external_tooling.routing).toEqual({ simple: "waza" });
+      expect(policy.external_tooling).not.toHaveProperty("gbrain");
       expect(policy.agentic_development.routing).toMatchObject({
         product_discovery: "parent-agent:geju",
         complex_engineering_plan: "parent-agent:geju",
@@ -147,7 +149,7 @@ describe("canonical adoption plan", () => {
       const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "standard", apply: true }));
       expect(apply.ok).toBe(true);
       const policy = JSON.parse(readFileSync(join(repo, ".ai", "harness", "policy.json"), "utf-8"));
-      expect(policy.external_tooling.routing).toEqual({ simple: "waza", knowledge: "gbrain" });
+      expect(policy.external_tooling.routing).toEqual({ simple: "waza" });
       expect(policy.agentic_development.routing).toMatchObject({
         product_discovery: "custom:product-discovery",
         complex_engineering_plan: "parent-agent:geju",

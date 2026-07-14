@@ -21,7 +21,7 @@ Use this command when the user asks whether the harness, migration, or release s
 3. Run advisory readiness when available:
    - `repo-harness run check-agent-tooling --host both --json`
 4. Treat missing CodeGraph or missing Codex `health`/`check`/`mermaid` as hard failures.
-5. Treat Waza staging drift and gbrain warnings as yellow readiness flags; report the fix or acceptance reason without failing the repo gate.
+5. Treat Waza staging drift as a yellow readiness flag; report the fix or acceptance reason without failing the repo gate.
 6. Report skill eval authority when release/readiness evidence depends on skill
    effectiveness:
    - authoritative: non-dry-run `bun run benchmark:skills --eval <slug>` with

@@ -130,7 +130,7 @@
     },
     {
       "version": "0.5.2",
-      "description": "Adds weekly tooling-update advisory caching, reviewed security exceptions, gbrain fast-doctor warning handling, and Claude review transcript recovery"
+      "description": "Adds weekly tooling-update advisory caching, reviewed security exceptions, external-tool fast-doctor warning handling, and Claude review transcript recovery"
     },
     {
       "version": "0.5.3",

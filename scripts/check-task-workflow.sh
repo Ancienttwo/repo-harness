@@ -983,8 +983,6 @@ check_required_file "$lessons_file"
 check_required_dir "$research_dir"
 check_required_file "$context_map_file"
 check_required_file "$policy_file"
-check_required_file "$(policy_get '.information_lifecycle.external_knowledge.manifest_file' '.ai/harness/brain-manifest.json')"
-
 if [[ -f ".claude/templates/plan.template.md" ]]; then
   check_plan_template_artifact_fields ".claude/templates/plan.template.md"
   check_plan_template_evidence_contract ".claude/templates/plan.template.md"
@@ -1049,14 +1047,6 @@ fi
 
 if ! run_optional_helper "check-deploy-sql-order.sh" --quiet; then
   report_issue "Deploy SQL order check failed."
-fi
-
-if ! run_optional_helper "check-brain-manifest.sh"; then
-  report_issue "Brain manifest check failed."
-fi
-
-if ! run_optional_helper "sync-brain-docs.sh" --check; then
-  report_issue "Brain doc sync check failed."
 fi
 
 todo_source="$(todo_source_plan || true)"

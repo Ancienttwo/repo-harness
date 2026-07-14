@@ -45,7 +45,7 @@ Error paths:
 - Contract/runtime parity drift is caught by `tests/workflow-contract.test.ts`.
 - Capability orphan modules are caught by `capability-resolver.ts validate`.
 - Missing, malformed, or non-existent capability prefixes fail closed; the resolver does not synthesize authority from legacy context blocks or directory scans.
-- Brain manifest drift is caught by `scripts/check-brain-manifest.sh`; opted-in repo-to-brain mirror drift is caught by `scripts/sync-brain-docs.sh --check`.
+- Brain-manifest validation and repo-to-brain export are explicit operator actions. Contract checks and hooks do not inspect external vault state.
 - Missing concrete risk targets for active execution fail closed. Checks,
   review, handoff, and resume freshness bind exact content fingerprints.
 - `.claude/.active-plan` is not a steady-state reader or writer. The only
@@ -202,7 +202,7 @@ self-migration dry-run.
 ## Optimization Backlog
 
 - Promote `bun scripts/capability-resolver.ts validate --format text` into the strict workflow gate after one more real architecture slice.
-- Keep optional long-form docs in default brain stubs; mirror valuable repo-authored docs only through manifest `sync.direction=repo-to-brain` entries.
+- Keep durable knowledge in repo-authored research and lessons. Optional external brain exports require an operator-invoked manifest sync and never participate in workflow correctness.
 
 - `tasks/workstreams/workflow-engine/contract-assets/20260712-contract-assets.md`
 

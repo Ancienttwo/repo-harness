@@ -163,12 +163,10 @@ const entries = Array.isArray(manifest.entries) ? manifest.entries : [];
 const ids = entries.map((entry) => entry.id);
 const repoPaths = entries.map((entry) => entry.repo_path);
 const brainPaths = entries.map((entry) => entry.brain_path);
-const gbrainSlugs = entries.map((entry) => entry.gbrain_slug);
 
 if (hasDuplicate(ids)) issue("Brain manifest contains duplicate entry ids");
 if (hasDuplicate(repoPaths)) issue("Brain manifest contains duplicate repo_path values");
 if (hasDuplicate(brainPaths)) issue("Brain manifest contains duplicate brain_path values");
-if (hasDuplicate(gbrainSlugs)) issue("Brain manifest contains duplicate gbrain_slug values");
 
 const defaultPrefix = stripWildcard(manifest.default_brain_path);
 const localVaultRoot = logicalToLocal(defaultPrefix);
@@ -182,7 +180,6 @@ for (const entry of entries) {
   const repoPath = entry.repo_path;
   const assetPath = entry.asset_path;
   const brainPath = entry.brain_path;
-  const gbrainSlug = entry.gbrain_slug;
   const maxRepoLines = Number(entry.max_repo_lines || 0);
   const syncDirection = entry.sync?.direction || entry.sync_direction || "";
   const isRepoToBrainSync = syncDirection === "repo-to-brain";
@@ -190,7 +187,6 @@ for (const entry of entries) {
   if (!entry.id) issue("Entry is missing id");
   if (!repoPath) issue(`Entry ${id} is missing repo_path`);
   if (!brainPath) issue(`Entry ${id} is missing brain_path`);
-  if (!gbrainSlug) issue(`Entry ${id} is missing gbrain_slug`);
   if (syncDirection && syncDirection !== "repo-to-brain") {
     issue(`Entry ${id} has unsupported sync.direction: ${syncDirection}`);
   }
@@ -207,9 +203,6 @@ for (const entry of entries) {
       const content = fs.readFileSync(repoFile, "utf8");
       if (!isRepoToBrainSync && brainPath && !content.includes(brainPath)) {
         issue(`Entry ${id} repo stub does not mention brain_path: ${repoPath}`);
-      }
-      if (!isRepoToBrainSync && gbrainSlug && !content.includes(gbrainSlug)) {
-        issue(`Entry ${id} repo stub does not mention gbrain_slug: ${repoPath}`);
       }
       if (maxRepoLines > 0) {
         const lineCount = content.endsWith("\n") ? content.split("\n").length - 1 : content.split("\n").length;

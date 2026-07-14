@@ -2646,8 +2646,8 @@ describe("Hook runtime behavior", () => {
     }
   });
 
-  test("post-edit-guard: syncs opted-in repo docs to the default brain vault", () => {
-    const cwd = tmpWorkspace("post-edit-brain-sync");
+  test("post-edit-guard: leaves external brain vault state untouched", () => {
+    const cwd = tmpWorkspace("post-edit-no-brain-sync");
     try {
       initGitRepo(cwd);
       installHooks(cwd);
@@ -2659,7 +2659,7 @@ describe("Hook runtime behavior", () => {
       copyFileSync(join(ROOT, "assets/templates/helpers/sync-brain-docs.sh"), join(cwd, "scripts/sync-brain-docs.sh"));
       expect(run("chmod", ["+x", "scripts/sync-brain-docs.sh"], cwd).status).toBe(0);
 
-      writeFileSync(join(cwd, "docs/valuable.md"), "# Valuable Doc\n\nHook mirrored knowledge.\n");
+      writeFileSync(join(cwd, "docs/valuable.md"), "# Valuable Doc\n\nOperator-managed export.\n");
       writeFileSync(
         join(cwd, ".ai/harness/brain-manifest.json"),
         JSON.stringify(
@@ -2674,7 +2674,6 @@ describe("Hook runtime behavior", () => {
                 role: "repo-authored",
                 repo_path: "docs/valuable.md",
                 brain_path: "brain/demo/references/valuable.md",
-                gbrain_slug: "references/valuable",
                 sync: { direction: "repo-to-brain" },
               },
             ],
@@ -2690,8 +2689,8 @@ describe("Hook runtime behavior", () => {
       });
 
       expect(res.status).toBe(0);
-      expect(res.stdout).toContain("[BrainSync] synced docs/valuable.md");
-      expect(readFileSync(join(brainRoot, "demo/references/valuable.md"), "utf-8")).toContain("Hook mirrored knowledge.");
+      expect(res.stdout).not.toContain("[BrainSync]");
+      expect(existsSync(join(brainRoot, "demo/references/valuable.md"))).toBe(false);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

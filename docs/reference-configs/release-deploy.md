@@ -5,7 +5,6 @@
 ## Default Brain
 
 - File vault: `brain/repo-harness/runbooks/runbook-agentic-release-deploy.md`
-- gbrain slug: `runbooks/runbook-agentic-release-deploy`
 
 ## Repo Role
 
@@ -35,6 +34,6 @@ evidence must record `full_test_count`, `dry_run_ratio`, `grader_pass_rate`, and
 evidence is non-authoritative, and missing eval evidence must be called out as
 unavailable. Readiness yellow flags from `repo-harness-check` must be recorded
 with either the accepted reason or the concrete repair command, including Waza
-staging drift, gbrain warnings, CodeGraph version drift, or non-authoritative
+staging drift, CodeGraph version drift, or non-authoritative
 skill eval evidence. Do not rely only on npm or GitHub release metadata for this
 local audit trail.

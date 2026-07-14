@@ -5,7 +5,6 @@
 ## Default Brain
 
 - File vault: `brain/repo-harness/patterns/pattern-agentic-development-protocol.md`
-- gbrain slug: `patterns/pattern-agentic-development-protocol`
 
 ## Repo Role
 

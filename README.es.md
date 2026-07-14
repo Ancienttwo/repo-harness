@@ -265,7 +265,7 @@ El comando debería terminar imprimiendo `=== Migration Report ===`, e incluir:
 - `Host hook adapters are user-level:`: recordatorio de instalar los global adapters y de confiar en `~/.codex/hooks.json`
 - `Workflow migration:`: el plan de creación o refresco de las repo-local harness surfaces
 - `Helper runtime:`: la cadena de herramientas operativa que obtendrás tras aplicar
-- `--- External Tooling ---`: la guía de planning parent/Geju, la readiness de Waza/gbrain y las advisory de instalación/actualización
+- `--- External Tooling ---`: la guía de planning parent/Geju, la readiness de Waza y CodeGraph y las advisory de instalación/actualización
 
 ### Los dos comandos siguientes
 
@@ -435,9 +435,6 @@ contribución e influencia.
 Gracias a [TW93](https://x.com/HiTw93), autor de Waza. Los skills centrales
 `think`, `hunt`, `check` y `health` dan forma al ritmo diario de planning, bug
 hunt y verification de `repo-harness`.
-
-Gracias a [Garry Tan](https://x.com/garrytan), autor de gbrain. Influyó en el
-workflow de release documentation, knowledge sync y handoff retrieval.
 
 Gracias a [Peter Steinberger](https://x.com/steipete), autor de Oracle
 (`@steipete/oracle`, MIT). Es el motor de consult de navegador GPT Pro / ChatGPT

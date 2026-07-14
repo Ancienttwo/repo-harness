@@ -317,7 +317,6 @@ export function defaultPolicy(documentationProfile: string): JsonObject {
     external_tooling: {
       routing: {
         simple: "waza",
-        knowledge: "gbrain",
       },
     },
     agentic_development: {
@@ -683,6 +682,8 @@ export function planStandardAdoption(opts: StandardPlanOptions): { operations: A
   const externalRouting = isObject(externalTooling.routing) ? externalTooling.routing : {};
   const retiredComplexProvider = typeof externalRouting.complex === "string" ? externalRouting.complex : null;
   delete externalRouting.complex;
+  if (externalRouting.knowledge === "gbrain") delete externalRouting.knowledge;
+  delete externalTooling.gbrain;
   externalTooling.routing = externalRouting;
   policy.external_tooling = externalTooling;
 

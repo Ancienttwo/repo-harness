@@ -145,38 +145,6 @@ function writeFakeBunx(fakeBin: string, logFile?: string) {
   );
 }
 
-function writeFakeGbrain(fakeBin: string, logFile?: string) {
-  writeExecutable(
-    join(fakeBin, "gbrain"),
-    [
-      "#!/bin/bash",
-      "set -euo pipefail",
-      logFile ? `echo "gbrain $*" >> "${logFile}"` : "",
-      "case \"$*\" in",
-      "  \"--version\")",
-      "    echo 'gbrain 0.12.0'",
-      "    ;;",
-      "  \"doctor --json --fast\")",
-      "    echo '{\"status\":\"warnings\",\"health_score\":90,\"checks\":[{\"name\":\"connection\",\"status\":\"warn\",\"message\":\"fast mode skipped DB checks\"}]}'",
-      "    ;;",
-      "  \"doctor --json\")",
-      "    echo '{\"status\":\"warnings\",\"health_score\":90}'",
-      "    ;;",
-      "  \"integrations list --json\")",
-      "    echo '{\"local\":[\"repo-sync\"]}'",
-      "    ;;",
-      "  \"check-update --json\")",
-      "    echo '{\"update_available\":false}'",
-      "    ;;",
-      "  *)",
-      "    exit 1",
-      "    ;;",
-      "esac",
-      "",
-    ].join("\n")
-  );
-}
-
 function writeFakeCodeGraph(
   fakeBin: string,
   options: { version?: string; status?: "up-to-date" | "stale" | "not-initialized"; logFile?: string } = {}
@@ -282,7 +250,7 @@ describe("check-agent-tooling", () => {
       mkdirSync(join(envRoot.home, ".claude"), { recursive: true });
       mkdirSync(join(envRoot.home, ".codex"), { recursive: true });
       writeFileSync(join(envRoot.home, ".claude", "settings.json"), "{}\n");
-      writeFileSync(join(envRoot.home, ".codex", "config.toml"), "[mcp_servers.codegraph]\ncommand = \"codegraph\"\n# no gbrain mcp\n");
+      writeFileSync(join(envRoot.home, ".codex", "config.toml"), "[mcp_servers.codegraph]\ncommand = \"codegraph\"\n");
       writeWazaBundle(join(envRoot.home, ".agents", "skills"), "3.0.0");
       writeWazaBundle(join(envRoot.home, ".codex", "skills"), "3.0.0");
       writeWazaRules(join(envRoot.home, ".agents"), "3.0.0");
@@ -292,7 +260,6 @@ describe("check-agent-tooling", () => {
       writeWazaLock(envRoot.home);
 
       writeFakeBunx(envRoot.fakeBin);
-      writeFakeGbrain(envRoot.fakeBin);
       writeFakeCodeGraph(envRoot.fakeBin);
 
       const res = spawnSync("bash", [SCRIPT, "--json", "--host", "both"], {
@@ -334,15 +301,7 @@ describe("check-agent-tooling", () => {
         architecture_diagram: "mermaid",
       });
       expect(report.tools.codex_automation_profile.vendoring_policy).toBe("do-not-vendor-skill-body");
-      expect(report.tools.gbrain.status).toBe("present");
-      expect(report.tools.gbrain.required).toBe(false);
-      expect(report.tools.gbrain.reason).toContain("fast doctor only skipped DB checks");
-      expect(report.tools.gbrain.install_command).toBe("bun install -g github:garrytan/gbrain");
-      expect(report.tools.gbrain.install_command).not.toContain("bun add -g gbrain");
-      expect(report.tools.gbrain.install_note).toContain("npm registry package gbrain");
-      expect(report.tools.gbrain.mcp_hosts.claude.status).toBe("disabled");
-      expect(report.tools.gbrain.mcp_hosts.codex.status).toBe("disabled");
-      expect(report.tools.gbrain.impact.knowledge_tasks).toBe("manual-only");
+      expect(report.tools).not.toHaveProperty("gbrain");
       expect(report.tools.codegraph.status).toBe("partial");
       expect(report.tools.codegraph.primary_host).toBe("codex");
       expect(report.tools.codegraph.source).toBe("global");
@@ -369,58 +328,11 @@ describe("check-agent-tooling", () => {
     }
   }, 15000);
 
-  test("keeps gbrain warning when fast doctor reports a real warning", () => {
-    const envRoot = setupFakeEnvironment("check-agent-tooling-gbrain-warning");
-    try {
-      writeExecutable(
-        join(envRoot.fakeBin, "gbrain"),
-        [
-          "#!/bin/bash",
-          "set -euo pipefail",
-          "case \"$*\" in",
-          "  \"--version\")",
-          "    echo 'gbrain 0.12.0'",
-          "    ;;",
-          "  \"doctor --json --fast\")",
-          "    echo '{\"status\":\"warnings\",\"health_score\":80,\"checks\":[{\"name\":\"sync_freshness\",\"status\":\"warn\",\"message\":\"stale source\"}]}'",
-          "    ;;",
-          "  \"integrations list --json\")",
-          "    echo '{}'",
-          "    ;;",
-          "  *)",
-          "    exit 1",
-          "    ;;",
-          "esac",
-          "",
-        ].join("\n")
-      );
-
-      const res = spawnSync("bash", [SCRIPT, "--json", "--host", "codex"], {
-        cwd: ROOT,
-        encoding: "utf-8",
-        env: {
-          ...process.env,
-          HOME: envRoot.home,
-          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
-          AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: "0",
-        },
-      });
-
-      expect(res.status).toBe(0);
-      const report = JSON.parse(res.stdout);
-      expect(report.tools.gbrain.status).toBe("warning");
-      expect(report.tools.gbrain.reason).toContain("doctor status is warnings");
-    } finally {
-      rmSync(envRoot.root, { recursive: true, force: true });
-    }
-  }, 15000);
-
   test("reports Claude CodeGraph MCP as deferred when alwaysLoad is missing", () => {
     const envRoot = setupFakeEnvironment("check-agent-tooling-codegraph-claude-deferred");
     try {
       writeClaudeCodeGraphConfig(envRoot.home, false);
       writeFakeBunx(envRoot.fakeBin);
-      writeFakeGbrain(envRoot.fakeBin);
       writeFakeCodeGraph(envRoot.fakeBin);
 
       const res = spawnSync("bash", [SCRIPT, "--json", "--host", "claude"], {
@@ -452,7 +364,6 @@ describe("check-agent-tooling", () => {
     try {
       writeClaudeCodeGraphConfig(envRoot.home, true);
       writeFakeBunx(envRoot.fakeBin);
-      writeFakeGbrain(envRoot.fakeBin);
       writeFakeCodeGraph(envRoot.fakeBin);
 
       const res = spawnSync("bash", [SCRIPT, "--json", "--host", "claude"], {
@@ -486,7 +397,7 @@ describe("check-agent-tooling", () => {
       mkdirSync(join(envRoot.home, ".claude"), { recursive: true });
       mkdirSync(join(envRoot.home, ".codex"), { recursive: true });
       writeFileSync(join(envRoot.home, ".claude", "settings.json"), "{}\n");
-      writeFileSync(join(envRoot.home, ".codex", "config.toml"), "[mcp_servers.codegraph]\ncommand = \"codegraph\"\n# no gbrain mcp\n");
+      writeFileSync(join(envRoot.home, ".codex", "config.toml"), "[mcp_servers.codegraph]\ncommand = \"codegraph\"\n");
       writeWazaBundle(join(envRoot.home, ".agents", "skills"), "3.0.0");
       writeWazaBundle(join(envRoot.home, ".codex", "skills"), "3.0.0");
       writeWazaRules(join(envRoot.home, ".agents"), "3.0.0");
@@ -528,7 +439,6 @@ describe("check-agent-tooling", () => {
         ].join("\n")
       );
 
-      writeFakeGbrain(envRoot.fakeBin, logFile);
       writeFakeCodeGraph(envRoot.fakeBin, { logFile });
       writeFakeNpm(envRoot.fakeBin, "0.9.6", logFile);
       writeFakeCurl(envRoot.fakeBin, "3.0.0", logFile);
@@ -550,18 +460,12 @@ describe("check-agent-tooling", () => {
       expect(log).not.toContain("git ");
       expect(log).toContain("curl -fsSL --max-time 5 https://raw.githubusercontent.com/tw93/Waza/main/skills/check/SKILL.md");
       expect(log).toContain("curl -fsSL --max-time 5 https://raw.githubusercontent.com/tw93/Waza/main/rules/durable-context.md");
-      expect(log).toContain("gbrain doctor --json --fast");
-      expect(log).toContain("gbrain check-update --json");
-      expect(log).toContain("gbrain integrations list --json");
       expect(log).toContain("codegraph --version");
       expect(log).toContain("codegraph status .");
       expect(log).toContain("npm view @colbymchenry/codegraph version --json");
       expect(log).not.toContain("setup");
       expect(log).not.toContain("skills check");
       expect(log).not.toContain("skills update");
-      expect(log).not.toContain("gbrain serve");
-      expect(log).not.toContain("gbrain sync");
-      expect(log).not.toContain("gbrain upgrade");
       expect(log).not.toContain("codegraph init");
       expect(log).not.toContain("codegraph sync");
       expect(log).not.toContain("codegraph install");
@@ -582,7 +486,6 @@ describe("check-agent-tooling", () => {
       mkdirSync(join(envRoot.home, ".codex"), { recursive: true });
       writeFileSync(join(envRoot.home, ".codex", "config.toml"), "# no codegraph mcp\n");
       writeFakeBunx(envRoot.fakeBin);
-      writeFakeGbrain(envRoot.fakeBin);
       writeFakeCodeGraph(envRoot.fakeBin);
 
       const res = spawnSync("bash", [SCRIPT, "--json", "--host", "codex", "--strict-readiness"], {
@@ -614,7 +517,7 @@ describe("check-agent-tooling", () => {
       mkdirSync(join(envRoot.home, ".claude"), { recursive: true });
       mkdirSync(join(envRoot.home, ".codex"), { recursive: true });
       writeFileSync(join(envRoot.home, ".claude", "settings.json"), "{}\n");
-      writeFileSync(join(envRoot.home, ".codex", "config.toml"), "[mcp_servers.codegraph]\ncommand = \"codegraph\"\n# no gbrain mcp\n");
+      writeFileSync(join(envRoot.home, ".codex", "config.toml"), "[mcp_servers.codegraph]\ncommand = \"codegraph\"\n");
       writeWazaBundle(join(envRoot.home, ".agents", "skills"), "9.0.0");
       writeWazaBundle(join(envRoot.home, ".codex", "skills"), "1.0.0");
       writeWazaRules(join(envRoot.home, ".agents"), "9.0.0");
@@ -623,7 +526,6 @@ describe("check-agent-tooling", () => {
       symlinkClaudeWazaToAgents(envRoot.home);
       writeWazaLock(envRoot.home);
       writeFakeBunx(envRoot.fakeBin);
-      writeFakeGbrain(envRoot.fakeBin);
       writeFakeCodeGraph(envRoot.fakeBin);
       writeFakeNpm(envRoot.fakeBin, "0.9.6");
       writeFakeCurl(envRoot.fakeBin, "9.0.0");
@@ -667,7 +569,7 @@ describe("check-agent-tooling", () => {
       mkdirSync(join(envRoot.home, ".claude"), { recursive: true });
       mkdirSync(join(envRoot.home, ".codex"), { recursive: true });
       writeFileSync(join(envRoot.home, ".claude", "settings.json"), "{}\n");
-      writeFileSync(join(envRoot.home, ".codex", "config.toml"), "[mcp_servers.codegraph]\ncommand = \"codegraph\"\n# no gbrain mcp\n");
+      writeFileSync(join(envRoot.home, ".codex", "config.toml"), "[mcp_servers.codegraph]\ncommand = \"codegraph\"\n");
       writeWazaBundle(join(envRoot.home, ".agents", "skills"), "3.0.0");
       writeWazaBundle(join(envRoot.home, ".codex", "skills"), "3.0.0");
       writeWazaRules(join(envRoot.home, ".agents"), "3.0.0");
@@ -679,7 +581,6 @@ describe("check-agent-tooling", () => {
       symlinkClaudeWazaToAgents(envRoot.home);
       writeWazaLock(envRoot.home);
       writeFakeBunx(envRoot.fakeBin);
-      writeFakeGbrain(envRoot.fakeBin);
       writeFakeCodeGraph(envRoot.fakeBin);
       writeFakeNpm(envRoot.fakeBin, "0.9.6");
       writeFakeCurl(envRoot.fakeBin, "3.0.0");
@@ -722,7 +623,6 @@ describe("check-agent-tooling", () => {
       mkdirSync(join(envRoot.home, ".codex"), { recursive: true });
       writeFileSync(join(envRoot.home, ".codex", "config.toml"), "[mcp_servers.codegraph]\ncommand = \"codegraph\"\n");
       writeFakeBunx(envRoot.fakeBin);
-      writeFakeGbrain(envRoot.fakeBin);
       writeFakeCodeGraph(localBin, { version: "0.9.6" });
       writeFakeCodeGraph(envRoot.fakeBin, { version: "0.8.0" });
 
@@ -768,7 +668,6 @@ describe("check-agent-tooling", () => {
         JSON.stringify({ devDependencies: { "@colbymchenry/codegraph": "1.0.1" } }, null, 2)
       );
       writeFakeBunx(envRoot.fakeBin);
-      writeFakeGbrain(envRoot.fakeBin);
       writeFakeCodeGraph(bundleBin, { version: "1.0.1" });
       writeExecutable(join(shimBin, "codegraph"), "#!/bin/bash\necho 'bad shim used' >&2\nexit 99\n");
 
@@ -799,7 +698,6 @@ describe("check-agent-tooling", () => {
     try {
       writeClaudeCodeGraphConfig(envRoot.home, true);
       writeFakeBunx(envRoot.fakeBin);
-      writeFakeGbrain(envRoot.fakeBin);
       writeFakeCodeGraph(envRoot.fakeBin);
 
       const res = spawnSync("bash", [SCRIPT, "--json", "--host", "claude", "--strict-readiness"], {
@@ -832,7 +730,6 @@ describe("check-agent-tooling", () => {
     try {
       writeClaudeCodeGraphConfig(envRoot.home, true);
       writeFakeBunx(envRoot.fakeBin);
-      writeFakeGbrain(envRoot.fakeBin);
       writeFakeCodeGraph(envRoot.fakeBin);
 
       mkdirSync(join(envRoot.home, ".claude", "agents"), { recursive: true });
@@ -883,7 +780,6 @@ describe("check-agent-tooling", () => {
         copyFileSync(join(ROOT, ".codex", "agents", `${agent}.toml`), join(envRoot.home, ".codex", "agents", `${agent}.toml`));
       }
       writeFakeBunx(envRoot.fakeBin);
-      writeFakeGbrain(envRoot.fakeBin);
       writeFakeCodeGraph(envRoot.fakeBin);
 
       const res = spawnSync("bash", [SCRIPT, "--json", "--host", "both", "--strict-readiness"], {
@@ -1095,7 +991,6 @@ describe("check-agent-tooling", () => {
       }
 
       writeFakeBunx(envRoot.fakeBin);
-      writeFakeGbrain(envRoot.fakeBin);
       writeFakeCodeGraph(envRoot.fakeBin);
       writeFakeNpm(envRoot.fakeBin, "0.9.6");
 

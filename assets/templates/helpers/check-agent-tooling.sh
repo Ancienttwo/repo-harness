@@ -103,9 +103,6 @@ const AGENT_FLEET_DEFAULT_MANAGED = ["explorer", "deep-reasoner", "fast-worker",
 const AGENT_FLEET_INSTALL_COMMAND = "repo-harness run install-agent-fleet";
 const CODEGRAPH_PACKAGE = "@colbymchenry/codegraph";
 const CODEGRAPH_GLOBAL_INSTALL_COMMAND = `bun add -g ${CODEGRAPH_PACKAGE} && repo-harness tools configure codegraph --target codex --location global`;
-const GBRAIN_INSTALL_COMMAND = "bun install -g github:garrytan/gbrain";
-const GBRAIN_INSTALL_NOTE =
-  "Install from GitHub; npm registry package gbrain is an unrelated GPU library and does not ship this CLI.";
 const CODEGRAPH_MCP_CONFIGURE_COMMAND = "repo-harness tools configure codegraph --target <codex|claude|both> --location global";
 const CODEGRAPH_LOCAL_INSTALL_COMMAND = "bun install";
 const CODEGRAPH_ENSURE_COMMAND = [
@@ -1217,144 +1214,6 @@ function detectAgentFleet() {
   };
 }
 
-function detectGbrainMcp(host) {
-  const meta = HOSTS[host];
-  const content = readText(meta.configPath);
-  if (!content) {
-    return {
-      status: "disabled",
-      reason: `No ${meta.label} config found at ${meta.configPath}.`,
-    };
-  }
-
-  if (host === "codex") {
-    if (/\[mcp_servers\.(gbrain|gbrain_http)\]/.test(content)) {
-      return {
-        status: "configured",
-        reason: "Codex config contains a gbrain MCP server entry.",
-      };
-    }
-
-    return {
-      status: "disabled",
-      reason: "Codex config does not contain a gbrain MCP server entry.",
-    };
-  }
-
-  if (/gbrain/i.test(content)) {
-    return {
-      status: "configured",
-      reason: "Claude settings contain a gbrain reference.",
-    };
-  }
-
-  return {
-    status: "disabled",
-    reason: "Claude settings do not contain a gbrain MCP configuration.",
-  };
-}
-
-function isGbrainFastOnlyConnectionSkip(doctorJson) {
-  if (!doctorJson || doctorJson.status !== "warnings") return false;
-  if (!Array.isArray(doctorJson.checks)) return false;
-  const warnings = doctorJson.checks.filter((entry) => entry?.status === "warn" || entry?.status === "warning");
-  if (warnings.length !== 1) return false;
-  const warning = warnings[0];
-  const message = String(warning.message || "");
-  return warning.name === "connection"
-    && (/Skipping DB checks \((--fast mode|"--fast mode)/i.test(message) || /fast mode skipped DB checks/i.test(message));
-}
-
-function detectGbrain() {
-  const gbrainBin = resolvePathCommand("gbrain");
-  let versionResult = gbrainBin
-    ? run(gbrainBin, ["--version"], { timeoutMs: 1000 })
-    : { ok: false, stdout: "", timed_out: false };
-  if (!versionResult.ok && versionResult.timed_out) {
-    versionResult = run(gbrainBin, ["--version"], { timeoutMs: 1000 });
-  }
-  const present = versionResult.ok;
-  const version = present ? versionResult.stdout.trim().replace(/^gbrain\s+/i, "") : null;
-  let doctorCommand = ["doctor", "--json", "--fast"];
-  let doctorResult = present ? run(gbrainBin, doctorCommand, { timeoutMs: 1500 }) : null;
-  let doctorJson = doctorResult?.ok ? parseJson(doctorResult.stdout) : null;
-  if (present && !doctorJson) {
-    doctorCommand = ["doctor", "--json"];
-    doctorResult = run(gbrainBin, doctorCommand, { timeoutMs: 1500 });
-    doctorJson = doctorResult?.ok ? parseJson(doctorResult.stdout) : null;
-  }
-  const checkUpdateResult = present && checkUpdates ? run(gbrainBin, ["check-update", "--json"], { timeoutMs: 1500 }) : null;
-  const checkUpdateJson = checkUpdateResult?.ok ? parseJson(checkUpdateResult.stdout) : null;
-  const integrationsResult = present ? run(gbrainBin, ["integrations", "list", "--json"], { timeoutMs: 1500 }) : null;
-  const integrationsJson = integrationsResult?.ok ? parseJson(integrationsResult.stdout) : null;
-  const integrationsAvailable = integrationsJson
-    ? Object.values(integrationsJson).reduce((count, value) => count + (Array.isArray(value) ? value.length : 0), 0)
-    : 0;
-  const mcpHosts = {};
-
-  for (const host of SELECTED_HOSTS) {
-    mcpHosts[host] = {
-      label: HOSTS[host].label,
-      ...detectGbrainMcp(host),
-    };
-  }
-
-  const mcpConfigured = Object.values(mcpHosts).some((entry) => entry.status === "configured");
-  const acceptedFastWarning = doctorCommand.join(" ") === "doctor --json --fast" && isGbrainFastOnlyConnectionSkip(doctorJson);
-  const status = !present
-    ? "missing"
-    : (doctorJson?.status === "ok" || acceptedFastWarning ? "present" : doctorJson?.status === "warnings" ? "warning" : "warning");
-  const updateStatus = !checkUpdates
-    ? "not-checked"
-    : checkUpdateJson?.update_available
-      ? "update-available"
-      : checkUpdateJson
-        ? "up-to-date"
-        : "unknown";
-
-  return {
-    name: "gbrain",
-    required: false,
-    status,
-    reason: !present
-      ? "gbrain CLI is not installed; install the official GitHub package, not npm registry package gbrain."
-      : acceptedFastWarning
-        ? "gbrain CLI is present; fast doctor only skipped DB checks."
-      : doctorJson
-        ? `gbrain CLI is present; doctor status is ${doctorJson.status}.`
-        : "gbrain CLI is present, but doctor output could not be parsed.",
-    cli_present: present,
-    version,
-    doctor_command: present ? `gbrain ${doctorCommand.join(" ")}` : null,
-    doctor: doctorJson,
-    update_status: updateStatus,
-    update_reason: checkUpdateJson?.error
-      ? `gbrain check-update returned ${checkUpdateJson.error}.`
-      : checkUpdateResult?.timed_out
-        ? "gbrain check-update timed out before update status could be determined."
-      : updateStatus === "update-available"
-        ? "gbrain check-update reports a newer version."
-        : updateStatus === "up-to-date"
-          ? "gbrain check-update did not find a newer version."
-          : "gbrain update status is unknown.",
-    integrations_available: integrationsAvailable,
-    mcp_hosts: mcpHosts,
-    install_command: GBRAIN_INSTALL_COMMAND,
-    install_note: GBRAIN_INSTALL_NOTE,
-    upgrade_command: checkUpdateJson?.upgrade_command || "gbrain upgrade",
-    sync_command: "gbrain sync --repo <path>",
-    impact: {
-      complex_tasks: "unaffected",
-      simple_tasks: "unaffected",
-      knowledge_tasks: !present
-        ? "missing"
-        : mcpConfigured
-          ? "full"
-          : "manual-only",
-    },
-  };
-}
-
 function detectCodeGraphMcp(host) {
   const meta = HOSTS[host];
   const content = readText(meta.configPath);
@@ -1668,7 +1527,6 @@ const report = {
     waza: wazaReport,
     codex_automation_profile: detectCodexAutomationProfile(),
     agent_fleet: detectAgentFleet(),
-    gbrain: detectGbrain(),
     codegraph: detectCodeGraph(),
   },
 };
@@ -1774,26 +1632,6 @@ function printText(result) {
   if (SELECTED_HOSTS.includes("codex")) {
     console.log(`  - Codex native role routing: ${agentFleet.native_role_routing.status} (${agentFleet.native_role_routing.reason})`);
   }
-  console.log("");
-
-  const gbrain = result.tools.gbrain;
-  console.log(`gbrain [${gbrain.status}]`);
-  console.log(`  - CLI: ${gbrain.cli_present ? `present${gbrain.version ? ` (v${gbrain.version})` : ""}` : "missing"}`);
-  if (gbrain.doctor?.status) {
-    console.log(`  - Doctor: ${gbrain.doctor.status} (score ${gbrain.doctor.health_score ?? "n/a"})`);
-  }
-  for (const host of SELECTED_HOSTS) {
-    const entry = gbrain.mcp_hosts[host];
-    console.log(`  - ${entry.label} MCP: ${entry.status}`);
-  }
-  if (gbrain.integrations_available) {
-    console.log(`  - Integrations available: ${gbrain.integrations_available}`);
-  }
-  console.log(`  - Updates: ${gbrain.update_status} (${gbrain.update_reason})`);
-  console.log(`  - Impact: knowledge=${gbrain.impact.knowledge_tasks}`);
-  console.log(`  - Install: ${gbrain.install_command}`);
-  console.log(`  - Upgrade: ${gbrain.upgrade_command}`);
-  console.log(`  - Manual sync: ${gbrain.sync_command}`);
   console.log("");
 
   const codegraph = result.tools.codegraph;

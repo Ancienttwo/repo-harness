@@ -15,7 +15,7 @@ Authoritative checks:
 - `bash scripts/check-deploy-sql-order.sh`
 - `bash scripts/check-task-sync.sh`
 - `bash scripts/check-task-workflow.sh --strict`
-- `bash scripts/sync-brain-docs.sh --check` for opted-in default-brain mirrors.
+- External brain-vault drift is intentionally outside verification; operators may run the manual manifest/export commands separately.
 - `bun scripts/inspect-project-state.ts --repo . --format text`
 - `repo-harness adopt --repo . --dry-run`
 - non-dry-run `bun run benchmark:skills --eval <slug>` runs when release or
@@ -58,7 +58,7 @@ Error paths:
 
 - `check-deploy-sql-order.sh` reads optional `.ai/harness/policy.json#operations.deploy_sql`; a valid override selects its roots, naming modes, and invariant file, while absence selects direct `deploy/sql/` children with `ordered4` names. Malformed or unsafe configured paths fail closed instead of falling back to the default layout.
 - `check-task-sync.sh` fails when substantive repo changes lack `tasks/` synchronization.
-- `check-task-workflow.sh --strict` fails for missing contract files, legacy docs, missing JSON runtime, broken deploy SQL order, or brain manifest drift.
+- `check-task-workflow.sh --strict` fails for missing contract files, legacy docs, missing JSON runtime, or broken deploy SQL order; it does not inspect external brain-vault state.
 - Skill eval evidence is non-authoritative when it is missing or dry-run-heavy;
   release filings must record the missing evidence or the repair command.
 - External tooling update checks may be skipped or timed out; CodeGraph host/index readiness is required for agent code navigation, while version freshness and other external tooling remain advisory unless the user explicitly asks for tooling maintenance.

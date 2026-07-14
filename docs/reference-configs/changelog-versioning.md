@@ -5,7 +5,6 @@
 ## Default Brain
 
 - File vault: `brain/repo-harness/references/changelog-versioning-reference.md`
-- gbrain slug: `references/changelog-versioning-reference`
 
 ## Repo Role
 

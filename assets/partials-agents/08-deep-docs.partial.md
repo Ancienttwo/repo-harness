@@ -19,7 +19,7 @@
 - `tasks/archive/`: archived todo snapshots
 - `docs/reference-configs/agentic-development-flow.md`: parent-agent/Waza routing, P1/P2/P3 reporting triggers, and daily flow
 - `docs/reference-configs/harness-overview.md`: orchestration playbook
-- `docs/reference-configs/external-tooling.md`: Waza/Geju/gbrain tooling, Codex-first skill sync, and required CodeGraph readiness commands
+- `docs/reference-configs/external-tooling.md`: Waza/Geju tooling, Codex-first skill sync, and required CodeGraph readiness commands
 - `docs/reference-configs/document-generation.md`: minimal docs profile and on-demand document rules
 - `docs/reference-configs/global-working-rules.md`: user-level Claude/Codex rule template
 - `docs/reference-configs/sprint-contracts.md`: contract rules

@@ -221,7 +221,7 @@ describe("Output Quality Gates", () => {
     expect(agents).toContain("repo-local artifact files");
     expect(claude).toContain("tasks/contracts/");
     expect(claude).toContain("Waza");
-    expect(claude).toContain("gbrain");
+    expect(claude).not.toContain("gbrain");
     expect(agents).toContain("tasks/reviews/");
     expect(claude).toContain("Self-Improvement Loop");
     expect(agents).toContain("Self-Improvement Loop");

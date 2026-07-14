@@ -1,27 +1,27 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-14T18:25:23+0800 -->
+<!-- updated_at: 2026-07-14T19:29:53+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-07-14T18:25:23+0800
-> **Source Branch**: codex/ux-feature-guardrail
-> **Source Commit**: cb8bd79b
+> **Status**: Active
+> **Updated At**: 2026-07-14T19:29:53+0800
+> **Source Branch**: detached
+> **Source Commit**: ba0b7238
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: archive-workflow
+> **Reason**: remove-gbrain-dependency
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: ManualClearedWithActiveWork
+- Status: Active
 - Active Plan: (none)
 - Plan Status: (none)
 - Next Task: inspect active worktree marker(s)
-- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
+- Clear Note: (none)
 
 ## Mainline Snapshot Reading
 
@@ -48,38 +48,57 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`: status=completed, current_slice=completed-20260713-policy-seed, source_plan=plans/plan-20260712-2215-agent-fleet-specialists.md
 ## Handoff
 
-- Exact Next Step: (none)
+- Exact Next Step: Clean up merged contract worktree codex/local-gatekeeper-enforcement. Command: repo-harness run contract-worktree cleanup --slug local-gatekeeper-enforcement --target main
 
 ## Checks
 
-- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
+- status=(none), source=(none), exit_code=(none), file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 21 changed/untracked path(s)
+- Summary: 78 changed/untracked path(s)
 
 ```
- M .ai/hooks/.projection.json
- M .ai/hooks/prompt-guard.sh
- M .claude/templates/design-brief.template.md
- M assets/hooks/prompt-guard.sh
- M assets/reference-configs/agentic-development-flow.md
- M assets/skill-commands/repo-harness-prd/SKILL.md
- M assets/templates/design-brief.template.md
- M assets/templates/helpers/ensure-task-workflow.sh
- M docs/reference-configs/agentic-development-flow.md
- M scripts/ensure-task-workflow.sh
- M src/core/adoption/standard-plan.ts
- M tasks/current.md
- M tasks/todos.md
-?? assets/reference-configs/ux-feature-guard.md
-?? docs/reference-configs/ux-feature-guard.md
-?? plans/archive/plan-20260714-1710-ux-feature-guardrail.md
-?? tasks/archive/contract-20260714-1825-ux-feature-guardrail.md
-?? tasks/archive/notes-20260714-1825-ux-feature-guardrail.md
-?? tasks/archive/review-20260714-1825-ux-feature-guardrail.md
-?? tasks/archive/todo-20260714-1825-ux-feature-guardrail.md
-?? tests/ux-feature-guardrail.test.ts
+M  .ai/harness/brain-manifest.json
+M  .ai/harness/policy.json
+UU .ai/hooks/.projection.json
+M  .ai/hooks/post-edit-guard.sh
+M  AGENTS.md
+M  CLAUDE.md
+M  README.es.md
+M  README.fr.md
+M  README.ja.md
+M  README.md
+M  README.zh-CN.md
+M  assets/hooks/post-edit-guard.sh
+M  assets/initializer-question-pack.v4.json
+M  assets/partials-agents/02-operating-mode.partial.md
+M  assets/partials-agents/08-deep-docs.partial.md
+M  assets/partials/04-project-structure.partial.md
+M  assets/reference-configs/ai-workflows.md
+M  assets/reference-configs/changelog-versioning.md
+M  assets/reference-configs/coding-standards.md
+M  assets/reference-configs/development-protocol.md
+M  assets/reference-configs/evaluator-rubric.md
+M  assets/reference-configs/external-tooling.md
+M  assets/reference-configs/git-strategy.md
+M  assets/reference-configs/harness-overview.md
+M  assets/reference-configs/hook-operations.md
+M  assets/reference-configs/release-deploy.md
+M  assets/reference-configs/spa-day-protocol.md
+M  assets/reference-configs/workflow-orchestration.md
+M  assets/skill-commands/repo-harness-check/SKILL.md
+M  assets/skill-version.json
+M  assets/templates/helpers/check-agent-tooling.sh
+M  assets/templates/helpers/check-brain-manifest.sh
+M  assets/templates/helpers/check-task-workflow.sh
+M  assets/templates/helpers/ensure-task-workflow.sh
+M  assets/templates/helpers/verify-sprint.sh
+M  docs/CHANGELOG.md
+M  docs/architecture/domains/verification.md
+M  docs/architecture/index.md
+M  docs/architecture/modules/public-surface/root-router.md
+M  docs/architecture/modules/verification/evals-checks.md
 ```
 
 ## Source Artifacts

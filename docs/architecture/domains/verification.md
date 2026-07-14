@@ -19,7 +19,7 @@ repos, command facades, hooks, migration helpers, and installed runtime copies.
 - `bun test` is the broad regression gate.
 - `check-task-sync.sh` enforces that substantive repo changes update `tasks/`.
 - `check-task-workflow.sh --strict` is the repo-local harness readiness gate.
-- `sync-brain-docs.sh --check` verifies manifest-controlled repo-to-brain mirrors without making gbrain or MCP part of hook correctness.
+- External brain-manifest and vault drift are outside repo verification and run only as explicit operator actions.
 - External tooling probes remain read-only by default; CodeGraph readiness is required for agent code navigation, while other external tooling remains advisory.
 - This self-host repo may use a vendored CodeGraph dev dependency; generated downstream repos keep global CodeGraph MCP setup explicit unless policy opts in.
 

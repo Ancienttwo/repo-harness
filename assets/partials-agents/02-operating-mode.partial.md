@@ -29,7 +29,7 @@
 - Deployment operations workspace: `deploy/` is commit-ready for runbooks, submission materials, release checklists, helper scripts, ordered SQL files, and env examples; follow `.ai/harness/policy.json#operations.deploy_sql` for configured SQL roots and naming modes, otherwise keep SQL directly under `deploy/sql/` with 4-digit ascending prefixes.
 - Local operations state: `_ops/` is ignored and private for secrets, real env files, provider state, artifacts, logs, and scratch files; do not commit or agent-edit `_ops/*`.
 - Agentic skill routing: product discovery and complex/design planning -> parent agent with `geju` pre-contract framing and parent-owned P1/P2/P3; daily small/medium planning, bug hunts, and checks -> Waza `/think`, `/hunt`, `/check`.
-- Knowledge sync and handoff retrieval -> `gbrain`.
+- Durable knowledge -> repo-authored `docs/researches/`, `tasks/lessons.md`, and workflow artifacts.
 - Codex automation profile: required `health`, `check`, and `mermaid` from `~/.codex/skills`; do not vendor skill bodies.
 - CodeGraph readiness: required for agent code navigation; keep `.codegraph/` ignored and use `codegraph sync/context/query/callers/callees/impact` for P1/P2 discovery.
 - External tooling reference: `docs/reference-configs/agentic-development-flow.md` for routing details, `docs/reference-configs/external-tooling.md` for install/update guidance.

@@ -276,7 +276,7 @@ La commande doit se terminer par `=== Migration Report ===` et inclure :
 - `Host hook adapters are user-level:` : rappel d'installer les global adapters, et de faire confiance à `~/.codex/hooks.json`
 - `Workflow migration:` : le plan de création ou de rafraîchissement des repo-local harness surfaces
 - `Helper runtime:` : la chaîne d'outils opérationnels obtenue après application
-- `--- External Tooling ---` : le guide de planning parent/Geju, la readiness Waza/gbrain et les conseils d'installation/mise à jour advisory
+- `--- External Tooling ---` : le guide de planning parent/Geju, la readiness Waza et CodeGraph et les conseils d'installation/mise à jour advisory
 
 Si la sortie du dry-run est incorrecte, arrêtez-vous ici et lisez
 [`docs/reference-configs/hook-operations.md`](docs/reference-configs/hook-operations.md).
@@ -439,9 +439,6 @@ viennent de sa contribution et de son influence.
 Merci à [TW93](https://x.com/HiTw93), auteur de Waza. Les skills centraux
 `think`, `hunt`, `check` et `health` structurent le rythme quotidien de planning,
 bug hunt et verification de `repo-harness`.
-
-Merci à [Garry Tan](https://x.com/garrytan), auteur de gbrain. Il a influencé le
-workflow de release documentation, knowledge sync et handoff retrieval.
 
 Merci à [Peter Steinberger](https://x.com/steipete), auteur d'Oracle
 (`@steipete/oracle`, MIT). C'est le moteur de consult navigateur GPT Pro /

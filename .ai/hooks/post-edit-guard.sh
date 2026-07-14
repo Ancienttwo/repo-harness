@@ -95,24 +95,6 @@ run_architecture_queue_sync() {
   fi
 }
 
-run_brain_doc_sync() {
-  repo_harness_runner_available || return 0
-  [[ -f ".ai/harness/brain-manifest.json" ]] || return 0
-
-  # Fast-path: most edits are not repo-to-brain sources. Avoid starting the JS
-  # manifest reader unless the changed repo path appears in the manifest.
-  if ! grep -Fq "\"$FILE_PATH\"" ".ai/harness/brain-manifest.json"; then
-    return 0
-  fi
-
-  if run_repo_harness_helper sync-brain-docs --changed "$FILE_PATH"; then
-    :
-  else
-    local status=$?
-    echo "[SyncChain] WARN: brain-doc-sync failed for $FILE_PATH (exit $status)"
-  fi
-}
-
 FILE_PATH="$(hook_get_file_path "${1:-}")"
 [[ -z "$FILE_PATH" ]] && exit 0
 
@@ -174,8 +156,6 @@ elif [[ -f "$SCRIPT_DIR/anti-simplification.sh" ]]; then
 fi
 
 run_architecture_queue_sync
-
-run_brain_doc_sync
 
 run_continuous_contract_verification
 

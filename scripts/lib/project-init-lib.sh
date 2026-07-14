@@ -1224,19 +1224,14 @@ pi_external_tooling_hosts_json() {
   pi_env_value "REPO_HARNESS_EXTERNAL_TOOLING_HOSTS_JSON" "$PI_EXTERNAL_TOOLING_HOSTS_DEFAULT"
 }
 
-pi_external_tooling_gbrain_mcp() {
-  pi_env_value "REPO_HARNESS_EXTERNAL_TOOLING_GBRAIN_MCP" "candidate-disabled"
-}
-
 pi_external_tooling_defaults_summary() {
   cat <<'EOF_EXTERNAL_TOOLING_DEFAULTS'
-- Policy defaults: parent-agent + geju owns product/complex/design planning; external routing keeps simple->waza and knowledge->gbrain
+- Policy defaults: parent-agent + geju owns product/complex/design planning; external routing keeps simple->waza
 - Hosts: claude-code, codex
 - Mode: agent-readiness-required
 - Detection: init-migrate
 - Waza: Codex-first, managed skills think/hunt/check/health, stage upstream in ~/.agents/skills, sync verified copies into ~/.codex/skills
 - Codex automation profile: required health/check/mermaid from ~/.codex/skills; do not vendor skill bodies
-- gbrain MCP: candidate-disabled
 - CodeGraph: required agent code-navigation readiness tool, target-aware MCP configure by explicit user command or authorized agent action, per-repo ignored .codegraph/ index; generated repos do not add it as a package dependency unless local policy opts in
 - Auto-actions: never install, upgrade, serve, sync, or enable MCP automatically
 EOF_EXTERNAL_TOOLING_DEFAULTS
@@ -1931,18 +1926,17 @@ pi_write_harness_policy() {
       "promotion_rule": "only promote patterns after verified reuse across tasks or fixtures"
     },
     "memory": {
-      "sources": ["docs/researches/", "tasks/lessons.md", "gbrain"],
+      "sources": ["docs/researches/", "tasks/lessons.md"],
       "rule": "memory is advisory; current repo state and evidence override summaries"
     },
     "external_knowledge": {
+      "mode": "manual-opt-in",
       "default_brain_path": "brain/<project>/*",
       "project_path": "brain/<project>/*",
       "manifest_file": ".ai/harness/brain-manifest.json",
-      "drift_check": "repo-harness run check-brain-manifest",
       "sync_script": "repo-harness run sync-brain-docs",
-      "hook_trigger": "PostToolUse Edit|Write for manifest entries with sync.direction=repo-to-brain",
       "rule": "external knowledge stores long-lived explanations, runbooks, and patterns only; repo-local contracts, hooks, scripts, checks, and evidence remain authoritative",
-      "sync_rule": "only explicitly opted-in repo-to-brain manifest entries may be written to the default brain vault; pointer-only externalized stubs remain check-only"
+      "sync_rule": "external sync and drift checks are operator-invoked only; hooks and workflow verification never read, write, or gate on external vault state"
     }
   },
   "handoff_resume": {
@@ -2063,8 +2057,7 @@ pi_write_harness_policy() {
   },
   "external_tooling": {
     "routing": {
-      "simple": "waza",
-      "knowledge": "gbrain"
+      "simple": "waza"
     },
     "hosts": $(pi_external_tooling_hosts_json),
     "mode": "agent-readiness-required",
@@ -2119,9 +2112,6 @@ pi_write_harness_policy() {
       "codex_primary_path": "~/.codex/skills/mermaid",
       "sync_mode": "external-installed-skill",
       "vendoring_policy": "do-not-vendor"
-    },
-    "gbrain": {
-      "mcp": "$(pi_external_tooling_gbrain_mcp)"
     },
     "codegraph": {
       "package": "@colbymchenry/codegraph",
@@ -2217,7 +2207,7 @@ pi_write_brain_manifest() {
   "rules": [
     "repo-local contracts, hooks, scripts, checks, and evidence remain authoritative",
     "default brain stores long-lived explanations, runbooks, decisions, references, and patterns",
-    "hook runtime may sync explicitly opted-in repo-to-brain entries only; it must not query gbrain, MCP, or unregistered default brain paths"
+    "external brain sync is manual opt-in; hooks and workflow checks do not read, write, or validate external vault state"
   ],
   "entries": []
 }
@@ -2619,6 +2609,8 @@ const externalTooling = isPlainObject(merged.external_tooling) ? merged.external
 const externalRouting = isPlainObject(externalTooling.routing) ? externalTooling.routing : {};
 const retiredComplexProvider = typeof externalRouting.complex === "string" ? externalRouting.complex : null;
 delete externalRouting.complex;
+if (externalRouting.knowledge === "gbrain") delete externalRouting.knowledge;
+delete externalTooling.gbrain;
 externalTooling.routing = externalRouting;
 merged.external_tooling = externalTooling;
 
@@ -2691,6 +2683,9 @@ external_tooling = merged.get("external_tooling") if isinstance(merged.get("exte
 external_routing = external_tooling.get("routing") if isinstance(external_tooling.get("routing"), dict) else {}
 retired_complex_provider = external_routing.get("complex") if isinstance(external_routing.get("complex"), str) else None
 external_routing.pop("complex", None)
+if external_routing.get("knowledge") == "gbrain":
+    external_routing.pop("knowledge", None)
+external_tooling.pop("gbrain", None)
 external_tooling["routing"] = external_routing
 merged["external_tooling"] = external_tooling
 
