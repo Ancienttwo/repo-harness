@@ -463,7 +463,7 @@ function initializeBenchmarkWorkspace(seed: string, workspace: string): void {
   run('git', ['commit', '-m', 'benchmark seed'], workspace);
 }
 
-function writeStrictArtifacts(workspace: string, scenario: HarnessScenario): void {
+function writeStrictArtifacts(workspace: string, scenario: HarnessScenario, activeWorktree: string): void {
   const plan = 'plans/plan-20000101-0000-benchmark.md';
   const contract = 'tasks/contracts/20000101-0000-benchmark.contract.md';
   mkdirSync(join(workspace, 'plans'), { recursive: true });
@@ -481,7 +481,7 @@ function writeStrictArtifacts(workspace: string, scenario: HarnessScenario): voi
     '  - src/', '  - tests/', '  - deploy/', '```', '',
   ].join('\n'));
   writeFileSync(join(workspace, '.ai/harness/active-plan'), `${plan}\n`);
-  writeFileSync(join(workspace, '.ai/harness/active-worktree'), `${workspace}\n`);
+  writeFileSync(join(workspace, '.ai/harness/active-worktree'), `${activeWorktree}\n`);
 }
 
 function writeResumeProjection(workspace: string): void {
@@ -584,17 +584,26 @@ export function cloneImmutableWorkspaceBase(source: string, target: string): voi
   run('git', ['push', '--quiet', '--set-upstream', 'origin', 'main'], target);
 }
 
+export function addLinkedArmWorkspace(primary: string, target: string): void {
+  run('git', ['worktree', 'add', '--quiet', '-b', 'codex/benchmark', target, 'main'], primary);
+}
+
 function createRunOverlay(base: PreparedProfileBase, layout: BenchmarkRunLayout, scenario: HarnessScenario): void {
   mkdirSync(dirname(layout.workspace), { recursive: true });
-  cloneImmutableWorkspaceBase(base.workspace, layout.workspace);
-  run('git', ['config', 'user.email', 'benchmark@example.com'], layout.workspace);
-  run('git', ['config', 'user.name', 'Benchmark'], layout.workspace);
+  const primaryWorkspace = base.profile === 'strict-harness' ? `${layout.workspace}-primary` : layout.workspace;
+  cloneImmutableWorkspaceBase(base.workspace, primaryWorkspace);
+  run('git', ['config', 'user.email', 'benchmark@example.com'], primaryWorkspace);
+  run('git', ['config', 'user.name', 'Benchmark'], primaryWorkspace);
   cpSync(base.home, layout.home, { recursive: true, mode: constants.COPYFILE_FICLONE });
   rebaseAbsoluteSymlinks(base.home, layout.home);
-  if (base.profile === 'strict-harness') writeStrictArtifacts(layout.workspace, scenario);
-  if (scenario.requires_resume_projection) writeResumeProjection(layout.workspace);
-  run('git', ['add', '.'], layout.workspace);
-  run('git', ['commit', '--allow-empty', '-m', `benchmark ${base.profile} ${scenario.id} input`], layout.workspace);
+  if (base.profile === 'strict-harness') {
+    const canonicalWorkspace = join(realpathSync(dirname(layout.workspace)), basename(layout.workspace));
+    writeStrictArtifacts(primaryWorkspace, scenario, canonicalWorkspace);
+  }
+  if (scenario.requires_resume_projection) writeResumeProjection(primaryWorkspace);
+  run('git', ['add', '.'], primaryWorkspace);
+  run('git', ['commit', '--allow-empty', '-m', `benchmark ${base.profile} ${scenario.id} input`], primaryWorkspace);
+  if (base.profile === 'strict-harness') addLinkedArmWorkspace(primaryWorkspace, layout.workspace);
   assertProfileBaseImmutable(base);
 }
 

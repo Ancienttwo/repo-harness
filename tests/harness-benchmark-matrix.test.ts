@@ -1,11 +1,12 @@
 import { describe, expect, test } from 'bun:test';
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, statSync, symlinkSync, writeFileSync } from 'fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import {
   BENCHMARK_MAX_CONCURRENCY,
   BENCHMARK_PROFILES,
   BENCHMARK_WALL_TIME_BUDGET_MS,
+  addLinkedArmWorkspace,
   benchmarkChangedFiles,
   benchmarkRunLayout,
   claudeBenchmarkCommand,
@@ -144,6 +145,27 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
       rebaseAbsoluteSymlinks(source, target);
       expect(readlinkSync(join(target, 'current'))).toBe(join(target, 'cache'));
       expect(readlinkSync(join(source, 'current'))).toBe(join(source, 'cache'));
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  test('Strict workspace overlays start as linked worktrees', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'harness-strict-linked-worktree-'));
+    const primary = join(dir, 'primary');
+    const linked = join(dir, 'linked');
+    const git = (cwd: string, ...args: string[]) => Bun.spawnSync(['git', ...args], { cwd, stdout: 'pipe', stderr: 'pipe' });
+    try {
+      mkdirSync(primary);
+      expect(git(primary, 'init', '-q').exitCode).toBe(0);
+      expect(git(primary, 'config', 'user.name', 'Benchmark Test').exitCode).toBe(0);
+      expect(git(primary, 'config', 'user.email', 'benchmark@example.com').exitCode).toBe(0);
+      writeFileSync(join(primary, 'seed.txt'), 'seed\n');
+      expect(git(primary, 'add', '.').exitCode).toBe(0);
+      expect(git(primary, 'commit', '-qm', 'seed').exitCode).toBe(0);
+      addLinkedArmWorkspace(primary, linked);
+      const gitDir = git(linked, 'rev-parse', '--git-dir').stdout.toString().trim();
+      expect(gitDir).toContain('.git/worktrees/');
+      expect(git(linked, 'branch', '--show-current').stdout.toString().trim()).toBe('codex/benchmark');
+      expect(realpathSync(linked)).not.toBe('');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 

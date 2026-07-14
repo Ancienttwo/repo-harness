@@ -100,6 +100,11 @@ lets small slices run focused tests while release/pre-merge runs the full gate.
   HOME overlays rebase absolute cache symlinks from the profile base to the arm
   copy. Provider-local merge/push/install behavior therefore cannot write back
   through Git remotes, shared object inodes, or copied absolute links.
+- Strict arms create a private primary clone and expose the graded workspace as
+  its linked `codex/benchmark` worktree. The active-worktree marker records that
+  workspace's canonical real path, so StrictWorktreeGuard neither creates an
+  ungraded second-level worktree nor rejects macOS `/var` versus `/private/var`
+  aliases.
 - At 10x scale the first failure would be evidence-production latency, not the
   verifier. Keeping production explicit and verification bounded prevents a
   closeout gate from becoming an unbounded job runner.
