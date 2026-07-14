@@ -169,3 +169,10 @@ Promote a candidate to `tasks/lessons.md`, `docs/researches/`, or harness asset 
 - Promote to `tasks/lessons.md` only after a repeated correction or failure pattern.
 - Promote to `docs/researches/` only when it is durable repo knowledge with evidence.
 - Promote to harness asset files only after verification across more than one task or fixture.
+
+## Post-acceptance incident: recursive gate execution via fixture env inheritance
+
+- During `contract-worktree finish`, the new workflow-state-lib fixtures spawned `verify-sprint.sh` with inherited `REPO_HARNESS_TARGET_REPO_ROOT` (verify-sprint.sh cds there at :5-6), escaping the fixture into the real worktree and re-running the real contract's exit criteria — which execute this very test file, forming an unbounded process chain (observed ~130 fixture roots before kill). Standalone test runs never carried that env, which is why worker/gatekeeper verification stayed green.
+- Fix: `fixtureEnv()` strips `REPO_HARNESS_*`/`HOOK_REPO_ROOT` from every fixture subprocess env in tests/workflow-state-lib.test.ts; reproduction with the incident env combination now completes in ~2s with no recursion.
+- Deliberately NOT added: a nested-execution sentinel inside verify-sprint.sh (guardrail minimalism — the only observed escape path is this env leak, now removed; revisit only if nested gate execution recurs via a different path).
+- Also observed during finish attempts: the global `repo-harness run` wrapper enforces a 120s helper timeout, so finish must run via `bash scripts/contract-worktree.sh` directly; and the stale global `repo-harness-hook` binary computes old-semantics fingerprints (base_rev still hashed) — refresh the global install after this package merges.

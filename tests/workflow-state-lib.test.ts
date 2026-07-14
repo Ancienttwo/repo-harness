@@ -18,6 +18,19 @@ import { spawnSync } from "child_process";
 const ROOT = join(import.meta.dir, "..");
 const HELPER_DIR = join(ROOT, "assets", "templates", "helpers");
 
+// Fixture subprocesses must never see the host repo's REPO_HARNESS_*/HOOK_REPO_ROOT
+// env: verify-sprint.sh cds into REPO_HARNESS_TARGET_REPO_ROOT when set, which lets
+// a fixture gate escape into the real repo and recursively execute the real
+// contract's exit criteria (which run this very test file).
+function fixtureEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (key.startsWith("REPO_HARNESS_") || key === "HOOK_REPO_ROOT") continue;
+    env[key] = value;
+  }
+  return env;
+}
+
 describe("workflow-state shared library", () => {
   test("exports the shared workflow helper functions", () => {
     const content = readFileSync(
@@ -130,7 +143,7 @@ describe("workflow-state shared library", () => {
           cwd,
           encoding: "utf-8",
           env: {
-            ...process.env,
+            ...fixtureEnv(),
             WORKFLOW_STATE: join(ROOT, "assets/hooks/lib/workflow-state.sh"),
           },
         }
@@ -187,7 +200,7 @@ describe("workflow-state shared library", () => {
           cwd,
           encoding: "utf-8",
           env: {
-            ...process.env,
+            ...fixtureEnv(),
             WORKFLOW_STATE: join(ROOT, "assets/hooks/lib/workflow-state.sh"),
           },
         }
@@ -210,7 +223,7 @@ describe("workflow-state shared library", () => {
       const fingerprint = spawnSync(
         "bash",
         ["-lc", 'source "$WORKFLOW_STATE"; workflow_benchmark_evidence_fingerprint'],
-        { cwd, encoding: "utf-8", env: { ...process.env, WORKFLOW_STATE: join(ROOT, "assets/hooks/lib/workflow-state.sh") } },
+        { cwd, encoding: "utf-8", env: { ...fixtureEnv(), WORKFLOW_STATE: join(ROOT, "assets/hooks/lib/workflow-state.sh") } },
       );
       expect(fingerprint.status).toBe(0);
       expect(fingerprint.stdout).toMatch(/^sha256:[0-9a-f]{64}$/);
@@ -225,7 +238,7 @@ describe("workflow-state shared library", () => {
       const check = () => spawnSync(
         "bash",
         ["-c", 'source "$WORKFLOW_STATE"; workflow_checks_pass checks.json tasks/contracts/demo.contract.md tasks/reviews/demo.review.md'],
-        { cwd, encoding: "utf-8", env: { ...process.env, WORKFLOW_STATE: join(ROOT, "assets/hooks/lib/workflow-state.sh") } },
+        { cwd, encoding: "utf-8", env: { ...fixtureEnv(), WORKFLOW_STATE: join(ROOT, "assets/hooks/lib/workflow-state.sh") } },
       );
       expect(check().status).toBe(0);
 
@@ -240,7 +253,7 @@ describe("workflow-state shared library", () => {
           cwd,
           encoding: "utf-8",
           env: {
-            ...process.env,
+            ...fixtureEnv(),
             PATH: noJqBin,
             WORKFLOW_STATE: join(ROOT, "assets/hooks/lib/workflow-state.sh"),
           },
@@ -352,7 +365,7 @@ describe("workflow-state shared library", () => {
       const res = spawnSync("bash", ["scripts/verify-sprint.sh"], {
         cwd,
         encoding: "utf-8",
-        env: { ...process.env, HOOK_HOST: "claude" },
+        env: { ...fixtureEnv(), HOOK_HOST: "claude" },
       });
       expect(res.status).toBe(1);
       expect(res.stderr).toContain("Sprint verification failed");
@@ -475,7 +488,7 @@ describe("workflow-state shared library", () => {
       const res = spawnSync("bash", ["scripts/verify-sprint.sh"], {
         cwd,
         encoding: "utf-8",
-        env: { ...process.env, HOOK_HOST: "claude" },
+        env: { ...fixtureEnv(), HOOK_HOST: "claude" },
       });
       expect(res.status).toBe(1);
       expect(res.stderr).toContain("Sprint verification failed");
@@ -591,7 +604,7 @@ describe("workflow-state shared library", () => {
       const res = spawnSync("bash", ["scripts/verify-sprint.sh"], {
         cwd,
         encoding: "utf-8",
-        env: { ...process.env, HOOK_HOST: "claude" },
+        env: { ...fixtureEnv(), HOOK_HOST: "claude" },
       });
       expect(res.status).toBe(1);
       expect(res.stderr).toContain("Sprint verification failed");
