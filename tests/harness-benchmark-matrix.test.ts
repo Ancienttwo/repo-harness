@@ -22,6 +22,7 @@ import {
   parsePorcelainPaths,
   prepareBenchmarkProfiles,
   rebaseAbsoluteSymlinks,
+  writeResumeProjection,
   reportByteBindingPath,
   runBoundedProviderProcess,
   runHarnessProfileBenchmark,
@@ -162,9 +163,11 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
       expect(git(primary, 'add', '.').exitCode).toBe(0);
       expect(git(primary, 'commit', '-qm', 'seed').exitCode).toBe(0);
       addLinkedArmWorkspace(primary, linked);
+      writeResumeProjection(linked);
       const gitDir = git(linked, 'rev-parse', '--git-dir').stdout.toString().trim();
       expect(gitDir).toContain('.git/worktrees/');
       expect(git(linked, 'branch', '--show-current').stdout.toString().trim()).toBe('codex/benchmark');
+      expect(readFileSync(join(linked, '.ai/harness/handoff/resume.md'), 'utf8')).toContain('## Exact Next Step');
       expect(realpathSync(linked)).not.toBe('');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });

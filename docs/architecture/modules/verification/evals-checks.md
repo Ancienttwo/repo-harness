@@ -104,7 +104,9 @@ lets small slices run focused tests while release/pre-merge runs the full gate.
   its linked `codex/benchmark` worktree. The active-worktree marker records that
   workspace's canonical real path, so StrictWorktreeGuard neither creates an
   ungraded second-level worktree nor rejects macOS `/var` versus `/private/var`
-  aliases.
+  aliases. Ignored runtime inputs such as the resume projection are materialized
+  again in that linked workspace after creation; they cannot travel through the
+  private primary's commit.
 - At 10x scale the first failure would be evidence-production latency, not the
   verifier. Keeping production explicit and verification bounded prevents a
   closeout gate from becoming an unbounded job runner.

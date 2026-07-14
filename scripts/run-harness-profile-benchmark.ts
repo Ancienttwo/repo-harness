@@ -484,7 +484,7 @@ function writeStrictArtifacts(workspace: string, scenario: HarnessScenario, acti
   writeFileSync(join(workspace, '.ai/harness/active-worktree'), `${activeWorktree}\n`);
 }
 
-function writeResumeProjection(workspace: string): void {
+export function writeResumeProjection(workspace: string): void {
   mkdirSync(join(workspace, '.ai/harness/handoff'), { recursive: true });
   writeFileSync(join(workspace, '.ai/harness/handoff/resume.md'), [
     '# Resume', '', '## Exact Next Step', 'Change src/recovery.ts so recoveryState() returns complete.',
@@ -603,7 +603,13 @@ function createRunOverlay(base: PreparedProfileBase, layout: BenchmarkRunLayout,
   if (scenario.requires_resume_projection) writeResumeProjection(primaryWorkspace);
   run('git', ['add', '.'], primaryWorkspace);
   run('git', ['commit', '--allow-empty', '-m', `benchmark ${base.profile} ${scenario.id} input`], primaryWorkspace);
-  if (base.profile === 'strict-harness') addLinkedArmWorkspace(primaryWorkspace, layout.workspace);
+  if (base.profile === 'strict-harness') {
+    addLinkedArmWorkspace(primaryWorkspace, layout.workspace);
+    // Handoff projections are intentionally ignored runtime state. Recreate
+    // them in the linked workspace because `git worktree add` can only project
+    // committed input from the private primary clone.
+    if (scenario.requires_resume_projection) writeResumeProjection(layout.workspace);
+  }
   assertProfileBaseImmutable(base);
 }
 
