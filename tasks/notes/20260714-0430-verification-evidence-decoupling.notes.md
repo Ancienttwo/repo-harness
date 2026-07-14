@@ -4,7 +4,7 @@
 > **Plan**: plans/plan-20260714-0430-verification-evidence-decoupling.md
 > **Contract**: tasks/contracts/20260714-0430-verification-evidence-decoupling.contract.md
 > **Review**: tasks/reviews/20260714-0430-verification-evidence-decoupling.review.md
-> **Last Updated**: 2026-07-14 04:43
+> **Last Updated**: 2026-07-14 12:46
 > **Lifecycle**: notes
 
 ## Design Decisions
@@ -65,6 +65,66 @@
   `allowed_paths`, and leaving the projection stale would fail that test
   in the final full `bun test` pass. Ran `bun run sync:helpers` to
   re-project after editing the canonical source.
+- Codex acceptance P2#1 (`not_required` dead literal in the external
+  acceptance gate): traced production/consumption before editing.
+  `workflow_external_acceptance_status` (`.ai/hooks/lib/workflow-state.sh`)
+  has exactly four `printf` outcomes -- `missing`, `fail` (several message
+  variants), `manual_override`, `pass` -- and no code path anywhere in that
+  function emits `not_required`. Its only historical "producer" was the
+  Human Review Card fallback branch (assigning `external_status` from the
+  Card's own free-text field) that slice 2 already deleted from
+  `verify-sprint.sh`; no other layer -- task-profile judgment or otherwise
+  -- generates `not_required` and feeds it into this case statement. So
+  deleting the literal (rather than tightening it to an explicit
+  "profile declares no external acceptance required" condition) removes no
+  legitimate closeout path: docs-only/eval-only/etc. profiles already had
+  to reach canonical `pass` or `manual_override` like every other profile.
+  Left three adjacent `not_required` occurrences untouched as genuinely out
+  of contract, not affected by the fix: `README*.md` (5 language variants;
+  not in `allowed_paths`, and the prose describes the Human Review Card's
+  own free-text "External acceptance" field -- a legitimate display value,
+  not this gate's `$external_status` variable); the closed
+  `tasks/{contracts,reviews,notes}/20260616-HE-*` artifacts (historical
+  record, not in `allowed_paths`); and
+  `tests/fixtures/harness-traces/*.json`'s hand-authored `not_required`
+  sample values (`scripts/harness-trace-grade.sh` never reads
+  `.external_acceptance.status` or `.review.card.change_type`'s sibling
+  `external_acceptance` field at all -- confirmed by running the "harness-
+  trace-grade should pass all local trace fixtures" test unchanged after
+  the case-statement fix -- so these fixtures are inert either way).
+- Codex acceptance P2#2 (canonical-failure test strengthening): once a
+  fixture installs the real `.ai/hooks/lib/workflow-state.sh`,
+  `scripts/verify-sprint.sh` resolves `contract_file`/`review_file` via
+  `workflow_active_contract`/`_review` instead of the directory-scan
+  fallback used when that helper file is absent -- that path requires a
+  `.ai/harness/active-plan` marker pointing at a plan file. Used an
+  explicit `> **Task Contract**:`/`> **Task Review**:` declaration in the
+  fixture plan so resolution does not also depend on matching the
+  timestamp-stem naming convention. The original "helper missing" test
+  never needed this setup because it never sources the helper and so never
+  enters that branch; renamed it to say so instead of implying it covers
+  every "Card can't rescue canonical" scenario.
+- Codex acceptance P2#3 (benchmark cleanup ordering test is a source-text
+  scan): accepted as advisory, no test added. The
+  `tests/harness-benchmark-matrix.test.ts` ordering assertion scans
+  `executeRun`'s source text for the delete-after-extract call order
+  rather than driving a real `executeRun`, which would require spawning a
+  live provider process -- fabricating one for this test would itself
+  violate this package's own minimal-mechanism principle. This guards
+  against a wording/reordering regression in the literal source but not
+  against a future change that reaches the arm's host root indirectly
+  (e.g. through an intermediate helper) without the asserted-on ordering
+  text changing. Limitation accepted as-is; no behavioral harness added.
+- Orchestrator ruling on P1 (fingerprint integration-context bypass,
+  external Codex acceptance): by design, not touched in this dispatch.
+  `src/cli/hook/diff-fingerprint.ts` and `tests/review-freshness.test.ts`
+  keep exactly the freshness semantics slice 1 left them with -- an
+  unrelated target/main advance must not mark a review stale. Rebase-
+  driven integration risk after such an advance is the deterministic
+  verifier's job (the contract's `exit_criteria` commands re-run against
+  current HEAD at closeout), not the fingerprint's; an integration token
+  is on the source plan's explicit do-not-do list. No code changed for
+  this item.
 
 ## Deviations From Plan Or Spec
 
