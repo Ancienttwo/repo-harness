@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, 
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
+import { defaultPolicy } from "../src/core/adoption/standard-plan";
 
 const ROOT = join(import.meta.dir, "..");
 const REFERENCE_STUB_MARKER = "<!-- repo-harness: reference-config-stub v1 -->";
@@ -374,10 +375,17 @@ describe("create-project-dirs runtime smoke", () => {
         product_discovery: "parent-agent:geju",
         complex_engineering_plan: "parent-agent:geju",
         design_plan: "parent-agent:geju",
+        design_options_choice: "convention:design-options",
         small_or_medium_plan: "waza:think",
         bug_or_regression: "waza:hunt",
         post_implementation_review: "waza:check",
       });
+      // Parity guard: scripts/lib/project-init-lib.sh (pi_write_harness_policy, bash-generated
+      // above) and src/core/adoption/standard-plan.ts (defaultPolicy, TS-generated) are two
+      // independently hardcoded sources for the same agentic_development.routing map. Assert
+      // they stay identical so the maps cannot silently diverge again.
+      const tsDefaultPolicy = defaultPolicy("minimal-agentic") as Record<string, any>;
+      expect(policy.agentic_development.routing).toEqual(tsDefaultPolicy.agentic_development.routing);
       expect(policy.agentic_development.due_diligence.levels).toEqual([
         "P1_GLOBAL_ARCHITECTURE",
         "P2_DATA_FLOW_TRACE",

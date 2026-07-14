@@ -262,7 +262,7 @@ function jsonContent(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
 
-function defaultPolicy(documentationProfile: string): JsonObject {
+export function defaultPolicy(documentationProfile: string): JsonObject {
   return {
     version: 1,
     hook_source: "central",
