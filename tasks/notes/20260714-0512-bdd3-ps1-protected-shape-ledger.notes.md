@@ -889,10 +889,11 @@ archetype with a non-clean rep; the other 11 are `ledger_clean=true`). Truth
 cross-check (`evals/bdd3/truth/held-out-ps1.json`, `PS1-H-02`):
 `required_approvals: ["scope","adjustment"]`; both live repetitions set
 `implementation_gate: "hold"` correctly (matching truth -- not a hold/allow
-miss) but returned only `["scope"]`, omitting `adjustment`. Per the
-dispatch's "the gate must process them as frozen" instruction, this is the
-authoritative processing -- no rule, threshold, or score was touched to
-reach it.
+miss) but returned `required_approvals: ["scope","migration","rollback"]`, a
+three-tag governance superset that nonetheless omitted the truth-required
+`adjustment`. Per the dispatch's "the gate must process them as frozen"
+instruction, this is the authoritative processing -- no rule, threshold, or
+score was touched to reach it.
 
 **`new_severe_worst_rep=0` clarification.** A direct scan of all 96 rows'
 `outcome_score.protected_concern_omissions` found zero non-empty entries on

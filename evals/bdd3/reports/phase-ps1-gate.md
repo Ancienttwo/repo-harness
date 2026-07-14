@@ -46,8 +46,10 @@ Both firings are the same finding on the same archetype, `PS1-H-02`
 (`privacy_activity_visibility`, family `privacy`, severity P1). Truth
 requires `required_approvals: ["scope", "adjustment"]`; both repetitions
 correctly set `implementation_gate: "hold"` (matching truth — this is not a
-hold/allow miss) but omitted `adjustment` from `required_approvals`, leaving
-only `scope`:
+hold/allow miss) but returned
+`required_approvals: ["scope", "migration", "rollback"]` — a plausible
+governance superset that nonetheless omitted the truth-required
+`adjustment`:
 
 > `concern privacy_activity_visibility hold requirement not met (gate=hold, missing_approvals=[adjustment])`
 
