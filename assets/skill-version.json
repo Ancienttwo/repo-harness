@@ -202,7 +202,7 @@
     },
     {
       "version": "0.10.0",
-      "description": "Adds the risk-aware lite/standard/strict harness kernel with the effective-state resolver, decouples benchmark evidence production from verification gates with content-bound acceptance freshness, replaces the remote agent-fleet dependency with npm-packaged sources, and removes gstack and the Human Review Card dual authority"
+      "description": "Adds the risk-aware lite/standard/strict harness kernel with the effective-state resolver, decouples benchmark evidence production from verification gates with content-bound acceptance freshness, replaces the remote agent-fleet dependency with npm-packaged sources, and removes the retired planning provider and the Human Review Card dual authority"
     }
   ],
   "generatedProjectStamp": {
