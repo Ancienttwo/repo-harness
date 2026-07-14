@@ -295,6 +295,7 @@ function resolveHelperFileName(helper: string, files: readonly string[]): string
 function resolveRepoRoot(cwd: string, env: NodeJS.ProcessEnv, protectedHelper: boolean): string {
   const result = runBoundedProcess(protectedHelper ? systemGit() : 'git', ['-C', cwd, 'rev-parse', '--show-toplevel'], {
     env: protectedHelper ? protectedChildEnv(env) : env,
+    inheritEnv: !protectedHelper,
     timeoutMs: 5000,
   });
   return result.status === 0 && result.stdout.trim() ? result.stdout.trim() : cwd;
@@ -366,6 +367,7 @@ export function runHelper(opts: RunHelperOptions): RunHelperResult {
   const child = runBoundedProcess(command, [resolved.path, ...args], {
     cwd: resolved.repoRoot,
     env: childEnv,
+    inheritEnv: !protectedHelper,
     stdio: opts.stdio ?? 'inherit',
     timeoutMs: opts.timeoutMs,
     maxOutputBytes: opts.maxOutputBytes,

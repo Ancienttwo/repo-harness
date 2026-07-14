@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-14T22:10:10+0800 -->
+<!-- updated_at: 2026-07-14T23:55:35+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-07-14T22:10:10+0800
+> **Updated At**: 2026-07-14T23:55:35+0800
 > **Source Branch**: codex/local-gatekeeper-enforcement
-> **Source Commit**: a7690b07
+> **Source Commit**: 13f79c0e
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: merge-gate-final-candidate
+> **Reason**: pr-review-remediation-blocked-external-acceptance
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -20,7 +20,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Status: Active
 - Active Plan: plans/plan-20260714-1713-merge-gate-enforcement.md
 - Plan Status: Executing
-- Next Task: (none)
+- Next Task: Resolve PR review findings for protected environment isolation, transactional PR ship rollback, and required runtime installation; then refresh full verification and external acceptance.
 - Clear Note: (none)
 
 ## Mainline Snapshot Reading
@@ -35,19 +35,17 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - .: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-local-gatekeeper-enforcement
 - /Users/kito/Projects/repo-harness: plans/plan-20260714-2128-3p-cli-skill-mcp-boundary.md
 - /Users/kito/Projects/repo-harness: active-worktree owner -> /Users/kito/Projects/repo-harness
-- /Users/kito/Projects/repo-harness-wt-codex-delegation-auto-boundary: plans/plan-20260714-2026-codex-delegation-auto-boundary.md
-- /Users/kito/Projects/repo-harness-wt-codex-delegation-auto-boundary: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-codex-delegation-auto-boundary
+- /Users/kito/Projects/repo-harness-release-blockers: plans/plan-20260714-2318-repo-harness-0-10-0-release-blockers.md
+- /Users/kito/Projects/repo-harness-release-blockers: active-worktree owner -> /Users/kito/Projects/repo-harness-release-blockers
 - /Users/kito/Projects/repo-harness-wt-codex-delegation-session-auth: plans/plan-20260714-2052-codex-delegation-session-auth.md
 - /Users/kito/Projects/repo-harness-wt-codex-delegation-session-auth: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-codex-delegation-session-auth
-- /Users/kito/Projects/repo-harness-wt-verifier-evidence-lifecycle-cutover: plans/plan-20260714-0421-verifier-evidence-lifecycle-cutover.md
-- /Users/kito/Projects/repo-harness-wt-verifier-evidence-lifecycle-cutover: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-verifier-evidence-lifecycle-cutover
 ## Active Sprint
 
 - Sprint: (none)
 ## Workstreams
 
 - `tasks/workstreams/workflow-engine/contract-assets/20260712-contract-assets.md`: status=active, current_slice=todo-01, source_plan=(none)
-- `tasks/workstreams/workflow-engine/contract-assets/20260714-merge-gate-enforcement.md`: status=active, current_slice=verified-awaiting-clean-main-merge, source_plan=`plans/plan-20260714-1713-merge-gate-enforcement.md`
+- `tasks/workstreams/workflow-engine/contract-assets/20260714-merge-gate-enforcement.md`: status=active, current_slice=pr-review-remediation-and-reverification, source_plan=`plans/plan-20260714-1713-merge-gate-enforcement.md`
 - `tasks/workstreams/workflow-engine/contract-assets/agent-fleet-specialists.md`: status=completed, current_slice=completed-20260713-specialist-roles, source_plan=plans/plan-20260712-2215-agent-fleet-specialists.md
 - `tasks/workstreams/workflow-engine/contract-assets/cleanup-script-policy.md`: status=completed, current_slice=todo-01, source_plan=(none)
 - `tasks/workstreams/workflow-engine/inspection-migration/20260703-inspection-migration.md`: status=active, current_slice=completed-20260703-architecture-closeout, source_plan=(none)
@@ -55,11 +53,11 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`: status=completed, current_slice=completed-20260713-policy-seed, source_plan=plans/plan-20260712-2215-agent-fleet-specialists.md
 ## Handoff
 
-- Exact Next Step: Stage the completed module diff first; then External reviewer is Claude; expected Codex. Run external acceptance via codex-review and record ## External Acceptance Advice in tasks/reviews/20260714-1713-merge-gate-enforcement.review.md. Command: /check
+- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Resolve PR review findings for protected environment isolation, transactional PR ship rollback, and required runtime installation; then refresh full verification and external acceptance.
 
 ## Checks
 
-- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
+- status=(none), source=(none), exit_code=(none), file=.ai/harness/checks/latest.json
 
 ## Git Status
 

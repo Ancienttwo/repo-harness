@@ -1,12 +1,12 @@
 # Task Contract: merge-gate-enforcement
 
-> **Status**: Fulfilled
+> **Status**: In Progress
 > **Plan**: plans/plan-20260714-1713-merge-gate-enforcement.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: kito
 > **Capability ID**: root
-> **Last Updated**: 2026-07-14 19:53
+> **Last Updated**: 2026-07-14 23:41
 > **Review File**: `tasks/reviews/20260714-1713-merge-gate-enforcement.review.md`
 > **Notes File**: `tasks/notes/20260714-1713-merge-gate-enforcement.notes.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
@@ -81,6 +81,7 @@ allowed_paths:
   - src/cli/commands/init.ts
   - src/cli/commands/global-runtime.ts
   - src/cli/runtime/helper-runner.ts
+  - src/effects/process-runner.ts
   - tasks/current.md
   - tasks/todos.md
   - tasks/contracts/20260714-1713-merge-gate-enforcement.contract.md
@@ -92,6 +93,7 @@ allowed_paths:
   - tests/cli/run.test.ts
   - tests/helper-scripts.test.ts
   - tests/merge-gate.test.ts
+  - tests/process-runner.test.ts
 ```
 
 ## Delegation Contract
@@ -143,8 +145,9 @@ exit_criteria:
   tests_pass:
     - path: tests/merge-gate.test.ts
     - path: tests/cli/init.test.ts
+    - path: tests/process-runner.test.ts
   commands_succeed:
-    - bun test tests/merge-gate.test.ts tests/cli/init.test.ts
+    - bun test tests/merge-gate.test.ts tests/cli/init.test.ts tests/cli/global-runtime-init.test.ts tests/cli/run.test.ts tests/process-runner.test.ts
     - bun test tests/helper-scripts.test.ts tests/archive-evidence-gates.test.ts --test-name-pattern 'merge gate runs after|ship-worktrees default mode|restores live workflow state|contract-worktree does not mask'
     - bun run check:type
     - cmp scripts/merge-gate.ts assets/templates/helpers/merge-gate.ts

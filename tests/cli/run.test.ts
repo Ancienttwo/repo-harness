@@ -106,7 +106,7 @@ describe("run command", () => {
     }
   });
 
-  test("official run ignores source override for protected ship and gate helpers", () => {
+  test("official run ignores source override and caller shell hooks for protected helpers", () => {
     const tmp = mkdtempSync(join(tmpdir(), "repo-harness-run-protected-"));
     const marker = join(tmp, "bypass-marker");
     try {
@@ -134,6 +134,24 @@ describe("run command", () => {
         writeFileSync(fake, `#!/bin/sh\ntouch "${marker}"\nexit 99\n`);
         chmodSync(fake, 0o755);
       }
+
+      const bashEnv = join(tmp, "bash-env-injection.sh");
+      writeFileSync(bashEnv, `#!/bin/sh\ntouch "${marker}"\n`);
+      const direct = runHelper({
+        helper: "ship-worktrees",
+        args: ["--help"],
+        cwd: tmp,
+        env: {
+          ...process.env,
+          PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
+          BASH_ENV: bashEnv,
+          REPO_HARNESS_SOURCE_ROOT: sourceRoot,
+        },
+        stdio: "pipe",
+      });
+      expect(direct.exitCode, direct.stderr).toBe(0);
+      expect(direct.stdout).toContain("Usage:");
+      expect(existsSync(marker)).toBe(false);
 
       const res = spawnSync(process.execPath, [CLI, "run", "ship-worktrees", "--help"], {
         cwd: tmp,

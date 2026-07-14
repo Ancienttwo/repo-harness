@@ -109,6 +109,81 @@ fail() {
   exit 1
 }
 
+ship_transaction_dir=""
+ship_transaction_active=0
+ship_transaction_original_head=""
+ship_transaction_paths=()
+ship_transaction_existed=()
+
+ship_transaction_snapshot() {
+  local path="$1"
+  local index="${#ship_transaction_paths[@]}"
+  ship_transaction_paths+=("$path")
+  if [[ -e "$path" || -L "$path" ]]; then
+    ship_transaction_existed+=("1")
+    mkdir -p "$ship_transaction_dir/$index"
+    cp -Rp "$path" "$ship_transaction_dir/$index/value"
+  else
+    ship_transaction_existed+=("0")
+  fi
+}
+
+ship_transaction_begin() {
+  [[ "$DRY_RUN" -eq 0 ]] || return 0
+  ship_transaction_dir="$(mktemp -d)"
+  ship_transaction_active=1
+  ship_transaction_original_head="$(git rev-parse HEAD)"
+  ship_transaction_paths=()
+  ship_transaction_existed=()
+  trap ship_transaction_on_exit EXIT
+  ship_transaction_snapshot "plans"
+  ship_transaction_snapshot "tasks"
+  ship_transaction_snapshot ".ai/harness/active-plan"
+  ship_transaction_snapshot ".ai/harness/active-worktree"
+  ship_transaction_snapshot ".ai/harness/sprint"
+  ship_transaction_snapshot ".claude/.plan-state"
+}
+
+ship_transaction_abort() {
+  local index path
+  [[ "$ship_transaction_active" -eq 1 ]] || return 0
+  if [[ -n "$ship_transaction_original_head" ]] && [[ "$(git rev-parse HEAD)" != "$ship_transaction_original_head" ]]; then
+    git reset --mixed "$ship_transaction_original_head"
+  fi
+  for ((index = ${#ship_transaction_paths[@]} - 1; index >= 0; index--)); do
+    path="${ship_transaction_paths[$index]}"
+    rm -rf "$path"
+    if [[ "${ship_transaction_existed[$index]}" == "1" ]]; then
+      mkdir -p "$(dirname "$path")"
+      cp -Rp "$ship_transaction_dir/$index/value" "$path"
+    fi
+  done
+  rm -rf "$ship_transaction_dir"
+  ship_transaction_dir=""
+  ship_transaction_active=0
+  ship_transaction_original_head=""
+  trap - EXIT
+  echo "ship-worktrees: ship failed; restored live workflow artifacts and the pre-ship branch" >&2
+}
+
+ship_transaction_commit() {
+  [[ "$ship_transaction_active" -eq 1 ]] || return 0
+  ship_transaction_active=0
+  trap - EXIT
+  rm -rf "$ship_transaction_dir"
+  ship_transaction_dir=""
+  ship_transaction_original_head=""
+}
+
+ship_transaction_on_exit() {
+  local status=$?
+  trap - EXIT
+  if [[ "$ship_transaction_active" -eq 1 && "$status" -ne 0 ]]; then
+    ship_transaction_abort || status=1
+  fi
+  exit "$status"
+}
+
 list_contract_worktrees() {
   local branch_prefix="$1"
   git worktree list --porcelain | awk -v prefix="refs/heads/${branch_prefix}" '
@@ -442,10 +517,12 @@ ship_linked_pr() {
 
   refresh_target_base
   gate_base_ref="refs/remotes/$REMOTE_NAME/$TARGET_BRANCH"
+  ship_transaction_begin
   finish_contract_worktree "pr" "$gate_base_ref"
   refresh_target_base
   verified_sha="$(verify_merge_gate_before_ship "$gate_base_ref")"
   push_branch "$branch" "$verified_sha"
+  ship_transaction_commit
   create_or_report_pr "$branch"
 }
 

@@ -9,7 +9,8 @@
 
 import { createInterface } from "readline/promises";
 import { stdin, stdout } from "process";
-import { homedir } from "os";
+import { homedir, userInfo } from "os";
+import { spawnSync } from "child_process";
 import {
   cpSync,
   copyFileSync,
@@ -58,13 +59,18 @@ export interface GlobalContextOptions {
  * install on the opposite host; the merge gate installs only on the configured
  * local gatekeeper host (Claude) so there is one runtime authority.
  */
-const BUNDLED_HOST_SKILLS: ReadonlyArray<{ skill: string; host: "claude" | "codex"; step: string }> = [
+type BundledHostSkill = { skill: string; host: "claude" | "codex"; step: string };
+type BundledHostAgent = { source: string; agent: string; host: "claude" | "codex"; step: string };
+
+const CROSS_REVIEW_SKILLS: ReadonlyArray<BundledHostSkill> = [
   { skill: "codex-review", host: "claude", step: "cross-review skill codex-review" },
   { skill: "claude-review", host: "codex", step: "cross-review skill claude-review" },
+];
+const MERGE_GATE_SKILLS: ReadonlyArray<BundledHostSkill> = [
   { skill: "merge-gate", host: "claude", step: "merge-gate skill" },
 ];
 
-const BUNDLED_HOST_AGENTS: ReadonlyArray<{ source: string; agent: string; host: "claude" | "codex"; step: string }> = [
+const MERGE_GATE_AGENTS: ReadonlyArray<BundledHostAgent> = [
   { source: "assets/skills/merge-gate/agents/claude.md", agent: "merge-gatekeeper.md", host: "claude", step: "merge-gate agent" },
 ];
 
@@ -101,6 +107,11 @@ export interface InitCommandResult {
   repoRoot: string;
   steps: InitStep[];
   lines: string[];
+}
+
+/** Internal dependency seam for filesystem-isolated tests. CLI callers use the OS account resolver. */
+export interface InitRuntimeDependencies {
+  authorityHome: () => string | null;
 }
 
 export interface InteractiveInitOptions extends InitCommandOptions {
@@ -181,6 +192,33 @@ function hostIds(target: InstallTargetSpec): Array<"codex" | "claude"> {
 function homeDir(env?: NodeJS.ProcessEnv): string | null {
   return env?.HOME ?? env?.USERPROFILE ?? process.env.HOME ?? process.env.USERPROFILE ?? homedir() ?? null;
 }
+
+export function resolveOsAccountHome(): string | null {
+  const uid = typeof process.getuid === "function" ? process.getuid() : undefined;
+  if (process.platform === "darwin" && uid !== undefined) {
+    const identity = spawnSync("/usr/bin/id", ["-un", String(uid)], { encoding: "utf-8" });
+    const username = identity.status === 0 ? identity.stdout.trim() : "";
+    if (!/^[A-Za-z0-9._-]+$/.test(username)) return null;
+    const directory = spawnSync("/usr/bin/dscl", [".", "-read", `/Users/${username}`, "NFSHomeDirectory"], { encoding: "utf-8" });
+    const match = directory.status === 0 ? directory.stdout.match(/^NFSHomeDirectory:\s*(.+)$/m) : null;
+    return match?.[1]?.trim() || null;
+  }
+  if (process.platform === "linux" && uid !== undefined) {
+    for (const getent of ["/usr/bin/getent", "/bin/getent"]) {
+      if (!existsSync(getent)) continue;
+      const account = spawnSync(getent, ["passwd", String(uid)], { encoding: "utf-8" });
+      const accountHome = account.status === 0 ? account.stdout.trim().split(":")[5] : "";
+      if (accountHome) return accountHome;
+    }
+    const account = readFileSync("/etc/passwd", "utf-8")
+      .split("\n")
+      .find((line) => line.split(":")[2] === String(uid));
+    return account?.split(":")[5] || null;
+  }
+  return userInfo().homedir || null;
+}
+
+const DEFAULT_INIT_RUNTIME_DEPENDENCIES: InitRuntimeDependencies = { authorityHome: resolveOsAccountHome };
 
 function samePath(a: string, b: string): boolean {
   try {
@@ -310,14 +348,15 @@ export function writeGlobalContextFiles(
  * idempotent (identical SKILL.md → "already present"), and treats a missing
  * bundled source as `skipped` (never fails init).
  */
-export function syncBundledHostSkills(
+function syncBundledItemsAtHome(
   sourceRoot: string,
   target: InstallTargetSpec,
-  env?: NodeJS.ProcessEnv,
+  home: string | null,
+  skills: ReadonlyArray<BundledHostSkill>,
+  agents: ReadonlyArray<BundledHostAgent>,
 ): InitStep[] {
-  const home = homeDir(env);
   const steps: InitStep[] = [];
-  for (const { skill, host, step } of BUNDLED_HOST_SKILLS) {
+  for (const { skill, host, step } of skills) {
     if (target !== "both" && target !== host) continue;
     if (!home) {
       steps.push({ step, status: "failed", detail: "HOME is required to resolve host skill roots" });
@@ -352,7 +391,7 @@ export function syncBundledHostSkills(
     cpSync(source, dest, { recursive: true });
     steps.push({ step, status: "ok", detail: `synced ${dest}` });
   }
-  for (const { source, agent, host, step } of BUNDLED_HOST_AGENTS) {
+  for (const { source, agent, host, step } of agents) {
     if (target !== "both" && target !== host) continue;
     if (!home) {
       steps.push({ step, status: "failed", detail: "HOME is required to resolve host agent roots" });
@@ -378,6 +417,30 @@ export function syncBundledHostSkills(
     steps.push({ step, status: "ok", detail: `synced ${dest}` });
   }
   return steps;
+}
+
+export function syncCrossReviewSkills(
+  sourceRoot: string,
+  target: InstallTargetSpec,
+  env?: NodeJS.ProcessEnv,
+): InitStep[] {
+  return syncBundledItemsAtHome(sourceRoot, target, homeDir(env), CROSS_REVIEW_SKILLS, []);
+}
+
+export function syncMergeGateRuntimeAtHome(
+  sourceRoot: string,
+  target: InstallTargetSpec,
+  authorityHome: string | null,
+): InitStep[] {
+  return syncBundledItemsAtHome(sourceRoot, target, authorityHome, MERGE_GATE_SKILLS, MERGE_GATE_AGENTS);
+}
+
+export function syncMergeGateRuntime(
+  sourceRoot: string,
+  target: InstallTargetSpec,
+  dependencies: InitRuntimeDependencies = DEFAULT_INIT_RUNTIME_DEPENDENCIES,
+): InitStep[] {
+  return syncMergeGateRuntimeAtHome(sourceRoot, target, dependencies.authorityHome());
 }
 
 function syncWazaSharedRules(target: InstallTargetSpec, env?: NodeJS.ProcessEnv): InitStep {
@@ -458,11 +521,14 @@ function installExternalSkills(sourceRoot: string, target: InstallTargetSpec, en
     env,
   );
   steps.push(withStepName(mermaid, "external skill mermaid", `target=${target}`));
-  steps.push(...syncBundledHostSkills(sourceRoot, target, env));
+  steps.push(...syncCrossReviewSkills(sourceRoot, target, env));
   return steps;
 }
 
-export function runInit(opts: InitCommandOptions = {}): InitCommandResult {
+export function runInit(
+  opts: InitCommandOptions = {},
+  dependencies: InitRuntimeDependencies = DEFAULT_INIT_RUNTIME_DEPENDENCIES,
+): InitCommandResult {
   const sourceRoot = resolve(opts.sourceRoot ?? REPO_ROOT);
   const repoRoot = resolve(opts.repo ?? process.cwd());
   let commandEnv = initCommandEnv(sourceRoot, opts.env);
@@ -576,6 +642,16 @@ export function runInit(opts: InitCommandOptions = {}): InitCommandResult {
         : apply
           ? "repo harness did not apply cleanly"
           : "dry-run",
+    });
+  }
+
+  if (apply && migrate.status === "ok") {
+    steps.push(...syncMergeGateRuntime(sourceRoot, target, dependencies));
+  } else {
+    steps.push({
+      step: "merge-gate runtime",
+      status: "skipped",
+      detail: apply ? "repo harness did not apply cleanly" : "dry-run",
     });
   }
 

@@ -1,26 +1,27 @@
 # Task Review: merge-gate-enforcement
 
-> **Status**: Done
+> **Status**: In Progress
 > **Plan**: plans/plan-20260714-1713-merge-gate-enforcement.md
 > **Contract**: tasks/contracts/20260714-1713-merge-gate-enforcement.contract.md
 > **Notes File**: tasks/notes/20260714-1713-merge-gate-enforcement.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-07-14 19:53
-> **Recommendation**: pass
+> **Last Updated**: 2026-07-14 23:41
+> **Recommendation**: blocked
 > **Review Rubric Version**: 2
-> **Reviewed Diff Fingerprint**: sha256:dee770051788f0770a616d2a0e9cb452ffa9ad4e63f33664cdf2f255b6a8fde7
-> **Reviewed Scope**: branch+staged+unstaged+untracked
+> **Reviewed Subject SHA256**: sha256:6ef552a68225c65e692ab9afbd75391ab1e4c5f74c17a25d40b8aa00fbdef81e
+> **Reviewed Subject Scope**: normalized-final-content
+> **Reviewed Target Revision**: ee571b8537b178e36d8ede8c50d32d0c3f0deee3
 
 ## Human Review Card
 
-- Verdict: pass
+- Verdict: blocked
 - Change type: code-change
 - Intended files changed: local merge-gate protocol, protected runner/receipt verifier, contract-worktree and PR ship enforcement, host runtime installation, generated projections, tests, and workflow/architecture artifacts.
 - Actual files changed: contract-allowed paths only; the cross-host general `gatekeeper` role and unrelated dirty `main` files are unchanged by this branch.
-- Commands passed: full suite `1436 pass / 1 skip / 0 fail`; focused gate and ship lifecycle suites; typecheck; helper/doc parity; skill/capability validation; deploy/architecture/state/adopt checks; installed-package live Claude PASS.
-- External acceptance: pass
+- Commands passed: full suite `1461 pass / 1 skip / 0 fail`; focused gate and ship lifecycle suites; typecheck; helper/doc parity; skill/capability validation; isolated package install and protected-helper smoke.
+- External acceptance: pending; `claude-review` returned `You've hit your session limit · resets 12:30am (Asia/Taipei)` with exit 1.
 - Residual risks: same-OS-user processes can bypass or replace local host state; GitHub branch protection/CI remains the remote merge-time authority.
-- Reviewer action required: none before branch integration; merge requires a clean target worktree.
+- Reviewer action required: rerun `claude-review` after the provider session resets, record a fresh result, then rerun sprint verification.
 - Rollback: revert the single work-package commit, reinstall the prior global tarball, and remove the host `merge_gate` config/installed skill/agent together.
 
 ## Mode Evidence
@@ -31,7 +32,7 @@
 
 ## Verification Evidence
 
-- Waza `/check` run: represented by focused lifecycle checks, full repository suite, independent CRITICAL/HIGH review, and final `verify-sprint`.
+- Waza `/check` run: remediation code and focused/full checks pass; refreshed independent Claude acceptance is still pending.
 - Commands run: `bun test`; `bun run check:type`; required shell checks; helper and reference parity; capability/skill validators; inspector/adopt dry-run; installed `repo-harness run merge-gate run` live canary.
 - Manual checks: host config names `merge-gatekeeper` + `merge-gate`; installed skill/agent/helper are byte-identical; general fleet `gatekeeper` is outside the diff; dirty target preflight is read-only.
 - Supporting artifacts: host receipt under `~/.repo-harness/gates/`, `.ai/harness/checks/latest.json`, architecture module, workstream, and notes.
@@ -40,18 +41,20 @@
 
 ## External Acceptance Advice
 
-> **External Acceptance**: pass
+> **External Acceptance**: pending
 > **External Reviewer**: Claude
 > **External Source**: claude-review
-> **External Started**: 2026-07-14T20:09:40+0800
-> **External Completed**: 2026-07-14T20:13:20+0800
+> **External Started**: 2026-07-14T23:50:00+0800
+> **External Completed**: (pending provider reset)
 > **Review Rubric Version**: 2
-> **Reviewed Diff Fingerprint**: sha256:dee770051788f0770a616d2a0e9cb452ffa9ad4e63f33664cdf2f255b6a8fde7
-> **Reviewed Scope**: branch+staged+unstaged+untracked
+> **Reviewed Subject SHA256**: sha256:6ef552a68225c65e692ab9afbd75391ab1e4c5f74c17a25d40b8aa00fbdef81e
+> **Reviewed Subject Scope**: normalized-final-content
+> **Reviewed Target Revision**: ee571b8537b178e36d8ede8c50d32d0c3f0deee3
+> **Benchmark Evidence SHA256**: not-applicable
 
-- P1 blockers: none
+- P1 blockers: pending external review
 - P2 advisories: none
-- Acceptance checklist: pass — Claude Fable independently reviewed the complete base-to-head diff and current check artifact, confirmed no CRITICAL/HIGH code blocker, and treated the artifact's sole `expected Claude` failure as the circular external-acceptance gate resolved by this review. It confirmed the skill/agent split, CLI-owned tool denial, exact-base/no-merge routing, receipt freshness, credential isolation, dirty-target refusal, and rollback boundaries.
+- Acceptance checklist: blocked — the fresh Claude review could not run because the provider session limit is exhausted until 12:30am Asia/Taipei.
 
 ## Behavior Diff Notes
 
@@ -75,7 +78,7 @@
 
 ## Failing Items
 
-- None.
+- Fresh external acceptance is unavailable until the Claude session limit resets. The four prior PR review findings are implemented and locally verified, but the workflow correctly remains fail-closed.
 
 ## Retest Steps
 
@@ -84,4 +87,4 @@
 
 ## Summary
 
-- PASS. No CRITICAL/HIGH blocker remains; implementation is verified and installed locally, while branch integration waits for a clean `main`.
+- BLOCKED only on fresh external acceptance. Local remediation, full tests, and isolated packaged-runtime proof pass; do not merge until `claude-review` succeeds and `verify-sprint` is refreshed.

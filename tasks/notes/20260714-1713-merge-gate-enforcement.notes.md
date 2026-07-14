@@ -1,10 +1,10 @@
 # Implementation Notes: merge-gate-enforcement
 
-> **Status**: Completed
+> **Status**: In Progress
 > **Plan**: plans/plan-20260714-1713-merge-gate-enforcement.md
 > **Contract**: tasks/contracts/20260714-1713-merge-gate-enforcement.contract.md
 > **Review**: tasks/reviews/20260714-1713-merge-gate-enforcement.review.md
-> **Last Updated**: 2026-07-14 19:53
+> **Last Updated**: 2026-07-14 23:41
 > **Lifecycle**: notes
 
 ## Design Decisions
@@ -37,6 +37,16 @@
 ## Open Questions
 
 - None. The installed-package live Claude canary returned PASS and the installed helper immediately revalidated the SHA/diff-bound receipt.
+
+## PR Review Remediation
+
+- **P1 map**: Protected helper execution crosses `helper-runner.ts` into the shared process runner; PR shipping crosses `ship-worktrees.sh` into the inner `contract-worktree.sh` closeout transaction; runtime installation crosses `runInit` / strict global setup into host-scoped skills and agents. These are the three mutation/authority boundaries corrected in this pass.
+- **P2 trace**: Caller `BASH_ENV` entered `runHelper`, was scrubbed by `protectedChildEnv`, then was incorrectly restored by `runProcess` merging `process.env`. The process runner now supports exact-environment execution and both protected Git root resolution and helper execution opt out of inheritance. A direct `runHelper` regression proves the shell hook is not executed.
+- **P2 trace**: PR ship now snapshots the pre-finish branch plus live `plans`, `tasks`, active markers, sprint state, and plan state before `finish --no-merge`. If the second target fetch invalidates the receipt or exact-SHA push fails, the outer transaction restores the branch and workflow artifacts. The integration fixture advances remote `main` during Claude review, observes fail-closed rollback before push, restores external state, and retries successfully.
+- **P3 decision**: Keep the inner finish transaction as the commit/gate boundary and add one outer PR-ship transaction around finish, refetch, receipt verification, and push. This is the smallest boundary that makes the whole local mutation sequence retryable; PR creation remains after commit because an external PR side effect cannot be rolled back locally.
+- **P3 decision**: Cross-review skills keep their caller-HOME/external-skill lifecycle. The required merge-gate skill and agent are installed independently after a successful adoption (and in strict global setup) using the same OS-account-home authority model as the gate runtime. The test-only dependency seam is internal to library calls and is not a CLI/environment fallback.
+- **Verification**: `bun test` passed `1461 pass / 1 skip / 0 fail` across 114 files in 542.60s. Typecheck, focused security/transaction/installer tests, Bash syntax, and helper projection parity pass. An isolated `npm pack` + Bun global install contained the merge-gate skill, agent, and helper, and the installed CLI successfully ran the protected `merge-gate fingerprint` path.
+- **External acceptance blocker**: the refreshed `claude-review` attempt exited 1 with `You've hit your session limit · resets 12:30am (Asia/Taipei)`. No manual override was recorded; merge remains fail-closed until a fresh review is bound to the current subject.
 
 ## Evidence Links
 

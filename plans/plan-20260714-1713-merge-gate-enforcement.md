@@ -108,6 +108,7 @@ Add one read-only merge-gate protocol consumed by the existing gatekeeper agent 
 - [x] Make the local ship entrypoint fail closed when the configured gatekeeper command or fresh receipt is absent, without changing existing product semantics.
 - [x] Add focused tests for pass, fail, blocked, stale SHA, stale diff, and bypass attempts.
 - [x] Update architecture and workflow artifacts, then run required checks.
+- [ ] Resolve PR review findings for protected environment isolation, transactional PR ship rollback, and required runtime installation; then refresh full verification and external acceptance.
 
 ## Constraints
 
@@ -134,3 +135,4 @@ Add one read-only merge-gate protocol consumed by the existing gatekeeper agent 
 - [x] Make the local ship entrypoint fail closed when the configured gatekeeper command or fresh receipt is absent, without changing existing product semantics.
 - [x] Add focused tests for pass, fail, blocked, stale SHA, stale diff, and bypass attempts.
 - [x] Update architecture and workflow artifacts, then run required checks.
+- [ ] Resolve PR review findings for protected environment isolation, transactional PR ship rollback, and required runtime installation; then refresh full verification and external acceptance.

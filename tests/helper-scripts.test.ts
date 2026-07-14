@@ -498,6 +498,12 @@ describe("Workflow helper scripts", () => {
     expect(ship.indexOf('verified_sha="$(verify_merge_gate_before_ship "$gate_base_ref")"')).toBeLessThan(
       ship.indexOf('push_branch "$branch" "$verified_sha"'),
     );
+    expect(ship.indexOf("\n  ship_transaction_begin\n")).toBeLessThan(
+      ship.indexOf('finish_contract_worktree "pr" "$gate_base_ref"'),
+    );
+    expect(ship.indexOf('push_branch "$branch" "$verified_sha"')).toBeLessThan(
+      ship.indexOf("\n  ship_transaction_commit\n"),
+    );
     expect(ship).toContain('git push "$REMOTE_NAME" "$verified_sha:refs/heads/$branch"');
     expect(ship).toContain('+refs/heads/$TARGET_BRANCH:refs/remotes/$REMOTE_NAME/$TARGET_BRANCH');
   });
@@ -1885,6 +1891,20 @@ describe("Workflow helper scripts", () => {
         join(fakeBin, "claude"),
         [
           "#!/bin/sh",
+          `advance_state=${JSON.stringify(join(fakeBin, "advanced-main.state"))}`,
+          `advance_clone=${JSON.stringify(`${cwd}-advance-main`)}`,
+          `remote_path=${JSON.stringify(remotePath)}`,
+          "if [ ! -f \"$advance_state\" ]; then",
+          "  touch \"$advance_state\"",
+          "  rm -rf \"$advance_clone\"",
+          "  /usr/bin/git clone \"$remote_path\" \"$advance_clone\" >/dev/null 2>&1",
+          "  /usr/bin/git -C \"$advance_clone\" config user.name 'Remote Advance'",
+          "  /usr/bin/git -C \"$advance_clone\" config user.email 'remote-advance@test.local'",
+          "  printf 'remote main advanced\\n' > \"$advance_clone/upstream.txt\"",
+          "  /usr/bin/git -C \"$advance_clone\" add upstream.txt",
+          "  /usr/bin/git -C \"$advance_clone\" commit -m 'advance remote main' >/dev/null 2>&1",
+          "  /usr/bin/git -C \"$advance_clone\" push origin main >/dev/null 2>&1",
+          "fi",
           "printf '%s\\n' '{\"type\":\"result\",\"structured_output\":{\"protocol\":1,\"verdict\":\"PASS\",\"summary\":\"fixture accepted\",\"findings\":[],\"checks\":[{\"command\":\"fixture check\",\"status\":\"pass\",\"summary\":\"passed\"}]}}'",
         ].join("\n") + "\n",
       );
@@ -1961,7 +1981,7 @@ describe("Workflow helper scripts", () => {
         ].join("\n")
       );
 
-      const ship = run("bash", ["scripts/ship-worktrees.sh"], worktreePath, {
+      const shipEnv = {
         HOOK_HOST: "claude",
         REPO_HARNESS_HOOK_CLI: join(ROOT, "src/cli/hook-entry.ts"),
         GH_LOG: ghLog,
@@ -1972,7 +1992,22 @@ describe("Workflow helper scripts", () => {
         REPO_HARNESS_BUN_BIN: process.execPath,
         REPO_HARNESS_GIT_BIN: "/usr/bin/git",
         REPO_HARNESS_WORKFLOW_STATE_LIB: join(ROOT, "assets/hooks/lib/workflow-state.sh"),
-      });
+      };
+      const beforeRejectedShip = run("git", ["rev-parse", "HEAD"], worktreePath).stdout.trim();
+      const originalRemoteMain = run("git", ["rev-parse", "main"], cwd).stdout.trim();
+      const rejectedShip = run("bash", ["scripts/ship-worktrees.sh"], worktreePath, shipEnv);
+      const rejectedOutput = `${rejectedShip.stdout}\n${rejectedShip.stderr}`;
+      expect(rejectedShip.status, rejectedOutput).not.toBe(0);
+      expect(rejectedOutput).toContain("ship failed; restored live workflow artifacts and the pre-ship branch");
+      expect(run("git", ["rev-parse", "HEAD"], worktreePath).stdout.trim()).toBe(beforeRejectedShip);
+      expect(existsSync(join(worktreePath, "plans/plan-20260304-1450-demo.md"))).toBe(true);
+      expect(existsSync(join(worktreePath, "plans/archive/plan-20260304-1450-demo.md"))).toBe(false);
+      expect(existsSync(join(worktreePath, "tasks/contracts/20260304-1450-demo.contract.md"))).toBe(true);
+      expect(existsSync(join(worktreePath, "tasks/reviews/20260304-1450-demo.review.md"))).toBe(true);
+      expect(run("git", ["ls-remote", "--heads", "origin", "codex/demo"], cwd).stdout.trim()).toBe("");
+      expect(run("git", ["--git-dir", remotePath, "update-ref", "refs/heads/main", originalRemoteMain], cwd).status).toBe(0);
+
+      const ship = run("bash", ["scripts/ship-worktrees.sh"], worktreePath, shipEnv);
       const shipOutput = `${ship.stdout}\n${ship.stderr}`;
       expect(ship.status, shipOutput).toBe(0);
       expect(ship.stdout).toContain("contract-worktree.sh finish --no-merge");
@@ -1993,6 +2028,7 @@ describe("Workflow helper scripts", () => {
       rmSync(fakeBin, { recursive: true, force: true });
       rmSync(home, { recursive: true, force: true });
       rmSync(trustedHelpers, { recursive: true, force: true });
+      rmSync(`${cwd}-advance-main`, { recursive: true, force: true });
       rmSync(cwd, { recursive: true, force: true });
     }
   }, 60000);

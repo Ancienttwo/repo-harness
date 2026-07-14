@@ -379,12 +379,15 @@ describe('init command global runtime bootstrap', () => {
         externalSkills: false,
         codegraph: false,
         env: { ...process.env, HOME: home, BUN_INSTALL: join(home, '.bun') },
-      });
+      }, { authorityHome: () => home });
 
       expect(result.exitCode).toBe(0);
       expect(result.steps.find((step) => step.step === 'configure Waza skills')?.status).toBe('skipped');
       expect(result.steps.find((step) => step.step === 'cross-review skill codex-review')?.status).toBe('ok');
+      expect(result.steps.find((step) => step.step === 'merge-gate skill')?.status).toBe('ok');
       expect(existsSync(join(home, '.claude', 'skills', 'codex-review', 'SKILL.md'))).toBe(true);
+      expect(existsSync(join(home, '.claude', 'skills', 'merge-gate', 'SKILL.md'))).toBe(true);
+      expect(existsSync(join(home, '.claude', 'agents', 'merge-gatekeeper.md'))).toBe(true);
       expect(existsSync(join(home, '.agents', 'skills', 'think'))).toBe(false);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
