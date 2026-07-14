@@ -1,27 +1,27 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-15T01:01:30+0800 -->
+<!-- updated_at: 2026-07-15T02:50:46+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-07-15T01:01:30+0800
-> **Source Branch**: codex/codex-delegation-session-auth
-> **Source Commit**: b43eaab5
+> **Status**: Idle
+> **Updated At**: 2026-07-15T02:50:46+0800
+> **Source Branch**: main
+> **Source Commit**: 9d444849
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: codex-delegation-session-auth-complete-awaiting-pr-merge
+> **Reason**: 0.10.0-release-complete
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: ManualClearedWithActiveWork
+- Status: Idle
 - Active Plan: (none)
 - Plan Status: (none)
-- Next Task: inspect active worktree marker(s)
-- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
+- Next Task: (none)
+- Clear Note: (none)
 
 ## Mainline Snapshot Reading
 
@@ -31,10 +31,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- /Users/kito/Projects/repo-harness: plans/plan-20260714-2128-3p-cli-skill-mcp-boundary.md
-- /Users/kito/Projects/repo-harness: active-worktree owner -> /Users/kito/Projects/repo-harness
-- /Users/kito/Projects/repo-harness-release-blockers: plans/plan-20260714-2318-repo-harness-0-10-0-release-blockers.md
-- /Users/kito/Projects/repo-harness-release-blockers: active-worktree owner -> /Users/kito/Projects/repo-harness-release-blockers
+- (none)
 ## Active Sprint
 
 - Sprint: (none)
@@ -53,18 +50,17 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Checks
 
-- status=(none), source=(none), exit_code=(none), file=.ai/harness/checks/latest.json
+- status=fail, source=verify-sprint, exit_code=1, file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 5 changed/untracked path(s)
+- Summary: 4 changed/untracked path(s)
 
 ```
- M plans/plan-20260714-2052-codex-delegation-session-auth.md
- M tasks/contracts/20260714-2052-codex-delegation-session-auth.contract.md
- M tasks/current.md
- M tasks/notes/20260714-2052-codex-delegation-session-auth.notes.md
- M tasks/reviews/20260714-2052-codex-delegation-session-auth.review.md
+ M deploy/release-checklists/260714-repo-harness-0.10.0.md
+ M plans/plan-20260714-2318-repo-harness-0-10-0-release-blockers.md
+ M tasks/notes/20260714-2318-repo-harness-0-10-0-release-blockers.notes.md
+ M tasks/reviews/20260714-2318-repo-harness-0-10-0-release-blockers.review.md
 ```
 
 ## Source Artifacts

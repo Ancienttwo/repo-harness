@@ -7,10 +7,9 @@
   (lite/standard/strict profiles plus the effective-state resolver), the
   verification/evidence decoupling of contract gates, the npm-packaged agent
   fleet authority, gstack removal, and the release-blocker hardening below.
-- Publish status: **release-blocker candidate, not published**. The source
-  branch still requires merge plus green CI. npm publish, the `v0.10.0` tag,
-  and the GitHub release require a separate explicit release authorization and
-  have not been executed.
+- Publish status: **published 2026-07-15**. PR #77 merged at
+  `9d4448494d919858de34f0a2169b5b029bd429f2`; npm `latest`, annotated tag
+  `v0.10.0`, and the GitHub release all point to the released `0.10.0` source.
 
 ## Scope
 
@@ -56,8 +55,8 @@
   `repo-harness run check-task-workflow --strict` pass on the bumped tree
   (recorded below after global refresh).
 - Candidate freeze: `bun run check:release` passed, including the complete CI
-  gate, package dry-run, and tarball install smoke. GitHub CI on the pushed
-  commit remains the remote merge gate.
+  gate, package dry-run, and tarball install smoke. All eight GitHub checks on
+  PR #77 passed before merge.
 
 ## Release-blocker Candidate Evidence
 
@@ -70,9 +69,21 @@
   status readback, MCP setup/HTTP/OAuth/process/coding tools, registry failure
   compensation, docs, and bootstrap surfaces with 0 failures; typecheck also
   passed.
-- The frozen local source passed `bun run check:release`; package count is 393
-  and installed tarball CLI bins start. Exact commit, PR/CI result, and merge
-  commit remain pending until the candidate is committed and pushed.
+- The frozen published source passed `bun run check:release`; package count is
+  393 and installed tarball CLI bins start. The exact published source is merge
+  commit `9d4448494d919858de34f0a2169b5b029bd429f2` from PR #77.
+
+## Publication Evidence
+
+- npm published `repo-harness@0.10.0` with `latest: 0.10.0`; registry integrity
+  is `sha512-OUJxlshnphPI4fSCvMSA2pYWW/mUUH/fUPtqC0WjUs5WRAjLBUu9cfPXfEtn1bMIPQN6m/aSt7h7l+2Xcuerig==`
+  and shasum `8e8278e61a0483453a5eb82c0ed0379803e96ec6`.
+- Annotated tag `v0.10.0` was pushed at the published source commit.
+- GitHub Release: <https://github.com/Ancienttwo/repo-harness/releases/tag/v0.10.0>.
+- `bash scripts/check-release-published.sh 0.10.0` passed registry, dist-tag,
+  tarball, tag, and local-version agreement.
+- A disposable Bun global install from the public registry exposed
+  `repo-harness` on `PATH`; `repo-harness --version` returned `0.10.0`.
 
 ## Accepted Residual Availability Risks
 
@@ -85,10 +96,10 @@
 
 ## Publish Checklist
 
-- [ ] Push the release-prep commit to `origin/main`.
-- [ ] Confirm CI for the pushed commit is green.
-- [ ] Run `bun run check:release` on the release commit.
-- [ ] Publish `repo-harness@0.10.0` to npm with the `latest` dist-tag.
-- [ ] Push annotated tag `v0.10.0` at the published source commit.
-- [ ] Create GitHub release `repo-harness 0.10.0`.
-- [ ] Run `bash scripts/check-release-published.sh 0.10.0`.
+- [x] Push the release-prep commit to `origin/main`.
+- [x] Confirm CI for the pushed commit is green.
+- [x] Run `bun run check:release` on the release commit.
+- [x] Publish `repo-harness@0.10.0` to npm with the `latest` dist-tag.
+- [x] Push annotated tag `v0.10.0` at the published source commit.
+- [x] Create GitHub release `repo-harness 0.10.0`.
+- [x] Run `bash scripts/check-release-published.sh 0.10.0`.

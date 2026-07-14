@@ -32,10 +32,10 @@
 - Per the user's explicit direction, Claude review is skipped. The current
   `/check` review uses local base review plus Codex security and architecture
   specialist passes.
-- npm publish, tag creation, GitHub Release creation, registry readback, and
-  installed-public-runtime readback are not authorized by the branch-cleanup
-  request. This slice prepares and merges the source candidate only; external
-  publication remains in the release filing for a separately authorized run.
+- The user subsequently authorized publication by identifying the private npm
+  release token. PR #77 merged with green CI; npm `0.10.0`, annotated tag
+  `v0.10.0`, GitHub Release, registry agreement, and a disposable PATH-visible
+  Bun install were completed and recorded in the release filing.
 - Allowed paths were widened to
   `docs/reference-configs/chatgpt-coding-mcp.md` because removing the public PTY
   contract without correcting its authoritative guide would leave source and

@@ -20,7 +20,7 @@
 - Actual files changed: matches the contract after adding `tests/cli/status.test.ts` for the full-gate fixture correction; no `_ops`, external worktree, npm registry, tag, or release mutation.
 - Commands passed: focused 133-test suite; targeted install/status 37-test suite; registry transaction 12-test suite; typecheck; `git diff --check`; deploy SQL, architecture, task, and strict workflow checks; project inspection; adoption dry-run; full `bun run check:release`, including package dry-run and installed tarball smoke.
 - Residual risks: one tunnel socket shares an OAuth limiter identity; unauthenticated DCR can fill the fixed 64-client/30-day capacity. Both are bounded availability risks without an authorization bypass.
-- Reviewer action required: none for source merge; npm publish/tag/GitHub Release still require separate authorization.
+- Reviewer action required: none; source merge and authorized publication are complete.
 - Rollback: revert the release-blocker commit before publication; after publication, ship a patch release.
 
 ## Mode Evidence
@@ -66,7 +66,7 @@
 ## Residual Risks / Follow-ups
 
 - Tunnel-wide rate identity and fixed DCR admission capacity remain explicit availability tradeoffs until a separately approved trusted-proxy or registration-admission contract exists.
-- npm `0.10.0`, tag `v0.10.0`, GitHub Release, published-package readback, and PATH-visible public install proof remain pending separate release authorization.
+- npm `0.10.0`, tag `v0.10.0`, GitHub Release, published-package readback, and PATH-visible public install proof are complete and recorded in the release filing.
 
 ## Scorecard
 
@@ -88,4 +88,4 @@
 
 ## Summary
 
-- All confirmed `0.10.0` source release blockers are closed. Local `/check`, security, architecture, full release, package, and installed-tarball evidence recommend source merge; external publication remains deliberately unexecuted.
+- All confirmed `0.10.0` source release blockers are closed. Source merge and authorized publication are complete; npm, tag, GitHub Release, registry, and PATH-visible installed-runtime evidence agree.

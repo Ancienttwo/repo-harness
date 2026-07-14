@@ -139,7 +139,7 @@ At 10x scale, the first pressure point is HTTP/DCR state cardinality; fixed TTL/
 - [x] Remove the unreachable PTY option/dependency from the unshipped coding MCP surface and keep pipe sessions fail-closed and covered.
 - [x] Refresh `0.10.0` changelog/release filing with coding MCP scope, candidate verification, package expectations, and residual risk; the exact published commit remains a publish-time fact.
 - [x] Run focused tests, `git diff --check`, dependency/package inspection, architecture/task/workflow checks, deep security/architecture re-review, and one final `bun run check:release` after code freeze.
-- [ ] Commit and push the reviewed slice, open/merge the PR after green GitHub CI, and clean the branch/worktree. Record npm publish, registry readback, tag, GitHub Release, and installed-public-runtime proof as pending separate explicit release authorization.
+- [x] Commit and push the reviewed slice, merge PR #77 after green GitHub CI, clean the branch/worktree, then publish npm `0.10.0`, verify registry readback, push `v0.10.0`, create the GitHub Release, and prove a PATH-visible public Bun install.
 
 ## Verification Boundary
 
@@ -164,4 +164,4 @@ Before publish, revert the single release-blocker commit. After npm publish, npm
 - [x] Remove the unreachable PTY option/dependency from the unshipped coding MCP surface and keep pipe sessions fail-closed and covered.
 - [x] Refresh `0.10.0` changelog/release filing with coding MCP scope, candidate verification, package expectations, and residual risk; the exact published commit remains a publish-time fact.
 - [x] Run focused tests, `git diff --check`, dependency/package inspection, architecture/task/workflow checks, deep security/architecture re-review, and one final `bun run check:release` after code freeze.
-- [ ] Commit and push the reviewed slice, open/merge the PR after green GitHub CI, and clean the branch/worktree. Record npm publish, registry readback, tag, GitHub Release, and installed-public-runtime proof as pending separate explicit release authorization.
+- [x] Commit and push the reviewed slice, merge PR #77 after green GitHub CI, clean the branch/worktree, then publish npm `0.10.0`, verify registry readback, push `v0.10.0`, create the GitHub Release, and prove a PATH-visible public Bun install.
