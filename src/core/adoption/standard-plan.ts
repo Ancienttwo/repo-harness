@@ -624,6 +624,7 @@ function addReferenceOperations(repoRoot: string, documentationProfile: string, 
   const minimal = new Set([
     "harness-overview.md",
     "agentic-development-flow.md",
+    "design-options.md",
     "external-tooling.md",
     "sprint-contracts.md",
     "heartbeat-triage.md",
