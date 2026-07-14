@@ -51,21 +51,24 @@ Missing copies of this route are soft-skipped so older repo-pinned hook runtimes
 do not break subagent creation before a hook refresh.
 
 Codex delegation route: `UserPromptSubmit.delegation` runs
-`codex-delegation-advisor.sh`. It does not infer delegation from prompt length.
-It reacts to explicit `/delegate`, `/parallel`, imperative subagent,
-multi-agent, or parallel-investigation language, excluding mechanism/design
-questions that only mention `spawn subagent(s)`. When no explicit trigger is
-present, `delegation.mode=auto` in global `~/.repo-harness/config.json` or repo
-policy is treated as standing permission only; the global value wins when it is
-exactly `auto` or `explicit`. Auto mode emits contract-bound context only when
-the active plan and matching Active/Ready/Executing contract both exist and
-`repo-harness-hook prompt-route` resolves the current prompt to execute or
-verify. Explicit delegation without that state emits permission-only context.
-The script writes scoped runtime state under `.ai/harness/delegation/` with
-`latest.json` as the current pointer and emits
-`hookSpecificOutput.additionalContext`; `runtime.ts` supplies the canonical
-prompt-route entrypoint and forwards stdout only for this route and only when
-the JSON is valid for `UserPromptSubmit`.
+`codex-delegation-advisor.sh`. It does not infer delegation from prompt length
+and does not read `delegation.mode`. It reacts only to explicit `/delegate`,
+`/parallel`, imperative subagent, multi-agent, or parallel-investigation
+language, excluding mechanism/design questions that only mention `spawn
+subagent(s)`, identically whether `delegation.mode` is `auto` or `explicit`.
+With no explicit trigger it exits silently: no context, no state write. The
+script writes ignored scoped runtime state under `.ai/harness/delegation/`
+with `latest.json` as the current pointer and emits
+`hookSpecificOutput.additionalContext`; `runtime.ts` forwards that stdout only for
+this route and only when the JSON is valid for `UserPromptSubmit`.
+
+Standing auto-mode authorization instead lives in `SessionStart.default`:
+`session-start-context.sh` injects one compact "Delegation Standing
+Authorization" block, only on the Codex host, only when effective
+`delegation.mode` resolves to `auto` (global `~/.repo-harness/config.json`
+`delegation.mode` wins when it is exactly `auto` or `explicit`, else repo
+`policy.json` decides). This fires once per SessionStart rather than
+re-asserting on every prompt.
 
 Codex subagent lifecycle routes: `SubagentStart.context` runs
 `subagent-start-context.sh` after a subagent exists, marks explicit delegation

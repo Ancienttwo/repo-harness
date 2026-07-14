@@ -490,6 +490,65 @@ If the current user message mentions `# Files mentioned by the user`, `pasted-te
 EOF_CONTEXT
 }
 
+delegation_mode_from_file() {
+  local file="$1"
+  command -v jq >/dev/null 2>&1 || return 1
+  [[ -f "$file" ]] || return 1
+
+  local mode
+  mode="$(jq -r '.delegation.mode // empty' "$file" 2>/dev/null || true)"
+  [[ "$mode" == "auto" || "$mode" == "explicit" ]] || return 1
+  printf '%s' "$mode"
+}
+
+effective_delegation_mode() {
+  local global_mode repo_mode
+  global_mode="$(delegation_mode_from_file "${HOME:-}/.repo-harness/config.json" || true)"
+  if [[ -n "$global_mode" ]]; then
+    printf '%s' "$global_mode"
+    return 0
+  fi
+
+  repo_mode="$(delegation_mode_from_file ".ai/harness/policy.json" || true)"
+  if [[ "$repo_mode" == "auto" ]]; then
+    printf '%s' "auto"
+  else
+    printf '%s' "explicit"
+  fi
+}
+
+delegation_max_agents_value() {
+  local value=""
+  if command -v jq >/dev/null 2>&1 && [[ -f ".ai/harness/policy.json" ]]; then
+    value="$(jq -r '.delegation.max_agents // empty' .ai/harness/policy.json 2>/dev/null || true)"
+  fi
+  if [[ "$value" =~ ^[0-9]+$ ]]; then
+    printf '%s' "$value"
+  else
+    printf '%s' "2"
+  fi
+}
+
+codex_delegation_auto_context() {
+  [[ "${HOOK_HOST:-}" == "codex" ]] || return 1
+  [[ "$(effective_delegation_mode)" == "auto" ]] || return 1
+
+  local max_agents
+  max_agents="$(delegation_max_agents_value)"
+
+  cat <<EOF_CONTEXT
+# Delegation Standing Authorization
+
+delegation.mode=auto is standing user authorization for bounded native
+subagent delegation for this session. Spawn only when at least two
+independent, bounded workstreams exist; spawn no more than ${max_agents}
+agents; never give concurrent writers overlapping write ownership; pass
+fork_turns="none" on spawn_agent calls that select an agent_type; close
+finished agent threads; do not spawn for a trivial or strictly sequential
+task.
+EOF_CONTEXT
+}
+
 context=""
 if resume_current_for_handoff; then
   if active_plan_exists \
@@ -551,6 +610,15 @@ if [[ -n "$tooling_update_context" ]]; then
     context="${context}"$'\n'"${tooling_update_context}"
   else
     context="$tooling_update_context"
+  fi
+fi
+
+delegation_auto_context="$(codex_delegation_auto_context || true)"
+if [[ -n "$delegation_auto_context" ]]; then
+  if [[ -n "$context" ]]; then
+    context="${context}"$'\n'"${delegation_auto_context}"
+  else
+    context="$delegation_auto_context"
   fi
 fi
 

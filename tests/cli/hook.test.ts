@@ -1029,7 +1029,7 @@ describe('hook command (Phase 1B)', () => {
     }
   });
 
-  test('CLI dispatcher bounds policy auto mode to active execute or verify prompts', () => {
+  test('CLI dispatcher stays silent in policy auto mode without explicit trigger words, but still injects on explicit triggers', () => {
     // Isolate HOME so an absent (or future) ~/.repo-harness/config.json on the
     // real machine can never leak into this repo-policy-only scenario.
     const emptyHome = fs.realpathSync(
@@ -1110,21 +1110,8 @@ describe('hook command (Phase 1B)', () => {
           },
         );
         expect(auto.status).toBe(0);
-        const autoParsed = JSON.parse(auto.stdout);
-        expect(autoParsed.hookSpecificOutput.hookEventName).toBe('UserPromptSubmit');
-        expect(autoParsed.hookSpecificOutput.additionalContext).toContain('[repo-harness:delegation]');
-        expect(autoParsed.hookSpecificOutput.additionalContext).toContain('delegation.mode=auto');
-        expect(autoParsed.hookSpecificOutput.additionalContext).toContain(
-          'standing user authorization for bounded delegation',
-        );
-        const autoState = JSON.parse(
-          fs.readFileSync(path.join(repoRoot, '.ai/harness/delegation/latest.json'), 'utf-8'),
-        );
-        expect(autoState.explicit).toBe(false);
-        expect(autoState.mode).toBe('auto');
-        expect(autoState.trigger).toBe('auto-mode');
-        expect(autoState.stop_fallback).toBe(false);
-        fs.rmSync(path.join(repoRoot, '.ai/harness/delegation'), { recursive: true, force: true });
+        expect(auto.stdout).toBe('');
+        expect(fs.existsSync(path.join(repoRoot, '.ai/harness/delegation/latest.json'))).toBe(false);
 
         const verify = spawnSync(
           process.execPath,
@@ -1137,8 +1124,8 @@ describe('hook command (Phase 1B)', () => {
           },
         );
         expect(verify.status).toBe(0);
-        expect(JSON.parse(verify.stdout).hookSpecificOutput.additionalContext).toContain('authoritative execution brief');
-        fs.rmSync(path.join(repoRoot, '.ai/harness/delegation'), { recursive: true, force: true });
+        expect(verify.stdout).toBe('');
+        expect(fs.existsSync(path.join(repoRoot, '.ai/harness/delegation/latest.json'))).toBe(false);
 
         const { REPO_HARNESS_HOOK_CLI: _ignoredHookCli, ...envWithoutHookCli } = process.env;
         const runtimeDefault = spawnSync(
@@ -1152,10 +1139,8 @@ describe('hook command (Phase 1B)', () => {
           },
         );
         expect(runtimeDefault.status).toBe(0);
-        expect(JSON.parse(runtimeDefault.stdout).hookSpecificOutput.additionalContext).toContain(
-          'authoritative execution brief',
-        );
-        fs.rmSync(path.join(repoRoot, '.ai/harness/delegation'), { recursive: true, force: true });
+        expect(runtimeDefault.stdout).toBe('');
+        expect(fs.existsSync(path.join(repoRoot, '.ai/harness/delegation/latest.json'))).toBe(false);
 
         const discussion = spawnSync(
           process.execPath,
@@ -1190,6 +1175,11 @@ describe('hook command (Phase 1B)', () => {
         expect(explicitUnderAuto.status).toBe(0);
         const explicitParsed = JSON.parse(explicitUnderAuto.stdout);
         expect(explicitParsed.hookSpecificOutput.additionalContext).toContain('[repo-harness:delegation]');
+        expect(explicitParsed.hookSpecificOutput.additionalContext).toContain('current user turn is the execution authority');
+        expect(explicitParsed.hookSpecificOutput.additionalContext).toContain(
+          'does not by itself authorize resuming prior implementation or completing Exit Criteria',
+        );
+        expect(explicitParsed.hookSpecificOutput.additionalContext).not.toContain('authoritative execution brief');
         const explicitState = JSON.parse(
           fs.readFileSync(path.join(repoRoot, '.ai/harness/delegation/latest.json'), 'utf-8'),
         );
@@ -1203,7 +1193,7 @@ describe('hook command (Phase 1B)', () => {
     }
   });
 
-  test('global config delegation.mode=auto takes precedence over repo policy explicit', () => {
+  test('global config delegation.mode=auto takes precedence over repo policy explicit: advisor stays silent, SessionStart injects the standing block', () => {
     const home = fs.realpathSync(
       fs.mkdtempSync(path.join(os.tmpdir(), 'repo-harness-hook-home-')),
     );
@@ -1245,26 +1235,31 @@ describe('hook command (Phase 1B)', () => {
           },
         );
         expect(result.status).toBe(0);
-        const parsed = JSON.parse(result.stdout);
-        expect(parsed.hookSpecificOutput.hookEventName).toBe('UserPromptSubmit');
-        expect(parsed.hookSpecificOutput.additionalContext).toContain('[repo-harness:delegation]');
-        expect(parsed.hookSpecificOutput.additionalContext).toContain(
-          'standing user authorization for bounded delegation',
+        expect(result.stdout).toBe('');
+        expect(fs.existsSync(path.join(repoRoot, '.ai/harness/delegation/latest.json'))).toBe(false);
+
+        // Global config auto overrides repo policy explicit, so SessionStart
+        // must inject the standing authorization block exactly once.
+        const sessionStart = spawnSync(
+          'bash',
+          [path.join(repoRoot, '.ai/hooks/session-start-context.sh')],
+          {
+            cwd: repoRoot,
+            input: '',
+            encoding: 'utf-8',
+            env: { ...process.env, HOME: home, HOOK_HOST: 'codex', HOOK_REPO_ROOT: repoRoot },
+          },
         );
-        const state = JSON.parse(
-          fs.readFileSync(path.join(repoRoot, '.ai/harness/delegation/latest.json'), 'utf-8'),
-        );
-        expect(state.mode).toBe('auto');
-        expect(state.trigger).toBe('auto-mode');
-        expect(state.explicit).toBe(false);
-        expect(state.stop_fallback).toBe(false);
+        expect(sessionStart.status).toBe(0);
+        expect(sessionStart.stdout).toContain('Delegation Standing Authorization');
+        expect(sessionStart.stdout).toContain('standing user authorization for bounded native');
       });
     } finally {
       fs.rmSync(home, { recursive: true, force: true });
     }
   });
 
-  test('global config delegation.mode=explicit takes precedence over repo policy auto', () => {
+  test('global config delegation.mode=explicit takes precedence over repo policy auto: advisor stays silent, SessionStart stays silent too', () => {
     const home = fs.realpathSync(
       fs.mkdtempSync(path.join(os.tmpdir(), 'repo-harness-hook-home-')),
     );
@@ -1307,9 +1302,79 @@ describe('hook command (Phase 1B)', () => {
         expect(result.status).toBe(0);
         expect(result.stdout).toBe('');
         expect(fs.existsSync(path.join(repoRoot, '.ai/harness/delegation/latest.json'))).toBe(false);
+
+        // Global config explicit overrides repo policy auto, so SessionStart
+        // must NOT inject the standing authorization block.
+        const sessionStart = spawnSync(
+          'bash',
+          [path.join(repoRoot, '.ai/hooks/session-start-context.sh')],
+          {
+            cwd: repoRoot,
+            input: '',
+            encoding: 'utf-8',
+            env: { ...process.env, HOME: home, HOOK_HOST: 'codex', HOOK_REPO_ROOT: repoRoot },
+          },
+        );
+        expect(sessionStart.status).toBe(0);
+        expect(sessionStart.stdout.trim()).toBe('');
       });
     } finally {
       fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test('full CLI dispatcher SessionStart on an idle codex+auto repo emits the delegation standing-authorization block (regression: was silently empty)', () => {
+    // Regression coverage for a real gap: session-start-context.sh emits the
+    // block correctly on its own, but the SessionStart route runs through
+    // src/cli/hook/runtime.ts's dispatchHook -> budgetSessionContext, which
+    // drops the ENTIRE SessionStart payload whenever nothing in the route is
+    // "actionable" (session-context-budget.ts's no-actionable-state gate).
+    // Before runtime.ts recognized the new "Delegation Standing Authorization"
+    // heading, an otherwise-idle repo (no resume, no active plan, no pending
+    // capture, no architecture/capability queue, no active sprint, no
+    // security-sentinel finding) made this the only SessionStart content and
+    // the whole dispatcher call returned empty stdout.
+    const emptyHome = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'repo-harness-hook-home-')),
+    );
+    try {
+      withTempRepo({ optIn: true }, (repoRoot) => {
+        installAssetHooks(repoRoot);
+
+        const policyPath = path.join(repoRoot, '.ai/harness/policy.json');
+        const existingPolicy = fs.existsSync(policyPath)
+          ? JSON.parse(fs.readFileSync(policyPath, 'utf-8'))
+          : {};
+        fs.writeFileSync(
+          policyPath,
+          `${JSON.stringify(
+            { ...existingPolicy, delegation: { ...(existingPolicy.delegation ?? {}), mode: 'auto' } },
+            null,
+            2,
+          )}\n`,
+        );
+
+        const result = spawnSync(
+          process.execPath,
+          [CLI, 'hook', 'SessionStart', '--route', 'default'],
+          {
+            cwd: repoRoot,
+            input: '',
+            encoding: 'utf-8',
+            env: { ...process.env, HOME: emptyHome, HOOK_HOST: 'codex', REPO_HARNESS_HOOK_CLI: HOOK_ENTRY },
+          },
+        );
+        expect(result.status).toBe(0);
+        expect(result.stdout).not.toBe('');
+        const parsed = JSON.parse(result.stdout);
+        expect(parsed.hookSpecificOutput.hookEventName).toBe('SessionStart');
+        expect(parsed.hookSpecificOutput.additionalContext).toContain('Delegation Standing Authorization');
+        expect(parsed.hookSpecificOutput.additionalContext).toContain(
+          'standing user authorization for bounded native',
+        );
+      });
+    } finally {
+      fs.rmSync(emptyHome, { recursive: true, force: true });
     }
   });
 

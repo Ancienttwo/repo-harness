@@ -19,7 +19,6 @@ JSON_INPUT="$input" REPO_ROOT="${HOOK_REPO_ROOT:-$(pwd)}" bun -e '
   const fs = require("fs");
   const path = require("path");
   const crypto = require("crypto");
-  const { spawnSync } = require("child_process");
 
   function sanitize(value) {
     return String(value || "")
@@ -60,19 +59,6 @@ JSON_INPUT="$input" REPO_ROOT="${HOOK_REPO_ROOT:-$(pwd)}" bun -e '
     return null;
   }
 
-  function readGlobalDelegationMode() {
-    try {
-      const home = process.env.HOME;
-      if (!home) return null;
-      const raw = fs.readFileSync(path.join(home, ".repo-harness", "config.json"), "utf8");
-      const parsed = JSON.parse(raw);
-      const mode = parsed && parsed.delegation && parsed.delegation.mode;
-      return mode === "auto" || mode === "explicit" ? mode : null;
-    } catch {
-      return null;
-    }
-  }
-
   function activeContractPath(repoRoot) {
     try {
       const plan = fs.readFileSync(path.join(repoRoot, ".ai", "harness", "active-plan"), "utf8").trim();
@@ -85,26 +71,6 @@ JSON_INPUT="$input" REPO_ROOT="${HOOK_REPO_ROOT:-$(pwd)}" bun -e '
       const content = fs.readFileSync(contractPath, "utf8");
       if (!/^> \*\*Status\*\*:\s*(Active|Ready|Executing)\s*$/mi.test(content)) return null;
       return { plan, contract, content };
-    } catch {
-      return null;
-    }
-  }
-
-  function promptRoute(prompt, hasActiveTask) {
-    const hookCli = process.env.REPO_HARNESS_HOOK_CLI;
-    if (!hookCli) return null;
-    const result = spawnSync(process.execPath, [hookCli, "prompt-route"], {
-      input: JSON.stringify({ prompt }),
-      encoding: "utf8",
-      stdio: ["pipe", "pipe", "ignore"],
-      env: {
-        ...process.env,
-        PROMPT_ROUTE_ACTIVE_TASK: hasActiveTask ? "1" : "0",
-      },
-    });
-    if (result.status !== 0 || !result.stdout?.trim()) return null;
-    try {
-      return JSON.parse(result.stdout);
     } catch {
       return null;
     }
@@ -277,24 +243,10 @@ JSON_INPUT="$input" REPO_ROOT="${HOOK_REPO_ROOT:-$(pwd)}" bun -e '
     policyDelegation = {};
   }
 
-  const globalDelegationMode = readGlobalDelegationMode();
-  const effectiveDelegationMode = globalDelegationMode || (policyDelegation.mode === "auto" ? "auto" : "explicit");
-
   const explicit = Boolean(trigger);
+  if (!explicit) process.exit(0);
   const activeContract = activeContractPath(repoRoot);
-  let contractBound = false;
-  if (!explicit) {
-    if (effectiveDelegationMode !== "auto") process.exit(0);
-    if (isDelegationDiscussion(prompt)) process.exit(0);
-    if (!activeContract) process.exit(0);
-    const route = promptRoute(prompt, true);
-    const executionRoute = route?.kind === "active-task"
-      || (route?.kind === "explicit" && (route.action === "execute" || route.action === "verify"));
-    if (!executionRoute) process.exit(0);
-    contractBound = true;
-  } else {
-    contractBound = Boolean(activeContract);
-  }
+  const contractBound = Boolean(activeContract);
 
   const strictContract = Boolean(
     activeContract && /^> \*\*Workflow Profile\*\*:\s*strict\s*$/mi.test(activeContract.content),
@@ -326,11 +278,11 @@ JSON_INPUT="$input" REPO_ROOT="${HOOK_REPO_ROOT:-$(pwd)}" bun -e '
     explicit,
     spawned: false,
     fallback_used: false,
-    mode: explicit ? "explicit" : "auto",
+    mode: "explicit",
     max_agents: maxAgents,
     max_depth: maxDepth,
     allow_parallel_writers: false,
-    stop_fallback: explicit,
+    stop_fallback: true,
     native_role_routing: {
       required: true,
       status: "unverified",
@@ -339,7 +291,7 @@ JSON_INPUT="$input" REPO_ROOT="${HOOK_REPO_ROOT:-$(pwd)}" bun -e '
     },
     preferred_runners: preferredRunners,
     fallback_runner: fallbackRunner,
-    trigger: explicit ? trigger.name : "auto-mode",
+    trigger: trigger.name,
     prompt_hash: promptHash,
     scope_source: scope?.source || "unscoped",
     scope_id: scope?.id || "",
@@ -409,11 +361,9 @@ JSON_INPUT="$input" REPO_ROOT="${HOOK_REPO_ROOT:-$(pwd)}" bun -e '
   const contractContext = [
     "[repo-harness:delegation]",
     "",
-    explicit
-      ? "The current user prompt explicitly enabled bounded delegation."
-      : "Repo policy delegation.mode=auto is standing user authorization for bounded delegation, selected by the user at install time. This satisfies the user-authorization requirement for native subagents (spawn_agent) when the dispatch conditions below are met.",
+    "The current user prompt explicitly enabled bounded delegation.",
     "",
-    `Treat the active task contract (${activeContract?.contract}) as the authoritative execution brief: Goal, Scope, Allowed Paths, and Exit Criteria. Do not re-derive scope from this conversation.`,
+    `The current user turn is the execution authority. The active task contract (${activeContract?.contract}) constrains the implementation scope authorized by the current turn, but does not by itself authorize resuming prior implementation or completing Exit Criteria.`,
     "",
     `Runner preference (policy delegation.preferred_runners): ${preferredRunners.join(", ")}. Native subagent (spawn_agent) is the preferred parallelism accelerator that consumes the contract brief. When spawn_agent is unavailable, sandboxed, or unreliable, degrade to ${fallbackRunner || "main-thread"} on the SAME contract via contract-run. Runner-availability degradation MUST be recorded in the contract-run manifest and MUST NOT silently succeed; it is a runner-availability fallback, not a product-semantics change.`,
     "",

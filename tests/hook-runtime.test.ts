@@ -1124,6 +1124,44 @@ describe("Hook runtime behavior", () => {
     }
   });
 
+  test("session-start-context injects the delegation standing-authorization block only for codex host + effective auto mode", () => {
+    const cwd = tmpWorkspace("session-start-delegation-auto");
+    // Isolate HOME: a real ~/.repo-harness/config.json delegation.mode value
+    // takes precedence over repo policy, so it must never leak into this
+    // repo-policy-only scenario.
+    const emptyHome = tmpWorkspace("session-start-delegation-home");
+    try {
+      installHooks(cwd);
+      mkdirSync(join(cwd, ".ai/harness"), { recursive: true });
+      writeFileSync(
+        join(cwd, ".ai/harness/policy.json"),
+        `${JSON.stringify({ delegation: { mode: "auto", max_agents: 3 } }, null, 2)}\n`
+      );
+
+      const codexAuto = runHook("session-start-context.sh", cwd, { env: { HOME: emptyHome, HOOK_HOST: "codex" } });
+      expect(codexAuto.status).toBe(0);
+      const codexAutoMatches = codexAuto.stdout.match(/Delegation Standing Authorization/g) ?? [];
+      expect(codexAutoMatches.length).toBe(1);
+      expect(codexAuto.stdout).toContain("standing user authorization for bounded native");
+      expect(codexAuto.stdout).toContain("no more than 3");
+
+      const claudeAuto = runHook("session-start-context.sh", cwd, { env: { HOME: emptyHome, HOOK_HOST: "claude" } });
+      expect(claudeAuto.status).toBe(0);
+      expect(claudeAuto.stdout).not.toContain("Delegation Standing Authorization");
+
+      writeFileSync(
+        join(cwd, ".ai/harness/policy.json"),
+        `${JSON.stringify({ delegation: { mode: "explicit" } }, null, 2)}\n`
+      );
+      const codexExplicit = runHook("session-start-context.sh", cwd, { env: { HOME: emptyHome, HOOK_HOST: "codex" } });
+      expect(codexExplicit.status).toBe(0);
+      expect(codexExplicit.stdout).not.toContain("Delegation Standing Authorization");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      rmSync(emptyHome, { recursive: true, force: true });
+    }
+  });
+
   test("session-start-context skips resume packets older than current handoff", () => {
     const cwd = tmpWorkspace("session-start-stale-resume");
     try {
