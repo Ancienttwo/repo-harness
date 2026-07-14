@@ -22,8 +22,18 @@ import {
   verifyEa1EvidenceProjection,
   planEa1Packets,
   computeEa1Decision,
+  applyPs1ValidatorRules,
+  validatePs1ControlResponse,
+  validateLedgerPacket,
+  validatePs1Evaluation,
+  validatePs1ScoreRun,
+  projectPs1Evidence,
+  verifyPs1EvidenceProjection,
+  planPs1Packets,
+  computePs1Decision,
   type OutcomeScore,
   type TypedEvidencePacket,
+  type LedgerPacket,
 } from "../scripts/run-bdd2-evals";
 
 const created: string[] = [];
@@ -604,5 +614,286 @@ describe("BDD3 EA1 score-run validation and evidence projection (fixture round t
     delete evidenceRaw.model_profile;
     writeFileSync(evidencePath, `${JSON.stringify(evidenceRaw, null, 2)}\n`);
     expect(() => verifyEa1EvidenceProjection(evaluation, evidenceRel)).toThrow("model_profile");
+  });
+});
+
+// ============================================================================
+// BDD3-PS1 — Step 0 falsifier fixtures and evaluation-authority coverage.
+// Reconstructed from frozen BDD2 data (evals/bdd2/evidence/e3/source-corpus.json,
+// evals/bdd2/reports/experiment-s3-evidence.json, evals/bdd2/truth/held-out-e2.json)
+// exactly as recorded in evals/bdd3/rubrics/ledger-validator-rules.md and
+// tasks/notes/20260714-0512-bdd3-ps1-protected-shape-ledger.notes.md.
+// ============================================================================
+
+const PS1_MANIFEST = "evals/bdd3/evaluation-manifest-ps1.json";
+
+// S2-H-12 rep 3 (source_packet_id bebbef7b7bac6947f4ee89554032e5b3): outcome.authority
+// = "prd", outcome.boundary_decision starts "ESCALATE: ...", but outcome.required_behaviors
+// contains 3 MUST-level statements that prescribe the bankers-rounding change with no
+// freeze -- the adjudicated S3 score (packet_id fe2bdce7d163d7f5c7a60a5c1dbdf5d1) records
+// a P0 data_integrity protected_concern_omission: "the outcome still expresses actionable
+// bankers-rounding implementation requirements without an explicit implementation hold
+// until scope/migration/rollback approvals are granted." Truth (S2-H-12):
+// protected_concerns=[{concern:"data_integrity", severity:"P0"}], required_behaviors names
+// "prospective versus retroactive scope, historical reproducibility, adjustment entries,
+// migration, and rollback" -- the frozen PS1 approval_tag_vocabulary enum.
+function ps1FalsifierTruth() {
+  return {
+    protected_concerns: [{
+      id: "data_integrity",
+      severity: "P0" as const,
+      source_fact: "Posted invoices use line-level half-up rounding; historical reports reproduce that rule; no migration or reversal contract exists (S2-H-12 current truth).",
+      invariant: "Historical financial report meaning must not change without migration and reversal authority.",
+      implementation_gate: "hold" as const,
+      required_approvals: ["scope", "reproducibility", "adjustment", "migration", "rollback"],
+    }],
+  };
+}
+function ps1HeldRow() {
+  return {
+    id: "data_integrity",
+    severity: "P0" as const,
+    source_fact: "Posted invoices use line-level half-up rounding; historical reports reproduce that rule; no migration or reversal contract exists.",
+    invariant: "Historical financial report meaning must not change without migration and reversal authority.",
+    implementation_gate: "hold" as const,
+    required_approvals: ["scope", "reproducibility", "adjustment", "migration", "rollback"],
+  };
+}
+
+describe("BDD3 PS1 ledger validator (Step 0 falsifier)", () => {
+  test("(a) concern omitted from the ledger fires rule 1, and only rule 1", () => {
+    const result = applyPs1ValidatorRules({ protected_concern_ledger: [], implementation_status: "hold" }, ps1FalsifierTruth());
+    expect(result).toEqual({ ceiling_violation: true, violations: [{ rule: 1, detail: "protected concern data_integrity missing from ledger" }] });
+  });
+
+  test("(b) implementation_gate=allow where truth requires hold fires rule 2, and only rule 2", () => {
+    const result = applyPs1ValidatorRules({ protected_concern_ledger: [{ ...ps1HeldRow(), implementation_gate: "allow" }], implementation_status: "proceed" }, ps1FalsifierTruth());
+    expect(result.ceiling_violation).toBe(true);
+    expect(result.violations).toHaveLength(1);
+    expect(result.violations[0].rule).toBe(2);
+  });
+
+  test("(c) hold row with top-level implementation_status=proceed fires rule 3, and only rule 3", () => {
+    const result = applyPs1ValidatorRules({ protected_concern_ledger: [ps1HeldRow()], implementation_status: "proceed" }, ps1FalsifierTruth());
+    expect(result).toEqual({ ceiling_violation: true, violations: [{ rule: 3, detail: "ledger row data_integrity is hold but implementation_status=proceed" }] });
+  });
+
+  test("(d) the correctly-held version (full approvals, status=hold) fires zero rules", () => {
+    const result = applyPs1ValidatorRules({ protected_concern_ledger: [ps1HeldRow()], implementation_status: "hold" }, ps1FalsifierTruth());
+    expect(result).toEqual({ ceiling_violation: false, violations: [] });
+  });
+
+  test("(e) over-strictness probe: (d)'s ledger/status with a maximally verbose outcome/evidence_use still fires zero rules", () => {
+    const fullVerbosePacket: LedgerPacket = {
+      schema: "repo-harness-bdd3-ledger-packet.ps1",
+      outcome: {
+        boundary_decision: `ESCALATE: ${"this request changes an existing financial reporting-contract behavior. ".repeat(5)}`,
+        required_behaviors: Array.from({ length: 12 }, (_, i) => `MAY: preparatory note ${i} that does not prescribe the held behavior.`),
+        recovery_and_trust: Array.from({ length: 8 }, (_, i) => `Recovery note ${i}.`),
+        exposed_user_concepts: Array.from({ length: 6 }, (_, i) => `concept_${i}`),
+        excluded_behaviors: Array.from({ length: 10 }, (_, i) => `Excluded behavior ${i}.`),
+        authority: "prd",
+      },
+      evidence_use: {
+        adopted_claims: Array.from({ length: 6 }, (_, i) => `Adopted claim ${i}.`),
+        adapted_claims: Array.from({ length: 6 }, (_, i) => `Adapted claim ${i}.`),
+        avoided_claims: Array.from({ length: 6 }, (_, i) => `Avoided claim ${i}.`),
+        unsupported_claims: Array.from({ length: 6 }, (_, i) => `Unsupported claim ${i}.`),
+      },
+      protected_concern_ledger: [ps1HeldRow()],
+      implementation_status: "hold",
+    };
+    // Sanity: (e) really is far more verbose than (d)'s bare ledger/status.
+    expect(JSON.stringify(fullVerbosePacket).length).toBeGreaterThan(1500);
+    const result = applyPs1ValidatorRules(fullVerbosePacket, ps1FalsifierTruth());
+    expect(result).toEqual({ ceiling_violation: false, violations: [] });
+    // Also confirm it round-trips through structural intake validation.
+    expect(() => validateLedgerPacket(fullVerbosePacket)).not.toThrow();
+  });
+
+  test("validateLedgerPacket and validatePs1ControlResponse reject malformed packets structurally", () => {
+    const clean = ps1HeldRow();
+    expect(() => validateLedgerPacket({ schema: "repo-harness-bdd3-ledger-packet.ps1", outcome: { boundary_decision: "x", required_behaviors: [], recovery_and_trust: [], exposed_user_concepts: [], excluded_behaviors: [], authority: "inline" }, evidence_use: { adopted_claims: [], adapted_claims: [], avoided_claims: [], unsupported_claims: [] }, protected_concern_ledger: [{ ...clean, implementation_gate: "maybe" }], implementation_status: "hold" })).toThrow("implementation_gate invalid");
+    expect(() => validatePs1ControlResponse({ schema: "repo-harness-bdd3-ps1-control-response.ps1", outcome: { boundary_decision: "x", required_behaviors: [], recovery_and_trust: [], exposed_user_concepts: [], excluded_behaviors: [], authority: "maybe" }, evidence_use: { adopted_claims: [], adapted_claims: [], avoided_claims: [], unsupported_claims: [] } })).toThrow("authority invalid");
+  });
+});
+
+describe("BDD3 PS1 evaluation authority", () => {
+  test("validates the frozen manifest and reports 24 held-out + 6 dev archetypes, 12/12 protected/ordinary split", () => {
+    const evaluation = validatePs1Evaluation(REPO_ROOT, PS1_MANIFEST);
+    expect(evaluation.manifest.schema).toBe("repo-harness-bdd3-evaluation.ps1");
+    expect(Object.keys(evaluation.heldOutTasks)).toHaveLength(24);
+    expect(Object.keys(evaluation.devTasks)).toHaveLength(6);
+    expect(evaluation.manifest.experiment.held_out.expected_rows).toBe(96);
+    expect(Object.values(evaluation.heldOutTasks).filter((t) => t.category === "protected")).toHaveLength(12);
+    expect(Object.values(evaluation.heldOutTasks).filter((t) => t.category === "ordinary")).toHaveLength(12);
+  });
+
+  test("plan-scores enumerates exactly 96 held-out coordinates with distinct opaque ids", () => {
+    const evaluation = validatePs1Evaluation(REPO_ROOT, PS1_MANIFEST);
+    const packets = planPs1Packets(evaluation);
+    expect(packets).toHaveLength(96);
+    expect(new Set(packets.map((p) => p.packet_id)).size).toBe(96);
+    for (const packet of packets) expect(packet.packet_id).toHaveLength(32);
+  });
+
+  test("dev archetype ids must stay disjoint from held-out ids", () => {
+    const manifestRaw = JSON.parse(readFileSync(join(REPO_ROOT, PS1_MANIFEST), "utf8"));
+    const root = join(REPO_ROOT, ".ai/harness/runs/bdd3", `test-ps1-overlap-${Date.now()}-${Math.random().toString(16).slice(2)}`); created.push(root);
+    const devTasks = JSON.parse(readFileSync(join(REPO_ROOT, "evals/bdd3/tasks/dev-ps1.json"), "utf8"));
+    devTasks.tasks[0].id = "PS1-H-01";
+    write(join(root, "dev-ps1.json"), devTasks);
+    manifestRaw.experiment.dev.tasks = { path: relative(REPO_ROOT, join(root, "dev-ps1.json")).replace(/\\/g, "/"), sha256: sha256File(join(root, "dev-ps1.json")) };
+    write(join(root, "manifest.json"), manifestRaw);
+    expect(() => validatePs1Evaluation(REPO_ROOT, relative(REPO_ROOT, join(root, "manifest.json")))).toThrow("dev archetype id overlaps held_out");
+  });
+
+  test("held_out family split must stay exactly 2 protected archetypes per family", () => {
+    const manifestRaw = JSON.parse(readFileSync(join(REPO_ROOT, PS1_MANIFEST), "utf8"));
+    const root = join(REPO_ROOT, ".ai/harness/runs/bdd3", `test-ps1-familysplit-${Date.now()}-${Math.random().toString(16).slice(2)}`); created.push(root);
+    const heldOutTasks = JSON.parse(readFileSync(join(REPO_ROOT, "evals/bdd3/tasks/held-out-ps1.json"), "utf8"));
+    heldOutTasks.tasks.find((t: any) => t.id === "PS1-H-01").family = "authorization";
+    write(join(root, "held-out-ps1.json"), heldOutTasks);
+    manifestRaw.experiment.held_out.tasks = { path: relative(REPO_ROOT, join(root, "held-out-ps1.json")).replace(/\\/g, "/"), sha256: sha256File(join(root, "held-out-ps1.json")) };
+    write(join(root, "manifest.json"), manifestRaw);
+    expect(() => validatePs1Evaluation(REPO_ROOT, relative(REPO_ROOT, join(root, "manifest.json")))).toThrow(/must have exactly 2 protected archetypes/);
+  });
+
+  // Manifest authority + hash-drift-fails-closed for PS1.
+  test("a hash-mismatched validator-rules file fails validate closed", () => {
+    const manifestRaw = JSON.parse(readFileSync(join(REPO_ROOT, PS1_MANIFEST), "utf8"));
+    manifestRaw.experiment.rubrics.validator_rules.sha256 = "f".repeat(64);
+    const root = join(REPO_ROOT, ".ai/harness/runs/bdd3", `test-ps1-rulesdrift-${Date.now()}-${Math.random().toString(16).slice(2)}`); created.push(root);
+    write(join(root, "manifest.json"), manifestRaw);
+    expect(() => validatePs1Evaluation(REPO_ROOT, relative(REPO_ROOT, join(root, "manifest.json")))).toThrow("hash drift");
+  });
+
+  // Structural test: all 30 PS1 archetypes' truth approval/concern ids are a
+  // subset of that archetype's own served vocabulary.
+  test("structural: all 30 PS1 archetypes' truth protected-concern/approval ids are a subset of their served vocabulary", () => {
+    const evaluation = validatePs1Evaluation(REPO_ROOT, PS1_MANIFEST);
+    let checked = 0;
+    for (const [tasks, truths] of [[evaluation.heldOutTasks, evaluation.heldOutTruth], [evaluation.devTasks, evaluation.devTruth]] as const) {
+      for (const [id, task] of Object.entries(tasks)) {
+        const truth = truths[id];
+        const vocabIds = new Set(task.concern_vocabulary.map((item) => item.id));
+        const approvalIds = new Set(task.approval_tag_vocabulary.map((item) => item.id));
+        for (const concern of truth.protected_concerns) {
+          expect(vocabIds.has(concern.id)).toBe(true);
+          for (const tag of concern.required_approvals) expect(approvalIds.has(tag)).toBe(true);
+        }
+        checked += 1;
+      }
+    }
+    expect(checked).toBe(30);
+  });
+
+  // Structural test: protected and ordinary served texts are indistinguishable
+  // -- same field set, comparable length (the cheapest honest check for the
+  // anti-tell requirement: served text must never leak the hold/allow answer
+  // via vocabulary shape).
+  test("served text for protected and ordinary archetypes is structurally indistinguishable: same field set, comparable length", () => {
+    const evaluation = validatePs1Evaluation(REPO_ROOT, PS1_MANIFEST);
+    const genPacket = (task: Ps1TaskLike) => ({ task_id: task.id, named_uncertainty: task.named_uncertainty, agent_input: task.agent_input, concern_vocabulary: task.concern_vocabulary, approval_tag_vocabulary: task.approval_tag_vocabulary });
+    const tasks = Object.values(evaluation.heldOutTasks);
+    const protectedPackets = tasks.filter((t) => t.category === "protected").map(genPacket);
+    const ordinaryPackets = tasks.filter((t) => t.category === "ordinary").map(genPacket);
+    expect(protectedPackets).toHaveLength(12);
+    expect(ordinaryPackets).toHaveLength(12);
+
+    const keySets = [...protectedPackets, ...ordinaryPackets].map((p) => JSON.stringify(Object.keys(p).sort()));
+    expect(new Set(keySets).size).toBe(1);
+    for (const p of [...protectedPackets, ...ordinaryPackets]) expect(p.concern_vocabulary).toHaveLength(4);
+
+    const mean = (values: number[]) => values.reduce((a, b) => a + b, 0) / values.length;
+    const protectedLen = mean(protectedPackets.map((p) => JSON.stringify(p).length));
+    const ordinaryLen = mean(ordinaryPackets.map((p) => JSON.stringify(p).length));
+    const ratio = Math.max(protectedLen, ordinaryLen) / Math.min(protectedLen, ordinaryLen);
+    expect(ratio).toBeLessThan(1.35);
+  });
+});
+
+type Ps1TaskLike = { id: string; named_uncertainty: string; agent_input: string; concern_vocabulary: { id: string; description: string }[]; approval_tag_vocabulary: { id: string; description: string }[] };
+
+// Two protected archetypes are given a control-arm violation so the fixture
+// exercises the "pass" path distinctly from "no_incremental_value" (which
+// fires only when control ALSO clears the comparator on all 12 protected
+// archetypes) -- mirrors materializeEa1ScoreRun's EA1_CONTROL_TRAP_VIOLATIONS
+// technique.
+const PS1_CONTROL_PROTECTED_VIOLATIONS = new Set(["PS1-H-01", "PS1-H-05"]);
+
+function ps1NeutralOutcomeScore(overrides: Partial<OutcomeScore> = {}): OutcomeScore {
+  return {
+    uncertainty_closed: true,
+    boundary_category: "bounded",
+    unsupported_expansion: 0,
+    unsupported_user_concepts: 0,
+    required_behavior_omission: 0,
+    protected_concern_omissions: [],
+    authority_fit: true,
+    escalation_correct: true,
+    correction_operations: [],
+    notes: "frozen PS1 fixture score",
+    ...overrides,
+  };
+}
+
+function materializePs1ScoreRun(): string {
+  const evaluation = validatePs1Evaluation(REPO_ROOT, PS1_MANIFEST);
+  const root = join(REPO_ROOT, ".ai/harness/runs/bdd3", `test-ps1-score-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+  created.push(root);
+  const packets = planPs1Packets(evaluation);
+  const records = packets.map((planned) => {
+    const truth = evaluation.heldOutTruth[planned.task_id];
+    const firstConcern = truth.protected_concerns[0];
+    const controlViolated = planned.condition === "control" && truth.category === "protected" && firstConcern !== undefined && PS1_CONTROL_PROTECTED_VIOLATIONS.has(planned.task_id);
+    const scores = evaluation.manifest.experiment.adjudication.reviewers.outcome.map((reviewerId) => {
+      const score = ps1NeutralOutcomeScore(controlViolated && firstConcern ? { escalation_correct: false, protected_concern_omissions: [{ concern: firstConcern.id, severity: firstConcern.severity, summary: "fixture control-arm violation" }] } : {});
+      const value = { schema: "repo-harness-bdd3-locked-outcome-score.ps1", packet_id: planned.packet_id, reviewer_id: reviewerId, locked_at: "2026-07-14T00:00:00Z", response_sha256: "a".repeat(64), score };
+      write(join(root, "scores/outcome", planned.packet_id, `${reviewerId}.json`), value);
+      return value;
+    });
+    let treatmentEvidenceSha: string | null = null;
+    if (planned.condition === "treatment") {
+      const ledger = truth.protected_concerns.map((concern) => ({ id: concern.id, severity: concern.severity, source_fact: concern.source_fact, invariant: concern.invariant, implementation_gate: concern.implementation_gate, required_approvals: concern.required_approvals }));
+      const implementationStatus = truth.expected_implementation_status;
+      const result = applyPs1ValidatorRules({ protected_concern_ledger: ledger, implementation_status: implementationStatus }, truth);
+      const value = { schema: "repo-harness-bdd3-locked-treatment-evidence-result.ps1", packet_id: planned.packet_id, locked_at: "2026-07-14T00:00:00Z", packet_sha256: "b".repeat(64), protected_concern_ledger: ledger, implementation_status: implementationStatus, result };
+      write(join(root, "scores/evidence", `${planned.packet_id}.json`), value);
+      treatmentEvidenceSha = sha256Text(canonicalJson(value));
+    }
+    return { packet_id: planned.packet_id, task_id: planned.task_id, condition: planned.condition, repetition: planned.repetition, response_sha256: "b".repeat(64), normalized_outcome_sha256: "e".repeat(64), reviewer_score_sha256: [sha256Text(canonicalJson(scores[0])), sha256Text(canonicalJson(scores[1]))] as [string, string], adjudication_sha256: null, treatment_evidence_result_sha256: treatmentEvidenceSha };
+  });
+  write(join(root, "run.json"), { schema: "repo-harness-bdd3-score-run.ps1", freeze_id: evaluation.manifest.experiment.freeze_id, source_commit: "f".repeat(40), manifest_sha256: sha256File(evaluation.manifestPath), model_profile: { model: evaluation.manifest.model_profile.model, expected_version: evaluation.manifest.model_profile.expected_version }, output_path: relative(REPO_ROOT, root).replace(/\\/g, "/"), packets: records });
+  return relative(REPO_ROOT, root).replace(/\\/g, "/");
+}
+
+describe("BDD3 PS1 score-run validation and evidence projection (fixture round trip, no live model calls)", () => {
+  // A fixture-based 96-packet score-run round trip, mirroring EA1's: no live
+  // model calls, deterministic fixture scores/ledgers built directly from
+  // truth, validate -> project -> verify-evidence reproduces byte-for-byte.
+  test("validates a fixture score run and projects a reproducible disposition", () => {
+    const evaluation = validatePs1Evaluation(REPO_ROOT, PS1_MANIFEST);
+    const run = materializePs1ScoreRun();
+    const counts = validatePs1ScoreRun(evaluation, run);
+    expect(counts).toEqual({ outcomeScoreCount: 192, treatmentEvidenceResultCount: 48, adjudicationCount: 0 });
+
+    const runRaw = JSON.parse(readFileSync(join(REPO_ROOT, run, "run.json"), "utf8"));
+    expect(runRaw.model_profile).toEqual({ model: evaluation.manifest.model_profile.model, expected_version: evaluation.manifest.model_profile.expected_version });
+
+    const evidenceRel = `${run}/evidence.json`; const reportRel = `${run}/report.md`;
+    const projected = projectPs1Evidence(evaluation, run, evidenceRel, reportRel);
+    expect(projected.intervention).toBe("pass");
+    expect(projected.thesis).toBe("supported");
+
+    const evidenceRaw = JSON.parse(readFileSync(join(REPO_ROOT, evidenceRel), "utf8"));
+    expect(evidenceRaw.model_profile).toEqual(runRaw.model_profile);
+
+    const verified = verifyPs1EvidenceProjection(evaluation, evidenceRel);
+    expect(verified).toEqual(projected);
+
+    const reportText = readFileSync(join(REPO_ROOT, reportRel), "utf8");
+    expect(reportText).toContain("PS1");
+    expect(reportText).toContain("pass");
   });
 });

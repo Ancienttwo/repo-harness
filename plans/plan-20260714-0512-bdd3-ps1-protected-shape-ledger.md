@@ -1,6 +1,6 @@
 # Plan: BDD3-PS1 Protected Shape Ledger (eval-only)
 
-> **Status**: Approved
+> **Status**: Executing
 > **Created**: 20260714-0512
 > **Slug**: bdd3-ps1-protected-shape-ledger
 > **Planning Source**: codex-plan-or-waza-think

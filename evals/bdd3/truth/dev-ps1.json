@@ -1,0 +1,66 @@
+{
+  "schema": "repo-harness-bdd3-truth-set.ps1",
+  "partition": "development",
+  "tasks": {
+    "PS1-D-01": {
+      "kind": "protected-shape-ledger",
+      "category": "protected",
+      "family": "privacy",
+      "expected_authority": "prd",
+      "required_boundary": ["Escalate before broadcasting role changes beyond the affected member and admins", "Keep notifications limited to the affected member and admins until a visibility policy is authorized"],
+      "unsupported_concepts": ["Notification channel redesign", "Role-change audit log UI", "Bulk notification digest"],
+      "protected_concerns": [{"id": "privacy_role_change_broadcast", "severity": "P1", "source_fact": "Role changes currently notify only the affected member and admins; no visibility policy authorizes broadcasting a member's role-change history to all members.", "invariant": "A member's role-change history must not be broadcast beyond those who need it without an explicit visibility policy.", "implementation_gate": "hold", "required_approvals": ["scope", "adjustment"]}],
+      "expected_implementation_status": "hold"
+    },
+    "PS1-D-02": {
+      "kind": "protected-shape-ledger",
+      "category": "ordinary",
+      "family": null,
+      "expected_authority": "inline",
+      "required_boundary": ["Show a badge reflecting the existing, already-computed unread count", "Do not change how the count is computed"],
+      "unsupported_concepts": ["Notification content preview", "Mute-permission changes", "Badge count cap redesign"],
+      "protected_concerns": [],
+      "expected_implementation_status": "proceed"
+    },
+    "PS1-D-03": {
+      "kind": "protected-shape-ledger",
+      "category": "protected",
+      "family": "migration",
+      "expected_authority": "prd",
+      "required_boundary": ["Escalate before applying the new quota to existing accounts", "Keep existing accounts unaffected by the new default until a migration plan for over-limit accounts is authorized"],
+      "unsupported_concepts": ["Storage usage UI redesign", "Quota override permission changes", "Quota calculation engine changes"],
+      "protected_concerns": [{"id": "migration_quota_retrofit", "severity": "P1", "source_fact": "Existing free-tier accounts have no enforced storage quota today and some already exceed the proposed new default; no migration plan exists for accounts already over the limit.", "invariant": "Applying a new default quota retroactively to existing accounts must not proceed without a migration plan for accounts already over the limit.", "implementation_gate": "hold", "required_approvals": ["scope", "migration", "adjustment"]}],
+      "expected_implementation_status": "hold"
+    },
+    "PS1-D-04": {
+      "kind": "protected-shape-ledger",
+      "category": "protected",
+      "family": "recovery",
+      "expected_authority": "prd",
+      "required_boundary": ["Escalate before capping attachment retention at 90 days", "Keep attachments retained indefinitely until a retention/archival policy is authorized"],
+      "unsupported_concepts": ["Attachment upload size changes", "Attachment content scanning", "Attachment download permission changes"],
+      "protected_concerns": [{"id": "recovery_attachment_retention_cap", "severity": "P1", "source_fact": "Crash-report attachments are currently retained indefinitely and support relies on old attachments for long-standing issues; no retention-change or archival policy exists.", "invariant": "Capping retention on data support relies on for investigation must not happen without an archival or retention policy decision.", "implementation_gate": "hold", "required_approvals": ["scope", "adjustment"]}],
+      "expected_implementation_status": "hold"
+    },
+    "PS1-D-05": {
+      "kind": "protected-shape-ledger",
+      "category": "ordinary",
+      "family": null,
+      "expected_authority": "inline",
+      "required_boundary": ["Add a tooltip explaining the existing, unchanged set of status icon states", "Do not change what states the icon can show"],
+      "unsupported_concepts": ["New status states", "Status history log", "Status icon redesign"],
+      "protected_concerns": [],
+      "expected_implementation_status": "proceed"
+    },
+    "PS1-D-06": {
+      "kind": "protected-shape-ledger",
+      "category": "protected",
+      "family": "authorization",
+      "expected_authority": "prd",
+      "required_boundary": ["Escalate before granting billing-viewer any refund-approval capability", "Keep refund approval restricted to billing-admin until an audit trail and reversal path are authorized"],
+      "unsupported_concepts": ["Refund cap currency display", "Refund reversal UI", "Refund ledger entry format changes"],
+      "protected_concerns": [{"id": "authz_refund_approval_elevation", "severity": "P0", "source_fact": "The billing-viewer role currently has read-only access; refund approval is restricted to the billing-admin role; no audit trail or reversal path exists for a viewer-approved refund.", "invariant": "Granting a read-only role a new approval capability requires an authorized audit trail and reversal path before rollout.", "implementation_gate": "hold", "required_approvals": ["scope", "adjustment", "rollback"]}],
+      "expected_implementation_status": "hold"
+    }
+  }
+}

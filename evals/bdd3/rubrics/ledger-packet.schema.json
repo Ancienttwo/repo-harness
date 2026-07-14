@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "repo-harness-bdd3-ledger-packet.ps1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "outcome", "evidence_use", "protected_concern_ledger", "implementation_status"],
+  "properties": {
+    "schema": {"type": "string", "const": "repo-harness-bdd3-ledger-packet.ps1"},
+    "outcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["boundary_decision", "required_behaviors", "recovery_and_trust", "exposed_user_concepts", "excluded_behaviors", "authority"],
+      "properties": {
+        "boundary_decision": {"type": "string", "minLength": 1},
+        "required_behaviors": {"$ref": "#/$defs/stringList"},
+        "recovery_and_trust": {"$ref": "#/$defs/stringList"},
+        "exposed_user_concepts": {"$ref": "#/$defs/stringList"},
+        "excluded_behaviors": {"$ref": "#/$defs/stringList"},
+        "authority": {"type": "string", "enum": ["inline", "prd"]}
+      }
+    },
+    "evidence_use": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["adopted_claims", "adapted_claims", "avoided_claims", "unsupported_claims"],
+      "properties": {
+        "adopted_claims": {"$ref": "#/$defs/stringList"},
+        "adapted_claims": {"$ref": "#/$defs/stringList"},
+        "avoided_claims": {"$ref": "#/$defs/stringList"},
+        "unsupported_claims": {"$ref": "#/$defs/stringList"}
+      }
+    },
+    "protected_concern_ledger": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "severity", "source_fact", "invariant", "implementation_gate", "required_approvals"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "severity": {"type": "string", "enum": ["P0", "P1"]},
+          "source_fact": {"type": "string", "minLength": 1},
+          "invariant": {"type": "string", "minLength": 1},
+          "implementation_gate": {"type": "string", "enum": ["hold", "allow"]},
+          "required_approvals": {"$ref": "#/$defs/stringList"}
+        }
+      }
+    },
+    "implementation_status": {"type": "string", "enum": ["proceed", "hold"]}
+  },
+  "$defs": {
+    "stringList": {"type": "array", "items": {"type": "string"}}
+  }
+}
