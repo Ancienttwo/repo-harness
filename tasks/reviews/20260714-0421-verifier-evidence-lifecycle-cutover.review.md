@@ -5,12 +5,12 @@
 > **Contract**: tasks/contracts/20260714-0421-verifier-evidence-lifecycle-cutover.contract.md
 > **Notes File**: tasks/notes/20260714-0421-verifier-evidence-lifecycle-cutover.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-07-14 10:04
+> **Last Updated**: 2026-07-14 20:24
 > **Recommendation**: fail
 > **Review Rubric Version**: 2
-> **Reviewed Subject SHA256**: sha256:b3947b1fb0e8c3aa0bc18fbc4dea74cf8c24ee1bcb494df3df5310618306dc2a
+> **Reviewed Subject SHA256**: sha256:54d9bd38f9806e6b95100c8510a55da19ba5f70875b38e27102e7e23747c3fbf
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: 5dc61850e067e994cc9e852fd1bff50dd5807187
+> **Reviewed Target Revision**: d5a8027959a991c1a0c23cad7923bab8bbe77731
 
 ## Human Review Card
 
@@ -18,10 +18,10 @@
 - Change type: code-change
 - Intended files changed: verifier, review-subject/acceptance, benchmark producer/validator, synchronized projections, tests, and workflow artifacts named by the contract
 - Actual files changed: intended contract scope only; benchmark reports are excluded from review-subject freshness and bound separately by report evidence
-- Commands passed: focused 48-test suite; typecheck; architecture/task sync; authoritative benchmark validator; final Claude 3x9 matrix 27/27
-- External acceptance: unavailable
-- Residual risks: the independent reviewer did not return verdicts for benchmark/verifier/acceptance authority chunks before the fixed review deadlines
-- Reviewer action required: rerun canonical external acceptance for the recorded subject and benchmark evidence; do not rerun the matrix
+- Commands passed: focused merged 241-test suite; typecheck; hook/helper projection checks; required repository checks; GitHub Test and MCP matrices; final Codex 3x9 matrix 27/27
+- External acceptance: unavailable; maintainer explicitly instructed the merge workflow to skip `claude-review`
+- Residual risks: independent full-scope external acceptance was skipped, so no canonical pass is claimed
+- Reviewer action required: none for this maintainer-authorized PR merge; if canonical acceptance is required later, reuse the frozen matrix and review the recorded subject
 - Rollback: revert the ordered work-package commits; no external runtime or deployment state was mutated
 
 ## Mode Evidence
@@ -33,11 +33,11 @@
 ## Verification Evidence
 
 - Waza `/check` run: source-equivalent focused gate passed; final contract gate intentionally remains blocked on this review recommendation
-- Commands run: `bun test tests/unit/verifier-evidence-lifecycle-cutover.test.ts tests/harness-benchmark-matrix.test.ts tests/review-freshness.test.ts tests/workflow-state-lib.test.ts`; `bun run check:type`; sync checks; benchmark validator
+- Commands run: merged 241-test focused surface; `bun run check:type`; hook/helper projection checks; task/workflow/architecture/deploy/adopt/inspection checks; benchmark validator; GitHub CI
 - Manual checks: report protocol v2, authoritative=true, 3 bases, 27 arms, 27 passed, sidecar SHA verified
 - Supporting artifacts: `evals/harness/reports/profile-comparison.{json,md,sha256.json}`
 - Implementation notes reviewed: yes
-- Run snapshot: benchmark run `ad5ada9c-3ba2-4ddb-84eb-a621238ab3ad`
+- Run snapshot: benchmark run `5829bad5-7d59-4698-913f-1eaad8a5813b`
 
 ## External Acceptance Advice
 
@@ -47,12 +47,12 @@
 > **External Started**: 2026-07-14 09:06:12 +0800
 > **External Completed**: 2026-07-14 10:03:00 +0800
 > **Review Rubric Version**: 2
-> **Reviewed Subject SHA256**: sha256:b3947b1fb0e8c3aa0bc18fbc4dea74cf8c24ee1bcb494df3df5310618306dc2a
+> **Reviewed Subject SHA256**: sha256:54d9bd38f9806e6b95100c8510a55da19ba5f70875b38e27102e7e23747c3fbf
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: 5dc61850e067e994cc9e852fd1bff50dd5807187
-> **Benchmark Evidence SHA256**: sha256:74ba0d3ee95222cf80f32cc5ca5ece651380c8dbaa41f23551d38eab22b91353
+> **Reviewed Target Revision**: d5a8027959a991c1a0c23cad7923bab8bbe77731
+> **Benchmark Evidence SHA256**: sha256:98dae1f5d54eb8d74b278ee9e13e3d60135049c1ce18b05820389734154a4f4e
 
-- P1 blockers: full external review did not complete; timeout/no-output is not acceptance
+- P1 blockers: full external review was explicitly skipped by the maintainer; this remains unavailable rather than being converted into acceptance
 - P2 advisories: the completed review-subject chunk initially reported two findings, then withdrew both after being shown the approved no-manual-override and content-subject constraints (`Recommendation: pass`)
 - Acceptance checklist: subject and benchmark hashes recorded; source/reviewer recorded; full-scope verdict still unavailable
 
@@ -64,7 +64,7 @@
 
 ## Residual Risks / Follow-ups
 
-- External acceptance is the only remaining closeout blocker. The existing authoritative benchmark must be reused, not regenerated.
+- Canonical external acceptance remains unavailable by explicit maintainer instruction; this is an operator merge waiver, not a product-level fallback or parser exception.
 - Full `bun test --max-concurrency 4` previously produced 1388 pass, 1 skip, and one pre-existing `check-agent-tooling` 15-second timeout; focused changed-path tests are green.
 
 ## Scorecard
@@ -82,9 +82,9 @@
 
 ## Retest Steps
 
-- Re-run: `claude-review` against subject `sha256:b3947b1fb0e8c3aa0bc18fbc4dea74cf8c24ee1bcb494df3df5310618306dc2a`
-- Re-check: validate existing benchmark evidence `sha256:74ba0d3ee95222cf80f32cc5ca5ece651380c8dbaa41f23551d38eab22b91353`, then run artifact-only `verify-contract`/`verify-sprint`
+- Optional future canonical review: inspect subject `sha256:54d9bd38f9806e6b95100c8510a55da19ba5f70875b38e27102e7e23747c3fbf`
+- Re-check: validate existing benchmark evidence `sha256:98dae1f5d54eb8d74b278ee9e13e3d60135049c1ce18b05820389734154a4f4e`; do not rerun the matrix for unchanged subject
 
 ## Summary
 
-- Implementation and benchmark production are complete. Recommendation remains fail solely because the contract forbids self-acceptance and the external reviewer did not finish the full scope.
+- Implementation, current-main integration, GitHub CI, and frozen-subject benchmark production are complete. Recommendation remains fail solely because canonical external acceptance was skipped by maintainer instruction; the PR merge waiver is recorded without changing product authority.

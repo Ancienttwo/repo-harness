@@ -4,7 +4,7 @@
 > **Plan**: plans/plan-20260714-0421-verifier-evidence-lifecycle-cutover.md
 > **Contract**: tasks/contracts/20260714-0421-verifier-evidence-lifecycle-cutover.contract.md
 > **Review**: tasks/reviews/20260714-0421-verifier-evidence-lifecycle-cutover.review.md
-> **Last Updated**: 2026-07-14 17:36
+> **Last Updated**: 2026-07-14 20:24
 > **Lifecycle**: notes
 
 ## Design Decisions
@@ -64,6 +64,7 @@
 - A Codex authoritative-matrix regeneration was started only after the first portability fix; it passed the nine No Harness arms, then was interrupted as soon as the independent GitHub CI failure above proved the content was not frozen. No report was written, active provider groups were terminated, and the final matrix must restart only after the corrected CI head is green.
 - GitHub CI then passed all Test and MCP matrix jobs on head `d248d135`. Codex producer run `ffc4b742-d335-4a82-8911-338705eab4c8` passed 27/27 for benchmark subject `sha256:96b37c54479675b321e11a44711ba5c97cce82873aed79407cedfc1681a4470a`, with report evidence `sha256:c41eba21ac70e8a646b9ad85382ad11c6bbfc8eea97e439913a257b0209d7d3d`. During that run, `origin/main` advanced to `d5a80279` on overlapping `assets/` and `src/` benchmark inputs. The successful report is therefore retained only as superseded run evidence and cannot satisfy the final frozen-subject gate.
 - The second main integration preserves the verifier cutover's `--read-only` contract consumption while accepting main's removal of the `sync-brain-docs` call from `verify-sprint`; regenerated helper/hook projections are byte-aligned. The merged focused surface is 241 pass / 0 fail across helper, hook, benchmark, review freshness, workflow-state, and cutover tests, with typecheck and projection checks green. A new authoritative matrix is required because the accepted main change legitimately changed the benchmark subject.
+- Final frozen-subject producer run `5829bad5-7d59-4698-913f-1eaad8a5813b` used Codex and passed all 27/27 arms against benchmark subject `sha256:88a8a1086a5ccc4c6629c1bf134b6706b3051ec1944d900f9f51d30bb445cad3`. The validator reports authoritative=true, profile_base_count=3, arm_count=27, and report evidence `sha256:98dae1f5d54eb8d74b278ee9e13e3d60135049c1ce18b05820389734154a4f4e`. `origin/main` remained `d5a80279` through completion and target overlap is zero.
 - The maintainer explicitly instructed this PR acceptance to skip `claude-review` after both Fable and direct Claude attempts reported the provider session limit. This is recorded as an operator merge waiver only; it is not written as canonical external acceptance, does not change the fail-closed parser, and does not turn the pending review into a pass.
 
 ## Promotion Filter
