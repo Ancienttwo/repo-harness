@@ -355,6 +355,7 @@ JSON_INPUT="$input" REPO_ROOT="${HOOK_REPO_ROOT:-$(pwd)}" bun -e '
     "- Never give two agents overlapping write ownership.",
     `- Keep max spawn depth at ${maxDepth}.`,
     "- Give every agent a precise scope and required return format.",
+    "- Pass fork_turns=\"none\" on every spawn_agent call that selects an agent_type: the default fork_turns=\"all\" copies the full parent conversation into the child. A named-role child works from its self-contained packet and the contract brief, not inherited parent history.",
     "- Wait for all requested agents.",
     "- Reconcile contradictory findings in the parent.",
     "- Close completed agent threads.",

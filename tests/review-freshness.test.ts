@@ -146,32 +146,122 @@ describe('review freshness fingerprint', () => {
     }
   });
 
-  test('binds the fingerprint to the target branch tip so advancing the target restales the review', () => {
-    const cwd = tmpFeatureRepo('repo-harness-review-freshness-target');
+  test('stays fresh across an unrelated target advance and a subsequent no-overlap rebase', () => {
+    const cwd = tmpFeatureRepo('repo-harness-review-freshness-target-advance');
     try {
       writeFileSync(join(cwd, 'impl.ts'), 'export const a = 1;\n');
       runGit(cwd, ['add', 'impl.ts']);
       runGit(cwd, ['commit', '-m', 'feature work']);
 
       const beforeTarget = buildImplementationDiffFingerprint(cwd, { baseRef: 'main' });
-      const beforeHead = buildImplementationDiffFingerprint(cwd); // unbound HEAD default
+      expect(beforeTarget.status).toBe('ok');
 
-      // Advance the target branch without touching the feature branch.
+      // Advance the target branch with a commit that never touches the
+      // feature branch's files.
       runGit(cwd, ['checkout', 'main']);
       writeFileSync(join(cwd, 'unrelated.ts'), 'export const b = 2;\n');
       runGit(cwd, ['add', 'unrelated.ts']);
       runGit(cwd, ['commit', '-m', 'target advance']);
       runGit(cwd, ['checkout', 'feature']);
 
-      const afterTarget = buildImplementationDiffFingerprint(cwd, { baseRef: 'main' });
-      const afterHead = buildImplementationDiffFingerprint(cwd);
+      const afterAdvance = buildImplementationDiffFingerprint(cwd, { baseRef: 'main' });
+      // An unrelated target advance alone must not restale the review: the
+      // merge-base (and so branch_diff_hash) is unaffected until feature
+      // actually rebases onto it.
+      expect(afterAdvance.fingerprint).toBe(beforeTarget.fingerprint);
 
+      // Rebase feature onto the advanced target. No file overlap, so the
+      // net diff content is unchanged even though HEAD's and main's
+      // resolved revs both moved.
+      runGit(cwd, ['rebase', 'main']);
+      const afterRebase = buildImplementationDiffFingerprint(cwd, { baseRef: 'main' });
+      expect(afterRebase.fingerprint).toBe(beforeTarget.fingerprint);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test('stales the target-bound fingerprint on real implementation content, path, or deletion changes', () => {
+    const cwd = tmpFeatureRepo('repo-harness-review-freshness-target-real-change');
+    try {
+      writeFileSync(join(cwd, 'impl.ts'), 'export const a = 1;\n');
+      writeFileSync(join(cwd, 'other.ts'), 'export const b = 1;\n');
+      runGit(cwd, ['add', 'impl.ts', 'other.ts']);
+      runGit(cwd, ['commit', '-m', 'feature work']);
+      const base = buildImplementationDiffFingerprint(cwd, { baseRef: 'main' });
+      expect(base.status).toBe('ok');
+
+      // Real implementation content change.
+      writeFileSync(join(cwd, 'impl.ts'), 'export const a = 2;\n');
+      runGit(cwd, ['add', 'impl.ts']);
+      runGit(cwd, ['commit', '-m', 'content change']);
+      const afterContentChange = buildImplementationDiffFingerprint(cwd, { baseRef: 'main' });
+      expect(afterContentChange.fingerprint).not.toBe(base.fingerprint);
+
+      // Path change: a new implementation file joins the diff.
+      writeFileSync(join(cwd, 'new-module.ts'), 'export const c = 1;\n');
+      runGit(cwd, ['add', 'new-module.ts']);
+      runGit(cwd, ['commit', '-m', 'add module']);
+      const afterPathChange = buildImplementationDiffFingerprint(cwd, { baseRef: 'main' });
+      expect(afterPathChange.paths).toContain('new-module.ts');
+      expect(afterPathChange.fingerprint).not.toBe(afterContentChange.fingerprint);
+
+      // Deletion status change: a previously tracked implementation file
+      // disappears from the diff.
+      runGit(cwd, ['rm', 'other.ts']);
+      runGit(cwd, ['commit', '-m', 'remove other']);
+      const afterDeletion = buildImplementationDiffFingerprint(cwd, { baseRef: 'main' });
+      expect(afterDeletion.fingerprint).not.toBe(afterPathChange.fingerprint);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test('stales the review when a same-file target change shifts the patch hash after rebase', () => {
+    // Built manually (not via tmpFeatureRepo) so impl.ts's shared base
+    // content commits on `main` before `feature` branches off it.
+    const cwd = mkdtempSync(join(tmpdir(), 'repo-harness-review-freshness-samefile-rebase-'));
+    try {
+      runGit(cwd, ['init', '-b', 'main']);
+      runGit(cwd, ['config', 'user.name', 'Review Freshness Test']);
+      runGit(cwd, ['config', 'user.email', 'review-freshness@test.local']);
+
+      const lines = Array.from({ length: 10 }, (_, index) => `l${index}`);
+      writeFileSync(join(cwd, 'impl.ts'), `${lines.join('\n')}\n`);
+      runGit(cwd, ['add', 'impl.ts']);
+      runGit(cwd, ['commit', '-m', 'base content']);
+      runGit(cwd, ['checkout', '-b', 'feature']);
+
+      // Feature changes line 5; default diff context (3 lines) reaches
+      // lines 2-4 and 6-8.
+      const featureLines = [...lines];
+      featureLines[5] = 'l5-feature';
+      writeFileSync(join(cwd, 'impl.ts'), `${featureLines.join('\n')}\n`);
+      runGit(cwd, ['add', 'impl.ts']);
+      runGit(cwd, ['commit', '-m', 'feature edit']);
+
+      const beforeTarget = buildImplementationDiffFingerprint(cwd, { baseRef: 'main' });
       expect(beforeTarget.status).toBe('ok');
-      // Target-bound fingerprint moves with the target tip.
-      expect(afterTarget.fingerprint).not.toBe(beforeTarget.fingerprint);
-      // The unbound HEAD default is blind to the target move — the exact gap the
-      // runtime closes by passing --base <target>.
-      expect(afterHead.fingerprint).toBe(beforeHead.fingerprint);
+
+      // Target changes line 7 of the SAME file — 2 lines from feature's
+      // line-5 change, which lands inside the default 3-line diff context
+      // window but leaves a 1-line unchanged gap (line 6) so the rebase's
+      // 3-way merge does not treat the two edits as the same conflicting
+      // hunk.
+      runGit(cwd, ['checkout', 'main']);
+      const targetLines = [...lines];
+      targetLines[7] = 'l7-target';
+      writeFileSync(join(cwd, 'impl.ts'), `${targetLines.join('\n')}\n`);
+      runGit(cwd, ['add', 'impl.ts']);
+      runGit(cwd, ['commit', '-m', 'target edit same file']);
+      runGit(cwd, ['checkout', 'feature']);
+
+      runGit(cwd, ['rebase', 'main']);
+      const afterRebase = buildImplementationDiffFingerprint(cwd, { baseRef: 'main' });
+      // The merge-base moved onto target's new tip, so feature's own hunk
+      // around line 5 now carries target's line-7 context — a genuine
+      // patch hash change, not a base_ref/base_rev artifact.
+      expect(afterRebase.fingerprint).not.toBe(beforeTarget.fingerprint);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-14T05:27:07+0800 -->
+<!-- updated_at: 2026-07-14T15:08:21+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-07-14T05:27:07+0800
+> **Updated At**: 2026-07-14T15:08:21+0800
 > **Source Branch**: main
-> **Source Commit**: 1dfa7d48
+> **Source Commit**: 0ce19ff5
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: manual
@@ -31,18 +31,10 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- /Users/kito/Projects/repo-harness-worktrees/harness-cost-baseline-slo-closeout: plans/plan-20260712-2327-harness-kernel-reduction.md
-- /Users/kito/Projects/repo-harness-worktrees/harness-cost-baseline-slo-closeout: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/harness-cost-baseline-slo-closeout
-- /Users/kito/Projects/repo-harness-worktrees/harness-cost-baseline-slo-final: plans/plan-20260712-2327-harness-kernel-reduction.md
-- /Users/kito/Projects/repo-harness-worktrees/harness-cost-baseline-slo-final: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/harness-cost-baseline-slo-final
-- /Users/kito/Projects/repo-harness-wt-codex-native-role-model-override: plans/plan-20260711-0219-codex-native-role-model-override.md
-- /Users/kito/Projects/repo-harness-wt-codex-native-role-model-override: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-codex-native-role-model-override
-- /Users/kito/Projects/repo-harness-wt-verification-evidence-decoupling: plans/plan-20260714-0430-verification-evidence-decoupling.md
-- /Users/kito/Projects/repo-harness-wt-verification-evidence-decoupling: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-verification-evidence-decoupling
+- /Users/kito/Projects/repo-harness-wt-design-options-proactive-choice: plans/plan-20260714-1353-design-options-proactive-choice.md
+- /Users/kito/Projects/repo-harness-wt-design-options-proactive-choice: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-design-options-proactive-choice
 - /Users/kito/Projects/repo-harness-wt-verifier-evidence-lifecycle-cutover: plans/plan-20260714-0421-verifier-evidence-lifecycle-cutover.md
 - /Users/kito/Projects/repo-harness-wt-verifier-evidence-lifecycle-cutover: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-verifier-evidence-lifecycle-cutover
-- /Users/kito/Projects/repo-harness/.claude/worktrees/agent-ae14c20f2b5dac4a3: plans/plan-20260712-1642-adaptive-lite-hook-routing.md
-- /Users/kito/Projects/repo-harness/.claude/worktrees/agent-ae14c20f2b5dac4a3: active-worktree owner -> /Users/kito/Projects/repo-harness/.claude/worktrees/agent-ae14c20f2b5dac4a3
 ## Active Sprint
 
 - Sprint: (none)
@@ -56,7 +48,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`: status=completed, current_slice=completed-20260713-policy-seed, source_plan=plans/plan-20260712-2215-agent-fleet-specialists.md
 ## Handoff
 
-- Exact Next Step: Clean up merged contract worktree codex/codex-native-role-model-override. Command: repo-harness run contract-worktree cleanup --slug codex-native-role-model-override --target main
+- Exact Next Step: (none)
 
 ## Checks
 
@@ -64,10 +56,10 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 1 changed/untracked path(s)
+- Summary: clean
 
 ```
-?? docs/researches/20260714-gpt-review.md
+(none)
 ```
 
 ## Source Artifacts

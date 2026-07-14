@@ -1,10 +1,35 @@
 import { describe, test, expect } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "fs";
+import {
+  chmodSync,
+  copyFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
 
 const ROOT = join(import.meta.dir, "..");
+const HELPER_DIR = join(ROOT, "assets", "templates", "helpers");
+
+// Fixture subprocesses must never see the host repo's REPO_HARNESS_*/HOOK_REPO_ROOT
+// env: verify-sprint.sh cds into REPO_HARNESS_TARGET_REPO_ROOT when set, which lets
+// a fixture gate escape into the real repo and recursively execute the real
+// contract's exit criteria (which run this very test file).
+function fixtureEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (key.startsWith("REPO_HARNESS_") || key === "HOOK_REPO_ROOT") continue;
+    env[key] = value;
+  }
+  return env;
+}
 
 describe("workflow-state shared library", () => {
   test("exports the shared workflow helper functions", () => {
@@ -118,7 +143,7 @@ describe("workflow-state shared library", () => {
           cwd,
           encoding: "utf-8",
           env: {
-            ...process.env,
+            ...fixtureEnv(),
             WORKFLOW_STATE: join(ROOT, "assets/hooks/lib/workflow-state.sh"),
           },
         }
@@ -175,7 +200,7 @@ describe("workflow-state shared library", () => {
           cwd,
           encoding: "utf-8",
           env: {
-            ...process.env,
+            ...fixtureEnv(),
             WORKFLOW_STATE: join(ROOT, "assets/hooks/lib/workflow-state.sh"),
           },
         }
@@ -198,7 +223,7 @@ describe("workflow-state shared library", () => {
       const fingerprint = spawnSync(
         "bash",
         ["-lc", 'source "$WORKFLOW_STATE"; workflow_benchmark_evidence_fingerprint'],
-        { cwd, encoding: "utf-8", env: { ...process.env, WORKFLOW_STATE: join(ROOT, "assets/hooks/lib/workflow-state.sh") } },
+        { cwd, encoding: "utf-8", env: { ...fixtureEnv(), WORKFLOW_STATE: join(ROOT, "assets/hooks/lib/workflow-state.sh") } },
       );
       expect(fingerprint.status).toBe(0);
       expect(fingerprint.stdout).toMatch(/^sha256:[0-9a-f]{64}$/);
@@ -213,7 +238,7 @@ describe("workflow-state shared library", () => {
       const check = () => spawnSync(
         "bash",
         ["-c", 'source "$WORKFLOW_STATE"; workflow_checks_pass checks.json tasks/contracts/demo.contract.md tasks/reviews/demo.review.md'],
-        { cwd, encoding: "utf-8", env: { ...process.env, WORKFLOW_STATE: join(ROOT, "assets/hooks/lib/workflow-state.sh") } },
+        { cwd, encoding: "utf-8", env: { ...fixtureEnv(), WORKFLOW_STATE: join(ROOT, "assets/hooks/lib/workflow-state.sh") } },
       );
       expect(check().status).toBe(0);
 
@@ -228,7 +253,7 @@ describe("workflow-state shared library", () => {
           cwd,
           encoding: "utf-8",
           env: {
-            ...process.env,
+            ...fixtureEnv(),
             PATH: noJqBin,
             WORKFLOW_STATE: join(ROOT, "assets/hooks/lib/workflow-state.sh"),
           },
@@ -256,6 +281,363 @@ describe("workflow-state shared library", () => {
       expect(legacy.stdout).toContain("invalid or legacy benchmark evidence status");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("a Human Review Card pass cannot rescue a canonical external-acceptance failure when the canonical helper is unavailable", () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "workflow-external-acceptance-no-fallback-")));
+    try {
+      mkdirSync(join(cwd, "scripts"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/contracts"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/reviews"), { recursive: true });
+      mkdirSync(join(cwd, "docs"), { recursive: true });
+      for (const file of readdirSync(HELPER_DIR).filter((name) => name.endsWith(".sh") || name.endsWith(".ts"))) {
+        copyFileSync(join(HELPER_DIR, file), join(cwd, "scripts", file));
+      }
+      for (const file of readdirSync(join(cwd, "scripts"))) {
+        if (file.endsWith(".sh")) chmodSync(join(cwd, "scripts", file), 0o755);
+      }
+      // Deliberately no ".ai/hooks/lib/workflow-state.sh" in this fixture, so
+      // `declare -F workflow_external_acceptance_status` is false inside
+      // verify-sprint.sh and external_status never leaves its hardcoded
+      // fail-closed default ("missing"); canonical is never actually consulted.
+      // This covers the "helper absent" leg of fail-closed. The two tests below
+      // install the real helper and drive canonical to actively compute "fail".
+
+      writeFileSync(join(cwd, "docs/spec.md"), "# Product Spec\n");
+      writeFileSync(
+        join(cwd, "tasks/contracts/demo.contract.md"),
+        [
+          "# Task Contract: demo",
+          "",
+          "> **Status**: Active",
+          "> **Task Profile**: code-change",
+          "",
+          "```yaml",
+          "allowed_paths:",
+          "  - docs",
+          "  - tasks",
+          "exit_criteria:",
+          "  files_exist:",
+          "    - docs/spec.md",
+          "```",
+          "",
+        ].join("\n"),
+      );
+      // Canonical "## External Acceptance Advice" reports unavailable (no
+      // manual override), while the "## Human Review Card"'s own "External
+      // acceptance" field independently claims pass. Only the canonical
+      // section is authoritative; the Card field is a display projection.
+      writeFileSync(
+        join(cwd, "tasks/reviews/demo.review.md"),
+        [
+          "# Task Review: demo",
+          "",
+          "> **Recommendation**: pass",
+          "",
+          "## Human Review Card",
+          "",
+          "- Verdict: pass",
+          "- Change type: code-change",
+          "- Intended files changed: fixture",
+          "- Actual files changed: fixture",
+          "- Commands passed: fixture",
+          "- External acceptance: pass",
+          "- Residual risks: (none)",
+          "- Reviewer action required: approve fixture closeout",
+          "- Rollback: revert fixture branch",
+          "",
+          "## External Acceptance Advice",
+          "",
+          "> **External Acceptance**: unavailable",
+          "> **External Reviewer**:",
+          "> **External Source**:",
+          "> **External Started**:",
+          "> **External Completed**:",
+          "",
+          "- P1 blockers: unavailable",
+          "- P2 advisories: unavailable",
+          "- Acceptance checklist: unavailable",
+          "",
+        ].join("\n"),
+      );
+
+      const res = spawnSync("bash", ["scripts/verify-sprint.sh"], {
+        cwd,
+        encoding: "utf-8",
+        env: { ...fixtureEnv(), HOOK_HOST: "claude" },
+      });
+      expect(res.status).toBe(1);
+      expect(res.stderr).toContain("Sprint verification failed");
+
+      const checks = JSON.parse(readFileSync(join(cwd, ".ai/harness/checks/latest.json"), "utf-8"));
+      expect(checks.status).toBe("fail");
+      expect(checks.failure_class).toBe("external_acceptance");
+      expect(checks.contract.status).toBe("pass");
+      expect(checks.review.status).toBe("pass");
+      // The Card's own claim is still projected into the trace for display...
+      expect(checks.review.card.external_acceptance).toBe("pass");
+      // ...but it never rescues the canonical gate, which stays fail-closed.
+      expect(checks.external_acceptance.status).toBe("missing");
+      expect(["pass", "manual_override"]).not.toContain(checks.external_acceptance.status);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("a Human Review Card pass cannot rescue a canonical external-acceptance failure when canonical reports P1 blockers", () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "workflow-external-acceptance-p1-blockers-")));
+    try {
+      mkdirSync(join(cwd, "scripts"), { recursive: true });
+      mkdirSync(join(cwd, "plans"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/contracts"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/reviews"), { recursive: true });
+      mkdirSync(join(cwd, "docs"), { recursive: true });
+      mkdirSync(join(cwd, ".ai/hooks/lib"), { recursive: true });
+      mkdirSync(join(cwd, ".ai/harness"), { recursive: true });
+      for (const file of readdirSync(HELPER_DIR).filter((name) => name.endsWith(".sh") || name.endsWith(".ts"))) {
+        copyFileSync(join(HELPER_DIR, file), join(cwd, "scripts", file));
+      }
+      for (const file of readdirSync(join(cwd, "scripts"))) {
+        if (file.endsWith(".sh")) chmodSync(join(cwd, "scripts", file), 0o755);
+      }
+      // Install the real canonical helper so workflow_external_acceptance_status
+      // is declared and actively evaluates the review file below, instead of
+      // leaving external_status at its hardcoded default.
+      copyFileSync(
+        join(ROOT, "assets/hooks/lib/workflow-state.sh"),
+        join(cwd, ".ai/hooks/lib/workflow-state.sh"),
+      );
+      // Once the canonical helper is installed, verify-sprint resolves
+      // contract/review paths through workflow_active_contract/_review, which
+      // require an active-plan marker rather than the directory-scan fallback
+      // used when the helper is absent.
+      writeFileSync(
+        join(cwd, "plans/plan-20260304-1605-demo.md"),
+        [
+          "# Plan: demo",
+          "",
+          "> **Status**: Executing",
+          "> **Task Contract**: tasks/contracts/demo.contract.md",
+          "> **Task Review**: tasks/reviews/demo.review.md",
+          "",
+        ].join("\n"),
+      );
+      writeFileSync(join(cwd, ".ai/harness/active-plan"), "plans/plan-20260304-1605-demo.md\n");
+
+      writeFileSync(join(cwd, "docs/spec.md"), "# Product Spec\n");
+      writeFileSync(
+        join(cwd, "tasks/contracts/demo.contract.md"),
+        [
+          "# Task Contract: demo",
+          "",
+          "> **Status**: Active",
+          "> **Task Profile**: code-change",
+          "",
+          "```yaml",
+          "allowed_paths:",
+          "  - docs",
+          "  - tasks",
+          "exit_criteria:",
+          "  files_exist:",
+          "    - docs/spec.md",
+          "```",
+          "",
+        ].join("\n"),
+      );
+      // Reviewer/source match HOOK_HOST=claude's expected Codex/codex-review,
+      // and the acceptance field itself is "pass" -- but the Advice section
+      // carries a live P1 blocker. workflow_external_acceptance_status checks
+      // P1 blockers before the rubric/fingerprint binding, so this must return
+      // "fail", not any status the gate's case statement treats as passing.
+      // The Human Review Card still claims pass to prove it cannot rescue this.
+      writeFileSync(
+        join(cwd, "tasks/reviews/demo.review.md"),
+        [
+          "# Task Review: demo",
+          "",
+          "> **Recommendation**: pass",
+          "",
+          "## Human Review Card",
+          "",
+          "- Verdict: pass",
+          "- Change type: code-change",
+          "- Intended files changed: fixture",
+          "- Actual files changed: fixture",
+          "- Commands passed: fixture",
+          "- External acceptance: pass",
+          "- Residual risks: (none)",
+          "- Reviewer action required: approve fixture closeout",
+          "- Rollback: revert fixture branch",
+          "",
+          "## External Acceptance Advice",
+          "",
+          "> **External Acceptance**: pass",
+          "> **External Reviewer**: Codex",
+          "> **External Source**: codex-review",
+          "> **External Started**: 2026-03-04T14:05:00+0800",
+          "> **External Completed**: 2026-03-04T14:06:00+0800",
+          "",
+          "- P1 blockers: release regression",
+          "- P2 advisories: none",
+          "- Acceptance checklist: pass",
+          "",
+        ].join("\n"),
+      );
+
+      const res = spawnSync("bash", ["scripts/verify-sprint.sh"], {
+        cwd,
+        encoding: "utf-8",
+        env: { ...fixtureEnv(), HOOK_HOST: "claude" },
+      });
+      expect(res.status).toBe(1);
+      expect(res.stderr).toContain("Sprint verification failed");
+
+      const checks = JSON.parse(readFileSync(join(cwd, ".ai/harness/checks/latest.json"), "utf-8"));
+      expect(checks.status).toBe("fail");
+      expect(checks.failure_class).toBe("external_acceptance");
+      expect(checks.contract.status).toBe("pass");
+      expect(checks.review.status).toBe("pass");
+      expect(checks.review.card.external_acceptance).toBe("pass");
+      expect(checks.external_acceptance.status).toBe("fail");
+      expect(checks.external_acceptance.message).toContain("External acceptance has P1 blockers: release regression");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("a Human Review Card pass cannot rescue a canonical external-acceptance failure when the review rubric is malformed", () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "workflow-external-acceptance-malformed-rubric-")));
+    try {
+      mkdirSync(join(cwd, "scripts"), { recursive: true });
+      mkdirSync(join(cwd, "plans"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/contracts"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/reviews"), { recursive: true });
+      mkdirSync(join(cwd, "docs"), { recursive: true });
+      mkdirSync(join(cwd, ".ai/hooks/lib"), { recursive: true });
+      mkdirSync(join(cwd, ".ai/harness"), { recursive: true });
+      for (const file of readdirSync(HELPER_DIR).filter((name) => name.endsWith(".sh") || name.endsWith(".ts"))) {
+        copyFileSync(join(HELPER_DIR, file), join(cwd, "scripts", file));
+      }
+      for (const file of readdirSync(join(cwd, "scripts"))) {
+        if (file.endsWith(".sh")) chmodSync(join(cwd, "scripts", file), 0o755);
+      }
+      copyFileSync(
+        join(ROOT, "assets/hooks/lib/workflow-state.sh"),
+        join(cwd, ".ai/hooks/lib/workflow-state.sh"),
+      );
+      writeFileSync(
+        join(cwd, "plans/plan-20260304-1605-demo.md"),
+        [
+          "# Plan: demo",
+          "",
+          "> **Status**: Executing",
+          "> **Task Contract**: tasks/contracts/demo.contract.md",
+          "> **Task Review**: tasks/reviews/demo.review.md",
+          "",
+        ].join("\n"),
+      );
+      writeFileSync(join(cwd, ".ai/harness/active-plan"), "plans/plan-20260304-1605-demo.md\n");
+
+      writeFileSync(join(cwd, "docs/spec.md"), "# Product Spec\n");
+      writeFileSync(
+        join(cwd, "tasks/contracts/demo.contract.md"),
+        [
+          "# Task Contract: demo",
+          "",
+          "> **Status**: Active",
+          "> **Task Profile**: code-change",
+          "",
+          "```yaml",
+          "allowed_paths:",
+          "  - docs",
+          "  - tasks",
+          "exit_criteria:",
+          "  files_exist:",
+          "    - docs/spec.md",
+          "```",
+          "",
+        ].join("\n"),
+      );
+      // The top-of-file "Review Rubric Version" is present but unsupported
+      // ("invalid" is neither 1 nor 2), so workflow_review_rubric_class returns
+      // "malformed" and workflow_external_acceptance_status fails closed rather
+      // than falling through to the lenient legacy (absent-rubric) path.
+      // Reviewer, source, and P1 blockers all check out clean, isolating the
+      // malformed rubric as the sole cause of the failure.
+      writeFileSync(
+        join(cwd, "tasks/reviews/demo.review.md"),
+        [
+          "# Task Review: demo",
+          "",
+          "> **Recommendation**: pass",
+          "",
+          "> **Review Rubric Version**: invalid",
+          "",
+          "## Human Review Card",
+          "",
+          "- Verdict: pass",
+          "- Change type: code-change",
+          "- Intended files changed: fixture",
+          "- Actual files changed: fixture",
+          "- Commands passed: fixture",
+          "- External acceptance: pass",
+          "- Residual risks: (none)",
+          "- Reviewer action required: approve fixture closeout",
+          "- Rollback: revert fixture branch",
+          "",
+          "## External Acceptance Advice",
+          "",
+          "> **External Acceptance**: pass",
+          "> **External Reviewer**: Codex",
+          "> **External Source**: codex-review",
+          "> **External Started**: 2026-03-04T14:05:00+0800",
+          "> **External Completed**: 2026-03-04T14:06:00+0800",
+          "",
+          "- P1 blockers: none",
+          "- P2 advisories: none",
+          "- Acceptance checklist: pass",
+          "",
+        ].join("\n"),
+      );
+
+      const res = spawnSync("bash", ["scripts/verify-sprint.sh"], {
+        cwd,
+        encoding: "utf-8",
+        env: { ...fixtureEnv(), HOOK_HOST: "claude" },
+      });
+      expect(res.status).toBe(1);
+      expect(res.stderr).toContain("Sprint verification failed");
+
+      const checks = JSON.parse(readFileSync(join(cwd, ".ai/harness/checks/latest.json"), "utf-8"));
+      expect(checks.status).toBe("fail");
+      expect(checks.failure_class).toBe("external_acceptance");
+      expect(checks.contract.status).toBe("pass");
+      expect(checks.review.status).toBe("pass");
+      expect(checks.review.card.external_acceptance).toBe("pass");
+      expect(checks.external_acceptance.status).toBe("fail");
+      expect(checks.external_acceptance.message).toContain("Review Rubric Version is malformed or unsupported");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("verify-sprint external acceptance gate only accepts statuses canonical can actually produce", () => {
+    // workflow_external_acceptance_status only ever prints "missing", "fail",
+    // "manual_override", or "pass" (grep .ai/hooks/lib/workflow-state.sh); it
+    // has no code path that emits "not_required". The gate case statement must
+    // not carry a literal for a status the canonical helper can never return —
+    // that literal is dead source text, not a reachable acceptance path, and a
+    // future author reading "pass|manual_override|not_required" could mistake
+    // it for a real profile-based bypass. Assert both the live script and its
+    // template mirror only accept the two statuses canonical can produce.
+    for (const path of [
+      join(ROOT, "scripts", "verify-sprint.sh"),
+      join(ROOT, "assets", "templates", "helpers", "verify-sprint.sh"),
+    ]) {
+      const helper = readFileSync(path, "utf-8");
+      expect(helper).toContain('  pass|manual_override)\n    external_gate="pass"');
+      expect(helper).not.toContain("not_required");
     }
   });
 });

@@ -1,6 +1,6 @@
 {
-  "version": "0.9.2",
-  "templateVersion": "0.9.2",
+  "version": "0.10.0",
+  "templateVersion": "0.10.0",
   "skillName": "repo-harness",
   "contractId": "tasks-first-harness-v1",
   "compatibility": {
@@ -199,6 +199,10 @@
     {
       "version": "0.9.2",
       "description": "Hardens CLI environment diagnostics and hook execution intent while aligning the generated GPT-5.6 agent fleet with current Codex runtime guidance"
+    },
+    {
+      "version": "0.10.0",
+      "description": "Adds the risk-aware lite/standard/strict harness kernel with the effective-state resolver, decouples benchmark evidence production from verification gates with content-bound acceptance freshness, replaces the remote agent-fleet dependency with npm-packaged sources, and removes the retired planning provider and the Human Review Card dual authority"
     }
   ],
   "generatedProjectStamp": {

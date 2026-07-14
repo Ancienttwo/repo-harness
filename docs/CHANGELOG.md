@@ -2,7 +2,7 @@
 
 All notable changes to this skill are documented here.
 
-## [Unreleased]
+## [0.10.0] - 2026-07-14
 
 ### Added
 
@@ -53,9 +53,27 @@ All notable changes to this skill are documented here.
   canonical package source is gone, instead of refusing the whole sync when
   any single facade was dropped from the package; `repo-harness-gptpro` now
   installs under the `product-planning` and `strict` profiles.
+- Isolated workflow gate test fixtures from the host repo-harness environment:
+  fixture subprocesses strip `REPO_HARNESS_*`/`HOOK_REPO_ROOT` so a fixture
+  `verify-sprint.sh` can no longer follow an inherited
+  `REPO_HARNESS_TARGET_REPO_ROOT` back into the real repository and
+  recursively execute the real contract gate.
 
 ### Changed
 
+- Decoupled benchmark evidence production from contract verification. Verify
+  gates now consume tracked report bytes plus provenance instead of
+  live-running the authoritative 3x9 matrix (a full matrix run stays a
+  one-shot, author-run evidence step before merge), review fingerprints bind
+  acceptance to implementation content — `base_ref`/`base_rev` are demoted to
+  non-hashed metadata, so unrelated target advances, clean rebases, and
+  acceptance-recording commits no longer stale a recorded acceptance while
+  same-file target changes still do — and the Human Review Card
+  external-acceptance fallback is removed: canonical `## External Acceptance
+  Advice` is the sole authority and the gate accepts only `pass` or
+  `manual_override`. Benchmark arms delete their disposable host toolchain
+  root after result extraction, bounding temporary-space growth without
+  touching arm timing or the retained regrade workspaces.
 - Removed gstack from active planning routes, generated policy, readiness
   detection, and install/update guidance. Product discovery and complex/design
   planning now stay with the parent agent: `geju` opens the pre-contract frame,
