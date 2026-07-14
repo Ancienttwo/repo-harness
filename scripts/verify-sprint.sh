@@ -219,8 +219,48 @@ git_changed_files_json() {
   done < <(git_changed_files_list | awk 'NF && !seen[$0]++') | jq -R -s 'split("\n") | map(select(length > 0))'
 }
 
+contract_worktree_base_commit() {
+  local current_worktree current_branch metadata_file metadata_row base_commit base_branch started_at
+  command -v jq >/dev/null 2>&1 || return 1
+  current_worktree="$(pwd -P)"
+  current_branch="$(git branch --show-current 2>/dev/null || true)"
+  [[ -n "$current_branch" ]] || return 1
+
+  for metadata_file in .ai/harness/worktrees/*.json; do
+    [[ -f "$metadata_file" ]] || continue
+    metadata_row="$(jq -r \
+      --arg worktree "$current_worktree" \
+      --arg branch "$current_branch" \
+      'if ((.worktree // "") == $worktree or (.branch // "") == $branch) then [(.base_commit // ""), (.base_branch // ""), (.started_at // "")] | join("\u001f") else "" end' \
+      "$metadata_file" 2>/dev/null || true)"
+    [[ -n "$metadata_row" ]] || continue
+    IFS=$'\x1f' read -r base_commit base_branch started_at <<< "$metadata_row"
+    if [[ -n "$base_commit" ]]; then
+      git rev-parse --verify "$base_commit^{commit}" >/dev/null 2>&1 || return 1
+      printf '%s' "$base_commit"
+      return 0
+    fi
+    if [[ -n "$started_at" ]]; then
+      base_commit="$(git rev-list -1 --before="$started_at" HEAD 2>/dev/null || true)"
+      if [[ -n "$base_commit" ]]; then
+        printf '%s' "$base_commit"
+        return 0
+      fi
+    fi
+    if [[ -n "$base_branch" ]] && git rev-parse --verify "$base_branch^{commit}" >/dev/null 2>&1; then
+      base_commit="$(git merge-base HEAD "$base_branch" 2>/dev/null || true)"
+      if [[ -n "$base_commit" ]]; then
+        printf '%s' "$base_commit"
+        return 0
+      fi
+    fi
+  done
+
+  return 1
+}
+
 git_diff_base_ref() {
-  local branch
+  local branch task_base_commit
   if [[ -n "${REPO_HARNESS_DIFF_BASE:-}" ]]; then
     printf '%s' "$REPO_HARNESS_DIFF_BASE"
     return 0
@@ -235,6 +275,12 @@ git_diff_base_ref() {
     else
       printf '%s' "$GITHUB_BASE_REF"
     fi
+    return 0
+  fi
+
+  task_base_commit="$(contract_worktree_base_commit || true)"
+  if [[ -n "$task_base_commit" ]]; then
+    printf '%s' "$task_base_commit"
     return 0
   fi
 
