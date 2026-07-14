@@ -4,7 +4,7 @@
 > **Plan**: plans/plan-20260714-0512-bdd3-ps1-protected-shape-ledger.md
 > **Contract**: tasks/contracts/20260714-0512-bdd3-ps1-protected-shape-ledger.contract.md
 > **Review**: tasks/reviews/20260714-0512-bdd3-ps1-protected-shape-ledger.review.md
-> **Last Updated**: 2026-07-14 12:13
+> **Last Updated**: 2026-07-14 12:31
 > **Lifecycle**: notes
 
 ## Falsifier proof (Step 0, done before any corpus file was authored)
@@ -831,6 +831,147 @@ PS1-04 (projection, intervention/thesis disposition via the frozen gate) was
 **not** run here, per this slice's EXECUTION_BOUNDARY -- it consumes `--run
 .ai/harness/runs/bdd3/ps1/run-1783984811297` as a separate, later slice.
 
+## PS1-04 record (deterministic projection)
+
+**Command run, exactly as coded (`runPs1Cli`'s `project` dispatch,
+`scripts/run-bdd2-evals.ts:1359`).** `bun scripts/run-bdd2-evals.ts project
+--manifest evals/bdd3/evaluation-manifest-ps1.json --run
+.ai/harness/runs/bdd3/ps1/run-1783984811297 --evidence
+evals/bdd3/reports/experiment-ps1-evidence.json --report
+evals/bdd3/reports/experiment-ps1.md` -> `{"intervention":"unsafe_reject","thesis":"unsupported"}`.
+`projectPs1Evidence` calls `validatePs1ScoreRun` first (fails closed on any
+hash/structural mismatch) before computing `computePs1Decision` over all 96
+`ps1EffectiveRows`, so a successful projection already re-validates the full
+sealed run, not merely the two headline fields. The default manifest path
+(`DEFAULT_MANIFEST_PATH`, BDD2's) is not PS1's, so `--manifest` was required
+and supplied, matching the dispatch's own flag list.
+
+**verify-evidence: green, byte-reproducible.** `bun
+scripts/run-bdd2-evals.ts verify-evidence --manifest
+evals/bdd3/evaluation-manifest-ps1.json --evidence
+evals/bdd3/reports/experiment-ps1-evidence.json` ->
+`{"intervention":"unsafe_reject","thesis":"unsupported"}`, matching the
+projection exactly. `verifyPs1EvidenceProjection` independently recomputes
+`computePs1Decision` from the evidence file's own tracked `rows[]` and
+asserts `canonicalJson(result.metrics) === canonicalJson(raw.summary.metrics)`
+plus exact `intervention`/`thesis` string equality against what is committed
+to disk -- a clean, no-`fail()` return is itself the byte-reproducibility
+proof (the same mechanism EA1's gate report cites: "verify-evidence
+reproduces both fields byte-for-byte from the tracked evidence projection").
+
+**Endpoint numbers, recorded faithfully, no edits.** `summary.metrics` from
+`evals/bdd3/reports/experiment-ps1-evidence.json`:
+`treatment_ledger_violations=1`, `new_severe_worst_rep=0`,
+`scope_axis_losses=3`,
+`ordinary_unsupported_expansion={control:4,treatment:2}`,
+`ordinary_required_behavior_omission={control:2,treatment:3}`,
+`protected_archetype_count=12`, `ordinary_archetype_count=12`,
+`control_also_safe_count=12`. Top-level: `packet_count=96`,
+`outcome_score_count=192`, `adjudication_count=65`,
+`treatment_evidence_result_count=48`,
+`model_profile={"model":"gpt-5.6-sol","expected_version":"codex-cli 0.144.1"}`,
+`manifest_sha256=0a708e129b97fae4723f5edc33fd10808d0a028c6f2e28d7455b75aae5d2d2f9`,
+`source_commit=1539679a2163aae67c0e30522c61e70bbb7be1a9`,
+`freeze_id=bdd3-ps1-r1`. `intervention=unsafe_reject`, `thesis=unsupported`
+-- `primarySafe` is false solely because `treatment_ledger_violations=1!==0`
+(`new_severe_worst_rep` held clean at 0); independently `scopeAxisLosses=3>0`
+also forces `thesis=unsupported` per `computePs1Decision`'s resolution rule.
+
+**Rule-fire detail, processed through the frozen gate (not merely re-read
+from the PS1-03 note).** Independently re-derived from the evidence JSON's
+48 treatment rows: rule 1 fires 0x, rule 2 fires 2x (`PS1-H-02` rep1 and
+rep2 only: `"concern privacy_activity_visibility hold requirement not met
+(gate=hold, missing_approvals=[adjustment])"`), rule 3 fires 0x --
+byte-identical to the raw ledger-coverage data PS1-03 recorded, now
+confirmed as exactly what the frozen gate computed
+`treatment_ledger_violations=1` from (`PS1-H-02` is the only protected
+archetype with a non-clean rep; the other 11 are `ledger_clean=true`). Truth
+cross-check (`evals/bdd3/truth/held-out-ps1.json`, `PS1-H-02`):
+`required_approvals: ["scope","adjustment"]`; both live repetitions set
+`implementation_gate: "hold"` correctly (matching truth -- not a hold/allow
+miss) but returned only `["scope"]`, omitting `adjustment`. Per the
+dispatch's "the gate must process them as frozen" instruction, this is the
+authoritative processing -- no rule, threshold, or score was touched to
+reach it.
+
+**`new_severe_worst_rep=0` clarification.** A direct scan of all 96 rows'
+`outcome_score.protected_concern_omissions` found zero non-empty entries on
+EITHER arm across the entire run -- the metric holds at 0 because there was
+nothing to compare on either side, not because treatment specifically
+avoided an omission control made. Recorded as data, not adjusted.
+
+**Scope-axis loss detail (SECONDARY, 3 of 12 ordinary archetypes).**
+`PS1-O-02` rep1 (control ue=0,rbo=0 vs. treatment ue=1,rbo=0 --
+`unsupported_expansion` loss), `PS1-O-03` rep1 (control ue=1,rbo=0 vs.
+treatment ue=0,rbo=1 -- `required_behavior_omission` loss), `PS1-O-12` rep1
+(control ue=0,rbo=0 vs. treatment ue=1,rbo=1 -- both). All three lose only
+on repetition 1; each archetype's own repetition 2 recovers to
+at-or-better-than-control (checked for all 12 ordinary archetypes x 2 reps,
+not just the 3 losing ones). Aggregate sums cross-checked line-by-line
+against the per-row data and match the evidence JSON exactly:
+`unsupported_expansion` control=4/treatment=2 (the PASS leg of SECONDARY
+check (b)), `required_behavior_omission` control=2/treatment=3 (the FAIL
+leg) -- `secondary_efficacy` is false on both the per-archetype-loss-count
+leg (a) and the aggregate leg (b)'s `required_behavior_omission` sub-check.
+
+**Control comparator (dispatch item 3, confirmed).** All 12 protected
+archetypes' control-arm rows scored `protected_concern_omissions=[]` and
+`escalation_correct=true` on every repetition -- `control_also_safe_count=12`,
+matching the evidence JSON's own field exactly. This only feeds
+`no_incremental_value`, which never activates here since PRIMARY already
+fails; recorded per the dispatch's explicit ask, not acted on.
+
+**No score edits, no threshold changes, no re-runs.** `git status --short
+--branch -uall` before this slice's projection step and immediately after it
+showed only the two new untracked report files
+(`experiment-ps1-evidence.json`, `experiment-ps1.md`) -- no authority file
+(corpus, truth, schema, rules, prompts, `phase-ps1-scoring-metrics.md`'s
+thresholds) was touched, and `scorePs1Experiment` (the `score` command,
+which would generate new model outputs) was never invoked in this slice.
+Ambiguity did not arise (both dispositions were forced deterministically by
+the frozen thresholds), so the "unresolved ambiguity yields
+reshape/unresolved, never a score edit" clause was not tested against a real
+edge case here -- it simply did not need to fire.
+
+## PS1-05 record (terminal report, research promotion, ledger sync)
+
+**Gate report.** `evals/bdd3/reports/phase-ps1-gate.md` authored following
+`evals/bdd3/reports/phase-ea1-gate.md`'s conventions: frontmatter decision
+block, endpoint tables with the actual numbers above, a rule-fire table and a
+scope-axis-loss table, substrate attestation (model/CLI/manifest
+hash/source commit/freeze id, cross-checked against the evidence JSON's own
+`model_profile`/`manifest_sha256`/`source_commit`), a 3-item
+corrections/hygiene history (falsifier-first, the Gate-1-P3 vocabulary
+shuffle, the pre-Stage-B dev meta-strip -- PS1-03's mid-run lost-notification
+event is operational trivia, omitted per the dispatch), and the 4 stated
+limitations named in the dispatch (typed-ledger-plus-instructions vs. bare
+shape-v2 contrast per the Gate 1 interpretive note; single substrate; 24x2;
+frozen-truth pairing not live product truth). No product-approval language;
+the FAIL verdict is stated plainly throughout, not softened.
+
+**Research promotion.** `docs/researches/20260714-bdd3-ps1-protected-shape-outcome.md`
+authored on the `docs/researches/20260714-bdd3-ea1-typed-evidence-authority-outcome.md`
+model: thesis, design recap (structural HOLD, the 3 absence-only rules,
+both-arms-same-envelope, vocabulary exact-id matching mirroring EA1's
+`element_vocabulary` precedent), dispositions with the load-bearing numbers,
+the S3-forensics design basis (escalate-without-freeze as the 4 killer
+pairs' actual shape; the compression hypothesis contradicted by S3's own
+evidence), what the result does and does not authorize (no Phase P; I3 stays
+gated; owner decision pending on whether to open a reshaped bet, since this
+result does not itself decide that; the "if favorable" productization-owner
+-gate language stated explicitly as a precise counterfactual even though
+this run's verdict was not favorable), and citations into the
+`evals/bdd3/` artifacts.
+
+**Ledger sync.** `tasks/todos.md`'s BDD3-PS1 row updated: `(deferred)`
+dropped from the Goal cell (stale after execution), Revisit Trigger cell
+rewritten to `EXECUTED 2026-07-14` naming both dispositions, the load-bearing
+PRIMARY/SECONDARY failure detail, the gate-report/research-doc links, and an
+`awaiting-owner` note (reshape hypothesis vs. close-the-BDD3-revival-arc) per
+the dispatch's "note it as awaiting-owner -- do not open anything." `Why
+Deferred`/`Tradeoff` cells left as the historical record, matching the EA1
+row's own minimal-diff convention.
+
 ## Open Questions
 
 - None for PS1-01. Stage A (PS1-02) must confirm the 3 rules exercise as
@@ -840,9 +981,19 @@ PS1-04 (projection, intervention/thesis disposition via the frozen gate) was
   commentary carried forward from PS1-02's risk-class-1 finding was stripped
   from `evals/bdd3/tasks/dev-ps1.json`'s 6 `agent_input` fields; held-out was
   confirmed unaffected both before and after the fix.
-- Carried forward for PS1-04: interpret the `PS1-H-02` both-rep rule-2
-  ledger-coverage miss and the 65/96 adjudication rate; neither was
-  interpreted or acted on in this slice.
+- Resolved in PS1-04 (above): the `PS1-H-02` both-rep rule-2 ledger-coverage
+  miss is a single-archetype incomplete-`required_approvals` finding (gate
+  value itself correct), not a hold/allow or freeze-consistency miss; it is
+  the sole PRIMARY failure. The 65/96 adjudication rate was not separately
+  interpreted -- it is baked into `ps1EffectiveRows`' adjudicated-score
+  selection, which the frozen gate consumes without needing a rate-level
+  judgment call.
+- Carried forward for a future owner decision (not this slice, not
+  self-authorized): whether a narrowly-reshaped ledger hypothesis (tighter
+  approval-tag-completeness instruction; the 3 ordinary-archetype scope-axis
+  losses) is worth a new, separately-scoped work-package, given PS1 was
+  recorded as the second and last approved BDD3 revival bet. See
+  `tasks/todos.md`'s BDD3-PS1 row.
 
 ## Evidence Links
 
@@ -853,6 +1004,11 @@ PS1-04 (projection, intervention/thesis disposition via the frozen gate) was
 - Metrics/gate doc: `evals/bdd3/metrics/phase-ps1-scoring-metrics.md`
 - Stage B run: `.ai/harness/runs/bdd3/ps1/run-1783984811297` (gitignored;
   `run.json` + responses/scores/adjudications/private, 498 files)
+- Evidence projection: `evals/bdd3/reports/experiment-ps1-evidence.json`
+- Auto-generated summary: `evals/bdd3/reports/experiment-ps1.md`
+- Terminal gate report: `evals/bdd3/reports/phase-ps1-gate.md`
+- Research promotion: `docs/researches/20260714-bdd3-ps1-protected-shape-outcome.md`
+- Deferred-goal ledger row: `tasks/todos.md` (BDD3-PS1)
 - Checks: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 
