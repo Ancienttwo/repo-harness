@@ -106,6 +106,76 @@ describe("run command", () => {
     }
   });
 
+  test("official run ignores source override and caller shell hooks for protected helpers", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "repo-harness-run-protected-"));
+    const marker = join(tmp, "bypass-marker");
+    try {
+      const sourceRoot = join(tmp, "source-root");
+      mkdirSync(join(sourceRoot, "assets"), { recursive: true });
+      mkdirSync(join(sourceRoot, "scripts"), { recursive: true });
+      const protectedFiles = ["contract-worktree.sh", "ship-worktrees.sh", "merge-gate.ts"];
+      writeFileSync(
+        join(sourceRoot, "assets", "workflow-contract.v1.json"),
+        `${JSON.stringify({ helpers: { scripts: protectedFiles } }, null, 2)}\n`,
+      );
+      for (const fileName of protectedFiles) {
+        const helperPath = join(sourceRoot, "scripts", fileName);
+        writeFileSync(helperPath, `#!/bin/bash\ntouch "${marker}"\n`);
+        chmodSync(helperPath, 0o755);
+        const resolved = resolveHelper(fileName, tmp, { REPO_HARNESS_SOURCE_ROOT: sourceRoot });
+        expect(resolved?.source).toBe("package");
+        expect(resolved?.path).toContain("assets/templates/helpers/");
+      }
+
+      const fakeBin = join(tmp, "fake-bin");
+      mkdirSync(fakeBin);
+      for (const binary of ["bash", "git", "bun"]) {
+        const fake = join(fakeBin, binary);
+        writeFileSync(fake, `#!/bin/sh\ntouch "${marker}"\nexit 99\n`);
+        chmodSync(fake, 0o755);
+      }
+
+      const bashEnv = join(tmp, "bash-env-injection.sh");
+      writeFileSync(bashEnv, `#!/bin/sh\ntouch "${marker}"\n`);
+      const direct = runHelper({
+        helper: "ship-worktrees",
+        args: ["--help"],
+        cwd: tmp,
+        env: {
+          ...process.env,
+          PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
+          BASH_ENV: bashEnv,
+          REPO_HARNESS_SOURCE_ROOT: sourceRoot,
+        },
+        stdio: "pipe",
+      });
+      expect(direct.exitCode, direct.stderr).toBe(0);
+      expect(direct.stdout).toContain("Usage:");
+      expect(existsSync(marker)).toBe(false);
+
+      const res = spawnSync(process.execPath, [CLI, "run", "ship-worktrees", "--help"], {
+        cwd: tmp,
+        encoding: "utf-8",
+        env: {
+          ...process.env,
+          PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
+          BASH_ENV: join(fakeBin, "bash"),
+          GIT_EXEC_PATH: fakeBin,
+          GH_REPO: "attacker/redirect",
+          REPO_HARNESS_SOURCE_ROOT: sourceRoot,
+          REPO_HARNESS_BASH_BIN: join(fakeBin, "bash"),
+          REPO_HARNESS_GIT_BIN: join(fakeBin, "git"),
+          REPO_HARNESS_BUN_BIN: join(fakeBin, "bun"),
+        },
+      });
+      expect(res.status, res.stderr).toBe(0);
+      expect(res.stdout).toContain("Usage:");
+      expect(existsSync(marker)).toBe(false);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   test("source checkout override fails closed for missing and malformed authority", () => {
     const tmp = mkdtempSync(join(tmpdir(), "repo-harness-run-source-invalid-"));
     try {

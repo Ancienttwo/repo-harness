@@ -3,7 +3,11 @@ import { homedir } from "os";
 import { delimiter, dirname, join, resolve, sep } from "path";
 import { fileURLToPath } from "url";
 import { configureBrainRoot, defaultBrainRootChoice, expandHomePath } from "./brain-root";
-import { syncCrossReviewSkills } from "./init";
+import {
+  syncCrossReviewSkills,
+  syncMergeGateRuntime,
+  type InitRuntimeDependencies,
+} from "./init";
 import { runInstall, type InstallTargetSpec } from "./install";
 import { compareVersions, readLatestPackageVersion } from "./doctor";
 import { configureCodegraph } from "../tools/codegraph";
@@ -603,7 +607,10 @@ function configureCodegraphMcp(cwd: string, target: InstallTargetSpec, env?: Nod
   }
 }
 
-export function runGlobalRuntimeSetup(opts: GlobalRuntimeOptions = {}): GlobalRuntimeResult {
+export function runGlobalRuntimeSetup(
+  opts: GlobalRuntimeOptions = {},
+  dependencies?: InitRuntimeDependencies,
+): GlobalRuntimeResult {
   const sourceRoot = opts.sourceRoot ?? defaultSourceRoot();
   const cwd = opts.cwd ?? process.cwd();
   const target = opts.target ?? "both";
@@ -651,6 +658,7 @@ export function runGlobalRuntimeSetup(opts: GlobalRuntimeOptions = {}): GlobalRu
 
   if (profile === 'strict') {
     steps.push(...syncCrossReviewSkills(sourceRoot, target, env));
+    steps.push(...syncMergeGateRuntime(sourceRoot, target, dependencies));
   } else {
     steps.push({ step: "cross-review skills", status: "skipped", detail: "disabled by install profile" });
   }

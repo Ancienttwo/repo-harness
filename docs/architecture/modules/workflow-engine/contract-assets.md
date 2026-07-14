@@ -1,7 +1,7 @@
 # Architecture Module: workflow-engine/contract-assets
 
 > **Capability ID**: `workflow-engine-contract-assets`
-> **Matched Prefixes**: `assets/workflow-contract.v1.json`, `.ai/harness/workflow-contract.json`, `.ai/harness/policy.json`, `.ai/context/context-map.json`, `.ai/context/capabilities.json`, `scripts/capability-resolver.ts`, `scripts/capability-config.ts`, `scripts/contract-run.ts`, `src/cli/commands/capability-context.ts`, `assets/templates`, `assets/reference-configs`, `docs/reference-configs`
+> **Matched Prefixes**: `assets/workflow-contract.v1.json`, `.ai/harness/workflow-contract.json`, `.ai/harness/policy.json`, `.ai/context/context-map.json`, `.ai/context/capabilities.json`, `scripts/capability-resolver.ts`, `scripts/capability-config.ts`, `scripts/contract-run.ts`, `scripts/contract-worktree.sh`, `scripts/archive-workflow.sh`, `scripts/merge-gate.ts`, `scripts/ship-worktrees.sh`, `src/cli/commands/init.ts`, `src/cli/commands/global-runtime.ts`, `src/cli/commands/capability-context.ts`, `src/cli/runtime/helper-runner.ts`, `assets/skills/merge-gate`, `assets/templates`, `assets/reference-configs`, `docs/reference-configs`
 > **Local Contracts**: `AGENTS.md`, `CLAUDE.md`
 
 ## P1 Map
@@ -20,6 +20,10 @@ Authoritative files:
 - `.ai/context/capabilities.json`: capability registry for longest-prefix ownership.
 - `scripts/capability-resolver.ts`: sole registry reader, validator, and longest-prefix matcher.
 - `scripts/capability-config.ts`: explicit authority-creation and capability-add command.
+- `scripts/merge-gate.ts`: trusted installed local gate orchestrator and SHA/diff/runtime-bound host receipt verifier.
+- `scripts/contract-worktree.sh`: candidate commit and local-merge choke point.
+- `scripts/ship-worktrees.sh`: PR push choke point and final receipt revalidation.
+- `assets/skills/merge-gate/`: semantic review protocol installed only on the declared local gatekeeper host.
 - `src/cli/commands/capability-context.ts`: one-way projection of registered capability context into controlled agent blocks.
 - `assets/templates/` and `.claude/templates/`: generated workflow document templates.
 - `assets/reference-configs/` and `docs/reference-configs/`: repo-local and installable reference config corpus.
@@ -45,6 +49,7 @@ Error paths:
 - Contract/runtime parity drift is caught by `tests/workflow-contract.test.ts`.
 - Capability orphan modules are caught by `capability-resolver.ts validate`.
 - Missing, malformed, or non-existent capability prefixes fail closed; the resolver does not synthesize authority from legacy context blocks or directory scans.
+- When the exact target base commit has `merge_gate.enabled=true`, missing host runner/skill evidence, untrusted helper execution, malformed structured output, FAIL/BLOCKED verdicts, dirty candidates, moved HEAD, moved base, or fingerprint drift fail before push or merge.
 - Brain-manifest validation and repo-to-brain export are explicit operator actions. Contract checks and hooks do not inspect external vault state.
 - Missing concrete risk targets for active execution fail closed. Checks,
   review, handoff, and resume freshness bind exact content fingerprints.
@@ -66,6 +71,40 @@ ignored effective-state cache cannot roll the version backward.
 At 10x generated repos, the first failure would be self-host behavior diverging
 from generated output. The smallest coherent guard is parity tests plus
 self-migration dry-run.
+
+## 2026-07-14 Local Merge Gate Enforcement
+
+- P1: installed `contract-worktree` remains the commit/merge authority and
+  installed `ship-worktrees` remains the PR push authority. The target base
+  policy owns enablement, the OS account home
+  `~/.repo-harness/config.json#merge_gate` owns local
+  runner identity, the host-only `merge-gatekeeper` agent owns only tool-free model isolation,
+  `assets/skills/merge-gate` owns review semantics, and `scripts/merge-gate.ts`
+  is the only receipt writer/verifier.
+- P2: finish snapshots live workflow state, verifies and archives it, commits
+  the exact candidate, and invokes Claude with no tools from an empty temporary
+  directory. The stdin request supplies the complete diff,
+  goal, changed files, and current deterministic check evidence. A successful
+  verdict is stored under `~/.repo-harness/gates/<repo-id>/` and bound to
+  repository root, exact base ref/SHA, head SHA, binary diff fingerprint, host
+  runtime fingerprint (config, binary identity, agent, and skill), and installed
+  helper fingerprint. FAIL/BLOCKED restores
+  the pre-finish commit and live workflow artifacts. PR mode fetches the remote
+  target and pushes the verified SHA explicitly; local merge also names the
+  verified SHA instead of the mutable branch name.
+- P3: target-base policy prevents the candidate from disabling its own gate;
+  host config and host-state receipts keep runner and receipt authority outside
+  the candidate workspace. The gate runs after commit because pre-commit HEAD
+  cannot identify the merge candidate. Only Claude is configured in this
+  slice; protected helper resolution ignores process-level source/helper/HOME
+  overrides and pins its Bash/Git/Bun/gh toolchain outside caller `PATH`.
+  There is no provider fallback, GitHub check-run, alternate receipt
+  shape, candidate-code execution, or agent-owned write.
+- At 10x concurrency the first failure is the remote target advancing after
+  fetch. Receipt revalidation rejects any locally observed base or head drift,
+  and the explicit SHA refspec prevents a moved local branch from changing what
+  is pushed. Remote merge-time freshness remains GitHub branch-protection/CI
+  authority rather than a claim made by this local pre-push gate.
 
 ## 2026-05-29 Cleanup Script Policy Closeout
 
@@ -228,3 +267,5 @@ self-migration dry-run.
 - `tasks/workstreams/workflow-engine/contract-assets/20260712-contract-assets.md`
 
 - `tasks/workstreams/workflow-engine/contract-assets/agent-fleet-specialists.md`
+
+- `tasks/workstreams/workflow-engine/contract-assets/20260714-merge-gate-enforcement.md`

@@ -17,7 +17,9 @@ import { PassThrough, Writable } from "stream";
 import {
   runInit,
   runInteractiveInit,
+  resolveOsAccountHome,
   syncCrossReviewSkills,
+  syncMergeGateRuntimeAtHome,
   writeGlobalContextFiles,
 } from "../../src/cli/commands/init";
 import { configuredBrainRoot } from "../../src/cli/commands/brain-root";
@@ -255,6 +257,44 @@ describe("init command", () => {
       expect(existsSync(join(home, ".codex", "skills", "claude-review", "SKILL.md"))).toBe(true);
       expect(existsSync(join(home, ".codex", "skills", "codex-review", "SKILL.md"))).toBe(false);
       expect(existsSync(join(home, ".claude", "skills", "claude-review", "SKILL.md"))).toBe(false);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test("runInit installs the required merge-gate runtime independently of external skills and caller HOME", () => {
+    const tmp = join(tmpdir(), `repo-harness-init-merge-gate-${Date.now()}`);
+    const source = join(tmp, "source");
+    const repo = join(tmp, "repo");
+    const callerHome = join(tmp, "caller-home");
+    const authorityHome = join(tmp, "authority-home");
+    try {
+      mkdirSync(source, { recursive: true });
+      mkdirSync(repo, { recursive: true });
+      mkdirSync(callerHome, { recursive: true });
+      mkdirSync(authorityHome, { recursive: true });
+      setupFakeSource(source);
+      cpSync(join(ROOT, "assets", "skills", "merge-gate"), join(source, "assets", "skills", "merge-gate"), { recursive: true });
+
+      const result = runInit({
+        repo,
+        sourceRoot: source,
+        target: "claude",
+        syncSkill: false,
+        hostAdapters: false,
+        externalSkills: false,
+        verify: false,
+        codegraph: false,
+        env: { ...process.env, HOME: callerHome },
+      }, { authorityHome: () => authorityHome });
+
+      expect(result.exitCode).toBe(0);
+      expect(result.steps.find((step) => step.step === "external skills")?.status).toBe("skipped");
+      expect(result.steps.find((step) => step.step === "merge-gate skill")?.status).toBe("ok");
+      expect(existsSync(join(authorityHome, ".claude", "skills", "merge-gate", "SKILL.md"))).toBe(true);
+      expect(existsSync(join(authorityHome, ".claude", "agents", "merge-gatekeeper.md"))).toBe(true);
+      expect(existsSync(join(callerHome, ".claude", "skills", "merge-gate", "SKILL.md"))).toBe(false);
+      expect(existsSync(join(callerHome, ".claude", "skills", "codex-review", "SKILL.md"))).toBe(false);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
@@ -793,7 +833,7 @@ describe("init command", () => {
   }, CODEGRAPH_INIT_TIMEOUT_MS);
 });
 
-describe("syncCrossReviewSkills", () => {
+describe("bundled host runtimes", () => {
   function makeSource(root: string): void {
     mkdirSync(join(root, "assets", "skills", "codex-review"), { recursive: true });
     writeFileSync(
@@ -805,6 +845,13 @@ describe("syncCrossReviewSkills", () => {
       join(root, "assets", "skills", "claude-review", "SKILL.md"),
       "---\nname: claude-review\n---\n",
     );
+    mkdirSync(join(root, "assets", "skills", "merge-gate"), { recursive: true });
+    writeFileSync(
+      join(root, "assets", "skills", "merge-gate", "SKILL.md"),
+      "---\nname: merge-gate\n---\n",
+    );
+    mkdirSync(join(root, "assets", "skills", "merge-gate", "agents"), { recursive: true });
+    writeFileSync(join(root, "assets", "skills", "merge-gate", "agents", "claude.md"), "fixture merge-gatekeeper\n");
   }
 
   test("installs host-aware: codex-review to Claude, claude-review to Codex", () => {
@@ -816,18 +863,39 @@ describe("syncCrossReviewSkills", () => {
       mkdirSync(home, { recursive: true });
       makeSource(source);
 
-      const steps = syncCrossReviewSkills(source, "both", { ...process.env, HOME: home });
+      const steps = [
+        ...syncCrossReviewSkills(source, "both", { ...process.env, HOME: home }),
+        ...syncMergeGateRuntimeAtHome(source, "both", home),
+      ];
 
       expect(steps.every((s) => s.status === "ok")).toBe(true);
       expect(existsSync(join(home, ".claude", "skills", "codex-review", "SKILL.md"))).toBe(true);
       expect(existsSync(join(home, ".codex", "skills", "claude-review", "SKILL.md"))).toBe(true);
       expect(existsSync(join(home, ".codex", "skills", "codex-review", "SKILL.md"))).toBe(false);
       expect(existsSync(join(home, ".claude", "skills", "claude-review", "SKILL.md"))).toBe(false);
+      expect(existsSync(join(home, ".claude", "skills", "merge-gate", "SKILL.md"))).toBe(true);
+      expect(existsSync(join(home, ".claude", "agents", "merge-gatekeeper.md"))).toBe(true);
+      expect(existsSync(join(home, ".codex", "skills", "merge-gate", "SKILL.md"))).toBe(false);
 
-      const again = syncCrossReviewSkills(source, "both", { ...process.env, HOME: home });
+      const again = [
+        ...syncCrossReviewSkills(source, "both", { ...process.env, HOME: home }),
+        ...syncMergeGateRuntimeAtHome(source, "both", home),
+      ];
       expect(again.some((s) => /already present/.test(s.detail ?? ""))).toBe(true);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test("resolves merge-gate authority from the OS account rather than caller HOME", () => {
+    const callerHome = join(tmpdir(), `caller-home-${Date.now()}`);
+    const previous = process.env.HOME;
+    process.env.HOME = callerHome;
+    try {
+      expect(resolveOsAccountHome()).not.toBe(callerHome);
+    } finally {
+      if (previous === undefined) delete process.env.HOME;
+      else process.env.HOME = previous;
     }
   });
 
@@ -843,12 +911,16 @@ describe("syncCrossReviewSkills", () => {
       makeSource(source);
 
       syncCrossReviewSkills(source, "claude", { ...process.env, HOME: claudeHome });
+      syncMergeGateRuntimeAtHome(source, "claude", claudeHome);
       expect(existsSync(join(claudeHome, ".claude", "skills", "codex-review", "SKILL.md"))).toBe(true);
+      expect(existsSync(join(claudeHome, ".claude", "skills", "merge-gate", "SKILL.md"))).toBe(true);
       expect(existsSync(join(claudeHome, ".codex", "skills", "claude-review", "SKILL.md"))).toBe(false);
 
       syncCrossReviewSkills(source, "codex", { ...process.env, HOME: codexHome });
+      syncMergeGateRuntimeAtHome(source, "codex", codexHome);
       expect(existsSync(join(codexHome, ".codex", "skills", "claude-review", "SKILL.md"))).toBe(true);
       expect(existsSync(join(codexHome, ".claude", "skills", "codex-review", "SKILL.md"))).toBe(false);
+      expect(existsSync(join(codexHome, ".codex", "skills", "merge-gate", "SKILL.md"))).toBe(false);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
@@ -862,7 +934,10 @@ describe("syncCrossReviewSkills", () => {
       mkdirSync(source, { recursive: true });
       mkdirSync(home, { recursive: true });
 
-      const steps = syncCrossReviewSkills(source, "both", { ...process.env, HOME: home });
+      const steps = [
+        ...syncCrossReviewSkills(source, "both", { ...process.env, HOME: home }),
+        ...syncMergeGateRuntimeAtHome(source, "both", home),
+      ];
       expect(steps.every((s) => s.status !== "failed")).toBe(true);
       expect(steps.some((s) => s.status === "skipped")).toBe(true);
     } finally {

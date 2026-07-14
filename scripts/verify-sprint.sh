@@ -1,6 +1,12 @@
 #!/bin/bash
 set -euo pipefail
 
+WORKFLOW_STATE_LIB="${REPO_HARNESS_WORKFLOW_STATE_LIB:-.ai/hooks/lib/workflow-state.sh}"
+if [[ -n "${REPO_HARNESS_BUN_BIN:-}" ]] && [[ "$WORKFLOW_STATE_LIB" != /* || ! -f "$WORKFLOW_STATE_LIB" || -L "$WORKFLOW_STATE_LIB" ]]; then
+  echo "verify-sprint: trusted workflow-state library is unavailable" >&2
+  exit 1
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -n "${REPO_HARNESS_TARGET_REPO_ROOT:-}" ]]; then
   cd "$REPO_HARNESS_TARGET_REPO_ROOT"
@@ -407,9 +413,9 @@ allowed_paths_check_json() {
   fi
 }
 
-if [[ -f ".ai/hooks/lib/workflow-state.sh" ]]; then
+if [[ -f "$WORKFLOW_STATE_LIB" ]]; then
   # shellcheck source=/dev/null
-  . ".ai/hooks/lib/workflow-state.sh"
+  . "$WORKFLOW_STATE_LIB"
   contract_file="$(workflow_active_contract || true)"
   review_file="$(workflow_active_review || true)"
   notes_file="$(workflow_active_notes || true)"

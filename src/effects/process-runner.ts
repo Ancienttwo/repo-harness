@@ -8,6 +8,7 @@ export interface ProcessOutputRedaction {
 export interface RunProcessOptions {
   readonly cwd?: string;
   readonly env?: NodeJS.ProcessEnv;
+  readonly inheritEnv?: boolean;
   readonly stdio?: "pipe" | "inherit" | "ignore";
   readonly timeoutMs?: number;
   readonly maxOutputBytes?: number;
@@ -65,7 +66,7 @@ export function runProcess(command: string, args: readonly string[], opts: RunPr
   const result = spawnSync(command, [...args], {
     cwd: opts.cwd,
     encoding: opts.stdio === "inherit" || opts.stdio === "ignore" ? undefined : "utf8",
-    env: { ...process.env, ...(opts.env ?? {}) },
+    env: opts.inheritEnv === false ? opts.env : { ...process.env, ...(opts.env ?? {}) },
     stdio: opts.stdio ?? "pipe",
     timeout: timeoutMs,
     maxBuffer: Math.max(maxOutputBytes, DEFAULT_PROCESS_MAX_BUFFER_BYTES),

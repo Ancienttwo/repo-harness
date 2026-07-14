@@ -271,6 +271,10 @@
       "preserve_unrelated_changes": true
     }
   },
+  "merge_gate": {
+    "enabled": true,
+    "rule": "the protected installed helper ignores caller source, helper, HOME, PATH, interpreter, and workflow-library overrides; it reads enablement from the exact target base commit and runner identity from the OS account home ~/.repo-harness/config.json; contract-worktree finish invokes one tool-free local Claude merge-gatekeeper after the candidate commit and before push or merge; the orchestrator writes a host-state PASS receipt bound to repository root, target base SHA, candidate head SHA, diff fingerprint, verification-evidence fingerprint, helper fingerprint, and host runtime fingerprint; missing, malformed, FAIL, BLOCKED, or stale receipts fail closed"
+  },
   "upgrade": {
     "strategy_version": 1,
     "supported_legacy_versions": [

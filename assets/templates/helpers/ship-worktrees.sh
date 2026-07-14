@@ -1,6 +1,21 @@
 #!/bin/bash
 set -euo pipefail
 
+unset GH_TOKEN GITHUB_TOKEN ANTHROPIC_API_KEY CLAUDE_CODE_OAUTH_TOKEN SSH_AUTH_SOCK HTTP_PROXY HTTPS_PROXY NO_PROXY
+
+GIT_BIN="${REPO_HARNESS_GIT_BIN:-/usr/bin/git}"
+BASH_BIN="${REPO_HARNESS_BASH_BIN:-/bin/bash}"
+BUN_BIN="${REPO_HARNESS_BUN_BIN:-}"
+WORKFLOW_STATE_LIB="${REPO_HARNESS_WORKFLOW_STATE_LIB:-.ai/hooks/lib/workflow-state.sh}"
+[[ "$GIT_BIN" == /* && -x "$GIT_BIN" ]] || { echo "ship-worktrees: trusted git executable is unavailable" >&2; exit 1; }
+[[ "$BASH_BIN" == /* && -x "$BASH_BIN" ]] || { echo "ship-worktrees: trusted bash executable is unavailable" >&2; exit 1; }
+if [[ -n "$BUN_BIN" ]] && [[ "$WORKFLOW_STATE_LIB" != /* || ! -f "$WORKFLOW_STATE_LIB" || -L "$WORKFLOW_STATE_LIB" ]]; then
+  echo "ship-worktrees: trusted workflow-state library is unavailable" >&2
+  exit 1
+fi
+git() { "$GIT_BIN" "$@"; }
+bash() { "$BASH_BIN" "$@"; }
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -n "${REPO_HARNESS_TARGET_REPO_ROOT:-}" ]]; then
   REPO_ROOT="$REPO_HARNESS_TARGET_REPO_ROOT"
@@ -10,7 +25,8 @@ else
   REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 fi
 cd "$REPO_ROOT"
-helper_dir="$SCRIPT_DIR"
+export REPO_HARNESS_TARGET_REPO_ROOT="$REPO_ROOT"
+helper_dir="$(cd "$(dirname "${REPO_HARNESS_HELPER_SOURCE_PATH:-$0}")" && pwd)"
 
 usage() {
   cat <<'USAGE_EOF'
@@ -74,9 +90,9 @@ current_branch() {
 }
 
 load_workflow_state() {
-  if [[ -f ".ai/hooks/lib/workflow-state.sh" ]]; then
+  if [[ -f "$WORKFLOW_STATE_LIB" ]]; then
     # shellcheck source=/dev/null
-    . ".ai/hooks/lib/workflow-state.sh"
+    . "$WORKFLOW_STATE_LIB"
   fi
 }
 
@@ -91,6 +107,81 @@ run_cmd() {
 fail() {
   echo "ship-worktrees: $*" >&2
   exit 1
+}
+
+ship_transaction_dir=""
+ship_transaction_active=0
+ship_transaction_original_head=""
+ship_transaction_paths=()
+ship_transaction_existed=()
+
+ship_transaction_snapshot() {
+  local path="$1"
+  local index="${#ship_transaction_paths[@]}"
+  ship_transaction_paths+=("$path")
+  if [[ -e "$path" || -L "$path" ]]; then
+    ship_transaction_existed+=("1")
+    mkdir -p "$ship_transaction_dir/$index"
+    cp -Rp "$path" "$ship_transaction_dir/$index/value"
+  else
+    ship_transaction_existed+=("0")
+  fi
+}
+
+ship_transaction_begin() {
+  [[ "$DRY_RUN" -eq 0 ]] || return 0
+  ship_transaction_dir="$(mktemp -d)"
+  ship_transaction_active=1
+  ship_transaction_original_head="$(git rev-parse HEAD)"
+  ship_transaction_paths=()
+  ship_transaction_existed=()
+  trap ship_transaction_on_exit EXIT
+  ship_transaction_snapshot "plans"
+  ship_transaction_snapshot "tasks"
+  ship_transaction_snapshot ".ai/harness/active-plan"
+  ship_transaction_snapshot ".ai/harness/active-worktree"
+  ship_transaction_snapshot ".ai/harness/sprint"
+  ship_transaction_snapshot ".claude/.plan-state"
+}
+
+ship_transaction_abort() {
+  local index path
+  [[ "$ship_transaction_active" -eq 1 ]] || return 0
+  if [[ -n "$ship_transaction_original_head" ]] && [[ "$(git rev-parse HEAD)" != "$ship_transaction_original_head" ]]; then
+    git reset --mixed "$ship_transaction_original_head"
+  fi
+  for ((index = ${#ship_transaction_paths[@]} - 1; index >= 0; index--)); do
+    path="${ship_transaction_paths[$index]}"
+    rm -rf "$path"
+    if [[ "${ship_transaction_existed[$index]}" == "1" ]]; then
+      mkdir -p "$(dirname "$path")"
+      cp -Rp "$ship_transaction_dir/$index/value" "$path"
+    fi
+  done
+  rm -rf "$ship_transaction_dir"
+  ship_transaction_dir=""
+  ship_transaction_active=0
+  ship_transaction_original_head=""
+  trap - EXIT
+  echo "ship-worktrees: ship failed; restored live workflow artifacts and the pre-ship branch" >&2
+}
+
+ship_transaction_commit() {
+  [[ "$ship_transaction_active" -eq 1 ]] || return 0
+  ship_transaction_active=0
+  trap - EXIT
+  rm -rf "$ship_transaction_dir"
+  ship_transaction_dir=""
+  ship_transaction_original_head=""
+}
+
+ship_transaction_on_exit() {
+  local status=$?
+  trap - EXIT
+  if [[ "$ship_transaction_active" -eq 1 && "$status" -ne 0 ]]; then
+    ship_transaction_abort || status=1
+  fi
+  exit "$status"
 }
 
 list_contract_worktrees() {
@@ -304,13 +395,37 @@ require_finish_ready() {
 }
 
 finish_contract_worktree() {
-  local merge_mode="$1"
+  local merge_mode="$1" gate_base_ref="${2:-$TARGET_BRANCH}"
   require_finish_ready
   if [[ "$merge_mode" == "local" ]]; then
     run_cmd bash "$helper_dir/contract-worktree.sh" finish --target "$TARGET_BRANCH"
   else
-    run_cmd bash "$helper_dir/contract-worktree.sh" finish --no-merge --target "$TARGET_BRANCH"
+    run_cmd bash "$helper_dir/contract-worktree.sh" finish --no-merge --target "$TARGET_BRANCH" --gate-base "$gate_base_ref"
   fi
+}
+
+verify_merge_gate_before_ship() {
+  local base_ref="$1"
+  [[ -f "$helper_dir/merge-gate.ts" ]] || fail "merge-gate helper is missing: $helper_dir/merge-gate.ts"
+  [[ "$BUN_BIN" == /* && -x "$BUN_BIN" ]] || fail "merge gate requires the trusted Bun runtime injected by repo-harness run"
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    git rev-parse HEAD
+    return 0
+  fi
+  "$BUN_BIN" "$helper_dir/merge-gate.ts" verify --base "$base_ref" --format sha
+}
+
+merge_gate_required() {
+  local base_ref="$1" result
+  [[ "$BUN_BIN" == /* && -x "$BUN_BIN" ]] || fail "merge gate requires the trusted Bun runtime injected by repo-harness run"
+  command -v jq >/dev/null 2>&1 || fail "merge gate preflight requires jq"
+  result="$("$BUN_BIN" "$helper_dir/merge-gate.ts" fingerprint --base "$base_ref" --format json)" || fail "cannot read merge-gate requirement from $base_ref"
+  printf '%s' "$result" | jq -er '.required == true' >/dev/null 2>&1
+}
+
+refresh_target_base() {
+  git remote get-url "$REMOTE_NAME" >/dev/null 2>&1 || fail "remote not found: $REMOTE_NAME"
+  run_cmd git fetch --no-tags "$REMOTE_NAME" "+refs/heads/$TARGET_BRANCH:refs/remotes/$REMOTE_NAME/$TARGET_BRANCH"
 }
 
 pr_title_for_branch() {
@@ -339,9 +454,14 @@ EOF_BODY
 }
 
 push_branch() {
-  local branch="$1"
+  local branch="$1" verified_sha="$2" current_sha
   git remote get-url "$REMOTE_NAME" >/dev/null 2>&1 || fail "remote not found: $REMOTE_NAME"
-  run_cmd git push -u "$REMOTE_NAME" "$branch"
+  current_sha="$(git rev-parse "$branch^{commit}")"
+  [[ "$current_sha" == "$verified_sha" ]] || fail "branch $branch moved after merge-gate review"
+  run_cmd git push "$REMOTE_NAME" "$verified_sha:refs/heads/$branch"
+  if [[ "$DRY_RUN" -eq 0 ]]; then
+    git branch --set-upstream-to="$REMOTE_NAME/$branch" "$branch" >/dev/null
+  fi
 }
 
 create_or_report_pr() {
@@ -386,7 +506,7 @@ create_or_report_pr() {
 }
 
 ship_linked_pr() {
-  local branch
+  local branch gate_base_ref verified_sha
   branch="$(current_branch)"
   [[ -n "$branch" ]] || fail "detached HEAD is not supported"
   [[ "$branch" != "$TARGET_BRANCH" ]] || fail "refusing to ship target branch as linked worktree"
@@ -395,8 +515,14 @@ ship_linked_pr() {
     *) fail "linked ship expects branch prefix $BRANCH_PREFIX, got $branch" ;;
   esac
 
-  finish_contract_worktree "pr"
-  push_branch "$branch"
+  refresh_target_base
+  gate_base_ref="refs/remotes/$REMOTE_NAME/$TARGET_BRANCH"
+  ship_transaction_begin
+  finish_contract_worktree "pr" "$gate_base_ref"
+  refresh_target_base
+  verified_sha="$(verify_merge_gate_before_ship "$gate_base_ref")"
+  push_branch "$branch" "$verified_sha"
+  ship_transaction_commit
   create_or_report_pr "$branch"
 }
 
@@ -409,7 +535,8 @@ ship_linked_local_merge() {
 }
 
 ship_primary_dirty_pr() {
-  local status active_slug base_slug branch message
+  local status active_slug active_plan base_slug branch message gate_base_ref verified_sha
+  local gate_args=()
   status="$(git status --porcelain=v1 --untracked-files=all)"
   [[ -n "$status" ]] || return 0
 
@@ -420,15 +547,33 @@ ship_primary_dirty_pr() {
   base_slug="$(normalize_slug "$base_slug")"
   branch="${BRANCH_PREFIX}${base_slug}-main-closeout"
   message="chore(ship): close out ${base_slug}"
+  active_plan="$(active_plan_or_empty)"
 
   if git show-ref --verify --quiet "refs/heads/$branch"; then
     fail "closeout branch already exists: $branch"
   fi
 
+  refresh_target_base
+  gate_base_ref="refs/remotes/$REMOTE_NAME/$TARGET_BRANCH"
+  if merge_gate_required "$gate_base_ref" && [[ -z "$active_plan" || ! -f "$active_plan" ]]; then
+    fail "target base requires merge gate but dirty-main closeout has no active goal plan; use a contract worktree"
+  fi
   run_cmd git switch -c "$branch"
   run_cmd git add -A
   run_cmd git commit -m "$message"
-  push_branch "$branch"
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    verified_sha="$(git rev-parse HEAD)"
+  else
+    gate_args=(run --base "$gate_base_ref" --format sha)
+    if [[ -n "$active_plan" && -f "$active_plan" ]]; then
+      gate_args+=(--goal "$active_plan")
+    fi
+    [[ "$BUN_BIN" == /* && -x "$BUN_BIN" ]] || fail "merge gate requires the trusted Bun runtime injected by repo-harness run"
+    verified_sha="$("$BUN_BIN" "$helper_dir/merge-gate.ts" "${gate_args[@]}")"
+    refresh_target_base
+    verified_sha="$(verify_merge_gate_before_ship "$gate_base_ref")"
+  fi
+  push_branch "$branch" "$verified_sha"
   create_or_report_pr "$branch"
 }
 

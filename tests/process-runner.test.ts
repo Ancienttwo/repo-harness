@@ -22,6 +22,25 @@ describe("process runner", () => {
     expect(capProcessOutput("0123456789", 5)).toBe("01234\n[output truncated after 5 bytes]");
   });
 
+  test("can execute with an exact environment instead of inheriting the caller", () => {
+    const inheritedKey = "REPO_HARNESS_PROCESS_RUNNER_INHERITED";
+    const previous = process.env[inheritedKey];
+    process.env[inheritedKey] = "caller-value";
+    try {
+      const result = runProcess(
+        process.execPath,
+        ["-e", `console.log(process.env.${inheritedKey} ?? "missing")`],
+        { env: { PATH: process.env.PATH }, inheritEnv: false },
+      );
+
+      expect(result.ok).toBe(true);
+      expect(result.stdout.trim()).toBe("missing");
+    } finally {
+      if (previous === undefined) delete process.env[inheritedKey];
+      else process.env[inheritedKey] = previous;
+    }
+  });
+
   test("reports timed out processes without throwing", () => {
     const result = runProcess(process.execPath, ["-e", "setTimeout(() => {}, 1000)"], { timeoutMs: 20 });
 
