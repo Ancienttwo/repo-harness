@@ -1,5 +1,5 @@
 import { createHash } from "crypto";
-import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } from "fs";
+import { existsSync, lstatSync, readdirSync, readFileSync } from "fs";
 import { basename, dirname, join, relative, resolve, sep } from "path";
 import type { AdoptionMode } from "./modes";
 import type { AdoptionOperation, AdoptionWarning, WriteFileOperation } from "./operations";
@@ -8,9 +8,9 @@ import { adoptionTemplateFile } from "./manifest-templates";
 import { gitignoreManagedBlockOperation } from "./gitignore-plan";
 import { managedBlockNeedsUpdate } from "./managed-block";
 import { loadWorkflowContractAsset, readWorkflowContractAsset } from "./workflow-contract-asset";
+import { isRepoHarnessSourceCheckout } from "./source-checkout";
 
 const ASSET_ROOT = join(import.meta.dir, "..", "..", "..", "assets");
-const PACKAGE_ROOT = join(import.meta.dir, "..", "..", "..");
 const TEMPLATE_ROOT = join(ASSET_ROOT, "templates");
 const HOOK_ROOT = join(ASSET_ROOT, "hooks");
 const REFERENCE_ROOT = join(ASSET_ROOT, "reference-configs");
@@ -423,14 +423,6 @@ function knownGeneratedFile(repoRoot: string, path: string): boolean {
   return false;
 }
 
-function isSelfHostedSourceRepo(repoRoot: string): boolean {
-  try {
-    return realpathSync(repoRoot) === realpathSync(PACKAGE_ROOT);
-  } catch {
-    return resolve(repoRoot) === resolve(PACKAGE_ROOT);
-  }
-}
-
 function isCanonicalDeferredLedger(content: string): boolean {
   return /^# Deferred Goal Ledger\s*$/m.test(content) && /^> \*\*Status\*\*:\s*Backlog\s*$/m.test(content);
 }
@@ -542,7 +534,7 @@ function addKnownGeneratedCleanup(repoRoot: string, operations: AdoptionOperatio
   // The source package owns its canonical scripts. They may be byte-identical
   // to package helpers, but that is not evidence that this source repo is a
   // downstream generated runtime copy.
-  if (isSelfHostedSourceRepo(repoRoot)) return;
+  if (isRepoHarnessSourceCheckout(repoRoot)) return;
   const contract = loadWorkflowContractAsset<WorkflowContractAsset>();
   const actions = contract.migrations?.upgrade?.actions ?? [];
   for (const action of actions) {
