@@ -71,14 +71,14 @@ allowed_paths:
   - .ai/harness/policy.json # agentic_development.routing key only
   - assets/workflow-contract.v1.json # only if routing is mirrored there
   - .ai/harness/workflow-contract.json # only if routing is mirrored there
-  - src/core/adoption/standard-plan.ts # only the reference-config shipped-set line, only if DO-03 adds the stub
+  - src/core/adoption/standard-plan.ts # reference-config shipped-set line + the agentic_development.routing default entry (cross-review P2)
   - tests/output-parity.test.ts
   - tests/prompt-routing-explicit-first.test.ts
   - tests/action-command-skills.test.ts
   - tests/workflow-contract.test.ts
   - tests/global-working-rules-distribution.test.ts
   - tests/cli/docs.test.ts
-  - tests/adoption-plan.test.ts # only if the stub changes adoption expectations
+  - tests/cli/adoption-plan.test.ts # only if the stub changes adoption expectations
   - tasks/todos.md
   - tasks/current.md
   - tasks/contracts/20260714-1353-design-options-proactive-choice.contract.md

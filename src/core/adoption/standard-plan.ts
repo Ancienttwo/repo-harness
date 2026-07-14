@@ -325,6 +325,7 @@ function defaultPolicy(documentationProfile: string): JsonObject {
         product_discovery: "parent-agent:geju",
         complex_engineering_plan: "parent-agent:geju",
         design_plan: "parent-agent:geju",
+        design_options_choice: "convention:design-options",
         small_or_medium_plan: "waza:think",
         bug_or_regression: "waza:hunt",
         post_implementation_review: "waza:check",
