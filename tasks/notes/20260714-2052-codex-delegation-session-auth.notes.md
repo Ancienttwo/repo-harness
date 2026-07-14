@@ -1,13 +1,16 @@
 # Implementation Notes: codex-delegation-session-auth
 
-> **Status**: Active
+> **Status**: Completed
 > **Plan**: plans/plan-20260714-2052-codex-delegation-session-auth.md
 > **Contract**: tasks/contracts/20260714-2052-codex-delegation-session-auth.contract.md
 > **Review**: tasks/reviews/20260714-2052-codex-delegation-session-auth.review.md
-> **Last Updated**: 2026-07-14 20:52
+> **Last Updated**: 2026-07-15 01:11
 > **Lifecycle**: notes
 
 ## Design Decisions
+
+- **Current-main integration**: rebasing onto merge commit `aef22480` exposed overlapping PR #75 changes in the delegation advisor, docs, and hook tests. Resolution retained PR #75's active-contract detection and explicit permission-only context, removed only the per-prompt auto branch and its `prompt-route` dependency, and kept the current user turn as execution authority for explicit contract-bound delegation. Canonical `assets/hooks/` was resolved first and `.ai/hooks/` was regenerated with `bun run sync:hooks`.
+- **Post-rebase verification**: `bun run check:hooks`, `bun run check:helpers`, `bun run check:type`, and the five-file focused suite pass on current `main`; the focused suite reports `183 pass / 0 fail`. Direct strict contract verification reports `total=10 failed=0 status=Fulfilled`. Workflow preflight passes task sync, strict task workflow, deploy SQL ordering, architecture sync, project-state inspection, and adoption dry-run. The code-frozen full `check:ci` also passes, including the packaged tarball smoke.
 
 - `codex-delegation-advisor.sh`: after deleting the auto-mode branch, `explicit`
   is provably `true` at every remaining use site (the script now exits at

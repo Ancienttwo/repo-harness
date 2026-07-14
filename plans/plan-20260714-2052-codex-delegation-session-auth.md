@@ -1,6 +1,6 @@
 # Plan: Codex delegation auto-mode de-escalation to session-level authorization
 
-> **Status**: Executing
+> **Status**: Completed
 > **Created**: 20260714-2052
 > **Slug**: codex-delegation-session-auth
 > **Planning Source**: repo-harness-plan
@@ -191,12 +191,12 @@ parity test fails; or the session-start block exceeds ~15 lines.
 
 ## Task Breakdown
 
-- [ ] Advisor: delete auto branch + dead mode resolution; state writes explicit-only
-- [ ] Session-start: add codex+auto standing-authorization block with relocated mode resolution
-- [ ] policy.json delegation.rule rewrite + sweep for template copies of the old sentence
-- [ ] `bun run sync:hooks` + `bun run check:hooks`
-- [ ] Test updates (hook.test.ts, hook-contracts.test.ts, session-start assertions)
-- [ ] Full verification: `bun test`, root required checks
+- [x] Advisor: delete auto branch + dead mode resolution; state writes explicit-only
+- [x] Session-start: add codex+auto standing-authorization block with relocated mode resolution
+- [x] policy.json delegation.rule rewrite + sweep for template copies of the old sentence
+- [x] `bun run sync:hooks` + `bun run check:hooks`
+- [x] Test updates (hook.test.ts, hook-contracts.test.ts, session-start assertions)
+- [x] Full verification: focused/current-main checks and full local `check:ci` pass; GitHub CI remains the merge-time remote gate
 
 ## Exit Criteria (commands)
 
@@ -218,9 +218,9 @@ next package update.
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
 
 ## Task Breakdown
-- [ ] Advisor: delete auto branch + dead mode resolution; state writes explicit-only
-- [ ] Session-start: add codex+auto standing-authorization block with relocated mode resolution
-- [ ] policy.json delegation.rule rewrite + sweep for template copies of the old sentence
-- [ ] `bun run sync:hooks` + `bun run check:hooks`
-- [ ] Test updates (hook.test.ts, hook-contracts.test.ts, session-start assertions)
-- [ ] Full verification: `bun test`, root required checks
+- [x] Advisor: delete auto branch + dead mode resolution; state writes explicit-only
+- [x] Session-start: add codex+auto standing-authorization block with relocated mode resolution
+- [x] policy.json delegation.rule rewrite + sweep for template copies of the old sentence
+- [x] `bun run sync:hooks` + `bun run check:hooks`
+- [x] Test updates (hook.test.ts, hook-contracts.test.ts, session-start assertions)
+- [x] Full verification: focused/current-main checks and full local `check:ci` pass; GitHub CI remains the merge-time remote gate

@@ -5,11 +5,12 @@
 > **Contract**: tasks/contracts/20260714-2052-codex-delegation-session-auth.contract.md
 > **Notes File**: tasks/notes/20260714-2052-codex-delegation-session-auth.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-07-14 22:44
+> **Last Updated**: 2026-07-15 01:11
 > **Recommendation**: pass
-> **Review Rubric Version**: 1
-> **Reviewed Diff Fingerprint**: sha256:ed00c22b7140c9dfe3733977cacf0a5c088704e69a909f52dd8ac1a2cfa42526
-> **Reviewed Scope**: branch+staged+unstaged+untracked
+> **Review Rubric Version**: 2
+> **Reviewed Subject SHA256**: sha256:8f4dbfff086a6aea1f5ff0431346d327651fd49f3431984f6a66bc8aec291133
+> **Reviewed Subject Scope**: normalized-final-content
+> **Reviewed Target Revision**: aef22480ad5202dfbe19677468407df30626c554
 
 ## Human Review Card
 
@@ -17,11 +18,11 @@
 - Change type: code-change
 - Intended files changed: assets/hooks/codex-delegation-advisor.sh, assets/hooks/session-start-context.sh, .ai/hooks/* (generated projection), .ai/harness/policy.json, src/cli/hook/runtime.ts, scripts/lib/project-init-lib.sh, scripts/ensure-task-workflow.sh, assets/templates/helpers/ensure-task-workflow.sh, docs/reference-configs/hook-operations.md, assets/reference-configs/hook-operations.md, README.md, docs/architecture/modules/runtime-harness/hook-adapters.md, tests/cli/hook.test.ts, tests/hook-contracts.test.ts, tests/hook-runtime.test.ts
 - Actual files changed: matches intended set plus contract/plan/notes/todos workflow artifacts; every changed path traced to contract `allowed_paths` by the acceptance gate (no out-of-scope edits)
-- Commands passed: `bun run check:hooks` (25 files OK), `bun run check:helpers` (46 helpers OK), targeted `bun test` (182 pass / 0 fail), full `bun test` (1420 pass / 1 pre-existing skip / 0 fail), `bash scripts/check-architecture-sync.sh` (0 blocking), `bash scripts/check-task-sync.sh` (pass)
-- External acceptance: manual_override (independent fresh-context gatekeeper review in-session; see External Acceptance Advice)
+- Commands passed: current-main `bun run check:hooks` (25 files OK), `bun run check:helpers` (49 helpers OK), `bun run check:type`, focused `bun test` (183 pass / 0 fail), strict contract verification (`total=10 failed=0 status=Fulfilled`), task sync, strict task workflow, deploy SQL ordering, architecture sync, project-state inspection, adoption dry-run, and the code-frozen full `check:ci` including packaged tarball smoke. GitHub CI remains the merge-time remote gate.
+- External acceptance: unavailable and skipped by explicit repository-owner direction in the current branch-consolidation thread; this is not represented as canonical external PASS.
 - Residual risks: on hosts without `jq`, the SessionStart standing block degrades to absent (pre-existing guarded soft-dependency pattern in session-start-context.sh; recorded as known behavior, not a defect)
 - Reviewer action required: none — diff, probes, and checks reviewed by the acceptance gate
-- Rollback: single revert of the work-package commit on `codex/codex-delegation-session-auth` (base d5a80279); no data migration, no install-surface change
+- Rollback: revert the work-package commits on `codex/codex-delegation-session-auth` (rebased base `aef22480`); no data migration, no install-surface change
 
 ## Mode Evidence
 
@@ -31,8 +32,8 @@
 
 ## Verification Evidence
 
-- Waza `/check` run: equivalent in-session acceptance gate (independent gatekeeper agent, fresh context, read-only + real verification commands)
-- Commands run: `bun run check:hooks`, `bun run check:helpers`, `bun test tests/cli/hook.test.ts tests/hook-contracts.test.ts tests/hook-runtime.test.ts tests/workflow-contract.test.ts tests/contract-run.test.ts` (182 pass), `bun test` (1420 pass / 0 fail), `bash scripts/check-architecture-sync.sh`, `bash scripts/check-task-sync.sh`
+- Waza `/check` run: current-main integration reviewed directly in this session; owner-directed Claude skip is recorded separately from the code verdict.
+- Commands run: `bun run check:hooks`, `bun run check:helpers`, `bun run check:type`, `bun test tests/cli/hook.test.ts tests/hook-contracts.test.ts tests/hook-runtime.test.ts tests/workflow-contract.test.ts tests/contract-run.test.ts --max-concurrency 4` (`183 pass / 0 fail`), direct strict contract verification (`total=10 failed=0 status=Fulfilled`), `bash scripts/check-task-sync.sh`, strict `check-task-workflow`, deploy SQL ordering, architecture sync, project-state inspection, adoption dry-run, and `BUN_TEST_MAX_CONCURRENCY=1 BUN_TEST_TIMEOUT_MS=180000 BUN_TEST_ISOLATE_FILES=1 bun run check:ci` (`[ci] OK`, packaged tarball smoke OK).
 - Manual checks: isolated-HOME runtime probes — plain prompt under repo-policy auto and global-config auto: advisor exit 0, empty stdout, no `.ai/harness/delegation/` created; mechanism question containing trigger phrase: silent; explicit trigger: injects with `explicit=true, mode="explicit", stop_fallback=true` and new current-turn-authority framing; full CLI dispatcher SessionStart on idle codex+auto repo emits the 10-line `# Delegation Standing Authorization` block (previously empty via budget drop); override matrix global-vs-repo in both directions plus invalid-global-JSON fallback; HOOK_HOST=claude silent on all paths
 - Supporting artifacts: regression test in tests/cli/hook.test.ts exercising the dispatcher path (self-checked: fails with the fix reverted, passes with it restored); EXECUTION_BOUNDARY first sentence verified byte-identical across parity surfaces
 - Implementation notes reviewed: yes (tasks/notes/20260714-2052-codex-delegation-session-auth.notes.md, slices 1 and 2)
@@ -40,15 +41,20 @@
 
 ## External Acceptance Advice
 
-> **External Acceptance**: manual_override
-> **External Reviewer**: independent gatekeeper agent (fresh-context acceptance gate, read-only)
-> **External Source**: in-session acceptance gate review, 2026-07-14
-> **External Started**: 2026-07-14 22:15
-> **External Completed**: 2026-07-14 22:30
+> **External Acceptance**: unavailable
+> **External Reviewer**: Claude
+> **External Source**: owner-directed skip after provider session limit
+> **External Started**: 2026-07-14T22:15:00+0800
+> **External Completed**: 2026-07-15T00:54:00+0800
+> **Review Rubric Version**: 2
+> **Reviewed Subject SHA256**: sha256:8f4dbfff086a6aea1f5ff0431346d327651fd49f3431984f6a66bc8aec291133
+> **Reviewed Subject Scope**: normalized-final-content
+> **Reviewed Target Revision**: aef22480ad5202dfbe19677468407df30626c554
+> **Benchmark Evidence SHA256**: not-applicable
 
-- P1 blockers: none
-- P2 advisories: review card and plan closeout hygiene (addressed: this card completed before commit; plan closes via archive-workflow after merge); jq-absent hosts silently lose the standing block (pre-existing soft-degrade convention, documented)
-- Acceptance checklist: diff-vs-allowed-paths sweep clean; absence checks clean (no intent classifier, no compatibility branch, worker-packet authority surfaces untouched); all verification commands re-run by the gate itself; runtime probes reproduced independently of the implementer
+- P1 blockers: none found in the current-main integration review.
+- P2 advisories: jq-absent hosts silently lose the standing block (pre-existing soft-degrade convention, documented).
+- Acceptance checklist: owner-directed skip — current-main code, projections, focused tests, and workflow evidence are verified locally; this records authority without claiming canonical external acceptance passed.
 
 ## Behavior Diff Notes
 
