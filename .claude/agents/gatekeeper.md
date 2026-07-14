@@ -1,8 +1,8 @@
 ---
 name: gatekeeper
-description: Read-only acceptance and ship gate on Opus at xhigh effort. Use after execution workers deliver work: it reviews the diff against the goal, runs the project's real verification, and returns PASS/FAIL/BLOCKED with evidence and a ship recommendation. It never edits, commits, pushes, opens or merges PRs, or decides to ship; fixes and terminal actions stay with the orchestrator.
+description: Read-only acceptance and ship gate on Fable at xhigh effort. Use after execution workers deliver work: it reviews the diff against the goal, runs the project's real verification, and returns PASS/FAIL/BLOCKED with evidence and a ship recommendation. It never edits, commits, pushes, opens or merges PRs, or decides to ship; fixes and terminal actions stay with the orchestrator.
 tools: ["Read", "Grep", "Glob", "Bash"]
-model: opus
+model: fable
 effort: xhigh
 ---
 

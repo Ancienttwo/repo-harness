@@ -18,6 +18,13 @@ skills and CodeGraph are not implicitly installed. Profile switching removes
 only package-owned surfaces. Unknown or modified canonical/facade directories
 fail closed before mutation; user-authored content is preserved.
 
+Adapter-only refreshes (`repo-harness install --location global`) also default
+to `minimal`, and `repo-harness update` refreshes host adapters with no profile
+flag; neither reads the recorded profile back from `install-state.json`. On a
+`standard` or higher install, pass `--profile <recorded>` explicitly when
+refreshing adapters (check with `--state`), otherwise the refresh rewrites the
+adapters at `minimal` and silently drops the extra routes.
+
 Strict always projects the package-bundled cross-review Skill required by its
 acceptance component. `--no-external-skills` disables marketplace Waza and
 Mermaid installation, but does not disable this bundled strict capability.

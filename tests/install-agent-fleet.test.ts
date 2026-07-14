@@ -38,7 +38,7 @@ const CODEX_EXPECTATIONS: Record<
     model: "gpt-5.6-sol",
     effort: "xhigh",
     descriptionLabel: "GPT-5.6 Sol at xhigh reasoning",
-    sourceDescription: "Opus at xhigh effort",
+    sourceDescription: "Fable at xhigh effort",
     sandboxMode: "read-only",
   },
   "root-cause-prover": {
@@ -127,6 +127,7 @@ describe("install-agent-fleet", () => {
         expect(installedCodex).toContain(expected.descriptionLabel);
         expect(installedCodex).toContain(`sandbox_mode = "${expected.sandboxMode}"`);
         expect(installedCodex).not.toContain(expected.sourceDescription);
+        expect(installedCodex).not.toMatch(/\b(?:fable|opus|sonnet|haiku)\b/i);
       }
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -482,7 +483,6 @@ describe("install-agent-fleet", () => {
     expect(source).toContain('AGENT_FLEET_SOURCE_DIR="$package_root/agents/fleet"');
     expect(source).not.toContain("REPO_HARNESS_FLEET_SOURCE_DIR");
     expect(source).not.toContain('spawnSync("curl"');
-    expect(source).not.toMatch(/\bfable\b/i);
     expect(source).toContain('const WRITABLE_AGENTS = new Set(["fast-worker", "root-cause-prover", "harness-evaluator"]);');
     expect(source).toContain("if (WRITABLE_AGENTS.has(agent))");
   });

@@ -124,6 +124,7 @@ const MODEL_EFFORT_MAP = {
   opus: buildFamilyEffortMap("Opus", "gpt-5.6-sol", "GPT-5.6 Sol"),
   sonnet: buildFamilyEffortMap("Sonnet", "gpt-5.6-luna", "GPT-5.6 Luna"),
   haiku: buildFamilyEffortMap("Haiku", "gpt-5.6-luna", "GPT-5.6 Luna"),
+  fable: buildFamilyEffortMap("Fable", "gpt-5.6-sol", "GPT-5.6 Sol"),
 };
 
 function readSource(agent) {
