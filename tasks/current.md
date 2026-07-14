@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-14T13:53:30+0800 -->
+<!-- updated_at: 2026-07-14T13:56:09+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-07-14T13:53:30+0800
-> **Source Branch**: codex/design-options-inception
-> **Source Commit**: 3df8738b
+> **Updated At**: 2026-07-14T13:56:09+0800
+> **Source Branch**: main
+> **Source Commit**: 16e3b2ee
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: manual
@@ -18,9 +18,9 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 ## Current Focus
 
 - Status: Active
-- Active Plan: plans/plan-20260714-1353-design-options-proactive-choice.md
-- Plan Status: Approved
-- Next Task: DO-01: Author assets/reference-configs/design-options.md (everything above, including the worked example, ceiling guidance, and lineage delineation) and mirror to docs/reference-configs/design-options.md. Verification: assets<->docs content parity; bun src/cli/index.ts docs show design-options resolves; bun test parity suite green.
+- Active Plan: (none)
+- Plan Status: (none)
+- Next Task: inspect active worktree marker(s)
 - Clear Note: (none)
 
 ## Mainline Snapshot Reading
@@ -31,8 +31,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- .: plans/plan-20260714-1353-design-options-proactive-choice.md
-- .: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/design-options-inception
+- /Users/kito/Projects/repo-harness-worktrees/design-options-inception: plans/plan-20260714-1353-design-options-proactive-choice.md
+- /Users/kito/Projects/repo-harness-worktrees/design-options-inception: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/design-options-inception
 - /Users/kito/Projects/repo-harness-wt-verifier-evidence-lifecycle-cutover: plans/plan-20260714-0421-verifier-evidence-lifecycle-cutover.md
 - /Users/kito/Projects/repo-harness-wt-verifier-evidence-lifecycle-cutover: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-verifier-evidence-lifecycle-cutover
 ## Active Sprint
@@ -48,18 +48,38 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`: status=completed, current_slice=completed-20260713-policy-seed, source_plan=plans/plan-20260712-2215-agent-fleet-specialists.md
 ## Handoff
 
-- Exact Next Step: (none)
+- Exact Next Step: Clean up merged contract worktree codex/design-options-inception. Command: repo-harness run contract-worktree cleanup --slug design-options-inception --target main
 
 ## Checks
 
-- status=(none), source=(none), file=.ai/harness/checks/latest.json
+- status=(none), source=(none), exit_code=(none), file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 1 changed/untracked path(s)
+- Summary: 21 changed/untracked path(s)
 
 ```
-?? plans/plan-20260714-1353-design-options-proactive-choice.md
+ M .ai/hooks/.projection.json
+ M .ai/hooks/AGENTS.md
+ M .ai/hooks/CLAUDE.md
+ M .ai/hooks/codex-delegation-advisor.sh
+ M .claude/.skill-version
+ M README.es.md
+ M README.fr.md
+ M README.ja.md
+ M README.md
+ M README.zh-CN.md
+ M assets/hooks/AGENTS.md
+ M assets/hooks/CLAUDE.md
+ M assets/hooks/codex-delegation-advisor.sh
+ M assets/skill-version.json
+ M docs/architecture/index.md
+ M docs/architecture/modules/runtime-harness/hook-adapters.md
+ M package.json
+ M tasks/lessons.md
+ M tests/cli/hook.test.ts
+?? docs/architecture/requests/archive/2026/20260714-135017-runtime-harness-hook-adapters.md
+?? docs/architecture/requests/root.md
 ```
 
 ## Source Artifacts
