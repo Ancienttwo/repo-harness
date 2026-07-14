@@ -8,7 +8,7 @@
 > **Last Updated**: 2026-07-14 12:59
 > **Recommendation**: pass
 > **Review Rubric Version**: 1
-> **Reviewed Diff Fingerprint**: sha256:a6c2bd8590c900443906bd06fcf58bd9a5795bc5499aa5dc385f256bf0a9649f
+> **Reviewed Diff Fingerprint**: sha256:097b809fd14b6b804a3ce5d3fcb293fd2b87111649930eccf1739d38b03036bb
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 ## Human Review Card
@@ -43,7 +43,7 @@
 > **External Acceptance**: pass
 > **External Reviewer**: Codex
 > **External Source**: codex-review
-> **Reviewed Diff Fingerprint**: sha256:a6c2bd8590c900443906bd06fcf58bd9a5795bc5499aa5dc385f256bf0a9649f
+> **Reviewed Diff Fingerprint**: sha256:097b809fd14b6b804a3ce5d3fcb293fd2b87111649930eccf1739d38b03036bb
 > **Reviewed Scope**: branch+staged+unstaged+untracked
 
 - P1 blockers: none
