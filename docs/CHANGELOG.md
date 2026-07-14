@@ -36,6 +36,11 @@ All notable changes to this skill are documented here.
 
 ### Fixed
 
+- Removed the external `gbrain` tooling dependency from setup/adoption policy,
+  install choices, readiness detection, generated guidance, and migration
+  routing. Brain-vault export remains an explicit operator command, while
+  PostEdit, sprint verification, and strict workflow checks no longer sync or
+  gate on external vault state.
 - Closed a guard gap where a batched `apply_patch` never showed the
   deterministic risk floor its full pending scope: each recursive per-file
   check now resolves against every path in the batch, so a medium-scope

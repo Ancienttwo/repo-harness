@@ -62,7 +62,7 @@ export function assertAdoptionMode(raw: string, commandName: string): AdoptionMo
 // Brain mode
 // ---------------------------------------------------------------------------
 
-const VALID_BRAIN_MODES: readonly string[] = ['skip', 'manifest-only', 'install-gbrain-cli'];
+const VALID_BRAIN_MODES: readonly string[] = ['skip', 'manifest-only'];
 
 export function assertBrainMode(raw: string, commandName: string): string {
   if (VALID_BRAIN_MODES.includes(raw)) {

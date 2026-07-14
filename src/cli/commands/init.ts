@@ -40,13 +40,12 @@ const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(SCRIPT_DIR, "..", "..", "..");
 const WAZA_SKILLS = ["think", "hunt", "check", "health"];
 const WAZA_SHARED_RULES = ["anti-patterns.md", "chinese.md", "durable-context.md", "english.md"];
-const GBRAIN_INSTALL_ARGS = ["install", "-g", "github:garrytan/gbrain"] as const;
 const GLOBAL_RULES_BEGIN = "<!-- BEGIN: repo-harness global-working-rules -->";
 const GLOBAL_RULES_END = "<!-- END: repo-harness global-working-rules -->";
 const GLOBAL_RULES_SELF_NOTE =
   "<!-- repo-harness manages this block; edits inside are overwritten on sync. Keep personal rules outside the markers. -->";
 
-export type InitBrainMode = "manifest-only" | "install-gbrain-cli" | "skip";
+export type InitBrainMode = "manifest-only" | "skip";
 export type ReportingLanguagePreset = "follow" | "zh-CN" | "en" | "custom";
 
 export interface GlobalContextOptions {
@@ -615,10 +614,6 @@ export function runInit(opts: InitCommandOptions = {}): InitCommandResult {
       mkdirSync(root, { recursive: true });
       steps.push({ step: "ensure brain root", status: "ok", detail: root });
     }
-    if (brainMode === "install-gbrain-cli") {
-      const gbrain = runProcess("bun", [...GBRAIN_INSTALL_ARGS], sourceRoot, commandEnv);
-      steps.push(withStepName(gbrain, "install gbrain CLI"));
-    }
     try {
       const result = withProcessEnv(commandEnv, () => runBrain("sync", { repo: repoRoot }));
       const hasErrors = result.issues.some((entry) => entry.level === "error");
@@ -830,7 +825,6 @@ export async function runInteractiveInit(opts: InteractiveInitOptions = {}): Pro
       "Brain mode",
       [
         { label: "manifest only", value: "manifest-only", detail: "Use file-vault manifest/check/sync" },
-        { label: "install gbrain CLI", value: "install-gbrain-cli", detail: "Install GitHub GBrain CLI, but do not enable MCP" },
         { label: "skip brain sync", value: "skip", detail: "Do not create or sync a brain root" },
       ],
       0,

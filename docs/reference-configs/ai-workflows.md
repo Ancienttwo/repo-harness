@@ -5,7 +5,6 @@
 ## Default Brain
 
 - File vault: `brain/repo-harness/references/ai-assisted-workflows-reference.md`
-- gbrain slug: `references/ai-assisted-workflows-reference`
 
 ## Repo Role
 

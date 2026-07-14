@@ -23,7 +23,7 @@ Weak dependencies:
 - `repo-harness install --profile <profile>` owns first-run global bootstrap; optional ecosystems are profile-selected and default off.
 - `repo-harness uninstall` removes repo-harness managed host adapters without deleting sibling hooks or third-party tools.
 - `repo-harness adopt` owns repo-local harness adoption and refresh.
-- `geju` is a pre-contract framing skill and gbrain remains advisory; this self-host repo vendors CodeGraph as a dev dependency while downstream generated repos keep global MCP setup explicit unless policy opts in.
+- `geju` is a pre-contract framing skill; repo-harness has no external knowledge-CLI runtime or readiness dependency. This self-host repo vendors CodeGraph as a dev dependency while downstream generated repos keep global MCP setup explicit unless policy opts in.
 
 Out of scope:
 

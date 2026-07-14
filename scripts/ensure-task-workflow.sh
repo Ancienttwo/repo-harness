@@ -1081,18 +1081,17 @@ ARCHITECTURE_INDEX_EOF
       "promotion_rule": "only promote patterns after verified reuse across tasks or fixtures"
     },
     "memory": {
-      "sources": ["docs/researches/", "tasks/lessons.md", "gbrain"],
+      "sources": ["docs/researches/", "tasks/lessons.md"],
       "rule": "memory is advisory; current repo state and evidence override summaries"
     },
     "external_knowledge": {
+      "mode": "manual-opt-in",
       "default_brain_path": "brain/<project>/*",
       "project_path": "brain/<project>/*",
       "manifest_file": ".ai/harness/brain-manifest.json",
-      "drift_check": "repo-harness run check-brain-manifest",
       "sync_script": "repo-harness run sync-brain-docs",
-      "hook_trigger": "PostToolUse Edit|Write for manifest entries with sync.direction=repo-to-brain",
       "rule": "external knowledge stores long-lived explanations, runbooks, and patterns only; repo-local contracts, hooks, scripts, checks, and evidence remain authoritative",
-      "sync_rule": "only explicitly opted-in repo-to-brain manifest entries may be written to the default brain vault; pointer-only externalized stubs remain check-only"
+      "sync_rule": "external sync and drift checks are operator-invoked only; hooks and workflow verification never read, write, or gate on external vault state"
     }
   },
   "handoff_resume": {
@@ -1212,8 +1211,7 @@ ARCHITECTURE_INDEX_EOF
   },
   "external_tooling": {
     "routing": {
-      "simple": "waza",
-      "knowledge": "gbrain"
+      "simple": "waza"
     },
     "hosts": [
       "claude-code",
@@ -1272,9 +1270,6 @@ ARCHITECTURE_INDEX_EOF
       "sync_mode": "external-installed-skill",
       "vendoring_policy": "do-not-vendor"
     },
-    "gbrain": {
-      "mcp": "candidate-disabled"
-    },
     "codegraph": {
       "package": "@colbymchenry/codegraph",
       "primary_host": "both",
@@ -1324,7 +1319,7 @@ POLICY_EOF
   "rules": [
     "repo-local contracts, hooks, scripts, checks, and evidence remain authoritative",
     "default brain stores long-lived explanations, runbooks, decisions, references, and patterns",
-    "hook runtime may sync explicitly opted-in repo-to-brain entries only; it must not query gbrain, MCP, or unregistered default brain paths"
+    "external brain sync is manual opt-in; hooks and workflow checks do not read, write, or validate external vault state"
   ],
   "entries": []
 }

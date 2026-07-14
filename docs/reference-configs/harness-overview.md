@@ -39,7 +39,7 @@ with the project.
 8. `.ai/harness/policy.json` is the machine-readable workflow contract.
 9. `information_lifecycle` inside `.ai/harness/policy.json` separates notes, raw evidence, reusable assets, advisory memory, and external knowledge.
 10. `agentic_development` inside `.ai/harness/policy.json` keeps product, engineering, and design planning parent-owned with `geju` pre-contract framing, and captures the Waza bug-hunt/review routes.
-11. `external_tooling` inside `.ai/harness/policy.json` captures host install/update defaults for Waza, `geju`, gbrain, and required CodeGraph readiness.
+11. `external_tooling` inside `.ai/harness/policy.json` captures host install/update defaults for Waza, `geju`, and required CodeGraph readiness.
 12. `.ai/context/capabilities.json` declares capability prefixes, contract files, architecture modules, and workstream directories.
 13. `.ai/context/context-map.json` indexes stable root context and discoverable capability context derived from the registry.
 14. `documentation` inside `.ai/harness/policy.json` keeps generated docs minimal and moves optional docs to agent-created, evidence-backed output.
@@ -59,7 +59,7 @@ with the project.
 - In non-target worktrees, read the target branch snapshot with `git show <target>:tasks/current.md` and verify stale or surprising state against the source artifacts before acting.
 - Use `docs/reference-configs/agentic-development-flow.md` for skill routing and `docs/reference-configs/external-tooling.md` for install/update commands.
 - Use `docs/reference-configs/global-working-rules.md` as the user-level Claude/Codex rule template; keep repo-local workflow contracts in repo files.
-- Externalized reference docs are indexed by `.ai/harness/brain-manifest.json` and checked by `repo-harness run check-brain-manifest`. Valuable repo docs can opt into default-brain mirroring with `sync.direction=repo-to-brain`; `post-edit-guard.sh` then calls `repo-harness run sync-brain-docs --changed <path>` for that specific file.
+- Externalized reference docs may be indexed by `.ai/harness/brain-manifest.json`. Validation and export through `repo-harness run check-brain-manifest` / `sync-brain-docs` are explicit operator actions and never part of hook or workflow correctness.
 - Contract-level execution should run in an isolated `codex/<task-slug>` worktree. Merge back only after the contract is fulfilled, `tasks/reviews/<plan-stem>.review.md` recommends pass, and the target worktree is clean.
 - Architecture-sensitive work also runs `repo-harness run check-architecture-sync`: the check keeps the request index derived from `docs/architecture/requests/` and, when policy is strict, blocks finish if the current diff touches a capability with a pending architecture request at or above `architecture.gate_min_severity`.
 - Migration cleans legacy root `scripts/<repo-harness-helper>` files only when content is identifiable as generated repo-harness runtime; ambiguous app-owned root scripts are reported and preserved.
@@ -79,8 +79,8 @@ with the project.
 - Evidence: `.ai/harness/checks/latest.json` is the current gate, while `.ai/harness/runs/*.json` keeps ignored local verification snapshots for the current workflow audit. Task-specific `.ai/harness/checks/*.latest.{json,md}` reports are ignored runtime cache; promote durable conclusions into reviews, contracts, notes, or research.
 - Human reading surface: `docs/spec.md`, `docs/architecture/`, and durable `docs/researches/` conclusions are the default entrypoint. Root workflow artifacts should describe active work only; completed plan/contract/review/notes/todo artifacts move to `plans/archive/` or `tasks/archive/`, and `.rgignore` keeps those archives plus runtime evidence out of default `rg` results.
 - Closeout order: promote durable truth first, then archive the workflow artifacts. If a fact only lives in a review/contract/checks file, the workflow is not ready to disappear from the active reading surface.
-- Memory: `docs/researches/`, `tasks/lessons.md`, and gbrain are advisory. Current repo state and evidence override summaries.
-- External knowledge: `brain/<project>/*` stores long-form explanations, runbooks, decisions, and patterns. Hooks may write only explicitly opted-in `repo-to-brain` manifest entries; checks must not require gbrain or MCP.
+- Memory: `docs/researches/` and `tasks/lessons.md` are advisory. Current repo state and evidence override summaries.
+- External knowledge: `brain/<project>/*` is an optional operator-managed export surface for long-form explanations, runbooks, decisions, and patterns. Hooks and workflow checks never read, write, or gate on its state.
 - Assets: policies, hooks, scripts, templates, and reference configs only change when a pattern has evidence across tasks or fixtures.
 
 ## Trace Evidence
@@ -188,7 +188,7 @@ Maintainer-facing detail on how the initializer and runtime defaults are wired.
 - Question-pack source of truth: `assets/initializer-question-pack.v4.json`.
 - Generated repos default to the repo-local harness flow: `docs/spec.md -> plans/ -> tasks/contracts/ -> tasks/reviews/ -> .ai/context/context-map.json -> .ai/harness/*`.
 - Generated and self-hosted repos install `.ai/harness/workflow-contract.json` and `.ai/harness/policy.json`.
-- Generated and migrated repos keep discovery and complex/design planning in the parent agent: `geju` opens the pre-contract frame, then the parent completes P1/P2/P3 and freezes the accepted direction. Daily small/medium work uses Waza with Codex-first runtime copies in `~/.codex/skills`; knowledge work uses gbrain.
+- Generated and migrated repos keep discovery and complex/design planning in the parent agent: `geju` opens the pre-contract frame, then the parent completes P1/P2/P3 and freezes the accepted direction. Daily small/medium work uses Waza with Codex-first runtime copies in `~/.codex/skills`; durable knowledge stays in repo-authored research and lessons.
 - `repo-harness install` bootstraps the Codex/Claude runtime pieces for the default workflow: refreshes `repo-harness` skill aliases, installs global Codex/Claude hook adapters, installs Waza skills (`think`, `hunt`, `check`, `health`) and Mermaid through the skills CLI, persists the brain root in `~/.repo-harness/config.json`, and configures CodeGraph MCP for selected host agents. `repo-harness init` remains a compatibility alias for existing automation.
-- Other external tooling stays advisory-only: `repo-harness run check-agent-tooling --host both --check-updates`; Waza update checks compare upstream `tw93/Waza` `SKILL.md` hashes without running `npx skills check`; no automatic gbrain MCP, CodeGraph daemon, or provider setup.
+- Other external tooling stays advisory-only: `repo-harness run check-agent-tooling --host both --check-updates`; Waza update checks compare upstream `tw93/Waza` `SKILL.md` hashes without running `npx skills check`; no automatic CodeGraph daemon or provider setup.
 - Manual distillation stays repo-local: repeated corrections -> `tasks/lessons.md`; deep findings and hidden contracts -> topic-scoped `docs/researches/*.md`; sprint verification evidence -> `tasks/reviews/*.review.md`; durable capability progress -> `tasks/workstreams/`; release history -> `docs/CHANGELOG.md`.

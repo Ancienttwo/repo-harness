@@ -950,8 +950,8 @@
     {
       "id": 23,
       "slug": "workflow-check-yellow-readiness",
-      "prompt": "Check release readiness. The workflow gates pass, but Waza has Codex staging drift and gbrain reports a warning. Give the verdict without silently treating those as pass or hard fail.",
-      "expected_output": "Routes to repo-harness-check, keeps required workflow gates as hard pass/fail, reports Waza drift and gbrain warning as yellow flags, and treats missing CodeGraph or Codex health/check/mermaid as hard failures.",
+      "prompt": "Check release readiness. The workflow gates pass, but Waza has Codex staging drift and a non-required external tool reports a warning. Give the verdict without silently treating those as pass or hard fail.",
+      "expected_output": "Routes to repo-harness-check, keeps required workflow gates as hard pass/fail, reports Waza drift and the non-required external warning as yellow flags, and treats missing CodeGraph or Codex health/check/mermaid as hard failures.",
       "files": [
         "assets/skill-commands/repo-harness-check/SKILL.md"
       ],
@@ -970,7 +970,7 @@
           },
           {
             "path": "final-response.md",
-            "pattern": "Waza|gbrain"
+            "pattern": "Waza|external"
           },
           {
             "path": "final-response.md",
@@ -980,7 +980,7 @@
       },
       "expectations": [
         "Separates hard workflow gates from advisory readiness.",
-        "Does not fail only because Waza staging drift or gbrain warning is present.",
+        "Does not fail only because Waza staging drift or a non-required external warning is present.",
         "Does not claim clean readiness without listing yellow flags."
       ]
     },

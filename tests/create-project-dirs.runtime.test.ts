@@ -288,7 +288,6 @@ describe("create-project-dirs runtime smoke", () => {
       expect(policy.sprints.helper_script).toBe("repo-harness run sprint-backlog");
       expect(policy.external_tooling.routing).toEqual({
         simple: "waza",
-        knowledge: "gbrain",
       });
       expect(policy.external_tooling.hosts).toEqual(["claude-code", "codex"]);
       expect(policy.external_tooling.mode).toBe("agent-readiness-required");
@@ -313,7 +312,7 @@ describe("create-project-dirs runtime smoke", () => {
         architecture_diagram: "mermaid",
       });
       expect(policy.external_tooling.codex_automation_profile.vendoring_policy).toBe("do-not-vendor-skill-body");
-      expect(policy.external_tooling.gbrain.mcp).toBe("candidate-disabled");
+      expect(policy.external_tooling).not.toHaveProperty("gbrain");
       expect(policy.external_tooling.codegraph.primary_host).toBe("both");
       expect(policy.external_tooling.codegraph.index_dir).toBe(".codegraph");
       expect(policy.external_tooling.codegraph.readiness).toBe("required-for-agent-code-navigation");
@@ -368,8 +367,10 @@ describe("create-project-dirs runtime smoke", () => {
       expect(policy.operations.rule).toContain("operations.deploy_sql");
       expect(policy.information_lifecycle.notes.dir).toBe("tasks/notes");
       expect(policy.information_lifecycle.evidence.snapshots_dir).toBe(".ai/harness/runs");
+      expect(policy.information_lifecycle.external_knowledge.mode).toBe("manual-opt-in");
       expect(policy.information_lifecycle.external_knowledge.manifest_file).toBe(".ai/harness/brain-manifest.json");
-      expect(policy.information_lifecycle.external_knowledge.drift_check).toBe("repo-harness run check-brain-manifest");
+      expect(policy.information_lifecycle.external_knowledge.drift_check).toBeUndefined();
+      expect(policy.information_lifecycle.external_knowledge.hook_trigger).toBeUndefined();
       expect(policy.information_lifecycle.external_knowledge.sync_script).toBe("repo-harness run sync-brain-docs");
       expect(policy.agentic_development.routing).toEqual({
         product_discovery: "parent-agent:geju",
@@ -558,10 +559,10 @@ describe("create-project-dirs runtime smoke", () => {
     const libPath = join(ROOT, "scripts/lib/project-init-lib.sh");
 
     try {
-      mkdirSync(join(cwd, "_ref/gbrain"), { recursive: true });
+      mkdirSync(join(cwd, "_ref/external-tool"), { recursive: true });
       mkdirSync(join(cwd, "_ops/scratch"), { recursive: true });
       mkdirSync(join(cwd, ".worktrees/codex/old"), { recursive: true });
-      writeFileSync(join(cwd, "_ref/gbrain/AGENTS.md"), "# External Reference\n");
+      writeFileSync(join(cwd, "_ref/external-tool/AGENTS.md"), "# External Reference\n");
       writeFileSync(join(cwd, "_ops/scratch/CLAUDE.md"), "# Local Operations\n");
       writeFileSync(join(cwd, ".worktrees/codex/old/AGENTS.md"), "# Old Worktree\n");
 
@@ -581,7 +582,7 @@ describe("create-project-dirs runtime smoke", () => {
       expect(res.status).toBe(0);
       expect(existsSync(join(cwd, "CLAUDE.md"))).toBe(true);
       expect(existsSync(join(cwd, "AGENTS.md"))).toBe(true);
-      expect(existsSync(join(cwd, "_ref/gbrain/CLAUDE.md"))).toBe(false);
+      expect(existsSync(join(cwd, "_ref/external-tool/CLAUDE.md"))).toBe(false);
       const capabilities = JSON.parse(readFileSync(join(cwd, ".ai/context/capabilities.json"), "utf-8"));
       expect(capabilities.capabilities).toEqual([]);
     } finally {
@@ -728,6 +729,7 @@ describe("create-project-dirs runtime smoke", () => {
         JSON.stringify(
           {
             external_tooling: {
+              gbrain: { mcp: "candidate-disabled" },
               routing: { complex: "gstack", simple: "waza", knowledge: "gbrain" },
             },
             agentic_development: {
@@ -754,7 +756,8 @@ describe("create-project-dirs runtime smoke", () => {
 
       expect(res.status).toBe(0);
       const policy = JSON.parse(readFileSync(join(cwd, ".ai/harness/policy.json"), "utf-8"));
-      expect(policy.external_tooling.routing).toEqual({ simple: "waza", knowledge: "gbrain" });
+      expect(policy.external_tooling.routing).toEqual({ simple: "waza" });
+      expect(policy.external_tooling).not.toHaveProperty("gbrain");
       expect(policy.agentic_development.routing).toMatchObject({
         product_discovery: "parent-agent:geju",
         complex_engineering_plan: "parent-agent:geju",
@@ -806,7 +809,7 @@ describe("create-project-dirs runtime smoke", () => {
 
       expect(res.status).toBe(0);
       const policy = JSON.parse(readFileSync(join(cwd, ".ai/harness/policy.json"), "utf-8"));
-      expect(policy.external_tooling.routing).toEqual({ simple: "waza", knowledge: "gbrain" });
+      expect(policy.external_tooling.routing).toEqual({ simple: "waza" });
       expect(policy.agentic_development.routing).toMatchObject({
         product_discovery: "custom:product-discovery",
         complex_engineering_plan: "parent-agent:geju",
@@ -891,7 +894,7 @@ describe("create-project-dirs runtime smoke", () => {
       expect(readFileSync(pythonOutput, "utf-8")).toBe(readFileSync(primaryOutput, "utf-8"));
 
       const policy = JSON.parse(readFileSync(pythonOutput, "utf-8"));
-      expect(policy.external_tooling.routing).toEqual({ simple: "waza", knowledge: "gbrain" });
+      expect(policy.external_tooling.routing).toEqual({ simple: "waza" });
       expect(policy.agentic_development.routing).toMatchObject({
         product_discovery: "parent-agent:geju",
         complex_engineering_plan: "parent-agent:geju",

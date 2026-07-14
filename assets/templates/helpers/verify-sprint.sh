@@ -489,9 +489,6 @@ if command -v jq >/dev/null 2>&1; then
 fi
 
 contract_command="repo-harness run verify-contract --contract $contract_file --strict --read-only --report-file <temp>"
-if [[ -f "$helper_dir/sync-brain-docs.sh" && -f ".ai/harness/brain-manifest.json" ]]; then
-  bash "$helper_dir/sync-brain-docs.sh" --all >/dev/null || true
-fi
 if [[ -f "$helper_dir/prepare-codex-handoff.sh" && ( -f ".ai/harness/handoff/current.md" || -f ".ai/harness/handoff/resume.md" ) ]]; then
   bash "$helper_dir/prepare-codex-handoff.sh" --reason "repo-harness-verify-sprint" >/dev/null || true
 fi

@@ -222,12 +222,19 @@ describe("Hook contracts", () => {
     expect(script).toContain("[TaskHandoff]");
     expect(script).toContain("run_repo_harness_helper architecture-queue");
     expect(script).toContain("run_repo_harness_helper context-contract-sync");
-    expect(script).toContain("run_repo_harness_helper sync-brain-docs");
+    expect(script).not.toContain("sync-brain-docs");
     expect(read("assets/templates/helpers/archive-architecture-request.sh")).toContain("[ArchitectureArchive]");
     expect(read("assets/templates/helpers/workstream-sync.sh")).toContain("tasks/workstreams");
     expect(script).toContain("tasks/todos.md");
     expect(script).toContain("--quiet");
     expect(script).toContain("contract_references_path");
+  });
+
+  test("workflow verification should not gate on external brain vault state", () => {
+    const script = read("assets/templates/helpers/check-task-workflow.sh");
+    expect(script).not.toContain('run_optional_helper "check-brain-manifest.sh"');
+    expect(script).not.toContain('run_optional_helper "sync-brain-docs.sh"');
+    expect(script).not.toContain("Brain doc sync check failed");
   });
 
   test("architecture drift helpers should keep detection and context sync separated", () => {

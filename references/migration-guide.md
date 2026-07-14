@@ -34,11 +34,9 @@ tasks-first harness. The canonical public entrypoint is `repo-harness adopt`.
   - pre-contract framing -> `geju`
   - architecture and plan decision -> parent-agent P1/P2/P3
   - simple -> Waza
-  - knowledge -> gbrain
   - hosts: `claude-code`, `codex`
   - mode: `guidance-only`
   - detection: `init-migrate`
-  - `gbrain.mcp: candidate-disabled`
 - Waza is Codex-first: stage upstream changes in `~/.agents/skills`, copy verified skills into `~/.codex/skills`, and compare whole managed directories plus shared rules.
 - `_ref/` and `_ops/` are preserved local surfaces. Migration must not vendor, rewrite, or delete ignored external references, private ops state, secrets, or real env files.
 - Approved-plan execution uses filesystem-owned Evidence Contract gates before implementation.
@@ -66,7 +64,7 @@ repo-harness adopt --repo /path/to/project
 10. Injects `check:task-sync`, `check:context-files`, and `check:task-workflow` into `package.json` when present.
 11. Returns a structured transaction manifest and explicit post-apply registry, CodeGraph, handoff, and strict workflow steps.
 12. Keeps downstream `.ai/hooks/` as a lib-only central-first surface unless policy explicitly pins `hook_source` to `repo`.
-13. Never auto-installs or auto-upgrades Waza/gbrain, never starts `gbrain serve`, and never enables MCP automatically.
+13. Never auto-installs or auto-upgrades Waza and never enables MCP automatically.
 
 ## External Tooling Safety Contract
 
@@ -76,17 +74,11 @@ The detector is intentionally read-only. It may call:
 
 - `npx -y skills ls -g --json`
 - GitHub raw URL fetches for upstream Waza `SKILL.md` files and shared `rules/` files when `--check-updates` is set
-- `gbrain doctor --json`
-- `gbrain check-update --json`
-- `gbrain integrations list --json`
 
 The migration flow must not treat these as probes:
 
 - `npx skills update`
 - `npx skills check`
-- `gbrain serve`
-- `gbrain sync`
-- `gbrain upgrade`
 
 ## Manual Follow-up
 

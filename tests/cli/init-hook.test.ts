@@ -395,7 +395,7 @@ describe('init-hook command', () => {
     });
   });
 
-  test('keeps optional gbrain gaps out of setup dependency actions', () => {
+  test('keeps optional tooling gaps out of setup dependency actions', () => {
     withTempHome((home, repo) => {
       mkdirSync(join(home, '.codex'), { recursive: true });
       writeFileSync(join(home, '.codex', 'AGENTS.md'), '# Global Working Rules\n');
@@ -408,22 +408,22 @@ describe('init-hook command', () => {
         statusReport: baseStatusReport(),
         doctorReport: baseDoctorReport(),
         toolingReport: baseToolingReport({
-          gbrain: {
-            name: 'gbrain',
+          advisory_tool: {
+            name: 'advisory_tool',
             required: false,
             status: 'missing',
-            reason: 'gbrain CLI is not installed.',
+            reason: 'Optional advisory tool is not installed.',
             update_status: 'update-available',
-            install_command: 'install-gbrain',
-            upgrade_command: 'upgrade-gbrain',
+            install_command: 'install-advisory-tool',
+            upgrade_command: 'upgrade-advisory-tool',
           },
         }),
       });
 
-      const check = report.checks.find((entry) => entry.id === 'tooling.gbrain');
+      const check = report.checks.find((entry) => entry.id === 'tooling.advisory_tool');
       expect(check?.status).toBe('ok');
       expect(check?.detail).toContain('optional');
-      expect(report.agent_actions.find((entry) => entry.id.startsWith('tooling.gbrain.'))).toBeUndefined();
+      expect(report.agent_actions.find((entry) => entry.id.startsWith('tooling.advisory_tool.'))).toBeUndefined();
       expect(report.status).toBe('ok');
     });
   });

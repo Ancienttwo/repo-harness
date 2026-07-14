@@ -6,7 +6,6 @@ skill routing lives in `docs/reference-configs/agentic-development-flow.md`.
 - `Waza` supplies `/think`, `/hunt`, and `/check` for daily small/medium work
 - `hai-stack` supplies `geju` for live, pre-contract exploration; only its frozen output enters a contract
 - Codex automation requires `health`, `check`, and `mermaid` from `~/.codex/skills`
-- `gbrain` supports knowledge capture, repo sync, and handoff retrieval
 - `CodeGraph` is required agent readiness for code navigation and impact tracing
 - repo-harness's packaged `agent_fleet` supplies the delegation loop's global agent definitions (`explorer`, `deep-reasoner`, `fast-worker`, `gatekeeper`, `root-cause-prover`, `harness-evaluator`) for both hosts
 
@@ -33,7 +32,7 @@ bootstrap path must not silently install unrelated toolchains or Claude
 marketplace plugins.
 
 `repo-harness uninstall` removes repo-harness managed Codex/Claude hook
-adapters. It intentionally does not uninstall Waza, Mermaid, CodeGraph, gbrain,
+adapters. It intentionally does not uninstall Waza, Mermaid, CodeGraph,
 brain config, package-manager globals, or user-authored sibling hook entries.
 
 `repo-harness update` refreshes only the CLI and repo-harness-owned user-level
@@ -83,8 +82,6 @@ The detector intentionally avoids side-effecting commands. It does not run:
 
 - `npx skills check`
 - `npx skills update`
-- `gbrain serve`
-- `gbrain sync`
 - `codegraph init`
 - `codegraph sync`
 - `codegraph install`
@@ -157,19 +154,6 @@ runtime copy:
 rsync -a --delete ~/.agents/skills/geju/ ~/.codex/skills/geju/
 diff -qr ~/.agents/skills/geju ~/.codex/skills/geju
 ```
-
-### gbrain
-
-```bash
-bun install -g github:garrytan/gbrain
-```
-
-Do not install npm registry `gbrain`; that package is unrelated to the GBrain
-CLI and does not ship the repo-harness advisory command.
-
-`gbrain` is optional advisory tooling for knowledge sync and retrieval. `setup
-check` may report its local state, but missing or stale `gbrain` must not
-create Agent repair/update actions or change the setup readiness result.
 
 ### CodeGraph
 
@@ -419,13 +403,6 @@ rsync -a --delete ~/.agents/skills/geju/ ~/.codex/skills/geju/
 diff -qr ~/.agents/skills/geju ~/.codex/skills/geju
 ```
 
-### gbrain
-
-```bash
-gbrain check-update --json
-gbrain upgrade
-```
-
 ### CodeGraph
 
 ```bash
@@ -593,18 +570,10 @@ managed files by hand:
 ~/.codex/agents/gatekeeper.toml
 ```
 
-## Manual Knowledge Sync
+## Manual Brain Vault Export
 
-`gbrain` stays advisory-first in this contract. Manual repo sync is allowed:
-
-```bash
-gbrain sync --repo <path>
-```
-
-## Default Brain Vault
-
-Long-lived external knowledge should land in the default brain file vault before
-or alongside `gbrain` import:
+Long-lived external knowledge may be exported to a brain file vault only through
+an explicit operator command:
 
 ```text
 brain/<project>/*
@@ -633,24 +602,16 @@ one-way mirroring by adding a manifest entry with:
   "id": "project-decision-log",
   "repo_path": "docs/decisions.md",
   "brain_path": "brain/<project>/decisions/project-decision-log.md",
-  "gbrain_slug": "decisions/project-decision-log",
   "sync": { "direction": "repo-to-brain" }
 }
 ```
 
-After that, PostEdit hooks sync only that source file. Manual sync and drift
-checks are also available:
+Hooks and workflow verification do not read, write, or gate on external vault
+state. Operators can run these commands when they intentionally want to inspect
+or export registered entries:
 
 ```bash
 repo-harness run check-brain-manifest
 repo-harness run sync-brain-docs --all
 repo-harness run sync-brain-docs --check
 ```
-
-## Why gbrain MCP Stays Off by Default
-
-- `gbrain` is useful even when only the CLI is healthy.
-- Missing `gbrain` CLI is not a setup dependency failure.
-- Local MCP endpoints are more failure-prone than the CLI health path.
-- The policy keeps `gbrain` as a candidate MCP entry, not a required runtime dependency.
-- Re-enable MCP only after the local host config is explicitly updated and `gbrain doctor --json` is healthy enough for your workflow.

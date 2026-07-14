@@ -313,7 +313,7 @@ bun test
 - `Host hook adapters are user-level:`：提醒安装 global adapters，并信任 `~/.codex/hooks.json`
 - `Workflow migration:`：repo-local harness surfaces 的创建或刷新计划
 - `Helper runtime:`：应用后会得到的操作工具链
-- `--- External Tooling ---`：parent/Geju planning 指引，以及 Waza/gbrain readiness 和 advisory 安装/更新提示
+- `--- External Tooling ---`：parent/Geju planning 指引，以及 Waza 和 CodeGraph readiness 与 advisory 安装/更新提示
 
 如果 dry-run 输出不对，先停在这里，阅读
 [`docs/reference-configs/hook-operations.md`](docs/reference-configs/hook-operations.md)。
@@ -475,9 +475,6 @@ decision rationale 的要求，来自他的贡献与启发。
 感谢 [TW93](https://x.com/HiTw93) 创作 Waza；`think`、`hunt`、`check`
 和 `health` 这些核心 skill 构成了 `repo-harness` 的日常 planning、bug hunt
 和 verification 节奏。
-
-感谢 [Garry Tan](https://x.com/garrytan) 创作 gbrain；它影响了 release 文档、
-knowledge sync 和 handoff retrieval 的工作流设计。
 
 感谢 [Peter Steinberger](https://x.com/steipete) 创作 Oracle（`@steipete/oracle`，MIT）；它是
 `chatgpt-browser` 默认的 GPT Pro / ChatGPT Web 浏览器 consult 引擎，Oracle provider

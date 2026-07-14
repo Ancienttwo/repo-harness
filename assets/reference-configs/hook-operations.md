@@ -1,6 +1,6 @@
 # Hook Operations Reference
 
-> Full troubleshooting runbook: `brain/repo-harness/runbooks/runbook-repo-harness-hook-troubleshooting.md` (`gbrain` slug `runbooks/runbook-repo-harness-hook-troubleshooting`).
+> Full troubleshooting runbook: `brain/repo-harness/runbooks/runbook-repo-harness-hook-troubleshooting.md`.
 
 ## Hook Authority Map
 
@@ -52,7 +52,7 @@ minimal-change observer is stdout-silent and writes bounded objective facts to
 numstat, package.json dependency changes, low-confidence abstraction candidates,
 and protected-change markers.
 
-`repo-harness run sync-brain-docs --changed <path>` is hot-path optimized: the PostEdit hook starts it only when the changed repo path appears in the brain manifest. The script still owns authoritative JSON parsing and containment checks. Source files that resolve outside the repo, or brain targets that resolve outside the configured brain root through symlinks, are rejected.
+Brain-vault export is not part of PostEdit. Operators may invoke `repo-harness run sync-brain-docs --changed <path>` explicitly; the script owns authoritative JSON parsing and containment checks. Source files that resolve outside the repo, or brain targets that resolve outside the configured brain root through symlinks, are rejected.
 
 Architecture drift requests use the current capability match as the pending pointer owner. Recording a newer request removes stale pending index lines for the same capability/path. Archiving a request removes it from the index and clears any local `AGENTS.md`/`CLAUDE.md` contract block that still points at that request.
 

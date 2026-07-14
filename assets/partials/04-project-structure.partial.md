@@ -47,8 +47,8 @@
 - Treat contract-level execution as worktree-first: `repo-harness run plan-to-todo --plan <approved-plan>` starts a linked `codex/<slug>` worktree when policy enables it, and `repo-harness run contract-worktree finish` merges back only after Waza `/check` and sprint verification pass.
 - Capture decision-complete Codex Plan mode, Waza `/think`, or `repo-harness-plan` outputs with `repo-harness run capture-plan --slug <slug> --title <title>` so planning becomes a `plans/` artifact before implementation.
 - Route product discovery and complex/design planning to the parent agent: use `geju` for pre-contract framing, complete P1/P2/P3 with the parent agent's own capabilities, and freeze the accepted direction into the plan and contract. Route daily small/medium planning, bug hunts, and checks to Waza `/think`, `/hunt`, and `/check`.
-- Route knowledge sync and handoff retrieval to `gbrain`.
-- Register valuable repo-authored docs in `.ai/harness/brain-manifest.json` with `sync.direction=repo-to-brain`; `repo-harness run sync-brain-docs` and the PostEdit hook mirror only those explicit entries into the default brain vault.
+- Keep durable repo knowledge in `docs/researches/`, `tasks/lessons.md`, and the canonical workflow artifacts.
+- Treat `.ai/harness/brain-manifest.json` and `repo-harness run sync-brain-docs` as explicit operator-invoked export surfaces only; hooks and workflow checks must not read, write, or gate on external brain-vault state.
 - Codex automation profile is runtime-referenced, not vendored: required skills are `health`, `check`, and `mermaid` from `~/.codex/skills`.
 - CodeGraph is required agent readiness for code navigation; keep `.codegraph/` ignored and use it for P1/P2 discovery, not hook correctness.
 - Treat Waza as Codex-first: `~/.codex/skills` is the Codex runtime source; `~/.agents/skills` is skills CLI staging/cache only.

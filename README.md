@@ -375,7 +375,7 @@ The command should end with `=== Migration Report ===` and summarize:
 - `Host hook adapters are user-level:` to remind the user to install global adapters and trust `~/.codex/hooks.json`
 - `Workflow migration:` to show the repo-local harness surfaces it will create or refresh
 - `Helper runtime:` to show `.ai/harness/scripts/*` implementations and `scripts/*` compatibility wrappers after apply
-- `--- External Tooling ---` to show parent/Geju planning guidance plus Waza/gbrain readiness and advisory install/update hints
+- `--- External Tooling ---` to show parent/Geju planning guidance plus Waza and CodeGraph readiness and advisory install/update hints
 
 If the dry-run output looks wrong, stop there and inspect
 [`docs/reference-configs/hook-operations.md`](docs/reference-configs/hook-operations.md)
@@ -653,7 +653,6 @@ are not ordinary bundled product dependencies.
 | --- | --- | --- |
 | [Hylarucoder](https://x.com/hylarucoder) / Geju | P1/P2/P3 due-diligence method and Geju practice that shaped the planning, tracing, and decision-rationale discipline in this workflow | Methodology contribution and acknowledgement; not a bundled dependency |
 | Waza by [TW93](https://x.com/HiTw93), including `think`, `hunt`, `check`, and `health` | Daily planning, bug hunts, verification, health checks, and Codex-first skill sync | Installed through the skills CLI into host skill roots |
-| `gbrain` by [Garry Tan](https://x.com/garrytan) | Post-ship documentation hygiene, knowledge sync, handoff retrieval, and long-form repo memory | Optional external CLI/index; advisory by default |
 | `mermaid` | Human-readable architecture and system-flow diagrams when Mermaid is not enough | Runtime-referenced skill, not vendored into generated repos |
 | CodeGraph (`@colbymchenry/codegraph`) | Symbol-aware navigation, impact tracing, and readiness checks for this self-host repo | Dev dependency in this repo; generated repos stay global-MCP-first unless policy opts in |
 | [Oracle](https://github.com/steipete/oracle) by [Peter Steinberger](https://x.com/steipete) (`@steipete/oracle`, MIT) | Default GPT Pro / ChatGPT Web browser consult engine that the `chatgpt-browser` Oracle provider shells out to for `gptpro` consults | Externally-resolved binary (`--oracle-bin`, `REPO_HARNESS_ORACLE_BIN`, `node_modules/.bin`, or `PATH`); never auto-downloaded, and a missing binary is a hard `ORACLE_NOT_INSTALLED` failure |
