@@ -10,6 +10,7 @@ root prompt concise; this file owns the detailed routing.
 | Product discovery, demand reality, "is this worth building" | Parent agent with `geju` pre-contract framing | Product direction or design doc before engineering planning |
 | Complex engineering plan, architecture lock-in, cross-module refactor | Parent agent with `geju`, then parent-owned P1/P2/P3 | Approved execution plan with architecture, data flow, edge cases, and tests |
 | UI/UX or design-system plan | Parent agent with `geju`, then parent-owned P1/P2/P3 | Design critique and plan fixes before implementation |
+| Multi-direction visual/UX decision (layout, component style, hierarchy, interaction pattern, aesthetic direction) | design-options convention (`repo-harness docs show design-options`) | User-picked direction recorded as `user_evidence`, feeding the design-brief hand-off |
 | Small or medium feature/fix plan | Waza `/think` | Concise approved plan, then implementation on request |
 | Bug, regression, error, crash, failing test | Waza `/hunt` | Root cause sentence with evidence before any fix |
 | Implemented diff, pre-merge, release follow-through | Waza `/check` | Review findings, safe fixes, verification, and shipment state |
