@@ -1,7 +1,13 @@
+> **Archived**: 2026-07-14 13:39
+> **Related Plan**: plans/archive/plan-20260714-0430-verification-evidence-decoupling.md
+> **Outcome**: Completed
+> **Source Plan**: (none)
+> **Parent Run ID**: run-20260714-1339
+
 # Deferred Goal Ledger
 
 > **Status**: Backlog
-> **Updated**: (archive-workflow)
+> **Updated**: 2026-07-14 12:24
 > **Scope**: Medium/long-term goals deferred from active plan execution
 
 Current plan tasks live in the active plan's `## Task Breakdown`.

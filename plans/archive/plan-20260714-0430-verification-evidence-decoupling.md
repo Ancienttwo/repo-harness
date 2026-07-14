@@ -1,6 +1,6 @@
 # Plan: 验证工作流去过度工程：证据生产与验证门禁解耦
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260714-0430
 > **Slug**: verification-evidence-decoupling
 > **Planning Source**: repo-harness-plan

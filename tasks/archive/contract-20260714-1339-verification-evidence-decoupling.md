@@ -1,3 +1,9 @@
+> **Archived**: 2026-07-14 13:39
+> **Related Plan**: plans/archive/plan-20260714-0430-verification-evidence-decoupling.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260714-1339
+
 # Task Contract: verification-evidence-decoupling
 
 > **Status**: Fulfilled
