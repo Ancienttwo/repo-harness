@@ -1,27 +1,27 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-14T13:39:01+0800 -->
+<!-- updated_at: 2026-07-14T13:53:30+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-07-14T13:39:01+0800
-> **Source Branch**: codex/verification-evidence-decoupling
-> **Source Commit**: da73a667
+> **Status**: Active
+> **Updated At**: 2026-07-14T13:53:30+0800
+> **Source Branch**: codex/design-options-inception
+> **Source Commit**: 3df8738b
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: archive-workflow
+> **Reason**: manual
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: ManualClearedWithActiveWork
-- Active Plan: (none)
-- Plan Status: (none)
-- Next Task: inspect active worktree marker(s)
-- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
+- Status: Active
+- Active Plan: plans/plan-20260714-1353-design-options-proactive-choice.md
+- Plan Status: Approved
+- Next Task: DO-01: Author assets/reference-configs/design-options.md (everything above, including the worked example, ceiling guidance, and lineage delineation) and mirror to docs/reference-configs/design-options.md. Verification: assets<->docs content parity; bun src/cli/index.ts docs show design-options resolves; bun test parity suite green.
+- Clear Note: (none)
 
 ## Mainline Snapshot Reading
 
@@ -31,6 +31,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
+- .: plans/plan-20260714-1353-design-options-proactive-choice.md
+- .: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/design-options-inception
 - /Users/kito/Projects/repo-harness-wt-verifier-evidence-lifecycle-cutover: plans/plan-20260714-0421-verifier-evidence-lifecycle-cutover.md
 - /Users/kito/Projects/repo-harness-wt-verifier-evidence-lifecycle-cutover: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-verifier-evidence-lifecycle-cutover
 ## Active Sprint
@@ -46,27 +48,18 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`: status=completed, current_slice=completed-20260713-policy-seed, source_plan=plans/plan-20260712-2215-agent-fleet-specialists.md
 ## Handoff
 
-- Exact Next Step: Review/checks pass; finish and fast-forward merge this contract worktree. Command: repo-harness run contract-worktree finish
+- Exact Next Step: (none)
 
 ## Checks
 
-- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
+- status=(none), source=(none), file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 10 changed/untracked path(s)
+- Summary: 1 changed/untracked path(s)
 
 ```
- D plans/plan-20260714-0430-verification-evidence-decoupling.md
- D tasks/contracts/20260714-0430-verification-evidence-decoupling.contract.md
- D tasks/notes/20260714-0430-verification-evidence-decoupling.notes.md
- D tasks/reviews/20260714-0430-verification-evidence-decoupling.review.md
- M tasks/todos.md
-?? plans/archive/plan-20260714-0430-verification-evidence-decoupling.md
-?? tasks/archive/contract-20260714-1339-verification-evidence-decoupling.md
-?? tasks/archive/notes-20260714-1339-verification-evidence-decoupling.md
-?? tasks/archive/review-20260714-1339-verification-evidence-decoupling.md
-?? tasks/archive/todo-20260714-1339-verification-evidence-decoupling.md
+?? plans/plan-20260714-1353-design-options-proactive-choice.md
 ```
 
 ## Source Artifacts
