@@ -8,7 +8,7 @@
 > **Last Updated**: 2026-07-15 04:30
 > **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Subject SHA256**: sha256:3f7d2164daa93066ba8a634b9ae0e386c986883c6a946c9618b2a820f7a6ad2e
+> **Reviewed Subject SHA256**: sha256:1f43a81213fa0999401ebdadafdb78fd48492161c84af77f3bead77b5c7c518b
 > **Reviewed Subject Scope**: normalized-final-content
 > **Reviewed Target Revision**: 7ecb762dd0fce80bbf08866e46dd518428218d2c
 
@@ -18,7 +18,7 @@
 - Change type: bugfix
 - Intended files changed: shared source-checkout predicate, adoption planner/cleanup/setup-check consumers, regression tests, and workflow artifacts named by the contract
 - Actual files changed: intended contract scope only; review subject reports zero target-overlap paths
-- Commands passed: 48 focused tests; typecheck; full suite 1476 pass / 1 skip / 0 fail; deploy SQL, architecture, task, strict workflow, inspection, adoption dry-run, setup-check, CodeGraph, and diff checks
+- Commands passed: 48 focused tests; typecheck; full suite 1476 pass / 1 skip / 0 fail; deploy SQL, architecture, task, strict workflow, inspection, adoption dry-run, setup-check, CodeGraph, diff checks, and PR #78 GitHub CI 8/8
 - External acceptance: unavailable; maintainer instructed this workflow to skip `claude-review`, and no Claude pass is claimed
 - Residual risks: the published and PATH-visible `0.10.0` CLI remains old until a follow-up release/install refresh; the branch tarball proof validates the fixed installed-runtime shape without mutating the real global install
 - Reviewer action required: none for the maintainer-authorized merge waiver
@@ -37,12 +37,12 @@
 - Manual checks: source dry-run returned zero operations; setup check reported `repo.adopt-refresh=na`; incomplete name-only fixture was not classified as source; explicit self-host apply remains blocked
 - Supporting artifacts: `.ai/harness/runs/20260715-self-host-adopt-boundary-pre-fix.log`, plan, contract, notes, and this review
 - Implementation notes reviewed: yes
-- Run snapshot: full repository test 1476 pass / 1 skip / 0 fail in 501.78 seconds; CodeGraph 1.4.1 index up-to-date
+- Run snapshot: full repository test 1476 pass / 1 skip / 0 fail in 501.78 seconds; CodeGraph 1.4.1 index up-to-date; PR #78 first candidate CI 8/8 green
 
 ## Manual Check Evidence
 
 - [x] Evaluator review file recommends pass
-  - Evidence: Human Review Card verdict and top-level Recommendation are pass for subject `sha256:3f7d2164daa93066ba8a634b9ae0e386c986883c6a946c9618b2a820f7a6ad2e`.
+  - Evidence: Human Review Card verdict and top-level Recommendation are pass for subject `sha256:1f43a81213fa0999401ebdadafdb78fd48492161c84af77f3bead77b5c7c518b`.
 - [x] Source adopt dry-run planned zero operations
   - Evidence: `bun src/cli/index.ts adopt --repo . --dry-run --json` exited 0 with `summary.plannedTotal=0`, `operations=[]`, and warning `self-host-source-noop`.
 
@@ -54,7 +54,7 @@
 > **External Started**: not run
 > **External Completed**: not run
 > **Review Rubric Version**: 2
-> **Reviewed Subject SHA256**: sha256:3f7d2164daa93066ba8a634b9ae0e386c986883c6a946c9618b2a820f7a6ad2e
+> **Reviewed Subject SHA256**: sha256:1f43a81213fa0999401ebdadafdb78fd48492161c84af77f3bead77b5c7c518b
 > **Reviewed Subject Scope**: normalized-final-content
 > **Reviewed Target Revision**: 7ecb762dd0fce80bbf08866e46dd518428218d2c
 > **Benchmark Evidence SHA256**: unavailable

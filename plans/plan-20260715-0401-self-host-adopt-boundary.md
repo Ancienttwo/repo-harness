@@ -123,7 +123,7 @@ Introduce one structural source-checkout predicate shared by planner, cleanup, a
 - [x] Add failing regression coverage for installed-runtime/source-target separation and false-positive package names.
 - [x] Implement the shared structural source-checkout authority and route planner/setup-check through it.
 - [x] Verify direct dry-run returns zero operations, setup check emits no adopt action, focused tests/typecheck/workflow checks pass, and no source files are mutated by dry-run.
-- [ ] Commit, push, and require green GitHub CI.
+- [x] Commit, push, and require green GitHub CI.
 
 ## Verification Boundary
 
@@ -150,4 +150,4 @@ Revert the single source-checkout boundary commit; no migration or persistent da
 - [x] Add failing regression coverage for installed-runtime/source-target separation and false-positive package names.
 - [x] Implement the shared structural source-checkout authority and route planner/setup-check through it.
 - [x] Verify direct dry-run returns zero operations, setup check emits no adopt action, focused tests/typecheck/workflow checks pass, and no source files are mutated by dry-run.
-- [ ] Commit, push, and require green GitHub CI.
+- [x] Commit, push, and require green GitHub CI.

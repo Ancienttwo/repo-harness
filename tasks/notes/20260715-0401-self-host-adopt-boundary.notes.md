@@ -41,6 +41,7 @@
 - Required checks: deploy SQL ordering, architecture sync, task sync, strict workflow check, project inspection, typecheck, and `git diff --check` all passed.
 - Source runtime proof: `adopt --repo . --dry-run --json` returned `plannedTotal=0`; `setup check --target codex --check-updates --json` reported `repo.adopt-refresh=na` with no adopt action.
 - CodeGraph proof: local and global CLI version `1.4.1`; the worktree index was initialized, synchronized, and read back as `up-to-date`; Codex and Claude MCP configurations were both detected.
+- GitHub proof: PR #78 first candidate `6cac4211` passed both Test jobs and all six push/pull-request MCP matrix jobs (8/8 checks green).
 
 ## Promotion Filter
 
