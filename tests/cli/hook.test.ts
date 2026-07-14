@@ -126,6 +126,20 @@ function installAssetHooks(repoRoot: string): void {
   });
 }
 
+function writeActiveContract(repoRoot: string, stem = '20260714-0000-active-task'): void {
+  const planPath = `plans/plan-${stem}.md`;
+  const contractPath = `tasks/contracts/${stem}.contract.md`;
+  fs.mkdirSync(path.join(repoRoot, 'plans'), { recursive: true });
+  fs.mkdirSync(path.join(repoRoot, 'tasks/contracts'), { recursive: true });
+  fs.writeFileSync(path.join(repoRoot, planPath), '# Active Plan\n');
+  fs.writeFileSync(
+    path.join(repoRoot, contractPath),
+    '# Active Contract\n\n> **Status**: Active\n> **Workflow Profile**: standard\n',
+  );
+  fs.writeFileSync(path.join(repoRoot, '.ai/harness/active-plan'), `${planPath}\n`);
+  fs.writeFileSync(path.join(repoRoot, '.ai/harness/active-worktree'), `${repoRoot}\n`);
+}
+
 function readRoutingObservations(repoRoot: string): Record<string, unknown>[] {
   const state = JSON.parse(
     fs.readFileSync(path.join(repoRoot, '.ai/harness/delegation/latest.json'), 'utf-8'),
@@ -994,11 +1008,10 @@ describe('hook command (Phase 1B)', () => {
       expect(parsed.hookSpecificOutput.hookEventName).toBe('UserPromptSubmit');
       expect(parsed.hookSpecificOutput.additionalContext).toContain('[repo-harness:delegation]');
       expect(parsed.hookSpecificOutput.additionalContext).toContain('Spawn no more than 2 agents');
-      expect(parsed.hookSpecificOutput.additionalContext).toContain('authoritative execution brief');
-      expect(parsed.hookSpecificOutput.additionalContext).toContain('MUST NOT silently succeed');
-      expect(parsed.hookSpecificOutput.additionalContext).toContain(
-        'Execution boundary: implement exactly the Goal, In scope items, Allowed Paths, and Exit Criteria in this brief.',
-      );
+      expect(parsed.hookSpecificOutput.additionalContext).toContain('permission only');
+      expect(parsed.hookSpecificOutput.additionalContext).toContain('No active task contract was resolved');
+      expect(parsed.hookSpecificOutput.additionalContext).not.toContain('authoritative execution brief');
+      expect(parsed.hookSpecificOutput.additionalContext).not.toContain('Execution boundary: implement exactly');
 
       const state = JSON.parse(
         fs.readFileSync(path.join(repoRoot, '.ai/harness/delegation/latest.json'), 'utf-8'),
@@ -1016,7 +1029,7 @@ describe('hook command (Phase 1B)', () => {
     }
   });
 
-  test('CLI dispatcher injects bounded delegation context in policy auto mode without explicit trigger words', () => {
+  test('CLI dispatcher bounds policy auto mode to active execute or verify prompts', () => {
     // Isolate HOME so an absent (or future) ~/.repo-harness/config.json on the
     // real machine can never leak into this repo-policy-only scenario.
     const emptyHome = fs.realpathSync(
@@ -1039,12 +1052,59 @@ describe('hook command (Phase 1B)', () => {
           )}\n`,
         );
 
+        const idle = spawnSync(
+          process.execPath,
+          [CLI, 'hook', 'UserPromptSubmit', '--route', 'delegation'],
+          {
+            cwd: repoRoot,
+            input: JSON.stringify({ session_id: 'session-auto-idle', prompt: '继续' }),
+            encoding: 'utf-8',
+            env: { ...process.env, HOME: emptyHome, HOOK_HOST: 'codex', REPO_HARNESS_HOOK_CLI: HOOK_ENTRY },
+          },
+        );
+        expect(idle.status).toBe(0);
+        expect(idle.stdout).toBe('');
+        expect(fs.existsSync(path.join(repoRoot, '.ai/harness/delegation/latest.json'))).toBe(false);
+
+        fs.writeFileSync(
+          path.join(repoRoot, '.ai/harness/active-plan'),
+          'plans/plan-../../outside.md\n',
+        );
+        const invalidMarker = spawnSync(
+          process.execPath,
+          [CLI, 'hook', 'UserPromptSubmit', '--route', 'delegation'],
+          {
+            cwd: repoRoot,
+            input: JSON.stringify({ session_id: 'session-auto-invalid-marker', prompt: '继续' }),
+            encoding: 'utf-8',
+            env: { ...process.env, HOME: emptyHome, HOOK_HOST: 'codex', REPO_HARNESS_HOOK_CLI: HOOK_ENTRY },
+          },
+        );
+        expect(invalidMarker.status).toBe(0);
+        expect(invalidMarker.stdout).toBe('');
+
+        writeActiveContract(repoRoot);
+
+        const statusQuestion = spawnSync(
+          process.execPath,
+          [CLI, 'hook', 'UserPromptSubmit', '--route', 'delegation'],
+          {
+            cwd: repoRoot,
+            input: JSON.stringify({ session_id: 'session-auto-status', prompt: '为什么这个任务这么慢？' }),
+            encoding: 'utf-8',
+            env: { ...process.env, HOME: emptyHome, HOOK_HOST: 'codex', REPO_HARNESS_HOOK_CLI: HOOK_ENTRY },
+          },
+        );
+        expect(statusQuestion.status).toBe(0);
+        expect(statusQuestion.stdout).toBe('');
+        expect(fs.existsSync(path.join(repoRoot, '.ai/harness/delegation/latest.json'))).toBe(false);
+
         const auto = spawnSync(
           process.execPath,
           [CLI, 'hook', 'UserPromptSubmit', '--route', 'delegation'],
           {
             cwd: repoRoot,
-            input: JSON.stringify({ session_id: 'session-auto', prompt: 'implement the next sequential task' }),
+            input: JSON.stringify({ session_id: 'session-auto', prompt: '继续' }),
             encoding: 'utf-8',
             env: { ...process.env, HOME: emptyHome, HOOK_HOST: 'codex', REPO_HARNESS_HOOK_CLI: HOOK_ENTRY },
           },
@@ -1064,6 +1124,37 @@ describe('hook command (Phase 1B)', () => {
         expect(autoState.mode).toBe('auto');
         expect(autoState.trigger).toBe('auto-mode');
         expect(autoState.stop_fallback).toBe(false);
+        fs.rmSync(path.join(repoRoot, '.ai/harness/delegation'), { recursive: true, force: true });
+
+        const verify = spawnSync(
+          process.execPath,
+          [CLI, 'hook', 'UserPromptSubmit', '--route', 'delegation'],
+          {
+            cwd: repoRoot,
+            input: JSON.stringify({ session_id: 'session-auto-verify', prompt: '/check' }),
+            encoding: 'utf-8',
+            env: { ...process.env, HOME: emptyHome, HOOK_HOST: 'codex', REPO_HARNESS_HOOK_CLI: HOOK_ENTRY },
+          },
+        );
+        expect(verify.status).toBe(0);
+        expect(JSON.parse(verify.stdout).hookSpecificOutput.additionalContext).toContain('authoritative execution brief');
+        fs.rmSync(path.join(repoRoot, '.ai/harness/delegation'), { recursive: true, force: true });
+
+        const { REPO_HARNESS_HOOK_CLI: _ignoredHookCli, ...envWithoutHookCli } = process.env;
+        const runtimeDefault = spawnSync(
+          process.execPath,
+          [CLI, 'hook', 'UserPromptSubmit', '--route', 'delegation'],
+          {
+            cwd: repoRoot,
+            input: JSON.stringify({ session_id: 'session-auto-runtime-default', prompt: '/check' }),
+            encoding: 'utf-8',
+            env: { ...envWithoutHookCli, HOME: emptyHome, HOOK_HOST: 'codex' },
+          },
+        );
+        expect(runtimeDefault.status).toBe(0);
+        expect(JSON.parse(runtimeDefault.stdout).hookSpecificOutput.additionalContext).toContain(
+          'authoritative execution brief',
+        );
         fs.rmSync(path.join(repoRoot, '.ai/harness/delegation'), { recursive: true, force: true });
 
         const discussion = spawnSync(
@@ -1125,6 +1216,7 @@ describe('hook command (Phase 1B)', () => {
 
       withTempRepo({ optIn: true }, (repoRoot) => {
         installAssetHooks(repoRoot);
+        writeActiveContract(repoRoot);
 
         const policyPath = path.join(repoRoot, '.ai/harness/policy.json');
         const existingPolicy = fs.existsSync(policyPath)
@@ -1146,7 +1238,7 @@ describe('hook command (Phase 1B)', () => {
             cwd: repoRoot,
             input: JSON.stringify({
               session_id: 'session-global-auto',
-              prompt: 'implement the next sequential task',
+              prompt: '继续',
             }),
             encoding: 'utf-8',
             env: { ...process.env, HOME: home, HOOK_HOST: 'codex', REPO_HARNESS_HOOK_CLI: HOOK_ENTRY },

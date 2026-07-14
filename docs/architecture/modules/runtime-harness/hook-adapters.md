@@ -56,12 +56,16 @@ It reacts to explicit `/delegate`, `/parallel`, imperative subagent,
 multi-agent, or parallel-investigation language, excluding mechanism/design
 questions that only mention `spawn subagent(s)`. When no explicit trigger is
 present, `delegation.mode=auto` in global `~/.repo-harness/config.json` or repo
-policy is treated as standing user authorization for bounded delegation; the
-global value wins when it is exactly `auto` or `explicit`. The script writes
-ignored scoped runtime state under
-`.ai/harness/delegation/` with `latest.json` as the current pointer and emits
-`hookSpecificOutput.additionalContext`; `runtime.ts` forwards that stdout only for
-this route and only when the JSON is valid for `UserPromptSubmit`.
+policy is treated as standing permission only; the global value wins when it is
+exactly `auto` or `explicit`. Auto mode emits contract-bound context only when
+the active plan and matching Active/Ready/Executing contract both exist and
+`repo-harness-hook prompt-route` resolves the current prompt to execute or
+verify. Explicit delegation without that state emits permission-only context.
+The script writes scoped runtime state under `.ai/harness/delegation/` with
+`latest.json` as the current pointer and emits
+`hookSpecificOutput.additionalContext`; `runtime.ts` supplies the canonical
+prompt-route entrypoint and forwards stdout only for this route and only when
+the JSON is valid for `UserPromptSubmit`.
 
 Codex subagent lifecycle routes: `SubagentStart.context` runs
 `subagent-start-context.sh` after a subagent exists, marks explicit delegation
@@ -325,6 +329,19 @@ per-host implementation trees or loading non-hook command modules.
 - This changes route semantics only. It does not add a hook route, host adapter,
   dependency, persistence location, or new runtime boundary, so no architecture
   snapshot or rendered diagram is required.
+
+## 2026-07-14 Codex Auto Delegation Boundary Correction
+
+- Auto mode remains standing permission to delegate, but no longer emits the
+  full contract packet for every prompt. A valid active plan/contract and the
+  existing deterministic execute/verify prompt route are now required.
+- Explicit delegation without a contract remains available through a
+  permission-only packet scoped to the current user prompt. It cannot claim
+  contract authority or inject the contract execution boundary.
+- The route registry, host coverage, persistence path, and Claude adapter are
+  unchanged. `runtime.ts` only exposes the already-existing canonical
+  `prompt-route` entrypoint to the hook child, so no second classifier or new
+  dependency was introduced.
 
 ## 2026-07-13 Threshold Input Hardening (Phase C)
 

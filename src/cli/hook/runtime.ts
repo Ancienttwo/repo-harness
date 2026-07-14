@@ -421,7 +421,12 @@ export function runHook(opts: RunHookOptions): RunHookResult {
       cwd: repoRoot,
       stdio,
       input: opts.input,
-      env: { ...process.env, HOOK_REPO_ROOT: repoRoot },
+      env: {
+        ...process.env,
+        HOOK_REPO_ROOT: repoRoot,
+        REPO_HARNESS_HOOK_CLI: process.env.REPO_HARNESS_HOOK_CLI
+          ?? path.join(PACKAGE_ROOT, 'src', 'cli', 'hook-entry.ts'),
+      },
     });
     recordHookInvocation(repoRoot, {
       event: opts.event,

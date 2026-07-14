@@ -104,6 +104,9 @@ describe("Hook contracts", () => {
     expect(advisor).toContain(".ai\", \"harness\", \"delegation");
     expect(advisor).toContain("policyDelegation.mode");
     expect(advisor).toContain("auto-mode");
+    expect(advisor).toContain("permission only");
+    expect(advisor).toContain("prompt-route");
+    expect(advisor).toContain("activeContractPath");
 
     const start = read("assets/hooks/subagent-start-context.sh");
     expect(start).toContain("SubagentStart.context");
