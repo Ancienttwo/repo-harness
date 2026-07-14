@@ -737,6 +737,20 @@ exit 0
       mkdirSync(home, { recursive: true });
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
+      mkdirSync(join(home, '.repo-harness'), { recursive: true });
+      writeFileSync(join(home, '.repo-harness', 'install-state.json'), `${JSON.stringify({
+        protocol: 1,
+        profile: 'strict',
+        components: [
+          'cli', 'effective-state', 'scope-worktree-check-guards', 'handoff', 'host-adapters',
+          'adaptive-workflow', 'codegraph-conditional', 'agent-fleet', 'verifier',
+          'cross-model-acceptance', 'release-deployment-gates',
+        ],
+        transaction_id: 'existing-strict-install',
+        applied_at: '2026-07-14T00:00:00.000Z',
+        ownership_manifest: [],
+        previous: null,
+      })}\n`);
       writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.3.14; exit 0; fi\nexit 0\n`);
 
       const res = spawnSync(
@@ -765,6 +779,7 @@ exit 0
       expect(res.status).toBe(0);
       const result = JSON.parse(res.stdout);
       expect(readFileSync(bunLog, 'utf-8')).toContain('add -g repo-harness@latest');
+      expect(result.steps.find((step: { step: string }) => step.step === 'install agent fleet')?.status).toBe('ok');
       expect(result.steps.find((step: { step: string }) => step.step === 'configure brain root')?.status).toBe('skipped');
       expect(existsSync(join(home, '.repo-harness', 'config.json'))).toBe(false);
       expect(existsSync(join(repo, '.ai'))).toBe(false);
@@ -817,6 +832,58 @@ exit 0
         'spec=repo-harness@9.9.9',
       );
       expect(readFileSync(bunLog, 'utf-8')).toContain('add -g repo-harness@9.9.9');
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test('CLI update preserves a recorded product-planning profile', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-cli-update-planning-profile-'));
+    const home = join(tmp, 'home');
+    const repo = join(tmp, 'repo');
+    const fakeBin = join(tmp, 'bin');
+    try {
+      mkdirSync(join(home, '.repo-harness'), { recursive: true });
+      mkdirSync(repo, { recursive: true });
+      mkdirSync(fakeBin, { recursive: true });
+      writeFileSync(join(home, '.repo-harness', 'install-state.json'), `${JSON.stringify({
+        protocol: 1,
+        profile: 'product-planning',
+        components: [
+          'cli', 'effective-state', 'scope-worktree-check-guards', 'handoff', 'host-adapters',
+          'adaptive-workflow', 'codegraph-conditional', 'planning-integrations',
+        ],
+        transaction_id: 'existing-planning-install',
+        applied_at: '2026-07-14T00:00:00.000Z',
+        ownership_manifest: [],
+        previous: null,
+      })}\n`);
+      writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.3.14; fi\nexit 0\n');
+
+      const res = spawnSync(process.execPath, [
+        CLI,
+        'update',
+        '--no-cli',
+        '--no-sync-skill',
+        '--no-hooks',
+        '--no-external-skills',
+        '--no-codegraph',
+        '--json',
+      ], {
+        cwd: repo,
+        encoding: 'utf-8',
+        env: {
+          ...process.env,
+          HOME: home,
+          PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
+          REPO_HARNESS_BUN_EXECUTABLE: join(fakeBin, 'bun'),
+        },
+      });
+
+      expect(res.status).toBe(0);
+      const result = JSON.parse(res.stdout);
+      expect(result.steps.find((step: { step: string }) => step.step === 'configure brain root')?.status).toBe('ok');
+      expect(existsSync(join(home, '.repo-harness', 'config.json'))).toBe(true);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

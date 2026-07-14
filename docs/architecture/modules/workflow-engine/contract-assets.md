@@ -25,6 +25,9 @@ Authoritative files:
 - `scripts/ship-worktrees.sh`: PR push choke point and final receipt revalidation.
 - `assets/skills/merge-gate/`: semantic review protocol installed only on the declared local gatekeeper host.
 - `src/cli/commands/capability-context.ts`: one-way projection of registered capability context into controlled agent blocks.
+- `src/cli/commands/global-runtime.ts`: install/update entrypoint that preserves
+  the persisted install profile rather than creating a second CLI-default
+  authority.
 - `assets/templates/` and `.claude/templates/`: generated workflow document templates.
 - `assets/reference-configs/` and `docs/reference-configs/`: repo-local and installable reference config corpus.
 
@@ -55,6 +58,10 @@ Error paths:
   review, handoff, and resume freshness bind exact content fingerprints.
 - `.claude/.active-plan` is not a steady-state reader or writer. The only
   reader is the explicit `state migrate-legacy-active-plan` one-shot command.
+- Global update resolves its command environment, reads the installed-profile
+  authority, validates the exact profile-to-components projection, and only
+  then invokes the runtime projection. Invalid state stops before package,
+  adapter, skill, or hook mutation.
 
 ## P3 Decision
 
@@ -71,6 +78,12 @@ ignored effective-state cache cannot roll the version backward.
 At 10x generated repos, the first failure would be self-host behavior diverging
 from generated output. The smallest coherent guard is parity tests plus
 self-migration dry-run.
+
+The install profile remains one datum with one authored authority: `profile`.
+`components` is a deterministic drift-checked projection, while ownership is a
+separate concrete filesystem proof. This prevents contract/runtime updates from
+silently downgrading Strict installs or trusting component labels as deletion
+authority.
 
 ## 2026-07-14 Local Merge Gate Enforcement
 

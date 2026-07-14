@@ -36,6 +36,19 @@ All notable changes to this skill are documented here.
 
 ### Fixed
 
+- Preserved the recorded install profile during ordinary `repo-harness update`
+  instead of silently projecting `minimal`, and rejected persisted ownership
+  paths outside the exact managed-surface allowlist before profile-switch
+  deletion.
+- Made the packaged root Skill resolve detailed guidance through
+  `repo-harness docs show <id>` and added installed-tarball smoke coverage for
+  both referenced documents.
+- Hardened the unshipped coding MCP surface: setup now validates every grant
+  and fallible option before committing `read_write`; OAuth rate limits use
+  direct-socket, canonical-route identities with bounded buckets; dynamic
+  clients have fixed expiry/capacity; and the unreachable Bun PTY schema and
+  `node-pty` dependency were removed while pipe stdin, polling, SIGINT, and
+  process-tree cleanup remain supported.
 - Removed the external `gbrain` tooling dependency from setup/adoption policy,
   install choices, readiness detection, generated guidance, and migration
   routing. Brain-vault export remains an explicit operator command, while

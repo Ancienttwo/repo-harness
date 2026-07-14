@@ -1,6 +1,6 @@
 # Plan: 3P CLI/Skill/MCP boundary optimization
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260714-2128
 > **Slug**: 3p-cli-skill-mcp-boundary
 > **Planning Source**: repo-harness-plan

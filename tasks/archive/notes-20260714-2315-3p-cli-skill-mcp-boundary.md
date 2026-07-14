@@ -1,3 +1,9 @@
+> **Archived**: 2026-07-14 23:15
+> **Related Plan**: plans/archive/plan-20260714-2128-3p-cli-skill-mcp-boundary.md
+> **Outcome**: Superseded
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260714-2315
+
 # Implementation Notes: 3p-cli-skill-mcp-boundary
 
 > **Status**: Active

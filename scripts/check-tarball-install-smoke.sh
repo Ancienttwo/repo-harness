@@ -62,6 +62,13 @@ if [[ "$VERSION" != "$PACKAGE_VERSION" ]]; then
   exit 1
 fi
 
+for doc_id in harness-overview agentic-development-flow; do
+  if ! "$CLI" docs show "$doc_id" >/dev/null; then
+    echo "[tarball-smoke] ERROR: packaged docs registry cannot resolve $doc_id" >&2
+    exit 1
+  fi
+done
+
 (cd "$TARGET_REPO" && "$CLI" status --json >/dev/null)
 "$CLI" adopt --repo "$TARGET_REPO" --dry-run --json >"$TMP_DIR/adopt-plan.json"
 bun - "$TMP_DIR/adopt-plan.json" <<'JS_EOF'

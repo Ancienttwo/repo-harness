@@ -44,6 +44,19 @@ export interface RepoHarnessRegisterResult {
   readonly reason?: string;
 }
 
+export interface RepoHarnessRegistryBatchEntry {
+  readonly repoRoot: string;
+  readonly source: RepoHarnessRegistrySource;
+  readonly accessMode?: RepoHarnessAccessMode;
+}
+
+export interface RepoHarnessRegistryBatchResult {
+  readonly registryPath: string;
+  readonly changed: boolean;
+  readonly authorizationRevision: number;
+  readonly repos: readonly RepoHarnessRegisteredRepo[];
+}
+
 function repoHarnessHome(env: NodeJS.ProcessEnv = process.env): string {
   return resolve(env.REPO_HARNESS_HOME ?? join(env.HOME ?? env.USERPROFILE ?? homedir(), ".repo-harness"));
 }
@@ -244,6 +257,60 @@ export function bumpRepoHarnessAuthorizationRevision(env: NodeJS.ProcessEnv = pr
     const next = registry.authorizationRevision + 1;
     writeRegistryFile(path, registry.repos, next);
     return next;
+  });
+}
+
+export function applyRepoHarnessRegistryBatch(
+  entries: readonly RepoHarnessRegistryBatchEntry[],
+  opts: {
+    readonly env?: NodeJS.ProcessEnv;
+    readonly requireAdopted?: boolean;
+    readonly bumpAuthorizationRevision?: boolean;
+    readonly beforeCommit?: (authorizationRevision: number) => void;
+    readonly onCommitFailure?: () => void;
+  } = {},
+): RepoHarnessRegistryBatchResult {
+  const registryPath = repoHarnessRegisteredReposPath(opts.env);
+  const canonicalEntries = entries.map((entry) => ({ ...entry, repoRoot: canonicalRepoPath(entry.repoRoot) }));
+  return withRegistryMutationLock(registryPath, () => {
+    if (opts.requireAdopted !== false) {
+      const unadopted = canonicalEntries.find((entry) => !isRepoHarnessAdoptedPath(entry.repoRoot));
+      if (unadopted) throw new Error(`repo is not repo-harness adopted: ${unadopted.repoRoot}`);
+    }
+    const registry = readRegistryFile(registryPath);
+    const now = new Date().toISOString();
+    let repos = dedupeRepos(registry.repos);
+    let accessChanged = false;
+    for (const entry of canonicalEntries) {
+      const previous = repos.find((repo) => repo.path === entry.repoRoot);
+      const accessMode = entry.accessMode ?? previous?.accessMode ?? 'read_only';
+      if (accessMode !== (previous?.accessMode ?? 'read_only')) accessChanged = true;
+      const next: RepoHarnessRegisteredRepo = {
+        id: previous?.id ?? repoHarnessRepoIdFor(entry.repoRoot),
+        path: entry.repoRoot,
+        accessMode,
+        source: entry.source,
+        registeredAt: previous?.registeredAt ?? now,
+        lastSeenAt: now,
+      };
+      repos = previous
+        ? repos.map((repo) => repo.path === entry.repoRoot ? next : repo)
+        : [...repos, next];
+    }
+    repos = dedupeRepos(repos);
+    const revisionChanged = accessChanged || opts.bumpAuthorizationRevision === true;
+    const authorizationRevision = registry.authorizationRevision + (revisionChanged ? 1 : 0);
+    const changed = JSON.stringify(repos) !== JSON.stringify(dedupeRepos(registry.repos)) || revisionChanged;
+    let prepared = false;
+    try {
+      opts.beforeCommit?.(authorizationRevision);
+      prepared = true;
+      if (changed) writeRegistryFile(registryPath, repos, authorizationRevision);
+    } catch (error) {
+      if (prepared) opts.onCommitFailure?.();
+      throw error;
+    }
+    return { registryPath, changed, authorizationRevision, repos };
   });
 }
 

@@ -12,8 +12,9 @@ operator-managed HTTPS tunnel.
 - `setup.ts`, `auth.ts`, and `repo-registry.ts` own ignored v3 config, stable
   repo ids, access modes, and the monotonically increasing authorization
   revision.
-- `oauth.ts` issues an opaque identity for each coding authorization grant and
-  preserves it across refresh-token rotation.
+- `oauth.ts` issues an opaque identity for each coding authorization grant,
+  preserves it across refresh-token rotation, and bounds dynamic clients by
+  capacity and expiry.
 - `transports/http.ts` owns Streamable HTTP, Host/CORS, OAuth discovery,
   DCR/PKCE, redirect allowlists, transport-session lifecycle, and the bounded
   authorization-runtime registry.
@@ -23,7 +24,7 @@ operator-managed HTTPS tunnel.
   worktrees, instruction discovery, and local cleanup metadata.
 - `coding-tools.ts` owns workspace-relative read and rollback-capable guarded
   file mutation plus mutation/audit/index evidence.
-- `process-sessions.ts` owns local-user Bash/optional PTY sessions, output bounds,
+- `process-sessions.ts` owns pipe-only local-user Bash sessions, output bounds,
   process-tree cleanup, environment scrubbing, and ownership isolation.
 - CodeGraph remains an optional index adapter. The filesystem and repo registry
   remain authorization and content truth.
@@ -51,11 +52,14 @@ repo-grant change, coding disable, 30-minute authorization idle expiry, process
 timeout, or server shutdown. Managed worktrees remain for local inspection and
 require a clean, merged state before local cleanup.
 
-Error paths fail closed: missing grant, stale OAuth revision, invalid Host,
+OAuth request limits use the direct socket plus canonical route as identity;
+forwarded headers never mint new buckets. Error paths fail closed: missing
+grant, stale OAuth revision, dynamic-client or rate-bucket capacity, invalid Host,
 wildcard/foreign Origin, unregistered redirect, traversal, secret path,
-symlink, stale file revision, process ownership mismatch, environment secret,
-and unavailable PTY return explicit errors without changing profile or falling
-back to a weaker execution mode.
+symlink, stale file revision, process ownership mismatch, and environment
+secrets return explicit errors without changing profile or falling back to a
+weaker execution mode. PTY and terminal resize are not public contracts under
+the Bun runtime; stdin, polling, SIGINT, and process-tree cleanup remain supported.
 
 ## Semantic Diagram
 

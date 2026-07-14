@@ -18,8 +18,8 @@ Treat that JSON as the state authority. Read Plan, Contract, checks, handoff, ar
 
 ## Actions
 
-1. **setup** — install, adopt, migrate, repair, or scaffold the harness. Inspect first with `repo-harness adopt --repo . --dry-run`; load `references/harness-overview.md` only when setup detail is needed.
-2. **plan** — create or capture a decision-complete plan. Use `repo-harness-plan`; load `docs/reference-configs/agentic-development-flow.md` for promotion boundaries.
+1. **setup** — install, adopt, migrate, repair, or scaffold the harness. Inspect first with `repo-harness adopt --repo . --dry-run`; run `repo-harness docs show harness-overview` when setup detail is needed.
+2. **plan** — create or capture a decision-complete plan. Use `repo-harness-plan`; run `repo-harness docs show agentic-development-flow` for promotion boundaries.
 3. **execute** — continue the active task using its resolved profile and allowed paths. Lite uses brief → edit → targeted test; Standard uses plan → edit → verify → at most one review; Strict follows the Contract/worktree/checks/external-acceptance chain.
 4. **verify** — run targeted tests and the profile-required gates. Use `repo-harness-check`; never infer provider-owned evidence.
 5. **handoff** — refresh compact recovery state with `repo-harness-handoff`; inject references and deltas, not full artifact copies.

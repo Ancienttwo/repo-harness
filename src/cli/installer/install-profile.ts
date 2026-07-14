@@ -641,28 +641,83 @@ export function readInstalledProfile(env: NodeJS.ProcessEnv = process.env): Inst
   if (!Array.isArray(parsed.ownership_manifest)) {
     throw new Error(`installed profile state has no ownership manifest; rerun repo-harness install --profile <profile>: ${path}`);
   }
-  const legacyManifest = parsed.ownership_manifest as unknown as Array<Record<string, unknown>>;
-  if (legacyManifest.every((entry) => (
+  if (!Array.isArray(parsed.components)) {
+    throw new Error(`installed profile state has invalid components; rerun repo-harness install --profile <profile>: ${path}`);
+  }
+  if (typeof parsed.transaction_id !== 'string' || typeof parsed.applied_at !== 'string') {
+    throw new Error(`installed profile state has invalid metadata; rerun repo-harness install --profile <profile>: ${path}`);
+  }
+  const isLegacyManifest = (manifest: readonly unknown[]): boolean => manifest.length > 0 && manifest.every((rawEntry) => {
+    const entry = rawEntry as Record<string, unknown>;
+    return (
     typeof entry.component === 'string'
     && entry.authority === 'repo-harness-install-transaction'
     && entry.removal === 'managed-surfaces-only'
     && entry.path === undefined
-  ))) {
-    // One-shot migration: old component labels never proved filesystem
-    // ownership. Preserve the profile selection but claim no managed surface;
-    // the next successful sync preflights the host and writes concrete proofs.
-    return { ...parsed, ownership_manifest: [] };
-  }
-  if (parsed.ownership_manifest.some((surface) => (
+    );
+  });
+  const invalidComponents = (profile: InstallProfile, components: readonly InstallComponent[]): boolean => {
+    const expected = PROFILE_COMPONENTS[profile];
+    return components.length !== expected.length
+      || components.some((component, index) => component !== expected[index]);
+  };
+  const allowedPaths = new Set(installProfileHostMutationPaths(env));
+  const invalidSurface = (surface: ManagedInstallSurface): boolean => (
     !Array.isArray(surface.components)
+    || surface.components.some((component: unknown) => !ALL_COMPONENTS.includes(component as InstallComponent))
     || surface.authority !== 'repo-harness-install-transaction'
     || surface.removal !== 'managed-surfaces-only'
     || typeof surface.path !== 'string'
+    || !allowedPaths.has(surface.path)
     || !['directory-copy', 'symlink', 'managed-file'].includes(surface.type)
-  ))) {
+    || (surface.content_hash !== null && typeof surface.content_hash !== 'string')
+    || (surface.managed_marker !== null && typeof surface.managed_marker !== 'string')
+    || (surface.symlink_target !== null && typeof surface.symlink_target !== 'string')
+    || (surface.type === 'symlink'
+      ? surface.symlink_target === null || surface.content_hash !== null || surface.managed_marker !== null
+      : surface.symlink_target !== null || surface.content_hash === null || surface.managed_marker === null)
+  );
+  const normalizedPrevious = (() => {
+    if (parsed.previous === null) return null;
+    const previous = parsed.previous;
+    if (
+      typeof previous !== 'object'
+      || Array.isArray(previous)
+      || previous.protocol !== 1
+      || !INSTALL_PROFILES.includes(previous.profile)
+      || !Array.isArray(previous.components)
+      || typeof previous.transaction_id !== 'string'
+      || typeof previous.applied_at !== 'string'
+      || !Array.isArray(previous.ownership_manifest)
+    ) {
+      throw new Error(`installed profile state has invalid previous state; rerun repo-harness install --profile <profile>: ${path}`);
+    }
+    if (isLegacyManifest(previous.ownership_manifest)) {
+      return { ...previous, components: PROFILE_COMPONENTS[previous.profile], ownership_manifest: [] };
+    }
+    if (invalidComponents(previous.profile, previous.components) || previous.ownership_manifest.some(invalidSurface)) {
+      throw new Error(`installed profile state has invalid previous state; rerun repo-harness install --profile <profile>: ${path}`);
+    }
+    return previous;
+  })();
+  if (isLegacyManifest(parsed.ownership_manifest)) {
+    // One-shot migration: old component labels never proved filesystem
+    // ownership. Preserve the validated profile history but claim no managed
+    // surface; the next successful sync writes concrete ownership proofs.
+    return {
+      ...parsed,
+      components: PROFILE_COMPONENTS[parsed.profile],
+      ownership_manifest: [],
+      previous: normalizedPrevious,
+    };
+  }
+  if (invalidComponents(parsed.profile, parsed.components)) {
+    throw new Error(`installed profile state components do not match profile ${parsed.profile}: ${path}`);
+  }
+  if (parsed.ownership_manifest.some(invalidSurface)) {
     throw new Error(`installed profile state has an invalid ownership surface; rerun repo-harness install --profile <profile>: ${path}`);
   }
-  return parsed;
+  return { ...parsed, previous: normalizedPrevious };
 }
 
 function existing(paths: readonly string[]): string[] {
