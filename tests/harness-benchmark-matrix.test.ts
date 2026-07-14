@@ -78,7 +78,14 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
     expect(Date.now() - started).toBeLessThan(2000);
     const childPid = Number(result.stdout.trim());
     expect(Number.isInteger(childPid)).toBe(true);
-    expect(() => process.kill(childPid, 0)).toThrow();
+    const childState = Bun.spawnSync(['ps', '-o', 'stat=', '-p', String(childPid)], {
+      stdout: 'pipe', stderr: 'pipe',
+    });
+    const state = childState.exitCode === 0 ? childState.stdout.toString().trim() : '';
+    // Linux can retain a killed descendant as a non-runnable zombie until PID
+    // 1 reaps it. A zombie is terminated even though kill(pid, 0) still sees
+    // the process-table entry; any runnable/sleeping descendant is a failure.
+    expect(state === '' || state.startsWith('Z')).toBe(true);
   });
 
   test('final-content detection includes provider commits made after the arm baseline', () => {
@@ -112,7 +119,7 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
     const git = (cwd: string, ...args: string[]) => Bun.spawnSync(['git', ...args], { cwd, stdout: 'pipe', stderr: 'pipe' });
     try {
       mkdirSync(source);
-      expect(git(source, 'init', '-q').exitCode).toBe(0);
+      expect(git(source, 'init', '-q', '--initial-branch=source-seed').exitCode).toBe(0);
       expect(git(source, 'config', 'user.name', 'Benchmark Test').exitCode).toBe(0);
       expect(git(source, 'config', 'user.email', 'benchmark@example.com').exitCode).toBe(0);
       writeFileSync(join(source, 'seed.txt'), 'seed\n');
@@ -122,6 +129,7 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
       cloneImmutableWorkspaceBase(source, target);
       const armOrigin = join(dir, 'origin.git');
       expect(git(target, 'remote', 'get-url', 'origin').stdout.toString().trim()).toBe(armOrigin);
+      expect(git(target, 'branch', '--show-current').stdout.toString().trim()).toBe('main');
       const object = git(source, 'rev-parse', 'HEAD:seed.txt').stdout.toString().trim();
       expect(statSync(join(source, '.git/objects', object.slice(0, 2), object.slice(2))).ino)
         .not.toBe(statSync(join(target, '.git/objects', object.slice(0, 2), object.slice(2))).ino);
@@ -157,7 +165,7 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
     const git = (cwd: string, ...args: string[]) => Bun.spawnSync(['git', ...args], { cwd, stdout: 'pipe', stderr: 'pipe' });
     try {
       mkdirSync(primary);
-      expect(git(primary, 'init', '-q').exitCode).toBe(0);
+      expect(git(primary, 'init', '-q', '--initial-branch=source-seed').exitCode).toBe(0);
       expect(git(primary, 'config', 'user.name', 'Benchmark Test').exitCode).toBe(0);
       expect(git(primary, 'config', 'user.email', 'benchmark@example.com').exitCode).toBe(0);
       writeFileSync(join(primary, 'seed.txt'), 'seed\n');

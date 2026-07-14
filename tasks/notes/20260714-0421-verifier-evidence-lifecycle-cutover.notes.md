@@ -4,7 +4,7 @@
 > **Plan**: plans/plan-20260714-0421-verifier-evidence-lifecycle-cutover.md
 > **Contract**: tasks/contracts/20260714-0421-verifier-evidence-lifecycle-cutover.contract.md
 > **Review**: tasks/reviews/20260714-0421-verifier-evidence-lifecycle-cutover.review.md
-> **Last Updated**: 2026-07-14 10:04
+> **Last Updated**: 2026-07-14 17:36
 > **Lifecycle**: notes
 
 ## Design Decisions
@@ -59,6 +59,8 @@
 - Seventh producer attempt passed 25/27 arms, including Strict small bug, ordinary feature, database migration, and all Adaptive scenarios. `strict-harness/cross-session-recovery` failed because `.ai/harness/handoff/resume.md` is intentionally ignored runtime state: it existed in the private primary before `git worktree add`, but could not be projected into the linked workspace from a commit. The provider correctly refused to invent a missing action; fail-fast then terminated the still-running Strict cross-capability sibling, whose focused grader had already passed. The overlay now rematerializes the resume projection inside the linked workspace after worktree creation, and regression asserts the exact runtime file is present there.
 - Final producer run `ad5ada9c-3ba2-4ddb-84eb-a621238ab3ad` passed all 27/27 arms against benchmark subject `sha256:afade5953018778733f3395cb8f22fa59365f9938db8393ea984f285afd9d232`. The validator reports authoritative=true, profile_base_count=3, arm_count=27, and report evidence `sha256:74ba0d3ee95222cf80f32cc5ca5ece651380c8dbaa41f23551d38eab22b91353`. Summed provider duration was 2,572,558 ms; the two-worker producer completed in roughly 26 minutes, below the fixed 50-minute budget.
 - Canonical external acceptance remains unavailable. `claude-review` passed its binary preflight and returned one normalized-subject chunk; its initial P1/P2 objections were both withdrawn after the approved no-manual-override/content-subject constraints were supplied, ending `Recommendation: pass`. However, full diff, three 49–64 KB authority chunks, contract-driven source inspection, and 9 KB single-file review all reached the skill's 330/240/120-second deadlines with no output. Because the benchmark/verifier/acceptance chunks did not produce verdicts, they are not recorded as pass and the final closeout gate remains blocked rather than fabricating acceptance.
+- PR integration with current `main` exposed two Linux CI portability assumptions in benchmark fixtures: disposable clones inherited the host's initial branch name while product code pushed/linked literal `main`, and a killed Linux descendant could remain briefly as a non-runnable zombie visible to `kill(pid, 0)`. The producer now establishes one canonical arm-local `main` from `HEAD`, creates the Strict linked arm from `HEAD`, and the regression explicitly starts from `source-seed`. The timeout regression still rejects any runnable/sleeping descendant while accepting only an absent process-table entry or `Z` state. Focused 60-test integration plus typecheck pass locally.
+- The maintainer explicitly instructed this PR acceptance to skip `claude-review` after both Fable and direct Claude attempts reported the provider session limit. This is recorded as an operator merge waiver only; it is not written as canonical external acceptance, does not change the fail-closed parser, and does not turn the pending review into a pass.
 
 ## Promotion Filter
 

@@ -580,12 +580,15 @@ export function cloneImmutableWorkspaceBase(source: string, target: string): voi
   run('git', ['clone', '--local', '--no-hardlinks', '--quiet', source, target], dirname(target));
   const armOrigin = join(dirname(target), 'origin.git');
   run('git', ['init', '--bare', '--quiet', armOrigin], dirname(target));
+  // Every disposable arm has one canonical integration branch regardless of
+  // the operator's init.defaultBranch or the source checkout's branch name.
+  run('git', ['switch', '--quiet', '--force-create', 'main', 'HEAD'], target);
   run('git', ['remote', 'set-url', 'origin', armOrigin], target);
-  run('git', ['push', '--quiet', '--set-upstream', 'origin', 'main'], target);
+  run('git', ['push', '--quiet', '--set-upstream', 'origin', 'HEAD:refs/heads/main'], target);
 }
 
 export function addLinkedArmWorkspace(primary: string, target: string): void {
-  run('git', ['worktree', 'add', '--quiet', '-b', 'codex/benchmark', target, 'main'], primary);
+  run('git', ['worktree', 'add', '--quiet', '-b', 'codex/benchmark', target, 'HEAD'], primary);
 }
 
 function createRunOverlay(base: PreparedProfileBase, layout: BenchmarkRunLayout, scenario: HarnessScenario): void {
