@@ -1,27 +1,27 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-14T16:15:12+0800 -->
+<!-- updated_at: 2026-07-14T18:25:23+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: Active
-> **Updated At**: 2026-07-14T16:15:12+0800
-> **Source Branch**: main
-> **Source Commit**: 280950f8
+> **Status**: ManualClearedWithActiveWork
+> **Updated At**: 2026-07-14T18:25:23+0800
+> **Source Branch**: codex/ux-feature-guardrail
+> **Source Commit**: cb8bd79b
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: manual
+> **Reason**: archive-workflow
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: Active
+- Status: ManualClearedWithActiveWork
 - Active Plan: (none)
 - Plan Status: (none)
 - Next Task: inspect active worktree marker(s)
-- Clear Note: (none)
+- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
 
 ## Mainline Snapshot Reading
 
@@ -31,6 +31,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
+- /Users/kito/Projects/repo-harness-wt-local-gatekeeper-enforcement: plans/plan-20260714-1713-merge-gate-enforcement.md
+- /Users/kito/Projects/repo-harness-wt-local-gatekeeper-enforcement: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-local-gatekeeper-enforcement
 - /Users/kito/Projects/repo-harness-wt-verifier-evidence-lifecycle-cutover: plans/plan-20260714-0421-verifier-evidence-lifecycle-cutover.md
 - /Users/kito/Projects/repo-harness-wt-verifier-evidence-lifecycle-cutover: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-verifier-evidence-lifecycle-cutover
 ## Active Sprint
@@ -50,20 +52,34 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Checks
 
-- status=(none), source=(none), exit_code=(none), file=.ai/harness/checks/latest.json
+- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 7 changed/untracked path(s)
+- Summary: 21 changed/untracked path(s)
 
 ```
- M .claude/agents/gatekeeper.md
- M .codex/agents/gatekeeper.toml
- M agents/fleet/gatekeeper.md
- M assets/templates/helpers/install-agent-fleet.sh
- M scripts/install-agent-fleet.sh
+ M .ai/hooks/.projection.json
+ M .ai/hooks/prompt-guard.sh
+ M .claude/templates/design-brief.template.md
+ M assets/hooks/prompt-guard.sh
+ M assets/reference-configs/agentic-development-flow.md
+ M assets/skill-commands/repo-harness-prd/SKILL.md
+ M assets/templates/design-brief.template.md
+ M assets/templates/helpers/ensure-task-workflow.sh
+ M docs/reference-configs/agentic-development-flow.md
+ M scripts/ensure-task-workflow.sh
+ M src/core/adoption/standard-plan.ts
  M tasks/current.md
- M tests/install-agent-fleet.test.ts
+ M tasks/todos.md
+?? assets/reference-configs/ux-feature-guard.md
+?? docs/reference-configs/ux-feature-guard.md
+?? plans/archive/plan-20260714-1710-ux-feature-guardrail.md
+?? tasks/archive/contract-20260714-1825-ux-feature-guardrail.md
+?? tasks/archive/notes-20260714-1825-ux-feature-guardrail.md
+?? tasks/archive/review-20260714-1825-ux-feature-guardrail.md
+?? tasks/archive/todo-20260714-1825-ux-feature-guardrail.md
+?? tests/ux-feature-guardrail.test.ts
 ```
 
 ## Source Artifacts

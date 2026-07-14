@@ -1,7 +1,13 @@
+> **Archived**: 2026-07-14 18:25
+> **Related Plan**: plans/archive/plan-20260714-1710-ux-feature-guardrail.md
+> **Outcome**: Completed
+> **Source Plan**: (none)
+> **Parent Run ID**: run-20260714-1825
+
 # Deferred Goal Ledger
 
 > **Status**: Backlog
-> **Updated**: (archive-workflow)
+> **Updated**: 2026-07-14 17:10
 > **Scope**: Medium/long-term goals deferred from active plan execution
 
 Current plan tasks live in the active plan's `## Task Breakdown`.
