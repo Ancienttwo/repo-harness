@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-15T02:50:46+0800 -->
+<!-- updated_at: 2026-07-15T03:52:02+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Idle
-> **Updated At**: 2026-07-15T02:50:46+0800
+> **Updated At**: 2026-07-15T03:52:02+0800
 > **Source Branch**: main
-> **Source Commit**: 9d444849
+> **Source Commit**: 3eda8007
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: 0.10.0-release-complete
+> **Reason**: codegraph-1.4.1-refresh
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -54,13 +54,11 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 4 changed/untracked path(s)
+- Summary: 2 changed/untracked path(s)
 
 ```
- M deploy/release-checklists/260714-repo-harness-0.10.0.md
- M plans/plan-20260714-2318-repo-harness-0-10-0-release-blockers.md
- M tasks/notes/20260714-2318-repo-harness-0-10-0-release-blockers.notes.md
- M tasks/reviews/20260714-2318-repo-harness-0-10-0-release-blockers.review.md
+ M bun.lock
+ M package.json
 ```
 
 ## Source Artifacts
