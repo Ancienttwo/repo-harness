@@ -109,10 +109,12 @@ self-migration dry-run.
 ## 2026-07-11 Archive Evidence Gate Closeout
 
 - `archive-workflow.sh` is the completion archive authority. `Completed` now
-  requires the linked contract to be `Fulfilled`, the review to recommend
-  `pass`, current `verify-sprint` structured evidence, passing external
-  acceptance or its explicit manual override, and the architecture freshness
-  helper to succeed before any workflow artifact moves.
+  requires a verified `Active` or `Fulfilled` linked contract, the review to
+  recommend `pass`, current `verify-sprint` structured evidence, canonical
+  external acceptance `pass`, and the architecture freshness helper to succeed
+  before any workflow artifact moves. After all gates pass, archive owns the
+  `Active -> Fulfilled` transition so verifier/reviewer content cannot be made
+  stale by a pre-archive status mutation.
 - `Abandoned` and `Superseded` remain non-completion outcomes and preserve the
   complete plan and lifecycle artifact bodies. They do not synthesize passing
   evidence.
@@ -128,6 +130,17 @@ self-migration dry-run.
 - These gates reuse the existing workflow-state, verify-sprint, architecture
   queue, and freshness authorities. No new dependency or compatibility parser
   was added.
+
+## 2026-07-14 Verification Asset Cutover
+
+- The installable helper inventory now includes the bounded-command runner and
+  benchmark evidence validator alongside `verify-contract.sh` and
+  `verify-sprint.sh`; self-host and product copies remain byte projections.
+- Generated contract/review templates emit only canonical completion and Rubric
+  v2 subject fields. The retired manual-override, Human Review Card fallback,
+  ancestry fingerprint, and report-v1 reader are removed in the same package.
+- Report/check projections use one benchmark evidence shape:
+  `status`, `report_sha256`, and `benchmark_subject_sha256`.
 
 ## 2026-07-13 Deploy SQL Policy Authority
 

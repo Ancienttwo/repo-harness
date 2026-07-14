@@ -473,7 +473,7 @@ workflow_source_authority_call() {
 # Source-authority verification must use the same checkout's hook CLI for every
 # freshness lookup. Each caller below runs in command substitution, so contract
 # commands and fixture subprocesses never inherit the temporary HOOK_REPO_ROOT.
-implementation_fingerprint="$(workflow_source_authority_call workflow_current_review_fingerprint_value 2>/dev/null || true)"
+review_subject_sha256="$(workflow_source_authority_call workflow_current_review_subject_value 2>/dev/null || true)"
 changed_files=()
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   while IFS= read -r changed_file; do
@@ -488,12 +488,12 @@ if command -v jq >/dev/null 2>&1; then
   allowed_paths_status="$(printf '%s' "$allowed_paths_check" | jq -r '.status // "unavailable"' 2>/dev/null || printf 'unavailable')"
 fi
 
-contract_command="repo-harness run verify-contract --contract $contract_file --strict --report-file <temp>"
+contract_command="repo-harness run verify-contract --contract $contract_file --strict --read-only --report-file <temp>"
 if [[ -f "$helper_dir/prepare-codex-handoff.sh" && ( -f ".ai/harness/handoff/current.md" || -f ".ai/harness/handoff/resume.md" ) ]]; then
   bash "$helper_dir/prepare-codex-handoff.sh" --reason "repo-harness-verify-sprint" >/dev/null || true
 fi
 set +e
-contract_output="$(bash "$helper_dir/verify-contract.sh" --contract "$contract_file" --strict --report-file "$contract_report" 2>&1)"
+contract_output="$(bash "$helper_dir/verify-contract.sh" --contract "$contract_file" --strict --read-only --report-file "$contract_report" 2>&1)"
 contract_exit=$?
 set -e
 
@@ -502,10 +502,12 @@ if [[ -n "$contract_output" ]]; then
 fi
 
 benchmark_evidence_fingerprint=""
+benchmark_subject_sha256=""
 benchmark_evidence_status="not_applicable"
 if declare -F workflow_benchmark_evidence_fingerprint >/dev/null 2>&1; then
   benchmark_evidence_fingerprint="$(workflow_benchmark_evidence_fingerprint 2>/dev/null || true)"
-  if [[ -n "$benchmark_evidence_fingerprint" ]]; then
+  benchmark_subject_sha256="$(workflow_benchmark_subject_sha256 2>/dev/null || true)"
+  if [[ -n "$benchmark_evidence_fingerprint" && -n "$benchmark_subject_sha256" ]]; then
     benchmark_evidence_status="present"
   elif [[ -e "evals/harness/reports/profile-comparison.json" || -e "evals/harness/reports/profile-comparison.md" ]]; then
     benchmark_evidence_status="invalid"
@@ -516,7 +518,6 @@ fi
 review_status="fail"
 review_message="Task review recommends pass and Human Review Card verdict is pass."
 review_card_verdict=""
-review_card_external=""
 review_card_change_type=""
 review_card_rollback=""
 if [[ -z "$review_file" || ! -f "$review_file" ]]; then
@@ -524,7 +525,6 @@ if [[ -z "$review_file" || ! -f "$review_file" ]]; then
   echo "Missing task review file" >&2
 else
   review_card_verdict="$(normalize_status_token "$(review_card_field "$review_file" "Verdict" || true)")"
-  review_card_external="$(review_card_field "$review_file" "External acceptance" || true)"
   review_card_change_type="$(normalize_status_token "$(review_card_field "$review_file" "Change type" || true)")"
   review_card_rollback="$(review_card_field "$review_file" "Rollback" || true)"
 fi
@@ -558,16 +558,10 @@ if declare -F workflow_external_acceptance_status >/dev/null 2>&1; then
   external_row="$(workflow_source_authority_call workflow_external_acceptance_status "$review_file")"
   IFS=$'\t' read -r external_status external_reviewer external_source external_message <<< "$external_row"
 fi
-# Canonical external acceptance is the sole authority. When it is missing,
-# unavailable, or the helper is not declared, external_status stays at its
-# fail-closed default above -- the Human Review Card's "External acceptance"
-# field is a display projection (still reported in the trace as
-# review_card_external) and must never resurrect a canonical failure.
-
 status="fail"
 exit_code=1
 case "$external_status" in
-  pass|manual_override)
+  pass)
     external_gate="pass"
     ;;
   *)
@@ -626,7 +620,6 @@ if command -v jq >/dev/null 2>&1 && jq -e . "$contract_report" >/dev/null 2>&1; 
     --arg review_message "$review_message" \
     --arg review_card_verdict "$review_card_verdict" \
     --arg review_card_change_type "$review_card_change_type" \
-    --arg review_card_external "$review_card_external" \
     --arg review_card_rollback "$review_card_rollback" \
     --arg external_status "$external_status" \
     --arg external_reviewer "$external_reviewer" \
@@ -636,9 +629,10 @@ if command -v jq >/dev/null 2>&1 && jq -e . "$contract_report" >/dev/null 2>&1; 
     --arg branch "$branch_name" \
     --arg diff_base_ref "$diff_base_ref" \
     --arg diff_base_commit "$diff_base_commit" \
-    --arg implementation_fingerprint "$implementation_fingerprint" \
+    --arg review_subject_sha256 "$review_subject_sha256" \
     --arg benchmark_evidence_status "$benchmark_evidence_status" \
     --arg benchmark_evidence_fingerprint "$benchmark_evidence_fingerprint" \
+    --arg benchmark_subject_sha256 "$benchmark_subject_sha256" \
     --argjson files_changed "$(git_changed_files_json)" \
     --argjson allowed_paths_check "$allowed_paths_check" \
     --argjson allowed_paths "$(allowed_paths_json "$contract_file")" \
@@ -664,10 +658,11 @@ if command -v jq >/dev/null 2>&1 && jq -e . "$contract_report" >/dev/null 2>&1; 
         ref: $diff_base_ref,
         merge_base: $diff_base_commit
       },
-      implementation_fingerprint: $implementation_fingerprint,
+      review_subject_sha256: $review_subject_sha256,
       benchmark_evidence: {
         status: $benchmark_evidence_status,
-        fingerprint: $benchmark_evidence_fingerprint
+        report_sha256: $benchmark_evidence_fingerprint,
+        benchmark_subject_sha256: $benchmark_subject_sha256
       },
       commands: [
         {name: "verify-sprint", command: $command, status: $status, exit_code: $exit_code},
@@ -708,7 +703,6 @@ if command -v jq >/dev/null 2>&1 && jq -e . "$contract_report" >/dev/null 2>&1; 
         card: {
           verdict: $review_card_verdict,
           change_type: $review_card_change_type,
-          external_acceptance: $review_card_external,
           rollback: $review_card_rollback
         }
       },
@@ -738,10 +732,11 @@ else
     "ref": "$(json_escape "$diff_base_ref")",
     "merge_base": "$(json_escape "$diff_base_commit")"
   },
-  "implementation_fingerprint": "$(json_escape "$implementation_fingerprint")",
+  "review_subject_sha256": "$(json_escape "$review_subject_sha256")",
   "benchmark_evidence": {
     "status": "$(json_escape "$benchmark_evidence_status")",
-    "fingerprint": "$(json_escape "$benchmark_evidence_fingerprint")"
+    "report_sha256": "$(json_escape "$benchmark_evidence_fingerprint")",
+    "benchmark_subject_sha256": "$(json_escape "$benchmark_subject_sha256")"
   },
   "commands": [
     {
@@ -794,7 +789,6 @@ else
     "card": {
       "verdict": "$(json_escape "$review_card_verdict")",
       "change_type": "$(json_escape "$review_card_change_type")",
-      "external_acceptance": "$(json_escape "$review_card_external")",
       "rollback": "$(json_escape "$review_card_rollback")"
     }
   },

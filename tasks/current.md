@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-14T19:29:53+0800 -->
+<!-- updated_at: 2026-07-14T10:05:58+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-07-14T19:29:53+0800
-> **Source Branch**: detached
-> **Source Commit**: ba0b7238
+> **Updated At**: 2026-07-14T10:05:58+0800
+> **Source Branch**: codex/verifier-evidence-lifecycle-cutover
+> **Source Commit**: a1372fb2
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: remove-gbrain-dependency
+> **Reason**: verifier-evidence-lifecycle-cutover
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -18,9 +18,9 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 ## Current Focus
 
 - Status: Active
-- Active Plan: (none)
-- Plan Status: (none)
-- Next Task: inspect active worktree marker(s)
+- Active Plan: plans/plan-20260714-0421-verifier-evidence-lifecycle-cutover.md
+- Plan Status: Executing
+- Next Task: Obtain one external acceptance and run artifact-only final closeout.
 - Clear Note: (none)
 
 ## Mainline Snapshot Reading
@@ -31,10 +31,20 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- /Users/kito/Projects/repo-harness-wt-local-gatekeeper-enforcement: plans/plan-20260714-1713-merge-gate-enforcement.md
-- /Users/kito/Projects/repo-harness-wt-local-gatekeeper-enforcement: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-local-gatekeeper-enforcement
-- /Users/kito/Projects/repo-harness-wt-verifier-evidence-lifecycle-cutover: plans/plan-20260714-0421-verifier-evidence-lifecycle-cutover.md
-- /Users/kito/Projects/repo-harness-wt-verifier-evidence-lifecycle-cutover: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-verifier-evidence-lifecycle-cutover
+- .: plans/plan-20260714-0421-verifier-evidence-lifecycle-cutover.md
+- .: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-verifier-evidence-lifecycle-cutover
+- /Users/kito/Projects/repo-harness-worktrees/harness-cost-baseline-slo-closeout: plans/plan-20260712-2327-harness-kernel-reduction.md
+- /Users/kito/Projects/repo-harness-worktrees/harness-cost-baseline-slo-closeout: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/harness-cost-baseline-slo-closeout
+- /Users/kito/Projects/repo-harness-worktrees/harness-cost-baseline-slo-final: plans/plan-20260712-2327-harness-kernel-reduction.md
+- /Users/kito/Projects/repo-harness-worktrees/harness-cost-baseline-slo-final: active-worktree owner -> /Users/kito/Projects/repo-harness-worktrees/harness-cost-baseline-slo-final
+- /Users/kito/Projects/repo-harness-wt-bdd3-ps1-protected-shape-ledger: plans/plan-20260714-0512-bdd3-ps1-protected-shape-ledger.md
+- /Users/kito/Projects/repo-harness-wt-bdd3-ps1-protected-shape-ledger: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-bdd3-ps1-protected-shape-ledger
+- /Users/kito/Projects/repo-harness-wt-codex-native-role-model-override: plans/plan-20260711-0219-codex-native-role-model-override.md
+- /Users/kito/Projects/repo-harness-wt-codex-native-role-model-override: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-codex-native-role-model-override
+- /Users/kito/Projects/repo-harness-wt-verification-evidence-decoupling: plans/plan-20260714-0430-verification-evidence-decoupling.md
+- /Users/kito/Projects/repo-harness-wt-verification-evidence-decoupling: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-verification-evidence-decoupling
+- /Users/kito/Projects/repo-harness/.claude/worktrees/agent-ae14c20f2b5dac4a3: plans/plan-20260712-1642-adaptive-lite-hook-routing.md
+- /Users/kito/Projects/repo-harness/.claude/worktrees/agent-ae14c20f2b5dac4a3: active-worktree owner -> /Users/kito/Projects/repo-harness/.claude/worktrees/agent-ae14c20f2b5dac4a3
 ## Active Sprint
 
 - Sprint: (none)
@@ -48,7 +58,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`: status=completed, current_slice=completed-20260713-policy-seed, source_plan=plans/plan-20260712-2215-agent-fleet-specialists.md
 ## Handoff
 
-- Exact Next Step: Clean up merged contract worktree codex/local-gatekeeper-enforcement. Command: repo-harness run contract-worktree cleanup --slug local-gatekeeper-enforcement --target main
+- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Run exactly one final authoritative 3x9 matrix for the frozen benchmark subject.
 
 ## Checks
 
@@ -56,49 +66,15 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 78 changed/untracked path(s)
+- Summary: 6 changed/untracked path(s)
 
 ```
-M  .ai/harness/brain-manifest.json
-M  .ai/harness/policy.json
-UU .ai/hooks/.projection.json
-M  .ai/hooks/post-edit-guard.sh
-M  AGENTS.md
-M  CLAUDE.md
-M  README.es.md
-M  README.fr.md
-M  README.ja.md
-M  README.md
-M  README.zh-CN.md
-M  assets/hooks/post-edit-guard.sh
-M  assets/initializer-question-pack.v4.json
-M  assets/partials-agents/02-operating-mode.partial.md
-M  assets/partials-agents/08-deep-docs.partial.md
-M  assets/partials/04-project-structure.partial.md
-M  assets/reference-configs/ai-workflows.md
-M  assets/reference-configs/changelog-versioning.md
-M  assets/reference-configs/coding-standards.md
-M  assets/reference-configs/development-protocol.md
-M  assets/reference-configs/evaluator-rubric.md
-M  assets/reference-configs/external-tooling.md
-M  assets/reference-configs/git-strategy.md
-M  assets/reference-configs/harness-overview.md
-M  assets/reference-configs/hook-operations.md
-M  assets/reference-configs/release-deploy.md
-M  assets/reference-configs/spa-day-protocol.md
-M  assets/reference-configs/workflow-orchestration.md
-M  assets/skill-commands/repo-harness-check/SKILL.md
-M  assets/skill-version.json
-M  assets/templates/helpers/check-agent-tooling.sh
-M  assets/templates/helpers/check-brain-manifest.sh
-M  assets/templates/helpers/check-task-workflow.sh
-M  assets/templates/helpers/ensure-task-workflow.sh
-M  assets/templates/helpers/verify-sprint.sh
-M  docs/CHANGELOG.md
-M  docs/architecture/domains/verification.md
-M  docs/architecture/index.md
-M  docs/architecture/modules/public-surface/root-router.md
-M  docs/architecture/modules/verification/evals-checks.md
+ M evals/harness/reports/profile-comparison.json
+ M evals/harness/reports/profile-comparison.md
+ M plans/plan-20260714-0421-verifier-evidence-lifecycle-cutover.md
+ M tasks/notes/20260714-0421-verifier-evidence-lifecycle-cutover.notes.md
+ M tasks/reviews/20260714-0421-verifier-evidence-lifecycle-cutover.review.md
+?? evals/harness/reports/profile-comparison.sha256.json
 ```
 
 ## Source Artifacts

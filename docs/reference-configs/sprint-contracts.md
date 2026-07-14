@@ -81,7 +81,9 @@ Both `verify-contract.sh` and `contract-run.ts` implement this check independent
 
 ## Verification Execution Boundary
 
-`verify-contract.sh --read-only` is read-only for contract state writes only: it does not rewrite the contract `> **Status**:` line. It still executes `tests_pass` with Bun and `commands_succeed` in a non-login Bash with `BASH_ENV` unset so hook-driven done gates can verify the same exit criteria as an explicit maintainer run without sourcing host shell profiles. Do not put mutating commands in `commands_succeed` unless the contract deliberately treats that side effect as part of verification.
+`verify-contract.sh --read-only` is read-only for contract state writes only: it does not rewrite the contract `> **Status**:` line. It executes `tests_pass` with Bun and `commands_succeed` in a non-login Bash with `BASH_ENV` unset. One fixed absolute 600-second budget covers the whole invocation; each command records duration, exit status, signal, and timeout state, and expiry terminates the command's process group before the verifier returns. The budget is not a policy or environment knob.
+
+Verification is an evidence consumer. `commands_succeed` must not launch profile benchmarks/providers, `adopt`, evidence-producer scripts, or substantive installs; the verifier rejects those command shapes before execution. Produce expensive evidence explicitly, validate its subject/provenance/bytes, then let `verify-sprint` consume that frozen artifact through `verify-contract --read-only`.
 
 A verifier consumes already-produced evidence; it must not become the producer of expensive, runtime-heavy evidence (for example, a full multi-provider/multi-profile benchmark matrix). An authoritative matrix or similarly expensive one-time evidence run belongs outside `commands_succeed`: the author runs it once on a clean checkout before merge and commits the resulting tracked report (for example `evals/harness/reports/profile-comparison.json`/`.md`); the contract then verifies that report's bytes and provenance, not a live re-run.
 
@@ -96,7 +98,7 @@ A verifier consumes already-produced evidence; it must not become the producer o
 ## Review Coupling
 
 - A contract is not truly done until the matching review file records a passing recommendation.
-- `tasks/reviews/<plan-stem>.review.md` should be filled from Waza `/check` after verification and cite the contract, implementation notes, checks file, run snapshot, `## External Acceptance Advice`, and any manual observations.
+- `tasks/reviews/<plan-stem>.review.md` should be filled from Waza `/check` after verification and cite the contract, implementation notes, checks file, run snapshot, canonical `## External Acceptance Advice`, and any manual observations. Rubric v2 binds both sections to `Reviewed Subject SHA256` with scope `normalized-final-content`; target revision is metadata and invalidates acceptance only when target movement overlaps reviewed paths.
 - `tasks/notes/<plan-stem>.notes.md` captures task-local decisions and should be archived or promoted deliberately, not left as hidden long-term memory.
 - Closeout is promote-then-archive: durable truths move into `docs/architecture/`, `docs/researches/`, `docs/spec.md`, or `tasks/lessons.md` before `archive-workflow.sh` moves fulfilled plan/contract/review/notes/todo artifacts into `plans/archive/` and `tasks/archive/`.
 
@@ -130,4 +132,4 @@ evaluator never guesses semantic equivalence.
   recorded `started_at`, then falls back to the recorded `base_branch`; the next fresh
   worktree start records immutable provenance.
 - Execute the sprint in that linked worktree. The primary worktree remains a merge target and must stay clean before merge-back.
-- After implementation, run Waza `/check` so the review file recommends pass, record passing `## External Acceptance Advice` from the peer reviewer or a concrete manual override, then run `repo-harness run contract-worktree finish`. The finish command gates on external acceptance before `repo-harness run verify-sprint`, commits the branch, and fast-forwards the target branch only when the target worktree is clean.
+- After implementation, run Waza `/check` so the review file recommends pass, record canonical passing `## External Acceptance Advice` from the peer reviewer for the current review subject and benchmark evidence, then run `repo-harness run contract-worktree finish`. Human Review Card remains the reading summary but is not an acceptance authority. The finish command gates on canonical acceptance before `repo-harness run verify-sprint`, commits the branch, and fast-forwards the target branch only when the target worktree is clean.

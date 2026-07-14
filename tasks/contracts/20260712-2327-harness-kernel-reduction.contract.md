@@ -196,10 +196,6 @@ exit_criteria:
     - path: tests/hook-runtime.test.ts
     - path: tests/action-command-skills.test.ts
   commands_succeed:
-    - bun test tests/effective-state.test.ts tests/harness-runtime-profiles.test.ts tests/harness-context-budget.test.ts tests/harness-circuit-breakers.test.ts
-    - bun test tests/install-profiles.test.ts tests/action-command-skills.test.ts
-    - bun test tests/harness-benchmark-matrix.test.ts tests/run-skill-evals.test.ts tests/hook-runtime.test.ts
-    - bun run benchmark:harness --provider claude --profile all --scenario all --require-authoritative
     - bun src/cli/index.ts state resolve --json
     - bun src/cli/index.ts install --profile minimal --dry-run --json
     - bun src/cli/index.ts install --profile strict --dry-run --json
@@ -210,7 +206,6 @@ exit_criteria:
     - bash scripts/check-task-sync.sh
     - repo-harness run check-task-workflow --strict
     - bun scripts/inspect-project-state.ts --repo . --format text
-    - bun src/cli/index.ts adopt --repo . --dry-run
   qa_scores:
     - dimension: functionality
       min: 9

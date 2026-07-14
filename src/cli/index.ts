@@ -51,7 +51,7 @@ import { routePromptExplicitFirst } from './hook/prompt-router';
 import { recordCircuitAttempt, type CircuitAttempt } from './hook/circuit-breaker';
 import { runMinimalChangeCli } from './hook/minimal-change-cli';
 import { runReviewRubricCli } from './hook/review-rubric';
-import { runReviewFingerprintCli } from './hook/diff-fingerprint';
+import { runReviewSubjectCli } from './hook/diff-fingerprint';
 import { runAdoptionPlan } from './commands/adopt-plan';
 import { runRuntimeRollback } from './repo-adoption/reclaim-runtime';
 import { rollbackAdoptionTransaction } from '../effects/fs-transaction';
@@ -757,13 +757,13 @@ export function buildProgram(): Command {
       process.exit(result.exitCode);
     });
   program
-    .command('review-fingerprint', { hidden: true })
+    .command('review-subject', { hidden: true })
     .argument('[args...]')
     .allowUnknownOption(true)
     .allowExcessArguments(true)
-    .description('Internal review freshness fingerprint renderer')
+    .description('Internal normalized review subject renderer')
     .action((args: string[]) => {
-      const result = runReviewFingerprintCli(args);
+      const result = runReviewSubjectCli(args);
       if (result.stdout) writeAllSync(1, result.stdout);
       if (result.stderr) writeAllSync(2, result.stderr);
       process.exit(result.exitCode);

@@ -84,6 +84,12 @@ then inspect the active contract, changed files, latest trace, and failed or
 skipped checks. A pass means the reviewer can see what changed, why it is in
 scope, what verified it, what risk remains, and how to roll it back.
 
+The card is a reading surface, not an acceptance authority. Closeout requires
+canonical `## External Acceptance Advice` with `pass`, bound under Review Rubric
+v2 to the normalized final-content review subject and current benchmark evidence.
+Machine verification is bounded and consumes frozen evidence; it must not launch
+providers, adoption, substantive installation, or benchmark production.
+
 ## Acceptance Scenarios
 
 - An existing repo can adopt the harness, generate workflow files, and pass

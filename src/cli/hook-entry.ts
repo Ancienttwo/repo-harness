@@ -44,9 +44,9 @@ if (import.meta.main) {
     process.exit(result.exitCode);
   }
 
-  if (argv[0] === 'review-fingerprint') {
-    const { runReviewFingerprintCli } = await import('./hook/diff-fingerprint');
-    const result = runReviewFingerprintCli(argv.slice(1));
+  if (argv[0] === 'review-subject') {
+    const { runReviewSubjectCli } = await import('./hook/diff-fingerprint');
+    const result = runReviewSubjectCli(argv.slice(1));
     if (result.stdout) writeAllSync(1, result.stdout);
     if (result.stderr) writeAllSync(2, result.stderr);
     process.exit(result.exitCode);

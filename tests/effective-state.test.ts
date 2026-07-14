@@ -89,7 +89,7 @@ function withRepo(fn: (cwd: string) => void): void {
     write(cwd, REVIEW, [
       '# Review',
       '> **Recommendation**: fail',
-      '> **Reviewed Diff Fingerprint**: pending',
+      '> **Reviewed Subject SHA256**: pending',
       '## External Acceptance Advice',
       '> **External Acceptance**: unavailable',
       '',
@@ -279,17 +279,16 @@ describe('effective state resolver', () => {
     });
   });
 
-  test('binds checks to the exact implementation fingerprint', () => {
+  test('binds checks to the exact review subject', () => {
     withRepo((cwd) => {
       const initial = resolveFixtureState(cwd);
       write(cwd, '.ai/harness/checks/latest.json', JSON.stringify({
         status: 'fail',
         active_plan: PLAN,
-        diff_base: { ref: 'main' },
-        implementation_fingerprint: initial.source_hashes.implementation_diff,
+        review_subject_sha256: initial.source_hashes.review_subject,
       }));
       const bound = resolveFixtureState(cwd);
-      expect(initial.source_hashes.implementation_diff).toMatch(/^sha256:[0-9a-f]{64}$/);
+      expect(initial.source_hashes.review_subject).toMatch(/^sha256:[0-9a-f]{64}$/);
       expect(bound.checks.freshness).toBe('fresh');
       expect(bound.blockers).toContain('checks_failed');
       expect(bound.phase).toBe('blocked');
@@ -297,8 +296,7 @@ describe('effective state resolver', () => {
       write(cwd, '.ai/harness/checks/latest.json', JSON.stringify({
         status: 'pass',
         active_plan: PLAN,
-        diff_base: { ref: 'main' },
-        implementation_fingerprint: 'sha256:' + '0'.repeat(64),
+        review_subject_sha256: 'sha256:' + '0'.repeat(64),
       }));
       expect(resolveFixtureState(cwd).checks.freshness).toBe('stale');
     });

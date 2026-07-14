@@ -3,6 +3,6 @@
   "canonical_root": "assets/hooks",
   "projection_target": ".ai/hooks",
   "manifest": "assets/hooks/projection.json",
-  "digest": "sha256:cdd56532afa08bc2b7ea29ed3f4384cb2195b269823e83e0e4c0a54b5085efdf",
+  "digest": "sha256:9b30840f61e3e36e803921c0acff938118dc72229a529dd21931283b2710399a",
   "file_count": 25
 }
