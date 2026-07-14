@@ -1,6 +1,6 @@
 # Task Contract: merge-gate-enforcement
 
-> **Status**: In Progress
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260714-1713-merge-gate-enforcement.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->

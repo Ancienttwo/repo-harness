@@ -8,7 +8,7 @@
 > **Architecture Capability**: `contract-assets`
 > **Architecture Module**: `docs/architecture/modules/workflow-engine/contract-assets.md`
 > **Source Plan**: `plans/plan-20260714-1713-merge-gate-enforcement.md`
-> **Current Slice**: pr-review-remediation-and-reverification
+> **Current Slice**: owner-directed-claude-skip-awaiting-github-ci-merge
 
 ## Purpose
 
@@ -21,7 +21,7 @@ Track the one-work-package cutover from advisory gatekeeper review to a local, f
 - [x] Gate contract-worktree merge and ship-worktrees push.
 - [x] Restore active workflow state after FAIL/BLOCKED and push/merge only the verified SHA.
 - [x] Complete repository verification and external review.
-- [ ] Close PR review findings and refresh full verification plus external acceptance.
+- [x] Close PR review findings, refresh full verification, and record the owner's explicit Claude-review skip without claiming external PASS.
 - [ ] Archive the workflow after this isolated branch lands on a clean `main`.
 
 ## Boundary

@@ -1,10 +1,10 @@
 # Implementation Notes: merge-gate-enforcement
 
-> **Status**: In Progress
+> **Status**: Completed
 > **Plan**: plans/plan-20260714-1713-merge-gate-enforcement.md
 > **Contract**: tasks/contracts/20260714-1713-merge-gate-enforcement.contract.md
 > **Review**: tasks/reviews/20260714-1713-merge-gate-enforcement.review.md
-> **Last Updated**: 2026-07-14 23:41
+> **Last Updated**: 2026-07-15 00:11
 > **Lifecycle**: notes
 
 ## Design Decisions
@@ -46,7 +46,10 @@
 - **P3 decision**: Keep the inner finish transaction as the commit/gate boundary and add one outer PR-ship transaction around finish, refetch, receipt verification, and push. This is the smallest boundary that makes the whole local mutation sequence retryable; PR creation remains after commit because an external PR side effect cannot be rolled back locally.
 - **P3 decision**: Cross-review skills keep their caller-HOME/external-skill lifecycle. The required merge-gate skill and agent are installed independently after a successful adoption (and in strict global setup) using the same OS-account-home authority model as the gate runtime. The test-only dependency seam is internal to library calls and is not a CLI/environment fallback.
 - **Verification**: `bun test` passed `1461 pass / 1 skip / 0 fail` across 114 files in 542.60s. Typecheck, focused security/transaction/installer tests, Bash syntax, and helper projection parity pass. An isolated `npm pack` + Bun global install contained the merge-gate skill, agent, and helper, and the installed CLI successfully ran the protected `merge-gate fingerprint` path.
-- **External acceptance blocker**: the refreshed `claude-review` attempt exited 1 with `You've hit your session limit · resets 12:30am (Asia/Taipei)`. No manual override was recorded; merge remains fail-closed until a fresh review is bound to the current subject.
+- **External acceptance disposition**: the refreshed `claude-review` attempt exited 1 with `You've hit your session limit · resets 12:30am (Asia/Taipei)`. On 2026-07-15 the repository owner explicitly directed this PR to skip Claude review and continue through GitHub CI, merge, and branch cleanup. This is an owner-directed review skip, not an external PASS and not a synthetic manual-override result.
+- **Linux CI fixture correction**: the PR ship rollback fixture cloned a bare remote without naming `main`; Linux resolved the bare remote's default branch differently, and the fixture's fake Claude script lacked `set -e`, so the intended remote-main advance failed silently. The fixture now uses `set -eu` and `git clone --branch main`, making the same base-movement condition deterministic on macOS and Linux.
+- **Reverification**: the corrected focused ship fixture passed. The full `check:ci` test phase also completed with zero test failures; its only non-test failure was `check-task-sync`, because this CI correction had not yet been recorded in a tracked task artifact. This notes update closes that synchronization requirement; the workflow-only tail is rerun separately rather than repeating the already-green full test matrix.
+- **Contract closeout**: strict contract verification passed all 19 criteria and marked the contract `Fulfilled`; task sync, strict task workflow, deploy SQL order, architecture advisory, project inspection, and adoption dry-run also pass.
 
 ## Evidence Links
 
@@ -56,6 +59,7 @@
 - End-to-end PR ship fixture: `tests/helper-scripts.test.ts`
 - Full repository suite: `1436 pass / 1 skip / 0 fail` across 112 files.
 - Focused gate lifecycle: `19 pass / 0 fail`; ship/rollback lifecycle: `4 pass / 0 fail`.
+- Corrected Linux/macOS PR ship fixture: `1 pass / 0 fail`; subsequent full `check:ci` test phase: zero test failures before the task-sync-only stop.
 - Live installed runtime: PASS for head `3a0ac9664ee80b19a29cedff6d653768b5f3be57`, diff `sha256:5df437a14455e52245763cfd125bb6e9a92617036a45a97ab7fd090ff34e4568`.
 - Independent architecture/security re-review: PASS with no CRITICAL/HIGH.
 
