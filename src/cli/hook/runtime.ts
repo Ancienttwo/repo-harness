@@ -477,7 +477,7 @@ export function runHook(opts: RunHookOptions): RunHookResult {
       if (context) {
         const securityBoundary = script === 'security-sentinel.sh';
         const taskState = script === 'session-start-context.sh';
-        const scriptActionable = taskState && /^# (Pending Plan Capture|Capability Context Queue|Architecture Queue|Active Sprint)/m.test(context);
+        const scriptActionable = taskState && /^# (Pending Plan Capture|Capability Context Queue|Architecture Queue|Active Sprint|Delegation Standing Authorization)/m.test(context);
         sessionStartContexts.push({
           id: script,
           priority: securityBoundary ? 2 : taskState ? 5 : 6,

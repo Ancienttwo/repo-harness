@@ -332,7 +332,11 @@ one-line interactive prompt shown in a TTY (Enter keeps the current choice,
 defaulting to `explicit` when nothing is configured yet). The chosen mode is
 written to `delegation.mode` in `~/.repo-harness/config.json`, merged with
 existing keys such as `brainRoot`; this global value takes precedence over a
-repo's `.ai/harness/policy.json` `delegation.mode`. The step never fires for
+repo's `.ai/harness/policy.json` `delegation.mode`. At runtime, `auto` injects
+one standing bounded-delegation authorization block per session at
+`SessionStart`; `codex-delegation-advisor.sh` itself injects on
+`UserPromptSubmit` only for explicit triggers (`/delegate`, `/parallel`, ...)
+in both `auto` and `explicit` modes. The step never fires for
 `--target claude`, and with no flag and no TTY it leaves the file untouched —
 it never writes a silent default.
 

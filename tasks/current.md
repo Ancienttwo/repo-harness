@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-15T00:17:12+0800 -->
+<!-- updated_at: 2026-07-15T01:01:30+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-07-15T00:17:12+0800
-> **Source Branch**: codex/local-gatekeeper-enforcement
-> **Source Commit**: 079312f0
+> **Updated At**: 2026-07-15T01:01:30+0800
+> **Source Branch**: codex/codex-delegation-session-auth
+> **Source Commit**: b43eaab5
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: merge-gate-work-package-complete-awaiting-pr-merge
+> **Reason**: codex-delegation-session-auth-complete-awaiting-pr-merge
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -35,8 +35,6 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - /Users/kito/Projects/repo-harness: active-worktree owner -> /Users/kito/Projects/repo-harness
 - /Users/kito/Projects/repo-harness-release-blockers: plans/plan-20260714-2318-repo-harness-0-10-0-release-blockers.md
 - /Users/kito/Projects/repo-harness-release-blockers: active-worktree owner -> /Users/kito/Projects/repo-harness-release-blockers
-- /Users/kito/Projects/repo-harness-wt-codex-delegation-session-auth: plans/plan-20260714-2052-codex-delegation-session-auth.md
-- /Users/kito/Projects/repo-harness-wt-codex-delegation-session-auth: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-codex-delegation-session-auth
 ## Active Sprint
 
 - Sprint: (none)
@@ -51,7 +49,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`: status=completed, current_slice=completed-20260713-policy-seed, source_plan=plans/plan-20260712-2215-agent-fleet-specialists.md
 ## Handoff
 
-- Exact Next Step: Stage the completed module diff first; then External acceptance is unavailable; expected pass from Claude via claude-review. Run external acceptance via claude-review and record ## External Acceptance Advice in tasks/reviews/20260714-1713-merge-gate-enforcement.review.md. Command: /check
+- Exact Next Step: (none)
 
 ## Checks
 
@@ -59,16 +57,14 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 7 changed/untracked path(s)
+- Summary: 5 changed/untracked path(s)
 
 ```
- M plans/plan-20260714-1713-merge-gate-enforcement.md
- M tasks/contracts/20260714-1713-merge-gate-enforcement.contract.md
+ M plans/plan-20260714-2052-codex-delegation-session-auth.md
+ M tasks/contracts/20260714-2052-codex-delegation-session-auth.contract.md
  M tasks/current.md
- M tasks/notes/20260714-1713-merge-gate-enforcement.notes.md
- M tasks/reviews/20260714-1713-merge-gate-enforcement.review.md
- M tasks/workstreams/workflow-engine/contract-assets/20260714-merge-gate-enforcement.md
- M tests/helper-scripts.test.ts
+ M tasks/notes/20260714-2052-codex-delegation-session-auth.notes.md
+ M tasks/reviews/20260714-2052-codex-delegation-session-auth.review.md
 ```
 
 ## Source Artifacts

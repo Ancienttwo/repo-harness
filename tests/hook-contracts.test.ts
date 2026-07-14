@@ -102,11 +102,22 @@ describe("Hook contracts", () => {
     expect(advisor).toContain("max_agents");
     expect(advisor).toContain("max_depth");
     expect(advisor).toContain(".ai\", \"harness\", \"delegation");
-    expect(advisor).toContain("policyDelegation.mode");
-    expect(advisor).toContain("auto-mode");
     expect(advisor).toContain("permission only");
-    expect(advisor).toContain("prompt-route");
     expect(advisor).toContain("activeContractPath");
+    expect(advisor).not.toContain("policyDelegation.mode");
+    expect(advisor).not.toContain("auto-mode");
+    expect(advisor).not.toContain("readGlobalDelegationMode");
+    expect(advisor).not.toContain("prompt-route");
+    expect(advisor).not.toContain(
+      "standing user authorization for bounded delegation, selected by the user at install time",
+    );
+
+    const sessionStart = read("assets/hooks/session-start-context.sh");
+    expect(sessionStart).toContain("Delegation Standing Authorization");
+    expect(sessionStart).toContain(
+      "standing user authorization for bounded native",
+    );
+    expect(sessionStart).toContain("effective_delegation_mode");
 
     const start = read("assets/hooks/subagent-start-context.sh");
     expect(start).toContain("SubagentStart.context");
