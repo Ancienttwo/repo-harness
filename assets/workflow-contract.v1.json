@@ -146,6 +146,8 @@
       "refresh-current-status": "Refresh tasks/current.md from repo-local workflow artifacts",
       "prepare-handoff": "Write the current-state handoff snapshot and trigger a resume refresh",
       "verify-contract": "Check a task contract's YAML exit criteria and update its status header",
+      "run-bounded-verifier-command": "Run a verifier command under an epoch-ms deadline, capturing log and timed exit result",
+      "validate-harness-profile-benchmark": "Validate a harness profile benchmark report and emit its byte-bound evidence hash",
       "summarize-failures": "Summarize recorded workflow failure log entries",
       "verify-sprint": "Verify the active sprint contract's exit criteria and allowed paths",
       "harness-trace-grade": "Grade a harness run trace against pass/fail criteria",
