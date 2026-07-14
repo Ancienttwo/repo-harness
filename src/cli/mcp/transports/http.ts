@@ -306,13 +306,27 @@ function oauthAuthorizationHandler(provider: ReturnType<typeof createMcpOAuthPro
   };
 }
 
-function rateLimitMiddleware(opts: { windowMs: number; maxRequests: number }) {
+export function createOAuthRateLimitMiddleware(opts: {
+  windowMs: number;
+  maxRequests: number;
+  maxBuckets?: number;
+  now?: () => number;
+}) {
   const buckets = new Map<string, { windowStart: number; count: number }>();
+  const maxBuckets = opts.maxBuckets ?? 1_024;
+  const clock = opts.now ?? Date.now;
   return (req: Request, res: Response, next: NextFunction) => {
-    const now = Date.now();
-    const key = `${req.ip ?? 'unknown'}:${req.path}`;
+    const now = clock();
+    for (const [bucketKey, bucket] of buckets) {
+      if (now - bucket.windowStart >= opts.windowMs) buckets.delete(bucketKey);
+    }
+    const key = `${req.socket.remoteAddress ?? 'unknown'}:${req.baseUrl}`;
     const current = buckets.get(key);
-    if (!current || now - current.windowStart > opts.windowMs) {
+    if (!current) {
+      if (buckets.size >= maxBuckets) {
+        res.status(429).json({ error: 'rate_limited', error_description: 'Too many OAuth request identities' });
+        return;
+      }
       buckets.set(key, { windowStart: now, count: 1 });
       next();
       return;
@@ -528,7 +542,15 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
     throw new Error('REPO_HARNESS_MCP_PUBLIC_ORIGIN is required when binding MCP HTTP to a non-loopback host');
   }
   const coding = profile === 'coding';
-  if (coding && (configScope !== 'user' || localConfig?.profile !== 'coding' || localConfig.coding?.enabled !== true)) {
+  if (
+    coding
+    && (
+      configScope !== 'user'
+      || localConfig?.profile !== 'coding'
+      || localConfig.coding?.enabled !== true
+      || localConfig.authorizationRevision !== repoHarnessAuthorizationRevision()
+    )
+  ) {
     throw new Error('coding profile requires enabled user-scoped v3 setup');
   }
   const readWriteRepos = readRegisteredRepoHarnessRepos({ adoptedOnly: true }).filter((repo) => repo.accessMode === 'read_write');
@@ -590,13 +612,17 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
   }, Math.min(sessionTtlMs, 60_000));
   cleanupTimer.unref?.();
   const app = express();
-  app.set('trust proxy', 1);
 
   app.use((req, res, next) => {
     if (coding) {
       const liveConfig = loadMcpLocalConfig(repoRoot, 'user');
       const hasGrant = readRegisteredRepoHarnessRepos({ adoptedOnly: true }).some((repo) => repo.accessMode === 'read_write');
-      if (liveConfig?.profile !== 'coding' || liveConfig.coding?.enabled !== true || !hasGrant) {
+      if (
+        liveConfig?.profile !== 'coding'
+        || liveConfig.coding?.enabled !== true
+        || liveConfig.authorizationRevision !== repoHarnessAuthorizationRevision()
+        || !hasGrant
+      ) {
         closeStaleCodingState();
         res.status(503).json({ error: 'coding_disabled' });
         return;
@@ -648,7 +674,7 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
   });
 
   if (authMode === 'oauth' && oauthProvider) {
-    const oauthRateLimit = rateLimitMiddleware({ windowMs: 60_000, maxRequests: 120 });
+    const oauthRateLimit = createOAuthRateLimitMiddleware({ windowMs: 60_000, maxRequests: 120 });
     app.use(['/authorize', '/token', '/revoke', '/register'], oauthRateLimit);
     app.use('/authorize', express.urlencoded({ extended: false, limit: '10kb' }));
     app.use('/authorize', requirePassphrase(oauthPassphrase ?? '', { coding, repoNames: readWriteRepos.map((repo) => basename(repo.path)) }));

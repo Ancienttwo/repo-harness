@@ -4,10 +4,16 @@ import { createServer } from 'net';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { ServerError } from '@modelcontextprotocol/sdk/server/auth/errors.js';
+import { McpOAuthTokenStore } from '../../src/cli/mcp/oauth';
 import { McpSessionStore, type McpSessionClosableTransport } from '../../src/cli/mcp/session-store';
 import type { McpCodingRuntime } from '../../src/cli/mcp/server';
 import { runMcpSetupChatgpt } from '../../src/cli/mcp/setup';
-import { CodingAuthorizationRuntimeStore, startMcpHttp } from '../../src/cli/mcp/transports/http';
+import {
+  CodingAuthorizationRuntimeStore,
+  createOAuthRateLimitMiddleware,
+  startMcpHttp,
+} from '../../src/cli/mcp/transports/http';
 import { repoHarnessPackageVersion } from '../../src/cli/mcp/version';
 import { readRegisteredRepoHarnessRepos, setRepoHarnessAccessMode } from '../../src/effects/repo-registry';
 
@@ -73,6 +79,102 @@ function useTempRegistryHome(): () => void {
 }
 
 describe('mcp http transport', () => {
+  test('OAuth limiter uses direct socket identity, bounded buckets, and canonical routes', () => {
+    let now = 1_000;
+    const middleware = createOAuthRateLimitMiddleware({
+      windowMs: 100,
+      maxRequests: 2,
+      maxBuckets: 1,
+      now: () => now,
+    });
+    const invoke = (remoteAddress: string, forwardedIp: string, baseUrl = '/authorize', path = '/') => {
+      let status = 200;
+      let nextCalls = 0;
+      const response = {
+        status(code: number) { status = code; return response; },
+        json() { return response; },
+      };
+      middleware({
+        ip: forwardedIp,
+        socket: { remoteAddress },
+        baseUrl,
+        path,
+      } as never, response as never, () => { nextCalls += 1; });
+      return { status, nextCalls };
+    };
+
+    expect(invoke('127.0.0.1', '203.0.113.1', '/authorize', '/one').nextCalls).toBe(1);
+    expect(invoke('127.0.0.1', '203.0.113.2', '/authorize', '/two').nextCalls).toBe(1);
+    expect(invoke('127.0.0.1', '203.0.113.3', '/authorize', '/three').status).toBe(429);
+    expect(invoke('127.0.0.2', '203.0.113.4').status).toBe(429);
+    now += 100;
+    expect(invoke('127.0.0.2', '203.0.113.4').nextCalls).toBe(1);
+  });
+
+  test('dynamic OAuth clients expire and fail closed at a fixed capacity', () => {
+    const root = mkdtempSync(join(tmpdir(), 'repo-harness-oauth-client-cap-'));
+    let now = 10_000;
+    try {
+      const store = new McpOAuthTokenStore(join(root, 'tokens.json'), {
+        nowSeconds: () => now,
+        dynamicClientTtlSeconds: 10,
+        maxDynamicClients: 2,
+      });
+      const metadata = {
+        redirect_uris: ['http://localhost/callback'],
+        token_endpoint_auth_method: 'none' as const,
+        grant_types: ['authorization_code'],
+        response_types: ['code'],
+      };
+      const first = store.registerClient(metadata);
+      const second = store.registerClient(metadata);
+      expect(first.client_id_issued_at).toBe(now);
+      expect(() => store.registerClient(metadata)).toThrow(ServerError);
+      expect(store.getClient(first.client_id)).toBeDefined();
+      expect(store.getClient(second.client_id)).toBeDefined();
+
+      now += 10;
+      expect(store.getClient(first.client_id)).toBeUndefined();
+      expect(store.registerClient(metadata).client_id_issued_at).toBe(now);
+
+      const reloaded = new McpOAuthTokenStore(join(root, 'tokens.json'), {
+        nowSeconds: () => now,
+        dynamicClientTtlSeconds: 10,
+        maxDynamicClients: 2,
+      });
+      reloaded.load();
+      expect(() => reloaded.registerClient(metadata)).not.toThrow();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('dynamic OAuth client load rejects an over-cap persisted set atomically', () => {
+    const root = mkdtempSync(join(tmpdir(), 'repo-harness-oauth-client-overcap-'));
+    const path = join(root, 'tokens.json');
+    const now = 20_000;
+    try {
+      const clients = Object.fromEntries([0, 1, 2].map((index) => [`client-${index}`, {
+        client_id: `client-${index}`,
+        client_id_issued_at: now,
+        redirect_uris: ['http://localhost/callback'],
+        token_endpoint_auth_method: 'none',
+      }]));
+      writeFileSync(path, `${JSON.stringify({ clients })}\n`);
+      const store = new McpOAuthTokenStore(path, {
+        nowSeconds: () => now,
+        dynamicClientTtlSeconds: 10,
+        maxDynamicClients: 2,
+      });
+      expect(() => store.load()).toThrow(ServerError);
+      expect(store.getClient('client-0')).toBeUndefined();
+      expect(store.getClient('client-1')).toBeUndefined();
+      expect(store.getClient('client-2')).toBeUndefined();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test('authorization runtime expiry catches background shutdown rejection and remains race-idempotent', async () => {
     let now = 1_000;
     let shutdownCalls = 0;

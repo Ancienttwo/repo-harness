@@ -71,6 +71,7 @@ allowed_paths:
   - docs/architecture/
   - docs/reference-configs/install-profiles.md
   - docs/reference-configs/hook-operations.md
+  - docs/reference-configs/chatgpt-coding-mcp.md
   - deploy/release-checklists/260714-repo-harness-0.10.0.md
   - README.md
   - SKILL.md
@@ -80,13 +81,17 @@ allowed_paths:
   - src/cli/index.ts
   - src/cli/commands/global-runtime.ts
   - src/cli/installer/install-profile.ts
+  - src/effects/repo-registry.ts
   - src/cli/mcp/setup.ts
+  - src/cli/mcp/server.ts
   - src/cli/mcp/oauth.ts
   - src/cli/mcp/transports/http.ts
   - src/cli/mcp/process-sessions.ts
   - src/cli/mcp/coding-tools.ts
   - tests/cli/global-runtime-init.test.ts
+  - tests/cli/status.test.ts
   - tests/install-profiles.test.ts
+  - tests/cli/registry.test.ts
   - tests/cli/mcp-setup.test.ts
   - tests/cli/mcp-http.test.ts
   - tests/cli/mcp-process-sessions.test.ts
@@ -141,6 +146,7 @@ exit_criteria:
     - tasks/notes/20260714-2318-repo-harness-0-10-0-release-blockers.notes.md
   tests_pass:
     - path: tests/cli/global-runtime-init.test.ts
+    - path: tests/cli/status.test.ts
     - path: tests/install-profiles.test.ts
     - path: tests/cli/mcp-setup.test.ts
     - path: tests/cli/mcp-http.test.ts

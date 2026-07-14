@@ -12,7 +12,7 @@ import { runInstall, type InstallTargetSpec } from "./install";
 import { compareVersions, readLatestPackageVersion } from "./doctor";
 import { configureCodegraph } from "../tools/codegraph";
 import { runProcess as runBoundedProcess } from "../../effects/process-runner";
-import type { InstallProfile } from "../installer/install-profile";
+import { readInstalledProfile, type InstallProfile } from "../installer/install-profile";
 
 export interface GlobalRuntimeOptions {
   sourceRoot?: string;
@@ -614,9 +614,9 @@ export function runGlobalRuntimeSetup(
   const sourceRoot = opts.sourceRoot ?? defaultSourceRoot();
   const cwd = opts.cwd ?? process.cwd();
   const target = opts.target ?? "both";
-  const profile = opts.profile ?? "minimal";
   const bunExecutable = resolveBunExecutable(opts.env);
   const env = bindBunRuntimeEnv(commandEnv(sourceRoot, opts.env), bunExecutable);
+  const profile = opts.profile ?? readInstalledProfile(env)?.profile ?? "minimal";
   const steps: GlobalRuntimeStep[] = [];
 
   const bunRuntime = ensureSupportedBunRuntime(cwd, env, bunExecutable);

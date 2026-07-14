@@ -3,7 +3,11 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprot
 import { randomUUID } from 'crypto';
 import { realpathSync, statSync } from 'fs';
 import { resolve } from 'path';
-import { readRegisteredRepoHarnessRepos, registeredRepoHarnessRoots } from '../../effects/repo-registry';
+import {
+  readRegisteredRepoHarnessRepos,
+  registeredRepoHarnessRoots,
+  repoHarnessAuthorizationRevision,
+} from '../../effects/repo-registry';
 import { loadMcpLocalConfig } from './auth';
 import { recordCodingProcessCompletion } from './coding-tools';
 import { createCodeGraphCliAdapter } from './codegraph-adapter';
@@ -183,6 +187,9 @@ export function createMcpToolContext(opts: McpServerOptions): McpToolContext {
     }
     if (!readRegisteredRepoHarnessRepos({ adoptedOnly: true }).some((repo) => repo.accessMode === 'read_write')) {
       throw new Error('coding MCP requires at least one adopted repo with an explicit read_write grant');
+    }
+    if (config.authorizationRevision !== repoHarnessAuthorizationRevision()) {
+      throw new Error('coding MCP authorization revision is stale; rerun user-scoped coding setup');
     }
   }
   const envDevRunner = parseBooleanSetting(process.env.REPO_HARNESS_MCP_DEV_RUNNER);

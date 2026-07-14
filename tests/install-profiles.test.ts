@@ -142,6 +142,36 @@ describe('install profiles', () => {
     expect(installedProfileStatus(applied.state, env).drift.status).toBe('consistent');
   }));
 
+  test('state rejects a component projection that conflicts with its profile authority', () => withHome((env) => {
+    writePath(join(env.HOME!, '.repo-harness', 'install-state.json'), `${JSON.stringify({
+      protocol: 1,
+      profile: 'strict',
+      components: ['cli'],
+      transaction_id: 'conflicting-state',
+      applied_at: '2026-07-14T00:00:00.000Z',
+      ownership_manifest: [],
+      previous: null,
+    })}\n`);
+    expect(() => readInstalledProfile(env)).toThrow('components do not match profile strict');
+  }));
+
+  test('legacy ownership migration rejects malformed rollback history', () => withHome((env) => {
+    writePath(join(env.HOME!, '.repo-harness', 'install-state.json'), `${JSON.stringify({
+      protocol: 1,
+      profile: 'strict',
+      components: ['strict-only-legacy-label'],
+      transaction_id: 'legacy-current',
+      applied_at: '2026-07-14T00:00:00.000Z',
+      ownership_manifest: [{
+        component: 'strict-only-legacy-label',
+        authority: 'repo-harness-install-transaction',
+        removal: 'managed-surfaces-only',
+      }],
+      previous: {},
+    })}\n`);
+    expect(() => readInstalledProfile(env)).toThrow('invalid previous state');
+  }));
+
   test('discoverManagedSurfaces empties the component set for a facade retired from the canonical package', () => withHome((env) => {
     const { source } = writeManagedHostSurfaces(env, 'standard');
     const codexSkills = join(env.HOME!, '.codex', 'skills');
@@ -368,6 +398,37 @@ describe('install profiles', () => {
     expect(lockState.skills['claude-review']).toBeUndefined();
     expect(lockState.skills['user-skill']).toEqual({ source: 'user/repo' });
     expect(installedProfileStatus(minimal.state, env).drift.status).toBe('consistent');
+  }));
+
+  test('profile switch rejects ownership paths outside canonical managed surfaces', () => withHome((env) => {
+    const external = join(env.HOME!, 'user-owned.txt');
+    const content = 'must survive';
+    writeFileSync(external, content);
+    writePath(join(env.HOME!, '.repo-harness', 'install-state.json'), `${JSON.stringify({
+      protocol: 1,
+      profile: 'strict',
+      components: [
+        'cli', 'effective-state', 'scope-worktree-check-guards', 'handoff', 'host-adapters',
+        'adaptive-workflow', 'codegraph-conditional', 'agent-fleet', 'verifier',
+        'cross-model-acceptance', 'release-deployment-gates',
+      ],
+      transaction_id: 'crafted-state',
+      applied_at: '2026-07-14T00:00:00.000Z',
+      ownership_manifest: [{
+        components: ['agent-fleet'],
+        authority: 'repo-harness-install-transaction',
+        removal: 'managed-surfaces-only',
+        path: external,
+        type: 'managed-file',
+        content_hash: `sha256:${createHash('sha256').update(content).digest('hex')}`,
+        managed_marker: 'transaction-created-file',
+        symlink_target: null,
+      }],
+      previous: null,
+    }, null, 2)}\n`);
+
+    expect(() => prepareInstallProfileSwitch('minimal', env)).toThrow('invalid ownership surface');
+    expect(readFileSync(external, 'utf-8')).toBe(content);
   }));
 
   test('reinstall refreshes ownership for an already-owned CodeGraph projection', () => withHome((env) => {

@@ -307,9 +307,6 @@ export function buildCodingToolDefinitions(): CodingToolDefinition[] {
         properties: {
           workspace_id: { type: 'string' },
           cmd: { type: 'string' },
-          tty: { type: 'boolean', default: false },
-          columns: { type: 'number', minimum: 1, maximum: 1000 },
-          rows: { type: 'number', minimum: 1, maximum: 1000 },
           working_directory: { type: 'string', default: '.' },
           yield_time_ms: { type: 'number', minimum: 0, maximum: 30000 },
           max_output_tokens: { type: 'number', minimum: 1, maximum: 100000 },
@@ -321,15 +318,13 @@ export function buildCodingToolDefinitions(): CodingToolDefinition[] {
     },
     {
       name: 'write_stdin',
-      description: 'Poll or interact with a running coding process session, including input, Ctrl-C bytes, and PTY resize.',
+      description: 'Poll or interact with a running pipe process session, including stdin input and Ctrl-C/SIGINT.',
       inputSchema: {
         type: 'object',
         properties: {
           session_id: { type: 'number' },
           chars: { type: 'string' },
           interrupt: { type: 'boolean', description: 'Send Ctrl-C/SIGINT to the owned process session.' },
-          columns: { type: 'number', minimum: 1, maximum: 1000 },
-          rows: { type: 'number', minimum: 1, maximum: 1000 },
           yield_time_ms: { type: 'number', minimum: 0, maximum: 30000 },
           max_output_tokens: { type: 'number', minimum: 1, maximum: 100000 },
         },
@@ -580,7 +575,6 @@ function processResult(snapshot: ProcessSnapshot): CodingToolResult {
   return textResult({
     session_id: snapshot.sessionId,
     running: snapshot.running,
-    tty: snapshot.tty,
     exit_code: snapshot.exitCode,
     signal: snapshot.signal,
     reason: snapshot.reason,
@@ -616,9 +610,6 @@ export async function callCodingTool(ctx: CodingToolContext, name: string, args:
         command,
         cwd,
         workspaceRoot: workspace.root,
-        tty: args.tty === true,
-        columns: integer(args.columns, 80, 1, 1000),
-        rows: integer(args.rows, 24, 1, 1000),
         yieldTimeMs: integer(args.yield_time_ms, 10_000, 0, 30_000),
         maxOutputTokens: integer(args.max_output_tokens, 10_000, 1, 100_000),
       });
@@ -630,8 +621,6 @@ export async function callCodingTool(ctx: CodingToolContext, name: string, args:
         sessionId: integer(args.session_id, -1, -1, Number.MAX_SAFE_INTEGER),
         chars: typeof args.chars === 'string' ? args.chars : undefined,
         interrupt: args.interrupt === true,
-        columns: args.columns === undefined ? undefined : integer(args.columns, 80, 1, 1000),
-        rows: args.rows === undefined ? undefined : integer(args.rows, 24, 1, 1000),
         yieldTimeMs: integer(args.yield_time_ms, 1_000, 0, 30_000),
         maxOutputTokens: integer(args.max_output_tokens, 10_000, 1, 100_000),
       });

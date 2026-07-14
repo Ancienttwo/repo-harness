@@ -18,6 +18,9 @@ Authoritative split:
   scripts under repo-local `scripts/` or `.ai/harness/scripts/`. The self-host
   repo keeps source helpers under root `scripts/`.
 - `src/cli/installer/targets/*`: user-level adapter writers for `~/.claude/settings.json` and `~/.codex/hooks.json`.
+- `~/.repo-harness/install-state.json`: sole installed-profile authority. Its
+  `components` field is the exact ordered projection of `profile`; only
+  canonical host mutation paths with coherent ownership proofs may be removed.
 - `src/cli/hook/*`: public route registry and compatibility runtime bridge.
 - `src/cli/hook-entry.ts`: minimal hook-only entrypoint that checks repo opt-in and dispatches ordered `.ai/hooks/*` scripts without loading the full CLI.
 - `src/cli/commands/security.ts`: read-only security scan for user-level hook config and VS Code folder-open task injection surfaces.
@@ -101,6 +104,10 @@ Error paths:
 - Hook input parsing falls back across stdin JSON, env, and argv compatibility.
 - Worktree guard warns by default and blocks only when marker policy is enabled.
 - Runtime write failures should produce structured warnings or failure logs without corrupting the repo contract.
+- `repo-harness update` resolves command environment -> persisted install state
+  -> exact profile component projection before runtime mutation. Missing state
+  alone selects `minimal`; malformed, conflicting, or non-canonical ownership
+  state fails closed before any host path is changed.
 
 ## 2026-07-14 Review Subject and Acceptance Authority Cutover
 
@@ -304,6 +311,12 @@ At 10x hook events, the first failure is cold-loading the full CLI on every
 hook event. The invariant is that host adapters point at the minimal
 hook-only entrypoint and then `.ai/hooks`, instead of creating separate
 per-host implementation trees or loading non-hook command modules.
+
+Install/update keeps the same one-authority invariant: profile selects the
+component set, and the ownership manifest proves only concrete paths eligible
+for deletion. At 10x managed surfaces, the first unsafe failure would be a
+forged or stale manifest widening deletion scope; exact canonical-path
+membership plus type/hash/marker coherence rejects that state before mutation.
 
 ## 2026-06-12 Architecture Queue Closeout
 

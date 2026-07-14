@@ -5,7 +5,12 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { repoHarnessRepoIdFor, setRepoHarnessAccessMode } from '../../src/effects/repo-registry';
-import { callCodingTool, recordCodingProcessCompletion, type CodingToolContext } from '../../src/cli/mcp/coding-tools';
+import {
+  buildCodingToolDefinitions,
+  callCodingTool,
+  recordCodingProcessCompletion,
+  type CodingToolContext,
+} from '../../src/cli/mcp/coding-tools';
 import {
   cleanupManagedCodingWorkspace,
   CodingWorkspaceError,
@@ -110,6 +115,17 @@ afterEach(() => {
 });
 
 describe('coding MCP workspace and file tools', () => {
+  test('process tool contract is pipe-only', () => {
+    const tools = buildCodingToolDefinitions();
+    const execProperties = tools.find(({ name }) => name === 'exec_command')?.inputSchema.properties ?? {};
+    const stdinProperties = tools.find(({ name }) => name === 'write_stdin')?.inputSchema.properties ?? {};
+    expect(execProperties).not.toHaveProperty('tty');
+    expect(execProperties).not.toHaveProperty('columns');
+    expect(execProperties).not.toHaveProperty('rows');
+    expect(stdinProperties).not.toHaveProperty('columns');
+    expect(stdinProperties).not.toHaveProperty('rows');
+  });
+
   test('defaults to an isolated worktree without exposing absolute paths and supports guarded patch plus shell', async () => {
     const state = fixture();
     try {
@@ -139,6 +155,7 @@ describe('coding MCP workspace and file tools', () => {
         yield_time_ms: 2_000,
       }));
       expect(command).toMatchObject({ running: false, exit_code: 0, output: 'shell-ok' });
+      expect(command).not.toHaveProperty('tty');
       expect(existsSync(join(state.manager.get(opened.workspace_id).root, '.ai/harness/mcp/index-events.jsonl'))).toBe(true);
       const auditLines = readFileSync(join(state.manager.get(opened.workspace_id).root, '.ai/harness/mcp/audit.log'), 'utf-8').trim().split('\n');
       const executionAudit = auditLines.map((line) => JSON.parse(line) as Record<string, unknown>).reverse().find((entry) => entry.tool === 'exec_command');

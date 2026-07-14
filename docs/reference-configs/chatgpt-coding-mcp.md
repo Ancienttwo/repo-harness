@@ -128,8 +128,8 @@ an invocation.
 - `read` accepts workspace-relative paths and returns a SHA-256 revision.
 - `apply_patch` performs guarded create/replace/delete/move operations as one
   rollback-capable transaction.
-- `exec_command` starts pipe or requested PTY sessions. `write_stdin` polls,
-  writes input, resizes PTY, or sends Ctrl-C.
+- `exec_command` starts pipe-only Bash sessions. `write_stdin` polls, writes
+  input, or sends Ctrl-C/SIGINT.
 - ChatGPT may initialize a fresh MCP transport for each tool call. Workspace and
   process ids remain usable across those transports only while they present
   tokens from the same OAuth authorization grant; another grant cannot reuse a
@@ -161,9 +161,9 @@ cookies, and private/API keys are always rejected. The name filter is
 conservative: any configured key containing `KEY`, `PASS`, or `AUTH` is denied,
 including compact forms such as `APIKEY`, `PASSWD`, and `BASICAUTH`.
 
-`node-pty` is optional. Under Bun 1.3.x its event delivery is unreliable, so a
-PTY request returns `PTY_UNAVAILABLE` instead of hanging or silently changing to
-pipe execution. Pipe sessions and the PTY manager contract remain supported.
+PTY and terminal resize are not part of the Bun coding-process contract. Pipe
+sessions retain stdin, polling, Ctrl-C/SIGINT, output bounds, and process-tree
+cleanup.
 
 Audit records hashes and metadata only: actor/session, command hash, relative
 cwd, duration, exit/signal, and byte counts. They do not store raw command,

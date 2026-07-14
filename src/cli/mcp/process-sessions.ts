@@ -1,8 +1,7 @@
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'child_process';
 import { createHash } from 'crypto';
-import { chmodSync, existsSync, realpathSync, statSync } from 'fs';
-import { createRequire } from 'module';
-import { dirname, isAbsolute, join, relative, resolve } from 'path';
+import { realpathSync, statSync } from 'fs';
+import { isAbsolute, relative } from 'path';
 
 const DEFAULT_MAX_CONCURRENT = 4;
 const DEFAULT_MAX_RUNTIME_MS = 30 * 60 * 1_000;
@@ -69,9 +68,6 @@ export interface ProcessStartInput {
   command: string;
   cwd: string;
   workspaceRoot: string;
-  tty?: boolean;
-  columns?: number;
-  rows?: number;
   yieldTimeMs?: number;
   maxOutputTokens?: number;
 }
@@ -82,8 +78,6 @@ export interface ProcessWriteInput {
   sessionId: number;
   chars?: string;
   interrupt?: boolean;
-  columns?: number;
-  rows?: number;
   yieldTimeMs?: number;
   maxOutputTokens?: number;
 }
@@ -101,7 +95,6 @@ export interface ProcessAuditMetadata {
   workspaceId: string;
   commandHash: string;
   commandLength: number;
-  tty: boolean;
   startedAt: string;
 }
 
@@ -120,7 +113,6 @@ export interface ProcessCompletionEvent extends ProcessAuditMetadata {
 export interface ProcessSnapshot {
   sessionId: number;
   running: boolean;
-  tty: boolean;
   output: string;
   outputTruncated: boolean;
   droppedOutputBytes: number;
@@ -132,26 +124,6 @@ export interface ProcessSnapshot {
   audit: ProcessAuditMetadata;
 }
 
-export interface ProcessPty {
-  readonly pid: number;
-  write(data: string): void;
-  resize(columns: number, rows: number): void;
-  kill(signal?: string): void;
-  onData(listener: (data: string) => void): { dispose?(): void } | void;
-  onExit(listener: (event: { exitCode: number; signal?: number }) => void): { dispose?(): void } | void;
-}
-
-export interface ProcessPtySpawnInput {
-  shellPath: string;
-  args: string[];
-  cwd: string;
-  env: Record<string, string>;
-  columns: number;
-  rows: number;
-}
-
-export type ProcessPtyFactory = (input: ProcessPtySpawnInput) => Promise<ProcessPty>;
-
 export interface McpProcessSessionManagerOptions {
   maxConcurrent?: number;
   maxRuntimeMs?: number;
@@ -162,7 +134,6 @@ export interface McpProcessSessionManagerOptions {
   baseEnv?: NodeJS.ProcessEnv;
   configuredEnv?: Record<string, string>;
   now?: () => number;
-  ptyFactory?: ProcessPtyFactory;
   onComplete?: (event: ProcessCompletionEvent) => void | Promise<void>;
   onCompletionError?: (error: unknown, event: ProcessCompletionEvent) => void;
 }
@@ -170,7 +141,6 @@ export interface McpProcessSessionManagerOptions {
 interface ManagedProcess {
   readonly pid?: number;
   write(data: string): void;
-  resize?(columns: number, rows: number): void;
   signal(signal: NodeJS.Signals): void;
 }
 
@@ -183,9 +153,6 @@ interface ProcessSession {
   commandLength: number;
   cwd: string;
   workspaceRoot: string;
-  tty: boolean;
-  columns: number;
-  rows: number;
   startedAtMs: number;
   completedAtMs?: number;
   process?: ManagedProcess;
@@ -301,14 +268,6 @@ function boundedPositiveOption(value: number | undefined, fallback: number, maxi
   return Math.min(value, maximum);
 }
 
-function terminalDimension(value: number | undefined, fallback: number, name: string): number {
-  if (value === undefined) return fallback;
-  if (!Number.isInteger(value) || value < 1 || value > 1_000) {
-    throw new McpProcessError('INVALID_TERMINAL_SIZE', `${name} must be an integer between 1 and 1000`);
-  }
-  return value;
-}
-
 function deniedEnvironmentKey(key: string): boolean {
   const upper = key.toUpperCase();
   return DENIED_ENV_KEY_PARTS.some((part) => upper.includes(part));
@@ -317,7 +276,6 @@ function deniedEnvironmentKey(key: string): boolean {
 export function buildMcpProcessEnvironment(options: {
   baseEnv?: NodeJS.ProcessEnv;
   configuredEnv?: Record<string, string>;
-  tty?: boolean;
 } = {}): Record<string, string> {
   const baseEnv = options.baseEnv ?? process.env;
   const env: Record<string, string> = {};
@@ -338,7 +296,7 @@ export function buildMcpProcessEnvironment(options: {
   env.PAGER = 'cat';
   env.GIT_PAGER = 'cat';
   env.GH_PAGER = 'cat';
-  env.TERM = options.tty ? 'xterm-256color' : 'dumb';
+  env.TERM = 'dumb';
   return env;
 }
 
@@ -364,43 +322,6 @@ function defaultShellPath(): string {
   return process.platform === 'win32' ? 'bash.exe' : '/bin/bash';
 }
 
-function ensureNodePtySpawnHelperExecutable(): void {
-  if (process.platform === 'win32') return;
-  const require = createRequire(import.meta.url);
-  const packageRoot = resolve(dirname(require.resolve('node-pty')), '..');
-  const candidates = [
-    join(packageRoot, 'prebuilds', `${process.platform}-${process.arch}`, 'spawn-helper'),
-    join(packageRoot, 'build', 'Release', 'spawn-helper'),
-  ];
-  for (const candidate of candidates) {
-    if (existsSync(candidate)) chmodSync(candidate, 0o755);
-  }
-}
-
-async function defaultPtyFactory(input: ProcessPtySpawnInput): Promise<ProcessPty> {
-  if (process.versions.bun) {
-    throw new McpProcessError('PTY_UNAVAILABLE', 'node-pty is unavailable in the Bun runtime');
-  }
-  let nodePty: typeof import('node-pty');
-  try {
-    nodePty = await import('node-pty');
-  } catch (_error) {
-    throw new McpProcessError('PTY_UNAVAILABLE', 'PTY support requires the optional node-pty dependency');
-  }
-  try {
-    ensureNodePtySpawnHelperExecutable();
-    return nodePty.spawn(input.shellPath, input.args, {
-      cwd: input.cwd,
-      env: input.env,
-      name: 'xterm-256color',
-      cols: input.columns,
-      rows: input.rows,
-    });
-  } catch (_error) {
-    throw new McpProcessError('PTY_UNAVAILABLE', 'PTY could not be started');
-  }
-}
-
 export class McpProcessSessionManager {
   private readonly sessions = new Map<number, ProcessSession>();
   private readonly maxConcurrent: number;
@@ -411,7 +332,6 @@ export class McpProcessSessionManager {
   private readonly shellPath: string;
   private readonly environment: Record<string, string>;
   private readonly now: () => number;
-  private readonly ptyFactory: ProcessPtyFactory;
   private readonly onComplete?: McpProcessSessionManagerOptions['onComplete'];
   private readonly onCompletionError?: McpProcessSessionManagerOptions['onCompletionError'];
   private startingCount = 0;
@@ -441,7 +361,6 @@ export class McpProcessSessionManager {
     this.shellPath = options.shellPath ?? defaultShellPath();
     this.environment = buildMcpProcessEnvironment({ baseEnv: options.baseEnv, configuredEnv: options.configuredEnv });
     this.now = options.now ?? Date.now;
-    this.ptyFactory = options.ptyFactory ?? defaultPtyFactory;
     this.onComplete = options.onComplete;
     this.onCompletionError = options.onCompletionError;
   }
@@ -466,8 +385,7 @@ export class McpProcessSessionManager {
     try {
       const paths = canonicalWorkingDirectory(input.cwd, input.workspaceRoot);
       const session = this.createSession(input, paths);
-      if (input.tty) await this.startPty(session);
-      else this.startPipe(session);
+      this.startPipe(session);
       this.sessions.set(session.id, session);
       this.startingCount -= 1;
       reservationHeld = false;
@@ -483,31 +401,17 @@ export class McpProcessSessionManager {
 
   async write(input: ProcessWriteInput): Promise<ProcessSnapshot> {
     const session = this.getOwnedSession(input.ownerId, input.workspaceId, input.sessionId);
-    const columns = input.columns === undefined ? undefined : terminalDimension(input.columns, session.columns, 'columns');
-    const rows = input.rows === undefined ? undefined : terminalDimension(input.rows, session.rows, 'rows');
     const chars = input.chars ?? '';
-    const interactionRequested = Boolean(input.interrupt || chars.length > 0 || columns !== undefined || rows !== undefined);
+    const interactionRequested = Boolean(input.interrupt || chars.length > 0);
     if (!session.running && interactionRequested) {
       throw new McpProcessError('PROCESS_NOT_RUNNING', 'completed process sessions only support output polling');
-    }
-    if ((columns !== undefined || rows !== undefined) && !session.process?.resize) {
-      throw new McpProcessError('PTY_REQUIRED', 'terminal resize requires a PTY process');
-    }
-    if (columns !== undefined || rows !== undefined) {
-      session.columns = columns ?? session.columns;
-      session.rows = rows ?? session.rows;
-      session.process?.resize?.(session.columns, session.rows);
     }
     if (Buffer.byteLength(chars, 'utf-8') > MAX_STDIN_BYTES) {
       throw new McpProcessError('STDIN_TOO_LARGE', `write_stdin input exceeds ${MAX_STDIN_BYTES} bytes`);
     }
     const containsCtrlC = chars.includes('\u0003');
     if (session.running && (input.interrupt || containsCtrlC)) {
-      if (session.tty && session.process) {
-        session.process.write('\u0003');
-      } else {
-        session.process?.signal('SIGINT');
-      }
+      session.process?.signal('SIGINT');
     }
     const writable = containsCtrlC ? chars.replaceAll('\u0003', '') : chars;
     if (session.running && writable.length > 0) session.process?.write(writable);
@@ -569,8 +473,6 @@ export class McpProcessSessionManager {
     if (Buffer.byteLength(input.command, 'utf-8') > MAX_COMMAND_BYTES) {
       throw new McpProcessError('COMMAND_TOO_LARGE', `command exceeds ${MAX_COMMAND_BYTES} bytes`);
     }
-    terminalDimension(input.columns, 80, 'columns');
-    terminalDimension(input.rows, 24, 'rows');
   }
 
   private createSession(
@@ -590,9 +492,6 @@ export class McpProcessSessionManager {
       commandLength: input.command.length,
       cwd: paths.cwd,
       workspaceRoot: paths.workspaceRoot,
-      tty: input.tty === true,
-      columns: terminalDimension(input.columns, 80, 'columns'),
-      rows: terminalDimension(input.rows, 24, 'rows'),
       startedAtMs: this.now(),
       ring: new ByteRingBuffer(this.ringBytes),
       totalOutputBytes: 0,
@@ -637,33 +536,6 @@ export class McpProcessSessionManager {
     });
     child.on('close', (code, signal) => {
       this.finish(session, code ?? undefined, signal ?? undefined);
-    });
-  }
-
-  private async startPty(session: ProcessSession): Promise<void> {
-    let pty: ProcessPty;
-    try {
-      pty = await this.ptyFactory({
-        shellPath: this.shellPath,
-        args: ['-c', session.command],
-        cwd: session.cwd,
-        env: { ...this.environment, TERM: 'xterm-256color' },
-        columns: session.columns,
-        rows: session.rows,
-      });
-    } catch (error) {
-      if (error instanceof McpProcessError) throw error;
-      throw new McpProcessError('PTY_UNAVAILABLE', 'PTY could not be started');
-    }
-    session.process = {
-      pid: pty.pid,
-      write: (data) => pty.write(data),
-      resize: (columns, rows) => pty.resize(columns, rows),
-      signal: (signal) => signalPtyTree(pty, signal),
-    };
-    pty.onData((data) => this.appendOutput(session, Buffer.from(data)));
-    pty.onExit(({ exitCode, signal }) => {
-      this.finish(session, exitCode, signal ? String(signal) : undefined);
     });
   }
 
@@ -825,7 +697,6 @@ export class McpProcessSessionManager {
     return {
       sessionId: session.id,
       running: session.running,
-      tty: session.tty,
       output: drained.output,
       outputTruncated: drained.droppedBytes > 0,
       droppedOutputBytes: drained.droppedBytes,
@@ -845,7 +716,6 @@ export class McpProcessSessionManager {
       workspaceId: session.workspaceId,
       commandHash: session.commandHash,
       commandLength: session.commandLength,
-      tty: session.tty,
       startedAt: new Date(session.startedAtMs).toISOString(),
     };
   }
@@ -890,21 +760,5 @@ function signalProcessTree(
     } catch (_childError) {
       // The process has already exited.
     }
-  }
-}
-
-function signalPtyTree(pty: ProcessPty, signal: NodeJS.Signals): void {
-  if (process.platform !== 'win32' && pty.pid > 0) {
-    try {
-      process.kill(-pty.pid, signal);
-      return;
-    } catch (_error) {
-      // node-pty may not expose a process-group leader on every platform.
-    }
-  }
-  try {
-    pty.kill(signal);
-  } catch (_error) {
-    // The process has already exited.
   }
 }

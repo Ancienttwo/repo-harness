@@ -15,7 +15,11 @@ import {
 import { createMcpToolContext } from '../../src/cli/mcp/server';
 import { repoHarnessPackageVersion } from '../../src/cli/mcp/version';
 import { assertChatGptMcpContract } from '../helpers/chatgpt-mcp-contract';
-import { readRegisteredRepoHarnessRepos, setRepoHarnessAccessMode } from '../../src/effects/repo-registry';
+import {
+  readRegisteredRepoHarnessRepos,
+  repoHarnessAuthorizationRevision,
+  setRepoHarnessAccessMode,
+} from '../../src/effects/repo-registry';
 
 const CLI = join(import.meta.dir, '../..', 'src/cli/index.ts');
 
@@ -322,8 +326,8 @@ describe('mcp setup', () => {
           profile: 'coding',
           capabilities: { workspaceReader: false, workflowPlanner: true, workspaceCoder: true },
           coding: { enabled: true, environmentAllowlist: [] },
-          authorizationRevision: 1,
         });
+        expect(config.authorizationRevision).toBe(1);
         expect(readRegisteredRepoHarnessRepos({ adoptedOnly: true })[0]).toMatchObject({ accessMode: 'read_write' });
         const ctx = createMcpToolContext({ repo: repoRoot, profile: 'coding' });
         expect(ctx.policy.profile).toBe('coding');
@@ -335,9 +339,11 @@ describe('mcp setup', () => {
         expect(() => createMcpToolContext({ repo: repoRoot, profile: 'coding' })).toThrow('explicit read_write grant');
 
         expect(setRepoHarnessAccessMode(repoRoot, 'read_write').authorizationRevision).toBe(3);
+        expect(() => createMcpToolContext({ repo: repoRoot, profile: 'coding' })).toThrow('authorization revision is stale');
         runMcpSetupChatgpt({ repo: repoRoot, scope: 'user', profile: 'planner' });
         const disabled = JSON.parse(readFileSync(join(userState, 'mcp.local.json'), 'utf-8'));
-        expect(disabled).toMatchObject({ profile: 'planner', authorizationRevision: 4, coding: { enabled: false } });
+        expect(disabled).toMatchObject({ profile: 'planner', coding: { enabled: false } });
+        expect(disabled.authorizationRevision).toBe(4);
         expect(() => createMcpToolContext({ repo: repoRoot, profile: 'coding' })).toThrow('coding MCP is disabled');
       } finally {
         if (previousHome === undefined) delete process.env.REPO_HARNESS_HOME;
@@ -345,6 +351,53 @@ describe('mcp setup', () => {
         rmSync(userState, { recursive: true, force: true });
       }
     });
+  });
+
+  test('coding setup validation failure leaves repo authorization unchanged', () => {
+    withTmpRepo((repoRoot) => {
+      expect(readRegisteredRepoHarnessRepos()).toEqual([]);
+      expect(repoHarnessAuthorizationRevision()).toBe(0);
+
+      expect(() => runMcpSetupChatgpt({
+        repo: repoRoot,
+        scope: 'user',
+        profile: 'coding',
+        grantReadWrite: [repoRoot],
+        endpoint: 'http://not-public.example/mcp',
+      })).toThrow('expected a public HTTPS URL');
+
+      expect(readRegisteredRepoHarnessRepos()).toEqual([]);
+      expect(repoHarnessAuthorizationRevision()).toBe(0);
+    });
+  });
+
+  test('coding setup preflights every grant and server name before authorization', () => {
+    for (const failure of ['server-name', 'mixed-grants'] as const) {
+      withTmpRepo((repoRoot) => {
+        const nonAdopted = mkdtempSync(join(tmpdir(), 'repo-harness-non-adopted-grant-'));
+        try {
+          const action = failure === 'server-name'
+            ? () => runMcpSetupChatgpt({
+                repo: repoRoot,
+                scope: 'user',
+                profile: 'coding',
+                grantReadWrite: [repoRoot],
+                serverName: 'bad/name',
+              })
+            : () => runMcpSetupChatgpt({
+                repo: repoRoot,
+                scope: 'user',
+                profile: 'coding',
+                grantReadWrite: [repoRoot, nonAdopted],
+              });
+          expect(action).toThrow();
+          expect(readRegisteredRepoHarnessRepos()).toEqual([]);
+          expect(repoHarnessAuthorizationRevision()).toBe(0);
+        } finally {
+          rmSync(nonAdopted, { recursive: true, force: true });
+        }
+      });
+    }
   });
 
   test('rerunning setup atomically migrates v1 and v2 local config to v3', () => {

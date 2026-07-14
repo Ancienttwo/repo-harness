@@ -7,7 +7,6 @@ import {
   McpProcessError,
   McpProcessSessionManager,
   type ProcessCompletionEvent,
-  type ProcessPty,
   type ProcessSnapshot,
 } from '../../src/cli/mcp/process-sessions';
 
@@ -76,28 +75,6 @@ describe('McpProcessSessionManager', () => {
       MONITOR_MODE: 'safe',
       COLOR_SCHEME: 'safe',
       WRITER_NAME: 'safe',
-    });
-  });
-
-  test('fails fast instead of hanging when node-pty runs under Bun', async () => {
-    if (!process.versions.bun) return;
-    await withTempRoot(async (root) => {
-      const manager = new McpProcessSessionManager();
-      try {
-        await expectProcessError(
-          () => manager.start({
-            ownerId: 'owner-a',
-            workspaceId: 'workspace-a',
-            command: 'printf pty-ok',
-            cwd: root,
-            workspaceRoot: root,
-            tty: true,
-          }),
-          'PTY_UNAVAILABLE',
-        );
-      } finally {
-        await manager.shutdown();
-      }
     });
   });
 
@@ -325,96 +302,40 @@ describe('McpProcessSessionManager', () => {
     });
   });
 
-  test('supports PTY input, resize, and Ctrl-C through an injected PTY factory', async () => {
+  test('pipe Ctrl-C interrupts the process tree', async () => {
     await withTempRoot(async (root) => {
-      let dataListener: ((data: string) => void) | undefined;
-      let exitListener: ((event: { exitCode: number; signal?: number }) => void) | undefined;
-      const writes: string[] = [];
-      const sizes: Array<[number, number]> = [];
-      const fakePty: ProcessPty = {
-        pid: 0,
-        write(data) {
-          writes.push(data);
-          if (data === '\u0003') exitListener?.({ exitCode: 130, signal: 2 });
-          else dataListener?.(`echo:${data}`);
-        },
-        resize(columns, rows) {
-          sizes.push([columns, rows]);
-        },
-        kill() {
-          exitListener?.({ exitCode: 143, signal: 15 });
-        },
-        onData(listener) {
-          dataListener = listener;
-        },
-        onExit(listener) {
-          exitListener = listener;
-        },
-      };
-      const manager = new McpProcessSessionManager({
-        terminationGraceMs: 20,
-        ptyFactory: async () => fakePty,
-      });
+      const manager = new McpProcessSessionManager({ terminationGraceMs: 20 });
       try {
         const started = await manager.start({
           ownerId: 'owner-a',
           workspaceId: 'workspace-a',
-          command: 'interactive-command',
+          command: 'sleep 10',
           cwd: root,
           workspaceRoot: root,
-          tty: true,
           yieldTimeMs: 0,
         });
-        const echoed = await manager.write({
-          ownerId: 'owner-a',
-          workspaceId: 'workspace-a',
-          sessionId: started.sessionId,
-          chars: 'hello',
-          columns: 120,
-          rows: 40,
-          yieldTimeMs: 0,
-        });
-        expect(echoed.output).toBe('echo:hello');
-        expect(sizes).toEqual([[120, 40]]);
-
         const interrupted = await manager.write({
           ownerId: 'owner-a',
           workspaceId: 'workspace-a',
           sessionId: started.sessionId,
           chars: '\u0003',
-          yieldTimeMs: 0,
+          yieldTimeMs: 1_000,
         });
-        expect(writes).toEqual(['hello', '\u0003']);
         expect(interrupted.running).toBe(false);
-        expect(interrupted.signal).toBe('2');
+        expect(interrupted.signal).toBe('SIGINT');
       } finally {
         await manager.shutdown();
       }
     });
   });
 
-  test('fails closed when PTY is unavailable and rejects unsafe environment keys and cwd escapes', async () => {
+  test('rejects unsafe environment keys and cwd escapes', async () => {
     await withTempRoot(async (root) => {
       const outside = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-process-outside-'));
       try {
         expect(() => buildMcpProcessEnvironment({ configuredEnv: { CODEX_TOKEN: 'secret' } })).toThrow();
-        const manager = new McpProcessSessionManager({
-          ptyFactory: async () => {
-            throw new McpProcessError('PTY_UNAVAILABLE', 'test PTY missing');
-          },
-        });
+        const manager = new McpProcessSessionManager();
         try {
-          await expectProcessError(
-            () => manager.start({
-              ownerId: 'owner-a',
-              workspaceId: 'workspace-a',
-              command: 'true',
-              cwd: root,
-              workspaceRoot: root,
-              tty: true,
-            }),
-            'PTY_UNAVAILABLE',
-          );
           await expectProcessError(
             () => manager.start({
               ownerId: 'owner-a',

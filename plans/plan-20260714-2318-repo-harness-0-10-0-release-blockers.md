@@ -130,16 +130,16 @@ At 10x scale, the first pressure point is HTTP/DCR state cardinality; fixed TTL/
 
 ## Task Breakdown
 
-- [ ] Capture pre-fix regression evidence for update profile loss, coding setup permission leak, crafted install-state deletion, forwarded-header bucket bypass, packaged Skill references, and Bun PTY unreachability.
-- [ ] Preserve the recorded install profile through `update` and add strict/product-planning CLI regressions.
-- [ ] Replace root Skill file references with packaged docs resolver commands and extend tarball smoke.
-- [ ] Reorder coding setup into full preflight, inert config write, then registry authorization commit; prove every late failure leaves mode/revision unchanged.
-- [ ] Strictly validate install-state schema and canonical managed paths before any profile-switch deletion; prove crafted external paths survive and fail closed.
-- [ ] Bound HTTP rate buckets and dynamic OAuth clients using direct socket identity, TTL, and caps; prove direct XFF spoofing cannot create identities.
-- [ ] Remove the unreachable PTY option/dependency from the unshipped coding MCP surface and keep pipe sessions fail-closed and covered.
-- [ ] Refresh `0.10.0` changelog/release filing with coding MCP scope, exact frozen commit, package contents, verification, and residual risk.
-- [ ] Run focused tests, `git diff --check`, dependency/package inspection, architecture/task/workflow checks, deep security/architecture re-review, and one final `bun run check:release` after code freeze.
-- [ ] Commit and push the reviewed slice; require green GitHub CI; publish npm; read registry tarball back; create annotated `v0.10.0`; create GitHub Release using the prior release format; reinstall from npm under Bun; run published-release/setup/CLI readbacks.
+- [x] Capture pre-fix regression evidence for update profile loss, coding setup permission leak, crafted install-state deletion, forwarded-header bucket bypass, packaged Skill references, and Bun PTY unreachability.
+- [x] Preserve the recorded install profile through `update` and add strict/product-planning CLI regressions.
+- [x] Replace root Skill file references with packaged docs resolver commands and extend tarball smoke.
+- [x] Reorder coding setup into full preflight, inert config write, then registry authorization commit; prove every late validation failure leaves mode/revision unchanged.
+- [x] Strictly validate install-state schema and canonical managed paths before any profile-switch deletion; prove crafted external paths survive and fail closed.
+- [x] Bound HTTP rate buckets and dynamic OAuth clients using direct socket identity, TTL, and caps; prove direct XFF spoofing cannot create identities.
+- [x] Remove the unreachable PTY option/dependency from the unshipped coding MCP surface and keep pipe sessions fail-closed and covered.
+- [x] Refresh `0.10.0` changelog/release filing with coding MCP scope, candidate verification, package expectations, and residual risk; the exact published commit remains a publish-time fact.
+- [x] Run focused tests, `git diff --check`, dependency/package inspection, architecture/task/workflow checks, deep security/architecture re-review, and one final `bun run check:release` after code freeze.
+- [ ] Commit and push the reviewed slice, open/merge the PR after green GitHub CI, and clean the branch/worktree. Record npm publish, registry readback, tag, GitHub Release, and installed-public-runtime proof as pending separate explicit release authorization.
 
 ## Verification Boundary
 
@@ -155,13 +155,13 @@ Before publish, revert the single release-blocker commit. After npm publish, npm
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
 
 ## Task Breakdown
-- [ ] Capture pre-fix regression evidence for update profile loss, coding setup permission leak, crafted install-state deletion, forwarded-header bucket bypass, packaged Skill references, and Bun PTY unreachability.
-- [ ] Preserve the recorded install profile through `update` and add strict/product-planning CLI regressions.
-- [ ] Replace root Skill file references with packaged docs resolver commands and extend tarball smoke.
-- [ ] Reorder coding setup into full preflight, inert config write, then registry authorization commit; prove every late failure leaves mode/revision unchanged.
-- [ ] Strictly validate install-state schema and canonical managed paths before any profile-switch deletion; prove crafted external paths survive and fail closed.
-- [ ] Bound HTTP rate buckets and dynamic OAuth clients using direct socket identity, TTL, and caps; prove direct XFF spoofing cannot create identities.
-- [ ] Remove the unreachable PTY option/dependency from the unshipped coding MCP surface and keep pipe sessions fail-closed and covered.
-- [ ] Refresh `0.10.0` changelog/release filing with coding MCP scope, exact frozen commit, package contents, verification, and residual risk.
-- [ ] Run focused tests, `git diff --check`, dependency/package inspection, architecture/task/workflow checks, deep security/architecture re-review, and one final `bun run check:release` after code freeze.
-- [ ] Commit and push the reviewed slice; require green GitHub CI; publish npm; read registry tarball back; create annotated `v0.10.0`; create GitHub Release using the prior release format; reinstall from npm under Bun; run published-release/setup/CLI readbacks.
+- [x] Capture pre-fix regression evidence for update profile loss, coding setup permission leak, crafted install-state deletion, forwarded-header bucket bypass, packaged Skill references, and Bun PTY unreachability.
+- [x] Preserve the recorded install profile through `update` and add strict/product-planning CLI regressions.
+- [x] Replace root Skill file references with packaged docs resolver commands and extend tarball smoke.
+- [x] Reorder coding setup into full preflight, inert config write, then registry authorization commit; prove every late validation failure leaves mode/revision unchanged.
+- [x] Strictly validate install-state schema and canonical managed paths before any profile-switch deletion; prove crafted external paths survive and fail closed.
+- [x] Bound HTTP rate buckets and dynamic OAuth clients using direct socket identity, TTL, and caps; prove direct XFF spoofing cannot create identities.
+- [x] Remove the unreachable PTY option/dependency from the unshipped coding MCP surface and keep pipe sessions fail-closed and covered.
+- [x] Refresh `0.10.0` changelog/release filing with coding MCP scope, candidate verification, package expectations, and residual risk; the exact published commit remains a publish-time fact.
+- [x] Run focused tests, `git diff --check`, dependency/package inspection, architecture/task/workflow checks, deep security/architecture re-review, and one final `bun run check:release` after code freeze.
+- [ ] Commit and push the reviewed slice, open/merge the PR after green GitHub CI, and clean the branch/worktree. Record npm publish, registry readback, tag, GitHub Release, and installed-public-runtime proof as pending separate explicit release authorization.

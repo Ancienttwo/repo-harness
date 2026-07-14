@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync, renameSync } from 'fs';
 import { dirname } from 'path';
 import type { OAuthRegisteredClientsStore } from '@modelcontextprotocol/sdk/server/auth/clients.js';
-import { InvalidGrantError, InvalidScopeError, InvalidTokenError } from '@modelcontextprotocol/sdk/server/auth/errors.js';
+import { InvalidGrantError, InvalidScopeError, InvalidTokenError, ServerError } from '@modelcontextprotocol/sdk/server/auth/errors.js';
 import type { AuthorizationParams, OAuthServerProvider } from '@modelcontextprotocol/sdk/server/auth/provider.js';
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import type {
@@ -51,12 +51,44 @@ export class McpOAuthTokenStore implements OAuthRegisteredClientsStore {
   private accessTokens = new Map<string, McpStoredAuthInfo>();
   private refreshTokens = new Map<string, RefreshTokenRecord>();
   private clients = new Map<string, OAuthClientInformationFull>();
-  private clock: () => number = nowSeconds;
+  private clock: () => number;
+  private readonly dynamicClientTtlSeconds: number;
+  private readonly maxDynamicClients: number;
 
-  constructor(private readonly path: string) {}
+  constructor(
+    private readonly path: string,
+    opts: {
+      readonly nowSeconds?: () => number;
+      readonly dynamicClientTtlSeconds?: number;
+      readonly maxDynamicClients?: number;
+    } = {},
+  ) {
+    this.clock = opts.nowSeconds ?? nowSeconds;
+    this.dynamicClientTtlSeconds = opts.dynamicClientTtlSeconds ?? 30 * 24 * 60 * 60;
+    this.maxDynamicClients = opts.maxDynamicClients ?? 64;
+    if (!Number.isInteger(this.dynamicClientTtlSeconds) || this.dynamicClientTtlSeconds < 1) {
+      throw new Error('dynamicClientTtlSeconds must be a positive integer');
+    }
+    if (!Number.isInteger(this.maxDynamicClients) || this.maxDynamicClients < 1) {
+      throw new Error('maxDynamicClients must be a positive integer');
+    }
+  }
 
   setClock(clock: () => number): void {
     this.clock = clock;
+  }
+
+  private cleanupExpiredClients(flush = true): void {
+    const now = this.clock();
+    let changed = false;
+    for (const [clientId, client] of this.clients) {
+      const issuedAt = client.client_id_issued_at;
+      if (typeof issuedAt !== 'number' || !Number.isInteger(issuedAt) || issuedAt <= 0 || issuedAt > now || issuedAt + this.dynamicClientTtlSeconds <= now) {
+        this.clients.delete(clientId);
+        changed = true;
+      }
+    }
+    if (changed && flush) this.flush();
   }
 
   load(): void {
@@ -72,10 +104,22 @@ export class McpOAuthTokenStore implements OAuthRegisteredClientsStore {
       for (const [token, record] of Object.entries(data.refreshTokens ?? {})) {
         this.refreshTokens.set(token, typeof record === 'string' ? { accessToken: record } : record);
       }
-      for (const [clientId, client] of Object.entries(data.clients ?? {})) {
-        this.clients.set(clientId, client);
+      const clients = new Map(Object.entries(data.clients ?? {}));
+      const persistedClientCount = clients.size;
+      const now = this.clock();
+      for (const [clientId, client] of clients) {
+        const issuedAt = client.client_id_issued_at;
+        if (typeof issuedAt !== 'number' || !Number.isInteger(issuedAt) || issuedAt <= 0 || issuedAt > now || issuedAt + this.dynamicClientTtlSeconds <= now) {
+          clients.delete(clientId);
+        }
       }
-    } catch (_error) {
+      if (clients.size > this.maxDynamicClients) {
+        throw new ServerError('Dynamic OAuth client capacity reached');
+      }
+      this.clients = clients;
+      if (clients.size !== persistedClientCount) this.flush();
+    } catch (error) {
+      if (error instanceof ServerError) throw error;
       // Corrupt local auth state should not prevent starting the server.
     }
   }
@@ -95,15 +139,20 @@ export class McpOAuthTokenStore implements OAuthRegisteredClientsStore {
   }
 
   getClient(clientId: string): OAuthClientInformationFull | undefined {
+    this.cleanupExpiredClients();
     return this.clients.get(clientId);
   }
 
   registerClient(client: Omit<OAuthClientInformationFull, 'client_id' | 'client_id_issued_at'>): OAuthClientInformationFull {
+    this.cleanupExpiredClients();
+    if (this.clients.size >= this.maxDynamicClients) {
+      throw new ServerError('Dynamic OAuth client capacity reached');
+    }
     const candidate = client as Partial<OAuthClientInformationFull>;
     const full: OAuthClientInformationFull = {
       ...client,
       client_id: candidate.client_id ?? randomUUID(),
-      client_id_issued_at: candidate.client_id_issued_at ?? nowSeconds(),
+      client_id_issued_at: this.clock(),
     };
     this.clients.set(full.client_id, full);
     this.flush();

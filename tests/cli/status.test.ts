@@ -130,7 +130,15 @@ describe('status command (Phase 1C)', () => {
       fs.writeFileSync(statePath, JSON.stringify({
         protocol: 1,
         profile: 'standard',
-        components: ['cli', 'effective-state', 'host-adapters', 'adaptive-workflow'],
+        components: [
+          'cli',
+          'effective-state',
+          'scope-worktree-check-guards',
+          'handoff',
+          'host-adapters',
+          'adaptive-workflow',
+          'codegraph-conditional',
+        ],
         transaction_id: 'test-txn',
         applied_at: '2026-01-01T00:00:00.000Z',
         ownership_manifest: [],
@@ -141,12 +149,20 @@ describe('status command (Phase 1C)', () => {
       expect(r.installedProfile).toEqual({
         recorded: true,
         profile: 'standard',
-        components: ['cli', 'effective-state', 'host-adapters', 'adaptive-workflow'],
+        components: [
+          'cli',
+          'effective-state',
+          'scope-worktree-check-guards',
+          'handoff',
+          'host-adapters',
+          'adaptive-workflow',
+          'codegraph-conditional',
+        ],
       });
 
       const text = formatStatus(r, false);
       expect(text).toContain('profile: standard');
-      expect(text).toContain('components: cli, effective-state, host-adapters, adaptive-workflow');
+      expect(text).toContain('components: cli, effective-state, scope-worktree-check-guards, handoff, host-adapters, adaptive-workflow, codegraph-conditional');
     });
   });
 
