@@ -1,6 +1,12 @@
 #!/bin/bash
 set -euo pipefail
 
+WORKFLOW_STATE_LIB="${REPO_HARNESS_WORKFLOW_STATE_LIB:-.ai/hooks/lib/workflow-state.sh}"
+if [[ -n "${REPO_HARNESS_BUN_BIN:-}" ]] && [[ "$WORKFLOW_STATE_LIB" != /* || ! -f "$WORKFLOW_STATE_LIB" || -L "$WORKFLOW_STATE_LIB" ]]; then
+  echo "archive-workflow: trusted workflow-state library is unavailable" >&2
+  exit 1
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -n "${REPO_HARNESS_TARGET_REPO_ROOT:-}" ]]; then
   cd "$REPO_HARNESS_TARGET_REPO_ROOT"
@@ -77,7 +83,7 @@ archive_transaction_commit() {
 completed_archive_gate() {
   local contract_file="$1"
   local review_file="$2"
-  local workflow_state_file=".ai/hooks/lib/workflow-state.sh"
+  local workflow_state_file="$WORKFLOW_STATE_LIB"
   local contract_status checks_file checks_message
   local external_row external_state external_reviewer external_source external_message
 

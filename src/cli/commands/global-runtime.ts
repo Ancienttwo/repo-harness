@@ -3,7 +3,7 @@ import { homedir } from "os";
 import { delimiter, dirname, join, resolve, sep } from "path";
 import { fileURLToPath } from "url";
 import { configureBrainRoot, defaultBrainRootChoice, expandHomePath } from "./brain-root";
-import { syncCrossReviewSkills } from "./init";
+import { syncBundledHostSkills } from "./init";
 import { runInstall, type InstallTargetSpec } from "./install";
 import { compareVersions, readLatestPackageVersion } from "./doctor";
 import { configureCodegraph } from "../tools/codegraph";
@@ -650,7 +650,7 @@ export function runGlobalRuntimeSetup(opts: GlobalRuntimeOptions = {}): GlobalRu
   }
 
   if (profile === 'strict') {
-    steps.push(...syncCrossReviewSkills(sourceRoot, target, env));
+    steps.push(...syncBundledHostSkills(sourceRoot, target, env));
   } else {
     steps.push({ step: "cross-review skills", status: "skipped", detail: "disabled by install profile" });
   }

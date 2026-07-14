@@ -17,7 +17,7 @@ import { PassThrough, Writable } from "stream";
 import {
   runInit,
   runInteractiveInit,
-  syncCrossReviewSkills,
+  syncBundledHostSkills,
   writeGlobalContextFiles,
 } from "../../src/cli/commands/init";
 import { configuredBrainRoot } from "../../src/cli/commands/brain-root";
@@ -793,7 +793,7 @@ describe("init command", () => {
   }, CODEGRAPH_INIT_TIMEOUT_MS);
 });
 
-describe("syncCrossReviewSkills", () => {
+describe("syncBundledHostSkills", () => {
   function makeSource(root: string): void {
     mkdirSync(join(root, "assets", "skills", "codex-review"), { recursive: true });
     writeFileSync(
@@ -805,6 +805,13 @@ describe("syncCrossReviewSkills", () => {
       join(root, "assets", "skills", "claude-review", "SKILL.md"),
       "---\nname: claude-review\n---\n",
     );
+    mkdirSync(join(root, "assets", "skills", "merge-gate"), { recursive: true });
+    writeFileSync(
+      join(root, "assets", "skills", "merge-gate", "SKILL.md"),
+      "---\nname: merge-gate\n---\n",
+    );
+    mkdirSync(join(root, "assets", "skills", "merge-gate", "agents"), { recursive: true });
+    writeFileSync(join(root, "assets", "skills", "merge-gate", "agents", "claude.md"), "fixture merge-gatekeeper\n");
   }
 
   test("installs host-aware: codex-review to Claude, claude-review to Codex", () => {
@@ -816,15 +823,18 @@ describe("syncCrossReviewSkills", () => {
       mkdirSync(home, { recursive: true });
       makeSource(source);
 
-      const steps = syncCrossReviewSkills(source, "both", { ...process.env, HOME: home });
+      const steps = syncBundledHostSkills(source, "both", { ...process.env, HOME: home });
 
       expect(steps.every((s) => s.status === "ok")).toBe(true);
       expect(existsSync(join(home, ".claude", "skills", "codex-review", "SKILL.md"))).toBe(true);
       expect(existsSync(join(home, ".codex", "skills", "claude-review", "SKILL.md"))).toBe(true);
       expect(existsSync(join(home, ".codex", "skills", "codex-review", "SKILL.md"))).toBe(false);
       expect(existsSync(join(home, ".claude", "skills", "claude-review", "SKILL.md"))).toBe(false);
+      expect(existsSync(join(home, ".claude", "skills", "merge-gate", "SKILL.md"))).toBe(true);
+      expect(existsSync(join(home, ".claude", "agents", "merge-gatekeeper.md"))).toBe(true);
+      expect(existsSync(join(home, ".codex", "skills", "merge-gate", "SKILL.md"))).toBe(false);
 
-      const again = syncCrossReviewSkills(source, "both", { ...process.env, HOME: home });
+      const again = syncBundledHostSkills(source, "both", { ...process.env, HOME: home });
       expect(again.some((s) => /already present/.test(s.detail ?? ""))).toBe(true);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
@@ -842,13 +852,15 @@ describe("syncCrossReviewSkills", () => {
       mkdirSync(codexHome, { recursive: true });
       makeSource(source);
 
-      syncCrossReviewSkills(source, "claude", { ...process.env, HOME: claudeHome });
+      syncBundledHostSkills(source, "claude", { ...process.env, HOME: claudeHome });
       expect(existsSync(join(claudeHome, ".claude", "skills", "codex-review", "SKILL.md"))).toBe(true);
+      expect(existsSync(join(claudeHome, ".claude", "skills", "merge-gate", "SKILL.md"))).toBe(true);
       expect(existsSync(join(claudeHome, ".codex", "skills", "claude-review", "SKILL.md"))).toBe(false);
 
-      syncCrossReviewSkills(source, "codex", { ...process.env, HOME: codexHome });
+      syncBundledHostSkills(source, "codex", { ...process.env, HOME: codexHome });
       expect(existsSync(join(codexHome, ".codex", "skills", "claude-review", "SKILL.md"))).toBe(true);
       expect(existsSync(join(codexHome, ".claude", "skills", "codex-review", "SKILL.md"))).toBe(false);
+      expect(existsSync(join(codexHome, ".codex", "skills", "merge-gate", "SKILL.md"))).toBe(false);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
@@ -862,7 +874,7 @@ describe("syncCrossReviewSkills", () => {
       mkdirSync(source, { recursive: true });
       mkdirSync(home, { recursive: true });
 
-      const steps = syncCrossReviewSkills(source, "both", { ...process.env, HOME: home });
+      const steps = syncBundledHostSkills(source, "both", { ...process.env, HOME: home });
       expect(steps.every((s) => s.status !== "failed")).toBe(true);
       expect(steps.some((s) => s.status === "skipped")).toBe(true);
     } finally {

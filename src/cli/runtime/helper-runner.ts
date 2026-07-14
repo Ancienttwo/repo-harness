@@ -1,5 +1,6 @@
-import { existsSync, lstatSync, readFileSync } from 'fs';
+import { existsSync, lstatSync, readFileSync, realpathSync } from 'fs';
 import { dirname, extname, isAbsolute, join, resolve } from 'path';
+import { userInfo } from 'os';
 import { fileURLToPath } from 'url';
 import { runProcess as runBoundedProcess } from '../../effects/process-runner';
 
@@ -7,6 +8,81 @@ const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = resolve(SCRIPT_DIR, '..', '..', '..');
 const PACKAGE_HELPERS_ROOT = join(PACKAGE_ROOT, 'assets', 'templates', 'helpers');
 const PACKAGE_CONTRACT = join(PACKAGE_ROOT, 'assets', 'workflow-contract.v1.json');
+const PACKAGE_WORKFLOW_STATE = join(PACKAGE_ROOT, 'assets', 'hooks', 'lib', 'workflow-state.sh');
+const PROTECTED_HELPERS = new Set(['contract-worktree', 'ship-worktrees', 'merge-gate']);
+
+function fixedSystemExecutable(label: string, candidates: readonly string[]): string {
+  for (const candidate of candidates) {
+    if (!existsSync(candidate)) continue;
+    const stat = lstatSync(candidate);
+    if (!stat.isSymbolicLink() && stat.isFile() && (stat.mode & 0o111) !== 0) return candidate;
+  }
+  throw new Error(`required system executable is unavailable: ${label}`);
+}
+
+function systemBash(): string {
+  return fixedSystemExecutable('bash', ['/bin/bash']);
+}
+
+function systemGit(): string {
+  return fixedSystemExecutable('git', ['/usr/bin/git', '/bin/git']);
+}
+
+function optionalHostExecutable(candidates: readonly string[]): string | undefined {
+  for (const candidate of candidates) {
+    if (!existsSync(candidate)) continue;
+    const actual = realpathSync(candidate);
+    const stat = lstatSync(actual);
+    if (stat.isFile() && (stat.mode & 0o111) !== 0) return actual;
+  }
+  return undefined;
+}
+
+const HOST_GH = optionalHostExecutable([
+  '/opt/homebrew/bin/gh',
+  '/usr/local/bin/gh',
+  '/usr/bin/gh',
+  '/home/linuxbrew/.linuxbrew/bin/gh',
+]);
+
+function protectedPath(): string {
+  return [...new Set([
+    dirname(process.execPath),
+    ...(HOST_GH ? [dirname(HOST_GH)] : []),
+    '/usr/bin',
+    '/bin',
+    '/usr/sbin',
+    '/sbin',
+  ])].join(':');
+}
+
+function copyAllowedEnv(source: NodeJS.ProcessEnv, target: NodeJS.ProcessEnv, keys: readonly string[]): void {
+  for (const key of keys) {
+    const value = source[key];
+    if (value !== undefined) target[key] = value;
+  }
+}
+
+function protectedChildEnv(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const account = userInfo();
+  const env: NodeJS.ProcessEnv = {
+    HOME: account.homedir,
+    USER: account.username,
+    LOGNAME: account.username,
+    PATH: protectedPath(),
+    TMPDIR: '/tmp',
+  };
+  copyAllowedEnv(source, env, [
+    'LANG',
+    'LC_ALL',
+    'TERM',
+    'CI',
+    'NO_COLOR',
+    'FORCE_COLOR',
+    'HOOK_HOST',
+  ]);
+  return env;
+}
 
 export type HelperSource = 'source' | 'package';
 
@@ -168,9 +244,13 @@ function readContractHelperDescriptions(
   return result;
 }
 
-function resolveHelperRuntime(env: NodeJS.ProcessEnv): HelperRuntime {
+function isProtectedHelper(helper: string): boolean {
+  return PROTECTED_HELPERS.has(helperId(helper));
+}
+
+function resolveHelperRuntime(env: NodeJS.ProcessEnv, allowSourceOverride = true): HelperRuntime {
   const sourceRoot = env.REPO_HARNESS_SOURCE_ROOT?.trim();
-  if (sourceRoot) {
+  if (sourceRoot && allowSourceOverride) {
     if (!isAbsolute(sourceRoot)) {
       throw new Error('REPO_HARNESS_SOURCE_ROOT must be an absolute path');
     }
@@ -212,9 +292,9 @@ function resolveHelperFileName(helper: string, files: readonly string[]): string
   return files.find((fileName) => helperId(fileName) === helper) ?? null;
 }
 
-function resolveRepoRoot(cwd: string, env: NodeJS.ProcessEnv): string {
-  const result = runBoundedProcess('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], {
-    env,
+function resolveRepoRoot(cwd: string, env: NodeJS.ProcessEnv, protectedHelper: boolean): string {
+  const result = runBoundedProcess(protectedHelper ? systemGit() : 'git', ['-C', cwd, 'rev-parse', '--show-toplevel'], {
+    env: protectedHelper ? protectedChildEnv(env) : env,
     timeoutMs: 5000,
   });
   return result.status === 0 && result.stdout.trim() ? result.stdout.trim() : cwd;
@@ -238,8 +318,9 @@ function resolveFromDir(
 }
 
 export function resolveHelper(helper: string, cwd = process.cwd(), env: NodeJS.ProcessEnv = process.env): ResolvedHelper | null {
-  const repoRoot = resolveRepoRoot(cwd, env);
-  const runtime = resolveHelperRuntime(env);
+  const protectedHelper = isProtectedHelper(helper);
+  const repoRoot = resolveRepoRoot(cwd, env, protectedHelper);
+  const runtime = resolveHelperRuntime(env, !protectedHelper);
   const fileName = resolveHelperFileName(helper, readContractHelpers(runtime.contractPath));
   if (!fileName) return null;
 
@@ -260,14 +341,31 @@ export function runHelper(opts: RunHelperOptions): RunHelperResult {
   }
 
   const args = [...(opts.args ?? [])];
-  const command = resolved.fileName.endsWith('.sh') ? 'bash' : process.execPath;
+  const protectedHelper = isProtectedHelper(opts.helper);
+  const trustedBash = protectedHelper ? systemBash() : 'bash';
+  const trustedGit = protectedHelper ? systemGit() : 'git';
+  const command = resolved.fileName.endsWith('.sh') ? trustedBash : process.execPath;
+  const childEnv: NodeJS.ProcessEnv = {
+    ...(protectedHelper ? protectedChildEnv(env) : env),
+    REPO_HARNESS_HELPER_SOURCE_PATH: resolved.path,
+    REPO_HARNESS_TARGET_REPO_ROOT: resolved.repoRoot,
+  };
+  if (protectedHelper) {
+    childEnv.REPO_HARNESS_BASH_BIN = trustedBash;
+    childEnv.REPO_HARNESS_GIT_BIN = trustedGit;
+    childEnv.REPO_HARNESS_BUN_BIN = process.execPath;
+    childEnv.REPO_HARNESS_WORKFLOW_STATE_LIB = resolveFromDir(
+      'workflow-state.sh',
+      dirname(PACKAGE_WORKFLOW_STATE),
+      'package',
+      resolved.repoRoot,
+    ).path;
+    if (HOST_GH) childEnv.REPO_HARNESS_GH_BIN = HOST_GH;
+    else delete childEnv.REPO_HARNESS_GH_BIN;
+  }
   const child = runBoundedProcess(command, [resolved.path, ...args], {
     cwd: resolved.repoRoot,
-    env: {
-      ...env,
-      REPO_HARNESS_HELPER_SOURCE_PATH: resolved.path,
-      REPO_HARNESS_TARGET_REPO_ROOT: resolved.repoRoot,
-    },
+    env: childEnv,
     stdio: opts.stdio ?? 'inherit',
     timeoutMs: opts.timeoutMs,
     maxOutputBytes: opts.maxOutputBytes,

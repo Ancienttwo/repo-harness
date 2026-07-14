@@ -12,6 +12,7 @@ import { stdin, stdout } from "process";
 import { homedir } from "os";
 import {
   cpSync,
+  copyFileSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -53,16 +54,18 @@ export interface GlobalContextOptions {
 }
 
 /**
- * Cross-review skills bundled in this package under `assets/skills/<skill>` and
- * installed host-aware: `codex-review` (Claude host) lets a Claude session get an
- * independent Codex review; `claude-review` (Codex host) lets a Codex session get
- * an independent Claude review. They are self-contained (no external planning-provider runtime), so
- * init bootstraps them as workflow-owned runtime skills alongside Waza and
- * Mermaid, not as an unrelated plugin marketplace stack.
+ * Host-scoped skills bundled under `assets/skills/<skill>`. Cross-review skills
+ * install on the opposite host; the merge gate installs only on the configured
+ * local gatekeeper host (Claude) so there is one runtime authority.
  */
-const CROSS_REVIEW_SKILLS: ReadonlyArray<{ skill: string; host: "claude" | "codex" }> = [
-  { skill: "codex-review", host: "claude" },
-  { skill: "claude-review", host: "codex" },
+const BUNDLED_HOST_SKILLS: ReadonlyArray<{ skill: string; host: "claude" | "codex"; step: string }> = [
+  { skill: "codex-review", host: "claude", step: "cross-review skill codex-review" },
+  { skill: "claude-review", host: "codex", step: "cross-review skill claude-review" },
+  { skill: "merge-gate", host: "claude", step: "merge-gate skill" },
+];
+
+const BUNDLED_HOST_AGENTS: ReadonlyArray<{ source: string; agent: string; host: "claude" | "codex"; step: string }> = [
+  { source: "assets/skills/merge-gate/agents/claude.md", agent: "merge-gatekeeper.md", host: "claude", step: "merge-gate agent" },
 ];
 
 export interface InitCommandOptions {
@@ -303,21 +306,18 @@ export function writeGlobalContextFiles(
 }
 
 /**
- * Install the bundled cross-review skills, each into the host where it is useful:
- * `codex-review` → `~/.claude/skills` (Claude calls Codex), `claude-review` →
- * `~/.codex/skills` (Codex calls Claude). Respects `target`, is idempotent
- * (identical SKILL.md → "already present"), and treats a missing bundled source
- * as `skipped` (never fails init).
+ * Install each bundled skill into its one declared host. Respects `target`, is
+ * idempotent (identical SKILL.md → "already present"), and treats a missing
+ * bundled source as `skipped` (never fails init).
  */
-export function syncCrossReviewSkills(
+export function syncBundledHostSkills(
   sourceRoot: string,
   target: InstallTargetSpec,
   env?: NodeJS.ProcessEnv,
 ): InitStep[] {
   const home = homeDir(env);
   const steps: InitStep[] = [];
-  for (const { skill, host } of CROSS_REVIEW_SKILLS) {
-    const step = `cross-review skill ${skill}`;
+  for (const { skill, host, step } of BUNDLED_HOST_SKILLS) {
     if (target !== "both" && target !== host) continue;
     if (!home) {
       steps.push({ step, status: "failed", detail: "HOME is required to resolve host skill roots" });
@@ -350,6 +350,31 @@ export function syncCrossReviewSkills(
       continue;
     }
     cpSync(source, dest, { recursive: true });
+    steps.push({ step, status: "ok", detail: `synced ${dest}` });
+  }
+  for (const { source, agent, host, step } of BUNDLED_HOST_AGENTS) {
+    if (target !== "both" && target !== host) continue;
+    if (!home) {
+      steps.push({ step, status: "failed", detail: "HOME is required to resolve host agent roots" });
+      continue;
+    }
+    const src = join(sourceRoot, source);
+    if (!existsSync(src)) {
+      steps.push({ step, status: "skipped", detail: `bundled source not found at ${src}` });
+      continue;
+    }
+    const root = join(home, host === "claude" ? ".claude" : ".codex", "agents");
+    const dest = join(root, agent);
+    mkdirSync(root, { recursive: true });
+    if (existsSync(dest)) {
+      if (readFileSync(dest, "utf-8") === readFileSync(src, "utf-8")) {
+        steps.push({ step, status: "ok", detail: "already present" });
+      } else {
+        steps.push({ step, status: "failed", detail: `refusing to overwrite modified agent at ${dest}` });
+      }
+      continue;
+    }
+    copyFileSync(src, dest);
     steps.push({ step, status: "ok", detail: `synced ${dest}` });
   }
   return steps;
@@ -433,7 +458,7 @@ function installExternalSkills(sourceRoot: string, target: InstallTargetSpec, en
     env,
   );
   steps.push(withStepName(mermaid, "external skill mermaid", `target=${target}`));
-  steps.push(...syncCrossReviewSkills(sourceRoot, target, env));
+  steps.push(...syncBundledHostSkills(sourceRoot, target, env));
   return steps;
 }
 

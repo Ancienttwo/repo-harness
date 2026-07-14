@@ -19,9 +19,13 @@ function setupFakeSource(root: string): void {
   mkdirSync(join(root, 'scripts'), { recursive: true });
   mkdirSync(join(root, 'assets', 'skills', 'codex-review'), { recursive: true });
   mkdirSync(join(root, 'assets', 'skills', 'claude-review'), { recursive: true });
+  mkdirSync(join(root, 'assets', 'skills', 'merge-gate'), { recursive: true });
   writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'repo-harness', version: '9.9.9' }, null, 2));
   writeFileSync(join(root, 'assets', 'skills', 'codex-review', 'SKILL.md'), 'codex-review\n');
   writeFileSync(join(root, 'assets', 'skills', 'claude-review', 'SKILL.md'), 'claude-review\n');
+  writeFileSync(join(root, 'assets', 'skills', 'merge-gate', 'SKILL.md'), 'merge-gate\n');
+  mkdirSync(join(root, 'assets', 'skills', 'merge-gate', 'agents'), { recursive: true });
+  writeFileSync(join(root, 'assets', 'skills', 'merge-gate', 'agents', 'claude.md'), 'merge-gatekeeper\n');
   writeExecutable(
     join(root, 'scripts', 'sync-codex-installed-copies.sh'),
     '#!/bin/bash\nset -euo pipefail\necho "sync runtime link=${AGENTIC_DEV_LINK_INSTALLED_COPIES:-unset}"\n',

@@ -99,6 +99,19 @@ function copyHelpers(cwd: string) {
   expect(run("bash", ["-lc", "chmod +x .ai/harness/scripts/*.sh"], cwd).status).toBe(0);
 }
 
+function createTrustedMergeGateRuntime(path: string, authorityHome: string): string {
+  cpSync(HELPER_DIR, path, { recursive: true });
+  writeFileSync(
+    join(path, "merge-gate.ts"),
+    [
+      `import { runMergeGateCli } from ${JSON.stringify(join(ROOT, "scripts/merge-gate.ts"))};`,
+      `runMergeGateCli(process.argv.slice(2), ${JSON.stringify(authorityHome)});`,
+      "",
+    ].join("\n"),
+  );
+  return path;
+}
+
 function installHooks(cwd: string) {
   const aiHooksDir = join(cwd, ".ai", "hooks");
   mkdirSync(aiHooksDir, { recursive: true });
@@ -470,6 +483,23 @@ describe("Workflow helper scripts", () => {
     expect(script.indexOf('check_architecture_freshness "$target_branch"')).toBeLessThan(
       script.indexOf('bash "$helper_dir/verify-sprint.sh"'),
     );
+  });
+
+  test("merge gate runs after the candidate commit and is reverified before merge or push", () => {
+    const contract = readFileSync(join(ROOT, "scripts/contract-worktree.sh"), "utf-8");
+    const ship = readFileSync(join(ROOT, "scripts/ship-worktrees.sh"), "utf-8");
+    expect(contract.indexOf('git commit -m "$commit_message"')).toBeLessThan(
+      contract.indexOf('run_merge_gate "$gate_base_ref" "$active_plan"'),
+    );
+    expect(contract.indexOf('verify_merge_gate_receipt "$gate_base_ref"')).toBeLessThan(
+      contract.indexOf('git -C "$target_worktree" merge --ff-only "$verified_sha"'),
+    );
+    expect(contract).toContain('local merge gate base must equal target branch $target_branch');
+    expect(ship.indexOf('verified_sha="$(verify_merge_gate_before_ship "$gate_base_ref")"')).toBeLessThan(
+      ship.indexOf('push_branch "$branch" "$verified_sha"'),
+    );
+    expect(ship).toContain('git push "$REMOTE_NAME" "$verified_sha:refs/heads/$branch"');
+    expect(ship).toContain('+refs/heads/$TARGET_BRANCH:refs/remotes/$REMOTE_NAME/$TARGET_BRANCH');
   });
 
   test("workflow contract drives a deterministic helper projection without a migration delegate", () => {
@@ -1527,6 +1557,10 @@ describe("Workflow helper scripts", () => {
   test("contract-worktree finish should require external acceptance, then verify, commit, and fast-forward merge", () => {
     const cwd = tmpWorkspace("helper-contract-finish");
     const worktreePath = `${cwd}-wt-demo`;
+    const fakeClaude = `${cwd}-fake-claude`;
+    const fakeVerdict = `${cwd}-fake-verdict`;
+    const home = `${cwd}-home`;
+    const trustedHelpers = `${cwd}-trusted-helpers`;
     try {
       mkdirSync(join(cwd, "plans"), { recursive: true });
       mkdirSync(join(cwd, "tasks"), { recursive: true });
@@ -1555,6 +1589,7 @@ describe("Workflow helper scripts", () => {
               base_branch: "main",
               merge_back: { target: "main" },
             },
+            merge_gate: { enabled: true, rule: "fixture" },
           },
           null,
           2
@@ -1571,12 +1606,43 @@ describe("Workflow helper scripts", () => {
       );
       writeFileSync(
         join(cwd, "package.json"),
-        JSON.stringify({ scripts: { "check:type": "test -f src/modules/demo/index.ts" } }, null, 2) + "\n"
+        JSON.stringify({ scripts: { "check:type": "test -z \"${GH_TOKEN:-}\" && test -z \"${GITHUB_TOKEN:-}\" && test -z \"${ANTHROPIC_API_KEY:-}\" && test -z \"${CLAUDE_CODE_OAUTH_TOKEN:-}\" && test -f src/modules/demo/index.ts" } }, null, 2) + "\n"
       );
       writeFixtureCapabilityRegistry(cwd);
       writeFileSync(join(cwd, "docs/spec.md"), "# Spec\n");
       initGitRepo(cwd);
       commitAll(cwd, "init workflow");
+      writeFileSync(
+        fakeClaude,
+        [
+          "#!/bin/sh",
+          `if [ \"$(cat ${JSON.stringify(fakeVerdict)})\" = FAIL ]; then`,
+          "  printf '%s\\n' '{\"type\":\"result\",\"structured_output\":{\"protocol\":1,\"verdict\":\"FAIL\",\"summary\":\"fixture rejected\",\"findings\":[{\"severity\":\"HIGH\",\"file\":\"src/modules/demo/index.ts\",\"line\":1,\"message\":\"fixture defect\",\"fix\":\"repair fixture\"}],\"checks\":[{\"command\":\"fixture check\",\"status\":\"fail\",\"summary\":\"failed\"}]}}'",
+          "else",
+          "  printf '%s\\n' '{\"type\":\"result\",\"structured_output\":{\"protocol\":1,\"verdict\":\"PASS\",\"summary\":\"fixture accepted\",\"findings\":[],\"checks\":[{\"command\":\"fixture check\",\"status\":\"pass\",\"summary\":\"passed\"}]}}'",
+          "fi",
+        ].join("\n") + "\n",
+      );
+      chmodSync(fakeClaude, 0o755);
+      writeFileSync(fakeVerdict, "PASS\n");
+      mkdirSync(join(home, ".repo-harness"), { recursive: true });
+      mkdirSync(join(home, ".claude", "agents"), { recursive: true });
+      mkdirSync(join(home, ".claude", "skills", "merge-gate"), { recursive: true });
+      writeFileSync(join(home, ".claude", "agents", "gatekeeper.md"), "fixture gatekeeper\n");
+      writeFileSync(join(home, ".claude", "skills", "merge-gate", "SKILL.md"), "fixture merge gate\n");
+      writeFileSync(
+        join(home, ".repo-harness", "config.json"),
+        JSON.stringify({
+          merge_gate: {
+            enabled: true,
+            runner: "claude-agent",
+            agent: "gatekeeper",
+            skill: "merge-gate",
+            claude_bin: fakeClaude,
+          },
+        }, null, 2) + "\n",
+      );
+      createTrustedMergeGateRuntime(trustedHelpers, home);
 
       writeFileSync(
         join(cwd, "plans/plan-20260304-1450-demo.md"),
@@ -1662,10 +1728,53 @@ describe("Workflow helper scripts", () => {
         ].join("\n")
       );
 
-      const finish = run("bash", ["scripts/contract-worktree.sh", "finish"], worktreePath, {
+      const gateEnv = {
         HOOK_HOST: "claude",
         REPO_HARNESS_HOOK_CLI: join(ROOT, "src/cli/hook-entry.ts"),
+        HOME: home,
+        REPO_HARNESS_HELPER_SOURCE_PATH: join(trustedHelpers, "contract-worktree.sh"),
+        REPO_HARNESS_BASH_BIN: "/bin/bash",
+        REPO_HARNESS_BUN_BIN: process.execPath,
+        REPO_HARNESS_GIT_BIN: "/usr/bin/git",
+        REPO_HARNESS_WORKFLOW_STATE_LIB: join(ROOT, "assets/hooks/lib/workflow-state.sh"),
+        GH_TOKEN: "must-not-reach-candidate",
+        GITHUB_TOKEN: "must-not-reach-candidate",
+        ANTHROPIC_API_KEY: "must-not-reach-candidate",
+        CLAUDE_CODE_OAUTH_TOKEN: "must-not-reach-candidate",
+      };
+      const candidateSourceMarker = `${cwd}-candidate-workflow-state-executed`;
+      writeFileSync(
+        join(worktreePath, ".ai/hooks/lib/workflow-state.sh"),
+        `touch ${JSON.stringify(candidateSourceMarker)}\nrun_merge_gate() { git rev-parse HEAD; }\nverify_merge_gate_receipt() { git rev-parse HEAD; }\n`,
+      );
+      const maliciousLibrary = run("bash", ["scripts/contract-worktree.sh", "finish"], worktreePath, gateEnv);
+      expect(maliciousLibrary.status).toBe(1);
+      expect(existsSync(candidateSourceMarker)).toBe(false);
+      expect(run("git", ["checkout", "--", ".ai/hooks/lib/workflow-state.sh"], worktreePath).status).toBe(0);
+
+      mkdirSync(join(cwd, "src/modules/demo"), { recursive: true });
+      writeFileSync(join(cwd, "src/modules/demo/index.ts"), "export const demo = true;\n");
+      const dirtyTarget = run("bash", ["scripts/contract-worktree.sh", "finish"], worktreePath, {
+        ...gateEnv,
       });
+      expect(dirtyTarget.status).toBe(1);
+      expect(dirtyTarget.stderr).toContain("target worktree is dirty, refusing merge");
+      expect(readFileSync(join(cwd, "src/modules/demo/index.ts"), "utf-8")).toBe("export const demo = true;\n");
+      rmSync(join(cwd, "src"), { recursive: true, force: true });
+
+      const beforeRejectedFinish = run("git", ["rev-parse", "HEAD"], worktreePath).stdout.trim();
+      writeFileSync(fakeVerdict, "FAIL\n");
+      const rejected = run("bash", ["scripts/contract-worktree.sh", "finish"], worktreePath, gateEnv);
+      expect(rejected.status).toBe(1);
+      expect(rejected.stderr).toContain("[MergeGate] FAIL: fixture rejected");
+      expect(rejected.stderr).toContain("restored live workflow artifacts and the pre-finish branch");
+      expect(run("git", ["rev-parse", "HEAD"], worktreePath).stdout.trim()).toBe(beforeRejectedFinish);
+      expect(existsSync(join(worktreePath, "plans/plan-20260304-1450-demo.md"))).toBe(true);
+      expect(existsSync(join(worktreePath, "plans/archive/plan-20260304-1450-demo.md"))).toBe(false);
+      expect(existsSync(join(worktreePath, "src/modules/demo/index.ts"))).toBe(true);
+
+      writeFileSync(fakeVerdict, "PASS\n");
+      const finish = run("bash", ["scripts/contract-worktree.sh", "finish"], worktreePath, gateEnv);
       expect(finish.status, `${finish.stdout}\n${finish.stderr}`).toBe(0);
       expect(finish.stdout).toContain("[ArchitectureSync] mode=strict");
       expect(finish.stdout).toContain("Sprint verification passed");
@@ -1689,6 +1798,10 @@ describe("Workflow helper scripts", () => {
     } finally {
       run("git", ["worktree", "remove", "--force", worktreePath], cwd);
       rmSync(worktreePath, { recursive: true, force: true });
+      rmSync(fakeClaude, { force: true });
+      rmSync(fakeVerdict, { force: true });
+      rmSync(home, { recursive: true, force: true });
+      rmSync(trustedHelpers, { recursive: true, force: true });
       rmSync(cwd, { recursive: true, force: true });
     }
   }, 60000);
@@ -1698,6 +1811,8 @@ describe("Workflow helper scripts", () => {
     const worktreePath = `${cwd}-wt-demo`;
     const remotePath = `${cwd}-remote.git`;
     const fakeBin = `${cwd}-fake-bin`;
+    const home = `${cwd}-home`;
+    const trustedHelpers = `${cwd}-trusted-helpers`;
     const ghLog = `${cwd}-gh.log`;
     try {
       mkdirSync(join(cwd, "plans"), { recursive: true });
@@ -1722,6 +1837,10 @@ describe("Workflow helper scripts", () => {
               branch_prefix: "codex/",
               base_branch: "main",
               merge_back: { target: "main" },
+            },
+            merge_gate: {
+              enabled: true,
+              rule: "fixture",
             },
           },
           null,
@@ -1762,6 +1881,32 @@ describe("Workflow helper scripts", () => {
         ].join("\n") + "\n"
       );
       expect(run("chmod", ["+x", join(fakeBin, "gh")], cwd).status).toBe(0);
+      writeFileSync(
+        join(fakeBin, "claude"),
+        [
+          "#!/bin/sh",
+          "printf '%s\\n' '{\"type\":\"result\",\"structured_output\":{\"protocol\":1,\"verdict\":\"PASS\",\"summary\":\"fixture accepted\",\"findings\":[],\"checks\":[{\"command\":\"fixture check\",\"status\":\"pass\",\"summary\":\"passed\"}]}}'",
+        ].join("\n") + "\n",
+      );
+      expect(run("chmod", ["+x", join(fakeBin, "claude")], cwd).status).toBe(0);
+      mkdirSync(join(home, ".repo-harness"), { recursive: true });
+      mkdirSync(join(home, ".claude", "agents"), { recursive: true });
+      mkdirSync(join(home, ".claude", "skills", "merge-gate"), { recursive: true });
+      writeFileSync(join(home, ".claude", "agents", "gatekeeper.md"), "fixture gatekeeper\n");
+      writeFileSync(join(home, ".claude", "skills", "merge-gate", "SKILL.md"), "fixture merge gate\n");
+      writeFileSync(
+        join(home, ".repo-harness", "config.json"),
+        JSON.stringify({
+          merge_gate: {
+            enabled: true,
+            runner: "claude-agent",
+            agent: "gatekeeper",
+            skill: "merge-gate",
+            claude_bin: join(fakeBin, "claude"),
+          },
+        }, null, 2) + "\n",
+      );
+      createTrustedMergeGateRuntime(trustedHelpers, home);
 
       writeFileSync(
         join(cwd, "plans/plan-20260304-1450-demo.md"),
@@ -1820,10 +1965,19 @@ describe("Workflow helper scripts", () => {
         HOOK_HOST: "claude",
         REPO_HARNESS_HOOK_CLI: join(ROOT, "src/cli/hook-entry.ts"),
         GH_LOG: ghLog,
+        HOME: home,
         PATH: `${fakeBin}:${process.env.PATH}`,
+        REPO_HARNESS_HELPER_SOURCE_PATH: join(trustedHelpers, "ship-worktrees.sh"),
+        REPO_HARNESS_BASH_BIN: "/bin/bash",
+        REPO_HARNESS_BUN_BIN: process.execPath,
+        REPO_HARNESS_GIT_BIN: "/usr/bin/git",
+        REPO_HARNESS_WORKFLOW_STATE_LIB: join(ROOT, "assets/hooks/lib/workflow-state.sh"),
       });
-      expect(ship.status, `${ship.stdout}\n${ship.stderr}`).toBe(0);
+      const shipOutput = `${ship.stdout}\n${ship.stderr}`;
+      expect(ship.status, shipOutput).toBe(0);
       expect(ship.stdout).toContain("contract-worktree.sh finish --no-merge");
+      expect(shipOutput).toContain("[MergeGate] PASS: fixture accepted");
+      expect(shipOutput.match(/\[MergeGate\] verified PASS/g)?.length).toBe(2);
       expect(ship.stdout).toContain("[ArchitectureSync] mode=advisory");
       expect(ship.stdout).toContain("PR already exists for codex/demo after create failure");
       expect(ship.stdout).toContain("https://example.test/pr/1");
@@ -1837,6 +1991,8 @@ describe("Workflow helper scripts", () => {
       rmSync(worktreePath, { recursive: true, force: true });
       rmSync(remotePath, { recursive: true, force: true });
       rmSync(fakeBin, { recursive: true, force: true });
+      rmSync(home, { recursive: true, force: true });
+      rmSync(trustedHelpers, { recursive: true, force: true });
       rmSync(cwd, { recursive: true, force: true });
     }
   }, 60000);
@@ -1872,6 +2028,10 @@ describe("Workflow helper scripts", () => {
       const ship = run("bash", ["scripts/ship-worktrees.sh", "--slug", "demo"], cwd, {
         GH_LOG: ghLog,
         PATH: `${fakeBin}:${process.env.PATH}`,
+        REPO_HARNESS_BASH_BIN: "/bin/bash",
+        REPO_HARNESS_BUN_BIN: process.execPath,
+        REPO_HARNESS_GIT_BIN: "/usr/bin/git",
+        REPO_HARNESS_WORKFLOW_STATE_LIB: join(ROOT, "assets/hooks/lib/workflow-state.sh"),
       });
       expect(ship.status).toBe(0);
       expect(run("git", ["branch", "--show-current"], cwd).stdout.trim()).toBe("codex/demo-main-closeout");
@@ -1881,6 +2041,39 @@ describe("Workflow helper scripts", () => {
     } finally {
       rmSync(remotePath, { recursive: true, force: true });
       rmSync(fakeBin, { recursive: true, force: true });
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 15000);
+
+  test("ship-worktrees rejects gated dirty-main closeout without a goal before branch mutation", () => {
+    const cwd = tmpWorkspace("helper-ship-main-gated-no-goal");
+    const remotePath = `${cwd}-remote.git`;
+    try {
+      copyHelpers(cwd);
+      initGitRepo(cwd);
+      mkdirSync(join(cwd, ".ai/harness"), { recursive: true });
+      writeFileSync(join(cwd, ".ai/harness/policy.json"), `${JSON.stringify({ merge_gate: { enabled: true, rule: "fixture" } }, null, 2)}\n`);
+      writeFileSync(join(cwd, "README.md"), "# gated demo\n");
+      commitAll(cwd, "init gated main closeout");
+      expect(run("git", ["init", "--bare", remotePath], cwd).status).toBe(0);
+      expect(run("git", ["remote", "add", "origin", remotePath], cwd).status).toBe(0);
+      expect(run("git", ["push", "-u", "origin", "main"], cwd).status).toBe(0);
+
+      writeFileSync(join(cwd, "main-dirty.txt"), "closeout\n");
+      const ship = run("bash", ["scripts/ship-worktrees.sh", "--slug", "demo"], cwd, {
+        REPO_HARNESS_BASH_BIN: "/bin/bash",
+        REPO_HARNESS_BUN_BIN: process.execPath,
+        REPO_HARNESS_GIT_BIN: "/usr/bin/git",
+        REPO_HARNESS_HELPER_SOURCE_PATH: join(HELPER_DIR, "ship-worktrees.sh"),
+        REPO_HARNESS_WORKFLOW_STATE_LIB: join(ROOT, "assets/hooks/lib/workflow-state.sh"),
+      });
+      expect(ship.status).toBe(1);
+      expect(ship.stderr).toContain("has no active goal plan; use a contract worktree");
+      expect(run("git", ["branch", "--show-current"], cwd).stdout.trim()).toBe("main");
+      expect(existsSync(join(cwd, "main-dirty.txt"))).toBe(true);
+      expect(run("git", ["show-ref", "--verify", "--quiet", "refs/heads/codex/demo-main-closeout"], cwd).status).not.toBe(0);
+    } finally {
+      rmSync(remotePath, { recursive: true, force: true });
       rmSync(cwd, { recursive: true, force: true });
     }
   }, 15000);

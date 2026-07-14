@@ -1,6 +1,21 @@
 #!/bin/bash
 set -euo pipefail
 
+unset GH_TOKEN GITHUB_TOKEN ANTHROPIC_API_KEY CLAUDE_CODE_OAUTH_TOKEN SSH_AUTH_SOCK HTTP_PROXY HTTPS_PROXY NO_PROXY
+
+GIT_BIN="${REPO_HARNESS_GIT_BIN:-/usr/bin/git}"
+BASH_BIN="${REPO_HARNESS_BASH_BIN:-/bin/bash}"
+BUN_BIN="${REPO_HARNESS_BUN_BIN:-}"
+WORKFLOW_STATE_LIB="${REPO_HARNESS_WORKFLOW_STATE_LIB:-.ai/hooks/lib/workflow-state.sh}"
+[[ "$GIT_BIN" == /* && -x "$GIT_BIN" ]] || { echo "contract-worktree: trusted git executable is unavailable" >&2; exit 1; }
+[[ "$BASH_BIN" == /* && -x "$BASH_BIN" ]] || { echo "contract-worktree: trusted bash executable is unavailable" >&2; exit 1; }
+if [[ -n "$BUN_BIN" ]] && [[ "$WORKFLOW_STATE_LIB" != /* || ! -f "$WORKFLOW_STATE_LIB" || -L "$WORKFLOW_STATE_LIB" ]]; then
+  echo "contract-worktree: trusted workflow-state library is unavailable" >&2
+  exit 1
+fi
+git() { "$GIT_BIN" "$@"; }
+bash() { "$BASH_BIN" "$@"; }
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -n "${REPO_HARNESS_TARGET_REPO_ROOT:-}" ]]; then
   REPO_ROOT="$REPO_HARNESS_TARGET_REPO_ROOT"
@@ -10,13 +25,14 @@ else
   REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 fi
 cd "$REPO_ROOT"
+export REPO_HARNESS_TARGET_REPO_ROOT="$REPO_ROOT"
 helper_dir="$(cd "$(dirname "${REPO_HARNESS_HELPER_SOURCE_PATH:-$0}")" && pwd)"
 
 usage() {
   cat <<'USAGE_EOF'
 Usage:
   repo-harness run contract-worktree start --plan <plan-file> [--path <worktree-path>] [--branch <branch-name>]
-  repo-harness run contract-worktree finish [--merge|--no-merge] [--target <branch>] [--message <commit-message>]
+  repo-harness run contract-worktree finish [--merge|--no-merge] [--target <branch>] [--gate-base <ref>] [--message <commit-message>]
   repo-harness run contract-worktree cleanup --slug <slug> [--target <branch>] [--dry-run]
   repo-harness run contract-worktree status
 USAGE_EOF
@@ -376,12 +392,12 @@ check_scope_against_contract() {
   local changed_paths path blocked=0
 
   [[ -f "$contract_file" ]] || return 0
-  if [[ ! -f ".ai/hooks/lib/workflow-state.sh" ]]; then
+  if [[ ! -f "$WORKFLOW_STATE_LIB" ]]; then
     return 0
   fi
 
   # shellcheck source=/dev/null
-  . ".ai/hooks/lib/workflow-state.sh"
+  . "$WORKFLOW_STATE_LIB"
 
   changed_paths="$(
     {
@@ -405,29 +421,13 @@ check_scope_against_contract() {
   [[ "$blocked" -eq 0 ]]
 }
 
-clean_matching_untracked_target_files() {
-  local target_worktree="$1"
-  local source_branch="$2"
-  local path tmp_file
-
-  while IFS= read -r path; do
-    [[ -n "$path" ]] || continue
-    tmp_file="$(mktemp)"
-    if git -C "$target_worktree" show "${source_branch}:${path}" > "$tmp_file" 2>/dev/null \
-      && cmp -s "$tmp_file" "$target_worktree/$path"; then
-      rm -f "$target_worktree/$path"
-      echo "[ContractWorktree] Removed matching untracked target file before merge: $path"
-    fi
-    rm -f "$tmp_file"
-  done < <(git -C "$target_worktree" ls-files --others --exclude-standard)
-}
-
 clean_local_runtime_markers() {
   rm -f .ai/harness/active-plan .ai/harness/active-worktree
 }
 
 finish_transaction_dir=""
 finish_transaction_active=0
+finish_transaction_original_head=""
 finish_transaction_paths=()
 finish_transaction_existed=()
 
@@ -447,6 +447,7 @@ finish_transaction_snapshot() {
 finish_transaction_begin() {
   finish_transaction_dir="$(mktemp -d)"
   finish_transaction_active=1
+  finish_transaction_original_head="$(git rev-parse HEAD)"
   finish_transaction_paths=()
   finish_transaction_existed=()
   trap finish_transaction_on_exit EXIT
@@ -460,6 +461,9 @@ finish_transaction_begin() {
 
 finish_transaction_abort() {
   local index path
+  if [[ -n "$finish_transaction_original_head" ]] && [[ "$(git rev-parse HEAD)" != "$finish_transaction_original_head" ]]; then
+    git reset --mixed "$finish_transaction_original_head"
+  fi
   for ((index = ${#finish_transaction_paths[@]} - 1; index >= 0; index--)); do
     path="${finish_transaction_paths[$index]}"
     rm -rf "$path"
@@ -471,8 +475,9 @@ finish_transaction_abort() {
   rm -rf "$finish_transaction_dir"
   finish_transaction_dir=""
   finish_transaction_active=0
+  finish_transaction_original_head=""
   trap - EXIT
-  echo "contract-worktree: finish projection failed; restored live workflow artifacts" >&2
+  echo "contract-worktree: finish failed; restored live workflow artifacts and the pre-finish branch" >&2
 }
 
 finish_transaction_commit() {
@@ -480,6 +485,7 @@ finish_transaction_commit() {
   trap - EXIT
   rm -rf "$finish_transaction_dir"
   finish_transaction_dir=""
+  finish_transaction_original_head=""
 }
 
 finish_transaction_on_exit() {
@@ -510,12 +516,39 @@ archive_finished_workflow() {
   REPO_HARNESS_TARGET_REPO_ROOT="$REPO_ROOT" bash "$helper_dir/archive-workflow.sh" --plan "$plan_file" --outcome Completed
 }
 
+run_merge_gate() {
+  local base_ref="$1" goal_file="$2"
+  [[ -f "$helper_dir/merge-gate.ts" ]] || {
+    echo "contract-worktree: merge-gate helper is missing: $helper_dir/merge-gate.ts" >&2
+    exit 1
+  }
+  [[ "$BUN_BIN" == /* && -x "$BUN_BIN" ]] || {
+    echo "contract-worktree: merge gate requires the trusted Bun runtime injected by repo-harness run" >&2
+    exit 1
+  }
+  echo "[ContractWorktree] Running read-only merge gate for HEAD against $base_ref" >&2
+  REPO_HARNESS_TARGET_REPO_ROOT="$REPO_ROOT" "$BUN_BIN" "$helper_dir/merge-gate.ts" run --base "$base_ref" --goal "$goal_file" --format sha
+}
+
+verify_merge_gate_receipt() {
+  local base_ref="$1"
+  echo "[ContractWorktree] Revalidating merge-gate receipt against $base_ref" >&2
+  [[ "$BUN_BIN" == /* && -x "$BUN_BIN" ]] || {
+    echo "contract-worktree: merge gate requires the trusted Bun runtime injected by repo-harness run" >&2
+    exit 1
+  }
+  REPO_HARNESS_TARGET_REPO_ROOT="$REPO_ROOT" "$BUN_BIN" "$helper_dir/merge-gate.ts" verify --base "$base_ref" --format sha
+}
+
 finish_worktree() {
   local merge_back=1
   local target_branch
+  local gate_base_ref
+  local gate_base_explicit=0
   local commit_message=""
 
   target_branch="$(policy_get '.worktree_strategy.merge_back.target' 'main')"
+  gate_base_ref=""
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -530,6 +563,12 @@ finish_worktree() {
       --target)
         [[ -n "${2:-}" ]] || { echo "contract-worktree: --target requires a value" >&2; exit 2; }
         target_branch="$2"
+        shift 2
+        ;;
+      --gate-base)
+        [[ -n "${2:-}" ]] || { echo "contract-worktree: --gate-base requires a value" >&2; exit 2; }
+        gate_base_ref="$2"
+        gate_base_explicit=1
         shift 2
         ;;
       --message|-m)
@@ -548,6 +587,11 @@ finish_worktree() {
         ;;
     esac
   done
+  gate_base_ref="${gate_base_ref:-$target_branch}"
+  if [[ "$merge_back" -eq 1 && "$gate_base_ref" != "$target_branch" ]]; then
+    echo "contract-worktree: local merge gate base must equal target branch $target_branch" >&2
+    exit 2
+  fi
 
   if ! is_linked_worktree; then
     echo "contract-worktree: finish must run from the linked contract worktree" >&2
@@ -562,9 +606,9 @@ finish_worktree() {
   slug="$(normalize_slug "${current_branch##*/}")"
   commit_message="${commit_message:-feat(contract): complete ${slug}}"
 
-  if [[ -f ".ai/hooks/lib/workflow-state.sh" ]]; then
+  if [[ -f "$WORKFLOW_STATE_LIB" ]]; then
     # shellcheck source=/dev/null
-    . ".ai/hooks/lib/workflow-state.sh"
+    . "$WORKFLOW_STATE_LIB"
     active_plan="$(get_active_plan || true)"
     if [[ -n "$active_plan" ]]; then
       contract_file="$(workflow_active_contract || true)"
@@ -606,6 +650,14 @@ finish_worktree() {
   check_architecture_freshness "$target_branch"
   REPO_HARNESS_TARGET_REPO_ROOT="$REPO_ROOT" bash "$helper_dir/verify-sprint.sh"
   check_scope_against_contract "$contract_file"
+  if [[ "$merge_back" -eq 1 ]]; then
+    target_worktree="$(find_worktree_for_branch "$target_branch" || true)"
+    [[ -n "$target_worktree" ]] || { echo "contract-worktree: target branch has no checked-out worktree: $target_branch" >&2; exit 1; }
+    if [[ -n "$(git -C "$target_worktree" status --porcelain=v1 --untracked-files=all)" ]]; then
+      echo "contract-worktree: target worktree is dirty, refusing merge: $target_worktree" >&2
+      exit 1
+    fi
+  fi
   finish_transaction_begin
   if ! archive_finished_workflow "$active_plan"; then
     finish_transaction_abort
@@ -619,8 +671,6 @@ finish_worktree() {
     finish_transaction_abort
     return 1
   fi
-  finish_transaction_commit
-
   if ! git diff --quiet || ! git diff --cached --quiet || [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
     git add -A
     git commit -m "$commit_message"
@@ -628,22 +678,40 @@ finish_worktree() {
     echo "[ContractWorktree] No tracked changes to commit."
   fi
 
-  if [[ "$merge_back" -eq 0 ]]; then
+  if [[ "$merge_back" -eq 0 && "$gate_base_explicit" -eq 0 ]]; then
+    finish_transaction_commit
     echo "[ContractWorktree] Merge skipped by --no-merge."
     return 0
   fi
 
-  target_worktree="$(find_worktree_for_branch "$target_branch" || true)"
-  [[ -n "$target_worktree" ]] || { echo "contract-worktree: target branch has no checked-out worktree: $target_branch" >&2; exit 1; }
+  local verified_sha current_head
+  if ! verified_sha="$(run_merge_gate "$gate_base_ref" "$active_plan")"; then
+    finish_transaction_abort
+    return 1
+  fi
+  current_head="$(git rev-parse HEAD)"
+  if [[ "$verified_sha" != "$current_head" ]]; then
+    echo "contract-worktree: merge gate verified $verified_sha but branch HEAD is $current_head" >&2
+    finish_transaction_abort
+    return 1
+  fi
 
-  clean_matching_untracked_target_files "$target_worktree" "$current_branch"
+  if [[ "$merge_back" -eq 0 ]]; then
+    finish_transaction_commit
+    echo "[ContractWorktree] Merge skipped by --no-merge."
+    return 0
+  fi
 
   if [[ -n "$(git -C "$target_worktree" status --porcelain=v1 --untracked-files=all)" ]]; then
     echo "contract-worktree: target worktree is dirty, refusing merge: $target_worktree" >&2
     exit 1
   fi
 
-  git -C "$target_worktree" merge --ff-only "$current_branch"
+  verified_sha="$(verify_merge_gate_receipt "$gate_base_ref")"
+  current_head="$(git rev-parse "$current_branch^{commit}")"
+  [[ "$verified_sha" == "$current_head" ]] || { echo "contract-worktree: branch moved after merge-gate review" >&2; exit 1; }
+  git -C "$target_worktree" merge --ff-only "$verified_sha"
+  finish_transaction_commit
   echo "[ContractWorktree] Merged $current_branch into $target_branch at $target_worktree"
 }
 
