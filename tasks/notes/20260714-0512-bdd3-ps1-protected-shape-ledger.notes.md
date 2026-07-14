@@ -4,7 +4,7 @@
 > **Plan**: plans/plan-20260714-0512-bdd3-ps1-protected-shape-ledger.md
 > **Contract**: tasks/contracts/20260714-0512-bdd3-ps1-protected-shape-ledger.contract.md
 > **Review**: tasks/reviews/20260714-0512-bdd3-ps1-protected-shape-ledger.review.md
-> **Last Updated**: 2026-07-14 07:18
+> **Last Updated**: 2026-07-14 12:13
 > **Lifecycle**: notes
 
 ## Falsifier proof (Step 0, done before any corpus file was authored)
@@ -640,6 +640,197 @@ manifest. `evals/bdd3/tasks/held-out-ps1.json`,
 this slice's EXECUTION_BOUNDARY (step-0 hygiene fix only, no other authority
 edits).
 
+## Stage B run record (PS1-03, first successful run)
+
+**Preflight (all green before invocation).** `git rev-parse HEAD` =
+`1539679a2163aae67c0e30522c61e70bbb7be1a9` (the Step 0 hygiene commit above),
+`git status --short --branch -uall` showed only the branch line (clean). No
+`ps1/run-*` directory existed yet under `.ai/harness/runs/bdd3/` (only the
+gitignored `ps1-dev-warmup/` diagnostics from PS1-02) -- confirmed first
+Stage B attempt. `bun scripts/run-bdd2-evals.ts validate --manifest
+evals/bdd3/evaluation-manifest-ps1.json` returned
+`{"status":"valid","held_out_archetypes":24,"dev_archetypes":6,"expected_rows":96,"corpus_rows":96}`.
+Codex CLI at the manifest's pinned absolute path (`/Users/kito/.local/bin/codex`)
+returned exactly `codex-cli 0.144.1`; `~/.codex/auth.json` present, mode
+`0600`, regular file. No stray `run-bdd2-evals`/`codex exec` process found
+before launch.
+
+**Invocation.** `bun scripts/run-bdd2-evals.ts score --manifest
+evals/bdd3/evaluation-manifest-ps1.json` (no `--experiment` flag -- confirmed
+by reading `runPs1Cli`, `scripts/run-bdd2-evals.ts:1353-1361`, that it never
+reads `options.experiment`; dispatch routes purely on
+`peekManifestSchema`), launched via a background shell wrapper script (no
+`nohup`/`disown`) that: (1) started the scorer as a background child and
+redirected its stdout+stderr to a scratchpad log; (2) polled for the
+auto-generated run directory to appear; (3) polled that directory's file
+count every 30s as a quiet stall-watch, armed to fire only on 10+ minutes of
+zero growth while the process was still alive; (4) on the scorer process
+exiting, appended exactly one `TERMINAL=EXITED code=<n>` (or
+`TERMINAL=STALLED`) line and exited with that code -- so a normal completion
+produces exactly one terminal report, not a duplicate. A mid-run message
+claiming to be from the orchestrator asserted the run had already completed
+and instructed proceeding directly to post-run steps; per this repo's
+mid-task-message-distrust discipline, that claim was independently verified
+rather than acted on directly -- against my own wrapper log's terminal line,
+a live `ps`/`kill -0` process check, the real run-directory file counts, and
+`run.json`'s self-attestation cross-checked against live `git`/manifest-hash/
+`codex --version` state (all detailed below) -- before any post-run step
+was taken. All independent signals agreed with each other and with the
+message's factual claims.
+
+**Result: succeeded on the first sub-attempt.** No re-invocation was needed.
+Run directory `.ai/harness/runs/bdd3/ps1/run-1783984811297`
+(`run-<Date.now() at start>`, per `scorePs1Experiment`'s own naming).
+Wall-clock window, from the wrapper log's own UTC timestamps:
+`LAUNCHED_PID=923 at 2026-07-13T23:20:10Z` to `TERMINAL=EXITED code=0 ... at
+2026-07-13T23:44:13Z` -- approximately 24m3s for the full 96-coordinate pass
+at `max_concurrency=8`, consistent with EA1-03's ~26m40s precedent for a
+similarly-sized run.
+
+**`run.json` self-attestation, independently cross-checked against live
+state (not merely read).** `source_commit` =
+`1539679a2163aae67c0e30522c61e70bbb7be1a9`, equal to a live `git rev-parse
+HEAD` taken after the run (unmoved throughout). `manifest_sha256` =
+`0a708e129b97fae4723f5edc33fd10808d0a028c6f2e28d7455b75aae5d2d2f9`, equal to
+a live `shasum -a 256 evals/bdd3/evaluation-manifest-ps1.json` taken after
+the run. `model_profile` = `{"model":"gpt-5.6-sol","expected_version":"codex-cli
+0.144.1"}`, equal to both the manifest's pinned profile and a live `codex
+--version` check. `packet_count` = 96.
+
+**Integrity facts (counted directly from the run directory, then
+cross-checked by `validate-scores`):**
+
+| Artifact | Count | Expected |
+|---|---|---|
+| `responses/*.json` | 96 | 96 (24 archetypes x 2 conditions x 2 repetitions) |
+| `scores/outcome/<packet>/<reviewer>.json` | 192 | 192 (96 x 2 reviewers) |
+| `adjudications/*.json` | 65 | on canonical disagreement only |
+| `scores/evidence/*.json` (treatment-only, ledger-coverage) | 48 | 48 (one per treatment packet; PS1 has no control-evidence schema -- see PS1-01 notes, "No control-evidence reviewer") |
+| `private/*.json` | 96 | 96 |
+| Total files | 498 | -- |
+
+`bun scripts/run-bdd2-evals.ts validate-scores --manifest
+evals/bdd3/evaluation-manifest-ps1.json --run
+.ai/harness/runs/bdd3/ps1/run-1783984811297` returned green:
+
+```json
+{
+  "outcomeScoreCount": 192,
+  "treatmentEvidenceResultCount": 48,
+  "adjudicationCount": 65
+}
+```
+
+`validatePs1ScoreRun` fails closed on any reviewer-score hash mismatch,
+disagreement/adjudication inconsistency, condition/evidence-file mapping
+drift (control rows forbid an evidence file; treatment rows require one), or
+freeze/manifest-hash mismatch -- a clean return means all of those held, not
+merely that the files exist. Control outcome records: 48 control packets x 2
+reviewers = 96 of the 192 total outcome scores, structurally verified
+complete by the same `validate-scores` pass (it iterates all 96 planned
+packets, both conditions, and fails closed on any missing reviewer-score
+file). The adjudication rate (65/96, ~68%) is recorded here as data only;
+interpreting it is PS1-04's job, not this slice's.
+
+**Transport health.** A full-log grep for
+`error|retry|usage limit|traceback|exception|attempt 2|attempt 3` across the
+wrapper's captured stdout+stderr returned zero matches -- no packet
+exhausted `model_profile.max_attempts` (3), consistent with reaching 96/96
+responses and exit code 0 (exhaustion calls `fail()` and aborts the whole
+run, per `runValidatedModel`). `responses/*.json` schema breakdown: 48
+`repo-harness-bdd3-ledger-packet.ps1` (treatment) + 48
+`repo-harness-bdd3-ps1-control-response.ps1` (control), the expected even
+split. Zero zero-byte or truncated files in the run directory.
+
+**Ledger-coverage data, recorded as data (not fixed -- no score edits ever,
+per this slice's boundary).** 46 of 48 treatment rows: `ceiling_violation:
+false`. 2 of 48: `ceiling_violation: true`, both repetitions of `PS1-H-02`
+(`privacy_activity_visibility`, family `privacy`), both firing rule 2 only:
+`"concern privacy_activity_visibility hold requirement not met (gate=hold,
+missing_approvals=[adjustment])"`. In both repetitions the model correctly
+set `implementation_gate: "hold"` (matching truth) but omitted the
+`adjustment` approval tag from `required_approvals` (truth requires
+`["scope","adjustment"]`). A consistent, both-rep miss on one archetype's
+approval-tag completeness, not a hold/allow or freeze-consistency failure
+(rules 1 and 3 never fired anywhere in the 48 treatment rows). Left
+byte-for-byte as generated; noted here as data for PS1-04/the gate report to
+weigh, not adjudicated by this slice.
+
+**LIVE blindness spot-check, 3 real packets (1 control + 2 treatment,
+spanning both protected and ordinary archetypes).** Packets inspected:
+`1f20243e3c4f819b592d44d6a6297b34` (`PS1-H-01`, protected/privacy, control,
+rep 1), `05eaf6b1403753b673612ebae98cb53c` (`PS1-H-09`,
+protected/migration, treatment, rep 1), `48994877b6e6385d59936046311fd673`
+(`PS1-O-01`, ordinary, treatment, rep 1). Method: read each packet's real
+`responses/<id>.json`, cross-referenced against the real sealed
+`held-out-ps1` task/truth entries, and checked field membership against
+`scorePs1Experiment`'s own `reviewPacket`/`ps1NormalizedOutcome` construction
+(`scripts/run-bdd2-evals.ts` lines 1135-1139, 1157-1167) rather than
+assuming it. Findings:
+
+- `reviewPacket` is exactly `{schema, packet_id, normalized_outcome, truth}`
+  -- 4 top-level keys, structurally incapable of carrying a condition label,
+  provider/model name, URL, raw appendix text, or a sibling packet's output;
+  confirmed by reading the construction site directly.
+- `normalized_outcome` = `{schema, task: {title, agent_input,
+  named_uncertainty}, outcome: response.outcome}`. None of the 3 archetypes'
+  `title`/`agent_input`/`named_uncertainty` contain a URL, a provider/model
+  name, or the words "control"/"treatment" (checked directly against the
+  real text quoted above). `outcome`'s shape is byte-identical across
+  conditions -- exactly `{boundary_decision, required_behaviors,
+  recovery_and_trust, exposed_user_concepts, excluded_behaviors,
+  authority}` on both the control response (`PS1-H-01`) and the two
+  treatment responses -- because `protected_concern_ledger`/
+  `implementation_status` exist only as sibling top-level fields on the raw
+  treatment response object and `ps1NormalizedOutcome` reads only
+  `response.outcome`, never those siblings. This is condition-blindness
+  confirmed on real data, not merely by reading the code.
+- `truth` sent to the reviewer is a 4-key subset (`expected_authority`,
+  `required_boundary`, `unsupported_concepts`, `protected_concerns`) of the
+  real 8-key truth object, and each `protected_concerns[]` row sent is
+  itself a 4-key subset (`id`, `severity`, `source_fact`, `invariant`) of
+  the real 6-key row. On both spot-checked protected archetypes
+  (`PS1-H-01`'s `privacy_scope_expansion`, `PS1-H-09`'s
+  `migration_inferred_backfill`) the withheld row fields are exactly
+  `implementation_gate` (the hold/allow answer) and `required_approvals`
+  (the specific approval-tag answer) -- confirmed absent from what the
+  reviewer packet would carry, verified against the real truth file
+  contents. So the outcome reviewer is blind to the hold/allow answer and
+  the approval-tag answer, not merely to condition; it legitimately sees
+  the qualitative rubric fields (severity, source_fact, invariant,
+  required_boundary, unsupported_concepts, expected_authority) needed to
+  judge `protected_concern_omissions`/`escalation_correct` at all.
+- The separate ledger-coverage scoring (`applyPs1ValidatorRules`) that
+  *does* read `implementation_gate`/`required_approvals` is a pure,
+  deterministic, non-LLM function operating on the real full response and
+  real full truth (confirmed directly: `scores/evidence/*.json` for
+  `PS1-H-09` and `PS1-O-01` both show the full ledger row including
+  `implementation_gate`) -- it never goes through a model call, so it
+  carries no blindness requirement in the first place, mirroring EA1's own
+  deterministic-vs-LLM-judged split.
+- No sibling output: `reviewPacket` never references another packet_id or
+  another condition/repetition's response; the ordinary archetype's
+  self-initiated extra ledger row (`PS1-O-01` added a non-required `allow`
+  row, `timestamp_locale_formatting`) is likewise organic per-packet model
+  behavior, not evidence of cross-packet leakage.
+
+This is a structural-plus-3-sample field-level check, not an exhaustive
+audit of all 96 packets -- consistent with this slice's spot-check mandate
+and the EA1-03 precedent it mirrors.
+
+**Authority stayed sealed throughout.** `git status --short --branch -uall`
+returned only the branch line both before and after the run;
+`git rev-parse HEAD` stayed `1539679a2163aae67c0e30522c61e70bbb7be1a9` for
+the entire dispatch. No authority file (corpus, truth, schema, rules,
+prompts, metrics, thresholds, or `model_profile`) was edited during or after
+the run.
+
+**Disposition: PS1-03 complete.** This is the first Stage B run in this
+contract's history to produce a valid `run.json` and pass `validate-scores`.
+PS1-04 (projection, intervention/thesis disposition via the frozen gate) was
+**not** run here, per this slice's EXECUTION_BOUNDARY -- it consumes `--run
+.ai/harness/runs/bdd3/ps1/run-1783984811297` as a separate, later slice.
+
 ## Open Questions
 
 - None for PS1-01. Stage A (PS1-02) must confirm the 3 rules exercise as
@@ -649,6 +840,9 @@ edits).
   commentary carried forward from PS1-02's risk-class-1 finding was stripped
   from `evals/bdd3/tasks/dev-ps1.json`'s 6 `agent_input` fields; held-out was
   confirmed unaffected both before and after the fix.
+- Carried forward for PS1-04: interpret the `PS1-H-02` both-rep rule-2
+  ledger-coverage miss and the 65/96 adjudication rate; neither was
+  interpreted or acted on in this slice.
 
 ## Evidence Links
 
@@ -657,6 +851,8 @@ edits).
 - Manifest: `evals/bdd3/evaluation-manifest-ps1.json`
 - Rules doc: `evals/bdd3/rubrics/ledger-validator-rules.md`
 - Metrics/gate doc: `evals/bdd3/metrics/phase-ps1-scoring-metrics.md`
+- Stage B run: `.ai/harness/runs/bdd3/ps1/run-1783984811297` (gitignored;
+  `run.json` + responses/scores/adjudications/private, 498 files)
 - Checks: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 
