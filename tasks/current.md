@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-14T15:08:21+0800 -->
+<!-- updated_at: 2026-07-14T16:15:12+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-07-14T15:08:21+0800
+> **Updated At**: 2026-07-14T16:15:12+0800
 > **Source Branch**: main
-> **Source Commit**: 0ce19ff5
+> **Source Commit**: 280950f8
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: manual
@@ -31,8 +31,6 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- /Users/kito/Projects/repo-harness-wt-design-options-proactive-choice: plans/plan-20260714-1353-design-options-proactive-choice.md
-- /Users/kito/Projects/repo-harness-wt-design-options-proactive-choice: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-design-options-proactive-choice
 - /Users/kito/Projects/repo-harness-wt-verifier-evidence-lifecycle-cutover: plans/plan-20260714-0421-verifier-evidence-lifecycle-cutover.md
 - /Users/kito/Projects/repo-harness-wt-verifier-evidence-lifecycle-cutover: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-verifier-evidence-lifecycle-cutover
 ## Active Sprint
@@ -56,10 +54,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: clean
+- Summary: 7 changed/untracked path(s)
 
 ```
-(none)
+ M .claude/agents/gatekeeper.md
+ M .codex/agents/gatekeeper.toml
+ M agents/fleet/gatekeeper.md
+ M assets/templates/helpers/install-agent-fleet.sh
+ M scripts/install-agent-fleet.sh
+ M tasks/current.md
+ M tests/install-agent-fleet.test.ts
 ```
 
 ## Source Artifacts
