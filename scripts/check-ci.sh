@@ -46,6 +46,9 @@ bun install --frozen-lockfile
 echo "[ci] typecheck"
 bun run check:type
 
+echo "[ci] state boundaries"
+bun run check:state-boundaries
+
 echo "[ci] hook projection"
 bun run check:hooks
 

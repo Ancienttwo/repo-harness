@@ -1,3 +1,4 @@
+/** Pure deterministic workflow-risk policy. */
 export type WorkflowProfile = 'lite' | 'standard' | 'strict';
 
 export type WorkflowOperationKind =

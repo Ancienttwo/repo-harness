@@ -111,7 +111,7 @@ Error paths:
 
 ## 2026-07-14 Review Subject and Acceptance Authority Cutover
 
-- `src/cli/hook/diff-fingerprint.ts` now builds review subject schema v2 from
+- `src/effects/review/diff-fingerprint.ts` now builds review subject schema v2 from
   normalized final path/content/mode/deletion state. Target revision is
   provenance metadata; only target movement overlapping reviewed paths forces
   re-acceptance.
@@ -379,7 +379,8 @@ membership plus type/hash/marker coherence rejects that state before mutation.
 ## 2026-07-13 Threshold Input Hardening (Phase C)
 
 - **Capability registry resolution (C1).** `capabilityIdsForPaths` in
-  `src/cli/hook/state-snapshot.ts` returns a structured
+  `src/effects/state/resolve-effective-state.ts` delegates canonical parsing
+  and matching to `src/core/capabilities/registry.ts` and returns a structured
   `{ ids, registryStatus, unmappedPaths }` instead of silently collapsing
   every failure mode to an empty array. `registryStatus: 'invalid'` (corrupt
   JSON, a non-array `capabilities` field, or a registry the repo declared via
@@ -397,7 +398,7 @@ membership plus type/hash/marker coherence rejects that state before mutation.
   never lower, the resolved floor.
 - **Implementation-surface predicate unification (C2).**
   `isImplementationSurfacePath()` / `isWorkflowSurfacePath()` in
-  `src/cli/hook/diff-fingerprint.ts` is now the single source for "what
+  `src/effects/review/diff-fingerprint.ts` is now the single source for "what
   counts toward medium-scope, cross-capability, and strict-token signals" --
   workflow-surface paths (`plans/`, `tasks/`, `docs/`, `.ai/`, `.claude/`,
   `.codex/`, and any `*.md` / `*.markdown` file) are excluded from the
@@ -409,7 +410,7 @@ membership plus type/hash/marker coherence rejects that state before mutation.
   those same paths from the plan/strict enforcement gates -- harmless while
   gates were the only consumer of the resolved profile, but wrong once the
   2026-07-13 ceremony-guidance change (`CEREMONY_GUIDANCE` in
-  `state-snapshot.ts`) started keying ceremony text off that profile. Strict
+  `src/core/state/project-effective-state.ts`) started keying ceremony text off that profile. Strict
   path-token categories (auth/payment/deploy/migration/schema/release/
   public-api) are unaffected: those categories are always implementation
   paths in practice, so the exclusion never suppresses a real strict signal
@@ -425,7 +426,7 @@ membership plus type/hash/marker coherence rejects that state before mutation.
   blocks (`enforce`), warns (`advice`), or no-ops (`off`) when an
   implementation edit lacks `docs/spec.md` or an active/approved plan. It
   does **not** touch how the risk floor itself is computed:
-  `resolveWorkflowProfile()` in `src/cli/hook/workflow-profile.ts` takes no
+  `resolveWorkflowProfile()` in `src/core/workflow/profile.ts` takes no
   policy input and cannot be configured to raise or lower a floor -- the
   product distinction is "computed standard" (the deterministic floor
   `resolveWorkflowProfile` derives from target-path, capability, and

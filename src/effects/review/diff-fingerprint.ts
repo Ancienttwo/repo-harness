@@ -48,12 +48,6 @@ export interface ReviewSubject {
   readonly reason?: string;
 }
 
-export interface ReviewSubjectCliResult {
-  readonly exitCode: number;
-  readonly stdout: string;
-  readonly stderr: string;
-}
-
 // Accumulates whether any git observation failed during a single fingerprint
 // computation. A degraded computation must fail closed (status: unknown) so the
 // Done gate never accepts a review against a diff it could not fully read.
@@ -533,44 +527,4 @@ export function buildReviewSubject(
     target_overlap_count: targetOverlapPaths.length,
     review_subject_sha256: reviewSubjectSha256,
   });
-}
-
-function reviewSubjectUsage(): ReviewSubjectCliResult {
-  return {
-    exitCode: 0,
-    stdout: '',
-    stderr: 'repo-harness-hook review-subject [--target <ref>] [--format json]\n',
-  };
-}
-
-function argValue(argv: readonly string[], flag: string): string | undefined {
-  const index = argv.indexOf(flag);
-  return index >= 0 ? argv[index + 1] : undefined;
-}
-
-export function runReviewSubjectCli(
-  argv: readonly string[],
-  opts: { cwd?: string } = {},
-): ReviewSubjectCliResult {
-  const allowed = new Set(['--target', '--format']);
-  for (let index = 0; index < argv.length; index += 1) {
-    const arg = argv[index];
-    if (!allowed.has(arg)) return reviewSubjectUsage();
-    index += 1;
-    if (index >= argv.length) return reviewSubjectUsage();
-  }
-
-  const format = argValue(argv, '--format') ?? 'json';
-  if (format !== 'json') return reviewSubjectUsage();
-
-  // The runtime passes the resolved target branch as metadata and for changed-path
-  // discovery. The normalized content subject does not hash the target revision.
-  const subject = buildReviewSubject(opts.cwd ?? process.cwd(), {
-    targetRef: argValue(argv, '--target') ?? 'HEAD',
-  });
-  return {
-    exitCode: 0,
-    stdout: `${JSON.stringify(subject)}\n`,
-    stderr: '',
-  };
 }

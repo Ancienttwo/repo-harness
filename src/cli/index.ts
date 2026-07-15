@@ -51,7 +51,7 @@ import { routePromptExplicitFirst } from './hook/prompt-router';
 import { recordCircuitAttempt, type CircuitAttempt } from './hook/circuit-breaker';
 import { runMinimalChangeCli } from './hook/minimal-change-cli';
 import { runReviewRubricCli } from './hook/review-rubric';
-import { runReviewSubjectCli } from './hook/diff-fingerprint';
+import { runReviewSubjectCli } from './hook/review-subject';
 import { runAdoptionPlan } from './commands/adopt-plan';
 import { runRuntimeRollback } from './repo-adoption/reclaim-runtime';
 import { rollbackAdoptionTransaction } from '../effects/fs-transaction';

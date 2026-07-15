@@ -1,6 +1,6 @@
 {
-  "version": "0.10.0",
-  "templateVersion": "0.10.0",
+  "version": "0.10.1",
+  "templateVersion": "0.10.1",
   "skillName": "repo-harness",
   "contractId": "tasks-first-harness-v1",
   "compatibility": {
@@ -203,6 +203,10 @@
     {
       "version": "0.10.0",
       "description": "Adds the risk-aware lite/standard/strict harness kernel with the effective-state resolver, decouples benchmark evidence production from verification gates with content-bound acceptance freshness, replaces the remote agent-fleet dependency with npm-packaged sources, and removes the retired planning provider and the Human Review Card dual authority"
+    },
+    {
+      "version": "0.10.1",
+      "description": "Converges Effective State into one core/effects authority shared by CLI, hooks, and MCP, and generates the standalone capability helper from one canonical registry implementation"
     }
   ],
   "generatedProjectStamp": {

@@ -169,7 +169,7 @@ fi
 
 # Workflow surfaces (plans, tasks, docs, harness state, markdown) stay
 # editable without an active plan; everything else is an implementation edit.
-# Canonical source: src/cli/hook/diff-fingerprint.ts's
+# Canonical source: src/effects/review/diff-fingerprint.ts's
 # WORKFLOW_SURFACE_DIR_PREFIXES / WORKFLOW_SURFACE_EXTENSIONS
 # (isWorkflowSurfacePath / isImplementationSurfacePath). This case list must
 # stay in the same shape as that TS source; `bun run check:hooks`

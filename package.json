@@ -1,6 +1,6 @@
 {
   "name": "repo-harness",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "description": "Installs, migrates, audits, and repairs repo-local agentic development harnesses",
   "license": "MIT",
   "repository": {
@@ -16,6 +16,7 @@
     "docs/repo-harness-chatgpt-browser-engine.md",
     "install.sh",
     "install.ps1",
+    "interfaces/",
     "scripts/",
     "src/",
     "AGENTS.md",
@@ -41,6 +42,7 @@
     "check:hooks": "bun scripts/sync-hook-sources.ts --check",
     "sync:helpers": "bun scripts/sync-helper-sources.ts --write",
     "check:helpers": "bun scripts/sync-helper-sources.ts --check",
+    "check:state-boundaries": "bun scripts/check-state-boundaries.ts",
     "check:ci": "bash scripts/check-ci.sh",
     "check:release": "bash scripts/check-npm-release.sh",
     "check:release-published": "bash scripts/check-release-published.sh",

@@ -1,0 +1,118 @@
+{
+  "baseline": "82550779cdccf0575d674ae53bbc95ba63e44743",
+  "scenario": "idle-inspect",
+  "cli_exit": 0,
+  "cli_stderr": "",
+  "field": {
+    "exit": 0,
+    "stdout": "lite\n",
+    "stderr": ""
+  },
+  "state": {
+    "protocol": 1,
+    "kind": "repo-harness-effective-state",
+    "task_id": null,
+    "phase": "idle",
+    "state_version": 1,
+    "state_revision": "sha256:<dynamic:state_revision>",
+    "authoritative_plan": null,
+    "contract": null,
+    "task_profile": null,
+    "workflow_profile": "lite",
+    "requested_workflow_profile": null,
+    "risk_floor": "lite",
+    "profile_reasons": [
+      "risk-floor:lite:local-low-risk",
+      "capability:registry:absent"
+    ],
+    "profile_signals": {
+      "targetPathCount": 0,
+      "capabilityCount": 0,
+      "operationKind": "inspect",
+      "strictCategories": [],
+      "mediumScope": false,
+      "crossCapability": false
+    },
+    "allowed_paths": [],
+    "next_action": null,
+    "guidance": "brief -> edit -> targeted test; do not author plan, contract, notes, todos, or checks files (zero ceremony)",
+    "blockers": [],
+    "stale_sources": [
+      "checks",
+      "current_snapshot"
+    ],
+    "conflicting_sources": [],
+    "source_hashes": {
+      ".ai/context/capabilities.json": "sha256:becde17b6600ee6ea2f65fe3320f11bc1efbb103d81bb7dda3788623ca293441",
+      ".ai/harness/active-plan": "sha256:19dfd7499d1dadc4f31d45ec03d9bbfa2ea2ba701e10e1b6dd836330582b3047",
+      ".ai/harness/active-worktree": "sha256:<dynamic:.ai/harness/active-worktree>",
+      ".ai/harness/checks/latest.json": "sha256:f241687e906c13ad0cb3baceee11b2aea9479712eb294fd93c50754d4aa63d78",
+      ".ai/harness/handoff/current.md": "sha256:<dynamic:.ai/harness/handoff/current.md>",
+      ".ai/harness/handoff/resume.md": "sha256:<dynamic:.ai/harness/handoff/resume.md>",
+      ".ai/harness/policy.json": "sha256:001e056f4ac35ace2e89e20bef71f492ac9a0ac7373cacaeaf1e0fa36ea130b8",
+      ".ai/harness/sprint/active-sprint": "sha256:a9f63c09a80ac033d6c3c3a1078aa2e85f5e192e87ccc51506a382e7ea180aa5",
+      "tasks/current.md": "sha256:7a5529548a9931f32c343c2012933992a1655c0e89a23affd1f5fb3d68331668",
+      "review_subject": "sha256:b6728423245c1f39a952e3d5e3f39227ce00a658be92d51253eadf167eced6fc",
+      "authority_revision": "sha256:<dynamic:authority_revision>"
+    },
+    "review": {
+      "path": null,
+      "freshness": "not_applicable",
+      "recommendation": null,
+      "recorded_subject_sha256": null,
+      "recorded_target_revision": null
+    },
+    "external_acceptance": {
+      "path": null,
+      "freshness": "not_applicable",
+      "status": null
+    },
+    "checks": {
+      "path": ".ai/harness/checks/latest.json",
+      "freshness": "stale",
+      "status": "fail"
+    },
+    "active_sprint": {
+      "path": null,
+      "freshness": "not_applicable"
+    },
+    "worktree": {
+      "path": ".ai/harness/active-worktree",
+      "freshness": "fresh",
+      "current": "<repo>",
+      "owner": "<repo>"
+    },
+    "handoff": {
+      "path": ".ai/harness/handoff/current.md",
+      "freshness": "missing"
+    },
+    "resume": {
+      "path": ".ai/harness/handoff/resume.md",
+      "freshness": "missing"
+    },
+    "current_snapshot": {
+      "path": "tasks/current.md",
+      "freshness": "stale"
+    }
+  },
+  "hook": {
+    "protocol": 1,
+    "kind": "repo-harness-state-snapshot",
+    "states": {
+      "spec": "present",
+      "plan": "none",
+      "pending": "none",
+      "worktree": "current",
+      "contract": "missing",
+      "contract_path": "missing",
+      "evidence": "unchecked"
+    },
+    "paths": {
+      "active_plan": null,
+      "contract": null
+    },
+    "marker": {
+      "problem": "none"
+    }
+  }
+}

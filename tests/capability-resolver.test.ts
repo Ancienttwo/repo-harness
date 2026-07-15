@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { createHash } from "crypto";
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
@@ -8,17 +9,30 @@ const ROOT = join(import.meta.dir, "..");
 
 function tmpWorkspace(prefix: string): string {
   const cwd = mkdtempSync(join(tmpdir(), `${prefix}-`));
-  mkdirSync(join(cwd, "scripts"), { recursive: true });
-  spawnSync("cp", [join(ROOT, "scripts/capability-resolver.ts"), join(cwd, "scripts/capability-resolver.ts")]);
   return cwd;
 }
 
 function runResolver(cwd: string, args: string[], env: Record<string, string> = {}) {
-  return spawnSync("bun", ["scripts/capability-resolver.ts", ...args], {
+  return spawnSync("bun", [join(ROOT, "scripts/capability-resolver.ts"), ...args, "--repo", cwd], {
     cwd,
     encoding: "utf-8",
     env: { ...process.env, ...env },
   });
+}
+
+function runStandaloneResolver(cwd: string, args: string[]) {
+  mkdirSync(join(cwd, "scripts"), { recursive: true });
+  const helper = join(ROOT, "assets/templates/helpers/capability-resolver.ts");
+  const target = join(cwd, "scripts/capability-resolver.ts");
+  writeFileSync(target, readFileSync(helper));
+  return spawnSync("bun", [target, ...args, "--repo", cwd], {
+    cwd,
+    encoding: "utf-8",
+  });
+}
+
+function sha256(content: string): string {
+  return createHash("sha256").update(content).digest("hex");
 }
 
 function writeRegistry(cwd: string, capabilities: unknown[]) {
@@ -60,6 +74,59 @@ const accountCapability = {
 };
 
 describe("capability resolver", () => {
+  test("standalone projection is deterministic, source-bound, and runnable without repo internals", () => {
+    const cwd = tmpWorkspace("capability-standalone-projection");
+    try {
+      mkdirSync(join(cwd, "apps/web/src/routes/account"), { recursive: true });
+      writeRegistry(cwd, [webCapability, accountCapability]);
+
+      const source = runResolver(cwd, [
+        "match", "--path", "apps/web/src/routes/account/page.tsx", "--format", "json",
+      ]);
+      const standalone = runStandaloneResolver(cwd, [
+        "match", "--path", "apps/web/src/routes/account/page.tsx", "--format", "json",
+      ]);
+      expect(standalone.status).toBe(0);
+      expect(standalone.stdout).toBe(source.stdout);
+      expect(standalone.stderr).toBe(source.stderr);
+
+      const core = readFileSync(join(ROOT, "src/core/capabilities/registry.ts"), "utf-8");
+      const expectedHash = sha256(core);
+      const projected = readFileSync(
+        join(ROOT, "assets/templates/helpers/capability-resolver.ts"),
+        "utf-8",
+      );
+      expect(projected).toContain(
+        `// @generated-from src/core/capabilities/registry.ts sha256:${expectedHash}`,
+      );
+      expect(projected).not.toContain('from "../src/core/capabilities/registry"');
+
+      expect(projected).toContain('export interface Capability');
+      expect(projected).toContain('export interface CapabilityRegistry');
+      const projectionCheck = spawnSync("bun", ["scripts/sync-helper-sources.ts", "--check"], {
+        cwd: ROOT,
+        encoding: "utf-8",
+      });
+      expect(projectionCheck.status, projectionCheck.stderr).toBe(0);
+      const typecheck = spawnSync("node", [
+        "node_modules/typescript/bin/tsc",
+        "--ignoreConfig",
+        "--noEmit",
+        "--module", "Preserve",
+        "--moduleResolution", "Bundler",
+        "--target", "ES2022",
+        "--strict",
+        "--skipLibCheck",
+        "--types", "bun",
+        "assets/templates/helpers/capability-config.ts",
+        "assets/templates/helpers/capability-resolver.ts",
+      ], { cwd: ROOT, encoding: "utf-8" });
+      expect(typecheck.status, typecheck.stderr || typecheck.stdout).toBe(0);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   test("longest prefix selects nested account capability over apps/web", () => {
     const cwd = tmpWorkspace("capability-longest-prefix");
     try {

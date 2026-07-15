@@ -786,7 +786,7 @@ function probeInstalledComponents(
     ]),
     ...canonicalEvidence(home, ['assets/skill-commands/repo-harness-handoff/SKILL.md']),
   ];
-  const adaptiveEvidence = canonicalEvidence(home, ['src/cli/hook/workflow-profile.ts']);
+  const adaptiveEvidence = canonicalEvidence(home, ['src/core/workflow/profile.ts']);
   const codegraphEvidence = state.profile === 'strict'
     ? executableEvidence('codegraph', env)
     : canonicalEvidence(home, ['src/cli/tools/codegraph.ts']);

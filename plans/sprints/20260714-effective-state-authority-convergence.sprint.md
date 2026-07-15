@@ -257,15 +257,15 @@ ESA-02 → ESA-06 ───────────────────↗
 
 Ordered execution queue. Every row has a machine-checkable acceptance line.
 
-| # | Status | Task | Mode | Estimate | Acceptance | Plan |
-|---:|:---:|---|---|---:|---|---|
-| 1 | [ ] | `ESA-01` — Freeze Effective State invariants and characterization fixtures | contract | 3 SP | Golden CLI/state fixtures cover at least 10 authority/risk/concurrency states and pass against `main@8255077` before production movement | pending |
-| 2 | [ ] | `ESA-02` — Extract workflow policy and Effective State v1 contracts | contract | 5 SP | New core modules have zero forbidden runtime imports; existing workflow-profile matrix and public protocol snapshots remain unchanged | pending |
-| 3 | [ ] | `ESA-03` — Split Effective State read → project → persist pipeline | contract | 8 SP | Hook adapter owns no authority parsing, Git version allocation, lock, or cache code; all state characterization and fault tests pass | pending |
-| 4 | [ ] | `ESA-04` — Single-source capability-registry validation and matching | contract | 5 SP | Exactly one handwritten source implementation owns version/shape/semantic/matching rules; projected helper drift fails CI | pending |
-| 5 | [ ] | `ESA-05` — Converge CLI, hook, and MCP state adapters | contract | 5 SP | Direct resolver, CLI JSON, hook projection, and MCP summary agree on canonical fields for every parity fixture | pending |
-| 6 | [ ] | `ESA-06` — Guard and atomically write workflow artifacts | contract | 5 SP | Migrated writes leave no partial file, return a revision, and reject a stale overwrite when the versioned precondition mode is enabled | pending |
-| 7 | [ ] | `ESA-07` — Enforce boundaries, package/release verification, and documentation | contract | 3 SP | Boundary checker, full CI/release checks, tarball smoke, architecture docs, changelog, and handoff evidence all pass | pending |
+| # | Status | Task | Mode | Acceptance | Plan |
+|---:|:---:|---|---|---|---|
+| 1 | [ ] | `ESA-01` — Freeze Effective State invariants and characterization fixtures | contract | Golden CLI/state fixtures cover at least 10 authority/risk/concurrency states and pass against `main@8255077` before production movement | pending |
+| 2 | [ ] | `ESA-02` — Extract workflow policy and Effective State v1 contracts | contract | New core modules have zero forbidden runtime imports; existing workflow-profile matrix and public protocol snapshots remain unchanged | pending |
+| 3 | [ ] | `ESA-03` — Split Effective State read → project → persist pipeline | contract | Hook adapter owns no authority parsing, Git version allocation, lock, or cache code; all state characterization and fault tests pass | pending |
+| 4 | [ ] | `ESA-04` — Single-source capability-registry validation and matching | contract | Exactly one handwritten source implementation owns version/shape/semantic/matching rules; projected helper drift fails CI | pending |
+| 5 | [ ] | `ESA-05` — Converge CLI, hook, and MCP state adapters | contract | Direct resolver, CLI JSON, hook projection, and MCP summary agree on canonical fields for every parity fixture | pending |
+| 6 | [ ] | `ESA-06` — Guard and atomically write workflow artifacts | contract | Migrated writes leave no partial file, return a revision, and reject a stale overwrite when the versioned precondition mode is enabled | pending |
+| 7 | [ ] | `ESA-07` — Enforce boundaries, package/release verification, and documentation | contract | Boundary checker, full CI/release checks, tarball smoke, architecture docs, changelog, and handoff evidence all pass | pending |
 
 Committed scope for two engineers: 34 SP.  
 Single-engineer committed scope: ESA-01 through ESA-05 plus ESA-07; ESA-06 moves intact to the next Sprint.

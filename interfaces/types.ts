@@ -4,5 +4,4 @@
  * IMMUTABLE: Changes here require downstream rewrites
  */
 
-// Add shared API schemas, event schemas, DTOs, or boundary types here
-export {}
+export type { EffectiveStateV1 } from './effective-state-v1';

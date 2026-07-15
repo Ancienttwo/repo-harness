@@ -9,7 +9,7 @@ import {
   writeFileSync,
 } from 'fs';
 import { dirname, join } from 'path';
-import type { WorkflowProfile } from './workflow-profile';
+import type { WorkflowProfile } from '../../core/workflow/profile';
 
 export type CircuitKind = 'guard' | 'review' | 'subagent' | 'repair' | 'cross-model-consult';
 

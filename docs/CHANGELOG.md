@@ -2,6 +2,28 @@
 
 All notable changes to this skill are documented here.
 
+## [0.10.1] - 2026-07-15
+
+### Changed
+
+- Moved Effective State v1 policy and projection into pure `src/core` modules,
+  isolated repository/Git/lock/cache work under `src/effects`, and kept CLI and
+  hook entrypoints as adapters without changing protocol `1`, public command
+  names, field ordering, or exit semantics.
+- Made `summarize_repo_harness_state` derive its compact state from the same
+  canonical resolver as CLI and hooks. `tasks/current.md` remains an explicitly
+  non-authoritative projection and is no longer parsed as MCP state authority.
+- Replaced the handwritten capability-registry shadow validator with one pure
+  parser/validator/longest-prefix matcher. The adopted-repository helper is now
+  a deterministic standalone Bun projection bound to the canonical source hash.
+
+### Verification
+
+- Added 12-scenario direct/CLI/hook/MCP parity goldens, lock/cache/source-mutation
+  fault coverage, a state-boundary gate, and packed-artifact state/helper smokes.
+- Kept ESA-06 workflow-artifact writer semantics deferred; this release adds no
+  overwrite compatibility mode or alternate authority.
+
 ## [0.10.0] - 2026-07-14
 
 ### Added

@@ -67,7 +67,7 @@ function writeManagedHostSurfaces(
     'assets/skill-commands/repo-harness-handoff/SKILL.md',
   ]) writePath(join(source, relative), '# managed\n');
   if (profile !== 'minimal') {
-    writePath(join(source, 'src/cli/hook/workflow-profile.ts'), '// managed\n');
+    writePath(join(source, 'src/core/workflow/profile.ts'), '// managed\n');
     writePath(join(source, 'src/cli/tools/codegraph.ts'), '// managed\n');
   }
   if (profile === 'product-planning') {

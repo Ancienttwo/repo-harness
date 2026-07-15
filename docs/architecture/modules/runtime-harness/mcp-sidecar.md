@@ -20,6 +20,12 @@ operator-managed HTTPS tunnel.
   authorization-runtime registry.
 - `server.ts`, `policy.ts`, and `tools.ts` select profile capabilities and keep
   planner, executor, and orchestrator unchanged.
+- `state-tools.ts` owns the additive `summarize_repo_harness_state` adapter. It
+  projects the canonical Effective State v1 resolver rather than interpreting
+  `tasks/current.md`; the existing MCP policy profile is separately labeled
+  with `profile_authority: "mcp-policy"`. The retained `current` preview is
+  explicitly labeled by `current_authority` and `current_preview.authority` as
+  a non-authoritative projection.
 - `coding-workspaces.ts` owns explicit granted-repo selection, default managed
   worktrees, instruction discovery, and local cleanup metadata.
 - `coding-tools.ts` owns workspace-relative read and rollback-capable guarded
@@ -51,6 +57,17 @@ runtime and its process trees close on OAuth revoke, authorization revision or
 repo-grant change, coding disable, 30-minute authorization idle expiry, process
 timeout, or server shutdown. Managed worktrees remain for local inspection and
 require a clean, merged state before local cleanup.
+
+For state inspection, the public MCP path is
+`summarize_repo_harness_state` -> `state-tools.ts` -> the shared effectful
+resolver -> pure Effective State v1 projection. Its task, phase, workflow
+profile, risk floor, plan/contract, blockers, freshness/conflicts, revision,
+version, and next action match CLI resolution. `current: null` preserves the
+existing result key when no projection exists; otherwise the legacy redacted
+preview remains additive and explicitly non-authoritative. The tool advertises
+`readOnlyHint: false` because canonical resolution materializes the ignored
+cache and Git-common-dir version owner while changing no workflow authority or
+product data.
 
 OAuth request limits use the direct socket plus canonical route as identity;
 forwarded headers never mint new buckets. Error paths fail closed: missing
