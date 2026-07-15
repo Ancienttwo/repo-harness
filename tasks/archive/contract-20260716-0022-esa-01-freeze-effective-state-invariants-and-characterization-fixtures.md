@@ -1,6 +1,12 @@
+> **Archived**: 2026-07-16 00:22
+> **Related Plan**: plans/archive/plan-20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260716-0022
+
 # Task Contract: esa-01-freeze-effective-state-invariants-and-characterization-fixtures
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md
 > **Task Profile**: code-change
 > **Workflow Profile**: strict

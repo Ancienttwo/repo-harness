@@ -1,3 +1,9 @@
+> **Archived**: 2026-07-16 00:22
+> **Related Plan**: plans/archive/plan-20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260716-0022
+
 # Task Review: ESA-01..05 + ESA-07 Effective State authority convergence
 
 > **Status**: Reviewed

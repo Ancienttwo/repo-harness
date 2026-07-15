@@ -1,7 +1,13 @@
+> **Archived**: 2026-07-16 00:22
+> **Related Plan**: plans/archive/plan-20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md
+> **Outcome**: Completed
+> **Source Plan**: (none)
+> **Parent Run ID**: run-20260716-0022
+
 # Deferred Goal Ledger
 
 > **Status**: Backlog
-> **Updated**: (archive-workflow)
+> **Updated**: 2026-07-15 14:30
 > **Scope**: Medium/long-term goals deferred from active plan execution
 
 Current plan tasks live in the active plan's `## Task Breakdown`.

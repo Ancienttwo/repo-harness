@@ -1,6 +1,6 @@
 # Plan: ESA-01..05 + ESA-07 Effective State authority convergence
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260715-1109
 > **Slug**: esa-01-freeze-effective-state-invariants-and-characterization-fixtures
 > **Planning Source**: parent-agent-p1-p2-p3

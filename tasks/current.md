@@ -1,26 +1,26 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-15T18:37:54+0800 -->
+<!-- updated_at: 2026-07-16T00:24:07+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: Active
-> **Updated At**: 2026-07-15T18:37:54+0800
+> **Status**: Idle
+> **Updated At**: 2026-07-16T00:24:07+0800
 > **Source Branch**: codex/esa-01-freeze-effective-state-invariants-and-characterization-fixtures
-> **Source Commit**: 606b02c1
+> **Source Commit**: 03567c56
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: ESA-07 contract metadata repair frozen; final exact-subject review pending
+> **Reason**: ESA-07 sprint closeout
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: Active
-- Active Plan: plans/plan-20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md
-- Plan Status: Executing
-- Next Task: Record benchmark/check evidence and obtain a current passing review.
+- Status: Idle
+- Active Plan: (none)
+- Plan Status: (none)
+- Next Task: (none)
 - Clear Note: (none)
 
 ## Mainline Snapshot Reading
@@ -31,8 +31,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- .: plans/plan-20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md
-- .: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-esa-01-freeze-effective-state-invariants-and-characterization-fixtures
+- (none)
 ## Active Sprint
 
 - Sprint: (none)
@@ -51,23 +50,25 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Checks
 
-- status=fail, source=verify-sprint, exit_code=1, file=.ai/harness/checks/latest.json
+- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 10 changed/untracked path(s)
+- Summary: 12 changed/untracked path(s)
 
 ```
- M evals/harness/reports/profile-comparison.json
- M evals/harness/reports/profile-comparison.md
- M evals/harness/reports/profile-comparison.sha256.json
- M plans/plan-20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md
+ D plans/plan-20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md
  M plans/sprints/20260714-effective-state-authority-convergence.sprint.md
- M tasks/contracts/20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.contract.md
+ D tasks/contracts/20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.contract.md
  M tasks/current.md
- M tasks/notes/20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.notes.md
- M tasks/reviews/20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.review.md
- M tests/helper-scripts.test.ts
+ D tasks/notes/20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.notes.md
+ D tasks/reviews/20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.review.md
+ M tasks/todos.md
+?? plans/archive/plan-20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md
+?? tasks/archive/contract-20260716-0022-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md
+?? tasks/archive/notes-20260716-0022-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md
+?? tasks/archive/review-20260716-0022-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md
+?? tasks/archive/todo-20260716-0022-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md
 ```
 
 ## Source Artifacts
