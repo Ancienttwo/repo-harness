@@ -1,6 +1,6 @@
 import { createHash } from 'crypto';
 import { readFileSync, realpathSync, statSync } from 'fs';
-import { join } from 'path';
+import { dirname, isAbsolute, posix, relative, resolve, sep, win32 } from 'path';
 import { stripWrappingQuotes } from '../../core/state/artifact-parsers';
 
 export interface CollectedStateInputs {
@@ -9,7 +9,54 @@ export interface CollectedStateInputs {
 }
 
 export function repoPath(cwd: string, relPath: string): string {
-  return join(cwd, relPath);
+  const posixRoot = posix.resolve('/repo');
+  const win32Root = win32.resolve('C:\\repo').toLowerCase();
+  const posixCandidate = posix.resolve(posixRoot, relPath);
+  const win32Candidate = win32.resolve(win32Root, relPath).toLowerCase();
+  if (
+    !relPath
+    || relPath.includes('\0')
+    || relPath.includes('\n')
+    || relPath.includes('\r')
+    || posix.isAbsolute(relPath)
+    || win32.isAbsolute(relPath)
+    || win32.parse(relPath).root !== ''
+    || !posixCandidate.startsWith(`${posixRoot}${posix.sep}`)
+    || !win32Candidate.startsWith(`${win32Root}${win32.sep}`)
+  ) {
+    throw new Error(`unsafe state source path escapes repository: ${relPath}`);
+  }
+
+  const canonicalRoot = realpathSync(resolve(cwd));
+  const lexicalTarget = resolve(canonicalRoot, relPath);
+  let canonicalTarget: string;
+  let targetExists = true;
+  try {
+    canonicalTarget = realpathSync(lexicalTarget);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    targetExists = false;
+    let existingAncestor = dirname(lexicalTarget);
+    while (true) {
+      try {
+        canonicalTarget = realpathSync(existingAncestor);
+        break;
+      } catch (ancestorError) {
+        if ((ancestorError as NodeJS.ErrnoException).code !== 'ENOENT') throw ancestorError;
+        existingAncestor = dirname(existingAncestor);
+      }
+    }
+  }
+  const canonicalRelative = relative(canonicalRoot, canonicalTarget);
+  if (
+    (targetExists && !canonicalRelative)
+    || canonicalRelative === '..'
+    || canonicalRelative.startsWith(`..${sep}`)
+    || isAbsolute(canonicalRelative)
+  ) {
+    throw new Error(`unsafe state source path escapes repository: ${relPath}`);
+  }
+  return targetExists ? canonicalTarget : lexicalTarget;
 }
 
 export function readText(cwd: string, relPath: string | null): string | null {
@@ -58,7 +105,9 @@ export function sourceHash(cwd: string, relPath: string): string {
 
 export function contentRevision(sourceHashes: Readonly<Record<string, string>>): string {
   const sorted = Object.fromEntries(
-    Object.entries(sourceHashes).sort(([left], [right]) => left.localeCompare(right)),
+    Object.entries(sourceHashes).sort(([left], [right]) => (
+      left < right ? -1 : left > right ? 1 : 0
+    )),
   );
   return sha256(JSON.stringify(sorted));
 }

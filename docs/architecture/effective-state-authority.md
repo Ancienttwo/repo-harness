@@ -81,9 +81,9 @@ At the baseline, `src/cli/hook/state-snapshot.ts` owns both deterministic rules 
 
 1. The CLI supplies explicit target paths, operation kind, and optional raise-only profile override; hook and MCP deliberately request the fixed `inspect` policy.
 2. The resolver acquires an exclusive directory-token state lock under a canonical repository root. Every ancestor is created and validated one level at a time, and any symlink, non-directory, or identity change fails closed.
-3. It reads canonical markers and artifacts, eagerly validates every resolver-owned policy field, and observes the Git review subject. Policy file paths must remain inside `.ai/harness` under both POSIX and Win32 path grammars. Only `ENOENT` means an authority path is absent; worktree canonicalization and Git common-dir corruption abort instead of falling back to a raw path or version `0`.
+3. It reads canonical markers and artifacts, eagerly validates every resolver-owned policy field, and observes the Git review subject. Policy file paths must remain inside `.ai/harness` under both POSIX and Win32 path grammars. Every artifact-derived read must also remain lexically and canonically inside the repository; existing external symlinks and missing targets whose nearest existing ancestor resolves outside abort before publication. Only in-repository `ENOENT` means an authority path is absent; worktree canonicalization and Git common-dir corruption abort instead of falling back to a raw path or version `0`.
 4. Workflow-only paths are removed from implementation-scope counting; capability IDs and unmapped paths are projected from the declared registry, then pure workflow policy returns a profile or a structured fail-closed error.
-5. The resolver calculates source freshness, conflicts, blockers, source hashes, authority revision, and state revision. A second read confirms that the exact source-hash set stayed stable.
+5. The resolver calculates source freshness, conflicts, blockers, source hashes, authority revision, and state revision. Revision keys use explicit code-unit ordering, not host locale collation. A second read confirms that the exact source-hash set stayed stable.
 6. Under the Git common-dir lock, the resolver selects the next version, atomically publishes the rollback-capable ignored cache, then commits the shared version owner last. Any cache or owner failure restores the exact previous cache bytes and exposes no consumed version.
 7. CLI renders the requested-risk result. Hook and MCP render a direct `inspect` result; all three agree on repository authority fields while their intentional policy input difference remains explicit.
 
@@ -129,6 +129,13 @@ Twelve concurrent stale reclaimers preserve one critical owner, and twelve
 linked-worktree publishers receive exactly versions `1..12`. The mutation barrier
 and cache/owner fault matrix prove failure publishes neither mixed state nor a
 consumed version.
+
+Artifact-path regressions cover POSIX and Win32 lexical traversal, an existing
+external symlink target, and an `ENOENT` target below an external symlink
+ancestor. Every case fails before cache/version publication, while an ordinary
+missing in-repository artifact preserves the explicit absence contract.
+Composed/decomposed Unicode source keys in reversed insertion orders produce
+one fixed code-unit-sorted revision digest.
 
 The final code-frozen 100-resolution benchmark is recorded only after its
 subject fingerprint is bound to the implementation under review; pre-freeze

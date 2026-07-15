@@ -5,9 +5,11 @@ import {
   readFileSync,
   readdirSync,
   rmSync,
+  symlinkSync,
+  utimesSync,
   writeFileSync,
 } from 'fs';
-import { join } from 'path';
+import { basename, join } from 'path';
 import { spawnSync } from 'child_process';
 import { createHash } from 'crypto';
 import {
@@ -23,6 +25,7 @@ import {
   REVIEW,
   ROOT,
   commitFixture,
+  createEffectiveStateFixture,
   resolveFixtureState,
   runCli,
   withRepo,
@@ -31,6 +34,118 @@ import {
 } from './state/effective-state-fixture';
 
 describe('effective state resolver', () => {
+  test('fails closed when artifact-derived paths escape the repository', () => {
+    const cases = [
+      {
+        name: 'active-plan marker',
+        setup(cwd: string, outsidePath: string, outsideRelative: string) {
+          writeFileSync(outsidePath, '# Outside plan\n> **Status**: Executing\n- [ ] leak\n');
+          write(cwd, '.ai/harness/active-plan', `${outsideRelative}\n`);
+        },
+        run(cwd: string) { resolveFixtureState(cwd); },
+      },
+      {
+        name: 'contract review header with Win32 traversal',
+        setup(cwd: string, outsidePath: string) {
+          writeFileSync(outsidePath, '# Outside review\n> **Recommendation**: pass\n');
+          const contract = readFileSync(join(cwd, CONTRACT), 'utf-8');
+          write(cwd, CONTRACT, contract.replace(
+            /^> \*\*Review File\*\*: .*$/m,
+            `> **Review File**: \`..\\${basename(outsidePath)}\``,
+          ));
+        },
+        run(cwd: string) { resolveFixtureState(cwd); },
+      },
+      {
+        name: 'active-sprint marker',
+        setup(cwd: string, outsidePath: string, outsideRelative: string) {
+          writeFileSync(outsidePath, '# Outside sprint\n');
+          write(cwd, '.ai/harness/sprint/active-sprint', `${outsideRelative}\n`);
+        },
+        run(cwd: string) { resolveFixtureState(cwd); },
+      },
+      {
+        name: 'pending draft path',
+        setup(cwd: string, outsidePath: string, outsideRelative: string) {
+          writeFileSync(outsidePath, '# Outside draft\n> **Status**: Draft\n');
+          const pendingPath = join(cwd, '.ai/harness/planning/pending.json');
+          write(cwd, '.ai/harness/planning/pending.json', JSON.stringify({
+            draft_plan_path: outsideRelative,
+          }));
+          const old = new Date(Date.now() - 4 * 24 * 60 * 60 * 1000);
+          utimesSync(pendingPath, old, old);
+        },
+        run(cwd: string) { buildStateSnapshot(cwd); },
+      },
+    ] as const;
+
+    const results: Array<{ readonly name: string; readonly failedClosed: boolean; readonly published: boolean }> = [];
+    for (const entry of cases) {
+      const fixture = createEffectiveStateFixture();
+      const outsidePath = join(fixture.cwd, '..', `${basename(fixture.cwd)}-${entry.name.replaceAll(' ', '-')}.md`);
+      const outsideRelative = `../${basename(outsidePath)}`;
+      try {
+        entry.setup(fixture.cwd, outsidePath, outsideRelative);
+        let failedClosed = false;
+        try {
+          entry.run(fixture.cwd);
+        } catch {
+          failedClosed = true;
+        }
+        results.push({
+          name: entry.name,
+          failedClosed,
+          published: existsSync(join(fixture.cwd, '.ai/harness/state/effective.json'))
+            || existsSync(stateVersionOwnerPath(fixture.cwd)),
+        });
+      } finally {
+        rmSync(outsidePath, { force: true });
+        fixture.cleanup();
+      }
+    }
+
+    expect(results).toEqual(cases.map((entry) => ({
+      name: entry.name,
+      failedClosed: true,
+      published: false,
+    })));
+  });
+
+  test('fails closed when an in-repo authority path symlinks outside the repository', () => {
+    if (process.platform === 'win32') return;
+    const fixture = createEffectiveStateFixture();
+    const outsidePath = join(fixture.cwd, '..', `${basename(fixture.cwd)}-symlink-plan.md`);
+    try {
+      writeFileSync(outsidePath, '# Outside plan\n> **Status**: Executing\n- [ ] leak\n');
+      const linkedPlan = join(fixture.cwd, 'plans/external-plan.md');
+      symlinkSync(outsidePath, linkedPlan);
+      write(fixture.cwd, '.ai/harness/active-plan', 'plans/external-plan.md\n');
+      expect(() => resolveFixtureState(fixture.cwd)).toThrow('unsafe state source path');
+      expect(existsSync(join(fixture.cwd, '.ai/harness/state/effective.json'))).toBe(false);
+      expect(existsSync(stateVersionOwnerPath(fixture.cwd))).toBe(false);
+    } finally {
+      rmSync(outsidePath, { force: true });
+      fixture.cleanup();
+    }
+  });
+
+  test('fails closed when a missing authority path has an external symlink ancestor', () => {
+    if (process.platform === 'win32') return;
+    const fixture = createEffectiveStateFixture();
+    const outsideDirectory = join(fixture.cwd, '..', `${basename(fixture.cwd)}-outside-directory`);
+    try {
+      mkdirSync(outsideDirectory);
+      symlinkSync(outsideDirectory, join(fixture.cwd, 'plans/external'));
+      write(fixture.cwd, '.ai/harness/active-plan', 'plans/external/missing.md\n');
+      expect(() => resolveFixtureState(fixture.cwd)).toThrow('unsafe state source path');
+      expect(existsSync(join(fixture.cwd, '.ai/harness/state/effective.json'))).toBe(false);
+      expect(existsSync(stateVersionOwnerPath(fixture.cwd))).toBe(false);
+    } finally {
+      rmSync(outsideDirectory, { recursive: true, force: true });
+      fixture.cleanup();
+    }
+  });
+
   test('normalizes authoritative workflow sources and writes an atomic cache', () => {
     withRepo((cwd) => {
       const state = resolveFixtureState(cwd);

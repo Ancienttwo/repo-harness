@@ -34,6 +34,26 @@ import {
   type StateVersionWriteEffects,
 } from '../../src/effects/state/git-state-version-store';
 import { resolveEffectiveState } from '../../src/effects/state/resolve-effective-state';
+import { contentRevision, sha256 } from '../../src/effects/state/collect-state-inputs';
+
+describe('Effective State content revision', () => {
+  test('uses code-unit ordering when locale collation treats distinct keys as equal', () => {
+    const composed = 'plans/\u00e9.md';
+    const decomposed = 'plans/e\u0301.md';
+    const first = Object.fromEntries([
+      [composed, 'sha256:composed'],
+      [decomposed, 'sha256:decomposed'],
+    ]);
+    const reversed = Object.fromEntries(Object.entries(first).reverse());
+    const expected = sha256(JSON.stringify({
+      [decomposed]: 'sha256:decomposed',
+      [composed]: 'sha256:composed',
+    }));
+
+    expect(contentRevision(first)).toBe(expected);
+    expect(contentRevision(reversed)).toBe(expected);
+  });
+});
 
 describe('Effective State lock effects', () => {
   test('a malformed stale lock is reclaimed only when its filename PID is dead', () => {
