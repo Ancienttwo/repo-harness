@@ -1,25 +1,25 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-15T03:52:02+0800 -->
+<!-- updated_at: 2026-07-15T15:26:42+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: Idle
-> **Updated At**: 2026-07-15T03:52:02+0800
-> **Source Branch**: main
-> **Source Commit**: 3eda8007
+> **Status**: Active
+> **Updated At**: 2026-07-15T15:26:42+0800
+> **Source Branch**: codex/esa-01-freeze-effective-state-invariants-and-characterization-fixtures
+> **Source Commit**: 26dd6e88
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: codegraph-1.4.1-refresh
+> **Reason**: ESA-07 pre-finish closeout
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: Idle
-- Active Plan: (none)
-- Plan Status: (none)
+- Status: Active
+- Active Plan: plans/plan-20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md
+- Plan Status: Executing
 - Next Task: (none)
 - Clear Note: (none)
 
@@ -31,7 +31,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- (none)
+- .: plans/plan-20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md
+- .: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-esa-01-freeze-effective-state-invariants-and-characterization-fixtures
 ## Active Sprint
 
 - Sprint: (none)
@@ -46,7 +47,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`: status=completed, current_slice=completed-20260713-policy-seed, source_plan=plans/plan-20260712-2215-agent-fleet-specialists.md
 ## Handoff
 
-- Exact Next Step: (none)
+- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Complete ESA-07 boundaries, package/release proof, docs, review, PR/merge/push closeout.
 
 ## Checks
 
@@ -54,11 +55,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 2 changed/untracked path(s)
+- Summary: 7 changed/untracked path(s)
 
 ```
- M bun.lock
- M package.json
+ M evals/harness/reports/profile-comparison.json
+ M evals/harness/reports/profile-comparison.md
+ M evals/harness/reports/profile-comparison.sha256.json
+ M plans/plan-20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md
+ M plans/sprints/20260714-effective-state-authority-convergence.sprint.md
+ M tasks/notes/20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.notes.md
+ M tasks/reviews/20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.review.md
 ```
 
 ## Source Artifacts

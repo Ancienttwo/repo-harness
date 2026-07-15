@@ -4,7 +4,7 @@
 > **Plan**: plans/plan-20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md
 > **Contract**: tasks/contracts/20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.contract.md
 > **Review**: tasks/reviews/20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.review.md
-> **Last Updated**: 2026-07-15 14:56 +0800
+> **Last Updated**: 2026-07-15 15:25 +0800
 > **Lifecycle**: notes
 
 ## P1/P2/P3 Decisions
@@ -36,7 +36,7 @@
 - Non-`ENOENT` authority reads fail closed. Fault tests cover plan/policy/registry `EACCES`, malformed and parseable-invalid policy, authoritative paths that become directories, cache temp/publish failure, owner temp/publish failure, symlink ancestors, token replacement, dead/malformed/live owners, deleted/corrupt cache, and continuous capability-registry mutation.
 - Policy and capability-registry files participate in `source_hashes`; resolver-owned policy fields are eagerly validated even for clean inspect/no-target calls. Sequential mutation advances revision/version, while continuous mutation or any cache/owner fault publishes no partial authority and consumes no version.
 - The third and final repair round closes the remaining platform/error-boundary gaps: policy-owned paths must be contained under both POSIX and Win32 grammars, `safeRealpath` degrades only explicit `ENOENT`, Git version reads return `0` only when discovery metadata is actually absent, and the unused standalone cache-writer export is removed so fault injection uses the resolver transaction seam.
-- The ESA-01 baseline benchmark at `main@82550779cdccf0575d674ae53bbc95ba63e44743` recorded median `223.197 ms` and p95 `270.589 ms`, giving a +10% p95 budget of `297.648 ms`. A later 170.305/215.574 calibration predates the final lock subject and is not release evidence. The final 100-resolution result will be recorded once after code freeze and fingerprint freshness verification.
+- The ESA-01 baseline benchmark at `main@82550779cdccf0575d674ae53bbc95ba63e44743` recorded median `223.197 ms` and p95 `270.589 ms`, giving a +10% p95 budget of `297.648 ms`. On clean source commit `26dd6e88ea7c5fcf1a80439044283e98d892da41`, the single final 100-resolution run recorded median `169.460 ms` and p95 `241.095 ms`: p95 is 10.900% below baseline and 56.553 ms inside the budget. The earlier 170.305/215.574 calibration remains invalid pre-freeze evidence.
 
 ## Focused Verification To Date
 
@@ -48,7 +48,8 @@
 - `bun test tests/runtime-profile-enforcement.test.ts -t "patch spanning two capability prefixes"`: pass after replacing an obsolete simplified registry fixture with a valid canonical registry record.
 - `bun run check:hooks`, `bun run check:helpers`, and `bun run check:state-boundaries`: pass; projection hashes remain `sha256:a28c881fdbbff56ab039140c355bf468ca7b2451ae34a6a372d99972efc6f53f` and `sha256:5b82b946bb37c6ce1ea69f8e1e117f849326ce55ec8bfa741f38c6f50c8edf08`, with 102 TypeScript files checked. `git diff --check`, architecture sync, and task sync also pass.
 - Earlier frozen slices: state core 27 pass; adapter/golden/CLI 33 pass; effective-state integration 35 pass; capability/config/architecture 27 pass; helper/boundary 13 pass; generated hook/helper drift checks pass.
-- The `73dc58c8` packed `repo-harness-0.10.1.tgz` installed and its packaged CLI bins started, but the third-round source delta makes that proof stale; regenerate it on the new clean freeze.
+- On clean source commit `26dd6e88`, packed `repo-harness-0.10.1.tgz` installs and its packaged CLI bins start.
+- The only final authoritative Harness run completed all 27 arms (3 profile bases x 9 scenarios) with 27 pass / 0 fail. Report validation returns `authoritative=true`, benchmark subject `sha256:f7f7cebdb595359aff5a0639e490376bf1e7f8aa452b1d3284072304ce70be0b`, and report evidence `sha256:676fb10bb9012919baf96e7464e9e741cf4ec7c8eb36548036be105f33b28373`; the report source commit is `26dd6e88ea7c5fcf1a80439044283e98d892da41`.
 - The pre-refactor full suite recorded 1493 pass, 1 skip, 0 fail. It is historical characterization, not final release evidence.
 
 ## Review Findings Closed
@@ -69,7 +70,7 @@
 - The approved Sprint proposed `0.11.0` only if ESA-06 mandatory overwrite preconditions shipped. ESA-06 remains deferred, so this cutover is the non-breaking `0.10.1` release surface and is not published or tagged by this task.
 - The standalone helper changed from a runtime Bun bundle to a deterministic typed source projection because bundling erased the public type surface needed by adopted repositories. It remains a generated projection of one canonical implementation.
 - Exact MCP `state_version` parity cannot be guaranteed by a number-only read without materializing the durable read model. The MCP tool therefore declares the write accurately instead of introducing a speculative counter or compatibility shape.
-- Final authoritative 3x9 benchmark, release gates, review binding, PR, merge, and remote-main verification remain pending. Lock, publication/policy, and adapter specialists now report no remaining P0-P2 on the source delta; workflow docs and clean-freeze gates must finish before the one permitted benchmark run.
+- Final release/workflow gates, Claude review binding, PR, merge, and remote-main verification remain pending. The one permitted 3x9 benchmark and the final 100-resolution evidence are complete; no benchmark rerun is allowed for this subject.
 
 ## Deferred Scope
 

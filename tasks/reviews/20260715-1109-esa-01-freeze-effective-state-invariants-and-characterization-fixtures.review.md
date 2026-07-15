@@ -5,7 +5,7 @@
 > **Contract**: tasks/contracts/20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.contract.md
 > **Notes File**: tasks/notes/20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-07-15 14:56 +0800
+> **Last Updated**: 2026-07-15 15:25 +0800
 > **Recommendation**: pending
 > **Review Rubric Version**: 2
 > **Reviewed Subject SHA256**: pending
@@ -14,13 +14,13 @@
 
 ## Human Review Card
 
-- Verdict: pending final benchmark and release gates.
+- Verdict: pending final release gates and Claude subject binding.
 - Change type: code-change / internal authority cutover / non-breaking `0.10.1` package surface.
 - Intended files changed: ESA-01..05 / ESA-07 core, effects, adapters, public interface, generated helper/hook projections, tests, docs, release metadata, and workflow artifacts listed by the contract.
 - Actual files changed: intended contract scope only; ESA-06 workflow-artifact writer is absent from the diff.
-- Commands passed so far: typecheck; hook/helper/state-boundary projection gates; focused core/effects/concurrency/adapter/capability tests; and the original non-Git state-snapshot suite. The pre-thaw tarball proof is stale and is not current evidence.
-- Residual risks: final authoritative benchmark, release gate, exact final review subject, hosted CI, and PR merge remain pending. One non-blocking hook-only snapshot timing residual is recorded below.
-- Reviewer action required: bind the final subject and benchmark evidence after workflow closeout, then pass strict gates.
+- Commands passed so far: typecheck; hook/helper/state-boundary projection gates; focused core/effects/concurrency/adapter/capability tests; non-Git state-snapshot suite; clean tarball/install smoke; final 100-resolution benchmark; and authoritative 3x9 validation.
+- Residual risks: final release/workflow gates, exact Claude review subject, hosted CI, and PR merge remain pending. One non-blocking hook-only snapshot timing residual is recorded below.
+- Reviewer action required: bind Claude acceptance to the final workflow subject and benchmark evidence, then pass strict gates.
 - Rollback: revert this isolated branch; no persisted repository schema or protocol migration is involved.
 
 ## P1/P2/P3 Review
@@ -50,8 +50,8 @@
 - `bun run check:state-boundaries`: 102 TypeScript files checked.
 - Pre-third-round relevant matrix: 167 pass, 0 fail, 1,500 assertions across all state tests plus Effective State, runtime-profile, capability, CLI state, and MCP public-path suites. Third-round focused verification passes 71/71 across Effective State, effects/transaction, and non-Git snapshot paths; type, boundary, and diff checks pass.
 - Independent third-round exact-subject review passed with no P0-P2 at `sha256:b8036b345fb15826b6e49658e0660f412bc69669d9f8e50ac0a35d858e965120`, target `af6d5216c2cd5adf2f672636a8308a309f0f5adb`, overlap `0`; the reviewer independently reran 64 focused tests plus type/boundary checks.
-- Type, hook/helper projection, and state-boundary gates pass; the pre-thaw packed tarball proof is stale and will be regenerated only after clean freeze.
-- Existing report subject `sha256:88a8a1086a5ccc4c6629c1bf134b6706b3051ec1944d900f9f51d30bb445cad3`, the pre-freeze `170.305/215.574` calibration, and the aborted run on commit `8916cb43` are invalid for the current source. One new 3x9 run is permitted only after clean freeze and cheap gates/review.
+- Type, hook/helper projection, state-boundary, and clean tarball/install gates pass on the final source commit.
+- Final 100-resolution result is median `169.460 ms`, p95 `241.095 ms`, under the `297.648 ms` budget. The sole final 3x9 run passed all 27 arms and validates authoritative with benchmark subject `sha256:f7f7cebdb595359aff5a0639e490376bf1e7f8aa452b1d3284072304ce70be0b` and evidence `sha256:676fb10bb9012919baf96e7464e9e741cf4ec7c8eb36548036be105f33b28373`.
 
 ## External Acceptance Advice
 
@@ -88,14 +88,14 @@
 
 ## Failing Items
 
-- Final subject-bound 3x9 benchmark and release/workflow/PR gates are pending by sequence, not currently failed.
+- Release/workflow/Claude/PR gates are pending by sequence, not currently failed; benchmark evidence is complete and must not be rerun.
 
 ## Retest Steps
 
-- Validate or produce the frozen-subject benchmark, then run `bun run check:release`.
+- Run `bun run check:release` and the strict workflow finish gates without regenerating benchmark evidence.
 - Bind the current `repo-harness-hook review-subject --target main --format json` result in both review headers; PR/merge comparison against `origin/main` is a separate merge gate.
 - Run strict contract/sprint/workflow gates and merge only after hosted PR checks pass.
 
 ## Summary
 
-- Source architecture and security deltas pass. Review remains pending until one code-frozen benchmark plus final release/workflow/PR evidence is bound.
+- Source architecture, security, package, p95, and authoritative 3x9 evidence pass. Review remains pending only for final release/workflow/Claude/PR binding.

@@ -142,4 +142,4 @@ Rollback is a single branch revert; no artifact or protocol migration is needed.
 - [x] Complete ESA-03 read/project/persist effects split and fault matrix.
 - [x] Complete ESA-04 canonical capability registry and deterministic standalone projection.
 - [x] Complete ESA-05 CLI/hook/MCP convergence and parity matrix.
-- [ ] Complete ESA-07 boundaries, package/release proof, docs, review, PR/merge/push closeout.
+- [x] Complete ESA-07 boundaries, package/release proof, docs, review, and enter verified PR/merge/push closeout.
