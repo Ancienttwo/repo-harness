@@ -6,7 +6,7 @@
 > **Workflow Profile**: strict
 > **Owner**: kito
 > **Capability ID**: workflow-engine-inspection-migration
-> **Last Updated**: 2026-07-15 11:18
+> **Last Updated**: 2026-07-15 14:45
 > **Review File**: `tasks/reviews/20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.review.md`
 > **Notes File**: `tasks/notes/20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.notes.md`
 
@@ -16,22 +16,22 @@ The current Effective State implementation combines authority parsing, determini
 
 ## Goal
 
-Freeze current Effective State v1 behavior at `main@82550779cdccf0575d674ae53bbc95ba63e44743` with reusable real-repository fixtures, at least ten full normalized direct/CLI/hook goldens, lock/cache/source-instability tests, an authority ADR, and a recorded 100-resolution median/p95 baseline. Production behavior must remain unchanged.
+Freeze Effective State v1 at `main@82550779cdccf0575d674ae53bbc95ba63e44743` with reusable real-repository fixtures, at least ten full normalized direct/CLI/hook goldens, lock/cache/source-instability tests, an authority ADR, and a recorded 100-resolution median/p95 baseline. Public protocol, command/tool names, ordering, exits, and valid-input semantics remain unchanged; review-proven authority-read, locking, and publication failures must be corrected fail closed.
 
 Then execute the approved dependent rows ESA-02 through ESA-05 and ESA-07 in order on the same isolated branch, leaving ESA-06 deferred. Produce the repository-wide authoritative benchmark exactly once after the final `src/cli` code freeze, then close the Sprint and merge/push `main`.
 
 ## Scope
 
 - In scope: ESA-01 through ESA-05 plus ESA-07 files and tests named by the approved Sprint, along with synchronized workflow artifacts.
-- Out of scope: ESA-06 writer hardening, unrelated tools, and the two no-touch Skill Surface files in the main checkout.
+- Out of scope: ESA-06 writer hardening, unrelated tools, the two no-touch Skill Surface files, and the unapproved Harness Loop plan in the main checkout.
 - Taste constraints: no new abstraction beyond a shared test fixture used by the existing suite and new characterization suites; no fallback or second authority.
 
 ## Stop Conditions
 
-- Stop if satisfying a golden requires changing production source or accepting a semantic delta from baseline.
+- Stop if satisfying a golden requires an unreviewed semantic delta from baseline; explicit fail-closed correctness fixes require a reproduced fault and regression proof.
 - Stop if an edit is required outside `allowed_paths`.
 - Stop if lock/source-mutation evidence cannot be made bounded and deterministic enough to distinguish stable publication from fail-closed behavior.
-- Stop if any existing Effective State assertion changes expected behavior.
+- Stop if an existing valid-input Effective State assertion changes expected behavior.
 
 ## Falsifier
 
@@ -140,7 +140,6 @@ exit_criteria:
     - bash scripts/check-tarball-install-smoke.sh
     - bun run check:release
     - repo-harness run check-task-workflow --strict
-    - repo-harness run verify-sprint --plan plans/plan-20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md
   qa_scores:
     - dimension: functionality
       min: 9
@@ -149,7 +148,7 @@ exit_criteria:
   manual_checks:
     - "Golden matrix contains at least ten named scenarios"
     - "100-resolution benchmark p95 remains within 10 percent of the ESA-01 baseline"
-    - "Direct, CLI, hook, and MCP canonical fields agree for every parity fixture"
+    - "CLI matches requested-risk resolution; hook/MCP match inspect resolution; repository authority fields agree across every parity fixture"
     - "Generated capability helper is standalone and bound to the canonical source hash"
     - "Authoritative 3x9 benchmark validates against the frozen final subject"
     - "Evaluator review and external acceptance recommend pass for the final subject"

@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  existsSync,
   mkdirSync,
   readFileSync,
   readdirSync,
@@ -9,7 +10,11 @@ import {
 import { join } from 'path';
 import { spawnSync } from 'child_process';
 import { createHash } from 'crypto';
-import { resolveEffectiveState } from '../src/effects/state/resolve-effective-state';
+import {
+  buildStateSnapshot,
+  resolveEffectiveState,
+} from '../src/effects/state/resolve-effective-state';
+import { stateVersionOwnerPath } from '../src/effects/state/git-state-version-store';
 import { migrateLegacyActivePlan } from '../src/cli/hook/legacy-active-plan-migration';
 import {
   CLI,
@@ -447,20 +452,64 @@ describe('effective state resolver', () => {
       });
     });
 
-    test('a corrupt policy.json is treated as "not declared" (absent, no blocker) -- intentionally aligned with every other policy.json reader in this file, not fixed', () => {
+    test('a corrupt policy.json fails closed before cache/version publication', () => {
       withRepo((cwd) => {
-        // policyPath/policyString/loadMinimalChangePolicy all catch a corrupt
-        // or missing policy.json and fall back to a default; none of them
-        // fail closed. Making policyDeclaresCapabilityRegistry the one
-        // exception would invent a new, inconsistent authority for exactly
-        // the case the dispatch says to avoid ("别造新权威"). Locks in the
-        // current, deliberate behavior.
         write(cwd, '.ai/harness/policy.json', 'not json{{{');
-        const state = resolveFixtureState(cwd);
-        expect(state.blockers).not.toContain('capability_registry:invalid');
-        expect(state.profile_reasons).toContain('capability:registry:absent');
+        expect(() => resolveFixtureState(cwd)).toThrow();
+        expect(existsSync(join(cwd, '.ai/harness/state/effective.json'))).toBe(false);
+        expect(existsSync(stateVersionOwnerPath(cwd))).toBe(false);
       });
     });
+
+    for (const malformed of [
+      {
+        name: 'non-string capability registry declaration',
+        policy: { context: { capability_registry_file: 42 } },
+        resolve: resolveFixtureState,
+      },
+      {
+        name: 'non-string review base',
+        policy: { worktree_strategy: { review_base: 42 } },
+        resolve: resolveFixtureState,
+      },
+      {
+        name: 'non-object worktree strategy',
+        policy: { worktree_strategy: 42 },
+        resolve: resolveFixtureState,
+      },
+      {
+        name: 'unsafe pending orchestration path',
+        policy: { planning: { pending_orchestration_file: '../../outside' } },
+        resolve: buildStateSnapshot,
+      },
+    ] as const) {
+      test(`parseable malformed policy fails closed: ${malformed.name}`, () => {
+        withRepo((cwd) => {
+          write(cwd, '.ai/harness/policy.json', JSON.stringify(malformed.policy));
+          expect(() => malformed.resolve(cwd)).toThrow();
+          expect(existsSync(join(cwd, '.ai/harness/state/effective.json'))).toBe(false);
+          expect(existsSync(stateVersionOwnerPath(cwd))).toBe(false);
+        });
+      });
+    }
+
+    for (const malformed of [
+      { context: 42 },
+      { context: { capability_registry_file: '../../outside' } },
+    ] as const) {
+      test(`clean inspect validates all policy authority eagerly: ${JSON.stringify(malformed)}`, () => {
+        withRepo((cwd) => {
+          write(cwd, '.ai/harness/policy.json', JSON.stringify(malformed));
+          commitFixture(cwd, 'commit malformed policy authority');
+          expect(() => resolveEffectiveState(cwd, Date.now(), {
+            targetPaths: [],
+            operationKind: 'inspect',
+          })).toThrow();
+          expect(existsSync(join(cwd, '.ai/harness/state/effective.json'))).toBe(false);
+          expect(existsSync(stateVersionOwnerPath(cwd))).toBe(false);
+        });
+      });
+    }
 
     test('a non-array capabilities field fails closed with a structured blocker', () => {
       withRepo((cwd) => {

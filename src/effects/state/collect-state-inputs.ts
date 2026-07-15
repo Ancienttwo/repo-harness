@@ -1,5 +1,5 @@
 import { createHash } from 'crypto';
-import { existsSync, readFileSync, realpathSync } from 'fs';
+import { readFileSync, realpathSync, statSync } from 'fs';
 import { join } from 'path';
 import { stripWrappingQuotes } from '../../core/state/artifact-parsers';
 
@@ -28,7 +28,14 @@ export function readTrimmed(cwd: string, relPath: string): string | null {
 }
 
 export function fileExists(cwd: string, relPath: string | null | undefined): boolean {
-  return Boolean(relPath) && existsSync(repoPath(cwd, relPath as string));
+  if (!relPath) return false;
+  try {
+    statSync(repoPath(cwd, relPath));
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    throw error;
+  }
 }
 
 export function safeRealpath(path: string): string {

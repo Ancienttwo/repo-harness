@@ -1,17 +1,19 @@
 import {
   closeSync,
+  constants,
   fstatSync,
   lstatSync,
   mkdirSync,
   openSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmdirSync,
   unlinkSync,
   writeFileSync,
 } from 'fs';
 import { randomUUID } from 'crypto';
-import { dirname, join } from 'path';
+import { isAbsolute, join, relative, resolve, sep } from 'path';
 
 const LOCK_RELATIVE_PATH = '.ai/harness/state/effective.lock';
 const LOCK_STALE_MS = 30_000;
@@ -20,6 +22,16 @@ const LOCK_WAIT_MS = 5_000;
 interface FileIdentity {
   readonly dev: number;
   readonly ino: number;
+}
+
+interface LockAncestor {
+  readonly path: string;
+  readonly identity: FileIdentity;
+}
+
+interface LockLocation {
+  readonly lockPath: string;
+  readonly ancestors: readonly LockAncestor[];
 }
 
 interface LockHandle {
@@ -58,14 +70,75 @@ function sameFileIdentity(left: FileIdentity, right: FileIdentity): boolean {
   return left.dev === right.dev && left.ino === right.ino;
 }
 
+function unsafeAncestor(path: string): Error {
+  return new Error(`unsafe lock ancestor is not a stable real directory: ${path}`);
+}
+
+function prepareLockLocation(root: string, relativeLockPath: string): LockLocation {
+  const absoluteRoot = resolve(root);
+  const canonicalRoot = realpathSync(absoluteRoot);
+  if (canonicalRoot !== absoluteRoot) throw unsafeAncestor(absoluteRoot);
+  const lockPath = resolve(canonicalRoot, relativeLockPath);
+  const normalizedRelative = relative(canonicalRoot, lockPath);
+  if (!relativeLockPath
+    || isAbsolute(relativeLockPath)
+    || !normalizedRelative
+    || normalizedRelative === '..'
+    || normalizedRelative.startsWith(`..${sep}`)
+    || isAbsolute(normalizedRelative)) {
+    throw new Error(`unsafe lock path escapes its canonical root: ${relativeLockPath}`);
+  }
+
+  const parts = normalizedRelative.split(sep);
+  if (parts.some((part) => !part || part === '.' || part === '..')) {
+    throw new Error(`unsafe lock path components: ${relativeLockPath}`);
+  }
+
+  let current = canonicalRoot;
+  const ancestors: LockAncestor[] = [];
+  const rootStat = lstatSync(current);
+  if (!rootStat.isDirectory()) throw unsafeAncestor(current);
+  ancestors.push({ path: current, identity: fileIdentity(rootStat) });
+
+  for (const component of parts.slice(0, -1)) {
+    current = join(current, component);
+    let currentStat;
+    try {
+      currentStat = lstatSync(current);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      try {
+        mkdirSync(current, { mode: 0o700 });
+      } catch (mkdirError) {
+        if ((mkdirError as NodeJS.ErrnoException).code !== 'EEXIST') throw mkdirError;
+      }
+      currentStat = lstatSync(current);
+    }
+    if (!currentStat.isDirectory()) throw unsafeAncestor(current);
+    ancestors.push({ path: current, identity: fileIdentity(currentStat) });
+  }
+  return { lockPath, ancestors };
+}
+
+function assertLockAncestors(location: LockLocation): void {
+  for (const ancestor of location.ancestors) {
+    const current = lstatSync(ancestor.path);
+    if (!current.isDirectory()
+      || !sameFileIdentity(fileIdentity(current), ancestor.identity)) {
+      throw unsafeAncestor(ancestor.path);
+    }
+  }
+}
+
 function removeOwnedLock(
-  lockPath: string,
+  location: LockLocation,
   ownerPath: string,
   directoryIdentity: FileIdentity,
   ownerIdentity: FileIdentity,
 ): void {
   try {
-    const currentDirectory = lstatSync(lockPath);
+    assertLockAncestors(location);
+    const currentDirectory = lstatSync(location.lockPath);
     if (!currentDirectory.isDirectory()
       || !sameFileIdentity(fileIdentity(currentDirectory), directoryIdentity)) return;
     const currentOwner = lstatSync(ownerPath);
@@ -75,26 +148,40 @@ function removeOwnedLock(
     return;
   }
   try {
-    const currentDirectory = lstatSync(lockPath);
+    assertLockAncestors(location);
+    const currentDirectory = lstatSync(location.lockPath);
     if (currentDirectory.isDirectory()
-      && sameFileIdentity(fileIdentity(currentDirectory), directoryIdentity)) rmdirSync(lockPath);
+      && sameFileIdentity(fileIdentity(currentDirectory), directoryIdentity)) rmdirSync(location.lockPath);
   } catch {
-    // Another token or unexpected entry keeps the lock closed.
+    // Another token, ancestor replacement, or unexpected entry keeps the lock closed.
+  }
+}
+
+function removeUnpublishedLock(location: LockLocation, directoryIdentity: FileIdentity): void {
+  try {
+    assertLockAncestors(location);
+    const currentDirectory = lstatSync(location.lockPath);
+    if (currentDirectory.isDirectory()
+      && sameFileIdentity(fileIdentity(currentDirectory), directoryIdentity)
+      && readdirSync(location.lockPath).length === 0) rmdirSync(location.lockPath);
+  } catch {
+    // Fail closed when publication state or ancestor identity is uncertain.
   }
 }
 
 function ownsExclusiveToken(
-  lockPath: string,
+  location: LockLocation,
   ownerPath: string,
   ownerName: string,
   directoryIdentity: FileIdentity,
   ownerIdentity: FileIdentity,
 ): boolean {
   try {
-    const currentDirectory = lstatSync(lockPath);
+    assertLockAncestors(location);
+    const currentDirectory = lstatSync(location.lockPath);
     if (!currentDirectory.isDirectory()
       || !sameFileIdentity(fileIdentity(currentDirectory), directoryIdentity)) return false;
-    const entries = readdirSync(lockPath);
+    const entries = readdirSync(location.lockPath);
     if (entries.length !== 1 || entries[0] !== ownerName) return false;
     const currentOwner = lstatSync(ownerPath);
     return currentOwner.isFile()
@@ -104,42 +191,31 @@ function ownsExclusiveToken(
   }
 }
 
-function reclaimStaleLockDirectory(lockPath: string): boolean {
+function reclaimStaleLockDirectory(location: LockLocation): boolean {
+  assertLockAncestors(location);
   let observedDirectoryIdentity: FileIdentity;
-  let observedDirectoryMtimeMs: number;
   try {
-    const observedDirectory = lstatSync(lockPath);
+    const observedDirectory = lstatSync(location.lockPath);
     if (!observedDirectory.isDirectory()) return false;
     observedDirectoryIdentity = fileIdentity(observedDirectory);
-    observedDirectoryMtimeMs = observedDirectory.mtimeMs;
   } catch {
     return false;
   }
   let entries: string[];
   try {
-    entries = readdirSync(lockPath);
+    entries = readdirSync(location.lockPath);
   } catch {
     return false;
   }
-  if (entries.length === 0) {
-    if (Date.now() - observedDirectoryMtimeMs <= LOCK_STALE_MS) return false;
-    try {
-      const currentDirectory = lstatSync(lockPath);
-      if (!currentDirectory.isDirectory()
-        || !sameFileIdentity(fileIdentity(currentDirectory), observedDirectoryIdentity)
-        || readdirSync(lockPath).length !== 0) return false;
-      rmdirSync(lockPath);
-      return true;
-    } catch {
-      return false;
-    }
-  }
+  // An empty directory cannot distinguish a crashed creator from a live
+  // creator paused between mkdir and token publication. Preserve it and fail
+  // closed; operator cleanup is required after verifying no creator is live.
   if (entries.length !== 1) return false;
 
   const entry = entries[0];
   const observedToken = ownerTokenFromFileName(entry);
   if (observedToken === null) return false;
-  const observedOwnerPath = join(lockPath, entry);
+  const observedOwnerPath = join(location.lockPath, entry);
   let reclaim = false;
   let observedOwnerIdentity: FileIdentity;
   let observedOwnerMtimeMs: number;
@@ -168,20 +244,22 @@ function reclaimStaleLockDirectory(lockPath: string): boolean {
   if (!reclaim) return false;
 
   try {
-    const currentDirectory = lstatSync(lockPath);
+    assertLockAncestors(location);
+    const currentDirectory = lstatSync(location.lockPath);
     const currentOwner = lstatSync(observedOwnerPath);
     if (!currentDirectory.isDirectory()
       || !sameFileIdentity(fileIdentity(currentDirectory), observedDirectoryIdentity)
       || !currentOwner.isFile()
       || !sameFileIdentity(fileIdentity(currentOwner), observedOwnerIdentity)) return false;
-    // Delete only the exact owner token that was observed. A new owner has a
-    // different filename, so a stale reclaimer can never unlink it by path.
+    // Delete only the exact observed token. A legitimate new owner always has
+    // a different UUID filename, so its token makes rmdir fail closed.
     unlinkSync(observedOwnerPath);
   } catch {
     return false;
   }
   try {
-    rmdirSync(lockPath);
+    assertLockAncestors(location);
+    rmdirSync(location.lockPath);
     return true;
   } catch {
     // Another token or unexpected entry appeared; preserve it and fail closed.
@@ -189,46 +267,62 @@ function reclaimStaleLockDirectory(lockPath: string): boolean {
   }
 }
 
-export function withExclusiveDirectoryLock<T>(lockPath: string, run: () => T): T {
-  mkdirSync(dirname(lockPath), { recursive: true });
+export function withExclusiveDirectoryLock<T>(
+  canonicalRoot: string,
+  relativeLockPath: string,
+  run: () => T,
+): T {
+  const location = prepareLockLocation(canonicalRoot, relativeLockPath);
   const deadline = Date.now() + LOCK_WAIT_MS;
   let handle: LockHandle | null = null;
 
   while (handle === null) {
+    assertLockAncestors(location);
     try {
-      mkdirSync(lockPath, { mode: 0o700 });
+      mkdirSync(location.lockPath, { mode: 0o700 });
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
       try {
-        if (!lstatSync(lockPath).isDirectory()) {
-          throw new Error(`unsafe lock path is not a real directory: ${lockPath}`);
+        assertLockAncestors(location);
+        if (!lstatSync(location.lockPath).isDirectory()) {
+          throw new Error(`unsafe lock path is not a real directory: ${location.lockPath}`);
         }
       } catch (pathError) {
         if ((pathError as NodeJS.ErrnoException).code === 'ENOENT') continue;
         throw pathError;
       }
-      reclaimStaleLockDirectory(lockPath);
-      if (Date.now() >= deadline) throw error;
+      reclaimStaleLockDirectory(location);
+      if (Date.now() >= deadline) {
+        throw new Error(
+          `timed out waiting for exclusive lock ${location.lockPath}; `
+          + 'verify the owner is not live before manual cleanup',
+        );
+      }
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
       continue;
     }
 
-    const directoryStat = lstatSync(lockPath);
+    const directoryStat = lstatSync(location.lockPath);
     if (!directoryStat.isDirectory()) {
-      throw new Error(`unsafe lock path is not a real directory: ${lockPath}`);
+      throw new Error(`unsafe lock path is not a real directory: ${location.lockPath}`);
     }
     const directoryIdentity = fileIdentity(directoryStat);
+    assertLockAncestors(location);
     const token = `${process.pid}-${Date.now()}-${randomUUID()}`;
     const ownerName = ownerFileName(token);
-    const ownerPath = join(lockPath, ownerName);
+    const ownerPath = join(location.lockPath, ownerName);
     let fd: number | null = null;
     let ownerIdentity: FileIdentity | null = null;
     try {
-      fd = openSync(ownerPath, 'wx', 0o600);
+      fd = openSync(
+        ownerPath,
+        constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
+        0o600,
+      );
       ownerIdentity = fileIdentity(fstatSync(fd));
       writeFileSync(fd, `${JSON.stringify({ pid: process.pid, created_at: Date.now(), token })}\n`);
       if (!ownsExclusiveToken(
-        lockPath,
+        location,
         ownerPath,
         ownerName,
         directoryIdentity,
@@ -236,8 +330,8 @@ export function withExclusiveDirectoryLock<T>(lockPath: string, run: () => T): T
       )) {
         closeSync(fd);
         fd = null;
-        removeOwnedLock(lockPath, ownerPath, directoryIdentity, ownerIdentity);
-        if (Date.now() >= deadline) throw new Error(`lost exclusive lock ownership: ${lockPath}`);
+        removeOwnedLock(location, ownerPath, directoryIdentity, ownerIdentity);
+        if (Date.now() >= deadline) throw new Error(`lost exclusive lock ownership: ${location.lockPath}`);
         Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
         continue;
       }
@@ -245,21 +339,21 @@ export function withExclusiveDirectoryLock<T>(lockPath: string, run: () => T): T
     } catch (error) {
       if (fd !== null) closeSync(fd);
       if (ownerIdentity !== null) {
-        removeOwnedLock(lockPath, ownerPath, directoryIdentity, ownerIdentity);
+        removeOwnedLock(location, ownerPath, directoryIdentity, ownerIdentity);
       } else {
-        try { unlinkSync(ownerPath); } catch { /* owner file was never published */ }
-        try { rmdirSync(lockPath); } catch { /* an unexpected entry keeps the lock closed */ }
+        removeUnpublishedLock(location, directoryIdentity);
       }
       throw error;
     }
   }
 
   try {
+    assertLockAncestors(location);
     return run();
   } finally {
     closeSync(handle.fd);
     removeOwnedLock(
-      lockPath,
+      location,
       handle.ownerPath,
       handle.directoryIdentity,
       handle.ownerIdentity,
@@ -268,5 +362,5 @@ export function withExclusiveDirectoryLock<T>(lockPath: string, run: () => T): T
 }
 
 export function withStateLock<T>(cwd: string, run: () => T): T {
-  return withExclusiveDirectoryLock(join(cwd, LOCK_RELATIVE_PATH), run);
+  return withExclusiveDirectoryLock(cwd, LOCK_RELATIVE_PATH, run);
 }

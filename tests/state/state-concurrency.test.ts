@@ -1,10 +1,13 @@
 import { describe, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'fs';
-import { join } from 'path';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'fs';
+import { basename, join } from 'path';
 import { spawn, spawnSync } from 'child_process';
 import { commitFixture, resolveFixtureState, createEffectiveStateFixture, writeFixture, writeFixtureStateLock } from './effective-state-fixture';
 import { ROOT } from './effective-state-fixture';
 import { stateVersionOwnerPath } from '../../src/effects/state/git-state-version-store';
+import { resolveEffectiveState } from '../../src/effects/state/resolve-effective-state';
+import type { StateCacheWriteEffects } from '../../src/effects/state/state-cache';
+import { withStateLock } from '../../src/effects/state/state-lock';
 
 function releaseLockAfter(ownerPath: string, lockPath: string, delaySeconds: string): void {
   const child = spawn('sh', [
@@ -29,8 +32,8 @@ describe('Effective State lock and source-stability characterization', () => {
       const lockPath = join(fixture.cwd, '.ai/harness/state/effective.lock');
       const { ownerPath } = writeFixtureStateLock(fixture.cwd, {
         pid: process.pid,
-        created_at: Date.now(),
-        token: 'live-owner',
+        created_at: Date.now() - 60_000,
+        token: `${process.pid}-0-00000000-0000-4000-8000-000000000005`,
       });
       releaseLockAfter(ownerPath, lockPath, '0.15');
       const started = performance.now();
@@ -126,46 +129,37 @@ describe('Effective State lock and source-stability characterization', () => {
     }
   }, 20_000);
 
-  test('a delayed live creator with a stale partial token cannot overlap a contender', async () => {
+  test('a delayed live creator in the aged empty pre-token window cannot overlap a contender', async () => {
     const fixture = createEffectiveStateFixture();
     const stateDir = join(fixture.cwd, '.ai/harness/state');
     const lockPath = join(stateDir, 'effective.lock');
-    const readyPath = join(stateDir, 'partial-owner-ready');
-    const resumePath = join(stateDir, 'partial-owner-resume');
-    const criticalDir = join(stateDir, 'partial-owner-critical');
-    const stateLockModule = join(ROOT, 'src/effects/state/state-lock.ts');
+    const readyPath = join(stateDir, 'empty-owner-ready');
+    const goPath = join(stateDir, 'empty-owner-go');
+    const finishedPath = join(stateDir, 'empty-owner-finished');
+    const criticalDir = join(stateDir, 'empty-owner-critical');
     const ownerScript = `
-      import { closeSync, existsSync, futimesSync, mkdirSync, openSync, rmdirSync, unlinkSync, writeFileSync } from 'fs';
+      import { closeSync, existsSync, mkdirSync, openSync, rmdirSync, unlinkSync, utimesSync, writeFileSync } from 'fs';
       import { join } from 'path';
       const token = \`\${process.pid}-0-00000000-0000-4000-8000-000000000004\`;
       const ownerPath = join(process.env.LOCK_PATH, \`\${token}.json\`);
       mkdirSync(process.env.LOCK_PATH, { mode: 0o700 });
-      const fd = openSync(ownerPath, 'wx', 0o600);
       const old = new Date(Date.now() - 60_000);
-      futimesSync(fd, old, old);
+      utimesSync(process.env.LOCK_PATH, old, old);
       writeFileSync(process.env.READY_PATH, 'ready\\n');
-      while (!existsSync(process.env.RESUME_PATH)) {
+      while (!existsSync(process.env.GO_PATH)) {
         Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
       }
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
+      const fd = openSync(ownerPath, 'wx', 0o600);
       writeFileSync(fd, \`\${JSON.stringify({ pid: process.pid, created_at: Date.now(), token })}\\n\`);
-      const marker = join(process.env.CRITICAL_DIR, 'partial-owner');
+      const marker = join(process.env.CRITICAL_DIR, 'empty-owner');
       writeFileSync(marker, 'owned\\n');
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 150);
       unlinkSync(marker);
+      writeFileSync(process.env.FINISHED_PATH, 'finished\\n');
       closeSync(fd);
       try { unlinkSync(ownerPath); } catch {}
       try { rmdirSync(process.env.LOCK_PATH); } catch {}
-    `;
-    const contenderScript = `
-      import { unlinkSync, writeFileSync } from 'fs';
-      import { join } from 'path';
-      const lock = await import(process.env.STATE_LOCK_MODULE);
-      lock.withStateLock(process.env.TEST_REPO, () => {
-        const marker = join(process.env.CRITICAL_DIR, 'contender');
-        writeFileSync(marker, 'owned\\n');
-        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 220);
-        unlinkSync(marker);
-      });
     `;
     try {
       mkdirSync(criticalDir, { recursive: true });
@@ -175,7 +169,8 @@ describe('Effective State lock and source-stability characterization', () => {
           ...process.env,
           LOCK_PATH: lockPath,
           READY_PATH: readyPath,
-          RESUME_PATH: resumePath,
+          GO_PATH: goPath,
+          FINISHED_PATH: finishedPath,
           CRITICAL_DIR: criticalDir,
         },
         stdout: 'pipe',
@@ -186,51 +181,67 @@ describe('Effective State lock and source-stability characterization', () => {
         await new Promise((resolvePromise) => setTimeout(resolvePromise, 5));
       }
       expect(existsSync(readyPath)).toBe(true);
-
-      const contender = Bun.spawn(['bun', '-e', contenderScript], {
-        cwd: ROOT,
-        env: {
-          ...process.env,
-          STATE_LOCK_MODULE: stateLockModule,
-          TEST_REPO: fixture.cwd,
-          CRITICAL_DIR: criticalDir,
-        },
-        stdout: 'pipe',
-        stderr: 'pipe',
+      expect(existsSync(lockPath)).toBe(true);
+      expect(readdirSync(criticalDir)).toEqual([]);
+      writeFileSync(goPath, 'go\n');
+      withStateLock(fixture.cwd, () => {
+        expect(existsSync(finishedPath)).toBe(true);
+        expect(readdirSync(criticalDir)).toEqual([]);
       });
-      await new Promise((resolvePromise) => setTimeout(resolvePromise, 75));
-      writeFileSync(resumePath, 'resume\n');
-
-      let ownerDone = false;
-      let contenderDone = false;
-      const ownerResult = Promise.all([
+      const [ownerExit, ownerStderr] = await Promise.all([
         owner.exited,
         new Response(owner.stderr).text(),
-      ]).then(([exitCode, stderr]) => {
-        ownerDone = true;
-        return { exitCode, stderr };
-      });
-      const contenderResult = Promise.all([
-        contender.exited,
-        new Response(contender.stderr).text(),
-      ]).then(([exitCode, stderr]) => {
-        contenderDone = true;
-        return { exitCode, stderr };
-      });
-      let maxConcurrent = 0;
-      while (!ownerDone || !contenderDone) {
-        maxConcurrent = Math.max(maxConcurrent, readdirSync(criticalDir).length);
-        await new Promise((resolvePromise) => setTimeout(resolvePromise, 1));
-      }
-      const results = await Promise.all([ownerResult, contenderResult]);
-      expect(results.map((result) => result.exitCode), results.map((result) => result.stderr).filter(Boolean).join('\n'))
-        .toEqual([0, 0]);
-      expect(maxConcurrent).toBe(1);
+      ]);
+      expect(ownerExit, ownerStderr).toBe(0);
       expect(existsSync(lockPath)).toBe(false);
     } finally {
       fixture.cleanup();
     }
   }, 15_000);
+
+  test('an aged token whose PID is live or reused stays fail-closed for manual recovery', async () => {
+    const fixture = createEffectiveStateFixture();
+    const stateLockModule = join(ROOT, 'src/effects/state/state-lock.ts');
+    const enteredPath = join(fixture.cwd, '.ai/harness/state/reused-pid-entered');
+    try {
+      const { lockPath, ownerPath } = writeFixtureStateLock(fixture.cwd, {
+        pid: process.pid,
+        created_at: Date.now() - 60_000,
+        token: `${process.pid}-0-00000000-0000-4000-8000-000000000006`,
+      });
+      const worker = Bun.spawn(['bun', '-e', `
+        const lock = await import(process.env.STATE_LOCK_MODULE);
+        const fs = await import('fs');
+        try {
+          lock.withStateLock(process.env.TEST_REPO, () => fs.writeFileSync(process.env.ENTERED_PATH, 'entered\\n'));
+        } catch (error) {
+          process.stderr.write(String(error.message));
+          process.exit(7);
+        }
+      `], {
+        cwd: ROOT,
+        env: {
+          ...process.env,
+          STATE_LOCK_MODULE: stateLockModule,
+          TEST_REPO: fixture.cwd,
+          ENTERED_PATH: enteredPath,
+        },
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+      const [exitCode, stderr] = await Promise.all([
+        worker.exited,
+        new Response(worker.stderr).text(),
+      ]);
+      expect(exitCode).toBe(7);
+      expect(stderr).toContain('timed out waiting for exclusive lock');
+      expect(existsSync(enteredPath)).toBe(false);
+      expect(existsSync(ownerPath)).toBe(true);
+      expect(readdirSync(lockPath)).toEqual([basename(ownerPath)]);
+    } finally {
+      fixture.cleanup();
+    }
+  }, 8_000);
 
   test('linked worktrees share one Git common-dir version owner', () => {
     const fixture = createEffectiveStateFixture();
@@ -261,6 +272,43 @@ describe('Effective State lock and source-stability characterization', () => {
     }
   }, 10_000);
 
+  test('a linked-worktree cache publication failure does not consume the shared next version', () => {
+    const fixture = createEffectiveStateFixture();
+    const linked = `${fixture.cwd}-linked-publication-failure`;
+    let linkedCreated = false;
+    try {
+      const first = resolveFixtureState(fixture.cwd);
+      const add = spawnSync('git', ['worktree', 'add', '-b', 'linked-state-publication-failure', linked], {
+        cwd: fixture.cwd,
+        encoding: 'utf-8',
+      });
+      if (add.status !== 0) throw new Error(add.stderr);
+      linkedCreated = true;
+      writeFixture(linked, '.ai/harness/active-worktree', `${linked}\n`);
+      const cache: StateCacheWriteEffects = {
+        writeTemp(path, content) { writeFileSync(path, content, { mode: 0o600 }); },
+        publish() { throw new Error('injected linked cache publish failure'); },
+        removeTemp(path) { rmSync(path, { force: true }); },
+      };
+      expect(() => resolveEffectiveState(linked, Date.now(), {
+        targetPaths: ['src/feature.ts'],
+        operationKind: 'feature',
+      }, { cache })).toThrow('injected linked cache publish failure');
+      expect(JSON.parse(readFileSync(versionOwner(fixture.cwd), 'utf-8')).version)
+        .toBe(first.state_version);
+      expect(resolveFixtureState(linked).state_version).toBe(first.state_version + 1);
+      expect(versionOwner(fixture.cwd)).toBe(versionOwner(linked));
+    } finally {
+      if (linkedCreated) {
+        spawnSync('git', ['worktree', 'remove', '--force', linked], {
+          cwd: fixture.cwd,
+          encoding: 'utf-8',
+        });
+      }
+      fixture.cleanup();
+    }
+  }, 10_000);
+
   test('linked worktrees serialize concurrent version allocations through the shared owner', async () => {
     const fixture = createEffectiveStateFixture();
     const linked = `${fixture.cwd}-linked-concurrent`;
@@ -268,12 +316,27 @@ describe('Effective State lock and source-stability characterization', () => {
     let linkedCreated = false;
     const versionStoreModule = join(ROOT, 'src/effects/state/git-state-version-store.ts');
     const workerScript = `
-      import { existsSync } from 'fs';
+      import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'fs';
+      import { join } from 'path';
       const store = await import(process.env.VERSION_STORE_MODULE);
       while (!existsSync(process.env.START_PATH)) {
         Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
       }
-      process.stdout.write(String(store.allocateStateVersion(process.env.TEST_REPO, process.env.REVISION)));
+      const publicationPath = join(
+        process.env.TEST_REPO,
+        '.ai/harness/state',
+        \`version-publication-\${process.env.WORKER_ID}.json\`,
+      );
+      mkdirSync(join(publicationPath, '..'), { recursive: true });
+      const version = store.commitStateVersionAfter(
+        process.env.TEST_REPO,
+        process.env.REVISION,
+        (candidate) => {
+          writeFileSync(publicationPath, String(candidate));
+          return { rollback() { try { unlinkSync(publicationPath); } catch {} } };
+        },
+      );
+      process.stdout.write(String(version));
     `;
     try {
       const add = spawnSync('git', ['worktree', 'add', '-b', 'linked-state-version-concurrent', linked], {
@@ -291,6 +354,7 @@ describe('Effective State lock and source-stability characterization', () => {
           START_PATH: startPath,
           TEST_REPO: index % 2 === 0 ? fixture.cwd : linked,
           REVISION: `revision-${index}`,
+          WORKER_ID: String(index),
         },
         stdout: 'pipe',
         stderr: 'pipe',

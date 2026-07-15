@@ -60,14 +60,17 @@ require a clean, merged state before local cleanup.
 
 For state inspection, the public MCP path is
 `summarize_repo_harness_state` -> `state-tools.ts` -> the shared effectful
-resolver -> pure Effective State v1 projection. Its task, phase, workflow
-profile, risk floor, plan/contract, blockers, freshness/conflicts, revision,
-version, and next action match CLI resolution. `current: null` preserves the
-existing result key when no projection exists; otherwise the legacy redacted
-preview remains additive and explicitly non-authoritative. The tool advertises
-`readOnlyHint: false` because canonical resolution materializes the ignored
-cache and Git-common-dir version owner while changing no workflow authority or
-product data.
+resolver -> pure Effective State v1 projection. MCP deliberately resolves the
+fixed `inspect` policy and therefore matches a direct `inspect` resolution for
+task, phase, workflow profile, risk floor, plan/contract, blockers,
+freshness/conflicts, revision, version, and next action. A CLI request with
+explicit target paths or operation kind can legitimately select a different
+requested-risk profile; the repository authority fields still agree.
+`current: null` preserves the existing result key when no projection exists;
+otherwise the legacy redacted preview remains additive and explicitly
+non-authoritative. The tool advertises `readOnlyHint: false` because canonical
+resolution materializes the ignored cache and Git-common-dir version owner while
+changing no workflow authority or product data.
 
 OAuth request limits use the direct socket plus canonical route as identity;
 forwarded headers never mint new buckets. Error paths fail closed: missing

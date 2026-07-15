@@ -3,8 +3,11 @@ import { createHash } from 'crypto';
 import { spawn, spawnSync } from 'child_process';
 import { existsSync, readFileSync, readdirSync, rmSync } from 'fs';
 import { join } from 'path';
-import type { EffectiveState, EffectiveStateRiskInput } from '../../src/core/state/types';
-import { resolveStateCommand } from '../../src/cli/commands/state';
+import type {
+  EffectiveState,
+  EffectiveStateRiskInput,
+  StateSnapshot,
+} from '../../src/core/state/types';
 import { getMcpPolicy } from '../../src/cli/mcp/policy';
 import { buildStateToolDefinitions, callStateTool } from '../../src/cli/mcp/state-tools';
 import { callMcpTool, type McpToolContext } from '../../src/cli/mcp/tools';
@@ -15,11 +18,13 @@ import {
 import { stateVersionOwnerPath } from '../../src/effects/state/git-state-version-store';
 import {
   CONTRACT,
+  HOOK_ENTRY,
   PLAN,
   REVIEW,
   commitFixture,
   createEffectiveStateFixture,
   replaceContractProfile,
+  runStateCli,
   writeFixture,
   writeFixtureStateLock,
 } from './effective-state-fixture';
@@ -183,7 +188,7 @@ const SCENARIOS: readonly Scenario[] = [
   },
 ];
 
-const CANONICAL_FIELDS = [
+const MCP_COMPACT_FIELDS = [
   'protocol',
   'kind',
   'task_id',
@@ -202,21 +207,60 @@ const CANONICAL_FIELDS = [
   'next_action',
 ] as const satisfies readonly (keyof EffectiveState)[];
 
-type CanonicalState = Pick<EffectiveState, (typeof CANONICAL_FIELDS)[number]>;
+const AUTHORITY_FIELDS = [
+  'protocol',
+  'kind',
+  'task_id',
+  'state_version',
+  'state_revision',
+  'authoritative_plan',
+  'contract',
+  'stale_sources',
+  'conflicting_sources',
+] as const satisfies readonly (keyof EffectiveState)[];
 
-function canonicalFields(state: CanonicalState): Record<string, unknown> {
-  return Object.fromEntries(CANONICAL_FIELDS.map((field) => [field, state[field]]));
+const POLICY_FIELDS = [
+  'phase',
+  'workflow_profile',
+  'requested_workflow_profile',
+  'risk_floor',
+  'profile_reasons',
+  'blockers',
+  'next_action',
+] as const satisfies readonly (keyof EffectiveState)[];
+
+type CompactState = Pick<EffectiveState, (typeof MCP_COMPACT_FIELDS)[number]>;
+
+function fields(state: object, names: readonly (keyof EffectiveState)[]): Record<string, unknown> {
+  const record = state as Readonly<Record<keyof EffectiveState, unknown>>;
+  return Object.fromEntries(names.map((field) => [field, record[field]]));
 }
 
-function commandOptions(risk: EffectiveStateRiskInput) {
-  return {
-    targetPath: risk.targetPaths,
-    operation: risk.operationKind,
-    profile: risk.explicitOverride,
-  };
+function cliRiskArgs(risk: EffectiveStateRiskInput): string[] {
+  return [
+    ...(risk.targetPaths?.length ? ['--target-path', ...risk.targetPaths] : []),
+    ...(risk.operationKind ? ['--operation', risk.operationKind] : []),
+    ...(risk.explicitOverride ? ['--profile', risk.explicitOverride] : []),
+  ];
 }
 
-describe('Effective State adapter parity', () => {
+function runPublicHook(cwd: string): StateSnapshot {
+  const result = spawnSync(process.execPath, [HOOK_ENTRY, 'state-snapshot', '--json'], {
+    cwd,
+    encoding: 'utf-8',
+  });
+  expect(result.status).toBe(0);
+  expect(result.stderr).toBe('');
+  return JSON.parse(result.stdout) as StateSnapshot;
+}
+
+async function runPublicMcp(cwd: string): Promise<CompactState> {
+  const policy = getMcpPolicy('planner', { allowedRoots: [cwd] });
+  const raw = await callMcpTool({ repoRoot: cwd, policy }, 'summarize_repo_harness_state');
+  return JSON.parse(raw.content[0].text) as CompactState;
+}
+
+describe('Effective State adapter authority parity and policy boundaries', () => {
   test('the parity matrix covers every ESA-01 golden scenario', () => {
     const goldenNames = readdirSync(FIXTURES)
       .filter((name) => name.endsWith('.json'))
@@ -226,69 +270,37 @@ describe('Effective State adapter parity', () => {
   });
 
   for (const scenario of SCENARIOS) {
-    test(`${scenario.name}: direct, CLI, hook, and MCP derive from one Effective State`, () => {
+    test(`${scenario.name}: requested CLI parity and default inspect adapter contract`, async () => {
       const fixture = createEffectiveStateFixture();
       const nowMs = Date.now();
       try {
         scenario.setup?.(fixture.cwd, nowMs);
-        const direct = resolveEffectiveState(fixture.cwd, nowMs, scenario.risk);
-        const expected = canonicalFields(direct);
-
-        let cliInvocation: unknown = null;
-        const cliOptions = commandOptions(scenario.risk);
-        const cli = resolveStateCommand(cliOptions, {
-          repoRoot: fixture.cwd,
-          nowMs,
-          resolve: (repoRoot, resolvedAt, risk) => {
-            cliInvocation = { repoRoot, resolvedAt, risk };
-            return direct;
-          },
-        });
-        expect(cliInvocation).toEqual({
-          repoRoot: fixture.cwd,
-          resolvedAt: nowMs,
-          risk: {
-            targetPaths: cliOptions.targetPath,
-            operationKind: cliOptions.operation,
-            explicitOverride: cliOptions.profile,
-          },
-        });
+        const requested = resolveEffectiveState(fixture.cwd, nowMs, scenario.risk);
+        const cli = runStateCli(fixture.cwd, [
+          'state', 'resolve', '--json', ...cliRiskArgs(scenario.risk),
+        ]);
         const cliState = JSON.parse(cli.stdout) as EffectiveState;
-        expect(canonicalFields(cliState)).toEqual(expected);
-        expect(cli.exitCode).toBe(direct.blockers.length > 0 ? 1 : 0);
+        expect(fields(cliState, MCP_COMPACT_FIELDS)).toEqual(fields(requested, MCP_COMPACT_FIELDS));
+        expect(cli.status).toBe(requested.blockers.length > 0 ? 1 : 0);
 
-        const hook = buildStateSnapshotFromEffectiveState(direct, fixture.cwd, nowMs);
-        expect(hook.states.contract).toBe(direct.contract ? 'present' : 'missing');
-        if (direct.authoritative_plan) {
-          expect(hook.paths.active_plan).toBe(direct.authoritative_plan.path);
-          expect(hook.states.plan).toBe(direct.authoritative_plan.status);
-        } else if (direct.worktree.freshness === 'stale') {
-          expect(hook.marker.problem).toBe('foreign_worktree');
-          expect(hook.states.plan).toBe('foreign_worktree');
+        const inspect = resolveEffectiveState(fixture.cwd, nowMs, {
+          targetPaths: [],
+          operationKind: 'inspect',
+        });
+        expect(fields(requested, AUTHORITY_FIELDS)).toEqual(fields(inspect, AUTHORITY_FIELDS));
+
+        const hook = runPublicHook(fixture.cwd);
+        expect(hook).toEqual(buildStateSnapshotFromEffectiveState(inspect, fixture.cwd, nowMs));
+
+        const mcp = await runPublicMcp(fixture.cwd);
+        expect(fields(mcp, MCP_COMPACT_FIELDS))
+          .toEqual(fields(inspect, MCP_COMPACT_FIELDS));
+
+        if (scenario.name === 'profile-below-strict-floor') {
+          expect(fields(requested, POLICY_FIELDS)).not.toEqual(fields(inspect, POLICY_FIELDS));
+          expect(fields(cliState, POLICY_FIELDS)).toEqual(fields(requested, POLICY_FIELDS));
+          expect(fields(mcp, POLICY_FIELDS)).toEqual(fields(inspect, POLICY_FIELDS));
         }
-
-        let mcpInvocation: unknown = null;
-        const mcp = callStateTool({
-          repoRoot: fixture.cwd,
-          mcpPolicyProfile: 'planner',
-          nowMs,
-        }, 'summarize_repo_harness_state', {
-          resolve: (repoRoot, resolvedAt, risk) => {
-            mcpInvocation = { repoRoot, resolvedAt, risk };
-            return direct;
-          },
-          isAdopted: () => true,
-          branch: () => 'main',
-        });
-        expect(mcpInvocation).toEqual({
-          repoRoot: fixture.cwd,
-          resolvedAt: nowMs,
-          risk: { targetPaths: [], operationKind: 'inspect' },
-        });
-        expect(canonicalFields(mcp)).toEqual(expected);
-        expect(mcp.status.profile_authority).toBe('mcp-policy');
-        expect(mcp.status.profile).toBe('planner');
-        expect(mcp.workflow_profile).toBe(direct.workflow_profile);
       } finally {
         fixture.cleanup();
       }

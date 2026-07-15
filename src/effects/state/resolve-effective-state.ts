@@ -23,8 +23,15 @@ import {
   projectStateSnapshot,
   type StateSnapshotCompatibilityFacts,
 } from '../../core/state/project-state-snapshot';
-import { allocateStateVersion, currentStateVersion } from './git-state-version-store';
-import { writeEffectiveStateCache } from './state-cache';
+import {
+  commitStateVersionAfter,
+  currentStateVersion,
+  type StateVersionWriteEffects,
+} from './git-state-version-store';
+import {
+  publishEffectiveStateCache,
+  type StateCacheWriteEffects,
+} from './state-cache';
 import { withStateLock } from './state-lock';
 import {
   collectStateInputs,
@@ -40,6 +47,49 @@ import {
 
 const ACTIVE_PLAN_MARKER = '.ai/harness/active-plan';
 const ACTIVE_WORKTREE_MARKER = '.ai/harness/active-worktree';
+const CAPABILITY_REGISTRY_PATH = '.ai/context/capabilities.json';
+const POLICY_PATH = '.ai/harness/policy.json';
+
+type WorkflowPolicy = Readonly<Record<string, unknown>> | null;
+const POLICY_FIELD_ABSENT = Symbol('policy-field-absent');
+
+export interface EffectiveStatePublicationEffects {
+  readonly cache?: StateCacheWriteEffects;
+  readonly version?: StateVersionWriteEffects;
+}
+
+function readWorkflowPolicy(cwd: string): WorkflowPolicy {
+  const text = readText(cwd, POLICY_PATH);
+  if (text === null) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text) as unknown;
+  } catch {
+    throw new Error(`invalid workflow policy JSON: ${POLICY_PATH}`);
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(`invalid workflow policy object: ${POLICY_PATH}`);
+  }
+  const policy = parsed as Readonly<Record<string, unknown>>;
+  validateWorkflowPolicy(policy);
+  return policy;
+}
+
+function policyValue(
+  policy: WorkflowPolicy,
+  jqPath: string,
+): unknown | typeof POLICY_FIELD_ABSENT {
+  if (policy === null) return POLICY_FIELD_ABSENT;
+  let current: unknown = policy;
+  for (const segment of jqPath.split('.').filter(Boolean)) {
+    if (!current || typeof current !== 'object' || Array.isArray(current)) {
+      throw new Error(`invalid workflow policy field ${jqPath}: non-object parent`);
+    }
+    if (!Object.hasOwn(current, segment)) return POLICY_FIELD_ABSENT;
+    current = (current as Record<string, unknown>)[segment];
+  }
+  return current;
+}
 
 function preferredOrLegacyPath(
   cwd: string,
@@ -61,23 +111,12 @@ function deriveContractPath(cwd: string, planPath: string, planText: string | nu
   );
 }
 
-function policyPath(cwd: string, jqPath: string, fallback: string): string {
-  let policy: unknown;
-  try {
-    policy = JSON.parse(readFileSync(repoPath(cwd, '.ai/harness/policy.json'), 'utf-8'));
-  } catch {
-    return fallback;
+function policyPath(policy: WorkflowPolicy, jqPath: string, fallback: string): string {
+  const value = policyValue(policy, jqPath);
+  if (value === POLICY_FIELD_ABSENT) return fallback;
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new Error(`invalid workflow policy path ${jqPath}`);
   }
-  const value = jqPath
-    .split('.')
-    .filter(Boolean)
-    .reduce<unknown>((current, segment) => {
-      if (current && typeof current === 'object' && segment in current) {
-        return (current as Record<string, unknown>)[segment];
-      }
-      return undefined;
-    }, policy);
-  if (typeof value !== 'string' || value.length === 0) return fallback;
   if (
     value.startsWith('/') ||
     value.includes('\n') ||
@@ -85,23 +124,37 @@ function policyPath(cwd: string, jqPath: string, fallback: string): string {
     value.split('/').includes('..') ||
     !value.startsWith('.ai/harness/')
   ) {
-    return fallback;
+    throw new Error(`unsafe workflow policy path ${jqPath}: ${value}`);
   }
   return value;
 }
 
-function policyString(cwd: string, jqPath: string, fallback: string): string {
-  try {
-    const policy = JSON.parse(readFileSync(repoPath(cwd, '.ai/harness/policy.json'), 'utf-8')) as unknown;
-    const value = jqPath.split('.').filter(Boolean).reduce<unknown>((current, segment) => {
-      if (current && typeof current === 'object' && segment in current) {
-        return (current as Record<string, unknown>)[segment];
-      }
-      return undefined;
-    }, policy);
-    return typeof value === 'string' && value.trim() ? value.trim() : fallback;
-  } catch {
-    return fallback;
+function policyString(policy: WorkflowPolicy, jqPath: string, fallback: string): string {
+  const value = policyValue(policy, jqPath);
+  if (value === POLICY_FIELD_ABSENT) return fallback;
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new Error(`invalid workflow policy string ${jqPath}`);
+  }
+  return value.trim();
+}
+
+function validateWorkflowPolicy(policy: WorkflowPolicy): void {
+  // Validate every policy field owned by this resolver eagerly. Otherwise a
+  // malformed capability or planning field can evade validation on an
+  // inspect/no-target call and still publish cache/version authority.
+  policyString(policy, '.worktree_strategy.review_base', 'main');
+  policyString(policy, '.worktree_strategy.merge_back.target', 'main');
+  policyString(policy, '.worktree_strategy.base_branch', 'main');
+  policyPath(
+    policy,
+    '.planning.pending_orchestration_file',
+    '.ai/harness/planning/pending.json',
+  );
+  const registryPath = policyValue(policy, '.context.capability_registry_file');
+  if (registryPath !== POLICY_FIELD_ABSENT && registryPath !== CAPABILITY_REGISTRY_PATH) {
+    throw new Error(
+      `invalid workflow policy path .context.capability_registry_file: ${String(registryPath)}`,
+    );
   }
 }
 
@@ -111,9 +164,9 @@ function planStatusForPendingDraft(cwd: string, planPath: string): string {
   return state === 'draft' || state === 'annotating' ? state : '';
 }
 
-function pendingState(cwd: string, nowMs: number): 'none' | 'fresh' | 'stale' {
+function pendingState(cwd: string, nowMs: number, policy: WorkflowPolicy): 'none' | 'fresh' | 'stale' {
   const pendingPath = policyPath(
-    cwd,
+    policy,
     '.planning.pending_orchestration_file',
     '.ai/harness/planning/pending.json',
   );
@@ -122,8 +175,9 @@ function pendingState(cwd: string, nowMs: number): 'none' | 'fresh' | 'stale' {
   try {
     stat = statSync(repoPath(cwd, pendingPath));
     if (stat.size <= 0) return 'none';
-  } catch {
-    return 'none';
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 'none';
+    throw error;
   }
   const ageSeconds = Math.max(0, Math.floor((nowMs - stat.mtimeMs) / 1000));
   if (ageSeconds <= 259200) return 'fresh';
@@ -160,9 +214,6 @@ export interface CapabilityResolution {
   readonly malformedEntryCount: number;
 }
 
-const CAPABILITY_REGISTRY_PATH = '.ai/context/capabilities.json';
-const POLICY_PATH = '.ai/harness/policy.json';
-
 // Deterministic "declared" signal for a missing registry file: a repo commits
 // to the capability-registry system by naming it in policy.json's
 // .context.capability_registry_file (written by ensure-task-workflow.sh /
@@ -175,22 +226,23 @@ const POLICY_PATH = '.ai/harness/policy.json';
 // `repo-harness run check-task-workflow` (ensure-task-workflow.sh scaffolds a
 // default capabilities.json when the declared path is missing) or hand-fix
 // corrupt JSON directly.
-function policyDeclaresCapabilityRegistry(cwd: string): boolean {
-  try {
-    const policy = JSON.parse(readFileSync(repoPath(cwd, '.ai/harness/policy.json'), 'utf-8')) as {
-      context?: { capability_registry_file?: unknown };
-    };
-    const declared = policy.context?.capability_registry_file;
-    return typeof declared === 'string' && declared.trim().length > 0;
-  } catch {
-    return false;
+function policyDeclaresCapabilityRegistry(policy: WorkflowPolicy): boolean {
+  const declared = policyValue(policy, '.context.capability_registry_file');
+  if (declared === POLICY_FIELD_ABSENT) return false;
+  if (declared !== CAPABILITY_REGISTRY_PATH) {
+    throw new Error('invalid workflow policy path .context.capability_registry_file');
   }
+  return true;
 }
 
-function capabilityIdsForPaths(cwd: string, paths: readonly string[]): CapabilityResolution {
+function capabilityIdsForPaths(
+  cwd: string,
+  paths: readonly string[],
+  policy: WorkflowPolicy,
+): CapabilityResolution {
   const text = readText(cwd, CAPABILITY_REGISTRY_PATH);
   const registry = parseCapabilityRegistry(text && text.length > 0 ? text : null, {
-    declared: policyDeclaresCapabilityRegistry(cwd),
+    declared: policyDeclaresCapabilityRegistry(policy),
     repoRoot: cwd,
   });
   if (registry.status === 'absent') {
@@ -234,11 +286,12 @@ function collectStateSnapshotFacts(
   cwd: string,
   nowMs: number,
 ): StateSnapshotCompatibilityFacts {
+  const policy = readWorkflowPolicy(cwd);
   const planPath = state.authoritative_plan?.path ?? null;
   const planText = readText(cwd, planPath);
   return {
     spec: fileExists(cwd, 'docs/spec.md') ? 'present' : 'missing',
-    pending: pendingState(cwd, nowMs),
+    pending: pendingState(cwd, nowMs, policy),
     activePlanMarker: readTrimmed(cwd, ACTIVE_PLAN_MARKER),
     contractPath: planPath ? deriveContractPath(cwd, planPath, planText) : null,
     evidence: planPath
@@ -258,6 +311,7 @@ function resolveEffectiveStateUnlocked(
   options: { risk?: EffectiveStateRiskInput },
 ): EffectiveState {
   const currentWorktree = safeRealpath(cwd);
+  const policy = readWorkflowPolicy(cwd);
   const preferredMarker = readTrimmed(cwd, ACTIVE_PLAN_MARKER);
   const owner = readTrimmed(cwd, ACTIVE_WORKTREE_MARKER);
   const conflictingSources: string[] = [];
@@ -285,12 +339,12 @@ function resolveEffectiveStateUnlocked(
   ));
 
   const targetBranch = policyString(
-    cwd,
+    policy,
     '.worktree_strategy.review_base',
     policyString(
-      cwd,
+      policy,
       '.worktree_strategy.merge_back.target',
-      policyString(cwd, '.worktree_strategy.base_branch', 'main'),
+      policyString(policy, '.worktree_strategy.base_branch', 'main'),
     ),
   );
   const reviewSubject = buildReviewSubject(cwd, { targetRef: targetBranch });
@@ -319,7 +373,7 @@ function resolveEffectiveStateUnlocked(
   const capabilityResolution: CapabilityResolution | null = options.risk?.capabilityIds
     ? { ids: options.risk.capabilityIds, registryStatus: 'valid', unmappedPaths: [], malformedEntryCount: 0 }
     : hasRawTargetPaths
-      ? capabilityIdsForPaths(cwd, implementationTargetPaths)
+      ? capabilityIdsForPaths(cwd, implementationTargetPaths, policy)
       : null;
   const observedCapabilityIds = capabilityResolution?.ids;
   const unmappedCapabilityCount = capabilityResolution?.unmappedPaths.length ?? 0;
@@ -460,14 +514,18 @@ export function resolveEffectiveState(
   cwd = process.cwd(),
   nowMs = Date.now(),
   risk?: EffectiveStateRiskInput,
+  publicationEffects?: EffectiveStatePublicationEffects,
 ): EffectiveState {
   return withStateLock(cwd, () => {
     const confirmed = resolveStableEffectiveState(cwd, nowMs, risk);
-    const finalized = {
-      ...confirmed,
-      state_version: allocateStateVersion(cwd, confirmed.state_revision),
-    };
-    writeEffectiveStateCache(cwd, finalized);
+    let finalized: EffectiveState | null = null;
+    commitStateVersionAfter(cwd, confirmed.state_revision, (version) => {
+      const candidate = { ...confirmed, state_version: version };
+      const publication = publishEffectiveStateCache(cwd, candidate, publicationEffects?.cache);
+      finalized = candidate;
+      return publication;
+    }, publicationEffects?.version);
+    if (finalized === null) throw new Error('effective-state publication did not produce a final state');
     return finalized;
   });
 }

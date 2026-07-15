@@ -25,7 +25,7 @@ After ESA-01 acceptance, continue the approved ordered Sprint through ESA-02, ES
 ## P1: Architecture Map
 
 - `src/core/state`, `src/core/workflow`, and `src/core/capabilities` now own pure artifact semantics, Effective State projection, risk/profile policy, and capability matching.
-- `src/effects/state` owns source collection, stability retries, exclusive directory-token locking, Git-common-dir version allocation, and atomic cache publication; `src/effects/review` owns Git review-subject observation.
+- `src/effects/state` owns source collection, stability retries, canonical-ancestor directory-token locking, and one Git-common-dir transaction whose cache publication precedes the version-owner commit point; `src/effects/review` owns Git review-subject observation.
 - `src/cli/commands/state.ts`, `src/cli/hook/state-snapshot.ts`, and `src/cli/mcp/state-tools.ts` are adapters. The hook is a compatibility projection; MCP materializes the canonical ignored read model and labels both its MCP policy and retained `tasks/current.md` preview authority.
 - `interfaces/effective-state-v1.ts` is the packed public protocol surface. The standalone capability helper is a deterministic typed projection of the canonical core plus its CLI adapter.
 - Repository artifacts remain authority. Cache, `tasks/current.md`, checks, handoff, and resume remain read models/evidence; ESA-06 writer semantics stay out of scope.
@@ -33,11 +33,11 @@ After ESA-01 acceptance, continue the approved ordered Sprint through ESA-02, ES
 ## P2: Concrete Trace
 
 1. `repo-harness state resolve --json` parses CLI risk arguments in `src/cli/commands/state.ts`.
-2. `resolveEffectiveState` acquires a repo-local exclusive lock directory whose owner is a unique token file, then performs the bounded stability loop.
-3. Effects read markers/artifacts, policy, capability registry, and Git review subject; every state-influencing file is source-hashed, so registry/policy mutation retries or fails before publication.
+2. `resolveEffectiveState` resolves one canonical repository root, rejects symlink ancestors while creating the repo-local exclusive lock path, publishes one unique token file, then performs the bounded stability loop.
+3. Effects read markers/artifacts, eagerly validate policy, read the capability registry and Git review subject, and treat only `ENOENT` as absence; every state-influencing file is source-hashed, so registry/policy mutation retries or fails before publication.
 4. Pure core projects profile, phase, blockers, freshness, conflicts, next action, and protocol ordering.
-5. A Git-common-dir allocation lock serializes linked-worktree version increments; stable state then atomically replaces the ignored cache.
-6. CLI renders/sets exit status, hook projects read-only compatibility state, and MCP returns the canonical compact projection plus explicitly non-authoritative preview metadata.
+5. A canonical Git-common-dir lock serializes linked worktrees. Stable state first atomically publishes the rollback-capable ignored cache, then commits the version owner as the sole authoritative commit point; failure before that point restores the exact prior cache bytes and consumes no version.
+6. CLI renders the caller-requested risk policy, while hook and MCP deliberately use the default `inspect` policy. All three share repository authority fields; MCP returns the inspect compact projection plus explicitly non-authoritative preview metadata.
 
 The pressure point is synchronous Git/source observation. Pure projection is not the scaling bottleneck; the 100-resolution benchmark guards the accepted +10% p95 envelope.
 
@@ -45,8 +45,8 @@ The pressure point is synchronous Git/source observation. Pure projection is not
 
 - Keep one implementation per semantic authority and one deterministic projection for packaged standalone code; no compatibility re-export, alternate parser, or feature flag remains.
 - Preserve public protocol/tool/command names and make the only MCP 0.10.x changes additive. `current` remains a redacted preview and gains explicit non-authoritative labels.
-- Use exclusive lock directories rather than flat lock files: stale reclaim deletes only the exact observed token filename, then `rmdir` fails closed if another entry exists. Version allocation has a separate common-dir lock because repo-local locks cannot serialize linked worktrees.
-- Treat non-ENOENT authority reads as errors. Cache/version publication occurs only after source stability, including policy and capability registry.
+- Use exclusive lock directories rather than flat lock files: stale reclaim deletes only the exact observed token filename, then `rmdir` fails closed if another entry exists. Empty pre-token directories and live/unknown PID identity are never auto-reclaimed; verified operator cleanup is the availability recovery path. Version publication has a separate common-dir lock because repo-local locks cannot serialize linked worktrees.
+- Treat non-`ENOENT` authority reads and malformed policy metadata as errors. Cache/version publication occurs only after source stability, including policy and capability registry, and the version owner is committed last.
 - Keep the helper projection typed and runnable by concatenating canonical core source with the stripped adapter import; `check:helpers`, typecheck, and packed-runtime smoke jointly prevent source, byte, runtime, or type drift.
 - At 10x scale, repeated Git/source reads fail first; no speculative cache authority or broad framework is introduced.
 
@@ -86,8 +86,8 @@ The pressure point is synchronous Git/source observation. Pure projection is not
 
 - ESA-01 golden CLI/state fixtures cover at least 10 authority/risk/concurrency states and retain the baseline protocol, field ordering, exit, blocker/reason, version, and hash contracts.
 - Workflow policy and Effective State v1 types have one pure core owner; state parsing/projection and capability-registry rules have one canonical implementation each.
-- Lock, Git-common-dir version ownership, cache publication, and source-stability effects are explicit and pass live/stale/malformed/token/fault tests without partial publication.
-- Direct resolver, CLI JSON, hook projection, and MCP compact summary agree on the approved canonical field set; MCP no longer treats `tasks/current.md` as authority.
+- Lock, Git-common-dir version ownership, cache publication, and source-stability effects are explicit and pass live/stale/malformed/token/ancestor/fault tests without partial authoritative publication.
+- Direct resolver and CLI agree for the requested risk input; hook and MCP agree with a direct `inspect` resolution; all public paths agree on repository authority fields while the intentional adapter policy delta is named and tested. MCP no longer treats `tasks/current.md` as authority.
 - Boundary, helper projection, full CI/release, tarball/install/adopted-helper smokes, strict workflow verification, and the final subject-bound 3×9 benchmark pass.
 - Architecture/changelog/notes record the actual non-breaking `0.10.x` cutover; ESA-06 remains deferred with no compatibility shim.
 

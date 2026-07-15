@@ -12,7 +12,7 @@
 > **Risk**: high
 > **Proposed release**: `0.11.0` only when MCP overwrite preconditions become mandatory; otherwise retain a non-breaking `0.10.x` release and defer that behavior change.
 
-Program-level Sprint container. This Sprint does not redesign repo-harness. It performs one behavior-preserving vertical convergence: make Effective State a single deterministic authority shared by CLI, hooks, and MCP; remove a handwritten capability-registry shadow implementation; and harden one bounded workflow-artifact write path.
+Program-level Sprint container. This Sprint does not redesign repo-harness. It performs one public-contract-preserving vertical convergence: make Effective State a single deterministic authority shared by CLI, hooks, and MCP; remove a handwritten capability-registry shadow implementation; correct review-proven fail-open authority/locking/publication faults; and harden one bounded workflow-artifact write path when that separately versioned row is staffed.
 
 ## Sprint Goal
 
@@ -21,7 +21,7 @@ By the end of the Sprint:
 1. Effective State domain rules no longer live under a CLI/hook adapter.
 2. CLI, hook projection, and MCP state summary derive their core fields from the same resolver.
 3. Capability-registry parsing, validation, and path matching have one source implementation.
-4. Workflow artifact creation uses a guarded atomic writer; optimistic overwrite enforcement is either shipped as an explicitly versioned `0.11.0` change or deferred without a silent compatibility fallback.
+4. When ESA-06 is staffed, workflow artifact creation uses a guarded atomic writer and optimistic overwrite enforcement is either shipped as an explicitly versioned `0.11.0` change or deferred without a silent compatibility fallback. In the approved single-engineer scope, ESA-06 moves intact to the next Sprint and this goal is satisfied by that explicit deferral.
 5. Public CLI command names, MCP tool names, repository artifact authority, and Effective State protocol `1` remain stable unless a separately approved release gate says otherwise.
 
 The architectural rule established by this Sprint is:
@@ -66,14 +66,14 @@ This is not primarily a feature deficit. It is capability ownership fragmentatio
 
 ### Acceptance Scenarios
 
-1. Given the same adopted repository fixture, direct resolution, `repo-harness state resolve --json`, hook snapshot projection, and MCP `summarize_repo_harness_state` agree on task, phase, workflow profile, risk floor, blockers, authoritative plan/contract, stale/conflicting sources, revision, and version.
-2. Given a stale or manually edited `tasks/current.md`, the canonical state and MCP summary remain unchanged except for an explicitly labeled non-authoritative preview field, if such a field is retained.
+1. Given the same adopted repository fixture, the CLI matches direct resolution for its requested risk input, hook and MCP match a direct `inspect` resolution, and every public path agrees on protocol/kind, task, authoritative plan/contract, stale/conflicting sources, revision, and version. Phase, blockers, workflow profile, risk floor, reasons, guidance, and next action may differ only as projections of that named requested-versus-inspect policy input.
+2. Given a stale or manually edited `tasks/current.md`, authority revision, task selection, and authoritative plan/contract remain unchanged. Its observed source hash/freshness may legitimately change `state_revision`/`state_version`, `stale_sources`, and an explicitly labeled non-authoritative MCP preview.
 3. Given a corrupt, unsupported-version, or malformed declared capability registry, all adapters fail closed with the same canonical reason.
 4. Given a deleted or corrupt Effective State cache, resolution reconstructs state from authoritative artifacts and preserves monotonic version semantics.
 5. Given a live state lock, a second resolver waits or fails according to the existing timeout contract; given a stale dead-owner lock, it safely reclaims it.
 6. Given sources that change during resolution, the resolver retries until stable or fails without publishing a mixed snapshot.
-7. Given two concurrent workflow-artifact overwrites, a stale expected revision cannot silently win.
-8. Given a simulated write failure, no partial final file or leaked temporary file remains.
+7. If ESA-06 is staffed, given two concurrent workflow-artifact overwrites, a stale expected revision cannot silently win; otherwise ESA-06 remains explicitly deferred with no claimed writer change.
+8. If ESA-06 is staffed, given a simulated workflow-artifact write failure, no partial final file or leaked temporary file remains; otherwise this scenario is not claimed by the single-engineer closeout.
 
 ### Non-goals
 
@@ -263,7 +263,7 @@ Ordered execution queue. Every row has a machine-checkable acceptance line.
 | 2 | [ ] | `ESA-02` — Extract workflow policy and Effective State v1 contracts | contract | New core modules have zero forbidden runtime imports; existing workflow-profile matrix and public protocol snapshots remain unchanged | pending |
 | 3 | [ ] | `ESA-03` — Split Effective State read → project → persist pipeline | contract | Hook adapter owns no authority parsing, Git version allocation, lock, or cache code; all state characterization and fault tests pass | pending |
 | 4 | [ ] | `ESA-04` — Single-source capability-registry validation and matching | contract | Exactly one handwritten source implementation owns version/shape/semantic/matching rules; projected helper drift fails CI | pending |
-| 5 | [ ] | `ESA-05` — Converge CLI, hook, and MCP state adapters | contract | Direct resolver, CLI JSON, hook projection, and MCP summary agree on canonical fields for every parity fixture | pending |
+| 5 | [ ] | `ESA-05` — Converge CLI, hook, and MCP state adapters | contract | CLI matches requested-risk resolution; hook/MCP match direct inspect resolution; repository authority fields agree for every parity fixture | pending |
 | 6 | [ ] | `ESA-06` — Guard and atomically write workflow artifacts | contract | Migrated writes leave no partial file, return a revision, and reject a stale overwrite when the versioned precondition mode is enabled | pending |
 | 7 | [ ] | `ESA-07` — Enforce boundaries, package/release verification, and documentation | contract | Boundary checker, full CI/release checks, tarball smoke, architecture docs, changelog, and handoff evidence all pass | pending |
 
@@ -584,7 +584,7 @@ next_action
 
 **Acceptance**
 
-- Same fixture produces identical canonical fields through direct resolver, CLI JSON, hook-derived snapshot, and MCP compact state.
+- Same fixture produces identical repository authority fields through direct resolver, CLI JSON, hook-derived snapshot, and MCP compact state. CLI follows its requested risk input; hook and MCP follow their fixed `inspect` contract and are compared to a direct inspect resolution rather than to a feature/security request.
 - MCP state summary no longer reads or parses `tasks/current.md` as authority.
 - Public CLI command names, options, JSON protocol, and exit codes remain unchanged.
 - Public MCP tool name remains unchanged.

@@ -213,8 +213,34 @@ describe('apply_patch batch-scope resolves the full pending write scope (guard g
       writeFileSync(join(cwd, '.ai/context/capabilities.json'), JSON.stringify({
         version: 1,
         capabilities: [
-          { id: 'module-a', prefixes: ['src/module-a'] },
-          { id: 'module-b', prefixes: ['src/module-b'] },
+          {
+            id: 'module-a',
+            domain: 'fixture',
+            name: 'Module A',
+            prefixes: ['src/module-a'],
+            contract_files: {
+              agents: 'src/module-a/AGENTS.md',
+              claude: 'src/module-a/CLAUDE.md',
+            },
+            architecture_module: 'docs/architecture/modules/fixture/module-a.md',
+            workstream_dir: 'tasks/workstreams/fixture/module-a',
+            lsp_profile: 'typescript-lsp',
+            verification_hints: ['bun test'],
+          },
+          {
+            id: 'module-b',
+            domain: 'fixture',
+            name: 'Module B',
+            prefixes: ['src/module-b'],
+            contract_files: {
+              agents: 'src/module-b/AGENTS.md',
+              claude: 'src/module-b/CLAUDE.md',
+            },
+            architecture_module: 'docs/architecture/modules/fixture/module-b.md',
+            workstream_dir: 'tasks/workstreams/fixture/module-b',
+            lsp_profile: 'typescript-lsp',
+            verification_hints: ['bun test'],
+          },
         ],
       }));
       const result = preApplyPatch(cwd, patchFromFiles(['src/module-a/a.ts', 'src/module-b/b.ts']));

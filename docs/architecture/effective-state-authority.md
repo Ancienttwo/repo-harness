@@ -30,7 +30,7 @@ Adapters render, trigger, or guard. They do not own workflow policy, artifact se
 
 1. Markdown and repository artifacts remain the authority and remain human-editable.
 2. `.ai/harness/state/effective.json` is an ignored, atomically replaceable read model; deletion or corruption cannot change authority output.
-3. `tasks/current.md` is an orientation snapshot. Stale or manually edited content can change only its own freshness projection, never canonical task/plan/contract state.
+3. `tasks/current.md` is an observed orientation snapshot, never authority. Its bytes may change its own source hash/freshness, `state_revision`/`state_version`, `stale_sources`, and the labeled MCP preview, but never `authority_revision`, task selection, or authoritative plan/contract state.
 4. The public envelope remains `protocol: 1` and `kind: "repo-harness-effective-state"`.
 5. `state_revision` is content-derived from the ordered source-hash projection; `state_version` is durable and monotonic for a changed revision and stable for an unchanged revision.
 6. Linked worktrees use one Git common-dir version owner rather than independent worktree-local counters. ESA-01 found that the baseline violated this invariant because `git rev-parse --git-path repo-harness/effective-state-version.json` resolved worktree-local paths; ESA-03 corrected it and added concurrent linked-worktree characterization.
@@ -46,8 +46,10 @@ Adapters render, trigger, or guard. They do not own workflow policy, artifact se
 - `src/core/workflow/profile.ts` owns deterministic risk/profile policy.
 - `src/core/capabilities/registry.ts` owns registry parsing, validation,
   normalization, diagnostics, and longest-prefix matching.
-- `src/effects/state` owns source collection, stable-read retries, Git common-dir
-  version allocation, directory-token lock ownership, and atomic cache publication.
+- `src/effects/state` owns source collection, stable-read retries, canonical-
+  ancestor directory-token locking, and one Git-common-dir publication
+  transaction. The ignored cache is rollback-capable and the shared version
+  owner is the final commit point.
 - `src/effects/review/diff-fingerprint.ts` owns Git review-subject observation;
   effects never import CLI adapters.
 - CLI, hook, and MCP adapters call these same surfaces. The MCP compact result
@@ -76,13 +78,13 @@ At the baseline, `src/cli/hook/state-snapshot.ts` owns both deterministic rules 
 
 ## P2 Resolution Trace
 
-1. The CLI supplies explicit target paths, operation kind, and optional raise-only profile override.
-2. The resolver acquires an exclusive directory-token state lock, reads canonical markers and artifacts, and observes the Git review subject.
-3. Workflow-only paths are removed from implementation-scope counting; capability IDs and unmapped paths are projected from the declared registry.
-4. Workflow policy returns a profile or a structured fail-closed error.
-5. The resolver calculates source freshness, conflicts, blockers, source hashes, authority revision, state revision, and monotonic version.
-6. A second read confirms source-hash stability. Stable output replaces the cache atomically; repeated change fails without publishing a partial cache.
-7. CLI and hook projections render the result under their existing public contracts.
+1. The CLI supplies explicit target paths, operation kind, and optional raise-only profile override; hook and MCP deliberately request the fixed `inspect` policy.
+2. The resolver acquires an exclusive directory-token state lock under a canonical repository root. Every ancestor is created and validated one level at a time, and any symlink, non-directory, or identity change fails closed.
+3. It reads canonical markers and artifacts, eagerly validates every resolver-owned policy field, and observes the Git review subject. Only `ENOENT` means an authority input is absent; other metadata/read failures abort resolution.
+4. Workflow-only paths are removed from implementation-scope counting; capability IDs and unmapped paths are projected from the declared registry, then pure workflow policy returns a profile or a structured fail-closed error.
+5. The resolver calculates source freshness, conflicts, blockers, source hashes, authority revision, and state revision. A second read confirms that the exact source-hash set stayed stable.
+6. Under the Git common-dir lock, the resolver selects the next version, atomically publishes the rollback-capable ignored cache, then commits the shared version owner last. Any cache or owner failure restores the exact previous cache bytes and exposes no consumed version.
+7. CLI renders the requested-risk result. Hook and MCP render a direct `inspect` result; all three agree on repository authority fields while their intentional policy input difference remains explicit.
 
 ## Authority and Projection Table
 
@@ -116,13 +118,16 @@ At the baseline, `src/cli/hook/state-snapshot.ts` owns both deterministic rules 
 Goldens normalize the temporary repository root plus only the hashes that necessarily derive from that root (`active-worktree`, handoff/resume, `authority_revision`, and `state_revision`). Stable source hashes and Git object IDs are frozen exactly. Tests also derive every file source hash, `authority_revision`, and `state_revision` independently and require direct/CLI hash equality.
 
 `tests/state/state-concurrency.test.ts` and `tests/state/state-effects.test.ts` use
-real files, subprocesses, and fault injection to prove live/stale/malformed lock
-handling, token ownership, safe orphan recovery, Git common-dir version sharing,
-and atomic cache publication. A delayed live token publisher plus concurrent
-contender proves the stale reclaimer cannot steal a live lock; twelve concurrent
-linked-worktree allocators prove that version allocation is serialized through
-the Git common-dir owner. The mutation barrier proves a continuously changing
-capability registry fails without cache or version publication.
+real files, subprocesses, and fault injection to prove canonical-ancestor lock
+handling, exact-token stale reclaim, Git common-dir version sharing, and
+cache-first/owner-last publication. An empty pre-token directory is never
+auto-reclaimed because it cannot distinguish a crashed creator from a live
+creator; a deterministic delayed-creator proof confirms the contender cannot
+enter. A live or PID-reused token reaches the real timeout without token deletion.
+Twelve concurrent stale reclaimers preserve one critical owner, and twelve
+linked-worktree publishers receive exactly versions `1..12`. The mutation barrier
+and cache/owner fault matrix prove failure publishes neither mixed state nor a
+consumed version.
 
 The final code-frozen 100-resolution benchmark is recorded only after its
 subject fingerprint is bound to the implementation under review; pre-freeze
@@ -136,3 +141,8 @@ calibration numbers are not release evidence.
 - The first expected 10x pressure point is repeated synchronous Git/source collection, not pure projection.
 - ESA-06 workflow-artifact overwrite semantics remain deferred; this authority
   convergence does not introduce a revision-precondition compatibility mode.
+- PID reuse can conservatively make a stale token appear live; the bounded
+  timeout and verified manual cleanup path preserve mutual exclusion without a
+  new host-native dependency. Active hostile ancestor rename after the final
+  identity check would require `openat`/dirfd primitives outside the portable
+  Bun/Node boundary; static and intermediate symlink redirection is rejected.
