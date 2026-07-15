@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-15T15:26:42+0800 -->
+<!-- updated_at: 2026-07-15T16:12:14+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-07-15T15:26:42+0800
+> **Updated At**: 2026-07-15T16:12:14+0800
 > **Source Branch**: codex/esa-01-freeze-effective-state-invariants-and-characterization-fixtures
-> **Source Commit**: 26dd6e88
+> **Source Commit**: 1beae1c7
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: ESA-07 pre-finish closeout
+> **Reason**: ESA-07 frozen closeout
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -47,7 +47,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`: status=completed, current_slice=completed-20260713-policy-seed, source_plan=plans/plan-20260712-2215-agent-fleet-specialists.md
 ## Handoff
 
-- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Complete ESA-07 boundaries, package/release proof, docs, review, PR/merge/push closeout.
+- Exact Next Step: Stage the completed module diff first; then run /check until tasks/reviews/20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.review.md records Recommendation: pass. Command: /check
 
 ## Checks
 
@@ -55,16 +55,10 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 7 changed/untracked path(s)
+- Summary: clean
 
 ```
- M evals/harness/reports/profile-comparison.json
- M evals/harness/reports/profile-comparison.md
- M evals/harness/reports/profile-comparison.sha256.json
- M plans/plan-20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md
- M plans/sprints/20260714-effective-state-authority-convergence.sprint.md
- M tasks/notes/20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.notes.md
- M tasks/reviews/20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.review.md
+(none)
 ```
 
 ## Source Artifacts
