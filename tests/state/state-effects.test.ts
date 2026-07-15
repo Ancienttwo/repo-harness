@@ -2,15 +2,18 @@ import { describe, expect, test } from 'bun:test';
 import {
   chmodSync,
   existsSync,
+  mkdtempSync,
   mkdirSync,
   readFileSync,
   readdirSync,
   realpathSync,
+  renameSync,
   rmSync,
   symlinkSync,
   utimesSync,
   writeFileSync,
 } from 'fs';
+import { tmpdir } from 'os';
 import { join } from 'path';
 import {
   CONTRACT,
@@ -22,7 +25,6 @@ import {
 } from './effective-state-fixture';
 import {
   EFFECTIVE_STATE_CACHE,
-  writeEffectiveStateCache,
   type StateCacheWriteEffects,
 } from '../../src/effects/state/state-cache';
 import { withStateLock } from '../../src/effects/state/state-lock';
@@ -150,7 +152,7 @@ describe('Effective State lock effects', () => {
   });
 });
 
-describe('Effective State cache publication faults', () => {
+describe('Effective State authority read faults', () => {
   test('an authoritative path read error fails closed before cache publication', () => {
     const fixture = createEffectiveStateFixture();
     try {
@@ -164,54 +166,6 @@ describe('Effective State cache publication faults', () => {
     }
   });
 
-  function withState(run: (fixture: ReturnType<typeof createEffectiveStateFixture>, state: ReturnType<typeof resolveFixtureState>) => void): void {
-    const fixture = createEffectiveStateFixture();
-    try {
-      const state = resolveFixtureState(fixture.cwd);
-      rmSync(join(fixture.cwd, EFFECTIVE_STATE_CACHE), { force: true });
-      run(fixture, state);
-    } finally {
-      fixture.cleanup();
-    }
-  }
-
-  test('a temporary-write failure publishes neither a final cache nor a leaked temp', () => {
-    withState((fixture, state) => {
-      const effects: StateCacheWriteEffects = {
-        writeTemp() { throw new Error('injected temp write failure'); },
-        publish() { throw new Error('publish must not run'); },
-        removeTemp(path) { rmSync(path, { force: true }); },
-      };
-      expect(() => writeEffectiveStateCache(fixture.cwd, state, effects)).toThrow('injected temp write failure');
-      const stateDir = join(fixture.cwd, '.ai/harness/state');
-      expect(existsSync(join(fixture.cwd, EFFECTIVE_STATE_CACHE))).toBe(false);
-      expect(readdirSync(stateDir).filter((name) => name.includes('.tmp-'))).toEqual([]);
-    });
-  });
-
-  test('an injected rename failure preserves the prior cache and removes the new temp', () => {
-    withState((fixture, state) => {
-      const cachePath = join(fixture.cwd, EFFECTIVE_STATE_CACHE);
-      writeFileSync(cachePath, 'prior-cache\n');
-      const effects: StateCacheWriteEffects = {
-        writeTemp(path, content) { writeFileSync(path, content, { mode: 0o600 }); },
-        publish() { throw new Error('injected rename failure'); },
-        removeTemp(path) { rmSync(path, { force: true }); },
-      };
-      expect(() => writeEffectiveStateCache(fixture.cwd, state, effects)).toThrow('injected rename failure');
-      expect(readFileSync(cachePath, 'utf-8')).toBe('prior-cache\n');
-      expect(readdirSync(join(fixture.cwd, '.ai/harness/state')).filter((name) => name.includes('.tmp-'))).toEqual([]);
-    });
-  });
-
-  test('successful publication replaces the cache with a complete JSON document', () => {
-    withState((fixture, state) => {
-      writeEffectiveStateCache(fixture.cwd, state);
-      const parsed = JSON.parse(readFileSync(join(fixture.cwd, EFFECTIVE_STATE_CACHE), 'utf-8'));
-      expect(parsed).toEqual(state);
-      expect(readdirSync(join(fixture.cwd, '.ai/harness/state')).filter((name) => name.includes('.tmp-'))).toEqual([]);
-    });
-  });
 });
 
 describe('Effective State version/cache publication transaction', () => {
@@ -341,9 +295,47 @@ describe('Effective State authority metadata failures', () => {
       }
     });
   }
+
+  test('worktree-owner canonicalization errors fail closed before publication', () => {
+    const fixture = createEffectiveStateFixture();
+    try {
+      const loop = join(fixture.cwd, 'worktree-owner-loop');
+      symlinkSync('worktree-owner-loop', loop);
+      writeFixture(fixture.cwd, '.ai/harness/active-worktree', `${loop}\n`);
+      expect(() => resolveFixtureState(fixture.cwd)).toThrow();
+      expect(existsSync(join(fixture.cwd, EFFECTIVE_STATE_CACHE))).toBe(false);
+      expect(existsSync(stateVersionOwnerPath(fixture.cwd))).toBe(false);
+    } finally {
+      fixture.cleanup();
+    }
+  });
 });
 
 describe('Effective State version read effects', () => {
+  test('read-only version lookup returns zero only when Git metadata is absent', () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'repo-harness-non-git-version-'));
+    try {
+      expect(currentStateVersion(cwd)).toBe(0);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test('corrupt Git common-directory discovery is not downgraded to version zero', () => {
+    const fixture = createEffectiveStateFixture();
+    const gitPath = join(fixture.cwd, '.git');
+    const backupPath = join(fixture.cwd, '.git-backup');
+    try {
+      renameSync(gitPath, backupPath);
+      symlinkSync('.git', gitPath);
+      expect(() => currentStateVersion(fixture.cwd)).toThrow();
+    } finally {
+      rmSync(gitPath, { force: true });
+      if (existsSync(backupPath)) renameSync(backupPath, gitPath);
+      fixture.cleanup();
+    }
+  });
+
   test('read-only version lookup preserves non-Git compatibility without hiding a corrupt owner', () => {
     const fixture = createEffectiveStateFixture();
     try {

@@ -4,7 +4,7 @@
 > **Plan**: plans/plan-20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md
 > **Contract**: tasks/contracts/20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.contract.md
 > **Review**: tasks/reviews/20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.review.md
-> **Last Updated**: 2026-07-15 14:45 +0800
+> **Last Updated**: 2026-07-15 14:56 +0800
 > **Lifecycle**: notes
 
 ## P1/P2/P3 Decisions
@@ -35,18 +35,20 @@
 - Twelve full normalized golden records retain stable source hashes and Git revisions exactly. Tests independently derive file hashes, `authority_revision`, and `state_revision`. Real CLI subprocesses match requested-risk resolution; real hook subprocess and MCP public dispatch match direct inspect resolution; repository authority fields remain identical across the intentional policy delta.
 - Non-`ENOENT` authority reads fail closed. Fault tests cover plan/policy/registry `EACCES`, malformed and parseable-invalid policy, authoritative paths that become directories, cache temp/publish failure, owner temp/publish failure, symlink ancestors, token replacement, dead/malformed/live owners, deleted/corrupt cache, and continuous capability-registry mutation.
 - Policy and capability-registry files participate in `source_hashes`; resolver-owned policy fields are eagerly validated even for clean inspect/no-target calls. Sequential mutation advances revision/version, while continuous mutation or any cache/owner fault publishes no partial authority and consumes no version.
+- The third and final repair round closes the remaining platform/error-boundary gaps: policy-owned paths must be contained under both POSIX and Win32 grammars, `safeRealpath` degrades only explicit `ENOENT`, Git version reads return `0` only when discovery metadata is actually absent, and the unused standalone cache-writer export is removed so fault injection uses the resolver transaction seam.
 - The ESA-01 baseline benchmark at `main@82550779cdccf0575d674ae53bbc95ba63e44743` recorded median `223.197 ms` and p95 `270.589 ms`, giving a +10% p95 budget of `297.648 ms`. A later 170.305/215.574 calibration predates the final lock subject and is not release evidence. The final 100-resolution result will be recorded once after code freeze and fingerprint freshness verification.
 
 ## Focused Verification To Date
 
 - `bun run check:type`: pass.
-- Final pre-freeze relevant matrix: `bun test tests/state tests/effective-state.test.ts tests/runtime-profile-enforcement.test.ts tests/capabilities tests/cli/state-command.test.ts tests/cli/state-snapshot.test.ts tests/cli/mcp-tools.test.ts`: 167 pass, 0 fail, 1,500 assertions across 12 files in 89.39 seconds.
+- Pre-third-round relevant matrix: `bun test tests/state tests/effective-state.test.ts tests/runtime-profile-enforcement.test.ts tests/capabilities tests/cli/state-command.test.ts tests/cli/state-snapshot.test.ts tests/cli/mcp-tools.test.ts`: 167 pass, 0 fail, 1,500 assertions across 12 files in 89.39 seconds; it is not the final source evidence after the last narrow delta.
+- Third-round focused matrix: `bun test tests/effective-state.test.ts tests/state/state-effects.test.ts tests/cli/state-snapshot.test.ts`: 71 pass, 0 fail, 251 assertions. Windows traversal, worktree-owner `ELOOP`, explicit non-Git version `0`, corrupt Git discovery fail-closed, transaction faults, and baseline snapshot behavior pass.
 - Earlier unified repair subset: `bun test tests/effective-state.test.ts tests/state/state-effects.test.ts tests/state/state-concurrency.test.ts`: 72 pass, 0 fail after the second repair round.
 - `bun test tests/effective-state.test.ts tests/state/state-effects.test.ts tests/state/state-concurrency.test.ts tests/state/adapter-parity.test.ts tests/cli/state-command.test.ts tests/cli/state-snapshot.test.ts`: 97 pass, 0 fail before the final eager-policy and evidence-hardening delta; every changed subset was subsequently reverified. A separate 86/86 checkpoint preceded one test-fixture correction and is not final evidence.
 - `bun test tests/runtime-profile-enforcement.test.ts -t "patch spanning two capability prefixes"`: pass after replacing an obsolete simplified registry fixture with a valid canonical registry record.
 - `bun run check:hooks`, `bun run check:helpers`, and `bun run check:state-boundaries`: pass; projection hashes remain `sha256:a28c881fdbbff56ab039140c355bf468ca7b2451ae34a6a372d99972efc6f53f` and `sha256:5b82b946bb37c6ce1ea69f8e1e117f849326ce55ec8bfa741f38c6f50c8edf08`, with 102 TypeScript files checked. `git diff --check`, architecture sync, and task sync also pass.
 - Earlier frozen slices: state core 27 pass; adapter/golden/CLI 33 pass; effective-state integration 35 pass; capability/config/architecture 27 pass; helper/boundary 13 pass; generated hook/helper drift checks pass.
-- The pre-thaw packed `repo-harness-0.10.1.tgz` installed and its packaged CLI bins started; this proof must be regenerated once on the new clean freeze.
+- The `73dc58c8` packed `repo-harness-0.10.1.tgz` installed and its packaged CLI bins started, but the third-round source delta makes that proof stale; regenerate it on the new clean freeze.
 - The pre-refactor full suite recorded 1493 pass, 1 skip, 0 fail. It is historical characterization, not final release evidence.
 
 ## Review Findings Closed
@@ -57,6 +59,7 @@
 - Closed version/cache partial publication with a common-lock transaction, cache rollback, and version-owner-last commit point; cold/warm and linked-worktree fault injection proves no consumed version.
 - Closed plan/policy/registry fail-open reads: only `ENOENT` means absent, resolver-owned policy metadata is eagerly validated, and permission/malformed inputs publish neither cache nor owner.
 - Replaced injected adapter "parity" with real CLI/hook/MCP public paths and named the intentional requested-risk versus fixed-inspect policy boundary.
+- Closed Win32 backslash traversal in policy-owned paths, worktree/common-dir error swallowing, and the zero-caller standalone cache publication bypass; direct cache fault tests now exercise only the resolver transaction seam.
 - Closed hidden MCP mutation by advertising the actual effectful contract and testing cache/version materialization.
 - Closed arbitrary target-script execution in the boundary checker; it performs static/source-hash validation only.
 - Closed Effects-to-CLI reverse dependency and expanded the durable checker to reject the actual migrated legacy artifact-authority names.

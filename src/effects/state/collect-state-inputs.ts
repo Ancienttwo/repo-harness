@@ -41,8 +41,9 @@ export function fileExists(cwd: string, relPath: string | null | undefined): boo
 export function safeRealpath(path: string): string {
   try {
     return realpathSync(path);
-  } catch {
-    return path;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return path;
+    throw error;
   }
 }
 

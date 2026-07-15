@@ -78,11 +78,3 @@ export function publishEffectiveStateCache(
     },
   };
 }
-
-export function writeEffectiveStateCache(
-  cwd: string,
-  state: EffectiveState,
-  effects: StateCacheWriteEffects = DEFAULT_CACHE_WRITE_EFFECTS,
-): void {
-  publishEffectiveStateCache(cwd, state, effects);
-}

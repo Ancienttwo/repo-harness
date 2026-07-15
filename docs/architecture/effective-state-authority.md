@@ -49,7 +49,8 @@ Adapters render, trigger, or guard. They do not own workflow policy, artifact se
 - `src/effects/state` owns source collection, stable-read retries, canonical-
   ancestor directory-token locking, and one Git-common-dir publication
   transaction. The ignored cache is rollback-capable and the shared version
-  owner is the final commit point.
+  owner is the final commit point. Cache publication has no standalone writer
+  entrypoint outside that transaction.
 - `src/effects/review/diff-fingerprint.ts` owns Git review-subject observation;
   effects never import CLI adapters.
 - CLI, hook, and MCP adapters call these same surfaces. The MCP compact result
@@ -80,7 +81,7 @@ At the baseline, `src/cli/hook/state-snapshot.ts` owns both deterministic rules 
 
 1. The CLI supplies explicit target paths, operation kind, and optional raise-only profile override; hook and MCP deliberately request the fixed `inspect` policy.
 2. The resolver acquires an exclusive directory-token state lock under a canonical repository root. Every ancestor is created and validated one level at a time, and any symlink, non-directory, or identity change fails closed.
-3. It reads canonical markers and artifacts, eagerly validates every resolver-owned policy field, and observes the Git review subject. Only `ENOENT` means an authority input is absent; other metadata/read failures abort resolution.
+3. It reads canonical markers and artifacts, eagerly validates every resolver-owned policy field, and observes the Git review subject. Policy file paths must remain inside `.ai/harness` under both POSIX and Win32 path grammars. Only `ENOENT` means an authority path is absent; worktree canonicalization and Git common-dir corruption abort instead of falling back to a raw path or version `0`.
 4. Workflow-only paths are removed from implementation-scope counting; capability IDs and unmapped paths are projected from the declared registry, then pure workflow policy returns a profile or a structured fail-closed error.
 5. The resolver calculates source freshness, conflicts, blockers, source hashes, authority revision, and state revision. A second read confirms that the exact source-hash set stayed stable.
 6. Under the Git common-dir lock, the resolver selects the next version, atomically publishes the rollback-capable ignored cache, then commits the shared version owner last. Any cache or owner failure restores the exact previous cache bytes and exposes no consumed version.

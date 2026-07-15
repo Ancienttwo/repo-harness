@@ -1,6 +1,6 @@
-import { readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'fs';
+import { lstatSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from 'fs';
 import { execFileSync } from 'child_process';
-import { isAbsolute, join, resolve } from 'path';
+import { dirname, isAbsolute, join, resolve } from 'path';
 import { withExclusiveDirectoryLock } from './state-lock';
 
 const VERSION_OWNER_RELATIVE_PATH = 'repo-harness/effective-state-version.json';
@@ -43,6 +43,26 @@ function gitCommonDirectory(cwd: string): string {
   return realpathSync(commonDir);
 }
 
+function hasGitDiscoveryMetadata(cwd: string): boolean {
+  const start = resolve(cwd);
+  if (!statSync(start).isDirectory()) {
+    throw new Error(`effective-state repository root is not a directory: ${start}`);
+  }
+  if (process.env.GIT_DIR || process.env.GIT_WORK_TREE) return true;
+  let current = start;
+  while (true) {
+    try {
+      lstatSync(join(current, '.git'));
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+    const parent = dirname(current);
+    if (parent === current) return false;
+    current = parent;
+  }
+}
+
 export function stateVersionOwnerPath(cwd: string): string {
   return join(gitCommonDirectory(cwd), VERSION_OWNER_RELATIVE_PATH);
 }
@@ -79,8 +99,9 @@ export function currentStateVersion(cwd: string): number {
   let commonDir: string;
   try {
     commonDir = gitCommonDirectory(cwd);
-  } catch {
-    return 0;
+  } catch (error) {
+    if (!hasGitDiscoveryMetadata(cwd)) return 0;
+    throw error;
   }
   return withExclusiveDirectoryLock(commonDir, VERSION_LOCK_RELATIVE_PATH, () => {
     const current = readVersionRecord(join(commonDir, VERSION_OWNER_RELATIVE_PATH));

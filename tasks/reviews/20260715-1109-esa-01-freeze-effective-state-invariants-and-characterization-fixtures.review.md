@@ -5,7 +5,7 @@
 > **Contract**: tasks/contracts/20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.contract.md
 > **Notes File**: tasks/notes/20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-07-15 14:45 +0800
+> **Last Updated**: 2026-07-15 14:56 +0800
 > **Recommendation**: pending
 > **Review Rubric Version**: 2
 > **Reviewed Subject SHA256**: pending
@@ -36,6 +36,7 @@
 - P1 closed: allocating the shared version before cache publication exposed an owner-only partial commit. The common-dir lock now covers candidate selection, cache publication, rollback, and owner-last commit; cache/owner fault injection and linked-worktree retry prove no version is consumed on failure.
 - P1 closed: plan `EACCES` and malformed/unreadable policy metadata could be interpreted as absent. Only `ENOENT` now means absence, resolver-owned policy fields validate eagerly even on clean inspect, and registry read/malformed behavior is fail-closed.
 - P1 test evidence closed: CLI and hook run through real subprocesses and MCP through public dispatch. Authority fields agree across adapters; CLI follows requested risk while hook/MCP deliberately follow fixed inspect policy.
+- P2 closed in the third and final repair round: Win32 backslash traversal is rejected by dual-grammar containment; worktree/common-dir canonicalization errors fail closed; explicit non-Git metadata absence remains the only version-`0` degradation; the unused standalone cache writer is removed.
 - P1 closed: state-snapshot non-Git fixtures regressed when read-only version lookup required a Git common-dir. Only owner-path resolution now returns baseline `0`; an existing corrupt owner still fails closed. Original suite: 7 pass.
 - P1 closed: MCP had hidden cache/version effects. The tool now advertises `readOnlyHint: false`, and tests assert both writes while keeping product authority unchanged.
 - P2 closed: boundary validation could execute a target-owned generator and missed actual legacy parser names. It is now static/source-hash only and adversarial fixtures cover target-script non-execution, Effects-to-CLI imports, and migrated names.
@@ -47,7 +48,8 @@
 - `bun run check:hooks`: 25-file projection pass, `sha256:a28c881fdbbff56ab039140c355bf468ca7b2451ae34a6a372d99972efc6f53f`.
 - `bun run check:helpers`: 49-helper projection pass, `sha256:5b82b946bb37c6ce1ea69f8e1e117f849326ce55ec8bfa741f38c6f50c8edf08`.
 - `bun run check:state-boundaries`: 102 TypeScript files checked.
-- Final pre-freeze relevant matrix: 167 pass, 0 fail, 1,500 assertions across all state tests plus Effective State, runtime-profile, capability, CLI state, and MCP public-path suites. The earlier repair subset passed 72/72 after eager policy validation and deterministic pre-token/PID proofs.
+- Pre-third-round relevant matrix: 167 pass, 0 fail, 1,500 assertions across all state tests plus Effective State, runtime-profile, capability, CLI state, and MCP public-path suites. Third-round focused verification passes 71/71 across Effective State, effects/transaction, and non-Git snapshot paths; type, boundary, and diff checks pass.
+- Independent third-round exact-subject review passed with no P0-P2 at `sha256:b8036b345fb15826b6e49658e0660f412bc69669d9f8e50ac0a35d858e965120`, target `af6d5216c2cd5adf2f672636a8308a309f0f5adb`, overlap `0`; the reviewer independently reran 64 focused tests plus type/boundary checks.
 - Type, hook/helper projection, and state-boundary gates pass; the pre-thaw packed tarball proof is stale and will be regenerated only after clean freeze.
 - Existing report subject `sha256:88a8a1086a5ccc4c6629c1bf134b6706b3051ec1944d900f9f51d30bb445cad3`, the pre-freeze `170.305/215.574` calibration, and the aborted run on commit `8916cb43` are invalid for the current source. One new 3x9 run is permitted only after clean freeze and cheap gates/review.
 

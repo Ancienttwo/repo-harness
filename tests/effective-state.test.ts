@@ -482,6 +482,11 @@ describe('effective state resolver', () => {
         policy: { planning: { pending_orchestration_file: '../../outside' } },
         resolve: buildStateSnapshot,
       },
+      {
+        name: 'win32 traversal pending orchestration path',
+        policy: { planning: { pending_orchestration_file: '.ai/harness/planning/..\\..\\outside.json' } },
+        resolve: buildStateSnapshot,
+      },
     ] as const) {
       test(`parseable malformed policy fails closed: ${malformed.name}`, () => {
         withRepo((cwd) => {

@@ -21,14 +21,17 @@ All notable changes to this skill are documented here.
 
 - Made authoritative plan, policy, and capability-registry reads fail closed:
   only `ENOENT` means absent, and malformed or unreadable state-influencing
-  policy metadata now aborts before cache or version publication.
+  policy metadata now aborts before cache or version publication. Policy paths
+  are contained under both POSIX and Win32 grammars, and worktree/common-dir
+  canonicalization faults no longer degrade to raw paths or version `0`.
 - Hardened repository and Git-common-dir locks against symlink ancestors and
   pathname token races. Unique token files are reclaimed by exact name, empty
   pre-token directories and live/unknown PID identities stay fail closed, and
   linked worktrees serialize through the Git common-dir.
 - Made Effective State publication one cache-first/version-owner-last
   transaction with exact cache rollback, so cache or owner faults cannot expose
-  a consumed version or half-published authoritative state.
+  a consumed version or half-published authoritative state. Removed the unused
+  standalone cache-writer export that could bypass that transaction.
 
 ### Verification
 

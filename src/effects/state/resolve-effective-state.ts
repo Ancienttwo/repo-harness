@@ -1,4 +1,5 @@
 import { readFileSync, statSync } from 'fs';
+import { posix, win32 } from 'path';
 import { buildReviewSubject, isImplementationSurfacePath } from '../review/diff-fingerprint';
 import { resolveWorkflowProfile, type WorkflowProfile } from '../../core/workflow/profile';
 import {
@@ -117,12 +118,18 @@ function policyPath(policy: WorkflowPolicy, jqPath: string, fallback: string): s
   if (typeof value !== 'string' || value.length === 0) {
     throw new Error(`invalid workflow policy path ${jqPath}`);
   }
+  const posixPolicyRoot = posix.resolve('/repo', '.ai/harness');
+  const posixCandidate = posix.resolve('/repo', value);
+  const win32PolicyRoot = win32.resolve('C:\\repo', '.ai/harness').toLowerCase();
+  const win32Candidate = win32.resolve('C:\\repo', value).toLowerCase();
+  const containedByBothPathGrammars =
+    posixCandidate.startsWith(`${posixPolicyRoot}${posix.sep}`) &&
+    win32Candidate.startsWith(`${win32PolicyRoot}${win32.sep}`);
   if (
-    value.startsWith('/') ||
     value.includes('\n') ||
     value.includes('\r') ||
-    value.split('/').includes('..') ||
-    !value.startsWith('.ai/harness/')
+    !value.startsWith('.ai/harness/') ||
+    !containedByBothPathGrammars
   ) {
     throw new Error(`unsafe workflow policy path ${jqPath}: ${value}`);
   }

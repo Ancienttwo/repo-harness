@@ -34,7 +34,7 @@ After ESA-01 acceptance, continue the approved ordered Sprint through ESA-02, ES
 
 1. `repo-harness state resolve --json` parses CLI risk arguments in `src/cli/commands/state.ts`.
 2. `resolveEffectiveState` resolves one canonical repository root, rejects symlink ancestors while creating the repo-local exclusive lock path, publishes one unique token file, then performs the bounded stability loop.
-3. Effects read markers/artifacts, eagerly validate policy, read the capability registry and Git review subject, and treat only `ENOENT` as absence; every state-influencing file is source-hashed, so registry/policy mutation retries or fails before publication.
+3. Effects read markers/artifacts, eagerly validate policy (including POSIX/Win32 containment for policy-owned paths), read the capability registry and Git review subject, and treat only explicit absence/non-Git state as degradable; other read/canonicalization failures abort. Every state-influencing file is source-hashed, so registry/policy mutation retries or fails before publication.
 4. Pure core projects profile, phase, blockers, freshness, conflicts, next action, and protocol ordering.
 5. A canonical Git-common-dir lock serializes linked worktrees. Stable state first atomically publishes the rollback-capable ignored cache, then commits the version owner as the sole authoritative commit point; failure before that point restores the exact prior cache bytes and consumes no version.
 6. CLI renders the caller-requested risk policy, while hook and MCP deliberately use the default `inspect` policy. All three share repository authority fields; MCP returns the inspect compact projection plus explicitly non-authoritative preview metadata.
