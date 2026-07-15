@@ -1,0 +1,129 @@
+{
+  "baseline": "82550779cdccf0575d674ae53bbc95ba63e44743",
+  "scenario": "executing-fresh-evidence",
+  "cli_exit": 0,
+  "cli_stderr": "",
+  "field": {
+    "exit": 0,
+    "stdout": "standard\n",
+    "stderr": ""
+  },
+  "state": {
+    "protocol": 1,
+    "kind": "repo-harness-effective-state",
+    "task_id": "20260712-2327-effective-fixture",
+    "phase": "executing",
+    "state_version": 3,
+    "state_revision": "sha256:<dynamic:state_revision>",
+    "authoritative_plan": {
+      "path": "plans/plan-20260712-2327-effective-fixture.md",
+      "status": "executing"
+    },
+    "contract": {
+      "path": "tasks/contracts/20260712-2327-effective-fixture.contract.md",
+      "status": "Active",
+      "plan": "plans/plan-20260712-2327-effective-fixture.md"
+    },
+    "task_profile": "code-change",
+    "workflow_profile": "standard",
+    "requested_workflow_profile": "standard",
+    "risk_floor": "standard",
+    "profile_reasons": [
+      "risk-floor:standard:feature",
+      "explicit-override:equal:standard",
+      "capability:registry:absent"
+    ],
+    "profile_signals": {
+      "targetPathCount": 1,
+      "capabilityCount": 0,
+      "operationKind": "feature",
+      "strictCategories": [],
+      "mediumScope": false,
+      "crossCapability": false
+    },
+    "allowed_paths": [
+      "src/",
+      "tests/effective-state.test.ts"
+    ],
+    "next_action": "implement resolver",
+    "guidance": "at most one active plan artifact; no contract, notes, or todos scaffolding beyond it",
+    "blockers": [],
+    "stale_sources": [],
+    "conflicting_sources": [],
+    "source_hashes": {
+      ".ai/context/capabilities.json": "sha256:becde17b6600ee6ea2f65fe3320f11bc1efbb103d81bb7dda3788623ca293441",
+      ".ai/harness/active-plan": "sha256:4c599629e7ec8436620001fc47b764de7b6c553404034c82ff7890ad6bd42af7",
+      ".ai/harness/active-worktree": "sha256:<dynamic:.ai/harness/active-worktree>",
+      ".ai/harness/checks/latest.json": "sha256:d9b003cf628370985b39a830d7652a5467f6bdada624e150fdc165d6d9ce2e3e",
+      ".ai/harness/handoff/current.md": "sha256:<dynamic:.ai/harness/handoff/current.md>",
+      ".ai/harness/handoff/resume.md": "sha256:<dynamic:.ai/harness/handoff/resume.md>",
+      ".ai/harness/policy.json": "sha256:001e056f4ac35ace2e89e20bef71f492ac9a0ac7373cacaeaf1e0fa36ea130b8",
+      ".ai/harness/sprint/active-sprint": "sha256:a9f63c09a80ac033d6c3c3a1078aa2e85f5e192e87ccc51506a382e7ea180aa5",
+      "plans/plan-20260712-2327-effective-fixture.md": "sha256:b2320675859fb4584b5602730cf3c21388f92b26d360c6fefff820b331395d50",
+      "tasks/contracts/20260712-2327-effective-fixture.contract.md": "sha256:39ee31d8d04c79cbfc24f87724175d754e2822a3666a9a7c4d055f5e04d87898",
+      "tasks/current.md": "sha256:7a5529548a9931f32c343c2012933992a1655c0e89a23affd1f5fb3d68331668",
+      "tasks/reviews/20260712-2327-effective-fixture.review.md": "sha256:15cf995d2ee4bbbef5406e241e3761827419772affad1ac6d06f2850d65890cc",
+      "review_subject": "sha256:b6728423245c1f39a952e3d5e3f39227ce00a658be92d51253eadf167eced6fc",
+      "authority_revision": "sha256:<dynamic:authority_revision>"
+    },
+    "review": {
+      "path": "tasks/reviews/20260712-2327-effective-fixture.review.md",
+      "freshness": "fresh",
+      "recommendation": "pass",
+      "recorded_subject_sha256": "sha256:b6728423245c1f39a952e3d5e3f39227ce00a658be92d51253eadf167eced6fc",
+      "recorded_target_revision": "4484dd5a7eab085e1c7619f3369e9de800cdadc4"
+    },
+    "external_acceptance": {
+      "path": "tasks/reviews/20260712-2327-effective-fixture.review.md",
+      "freshness": "fresh",
+      "status": "pass"
+    },
+    "checks": {
+      "path": ".ai/harness/checks/latest.json",
+      "freshness": "fresh",
+      "status": "pass"
+    },
+    "active_sprint": {
+      "path": null,
+      "freshness": "not_applicable"
+    },
+    "worktree": {
+      "path": ".ai/harness/active-worktree",
+      "freshness": "fresh",
+      "current": "<repo>",
+      "owner": "<repo>"
+    },
+    "handoff": {
+      "path": ".ai/harness/handoff/current.md",
+      "freshness": "fresh"
+    },
+    "resume": {
+      "path": ".ai/harness/handoff/resume.md",
+      "freshness": "fresh"
+    },
+    "current_snapshot": {
+      "path": "tasks/current.md",
+      "freshness": "fresh"
+    }
+  },
+  "hook": {
+    "protocol": 1,
+    "kind": "repo-harness-state-snapshot",
+    "states": {
+      "spec": "present",
+      "plan": "executing",
+      "pending": "none",
+      "worktree": "current",
+      "contract": "present",
+      "contract_path": "present",
+      "evidence": "complete"
+    },
+    "paths": {
+      "active_plan": "plans/plan-20260712-2327-effective-fixture.md",
+      "contract": "tasks/contracts/20260712-2327-effective-fixture.contract.md"
+    },
+    "marker": {
+      "problem": "none"
+    }
+  }
+}

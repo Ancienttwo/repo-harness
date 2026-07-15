@@ -18,7 +18,7 @@ import {
 import {
   WORKFLOW_SURFACE_DIR_PREFIXES,
   WORKFLOW_SURFACE_EXTENSIONS,
-} from "../src/cli/hook/diff-fingerprint";
+} from "../src/effects/review/diff-fingerprint";
 
 type Mode = "check" | "write";
 
@@ -105,7 +105,7 @@ function markerText(marker: ProjectionMarker): string {
 
 // Phase C2: assets/hooks/pre-edit-guard.sh's is_workflow_surface_path() case
 // list is a hand-authored shell projection of the canonical TS source
-// (src/cli/hook/diff-fingerprint.ts's WORKFLOW_SURFACE_DIR_PREFIXES /
+// (src/effects/review/diff-fingerprint.ts's WORKFLOW_SURFACE_DIR_PREFIXES /
 // WORKFLOW_SURFACE_EXTENSIONS). There is no automatic fix for a mismatch --
 // unlike file-content projection, this check always fails closed in both
 // --check and --write, naming which side to edit.
@@ -198,7 +198,7 @@ function main(): void {
   if (parityErrors.length > 0) {
     for (const error of parityErrors) process.stderr.write(`[hooks] ${error}\n`);
     process.stderr.write(
-      "[hooks] Keep assets/hooks/pre-edit-guard.sh's is_workflow_surface_path() case list in sync with src/cli/hook/diff-fingerprint.ts's WORKFLOW_SURFACE_DIR_PREFIXES / WORKFLOW_SURFACE_EXTENSIONS.\n",
+      "[hooks] Keep assets/hooks/pre-edit-guard.sh's is_workflow_surface_path() case list in sync with src/effects/review/diff-fingerprint.ts's WORKFLOW_SURFACE_DIR_PREFIXES / WORKFLOW_SURFACE_EXTENSIONS.\n",
     );
     process.exit(1);
   }

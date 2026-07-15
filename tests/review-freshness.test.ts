@@ -6,9 +6,9 @@ import { spawnSync } from 'child_process';
 import {
   REVIEW_SUBJECT_SCOPE,
   buildReviewSubject,
-  runReviewSubjectCli,
   splitNul,
-} from '../src/cli/hook/diff-fingerprint';
+} from '../src/effects/review/diff-fingerprint';
+import { runReviewSubjectCli } from '../src/cli/hook/review-subject';
 
 function tmpRepo(prefix: string): string {
   const cwd = mkdtempSync(join(tmpdir(), `${prefix}-`));

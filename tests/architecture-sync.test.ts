@@ -24,7 +24,10 @@ function tmpRepo(fn: (cwd: string) => void): void {
       "architecture-event.ts",
       "capability-resolver.ts",
     ]) {
-      copyFileSync(join(ROOT, "scripts", file), join(cwd, "scripts", file));
+      const source = file === "capability-resolver.ts"
+        ? join(ROOT, "assets/templates/helpers", file)
+        : join(ROOT, "scripts", file);
+      copyFileSync(source, join(cwd, "scripts", file));
     }
     expect(run("chmod", ["+x", "scripts/check-architecture-sync.sh", "scripts/architecture-queue.sh"], cwd).status).toBe(0);
     writeFileSync(

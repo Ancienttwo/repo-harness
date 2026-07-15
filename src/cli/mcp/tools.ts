@@ -16,6 +16,7 @@ import type { GeneralRepoCodeGraphAdapter } from './codegraph-adapter';
 import type { McpProcessSessionManager } from './process-sessions';
 import { currentGitBranch, isRepoHarnessAdopted, resolveMcpRepoRoot } from './repo';
 import { redactMcpText } from './redaction';
+import { buildStateToolDefinitions, callStateTool, isStateTool } from './state-tools';
 import type { McpAgentRunnerName, McpPolicy } from './types';
 import type { WorkspaceManager } from './workspaces';
 
@@ -974,7 +975,7 @@ export function buildMcpToolDefinitions(policy: McpPolicy, opts: { enableChatgpt
     { name: 'latest_checks', description: 'Return latest repo-harness check artifacts.', inputSchema: optionalRepoSchema, annotations: readOnly },
     { name: 'list_prds', description: 'List PRD artifacts under plans/prds.', inputSchema: optionalRepoSchema, annotations: readOnly },
     { name: 'list_sprints', description: 'List sprint artifacts under plans/sprints.', inputSchema: optionalRepoSchema, annotations: readOnly },
-    { name: 'summarize_repo_harness_state', description: 'Return a compact planning state summary.', inputSchema: optionalRepoSchema, annotations: readOnly },
+    ...buildStateToolDefinitions(),
     { name: 'write_prd', description: 'Write a PRD under plans/prds/*.prd.md.', inputSchema: markdownWriterSchema, annotations: write },
     { name: 'write_prd_from_idea', description: 'Turn a product idea into a strict-compatible draft PRD under plans/prds/*.prd.md.', inputSchema: ideaPrdSchema, annotations: write },
     { name: 'write_sprint', description: 'Write a sprint under plans/sprints/*.sprint.md.', inputSchema: markdownWriterSchema, annotations: write },
@@ -1082,6 +1083,16 @@ export async function callMcpTool(ctx: McpToolContext, name: string, args: Recor
         return errorResult('TOOL_NOT_AVAILABLE', 'reader tools require the workspace reader capability to be enabled in MCP config.');
       }
       return callReaderTool(readerContext(ctx), name, args);
+    }
+    if (isStateTool(name)) {
+      const target = targetRepoRoot(ctx, args);
+      if (!target.ok) return target.result;
+      const result = callStateTool({
+        repoRoot: target.repoRoot,
+        mcpPolicyProfile: ctx.policy.profile,
+      }, name);
+      audit(ctx, name, 'ok', args);
+      return textResult(result);
     }
     switch (name) {
       case 'harness_status': {
@@ -1199,22 +1210,6 @@ export async function callMcpTool(ctx: McpToolContext, name: string, args: Recor
         listFilesUnder(target.repoRoot, root, 200, files);
         audit(ctx, name, 'ok', args);
         return textResult({ files: files.map((path) => fileSummary(path, target.repoRoot)).filter(Boolean) });
-      }
-      case 'summarize_repo_harness_state': {
-        const target = targetRepoRoot(ctx, args);
-        if (!target.ok) return target.result;
-        const current = existsSync(join(target.repoRoot, 'tasks/current.md'))
-          ? readFileSync(join(target.repoRoot, 'tasks/current.md'), 'utf-8').split(/\r?\n/).slice(0, 50).join('\n')
-          : null;
-        audit(ctx, name, 'ok', args);
-        return textResult({
-          status: {
-            adopted: isRepoHarnessAdopted(target.repoRoot),
-            branch: currentGitBranch(target.repoRoot),
-            profile: ctx.policy.profile,
-          },
-          current: current ? redactMcpText(current).text : null,
-        });
       }
       case 'write_prd': {
         const target = targetRepoRoot(ctx, args);

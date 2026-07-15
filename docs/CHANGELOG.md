@@ -2,6 +2,47 @@
 
 All notable changes to this skill are documented here.
 
+## [0.10.1] - 2026-07-15
+
+### Changed
+
+- Moved Effective State v1 policy and projection into pure `src/core` modules,
+  isolated repository/Git/lock/cache work under `src/effects`, and kept CLI and
+  hook entrypoints as adapters without changing protocol `1`, public command
+  names, field ordering, or exit semantics.
+- Made `summarize_repo_harness_state` derive its compact state from the same
+  canonical resolver as CLI and hooks. `tasks/current.md` remains an explicitly
+  non-authoritative projection and is no longer parsed as MCP state authority.
+- Replaced the handwritten capability-registry shadow validator with one pure
+  parser/validator/longest-prefix matcher. The adopted-repository helper is now
+  a deterministic standalone Bun projection bound to the canonical source hash.
+
+### Fixed
+
+- Made authoritative plan, policy, and capability-registry reads fail closed:
+  only `ENOENT` means absent, and malformed or unreadable state-influencing
+  policy metadata now aborts before cache or version publication. Policy paths
+  are contained under both POSIX and Win32 grammars, and worktree/common-dir
+  canonicalization faults no longer degrade to raw paths or version `0`.
+- Hardened repository and Git-common-dir locks against symlink ancestors and
+  pathname token races. Unique token files are reclaimed by exact name, empty
+  pre-token directories and live/unknown PID identities stay fail closed, and
+  linked worktrees serialize through the Git common-dir.
+- Made Effective State publication one cache-first/version-owner-last
+  transaction with exact cache rollback, so cache or owner faults cannot expose
+  a consumed version or half-published authoritative state. Removed the unused
+  standalone cache-writer export that could bypass that transaction.
+
+### Verification
+
+- Added 12-scenario public-path goldens: CLI matches requested-risk resolution,
+  hook and MCP match direct `inspect`, and repository authority fields remain
+  identical across that intentional policy delta. Lock/cache/source-mutation
+  fault coverage, a state-boundary gate, and packed-artifact state/helper smokes
+  cover the converged boundary.
+- Kept ESA-06 workflow-artifact writer semantics deferred; this release adds no
+  overwrite compatibility mode or alternate authority.
+
 ## [0.10.0] - 2026-07-14
 
 ### Added

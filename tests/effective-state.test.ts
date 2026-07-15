@@ -1,146 +1,151 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  existsSync,
   mkdirSync,
-  mkdtempSync,
   readFileSync,
   readdirSync,
-  realpathSync,
   rmSync,
+  symlinkSync,
+  utimesSync,
   writeFileSync,
 } from 'fs';
-import { tmpdir } from 'os';
-import { join } from 'path';
+import { basename, join } from 'path';
 import { spawnSync } from 'child_process';
 import { createHash } from 'crypto';
 import {
-  migrateLegacyActivePlan,
+  buildStateSnapshot,
   resolveEffectiveState,
-  type EffectiveState,
-} from '../src/cli/hook/state-snapshot';
-
-const ROOT = join(import.meta.dir, '..');
-const CLI = join(ROOT, 'src/cli/index.ts');
-const PLAN = 'plans/plan-20260712-2327-effective-fixture.md';
-const CONTRACT = 'tasks/contracts/20260712-2327-effective-fixture.contract.md';
-const REVIEW = 'tasks/reviews/20260712-2327-effective-fixture.review.md';
-
-function write(cwd: string, path: string, content: string): void {
-  mkdirSync(join(cwd, path, '..'), { recursive: true });
-  writeFileSync(join(cwd, path), content);
-}
-
-// Commits a fixture write so it lands on HEAD instead of staying an
-// uncommitted diff. Needed for files (like .ai/context/capabilities.json)
-// that the resolver itself might otherwise pick up as an "observed target
-// path" via buildImplementationDiffFingerprint's branch/status scan --
-// polluting the very capability-mapping input the test is trying to control.
-function commitFixture(cwd: string, message: string): void {
-  for (const args of [['add', '.'], ['commit', '-m', message]]) {
-    const git = spawnSync('git', args, { cwd, encoding: 'utf-8' });
-    if (git.status !== 0) throw new Error(git.stderr);
-  }
-}
-
-function withRepo(fn: (cwd: string) => void): void {
-  const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-effective-')));
-  try {
-    for (const path of ['plans', 'tasks/contracts', 'tasks/reviews', '.ai/harness/handoff', '.claude']) {
-      mkdirSync(join(cwd, path), { recursive: true });
-    }
-    write(cwd, '.ai/harness/active-plan', `${PLAN}\n`);
-    write(cwd, '.claude/.active-plan', `${PLAN}\n`);
-    write(cwd, '.ai/harness/active-worktree', `${cwd}\n`);
-    write(cwd, PLAN, [
-      '# Plan: Effective Fixture',
-      '',
-      '> **Status**: Executing',
-      `> **Task Contract**: \`${CONTRACT}\``,
-      '',
-      '## Task Breakdown',
-      '- [x] first task',
-      '- [ ] implement resolver',
-      '',
-      '## Evidence Contract',
-      '- **State/progress path**: plan',
-      '- **Verification evidence**: tests',
-      '- **Evaluator rubric**: review',
-      '- **Stop condition**: pass',
-      '- **Rollback surface**: revert',
-      '',
-    ].join('\n'));
-    write(cwd, CONTRACT, [
-      '# Task Contract: effective-fixture',
-      '',
-      '> **Status**: Active',
-      `> **Plan**: ${PLAN}`,
-      '> **Task Profile**: code-change',
-      '> **Workflow Profile**: standard',
-      `> **Review File**: \`${REVIEW}\``,
-      '',
-      '## Allowed Paths',
-      '',
-      '```yaml',
-      'allowed_paths:',
-      '  - src/',
-      '  - tests/effective-state.test.ts',
-      '```',
-      '',
-    ].join('\n'));
-    write(cwd, REVIEW, [
-      '# Review',
-      '> **Recommendation**: fail',
-      '> **Reviewed Subject SHA256**: pending',
-      '## External Acceptance Advice',
-      '> **External Acceptance**: unavailable',
-      '',
-    ].join('\n'));
-    write(cwd, '.ai/harness/checks/latest.json', JSON.stringify({
-      status: 'fail',
-      active_plan: PLAN,
-    }));
-    write(cwd, 'tasks/current.md', [
-      '# Current',
-      `> **Updated At**: ${new Date().toISOString()}`,
-      `- Active Plan: ${PLAN}`,
-      '',
-    ].join('\n'));
-    write(cwd, '.gitignore', '.ai/harness/state/\n.ai/harness/checks/\n.ai/harness/handoff/\n');
-    for (const args of [
-      ['init', '-b', 'main'],
-      ['config', 'user.email', 'fixture@example.com'],
-      ['config', 'user.name', 'Fixture'],
-      ['add', '.'],
-      ['commit', '-m', 'fixture'],
-    ]) {
-      const git = spawnSync('git', args, { cwd, encoding: 'utf-8' });
-      if (git.status !== 0) throw new Error(git.stderr);
-    }
-    fn(cwd);
-  } finally {
-    rmSync(cwd, { recursive: true, force: true });
-  }
-}
-
-function runCli(cwd: string): { status: number | null; state: EffectiveState; stderr: string } {
-  const result = spawnSync(process.execPath, [CLI, 'state', 'resolve', '--json'], {
-    cwd,
-    encoding: 'utf-8',
-  });
-  return {
-    status: result.status,
-    state: JSON.parse(result.stdout) as EffectiveState,
-    stderr: result.stderr,
-  };
-}
-
-function resolveFixtureState(cwd: string): EffectiveState {
-  return resolveEffectiveState(cwd, Date.now(), {
-    targetPaths: ['src/feature.ts'],
-    operationKind: 'feature',
-  });
-}
+} from '../src/effects/state/resolve-effective-state';
+import { stateVersionOwnerPath } from '../src/effects/state/git-state-version-store';
+import { migrateLegacyActivePlan } from '../src/cli/hook/legacy-active-plan-migration';
+import {
+  CLI,
+  CONTRACT,
+  PLAN,
+  REVIEW,
+  ROOT,
+  commitFixture,
+  createEffectiveStateFixture,
+  resolveFixtureState,
+  runCli,
+  withRepo,
+  writeFixture as write,
+  writeFixtureStateLock,
+} from './state/effective-state-fixture';
 
 describe('effective state resolver', () => {
+  test('fails closed when artifact-derived paths escape the repository', () => {
+    const cases = [
+      {
+        name: 'active-plan marker',
+        setup(cwd: string, outsidePath: string, outsideRelative: string) {
+          writeFileSync(outsidePath, '# Outside plan\n> **Status**: Executing\n- [ ] leak\n');
+          write(cwd, '.ai/harness/active-plan', `${outsideRelative}\n`);
+        },
+        run(cwd: string) { resolveFixtureState(cwd); },
+      },
+      {
+        name: 'contract review header with Win32 traversal',
+        setup(cwd: string, outsidePath: string) {
+          writeFileSync(outsidePath, '# Outside review\n> **Recommendation**: pass\n');
+          const contract = readFileSync(join(cwd, CONTRACT), 'utf-8');
+          write(cwd, CONTRACT, contract.replace(
+            /^> \*\*Review File\*\*: .*$/m,
+            `> **Review File**: \`..\\${basename(outsidePath)}\``,
+          ));
+        },
+        run(cwd: string) { resolveFixtureState(cwd); },
+      },
+      {
+        name: 'active-sprint marker',
+        setup(cwd: string, outsidePath: string, outsideRelative: string) {
+          writeFileSync(outsidePath, '# Outside sprint\n');
+          write(cwd, '.ai/harness/sprint/active-sprint', `${outsideRelative}\n`);
+        },
+        run(cwd: string) { resolveFixtureState(cwd); },
+      },
+      {
+        name: 'pending draft path',
+        setup(cwd: string, outsidePath: string, outsideRelative: string) {
+          writeFileSync(outsidePath, '# Outside draft\n> **Status**: Draft\n');
+          const pendingPath = join(cwd, '.ai/harness/planning/pending.json');
+          write(cwd, '.ai/harness/planning/pending.json', JSON.stringify({
+            draft_plan_path: outsideRelative,
+          }));
+          const old = new Date(Date.now() - 4 * 24 * 60 * 60 * 1000);
+          utimesSync(pendingPath, old, old);
+        },
+        run(cwd: string) { buildStateSnapshot(cwd); },
+      },
+    ] as const;
+
+    const results: Array<{ readonly name: string; readonly failedClosed: boolean; readonly published: boolean }> = [];
+    for (const entry of cases) {
+      const fixture = createEffectiveStateFixture();
+      const outsidePath = join(fixture.cwd, '..', `${basename(fixture.cwd)}-${entry.name.replaceAll(' ', '-')}.md`);
+      const outsideRelative = `../${basename(outsidePath)}`;
+      try {
+        entry.setup(fixture.cwd, outsidePath, outsideRelative);
+        let failedClosed = false;
+        try {
+          entry.run(fixture.cwd);
+        } catch {
+          failedClosed = true;
+        }
+        results.push({
+          name: entry.name,
+          failedClosed,
+          published: existsSync(join(fixture.cwd, '.ai/harness/state/effective.json'))
+            || existsSync(stateVersionOwnerPath(fixture.cwd)),
+        });
+      } finally {
+        rmSync(outsidePath, { force: true });
+        fixture.cleanup();
+      }
+    }
+
+    expect(results).toEqual(cases.map((entry) => ({
+      name: entry.name,
+      failedClosed: true,
+      published: false,
+    })));
+  });
+
+  test('fails closed when an in-repo authority path symlinks outside the repository', () => {
+    if (process.platform === 'win32') return;
+    const fixture = createEffectiveStateFixture();
+    const outsidePath = join(fixture.cwd, '..', `${basename(fixture.cwd)}-symlink-plan.md`);
+    try {
+      writeFileSync(outsidePath, '# Outside plan\n> **Status**: Executing\n- [ ] leak\n');
+      const linkedPlan = join(fixture.cwd, 'plans/external-plan.md');
+      symlinkSync(outsidePath, linkedPlan);
+      write(fixture.cwd, '.ai/harness/active-plan', 'plans/external-plan.md\n');
+      expect(() => resolveFixtureState(fixture.cwd)).toThrow('unsafe state source path');
+      expect(existsSync(join(fixture.cwd, '.ai/harness/state/effective.json'))).toBe(false);
+      expect(existsSync(stateVersionOwnerPath(fixture.cwd))).toBe(false);
+    } finally {
+      rmSync(outsidePath, { force: true });
+      fixture.cleanup();
+    }
+  });
+
+  test('fails closed when a missing authority path has an external symlink ancestor', () => {
+    if (process.platform === 'win32') return;
+    const fixture = createEffectiveStateFixture();
+    const outsideDirectory = join(fixture.cwd, '..', `${basename(fixture.cwd)}-outside-directory`);
+    try {
+      mkdirSync(outsideDirectory);
+      symlinkSync(outsideDirectory, join(fixture.cwd, 'plans/external'));
+      write(fixture.cwd, '.ai/harness/active-plan', 'plans/external/missing.md\n');
+      expect(() => resolveFixtureState(fixture.cwd)).toThrow('unsafe state source path');
+      expect(existsSync(join(fixture.cwd, '.ai/harness/state/effective.json'))).toBe(false);
+      expect(existsSync(stateVersionOwnerPath(fixture.cwd))).toBe(false);
+    } finally {
+      rmSync(outsideDirectory, { recursive: true, force: true });
+      fixture.cleanup();
+    }
+  });
+
   test('normalizes authoritative workflow sources and writes an atomic cache', () => {
     withRepo((cwd) => {
       const state = resolveFixtureState(cwd);
@@ -227,6 +232,16 @@ describe('effective state resolver', () => {
     withRepo((cwd) => {
       write(cwd, '.claude/.active-plan', 'plans/plan-other.md\n');
       expect(() => migrateLegacyActivePlan(cwd)).toThrow('conflicts with canonical');
+    });
+  });
+
+  test('explicit legacy migration fails closed when a canonical marker is unreadable', () => {
+    withRepo((cwd) => {
+      const marker = join(cwd, '.ai/harness/active-plan');
+      rmSync(marker);
+      mkdirSync(marker);
+      expect(() => migrateLegacyActivePlan(cwd)).toThrow();
+      expect(readFileSync(join(cwd, '.claude/.active-plan'), 'utf-8')).toContain(PLAN);
     });
   });
 
@@ -332,14 +347,14 @@ describe('effective state resolver', () => {
 
   test('records lock ownership and reclaims a stale dead owner', () => {
     withRepo((cwd) => {
-      write(cwd, '.ai/harness/state/effective.lock', JSON.stringify({
+      writeFixtureStateLock(cwd, {
         pid: 99999999,
         created_at: Date.now() - 60_000,
-        token: 'dead',
-      }));
+        token: '99999999-0-00000000-0000-4000-8000-000000000005',
+      });
       const state = resolveFixtureState(cwd);
       expect(state.task_id).toBe('20260712-2327-effective-fixture');
-      expect(() => readFileSync(join(cwd, '.ai/harness/state/effective.lock'), 'utf-8')).toThrow();
+      expect(() => readdirSync(join(cwd, '.ai/harness/state/effective.lock'))).toThrow();
     });
   });
 
@@ -460,6 +475,23 @@ describe('effective state resolver', () => {
   });
 
   describe('capability registry resolution (Phase C1)', () => {
+    function capability(id: string, prefixes: readonly string[]) {
+      return {
+        id,
+        domain: 'fixture',
+        name: id,
+        prefixes,
+        contract_files: {
+          agents: `${prefixes[0]}/AGENTS.md`,
+          claude: `${prefixes[0]}/CLAUDE.md`,
+        },
+        architecture_module: `docs/architecture/modules/fixture/${id}.md`,
+        workstream_dir: `tasks/workstreams/fixture/${id}`,
+        lsp_profile: 'typescript-lsp',
+        verification_hints: ['bun test'],
+      };
+    }
+
     test('a repo that never declared a registry keeps no-signal behavior with no blocker', () => {
       withRepo((cwd) => {
         const state = resolveFixtureState(cwd);
@@ -512,7 +544,7 @@ describe('effective state resolver', () => {
         write(cwd, '.ai/context/capabilities.json', JSON.stringify({
           version: 1,
           capabilities: [
-            { id: 'good-cap', prefixes: ['src/good'] },
+            capability('good-cap', ['src/good']),
             { id: 'bad-entry-no-prefixes' },
             'just a string',
             { prefixes: ['src/no-id'] },
@@ -535,20 +567,69 @@ describe('effective state resolver', () => {
       });
     });
 
-    test('a corrupt policy.json is treated as "not declared" (absent, no blocker) -- intentionally aligned with every other policy.json reader in this file, not fixed', () => {
+    test('a corrupt policy.json fails closed before cache/version publication', () => {
       withRepo((cwd) => {
-        // policyPath/policyString/loadMinimalChangePolicy all catch a corrupt
-        // or missing policy.json and fall back to a default; none of them
-        // fail closed. Making policyDeclaresCapabilityRegistry the one
-        // exception would invent a new, inconsistent authority for exactly
-        // the case the dispatch says to avoid ("别造新权威"). Locks in the
-        // current, deliberate behavior.
         write(cwd, '.ai/harness/policy.json', 'not json{{{');
-        const state = resolveFixtureState(cwd);
-        expect(state.blockers).not.toContain('capability_registry:invalid');
-        expect(state.profile_reasons).toContain('capability:registry:absent');
+        expect(() => resolveFixtureState(cwd)).toThrow();
+        expect(existsSync(join(cwd, '.ai/harness/state/effective.json'))).toBe(false);
+        expect(existsSync(stateVersionOwnerPath(cwd))).toBe(false);
       });
     });
+
+    for (const malformed of [
+      {
+        name: 'non-string capability registry declaration',
+        policy: { context: { capability_registry_file: 42 } },
+        resolve: resolveFixtureState,
+      },
+      {
+        name: 'non-string review base',
+        policy: { worktree_strategy: { review_base: 42 } },
+        resolve: resolveFixtureState,
+      },
+      {
+        name: 'non-object worktree strategy',
+        policy: { worktree_strategy: 42 },
+        resolve: resolveFixtureState,
+      },
+      {
+        name: 'unsafe pending orchestration path',
+        policy: { planning: { pending_orchestration_file: '../../outside' } },
+        resolve: buildStateSnapshot,
+      },
+      {
+        name: 'win32 traversal pending orchestration path',
+        policy: { planning: { pending_orchestration_file: '.ai/harness/planning/..\\..\\outside.json' } },
+        resolve: buildStateSnapshot,
+      },
+    ] as const) {
+      test(`parseable malformed policy fails closed: ${malformed.name}`, () => {
+        withRepo((cwd) => {
+          write(cwd, '.ai/harness/policy.json', JSON.stringify(malformed.policy));
+          expect(() => malformed.resolve(cwd)).toThrow();
+          expect(existsSync(join(cwd, '.ai/harness/state/effective.json'))).toBe(false);
+          expect(existsSync(stateVersionOwnerPath(cwd))).toBe(false);
+        });
+      });
+    }
+
+    for (const malformed of [
+      { context: 42 },
+      { context: { capability_registry_file: '../../outside' } },
+    ] as const) {
+      test(`clean inspect validates all policy authority eagerly: ${JSON.stringify(malformed)}`, () => {
+        withRepo((cwd) => {
+          write(cwd, '.ai/harness/policy.json', JSON.stringify(malformed));
+          commitFixture(cwd, 'commit malformed policy authority');
+          expect(() => resolveEffectiveState(cwd, Date.now(), {
+            targetPaths: [],
+            operationKind: 'inspect',
+          })).toThrow();
+          expect(existsSync(join(cwd, '.ai/harness/state/effective.json'))).toBe(false);
+          expect(existsSync(stateVersionOwnerPath(cwd))).toBe(false);
+        });
+      });
+    }
 
     test('a non-array capabilities field fails closed with a structured blocker', () => {
       withRepo((cwd) => {
@@ -562,7 +643,7 @@ describe('effective state resolver', () => {
       withRepo((cwd) => {
         write(cwd, '.ai/context/capabilities.json', JSON.stringify({
           version: 1,
-          capabilities: [{ id: 'other-capability', prefixes: ['src/other'] }],
+          capabilities: [capability('other-capability', ['src/other'])],
         }));
         commitFixture(cwd, 'seed registry');
         const state = resolveEffectiveState(cwd, Date.now(), {
@@ -574,11 +655,46 @@ describe('effective state resolver', () => {
       });
     });
 
+    test('registry and policy changes advance the state revision and durable version', () => {
+      withRepo((cwd) => {
+        write(cwd, '.ai/context/capabilities.json', JSON.stringify({
+          version: 1,
+          capabilities: [capability('feature-capability', ['src'])],
+        }));
+        commitFixture(cwd, 'seed valid capability registry');
+        const first = resolveEffectiveState(cwd, Date.now(), {
+          targetPaths: ['src/feature.ts'],
+          operationKind: 'edit',
+        });
+
+        write(cwd, '.ai/context/capabilities.json', '{invalid registry');
+        commitFixture(cwd, 'invalidate capability registry');
+        const second = resolveEffectiveState(cwd, Date.now(), {
+          targetPaths: ['src/feature.ts'],
+          operationKind: 'edit',
+        });
+        expect(second.state_revision).not.toBe(first.state_revision);
+        expect(second.state_version).toBe(first.state_version + 1);
+        expect(second.blockers).toContain('capability_registry:invalid');
+
+        write(cwd, '.ai/harness/policy.json', JSON.stringify({
+          worktree_strategy: { review_base: 'main' },
+        }));
+        commitFixture(cwd, 'add workflow policy');
+        const third = resolveEffectiveState(cwd, Date.now(), {
+          targetPaths: ['src/feature.ts'],
+          operationKind: 'edit',
+        });
+        expect(third.state_revision).not.toBe(second.state_revision);
+        expect(third.state_version).toBe(second.state_version + 1);
+      });
+    });
+
     test('an unmapped implementation path contributes one cross-capability bucket without lowering the floor', () => {
       withRepo((cwd) => {
         write(cwd, '.ai/context/capabilities.json', JSON.stringify({
           version: 1,
-          capabilities: [{ id: 'mapped-capability', prefixes: ['src/mapped'] }],
+          capabilities: [capability('mapped-capability', ['src/mapped'])],
         }));
         commitFixture(cwd, 'seed registry');
         const state = resolveEffectiveState(cwd, Date.now(), {
@@ -595,7 +711,7 @@ describe('effective state resolver', () => {
       withRepo((cwd) => {
         write(cwd, '.ai/context/capabilities.json', JSON.stringify({
           version: 1,
-          capabilities: [{ id: 'docs-capability', prefixes: ['docs'] }],
+          capabilities: [capability('docs-capability', ['docs'])],
         }));
         commitFixture(cwd, 'seed registry');
         const state = resolveEffectiveState(cwd, Date.now(), {
@@ -622,7 +738,10 @@ describe('effective state resolver', () => {
   describe('registry validation parity with capability-resolver.ts (Round 2 external acceptance)', () => {
     function installCanonicalValidator(cwd: string): void {
       mkdirSync(join(cwd, 'scripts'), { recursive: true });
-      writeFileSync(join(cwd, 'scripts/capability-resolver.ts'), readFileSync(join(ROOT, 'scripts/capability-resolver.ts')));
+      writeFileSync(
+        join(cwd, 'scripts/capability-resolver.ts'),
+        readFileSync(join(ROOT, 'assets/templates/helpers/capability-resolver.ts')),
+      );
     }
 
     function runCanonicalValidate(cwd: string): { status: number | null; stdout: string; errors: string[] } {

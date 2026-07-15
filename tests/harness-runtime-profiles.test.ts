@@ -3,8 +3,8 @@ import {
   resolveWorkflowProfile,
   type WorkflowOperationKind,
   type WorkflowProfileInput,
-} from '../src/cli/hook/workflow-profile';
-import { isImplementationSurfacePath, isWorkflowSurfacePath } from '../src/cli/hook/diff-fingerprint';
+} from '../src/core/workflow/profile';
+import { isImplementationSurfacePath, isWorkflowSurfacePath } from '../src/effects/review/diff-fingerprint';
 
 describe('workflow runtime profile risk floor', () => {
   test('keeps a low-risk local edit in lite', () => {
@@ -281,7 +281,7 @@ describe('workflow-surface path predicate (Phase C2 resolver layer)', () => {
   });
 
   test.each([
-    'src/cli/hook/workflow-profile.ts',
+    'src/core/workflow/profile.ts',
     'src/cli/hook/state-snapshot.ts',
     'deploy/sql/0001_demo.sql',
     'scripts/run-harness-profile-benchmark.ts',

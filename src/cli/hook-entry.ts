@@ -45,7 +45,7 @@ if (import.meta.main) {
   }
 
   if (argv[0] === 'review-subject') {
-    const { runReviewSubjectCli } = await import('./hook/diff-fingerprint');
+    const { runReviewSubjectCli } = await import('./hook/review-subject');
     const result = runReviewSubjectCli(argv.slice(1));
     if (result.stdout) writeAllSync(1, result.stdout);
     if (result.stderr) writeAllSync(2, result.stderr);

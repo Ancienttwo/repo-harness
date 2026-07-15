@@ -1,6 +1,87 @@
 import { Command } from 'commander';
-import { migrateLegacyActivePlan, resolveEffectiveState } from '../hook/state-snapshot';
-import type { WorkflowOperationKind, WorkflowProfile } from '../hook/workflow-profile';
+import type { EffectiveState, EffectiveStateRiskInput } from '../../core/state/types';
+import type { WorkflowOperationKind, WorkflowProfile } from '../../core/workflow/profile';
+import { resolveEffectiveState } from '../../effects/state/resolve-effective-state';
+import { migrateLegacyActivePlan } from '../hook/legacy-active-plan-migration';
+
+export interface CommandOutcome {
+  readonly exitCode: 0 | 1 | 2;
+  readonly stdout: string;
+  readonly stderr: string;
+}
+
+export interface StateCommandOptions {
+  readonly targetPath?: readonly string[];
+  readonly operation?: string;
+  readonly profile?: string;
+  readonly field?: string;
+}
+
+export type ResolveEffectiveState = (
+  repoRoot: string,
+  nowMs: number,
+  risk?: EffectiveStateRiskInput,
+) => EffectiveState;
+
+export interface StateCommandDependencies {
+  readonly repoRoot: string;
+  readonly nowMs: number;
+  readonly resolve: ResolveEffectiveState;
+}
+
+function operationalFailure(error: unknown): CommandOutcome {
+  const message = error instanceof Error ? error.message : String(error);
+  return { exitCode: 1, stdout: '', stderr: `${message}\n` };
+}
+
+/** Pure command projection. Commander owns only option parsing and process I/O. */
+export function resolveStateCommand(
+  options: StateCommandOptions,
+  deps: StateCommandDependencies,
+): CommandOutcome {
+  let effective: EffectiveState;
+  try {
+    effective = deps.resolve(deps.repoRoot, deps.nowMs, {
+      targetPaths: options.targetPath,
+      operationKind: options.operation as WorkflowOperationKind | undefined,
+      explicitOverride: options.profile as WorkflowProfile | undefined,
+    });
+  } catch (error) {
+    return operationalFailure(error);
+  }
+
+  const blocked = effective.blockers.length > 0;
+  if (options.field) {
+    const record = effective as unknown as Record<string, unknown>;
+    if (!Object.prototype.hasOwnProperty.call(record, options.field)) {
+      return {
+        exitCode: 2,
+        stdout: '',
+        stderr: `unknown --field '${options.field}'; expected one of: ${Object.keys(record).sort().join(', ')}\n`,
+      };
+    }
+
+    // A blocked resolution's field value is not trustworthy: callers must
+    // key off the exit code, not a possibly-still-populated value.
+    const value = record[options.field];
+    const stdout = !blocked && value !== undefined && value !== null
+      ? `${typeof value === 'string' ? value : JSON.stringify(value)}\n`
+      : '';
+    return { exitCode: blocked ? 1 : 0, stdout, stderr: '' };
+  }
+
+  return {
+    exitCode: blocked ? 1 : 0,
+    stdout: `${JSON.stringify(effective, null, 2)}\n`,
+    stderr: '',
+  };
+}
+
+function writeOutcome(outcome: CommandOutcome): void {
+  if (outcome.stdout) process.stdout.write(outcome.stdout);
+  if (outcome.stderr) process.stderr.write(outcome.stderr);
+  process.exitCode = outcome.exitCode;
+}
 
 export function buildStateCommand(): Command {
   const state = new Command('state').description('Resolve authoritative repo workflow state');
@@ -16,35 +97,12 @@ export function buildStateCommand(): Command {
       '--field <name>',
       'Print only this top-level field of the resolved state (e.g. workflow_profile) instead of the full JSON document; a pure output projection, the resolver is unchanged',
     )
-    .action((opts: { targetPath?: string[]; operation?: string; profile?: string; field?: string }) => {
-      const effective = resolveEffectiveState(process.cwd(), Date.now(), {
-        targetPaths: opts.targetPath,
-        operationKind: opts.operation as WorkflowOperationKind | undefined,
-        explicitOverride: opts.profile as WorkflowProfile | undefined,
-      });
-      const blocked = effective.blockers.length > 0;
-      if (opts.field) {
-        const record = effective as unknown as Record<string, unknown>;
-        if (!Object.prototype.hasOwnProperty.call(record, opts.field)) {
-          console.error(
-            `unknown --field '${opts.field}'; expected one of: ${Object.keys(record).sort().join(', ')}`,
-          );
-          process.exit(2);
-        }
-        // A blocked resolution's field value is not trustworthy: callers must
-        // key off the exit code, not a possibly-still-populated value, so a
-        // blocker suppresses --field's printed value the same way the full
-        // JSON path already signals "blocked" via exit code alone.
-        if (!blocked) {
-          const value = record[opts.field];
-          if (value !== undefined && value !== null) {
-            console.log(typeof value === 'string' ? value : JSON.stringify(value));
-          }
-        }
-        process.exit(blocked ? 1 : 0);
-      }
-      console.log(JSON.stringify(effective, null, 2));
-      process.exit(blocked ? 1 : 0);
+    .action((opts: StateCommandOptions) => {
+      writeOutcome(resolveStateCommand(opts, {
+        repoRoot: process.cwd(),
+        nowMs: Date.now(),
+        resolve: resolveEffectiveState,
+      }));
     });
 
   state
@@ -53,11 +111,12 @@ export function buildStateCommand(): Command {
     .requiredOption('--json', 'Output the migration result as JSON')
     .action(() => {
       try {
-        console.log(JSON.stringify(migrateLegacyActivePlan(), null, 2));
-        process.exit(0);
+        process.stdout.write(`${JSON.stringify(migrateLegacyActivePlan(), null, 2)}\n`);
+        process.exitCode = 0;
       } catch (error) {
-        console.error((error as Error).message);
-        process.exit(1);
+        const message = error instanceof Error ? error.message : String(error);
+        process.stderr.write(`${message}\n`);
+        process.exitCode = 1;
       }
     });
 

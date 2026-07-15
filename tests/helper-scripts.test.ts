@@ -25,7 +25,9 @@ const HELPER_DIR = join(ROOT, "assets/templates/helpers");
 const TEMPLATE_DIR = join(ROOT, "assets/templates");
 const ASSETS_HOOKS_DIR = join(ROOT, "assets/hooks");
 
-const INTENTIONALLY_DIVERGENT: string[] = [];
+// The repository resolver imports the canonical core. Its packaged projection
+// is intentionally standalone and is source-hash/drift checked separately.
+const INTENTIONALLY_DIVERGENT = ["capability-resolver.ts"];
 
 setDefaultTimeout(30000);
 

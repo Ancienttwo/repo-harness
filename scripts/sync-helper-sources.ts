@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { createHash } from "crypto";
 import { existsSync, lstatSync, readFileSync } from "fs";
 import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
@@ -9,6 +10,7 @@ import {
   readProjectionFile,
   sameProjectionBytes,
   writeProjectionFileAtomic,
+  type ProjectionFileRecord,
 } from "../src/core/source-projection";
 import { getHelperScripts, loadWorkflowContract } from "./workflow-contract";
 
@@ -19,6 +21,8 @@ const REPO_ROOT = resolve(SCRIPT_DIR, "..");
 const CANONICAL_ROOT = join(REPO_ROOT, "scripts");
 const TARGET_ROOT = join(REPO_ROOT, "assets", "templates", "helpers");
 const CONTRACT_PATH = join(REPO_ROOT, "assets", "workflow-contract.v1.json");
+const CAPABILITY_HELPER = "capability-resolver.ts";
+const CAPABILITY_CORE = join(REPO_ROOT, "src", "core", "capabilities", "registry.ts");
 
 function usage(): never {
   process.stderr.write("Usage: bun scripts/sync-helper-sources.ts [--check|--write]\n");
@@ -41,6 +45,46 @@ function parseMode(argv: string[]): Mode {
   return mode;
 }
 
+function buildCapabilityProjection(): ProjectionFileRecord {
+  if (!existsSync(CAPABILITY_CORE)) {
+    throw new Error("canonical capability registry source is missing: src/core/capabilities/registry.ts");
+  }
+  const sourcePath = join(CANONICAL_ROOT, CAPABILITY_HELPER);
+  const script = readFileSync(sourcePath, "utf-8");
+  const shebang = "#!/usr/bin/env bun\n";
+  if (!script.startsWith(shebang)) {
+    throw new Error("canonical capability helper must start with the Bun shebang");
+  }
+  let adapter = script.slice(shebang.length);
+  const importEndMarker = '} from "../src/core/capabilities/registry";';
+  const importEnd = adapter.indexOf(importEndMarker);
+  const importStart = importEnd >= 0 ? adapter.lastIndexOf("import {", importEnd) : -1;
+  if (importStart < 0 || importEnd < 0) {
+    throw new Error("canonical capability helper must import the canonical registry module exactly once");
+  }
+  adapter = `${adapter.slice(0, importStart)}${adapter.slice(importEnd + importEndMarker.length).replace(/^\n/, "")}`;
+  const typeExport = /^export type \{[^\n]+\} from "\.\.\/src\/core\/capabilities\/registry";\n/m;
+  if (!typeExport.test(adapter)) {
+    throw new Error("canonical capability helper must re-export canonical registry contract types");
+  }
+  adapter = adapter.replace(typeExport, "");
+
+  const core = readFileSync(CAPABILITY_CORE, "utf-8");
+  const sourceHash = createHash("sha256").update(core).digest("hex");
+  const content = [
+    "#!/usr/bin/env bun",
+    `// @generated-from src/core/capabilities/registry.ts sha256:${sourceHash}`,
+    "// Standalone typed Bun projection. Regenerate from scripts/capability-resolver.ts; do not edit by hand.",
+    core.trimEnd(),
+    adapter.trim(),
+  ].join("\n") + "\n";
+  return {
+    relPath: CAPABILITY_HELPER,
+    bytes: Buffer.from(content),
+    mode: "100755",
+  };
+}
+
 function main(): void {
   const mode = parseMode(process.argv.slice(2));
   const contract = loadWorkflowContract(CONTRACT_PATH);
@@ -54,7 +98,9 @@ function main(): void {
       errors.push(`contract helper source is missing: scripts/${name}`);
       return null;
     }
-    return readProjectionFile(CANONICAL_ROOT, name);
+    return name === CAPABILITY_HELPER
+      ? buildCapabilityProjection()
+      : readProjectionFile(CANONICAL_ROOT, name);
   }).filter((file) => file !== null);
 
   const targetFiles = existsSync(TARGET_ROOT) ? collectProjectionFiles(TARGET_ROOT) : [];
