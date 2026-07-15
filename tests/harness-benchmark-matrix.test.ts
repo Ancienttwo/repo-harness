@@ -13,6 +13,7 @@ import {
   cloneImmutableWorkspaceBase,
   cleanupArmHostRoot,
   codexBenchmarkCommand,
+  createRunOverlay,
   hashTree,
   isolatedHarnessEnvironment,
   isAuthoritativeCompletedRecord,
@@ -178,6 +179,64 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
       expect(git(linked, 'branch', '--show-current').stdout.toString().trim()).toBe('codex/benchmark');
       expect(readFileSync(join(linked, '.ai/harness/handoff/resume.md'), 'utf8')).toContain('## Exact Next Step');
       expect(realpathSync(linked)).not.toBe('');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  test('harness-enabled arm overlays grade the precreated linked provider workspace', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'harness-profile-linked-workspaces-'));
+    const source = join(dir, 'source');
+    const home = join(dir, 'base-home');
+    const git = (cwd: string, ...args: string[]) => Bun.spawnSync(['git', ...args], { cwd, stdout: 'pipe', stderr: 'pipe' });
+    try {
+      mkdirSync(source);
+      mkdirSync(home);
+      expect(git(source, 'init', '-q', '--initial-branch=main').exitCode).toBe(0);
+      expect(git(source, 'config', 'user.name', 'Benchmark Test').exitCode).toBe(0);
+      expect(git(source, 'config', 'user.email', 'benchmark@example.com').exitCode).toBe(0);
+      writeFileSync(join(source, '.gitignore'), [
+        '.ai/harness/active-plan',
+        '.ai/harness/active-worktree',
+        '.ai/harness/handoff/resume.md',
+        '',
+      ].join('\n'));
+      writeFileSync(join(source, 'seed.txt'), 'seed\n');
+      expect(git(source, 'add', '.').exitCode).toBe(0);
+      expect(git(source, 'commit', '-qm', 'seed').exitCode).toBe(0);
+
+      const scenario = {
+        id: 'linked-workspace',
+        category: 'ordinary-feature',
+        prompt: 'task',
+        expected_paths: [],
+        acceptance_command: 'true',
+        requires_resume_projection: true,
+      };
+      for (const profile of BENCHMARK_PROFILES) {
+        const armRoot = join(dir, profile);
+        const layout = {
+          profile,
+          scenario_id: scenario.id,
+          profile_base_id: `${profile}-base`,
+          workspace: join(armRoot, 'workspace'),
+          home: join(armRoot, 'home'),
+        };
+        createRunOverlay({
+          id: layout.profile_base_id,
+          profile,
+          workspace: realpathSync(source),
+          home: realpathSync(home),
+          workspaceSha256: hashTree(source),
+          homeSha256: hashTree(home),
+        }, layout, scenario);
+
+        const gitDir = git(layout.workspace, 'rev-parse', '--git-dir').stdout.toString().trim();
+        expect(gitDir.includes('.git/worktrees/')).toBe(profile !== 'no-harness');
+        expect(existsSync(join(layout.workspace, 'plans/plan-20000101-0000-benchmark.md')))
+          .toBe(profile === 'strict-harness');
+        expect(existsSync(join(layout.workspace, 'tasks/contracts/20000101-0000-benchmark.contract.md')))
+          .toBe(profile === 'strict-harness');
+        expect(existsSync(join(layout.workspace, '.ai/harness/handoff/resume.md'))).toBe(true);
+      }
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 

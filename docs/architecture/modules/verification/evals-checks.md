@@ -100,13 +100,18 @@ lets small slices run focused tests while release/pre-merge runs the full gate.
   HOME overlays rebase absolute cache symlinks from the profile base to the arm
   copy. Provider-local merge/push/install behavior therefore cannot write back
   through Git remotes, shared object inodes, or copied absolute links.
-- Strict arms create a private primary clone and expose the graded workspace as
-  its linked `codex/benchmark` worktree. The active-worktree marker records that
-  workspace's canonical real path, so StrictWorktreeGuard neither creates an
-  ungraded second-level worktree nor rejects macOS `/var` versus `/private/var`
-  aliases. Ignored runtime inputs such as the resume projection are materialized
-  again in that linked workspace after creation; they cannot travel through the
-  private primary's commit.
+- Harness-enabled arms (`adaptive-lite` and `strict-harness`) create a private
+  primary clone and expose the graded workspace as its linked `codex/benchmark`
+  worktree. Adaptive Lite may rise to Strict from runtime risk signals, so the
+  topology must exist before provider execution; guards, provider output,
+  focused checks, and the grader then observe one workspace instead of an
+  ungraded second-level worktree. Strict alone receives preprojected plan and
+  contract inputs. No Harness remains a plain isolated clone. Ignored runtime
+  inputs such as the resume projection are materialized again in each graded
+  linked workspace after worktree creation.
+- Authoritative fail-fast still terminates an in-flight sibling. A sibling with
+  no structured provider completion is producer cancellation evidence, not an
+  independent product regression.
 - At 10x scale the first failure would be evidence-production latency, not the
   verifier. Keeping production explicit and verification bounded prevents a
   closeout gate from becoming an unbounded job runner.

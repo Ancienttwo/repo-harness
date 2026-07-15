@@ -6,7 +6,7 @@
 > **Workflow Profile**: strict
 > **Owner**: kito
 > **Capability ID**: workflow-engine-inspection-migration
-> **Last Updated**: 2026-07-15 14:45
+> **Last Updated**: 2026-07-15 16:58
 > **Review File**: `tasks/reviews/20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.review.md`
 > **Notes File**: `tasks/notes/20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.notes.md`
 
@@ -18,12 +18,12 @@ The current Effective State implementation combines authority parsing, determini
 
 Freeze Effective State v1 at `main@82550779cdccf0575d674ae53bbc95ba63e44743` with reusable real-repository fixtures, at least ten full normalized direct/CLI/hook goldens, lock/cache/source-instability tests, an authority ADR, and a recorded 100-resolution median/p95 baseline. Public protocol, command/tool names, ordering, exits, and valid-input semantics remain unchanged; review-proven authority-read, locking, and publication failures must be corrected fail closed.
 
-Then execute the approved dependent rows ESA-02 through ESA-05 and ESA-07 in order on the same isolated branch, leaving ESA-06 deferred. Produce the repository-wide authoritative benchmark exactly once after the final `src/cli` code freeze, then close the Sprint and merge/push `main`.
+Then execute the approved dependent rows ESA-02 through ESA-05 and ESA-07 in order on the same isolated branch, leaving ESA-06 deferred. ESA-07 includes the minimal evidence-producer correction required to make every harness-enabled provider write into the linked workspace read by its grader. Produce one successful repository-wide authoritative benchmark after the final code freeze, then close the Sprint and merge/push `main`.
 
 ## Scope
 
-- In scope: ESA-01 through ESA-05 plus ESA-07 files and tests named by the approved Sprint, along with synchronized workflow artifacts.
-- Out of scope: ESA-06 writer hardening, unrelated tools, the two no-touch Skill Surface files, and the unapproved Harness Loop plan in the main checkout.
+- In scope: ESA-01 through ESA-05 plus ESA-07 files and tests named by the approved Sprint, the bounded benchmark linked-worktree topology correction, and synchronized workflow artifacts.
+- Out of scope: ESA-06 writer hardening, benchmark scenarios/graders/provider semantics/fingerprint validation, unrelated tools, the two no-touch Skill Surface files, and the unapproved Harness Loop plan in the main checkout.
 - Taste constraints: no new abstraction beyond a shared test fixture used by the existing suite and new characterization suites; no fallback or second authority.
 
 ## Stop Conditions
@@ -32,10 +32,11 @@ Then execute the approved dependent rows ESA-02 through ESA-05 and ESA-07 in ord
 - Stop if an edit is required outside `allowed_paths`.
 - Stop if lock/source-mutation evidence cannot be made bounded and deterministic enough to distinguish stable publication from fail-closed behavior.
 - Stop if an existing valid-input Effective State assertion changes expected behavior.
+- Stop if benchmark recovery requires changing scenario prompts, acceptance commands, grader semantics, product source, or fingerprint/hash validation.
 
 ## Falsifier
 
-The direction is wrong if current behavior cannot be captured without weakening exact blocker/reason/order/version/hash contracts or if real Git/lock fixtures expose nondeterministic semantic output. Cheapest proof: run the existing suite after extracting only the shared fixture helper, before adding new assertions.
+The direction is wrong if current behavior cannot be captured without weakening exact blocker/reason/order/version/hash contracts, if real Git/lock fixtures expose nondeterministic semantic output, or if provider output and grader authority cannot share one precreated linked workspace without changing evaluator semantics. Cheapest topology proof: run the focused matrix regression before the runner patch.
 
 ## Workflow Inventory
 
@@ -53,6 +54,7 @@ allowed_paths:
   - docs/architecture/effective-state-authority.md
   - docs/architecture/modules/runtime-harness/mcp-sidecar.md
   - docs/architecture/modules/runtime-harness/hook-adapters.md
+  - docs/architecture/modules/verification/evals-checks.md
   - docs/CHANGELOG.md
   - README.md
   - README.zh-CN.md
@@ -70,6 +72,7 @@ allowed_paths:
   - scripts/check-ci.sh
   - scripts/check-state-boundaries.ts
   - scripts/check-tarball-install-smoke.sh
+  - scripts/run-harness-profile-benchmark.ts
   - scripts/sync-helper-sources.ts
   - scripts/sync-hook-sources.ts
   - src/core/
@@ -125,6 +128,9 @@ exit_criteria:
     - tests/state/cli-state-golden.test.ts
     - tests/state/state-concurrency.test.ts
     - tests/state/benchmark-effective-state.ts
+    - scripts/run-harness-profile-benchmark.ts
+    - tests/harness-benchmark-matrix.test.ts
+    - docs/architecture/modules/verification/evals-checks.md
   artifacts_exist:
     - .ai/harness/checks/latest.json
     - tasks/notes/20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.notes.md
@@ -133,6 +139,7 @@ exit_criteria:
     - path: tests/state/
     - path: tests/capabilities/
     - path: tests/cli/mcp-tools.test.ts
+    - path: tests/harness-benchmark-matrix.test.ts
   commands_succeed:
     - bun run check:type
     - bun run check:state-boundaries
@@ -151,6 +158,7 @@ exit_criteria:
     - "CLI matches requested-risk resolution; hook/MCP match inspect resolution; repository authority fields agree across every parity fixture"
     - "Generated capability helper is standalone and bound to the canonical source hash"
     - "Authoritative 3x9 benchmark validates against the frozen final subject"
+    - "Adaptive Lite and Strict providers, guards, focused checks, and graders observe the same precreated linked workspace; No Harness remains a plain isolated clone"
     - "Evaluator review and external acceptance recommend pass for the final subject"
 ```
 

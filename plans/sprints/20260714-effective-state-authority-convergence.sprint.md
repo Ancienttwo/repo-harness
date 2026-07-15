@@ -265,7 +265,7 @@ Ordered execution queue. Every row has a machine-checkable acceptance line.
 | 4 | [x] | `ESA-04` — Single-source capability-registry validation and matching | contract | Exactly one handwritten source implementation owns version/shape/semantic/matching rules; projected helper drift fails CI | `plans/plan-20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md` |
 | 5 | [x] | `ESA-05` — Converge CLI, hook, and MCP state adapters | contract | CLI matches requested-risk resolution; hook/MCP match direct inspect resolution; repository authority fields agree for every parity fixture | `plans/plan-20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md` |
 | 6 | [ ] | `ESA-06` — Guard and atomically write workflow artifacts | contract | Migrated writes leave no partial file, return a revision, and reject a stale overwrite when the versioned precondition mode is enabled | pending |
-| 7 | [x] | `ESA-07` — Enforce boundaries, package/release verification, and documentation | contract | Boundary checker, full CI/release checks, tarball smoke, architecture docs, changelog, and handoff evidence all pass | `plans/plan-20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md` |
+| 7 | [ ] | `ESA-07` — Enforce boundaries, package/release verification, and documentation | contract | Boundary checker, full CI/release checks, tarball smoke, architecture docs, authoritative benchmark, and handoff evidence all pass | `plans/plan-20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md` |
 
 Committed scope for two engineers: 34 SP.  
 Single-engineer committed scope: ESA-01 through ESA-05 plus ESA-07; ESA-06 moves intact to the next Sprint.
@@ -719,6 +719,7 @@ bun test tests/effective-state.test.ts
 bun test tests/state
 bun test tests/capabilities
 bun test tests/mcp
+bun test tests/harness-benchmark-matrix.test.ts
 bun test
 bun run check:hooks
 bun run check:helpers
@@ -744,6 +745,7 @@ Update:
 ```text
 docs/architecture/effective-state-authority.md
 docs/architecture/mcp.md or the current MCP architecture guide
+docs/architecture/modules/verification/evals-checks.md
 docs/CHANGELOG.md
 tasks/notes/effective-state-authority-convergence.notes.md
 ```
@@ -765,6 +767,7 @@ Document:
 - All required verification commands pass from a clean checkout.
 - Packed artifact smoke passes without source-tree imports.
 - Benchmark p95 stays within the agreed budget.
+- Adaptive Lite and Strict provider output is graded from the same precreated linked workspace, and the final authoritative matrix passes 27/27.
 - Changelog and migration/release note match actual shipped behavior.
 - Task notes contain commands, exit codes, fixture revisions, and any accepted deviations.
 - No old/new dual resolver remains.
@@ -985,4 +988,4 @@ This order is intentional: first establish one capability implementation and one
 | 2026-07-15 15:26 | `ESA-03` — Split Effective State read → project → persist pipeline | `plans/plan-20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md` | done |
 | 2026-07-15 15:26 | `ESA-04` — Single-source capability-registry validation and matching | `plans/plan-20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md` | done |
 | 2026-07-15 15:26 | `ESA-05` — Converge CLI, hook, and MCP state adapters | `plans/plan-20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md` | done |
-| 2026-07-15 15:26 | `ESA-07` — Enforce boundaries, package/release verification, and documentation | `plans/plan-20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md` | done |
+| pending | `ESA-07` — Enforce boundaries, package/release verification, and documentation | `plans/plan-20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md` | pending graded-workspace recovery and final evidence |

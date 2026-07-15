@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-15T16:12:14+0800 -->
+<!-- updated_at: 2026-07-15T17:05:40+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-07-15T16:12:14+0800
+> **Updated At**: 2026-07-15T17:05:40+0800
 > **Source Branch**: codex/esa-01-freeze-effective-state-invariants-and-characterization-fixtures
-> **Source Commit**: 1beae1c7
+> **Source Commit**: 2ca691ae
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: ESA-07 frozen closeout
+> **Reason**: ESA-07 benchmark workspace-topology recovery
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -20,7 +20,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Status: Active
 - Active Plan: plans/plan-20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md
 - Plan Status: Executing
-- Next Task: (none)
+- Next Task: Rebind the exact subject review and produce one successful final authoritative 3×9 report from a clean frozen HEAD.
 - Clear Note: (none)
 
 ## Mainline Snapshot Reading
@@ -55,10 +55,17 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: clean
+- Summary: 8 changed/untracked path(s)
 
 ```
-(none)
+ M docs/architecture/modules/verification/evals-checks.md
+ M plans/plan-20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md
+ M plans/sprints/20260714-effective-state-authority-convergence.sprint.md
+ M scripts/run-harness-profile-benchmark.ts
+ M tasks/contracts/20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.contract.md
+ M tasks/notes/20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.notes.md
+ M tasks/reviews/20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.review.md
+ M tests/harness-benchmark-matrix.test.ts
 ```
 
 ## Source Artifacts

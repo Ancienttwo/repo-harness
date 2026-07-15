@@ -5,7 +5,7 @@
 > **Contract**: tasks/contracts/20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.contract.md
 > **Notes File**: tasks/notes/20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-07-15 15:25 +0800
+> **Last Updated**: 2026-07-15 16:58 +0800
 > **Recommendation**: pending
 > **Review Rubric Version**: 2
 > **Reviewed Subject SHA256**: pending
@@ -14,12 +14,12 @@
 
 ## Human Review Card
 
-- Verdict: pending final release gates and Claude subject binding.
+- Verdict: pending ESA-07 graded-workspace recovery, final benchmark, release gates, and external subject binding.
 - Change type: code-change / internal authority cutover / non-breaking `0.10.1` package surface.
 - Intended files changed: ESA-01..05 / ESA-07 core, effects, adapters, public interface, generated helper/hook projections, tests, docs, release metadata, and workflow artifacts listed by the contract.
 - Actual files changed: intended contract scope only; ESA-06 workflow-artifact writer is absent from the diff.
-- Commands passed so far: typecheck; hook/helper/state-boundary projection gates; focused core/effects/concurrency/adapter/capability tests; non-Git state-snapshot suite; clean tarball/install smoke; final 100-resolution benchmark; and authoritative 3x9 validation.
-- Residual risks: final release/workflow gates, exact Claude review subject, hosted CI, and PR merge remain pending. One non-blocking hook-only snapshot timing residual is recorded below.
+- Commands passed so far: typecheck; hook/helper/state-boundary projection gates; focused core/effects/concurrency/adapter/capability tests; non-Git state-snapshot suite; clean tarball/install smoke; and the final 100-resolution benchmark. The old 3x9 report is historical, not final evidence.
+- Residual risks: benchmark graded-workspace topology, final release/workflow gates, exact Claude review subject, hosted CI, and PR merge remain pending. One non-blocking hook-only snapshot timing residual and one benchmark fingerprint debt are recorded below.
 - Reviewer action required: bind Claude acceptance to the final workflow subject and benchmark evidence, then pass strict gates.
 - Rollback: revert this isolated branch; no persisted repository schema or protocol migration is involved.
 
@@ -31,6 +31,7 @@
 
 ## Findings And Closure
 
+- P1 evaluator topology closed: the grader workspace is now precreated as a linked worktree for both Adaptive Lite and Strict. Runtime promotion therefore cannot redirect provider output into an ungraded second-level worktree; No Harness and Strict-only projection semantics remain unchanged.
 - P1 closed: linked worktrees previously had independent version owners. The owner and allocation lock now live in Git common-dir; twelve concurrent allocators across two worktrees return exactly `1..12`.
 - P1 closed: flat-file stale reclaim and symlink ancestors could split lock authority. Canonical roots, stepwise no-symlink ancestor validation, unique token files, dead-PID validation, inode checks, and exact-token unlink close the portable scope. Empty pre-token directories and live/unknown PID identity remain fail-closed for verified manual recovery.
 - P1 closed: allocating the shared version before cache publication exposed an owner-only partial commit. The common-dir lock now covers candidate selection, cache publication, rollback, and owner-last commit; cache/owner fault injection and linked-worktree retry prove no version is consumed on failure.
@@ -44,6 +45,7 @@
 
 ## Verification Evidence To Date
 
+- Benchmark topology pre-fix: 24 pass / 1 fail, with the sole failure proving Adaptive Lite remained a primary workspace. Post-fix: 25/25 pass, 141 assertions; type, architecture sync, task sync, and diff checks pass.
 - `bun run check:type`: pass.
 - `bun run check:hooks`: 25-file projection pass, `sha256:a28c881fdbbff56ab039140c355bf468ca7b2451ae34a6a372d99972efc6f53f`.
 - `bun run check:helpers`: 49-helper projection pass, `sha256:5b82b946bb37c6ce1ea69f8e1e117f849326ce55ec8bfa741f38c6f50c8edf08`.
@@ -51,7 +53,7 @@
 - Pre-third-round relevant matrix: 167 pass, 0 fail, 1,500 assertions across all state tests plus Effective State, runtime-profile, capability, CLI state, and MCP public-path suites. Third-round focused verification passes 71/71 across Effective State, effects/transaction, and non-Git snapshot paths; type, boundary, and diff checks pass.
 - Independent third-round exact-subject review passed with no P0-P2 at `sha256:b8036b345fb15826b6e49658e0660f412bc69669d9f8e50ac0a35d858e965120`, target `af6d5216c2cd5adf2f672636a8308a309f0f5adb`, overlap `0`; the reviewer independently reran 64 focused tests plus type/boundary checks.
 - Type, hook/helper projection, state-boundary, and clean tarball/install gates pass on the final source commit.
-- Final 100-resolution result is median `169.460 ms`, p95 `241.095 ms`, under the `297.648 ms` budget. The sole final 3x9 run passed all 27 arms and validates authoritative with benchmark subject `sha256:f7f7cebdb595359aff5a0639e490376bf1e7f8aa452b1d3284072304ce70be0b` and evidence `sha256:676fb10bb9012919baf96e7464e9e741cf4ec7c8eb36548036be105f33b28373`.
+- Final 100-resolution result is median `169.460 ms`, p95 `241.095 ms`, under the `297.648 ms` budget. The `26dd6e88` 3x9 run passed 27/27 with benchmark subject `sha256:f7f7cebdb595359aff5a0639e490376bf1e7f8aa452b1d3284072304ce70be0b` and evidence `sha256:676fb10bb9012919baf96e7464e9e741cf4ec7c8eb36548036be105f33b28373`; it is historical and cannot satisfy the current frozen subject.
 
 ## External Acceptance Advice
 
@@ -76,6 +78,7 @@
 - Non-blocking P3: legacy hook-only `StateSnapshot` facts (`spec`, `pending`, evidence, and contract path) are read after canonical Effective State stability. A concurrent edit can make those compatibility-only fields reflect the next instant; canonical plan/profile/blockers remain the shared stable state. Do not widen this cutover; bundle them into the same observation only if that compatibility contract is changed later.
 - PID reuse is a fail-closed availability residual requiring verified manual cleanup after timeout; automatic incarnation detection would require unapproved host-native APIs. Active hostile ancestor rename after validation similarly requires dirfd/openat primitives outside this portable TypeScript scope.
 - ESA-06 guarded workflow-artifact overwrite semantics remain explicitly deferred and unmodified.
+- Benchmark subject fingerprinting under-binds transitive `src/effects` runtime bytes. Current acceptance compensates by proving report `source_commit == frozen HEAD`, a clean checkout before execution, unchanged source HEAD during execution, and only the three expected report artifacts afterward; durable fingerprint repair remains outside this bounded slice.
 
 ## Scorecard
 
@@ -88,14 +91,16 @@
 
 ## Failing Items
 
-- Release/workflow/Claude/PR gates are pending by sequence, not currently failed; benchmark evidence is complete and must not be rerun.
+- The required final benchmark is blocked until Adaptive Lite and Strict provider output is graded from the same precreated linked workspace.
 
 ## Retest Steps
 
-- Run `bun run check:release` and the strict workflow finish gates without regenerating benchmark evidence.
+- Run the focused benchmark topology regression, type/architecture/task gates, and exact-subject bounded review.
+- From the accepted clean freeze, run one final authoritative 3x9 matrix and require report `source_commit` to equal the unchanged clean HEAD.
+- Run `bun run check:release` and the strict workflow finish gates without regenerating successful benchmark evidence.
 - Bind the current `repo-harness-hook review-subject --target main --format json` result in both review headers; PR/merge comparison against `origin/main` is a separate merge gate.
 - Run strict contract/sprint/workflow gates and merge only after hosted PR checks pass.
 
 ## Summary
 
-- Source architecture, security, package, p95, and authoritative 3x9 evidence pass. Review remains pending only for final release/workflow/Claude/PR binding.
+- Source architecture, security, package, and p95 evidence pass. Review remains pending on the bounded evaluator topology repair, one final current-subject 3x9 report, and release/workflow/external/PR binding.

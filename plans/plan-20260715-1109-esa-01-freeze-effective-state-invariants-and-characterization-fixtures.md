@@ -8,7 +8,7 @@
 > **Source Ref**: sprint:plans/sprints/20260714-effective-state-authority-convergence.sprint.md#`ESA-01` — Freeze Effective State invariants and characterization fixtures
 > **Artifact Level**: work-package
 > **Promotion Reason**: worktree_boundary
-> **Verification Boundary**: Characterization/parity/fault tests, boundary and package gates, one subject-bound 3×9 benchmark, release validation, and strict workflow verification.
+> **Verification Boundary**: Characterization/parity/fault tests, boundary and package gates, a graded-linked-worktree topology regression, one subject-bound 3×9 benchmark, release validation, and strict workflow verification.
 > **Rollback Surface**: Revert this isolated branch; the cutover is source-only, retains Effective State protocol `1`, and leaves ESA-06 writer semantics deferred.
 > **Spec**: `docs/spec.md`
 > **Research**: `docs/researches/20260715-archi-research.md`
@@ -22,6 +22,8 @@ Freeze the current Effective State v1 behavior at baseline `82550779cdccf0575d67
 
 After ESA-01 acceptance, continue the approved ordered Sprint through ESA-02, ESA-03, ESA-04, ESA-05, and ESA-07 in this isolated branch. ESA-06 remains deferred intact. The combined closeout is required because the repository-wide authoritative Harness benchmark binds `src/cli` and must be produced once after the final production code freeze, not regenerated after each intermediate move.
 
+ESA-07 also owns one bounded evidence-producer correction proven by the final benchmark: every harness-enabled arm must expose the grader's workspace as a linked worktree before the provider starts, so an Adaptive Lite arm that rises to Strict cannot finish in an ungraded second-level worktree. This does not change provider prompts, graders, scenarios, product semantics, or the broader Harness Loop design.
+
 ## P1: Architecture Map
 
 - `src/core/state`, `src/core/workflow`, and `src/core/capabilities` now own pure artifact semantics, Effective State projection, risk/profile policy, and capability matching.
@@ -29,6 +31,7 @@ After ESA-01 acceptance, continue the approved ordered Sprint through ESA-02, ES
 - `src/cli/commands/state.ts`, `src/cli/hook/state-snapshot.ts`, and `src/cli/mcp/state-tools.ts` are adapters. The hook is a compatibility projection; MCP materializes the canonical ignored read model and labels both its MCP policy and retained `tasks/current.md` preview authority.
 - `interfaces/effective-state-v1.ts` is the packed public protocol surface. The standalone capability helper is a deterministic typed projection of the canonical core plus its CLI adapter.
 - Repository artifacts remain authority. Cache, `tasks/current.md`, checks, handoff, and resume remain read models/evidence; ESA-06 writer semantics stay out of scope.
+- `scripts/run-harness-profile-benchmark.ts` owns isolated profile bases and arm topology; `docs/architecture/modules/verification/evals-checks.md` owns the verification contract for provider, guard, grader, and report authority.
 
 ## P2: Concrete Trace
 
@@ -38,6 +41,7 @@ After ESA-01 acceptance, continue the approved ordered Sprint through ESA-02, ES
 4. Pure core projects profile, phase, blockers, freshness, conflicts, next action, and protocol ordering.
 5. A canonical Git-common-dir lock serializes linked worktrees. Stable state first atomically publishes the rollback-capable ignored cache, then commits the version owner as the sole authoritative commit point; failure before that point restores the exact prior cache bytes and consumes no version.
 6. CLI renders the caller-requested risk policy, while hook and MCP deliberately use the default `inspect` policy. All three share repository authority fields; MCP returns the inspect compact projection plus explicitly non-authoritative preview metadata.
+7. The benchmark clones an arm-owned primary, exposes the provider/grader workspace as a linked worktree for Adaptive Lite and Strict, and grades that same workspace. Strict alone receives preprojected plan/contract inputs; No Harness remains a plain isolated clone.
 
 The pressure point is synchronous Git/source observation. Pure projection is not the scaling bottleneck; the 100-resolution benchmark guards the accepted +10% p95 envelope.
 
@@ -49,6 +53,7 @@ The pressure point is synchronous Git/source observation. Pure projection is not
 - Treat non-`ENOENT` authority reads and malformed policy metadata as errors. Cache/version publication occurs only after source stability, including policy and capability registry, and the version owner is committed last.
 - Keep the helper projection typed and runnable by concatenating canonical core source with the stripped adapter import; `check:helpers`, typecheck, and packed-runtime smoke jointly prevent source, byte, runtime, or type drift.
 - At 10x scale, repeated Git/source reads fail first; no speculative cache authority or broad framework is introduced.
+- Precreate the graded linked worktree for every harness-enabled arm. Runtime promotion may raise Adaptive Lite to Strict, so topology must be valid before model execution rather than repaired after the provider has already selected a workspace.
 
 ## Scope
 
@@ -63,11 +68,13 @@ The pressure point is synchronous Git/source observation. Pure projection is not
 - ESA-04 canonical capability registry with generated standalone helper projection.
 - ESA-05 canonical CLI/hook/MCP adapter projection.
 - ESA-07 boundary checker, packed-product smoke, documentation, one final authoritative benchmark, and release/merge validation.
+- ESA-07 benchmark topology regression and the minimal runner correction that keeps provider output and grader authority in the same linked workspace.
 
 ### Out of scope
 
 - ESA-06 workflow-artifact writer hardening and every unrelated writer.
 - New fallback, compatibility path, feature flag, or alternate authority.
+- Benchmark scenario prompts, acceptance commands, graders, provider policy, product source, fingerprint/hash validation, and the unapproved Harness Loop plan.
 
 ## File Changes
 
@@ -80,6 +87,9 @@ The pressure point is synchronous Git/source observation. Pure projection is not
 | `tests/state/benchmark-effective-state.ts` | add | 100-resolution median/p95 baseline harness |
 | `tests/state/fixtures/*.json` | add | Committed golden outputs |
 | `docs/architecture/effective-state-authority.md` | add | Authority/projection ADR and frozen invariants |
+| `scripts/run-harness-profile-benchmark.ts` | edit | Precreate the grader's linked workspace for every harness-enabled arm |
+| `tests/harness-benchmark-matrix.test.ts` | edit | Prove No Harness remains primary while Adaptive Lite and Strict are graded in linked worktrees |
+| `docs/architecture/modules/verification/evals-checks.md` | edit | Record provider/guard/grader workspace authority |
 | workflow artifacts | edit | Decision, evidence, review, and closeout state |
 
 ## Acceptance
@@ -89,6 +99,7 @@ The pressure point is synchronous Git/source observation. Pure projection is not
 - Lock, Git-common-dir version ownership, cache publication, and source-stability effects are explicit and pass live/stale/malformed/token/ancestor/fault tests without partial authoritative publication.
 - Direct resolver and CLI agree for the requested risk input; hook and MCP agree with a direct `inspect` resolution; all public paths agree on repository authority fields while the intentional adapter policy delta is named and tested. MCP no longer treats `tasks/current.md` as authority.
 - Boundary, helper projection, full CI/release, tarball/install/adopted-helper smokes, strict workflow verification, and the final subject-bound 3×9 benchmark pass.
+- Adaptive Lite and Strict provider edits, guards, focused tests, and graders observe the exact same precreated linked workspace; No Harness remains isolated without harness projections.
 - Architecture/changelog/notes record the actual non-breaking `0.10.x` cutover; ESA-06 remains deferred with no compatibility shim.
 
 ## Verification
@@ -96,6 +107,7 @@ The pressure point is synchronous Git/source observation. Pure projection is not
 ```bash
 bun test tests/effective-state.test.ts
 bun test tests/state/cli-state-golden.test.ts tests/state/state-concurrency.test.ts
+bun test tests/harness-benchmark-matrix.test.ts
 bun tests/state/benchmark-effective-state.ts
 bun run check:type
 bash scripts/check-task-sync.sh
@@ -142,4 +154,6 @@ Rollback is a single branch revert; no artifact or protocol migration is needed.
 - [x] Complete ESA-03 read/project/persist effects split and fault matrix.
 - [x] Complete ESA-04 canonical capability registry and deterministic standalone projection.
 - [x] Complete ESA-05 CLI/hook/MCP convergence and parity matrix.
-- [x] Complete ESA-07 boundaries, package/release proof, docs, review, and enter verified PR/merge/push closeout.
+- [x] Recover the ESA-07 benchmark graded-workspace topology with one failing regression and the minimal runner patch.
+- [ ] Rebind the exact subject review and produce one successful final authoritative 3×9 report from a clean frozen HEAD.
+- [ ] Complete ESA-07 boundaries, package/release proof, docs, review, and verified PR/merge/push closeout.

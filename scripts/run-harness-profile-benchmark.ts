@@ -591,9 +591,10 @@ export function addLinkedArmWorkspace(primary: string, target: string): void {
   run('git', ['worktree', 'add', '--quiet', '-b', 'codex/benchmark', target, 'HEAD'], primary);
 }
 
-function createRunOverlay(base: PreparedProfileBase, layout: BenchmarkRunLayout, scenario: HarnessScenario): void {
+export function createRunOverlay(base: PreparedProfileBase, layout: BenchmarkRunLayout, scenario: HarnessScenario): void {
   mkdirSync(dirname(layout.workspace), { recursive: true });
-  const primaryWorkspace = base.profile === 'strict-harness' ? `${layout.workspace}-primary` : layout.workspace;
+  const usesLinkedWorkspace = base.profile !== 'no-harness';
+  const primaryWorkspace = usesLinkedWorkspace ? `${layout.workspace}-primary` : layout.workspace;
   cloneImmutableWorkspaceBase(base.workspace, primaryWorkspace);
   run('git', ['config', 'user.email', 'benchmark@example.com'], primaryWorkspace);
   run('git', ['config', 'user.name', 'Benchmark'], primaryWorkspace);
@@ -606,7 +607,7 @@ function createRunOverlay(base: PreparedProfileBase, layout: BenchmarkRunLayout,
   if (scenario.requires_resume_projection) writeResumeProjection(primaryWorkspace);
   run('git', ['add', '.'], primaryWorkspace);
   run('git', ['commit', '--allow-empty', '-m', `benchmark ${base.profile} ${scenario.id} input`], primaryWorkspace);
-  if (base.profile === 'strict-harness') {
+  if (usesLinkedWorkspace) {
     addLinkedArmWorkspace(primaryWorkspace, layout.workspace);
     // Handoff projections are intentionally ignored runtime state. Recreate
     // them in the linked workspace because `git worktree add` can only project
