@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-15T17:05:40+0800 -->
+<!-- updated_at: 2026-07-15T18:37:54+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-07-15T17:05:40+0800
+> **Updated At**: 2026-07-15T18:37:54+0800
 > **Source Branch**: codex/esa-01-freeze-effective-state-invariants-and-characterization-fixtures
-> **Source Commit**: 2ca691ae
+> **Source Commit**: 606b02c1
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: ESA-07 benchmark workspace-topology recovery
+> **Reason**: ESA-07 contract metadata repair frozen; final exact-subject review pending
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -20,7 +20,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Status: Active
 - Active Plan: plans/plan-20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md
 - Plan Status: Executing
-- Next Task: Rebind the exact subject review and produce one successful final authoritative 3×9 report from a clean frozen HEAD.
+- Next Task: Record benchmark/check evidence and obtain a current passing review.
 - Clear Note: (none)
 
 ## Mainline Snapshot Reading
@@ -47,7 +47,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`: status=completed, current_slice=completed-20260713-policy-seed, source_plan=plans/plan-20260712-2215-agent-fleet-specialists.md
 ## Handoff
 
-- Exact Next Step: Stage the completed module diff first; then run /check until tasks/reviews/20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.review.md records Recommendation: pass. Command: /check
+- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Record benchmark/check evidence and obtain a current passing review.
 
 ## Checks
 
@@ -55,17 +55,19 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 8 changed/untracked path(s)
+- Summary: 10 changed/untracked path(s)
 
 ```
- M docs/architecture/modules/verification/evals-checks.md
+ M evals/harness/reports/profile-comparison.json
+ M evals/harness/reports/profile-comparison.md
+ M evals/harness/reports/profile-comparison.sha256.json
  M plans/plan-20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md
  M plans/sprints/20260714-effective-state-authority-convergence.sprint.md
- M scripts/run-harness-profile-benchmark.ts
  M tasks/contracts/20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.contract.md
+ M tasks/current.md
  M tasks/notes/20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.notes.md
  M tasks/reviews/20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.review.md
- M tests/harness-benchmark-matrix.test.ts
+ M tests/helper-scripts.test.ts
 ```
 
 ## Source Artifacts

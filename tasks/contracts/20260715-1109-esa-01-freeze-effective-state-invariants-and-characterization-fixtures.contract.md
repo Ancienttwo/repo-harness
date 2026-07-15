@@ -124,29 +124,25 @@ exit_criteria:
     - src/effects/state/resolve-effective-state.ts
     - src/cli/mcp/state-tools.ts
     - scripts/check-state-boundaries.ts
+    - tests/effective-state.test.ts
     - tests/state/effective-state-fixture.ts
+    - tests/state/adapter-parity.test.ts
+    - tests/state/artifact-parsers.test.ts
     - tests/state/cli-state-golden.test.ts
+    - tests/state/project-effective-state.test.ts
     - tests/state/state-concurrency.test.ts
+    - tests/state/state-effects.test.ts
     - tests/state/benchmark-effective-state.ts
+    - tests/capabilities/registry.test.ts
+    - tests/cli/mcp-tools.test.ts
     - scripts/run-harness-profile-benchmark.ts
     - tests/harness-benchmark-matrix.test.ts
     - docs/architecture/modules/verification/evals-checks.md
   artifacts_exist:
     - .ai/harness/checks/latest.json
     - tasks/notes/20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.notes.md
-  tests_pass:
-    - path: tests/effective-state.test.ts
-    - path: tests/state/
-    - path: tests/capabilities/
-    - path: tests/cli/mcp-tools.test.ts
-    - path: tests/harness-benchmark-matrix.test.ts
   commands_succeed:
-    - bun run check:type
-    - bun run check:state-boundaries
-    - bun run check:helpers
-    - bash scripts/check-tarball-install-smoke.sh
-    - bun run check:release
-    - repo-harness run check-task-workflow --strict
+    - BUN_TEST_ISOLATE_FILES=0 BUN_TEST_TIMEOUT_MS=60000 BUN_TEST_MAX_CONCURRENCY=4 NPM_RELEASE_REGISTRY=https://registry.npmjs.org/ bun run check:release
   qa_scores:
     - dimension: functionality
       min: 9

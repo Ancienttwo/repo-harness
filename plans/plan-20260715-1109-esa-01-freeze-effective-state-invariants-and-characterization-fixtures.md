@@ -149,11 +149,11 @@ Rollback is a single branch revert; no artifact or protocol migration is needed.
 - [x] Add and commit the 10+ scenario golden matrix.
 - [x] Add lock/cache/source-instability characterization.
 - [x] Add the authority ADR and 100-resolution benchmark harness.
-- [x] Record benchmark/check evidence and obtain a current passing review.
+- [ ] Record benchmark/check evidence and obtain a current passing review.
 - [x] Complete ESA-02 core policy/public-contract extraction.
 - [x] Complete ESA-03 read/project/persist effects split and fault matrix.
 - [x] Complete ESA-04 canonical capability registry and deterministic standalone projection.
 - [x] Complete ESA-05 CLI/hook/MCP convergence and parity matrix.
 - [x] Recover the ESA-07 benchmark graded-workspace topology with one failing regression and the minimal runner patch.
-- [ ] Rebind the exact subject review and produce one successful final authoritative 3×9 report from a clean frozen HEAD.
-- [ ] Complete ESA-07 boundaries, package/release proof, docs, review, and verified PR/merge/push closeout.
+- [x] Produce and validate one successful final authoritative 3×9 report from clean frozen HEAD `606b02c17348dfb2085575d136fae1d38ea5728d`.
+- [ ] Complete ESA-07 strict workflow review and prepare the verified PR/merge/push closeout.

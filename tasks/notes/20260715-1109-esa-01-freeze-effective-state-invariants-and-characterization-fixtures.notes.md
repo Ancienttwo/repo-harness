@@ -4,7 +4,7 @@
 > **Plan**: plans/plan-20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md
 > **Contract**: tasks/contracts/20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.contract.md
 > **Review**: tasks/reviews/20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.review.md
-> **Last Updated**: 2026-07-15 16:09 +0800
+> **Last Updated**: 2026-07-15 18:37 +0800
 > **Lifecycle**: notes
 
 ## P1/P2/P3 Decisions
@@ -55,6 +55,11 @@
 - The authoritative 27/27 Harness report and 100-resolution numbers bound to source commit `26dd6e88ea7c5fcf1a80439044283e98d892da41` became historical after the bounded repository-containment/revision repair changed the source subject. They are retained for audit but are not final evidence for the new freeze; final evidence must be produced once after the replacement subject is clean and accepted.
 - The first replacement matrix stopped at Adaptive Lite cross-capability: Codex correctly attempted the Strict worktree path after runtime promotion, but `workspace-write` could not create the required Git ref; its concurrent database sibling had a passing 1/1 grader before intentional fail-fast cancellation. A single bounded Claude recovery created a linked worktree and passed the cross-capability focused test there, but the provider output remained outside the primary workspace read by the grader; the database sibling was then cancelled. This proves one evaluator topology defect, not an Effective State/product regression.
 - ESA-07 is amended only to precreate the grader's linked workspace for every harness-enabled arm. Scenario prompts, graders, provider policy, product source, and the broader Harness Loop remain unchanged.
+- Final authoritative evidence was produced exactly once after the topology patch from clean frozen HEAD `606b02c17348dfb2085575d136fae1d38ea5728d`. Run `c88767c6-bf6e-4425-be8b-02e275141d8b` used `codex-cli 0.144.4`; all 27 provider executions, expected-path checks, and graders passed across No Harness, Adaptive Lite, and Strict. The report subject is `sha256:c2c55a74bcb67448451f57fa10a8c6f2fe8f195992d2969b153781ce89e0d640`; its byte-bound evidence is `sha256:4dc0944c44d337948ae98a59710ea982810af47c00813a99937ebd2300572658`.
+- `bun scripts/validate-harness-profile-benchmark.ts --report evals/harness/reports/profile-comparison.json --require-authoritative --format json` returned `status=pass`, `profile_base_count=3`, and `arm_count=27`. The source HEAD remained `606b02c1` throughout execution, and afterward exactly the three allowed `profile-comparison.{json,md,sha256.json}` artifacts were modified.
+- The first full release-gate run executed 1,592 tests and exposed one stale test contract: `tests/helper-scripts.test.ts` still required byte identity for `capability-resolver.ts` even though ESA-04 deliberately made the repository script a canonical-core adapter and the packaged helper a standalone, source-hash-bound projection. The fix changes only that test's explicit divergence allowlist; `tests/capability-resolver.test.ts` and `check:helpers` remain the dedicated content, runtime, type, and source-hash proof.
+- The bounded helper-contract reverify passes the exact helper test, all 9 standalone capability-resolver tests, and the 49-helper drift gate. The second full `bun run check:release` then passes with 1,591 tests passed, 1 skipped, 0 failed, 14,048 assertions, `[ci] OK`, and `[release] OK`; its tarball smoke installs `repo-harness-0.10.1.tgz` and starts the packaged CLI binaries. No production or benchmark-subject file changed after `606b02c1`.
+- The first strict closeout attempt through the installed helper was infrastructure-inconclusive because its fixed 120-second wrapper timed out before `verify-sprint.sh` returned. The repo-local verifier then completed all implementation and command criteria, including another `check:release` pass in `518.933s`, and exposed only contract metadata defects: directory names are invalid `tests_pass` entries, and seven manual criteria lacked the required exact checked evidence rows. The bounded metadata repair expands those directories to their real test files and records concrete evidence in the review; it retains the full `check:release` criterion and does not change product or benchmark bytes.
 - The pre-refactor full suite recorded 1493 pass, 1 skip, 0 fail. It is historical characterization, not final release evidence.
 
 ## Review Findings Closed
@@ -76,7 +81,7 @@
 - The approved Sprint proposed `0.11.0` only if ESA-06 mandatory overwrite preconditions shipped. ESA-06 remains deferred, so this cutover is the non-breaking `0.10.1` release surface and is not published or tagged by this task.
 - The standalone helper changed from a runtime Bun bundle to a deterministic typed source projection because bundling erased the public type surface needed by adopted repositories. It remains a generated projection of one canonical implementation.
 - Exact MCP `state_version` parity cannot be guaranteed by a number-only read without materializing the durable read model. The MCP tool therefore declares the write accurately instead of introducing a speculative counter or compatibility shape.
-- Final release/workflow gates, Claude review binding, replacement frozen-subject benchmark evidence, PR, merge, and remote-main verification remain pending. The prior benchmark remains valid only for its recorded `26dd6e88` subject.
+- The frozen-subject benchmark, helper-contract repair, and full release/package gate are complete. Exact-subject external acceptance, strict workflow finish, PR checks, merge, and remote-main verification remain pending.
 
 ## Deferred Scope
 

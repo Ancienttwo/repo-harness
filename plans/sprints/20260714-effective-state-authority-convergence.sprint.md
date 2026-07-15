@@ -3,7 +3,7 @@
 > **Status**: Approved
 > **Slug**: `effective-state-authority-convergence`
 > **Created**: 2026-07-14
-> **Updated**: 2026-07-15 15:26
+> **Updated**: 2026-07-15 18:12
 > **Audit baseline**: `main@82550779cdccf0575d674ae53bbc95ba63e44743`
 > **Source Spec**: `docs/spec.md`
 > **Goal Mode**: incremental
@@ -259,7 +259,7 @@ Ordered execution queue. Every row has a machine-checkable acceptance line.
 
 | # | Status | Task | Mode | Acceptance | Plan |
 |---:|:---:|---|---|---|---|
-| 1 | [ ] | `ESA-01` — Freeze Effective State invariants and characterization fixtures | contract | Golden CLI/state fixtures cover at least 10 authority/risk/concurrency states and pass against `main@8255077` before production movement | pending |
+| 1 | [x] | `ESA-01` — Freeze Effective State invariants and characterization fixtures | contract | Golden CLI/state fixtures cover at least 10 authority/risk/concurrency states and pass against `main@8255077` before production movement | `plans/plan-20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md` |
 | 2 | [x] | `ESA-02` — Extract workflow policy and Effective State v1 contracts | contract | New core modules have zero forbidden runtime imports; existing workflow-profile matrix and public protocol snapshots remain unchanged | `plans/plan-20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md` |
 | 3 | [x] | `ESA-03` — Split Effective State read → project → persist pipeline | contract | Hook adapter owns no authority parsing, Git version allocation, lock, or cache code; all state characterization and fault tests pass | `plans/plan-20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md` |
 | 4 | [x] | `ESA-04` — Single-source capability-registry validation and matching | contract | Exactly one handwritten source implementation owns version/shape/semantic/matching rules; projected helper drift fails CI | `plans/plan-20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md` |
@@ -928,21 +928,21 @@ PR rules:
 
 This Sprint is complete only when:
 
-- [ ] Effective State public behavior is frozen by characterization fixtures.
-- [ ] Workflow profile policy and state DTOs are no longer adapter-owned.
-- [ ] Effective State resolution is split into pure projection and explicit effects.
-- [ ] Cache remains a non-authoritative read model.
-- [ ] State lock, monotonic version, linked-worktree, and source-stability behavior are preserved.
-- [ ] Capability registry rules have one canonical source and downstream helper projection is deterministic.
-- [ ] CLI, hook, and MCP use the shared resolver.
-- [ ] MCP state summary no longer treats `tasks/current.md` as authority.
-- [ ] Adapter parity tests cover all authority-sensitive fields.
-- [ ] CLI JSON protocol and exit semantics remain compatible.
-- [ ] The bounded workflow writer is atomic and revision-aware, or ESA-06 is explicitly deferred without weakening state convergence.
-- [ ] Boundary checks are part of CI.
+- [x] Effective State public behavior is frozen by characterization fixtures.
+- [x] Workflow profile policy and state DTOs are no longer adapter-owned.
+- [x] Effective State resolution is split into pure projection and explicit effects.
+- [x] Cache remains a non-authoritative read model.
+- [x] State lock, monotonic version, linked-worktree, and source-stability behavior are preserved.
+- [x] Capability registry rules have one canonical source and downstream helper projection is deterministic.
+- [x] CLI, hook, and MCP use the shared resolver.
+- [x] MCP state summary no longer treats `tasks/current.md` as authority.
+- [x] Adapter parity tests cover all authority-sensitive fields.
+- [x] CLI JSON protocol and exit semantics remain compatible.
+- [x] The bounded workflow writer is atomic and revision-aware, or ESA-06 is explicitly deferred without weakening state convergence.
+- [x] Boundary checks are part of CI.
 - [ ] Full test/check/release/tarball smoke passes from a clean checkout.
-- [ ] Architecture docs, changelog, task notes, and release compatibility notes are complete.
-- [ ] No dual resolver, manual shadow validator, or temporary re-export remains.
+- [x] Architecture docs, changelog, task notes, and release compatibility notes are complete.
+- [x] No dual resolver, manual shadow validator, or temporary re-export remains.
 
 ## Rollback Strategy
 
@@ -983,9 +983,9 @@ This order is intentional: first establish one capability implementation and one
 
 | When | Task | Plan | Result |
 |---|---|---|---|
-| pending | ESA-01 | pending | pending |
+| 2026-07-15 18:05 | `ESA-01` — Freeze Effective State invariants and characterization fixtures | `plans/plan-20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md` | done |
 | 2026-07-15 15:26 | `ESA-02` — Extract workflow policy and Effective State v1 contracts | `plans/plan-20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md` | done |
 | 2026-07-15 15:26 | `ESA-03` — Split Effective State read → project → persist pipeline | `plans/plan-20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md` | done |
 | 2026-07-15 15:26 | `ESA-04` — Single-source capability-registry validation and matching | `plans/plan-20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md` | done |
 | 2026-07-15 15:26 | `ESA-05` — Converge CLI, hook, and MCP state adapters | `plans/plan-20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md` | done |
-| pending | `ESA-07` — Enforce boundaries, package/release verification, and documentation | `plans/plan-20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md` | pending graded-workspace recovery and final evidence |
+| pending | `ESA-07` — Enforce boundaries, package/release verification, and documentation | `plans/plan-20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md` | pending exact review and strict workflow verification |
