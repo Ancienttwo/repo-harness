@@ -750,12 +750,25 @@ function captureShip(profile: Profile): Record<string, unknown> {
           : 'verify_sprint_failed'),
       gate_requirements: gateOrder,
       ordering: gateOrder,
+      // CRG-01 (merged, PR #83) made contract-worktree finish the sole
+      // sprint-verification owner: require_finish_ready() in
+      // scripts/ship-worktrees.sh now checks only contract existence,
+      // review existence, review-recommends-pass, and external acceptance,
+      // then dispatches once to contract-worktree.sh finish -- the
+      // verify-sprint.sh and checks-freshness steps that used to run
+      // directly inside ship-worktrees.sh moved entirely inside that single
+      // dispatch (proven separately by contract_worktree_finish_probe
+      // above), so 'verify_sprint' and 'fresh_checks' markers searched
+      // against ship-worktrees.sh's own source no longer exist there.
+      // Removing them here characterizes the real, current,
+      // already-reviewed post-CRG-01 four-step ordering rather than source
+      // strings that were deleted (re-verified by reading
+      // require_finish_ready()/finish_contract_worktree() directly, not
+      // assumed).
       envelope_ordering: observedSourceOrder(SHIP_WORKTREES, [
         { name: 'contract', marker: '[[ -n "$contract_file" && -f "$contract_file" ]]' },
         { name: 'review', marker: '[[ -n "$review_file" && -f "$review_file" ]]' },
         { name: 'external_acceptance', marker: 'workflow_external_acceptance_pass "$review_file"' },
-        { name: 'verify_sprint', marker: 'run_cmd bash "$helper_dir/verify-sprint.sh"' },
-        { name: 'fresh_checks', marker: 'workflow_checks_pass "$checks_file"' },
         { name: 'contract_worktree_finish', marker: 'run_cmd bash "$helper_dir/contract-worktree.sh" finish' },
       ]),
       envelope_ordering_source: 'static_source_inventory_ship_worktrees_sh',

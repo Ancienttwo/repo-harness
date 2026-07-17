@@ -408,8 +408,41 @@ actually contain that binary -- CI's `.bun/bin` (which has only `bun`, from
 a project-local `bun install`, not a global `repo-harness` install) is left
 untouched, while the operator-local contaminated directory is still
 excluded. Re-verified clean locally (focused test and full suite, same
-counts as before); the real proof is CI itself, checked after this push.
+counts as before); CI confirmed green on the corrected push
+(`https://github.com/Ancienttwo/repo-harness/actions/runs/29614131792`).
+
+## Post-Merge Fix: Sprint Doc Conflict and Post-CRG-01 Marker Drift (2026-07-18)
+
+CRG-01 (PR #83) merged first, as the sprint's own dependency order requires.
+Merging `origin/main` into this branch to pick that up surfaced two more
+real issues, both resolved before this push:
+
+- `plans/sprints/20260716-0101-loop-semantics-convergence.sprint.md` had a
+  genuine content conflict: this branch and CRG-01's branch each edited the
+  header's baseline/predecessor fields independently. Resolved by adopting
+  CRG-01's correct framing (Predecessor: CRG-01, now merged) and filling in
+  the real post-CRG-01 `origin/main` SHA (`d8e5f221053b8bf20f105933376c7524a0f05063`,
+  fetched fresh) as the `LSC-01 Execution Base`, per this sprint's own rule
+  that every successor pins the live SHA after its predecessor merges.
+  `tasks/current.md` (a generated, non-authoritative snapshot per this
+  repo's own root `CLAUDE.md`) was resolved by taking `origin/main`'s
+  version wholesale rather than hand-merging conflict markers in derived
+  content.
+- After the merge, the full suite caught a real behavior drift, not a false
+  positive: `envelope_ordering`'s static marker search against
+  `scripts/ship-worktrees.sh` failed for both `verify_sprint` and
+  `fresh_checks` -- because CRG-01's real, reviewed change (single
+  sprint-verification owner) removed both of those direct calls from
+  `require_finish_ready()`; that verification now happens only inside the
+  one `contract-worktree.sh finish` dispatch, already proven separately by
+  `contract_worktree_finish_probe`. Read `require_finish_ready()` and
+  `finish_contract_worktree()` directly to confirm the real current
+  four-step structure (contract, review, external_acceptance,
+  contract_worktree_finish) before editing the marker list -- not guessed.
+  Golden regenerated against the corrected list; full suite re-verified
+  clean (1615 pass, 1 skip, 0 fail -- one more pass than the pre-merge
+  baseline because this branch now also carries CRG-01's own new tests).
 
 ## Summary
 
-- LSC-01 remains eval-only, production behavior is untouched, all focused/root/full-suite evidence passes, and content is accepted (Round 3, Claude gatekeeper substitution for a Codex CLI that was unavailable this session) with no P1 findings and 3 documented P2 advisories, plus a post-Round-3 fix for a real PATH-leaked golden contamination bug that this repo's own CI independently caught (see above). The canonical mechanical ship path (`scripts/ship-worktrees.sh --ready`) still fails closed regardless, both from 3 pre-existing infra defects (tracked separately) and from its host-identity-derived reviewer check having no accommodation for this authorized exception — so shipping proceeds via an explicit, user-authorized manual path instead (checks run by hand, then direct `git push` + `gh pr create`).
+- LSC-01 remains eval-only, production behavior is untouched, all focused/root/full-suite evidence passes, and content is accepted (Round 3, Claude gatekeeper substitution for a Codex CLI that was unavailable this session) with no P1 findings and 3 documented P2 advisories, plus two post-Round-3 fixes: a real PATH-leaked golden contamination bug this repo's own CI independently caught, and a real post-CRG-01-merge marker/sprint-doc drift caught by re-running the full suite after merging main. The canonical mechanical ship path (`scripts/ship-worktrees.sh --ready`) still fails closed regardless, both from 3 pre-existing infra defects (tracked separately) and from its host-identity-derived reviewer check having no accommodation for this authorized exception — so shipping proceeds via an explicit, user-authorized manual path instead (checks run by hand, then direct `git push` + `gh pr create`).

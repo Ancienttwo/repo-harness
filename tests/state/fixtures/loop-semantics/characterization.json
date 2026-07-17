@@ -404,8 +404,6 @@
           "contract",
           "review",
           "external_acceptance",
-          "verify_sprint",
-          "fresh_checks",
           "contract_worktree_finish"
         ],
         "envelope_ordering_source": "static_source_inventory_ship_worktrees_sh",
@@ -488,8 +486,6 @@
           "contract",
           "review",
           "external_acceptance",
-          "verify_sprint",
-          "fresh_checks",
           "contract_worktree_finish"
         ],
         "envelope_ordering_source": "static_source_inventory_ship_worktrees_sh",
@@ -578,8 +574,6 @@
           "contract",
           "review",
           "external_acceptance",
-          "verify_sprint",
-          "fresh_checks",
           "contract_worktree_finish"
         ],
         "envelope_ordering_source": "static_source_inventory_ship_worktrees_sh",
