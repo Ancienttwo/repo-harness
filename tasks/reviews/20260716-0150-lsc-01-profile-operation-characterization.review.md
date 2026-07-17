@@ -349,6 +349,52 @@ round-2 result replaces that record below.
 - Run the SHA-bound merge gate on the candidate commit, push the isolated branch, and require hosted PR checks before merge.
 - After remote merge, fetch and pin the exact post-LSC-01 `origin/main` SHA before starting LSC-02.
 
+## Post-Round-3 Fix: PATH-Leaked Circuit-Breaker Golden (2026-07-18)
+
+After Round 3 passed and this package was pushed as a draft PR (#82), this
+repo's own GitHub Actions CI independently caught a real bug neither three
+Codex rounds nor the Round 3 Claude gatekeeper substitution found: the
+`Test` job failed with a golden mismatch on two ship cells, expecting
+`.ai/harness/state/circuit-breaker.json` as a side effect that the CI run
+never produced.
+
+Root cause, confirmed by direct investigation: `isolatedEnv()` in
+`tests/state/loop-semantics-characterization.test.ts` spreads the full
+ambient `process.env` (including `PATH`) into each disposable fixture's
+subprocess and only deletes a specific allowlist of `REPO_HARNESS_*`
+variables -- it never resets `PATH`. `.ai/hooks/hook-input.sh`'s
+`hook_circuit_record()` falls back to `command -v repo-harness-hook` on
+`PATH` when `REPO_HARNESS_HOOK_CLI` is unset. The local machine that
+captured this golden has a personal `bun install -g repo-harness`, whose
+`~/.bun/bin/repo-harness-hook` symlink stayed on `PATH` inside the
+"isolated" fixture, so the guard's circuit-breaker recording silently
+succeeded locally. A clean CI checkout has no such global install, so the
+same code path no-ops there. The golden captured this operator's personal
+machine state, not reproducible current behavior -- confirmed by locating
+the exact binary (`which repo-harness-hook` -> `/Users/kito/.bun/bin/...`)
+and reproducing the exact CI failure locally once `PATH` was correctly
+filtered.
+
+Fix: `isolatedEnv()` now also deletes `REPO_HARNESS_HOOK_CLI` (defense in
+depth) and strips any `.bun/bin`-suffixed directory from `PATH` before
+spawning fixture subprocesses -- `bun` and `git` themselves resolve from
+other `PATH` entries on this machine, so this does not affect the fixture's
+ability to run real scripts. Golden regenerated with the fix in place;
+re-verified clean against both the focused test and the full suite (1592
+pass, 1 skip, 0 fail, matching the pre-fix baseline exactly -- no
+regression). `isolatedEnv()` is used only by this test file, so blast
+radius is confirmed contained.
+
+This is a genuine, useful demonstration of why real independent CI matters
+beyond same-machine review substitutes: both this closeout's own Claude
+gatekeeper rounds and the earlier Codex rounds ran on the same local
+machine as the golden capture, so none of them could have caught
+machine-specific contamination this way. Not re-submitted for another
+external acceptance round (Codex still unavailable; this fix is mechanical,
+narrow, and independently verified against both a clean local re-run and
+CI's own signal, which is itself the independent check for this specific
+class of bug).
+
 ## Summary
 
-- LSC-01 remains eval-only, production behavior is untouched, all focused/root/full-suite evidence passes, and content is accepted (Round 3, Claude gatekeeper substitution for a Codex CLI that was unavailable this session) with no P1 findings and 3 documented P2 advisories. The canonical mechanical ship path (`scripts/ship-worktrees.sh --ready`) still fails closed regardless, both from 3 pre-existing infra defects (tracked separately) and from its host-identity-derived reviewer check having no accommodation for this authorized exception — so shipping proceeds via an explicit, user-authorized manual path instead (checks run by hand, then direct `git push` + `gh pr create`).
+- LSC-01 remains eval-only, production behavior is untouched, all focused/root/full-suite evidence passes, and content is accepted (Round 3, Claude gatekeeper substitution for a Codex CLI that was unavailable this session) with no P1 findings and 3 documented P2 advisories, plus a post-Round-3 fix for a real PATH-leaked golden contamination bug that this repo's own CI independently caught (see above). The canonical mechanical ship path (`scripts/ship-worktrees.sh --ready`) still fails closed regardless, both from 3 pre-existing infra defects (tracked separately) and from its host-identity-derived reviewer check having no accommodation for this authorized exception — so shipping proceeds via an explicit, user-authorized manual path instead (checks run by hand, then direct `git push` + `gh pr create`).

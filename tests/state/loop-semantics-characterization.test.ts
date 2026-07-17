@@ -185,15 +185,30 @@ function isolatedEnv(cwd: string, extra: NodeJS.ProcessEnv = {}): NodeJS.Process
       || key === 'REPO_HARNESS_CLI'
       || key === 'REPO_HARNESS_WORKFLOW_STATE_LIB'
       || key === 'REPO_HARNESS_BUN_BIN'
+      || key === 'REPO_HARNESS_HOOK_CLI'
       || key.startsWith('CONTRACT_RUN_')
     ) {
       delete env[key];
     }
   }
+  // Strip any operator-local global-install bin directory (e.g. a personal
+  // `bun install -g repo-harness`'s ~/.bun/bin) from PATH. Left unfiltered,
+  // hook_circuit_record()'s `command -v repo-harness-hook` PATH fallback
+  // silently changes this fixture's observed behavior based on what happens
+  // to be globally installed on the operator's machine, producing a golden
+  // that cannot reproduce on a clean checkout (verified: this is exactly
+  // what diverged between a local capture and this repo's own CI, which has
+  // no such global install).
+  const pathSeparator = process.platform === 'win32' ? ';' : ':';
+  const filteredPath = (env.PATH ?? '')
+    .split(pathSeparator)
+    .filter((entry) => !/(^|[/\\])\.bun[/\\]bin$/.test(entry))
+    .join(pathSeparator);
   const home = join(cwd, '.home');
   mkdirSync(home, { recursive: true });
   return {
     ...env,
+    PATH: filteredPath,
     HOME: home,
     HOOK_REPO_ROOT: cwd,
     HOOK_HOST: 'claude',

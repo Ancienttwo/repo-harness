@@ -134,7 +134,6 @@
         ],
         "side_effects": [
           ".ai/harness/failures/latest.jsonl",
-          ".ai/harness/state/circuit-breaker.json",
           ".ai/harness/state/effective.json"
         ],
         "missing_semantic_fields": [
@@ -193,7 +192,6 @@
         ],
         "side_effects": [
           ".ai/harness/failures/latest.jsonl",
-          ".ai/harness/state/circuit-breaker.json",
           ".ai/harness/state/effective.json"
         ],
         "missing_semantic_fields": [
