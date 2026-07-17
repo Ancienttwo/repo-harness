@@ -3,19 +3,21 @@
 > **Status**: Approved
 > **Slug**: loop-semantics-convergence
 > **Created**: 2026-07-16 01:01
-> **Updated**: 2026-07-16 01:06
+> **Updated**: 2026-07-16 04:22
 > **Source PRD**: (none; source authority is the Harness Loop audit)
 > **Source Audit**: `plans/sprints/20260715-harness-loop-audit-and-optimization.md`
 > **Source Spec**: `docs/spec.md`
 > **Post-ESA Program Baseline**: `origin/main@3b33cea2422b1aa1e5be9080be54f731c4f2015d`
-> **LSC-01 Execution Base**: `origin/main@be3e93ce72c812a33045a15c4d97452c59fa3fbb` (Program-planning PR #80 merge)
-> **Predecessor**: Effective State Authority Convergence, merged by PR #79 at `3b33cea2422b1aa1e5be9080be54f731c4f2015d`
+> **Program Planning Base**: `origin/main@be3e93ce72c812a33045a15c4d97452c59fa3fbb` (PR #80)
+> **LSC-01 Execution Base**: `origin/main@d8e5f221053b8bf20f105933376c7524a0f05063` (post-CRG-01 merge, PR #83; fetched and pinned per this sprint's own successor rule now that CRG-01 has merged)
+> **Predecessor**: Closeout Runner Guardrails (CRG-01), merged by PR #83 at `d8e5f221053b8bf20f105933376c7524a0f05063`; Effective State Authority Convergence (PR #79, `3b33cea2422b1aa1e5be9080be54f731c4f2015d`) remains the semantic baseline
 > **Successor Order**: Hook Runtime Diet -> Evidence & Projection Convergence -> Skill Surface & Discovery Convergence
 > **Goal Mode**: incremental
 
 This is the machine-operable Sprint A projection of the preserved Harness Loop
 Program audit. Each backlog row is an independent work-package, worktree,
-branch, PR, verification subject, and rollback boundary. LSC-01 must merge
+branch, PR, verification subject, and rollback boundary. CRG-01 changed only
+closeout control-plane mechanics and merged first (PR #83). LSC-01 must merge
 before any semantic row starts. Every successor pins the live `origin/main`
 produced by its predecessor.
 
@@ -96,7 +98,7 @@ its approved contract is not satisfied.
 ### Dependency Order
 
 ```text
-ESA@3b33cea2
+ESA@3b33cea2 -> Program@be3e93ce -> CRG-01
     -> LSC-01 -> LSC-02 -> LSC-03 -> LSC-04
     -> LSC-05 -> LSC-06 -> LSC-07 -> LSC-08
     -> HRD -> EPC -> SSD
@@ -104,9 +106,9 @@ ESA@3b33cea2
 
 ### LSC-01 Start Gate
 
-LSC-01 starts only after this Program-planning package is independently
-committed, pushed, reviewed, and merged. Fetch live `origin/main`, record its
-exact post-planning SHA, and run the explicit `sprint-backlog start-task`
+LSC-01 starts only after CRG-01 is independently committed, pushed, reviewed,
+and merged. Fetch live `origin/main`, record its exact post-CRG SHA, and run the
+explicit `sprint-backlog start-task`
 command from a clean primary checkout or standalone non-linked control
 checkout. Do not run it from this linked planning worktree: a linked worktree
 cannot create the required independent contract worktree, and its ignored

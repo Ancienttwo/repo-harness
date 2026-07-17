@@ -1,7 +1,7 @@
-import { lstatSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync } from 'fs';
-import { execFileSync } from 'child_process';
-import { dirname, isAbsolute, join, resolve } from 'path';
-import { withExclusiveDirectoryLock } from './state-lock';
+import { lstatSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'fs';
+import { dirname, join, resolve } from 'path';
+import { resolveGitCommonDirectory } from '../git/common-directory';
+import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
 
 const VERSION_OWNER_RELATIVE_PATH = 'repo-harness/effective-state-version.json';
 const VERSION_LOCK_RELATIVE_PATH = `${VERSION_OWNER_RELATIVE_PATH}.lock`;
@@ -33,16 +33,6 @@ const DEFAULT_VERSION_WRITE_EFFECTS: StateVersionWriteEffects = {
   },
 };
 
-function gitCommonDirectory(cwd: string): string {
-  const raw = execFileSync('git', ['rev-parse', '--git-common-dir'], {
-    cwd,
-    encoding: 'utf-8',
-    stdio: ['ignore', 'pipe', 'ignore'],
-  }).trim();
-  const commonDir = isAbsolute(raw) ? raw : resolve(cwd, raw);
-  return realpathSync(commonDir);
-}
-
 function hasGitDiscoveryMetadata(cwd: string): boolean {
   const start = resolve(cwd);
   if (!statSync(start).isDirectory()) {
@@ -64,7 +54,7 @@ function hasGitDiscoveryMetadata(cwd: string): boolean {
 }
 
 export function stateVersionOwnerPath(cwd: string): string {
-  return join(gitCommonDirectory(cwd), VERSION_OWNER_RELATIVE_PATH);
+  return join(resolveGitCommonDirectory(cwd), VERSION_OWNER_RELATIVE_PATH);
 }
 
 function readVersionRecord(target: string): VersionRecord | null {
@@ -98,7 +88,7 @@ function writeVersionRecord(
 export function currentStateVersion(cwd: string): number {
   let commonDir: string;
   try {
-    commonDir = gitCommonDirectory(cwd);
+    commonDir = resolveGitCommonDirectory(cwd);
   } catch (error) {
     if (!hasGitDiscoveryMetadata(cwd)) return 0;
     throw error;
@@ -121,7 +111,7 @@ export function commitStateVersionAfter(
   publishCache: (version: number) => StateVersionPublication,
   effects: StateVersionWriteEffects = DEFAULT_VERSION_WRITE_EFFECTS,
 ): number {
-  const commonDir = gitCommonDirectory(cwd);
+  const commonDir = resolveGitCommonDirectory(cwd);
   const target = join(commonDir, VERSION_OWNER_RELATIVE_PATH);
   return withExclusiveDirectoryLock(commonDir, VERSION_LOCK_RELATIVE_PATH, () => {
     const previous = readVersionRecord(target);

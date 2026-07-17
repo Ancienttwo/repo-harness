@@ -31,10 +31,20 @@ const command = argv[separator + 1];
 const args = argv.slice(separator + 2);
 if (!Number.isFinite(deadlineMs)) usage();
 
+// How long to keep re-polling process-group absence after a forced (deadline
+// or signal) SIGKILL before giving up. SIGKILL delivery is not synchronous:
+// the OS needs a moment to actually reap the group, so treating the instant
+// the signal is *sent* as proof the group is gone lets a surviving
+// descendant (this command was spawned `detached: true`, its own separate
+// process group) outlive this wrapper undetected.
+const FORCED_TERMINATION_CONFIRM_MS = 500;
+
 const startedAt = Date.now();
 let timedOut = false;
 let terminating = false;
-let forceTimer: ReturnType<typeof setTimeout> | undefined;
+let forcedTerminationSent = false;
+let forcedTerminationConfirmDeadlineMs = 0;
+let forceTermination: Promise<void> | undefined;
 const logFd = openSync(logPath, 'w');
 const child = spawn(command, args, {
   detached: process.platform !== 'win32',
@@ -51,11 +61,45 @@ function terminate(signal: NodeJS.Signals): void {
   }
 }
 
+function processGroupExists(): boolean {
+  if (!child.pid || process.platform === 'win32') return false;
+  try {
+    process.kill(-child.pid, 0);
+    return true;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ESRCH') return false;
+    if (code === 'EPERM') return true;
+    throw error;
+  }
+}
+
+async function waitForProcessGroupQuiescence(): Promise<void> {
+  while (processGroupExists()) {
+    // A forced SIGKILL was already sent; give the OS a bounded confirmation
+    // window to actually reap the group instead of trusting
+    // forcedTerminationSent alone (that flag flips the instant the signal is
+    // *sent*, not once the group is actually gone). Only give up -- and
+    // proceed as though quiescent -- once that window has elapsed too.
+    if (forcedTerminationSent && Date.now() >= forcedTerminationConfirmDeadlineMs) return;
+    await Bun.sleep(10);
+  }
+}
+
 function beginTermination(): void {
   if (terminating) return;
   terminating = true;
   terminate('SIGTERM');
-  forceTimer = setTimeout(() => terminate('SIGKILL'), 500);
+  forceTermination = new Promise((resolve) => {
+    setTimeout(() => {
+      // Address the original process group even when its leader already
+      // exited; a TERM-resistant descendant may still own the group.
+      terminate('SIGKILL');
+      forcedTerminationSent = true;
+      forcedTerminationConfirmDeadlineMs = Date.now() + FORCED_TERMINATION_CONFIRM_MS;
+      resolve();
+    }, 500);
+  });
 }
 
 for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) {
@@ -70,13 +114,17 @@ const deadlineTimer = setTimeout(() => {
   beginTermination();
 }, remainingMs);
 
-const completion = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
+const leaderCompletion = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
   child.once('error', () => resolve({ code: 127, signal: null }));
   child.once('exit', (code, signal) => resolve({ code, signal }));
 });
+const completion = await leaderCompletion.then(async (result) => {
+  await waitForProcessGroupQuiescence();
+  return result;
+});
 
 clearTimeout(deadlineTimer);
-if (forceTimer) clearTimeout(forceTimer);
+if (forceTermination) await forceTermination;
 closeSync(logFd);
 const result: Result = {
   duration_ms: Date.now() - startedAt,

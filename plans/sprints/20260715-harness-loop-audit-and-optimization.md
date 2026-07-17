@@ -10,7 +10,9 @@
 > Program role：保留的静态审计与 Program source；不是 machine-operable Sprint backlog。
 > Post-ESA authority baseline：`origin/main@3b33cea2422b1aa1e5be9080be54f731c4f2015d`（PR #79；ESA-01..05 与 ESA-07 完成，ESA-06 原样 deferred）。
 > Canonical Sprint A：`plans/sprints/20260716-0101-loop-semantics-convergence.sprint.md`。
-> Program dependency：`ESA@3b33cea -> LSC -> HRD -> EPC -> SSD`。
+> Current execution base：`origin/main@be3e93ce72c812a33045a15c4d97452c59fa3fbb`（Program planning PR #80）。
+> Guardrail predecessor：先独立合并 `Closeout Runner Guardrails`（CRG-01），再从其 exact remote-main SHA 启动 LSC-01；CRG 不吸收任何 Loop semantic change。
+> Program dependency：`ESA@3b33cea -> Program@be3e93ce -> CRG-01 -> LSC -> HRD -> EPC -> SSD`。
 > Delivery boundary：每个阶段使用独立 work-package、worktree、branch 与 PR；LSC characterization 与 semantic changes 也必须分 PR。
 > Execution override：本文历史分析中的 compatibility/shim/fallback window 不构成实现授权；执行禁止 steady-state compatibility、dual authority、semantic fallback 与 silent migration。任何另行获批的 one-shot migration 必须 operator-invoked、fail closed，并在同一 work-package 删除旧 authority。
 
@@ -1839,6 +1841,10 @@ Skill workflows
 ---
 
 ## 18. 已批准的首个任务
+
+LSC-01 的批准保持有效，但执行排在独立 CRG-01 之后。CRG-01 只修复
+closeout timeout、process-group lifecycle、duplicate verifier 与跨 worktree
+expensive-run serialization；它不修改下列 characterization 语义或验收。
 
 ```text
 Title:

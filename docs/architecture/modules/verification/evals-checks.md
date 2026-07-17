@@ -116,6 +116,32 @@ lets small slices run focused tests while release/pre-merge runs the full gate.
   verifier. Keeping production explicit and verification bounded prevents a
   closeout gate from becoming an unbounded job runner.
 
+## 2026-07-16 Closeout Runner Guardrails
+
+- P1: bounded verification remains an evidence consumer and the profile
+  benchmark remains the evidence producer. Their execution policy now consumes
+  neutral process/lock effects without moving evaluator or report authority.
+- P2: the bounded verifier's force-kill phase is no longer cancelled when the
+  process-group leader exits on TERM; after the fixed grace it still addresses
+  the original group, closing the TERM-resistant descendant gap. Authoritative
+  benchmark main acquires the Git-common-dir expensive-run lock before any run
+  workspace/report mutation and holds its explicit token across the awaited
+  provider lifecycle.
+- Helper execution uses a launcher start barrier so the PGID is durable before
+  target execution. If the async supervisor itself stalls, the synchronous
+  facade uses that PGID for its final TERM/grace/KILL backstop rather than
+  returning with an untracked descendant group.
+- P3: release verification and benchmark production serialize through one
+  cross-worktree lock, while dry-run and regrade-only benchmark modes do not
+  occupy the expensive lane. During the async provider phase, signal cleanup
+  retains each PGID through TERM/grace/KILL and releases the token only after
+  every group drains, including when a leader exits first. A signal delivered
+  while the benchmark is blocked in a synchronous subprocess is handled only
+  after that subprocess returns; abnormal owner death leaves the non-reclaimable
+  token for manual recovery instead of reopening the lane. CRG-01 uses only
+  short sentinel and linked-worktree regressions; it does not regenerate the
+  3x9 matrix or change its subject/evaluator contract.
+
 ## 2026-06-12 Architecture Queue Closeout
 
 - The strict workflow required-file surface now tracks

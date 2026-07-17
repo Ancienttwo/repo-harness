@@ -27,6 +27,11 @@ Authoritative surfaces:
 - Runtime harness: `assets/hooks/`, `.ai/hooks/`, user-level host adapters, and ignored `.ai/harness/*` runtime state.
 - MCP sidecar: `src/cli/mcp/`, `src/cli/commands/mcp.ts`, user-owned ignored config/registry under `~/.repo-harness/`, and the [MCP sidecar architecture](modules/runtime-harness/mcp-sidecar.md).
 - Verification: `tests/`, `evals/`, `scripts/check-task-workflow.sh`, `scripts/check-task-sync.sh`, `scripts/check-agent-tooling.sh`, `scripts/ensure-codegraph.sh`.
+- Shared execution effects: `src/effects/process-runner.ts`,
+  `src/effects/process-supervisor.ts`, `src/effects/process-group-launcher.ts`,
+  `src/effects/locking/`, and `src/effects/git/` own bounded process lifecycle
+  and canonical filesystem/Git primitives consumed by workflow and
+  verification modules.
 
 Out of scope:
 
@@ -78,6 +83,26 @@ Project
 - Valid terminal statuses are `Resolved`, `Superseded`, `Rejected`, and `No architecture change`.
 - The archived request must link any produced module, snapshot, embedded Mermaid source, or human diagram artifact.
 - `docs/architecture/index.md` keeps only pending request links.
+
+## 2026-07-16 Closeout Runner Guardrails
+
+- P1: helper dispatch and authoritative benchmark production are separate
+  consumers of one neutral lifecycle/locking effects layer. Workflow helper
+  policy remains in `src/cli/runtime/helper-runner.ts`; benchmark semantics
+  remain in `scripts/run-harness-profile-benchmark.ts`.
+- P2: helper identity selects a fixed timeout envelope. A private launcher
+  waits on an inherited start barrier while the supervisor publishes the PGID;
+  only then may the target start. The supervisor normally performs `SIGTERM ->
+  500ms -> SIGKILL` and publishes completion only after PGID absence; if the
+  supervisor itself exceeds its hard envelope, the synchronous parent repeats
+  that bounded cleanup against the published PGID. Expensive consumers contend on
+  `<git-common-dir>/repo-harness/expensive-run.lock`. Linked worktrees therefore
+  share one lane while repo-local state locking keeps its existing path.
+- P3: the directory-token primitive was moved, not duplicated, so state and
+  closeout locks retain the same fail-closed ancestor, exact-token, and stale
+  owner rules. Portable process-group cleanup is guaranteed on POSIX; Windows
+  uses best-effort `taskkill /T`, and direct raw Bash helper execution remains
+  internal rather than a second supported lifecycle authority.
 
 ## Pending Requests
 

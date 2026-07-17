@@ -2014,6 +2014,7 @@ describe("Workflow helper scripts", () => {
       const shipOutput = `${ship.stdout}\n${ship.stderr}`;
       expect(ship.status, shipOutput).toBe(0);
       expect(ship.stdout).toContain("contract-worktree.sh finish --no-merge");
+      expect(ship.stdout.match(/Sprint verification passed/g) ?? []).toHaveLength(1);
       expect(shipOutput).toContain("[MergeGate] PASS: fixture accepted");
       expect(shipOutput.match(/\[MergeGate\] verified PASS/g)?.length).toBe(2);
       expect(ship.stdout).toContain("[ArchitectureSync] mode=advisory");
