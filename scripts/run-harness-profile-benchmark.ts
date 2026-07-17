@@ -7,6 +7,8 @@ import { tmpdir } from 'os';
 import { basename, dirname, join, relative, resolve } from 'path';
 import { spawnSync } from 'child_process';
 import { createHash, randomUUID } from 'crypto';
+import { acquireExpensiveRunLock } from '../src/effects/expensive-run-lock';
+import type { ExclusiveDirectoryLockHandle } from '../src/effects/locking/exclusive-directory-lock';
 
 const ROOT = resolve(import.meta.dir, '..');
 const DEFAULT_MANIFEST = join(ROOT, 'evals/harness/scenarios.json');
@@ -19,6 +21,10 @@ export const BENCHMARK_WALL_TIME_BUDGET_MS = 50 * 60 * 1000;
 export const BENCHMARK_MAX_CONCURRENCY = 2;
 const BENCHMARK_TERMINATION_GRACE_MS = 500;
 const ACTIVE_PROVIDER_PROCESS_GROUPS = new Set<number>();
+let ACTIVE_EXPENSIVE_RUN_LOCK: ExclusiveDirectoryLockHandle | null = null;
+let PRODUCER_TERMINATING = false;
+let PRODUCER_SIGNAL_TERMINATING = false;
+let PRESERVE_EXPENSIVE_RUN_LOCK = false;
 
 const PROVIDER_INVOCATION_SCHEMA = {
   codex: {
@@ -230,17 +236,73 @@ function signalProcessGroup(pid: number, signal: NodeJS.Signals): void {
   }
 }
 
-async function terminateActiveProviderGroups(): Promise<void> {
-  const pids = [...ACTIVE_PROVIDER_PROCESS_GROUPS];
-  for (const pid of pids) signalProcessGroup(pid, 'SIGTERM');
-  await Bun.sleep(BENCHMARK_TERMINATION_GRACE_MS);
-  for (const pid of pids) signalProcessGroup(pid, 'SIGKILL');
+function processGroupExists(pid: number): boolean {
+  try {
+    if (process.platform === 'win32') process.kill(pid, 0);
+    else process.kill(-pid, 0);
+    return true;
+  } catch (error) {
+    // Permission and unknown errors cannot prove that the group is gone.
+    return (error as NodeJS.ErrnoException).code !== 'ESRCH';
+  }
 }
 
-function installProducerSignalCleanup(): void {
+async function waitForProcessGroupExit(pid: number, deadlineMs = Number.POSITIVE_INFINITY): Promise<boolean> {
+  while (processGroupExists(pid)) {
+    if (Date.now() >= deadlineMs) return false;
+    await Bun.sleep(Math.min(10, Math.max(1, deadlineMs - Date.now())));
+  }
+  return true;
+}
+
+async function terminateActiveProviderGroups(): Promise<void> {
+  PRODUCER_TERMINATING = true;
+  const cleanupDeadline = Date.now() + (BENCHMARK_TERMINATION_GRACE_MS * 2);
+  try {
+    if (ACTIVE_PROVIDER_PROCESS_GROUPS.size > 0) {
+      for (const pid of ACTIVE_PROVIDER_PROCESS_GROUPS) signalProcessGroup(pid, 'SIGTERM');
+      await Bun.sleep(BENCHMARK_TERMINATION_GRACE_MS);
+      for (const pid of ACTIVE_PROVIDER_PROCESS_GROUPS) signalProcessGroup(pid, 'SIGKILL');
+      // Let each provider promise observe exit and delete its PID before
+      // deciding the lane is empty. New spawns are blocked above.
+      while (ACTIVE_PROVIDER_PROCESS_GROUPS.size > 0 && Date.now() < cleanupDeadline) {
+        await Bun.sleep(10);
+      }
+    }
+    if (ACTIVE_PROVIDER_PROCESS_GROUPS.size > 0) {
+      throw new Error(`benchmark provider cleanup did not drain ${ACTIVE_PROVIDER_PROCESS_GROUPS.size} process group(s)`);
+    }
+  } catch (error) {
+    // Never reopen the lane when complete provider termination is uncertain.
+    PRESERVE_EXPENSIVE_RUN_LOCK = true;
+    throw error;
+  }
+}
+
+function releaseActiveExpensiveRunLock(): void {
+  if (PRESERVE_EXPENSIVE_RUN_LOCK) return;
+  ACTIVE_EXPENSIVE_RUN_LOCK?.release();
+  ACTIVE_EXPENSIVE_RUN_LOCK = null;
+}
+
+export function installProducerSignalCleanup(): void {
+  let terminating = false;
   for (const [signal, exitCode] of [['SIGINT', 130], ['SIGTERM', 143], ['SIGHUP', 129]] as const) {
-    process.once(signal, () => {
-      void terminateActiveProviderGroups().finally(() => process.exit(exitCode));
+    process.on(signal, () => {
+      if (terminating) return;
+      terminating = true;
+      PRODUCER_TERMINATING = true;
+      PRODUCER_SIGNAL_TERMINATING = true;
+      void terminateActiveProviderGroups()
+        .then(() => {
+          releaseActiveExpensiveRunLock();
+          process.exit(exitCode);
+        })
+        .catch((error) => {
+          console.error(error instanceof Error ? error.message : String(error));
+          // The exact token intentionally remains for manual recovery.
+          process.exit(exitCode);
+        });
     });
   }
 }
@@ -251,36 +313,62 @@ export async function runBoundedProviderProcess(
   env: NodeJS.ProcessEnv,
   deadlineMs: number,
 ): Promise<ProviderProcessResult> {
+  if (PRODUCER_TERMINATING) throw new Error('benchmark producer is terminating; refusing a new provider arm');
   const remainingMs = deadlineMs - Date.now();
   if (remainingMs <= 0) throw new Error('benchmark wall-clock budget exhausted before provider start');
   const processHandle = Bun.spawn(command, {
     cwd, env, stdout: 'pipe', stderr: 'pipe', stdin: 'ignore', detached: true,
   });
   ACTIVE_PROVIDER_PROCESS_GROUPS.add(processHandle.pid);
-  const stdoutPromise = new Response(processHandle.stdout).text();
-  const stderrPromise = new Response(processHandle.stderr).text();
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const outcome = await Promise.race([
-    processHandle.exited.then(() => 'exited' as const),
-    new Promise<'timed-out'>((resolveTimeout) => {
-      timer = setTimeout(() => resolveTimeout('timed-out'), remainingMs);
-    }),
-  ]);
-  if (timer) clearTimeout(timer);
-  const timedOut = outcome === 'timed-out';
-  if (timedOut) {
-    signalProcessGroup(processHandle.pid, 'SIGTERM');
-    await Bun.sleep(BENCHMARK_TERMINATION_GRACE_MS);
-    // The group leader may exit before a descendant that ignored SIGTERM.
-    // Always address the original process group after the grace period; ESRCH
-    // means the whole group is already gone.
-    signalProcessGroup(processHandle.pid, 'SIGKILL');
+  let groupDrained = false;
+  try {
+    const stdoutPromise = new Response(processHandle.stdout).text();
+    const stderrPromise = new Response(processHandle.stderr).text();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const groupCompletion = processHandle.exited.then(async () => {
+      return await waitForProcessGroupExit(processHandle.pid, deadlineMs)
+        ? 'exited' as const
+        : 'timed-out' as const;
+    });
+    const outcome = await Promise.race([
+      groupCompletion,
+      new Promise<'timed-out'>((resolveTimeout) => {
+        timer = setTimeout(() => resolveTimeout('timed-out'), remainingMs);
+      }),
+    ]);
+    if (timer) clearTimeout(timer);
+    const timedOut = outcome === 'timed-out';
+    if (timedOut) {
+      signalProcessGroup(processHandle.pid, 'SIGTERM');
+      await Bun.sleep(BENCHMARK_TERMINATION_GRACE_MS);
+      // The group leader may exit before a descendant that ignored SIGTERM.
+      // Always address the original process group after the grace period; ESRCH
+      // means the whole group is already gone.
+      signalProcessGroup(processHandle.pid, 'SIGKILL');
+      groupDrained = await waitForProcessGroupExit(
+        processHandle.pid,
+        Date.now() + BENCHMARK_TERMINATION_GRACE_MS,
+      );
+      if (!groupDrained) {
+        PRESERVE_EXPENSIVE_RUN_LOCK = true;
+        throw new Error(`benchmark provider process group ${processHandle.pid} did not terminate`);
+      }
+    } else {
+      groupDrained = true;
+    }
+    const [stdout, stderr, exitCode] = await Promise.all([
+      stdoutPromise, stderrPromise, processHandle.exited,
+    ]);
+    return { stdout, stderr, exitCode, signalCode: processHandle.signalCode, timedOut };
+  } finally {
+    if (groupDrained || !processGroupExists(processHandle.pid)) {
+      ACTIVE_PROVIDER_PROCESS_GROUPS.delete(processHandle.pid);
+    } else {
+      // Keep the exact token and active PGID registered when group absence is
+      // uncertain. Reopening the lane would allow overlapping benchmark work.
+      PRESERVE_EXPENSIVE_RUN_LOCK = true;
+    }
   }
-  const [stdout, stderr, exitCode] = await Promise.all([
-    stdoutPromise, stderrPromise, processHandle.exited,
-  ]);
-  ACTIVE_PROVIDER_PROCESS_GROUPS.delete(processHandle.pid);
-  return { stdout, stderr, exitCode, signalCode: processHandle.signalCode, timedOut };
 }
 
 export async function mapWithConcurrency<T, R>(
@@ -1055,7 +1143,7 @@ export function regradeHarnessBenchmarkReport(reportPath: string): HarnessBenchm
   return report;
 }
 
-export async function runHarnessProfileBenchmark(options: CliOptions) {
+async function runHarnessProfileBenchmarkUnlocked(options: CliOptions) {
   const deadlineMs = Date.now() + BENCHMARK_WALL_TIME_BUDGET_MS;
   if (options.execute && run('git', ['status', '--porcelain=v1', '-uall'], ROOT) !== '') {
     throw new Error('authoritative benchmark requires a clean source checkout');
@@ -1146,13 +1234,53 @@ export async function runHarnessProfileBenchmark(options: CliOptions) {
   return report;
 }
 
+export async function withHarnessBenchmarkExecutionLock<T>(
+  execute: boolean,
+  lockCwd: string,
+  runLocked: () => Promise<T>,
+): Promise<T> {
+  if (!execute) return runLocked();
+  if (ACTIVE_EXPENSIVE_RUN_LOCK !== null) {
+    throw new Error('benchmark execution lock is already owned by this process');
+  }
+  const lock = acquireExpensiveRunLock(lockCwd);
+  ACTIVE_EXPENSIVE_RUN_LOCK = lock;
+  try {
+    lock.assertOwned();
+    return await runLocked();
+  } finally {
+    if (!PRESERVE_EXPENSIVE_RUN_LOCK && !PRODUCER_SIGNAL_TERMINATING) {
+      if (ACTIVE_EXPENSIVE_RUN_LOCK === lock) ACTIVE_EXPENSIVE_RUN_LOCK = null;
+      lock.release();
+    }
+  }
+}
+
+export async function runHarnessProfileBenchmark(options: CliOptions) {
+  if (PRODUCER_TERMINATING) throw new Error('benchmark producer is terminating');
+  try {
+    return await withHarnessBenchmarkExecutionLock(
+      options.execute,
+      ROOT,
+      () => runHarnessProfileBenchmarkUnlocked(options),
+    );
+  } finally {
+    if (!PRODUCER_SIGNAL_TERMINATING && !PRESERVE_EXPENSIVE_RUN_LOCK) PRODUCER_TERMINATING = false;
+  }
+}
+
 if (import.meta.main) {
   installProducerSignalCleanup();
   const options = parseArgs(process.argv.slice(2));
-  const execution = options.regradeExisting
-    ? Promise.resolve(regradeHarnessBenchmarkReport(options.report))
-    : runHarnessProfileBenchmark(options);
-  execution
-    .then((report) => console.log(`profile benchmark: ${report.records.length} runs -> ${options.report}`))
-    .catch((error) => { console.error((error as Error).message); process.exit(1); });
+  try {
+    const report = options.regradeExisting
+      ? regradeHarnessBenchmarkReport(options.report)
+      : await runHarnessProfileBenchmark(options);
+    console.log(`profile benchmark: ${report.records.length} runs -> ${options.report}`);
+  } catch (error) {
+    console.error((error as Error).message);
+    process.exitCode = 1;
+  } finally {
+    releaseActiveExpensiveRunLock();
+  }
 }

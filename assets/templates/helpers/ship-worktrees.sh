@@ -349,10 +349,9 @@ external_acceptance_pass_fallback() {
 }
 
 require_finish_ready() {
-  local contract_file="" review_file="" checks_file=".ai/harness/checks/latest.json" checks_error=""
+  local contract_file="" review_file=""
 
   [[ -x "$helper_dir/contract-worktree.sh" ]] || fail "packaged contract-worktree helper is missing or not executable"
-  [[ -x "$helper_dir/verify-sprint.sh" ]] || fail "packaged verify-sprint helper is missing or not executable"
 
   load_workflow_state
   if declare -F workflow_active_contract >/dev/null 2>&1; then
@@ -361,10 +360,6 @@ require_finish_ready() {
   if declare -F workflow_active_review >/dev/null 2>&1; then
     review_file="$(workflow_active_review 2>/dev/null || true)"
   fi
-  if declare -F workflow_checks_file >/dev/null 2>&1; then
-    checks_file="$(workflow_checks_file)"
-  fi
-
   [[ -n "$contract_file" && -f "$contract_file" ]] || fail "active sprint contract is missing"
   [[ -n "$review_file" && -f "$review_file" ]] || fail "active sprint review is missing"
 
@@ -380,18 +375,6 @@ require_finish_ready() {
     external_acceptance_pass_fallback "$review_file" || fail "$review_file has no passing external acceptance"
   fi
 
-  run_cmd bash "$helper_dir/verify-sprint.sh"
-  if [[ "$DRY_RUN" -eq 1 ]]; then
-    return 0
-  fi
-
-  if declare -F workflow_checks_pass >/dev/null 2>&1; then
-    if ! checks_error="$(workflow_checks_pass "$checks_file" "$contract_file" "$review_file")"; then
-      fail "$checks_error"
-    fi
-  elif ! grep -Eq '"status"[[:space:]]*:[[:space:]]*"pass"' "$checks_file"; then
-    fail "structured checks are not passing in $checks_file"
-  fi
 }
 
 finish_contract_worktree() {
@@ -447,7 +430,7 @@ Automated repo-harness ship for \`${branch}\`.
 Checks:
 - Waza /check review artifact recommends pass.
 - External acceptance is recorded in the sprint review.
-- \`repo-harness run verify-sprint\` passed before \`contract-worktree finish --no-merge\`.
+- \`contract-worktree finish --no-merge\` ran the sole sprint verification.
 
 This PR intentionally does not merge \`${TARGET_BRANCH}\` locally.
 EOF_BODY
