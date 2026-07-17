@@ -8,7 +8,7 @@
 > **Source Audit**: `plans/sprints/20260715-harness-loop-audit-and-optimization.md`
 > **Source Spec**: `docs/spec.md`
 > **Post-ESA Program Baseline**: `origin/main@3b33cea2422b1aa1e5be9080be54f731c4f2015d`
-> **LSC-01 Execution Base**: Pending the exact live `origin/main` SHA after this Program-planning package is merged/pushed
+> **LSC-01 Execution Base**: `origin/main@be3e93ce72c812a33045a15c4d97452c59fa3fbb` (Program-planning PR #80 merge)
 > **Predecessor**: Effective State Authority Convergence, merged by PR #79 at `3b33cea2422b1aa1e5be9080be54f731c4f2015d`
 > **Successor Order**: Hook Runtime Diet -> Evidence & Projection Convergence -> Skill Surface & Discovery Convergence
 > **Goal Mode**: incremental

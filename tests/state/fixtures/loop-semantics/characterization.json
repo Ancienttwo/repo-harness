@@ -1,0 +1,641 @@
+{
+  "schema": "repo-harness-loop-semantics-characterization.v1",
+  "post_esa_program_baseline": "3b33cea2422b1aa1e5be9080be54f731c4f2015d",
+  "lsc_01_execution_base": "be3e93ce72c812a33045a15c4d97452c59fa3fbb",
+  "esa_golden_baseline": "82550779cdccf0575d674ae53bbc95ba63e44743",
+  "esa_goldens": [
+    {
+      "scenario": "idle-inspect",
+      "source_sha256": "eb61ed2e2f3f265ab6ec758f1e82c7069c78b07dbb92a4b7129e6c490d8c487e",
+      "baseline": "82550779cdccf0575d674ae53bbc95ba63e44743",
+      "cli_exit": 0,
+      "workflow_profile": "lite",
+      "blockers": []
+    },
+    {
+      "scenario": "missing-contract",
+      "source_sha256": "1cd1c8aedaa6dac2972ac06ed4a90f67d26cf12ab0ce8507122fad6149b7a784",
+      "baseline": "82550779cdccf0575d674ae53bbc95ba63e44743",
+      "cli_exit": 1,
+      "workflow_profile": "standard",
+      "blockers": [
+        "missing_contract"
+      ]
+    },
+    {
+      "scenario": "executing-fresh-evidence",
+      "source_sha256": "4351fc5464b9e9ae28b6a9e69cb970d072c75308c5370d9d0c5172d1d3de454c",
+      "baseline": "82550779cdccf0575d674ae53bbc95ba63e44743",
+      "cli_exit": 0,
+      "workflow_profile": "standard",
+      "blockers": []
+    },
+    {
+      "scenario": "explicit-strict-without-path-signals",
+      "source_sha256": "c7ae9343a9e8775f8b74d3d173692d971706fb69c1af51bb84e281527020d1ca",
+      "baseline": "82550779cdccf0575d674ae53bbc95ba63e44743",
+      "cli_exit": 0,
+      "workflow_profile": "strict",
+      "blockers": []
+    }
+  ],
+  "cells": [
+    {
+      "name": "lite.edit.no-plan-contract-allows",
+      "profile": "lite",
+      "operation": "edit",
+      "esa_reference_scenarios": [
+        "idle-inspect"
+      ],
+      "current": {
+        "entrypoint": ".ai/hooks/pre-edit-guard.sh",
+        "profile_source": "live_effective_state",
+        "exit_code": 0,
+        "verdict": "allow",
+        "reason": "none",
+        "workflow_profile": "lite",
+        "state_blockers": [],
+        "guard_tokens": [],
+        "structured_error": false,
+        "state_version_published": true,
+        "work_package_status": "Executing",
+        "work_package_remaining_tasks": 1,
+        "work_package_minimum_execution_contract": null,
+        "contract_exists": true,
+        "ordering": [
+          "resolve_effective_state",
+          "contract_scope",
+          "plan_gate",
+          "strict_contract",
+          "strict_worktree"
+        ],
+        "side_effects": [
+          ".ai/harness/state/effective.json"
+        ],
+        "missing_semantic_fields": [
+          "allowedToEdit",
+          "requirements",
+          "nextAction"
+        ]
+      },
+      "approved_target_delta": {
+        "verdict": "allow",
+        "requirements": [
+          "safe_path",
+          "worktree_boundary",
+          "destructive_action_boundary"
+        ],
+        "missing_requirements": [],
+        "next_action": "edit",
+        "behavior_changes": [
+          "return a typed allowedToEdit decision without adding plan or contract ceremony"
+        ]
+      }
+    },
+    {
+      "name": "standard.edit.complete-work-package-no-contract-blocks",
+      "profile": "standard",
+      "operation": "edit",
+      "esa_reference_scenarios": [
+        "missing-contract",
+        "executing-fresh-evidence"
+      ],
+      "current": {
+        "entrypoint": ".ai/hooks/pre-edit-guard.sh",
+        "profile_source": "live_effective_state",
+        "exit_code": 2,
+        "verdict": "block",
+        "reason": "WorkflowProfileGuard",
+        "workflow_profile": "standard",
+        "state_blockers": [
+          "missing_contract"
+        ],
+        "guard_tokens": [
+          "WorkflowProfileGuard"
+        ],
+        "structured_error": true,
+        "state_version_published": true,
+        "work_package_status": "Approved",
+        "work_package_remaining_tasks": 0,
+        "work_package_minimum_execution_contract": {
+          "scope": "one local feature edit with no cross-capability change",
+          "target_paths_capabilities": "`src/feature.ts` / `feature`",
+          "acceptance": "the local feature edit remains inside the approved path and passes its focused test",
+          "verification_commands": "`bun test tests/feature.test.ts`",
+          "rollback_boundary": "revert this independent Work Package change"
+        },
+        "contract_exists": false,
+        "ordering": [
+          "resolve_effective_state",
+          "contract_scope",
+          "plan_gate",
+          "strict_contract",
+          "strict_worktree"
+        ],
+        "side_effects": [
+          ".ai/harness/failures/latest.jsonl",
+          ".ai/harness/state/circuit-breaker.json",
+          ".ai/harness/state/effective.json"
+        ],
+        "missing_semantic_fields": [
+          "allowedToEdit",
+          "requirements",
+          "nextAction"
+        ]
+      },
+      "approved_target_delta": {
+        "verdict": "allow",
+        "requirements": [
+          "complete_approved_work_package"
+        ],
+        "missing_requirements": [],
+        "next_action": "edit",
+        "behavior_changes": [
+          "separate_contract becomes not_required by default",
+          "remove the current missing_contract collapse into WorkflowProfileGuard"
+        ]
+      }
+    },
+    {
+      "name": "strict.edit.missing-contract-blocks",
+      "profile": "strict",
+      "operation": "edit",
+      "esa_reference_scenarios": [
+        "missing-contract",
+        "explicit-strict-without-path-signals",
+        "executing-fresh-evidence"
+      ],
+      "current": {
+        "entrypoint": ".ai/hooks/pre-edit-guard.sh",
+        "profile_source": "live_effective_state",
+        "exit_code": 2,
+        "verdict": "block",
+        "reason": "WorkflowProfileGuard",
+        "workflow_profile": "strict",
+        "state_blockers": [
+          "missing_contract"
+        ],
+        "guard_tokens": [
+          "WorkflowProfileGuard"
+        ],
+        "structured_error": true,
+        "state_version_published": true,
+        "work_package_status": "Executing",
+        "work_package_remaining_tasks": 1,
+        "work_package_minimum_execution_contract": null,
+        "contract_exists": false,
+        "ordering": [
+          "resolve_effective_state",
+          "contract_scope",
+          "plan_gate",
+          "strict_contract",
+          "strict_worktree"
+        ],
+        "side_effects": [
+          ".ai/harness/failures/latest.jsonl",
+          ".ai/harness/state/circuit-breaker.json",
+          ".ai/harness/state/effective.json"
+        ],
+        "missing_semantic_fields": [
+          "allowedToEdit",
+          "requirements",
+          "nextAction"
+        ]
+      },
+      "approved_target_delta": {
+        "verdict": "block",
+        "requirements": [
+          "separate_contract",
+          "isolated_contract_worktree"
+        ],
+        "missing_requirements": [
+          "separate_contract",
+          "isolated_contract_worktree"
+        ],
+        "next_action": "create_contract_worktree",
+        "behavior_changes": [
+          "return typed required_contract_missing and required_worktree_missing reasons"
+        ]
+      }
+    },
+    {
+      "name": "lite.stop.handoff-only-allows",
+      "profile": "lite",
+      "operation": "stop",
+      "esa_reference_scenarios": [
+        "idle-inspect"
+      ],
+      "current": {
+        "entrypoint": ".ai/hooks/stop-orchestrator.sh",
+        "profile_source": "effective_state_cache_with_install_profile_fallback",
+        "exit_code": 0,
+        "verdict": "allow",
+        "reason": "none",
+        "effective_state_cache_profile": "lite",
+        "review_freshness_warning": false,
+        "decision_json_uses_exit_zero": null,
+        "minimal_change_review_appended": false,
+        "ordering": [
+          "refresh_handoff",
+          "lite_early_exit",
+          "minimal_change_review",
+          "review_freshness_warning",
+          "plan_completeness_gate",
+          "delegation_fallback"
+        ],
+        "side_effects": [
+          ".ai/harness/events.jsonl",
+          ".ai/harness/failures/latest.jsonl",
+          ".ai/harness/handoff/current.md",
+          ".ai/harness/handoff/resume.md",
+          ".ai/harness/runs/loop-semantics-lite-stop.json"
+        ],
+        "missing_semantic_fields": [
+          "allowedToStop",
+          "readyToShip",
+          "requirements",
+          "nextAction"
+        ]
+      },
+      "approved_target_delta": {
+        "verdict": "allow",
+        "requirements": [
+          "durable_recovery_state"
+        ],
+        "missing_requirements": [],
+        "next_action": "stop",
+        "behavior_changes": [
+          "replace repeated recovery writes with one compact checkpoint"
+        ]
+      }
+    },
+    {
+      "name": "standard.stop.stale-review-warns-allows",
+      "profile": "standard",
+      "operation": "stop",
+      "esa_reference_scenarios": [
+        "missing-contract",
+        "executing-fresh-evidence"
+      ],
+      "current": {
+        "entrypoint": ".ai/hooks/stop-orchestrator.sh",
+        "profile_source": "effective_state_cache_with_install_profile_fallback",
+        "exit_code": 0,
+        "verdict": "allow",
+        "reason": "none",
+        "effective_state_cache_profile": "standard",
+        "review_freshness_warning": true,
+        "decision_json_uses_exit_zero": null,
+        "minimal_change_review_appended": false,
+        "ordering": [
+          "refresh_handoff",
+          "lite_early_exit",
+          "minimal_change_review",
+          "review_freshness_warning",
+          "plan_completeness_gate",
+          "delegation_fallback"
+        ],
+        "side_effects": [
+          ".ai/harness/events.jsonl",
+          ".ai/harness/failures/latest.jsonl",
+          ".ai/harness/handoff/current.md",
+          ".ai/harness/handoff/resume.md",
+          ".ai/harness/runs/loop-semantics-standard-stop.json"
+        ],
+        "missing_semantic_fields": [
+          "allowedToStop",
+          "readyToShip",
+          "requirements",
+          "nextAction"
+        ]
+      },
+      "approved_target_delta": {
+        "verdict": "allow",
+        "requirements": [
+          "durable_recovery_state"
+        ],
+        "missing_requirements": [],
+        "next_action": "stop",
+        "behavior_changes": [
+          "return typed allowedToStop independently from readyToShip",
+          "unrequired review or external acceptance cannot block Stop"
+        ]
+      }
+    },
+    {
+      "name": "strict.stop.not-ready-to-ship-still-allows",
+      "profile": "strict",
+      "operation": "stop",
+      "esa_reference_scenarios": [
+        "missing-contract",
+        "explicit-strict-without-path-signals",
+        "executing-fresh-evidence"
+      ],
+      "current": {
+        "entrypoint": ".ai/hooks/stop-orchestrator.sh",
+        "profile_source": "effective_state_cache_with_install_profile_fallback",
+        "exit_code": 0,
+        "verdict": "allow",
+        "reason": "none",
+        "effective_state_cache_profile": "strict",
+        "review_freshness_warning": true,
+        "decision_json_uses_exit_zero": null,
+        "minimal_change_review_appended": false,
+        "ordering": [
+          "refresh_handoff",
+          "lite_early_exit",
+          "minimal_change_review",
+          "review_freshness_warning",
+          "plan_completeness_gate",
+          "delegation_fallback"
+        ],
+        "side_effects": [
+          ".ai/harness/events.jsonl",
+          ".ai/harness/failures/latest.jsonl",
+          ".ai/harness/handoff/current.md",
+          ".ai/harness/handoff/resume.md",
+          ".ai/harness/runs/loop-semantics-strict-stop.json"
+        ],
+        "missing_semantic_fields": [
+          "allowedToStop",
+          "readyToShip",
+          "requirements",
+          "nextAction"
+        ]
+      },
+      "approved_target_delta": {
+        "verdict": "allow",
+        "requirements": [
+          "durable_recovery_state"
+        ],
+        "missing_requirements": [
+          "fresh_review",
+          "external_acceptance",
+          "fresh_checks"
+        ],
+        "next_action": "stop",
+        "behavior_changes": [
+          "report readyToShip=false without converting it into a Stop block",
+          "consume canonical state only and remove install-profile fallback"
+        ]
+      }
+    },
+    {
+      "name": "lite.ship.no-profile-readiness",
+      "profile": "lite",
+      "operation": "ship",
+      "esa_reference_scenarios": [
+        "idle-inspect"
+      ],
+      "current": {
+        "entrypoint": "scripts/verify-sprint.sh",
+        "envelope_sources": [
+          "scripts/ship-worktrees.sh",
+          "scripts/verify-sprint.sh",
+          "scripts/contract-worktree.sh"
+        ],
+        "profile_source": "none_observed",
+        "profile_aware": false,
+        "profile_source_matches": [],
+        "exit_code": 1,
+        "verdict": "block",
+        "reason": "no_active_contract",
+        "gate_requirements": [],
+        "ordering": [],
+        "envelope_ordering": [
+          "contract",
+          "review",
+          "external_acceptance",
+          "verify_sprint",
+          "fresh_checks",
+          "contract_worktree_finish"
+        ],
+        "envelope_ordering_source": "static_source_inventory_ship_worktrees_sh",
+        "profile_signal_fed": {
+          "effective_state_workflow_profile": "lite",
+          "env_repo_harness_workflow_profile": "lite"
+        },
+        "contract_worktree_finish_probe": {
+          "invoked": true,
+          "exit_code": 1,
+          "guard": "linked_worktree_required",
+          "side_effects": []
+        },
+        "ship_worktrees_dispatch_probe": {
+          "invoked": true,
+          "mode": "local-merge",
+          "dry_run": true,
+          "linked_worktree_confirmed": true,
+          "exit_code": 1,
+          "guard": "active_sprint_contract_missing",
+          "worktree_side_effects": [],
+          "primary_side_effects": []
+        },
+        "side_effects": [],
+        "missing_semantic_fields": [
+          "readyToShip",
+          "workflowProfile",
+          "requirementsResult",
+          "nextAction"
+        ]
+      },
+      "approved_target_delta": {
+        "verdict": "block",
+        "requirements": [
+          "subject_bound_targeted_evidence"
+        ],
+        "missing_requirements": [
+          "subject_bound_targeted_evidence"
+        ],
+        "next_action": "run_targeted_verification",
+        "behavior_changes": [
+          "introduce a typed readyToShip result and raise profile only when risk requires it"
+        ]
+      }
+    },
+    {
+      "name": "standard.ship.full-strict-envelope-required",
+      "profile": "standard",
+      "operation": "ship",
+      "esa_reference_scenarios": [
+        "missing-contract",
+        "executing-fresh-evidence"
+      ],
+      "current": {
+        "entrypoint": "scripts/verify-sprint.sh",
+        "envelope_sources": [
+          "scripts/ship-worktrees.sh",
+          "scripts/verify-sprint.sh",
+          "scripts/contract-worktree.sh"
+        ],
+        "profile_source": "none_observed",
+        "profile_aware": false,
+        "profile_source_matches": [],
+        "exit_code": 1,
+        "verdict": "block",
+        "reason": "missing_artifact",
+        "gate_requirements": [
+          "contract",
+          "review",
+          "external_acceptance",
+          "allowed_paths"
+        ],
+        "ordering": [
+          "contract",
+          "review",
+          "external_acceptance",
+          "allowed_paths"
+        ],
+        "envelope_ordering": [
+          "contract",
+          "review",
+          "external_acceptance",
+          "verify_sprint",
+          "fresh_checks",
+          "contract_worktree_finish"
+        ],
+        "envelope_ordering_source": "static_source_inventory_ship_worktrees_sh",
+        "profile_signal_fed": {
+          "effective_state_workflow_profile": "standard",
+          "env_repo_harness_workflow_profile": "standard"
+        },
+        "contract_worktree_finish_probe": {
+          "invoked": true,
+          "exit_code": 1,
+          "guard": "linked_worktree_required",
+          "side_effects": []
+        },
+        "ship_worktrees_dispatch_probe": {
+          "invoked": true,
+          "mode": "local-merge",
+          "dry_run": true,
+          "linked_worktree_confirmed": true,
+          "exit_code": 1,
+          "guard": "active_sprint_contract_missing",
+          "worktree_side_effects": [],
+          "primary_side_effects": []
+        },
+        "side_effects": [
+          ".ai/harness/checks/latest.json",
+          ".ai/harness/runs/loop-semantics-standard-ship-20260712-2327-effective-fixture.json"
+        ],
+        "missing_semantic_fields": [
+          "readyToShip",
+          "workflowProfile",
+          "requirementsResult",
+          "nextAction"
+        ]
+      },
+      "approved_target_delta": {
+        "verdict": "conditional_allow",
+        "requirements": [
+          "complete_approved_work_package",
+          "subject_bound_targeted_evidence"
+        ],
+        "missing_requirements": [
+          "subject_bound_targeted_evidence"
+        ],
+        "next_action": "run_targeted_verification",
+        "behavior_changes": [
+          "separate_contract and external_acceptance become not_required by default",
+          "risk or explicit policy may raise either requirement"
+        ]
+      }
+    },
+    {
+      "name": "strict.ship.full-envelope-fragmented",
+      "profile": "strict",
+      "operation": "ship",
+      "esa_reference_scenarios": [
+        "missing-contract",
+        "explicit-strict-without-path-signals",
+        "executing-fresh-evidence"
+      ],
+      "current": {
+        "entrypoint": "scripts/verify-sprint.sh",
+        "envelope_sources": [
+          "scripts/ship-worktrees.sh",
+          "scripts/verify-sprint.sh",
+          "scripts/contract-worktree.sh"
+        ],
+        "profile_source": "none_observed",
+        "profile_aware": false,
+        "profile_source_matches": [],
+        "exit_code": 1,
+        "verdict": "block",
+        "reason": "missing_artifact",
+        "gate_requirements": [
+          "contract",
+          "review",
+          "external_acceptance",
+          "allowed_paths"
+        ],
+        "ordering": [
+          "contract",
+          "review",
+          "external_acceptance",
+          "allowed_paths"
+        ],
+        "envelope_ordering": [
+          "contract",
+          "review",
+          "external_acceptance",
+          "verify_sprint",
+          "fresh_checks",
+          "contract_worktree_finish"
+        ],
+        "envelope_ordering_source": "static_source_inventory_ship_worktrees_sh",
+        "profile_signal_fed": {
+          "effective_state_workflow_profile": "strict",
+          "env_repo_harness_workflow_profile": "strict"
+        },
+        "contract_worktree_finish_probe": {
+          "invoked": true,
+          "exit_code": 1,
+          "guard": "linked_worktree_required",
+          "side_effects": []
+        },
+        "ship_worktrees_dispatch_probe": {
+          "invoked": true,
+          "mode": "local-merge",
+          "dry_run": true,
+          "linked_worktree_confirmed": true,
+          "exit_code": 1,
+          "guard": "active_sprint_contract_missing",
+          "worktree_side_effects": [],
+          "primary_side_effects": []
+        },
+        "side_effects": [
+          ".ai/harness/checks/latest.json",
+          ".ai/harness/runs/loop-semantics-strict-ship-20260712-2327-effective-fixture.json"
+        ],
+        "missing_semantic_fields": [
+          "readyToShip",
+          "workflowProfile",
+          "requirementsResult",
+          "nextAction"
+        ]
+      },
+      "approved_target_delta": {
+        "verdict": "block",
+        "requirements": [
+          "separate_contract",
+          "isolated_contract_worktree",
+          "fresh_review",
+          "external_acceptance",
+          "fresh_checks",
+          "candidate_revision_precondition"
+        ],
+        "missing_requirements": [
+          "fresh_review",
+          "external_acceptance",
+          "fresh_checks"
+        ],
+        "next_action": "complete_strict_acceptance",
+        "behavior_changes": [
+          "one readiness authority returns typed requirements while preserving candidate fingerprint checks"
+        ]
+      }
+    }
+  ]
+}

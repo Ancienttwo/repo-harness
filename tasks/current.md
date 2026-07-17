@@ -1,26 +1,26 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-16T00:24:07+0800 -->
+<!-- updated_at: 2026-07-16T03:31:07+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: Idle
-> **Updated At**: 2026-07-16T00:24:07+0800
-> **Source Branch**: codex/esa-01-freeze-effective-state-invariants-and-characterization-fixtures
-> **Source Commit**: 03567c56
+> **Status**: Active
+> **Updated At**: 2026-07-16T03:31:07+0800
+> **Source Branch**: codex/lsc-01-profile-operation-characterization
+> **Source Commit**: be3e93c
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: ESA-07 sprint closeout
+> **Reason**: lsc-01-external-review-corrections
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: Idle
-- Active Plan: (none)
-- Plan Status: (none)
-- Next Task: (none)
+- Status: Active
+- Active Plan: plans/plan-20260716-0150-lsc-01-profile-operation-characterization.md
+- Plan Status: Executing
+- Next Task: Obtain fresh review/external acceptance and run verify-sprint plus the SHA-bound merge gate.
 - Clear Note: (none)
 
 ## Mainline Snapshot Reading
@@ -31,7 +31,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- (none)
+- .: plans/plan-20260716-0150-lsc-01-profile-operation-characterization.md
+- .: active-worktree owner -> /Users/kito/Projects/repo-harness-loop-control-wt-lsc-01-profile-operation-characterization
 ## Active Sprint
 
 - Sprint: (none)
@@ -46,29 +47,25 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`: status=completed, current_slice=completed-20260713-policy-seed, source_plan=plans/plan-20260712-2215-agent-fleet-specialists.md
 ## Handoff
 
-- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Record benchmark/check evidence and obtain a current passing review.
+- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Obtain fresh review/external acceptance and run verify-sprint plus the SHA-bound merge gate.
 
 ## Checks
 
-- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
+- status=(none), source=(none), exit_code=(none), file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 12 changed/untracked path(s)
+- Summary: 8 changed/untracked path(s)
 
 ```
- D plans/plan-20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md
- M plans/sprints/20260714-effective-state-authority-convergence.sprint.md
- D tasks/contracts/20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.contract.md
+ M plans/sprints/20260716-0101-loop-semantics-convergence.sprint.md
  M tasks/current.md
- D tasks/notes/20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.notes.md
- D tasks/reviews/20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.review.md
- M tasks/todos.md
-?? plans/archive/plan-20260715-1109-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md
-?? tasks/archive/contract-20260716-0022-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md
-?? tasks/archive/notes-20260716-0022-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md
-?? tasks/archive/review-20260716-0022-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md
-?? tasks/archive/todo-20260716-0022-esa-01-freeze-effective-state-invariants-and-characterization-fixtures.md
+?? plans/plan-20260716-0150-lsc-01-profile-operation-characterization.md
+?? tasks/contracts/20260716-0150-lsc-01-profile-operation-characterization.contract.md
+?? tasks/notes/20260716-0150-lsc-01-profile-operation-characterization.notes.md
+?? tasks/reviews/20260716-0150-lsc-01-profile-operation-characterization.review.md
+?? tests/state/fixtures/loop-semantics/
+?? tests/state/loop-semantics-characterization.test.ts
 ```
 
 ## Source Artifacts
