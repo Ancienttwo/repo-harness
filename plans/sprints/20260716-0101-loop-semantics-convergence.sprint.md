@@ -9,16 +9,16 @@
 > **Source Spec**: `docs/spec.md`
 > **Post-ESA Program Baseline**: `origin/main@3b33cea2422b1aa1e5be9080be54f731c4f2015d`
 > **Program Planning Base**: `origin/main@be3e93ce72c812a33045a15c4d97452c59fa3fbb` (PR #80)
-> **LSC-01 Execution Base**: Pending the exact live `origin/main` SHA after CRG-01 merges
-> **Predecessor**: Closeout Runner Guardrails (CRG-01), independently based on `be3e93ce72c812a33045a15c4d97452c59fa3fbb`; Effective State Authority Convergence remains the semantic baseline
+> **LSC-01 Execution Base**: `origin/main@d8e5f221053b8bf20f105933376c7524a0f05063` (post-CRG-01 merge, PR #83; fetched and pinned per this sprint's own successor rule now that CRG-01 has merged)
+> **Predecessor**: Closeout Runner Guardrails (CRG-01), merged by PR #83 at `d8e5f221053b8bf20f105933376c7524a0f05063`; Effective State Authority Convergence (PR #79, `3b33cea2422b1aa1e5be9080be54f731c4f2015d`) remains the semantic baseline
 > **Successor Order**: Hook Runtime Diet -> Evidence & Projection Convergence -> Skill Surface & Discovery Convergence
 > **Goal Mode**: incremental
 
 This is the machine-operable Sprint A projection of the preserved Harness Loop
 Program audit. Each backlog row is an independent work-package, worktree,
-branch, PR, verification subject, and rollback boundary. CRG-01 changes only
-closeout control-plane mechanics and must merge first. LSC-01 must merge before
-any semantic row starts. Every successor pins the live `origin/main`
+branch, PR, verification subject, and rollback boundary. CRG-01 changed only
+closeout control-plane mechanics and merged first (PR #83). LSC-01 must merge
+before any semantic row starts. Every successor pins the live `origin/main`
 produced by its predecessor.
 
 ## PRD
