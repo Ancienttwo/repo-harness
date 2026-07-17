@@ -268,6 +268,27 @@ authority.
 - Regression coverage: `tests/workflow-contract.test.ts` (descriptions cover `helpers.scripts` 1:1 with non-empty text) and `tests/cli/run.test.ts` (fail-closed validation plus `run --help` enumeration output).
 - The invariant was exercised live at ship time: rebasing onto origin/main added two upstream helpers (`run-bounded-verifier-command.ts`, `validate-harness-profile-benchmark.ts`) and the fail-closed check blocked shipping until their descriptions landed, bringing the map to 48 entries.
 
+## 2026-07-16 Closeout Runner Guardrails
+
+- P1: `src/cli/runtime/helper-runner.ts` remains the canonical helper dispatch
+  policy. Ordinary helpers receive a fixed 120-second envelope,
+  `verify-contract`/`verify-sprint` receive 720 seconds, and
+  `contract-worktree`/`ship-worktrees` receive 900 seconds. Repository policy
+  and caller environment cannot redefine these classes.
+- P2: every helper runs through a private launcher/supervisor pair. The launcher
+  cannot start the target until the supervisor has published its PGID; normal
+  cleanup and the parent's hard-timeout backstop both perform TERM, a fixed
+  grace period, then KILL against that group. Lock wait consumes the same outer
+  deadline, and completion is published only after group absence.
+  `ship-worktrees` checks review/acceptance readiness and delegates to
+  `contract-worktree finish`; only finish invokes `verify-sprint`, so one ship
+  has exactly one sprint-verification producer.
+- P3: canonical release helper modes resolve the Git common directory and use
+  the same fail-closed expensive-run lane as authoritative benchmark
+  production. Nested raw helper calls stay inside the already-held outer lane;
+  invoking packaged Bash files directly is an internal/test surface and does
+  not create a second lock or verification authority.
+
 ## Workstream Ledger
 
 - `tasks/workstreams/workflow-engine/contract-assets/cleanup-script-policy.md`
