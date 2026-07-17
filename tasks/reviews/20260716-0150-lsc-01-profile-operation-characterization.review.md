@@ -395,6 +395,21 @@ narrow, and independently verified against both a clean local re-run and
 CI's own signal, which is itself the independent check for this specific
 class of bug).
 
+**Correction (same day, before merge):** the first version of this fix
+stripped every PATH entry whose directory name matched `.bun/bin`. CI's own
+`Test` job then failed completely -- not the original narrow mismatch, but
+every fixture subprocess breaking, because this repo's CI installs `bun`
+itself via `oven-sh/setup-bun@v2` into `/home/runner/.bun/bin/bun`, i.e. a
+directory with the exact same name pattern. Name-matching the directory was
+the wrong signal; the actual distinguishing fact is which binary lives
+there. Corrected `isolatedEnv()` to check `existsSync(join(entry,
+'repo-harness-hook'))` per PATH entry and only exclude directories that
+actually contain that binary -- CI's `.bun/bin` (which has only `bun`, from
+a project-local `bun install`, not a global `repo-harness` install) is left
+untouched, while the operator-local contaminated directory is still
+excluded. Re-verified clean locally (focused test and full suite, same
+counts as before); the real proof is CI itself, checked after this push.
+
 ## Summary
 
 - LSC-01 remains eval-only, production behavior is untouched, all focused/root/full-suite evidence passes, and content is accepted (Round 3, Claude gatekeeper substitution for a Codex CLI that was unavailable this session) with no P1 findings and 3 documented P2 advisories, plus a post-Round-3 fix for a real PATH-leaked golden contamination bug that this repo's own CI independently caught (see above). The canonical mechanical ship path (`scripts/ship-worktrees.sh --ready`) still fails closed regardless, both from 3 pre-existing infra defects (tracked separately) and from its host-identity-derived reviewer check having no accommodation for this authorized exception — so shipping proceeds via an explicit, user-authorized manual path instead (checks run by hand, then direct `git push` + `gh pr create`).

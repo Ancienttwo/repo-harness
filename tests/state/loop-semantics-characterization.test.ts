@@ -191,18 +191,25 @@ function isolatedEnv(cwd: string, extra: NodeJS.ProcessEnv = {}): NodeJS.Process
       delete env[key];
     }
   }
-  // Strip any operator-local global-install bin directory (e.g. a personal
-  // `bun install -g repo-harness`'s ~/.bun/bin) from PATH. Left unfiltered,
+  // Strip PATH entries that resolve `repo-harness-hook` (e.g. a personal
+  // `bun install -g repo-harness`'s ~/.bun/bin). Left unfiltered,
   // hook_circuit_record()'s `command -v repo-harness-hook` PATH fallback
   // silently changes this fixture's observed behavior based on what happens
   // to be globally installed on the operator's machine, producing a golden
   // that cannot reproduce on a clean checkout (verified: this is exactly
-  // what diverged between a local capture and this repo's own CI, which has
-  // no such global install).
+  // what diverged between a local capture and this repo's own CI). This
+  // targets the specific binary, not the directory name -- CI's own
+  // oven-sh/setup-bun action also installs into a `.bun/bin`-named
+  // directory, so name-pattern matching would strip CI's own `bun` too
+  // (confirmed: an earlier version of this filter did exactly that and
+  // broke every fixture subprocess in CI).
   const pathSeparator = process.platform === 'win32' ? ';' : ':';
+  const hookBinaryNames = process.platform === 'win32'
+    ? ['repo-harness-hook.exe', 'repo-harness-hook.cmd', 'repo-harness-hook']
+    : ['repo-harness-hook'];
   const filteredPath = (env.PATH ?? '')
     .split(pathSeparator)
-    .filter((entry) => !/(^|[/\\])\.bun[/\\]bin$/.test(entry))
+    .filter((entry) => !hookBinaryNames.some((name) => existsSync(join(entry, name))))
     .join(pathSeparator);
   const home = join(cwd, '.home');
   mkdirSync(home, { recursive: true });
