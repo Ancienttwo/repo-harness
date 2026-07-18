@@ -457,19 +457,31 @@ describe('Effective State lock and source-stability characterization', () => {
 
   // LSC-05: nothing currently re-checks the source snapshot between
   // resolveStableEffectiveState's confirming read and commitStateVersionAfter
-  // consuming confirmed.state_revision. These two tests pre-hold the version
-  // lock (the same lock commitStateVersionAfter already acquires) with a
-  // live-pid owner file, so the main thread's resolveEffectiveState call
-  // blocks *after* its stability loop has already confirmed a snapshot but
-  // *before* commitStateVersionAfter's critical section can run. A detached
-  // shell process then mutates a source file and only afterwards releases the
-  // lock -- deterministically landing the mutation inside the confirm-to-commit
-  // window on every run, with no reliance on timing luck. Emptying (not
-  // removing) the lock directory between the two owner files in the
-  // exhaustion variant relies on the same empty-directory fail-closed
-  // behavior already exercised by "a delayed live creator in the aged empty
-  // pre-token window cannot overlap a contender" above, so the main thread's
-  // poll can never squeeze between the two writes.
+  // consuming confirmed.state_revision. The retry-succeeds test below
+  // pre-holds the version lock (the same lock commitStateVersionAfter already
+  // acquires) with a live-pid owner file, so the main thread's
+  // resolveEffectiveState call blocks *after* its stability loop has already
+  // confirmed a snapshot but *before* commitStateVersionAfter's critical
+  // section can run. A detached shell process then mutates a source file and
+  // only afterwards releases the lock -- deterministically landing the
+  // mutation inside the confirm-to-commit window on every run, with no
+  // reliance on timing luck. Only one mutation ever happens, and the bounded
+  // single retry is designed to absorb exactly one authority change, so this
+  // test's assertions hold no matter which checkpoint (stability loop or
+  // commit confirm) ends up observing it.
+  //
+  // The exhaustion test below cannot reuse a single precisely-timed mutation:
+  // it needs every attempt (the initial one and the one bounded retry) to
+  // keep observing change, and a slow host can let a one-shot sleep-timed
+  // mutation miss its window -- the resolver's bounded retry then
+  // legitimately finds a stable snapshot and succeeds instead of exhausting.
+  // It instead reuses the continuous-mutation barrier technique from
+  // "continuous capability-registry mutation overlaps resolution and fails
+  // without a partial cache" above: a background mutator holds the outer
+  // state lock until it is already rewriting the plan file in a tight loop,
+  // then releases it, so both resolveStableEffectiveState's stability loop
+  // and every subsequent confirm check keep observing freshly-changed
+  // content for the whole call, regardless of host speed.
 
   test('a source mutation exactly inside the version-allocation window is caught, retried once, and resolves against the new content with no version gap', async () => {
     const fixture = createEffectiveStateFixture();
@@ -519,55 +531,49 @@ describe('Effective State lock and source-stability characterization', () => {
     const fixture = createEffectiveStateFixture();
     try {
       const risk = { targetPaths: ['src/feature.ts'], operationKind: 'feature' } as const;
-      const ownerPath = stateVersionOwnerPath(fixture.cwd);
-      const lockDirPath = `${ownerPath}.lock`;
       const planAbsPath = join(fixture.cwd, PLAN);
-      const token1 = `${process.pid}-0-00000000-0000-4000-8000-000000000011`;
-      const owner1Path = join(lockDirPath, `${token1}.json`);
-      const token2 = `${process.pid}-0-00000000-0000-4000-8000-000000000012`;
-      const owner2Path = join(lockDirPath, `${token2}.json`);
-      const owner2Json = `${JSON.stringify({ pid: process.pid, created_at: Date.now(), token: token2 })}\n`;
-      mkdirSync(lockDirPath, { recursive: true, mode: 0o700 });
-      writeFileSync(owner1Path, `${JSON.stringify({ pid: process.pid, created_at: Date.now(), token: token1 })}\n`);
-
-      // Attempt 2 (the retry) cannot start until attempt 1 has fully failed
-      // and released -- resolveEffectiveState runs both attempts strictly
-      // sequentially and synchronously. So the lock genuinely must go through
-      // a real release -> reacquire cycle between the two mutations: a
-      // continuously-held directory (owner file swapped in place) would keep
-      // attempt 1 blocked through both mutations and let attempt 2 land on a
-      // clean, already-mutated read (only one combined mismatch ever
-      // detected, retry succeeds instead of exhausting). The "$5" gap after
-      // the first rmdir is generous relative to the lock's 10ms poll
-      // interval so attempt 1 reliably wins the reacquire race; attempt 2
-      // structurally cannot contend for that same window since it does not
-      // exist yet until attempt 1's fail cycle completes.
-      const exhaustScript = [
-        'sleep "$1"',
-        'printf "\\n<!-- confirm-window mutation 1 -->\\n" >> "$2"',
-        'rm -f "$3"',
-        'rmdir "$4"',
-        'sleep "$5"',
-        'mkdir "$4"',
-        'printf "%s" "$6" > "$7"',
-        'sleep "$1"',
-        'printf "\\n<!-- confirm-window mutation 2 -->\\n" >> "$2"',
-        'rm -f "$7"',
-        'rmdir "$4"',
-      ].join('\n');
+      const lockPath = join(fixture.cwd, '.ai/harness/state/effective.lock');
+      const startedPath = join(fixture.cwd, '.ai/harness/state/mutator-started');
+      const stopPath = join(fixture.cwd, '.ai/harness/state/mutator-stop');
+      const counterPath = join(fixture.cwd, '.ai/harness/state/mutator-count');
+      const { ownerPath } = writeFixtureStateLock(fixture.cwd, {
+        pid: process.pid,
+        created_at: Date.now(),
+        token: 'exhaustion-mutation-barrier',
+      });
       const mutator = spawn('sh', [
         '-c',
-        exhaustScript,
-        'confirm-window-exhaustion',
-        '0.2',
+        [
+          'i=0',
+          'printf "started\\n" > "$2"',
+          'printf " " >> "$1"',
+          'i=$((i + 1))',
+          'printf "%s\\n" "$i" > "$5"',
+          'rm -f "$3"',
+          'rmdir "$4"',
+          'while [ ! -f "$6" ]; do',
+          '  printf " " >> "$1"',
+          '  i=$((i + 1))',
+          'done',
+          'printf "%s\\n" "$i" > "$5"',
+        ].join('\n'),
+        'mutate-effective-state-source',
         planAbsPath,
-        owner1Path,
-        lockDirPath,
-        '0.1',
-        owner2Json,
-        owner2Path,
+        startedPath,
+        ownerPath,
+        lockPath,
+        counterPath,
+        stopPath,
       ], { stdio: 'ignore' });
-      mutator.unref();
+      const mutatorDone = new Promise<void>((resolvePromise, rejectPromise) => {
+        mutator.once('exit', (code) => code === 0
+          ? resolvePromise()
+          : rejectPromise(new Error(`fixture mutator exited ${code}`)));
+        mutator.once('error', rejectPromise);
+      });
+      const barrier = spawnSync('sh', ['-c', 'i=0; while [ ! -f "$1" ]; do i=$((i + 1)); [ "$i" -lt 500 ] || exit 1; sleep 0.01; done', 'wait-mutator', startedPath]);
+      expect(barrier.status).toBe(0);
+      const beforeCount = Number.parseInt(readFileSync(counterPath, 'utf-8'), 10);
 
       let cacheWriteTempCount = 0;
       const cache: StateCacheWriteEffects = {
@@ -576,13 +582,24 @@ describe('Effective State lock and source-stability characterization', () => {
         removeTemp(path) { rmSync(path, { force: true }); },
       };
 
-      expect(() => resolveEffectiveState(fixture.cwd, Date.now(), risk, { cache }))
-        .toThrow('workflow authority changed repeatedly while resolving effective state');
+      let failure: Error | null = null;
+      try {
+        resolveEffectiveState(fixture.cwd, Date.now(), risk, { cache });
+      } catch (error) {
+        failure = error as Error;
+      } finally {
+        writeFileSync(stopPath, 'stop\n');
+      }
+      await mutatorDone;
+
+      const afterCount = Number.parseInt(readFileSync(counterPath, 'utf-8'), 10);
+      expect(afterCount).toBeGreaterThan(beforeCount);
+      expect(failure?.message).toBe('workflow authority changed repeatedly while resolving effective state');
       expect(cacheWriteTempCount).toBe(0);
-      expect(existsSync(ownerPath)).toBe(false);
+      expect(existsSync(stateVersionOwnerPath(fixture.cwd))).toBe(false);
       expect(existsSync(join(fixture.cwd, EFFECTIVE_STATE_CACHE))).toBe(false);
     } finally {
       fixture.cleanup();
     }
-  }, 10_000);
+  }, 15_000);
 });
