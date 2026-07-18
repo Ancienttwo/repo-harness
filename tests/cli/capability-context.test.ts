@@ -7,8 +7,8 @@ import {
   runCapabilityContextRequest,
   runCapabilityContextStatus,
   runCapabilityContextSync,
-  type Capability,
 } from '../../src/cli/commands/capability-context';
+import type { Capability } from '../../src/core/capabilities/registry';
 
 function tmpWorkspace(prefix: string): string {
   return fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), `${prefix}-`)));

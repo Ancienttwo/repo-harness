@@ -8,9 +8,8 @@ import {
   buildArchContextBoundariesV1,
   findMatch,
   type ArchContextBoundaryNode,
-  type Capability,
-  type CapabilityRegistry,
 } from "../scripts/capability-resolver";
+import type { Capability, CapabilityRegistry } from "../src/core/capabilities/registry";
 
 const ROOT = join(import.meta.dir, "..");
 const REPO = ROOT;

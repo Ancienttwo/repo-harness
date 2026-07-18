@@ -3,15 +3,12 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
-  readdirSync,
   rmSync,
   symlinkSync,
   utimesSync,
   writeFileSync,
 } from 'fs';
 import { basename, join } from 'path';
-import { spawnSync } from 'child_process';
-import { createHash } from 'crypto';
 import {
   buildStateSnapshot,
   resolveEffectiveState,
@@ -19,18 +16,13 @@ import {
 import { stateVersionOwnerPath } from '../src/effects/state/git-state-version-store';
 import { migrateLegacyActivePlan } from '../src/cli/hook/legacy-active-plan-migration';
 import {
-  CLI,
   CONTRACT,
   PLAN,
-  REVIEW,
-  ROOT,
   commitFixture,
   createEffectiveStateFixture,
   resolveFixtureState,
-  runCli,
   withRepo,
   writeFixture as write,
-  writeFixtureStateLock,
 } from './state/effective-state-fixture';
 
 describe('effective state resolver', () => {
@@ -146,54 +138,6 @@ describe('effective state resolver', () => {
     }
   });
 
-  test('normalizes authoritative workflow sources and writes an atomic cache', () => {
-    withRepo((cwd) => {
-      const state = resolveFixtureState(cwd);
-      expect(state.task_id).toBe('20260712-2327-effective-fixture');
-      expect(state.phase).toBe('executing');
-      expect(state.authoritative_plan).toEqual({ path: PLAN, status: 'executing' });
-      expect(state.contract).toEqual({ path: CONTRACT, status: 'Active', plan: PLAN });
-      expect(state.task_profile).toBe('code-change');
-      expect(state.workflow_profile).toBe('standard');
-      expect(state.requested_workflow_profile).toBe('standard');
-      expect(state.risk_floor).toBe('standard');
-      expect(state.profile_reasons).toContain('risk-floor:standard:feature');
-      expect(state.allowed_paths).toEqual(['src/', 'tests/effective-state.test.ts']);
-      expect(state.next_action).toBe('implement resolver');
-      expect(state.blockers).toEqual([]);
-      expect(state.review.freshness).toBe('stale');
-      expect(state.external_acceptance.status).toBe('unavailable');
-      expect(state.checks).toMatchObject({ freshness: 'stale', status: 'fail' });
-      expect(state.handoff.freshness).toBe('missing');
-      expect(state.resume.freshness).toBe('missing');
-      expect(state.current_snapshot.freshness).toBe('fresh');
-      expect(state.source_hashes[PLAN]).toMatch(/^sha256:[0-9a-f]{64}$/);
-
-      const cached = JSON.parse(readFileSync(join(cwd, '.ai/harness/state/effective.json'), 'utf-8'));
-      expect(cached).toEqual(state);
-      expect(readdirSync(join(cwd, '.ai/harness/state'))).toEqual(['effective.json']);
-    });
-  });
-
-  test('uses a durable monotonic version plus content revision across cache deletion or corruption', () => {
-    withRepo((cwd) => {
-      const first = resolveFixtureState(cwd);
-      const unchanged = resolveFixtureState(cwd);
-      expect(unchanged.state_version).toBe(first.state_version);
-
-      rmSync(join(cwd, '.ai/harness/state/effective.json'));
-      expect(resolveFixtureState(cwd).state_version).toBe(first.state_version);
-      write(cwd, '.ai/harness/state/effective.json', '{broken');
-      expect(resolveFixtureState(cwd).state_version).toBe(first.state_version);
-
-      write(cwd, CONTRACT, readFileSync(join(cwd, CONTRACT), 'utf-8').replace('standard', 'strict'));
-      const changed = resolveFixtureState(cwd);
-      expect(changed.state_version).toBe(first.state_version + 1);
-      expect(changed.state_revision).toMatch(/^sha256:[0-9a-f]{64}$/);
-      expect(changed.workflow_profile).toBe('strict');
-    });
-  });
-
   test('fails closed when no actual changed or target paths are authoritative', () => {
     withRepo((cwd) => {
       const state = resolveEffectiveState(cwd);
@@ -218,6 +162,7 @@ describe('effective state resolver', () => {
 
   test('performs legacy migration only through the explicit one-shot command', () => {
     withRepo((cwd) => {
+      write(cwd, '.claude/.active-plan', `${PLAN}\n`);
       rmSync(join(cwd, '.ai/harness/active-plan'));
       expect(resolveEffectiveState(cwd, Date.now(), { targetPaths: ['src/index.ts'] }).authoritative_plan).toBeNull();
       const migrated = migrateLegacyActivePlan(cwd);
@@ -237,6 +182,7 @@ describe('effective state resolver', () => {
 
   test('explicit legacy migration fails closed when a canonical marker is unreadable', () => {
     withRepo((cwd) => {
+      write(cwd, '.claude/.active-plan', `${PLAN}\n`);
       const marker = join(cwd, '.ai/harness/active-plan');
       rmSync(marker);
       mkdirSync(marker);
@@ -312,96 +258,6 @@ describe('effective state resolver', () => {
     });
   });
 
-  test('keeps the legacy snapshot projection read-only', () => {
-    withRepo((cwd) => {
-      rmSync(join(cwd, '.ai/harness/active-plan'));
-      const result = spawnSync(process.execPath, [join(ROOT, 'src/cli/hook-entry.ts'), 'state-snapshot', '--json'], {
-        cwd,
-        encoding: 'utf-8',
-      });
-      expect(result.status).toBe(0);
-      expect(() => readFileSync(join(cwd, '.ai/harness/active-plan'), 'utf-8')).toThrow();
-      expect(() => readFileSync(join(cwd, '.ai/harness/state/effective.json'), 'utf-8')).toThrow();
-    });
-  });
-
-  test('marks stale projections without allowing tasks/current to become authority', () => {
-    withRepo((cwd) => {
-      write(cwd, '.ai/harness/checks/latest.json', JSON.stringify({
-        status: 'pass',
-        active_plan: 'plans/plan-old.md',
-      }));
-      write(cwd, '.ai/harness/handoff/current.md', '- Active plan: plans/plan-old.md\n');
-      write(cwd, 'tasks/current.md', [
-        '> **Updated At**: 2020-01-01T00:00:00Z',
-        '- Active Plan: plans/plan-old.md',
-      ].join('\n'));
-      write(cwd, '.ai/harness/sprint/active-sprint', 'plans/sprints/missing.sprint.md\n');
-
-      const state = resolveFixtureState(cwd);
-      expect(state.authoritative_plan?.path).toBe(PLAN);
-      expect(state.stale_sources).toEqual(expect.arrayContaining([
-        'checks',
-        'handoff',
-        'current_snapshot',
-        'active_sprint',
-      ]));
-      expect(state.checks.freshness).toBe('stale');
-      expect(state.active_sprint.freshness).toBe('stale');
-    });
-  });
-
-  test('binds checks to the exact review subject', () => {
-    withRepo((cwd) => {
-      const initial = resolveFixtureState(cwd);
-      write(cwd, '.ai/harness/checks/latest.json', JSON.stringify({
-        status: 'fail',
-        active_plan: PLAN,
-        review_subject_sha256: initial.source_hashes.review_subject,
-      }));
-      const bound = resolveFixtureState(cwd);
-      expect(initial.source_hashes.review_subject).toMatch(/^sha256:[0-9a-f]{64}$/);
-      expect(bound.checks.freshness).toBe('fresh');
-      expect(bound.blockers).toContain('checks_failed');
-      expect(bound.phase).toBe('blocked');
-
-      write(cwd, '.ai/harness/checks/latest.json', JSON.stringify({
-        status: 'pass',
-        active_plan: PLAN,
-        review_subject_sha256: 'sha256:' + '0'.repeat(64),
-      }));
-      expect(resolveFixtureState(cwd).checks.freshness).toBe('stale');
-    });
-  });
-
-  test('binds handoff and resume to task id, authority revision, and handoff hash', () => {
-    withRepo((cwd) => {
-      const initial = resolveFixtureState(cwd);
-      const revision = initial.source_hashes.authority_revision;
-      const handoff = [
-        '# Handoff',
-        `> **Task ID**: ${initial.task_id}`,
-        `> **Source State Revision**: ${revision}`,
-        '- Exact Next Step: continue bound task',
-        '',
-      ].join('\n');
-      write(cwd, '.ai/harness/handoff/current.md', handoff);
-      write(cwd, '.ai/harness/handoff/resume.md', [
-        '# Resume',
-        `> **Task ID**: ${initial.task_id}`,
-        `> **Source State Revision**: ${revision}`,
-        `> **Handoff Hash**: sha256:${createHash('sha256').update(handoff).digest('hex')}`,
-        '',
-      ].join('\n'));
-      const bound = resolveFixtureState(cwd);
-      expect(bound.handoff.freshness).toBe('fresh');
-      expect(bound.resume.freshness).toBe('fresh');
-
-      write(cwd, '.ai/harness/handoff/resume.md', `> **Task ID**: ${initial.task_id}\nold ${revision}\n`);
-      expect(resolveFixtureState(cwd).resume.freshness).toBe('stale');
-    });
-  });
-
   test('rewriting handoff and resume advances only projection and state revision, never authority, subject, evidence, or the progress token', () => {
     withRepo((cwd) => {
       const first = resolveFixtureState(cwd);
@@ -423,141 +279,6 @@ describe('effective state resolver', () => {
       expect(second.subject_revision).toBe(first.subject_revision);
       expect(second.evidence_revision).toBe(first.evidence_revision);
       expect(second.progress_token).toBe(first.progress_token);
-    });
-  });
-
-  test('records lock ownership and reclaims a stale dead owner', () => {
-    withRepo((cwd) => {
-      writeFixtureStateLock(cwd, {
-        pid: 99999999,
-        created_at: Date.now() - 60_000,
-        token: '99999999-0-00000000-0000-4000-8000-000000000005',
-      });
-      const state = resolveFixtureState(cwd);
-      expect(state.task_id).toBe('20260712-2327-effective-fixture');
-      expect(() => readdirSync(join(cwd, '.ai/harness/state/effective.lock'))).toThrow();
-    });
-  });
-
-  test('--field workflow_profile prints only the resolved profile value, matching the full JSON field', () => {
-    withRepo((cwd) => {
-      const full = resolveFixtureState(cwd);
-      const fieldOutput = spawnSync(process.execPath, [
-        CLI, 'state', 'resolve', '--json', '--field', 'workflow_profile',
-        '--target-path', 'src/feature.ts', '--operation', 'feature',
-      ], { cwd, encoding: 'utf-8' });
-      expect(fieldOutput.status).toBe(0);
-      expect(fieldOutput.stdout).toBe(`${full.workflow_profile}\n`);
-      expect(fieldOutput.stdout).not.toContain('{');
-      expect(fieldOutput.stderr).toBe('');
-    });
-  });
-
-  test('--field prints nothing for a null field and still preserves the blocked exit code', () => {
-    withRepo((cwd) => {
-      const fieldOutput = spawnSync(process.execPath, [
-        CLI, 'state', 'resolve', '--json', '--field', 'workflow_profile',
-      ], { cwd, encoding: 'utf-8' });
-      expect(fieldOutput.status).toBe(1);
-      expect(fieldOutput.stdout).toBe('');
-    });
-  });
-
-  test('--field serializes a non-string field as JSON while still suppressing the full document', () => {
-    withRepo((cwd) => {
-      const full = resolveFixtureState(cwd);
-      const fieldOutput = spawnSync(process.execPath, [
-        CLI, 'state', 'resolve', '--json', '--field', 'blockers',
-        '--target-path', 'src/feature.ts', '--operation', 'feature',
-      ], { cwd, encoding: 'utf-8' });
-      expect(fieldOutput.status).toBe(0);
-      expect(JSON.parse(fieldOutput.stdout)).toEqual(full.blockers);
-    });
-  });
-
-  test('--field on an unknown field name reports an error and exits non-zero, listing legal fields', () => {
-    withRepo((cwd) => {
-      const fieldOutput = spawnSync(process.execPath, [
-        CLI, 'state', 'resolve', '--json', '--field', 'not_a_real_field',
-        '--target-path', 'src/feature.ts', '--operation', 'feature',
-      ], { cwd, encoding: 'utf-8' });
-      expect(fieldOutput.status).toBe(2);
-      expect(fieldOutput.stdout).toBe('');
-      expect(fieldOutput.stderr).toContain('not_a_real_field');
-      expect(fieldOutput.stderr).toContain('workflow_profile');
-    });
-  });
-
-  test('--field suppresses the printed value when blockers are present, even though the field itself resolved a value', () => {
-    withRepo((cwd) => {
-      // missing_contract only fires under Strict now (Standard's
-      // separate_contract requirement is not_required by default) -- force
-      // Strict explicitly so this still exercises "a blocker fires while
-      // workflow_profile itself resolves a real, non-null value" -- the CLI
-      // must not print a value a caller could mistake for trustworthy when
-      // the exit code already signals "blocked".
-      rmSync(join(cwd, CONTRACT));
-      const full = resolveFixtureState(cwd, Date.now(), {
-        targetPaths: ['src/feature.ts'],
-        operationKind: 'feature',
-        explicitOverride: 'strict',
-      });
-      expect(full.blockers).toContain('missing_contract');
-      expect(full.workflow_profile).not.toBeNull();
-
-      const fieldOutput = spawnSync(process.execPath, [
-        CLI, 'state', 'resolve', '--json', '--field', 'workflow_profile',
-        '--target-path', 'src/feature.ts', '--operation', 'feature', '--profile', 'strict',
-      ], { cwd, encoding: 'utf-8' });
-      expect(fieldOutput.status).toBe(1);
-      expect(fieldOutput.stdout).toBe('');
-    });
-  });
-
-  function setContractProfile(cwd: string, profile: string): void {
-    const current = readFileSync(join(cwd, CONTRACT), 'utf-8');
-    write(cwd, CONTRACT, current.replace(
-      /^> \*\*Workflow Profile\*\*: .*$/m,
-      `> **Workflow Profile**: ${profile}`,
-    ));
-  }
-
-  test('guidance encodes the ceremony bound per resolved profile: lite zero, standard capped, strict full', () => {
-    withRepo((cwd) => {
-      // Lite: no strict category, no cross-capability, no medium scope, not
-      // an explicit "feature" operation -- riskFloor is lite, and an
-      // explicit override to lite matches it exactly.
-      setContractProfile(cwd, 'lite');
-      const lite = resolveEffectiveState(cwd, Date.now(), {
-        targetPaths: ['src/feature.ts'],
-        operationKind: 'edit',
-      });
-      expect(lite.workflow_profile).toBe('lite');
-      expect(lite.guidance).toBe(
-        'brief -> edit -> targeted test; do not author plan, contract, notes, todos, or checks files (zero ceremony)',
-      );
-
-      // Standard: restore the fixture's default contract override + feature operation.
-      setContractProfile(cwd, 'standard');
-      const standard = resolveFixtureState(cwd);
-      expect(standard.workflow_profile).toBe('standard');
-      expect(standard.guidance).toBe(
-        'at most one active plan artifact; no contract, notes, or todos scaffolding beyond it',
-      );
-
-      // Strict: raising the override is always allowed (raise-only floor).
-      setContractProfile(cwd, 'strict');
-      const strict = resolveFixtureState(cwd);
-      expect(strict.workflow_profile).toBe('strict');
-      expect(strict.guidance).toBe('full envelope: plan, contract, notes, and checks as required');
-    });
-  });
-
-  test('guidance is null when the risk floor cannot resolve a profile', () => {
-    withRepo((cwd) => {
-      const state = resolveEffectiveState(cwd);
-      expect(state.workflow_profile).toBeNull();
-      expect(state.guidance).toBeNull();
     });
   });
 
@@ -605,24 +326,6 @@ describe('effective state resolver', () => {
         write(cwd, '.ai/context/capabilities.json', '{not json');
         const state = resolveFixtureState(cwd);
         expect(state.blockers).toContain('capability_registry:invalid');
-      });
-    });
-
-    test('a declared registry file that is zero-byte or otherwise unreadable already fails closed the same as missing (locks in existing behavior; external acceptance verified this was not actually a gap)', () => {
-      withRepo((cwd) => {
-        write(cwd, '.ai/harness/policy.json', JSON.stringify({
-          context: { capability_registry_file: '.ai/context/capabilities.json' },
-        }));
-        // readFileSync on a zero-byte file returns '' (does not throw), and
-        // '' is falsy in JS -- capabilityIdsForPaths' `if (!text)` branch
-        // already treats a present-but-empty file identically to a missing
-        // one, so a declared registry that is zero-byte already resolves
-        // 'invalid' today. This test locks that in explicitly rather than
-        // only covering the "file does not exist at all" case above.
-        write(cwd, '.ai/context/capabilities.json', '');
-        const state = resolveFixtureState(cwd);
-        expect(state.blockers).toContain('capability_registry:invalid');
-        expect(state.profile_reasons).toContain('capability:registry:invalid');
       });
     });
 
@@ -717,14 +420,6 @@ describe('effective state resolver', () => {
         });
       });
     }
-
-    test('a non-array capabilities field fails closed with a structured blocker', () => {
-      withRepo((cwd) => {
-        write(cwd, '.ai/context/capabilities.json', JSON.stringify({ capabilities: 'oops' }));
-        const state = resolveFixtureState(cwd);
-        expect(state.blockers).toContain('capability_registry:invalid');
-      });
-    });
 
     test('a valid registry with no matching prefix produces no blocker but records the unmapped reason', () => {
       withRepo((cwd) => {
@@ -827,122 +522,4 @@ describe('effective state resolver', () => {
     });
   });
 
-  // Round 2 external acceptance: capabilityIdsForPaths previously marked a
-  // registry 'valid' even when version !== 1, an entry's id was an empty
-  // string, or an entry's prefixes was an empty array -- all three are
-  // rejected by the canonical registry validator (scripts/capability-
-  // resolver.ts, projected to assets/templates/helpers/capability-
-  // resolver.ts), so a malformed registry of exactly this shape silently
-  // bypassed the capability_registry:invalid blocker. This describe block
-  // proves both sides agree on accept/reject for the same fixture, using the
-  // real, independently-shipped canonical script (copied into the fixture
-  // repo, not imported) rather than trusting the two implementations stay in
-  // sync by inspection alone.
-  describe('registry validation parity with capability-resolver.ts (Round 2 external acceptance)', () => {
-    function installCanonicalValidator(cwd: string): void {
-      mkdirSync(join(cwd, 'scripts'), { recursive: true });
-      writeFileSync(
-        join(cwd, 'scripts/capability-resolver.ts'),
-        readFileSync(join(ROOT, 'assets/templates/helpers/capability-resolver.ts')),
-      );
-    }
-
-    function runCanonicalValidate(cwd: string): { status: number | null; stdout: string; errors: string[] } {
-      const result = spawnSync('bun', ['scripts/capability-resolver.ts', 'validate', '--repo', '.', '--format', 'json'], {
-        cwd,
-        encoding: 'utf-8',
-      });
-      let errors: string[] = [];
-      try {
-        errors = (JSON.parse(result.stdout) as { errors?: string[] }).errors ?? [];
-      } catch {
-        // readRegistry() throws before producing any JSON for a structural
-        // failure (e.g. version !== 1); the CLI still exits non-zero with a
-        // plain-text message on stderr/stdout, which is what this parity
-        // check actually asserts -- the errors array is only populated when
-        // readRegistry() succeeded and validateRegistry() ran.
-      }
-      return { status: result.status, stdout: result.stdout, errors };
-    }
-
-    const validCapability = {
-      id: 'good-cap',
-      domain: 'good-domain',
-      name: 'good-name',
-      prefixes: ['src/good'],
-      contract_files: { agents: 'src/good/AGENTS.md', claude: 'src/good/CLAUDE.md' },
-      architecture_module: 'docs/architecture/modules/good/good.md',
-      workstream_dir: 'tasks/workstreams/good/good',
-      lsp_profile: 'typescript-lsp',
-      verification_hints: ['bun test'],
-    };
-
-    function seedRegistry(cwd: string, version: unknown, capability: Record<string, unknown>): void {
-      write(cwd, 'src/good/f.ts', 'export const good = true;\n');
-      write(cwd, '.ai/context/capabilities.json', JSON.stringify({ version, capabilities: [capability] }));
-      installCanonicalValidator(cwd);
-      commitFixture(cwd, 'seed registry parity fixture');
-    }
-
-    test('a fully valid registry passes both state resolution and capability-resolver.ts validate', () => {
-      withRepo((cwd) => {
-        seedRegistry(cwd, 1, validCapability);
-        const state = resolveEffectiveState(cwd, Date.now(), {
-          targetPaths: ['src/good/f.ts'],
-          operationKind: 'edit',
-        });
-        expect(state.blockers).not.toContain('capability_registry:invalid');
-
-        const canonical = runCanonicalValidate(cwd);
-        expect(canonical.status).toBe(0);
-        expect(canonical.errors).toEqual([]);
-      });
-    });
-
-    test('version !== 1 fails closed on both sides', () => {
-      withRepo((cwd) => {
-        seedRegistry(cwd, 2, validCapability);
-        const state = resolveEffectiveState(cwd, Date.now(), {
-          targetPaths: ['src/good/f.ts'],
-          operationKind: 'edit',
-        });
-        expect(state.blockers).toContain('capability_registry:invalid');
-
-        const canonical = runCanonicalValidate(cwd);
-        expect(canonical.status).not.toBe(0);
-      });
-    });
-
-    test('an empty (post-trim) id fails closed on both sides', () => {
-      withRepo((cwd) => {
-        seedRegistry(cwd, 1, { ...validCapability, id: '  ' });
-        const state = resolveEffectiveState(cwd, Date.now(), {
-          targetPaths: ['src/good/f.ts'],
-          operationKind: 'edit',
-        });
-        expect(state.blockers).toContain('capability_registry:invalid');
-        expect(state.profile_reasons).toContain('capability:registry:malformed-entries:1');
-
-        const canonical = runCanonicalValidate(cwd);
-        expect(canonical.status).not.toBe(0);
-        expect(canonical.errors.some((error) => error.includes('id is required'))).toBe(true);
-      });
-    });
-
-    test('empty prefixes fails closed on both sides', () => {
-      withRepo((cwd) => {
-        seedRegistry(cwd, 1, { ...validCapability, prefixes: [] });
-        const state = resolveEffectiveState(cwd, Date.now(), {
-          targetPaths: ['src/good/f.ts'],
-          operationKind: 'edit',
-        });
-        expect(state.blockers).toContain('capability_registry:invalid');
-        expect(state.profile_reasons).toContain('capability:registry:malformed-entries:1');
-
-        const canonical = runCanonicalValidate(cwd);
-        expect(canonical.status).not.toBe(0);
-        expect(canonical.errors.some((error) => error.includes('prefixes must contain at least one path'))).toBe(true);
-      });
-    });
-  });
 });

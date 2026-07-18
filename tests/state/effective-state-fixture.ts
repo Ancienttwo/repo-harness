@@ -6,9 +6,10 @@ import {
   rmSync,
   writeFileSync,
 } from 'fs';
+import { createHash } from 'crypto';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { spawnSync } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import {
   resolveEffectiveState,
 } from '../../src/effects/state/resolve-effective-state';
@@ -19,20 +20,27 @@ export const CLI = join(ROOT, 'src/cli/index.ts');
 export const HOOK_ENTRY = join(ROOT, 'src/cli/hook-entry.ts');
 export const PLAN = 'plans/plan-20260712-2327-effective-fixture.md';
 export const CONTRACT = 'tasks/contracts/20260712-2327-effective-fixture.contract.md';
-export const REVIEW = 'tasks/reviews/20260712-2327-effective-fixture.review.md';
+const REVIEW = 'tasks/reviews/20260712-2327-effective-fixture.review.md';
 const FIXTURE_GIT_ENV = {
   ...process.env,
   GIT_AUTHOR_DATE: '2020-01-01T00:00:00Z',
   GIT_COMMITTER_DATE: '2020-01-01T00:00:00Z',
 };
 
-export interface EffectiveStateFixture {
+interface EffectiveStateFixture {
   readonly cwd: string;
   cleanup(): void;
 }
 
-export interface EffectiveStateFixtureOptions {
+interface EffectiveStateFixtureOptions {
   readonly currentUpdatedAt?: string;
+  readonly includeLegacyActivePlan?: boolean;
+}
+
+interface EffectiveStateScenario {
+  readonly name: string;
+  readonly risk: EffectiveStateRiskInput;
+  readonly setup?: (cwd: string, nowMs: number) => void;
 }
 
 export function writeFixture(cwd: string, path: string, content: string): void {
@@ -66,11 +74,13 @@ export function createEffectiveStateFixture(
 ): EffectiveStateFixture {
   const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-effective-')));
   try {
-    for (const path of ['plans', 'tasks/contracts', 'tasks/reviews', '.ai/harness/handoff', '.claude']) {
+    for (const path of ['plans', 'tasks/contracts', 'tasks/reviews', '.ai/harness/handoff']) {
       mkdirSync(join(cwd, path), { recursive: true });
     }
     writeFixture(cwd, '.ai/harness/active-plan', `${PLAN}\n`);
-    writeFixture(cwd, '.claude/.active-plan', `${PLAN}\n`);
+    if (options.includeLegacyActivePlan) {
+      writeFixture(cwd, '.claude/.active-plan', `${PLAN}\n`);
+    }
     writeFixture(cwd, '.ai/harness/active-worktree', `${cwd}\n`);
     writeFixture(cwd, PLAN, [
     '# Plan: Effective Fixture',
@@ -173,15 +183,6 @@ export function runStateCli(
   return { status: result.status, stdout: result.stdout, stderr: result.stderr };
 }
 
-export function runCli(cwd: string): { status: number | null; state: EffectiveState; stderr: string } {
-  const result = runStateCli(cwd, ['state', 'resolve', '--json']);
-  return {
-    status: result.status,
-    state: JSON.parse(result.stdout) as EffectiveState,
-    stderr: result.stderr,
-  };
-}
-
 export function resolveFixtureState(
   cwd: string,
   nowMs = Date.now(),
@@ -199,4 +200,163 @@ export function replaceContractProfile(cwd: string, profile: string): void {
     /^> \*\*Workflow Profile\*\*: .*$/m,
     `> **Workflow Profile**: ${profile}`,
   ));
+}
+
+function sha256(content: string): string {
+  return `sha256:${createHash('sha256').update(content).digest('hex')}`;
+}
+
+function gitHead(cwd: string): string {
+  const result = spawnSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf-8' });
+  if (result.status !== 0) throw new Error(result.stderr);
+  return result.stdout.trim();
+}
+
+function makeFreshEvidence(cwd: string, nowMs: number): void {
+  const risk = { targetPaths: ['src/feature.ts'], operationKind: 'feature' } as const;
+  const initial = resolveEffectiveState(cwd, nowMs, risk);
+  const subject = initial.source_hashes.review_subject;
+  if (!subject) throw new Error('fixture review subject is unavailable');
+  const target = gitHead(cwd);
+  writeFixture(cwd, REVIEW, [
+    '# Review',
+    '> **Recommendation**: pass',
+    `> **Reviewed Subject SHA256**: ${subject}`,
+    `> **Reviewed Target Revision**: ${target}`,
+    '## External Acceptance Advice',
+    '> **External Acceptance**: pass',
+    `> **Reviewed Subject SHA256**: ${subject}`,
+    `> **Reviewed Target Revision**: ${target}`,
+    '',
+  ].join('\n'));
+  const reviewed = resolveEffectiveState(cwd, nowMs, risk);
+  const authorityRevision = reviewed.source_hashes.authority_revision;
+  const handoff = [
+    '# Handoff',
+    '> **Task ID**: 20260712-2327-effective-fixture',
+    `> **Source State Revision**: ${authorityRevision}`,
+    '- Exact Next Step: implement resolver',
+    '',
+  ].join('\n');
+  writeFixture(cwd, '.ai/harness/checks/latest.json', JSON.stringify({
+    status: 'pass',
+    active_plan: PLAN,
+    review_subject_sha256: subject,
+  }));
+  writeFixture(cwd, '.ai/harness/handoff/current.md', handoff);
+  writeFixture(cwd, '.ai/harness/handoff/resume.md', [
+    '# Resume',
+    '> **Task ID**: 20260712-2327-effective-fixture',
+    `> **Source State Revision**: ${authorityRevision}`,
+    `> **Handoff Hash**: ${sha256(handoff)}`,
+    '',
+  ].join('\n'));
+}
+
+export const EFFECTIVE_STATE_SCENARIOS: readonly EffectiveStateScenario[] = [
+  {
+    name: 'idle-inspect',
+    risk: { targetPaths: [], operationKind: 'inspect' },
+    setup: (cwd) => {
+      rmSync(join(cwd, '.ai/harness/active-plan'), { force: true });
+      rmSync(join(cwd, '.claude/.active-plan'), { force: true });
+    },
+  },
+  {
+    name: 'executing-fresh-evidence',
+    risk: { targetPaths: ['src/feature.ts'], operationKind: 'feature' },
+    setup: makeFreshEvidence,
+  },
+  {
+    name: 'missing-contract',
+    risk: { targetPaths: ['src/feature.ts'], operationKind: 'feature' },
+    setup: (cwd) => rmSync(join(cwd, CONTRACT)),
+  },
+  {
+    name: 'foreign-worktree-owner',
+    risk: { targetPaths: ['src/feature.ts'], operationKind: 'feature' },
+    setup: (cwd) => writeFixture(cwd, '.ai/harness/active-worktree', '/tmp/foreign-worktree\n'),
+  },
+  {
+    name: 'stale-projections',
+    risk: { targetPaths: ['src/feature.ts'], operationKind: 'feature' },
+    setup: (cwd) => {
+      writeFixture(cwd, '.ai/harness/checks/latest.json', JSON.stringify({
+        status: 'pass',
+        active_plan: 'plans/plan-old.md',
+      }));
+      writeFixture(cwd, '.ai/harness/handoff/current.md', '- Active Plan: plans/plan-old.md\n');
+      writeFixture(cwd, 'tasks/current.md', [
+        '> **Updated At**: 2020-01-01T00:00:00Z',
+        '- Active Plan: plans/plan-old.md',
+      ].join('\n'));
+      writeFixture(cwd, '.ai/harness/sprint/active-sprint', 'plans/sprints/missing.sprint.md\n');
+    },
+  },
+  {
+    name: 'invalid-capability-registry',
+    risk: { targetPaths: ['src/feature.ts'], operationKind: 'edit' },
+    setup: (cwd) => {
+      writeFixture(cwd, '.ai/context/capabilities.json', '{not json');
+      commitFixture(cwd, 'seed invalid capability registry');
+    },
+  },
+  {
+    name: 'profile-below-strict-floor',
+    risk: { targetPaths: ['src/security/auth.ts'], operationKind: 'security' },
+  },
+  {
+    name: 'deleted-cache-reconstruction',
+    risk: { targetPaths: ['src/feature.ts'], operationKind: 'feature' },
+    setup: (cwd, nowMs) => {
+      resolveEffectiveState(cwd, nowMs, { targetPaths: ['src/feature.ts'], operationKind: 'feature' });
+      rmSync(join(cwd, '.ai/harness/state/effective.json'));
+    },
+  },
+  {
+    name: 'corrupt-cache-reconstruction',
+    risk: { targetPaths: ['src/feature.ts'], operationKind: 'feature' },
+    setup: (cwd, nowMs) => {
+      resolveEffectiveState(cwd, nowMs, { targetPaths: ['src/feature.ts'], operationKind: 'feature' });
+      writeFixture(cwd, '.ai/harness/state/effective.json', '{broken');
+    },
+  },
+  {
+    name: 'stale-dead-lock-reclaimed',
+    risk: { targetPaths: ['src/feature.ts'], operationKind: 'feature' },
+    setup: (cwd, nowMs) => writeFixtureStateLock(cwd, {
+      pid: 99999999,
+      created_at: nowMs - 60_000,
+      token: '99999999-0-00000000-0000-4000-8000-000000000003',
+    }),
+  },
+  {
+    name: 'live-lock-waits-for-release',
+    risk: { targetPaths: ['src/feature.ts'], operationKind: 'feature' },
+    setup: (cwd, nowMs) => {
+      const { lockPath, ownerPath } = writeFixtureStateLock(cwd, {
+        pid: process.pid,
+        created_at: nowMs,
+        token: 'live',
+      });
+      const release = spawn('sh', ['-c', 'sleep 0.1; rm -f "$1"; rmdir "$2"', 'release-lock', ownerPath, lockPath], {
+        cwd,
+        stdio: 'ignore',
+      });
+      release.unref();
+    },
+  },
+  {
+    name: 'explicit-strict-without-path-signals',
+    risk: { explicitOverride: 'strict' },
+    setup: (cwd) => replaceContractProfile(cwd, 'strict'),
+  },
+];
+
+export function effectiveStateCliRiskArgs(risk: EffectiveStateRiskInput): string[] {
+  return [
+    ...(risk.targetPaths?.length ? ['--target-path', ...risk.targetPaths] : []),
+    ...(risk.operationKind ? ['--operation', risk.operationKind] : []),
+    ...(risk.explicitOverride ? ['--profile', risk.explicitOverride] : []),
+  ];
 }
