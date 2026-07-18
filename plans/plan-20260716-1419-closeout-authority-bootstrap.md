@@ -207,7 +207,7 @@ Cap each fail → fix → reverify invariant at three rounds; on the third failu
 - [x] S2-H2: Bind exact post-freeze semantic destination bytes through a trusted-driver scratch manifest and host receipt; tampered-destination regression green
 - [x] V: Full required checks green (`bun test`, deploy-sql-order, architecture-sync, task-sync, `check-task-workflow --strict`, inspect-project-state, `adopt --repo . --dry-run`, `sync-hook-sources --check`, `sync-helper-sources --check`); docs/tasks sync
 - [x] G: Gatekeeper acceptance on the full diff against this plan
-- [ ] E: External acceptance (host-aware: Codex via codex-review, since the executing host is Claude) recorded on the frozen normalized subject with `Benchmark Evidence SHA256: not-applicable`
+- [x] E: External acceptance recorded on the frozen normalized REBASED subject with `Benchmark Evidence SHA256: not-applicable` (Round 2, Claude gatekeeper substitution — Codex quota-limited until 2026-08-16 per the documented exception; see review)
 - [ ] SHIP: independent PR to main after gatekeeper acceptance (CRG-01 resumption framing overtaken: CRG-01 and LSC-01..08 already shipped via the documented manual pattern; this package retires that pattern for future closeouts)
 
 ## Verification
@@ -246,14 +246,3 @@ bun src/cli/index.ts adopt --repo . --dry-run
 
 ## Annotations
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
-
-## Task Breakdown
-- [x] S1-R: Author failing regressions 1-3 (contract-scoped benchmark evidence) and confirm they fail against current code
-- [x] S1-I: Implement Part A (workflow-state.sh canonical + projection, verify-sprint.sh, verify-contract.sh, contract templates, helper mirrors); regressions 1-3 green; focused suites green
-- [x] S1-C: Add `## Evidence Requirements` (`benchmark: not_applicable`) to this work-package's own active contract
-- [x] S2-R: Author failing regressions 4-7 (freeze receipt + topology) and confirm they fail against current code
-- [x] S2-I: Implement Part B (contract-worktree.sh finish reorder + allowlist, merge-gate.ts receipt/verify/goal-resolution, helper mirrors); regressions 4-7 green
-- [x] V: Full required checks green (`bun test`, deploy-sql-order, architecture-sync, task-sync, `check-task-workflow --strict`, inspect-project-state, `adopt --repo . --dry-run`, `sync-hook-sources --check`, `sync-helper-sources --check`); docs/tasks sync
-- [x] G: Gatekeeper acceptance on the full diff against this plan
-- [x] E: External acceptance (host-aware: Codex via codex-review, since the executing host is Claude) recorded on the frozen normalized subject with `Benchmark Evidence SHA256: not-applicable`
-- [ ] SHIP: independent PR to main after gatekeeper acceptance (CRG-01 resumption framing overtaken: CRG-01 and LSC-01..08 already shipped via the documented manual pattern; this package retires that pattern for future closeouts)

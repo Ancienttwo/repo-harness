@@ -5,12 +5,53 @@
 > **Contract**: tasks/contracts/20260716-1419-closeout-authority-bootstrap.contract.md
 > **Notes File**: tasks/notes/20260716-1419-closeout-authority-bootstrap.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-07-17 06:10
+> **Last Updated**: 2026-07-19 (Round 2, rebased subject; Claude gatekeeper substitution for external acceptance)
 > **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Subject SHA256**: sha256:abc80249e0b5abd1e5a13687be20ecbfa943ecee9bd2d184548484624f22f7b8
+> **Reviewed Subject SHA256**: sha256:67bbb351129ef2adc9837fff683916ca47465c64e47883c3c2671b74c10ec84a
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: be3e93ce72c812a33045a15c4d97452c59fa3fbb
+> **Reviewed Target Revision**: 351139fd91717a83d38d5da8a39b3ed28df93257
+
+## Round 2 — Rebased Subject Acceptance (2026-07-19)
+
+The package parked at `be3e93ce` was checkpoint-committed (`3dd89785`),
+rebased onto post-LSC `origin/main@351139fd` (31/38 files untouched by main;
+two real conflicts + one mechanical projection regen, resolved per the
+reconciliation map), and re-framed (`79be6d3d`: the original "unblock
+CRG-01" mission is overtaken — CRG-01 and LSC-01..08 shipped through the
+documented manual pattern; this package retires that pattern for future
+closeouts). Round 1 below remains the historical record bound to the old
+subject; THIS round is the authoritative acceptance for the rebased subject
+in the header.
+
+- Independent read-only Claude gatekeeper (fresh context): VERDICT PASS.
+  Repair 1 re-verified with live disposable-fixture probes (sentinel
+  injection, duplicate keys, glued tokens, nested-scope all rejected
+  fail-closed; presence alone never creates a requirement). Repair 2
+  re-verified by code path and pinned tests (freeze F -> gate-at-F with live
+  goal -> archive as separate L; receipt binds F + post-freeze allowlist +
+  goal hash + destination content hashes; empty allowlist = zero tolerance).
+  Rebase integrity: src/core, src/effects, hook-input, stop-orchestrator,
+  tests/state all empty diffs vs main; characterization passes unmodified.
+  Post-LSC interaction: fail-closed gate binds only the active-contract
+  path; all active-contract fixtures carry declarations.
+- Verification at the rebased subject: full `bun test` 1687 pass / 1 skip /
+  0 fail; focused suites 51 + 124 pass; check:type clean; six canonical/
+  mirror cmp pairs identical; sync checks OK; strict workflow check exit 0
+  after the handoff refresh.
+- Gate findings closed this round: the plan's trailing duplicate Task
+  Breakdown removed (single authority, E-state consistent); stale worktree
+  resume packet refreshed via prepare-handoff.
+- External acceptance: pass (Claude gatekeeper substitution — Codex CLI
+  quota-limited until 2026-08-16; continuation of the documented exception
+  recorded across the LSC-01..08 reviews). Mechanical
+  `workflow_external_acceptance_pass` reviewer-identity gating (the
+  solo-operator ledger row) is NOT repaired by this package and remains
+  tracked; the canonical ship-worktrees end-to-end proof is deferred to the
+  first package shipped after Codex quota returns.
+- Benchmark Evidence SHA256: not-applicable (this package's own contract
+  declares `benchmark: not_applicable` under `## Evidence Requirements` —
+  the exact mechanism it introduces).
 
 ## Human Review Card
 
