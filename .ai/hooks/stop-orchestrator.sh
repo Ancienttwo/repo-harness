@@ -253,7 +253,7 @@ minimal_change_render_handoff_section() {
 }
 
 minimal_change_append_handoff() {
-  local handoff_file tmp_file resume_file
+  local handoff_file tmp_file resume_file resume_tmp_file
 
   [[ -n "$MINIMAL_CHANGE_REVIEW_VERDICT" ]] || return 0
   [[ "$MINIMAL_CHANGE_REVIEW_VERDICT" != "disabled" ]] || return 0
@@ -276,13 +276,24 @@ minimal_change_append_handoff() {
   minimal_change_render_handoff_section >> "$tmp_file"
   mv "$tmp_file" "$handoff_file"
 
-  # refresh_handoff (workflow_write_handoff) already wrote a resume packet
-  # whose mtime matched the handoff snapshot at that time; this function just
-  # mutated handoff_file again, so bump the resume packet's mtime to match or
-  # check_handoff_resume_pair sees it as stale. Its content does not
-  # reference minimal-change-review data, so no rewrite is needed.
+  # refresh_handoff (workflow_write_handoff) already wrote a matched-freshness
+  # handoff+resume pair; this function's append above is a genuine second
+  # mutation of handoff_file, so check_handoff_resume_pair
+  # (scripts/check-task-workflow.sh) would see a stale resume packet unless
+  # the pair's finalization is completed here too. Reconfirm resume_file with
+  # a real write -- reissuing its own Generated timestamp in place -- instead
+  # of borrowing handoff's mtime via a content-blind `touch -r`: the resume
+  # packet's Generated field should reflect when the pair was actually last
+  # finalized, and its other content does not reference minimal-change-review
+  # data, so no further rewrite is needed.
   resume_file="$(workflow_resume_packet_file)"
-  [[ -f "$resume_file" ]] && touch -r "$handoff_file" "$resume_file" 2>/dev/null || true
+  if [[ -f "$resume_file" ]]; then
+    resume_tmp_file="$(mktemp "${resume_file}.finalize.XXXXXX")" && {
+      sed -E "s/^> \*\*Generated\*\*:.*/> **Generated**: $(date '+%Y-%m-%d %H:%M:%S')/" "$resume_file" > "$resume_tmp_file" \
+        && mv "$resume_tmp_file" "$resume_file" \
+        || rm -f "$resume_tmp_file"
+    }
+  fi
 }
 
 minimal_change_reason_suffix() {
@@ -588,32 +599,133 @@ refresh_handoff() {
   echo "[FinalizeHandoff] Refreshed $(workflow_handoff_file)." >&2
 }
 
+# Memoized canonical-state globals. Populated exactly once per Stop run by
+# stop_resolve_state(), which every reader below (stop_workflow_profile,
+# stop_maybe_block_on_readiness, stop_report_not_ready_to_ship) consumes
+# verbatim -- one CLI invocation per Stop run, reused for profile AND
+# readiness, re-deriving nothing.
+STOP_STATE_RESOLVED=""
+STOP_STATE_PROFILE=""
+STOP_STATE_ALLOWED_TO_STOP=""
+STOP_STATE_ALLOWED_TO_STOP_REASONS=""
+STOP_STATE_READY_TO_SHIP=""
+STOP_STATE_READY_TO_SHIP_REASONS=""
+STOP_STATE_NEXT_ACTION=""
+
+# Resolve profile + readiness through the same canonical hook CLI route
+# pre-edit-guard.sh uses for `state resolve` (REPO_HARNESS_CLI -> repo-harness
+# on PATH -> source src/cli/index.ts, in that order). Memoized so callers
+# invoked more than once in this process (e.g. from inside the
+# stop_workflow_profile() command substitution below) never trigger a second
+# cold start. Must be called at least once from the *main* shell (not from
+# inside a `$(...)` command substitution) before any reader below, because
+# bash command substitutions fork a subshell and cannot write these globals
+# back to the caller.
+#
+# Any output at all -- even a blocked resolution (non-zero CLI exit with a
+# populated blockers array) -- counts as success: it is still a real,
+# canonical answer, just one that reports workflow_profile/readiness as
+# unavailable. Only empty/unparseable output means the resolver itself is
+# unavailable or failed; that -- and only that -- logs to stderr and leaves
+# every STOP_STATE_* value empty so no profile is ever invented and nothing
+# is ever blocked from an absent answer. The orthogonal gates (plan
+# completeness, delegation fallback) run regardless of this outcome.
+stop_resolve_state() {
+  [[ -z "$STOP_STATE_RESOLVED" ]] || return 0
+  STOP_STATE_RESOLVED="1"
+
+  local source_cli output
+  local -a args=(state resolve --json --operation inspect)
+  if [[ -n "${REPO_HARNESS_WORKFLOW_PROFILE:-}" ]]; then
+    args+=(--profile "$REPO_HARNESS_WORKFLOW_PROFILE")
+  fi
+  source_cli="$(cd "$SCRIPT_DIR/../.." 2>/dev/null && pwd)/src/cli/index.ts"
+
+  set +e
+  if [[ -n "${REPO_HARNESS_CLI:-}" && -f "${REPO_HARNESS_CLI:-}" ]] && command -v bun >/dev/null 2>&1; then
+    output="$(bun "$REPO_HARNESS_CLI" "${args[@]}" 2>/dev/null)"
+  elif command -v repo-harness >/dev/null 2>&1; then
+    output="$(repo-harness "${args[@]}" 2>/dev/null)"
+  elif [[ -f "$source_cli" ]] && command -v bun >/dev/null 2>&1; then
+    output="$(bun "$source_cli" "${args[@]}" 2>/dev/null)"
+  else
+    output=""
+  fi
+  set -e
+
+  if [[ -z "$output" ]]; then
+    echo "[StopReadiness] Unable to resolve canonical state via the hook CLI; skipping readiness-driven behavior (orthogonal gates still run)." >&2
+    return 1
+  fi
+
+  if command -v jq >/dev/null 2>&1; then
+    if ! printf '%s' "$output" | jq -e . >/dev/null 2>&1; then
+      echo "[StopReadiness] Canonical state resolution returned unparseable output; skipping readiness-driven behavior (orthogonal gates still run)." >&2
+      return 1
+    fi
+    STOP_STATE_PROFILE="$(printf '%s' "$output" | jq -r '.workflow_profile // empty' 2>/dev/null)"
+    STOP_STATE_ALLOWED_TO_STOP="$(printf '%s' "$output" | jq -r '.readiness.allowedToStop.decision // empty' 2>/dev/null)"
+    STOP_STATE_ALLOWED_TO_STOP_REASONS="$(printf '%s' "$output" | jq -r '(.readiness.allowedToStop.reasons // []) | join(",")' 2>/dev/null)"
+    STOP_STATE_READY_TO_SHIP="$(printf '%s' "$output" | jq -r '.readiness.readyToShip.decision // empty' 2>/dev/null)"
+    STOP_STATE_READY_TO_SHIP_REASONS="$(printf '%s' "$output" | jq -r '(.readiness.readyToShip.reasons // []) | join(",")' 2>/dev/null)"
+    STOP_STATE_NEXT_ACTION="$(printf '%s' "$output" | jq -r '.readiness.nextAction // empty' 2>/dev/null)"
+    return 0
+  fi
+
+  if command -v bun >/dev/null 2>&1; then
+    local parsed
+    parsed="$(STOP_STATE_JSON="$output" bun -e '
+      let s;
+      try { s = JSON.parse(process.env.STOP_STATE_JSON || ""); } catch { s = null; }
+      if (!s || typeof s !== "object") process.exit(1);
+      const r = (s.readiness && typeof s.readiness === "object") ? s.readiness : {};
+      const stop = (r.allowedToStop && typeof r.allowedToStop === "object") ? r.allowedToStop : {};
+      const ship = (r.readyToShip && typeof r.readyToShip === "object") ? r.readyToShip : {};
+      const text = (v) => (v === undefined || v === null) ? "" : String(v);
+      console.log([
+        text(s.workflow_profile),
+        text(stop.decision),
+        Array.isArray(stop.reasons) ? stop.reasons.join(",") : "",
+        text(ship.decision),
+        Array.isArray(ship.reasons) ? ship.reasons.join(",") : "",
+        text(r.nextAction),
+      ].join("\t"));
+    ' 2>/dev/null)" || parsed=""
+    if [[ -n "$parsed" ]]; then
+      IFS=$'\t' read -r STOP_STATE_PROFILE STOP_STATE_ALLOWED_TO_STOP STOP_STATE_ALLOWED_TO_STOP_REASONS \
+        STOP_STATE_READY_TO_SHIP STOP_STATE_READY_TO_SHIP_REASONS STOP_STATE_NEXT_ACTION <<< "$parsed"
+      return 0
+    fi
+  fi
+
+  echo "[StopReadiness] Unable to parse canonical state JSON; skipping readiness-driven behavior (orthogonal gates still run)." >&2
+  return 1
+}
+
 stop_workflow_profile() {
-  local effective_state=".ai/harness/state/effective.json"
-  local install_state="${HOME:-}/.repo-harness/install-state.json"
-  if [[ -f "$effective_state" ]]; then
-    if command -v jq >/dev/null 2>&1; then
-      jq -r '.workflow_profile // empty' "$effective_state" 2>/dev/null
-      return 0
-    fi
-    if command -v bun >/dev/null 2>&1; then
-      bun -e 'const s=require(process.argv[1]); if (["lite","standard","strict"].includes(s.workflow_profile)) console.log(s.workflow_profile)' "$effective_state" 2>/dev/null
-      return 0
-    fi
-  fi
-  if [[ -n "${HOME:-}" && -f "$install_state" ]]; then
-    local installed=""
-    if command -v jq >/dev/null 2>&1; then
-      installed="$(jq -r '.profile // empty' "$install_state" 2>/dev/null || true)"
-    elif command -v bun >/dev/null 2>&1; then
-      installed="$(bun -e 'const s=require(process.argv[1]); if (typeof s.profile === "string") console.log(s.profile)' "$install_state" 2>/dev/null || true)"
-    fi
-    case "$installed" in
-      minimal) printf 'lite\n' ;;
-      standard|product-planning) printf 'standard\n' ;;
-      strict) printf 'strict\n' ;;
-    esac
-  fi
+  stop_resolve_state || true
+  case "$STOP_STATE_PROFILE" in
+    lite|standard|strict) printf '%s\n' "$STOP_STATE_PROFILE" ;;
+  esac
+}
+
+# The only readiness-driven emit_stop_block_json path: allowedToStop=block
+# (durable recovery state lost or another stop-gate requirement unmet).
+# Prints the block JSON and returns success (0) so callers know to exit
+# immediately; returns failure (1) -- the common case -- when Stop remains
+# allowed, whether or not readiness resolved at all.
+stop_maybe_block_on_readiness() {
+  [[ "$STOP_STATE_ALLOWED_TO_STOP" == "block" ]] || return 1
+  emit_stop_block_json "[ReadinessGate] Stop is blocked by shared readiness (missing: ${STOP_STATE_ALLOWED_TO_STOP_REASONS:-unspecified}).$(minimal_change_reason_suffix)"
+  return 0
+}
+
+# readyToShip=false never blocks Stop (frozen strict.stop delta): report it
+# on stderr and let the caller continue to exit 0. Unrequired review/external
+# acceptance evidence therefore can never block Stop through this path.
+stop_report_not_ready_to_ship() {
+  [[ "$STOP_STATE_READY_TO_SHIP" == "block" ]] || return 0
+  echo "[ReadinessGate] readyToShip=false (missing: ${STOP_STATE_READY_TO_SHIP_REASONS:-unspecified}); Stop is not blocked -- resolve before shipping." >&2
 }
 
 should_run_plan_completeness_gate() {
@@ -641,13 +753,18 @@ if [[ "$stop_hook_active" == "true" ]]; then
 fi
 
 refresh_handoff
+stop_resolve_state || true
 
 # Lite's complete Stop path is compact handoff only. Review freshness,
 # minimal-change review, plan capture, and delegation fallback belong to the
 # Standard/Strict orchestration envelopes, not brief -> edit -> targeted test.
 if [[ "$(stop_workflow_profile || true)" == "lite" ]]; then
+  stop_maybe_block_on_readiness || true
   exit 0
 fi
+
+stop_maybe_block_on_readiness && exit 0
+stop_report_not_ready_to_ship
 
 minimal_change_refresh_review
 minimal_change_append_handoff

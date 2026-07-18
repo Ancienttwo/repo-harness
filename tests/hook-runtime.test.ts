@@ -1849,6 +1849,68 @@ describe("Hook runtime behavior", () => {
     }
   });
 
+  test("stop-orchestrator: an installed profile is never inferred when the state cache is absent", () => {
+    const cwd = tmpWorkspace("stop-no-install-fallback");
+    const home = mkdtempSync(join(tmpdir(), "stop-no-install-fallback-home-"));
+    try {
+      initGitRepo(cwd);
+      installHooks(cwd);
+      mkdirSync(join(home, ".repo-harness"), { recursive: true });
+      writeFileSync(join(home, ".repo-harness/install-state.json"), JSON.stringify({ profile: "strict" }));
+      expect(existsSync(join(cwd, ".ai/harness/state/effective.json"))).toBe(false);
+
+      const res = runHook("stop-orchestrator.sh", cwd, {
+        stdin: JSON.stringify({ hook_event_name: "Stop", stop_hook_active: false }),
+        env: { HOME: home },
+      });
+
+      expect(res.status).toBe(0);
+      // The removed install-state fallback used to map an installed "strict"
+      // profile straight onto Stop's own workflow profile whenever the state
+      // cache was absent. Canonical resolution never reads install-state.json
+      // at all: this bare fixture (no active plan) resolves "lite" on its own
+      // merits, so Stop takes the Lite early-exit -- no minimal-change
+      // review, plan-completeness gate, or delegation fallback -- even though
+      // install-state.json claims strict.
+      expect(res.stdout).toBe("");
+      expect(res.stderr).toContain("[FinalizeHandoff]");
+      const handoff = readFileSync(join(cwd, ".ai/harness/handoff/current.md"), "utf-8");
+      expect(handoff).not.toContain("Minimal Change Review");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test("stop-orchestrator: allowed-to-stop and not-ready-to-ship are reported independently", () => {
+    const cwd = tmpWorkspace("stop-allowed-not-ready-to-ship");
+    try {
+      initGitRepo(cwd);
+      installHooks(cwd);
+      writeDoneGateBase(cwd);
+      // No review is ever written for this fixture: fresh_review/
+      // external_acceptance/fresh_checks stay unsatisfied under Strict, so
+      // readyToShip resolves to block while durable_recovery_state (the only
+      // requirement Stop's own gate has) stays satisfied by refresh_handoff.
+
+      const res = runHook("stop-orchestrator.sh", cwd, {
+        stdin: JSON.stringify({ hook_event_name: "Stop", stop_hook_active: false }),
+        env: { REPO_HARNESS_WORKFLOW_PROFILE: "strict" },
+      });
+
+      // readyToShip=false is a report, never a Stop block (frozen strict.stop
+      // delta): exit stays 0, no {"decision":"block",...} JSON on stdout, and
+      // the gap is surfaced on stderr instead.
+      expect(res.status).toBe(0);
+      expect(res.stdout).toBe("");
+      expect(res.stderr).toContain("[FinalizeHandoff]");
+      expect(res.stderr).toContain("[ReadinessGate] readyToShip=false");
+      expect(res.stderr).not.toContain("[ReadinessGate] Stop is blocked");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   test("changelog-guard: warns when unreleased section is empty on release command", () => {
     const cwd = tmpWorkspace("changelog-guard");
     try {

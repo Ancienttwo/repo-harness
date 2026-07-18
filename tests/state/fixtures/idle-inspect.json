@@ -98,6 +98,62 @@
     "current_snapshot": {
       "path": "tasks/current.md",
       "freshness": "stale"
+    },
+    "readiness": {
+      "ok": true,
+      "allowedToEdit": {
+        "decision": "block",
+        "reasons": [
+          "required_safe_path_missing",
+          "required_destructive_action_boundary_missing"
+        ]
+      },
+      "allowedToStop": {
+        "decision": "block",
+        "reasons": [
+          "required_recovery_state_missing"
+        ]
+      },
+      "readyToShip": {
+        "decision": "block",
+        "reasons": [
+          "required_evidence_missing"
+        ]
+      },
+      "requirements": {
+        "edit": [
+          {
+            "key": "safe_path",
+            "status": "required",
+            "satisfied": false
+          },
+          {
+            "key": "worktree_boundary",
+            "status": "required",
+            "satisfied": true
+          },
+          {
+            "key": "destructive_action_boundary",
+            "status": "required",
+            "satisfied": false
+          }
+        ],
+        "stop": [
+          {
+            "key": "durable_recovery_state",
+            "status": "required",
+            "satisfied": false
+          }
+        ],
+        "ship": [
+          {
+            "key": "subject_bound_targeted_evidence",
+            "status": "required",
+            "satisfied": false
+          }
+        ]
+      },
+      "nextAction": null
     }
   },
   "hook": {
