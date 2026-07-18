@@ -77,6 +77,11 @@ function setupFakeSource(root: string): void {
     join(root, "assets", "skills", "claude-review", "SKILL.md"),
     "---\nname: claude-review\n---\n",
   );
+  mkdirSync(join(root, "assets", "skills", "claude-plan"), { recursive: true });
+  writeFileSync(
+    join(root, "assets", "skills", "claude-plan", "SKILL.md"),
+    "---\nname: claude-plan\n---\n",
+  );
 }
 
 function writeFakeCodegraph(fakeBin: string, logFile: string): void {
@@ -252,11 +257,13 @@ describe("init command", () => {
       expect(readFileSync(bunxLog, "utf-8")).toContain(
         "skills add BfdCampos/dotfiles -g -a claude-code codex -s mermaid -y",
       );
-      // Cross-review skills install host-aware: codex-review on Claude, claude-review on Codex.
+      // Cross-model skills install host-aware: codex-review on Claude; claude-review and claude-plan on Codex.
       expect(existsSync(join(home, ".claude", "skills", "codex-review", "SKILL.md"))).toBe(true);
       expect(existsSync(join(home, ".codex", "skills", "claude-review", "SKILL.md"))).toBe(true);
+      expect(existsSync(join(home, ".codex", "skills", "claude-plan", "SKILL.md"))).toBe(true);
       expect(existsSync(join(home, ".codex", "skills", "codex-review", "SKILL.md"))).toBe(false);
       expect(existsSync(join(home, ".claude", "skills", "claude-review", "SKILL.md"))).toBe(false);
+      expect(existsSync(join(home, ".claude", "skills", "claude-plan", "SKILL.md"))).toBe(false);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
@@ -845,6 +852,11 @@ describe("bundled host runtimes", () => {
       join(root, "assets", "skills", "claude-review", "SKILL.md"),
       "---\nname: claude-review\n---\n",
     );
+    mkdirSync(join(root, "assets", "skills", "claude-plan"), { recursive: true });
+    writeFileSync(
+      join(root, "assets", "skills", "claude-plan", "SKILL.md"),
+      "---\nname: claude-plan\n---\n",
+    );
     mkdirSync(join(root, "assets", "skills", "merge-gate"), { recursive: true });
     writeFileSync(
       join(root, "assets", "skills", "merge-gate", "SKILL.md"),
@@ -871,8 +883,10 @@ describe("bundled host runtimes", () => {
       expect(steps.every((s) => s.status === "ok")).toBe(true);
       expect(existsSync(join(home, ".claude", "skills", "codex-review", "SKILL.md"))).toBe(true);
       expect(existsSync(join(home, ".codex", "skills", "claude-review", "SKILL.md"))).toBe(true);
+      expect(existsSync(join(home, ".codex", "skills", "claude-plan", "SKILL.md"))).toBe(true);
       expect(existsSync(join(home, ".codex", "skills", "codex-review", "SKILL.md"))).toBe(false);
       expect(existsSync(join(home, ".claude", "skills", "claude-review", "SKILL.md"))).toBe(false);
+      expect(existsSync(join(home, ".claude", "skills", "claude-plan", "SKILL.md"))).toBe(false);
       expect(existsSync(join(home, ".claude", "skills", "merge-gate", "SKILL.md"))).toBe(true);
       expect(existsSync(join(home, ".claude", "agents", "merge-gatekeeper.md"))).toBe(true);
       expect(existsSync(join(home, ".codex", "skills", "merge-gate", "SKILL.md"))).toBe(false);
@@ -915,10 +929,12 @@ describe("bundled host runtimes", () => {
       expect(existsSync(join(claudeHome, ".claude", "skills", "codex-review", "SKILL.md"))).toBe(true);
       expect(existsSync(join(claudeHome, ".claude", "skills", "merge-gate", "SKILL.md"))).toBe(true);
       expect(existsSync(join(claudeHome, ".codex", "skills", "claude-review", "SKILL.md"))).toBe(false);
+      expect(existsSync(join(claudeHome, ".codex", "skills", "claude-plan", "SKILL.md"))).toBe(false);
 
       syncCrossReviewSkills(source, "codex", { ...process.env, HOME: codexHome });
       syncMergeGateRuntimeAtHome(source, "codex", codexHome);
       expect(existsSync(join(codexHome, ".codex", "skills", "claude-review", "SKILL.md"))).toBe(true);
+      expect(existsSync(join(codexHome, ".codex", "skills", "claude-plan", "SKILL.md"))).toBe(true);
       expect(existsSync(join(codexHome, ".claude", "skills", "codex-review", "SKILL.md"))).toBe(false);
       expect(existsSync(join(codexHome, ".codex", "skills", "merge-gate", "SKILL.md"))).toBe(false);
     } finally {

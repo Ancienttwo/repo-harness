@@ -49,8 +49,10 @@ lives in `assets/skills/<skill>/` and they wrap the peer CLI (`codex exec` /
 is a workflow-owned runtime concern, not an unrelated toolchain. They install
 host-aware during `repo-harness install`/`init` and explicit external-skill refreshes:
 `codex-review` only into `~/.claude/skills` (a Claude session asking
-Codex for an independent review) and `claude-review` only into `~/.codex/skills`
-(a Codex session asking Claude). The harness skills are the self-contained
+Codex for an independent review), and `claude-review` plus `claude-plan` only
+into `~/.codex/skills` (a Codex session asking Claude for a review or, via
+Claude's headless plan mode, for a plan consult on a mid-execution design
+fork). The harness skills are the self-contained
 baseline that always ships with `init` and the peer acceptance gate surface for
 `## External Acceptance Advice`.
 

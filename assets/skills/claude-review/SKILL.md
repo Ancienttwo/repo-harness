@@ -80,7 +80,10 @@ EOF
 ## Step 2 — Run the review (read-only tools, 330s)
 
 Claude runs in print mode with only `Read,Grep,Glob` (no `Bash`/`Edit`/`Write`), so
-it can inspect repo files for context but cannot modify anything. `--disable-slash-commands`
+it can inspect repo files for context but cannot modify anything. The model is
+pinned to the `fable` alias so the external opinion does not silently follow the
+host's default model; if the fable route fails, retry exactly once on `opus` —
+one fallback step, never a loop. `--disable-slash-commands`
 and the DIFF_START/DIFF_END markers defend against prompt injection from diff content.
 The filesystem-boundary prefix keeps Claude on repository code instead of crawling
 the host's agent skill definitions. Claude Code also persists print-mode
@@ -188,8 +191,14 @@ CLAUDE_REVIEW_OUT=$(mktemp -t claude-review-out.XXXXXX)
 CLAUDE_REVIEW_ERR=$(mktemp -t claude-review-err.XXXXXX)
 CLAUDE_REVIEW_RECOVERED=$(mktemp -t claude-review-transcript.XXXXXX)
 CLAUDE_REVIEW_STARTED=$(date +%s)
-printf '%s' "$PROMPT" | run_with_optional_timeout claude -p --output-format text --disable-slash-commands --allowedTools Read,Grep,Glob --disallowedTools Bash,Edit,Write >"$CLAUDE_REVIEW_OUT" 2>"$CLAUDE_REVIEW_ERR"
+printf '%s' "$PROMPT" | run_with_optional_timeout claude -p --model fable --output-format text --disable-slash-commands --allowedTools Read,Grep,Glob --disallowedTools Bash,Edit,Write >"$CLAUDE_REVIEW_OUT" 2>"$CLAUDE_REVIEW_ERR"
 CLAUDE_EXIT=$?
+if [ "$CLAUDE_EXIT" != "0" ] && [ "$CLAUDE_EXIT" != "124" ] && [ ! -s "$CLAUDE_REVIEW_OUT" ]; then
+  echo "[claude-review] fable route failed (exit $CLAUDE_EXIT); retrying once on opus." >&2
+  CLAUDE_REVIEW_STARTED=$(date +%s)
+  printf '%s' "$PROMPT" | run_with_optional_timeout claude -p --model opus --output-format text --disable-slash-commands --allowedTools Read,Grep,Glob --disallowedTools Bash,Edit,Write >"$CLAUDE_REVIEW_OUT" 2>"$CLAUDE_REVIEW_ERR"
+  CLAUDE_EXIT=$?
+fi
 CLAUDE_USED_TRANSCRIPT=0
 if [ -s "$CLAUDE_REVIEW_OUT" ]; then
   cat "$CLAUDE_REVIEW_OUT"

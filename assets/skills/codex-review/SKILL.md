@@ -59,17 +59,24 @@ fi
 echo "base=$BASE"
 ```
 
-## Step 2 — Run the review (read-only sandbox, 330s, stdin from /dev/null)
+## Step 2 — Run the review (read-only sandbox, budgeted, stdin from /dev/null)
 
 `-s read-only` lets Codex read files and run `git diff` but not modify anything.
 `</dev/null` avoids a known Codex stdin deadlock. The filesystem-boundary prefix
 keeps Codex on repository code instead of crawling agent skill definitions.
 
+Budget: default 1800s, override with `CODEX_REVIEW_TIMEOUT_SECS`. A large diff at
+high reasoning effort can legitimately run 10-30+ minutes with zero stdout
+(`codex exec` buffers its answer until done), so a small fixed budget kills
+healthy runs; completion time for the same prompt also varies widely between
+runs. If you must watch progress, follow `~/.codex/sessions/<date>/rollout-*.jsonl`
+growth — silence on stdout is not a hang signal.
+
 ```bash
 TO=$(command -v gtimeout || command -v timeout || true)
 run_with_optional_timeout() {
   if [ -n "$TO" ]; then
-    "$TO" 330 "$@"
+    "$TO" "${CODEX_REVIEW_TIMEOUT_SECS:-1800}" "$@"
   else
     "$@"
   fi
@@ -88,7 +95,7 @@ Report findings, each marked [P1] (critical — must fix before merge) or [P2] (
 run_with_optional_timeout codex exec -s read-only "$PROMPT" -c 'model_reasoning_effort="high"' </dev/null
 CODEX_EXIT=$?
 if [ "$CODEX_EXIT" = "124" ]; then
-  echo "[codex-review] Codex stalled past 5.5 min — re-run, or split the prompt."
+  echo "[codex-review] Codex hit the ${CODEX_REVIEW_TIMEOUT_SECS:-1800}s budget — check rollout file growth before assuming a hang; re-run with a larger CODEX_REVIEW_TIMEOUT_SECS, or split the prompt."
 elif [ "$CODEX_EXIT" != "0" ]; then
   echo "[codex-review] codex exited $CODEX_EXIT (check 'codex login' / ~/.codex/logs)."
 fi

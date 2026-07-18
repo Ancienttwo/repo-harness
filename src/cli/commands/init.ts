@@ -55,7 +55,8 @@ export interface GlobalContextOptions {
 }
 
 /**
- * Host-scoped skills bundled under `assets/skills/<skill>`. Cross-review skills
+ * Host-scoped skills bundled under `assets/skills/<skill>`. Cross-model skills
+ * (review second opinions plus the claude-plan external-brain plan consult)
  * install on the opposite host; the merge gate installs only on the configured
  * local gatekeeper host (Claude) so there is one runtime authority.
  */
@@ -65,6 +66,7 @@ type BundledHostAgent = { source: string; agent: string; host: "claude" | "codex
 const CROSS_REVIEW_SKILLS: ReadonlyArray<BundledHostSkill> = [
   { skill: "codex-review", host: "claude", step: "cross-review skill codex-review" },
   { skill: "claude-review", host: "codex", step: "cross-review skill claude-review" },
+  { skill: "claude-plan", host: "codex", step: "external-brain skill claude-plan" },
 ];
 const MERGE_GATE_SKILLS: ReadonlyArray<BundledHostSkill> = [
   { skill: "merge-gate", host: "claude", step: "merge-gate skill" },
