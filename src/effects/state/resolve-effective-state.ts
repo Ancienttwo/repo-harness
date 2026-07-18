@@ -438,17 +438,45 @@ function resolveEffectiveStateUnlocked(
   const checksText = readText(cwd, CHECKS_PATH);
   const sprintPath = readTrimmed(cwd, ACTIVE_SPRINT_MARKER);
   const taskId = planPath ? artifactStemFromPlan(planPath, planText) : null;
+
+  // Four typed revisions (LOOP-03/LOOP-08 audit), each computed once here
+  // from source hashes this resolver already collected. The review-subject
+  // fingerprint moves OUT of authority into its own subject bucket; policy,
+  // capability registry, active-sprint marker+file, and task identity move
+  // IN. state_revision/state_version below keep their untouched all-source
+  // formula byte-for-byte (LSC-05 owns allocation) -- authority_revision is
+  // still one of their ingredients, it is just computed differently now.
   const authorityRevision = contentRevision({
     active_plan: sourceHash(cwd, ACTIVE_PLAN_MARKER),
     active_worktree: sourceHash(cwd, ACTIVE_WORKTREE_MARKER),
     plan: planPath ? sourceHash(cwd, planPath) : sha256('missing:plan'),
     contract: contractPath ? sourceHash(cwd, contractPath) : sha256('missing:contract'),
+    policy: sourceHash(cwd, POLICY_PATH),
+    capability_registry: sourceHash(cwd, CAPABILITY_REGISTRY_PATH),
+    active_sprint_marker: sourceHash(cwd, ACTIVE_SPRINT_MARKER),
+    active_sprint_file: sprintPath ? sourceHash(cwd, sprintPath) : sha256('missing:active-sprint-file'),
+    task_identity: sha256(taskId ?? 'missing:task-id'),
+  });
+  const subjectRevision = contentRevision({
     review_subject: reviewSubjectSha256 ?? sha256('unavailable:review-subject'),
+    target_rev: reviewSubject.status === 'ok' ? sha256(reviewSubject.target_rev) : sha256('unavailable:target-rev'),
+  });
+  const evidenceRevision = contentRevision({
+    checks: checksText !== null ? sha256(checksText) : sha256('missing:checks'),
+    review: reviewText !== null ? sha256(reviewText) : sha256('missing:review'),
+    // Bound to the subject: evidence recomputed against a new subject is
+    // distinguishable from stale evidence even if checks/review bytes match.
+    subject_revision: subjectRevision,
   });
 
   const handoffText = readText(cwd, HANDOFF_PATH);
   const resumeText = readText(cwd, RESUME_PATH);
   const currentText = readText(cwd, CURRENT_SNAPSHOT_PATH);
+  const projectionRevision = contentRevision({
+    handoff: handoffText !== null ? sha256(handoffText) : sha256('missing:handoff'),
+    resume: resumeText !== null ? sha256(resumeText) : sha256('missing:resume'),
+    current_snapshot: currentText !== null ? sha256(currentText) : sha256('missing:current-snapshot'),
+  });
 
   const sourcePaths = [
     ACTIVE_PLAN_MARKER,
@@ -510,6 +538,9 @@ function resolveEffectiveStateUnlocked(
     currentSnapshotPath: CURRENT_SNAPSHOT_PATH,
     currentSnapshotText: currentText,
     authorityRevision,
+    subjectRevision,
+    evidenceRevision,
+    projectionRevision,
     stateVersion: 0,
     stateRevision,
     sourceHashes,

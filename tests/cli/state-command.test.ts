@@ -13,6 +13,11 @@ function effectiveState(overrides: Partial<EffectiveState> = {}): EffectiveState
     phase: 'executing',
     state_version: 7,
     state_revision: `sha256:${'1'.repeat(64)}`,
+    authority_revision: `sha256:${'2'.repeat(64)}`,
+    subject_revision: `sha256:${'3'.repeat(64)}`,
+    evidence_revision: `sha256:${'4'.repeat(64)}`,
+    projection_revision: `sha256:${'5'.repeat(64)}`,
+    progress_token: `sha256:${'6'.repeat(64)}`,
     authoritative_plan: { path: 'plans/plan-example.md', status: 'executing' },
     contract: {
       path: 'tasks/contracts/example.contract.md',

@@ -591,9 +591,9 @@ hook_append_failure_record() {
 hook_circuit_record() {
   local kind="$1" guard="$2" reason="$3" path_action="$4" fingerprint="$5"
   local profile="${6:-}" explicit_high_risk="${7:-false}" risk_consult="${8:-false}" user_consult="${9:-false}" strong="${10:-false}"
-  local state_version="unknown" payload output
+  local progress_token="unknown" payload output
   if [[ -f ".ai/harness/state/effective.json" ]] && command -v jq >/dev/null 2>&1; then
-    state_version="$(jq -r '.state_version // "unknown"' .ai/harness/state/effective.json 2>/dev/null || printf unknown)"
+    progress_token="$(jq -r '.progress_token // "unknown"' .ai/harness/state/effective.json 2>/dev/null || printf unknown)"
     [[ -n "$profile" ]] || profile="$(jq -r '.workflow_profile // empty' .ai/harness/state/effective.json 2>/dev/null || true)"
   fi
   case "$profile" in
@@ -603,9 +603,9 @@ hook_circuit_record() {
   command -v jq >/dev/null 2>&1 || return 2
   payload="$(jq -nc \
     --arg kind "$kind" --arg guard "$guard" --arg reason "$reason" --arg path "$path_action" \
-    --arg state "$state_version" --arg fingerprint "$fingerprint" --arg profile "$profile" \
+    --arg token "$progress_token" --arg fingerprint "$fingerprint" --arg profile "$profile" \
     --argjson high "$explicit_high_risk" --argjson risk "$risk_consult" --argjson user "$user_consult" --argjson strong "$strong" \
-    '{kind:$kind,guard:$guard,reason:$reason,pathOrAction:$path,stateVersion:$state,fingerprint:$fingerprint,profile:$profile,explicitHighRiskContract:$high,riskTriggeredConsult:$risk,userRequestedConsult:$user,strongBoundary:$strong}')"
+    '{kind:$kind,guard:$guard,reason:$reason,pathOrAction:$path,progressToken:$token,fingerprint:$fingerprint,profile:$profile,explicitHighRiskContract:$high,riskTriggeredConsult:$risk,userRequestedConsult:$user,strongBoundary:$strong}')"
   if [[ -n "${REPO_HARNESS_HOOK_CLI:-}" && -f "${REPO_HARNESS_HOOK_CLI:-}" ]] && command -v bun >/dev/null 2>&1; then
     output="$(printf '%s' "$payload" | bun "$REPO_HARNESS_HOOK_CLI" circuit-breaker-record 2>/dev/null)" || return 2
   elif command -v repo-harness-hook >/dev/null 2>&1; then

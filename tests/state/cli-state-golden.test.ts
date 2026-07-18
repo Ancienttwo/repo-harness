@@ -236,6 +236,9 @@ function assertExactHashContract(state: EffectiveState, cwd: string): void {
     if (path === 'review_subject' || path === 'authority_revision') continue;
     expect(value).toBe(sourceHash(cwd, path));
   }
+  // LSC-04: authority_revision now composes policy/capability-registry/
+  // active-sprint marker+file/task identity and excludes the review-subject
+  // fingerprint (that moved to subject_revision, checked separately below).
   const expectedAuthorityRevision = contentRevision({
     active_plan: sourceHash(cwd, '.ai/harness/active-plan'),
     active_worktree: sourceHash(cwd, '.ai/harness/active-worktree'),
@@ -243,9 +246,16 @@ function assertExactHashContract(state: EffectiveState, cwd: string): void {
       ? sourceHash(cwd, state.authoritative_plan.path)
       : sha256('missing:plan'),
     contract: state.authoritative_plan ? sourceHash(cwd, CONTRACT) : sha256('missing:contract'),
-    review_subject: state.source_hashes.review_subject ?? sha256('unavailable:review-subject'),
+    policy: sourceHash(cwd, '.ai/harness/policy.json'),
+    capability_registry: sourceHash(cwd, '.ai/context/capabilities.json'),
+    active_sprint_marker: sourceHash(cwd, '.ai/harness/sprint/active-sprint'),
+    active_sprint_file: state.active_sprint.path
+      ? sourceHash(cwd, state.active_sprint.path)
+      : sha256('missing:active-sprint-file'),
+    task_identity: sha256(state.task_id ?? 'missing:task-id'),
   });
   expect(state.source_hashes.authority_revision).toBe(expectedAuthorityRevision);
+  expect(state.authority_revision).toBe(expectedAuthorityRevision);
   expect(state.state_revision).toBe(contentRevision(state.source_hashes));
 }
 
@@ -255,6 +265,10 @@ const DYNAMIC_HASH_KEYS = new Set([
   '.ai/harness/handoff/resume.md',
   'authority_revision',
   'state_revision',
+  // Handoff/resume content embeds authority_revision (dynamic, via the
+  // active-worktree marker's tmpdir path) in the executing-fresh-evidence
+  // scenario, which cascades into projection_revision.
+  'projection_revision',
 ]);
 
 function normalize(value: unknown, cwd: string, key = ''): unknown {

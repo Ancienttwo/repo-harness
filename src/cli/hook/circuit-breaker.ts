@@ -18,7 +18,7 @@ export interface CircuitAttempt {
   readonly guard: string;
   readonly reason: string;
   readonly pathOrAction: string;
-  readonly stateVersion: string | number;
+  readonly progressToken: string;
   readonly fingerprint: string;
   readonly profile: WorkflowProfile;
   readonly explicitHighRiskContract?: boolean;
@@ -34,7 +34,7 @@ export interface CircuitDecision {
   readonly guard: string;
   readonly reason: string;
   readonly path_action: string;
-  readonly state_version: string | number;
+  readonly progress_token: string;
   readonly repeat_count: number;
   readonly limit: number;
   readonly required_action: string;
@@ -72,9 +72,15 @@ export function circuitLimit(attempt: CircuitAttempt): number {
 }
 
 function keyFor(attempt: CircuitAttempt): string {
+  // A missing/empty progressToken must still hash to one stable value so
+  // repeats keep accumulating against the same key (fail closed, breaker
+  // trips sooner) instead of looking like a fresh key every call (fail
+  // open, breaker never trips). Array#join already normalizes undefined,
+  // null, and '' to the same empty segment, so this holds with no extra
+  // branching -- but this behavior is the requirement, not an accident.
   const authority = [
     attempt.kind, attempt.guard, attempt.reason, attempt.pathOrAction,
-    attempt.stateVersion, attempt.fingerprint,
+    attempt.progressToken, attempt.fingerprint,
   ].join('\0');
   return createHash('sha256').update(authority).digest('hex');
 }
@@ -219,7 +225,7 @@ export function recordCircuitAttempt(
     guard: attempt.guard,
     reason: attempt.reason,
     path_action: attempt.pathOrAction,
-    state_version: attempt.stateVersion,
+    progress_token: attempt.progressToken,
     repeat_count: repeatCount,
     limit,
     required_action: !allowed
