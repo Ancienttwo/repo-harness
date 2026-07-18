@@ -3,7 +3,7 @@
 > **Status**: Approved
 > **Slug**: loop-semantics-convergence
 > **Created**: 2026-07-16 01:01
-> **Updated**: 2026-07-16 04:22
+> **Updated**: 2026-07-18 15:29
 > **Source PRD**: (none; source authority is the Harness Loop audit)
 > **Source Audit**: `plans/sprints/20260715-harness-loop-audit-and-optimization.md`
 > **Source Spec**: `docs/spec.md`
@@ -159,8 +159,8 @@ flow and lands through an independent PR.
 
 | # | Status | Task | Mode | Acceptance | Plan |
 |---|--------|------|------|------------|------|
-| 1 | [ ] | lsc-01-profile-operation-characterization | contract | Task Profile is `eval-only`; reuse ESA goldens and freeze Lite/Standard/Strict x edit/stop/ship as 9 named current-behavior cells plus approved target deltas; `bun test tests/state/loop-semantics-characterization.test.ts` passes; the calibrated contract lists exact test/eval/docs/workflow paths and all production paths remain untouched | (pending) |
-| 2 | [ ] | lsc-02-artifact-requirement-policy | contract | In an independent PR, establish one pure `ArtifactRequirementPolicy` matrix for Lite/Standard/Strict with positive/negative fixtures; do not switch consumers or implement readiness in this package | (pending) |
+| 1 | [x] | lsc-01-profile-operation-characterization | contract | Task Profile is `eval-only`; reuse ESA goldens and freeze Lite/Standard/Strict x edit/stop/ship as 9 named current-behavior cells plus approved target deltas; `bun test tests/state/loop-semantics-characterization.test.ts` passes; the calibrated contract lists exact test/eval/docs/workflow paths and all production paths remain untouched | `plans/plan-20260716-0150-lsc-01-profile-operation-characterization.md` |
+| 2 | [x] | lsc-02-artifact-requirement-policy | contract | In an independent PR, establish one pure `ArtifactRequirementPolicy` matrix for Lite/Standard/Strict with positive/negative fixtures; do not switch consumers or implement readiness in this package | `plans/plan-20260718-1405-lsc-02-artifact-requirement-policy.md` |
 | 3 | [ ] | lsc-03-standard-contract-semantic-cutover | contract | In an independent PR, make the approved Standard work-package contract policy identical across State, PreEdit, Stop, docs, and Skill guidance while Strict missing-contract/worktree states remain fail-closed | (pending) |
 | 4 | [ ] | lsc-04-revision-partition-and-progress-token | contract | In an independent PR, separate authority, subject, evidence, and projection revisions, define a progress token, and make circuit keys consume it; projection-only rendering changes neither authority revision, progress token, nor no-progress detection | (pending) |
 | 5 | [ ] | lsc-05-stable-state-version-allocation | contract | In an independent PR, publish state versions only after a stable source snapshot is confirmed; source-mutation retries and failed transactions consume no observable version and concurrency fixtures pass | (pending) |
@@ -195,3 +195,5 @@ flow and lands through an independent PR.
 
 | When | Task | Plan | Result |
 |------|------|------|--------|
+| 2026-07-18 15:29 | lsc-01-profile-operation-characterization | `plans/plan-20260716-0150-lsc-01-profile-operation-characterization.md` | done |
+| 2026-07-18 15:29 | lsc-02-artifact-requirement-policy | `plans/plan-20260718-1405-lsc-02-artifact-requirement-policy.md` | done |
