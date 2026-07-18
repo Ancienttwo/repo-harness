@@ -35,6 +35,13 @@ allowed_paths:
   - tests/fixtures/root-cause/
 ```
 
+## Evidence Requirements
+
+```yaml
+evidence_requirements:
+  benchmark: not_applicable
+```
+
 ## Exit Criteria (Machine Verifiable)
 
 ```yaml

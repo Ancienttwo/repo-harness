@@ -1515,6 +1515,151 @@ workflow_external_acceptance_field() {
     sed -E 's/[[:space:]]+$//'
 }
 
+# Parses the contract's fenced yaml block that declares `evidence_requirements:`
+# (awk-block style like workflow_contract_allows_path, but scans every fenced
+# yaml block instead of only the first, since evidence_requirements is not
+# necessarily the first ```yaml block in the file). Prints exactly `required`
+# or `not_applicable` and returns 0. Any of the following prints nothing and
+# returns nonzero so callers fail closed instead of inferring applicability
+# from report presence: missing file, no block declaring
+# `evidence_requirements:`, more than one `evidence_requirements:` line
+# anywhere in the file's yaml blocks, a `benchmark:` key that is not a direct
+# child of the declaring line (deeper indent, with no intervening non-comment
+# line at or above the declaring line's own indent between them), more than
+# one `benchmark:` occurrence within that direct-child scope, or an unknown
+# value. Comments (`#...`) inside the yaml block are ignored, both as full
+# lines and as trailing content after a value, and never end the direct-child
+# scope.
+workflow_contract_evidence_requirement() {
+  local contract_file="${1:-}"
+  local marked line block="" in_block=0
+  # Plain-text sentinels, not control-character escapes: some awk
+  # implementations (e.g. macOS's one-true-awk) parse "\x" hex escapes with a
+  # greedy, variable-length digit count, so "\x01BEGIN\x01" silently corrupts
+  # into garbage because B/E are themselves valid hex digits.
+  local begin_marker="@@workflow_contract_evidence_requirement:begin@@"
+  local end_marker="@@workflow_contract_evidence_requirement:end@@"
+
+  [[ -n "$contract_file" && -f "$contract_file" ]] || return 1
+  # The markers become control records after awk flattens fenced yaml blocks.
+  # Reject either literal in source data before that transformation; otherwise
+  # an exact marker line inside a yaml fence could truncate or restart the
+  # parser stream and hide a conflicting declaration.
+  if grep -Fqx -- "$begin_marker" "$contract_file" || grep -Fqx -- "$end_marker" "$contract_file"; then
+    return 1
+  fi
+  # This parser intentionally accepts only the canonical unquoted contract
+  # keys. A quoted YAML spelling is semantically the same key; accepting an
+  # unquoted declaration while ignoring a quoted duplicate would turn a
+  # contradictory contract into an apparently unambiguous one.
+  if awk '
+    /^```yaml[[:space:]]*$/ { in_block = 1; next }
+    /^```[[:space:]]*$/ && in_block == 1 { in_block = 0; next }
+    in_block == 1 && ($0 ~ /^[[:space:]]*["\047](evidence_requirements|benchmark)["\047][[:space:]]*:/ || $0 ~ /^[[:space:]]*(evidence_requirements|benchmark)[[:space:]]+:/) { found = 1; exit }
+    END { exit found ? 0 : 1 }
+  ' "$contract_file"; then
+    return 1
+  fi
+
+  marked="$(
+    awk -v begin_marker="$begin_marker" -v end_marker="$end_marker" '
+      /^```yaml[[:space:]]*$/ { print begin_marker; in_block = 1; next }
+      /^```[[:space:]]*$/ && in_block == 1 { print end_marker; in_block = 0; next }
+      in_block == 1 { print }
+    ' "$contract_file"
+  )"
+
+  # Pass 1: count every `evidence_requirements:` LINE across all yaml blocks
+  # (not merely how many blocks contain one -- two such lines in a single
+  # block must also fail closed), and remember the single declaring block
+  # plus that line's own indent so pass 2 can compute its direct-child scope.
+  local total_count=0 declaration_block="" er_indent=-1 trimmed block_has_match=0
+  while IFS= read -r line; do
+    if [[ "$line" == "$begin_marker" ]]; then
+      in_block=1
+      block=""
+      block_has_match=0
+      continue
+    fi
+    if [[ "$line" == "$end_marker" ]]; then
+      in_block=0
+      [[ "$block_has_match" -eq 1 ]] && declaration_block="$block"
+      continue
+    fi
+    [[ "$in_block" -eq 1 ]] || continue
+    block+="$line"$'\n'
+    # A `#` only starts a comment when it is the first character on the line
+    # or is preceded by whitespace (standard YAML comment syntax); requiring
+    # `[[:space:]]*` (zero or more) here would strip an inline `#` glued
+    # directly onto a scalar value (e.g. "not_applicable#required"), silently
+    # truncating a malformed value into a valid-looking one instead of
+    # letting it fail the required|not_applicable case match below.
+    trimmed="$(printf '%s' "$line" | sed -E 's/(^|[[:space:]])#.*$//; s/[[:space:]]+$//')"
+    if [[ "$trimmed" =~ ^([[:space:]]*)evidence_requirements:[[:space:]]*$ ]]; then
+      total_count=$((total_count + 1))
+      block_has_match=1
+      er_indent=${#BASH_REMATCH[1]}
+    fi
+  done <<< "$marked"
+
+  [[ "$total_count" -eq 1 ]] || return 1
+
+  # Pass 2: within the single declaring block, scan forward from the
+  # evidence_requirements: line. Comments never end the scope and are never
+  # scope content. The scope ends at the first non-comment line whose indent
+  # is <= the declaring line's own indent. Only a DIRECT child counts:
+  # child_indent is fixed by the first non-comment line seen inside the
+  # scope (whatever indent step the author used), and benchmark: must land
+  # at exactly that indent -- a deeper indent (nested under some other key)
+  # stays in-scope for the dedent-exit check but never itself matches, so
+  # "evidence_requirements: -> other_key: -> benchmark: x" fails closed
+  # (benchmark_count stays 0) instead of being silently accepted.
+  local seen_declaration=0 benchmark_count=0 value="" rest indent child_indent=-1
+  while IFS= read -r line; do
+    # A `#` only starts a comment when it is the first character on the line
+    # or is preceded by whitespace (standard YAML comment syntax); requiring
+    # `[[:space:]]*` (zero or more) here would strip an inline `#` glued
+    # directly onto a scalar value (e.g. "not_applicable#required"), silently
+    # truncating a malformed value into a valid-looking one instead of
+    # letting it fail the required|not_applicable case match below.
+    trimmed="$(printf '%s' "$line" | sed -E 's/(^|[[:space:]])#.*$//; s/[[:space:]]+$//')"
+    [[ "$trimmed" =~ ^([[:space:]]*)(.*)$ ]]
+    indent=${#BASH_REMATCH[1]}
+    rest="${BASH_REMATCH[2]}"
+    [[ -n "$rest" ]] || continue
+
+    if [[ "$seen_declaration" -eq 0 ]]; then
+      if [[ "$indent" -eq "$er_indent" && "$rest" == "evidence_requirements:" ]]; then
+        seen_declaration=1
+      fi
+      continue
+    fi
+
+    if [[ "$indent" -le "$er_indent" ]]; then
+      break
+    fi
+    if [[ "$child_indent" -eq -1 ]]; then
+      child_indent="$indent"
+    fi
+    if [[ "$indent" -eq "$child_indent" ]] && [[ "$rest" =~ ^benchmark:[[:space:]]*(.+)$ ]]; then
+      benchmark_count=$((benchmark_count + 1))
+      value="$(workflow_strip_quotes "${BASH_REMATCH[1]}")"
+    fi
+  done <<< "$declaration_block"
+
+  [[ "$benchmark_count" -eq 1 ]] || return 1
+
+  case "$value" in
+    required|not_applicable)
+      printf '%s' "$value"
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 workflow_external_acceptance_status() {
   local review_file="${1:-}"
   local expected_reviewer="${2:-}"
@@ -1578,6 +1723,7 @@ workflow_external_acceptance_status() {
   # is agent-editable. An absent or malformed rubric fails closed here — external
   # acceptance is the authority that requires the current rubric.
   local rubric_class section_fp section_scope section_target section_benchmark current_json current_fp current_target current_benchmark overlap_count
+  local contract_path evidence_requirement
   rubric_class="$(workflow_review_rubric_class "$review_file")"
   case "$rubric_class" in
     absent)
@@ -1622,19 +1768,41 @@ workflow_external_acceptance_status() {
         printf 'fail\t%s\t%s\tTarget revision advanced across %s reviewed path(s); rerun peer acceptance.\n' "${reviewer:--}" "${source:--}" "$overlap_count"
         return 0
       fi
-      current_benchmark="$(workflow_benchmark_evidence_fingerprint 2>/dev/null || true)"
-      if [[ -e "evals/harness/reports/profile-comparison.json" || -e "evals/harness/reports/profile-comparison.md" || -e "evals/harness/reports/profile-comparison.sha256.json" ]]; then
-        if [[ -z "$current_benchmark" ]]; then
-          printf 'fail\t%s\t%s\tCurrent benchmark evidence is present but invalid.\n' "${reviewer:--}" "${source:--}"
-          return 0
-        fi
+      # Applicability is a reviewed contract declaration, not an inference from
+      # report-file presence: resolve the contract deterministically from the
+      # review path stem and consult its evidence_requirements declaration.
+      if [[ "$review_file" =~ ^(.*)tasks/reviews/([^/]+)\.review\.md$ ]]; then
+        contract_path="${BASH_REMATCH[1]}tasks/contracts/${BASH_REMATCH[2]}.contract.md"
       else
-        current_benchmark="not-applicable"
+        contract_path=""
       fi
-      if [[ "$section_benchmark" != "$current_benchmark" ]]; then
-        printf 'fail\t%s\t%s\tExternal acceptance benchmark evidence is stale: %s != %s.\n' "${reviewer:--}" "${source:--}" "${section_benchmark:-missing}" "$current_benchmark"
-        return 0
+      evidence_requirement=""
+      if [[ -n "$contract_path" ]]; then
+        evidence_requirement="$(workflow_contract_evidence_requirement "$contract_path" 2>/dev/null || true)"
       fi
+      case "$evidence_requirement" in
+        required)
+          current_benchmark="$(workflow_benchmark_evidence_fingerprint 2>/dev/null || true)"
+          if [[ -z "$current_benchmark" ]]; then
+            printf 'fail\t%s\t%s\tBenchmark evidence is required by %s but current evidence is missing or invalid.\n' "${reviewer:--}" "${source:--}" "${contract_path:-$review_file}"
+            return 0
+          fi
+          if [[ "$section_benchmark" != "$current_benchmark" ]]; then
+            printf 'fail\t%s\t%s\tExternal acceptance benchmark evidence is stale: %s != %s.\n' "${reviewer:--}" "${source:--}" "${section_benchmark:-missing}" "$current_benchmark"
+            return 0
+          fi
+          ;;
+        not_applicable)
+          if [[ "$section_benchmark" != "not-applicable" ]]; then
+            printf 'fail\t%s\t%s\tExternal acceptance benchmark evidence must be not-applicable per %s, got %s.\n' "${reviewer:--}" "${source:--}" "${contract_path:-$review_file}" "${section_benchmark:-missing}"
+            return 0
+          fi
+          ;;
+        *)
+          printf 'fail\t%s\t%s\tContract evidence requirement is missing or invalid: %s.\n' "${reviewer:--}" "${source:--}" "${contract_path:-$review_file}"
+          return 0
+          ;;
+      esac
       ;;
   esac
 
@@ -1682,11 +1850,12 @@ workflow_benchmark_subject_sha256() {
 
 workflow_benchmark_evidence_checks_match() {
   local checks_file="$1"
-  local evidence_status="" evidence_recorded="" subject_recorded="" evidence_current="" subject_current="" runtime="" row=""
+  local evidence_status="" evidence_recorded="" subject_recorded="" contract_recorded="" evidence_current="" subject_current="" runtime="" row="" requirement=""
   if command -v jq >/dev/null 2>&1; then
     evidence_status="$(jq -r '.benchmark_evidence.status // empty' "$checks_file" 2>/dev/null || true)"
     evidence_recorded="$(jq -r '.benchmark_evidence.report_sha256 // empty' "$checks_file" 2>/dev/null || true)"
     subject_recorded="$(jq -r '.benchmark_evidence.benchmark_subject_sha256 // empty' "$checks_file" 2>/dev/null || true)"
+    contract_recorded="$(jq -r '.contract.file // .contract // empty' "$checks_file" 2>/dev/null || true)"
   else
     if command -v node >/dev/null 2>&1; then runtime="node"
     elif command -v bun >/dev/null 2>&1; then runtime="bun"
@@ -1696,25 +1865,47 @@ workflow_benchmark_evidence_checks_match() {
     fi
     row="$("$runtime" - "$checks_file" <<'JS_EOF' 2>/dev/null || true
 const fs = require('fs');
-const value = JSON.parse(fs.readFileSync(process.argv[2], 'utf8')).benchmark_evidence || {};
-process.stdout.write(`${typeof value.status === 'string' ? value.status : ''}\t${typeof value.report_sha256 === 'string' ? value.report_sha256 : ''}\t${typeof value.benchmark_subject_sha256 === 'string' ? value.benchmark_subject_sha256 : ''}`);
+const parsed = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+const value = parsed.benchmark_evidence || {};
+const contractValue = parsed.contract;
+const contractFile = typeof contractValue === 'string'
+  ? contractValue
+  : (contractValue && typeof contractValue.file === 'string' ? contractValue.file : '');
+process.stdout.write(`${typeof value.status === 'string' ? value.status : ''}\t${typeof value.report_sha256 === 'string' ? value.report_sha256 : ''}\t${typeof value.benchmark_subject_sha256 === 'string' ? value.benchmark_subject_sha256 : ''}\t${contractFile}`);
 JS_EOF
 )"
-    IFS=$'\t' read -r evidence_status evidence_recorded subject_recorded <<< "$row"
+    IFS=$'\t' read -r evidence_status evidence_recorded subject_recorded contract_recorded <<< "$row"
   fi
 
-  evidence_current="$(workflow_benchmark_evidence_fingerprint 2>/dev/null || true)"
-  subject_current="$(workflow_benchmark_subject_sha256 2>/dev/null || true)"
+  # Applicability is a reviewed contract declaration, not an inference from
+  # report-file presence; an unresolvable declaration fails closed here rather
+  # than falling through to the status-only branches below.
+  requirement="$(workflow_contract_evidence_requirement "$contract_recorded" 2>/dev/null || true)"
+  if [[ -z "$requirement" ]]; then
+    echo "Contract evidence requirement is missing or invalid: ${contract_recorded:-missing}."
+    return 1
+  fi
+
   case "$evidence_status" in
     present)
+      if [[ "$requirement" != "required" ]]; then
+        echo "Structured checks record benchmark evidence status present, but the contract declares $requirement."
+        return 1
+      fi
+      # Only invoked on the required+present path: not_applicable must never
+      # trigger the validator, even to compute a fingerprint whose result the
+      # not_applicable branch below wouldn't use -- report presence must not
+      # create a validation requirement by itself, per invariant 1.
+      evidence_current="$(workflow_benchmark_evidence_fingerprint 2>/dev/null || true)"
+      subject_current="$(workflow_benchmark_subject_sha256 2>/dev/null || true)"
       if [[ -z "$evidence_recorded" || -z "$subject_recorded" || -z "$evidence_current" || -z "$subject_current" || "$evidence_current" != "$evidence_recorded" || "$subject_current" != "$subject_recorded" ]]; then
         echo "Structured checks are stale for benchmark evidence (report=${evidence_recorded:-missing}/${evidence_current:-unavailable}, subject=${subject_recorded:-missing}/${subject_current:-unavailable})."
         return 1
       fi
       ;;
     not_applicable)
-      if [[ -n "$evidence_current" || -e "evals/harness/reports/profile-comparison.json" || -e "evals/harness/reports/profile-comparison.md" ]]; then
-        echo "Structured checks did not bind the benchmark evidence now present."
+      if [[ "$requirement" != "not_applicable" ]]; then
+        echo "Structured checks record benchmark evidence status not_applicable, but the contract declares $requirement."
         return 1
       fi
       ;;

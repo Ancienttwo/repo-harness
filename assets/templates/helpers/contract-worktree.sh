@@ -110,6 +110,13 @@ derive_original_artifact_stem_from_plan() {
   fi
 }
 
+derive_raw_slug_from_plan() {
+  local plan_file="$1"
+  local plan_base
+  plan_base="$(basename "$plan_file")"
+  printf '%s' "$plan_base" | sed -E 's/^plan-[0-9]{8}-[0-9]{4}-//; s/\.md$//'
+}
+
 is_transient_plan_slug() {
   case "$1" in
     think-plan-[0-9]*|codex-plan-[0-9]*|approved-plan-[0-9]*)
@@ -506,18 +513,102 @@ latest_plan_for_slug() {
 }
 
 archive_finished_workflow() {
-  local plan_file="$1"
+  local plan_file="$1" timestamp="$2" timestamp_human="$3" parent_run_id="$4"
 
   [[ -n "$plan_file" ]] || { echo "contract-worktree: no active plan found to archive" >&2; exit 1; }
   [[ -f "$plan_file" ]] || { echo "contract-worktree: active plan not found for archive: $plan_file" >&2; exit 1; }
+  [[ -n "$timestamp" ]] || { echo "contract-worktree: no timestamp provided for archive" >&2; exit 1; }
   [[ -x "$helper_dir/archive-workflow.sh" ]] || { echo "contract-worktree: archive-workflow helper is missing or not executable" >&2; exit 1; }
 
   echo "[ContractWorktree] Archiving completed workflow before merge: $plan_file"
-  REPO_HARNESS_TARGET_REPO_ROOT="$REPO_ROOT" bash "$helper_dir/archive-workflow.sh" --plan "$plan_file" --outcome Completed
+  REPO_HARNESS_TARGET_REPO_ROOT="$REPO_ROOT" bash "$helper_dir/archive-workflow.sh" \
+    --plan "$plan_file" --outcome Completed --timestamp "$timestamp" \
+    --timestamp-human "$timestamp_human" --parent-run-id "$parent_run_id"
+}
+
+predict_post_freeze_manifest() {
+  local plan_file="$1" timestamp="$2" timestamp_human="$3" parent_run_id="$4" output="$5"
+  REPO_HARNESS_TARGET_REPO_ROOT="$REPO_ROOT" bash "$helper_dir/archive-workflow.sh" \
+    --plan "$plan_file" --outcome Completed --timestamp "$timestamp" \
+    --timestamp-human "$timestamp_human" --parent-run-id "$parent_run_id" \
+    --predict-manifest "$output"
+}
+
+
+# Post-freeze allowlist: the exact repo-relative paths finish's own lifecycle step
+# (archive + local-marker cleanup + sprint backfill) is expected to touch after the
+# merge gate reviews frozen candidate F. Computed BEFORE archiving so the gate can
+# bind the allowlist to F. The archive-family timestamp is supplied by the caller
+# (a single `date` call in finish_worktree, shared with archive_finished_workflow's
+# own --timestamp argument below) rather than computed here, so the allowlist
+# prediction and archive-workflow.sh's actual output cannot disagree across a
+# minute boundary. Under-enumeration must fail closed at verify time, never
+# silently pass -- so this only ever predicts exact paths, never a directory or
+# wildcard.
+compute_post_freeze_allowlist() {
+  local plan_file="$1" contract_file="$2" review_file="$3" timestamp="$4"
+  local plan_base raw_slug artifact_stem notes_file source_ref sprint_path
+  local -a paths=()
+
+  plan_base="$(basename "$plan_file")"
+  raw_slug="$(derive_raw_slug_from_plan "$plan_file")"
+  artifact_stem="$(derive_artifact_stem_from_plan "$plan_file")"
+
+  paths+=("plans/${plan_base}")
+  paths+=("plans/archive/${plan_base}")
+  paths+=("$contract_file")
+  paths+=("$review_file")
+  paths+=("tasks/current.md")
+  paths+=("tasks/todos.md")
+  # clean_local_runtime_markers deletes these two unconditionally. They are
+  # gitignored in a normal install (never appear in a diff, so listing them here
+  # is a no-op), but a repo/fixture that tracks them still needs the allowlist
+  # entry for the delete to verify.
+  paths+=(".ai/harness/active-plan")
+  paths+=(".ai/harness/active-worktree")
+
+  notes_file="tasks/notes/${artifact_stem}.notes.md"
+  if [[ ! -f "$notes_file" && -f "tasks/notes/${raw_slug}.notes.md" ]]; then
+    notes_file="tasks/notes/${raw_slug}.notes.md"
+  fi
+
+  paths+=("tasks/archive/contract-${timestamp}-${raw_slug}.md")
+  paths+=("tasks/archive/review-${timestamp}-${raw_slug}.md")
+  if [[ -f "$notes_file" ]]; then
+    paths+=("$notes_file")
+    paths+=("tasks/archive/notes-${timestamp}-${raw_slug}.md")
+  fi
+  if [[ -f tasks/todos.md ]] && grep -q '[^[:space:]]' tasks/todos.md; then
+    paths+=("tasks/archive/todo-${timestamp}-${raw_slug}.md")
+  fi
+
+  source_ref="$(awk '/^> \*\*Source Ref\*\*:/ {sub(/^> \*\*Source Ref\*\*:[[:space:]]*/, ""); gsub(/\r/, ""); print; exit}' "$plan_file" 2>/dev/null | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+  case "$source_ref" in
+    sprint:*#*)
+      sprint_path="${source_ref#sprint:}"
+      sprint_path="${sprint_path%%#*}"
+      paths+=("$sprint_path")
+      ;;
+  esac
+
+  printf '%s\n' "${paths[@]}" | awk 'NF && !seen[$0]++'
 }
 
 run_merge_gate() {
-  local base_ref="$1" goal_file="$2"
+  local base_ref="$1" goal_file="$2" manifest_file="$3"
+  shift 3
+  local -a allow_args=() destination_args=()
+  local allow_path destination_path destination_sha extra
+  for allow_path in "$@"; do
+    allow_args+=(--allow-post-freeze "$allow_path")
+  done
+  while IFS=$'\t' read -r destination_path destination_sha extra; do
+    [[ -n "$destination_path" && -n "$destination_sha" && -z "$extra" ]] || {
+      echo "contract-worktree: invalid post-freeze destination manifest row" >&2
+      exit 1
+    }
+    destination_args+=(--expect-post-freeze-destination "${destination_path}=${destination_sha}")
+  done < "$manifest_file"
   [[ -f "$helper_dir/merge-gate.ts" ]] || {
     echo "contract-worktree: merge-gate helper is missing: $helper_dir/merge-gate.ts" >&2
     exit 1
@@ -527,7 +618,7 @@ run_merge_gate() {
     exit 1
   }
   echo "[ContractWorktree] Running read-only merge gate for HEAD against $base_ref" >&2
-  REPO_HARNESS_TARGET_REPO_ROOT="$REPO_ROOT" "$BUN_BIN" "$helper_dir/merge-gate.ts" run --base "$base_ref" --goal "$goal_file" --format sha
+  REPO_HARNESS_TARGET_REPO_ROOT="$REPO_ROOT" "$BUN_BIN" "$helper_dir/merge-gate.ts" run --base "$base_ref" --goal "$goal_file" "${allow_args[@]}" "${destination_args[@]}" --format sha
 }
 
 verify_merge_gate_receipt() {
@@ -659,7 +750,64 @@ finish_worktree() {
     fi
   fi
   finish_transaction_begin
-  if ! archive_finished_workflow "$active_plan"; then
+
+  # Step 1/2: freeze the implementation candidate F before any lifecycle mutation
+  # touches it. If there is nothing outstanding to commit, F is simply the current
+  # HEAD (which may itself already be the branch's tip from a prior finish attempt).
+  if ! git diff --quiet || ! git diff --cached --quiet || [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
+    git add -A
+    git commit -m "$commit_message"
+  else
+    echo "[ContractWorktree] No tracked changes to commit."
+  fi
+
+  local run_gate=0
+  if [[ "$merge_back" -eq 1 || "$gate_base_explicit" -eq 1 ]]; then
+    run_gate=1
+  fi
+
+  local verified_sha current_head
+  # Single timestamp authority: one `date` call for this whole finish run, shared
+  # by the post-freeze allowlist prediction (Step 3, when a gate runs) and the
+  # archive step's actual output (Step 4, unconditional), so the two cannot
+  # disagree across a minute boundary.
+  local finish_timestamp finish_timestamp_human finish_parent_run_id
+  finish_timestamp="$(date +%Y%m%d-%H%M)"
+  finish_timestamp_human="$(date '+%Y-%m-%d %H:%M')"
+  finish_parent_run_id="${HOOK_RUN_ID:-${CLAUDE_RUN_ID:-${CODEX_RUN_ID:-run-${finish_timestamp}}}}"
+  if [[ "$run_gate" -eq 1 ]]; then
+    # Step 3: review F while the goal plan is still live at its pre-archive path,
+    # binding the receipt to F plus the exact set of paths the lifecycle step below
+    # is expected to touch.
+    local -a post_freeze_allowlist=()
+    local allow_path
+    while IFS= read -r allow_path; do
+      [[ -n "$allow_path" ]] && post_freeze_allowlist+=("$allow_path")
+    done < <(compute_post_freeze_allowlist "$active_plan" "$contract_file" "$review_file" "$finish_timestamp")
+
+    local post_freeze_manifest
+    post_freeze_manifest="$(mktemp)"
+    if ! predict_post_freeze_manifest "$active_plan" "$finish_timestamp" "$finish_timestamp_human" "$finish_parent_run_id" "$post_freeze_manifest"; then
+      rm -f "$post_freeze_manifest"
+      finish_transaction_abort
+      return 1
+    fi
+    if ! verified_sha="$(run_merge_gate "$gate_base_ref" "$active_plan" "$post_freeze_manifest" "${post_freeze_allowlist[@]}")"; then
+      rm -f "$post_freeze_manifest"
+      finish_transaction_abort
+      return 1
+    fi
+    rm -f "$post_freeze_manifest"
+    current_head="$(git rev-parse HEAD)"
+    if [[ "$verified_sha" != "$current_head" ]]; then
+      echo "contract-worktree: merge gate verified $verified_sha but branch HEAD is $current_head" >&2
+      finish_transaction_abort
+      return 1
+    fi
+  fi
+
+  # Step 4: lifecycle mutation now that the gate (if any) has already reviewed F.
+  if ! archive_finished_workflow "$active_plan" "$finish_timestamp" "$finish_timestamp_human" "$finish_parent_run_id"; then
     finish_transaction_abort
     return 1
   fi
@@ -671,37 +819,46 @@ finish_worktree() {
     finish_transaction_abort
     return 1
   fi
+
+  # Step 5: lifecycle changes land as a separate, deterministic commit L. If
+  # archiving produced no tracked change, L is simply F.
   if ! git diff --quiet || ! git diff --cached --quiet || [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
     git add -A
-    git commit -m "$commit_message"
+    git commit -m "chore(workflow): archive ${slug} closeout"
   else
-    echo "[ContractWorktree] No tracked changes to commit."
+    echo "[ContractWorktree] No lifecycle changes to commit."
   fi
 
-  if [[ "$merge_back" -eq 0 && "$gate_base_explicit" -eq 0 ]]; then
+  # Step 6: no gate ran at all (plain --no-merge) -- nothing further to verify.
+  if [[ "$run_gate" -eq 0 ]]; then
     finish_transaction_commit
     echo "[ContractWorktree] Merge skipped by --no-merge."
     return 0
-  fi
-
-  local verified_sha current_head
-  if ! verified_sha="$(run_merge_gate "$gate_base_ref" "$active_plan")"; then
-    finish_transaction_abort
-    return 1
-  fi
-  current_head="$(git rev-parse HEAD)"
-  if [[ "$verified_sha" != "$current_head" ]]; then
-    echo "contract-worktree: merge gate verified $verified_sha but branch HEAD is $current_head" >&2
-    finish_transaction_abort
-    return 1
   fi
 
   if [[ "$merge_back" -eq 0 ]]; then
+    # A gate ran against F above; verify the receipt against the post-lifecycle
+    # HEAD (L) before this transaction is allowed to commit, so an
+    # out-of-allowlist lifecycle mutation (or any other post-freeze drift) is
+    # caught and rolled back here instead of being handed to the caller as a
+    # silently-unverified success.
+    if ! verified_sha="$(verify_merge_gate_receipt "$gate_base_ref")"; then
+      finish_transaction_abort
+      return 1
+    fi
+    current_head="$(git rev-parse HEAD)"
+    if [[ "$verified_sha" != "$current_head" ]]; then
+      echo "contract-worktree: merge gate receipt does not verify against post-archive HEAD $current_head (got $verified_sha)" >&2
+      finish_transaction_abort
+      return 1
+    fi
     finish_transaction_commit
     echo "[ContractWorktree] Merge skipped by --no-merge."
     return 0
   fi
 
+  # Step 7: re-validate the receipt against L (F plus only allowlisted drift) before
+  # the fast-forward merge; ff-merge uses the SHA this verify prints.
   if [[ -n "$(git -C "$target_worktree" status --porcelain=v1 --untracked-files=all)" ]]; then
     echo "contract-worktree: target worktree is dirty, refusing merge: $target_worktree" >&2
     exit 1

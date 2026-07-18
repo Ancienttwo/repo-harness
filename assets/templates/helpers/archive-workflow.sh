@@ -160,8 +160,99 @@ completed_archive_gate() {
 
 usage() {
   cat <<'USAGE_EOF'
-Usage: scripts/archive-workflow.sh --plan <plan-file> --outcome <Completed|Abandoned|Superseded>
+Usage: scripts/archive-workflow.sh --plan <plan-file> --outcome <Completed|Abandoned|Superseded> [--timestamp <YYYYMMDD-HHMM>] [--timestamp-human <YYYY-MM-DD HH:MM>] [--parent-run-id <id>] [--predict-manifest <absolute-output>]
+
+  --timestamp  Use this exact value as the archive-family filename timestamp
+               instead of calling `date` here. Callers that predict archive
+               destinations ahead of time (contract-worktree.sh finish) pass
+               their own already-computed timestamp so predictions and actual
+               output cannot disagree across a minute boundary. Standalone
+               invocations omit this and get a fresh single `date` call, as
+               before.
 USAGE_EOF
+}
+
+sha256_file() {
+  local file="$1"
+  [[ "${REPO_HARNESS_BUN_BIN:-}" == /* && -x "${REPO_HARNESS_BUN_BIN:-}" ]] || {
+    echo "archive-workflow: manifest prediction requires the trusted Bun runtime" >&2
+    return 1
+  }
+  REPO_HARNESS_SHA256_FILE="$file" "$REPO_HARNESS_BUN_BIN" -e '
+    import { createHash } from "crypto";
+    const file = process.env.REPO_HARNESS_SHA256_FILE;
+    if (!file) process.exit(2);
+    const bytes = await Bun.file(file).arrayBuffer();
+    process.stdout.write(`sha256:${createHash("sha256").update(new Uint8Array(bytes)).digest("hex")}`);
+  '
+}
+
+predict_archive_manifest() {
+  local output="$1" fixed_timestamp="$2" fixed_timestamp_human="$3" fixed_parent_run_id="$4"
+  local scratch scratch_repo manifest_tmp path digest target_branch
+  [[ "$output" == /* ]] || { echo "archive-workflow: --predict-manifest output must be absolute" >&2; return 1; }
+  [[ "${REPO_HARNESS_BUN_BIN:-}" == /* && -x "${REPO_HARNESS_BUN_BIN:-}" ]] || { echo "archive-workflow: --predict-manifest requires the trusted Bun runtime" >&2; return 1; }
+  [[ ! -L "$output" ]] || { echo "archive-workflow: --predict-manifest output must not be a symlink" >&2; return 1; }
+  [[ -d "$(dirname "$output")" ]] || { echo "archive-workflow: manifest output parent is missing" >&2; return 1; }
+  scratch="$(mktemp -d)"
+  scratch_repo="$scratch/repo"
+  manifest_tmp="$scratch/manifest"
+  if ! git clone --quiet --no-hardlinks "$PWD" "$scratch_repo"; then
+    rm -rf "$scratch"
+    return 1
+  fi
+  # The scratch clone intentionally contains only tracked candidate bytes.
+  # Reuse the caller's installed dependency tree for read-only workflow checks;
+  # node_modules remains ignored and is never part of the predicted manifest.
+  if [[ -d "$PWD/node_modules" ]]; then
+    ln -s "$PWD/node_modules" "$scratch_repo/node_modules"
+  fi
+  target_branch="$("$REPO_HARNESS_BUN_BIN" -e '
+    try {
+      const policy = JSON.parse(await Bun.file(".ai/harness/policy.json").text());
+      process.stdout.write(policy?.worktree_strategy?.merge_back?.target || "main");
+    } catch { process.stdout.write("main"); }
+  ' 2>/dev/null)"
+  if ! git -C "$scratch_repo" show-ref --verify --quiet "refs/heads/$target_branch"; then
+    git -C "$scratch_repo" show-ref --verify --quiet "refs/remotes/origin/$target_branch" || {
+      echo "archive-workflow: prediction target branch is unavailable: $target_branch" >&2
+      rm -rf "$scratch"
+      return 1
+    }
+    git -C "$scratch_repo" update-ref "refs/heads/$target_branch" "refs/remotes/origin/$target_branch"
+  fi
+  if [[ -d .ai/harness/checks ]]; then
+    mkdir -p "$scratch_repo/.ai/harness"
+    cp -Rp .ai/harness/checks "$scratch_repo/.ai/harness/checks"
+  fi
+  for path in .ai/harness/active-plan .ai/harness/active-worktree; do
+    if [[ -f "$path" ]]; then
+      mkdir -p "$scratch_repo/$(dirname "$path")"
+      cp -p "$path" "$scratch_repo/$path"
+    fi
+  done
+  if ! REPO_HARNESS_TARGET_REPO_ROOT="$scratch_repo" \
+    bash "$SCRIPT_DIR/archive-workflow.sh" \
+      --plan "$plan_file" --outcome "$outcome" \
+      --timestamp "$fixed_timestamp" --timestamp-human "$fixed_timestamp_human" \
+      --parent-run-id "$fixed_parent_run_id" >/dev/null; then
+    rm -rf "$scratch"
+    return 1
+  fi
+  git -C "$scratch_repo" add -A
+  : > "$manifest_tmp"
+  while IFS= read -r path; do
+    case "$path" in
+      plans/archive/*.md|tasks/archive/contract-*.md|tasks/archive/review-*.md|tasks/archive/notes-*.md)
+        [[ -f "$scratch_repo/$path" && ! -L "$scratch_repo/$path" ]] || { rm -rf "$scratch"; return 1; }
+        digest="$(sha256_file "$scratch_repo/$path")"
+        printf '%s\t%s\n' "$path" "$digest" >> "$manifest_tmp"
+        ;;
+    esac
+  done < <(git -C "$scratch_repo" diff --cached --name-only --diff-filter=ACMR)
+  [[ -s "$manifest_tmp" ]] || { echo "archive-workflow: predicted semantic destination manifest is empty" >&2; rm -rf "$scratch"; return 1; }
+  /usr/bin/sort -u "$manifest_tmp" > "$output"
+  rm -rf "$scratch"
 }
 
 set_plan_status() {
@@ -298,6 +389,10 @@ TODO_EOF
 
 plan_file=""
 outcome=""
+timestamp_override=""
+timestamp_human_override=""
+parent_run_id_override=""
+predict_manifest_output=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -309,6 +404,27 @@ while [[ $# -gt 0 ]]; do
     --outcome)
       [[ -n "${2:-}" ]] || { echo "Error: --outcome requires a value" >&2; usage; exit 1; }
       outcome="$2"
+      shift 2
+      ;;
+    --timestamp)
+      [[ -n "${2:-}" ]] || { echo "Error: --timestamp requires a value" >&2; usage; exit 1; }
+      [[ "$2" =~ ^[0-9]{8}-[0-9]{4}$ ]] || { echo "Error: --timestamp must match YYYYMMDD-HHMM, got: $2" >&2; usage; exit 1; }
+      timestamp_override="$2"
+      shift 2
+      ;;
+    --timestamp-human)
+      [[ "${2:-}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}[[:space:]][0-9]{2}:[0-9]{2}$ ]] || { echo "Error: --timestamp-human must match YYYY-MM-DD HH:MM" >&2; usage; exit 1; }
+      timestamp_human_override="$2"
+      shift 2
+      ;;
+    --parent-run-id)
+      [[ -n "${2:-}" && ! "$2" =~ [[:space:]] ]] || { echo "Error: --parent-run-id must be a non-empty token" >&2; usage; exit 1; }
+      parent_run_id_override="$2"
+      shift 2
+      ;;
+    --predict-manifest)
+      [[ -n "${2:-}" ]] || { echo "Error: --predict-manifest requires a value" >&2; usage; exit 1; }
+      predict_manifest_output="$2"
       shift 2
       ;;
     --help|-h)
@@ -349,14 +465,23 @@ if [[ "$normalized_plan" == plans/archive/* ]]; then
   exit 1
 fi
 
-timestamp="$(date +%Y%m%d-%H%M)"
-timestamp_human="$(date '+%Y-%m-%d %H:%M')"
+if [[ -n "$timestamp_override" ]]; then
+  timestamp="$timestamp_override"
+else
+  timestamp="$(date +%Y%m%d-%H%M)"
+fi
+timestamp_human="${timestamp_human_override:-$(date '+%Y-%m-%d %H:%M')}"
 plan_base="$(basename "$plan_file")"
 slug="$(echo "$plan_base" | sed -E 's/^plan-[0-9]{8}-[0-9]{4}-//; s/\.md$//')"
 original_artifact_stem="$(printf '%s' "$plan_base" | sed -E 's/^plan-//; s/\.md$//')"
 artifact_stem="$(plan_artifact_stem_from_parts "$plan_file" "$original_artifact_stem" "$slug")"
-parent_run_id="${HOOK_RUN_ID:-${CLAUDE_RUN_ID:-${CODEX_RUN_ID:-run-${timestamp}}}}"
+parent_run_id="${parent_run_id_override:-${HOOK_RUN_ID:-${CLAUDE_RUN_ID:-${CODEX_RUN_ID:-run-${timestamp}}}}}"
 todo_source_plan="$(awk -F': ' '/^> \*\*Source Plan\*\*:/ {print $2; exit}' tasks/todos.md 2>/dev/null | xargs)"
+
+if [[ -n "$predict_manifest_output" ]]; then
+  predict_archive_manifest "$predict_manifest_output" "$timestamp" "$timestamp_human" "$parent_run_id"
+  exit 0
+fi
 
 contract_file="tasks/contracts/${artifact_stem}.contract.md"
 if [[ ! -f "$contract_file" && -f "tasks/contracts/${slug}.contract.md" ]]; then
@@ -393,7 +518,7 @@ if [[ "$plan_file" != "$archive_plan_path" ]]; then
 fi
 
 if [[ -f tasks/todos.md ]] && grep -q '[^[:space:]]' tasks/todos.md; then
-  archive_todo="tasks/archive/todo-${timestamp}-${slug}.md"
+  archive_todo="$(unique_archive_path "tasks/archive/todo-${timestamp}-${slug}.md")"
   {
     echo "> **Archived**: ${timestamp_human}"
     echo "> **Related Plan**: ${archive_plan_path}"

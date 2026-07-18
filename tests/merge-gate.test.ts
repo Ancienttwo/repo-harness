@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createHash } from "crypto";
-import { chmodSync, copyFileSync, existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "fs";
+import { chmodSync, copyFileSync, existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
@@ -30,6 +30,10 @@ function git(cwd: string, ...args: string[]): string {
 function commitAll(cwd: string, message: string): void {
   git(cwd, "add", "-A");
   git(cwd, "commit", "-m", message);
+}
+
+function contentSha256(content: string | Buffer): string {
+  return `sha256:${createHash("sha256").update(content).digest("hex")}`;
 }
 
 function basePolicy(enabled: unknown = true): string {
@@ -126,8 +130,9 @@ function gate(
   command: "run" | "verify" | "fingerprint",
   verdict = "PASS",
   extraEnv: NodeJS.ProcessEnv = {},
+  extraArgs: string[] = [],
 ) {
-  const args = [fixture.harness, command, "--base", "main"];
+  const args = [fixture.harness, command, "--base", "main", ...extraArgs];
   if (command === "run") args.push("--goal", "plans/plan-demo.md");
   writeFileSync(fixture.fakeVerdict, `${verdict}\n`);
   return run("bun", args, fixture.cwd, {
@@ -280,7 +285,7 @@ describe("merge-gate receipt lifecycle", () => {
     const missing = gate(fixture, "verify");
     expect(missing.status).toBe(2);
     expect(missing.stderr).toContain("verification evidence is missing");
-  });
+  }, 20000);
 
   test("rejects stale head, base, diff, host config, and helper identity", () => {
     const fixture = makeFixture();
@@ -351,4 +356,174 @@ describe("merge-gate receipt lifecycle", () => {
     expect(result.status).toBe(2);
     expect(result.stderr).toContain("is not an ancestor of HEAD");
   });
+
+  test("verifies a post-freeze commit that touches only the paths named by --allow-post-freeze", () => {
+    const fixture = makeFixture();
+    const run1 = gate(fixture, "run", "PASS", {}, [
+      "--allow-post-freeze", "plans/plan-demo.md",
+      "--allow-post-freeze", "plans/archive/plan-demo.md",
+      "--expect-post-freeze-destination", `plans/archive/plan-demo.md=${contentSha256(readFileSync(join(fixture.cwd, "plans", "plan-demo.md")))}`,
+    ]);
+    expect(run1.status, run1.stderr).toBe(0);
+    const receipt = JSON.parse(readFileSync(fixture.receipt, "utf-8"));
+    expect(receipt.post_freeze_allowlist).toEqual(["plans/archive/plan-demo.md", "plans/plan-demo.md"]);
+    expect(receipt.post_freeze_destinations).toEqual({
+      "plans/archive/plan-demo.md": contentSha256(readFileSync(join(fixture.cwd, "plans", "plan-demo.md"))),
+    });
+    expect(receipt.goal_sha256).toMatch(/^sha256:[0-9a-f]{64}$/);
+    const frozenHead = receipt.head_sha;
+
+    // Simulate the lifecycle step: archive the reviewed plan (a pure rename) as a
+    // separate deterministic commit L. Both the old and new name of the rename are
+    // covered by the allowlist supplied above.
+    mkdirSync(join(fixture.cwd, "plans", "archive"), { recursive: true });
+    renameSync(join(fixture.cwd, "plans", "plan-demo.md"), join(fixture.cwd, "plans", "archive", "plan-demo.md"));
+    commitAll(fixture.cwd, "chore(workflow): archive demo closeout");
+    const lifecycleHead = git(fixture.cwd, "rev-parse", "HEAD");
+    expect(lifecycleHead).not.toBe(frozenHead);
+
+    const verify = gate(fixture, "verify");
+    expect(verify.status, verify.stderr).toBe(0);
+    expect(verify.stderr).toContain("verified PASS");
+    expect(JSON.parse(verify.stdout)).toMatchObject({ required: true, head_sha: lifecycleHead });
+  });
+
+  test("rejects post-freeze drift outside the allowlist, a mixed allowed+disallowed commit, and any drift with no allowlist", () => {
+    const noAllowlist = makeFixture();
+    expect(gate(noAllowlist, "run").status).toBe(0);
+    expect(JSON.parse(readFileSync(noAllowlist.receipt, "utf-8")).post_freeze_allowlist).toEqual([]);
+    writeFileSync(join(noAllowlist.cwd, "after.txt"), "after\n");
+    commitAll(noAllowlist.cwd, "unrelated post-freeze change");
+    const strict = gate(noAllowlist, "verify");
+    expect(strict.status).toBe(2);
+    expect(strict.stderr).toContain("head_sha is stale");
+
+    const outsideAllowlist = makeFixture();
+    expect(gate(outsideAllowlist, "run", "PASS", {}, [
+      "--allow-post-freeze", "plans/plan-demo.md",
+      "--allow-post-freeze", "plans/archive/plan-demo.md",
+      "--expect-post-freeze-destination", `plans/archive/plan-demo.md=${contentSha256(readFileSync(join(outsideAllowlist.cwd, "plans", "plan-demo.md")))}`,
+    ]).status).toBe(0);
+    mkdirSync(join(outsideAllowlist.cwd, "src"), { recursive: true });
+    writeFileSync(join(outsideAllowlist.cwd, "src", "x.ts"), "export const x = 1;\n");
+    commitAll(outsideAllowlist.cwd, "unrelated production change");
+    const outside = gate(outsideAllowlist, "verify");
+    expect(outside.status).toBe(2);
+    expect(outside.stderr).toContain("post-freeze change outside allowlist");
+    expect(outside.stderr).toContain("src/x.ts");
+
+    const mixedCommit = makeFixture();
+    expect(gate(mixedCommit, "run", "PASS", {}, [
+      "--allow-post-freeze", "plans/plan-demo.md",
+      "--allow-post-freeze", "plans/archive/plan-demo.md",
+      "--expect-post-freeze-destination", `plans/archive/plan-demo.md=${contentSha256(readFileSync(join(mixedCommit.cwd, "plans", "plan-demo.md")))}`,
+    ]).status).toBe(0);
+    mkdirSync(join(mixedCommit.cwd, "plans", "archive"), { recursive: true });
+    renameSync(join(mixedCommit.cwd, "plans", "plan-demo.md"), join(mixedCommit.cwd, "plans", "archive", "plan-demo.md"));
+    mkdirSync(join(mixedCommit.cwd, "src"), { recursive: true });
+    writeFileSync(join(mixedCommit.cwd, "src", "x.ts"), "export const x = 1;\n");
+    commitAll(mixedCommit.cwd, "archive plus an unrelated production change");
+    const mixed = gate(mixedCommit, "verify");
+    expect(mixed.status).toBe(2);
+    expect(mixed.stderr).toContain("post-freeze change outside allowlist");
+    expect(mixed.stderr).toContain("src/x.ts");
+  }, 20000);
+
+  // R-B (fix 2): production/test/asset paths must be structurally impossible to
+  // allowlist -- run rejects any --allow-post-freeze entry outside the closed
+  // set of lifecycle-surface shapes, naming the offending path.
+  test("rejects an --allow-post-freeze path outside the closed lifecycle-surface shape set", () => {
+    const fixture = makeFixture();
+    const result = gate(fixture, "run", "PASS", {}, ["--allow-post-freeze", "src/x.ts"]);
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain("src/x.ts");
+    expect(existsSync(fixture.receipt)).toBe(false);
+  });
+
+  // R-C (fix 3, reduced scope -- see notes): SEMANTIC allowlist members (the
+  // goal plan, contracts, reviews, notes) record a content hash on the receipt
+  // and a byte-identical archive move passes verify. Byte-level content
+  // BINDING at the archive destination was found, via this same finish e2e
+  // fixture, to be incompatible with scripts/archive-workflow.sh's real
+  // behavior (it legitimately rewrites a status line and prepends an
+  // audit-trail header onto every archived plan/contract/review/notes file)
+  // and is intentionally not enforced; what IS still enforced and covered
+  // here is that a SEMANTIC live path's move must land on its own family's
+  // archive destination -- a rename into a different family's archive shape
+  // (still an individually allowlisted path) fails.
+  test("verifies a post-freeze archived contract: byte-identical move passes, a rename into the wrong family's archive shape fails", () => {
+    const identical = makeFixture();
+    mkdirSync(join(identical.cwd, "tasks", "contracts"), { recursive: true });
+    writeFileSync(join(identical.cwd, "tasks", "contracts", "demo.contract.md"), "# Contract: demo\n\nOriginal contract body.\n");
+    commitAll(identical.cwd, "add contract");
+    const run1 = gate(identical, "run", "PASS", {}, [
+      "--allow-post-freeze", "tasks/contracts/demo.contract.md",
+      "--allow-post-freeze", "tasks/archive/contract-20260716-1500-demo.md",
+      "--expect-post-freeze-destination", `tasks/archive/contract-20260716-1500-demo.md=${contentSha256(readFileSync(join(identical.cwd, "tasks", "contracts", "demo.contract.md")))}`,
+    ]);
+    expect(run1.status, run1.stderr).toBe(0);
+    const receipt = JSON.parse(readFileSync(identical.receipt, "utf-8"));
+    const recordedHash = receipt.post_freeze_destinations["tasks/archive/contract-20260716-1500-demo.md"];
+    expect(recordedHash).toMatch(/^sha256:[0-9a-f]{64}$/);
+
+    mkdirSync(join(identical.cwd, "tasks", "archive"), { recursive: true });
+    renameSync(
+      join(identical.cwd, "tasks", "contracts", "demo.contract.md"),
+      join(identical.cwd, "tasks", "archive", "contract-20260716-1500-demo.md")
+    );
+    commitAll(identical.cwd, "chore(workflow): archive demo contract");
+    const passed = gate(identical, "verify");
+    expect(passed.status, passed.stderr).toBe(0);
+    expect(passed.stderr).toContain("verified PASS");
+
+    const tampered = makeFixture();
+    mkdirSync(join(tampered.cwd, "tasks", "contracts"), { recursive: true });
+    writeFileSync(join(tampered.cwd, "tasks", "contracts", "demo.contract.md"), "# Contract: demo\n\nOriginal contract body.\n");
+    commitAll(tampered.cwd, "add contract");
+    expect(gate(tampered, "run", "PASS", {}, [
+      "--allow-post-freeze", "tasks/contracts/demo.contract.md",
+      "--allow-post-freeze", "tasks/archive/contract-20260716-1500-demo.md",
+      "--expect-post-freeze-destination", `tasks/archive/contract-20260716-1500-demo.md=${contentSha256(readFileSync(join(tampered.cwd, "tasks", "contracts", "demo.contract.md")))}`,
+    ]).status).toBe(0);
+    mkdirSync(join(tampered.cwd, "tasks", "archive"), { recursive: true });
+    rmSync(join(tampered.cwd, "tasks", "contracts", "demo.contract.md"));
+    writeFileSync(join(tampered.cwd, "tasks", "archive", "contract-20260716-1500-demo.md"), "arbitrary replacement\n");
+    commitAll(tampered.cwd, "chore(workflow): write tampered archive destination");
+    const tamperedResult = gate(tampered, "verify");
+    expect(tamperedResult.status).toBe(2);
+    expect(tamperedResult.stderr).toContain("semantic destination content is stale");
+
+    const wrongFamily = makeFixture();
+    mkdirSync(join(wrongFamily.cwd, "tasks", "contracts"), { recursive: true });
+    mkdirSync(join(wrongFamily.cwd, "tasks", "reviews"), { recursive: true });
+    writeFileSync(join(wrongFamily.cwd, "tasks", "contracts", "demo.contract.md"), "# Contract: demo\n\nOriginal contract body.\n");
+    writeFileSync(join(wrongFamily.cwd, "tasks", "reviews", "demo.review.md"), "# Review: demo\n\nOriginal review body.\n");
+    commitAll(wrongFamily.cwd, "add contract");
+    // Allowlist both the contract's own predicted archive destination AND
+    // (as the review family's own predicted destination, present in the same
+    // finish's allowlist) a review-shaped archive path -- both individually
+    // legal shapes.
+    expect(gate(wrongFamily, "run", "PASS", {}, [
+      "--allow-post-freeze", "tasks/contracts/demo.contract.md",
+      "--allow-post-freeze", "tasks/reviews/demo.review.md",
+      "--allow-post-freeze", "tasks/archive/contract-20260716-1500-demo.md",
+      "--allow-post-freeze", "tasks/archive/review-20260716-1500-demo.md",
+      "--expect-post-freeze-destination", `tasks/archive/contract-20260716-1500-demo.md=${contentSha256(readFileSync(join(wrongFamily.cwd, "tasks", "contracts", "demo.contract.md")))}`,
+      "--expect-post-freeze-destination", `tasks/archive/review-20260716-1500-demo.md=${contentSha256(readFileSync(join(wrongFamily.cwd, "tasks", "reviews", "demo.review.md")))}`,
+    ]).status).toBe(0);
+    // The contract is renamed into the REVIEW family's archive shape instead
+    // of its own -- both endpoints are individually allowlisted, but the live
+    // contract's move does not land on its own family's destination.
+    mkdirSync(join(wrongFamily.cwd, "tasks", "archive"), { recursive: true });
+    renameSync(
+      join(wrongFamily.cwd, "tasks", "contracts", "demo.contract.md"),
+      join(wrongFamily.cwd, "tasks", "archive", "review-20260716-1500-demo.md")
+    );
+    rmSync(join(wrongFamily.cwd, "tasks", "reviews", "demo.review.md"));
+    commitAll(wrongFamily.cwd, "chore(workflow): archive demo contract (misfiled as a review)");
+    const failed = gate(wrongFamily, "verify");
+    expect(failed.status).toBe(2);
+    expect(failed.stderr).toContain("post-freeze change to semantic source is not a deletion or archive move");
+    expect(failed.stderr).toContain("tasks/contracts/demo.contract.md");
+  }, 20000);
 });

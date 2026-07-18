@@ -79,6 +79,20 @@ For a `bugfix` contract, the gate requires all four `## Root Cause Evidence` fie
 
 Both `verify-contract.sh` and `contract-run.ts` implement this check independently against the same fixture expectations so that a `bugfix` contract cannot pass one gate while failing the other.
 
+## Evidence Requirements Gate
+
+New task contracts include a `## Evidence Requirements` fenced yaml block between `Allowed Paths` and `Delegation Contract`:
+
+```yaml
+evidence_requirements:
+  benchmark: not_applicable
+```
+
+`benchmark` is a reviewed contract declaration, not an inference from `evals/harness/reports/profile-comparison.*` presence, changed filenames, or `Task Profile`. It accepts exactly two values, `required` or `not_applicable`. A missing `## Evidence Requirements` block, more than one such block in the contract, a missing `benchmark:` key, or any other value fails closed wherever the declaration is consulted: `workflow_external_acceptance_status`, `workflow_benchmark_evidence_checks_match`, and `verify-sprint.sh`'s `benchmark_evidence.status` derivation. Unlike `Task Profile`, there is no legacy-passthrough exemption for an absent block.
+
+- `not_applicable` preserves any existing benchmark report on disk and excludes it from this contract's acceptance and checks binding: the coupled review's `Benchmark Evidence SHA256` must read literally `not-applicable`, `.ai/harness/checks/latest.json`'s `benchmark_evidence.status` must read `not_applicable`, and report presence no longer fails the checks match.
+- `required` keeps byte-exact strictness: the current authoritative report's fingerprint and benchmark subject hash must resolve, and both the review's `Benchmark Evidence SHA256` and the recorded checks fingerprint/subject must match that current evidence exactly; a missing or drifted report fails.
+
 ## Verification Execution Boundary
 
 `verify-contract.sh --read-only` is read-only for contract state writes only: it does not rewrite the contract `> **Status**:` line. It executes `tests_pass` with Bun and `commands_succeed` in a non-login Bash with `BASH_ENV` unset. One fixed absolute 600-second budget covers the whole invocation; each command records duration, exit status, signal, and timeout state, and expiry terminates the command's process group before the verifier returns. The budget is not a policy or environment knob.

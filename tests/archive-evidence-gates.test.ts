@@ -108,7 +108,23 @@ function installWorkflowArchiveFixture(cwd: string): void {
 function writeWorkflowContract(cwd: string, status: string): void {
   writeFileSync(
     join(cwd, "tasks/contracts/20260711-1200-demo.contract.md"),
-    `# Task Contract: demo\n\n> **Status**: ${status}\n`,
+    // writeWorkflowChecks below records benchmark_evidence.status as
+    // not_applicable, so the contract's own declaration must match or the new
+    // contract-scoped evidence_requirements gate fails closed before any of
+    // this file's injected-failure scenarios are ever reached.
+    [
+      "# Task Contract: demo",
+      "",
+      `> **Status**: ${status}`,
+      "",
+      "## Evidence Requirements",
+      "",
+      "```yaml",
+      "evidence_requirements:",
+      "  benchmark: not_applicable",
+      "```",
+      "",
+    ].join("\n"),
   );
 }
 
@@ -377,6 +393,13 @@ describe("archive evidence gates", () => {
           "allowed_paths:",
           "  - plans/",
           "  - tasks/",
+          "```",
+          "",
+          "## Evidence Requirements",
+          "",
+          "```yaml",
+          "evidence_requirements:",
+          "  benchmark: not_applicable",
           "```",
           "",
         ].join("\n"),

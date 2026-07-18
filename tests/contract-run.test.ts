@@ -73,6 +73,13 @@ function writePilotContract(
       "  - tasks/reviews/",
       "```",
       "",
+      "## Evidence Requirements",
+      "",
+      "```yaml",
+      "evidence_requirements:",
+      "  benchmark: not_applicable",
+      "```",
+      "",
       "## Delegation Contract",
       "",
       "```yaml",
@@ -387,7 +394,14 @@ describe("contract-run helper", () => {
           "--report-file",
           verifyReport,
         ],
-        { cwd: repo, encoding: "utf-8" },
+        {
+          cwd: repo,
+          encoding: "utf-8",
+          // This synthetic repo has no .ai/hooks/ scaffold, so point verify-contract.sh
+          // at the real repo's shared lib (its documented override) instead of letting
+          // it silently fail the evidence_requirements check closed for a missing lib.
+          env: { ...process.env, REPO_HARNESS_WORKFLOW_STATE_LIB: join(ROOT, "assets/hooks/lib/workflow-state.sh") },
+        },
       );
       if (verify.status !== 0) {
         console.error(
