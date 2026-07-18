@@ -864,9 +864,10 @@ describe('LSC-01 profile × operation current-behavior characterization', () => 
       state_blockers: [],
     });
     expect(cells.find((cell) => cell.name.startsWith('standard.edit'))?.current).toMatchObject({
-      verdict: 'block',
-      reason: 'WorkflowProfileGuard',
-      state_blockers: ['missing_contract'],
+      verdict: 'allow',
+      exit_code: 0,
+      reason: 'none',
+      state_blockers: [],
       work_package_status: 'Approved',
       work_package_remaining_tasks: 0,
       work_package_minimum_execution_contract: {

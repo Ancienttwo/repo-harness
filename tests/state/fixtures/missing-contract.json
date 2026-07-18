@@ -1,18 +1,18 @@
 {
   "baseline": "82550779cdccf0575d674ae53bbc95ba63e44743",
   "scenario": "missing-contract",
-  "cli_exit": 1,
+  "cli_exit": 0,
   "cli_stderr": "",
   "field": {
-    "exit": 1,
-    "stdout": "",
+    "exit": 0,
+    "stdout": "standard\n",
     "stderr": ""
   },
   "state": {
     "protocol": 1,
     "kind": "repo-harness-effective-state",
     "task_id": "20260712-2327-effective-fixture",
-    "phase": "blocked",
+    "phase": "executing",
     "state_version": 1,
     "state_revision": "sha256:<dynamic:state_revision>",
     "authoritative_plan": {
@@ -37,11 +37,9 @@
       "crossCapability": false
     },
     "allowed_paths": [],
-    "next_action": "resolve blockers",
+    "next_action": "implement resolver",
     "guidance": "at most one active plan artifact; no contract, notes, or todos scaffolding beyond it",
-    "blockers": [
-      "missing_contract"
-    ],
+    "blockers": [],
     "stale_sources": [
       "checks",
       "external_acceptance",

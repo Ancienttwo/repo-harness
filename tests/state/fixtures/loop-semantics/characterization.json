@@ -14,13 +14,11 @@
     },
     {
       "scenario": "missing-contract",
-      "source_sha256": "1cd1c8aedaa6dac2972ac06ed4a90f67d26cf12ab0ce8507122fad6149b7a784",
+      "source_sha256": "80325c939b642295f370b00051d818b9d8574872db9b75d8bf30097bb2400a77",
       "baseline": "82550779cdccf0575d674ae53bbc95ba63e44743",
-      "cli_exit": 1,
+      "cli_exit": 0,
       "workflow_profile": "standard",
-      "blockers": [
-        "missing_contract"
-      ]
+      "blockers": []
     },
     {
       "scenario": "executing-fresh-evidence",
@@ -103,17 +101,13 @@
       "current": {
         "entrypoint": ".ai/hooks/pre-edit-guard.sh",
         "profile_source": "live_effective_state",
-        "exit_code": 2,
-        "verdict": "block",
-        "reason": "WorkflowProfileGuard",
+        "exit_code": 0,
+        "verdict": "allow",
+        "reason": "none",
         "workflow_profile": "standard",
-        "state_blockers": [
-          "missing_contract"
-        ],
-        "guard_tokens": [
-          "WorkflowProfileGuard"
-        ],
-        "structured_error": true,
+        "state_blockers": [],
+        "guard_tokens": [],
+        "structured_error": false,
         "state_version_published": true,
         "work_package_status": "Approved",
         "work_package_remaining_tasks": 0,
@@ -133,7 +127,6 @@
           "strict_worktree"
         ],
         "side_effects": [
-          ".ai/harness/failures/latest.jsonl",
           ".ai/harness/state/effective.json"
         ],
         "missing_semantic_fields": [

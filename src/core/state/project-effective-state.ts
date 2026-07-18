@@ -2,6 +2,7 @@ import type {
   WorkflowProfile,
   WorkflowProfileResult,
 } from '../workflow/profile';
+import { resolve as resolveArtifactRequirement } from '../workflow/artifact-requirement-policy';
 import {
   firstOpenTask,
   markdownBullet,
@@ -210,13 +211,32 @@ export function projectEffectiveState(input: EffectiveStateInputs): EffectiveSta
       : 'stale';
   if (currentFreshness === 'stale') staleSources.push('current_snapshot');
 
+  const workflowProfile = input.riskResolution.ok ? input.riskResolution.profile : null;
+
   const blockers = conflictingSources.map((source) => `conflict:${source}`);
   if (
     input.planPath &&
     (input.planStatus === 'approved' || input.planStatus === 'executing') &&
     !input.contractText
   ) {
-    blockers.push('missing_contract');
+    // Fail closed by default (unresolvable profile keeps blocking); only a
+    // resolved cell that marks `separate_contract` required overrides that.
+    // Standard's not_required cell and Lite's absent entry both leave this
+    // false, which is how the Standard collapse into missing_contract
+    // disappears without any consumer-specific branch here or in the policy
+    // module itself.
+    let separateContractRequired = true;
+    if (workflowProfile) {
+      const contractPolicy = resolveArtifactRequirement({ profile: workflowProfile, operation: 'edit' });
+      separateContractRequired = contractPolicy.ok
+        ? contractPolicy.requirements.some(
+            (requirement) => requirement.key === 'separate_contract' && requirement.status === 'required',
+          )
+        : true;
+    }
+    if (separateContractRequired) {
+      blockers.push('missing_contract');
+    }
   }
   if (checksFreshness === 'fresh' && checksStatus && checksStatus !== 'pass') {
     blockers.push('checks_failed');
@@ -226,7 +246,6 @@ export function projectEffectiveState(input: EffectiveStateInputs): EffectiveSta
   }
   if (input.capabilityRegistryInvalid) blockers.push('capability_registry:invalid');
 
-  const workflowProfile = input.riskResolution.ok ? input.riskResolution.profile : null;
   const phase = blockers.length > 0
     ? 'blocked'
     : input.planPath ? input.planStatus : 'idle';
