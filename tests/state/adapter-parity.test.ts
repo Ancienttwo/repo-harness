@@ -213,6 +213,14 @@ const AUTHORITY_FIELDS = [
   'task_id',
   'state_version',
   'state_revision',
+  // Authority, subject, evidence, and projection revisions are all computed
+  // independently of the calling risk/operation input (LSC-04), so -- like
+  // the other fields in this set -- they must be identical between a
+  // risk-bearing "requested" resolve and the zero-risk "inspect" resolve.
+  'authority_revision',
+  'subject_revision',
+  'evidence_revision',
+  'projection_revision',
   'authoritative_plan',
   'contract',
   'stale_sources',

@@ -402,6 +402,30 @@ describe('effective state resolver', () => {
     });
   });
 
+  test('rewriting handoff and resume advances only projection and state revision, never authority, subject, evidence, or the progress token', () => {
+    withRepo((cwd) => {
+      const first = resolveFixtureState(cwd);
+
+      // Handoff/resume are gitignored by the fixture AND excluded from the
+      // review-subject scan (isOperationalReviewPath), so rewriting them is
+      // pure projection churn with zero side effect on any other bucket --
+      // no commit needed, which also means target_rev (an ingredient of
+      // subject_revision) cannot move as a side effect of this rewrite.
+      write(cwd, '.ai/harness/handoff/current.md', '# Handoff\nrewritten body\n');
+      write(cwd, '.ai/harness/handoff/resume.md', '# Resume\nrewritten body\n');
+
+      const second = resolveFixtureState(cwd);
+
+      expect(second.projection_revision).not.toBe(first.projection_revision);
+      expect(second.state_revision).not.toBe(first.state_revision);
+      expect(second.state_version).toBe(first.state_version + 1);
+      expect(second.authority_revision).toBe(first.authority_revision);
+      expect(second.subject_revision).toBe(first.subject_revision);
+      expect(second.evidence_revision).toBe(first.evidence_revision);
+      expect(second.progress_token).toBe(first.progress_token);
+    });
+  });
+
   test('records lock ownership and reclaims a stale dead owner', () => {
     withRepo((cwd) => {
       writeFixtureStateLock(cwd, {
@@ -718,7 +742,7 @@ describe('effective state resolver', () => {
       });
     });
 
-    test('registry and policy changes advance the state revision and durable version', () => {
+    test('registry and policy changes advance the state revision, durable version, and authority revision', () => {
       withRepo((cwd) => {
         write(cwd, '.ai/context/capabilities.json', JSON.stringify({
           version: 1,
@@ -739,6 +763,17 @@ describe('effective state resolver', () => {
         expect(second.state_revision).not.toBe(first.state_revision);
         expect(second.state_version).toBe(first.state_version + 1);
         expect(second.blockers).toContain('capability_registry:invalid');
+        // The registry is part of the authority bucket now (LSC-04): an
+        // invalid registry moves authority_revision (a new capability hash
+        // ingredient). Note: this fixture commits every step directly onto
+        // the same branch used as the review target, so subject_revision
+        // (bound to target_rev) legitimately moves on every commit too --
+        // that is a property of this single-branch fixture's git shape, not
+        // of the authority/subject partition, so it is intentionally not
+        // asserted either way here (see the projection-only isolation test
+        // above, and the pure-projector progress_token test, for the actual
+        // bucket-isolation proof without this confound).
+        expect(second.authority_revision).not.toBe(first.authority_revision);
 
         write(cwd, '.ai/harness/policy.json', JSON.stringify({
           worktree_strategy: { review_base: 'main' },
@@ -750,6 +785,11 @@ describe('effective state resolver', () => {
         });
         expect(third.state_revision).not.toBe(second.state_revision);
         expect(third.state_version).toBe(second.state_version + 1);
+        // Policy is a pure authority ingredient: authority_revision moves,
+        // and the still-invalid registry contributes the same blocker set as
+        // `second` (policy adds no new blocker).
+        expect(third.authority_revision).not.toBe(second.authority_revision);
+        expect(third.blockers).toEqual(second.blockers);
       });
     });
 

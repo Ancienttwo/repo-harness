@@ -15,6 +15,11 @@
     "phase": "executing",
     "state_version": 1,
     "state_revision": "sha256:<dynamic:state_revision>",
+    "authority_revision": "sha256:<dynamic:authority_revision>",
+    "subject_revision": "sha256:3e07a153089d6ccd3c8e383dd3d958b120c12d6ca7c3dd06584a4d7a90546afd",
+    "evidence_revision": "sha256:7d48fddc4362a26f5e97057e52068e355acbbf4e54f7235df4f153195a2cad0f",
+    "projection_revision": "sha256:<dynamic:projection_revision>",
+    "progress_token": "sha256:183a43a9e7deb9858a43d029d9a77958a3a14344ed6a0c08cc65b71d1fbc098c",
     "authoritative_plan": {
       "path": "plans/plan-20260712-2327-effective-fixture.md",
       "status": "executing"

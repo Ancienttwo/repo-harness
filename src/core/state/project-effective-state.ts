@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import type {
   WorkflowProfile,
   WorkflowProfileResult,
@@ -62,6 +63,9 @@ export interface EffectiveStateInputs {
   readonly currentSnapshotPath: string;
   readonly currentSnapshotText: string | null;
   readonly authorityRevision: string;
+  readonly subjectRevision: string;
+  readonly evidenceRevision: string;
+  readonly projectionRevision: string;
   readonly stateVersion: number;
   readonly stateRevision: string;
   readonly sourceHashes: Readonly<Record<string, string>>;
@@ -71,10 +75,22 @@ function uniqueSorted(values: readonly string[]): string[] {
   return [...new Set(values)].sort();
 }
 
+// The audit's progress-token recipe wants "completed task markers derived
+// from the plan text" (plans/sprints/20260715-harness-loop-audit-and-optimization.md:834-844).
+// This repo's plans have no formal task-id scheme, so each completed
+// checkbox line stands in as its own stable marker: it changes only when a
+// task is actually checked off (or its recorded line changes), never when an
+// open task's wording changes or projection files are rewritten.
+function completedTaskMarkers(planText: string | null): string[] {
+  if (!planText) return [];
+  return (planText.match(/^\s*- \[[xX]\]\s+.+$/gm) ?? []).map((line) => line.trim());
+}
+
 /** Pure projection over already-read repository content and effect observations. */
 export function projectEffectiveState(input: EffectiveStateInputs): EffectiveState {
   const staleSources = [...input.staleSources];
   const conflictingSources = [...input.conflictingSources];
+  const allowedPaths = parseAllowedPaths(input.contractText);
 
   const recommendation = input.reviewText
     ? markdownHeader(input.reviewText, 'Recommendation')
@@ -246,6 +262,19 @@ export function projectEffectiveState(input: EffectiveStateInputs): EffectiveSta
   }
   if (input.capabilityRegistryInvalid) blockers.push('capability_registry:invalid');
 
+  // Progress token: one deterministic content hash over exactly the audit's
+  // recipe. It composes revisions and values the resolver/projector already
+  // computed -- no re-hashing of source content, no projection, time, or PID
+  // input -- so rendering-only churn (handoff/resume/current-snapshot) can
+  // never move it, only real subject/evidence/task/blocker/scope progress can.
+  const progressToken = `sha256:${createHash('sha256').update(JSON.stringify({
+    subject_revision: input.subjectRevision,
+    completed_task_markers: completedTaskMarkers(input.planText),
+    evidence_revision: input.evidenceRevision,
+    hard_blockers: blockers,
+    allowed_paths: allowedPaths,
+  })).digest('hex')}`;
+
   const phase = blockers.length > 0
     ? 'blocked'
     : input.planPath ? input.planStatus : 'idle';
@@ -264,6 +293,11 @@ export function projectEffectiveState(input: EffectiveStateInputs): EffectiveSta
     phase,
     state_version: input.stateVersion,
     state_revision: input.stateRevision,
+    authority_revision: input.authorityRevision,
+    subject_revision: input.subjectRevision,
+    evidence_revision: input.evidenceRevision,
+    projection_revision: input.projectionRevision,
+    progress_token: progressToken,
     authoritative_plan: input.planPath
       ? { path: input.planPath, status: input.planStatus }
       : null,
@@ -280,7 +314,7 @@ export function projectEffectiveState(input: EffectiveStateInputs): EffectiveSta
     risk_floor: input.riskResolution.riskFloor,
     profile_reasons: [...input.riskResolution.reasons, ...input.capabilityReasons],
     profile_signals: input.riskResolution.ok ? input.riskResolution.signals : null,
-    allowed_paths: parseAllowedPaths(input.contractText),
+    allowed_paths: allowedPaths,
     next_action: nextAction,
     guidance: workflowProfile ? CEREMONY_GUIDANCE[workflowProfile] : null,
     blockers,

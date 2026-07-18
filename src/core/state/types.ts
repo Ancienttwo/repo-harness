@@ -50,6 +50,22 @@ export interface EffectiveStateV1 {
   readonly phase: string;
   readonly state_version: number;
   readonly state_revision: string;
+  /**
+   * Four typed revisions partition the former single authority+subject+
+   * evidence+projection mix (LOOP-03/LOOP-08 audit). `state_revision` above
+   * stays the untouched all-source union (LSC-05 owns allocation); these are
+   * additive and each computed once per bucket (LSC-04).
+   */
+  readonly authority_revision: string;
+  readonly subject_revision: string;
+  readonly evidence_revision: string;
+  readonly projection_revision: string;
+  /**
+   * Pure content hash over exactly {subject_revision, completed-task markers
+   * derived from the plan text, evidence_revision, the hard blocker set,
+   * allowed_paths}. No projection, time, or PID input feeds it.
+   */
+  readonly progress_token: string;
   readonly authoritative_plan: {
     readonly path: string;
     readonly status: SnapshotPlanState;

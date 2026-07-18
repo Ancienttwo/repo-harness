@@ -16,7 +16,7 @@ import { circuitLimit, recordCircuitAttempt, type CircuitAttempt } from '../src/
 function attempt(overrides: Partial<CircuitAttempt> = {}): CircuitAttempt {
   return {
     kind: 'guard', guard: 'scope', reason: 'outside allowed paths', pathOrAction: 'src/secret.ts',
-    stateVersion: 'sha256:state', fingerprint: 'sha256:guard', profile: 'lite', ...overrides,
+    progressToken: 'sha256:progress', fingerprint: 'sha256:guard', profile: 'lite', ...overrides,
   };
 }
 
@@ -35,10 +35,38 @@ describe('workflow circuit breakers', () => {
     expect(third.required_action).toStartWith('terminal:');
   }));
 
-  test('state or action changes reset the consecutive repeat counter', () => withRepo((cwd) => {
+  test('progress token or action changes reset the consecutive repeat counter', () => withRepo((cwd) => {
     recordCircuitAttempt(cwd, attempt());
-    expect(recordCircuitAttempt(cwd, attempt({ stateVersion: 'sha256:new' })).repeat_count).toBe(1);
+    expect(recordCircuitAttempt(cwd, attempt({ progressToken: 'sha256:new' })).repeat_count).toBe(1);
     expect(recordCircuitAttempt(cwd, attempt({ pathOrAction: 'src/other.ts' })).repeat_count).toBe(1);
+  }));
+
+  test('projection-only churn never changes the progress token, so repeats keep accumulating on it', () => withRepo((cwd) => {
+    // Same progress token across calls (what a handoff/resume/current-snapshot
+    // rewrite produces, since projection churn never moves progress_token):
+    // repeats accumulate against the same key instead of resetting.
+    expect(recordCircuitAttempt(cwd, attempt({ progressToken: 'sha256:same' })).repeat_count).toBe(1);
+    expect(recordCircuitAttempt(cwd, attempt({ progressToken: 'sha256:same' })).repeat_count).toBe(2);
+    const third = recordCircuitAttempt(cwd, attempt({ progressToken: 'sha256:same' }));
+    expect(third).toMatchObject({ allowed: false, tripped: true, repeat_count: 3, limit: 2 });
+
+    // Real progress -- the token itself changes -- resets to a fresh key.
+    expect(recordCircuitAttempt(cwd, attempt({ progressToken: 'sha256:advanced' })).repeat_count).toBe(1);
+  }));
+
+  test('an empty or missing progress token fails closed: the key stays stable so repeats keep accumulating', () => withRepo((cwd) => {
+    expect(recordCircuitAttempt(cwd, attempt({ progressToken: '' })).repeat_count).toBe(1);
+    expect(recordCircuitAttempt(cwd, attempt({ progressToken: '' })).repeat_count).toBe(2);
+    const third = recordCircuitAttempt(cwd, attempt({ progressToken: '' }));
+    expect(third).toMatchObject({ allowed: false, tripped: true, repeat_count: 3, limit: 2 });
+
+    // Omitting the field entirely (as a raw stdin-JSON caller might) must
+    // collapse to the exact same stable key as an explicit empty string --
+    // never a distinct, ever-changing key that would fail open -- so the
+    // breaker stays tripped at the capped count instead of resetting to 1.
+    const { progressToken: _omitted, ...omitted } = attempt();
+    const fourth = recordCircuitAttempt(cwd, omitted as CircuitAttempt);
+    expect(fourth).toMatchObject({ allowed: false, tripped: true, repeat_count: 3, limit: 2 });
   }));
 
   test('profile caps match review, subagent, repair, and consult contracts', () => {

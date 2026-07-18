@@ -8,6 +8,9 @@ const NOW = Date.parse('2026-07-15T12:00:00Z');
 const PLAN = 'plans/plan-20260715-1200-fixture.md';
 const CONTRACT = 'tasks/contracts/20260715-1200-fixture.contract.md';
 const AUTHORITY = 'sha256:authority';
+const SUBJECT_REVISION = 'sha256:subject';
+const EVIDENCE_REVISION = 'sha256:evidence';
+const PROJECTION_REVISION = 'sha256:projection';
 const SUBJECT = `sha256:${'a'.repeat(64)}`;
 const TARGET = 'b'.repeat(40);
 
@@ -73,6 +76,9 @@ function input(overrides: Partial<EffectiveStateInputs> = {}): EffectiveStateInp
     currentSnapshotPath: 'tasks/current.md',
     currentSnapshotText: null,
     authorityRevision: AUTHORITY,
+    subjectRevision: SUBJECT_REVISION,
+    evidenceRevision: EVIDENCE_REVISION,
+    projectionRevision: PROJECTION_REVISION,
     stateVersion: 7,
     stateRevision: 'sha256:state',
     sourceHashes: { '.ai/harness/handoff/current.md': 'sha256:handoff' },
@@ -265,6 +271,59 @@ describe('pure Effective State projection', () => {
     }
   });
 
+  test('exposes the four additive revisions verbatim and derives progress_token as a pure content hash', () => {
+    const state = projectEffectiveState(input());
+    expect(state.authority_revision).toBe(AUTHORITY);
+    expect(state.subject_revision).toBe(SUBJECT_REVISION);
+    expect(state.evidence_revision).toBe(EVIDENCE_REVISION);
+    expect(state.projection_revision).toBe(PROJECTION_REVISION);
+    expect(state.progress_token).toMatch(/^sha256:[0-9a-f]{64}$/);
+  });
+
+  test('progress_token depends only on subject/evidence revisions, completed tasks, blockers, and allowed_paths -- never projection text, time, or state version', () => {
+    const base = projectEffectiveState(input());
+
+    // Projection-only churn (handoff/resume/current-snapshot text, plus the
+    // clock and the untouched state_version/state_revision) must never move
+    // it: none of those are in the recipe.
+    const projectionChurned = projectEffectiveState(input({
+      handoffText: '> **Task ID**: other\n',
+      resumeText: '> **Task ID**: other\n',
+      currentSnapshotText: '> **Updated At**: 2000-01-01T00:00:00Z\n',
+      nowMs: NOW + 999_999,
+      stateVersion: 999,
+      stateRevision: 'sha256:different',
+    }));
+    expect(projectionChurned.progress_token).toBe(base.progress_token);
+
+    // Checking off a task is real progress: the completed-task marker set
+    // changes, so the token moves.
+    const taskCompleted = projectEffectiveState(input({
+      planText: '# Plan\n\n- [x] run parity tests\n',
+    }));
+    expect(taskCompleted.progress_token).not.toBe(base.progress_token);
+
+    // A new hard blocker is real (regressive) progress: the token moves.
+    const blocked = projectEffectiveState(input({
+      contractText: null,
+      riskResolution: {
+        ok: false,
+        code: 'INVALID_RISK_INPUT',
+        message: 'missing signals',
+        requestedProfile: null,
+        riskFloor: 'strict',
+        reasons: ['risk-floor:strict:signals-unavailable'],
+      },
+    }));
+    expect(blocked.progress_token).not.toBe(base.progress_token);
+
+    // The subject or evidence bucket advancing is also real progress.
+    expect(projectEffectiveState(input({ subjectRevision: 'sha256:moved-subject' })).progress_token)
+      .not.toBe(base.progress_token);
+    expect(projectEffectiveState(input({ evidenceRevision: 'sha256:moved-evidence' })).progress_token)
+      .not.toBe(base.progress_token);
+  });
+
   test('preserves the protocol v1 JSON field order', () => {
     const keys = Object.keys(projectEffectiveState(input()));
     expect(keys.slice(0, 6)).toEqual([
@@ -274,6 +333,13 @@ describe('pure Effective State projection', () => {
       'phase',
       'state_version',
       'state_revision',
+    ]);
+    expect(keys.slice(6, 11)).toEqual([
+      'authority_revision',
+      'subject_revision',
+      'evidence_revision',
+      'projection_revision',
+      'progress_token',
     ]);
     expect(keys.indexOf('next_action')).toBeLessThan(keys.indexOf('source_hashes'));
   });
