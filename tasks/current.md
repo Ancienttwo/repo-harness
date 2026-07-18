@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-18T23:50:42+0800 -->
+<!-- updated_at: 2026-07-19T01:55:46+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-07-18T23:50:42+0800
+> **Updated At**: 2026-07-19T01:55:46+0800
 > **Source Branch**: main
-> **Source Commit**: 740b72d2
+> **Source Commit**: d326d704
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: LSC-06 merged (PR #88); LSC-07 next
+> **Reason**: LSC-07 merged (PR #89); LSC-08 final row next
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
