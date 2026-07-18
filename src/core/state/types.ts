@@ -3,6 +3,7 @@ import type {
   WorkflowProfile,
   WorkflowProfileSignals,
 } from '../workflow/profile';
+import type { EvaluateReadinessResult } from '../workflow/operation-readiness';
 
 export type SnapshotPlanState =
   | 'none'
@@ -107,6 +108,16 @@ export interface EffectiveStateV1 {
   readonly handoff: EffectiveStateSource;
   readonly resume: EffectiveStateSource;
   readonly current_snapshot: EffectiveStateSource;
+  /**
+   * LSC-07: additive shared-readiness projection. `evaluateReadiness`
+   * (operation `'stop'`, scoping its `nextAction` to the Stop gate) computed
+   * purely from inputs this projector already has -- per-operation
+   * `resolve()` decisions, contract presence, worktree ownership,
+   * review/external/checks freshness, and `blockers`. Null only when
+   * `workflow_profile` itself is unavailable (`riskResolution` not ok);
+   * every other existing field keeps byte-identical semantics.
+   */
+  readonly readiness: EvaluateReadinessResult | null;
 }
 
 export type EffectiveState = EffectiveStateV1;

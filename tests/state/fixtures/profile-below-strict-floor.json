@@ -108,7 +108,8 @@
     "current_snapshot": {
       "path": "tasks/current.md",
       "freshness": "fresh"
-    }
+    },
+    "readiness": null
   },
   "hook": {
     "protocol": 1,

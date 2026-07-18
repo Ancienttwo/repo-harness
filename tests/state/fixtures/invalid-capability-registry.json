@@ -116,6 +116,75 @@
     "current_snapshot": {
       "path": "tasks/current.md",
       "freshness": "fresh"
+    },
+    "readiness": {
+      "ok": true,
+      "allowedToEdit": {
+        "decision": "block",
+        "reasons": [
+          "required_work_package_missing",
+          "hard_blocker_present"
+        ]
+      },
+      "allowedToStop": {
+        "decision": "block",
+        "reasons": [
+          "required_recovery_state_missing",
+          "hard_blocker_present"
+        ]
+      },
+      "readyToShip": {
+        "decision": "block",
+        "reasons": [
+          "required_work_package_missing",
+          "required_evidence_missing",
+          "hard_blocker_present"
+        ]
+      },
+      "requirements": {
+        "edit": [
+          {
+            "key": "complete_approved_work_package",
+            "status": "required",
+            "satisfied": false
+          },
+          {
+            "key": "separate_contract",
+            "status": "not_required",
+            "satisfied": true
+          }
+        ],
+        "stop": [
+          {
+            "key": "durable_recovery_state",
+            "status": "required",
+            "satisfied": false
+          }
+        ],
+        "ship": [
+          {
+            "key": "complete_approved_work_package",
+            "status": "required",
+            "satisfied": false
+          },
+          {
+            "key": "subject_bound_targeted_evidence",
+            "status": "required",
+            "satisfied": false
+          },
+          {
+            "key": "separate_contract",
+            "status": "not_required",
+            "satisfied": true
+          },
+          {
+            "key": "external_acceptance",
+            "status": "not_required",
+            "satisfied": true
+          }
+        ]
+      },
+      "nextAction": null
     }
   },
   "hook": {

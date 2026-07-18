@@ -3,7 +3,11 @@ import type {
   WorkflowProfile,
   WorkflowProfileResult,
 } from '../workflow/profile';
-import { resolve as resolveArtifactRequirement } from '../workflow/artifact-requirement-policy';
+import {
+  resolve as resolveArtifactRequirement,
+  type ArtifactRequirementKey,
+} from '../workflow/artifact-requirement-policy';
+import { evaluateReadiness, type EvaluateReadinessResult } from '../workflow/operation-readiness';
 import {
   firstOpenTask,
   markdownBullet,
@@ -286,6 +290,56 @@ export function projectEffectiveState(input: EffectiveStateInputs): EffectiveSta
         : null
     );
 
+  // LSC-07: additive readiness projection, computed purely from inputs this
+  // projector already has -- contract presence, worktree ownership,
+  // review/external/checks freshness, and the blockers just derived above.
+  // `operation: 'stop'` scopes only `nextAction`'s remediation lookup (see
+  // operation-readiness.ts's module docstring); allowedToEdit/allowedToStop/
+  // readyToShip/requirements are always all three computed together. Null
+  // only when no workflow profile resolved at all -- every other existing
+  // field above keeps its untouched, byte-identical formula.
+  const readiness: EvaluateReadinessResult | null = workflowProfile
+    ? (() => {
+        const satisfiedRequirements: ArtifactRequirementKey[] = [];
+        if (input.contractText) satisfiedRequirements.push('separate_contract');
+        if (input.worktreeOwnerIsCurrent) {
+          satisfiedRequirements.push('isolated_contract_worktree', 'worktree_boundary');
+        }
+        if (reviewFreshness === 'fresh') satisfiedRequirements.push('fresh_review');
+        if (externalFreshness === 'fresh') satisfiedRequirements.push('external_acceptance');
+        if (checksFreshness === 'fresh') {
+          satisfiedRequirements.push('fresh_checks', 'subject_bound_targeted_evidence');
+        }
+        if (input.reviewSubject.available) satisfiedRequirements.push('candidate_revision_precondition');
+        if (
+          input.planPath &&
+          (input.planStatus === 'approved' || input.planStatus === 'executing') &&
+          firstOpenTask(input.planText) === null
+        ) {
+          satisfiedRequirements.push('complete_approved_work_package');
+        }
+        // The handoff/resume checkpoint pair is the durable recovery state
+        // Stop always (re)writes before ever consulting readiness; "missing"
+        // (never written) is the only unsatisfied case here -- a "stale"
+        // pair per this projector's own task-id/revision match (the bash
+        // handoff writer does not populate those fields) still proves a
+        // checkpoint exists on disk.
+        if (handoffFreshness !== 'missing' && resumeFreshness !== 'missing') {
+          satisfiedRequirements.push('durable_recovery_state');
+        }
+        return evaluateReadiness({
+          profile: workflowProfile,
+          operation: 'stop',
+          requirements: {
+            edit: resolveArtifactRequirement({ profile: workflowProfile, operation: 'edit' }),
+            stop: resolveArtifactRequirement({ profile: workflowProfile, operation: 'stop' }),
+            ship: resolveArtifactRequirement({ profile: workflowProfile, operation: 'ship' }),
+          },
+          evidence: { satisfiedRequirements, hardBlockers: blockers },
+        });
+      })()
+    : null;
+
   return {
     protocol: 1,
     kind: 'repo-harness-effective-state',
@@ -346,5 +400,6 @@ export function projectEffectiveState(input: EffectiveStateInputs): EffectiveSta
     handoff: { path: input.handoffPath, freshness: handoffFreshness },
     resume: { path: input.resumePath, freshness: resumeFreshness },
     current_snapshot: { path: input.currentSnapshotPath, freshness: currentFreshness },
+    readiness,
   };
 }

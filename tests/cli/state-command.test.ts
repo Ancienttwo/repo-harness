@@ -56,6 +56,7 @@ function effectiveState(overrides: Partial<EffectiveState> = {}): EffectiveState
     handoff: { path: null, freshness: 'missing' },
     resume: { path: null, freshness: 'missing' },
     current_snapshot: { path: 'tasks/current.md', freshness: 'stale' },
+    readiness: null,
     ...overrides,
   };
 }

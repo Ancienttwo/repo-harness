@@ -350,6 +350,10 @@ function editProfileSource(): string {
 
 function stopProfileSource(): string {
   const source = readFileSync(STOP, 'utf-8');
+  // LSC-07: the raw cache read and the install-state fallback are both
+  // removed; these two checks now assert their absence rather than their
+  // presence. A canonical CLI invocation (the same route pre-edit-guard.sh
+  // uses) is the only remaining profile source.
   const readsEffectiveState = source.includes('local effective_state=".ai/harness/state/effective.json"');
   const readsInstallFallback = source.includes('local install_state="${HOME:-}/.repo-harness/install-state.json"');
   if (readsEffectiveState && readsInstallFallback) {
@@ -357,6 +361,9 @@ function stopProfileSource(): string {
   }
   if (readsEffectiveState) return 'effective_state_cache';
   if (readsInstallFallback) return 'install_profile';
+  if (source.includes('state resolve --json --operation inspect')) {
+    return 'live_effective_state';
+  }
   return 'none';
 }
 
@@ -929,7 +936,7 @@ describe('LSC-01 profile × operation current-behavior characterization', () => 
     });
 
     expect(shipProfileObservation()).toEqual({ profileAware: false, matchedSources: [] });
-    expect(stopProfileSource()).toBe('effective_state_cache_with_install_profile_fallback');
+    expect(stopProfileSource()).toBe('live_effective_state');
     expect(editProfileSource()).toBe('live_effective_state');
 
     if (process.env.UPDATE_LOOP_SEMANTICS_GOLDEN === '1') {
