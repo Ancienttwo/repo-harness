@@ -5,12 +5,12 @@
 > **Contract**: tasks/contracts/20260716-0222-effective-state-test-retirement.contract.md
 > **Notes File**: tasks/notes/20260716-0222-effective-state-test-retirement.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-07-16 03:15
+> **Last Updated**: 2026-07-19 (Round 2, rebased subject; Claude gatekeeper substitution for external acceptance)
 > **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Subject SHA256**: sha256:be161ecd57401113308253b5a3abf1fb7a41f69387a9d5eb3ff2b1acb4a41d30
+> **Reviewed Subject SHA256**: sha256:e3a0211af7ef926f45f4b413b3b1c58ad16f3d9e4eacb98f1571c7fbdbdbc980
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: be3e93ce72c812a33045a15c4d97452c59fa3fbb
+> **Reviewed Target Revision**: 15dd405c87c844fd301ff3aaa6dcf89910f5216e
 
 ## Human Review Card
 
@@ -65,19 +65,34 @@
 
 ## External Acceptance Advice
 
-> **External Acceptance**: unavailable
+> **External Acceptance**: pass (Round 2, Claude gatekeeper substitution — Codex CLI quota-limited until 2026-08-16 per the documented exception; Round 1's claude-review attempts had timed out with no verdict)
 > **External Reviewer**: Claude
-> **External Source**: claude-review
-> **External Started**: 2026-07-16T02:55:00+0800
-> **External Completed**: 2026-07-16T03:14:00+0800
+> **External Source**: claude-gatekeeper
+> **External Started**: 2026-07-19
+> **External Completed**: 2026-07-19
 > **Review Rubric Version**: 2
-> **Reviewed Subject SHA256**: sha256:be161ecd57401113308253b5a3abf1fb7a41f69387a9d5eb3ff2b1acb4a41d30
+> **Reviewed Subject SHA256**: sha256:e3a0211af7ef926f45f4b413b3b1c58ad16f3d9e4eacb98f1571c7fbdbdbc980
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: be3e93ce72c812a33045a15c4d97452c59fa3fbb
-> **Benchmark Evidence SHA256**: unavailable
+> **Reviewed Target Revision**: 15dd405c87c844fd301ff3aaa6dcf89910f5216e
+> **Benchmark Evidence SHA256**: not-applicable
 
-- P1 blockers: no final external verdict; both read-only attempts timed out at 330 seconds.
-- P2 advisories: the partial transcript confirmed no live caller of the deleted benchmark harness and confirmed surviving path-security, migration, and registry fail-closed integration owners, but did not finish the remaining ownership review.
+- P1 blockers: none. Round 2 (rebased subject cdddc06e on 15dd405c): the
+  independent read-only Claude gatekeeper spot-checked eight retirement
+  ownership claims against the deleted test bodies (legacy snapshot
+  read-only, stale projections golden, checks-subject binding both
+  branches, lock reclaim, all five --field semantics, guidance branches,
+  atomic cache/version transaction, zero-byte registry normalization) and
+  verified the two rebase-resolution traps closed
+  (replaceContractProfile export + consumers; effectiveStateCliRiskArgs
+  byte-identical consolidation). Zero production paths changed; LSC-era
+  tests all preserved; characterization unmodified and passing; zero
+  golden fixture changes. Full suite at the rebased subject: 1661 pass /
+  1 skip / 0 fail (net -25 tests from 1687), independently re-run by the
+  gatekeeper.
+- P2 advisories: Round 1 historical metrics (1563 pass, net -777 lines)
+  superseded by the rebased-subject numbers above. The pre-existing
+  profile-comparison --require-authoritative staleness note is moot under
+  the PR #91 regime (this contract declares benchmark: not_applicable).
 - Acceptance checklist: unavailable. Internal architecture review returned no findings; the ownership-closure audit found two P2 coverage gaps, both fixed and reverified with no remaining P0-P2.
 
 ## Behavior Diff Notes
