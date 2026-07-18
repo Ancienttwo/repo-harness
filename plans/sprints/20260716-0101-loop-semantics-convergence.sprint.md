@@ -3,7 +3,7 @@
 > **Status**: Approved
 > **Slug**: loop-semantics-convergence
 > **Created**: 2026-07-16 01:01
-> **Updated**: 2026-07-18 21:19
+> **Updated**: 2026-07-18 22:38
 > **Source PRD**: (none; source authority is the Harness Loop audit)
 > **Source Audit**: `plans/sprints/20260715-harness-loop-audit-and-optimization.md`
 > **Source Spec**: `docs/spec.md`
@@ -166,7 +166,7 @@ flow and lands through an independent PR.
 | 2 | [x] | lsc-02-artifact-requirement-policy | contract | In an independent PR, establish one pure `ArtifactRequirementPolicy` matrix for Lite/Standard/Strict with positive/negative fixtures; do not switch consumers or implement readiness in this package | `plans/plan-20260718-1405-lsc-02-artifact-requirement-policy.md` |
 | 3 | [x] | lsc-03-standard-contract-semantic-cutover | contract | In an independent PR, make the approved Standard work-package contract policy identical across State, PreEdit, Stop, docs, and Skill guidance while Strict missing-contract/worktree states remain fail-closed | `plans/plan-20260718-1531-lsc-03-standard-contract-semantic-cutover.md` |
 | 4 | [x] | lsc-04-revision-partition-and-progress-token | contract | In an independent PR, separate authority, subject, evidence, and projection revisions, define a progress token, and make circuit keys consume it; projection-only rendering changes neither authority revision, progress token, nor no-progress detection | `plans/plan-20260718-1909-lsc-04-revision-partition-and-progress-token.md` |
-| 5 | [ ] | lsc-05-stable-state-version-allocation | contract | In an independent PR, publish state versions only after a stable source snapshot is confirmed; source-mutation retries and failed transactions consume no observable version and concurrency fixtures pass | (pending) |
+| 5 | [x] | lsc-05-stable-state-version-allocation | contract | In an independent PR, publish state versions only after a stable source snapshot is confirmed; source-mutation retries and failed transactions consume no observable version and concurrency fixtures pass | `plans/plan-20260718-2119-lsc-05-stable-state-version-allocation.md` |
 | 6 | [ ] | lsc-06-operation-readiness-evaluator | contract | In an independent PR, establish one `evaluateReadiness` result with allowedToEdit, allowedToStop, readyToShip, requirements, and nextAction; 9-cell positive/negative fixtures pass and adapters do not recompute semantics | (pending) |
 | 7 | [ ] | lsc-07-stop-semantics-cutover | contract | In an independent PR, make Stop consume shared readiness and remove install-profile fallback, mtime freshness touch, and cache-as-authority; the allowed-to-stop/not-ready-to-ship fixture passes and public routes remain unchanged | (pending) |
 | 8 | [ ] | lsc-08-adapter-parity-and-docs | contract | In an independent PR, prove CLI/MCP/Hook/Skill parity for profile, operation, decision, reason, and readiness on the same fixtures; public route/tool/CLI names remain unchanged and parity/docs gates pass | (pending) |
@@ -202,3 +202,4 @@ flow and lands through an independent PR.
 | 2026-07-18 15:29 | lsc-02-artifact-requirement-policy | `plans/plan-20260718-1405-lsc-02-artifact-requirement-policy.md` | done |
 | 2026-07-18 19:08 | lsc-03-standard-contract-semantic-cutover | `plans/plan-20260718-1531-lsc-03-standard-contract-semantic-cutover.md` | done |
 | 2026-07-18 21:19 | lsc-04-revision-partition-and-progress-token | `plans/plan-20260718-1909-lsc-04-revision-partition-and-progress-token.md` | done |
+| 2026-07-18 22:38 | lsc-05-stable-state-version-allocation | `plans/plan-20260718-2119-lsc-05-stable-state-version-allocation.md` | done |
