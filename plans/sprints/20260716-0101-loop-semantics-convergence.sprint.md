@@ -16,6 +16,7 @@
 > **LSC-05 Execution Base**: `origin/main@42b77aa0` (post-LSC-04 merge PR #86 plus backfill)
 > **LSC-06 Execution Base**: `origin/main@df3226dd` (post-LSC-05 merge PR #87 plus backfill)
 > **LSC-07 Execution Base**: `origin/main@574c5c66` (post-LSC-06 merge PR #88 plus backfill)
+> **LSC-08 Execution Base**: `origin/main@89f75d8a` (post-LSC-07 merge PR #89 plus backfill)
 > **Predecessor**: Closeout Runner Guardrails (CRG-01), merged by PR #83 at `d8e5f221053b8bf20f105933376c7524a0f05063`; Effective State Authority Convergence (PR #79, `3b33cea2422b1aa1e5be9080be54f731c4f2015d`) remains the semantic baseline
 > **Successor Order**: Hook Runtime Diet -> Evidence & Projection Convergence -> Skill Surface & Discovery Convergence
 > **Goal Mode**: incremental

@@ -32,6 +32,14 @@ export interface CompactEffectiveState {
   readonly stale_sources: EffectiveStateV1['stale_sources'];
   readonly conflicting_sources: EffectiveStateV1['conflicting_sources'];
   readonly next_action: EffectiveStateV1['next_action'];
+  /**
+   * LSC-08: additive parity fields, copied verbatim from the resolved
+   * state. MCP never recomputes readiness or Skill guidance -- it projects
+   * the same authority CLI and the Stop hook already consume (see the
+   * four-adapter parity assertions in `tests/state/adapter-parity.test.ts`).
+   */
+  readonly readiness: EffectiveStateV1['readiness'];
+  readonly guidance: EffectiveStateV1['guidance'];
 }
 
 export interface StateSummaryResult extends CompactEffectiveState {
@@ -119,6 +127,8 @@ export function projectCompactEffectiveState(state: EffectiveStateV1): CompactEf
     stale_sources: state.stale_sources,
     conflicting_sources: state.conflicting_sources,
     next_action: state.next_action,
+    readiness: state.readiness,
+    guidance: state.guidance,
   };
 }
 

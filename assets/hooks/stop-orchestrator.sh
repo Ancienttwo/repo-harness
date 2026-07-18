@@ -664,11 +664,24 @@ stop_resolve_state() {
       return 1
     fi
     STOP_STATE_PROFILE="$(printf '%s' "$output" | jq -r '.workflow_profile // empty' 2>/dev/null)"
-    STOP_STATE_ALLOWED_TO_STOP="$(printf '%s' "$output" | jq -r '.readiness.allowedToStop.decision // empty' 2>/dev/null)"
-    STOP_STATE_ALLOWED_TO_STOP_REASONS="$(printf '%s' "$output" | jq -r '(.readiness.allowedToStop.reasons // []) | join(",")' 2>/dev/null)"
-    STOP_STATE_READY_TO_SHIP="$(printf '%s' "$output" | jq -r '.readiness.readyToShip.decision // empty' 2>/dev/null)"
-    STOP_STATE_READY_TO_SHIP_REASONS="$(printf '%s' "$output" | jq -r '(.readiness.readyToShip.reasons // []) | join(",")' 2>/dev/null)"
-    STOP_STATE_NEXT_ACTION="$(printf '%s' "$output" | jq -r '.readiness.nextAction // empty' 2>/dev/null)"
+    # Scalar-readiness guard: `.readiness` is documented as an object or
+    # null (EffectiveStateV1['readiness']), but this reads externally
+    # produced JSON, so a malformed non-object/non-null value must degrade
+    # to skip-readiness rather than let jq's runtime type error
+    # (`Cannot index <type> with "..."`) escape this pipeline and abort the
+    # whole hook under `set -e` + `pipefail`. `type` itself never errors, so
+    # this check is always safe to run.
+    local readiness_type
+    readiness_type="$(printf '%s' "$output" | jq -r '.readiness | type' 2>/dev/null)"
+    if [[ "$readiness_type" == "object" || "$readiness_type" == "null" ]]; then
+      STOP_STATE_ALLOWED_TO_STOP="$(printf '%s' "$output" | jq -r '.readiness.allowedToStop.decision // empty' 2>/dev/null)"
+      STOP_STATE_ALLOWED_TO_STOP_REASONS="$(printf '%s' "$output" | jq -r '(.readiness.allowedToStop.reasons // []) | join(",")' 2>/dev/null)"
+      STOP_STATE_READY_TO_SHIP="$(printf '%s' "$output" | jq -r '.readiness.readyToShip.decision // empty' 2>/dev/null)"
+      STOP_STATE_READY_TO_SHIP_REASONS="$(printf '%s' "$output" | jq -r '(.readiness.readyToShip.reasons // []) | join(",")' 2>/dev/null)"
+      STOP_STATE_NEXT_ACTION="$(printf '%s' "$output" | jq -r '.readiness.nextAction // empty' 2>/dev/null)"
+    else
+      echo "[StopReadiness] readiness field is not an object (${readiness_type:-unknown}); skipping readiness-driven behavior (orthogonal gates still run)." >&2
+    fi
     return 0
   fi
 

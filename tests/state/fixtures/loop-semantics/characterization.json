@@ -70,11 +70,7 @@
         "side_effects": [
           ".ai/harness/state/effective.json"
         ],
-        "missing_semantic_fields": [
-          "allowedToEdit",
-          "requirements",
-          "nextAction"
-        ]
+        "missing_semantic_fields": []
       },
       "approved_target_delta": {
         "verdict": "allow",
@@ -129,11 +125,7 @@
         "side_effects": [
           ".ai/harness/state/effective.json"
         ],
-        "missing_semantic_fields": [
-          "allowedToEdit",
-          "requirements",
-          "nextAction"
-        ]
+        "missing_semantic_fields": []
       },
       "approved_target_delta": {
         "verdict": "allow",
@@ -187,11 +179,7 @@
           ".ai/harness/failures/latest.jsonl",
           ".ai/harness/state/effective.json"
         ],
-        "missing_semantic_fields": [
-          "allowedToEdit",
-          "requirements",
-          "nextAction"
-        ]
+        "missing_semantic_fields": []
       },
       "approved_target_delta": {
         "verdict": "block",
@@ -242,12 +230,7 @@
           ".ai/harness/runs/loop-semantics-lite-stop.json",
           ".ai/harness/state/effective.json"
         ],
-        "missing_semantic_fields": [
-          "allowedToStop",
-          "readyToShip",
-          "requirements",
-          "nextAction"
-        ]
+        "missing_semantic_fields": []
       },
       "approved_target_delta": {
         "verdict": "allow",
@@ -295,12 +278,7 @@
           ".ai/harness/runs/loop-semantics-standard-stop.json",
           ".ai/harness/state/effective.json"
         ],
-        "missing_semantic_fields": [
-          "allowedToStop",
-          "readyToShip",
-          "requirements",
-          "nextAction"
-        ]
+        "missing_semantic_fields": []
       },
       "approved_target_delta": {
         "verdict": "allow",
@@ -350,12 +328,7 @@
           ".ai/harness/runs/loop-semantics-strict-stop.json",
           ".ai/harness/state/effective.json"
         ],
-        "missing_semantic_fields": [
-          "allowedToStop",
-          "readyToShip",
-          "requirements",
-          "nextAction"
-        ]
+        "missing_semantic_fields": []
       },
       "approved_target_delta": {
         "verdict": "allow",

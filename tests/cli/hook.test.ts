@@ -103,9 +103,24 @@ function spawnAdvisorProcess(repoRoot: string, input: Record<string, unknown>): 
 // sequenced before or after it.
 function spawnStopHookProcess(repoRoot: string, input: Record<string, unknown>): Promise<{ code: number | null; stdout: string }> {
   return new Promise((resolve, reject) => {
+    // REPO_HARNESS_CLI pins stop-orchestrator.sh's canonical `state resolve`
+    // route to this repo's own source CLI (mirroring runHook's pattern
+    // above) -- without it, a stale globally installed `repo-harness`
+    // binary on the operator's PATH can skew the LSC-06/07 readiness read
+    // this helper's three Delegation Fallback callers depend on.
+    // REPO_HARNESS_WORKFLOW_PROFILE raises these bare fixtures (no plan or
+    // contract) off the resolved 'lite' floor so Stop's LSC-07
+    // lite-profile early exit does not short-circuit before ever reaching
+    // delegation_should_block -- the behavior these callers exercise.
     const child = spawn(process.execPath, [CLI, 'hook', 'Stop', '--route', 'default'], {
       cwd: repoRoot,
-      env: { ...process.env, HOOK_HOST: 'codex', REPO_HARNESS_HOOK_CLI: HOOK_ENTRY },
+      env: {
+        ...process.env,
+        HOOK_HOST: 'codex',
+        REPO_HARNESS_CLI: CLI,
+        REPO_HARNESS_HOOK_CLI: HOOK_ENTRY,
+        REPO_HARNESS_WORKFLOW_PROFILE: 'standard',
+      },
     });
     let stdout = '';
     child.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
@@ -2303,7 +2318,13 @@ describe('hook command (Phase 1B)', () => {
           cwd: repoRoot,
           input: JSON.stringify({ hook_event_name: 'Stop', session_id: 'session-2', stop_hook_active: false }),
           encoding: 'utf-8',
-          env: { ...process.env, HOOK_HOST: 'codex', REPO_HARNESS_HOOK_CLI: HOOK_ENTRY },
+          env: {
+            ...process.env,
+            HOOK_HOST: 'codex',
+            REPO_HARNESS_CLI: CLI,
+            REPO_HARNESS_HOOK_CLI: HOOK_ENTRY,
+            REPO_HARNESS_WORKFLOW_PROFILE: 'standard',
+          },
         },
       );
       expect(mismatched.status).toBe(0);
@@ -2316,11 +2337,23 @@ describe('hook command (Phase 1B)', () => {
           cwd: repoRoot,
           input: JSON.stringify({ hook_event_name: 'Stop', session_id: 'session-1', stop_hook_active: false }),
           encoding: 'utf-8',
-          env: { ...process.env, HOOK_HOST: 'codex', REPO_HARNESS_HOOK_CLI: HOOK_ENTRY },
+          env: {
+            ...process.env,
+            HOOK_HOST: 'codex',
+            REPO_HARNESS_CLI: CLI,
+            REPO_HARNESS_HOOK_CLI: HOOK_ENTRY,
+            REPO_HARNESS_WORKFLOW_PROFILE: 'standard',
+          },
         },
       );
       expect(first.status).toBe(0);
       expect(first.stdout).toBe('');
+      // HOOK_HOST=codex's codexStopSuppressSuccessOutput swallows all child
+      // stdout/stderr for a successful (exit 0) Stop -- including the
+      // standard-profile [ReadinessGate] readyToShip=false stderr note this
+      // bare fixture's unmet ship evidence now genuinely produces -- and
+      // only replays either stream on a non-zero exit. Empty stderr here
+      // proves that suppression held, not that the hook printed nothing.
       expect(first.stderr).toBe('');
 
       const state = JSON.parse(
@@ -2335,7 +2368,13 @@ describe('hook command (Phase 1B)', () => {
           cwd: repoRoot,
           input: JSON.stringify({ hook_event_name: 'Stop', session_id: 'session-1', stop_hook_active: false }),
           encoding: 'utf-8',
-          env: { ...process.env, HOOK_HOST: 'codex', REPO_HARNESS_HOOK_CLI: HOOK_ENTRY },
+          env: {
+            ...process.env,
+            HOOK_HOST: 'codex',
+            REPO_HARNESS_CLI: CLI,
+            REPO_HARNESS_HOOK_CLI: HOOK_ENTRY,
+            REPO_HARNESS_WORKFLOW_PROFILE: 'standard',
+          },
         },
       );
       expect(second.status).toBe(0);
@@ -2395,7 +2434,13 @@ describe('hook command (Phase 1B)', () => {
             stop_hook_active: false,
           }),
           encoding: 'utf-8',
-          env: { ...process.env, HOOK_HOST: 'codex', REPO_HARNESS_HOOK_CLI: HOOK_ENTRY },
+          env: {
+            ...process.env,
+            HOOK_HOST: 'codex',
+            REPO_HARNESS_CLI: CLI,
+            REPO_HARNESS_HOOK_CLI: HOOK_ENTRY,
+            REPO_HARNESS_WORKFLOW_PROFILE: 'standard',
+          },
         },
       );
 
@@ -2717,10 +2762,16 @@ describe('hook command (Phase 1B)', () => {
       installAssetHooks(repoRoot);
 
       const paddedTranscriptPath = '  /workspace/transcripts/turn-trim-parity.jsonl  ';
+      // REPO_HARNESS_CLI/REPO_HARNESS_WORKFLOW_PROFILE: see spawnStopHookProcess
+      // above -- this shared env also drives the Stop call below, which
+      // otherwise resolves this bare fixture to 'lite' and short-circuits
+      // before ever reaching delegation_should_block.
       const env: Record<string, string | undefined> = {
         ...process.env,
         HOOK_HOST: 'codex',
+        REPO_HARNESS_CLI: CLI,
         REPO_HARNESS_HOOK_CLI: HOOK_ENTRY,
+        REPO_HARNESS_WORKFLOW_PROFILE: 'standard',
       };
       delete env.CODEX_SESSION_ID;
       delete env.CLAUDE_SESSION_ID;

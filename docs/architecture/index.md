@@ -37,6 +37,18 @@ Authoritative surfaces:
   (`plans/sprints/20260716-0101-loop-semantics-convergence.sprint.md`);
   its frozen current-behavior baseline lives in
   `tests/state/loop-semantics-characterization.test.ts`.
+- Loop semantics parity contract (LSC-08): the readiness authority
+  (`src/core/workflow/operation-readiness.ts`'s `evaluateReadiness`, carried
+  verbatim as `EffectiveStateV1.readiness`) and its Skill guidance
+  (`EffectiveStateV1.guidance`) are projected, never recomputed, by four
+  adapter surfaces — CLI (`repo-harness state resolve --json`, including
+  `--field readiness`), MCP (`summarize_repo_harness_state`'s compact
+  state), Hook (the Stop route's `stop-orchestrator.sh` reading
+  `.readiness.allowedToStop` / `.readiness.readyToShip`), and Skill
+  (guidance text matched against `CEREMONY_GUIDANCE[profile]`). All four
+  agree on profile, operation, decision, reason, and readiness for the same
+  fixtures; the parity gate is `tests/state/adapter-parity.test.ts`, with no
+  separate gate machinery.
 - Shared execution effects: `src/effects/process-runner.ts`,
   `src/effects/process-supervisor.ts`, `src/effects/process-group-launcher.ts`,
   `src/effects/locking/`, and `src/effects/git/` own bounded process lifecycle
