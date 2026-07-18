@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-19T03:09:19+0800 -->
+<!-- updated_at: 2026-07-19T05:21:37+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-07-19T03:09:19+0800
+> **Updated At**: 2026-07-19T05:21:37+0800
 > **Source Branch**: main
-> **Source Commit**: 0a3b4144
+> **Source Commit**: c8b8c773
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: LSC-08 merged (PR #90): Loop Semantics Convergence sprint complete 8/8
+> **Reason**: closeout-authority-bootstrap merged (PR #91): ship-gate evidence + freeze repairs live
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -33,8 +33,6 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 - /Users/kito/Projects/repo-harness-wt-closeout-authority-bootstrap: plans/plan-20260716-1419-closeout-authority-bootstrap.md
 - /Users/kito/Projects/repo-harness-wt-closeout-authority-bootstrap: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-closeout-authority-bootstrap
-- /Users/kito/Projects/repo-harness-wt-closeout-runner-guardrails: plans/plan-20260716-0338-closeout-runner-guardrails.md
-- /Users/kito/Projects/repo-harness-wt-closeout-runner-guardrails: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-closeout-runner-guardrails
 - /Users/kito/Projects/repo-harness-wt-effective-state-test-retirement: plans/plan-20260716-0222-effective-state-test-retirement.md
 - /Users/kito/Projects/repo-harness-wt-effective-state-test-retirement: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-effective-state-test-retirement
 ## Active Sprint
@@ -51,7 +49,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`: status=completed, current_slice=completed-20260713-policy-seed, source_plan=plans/plan-20260712-2215-agent-fleet-specialists.md
 ## Handoff
 
-- Exact Next Step: Clean up merged contract worktree codex/closeout-authority-bootstrap. Command: repo-harness run contract-worktree cleanup --slug closeout-authority-bootstrap --target main
+- Exact Next Step: (none)
 
 ## Checks
 
@@ -59,10 +57,10 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 1 changed/untracked path(s)
+- Summary: clean
 
 ```
- M plans/sprints/20260716-0101-loop-semantics-convergence.sprint.md
+(none)
 ```
 
 ## Source Artifacts
