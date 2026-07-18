@@ -3,6 +3,7 @@ import {
   projectEffectiveState,
   type EffectiveStateInputs,
 } from '../../src/core/state/project-effective-state';
+import { projectStateSnapshot } from '../../src/core/state/project-state-snapshot';
 
 const NOW = Date.parse('2026-07-15T12:00:00Z');
 const PLAN = 'plans/plan-20260715-1200-fixture.md';
@@ -185,6 +186,41 @@ describe('pure Effective State projection', () => {
     }));
     expect(state.checks.freshness).toBe('fresh');
     expect(state.blockers).toContain('checks_failed');
+
+    const mismatched = projectEffectiveState(input({
+      reviewSubject: {
+        available: true,
+        reviewSubjectSha256: SUBJECT,
+        targetRevision: TARGET,
+        targetOverlapCount: 0,
+      },
+      checksText: JSON.stringify({
+        status: 'pass',
+        active_plan: PLAN,
+        review_subject_sha256: `sha256:${'0'.repeat(64)}`,
+      }),
+    }));
+    expect(mismatched.checks.freshness).toBe('stale');
+    expect(mismatched.stale_sources).toContain('checks');
+  });
+
+  test('binds resume independently to task id, authority revision, and handoff hash', () => {
+    const taskId = '20260715-1200-fixture';
+    const resume = (candidateTaskId: string, revision: string, handoffHash: string) => [
+      `> **Task ID**: ${candidateTaskId}`,
+      `> **Source State Revision**: ${revision}`,
+      `> **Handoff Hash**: ${handoffHash}`,
+    ].join('\n');
+    const fresh = resume(taskId, AUTHORITY, 'sha256:handoff');
+    expect(projectEffectiveState(input({ resumeText: fresh })).resume.freshness).toBe('fresh');
+
+    for (const stale of [
+      resume('other-task', AUTHORITY, 'sha256:handoff'),
+      resume(taskId, 'sha256:other-authority', 'sha256:handoff'),
+      resume(taskId, AUTHORITY, 'sha256:other-handoff'),
+    ]) {
+      expect(projectEffectiveState(input({ resumeText: stale })).resume.freshness).toBe('stale');
+    }
   });
 
   test('covers every non-blocked phase and the null next-action branch', () => {
@@ -342,5 +378,43 @@ describe('pure Effective State projection', () => {
       'progress_token',
     ]);
     expect(keys.indexOf('next_action')).toBeLessThan(keys.indexOf('source_hashes'));
+  });
+});
+
+describe('state-snapshot compatibility projection', () => {
+  test('owns draft, approved, and stale-marker branch mapping', () => {
+    const facts = {
+      spec: 'present',
+      pending: 'none',
+      activePlanMarker: PLAN,
+      contractPath: CONTRACT,
+      evidence: 'complete',
+    } as const;
+    const activeCases = [
+      { status: 'draft', expected: 'draft' },
+      { status: 'approved', expected: 'approved' },
+    ] as const;
+
+    for (const entry of activeCases) {
+      const snapshot = projectStateSnapshot(
+        projectEffectiveState(input({ planStatus: entry.status })),
+        facts,
+      );
+      expect(snapshot.states.plan).toBe(entry.expected);
+      expect(snapshot.paths.active_plan).toBe(PLAN);
+      expect(snapshot.marker.problem).toBe('none');
+    }
+
+    const stale = projectStateSnapshot(projectEffectiveState(input({
+      planPath: null,
+      planStatus: 'none',
+      planText: null,
+      contractPath: null,
+      contractText: null,
+      staleSources: ['active_plan_marker'],
+    })), facts);
+    expect(stale.states.plan).toBe('stale_marker');
+    expect(stale.paths).toEqual({ active_plan: PLAN, contract: null });
+    expect(stale.marker.problem).toBe('deleted');
   });
 });

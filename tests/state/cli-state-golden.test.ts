@@ -1,35 +1,24 @@
 import { describe, expect, test } from 'bun:test';
 import { createHash } from 'crypto';
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { spawn, spawnSync } from 'child_process';
+import { spawnSync } from 'child_process';
 import {
   resolveEffectiveState,
 } from '../../src/effects/state/resolve-effective-state';
-import type { EffectiveState, EffectiveStateRiskInput, StateSnapshot } from '../../src/core/state/types';
+import type { EffectiveState, StateSnapshot } from '../../src/core/state/types';
 import {
   CONTRACT,
+  EFFECTIVE_STATE_SCENARIOS,
   HOOK_ENTRY,
-  PLAN,
-  REVIEW,
-  commitFixture,
   createEffectiveStateFixture,
-  replaceContractProfile,
-  resolveFixtureState,
+  effectiveStateCliRiskArgs,
   runStateCli,
   writeFixture,
-  writeFixtureStateLock,
 } from './effective-state-fixture';
 
 const BASELINE = '82550779cdccf0575d674ae53bbc95ba63e44743';
 const FIXTURES = join(import.meta.dir, 'fixtures');
-
-interface Scenario {
-  readonly name: string;
-  readonly risk: EffectiveStateRiskInput;
-  readonly cliRiskArgs: readonly string[];
-  readonly setup?: (cwd: string) => void;
-}
 
 interface GoldenRecord {
   readonly baseline: string;
@@ -45,168 +34,9 @@ interface GoldenRecord {
   readonly hook: unknown;
 }
 
-function gitHead(cwd: string): string {
-  const result = spawnSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf-8' });
-  if (result.status !== 0) throw new Error(result.stderr);
-  return result.stdout.trim();
-}
-
 function sha256(content: string): string {
   return `sha256:${createHash('sha256').update(content).digest('hex')}`;
 }
-
-function makeFreshEvidence(cwd: string): void {
-  const nowMs = Date.now();
-  const initial = resolveFixtureState(cwd, nowMs);
-  const subject = initial.source_hashes.review_subject;
-  if (!subject) throw new Error('fixture review subject is unavailable');
-  const target = gitHead(cwd);
-  writeFixture(cwd, REVIEW, [
-    '# Review',
-    '> **Recommendation**: pass',
-    `> **Reviewed Subject SHA256**: ${subject}`,
-    `> **Reviewed Target Revision**: ${target}`,
-    '## External Acceptance Advice',
-    '> **External Acceptance**: pass',
-    `> **Reviewed Subject SHA256**: ${subject}`,
-    `> **Reviewed Target Revision**: ${target}`,
-    '',
-  ].join('\n'));
-  const reviewed = resolveFixtureState(cwd, nowMs);
-  const authorityRevision = reviewed.source_hashes.authority_revision;
-  const handoff = [
-    '# Handoff',
-    '> **Task ID**: 20260712-2327-effective-fixture',
-    `> **Source State Revision**: ${authorityRevision}`,
-    '- Exact Next Step: implement resolver',
-    '',
-  ].join('\n');
-  writeFixture(cwd, '.ai/harness/checks/latest.json', JSON.stringify({
-    status: 'pass',
-    active_plan: PLAN,
-    review_subject_sha256: subject,
-  }));
-  writeFixture(cwd, '.ai/harness/handoff/current.md', handoff);
-  writeFixture(cwd, '.ai/harness/handoff/resume.md', [
-    '# Resume',
-    '> **Task ID**: 20260712-2327-effective-fixture',
-    `> **Source State Revision**: ${authorityRevision}`,
-    `> **Handoff Hash**: ${sha256(handoff)}`,
-    '',
-  ].join('\n'));
-}
-
-const SCENARIOS: readonly Scenario[] = [
-  {
-    name: 'idle-inspect',
-    risk: { targetPaths: [], operationKind: 'inspect' },
-    cliRiskArgs: ['--operation', 'inspect'],
-    setup: (cwd) => {
-      rmSync(join(cwd, '.ai/harness/active-plan'));
-      rmSync(join(cwd, '.claude/.active-plan'));
-    },
-  },
-  {
-    name: 'executing-fresh-evidence',
-    risk: { targetPaths: ['src/feature.ts'], operationKind: 'feature' },
-    cliRiskArgs: ['--target-path', 'src/feature.ts', '--operation', 'feature'],
-    setup: makeFreshEvidence,
-  },
-  {
-    name: 'missing-contract',
-    risk: { targetPaths: ['src/feature.ts'], operationKind: 'feature' },
-    cliRiskArgs: ['--target-path', 'src/feature.ts', '--operation', 'feature'],
-    setup: (cwd) => rmSync(join(cwd, CONTRACT)),
-  },
-  {
-    name: 'foreign-worktree-owner',
-    risk: { targetPaths: ['src/feature.ts'], operationKind: 'feature' },
-    cliRiskArgs: ['--target-path', 'src/feature.ts', '--operation', 'feature'],
-    setup: (cwd) => writeFixture(cwd, '.ai/harness/active-worktree', '/tmp/foreign-worktree\n'),
-  },
-  {
-    name: 'stale-projections',
-    risk: { targetPaths: ['src/feature.ts'], operationKind: 'feature' },
-    cliRiskArgs: ['--target-path', 'src/feature.ts', '--operation', 'feature'],
-    setup: (cwd) => {
-      writeFixture(cwd, '.ai/harness/checks/latest.json', JSON.stringify({
-        status: 'pass',
-        active_plan: 'plans/plan-old.md',
-      }));
-      writeFixture(cwd, '.ai/harness/handoff/current.md', '- Active Plan: plans/plan-old.md\n');
-      writeFixture(cwd, 'tasks/current.md', [
-        '> **Updated At**: 2020-01-01T00:00:00Z',
-        '- Active Plan: plans/plan-old.md',
-      ].join('\n'));
-      writeFixture(cwd, '.ai/harness/sprint/active-sprint', 'plans/sprints/missing.sprint.md\n');
-    },
-  },
-  {
-    name: 'invalid-capability-registry',
-    risk: { targetPaths: ['src/feature.ts'], operationKind: 'edit' },
-    cliRiskArgs: ['--target-path', 'src/feature.ts', '--operation', 'edit'],
-    setup: (cwd) => {
-      writeFixture(cwd, '.ai/context/capabilities.json', '{not json');
-      commitFixture(cwd, 'seed invalid capability registry');
-    },
-  },
-  {
-    name: 'profile-below-strict-floor',
-    risk: { targetPaths: ['src/security/auth.ts'], operationKind: 'security' },
-    cliRiskArgs: ['--target-path', 'src/security/auth.ts', '--operation', 'security'],
-  },
-  {
-    name: 'deleted-cache-reconstruction',
-    risk: { targetPaths: ['src/feature.ts'], operationKind: 'feature' },
-    cliRiskArgs: ['--target-path', 'src/feature.ts', '--operation', 'feature'],
-    setup: (cwd) => {
-      resolveFixtureState(cwd);
-      rmSync(join(cwd, '.ai/harness/state/effective.json'));
-    },
-  },
-  {
-    name: 'corrupt-cache-reconstruction',
-    risk: { targetPaths: ['src/feature.ts'], operationKind: 'feature' },
-    cliRiskArgs: ['--target-path', 'src/feature.ts', '--operation', 'feature'],
-    setup: (cwd) => {
-      resolveFixtureState(cwd);
-      writeFixture(cwd, '.ai/harness/state/effective.json', '{broken');
-    },
-  },
-  {
-    name: 'stale-dead-lock-reclaimed',
-    risk: { targetPaths: ['src/feature.ts'], operationKind: 'feature' },
-    cliRiskArgs: ['--target-path', 'src/feature.ts', '--operation', 'feature'],
-    setup: (cwd) => writeFixtureStateLock(cwd, {
-      pid: 99999999,
-      created_at: Date.now() - 60_000,
-      token: '99999999-0-00000000-0000-4000-8000-000000000003',
-    }),
-  },
-  {
-    name: 'live-lock-waits-for-release',
-    risk: { targetPaths: ['src/feature.ts'], operationKind: 'feature' },
-    cliRiskArgs: ['--target-path', 'src/feature.ts', '--operation', 'feature'],
-    setup: (cwd) => {
-      const { lockPath, ownerPath } = writeFixtureStateLock(cwd, {
-        pid: process.pid,
-        created_at: Date.now(),
-        token: 'live',
-      });
-      const release = spawn('sh', ['-c', 'sleep 0.1; rm -f "$1"; rmdir "$2"', 'release-lock', ownerPath, lockPath], {
-        cwd,
-        stdio: 'ignore',
-      });
-      release.unref();
-    },
-  },
-  {
-    name: 'explicit-strict-without-path-signals',
-    risk: { explicitOverride: 'strict' },
-    cliRiskArgs: ['--profile', 'strict'],
-    setup: (cwd) => replaceContractProfile(cwd, 'strict'),
-  },
-];
 
 function assertHashes(state: EffectiveState): void {
   expect(state.state_revision).toMatch(/^sha256:[0-9a-f]{64}$/);
@@ -227,7 +57,9 @@ function sourceHash(cwd: string, path: string): string {
 
 function contentRevision(sourceHashes: Readonly<Record<string, string>>): string {
   return sha256(JSON.stringify(Object.fromEntries(
-    Object.entries(sourceHashes).sort(([a], [b]) => a.localeCompare(b)),
+    Object.entries(sourceHashes).sort(([left], [right]) => (
+      left < right ? -1 : left > right ? 1 : 0
+    )),
   )));
 }
 
@@ -301,15 +133,17 @@ function runHook(cwd: string): StateSnapshot {
   return JSON.parse(result.stdout) as StateSnapshot;
 }
 
-function captureScenario(scenario: Scenario): GoldenRecord {
-  const fixture = createEffectiveStateFixture();
+function captureScenario(scenario: (typeof EFFECTIVE_STATE_SCENARIOS)[number]): GoldenRecord {
+  const fixture = createEffectiveStateFixture({ includeLegacyActivePlan: true });
   try {
+    const nowMs = Date.now();
     writeFixture(fixture.cwd, 'docs/spec.md', '# Effective State fixture spec\n');
-    scenario.setup?.(fixture.cwd);
-    const direct = resolveEffectiveState(fixture.cwd, Date.now(), scenario.risk);
+    scenario.setup?.(fixture.cwd, nowMs);
+    const direct = resolveEffectiveState(fixture.cwd, nowMs, scenario.risk);
     assertHashes(direct);
     assertExactHashContract(direct, fixture.cwd);
-    const cli = runStateCli(fixture.cwd, ['state', 'resolve', '--json', ...scenario.cliRiskArgs]);
+    const cliRiskArgs = effectiveStateCliRiskArgs(scenario.risk);
+    const cli = runStateCli(fixture.cwd, ['state', 'resolve', '--json', ...cliRiskArgs]);
     const cliState = JSON.parse(cli.stdout) as EffectiveState;
     assertHashes(cliState);
     assertExactHashContract(cliState, fixture.cwd);
@@ -317,7 +151,7 @@ function captureScenario(scenario: Scenario): GoldenRecord {
     expect(cliState.state_revision).toBe(direct.state_revision);
     expect(normalize(cliState, fixture.cwd)).toEqual(normalize(direct, fixture.cwd));
     const field = runStateCli(fixture.cwd, [
-      'state', 'resolve', '--json', '--field', 'workflow_profile', ...scenario.cliRiskArgs,
+      'state', 'resolve', '--json', '--field', 'workflow_profile', ...cliRiskArgs,
     ]);
     return {
       baseline: BASELINE,
@@ -339,11 +173,12 @@ function captureScenario(scenario: Scenario): GoldenRecord {
 
 describe('Effective State baseline characterization goldens', () => {
   test('covers at least ten named authority/risk/concurrency states', () => {
-    expect(SCENARIOS.length).toBeGreaterThanOrEqual(10);
-    expect(new Set(SCENARIOS.map((scenario) => scenario.name)).size).toBe(SCENARIOS.length);
+    expect(EFFECTIVE_STATE_SCENARIOS.length).toBeGreaterThanOrEqual(10);
+    expect(new Set(EFFECTIVE_STATE_SCENARIOS.map((scenario) => scenario.name)).size)
+      .toBe(EFFECTIVE_STATE_SCENARIOS.length);
   });
 
-  for (const scenario of SCENARIOS) {
+  for (const scenario of EFFECTIVE_STATE_SCENARIOS) {
     test(scenario.name, () => {
       const actual = captureScenario(scenario);
       const fixturePath = join(FIXTURES, `${scenario.name}.json`);

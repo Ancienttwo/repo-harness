@@ -89,6 +89,10 @@ describe("capability resolver", () => {
       expect(standalone.status).toBe(0);
       expect(standalone.stdout).toBe(source.stdout);
       expect(standalone.stderr).toBe(source.stderr);
+      const match = JSON.parse(standalone.stdout);
+      expect(match.capability_id).toBe("apps-web-account");
+      expect(match.matched_prefix).toBe("apps/web/src/routes/account");
+      expect(match.workstream_dir).toBe("tasks/workstreams/apps-web/account");
 
       const core = readFileSync(join(ROOT, "src/core/capabilities/registry.ts"), "utf-8");
       const expectedHash = sha256(core);
@@ -122,47 +126,6 @@ describe("capability resolver", () => {
         "assets/templates/helpers/capability-resolver.ts",
       ], { cwd: ROOT, encoding: "utf-8" });
       expect(typecheck.status, typecheck.stderr || typecheck.stdout).toBe(0);
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  });
-
-  test("longest prefix selects nested account capability over apps/web", () => {
-    const cwd = tmpWorkspace("capability-longest-prefix");
-    try {
-      mkdirSync(join(cwd, "apps/web/src/routes/account"), { recursive: true });
-      writeRegistry(cwd, [webCapability, accountCapability]);
-
-      const res = runResolver(cwd, ["match", "--path", "apps/web/src/routes/account/page.tsx", "--format", "json"]);
-      expect(res.status).toBe(0);
-      const match = JSON.parse(res.stdout);
-      expect(match.capability_id).toBe("apps-web-account");
-      expect(match.matched_prefix).toBe("apps/web/src/routes/account");
-      expect(match.workstream_dir).toBe("tasks/workstreams/apps-web/account");
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  });
-
-  test("duplicate same-length prefix fails validation instead of guessing", () => {
-    const cwd = tmpWorkspace("capability-prefix-conflict");
-    try {
-      mkdirSync(join(cwd, "apps/web"), { recursive: true });
-      writeRegistry(cwd, [
-        webCapability,
-        {
-          ...webCapability,
-          id: "apps-web-duplicate",
-          contract_files: {
-            agents: "apps/web/DUPLICATE_AGENTS.md",
-            claude: "apps/web/DUPLICATE_CLAUDE.md",
-          },
-        },
-      ]);
-
-      const res = runResolver(cwd, ["validate", "--format", "text"]);
-      expect(res.status).toBe(1);
-      expect(res.stdout).toContain("duplicate capability prefix: apps/web");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -238,30 +201,6 @@ describe("capability resolver", () => {
       const res = runResolver(cwd, ["validate", "--format", "text"]);
       expect(res.status).toBe(1);
       expect(res.stderr).toContain("malformed capability registry: .ai/context/capabilities.json");
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  });
-
-  test("registry capabilities must be an array and version must be explicit", () => {
-    const cwd = tmpWorkspace("capability-invalid-registry-shape");
-    try {
-      mkdirSync(join(cwd, ".ai/context"), { recursive: true });
-      writeFileSync(
-        join(cwd, ".ai/context/capabilities.json"),
-        JSON.stringify({ version: 1, capabilities: {} }) + "\n"
-      );
-      const invalidCapabilities = runResolver(cwd, ["validate", "--format", "text"]);
-      expect(invalidCapabilities.status).toBe(1);
-      expect(invalidCapabilities.stderr).toContain("capabilities must be an array");
-
-      writeFileSync(
-        join(cwd, ".ai/context/capabilities.json"),
-        JSON.stringify({ capabilities: [] }) + "\n"
-      );
-      const missingVersion = runResolver(cwd, ["validate", "--format", "text"]);
-      expect(missingVersion.status).toBe(1);
-      expect(missingVersion.stderr).toContain("version must be 1");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

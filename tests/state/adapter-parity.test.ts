@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { createHash } from 'crypto';
-import { spawn, spawnSync } from 'child_process';
-import { existsSync, readFileSync, readdirSync, rmSync } from 'fs';
+import { spawnSync } from 'child_process';
+import { existsSync, readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
 import type {
   EffectiveState,
@@ -13,183 +12,25 @@ import { getMcpPolicy } from '../../src/cli/mcp/policy';
 import { buildStateToolDefinitions, callStateTool } from '../../src/cli/mcp/state-tools';
 import { callMcpTool, type McpToolContext } from '../../src/cli/mcp/tools';
 import {
-  buildStateSnapshotFromEffectiveState,
+  buildStateSnapshot,
   resolveEffectiveState,
 } from '../../src/effects/state/resolve-effective-state';
 import { stateVersionOwnerPath } from '../../src/effects/state/git-state-version-store';
 import {
   CLI,
   CONTRACT,
+  EFFECTIVE_STATE_SCENARIOS,
   HOOK_ENTRY,
   PLAN,
-  REVIEW,
   ROOT,
-  commitFixture,
   createEffectiveStateFixture,
+  effectiveStateCliRiskArgs,
   replaceContractProfile,
   runStateCli,
   writeFixture,
-  writeFixtureStateLock,
 } from './effective-state-fixture';
 
 const FIXTURES = join(import.meta.dir, 'fixtures');
-
-interface Scenario {
-  readonly name: string;
-  readonly risk: EffectiveStateRiskInput;
-  readonly setup?: (cwd: string, nowMs: number) => void;
-}
-
-function sha256(content: string): string {
-  return `sha256:${createHash('sha256').update(content).digest('hex')}`;
-}
-
-function gitHead(cwd: string): string {
-  const result = spawnSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf-8' });
-  if (result.status !== 0) throw new Error(result.stderr);
-  return result.stdout.trim();
-}
-
-function makeFreshEvidence(cwd: string, nowMs: number): void {
-  const risk = { targetPaths: ['src/feature.ts'], operationKind: 'feature' } as const;
-  const initial = resolveEffectiveState(cwd, nowMs, risk);
-  const subject = initial.source_hashes.review_subject;
-  if (!subject) throw new Error('fixture review subject is unavailable');
-  const target = gitHead(cwd);
-  writeFixture(cwd, REVIEW, [
-    '# Review',
-    '> **Recommendation**: pass',
-    `> **Reviewed Subject SHA256**: ${subject}`,
-    `> **Reviewed Target Revision**: ${target}`,
-    '## External Acceptance Advice',
-    '> **External Acceptance**: pass',
-    `> **Reviewed Subject SHA256**: ${subject}`,
-    `> **Reviewed Target Revision**: ${target}`,
-    '',
-  ].join('\n'));
-  const reviewed = resolveEffectiveState(cwd, nowMs, risk);
-  const authorityRevision = reviewed.source_hashes.authority_revision;
-  const handoff = [
-    '# Handoff',
-    '> **Task ID**: 20260712-2327-effective-fixture',
-    `> **Source State Revision**: ${authorityRevision}`,
-    '- Exact Next Step: implement resolver',
-    '',
-  ].join('\n');
-  writeFixture(cwd, '.ai/harness/checks/latest.json', JSON.stringify({
-    status: 'pass',
-    active_plan: PLAN,
-    review_subject_sha256: subject,
-  }));
-  writeFixture(cwd, '.ai/harness/handoff/current.md', handoff);
-  writeFixture(cwd, '.ai/harness/handoff/resume.md', [
-    '# Resume',
-    '> **Task ID**: 20260712-2327-effective-fixture',
-    `> **Source State Revision**: ${authorityRevision}`,
-    `> **Handoff Hash**: ${sha256(handoff)}`,
-    '',
-  ].join('\n'));
-}
-
-const SCENARIOS: readonly Scenario[] = [
-  {
-    name: 'idle-inspect',
-    risk: { targetPaths: [], operationKind: 'inspect' },
-    setup: (cwd) => {
-      rmSync(join(cwd, '.ai/harness/active-plan'), { force: true });
-      rmSync(join(cwd, '.claude/.active-plan'), { force: true });
-    },
-  },
-  {
-    name: 'executing-fresh-evidence',
-    risk: { targetPaths: ['src/feature.ts'], operationKind: 'feature' },
-    setup: makeFreshEvidence,
-  },
-  {
-    name: 'missing-contract',
-    risk: { targetPaths: ['src/feature.ts'], operationKind: 'feature' },
-    setup: (cwd) => rmSync(join(cwd, CONTRACT)),
-  },
-  {
-    name: 'foreign-worktree-owner',
-    risk: { targetPaths: ['src/feature.ts'], operationKind: 'feature' },
-    setup: (cwd) => writeFixture(cwd, '.ai/harness/active-worktree', '/tmp/foreign-worktree\n'),
-  },
-  {
-    name: 'stale-projections',
-    risk: { targetPaths: ['src/feature.ts'], operationKind: 'feature' },
-    setup: (cwd) => {
-      writeFixture(cwd, '.ai/harness/checks/latest.json', JSON.stringify({
-        status: 'pass',
-        active_plan: 'plans/plan-old.md',
-      }));
-      writeFixture(cwd, '.ai/harness/handoff/current.md', '- Active Plan: plans/plan-old.md\n');
-      writeFixture(cwd, 'tasks/current.md', [
-        '> **Updated At**: 2020-01-01T00:00:00Z',
-        '- Active Plan: plans/plan-old.md',
-      ].join('\n'));
-      writeFixture(cwd, '.ai/harness/sprint/active-sprint', 'plans/sprints/missing.sprint.md\n');
-    },
-  },
-  {
-    name: 'invalid-capability-registry',
-    risk: { targetPaths: ['src/feature.ts'], operationKind: 'edit' },
-    setup: (cwd) => {
-      writeFixture(cwd, '.ai/context/capabilities.json', '{not json');
-      commitFixture(cwd, 'seed invalid capability registry');
-    },
-  },
-  {
-    name: 'profile-below-strict-floor',
-    risk: { targetPaths: ['src/security/auth.ts'], operationKind: 'security' },
-  },
-  {
-    name: 'deleted-cache-reconstruction',
-    risk: { targetPaths: ['src/feature.ts'], operationKind: 'feature' },
-    setup: (cwd, nowMs) => {
-      resolveEffectiveState(cwd, nowMs, { targetPaths: ['src/feature.ts'], operationKind: 'feature' });
-      rmSync(join(cwd, '.ai/harness/state/effective.json'));
-    },
-  },
-  {
-    name: 'corrupt-cache-reconstruction',
-    risk: { targetPaths: ['src/feature.ts'], operationKind: 'feature' },
-    setup: (cwd, nowMs) => {
-      resolveEffectiveState(cwd, nowMs, { targetPaths: ['src/feature.ts'], operationKind: 'feature' });
-      writeFixture(cwd, '.ai/harness/state/effective.json', '{broken');
-    },
-  },
-  {
-    name: 'stale-dead-lock-reclaimed',
-    risk: { targetPaths: ['src/feature.ts'], operationKind: 'feature' },
-    setup: (cwd, nowMs) => writeFixtureStateLock(cwd, {
-      pid: 99999999,
-      created_at: nowMs - 60_000,
-      token: '99999999-0-00000000-0000-4000-8000-000000000003',
-    }),
-  },
-  {
-    name: 'live-lock-waits-for-release',
-    risk: { targetPaths: ['src/feature.ts'], operationKind: 'feature' },
-    setup: (cwd, nowMs) => {
-      const { lockPath, ownerPath } = writeFixtureStateLock(cwd, {
-        pid: process.pid,
-        created_at: nowMs,
-        token: 'live',
-      });
-      const release = spawn('sh', ['-c', 'sleep 0.1; rm -f "$1"; rmdir "$2"', 'release-lock', ownerPath, lockPath], {
-        cwd,
-        stdio: 'ignore',
-      });
-      release.unref();
-    },
-  },
-  {
-    name: 'explicit-strict-without-path-signals',
-    risk: { explicitOverride: 'strict' },
-    setup: (cwd) => replaceContractProfile(cwd, 'strict'),
-  },
-];
 
 const MCP_COMPACT_FIELDS = [
   'protocol',
@@ -253,14 +94,6 @@ function fields(state: object, names: readonly (keyof EffectiveState)[]): Record
   return Object.fromEntries(names.map((field) => [field, record[field]]));
 }
 
-function cliRiskArgs(risk: EffectiveStateRiskInput): string[] {
-  return [
-    ...(risk.targetPaths?.length ? ['--target-path', ...risk.targetPaths] : []),
-    ...(risk.operationKind ? ['--operation', risk.operationKind] : []),
-    ...(risk.explicitOverride ? ['--profile', risk.explicitOverride] : []),
-  ];
-}
-
 function runPublicHook(cwd: string): StateSnapshot {
   const result = spawnSync(process.execPath, [HOOK_ENTRY, 'state-snapshot', '--json'], {
     cwd,
@@ -283,18 +116,18 @@ describe('Effective State adapter authority parity and policy boundaries', () =>
       .filter((name) => name.endsWith('.json'))
       .map((name) => name.replace(/\.json$/, ''))
       .sort();
-    expect(SCENARIOS.map((scenario) => scenario.name).sort()).toEqual(goldenNames);
+    expect(EFFECTIVE_STATE_SCENARIOS.map((scenario) => scenario.name).sort()).toEqual(goldenNames);
   });
 
-  for (const scenario of SCENARIOS) {
+  for (const scenario of EFFECTIVE_STATE_SCENARIOS) {
     test(`${scenario.name}: requested CLI parity and default inspect adapter contract`, async () => {
-      const fixture = createEffectiveStateFixture();
+      const fixture = createEffectiveStateFixture({ includeLegacyActivePlan: true });
       const nowMs = Date.now();
       try {
         scenario.setup?.(fixture.cwd, nowMs);
         const requested = resolveEffectiveState(fixture.cwd, nowMs, scenario.risk);
         const cli = runStateCli(fixture.cwd, [
-          'state', 'resolve', '--json', ...cliRiskArgs(scenario.risk),
+          'state', 'resolve', '--json', ...effectiveStateCliRiskArgs(scenario.risk),
         ]);
         const cliState = JSON.parse(cli.stdout) as EffectiveState;
         expect(fields(cliState, MCP_COMPACT_FIELDS)).toEqual(fields(requested, MCP_COMPACT_FIELDS));
@@ -307,7 +140,7 @@ describe('Effective State adapter authority parity and policy boundaries', () =>
         expect(fields(requested, AUTHORITY_FIELDS)).toEqual(fields(inspect, AUTHORITY_FIELDS));
 
         const hook = runPublicHook(fixture.cwd);
-        expect(hook).toEqual(buildStateSnapshotFromEffectiveState(inspect, fixture.cwd, nowMs));
+        expect(hook).toEqual(buildStateSnapshot(fixture.cwd, nowMs));
 
         const mcp = await runPublicMcp(fixture.cwd);
         expect(fields(mcp, MCP_COMPACT_FIELDS))
@@ -456,7 +289,7 @@ describe('Effective State adapter authority parity and policy boundaries', () =>
       expect(readiness.readyToShip.decision).toBe('block');
 
       // CLI full JSON.
-      const cliFull = runStateCli(fixture.cwd, ['state', 'resolve', '--json', ...cliRiskArgs(risk)]);
+      const cliFull = runStateCli(fixture.cwd, ['state', 'resolve', '--json', ...effectiveStateCliRiskArgs(risk)]);
       expect(cliFull.status).toBe(0);
       const cliState = JSON.parse(cliFull.stdout) as EffectiveState;
       expect(cliState.readiness).toEqual(authority.readiness);
@@ -465,7 +298,7 @@ describe('Effective State adapter authority parity and policy boundaries', () =>
       // CLI --field readiness: a distinct output projection in state.ts,
       // not merely a re-read of the same --json body.
       const cliField = runStateCli(fixture.cwd, [
-        'state', 'resolve', '--json', '--field', 'readiness', ...cliRiskArgs(risk),
+        'state', 'resolve', '--json', '--field', 'readiness', ...effectiveStateCliRiskArgs(risk),
       ]);
       expect(cliField.status).toBe(0);
       expect(JSON.parse(cliField.stdout)).toEqual(authority.readiness);
