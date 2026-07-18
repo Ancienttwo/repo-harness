@@ -4,6 +4,16 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VERIFICATION_BUDGET_MS=600000
 
+# Delegate evidence_requirements parsing to the one shared lib function
+# (workflow_contract_evidence_requirement) instead of re-implementing a second
+# parser here; sourced defensively so a missing/relocated lib fails the new
+# check closed rather than crashing the whole script.
+WORKFLOW_STATE_LIB="${REPO_HARNESS_WORKFLOW_STATE_LIB:-.ai/hooks/lib/workflow-state.sh}"
+if [[ -f "$WORKFLOW_STATE_LIB" ]]; then
+  # shellcheck disable=SC1090
+  . "$WORKFLOW_STATE_LIB"
+fi
+
 now_ms() {
   if command -v node >/dev/null 2>&1; then
     node -e 'process.stdout.write(String(Date.now()))'
@@ -296,6 +306,22 @@ check_root_cause_evidence() {
       fi
     fi
   fi
+}
+
+check_evidence_requirements() {
+  local contract_file="$1"
+  local requirement=""
+  if declare -F workflow_contract_evidence_requirement >/dev/null 2>&1; then
+    requirement="$(workflow_contract_evidence_requirement "$contract_file" 2>/dev/null || true)"
+  fi
+  case "$requirement" in
+    required|not_applicable)
+      pass "evidence_requirements" "benchmark" "Evidence Requirements: benchmark declared as $requirement"
+      ;;
+    *)
+      fail "evidence_requirements" "benchmark" "Evidence Requirements: missing or invalid evidence_requirements.benchmark declaration in $contract_file"
+      ;;
+  esac
 }
 
 review_recommends_pass() {
@@ -829,6 +855,8 @@ case "$task_profile" in
     fail "task_profile" "$task_profile" "unsupported task_profile: $task_profile"
     ;;
 esac
+
+check_evidence_requirements "$contract_file"
 
 if [[ "$task_profile" == "bugfix" ]]; then
   check_root_cause_evidence "$contract_file"

@@ -16,7 +16,7 @@ import {
   writeFileSync,
 } from "fs";
 import { tmpdir, userInfo } from "os";
-import { basename, dirname, isAbsolute, join, relative, resolve } from "path";
+import { dirname, isAbsolute, join, relative, resolve } from "path";
 import { fileURLToPath } from "url";
 
 type Verdict = "PASS" | "FAIL" | "BLOCKED";
@@ -123,6 +123,9 @@ type Receipt = GateDecision & {
   diff_fingerprint: string;
   verification_evidence_fingerprint: string;
   goal_file: string;
+  goal_sha256: string;
+  post_freeze_allowlist: string[];
+  post_freeze_destinations: Record<string, string>;
   runner: "claude-agent";
   agent: string;
   skill: string;
@@ -130,6 +133,71 @@ type Receipt = GateDecision & {
   helper_fingerprint: string;
   reviewed_at: string;
 };
+
+// Closed set of lifecycle-surface shapes a post-freeze allowlist entry may take,
+// each bound to the semantic family it belongs to. This is the single parser for
+// "what is this path" -- the allowlist shape guard (fail closed on anything
+// outside this set) and the semantic content-binding check (which paths get
+// byte-level verification vs. membership-only) both read it, so the two never
+// drift apart. SEMANTIC families pair a live source path with its predicted
+// archive destination; DERIVED paths are lifecycle bookkeeping with no source
+// content to bind.
+type PostFreezeFamily = "goal" | "contract" | "review" | "notes";
+type PostFreezeClass =
+  | { kind: "semantic"; role: "live" | "dest"; family: PostFreezeFamily }
+  | { kind: "derived" };
+
+function classifyPostFreezePath(path: string): PostFreezeClass | null {
+  if (/^plans\/sprints\/[^/]+\.md$/.test(path)) return { kind: "derived" };
+  if (/^plans\/archive\/[^/]+\.md$/.test(path)) return { kind: "semantic", role: "dest", family: "goal" };
+  if (/^plans\/[^/]+\.md$/.test(path)) return { kind: "semantic", role: "live", family: "goal" };
+  if (/^tasks\/contracts\/[^/]+\.contract\.md$/.test(path)) return { kind: "semantic", role: "live", family: "contract" };
+  if (/^tasks\/reviews\/[^/]+\.review\.md$/.test(path)) return { kind: "semantic", role: "live", family: "review" };
+  if (/^tasks\/notes\/[^/]+\.notes\.md$/.test(path)) return { kind: "semantic", role: "live", family: "notes" };
+  if (/^tasks\/archive\/contract-[^/]+\.md$/.test(path)) return { kind: "semantic", role: "dest", family: "contract" };
+  if (/^tasks\/archive\/review-[^/]+\.md$/.test(path)) return { kind: "semantic", role: "dest", family: "review" };
+  if (/^tasks\/archive\/notes-[^/]+\.md$/.test(path)) return { kind: "semantic", role: "dest", family: "notes" };
+  if (/^tasks\/archive\/todo-[^/]+\.md$/.test(path)) return { kind: "derived" };
+  if (path === "tasks/current.md") return { kind: "derived" };
+  if (path === "tasks/todos.md") return { kind: "derived" };
+  if (path === ".ai/harness/active-plan") return { kind: "derived" };
+  if (path === ".ai/harness/active-worktree") return { kind: "derived" };
+  return null;
+}
+
+// (a) Fails closed on any --allow-post-freeze entry outside the closed shape
+// set above: production, test, and asset paths are structurally impossible to
+// allowlist, not merely discouraged.
+function validatePostFreezeAllowlistShape(paths: string[]): void {
+  for (const path of paths) {
+    if (classifyPostFreezePath(path) === null) {
+      fail(`--allow-post-freeze path is not a recognized lifecycle-surface shape: ${path}`);
+    }
+  }
+}
+
+function validatePostFreezeDestinations(allowlist: string[], destinations: Record<string, string>): void {
+  const expected = allowlist.filter((path) => {
+    const classification = classifyPostFreezePath(path);
+    return classification?.kind === "semantic" && classification.role === "dest";
+  }).sort();
+  const actual = Object.keys(destinations).sort();
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+    fail("--expect-post-freeze-destination must bind every semantic destination in the allowlist exactly once");
+  }
+  for (const [path, digest] of Object.entries(destinations)) {
+    if (!/^sha256:[0-9a-f]{64}$/.test(digest)) fail(`invalid destination sha256 for ${path}`);
+    const destination = classifyPostFreezePath(path);
+    if (!destination || destination.kind !== "semantic" || destination.role !== "dest") {
+      fail(`expected post-freeze destination is not semantic: ${path}`);
+    }
+    const pairedLive = allowlist.some((candidate) => {
+      const live = classifyPostFreezePath(candidate);
+      return live?.kind === "semantic" && live.role === "live" && live.family === destination.family;
+    });
+    if (!pairedLive) fail(`expected post-freeze destination has no same-family live source: ${path}`);
+  }
+}
 
 const DECISION_SCHEMA = {
   type: "object",
@@ -242,26 +310,42 @@ function parseArgs(argv: string[]): {
   base: string;
   goal?: string;
   format: OutputFormat;
+  allowPostFreeze: string[];
+  expectedPostFreezeDestinations: Record<string, string>;
 } {
   const command = argv.shift();
   if (command !== "run" && command !== "verify" && command !== "fingerprint") {
-    fail("usage: merge-gate.ts <run|verify|fingerprint> --base <ref> [--goal <plan>] [--format json|sha]", 2);
+    fail("usage: merge-gate.ts <run|verify|fingerprint> --base <ref> [--goal <plan>] [--format json|sha] [--allow-post-freeze <path>] [--expect-post-freeze-destination <path=sha256:...>]", 2);
   }
   let base = "";
   let goal: string | undefined;
   let format: OutputFormat = "json";
+  const allowPostFreeze: string[] = [];
+  const expectedPostFreezeDestinations: Record<string, string> = {};
   while (argv.length > 0) {
     const flag = argv.shift();
     if (flag === "--base") base = argv.shift() ?? "";
     else if (flag === "--goal") goal = argv.shift() ?? "";
-    else if (flag === "--format") {
+    else if (flag === "--allow-post-freeze") {
+      const value = argv.shift();
+      if (!value) fail("--allow-post-freeze requires a value", 2);
+      allowPostFreeze.push(value);
+    } else if (flag === "--expect-post-freeze-destination") {
+      const value = argv.shift();
+      const separator = value?.lastIndexOf("=") ?? -1;
+      if (!value || separator <= 0) fail("--expect-post-freeze-destination requires path=sha256:...", 2);
+      const path = value.slice(0, separator);
+      const digest = value.slice(separator + 1);
+      if (Object.hasOwn(expectedPostFreezeDestinations, path)) fail(`duplicate expected post-freeze destination: ${path}`, 2);
+      expectedPostFreezeDestinations[path] = digest;
+    } else if (flag === "--format") {
       const value = argv.shift();
       if (value !== "json" && value !== "sha") fail("--format must be json or sha", 2);
       format = value;
     } else fail(`unknown argument: ${flag}`, 2);
   }
   if (!base) fail("--base is required", 2);
-  return { command, base, goal, format };
+  return { command, base, goal, format, allowPostFreeze, expectedPostFreezeDestinations };
 }
 
 function candidate(root: string, baseRef: string): Candidate {
@@ -275,6 +359,53 @@ function candidate(root: string, baseRef: string): Candidate {
     .map((value) => value.trim())
     .filter(Boolean);
   return { baseSha, headSha, diff, diffFingerprint: sha256(diff), changedFiles };
+}
+
+// Recomputes the same triple-dot diff fingerprint shape candidate() produces, but
+// rooted at an arbitrary (base, head) pair instead of (base, HEAD). Used to confirm
+// the frozen candidate F reviewed by the gate has not been rewritten since.
+function frozenDiffFingerprint(root: string, baseSha: string, headSha: string): string {
+  const diff = runGit(root, ["diff", "--binary", "--full-index", "--no-ext-diff", `${baseSha}...${headSha}`], true).stdout as Buffer;
+  return sha256(diff);
+}
+
+type DiffEntry = { status: string; path: string; renameFrom?: string };
+
+// Single parser for "what changed between two commits, with rename pairing" --
+// both the plain post-freeze membership check and the semantic content-binding
+// check read this, rather than each re-running and re-parsing `git diff`
+// independently. Name-status with rename detection so both the old and new
+// name of a moved path are captured (archival mutation is mostly moves:
+// plans/<f> -> plans/archive/<f>); the destination entry of a rename/copy
+// records `renameFrom` so callers can pair a semantic source with its move
+// target without a second lookup.
+function diffEntriesBetween(root: string, fromSha: string, toSha: string): DiffEntry[] {
+  const output = gitText(root, ["diff", "--name-status", "-M", "--no-ext-diff", fromSha, toSha]);
+  const entries: DiffEntry[] = [];
+  for (const line of output.split("\n")) {
+    if (!line.trim()) continue;
+    const fields = line.split("\t");
+    const status = fields[0] ?? "";
+    if (status.startsWith("R") || status.startsWith("C")) {
+      if (fields[1]) entries.push({ status, path: fields[1] });
+      if (fields[2]) entries.push({ status, path: fields[2], renameFrom: fields[1] });
+    } else if (fields[1]) {
+      entries.push({ status, path: fields[1] });
+    }
+  }
+  return entries;
+}
+
+// A SEMANTIC live path's post-freeze change is only ever legitimate as its own
+// removal: a plain delete, or the source side of a rename whose destination is
+// classified as that same family's archive destination (never some other
+// family's, and never an arbitrary path).
+function semanticLiveIsRemoved(entries: DiffEntry[], path: string, family: PostFreezeFamily): boolean {
+  if (entries.some((entry) => entry.status.startsWith("D") && entry.path === path)) return true;
+  const renamed = entries.find((entry) => entry.renameFrom === path);
+  if (!renamed) return false;
+  const destClass = classifyPostFreezePath(renamed.path);
+  return !!destClass && destClass.kind === "semantic" && destClass.role === "dest" && destClass.family === family;
 }
 
 function requireCleanCandidate(root: string): void {
@@ -397,19 +528,8 @@ function receiptPath(root: string, authorityHome: string, createParent = false):
 function resolveGoal(root: string, requested: string): string {
   const direct = resolve(root, requested);
   if (!pathIsInside(root, direct)) fail(`goal artifact escapes repository: ${requested}`);
-  let actual: string | undefined;
-  if (existsSync(direct)) {
-    actual = realpathSync(direct);
-  } else {
-    const archive = join(root, "plans", "archive");
-    const stem = basename(requested, ".md");
-    if (existsSync(archive)) {
-      const entries = Array.from(new Bun.Glob(`${stem}{,-v*}.md`).scanSync({ cwd: archive, onlyFiles: true })).sort();
-      const match = entries.at(-1);
-      if (match) actual = realpathSync(join(archive, match));
-    }
-  }
-  if (!actual) fail(`goal artifact not found: ${requested}`);
+  if (!existsSync(direct)) fail(`goal artifact not found: ${requested}`);
+  const actual = realpathSync(direct);
   if (!pathIsInside(root, actual)) fail(`goal artifact resolves outside repository: ${requested}`);
   const repoRelative = relative(root, actual).replaceAll("\\", "/");
   if (!/^plans\/(?:archive\/)?[^/]+\.md$/.test(repoRelative)) {
@@ -531,12 +651,29 @@ function readReceipt(path: string): Receipt {
   if (!isRecord(parsed) || parsed.kind !== "repo-harness-merge-gate-receipt") fail("receipt kind is invalid");
   const decision = validateDecision(parsed);
   for (const field of [
-    "repository_root", "base_ref", "base_sha", "head_sha", "diff_fingerprint", "verification_evidence_fingerprint", "goal_file", "runner", "agent", "skill",
+    "repository_root", "base_ref", "base_sha", "head_sha", "diff_fingerprint", "verification_evidence_fingerprint", "goal_file", "goal_sha256", "runner", "agent", "skill",
     "host_runtime_fingerprint", "helper_fingerprint", "reviewed_at",
   ] as const) {
     if (typeof parsed[field] !== "string" || parsed[field].trim() === "") fail(`receipt ${field} is required`);
   }
-  return { ...parsed, ...decision } as Receipt;
+  // Absent on purpose (never a migration shim): a receipt written before this field
+  // existed, or written with no --allow-post-freeze flags, carries zero post-receipt
+  // tolerance below rather than silently inheriting some default allowance.
+  let postFreezeAllowlist: string[] = [];
+  if (parsed.post_freeze_allowlist !== undefined) {
+    const raw = parsed.post_freeze_allowlist;
+    if (!Array.isArray(raw) || raw.some((item) => typeof item !== "string")) {
+      fail("receipt post_freeze_allowlist must be an array of strings");
+    }
+    postFreezeAllowlist = raw as string[];
+  }
+  const rawDestinations = parsed.post_freeze_destinations;
+  if (!isRecord(rawDestinations) || Object.values(rawDestinations).some((value) => typeof value !== "string")) {
+    fail("receipt post_freeze_destinations must be an object mapping paths to sha256 strings");
+  }
+  const postFreezeDestinations = rawDestinations as Record<string, string>;
+  validatePostFreezeDestinations(postFreezeAllowlist, postFreezeDestinations);
+  return { ...parsed, ...decision, post_freeze_allowlist: postFreezeAllowlist, post_freeze_destinations: postFreezeDestinations } as Receipt;
 }
 
 function printResult(format: OutputFormat, required: boolean, current: Candidate): void {
@@ -560,8 +697,51 @@ function verifyReceipt(root: string, authorityHome: string, baseRef: string, cur
   if (receipt.repository_root !== root) fail("receipt repository_root does not match current repository");
   if (receipt.base_ref !== baseRef) fail("receipt base_ref does not match requested base");
   if (receipt.base_sha !== current.baseSha) fail("receipt base_sha is stale");
-  if (receipt.head_sha !== current.headSha) fail("receipt head_sha is stale");
-  if (receipt.diff_fingerprint !== current.diffFingerprint) fail("receipt diff_fingerprint is stale");
+
+  if (receipt.head_sha === current.headSha) {
+    // Exact-match path: HEAD has not moved since the receipt was written.
+    if (receipt.diff_fingerprint !== current.diffFingerprint) fail("receipt diff_fingerprint is stale");
+  } else {
+    // Post-freeze tolerance path: HEAD moved past the reviewed candidate F. This is
+    // only ever acceptable for the bounded lifecycle mutation (archive) that finish
+    // applies after the gate runs, never for an arbitrary post-review edit.
+    const allowlist = receipt.post_freeze_allowlist;
+    const destinations = receipt.post_freeze_destinations;
+    if (allowlist.length === 0) fail("receipt head_sha is stale");
+    const ancestry = runGit(root, ["merge-base", "--is-ancestor", receipt.head_sha, current.headSha], false, false);
+    if (ancestry.status !== 0) fail("receipt head_sha is stale");
+    if (frozenDiffFingerprint(root, receipt.base_sha, receipt.head_sha) !== receipt.diff_fingerprint) {
+      fail("receipt diff_fingerprint is stale");
+    }
+    const allowSet = new Set(allowlist);
+    const diffEntries = diffEntriesBetween(root, receipt.head_sha, current.headSha);
+    const changedPaths = Array.from(new Set(diffEntries.map((entry) => entry.path)));
+    const outside = changedPaths.filter((path) => !allowSet.has(path));
+    if (outside.length > 0) fail(`post-freeze change outside allowlist: ${outside.join(", ")}`);
+
+    for (const path of allowlist) {
+      const classification = classifyPostFreezePath(path);
+      if (!classification || classification.kind !== "semantic" || classification.role !== "live") continue;
+      if (!semanticLiveIsRemoved(diffEntries, path, classification.family)) {
+        fail(`post-freeze change to semantic source is not a deletion or archive move: ${path}`);
+      }
+      if (existsSync(resolve(root, path))) fail(`post-freeze semantic source still exists: ${path}`);
+    }
+    const changedSemanticDestinations = changedPaths.filter((path) => {
+      const classification = classifyPostFreezePath(path);
+      return classification?.kind === "semantic" && classification.role === "dest";
+    }).sort();
+    const expectedSemanticDestinations = Object.keys(destinations).sort();
+    if (JSON.stringify(changedSemanticDestinations) !== JSON.stringify(expectedSemanticDestinations)) {
+      fail("post-freeze semantic destinations do not match the frozen manifest");
+    }
+    for (const [path, expectedHash] of Object.entries(destinations)) {
+      const absolute = resolve(root, path);
+      if (!existsSync(absolute) || !lstatSync(absolute).isFile()) fail(`post-freeze semantic destination is missing or not a regular file: ${path}`);
+      if (sha256(readFileSync(absolute)) !== expectedHash) fail(`post-freeze semantic destination content is stale: ${path}`);
+    }
+  }
+
   const evidence = verificationEvidence(root);
   const evidenceFingerprint = sha256(`${evidence.path}\0${evidence.content}`);
   if (receipt.verification_evidence_fingerprint !== evidenceFingerprint) fail("receipt verification evidence is stale");
@@ -612,7 +792,11 @@ if (!args.goal) fail("--goal is required when the target base enables merge_gate
 const path = receiptPath(root, trustedHome, true);
 rmSync(path, { force: true });
 const goalPath = resolveGoal(root, args.goal!);
+const goalContent = readFileSync(goalPath, "utf-8");
 const evidence = verificationEvidence(root);
+const postFreezeAllowlist = Array.from(new Set(args.allowPostFreeze)).sort();
+validatePostFreezeAllowlistShape(postFreezeAllowlist);
+validatePostFreezeDestinations(postFreezeAllowlist, args.expectedPostFreezeDestinations);
 const request = {
   protocol: 1,
   base_ref: args.base,
@@ -620,10 +804,12 @@ const request = {
   head_sha: current.headSha,
   diff_fingerprint: current.diffFingerprint,
   goal_file: relative(root, goalPath).replaceAll("\\", "/"),
-  goal: readFileSync(goalPath, "utf-8"),
+  goal: goalContent,
   changed_files: current.changedFiles,
   diff: current.diff.toString("utf-8"),
   verification_evidence: evidence,
+  post_freeze_allowlist: postFreezeAllowlist,
+  post_freeze_destinations: args.expectedPostFreezeDestinations,
 };
 const decision = invokeClaude(trustedHome, config, request);
 requireCleanCandidate(root);
@@ -641,6 +827,9 @@ const receipt: Receipt = {
   diff_fingerprint: after.diffFingerprint,
   verification_evidence_fingerprint: sha256(`${evidence.path}\0${evidence.content}`),
   goal_file: request.goal_file,
+  goal_sha256: sha256(goalContent),
+  post_freeze_allowlist: postFreezeAllowlist,
+  post_freeze_destinations: args.expectedPostFreezeDestinations,
   runner: config.runner,
   agent: config.agent,
   skill: config.skill,

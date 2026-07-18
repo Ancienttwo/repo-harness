@@ -510,16 +510,31 @@ fi
 benchmark_evidence_fingerprint=""
 benchmark_subject_sha256=""
 benchmark_evidence_status="not_applicable"
-if declare -F workflow_benchmark_evidence_fingerprint >/dev/null 2>&1; then
-  benchmark_evidence_fingerprint="$(workflow_benchmark_evidence_fingerprint 2>/dev/null || true)"
-  benchmark_subject_sha256="$(workflow_benchmark_subject_sha256 2>/dev/null || true)"
-  if [[ -n "$benchmark_evidence_fingerprint" && -n "$benchmark_subject_sha256" ]]; then
-    benchmark_evidence_status="present"
-  elif [[ -e "evals/harness/reports/profile-comparison.json" || -e "evals/harness/reports/profile-comparison.md" ]]; then
+benchmark_evidence_requirement=""
+if declare -F workflow_contract_evidence_requirement >/dev/null 2>&1; then
+  benchmark_evidence_requirement="$(workflow_contract_evidence_requirement "$contract_file" 2>/dev/null || true)"
+fi
+case "$benchmark_evidence_requirement" in
+  required)
+    if declare -F workflow_benchmark_evidence_fingerprint >/dev/null 2>&1; then
+      benchmark_evidence_fingerprint="$(workflow_benchmark_evidence_fingerprint 2>/dev/null || true)"
+      benchmark_subject_sha256="$(workflow_benchmark_subject_sha256 2>/dev/null || true)"
+    fi
+    if [[ -n "$benchmark_evidence_fingerprint" && -n "$benchmark_subject_sha256" ]]; then
+      benchmark_evidence_status="present"
+    else
+      benchmark_evidence_status="invalid"
+      contract_exit=1
+    fi
+    ;;
+  not_applicable)
+    benchmark_evidence_status="not_applicable"
+    ;;
+  *)
     benchmark_evidence_status="invalid"
     contract_exit=1
-  fi
-fi
+    ;;
+esac
 
 review_status="fail"
 review_message="Task review recommends pass and Human Review Card verdict is pass."

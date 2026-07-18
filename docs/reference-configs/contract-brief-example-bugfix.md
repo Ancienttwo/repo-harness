@@ -61,6 +61,14 @@ allowed_paths:
   - tests/fixtures/root-cause/
 ```
 
+## Evidence Requirements
+
+```yaml
+evidence_requirements:
+  # Set benchmark to required when this contract consumes the harness profile benchmark matrix.
+  benchmark: not_applicable
+```
+
 ## Delegation Contract
 
 ```yaml

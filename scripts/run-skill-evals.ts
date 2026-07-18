@@ -947,6 +947,18 @@ function renderEvalContract(evalEntry: EvalEntry): string {
   appendPathPatterns("files_not_contain", evalEntry.anti_graders?.files_not_contain);
 
   lines.push("```", "");
+
+  lines.push(
+    "## Evidence Requirements",
+    "",
+    "```yaml",
+    "evidence_requirements:",
+    "  # Set benchmark to required when this contract consumes the harness profile benchmark matrix.",
+    "  benchmark: not_applicable",
+    "```",
+    ""
+  );
+
   return `${lines.join("\n")}\n`;
 }
 
@@ -971,7 +983,14 @@ function runEvalGraders(repoRoot: string, workspacePath: string, evalEntry: Eval
       reportPath,
     ],
     workspacePath,
-    home ? { HOME: home } : {},
+    {
+      // workspacePath is a disposable directory outside repoRoot, so
+      // verify-contract.sh's cwd-relative default lib path never resolves;
+      // point it at the packaged mirror explicitly (same pattern as
+      // tests/contract-run.test.ts and tests/helper-scripts.test.ts).
+      REPO_HARNESS_WORKFLOW_STATE_LIB: join(repoRoot, "assets", "hooks", "lib", "workflow-state.sh"),
+      ...(home ? { HOME: home } : {}),
+    },
     Boolean(home),
   );
 

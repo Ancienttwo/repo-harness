@@ -512,7 +512,10 @@ describe("Workflow helper scripts", () => {
 
   test("workflow contract drives a deterministic helper projection without a migration delegate", () => {
     const check = run("bun", ["scripts/sync-helper-sources.ts", "--check"], ROOT);
-    expect(check.status).toBe(0);
+    expect(
+      check.status,
+      `sync-helper-sources --check exited ${check.status} (signal=${check.signal ?? "none"})\nstdout:\n${check.stdout}\nstderr:\n${check.stderr}`
+    ).toBe(0);
     expect(check.stdout).toContain("projection OK");
     expect(check.stdout).not.toContain("package delegate preserved");
     expect(check.stderr).toBe("");
@@ -1569,6 +1572,7 @@ describe("Workflow helper scripts", () => {
     const fakeVerdict = `${cwd}-fake-verdict`;
     const home = `${cwd}-home`;
     const trustedHelpers = `${cwd}-trusted-helpers`;
+    const goalExistsMarker = `${cwd}-goal-exists-marker`;
     try {
       mkdirSync(join(cwd, "plans"), { recursive: true });
       mkdirSync(join(cwd, "tasks"), { recursive: true });
@@ -1624,6 +1628,19 @@ describe("Workflow helper scripts", () => {
         fakeClaude,
         [
           "#!/bin/sh",
+          // Regression guard: record, at merge-gate invocation time, whether the
+          // request's goal_file is the plan's exact live (pre-archive) path and that
+          // path exists on disk. Checking existence alone is not enough: the old
+          // resolveGoal silently substituted the plans/archive/ copy once the goal
+          // was already archived, so a naive existence check stays "exists" either
+          // way. Requiring goal_file to equal the live path catches that substitution.
+          "prompt=\"$(cat)\"",
+          "goal_file=\"$(printf '%s' \"$prompt\" | grep -o '\"goal_file\": *\"[^\"]*\"' | head -1 | sed -E 's/.*\"goal_file\": *\"([^\"]*)\".*/\\1/')\"",
+          `if [ \"$goal_file\" = \"plans/plan-20260304-1450-demo.md\" ] && [ -f ${JSON.stringify(worktreePath)}"/$goal_file" ]; then`,
+          `  printf 'exists' > ${JSON.stringify(goalExistsMarker)}`,
+          "else",
+          `  printf 'missing' > ${JSON.stringify(goalExistsMarker)}`,
+          "fi",
           `if [ \"$(cat ${JSON.stringify(fakeVerdict)})\" = FAIL ]; then`,
           "  printf '%s\\n' '{\"type\":\"result\",\"structured_output\":{\"protocol\":1,\"verdict\":\"FAIL\",\"summary\":\"fixture rejected\",\"findings\":[{\"severity\":\"HIGH\",\"file\":\"src/modules/demo/index.ts\",\"line\":1,\"message\":\"fixture defect\",\"fix\":\"repair fixture\"}],\"checks\":[{\"command\":\"fixture check\",\"status\":\"fail\",\"summary\":\"failed\"}]}}'",
           "else",
@@ -1784,8 +1801,14 @@ describe("Workflow helper scripts", () => {
       writeFileSync(fakeVerdict, "PASS\n");
       const finish = run("bash", ["scripts/contract-worktree.sh", "finish"], worktreePath, gateEnv);
       expect(finish.status, `${finish.stdout}\n${finish.stderr}`).toBe(0);
+      // R4: the merge gate reviewed the frozen candidate F while the goal plan still
+      // existed at its live plans/ path -- archiving happens only after the gate runs.
+      expect(readFileSync(goalExistsMarker, "utf-8")).toBe("exists");
       expect(finish.stdout).toContain("[ArchitectureSync] mode=strict");
       expect(finish.stdout).toContain("Sprint verification passed");
+      // R7: the freeze-then-archive reorder must not introduce a second verify-sprint
+      // invocation inside finish itself.
+      expect(finish.stdout.match(/Sprint verification passed/g)?.length).toBe(1);
       expect(finish.stdout).toContain("Archiving completed workflow before merge");
       expect(finish.stdout).toContain("Merged codex/demo into main");
       expect(existsSync(join(cwd, "src/modules/demo/index.ts"))).toBe(true);
@@ -1794,8 +1817,11 @@ describe("Workflow helper scripts", () => {
       expect(existsSync(join(cwd, "tasks/notes/demo.notes.md"))).toBe(false);
       expect(readdirSync(join(cwd, "tasks/archive")).some((name) => name.includes("demo"))).toBe(true);
 
-      const log = run("git", ["log", "--oneline", "-1"], cwd);
+      // Freeze-before-archive lands as two commits: the frozen implementation
+      // candidate F, then a separate deterministic lifecycle commit L.
+      const log = run("git", ["log", "--oneline", "-2"], cwd);
       expect(log.stdout).toContain("feat(contract): complete demo");
+      expect(log.stdout).toContain("chore(workflow): archive demo closeout");
 
       const cleanup = run("bash", ["scripts/contract-worktree.sh", "cleanup", "--slug", "demo"], cwd);
       expect(cleanup.status).toBe(0);
@@ -1808,6 +1834,210 @@ describe("Workflow helper scripts", () => {
       rmSync(worktreePath, { recursive: true, force: true });
       rmSync(fakeClaude, { force: true });
       rmSync(fakeVerdict, { force: true });
+      rmSync(goalExistsMarker, { force: true });
+      rmSync(home, { recursive: true, force: true });
+      rmSync(trustedHelpers, { recursive: true, force: true });
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 60000);
+
+  // R-A (fix 1): finish's --no-merge + gate path must verify the merge-gate
+  // receipt against post-lifecycle HEAD (L) BEFORE committing the transaction.
+  // Simulates an unexpected file landing during the lifecycle step (Step 4,
+  // between the gate reviewing frozen candidate F and the deterministic
+  // lifecycle commit L that follows it) via a wrapped archive-workflow helper,
+  // and asserts finish fails closed and rolls back instead of returning
+  // success with an unverified L.
+  test("contract-worktree finish --no-merge --gate-base rolls back when an out-of-allowlist file lands between the gate and the lifecycle commit", () => {
+    const cwd = tmpWorkspace("helper-contract-finish-rogue");
+    const worktreePath = `${cwd}-wt-demo`;
+    const fakeClaude = `${cwd}-fake-claude`;
+    const home = `${cwd}-home`;
+    const trustedHelpers = `${cwd}-trusted-helpers`;
+    try {
+      mkdirSync(join(cwd, "plans"), { recursive: true });
+      mkdirSync(join(cwd, "tasks"), { recursive: true });
+      mkdirSync(join(cwd, "docs"), { recursive: true });
+      copyHelpers(cwd);
+      mkdirSync(join(cwd, ".claude/templates"), { recursive: true });
+      for (const file of readdirSync(TEMPLATE_DIR).filter((name) => name.endsWith(".md"))) {
+        copyFileSync(join(TEMPLATE_DIR, file), join(cwd, ".claude/templates", file));
+      }
+      mkdirSync(join(cwd, ".ai/hooks/lib"), { recursive: true });
+      copyFileSync(
+        join(ROOT, "assets/hooks/lib/workflow-state.sh"),
+        join(cwd, ".ai/hooks/lib/workflow-state.sh")
+      );
+      writeFileSync(
+        join(cwd, ".ai/harness/policy.json"),
+        JSON.stringify(
+          {
+            architecture: {
+              freshness_gate: "strict",
+              gate_min_severity: "medium",
+            },
+            worktree_strategy: {
+              auto_for_contract_tasks: true,
+              branch_prefix: "codex/",
+              base_branch: "main",
+              merge_back: { target: "main" },
+            },
+            merge_gate: { enabled: true, rule: "fixture" },
+          },
+          null,
+          2
+        ) + "\n"
+      );
+      writeFileSync(
+        join(cwd, ".gitignore"),
+        [
+          ".claude/.task-state.json",
+          ".ai/harness/checks/latest.json",
+          ".ai/harness/runs/",
+          ".ai/harness/worktrees/",
+        ].join("\n") + "\n"
+      );
+      writeFileSync(
+        join(cwd, "package.json"),
+        JSON.stringify({ scripts: { "check:type": "test -f src/modules/demo/index.ts" } }, null, 2) + "\n"
+      );
+      writeFixtureCapabilityRegistry(cwd);
+      writeFileSync(join(cwd, "docs/spec.md"), "# Spec\n");
+      initGitRepo(cwd);
+      commitAll(cwd, "init workflow");
+
+      writeFileSync(
+        fakeClaude,
+        [
+          "#!/bin/sh",
+          "cat >/dev/null",
+          "printf '%s\\n' '{\"type\":\"result\",\"structured_output\":{\"protocol\":1,\"verdict\":\"PASS\",\"summary\":\"fixture accepted\",\"findings\":[],\"checks\":[{\"command\":\"fixture check\",\"status\":\"pass\",\"summary\":\"passed\"}]}}'",
+        ].join("\n") + "\n",
+      );
+      chmodSync(fakeClaude, 0o755);
+      mkdirSync(join(home, ".repo-harness"), { recursive: true });
+      mkdirSync(join(home, ".claude", "agents"), { recursive: true });
+      mkdirSync(join(home, ".claude", "skills", "merge-gate"), { recursive: true });
+      writeFileSync(join(home, ".claude", "agents", "gatekeeper.md"), "fixture gatekeeper\n");
+      writeFileSync(join(home, ".claude", "skills", "merge-gate", "SKILL.md"), "fixture merge gate\n");
+      writeFileSync(
+        join(home, ".repo-harness", "config.json"),
+        JSON.stringify({
+          merge_gate: {
+            enabled: true,
+            runner: "claude-agent",
+            agent: "gatekeeper",
+            skill: "merge-gate",
+            claude_bin: fakeClaude,
+          },
+        }, null, 2) + "\n",
+      );
+      createTrustedMergeGateRuntime(trustedHelpers, home);
+
+      // Wrap the trusted archive-workflow helper so it performs the real
+      // archive and then also writes one file that compute_post_freeze_allowlist
+      // never predicted -- simulating an unexpected side effect landing during
+      // the lifecycle step.
+      const realArchiveWorkflow = join(trustedHelpers, "archive-workflow.sh.real");
+      copyFileSync(join(trustedHelpers, "archive-workflow.sh"), realArchiveWorkflow);
+      chmodSync(realArchiveWorkflow, 0o755);
+      writeFileSync(
+        join(trustedHelpers, "archive-workflow.sh"),
+        [
+          "#!/bin/bash",
+          "set -euo pipefail",
+          'cd "${REPO_HARNESS_TARGET_REPO_ROOT:-$PWD}"',
+          '"$(dirname "$0")/archive-workflow.sh.real" "$@"',
+          'case " $* " in *" --predict-manifest "*) exit 0 ;; esac',
+          "printf '# Rogue\\n' > tasks/rogue-injected.md",
+          "",
+        ].join("\n"),
+      );
+      chmodSync(join(trustedHelpers, "archive-workflow.sh"), 0o755);
+
+      writeFileSync(
+        join(cwd, "plans/plan-20260304-1450-demo.md"),
+        [
+          "# Plan: demo",
+          "",
+          "> **Status**: Approved",
+          "",
+          evidenceContract(),
+          "",
+          promotionGate(),
+          "",
+          "## Task Breakdown",
+          "- [ ] Build demo",
+        ].join("\n")
+      );
+
+      const start = run("bash", ["scripts/plan-to-todo.sh", "--plan", "plans/plan-20260304-1450-demo.md"], cwd);
+      expect(start.status).toBe(0);
+      expect(existsSync(worktreePath)).toBe(true);
+
+      mkdirSync(join(worktreePath, "src/modules/demo"), { recursive: true });
+      mkdirSync(join(worktreePath, "tests/unit"), { recursive: true });
+      writeFileSync(join(worktreePath, "src/modules/demo/index.ts"), "export const demo = true;\n");
+      writeFileSync(
+        join(worktreePath, "tests/unit/demo.test.ts"),
+        'import { test, expect } from "bun:test";\n' +
+          'test("demo", () => { expect(true).toBe(true); });\n'
+      );
+      writeFileSync(
+        join(worktreePath, "tasks/reviews/20260304-1450-demo.review.md"),
+        [
+          "# Task Review: demo",
+          "",
+          "> **Recommendation**: pass",
+          "",
+          reviewSubjectMetadata(worktreePath),
+          "",
+          humanReviewCard("pass", "unavailable"),
+          "",
+          "## Scorecard",
+          "",
+          "| Dimension | Score | Notes |",
+          "|-----------|-------|-------|",
+          "| Functionality | 8/10 | verified |",
+          "",
+          "## Verification Evidence",
+          "- Unit test and typecheck covered by verify-sprint.",
+          "",
+          externalAcceptanceAdvice("Codex", "codex-review", worktreePath),
+          "",
+        ].join("\n")
+      );
+
+      const gateEnv = {
+        HOOK_HOST: "claude",
+        REPO_HARNESS_HOOK_CLI: join(ROOT, "src/cli/hook-entry.ts"),
+        HOME: home,
+        REPO_HARNESS_HELPER_SOURCE_PATH: join(trustedHelpers, "contract-worktree.sh"),
+        REPO_HARNESS_BASH_BIN: "/bin/bash",
+        REPO_HARNESS_BUN_BIN: process.execPath,
+        REPO_HARNESS_GIT_BIN: "/usr/bin/git",
+        REPO_HARNESS_WORKFLOW_STATE_LIB: join(ROOT, "assets/hooks/lib/workflow-state.sh"),
+      };
+
+      const beforeFinish = run("git", ["rev-parse", "HEAD"], worktreePath).stdout.trim();
+      const finish = run(
+        "bash",
+        ["scripts/contract-worktree.sh", "finish", "--no-merge", "--gate-base", "main"],
+        worktreePath,
+        gateEnv
+      );
+      expect(finish.status, `${finish.stdout}\n${finish.stderr}`).not.toBe(0);
+      expect(finish.stderr).toContain("post-freeze change outside allowlist");
+      expect(finish.stderr).toContain("tasks/rogue-injected.md");
+      expect(finish.stderr).toContain("restored live workflow artifacts and the pre-finish branch");
+      expect(run("git", ["rev-parse", "HEAD"], worktreePath).stdout.trim()).toBe(beforeFinish);
+      expect(existsSync(join(worktreePath, "tasks/rogue-injected.md"))).toBe(false);
+      expect(existsSync(join(worktreePath, "plans/plan-20260304-1450-demo.md"))).toBe(true);
+      expect(existsSync(join(worktreePath, "plans/archive/plan-20260304-1450-demo.md"))).toBe(false);
+    } finally {
+      run("git", ["worktree", "remove", "--force", worktreePath], cwd);
+      rmSync(worktreePath, { recursive: true, force: true });
+      rmSync(fakeClaude, { force: true });
       rmSync(home, { recursive: true, force: true });
       rmSync(trustedHelpers, { recursive: true, force: true });
       rmSync(cwd, { recursive: true, force: true });
@@ -1994,6 +2224,7 @@ describe("Workflow helper scripts", () => {
         REPO_HARNESS_BASH_BIN: "/bin/bash",
         REPO_HARNESS_BUN_BIN: process.execPath,
         REPO_HARNESS_GIT_BIN: "/usr/bin/git",
+        REPO_HARNESS_GH_BIN: join(fakeBin, "gh"),
         REPO_HARNESS_WORKFLOW_STATE_LIB: join(ROOT, "assets/hooks/lib/workflow-state.sh"),
       };
       const beforeRejectedShip = run("git", ["rev-parse", "HEAD"], worktreePath).stdout.trim();
@@ -2016,7 +2247,11 @@ describe("Workflow helper scripts", () => {
       expect(ship.stdout).toContain("contract-worktree.sh finish --no-merge");
       expect(ship.stdout.match(/Sprint verification passed/g) ?? []).toHaveLength(1);
       expect(shipOutput).toContain("[MergeGate] PASS: fixture accepted");
-      expect(shipOutput.match(/\[MergeGate\] verified PASS/g)?.length).toBe(2);
+      // Three, not two: run's own post-write self-check, finish's new fix-1
+      // verify-before-commit on the --no-merge + gate path (before this
+      // change, finish returned success here without ever re-verifying L),
+      // and ship-worktrees' own pre-push reverify.
+      expect(shipOutput.match(/\[MergeGate\] verified PASS/g)?.length).toBe(3);
       expect(ship.stdout).toContain("[ArchitectureSync] mode=advisory");
       expect(ship.stdout).toContain("PR already exists for codex/demo after create failure");
       expect(ship.stdout).toContain("https://example.test/pr/1");
@@ -2035,7 +2270,7 @@ describe("Workflow helper scripts", () => {
       rmSync(`${cwd}-advance-main`, { recursive: true, force: true });
       rmSync(cwd, { recursive: true, force: true });
     }
-  }, 60000);
+  }, 120000);
 
   test("ship-worktrees should put dirty main closeout on a PR branch", () => {
     const cwd = tmpWorkspace("helper-ship-main-closeout");
@@ -2071,6 +2306,7 @@ describe("Workflow helper scripts", () => {
         REPO_HARNESS_BASH_BIN: "/bin/bash",
         REPO_HARNESS_BUN_BIN: process.execPath,
         REPO_HARNESS_GIT_BIN: "/usr/bin/git",
+        REPO_HARNESS_GH_BIN: join(fakeBin, "gh"),
         REPO_HARNESS_WORKFLOW_STATE_LIB: join(ROOT, "assets/hooks/lib/workflow-state.sh"),
       });
       expect(ship.status).toBe(0);
@@ -2154,6 +2390,13 @@ describe("Workflow helper scripts", () => {
           "exit_criteria:",
           "  files_exist:",
           "    - docs/spec.md",
+          "```",
+          "",
+          "## Evidence Requirements",
+          "",
+          "```yaml",
+          "evidence_requirements:",
+          "  benchmark: not_applicable",
           "```",
           "",
         ].join("\n")
@@ -2766,6 +3009,115 @@ describe("Workflow helper scripts", () => {
     }
   });
 
+  // R-E (fix 5): a --timestamp value passed to archive-workflow.sh is used
+  // verbatim for every archive-family filename instead of a fresh internal
+  // `date` call (the seam contract-worktree.sh finish now relies on so its
+  // allowlist predictions and archive's actual output cannot disagree across
+  // a minute boundary); a standalone invocation without --timestamp keeps
+  // making its own single `date` call, unchanged.
+  test("archive-workflow uses a caller-supplied --timestamp for every archive filename; a standalone run keeps its own date call", () => {
+    const cwd = tmpWorkspace("helper-archive-timestamp-seam");
+    try {
+      mkdirSync(join(cwd, "plans/archive"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/archive"), { recursive: true });
+      copyHelpers(cwd);
+
+      writeFileSync(
+        join(cwd, "plans/plan-20260304-1500-demo.md"),
+        "# Plan: demo\n\n> **Status**: Executing\n"
+      );
+      mkdirSync(join(cwd, "tasks/notes"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/contracts"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/reviews"), { recursive: true });
+      writeFileSync(join(cwd, "tasks/notes/demo.notes.md"), "# Implementation Notes: demo\n");
+      writeFileSync(join(cwd, "tasks/contracts/demo.contract.md"), "# Task Contract: demo\n");
+      writeFileSync(join(cwd, "tasks/reviews/demo.review.md"), "# Task Review: demo\n");
+      writeFileSync(join(cwd, "tasks/todos.md"), "# Task Execution Checklist (Primary)\n\n- [ ] task\n");
+
+      // A deliberately implausible value: a real `date +%Y%m%d-%H%M` call can
+      // never produce this, so finding it in the archived filenames is proof
+      // the seam is wired, not a coincidence.
+      const markerTimestamp = "20990101-0000";
+      const marked = run(
+        "bash",
+        [
+          "scripts/archive-workflow.sh",
+          "--plan", "plans/plan-20260304-1500-demo.md",
+          "--outcome", "Abandoned",
+          "--timestamp", markerTimestamp,
+        ],
+        cwd
+      );
+      expect(marked.status, marked.stderr).toBe(0);
+
+      const markedEntries = readdirSync(join(cwd, "tasks/archive"));
+      expect(markedEntries).toContain(`contract-${markerTimestamp}-demo.md`);
+      expect(markedEntries).toContain(`review-${markerTimestamp}-demo.md`);
+      expect(markedEntries).toContain(`notes-${markerTimestamp}-demo.md`);
+      expect(markedEntries).toContain(`todo-${markerTimestamp}-demo.md`);
+
+      // Standalone invocation (no --timestamp): unchanged behavior, its own
+      // fresh `date` call, never the marker from the previous invocation.
+      writeFileSync(
+        join(cwd, "plans/plan-20260304-1501-demo2.md"),
+        "# Plan: demo2\n\n> **Status**: Executing\n"
+      );
+      writeFileSync(join(cwd, "tasks/notes/demo2.notes.md"), "# Implementation Notes: demo2\n");
+      writeFileSync(join(cwd, "tasks/contracts/demo2.contract.md"), "# Task Contract: demo2\n");
+      writeFileSync(join(cwd, "tasks/reviews/demo2.review.md"), "# Task Review: demo2\n");
+      writeFileSync(join(cwd, "tasks/todos.md"), "# Task Execution Checklist (Primary)\n\n- [ ] task\n");
+
+      const standalone = run(
+        "bash",
+        ["scripts/archive-workflow.sh", "--plan", "plans/plan-20260304-1501-demo2.md", "--outcome", "Abandoned"],
+        cwd
+      );
+      expect(standalone.status, standalone.stderr).toBe(0);
+
+      const standaloneContracts = readdirSync(join(cwd, "tasks/archive")).filter(
+        (name) => name.startsWith("contract-") && name.endsWith("-demo2.md")
+      );
+      expect(standaloneContracts.length).toBe(1);
+      expect(standaloneContracts[0]).toMatch(/^contract-\d{8}-\d{4}-demo2\.md$/);
+      expect(standaloneContracts[0]).not.toContain(markerTimestamp);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  // R-E hardening (third external review round): --timestamp is interpolated
+  // directly into archive filenames, so a malformed value must fail closed
+  // rather than produce a garbage or unexpected archive path.
+  test("archive-workflow rejects a --timestamp value that does not match YYYYMMDD-HHMM", () => {
+    const cwd = tmpWorkspace("helper-archive-timestamp-format-guard");
+    try {
+      mkdirSync(join(cwd, "plans/archive"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/archive"), { recursive: true });
+      copyHelpers(cwd);
+
+      writeFileSync(
+        join(cwd, "plans/plan-20260304-1502-demo.md"),
+        "# Plan: demo\n\n> **Status**: Executing\n"
+      );
+
+      const malformed = run(
+        "bash",
+        [
+          "scripts/archive-workflow.sh",
+          "--plan", "plans/plan-20260304-1502-demo.md",
+          "--outcome", "Abandoned",
+          "--timestamp", "not-a-timestamp",
+        ],
+        cwd
+      );
+      expect(malformed.status).not.toBe(0);
+      expect(malformed.stderr).toContain("--timestamp must match YYYYMMDD-HHMM");
+      expect(readdirSync(join(cwd, "plans")).some((name) => name.startsWith("plan-20260304-1502-demo"))).toBe(true);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   test("archive-workflow should preserve existing deferred ledger rows", () => {
     const cwd = tmpWorkspace("helper-archive-deferred-ledger");
     try {
@@ -2809,6 +3161,57 @@ describe("Workflow helper scripts", () => {
       expect(todo).toContain("> **Updated**: (archive-workflow)");
       expect(todo).toContain("Review archived legacy checklist");
       expect(todo).not.toContain("Archived workflow did not leave a deferred medium/long-term goal");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  // Sixth external review round: plan/notes/contract/review archive
+  // destinations all go through unique_archive_path (collision -> -v2
+  // suffix), but the todo destination was written with a direct `>`
+  // redirect, silently overwriting an existing archived todo snapshot on a
+  // same-timestamp-and-slug collision instead of suffixing like its three
+  // siblings.
+  test("archive-workflow suffixes a colliding todo archive destination instead of overwriting it", () => {
+    const cwd = tmpWorkspace("helper-archive-todo-collision");
+    try {
+      mkdirSync(join(cwd, "plans/archive"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/archive"), { recursive: true });
+      copyHelpers(cwd);
+
+      const collidingTimestamp = "20990101-0000";
+      writeFileSync(
+        join(cwd, "tasks/archive/todo-20990101-0000-demo.md"),
+        "> **Archived**: 2099-01-01 00:00\n\npre-existing archived todo content\n"
+      );
+
+      writeFileSync(
+        join(cwd, "plans/plan-20260304-1506-demo.md"),
+        "# Plan: demo\n\n> **Status**: Executing\n"
+      );
+      writeFileSync(join(cwd, "tasks/todos.md"), "# Task Execution Checklist (Primary)\n\n- [ ] fresh todo row\n");
+
+      const res = run(
+        "bash",
+        [
+          "scripts/archive-workflow.sh",
+          "--plan", "plans/plan-20260304-1506-demo.md",
+          "--outcome", "Abandoned",
+          "--timestamp", collidingTimestamp,
+        ],
+        cwd
+      );
+      expect(res.status, res.stderr).toBe(0);
+
+      const preserved = readFileSync(join(cwd, "tasks/archive/todo-20990101-0000-demo.md"), "utf-8");
+      expect(preserved).toContain("pre-existing archived todo content");
+
+      const suffixed = readdirSync(join(cwd, "tasks/archive")).filter(
+        (name) => name.startsWith("todo-20990101-0000-demo-v") && name.endsWith(".md")
+      );
+      expect(suffixed.length).toBe(1);
+      const suffixedContent = readFileSync(join(cwd, "tasks/archive", suffixed[0]), "utf-8");
+      expect(suffixedContent).toContain("fresh todo row");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -2933,6 +3336,7 @@ describe("Workflow helper scripts", () => {
       mkdirSync(join(cwd, "tests/unit"), { recursive: true });
       mkdirSync(join(cwd, "src"), { recursive: true });
       copyHelpers(cwd);
+      installHooks(cwd);
 
       writeFileSync(join(cwd, "src/index.ts"), "export const value = 1;\n");
       writeFileSync(
@@ -2962,6 +3366,13 @@ describe("Workflow helper scripts", () => {
           "      pattern: \"export const value\"",
           "```",
           "",
+          "## Evidence Requirements",
+          "",
+          "```yaml",
+          "evidence_requirements:",
+          "  benchmark: not_applicable",
+          "```",
+          "",
         ].join("\n")
       );
 
@@ -2980,6 +3391,7 @@ describe("Workflow helper scripts", () => {
     try {
       mkdirSync(join(cwd, "tasks/reviews"), { recursive: true });
       copyHelpers(cwd);
+      installHooks(cwd);
       writeFileSync(
         join(cwd, "task.contract.md"),
         [
@@ -2992,6 +3404,13 @@ describe("Workflow helper scripts", () => {
           "exit_criteria:",
           "  manual_checks:",
           `    - "${requirement}"`,
+          "```",
+          "",
+          "## Evidence Requirements",
+          "",
+          "```yaml",
+          "evidence_requirements:",
+          "  benchmark: not_applicable",
           "```",
           "",
         ].join("\n")
@@ -3183,6 +3602,7 @@ describe("Workflow helper scripts", () => {
       mkdirSync(join(cwd, "scripts"), { recursive: true });
       mkdirSync(join(cwd, "src"), { recursive: true });
       copyHelpers(cwd);
+      installHooks(cwd);
 
       writeFileSync(join(cwd, "src/index.ts"), "export const value = 1;\n");
       const contractPath = join(cwd, "task.contract.md");
@@ -3197,6 +3617,13 @@ describe("Workflow helper scripts", () => {
           "exit_criteria:",
           "  files_exist:",
           "    - src/index.ts",
+          "```",
+          "",
+          "## Evidence Requirements",
+          "",
+          "```yaml",
+          "evidence_requirements:",
+          "  benchmark: not_applicable",
           "```",
           "",
         ].join("\n")
@@ -3221,6 +3648,7 @@ describe("Workflow helper scripts", () => {
     try {
       mkdirSync(join(cwd, "scripts"), { recursive: true });
       copyHelpers(cwd);
+      installHooks(cwd);
 
       const contractPath = join(cwd, "task.contract.md");
       writeFileSync(
@@ -3234,6 +3662,13 @@ describe("Workflow helper scripts", () => {
           "exit_criteria:",
           "  commands_succeed:",
           "    - printf executed > command-ran.txt",
+          "```",
+          "",
+          "## Evidence Requirements",
+          "",
+          "```yaml",
+          "evidence_requirements:",
+          "  benchmark: not_applicable",
           "```",
           "",
         ].join("\n")
@@ -3271,6 +3706,7 @@ describe("Workflow helper scripts", () => {
       mkdirSync(join(cwd, "scripts"), { recursive: true });
       mkdirSync(join(cwd, "src"), { recursive: true });
       copyHelpers(cwd);
+      installHooks(cwd);
 
       writeFileSync(join(cwd, "src/index.ts"), "export const quiet = true;\n");
       writeFileSync(
@@ -3287,6 +3723,13 @@ describe("Workflow helper scripts", () => {
           "  files_not_contain:",
           "    - path: src/index.ts",
           "      pattern: \"forbidden\"",
+          "```",
+          "",
+          "## Evidence Requirements",
+          "",
+          "```yaml",
+          "evidence_requirements:",
+          "  benchmark: not_applicable",
           "```",
           "",
         ].join("\n")
@@ -3323,6 +3766,7 @@ describe("Workflow helper scripts", () => {
       mkdirSync(join(cwd, "scripts"), { recursive: true });
       mkdirSync(join(cwd, "src"), { recursive: true });
       copyHelpers(cwd);
+      installHooks(cwd);
 
       writeFileSync(join(cwd, "src/index.ts"), "export const value = 1;\n");
       writeFileSync(
@@ -3339,6 +3783,13 @@ describe("Workflow helper scripts", () => {
           "allowed_paths:",
           "  - src/",
           "  - tests/",
+          "```",
+          "",
+          "## Evidence Requirements",
+          "",
+          "```yaml",
+          "evidence_requirements:",
+          "  benchmark: not_applicable",
           "```",
           "",
           "## Exit Criteria",
@@ -3368,6 +3819,7 @@ describe("Workflow helper scripts", () => {
       mkdirSync(join(cwd, "scripts"), { recursive: true });
       mkdirSync(join(cwd, "src"), { recursive: true });
       copyHelpers(cwd);
+      installHooks(cwd);
 
       writeFileSync(join(cwd, "src/index.ts"), "export const value = 1;\n");
       writeFileSync(
@@ -3382,6 +3834,13 @@ describe("Workflow helper scripts", () => {
           "```yaml",
           "allowed_paths:",
           "  - src/",
+          "```",
+          "",
+          "## Evidence Requirements",
+          "",
+          "```yaml",
+          "evidence_requirements:",
+          "  benchmark: not_applicable",
           "```",
           "",
           "## Delegation Contract",
@@ -3582,6 +4041,7 @@ describe("Workflow helper scripts", () => {
       mkdirSync(join(cwd, "scripts"), { recursive: true });
       mkdirSync(join(cwd, "docs/design"), { recursive: true });
       copyHelpers(cwd);
+      installHooks(cwd);
 
       writeFileSync(join(cwd, "docs/design/DESIGN-fixture.md"), "# Design Brief: fixture\n");
       writeFileSync(
@@ -3598,6 +4058,13 @@ describe("Workflow helper scripts", () => {
           "exit_criteria:",
           "  files_exist:",
           "    - docs/design/DESIGN-fixture.md",
+          "```",
+          "",
+          "## Evidence Requirements",
+          "",
+          "```yaml",
+          "evidence_requirements:",
+          "  benchmark: not_applicable",
           "```",
           "",
         ].join("\n")
@@ -3683,6 +4150,8 @@ describe("Workflow helper scripts", () => {
           "exit_criteria:",
           "  files_exist:",
           "    - docs/spec.md",
+          "evidence_requirements:",
+          "  benchmark: not_applicable",
           "```",
           "",
         ].join("\n")
@@ -3770,6 +4239,8 @@ describe("Workflow helper scripts", () => {
             "exit_criteria:",
             "  files_exist:",
             "    - docs/spec.md",
+            "evidence_requirements:",
+            "  benchmark: not_applicable",
             "```",
             "",
           ].join("\n")
@@ -3871,6 +4342,8 @@ describe("Workflow helper scripts", () => {
           "exit_criteria:",
           "  files_exist:",
           "    - docs/spec.md",
+          "evidence_requirements:",
+          "  benchmark: not_applicable",
           "```",
           "",
         ].join("\n")
@@ -3947,6 +4420,8 @@ describe("Workflow helper scripts", () => {
           "exit_criteria:",
           "  files_exist:",
           "    - docs/task-change.md",
+          "evidence_requirements:",
+          "  benchmark: not_applicable",
           "```",
           "",
         ].join("\n")

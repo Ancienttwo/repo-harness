@@ -454,6 +454,14 @@ allowed_paths:
   - tests/
 ```
 
+## Evidence Requirements
+
+```yaml
+evidence_requirements:
+  # Set benchmark to required when this contract consumes the harness profile benchmark matrix.
+  benchmark: not_applicable
+```
+
 ## Delegation Contract
 
 ```yaml
