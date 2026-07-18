@@ -21,6 +21,19 @@ export interface StateVersionPublication {
   rollback(): void;
 }
 
+/**
+ * Thrown by `commitStateVersionAfter` when an optional `confirmSnapshot`
+ * check reports a mismatch. Internal signal only: callers that pass
+ * `confirmSnapshot` are expected to catch this by type and decide whether to
+ * retry; it never reaches a public error surface on its own.
+ */
+export class StateVersionConfirmMismatchError extends Error {
+  constructor() {
+    super('effective-state confirm snapshot mismatch before version allocation');
+    this.name = 'StateVersionConfirmMismatchError';
+  }
+}
+
 const DEFAULT_VERSION_WRITE_EFFECTS: StateVersionWriteEffects = {
   writeTemp(path, content) {
     writeFileSync(path, content, { mode: 0o600 });
@@ -104,16 +117,26 @@ export function currentStateVersion(cwd: string): number {
  * publication before the Git-common-dir owner is committed. The version owner
  * is the authoritative commit point; if cache publication fails, it is never
  * advanced. The cache remains a replaceable read model and is never read here.
+ *
+ * `confirmSnapshot`, when provided, is evaluated first inside the version
+ * lock, before the candidate version is computed or consumed. A `false`
+ * result throws `StateVersionConfirmMismatchError` without reading/writing
+ * the owner file or invoking `publishCache` -- the same no-observable-version
+ * guarantee the four existing fault paths already hold.
  */
 export function commitStateVersionAfter(
   cwd: string,
   revision: string,
   publishCache: (version: number) => StateVersionPublication,
   effects: StateVersionWriteEffects = DEFAULT_VERSION_WRITE_EFFECTS,
+  confirmSnapshot?: () => boolean,
 ): number {
   const commonDir = resolveGitCommonDirectory(cwd);
   const target = join(commonDir, VERSION_OWNER_RELATIVE_PATH);
   return withExclusiveDirectoryLock(commonDir, VERSION_LOCK_RELATIVE_PATH, () => {
+    if (confirmSnapshot && !confirmSnapshot()) {
+      throw new StateVersionConfirmMismatchError();
+    }
     const previous = readVersionRecord(target);
     const version = previous?.revision === revision
       ? previous.version
