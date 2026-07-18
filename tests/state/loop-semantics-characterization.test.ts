@@ -340,6 +340,21 @@ function missingSemanticFields(
   return fields.filter((field) => !Object.prototype.hasOwnProperty.call(surface, field));
 }
 
+// LSC-08: `missingSemanticFields` above only ever inspected top-level keys,
+// so it always reported allowedToEdit/allowedToStop/readyToShip/
+// requirements/nextAction as "missing" even once LSC-06/07 landed them on
+// EffectiveStateV1['readiness'] -- they live one level down, nested under
+// `readiness`, not at the top of the cached state document. This projects
+// that nested authority surface (when present and object-shaped) up to
+// top-level keys so the presence check can see it, without recomputing or
+// asserting anything about its values -- a pure, additive read.
+function readinessSurface(state: Record<string, unknown>): Record<string, unknown> {
+  const readiness = (state as { readiness?: unknown }).readiness;
+  return readiness && typeof readiness === 'object' && !Array.isArray(readiness)
+    ? readiness as Record<string, unknown>
+    : {};
+}
+
 function editProfileSource(): string {
   const source = readFileSync(PRE_EDIT, 'utf-8');
   if (source.includes('args=(state resolve --json --field workflow_profile)')) {
@@ -518,7 +533,7 @@ function captureEdit(profile: Profile): Record<string, unknown> {
     const after = repositorySnapshot(fixture.cwd);
     const tokens = guardTokens(`${result.stdout}\n${result.stderr}`);
     const state = readEffectiveState(fixture.cwd);
-    const semanticSurface = Object.assign({}, state, ...jsonObjectLines(result.stdout));
+    const semanticSurface = Object.assign({}, state, readinessSurface(state), ...jsonObjectLines(result.stdout));
     return {
       entrypoint: '.ai/hooks/pre-edit-guard.sh',
       profile_source: editProfileSource(),
@@ -573,7 +588,7 @@ function captureStop(profile: Profile): Record<string, unknown> {
     const decision = stopDecision(result.stdout);
     const handoff = readFileSync(join(fixture.cwd, '.ai/harness/handoff/current.md'), 'utf-8');
     const state = readEffectiveState(fixture.cwd);
-    const semanticSurface = Object.assign({}, state, decision ?? {});
+    const semanticSurface = Object.assign({}, state, readinessSurface(state), decision ?? {});
     return {
       entrypoint: '.ai/hooks/stop-orchestrator.sh',
       profile_source: stopProfileSource(),
@@ -729,6 +744,19 @@ function captureShip(profile: Profile): Record<string, unknown> {
         checks = {};
       }
     }
+    // The ship envelope is profile-blind and never calls `state resolve`
+    // (see shipProfileObservation() above), so this fixture's own seeded
+    // effective.json stub (written above, workflow_profile/state_version
+    // only) is still whatever readEffectiveState() finds here -- carrying
+    // no `readiness` key at all. readinessSurface() therefore contributes
+    // nothing for this cell today; the ship-script surface genuinely does
+    // not yet express readyToShip/workflowProfile/requirementsResult/
+    // nextAction, so missing_semantic_fields below correctly stays
+    // unshrunk rather than fake-closing on an authority this envelope does
+    // not actually consume (row 8's recorded non-goal: that cutover is
+    // future work).
+    const shipState = readEffectiveState(fixture.cwd);
+    const shipSemanticSurface = Object.assign({}, readinessSurface(shipState), checks);
     const noContract = result.stderr.includes('No active sprint contract found');
     const gateOrder = Array.isArray(checks.guards)
       ? checks.guards.flatMap((gate) => {
@@ -794,7 +822,7 @@ function captureShip(profile: Profile): Record<string, unknown> {
       ship_worktrees_dispatch_probe: shipDispatch,
       side_effects: writtenPaths(before, after),
       missing_semantic_fields: missingSemanticFields(
-        checks,
+        shipSemanticSurface,
         ['readyToShip', 'workflowProfile', 'requirementsResult', 'nextAction'],
       ),
     };
