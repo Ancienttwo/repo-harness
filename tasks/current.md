@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-18T15:47:00+0800 -->
+<!-- updated_at: 2026-07-18T19:08:56+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-07-18T15:47:00+0800
+> **Updated At**: 2026-07-18T19:08:56+0800
 > **Source Branch**: main
-> **Source Commit**: 7a579748
+> **Source Commit**: 6dfdaf4e
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: post-LSC-02 merge; LSC-03 executing in loop-control lane
+> **Reason**: LSC-03 merged (PR #85); LSC-04 next
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -59,12 +59,10 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 3 changed/untracked path(s)
+- Summary: 1 changed/untracked path(s)
 
 ```
- M docs/architecture/index.md
- M tasks/lessons.md
-?? .ai/harness/handoff/crg02-dispatch.md
+ M plans/sprints/20260716-0101-loop-semantics-convergence.sprint.md
 ```
 
 ## Source Artifacts
