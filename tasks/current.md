@@ -1,26 +1,26 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-19T05:21:37+0800 -->
+<!-- updated_at: 2026-07-19T06:29:16+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: Active
-> **Updated At**: 2026-07-19T05:21:37+0800
+> **Status**: Idle
+> **Updated At**: 2026-07-19T06:29:16+0800
 > **Source Branch**: main
-> **Source Commit**: c8b8c773
+> **Source Commit**: a20ffbba
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: closeout-authority-bootstrap merged (PR #91): ship-gate evidence + freeze repairs live
+> **Reason**: test-retirement merged (PR #92); all stray branches resolved
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: Active
+- Status: Idle
 - Active Plan: (none)
 - Plan Status: (none)
-- Next Task: inspect active worktree marker(s)
+- Next Task: (none)
 - Clear Note: (none)
 
 ## Mainline Snapshot Reading
@@ -31,10 +31,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- /Users/kito/Projects/repo-harness-wt-closeout-authority-bootstrap: plans/plan-20260716-1419-closeout-authority-bootstrap.md
-- /Users/kito/Projects/repo-harness-wt-closeout-authority-bootstrap: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-closeout-authority-bootstrap
-- /Users/kito/Projects/repo-harness-wt-effective-state-test-retirement: plans/plan-20260716-0222-effective-state-test-retirement.md
-- /Users/kito/Projects/repo-harness-wt-effective-state-test-retirement: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-effective-state-test-retirement
+- (none)
 ## Active Sprint
 
 - Sprint: (none)
