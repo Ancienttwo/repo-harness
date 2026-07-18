@@ -1,0 +1,214 @@
+{
+  "schema": "repo-harness-artifact-requirement-policy.v1",
+  "positive_cases": [
+    {
+      "name": "lite.edit default matrix",
+      "input": { "profile": "lite", "operation": "edit" },
+      "expected": {
+        "ok": true,
+        "profile": "lite",
+        "operation": "edit",
+        "requirements": [
+          { "key": "safe_path", "defaultStatus": "required", "status": "required", "raisedBy": [] },
+          { "key": "worktree_boundary", "defaultStatus": "required", "status": "required", "raisedBy": [] },
+          { "key": "destructive_action_boundary", "defaultStatus": "required", "status": "required", "raisedBy": [] }
+        ]
+      }
+    },
+    {
+      "name": "lite.stop default matrix",
+      "input": { "profile": "lite", "operation": "stop" },
+      "expected": {
+        "ok": true,
+        "profile": "lite",
+        "operation": "stop",
+        "requirements": [
+          { "key": "durable_recovery_state", "defaultStatus": "required", "status": "required", "raisedBy": [] }
+        ]
+      }
+    },
+    {
+      "name": "lite.ship default matrix",
+      "input": { "profile": "lite", "operation": "ship" },
+      "expected": {
+        "ok": true,
+        "profile": "lite",
+        "operation": "ship",
+        "requirements": [
+          { "key": "subject_bound_targeted_evidence", "defaultStatus": "required", "status": "required", "raisedBy": [] }
+        ]
+      }
+    },
+    {
+      "name": "standard.edit default matrix",
+      "input": { "profile": "standard", "operation": "edit" },
+      "expected": {
+        "ok": true,
+        "profile": "standard",
+        "operation": "edit",
+        "requirements": [
+          { "key": "complete_approved_work_package", "defaultStatus": "required", "status": "required", "raisedBy": [] },
+          { "key": "separate_contract", "defaultStatus": "not_required", "status": "not_required", "raisedBy": [] }
+        ]
+      }
+    },
+    {
+      "name": "standard.stop default matrix",
+      "input": { "profile": "standard", "operation": "stop" },
+      "expected": {
+        "ok": true,
+        "profile": "standard",
+        "operation": "stop",
+        "requirements": [
+          { "key": "durable_recovery_state", "defaultStatus": "required", "status": "required", "raisedBy": [] }
+        ]
+      }
+    },
+    {
+      "name": "standard.ship default matrix",
+      "input": { "profile": "standard", "operation": "ship" },
+      "expected": {
+        "ok": true,
+        "profile": "standard",
+        "operation": "ship",
+        "requirements": [
+          { "key": "complete_approved_work_package", "defaultStatus": "required", "status": "required", "raisedBy": [] },
+          { "key": "subject_bound_targeted_evidence", "defaultStatus": "required", "status": "required", "raisedBy": [] },
+          { "key": "separate_contract", "defaultStatus": "not_required", "status": "not_required", "raisedBy": [] },
+          { "key": "external_acceptance", "defaultStatus": "not_required", "status": "not_required", "raisedBy": [] }
+        ]
+      }
+    },
+    {
+      "name": "strict.edit default matrix",
+      "input": { "profile": "strict", "operation": "edit" },
+      "expected": {
+        "ok": true,
+        "profile": "strict",
+        "operation": "edit",
+        "requirements": [
+          { "key": "separate_contract", "defaultStatus": "required", "status": "required", "raisedBy": [] },
+          { "key": "isolated_contract_worktree", "defaultStatus": "required", "status": "required", "raisedBy": [] }
+        ]
+      }
+    },
+    {
+      "name": "strict.stop default matrix",
+      "input": { "profile": "strict", "operation": "stop" },
+      "expected": {
+        "ok": true,
+        "profile": "strict",
+        "operation": "stop",
+        "requirements": [
+          { "key": "durable_recovery_state", "defaultStatus": "required", "status": "required", "raisedBy": [] }
+        ]
+      }
+    },
+    {
+      "name": "strict.ship default matrix (full fail-closed envelope)",
+      "input": { "profile": "strict", "operation": "ship" },
+      "expected": {
+        "ok": true,
+        "profile": "strict",
+        "operation": "ship",
+        "requirements": [
+          { "key": "separate_contract", "defaultStatus": "required", "status": "required", "raisedBy": [] },
+          { "key": "isolated_contract_worktree", "defaultStatus": "required", "status": "required", "raisedBy": [] },
+          { "key": "fresh_review", "defaultStatus": "required", "status": "required", "raisedBy": [] },
+          { "key": "external_acceptance", "defaultStatus": "required", "status": "required", "raisedBy": [] },
+          { "key": "fresh_checks", "defaultStatus": "required", "status": "required", "raisedBy": [] },
+          { "key": "candidate_revision_precondition", "defaultStatus": "required", "status": "required", "raisedBy": [] }
+        ]
+      }
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "standard.edit: risk outranking profile raises separate_contract",
+      "input": { "profile": "standard", "operation": "edit", "risk": "strict" },
+      "expected": {
+        "ok": true,
+        "profile": "standard",
+        "operation": "edit",
+        "requirements": [
+          { "key": "complete_approved_work_package", "defaultStatus": "required", "status": "required", "raisedBy": [] },
+          { "key": "separate_contract", "defaultStatus": "not_required", "status": "required", "raisedBy": ["risk"] }
+        ]
+      }
+    },
+    {
+      "name": "standard.edit: explicit policy raises separate_contract",
+      "input": { "profile": "standard", "operation": "edit", "policy": { "require": ["separate_contract"] } },
+      "expected": {
+        "ok": true,
+        "profile": "standard",
+        "operation": "edit",
+        "requirements": [
+          { "key": "complete_approved_work_package", "defaultStatus": "required", "status": "required", "raisedBy": [] },
+          { "key": "separate_contract", "defaultStatus": "not_required", "status": "required", "raisedBy": ["policy"] }
+        ]
+      }
+    },
+    {
+      "name": "standard.edit: risk equal to profile does not raise (strict outranking only)",
+      "input": { "profile": "standard", "operation": "edit", "risk": "standard" },
+      "expected": {
+        "ok": true,
+        "profile": "standard",
+        "operation": "edit",
+        "requirements": [
+          { "key": "complete_approved_work_package", "defaultStatus": "required", "status": "required", "raisedBy": [] },
+          { "key": "separate_contract", "defaultStatus": "not_required", "status": "not_required", "raisedBy": [] }
+        ]
+      }
+    },
+    {
+      "name": "standard.ship: risk outranking profile raises both not_required entries",
+      "input": { "profile": "standard", "operation": "ship", "risk": "strict" },
+      "expected": {
+        "ok": true,
+        "profile": "standard",
+        "operation": "ship",
+        "requirements": [
+          { "key": "complete_approved_work_package", "defaultStatus": "required", "status": "required", "raisedBy": [] },
+          { "key": "subject_bound_targeted_evidence", "defaultStatus": "required", "status": "required", "raisedBy": [] },
+          { "key": "separate_contract", "defaultStatus": "not_required", "status": "required", "raisedBy": ["risk"] },
+          { "key": "external_acceptance", "defaultStatus": "not_required", "status": "required", "raisedBy": ["risk"] }
+        ]
+      }
+    },
+    {
+      "name": "standard.ship: explicit policy selectively raises only external_acceptance",
+      "input": { "profile": "standard", "operation": "ship", "policy": { "require": ["external_acceptance"] } },
+      "expected": {
+        "ok": true,
+        "profile": "standard",
+        "operation": "ship",
+        "requirements": [
+          { "key": "complete_approved_work_package", "defaultStatus": "required", "status": "required", "raisedBy": [] },
+          { "key": "subject_bound_targeted_evidence", "defaultStatus": "required", "status": "required", "raisedBy": [] },
+          { "key": "separate_contract", "defaultStatus": "not_required", "status": "not_required", "raisedBy": [] },
+          { "key": "external_acceptance", "defaultStatus": "not_required", "status": "required", "raisedBy": ["policy"] }
+        ]
+      }
+    },
+    {
+      "name": "invalid profile is rejected, not defaulted",
+      "input": { "profile": "nonexistent", "operation": "edit" },
+      "expected": {
+        "ok": false,
+        "code": "INVALID_PROFILE",
+        "message": "unknown workflow profile: nonexistent"
+      }
+    },
+    {
+      "name": "invalid operation is rejected, not defaulted",
+      "input": { "profile": "lite", "operation": "deploy" },
+      "expected": {
+        "ok": false,
+        "code": "INVALID_OPERATION",
+        "message": "unknown artifact requirement operation: deploy"
+      }
+    }
+  ]
+}
