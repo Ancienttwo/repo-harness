@@ -1,0 +1,717 @@
+{
+  "schema": "repo-harness-operation-readiness.v1",
+  "positive_cases": [
+    {
+      "name": "lite.edit.no-plan-contract-allows",
+      "input": {
+        "profile": "lite",
+        "operation": "edit",
+        "requirements": {
+          "edit": { "profile": "lite", "operation": "edit" },
+          "stop": { "profile": "lite", "operation": "stop" },
+          "ship": { "profile": "lite", "operation": "ship" }
+        },
+        "evidence": {
+          "satisfiedRequirements": [
+            "safe_path", "worktree_boundary", "destructive_action_boundary",
+            "complete_approved_work_package", "separate_contract", "isolated_contract_worktree",
+            "durable_recovery_state", "fresh_review", "external_acceptance", "fresh_checks",
+            "subject_bound_targeted_evidence", "candidate_revision_precondition"
+          ]
+        }
+      },
+      "expected": {
+        "ok": true,
+        "allowedToEdit": { "decision": "allow" },
+        "allowedToStop": { "decision": "allow" },
+        "readyToShip": { "decision": "allow" },
+        "requirements": {
+          "edit": [
+            { "key": "safe_path", "status": "required", "satisfied": true },
+            { "key": "worktree_boundary", "status": "required", "satisfied": true },
+            { "key": "destructive_action_boundary", "status": "required", "satisfied": true }
+          ],
+          "stop": [
+            { "key": "durable_recovery_state", "status": "required", "satisfied": true }
+          ],
+          "ship": [
+            { "key": "subject_bound_targeted_evidence", "status": "required", "satisfied": true }
+          ]
+        },
+        "nextAction": null
+      }
+    },
+    {
+      "name": "standard.edit.complete-work-package-no-contract-blocks",
+      "input": {
+        "profile": "standard",
+        "operation": "edit",
+        "requirements": {
+          "edit": { "profile": "standard", "operation": "edit" },
+          "stop": { "profile": "standard", "operation": "stop" },
+          "ship": { "profile": "standard", "operation": "ship" }
+        },
+        "evidence": {
+          "satisfiedRequirements": [
+            "safe_path", "worktree_boundary", "destructive_action_boundary",
+            "complete_approved_work_package", "separate_contract", "isolated_contract_worktree",
+            "durable_recovery_state", "fresh_review", "external_acceptance", "fresh_checks",
+            "subject_bound_targeted_evidence", "candidate_revision_precondition"
+          ]
+        }
+      },
+      "expected": {
+        "ok": true,
+        "allowedToEdit": { "decision": "allow" },
+        "allowedToStop": { "decision": "allow" },
+        "readyToShip": { "decision": "allow" },
+        "requirements": {
+          "edit": [
+            { "key": "complete_approved_work_package", "status": "required", "satisfied": true },
+            { "key": "separate_contract", "status": "not_required", "satisfied": true }
+          ],
+          "stop": [
+            { "key": "durable_recovery_state", "status": "required", "satisfied": true }
+          ],
+          "ship": [
+            { "key": "complete_approved_work_package", "status": "required", "satisfied": true },
+            { "key": "subject_bound_targeted_evidence", "status": "required", "satisfied": true },
+            { "key": "separate_contract", "status": "not_required", "satisfied": true },
+            { "key": "external_acceptance", "status": "not_required", "satisfied": true }
+          ]
+        },
+        "nextAction": null
+      }
+    },
+    {
+      "name": "strict.edit.missing-contract-blocks",
+      "input": {
+        "profile": "strict",
+        "operation": "edit",
+        "requirements": {
+          "edit": { "profile": "strict", "operation": "edit" },
+          "stop": { "profile": "strict", "operation": "stop" },
+          "ship": { "profile": "strict", "operation": "ship" }
+        },
+        "evidence": {
+          "satisfiedRequirements": [
+            "safe_path", "worktree_boundary", "destructive_action_boundary",
+            "complete_approved_work_package",
+            "durable_recovery_state", "fresh_review", "external_acceptance", "fresh_checks",
+            "subject_bound_targeted_evidence", "candidate_revision_precondition"
+          ]
+        }
+      },
+      "expected": {
+        "ok": true,
+        "allowedToEdit": { "decision": "block", "reasons": ["required_contract_missing", "required_worktree_missing"] },
+        "allowedToStop": { "decision": "allow" },
+        "readyToShip": { "decision": "block", "reasons": ["required_contract_missing", "required_worktree_missing"] },
+        "requirements": {
+          "edit": [
+            { "key": "separate_contract", "status": "required", "satisfied": false },
+            { "key": "isolated_contract_worktree", "status": "required", "satisfied": false }
+          ],
+          "stop": [
+            { "key": "durable_recovery_state", "status": "required", "satisfied": true }
+          ],
+          "ship": [
+            { "key": "separate_contract", "status": "required", "satisfied": false },
+            { "key": "isolated_contract_worktree", "status": "required", "satisfied": false },
+            { "key": "fresh_review", "status": "required", "satisfied": true },
+            { "key": "external_acceptance", "status": "required", "satisfied": true },
+            { "key": "fresh_checks", "status": "required", "satisfied": true },
+            { "key": "candidate_revision_precondition", "status": "required", "satisfied": true }
+          ]
+        },
+        "nextAction": "create_contract_worktree"
+      }
+    },
+    {
+      "name": "lite.stop.handoff-only-allows",
+      "input": {
+        "profile": "lite",
+        "operation": "stop",
+        "requirements": {
+          "edit": { "profile": "lite", "operation": "edit" },
+          "stop": { "profile": "lite", "operation": "stop" },
+          "ship": { "profile": "lite", "operation": "ship" }
+        },
+        "evidence": {
+          "satisfiedRequirements": [
+            "safe_path", "worktree_boundary", "destructive_action_boundary",
+            "complete_approved_work_package", "separate_contract", "isolated_contract_worktree",
+            "durable_recovery_state", "fresh_review", "external_acceptance", "fresh_checks",
+            "subject_bound_targeted_evidence", "candidate_revision_precondition"
+          ]
+        }
+      },
+      "expected": {
+        "ok": true,
+        "allowedToEdit": { "decision": "allow" },
+        "allowedToStop": { "decision": "allow" },
+        "readyToShip": { "decision": "allow" },
+        "requirements": {
+          "edit": [
+            { "key": "safe_path", "status": "required", "satisfied": true },
+            { "key": "worktree_boundary", "status": "required", "satisfied": true },
+            { "key": "destructive_action_boundary", "status": "required", "satisfied": true }
+          ],
+          "stop": [
+            { "key": "durable_recovery_state", "status": "required", "satisfied": true }
+          ],
+          "ship": [
+            { "key": "subject_bound_targeted_evidence", "status": "required", "satisfied": true }
+          ]
+        },
+        "nextAction": null
+      }
+    },
+    {
+      "name": "standard.stop.stale-review-warns-allows",
+      "input": {
+        "profile": "standard",
+        "operation": "stop",
+        "requirements": {
+          "edit": { "profile": "standard", "operation": "edit" },
+          "stop": { "profile": "standard", "operation": "stop" },
+          "ship": { "profile": "standard", "operation": "ship" }
+        },
+        "evidence": {
+          "satisfiedRequirements": [
+            "safe_path", "worktree_boundary", "destructive_action_boundary",
+            "complete_approved_work_package", "separate_contract", "isolated_contract_worktree",
+            "durable_recovery_state", "external_acceptance", "fresh_checks",
+            "subject_bound_targeted_evidence", "candidate_revision_precondition"
+          ]
+        }
+      },
+      "expected": {
+        "ok": true,
+        "allowedToEdit": { "decision": "allow" },
+        "allowedToStop": { "decision": "allow" },
+        "readyToShip": { "decision": "allow" },
+        "requirements": {
+          "edit": [
+            { "key": "complete_approved_work_package", "status": "required", "satisfied": true },
+            { "key": "separate_contract", "status": "not_required", "satisfied": true }
+          ],
+          "stop": [
+            { "key": "durable_recovery_state", "status": "required", "satisfied": true }
+          ],
+          "ship": [
+            { "key": "complete_approved_work_package", "status": "required", "satisfied": true },
+            { "key": "subject_bound_targeted_evidence", "status": "required", "satisfied": true },
+            { "key": "separate_contract", "status": "not_required", "satisfied": true },
+            { "key": "external_acceptance", "status": "not_required", "satisfied": true }
+          ]
+        },
+        "nextAction": null
+      }
+    },
+    {
+      "name": "strict.stop.not-ready-to-ship-still-allows",
+      "input": {
+        "profile": "strict",
+        "operation": "stop",
+        "requirements": {
+          "edit": { "profile": "strict", "operation": "edit" },
+          "stop": { "profile": "strict", "operation": "stop" },
+          "ship": { "profile": "strict", "operation": "ship" }
+        },
+        "evidence": {
+          "satisfiedRequirements": [
+            "safe_path", "worktree_boundary", "destructive_action_boundary",
+            "complete_approved_work_package", "separate_contract", "isolated_contract_worktree",
+            "durable_recovery_state",
+            "subject_bound_targeted_evidence", "candidate_revision_precondition"
+          ]
+        }
+      },
+      "expected": {
+        "ok": true,
+        "allowedToEdit": { "decision": "allow" },
+        "allowedToStop": { "decision": "allow" },
+        "readyToShip": {
+          "decision": "block",
+          "reasons": ["required_review_missing", "required_external_acceptance_missing", "required_checks_missing"]
+        },
+        "requirements": {
+          "edit": [
+            { "key": "separate_contract", "status": "required", "satisfied": true },
+            { "key": "isolated_contract_worktree", "status": "required", "satisfied": true }
+          ],
+          "stop": [
+            { "key": "durable_recovery_state", "status": "required", "satisfied": true }
+          ],
+          "ship": [
+            { "key": "separate_contract", "status": "required", "satisfied": true },
+            { "key": "isolated_contract_worktree", "status": "required", "satisfied": true },
+            { "key": "fresh_review", "status": "required", "satisfied": false },
+            { "key": "external_acceptance", "status": "required", "satisfied": false },
+            { "key": "fresh_checks", "status": "required", "satisfied": false },
+            { "key": "candidate_revision_precondition", "status": "required", "satisfied": true }
+          ]
+        },
+        "nextAction": null
+      }
+    },
+    {
+      "name": "lite.ship.no-profile-readiness",
+      "input": {
+        "profile": "lite",
+        "operation": "ship",
+        "requirements": {
+          "edit": { "profile": "lite", "operation": "edit" },
+          "stop": { "profile": "lite", "operation": "stop" },
+          "ship": { "profile": "lite", "operation": "ship" }
+        },
+        "evidence": {
+          "satisfiedRequirements": [
+            "safe_path", "worktree_boundary", "destructive_action_boundary",
+            "complete_approved_work_package", "separate_contract", "isolated_contract_worktree",
+            "durable_recovery_state", "fresh_review", "external_acceptance", "fresh_checks",
+            "candidate_revision_precondition"
+          ]
+        }
+      },
+      "expected": {
+        "ok": true,
+        "allowedToEdit": { "decision": "allow" },
+        "allowedToStop": { "decision": "allow" },
+        "readyToShip": { "decision": "block", "reasons": ["required_evidence_missing"] },
+        "requirements": {
+          "edit": [
+            { "key": "safe_path", "status": "required", "satisfied": true },
+            { "key": "worktree_boundary", "status": "required", "satisfied": true },
+            { "key": "destructive_action_boundary", "status": "required", "satisfied": true }
+          ],
+          "stop": [
+            { "key": "durable_recovery_state", "status": "required", "satisfied": true }
+          ],
+          "ship": [
+            { "key": "subject_bound_targeted_evidence", "status": "required", "satisfied": false }
+          ]
+        },
+        "nextAction": "run_targeted_verification"
+      }
+    },
+    {
+      "name": "standard.ship.full-strict-envelope-required",
+      "input": {
+        "profile": "standard",
+        "operation": "ship",
+        "requirements": {
+          "edit": { "profile": "standard", "operation": "edit" },
+          "stop": { "profile": "standard", "operation": "stop" },
+          "ship": { "profile": "standard", "operation": "ship" }
+        },
+        "evidence": {
+          "satisfiedRequirements": [
+            "safe_path", "worktree_boundary", "destructive_action_boundary",
+            "complete_approved_work_package", "separate_contract", "isolated_contract_worktree",
+            "durable_recovery_state", "fresh_review", "external_acceptance", "fresh_checks",
+            "candidate_revision_precondition"
+          ]
+        }
+      },
+      "expected": {
+        "ok": true,
+        "allowedToEdit": { "decision": "allow" },
+        "allowedToStop": { "decision": "allow" },
+        "readyToShip": { "decision": "block", "reasons": ["required_evidence_missing"] },
+        "requirements": {
+          "edit": [
+            { "key": "complete_approved_work_package", "status": "required", "satisfied": true },
+            { "key": "separate_contract", "status": "not_required", "satisfied": true }
+          ],
+          "stop": [
+            { "key": "durable_recovery_state", "status": "required", "satisfied": true }
+          ],
+          "ship": [
+            { "key": "complete_approved_work_package", "status": "required", "satisfied": true },
+            { "key": "subject_bound_targeted_evidence", "status": "required", "satisfied": false },
+            { "key": "separate_contract", "status": "not_required", "satisfied": true },
+            { "key": "external_acceptance", "status": "not_required", "satisfied": true }
+          ]
+        },
+        "nextAction": "run_targeted_verification"
+      }
+    },
+    {
+      "name": "strict.ship.full-envelope-fragmented",
+      "input": {
+        "profile": "strict",
+        "operation": "ship",
+        "requirements": {
+          "edit": { "profile": "strict", "operation": "edit" },
+          "stop": { "profile": "strict", "operation": "stop" },
+          "ship": { "profile": "strict", "operation": "ship" }
+        },
+        "evidence": {
+          "satisfiedRequirements": [
+            "safe_path", "worktree_boundary", "destructive_action_boundary",
+            "complete_approved_work_package", "separate_contract", "isolated_contract_worktree",
+            "durable_recovery_state",
+            "subject_bound_targeted_evidence", "candidate_revision_precondition"
+          ]
+        }
+      },
+      "expected": {
+        "ok": true,
+        "allowedToEdit": { "decision": "allow" },
+        "allowedToStop": { "decision": "allow" },
+        "readyToShip": {
+          "decision": "block",
+          "reasons": ["required_review_missing", "required_external_acceptance_missing", "required_checks_missing"]
+        },
+        "requirements": {
+          "edit": [
+            { "key": "separate_contract", "status": "required", "satisfied": true },
+            { "key": "isolated_contract_worktree", "status": "required", "satisfied": true }
+          ],
+          "stop": [
+            { "key": "durable_recovery_state", "status": "required", "satisfied": true }
+          ],
+          "ship": [
+            { "key": "separate_contract", "status": "required", "satisfied": true },
+            { "key": "isolated_contract_worktree", "status": "required", "satisfied": true },
+            { "key": "fresh_review", "status": "required", "satisfied": false },
+            { "key": "external_acceptance", "status": "required", "satisfied": false },
+            { "key": "fresh_checks", "status": "required", "satisfied": false },
+            { "key": "candidate_revision_precondition", "status": "required", "satisfied": true }
+          ]
+        },
+        "nextAction": "complete_strict_acceptance"
+      }
+    }
+  ],
+  "negative_cases": [
+    {
+      "name": "lite.edit: unsatisfied destructive_action_boundary blocks with no known remediation action",
+      "input": {
+        "profile": "lite",
+        "operation": "edit",
+        "requirements": {
+          "edit": { "profile": "lite", "operation": "edit" },
+          "stop": { "profile": "lite", "operation": "stop" },
+          "ship": { "profile": "lite", "operation": "ship" }
+        },
+        "evidence": {
+          "satisfiedRequirements": [
+            "safe_path", "worktree_boundary",
+            "complete_approved_work_package", "separate_contract", "isolated_contract_worktree",
+            "durable_recovery_state", "fresh_review", "external_acceptance", "fresh_checks",
+            "subject_bound_targeted_evidence", "candidate_revision_precondition"
+          ]
+        }
+      },
+      "expected": {
+        "ok": true,
+        "allowedToEdit": { "decision": "block", "reasons": ["required_destructive_action_boundary_missing"] },
+        "allowedToStop": { "decision": "allow" },
+        "readyToShip": { "decision": "allow" },
+        "requirements": {
+          "edit": [
+            { "key": "safe_path", "status": "required", "satisfied": true },
+            { "key": "worktree_boundary", "status": "required", "satisfied": true },
+            { "key": "destructive_action_boundary", "status": "required", "satisfied": false }
+          ],
+          "stop": [
+            { "key": "durable_recovery_state", "status": "required", "satisfied": true }
+          ],
+          "ship": [
+            { "key": "subject_bound_targeted_evidence", "status": "required", "satisfied": true }
+          ]
+        },
+        "nextAction": null
+      }
+    },
+    {
+      "name": "standard.edit: unsatisfied complete_approved_work_package blocks edit and cascades into ship",
+      "input": {
+        "profile": "standard",
+        "operation": "edit",
+        "requirements": {
+          "edit": { "profile": "standard", "operation": "edit" },
+          "stop": { "profile": "standard", "operation": "stop" },
+          "ship": { "profile": "standard", "operation": "ship" }
+        },
+        "evidence": {
+          "satisfiedRequirements": [
+            "safe_path", "worktree_boundary", "destructive_action_boundary",
+            "separate_contract", "isolated_contract_worktree",
+            "durable_recovery_state", "fresh_review", "external_acceptance", "fresh_checks",
+            "subject_bound_targeted_evidence", "candidate_revision_precondition"
+          ]
+        }
+      },
+      "expected": {
+        "ok": true,
+        "allowedToEdit": { "decision": "block", "reasons": ["required_work_package_missing"] },
+        "allowedToStop": { "decision": "allow" },
+        "readyToShip": { "decision": "block", "reasons": ["required_work_package_missing"] },
+        "requirements": {
+          "edit": [
+            { "key": "complete_approved_work_package", "status": "required", "satisfied": false },
+            { "key": "separate_contract", "status": "not_required", "satisfied": true }
+          ],
+          "stop": [
+            { "key": "durable_recovery_state", "status": "required", "satisfied": true }
+          ],
+          "ship": [
+            { "key": "complete_approved_work_package", "status": "required", "satisfied": false },
+            { "key": "subject_bound_targeted_evidence", "status": "required", "satisfied": true },
+            { "key": "separate_contract", "status": "not_required", "satisfied": true },
+            { "key": "external_acceptance", "status": "not_required", "satisfied": true }
+          ]
+        },
+        "nextAction": null
+      }
+    },
+    {
+      "name": "hard blocker forces block on edit, stop, and ship simultaneously",
+      "input": {
+        "profile": "lite",
+        "operation": "edit",
+        "requirements": {
+          "edit": { "profile": "lite", "operation": "edit" },
+          "stop": { "profile": "lite", "operation": "stop" },
+          "ship": { "profile": "lite", "operation": "ship" }
+        },
+        "evidence": {
+          "satisfiedRequirements": [
+            "safe_path", "worktree_boundary", "destructive_action_boundary",
+            "complete_approved_work_package", "separate_contract", "isolated_contract_worktree",
+            "durable_recovery_state", "fresh_review", "external_acceptance", "fresh_checks",
+            "subject_bound_targeted_evidence", "candidate_revision_precondition"
+          ],
+          "hardBlockers": ["active_destructive_operation"]
+        }
+      },
+      "expected": {
+        "ok": true,
+        "allowedToEdit": { "decision": "block", "reasons": ["hard_blocker_present"] },
+        "allowedToStop": { "decision": "block", "reasons": ["hard_blocker_present"] },
+        "readyToShip": { "decision": "block", "reasons": ["hard_blocker_present"] },
+        "requirements": {
+          "edit": [
+            { "key": "safe_path", "status": "required", "satisfied": true },
+            { "key": "worktree_boundary", "status": "required", "satisfied": true },
+            { "key": "destructive_action_boundary", "status": "required", "satisfied": true }
+          ],
+          "stop": [
+            { "key": "durable_recovery_state", "status": "required", "satisfied": true }
+          ],
+          "ship": [
+            { "key": "subject_bound_targeted_evidence", "status": "required", "satisfied": true }
+          ]
+        },
+        "nextAction": null
+      }
+    },
+    {
+      "name": "standard.ship: combined risk+policy raise on the same key cascades into readyToShip reasons",
+      "input": {
+        "profile": "standard",
+        "operation": "ship",
+        "requirements": {
+          "edit": { "profile": "standard", "operation": "edit" },
+          "stop": { "profile": "standard", "operation": "stop" },
+          "ship": {
+            "profile": "standard",
+            "operation": "ship",
+            "risk": "strict",
+            "policy": { "require": ["external_acceptance"] }
+          }
+        },
+        "evidence": {
+          "satisfiedRequirements": [
+            "safe_path", "worktree_boundary", "destructive_action_boundary",
+            "complete_approved_work_package", "isolated_contract_worktree",
+            "durable_recovery_state", "fresh_review", "fresh_checks",
+            "candidate_revision_precondition"
+          ]
+        }
+      },
+      "expected": {
+        "ok": true,
+        "allowedToEdit": { "decision": "allow" },
+        "allowedToStop": { "decision": "allow" },
+        "readyToShip": {
+          "decision": "block",
+          "reasons": ["required_evidence_missing", "required_contract_missing", "required_external_acceptance_missing"]
+        },
+        "requirements": {
+          "edit": [
+            { "key": "complete_approved_work_package", "status": "required", "satisfied": true },
+            { "key": "separate_contract", "status": "not_required", "satisfied": true }
+          ],
+          "stop": [
+            { "key": "durable_recovery_state", "status": "required", "satisfied": true }
+          ],
+          "ship": [
+            { "key": "complete_approved_work_package", "status": "required", "satisfied": true },
+            { "key": "subject_bound_targeted_evidence", "status": "required", "satisfied": false },
+            { "key": "separate_contract", "status": "required", "satisfied": false },
+            { "key": "external_acceptance", "status": "required", "satisfied": false }
+          ]
+        },
+        "nextAction": "run_targeted_verification"
+      }
+    },
+    {
+      "name": "strict.stop: allowedToStop=allow even when edit is also blocked and every ship key is missing",
+      "input": {
+        "profile": "strict",
+        "operation": "stop",
+        "requirements": {
+          "edit": { "profile": "strict", "operation": "edit" },
+          "stop": { "profile": "strict", "operation": "stop" },
+          "ship": { "profile": "strict", "operation": "ship" }
+        },
+        "evidence": {
+          "satisfiedRequirements": ["durable_recovery_state"]
+        }
+      },
+      "expected": {
+        "ok": true,
+        "allowedToEdit": { "decision": "block", "reasons": ["required_contract_missing", "required_worktree_missing"] },
+        "allowedToStop": { "decision": "allow" },
+        "readyToShip": {
+          "decision": "block",
+          "reasons": [
+            "required_contract_missing",
+            "required_worktree_missing",
+            "required_review_missing",
+            "required_external_acceptance_missing",
+            "required_checks_missing",
+            "required_candidate_revision_missing"
+          ]
+        },
+        "requirements": {
+          "edit": [
+            { "key": "separate_contract", "status": "required", "satisfied": false },
+            { "key": "isolated_contract_worktree", "status": "required", "satisfied": false }
+          ],
+          "stop": [
+            { "key": "durable_recovery_state", "status": "required", "satisfied": true }
+          ],
+          "ship": [
+            { "key": "separate_contract", "status": "required", "satisfied": false },
+            { "key": "isolated_contract_worktree", "status": "required", "satisfied": false },
+            { "key": "fresh_review", "status": "required", "satisfied": false },
+            { "key": "external_acceptance", "status": "required", "satisfied": false },
+            { "key": "fresh_checks", "status": "required", "satisfied": false },
+            { "key": "candidate_revision_precondition", "status": "required", "satisfied": false }
+          ]
+        },
+        "nextAction": null
+      }
+    },
+    {
+      "name": "invalid profile is rejected, not defaulted",
+      "input": {
+        "profile": "nonexistent",
+        "operation": "edit",
+        "requirements": {
+          "edit": { "profile": "lite", "operation": "edit" },
+          "stop": { "profile": "lite", "operation": "stop" },
+          "ship": { "profile": "lite", "operation": "ship" }
+        },
+        "evidence": { "satisfiedRequirements": [] }
+      },
+      "expected": {
+        "ok": false,
+        "code": "INVALID_PROFILE",
+        "message": "unknown workflow profile: nonexistent"
+      }
+    },
+    {
+      "name": "invalid operation is rejected, not defaulted",
+      "input": {
+        "profile": "lite",
+        "operation": "deploy",
+        "requirements": {
+          "edit": { "profile": "lite", "operation": "edit" },
+          "stop": { "profile": "lite", "operation": "stop" },
+          "ship": { "profile": "lite", "operation": "ship" }
+        },
+        "evidence": { "satisfiedRequirements": [] }
+      },
+      "expected": {
+        "ok": false,
+        "code": "INVALID_OPERATION",
+        "message": "unknown operation-readiness operation: deploy"
+      }
+    },
+    {
+      "name": "an invalid edit requirement decision is propagated, not swallowed",
+      "input": {
+        "profile": "lite",
+        "operation": "edit",
+        "requirements": {
+          "edit": { "profile": "lite", "operation": "deploy" },
+          "stop": { "profile": "lite", "operation": "stop" },
+          "ship": { "profile": "lite", "operation": "ship" }
+        },
+        "evidence": {
+          "satisfiedRequirements": [
+            "safe_path", "worktree_boundary", "destructive_action_boundary",
+            "durable_recovery_state", "subject_bound_targeted_evidence"
+          ]
+        }
+      },
+      "expected": {
+        "ok": false,
+        "code": "INVALID_REQUIREMENT_DECISION",
+        "message": "edit requirement decision was rejected by resolve(): [INVALID_OPERATION] unknown artifact requirement operation: deploy"
+      }
+    },
+    {
+      "name": "an edit requirement decision resolved for a different profile is rejected as mismatched",
+      "input": {
+        "profile": "lite",
+        "operation": "edit",
+        "requirements": {
+          "edit": { "profile": "standard", "operation": "edit" },
+          "stop": { "profile": "lite", "operation": "stop" },
+          "ship": { "profile": "lite", "operation": "ship" }
+        },
+        "evidence": {
+          "satisfiedRequirements": [
+            "safe_path", "worktree_boundary", "destructive_action_boundary",
+            "complete_approved_work_package", "durable_recovery_state", "subject_bound_targeted_evidence"
+          ]
+        }
+      },
+      "expected": {
+        "ok": false,
+        "code": "REQUIREMENT_MISMATCH",
+        "message": "edit requirement decision profile \"standard\" does not match input profile \"lite\""
+      }
+    },
+    {
+      "name": "a ship requirement decision placed in the stop slot is rejected as mismatched",
+      "input": {
+        "profile": "lite",
+        "operation": "stop",
+        "requirements": {
+          "edit": { "profile": "lite", "operation": "edit" },
+          "stop": { "profile": "lite", "operation": "ship" },
+          "ship": { "profile": "lite", "operation": "ship" }
+        },
+        "evidence": {
+          "satisfiedRequirements": [
+            "safe_path", "worktree_boundary", "destructive_action_boundary", "subject_bound_targeted_evidence"
+          ]
+        }
+      },
+      "expected": {
+        "ok": false,
+        "code": "REQUIREMENT_MISMATCH",
+        "message": "stop requirement decision is for operation \"ship\", expected \"stop\""
+      }
+    }
+  ]
+}

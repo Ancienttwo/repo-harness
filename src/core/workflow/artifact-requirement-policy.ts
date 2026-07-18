@@ -10,12 +10,13 @@
  * see `tasks/notes/20260718-1405-lsc-02-artifact-requirement-policy.notes.md`
  * for the record -> key derivation.
  *
- * No consumer imports this module yet -- LSC-03..08 cut PreEdit, Stop,
- * ship, and adapter consumers over one package at a time. This module
- * performs no fs/process/env/network access and imports only the
- * `WorkflowProfile` type from `./profile`. It does not reuse or extend
- * `WorkflowOperationKind`, which is a different (risk-signal) axis with no
- * `stop`/`ship` member.
+ * LSC-03 wired this module's `resolve()` into `projectEffectiveState`
+ * (`src/core/state/project-effective-state.ts`) for Standard work-package
+ * contract-policy parity; LSC-04..08 cut PreEdit, Stop, ship, and adapter
+ * consumers over one package at a time. This module performs no
+ * fs/process/env/network access and imports only the `WorkflowProfile` type
+ * from `./profile`. It does not reuse or extend `WorkflowOperationKind`,
+ * which is a different (risk-signal) axis with no `stop`/`ship` member.
  */
 import type { WorkflowProfile } from './profile';
 
@@ -125,6 +126,16 @@ export const ARTIFACT_REQUIREMENT_MATRIX: ArtifactRequirementMatrix = {
 const KNOWN_PROFILES: ReadonlySet<string> = new Set(Object.keys(ARTIFACT_REQUIREMENT_MATRIX));
 const KNOWN_OPERATIONS: ReadonlySet<string> = new Set(Object.keys(ARTIFACT_REQUIREMENT_MATRIX.lite));
 const PROFILE_RANK: Readonly<Record<WorkflowProfile, number>> = { lite: 0, standard: 1, strict: 2 };
+/**
+ * Derived from `ARTIFACT_REQUIREMENT_MATRIX` itself (every requirement key
+ * appears in at least one cell), so this stays the single source of truth
+ * for "known requirement key" rather than a hand-maintained duplicate list.
+ */
+const KNOWN_REQUIREMENT_KEYS: ReadonlySet<string> = new Set(
+  Object.values(ARTIFACT_REQUIREMENT_MATRIX).flatMap((operations) => Object.values(operations).flatMap(
+    (entries) => entries.map((entry) => entry.key),
+  )),
+);
 
 /** Explicit policy override: names requirement keys to force to `required`. */
 export interface ArtifactRequirementPolicyOverride {
@@ -163,7 +174,11 @@ export interface ArtifactRequirementResolution {
   readonly requirements: readonly ArtifactRequirementDecision[];
 }
 
-export type ArtifactRequirementResolveErrorCode = 'INVALID_PROFILE' | 'INVALID_OPERATION';
+export type ArtifactRequirementResolveErrorCode =
+  | 'INVALID_PROFILE'
+  | 'INVALID_OPERATION'
+  | 'INVALID_RISK'
+  | 'INVALID_POLICY_REQUIRE_KEY';
 
 export interface ArtifactRequirementResolveError {
   readonly ok: false;
@@ -178,7 +193,8 @@ export type ArtifactRequirementResolveResult =
 /**
  * Resolve the artifact-requirement decision for one profile x operation
  * cell, applying the risk/policy raise rule to any not_required entry.
- * Unknown profile/operation values are rejected, never defaulted.
+ * Unknown profile, operation, `risk`, and `policy.require` values are all
+ * rejected, never defaulted.
  */
 export function resolve(input: ArtifactRequirementResolveInput): ArtifactRequirementResolveResult {
   if (!KNOWN_PROFILES.has(input.profile)) {
@@ -190,6 +206,14 @@ export function resolve(input: ArtifactRequirementResolveInput): ArtifactRequire
       code: 'INVALID_OPERATION',
       message: `unknown artifact requirement operation: ${input.operation}`,
     };
+  }
+  if (input.risk !== undefined && !KNOWN_PROFILES.has(input.risk)) {
+    return { ok: false, code: 'INVALID_RISK', message: `unknown risk profile: ${input.risk}` };
+  }
+  for (const key of input.policy?.require ?? []) {
+    if (!KNOWN_REQUIREMENT_KEYS.has(key)) {
+      return { ok: false, code: 'INVALID_POLICY_REQUIRE_KEY', message: `unknown policy requirement key: ${key}` };
+    }
   }
 
   const cell = ARTIFACT_REQUIREMENT_MATRIX[input.profile][input.operation];
