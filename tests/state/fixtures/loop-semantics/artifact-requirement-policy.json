@@ -193,6 +193,44 @@
       }
     },
     {
+      "name": "standard.edit: combined risk+policy raise on the same key pins raisedBy ordering to [risk, policy]",
+      "input": {
+        "profile": "standard",
+        "operation": "edit",
+        "risk": "strict",
+        "policy": { "require": ["separate_contract"] }
+      },
+      "expected": {
+        "ok": true,
+        "profile": "standard",
+        "operation": "edit",
+        "requirements": [
+          { "key": "complete_approved_work_package", "defaultStatus": "required", "status": "required", "raisedBy": [] },
+          { "key": "separate_contract", "defaultStatus": "not_required", "status": "required", "raisedBy": ["risk", "policy"] }
+        ]
+      }
+    },
+    {
+      "name": "standard.ship: combined risk+policy raise on separate keys keeps each raisedBy source-specific",
+      "input": {
+        "profile": "standard",
+        "operation": "ship",
+        "risk": "strict",
+        "policy": { "require": ["external_acceptance"] }
+      },
+      "expected": {
+        "ok": true,
+        "profile": "standard",
+        "operation": "ship",
+        "requirements": [
+          { "key": "complete_approved_work_package", "defaultStatus": "required", "status": "required", "raisedBy": [] },
+          { "key": "subject_bound_targeted_evidence", "defaultStatus": "required", "status": "required", "raisedBy": [] },
+          { "key": "separate_contract", "defaultStatus": "not_required", "status": "required", "raisedBy": ["risk"] },
+          { "key": "external_acceptance", "defaultStatus": "not_required", "status": "required", "raisedBy": ["risk", "policy"] }
+        ]
+      }
+    },
+    {
       "name": "invalid profile is rejected, not defaulted",
       "input": { "profile": "nonexistent", "operation": "edit" },
       "expected": {
@@ -208,6 +246,24 @@
         "ok": false,
         "code": "INVALID_OPERATION",
         "message": "unknown artifact requirement operation: deploy"
+      }
+    },
+    {
+      "name": "invalid risk is rejected, not defaulted",
+      "input": { "profile": "lite", "operation": "edit", "risk": "nonexistent" },
+      "expected": {
+        "ok": false,
+        "code": "INVALID_RISK",
+        "message": "unknown risk profile: nonexistent"
+      }
+    },
+    {
+      "name": "invalid policy.require key is rejected, not defaulted",
+      "input": { "profile": "standard", "operation": "edit", "policy": { "require": ["nonexistent_key"] } },
+      "expected": {
+        "ok": false,
+        "code": "INVALID_POLICY_REQUIRE_KEY",
+        "message": "unknown policy requirement key: nonexistent_key"
       }
     }
   ]
