@@ -245,13 +245,70 @@ describe('effective state resolver', () => {
     });
   });
 
-  test('blocks approved or executing work when its contract is missing', () => {
+  test('blocks approved or executing work under Strict when its contract is missing', () => {
     withRepo((cwd) => {
       rmSync(join(cwd, CONTRACT));
-      const state = resolveFixtureState(cwd);
+      // Strict's separate_contract requirement is unconditionally required
+      // (ArtifactRequirementPolicy), so this state keeps blocking under the
+      // profile-aware missing_contract decision.
+      const state = resolveFixtureState(cwd, Date.now(), {
+        targetPaths: ['src/feature.ts'],
+        operationKind: 'feature',
+        explicitOverride: 'strict',
+      });
+      expect(state.workflow_profile).toBe('strict');
       expect(state.phase).toBe('blocked');
       expect(state.blockers).toContain('missing_contract');
       expect(state.next_action).toBe('resolve blockers');
+    });
+  });
+
+  test('allows approved or executing work under Standard when its contract is missing', () => {
+    withRepo((cwd) => {
+      rmSync(join(cwd, CONTRACT));
+      // Default fixture risk input (targetPaths + operationKind: 'feature',
+      // no explicit override) naturally resolves to Standard. Standard's
+      // separate_contract requirement defaults to not_required, so the
+      // profile-aware decision no longer pushes missing_contract.
+      const state = resolveFixtureState(cwd);
+      expect(state.workflow_profile).toBe('standard');
+      expect(state.blockers).not.toContain('missing_contract');
+      expect(state.phase).not.toBe('blocked');
+    });
+  });
+
+  test('allows approved or executing work under Lite when its contract is missing', () => {
+    withRepo((cwd) => {
+      rmSync(join(cwd, CONTRACT));
+      // Lite's edit matrix cell carries no separate_contract entry at all
+      // (ArtifactRequirementPolicy) -- the absent-entry path, distinct from
+      // Standard's explicit not_required entry.
+      const state = resolveFixtureState(cwd, Date.now(), {
+        targetPaths: ['src/feature.ts'],
+        operationKind: 'edit',
+      });
+      expect(state.workflow_profile).toBe('lite');
+      expect(state.blockers).not.toContain('missing_contract');
+      expect(state.phase).not.toBe('blocked');
+    });
+  });
+
+  test('fails closed with missing_contract when the workflow profile cannot be resolved', () => {
+    withRepo((cwd) => {
+      rmSync(join(cwd, CONTRACT));
+      // Requesting Lite while real signals (operationKind: 'feature') compute
+      // a Standard risk floor is rejected outright (PROFILE_BELOW_RISK_FLOOR,
+      // riskResolution.ok === false) rather than silently downgraded. The
+      // profile-aware missing_contract decision must fail closed on any
+      // unresolved profile, not just the "signals unavailable" case.
+      const state = resolveFixtureState(cwd, Date.now(), {
+        targetPaths: ['src/feature.ts'],
+        operationKind: 'feature',
+        explicitOverride: 'lite',
+      });
+      expect(state.workflow_profile).toBeNull();
+      expect(state.blockers).toContain('missing_contract');
+      expect(state.phase).toBe('blocked');
     });
   });
 
@@ -409,18 +466,24 @@ describe('effective state resolver', () => {
 
   test('--field suppresses the printed value when blockers are present, even though the field itself resolved a value', () => {
     withRepo((cwd) => {
-      // missing_contract fires (Executing plan, no contract file yet) while
-      // workflow_profile still resolves a real, non-null value ('standard')
-      // -- the CLI must not print a value a caller could mistake for
-      // trustworthy when the exit code already signals "blocked".
+      // missing_contract only fires under Strict now (Standard's
+      // separate_contract requirement is not_required by default) -- force
+      // Strict explicitly so this still exercises "a blocker fires while
+      // workflow_profile itself resolves a real, non-null value" -- the CLI
+      // must not print a value a caller could mistake for trustworthy when
+      // the exit code already signals "blocked".
       rmSync(join(cwd, CONTRACT));
-      const full = resolveFixtureState(cwd);
+      const full = resolveFixtureState(cwd, Date.now(), {
+        targetPaths: ['src/feature.ts'],
+        operationKind: 'feature',
+        explicitOverride: 'strict',
+      });
       expect(full.blockers).toContain('missing_contract');
       expect(full.workflow_profile).not.toBeNull();
 
       const fieldOutput = spawnSync(process.execPath, [
         CLI, 'state', 'resolve', '--json', '--field', 'workflow_profile',
-        '--target-path', 'src/feature.ts', '--operation', 'feature',
+        '--target-path', 'src/feature.ts', '--operation', 'feature', '--profile', 'strict',
       ], { cwd, encoding: 'utf-8' });
       expect(fieldOutput.status).toBe(1);
       expect(fieldOutput.stdout).toBe('');
