@@ -29,6 +29,7 @@ import {
 } from '../../src/effects/state/state-cache';
 import { withStateLock } from '../../src/effects/state/state-lock';
 import {
+  commitStateVersionAfter,
   currentStateVersion,
   stateVersionOwnerPath,
   type StateVersionWriteEffects,
@@ -262,6 +263,39 @@ describe('Effective State version/cache publication transaction', () => {
       }
     });
   }
+
+  test('a confirmSnapshot mismatch leaves owner/cache bytes identical, writes no temp files, and the next successful call consumes exactly +1', () => {
+    const fixture = createEffectiveStateFixture();
+    try {
+      const first = resolveEffectiveState(fixture.cwd, Date.now(), risk);
+      const cachePath = join(fixture.cwd, EFFECTIVE_STATE_CACHE);
+      const ownerPath = stateVersionOwnerPath(fixture.cwd);
+      const priorCache = readFileSync(cachePath);
+      const priorOwner = readFileSync(ownerPath);
+      mutateAuthority(fixture.cwd);
+
+      let publishCacheCalls = 0;
+      expect(() => commitStateVersionAfter(
+        fixture.cwd,
+        'revision-mismatch-probe',
+        () => {
+          publishCacheCalls += 1;
+          return { rollback() {} };
+        },
+        undefined,
+        () => false,
+      )).toThrow('effective-state confirm snapshot mismatch before version allocation');
+      expect(publishCacheCalls).toBe(0);
+      expect(readFileSync(cachePath).equals(priorCache)).toBe(true);
+      expect(readFileSync(ownerPath).equals(priorOwner)).toBe(true);
+      expect(tempNames(join(fixture.cwd, '.ai/harness/state'))).toEqual([]);
+      expect(tempNames(join(ownerPath, '..'))).toEqual([]);
+      expect(resolveEffectiveState(fixture.cwd, Date.now(), risk).state_version)
+        .toBe(first.state_version + 1);
+    } finally {
+      fixture.cleanup();
+    }
+  });
 
   test('same-revision cache reconstruction never invokes version-owner write effects', () => {
     const fixture = createEffectiveStateFixture();

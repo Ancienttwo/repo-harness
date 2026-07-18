@@ -27,6 +27,7 @@ import {
 import {
   commitStateVersionAfter,
   currentStateVersion,
+  StateVersionConfirmMismatchError,
   type StateVersionWriteEffects,
 } from './git-state-version-store';
 import {
@@ -548,6 +549,36 @@ function resolveEffectiveStateUnlocked(
 }
 
 
+/**
+ * Run one stable-resolve + version-commit attempt. The version lock's
+ * `confirmSnapshot` seam re-collects source hashes immediately before the
+ * candidate version is computed and compares them against this attempt's own
+ * `confirmed.source_hashes`; a mismatch means a source mutated after the
+ * stability loop returned but before allocation, so it throws
+ * `StateVersionConfirmMismatchError` with no owner write and no cache
+ * publish -- `resolveEffectiveState` below decides whether to retry.
+ */
+function resolveAndCommitEffectiveState(
+  cwd: string,
+  nowMs: number,
+  risk: EffectiveStateRiskInput | undefined,
+  publicationEffects: EffectiveStatePublicationEffects | undefined,
+): EffectiveState {
+  const confirmed = resolveStableEffectiveState(cwd, nowMs, risk);
+  let finalized: EffectiveState | null = null;
+  commitStateVersionAfter(cwd, confirmed.state_revision, (version) => {
+    const candidate = { ...confirmed, state_version: version };
+    const publication = publishEffectiveStateCache(cwd, candidate, publicationEffects?.cache);
+    finalized = candidate;
+    return publication;
+  }, publicationEffects?.version, () => {
+    const recheck = resolveEffectiveStateUnlocked(cwd, nowMs, { risk });
+    return JSON.stringify(recheck.source_hashes) === JSON.stringify(confirmed.source_hashes);
+  });
+  if (finalized === null) throw new Error('effective-state publication did not produce a final state');
+  return finalized;
+}
+
 export function resolveEffectiveState(
   cwd = process.cwd(),
   nowMs = Date.now(),
@@ -555,16 +586,25 @@ export function resolveEffectiveState(
   publicationEffects?: EffectiveStatePublicationEffects,
 ): EffectiveState {
   return withStateLock(cwd, () => {
-    const confirmed = resolveStableEffectiveState(cwd, nowMs, risk);
-    let finalized: EffectiveState | null = null;
-    commitStateVersionAfter(cwd, confirmed.state_revision, (version) => {
-      const candidate = { ...confirmed, state_version: version };
-      const publication = publishEffectiveStateCache(cwd, candidate, publicationEffects?.cache);
-      finalized = candidate;
-      return publication;
-    }, publicationEffects?.version);
-    if (finalized === null) throw new Error('effective-state publication did not produce a final state');
-    return finalized;
+    try {
+      return resolveAndCommitEffectiveState(cwd, nowMs, risk, publicationEffects);
+    } catch (error) {
+      if (!(error instanceof StateVersionConfirmMismatchError)) throw error;
+    }
+    // One bounded outer retry of the whole stable-resolve + commit sequence:
+    // a fresh stability loop re-reads sources (now reflecting whatever
+    // mutated the first attempt's confirm window) and a fresh commit attempt
+    // re-checks its own window. A second mismatch here means sources kept
+    // changing across the retry too, so this reuses the existing
+    // stability-exhausted error rather than inventing new vocabulary.
+    try {
+      return resolveAndCommitEffectiveState(cwd, nowMs, risk, publicationEffects);
+    } catch (error) {
+      if (error instanceof StateVersionConfirmMismatchError) {
+        throw new Error('workflow authority changed repeatedly while resolving effective state');
+      }
+      throw error;
+    }
   });
 }
 
