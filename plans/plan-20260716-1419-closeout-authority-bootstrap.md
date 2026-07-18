@@ -8,6 +8,8 @@
 > **Source Ref**: (none)
 > **Artifact Level**: work-package
 > **Promotion Reason**: merge_boundary
+> **Original Base**: `origin/main@be3e93ce` (parked 2026-07-16; WIP checkpoint `3dd89785`)
+> **Execution Base**: `origin/main@351139fd` (post-LSC-08; rebased `0f7c274b`, full suite 1687 pass / 0 fail)
 > **Verification Boundary**: Seven named failing regressions, full required check surface, canonical self-ship as end-to-end proof
 > **Rollback Surface**: Revert this isolated branch; receipt schema addition is strict-by-default with no persistent migration
 > **Spec**: `docs/spec.md`
@@ -206,7 +208,7 @@ Cap each fail → fix → reverify invariant at three rounds; on the third failu
 - [x] V: Full required checks green (`bun test`, deploy-sql-order, architecture-sync, task-sync, `check-task-workflow --strict`, inspect-project-state, `adopt --repo . --dry-run`, `sync-hook-sources --check`, `sync-helper-sources --check`); docs/tasks sync
 - [x] G: Gatekeeper acceptance on the full diff against this plan
 - [ ] E: External acceptance (host-aware: Codex via codex-review, since the executing host is Claude) recorded on the frozen normalized subject with `Benchmark Evidence SHA256: not-applicable`
-- [ ] SHIP: Canonical finish/ship to main; no direct git push; then update the handoff for CRG-01 resumption
+- [ ] SHIP: independent PR to main after gatekeeper acceptance (CRG-01 resumption framing overtaken: CRG-01 and LSC-01..08 already shipped via the documented manual pattern; this package retires that pattern for future closeouts)
 
 ## Verification
 
@@ -254,4 +256,4 @@ bun src/cli/index.ts adopt --repo . --dry-run
 - [x] V: Full required checks green (`bun test`, deploy-sql-order, architecture-sync, task-sync, `check-task-workflow --strict`, inspect-project-state, `adopt --repo . --dry-run`, `sync-hook-sources --check`, `sync-helper-sources --check`); docs/tasks sync
 - [x] G: Gatekeeper acceptance on the full diff against this plan
 - [x] E: External acceptance (host-aware: Codex via codex-review, since the executing host is Claude) recorded on the frozen normalized subject with `Benchmark Evidence SHA256: not-applicable`
-- [ ] SHIP: Canonical finish/ship to main; no direct git push; then update the handoff for CRG-01 resumption
+- [ ] SHIP: independent PR to main after gatekeeper acceptance (CRG-01 resumption framing overtaken: CRG-01 and LSC-01..08 already shipped via the documented manual pattern; this package retires that pattern for future closeouts)

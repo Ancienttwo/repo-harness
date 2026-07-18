@@ -6,14 +6,16 @@
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: kito
 > **Capability ID**: root
-> **Last Updated**: 2026-07-16 14:19
+> **Last Updated**: 2026-07-19 (rebase reconciliation onto post-LSC main)
+> **Original Base**: `origin/main@be3e93ce` (parked 2026-07-16; WIP checkpoint `3dd89785`)
+> **Execution Base**: `origin/main@351139fd` (post-LSC-08 merge PR #90; rebased `0f7c274b`)
 > **Review File**: `tasks/reviews/20260716-1419-closeout-authority-bootstrap.review.md`
 > **Notes File**: `tasks/notes/20260716-1419-closeout-authority-bootstrap.notes.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
 
 ## Why
 
-CRG-01 (and any future contract whose diff moves the benchmark subject) is blocked at `ship-worktrees --ready`: external acceptance fails closed because benchmark evidence applicability is inferred from report-file presence instead of a contract declaration, and even with acceptance repaired, `contract-worktree.sh finish` archives the goal before the merge gate reads it, mutating the reviewed subject after freeze. If this ships wrong, the repo's ship authority either blocks all legitimate closeouts or silently accepts post-review mutations.
+Every canonical closeout (CRG-01 originally; since then all eight LSC rows, each forced through the manual push + gatekeeper-substitution pattern) is blocked at `ship-worktrees --ready`: external acceptance fails closed because benchmark evidence applicability is inferred from report-file presence instead of a contract declaration, and even with acceptance repaired, `contract-worktree.sh finish` archives the goal before the merge gate reads it, mutating the reviewed subject after freeze. If this ships wrong, the repo's ship authority either blocks all legitimate closeouts or silently accepts post-review mutations.
 
 ## Goal
 
