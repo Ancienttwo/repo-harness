@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-16T06:18:07+0800 -->
+<!-- updated_at: 2026-07-18T15:47:00+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-07-16T06:18:07+0800
-> **Source Branch**: codex/closeout-runner-guardrails
-> **Source Commit**: be3e93ce
+> **Updated At**: 2026-07-18T15:47:00+0800
+> **Source Branch**: main
+> **Source Commit**: 7a579748
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: CRG-01 exact-subject Claude re-review and final closeout
+> **Reason**: post-LSC-02 merge; LSC-03 executing in loop-control lane
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -18,9 +18,9 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 ## Current Focus
 
 - Status: Active
-- Active Plan: plans/plan-20260716-0338-closeout-runner-guardrails.md
-- Plan Status: Executing
-- Next Task: Run focused checks, bounded review, strict closeout, commit/push/PR/checks/merge, and report exact `origin/main` SHA.
+- Active Plan: (none)
+- Plan Status: (none)
+- Next Task: inspect active worktree marker(s)
 - Clear Note: (none)
 
 ## Mainline Snapshot Reading
@@ -31,8 +31,10 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- .: plans/plan-20260716-0338-closeout-runner-guardrails.md
-- .: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-closeout-runner-guardrails
+- /Users/kito/Projects/repo-harness-wt-closeout-authority-bootstrap: plans/plan-20260716-1419-closeout-authority-bootstrap.md
+- /Users/kito/Projects/repo-harness-wt-closeout-authority-bootstrap: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-closeout-authority-bootstrap
+- /Users/kito/Projects/repo-harness-wt-closeout-runner-guardrails: plans/plan-20260716-0338-closeout-runner-guardrails.md
+- /Users/kito/Projects/repo-harness-wt-closeout-runner-guardrails: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-closeout-runner-guardrails
 - /Users/kito/Projects/repo-harness-wt-effective-state-test-retirement: plans/plan-20260716-0222-effective-state-test-retirement.md
 - /Users/kito/Projects/repo-harness-wt-effective-state-test-retirement: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-effective-state-test-retirement
 ## Active Sprint
@@ -49,45 +51,20 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`: status=completed, current_slice=completed-20260713-policy-seed, source_plan=plans/plan-20260712-2215-agent-fleet-specialists.md
 ## Handoff
 
-- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Run focused checks, bounded review, strict closeout, commit/push/PR/checks/merge, and report exact `origin/main` SHA.
+- Exact Next Step: Clean up merged contract worktree codex/closeout-authority-bootstrap. Command: repo-harness run contract-worktree cleanup --slug closeout-authority-bootstrap --target main
 
 ## Checks
 
-- status=(none), source=(none), exit_code=(none), file=.ai/harness/checks/latest.json
+- status=fail, source=verify-sprint, exit_code=1, file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 28 changed/untracked path(s)
+- Summary: 3 changed/untracked path(s)
 
 ```
- M assets/templates/helpers/run-bounded-verifier-command.ts
- M assets/templates/helpers/ship-worktrees.sh
  M docs/architecture/index.md
- M docs/architecture/modules/verification/evals-checks.md
- M docs/architecture/modules/workflow-engine/contract-assets.md
- M plans/sprints/20260715-harness-loop-audit-and-optimization.md
- M plans/sprints/20260716-0101-loop-semantics-convergence.sprint.md
- M scripts/run-bounded-verifier-command.ts
- M scripts/run-harness-profile-benchmark.ts
- M scripts/ship-worktrees.sh
- M src/cli/runtime/helper-runner.ts
- M src/effects/process-runner.ts
- M src/effects/state/git-state-version-store.ts
- M src/effects/state/state-lock.ts
- M tasks/current.md
- M tasks/todos.md
- M tests/helper-scripts.test.ts
- M tests/unit/verifier-evidence-lifecycle-cutover.test.ts
-?? plans/plan-20260716-0338-closeout-runner-guardrails.md
-?? src/effects/expensive-run-lock.ts
-?? src/effects/git/
-?? src/effects/locking/
-?? src/effects/process-group-launcher.ts
-?? src/effects/process-supervisor.ts
-?? tasks/contracts/20260716-0338-closeout-runner-guardrails.contract.md
-?? tasks/notes/20260716-0338-closeout-runner-guardrails.notes.md
-?? tasks/reviews/20260716-0338-closeout-runner-guardrails.review.md
-?? tests/unit/closeout-runner-guardrails.test.ts
+ M tasks/lessons.md
+?? .ai/harness/handoff/crg02-dispatch.md
 ```
 
 ## Source Artifacts

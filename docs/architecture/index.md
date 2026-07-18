@@ -27,6 +27,16 @@ Authoritative surfaces:
 - Runtime harness: `assets/hooks/`, `.ai/hooks/`, user-level host adapters, and ignored `.ai/harness/*` runtime state.
 - MCP sidecar: `src/cli/mcp/`, `src/cli/commands/mcp.ts`, user-owned ignored config/registry under `~/.repo-harness/`, and the [MCP sidecar architecture](modules/runtime-harness/mcp-sidecar.md).
 - Verification: `tests/`, `evals/`, `scripts/check-task-workflow.sh`, `scripts/check-task-sync.sh`, `scripts/check-agent-tooling.sh`, `scripts/ensure-codegraph.sh`.
+- Effective State and workflow policy: `src/core/state/` (pure Effective State
+  projection, ESA PR #79), `src/effects/state/` (source resolution and
+  publication), and `src/core/workflow/` — `profile.ts` owns the deterministic
+  risk/profile authority and `artifact-requirement-policy.ts` (LSC-02) owns
+  the Lite/Standard/Strict x edit/stop/ship artifact-requirement matrix.
+  Consumer cutovers to that matrix land one package at a time through the
+  Loop Semantics Convergence sprint
+  (`plans/sprints/20260716-0101-loop-semantics-convergence.sprint.md`);
+  its frozen current-behavior baseline lives in
+  `tests/state/loop-semantics-characterization.test.ts`.
 - Shared execution effects: `src/effects/process-runner.ts`,
   `src/effects/process-supervisor.ts`, `src/effects/process-group-launcher.ts`,
   `src/effects/locking/`, and `src/effects/git/` own bounded process lifecycle
