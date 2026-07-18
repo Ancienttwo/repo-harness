@@ -33,7 +33,7 @@
 
 - Waza `/check` run: not run; orchestrator review in-session, external acceptance waived (see below)
 - Commands run: bun run check:type; bun test tests/cli/init.test.ts tests/bootstrap-files.test.ts; bun src/cli/index.ts adopt --repo . --dry-run; cmp parity checks
-- Manual checks: assets/skills SKILL.md files byte-identical to installed host copies (cmp, all three OK)
+- Manual checks: assets/skills SKILL.md files are byte-identical to the installed host copies they were synced from (cmp, all three OK)
 - Supporting artifacts: tasks/notes/20260719-0432-review-convergence-source-sync.notes.md
 - Implementation notes reviewed: yes
 - Run snapshot: n/a
@@ -55,6 +55,11 @@
 - P2 advisories:
 - Acceptance checklist:
 - Waiver: external acceptance gate waived by user decision on 2026-07-19 ("先跳过Codex"). codex-review was attempted and failed on an environmental precondition: Codex usage limit exhausted (reset ~Aug 16), no API-key fallback auth. Additionally the benchmark evidence binding is stale repo-wide on clean main (`benchmark subject changed at benchmark_subject_sha256`), independent of this diff. Merge performed manually with the finish sequence minus external acceptance and merge-gate receipt; all local verification green.
+
+## Manual Check Evidence
+
+- [x] assets/skills SKILL.md files are byte-identical to the installed host copies they were synced from
+  - Evidence: cmp against ~/.codex/skills/claude-plan, ~/.codex/skills/claude-review, ~/.claude/skills/codex-review all exited 0 on 2026-07-19
 
 ## Behavior Diff Notes
 
