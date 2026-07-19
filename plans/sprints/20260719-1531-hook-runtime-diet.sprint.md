@@ -11,7 +11,7 @@
 > **Program Planning Base**: `origin/main@be3e93ce72c812a33045a15c4d97452c59fa3fbb` (PR #80)
 > **Sprint A Completion**: Loop Semantics Convergence Done 8/8 (PRs #82, #84-#90; sprint marked Done at `351139fd`)
 > **Sprint Planning Base**: `origin/main@2c39c4a46c83c604fc9ce2fe2752a79d93edbddc` (live at drafting time; includes post-LSC mainline packages #91-#93 and 0.10.1 release prep, which HRD builds on)
-> **HRD-01 Execution Base**: Pending the exact live `origin/main` SHA after this sprint-planning package is merged/pushed
+> **HRD-01 Execution Base**: `origin/main@4f4666efd3810ed50dd1d5da17e44fd721d84689` (post-sprint-planning push)
 > **Predecessor**: Loop Semantics Convergence (Sprint A). Its semantic modules — `ArtifactRequirementPolicy`, `evaluateReadiness`, the authority/subject/evidence/projection revision partition, the progress token, stable state-version allocation, and the Stop readiness cutover — are fixed inputs to this sprint, not change surfaces
 > **Successor Order**: Evidence & Projection Convergence -> Skill Surface & Discovery Convergence
 > **Goal Mode**: incremental
