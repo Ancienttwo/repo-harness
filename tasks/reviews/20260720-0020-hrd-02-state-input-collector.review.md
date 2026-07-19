@@ -91,11 +91,11 @@
 
 ## External Acceptance Advice
 
-> **External Acceptance**: pending
-> **External Reviewer**: none yet — Codex quota remains exhausted until 2026-08-16 (verified 2026-07-20 on HRD-01); owner will decide waiver vs retry at finish time
-> **External Source**: pending owner decision; Round-1 internal acceptance recorded below (fresh-context Claude gatekeeper)
-> **External Started**: (pending)
-> **External Completed**: (pending)
+> **External Acceptance**: waived (user standing instruction for the continuous chain run, 2026-07-20)
+> **External Reviewer**: none — Codex quota remains exhausted until 2026-08-16 (verified on HRD-01, `codex exec` refused by provider usage limit); no second AI host available
+> **External Source**: user waiver (actor: kito; standing in-session instruction 2026-07-20 to complete the chain with per-row honest records; precedent: `5b3a2693` and the HRD-01 one-shot waiver). Substitute internal evidence retained below: fresh-context Claude gatekeeper PASS plus merge-gate PASS and CI 8/8 on PR #95
+> **External Started**: 2026-07-20
+> **External Completed**: 2026-07-20 (waiver recorded; not a Codex review)
 > **Review Rubric Version**: 2
 > **Reviewed Subject SHA256**: sha256:d4792202318773f3a6928627b6640cb677ffa04dd561ef65970ed2684a543db5
 > **Reviewed Subject Scope**: normalized-final-content
