@@ -85,7 +85,7 @@ evidence_requirements:
 delegation:
   budget:
     tokens: null
-    tool_calls: null
+    runner_invocations: null
     wall_time_minutes: null
   permission_scope:
     mode: inherit_allowed_paths

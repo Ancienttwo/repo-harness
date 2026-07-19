@@ -61,7 +61,7 @@ new generated contracts should include the field.
 
 New contracts include a `## Delegation Contract` YAML block between allowed paths and exit criteria. This block is the forward-compatible contract-kappa surface for future delegated execution; it is metadata unless a runner such as `contract-run` consumes it.
 
-- `budget`: optional limits for `tokens`, `tool_calls`, and `wall_time_minutes`. `null` means the current session/default command limits apply; explicit numbers are hard limits only where the runner can enforce them and otherwise advisory in the run manifest.
+- `budget`: optional limits for `tokens`, `runner_invocations`, and `wall_time_minutes`. `null` means the current session/default command limits apply. `wall_time_minutes` is a hard limit mechanically enforced via the bounded process runner deadline; a non-null `tokens` is REJECTED at preflight (contract-run has no token-budget enforcement mechanism, so it refuses to run with an unenforced constraint instead of silently treating it as advisory).
 - `permission_scope`: the execution permission model. The default `mode: inherit_allowed_paths` means worker edits are limited by the contract `allowed_paths`; `writable_paths: []` means no narrower override; `network: inherited` means no new network permission is granted by the contract itself.
 - `roles`: named responsibilities for `parent`, `explorer`, `worker`, and `verifier`. The parent remains the approval/checkpoint owner; explorer and verifier are read-only; worker may edit only within `allowed_paths` or a narrower `writable_paths` list. The verifier rubric is exactly the contract `exit_criteria`.
 

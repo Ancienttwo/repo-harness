@@ -105,6 +105,30 @@ describe('prompt-guard decision engine', () => {
     ).toBe('plan_status_no_active_block');
   });
 
+  test('unknown plan status gets the same conservative advisory as draft, never silent allow', () => {
+    const unknown = state({ plan: 'unknown' });
+
+    // Positive: matches the draft/annotating advisory action, not 'allow'.
+    expect(decidePromptGuardAction('embedded_approved_plan', unknown)).toBe(
+      'plan_status_not_approved_block',
+    );
+    expect(decidePromptGuardAction('bug_fix_execution', unknown)).toBe(
+      'plan_status_not_approved_block',
+    );
+    expect(decidePromptGuardAction('general_execution', unknown)).toBe(
+      'plan_status_not_approved_block',
+    );
+    expect(decidePromptGuardAction('plan_execution_projection', unknown)).toBe(
+      'plan_capture_draft_advice',
+    );
+
+    // Negative: none of the four execution intents silently allow on an
+    // unrecognized plan status (this was the fail-open bug).
+    for (const intent of PROMPT_GUARD_EXECUTION_INTENTS) {
+      expect(decidePromptGuardAction(intent, unknown)).not.toBe('allow');
+    }
+  });
+
   test('approved plan without contract scaffolds explicit execution and blocks generic execution', () => {
     const approved = state({
       plan: 'approved',

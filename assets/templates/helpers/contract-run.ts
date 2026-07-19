@@ -2,6 +2,12 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, isAbsolute, join, relative, resolve } from "path";
 import { spawnSync } from "child_process";
+import { fileURLToPath } from "url";
+
+// Sibling of the existing bounded process runner (scripts/run-bounded-verifier-command.ts,
+// mirrored to assets/templates/helpers/run-bounded-verifier-command.ts): both live next to
+// whichever copy of this file is executing, canonical or projected.
+const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 
 type Mode = "dry-run" | "run" | "preflight";
 
@@ -13,14 +19,14 @@ interface Options {
   verifierCommand?: string;
   out?: string;
   json: boolean;
-  maxToolCalls?: number;
+  maxRunnerInvocations?: number;
   runner?: string;
   effort?: string;
 }
 
 interface DelegationBudget {
   tokens: number | null;
-  tool_calls: number | null;
+  runner_invocations: number | null;
   wall_time_minutes: number | null;
 }
 
@@ -44,7 +50,12 @@ interface DelegationContract {
 interface BriefPreflight {
   ok: boolean;
   issues: string[];
-  failure_class: "incomplete_brief" | "incomplete_root_cause" | null;
+  failure_class:
+    | "incomplete_brief"
+    | "incomplete_root_cause"
+    | "legacy_delegation_field"
+    | "unenforceable_delegation_constraint"
+    | null;
 }
 
 interface DelegationRole {
@@ -59,6 +70,7 @@ interface ChildResult {
   stdout_path: string;
   stderr_path: string;
   skipped?: boolean;
+  timed_out?: boolean;
 }
 
 // Canonical anti-extras clause injected into every runner-reachable surface (worker
@@ -80,11 +92,18 @@ function usage(): string {
     "Usage:",
     "  bun scripts/contract-run.ts preflight --contract <contract-file> [--repo <path>] [--json]",
     "  bun scripts/contract-run.ts dry-run --contract <contract-file> [--repo <path>] [--out <dir>] [--runner <label>] [--effort <tier>] [--json]",
-    "  bun scripts/contract-run.ts run --contract <contract-file> --worker-command <cmd> --verifier-command <cmd> [--repo <path>] [--out <dir>] [--max-tool-calls <n>] [--runner <label>] [--effort <tier>] [--json]",
+    "  bun scripts/contract-run.ts run --contract <contract-file> --worker-command <cmd> --verifier-command <cmd> [--repo <path>] [--out <dir>] [--max-runner-invocations <n>] [--runner <label>] [--effort <tier>] [--json]",
     "",
     "preflight asserts the contract is a self-sufficient execution brief (Goal, Scope,",
     "Allowed Paths, Exit Criteria are filled in, not template placeholders) and exits",
     "non-zero otherwise. run enforces the same gate before dispatching the worker.",
+    "",
+    "preflight also enforce-or-rejects the Delegation Contract budget: wall_time_minutes",
+    "rides the existing bounded process runner deadline (scripts/run-bounded-verifier-command.ts);",
+    "a non-null tokens, a non-'inherited' network, or a non-empty writable_paths narrowing",
+    "is REJECTED (contract-run cannot yet enforce those dimensions, so it refuses to run with",
+    "a false safety claim instead of silently ignoring them); the retired tool_calls budget",
+    "field name is rejected in favor of runner_invocations, with no alias.",
     "",
     "--runner records which runner label actually ran this contract (manifest.runner_usage);",
     "it defaults to the contract's own delegation.runner.preferred[0] and does not itself",
@@ -137,8 +156,8 @@ function parseArgs(argv: string[]): Options {
         opts.out = requireValue(argv, ++index, arg);
         index++;
         break;
-      case "--max-tool-calls":
-        opts.maxToolCalls = parsePositiveInt(requireValue(argv, ++index, arg), arg);
+      case "--max-runner-invocations":
+        opts.maxRunnerInvocations = parsePositiveInt(requireValue(argv, ++index, arg), arg);
         index++;
         break;
       case "--runner":
@@ -329,7 +348,7 @@ function parseDelegation(markdown: string): DelegationContract {
   return {
     budget: {
       tokens: parseNullableNumber(block, "tokens"),
-      tool_calls: parseNullableNumber(block, "tool_calls"),
+      runner_invocations: parseNullableNumber(block, "runner_invocations"),
       wall_time_minutes: parseNullableNumber(block, "wall_time_minutes"),
     },
     permission_scope: {
@@ -346,6 +365,42 @@ function parseDelegation(markdown: string): DelegationContract {
     },
     runner: parseRunner(block),
   };
+}
+
+// The budget field was renamed tool_calls -> runner_invocations (the old name counted
+// worker/verifier process launches, not model tool calls, and never had an enforcement
+// story attached to the name it claimed). No alias: a contract that still declares
+// tool_calls must fail closed instead of silently parsing as an unset runner_invocations
+// budget, which would drop the author's intended limit without any signal.
+function hasLegacyToolCallsField(markdown: string): boolean {
+  const block = fencedYamlBlock(markdown, "delegation");
+  return /^\s*tool_calls\s*:/m.test(block);
+}
+
+// Enforce-or-reject for every delegation constraint contract-run cannot yet make true:
+// wall_time_minutes rides the existing bounded process runner deadline (see runChild), so
+// it is mechanically enforced rather than checked here. tokens, a non-'inherited' network,
+// and a writable_paths narrowing have no enforcement mechanism in this runner, so a non-null
+// declaration is rejected at preflight instead of silently parsing to a no-op -- a declared
+// constraint the runner cannot honor is a false safety claim.
+function checkUnenforceableDelegationConstraints(delegation: DelegationContract): string[] {
+  const issues: string[] = [];
+  if (delegation.budget.tokens !== null) {
+    issues.push(
+      `Delegation budget.tokens is set to ${delegation.budget.tokens}, but contract-run has no token-budget enforcement mechanism; set it to null instead of declaring a limit that will not be checked.`,
+    );
+  }
+  if (delegation.permission_scope.network !== "inherited") {
+    issues.push(
+      `Delegation permission_scope.network is '${delegation.permission_scope.network}', but contract-run cannot restrict network access beyond the inherited environment; set it to 'inherited' instead of declaring a restriction that will not be enforced.`,
+    );
+  }
+  if (delegation.permission_scope.writable_paths.length > 0) {
+    issues.push(
+      `Delegation permission_scope.writable_paths narrows to [${delegation.permission_scope.writable_paths.join(", ")}], but contract-run does not enforce a writable-path boundary narrower than allowed_paths; leave it empty instead of declaring a narrowing that will not be enforced.`,
+    );
+  }
+  return issues;
 }
 
 function parseRunner(block: string): RunnerContract {
@@ -532,12 +587,33 @@ function runBriefPreflight(markdown: string, repo: string): BriefPreflight {
   const rootCauseIssues =
     readHeader(markdown, "Task Profile") === "bugfix" ? checkRootCauseEvidence(markdown, repo) : [];
 
-  const issues = [...baseIssues, ...rootCauseIssues];
+  const legacyFieldIssues = hasLegacyToolCallsField(markdown)
+    ? [
+        "Delegation budget uses the retired field name 'tool_calls'; rename it to 'runner_invocations'. No alias is supported, so the old name is rejected rather than silently ignored.",
+      ]
+    : [];
+
+  const delegationConstraintIssues = checkUnenforceableDelegationConstraints(parseDelegation(markdown));
+
+  const issues = [...baseIssues, ...rootCauseIssues, ...legacyFieldIssues, ...delegationConstraintIssues];
   const failureClass: BriefPreflight["failure_class"] =
-    baseIssues.length > 0 ? "incomplete_brief" : rootCauseIssues.length > 0 ? "incomplete_root_cause" : null;
+    baseIssues.length > 0
+      ? "incomplete_brief"
+      : rootCauseIssues.length > 0
+        ? "incomplete_root_cause"
+        : legacyFieldIssues.length > 0
+          ? "legacy_delegation_field"
+          : delegationConstraintIssues.length > 0
+            ? "unenforceable_delegation_constraint"
+            : null;
 
   return { ok: issues.length === 0, issues, failure_class: failureClass };
 }
+
+// Sentinel exit code the bounded runner writes when the deadline fires (see
+// scripts/run-bounded-verifier-command.ts). Surfaced separately so a timeout reads as
+// "wall_time_minutes exceeded" in the manifest instead of a generic child failure.
+const BOUNDED_RUNNER_TIMEOUT_EXIT_CODE = 124;
 
 function runChild(
   role: "worker" | "verifier",
@@ -545,18 +621,67 @@ function runChild(
   repo: string,
   runDir: string,
   env: NodeJS.ProcessEnv,
+  deadlineMs: number | null,
 ): ChildResult {
   const stdoutPath = join(runDir, `${role}.stdout.log`);
   const stderrPath = join(runDir, `${role}.stderr.log`);
+  const childEnv = { ...process.env, ...env, CONTRACT_RUN_ROLE: role };
+
+  if (deadlineMs !== null) {
+    // wall_time_minutes is non-null: ride the existing bounded process runner instead of
+    // reimplementing deadline/process-group termination here. It writes combined
+    // stdout+stderr to one log (its own process-group-aware kill logic needs a single
+    // stream), so stderr_path stays present but empty in this branch.
+    const boundedResultPath = join(runDir, `${role}.bounded-result.json`);
+    const boundedRunner = join(SCRIPT_DIR, "run-bounded-verifier-command.ts");
+    const wrapper = spawnSync(
+      process.execPath,
+      [
+        boundedRunner,
+        "--deadline-ms",
+        String(deadlineMs),
+        "--log",
+        stdoutPath,
+        "--result",
+        boundedResultPath,
+        "--",
+        "/bin/sh",
+        "-c",
+        command,
+      ],
+      { cwd: repo, encoding: "utf-8", env: childEnv },
+    );
+    if (!existsSync(stdoutPath)) writeFileSync(stdoutPath, "");
+    writeFileSync(stderrPath, "");
+    let exitCode: number | null = wrapper.status;
+    let timedOut = false;
+    if (existsSync(boundedResultPath)) {
+      try {
+        const bounded = JSON.parse(readFileSync(boundedResultPath, "utf-8")) as {
+          exit_code: number;
+          timed_out: boolean;
+        };
+        exitCode = bounded.exit_code;
+        timedOut = bounded.timed_out === true;
+      } catch {
+        // Keep the wrapper's own exit status if the result artifact is unreadable.
+      }
+    }
+    return {
+      role,
+      command,
+      exit_code: exitCode,
+      stdout_path: repoRelative(repo, stdoutPath),
+      stderr_path: repoRelative(repo, stderrPath),
+      timed_out: timedOut || exitCode === BOUNDED_RUNNER_TIMEOUT_EXIT_CODE,
+    };
+  }
+
   const result = spawnSync(command, {
     cwd: repo,
     shell: true,
     encoding: "utf-8",
-    env: {
-      ...process.env,
-      ...env,
-      CONTRACT_RUN_ROLE: role,
-    },
+    env: childEnv,
   });
   writeFileSync(stdoutPath, result.stdout ?? "");
   writeFileSync(stderrPath, result.stderr ?? "");
@@ -566,6 +691,7 @@ function runChild(
     exit_code: result.status,
     stdout_path: repoRelative(repo, stdoutPath),
     stderr_path: repoRelative(repo, stderrPath),
+    timed_out: false,
   };
 }
 
@@ -607,7 +733,12 @@ function buildRun(opts: Options) {
     return { manifest, manifestPath: "" };
   }
 
-  const toolLimit = opts.maxToolCalls ?? delegation.budget.tool_calls;
+  const runnerInvocationLimit = opts.maxRunnerInvocations ?? delegation.budget.runner_invocations;
+  // wall_time_minutes rides the existing bounded process runner deadline (runChild),
+  // shared across worker and verifier so it bounds the whole delegated task's wall clock,
+  // matching how verify-contract.sh computes one verification_deadline_ms for its run.
+  const wallTimeDeadlineMs =
+    delegation.budget.wall_time_minutes !== null ? Date.now() + delegation.budget.wall_time_minutes * 60_000 : null;
   const slug = contractPath
     .split("/")
     .pop()!
@@ -683,7 +814,7 @@ function buildRun(opts: Options) {
   ]);
 
   const children: ChildResult[] = [];
-  let toolCalls = 0;
+  let runnerInvocations = 0;
   let status: "dry_run" | "pass" | "fail" = opts.mode === "dry-run" ? "dry_run" : "pass";
   let failureClass = "";
 
@@ -701,7 +832,7 @@ function buildRun(opts: Options) {
   };
 
   const consume = (role: "worker" | "verifier") => {
-    if (toolLimit !== null && toolCalls + 1 > toolLimit) {
+    if (runnerInvocationLimit !== null && runnerInvocations + 1 > runnerInvocationLimit) {
       status = "fail";
       failureClass = "budget_exceeded";
       children.push({
@@ -714,7 +845,7 @@ function buildRun(opts: Options) {
       });
       return false;
     }
-    toolCalls++;
+    runnerInvocations++;
     return true;
   };
 
@@ -725,25 +856,33 @@ function buildRun(opts: Options) {
 
   if (opts.mode === "run" && briefPreflight.ok) {
     if (consume("worker")) {
-      const worker = runChild("worker", opts.workerCommand!, repo, runDir, {
-        ...baseEnv,
-        CONTRACT_RUN_PROMPT: baseEnv.CONTRACT_RUN_WORKER_PROMPT,
-      });
+      const worker = runChild(
+        "worker",
+        opts.workerCommand!,
+        repo,
+        runDir,
+        { ...baseEnv, CONTRACT_RUN_PROMPT: baseEnv.CONTRACT_RUN_WORKER_PROMPT },
+        wallTimeDeadlineMs,
+      );
       children.push(worker);
       if (worker.exit_code !== 0) {
         status = "fail";
-        failureClass = "worker_failed";
+        failureClass = worker.timed_out ? "wall_time_exceeded" : "worker_failed";
       }
     }
     if (status === "pass" && consume("verifier")) {
-      const verifier = runChild("verifier", opts.verifierCommand!, repo, runDir, {
-        ...baseEnv,
-        CONTRACT_RUN_PROMPT: baseEnv.CONTRACT_RUN_VERIFIER_PROMPT,
-      });
+      const verifier = runChild(
+        "verifier",
+        opts.verifierCommand!,
+        repo,
+        runDir,
+        { ...baseEnv, CONTRACT_RUN_PROMPT: baseEnv.CONTRACT_RUN_VERIFIER_PROMPT },
+        wallTimeDeadlineMs,
+      );
       children.push(verifier);
       if (verifier.exit_code !== 0) {
         status = "fail";
-        failureClass = "verifier_failed";
+        failureClass = verifier.timed_out ? "wall_time_exceeded" : "verifier_failed";
       } else if (reviewFile && !existsSync(repoPath(repo, reviewFile))) {
         status = "fail";
         failureClass = "missing_review";
@@ -789,7 +928,7 @@ function buildRun(opts: Options) {
       verifier: delegation.roles.verifier,
       allowed_paths: allowedPaths,
       verifier_rubric: "contract exit_criteria",
-      budget_semantics: "null uses session default; explicit numbers are enforced where the runner supports that dimension",
+      budget_semantics: "null uses session default; wall_time_minutes is mechanically enforced via the bounded process runner deadline; a non-null tokens, a non-'inherited' network, or a non-empty writable_paths narrowing fails preflight instead of parsing to a silent no-op",
       permission_semantics: "explorer and verifier are read-only; worker is constrained to allowed_paths or narrower writable_paths",
       role_profiles: {
         parent: "orchestrator",
@@ -799,8 +938,8 @@ function buildRun(opts: Options) {
       },
     },
     budget_usage: {
-      tool_calls: toolCalls,
-      tool_call_limit: toolLimit,
+      runner_invocations: runnerInvocations,
+      runner_invocation_limit: runnerInvocationLimit,
     },
     children,
   };
