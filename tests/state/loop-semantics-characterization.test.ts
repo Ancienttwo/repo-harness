@@ -252,6 +252,27 @@ function prepare(profile: Profile): ReturnType<typeof createEffectiveStateFixtur
   const fixture = createEffectiveStateFixture();
   writeFileSync(join(fixture.cwd, '.git/info/exclude'), '.home/\n', { flag: 'a' });
   writeFixture(fixture.cwd, 'docs/spec.md', '# Loop semantics characterization fixture\n');
+  // A properly adopted repo always carries the plan-status authority
+  // (.ai/harness/policy.json active_plan.statuses); without it the
+  // fail-closed edit gate blocks on authority-unavailable, which is not
+  // the semantics these cells freeze. Minimal policy: the authority only.
+  writeFixture(
+    fixture.cwd,
+    '.ai/harness/policy.json',
+    `${JSON.stringify(
+      {
+        active_plan: {
+          statuses: [
+            'Draft', 'Annotating', 'Approved', 'Executing', 'Blocked',
+            'Review', 'Complete', 'Completed', 'Done', 'Fulfilled',
+            'Archived', 'Abandoned', 'Superseded',
+          ],
+        },
+      },
+      null,
+      2,
+    )}\n`,
+  );
   if (profile === 'strict') {
     // Ship receives explicit Strict metadata so its current profile-blind
     // result is compared against a genuinely distinct Standard input.

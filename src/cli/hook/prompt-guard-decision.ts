@@ -205,11 +205,20 @@ export const PROMPT_GUARD_EXECUTION_TABLE: Readonly<
       decideApprovedPlanAction('plan_execution_projection', state),
     general_execution: (state: PromptGuardState) => decideApprovedPlanAction('general_execution', state),
   }),
+  // A plan status that classifies as 'unknown' (empty, malformed, or any
+  // string outside the known lifecycle values) gets the same conservative
+  // advisory treatment as 'draft'/'annotating': steer the session toward
+  // repairing plan authority instead of silently allowing execution. This
+  // layer stays advisory only (see render_prompt_guard_action in
+  // prompt-guard.sh, which exits 0 for every branch) — the hard fail-closed
+  // block for unrecognized plan status lives at the edit boundary
+  // (pre-edit-guard.sh), not here.
   unknown: Object.freeze({
-    embedded_approved_plan: () => 'allow',
-    bug_fix_execution: () => 'allow',
-    plan_execution_projection: () => 'allow',
-    general_execution: () => 'allow',
+    embedded_approved_plan: () => decideDraftPlanAction('embedded_approved_plan'),
+    bug_fix_execution: () => decideDraftPlanAction('bug_fix_execution'),
+    plan_execution_projection: () =>
+      decideDraftPlanAction('plan_execution_projection'),
+    general_execution: () => decideDraftPlanAction('general_execution'),
   }),
 });
 

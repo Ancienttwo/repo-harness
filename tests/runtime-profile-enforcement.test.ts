@@ -22,6 +22,16 @@ function initRepo(cwd: string): void {
   writeFileSync(join(cwd, '.ai/harness/workflow-contract.json'), '{}\n');
   writeFileSync(join(cwd, '.ai/harness/policy.json'), JSON.stringify({
     hook_source: 'repo', worktree_strategy: { review_base: 'main', base_branch: 'main' },
+    // Single known-status authority the plan-status fail-closed default
+    // branch reads (pre-edit-guard.sh's plan_status_known_values()); must
+    // be present so fixtures below can use a real, non-Draft/Annotating/
+    // Approved/Executing status without tripping "authority unavailable".
+    active_plan: {
+      statuses: [
+        'Draft', 'Annotating', 'Approved', 'Executing', 'Blocked', 'Review',
+        'Complete', 'Completed', 'Done', 'Fulfilled', 'Archived', 'Abandoned', 'Superseded',
+      ],
+    },
   }, null, 2));
   writeFileSync(join(cwd, 'README.md'), '# fixture\n');
   git(cwd, ['add', '.']);
@@ -116,10 +126,13 @@ describe('risk-based runtime profile enforcement', () => {
         // approved/executing with no contract file yet), which now fails
         // pre-edit-guard.sh closed via the generic WorkflowProfileGuard
         // before ever reaching the StrictContractGuard check this test wants
-        // to isolate. A status outside {Draft, Annotating, Approved,
-        // Executing} still passes PlanStatusGuard (only Draft/Annotating
-        // block) without also tripping missing_contract.
-        '# Strict', '', '> **Status**: InProgress', `> **Task Contract**: ${contract}`, '',
+        // to isolate. "Blocked" is a real status in the policy.json
+        // active_plan.statuses authority (not Draft/Annotating, so it still
+        // passes PlanStatusGuard's own case arm; not Approved/Executing, so
+        // it avoids missing_contract) -- unlike the plan's original
+        // "InProgress" placeholder, it also passes the fail-closed default
+        // branch instead of relying on that branch not existing yet.
+        '# Strict', '', '> **Status**: Blocked', `> **Task Contract**: ${contract}`, '',
         '## Evidence Contract', '- **State/progress path**: plan', '- **Verification evidence**: test',
         '- **Evaluator rubric**: review', '- **Stop condition**: pass', '- **Rollback surface**: revert', '',
       ].join('\n'));
@@ -277,14 +290,17 @@ describe('apply_patch batch-scope resolves the full pending write scope (guard g
       writeFileSync(join(cwd, 'docs/spec.md'), '# Spec\n');
       const plan = 'plans/plan-20260713-1300-batch-strict.md';
       writeFileSync(join(cwd, plan), [
-        // Status "InProgress" (not Executing/Approved), same reasoning as the
-        // "Strict high-risk paths" fixture above: avoids the state
-        // resolver's own missing_contract blocker so this test's specific
-        // assertion (src/plain1.ts named by StrictContractGuard, proving the
-        // batch-scope strict-token leak) is reachable and unambiguous, not
-        // masked by an unrelated, coincidental blocker that would fire
-        // regardless of whether the batch-scope fix under test works at all.
-        '# Batch Strict', '', '> **Status**: InProgress', '',
+        // Status "Blocked" (not Executing/Approved/Draft/Annotating), same
+        // reasoning as the "Strict high-risk paths" fixture above: avoids
+        // the state resolver's own missing_contract blocker AND passes the
+        // plan-status fail-closed default branch (it is a real status in
+        // the policy.json active_plan.statuses authority) so this test's
+        // specific assertion (src/plain1.ts named by StrictContractGuard,
+        // proving the batch-scope strict-token leak) is reachable and
+        // unambiguous, not masked by an unrelated, coincidental blocker
+        // that would fire regardless of whether the batch-scope fix under
+        // test works at all.
+        '# Batch Strict', '', '> **Status**: Blocked', '',
         '## Evidence Contract', '- **State/progress path**: plan', '- **Verification evidence**: test',
         '- **Evaluator rubric**: review', '- **Stop condition**: pass', '- **Rollback surface**: revert', '',
       ].join('\n'));

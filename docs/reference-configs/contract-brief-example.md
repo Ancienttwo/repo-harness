@@ -62,12 +62,12 @@ evidence_requirements:
 delegation:
   budget:
     tokens: null
-    tool_calls: 4
+    runner_invocations: 4
     wall_time_minutes: 20
   permission_scope:
     mode: inherit_allowed_paths
     writable_paths: []
-    network: off
+    network: inherited
   roles:
     parent:
       mode: narrate_and_gatekeep

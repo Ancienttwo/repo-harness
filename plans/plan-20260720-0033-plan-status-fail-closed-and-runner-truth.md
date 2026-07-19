@@ -1,6 +1,6 @@
 # Plan: Fail-closed plan-status authority and truthful runner constraints
 
-> **Status**: Approved
+> **Status**: Executing
 > **Created**: 20260720-0033
 > **Slug**: plan-status-fail-closed-and-runner-truth
 > **Planning Source**: repo-harness-plan

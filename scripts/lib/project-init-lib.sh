@@ -324,7 +324,7 @@ evidence_requirements:
 delegation:
   budget:
     tokens: null
-    tool_calls: null
+    runner_invocations: null
     wall_time_minutes: null
   permission_scope:
     mode: inherit_allowed_paths
@@ -1834,7 +1834,8 @@ pi_write_harness_policy() {
     "archive_directory": "plans/archive",
     "glob": "plan-*.md",
     "active_worktree_marker_file": ".ai/harness/active-worktree",
-    "source_of_truth": "per-worktree explicit marker with active-worktree owner"
+    "source_of_truth": "per-worktree explicit marker with active-worktree owner",
+    "statuses": ["Draft", "Annotating", "Approved", "Executing", "Blocked", "Review", "Complete", "Completed", "Done", "Fulfilled", "Archived", "Abandoned", "Superseded"]
   },
   "tasks": {
     "todo_file": "tasks/todos.md",

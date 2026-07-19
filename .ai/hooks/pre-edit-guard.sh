@@ -190,13 +190,39 @@ edit_plan_gate_mode() {
   printf '%s' "$mode"
 }
 
+# Single authority for the known-good plan-status vocabulary: reads
+# .ai/harness/policy.json's active_plan.statuses array (owner-decided,
+# 2026-07-20 falsifier resolution) rather than hardcoding a second list in
+# this guard. Prints one known status per line. Empty output covers every
+# "authority unavailable" case alike (missing policy.json, missing jq,
+# missing active_plan.statuses key, or an empty array) -- the caller must
+# treat empty output as fail-closed, not as "nothing to check against".
+plan_status_known_values() {
+  local policy_file=".ai/harness/policy.json"
+  [[ -f "$policy_file" ]] || return 0
+  command -v jq >/dev/null 2>&1 || return 0
+  jq -r '.active_plan.statuses[]? // empty' "$policy_file" 2>/dev/null
+}
+
+# True (0) when $1 exactly matches one line of the newline-separated known
+# statuses in $2. Byte-equal comparison: no case-folding, no trimming.
+plan_status_is_known() {
+  local status="$1"
+  local known_values="$2"
+  local candidate
+  while IFS= read -r candidate; do
+    [[ "$candidate" == "$status" ]] && return 0
+  done <<< "$known_values"
+  return 1
+}
+
 # Edit-layer plan gate: the deterministic enforcement point for "no
 # implementation edits without an approved plan". The prompt layer only
 # advises (natural-language intent guessing is unreliable); this gate keys
 # off path + plan state. Modes: enforce (default) | advice | off, via
 # REPO_HARNESS_EDIT_PLAN_GATE or policy .guards.edit_plan_gate.
 run_edit_plan_gate() {
-  local mode gate_plan gate_status
+  local mode gate_plan gate_status known_statuses
   mode="$(edit_plan_gate_mode)"
   [[ "$mode" == "off" ]] && return 0
   is_repo_scoped_path "$FILE_PATH" || return 0
@@ -246,6 +272,34 @@ run_edit_plan_gate() {
           "Complete the annotation cycle and move the plan to Approved before implementation." \
           "state_violation"
         exit 2
+      fi
+      ;;
+    *)
+      known_statuses="$(plan_status_known_values)"
+      if [[ -z "$known_statuses" ]]; then
+        echo "[PlanStatusGuard] Plan-status authority unavailable (.ai/harness/policy.json active_plan.statuses is missing, empty, or unreadable); implementation edit: $FILE_PATH"
+        if [[ "$mode" == "advice" ]]; then
+          echo "[PlanStatusGuard] Advisory: restore active_plan.statuses in .ai/harness/policy.json (the single known-status authority) before implementation."
+        else
+          hook_structured_error \
+            "PlanStatusGuard" \
+            "Implementation edit to $FILE_PATH could not be checked against plan-status authority: .ai/harness/policy.json is missing, unreadable, or has no active_plan.statuses array." \
+            "Restore active_plan.statuses in .ai/harness/policy.json (the single known-status authority) before implementation." \
+            "missing_artifact"
+          exit 2
+        fi
+      elif ! plan_status_is_known "$gate_status" "$known_statuses"; then
+        echo "[PlanStatusGuard] Plan status '$gate_status' in $gate_plan is not in the known-status authority; implementation edit: $FILE_PATH"
+        if [[ "$mode" == "advice" ]]; then
+          echo "[PlanStatusGuard] Advisory: fix the plan Status header in $gate_plan to a known value, or add '$gate_status' to active_plan.statuses in .ai/harness/policy.json if it is a legitimate new status."
+        else
+          hook_structured_error \
+            "PlanStatusGuard" \
+            "Implementation edit to $FILE_PATH while plan status '$gate_status' in $gate_plan is not in the known-status authority (.ai/harness/policy.json active_plan.statuses)." \
+            "Fix the plan Status header in $gate_plan to a known value, or add '$gate_status' to active_plan.statuses in .ai/harness/policy.json if it is a legitimate new status." \
+            "state_violation"
+          exit 2
+        fi
       fi
       ;;
   esac

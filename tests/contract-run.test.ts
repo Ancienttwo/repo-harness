@@ -30,12 +30,12 @@ function makeRepo(prefix = "contract-run-"): string {
 
 function writePilotContract(
   repo: string,
-  toolCalls: string | number | null = 2,
+  runnerInvocations: string | number | null = 2,
   why: string = "This pilot proves the worker→verifier file-coupled loop; without it the runner ships unverified.",
   options: { exemplar?: boolean; stopConditions?: string[]; runnerFallback?: string | null } = {},
 ): string {
   const contractPath = join(repo, "tasks/contracts/pilot.contract.md");
-  const budgetValue = toolCalls === null ? "null" : String(toolCalls);
+  const budgetValue = runnerInvocations === null ? "null" : String(runnerInvocations);
   const fallbackValue = options.runnerFallback === undefined ? "main-thread" : options.runnerFallback === null ? "null" : options.runnerFallback;
   writeFileSync(
     contractPath,
@@ -86,12 +86,12 @@ function writePilotContract(
       "delegation:",
       "  budget:",
       "    tokens: null",
-      `    tool_calls: ${budgetValue}`,
+      `    runner_invocations: ${budgetValue}`,
       "    wall_time_minutes: 5",
       "  permission_scope:",
       "    mode: inherit_allowed_paths",
       "    writable_paths: []",
-      "    network: off",
+      "    network: inherited",
       "  roles:",
       "    parent:",
       "      mode: narrate_and_gatekeep",
@@ -177,12 +177,73 @@ function writeContractWithBlankOutOfScope(repo: string): string {
       "delegation:",
       "  budget:",
       "    tokens: null",
-      "    tool_calls: 2",
+      "    runner_invocations: 2",
       "    wall_time_minutes: 5",
       "  permission_scope:",
       "    mode: inherit_allowed_paths",
       "    writable_paths: []",
-      "    network: off",
+      "    network: inherited",
+      "  roles:",
+      "    worker:",
+      "      mode: edit_within_allowed_paths",
+      "      purpose: implementation",
+      "```",
+      "",
+      "## Exit Criteria (Machine Verifiable)",
+      "",
+      "```yaml",
+      "exit_criteria:",
+      "  files_exist:",
+      "    - src/pilot.txt",
+      "```",
+      "",
+    ].join("\n"),
+  );
+  return contractPath;
+}
+
+// Writes a self-sufficient brief (so base preflight issues never mask the delegation-only
+// case under test) with a caller-supplied Delegation Contract budget/permission_scope body,
+// isolating each enforce-or-reject and rename assertion to exactly the lines under test.
+function writeContractWithDelegation(repo: string, delegationBudgetAndScopeLines: string[]): string {
+  const contractPath = join(repo, "tasks/contracts/pilot.contract.md");
+  writeFileSync(
+    contractPath,
+    [
+      "# Task Contract: pilot",
+      "",
+      "> **Status**: Active",
+      "> **Plan**: plans/plan.md",
+      "> **Owner**: test",
+      "> **Review File**: `tasks/reviews/pilot.review.md`",
+      "> **Notes File**: `tasks/notes/pilot.notes.md`",
+      "",
+      "## Why",
+      "",
+      "This pilot proves the worker→verifier file-coupled loop; without it the runner ships unverified.",
+      "",
+      "## Goal",
+      "",
+      "Create src/pilot.txt containing worker-output so the verifier can confirm the exit criteria.",
+      "",
+      "## Scope",
+      "",
+      "- In scope: create src/pilot.txt with worker-output",
+      "- Out of scope: anything outside src/",
+      "",
+      "## Allowed Paths",
+      "",
+      "```yaml",
+      "allowed_paths:",
+      "  - src/",
+      "  - tasks/reviews/",
+      "```",
+      "",
+      "## Delegation Contract",
+      "",
+      "```yaml",
+      "delegation:",
+      ...delegationBudgetAndScopeLines,
       "  roles:",
       "    worker:",
       "      mode: edit_within_allowed_paths",
@@ -377,7 +438,7 @@ describe("contract-run helper", () => {
       expect(res.status).toBe(0);
       const manifest = parseJson(res.stdout);
       expect(manifest.status).toBe("pass");
-      expect((manifest.budget_usage as { tool_calls: number }).tool_calls).toBe(2);
+      expect((manifest.budget_usage as { runner_invocations: number }).runner_invocations).toBe(2);
       expect((manifest.children as unknown[])).toHaveLength(2);
       expect(readFileSync(join(repo, "src/pilot.txt"), "utf-8")).toContain("worker-output");
       expect(existsSync(join(repo, "tasks/reviews/pilot.review.md"))).toBe(true);
@@ -477,8 +538,13 @@ describe("contract-run helper", () => {
       const manifest = parseJson(res.stdout);
       expect(manifest.status).toBe("fail");
       expect(manifest.failure_class).toBe("budget_exceeded");
-      expect((manifest.budget_usage as { tool_calls: number; tool_call_limit: number }).tool_calls).toBe(1);
-      expect((manifest.budget_usage as { tool_calls: number; tool_call_limit: number }).tool_call_limit).toBe(1);
+      expect(
+        (manifest.budget_usage as { runner_invocations: number; runner_invocation_limit: number }).runner_invocations,
+      ).toBe(1);
+      expect(
+        (manifest.budget_usage as { runner_invocations: number; runner_invocation_limit: number })
+          .runner_invocation_limit,
+      ).toBe(1);
       const children = manifest.children as Array<{ role: string; skipped?: boolean }>;
       expect(children).toEqual([
         expect.objectContaining({ role: "worker" }),
@@ -696,12 +762,12 @@ describe("contract-run helper", () => {
           "delegation:",
           "  budget:",
           "    tokens: null",
-          "    tool_calls: null",
+          "    runner_invocations: null",
           "    wall_time_minutes: 5",
           "  permission_scope:",
           "    mode: inherit_allowed_paths",
           "    writable_paths: []",
-          "    network: off",
+          "    network: inherited",
           "  roles:",
           "    worker:",
           "      mode: edit_within_allowed_paths",
@@ -1085,5 +1151,262 @@ describe("contract-run helper", () => {
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }
+  });
+
+  describe("delegation budget enforce-or-reject", () => {
+    test("preflight rejects a non-null tokens budget with a named-constraint message", () => {
+      const repo = makeRepo("contract-run-tokens-reject-");
+      try {
+        writeContractWithDelegation(repo, [
+          "  budget:",
+          "    tokens: 5000",
+          "    runner_invocations: null",
+          "    wall_time_minutes: null",
+          "  permission_scope:",
+          "    mode: inherit_allowed_paths",
+          "    writable_paths: []",
+          "    network: inherited",
+        ]);
+        const res = runContractRun(repo, [
+          "preflight",
+          "--repo",
+          repo,
+          "--contract",
+          "tasks/contracts/pilot.contract.md",
+          "--json",
+        ]);
+        expect(res.status).toBe(1);
+        const manifest = parseJson(res.stdout);
+        expect(manifest.status).toBe("fail");
+        expect(manifest.failure_class).toBe("unenforceable_delegation_constraint");
+        const issues = (manifest.brief_preflight as { issues: string[] }).issues;
+        expect(issues.some((issue) => issue.includes("budget.tokens") && issue.includes("5000"))).toBe(true);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    test("preflight rejects a non-inherited network value with a named-constraint message", () => {
+      const repo = makeRepo("contract-run-network-reject-");
+      try {
+        writeContractWithDelegation(repo, [
+          "  budget:",
+          "    tokens: null",
+          "    runner_invocations: null",
+          "    wall_time_minutes: null",
+          "  permission_scope:",
+          "    mode: inherit_allowed_paths",
+          "    writable_paths: []",
+          "    network: none",
+        ]);
+        const res = runContractRun(repo, [
+          "preflight",
+          "--repo",
+          repo,
+          "--contract",
+          "tasks/contracts/pilot.contract.md",
+          "--json",
+        ]);
+        expect(res.status).toBe(1);
+        const manifest = parseJson(res.stdout);
+        expect(manifest.status).toBe("fail");
+        expect(manifest.failure_class).toBe("unenforceable_delegation_constraint");
+        const issues = (manifest.brief_preflight as { issues: string[] }).issues;
+        expect(
+          issues.some((issue) => issue.includes("permission_scope.network") && issue.includes("'none'")),
+        ).toBe(true);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    test("preflight rejects a non-empty writable_paths narrowing with a named-constraint message", () => {
+      const repo = makeRepo("contract-run-writable-paths-reject-");
+      try {
+        writeContractWithDelegation(repo, [
+          "  budget:",
+          "    tokens: null",
+          "    runner_invocations: null",
+          "    wall_time_minutes: null",
+          "  permission_scope:",
+          "    mode: inherit_allowed_paths",
+          "    writable_paths:",
+          "      - src/narrow.ts",
+          "    network: inherited",
+        ]);
+        const res = runContractRun(repo, [
+          "preflight",
+          "--repo",
+          repo,
+          "--contract",
+          "tasks/contracts/pilot.contract.md",
+          "--json",
+        ]);
+        expect(res.status).toBe(1);
+        const manifest = parseJson(res.stdout);
+        expect(manifest.status).toBe("fail");
+        expect(manifest.failure_class).toBe("unenforceable_delegation_constraint");
+        const issues = (manifest.brief_preflight as { issues: string[] }).issues;
+        expect(
+          issues.some(
+            (issue) => issue.includes("permission_scope.writable_paths") && issue.includes("src/narrow.ts"),
+          ),
+        ).toBe(true);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    test("preflight reports every unenforceable constraint together, not just the first", () => {
+      const repo = makeRepo("contract-run-multi-reject-");
+      try {
+        writeContractWithDelegation(repo, [
+          "  budget:",
+          "    tokens: 1000",
+          "    runner_invocations: null",
+          "    wall_time_minutes: null",
+          "  permission_scope:",
+          "    mode: inherit_allowed_paths",
+          "    writable_paths: []",
+          "    network: sandboxed",
+        ]);
+        const res = runContractRun(repo, [
+          "preflight",
+          "--repo",
+          repo,
+          "--contract",
+          "tasks/contracts/pilot.contract.md",
+          "--json",
+        ]);
+        expect(res.status).toBe(1);
+        const manifest = parseJson(res.stdout);
+        const issues = (manifest.brief_preflight as { issues: string[] }).issues;
+        expect(issues.some((issue) => issue.includes("budget.tokens"))).toBe(true);
+        expect(issues.some((issue) => issue.includes("permission_scope.network"))).toBe(true);
+        expect(issues.length).toBe(2);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    test("preflight passes when tokens is null, network is inherited, and writable_paths is empty", () => {
+      const repo = makeRepo("contract-run-enforceable-ok-");
+      try {
+        writeContractWithDelegation(repo, [
+          "  budget:",
+          "    tokens: null",
+          "    runner_invocations: 3",
+          "    wall_time_minutes: 5",
+          "  permission_scope:",
+          "    mode: inherit_allowed_paths",
+          "    writable_paths: []",
+          "    network: inherited",
+        ]);
+        const res = runContractRun(repo, [
+          "preflight",
+          "--repo",
+          repo,
+          "--contract",
+          "tasks/contracts/pilot.contract.md",
+          "--json",
+        ]);
+        expect(res.status).toBe(0);
+        const manifest = parseJson(res.stdout);
+        expect(manifest.status).toBe("preflight_pass");
+        expect((manifest.brief_preflight as { ok: boolean; issues: string[] }).issues).toEqual([]);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    test("preflight fails closed on the retired tool_calls field name instead of silently dropping the budget", () => {
+      const repo = makeRepo("contract-run-legacy-field-");
+      try {
+        writeContractWithDelegation(repo, [
+          "  budget:",
+          "    tokens: null",
+          "    tool_calls: 3",
+          "    wall_time_minutes: null",
+          "  permission_scope:",
+          "    mode: inherit_allowed_paths",
+          "    writable_paths: []",
+          "    network: inherited",
+        ]);
+        const res = runContractRun(repo, [
+          "preflight",
+          "--repo",
+          repo,
+          "--contract",
+          "tasks/contracts/pilot.contract.md",
+          "--json",
+        ]);
+        expect(res.status).toBe(1);
+        const manifest = parseJson(res.stdout);
+        expect(manifest.status).toBe("fail");
+        expect(manifest.failure_class).toBe("legacy_delegation_field");
+        const issues = (manifest.brief_preflight as { issues: string[] }).issues;
+        expect(
+          issues.some((issue) => issue.includes("tool_calls") && issue.includes("runner_invocations")),
+        ).toBe(true);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
+    test("run enforces wall_time_minutes via the bounded process runner deadline and kills an overrunning worker", () => {
+      const repo = makeRepo("contract-run-walltime-");
+      try {
+        writeContractWithDelegation(repo, [
+          "  budget:",
+          "    tokens: null",
+          "    runner_invocations: null",
+          "    wall_time_minutes: 0.03",
+          "  permission_scope:",
+          "    mode: inherit_allowed_paths",
+          "    writable_paths: []",
+          "    network: inherited",
+        ]);
+        const workerCommand = writeExecutable(
+          repo,
+          "worker-slow.sh",
+          ["#!/bin/bash", "sleep 10", "mkdir -p src", "printf 'worker-output\\n' > src/pilot.txt", ""].join("\n"),
+        );
+        const verifierCommand = writeExecutable(
+          repo,
+          "verifier.sh",
+          ["#!/bin/bash", "printf 'ran\\n' > verifier-ran.txt", ""].join("\n"),
+        );
+
+        const res = runContractRun(repo, [
+          "run",
+          "--repo",
+          repo,
+          "--contract",
+          "tasks/contracts/pilot.contract.md",
+          "--worker-command",
+          workerCommand,
+          "--verifier-command",
+          verifierCommand,
+          "--out",
+          ".ai/harness/runs/walltime",
+          "--json",
+        ]);
+
+        expect(res.status).toBe(1);
+        const manifest = parseJson(res.stdout);
+        expect(manifest.status).toBe("fail");
+        expect(manifest.failure_class).toBe("wall_time_exceeded");
+        const children = manifest.children as Array<{ role: string; exit_code: number | null; timed_out?: boolean }>;
+        expect(children[0].role).toBe("worker");
+        expect(children[0].exit_code).toBe(124);
+        expect(children[0].timed_out).toBe(true);
+        // The worker never reached its own file write: the process was actually
+        // terminated at the deadline, not merely reported as failed after completing.
+        expect(existsSync(join(repo, "src/pilot.txt"))).toBe(false);
+        expect(existsSync(join(repo, "verifier-ran.txt"))).toBe(false);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
   });
 });
