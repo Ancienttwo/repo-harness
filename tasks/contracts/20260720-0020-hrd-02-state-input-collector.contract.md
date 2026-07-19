@@ -1,6 +1,6 @@
 # Task Contract: hrd-02-state-input-collector
 
-> **Status**: Partial
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260720-0020-hrd-02-state-input-collector.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
