@@ -3,10 +3,18 @@ import { cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } f
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { spawnSync } from 'child_process';
+import { pathToFileURL } from 'url';
 
+// Migrated (HRD-03) from spawning `assets/hooks/pre-edit-guard.sh` directly
+// to exercising the handler through `runHook()`: `preEdit`/`preApplyPatch`
+// now spawn a `bun -e` wrapper that imports and calls `runHook()`
+// in-process (the same "one subprocess, purely to observe real fd1/fd2
+// output" role the old single `bash` spawn played -- `RunHookResult` itself
+// carries no stdout/stderr text). `resolveStateDirect` is untouched: it
+// calls `state resolve` directly and was never a script invocation.
 const ROOT = join(import.meta.dir, '..');
 const CLI = join(ROOT, 'src/cli/index.ts');
-const HOOK = join(ROOT, 'assets/hooks/pre-edit-guard.sh');
+const RUNTIME_MODULE = join(ROOT, 'src/cli/hook/runtime.ts');
 const FOUR_NORMAL_FILES = ['src/alpha.ts', 'src/beta.ts', 'src/gamma.ts', 'src/delta.ts'];
 
 function git(cwd: string, args: string[]): void {
@@ -38,21 +46,31 @@ function initRepo(cwd: string): void {
   git(cwd, ['commit', '-m', 'seed']);
 }
 
+function runHookWrapperScript(): string {
+  const moduleUrl = pathToFileURL(RUNTIME_MODULE).href;
+  return [
+    'const stdinText = await Bun.stdin.text();',
+    `const { runHook } = await import(${JSON.stringify(moduleUrl)});`,
+    "const result = runHook({ event: 'PreToolUse', routeId: 'edit', input: stdinText.length > 0 ? stdinText : undefined });",
+    'process.exit(result.exitCode);',
+  ].join('\n');
+}
+
 function preEdit(cwd: string, path: string, extraEnv: NodeJS.ProcessEnv = {}) {
-  return spawnSync('bash', [HOOK], {
+  return spawnSync(process.execPath, ['-e', runHookWrapperScript()], {
     cwd,
     input: JSON.stringify({ tool_input: { file_path: path } }),
     encoding: 'utf-8',
-    env: { ...process.env, HOOK_REPO_ROOT: cwd, REPO_HARNESS_CLI: CLI, ...extraEnv },
+    env: { ...process.env, HOOK_REPO_ROOT: cwd, REPO_HARNESS_HOOK_SOURCE: 'repo', ...extraEnv },
   });
 }
 
 function preApplyPatch(cwd: string, patch: string, extraEnv: NodeJS.ProcessEnv = {}) {
-  return spawnSync('bash', [HOOK], {
+  return spawnSync(process.execPath, ['-e', runHookWrapperScript()], {
     cwd,
     input: JSON.stringify({ tool_name: 'apply_patch', tool_input: { command: patch } }),
     encoding: 'utf-8',
-    env: { ...process.env, HOOK_REPO_ROOT: cwd, REPO_HARNESS_CLI: CLI, ...extraEnv },
+    env: { ...process.env, HOOK_REPO_ROOT: cwd, REPO_HARNESS_HOOK_SOURCE: 'repo', ...extraEnv },
   });
 }
 
@@ -465,40 +483,23 @@ describe('pre-edit-guard.sh fails closed on any state-resolve blocker (guard gap
     } finally { rmSync(cwd, { recursive: true, force: true }); }
   });
 
-  // Round 2 external acceptance: the test above alone does not isolate the
-  // guard's own exit-code check from state.ts's --field blocker-suppression
-  // fix. If ONLY pre-edit-guard.sh's `set +e`/capture-$?/`set -e` change were
-  // reverted (keeping state.ts's --field change, which makes a blocked
-  // resolution print an empty value), the guard's *pre-existing*
-  // `[[ -n "$output" ]] || return 1` check would already reject empty output
-  // on its own -- the test above would still pass for the wrong reason. This
-  // substitutes REPO_HARNESS_CLI with a fake, deterministic script that
-  // prints a fully legal, non-empty profile value ("lite") regardless of its
-  // exit code, completely decoupled from whatever state.ts actually does, so
-  // rejection can only be attributed to the guard's own $? check.
-  test('a fake CLI that prints a legal profile value but exits non-zero is still rejected (isolates the guard exit-code check from the --field change)', () => {
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'profile-fake-cli-reject-')));
-    try {
-      initRepo(cwd);
-      const fakeCli = join(cwd, 'fake-cli.ts');
-      writeFileSync(fakeCli, "#!/usr/bin/env bun\nconsole.log('lite');\nprocess.exit(1);\n");
-
-      const result = preEdit(cwd, 'src/feature.ts', { REPO_HARNESS_CLI: fakeCli });
-      expect(result.status).toBe(2);
-      expect(result.stderr).toContain('WorkflowProfileGuard');
-    } finally { rmSync(cwd, { recursive: true, force: true }); }
-  });
-
-  test('the same fake-CLI mechanism is accepted when it exits 0, proving only the exit code drives rejection above, not the substitution itself', () => {
-    const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'profile-fake-cli-accept-')));
-    try {
-      initRepo(cwd);
-      const fakeCli = join(cwd, 'fake-cli.ts');
-      writeFileSync(fakeCli, "#!/usr/bin/env bun\nconsole.log('lite');\nprocess.exit(0);\n");
-
-      const result = preEdit(cwd, 'src/feature.ts', { REPO_HARNESS_CLI: fakeCli });
-      expect(result.status).toBe(0);
-      expect(result.stdout).not.toContain('WorkflowProfileGuard');
-    } finally { rmSync(cwd, { recursive: true, force: true }); }
-  });
+  // Round 2 external acceptance, HRD-03 retirement note: the original pair of
+  // fake-CLI tests here (see notes file) substituted REPO_HARNESS_CLI with a
+  // script that printed a legal "lite" value but exited non-zero, to isolate
+  // pre-edit-guard.sh's own `set +e`/capture-$?/`set -e` exit-code check from
+  // state.ts's --field blocker-suppression fix -- proving the guard didn't
+  // naively trust a well-formed stdout value while ignoring the subprocess's
+  // own exit code. That failure mode is specific to a shell subprocess
+  // boundary (a fake CLI can "print a value but signal failure" only because
+  // the guard has to read stdout and $? as two separate channels). The
+  // in-process handler has no such boundary: `resolveWorkflowProfile()`
+  // either returns an `EffectiveState` value it inspects directly, or the
+  // call throws; there is no way for a resolution to simultaneously produce
+  // a trustworthy-looking `workflow_profile` string and signal failure
+  // through a side channel the guard could forget to check. The equivalent
+  // invariant -- a resolution with real blockers rejects the edit even when
+  // `workflow_profile` itself is still populated -- is covered above by "a
+  // declared-but-corrupt capability registry blocks an otherwise-lite edit
+  // instead of silently passing through", using real corruption rather than
+  // a subprocess substitution.
 });

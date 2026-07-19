@@ -46,7 +46,7 @@
         "idle-inspect"
       ],
       "current": {
-        "entrypoint": ".ai/hooks/pre-edit-guard.sh",
+        "entrypoint": "src/cli/hook/mutation-guard.ts",
         "profile_source": "live_effective_state",
         "exit_code": 0,
         "verdict": "allow",
@@ -68,6 +68,7 @@
           "strict_worktree"
         ],
         "side_effects": [
+          ".ai/harness/runs/hook-invocations.jsonl",
           ".ai/harness/state/effective.json"
         ],
         "missing_semantic_fields": []
@@ -95,7 +96,7 @@
         "executing-fresh-evidence"
       ],
       "current": {
-        "entrypoint": ".ai/hooks/pre-edit-guard.sh",
+        "entrypoint": "src/cli/hook/mutation-guard.ts",
         "profile_source": "live_effective_state",
         "exit_code": 0,
         "verdict": "allow",
@@ -123,6 +124,7 @@
           "strict_worktree"
         ],
         "side_effects": [
+          ".ai/harness/runs/hook-invocations.jsonl",
           ".ai/harness/state/effective.json"
         ],
         "missing_semantic_fields": []
@@ -150,7 +152,7 @@
         "executing-fresh-evidence"
       ],
       "current": {
-        "entrypoint": ".ai/hooks/pre-edit-guard.sh",
+        "entrypoint": "src/cli/hook/mutation-guard.ts",
         "profile_source": "live_effective_state",
         "exit_code": 2,
         "verdict": "block",
@@ -177,6 +179,8 @@
         ],
         "side_effects": [
           ".ai/harness/failures/latest.jsonl",
+          ".ai/harness/runs/hook-invocations.jsonl",
+          ".ai/harness/state/circuit-breaker.json",
           ".ai/harness/state/effective.json"
         ],
         "missing_semantic_fields": []

@@ -3,18 +3,31 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { spawnSync } from 'child_process';
+import { pathToFileURL } from 'url';
 
-// Edit-guard fixtures for the pre-edit-guard.sh fail-closed default branch
-// (2026-07-20 falsifier resolution): any plan status outside the single
-// authority -- .ai/harness/policy.json's active_plan.statuses array --
-// deterministically blocks implementation edits, while every status in that
-// array (including Blocked/Review, added by owner decision) behaves exactly
-// as before. Covers: malformed, empty, unrecognized, each known-good
-// status, and the missing-authority case (policy.json lacks the array).
-
+// Edit-guard fixtures for the mutation-guard.ts (HRD-03; formerly
+// pre-edit-guard.sh) fail-closed default branch (2026-07-20 falsifier
+// resolution): any plan status outside the single authority --
+// .ai/harness/policy.json's active_plan.statuses array -- deterministically
+// blocks implementation edits, while every status in that array (including
+// Blocked/Review, added by owner decision) behaves exactly as before.
+// Covers: malformed, empty, unrecognized, each known-good status, and the
+// missing-authority case (policy.json lacks the array).
+//
+// Migrated from a direct `bash assets/hooks/pre-edit-guard.sh` spawn to
+// exercising the handler through `runHook()` (HRD-03 test migration): the
+// fixture repo below never creates `.ai/hooks`, so `runHook()`'s
+// `mutationGuardScriptsAbsent` check is satisfied and the in-process handler
+// runs. `preEdit()` still spawns exactly one subprocess per call -- a `bun
+// -e` wrapper importing and calling `runHook()` in-process -- purely so this
+// test can observe real host-visible fd1/fd2 output (`RunHookResult` itself
+// carries no stdout/stderr text; the previous single `bash` spawn served the
+// same "capture real process output" role). REPO_HARNESS_CLI /
+// REPO_HARNESS_HOOK_CLI are gone: the handler calls `resolveEffectiveState`
+// and `recordCircuitAttempt` in-process, so there is no CLI subprocess left
+// to point at.
 const ROOT = join(import.meta.dir, '..');
-const HOOK = join(ROOT, 'assets/hooks/pre-edit-guard.sh');
-const CLI = join(ROOT, 'src/cli/index.ts');
+const RUNTIME_MODULE = join(ROOT, 'src/cli/hook/runtime.ts');
 
 // Mirrors .ai/harness/policy.json's active_plan.statuses (owner-decided
 // 13-value union: the 11-value code union plus Blocked and Review, which
@@ -81,15 +94,29 @@ function writeActivePlan(cwd: string, status: string): string {
 }
 
 function preEdit(cwd: string, path: string, extraEnv: NodeJS.ProcessEnv = {}) {
-  return spawnSync('bash', [HOOK], {
+  const moduleUrl = pathToFileURL(RUNTIME_MODULE).href;
+  const script = [
+    'const stdinText = await Bun.stdin.text();',
+    `const { runHook } = await import(${JSON.stringify(moduleUrl)});`,
+    "const result = runHook({ event: 'PreToolUse', routeId: 'edit', input: stdinText.length > 0 ? stdinText : undefined });",
+    'process.exit(result.exitCode);',
+  ].join('\n');
+  return spawnSync(process.execPath, ['-e', script], {
     cwd,
     input: JSON.stringify({ tool_input: { file_path: path } }),
     encoding: 'utf-8',
     env: {
       ...process.env,
       HOOK_REPO_ROOT: cwd,
-      REPO_HARNESS_CLI: CLI,
       REPO_HARNESS_WORKFLOW_PROFILE: 'standard',
+      // Forces hooksDir resolution to the fixture's own (nonexistent)
+      // .ai/hooks regardless of policy.json's hook_source pin -- several
+      // fixtures below deliberately delete policy.json to exercise the
+      // plan-status authority-unavailable branch, which would otherwise
+      // ALSO strip the repo-pin signal `resolveHooksDir()` reads from the
+      // same file and silently fall back to this checkout's own real
+      // assets/hooks/ scripts instead of the in-process handler under test.
+      REPO_HARNESS_HOOK_SOURCE: 'repo',
       ...extraEnv,
     },
   });

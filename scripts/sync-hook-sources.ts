@@ -103,18 +103,23 @@ function markerText(marker: ProjectionMarker): string {
   return `${JSON.stringify(marker, null, 2)}\n`;
 }
 
-// Phase C2: assets/hooks/pre-edit-guard.sh's is_workflow_surface_path() case
-// list is a hand-authored shell projection of the canonical TS source
-// (src/effects/review/diff-fingerprint.ts's WORKFLOW_SURFACE_DIR_PREFIXES /
-// WORKFLOW_SURFACE_EXTENSIONS). There is no automatic fix for a mismatch --
-// unlike file-content projection, this check always fails closed in both
-// --check and --write, naming which side to edit.
-//
-// Exported as a pure function of the shell source text (rather than only a
-// no-arg wrapper that reads the real file) so a drift scenario -- e.g. a
-// third case arm added to the shell function that the TS side never declared
-// -- can be unit tested directly without mutating the real, checked-in
-// assets/hooks/pre-edit-guard.sh on disk.
+// Phase C2 (retired by HRD-03): assets/hooks/pre-edit-guard.sh's
+// is_workflow_surface_path() case list used to be a hand-authored shell
+// projection of the canonical TS source (src/effects/review/diff-fingerprint.ts's
+// WORKFLOW_SURFACE_DIR_PREFIXES / WORKFLOW_SURFACE_EXTENSIONS), so this
+// checked the two representations stayed in sync. HRD-03 (PreToolUse.edit
+// in-process cutover) deleted pre-edit-guard.sh and retired the shell
+// predicate entirely: src/cli/hook/mutation-guard.ts imports and calls
+// `isWorkflowSurfacePath` from diff-fingerprint.ts directly instead of
+// hand-copying it into a bash case statement. There is now no second
+// representation of this predicate anywhere in assets/hooks/ to drift from
+// the TS source -- confirmed via `grep -rl is_workflow_surface_path
+// assets/hooks/ .ai/hooks/` returning nothing. `workflowSurfaceParityErrors`
+// stays exported as a general, already-tested pure function (a future
+// script that hand-copies a TS predicate into a bash case list the same way
+// pre-edit-guard.sh used to could reuse it), but nothing in this file calls
+// it anymore -- there is no live check to retarget at "the surviving
+// authority" because there is no surviving hand-copy for it to check.
 export function workflowSurfaceParityErrors(source: string): string[] {
   const functionMatch = /is_workflow_surface_path\(\)\s*\{([\s\S]*?)\n\}/.exec(source);
   if (!functionMatch) {
@@ -147,14 +152,6 @@ export function workflowSurfaceParityErrors(source: string): string[] {
     );
   }
   return errors;
-}
-
-function checkWorkflowSurfaceParity(): string[] {
-  const guardPath = join(CANONICAL_ROOT, "pre-edit-guard.sh");
-  if (!existsSync(guardPath)) {
-    return ["missing assets/hooks/pre-edit-guard.sh: cannot check is_workflow_surface_path parity"];
-  }
-  return workflowSurfaceParityErrors(readFileSync(guardPath, "utf-8"));
 }
 
 function main(): void {
@@ -194,15 +191,9 @@ function main(): void {
     process.exit(1);
   }
 
-  const parityErrors = checkWorkflowSurfaceParity();
-  if (parityErrors.length > 0) {
-    for (const error of parityErrors) process.stderr.write(`[hooks] ${error}\n`);
-    process.stderr.write(
-      "[hooks] Keep assets/hooks/pre-edit-guard.sh's is_workflow_surface_path() case list in sync with src/effects/review/diff-fingerprint.ts's WORKFLOW_SURFACE_DIR_PREFIXES / WORKFLOW_SURFACE_EXTENSIONS.\n",
-    );
-    process.exit(1);
-  }
-
+  // HRD-03 retired the only bash consumer of is_workflow_surface_path()
+  // (pre-edit-guard.sh); see the comment on workflowSurfaceParityErrors
+  // above. No hand-copied shell predicate survives to check parity against.
   const drift: string[] = [];
   const blockedDrift: string[] = [];
   for (const file of managedFiles) {

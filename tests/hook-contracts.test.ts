@@ -44,8 +44,15 @@ describe("Hook contracts", () => {
   });
 
 
-  test("pre-edit guard should combine asset-layer and test reminders", () => {
-    const script = read("assets/hooks/pre-edit-guard.sh");
+  // HRD-03: worktree-guard.sh and pre-edit-guard.sh are retired; their
+  // decision surface -- including the exact reason tokens and message text
+  // this test protects -- now lives in the in-process mutation-guard
+  // handler. Shell-specific assertions (sourcing hook-input.sh, calling the
+  // bash hook_structured_error helper) are dropped as not applicable to a
+  // TypeScript module; every guard-name/message-text string stays checked
+  // against the new handler's source.
+  test("mutation-guard handler should combine asset-layer and test reminders", () => {
+    const script = read("src/cli/hook/mutation-guard.ts");
     expect(script).toContain("[AssetLayer]");
     expect(script).toContain("[BDD Guard]");
     expect(script).toContain("[TDD Guard]");
@@ -55,13 +62,11 @@ describe("Hook contracts", () => {
     expect(script).toContain("deploy/");
   });
 
-  test("worktree-guard should be warning-first with marker-based enforcement", () => {
-    const script = read("assets/hooks/worktree-guard.sh");
+  test("mutation-guard handler should be warning-first with marker-based worktree enforcement", () => {
+    const script = read("src/cli/hook/mutation-guard.ts");
     expect(script).toContain(".claude/.require-worktree");
     expect(script).toContain("Warning: primary working tree detected");
     expect(script).toContain("Mutation blocked");
-    expect(script).toContain("hook-input.sh");
-    expect(script).toContain("hook_structured_error");
   });
 
   test("post-tool observer should keep trace, CodeGraph session state, and plan annotation guards without budget probes", () => {

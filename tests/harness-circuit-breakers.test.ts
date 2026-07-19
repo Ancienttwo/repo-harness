@@ -12,6 +12,34 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { spawn, spawnSync } from 'child_process';
 import { circuitLimit, recordCircuitAttempt, type CircuitAttempt } from '../src/cli/hook/circuit-breaker';
+import { runMutationGuard, type MutationGuardCollector } from '../src/cli/hook/mutation-guard';
+import { createStateInputCollector } from '../src/effects/loop/state-input-collector';
+import { resolveEffectiveState } from '../src/effects/state/resolve-effective-state';
+import type { EffectiveState } from '../src/core/state/types';
+
+// HRD-03: pre-edit-guard.sh is retired; the OpsPrivateGuard phase below
+// (the only phase of this test that used it -- subagent-start-context.sh
+// and post-bash.sh, the other three phases' scripts, are untouched by this
+// cutover) is retargeted to call the in-process mutation-guard handler
+// directly. OpsPrivateGuard fires on a pure `_ops/*` path-prefix match
+// before any Effective State resolution, so this needs no git repo --
+// matching withRepo's own bare (non-git-initialized) fixture.
+function editHandlerResult(cwd: string, filePath: string): { status: number | null; stdout: string; stderr: string } {
+  const collector: MutationGuardCollector = createStateInputCollector({
+    event: 'PreToolUse',
+    repoRoot: cwd,
+    resolveSessionEffectiveState: () => null,
+    resolvePreEditEffectiveState: (targetPaths: readonly string[]): EffectiveState | null => {
+      try {
+        return resolveEffectiveState(cwd, Date.now(), { targetPaths, operationKind: 'edit' });
+      } catch {
+        return null;
+      }
+    },
+  });
+  const result = runMutationGuard({ collector, input: JSON.stringify({ tool_input: { file_path: filePath } }) });
+  return { status: result.exitCode, stdout: result.stdout, stderr: result.stderr };
+}
 
 function attempt(overrides: Partial<CircuitAttempt> = {}): CircuitAttempt {
   return {
@@ -198,15 +226,27 @@ describe('workflow circuit breakers', () => {
 
     const runner = join(root, 'assets/hooks/run-hook.sh');
     for (let index = 1; index <= 3; index += 1) {
-      const result = spawnSync('bash', [runner, 'pre-edit-guard.sh', '_ops/secret.env'], { cwd, env, encoding: 'utf-8' });
+      const result = editHandlerResult(cwd, '_ops/secret.env');
       expect(result.status).toBe(2);
-      const stderr = result.stderr;
-      if (index < 3) expect(stderr).toContain('Fix:');
-      else {
-        expect(stderr).toContain('"tripped":true');
-        expect(stderr).toContain('terminal:');
-        expect(stderr).not.toContain('Fix:');
-        expect(stderr).not.toContain('circuit-override');
+      if (index < 3) {
+        // Non-tripped blocks: structuredError() writes "[Guard] reason" +
+        // "  Fix: ..." to stderr exactly like the retired script did.
+        expect(result.stderr).toContain('Fix:');
+      } else {
+        // Tripped: structuredError() returns before ever reaching the
+        // stderr-writing branch (mirrors hook_structured_error's own early
+        // return), so the terminal circuit JSON lands on stdout here. The
+        // ORIGINAL script-based test saw it on stderr only because
+        // run-hook.sh's Codex-host wrapper moves non-`{"guard":`-prefixed
+        // stdout lines to stderr on failure -- a run-hook.sh concern with
+        // its own dedicated coverage (tests/hook-runtime.test.ts's
+        // "run-hook preserves Codex failure status..."), not
+        // mutation-guard.ts's. The decision content asserted below is
+        // unchanged.
+        expect(result.stdout).toContain('"tripped":true');
+        expect(result.stdout).toContain('terminal:');
+        expect(result.stderr).not.toContain('Fix:');
+        expect(result.stdout).not.toContain('circuit-override');
       }
     }
 

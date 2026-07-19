@@ -10,8 +10,8 @@ import {
 } from 'fs';
 import { join, relative } from 'path';
 import { spawnSync } from 'child_process';
+import { pathToFileURL } from 'url';
 import {
-  CLI,
   CONTRACT,
   PLAN,
   ROOT,
@@ -40,7 +40,11 @@ interface TargetDelta {
 }
 
 const FIXTURE_PATH = join(import.meta.dir, 'fixtures/loop-semantics/characterization.json');
-const PRE_EDIT = join(ROOT, '.ai/hooks/pre-edit-guard.sh');
+// HRD-03: pre-edit-guard.sh is retired; its decision surface now lives in
+// the in-process mutation-guard handler, invoked through runHook() (see
+// runMutationGuardHandler below) rather than as a standalone bash script.
+const MUTATION_GUARD_SOURCE = join(ROOT, 'src/cli/hook/mutation-guard.ts');
+const RUNTIME_MODULE = join(ROOT, 'src/cli/hook/runtime.ts');
 const STOP = join(ROOT, '.ai/hooks/stop-orchestrator.sh');
 const VERIFY_SPRINT = join(ROOT, 'scripts/verify-sprint.sh');
 const SHIP_WORKTREES = join(ROOT, 'scripts/ship-worktrees.sh');
@@ -248,6 +252,36 @@ function remove(cwd: string, path: string): void {
   rmSync(join(cwd, path), { recursive: true, force: true });
 }
 
+// HRD-03: exercises the retired pre-edit-guard.sh's decision surface through
+// the PRODUCTION `runHook()` entry (a `bun -e` wrapper subprocess importing
+// and calling it in-process -- the same "one subprocess purely to observe
+// real fd1/fd2 output" role the old direct `bash pre-edit-guard.sh` spawn
+// played; `RunHookResult` itself carries no stdout/stderr text). Routed
+// through the same `isolatedEnv()` every other capture in this file uses,
+// for the same determinism guarantees.
+function runMutationGuardHandler(
+  cwd: string,
+  payload: unknown,
+  options: { readonly env?: NodeJS.ProcessEnv } = {},
+): ProcessResult {
+  const moduleUrl = pathToFileURL(RUNTIME_MODULE).href;
+  const script = [
+    'const stdinText = await Bun.stdin.text();',
+    `const { runHook } = await import(${JSON.stringify(moduleUrl)});`,
+    "const result = runHook({ event: 'PreToolUse', routeId: 'edit', input: stdinText.length > 0 ? stdinText : undefined });",
+    'process.exit(result.exitCode);',
+  ].join('\n');
+  const result = spawnSync(process.execPath, ['-e', script], {
+    cwd,
+    input: JSON.stringify(payload),
+    encoding: 'utf-8',
+    env: isolatedEnv(cwd, options.env),
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  if (result.error) throw result.error;
+  return { status: result.status ?? -1, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
+}
+
 function prepare(profile: Profile): ReturnType<typeof createEffectiveStateFixture> {
   const fixture = createEffectiveStateFixture();
   writeFileSync(join(fixture.cwd, '.git/info/exclude'), '.home/\n', { flag: 'a' });
@@ -377,11 +411,11 @@ function readinessSurface(state: Record<string, unknown>): Record<string, unknow
 }
 
 function editProfileSource(): string {
-  const source = readFileSync(PRE_EDIT, 'utf-8');
-  if (source.includes('args=(state resolve --json --field workflow_profile)')) {
+  const source = readFileSync(MUTATION_GUARD_SOURCE, 'utf-8');
+  if (source.includes('ctx.collector.getPreEditEffectiveState(allTargetPaths)')) {
     return 'live_effective_state';
   }
-  throw new Error('PreEdit no longer reads workflow_profile from Effective State');
+  throw new Error('mutation-guard.ts no longer reads workflow_profile from a live Effective State resolution');
 }
 
 function stopProfileSource(): string {
@@ -512,11 +546,15 @@ function readEffectiveState(cwd: string): Record<string, unknown> {
 
 function captureEdit(profile: Profile): Record<string, unknown> {
   const fixture = prepare(profile);
+  const worktreeDir = `${fixture.cwd}-wt`;
   try {
+    // HRD-03: the old direct `bash pre-edit-guard.sh` spawn never needed
+    // this -- runHook() does, to pass its opt-in gate before ever
+    // dispatching to the handler.
+    writeFixture(fixture.cwd, '.ai/harness/workflow-contract.json', '{}\n');
     if (profile === 'lite') {
       remove(fixture.cwd, '.ai/harness/active-plan');
       remove(fixture.cwd, '.claude/.active-plan');
-      commitFixture(fixture.cwd, 'seed lite edit characterization');
     } else {
       if (profile === 'standard') {
         const plan = readFileSync(join(fixture.cwd, PLAN), 'utf-8');
@@ -541,22 +579,39 @@ function captureEdit(profile: Profile): Record<string, unknown> {
       }
       remove(fixture.cwd, CONTRACT);
     }
-    const workPackage = planObservation(fixture.cwd);
-    const before = repositorySnapshot(fixture.cwd);
-    const result = run('bash', [PRE_EDIT], fixture.cwd, {
-      input: JSON.stringify({ tool_input: { file_path: 'src/feature.ts' } }),
+    // Every profile's setup now commits (not just lite): a linked worktree
+    // below only sees committed state, and every profile needs the same
+    // fixture content the old direct-invocation capture read straight off
+    // the working tree.
+    commitFixture(fixture.cwd, `seed ${profile} edit characterization`);
+
+    // HRD-03: run through a linked worktree, not the fixture's own primary
+    // tree. The retired pre-edit-guard.sh was invoked ALONE (bypassing
+    // worktree-guard.sh entirely), so these cells never observed a
+    // WorktreeGuard warning. The unified handler always runs the worktree
+    // check first; a linked worktree keeps git's own worktree-structure
+    // check silent (exit 0, no output -- same as the primary-tree fixture
+    // silently skipping it before), so every decision-semantic field below
+    // stays byte-identical to the pre-cutover golden. Only
+    // entrypoint/ordering/side_effects (this package's authorized
+    // runtime-shape delta for edit cells) legitimately move.
+    run('git', ['worktree', 'add', '-b', `codex/lsc-edit-${profile}-fixture`, worktreeDir], fixture.cwd);
+    writeFileSync(join(worktreeDir, '.ai/harness/active-worktree'), `${worktreeDir}\n`);
+
+    const workPackage = planObservation(worktreeDir);
+    const before = repositorySnapshot(worktreeDir);
+    const result = runMutationGuardHandler(worktreeDir, { tool_input: { file_path: 'src/feature.ts' } }, {
       env: {
-        REPO_HARNESS_CLI: CLI,
         REPO_HARNESS_WORKFLOW_PROFILE: profile,
         HOOK_RUN_ID: `loop-semantics-${profile}-edit`,
       },
     });
-    const after = repositorySnapshot(fixture.cwd);
+    const after = repositorySnapshot(worktreeDir);
     const tokens = guardTokens(`${result.stdout}\n${result.stderr}`);
-    const state = readEffectiveState(fixture.cwd);
+    const state = readEffectiveState(worktreeDir);
     const semanticSurface = Object.assign({}, state, readinessSurface(state), ...jsonObjectLines(result.stdout));
     return {
-      entrypoint: '.ai/hooks/pre-edit-guard.sh',
+      entrypoint: 'src/cli/hook/mutation-guard.ts',
       profile_source: editProfileSource(),
       exit_code: result.status,
       verdict: result.status === 0 ? 'allow' : 'block',
@@ -570,12 +625,12 @@ function captureEdit(profile: Profile): Record<string, unknown> {
       work_package_remaining_tasks: workPackage.remainingTasks,
       work_package_minimum_execution_contract: workPackage.minimumExecutionContract,
       contract_exists: workPackage.contractExists,
-      ordering: observedSourceOrder(PRE_EDIT, [
-        { name: 'resolve_effective_state', marker: 'WORKFLOW_PROFILE="$(resolve_edit_workflow_profile || true)"' },
-        { name: 'contract_scope', marker: 'active_contract="$(workflow_active_contract || true)"' },
-        { name: 'plan_gate', marker: '\nrun_edit_plan_gate\n' },
-        { name: 'strict_contract', marker: '[StrictContractGuard]' },
-        { name: 'strict_worktree', marker: '[StrictWorktreeGuard]' },
+      ordering: observedSourceOrder(MUTATION_GUARD_SOURCE, [
+        { name: 'resolve_effective_state', marker: 'ctx.collector.getPreEditEffectiveState(allTargetPaths)' },
+        { name: 'contract_scope', marker: 'const activeContract = getActiveContractPath(ctx);' },
+        { name: 'plan_gate', marker: 'runEditPlanGate(ctx, filePath, workflowProfile);' },
+        { name: 'strict_contract', marker: '[StrictContractGuard] Strict profile requires an active contract for' },
+        { name: 'strict_worktree', marker: '[StrictWorktreeGuard] Strict profile requires an isolated contract worktree for' },
       ]),
       side_effects: writtenPaths(before, after),
       missing_semantic_fields: missingSemanticFields(
@@ -584,6 +639,7 @@ function captureEdit(profile: Profile): Record<string, unknown> {
       ),
     };
   } finally {
+    rmSync(worktreeDir, { recursive: true, force: true });
     fixture.cleanup();
   }
 }
