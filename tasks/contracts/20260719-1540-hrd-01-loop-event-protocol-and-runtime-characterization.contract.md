@@ -1,6 +1,6 @@
 # Task Contract: hrd-01-loop-event-protocol-and-runtime-characterization
 
-> **Status**: Partial
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260719-1540-hrd-01-loop-event-protocol-and-runtime-characterization.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
