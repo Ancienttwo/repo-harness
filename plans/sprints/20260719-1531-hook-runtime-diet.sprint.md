@@ -3,7 +3,7 @@
 > **Status**: Approved
 > **Slug**: hook-runtime-diet
 > **Created**: 2026-07-19 15:31
-> **Updated**: 2026-07-19 15:42
+> **Updated**: 2026-07-20 00:18
 > **Source PRD**: (none; source authority is the Harness Loop audit)
 > **Source Audit**: `plans/sprints/20260715-harness-loop-audit-and-optimization.md`
 > **Source Spec**: `docs/spec.md`
@@ -246,7 +246,7 @@ flow and lands through an independent PR.
 
 | # | Status | Task | Mode | Acceptance | Plan |
 |---|--------|------|------|------------|------|
-| 1 | [ ] | hrd-01-loop-event-protocol-and-runtime-characterization | contract | In an independent PR, establish host-neutral `LoopEvent`/`LoopEventResult` typed contracts as a pure module with zero consumers, and freeze the current per-event runtime baseline for all 11 routes (script sequence, subprocess count, decision/reason/exit code, durable-write set) as characterization fixtures; no host-visible behavior change, no script retired, and the fixtures normalize only path/time/PID data | (pending) |
+| 1 | [x] | hrd-01-loop-event-protocol-and-runtime-characterization | contract | In an independent PR, establish host-neutral `LoopEvent`/`LoopEventResult` typed contracts as a pure module with zero consumers, and freeze the current per-event runtime baseline for all 11 routes (script sequence, subprocess count, decision/reason/exit code, durable-write set) as characterization fixtures; no host-visible behavior change, no script retired, and the fixtures normalize only path/time/PID data | `plans/plan-20260719-1540-hrd-01-loop-event-protocol-and-runtime-characterization.md` |
 | 2 | [ ] | hrd-02-state-input-collector | contract | In an independent PR, implement a one-shot `StateInputCollector` at the `runHook()` entry that gathers repo facts and the single Effective State resolution once per event and hands the collected input to downstream handlers; determinism fixtures pass, SessionStart and Stop keep exactly one resolution, and no consumer behavior changes yet — consumers cut over in HRD-03..06 | (pending) |
 | 3 | [ ] | hrd-03-pre-edit-one-decision-cutover | contract | In an independent PR, replace `worktree-guard.sh` + `pre-edit-guard.sh` + the embedded `state resolve --field workflow_profile` subprocess with one in-process mutation-guard handler consuming the HRD-02 collected input and producing one decision; decision/reason/exit-code parity against the HRD-01 baseline holds for both hosts, both scripts are deleted from `assets/hooks/` with the projection re-synced in the same package, and the public route tuple is unchanged | (pending) |
 | 4 | [ ] | hrd-04-session-start-consolidation | contract | In an independent PR, collapse `session-start-context.sh`, `minimal-change-context.sh`, and `security-sentinel.sh` into the existing TS aggregation/budget path with one context assembly and one budget pass per event; the 1500-token hard cap and fail-closed overflow are retained, content parity against the HRD-01 baseline holds modulo approved cost-only deltas, no packet content redesign occurs (EPC-08 scope), and the three scripts are deleted with the projection re-synced in the same package | (pending) |
@@ -288,3 +288,4 @@ flow and lands through an independent PR.
 
 | When | Task | Plan | Result |
 |------|------|------|--------|
+| 2026-07-20 00:18 | hrd-01-loop-event-protocol-and-runtime-characterization | `plans/plan-20260719-1540-hrd-01-loop-event-protocol-and-runtime-characterization.md` | done |

@@ -85,11 +85,11 @@
 
 ## External Acceptance Advice
 
-> **External Acceptance**: pass
-> **External Reviewer**: claude-gatekeeper (fresh-context, read-only; Round-1 substitution per LSC-08 precedent)
-> **External Source**: independent gatekeeper dispatch, 2026-07-19
-> **External Started**: 2026-07-19
-> **External Completed**: 2026-07-19
+> **External Acceptance**: waived (user override, one-shot for HRD-01 only)
+> **External Reviewer**: none — cross-model Codex review was attempted 2026-07-20 (`codex exec` read-only, session 019f7b29-251b-71a1-a971-7902871d098e) and refused by the provider usage limit (quota exhausted until 2026-08-16); no second AI host was available, the exact solo-operator gap already recorded in `tasks/todos.md`
+> **External Source**: user waiver (actor: kito, decided 2026-07-20 in-session; precedent: `5b3a2693` external-acceptance waiver). Substitute internal evidence retained below: fresh-context Claude gatekeeper PASS plus merge-gate PASS and CI 8/8 on PR #94
+> **External Started**: 2026-07-20
+> **External Completed**: 2026-07-20 (waiver recorded; not a Codex review)
 > **Review Rubric Version**: 2
 > **Reviewed Subject SHA256**: sha256:68119c75169b39c1976c7b6cd0b3eba4a62c94309001a4f58a72d082f5efa8a1
 > **Reviewed Subject Scope**: normalized-final-content
