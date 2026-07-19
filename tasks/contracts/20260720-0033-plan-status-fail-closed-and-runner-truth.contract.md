@@ -66,6 +66,16 @@ positive/negative fixtures and a documented characterization-golden outcome.
     and its byte-parity mirror `assets/reference-configs/sprint-contracts.md`
     are renamed together in this package (the parity test
     `tests/sprint-backlog.test.ts` stays untouched and must stay green).
+  - AMENDMENT (ship-boundary CI fix): `tests/state/loop-semantics-characterization.test.ts`
+    joins the named test surfaces — its `prepare()` fixture repos carry no
+    `.ai/harness/policy.json`, so the new authority-unavailable branch
+    blocked the `standard.edit` cell in full-suite CI (a coverage gap: the
+    dispatch-scoped groups never ran `tests/state/`). The fixture gains a
+    minimal policy carrying only `active_plan.statuses` (the 13-value
+    authority), restoring the frozen cells' intent — a properly adopted
+    repo always has the policy file; the omission was fixture minimalism,
+    not frozen semantics. The frozen characterization JSON must come back
+    byte-identical; any other cell shifting fails this amendment.
   - AMENDMENT (round-2 blocker resolution): `tests/runtime-profile-enforcement.test.ts`
     joins the named test surfaces — its shared `initRepo()` policy fixture
     gains the `active_plan.statuses` array, and its two fixtures that
@@ -212,6 +222,7 @@ allowed_paths:
   - tests/helper-scripts.test.ts
   - tests/plan-status-gate.test.ts
   - tests/runtime-profile-enforcement.test.ts
+  - tests/state/loop-semantics-characterization.test.ts
   - tests/hook-runtime-characterization.test.ts
   - tests/fixtures/loop-runtime/characterization.json
 ```

@@ -398,3 +398,19 @@ Promote a candidate to `tasks/lessons.md`, `docs/researches/`, or harness asset 
 - Promote to `tasks/lessons.md` only after a repeated correction or failure pattern.
 - Promote to `docs/researches/` only when it is durable repo knowledge with evidence.
 - Promote to harness asset files only after verification across more than one task or fixture.
+
+## Ship-Boundary CI Fix (round 4)
+
+Full-suite CI failed on `tests/state/loop-semantics-characterization.test.ts`
+(`standard.edit` cell: expected allow/exit 0, got PlanStatusGuard/exit 2) — a
+coverage gap: no dispatch round ran `tests/state/`. Root cause: `prepare()`
+fixture repos carry no `.ai/harness/policy.json`, so the new
+authority-unavailable branch fires. Guard ordering (`plan_gate` before
+`strict_contract`) means every non-lite edit cell traverses the status case.
+Fix (contract AMENDMENT, ship-boundary): fixture gains a minimal policy with
+only `active_plan.statuses` (13 values, copied from the live authority) —
+adopted repos always carry the policy file, so the omission was fixture
+minimalism, not frozen semantics. Frozen characterization JSON came back
+byte-identical (21/21 expects, no regeneration). `state-concurrency`'s single
+local ENOENT was classified as host-load flake: passes on main and on
+re-run in this worktree, and CI never failed it.
