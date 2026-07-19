@@ -5,6 +5,7 @@ import { execFileSync, spawnSync, type StdioOptions } from 'child_process';
 import { getRoute, type HookEvent, type RouteId } from './route-registry';
 import { budgetSessionContext, type SessionContextSection } from './session-context-budget';
 import { writeAllSync } from '../runtime/write-all-sync';
+import { createStateInputCollector } from '../../effects/loop/state-input-collector';
 import { createHash } from 'crypto';
 
 const OPT_IN_MARKER = '.ai/harness/workflow-contract.json';
@@ -322,6 +323,17 @@ export function runHook(opts: RunHookOptions): RunHookResult {
     return { exitCode: 0, reason: 'non-opt-in', repoRoot, scriptsRun, skippedScripts };
   }
 
+  // One lazy, memoizing collector per event (HRD-02), threaded to the call
+  // sites HRD-03..06 will add. Today only the SessionStart branch below
+  // reads from it; effectiveStateSessionSection is injected (not imported)
+  // because state-input-collector.ts lives in the effects layer, which
+  // cannot depend on this CLI module.
+  const collector = createStateInputCollector({
+    event: opts.event,
+    repoRoot,
+    resolveSessionEffectiveState: () => effectiveStateSessionSection(repoRoot),
+  });
+
   const route = getRoute(opts.event, opts.routeId);
   if (!route) {
     writeAllSync(2,
@@ -343,7 +355,7 @@ export function runHook(opts: RunHookOptions): RunHookResult {
   const sessionStartCollectStdout = opts.event === 'SessionStart' && opts.stdio === undefined;
   const sessionStartContexts: SessionContextSection[] = [];
   if (sessionStartCollectStdout) {
-    const stateSection = effectiveStateSessionSection(repoRoot);
+    const stateSection = collector.getSessionEffectiveState();
     if (stateSection) sessionStartContexts.push(stateSection);
   }
   // Codex Desktop rejects Stop decision stdout at turn finalization, so collect
