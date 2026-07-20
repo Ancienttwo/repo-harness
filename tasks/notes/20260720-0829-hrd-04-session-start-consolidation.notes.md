@@ -364,9 +364,174 @@ in-process equivalent, ported as real `execFileSync` calls, matching HRD-03's
 own precedent of the git count dropping only modestly (22->21 there) rather
 than to zero.
 
+## Gatekeeper round-2 findings (FAIL verdict, 3 items -- all in Allowed Paths, no amendment needed)
+
+### 1. BLOCKING (safe_auto), S5 root cause: `capResumeContent` trailing newline
+
+`capResumeContent`'s internal loop builds `total` by appending `` `${line}\n` ``
+per kept line, so it always ends with `\n` after the last line -- mirroring
+awk's own `total` variable exactly. What the first pass missed: bash never
+observes that trailing `\n` directly. `resume_current_for_handoff`'s caller
+captures the awk output via `context="$(awk ...)"`, and command substitution
+strips ALL trailing newlines from the captured value unconditionally. My
+first-pass `capResumeContent` returned the raw (still `\n`-terminated)
+`total`, so whenever a LATER section followed the resume blob,
+`appendBlock`'s own single `"\n"` separator produced `\n\n` (a spurious
+blank line) between them. A resume-only fixture (nothing follows it) cannot
+observe this -- the joined-with-later-section shape is required to trip it,
+which is exactly why neither my own falsifier-style validation nor the
+first-pass `tests/session-context.test.ts` caught it (gatekeeper's own S5
+differential: 985B vs 986B, one extra `\n`).
+
+Fix: `capResumeContent` now returns `total.replace(/\n+$/, '')`, matching
+command substitution's stripping exactly. Added a parity fixture
+("S5 parity: resume packet + a later section (active sprint) join with no
+blank line between them" in `tests/session-context.test.ts`) asserting the
+COMPLETE joined output string equality (`INPUT_PRIORITY_CONTEXT` + resume
+blob + Active Sprint block, no intervening blank line) -- not just a
+substring check, so a regression here would fail loudly again.
+`INPUT_PRIORITY_CONTEXT` is now exported specifically so this fixture (and
+any future one) can assert exact output without duplicating that literal.
+
+### 2. BLOCKING (port decision: PORT), `workflow_rotate_events_file`
+
+The base script's own top-of-file housekeeping --
+`workflow_rotate_events_file "$(workflow_events_file)"` and
+`workflow_rotate_events_file ".ai/harness/architecture/events.jsonl"` --
+was dropped in the first pass with no equivalent. Since live bash writers
+(`workflow_append_event`, called from `prompt-guard.sh`,
+`post-tool-observer.sh`, etc., all still shipping, all outside this
+contract's scope) keep appending to both files every event, both would grow
+unbounded forever without SessionStart's own rotation ever running.
+
+Ported `workflow_rotate_events_file` / `_locked` / `workflow_with_lock`
+verbatim from `assets/hooks/lib/workflow-state.sh` at base SHA `ab5f7cad`
+(thresholds unchanged: 2000 lines / 524288 bytes / keep 500) into
+`src/cli/hook/session-context.ts` as `workflowRotateEventsFile` /
+`workflowRotateEventsFileLocked` / `withEventsLock`, called via
+`rotateSessionStartEventLogs(repoRoot)` at the very top of
+`sessionStartMainContent`, matching the base script's own call order
+(before `resume_file` is even resolved). Produces no session content --
+pure housekeeping, exactly like bash's `2>/dev/null || true`-wrapped calls.
+
+Placement: plain `fs` calls inside `src/cli/hook/session-context.ts`
+(matching this file's already-established pattern for the security cache
+and failure-adjacent writes), NOT routed through the effects layer.
+Confirmed safe against `check:state-boundaries`'s actual rules before
+committing to this placement: `EFFECTS_REVERSE_IMPORT` only fires on
+`src/effects/*` importing FROM `src/cli/*` (the opposite direction from
+anything this code does), and `CLI_AUTHORITY_NAME` matches specific
+resolver-shaped function names (`resolve/calculate/derive/parse/validate
+...WorkflowProfile`, etc.) that none of the new rotation function names
+collide with. `check:state-boundaries` confirmed green after implementation
+(112 TypeScript files checked).
+
+Edge cases (the two the dispatch specifically named):
+- **Missing file**: `workflowRotateEventsFile` returns immediately if
+  `existsSync(absPath)` is false, matching bash's `[[ -f "$file" ]] ||
+  return 0`.
+- **Partial (non-newline-terminated) final line**: `wc -l` counts NEWLINE
+  BYTES, not "lines" in the visual sense, so a file missing its trailing
+  newline is undercounted by one relative to `head`/`tail`'s own
+  newline-agnostic line splitting (both treat a final partial chunk as one
+  more "line"). `readEventsFileForRotation` reproduces this exact
+  bash-inherent quirk (not a TS-introduced one) rather than engineering
+  something bash itself doesn't do: `cut`/`keep` stay computed from the
+  `wc -l`-based count, and `head`/`tail` slice the full (possibly
+  one-longer) line array from either end -- documented in the function's own
+  comment. This system's own writer (`workflow_locked_append_line`) always
+  appends `` `${line}\n` ``, so every REAL file this code encounters is
+  well-formed; the quirk only matters for an externally-truncated file.
+
+Validated against the REAL base-SHA bash function (not just reasoned about)
+via a throwaway comparison harness (`git show ab5f7cad:assets/hooks/lib/workflow-state.sh`
+extracted to scratch, `workflow_rotate_events_file` invoked directly against
+identical fixtures): 5/5 scenarios byte-identical (oversized main
+events.jsonl, oversized architecture events.jsonl, small/untouched file, and
+both the 2000-line and 2001-line boundary). Golden re-run 5x confirmed zero
+count/write_set drift (the fixture never accumulates enough events to
+trigger rotation, and rotation is pure `fs` I/O -- no subprocess -- so it
+cannot affect `child_invocations` either way).
+
+Fixtures added to `tests/session-context.test.ts` (`describe("sessionStartMainContent
+— cold-path event-log rotation ...")`): oversized main + architecture logs
+rotate to last 500 lines with the first 2000 archived to
+`.ai/harness/archive/events-<yyyymm>.jsonl` / `.ai/harness/architecture/archive/events-<yyyymm>.jsonl`;
+small file left untouched with no archive dir created; missing file is a
+silent no-op.
+
+### 3. MEDIUM (adjudicated FIX), tooling-advisory detached async populate
+
+The default (no `REPO_HARNESS_TOOLING_ADVISORY_SYNC`) stale-cache path
+previously only attempted the lock-dir `mkdir` and did nothing further --
+documented at the time as a cost-only simplification, since it never
+contributes content to the *triggering* session either way. The gatekeeper's
+adjudication: this silently broke the CROSS-SESSION refresh cycle bash's
+detached background subshell provided (a stale cache would never
+self-heal for any FUTURE session either, once the first session's `mkdir`
+"claimed" the attempt and did nothing else).
+
+Implemented `triggerDetachedToolingPopulate` (acquire the lock, then
+`spawn(process.execPath, [thisFile, '--detached-tooling-populate', repoRoot,
+target, reportFile, lockDir], { detached: true, stdio: 'ignore' }).unref()`)
+plus `runDetachedToolingPopulate` (the actual populate: run the SAME
+two-tier `repoHarnessSetupCheckSubprocess` the SYNC branch already uses,
+write the report on success, ALWAYS remove the lock dir when done --
+success or failure). The detached child is a STANDALONE
+`bun session-context.ts --detached-tooling-populate ...` process (an
+`import.meta.main`-gated bootstrap at the bottom of the file), not a
+`.then()`/callback kept alive in the parent's own event loop -- the parent
+process (the whole hook invocation) exits essentially immediately after
+spawning, so any callback registered in ITS OWN event loop would simply
+never run; only a truly separate, reparented process (matching bash's own
+orphaned background job) can outlive it. `env`/`cwd` are passed through
+explicitly to the child so it sees the SAME `REPO_HARNESS_CLI`/`HOME`/PATH
+context the triggering session had.
+
+**Deviation from a literal 1:1 port** (this is the line the "Deviations"
+section below now needs to carry, replacing "None recorded"): bash's own
+async branch had NO staleness handling for `tooling-update-advisory-${target}.lock`
+at all -- only the backgrounded subshell itself ever removes it (via its own
+trailing `rmdir`), so if that subshell dies mid-flight (OOM, forced kill,
+host sleep) before reaching its `rmdir`, the lock is left behind FOREVER and
+every future session's `mkdir` attempt fails forever, permanently
+suppressing the refresh cycle -- a latent bash bug, not a behavior worth
+preserving byte-for-byte. Added `acquireToolingAdvisoryLock`, reusing
+`workflow_with_lock`'s own 60-second crashed-holder threshold (the only
+"sane age" precedent this codebase already establishes) to break a lock
+older than that and retry once; a younger lock is left alone (a populate is
+plausibly still genuinely in progress). The SYNC=1 branch itself is
+unchanged (adjudicated sound by the gatekeeper) -- it never touches the lock
+dir at all, so lock staleness cannot affect it either way.
+
+Golden impact: re-ran the characterization test 5x after this change --
+zero drift. This confirms (empirically, not just by reasoning) that the
+SAME timing race bash's own backgrounded subshell relied on to stay
+invisible to the golden's counting-stub measurement (the test's own
+synchronous `spawnSync` completes and captures `child_invocations` well
+before a freshly-forked detached process gets scheduled and reaches its OWN
+internal subprocess call) applies equally to the TS detached spawn. No
+additional gating beyond `.unref()` + true process detachment was needed to
+keep the golden scenario identical; the mechanism is the same, not a new one.
+
+Fixtures added (`describe("tooling-advisory detached populate ...")`,
+async, PATH-injected fake `repo-harness` binary matching the existing
+SYNC-path test's pattern): lock dir appears synchronously on trigger, then
+disappears once the detached child completes (polled with a 5s timeout); a
+FRESH-but-not-yet-rendered report from a completed background populate
+renders on the NEXT session (the cross-session TTL refresh this fix
+restores); a lock older than the 60s stale threshold is broken and retried
+rather than permanently suppressing refresh. All 3 stable across repeated
+local runs (checked 4x for the detached-populate suite, 5x for the golden).
+
 ## Deviations From Plan Or Spec
 
-- None recorded.
+- `acquireToolingAdvisoryLock`'s 60-second stale-lock recovery (see round-2
+  finding #3 above) is new behavior bash's own async tooling-advisory branch
+  never had -- an explicit, adjudicated fix for a latent bash bug (a crashed
+  background populate permanently suppressing all future refreshes), not a
+  literal 1:1 port. Reuses `workflow_with_lock`'s own existing 60s threshold
+  rather than inventing a new constant.
 
 ## Tradeoffs Considered
 

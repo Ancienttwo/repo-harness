@@ -11,10 +11,21 @@
  * for the falsifier result, section port table, and golden delta.
  */
 
-import { execFileSync } from 'child_process';
+import { execFileSync, spawn } from 'child_process';
 import { createHash } from 'crypto';
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'fs';
-import { join } from 'path';
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmdirSync,
+  statSync,
+  writeFileSync,
+} from 'fs';
+import { fileURLToPath } from 'url';
+import { basename, dirname, join } from 'path';
 import type { SessionContextSection } from './session-context-budget';
 import { loadMinimalChangePolicy } from './minimal-change-policy';
 import { renderMinimalChangeSessionContext } from './minimal-change-context';
@@ -240,6 +251,11 @@ function workflowPendingOrchestrationFile(repoRoot: string): string {
   return repoRelativePath(value, '.ai/harness/planning/pending.json', '.ai/harness/');
 }
 
+function workflowEventsFile(repoRoot: string): string {
+  const value = policyGet(repoRoot, ['harness', 'events_file'], '.ai/harness/events.jsonl');
+  return repoRelativePath(value, '.ai/harness/events.jsonl', '.ai/harness/');
+}
+
 function workflowTargetBranch(repoRoot: string): string {
   let target = policyGet(repoRoot, ['worktree_strategy', 'merge_back', 'target'], '');
   if (!target) target = policyGet(repoRoot, ['worktree_strategy', 'base_branch'], 'main');
@@ -313,6 +329,209 @@ function getActivePlan(collector: SessionContextCollector): string | null {
 }
 
 // ---------------------------------------------------------------------------
+// session-start-context.sh port -- cold-path event-log rotation
+// ---------------------------------------------------------------------------
+//
+// Gatekeeper blocking finding (PORT decision): the base script's own
+// top-of-file housekeeping --
+//   workflow_rotate_events_file "$(workflow_events_file)" 2>/dev/null || true
+//   workflow_rotate_events_file ".ai/harness/architecture/events.jsonl" 2>/dev/null || true
+// -- was dropped in the first pass. `workflow_append_event` (still bash,
+// still live: prompt-guard.sh, post-tool-observer.sh, etc.) keeps writing to
+// both files every event; without rotation they grow unbounded. Ported
+// verbatim from `assets/hooks/lib/workflow-state.sh`'s
+// `workflow_rotate_events_file` / `_locked` / `workflow_with_lock`
+// (thresholds: 2000 lines / 524288 bytes / keep 500), including the mkdir-based
+// mutual-exclusion lock (protects against a concurrent bash hook -- e.g.
+// PostToolUse.always's post-tool-observer.sh -- appending mid-rotation; this
+// is a genuine cross-process race the new architecture still needs to guard
+// against, not merely an old bash implementation detail). Produces no
+// session content -- pure housekeeping, called before any of the 8
+// sub-blocks below, matching the base script's own call order.
+
+/** `wc -l`/`wc -c` port: `wc -l` counts NEWLINE BYTES, not "lines" in the text sense (a file lacking a trailing newline is undercounted by one relative to its visual line count) -- this must stay a raw byte count to match bash exactly. */
+function fileLineAndByteCount(absPath: string): { lines: number; bytes: number } | null {
+  let content: Buffer;
+  try {
+    content = readFileSync(absPath);
+  } catch {
+    return null;
+  }
+  let lines = 0;
+  for (let i = 0; i < content.length; i += 1) if (content[i] === 0x0a) lines += 1;
+  return { lines, bytes: content.length };
+}
+
+/**
+ * `head -n N "$file"` / `tail -n N "$file"` port, splitting on `\n` the same
+ * way both POSIX tools do: a trailing partial (non-newline-terminated)
+ * final segment still counts as one more "line" for head/tail purposes even
+ * though `wc -l` (byte-newline-count) does not count it -- so
+ * `lines.length` can be one more than `wcLineCount` for a file missing its
+ * final newline. `cut`/`keep` are always computed from the `wc -l`-based
+ * count (matching bash's own `cut=$((lines - keep))`), so this mirrors
+ * bash's own behavior byte-for-byte for the well-formed (trailing-newline)
+ * case this system's own writer (`workflow_locked_append_line`) always
+ * produces, and reproduces the same (bash-inherent, not TS-introduced)
+ * "one line unaccounted for" quirk on a malformed/truncated file missing
+ * its final newline, rather than engineering something bash itself doesn't do.
+ */
+function readEventsFileForRotation(absPath: string): { lines: readonly string[]; wcLineCount: number } | null {
+  let content: string;
+  try {
+    content = readFileSync(absPath, 'utf-8');
+  } catch {
+    return null;
+  }
+  if (content === '') return { lines: [], wcLineCount: 0 };
+  const endsWithNewline = content.endsWith('\n');
+  let lines = content.split('\n');
+  if (endsWithNewline) lines = lines.slice(0, -1);
+  const wcLineCount = endsWithNewline ? lines.length : lines.length - 1;
+  return { lines, wcLineCount };
+}
+
+/** Synchronous blocking sleep (bash's own `sleep 0.05` blocks its single-threaded script too) -- `Atomics.wait` on a value that never changes is the standard synchronous-sleep primitive in Node/Bun. */
+function sleepSyncMs(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/**
+ * `workflow_with_lock()` port: mkdir-based mutual exclusion. Spins up to 40
+ * times at 50ms (~2s), breaks a lock older than 60s (crashed holder), and as
+ * a last resort runs the callback unlocked rather than wedging SessionStart
+ * -- verbatim thresholds from the bash source. `lockRoot` is always
+ * `dirname(workflowEventsFile()) + "/.locks"`, computed ONCE by the caller
+ * and reused for both rotation targets, matching bash's own
+ * `workflow_with_lock`'s unconditional `lock_root="$(dirname "$(workflow_events_file)")/.locks"`
+ * regardless of which file is actually being locked (so both rotation calls
+ * share one lock namespace root, differentiated only by `name`).
+ */
+function withEventsLock(lockRoot: string, name: string, fn: () => void): void {
+  const lockDir = join(lockRoot, `${name}.lock`);
+  try {
+    mkdirSync(lockRoot, { recursive: true });
+  } catch {
+    fn();
+    return;
+  }
+
+  let waited = 0;
+  for (;;) {
+    try {
+      mkdirSync(lockDir);
+      break;
+    } catch {
+      if (waited >= 40) {
+        let mtimeSec: number | null = null;
+        try {
+          mtimeSec = Math.floor(statSync(lockDir).mtimeMs / 1000);
+        } catch {
+          mtimeSec = null;
+        }
+        const nowSec = Math.floor(Date.now() / 1000);
+        if (mtimeSec !== null && mtimeSec > 0 && nowSec - mtimeSec >= 60) {
+          try {
+            rmdirSync(lockDir);
+          } catch {
+            // matches bash's `rmdir ... || true`
+          }
+          waited = 0;
+          continue;
+        }
+        fn();
+        return;
+      }
+      sleepSyncMs(50);
+      waited += 1;
+    }
+  }
+
+  try {
+    fn();
+  } finally {
+    try {
+      rmdirSync(lockDir);
+    } catch {
+      // matches bash's `rmdir ... || true`
+    }
+  }
+}
+
+/** `workflow_rotate_events_file_locked()` port. */
+function workflowRotateEventsFileLocked(repoRoot: string, relPath: string, wcLineCount: number, keep: number): void {
+  const absPath = join(repoRoot, relPath);
+  const parsed = readEventsFileForRotation(absPath);
+  if (parsed === null) return;
+
+  const cut = wcLineCount - keep;
+  const archiveDir = join(dirname(absPath), 'archive');
+  const stamp = (() => {
+    const now = new Date();
+    return `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+  })();
+  const base = basename(relPath).replace(/\.jsonl$/, '');
+  const archiveFile = join(archiveDir, `${base}-${stamp}.jsonl`);
+
+  try {
+    mkdirSync(archiveDir, { recursive: true });
+  } catch {
+    return;
+  }
+
+  const headLines = parsed.lines.slice(0, cut);
+  const tailLines = parsed.lines.slice(cut);
+  const archiveChunk = headLines.map((line) => `${line}\n`).join('');
+  const keptContent = tailLines.map((line) => `${line}\n`).join('');
+
+  try {
+    appendFileSync(archiveFile, archiveChunk);
+    const tmpPath = `${absPath}.tmp-${process.pid}-${Date.now()}`;
+    writeFileSync(tmpPath, keptContent);
+    renameSync(tmpPath, absPath);
+  } catch {
+    // matches bash's `else rm -f "$tmp"` fallback -- best-effort, never
+    // throws out of a cold-path housekeeping step.
+  }
+}
+
+/** `workflow_rotate_events_file()` port. */
+function workflowRotateEventsFile(
+  repoRoot: string,
+  relPath: string,
+  lockRoot: string,
+  maxLines = 2000,
+  maxBytes = 524288,
+  keep = 500,
+): void {
+  const absPath = join(repoRoot, relPath);
+  if (!existsSync(absPath)) return;
+  const counts = fileLineAndByteCount(absPath);
+  if (counts === null) return;
+  if (counts.lines <= maxLines && counts.bytes <= maxBytes) return;
+  if (!(counts.lines > keep)) return;
+
+  withEventsLock(lockRoot, `evt-${basename(relPath)}`, () => {
+    workflowRotateEventsFileLocked(repoRoot, relPath, counts.lines, keep);
+  });
+}
+
+/** Both cold-path rotation targets, in the base script's own call order. Never throws (mirrors `2>/dev/null || true` on each call). */
+function rotateSessionStartEventLogs(repoRoot: string): void {
+  const lockRoot = join(dirname(join(repoRoot, workflowEventsFile(repoRoot))), '.locks');
+  try {
+    workflowRotateEventsFile(repoRoot, workflowEventsFile(repoRoot), lockRoot);
+  } catch {
+    /* cold-path housekeeping must never fail the session */
+  }
+  try {
+    workflowRotateEventsFile(repoRoot, '.ai/harness/architecture/events.jsonl', lockRoot);
+  } catch {
+    /* cold-path housekeeping must never fail the session */
+  }
+}
+
+// ---------------------------------------------------------------------------
 // session-start-context.sh port -- the 8 composed sub-blocks, in file order
 // ---------------------------------------------------------------------------
 
@@ -373,7 +592,20 @@ function resumeCurrentForHandoff(repoRoot: string, resumeFile: string, handoffFi
   return resumeMtime >= handoffMtime;
 }
 
-/** `awk 'length(total) < 12000 { total = total $0 "\n" } END { printf "%s", total }'` -- keeps whole lines while the running total is under the cap (checked BEFORE appending), so the result can overshoot by up to one line's length but never truncates mid-line. */
+/**
+ * `awk 'length(total) < 12000 { total = total $0 "\n" } END { printf "%s", total }'`
+ * -- keeps whole lines while the running total is under the cap (checked
+ * BEFORE appending), so the result can overshoot by up to one line's length
+ * but never truncates mid-line.
+ *
+ * Gatekeeper S5 fix: the awk `total` variable (and `printf "%s", total`)
+ * itself ends with `\n` after the last appended line, but bash captures
+ * this via `context="$(awk ...)"` -- command substitution strips ALL
+ * trailing newlines from the captured value. Without stripping here too,
+ * `resumeBlock`'s caller (`appendBlock`) would join a later section with an
+ * extra blank line (this value's own trailing `\n` plus appendBlock's own
+ * `\n` separator).
+ */
 function capResumeContent(text: string, capChars = 12000): string {
   let lines = text.split('\n');
   if (lines.length > 0 && lines[lines.length - 1] === '') lines = lines.slice(0, -1);
@@ -382,7 +614,7 @@ function capResumeContent(text: string, capChars = 12000): string {
     if (total.length >= capChars) break;
     total += `${line}\n`;
   }
-  return total;
+  return total.replace(/\n+$/, '');
 }
 
 /** 1. `resume_current_for_handoff` gate + the capped resume.md blob. */
@@ -826,18 +1058,128 @@ function toolingUpdateSyncPopulateAndRender(
   return content;
 }
 
+/** `evt-` lock's own crashed-holder threshold (`workflow_with_lock`'s 60s) reused for the tooling-advisory lock -- see `acquireToolingAdvisoryLock`'s doc comment for why this exists even though bash's own async branch had no such handling. */
+const TOOLING_ADVISORY_LOCK_STALE_SECONDS = 60;
+
+/** Marks a `bun session-context.ts <flag> <repoRoot> <target> <reportFile> <lockDir>` standalone invocation -- see the `import.meta.main` bootstrap at the bottom of this file. */
+const DETACHED_TOOLING_POPULATE_FLAG = '--detached-tooling-populate';
+
+/**
+ * Gatekeeper MEDIUM (adjudicated fix): restores the cross-session TTL
+ * refresh cycle bash's detached background subshell provided. Runs in its
+ * OWN separate, `unref()`'d process (spawned by `triggerDetachedToolingPopulate`
+ * below) so it outlives the triggering SessionStart hook, which exits
+ * immediately after spawning -- that is the entire point of "detached".
+ * Mirrors bash's backgrounded subshell exactly: populate the report cache
+ * on success, and ALWAYS remove the lock dir when done (success OR
+ * failure), so a later session's trigger can acquire it again. Never
+ * renders/marks-rendered here -- exactly like bash, only a LATER session
+ * that finds the cache fresh does that.
+ */
+export function runDetachedToolingPopulate(
+  repoRoot: string,
+  env: NodeJS.ProcessEnv,
+  target: string,
+  reportFile: string,
+  lockDir: string,
+): void {
+  try {
+    const stdout = repoHarnessSetupCheckSubprocess(repoRoot, env, target);
+    if (stdout !== null) {
+      writeFileSync(join(repoRoot, reportFile), stdout);
+    }
+  } finally {
+    try {
+      rmdirSync(join(repoRoot, lockDir));
+    } catch {
+      // Already removed / never fully created -- matches bash's own
+      // `rmdir "$lock_dir" 2>/dev/null || true`.
+    }
+  }
+}
+
+/**
+ * `if mkdir "$lock_dir" 2>/dev/null; then ... fi` port, PLUS a deliberate
+ * improvement bash's own async branch never had: bash's backgrounded
+ * subshell is the ONLY thing that ever removes this lock dir, so if it dies
+ * mid-flight (OOM, forced kill, host sleep) before reaching its own
+ * `rmdir`, the lock is left behind FOREVER and every future session's
+ * `mkdir` attempt fails forever, permanently suppressing the refresh cycle
+ * -- a latent bash bug, not a behavior worth preserving. Reuses
+ * `workflow_with_lock`'s own 60s crashed-holder threshold (the only "sane
+ * age" precedent this codebase already establishes) to break a stale lock
+ * and retry once; a lock younger than that is left alone (a populate is
+ * plausibly still genuinely in progress).
+ */
+function acquireToolingAdvisoryLock(repoRoot: string, lockDir: string): boolean {
+  const absLockDir = join(repoRoot, lockDir);
+  try {
+    mkdirSync(absLockDir);
+    return true;
+  } catch {
+    let mtimeSec: number | null;
+    try {
+      mtimeSec = Math.floor(statSync(absLockDir).mtimeMs / 1000);
+    } catch {
+      return false; // vanished between the failed mkdir and this stat; next session tries again
+    }
+    const nowSec = Math.floor(Date.now() / 1000);
+    if (nowSec - mtimeSec < TOOLING_ADVISORY_LOCK_STALE_SECONDS) return false;
+    try {
+      rmdirSync(absLockDir);
+      mkdirSync(absLockDir);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
+
+/**
+ * Spawns the detached populate as a standalone `bun session-context.ts
+ * --detached-tooling-populate ...` process (not a plain callback in this
+ * process: a `spawn(...).unref()`'d NODE-SIDE callback would never run --
+ * this process's own event loop stops the moment SessionStart returns and
+ * the host hook process exits, which is the whole reason bash used a
+ * backgrounded, independent subshell instead of "do it later in the same
+ * script"). `detached: true` + `unref()` means the parent never waits, and
+ * the child is reparented (survives the parent exiting), matching bash's
+ * own orphaned-background-job semantics.
+ */
+function triggerDetachedToolingPopulate(
+  repoRoot: string,
+  env: NodeJS.ProcessEnv,
+  target: string,
+  reportFile: string,
+  lockDir: string,
+): void {
+  if (!acquireToolingAdvisoryLock(repoRoot, lockDir)) return;
+  try {
+    const child = spawn(
+      process.execPath,
+      [fileURLToPath(import.meta.url), DETACHED_TOOLING_POPULATE_FLAG, repoRoot, target, reportFile, lockDir],
+      { cwd: repoRoot, env, detached: true, stdio: 'ignore' },
+    );
+    child.unref();
+  } catch {
+    // Spawn itself failed; release the lock we just acquired instead of
+    // leaking it, so a later session can try again.
+    try {
+      rmdirSync(join(repoRoot, lockDir));
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
 /**
  * 7. `tooling_update_advisory_context`. The fresh-cache render path (the
  * steady-state case) and the `REPO_HARNESS_TOOLING_ADVISORY_SYNC=1` path are
- * both ported with full fidelity. The DEFAULT stale-cache path (no SYNC env)
- * forks a detached background `setup check --check-updates` populate in
- * bash and contributes ZERO content to the *triggering* session's own
- * stdout either way -- reproducing detached background population
- * in-process would need real child-process backgrounding for a side channel
- * with no observable content this session, deliberately not ported (see
- * notes: cost-only simplification). Only the lock-directory attempt is
- * mirrored for that default path, so a concurrent populate elsewhere still
- * finds the same "already populating" signal on disk.
+ * both ported with full fidelity. The DEFAULT stale-cache path now also
+ * triggers a detached background populate (see `triggerDetachedToolingPopulate`)
+ * restoring bash's own cross-session TTL refresh cycle; either way it
+ * contributes ZERO content to the *triggering* session's own stdout, exactly
+ * like bash's backgrounded subshell.
  */
 function toolingUpdateAdvisoryContext(repoRoot: string, env: NodeJS.ProcessEnv, nowMs: number): string | null {
   if (!fileExists(repoRoot, '.ai/harness/workflow-contract.json')) return null;
@@ -861,12 +1203,7 @@ function toolingUpdateAdvisoryContext(repoRoot: string, env: NodeJS.ProcessEnv, 
     return toolingUpdateSyncPopulateAndRender(repoRoot, env, target, reportFile, markerFile);
   }
 
-  try {
-    mkdirSync(join(repoRoot, lockDir));
-  } catch {
-    // Directory exists already (lock held elsewhere) or could not be
-    // created; either way nothing renders for this session.
-  }
+  triggerDetachedToolingPopulate(repoRoot, env, target, reportFile, lockDir);
   return null;
 }
 
@@ -939,7 +1276,8 @@ function codexDelegationAutoContext(repoRoot: string, env: NodeJS.ProcessEnv): s
   ].join('\n');
 }
 
-const INPUT_PRIORITY_CONTEXT = [
+/** Exported so parity fixtures (tests/session-context.test.ts) can assert exact joined output without duplicating this literal. */
+export const INPUT_PRIORITY_CONTEXT = [
   '# Input Priority',
   '',
   'If the current user message mentions `# Files mentioned by the user`, `pasted-text.txt`, or an explicit attachment/file path, read those current-input files first. Treat handoff, resume, and `tasks/current.md` as recovery context only.',
@@ -977,6 +1315,11 @@ export function sessionStartMainContent(
   nowMs: number,
 ): string | null {
   const repoRoot = collector.getRepoRoot();
+
+  // Cold-path housekeeping, matching the base script's own call order
+  // (before resume_file is even resolved): both event logs grow unbounded
+  // otherwise. Produces no session content.
+  rotateSessionStartEventLogs(repoRoot);
 
   let context = safely(() => resumeBlock(repoRoot, collector) || null) ?? '';
   context = appendBlock(context, safely(() => capabilityContextPendingContext(repoRoot)));
@@ -1037,4 +1380,18 @@ export function buildSessionStartSections(
   const security = securitySentinelSessionSection(collector.getRepoRoot(), env);
   if (security) sections.push(security);
   return sections;
+}
+
+// ---------------------------------------------------------------------------
+// Standalone detached-populate entry point (see triggerDetachedToolingPopulate)
+// ---------------------------------------------------------------------------
+//
+// Only activates when THIS file is the directly-invoked entry point (a
+// `bun session-context.ts --detached-tooling-populate ...` process spawned
+// detached+unref'd) -- false whenever the module is merely imported (the
+// normal case: runtime.ts imports buildSessionStartSections), so this never
+// runs as a side effect of importing the module.
+if (import.meta.main && process.argv[2] === DETACHED_TOOLING_POPULATE_FLAG) {
+  const [, , , repoRootArg, targetArg, reportFileArg, lockDirArg] = process.argv;
+  runDetachedToolingPopulate(repoRootArg, process.env, targetArg, reportFileArg, lockDirArg);
 }

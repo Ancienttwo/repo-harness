@@ -6,11 +6,13 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  utimesSync,
   writeFileSync,
 } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import {
+  INPUT_PRIORITY_CONTEXT,
   buildSessionStartSections,
   minimalChangeSessionContent,
   minimalChangeSessionSection,
@@ -33,6 +35,15 @@ function withTmpRepo(prefix: string, fn: (repoRoot: string) => void): void {
   const repoRoot = tmpRepo(prefix);
   try {
     fn(repoRoot);
+  } finally {
+    rmSync(repoRoot, { recursive: true, force: true });
+  }
+}
+
+async function withTmpRepoAsync(prefix: string, fn: (repoRoot: string) => Promise<void>): Promise<void> {
+  const repoRoot = tmpRepo(prefix);
+  try {
+    await fn(repoRoot);
   } finally {
     rmSync(repoRoot, { recursive: true, force: true });
   }
@@ -225,6 +236,52 @@ describe("sessionStartMainContent (session-start-context.sh port) — empty/gati
       expect(content).toContain("Continue the widget work.");
       expect(content).toContain("# Input Priority");
       expect(content!.indexOf("# Input Priority")).toBeLessThan(content!.indexOf("Continue the widget work."));
+    });
+  });
+
+  // Gatekeeper S5: capResumeContent used to leave a trailing "\n" on the
+  // capped resume blob; appendBlock's own single "\n" separator then
+  // produced a spurious blank line before the NEXT section. A resume-only
+  // fixture (no later section) can't observe this -- the exact joined
+  // output below is the parity fixture.
+  test("S5 parity: resume packet + a later section (active sprint) join with no blank line between them", () => {
+    withTmpRepo("main-resume-plus-sprint", (repoRoot) => {
+      mkdirSync(join(repoRoot, ".ai/harness/handoff"), { recursive: true });
+      const resumeBlob = [
+        "<!-- generated-by: repo-harness codex-handoff-resume v1 -->",
+        "# Codex Resume Packet",
+        "",
+        "## Resume Prompt",
+        "",
+        "Continue the widget work.",
+      ].join("\n");
+      writeFileSync(join(repoRoot, ".ai/harness/handoff/resume.md"), resumeBlob);
+      mkdirSync(join(repoRoot, "tasks"), { recursive: true });
+      writeFileSync(join(repoRoot, "tasks/todos.md"), "# Deferred Goal Ledger\n\n- [ ] revisit caching\n");
+
+      mkdirSync(join(repoRoot, "plans/sprints"), { recursive: true });
+      mkdirSync(join(repoRoot, ".ai/harness/sprint"), { recursive: true });
+      writeFileSync(
+        join(repoRoot, "plans/sprints/fixture.sprint.md"),
+        "# Sprint: Fixture\n\n> **Status**: Approved\n\n## Backlog\n\n| # | Status | Task |\n|---|--------|------|\n| 1 | [ ] | task-a |\n",
+      );
+      writeFileSync(join(repoRoot, ".ai/harness/sprint/active-sprint"), "plans/sprints/fixture.sprint.md\n");
+
+      const content = sessionStartMainContent(freshCollector(repoRoot), process.env, Date.now());
+      expect(content).not.toBeNull();
+
+      const sprintBlock = [
+        "# Active Sprint",
+        "",
+        "- Sprint: `plans/sprints/fixture.sprint.md` status=Approved backlog=0/1",
+        "- Next sprint task: task-a",
+        "- Rule: a Sprint is a long-task container. Use `$think` to expand the next sprint task into a detailed `plans/plan-*.md`, then run the existing plan -> contract -> worktree flow. `tasks/todos.md` stays the deferred-goal ledger.",
+        "- Entrypoint: inspect with `repo-harness run sprint-backlog next`; after `$think` produces an approved plan, capture it with `repo-harness run capture-plan --source waza-think --source-ref sprint:plans/sprints/fixture.sprint.md#task-a`.",
+      ].join("\n");
+      const expected = [INPUT_PRIORITY_CONTEXT, resumeBlob, sprintBlock].join("\n");
+
+      expect(content).toBe(expected);
+      expect(content).not.toContain("\n\n# Active Sprint");
     });
   });
 });
@@ -509,4 +566,202 @@ describe("budgetSessionContext integration — dedupe and mandatory-overflow fai
       expect(result.evidence.mandatory_overflows.length).toBe(1);
     });
   });
+});
+
+describe("sessionStartMainContent — cold-path event-log rotation (gatekeeper PORT finding)", () => {
+  function writeEventLines(path: string, n: number): void {
+    const lines: string[] = [];
+    for (let i = 1; i <= n; i += 1) {
+      lines.push(JSON.stringify({ ts: "2026-07-20T00:00:00+0000", event_type: "probe", reason: `line-${i}`, run_id: "r" }));
+    }
+    writeFileSync(path, `${lines.join("\n")}\n`);
+  }
+
+  test("oversized main events.jsonl (2500 lines) rotates to last 500, archives first 2000", () => {
+    withTmpRepo("rotate-main-oversized", (repoRoot) => {
+      const eventsPath = join(repoRoot, ".ai/harness/events.jsonl");
+      writeEventLines(eventsPath, 2500);
+
+      sessionStartMainContent(freshCollector(repoRoot), process.env, Date.now());
+
+      const kept = readFileSync(eventsPath, "utf-8").trim().split("\n");
+      expect(kept.length).toBe(500);
+      expect(JSON.parse(kept[0]).reason).toBe("line-2001");
+      expect(JSON.parse(kept[kept.length - 1]).reason).toBe("line-2500");
+
+      const now = new Date();
+      const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}`;
+      const archivePath = join(repoRoot, ".ai/harness/archive", `events-${stamp}.jsonl`);
+      expect(existsSync(archivePath)).toBe(true);
+      const archived = readFileSync(archivePath, "utf-8").trim().split("\n");
+      expect(archived.length).toBe(2000);
+      expect(JSON.parse(archived[0]).reason).toBe("line-1");
+      expect(JSON.parse(archived[archived.length - 1]).reason).toBe("line-2000");
+    });
+  });
+
+  test("oversized architecture events.jsonl also rotates (hardcoded second target, not policy-configurable)", () => {
+    withTmpRepo("rotate-architecture-oversized", (repoRoot) => {
+      mkdirSync(join(repoRoot, ".ai/harness/architecture"), { recursive: true });
+      const eventsPath = join(repoRoot, ".ai/harness/architecture/events.jsonl");
+      writeEventLines(eventsPath, 2500);
+
+      sessionStartMainContent(freshCollector(repoRoot), process.env, Date.now());
+
+      const kept = readFileSync(eventsPath, "utf-8").trim().split("\n");
+      expect(kept.length).toBe(500);
+      expect(JSON.parse(kept[0]).reason).toBe("line-2001");
+
+      const now = new Date();
+      const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}`;
+      expect(existsSync(join(repoRoot, ".ai/harness/architecture/archive", `events-${stamp}.jsonl`))).toBe(true);
+    });
+  });
+
+  test("small events.jsonl (under both thresholds) is left untouched, no archive dir created", () => {
+    withTmpRepo("rotate-small-untouched", (repoRoot) => {
+      const eventsPath = join(repoRoot, ".ai/harness/events.jsonl");
+      writeEventLines(eventsPath, 10);
+      const before = readFileSync(eventsPath, "utf-8");
+
+      sessionStartMainContent(freshCollector(repoRoot), process.env, Date.now());
+
+      expect(readFileSync(eventsPath, "utf-8")).toBe(before);
+      expect(existsSync(join(repoRoot, ".ai/harness/archive"))).toBe(false);
+    });
+  });
+
+  test("missing events.jsonl is a no-op (no directory, no throw)", () => {
+    withTmpRepo("rotate-missing-file", (repoRoot) => {
+      expect(() => sessionStartMainContent(freshCollector(repoRoot), process.env, Date.now())).not.toThrow();
+      expect(existsSync(join(repoRoot, ".ai/harness/events.jsonl"))).toBe(false);
+    });
+  });
+});
+
+describe("tooling-advisory detached populate (gatekeeper MEDIUM finding)", () => {
+  async function waitUntil(predicate: () => boolean, timeoutMs = 5000, intervalMs = 25): Promise<boolean> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (predicate()) return true;
+      await Bun.sleep(intervalMs);
+    }
+    return predicate();
+  }
+
+  function writeFakeRepoHarness(fakeBin: string, logFile: string): void {
+    mkdirSync(fakeBin, { recursive: true });
+    writeFileSync(
+      join(fakeBin, "repo-harness"),
+      [
+        "#!/bin/bash",
+        `printf '%s\\n' "$*" >> '${logFile}'`,
+        "cat <<'JSON'",
+        JSON.stringify({
+          version: 1,
+          status: "attention",
+          target: "codex",
+          checkUpdates: true,
+          agent_actions: [
+            {
+              id: "cli.update",
+              status: "needs_agent",
+              reason: "a new repo-harness version is available.",
+              command: "bun add -g repo-harness@latest",
+              verification: "repo-harness --version",
+            },
+          ],
+        }),
+        "JSON",
+      ].join("\n") + "\n",
+      { mode: 0o755 },
+    );
+  }
+
+  test("stale cache triggers a detached populate: lock appears then disappears, report cache refreshes", async () => {
+    await withTmpRepoAsync("detached-lock-lifecycle", async (repoRoot) => {
+      writeFileSync(join(repoRoot, ".ai/harness/workflow-contract.json"), "{}\n");
+      const fakeBin = join(repoRoot, "fake-bin");
+      const logFile = join(repoRoot, "tooling-check.log");
+      writeFakeRepoHarness(fakeBin, logFile);
+
+      const env = {
+        ...process.env,
+        HOOK_HOST: "codex",
+        PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
+        REPO_HARNESS_CLI: "",
+      };
+      const lockDir = join(repoRoot, ".ai/harness/security/tooling-update-advisory-codex.lock");
+      const reportFile = join(repoRoot, ".ai/harness/security/tooling-update-advisory-codex.json");
+
+      const content = sessionStartMainContent(freshCollector(repoRoot), env, Date.now());
+      // Nothing renders on the TRIGGERING session -- exactly like bash's
+      // own backgrounded subshell, which never renders either.
+      expect(content === null || !content.includes("Tooling Update Advisory")).toBe(true);
+      // The lock is acquired SYNCHRONOUSLY before the detached child is spawned.
+      expect(existsSync(lockDir)).toBe(true);
+
+      const lockRemoved = await waitUntil(() => !existsSync(lockDir));
+      expect(lockRemoved).toBe(true);
+      const reportWritten = await waitUntil(() => existsSync(reportFile));
+      expect(reportWritten).toBe(true);
+      const report = JSON.parse(readFileSync(reportFile, "utf-8"));
+      expect(report.agent_actions[0].id).toBe("cli.update");
+      expect(readFileSync(logFile, "utf-8").trim()).toBe("setup check --target codex --check-updates --json");
+    });
+  }, 10000);
+
+  test("TTL-expired advisory re-renders on the NEXT session after a background populate completes", async () => {
+    await withTmpRepoAsync("detached-ttl-rerender", async (repoRoot) => {
+      writeFileSync(join(repoRoot, ".ai/harness/workflow-contract.json"), "{}\n");
+      const fakeBin = join(repoRoot, "fake-bin");
+      const logFile = join(repoRoot, "tooling-check.log");
+      writeFakeRepoHarness(fakeBin, logFile);
+
+      const env = {
+        ...process.env,
+        HOOK_HOST: "codex",
+        PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
+        REPO_HARNESS_CLI: "",
+      };
+      const reportFile = join(repoRoot, ".ai/harness/security/tooling-update-advisory-codex.json");
+      const lockDir = join(repoRoot, ".ai/harness/security/tooling-update-advisory-codex.lock");
+
+      // First session: stale (missing) cache -> triggers populate, renders nothing.
+      sessionStartMainContent(freshCollector(repoRoot), env, Date.now());
+      await waitUntil(() => existsSync(reportFile) && !existsSync(lockDir));
+
+      // Second session, immediately after: cache is now FRESH (just
+      // written) and not yet rendered -- must render this time.
+      const second = sessionStartMainContent(freshCollector(repoRoot), env, Date.now());
+      expect(second).not.toBeNull();
+      expect(second).toContain("Tooling Update Advisory");
+      expect(second).toContain("cli.update");
+    });
+  }, 10000);
+
+  test("a lock older than the stale threshold is broken and retried rather than permanently suppressing refresh", async () => {
+    await withTmpRepoAsync("detached-stale-lock", async (repoRoot) => {
+      writeFileSync(join(repoRoot, ".ai/harness/workflow-contract.json"), "{}\n");
+      const fakeBin = join(repoRoot, "fake-bin");
+      const logFile = join(repoRoot, "tooling-check.log");
+      writeFakeRepoHarness(fakeBin, logFile);
+      mkdirSync(join(repoRoot, ".ai/harness/security"), { recursive: true });
+      const lockDir = join(repoRoot, ".ai/harness/security/tooling-update-advisory-codex.lock");
+      mkdirSync(lockDir);
+      const old = new Date(Date.now() - 120_000);
+      utimesSync(lockDir, old, old);
+
+      const env = {
+        ...process.env,
+        HOOK_HOST: "codex",
+        PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
+        REPO_HARNESS_CLI: "",
+      };
+      sessionStartMainContent(freshCollector(repoRoot), env, Date.now());
+      const reportFile = join(repoRoot, ".ai/harness/security/tooling-update-advisory-codex.json");
+      const reportWritten = await waitUntil(() => existsSync(reportFile));
+      expect(reportWritten).toBe(true);
+    });
+  }, 10000);
 });
