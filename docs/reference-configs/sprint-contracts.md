@@ -101,6 +101,38 @@ Verification is an evidence consumer. `commands_succeed` must not launch profile
 
 A verifier consumes already-produced evidence; it must not become the producer of expensive, runtime-heavy evidence (for example, a full multi-provider/multi-profile benchmark matrix). An authoritative matrix or similarly expensive one-time evidence run belongs outside `commands_succeed`: the author runs it once on a clean checkout before merge and commits the resulting tracked report (for example `evals/harness/reports/profile-comparison.json`/`.md`); the contract then verifies that report's bytes and provenance, not a live re-run.
 
+## Cutover Package Discipline
+
+Distilled from the Hook Runtime Diet sprint (HRD-03..05, 2026-07-20). Apply
+to every contract that retires a script/module, renames a field, or moves an
+authority.
+
+1. **Pre-enumeration gate (one amendment round).** Before any code, grep the
+   retired filenames AND the surfaces they write across `src/`, `scripts/`,
+   `tests/`, `docs/`, `README*` (all locales), `assets/`, `.ai/hooks/`.
+   Classify every hit live vs historical with evidence in the notes file.
+   Hand back the enumeration for exactly one Allowed Paths amendment round;
+   reactive widening across gate rounds is the failure mode this prevents.
+2. **Falsifier first.** Port the two smallest units first and byte-diff them
+   against the base SHA before touching the main body; if they need a
+   subprocess or shell-only semantics to stay observable-identical, stop.
+3. **Full suite before reporting.** Scoped test groups are for iteration
+   only. The worker runs the complete `bun test` plus projection/type/
+   boundary checks before claiming RESULT; scoped-green with full-suite-red
+   is a known CI blind-spot pattern.
+4. **Composition fixtures.** Parity suites must include end-to-end cases
+   through the production entrypoint (`runHook()` or equivalent) and
+   combined-feature differentials; single-feature fixtures miss joins,
+   budget filtering, and entrypoint drops.
+5. **Golden delta policy.** A characterization golden regenerates at most
+   once per package under a per-field authorized policy: runtime-shape
+   fields may move where contracted, decision-semantic fields never move,
+   and the per-field before/after lands in the notes and PR body.
+6. **Dead-code claims need base-SHA proof.** A cleanup advisory (including a
+   gatekeeper's) is a claim: prove deadness against the base SHA's owning
+   function and grep for real exercisers before dropping; refuse with
+   evidence otherwise and record the adjudication in the contract.
+
 ## Status Rules
 
 - `Pending`: drafted but not approved for execution
