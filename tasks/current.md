@@ -1,26 +1,26 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-19T06:29:16+0800 -->
+<!-- updated_at: 2026-07-20T22:54:06+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: Idle
-> **Updated At**: 2026-07-19T06:29:16+0800
+> **Status**: Active
+> **Updated At**: 2026-07-20T22:54:06+0800
 > **Source Branch**: main
-> **Source Commit**: a20ffbba
+> **Source Commit**: 8cdc0340
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: test-retirement merged (PR #92); all stray branches resolved
+> **Reason**: manual
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: Idle
+- Status: Active
 - Active Plan: (none)
 - Plan Status: (none)
-- Next Task: (none)
+- Next Task: inspect active worktree marker(s)
 - Clear Note: (none)
 
 ## Mainline Snapshot Reading
@@ -31,7 +31,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- (none)
+- /Users/kito/Projects/repo-harness-wt-hrd-05-post-edit-event-journal: plans/plan-20260720-1146-hrd-05-post-edit-event-journal.md
+- /Users/kito/Projects/repo-harness-wt-hrd-05-post-edit-event-journal: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-hrd-05-post-edit-event-journal
 ## Active Sprint
 
 - Sprint: (none)
@@ -50,14 +51,15 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Checks
 
-- status=fail, source=verify-sprint, exit_code=1, file=.ai/harness/checks/latest.json
+- status=(none), source=(none), exit_code=(none), file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: clean
+- Summary: 2 changed/untracked path(s)
 
 ```
-(none)
+ M plans/sprints/20260719-1531-hook-runtime-diet.sprint.md
+?? HANDOFF.md
 ```
 
 ## Source Artifacts
