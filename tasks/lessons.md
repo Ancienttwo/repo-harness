@@ -12,6 +12,30 @@
 
 ## Active Lessons
 
+- Date: 2026-07-20
+- Triggered by correction: HRD-03's script retirement needed four separate contract amendment rounds because live consumers (installer evidence lists, sync-tool checks, generated-rule emitters, five locale READMEs, nine test files) were discovered one gate round at a time; HRD-04/05 then landed the same class of cutover with a single amendment round each by enumerating first.
+- Mistake pattern: starting a retirement/cutover implementation before enumerating every live consumer of the retired surface, so the allowlist grows reactively through repeated fail-fix-regate rounds.
+- Prevention rule: every retirement or cutover contract carries a mandatory pre-enumeration gate — before any code, grep the retired filenames AND the surfaces they write across src/, scripts/, tests/, docs/, README* (all locales), assets/, .ai/hooks/; classify every hit live vs historical with evidence; hand back the enumeration for exactly one allowlist amendment round.
+- Where to apply next time: any contract that deletes a script/module, renames a field, or moves an authority; the dispatch packet and the contract Scope must both name the gate.
+
+- Date: 2026-07-20
+- Triggered by correction: the P0 package's dispatch-scoped test groups were all green locally, but full-suite CI failed on `tests/state/loop-semantics-characterization.test.ts` — a file no scoped group had ever run.
+- Mistake pattern: treating a curated test subset as ship evidence; scoped groups leave CI blind spots exactly where cross-surface interactions live.
+- Prevention rule: an implementation worker runs the FULL `bun test` suite (plus the projection/type/boundary checks) before reporting RESULT; the scoped groups are for iteration speed only, never the final claim.
+- Where to apply next time: every delegated implementation dispatch; put "full suite before reporting" in the packet verbatim.
+
+- Date: 2026-07-20
+- Triggered by correction: a gatekeeper advisory claimed the Sprint Contract header fallback was dead code and should be dropped; the worker's counter-evidence (base `derive_contract_path()` carries the identical fallback; non-archived Approved plans exercise it) proved the premise false, and the round-2 gate overruled the advisory.
+- Mistake pattern: treating a reviewer's dead-code/cleanup claim as fact without verifying the base behavior and searching for real exercisers first.
+- Prevention rule: before dropping "dead" code during a parity port, prove deadness against the base SHA (the function that owns the behavior, not a neighbor) and grep for real artifacts that would exercise the path; an advisory that fails this check gets refused with the evidence, and the adjudication is recorded in the contract, not just the notes.
+- Where to apply next time: parity-locked ports and any cleanup suggestion arriving from review, including gatekeeper advisories.
+
+- Date: 2026-07-20
+- Triggered by correction: HRD-04's worker validated seven parity scenarios and still missed a 1-byte break that only appeared when two sections combined (resume + active sprint); the gatekeeper's self-built combined-scenario differential caught it. Separately, HRD-05's crash-replay fixture asserted a unit function while the production SessionStart path silently dropped the same section.
+- Mistake pattern: parity/behavior fixtures that exercise components in isolation while the composition path (section joining, budget filtering, production entrypoint) is where the regression lives.
+- Prevention rule: characterization and parity suites must include at least one end-to-end composition case per surface (through the production entrypoint, e.g. `runHook()`), and differential harnesses must combine features, not only test them singly; goldens regenerate at most once per package under a per-field authorized delta policy where decision-semantic fields never move.
+- Where to apply next time: every handler cutover's fixture design and every golden regeneration authorization.
+
 - Date: 2026-07-12
 - Triggered by correction: the TypeScript 7 upgrade verification exposed truncated JSON from Bun CLI helpers, which cascaded into architecture-queue parse failures and `unknown` review fingerprints.
 - Mistake pattern: writing buffered output with `process.stdout.write` or `process.stderr.write` and immediately calling `process.exit`, allowing Bun to terminate before the pipe was fully flushed.
