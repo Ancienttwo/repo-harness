@@ -5,7 +5,6 @@ import { describe, test, expect, setDefaultTimeout } from "bun:test";
 setDefaultTimeout(20000);
 import {
   copyFileSync,
-  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -19,10 +18,11 @@ import {
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
+import { sessionStartMainContent } from "../src/cli/hook/session-context";
+import { createStateInputCollector } from "../src/effects/loop/state-input-collector";
 
 const ROOT = join(import.meta.dir, "..");
 const HELPER_DIR = join(ROOT, "assets/templates/helpers");
-const ASSETS_HOOKS_DIR = join(ROOT, "assets/hooks");
 
 function tmpWorkspace(prefix: string): string {
   return realpathSync(mkdtempSync(join(tmpdir(), `${prefix}-`)));
@@ -55,20 +55,6 @@ function copySprintHelpers(cwd: string, files: string[]) {
     copyFileSync(join(HELPER_DIR, file), join(cwd, "scripts", file));
   }
   expect(run("bash", ["-lc", "chmod +x scripts/*.sh"], cwd).status).toBe(0);
-}
-
-function installHooks(cwd: string) {
-  const aiHooksDir = join(cwd, ".ai", "hooks");
-  mkdirSync(aiHooksDir, { recursive: true });
-  for (const f of readdirSync(ASSETS_HOOKS_DIR, { withFileTypes: true })) {
-    const src = join(ASSETS_HOOKS_DIR, f.name);
-    if (f.isDirectory()) {
-      cpSync(src, join(aiHooksDir, f.name), { recursive: true });
-    } else {
-      copyFileSync(src, join(aiHooksDir, f.name));
-    }
-  }
-  expect(run("bash", ["-lc", "find .ai/hooks -type f -name '*.sh' -exec chmod +x {} +"], cwd).status).toBe(0);
 }
 
 function writeActiveSprintFixture(cwd: string, sprintRelPath: string) {
@@ -663,30 +649,29 @@ describe("sprint projection", () => {
     }
   });
 
+  // HRD-04 retired session-start-context.sh; the direct-spawn vehicle
+  // retargets through the in-process session-context builder with identical
+  // Active Sprint assertions (installHooks() is no longer needed -- the
+  // builder reads repo facts directly, not a vendored script).
   test("session-start hook injects active sprint context and stays inert without a marker", () => {
     const cwd = tmpWorkspace("sprint-session-start");
     try {
-      installHooks(cwd);
-
-      const inert = spawnSync("bash", [join(cwd, ".ai/hooks/session-start-context.sh")], {
-        cwd,
-        input: "{}",
-        encoding: "utf-8",
+      const freshCollector = () => createStateInputCollector({
+        event: "SessionStart",
+        repoRoot: cwd,
+        resolveSessionEffectiveState: () => null,
       });
-      expect(inert.status).toBe(0);
-      expect(inert.stdout).not.toContain("Active Sprint");
+
+      const inert = sessionStartMainContent(freshCollector(), process.env, Date.now());
+      expect(inert === null || !inert.includes("Active Sprint")).toBe(true);
 
       writeActiveSprintFixture(cwd, "plans/sprints/20260610-0000-fixture-sprint.sprint.md");
-      const active = spawnSync("bash", [join(cwd, ".ai/hooks/session-start-context.sh")], {
-        cwd,
-        input: "{}",
-        encoding: "utf-8",
-      });
-      expect(active.status).toBe(0);
-      expect(active.stdout).toContain("Active Sprint");
-      expect(active.stdout).toContain("backlog=0/2");
-      expect(active.stdout).toContain("task-a");
-      expect(active.stdout).toContain("Use `$think` to expand the next sprint task");
+      const active = sessionStartMainContent(freshCollector(), process.env, Date.now());
+      expect(active).not.toBeNull();
+      expect(active).toContain("Active Sprint");
+      expect(active).toContain("backlog=0/2");
+      expect(active).toContain("task-a");
+      expect(active).toContain("Use `$think` to expand the next sprint task");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

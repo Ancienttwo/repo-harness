@@ -19,6 +19,8 @@ import { platform, tmpdir } from "os";
 import { dirname, join } from "path";
 import { spawnSync } from "child_process";
 import { pathToFileURL } from "url";
+import { sessionStartMainContent } from "../src/cli/hook/session-context";
+import { createStateInputCollector } from "../src/effects/loop/state-input-collector";
 
 const HOOK_RUNTIME_TIMEOUT_MS = 60000;
 const HOOK_RUNTIME_SPAWN_BUFFER_BYTES = 16 * 1024 * 1024;
@@ -317,6 +319,43 @@ function runHook(
       ...(options?.env ?? {}),
     },
   });
+}
+
+// HRD-04 retired session-start-context.sh; every "session-start-context ..."
+// test below retargets from runHook("session-start-context.sh", cwd, opts)
+// to this in-process equivalent. Same options shape (stdin is unused --
+// the retired script never read stdin either) and the same
+// hookSpecificOutput-JSON-wrapped `.stdout` shape jq produced (jq is
+// present on every dev/CI host this suite runs on), so every existing
+// "contains SessionStart/additionalContext/<substring>" and
+// `.stdout.trim() === ""` assertion is unchanged; only the call site swaps.
+function runSessionStartBuilder(
+  cwd: string,
+  options?: {
+    stdin?: string;
+    env?: Record<string, string>;
+    args?: string[];
+  }
+): { status: number; stdout: string; stderr: string } {
+  const collector = createStateInputCollector({
+    event: "SessionStart",
+    repoRoot: cwd,
+    resolveSessionEffectiveState: () => null,
+  });
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    REPO_HARNESS_CLI: join(ROOT, "src/cli/index.ts"),
+    ...(options?.env ?? {}),
+  };
+  const content = sessionStartMainContent(collector, env, Date.now());
+  if (!content) return { status: 0, stdout: "", stderr: "" };
+  return {
+    status: 0,
+    stdout: `${JSON.stringify({
+      hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: content },
+    })}\n`,
+    stderr: "",
+  };
 }
 
 function initGitRepo(cwd: string) {
@@ -1112,7 +1151,7 @@ describe("Hook runtime behavior", () => {
       mkdirSync(join(cwd, ".ai/harness/handoff"), { recursive: true });
 
       writeFileSync(join(cwd, ".ai/harness/handoff/resume.md"), "# Codex Resume Packet\n\n> **Reason**: bootstrap\n");
-      const bootstrapRes = runHook("session-start-context.sh", cwd);
+      const bootstrapRes = runSessionStartBuilder(cwd);
       expect(bootstrapRes.status).toBe(0);
       expect(bootstrapRes.stdout.trim()).toBe("");
 
@@ -1133,11 +1172,11 @@ describe("Hook runtime behavior", () => {
         ].join("\n")
       );
 
-      const staleRes = runHook("session-start-context.sh", cwd);
+      const staleRes = runSessionStartBuilder(cwd);
       expect(staleRes.status).toBe(0);
       expect(staleRes.stdout.trim()).toBe("");
 
-      const idleCodexRes = runHook("session-start-context.sh", cwd, { env: { HOOK_HOST: "codex" } });
+      const idleCodexRes = runSessionStartBuilder(cwd, { env: { HOOK_HOST: "codex" } });
       expect(idleCodexRes.status).toBe(0);
       expect(idleCodexRes.stdout.trim()).toBe("");
 
@@ -1155,7 +1194,7 @@ describe("Hook runtime behavior", () => {
       );
       appendFileSync(join(cwd, ".ai/harness/handoff/resume.md"), "\n");
 
-      const res = runHook("session-start-context.sh", cwd, { env: { HOOK_HOST: "codex" } });
+      const res = runSessionStartBuilder(cwd, { env: { HOOK_HOST: "codex" } });
       expect(res.status).toBe(0);
       expect(res.stdout).toContain("SessionStart");
       expect(res.stdout).toContain("additionalContext");
@@ -1186,14 +1225,14 @@ describe("Hook runtime behavior", () => {
         `${JSON.stringify({ delegation: { mode: "auto", max_agents: 3 } }, null, 2)}\n`
       );
 
-      const codexAuto = runHook("session-start-context.sh", cwd, { env: { HOME: emptyHome, HOOK_HOST: "codex" } });
+      const codexAuto = runSessionStartBuilder(cwd, { env: { HOME: emptyHome, HOOK_HOST: "codex" } });
       expect(codexAuto.status).toBe(0);
       const codexAutoMatches = codexAuto.stdout.match(/Delegation Standing Authorization/g) ?? [];
       expect(codexAutoMatches.length).toBe(1);
       expect(codexAuto.stdout).toContain("standing user authorization for bounded native");
       expect(codexAuto.stdout).toContain("no more than 3");
 
-      const claudeAuto = runHook("session-start-context.sh", cwd, { env: { HOME: emptyHome, HOOK_HOST: "claude" } });
+      const claudeAuto = runSessionStartBuilder(cwd, { env: { HOME: emptyHome, HOOK_HOST: "claude" } });
       expect(claudeAuto.status).toBe(0);
       expect(claudeAuto.stdout).not.toContain("Delegation Standing Authorization");
 
@@ -1201,7 +1240,7 @@ describe("Hook runtime behavior", () => {
         join(cwd, ".ai/harness/policy.json"),
         `${JSON.stringify({ delegation: { mode: "explicit" } }, null, 2)}\n`
       );
-      const codexExplicit = runHook("session-start-context.sh", cwd, { env: { HOME: emptyHome, HOOK_HOST: "codex" } });
+      const codexExplicit = runSessionStartBuilder(cwd, { env: { HOME: emptyHome, HOOK_HOST: "codex" } });
       expect(codexExplicit.status).toBe(0);
       expect(codexExplicit.stdout).not.toContain("Delegation Standing Authorization");
     } finally {
@@ -1236,7 +1275,7 @@ describe("Hook runtime behavior", () => {
       utimesSync(join(cwd, ".ai/harness/handoff/resume.md"), oldTime, oldTime);
       utimesSync(join(cwd, ".ai/harness/handoff/current.md"), newTime, newTime);
 
-      const res = runHook("session-start-context.sh", cwd);
+      const res = runSessionStartBuilder(cwd);
       expect(res.status).toBe(0);
       expect(res.stdout.trim()).toBe("");
     } finally {
@@ -1264,7 +1303,7 @@ describe("Hook runtime behavior", () => {
         ].join("\n")
       );
 
-      const res = runHook("session-start-context.sh", cwd, { env: { HOOK_HOST: "codex" } });
+      const res = runSessionStartBuilder(cwd, { env: { HOOK_HOST: "codex" } });
       expect(res.status).toBe(0);
       expect(res.stdout.trim()).toBe("");
     } finally {
@@ -1290,7 +1329,7 @@ describe("Hook runtime behavior", () => {
         })}\n`,
       );
 
-      const res = runHook("session-start-context.sh", cwd);
+      const res = runSessionStartBuilder(cwd);
       expect(res.status).toBe(0);
       expect(res.stdout).toContain("SessionStart");
       expect(res.stdout).toContain("Capability Context Queue");
@@ -1298,7 +1337,7 @@ describe("Hook runtime behavior", () => {
       expect(res.stdout).toContain("apps-web");
       expect(res.stdout).not.toContain("[CrossReview]");
 
-      const codexRes = runHook("session-start-context.sh", cwd, { env: { HOOK_HOST: "codex" } });
+      const codexRes = runSessionStartBuilder(cwd, { env: { HOOK_HOST: "codex" } });
       expect(codexRes.status).toBe(0);
       expect(codexRes.stdout).toContain("Capability Context Queue");
       expect(codexRes.stdout).not.toContain("[CrossReview]");
@@ -1326,7 +1365,7 @@ describe("Hook runtime behavior", () => {
         ].join("\n"),
       );
 
-      const res = runHook("session-start-context.sh", cwd);
+      const res = runSessionStartBuilder(cwd);
       expect(res.status).toBe(0);
       expect(res.stdout).toContain("SessionStart");
       expect(res.stdout).toContain("Architecture Queue");
@@ -1334,7 +1373,7 @@ describe("Hook runtime behavior", () => {
       expect(res.stdout).toContain("repo-harness run architecture-queue status");
       expect(res.stdout).not.toContain("[CrossReview]");
 
-      const codexRes = runHook("session-start-context.sh", cwd, { env: { HOOK_HOST: "codex" } });
+      const codexRes = runSessionStartBuilder(cwd, { env: { HOOK_HOST: "codex" } });
       expect(codexRes.status).toBe(0);
       expect(codexRes.stdout).toContain("Architecture Queue");
       expect(codexRes.stdout).not.toContain("[CrossReview]");
@@ -1367,7 +1406,7 @@ describe("Hook runtime behavior", () => {
         ) + "\n"
       );
 
-      const res = runHook("session-start-context.sh", cwd);
+      const res = runSessionStartBuilder(cwd);
 
       expect(res.status).toBe(0);
       expect(res.stdout).toContain("Pending Plan Capture");
@@ -1403,7 +1442,7 @@ describe("Hook runtime behavior", () => {
       expect(run("git", ["commit", "-m", "add current status"], cwd).status).toBe(0);
       expect(run("git", ["checkout", "-b", "feature/current-status"], cwd).status).toBe(0);
 
-      const res = runHook("session-start-context.sh", cwd);
+      const res = runSessionStartBuilder(cwd);
 
       expect(res.status).toBe(0);
       expect(res.stdout).toContain("Current Status Snapshot");
@@ -1462,7 +1501,7 @@ describe("Hook runtime behavior", () => {
         REPO_HARNESS_CLI: "",
         REPO_HARNESS_TOOLING_ADVISORY_SYNC: "1",
       };
-      const first = runHook("session-start-context.sh", cwd, { env });
+      const first = runSessionStartBuilder(cwd, { env });
       expect(first.status).toBe(0);
       expect(first.stdout).toContain("Tooling Update Advisory");
       expect(first.stdout).toContain("tooling.codegraph.update");
@@ -1478,7 +1517,7 @@ describe("Hook runtime behavior", () => {
       utimesSync(reportFile, sixDaysAgo, sixDaysAgo);
       writeFileSync(renderedMarkerFile, `${Math.floor(sixDaysAgo.getTime() / 1000)}\n`);
 
-      const second = runHook("session-start-context.sh", cwd, { env });
+      const second = runSessionStartBuilder(cwd, { env });
       expect(second.status).toBe(0);
       expect(second.stdout).not.toContain("Tooling Update Advisory");
       expect(second.stdout).not.toContain("tooling.codegraph.update");
@@ -1489,7 +1528,7 @@ describe("Hook runtime behavior", () => {
       const eightDaysAgo = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
       utimesSync(reportFile, eightDaysAgo, eightDaysAgo);
 
-      const third = runHook("session-start-context.sh", cwd, { env });
+      const third = runSessionStartBuilder(cwd, { env });
       expect(third.status).toBe(0);
       expect(third.stdout).toContain("Tooling Update Advisory");
       expect(readFileSync(logFile, "utf-8").trim().split("\n")).toEqual([

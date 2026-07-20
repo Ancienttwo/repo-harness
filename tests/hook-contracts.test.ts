@@ -117,12 +117,14 @@ describe("Hook contracts", () => {
       "standing user authorization for bounded delegation, selected by the user at install time",
     );
 
-    const sessionStart = read("assets/hooks/session-start-context.sh");
+    // HRD-04 retired session-start-context.sh; the delegation section it
+    // owned now lives in the in-process session-context builder.
+    const sessionStart = read("src/cli/hook/session-context.ts");
     expect(sessionStart).toContain("Delegation Standing Authorization");
     expect(sessionStart).toContain(
       "standing user authorization for bounded native",
     );
-    expect(sessionStart).toContain("effective_delegation_mode");
+    expect(sessionStart).toContain("effectiveDelegationMode");
 
     const start = read("assets/hooks/subagent-start-context.sh");
     expect(start).toContain("SubagentStart.context");
@@ -189,20 +191,25 @@ describe("Hook contracts", () => {
     expect(intents).toContain("\\p{P}");
   });
 
+  // HRD-04 retired session-start-context.sh; its content now lives in the
+  // in-process session-context builder. Bash-syntax assertions
+  // (`:-604800` default-value syntax, `"$target"` interpolation) retarget to
+  // the equivalent TS constructs; every underlying claim (default TTL 604800,
+  // report/marker file naming, update-action id filter) is unchanged.
   test("session-start should not spend the global budget on cross-review availability", () => {
-    const script = read("assets/hooks/session-start-context.sh");
+    const script = read("src/cli/hook/session-context.ts");
     expect(script).not.toContain("[CrossReview]");
     expect(script).toContain("Pending Plan Capture");
-    expect(script).toContain("workflow_pending_orchestration_is_fresh");
+    expect(script).toContain("pendingOrchestrationIsFresh");
     expect(script).not.toContain("claude-review");
     expect(script).not.toContain("worth the tokens");
   });
 
   test("session-start owns throttled tooling update advisories", () => {
-    const script = read("assets/hooks/session-start-context.sh");
+    const script = read("src/cli/hook/session-context.ts");
     expect(script).toContain("Tooling Update Advisory");
-    expect(script).toContain("setup check --target \"$target\" --check-updates --json");
-    expect(script).toContain("REPO_HARNESS_TOOLING_ADVISORY_TTL_SECONDS:-604800");
+    expect(script).toContain("'setup', 'check', '--target', target, '--check-updates', '--json'");
+    expect(script).toContain("if (raw === undefined) return 604800;");
     expect(script).toContain("tooling-update-advisory-${target}.json");
     expect(script).toContain("tooling-update-advisory-${target}.rendered");
     expect(script).toContain("cli.update");
@@ -210,8 +217,12 @@ describe("Hook contracts", () => {
   });
 
   test("security sentinel should stay changed-only and advisory", () => {
-    const script = read("assets/hooks/security-sentinel.sh");
-    expect(script).toContain("security scan --json");
+    const script = read("src/cli/hook/session-context.ts");
+    // Ports to a direct in-process runSecurityScan() call (no CLI text to
+    // match); the fingerprint-gated, changed-only, advisory shape it owns is
+    // still verified via the surrounding state/state.sha256/[SecurityConfig]
+    // markers and the absence of any --strict escalation.
+    expect(script).toContain("runSecurityScan");
     expect(script).toContain("state.sha256");
     expect(script).toContain(".ai/harness/security");
     expect(script).toContain("[SecurityConfig]");

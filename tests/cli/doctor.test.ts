@@ -217,7 +217,11 @@ describe('doctor command (Phase 1C)', () => {
       const hooks = r.checks.find((c) => c.id === 'repo-hook-scripts')!;
       expect(hooks.status).toBe('warn');
       expect(hooks.detail).toContain('source=repo-pin');
-      expect(hooks.detail).toContain('security-sentinel.sh');
+      // HRD-04 retired security-sentinel.sh from SessionStart.default's
+      // route.scripts entirely (in-process builder now); prompt-guard.sh is
+      // an equally-representative still-registered script for this
+      // no-scripts-written fixture.
+      expect(hooks.detail).toContain('prompt-guard.sh');
       expect(hooks.detail).toContain(`repo-harness adopt --repo ${repoRoot}`);
     });
   }, DOCTOR_CHECK_TIMEOUT_MS);

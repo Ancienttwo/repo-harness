@@ -7,9 +7,10 @@ fail-open.
 
 ## Runtime Path
 
-- `SessionStart.default` runs `minimal-change-context.sh` after the normal
-  session context. It prints a short reminder of the active policy, protected
-  concerns, and report path.
+- `SessionStart.default`'s in-process session-context builder
+  (`src/cli/hook/session-context.ts`, HRD-04) emits the minimal-change section
+  after the normal session context. It prints a short reminder of the active
+  policy, protected concerns, and report path.
 - `UserPromptSubmit.default` still routes only through `prompt-guard.sh`. When
   the prompt is allowed and looks execution-oriented, prompt guard appends the
   same advisory context.

@@ -8,6 +8,7 @@ import { writeAllSync } from '../runtime/write-all-sync';
 import { createStateInputCollector } from '../../effects/loop/state-input-collector';
 import { createHash } from 'crypto';
 import { runMutationGuard } from './mutation-guard';
+import { buildSessionStartSections } from './session-context';
 import { resolveEffectiveState } from '../../effects/state/resolve-effective-state';
 import type { EffectiveState } from '../../core/state/types';
 import type { WorkflowProfile } from '../../core/workflow/profile';
@@ -105,28 +106,6 @@ function looksLikeHookAdditionalContextJson(
   } catch {
     return false;
   }
-}
-
-function extractSessionStartContext(output: Buffer | string | null | undefined): string | null {
-  if (!output) return null;
-  const text = output.toString().trim();
-  if (!text) return null;
-  if (!text.startsWith('{')) return text;
-  try {
-    const parsed = JSON.parse(text) as {
-      hookSpecificOutput?: { hookEventName?: unknown; additionalContext?: unknown };
-    };
-    const specific = parsed.hookSpecificOutput;
-    if (
-      specific?.hookEventName === 'SessionStart' &&
-      typeof specific.additionalContext === 'string'
-    ) {
-      return specific.additionalContext;
-    }
-  } catch {
-    return text;
-  }
-  return text;
 }
 
 function effectiveStateSessionSection(repoRoot: string): SessionContextSection | null {
@@ -392,6 +371,33 @@ export function runHook(opts: RunHookOptions): RunHookResult {
     const stateSection = collector.getSessionEffectiveState();
     if (stateSection) sessionStartContexts.push(stateSection);
   }
+  // HRD-04: SessionStart.default's script list is replaced by the in-process
+  // session-context builder (route.scripts is `[]`, mirroring HRD-03's
+  // mutation-guard precedent), so the ordinary script loop below already
+  // no-ops for this route. Runs unconditionally whenever this route matches
+  // (scriptsRun + durable side effects + telemetry), exactly like the
+  // retired 3-script loop ran regardless of sessionStartCollectStdout (a
+  // caller that overrides opts.stdio still executed the scripts, with their
+  // real side effects, just with I/O silenced) -- only pushing the resulting
+  // sections into sessionStartContexts is gated on sessionStartCollectStdout,
+  // matching the old per-script stdout->section extraction step exactly.
+  const isSessionStartBuilderRoute = opts.event === 'SessionStart' && opts.routeId === 'default';
+  if (isSessionStartBuilderRoute) {
+    const builderScript = 'session-context';
+    scriptsRun.push(builderScript);
+    const startedAt = Date.now();
+    const builtSections = buildSessionStartSections(collector, process.env, startedAt);
+    if (sessionStartCollectStdout) sessionStartContexts.push(...builtSections);
+    recordHookInvocation(repoRoot, {
+      event: opts.event,
+      routeId: opts.routeId,
+      script: builderScript,
+      startedAt,
+      durationMs: Date.now() - startedAt,
+      exitCode: 0,
+      stdout: Buffer.from(builtSections.map((section) => section.content).join('\n'), 'utf-8'),
+    });
+  }
   // Codex Desktop rejects Stop decision stdout at turn finalization, so collect
   // and suppress successful Stop output while preserving failure diagnostics.
   const codexStopSuppressSuccessOutput =
@@ -569,24 +575,13 @@ export function runHook(opts: RunHookOptions): RunHookResult {
       writeAllSync(1, child.stdout);
     }
 
-    if (sessionStartCollectStdout && child.status === 0) {
-      const context = extractSessionStartContext(child.stdout);
-      if (context) {
-        const securityBoundary = script === 'security-sentinel.sh';
-        const taskState = script === 'session-start-context.sh';
-        const scriptActionable = taskState && /^# (Pending Plan Capture|Capability Context Queue|Architecture Queue|Active Sprint|Delegation Standing Authorization)/m.test(context);
-        sessionStartContexts.push({
-          id: script,
-          priority: securityBoundary ? 2 : taskState ? 5 : 6,
-          content: context,
-          mandatory: securityBoundary,
-          actionable: securityBoundary || scriptActionable,
-          reference: taskState
-            ? 'repo-harness state resolve --json'
-            : 'repo-harness setup check --json',
-        });
-      }
-    }
+    // HRD-04: the per-script SessionStart stdout->section extraction that
+    // used to live here is retired along with the three scripts. SessionStart
+    // has exactly one route (`default`), whose script list is now `[]` (see
+    // route-registry.ts), so this loop never iterates with
+    // sessionStartCollectStdout true any more -- the in-process
+    // session-context builder above produces these sections directly instead
+    // of round-tripping through a child stdout buffer.
 
     if (
       (codexStopSuppressSuccessOutput || codexDecisionStdout) &&
@@ -621,16 +616,11 @@ export function runHook(opts: RunHookOptions): RunHookResult {
     }
   }
 
-  if (sessionStartCollectStdout && skippedScripts.length > 0) {
-    sessionStartContexts.push({
-      id: 'hooks-drift',
-      priority: 6,
-      content: `[repo-harness] hooks drift (source=${resolved.source}): missing ${skippedScripts.join(', ')}; ${syncHint}.`,
-      mandatory: false,
-      actionable: true,
-      reference: syncHint,
-    });
-  }
+  // HRD-04: the "hooks-drift" synthetic section that used to fire here when
+  // a SessionStart script was soft-missing is now unreachable -- SessionStart
+  // has exactly one route, and that route's script list is `[]` (nothing can
+  // ever land in skippedScripts while sessionStartCollectStdout is true), so
+  // it is removed rather than left dead.
 
   if (sessionStartCollectStdout && sessionStartContexts.length > 0) {
     const sessionId = process.env.HOOK_SESSION_ID

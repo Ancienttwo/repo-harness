@@ -51,11 +51,12 @@ describe('route registry (Phase 1B Z design)', () => {
   });
 
   test('getRoute returns the expected ordered scripts for each route', () => {
-    expect(getRoute('SessionStart', 'default')?.scripts).toEqual([
-      'session-start-context.sh',
-      'minimal-change-context.sh',
-      'security-sentinel.sh',
-    ]);
+    // HRD-04: SessionStart.default's script list is retired scripts-free --
+    // the in-process session-context builder (src/cli/hook/session-context.ts)
+    // assembles this route's context unconditionally now; see
+    // route-registry.ts's own comment on this route for why the list is
+    // empty rather than a symbolic placeholder.
+    expect(getRoute('SessionStart', 'default')?.scripts).toEqual([]);
     // HRD-03: PreToolUse.edit's script list is retired scripts-free -- the
     // in-process mutation-guard handler (src/cli/hook/mutation-guard.ts) now
     // decides this route unconditionally; see route-registry.ts's own

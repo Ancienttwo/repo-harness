@@ -93,7 +93,15 @@ hook_stdout_is_json_kind() {
 # for approved routes is surfaced on success. Stop decision JSON is deliberately
 # suppressed because current Codex Desktop rejects it as an unsupported content
 # type at turn finalization.
-if [[ "${HOOK_HOST:-}" == "codex" && "$HOOK_NAME" != "session-start-context.sh" ]]; then
+#
+# HRD-04: session-start-context.sh (which used to be exempted here so its own
+# hookSpecificOutput JSON always flowed through unfiltered) is retired -- the
+# in-process session-context builder now owns SessionStart entirely via the
+# `repo-harness hook SessionStart --route default` CLI path, which never
+# reaches this per-script-name dispatcher. No HOOK_NAME can equal
+# `session-start-context.sh` here any more (the file no longer exists to
+# dispatch), so the exemption is removed rather than left dead.
+if [[ "${HOOK_HOST:-}" == "codex" ]]; then
   if ! tmp_stdout="$(mktemp)" || ! tmp_stderr="$(mktemp)"; then
     # No temp space: run unfiltered rather than silently dropping the hook.
     exec bash "$HOOK_PATH" "$@"

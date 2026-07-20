@@ -57,11 +57,16 @@ export const ROUTES: readonly Route[] = Object.freeze([
   Object.freeze({
     event: 'SessionStart' as const,
     routeId: 'default' as const,
-    scripts: Object.freeze([
-      'session-start-context.sh',
-      'minimal-change-context.sh',
-      'security-sentinel.sh',
-    ]),
+    // HRD-04: session-start-context.sh, minimal-change-context.sh, and
+    // security-sentinel.sh are retired; this route's context assembly is now
+    // the in-process session-context builder (src/cli/hook/session-context.ts),
+    // invoked directly by runHook() -- there is no script left to name here.
+    // An empty list (rather than a stale 3-name array) is what keeps
+    // consumers that treat `scripts` as "files that must exist on disk"
+    // (doctor's repo-hook-scripts check, the adopt/sync tooling) reporting
+    // truthfully instead of a permanent false "missing script" drift signal
+    // (same reasoning as HRD-03's PreToolUse.edit precedent below).
+    scripts: Object.freeze([]),
   }),
   Object.freeze({
     event: 'PreToolUse' as const,

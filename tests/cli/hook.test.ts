@@ -7,6 +7,8 @@ import { execSync, spawn, spawnSync } from 'child_process';
 import { runHook } from '../../src/cli/commands/hook';
 import { resolveHooksDir } from '../../src/cli/hook/runtime';
 import { runHookEntry } from '../../src/cli/hook-entry';
+import { sessionStartMainContent } from '../../src/cli/hook/session-context';
+import { createStateInputCollector } from '../../src/effects/loop/state-input-collector';
 
 const ROOT = path.join(import.meta.dir, '../..');
 const CLI = path.join(ROOT, 'src/cli/index.ts');
@@ -153,6 +155,32 @@ function writeActiveContract(repoRoot: string, stem = '20260714-0000-active-task
   );
   fs.writeFileSync(path.join(repoRoot, '.ai/harness/active-plan'), `${planPath}\n`);
   fs.writeFileSync(path.join(repoRoot, '.ai/harness/active-worktree'), `${repoRoot}\n`);
+}
+
+// Minimal real fixture the in-process session-context builder's
+// "# Active Sprint" section reads directly (HRD-04): a marker pointing at a
+// sprint file with a `## Backlog` table. Used in place of the retired
+// session-start-context.sh fake-script vehicle for actionable-content tests.
+function writeActiveSprintFixtureForBudgetTest(repoRoot: string): void {
+  const sprintRelPath = 'plans/sprints/budget-fixture.sprint.md';
+  fs.mkdirSync(path.join(repoRoot, 'plans/sprints'), { recursive: true });
+  fs.mkdirSync(path.join(repoRoot, '.ai/harness/sprint'), { recursive: true });
+  fs.writeFileSync(
+    path.join(repoRoot, sprintRelPath),
+    [
+      '# Sprint: Budget Fixture',
+      '',
+      '> **Status**: Approved',
+      '',
+      '## Backlog',
+      '',
+      '| # | Status | Task |',
+      '|---|--------|------|',
+      '| 1 | [ ] | task-a |',
+      '',
+    ].join('\n'),
+  );
+  fs.writeFileSync(path.join(repoRoot, '.ai/harness/sprint/active-sprint'), `${sprintRelPath}\n`);
 }
 
 function readRoutingObservations(repoRoot: string): Record<string, unknown>[] {
@@ -383,7 +411,13 @@ describe('hook command (Phase 1B)', () => {
     });
   });
 
-  test('opt-in + all advisory route scripts missing → skips and exits 0', () => {
+  // HRD-04 retired the 3-script SessionStart.default fan-out entirely
+  // (route.scripts is `[]`); there is nothing left to soft-skip, so the old
+  // "all advisory scripts missing" scenario has no equivalent any more. The
+  // in-process session-context builder that replaces it runs unconditionally
+  // for this route -- verified here instead: one scriptsRun entry, no
+  // skippedScripts, exit 0, even on a bare repo with nothing to inject.
+  test('opt-in SessionStart.default runs the in-process builder unconditionally, no scripts to skip', () => {
     withTempRepo({ optIn: true }, (repoRoot) => {
       const result = runHook({
         event: 'SessionStart',
@@ -393,12 +427,8 @@ describe('hook command (Phase 1B)', () => {
       });
       expect(result.exitCode).toBe(0);
       expect(result.reason).toBe('ok');
-      expect(result.scriptsRun).toEqual([]);
-      expect(result.skippedScripts).toEqual([
-        'session-start-context.sh',
-        'minimal-change-context.sh',
-        'security-sentinel.sh',
-      ]);
+      expect(result.scriptsRun).toEqual(['session-context']);
+      expect(result.skippedScripts).toEqual([]);
       expect(result.failedScript).toBeUndefined();
     });
   });
@@ -497,30 +527,27 @@ describe('hook command (Phase 1B)', () => {
     );
   });
 
-  test('opt-in + advisory route partial missing → later script still runs', () => {
-    withTempRepo(
-      {
-        optIn: true,
-        scripts: {
-          'security-sentinel.sh': '#!/bin/bash\nexit 0\n',
-        },
-      },
-      (repoRoot) => {
-        const result = runHook({
-          event: 'SessionStart',
-          routeId: 'default',
-          cwd: repoRoot,
-          stdio: 'ignore',
-        });
-        expect(result.exitCode).toBe(0);
-        expect(result.reason).toBe('ok');
-        expect(result.scriptsRun).toEqual(['security-sentinel.sh']);
-        expect(result.skippedScripts).toEqual([
-          'session-start-context.sh',
-          'minimal-change-context.sh',
-        ]);
-      },
-    );
+  // HRD-04: the retired scripts' "some present, some missing" scenario has
+  // no equivalent (nothing to be missing any more). What the old script loop
+  // DID guarantee -- a spawned script's own durable side effects happen
+  // regardless of sessionStartCollectStdout, since only the OLD stdout->
+  // section extraction step (not script execution) was gated on it -- is
+  // preserved for the builder: it still runs (and still writes its security
+  // scan cache) even when a caller overrides opts.stdio.
+  test('opt-in SessionStart.default builder writes its durable side effects even with stdio overridden', () => {
+    withTempRepo({ optIn: true }, (repoRoot) => {
+      const result = runHook({
+        event: 'SessionStart',
+        routeId: 'default',
+        cwd: repoRoot,
+        stdio: 'ignore',
+      });
+      expect(result.exitCode).toBe(0);
+      expect(result.reason).toBe('ok');
+      expect(result.scriptsRun).toEqual(['session-context']);
+      expect(fs.existsSync(path.join(repoRoot, '.ai/harness/security/state.sha256'))).toBe(true);
+      expect(fs.existsSync(path.join(repoRoot, '.ai/harness/security/latest.json'))).toBe(true);
+    });
   });
 
   test('opt-in + missing observer script on PostToolUse.always → soft-skips, exits 0', () => {
@@ -649,20 +676,25 @@ describe('hook command (Phase 1B)', () => {
     );
   });
 
+  // HRD-04 retired SessionStart.default's spawned scripts entirely, so the
+  // three HOOK_REPO_ROOT-propagation vehicles below retarget to
+  // PostToolUse.bash's post-bash.sh -- a still-scripted single-script route.
+  // Test intent (env propagation into the child, repo-root-mismatch no-op
+  // before any script runs) is unchanged; only the vehicle route/script name
+  // does.
   test('HOOK_REPO_ROOT is set to resolved repo root in child env', () => {
     withTempRepo(
       {
         optIn: true,
         scripts: {
-          'session-start-context.sh':
+          'post-bash.sh':
             '#!/bin/bash\n[ "$HOOK_REPO_ROOT" = "$1" ] && exit 0 || exit 99\n',
-          'security-sentinel.sh': '#!/bin/bash\nexit 0\n',
         },
       },
       (repoRoot) => {
         const result = runHook({
-          event: 'SessionStart',
-          routeId: 'default',
+          event: 'PostToolUse',
+          routeId: 'bash',
           cwd: repoRoot,
           args: [repoRoot],
           stdio: 'ignore',
@@ -680,9 +712,8 @@ describe('hook command (Phase 1B)', () => {
       {
         optIn: true,
         scripts: {
-          'session-start-context.sh':
+          'post-bash.sh':
             '#!/bin/bash\n[ "$(pwd)" = "$1" ] && [ "$HOOK_REPO_ROOT" = "$1" ] && exit 0 || exit 99\n',
-          'security-sentinel.sh': '#!/bin/bash\nexit 0\n',
         },
       },
       (repoRoot) => {
@@ -690,8 +721,8 @@ describe('hook command (Phase 1B)', () => {
         process.env.HOOK_REPO_ROOT = repoRoot;
         try {
           const result = runHook({
-            event: 'SessionStart',
-            routeId: 'default',
+            event: 'PostToolUse',
+            routeId: 'bash',
             cwd: outside,
             args: [repoRoot],
             stdio: 'ignore',
@@ -712,8 +743,7 @@ describe('hook command (Phase 1B)', () => {
       {
         optIn: true,
         scripts: {
-          'session-start-context.sh': '#!/bin/bash\ntouch script-ran\nexit 0\n',
-          'security-sentinel.sh': '#!/bin/bash\ntouch sentinel-ran\nexit 0\n',
+          'post-bash.sh': '#!/bin/bash\ntouch script-ran\nexit 0\n',
         },
       },
       (cwdRepo) => {
@@ -722,8 +752,8 @@ describe('hook command (Phase 1B)', () => {
           process.env.HOOK_REPO_ROOT = explicitRepo;
           try {
             const result = runHook({
-              event: 'SessionStart',
-              routeId: 'default',
+              event: 'PostToolUse',
+              routeId: 'bash',
               cwd: cwdRepo,
               stdio: 'ignore',
             });
@@ -731,7 +761,6 @@ describe('hook command (Phase 1B)', () => {
             expect(result.reason).toBe('repo-root-mismatch');
             expect(result.scriptsRun).toEqual([]);
             expect(fs.existsSync(path.join(cwdRepo, 'script-ran'))).toBe(false);
-            expect(fs.existsSync(path.join(cwdRepo, 'sentinel-ran'))).toBe(false);
           } finally {
             if (prev === undefined) delete process.env.HOOK_REPO_ROOT;
             else process.env.HOOK_REPO_ROOT = prev;
@@ -793,82 +822,75 @@ describe('hook command (Phase 1B)', () => {
     }
   });
 
-  test('SessionStart CLI smoke reports one drift line when an advisory script is missing', () => {
-    withTempRepo(
-      {
-        optIn: true,
-        scripts: {
-          'session-start-context.sh': '#!/bin/bash\necho ctx-ok\n',
-        },
-      },
-      (repoRoot) => {
-        const res = spawnSync(
-          process.execPath,
-          [HOOK_ENTRY, 'SessionStart', '--route', 'default'],
-          { cwd: repoRoot, encoding: 'utf-8' },
-        );
-        expect(res.status).toBe(0);
-        const parsed = JSON.parse(res.stdout);
-        const context = parsed.hookSpecificOutput.additionalContext;
-        expect(context).toContain('ctx-ok');
-        expect(context).toContain(
-          'hooks drift (source=repo-pin): missing minimal-change-context.sh, security-sentinel.sh',
-        );
-        expect(context.split('\n').filter((line: string) => line.includes('hooks drift')).length).toBe(1);
-        expect(res.stderr).toContain('skipping missing script');
-        expect(res.stderr).toContain('minimal-change-context.sh');
-        expect(res.stderr).toContain('security-sentinel.sh');
-      },
-    );
+  // HRD-04: the "hooks drift" advisory line only ever fired when a
+  // SessionStart script was soft-missing (see runtime.ts); SessionStart has
+  // no scripts left to go missing, so that mechanism is now dead by
+  // construction (removed from runtime.ts in the same package). Kept as a
+  // regression guard in the opposite direction: a repo-pinned install with
+  // NO vendored hooks at all must still produce a clean SessionStart with no
+  // drift line, since there is nothing left to sync.
+  test('SessionStart CLI smoke has no hooks-drift line even with zero vendored scripts', () => {
+    withTempRepo({ optIn: true }, (repoRoot) => {
+      writeActiveSprintFixtureForBudgetTest(repoRoot);
+      const res = spawnSync(
+        process.execPath,
+        [HOOK_ENTRY, 'SessionStart', '--route', 'default'],
+        { cwd: repoRoot, encoding: 'utf-8' },
+      );
+      expect(res.status).toBe(0);
+      const parsed = JSON.parse(res.stdout);
+      const context = parsed.hookSpecificOutput.additionalContext as string;
+      expect(context).toContain('# Active Sprint');
+      expect(context).not.toContain('hooks drift');
+      expect(res.stderr).not.toContain('skipping missing script');
+    });
   });
 
+  // HRD-04: session-start-context.sh/minimal-change-context.sh/
+  // security-sentinel.sh's fake-script content vehicle is retired; the same
+  // budget-cap, actionable-suppression, and session dedup assertions now
+  // drive off real repo fixtures the in-process builder reads directly (an
+  // active-sprint marker for the actionable case, a bare opt-in repo for the
+  // all-silent/idle case -- mirroring the old fixtures' shapes).
   test('SessionStart global budget emits zero for non-actionable context and dedupes actionable state', () => {
-    withTempRepo(
-      {
-        optIn: true,
-        scripts: {
-          'session-start-context.sh': '#!/bin/bash\necho "# Pending Plan Capture"\necho "continue captured plan"\n',
-          'minimal-change-context.sh': '#!/bin/bash\necho "generic static advice"\n',
-          'security-sentinel.sh': '#!/bin/bash\nexit 0\n',
-        },
-      },
-      (repoRoot) => {
-        const env = { ...process.env, HOOK_SESSION_ID: 'budget-session' };
-        const first = spawnSync(process.execPath, [HOOK_ENTRY, 'SessionStart', '--route', 'default'], {
-          cwd: repoRoot, encoding: 'utf-8', env,
-        });
-        expect(first.status).toBe(0);
-        const context = JSON.parse(first.stdout).hookSpecificOutput.additionalContext as string;
-        expect(context).toContain('# Pending Plan Capture');
-        expect(Buffer.byteLength(context, 'utf-8') / 4).toBeLessThanOrEqual(1500);
+    withTempRepo({ optIn: true }, (repoRoot) => {
+      writeActiveSprintFixtureForBudgetTest(repoRoot);
+      const env = { ...process.env, HOOK_SESSION_ID: 'budget-session' };
+      const first = spawnSync(process.execPath, [HOOK_ENTRY, 'SessionStart', '--route', 'default'], {
+        cwd: repoRoot, encoding: 'utf-8', env,
+      });
+      expect(first.status).toBe(0);
+      const context = JSON.parse(first.stdout).hookSpecificOutput.additionalContext as string;
+      expect(context).toContain('# Active Sprint');
+      expect(Buffer.byteLength(context, 'utf-8') / 4).toBeLessThanOrEqual(1500);
 
-        const second = spawnSync(process.execPath, [HOOK_ENTRY, 'SessionStart', '--route', 'default'], {
-          cwd: repoRoot, encoding: 'utf-8', env,
-        });
-        expect(second.status).toBe(0);
-        expect(second.stdout).toBe('');
-      },
-    );
+      const second = spawnSync(process.execPath, [HOOK_ENTRY, 'SessionStart', '--route', 'default'], {
+        cwd: repoRoot, encoding: 'utf-8', env,
+      });
+      expect(second.status).toBe(0);
+      expect(second.stdout).toBe('');
+    });
 
-    withTempRepo(
-      {
-        optIn: true,
-        scripts: {
-          'session-start-context.sh': '#!/bin/bash\nexit 0\n',
-          'minimal-change-context.sh': '#!/bin/bash\necho "generic static advice"\n',
-          'security-sentinel.sh': '#!/bin/bash\nexit 0\n',
-        },
-      },
-      (repoRoot) => {
-        const idle = spawnSync(process.execPath, [HOOK_ENTRY, 'SessionStart', '--route', 'default'], {
-          cwd: repoRoot, encoding: 'utf-8', env: { ...process.env, HOOK_SESSION_ID: 'idle-session' },
-        });
-        expect(idle.status).toBe(0);
-        expect(idle.stdout).toBe('');
-        const evidence = JSON.parse(fs.readFileSync(path.join(repoRoot, '.ai/harness/state/session-context-budget.json'), 'utf-8'));
-        expect(evidence.estimated_tokens).toBe(0);
-      },
-    );
+    withTempRepo({ optIn: true }, (repoRoot) => {
+      // A bare repo alone would leave sessionStartContexts empty (no section
+      // at all) rather than exercising budgetSessionContext's own
+      // not-actionable suppression path; a minimal-change policy in
+      // advisory mode guarantees one non-actionable section exists (mirrors
+      // the old fake minimal-change-context.sh's non-empty, non-actionable
+      // "generic static advice" output) so the idle case still calls
+      // budgetSessionContext and produces evidence.
+      fs.writeFileSync(
+        path.join(repoRoot, '.ai/harness/policy.json'),
+        JSON.stringify({ hook_source: 'repo', minimal_change: { mode: 'advice' } }, null, 2),
+      );
+      const idle = spawnSync(process.execPath, [HOOK_ENTRY, 'SessionStart', '--route', 'default'], {
+        cwd: repoRoot, encoding: 'utf-8', env: { ...process.env, HOOK_SESSION_ID: 'idle-session' },
+      });
+      expect(idle.status).toBe(0);
+      expect(idle.stdout).toBe('');
+      const evidence = JSON.parse(fs.readFileSync(path.join(repoRoot, '.ai/harness/state/session-context-budget.json'), 'utf-8'));
+      expect(evidence.estimated_tokens).toBe(0);
+    });
   });
 
   test('Codex Stop with missing advisory script exits 0 without stdout', () => {
@@ -1306,21 +1328,22 @@ describe('hook command (Phase 1B)', () => {
         expect(result.stdout).toBe('');
         expect(fs.existsSync(path.join(repoRoot, '.ai/harness/delegation/latest.json'))).toBe(false);
 
-        // Global config auto overrides repo policy explicit, so SessionStart
-        // must inject the standing authorization block exactly once.
-        const sessionStart = spawnSync(
-          'bash',
-          [path.join(repoRoot, '.ai/hooks/session-start-context.sh')],
-          {
-            cwd: repoRoot,
-            input: '',
-            encoding: 'utf-8',
-            env: { ...process.env, HOME: home, HOOK_HOST: 'codex', HOOK_REPO_ROOT: repoRoot },
-          },
+        // Global config auto overrides repo policy explicit, so the
+        // in-process session-context builder (HRD-04 retired
+        // session-start-context.sh) must inject the standing authorization
+        // block exactly once.
+        const sessionStart = sessionStartMainContent(
+          createStateInputCollector({
+            event: 'SessionStart',
+            repoRoot,
+            resolveSessionEffectiveState: () => null,
+          }),
+          { ...process.env, HOME: home, HOOK_HOST: 'codex' },
+          Date.now(),
         );
-        expect(sessionStart.status).toBe(0);
-        expect(sessionStart.stdout).toContain('Delegation Standing Authorization');
-        expect(sessionStart.stdout).toContain('standing user authorization for bounded native');
+        expect(sessionStart).not.toBeNull();
+        expect(sessionStart).toContain('Delegation Standing Authorization');
+        expect(sessionStart).toContain('standing user authorization for bounded native');
       });
     } finally {
       fs.rmSync(home, { recursive: true, force: true });
@@ -1371,20 +1394,19 @@ describe('hook command (Phase 1B)', () => {
         expect(result.stdout).toBe('');
         expect(fs.existsSync(path.join(repoRoot, '.ai/harness/delegation/latest.json'))).toBe(false);
 
-        // Global config explicit overrides repo policy auto, so SessionStart
-        // must NOT inject the standing authorization block.
-        const sessionStart = spawnSync(
-          'bash',
-          [path.join(repoRoot, '.ai/hooks/session-start-context.sh')],
-          {
-            cwd: repoRoot,
-            input: '',
-            encoding: 'utf-8',
-            env: { ...process.env, HOME: home, HOOK_HOST: 'codex', HOOK_REPO_ROOT: repoRoot },
-          },
+        // Global config explicit overrides repo policy auto, so the
+        // in-process session-context builder must NOT inject the standing
+        // authorization block (nor anything else, on this otherwise-idle repo).
+        const sessionStart = sessionStartMainContent(
+          createStateInputCollector({
+            event: 'SessionStart',
+            repoRoot,
+            resolveSessionEffectiveState: () => null,
+          }),
+          { ...process.env, HOME: home, HOOK_HOST: 'codex' },
+          Date.now(),
         );
-        expect(sessionStart.status).toBe(0);
-        expect(sessionStart.stdout.trim()).toBe('');
+        expect(sessionStart).toBeNull();
       });
     } finally {
       fs.rmSync(home, { recursive: true, force: true });
@@ -1392,16 +1414,18 @@ describe('hook command (Phase 1B)', () => {
   });
 
   test('full CLI dispatcher SessionStart on an idle codex+auto repo emits the delegation standing-authorization block (regression: was silently empty)', () => {
-    // Regression coverage for a real gap: session-start-context.sh emits the
-    // block correctly on its own, but the SessionStart route runs through
-    // src/cli/hook/runtime.ts's dispatchHook -> budgetSessionContext, which
-    // drops the ENTIRE SessionStart payload whenever nothing in the route is
-    // "actionable" (session-context-budget.ts's no-actionable-state gate).
-    // Before runtime.ts recognized the new "Delegation Standing Authorization"
-    // heading, an otherwise-idle repo (no resume, no active plan, no pending
-    // capture, no architecture/capability queue, no active sprint, no
-    // security-sentinel finding) made this the only SessionStart content and
-    // the whole dispatcher call returned empty stdout.
+    // Regression coverage for a real gap: the in-process session-context
+    // builder (HRD-04) emits the delegation block correctly on its own, but
+    // the SessionStart route runs through src/cli/hook/runtime.ts's
+    // runHook() -> budgetSessionContext, which drops the ENTIRE SessionStart
+    // payload whenever nothing in the route is "actionable"
+    // (session-context-budget.ts's no-actionable-state gate). Before
+    // runtime.ts recognized the "Delegation Standing Authorization" heading,
+    // an otherwise-idle repo (no resume, no active plan, no pending capture,
+    // no architecture/capability queue, no active sprint, no security
+    // finding) made this the only SessionStart content and the whole
+    // dispatcher call returned empty stdout. This test still runs the real,
+    // unmodified end-to-end CLI path (no direct-spawn vehicle to retarget).
     const emptyHome = fs.realpathSync(
       fs.mkdtempSync(path.join(os.tmpdir(), 'repo-harness-hook-home-')),
     );

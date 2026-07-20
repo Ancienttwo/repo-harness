@@ -25,7 +25,7 @@ handoff、检查结果和 review evidence 写回项目文件，让下一个 agen
 ## 为什么用 repo-harness
 
 - **会话状态落在文件里，不在聊天记录里。** 不同 agent 会话——Claude、Codex、现在或之后——
-  靠仓库而不是聊天线程保持同步。新会话启动时 `.ai/hooks/session-start-context.sh` 注入上一会话的
+  靠仓库而不是聊天线程保持同步。新会话启动时进程内的 session-context builder（`src/cli/hook/session-context.ts`）注入上一会话的
   resume packet（`.ai/harness/handoff/resume.md`、`tasks/current.md`）；会话结束和每次编辑后，
   `finalize-handoff.sh`、`post-edit-guard.sh` 把下一份 handoff 写回。任务可以中途断开，下一个会话
   直接接上准确的下一步、阻塞点和改动文件，不用重新推断。
@@ -391,7 +391,7 @@ implementation under `assets/hooks/` or a repo-pinned `.ai/hooks/` copy.
 
 | Route | Matcher | Scripts | Function |
 | --- | --- | --- | --- |
-| `SessionStart.default` | all sessions | `session-start-context.sh`, `security-sentinel.sh` | Injects prior handoff, sprint status, and read-only config-security findings before work starts. |
+| `SessionStart.default` | all sessions | `src/cli/hook/session-context.ts` (in-process builder) | Injects prior handoff, sprint status, and read-only config-security findings before work starts. |
 | `PreToolUse.edit` | `Edit|Write` | `src/cli/hook/mutation-guard.ts` (in-process handler) | Enforces worktree policy and plan/contract readiness before implementation edits. |
 | `PreToolUse.subagent` | `Task|Agent|SendUserMessage` | `subagent-return-channel-guard.sh` | Keeps delegated work returning through the parent session instead of leaking completion claims. |
 | `PostToolUse.edit` | `Edit|Write` | `post-edit-guard.sh` | Records edit traces, refreshes handoff/task status, and queues architecture drift when controlled files change. |
@@ -400,19 +400,17 @@ implementation under `assets/hooks/` or a repo-pinned `.ai/hooks/` copy.
 | `UserPromptSubmit.default` | all prompts | `prompt-guard.sh` | Classifies prompt intent, routes planning/check/hunt hints, and renders host-safe workflow guidance. |
 | `Stop.default` | session stop | `stop-orchestrator.sh` | Finalizes handoff and guards against ending with unresolved draft-plan or completion evidence gaps. |
 
-`SessionStart` 先按 central-first 解析 hook source，再按顺序跑两个脚本：
+`SessionStart` 运行进程内的 session-context builder，一次性组装出上下文：
 
 ```mermaid
 flowchart LR
   SessionStart["Claude/Codex SessionStart"] --> Adapter["user-level adapter"]
   Adapter --> Entry["repo-harness-hook SessionStart --route default"]
-  Entry --> Source{"hook source"}
-  Source -->|central default| Central["packaged hooks<br/>或 ~/.repo-harness/hooks"]
-  Source -->|repo policy pin| Repo["repo .ai/hooks<br/>self-host development"]
-  Central --> Ctx["session-start-context.sh<br/>恢复 + sprint + handoff 上下文"]
-  Repo --> Ctx
-  Ctx --> Sec["security-sentinel.sh<br/>只读配置扫描，按指纹门控"]
-  Sec --> SSOut["SessionStart additionalContext<br/>上次会话状态 + SecurityConfig 发现项"]
+  Entry --> Ctx["session-context.ts<br/>in-process builder"]
+  Ctx --> Resume["恢复 + sprint + handoff 上下文"]
+  Ctx --> Sec["security scan<br/>只读配置扫描，按指纹门控"]
+  Resume --> SSOut["SessionStart additionalContext<br/>上次会话状态 + SecurityConfig 发现项"]
+  Sec --> SSOut
 ```
 
 Prompt guard 多一个内部步骤：
