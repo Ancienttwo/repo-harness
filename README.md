@@ -31,7 +31,7 @@ Repository: `https://github.com/Ancienttwo/repo-harness`
   The in-process session-context builder (`src/cli/hook/session-context.ts`)
   injects the prior session's resume packet
   (`.ai/harness/handoff/resume.md`, `tasks/current.md`) when a new session starts;
-  `stop-orchestrator.sh` writes the stop handoff, while the in-process
+  the in-process Stop handler (`src/cli/hook/stop-handler.ts`) writes the stop handoff, while the in-process
   mutation-observed journal handler (`src/cli/hook/mutation-observed.ts`)
   records a small dirty-bit event per edit and defers maintenance work (contract
   verification, architecture/context/capability sync, minimal-change signals) to
@@ -569,7 +569,7 @@ implementation under `assets/hooks/` or a repo-pinned `.ai/hooks/` copy.
 | `PostToolUse.bash` | `Bash` | `post-bash.sh` | Observes command results and captures verification evidence without replacing the command runner. |
 | `PostToolUse.always` | all tools | `post-tool-observer.sh` | Provides low-noise always-on trace and runtime observation; stale pinned copies soft-skip with a refresh hint. |
 | `UserPromptSubmit.default` | all prompts | `prompt-guard.sh` | Classifies prompt intent, routes planning/check/hunt hints, and renders host-safe workflow guidance. |
-| `Stop.default` | session stop | `stop-orchestrator.sh` | Finalizes handoff and guards against ending with unresolved draft-plan or completion evidence gaps. |
+| `Stop.default` | session stop | `src/cli/hook/stop-handler.ts` (in-process handler) | Finalizes handoff and guards against ending with unresolved draft-plan or completion evidence gaps. |
 
 Codex-only routes are `UserPromptSubmit.delegation`,
 `SubagentStart.context`, and `SubagentStop.quality`. Claude keeps the shared

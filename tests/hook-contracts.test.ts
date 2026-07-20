@@ -229,14 +229,14 @@ describe("Hook contracts", () => {
     expect(script).not.toContain("--strict");
   });
 
-  test("stop orchestrator should own Stop JSON control and handoff refresh", () => {
-    const script = read("assets/hooks/stop-orchestrator.sh");
-    expect(script).toContain("PlanCompletenessGate");
-    expect(script).toContain("last_assistant_message");
-    expect(script).toContain("stop_hook_active");
-    expect(script).toContain("workflow_write_handoff");
-    expect(script).toContain("decision:\"block\"");
-    expect(script).not.toContain('HOOK_HOST:-claude}" != "codex"');
+  test("in-process stop handler should own Stop JSON control and recovery projection", () => {
+    const handler = read("src/cli/hook/stop-handler.ts");
+    expect(handler).toContain("PlanCompletenessGate");
+    expect(handler).toContain("last_assistant_message");
+    expect(handler).toContain("stop_hook_active");
+    expect(handler).toContain("StopProjectionBatch");
+    expect(handler).toContain("decision: 'block'");
+    expect(handler).toContain("getStopEffectiveState");
   });
 
   // HRD-05 retired assets/hooks/post-edit-guard.sh; doc-drift coverage now

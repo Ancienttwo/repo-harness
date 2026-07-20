@@ -140,7 +140,8 @@ export const ROUTES: readonly Route[] = Object.freeze([
   Object.freeze({
     event: 'Stop' as const,
     routeId: 'default' as const,
-    scripts: Object.freeze(['stop-orchestrator.sh']),
+    // HRD-06: Stop orchestration is owned by the in-process stop-handler.
+    scripts: Object.freeze([]),
   }),
 ]);
 

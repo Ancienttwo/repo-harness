@@ -10,10 +10,10 @@ import { createHash } from 'crypto';
 import { runMutationGuard } from './mutation-guard';
 import { buildSessionStartSections } from './session-context';
 import {
-  consumePendingPostEditEvents,
   pendingPostEditJournalSection,
   runMutationObserved,
 } from './mutation-observed';
+import { runStopHandler } from './stop-handler';
 import { resolveEffectiveState } from '../../effects/state/resolve-effective-state';
 import type { EffectiveState } from '../../core/state/types';
 import type { WorkflowProfile } from '../../core/workflow/profile';
@@ -206,6 +206,19 @@ function resolvePreEditEffectiveState(repoRoot: string, targetPaths: readonly st
   }
 }
 
+/** HRD-06 Stop-shaped canonical resolution, memoized by StateInputCollector. */
+function resolveStopEffectiveState(repoRoot: string): EffectiveState | null {
+  const explicitOverride = process.env.REPO_HARNESS_WORKFLOW_PROFILE as WorkflowProfile | undefined;
+  try {
+    return resolveEffectiveState(repoRoot, Date.now(), {
+      operationKind: 'inspect',
+      explicitOverride,
+    });
+  } catch {
+    return null;
+  }
+}
+
 export function resolveRepoRoot(cwd: string): string | null {
   try {
     const out = execFileSync('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], {
@@ -358,6 +371,7 @@ export function runHook(opts: RunHookOptions): RunHookResult {
     repoRoot,
     resolveSessionEffectiveState: () => effectiveStateSessionSection(repoRoot),
     resolvePreEditEffectiveState: (targetPaths) => resolvePreEditEffectiveState(repoRoot, targetPaths),
+    resolveStopEffectiveState: () => resolveStopEffectiveState(repoRoot),
   });
 
   const route = getRoute(opts.event, opts.routeId);
@@ -420,33 +434,6 @@ export function runHook(opts: RunHookOptions): RunHookResult {
     });
   }
 
-  // HRD-05: Stop's existing shell orchestration (stop-orchestrator.sh, run
-  // unmodified immediately afterward via the generic script loop below)
-  // keeps running; this is the minimal deferred-consumption wiring the
-  // contract asks for -- reading pending post-edit journal events and
-  // replaying the SAME external commands the retired scripts used
-  // (architecture-queue/context-sync/capability-context/verify-contract/
-  // minimal-change), then marking each event consumed atomically. Runs
-  // before stop-orchestrator.sh so its own unconditional
-  // `workflow_write_handoff "session-stop"` still refreshes the handoff
-  // checkpoint afterward, matching the old per-edit-then-Stop ordering
-  // closely enough for recovery purposes. Deliberately NOT added to
-  // `scriptsRun`/`recordHookInvocation`: this route's `scripts_run`/
-  // `child_invocations`/`write_set` shape is pinned byte-for-byte by the
-  // HRD-01 golden (tests/fixtures/loop-runtime/characterization.json), and
-  // this contract's Stop Conditions forbid shifting any cell other than
-  // PostToolUse.edit. When there are no pending events (the golden's own
-  // fixture scenario) this is a single failed readdir, zero subprocess
-  // calls, zero writes -- unobservable in the golden's own terms. Wrapped in
-  // try/catch: deferred-consumption housekeeping must never block Stop.
-  if (opts.event === 'Stop' && opts.routeId === 'default') {
-    try {
-      consumePendingPostEditEvents(repoRoot, process.env);
-    } catch {
-      // Never fail Stop on deferred-consumption housekeeping.
-    }
-  }
-
   // Codex Desktop rejects Stop decision stdout at turn finalization, so collect
   // and suppress successful Stop output while preserving failure diagnostics.
   const codexStopSuppressSuccessOutput =
@@ -505,13 +492,78 @@ export function runHook(opts: RunHookOptions): RunHookResult {
   // (see route-registry.ts), mirroring HRD-03's mutation-guard precedent
   // exactly -- this route's dispatch is NOT driven by route.scripts either.
   const isMutationObservedRoute = opts.event === 'PostToolUse' && opts.routeId === 'edit';
-  const steps: readonly string[] = isMutationGuardRoute
+  // HRD-06: Stop.default is a single in-process handler. Journal consumption
+  // moved inside it so projection-before-resolve is one explicit ordering.
+  const isStopHandlerRoute = opts.event === 'Stop' && opts.routeId === 'default';
+  const steps: readonly string[] = isStopHandlerRoute
+    ? ['stop-handler']
+    : isMutationGuardRoute
     ? ['mutation-guard']
     : isMutationObservedRoute
       ? ['mutation-observed']
       : route.scripts;
 
   for (const script of steps) {
+    if (isStopHandlerRoute && script === 'stop-handler') {
+      scriptsRun.push(script);
+      const startedAt = Date.now();
+      // Full `repo-harness hook` historically left opts.input undefined and
+      // let the Stop script inherit fd0. Preserve that host contract when the
+      // implementation moves in-process by reading the same fd exactly once.
+      let stopInput = opts.input;
+      if (stopInput === undefined && (opts.stdio === undefined || opts.stdio === 'inherit')) {
+        try {
+          stopInput = fs.readFileSync(0);
+        } catch {
+          stopInput = undefined;
+        }
+      }
+      let handlerResult;
+      try {
+        handlerResult = runStopHandler({ collector, input: stopInput, env: process.env });
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        handlerResult = {
+          exitCode: 1,
+          stdout: '',
+          stderr: `repo-harness hook: stop-handler failed: ${detail}\n`,
+        };
+      }
+      const child = {
+        status: handlerResult.exitCode as number | null,
+        stdout: Buffer.from(handlerResult.stdout, 'utf-8'),
+        stderr: Buffer.from(handlerResult.stderr, 'utf-8'),
+      };
+      recordHookInvocation(repoRoot, {
+        event: opts.event,
+        routeId: opts.routeId,
+        script,
+        startedAt,
+        durationMs: Date.now() - startedAt,
+        exitCode: child.status ?? 0,
+        stdout: child.stdout,
+      });
+      if (captureAndReplayHostOutput || opts.stdio === 'inherit') {
+        if (child.stdout.length > 0) writeAllSync(1, child.stdout);
+        if (child.stderr.length > 0) writeAllSync(2, child.stderr);
+      }
+      if (codexStopSuppressSuccessOutput && child.status !== 0) {
+        if (child.stderr.length > 0) writeAllSync(2, child.stderr);
+        if (child.stdout.length > 0) writeAllSync(2, child.stdout);
+      }
+      if (child.status !== 0) {
+        return {
+          exitCode: child.status ?? 1,
+          reason: 'script-failed',
+          repoRoot,
+          scriptsRun,
+          skippedScripts,
+          failedScript: script,
+        };
+      }
+      continue;
+    }
+
     if (isMutationObservedRoute && script === 'mutation-observed') {
       scriptsRun.push(script);
       const startedAt = Date.now();
