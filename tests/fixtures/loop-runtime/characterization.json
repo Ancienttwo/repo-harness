@@ -34,17 +34,16 @@
       "route_id": "edit",
       "host_exercised": "claude",
       "scripts_run": [
-        "worktree-guard.sh",
-        "pre-edit-guard.sh"
+        "mutation-guard"
       ],
       "skipped_scripts": [],
-      "failed_script": "pre-edit-guard.sh",
+      "failed_script": "mutation-guard",
       "exit_code": 2,
       "reason": "script-failed",
       "child_invocations": {
-        "git": 22,
-        "bun_cli": 2,
-        "bun_generic": 6
+        "git": 21,
+        "bun_cli": 0,
+        "bun_generic": 0
       },
       "stdout": "[WorktreeGuard] Warning: primary working tree detected (.git).\n  To enforce linked worktrees, create .claude/.require-worktree\n[SpecGuard] Implementation edit without docs/spec.md: src/example.ts\n{\"guard\":\"SpecGuard\",\"action\":\"block\",\"reason\":\"Implementation edit to src/example.ts without docs/spec.md.\",\"fix\":\"Run repo-harness run new-spec and capture stable product intent before implementing.\",\"failure_class\":\"missing_artifact\",\"run_id\":\"characterization-run\"}\n",
       "stderr": "[SpecGuard] Implementation edit to src/example.ts without docs/spec.md.\n  Fix: Run repo-harness run new-spec and capture stable product intent before implementing.\n",

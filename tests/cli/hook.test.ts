@@ -403,25 +403,36 @@ describe('hook command (Phase 1B)', () => {
     });
   });
 
+  // HRD-03 retired PreToolUse.edit's script list to `[]` (the in-process
+  // mutation-guard handler always decides that route now -- see the
+  // dedicated "PreToolUse.edit dispatches to the in-process handler
+  // unconditionally" test below). PreToolUse.edit was the only route with
+  // two FULLY required (non-soft) scripts, so the four generic
+  // multi-script-mechanics tests below -- which test runHook()'s own
+  // script-loop plumbing, not any guard's content -- are retargeted to
+  // PostToolUse.edit (`post-edit-guard.sh` required, `minimal-change-observer.sh`
+  // soft-missing per isSoftMissingScript). Test intent (ordering, payload
+  // replay, hard-vs-soft missing-script handling, failure propagation) is
+  // preserved; only the vehicle route/script names change.
   test('opt-in + all scripts present and succeed → exits 0, scripts run in registry order', () => {
     withTempRepo(
       {
         optIn: true,
         scripts: {
-          'worktree-guard.sh': '#!/bin/bash\nexit 0\n',
-          'pre-edit-guard.sh': '#!/bin/bash\nexit 0\n',
+          'post-edit-guard.sh': '#!/bin/bash\nexit 0\n',
+          'minimal-change-observer.sh': '#!/bin/bash\nexit 0\n',
         },
       },
       (repoRoot) => {
         const result = runHook({
-          event: 'PreToolUse',
+          event: 'PostToolUse',
           routeId: 'edit',
           cwd: repoRoot,
           stdio: 'ignore',
         });
         expect(result.exitCode).toBe(0);
         expect(result.reason).toBe('ok');
-        expect(result.scriptsRun).toEqual(['worktree-guard.sh', 'pre-edit-guard.sh']);
+        expect(result.scriptsRun).toEqual(['post-edit-guard.sh', 'minimal-change-observer.sh']);
       },
     );
   });
@@ -431,14 +442,14 @@ describe('hook command (Phase 1B)', () => {
       {
         optIn: true,
         scripts: {
-          'worktree-guard.sh': '#!/bin/bash\ncat > .first-payload\n',
-          'pre-edit-guard.sh': '#!/bin/bash\ncat > .second-payload\n',
+          'post-edit-guard.sh': '#!/bin/bash\ncat > .first-payload\n',
+          'minimal-change-observer.sh': '#!/bin/bash\ncat > .second-payload\n',
         },
       },
       (repoRoot) => {
         const payload = JSON.stringify({ tool_input: { file_path: 'deploy/sql/0001.sql' } });
         const result = runHook({
-          event: 'PreToolUse',
+          event: 'PostToolUse',
           routeId: 'edit',
           cwd: repoRoot,
           stdio: 'ignore',
@@ -451,26 +462,37 @@ describe('hook command (Phase 1B)', () => {
     );
   });
 
-  test('opt-in + required route partial missing → exits 3 after existing script runs', () => {
+  // Adapted shape: on PostToolUse.edit the one non-soft (genuinely required)
+  // script, post-edit-guard.sh, is FIRST in registry order (unlike the old
+  // PreToolUse.edit vehicle, where the required script that ran before the
+  // missing one was first and the missing one was second) -- so this
+  // fixture omits post-edit-guard.sh itself to reach the hard-missing path,
+  // rather than omitting a later script after an earlier one already ran.
+  // The behavior under test -- a genuinely required (non-soft) script
+  // missing hard-fails with exit 3 and reason 'missing-script', not a soft
+  // skip -- is preserved exactly; "an earlier script already ran" is not
+  // reproducible with any current route's required-script ordering (see
+  // notes file).
+  test('opt-in + required route partial missing → exits 3 for the missing required script', () => {
     withTempRepo(
       {
         optIn: true,
         scripts: {
-          'worktree-guard.sh': '#!/bin/bash\nexit 0\n',
+          'minimal-change-observer.sh': '#!/bin/bash\nexit 0\n',
         },
       },
       (repoRoot) => {
         const result = runHook({
-          event: 'PreToolUse',
+          event: 'PostToolUse',
           routeId: 'edit',
           cwd: repoRoot,
           stdio: 'ignore',
         });
         expect(result.exitCode).toBe(3);
         expect(result.reason).toBe('missing-script');
-        expect(result.scriptsRun).toEqual(['worktree-guard.sh']);
+        expect(result.scriptsRun).toEqual([]);
         expect(result.skippedScripts).toEqual([]);
-        expect(result.failedScript).toBe('pre-edit-guard.sh');
+        expect(result.failedScript).toBe('post-edit-guard.sh');
       },
     );
   });
@@ -577,8 +599,37 @@ describe('hook command (Phase 1B)', () => {
       {
         optIn: true,
         scripts: {
+          'post-edit-guard.sh': '#!/bin/bash\nexit 7\n',
+          'minimal-change-observer.sh': '#!/bin/bash\nexit 0\n',
+        },
+      },
+      (repoRoot) => {
+        const result = runHook({
+          event: 'PostToolUse',
+          routeId: 'edit',
+          cwd: repoRoot,
+          stdio: 'ignore',
+        });
+        expect(result.exitCode).toBe(7);
+        expect(result.reason).toBe('script-failed');
+        expect(result.scriptsRun).toEqual(['post-edit-guard.sh']);
+        expect(result.failedScript).toBe('post-edit-guard.sh');
+      },
+    );
+  });
+
+  test('PreToolUse.edit dispatches to the in-process handler unconditionally, ignoring any script files present', () => {
+    withTempRepo(
+      {
+        optIn: true,
+        // Even when a fixture still provides files under the retired
+        // names, runHook() never looks for them: PreToolUse.edit's
+        // route.scripts is `[]` now (route-registry.ts), so the in-process
+        // mutation-guard handler always decides this route regardless of
+        // what -- if anything -- exists on disk under these old names.
+        scripts: {
           'worktree-guard.sh': '#!/bin/bash\nexit 7\n',
-          'pre-edit-guard.sh': '#!/bin/bash\nexit 0\n',
+          'pre-edit-guard.sh': '#!/bin/bash\nexit 7\n',
         },
       },
       (repoRoot) => {
@@ -588,10 +639,12 @@ describe('hook command (Phase 1B)', () => {
           cwd: repoRoot,
           stdio: 'ignore',
         });
-        expect(result.exitCode).toBe(7);
-        expect(result.reason).toBe('script-failed');
-        expect(result.scriptsRun).toEqual(['worktree-guard.sh']);
-        expect(result.failedScript).toBe('worktree-guard.sh');
+        // A bare event with no file_path in the payload exits 0 right after
+        // the (silent, non-worktree-linked... warning-only) worktree check
+        // -- had the fake "exit 7" scripts run instead, this would be 7.
+        expect(result.exitCode).toBe(0);
+        expect(result.reason).toBe('ok');
+        expect(result.scriptsRun).toEqual(['mutation-guard']);
       },
     );
   });

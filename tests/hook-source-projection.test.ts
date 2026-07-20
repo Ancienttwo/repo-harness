@@ -206,10 +206,15 @@ describe("hook source projection", () => {
     }
   });
 
-  test("workflowSurfaceParityErrors accepts the real checked-in is_workflow_surface_path() shape", () => {
-    const source = readFileSync(join(ASSETS_HOOKS, "pre-edit-guard.sh"), "utf-8");
-    expect(workflowSurfaceParityErrors(source)).toEqual([]);
-  });
+  // HRD-03 retired assets/hooks/pre-edit-guard.sh (the real file this test
+  // used to read to prove workflowSurfaceParityErrors "accepts the real
+  // checked-in shape") along with the hand-copied is_workflow_surface_path()
+  // bash predicate it carried -- mutation-guard.ts imports isWorkflowSurfacePath
+  // from diff-fingerprint.ts directly now, so there is no real bash file
+  // left with this shape to read. The synthetic-source tests below continue
+  // to prove workflowSurfaceParityErrors' own parsing/comparison logic
+  // (kept exported as general, reusable infrastructure -- see
+  // scripts/sync-hook-sources.ts) without depending on a real file.
 
   function guardSourceWithCaseLines(caseLines: readonly string[]): string {
     return [

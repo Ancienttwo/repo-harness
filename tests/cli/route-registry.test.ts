@@ -56,7 +56,12 @@ describe('route registry (Phase 1B Z design)', () => {
       'minimal-change-context.sh',
       'security-sentinel.sh',
     ]);
-    expect(getRoute('PreToolUse', 'edit')?.scripts).toEqual(['worktree-guard.sh', 'pre-edit-guard.sh']);
+    // HRD-03: PreToolUse.edit's script list is retired scripts-free -- the
+    // in-process mutation-guard handler (src/cli/hook/mutation-guard.ts) now
+    // decides this route unconditionally; see route-registry.ts's own
+    // comment on this route for why the list is empty rather than a
+    // symbolic placeholder.
+    expect(getRoute('PreToolUse', 'edit')?.scripts).toEqual([]);
     expect(getRoute('PreToolUse', 'subagent')?.scripts).toEqual(['subagent-return-channel-guard.sh']);
     expect(getRoute('PostToolUse', 'edit')?.scripts).toEqual([
       'post-edit-guard.sh',

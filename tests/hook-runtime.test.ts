@@ -18,6 +18,7 @@ import {
 import { platform, tmpdir } from "os";
 import { dirname, join } from "path";
 import { spawnSync } from "child_process";
+import { pathToFileURL } from "url";
 
 const HOOK_RUNTIME_TIMEOUT_MS = 60000;
 const HOOK_RUNTIME_SPAWN_BUFFER_BYTES = 16 * 1024 * 1024;
@@ -65,6 +66,46 @@ function installHooks(cwd: string): string {
     expect(res.status).toBe(0);
   }
   return aiHooksDir;
+}
+
+// HRD-03: opt-in marker the PRODUCTION `runHook()` (unlike the direct
+// `bash <script>` spawns most of this file's local `runHook()` helper does)
+// requires before dispatching any route at all.
+function ensureOptIn(cwd: string): void {
+  mkdirSync(join(cwd, ".ai/harness"), { recursive: true });
+  writeFileSync(join(cwd, ".ai/harness/workflow-contract.json"), "{}\n");
+}
+
+const RUNTIME_MODULE = join(ROOT, "src/cli/hook/runtime.ts");
+
+// HRD-03: migrated worktree-guard.sh/pre-edit-guard.sh fixtures below no
+// longer spawn either retired script directly; this spawns a `bun -e`
+// wrapper that imports and calls the PRODUCTION `src/cli/hook/runtime.ts`
+// `runHook()` in-process (which now special-cases PreToolUse.edit to the
+// in-process mutation-guard handler once both scripts are absent from the
+// resolved hooks dir -- see runtime.ts). The wrapper subprocess exists only
+// so this test can observe real host-visible fd1/fd2 output; `RunHookResult`
+// itself carries no stdout/stderr text.
+function runMutationGuardHook(cwd: string, payload: unknown, env: Record<string, string> = {}) {
+  const moduleUrl = pathToFileURL(RUNTIME_MODULE).href;
+  const script = [
+    "const stdinText = await Bun.stdin.text();",
+    `const { runHook } = await import(${JSON.stringify(moduleUrl)});`,
+    "const result = runHook({ event: 'PreToolUse', routeId: 'edit', input: stdinText.length > 0 ? stdinText : undefined });",
+    "process.exit(result.exitCode);",
+  ].join("\n");
+  return spawnSync(process.execPath, ["-e", script], {
+    cwd,
+    input: JSON.stringify(payload),
+    encoding: "utf-8",
+    maxBuffer: HOOK_RUNTIME_SPAWN_BUFFER_BYTES,
+    env: {
+      ...process.env,
+      HOOK_REPO_ROOT: cwd,
+      REPO_HARNESS_HOOK_SOURCE: "repo",
+      ...env,
+    },
+  });
 }
 
 function writeValidSprintChecks(cwd: string) {
@@ -492,16 +533,16 @@ describe("Hook runtime behavior", () => {
     const cwd = tmpWorkspace("worktree-guard");
     try {
       initGitRepo(cwd);
-      installHooks(cwd);
+      ensureOptIn(cwd);
 
-      const warnRes = runHook("worktree-guard.sh", cwd);
+      const warnRes = runMutationGuardHook(cwd, {});
       expect(warnRes.status).toBe(0);
       expect(warnRes.stdout).toContain("Warning: primary working tree detected");
 
       mkdirSync(join(cwd, ".claude"), { recursive: true });
       writeFileSync(join(cwd, ".claude/.require-worktree"), "1\n");
 
-      const blockRes = runHook("worktree-guard.sh", cwd);
+      const blockRes = runMutationGuardHook(cwd, {});
       expect(blockRes.status).toBe(2);
       expect(blockRes.stdout).toContain("Mutation blocked");
       expect(blockRes.stdout).toContain('"failure_class":"state_violation"');
@@ -1466,12 +1507,20 @@ describe("Hook runtime behavior", () => {
       initGitRepo(cwd);
       installHooks(cwd);
       mkdirSync(join(cwd, "apps/api"), { recursive: true });
+      // HRD-03: worktree-guard.sh is retired; run-hook.sh's own nested-cwd
+      // repo-root resolution (what this test actually verifies) needs some
+      // script to dispatch to, so it uses a purpose-built probe instead of
+      // depending on any specific real hook's remaining content.
+      writeFileSync(
+        join(cwd, ".ai/hooks/nested-cwd-probe.sh"),
+        '#!/bin/bash\necho "[NestedCwdProbe] $HOOK_REPO_ROOT"\n'
+      );
 
       const res = spawnSync(
         "sh",
         [
           "-c",
-          'repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_REPO_ROOT="$repo" bash "$repo/.ai/hooks/run-hook.sh" worktree-guard.sh',
+          'repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_REPO_ROOT="$repo" bash "$repo/.ai/hooks/run-hook.sh" nested-cwd-probe.sh',
         ],
         {
           cwd: join(cwd, "apps/api"),
@@ -1480,7 +1529,8 @@ describe("Hook runtime behavior", () => {
       );
 
       expect(res.status).toBe(0);
-      expect(res.stdout).toContain("[WorktreeGuard]");
+      expect(res.stdout).toContain("[NestedCwdProbe]");
+      expect(res.stdout).toContain(cwd);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -1555,18 +1605,29 @@ describe("Hook runtime behavior", () => {
       mkdirSync(join(cwd, "docs"), { recursive: true });
       writeFileSync(join(cwd, "docs/spec.md"), "# Product Spec\n");
 
-      const blockRes = spawnSync("bash", [join(cwd, ".ai/hooks/run-hook.sh"), "pre-edit-guard.sh"], {
+      // HRD-03: pre-edit-guard.sh is retired, and the scenario this
+      // specifically probed -- a degraded PATH with no bun/CLI reachable,
+      // which used to fall through to WorkflowProfileGuard -- is moot for
+      // the in-process handler (there is no subprocess CLI lookup to fail).
+      // run-hook.sh's own Codex-failure stdout/stderr filtering (what this
+      // test actually verifies) is exercised here with a purpose-built
+      // probe that fails the same way any blocking guard does: a
+      // `{"guard":...}` JSON line on stdout, a human message on stderr,
+      // non-zero exit.
+      writeFileSync(
+        join(cwd, ".ai/hooks/failure-probe.sh"),
+        '#!/bin/bash\necho \'{"guard":"ProbeGuard","action":"block"}\'\necho "[ProbeGuard] blocked for test" >&2\nexit 2\n'
+      );
+      const blockRes = spawnSync("bash", [join(cwd, ".ai/hooks/run-hook.sh"), "failure-probe.sh"], {
         cwd,
-        input: JSON.stringify({ tool_input: { file_path: "src/app.ts" } }),
         encoding: "utf-8",
         env: { ...process.env, HOOK_HOST: "codex", HOOK_REPO_ROOT: cwd },
       });
 
       expect(blockRes.status).toBe(2);
       expect(blockRes.stdout).toBe("");
-      expect(blockRes.stderr).toContain("[WorkflowProfileGuard]");
+      expect(blockRes.stderr).toContain("[ProbeGuard] blocked for test");
       expect(blockRes.stderr).not.toContain('{"guard":');
-      expect(blockRes.stderr).not.toContain('"guard":"PlanStatusGuard"');
 
       const reviewRes = spawnSync("bash", [join(cwd, ".ai/hooks/run-hook.sh"), "prompt-guard.sh"], {
         cwd,
@@ -1604,23 +1665,30 @@ describe("Hook runtime behavior", () => {
         },
       });
 
-      // Without bun/CLI the prompt layer bypasses. The edit layer still blocks.
+      // Without bun/CLI the prompt layer bypasses. The edit layer still
+      // blocks -- HRD-03: through the in-process handler, PATH availability
+      // is moot for it (no subprocess CLI lookup exists to degrade), so the
+      // block now comes from the ordinary "no active plan" gate rather than
+      // a degraded-CLI WorkflowProfileGuard fallback; the two retired
+      // scripts are removed from this fixture's `.ai/hooks` so the handler
+      // (not a stale copy of the scripts `installHooks` placed there for the
+      // prompt-guard.sh check above) is what actually runs.
       expect(res.status).toBe(0);
       expect(res.stdout).toBe("");
       expect(res.stderr).toBe("");
 
-      const editRes = spawnSync("bash", [join(cwd, ".ai/hooks/pre-edit-guard.sh")], {
-        cwd,
-        input: JSON.stringify({ tool_input: { file_path: "src/app.ts" } }),
-        encoding: "utf-8",
-        env: {
-          HOME: process.env.HOME ?? "",
-          HOOK_REPO_ROOT: cwd,
-          PATH: "/bin:/usr/bin:/usr/sbin",
-        },
-      });
+      // The bare prompt-guard.sh check above never needed a real git repo
+      // (HOOK_REPO_ROOT was passed explicitly); runHook() does, to resolve
+      // and confirm the repo root before dispatching -- initialized here,
+      // after that check, so the prompt-guard.sh assertions above stay
+      // exercised against the exact same bare-directory shape as before.
+      initGitRepo(cwd);
+      rmSync(join(cwd, ".ai/hooks/worktree-guard.sh"), { force: true });
+      rmSync(join(cwd, ".ai/hooks/pre-edit-guard.sh"), { force: true });
+      ensureOptIn(cwd);
+      const editRes = runMutationGuardHook(cwd, { tool_input: { file_path: "src/app.ts" } });
       expect(editRes.status).toBe(2);
-      expect(editRes.stderr).toContain("[WorkflowProfileGuard]");
+      expect(editRes.stderr).toContain("[PlanStatusGuard]");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -2645,35 +2713,27 @@ describe("Hook runtime behavior", () => {
     const cwd = tmpWorkspace("ops-ref-guard");
     try {
       initGitRepo(cwd);
-      installHooks(cwd);
+      ensureOptIn(cwd);
 
-      const refRes = runHook("pre-edit-guard.sh", cwd, {
-        stdin: JSON.stringify({ tool_input: { file_path: "_ref/upstream/README.md" } }),
-      });
+      const refRes = runMutationGuardHook(cwd, { tool_input: { file_path: "_ref/upstream/README.md" } });
       expect(refRes.status).toBe(2);
       expect(refRes.stdout).toContain("[ExternalReferenceGuard]");
       expect(refRes.stdout).toContain('"guard":"ExternalReferenceGuard"');
       expect(refRes.stderr).toContain("[ExternalReferenceGuard]");
 
-      const secretRes = runHook("pre-edit-guard.sh", cwd, {
-        stdin: JSON.stringify({ tool_input: { file_path: "_ops/env/.env.production" } }),
-      });
+      const secretRes = runMutationGuardHook(cwd, { tool_input: { file_path: "_ops/env/.env.production" } });
       expect(secretRes.status).toBe(2);
       expect(secretRes.stdout).toContain("[OpsPrivateGuard]");
       expect(secretRes.stdout).toContain('"guard":"OpsPrivateGuard"');
       expect(secretRes.stderr).toContain("[OpsPrivateGuard]");
 
-      const opsRes = runHook("pre-edit-guard.sh", cwd, {
-        stdin: JSON.stringify({ tool_input: { file_path: "deploy/scripts/release.sh" } }),
-      });
+      const opsRes = runMutationGuardHook(cwd, { tool_input: { file_path: "deploy/scripts/release.sh" } });
       expect(opsRes.status).toBe(2);
       expect(opsRes.stdout).toContain("[DeployAsset]");
       expect(opsRes.stdout).toContain("operations.deploy_sql");
       expect(opsRes.stderr).toMatch(/SpecGuard|PlanStatusGuard|StrictContractGuard/);
 
-      const exampleRes = runHook("pre-edit-guard.sh", cwd, {
-        stdin: JSON.stringify({ tool_input: { file_path: "deploy/env/.env.example" } }),
-      });
+      const exampleRes = runMutationGuardHook(cwd, { tool_input: { file_path: "deploy/env/.env.example" } });
       expect(exampleRes.status).toBe(2);
       expect(exampleRes.stdout).toContain("[DeployAsset]");
     } finally {
@@ -2685,20 +2745,18 @@ describe("Hook runtime behavior", () => {
     const cwd = tmpWorkspace("pre-edit-plan-transition");
     try {
       initGitRepo(cwd);
-      installHooks(cwd);
+      ensureOptIn(cwd);
       mkdirSync(join(cwd, "plans"), { recursive: true });
       writeFileSync(
         join(cwd, "plans/plan-20260304-1500-demo.md"),
         "# Plan: demo\n\n> **Status**: Draft\n\n## Annotations\n<!-- [NOTE]: add detail -->\n"
       );
 
-      const res = runHook("pre-edit-guard.sh", cwd, {
-        stdin: JSON.stringify({
-          tool_input: {
-            file_path: "plans/plan-20260304-1500-demo.md",
-            content: "# Plan: demo\n\n> **Status**: Approved\n\n## Annotations\n<!-- [NOTE]: add detail -->\n",
-          },
-        }),
+      const res = runMutationGuardHook(cwd, {
+        tool_input: {
+          file_path: "plans/plan-20260304-1500-demo.md",
+          content: "# Plan: demo\n\n> **Status**: Approved\n\n## Annotations\n<!-- [NOTE]: add detail -->\n",
+        },
       });
 
       expect(res.status).toBe(2);

@@ -777,7 +777,14 @@ function probeInstalledComponents(
     .map(({ path }) => path);
   const cliEvidence = executableEvidence('repo-harness', env);
   const effectiveStateEvidence = canonicalEvidence(home, ['src/cli/commands/state.ts']);
-  const guardPaths = ['assets/hooks/pre-edit-guard.sh', 'scripts/contract-worktree.sh'];
+  // HRD-03 retired assets/hooks/pre-edit-guard.sh: the `scope-worktree-check-guards`
+  // capability it used to prove now lives in the in-process
+  // src/cli/hook/mutation-guard.ts handler (bundled straight into the CLI
+  // source tree, so it is vendored the same way every other canonicalEvidence
+  // path here is -- see effectiveStateEvidence / adaptiveEvidence / releaseEvidence
+  // above for the same pattern). scripts/contract-worktree.sh is untouched by
+  // this cutover and stays.
+  const guardPaths = ['src/cli/hook/mutation-guard.ts', 'scripts/contract-worktree.sh'];
   const guardEvidence = canonicalEvidence(home, guardPaths);
   const handoffEvidence = [
     ...existing([

@@ -12,11 +12,57 @@ import {
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
+import { runMutationGuard, type MutationGuardCollector } from "../src/cli/hook/mutation-guard";
+import { createStateInputCollector } from "../src/effects/loop/state-input-collector";
+import { resolveEffectiveState } from "../src/effects/state/resolve-effective-state";
+import type { EffectiveState } from "../src/core/state/types";
+import type { WorkflowProfile } from "../src/core/workflow/profile";
 
 // Every test here spawns bash hook scripts (each forking git/jq/bun
 // subprocesses) several times; one invocation can exceed 2s under parallel
 // session load, so the 5s bun default flakes on multi-invocation tests.
 setDefaultTimeout(20000);
+
+// HRD-03: worktree-guard.sh + pre-edit-guard.sh are retired; the tests below
+// that used to spawn them directly (via the local `runHook` bash-script
+// helper) are retargeted to call the in-process mutation-guard handler
+// directly -- the same "no subprocess, real resolveEffectiveState authority"
+// pattern tests/mutation-guard.test.ts uses. Returning the same
+// `{status, stdout, stderr}` shape the old spawnSync-based `runHook` helper
+// returned keeps every migrated test's own assertions byte-identical; only
+// how `res`/`result` gets computed changes. prompt-guard.sh-only tests
+// (a different, still-live script) are untouched.
+function mutationGuardCollector(repoRoot: string, explicitOverride?: WorkflowProfile): MutationGuardCollector {
+  return createStateInputCollector({
+    event: "PreToolUse",
+    repoRoot,
+    resolveSessionEffectiveState: () => null,
+    resolvePreEditEffectiveState: (targetPaths: readonly string[]): EffectiveState | null => {
+      try {
+        return resolveEffectiveState(repoRoot, Date.now(), {
+          targetPaths,
+          operationKind: "edit",
+          explicitOverride,
+        });
+      } catch {
+        return null;
+      }
+    },
+  });
+}
+
+function runEditHandler(
+  cwd: string,
+  payload: unknown,
+  options: { readonly env?: NodeJS.ProcessEnv; readonly profile?: WorkflowProfile } = {},
+): { status: number; stdout: string; stderr: string } {
+  const result = runMutationGuard({
+    collector: mutationGuardCollector(cwd, options.profile),
+    input: JSON.stringify(payload),
+    env: options.env ?? {},
+  });
+  return { status: result.exitCode, stdout: result.stdout, stderr: result.stderr };
+}
 
 const ROOT = join(import.meta.dir, "..");
 const ASSETS_HOOKS_DIR = join(ROOT, "assets/hooks");
@@ -89,11 +135,10 @@ describe("Claude Code hook protocol compliance", () => {
     const cwd = tmpWorkspace("hook-proto-worktree");
     try {
       initGitRepo(cwd);
-      installHooks(cwd);
       mkdirSync(join(cwd, ".claude"), { recursive: true });
       writeFileSync(join(cwd, ".claude/.require-worktree"), "1\n");
 
-      const res = runHook("worktree-guard.sh", cwd);
+      const res = runEditHandler(cwd, {});
       expect(res.status).toBe(2);
       expect(res.stderr).toContain("[WorktreeGuard]");
       expect(res.stderr).toContain("Primary working tree detected");
@@ -107,11 +152,8 @@ describe("Claude Code hook protocol compliance", () => {
     const cwd = tmpWorkspace("hook-proto-ref");
     try {
       initGitRepo(cwd);
-      installHooks(cwd);
 
-      const res = runHook("pre-edit-guard.sh", cwd, {
-        stdin: JSON.stringify({ tool_input: { file_path: "_ref/upstream/README.md" } }),
-      });
+      const res = runEditHandler(cwd, { tool_input: { file_path: "_ref/upstream/README.md" } });
       expect(res.status).toBe(2);
       expect(res.stderr).toContain("[ExternalReferenceGuard]");
       expect(res.stderr).toContain("_ref/");
@@ -124,11 +166,8 @@ describe("Claude Code hook protocol compliance", () => {
     const cwd = tmpWorkspace("hook-proto-ops");
     try {
       initGitRepo(cwd);
-      installHooks(cwd);
 
-      const res = runHook("pre-edit-guard.sh", cwd, {
-        stdin: JSON.stringify({ tool_input: { file_path: "_ops/env/.env.production" } }),
-      });
+      const res = runEditHandler(cwd, { tool_input: { file_path: "_ops/env/.env.production" } });
       expect(res.status).toBe(2);
       expect(res.stderr).toContain("[OpsPrivateGuard]");
       expect(res.stderr).toContain("_ops/");
@@ -143,7 +182,6 @@ describe("Claude Code hook protocol compliance", () => {
     const cwd = tmpWorkspace("hook-proto-contract-scope");
     try {
       initGitRepo(cwd);
-      installHooks(cwd);
       mkdirSync(join(cwd, "plans"), { recursive: true });
       mkdirSync(join(cwd, "tasks/contracts"), { recursive: true });
 
@@ -168,11 +206,7 @@ describe("Claude Code hook protocol compliance", () => {
         ].join("\n")
       );
 
-      const res = runHook("pre-edit-guard.sh", cwd, {
-        stdin: JSON.stringify({
-          tool_input: { file_path: "README.md" },
-        }),
-      });
+      const res = runEditHandler(cwd, { tool_input: { file_path: "README.md" } });
       expect(res.status).toBe(2);
       expect(res.stderr).toContain("[ContractScopeGuard]");
       expect(res.stderr).toContain("outside");
@@ -186,21 +220,18 @@ describe("Claude Code hook protocol compliance", () => {
     const cwd = tmpWorkspace("hook-proto-plan-transition");
     try {
       initGitRepo(cwd);
-      installHooks(cwd);
       mkdirSync(join(cwd, "plans"), { recursive: true });
       writeFileSync(
         join(cwd, "plans/plan-20260528-1500-demo.md"),
         "# Plan: demo\n\n> **Status**: Draft\n\n## Annotations\n<!-- [NOTE]: add detail -->\n"
       );
 
-      const res = runHook("pre-edit-guard.sh", cwd, {
-        stdin: JSON.stringify({
-          tool_input: {
-            file_path: "plans/plan-20260528-1500-demo.md",
-            content:
-              "# Plan: demo\n\n> **Status**: Approved\n\n## Annotations\n<!-- [NOTE]: add detail -->\n",
-          },
-        }),
+      const res = runEditHandler(cwd, {
+        tool_input: {
+          file_path: "plans/plan-20260528-1500-demo.md",
+          content:
+            "# Plan: demo\n\n> **Status**: Approved\n\n## Annotations\n<!-- [NOTE]: add detail -->\n",
+        },
       });
       expect(res.status).toBe(2);
       expect(res.stderr).toContain("[PlanTransitionGuard]");
@@ -222,24 +253,34 @@ describe("Claude Code hook protocol compliance", () => {
         "# Plan: demo\n\n> **Status**: Draft\n"
       );
       writeActivePlan(cwd, "plans/plan-20260528-1300-demo.md");
-      const failingResolver = join(cwd, "profile-resolver-fail.ts");
-      writeFileSync(failingResolver, "process.exit(1);\n");
 
       // Prompt layer is advisory for plan status; the edit-layer plan gate is
-      // the blocking enforcement point.
+      // the blocking enforcement point. prompt-guard.sh is untouched by the
+      // HRD-03 retirement, so this half stays on the real script + installHooks.
       const promptRes = runHook("prompt-guard.sh", cwd, {
         stdin: JSON.stringify({ user_message: "/execute" }),
       });
       expect(promptRes.status).toBe(0);
       expect(promptRes.stdout).toContain("[PlanStatusGuard]");
 
-      const res = runHook("pre-edit-guard.sh", cwd, {
-        stdin: JSON.stringify({ tool_input: { file_path: "src/app.ts" } }),
-        env: {
-          REPO_HARNESS_CLI: failingResolver,
-          REPO_HARNESS_WORKFLOW_PROFILE: "standard",
-        },
-      });
+      // HRD-03: the old failing-resolver-subprocess-substitution mechanism
+      // (REPO_HARNESS_CLI pointed at a script that exits 1) cannot occur
+      // in-process -- there is no subprocess CLI lookup left to degrade
+      // (see runtime-profile-enforcement.test.ts's retired fake-CLI tests
+      // for the same reasoning). Retargeted to a real fail-closed
+      // resolution instead (a declared-but-corrupt capability registry,
+      // the same technique runtime-profile-enforcement.test.ts's
+      // "a declared-but-corrupt capability registry blocks..." test uses):
+      // the assertions below -- exit 2, "[WorkflowProfileGuard]" on stderr
+      // -- are unchanged from the original test.
+      mkdirSync(join(cwd, ".ai/context"), { recursive: true });
+      writeFileSync(
+        join(cwd, ".ai/harness/policy.json"),
+        JSON.stringify({ context: { capability_registry_file: ".ai/context/capabilities.json" } }, null, 2),
+      );
+      writeFileSync(join(cwd, ".ai/context/capabilities.json"), "{not json");
+
+      const res = runEditHandler(cwd, { tool_input: { file_path: "src/app.ts" } }, { profile: "standard" });
       expect(res.status).toBe(2);
       expect(res.stderr).toContain("[WorkflowProfileGuard]");
     } finally {
@@ -284,13 +325,8 @@ describe("Claude Code hook protocol compliance", () => {
     const cwd = tmpWorkspace("hook-proto-abs-ref");
     try {
       initGitRepo(cwd);
-      installHooks(cwd);
 
-      const refRes = runHook("pre-edit-guard.sh", cwd, {
-        stdin: JSON.stringify({
-          tool_input: { file_path: `${cwd}/_ref/upstream/README.md` },
-        }),
-      });
+      const refRes = runEditHandler(cwd, { tool_input: { file_path: `${cwd}/_ref/upstream/README.md` } });
       expect(refRes.status).toBe(2);
       expect(refRes.stderr).toContain("[ExternalReferenceGuard]");
     } finally {
@@ -307,7 +343,6 @@ describe("Claude Code hook protocol compliance", () => {
     const outsideRoot = realpathSync(mkdtempSync(join(tmpdir(), "hook-proto-outside-")));
     try {
       initGitRepo(cwd);
-      installHooks(cwd);
       mkdirSync(join(cwd, "plans"), { recursive: true });
       mkdirSync(join(cwd, "tasks/contracts"), { recursive: true });
 
@@ -333,9 +368,7 @@ describe("Claude Code hook protocol compliance", () => {
       );
 
       const outsidePath = join(outsideRoot, "some-other-file.md");
-      const res = runHook("pre-edit-guard.sh", cwd, {
-        stdin: JSON.stringify({ tool_input: { file_path: outsidePath } }),
-      });
+      const res = runEditHandler(cwd, { tool_input: { file_path: outsidePath } });
       expect(res.status).toBe(0);
       expect(res.stderr).not.toContain("[ContractScopeGuard]");
       expect(res.stdout).not.toContain("[ContractScopeGuard]");
@@ -353,7 +386,6 @@ describe("Claude Code hook protocol compliance", () => {
     const cwd = tmpWorkspace("hook-proto-abs-allowed");
     try {
       initGitRepo(cwd);
-      installHooks(cwd);
       mkdirSync(join(cwd, "plans"), { recursive: true });
       mkdirSync(join(cwd, "tasks/contracts"), { recursive: true });
       mkdirSync(join(cwd, ".ai/hooks"), { recursive: true });
@@ -381,11 +413,7 @@ describe("Claude Code hook protocol compliance", () => {
       );
       writeFileSync(join(cwd, ".ai/hooks/sample.sh"), "#!/bin/bash\necho sample\n");
 
-      const res = runHook("pre-edit-guard.sh", cwd, {
-        stdin: JSON.stringify({
-          tool_input: { file_path: `${cwd}/.ai/hooks/sample.sh` },
-        }),
-      });
+      const res = runEditHandler(cwd, { tool_input: { file_path: `${cwd}/.ai/hooks/sample.sh` } });
       // ContractScopeGuard must NOT trip — the path is inside an allowed
       // directory. Other guards may emit advisories on stdout (TDD/BDD
       // reminders) but the hook must exit 0.
@@ -403,11 +431,10 @@ describe("Claude Code hook protocol compliance", () => {
     const cwd = tmpWorkspace("hook-proto-emit-shape");
     try {
       initGitRepo(cwd);
-      installHooks(cwd);
       mkdirSync(join(cwd, ".claude"), { recursive: true });
       writeFileSync(join(cwd, ".claude/.require-worktree"), "1\n");
 
-      const res = runHook("worktree-guard.sh", cwd);
+      const res = runEditHandler(cwd, {});
       expect(res.status).toBe(2);
       // stderr keeps the human-readable diagnostic (this is what Claude / the user reads).
       expect(res.stderr).toContain("[WorktreeGuard]");

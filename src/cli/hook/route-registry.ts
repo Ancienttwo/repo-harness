@@ -67,7 +67,15 @@ export const ROUTES: readonly Route[] = Object.freeze([
     event: 'PreToolUse' as const,
     routeId: 'edit' as const,
     matcher: 'Edit|Write',
-    scripts: Object.freeze(['worktree-guard.sh', 'pre-edit-guard.sh']),
+    // HRD-03: worktree-guard.sh and pre-edit-guard.sh are retired; this
+    // route's decision surface is now the in-process mutation-guard handler
+    // (src/cli/hook/mutation-guard.ts), invoked directly by runHook() --
+    // there is no script left to name here. An empty list (rather than a
+    // stale ['worktree-guard.sh', 'pre-edit-guard.sh']) is what keeps
+    // consumers that treat `scripts` as "files that must exist on disk"
+    // (doctor's repo-hook-scripts check, the adopt/sync tooling) reporting
+    // truthfully instead of a permanent false "missing script" drift signal.
+    scripts: Object.freeze([]),
   }),
   Object.freeze({
     event: 'PreToolUse' as const,

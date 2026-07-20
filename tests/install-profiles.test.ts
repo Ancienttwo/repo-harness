@@ -62,7 +62,7 @@ function writeManagedHostSurfaces(
   writePath(join(source, 'SKILL.md'), '# managed\n');
   for (const relative of [
     'src/cli/commands/state.ts',
-    'assets/hooks/pre-edit-guard.sh',
+    'src/cli/hook/mutation-guard.ts',
     'scripts/contract-worktree.sh',
     'assets/skill-commands/repo-harness-handoff/SKILL.md',
   ]) writePath(join(source, relative), '# managed\n');

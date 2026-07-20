@@ -7,6 +7,10 @@ import { budgetSessionContext, type SessionContextSection } from './session-cont
 import { writeAllSync } from '../runtime/write-all-sync';
 import { createStateInputCollector } from '../../effects/loop/state-input-collector';
 import { createHash } from 'crypto';
+import { runMutationGuard } from './mutation-guard';
+import { resolveEffectiveState } from '../../effects/state/resolve-effective-state';
+import type { EffectiveState } from '../../core/state/types';
+import type { WorkflowProfile } from '../../core/workflow/profile';
 
 const OPT_IN_MARKER = '.ai/harness/workflow-contract.json';
 const POLICY_FILE = '.ai/harness/policy.json';
@@ -189,6 +193,35 @@ function effectiveStateSessionSection(repoRoot: string): SessionContextSection |
   }
 }
 
+/**
+ * HRD-03's PreEdit-shaped Effective State resolution thunk. Mirrors the
+ * retired `pre-edit-guard.sh`'s `bun $CLI state resolve --json --operation
+ * edit --target-path ...` call, but invokes the same `resolveEffectiveState`
+ * function `src/cli/commands/state.ts` itself calls directly in-process --
+ * `mutation-guard.ts` lives under `src/cli/*`, the same layer `state.ts`
+ * already imports `resolveEffectiveState` from, so this is not a new
+ * cross-layer dependency. Going in-process (rather than spawning the CLI as
+ * a subprocess, matching `effectiveStateSessionSection` above) is what
+ * collapses the old two-subprocess PreToolUse.edit chain's `bun_cli` count:
+ * the resolver's own internal git/cache work still happens (this call is
+ * not a no-op), but the wrapping subprocess spawn -- and the shell-side
+ * `hook_json_get`/jq/bun fallback machinery around it -- disappears.
+ * Exceptions (matching a non-zero CLI exit) collapse to `null`, exactly
+ * like the old script's `cli_status -ne 0` branch.
+ */
+function resolvePreEditEffectiveState(repoRoot: string, targetPaths: readonly string[]): EffectiveState | null {
+  const explicitOverride = process.env.REPO_HARNESS_WORKFLOW_PROFILE as WorkflowProfile | undefined;
+  try {
+    return resolveEffectiveState(repoRoot, Date.now(), {
+      targetPaths,
+      operationKind: 'edit',
+      explicitOverride,
+    });
+  } catch {
+    return null;
+  }
+}
+
 export function resolveRepoRoot(cwd: string): string | null {
   try {
     const out = execFileSync('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], {
@@ -332,6 +365,7 @@ export function runHook(opts: RunHookOptions): RunHookResult {
     event: opts.event,
     repoRoot,
     resolveSessionEffectiveState: () => effectiveStateSessionSection(repoRoot),
+    resolvePreEditEffectiveState: (targetPaths) => resolvePreEditEffectiveState(repoRoot, targetPaths),
   });
 
   const route = getRoute(opts.event, opts.routeId);
@@ -403,7 +437,58 @@ export function runHook(opts: RunHookOptions): RunHookResult {
     ? [childStdin, 'pipe', 'pipe']
     : (opts.stdio ?? 'inherit')) as StdioOptions;
 
-  for (const script of route.scripts) {
+  // HRD-03: PreToolUse.edit's script list is replaced by the in-process
+  // mutation-guard handler; route.scripts for this route is `[]` (see
+  // route-registry.ts), so the ordinary script loop below would already no-op
+  // for it. This is the one route whose dispatch is NOT driven by
+  // route.scripts at all anymore -- the handler always runs. The generic
+  // script-spawn path immediately below is untouched and still drives every
+  // other route exactly as before.
+  const isMutationGuardRoute = opts.event === 'PreToolUse' && opts.routeId === 'edit';
+  const steps: readonly string[] = isMutationGuardRoute ? ['mutation-guard'] : route.scripts;
+
+  for (const script of steps) {
+    if (isMutationGuardRoute && script === 'mutation-guard') {
+      scriptsRun.push(script);
+      const startedAt = Date.now();
+      const handlerResult = runMutationGuard({ collector, input: opts.input });
+      const child = {
+        status: handlerResult.exitCode as number | null,
+        stdout: Buffer.from(handlerResult.stdout, 'utf-8') as Buffer | null,
+        stderr: Buffer.from(handlerResult.stderr, 'utf-8') as Buffer | null,
+        error: undefined as Error | undefined,
+      };
+      recordHookInvocation(repoRoot, {
+        event: opts.event,
+        routeId: opts.routeId,
+        script,
+        startedAt,
+        durationMs: Date.now() - startedAt,
+        exitCode: child.status ?? 0,
+        stdout: child.stdout,
+      });
+      if (captureAndReplayHostOutput) {
+        if (child.stdout) writeAllSync(1, child.stdout);
+        if (child.stderr) writeAllSync(2, child.stderr);
+      }
+      // No SessionStart/Stop/decision/additionalContext branch applies to
+      // PreToolUse.edit; only the Codex quiet-stdout failure diagnostic does.
+      if (codexQuietStdout && child.status !== 0 && child.stdout) {
+        writeAllSync(2, child.stdout);
+      }
+      if (child.status !== 0) {
+        return {
+          exitCode: child.status ?? 1,
+          reason: 'script-failed',
+          repoRoot,
+          scriptsRun,
+          skippedScripts,
+          failedScript: script,
+        };
+      }
+      continue;
+    }
+
     const scriptPath = path.join(hooksDir, script);
     if (!fs.existsSync(scriptPath)) {
       if (isSoftMissingScript(opts.event, opts.routeId, script)) {
