@@ -1,17 +1,14 @@
-import { createHash, randomUUID } from 'crypto';
-import {
-  closeSync,
-  mkdirSync,
-  openSync,
-  readFileSync,
-  renameSync,
-  unlinkSync,
-  writeFileSync,
-} from 'fs';
+import { createHash } from 'crypto';
+import { mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'fs';
 import { dirname, join } from 'path';
 import type { WorkflowProfile } from '../../core/workflow/profile';
+import { withExclusiveDirectoryLock } from '../../effects/locking/exclusive-directory-lock';
 
-export type CircuitKind = 'guard' | 'review' | 'subagent' | 'repair' | 'cross-model-consult';
+const CIRCUIT_KINDS = [
+  'guard', 'review', 'subagent', 'repair', 'cross-model-consult',
+] as const;
+
+export type CircuitKind = typeof CIRCUIT_KINDS[number];
 
 export interface CircuitAttempt {
   readonly kind: CircuitKind;
@@ -41,24 +38,32 @@ export interface CircuitDecision {
   readonly explicit_override_command: string | null;
 }
 
+type CircuitPattern =
+  | 'initial'
+  | 'real-progress-reset'
+  | 'exact-repeat'
+  | 'new-blocker'
+  | 'oscillation'
+  | 'superficial-churn';
+
+interface PersistedCircuitEntry {
+  progress_token: string;
+  blocker_key: string;
+  count: number;
+  render_key: string;
+  recent_blockers: readonly string[];
+  last_pattern: CircuitPattern;
+}
+
 interface PersistedCircuitState {
-  protocol: 1;
-  entries: Record<string, { count: number; token: string }>;
+  protocol: 2;
+  entries: Partial<Record<CircuitKind, PersistedCircuitEntry>>;
   updated_at: string;
 }
 
 const STATE_PATH = '.ai/harness/state/circuit-breaker.json';
 const LOCK_PATH = `${STATE_PATH}.lock`;
 const LOCK_TIMEOUT_MS = 2_000;
-const LOCK_POLL_MS = 5;
-const LOCK_WAIT = new Int32Array(new SharedArrayBuffer(4));
-
-interface CircuitLockOwner {
-  protocol: 1;
-  pid: number;
-  token: string;
-  acquired_at: string;
-}
 
 export function circuitLimit(attempt: CircuitAttempt): number {
   switch (attempt.kind) {
@@ -71,27 +76,91 @@ export function circuitLimit(attempt: CircuitAttempt): number {
   }
 }
 
-function keyFor(attempt: CircuitAttempt): string {
-  // A missing/empty progressToken must still hash to one stable value so
-  // repeats keep accumulating against the same key (fail closed, breaker
-  // trips sooner) instead of looking like a fresh key every call (fail
-  // open, breaker never trips). Array#join already normalizes undefined,
-  // null, and '' to the same empty segment, so this holds with no extra
-  // branching -- but this behavior is the requirement, not an accident.
-  const authority = [
-    attempt.kind, attempt.guard, attempt.reason, attempt.pathOrAction,
-    attempt.progressToken, attempt.fingerprint,
-  ].join('\0');
-  return createHash('sha256').update(authority).digest('hex');
+function isCircuitKind(value: unknown): value is CircuitKind {
+  return typeof value === 'string' && (CIRCUIT_KINDS as readonly string[]).includes(value);
+}
+
+function hashSegments(...segments: readonly string[]): string {
+  return createHash('sha256').update(segments.join('\0')).digest('hex');
+}
+
+function isCircuitPattern(value: unknown): value is CircuitPattern {
+  return value === 'initial'
+    || value === 'real-progress-reset'
+    || value === 'exact-repeat'
+    || value === 'new-blocker'
+    || value === 'oscillation'
+    || value === 'superficial-churn';
+}
+
+function isPersistedCircuitEntry(value: unknown): value is PersistedCircuitEntry {
+  if (!value || typeof value !== 'object') return false;
+  const entry = value as Partial<PersistedCircuitEntry>;
+  return typeof entry.progress_token === 'string'
+    && typeof entry.blocker_key === 'string'
+    && Number.isSafeInteger(entry.count)
+    && (entry.count ?? 0) >= 1
+    && typeof entry.render_key === 'string'
+    && Array.isArray(entry.recent_blockers)
+    && entry.recent_blockers.length <= 2
+    && entry.recent_blockers.every((blocker) => typeof blocker === 'string')
+    && isCircuitPattern(entry.last_pattern);
+}
+
+function isLegacyCircuitState(value: Record<string, unknown>): boolean {
+  if (!value.entries || typeof value.entries !== 'object' || Array.isArray(value.entries)
+    || typeof value.updated_at !== 'string') return false;
+  return Object.entries(value.entries).every(([key, entry]) => {
+    if (!/^[0-9a-f]{64}$/.test(key) || !entry || typeof entry !== 'object') return false;
+    const legacy = entry as { count?: unknown; token?: unknown };
+    return Number.isSafeInteger(legacy.count)
+      && (legacy.count as number) >= 1
+      && typeof legacy.token === 'string'
+      && legacy.token.length > 0;
+  });
 }
 
 function readState(repoRoot: string): PersistedCircuitState | null {
+  const statePath = join(repoRoot, STATE_PATH);
+  let raw: string;
   try {
-    const parsed = JSON.parse(readFileSync(join(repoRoot, STATE_PATH), 'utf-8')) as PersistedCircuitState;
-    return parsed.protocol === 1 && parsed.entries && typeof parsed.entries === 'object' ? parsed : null;
+    raw = readFileSync(statePath, 'utf-8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw new Error(`cannot read circuit breaker state: ${statePath}`);
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
   } catch {
+    throw new Error(`invalid circuit breaker state JSON: ${statePath}`);
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(`invalid circuit breaker state envelope: ${statePath}`);
+  }
+  const envelope = parsed as Record<string, unknown>;
+  if (envelope.protocol === 1) {
+    if (!isLegacyCircuitState(envelope)) {
+      throw new Error(`invalid protocol-1 circuit breaker state: ${statePath}`);
+    }
     return null;
   }
+  if (envelope.protocol !== 2) {
+    throw new Error(`unsupported circuit breaker state protocol: ${String(envelope.protocol)}`);
+  }
+  if (!envelope.entries || typeof envelope.entries !== 'object'
+    || Array.isArray(envelope.entries) || typeof envelope.updated_at !== 'string') {
+    throw new Error(`invalid protocol-2 circuit breaker state: ${statePath}`);
+  }
+  const entries: Partial<Record<CircuitKind, PersistedCircuitEntry>> = {};
+  for (const [kind, value] of Object.entries(envelope.entries)) {
+    if (!isCircuitKind(kind) || !isPersistedCircuitEntry(value)) {
+      throw new Error(`invalid protocol-2 circuit breaker entry: ${kind}`);
+    }
+    entries[kind] = value;
+  }
+  return { protocol: 2, entries, updated_at: envelope.updated_at };
 }
 
 function writeState(repoRoot: string, state: PersistedCircuitState): void {
@@ -102,89 +171,12 @@ function writeState(repoRoot: string, state: PersistedCircuitState): void {
   renameSync(temp, target);
 }
 
-function readLockOwner(lockPath: string): CircuitLockOwner | null {
-  try {
-    const parsed = JSON.parse(readFileSync(lockPath, 'utf-8')) as Partial<CircuitLockOwner>;
-    return parsed.protocol === 1
-      && Number.isInteger(parsed.pid)
-      && (parsed.pid ?? 0) > 0
-      && typeof parsed.token === 'string'
-      && parsed.token.length > 0
-      && typeof parsed.acquired_at === 'string'
-      ? parsed as CircuitLockOwner
-      : null;
-  } catch {
-    return null;
-  }
-}
-
-function processIsAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code !== 'ESRCH';
-  }
-}
-
-function acquireLock(repoRoot: string): { lockPath: string; token: string } {
-  const lockPath = join(repoRoot, LOCK_PATH);
-  mkdirSync(dirname(lockPath), { recursive: true });
-  const token = randomUUID();
-  const owner: CircuitLockOwner = {
-    protocol: 1,
-    pid: process.pid,
-    token,
-    acquired_at: new Date().toISOString(),
-  };
-  const deadline = Date.now() + LOCK_TIMEOUT_MS;
-
-  while (true) {
-    let descriptor: number | null = null;
-    try {
-      descriptor = openSync(lockPath, 'wx', 0o600);
-      writeFileSync(descriptor, `${JSON.stringify(owner)}\n`);
-      closeSync(descriptor);
-      return { lockPath, token };
-    } catch (error) {
-      if (descriptor !== null) {
-        try { closeSync(descriptor); } catch { /* descriptor already closed */ }
-        try { unlinkSync(lockPath); } catch { /* another process will observe/recover it */ }
-      }
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-    }
-
-    const observed = readLockOwner(lockPath);
-    if (Date.now() >= deadline) {
-      // Never reclaim a stale-looking wx lock in-process. With only portable
-      // filesystem primitives, read/verify/unlink has a TOCTOU window where a
-      // concurrent reclaimer can delete a newly acquired lock. A crashed owner
-      // therefore fails closed and requires explicit operator cleanup.
-      const ownerDetail = observed
-        ? `${processIsAlive(observed.pid) ? 'live' : 'stale'} owner pid ${observed.pid}`
-        : 'unresolved owner';
-      throw new Error(
-        `circuit breaker lock contention (${ownerDetail}); attempt denied after ${LOCK_TIMEOUT_MS}ms`,
-      );
-    }
-    Atomics.wait(LOCK_WAIT, 0, 0, LOCK_POLL_MS);
-  }
-}
-
-function releaseLock(lockPath: string, token: string): void {
-  const owner = readLockOwner(lockPath);
-  if (!owner || owner.token !== token || owner.pid !== process.pid) {
-    throw new Error('circuit breaker lock ownership changed before release; attempt denied');
-  }
-  unlinkSync(lockPath);
-}
-
 export function recordCircuitAttempt(
   repoRoot: string,
   attempt: CircuitAttempt,
   now = new Date(),
 ): CircuitDecision {
-  if (!['guard', 'review', 'subagent', 'repair', 'cross-model-consult'].includes(attempt.kind)) {
+  if (!isCircuitKind(attempt.kind)) {
     throw new Error(`invalid circuit kind: ${String(attempt.kind)}`);
   }
   if (!['lite', 'standard', 'strict'].includes(attempt.profile)) {
@@ -198,24 +190,70 @@ export function recordCircuitAttempt(
   })) {
     if (typeof value !== 'string' || !value.trim()) throw new Error(`${field} is required`);
   }
-  const key = keyFor(attempt);
+  const progressToken = typeof attempt.progressToken === 'string' ? attempt.progressToken : '';
+  const blockerKey = hashSegments(attempt.kind, attempt.guard);
+  const renderKey = hashSegments(attempt.reason, attempt.pathOrAction, attempt.fingerprint);
   const limit = circuitLimit(attempt);
-  const lock = acquireLock(repoRoot);
-  let repeatCount: number;
-  try {
-    const previous = readState(repoRoot);
-    repeatCount = Math.min((previous?.entries[key]?.count ?? 0) + 1, limit + 1);
-    writeState(repoRoot, {
-      protocol: 1,
-      entries: {
-        ...(previous?.entries ?? {}),
-        [key]: { count: repeatCount, token: randomUUID() },
-      },
+  const canonicalRoot = realpathSync(repoRoot);
+  const repeatCount = withExclusiveDirectoryLock(canonicalRoot, LOCK_PATH, () => {
+    const previous = readState(canonicalRoot);
+    const prior = previous?.entries[attempt.kind];
+    let pattern: CircuitPattern;
+    let nextRepeatCount: number;
+    let entry: PersistedCircuitEntry;
+    if (!prior) {
+      pattern = 'initial';
+      nextRepeatCount = 1;
+      entry = {
+        progress_token: progressToken,
+        blocker_key: blockerKey,
+        count: nextRepeatCount,
+        render_key: renderKey,
+        recent_blockers: [blockerKey],
+        last_pattern: pattern,
+      };
+    } else if (prior.progress_token !== progressToken) {
+      pattern = 'real-progress-reset';
+      nextRepeatCount = 1;
+      entry = {
+        progress_token: progressToken,
+        blocker_key: blockerKey,
+        count: nextRepeatCount,
+        render_key: renderKey,
+        recent_blockers: [blockerKey],
+        last_pattern: pattern,
+      };
+    } else {
+      const oscillating = prior.recent_blockers.length === 2
+        && prior.recent_blockers[0] === blockerKey
+        && prior.recent_blockers[1] === prior.blocker_key
+        && blockerKey !== prior.blocker_key;
+      if (oscillating) {
+        pattern = 'oscillation';
+        nextRepeatCount = limit + 1;
+      } else if (prior.blocker_key === blockerKey) {
+        pattern = prior.render_key === renderKey ? 'exact-repeat' : 'superficial-churn';
+        nextRepeatCount = Math.min(prior.count + 1, limit + 1);
+      } else {
+        pattern = 'new-blocker';
+        nextRepeatCount = 1;
+      }
+      entry = {
+        progress_token: progressToken,
+        blocker_key: blockerKey,
+        count: nextRepeatCount,
+        render_key: renderKey,
+        recent_blockers: [...prior.recent_blockers, blockerKey].slice(-2),
+        last_pattern: pattern,
+      };
+    }
+    writeState(canonicalRoot, {
+      protocol: 2,
+      entries: { ...(previous?.entries ?? {}), [attempt.kind]: entry },
       updated_at: now.toISOString(),
     });
-  } finally {
-    releaseLock(lock.lockPath, lock.token);
-  }
+    return nextRepeatCount;
+  }, { reclaimStaleOwner: false, waitTimeoutMs: LOCK_TIMEOUT_MS });
   const allowed = repeatCount <= limit;
   const strongBoundary = attempt.strongBoundary === true;
   return {
@@ -225,7 +263,7 @@ export function recordCircuitAttempt(
     guard: attempt.guard,
     reason: attempt.reason,
     path_action: attempt.pathOrAction,
-    progress_token: attempt.progressToken,
+    progress_token: progressToken,
     repeat_count: repeatCount,
     limit,
     required_action: !allowed
