@@ -14,13 +14,13 @@
 
 ## Human Review Card
 
-- Verdict: pass for the implementation diff; external acceptance remains a separate pending gate.
+- Verdict: pass — implementation diff pass confirmed independently by a fresh-context gatekeeper round (see "Independent Gatekeeper Verification" below); canonical cross-vendor external acceptance remains waived per standing chain instruction, not satisfied.
 - Change type: code-change
 - Intended files changed: the HRD-06 contract allowlist: in-process Stop handler and runtime/collector/route wiring; deletion of both Stop script copies; projection manifest; Stop tests and the four authorized characterization cells; Stop-specific docs and workflow artifacts.
 - Actual files changed: exactly the contract allowlist subset reported by `review-subject`; no target overlap and no live `stop-orchestrator.sh` authority remains.
 - Commands passed: targeted Stop/collector/runtime/characterization suites; `bun run check:type`; `bun run check:hooks`; `bun run check:state-boundaries`; deploy SQL, architecture sync, task sync, strict workflow, project-state inspection, adoption dry-run, and `git diff --check`.
 - Residual risks: the inherited delegation protocol can lose one monotonic field when Stop and SubagentStart overlap on the same scope because the scoped object is replaced outside the latest-pointer lock. Fixing both writers is outside this contract and is now an explicit independent `tasks/todos.md` goal; HRD-07 owns only the circuit-breaker lock.
-- Reviewer action required: proceed with non-merge closeout under the owner's explicit one-shot waiver. Merge remains separately locked and requires fresh explicit authorization.
+- Reviewer action required: none — independent gatekeeper PASS obtained this turn; owner has explicitly authorized proceeding to merge in the current turn (2026-07-21), contingent on this acceptance pass.
 - Rollback: revert the single HRD-06 branch/PR to base `e0e57acd1254932941635cfb9c36186ba6a654b3`; the retired scripts, route entry, fixtures, and docs return as one unit and no data migration is required.
 
 ## Mode Evidence
@@ -61,20 +61,67 @@
 
 ## External Acceptance Advice
 
-> **External Acceptance**: waived (explicit one-shot user waiver for the current HRD-06 subject; not canonical external PASS)
-> **External Reviewer**: none — Claude Code was not reached because tenant policy blocked private-diff transfer before execution
-> **External Source**: user waiver (actor: kito; exact in-session authorization on 2026-07-21 after the tenant-policy block; merge explicitly excluded)
+> **External Acceptance**: waived (canonical cross-vendor Codex review unavailable; Codex quota exhausted per standing chain record — user waiver for HRD-05..09 reconfirmed in-session 2026-07-21)
+> **External Reviewer**: none (canonical) — Codex quota exhausted; correction to the prior entry in this section: an earlier draft of this card stated "Claude Code was not reached because tenant policy blocked private-diff transfer" — that claim is superseded and known stale as of this update. An independent fresh-context Claude gatekeeper review (opus route, one-step fallback after a Fable-route quota error) DID run against this exact worktree/commit with full read access and real command execution; see Verification Evidence below for its evidence. It is a substitute internal-acceptance pass, not the canonical cross-vendor `external_acceptance` policy check, which remains genuinely unsatisfied and waived.
+> **External Source**: user waiver (actor: kito; standing chain instruction for HRD-05..09, reconfirmed in-session 2026-07-21; precedent: HRD-01/02/03/04/05). Substitute internal evidence: one independent fresh-context Claude gatekeeper round (adversarial re-derivation of all five contract-mandated hard invariants from source + real test execution, explicitly instructed to treat this review card's own prior self-report as an unverified claim rather than evidence) plus full `bun test` 1776 pass / 1 skip / 0 fail and the focused 10-file suite 204 pass / 0 fail, at the ship boundary alongside CI and merge-gate.
 > **External Started**: 2026-07-21 01:20 +0800
-> **External Completed**: 2026-07-21 01:24 +0800 (waiver recorded; not an external review)
+> **External Completed**: 2026-07-21 (independent gatekeeper pass completed; waiver covers only the canonical cross-vendor check, not the Claude-side re-verification, which did happen)
 > **Review Rubric Version**: 2
 > **Reviewed Subject SHA256**: sha256:dc7686c054a2e8febfbc68078bec0b2dcd0d608d2084141f5421550422b71710
 > **Reviewed Subject Scope**: normalized-final-content
 > **Reviewed Target Revision**: e0e57acd1254932941635cfb9c36186ba6a654b3
 > **Benchmark Evidence SHA256**: not-applicable
 
-- P1 blockers: none in the internally reviewed implementation. Canonical external acceptance did not run: tenant policy denied the authorized transfer before any diff data was sent, and the owner explicitly waived that gate for this subject only.
-- P2 advisories: full-suite evidence contains one non-product fixture startup race; the exact case passed immediately in isolation. The inherited same-scope delegation transaction risk remains explicitly deferred.
-- Acceptance checklist: review the exact subject hash and target above; verify handler authority, single resolution, four-target pre-resolution projection, gate precedence, lock interoperability, script deletion, golden confinement, and the documented residual boundary.
+- P1 blockers: none. The independent gatekeeper round found no blocking findings across all five contract-mandated invariants, each re-derived from source and real test execution rather than accepted from this card's own earlier draft.
+- P2 advisories: full-suite evidence contains one non-product fixture-start race historically seen in `tests/state/state-concurrency.test.ts`; it did not reproduce in the independent gatekeeper's own full run (1776 pass / 1 skip / 0 fail, clean). The inherited same-scope delegation transaction risk remains explicitly deferred to its own `tasks/todos.md` row.
+- Acceptance checklist: review the exact subject hash and target above; independently confirmed — handler authority, single resolution, four-target pre-resolution projection with real write-count proof (not just final-content checks), gate precedence with genuine non-invocation assertions, cross-boundary lock interoperability against a real spawned bash writer, script deletion, golden confinement to exactly the four named Stop cells with decision/reason/exit_code unchanged, and the documented residual boundary.
+
+## Independent Gatekeeper Verification (2026-07-21, post-implementation)
+
+A fresh-context `gatekeeper` subagent (opus route) re-derived all five
+contract-mandated hard invariants directly from source and real test
+execution, explicitly instructed to treat this card's own claims as
+unverified. Verdict: **PASS**, no blocking findings.
+
+- Precedence: `stop-handler.ts:746-782` — readiness block (748-753, before
+  `minimalChangeReview` at 761, so no minimal suffix); lite exit (754-756);
+  plan block (768-775, carries suffix); delegation block (777-782, carries
+  suffix). `tests/stop-handler.test.ts:233-299` assert genuine
+  non-invocation (e.g. `plan-completeness.json` does not exist when
+  readiness wins, proving the write never ran) not just "result looks
+  right."
+- Write-before-resolve: `StopProjectionBatch.commit()` (727-733) then
+  `getStopEffectiveState()` (738). `tests/stop-handler.test.ts:87-109` uses
+  a genuinely fresh fixture and asserts INSIDE the resolve callback that the
+  files already exist — a real, non-superficial ordering proof. Nuance
+  noted by the gatekeeper: that specific test's resolver is a stub
+  returning `allow`; the real-resolver "fresh handoff → allow" property is
+  covered separately by the loop-semantics golden's real-resolver path
+  (which pre-seeds handoff, so it doesn't isolate ordering on its own) — the
+  two suites compose to cover the full claim. Judged adequate, not a gap.
+- Batched write-set: contract names exactly four targets; `StopProjectionBatch`
+  (388-422) writes each once; the write-count test uses a real invocation
+  observer (`observeProjectionWrite`), not a final-content check. The
+  retired minimal-change→handoff/resume write path is confirmed gone
+  (`minimalChangeReview`, 484-511, only reads/reports; canonical evidence
+  moved to `.ai/harness/checks/minimal-change.latest.json`).
+- Cross-boundary lock: `acquireLock`/`releaseLock`/`markDelegationFallback`
+  (656-706) preserve the `wx` O_CREAT|O_EXCL create, token-matched release,
+  and in-lock scope re-check. `tests/cli/hook.test.ts:2589` and the migrated
+  TOCTOU test at 2774 both race a REAL separate bash process (built from
+  `subagent-start-context.sh`), not an in-process mock — both pass.
+- Allowed Paths + golden confinement: all 36 changed files map to the
+  contract's `allowed_paths`; both script copies confirmed deleted from
+  disk; projection file_count 18→17; both goldens confined to exactly the
+  four named Stop cells with decision/reason/exit_code unchanged.
+- Real verification run this pass: targeted 10-file suite 204/0 fail;
+  `check:type`/`check:hooks`/`check:state-boundaries` all exit 0;
+  `check-task-workflow --strict` OK; `verify-contract --strict` 32/0 failed,
+  Fulfilled; full `bun test` 1776 pass / 1 skip / 0 fail, 135 files, 666s
+  (the previously-reported flake did not reproduce).
+- Retirement grep: 5 hits, all classified non-live (one negative-assertion
+  test, `scripts/repo-harness.sh` — explicitly out of scope, ledgered to
+  HRD-09 — and 3 historical research docs).
 
 ## Behavior Diff Notes
 
