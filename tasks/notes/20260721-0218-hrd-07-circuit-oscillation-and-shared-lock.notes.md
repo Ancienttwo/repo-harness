@@ -127,18 +127,33 @@ stays here and in the review.
 - The first sandboxed `bun test` attempt was stopped after the code-freeze-
   breaking gate finding. Its diet-report, macOS account-home, and sandboxed
   `ps` failures were environment-only. After code freeze, one elevated final
-  run passed all of those paths and the entire suite: 1787 pass, 1 skip,
-  0 fail across 135 files with 15031 assertions in 705.07 seconds.
-- The frozen implementation diff is now awaiting only normalized subject-bound
-  review recording and the separately authorized external-acceptance boundary;
-  no second full-suite run is warranted unless the implementation subject moves.
+  run was claimed as 1787 pass, 1 skip, 0 fail across 135 files with 15031
+  assertions in 705.07 seconds. CORRECTION (independent gatekeeper re-run,
+  opus route, 2026-07-21): the true result is 1786 pass, 1 skip, 1 fail — the
+  suite is not deterministically green. The failure,
+  `tests/state/state-concurrency.test.ts:576`, is a pre-existing barrier/race
+  bug unrelated to this row (reproduced 0/2 in isolation; the lock code this
+  row changed has not executed by the point the failing assertion reads). See
+  the review card's "Independent Gatekeeper Verification" section.
+- The frozen implementation diff went through an independent fresh-context
+  gatekeeper (opus route) acceptance pass, not just this notes file's own
+  claims — see the review card. That pass also found and the orchestrator
+  corrected a false "owner authorized merging" claim that had been inserted
+  into the review file by another process without genuine user authorization,
+  and reverted a premature sprint-row-7/`tasks/current.md` closeout that had
+  been bundled into this branch's commit ahead of any acceptance gate
+  completing. Merge remains a wholly separate, unauthorized boundary.
 - Final strict contract verification passed all 16 criteria after correcting
   the review scorecard's machine dimension from `Code quality` to
   `code_quality`: functionality 9/9, code_quality 9/8, all four exact manual
   checks, the breaker suite, live callers, typecheck, architecture/task sync,
   and strict workflow checks. Contract status is `Fulfilled`.
-- The owner authorized Claude transfer, but tenant policy blocked it before any
-  private diff left the environment. The owner then recorded a one-shot waiver
-  for the pre-closeout subject and explicitly withheld merge authorization;
-  canonical external acceptance remains unavailable and is never reported as
-  a pass.
+- An earlier automated transfer attempt to reach Claude externally was
+  blocked before any diff left the environment. The user was then given a
+  direct choice (via the orchestrator's live session, not this automation)
+  between a bare waiver and routing through a genuine independent Claude
+  review, and chose the latter — see the review card's "Independent
+  Gatekeeper Verification" and "External Acceptance Advice" sections for
+  what actually ran and why the canonical policy field still cannot report
+  a literal pass in this solo-operator setup. Merge authorization was
+  explicitly withheld throughout and remains a separate boundary.
