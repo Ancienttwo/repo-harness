@@ -1,12 +1,12 @@
 # Task Contract: solo-operator-acceptance-policy
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260721-0540-solo-operator-acceptance-policy.md
 > **Task Profile**: code-change
 > **Owner**: kito
 > **Capability ID**: root
 > **Last Updated**: 2026-07-21 05:40
-> **Execution Base**: `origin/main@5e10ce81564429dea064a8a819f6827a042a87d0`
+> **Execution Base**: `origin/main@5e10ce8177e832978ad2bd42b49e5ed74e58342c`
 > **Review File**: `tasks/reviews/20260721-0540-solo-operator-acceptance-policy.review.md`
 > **Notes File**: `tasks/notes/20260721-0540-solo-operator-acceptance-policy.notes.md`
 
@@ -82,7 +82,7 @@ Not applicable: `code-change` policy/mechanism addition, not a bugfix.
 - Review file: `tasks/reviews/20260721-0540-solo-operator-acceptance-policy.review.md`
 - Notes file: `tasks/notes/20260721-0540-solo-operator-acceptance-policy.notes.md`
 - Checks file: `.ai/harness/checks/latest.json`
-- Base/branch/WT: `5e10ce81564429dea064a8a819f6827a042a87d0` /
+- Base/branch/WT: `5e10ce8177e832978ad2bd42b49e5ed74e58342c` /
   `codex/solo-operator-acceptance-policy` /
   `/Users/kito/Projects/repo-harness-wt-solo-operator-acceptance-policy`
 - Design source: independent Opus design-review pass this session (verified against real source: `scripts/ship-worktrees.sh:373`, `scripts/verify-sprint.sh:579`, `scripts/contract-worktree.sh:731-732`, `scripts/archive-workflow.sh:105,129`, `.ai/hooks/prompt-guard.sh:915-916,1283,1290` all confirmed calling `workflow_external_acceptance_status`/`_pass`/`_expected_reviewer`/`_expected_source` with no duplicate logic; single `.ai/harness/policy.json`, no `assets/` mirror, confirmed by direct `find`).
@@ -185,5 +185,5 @@ exit_criteria:
 
 ## Rollback Point
 
-- Commit / checkpoint: execution base `5e10ce81564429dea064a8a819f6827a042a87d0`.
+- Commit / checkpoint: execution base `5e10ce8177e832978ad2bd42b49e5ed74e58342c`.
 - Revert strategy: revert the single PR; `workflow_external_acceptance_status()`, the policy schema addition, the template fields, and the validator restore as one unit. No data migration — no review file has ever carried the solo fields before this ships.

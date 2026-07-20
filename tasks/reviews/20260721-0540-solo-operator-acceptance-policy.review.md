@@ -5,10 +5,10 @@
 > **Contract**: tasks/contracts/20260721-0540-solo-operator-acceptance-policy.contract.md
 > **Notes File**: tasks/notes/20260721-0540-solo-operator-acceptance-policy.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-07-21 06:20
+> **Last Updated**: 2026-07-21 06:36
 > **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Subject SHA256**: sha256:86d58a245427badea399077810ebfc4c78a1624d98b5db5e2f9849dc204827f8
+> **Reviewed Subject SHA256**: sha256:083d54ce3957ccb760234bf1b5140adca94fc3469bedefd74a17eee801b14887
 > **Reviewed Subject Scope**: normalized-final-content
 > **Reviewed Target Revision**: 5e10ce8177e832978ad2bd42b49e5ed74e58342c
 
@@ -93,6 +93,28 @@
 - Implementation notes reviewed: yes.
 - Run snapshot: `.ai/harness/checks/latest.json`.
 
+### Merge-Time Acceptance Delta
+
+- The final Waza `/check` pass reviewed the complete candidate at Deep depth.
+  Security review returned PASS with no findings. Architecture review found
+  one real manifest defect: three references used a nonexistent execution-base
+  SHA. They now name the actual reviewed base
+  `5e10ce8177e832978ad2bd42b49e5ed74e58342c`; the verifier-produced contract
+  status transition to `Fulfilled` is included in the same closeout delta.
+- Two architecture suggestions (mode-aware prompt copy and downstream
+  adoption/fallback-template defaults) were rejected for this PR because the
+  approved contract explicitly excludes `prompt-guard.sh`, requires manual
+  authoring of solo evidence, and scopes the product change to the one
+  enforcement function. They are not needed for the opt-in self-host path to
+  work and expanding into them would violate the execution boundary.
+- Current-turn checks after the delta: focused suite 30/0; `check:type`,
+  `check:hooks`, `check:state-boundaries`, deploy-SQL order, architecture sync,
+  task sync, strict task workflow, project-state inspection, and adopt dry-run
+  all passed. A direct runtime probe also proved the TS policy reader rejects
+  string `"true"` while accepting boolean `true`. Runtime code did not change
+  after the recorded full-suite run; the exact pushed head will receive GitHub
+  CI before merge.
+
 ## Manual Check Evidence
 
 - [x] Fixture 1 (no flag, same-vendor review) still fails exactly as pre-change main — zero regression on the cross-vendor path
@@ -166,7 +188,7 @@
 > assertion matches its name, and independently re-swept all five real
 > callers for duplicate gate logic.
 > **Review Rubric Version**: 2
-> **Reviewed Subject SHA256**: sha256:86d58a245427badea399077810ebfc4c78a1624d98b5db5e2f9849dc204827f8
+> **Reviewed Subject SHA256**: sha256:083d54ce3957ccb760234bf1b5140adca94fc3469bedefd74a17eee801b14887
 > **Reviewed Subject Scope**: normalized-final-content
 > **Reviewed Target Revision**: 5e10ce8177e832978ad2bd42b49e5ed74e58342c
 > **Benchmark Evidence SHA256**: not-applicable

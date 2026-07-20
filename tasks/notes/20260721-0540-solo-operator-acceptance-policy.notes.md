@@ -143,6 +143,20 @@ transcript itself is not.
 - No existing review file has ever carried the three new solo fields — this
   is a purely additive schema change with zero migration surface.
 
+## Merge-Time Acceptance Correction
+
+- The final acceptance pass found that the contract repeated a mistyped,
+  nonexistent execution-base SHA in three places. Those references were
+  corrected to the actual reviewed `origin/main` base
+  `5e10ce8177e832978ad2bd42b49e5ed74e58342c`; no runtime code or target
+  revision changed. The same closeout includes the verifier-produced contract
+  status transition from `Active` to `Fulfilled`.
+- Two broader suggestions (mode-aware prompt copy and downstream adoption
+  defaults/fallback templates) remain outside this contract's explicit
+  one-function enforcement boundary. The plan intentionally requires manual
+  authoring of solo fields and explicitly excludes `prompt-guard.sh`; neither
+  suggestion is required for the opt-in gate to work in this self-host repo.
+
 ## Open Questions
 
 - None. If a sixth caller of `workflow_external_acceptance_status`/`_pass`
