@@ -7,17 +7,15 @@
       "route_id": "default",
       "host_exercised": "claude",
       "scripts_run": [
-        "session-start-context.sh",
-        "minimal-change-context.sh",
-        "security-sentinel.sh"
+        "session-context"
       ],
       "skipped_scripts": [],
       "failed_script": null,
       "exit_code": 0,
       "reason": "ok",
       "child_invocations": {
-        "git": 23,
-        "bun_cli": 3,
+        "git": 22,
+        "bun_cli": 0,
         "bun_generic": 0
       },
       "stdout": "",

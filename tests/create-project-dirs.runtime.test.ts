@@ -648,7 +648,9 @@ describe("create-project-dirs runtime smoke", () => {
       expect(existsSync(join(cwd, ".ai/hooks/run-hook.sh"))).toBe(true);
       expect(existsSync(join(cwd, ".ai/hooks/post-edit-guard.sh"))).toBe(true);
       expect(existsSync(join(cwd, ".ai/hooks/post-tool-observer.sh"))).toBe(true);
-      expect(existsSync(join(cwd, ".ai/hooks/session-start-context.sh"))).toBe(true);
+      // HRD-04 retired session-start-context.sh; post-bash.sh is an
+      // equally-representative still-vendored script for this assertion.
+      expect(existsSync(join(cwd, ".ai/hooks/post-bash.sh"))).toBe(true);
       expect(existsSync(join(cwd, ".ai/hooks/lib/workflow-state.sh"))).toBe(true);
       expect(existsSync(join(cwd, ".ai/hooks/lib/session-state.sh"))).toBe(true);
       expect(existsSync(join(cwd, ".ai/hooks/AGENTS.md"))).toBe(true);

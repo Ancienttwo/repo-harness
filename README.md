@@ -28,7 +28,8 @@ Repository: `https://github.com/Ancienttwo/repo-harness`
 
 - **File-backed sessions, not chat memory.** Separate agent sessions — Claude and
   Codex, now and later — stay coordinated through the repo, not a thread.
-  `.ai/hooks/session-start-context.sh` injects the prior session's resume packet
+  The in-process session-context builder (`src/cli/hook/session-context.ts`)
+  injects the prior session's resume packet
   (`.ai/harness/handoff/resume.md`, `tasks/current.md`) when a new session starts;
   `stop-orchestrator.sh` writes the stop handoff, while `post-edit-guard.sh`
   refreshes edit-time traces and task status after changes. A session can end
@@ -559,7 +560,7 @@ implementation under `assets/hooks/` or a repo-pinned `.ai/hooks/` copy.
 
 | Route | Matcher | Scripts | Function |
 | --- | --- | --- | --- |
-| `SessionStart.default` | all sessions | `session-start-context.sh`, `minimal-change-context.sh`, `security-sentinel.sh` | Injects prior handoff, sprint status, minimal-change guidance, and read-only config-security findings before work starts. |
+| `SessionStart.default` | all sessions | `src/cli/hook/session-context.ts` (in-process builder) | Injects prior handoff, sprint status, minimal-change guidance, and read-only config-security findings before work starts. |
 | `PreToolUse.edit` | `Edit|Write` | `src/cli/hook/mutation-guard.ts` (in-process handler) | Enforces worktree policy and plan/contract readiness before implementation edits. |
 | `PreToolUse.subagent` | `Task|Agent|SendUserMessage` | `subagent-return-channel-guard.sh` | Keeps delegated work returning through the parent session instead of leaking completion claims. |
 | `PostToolUse.edit` | `Edit|Write` | `post-edit-guard.sh`, `minimal-change-observer.sh` | Records edit traces, refreshes handoff/task status, queues architecture drift, and writes bounded minimal-change evidence when controlled files change. |
@@ -573,27 +574,29 @@ Codex-only routes are `UserPromptSubmit.delegation`,
 `PreToolUse.subagent` return-channel route and does not install those Codex
 delegation lifecycle entries.
 
-`SessionStart` resolves hooks central-first, then runs three ordered scripts before
-work begins:
+`SessionStart` resolves the in-process session-context builder, which
+assembles resume, sprint, minimal-change, and security-scan sections into one
+context before work begins:
 
 ```mermaid
 flowchart LR
   SessionStart["Claude/Codex SessionStart"] --> Adapter["user-level adapter"]
   Adapter --> Entry["repo-harness-hook SessionStart --route default"]
-  Entry --> Source{"hook source"}
-  Source -->|central default| Central["packaged hooks<br/>or ~/.repo-harness/hooks"]
-  Source -->|repo policy pin| Repo["repo .ai/hooks<br/>self-host development"]
-  Central --> Ctx["session-start-context.sh<br/>resume + sprint + handoff context"]
-  Repo --> Ctx
-  Ctx --> Min["minimal-change-context.sh<br/>advice-only scope pressure"]
-  Min --> Sec["security-sentinel.sh<br/>read-only config scan, fingerprint-gated"]
-  Sec --> SSOut["SessionStart additionalContext<br/>prior-session state + SecurityConfig findings"]
+  Entry --> Ctx["session-context.ts<br/>in-process builder"]
+  Ctx --> Resume["resume + sprint + handoff context"]
+  Ctx --> Min["minimal-change guidance<br/>advice-only scope pressure"]
+  Ctx --> Sec["security scan<br/>read-only config scan, fingerprint-gated"]
+  Resume --> SSOut["SessionStart additionalContext<br/>prior-session state + SecurityConfig findings"]
+  Min --> SSOut
+  Sec --> SSOut
 ```
 
-`SessionStart` and `Stop` hooks are advisory for missing repo-local scripts: stale
-repos get a drift warning instead of a startup failure. Required guard routes,
-including edit and prompt gates, still fail closed when their scripts are
-missing.
+`Stop` hooks are advisory for missing repo-local scripts: stale repos get a
+drift warning instead of a startup failure. `SessionStart` no longer spawns
+any repo-local scripts at all (the in-process builder reads repo facts
+directly), so that drift class does not apply to it any more. Required guard
+routes, including edit and prompt gates, still fail closed when their
+scripts are missing.
 
 Prompt guard has one extra internal step:
 

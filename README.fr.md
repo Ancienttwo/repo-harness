@@ -30,7 +30,8 @@ Adresse du dépôt : `https://github.com/Ancienttwo/repo-harness`
 - **L'état de session vit dans les fichiers, pas dans l'historique de chat.** Des
   sessions d'agent distinctes — Claude, Codex, maintenant ou plus tard — restent
   synchronisées via le dépôt et non via un thread de conversation. Au démarrage
-  d'une nouvelle session, `.ai/hooks/session-start-context.sh` injecte le resume
+  d'une nouvelle session, le session-context builder in-process
+  (`src/cli/hook/session-context.ts`) injecte le resume
   packet de la session précédente (`.ai/harness/handoff/resume.md`,
   `tasks/current.md`) ; à la fin de la session et après chaque édition,
   `finalize-handoff.sh` et `post-edit-guard.sh` réécrivent le handoff suivant. Une
@@ -358,8 +359,8 @@ implementation under `assets/hooks/` or a repo-pinned `.ai/hooks/` copy.
 
 | Route | Matcher | Scripts | Function |
 | --- | --- | --- | --- |
-| `SessionStart.default` | all sessions | `session-start-context.sh`, `security-sentinel.sh` | Injects prior handoff, sprint status, and read-only config-security findings before work starts. |
-| `PreToolUse.edit` | `Edit|Write` | `worktree-guard.sh`, `pre-edit-guard.sh` | Enforces worktree policy and plan/contract readiness before implementation edits. |
+| `SessionStart.default` | all sessions | `src/cli/hook/session-context.ts` (in-process builder) | Injects prior handoff, sprint status, and read-only config-security findings before work starts. |
+| `PreToolUse.edit` | `Edit|Write` | `src/cli/hook/mutation-guard.ts` (in-process handler) | Enforces worktree policy and plan/contract readiness before implementation edits. |
 | `PreToolUse.subagent` | `Task|Agent|SendUserMessage` | `subagent-return-channel-guard.sh` | Keeps delegated work returning through the parent session instead of leaking completion claims. |
 | `PostToolUse.edit` | `Edit|Write` | `post-edit-guard.sh` | Records edit traces, refreshes handoff/task status, and queues architecture drift when controlled files change. |
 | `PostToolUse.bash` | `Bash` | `post-bash.sh` | Observes command results and captures verification evidence without replacing the command runner. |
@@ -367,13 +368,15 @@ implementation under `assets/hooks/` or a repo-pinned `.ai/hooks/` copy.
 | `UserPromptSubmit.default` | all prompts | `prompt-guard.sh` | Classifies prompt intent, routes planning/check/hunt hints, and renders host-safe workflow guidance. |
 | `Stop.default` | session stop | `stop-orchestrator.sh` | Finalizes handoff and guards against ending with unresolved draft-plan or completion evidence gaps. |
 
-`SessionStart` exécute deux scripts ordonnés avant le début du travail :
+`SessionStart` exécute le session-context builder in-process, qui assemble le contexte avant le début du travail :
 
 ```mermaid
 flowchart LR
-  SessionStart["Claude/Codex SessionStart"] --> Ctx["session-start-context.sh<br/>resume + handoff context"]
-  Ctx --> Sec["security-sentinel.sh<br/>read-only config scan, fingerprint-gated"]
-  Sec --> SSOut["SessionStart additionalContext<br/>prior-session state + SecurityConfig findings"]
+  SessionStart["Claude/Codex SessionStart"] --> Ctx["session-context.ts<br/>in-process builder"]
+  Ctx --> Resume["resume + handoff context"]
+  Ctx --> Sec["security scan<br/>read-only config scan, fingerprint-gated"]
+  Resume --> SSOut["SessionStart additionalContext<br/>prior-session state + SecurityConfig findings"]
+  Sec --> SSOut
 ```
 
 Le prompt guard ajoute une étape interne supplémentaire :
