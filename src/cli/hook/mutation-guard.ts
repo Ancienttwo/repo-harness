@@ -18,7 +18,7 @@
  */
 
 import { execFileSync } from 'child_process';
-import { appendFileSync, mkdirSync } from 'fs';
+import { appendFileSync, mkdirSync, realpathSync } from 'fs';
 import { basename, dirname, join } from 'path';
 import type { EffectiveState } from '../../core/state/types';
 import type { WorkflowProfile } from '../../core/workflow/profile';
@@ -93,11 +93,16 @@ export function runMutationGuard(opts: MutationGuardInput): MutationGuardResult 
       // batch's patch text, not just its own path's slice.
       writePayloadFor = () => applyPatchCommand;
     } else {
+      // hook_get_file_path() port: falls back to the CLAUDE_FILE_PATH env
+      // var (gate round-1 parity closure) only when none of the four JSON
+      // fields resolved -- `git show c6504231:assets/hooks/hook-input.sh`
+      // lines 224-241.
       const filePath = normalizeFilePath(repoRoot, firstNonEmpty([
         stringAt(payload, ['file_path']),
         stringAt(payload, ['tool_input', 'file_path']),
         stringAt(payload, ['trigger_file_path']),
         stringAt(payload, ['parent_file_path']),
+        env.CLAUDE_FILE_PATH ?? '',
       ]));
       if (!filePath) return finish(ctx, 0);
       targetPaths = [filePath];
@@ -681,10 +686,48 @@ function isRepoScopedPath(filePath: string): boolean {
   return filePath.length > 0 && !filePath.startsWith('/');
 }
 
+/**
+ * `hook_normalize_file_path()` port. The plain prefix strip above handles
+ * the common case; these two fallbacks (gate round-1 parity closure) port
+ * bash's symlink-canonicalization tiers verbatim (`git show
+ * c6504231:assets/hooks/hook-input.sh` lines 174-220) for hosts where
+ * `repoRoot` and the reported absolute path disagree on a symlinked
+ * ancestor's spelling even though they name the same directory -- the
+ * canonical example being macOS temp dirs, where `/var/...` is itself a
+ * symlink to `/private/var/...`.
+ */
 function normalizeFilePath(repoRoot: string, raw: string): string {
   if (!raw || !raw.startsWith('/')) return raw;
   if (raw === repoRoot || raw.startsWith(`${repoRoot}/`)) return raw.slice(repoRoot.length + 1);
+
+  const repoReal = tryRealpath(repoRoot);
+  if (repoReal && (raw === repoReal || raw.startsWith(`${repoReal}/`))) {
+    return raw.slice(repoReal.length + 1);
+  }
+
+  // Last resort: resolve the raw path's own parent directory (the file
+  // itself may not exist yet on a PreToolUse event) and retry against both
+  // roots.
+  const rawParentReal = tryRealpath(dirname(raw));
+  if (rawParentReal) {
+    const rawReal = `${rawParentReal}/${basename(raw)}`;
+    if (repoReal && (rawReal === repoReal || rawReal.startsWith(`${repoReal}/`))) {
+      return rawReal.slice(repoReal.length + 1);
+    }
+    if (rawReal === repoRoot || rawReal.startsWith(`${repoRoot}/`)) {
+      return rawReal.slice(repoRoot.length + 1);
+    }
+  }
+
   return raw;
+}
+
+function tryRealpath(path: string): string | null {
+  try {
+    return realpathSync(path);
+  } catch {
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -765,17 +808,49 @@ const STRONG_BOUNDARY_GUARDS = new Set([
   'StrictWorktreeGuard',
 ]);
 
-/**
- * `.ai/harness/failures/latest.jsonl` -- fixed, not policy-overridden.
- * `workflow_failure_log_file()` in bash can be redirected via policy
- * `.harness.failure_log_file`, but `circuit-breaker.ts`'s own `STATE_PATH`
- * (`.ai/harness/state/circuit-breaker.json`) is ALREADY a hardcoded constant
- * with no such override, and no fixture in this package's Allowed Paths
- * exercises the failure-log override either -- matching that existing
- * asymmetry is a deliberate, low-risk simplification (see notes).
- */
-const FAILURE_LOG_FILE = '.ai/harness/failures/latest.jsonl';
+const DEFAULT_FAILURE_LOG_FILE = '.ai/harness/failures/latest.jsonl';
 const EFFECTIVE_STATE_CACHE_FILE = '.ai/harness/state/effective.json';
+
+/**
+ * `workflow_repo_relative_path()` port (gate round-1 parity closure):
+ * rejects an override that is empty, absolute, carries a newline/CR, or
+ * escapes via `..`; when `allowedPrefix` is set the override must also stay
+ * under it. Any rejection silently falls back to `defaultValue` -- matching
+ * bash's own silent-fallback shape (no warning, no error either side).
+ */
+function repoRelativePath(value: string, defaultValue: string, allowedPrefix: string): string {
+  if (!value || value.startsWith('/') || value.includes('\n') || value.includes('\r')) return defaultValue;
+  if (value === '..' || value.startsWith('../') || value.endsWith('/..') || value.includes('/../')) {
+    return defaultValue;
+  }
+  if (allowedPrefix && !value.startsWith(allowedPrefix)) return defaultValue;
+  return value;
+}
+
+/**
+ * `workflow_failure_log_file()` port (gate round-1 parity closure: this was
+ * previously left hardcoded -- see git history for the superseded comment).
+ * Verified against base SHA `c6504231` before porting: `pre-edit-guard.sh`
+ * sources `lib/workflow-state.sh`
+ * (`git show c6504231:assets/hooks/pre-edit-guard.sh` lines 8-12), so
+ * `hook_structured_error`'s `hook_failure_log_file()` call resolved through
+ * the real `workflow_failure_log_file()` -- which DOES honor policy
+ * `.harness.failure_log_file` (`git show
+ * c6504231:assets/hooks/lib/workflow-state.sh` lines 77-79, validated by
+ * `workflow_repo_relative_path` at lines 49-70) -- for every guard ported
+ * from `pre-edit-guard.sh` into this handler. `worktree-guard.sh` never
+ * sourced that lib (only `hook-input.sh`), so its own `hook_structured_error`
+ * call (`git show c6504231:assets/hooks/worktree-guard.sh` line 29) fell
+ * back to the hardcoded default via `hook_failure_log_file()`'s
+ * `declare -F workflow_failure_log_file` guard failing -- an artifact of
+ * that script's narrower sourcing, not a deliberate opt-out from the
+ * override. This merged handler resolves the override the same way for
+ * every guard rather than reproducing that bash file-layout accident.
+ */
+function failureLogFile(repoRoot: string): string {
+  const override = policyGet(repoRoot, ['harness', 'failure_log_file'], DEFAULT_FAILURE_LOG_FILE);
+  return repoRelativePath(override, DEFAULT_FAILURE_LOG_FILE, '.ai/harness/');
+}
 
 function appendFailureRecord(
   repoRoot: string,
@@ -786,7 +861,7 @@ function appendFailureRecord(
   failureClass: FailureClass,
   runId: string,
 ): void {
-  const target = join(repoRoot, FAILURE_LOG_FILE);
+  const target = join(repoRoot, failureLogFile(repoRoot));
   mkdirSync(dirname(target), { recursive: true });
   const record = {
     ts: formatIsoWithNumericOffset(new Date()),

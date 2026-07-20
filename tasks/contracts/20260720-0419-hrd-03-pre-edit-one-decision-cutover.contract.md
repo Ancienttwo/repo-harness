@@ -112,6 +112,23 @@ HRD-01 golden regenerated once with a per-field before/after record.
     suite — the identical one-line substitution approved for
     `install-profile.ts`). Test intent everywhere preserved; only
     invocation paths and pinned lists adapt.
+  - AMENDMENT (gate round-1 fix): live-doc and residual-parity sweep. The
+    five live docs still enumerating the retired scripts join the named
+    surfaces for mechanical updates only (`README.md`, `README.ja.md`,
+    `README.es.md`, `README.zh-CN.md`,
+    `docs/reference-configs/hook-operations.md`: route rows and prose move
+    to the in-process mutation-guard handler). The generated-rule emitters
+    (`scripts/ensure-task-workflow.sh`, `scripts/lib/project-init-lib.sh`
+    + helper mirrors) update their "pre-edit-guard" rule strings to the
+    handler reality. Parity closure in already-allowed files: honor the
+    `.harness.failure_log_file` policy override in `mutation-guard.ts`
+    exactly as the base-SHA bash did (verify the old behavior first; if
+    bash also ignored the override, leave the hardcode and ledger it);
+    drop the never-fired `markdownHeader(planText, 'Sprint Contract')`
+    fallback; restore the `CLAUDE_FILE_PATH` env and symlink-normalization
+    input fallbacks for observable parity; fix the stale
+    `mutationGuardScriptsAbsent` reference in `tests/plan-status-gate.test.ts`
+    and the todos wording. No other behavior change.
 - Out of scope:
   - SessionStart consolidation (HRD-04), PostEdit journal (HRD-05), Stop
     (HRD-06), circuit/lock (HRD-07), telemetry aggregation (HRD-08),
@@ -230,6 +247,14 @@ allowed_paths:
   - tests/hook-protocol.test.ts
   - tests/harness-circuit-breakers.test.ts
   - tests/install-profiles.test.ts
+  - README.md
+  - README.ja.md
+  - README.es.md
+  - README.zh-CN.md
+  - docs/reference-configs/hook-operations.md
+  - scripts/ensure-task-workflow.sh
+  - assets/templates/helpers/ensure-task-workflow.sh
+  - scripts/lib/project-init-lib.sh
 ```
 
 ## Evidence Requirements

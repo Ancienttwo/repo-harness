@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { spawnSync } from 'child_process';
@@ -386,6 +386,54 @@ describe('HRD-03 guard-by-guard parity: previously-uncovered decision branches',
       expect(result.stdout).toContain('"guard":"ApplyPatchScopeGuard"');
     } finally {
       rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('gate round-1 parity closure: restored input-normalization fallbacks', () => {
+  test('CLAUDE_FILE_PATH env fallback: no JSON file_path field resolves, env var supplies the target path', () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'mutation-guard-claude-file-path-')));
+    try {
+      initRepo(cwd);
+      writePolicy(cwd);
+      // No `.file_path` / `.tool_input.file_path` / `.trigger_file_path` /
+      // `.parent_file_path` anywhere in the payload -- if CLAUDE_FILE_PATH
+      // were not consulted, `filePath` would resolve empty and the handler
+      // would return exit 0 before any guard ever runs (see the early
+      // `if (!filePath) return finish(ctx, 0);` in runMutationGuard).
+      const result = invoke(cwd, { tool_input: {} }, {
+        profile: 'lite',
+        env: { CLAUDE_FILE_PATH: '_ref/upstream/note.md' },
+      });
+      expect(result.exitCode).toBe(2);
+      expect(result.stdout).toContain('[ExternalReferenceGuard]');
+      expect(result.stdout).toContain('_ref/upstream/note.md');
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test('symlink-canonicalization: an absolute file_path reached through a symlinked repo ancestor still normalizes to repo-relative', () => {
+    // Mirrors the macOS /var -> /private/var shape the bash port's comment
+    // describes: repoRoot is the symlink spelling, but the host reports the
+    // file_path already resolved through the real (physical) directory, so
+    // the plain prefix strip cannot match and only the realpath-resolution
+    // fallback tiers in normalizeFilePath() can recover a repo-relative path.
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'mutation-guard-symlink-')));
+    const real = join(root, 'real');
+    const alias = join(root, 'alias');
+    mkdirSync(real, { recursive: true });
+    symlinkSync(real, alias);
+    try {
+      initRepo(alias);
+      writePolicy(alias);
+      const throughReal = join(real, '_ref/upstream/note.md');
+      const result = invoke(alias, { tool_input: { file_path: throughReal } }, { profile: 'lite' });
+      expect(result.exitCode).toBe(2);
+      expect(result.stdout).toContain('[ExternalReferenceGuard]');
+      expect(result.stdout).toContain('_ref/upstream/note.md');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 });

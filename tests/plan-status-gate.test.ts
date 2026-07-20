@@ -15,14 +15,16 @@ import { pathToFileURL } from 'url';
 // missing-authority case (policy.json lacks the array).
 //
 // Migrated from a direct `bash assets/hooks/pre-edit-guard.sh` spawn to
-// exercising the handler through `runHook()` (HRD-03 test migration): the
-// fixture repo below never creates `.ai/hooks`, so `runHook()`'s
-// `mutationGuardScriptsAbsent` check is satisfied and the in-process handler
-// runs. `preEdit()` still spawns exactly one subprocess per call -- a `bun
-// -e` wrapper importing and calling `runHook()` in-process -- purely so this
-// test can observe real host-visible fd1/fd2 output (`RunHookResult` itself
-// carries no stdout/stderr text; the previous single `bash` spawn served the
-// same "capture real process output" role). REPO_HARNESS_CLI /
+// exercising the handler through `runHook()` (HRD-03 test migration):
+// `PreToolUse.edit`'s route carries an empty `scripts` list and `runHook()`
+// dispatches it to the in-process mutation-guard handler unconditionally
+// (see `isMutationGuardRoute` in `src/cli/hook/runtime.ts`), so the fixture
+// repo below never needs `.ai/hooks` at all. `preEdit()` still spawns
+// exactly one subprocess per call -- a `bun -e` wrapper importing and
+// calling `runHook()` in-process -- purely so this test can observe real
+// host-visible fd1/fd2 output (`RunHookResult` itself carries no
+// stdout/stderr text; the previous single `bash` spawn served the same
+// "capture real process output" role). REPO_HARNESS_CLI /
 // REPO_HARNESS_HOOK_CLI are gone: the handler calls `resolveEffectiveState`
 // and `recordCircuitAttempt` in-process, so there is no CLI subprocess left
 // to point at.

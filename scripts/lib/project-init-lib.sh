@@ -1973,7 +1973,7 @@ pi_write_harness_policy() {
   "guards": {
     "edit_plan_gate": "enforce",
     "edit_plan_gate_modes": ["enforce", "advice", "off"],
-    "rule": "pre-edit-guard blocks implementation edits (non-workflow paths) unless an active plan is Approved/Executing; prompt-layer plan gates are advisory routing only"
+    "rule": "the mutation-guard handler blocks implementation edits (non-workflow paths) unless an active plan is Approved/Executing; prompt-layer plan gates are advisory routing only"
   },
   "circuit_breakers": {
     "guard_repeat": 2,
