@@ -1,6 +1,6 @@
 # Task Contract: hrd-03-pre-edit-one-decision-cutover
 
-> **Status**: Partial
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260720-0419-hrd-03-pre-edit-one-decision-cutover.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
