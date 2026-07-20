@@ -64,10 +64,12 @@ describe('route registry (Phase 1B Z design)', () => {
     // symbolic placeholder.
     expect(getRoute('PreToolUse', 'edit')?.scripts).toEqual([]);
     expect(getRoute('PreToolUse', 'subagent')?.scripts).toEqual(['subagent-return-channel-guard.sh']);
-    expect(getRoute('PostToolUse', 'edit')?.scripts).toEqual([
-      'post-edit-guard.sh',
-      'minimal-change-observer.sh',
-    ]);
+    // HRD-05: PostToolUse.edit's script list is retired scripts-free -- the
+    // in-process mutation-observed journal handler
+    // (src/cli/hook/mutation-observed.ts) now decides this route
+    // unconditionally; see route-registry.ts's own comment on this route for
+    // why the list is empty rather than a symbolic placeholder.
+    expect(getRoute('PostToolUse', 'edit')?.scripts).toEqual([]);
     expect(getRoute('PostToolUse', 'bash')?.scripts).toEqual(['post-bash.sh']);
     expect(getRoute('PostToolUse', 'always')?.scripts).toEqual(['post-tool-observer.sh']);
     expect(getRoute('UserPromptSubmit', 'default')?.scripts).toEqual(['prompt-guard.sh']);

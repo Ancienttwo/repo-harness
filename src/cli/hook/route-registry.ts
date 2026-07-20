@@ -92,7 +92,16 @@ export const ROUTES: readonly Route[] = Object.freeze([
     event: 'PostToolUse' as const,
     routeId: 'edit' as const,
     matcher: 'Edit|Write',
-    scripts: Object.freeze(['post-edit-guard.sh', 'minimal-change-observer.sh']),
+    // HRD-05: post-edit-guard.sh and minimal-change-observer.sh are retired;
+    // this route's write-amplification hot path is now the in-process
+    // mutation-observed journal handler (src/cli/hook/mutation-observed.ts),
+    // invoked directly by runHook() -- there is no script left to name here.
+    // An empty list (rather than a stale two-name array) is what keeps
+    // consumers that treat `scripts` as "files that must exist on disk"
+    // (doctor's repo-hook-scripts check, the adopt/sync tooling) reporting
+    // truthfully instead of a permanent false "missing script" drift signal
+    // (same reasoning as HRD-03/HRD-04's precedents above).
+    scripts: Object.freeze([]),
   }),
   Object.freeze({
     event: 'PostToolUse' as const,

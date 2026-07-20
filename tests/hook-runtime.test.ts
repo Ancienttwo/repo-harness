@@ -21,6 +21,7 @@ import { spawnSync } from "child_process";
 import { pathToFileURL } from "url";
 import { sessionStartMainContent } from "../src/cli/hook/session-context";
 import { createStateInputCollector } from "../src/effects/loop/state-input-collector";
+import { consumePendingPostEditEvents } from "../src/cli/hook/mutation-observed";
 
 const HOOK_RUNTIME_TIMEOUT_MS = 60000;
 const HOOK_RUNTIME_SPAWN_BUFFER_BYTES = 16 * 1024 * 1024;
@@ -108,6 +109,43 @@ function runMutationGuardHook(cwd: string, payload: unknown, env: Record<string,
       ...env,
     },
   });
+}
+
+// HRD-05: migrated post-edit-guard.sh/minimal-change-observer.sh fixtures
+// below no longer spawn either retired script directly; this spawns a
+// `bun -e` wrapper that imports and calls the PRODUCTION
+// `src/cli/hook/runtime.ts` `runHook()` in-process (which now special-cases
+// PostToolUse.edit to the in-process mutation-observed handler once both
+// scripts are absent from the resolved hooks dir -- see runtime.ts), same
+// shape as HRD-03's `runMutationGuardHook` above.
+function runMutationObservedHook(cwd: string, payload: unknown, env: Record<string, string> = {}) {
+  const moduleUrl = pathToFileURL(RUNTIME_MODULE).href;
+  const script = [
+    "const stdinText = await Bun.stdin.text();",
+    `const { runHook } = await import(${JSON.stringify(moduleUrl)});`,
+    "const result = runHook({ event: 'PostToolUse', routeId: 'edit', input: stdinText.length > 0 ? stdinText : undefined });",
+    "process.exit(result.exitCode);",
+  ].join("\n");
+  return spawnSync(process.execPath, ["-e", script], {
+    cwd,
+    input: JSON.stringify(payload),
+    encoding: "utf-8",
+    maxBuffer: HOOK_RUNTIME_SPAWN_BUFFER_BYTES,
+    env: {
+      ...process.env,
+      HOOK_REPO_ROOT: cwd,
+      REPO_HARNESS_HOOK_SOURCE: "repo",
+      ...env,
+    },
+  });
+}
+
+function readPendingPostEditJournalEvents(cwd: string): unknown[] {
+  const dir = join(cwd, ".ai/harness/journal/post-edit/pending");
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((name) => name.endsWith(".json"))
+    .map((name) => JSON.parse(readFileSync(join(dir, name), "utf-8")));
 }
 
 function writeValidSprintChecks(cwd: string) {
@@ -660,26 +698,29 @@ describe("Hook runtime behavior", () => {
   });
 
 
-  test("post-edit-guard: detects apps/*/src direct files and wrangler variants", () => {
+  // HRD-05 retired post-edit-guard.sh; DocDrift advisories are ported
+  // verbatim into the in-process mutation-observed handler, so this
+  // retargets to the production runHook() (via runMutationObservedHook)
+  // instead of spawning the retired script directly. Requires a real git
+  // repo (unlike the old direct-script-spawn helper) because the production
+  // runHook() resolves repoRoot via `git rev-parse --show-toplevel` before
+  // any handler runs.
+  test("mutation-observed: detects apps/*/src direct files and wrangler variants", () => {
     const cwd = tmpWorkspace("doc-drift");
     try {
+      initGitRepo(cwd);
       installHooks(cwd);
+      ensureOptIn(cwd);
 
-      const srcRes = runHook("post-edit-guard.sh", cwd, {
-        stdin: JSON.stringify({ tool_input: { file_path: "apps/web/src/main.tsx" } }),
-      });
+      const srcRes = runMutationObservedHook(cwd, { tool_input: { file_path: "apps/web/src/main.tsx" } });
       expect(srcRes.status).toBe(0);
       expect(srcRes.stdout).toContain("[DocDrift] App source changed");
 
-      const routeRes = runHook("post-edit-guard.sh", cwd, {
-        stdin: JSON.stringify({ tool_input: { file_path: "apps/web/src/routes/index.tsx" } }),
-      });
+      const routeRes = runMutationObservedHook(cwd, { tool_input: { file_path: "apps/web/src/routes/index.tsx" } });
       expect(routeRes.status).toBe(0);
       expect(routeRes.stdout).toContain("[DocDrift] App source changed");
 
-      const wranglerRes = runHook("post-edit-guard.sh", cwd, {
-        stdin: JSON.stringify({ tool_input: { file_path: "apps/api/wrangler.production.toml" } }),
-      });
+      const wranglerRes = runMutationObservedHook(cwd, { tool_input: { file_path: "apps/api/wrangler.production.toml" } });
       expect(wranglerRes.status).toBe(0);
       expect(wranglerRes.stdout).toContain("Wrangler config changed");
     } finally {
@@ -692,6 +733,7 @@ describe("Hook runtime behavior", () => {
     try {
       installHooks(cwd);
       initGitRepo(cwd);
+      ensureOptIn(cwd);
 
       const noDiff = runHook("first-principles-guard.sh", cwd, { args: ["tracked.txt"] });
       expect(noDiff.status).toBe(0);
@@ -726,9 +768,10 @@ describe("Hook runtime behavior", () => {
       expect(wrapper.status).toBe(0);
       expect(wrapper.stdout).toContain("[FirstPrinciples]");
 
-      const postEdit = runHook("post-edit-guard.sh", cwd, {
-        stdin: JSON.stringify({ tool_input: { file_path: "tracked.txt" } }),
-      });
+      // HRD-05 retired post-edit-guard.sh; the aggregated first-principles
+      // dispatch it used to run inline is ported verbatim into
+      // mutation-observed.ts -- retargeted to the production runHook().
+      const postEdit = runMutationObservedHook(cwd, { tool_input: { file_path: "tracked.txt" } });
       expect(postEdit.status).toBe(0);
       expect(postEdit.stdout).toContain("[FirstPrinciples]");
     } finally {
@@ -736,10 +779,26 @@ describe("Hook runtime behavior", () => {
     }
   });
 
-  test("post-edit-guard: ignores repo-local fake drift helpers under global-only helper runtime", () => {
+  // HRD-05 retired post-edit-guard.sh's SYNCHRONOUS architecture-queue /
+  // context-contract-sync / capability-context cascade -- it is now a
+  // deferred dirty-bit chain, consumed at Stop (consumePendingPostEditEvents,
+  // wired into runtime.ts's Stop.default dispatch). The four tests below
+  // (repo-local-decoy-ignored, records-and-syncs, skips-unmatched,
+  // nested-block-specificity) each retarget from a single synchronous
+  // runHook("post-edit-guard.sh", ...) call to a defer-then-consume pair:
+  // mutation-observed writes a journal event with NO synchronous durable
+  // architecture/context/capability writes, then consumePendingPostEditEvents
+  // (called directly, the same function runtime.ts's Stop dispatch calls)
+  // replays the SAME external commands and produces the SAME end state the
+  // old synchronous call did -- proving both the write-amplification
+  // reduction and that deferral does not lose the underlying capability-
+  // resolver behavior (unchanged by this contract, only its timing moved).
+  test("mutation-observed: defers architecture-queue work, ignoring repo-local fake drift helpers at both edit and consume time", () => {
     const cwd = tmpWorkspace("post-edit-sync-chain-warning");
     try {
+      initGitRepo(cwd);
       installHooks(cwd);
+      ensureOptIn(cwd);
       mkdirSync(join(cwd, "scripts"), { recursive: true });
       writeFileSync(
         join(cwd, "scripts/architecture-queue.sh"),
@@ -747,23 +806,33 @@ describe("Hook runtime behavior", () => {
       );
       expect(run("chmod", ["+x", "scripts/architecture-queue.sh"], cwd).status).toBe(0);
 
-      const res = runHook("post-edit-guard.sh", cwd, {
-        stdin: JSON.stringify({ tool_input: { file_path: "apps/web/src/main.tsx" } }),
-      });
-
+      const res = runMutationObservedHook(cwd, { tool_input: { file_path: "apps/web/src/main.tsx" } });
       expect(res.status).toBe(0);
       expect(res.stdout).not.toContain("drift blew up");
-      expect(res.stdout).toContain("[ArchitectureDrift] No architecture drift request for apps/web/src/main.tsx");
+      expect(res.stdout).not.toContain("[ArchitectureDrift]");
+
+      const events = readPendingPostEditJournalEvents(cwd) as Array<{ dirty: Record<string, boolean> }>;
+      expect(events.length).toBe(1);
+      expect(events[0].dirty.architecture).toBe(true);
+
+      // Global-only helper resolution: with no REPO_HARNESS_CLI and no
+      // `repo-harness`/`bun` reachable target, consumption is a safe no-op
+      // (repoHarnessRunnerAvailable() false-negatives cleanly) -- it must
+      // NOT fall back to the repo-local decoy the way old bash never did.
+      consumePendingPostEditEvents(cwd, { PATH: "/nonexistent" });
+      expect(existsSync(join(cwd, "docs/architecture/requests"))).toBe(false);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
   });
 
-  test("post-edit-guard: records architecture drift and syncs local context contract blocks", () => {
+  test("mutation-observed: defers, then consumption records architecture drift and syncs local context contract blocks", () => {
     const cwd = tmpWorkspace("architecture-drift-hook");
     try {
+      initGitRepo(cwd);
       installHooks(cwd);
       installArchitectureHelpers(cwd);
+      ensureOptIn(cwd);
       mkdirSync(join(cwd, "apps/web/src/routes"), { recursive: true });
       mkdirSync(join(cwd, ".ai/context"), { recursive: true });
       writeFileSync(join(cwd, ".ai/context/capabilities.json"), JSON.stringify({
@@ -794,20 +863,27 @@ describe("Hook runtime behavior", () => {
         discoverable_contexts: [],
       }, null, 2));
       writeFileSync(join(cwd, "apps/web/AGENTS.md"), "# Existing Web Contract\n\n- Keep manual rule.\n");
-      const fakeBin = join(cwd, "bin");
-      mkdirSync(fakeBin, { recursive: true });
-      writeFileSync(join(fakeBin, "repo-harness"), `#!/bin/bash\nexec bun "${join(ROOT, "src/cli/index.ts")}" "$@"\n`);
-      expect(run("chmod", ["+x", join(fakeBin, "repo-harness")], cwd).status).toBe(0);
 
-      const res = runHook("post-edit-guard.sh", cwd, {
-        stdin: JSON.stringify({ tool_input: { file_path: "apps/web/src/routes/account.tsx" } }),
-        env: { PATH: `${fakeBin}:${process.env.PATH ?? ""}` },
-      });
-
+      const res = runMutationObservedHook(cwd, { tool_input: { file_path: "apps/web/src/routes/account.tsx" } });
       expect(res.status).toBe(0);
-      expect(res.stdout).toContain("[ArchitectureDrift] Request:");
-      expect(res.stdout).toContain("[ContextContractSync] Updated apps/web/AGENTS.md and apps/web/CLAUDE.md.");
-      expect(res.stdout).toContain("[CapabilityContext] Queued apps-web");
+      expect(res.stdout).not.toContain("[ArchitectureDrift]");
+      expect(res.stdout).not.toContain("[ContextContractSync]");
+      expect(res.stdout).not.toContain("[CapabilityContext]");
+      expect(existsSync(join(cwd, "docs/architecture/requests"))).toBe(false);
+      expect(existsSync(join(cwd, ".ai/harness/capability-context/requests.jsonl"))).toBe(false);
+      const agentsBeforeConsume = readFileSync(join(cwd, "apps/web/AGENTS.md"), "utf-8");
+      expect(agentsBeforeConsume).not.toContain("BEGIN ARCHITECTURE CONTRACT");
+
+      const pendingBefore = readPendingPostEditJournalEvents(cwd) as Array<{ event_id: string; dirty: Record<string, boolean> }>;
+      expect(pendingBefore.length).toBe(1);
+      expect(pendingBefore[0].dirty.architecture).toBe(true);
+      expect(pendingBefore[0].dirty.context).toBe(true);
+      expect(pendingBefore[0].dirty.capability).toBe(true);
+
+      const consumeEnv = { ...process.env, REPO_HARNESS_CLI: join(ROOT, "src/cli/index.ts") };
+      const summary = consumePendingPostEditEvents(cwd, consumeEnv);
+      expect(summary).toEqual({ consumed: 1, pending: 0, errors: 0 });
+
       expect(existsSync(join(cwd, ".ai/harness/architecture/events.jsonl"))).toBe(true);
       expect(readFileSync(join(cwd, ".ai/harness/capability-context/requests.jsonl"), "utf-8")).toContain('"capability_id":"apps-web"');
 
@@ -828,16 +904,22 @@ describe("Hook runtime behavior", () => {
       const contextMap = JSON.parse(readFileSync(join(cwd, ".ai/context/context-map.json"), "utf-8"));
       expect(contextMap.discoverable_contexts.map((entry: { path: string }) => entry.path)).toContain("apps/web/AGENTS.md");
       expect(contextMap.discoverable_contexts.map((entry: { path: string }) => entry.path)).toContain("apps/web/CLAUDE.md");
+
+      // The consumed event moved out of pending (marked consumed atomically).
+      expect(readPendingPostEditJournalEvents(cwd)).toEqual([]);
+      expect(existsSync(join(cwd, ".ai/harness/journal/post-edit/consumed", `${pendingBefore[0].event_id}.json`))).toBe(true);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
-  });
+  }, HOOK_RUNTIME_TIMEOUT_MS);
 
-  test("post-edit-guard: skips unmatched low source-change root requests", () => {
+  test("mutation-observed: consumption skips unmatched low source-change root requests, same as the old synchronous call", () => {
     const cwd = tmpWorkspace("architecture-drift-unmatched-source");
     try {
+      initGitRepo(cwd);
       installHooks(cwd);
       installArchitectureHelpers(cwd);
+      ensureOptIn(cwd);
       mkdirSync(join(cwd, "apps/landing/src/pages"), { recursive: true });
       mkdirSync(join(cwd, "packages/landing-video"), { recursive: true });
       mkdirSync(join(cwd, ".ai/context"), { recursive: true });
@@ -861,14 +943,14 @@ describe("Hook runtime behavior", () => {
         ],
       }, null, 2) + "\n");
 
-      const res = runHook("post-edit-guard.sh", cwd, {
-        stdin: JSON.stringify({ tool_input: { file_path: "apps/landing/src/pages/about.astro" } }),
-      });
-
+      const res = runMutationObservedHook(cwd, { tool_input: { file_path: "apps/landing/src/pages/about.astro" } });
       expect(res.status).toBe(0);
       expect(res.stdout).toContain("[DocDrift] App source changed");
-      expect(res.stdout).toContain("[ArchitectureDrift] No architecture drift request for apps/landing/src/pages/about.astro (unmatched source-change).");
-      expect(res.stdout).not.toContain("[ArchitectureDrift] Request:");
+
+      const consumeEnv = { ...process.env, REPO_HARNESS_CLI: join(ROOT, "src/cli/index.ts") };
+      const summary = consumePendingPostEditEvents(cwd, consumeEnv);
+      expect(summary).toEqual({ consumed: 1, pending: 0, errors: 0 });
+
       const requestsDir = join(cwd, "docs/architecture/requests");
       const requestFiles = existsSync(requestsDir)
         ? readdirSync(requestsDir).filter((name) => name.endsWith(".md"))
@@ -879,11 +961,13 @@ describe("Hook runtime behavior", () => {
     }
   });
 
-  test("architecture drift uses the most specific domain/capability functional block", () => {
+  test("architecture drift uses the most specific domain/capability functional block (after Stop-time consumption)", () => {
     const cwd = tmpWorkspace("architecture-nested-block");
     try {
+      initGitRepo(cwd);
       installHooks(cwd);
       installArchitectureHelpers(cwd);
+      ensureOptIn(cwd);
       mkdirSync(join(cwd, "apps/web/src/routes/account"), { recursive: true });
       writeAccountCapabilityRegistry(cwd);
       mkdirSync(join(cwd, ".ai/context"), { recursive: true });
@@ -894,12 +978,14 @@ describe("Hook runtime behavior", () => {
       ].join("\n"));
       writeFileSync(join(cwd, "apps/web/src/routes/account/AGENTS.md"), "# Account Contract\n\nManual account rule.\n");
 
-      const res = runHook("post-edit-guard.sh", cwd, {
-        stdin: JSON.stringify({ tool_input: { file_path: "apps/web/src/routes/account/page.tsx" } }),
-      });
-
+      const res = runMutationObservedHook(cwd, { tool_input: { file_path: "apps/web/src/routes/account/page.tsx" } });
       expect(res.status).toBe(0);
-      expect(res.stdout).toContain("[ContextContractSync] Updated apps/web/src/routes/account/AGENTS.md and apps/web/src/routes/account/CLAUDE.md.");
+      expect(res.stdout).not.toContain("[ContextContractSync]");
+
+      const consumeEnv = { ...process.env, REPO_HARNESS_CLI: join(ROOT, "src/cli/index.ts") };
+      consumePendingPostEditEvents(cwd, consumeEnv);
+
+      expect(existsSync(join(cwd, "apps/web/src/routes/account/CLAUDE.md"))).toBe(true);
 
       const requestFiles = readdirSync(join(cwd, "docs/architecture/requests")).filter((name) => name.endsWith(".md"));
       expect(requestFiles.length).toBe(1);
@@ -1749,11 +1835,18 @@ describe("Hook runtime behavior", () => {
     }
   });
 
-  test("minimal-change-observer: writes objective report and stays stdout-silent", () => {
+  // HRD-05 retired minimal-change-observer.sh: its policy-gated latest-file
+  // write is now a `minimal-change` dirty bit (path+baseRef payload only,
+  // cheap -- no git diff calls at edit time) consumed by
+  // consumePendingPostEditEvents at Stop, calling the SAME
+  // collectMinimalChangeSignals() function the retired script called via
+  // minimal-change-cli.ts, just later.
+  test("mutation-observed: defers minimal-change signals; Stop-time consumption writes the same objective report", () => {
     const cwd = tmpWorkspace("minimal-change-observer");
     try {
       initGitRepo(cwd);
       installHooks(cwd);
+      ensureOptIn(cwd);
       mkdirSync(join(cwd, ".ai/harness"), { recursive: true });
       writeFileSync(
         join(cwd, ".ai/harness/policy.json"),
@@ -1769,11 +1862,20 @@ describe("Hook runtime behavior", () => {
         ].join("\n")
       );
 
-      const res = runHook("minimal-change-observer.sh", cwd, {
-        stdin: JSON.stringify({ tool_input: { file_path: "src/payment-wrapper.ts" } }),
-      });
+      const res = runMutationObservedHook(cwd, { tool_input: { file_path: "src/payment-wrapper.ts" } });
       expect(res.status).toBe(0);
       expect(res.stdout).toBe("");
+      expect(existsSync(join(cwd, ".ai/harness/checks/minimal-change.latest.json"))).toBe(false);
+
+      const events = readPendingPostEditJournalEvents(cwd) as Array<{
+        dirty: Record<string, boolean>;
+        payload: { minimal_change?: { path: string; base_ref: string } };
+      }>;
+      expect(events.length).toBe(1);
+      expect(events[0].dirty["minimal-change"]).toBe(true);
+      expect(events[0].payload.minimal_change).toEqual({ path: "src/payment-wrapper.ts", base_ref: "HEAD" });
+
+      consumePendingPostEditEvents(cwd, process.env);
 
       const report = JSON.parse(
         readFileSync(join(cwd, ".ai/harness/checks/minimal-change.latest.json"), "utf-8")
@@ -2806,25 +2908,28 @@ describe("Hook runtime behavior", () => {
     }
   });
 
-  test("post-edit-guard: combines doc drift and task handoff", () => {
+  // HRD-05 retired post-edit-guard.sh's per-edit task-handoff regeneration
+  // entirely (`.claude/.task-handoff.md` has no programmatic reader -- see
+  // the falsifier record in the notes file -- so it is not reconstructed by
+  // the deferred consumer either). tasks/todos.md now sets the `checkpoint`
+  // dirty bit instead of reprinting "[TaskHandoff]"/rewriting the file
+  // per edit; DocDrift/DeployAsset advisory parity is unchanged.
+  test("mutation-observed: combines doc drift, deploy advisories, and the checkpoint dirty bit", () => {
     const cwd = tmpWorkspace("post-edit-guard");
     try {
       initGitRepo(cwd);
       installHooks(cwd);
+      ensureOptIn(cwd);
       mkdirSync(join(cwd, "apps/web/src"), { recursive: true });
       mkdirSync(join(cwd, "tasks"), { recursive: true });
       mkdirSync(join(cwd, "plans"), { recursive: true });
 
       writeFileSync(join(cwd, "apps/web/src/index.ts"), "export const x = 1;\n");
-      const docRes = runHook("post-edit-guard.sh", cwd, {
-        stdin: JSON.stringify({ tool_input: { file_path: "apps/web/src/index.ts" } }),
-      });
+      const docRes = runMutationObservedHook(cwd, { tool_input: { file_path: "apps/web/src/index.ts" } });
       expect(docRes.status).toBe(0);
       expect(docRes.stdout).toContain("[DocDrift]");
 
-      const deployRes = runHook("post-edit-guard.sh", cwd, {
-        stdin: JSON.stringify({ tool_input: { file_path: "deploy/sql/0001_init.sql" } }),
-      });
+      const deployRes = runMutationObservedHook(cwd, { tool_input: { file_path: "deploy/sql/0001_init.sql" } });
       expect(deployRes.status).toBe(0);
       expect(deployRes.stdout).toContain("[DeployAsset]");
       expect(deployRes.stdout).toContain("operations.deploy_sql");
@@ -2847,23 +2952,24 @@ describe("Hook runtime behavior", () => {
       );
       writeActivePlan(cwd, "plans/plan-20260304-1410-demo.md");
 
-      const handoffRes = runHook("post-edit-guard.sh", cwd, {
-        stdin: JSON.stringify({ tool_input: { file_path: "tasks/todos.md" } }),
-      });
+      const handoffRes = runMutationObservedHook(cwd, { tool_input: { file_path: "tasks/todos.md" } });
       expect(handoffRes.status).toBe(0);
-      expect(handoffRes.stdout).toContain("[TaskHandoff]");
-      expect(existsSync(join(cwd, ".claude/.task-handoff.md"))).toBe(true);
-      expect(readFileSync(join(cwd, ".claude/.task-state.json"), "utf-8")).toContain('"status":"in_progress"');
+      expect(existsSync(join(cwd, ".claude/.task-handoff.md"))).toBe(false);
+
+      const events = readPendingPostEditJournalEvents(cwd) as Array<{ changed_paths: string[]; dirty: Record<string, boolean> }>;
+      const todosEvent = events.find((e) => e.changed_paths.includes("tasks/todos.md"));
+      expect(todosEvent?.dirty.checkpoint).toBe(true);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
   });
 
-  test("post-edit-guard: leaves external brain vault state untouched", () => {
+  test("mutation-observed: leaves external brain vault state untouched", () => {
     const cwd = tmpWorkspace("post-edit-no-brain-sync");
     try {
       initGitRepo(cwd);
       installHooks(cwd);
+      ensureOptIn(cwd);
       mkdirSync(join(cwd, "scripts"), { recursive: true });
       mkdirSync(join(cwd, "docs"), { recursive: true });
       mkdirSync(join(cwd, ".ai/harness"), { recursive: true });
@@ -2896,10 +3002,11 @@ describe("Hook runtime behavior", () => {
         ) + "\n"
       );
 
-      const res = runHook("post-edit-guard.sh", cwd, {
-        stdin: JSON.stringify({ tool_input: { file_path: "docs/valuable.md" } }),
-        env: { REPO_HARNESS_BRAIN_ROOT: brainRoot },
-      });
+      const res = runMutationObservedHook(
+        cwd,
+        { tool_input: { file_path: "docs/valuable.md" } },
+        { REPO_HARNESS_BRAIN_ROOT: brainRoot },
+      );
 
       expect(res.status).toBe(0);
       expect(res.stdout).not.toContain("[BrainSync]");
@@ -2909,59 +3016,21 @@ describe("Hook runtime behavior", () => {
     }
   });
 
-  test("post-edit-guard: creates handoff summary when completed tasks increase", () => {
-    const cwd = tmpWorkspace("task-handoff");
-    try {
-      initGitRepo(cwd);
-      installHooks(cwd);
-      mkdirSync(join(cwd, "tasks"), { recursive: true });
-      mkdirSync(join(cwd, "plans"), { recursive: true });
-
-      writeFileSync(
-        join(cwd, "tasks/todos.md"),
-        [
-          "# Task Execution Checklist (Primary)",
-          "",
-          "> **Source Plan**: plans/plan-20260304-1410-demo.md",
-          "",
-          "- [x] finish first task",
-          "- [ ] second task",
-          "",
-        ].join("\n")
-      );
-      writeFileSync(
-        join(cwd, "plans/plan-20260304-1410-demo.md"),
-        "# Plan: demo\n\n> **Status**: Executing\n"
-      );
-      writeActivePlan(cwd, "plans/plan-20260304-1410-demo.md");
-
-      const res = runHook("post-edit-guard.sh", cwd, {
-        stdin: JSON.stringify({ tool_input: { file_path: "tasks/todos.md" } }),
-      });
-
-      expect(res.status).toBe(0);
-      expect(res.stdout).toContain("[TaskHandoff]");
-      expect(existsSync(join(cwd, ".claude/.task-handoff.md"))).toBe(true);
-      expect(existsSync(join(cwd, ".claude/.task-state.json"))).toBe(true);
-      const handoff = readFileSync(join(cwd, ".claude/.task-handoff.md"), "utf-8");
-      expect(handoff).toContain("second task");
-      expect(handoff).toContain("stage its coherent diff first");
-      expect(handoff).toContain("Stage: task");
-      expect(handoff).toContain("Progress");
-      expect(handoff).toContain("plans/plan-20260304-1410-demo.md");
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  });
-
-  test("post-edit-guard: runs continuous contract verification for referenced files", () => {
+  // HRD-05: post-edit-guard.sh's SYNCHRONOUS `run_continuous_contract_
+  // verification()` (which printed the verify-contract subprocess's own
+  // "[ContractVerify]" stdout inline) becomes the `contract-verification`
+  // dirty bit; consumption invokes the SAME `verify-contract --report-file`
+  // command, just at Stop instead of per edit -- deferred consumption is
+  // deliberately silent (no scriptsRun/stdout relay, see runtime.ts), so
+  // the functional proof is the checks file's content, not stdout text.
+  test("mutation-observed: defers contract verification; Stop-time consumption writes the checks file", () => {
     const cwd = tmpWorkspace("post-edit-contract-verify");
     try {
       initGitRepo(cwd);
       installHooks(cwd);
+      ensureOptIn(cwd);
       mkdirSync(join(cwd, "plans"), { recursive: true });
       mkdirSync(join(cwd, "tasks/contracts"), { recursive: true });
-      mkdirSync(join(cwd, "scripts"), { recursive: true });
       mkdirSync(join(cwd, "src"), { recursive: true });
 
       writeFileSync(
@@ -2986,12 +3055,26 @@ describe("Hook runtime behavior", () => {
       );
       writeFileSync(join(cwd, "src/demo.ts"), "export const demo = true;\n");
 
-      const res = runHook("post-edit-guard.sh", cwd, {
-        stdin: JSON.stringify({ tool_input: { file_path: "src/demo.ts" } }),
+      const res = runMutationObservedHook(cwd, { tool_input: { file_path: "src/demo.ts" } });
+      expect(res.status).toBe(0);
+      expect(existsSync(join(cwd, ".ai/harness/checks/latest.json"))).toBe(false);
+
+      const events = readPendingPostEditJournalEvents(cwd) as Array<{
+        dirty: Record<string, boolean>;
+        payload: { contract_verification?: { contract_file: string; checks_file: string } };
+      }>;
+      expect(events.length).toBe(1);
+      expect(events[0].dirty["contract-verification"]).toBe(true);
+      expect(events[0].payload.contract_verification).toEqual({
+        contract_file: "tasks/contracts/demo.contract.md",
+        checks_file: ".ai/harness/checks/latest.json",
       });
 
-      expect(res.status).toBe(0);
-      expect(res.stdout).toContain("[ContractVerify]");
+      const consumeEnv = { ...process.env, REPO_HARNESS_CLI: join(ROOT, "src/cli/index.ts") };
+      consumePendingPostEditEvents(cwd, consumeEnv);
+
+      const checks = JSON.parse(readFileSync(join(cwd, ".ai/harness/checks/latest.json"), "utf-8"));
+      expect(checks.contract).toBe("tasks/contracts/demo.contract.md");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

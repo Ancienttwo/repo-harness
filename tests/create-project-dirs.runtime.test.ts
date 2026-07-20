@@ -646,7 +646,9 @@ describe("create-project-dirs runtime smoke", () => {
 
       expect(res.status).toBe(0);
       expect(existsSync(join(cwd, ".ai/hooks/run-hook.sh"))).toBe(true);
-      expect(existsSync(join(cwd, ".ai/hooks/post-edit-guard.sh"))).toBe(true);
+      // HRD-05 retired post-edit-guard.sh; post-tool-observer.sh (already
+      // checked below) is an equally-representative still-vendored script
+      // for this assertion.
       expect(existsSync(join(cwd, ".ai/hooks/post-tool-observer.sh"))).toBe(true);
       // HRD-04 retired session-start-context.sh; post-bash.sh is an
       // equally-representative still-vendored script for this assertion.

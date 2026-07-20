@@ -9,6 +9,11 @@ import { createStateInputCollector } from '../../effects/loop/state-input-collec
 import { createHash } from 'crypto';
 import { runMutationGuard } from './mutation-guard';
 import { buildSessionStartSections } from './session-context';
+import {
+  consumePendingPostEditEvents,
+  pendingPostEditJournalSection,
+  runMutationObserved,
+} from './mutation-observed';
 import { resolveEffectiveState } from '../../effects/state/resolve-effective-state';
 import type { EffectiveState } from '../../core/state/types';
 import type { WorkflowProfile } from '../../core/workflow/profile';
@@ -312,9 +317,17 @@ function isSoftMissingRoute(event: HookEvent, routeId: RouteId): boolean {
   );
 }
 
+// HRD-05: the PostToolUse.edit / minimal-change-observer.sh per-script
+// exception that used to live here is now unreachable -- that route's
+// script list is `[]` (route-registry.ts) and its dispatch bypasses
+// route.scripts entirely (mutation-observed handler, see `steps` below), so
+// the generic script loop this function gates can never see that script
+// name for that route again. Removed rather than left dead, matching
+// HRD-04's precedent for the analogous SessionStart case. `script` stays a
+// parameter for a future per-script exception, unused today.
 function isSoftMissingScript(event: HookEvent, routeId: RouteId, script: string): boolean {
-  if (isSoftMissingRoute(event, routeId)) return true;
-  return event === 'PostToolUse' && routeId === 'edit' && script === 'minimal-change-observer.sh';
+  void script;
+  return isSoftMissingRoute(event, routeId);
 }
 
 export function runHook(opts: RunHookOptions): RunHookResult {
@@ -370,6 +383,14 @@ export function runHook(opts: RunHookOptions): RunHookResult {
   if (sessionStartCollectStdout) {
     const stateSection = collector.getSessionEffectiveState();
     if (stateSection) sessionStartContexts.push(stateSection);
+    // HRD-05: crash-replay visibility -- pending post-edit journal events
+    // (written but not yet consumed at Stop) are surfaced here so a session
+    // that resumes after a crash sees them. Defined in mutation-observed.ts
+    // (outside session-context.ts, which is outside this package's Allowed
+    // Paths) and pushed the same way effectiveStateSessionSection's result
+    // is, immediately above.
+    const pendingJournalSection = pendingPostEditJournalSection(repoRoot);
+    if (pendingJournalSection) sessionStartContexts.push(pendingJournalSection);
   }
   // HRD-04: SessionStart.default's script list is replaced by the in-process
   // session-context builder (route.scripts is `[]`, mirroring HRD-03's
@@ -398,6 +419,34 @@ export function runHook(opts: RunHookOptions): RunHookResult {
       stdout: Buffer.from(builtSections.map((section) => section.content).join('\n'), 'utf-8'),
     });
   }
+
+  // HRD-05: Stop's existing shell orchestration (stop-orchestrator.sh, run
+  // unmodified immediately afterward via the generic script loop below)
+  // keeps running; this is the minimal deferred-consumption wiring the
+  // contract asks for -- reading pending post-edit journal events and
+  // replaying the SAME external commands the retired scripts used
+  // (architecture-queue/context-sync/capability-context/verify-contract/
+  // minimal-change), then marking each event consumed atomically. Runs
+  // before stop-orchestrator.sh so its own unconditional
+  // `workflow_write_handoff "session-stop"` still refreshes the handoff
+  // checkpoint afterward, matching the old per-edit-then-Stop ordering
+  // closely enough for recovery purposes. Deliberately NOT added to
+  // `scriptsRun`/`recordHookInvocation`: this route's `scripts_run`/
+  // `child_invocations`/`write_set` shape is pinned byte-for-byte by the
+  // HRD-01 golden (tests/fixtures/loop-runtime/characterization.json), and
+  // this contract's Stop Conditions forbid shifting any cell other than
+  // PostToolUse.edit. When there are no pending events (the golden's own
+  // fixture scenario) this is a single failed readdir, zero subprocess
+  // calls, zero writes -- unobservable in the golden's own terms. Wrapped in
+  // try/catch: deferred-consumption housekeeping must never block Stop.
+  if (opts.event === 'Stop' && opts.routeId === 'default') {
+    try {
+      consumePendingPostEditEvents(repoRoot, process.env);
+    } catch {
+      // Never fail Stop on deferred-consumption housekeeping.
+    }
+  }
+
   // Codex Desktop rejects Stop decision stdout at turn finalization, so collect
   // and suppress successful Stop output while preserving failure diagnostics.
   const codexStopSuppressSuccessOutput =
@@ -451,9 +500,59 @@ export function runHook(opts: RunHookOptions): RunHookResult {
   // script-spawn path immediately below is untouched and still drives every
   // other route exactly as before.
   const isMutationGuardRoute = opts.event === 'PreToolUse' && opts.routeId === 'edit';
-  const steps: readonly string[] = isMutationGuardRoute ? ['mutation-guard'] : route.scripts;
+  // HRD-05: PostToolUse.edit's script list is replaced by the in-process
+  // mutation-observed journal handler; route.scripts for this route is `[]`
+  // (see route-registry.ts), mirroring HRD-03's mutation-guard precedent
+  // exactly -- this route's dispatch is NOT driven by route.scripts either.
+  const isMutationObservedRoute = opts.event === 'PostToolUse' && opts.routeId === 'edit';
+  const steps: readonly string[] = isMutationGuardRoute
+    ? ['mutation-guard']
+    : isMutationObservedRoute
+      ? ['mutation-observed']
+      : route.scripts;
 
   for (const script of steps) {
+    if (isMutationObservedRoute && script === 'mutation-observed') {
+      scriptsRun.push(script);
+      const startedAt = Date.now();
+      const handlerResult = runMutationObserved({ collector, input: opts.input, hooksDir, env: process.env });
+      const child = {
+        status: handlerResult.exitCode as number | null,
+        stdout: Buffer.from(handlerResult.stdout, 'utf-8') as Buffer | null,
+        stderr: Buffer.from(handlerResult.stderr, 'utf-8') as Buffer | null,
+        error: undefined as Error | undefined,
+      };
+      recordHookInvocation(repoRoot, {
+        event: opts.event,
+        routeId: opts.routeId,
+        script,
+        startedAt,
+        durationMs: Date.now() - startedAt,
+        exitCode: child.status ?? 0,
+        stdout: child.stdout,
+      });
+      if (captureAndReplayHostOutput) {
+        if (child.stdout) writeAllSync(1, child.stdout);
+        if (child.stderr) writeAllSync(2, child.stderr);
+      }
+      // No SessionStart/Stop/decision/additionalContext branch applies to
+      // PostToolUse.edit; only the Codex quiet-stdout failure diagnostic does.
+      if (codexQuietStdout && child.status !== 0 && child.stdout) {
+        writeAllSync(2, child.stdout);
+      }
+      if (child.status !== 0) {
+        return {
+          exitCode: child.status ?? 1,
+          reason: 'script-failed',
+          repoRoot,
+          scriptsRun,
+          skippedScripts,
+          failedScript: script,
+        };
+      }
+      continue;
+    }
+
     if (isMutationGuardRoute && script === 'mutation-guard') {
       scriptsRun.push(script);
       const startedAt = Date.now();

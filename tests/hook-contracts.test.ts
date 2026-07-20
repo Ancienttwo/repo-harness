@@ -239,19 +239,26 @@ describe("Hook contracts", () => {
     expect(script).not.toContain('HOOK_HOST:-claude}" != "codex"');
   });
 
-  test("post-edit guard should retain doc-drift coverage for apps/*/src/** and wrangler*.toml", () => {
-    const script = read("assets/hooks/post-edit-guard.sh");
-    expect(script).toContain("apps/[^/]+/src/.+");
+  // HRD-05 retired assets/hooks/post-edit-guard.sh; doc-drift coverage now
+  // lives in the in-process mutation-observed journal handler.
+  test("mutation-observed should retain doc-drift coverage for apps/*/src/** and wrangler*.toml", () => {
+    const script = read("src/cli/hook/mutation-observed.ts");
+    expect(script).toContain("apps\\/[^/]+\\/src\\/.+");
     expect(script).toContain("wrangler.*\\.toml");
   });
 
-  test("post-edit guard should combine doc drift and task handoff", () => {
-    const script = read("assets/hooks/post-edit-guard.sh");
+  // HRD-05: post-edit-guard.sh's per-edit task-handoff regeneration
+  // ("[TaskHandoff]") is retired -- deferred to Stop's existing unconditional
+  // handoff refresh instead of reprinted per edit -- so that assertion does
+  // not carry over. architecture-queue/context-contract-sync move from a
+  // synchronous `run_repo_harness_helper` call to deferred Stop-time
+  // consumption (`runRepoHarnessHelper`, same helper names as CLI args).
+  test("mutation-observed should combine doc drift and deferred contract/architecture dirty bits", () => {
+    const script = read("src/cli/hook/mutation-observed.ts");
     expect(script).toContain("[DocDrift]");
     expect(script).toContain("[DeployAsset]");
-    expect(script).toContain("[TaskHandoff]");
-    expect(script).toContain("run_repo_harness_helper architecture-queue");
-    expect(script).toContain("run_repo_harness_helper context-contract-sync");
+    expect(script).toContain("'architecture-queue'");
+    expect(script).toContain("'context-contract-sync'");
     expect(script).not.toContain("sync-brain-docs");
     expect(read("assets/templates/helpers/archive-architecture-request.sh")).toContain("[ArchitectureArchive]");
     expect(read("assets/templates/helpers/workstream-sync.sh")).toContain("tasks/workstreams");
@@ -298,7 +305,11 @@ describe("Hook contracts", () => {
   test("first-principles guard should parse file path and keep anti-overengineering advisory semantics", () => {
     const script = read("assets/hooks/first-principles-guard.sh");
     const wrapper = read("assets/hooks/anti-simplification.sh");
-    const postEdit = read("assets/hooks/post-edit-guard.sh");
+    // HRD-05 retired assets/hooks/post-edit-guard.sh; the aggregated
+    // first-principles-guard.sh/anti-simplification.sh dispatch that used to
+    // live inline in that script is now ported verbatim into the in-process
+    // mutation-observed journal handler.
+    const postEdit = read("src/cli/hook/mutation-observed.ts");
 
     expect(script).toContain("hook-input.sh");
     expect(script).toContain("hook_get_file_path");

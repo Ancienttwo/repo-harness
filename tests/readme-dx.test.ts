@@ -82,13 +82,16 @@ describe("README DX contract", () => {
     expect(hookAuthority).toContain("repo-harness-hook");
     expect(hookAuthority).toContain("route registry");
     // HRD-04 retired minimal-change-context.sh (folded into the in-process
-    // session-context builder); minimal-change-observer.sh (PostToolUse.edit)
-    // is unretired and still documented.
+    // session-context builder). HRD-05 retired post-edit-guard.sh and
+    // minimal-change-observer.sh (folded into the in-process
+    // mutation-observed journal handler).
     expect(hookAuthority).toContain("session-context.ts");
-    expect(hookAuthority).toContain("minimal-change-observer.sh");
+    expect(hookAuthority).toContain("mutation-observed.ts");
     expect(hookAuthority).toContain("stop-orchestrator.sh");
     expect(readme).not.toContain("finalize-handoff.sh");
     expect(readme).not.toContain("session-start-context.sh");
+    expect(readme).not.toContain("post-edit-guard.sh");
+    expect(readme).not.toContain("minimal-change-observer.sh");
     expect(maintainer).toContain("bun scripts/assemble-template.ts --plan C --name \"MyProject\"");
   });
 
