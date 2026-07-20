@@ -1,6 +1,6 @@
 # Task Contract: hrd-04-session-start-consolidation
 
-> **Status**: Partial
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260720-0829-hrd-04-session-start-consolidation.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
