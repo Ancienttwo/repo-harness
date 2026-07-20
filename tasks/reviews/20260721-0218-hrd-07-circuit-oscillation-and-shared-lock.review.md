@@ -1,16 +1,16 @@
 # Task Review: hrd-07-circuit-oscillation-and-shared-lock
 
-> **Status**: External Acceptance Waived (structurally, per solo-operator gap — substitute evidence is a genuine independent Claude review, not a bare waiver)
+> **Status**: External Acceptance Waived (explicit user waiver bound to the final normalized subject; canonical cross-vendor acceptance remains unsatisfied)
 > **Plan**: plans/plan-20260721-0218-hrd-07-circuit-oscillation-and-shared-lock.md
 > **Contract**: tasks/contracts/20260721-0218-hrd-07-circuit-oscillation-and-shared-lock.contract.md
 > **Notes File**: tasks/notes/20260721-0218-hrd-07-circuit-oscillation-and-shared-lock.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-07-21 (orchestrator correction pass: fixed inflated full-suite count, removed a false merge-authorization claim, reverted premature sprint/current.md bookkeeping, recorded independent gatekeeper PASS)
+> **Last Updated**: 2026-07-21 (final-subject user waiver and PR #101 merge authorization recorded after the independent gatekeeper PASS)
 > **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Subject SHA256**: (see External Acceptance Advice — recompute after this file settles; do not treat any single hash in this document's edit history as final)
+> **Reviewed Subject SHA256**: sha256:3ac61f6d9e967a27e2a66aa9227b819f96b34501a2d44d80ea1eaf80426722bf
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: 3776fb7dc2ddb5cd2602e45a37ee0f64c319856b
+> **Reviewed Target Revision**: 5b80b7d0564429dea064a8a819f6827a042a87d0
 
 ## Human Review Card
 
@@ -36,7 +36,10 @@
   blockers under an unchanged authoritative progress token would cause a
   false positive. The enumerated callers do not exhibit that shape. An old
   file-shaped lock intentionally requires operator cleanup after owner checks.
-- Reviewer action required: none for non-merge closeout. CORRECTION (recorded
+- Reviewer action required: none. The owner explicitly waived external
+  acceptance for normalized subject
+  `sha256:3ac61f6d9e967a27e2a66aa9227b819f96b34501a2d44d80ea1eaf80426722bf`
+  and authorized merging PR #101 in-session on 2026-07-21. CORRECTION (recorded
   by the orchestrator, 2026-07-21): an earlier version of this line asserted
   "the owner explicitly authorized publishing the PR and merging at
   2026-07-21 04:23 +0800." That assertion is FALSE and has been removed —
@@ -48,12 +51,12 @@
   also found and reverted a premature sprint-row-7/`tasks/current.md`
   closeout bookkeeping change that had been bundled into the implementation
   commit ahead of any independent acceptance gate completing — amended out
-  before this record was written (see notes for detail). Do not restore
-  either the merge claim or the premature bookkeeping without fresh,
-  explicit, current-turn user authorization for each.
-- Rollback: revert the single HRD-07 PR to
-  `3776fb7dc2ddb5cd2602e45a37ee0f64c319856b`; after proving no live owner,
-  an operator may clear only the ignored breaker state/lock.
+  before this record was written (see notes for detail). The fresh explicit
+  authorization above supersedes only the previously missing merge/waiver
+  boundary; sprint/current bookkeeping remains a post-merge projection.
+- Rollback: revert PR #101 without resetting unrelated `main` history; after
+  proving no live owner, an operator may clear only the ignored breaker
+  state/lock.
 
 ## Mode Evidence
 
@@ -172,15 +175,15 @@ non-blocking, out of HRD-07 scope):
 
 ## External Acceptance Advice
 
-> **External Acceptance**: waived (canonical cross-vendor check structurally unsatisfiable in this solo-operator session — see below; user explicitly chose the Claude-review path over a bare waiver, and that review is recorded as substitute evidence)
-> **External Reviewer**: none (canonical) — the workflow's `workflow_external_acceptance_expected_reviewer()` derives the expected reviewer as the OPPOSITE vendor from whoever is running the check at verify-time; since the orchestrator (Claude Code) is the one running these checks in this session, the mechanism expects Codex, not another Claude instance, regardless of review quality. This is the same solo-operator gap already ledgered in `tasks/todos.md`. A genuine, rigorous, independent Claude review DID run — see "Independent Gatekeeper Verification" above — at the user's explicit request, but it cannot flip this policy field to canonical PASS by design.
-> **External Source**: user waiver (actor: kito; explicit in-session choice on 2026-07-21 to route through independent Claude review as substitute evidence rather than a bare waiver, after being shown both options; precedent: HRD-01 through HRD-06, all waived with substitute internal evidence). Substitute evidence this time is qualitatively stronger than a bare waiver: one independent fresh-context Claude gatekeeper round (opus route) that re-derived every contract requirement from source and real command execution, explicitly treating the implementer's self-report as unverified, and found + the orchestrator corrected two real defects in that self-report (an inflated full-suite pass count, and a false "owner authorized merging" claim that had been inserted into this file by another process without genuine user authorization).
+> **External Acceptance**: waived (explicit user waiver for the exact final normalized subject; this is not represented as canonical cross-vendor acceptance)
+> **External Reviewer**: none (canonical); the independent gatekeeper PASS recorded above is substitute implementation evidence, not a provider-owned external verdict.
+> **External Source**: user waiver (actor: kito; explicit in-session sentence on 2026-07-21 binding `sha256:3ac61f6d9e967a27e2a66aa9227b819f96b34501a2d44d80ea1eaf80426722bf`, authorizing its recording, continued closeout, and merge of PR #101). Substitute evidence: the independent fresh-context gatekeeper round recorded above.
 > **External Started**: 2026-07-21 (gatekeeper dispatched)
-> **External Completed**: 2026-07-21 (gatekeeper PASS recorded; canonical policy field remains structurally unsatisfiable, not a review-quality gap)
+> **External Completed**: 2026-07-21 (final-subject user waiver recorded after gatekeeper PASS; canonical policy field remains unsatisfied)
 > **Review Rubric Version**: 2
-> **Reviewed Subject SHA256**: (recompute after this edit settles — see header)
+> **Reviewed Subject SHA256**: sha256:3ac61f6d9e967a27e2a66aa9227b819f96b34501a2d44d80ea1eaf80426722bf
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: 3776fb7dc2ddb5cd2602e45a37ee0f64c319856b
+> **Reviewed Target Revision**: 5b80b7d0564429dea064a8a819f6827a042a87d0
 > **Benchmark Evidence SHA256**: not-applicable
 
 - P1 blockers: none. The independent gatekeeper found no blocking findings
@@ -193,8 +196,9 @@ non-blocking, out of HRD-07 scope):
 - Acceptance checklist: handler/detector authority, single progress-token
   reset path, fail-closed malformed-state handling, shared-lock
   interoperability and no-reclaim semantics, and scope conformance are all
-  independently confirmed. Merge is a separate, still-unauthorized boundary
-  — no statement in this section should be read as merge authorization.
+  independently confirmed. Merge authorization is the owner's explicit
+  subject-bound instruction recorded above; the waiver remains distinct from
+  a canonical external verdict.
 
 ## Behavior Diff Notes
 
@@ -216,10 +220,11 @@ non-blocking, out of HRD-07 scope):
   solo-operator session (see External Acceptance Advice) — waived with a
   genuine independent Claude review as substitute evidence, at the user's
   explicit choice. Not represented as a canonical external verdict.
-- Merge is NOT authorized. Sprint row 7 backfill and `tasks/current.md`
+- Merge of PR #101 is explicitly authorized for the subject recorded above.
+  Sprint row 7 backfill and `tasks/current.md`
   refresh are deliberately NOT part of this branch (a premature version was
   found and reverted this session) and will be done by the orchestrator's
-  normal post-merge ritual once merge is separately, explicitly authorized.
+  normal post-merge ritual after the authorized merge.
 - `tests/state/state-concurrency.test.ts:576` is a pre-existing flaky test
   (barrier races on the wrong marker file) unrelated to this row — track
   separately in `tasks/todos.md`, do not fold into HRD-07.
@@ -241,8 +246,9 @@ non-blocking, out of HRD-07 scope):
 
 ## Failing Items
 
-- No implementation finding remains. Merge remains a separate, unauthorized
-  boundary — nothing in this record should be read as merge authorization.
+- No implementation finding remains. The final-subject waiver and merge of
+  PR #101 are explicitly authorized; canonical external acceptance remains
+  unsatisfied and is not synthesized as PASS.
 
 ## Retest Steps
 
@@ -267,5 +273,6 @@ non-blocking, out of HRD-07 scope):
   commit. Canonical cross-vendor external acceptance is structurally
   unavailable in this solo-operator session (not a review-quality gap); the
   user explicitly chose to route through independent Claude review as
-  substitute evidence rather than a bare waiver. Merge authorization remains
-  a wholly separate, still-pending boundary.
+  substitute evidence rather than a bare waiver. The owner subsequently bound
+  an explicit waiver to the final normalized subject and authorized merging
+  PR #101; neither instruction is represented as canonical external PASS.
