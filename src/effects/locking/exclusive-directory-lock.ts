@@ -17,6 +17,7 @@ import { isAbsolute, join, relative, resolve, sep } from 'path';
 
 const LOCK_STALE_MS = 30_000;
 const LOCK_WAIT_MS = 5_000;
+const MAX_LOCK_WAIT_MS = 2_147_483_647;
 
 interface FileIdentity {
   readonly dev: number;
@@ -49,6 +50,17 @@ export interface ExclusiveDirectoryLockHandle {
 
 export interface ExclusiveDirectoryLockOptions {
   readonly reclaimStaleOwner?: boolean;
+  readonly waitTimeoutMs?: number;
+}
+
+function resolveWaitTimeoutMs(value: number | undefined): number {
+  if (value === undefined) return LOCK_WAIT_MS;
+  if (!Number.isSafeInteger(value) || value < 1 || value > MAX_LOCK_WAIT_MS) {
+    throw new Error(
+      `invalid exclusive lock waitTimeoutMs: expected an integer from 1 to ${MAX_LOCK_WAIT_MS}`,
+    );
+  }
+  return value;
 }
 
 function ownerFileName(token: string): string {
@@ -282,8 +294,9 @@ export function acquireExclusiveDirectoryLock(
   relativeLockPath: string,
   options: ExclusiveDirectoryLockOptions = {},
 ): ExclusiveDirectoryLockHandle {
+  const waitTimeoutMs = resolveWaitTimeoutMs(options.waitTimeoutMs);
   const location = prepareLockLocation(canonicalRoot, relativeLockPath);
-  const deadline = Date.now() + LOCK_WAIT_MS;
+  const deadline = Date.now() + waitTimeoutMs;
   let handle: LockHandle | null = null;
 
   while (handle === null) {
@@ -390,8 +403,9 @@ export function withExclusiveDirectoryLock<T>(
   canonicalRoot: string,
   relativeLockPath: string,
   run: () => T,
+  options: ExclusiveDirectoryLockOptions = {},
 ): T {
-  const handle = acquireExclusiveDirectoryLock(canonicalRoot, relativeLockPath);
+  const handle = acquireExclusiveDirectoryLock(canonicalRoot, relativeLockPath, options);
   try {
     handle.assertOwned();
     return run();

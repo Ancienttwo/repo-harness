@@ -3,6 +3,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   readdirSync,
   realpathSync,
   rmSync,
@@ -12,6 +13,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { spawn, spawnSync } from 'child_process';
 import { circuitLimit, recordCircuitAttempt, type CircuitAttempt } from '../src/cli/hook/circuit-breaker';
+import { withExclusiveDirectoryLock } from '../src/effects/locking/exclusive-directory-lock';
 import { runMutationGuard, type MutationGuardCollector } from '../src/cli/hook/mutation-guard';
 import { createStateInputCollector } from '../src/effects/loop/state-input-collector';
 import { resolveEffectiveState } from '../src/effects/state/resolve-effective-state';
@@ -53,6 +55,30 @@ function withRepo(run: (cwd: string) => void): void {
   try { run(cwd); } finally { rmSync(cwd, { recursive: true, force: true }); }
 }
 
+function readCircuitState(cwd: string): {
+  protocol: number;
+  entries: Record<string, {
+    progress_token: string;
+    blocker_key: string;
+    count: number;
+    render_key: string;
+    recent_blockers: string[];
+    last_pattern: string;
+  }>;
+} {
+  return JSON.parse(readFileSync(join(cwd, '.ai/harness/state/circuit-breaker.json'), 'utf-8')) as {
+    protocol: number;
+    entries: Record<string, {
+      progress_token: string;
+      blocker_key: string;
+      count: number;
+      render_key: string;
+      recent_blockers: string[];
+      last_pattern: string;
+    }>;
+  };
+}
+
 describe('workflow circuit breakers', () => {
   test('same guard fingerprint blocks at most twice before structured trip', () => withRepo((cwd) => {
     expect(recordCircuitAttempt(cwd, attempt()).allowed).toBe(true);
@@ -63,10 +89,78 @@ describe('workflow circuit breakers', () => {
     expect(third.required_action).toStartWith('terminal:');
   }));
 
-  test('progress token or action changes reset the consecutive repeat counter', () => withRepo((cwd) => {
+  test('real progress resets the stream while a different blocker starts a fresh streak', () => withRepo((cwd) => {
     recordCircuitAttempt(cwd, attempt());
     expect(recordCircuitAttempt(cwd, attempt({ progressToken: 'sha256:new' })).repeat_count).toBe(1);
     expect(recordCircuitAttempt(cwd, attempt({ pathOrAction: 'src/other.ts' })).repeat_count).toBe(1);
+  }));
+
+  test('exact repeats increment one blocker streak and persist the latest pattern', () => withRepo((cwd) => {
+    const first = recordCircuitAttempt(cwd, attempt());
+    const second = recordCircuitAttempt(cwd, attempt());
+    const third = recordCircuitAttempt(cwd, attempt());
+    expect(first.repeat_count).toBe(1);
+    expect(second).toMatchObject({ allowed: true, repeat_count: 2 });
+    expect(third).toMatchObject({ allowed: false, tripped: true, repeat_count: 3 });
+    const state = readCircuitState(cwd);
+    expect(state.protocol).toBe(2);
+    expect(Object.keys(state.entries)).toEqual(['guard']);
+    expect(state.entries.guard.last_pattern).toBe('exact-repeat');
+    expect(state.entries.guard.recent_blockers).toHaveLength(2);
+  }));
+
+  test('render-only reason, path, and fingerprint churn cannot reset one blocker', () => withRepo((cwd) => {
+    const first = recordCircuitAttempt(cwd, attempt({ reason: 'reason A', pathOrAction: 'path A', fingerprint: 'render A' }));
+    const second = recordCircuitAttempt(cwd, attempt({ reason: 'reason B', pathOrAction: 'path B', fingerprint: 'render B' }));
+    const third = recordCircuitAttempt(cwd, attempt({ reason: 'reason C', pathOrAction: 'path C', fingerprint: 'render C' }));
+    expect(first.repeat_count).toBe(1);
+    expect(second).toMatchObject({ allowed: true, repeat_count: 2 });
+    expect(third).toMatchObject({ allowed: false, tripped: true, repeat_count: 3 });
+    const state = readCircuitState(cwd);
+    expect(state.entries.guard.last_pattern).toBe('superficial-churn');
+    expect(state.entries.guard.recent_blockers).toHaveLength(2);
+    expect(state.entries.guard.recent_blockers[0]).toBe(state.entries.guard.recent_blockers[1]);
+  }));
+
+  test('A-B-A trips immediately under one unchanged progress token', () => withRepo((cwd) => {
+    const blockerA = attempt({ guard: 'blocker-a', reason: 'A' });
+    const blockerB = attempt({ guard: 'blocker-b', reason: 'B' });
+    expect(recordCircuitAttempt(cwd, blockerA)).toMatchObject({ allowed: true, repeat_count: 1 });
+    expect(recordCircuitAttempt(cwd, blockerB)).toMatchObject({ allowed: true, repeat_count: 1 });
+    const oscillation = recordCircuitAttempt(cwd, blockerA);
+    expect(oscillation).toMatchObject({ allowed: false, tripped: true, repeat_count: 3, limit: 2 });
+    expect(readCircuitState(cwd).entries.guard.last_pattern).toBe('oscillation');
+  }));
+
+  test('non-cycling blocker changes do not trip and do not inherit the old count', () => withRepo((cwd) => {
+    const first = attempt({ guard: 'blocker-a' });
+    const second = attempt({ guard: 'blocker-b' });
+    const third = attempt({ guard: 'blocker-c' });
+    expect(recordCircuitAttempt(cwd, first).repeat_count).toBe(1);
+    expect(recordCircuitAttempt(cwd, second).repeat_count).toBe(1);
+    expect(recordCircuitAttempt(cwd, third)).toMatchObject({ allowed: true, repeat_count: 1 });
+    expect(readCircuitState(cwd).entries.guard.last_pattern).toBe('new-blocker');
+  }));
+
+  test('A-A-B is a new blocker, not an A-B-A oscillation', () => withRepo((cwd) => {
+    const blockerA = attempt({ guard: 'blocker-a' });
+    const blockerB = attempt({ guard: 'blocker-b' });
+    expect(recordCircuitAttempt(cwd, blockerA).repeat_count).toBe(1);
+    expect(recordCircuitAttempt(cwd, blockerA)).toMatchObject({ allowed: true, repeat_count: 2 });
+    expect(recordCircuitAttempt(cwd, blockerB)).toMatchObject({ allowed: true, repeat_count: 1 });
+    expect(readCircuitState(cwd).entries.guard.last_pattern).toBe('new-blocker');
+  }));
+
+  test('a progress-token change prevents A-B-A classification and resets bounded history', () => withRepo((cwd) => {
+    const blockerA = attempt({ guard: 'blocker-a' });
+    const blockerB = attempt({ guard: 'blocker-b' });
+    expect(recordCircuitAttempt(cwd, blockerA).repeat_count).toBe(1);
+    expect(recordCircuitAttempt(cwd, blockerB).repeat_count).toBe(1);
+    const progressed = recordCircuitAttempt(cwd, { ...blockerA, progressToken: 'sha256:advanced' });
+    expect(progressed).toMatchObject({ allowed: true, repeat_count: 1, progress_token: 'sha256:advanced' });
+    const state = readCircuitState(cwd);
+    expect(state.entries.guard.last_pattern).toBe('real-progress-reset');
+    expect(state.entries.guard.recent_blockers).toHaveLength(1);
   }));
 
   test('projection-only churn never changes the progress token, so repeats keep accumulating on it', () => withRepo((cwd) => {
@@ -190,29 +284,95 @@ describe('workflow circuit breakers', () => {
     }
   }, 30_000);
 
-  test('never reclaims stale or live owner locks without an atomic ownership primitive', () => withRepo((cwd) => {
+  test('protocol-1 state is ignored and the first protocol-2 attempt starts at one', () => withRepo((cwd) => {
+    const statePath = join(cwd, '.ai/harness/state/circuit-breaker.json');
+    mkdirSync(join(cwd, '.ai/harness/state'), { recursive: true });
+    writeFileSync(statePath, JSON.stringify({
+      protocol: 1,
+      entries: { ['a'.repeat(64)]: { count: 2, token: 'legacy-token' } },
+      updated_at: new Date().toISOString(),
+    }));
+    expect(recordCircuitAttempt(cwd, attempt())).toMatchObject({ allowed: true, repeat_count: 1 });
+    const state = readCircuitState(cwd);
+    expect(state.protocol).toBe(2);
+    expect(state.entries.guard.count).toBe(1);
+    expect(state.entries.legacy).toBeUndefined();
+  }));
+
+  test('malformed protocol-2 state fails closed without overwriting evidence', () => withRepo((cwd) => {
+    const statePath = join(cwd, '.ai/harness/state/circuit-breaker.json');
+    mkdirSync(join(cwd, '.ai/harness/state'), { recursive: true });
+    const malformed = `${JSON.stringify({
+      protocol: 2,
+      entries: { guard: { count: 2 } },
+      updated_at: new Date().toISOString(),
+    })}\n`;
+    writeFileSync(statePath, malformed);
+    expect(() => recordCircuitAttempt(cwd, attempt())).toThrow(/invalid protocol-2 circuit breaker entry/);
+    expect(readFileSync(statePath, 'utf-8')).toBe(malformed);
+  }));
+
+  test('unknown state protocol fails closed without overwriting evidence', () => withRepo((cwd) => {
+    const statePath = join(cwd, '.ai/harness/state/circuit-breaker.json');
+    mkdirSync(join(cwd, '.ai/harness/state'), { recursive: true });
+    const unknown = `${JSON.stringify({
+      protocol: 3,
+      entries: {},
+      updated_at: new Date().toISOString(),
+    })}\n`;
+    writeFileSync(statePath, unknown);
+    expect(() => recordCircuitAttempt(cwd, attempt())).toThrow(/unsupported circuit breaker state protocol: 3/);
+    expect(readFileSync(statePath, 'utf-8')).toBe(unknown);
+  }));
+
+  test('an old file-shaped lock is never converted or removed', () => withRepo((cwd) => {
     const stateDir = join(cwd, '.ai/harness/state');
     const lockPath = join(stateDir, 'circuit-breaker.json.lock');
     mkdirSync(stateDir, { recursive: true });
-    writeFileSync(lockPath, JSON.stringify({
-      protocol: 1,
-      pid: 2_147_483_647,
-      token: 'dead-owner',
-      acquired_at: new Date().toISOString(),
-    }));
-    expect(() => recordCircuitAttempt(cwd, attempt())).toThrow(/lock contention \(stale owner pid .*attempt denied/);
+    writeFileSync(lockPath, JSON.stringify({ protocol: 1, pid: process.pid, token: 'old-file-lock' }));
+    expect(() => recordCircuitAttempt(cwd, attempt())).toThrow(/unsafe lock path is not a real directory/);
     expect(existsSync(lockPath)).toBe(true);
+  }));
 
-    rmSync(lockPath);
-    writeFileSync(lockPath, JSON.stringify({
-      protocol: 1,
+  test('never reclaims stale or live shared-directory owners', () => withRepo((cwd) => {
+    const stateDir = join(cwd, '.ai/harness/state');
+    const lockPath = join(stateDir, 'circuit-breaker.json.lock');
+    mkdirSync(lockPath, { recursive: true });
+    const staleToken = `2147483647-${Date.now()}-00000000-0000-4000-8000-000000000001`;
+    const staleOwner = join(lockPath, `${staleToken}.json`);
+    writeFileSync(staleOwner, `${JSON.stringify({
+      pid: 2_147_483_647,
+      created_at: Date.now() - 60_000,
+      token: staleToken,
+    })}\n`);
+    expect(() => recordCircuitAttempt(cwd, attempt())).toThrow(/timed out waiting for exclusive lock/);
+    expect(existsSync(staleOwner)).toBe(true);
+
+    rmSync(lockPath, { recursive: true, force: true });
+    mkdirSync(lockPath, { recursive: true });
+    const liveToken = `${process.pid}-${Date.now()}-00000000-0000-4000-8000-000000000002`;
+    const liveOwner = join(lockPath, `${liveToken}.json`);
+    writeFileSync(liveOwner, `${JSON.stringify({
       pid: process.pid,
-      token: 'live-owner',
-      acquired_at: new Date().toISOString(),
-    }));
-    expect(() => recordCircuitAttempt(cwd, attempt())).toThrow(/lock contention \(live owner pid .*attempt denied/);
-    expect(existsSync(lockPath)).toBe(true);
-  }), 30_000);
+      created_at: Date.now() - 60_000,
+      token: liveToken,
+    })}\n`);
+    expect(() => recordCircuitAttempt(cwd, attempt())).toThrow(/timed out waiting for exclusive lock/);
+    expect(existsSync(liveOwner)).toBe(true);
+  }), 10_000);
+
+  test('wrapper forwards no-reclaim and validates bounded wait overrides', () => withRepo((cwd) => {
+    const lockPath = '.ai/harness/state/test-options.lock';
+    const canonicalRoot = realpathSync(cwd);
+    expect(withExclusiveDirectoryLock(canonicalRoot, lockPath, () => 'ok', { waitTimeoutMs: 1 })).toBe('ok');
+    expect(() => withExclusiveDirectoryLock(canonicalRoot, lockPath, () => {
+      throw new Error('fixture callback failure');
+    }, { waitTimeoutMs: 1 })).toThrow('fixture callback failure');
+    expect(withExclusiveDirectoryLock(canonicalRoot, lockPath, () => 'released', { waitTimeoutMs: 1 })).toBe('released');
+    for (const waitTimeoutMs of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => withExclusiveDirectoryLock(canonicalRoot, lockPath, () => 'never', { waitTimeoutMs })).toThrow(/invalid exclusive lock waitTimeoutMs/);
+    }
+  }));
 
   test('real hook callers block guard, subagent, and repair attempts over their limits', () => withRepo((cwd) => {
     const root = join(import.meta.dir, '..');
