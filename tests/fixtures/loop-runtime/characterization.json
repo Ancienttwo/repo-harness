@@ -79,8 +79,7 @@
       "route_id": "edit",
       "host_exercised": "claude",
       "scripts_run": [
-        "post-edit-guard.sh",
-        "minimal-change-observer.sh"
+        "mutation-observed"
       ],
       "skipped_scripts": [],
       "failed_script": null,
@@ -88,12 +87,13 @@
       "reason": "ok",
       "child_invocations": {
         "git": 5,
-        "bun_cli": 1,
-        "bun_generic": 7
+        "bun_cli": 0,
+        "bun_generic": 4
       },
-      "stdout": "[ArchitectureDrift] No architecture drift request for src/example.ts (unrelated).\n",
+      "stdout": "",
       "stderr": "",
       "write_set": [
+        ".ai/harness/journal/post-edit/pending/ec3c6c9f5f027d340359.json",
         ".ai/harness/runs/hook-invocations.jsonl"
       ]
     },

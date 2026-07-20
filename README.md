@@ -31,10 +31,12 @@ Repository: `https://github.com/Ancienttwo/repo-harness`
   The in-process session-context builder (`src/cli/hook/session-context.ts`)
   injects the prior session's resume packet
   (`.ai/harness/handoff/resume.md`, `tasks/current.md`) when a new session starts;
-  `stop-orchestrator.sh` writes the stop handoff, while `post-edit-guard.sh`
-  refreshes edit-time traces and task status after changes. A session can end
-  mid-task and the next one resumes the exact next step, blockers, and changed
-  files without re-deriving them.
+  `stop-orchestrator.sh` writes the stop handoff, while the in-process
+  mutation-observed journal handler (`src/cli/hook/mutation-observed.ts`)
+  records a small dirty-bit event per edit and defers maintenance work (contract
+  verification, architecture/context/capability sync, minimal-change signals) to
+  Stop. A session can end mid-task and the next one resumes the exact next
+  step, blockers, and changed files without re-deriving them.
 - **Token-lean by design.** Instead of grep-and-read loops that re-scan the repo every
   session, the harness leans on a pre-built CodeGraph index for structural queries
   (callers, callees, definitions) and on progressive context loading via
@@ -563,7 +565,7 @@ implementation under `assets/hooks/` or a repo-pinned `.ai/hooks/` copy.
 | `SessionStart.default` | all sessions | `src/cli/hook/session-context.ts` (in-process builder) | Injects prior handoff, sprint status, minimal-change guidance, and read-only config-security findings before work starts. |
 | `PreToolUse.edit` | `Edit|Write` | `src/cli/hook/mutation-guard.ts` (in-process handler) | Enforces worktree policy and plan/contract readiness before implementation edits. |
 | `PreToolUse.subagent` | `Task|Agent|SendUserMessage` | `subagent-return-channel-guard.sh` | Keeps delegated work returning through the parent session instead of leaking completion claims. |
-| `PostToolUse.edit` | `Edit|Write` | `post-edit-guard.sh`, `minimal-change-observer.sh` | Records edit traces, refreshes handoff/task status, queues architecture drift, and writes bounded minimal-change evidence when controlled files change. |
+| `PostToolUse.edit` | `Edit|Write` | `src/cli/hook/mutation-observed.ts` (in-process handler) | Writes at most one small journal event with dirty bits per qualifying edit; contract verification, architecture/context/capability sync, and minimal-change evidence are deferred to Stop instead of run per edit. |
 | `PostToolUse.bash` | `Bash` | `post-bash.sh` | Observes command results and captures verification evidence without replacing the command runner. |
 | `PostToolUse.always` | all tools | `post-tool-observer.sh` | Provides low-noise always-on trace and runtime observation; stale pinned copies soft-skip with a refresh hint. |
 | `UserPromptSubmit.default` | all prompts | `prompt-guard.sh` | Classifies prompt intent, routes planning/check/hunt hints, and renders host-safe workflow guidance. |

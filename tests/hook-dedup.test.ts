@@ -10,10 +10,14 @@ describe("Hook dedup", () => {
     expect(existsSync(join(ROOT, "assets/hooks/task-handoff.sh"))).toBe(false);
   });
 
-  test("post-edit guard remains the single home for doc drift and task handoff behavior", () => {
-    const content = readFileSync(join(ROOT, "assets/hooks/post-edit-guard.sh"), "utf-8");
+  // HRD-05 retired assets/hooks/post-edit-guard.sh; the in-process
+  // mutation-observed journal handler is now the single home for doc-drift
+  // advisories. Task-handoff regeneration ("[TaskHandoff]") is retired
+  // entirely (deferred to Stop's existing unconditional handoff refresh, not
+  // reprinted per edit), so that assertion does not carry over.
+  test("mutation-observed remains the single home for doc drift advisories", () => {
+    const content = readFileSync(join(ROOT, "src/cli/hook/mutation-observed.ts"), "utf-8");
     expect(content).toContain("[DocDrift]");
-    expect(content).toContain("[TaskHandoff]");
     expect(content).not.toContain("run_skill_factory_activity");
   });
 });

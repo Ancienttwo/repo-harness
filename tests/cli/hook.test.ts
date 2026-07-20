@@ -433,88 +433,28 @@ describe('hook command (Phase 1B)', () => {
     });
   });
 
-  // HRD-03 retired PreToolUse.edit's script list to `[]` (the in-process
-  // mutation-guard handler always decides that route now -- see the
-  // dedicated "PreToolUse.edit dispatches to the in-process handler
-  // unconditionally" test below). PreToolUse.edit was the only route with
-  // two FULLY required (non-soft) scripts, so the four generic
-  // multi-script-mechanics tests below -- which test runHook()'s own
-  // script-loop plumbing, not any guard's content -- are retargeted to
-  // PostToolUse.edit (`post-edit-guard.sh` required, `minimal-change-observer.sh`
-  // soft-missing per isSoftMissingScript). Test intent (ordering, payload
-  // replay, hard-vs-soft missing-script handling, failure propagation) is
-  // preserved; only the vehicle route/script names change.
-  test('opt-in + all scripts present and succeed → exits 0, scripts run in registry order', () => {
+  // HRD-03 retired PreToolUse.edit's script list to `[]`, then HRD-05
+  // retired PostToolUse.edit's too (the in-process mutation-guard and
+  // mutation-observed handlers always decide those routes now -- see the
+  // dedicated "dispatches to the in-process handler unconditionally" tests
+  // below). PostToolUse.edit was the last route with two FULLY required
+  // (non-soft) scripts; every remaining route is single-script, so the two
+  // generic multi-script-mechanics tests that used to live here (script
+  // ordering across 2 scripts, payload replay to 2 scripts) no longer have a
+  // real route to vehicle them and are removed rather than kept against a
+  // fabricated scenario (see notes file). The "a required script is
+  // missing hard-fails" and "first script fails propagates its exit code"
+  // tests below only need ONE required script, so they retarget to
+  // PostToolUse.bash's post-bash.sh (a still-scripted, hard-required,
+  // single-script route -- the same vehicle the HOOK_REPO_ROOT propagation
+  // tests further below already use).
+  test('opt-in + required route script missing → exits 3 for the missing required script', () => {
     withTempRepo(
-      {
-        optIn: true,
-        scripts: {
-          'post-edit-guard.sh': '#!/bin/bash\nexit 0\n',
-          'minimal-change-observer.sh': '#!/bin/bash\nexit 0\n',
-        },
-      },
+      { optIn: true },
       (repoRoot) => {
         const result = runHook({
           event: 'PostToolUse',
-          routeId: 'edit',
-          cwd: repoRoot,
-          stdio: 'ignore',
-        });
-        expect(result.exitCode).toBe(0);
-        expect(result.reason).toBe('ok');
-        expect(result.scriptsRun).toEqual(['post-edit-guard.sh', 'minimal-change-observer.sh']);
-      },
-    );
-  });
-
-  test('replays the same host payload to every script on a multi-script route', () => {
-    withTempRepo(
-      {
-        optIn: true,
-        scripts: {
-          'post-edit-guard.sh': '#!/bin/bash\ncat > .first-payload\n',
-          'minimal-change-observer.sh': '#!/bin/bash\ncat > .second-payload\n',
-        },
-      },
-      (repoRoot) => {
-        const payload = JSON.stringify({ tool_input: { file_path: 'deploy/sql/0001.sql' } });
-        const result = runHook({
-          event: 'PostToolUse',
-          routeId: 'edit',
-          cwd: repoRoot,
-          stdio: 'ignore',
-          input: payload,
-        });
-        expect(result.exitCode).toBe(0);
-        expect(fs.readFileSync(path.join(repoRoot, '.first-payload'), 'utf-8')).toBe(payload);
-        expect(fs.readFileSync(path.join(repoRoot, '.second-payload'), 'utf-8')).toBe(payload);
-      },
-    );
-  });
-
-  // Adapted shape: on PostToolUse.edit the one non-soft (genuinely required)
-  // script, post-edit-guard.sh, is FIRST in registry order (unlike the old
-  // PreToolUse.edit vehicle, where the required script that ran before the
-  // missing one was first and the missing one was second) -- so this
-  // fixture omits post-edit-guard.sh itself to reach the hard-missing path,
-  // rather than omitting a later script after an earlier one already ran.
-  // The behavior under test -- a genuinely required (non-soft) script
-  // missing hard-fails with exit 3 and reason 'missing-script', not a soft
-  // skip -- is preserved exactly; "an earlier script already ran" is not
-  // reproducible with any current route's required-script ordering (see
-  // notes file).
-  test('opt-in + required route partial missing → exits 3 for the missing required script', () => {
-    withTempRepo(
-      {
-        optIn: true,
-        scripts: {
-          'minimal-change-observer.sh': '#!/bin/bash\nexit 0\n',
-        },
-      },
-      (repoRoot) => {
-        const result = runHook({
-          event: 'PostToolUse',
-          routeId: 'edit',
+          routeId: 'bash',
           cwd: repoRoot,
           stdio: 'ignore',
         });
@@ -522,7 +462,7 @@ describe('hook command (Phase 1B)', () => {
         expect(result.reason).toBe('missing-script');
         expect(result.scriptsRun).toEqual([]);
         expect(result.skippedScripts).toEqual([]);
-        expect(result.failedScript).toBe('post-edit-guard.sh');
+        expect(result.failedScript).toBe('post-bash.sh');
       },
     );
   });
@@ -566,29 +506,11 @@ describe('hook command (Phase 1B)', () => {
     });
   });
 
-  test('opt-in + missing minimal-change observer on PostToolUse.edit → soft-skips after guard', () => {
-    withTempRepo(
-      {
-        optIn: true,
-        scripts: {
-          'post-edit-guard.sh': '#!/bin/bash\nexit 0\n',
-        },
-      },
-      (repoRoot) => {
-        const result = runHook({
-          event: 'PostToolUse',
-          routeId: 'edit',
-          cwd: repoRoot,
-          stdio: 'ignore',
-        });
-        expect(result.exitCode).toBe(0);
-        expect(result.reason).toBe('ok');
-        expect(result.scriptsRun).toEqual(['post-edit-guard.sh']);
-        expect(result.skippedScripts).toEqual(['minimal-change-observer.sh']);
-        expect(result.failedScript).toBeUndefined();
-      },
-    );
-  });
+  // HRD-05: PostToolUse.edit's "required script present, soft-missing
+  // script skipped" scenario has no equivalent -- the in-process
+  // mutation-observed handler always handles both the doc-drift/journal work
+  // and the (now deferred) minimal-change signal in ONE handler invocation,
+  // so there is no second script left to be soft-missing.
 
   test('opt-in + missing subagent guard script on PreToolUse.subagent → soft-skips, exits 0', () => {
     withTempRepo({ optIn: true }, (repoRoot) => {
@@ -626,8 +548,36 @@ describe('hook command (Phase 1B)', () => {
       {
         optIn: true,
         scripts: {
+          'post-bash.sh': '#!/bin/bash\nexit 7\n',
+        },
+      },
+      (repoRoot) => {
+        const result = runHook({
+          event: 'PostToolUse',
+          routeId: 'bash',
+          cwd: repoRoot,
+          stdio: 'ignore',
+        });
+        expect(result.exitCode).toBe(7);
+        expect(result.reason).toBe('script-failed');
+        expect(result.scriptsRun).toEqual(['post-bash.sh']);
+        expect(result.failedScript).toBe('post-bash.sh');
+      },
+    );
+  });
+
+  test('PostToolUse.edit dispatches to the in-process handler unconditionally, ignoring any script files present', () => {
+    withTempRepo(
+      {
+        optIn: true,
+        // Even when a fixture still provides files under the retired names,
+        // runHook() never looks for them: PostToolUse.edit's route.scripts
+        // is `[]` now (route-registry.ts), so the in-process
+        // mutation-observed handler always decides this route regardless of
+        // what -- if anything -- exists on disk under these old names.
+        scripts: {
           'post-edit-guard.sh': '#!/bin/bash\nexit 7\n',
-          'minimal-change-observer.sh': '#!/bin/bash\nexit 0\n',
+          'minimal-change-observer.sh': '#!/bin/bash\nexit 7\n',
         },
       },
       (repoRoot) => {
@@ -637,10 +587,12 @@ describe('hook command (Phase 1B)', () => {
           cwd: repoRoot,
           stdio: 'ignore',
         });
-        expect(result.exitCode).toBe(7);
-        expect(result.reason).toBe('script-failed');
-        expect(result.scriptsRun).toEqual(['post-edit-guard.sh']);
-        expect(result.failedScript).toBe('post-edit-guard.sh');
+        // A bare event with no file_path in the payload exits 0 with no
+        // journal event written -- had the fake "exit 7" scripts run
+        // instead, this would be 7.
+        expect(result.exitCode).toBe(0);
+        expect(result.reason).toBe('ok');
+        expect(result.scriptsRun).toEqual(['mutation-observed']);
       },
     );
   });
