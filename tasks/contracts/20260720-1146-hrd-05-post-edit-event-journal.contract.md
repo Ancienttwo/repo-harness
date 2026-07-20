@@ -106,6 +106,20 @@ documented per-field).
     reason, exit code, stdout/stderr parity except documented advisory
     formatting that is byte-identical today must stay byte-identical.
     Any other cell shifting fails this contract.
+  - AMENDMENT (gate round-1, second widening — orchestrator decision):
+    `.ai/harness/journal/` joins the ignored-runtime-evidence surface. The
+    managed gitignore block gains the entry in `src/core/adoption/gitignore-plan.ts`,
+    the repo `.gitignore`, and the init seed in `scripts/lib/project-init-lib.sh`
+    (plus the direct test pinning the managed block — name it in notes).
+    Retention decision: the journal is a transit queue, not an evidence
+    ledger (that is EPC scope) — events are DELETED on consumption (no
+    consumed/ retention); corrupt pending files are removed at Stop with a
+    stderr warning line. The crash-replay SessionStart section becomes
+    `actionable: true` with a production-path fixture through `runHook()`.
+    The two near-dead checkpoint-block behaviors (per-edit todo sync;
+    Backlog-no-plan task-state cleanup) are accepted drops, documented in
+    notes deviations. The explicit-verify consumer narrowing (Stop-only
+    wiring) is recorded and deferred to HRD-06.
 - Out of scope:
   - Stop handler port (HRD-06) — Stop's existing shell orchestration keeps
     running; this row only makes it (and explicit verify) consume the
@@ -216,6 +230,12 @@ allowed_paths:
   - tests/readme-dx.test.ts
   - tests/create-project-dirs.runtime.test.ts
   - README.md
+  # --- AMENDMENT (gate round-1 second widening: journal gitignore surface) ---
+  - .gitignore
+  - src/core/adoption/gitignore-plan.ts
+  - scripts/lib/project-init-lib.sh
+  - tests/adopt-dry-run.test.ts
+  - tests/bootstrap-files.test.ts
 ```
 
 ## Evidence Requirements

@@ -148,6 +148,32 @@ function readPendingPostEditJournalEvents(cwd: string): unknown[] {
     .map((name) => JSON.parse(readFileSync(join(dir, name), "utf-8")));
 }
 
+// Gate round-1 blocking fix: the crash-replay fixture must prove the pending
+// journal section survives PRODUCTION `runHook()`'s own `budgetSessionContext`
+// pass, not just call the unit-level `pendingPostEditJournalSection()`
+// function directly (a unit call cannot observe the no-actionable-state drop
+// the gatekeeper reproduced). Same `bun -e` wrapper shape as
+// `runMutationObservedHook` above, targeting SessionStart.default instead.
+function runSessionStartHook(cwd: string, env: Record<string, string> = {}) {
+  const moduleUrl = pathToFileURL(RUNTIME_MODULE).href;
+  const script = [
+    `const { runHook } = await import(${JSON.stringify(moduleUrl)});`,
+    "const result = runHook({ event: 'SessionStart', routeId: 'default' });",
+    "process.exit(result.exitCode);",
+  ].join("\n");
+  return spawnSync(process.execPath, ["-e", script], {
+    cwd,
+    encoding: "utf-8",
+    maxBuffer: HOOK_RUNTIME_SPAWN_BUFFER_BYTES,
+    env: {
+      ...process.env,
+      HOOK_REPO_ROOT: cwd,
+      REPO_HARNESS_HOOK_SOURCE: "repo",
+      ...env,
+    },
+  });
+}
+
 function writeValidSprintChecks(cwd: string) {
   writeFileSync(
     join(cwd, ".ai/harness/checks/latest.json"),
@@ -779,6 +805,46 @@ describe("Hook runtime behavior", () => {
     }
   });
 
+  // Gate round-1 blocking fix proof: a pending journal event must survive
+  // the crash-replay path through PRODUCTION runHook() SessionStart -- not
+  // just the unit-level `pendingPostEditJournalSection()` call (see
+  // tests/mutation-observed.test.ts for that), which cannot observe
+  // `budgetSessionContext`'s own no-actionable-state drop. This fixture is a
+  // deliberately quiet repo (opt-in only, no policy.json, no security/plan
+  // state) so the pending journal section is the ONLY candidate section --
+  // exactly the scenario the gatekeeper reproduced as empty stdout.
+  test("mutation-observed: a pending journal event is visible through production SessionStart stdout in an otherwise-quiet repo, then Stop consumption clears it", () => {
+    const cwd = tmpWorkspace("mo-crash-replay-production");
+    try {
+      initGitRepo(cwd);
+      installHooks(cwd);
+      ensureOptIn(cwd);
+
+      const editRes = runMutationObservedHook(cwd, { tool_input: { file_path: "src/crash.ts" } });
+      expect(editRes.status).toBe(0);
+      const pendingBefore = readPendingPostEditJournalEvents(cwd) as Array<{ event_id: string }>;
+      expect(pendingBefore.length).toBe(1);
+
+      const sessionBefore = runSessionStartHook(cwd);
+      expect(sessionBefore.status).toBe(0);
+      expect(sessionBefore.stdout).not.toBe("");
+      expect(sessionBefore.stdout).toContain('"hookEventName":"SessionStart"');
+      expect(sessionBefore.stdout).toContain("[PostEditJournal]");
+      expect(sessionBefore.stdout).toContain("1 pending post-edit journal event");
+      expect(sessionBefore.stdout).toContain(pendingBefore[0].event_id);
+
+      const consumeEnv = { ...process.env, REPO_HARNESS_CLI: join(ROOT, "src/cli/index.ts") };
+      consumePendingPostEditEvents(cwd, consumeEnv);
+      expect(readPendingPostEditJournalEvents(cwd)).toEqual([]);
+
+      const sessionAfter = runSessionStartHook(cwd);
+      expect(sessionAfter.status).toBe(0);
+      expect(sessionAfter.stdout).not.toContain("[PostEditJournal]");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   // HRD-05 retired post-edit-guard.sh's SYNCHRONOUS architecture-queue /
   // context-contract-sync / capability-context cascade -- it is now a
   // deferred dirty-bit chain, consumed at Stop (consumePendingPostEditEvents,
@@ -882,7 +948,7 @@ describe("Hook runtime behavior", () => {
 
       const consumeEnv = { ...process.env, REPO_HARNESS_CLI: join(ROOT, "src/cli/index.ts") };
       const summary = consumePendingPostEditEvents(cwd, consumeEnv);
-      expect(summary).toEqual({ consumed: 1, pending: 0, errors: 0 });
+      expect(summary).toEqual({ consumed: 1, pending: 0, errors: 0, warnings: [] });
 
       expect(existsSync(join(cwd, ".ai/harness/architecture/events.jsonl"))).toBe(true);
       expect(readFileSync(join(cwd, ".ai/harness/capability-context/requests.jsonl"), "utf-8")).toContain('"capability_id":"apps-web"');
@@ -905,9 +971,11 @@ describe("Hook runtime behavior", () => {
       expect(contextMap.discoverable_contexts.map((entry: { path: string }) => entry.path)).toContain("apps/web/AGENTS.md");
       expect(contextMap.discoverable_contexts.map((entry: { path: string }) => entry.path)).toContain("apps/web/CLAUDE.md");
 
-      // The consumed event moved out of pending (marked consumed atomically).
+      // Retention: the journal is a transit queue, not an evidence ledger --
+      // consumption DELETES the event file outright (no consumed/ directory).
       expect(readPendingPostEditJournalEvents(cwd)).toEqual([]);
-      expect(existsSync(join(cwd, ".ai/harness/journal/post-edit/consumed", `${pendingBefore[0].event_id}.json`))).toBe(true);
+      expect(existsSync(join(cwd, ".ai/harness/journal/post-edit/pending", `${pendingBefore[0].event_id}.json`))).toBe(false);
+      expect(existsSync(join(cwd, ".ai/harness/journal/post-edit/consumed"))).toBe(false);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -949,7 +1017,7 @@ describe("Hook runtime behavior", () => {
 
       const consumeEnv = { ...process.env, REPO_HARNESS_CLI: join(ROOT, "src/cli/index.ts") };
       const summary = consumePendingPostEditEvents(cwd, consumeEnv);
-      expect(summary).toEqual({ consumed: 1, pending: 0, errors: 0 });
+      expect(summary).toEqual({ consumed: 1, pending: 0, errors: 0, warnings: [] });
 
       const requestsDir = join(cwd, "docs/architecture/requests");
       const requestFiles = existsSync(requestsDir)

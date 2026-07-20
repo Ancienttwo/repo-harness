@@ -225,9 +225,149 @@ Per-field before/after:
 | `stderr` | `""` | `""` (unchanged) | Same. |
 | `write_set` | `[".ai/harness/runs/hook-invocations.jsonl"]` | `[".ai/harness/journal/post-edit/pending/ec3c6c9f5f027d340359.json", ".ai/harness/runs/hook-invocations.jsonl"]` | The one new journal event write — this row's deliverable write-set change, made visible even though every one of the OLD script's OWN conditional durable writes was already a no-op for this specific fixture input (no active plan/contract, no minimal_change policy, unmatched architecture path). |
 
+## Gate Round-1 Fixes (FAIL round 1, adjudicated, applied)
+
+Gatekeeper round 1 returned FAIL with 2 blocking findings + 2 MEDIUM
+advisories, all adjudicated by the orchestrator. Contract amended a second
+time (`.gitignore` surface, 5 new Allowed Paths). Applied exactly:
+
+1. **BLOCKING — crash-replay surfacing dropped in quiet repos.**
+   `pendingPostEditJournalSection`'s `actionable: false` meant
+   `budgetSessionContext` (session-context-budget.ts's
+   `normalized.some((section) => section.actionable)` check) dropped the
+   ENTIRE SessionStart payload to empty stdout whenever the pending journal
+   section was the only candidate section -- exactly a quiet repo with a
+   crash-recovered pending event and nothing else actionable. Fixed:
+   `actionable: true` (mutation-observed.ts, with an inline comment citing
+   the mechanism). Proof added through the PRODUCTION path, not the unit
+   function: `tests/hook-runtime.test.ts` "a pending journal event is
+   visible through production SessionStart stdout in an otherwise-quiet
+   repo..." spawns the real `runHook({event:'SessionStart',routeId:'default'})`
+   via a `bun -e` wrapper (same shape as `runMutationObservedHook`) and
+   asserts the captured child stdout contains `[PostEditJournal]` before
+   consumption and not after. Golden proof: `tests/hook-runtime-characterization.test.ts`
+   passes UNCHANGED (no regen needed) after this fix -- the `SessionStart.default`
+   fixture has zero pending events, so `actionable: true` is never exercised
+   there, confirmed empirically, not just asserted.
+2. **BLOCKING — journal not covered by the managed gitignore block.** Added
+   `.ai/harness/journal/` to `GITIGNORE_MANAGED_BLOCK_CONTENT`
+   (`src/core/adoption/gitignore-plan.ts`), this repo's own `.gitignore`
+   (dogfood copy, not byte-identical to the template array -- has
+   self-host-specific extra entries already), and `PI_DEFAULT_RUNTIME_ENTRIES`
+   (`scripts/lib/project-init-lib.sh`) -- all three placed next to
+   `.ai/harness/capability-context/` (nearest sibling: another runtime queue
+   directory). **Test-pinning finding (verified, not assumed):** neither
+   named file needs a content edit. `tests/adopt-dry-run.test.ts` does not
+   exist in this repo (`find tests -iname "*adopt*"` finds only
+   `tests/cli/adoption-plan.test.ts` and `tests/fixtures/adoption/`, neither
+   of which reference the gitignore managed block at all -- confirmed by
+   grep, `tests/cli/adoption-plan.test.ts` has zero "gitignore" hits).
+   `tests/bootstrap-files.test.ts`'s `.ai/harness/capability-context/`-adjacent
+   assertions (lines ~290-300) are `toContain`/`not.toContain` checks against
+   `assets/workflow-contract.v1.json`'s `artifacts.runtimeFiles` array -- a
+   DIFFERENT manifest, not the gitignore block, and non-exhaustive (adding a
+   new gitignore line cannot break a `toContain` check that doesn't mention
+   it). A repo-wide search (`grep -rln "GITIGNORE_MANAGED_BLOCK_CONTENT\|gitignoreManagedBlockOperation" tests/`)
+   found zero test files importing or exercising the gitignore-plan.ts
+   exports at all; every test that reads the real `.gitignore` file
+   (`tests/create-project-dirs.runtime.test.ts` [Allowed], plus
+   `tests/scaffold-parity.test.ts`/`tests/workflow-contract.test.ts`
+   [not touched, out of Allowed Paths, not exhaustive]) uses `toContain`/
+   `not.toContain` spot checks, never an exact/exhaustive match -- none of
+   them assert `not.toContain(".ai/harness/journal/")`, so none break.
+   Neither `tests/adopt-dry-run.test.ts` nor `tests/bootstrap-files.test.ts`
+   was edited; no new test file was invented to fill the named-but-nonexistent
+   path. Proof (both required items): `git check-ignore -v` against a real
+   fixture repo returns `.gitignore:46:.ai/harness/journal/	<path>` (exit 0);
+   `tests/mutation-observed.test.ts` "the journal directory is covered by the
+   managed gitignore block, and a qualifying edit leaves git status clean"
+   writes `GITIGNORE_MANAGED_BLOCK_CONTENT` into a fresh fixture repo's
+   `.gitignore`, runs a real qualifying edit through `runMutationObserved`,
+   then asserts `git check-ignore -q` exits 0 for the written event file AND
+   `git status --porcelain` is empty.
+3. **MEDIUM adjudicated — retention.** The journal is a transit queue, not
+   an evidence ledger (EPC scope, out of this row). Removed the `consumed/`
+   directory machinery entirely (`JOURNAL_CONSUMED_DIR` constant,
+   `markPostEditEventConsumed`'s rename-to-consumed); `consumePendingPostEditEvents`
+   now DELETES each pending file on successful consumption
+   (`deletePendingPostEditEventFile`, `unlinkSync`). Corrupt pending files
+   (unparseable JSON, wrong `schema`) are detected via a new
+   `scanPendingPostEditEventFiles` scan (separates `valid` from
+   `corruptNames`), deleted outright, and warned via `process.stderr.write`
+   (a direct write, independent of the `RunHookResult`/`scriptsRun`
+   contract, since Stop-time consumption deliberately never touches that
+   contract -- see Design Decisions) plus returned in the new
+   `PostEditConsumeSummary.warnings` field for testability. Proof:
+   `tests/mutation-observed.test.ts` "a corrupt pending file is removed at
+   consumption with a stderr warning, without disturbing valid events"
+   writes two malformed files alongside one valid event, spies on
+   `process.stderr.write`, and asserts both are deleted, both produce a
+   warning line (in both the captured stderr and the returned summary), and
+   the valid event still consumes normally. All prior "moved to consumed/"
+   fixtures (in both `tests/mutation-observed.test.ts` and
+   `tests/hook-runtime.test.ts`) updated to assert deletion instead
+   (`existsSync(...pending/<id>.json)` is `false`, `existsSync(.../consumed)`
+   is `false`).
+4. **MEDIUM adjudicated — notes honesty.** See "Deviations From Plan Or
+   Spec" below: documents the two accepted drops
+   (`workflow_sync_task_state_from_todo`; Backlog-no-plan cleanup +
+   `[TaskHandoff]` stdout) with the near-dead-file evidence, and the
+   explicit-verify consumer narrowing (Stop-only wiring; explicit CLI runs
+   do not read the journal in this row, deferred to HRD-06).
+
 ## Deviations From Plan Or Spec
 
-- None beyond the one documented Allowed Paths amendment above.
+Gate round-1 MEDIUM finding: the original pass of this section understated
+what was dropped. Two `post-edit-guard.sh` behaviors are genuinely gone, not
+ported to any dirty bit or deferred consumer. Both write/read files this
+row's own Falsifier already proved have zero programmatic readers
+(`.claude/.task-state.json`, `.claude/.task-handoff.md`), which is the
+evidence the gatekeeper adjudicated as "near-dead" and accepted as a drop
+rather than requiring a port:
+
+1. **Per-edit `workflow_sync_task_state_from_todo` sync.** post-edit-guard.sh:182-184:
+   `if [[ "$FILE_PATH" == "tasks/todos.md" ]] && [[ -f "tasks/todos.md" ]] && !
+   grep -Eq '^> \*\*Status\*\*:[[:space:]]*Backlog[[:space:]]*$' tasks/todos.md;
+   then workflow_sync_task_state_from_todo "tasks/todos.md" "$STATE_FILE"; fi` --
+   synced `.claude/.task-state.json` from the todo checklist's `[x]`/`[ ]`
+   markers on every non-Backlog edit to `tasks/todos.md`. No dirty bit
+   carries this; `.claude/.task-state.json` is not part of the journal
+   payload or the consumption cascade. Accepted: the file has no
+   programmatic reader (same finding as the Falsifier's `.claude/.task-handoff.md`
+   check) -- it fed the now-also-retired `.claude/.task-handoff.md` heredoc
+   and nothing else.
+2. **Backlog-no-plan cleanup + its `[TaskHandoff]` stdout line.**
+   post-edit-guard.sh:170-175: when `tasks/todos.md` is edited, no active
+   plan is set, AND todos.md's status is `Backlog`, the script deleted
+   `$(workflow_task_state_file)` + `.claude/.task-handoff.md`, printed
+   `[TaskHandoff] Deferred-goal ledger updated; active execution remains in
+   the plan Task Breakdown.`, and exited early. `mutation-observed.ts` has no
+   equivalent branch -- the checkpoint dirty bit fires for `tasks/todos.md`
+   regardless of Backlog/active-plan state, and neither the delete nor the
+   stdout line happens anywhere. Accepted for the same reason: both deleted
+   files are dead-reader files, and the stdout line was purely advisory
+   about that same dead state.
+
+Neither drop weakens crash recovery (the Falsifier's own scope): both are
+downstream of files nothing reads. If a future row gives
+`.claude/.task-state.json`/`.claude/.task-handoff.md` a real reader, these
+two behaviors need reconsidering at that point, not before.
+
+**Explicit-verify consumer narrowing.** The contract's Scope text ("Stop's
+existing orchestration and the explicit CLI runs read pending journal
+events...") reads as if both Stop AND a manual `repo-harness run
+verify-contract` invocation consume the journal. Only Stop actually does
+(`consumePendingPostEditEvents`, wired into `runtime.ts`'s `Stop.default`
+dispatch). A manual `repo-harness run verify-contract`/`architecture-queue`/
+etc. invocation runs against current repo state as it always has -- it does
+not read `.ai/harness/journal/post-edit/pending/`, does not mark events
+consumed, and is not aware the journal exists. This is a narrowing from the
+Scope text's literal reading, not from the Goal (Stop remains the safety net
+that guarantees every dirty bit eventually gets processed regardless of
+whether a human also ran verify-contract manually in between). Wiring
+explicit-verify surfaces to also consume the journal is recorded here and
+deferred to HRD-06 (which already owns the "port Stop to TS" surface this
+would naturally live next to) rather than implemented in this row.
 
 ## Tradeoffs Considered
 

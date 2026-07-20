@@ -31,6 +31,7 @@ import {
   readdirSync,
   realpathSync,
   renameSync,
+  unlinkSync,
   writeFileSync,
 } from 'fs';
 import { createHash } from 'crypto';
@@ -507,7 +508,6 @@ export interface PostEditJournalEvent {
 
 const JOURNAL_ROOT = '.ai/harness/journal/post-edit';
 const JOURNAL_PENDING_DIR = `${JOURNAL_ROOT}/pending`;
-const JOURNAL_CONSUMED_DIR = `${JOURNAL_ROOT}/consumed`;
 
 /** Session-scoped coalesce key: a same-session edit to the same path set
  * overwrites the same pending file instead of appending unboundedly. */
@@ -590,29 +590,53 @@ function writeOrCoalesceJournalEvent(repoRoot: string, input: WriteJournalEventI
   }
 }
 
-/** Pending (unconsumed) events, oldest-key-first. Used both by the
- * SessionStart orientation section and Stop-time consumption. */
-export function readPendingPostEditEvents(repoRoot: string): readonly PostEditJournalEvent[] {
+interface PendingScanResult {
+  /** Well-formed `change_observed` events, parsed and ready to process. */
+  readonly valid: ReadonlyArray<{ readonly name: string; readonly event: PostEditJournalEvent }>;
+  /** File names under pending/ that failed to parse as a `change_observed`
+   * event (missing/unreadable/malformed JSON) -- garbage the Stop-time
+   * consumer cleans up, never a state the SessionStart display needs to
+   * know about. */
+  readonly corruptNames: readonly string[];
+}
+
+function scanPendingPostEditEventFiles(repoRoot: string): PendingScanResult {
   const dir = join(repoRoot, JOURNAL_PENDING_DIR);
   let names: string[];
   try {
     names = readdirSync(dir).filter((name) => name.endsWith('.json'));
   } catch {
-    return [];
+    return { valid: [], corruptNames: [] };
   }
-  const events: PostEditJournalEvent[] = [];
+  const valid: Array<{ name: string; event: PostEditJournalEvent }> = [];
+  const corruptNames: string[] = [];
   for (const name of names.sort()) {
     const event = readJournalEventFile(join(dir, name));
-    if (event) events.push(event);
+    if (event) valid.push({ name, event });
+    else corruptNames.push(name);
   }
-  return events;
+  return { valid, corruptNames };
 }
 
-function markPostEditEventConsumed(repoRoot: string, eventId: string): void {
-  const from = join(repoRoot, JOURNAL_PENDING_DIR, `${eventId}.json`);
-  const toDir = join(repoRoot, JOURNAL_CONSUMED_DIR);
-  mkdirSync(toDir, { recursive: true });
-  renameSync(from, join(toDir, `${eventId}.json`));
+/** Pending (unconsumed) events, oldest-key-first. Used both by the
+ * SessionStart orientation section and Stop-time consumption. Corrupt files
+ * are silently omitted here (they are not a "pending event" in any
+ * meaningful sense) -- `consumePendingPostEditEvents` is the one that
+ * cleans them up. */
+export function readPendingPostEditEvents(repoRoot: string): readonly PostEditJournalEvent[] {
+  return scanPendingPostEditEventFiles(repoRoot).valid.map(({ event }) => event);
+}
+
+/**
+ * Retention decision (gate round-1 second widening, MEDIUM adjudicated): the
+ * journal is a transit queue, not an evidence ledger (that is EPC scope --
+ * out of scope for this row). Consumption DELETES the pending file outright;
+ * there is no `consumed/` retention directory. A consumption failure simply
+ * leaves the file in `pending/` for the next Stop to retry (see
+ * `consumePendingPostEditEvents`'s per-event try/catch).
+ */
+function deletePendingPostEditEventFile(repoRoot: string, name: string): void {
+  unlinkSync(join(repoRoot, JOURNAL_PENDING_DIR, name));
 }
 
 // ---------------------------------------------------------------------------
@@ -631,7 +655,16 @@ export function pendingPostEditJournalSection(repoRoot: string): SessionContextS
     priority: 4,
     content: `[PostEditJournal] ${events.length} pending post-edit journal event(s) awaiting Stop consumption (oldest: ${oldest.event_id} at ${oldest.created_at}).`,
     mandatory: false,
-    actionable: false,
+    // Gate round-1 blocking fix: `budgetSessionContext` drops the ENTIRE
+    // SessionStart payload to empty stdout when NO section is actionable
+    // (session-context-budget.ts's `no-actionable-state` branch checks
+    // `normalized.some((section) => section.actionable)` across ALL
+    // sections, not just this one) -- a quiet repo with only a pending
+    // journal event and no other actionable state was rendering empty
+    // stdout, silently losing crash-replay visibility. `true` here is what
+    // keeps this section (and the whole budgeted payload) from being
+    // dropped.
+    actionable: true,
     reference: 'repo-harness run verify-contract',
   };
 }
@@ -742,23 +775,57 @@ export interface PostEditConsumeSummary {
   readonly consumed: number;
   readonly pending: number;
   readonly errors: number;
+  /** One line per corrupt pending file removed this pass -- also written to
+   * stderr (see below), returned too so tests/callers can observe it
+   * without capturing the process stream. */
+  readonly warnings: readonly string[];
+}
+
+/** Writes one warning line to the real process stderr -- host-visible,
+ * independent of the RunHookResult/scriptsRun contract (this function is
+ * called from `runtime.ts`'s Stop dispatch, which deliberately does not
+ * route consumption through scriptsRun/child-process stdio capture, so this
+ * is the only channel a corrupt-file warning has). Never throws. */
+function warnStderr(line: string): void {
+  try {
+    process.stderr.write(`${line}\n`);
+  } catch {
+    /* stderr unavailable is not this function's problem to solve */
+  }
 }
 
 /**
  * Processes every pending journal event's dirty bits (architecture cascade,
- * contract verification, deferred minimal-change signals) and marks each
- * event consumed atomically. Best-effort per event: one event's failure
- * leaves it pending for the next Stop rather than losing the others or
- * throwing out of Stop.
+ * contract verification, deferred minimal-change signals) and DELETES the
+ * event file on success (retention: transit queue, not an evidence ledger --
+ * see `deletePendingPostEditEventFile`'s doc comment). Best-effort per
+ * event: one event's failure leaves its file in `pending/` for the next
+ * Stop to retry rather than losing the others or throwing out of Stop.
+ * Corrupt pending files (unparseable JSON, wrong schema) are removed
+ * outright with a stderr warning -- they can never be "retried" into
+ * validity.
  */
 export function consumePendingPostEditEvents(
   repoRoot: string,
   env: NodeJS.ProcessEnv = process.env,
 ): PostEditConsumeSummary {
-  const events = readPendingPostEditEvents(repoRoot);
+  const { valid, corruptNames } = scanPendingPostEditEventFiles(repoRoot);
   let consumed = 0;
   let errors = 0;
-  for (const event of events) {
+  const warnings: string[] = [];
+
+  for (const name of corruptNames) {
+    const warning = `[PostEditJournal] WARN: removed corrupt pending event file ${name}`;
+    try {
+      deletePendingPostEditEventFile(repoRoot, name);
+      warnings.push(warning);
+      warnStderr(warning);
+    } catch {
+      errors += 1;
+    }
+  }
+
+  for (const { name, event } of valid) {
     try {
       if (event.dirty.architecture) {
         for (const filePath of event.changed_paths) {
@@ -780,11 +847,11 @@ export function consumePendingPostEditEvents(
           event.payload.minimal_change.base_ref,
         );
       }
-      markPostEditEventConsumed(repoRoot, event.event_id);
+      deletePendingPostEditEventFile(repoRoot, name);
       consumed += 1;
     } catch {
       errors += 1;
     }
   }
-  return { consumed, pending: events.length - consumed, errors };
+  return { consumed, pending: valid.length - consumed, errors, warnings };
 }

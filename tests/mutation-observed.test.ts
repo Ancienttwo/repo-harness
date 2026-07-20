@@ -11,6 +11,7 @@ import {
   type MutationObservedCollector,
   type PostEditJournalEvent,
 } from '../src/cli/hook/mutation-observed';
+import { GITIGNORE_MANAGED_BLOCK_CONTENT } from '../src/core/adoption/gitignore-plan';
 
 // HRD-05 journal-schema + dirty-bit-derivation + crash-replay fixtures for
 // the in-process mutation-observed handler that replaces
@@ -351,12 +352,19 @@ describe('mutation-observed: crash-replay', () => {
       expect(section!.content).toContain('1 pending post-edit journal event');
       expect(section!.content).toContain(eventId);
       expect(section!.mandatory).toBe(false);
-      expect(section!.actionable).toBe(false);
+      // Gate round-1 blocking fix: must be actionable, or budgetSessionContext
+      // drops this (and every other) section to empty stdout in a quiet repo
+      // with no other actionable state -- see mutation-observed.ts's comment
+      // on this field and the production-path proof further down this file.
+      expect(section!.actionable).toBe(true);
 
       const summary = consumePendingPostEditEvents(cwd, { PATH: '/nonexistent' });
-      expect(summary).toEqual({ consumed: 1, pending: 0, errors: 0 });
+      expect(summary).toEqual({ consumed: 1, pending: 0, errors: 0, warnings: [] });
       expect(pendingEvents(cwd)).toEqual([]);
-      expect(existsSync(join(cwd, '.ai/harness/journal/post-edit/consumed', `${eventId}.json`))).toBe(true);
+      // Retention (gate round-1 MEDIUM): transit queue, not an evidence
+      // ledger -- consumption deletes the file outright, no consumed/ dir.
+      expect(existsSync(join(cwd, '.ai/harness/journal/post-edit/pending', `${eventId}.json`))).toBe(false);
+      expect(existsSync(join(cwd, '.ai/harness/journal/post-edit/consumed'))).toBe(false);
 
       // A second SessionStart after Stop has consumed everything sees nothing pending.
       expect(pendingPostEditJournalSection(cwd)).toBeNull();
@@ -370,7 +378,50 @@ describe('mutation-observed: crash-replay', () => {
     try {
       initRepo(cwd);
       const summary = consumePendingPostEditEvents(cwd, process.env);
-      expect(summary).toEqual({ consumed: 0, pending: 0, errors: 0 });
+      expect(summary).toEqual({ consumed: 0, pending: 0, errors: 0, warnings: [] });
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test('a corrupt pending file is removed at consumption with a stderr warning, without disturbing valid events', () => {
+    const cwd = tmpWorkspace('mo-corrupt-pending');
+    try {
+      initRepo(cwd);
+      runMutationObserved({ collector: collectorFor(cwd), input: editPayload('src/valid.ts') });
+      const validEventId = pendingEvents(cwd)[0].event_id;
+
+      const pendingDir = join(cwd, '.ai/harness/journal/post-edit/pending');
+      writeFileSync(join(pendingDir, 'not-json-at-all.json'), 'this is not valid JSON\n');
+      writeFileSync(join(pendingDir, 'wrong-schema.json'), JSON.stringify({ schema: 'something-else' }));
+
+      const originalWrite = process.stderr.write.bind(process.stderr);
+      const captured: string[] = [];
+      // Test-local stderr spy, restored in the inner finally below.
+      process.stderr.write = (chunk: string) => {
+        captured.push(String(chunk));
+        return true;
+      };
+      let summary;
+      try {
+        summary = consumePendingPostEditEvents(cwd, { PATH: '/nonexistent' });
+      } finally {
+        process.stderr.write = originalWrite;
+      }
+
+      expect(summary.consumed).toBe(1);
+      expect(summary.pending).toBe(0);
+      expect(summary.errors).toBe(0);
+      expect(summary.warnings.length).toBe(2);
+      expect(summary.warnings.some((w) => w.includes('not-json-at-all.json'))).toBe(true);
+      expect(summary.warnings.some((w) => w.includes('wrong-schema.json'))).toBe(true);
+      expect(captured.join('')).toContain('not-json-at-all.json');
+      expect(captured.join('')).toContain('wrong-schema.json');
+
+      expect(existsSync(join(pendingDir, 'not-json-at-all.json'))).toBe(false);
+      expect(existsSync(join(pendingDir, 'wrong-schema.json'))).toBe(false);
+      expect(existsSync(join(pendingDir, `${validEventId}.json`))).toBe(false);
+      expect(pendingEvents(cwd)).toEqual([]);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -404,6 +455,32 @@ describe('mutation-observed: advisory stdout parity', () => {
 
       const wrangler = runMutationObserved({ collector, input: editPayload('apps/api/wrangler.staging.toml') });
       expect(wrangler.stdout).toContain('[DocDrift] Wrangler config changed: wrangler.staging.toml');
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('mutation-observed: gitignore coverage (gate round-1 second widening)', () => {
+  test('the journal directory is covered by the managed gitignore block, and a qualifying edit leaves git status clean', () => {
+    const cwd = tmpWorkspace('mo-gitignore');
+    try {
+      initRepo(cwd);
+      writeFileSync(join(cwd, '.gitignore'), `${GITIGNORE_MANAGED_BLOCK_CONTENT}\n`);
+      git(cwd, ['add', '.gitignore']);
+      git(cwd, ['commit', '-m', 'add managed gitignore block']);
+
+      runMutationObserved({ collector: collectorFor(cwd), input: editPayload('src/tracked.ts') });
+      const [event] = pendingEvents(cwd);
+      expect(event).toBeDefined();
+      const eventPath = `.ai/harness/journal/post-edit/pending/${event.event_id}.json`;
+
+      const checkIgnore = spawnSync('git', ['check-ignore', '-q', eventPath], { cwd, encoding: 'utf-8' });
+      expect(checkIgnore.status).toBe(0);
+
+      const status = spawnSync('git', ['status', '--porcelain'], { cwd, encoding: 'utf-8' });
+      expect(status.status).toBe(0);
+      expect(status.stdout.trim()).toBe('');
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
