@@ -124,8 +124,11 @@ HRD-01 golden regenerated once with a per-field before/after record.
     `.harness.failure_log_file` policy override in `mutation-guard.ts`
     exactly as the base-SHA bash did (verify the old behavior first; if
     bash also ignored the override, leave the hardcode and ledger it);
-    drop the never-fired `markdownHeader(planText, 'Sprint Contract')`
-    fallback; restore the `CLAUDE_FILE_PATH` env and symlink-normalization
+    ADJUDICATED KEEP (round-2 gate, orchestrator final): the
+    `markdownHeader(planText, 'Sprint Contract')` fallback stays — base
+    `derive_contract_path()` carries the identical Task->Sprint Contract
+    fallback and non-archived Approved plans exercise it; the round-1
+    drop advisory rested on a false dead-code premise; restore the `CLAUDE_FILE_PATH` env and symlink-normalization
     input fallbacks for observable parity; fix the stale
     `mutationGuardScriptsAbsent` reference in `tests/plan-status-gate.test.ts`
     and the todos wording. No other behavior change.
