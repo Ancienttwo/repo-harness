@@ -1,7 +1,7 @@
 # Deferred Goal Ledger
 
 > **Status**: Backlog
-> **Updated**: 2026-07-20 16:20
+> **Updated**: 2026-07-21 00:41
 > **Scope**: Medium/long-term goals deferred from active plan execution
 
 Current plan tasks live in the active plan's `## Task Breakdown`.
@@ -11,6 +11,7 @@ Do not duplicate that execution checklist here. Record only work intentionally d
 
 | Goal | Why Deferred | Tradeoff | Revisit Trigger |
 |------|--------------|----------|-----------------|
+| Make same-scope delegation state one cross-writer transaction across Stop and SubagentStart | HRD-06's adversarial review proved the inherited protocol can lose `spawned` or `fallback_used` when the TS Stop writer and surviving `subagent-start-context.sh` overlap on the same `turns/<scope>.json`: both read and replace the scoped object outside `latest.json.lock`. HRD-06 is an exact authority port and cannot fix only one writer; HRD-07 owns a different circuit-breaker lock and does not currently cover this state | Until a dedicated cross-writer package lands, the existing latest-pointer lock prevents stale scope rollback but cannot prevent a same-scope full-object lost update. The real host overlap schedule remains unverified; the filesystem schedule is concrete | First package that touches either delegation writer, or immediately after HRD-07 if the runtime-diet sequence needs this risk closed before telemetry/legacy retirement; require a real two-process same-scope fixture and an in-lock eligibility re-check |
 | ESA-06 guarded workflow-artifact writer and optimistic overwrite preconditions | The approved single-engineer Effective State convergence scope is ESA-01..05 plus ESA-07; ESA-06 is an independent mutation/compatibility boundary and was explicitly deferred intact | MCP workflow-artifact writes retain their current semantics; this slice claims no atomic-writer or stale-overwrite protection and adds no compatibility shim | Open the next mutation-kernel work-package with an explicit `0.11.0` decision if mandatory revision preconditions are approved |
 | Interactive `codex` `/agent` check confirming the six `.codex/agents/*.toml` load on cli 0.144.1 | No automatable introspection surface on this codex-cli version (C2 smoke inconclusive, not failing) | Fleet TOMLs are schema-valid but end-to-end recognition unproven | First interactive Codex session in this repo |
 | BDD² revival (new product thesis + new intervention) | The browser branch's revival condition is met: a new product thesis and new intervention are captured as the approved eval-only work-package `plans/plan-20260713-1336-bdd3-ea1-typed-browser-evidence-authority.md` (BDD3-EA1); see `docs/researches/20260713-bdd3-ea1-direction-adjudication.md`. The general ImageGen preference/trust thesis is terminated, not revived (net-negative EI3 closure plus an unevidenced user-value claim). I3 and Phase P remain gated behind BDD3-EA1's own outcome. | BDD3-EA1 is scoped eval-only with no productization; I3 and Phase P still require a separate owner decision on top of a Pass outcome, not an automatic unlock. The killed S3/EB3/EI3 treatments and the terminated ImageGen thesis stay closed regardless of EA1's result. | BDD3-EA1 reaches its Stage B gate report (EA1-05 in the plan's Task Breakdown); I3/Phase P revisit only on that new outcome, not on a rescoring of the killed treatments |

@@ -45,7 +45,7 @@ const FIXTURE_PATH = join(import.meta.dir, 'fixtures/loop-semantics/characteriza
 // runMutationGuardHandler below) rather than as a standalone bash script.
 const MUTATION_GUARD_SOURCE = join(ROOT, 'src/cli/hook/mutation-guard.ts');
 const RUNTIME_MODULE = join(ROOT, 'src/cli/hook/runtime.ts');
-const STOP = join(ROOT, '.ai/hooks/stop-orchestrator.sh');
+const STOP_HANDLER_SOURCE = join(ROOT, 'src/cli/hook/stop-handler.ts');
 const VERIFY_SPRINT = join(ROOT, 'scripts/verify-sprint.sh');
 const SHIP_WORKTREES = join(ROOT, 'scripts/ship-worktrees.sh');
 const CONTRACT_WORKTREE = join(ROOT, 'scripts/contract-worktree.sh');
@@ -282,6 +282,29 @@ function runMutationGuardHandler(
   return { status: result.status ?? -1, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
 }
 
+function runStopHandler(
+  cwd: string,
+  payload: unknown,
+  options: { readonly env?: NodeJS.ProcessEnv } = {},
+): ProcessResult {
+  const moduleUrl = pathToFileURL(RUNTIME_MODULE).href;
+  const script = [
+    'const stdinText = await Bun.stdin.text();',
+    `const { runHook } = await import(${JSON.stringify(moduleUrl)});`,
+    "const result = runHook({ event: 'Stop', routeId: 'default', input: stdinText.length > 0 ? stdinText : undefined });",
+    'process.exit(result.exitCode);',
+  ].join('\n');
+  const result = spawnSync(process.execPath, ['-e', script], {
+    cwd,
+    input: JSON.stringify(payload),
+    encoding: 'utf-8',
+    env: isolatedEnv(cwd, options.env),
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  if (result.error) throw result.error;
+  return { status: result.status ?? -1, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
+}
+
 function prepare(profile: Profile): ReturnType<typeof createEffectiveStateFixture> {
   const fixture = createEffectiveStateFixture();
   writeFileSync(join(fixture.cwd, '.git/info/exclude'), '.home/\n', { flag: 'a' });
@@ -419,19 +442,8 @@ function editProfileSource(): string {
 }
 
 function stopProfileSource(): string {
-  const source = readFileSync(STOP, 'utf-8');
-  // LSC-07: the raw cache read and the install-state fallback are both
-  // removed; these two checks now assert their absence rather than their
-  // presence. A canonical CLI invocation (the same route pre-edit-guard.sh
-  // uses) is the only remaining profile source.
-  const readsEffectiveState = source.includes('local effective_state=".ai/harness/state/effective.json"');
-  const readsInstallFallback = source.includes('local install_state="${HOME:-}/.repo-harness/install-state.json"');
-  if (readsEffectiveState && readsInstallFallback) {
-    return 'effective_state_cache_with_install_profile_fallback';
-  }
-  if (readsEffectiveState) return 'effective_state_cache';
-  if (readsInstallFallback) return 'install_profile';
-  if (source.includes('state resolve --json --operation inspect')) {
+  const source = readFileSync(STOP_HANDLER_SOURCE, 'utf-8');
+  if (source.includes('opts.collector.getStopEffectiveState()')) {
     return 'live_effective_state';
   }
   return 'none';
@@ -647,6 +659,7 @@ function captureEdit(profile: Profile): Record<string, unknown> {
 function captureStop(profile: Profile): Record<string, unknown> {
   const fixture = prepare(profile);
   try {
+    writeFixture(fixture.cwd, '.ai/harness/workflow-contract.json', '{}\n');
     if (profile === 'lite') {
       remove(fixture.cwd, '.ai/harness/active-plan');
       remove(fixture.cwd, '.claude/.active-plan');
@@ -657,9 +670,11 @@ function captureStop(profile: Profile): Record<string, unknown> {
       `${JSON.stringify({ workflow_profile: profile, state_version: 1 })}\n`,
     );
     const before = repositorySnapshot(fixture.cwd);
-    const result = run('bash', [STOP], fixture.cwd, {
-      input: JSON.stringify({ hook_event_name: 'Stop', stop_hook_active: false }),
-      env: { HOOK_RUN_ID: `loop-semantics-${profile}-stop` },
+    const result = runStopHandler(fixture.cwd, { hook_event_name: 'Stop', stop_hook_active: false }, {
+      env: {
+        HOOK_RUN_ID: `loop-semantics-${profile}-stop`,
+        REPO_HARNESS_WORKFLOW_PROFILE: profile,
+      },
     });
     const after = repositorySnapshot(fixture.cwd);
     const decision = stopDecision(result.stdout);
@@ -667,7 +682,7 @@ function captureStop(profile: Profile): Record<string, unknown> {
     const state = readEffectiveState(fixture.cwd);
     const semanticSurface = Object.assign({}, state, readinessSurface(state), decision ?? {});
     return {
-      entrypoint: '.ai/hooks/stop-orchestrator.sh',
+      entrypoint: 'src/cli/hook/stop-handler.ts',
       profile_source: stopProfileSource(),
       exit_code: result.status,
       verdict: decision?.decision === 'block' ? 'block' : 'allow',
@@ -676,13 +691,13 @@ function captureStop(profile: Profile): Record<string, unknown> {
       review_freshness_warning: result.stderr.includes('[ReviewFreshness]'),
       decision_json_uses_exit_zero: decision?.decision === 'block' ? result.status === 0 : null,
       minimal_change_review_appended: handoff.includes('## Minimal Change Review'),
-      ordering: observedSourceOrder(STOP, [
-        { name: 'refresh_handoff', marker: '\nrefresh_handoff\n' },
-        { name: 'lite_early_exit', marker: 'if [[ "$(stop_workflow_profile || true)" == "lite" ]]' },
-        { name: 'minimal_change_review', marker: '\nminimal_change_refresh_review\n' },
-        { name: 'review_freshness_warning', marker: 'review_file="$(workflow_active_review || true)"' },
-        { name: 'plan_completeness_gate', marker: 'if should_run_plan_completeness_gate' },
-        { name: 'delegation_fallback', marker: 'if delegation_should_block' },
+      ordering: observedSourceOrder(STOP_HANDLER_SOURCE, [
+        { name: 'refresh_handoff', marker: 'new StopProjectionBatch(' },
+        { name: 'lite_early_exit', marker: "if (state?.workflow_profile === 'lite')" },
+        { name: 'minimal_change_review', marker: 'const minimal = minimalChangeReview(repoRoot);' },
+        { name: 'review_freshness_warning', marker: "if (state?.review.path && ['stale'" },
+        { name: 'plan_completeness_gate', marker: 'const planGate = planCompletenessBlock(' },
+        { name: 'delegation_fallback', marker: 'if (delegationShouldBlock(paths, now) && paths)' },
       ]),
       side_effects: writtenPaths(before, after),
       missing_semantic_fields: missingSemanticFields(

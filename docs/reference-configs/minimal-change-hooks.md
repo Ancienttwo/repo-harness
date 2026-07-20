@@ -18,9 +18,10 @@ fail-open.
   `minimal-change-observer.sh`. The observer is silent unless policy explicitly
   sets `post_edit_observer: true`; when enabled it writes a deterministic report
   to `.ai/harness/checks/minimal-change.latest.json`.
-- `Stop.default` still routes through `stop-orchestrator.sh`. Stop review reads
-  the latest report and records summary evidence in the handoff. It does not
-  block the session by itself.
+- `Stop.default` runs the in-process `src/cli/hook/stop-handler.ts`. Stop
+  review reads the canonical latest report for diagnostics and block-reason
+  suffixes without rewriting the recovery handoff. It does not block the
+  session by itself.
 
 ## Policy
 

@@ -79,12 +79,13 @@ state as spawned, and injects role/evidence/final-response requirements.
 `SubagentStop.quality` runs `subagent-stop-quality.sh` and forwards valid
 decision JSON only when the final report is clearly incomplete, with one retry
 keyed by session/run identity, subagent identity, and message hash.
-`Stop.default` runs `stop-orchestrator.sh` and refreshes handoff state. Lite
-terminates after that compact recovery write; Standard/Strict may additionally
-run review freshness, plan completeness, and delegation fallback. Codex
+`Stop.default` runs the in-process `src/cli/hook/stop-handler.ts`, flushes the
+pending PostEdit journal, and commits one recovery projection before resolving
+shared readiness once. Lite terminates after its readiness gate;
+Standard/Strict may additionally run review freshness, plan completeness, and delegation fallback. Codex
 suppresses Stop decision JSON because current Codex Desktop rejects that
 turn-finalization stdout as an unsupported content type; Claude can still
-consume the direct `stop-orchestrator.sh` decision JSON path. These Codex
+consume the direct in-process decision JSON path. These Codex
 delegation routes are host-scoped in `route-registry.ts` and are not installed
 into Claude adapters.
 
@@ -200,7 +201,7 @@ flowchart TD
     SubagentStop --> SubagentQuality["subagent-stop-quality.sh<br/>one-shot quality continuation"]
 
     Route --> Stop["Stop.default"]
-    Stop --> StopOrchestrator["stop-orchestrator.sh"]
+    Stop --> StopHandler["stop-handler.ts<br/>in-process recovery + gates"]
   end
 
   subgraph Shared["Shared Hook Libraries"]

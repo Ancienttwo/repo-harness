@@ -16,8 +16,8 @@
  * This module performs no fs/process/env/network access and imports only
  * types from `./profile` and `./artifact-requirement-policy`. It consumes
  * `resolve()` decisions verbatim -- it does not re-derive or duplicate the
- * `ARTIFACT_REQUIREMENT_MATRIX`. No consumer imports this module yet:
- * LSC-07 (Stop) and LSC-08 (adapter parity) cut consumers over separately.
+ * `ARTIFACT_REQUIREMENT_MATRIX`. The Effective State projector is the shared
+ * consumer; hook adapters read its projected `readiness` result verbatim.
  *
  * Design note -- why `operation` is part of the input even though
  * `allowedToEdit`/`allowedToStop`/`readyToShip` are always all three

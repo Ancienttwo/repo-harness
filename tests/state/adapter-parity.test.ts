@@ -277,6 +277,7 @@ describe('Effective State adapter authority parity and policy boundaries', () =>
         '> **Task ID**: adapter-parity-probe',
         '',
       ].join('\n'));
+      writeFixture(fixture.cwd, '.ai/harness/workflow-contract.json', '{}\n');
       const nowMs = Date.now();
       const risk: EffectiveStateRiskInput = { explicitOverride: 'strict' };
 
@@ -308,16 +309,13 @@ describe('Effective State adapter authority parity and policy boundaries', () =>
       expect(mcp.readiness).toEqual(authority.readiness);
       expect(mcp.guidance).toBe(authority.guidance);
 
-      // The Stop hook's own readiness consumption -- read-only, pinned to
-      // the repo-source CLI so a stale global `repo-harness` binary cannot
-      // skew it (the same hazard the hook.test.ts REPO_HARNESS_CLI fixtures
-      // guard against). Does not modify stop-orchestrator.sh's decision
-      // logic; only observes its emitted decision/reason.
-      const hook = spawnSync('bash', [join(ROOT, '.ai/hooks/stop-orchestrator.sh')], {
+      // The Stop hook's own readiness consumption through the production
+      // in-process route; only observes its emitted decision/reason.
+      const hook = spawnSync(process.execPath, [CLI, 'hook', 'Stop', '--route', 'default'], {
         cwd: fixture.cwd,
         input: JSON.stringify({ stop_hook_active: false, last_assistant_message: '' }),
         encoding: 'utf-8',
-        env: { ...process.env, REPO_HARNESS_CLI: CLI, REPO_HARNESS_WORKFLOW_PROFILE: 'strict' },
+        env: { ...process.env, HOOK_HOST: 'claude', REPO_HARNESS_WORKFLOW_PROFILE: 'strict' },
       });
       expect(hook.status).toBe(0);
       expect(hook.stdout).not.toContain('"decision":"block"');

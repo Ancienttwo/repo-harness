@@ -76,7 +76,7 @@ describe('route registry (Phase 1B Z design)', () => {
     expect(getRoute('UserPromptSubmit', 'delegation')?.scripts).toEqual(['codex-delegation-advisor.sh']);
     expect(getRoute('SubagentStart', 'context')?.scripts).toEqual(['subagent-start-context.sh']);
     expect(getRoute('SubagentStop', 'quality')?.scripts).toEqual(['subagent-stop-quality.sh']);
-    expect(getRoute('Stop', 'default')?.scripts).toEqual(['stop-orchestrator.sh']);
+    expect(getRoute('Stop', 'default')?.scripts).toEqual([]);
   });
 
   test('getRoute returns undefined for unknown (event, route) tuples', () => {
@@ -116,7 +116,6 @@ describe('route registry (Phase 1B Z design)', () => {
       'codex-delegation-advisor.sh',
       'subagent-start-context.sh',
       'subagent-stop-quality.sh',
-      'stop-orchestrator.sh',
     ]);
     for (const r of ROUTES) {
       for (const s of r.scripts) expect(KNOWN.has(s)).toBe(true);

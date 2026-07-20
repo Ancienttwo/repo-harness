@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-20T22:55:32+0800 -->
+<!-- updated_at: 2026-07-21T01:12:16+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: Idle
-> **Updated At**: 2026-07-20T22:55:32+0800
-> **Source Branch**: main
-> **Source Commit**: 9c93c5de
+> **Status**: Active
+> **Updated At**: 2026-07-21T01:12:16+0800
+> **Source Branch**: codex/hrd-06-stop-handler-slim
+> **Source Commit**: e0e57acd
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: manual
@@ -17,9 +17,9 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Current Focus
 
-- Status: Idle
-- Active Plan: (none)
-- Plan Status: (none)
+- Status: Active
+- Active Plan: plans/plan-20260720-2256-hrd-06-stop-handler-slim.md
+- Plan Status: Review
 - Next Task: (none)
 - Clear Note: (none)
 
@@ -31,7 +31,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- (none)
+- .: plans/plan-20260720-2256-hrd-06-stop-handler-slim.md
+- .: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-hrd-06-stop-handler-slim
 ## Active Sprint
 
 - Sprint: (none)
@@ -54,10 +55,45 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 1 changed/untracked path(s)
+- Summary: 36 changed/untracked path(s)
 
 ```
-?? HANDOFF.md
+ M .ai/hooks/.projection.json
+ D .ai/hooks/stop-orchestrator.sh
+ M README.es.md
+ M README.fr.md
+ M README.ja.md
+ M README.md
+ M README.zh-CN.md
+ D assets/hooks/stop-orchestrator.sh
+ M assets/reference-configs/hook-operations.md
+ M assets/reference-configs/minimal-change-hooks.md
+ M docs/architecture/index.md
+ M docs/architecture/modules/runtime-harness/hook-adapters.md
+ M docs/reference-configs/hook-operations.md
+ M docs/reference-configs/minimal-change-hooks.md
+ M src/cli/hook/route-registry.ts
+ M src/cli/hook/runtime.ts
+ M src/core/workflow/operation-readiness.ts
+ M src/effects/loop/state-input-collector.ts
+ M tasks/current.md
+ M tasks/todos.md
+ M tests/cli/hook.test.ts
+ M tests/cli/route-registry.test.ts
+ M tests/fixtures/loop-runtime/characterization.json
+ M tests/hook-contracts.test.ts
+ M tests/hook-runtime.test.ts
+ M tests/readme-dx.test.ts
+ M tests/state-input-collector.test.ts
+ M tests/state/adapter-parity.test.ts
+ M tests/state/fixtures/loop-semantics/characterization.json
+ M tests/state/loop-semantics-characterization.test.ts
+?? plans/plan-20260720-2256-hrd-06-stop-handler-slim.md
+?? src/cli/hook/stop-handler.ts
+?? tasks/contracts/20260720-2256-hrd-06-stop-handler-slim.contract.md
+?? tasks/notes/20260720-2256-hrd-06-stop-handler-slim.notes.md
+?? tasks/reviews/20260720-2256-hrd-06-stop-handler-slim.review.md
+?? tests/stop-handler.test.ts
 ```
 
 ## Source Artifacts

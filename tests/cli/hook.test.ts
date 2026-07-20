@@ -13,6 +13,9 @@ import { createStateInputCollector } from '../../src/effects/loop/state-input-co
 const ROOT = path.join(import.meta.dir, '../..');
 const CLI = path.join(ROOT, 'src/cli/index.ts');
 const HOOK_ENTRY = path.join(ROOT, 'src/cli/hook-entry.ts');
+const HOOK_RUNTIME = path.join(ROOT, 'src/cli/hook/runtime.ts');
+const STOP_HANDLER = path.join(ROOT, 'src/cli/hook/stop-handler.ts');
+const EFFECTIVE_STATE = path.join(ROOT, 'src/effects/state/resolve-effective-state.ts');
 
 // This file exercises hook routes through the full CLI, and several tests fork
 // multiple hook subprocesses. Under full-suite concurrency the default 5s Bun
@@ -99,17 +102,14 @@ function spawnAdvisorProcess(repoRoot: string, input: Record<string, unknown>): 
   });
 }
 
-// Fires the real Stop hook (default route, i.e. stop-orchestrator.sh) as a
+// Fires the real Stop hook (default route, i.e. the in-process stop-handler) as a
 // non-blocking child process, mirroring spawnHookProcess above, so it can be
 // raced against an externally-held latest.json.lock instead of being fully
 // sequenced before or after it.
 function spawnStopHookProcess(repoRoot: string, input: Record<string, unknown>): Promise<{ code: number | null; stdout: string }> {
   return new Promise((resolve, reject) => {
-    // REPO_HARNESS_CLI pins stop-orchestrator.sh's canonical `state resolve`
-    // route to this repo's own source CLI (mirroring runHook's pattern
-    // above) -- without it, a stale globally installed `repo-harness`
-    // binary on the operator's PATH can skew the LSC-06/07 readiness read
-    // this helper's three Delegation Fallback callers depend on.
+    // REPO_HARNESS_WORKFLOW_PROFILE raises these bare fixtures explicitly;
+    // the handler resolves canonical state in-process through runHook.
     // REPO_HARNESS_WORKFLOW_PROFILE raises these bare fixtures (no plan or
     // contract) off the resolved 'lite' floor so Stop's LSC-07
     // lite-profile early exit does not short-circuit before ever reaching
@@ -128,6 +128,49 @@ function spawnStopHookProcess(repoRoot: string, input: Record<string, unknown>):
     child.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
     child.on('error', reject);
     child.on('close', (code) => resolve({ code, stdout }));
+    child.stdin.end(JSON.stringify(input));
+  });
+}
+
+// HRD-06 race seam: run the real in-process handler in a separate process,
+// pausing at its injected pre-lock observation point. The competing writer
+// remains the real advisor subprocess; no production source is spliced.
+function spawnStopHandlerProcessWithBarrier(
+  repoRoot: string,
+  input: Record<string, unknown>,
+  reachedPath: string,
+  barrierPath: string,
+): Promise<{ code: number | null }> {
+  return new Promise((resolveProcess, reject) => {
+    const script = [
+      `const fs = await import('fs');`,
+      `const { runStopHandler } = await import(${JSON.stringify(STOP_HANDLER)});`,
+      `const { resolveEffectiveState } = await import(${JSON.stringify(EFFECTIVE_STATE)});`,
+      `const repoRoot = ${JSON.stringify(repoRoot)};`,
+      'const input = await Bun.stdin.text();',
+      `const reachedPath = ${JSON.stringify(reachedPath)};`,
+      `const barrierPath = ${JSON.stringify(barrierPath)};`,
+      'const collector = {',
+      '  getRepoRoot: () => repoRoot,',
+      '  getWorktreeOwnership: () => ({ owner: null, ownedByCurrent: false }),',
+      "  getActivePlanMarker: () => { try { return fs.readFileSync(`${repoRoot}/.ai/harness/active-plan`, 'utf8').trim() || null; } catch { return null; } },",
+      "  getStopEffectiveState: () => resolveEffectiveState(repoRoot, Date.now(), { operationKind: 'inspect', explicitOverride: 'standard' }),",
+      '};',
+      'const result = runStopHandler({',
+      '  collector,',
+      '  input,',
+      "  env: { ...process.env, HOOK_RUN_ID: 'stop-race-barrier' },",
+      '  dependencies: { beforeDelegationLock: () => {',
+      "    fs.writeFileSync(reachedPath, '');",
+      '    const deadline = Date.now() + 5000;',
+      '    while (!fs.existsSync(barrierPath) && Date.now() < deadline) Bun.sleepSync(10);',
+      '  } },',
+      '});',
+      'process.exit(result.exitCode);',
+    ].join('\n');
+    const child = spawn(process.execPath, ['-e', script], { cwd: repoRoot });
+    child.on('error', reject);
+    child.on('close', (code) => resolveProcess({ code }));
     child.stdin.end(JSON.stringify(input));
   });
 }
@@ -845,7 +888,7 @@ describe('hook command (Phase 1B)', () => {
     });
   });
 
-  test('Codex Stop with missing advisory script exits 0 without stdout', () => {
+  test('Codex Stop dispatches in-process with no script dependency or stdout', () => {
     withTempRepo({ optIn: true }, (repoRoot) => {
       const res = spawnSync(
         process.execPath,
@@ -858,8 +901,63 @@ describe('hook command (Phase 1B)', () => {
       );
       expect(res.status).toBe(0);
       expect(res.stdout).toBe('');
-      expect(res.stderr).toContain('skipping missing script');
-      expect(res.stderr).toContain('stop-orchestrator.sh');
+      expect(res.stderr).toBe('');
+      expect(fs.existsSync(path.join(repoRoot, '.ai/harness/handoff/current.md'))).toBe(true);
+    });
+  });
+
+  test('Stop projection faults return a controlled script-failed result without an uncaught stack', () => {
+    withTempRepo({ optIn: true }, (repoRoot) => {
+      fs.writeFileSync(path.join(repoRoot, '.ai/harness/broken'), 'not a directory\n');
+      fs.writeFileSync(
+        path.join(repoRoot, '.ai/harness/policy.json'),
+        `${JSON.stringify({ hook_source: 'repo', harness: { handoff_file: '.ai/harness/broken/current.md' } }, null, 2)}\n`,
+      );
+      const result = runHook({
+        event: 'Stop',
+        routeId: 'default',
+        cwd: repoRoot,
+        input: '{}',
+        stdio: 'ignore',
+      });
+      expect(result.exitCode).toBe(1);
+      expect(result.reason).toBe('script-failed');
+      expect(result.failedScript).toBe('stop-handler');
+      expect(result.scriptsRun).toEqual(['stop-handler']);
+    });
+  });
+
+  test('in-process Stop preserves explicit inherit and ignore stdio contracts', () => {
+    withTempRepo({ optIn: true }, (repoRoot) => {
+      const inheritScript = [
+        `const { runHook } = await import(${JSON.stringify(HOOK_RUNTIME)});`,
+        `const result = runHook({ event: 'Stop', routeId: 'default', cwd: ${JSON.stringify(repoRoot)}, input: '{}', stdio: 'inherit' });`,
+        'process.exit(result.exitCode);',
+      ].join('\n');
+      const inherited = spawnSync(process.execPath, ['-e', inheritScript], {
+        cwd: repoRoot,
+        encoding: 'utf8',
+        env: { ...process.env, HOOK_HOST: 'claude' },
+      });
+      expect(inherited.status).toBe(0);
+      expect(inherited.stderr).toContain('[FinalizeHandoff]');
+
+      fs.rmSync(path.join(repoRoot, '.ai/harness/handoff'), { recursive: true, force: true });
+      const ignoreScript = [
+        `const { runHook } = await import(${JSON.stringify(HOOK_RUNTIME)});`,
+        `const result = runHook({ event: 'Stop', routeId: 'default', cwd: ${JSON.stringify(repoRoot)}, stdio: 'ignore' });`,
+        'process.exit(result.exitCode);',
+      ].join('\n');
+      const ignored = spawnSync(process.execPath, ['-e', ignoreScript], {
+        cwd: repoRoot,
+        input: '{"stop_hook_active":true}',
+        encoding: 'utf8',
+        env: { ...process.env, HOOK_HOST: 'claude' },
+      });
+      expect(ignored.status).toBe(0);
+      expect(ignored.stdout).toBe('');
+      expect(ignored.stderr).toBe('');
+      expect(fs.existsSync(path.join(repoRoot, '.ai/harness/handoff/current.md'))).toBe(true);
     });
   });
 
@@ -2491,13 +2589,13 @@ describe('hook command (Phase 1B)', () => {
   test('Stop delegation fallback write for a third writer respects the same latest.json lock as the other two writers', async () => {
     // Mirrors "a caller correctly skips the shared write and does not hang
     // when the lock is held past the bounded timeout" above, but drives it
-    // through stop-orchestrator.sh's delegation_mark_fallback_used(), the
+    // through stop-handler's delegation fallback writer, the
     // third writer of the shared latest.json pointer. The external-holder
     // harness is built from subagent-start-context.sh rather than
-    // stop-orchestrator.sh itself, so this test still exercises a real
-    // external lock holder even if stop-orchestrator.sh's own lock guard is
+    // stop-handler itself, so this test still exercises a real
+    // external lock holder even if the handler's own lock guard is
     // reverted for a fail-then-pass check -- only the SUT (whether
-    // stop-orchestrator.sh honors that externally-held lock) should vary.
+    // stop-handler honors that externally-held lock) should vary.
     await withTempRepoAsync({ optIn: true }, async (repoRoot) => {
       installAssetHooks(repoRoot);
 
@@ -2579,7 +2677,7 @@ describe('hook command (Phase 1B)', () => {
     // Seventh-round finding: resolveStatePath / delegation_state_paths_json
     // return statePath === latestPath when latest.json has no scope_id yet
     // (the "unscoped" case). Both subagent-start-context.sh and
-    // stop-orchestrator.sh used to write that single collapsed path
+    // the Stop writer used to write that single collapsed path
     // unconditionally, with no lock at all, because their lock-guarded
     // branch was gated on `paths.latestPath !== paths.statePath` -- a guard
     // that is false in exactly this case, so the guarded block never ran.
@@ -2680,33 +2778,15 @@ describe('hook command (Phase 1B)', () => {
     // latest.json's scope_id still matched the scope this invocation
     // resolved. Mirrors "Codex SubagentStart does not clobber a newer
     // delegation scope with a stale write (TOCTOU)" above, but exercises
-    // stop-orchestrator.sh's writer instead: pause Stop right after it
+    // stop-handler's writer instead: pause Stop right after it
     // finalizes its in-memory state and before it acquires the lock, let a
     // real concurrent advisor call commit a newer scope, then release Stop
     // and confirm it skips its now-stale write instead of rolling
     // latest.json back.
     await withTempRepoAsync({ optIn: true }, async (repoRoot) => {
       installAssetHooks(repoRoot);
-      const scriptPath = path.join(repoRoot, '.ai/hooks/stop-orchestrator.sh');
-      const original = fs.readFileSync(scriptPath, 'utf-8');
-      const anchor = 'state.updated_at = state.fallback_used_at;';
-      if (original.split(anchor).length - 1 !== 1) {
-        throw new Error('race-test splice anchor is not unique in stop-orchestrator.sh');
-      }
       const barrierPath = path.join(repoRoot, '.race-stop-barrier');
       const reachedPath = path.join(repoRoot, '.race-stop-reached');
-      const rendezvous = [
-        anchor,
-        '    {',
-        `      const raceReachedPath = ${JSON.stringify(reachedPath)};`,
-        `      const raceBarrierPath = ${JSON.stringify(barrierPath)};`,
-        '      fs.writeFileSync(raceReachedPath, "");',
-        '      const raceDeadline = Date.now() + 5000;',
-        '      while (!fs.existsSync(raceBarrierPath) && Date.now() < raceDeadline) { Bun.sleepSync(10); }',
-        '    }',
-      ].join('\n');
-      fs.writeFileSync(scriptPath, original.replace(anchor, rendezvous));
-      fs.chmodSync(scriptPath, 0o755);
 
       // Turn A: an explicit, unspawned delegation is established normally.
       spawnSync(process.execPath, [CLI, 'hook', 'UserPromptSubmit', '--route', 'delegation'], {
@@ -2725,12 +2805,12 @@ describe('hook command (Phase 1B)', () => {
 
       // Stop resolves paths/state for turn A and pauses right before it
       // would acquire the shared lock.
-      const stopPromise = spawnStopHookProcess(repoRoot, {
+      const stopPromise = spawnStopHandlerProcessWithBarrier(repoRoot, {
         hook_event_name: 'Stop',
         session_id: 'session-stopb',
         turn_id: 'stopb-a',
         stop_hook_active: false,
-      });
+      }, reachedPath, barrierPath);
 
       const reachedDeadline = Date.now() + 5000;
       while (!fs.existsSync(reachedPath) && Date.now() < reachedDeadline) {
@@ -2777,7 +2857,7 @@ describe('hook command (Phase 1B)', () => {
   });
 
   test('Codex Stop matches the advisor delegation scope for a whitespace-padded transcript_path identifier (firstString trim parity)', () => {
-    // Seventh-round finding: stop-orchestrator.sh's own firstString()
+    // Seventh-round finding: the Stop writer's own firstString()
     // returned the raw, untrimmed value, while the advisor's and
     // SubagentStart's versions trim. turn_id/run_id/session_id all funnel
     // through sanitize(), whose regex happens to neutralize plain

@@ -104,6 +104,20 @@ describe('createStateInputCollector: laziness', () => {
 });
 
 describe('createStateInputCollector: memoization', () => {
+  test('getStopEffectiveState resolves at most once across downstream reads', () => {
+    let calls = 0;
+    const collector = createStateInputCollector({
+      event: 'Stop',
+      repoRoot: '/tmp/repo-harness-stop-collector',
+      resolveSessionEffectiveState: () => null,
+      resolveStopEffectiveState: () => ({ revision: ++calls }),
+    });
+
+    expect(collector.getStopEffectiveState()).toEqual({ revision: 1 });
+    expect(collector.getStopEffectiveState()).toEqual({ revision: 1 });
+    expect(calls).toBe(1);
+  });
+
   test('getSessionEffectiveState collects at most once across N calls', () => {
     let calls = 0;
     const collector = createStateInputCollector({

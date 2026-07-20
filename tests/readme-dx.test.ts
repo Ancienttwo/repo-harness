@@ -87,7 +87,7 @@ describe("README DX contract", () => {
     // mutation-observed journal handler).
     expect(hookAuthority).toContain("session-context.ts");
     expect(hookAuthority).toContain("mutation-observed.ts");
-    expect(hookAuthority).toContain("stop-orchestrator.sh");
+    expect(hookAuthority).toContain("stop-handler.ts");
     expect(readme).not.toContain("finalize-handoff.sh");
     expect(readme).not.toContain("session-start-context.sh");
     expect(readme).not.toContain("post-edit-guard.sh");

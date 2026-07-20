@@ -140,6 +140,32 @@ function runMutationObservedHook(cwd: string, payload: unknown, env: Record<stri
   });
 }
 
+// HRD-06: Stop.default is now the in-process stop-handler. Dispatch through
+// production runHook so these fixtures exercise the real collector wiring,
+// host stdout policy, recovery projection, and gate ordering.
+function runStopHook(cwd: string, payload: unknown, env: Record<string, string> = {}) {
+  ensureOptIn(cwd);
+  const moduleUrl = pathToFileURL(RUNTIME_MODULE).href;
+  const script = [
+    "const stdinText = await Bun.stdin.text();",
+    `const { runHook } = await import(${JSON.stringify(moduleUrl)});`,
+    "const result = runHook({ event: 'Stop', routeId: 'default', input: stdinText.length > 0 ? stdinText : undefined });",
+    "process.exit(result.exitCode);",
+  ].join("\n");
+  return spawnSync(process.execPath, ["-e", script], {
+    cwd,
+    input: JSON.stringify(payload),
+    encoding: "utf-8",
+    maxBuffer: HOOK_RUNTIME_SPAWN_BUFFER_BYTES,
+    env: {
+      ...process.env,
+      HOOK_REPO_ROOT: cwd,
+      REPO_HARNESS_HOOK_SOURCE: "repo",
+      ...env,
+    },
+  });
+}
+
 function readPendingPostEditJournalEvents(cwd: string): unknown[] {
   const dir = join(cwd, ".ai/harness/journal/post-edit/pending");
   if (!existsSync(dir)) return [];
@@ -1772,16 +1798,11 @@ describe("Hook runtime behavior", () => {
       const lastAssistantMessage =
         "## Approved design summary\n" +
         "Building a Codex Stop block contract with P1 map, P2 trace, P3 decision rationale, tests, rollback, and risk handling. ".repeat(4);
-      const res = spawnSync("bash", [join(cwd, ".ai/hooks/run-hook.sh"), "stop-orchestrator.sh"], {
-        cwd,
-        input: JSON.stringify({
+      const res = runStopHook(cwd, {
           hook_event_name: "Stop",
           stop_hook_active: false,
           last_assistant_message: lastAssistantMessage,
-        }),
-        encoding: "utf-8",
-        env: { ...process.env, HOOK_HOST: "codex", HOOK_REPO_ROOT: cwd },
-      });
+        }, { HOOK_HOST: "codex" });
 
       expect(res.status).toBe(0);
       expect(res.stdout).toBe("");
@@ -2008,7 +2029,7 @@ describe("Hook runtime behavior", () => {
     }
   });
 
-  test("stop-orchestrator: records minimal-change review evidence in handoff", () => {
+  test("stop-handler: keeps minimal-change evidence canonical without rewriting handoff", () => {
     const cwd = tmpWorkspace("minimal-change-stop");
     try {
       initGitRepo(cwd);
@@ -2062,18 +2083,15 @@ describe("Hook runtime behavior", () => {
         )
       );
 
-      const res = runHook("stop-orchestrator.sh", cwd, {
-        stdin: JSON.stringify({ hook_event_name: "Stop", stop_hook_active: false }),
-      });
+      const res = runStopHook(cwd, { hook_event_name: "Stop", stop_hook_active: false });
       expect(res.status).toBe(0);
       expect(res.stdout).toBe("");
 
       const handoff = readFileSync(join(cwd, ".ai/harness/handoff/current.md"), "utf-8");
-      expect(handoff).toContain("<!-- repo-harness:minimal-change-review begin -->");
-      expect(handoff).toContain("## Minimal Change Review");
-      expect(handoff).toContain("Verdict: `review`");
-      expect(handoff).toContain("package.json");
-      expect(handoff).toContain("Can an existing dependency cover this?");
+      expect(handoff).not.toContain("Minimal Change Review");
+      expect(res.stderr).toContain("[MinimalChange] Non-blocking review");
+      expect(readFileSync(join(cwd, ".ai/harness/checks/minimal-change.latest.json"), "utf-8"))
+        .toContain("Can an existing dependency cover this?");
 
       // workflow_write_handoff must refresh the resume packet alongside
       // current.md on every Stop, or check-task-workflow --strict's
@@ -2089,18 +2107,16 @@ describe("Hook runtime behavior", () => {
         statSync(join(cwd, ".ai/harness/handoff/current.md")).mtimeMs
       );
 
-      const second = runHook("stop-orchestrator.sh", cwd, {
-        stdin: JSON.stringify({ hook_event_name: "Stop", stop_hook_active: false }),
-      });
+      const second = runStopHook(cwd, { hook_event_name: "Stop", stop_hook_active: false });
       expect(second.status).toBe(0);
       const updated = readFileSync(join(cwd, ".ai/harness/handoff/current.md"), "utf-8");
-      expect(updated.match(/## Minimal Change Review/g)?.length).toBe(1);
+      expect(updated).not.toContain("Minimal Change Review");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
   });
 
-  test("stop-orchestrator: Lite refreshes compact handoff without review orchestration", () => {
+  test("stop-handler: Lite refreshes compact handoff without review orchestration", () => {
     const cwd = tmpWorkspace("lite-stop");
     try {
       initGitRepo(cwd);
@@ -2119,8 +2135,8 @@ describe("Hook runtime behavior", () => {
         report_path: ".ai/harness/checks/minimal-change.latest.json",
       }));
 
-      const res = runHook("stop-orchestrator.sh", cwd, {
-        stdin: JSON.stringify({ hook_event_name: "Stop", stop_hook_active: false }),
+      const res = runStopHook(cwd, { hook_event_name: "Stop", stop_hook_active: false }, {
+        REPO_HARNESS_WORKFLOW_PROFILE: "lite",
       });
       expect(res.status).toBe(0);
       expect(res.stdout).toBe("");
@@ -2133,7 +2149,7 @@ describe("Hook runtime behavior", () => {
     }
   });
 
-  test("stop-orchestrator: an installed profile is never inferred when the state cache is absent", () => {
+  test("stop-handler: an installed profile is never inferred when the state cache is absent", () => {
     const cwd = tmpWorkspace("stop-no-install-fallback");
     const home = mkdtempSync(join(tmpdir(), "stop-no-install-fallback-home-"));
     try {
@@ -2143,10 +2159,7 @@ describe("Hook runtime behavior", () => {
       writeFileSync(join(home, ".repo-harness/install-state.json"), JSON.stringify({ profile: "strict" }));
       expect(existsSync(join(cwd, ".ai/harness/state/effective.json"))).toBe(false);
 
-      const res = runHook("stop-orchestrator.sh", cwd, {
-        stdin: JSON.stringify({ hook_event_name: "Stop", stop_hook_active: false }),
-        env: { HOME: home },
-      });
+      const res = runStopHook(cwd, { hook_event_name: "Stop", stop_hook_active: false }, { HOME: home });
 
       expect(res.status).toBe(0);
       // The removed install-state fallback used to map an installed "strict"
@@ -2166,7 +2179,7 @@ describe("Hook runtime behavior", () => {
     }
   });
 
-  test("stop-orchestrator: allowed-to-stop and not-ready-to-ship are reported independently", () => {
+  test("stop-handler: allowed-to-stop and not-ready-to-ship are reported independently", () => {
     const cwd = tmpWorkspace("stop-allowed-not-ready-to-ship");
     try {
       initGitRepo(cwd);
@@ -2177,9 +2190,8 @@ describe("Hook runtime behavior", () => {
       // readyToShip resolves to block while durable_recovery_state (the only
       // requirement Stop's own gate has) stays satisfied by refresh_handoff.
 
-      const res = runHook("stop-orchestrator.sh", cwd, {
-        stdin: JSON.stringify({ hook_event_name: "Stop", stop_hook_active: false }),
-        env: { REPO_HARNESS_WORKFLOW_PROFILE: "strict" },
+      const res = runStopHook(cwd, { hook_event_name: "Stop", stop_hook_active: false }, {
+        REPO_HARNESS_WORKFLOW_PROFILE: "strict",
       });
 
       // readyToShip=false is a report, never a Stop block (frozen strict.stop
@@ -2894,7 +2906,7 @@ describe("Hook runtime behavior", () => {
     }
   });
 
-  test("stop-orchestrator: nudges stale review freshness without blocking stop", () => {
+  test("stop-handler: nudges stale review freshness without blocking stop", () => {
     const cwd = tmpWorkspace("stop-review-freshness-stale");
     try {
       initGitRepo(cwd);
@@ -2905,9 +2917,7 @@ describe("Hook runtime behavior", () => {
       writePassingReview(cwd, fingerprint);
       writeFileSync(join(cwd, "tracked.txt"), "base\nreviewed change\nchanged after review\n");
 
-      const res = runHook("stop-orchestrator.sh", cwd, {
-        stdin: JSON.stringify({ stop_hook_active: false, last_assistant_message: "Done." }),
-      });
+      const res = runStopHook(cwd, { stop_hook_active: false, last_assistant_message: "Done." });
 
       expect(res.status).toBe(0);
       expect(res.stderr).toContain("[FinalizeHandoff] Refreshed .ai/harness/handoff/current.md.");

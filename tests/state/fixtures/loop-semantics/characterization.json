@@ -209,7 +209,7 @@
         "idle-inspect"
       ],
       "current": {
-        "entrypoint": ".ai/hooks/stop-orchestrator.sh",
+        "entrypoint": "src/cli/hook/stop-handler.ts",
         "profile_source": "live_effective_state",
         "exit_code": 0,
         "verdict": "allow",
@@ -228,9 +228,9 @@
         ],
         "side_effects": [
           ".ai/harness/events.jsonl",
-          ".ai/harness/failures/latest.jsonl",
           ".ai/harness/handoff/current.md",
           ".ai/harness/handoff/resume.md",
+          ".ai/harness/runs/hook-invocations.jsonl",
           ".ai/harness/runs/loop-semantics-lite-stop.json",
           ".ai/harness/state/effective.json"
         ],
@@ -257,7 +257,7 @@
         "executing-fresh-evidence"
       ],
       "current": {
-        "entrypoint": ".ai/hooks/stop-orchestrator.sh",
+        "entrypoint": "src/cli/hook/stop-handler.ts",
         "profile_source": "live_effective_state",
         "exit_code": 0,
         "verdict": "allow",
@@ -276,9 +276,9 @@
         ],
         "side_effects": [
           ".ai/harness/events.jsonl",
-          ".ai/harness/failures/latest.jsonl",
           ".ai/harness/handoff/current.md",
           ".ai/harness/handoff/resume.md",
+          ".ai/harness/runs/hook-invocations.jsonl",
           ".ai/harness/runs/loop-semantics-standard-stop.json",
           ".ai/harness/state/effective.json"
         ],
@@ -307,7 +307,7 @@
         "executing-fresh-evidence"
       ],
       "current": {
-        "entrypoint": ".ai/hooks/stop-orchestrator.sh",
+        "entrypoint": "src/cli/hook/stop-handler.ts",
         "profile_source": "live_effective_state",
         "exit_code": 0,
         "verdict": "allow",
@@ -326,9 +326,9 @@
         ],
         "side_effects": [
           ".ai/harness/events.jsonl",
-          ".ai/harness/failures/latest.jsonl",
           ".ai/harness/handoff/current.md",
           ".ai/harness/handoff/resume.md",
+          ".ai/harness/runs/hook-invocations.jsonl",
           ".ai/harness/runs/loop-semantics-strict-stop.json",
           ".ai/harness/state/effective.json"
         ],

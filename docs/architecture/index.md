@@ -43,7 +43,7 @@ Authoritative surfaces:
   (`EffectiveStateV1.guidance`) are projected, never recomputed, by four
   adapter surfaces — CLI (`repo-harness state resolve --json`, including
   `--field readiness`), MCP (`summarize_repo_harness_state`'s compact
-  state), Hook (the Stop route's `stop-orchestrator.sh` reading
+  state), Hook (the Stop route's in-process `stop-handler.ts` reading
   `.readiness.allowedToStop` / `.readiness.readyToShip`), and Skill
   (guidance text matched against `CEREMONY_GUIDANCE[profile]`). All four
   agree on profile, operation, decision, reason, and readiness for the same

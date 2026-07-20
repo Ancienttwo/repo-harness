@@ -238,23 +238,21 @@
       "route_id": "default",
       "host_exercised": "claude",
       "scripts_run": [
-        "stop-orchestrator.sh"
+        "stop-handler"
       ],
       "skipped_scripts": [],
       "failed_script": null,
       "exit_code": 0,
       "reason": "ok",
       "child_invocations": {
-        "git": 28,
-        "bun_cli": 2,
-        "bun_generic": 2
+        "git": 22,
+        "bun_cli": 0,
+        "bun_generic": 0
       },
       "stdout": "",
       "stderr": "[FinalizeHandoff] Refreshed .ai/harness/handoff/current.md.\n[ReadinessGate] readyToShip=false (missing: required_contract_missing,required_worktree_missing,required_review_missing,required_external_acceptance_missing,required_checks_missing); Stop is not blocked -- resolve before shipping.\n",
       "write_set": [
-        ".ai/harness/checks/latest.json",
         ".ai/harness/events.jsonl",
-        ".ai/harness/failures/latest.jsonl",
         ".ai/harness/handoff/current.md",
         ".ai/harness/handoff/resume.md",
         ".ai/harness/runs/characterization-run.json",

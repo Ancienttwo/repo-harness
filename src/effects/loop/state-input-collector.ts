@@ -38,6 +38,7 @@ export interface StateInputCollectorDeps<
   TEvent extends string = string,
   TSessionEffectiveState = unknown,
   TPreEditEffectiveState = unknown,
+  TStopEffectiveState = unknown,
 > {
   readonly event: TEvent;
   readonly repoRoot: string;
@@ -56,12 +57,15 @@ export interface StateInputCollectorDeps<
    * caller that never invokes `getPreEditEffectiveState()` never needs it.
    */
   readonly resolvePreEditEffectiveState?: (targetPaths: readonly string[]) => TPreEditEffectiveState;
+  /** Stop-shaped canonical resolution thunk (HRD-06), requested at most once. */
+  readonly resolveStopEffectiveState?: () => TStopEffectiveState;
 }
 
 export interface StateInputCollector<
   TEvent extends string = string,
   TSessionEffectiveState = unknown,
   TPreEditEffectiveState = unknown,
+  TStopEffectiveState = unknown,
 > {
   readonly event: TEvent;
   /** Already resolved by the caller before construction; not a collection. */
@@ -90,6 +94,8 @@ export interface StateInputCollector<
    * `once()` semantics `getSessionEffectiveState` already relies on).
    */
   getPreEditEffectiveState(targetPaths: readonly string[]): TPreEditEffectiveState;
+  /** Memoized facade over the injected Stop-shaped Effective State resolution. */
+  getStopEffectiveState(): TStopEffectiveState;
 }
 
 const UNCOMPUTED = Symbol('state-input-collector-uncomputed');
@@ -121,9 +127,14 @@ function onceWith<TArg, T>(compute: (arg: TArg) => T): (arg: TArg) => T {
   };
 }
 
-export function createStateInputCollector<TEvent extends string, TSessionEffectiveState, TPreEditEffectiveState>(
-  deps: StateInputCollectorDeps<TEvent, TSessionEffectiveState, TPreEditEffectiveState>,
-): StateInputCollector<TEvent, TSessionEffectiveState, TPreEditEffectiveState> {
+export function createStateInputCollector<
+  TEvent extends string,
+  TSessionEffectiveState,
+  TPreEditEffectiveState,
+  TStopEffectiveState,
+>(
+  deps: StateInputCollectorDeps<TEvent, TSessionEffectiveState, TPreEditEffectiveState, TStopEffectiveState>,
+): StateInputCollector<TEvent, TSessionEffectiveState, TPreEditEffectiveState, TStopEffectiveState> {
   const getWorktreeOwnership = once((): WorktreeOwnership => {
     const current = safeRealpath(deps.repoRoot);
     const owner = readTrimmed(deps.repoRoot, ACTIVE_WORKTREE_MARKER);
@@ -140,6 +151,11 @@ export function createStateInputCollector<TEvent extends string, TSessionEffecti
       throw new Error('state-input-collector: getPreEditEffectiveState() called without a resolvePreEditEffectiveState dep');
     });
   const getPreEditEffectiveState = onceWith(resolvePreEdit);
+  const resolveStop = deps.resolveStopEffectiveState
+    ?? ((): TStopEffectiveState => {
+      throw new Error('state-input-collector: getStopEffectiveState() called without a resolveStopEffectiveState dep');
+    });
+  const getStopEffectiveState = once(resolveStop);
 
   return {
     event: deps.event,
@@ -148,5 +164,6 @@ export function createStateInputCollector<TEvent extends string, TSessionEffecti
     getActivePlanMarker,
     getSessionEffectiveState,
     getPreEditEffectiveState,
+    getStopEffectiveState,
   };
 }
