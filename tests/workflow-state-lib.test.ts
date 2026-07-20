@@ -130,6 +130,91 @@ function runEvidenceRequirement(cwd: string, contractRelPath: string) {
   );
 }
 
+function writeSoloPolicy(cwd: string, solo_operator: unknown): void {
+  mkdirSync(join(cwd, ".ai/harness"), { recursive: true });
+  writeFileSync(
+    join(cwd, ".ai/harness/policy.json"),
+    JSON.stringify({ external_acceptance: { solo_operator } }),
+  );
+}
+
+function writeSoloContract(cwd: string): void {
+  mkdirSync(join(cwd, "tasks/contracts"), { recursive: true });
+  mkdirSync(join(cwd, "tasks/reviews"), { recursive: true });
+  writeFileSync(
+    join(cwd, "tasks/contracts/demo.contract.md"),
+    [
+      "# Task Contract: demo",
+      "",
+      "## Evidence Requirements",
+      "",
+      "```yaml",
+      "evidence_requirements:",
+      "  benchmark: not_applicable",
+      "```",
+      "",
+    ].join("\n"),
+  );
+}
+
+function writeSoloReview(
+  cwd: string,
+  fp: { subject: string; target: string },
+  opts: {
+    reviewer?: string;
+    source?: string;
+    acknowledgement?: string | null;
+    reviewerIdentity?: string | null;
+    implementerIdentity?: string | null;
+    p1?: string;
+    subject?: string;
+  } = {},
+): void {
+  const reviewer = opts.reviewer ?? "Claude";
+  const source = opts.source ?? "solo-operator-adversarial-review";
+  const acknowledgement =
+    opts.acknowledgement === null
+      ? null
+      : (opts.acknowledgement ?? "single-vendor-adversarial-review; cross-vendor unavailable");
+  const reviewerIdentity = opts.reviewerIdentity === null ? null : (opts.reviewerIdentity ?? "reviewer-session-abc");
+  const implementerIdentity =
+    opts.implementerIdentity === null ? null : (opts.implementerIdentity ?? "implementer-session-xyz");
+  const p1 = opts.p1 ?? "none";
+  const subject = opts.subject ?? fp.subject;
+  const lines = [
+    "# Task Review: demo",
+    "",
+    "> **Recommendation**: pass",
+    "",
+    "> **Review Rubric Version**: 2",
+    "",
+    "## External Acceptance Advice",
+    "",
+    "> **External Acceptance**: pass",
+    `> **External Reviewer**: ${reviewer}`,
+    `> **External Source**: ${source}`,
+    "> **External Started**: 2026-07-21T05:00:00+0800",
+    "> **External Completed**: 2026-07-21T05:30:00+0800",
+    `> **Reviewed Subject SHA256**: ${subject}`,
+    "> **Reviewed Subject Scope**: normalized-final-content",
+    `> **Reviewed Target Revision**: ${fp.target}`,
+    "> **Benchmark Evidence SHA256**: not-applicable",
+  ];
+  if (acknowledgement !== null) lines.push(`> **Solo Operator Acknowledgement**: ${acknowledgement}`);
+  if (reviewerIdentity !== null) lines.push(`> **Reviewer Session Identity**: ${reviewerIdentity}`);
+  if (implementerIdentity !== null) lines.push(`> **Implementer Session Identity**: ${implementerIdentity}`);
+  lines.push("", `- P1 blockers: ${p1}`, "- P2 advisories: none", "- Acceptance checklist: pass", "");
+  writeFileSync(join(cwd, "tasks/reviews/demo.review.md"), lines.join("\n"));
+}
+
+function runSoloAcceptance(cwd: string, host: "claude" | "codex") {
+  return spawnSync(
+    "bash",
+    ["-lc", `source "$WORKFLOW_STATE"; HOOK_HOST=${host} workflow_external_acceptance_status "$PWD/tasks/reviews/demo.review.md"`],
+    { cwd, encoding: "utf-8", env: evidenceAcceptanceEnv() },
+  );
+}
+
 describe("workflow-state shared library", () => {
   test("exports the shared workflow helper functions", () => {
     const content = readFileSync(
@@ -1188,5 +1273,204 @@ describe("workflow-state shared library", () => {
       expect(helper).not.toContain("manual_override");
       expect(helper).not.toContain("not_required");
     }
+  });
+
+  // solo_operator: nine fixtures proving the flag is additive (fixture 1 is
+  // the regression bar: absent-flag behavior must be byte-identical to
+  // pre-change main) and cannot be satisfied by reusing the existing
+  // cross-vendor template, a stale subject, a missing acknowledgement,
+  // identical/missing session identities, or live P1 blockers -- see
+  // tasks/notes/20260721-0540-solo-operator-acceptance-policy.notes.md for
+  // the full design rationale.
+  test("solo_operator fixture 1: absent policy key rejects a same-vendor review exactly as before the flag existed", () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "workflow-solo-absent-")));
+    try {
+      initEvidenceGitRepo(cwd);
+      writeSoloContract(cwd);
+      const fp = currentReviewFingerprint(cwd);
+      writeEvidenceReview(cwd, fp, "not-applicable");
+      // No .ai/harness/policy.json at all in this fixture -- the absolute
+      // absent-key case. HOOK_HOST=claude wants the opposite vendor (Codex);
+      // a Claude-authored claude-review template must still be rejected,
+      // byte-identical to the mechanism's pre-solo_operator behavior.
+      const res = runSoloAcceptance(cwd, "claude");
+      expect(res.status).toBe(0);
+      expect(res.stdout).toBe("fail\tClaude\tclaude-review\tExternal reviewer is Claude; expected Codex.\n");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("solo_operator fixture 2: flag on but an ordinary claude-review source still fails", () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "workflow-solo-ordinary-source-")));
+    try {
+      initEvidenceGitRepo(cwd);
+      writeSoloContract(cwd);
+      writeSoloPolicy(cwd, true);
+      const fp = currentReviewFingerprint(cwd);
+      writeEvidenceReview(cwd, fp, "not-applicable");
+      const res = runSoloAcceptance(cwd, "codex");
+      expect(res.status).toBe(0);
+      expect(res.stdout).toContain("External source is claude-review; expected solo-operator-adversarial-review under solo_operator mode.");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("solo_operator fixture 3: valid solo markers but a stale subject hash still fails (freshness binding unweakened)", () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "workflow-solo-stale-subject-")));
+    try {
+      initEvidenceGitRepo(cwd);
+      writeSoloContract(cwd);
+      writeSoloPolicy(cwd, true);
+      const fp = currentReviewFingerprint(cwd);
+      writeSoloReview(cwd, fp, { subject: "sha256:" + "d".repeat(64) });
+      const res = runSoloAcceptance(cwd, "claude");
+      expect(res.status).toBe(0);
+      expect(res.stdout).toContain("is stale for current review subject");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("solo_operator fixture 4: solo source with a missing or mismatched acknowledgement fails", () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "workflow-solo-missing-ack-")));
+    try {
+      initEvidenceGitRepo(cwd);
+      writeSoloContract(cwd);
+      writeSoloPolicy(cwd, true);
+      const fp = currentReviewFingerprint(cwd);
+      writeSoloReview(cwd, fp, { acknowledgement: null });
+      const missing = runSoloAcceptance(cwd, "claude");
+      expect(missing.status).toBe(0);
+      expect(missing.stdout).toContain("Solo Operator Acknowledgement is missing or does not match");
+
+      writeSoloReview(cwd, fp, { acknowledgement: "close enough" });
+      const wrong = runSoloAcceptance(cwd, "claude");
+      expect(wrong.status).toBe(0);
+      expect(wrong.stdout).toContain("Solo Operator Acknowledgement is missing or does not match");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("solo_operator fixture 5: missing or identical Reviewer/Implementer Session Identity fails", () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "workflow-solo-identity-")));
+    try {
+      initEvidenceGitRepo(cwd);
+      writeSoloContract(cwd);
+      writeSoloPolicy(cwd, true);
+      const fp = currentReviewFingerprint(cwd);
+
+      writeSoloReview(cwd, fp, { reviewerIdentity: "same-session", implementerIdentity: "same-session" });
+      const identical = runSoloAcceptance(cwd, "claude");
+      expect(identical.status).toBe(0);
+      expect(identical.stdout).toContain("Reviewer/Implementer Session Identity is missing or identical");
+
+      writeSoloReview(cwd, fp, { reviewerIdentity: null });
+      const missing = runSoloAcceptance(cwd, "claude");
+      expect(missing.status).toBe(0);
+      expect(missing.stdout).toContain("Reviewer/Implementer Session Identity is missing or identical");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("solo_operator fixture 6: a fully valid solo review passes under both HOOK_HOST=claude and HOOK_HOST=codex", () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "workflow-solo-pass-")));
+    try {
+      initEvidenceGitRepo(cwd);
+      writeSoloContract(cwd);
+      writeSoloPolicy(cwd, true);
+      const fp = currentReviewFingerprint(cwd);
+      writeSoloReview(cwd, fp, {});
+
+      const asClaude = runSoloAcceptance(cwd, "claude");
+      expect(asClaude.status).toBe(0);
+      expect(asClaude.stdout).toBe("pass\tClaude\tsolo-operator-adversarial-review\tExternal acceptance passed.\n");
+
+      const asCodex = runSoloAcceptance(cwd, "codex");
+      expect(asCodex.status).toBe(0);
+      expect(asCodex.stdout).toBe("pass\tClaude\tsolo-operator-adversarial-review\tExternal acceptance passed.\n");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("solo_operator fixture 7: a fully valid solo review with a live P1 blocker still fails (P1 gate not bypassed)", () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "workflow-solo-p1-")));
+    try {
+      initEvidenceGitRepo(cwd);
+      writeSoloContract(cwd);
+      writeSoloPolicy(cwd, true);
+      const fp = currentReviewFingerprint(cwd);
+      writeSoloReview(cwd, fp, { p1: "unresolved concurrency risk" });
+      const res = runSoloAcceptance(cwd, "claude");
+      expect(res.status).toBe(0);
+      expect(res.stdout).toContain("External acceptance has P1 blockers");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("solo_operator fixture 8: a malformed policy value (JSON string instead of boolean) is treated as off", () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "workflow-solo-malformed-string-true-")));
+    try {
+      initEvidenceGitRepo(cwd);
+      writeSoloContract(cwd);
+      // A naive `jq -r '.external_acceptance.solo_operator'` would unquote a
+      // JSON STRING "true" to the same bare word a real boolean true
+      // produces, indistinguishable by plain text comparison -- this is
+      // exactly why workflow_policy_get_strict_boolean uses jq's own
+      // type-aware `== true` comparison instead of workflow_policy_get's
+      // generic string read. This fixture proves that comparison actually
+      // rejects the string form: solo mode must NOT activate, so an
+      // ordinary claude-review template takes the unchanged cross-vendor
+      // path and passes exactly as it does with no policy.json at all.
+      writeSoloPolicy(cwd, "true");
+      const fp = currentReviewFingerprint(cwd);
+      writeEvidenceReview(cwd, fp, "not-applicable");
+      const res = runSoloAcceptance(cwd, "codex");
+      expect(res.status).toBe(0);
+      expect(res.stdout).toBe("pass\tClaude\tclaude-review\tExternal acceptance passed.\n");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("solo_operator fixture 8b: a malformed policy value (arbitrary string) is treated as off", () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "workflow-solo-malformed-yes-")));
+    try {
+      initEvidenceGitRepo(cwd);
+      writeSoloContract(cwd);
+      writeSoloPolicy(cwd, "yes");
+      const fp = currentReviewFingerprint(cwd);
+      writeSoloReview(cwd, fp, {});
+      const res = runSoloAcceptance(cwd, "claude");
+      expect(res.status).toBe(0);
+      expect(res.stdout).toContain("External reviewer is Claude; expected Codex.");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("solo_operator fixture 9: flag off but a review already carries the solo source marker still fails", () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "workflow-solo-flag-off-marker-present-")));
+    try {
+      initEvidenceGitRepo(cwd);
+      writeSoloContract(cwd);
+      const fp = currentReviewFingerprint(cwd);
+      writeSoloReview(cwd, fp, { reviewer: "Codex" });
+      const res = runSoloAcceptance(cwd, "claude");
+      expect(res.status).toBe(0);
+      expect(res.stdout).toContain("External source is solo-operator-adversarial-review; expected codex-review.");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("validateWorkflowPolicy rejects a non-boolean external_acceptance.solo_operator value", () => {
+    const content = readFileSync(join(ROOT, "src/effects/state/resolve-effective-state.ts"), "utf-8");
+    expect(content).toContain("policyBoolean(policy, '.external_acceptance.solo_operator', false)");
   });
 });

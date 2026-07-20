@@ -46,6 +46,28 @@ workflow_policy_get() {
   printf '%s' "$default_value"
 }
 
+# Type-aware boolean read: unlike workflow_policy_get (which reads via
+# `jq -r "$path // empty"` and so cannot distinguish a JSON string "true"
+# from a JSON boolean true -- jq -r unquotes both to the bare word `true`),
+# this uses jq's own type-aware `== true` comparison so only a genuine JSON
+# boolean true activates; any other value (string, number, absent, null)
+# resolves to `false`.
+workflow_policy_get_strict_boolean() {
+  local jq_path="$1"
+  local policy_file value
+
+  policy_file="$(workflow_policy_file)"
+  if [[ -f "$policy_file" ]] && command -v jq >/dev/null 2>&1; then
+    value="$(jq -r "if (${jq_path} == true) then \"true\" else \"false\" end" "$policy_file" 2>/dev/null || true)"
+    if [[ "$value" == "true" ]]; then
+      printf 'true'
+      return 0
+    fi
+  fi
+
+  printf 'false'
+}
+
 workflow_repo_relative_path() {
   local value="$1"
   local default_value="$2"
@@ -1701,14 +1723,63 @@ workflow_external_acceptance_status() {
     return 0
   fi
 
-  if [[ "$reviewer_lc" != "$expected_reviewer_lc" ]]; then
-    printf 'fail\t%s\t%s\tExternal reviewer is %s; expected %s.\n' "${reviewer:--}" "${source:--}" "${reviewer:-missing}" "$expected_reviewer"
-    return 0
-  fi
+  # solo_operator (default false, fail-closed): lets a same-vendor
+  # fresh-context adversarial review satisfy acceptance for an operator
+  # holding only one vendor's CLI, WITHOUT touching the cross-vendor path
+  # below (absent/false/malformed value takes the untouched else branch).
+  # Gated behind a distinct External Source literal
+  # (`workflow_external_acceptance_source_for_reviewer` never emits it, so
+  # an ordinary claude-review/codex-review template cannot satisfy this
+  # path) plus a fixed acknowledgement literal and two non-empty, distinct
+  # session-identity fields. The identity fields are self-attested
+  # procedural evidence, not cryptographic proof -- see
+  # tasks/notes/20260721-0540-solo-operator-acceptance-policy.notes.md for
+  # why a machine-verifiable binding was investigated and rejected as out
+  # of scope. Every check after this block (P1, rubric, subject-hash
+  # freshness, target, benchmark) is unconditional in both modes.
+  local solo_operator
+  solo_operator="$(workflow_policy_get_strict_boolean '.external_acceptance.solo_operator')"
 
-  if [[ "$source_lc" != "$expected_source_lc" ]]; then
-    printf 'fail\t%s\t%s\tExternal source is %s; expected %s.\n' "${reviewer:--}" "${source:--}" "${source:-missing}" "$expected_source"
-    return 0
+  if [[ "$solo_operator" == "true" ]]; then
+    local solo_source solo_ack solo_ack_field rev_identity imp_identity
+    solo_source='solo-operator-adversarial-review'
+    solo_ack='single-vendor-adversarial-review; cross-vendor unavailable'
+
+    case "$reviewer_lc" in
+      claude|codex) : ;;
+      *)
+        printf 'fail\t%s\t%s\tExternal reviewer is %s; expected claude or codex under solo_operator mode.\n' "${reviewer:--}" "${source:--}" "${reviewer:-missing}"
+        return 0
+        ;;
+    esac
+
+    if [[ "$source_lc" != "$solo_source" ]]; then
+      printf 'fail\t%s\t%s\tExternal source is %s; expected %s under solo_operator mode.\n' "${reviewer:--}" "${source:--}" "${source:-missing}" "$solo_source"
+      return 0
+    fi
+
+    solo_ack_field="$(workflow_external_acceptance_field "$section" "Solo Operator Acknowledgement")"
+    if [[ "$solo_ack_field" != "$solo_ack" ]]; then
+      printf 'fail\t%s\t%s\tSolo Operator Acknowledgement is missing or does not match the required text.\n' "${reviewer:--}" "${source:--}"
+      return 0
+    fi
+
+    rev_identity="$(workflow_external_acceptance_field "$section" "Reviewer Session Identity" | xargs || true)"
+    imp_identity="$(workflow_external_acceptance_field "$section" "Implementer Session Identity" | xargs || true)"
+    if [[ -z "$rev_identity" || -z "$imp_identity" || "$rev_identity" == "$imp_identity" ]]; then
+      printf 'fail\t%s\t%s\tReviewer/Implementer Session Identity is missing or identical; solo_operator mode requires two distinct, non-empty session identities.\n' "${reviewer:--}" "${source:--}"
+      return 0
+    fi
+  else
+    if [[ "$reviewer_lc" != "$expected_reviewer_lc" ]]; then
+      printf 'fail\t%s\t%s\tExternal reviewer is %s; expected %s.\n' "${reviewer:--}" "${source:--}" "${reviewer:-missing}" "$expected_reviewer"
+      return 0
+    fi
+
+    if [[ "$source_lc" != "$expected_source_lc" ]]; then
+      printf 'fail\t%s\t%s\tExternal source is %s; expected %s.\n' "${reviewer:--}" "${source:--}" "${source:-missing}" "$expected_source"
+      return 0
+    fi
   fi
 
   if [[ "$p1_lc" != "none" ]]; then

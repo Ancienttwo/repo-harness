@@ -146,6 +146,19 @@ function policyString(policy: WorkflowPolicy, jqPath: string, fallback: string):
   return value.trim();
 }
 
+function policyBoolean(policy: WorkflowPolicy, jqPath: string, fallback: boolean): boolean {
+  const value = policyValue(policy, jqPath);
+  if (value === POLICY_FIELD_ABSENT) return fallback;
+  if (typeof value !== 'boolean') {
+    // A quoted JSON string like "true" would otherwise satisfy the bash
+    // reader's `jq -r` unquoting and silently activate solo_operator mode
+    // from a type error rather than a deliberate edit -- fail closed here
+    // instead of at the point of use.
+    throw new Error(`invalid workflow policy boolean ${jqPath}`);
+  }
+  return value;
+}
+
 function validateWorkflowPolicy(policy: WorkflowPolicy): void {
   // Validate every policy field owned by this resolver eagerly. Otherwise a
   // malformed capability or planning field can evade validation on an
@@ -153,6 +166,7 @@ function validateWorkflowPolicy(policy: WorkflowPolicy): void {
   policyString(policy, '.worktree_strategy.review_base', 'main');
   policyString(policy, '.worktree_strategy.merge_back.target', 'main');
   policyString(policy, '.worktree_strategy.base_branch', 'main');
+  policyBoolean(policy, '.external_acceptance.solo_operator', false);
   policyPath(
     policy,
     '.planning.pending_orchestration_file',

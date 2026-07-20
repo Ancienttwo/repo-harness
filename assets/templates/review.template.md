@@ -59,6 +59,9 @@ screenshot/artifact path, or reviewer observation.
 > **Reviewed Subject Scope**: normalized-final-content
 > **Reviewed Target Revision**: pending
 > **Benchmark Evidence SHA256**: pending
+> **Solo Operator Acknowledgement**: <!-- only under policy external_acceptance.solo_operator=true; omit otherwise -->
+> **Reviewer Session Identity**: <!-- only under solo_operator=true; self-attested, must differ from Implementer Session Identity -->
+> **Implementer Session Identity**: <!-- only under solo_operator=true; self-attested, must differ from Reviewer Session Identity -->
 
 - P1 blockers:
 - P2 advisories:
