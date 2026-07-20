@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-20T22:54:06+0800 -->
+<!-- updated_at: 2026-07-20T22:55:32+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: Active
-> **Updated At**: 2026-07-20T22:54:06+0800
+> **Status**: Idle
+> **Updated At**: 2026-07-20T22:55:32+0800
 > **Source Branch**: main
-> **Source Commit**: 8cdc0340
+> **Source Commit**: 9c93c5de
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: manual
@@ -17,10 +17,10 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Current Focus
 
-- Status: Active
+- Status: Idle
 - Active Plan: (none)
 - Plan Status: (none)
-- Next Task: inspect active worktree marker(s)
+- Next Task: (none)
 - Clear Note: (none)
 
 ## Mainline Snapshot Reading
@@ -31,8 +31,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- /Users/kito/Projects/repo-harness-wt-hrd-05-post-edit-event-journal: plans/plan-20260720-1146-hrd-05-post-edit-event-journal.md
-- /Users/kito/Projects/repo-harness-wt-hrd-05-post-edit-event-journal: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-hrd-05-post-edit-event-journal
+- (none)
 ## Active Sprint
 
 - Sprint: (none)
@@ -55,10 +54,9 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 2 changed/untracked path(s)
+- Summary: 1 changed/untracked path(s)
 
 ```
- M plans/sprints/20260719-1531-hook-runtime-diet.sprint.md
 ?? HANDOFF.md
 ```
 
