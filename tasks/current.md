@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-21T02:13:48+0800 -->
+<!-- updated_at: 2026-07-21T05:33:56+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-07-21T02:13:48+0800
+> **Updated At**: 2026-07-21T05:33:56+0800
 > **Source Branch**: main
-> **Source Commit**: 60e0f73b
+> **Source Commit**: 59b7e0d0
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: manual
@@ -31,8 +31,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- /Users/kito/Projects/repo-harness-wt-hrd-06-stop-handler-slim: plans/plan-20260720-2256-hrd-06-stop-handler-slim.md
-- /Users/kito/Projects/repo-harness-wt-hrd-06-stop-handler-slim: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-hrd-06-stop-handler-slim
+- /private/tmp/repo-harness-wt-hrd-07-closeout: plans/plan-20260721-0218-hrd-07-circuit-oscillation-and-shared-lock.md
+- /private/tmp/repo-harness-wt-hrd-07-closeout: active-worktree owner -> /private/tmp/repo-harness-wt-hrd-07-closeout
 ## Active Sprint
 
 - Sprint: (none)
