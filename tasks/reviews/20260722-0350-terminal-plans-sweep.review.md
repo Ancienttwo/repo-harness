@@ -40,17 +40,17 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
+> **Disposition**: external_pass
+> **Reviewer**: Claude
+> **Source**: claude-review
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:295db403189a6d7f80c01b9025faae719b1d4683bb36aa6f653018cbc300d8c1
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: 61b5ec5960bd5bd763a0c02ebadbe37cba5a2c5f
+> **Verification Evidence SHA256**: sha256:f91b3b6bad73261cee326dd676d36be72f20db2c5b7e3774301c381037572d5f
+> **Issued At**: 2026-07-21T21:24:24.734Z
 
-- Summary: No AcceptanceReceipt has been recorded.
+- Summary: Gatekeeper PASS: fail-closed property independently verified (33 AUTO moves one-to-one with audit table, removed-status tally exact, HOLD/EXCLUDE byte-identical to fork, edge cases honored); follower fixes proven; full suite 1672/0 in gatekeeper's own run; amendment trail completed per findings and committed.
 - Findings: none
 
 ## Behavior Diff Notes
