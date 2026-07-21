@@ -55,13 +55,13 @@
 > **Reviewer**: User
 > **Source**: user-waiver
 > **Actor**: kito
-> **Reviewed Subject SHA256**: sha256:facb965a77994c3684becec5a18cc181367f3c9230c85e449255be1de654cbdb
+> **Reviewed Subject SHA256**: sha256:7e9a8a0cf29bd1e54a46f05b44d8b24a020fe94980899a0236ed676b77ece864
 > **Reviewed Subject Scope**: normalized-final-content
 > **Reviewed Target Revision**: d61d153e76234de94c9082236405125bbe83dd88
-> **Verification Evidence SHA256**: sha256:3381442f01f7358223d3acbae782bec2939f8edfbebfdc5008fecf3f36870f5d
-> **Issued At**: 2026-07-21T06:43:20.881Z
+> **Verification Evidence SHA256**: sha256:0e7a88a39dca32d0e695f2e61e0855cbcb5e44fadfed2c8ad31656a32499d775
+> **Issued At**: 2026-07-21T06:53:55.086Z
 
-- Summary: Owner kito accepts the remaining risk after the bounded Claude attempt timed out; recovered findings and the receipt projection defect are fixed, and the final frozen verification evidence passes.
+- Summary: Owner kito reaffirms the previously granted waiver for the current final frozen subject after closeout and CI defects were fixed, and accepts the remaining risk.
 - Findings: none
 
 ## Behavior Diff Notes
