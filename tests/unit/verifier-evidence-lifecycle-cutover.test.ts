@@ -117,7 +117,7 @@ describe('verifier evidence lifecycle cutover', () => {
     for (const path of [
       'scripts/verify-sprint.sh',
       'assets/templates/helpers/verify-sprint.sh',
-      'tasks/contracts/20260712-2327-harness-kernel-reduction.contract.md',
+      'tasks/archive/contract-20260722-0350-20260712-2327-harness-kernel-reduction.md',
     ]) {
       const source = readFileSync(join(ROOT, path), 'utf-8');
       expect(source).not.toContain('bun run benchmark:harness');

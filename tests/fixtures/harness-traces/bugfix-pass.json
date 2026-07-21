@@ -8,7 +8,7 @@
   "run_id": "fixture-bugfix",
   "run_file": ".ai/harness/runs/fixture-bugfix.json",
   "task_profile": "bugfix",
-  "active_plan": "plans/plan-20260616-HE-05-trace-eval-schema.md",
+  "active_plan": "plans/archive/plan-20260616-HE-05-trace-eval-schema.md",
   "contract": {
     "file": "tasks/contracts/fixture-bugfix.contract.md",
     "task_profile": "bugfix",

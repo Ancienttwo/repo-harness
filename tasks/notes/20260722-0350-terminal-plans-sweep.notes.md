@@ -15,7 +15,9 @@
 
 ## Deviations From Plan Or Spec
 
-- None recorded.
+- Scope widened to `tests/` (contract amended, disclosed): two follow-the-move classes surfaced by the full suite — a hardcoded historical-contract pin in `tests/unit/verifier-evidence-lifecycle-cutover.test.ts` (updated to the archive path) and all seven `tests/fixtures/harness-traces/*.json` fixtures referencing `plan-20260616-HE-05` as their resolvable active plan (repointed to `plans/archive/`; `harness-trace-grade --strict` verified it resolves paths without status semantics).
+- Diagnostic detours recorded honestly: an initial 26-fail full-suite run decomposed into three unrelated causes — (1) `.ai/hooks/.projection.json` marker drift COMMITTED TO MAIN by the prior docs push (41eb7536; broke CI on two main commits; fixed and CI-verified as 38395599), (2) this worktree lacked `node_modules` entirely (contract-worktree creation does not install dependencies; 128 tests silently did not execute — file-level import errors — and 20+ spawn-based tests failed; `bun install --frozen-lockfile` resolved), (3) the two real follow-the-move classes above. The sweep migration itself caused only class 3.
+- Commit-before-read error acknowledged: the sweep commit landed chained on grep success rather than the test exit; superseded by the follower-fix commit and the final green run below.
 
 ## Tradeoffs Considered
 

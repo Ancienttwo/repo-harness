@@ -71,6 +71,7 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 allowed_paths:
   - plans/
   - tasks/
+  - tests/
 ```
 
 ## Evidence Requirements
