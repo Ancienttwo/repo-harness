@@ -12,6 +12,7 @@
 > **Rollback Surface**: Revert the runner/test commit; no report bytes or product semantics are migrated
 > **Spec**: `docs/spec.md`
 > **Research**: See `docs/researches/`
+> **Program**: Sprint C (Evidence & Projection Convergence) backlog row 2 `vgbr-rf` — `plans/sprints/20260722-0001-evidence-projection-convergence.sprint.md`
 > **Task Contract**: `tasks/contracts/20260721-2237-vgbr-benchmark-runner-subject-immutability.contract.md`
 > **Task Review**: `tasks/reviews/20260721-2237-vgbr-benchmark-runner-subject-immutability.review.md`
 > **Implementation Notes**: `tasks/notes/20260721-2237-vgbr-benchmark-runner-subject-immutability.notes.md`
@@ -115,6 +116,24 @@ Use one immutable npm tarball rather than a copied checkout. The artifact is out
 
 BDD2 may continue in parallel because it does not own the runner or focused benchmark test files. Because BDD2 changes benchmark-subject inputs under assets and src/cli, the successor VGBR attempt may start only after live origin/main is frozen and every subject writer is merged or held off-main.
 
+Execution-base annotation: BDD2 PR #109 merged without runner/test overlap while
+this package was in verification.  The candidate was rebased from the historical
+post-HRD closeout SHA onto fresh `origin/main@9e9dce6e1f817b766d21436c0b69477f6c67ca20`;
+all final evidence is regenerated on that base.  The successor VGBR still pins
+the later runner-fix merge SHA rather than either historical SHA.
+
+Takeover annotation (2026-07-22): the prior session went dormant before
+committing; a fresh session took the worktree over per explicit user
+authorization. `origin/main` had advanced three further docs-only commits in
+the interim — `0852e9ab`/`43aab46a`/`4bd4133d`, adding Sprint C
+(`plans/sprints/20260722-0001-evidence-projection-convergence.sprint.md`,
+this package's Program registration as backlog row 2) and its research doc,
+touching only `plans/sprints/` and `docs/researches/`. Rebased cleanly onto
+`4bd4133d142a06494510d09650ea5417fd6866d6`; diff-stat vs the new base is
+byte-identical in shape to the diff-stat vs the old base, confirming the
+rebase carried no semantic change. All evidence in the Acceptance section and
+the contract/notes/review was regenerated fresh on this rebased base.
+
 ## Acceptance
 
 - Root Cause Evidence records the mode drift, isolated bun global-install reproduction, regression guard, and pre-fix failure artifact.
@@ -128,8 +147,18 @@ BDD2 may continue in parallel because it does not own the runner or focused benc
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
 
 ## Task Breakdown
-- [ ] Freeze bugfix contract and capture the unfixed regression artifact.
-- [ ] Implement one external packed runtime authority and phase-boundary guards.
-- [ ] Pass focused regression and disposable installed-CLI smoke checks.
-- [ ] Freeze code and pass full repository verification.
+- [x] Freeze bugfix contract and capture the unfixed regression artifact.
+- [x] Implement one external packed runtime authority and phase-boundary guards.
+- [x] Pass focused regression and disposable installed-CLI smoke checks.
+- [x] Freeze code and pass full repository verification.
 - [ ] Record fresh semantic acceptance, merge seal, PR merge, and successor SHA.
+  - Deliberately unchecked at the end of the 2026-07-22 takeover phase: that
+    phase's own scope was rebase + re-verification + lifecycle-doc closeout,
+    committed locally only (no merge seal, push, PR, or merge — see the
+    contract's `Program`/`Base SHA` fields and Closeout Blocker). This row
+    also cannot close cleanly yet regardless: `repo-harness run
+    check-task-workflow --strict` currently fails for a proven pre-existing,
+    out-of-package reason (Sprint C's own `## PRD` section is empty; see the
+    contract's Closeout Blocker section). Remaining before this row can check:
+    a Program-level fix or waiver for that gate, a typed AcceptanceReceipt,
+    then merge seal / PR / merge / successor-SHA pin.

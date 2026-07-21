@@ -4,8 +4,20 @@
 > **Plan**: plans/plan-20260721-2237-vgbr-benchmark-runner-subject-immutability.md
 > **Contract**: tasks/contracts/20260721-2237-vgbr-benchmark-runner-subject-immutability.contract.md
 > **Review**: tasks/reviews/20260721-2237-vgbr-benchmark-runner-subject-immutability.review.md
-> **Last Updated**: 2026-07-21 22:37
+> **Last Updated**: 2026-07-22 00:59
 > **Lifecycle**: notes
+
+## Takeover Record
+
+- The prior Codex session implemented the fix (`208661dd`/`a0082486` on top of
+  the rebased `964d4a2b`), drafted a passing internal review, and ran a full
+  verification pass, then went dormant (last write 2026-07-21 23:39) without
+  reconciling Program registration, rebasing onto the newest `origin/main`, or
+  committing the lifecycle docs. Per explicit user authorization, a fresh
+  Claude session took the worktree over on 2026-07-22 to finish the package:
+  reconcile Program registration against the newly landed Sprint C, rebase
+  onto fresh `origin/main`, re-verify from a clean state, complete the
+  lifecycle docs, and commit locally (no push, no PR, no merge this phase).
 
 ## Design Decisions
 
@@ -22,7 +34,47 @@
 
 ## Deviations From Plan Or Spec
 
-- None recorded.
+- BDD2 PR #109 merged while the runner-fix package was verifying.  It did not
+  touch the owned runner or focused benchmark-test paths.  The candidate was
+  rebased onto fresh `origin/main@9e9dce6e1f817b766d21436c0b69477f6c67ca20`
+  before final evidence; no VGBR matrix was started.
+- The installed-artifact smoke takes about 31 seconds under the full suite, so
+  its Bun test timeout is explicitly 60 seconds.  This changes only the test
+  budget, not runner semantics.
+- The first pre-rebase full-suite pass attempt exposed the missing test timeout
+  and one independent Effective State temporary-counter race.  After the
+  bounded timeout fix, the final frozen-subject full suite passed the same
+  concurrency test; no out-of-scope Effective State file was changed.
+- Takeover reconciliation: the prior session left an uncommitted append to
+  `plans/sprints/20260719-1531-hook-runtime-diet.sprint.md` (a "Post-closeout
+  Program Dependency Annotation" recording HRD-completion facts, the historical
+  closeout SHA, and a serial-successor note).  It did not flip that sprint's
+  `Status` or reopen any HRD backlog row, but every fact it recorded is already
+  captured more precisely in the canonical `plans/sprints/20260722-0001-
+  evidence-projection-convergence.sprint.md` (Sprint C) that landed on
+  `origin/main` afterward (its header, Predecessor line, and Attempt ledger).
+  Sprint C's own Predecessor rule treats HRD as "frozen inputs, not change
+  surfaces" for this Program, so the edit was dropped (`git checkout --`)
+  rather than kept or merged forward; Sprint C row 2 is now this package's
+  sole Program registration (see contract `Program` field).
+- Second rebase: `origin/main` advanced three docs-only commits
+  (`0852e9ab`, `43aab46a`, `4bd4133d` — adding Sprint C and its research doc,
+  touching only `plans/sprints/` and `docs/researches/`) after the prior
+  session's own rebase onto `9e9dce6e`.  Re-fetched and rebased cleanly onto
+  `4bd4133d142a06494510d09650ea5417fd6866d6`; no conflicts, diff-stat vs the
+  new base identical to the diff-stat vs the old base (831 insertions / 14
+  deletions across the same 6 files), confirming the rebase carried no
+  semantic change.
+- Closeout discovery: `repo-harness run check-task-workflow --strict` fails on
+  the rebased branch with "Sprint plans/sprints/20260722-0001-evidence-
+  projection-convergence.sprint.md is not execution-ready: PRD section is
+  empty or placeholder-only".  Reproduced identically in a temporary detached
+  worktree at plain `origin/main` (no commits from this branch), and this
+  branch's diff touches no `plans/sprints/*` file — so the defect is
+  pre-existing on `origin/main` and out of this package's scope/allowed_paths
+  to fix.  Recorded as a Closeout Blocker in the contract rather than worked
+  around; contract Status set to `Blocked` rather than `Verified` because of
+  it.
 
 ## Tradeoffs Considered
 
@@ -45,6 +97,44 @@
   `40a33be4`, run id `19aadbf4-ac7f-434f-8ed0-60d1433c311d`.
 - Pre-fix regression artifact:
   `.ai/harness/runs/vgbr-benchmark-runner-subject-immutability-pre-fix.log`.
+- Implementation commits, rebased onto `4bd4133d`: `d1645dd8` (runner/test
+  fix, formerly `208661dd`) and `4453b6b5` (explicit smoke-test timeout,
+  formerly `a0082486`); workflow capture is `da82b156` (formerly `964d4a2b`).
+- Focused benchmark runner suite (re-run after the second rebase):
+  `31 pass`, `0 fail`, `204 expect()`, 33.42s.
+- Invariant proof for "runner setup mutates nothing in the frozen subject":
+  `tests/harness-benchmark-matrix.test.ts` test "reuses one packed artifact
+  across isolated installs without mutating source authority" packs the real
+  `ROOT` into one tarball, installs it into two isolated `BUN_INSTALL` homes,
+  and asserts `assertBenchmarkSubjectUnchanged` does not throw; that assertion
+  is mode-sensitive by construction (`install_profile_inputs_sha256` hashes
+  `src/cli` via `hashTree`, which folds `statSync(...).mode & 0o777` into every
+  entry — proven mode-sensitive by the sibling "rejects Git-clean
+  install-profile mode drift" test in the same file). Independently confirmed
+  by hand: `stat -f "%N %Lp" src/cli/index.ts src/cli/hook-entry.ts` read
+  `755 755` before the focused suite, after it, and again after the full
+  suite; `git status --porcelain` showed no path outside the four lifecycle
+  docs at every checkpoint.
+- Final full repository suite on the rebased frozen candidate: `1676 pass`,
+  `1 skip`, `0 fail`, `14012 expect()` across 140 files, 526.31s (the minor
+  count delta from the prior session's pre-second-rebase `1675 pass` / `13999
+  expect()` tracks the three additional docs-only commits now in the base,
+  not a regression — `0 fail` both times).
+- Required checks re-run from a clean state after the second rebase: `bun
+  test` (above), `bash scripts/check-deploy-sql-order.sh` (OK), `bash
+  scripts/check-architecture-sync.sh` (exit 0; advisory WARN for two
+  pre-existing pending architecture requests unrelated to this package),
+  `bash scripts/check-task-sync.sh` (OK), `bun scripts/inspect-project-
+  state.ts --repo . --format text` (no drift signals), `bun src/cli/index.ts
+  adopt --repo . --dry-run` (`0` planned operations), and `repo-harness run
+  contract-run preflight --contract <this contract> --repo . --json`
+  (`status: preflight_pass`). `repo-harness run check-task-workflow --strict`
+  fails; see the contract's Closeout Blocker section — proven pre-existing on
+  plain `origin/main` and out of this package's scope.
+- Canonical report SHA-256 values remained unchanged from the task base:
+  JSON `efb9fc6d96114dba32918ae67df8af3631303ff2f2fd1030f1105cfbd10f3925`,
+  Markdown `b6066e3cde27b863c73d3399d2fe2a7d50466c34a5a86326535d6c133bbb9d63`,
+  binding `4dc0944c44d337948ae98a59710ea982810af47c00813a99937ebd2300572658`.
 
 ## Promotion Filter
 

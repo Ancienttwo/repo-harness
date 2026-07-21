@@ -1,13 +1,17 @@
 # Task Contract: vgbr-benchmark-runner-subject-immutability
 
-> **Status**: Active
+> **Status**: Blocked
 > **Plan**: plans/plan-20260721-2237-vgbr-benchmark-runner-subject-immutability.md
 > **Task Profile**: bugfix
 > **Workflow Profile**: strict
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: kito
 > **Capability ID**: root
-> **Last Updated**: 2026-07-21 22:37
+> **Program**: Sprint C (Evidence & Projection Convergence) backlog row 2 `vgbr-rf` — `plans/sprints/20260722-0001-evidence-projection-convergence.sprint.md`
+> **Base SHA**: `4bd4133d142a06494510d09650ea5417fd6866d6` (`origin/main`, fetched and rebased onto 2026-07-22)
+> **Target Branch**: `main`
+> **PR Unit**: `codex/vgbr-benchmark-runner-subject-immutability` (this branch; not yet opened as a PR)
+> **Last Updated**: 2026-07-22 00:59
 > **Review File**: `tasks/reviews/20260721-2237-vgbr-benchmark-runner-subject-immutability.review.md`
 > **Notes File**: `tasks/notes/20260721-2237-vgbr-benchmark-runner-subject-immutability.notes.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
@@ -40,8 +44,7 @@ in this package.
     projection, pre-provider/post-run drift guards, and initial report binding.
   - `tests/harness-benchmark-matrix.test.ts`: pre-fix regression and focused
     artifact/command/phase-boundary coverage.
-  - This package's plan, contract, notes, review, and one append-only Program
-    dependency annotation.
+  - This package's own plan, contract, notes, and review.
 - Out of scope:
   - The prior invalid report bytes, canonical `profile-comparison.*`, a new
     provider matrix, report regrade/rebind, manifests, scenarios, or fixtures.
@@ -49,6 +52,10 @@ in this package.
     EPC/SSD implementation, `tasks/current.md`, and `tasks/todos.md`.
   - Mode normalization, post-hoc `chmod`, copied-source fallback, alternate
     install semantics, report protocol/schema changes, or compatibility code.
+- Non-goals: this package does not run, validate, or accept a new authoritative
+  VGBR provider matrix; that is `vgbr-r` (Sprint C backlog row 3), a separate
+  approved contract that starts only after this package merges and its exact
+  merge SHA is re-fetched and pinned as `VGBR_BASELINE_SHA`.
 - Taste constraints: preserve one source/subject authority and fail closed;
   the runner may consume an external immutable artifact but must never repair
   or reinterpret the authoritative checkout.
@@ -81,6 +88,28 @@ and tarball hash equality checks before any provider process exists.
 - regression_guard: tests/harness-benchmark-matrix.test.ts
 - pre_fix_failure_artifact: .ai/harness/runs/vgbr-benchmark-runner-subject-immutability-pre-fix.log
 
+## Concurrency & Ownership
+
+- Program registration: Sprint C (`Evidence & Projection Convergence`,
+  `plans/sprints/20260722-0001-evidence-projection-convergence.sprint.md`)
+  backlog row 2, task `vgbr-rf`. This contract is that row's execution slice;
+  the sprint file is the Program contract-of-record and this package never
+  edits it.
+- Layer 1 (repository ownership, Program Rule R2): `allowed_paths` below
+  intersect no other active package's `allowed_paths`. No `vgbr-r`/EPC row has
+  started; none owns `scripts/run-harness-profile-benchmark.ts` or
+  `tests/harness-benchmark-matrix.test.ts`.
+- Layer 2 (verification subject, Program Rule R2/R3): merging this package
+  neither opens nor closes the VGBR subject-quiescence freeze. That freeze
+  begins only when the successor `vgbr-r` contract pins `VGBR_BASELINE_SHA`
+  after a fresh post-merge fetch; this package may merge before that freeze
+  opens and carries no freeze obligation of its own.
+- No-compatibility declaration (Program Rule R5 / repo-wide no-compat rule):
+  this package replaces the direct-`ROOT` install path outright. It adds no
+  alias, dual read/write, semantic fallback, or steady-state migration shim;
+  the retired install call site is deleted in the same commit that adds the
+  packed-artifact path.
+
 ## Workflow Inventory
 
 - Source plan: `plans/plan-20260721-2237-vgbr-benchmark-runner-subject-immutability.md`
@@ -103,7 +132,6 @@ and tarball hash equality checks before any provider process exists.
 ```yaml
 allowed_paths:
   - plans/plan-20260721-2237-vgbr-benchmark-runner-subject-immutability.md
-  - plans/sprints/20260719-1531-hook-runtime-diet.sprint.md
   - tasks/contracts/20260721-2237-vgbr-benchmark-runner-subject-immutability.contract.md
   - tasks/reviews/20260721-2237-vgbr-benchmark-runner-subject-immutability.review.md
   - tasks/notes/20260721-2237-vgbr-benchmark-runner-subject-immutability.notes.md
@@ -196,8 +224,24 @@ exit_criteria:
 - Regression risks: installed-bin path resolution and package lifecycle
   behavior; focused smoke must prove both before full verification.
 
+## Closeout Blocker
+
+- `repo-harness run check-task-workflow --strict` (root required check and
+  this contract's own `exit_criteria.commands_succeed` entry) currently fails:
+  `Sprint plans/sprints/20260722-0001-evidence-projection-convergence.sprint.md
+  is not execution-ready: PRD section is empty or placeholder-only`.
+- Verified pre-existing and out of this package's scope: a temporary detached
+  worktree at plain `origin/main` (zero commits from this branch) reproduces
+  the identical failure. This package's diff never touches any
+  `plans/sprints/*` file (confirmed via `git diff --stat origin/main..HEAD --
+  'plans/sprints/*'`, empty).
+- Resolution is a Program-governance edit to that sprint file's own `## PRD`
+  section — outside this contract's `allowed_paths` — not a change to this
+  package. Every other exit-criteria command, the focused regression suite,
+  and the full repository test suite pass (see review).
+
 ## Rollback Point
 
-- Commit / checkpoint: `dbcfbe75025b0a7f6db06b9ea7d629ef11f91e7b`
+- Commit / checkpoint: `4bd4133d142a06494510d09650ea5417fd6866d6`
 - Revert strategy: revert the runner/test commit; no schema, report, or data
   migration exists.
