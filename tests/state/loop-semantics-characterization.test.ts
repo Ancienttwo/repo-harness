@@ -174,8 +174,8 @@ const CURRENT_SHIP_EXPECTATIONS: Readonly<Record<Profile, {
   readonly reason: string;
 }>> = {
   lite: { exit_code: 1, reason: 'no_active_contract' },
-  standard: { exit_code: 1, reason: 'missing_artifact' },
-  strict: { exit_code: 1, reason: 'missing_artifact' },
+  standard: { exit_code: 1, reason: 'verify_sprint_failed' },
+  strict: { exit_code: 1, reason: 'verify_sprint_failed' },
 };
 
 function isolatedEnv(cwd: string, extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
@@ -792,6 +792,7 @@ function captureShip(profile: Profile): Record<string, unknown> {
         HOOK_RUN_ID: `loop-semantics-${profile}-ship`,
         REPO_HARNESS_TARGET_REPO_ROOT: fixture.cwd,
         REPO_HARNESS_SOURCE_ROOT: ROOT,
+        REPO_HARNESS_HOOK_CLI: join(ROOT, 'src/cli/hook-entry.ts'),
         REPO_HARNESS_WORKFLOW_PROFILE: profile,
       },
     });
@@ -820,6 +821,7 @@ function captureShip(profile: Profile): Record<string, unknown> {
           HOOK_RUN_ID: `loop-semantics-${profile}-ship-finish-probe`,
           REPO_HARNESS_TARGET_REPO_ROOT: fixture.cwd,
           REPO_HARNESS_SOURCE_ROOT: ROOT,
+          REPO_HARNESS_HOOK_CLI: join(ROOT, 'src/cli/hook-entry.ts'),
         },
       },
     );
@@ -1051,8 +1053,8 @@ describe('LSC-01 profile × operation current-behavior characterization', () => 
     expect(cells.find((cell) => cell.name.startsWith('standard.stop'))?.current.review_freshness_warning).toBe(true);
     expect(cells.find((cell) => cell.name.startsWith('strict.stop'))?.current.review_freshness_warning).toBe(true);
     expect(cells.find((cell) => cell.name.startsWith('standard.ship'))?.current).toMatchObject({
-      gate_requirements: ['contract', 'review', 'acceptance_receipt', 'allowed_paths'],
-      ordering: ['contract', 'review', 'acceptance_receipt', 'allowed_paths'],
+      gate_requirements: [],
+      ordering: [],
     });
 
     expect(shipProfileObservation()).toEqual({ profileAware: false, matchedSources: [] });

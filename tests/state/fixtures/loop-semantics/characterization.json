@@ -442,19 +442,9 @@
         "profile_source_matches": [],
         "exit_code": 1,
         "verdict": "block",
-        "reason": "missing_artifact",
-        "gate_requirements": [
-          "contract",
-          "review",
-          "acceptance_receipt",
-          "allowed_paths"
-        ],
-        "ordering": [
-          "contract",
-          "review",
-          "acceptance_receipt",
-          "allowed_paths"
-        ],
+        "reason": "verify_sprint_failed",
+        "gate_requirements": [],
+        "ordering": [],
         "envelope_ordering": [
           "contract",
           "review",
@@ -482,10 +472,7 @@
           "worktree_side_effects": [],
           "primary_side_effects": []
         },
-        "side_effects": [
-          ".ai/harness/checks/latest.json",
-          ".ai/harness/runs/loop-semantics-standard-ship-20260712-2327-effective-fixture.json"
-        ],
+        "side_effects": [],
         "missing_semantic_fields": [
           "readyToShip",
           "workflowProfile",
@@ -530,19 +517,9 @@
         "profile_source_matches": [],
         "exit_code": 1,
         "verdict": "block",
-        "reason": "missing_artifact",
-        "gate_requirements": [
-          "contract",
-          "review",
-          "acceptance_receipt",
-          "allowed_paths"
-        ],
-        "ordering": [
-          "contract",
-          "review",
-          "acceptance_receipt",
-          "allowed_paths"
-        ],
+        "reason": "verify_sprint_failed",
+        "gate_requirements": [],
+        "ordering": [],
         "envelope_ordering": [
           "contract",
           "review",
@@ -570,10 +547,7 @@
           "worktree_side_effects": [],
           "primary_side_effects": []
         },
-        "side_effects": [
-          ".ai/harness/checks/latest.json",
-          ".ai/harness/runs/loop-semantics-strict-ship-20260712-2327-effective-fixture.json"
-        ],
+        "side_effects": [],
         "missing_semantic_fields": [
           "readyToShip",
           "workflowProfile",

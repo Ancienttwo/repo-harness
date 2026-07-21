@@ -66,6 +66,11 @@
   fixture now uses an ordinary exact observation about the worker artifact and
   records it under `Manual Check Evidence`, preserving generic manual-check
   coverage without recreating prose acceptance authority.
+- A later CI pass exposed a source-runtime leak in the loop-semantics ship
+  characterization: local PATH fallback could reach the pre-cutover global CLI,
+  while clean CI used only the candidate checkout. The fixture now pins
+  `REPO_HARNESS_HOOK_CLI` to the current source hook entry for both verify and
+  finish probes, so its golden is independent of operator-global installation.
 
 ## Tradeoffs Considered
 
