@@ -565,3 +565,16 @@ export function shouldEmitBddFeatureAdvice(ctx: PromptIntentContext): boolean {
   if (passiveOrAdvisoryExclusion(ctx)) return false;
   return BDD_FEATURE.test(ctx.raw);
 }
+
+const UX_FEATURE_NOUN_ZH = re(
+  '(页面|界面|前端|网页|落地页|组件|按钮|弹窗|表单|布局|排版|样式|交互|仪表盘)',
+);
+const UX_FEATURE_NOUN_EN = re(
+  String.raw`(^|[^A-Za-z0-9_])(ui|ux|user interface|frontend|front-?end|web ?page|landing page|screen|button|modal|dialog|form|layout|dashboard|css)([^A-Za-z0-9_]|$)`,
+);
+
+/** Frontend-scoped UX guard advisory: BDD feature intent AND a UI noun in the stripped prompt. */
+export function shouldEmitUxFeatureGuardAdvice(ctx: PromptIntentContext): boolean {
+  if (!shouldEmitBddFeatureAdvice(ctx)) return false;
+  return UX_FEATURE_NOUN_ZH.test(ctx.text) || UX_FEATURE_NOUN_EN.test(ctx.text);
+}

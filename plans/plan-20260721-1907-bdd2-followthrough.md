@@ -1,6 +1,6 @@
 # Plan: BDD2 review follow-through: frontend-scoped UX guard advisory, design-proposal skill, ledger closeout
 
-> **Status**: Draft
+> **Status**: Executing
 > **Created**: 20260721-1907
 > **Slug**: bdd2-followthrough
 > **Planning Source**: waza-think
@@ -127,8 +127,7 @@ One work-package, one worktree branch (`codex/bdd2-followthrough`), one PR, thre
 |------|--------|-------------|
 | `src/cli/hook/prompt-intents.ts` | edit | Add `UX_FEATURE_NOUN` regex + `shouldEmitUxFeatureGuardAdvice()`; `shouldEmitBddFeatureAdvice` unchanged |
 | `src/cli/commands/prompt-guard-decision.ts` | edit | Add `ux_feature_guard_advice` to the verdict facts record (after line 193) |
-| `assets/hooks/prompt-guard.sh` | edit | Split the `:1340-1345` echo block: `[BDD]` under `BDD_FEATURE_ADVICE`, `[UXFeatureGuard]` under new `UX_FEATURE_GUARD_ADVICE` |
-| `.ai/hooks/prompt-guard.sh` | generated | `bun run sync:hooks` projection; verify `bun run check:hooks` |
+| `src/cli/hook/prompt-handler.ts` | edit | Split the combined advisory push (~line 575): `[BDD]` under `shouldEmitBddFeatureAdvice`, `[UXFeatureGuard]` under `shouldEmitUxFeatureGuardAdvice`; HRD-09 retired the bash hook — this is the runtime authority |
 | `tests/cli/prompt-intents.test.ts` | edit | New cases: frontend positive, non-UI negative, exclusion invariants (existing `:161-162` assertions stay) |
 | `tests/ux-feature-guardrail.test.ts` | edit | Update `[UXFeatureGuard]` string assertions (`:79-90`) to the new fact block; add pointer-line assertions if the suite pins template content |
 | `~/.claude/skills/design-proposal/SKILL.md` | create (repo-external) | Orchestration skill per content contract below |
@@ -165,20 +164,18 @@ Three invariants bind the executor (from the GPT sprint-proposal review): the no
       ux_feature_guard_advice: bit(shouldEmitUxFeatureGuardAdvice(ctx)),
 ```
 
-`assets/hooks/prompt-guard.sh` replacement for lines 1340-1345:
+`src/cli/hook/prompt-handler.ts` — runtime drift note: HRD-09 (PR #106, this branch's base `b5a98c90`) retired the bash `prompt-guard.sh`; the UserPromptSubmit authority is this in-process handler, where a single `if (shouldEmitBddFeatureAdvice(context))` around line 575 currently pushes both advisory texts as one string. Split it:
 
-```bash
-if pg_fact BDD_FEATURE_ADVICE; then
-  echo "[BDD] Feature intent detected. Define Given-When-Then acceptance scenarios first."
-  echo "  检测到新功能请求：先定义 Given-When-Then 验收场景。"
-fi
-if pg_fact UX_FEATURE_GUARD_ADVICE; then
-  echo "[UXFeatureGuard] For user-visible behavior, first freeze rules/non-goals, separate instruction from payload, and inventory existing UI/domain reuse targets."
-  echo "  Read: repo-harness docs show ux-feature-guard (fail loudly; no parallel authority or compatibility fallback)."
-fi
+```ts
+if (shouldEmitBddFeatureAdvice(context)) {
+  out.push('[BDD] Feature intent detected. Define Given-When-Then acceptance scenarios first.\n  检测到新功能请求：先定义 Given-When-Then 验收场景。\n');
+}
+if (shouldEmitUxFeatureGuardAdvice(context)) {
+  out.push('[UXFeatureGuard] For user-visible behavior, first freeze rules/non-goals, separate instruction from payload, and inventory existing UI/domain reuse targets.\n  Read: repo-harness docs show ux-feature-guard (fail loudly; no parallel authority or compatibility fallback).\n');
+}
 ```
 
-Executor precondition for T3: confirm `pg_fact` derives shell names by uppercasing the JSON fact key (`bdd_feature_advice` → `BDD_FEATURE_ADVICE`) and follow the same derivation; if the mapping is an explicit table, register the new fact there.
+Keep the existing advisory text verbatim; only the gating condition for the `[UXFeatureGuard]` segment changes. No shell edit and no `pg_fact` derivation work exists post-HRD-09.
 
 ### design-proposal SKILL.md content contract (repo-external artifact)
 Frontmatter: `name: design-proposal`; `description`: end-to-end frontend design-proposal pipeline — peer research with cited real cases, imagegen sample variants, a PRD, then taste-skill UI/UX design; composes user-level skills, never replaces repo design-brief checklists. `when_to_use`: design proposal, preview 方案, 出设计方案, 前端方案, 设计预览, mockup pipeline.
@@ -194,7 +191,7 @@ Body sections, all required:
 8. **Boundaries** — never a substitute for the design-brief Confirmation Checklist; inside repo-harness repos the repo conventions (`ux-feature-guard`, `design-options`) take precedence; no auto-selection of direction.
 
 ### Data Flow
-User prompt → `prompt-guard.sh` → `prompt-guard-decide` verdict facts → `pg_fact` advisory echoes (Track A touches only the last hop plus the classifier). Skill pipeline: peer-research citations → imagegen variants → PRD → taste pass, each feeding the design-brief when one exists (Track B, entirely convention-level).
+User prompt → `repo-harness-hook` route registry → `src/cli/hook/prompt-handler.ts` advisory pushes (Track A touches only the advisory gating plus the classifier; the verdict facts record in `prompt-guard-decision.ts` stays consistent as a secondary surface). Skill pipeline: peer-research citations → imagegen variants → PRD → taste pass, each feeding the design-brief when one exists (Track B, entirely convention-level).
 
 ## Risk Assessment
 | Risk | Likelihood | Impact | Mitigation |
@@ -216,31 +213,31 @@ User prompt → `prompt-guard.sh` → `prompt-guard-decide` verdict facts → `p
 ## Evidence Contract
 - **State/progress path**: header-linked contract file `exit_criteria`; worktree per `plan-to-todo` projection.
 - **Verification evidence**: test run outputs for the four suites, `check:hooks` output, parity test output, `repo-harness run check-task-workflow --strict` result.
-- **Evaluator rubric**: gatekeeper `PASS` on diff-vs-goal with the verification commands above; no new enforcement machinery introduced (grep guard: no new `exit 2` paths in `prompt-guard.sh` for these facts).
+- **Evaluator rubric**: gatekeeper `PASS` on diff-vs-goal with the verification commands above; no new enforcement machinery introduced (grep guard: no new blocking/deny paths in `prompt-handler.ts` for these advisories).
 - **Stop condition**: all Task Breakdown rows checked, strict workflow check green, gatekeeper recommendation recorded in the review file.
 - **Rollback surface**: as in Promotion Gate.
 
 ## Task Breakdown
-- [ ] T1 `prompt-intents.ts`: add `UX_FEATURE_NOUN` + `shouldEmitUxFeatureGuardAdvice` composed over `shouldEmitBddFeatureAdvice`; export unchanged surfaces untouched
-- [ ] T2 `prompt-guard-decision.ts`: emit `ux_feature_guard_advice` fact; confirm `pg_fact` name derivation (uppercase mapping or explicit table) and register accordingly
-- [ ] T3 `assets/hooks/prompt-guard.sh`: split the echo block per snippet; `bun run sync:hooks && bun run check:hooks`
-- [ ] T4 tests: `prompt-intents.test.ts` fixtures — `实现一个新功能页面` → both facts; `实现一个 CLI 子命令` → bdd only; `build a dashboard` → both; `build a CLI command` and `build a test suite` → bdd only (proves no `ui` substring hit); host-injected frontend context + CLI-only request → no UX fact; existing exclusion cases unchanged; update `ux-feature-guardrail.test.ts` string assertions
-- [ ] T5 author `~/.claude/skills/design-proposal/SKILL.md` per the adjudicated content contract (boundary freeze before imagegen; provider ceilings); smoke: skill listing shows it and its four named sub-skills resolve in `~/.claude/skills`
-- [ ] T6 harness convention deltas: `repo-harness-prd/SKILL.md` step 15 pointer (with the boundary-before-imagegen ordering) + design-brief template role-aware concept-boundary subsection and pointer propagated via `bun run sync:helpers` + design-options boundary-prerequisite and taste-ceiling table in both mirrors; parity and content tests green
-- [ ] T7 `tasks/todos.md`: close rows 17-18 citing `20260714-bdd3-ea1-typed-evidence-authority-outcome.md` / `20260714-bdd3-ps1-protected-shape-outcome.md`; VH1 row untouched; add the rendered-surface verification deferred row (trigger: first observed post-brief developer-view leakage); note `project-init-lib.sh:2153` residue already fixed
-- [ ] T8 archive `plans/plan-20260714-1353-design-options-proactive-choice.md` with `--outcome Completed`; verify `tasks/current.md` refresh with `--write` if the helper prompts it
-- [ ] T9 full verification: four capability suites + `bun run check:type` + hook/helper parity checks + root required checks + `repo-harness run check-task-workflow --strict`; hand diff + evidence to gatekeeper for acceptance
+- [x] T1 `prompt-intents.ts`: add `UX_FEATURE_NOUN` + `shouldEmitUxFeatureGuardAdvice` composed over `shouldEmitBddFeatureAdvice`; export unchanged surfaces untouched
+- [x] T2 `prompt-guard-decision.ts`: emit `ux_feature_guard_advice` in the verdict facts record (echo-only fact, no routing impact)
+- [x] T3 `src/cli/hook/prompt-handler.ts`: split the combined `[BDD]`+`[UXFeatureGuard]` push (single `if (shouldEmitBddFeatureAdvice(...))` around line 575) into two conditionals — `[BDD]` stays under `shouldEmitBddFeatureAdvice`, `[UXFeatureGuard]` moves under `shouldEmitUxFeatureGuardAdvice`; text stays verbatim (HRD-09 retired the bash `prompt-guard.sh`; no shell/`pg_fact` work exists)
+- [x] T4 tests: `prompt-intents.test.ts` fixtures — `实现一个新功能页面` → both facts; `实现一个 CLI 子命令` → bdd only; `build a dashboard` → both; `build a CLI command` and `build a test suite` → bdd only (proves no `ui` substring hit); host-injected frontend context + CLI-only request → no UX fact; existing exclusion cases unchanged; update `ux-feature-guardrail.test.ts` string assertions
+- [x] T5 author `~/.claude/skills/design-proposal/SKILL.md` per the adjudicated content contract (boundary freeze before imagegen; provider ceilings); smoke: skill listing shows it and its four named sub-skills resolve in `~/.claude/skills`
+- [x] T6 harness convention deltas: `repo-harness-prd/SKILL.md` step 15 pointer (with the boundary-before-imagegen ordering) + design-brief template role-aware concept-boundary subsection and pointer propagated via `bun run sync:helpers` + design-options boundary-prerequisite and taste-ceiling table in both mirrors; parity and content tests green
+- [x] T7 `tasks/todos.md`: close rows 17-18 citing `20260714-bdd3-ea1-typed-evidence-authority-outcome.md` / `20260714-bdd3-ps1-protected-shape-outcome.md`; VH1 row untouched; add the rendered-surface verification deferred row (trigger: first observed post-brief developer-view leakage); note `project-init-lib.sh:2153` residue already fixed (deviation: contract Goal + dispatch omit the project-init-lib.sh sentence, see notes)
+- [ ] T8 BLOCKED: `archive-workflow --outcome Completed` requires fresh verify-sprint evidence in this worktree's `.ai/harness/checks/latest.json` (currently `{}`), which the dispatch forbids generating; see notes for full gate analysis and zero-side-effect confirmation
+- [x] T9 full verification: four capability suites + `bun run check:type` + hook/helper parity checks + root required checks + `repo-harness run check-task-workflow --strict`; hand diff + evidence to gatekeeper for acceptance (full `bun test`: 1670 pass/1 skip/1 fail — the 1 fail is a newly-identified environmental issue in `tests/hook-dispatch-diet-report.test.ts`, not the documented state-concurrency flake; see notes)
 
 ## Annotations
-<!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
+No annotations raised. The plan was revised through two review rounds before approval: the BDD² module review adjudication and the GPT Pro cross-review/sprint-proposal adjudication, both recorded in `docs/researches/20260721-bdd2-module-review-verdict.md`.
 
 ## Task Breakdown
-- [ ] T1 `prompt-intents.ts`: add `UX_FEATURE_NOUN` + `shouldEmitUxFeatureGuardAdvice` composed over `shouldEmitBddFeatureAdvice`; export unchanged surfaces untouched
-- [ ] T2 `prompt-guard-decision.ts`: emit `ux_feature_guard_advice` fact; confirm `pg_fact` name derivation (uppercase mapping or explicit table) and register accordingly
-- [ ] T3 `assets/hooks/prompt-guard.sh`: split the echo block per snippet; `bun run sync:hooks && bun run check:hooks`
-- [ ] T4 tests: `prompt-intents.test.ts` fixtures — `实现一个新功能页面` → both facts; `实现一个 CLI 子命令` → bdd only; `build a dashboard` → both; `build a CLI command` and `build a test suite` → bdd only (proves no `ui` substring hit); host-injected frontend context + CLI-only request → no UX fact; existing exclusion cases unchanged; update `ux-feature-guardrail.test.ts` string assertions
-- [ ] T5 author `~/.claude/skills/design-proposal/SKILL.md` per the adjudicated content contract (boundary freeze before imagegen; provider ceilings); smoke: skill listing shows it and its four named sub-skills resolve in `~/.claude/skills`
-- [ ] T6 harness convention deltas: `repo-harness-prd/SKILL.md` step 15 pointer (with the boundary-before-imagegen ordering) + design-brief template role-aware concept-boundary subsection and pointer propagated via `bun run sync:helpers` + design-options boundary-prerequisite and taste-ceiling table in both mirrors; parity and content tests green
-- [ ] T7 `tasks/todos.md`: close rows 17-18 citing `20260714-bdd3-ea1-typed-evidence-authority-outcome.md` / `20260714-bdd3-ps1-protected-shape-outcome.md`; VH1 row untouched; add the rendered-surface verification deferred row (trigger: first observed post-brief developer-view leakage); note `project-init-lib.sh:2153` residue already fixed
-- [ ] T8 archive `plans/plan-20260714-1353-design-options-proactive-choice.md` with `--outcome Completed`; verify `tasks/current.md` refresh with `--write` if the helper prompts it
-- [ ] T9 full verification: four capability suites + `bun run check:type` + hook/helper parity checks + root required checks + `repo-harness run check-task-workflow --strict`; hand diff + evidence to gatekeeper for acceptance
+- [x] T1 `prompt-intents.ts`: add `UX_FEATURE_NOUN` + `shouldEmitUxFeatureGuardAdvice` composed over `shouldEmitBddFeatureAdvice`; export unchanged surfaces untouched
+- [x] T2 `prompt-guard-decision.ts`: emit `ux_feature_guard_advice` in the verdict facts record (echo-only fact, no routing impact)
+- [x] T3 `src/cli/hook/prompt-handler.ts`: split the combined `[BDD]`+`[UXFeatureGuard]` push (single `if (shouldEmitBddFeatureAdvice(...))` around line 575) into two conditionals — `[BDD]` stays under `shouldEmitBddFeatureAdvice`, `[UXFeatureGuard]` moves under `shouldEmitUxFeatureGuardAdvice`; text stays verbatim (HRD-09 retired the bash `prompt-guard.sh`; no shell/`pg_fact` work exists)
+- [x] T4 tests: `prompt-intents.test.ts` fixtures — `实现一个新功能页面` → both facts; `实现一个 CLI 子命令` → bdd only; `build a dashboard` → both; `build a CLI command` and `build a test suite` → bdd only (proves no `ui` substring hit); host-injected frontend context + CLI-only request → no UX fact; existing exclusion cases unchanged; update `ux-feature-guardrail.test.ts` string assertions
+- [x] T5 author `~/.claude/skills/design-proposal/SKILL.md` per the adjudicated content contract (boundary freeze before imagegen; provider ceilings); smoke: skill listing shows it and its four named sub-skills resolve in `~/.claude/skills`
+- [x] T6 harness convention deltas: `repo-harness-prd/SKILL.md` step 15 pointer (with the boundary-before-imagegen ordering) + design-brief template role-aware concept-boundary subsection and pointer propagated via `bun run sync:helpers` + design-options boundary-prerequisite and taste-ceiling table in both mirrors; parity and content tests green
+- [x] T7 `tasks/todos.md`: close rows 17-18 citing `20260714-bdd3-ea1-typed-evidence-authority-outcome.md` / `20260714-bdd3-ps1-protected-shape-outcome.md`; VH1 row untouched; add the rendered-surface verification deferred row (trigger: first observed post-brief developer-view leakage); note `project-init-lib.sh:2153` residue already fixed (deviation: contract Goal + dispatch omit the project-init-lib.sh sentence, see notes)
+- [ ] T8 BLOCKED: `archive-workflow --outcome Completed` requires fresh verify-sprint evidence in this worktree's `.ai/harness/checks/latest.json` (currently `{}`), which the dispatch forbids generating; see notes for full gate analysis and zero-side-effect confirmation
+- [x] T9 full verification: four capability suites + `bun run check:type` + hook/helper parity checks + root required checks + `repo-harness run check-task-workflow --strict`; hand diff + evidence to gatekeeper for acceptance (full `bun test`: 1670 pass/1 skip/1 fail — the 1 fail is a newly-identified environmental issue in `tests/hook-dispatch-diet-report.test.ts`, not the documented state-concurrency flake; see notes)

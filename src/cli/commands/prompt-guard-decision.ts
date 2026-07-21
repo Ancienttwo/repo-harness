@@ -40,6 +40,7 @@ import {
   isTriggerQuestionPrompt,
   shouldEmitBddFeatureAdvice,
   shouldEmitTddBugFixAdvice,
+  shouldEmitUxFeatureGuardAdvice,
   type PromptIntentContext,
 } from '../hook/prompt-intents';
 
@@ -191,6 +192,7 @@ export function runPromptGuardVerdictFromPrompt(prompt: string): PromptGuardVerd
       spa_day: bit(isSpaDayIntent(ctx)),
       tdd_bug_fix_advice: bit(shouldEmitTddBugFixAdvice(ctx)),
       bdd_feature_advice: bit(shouldEmitBddFeatureAdvice(ctx)),
+      ux_feature_guard_advice: bit(shouldEmitUxFeatureGuardAdvice(ctx)),
     },
     derived: {
       done_outcome: deriveDoneOutcome(ctx),

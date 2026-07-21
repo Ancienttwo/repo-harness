@@ -130,7 +130,8 @@ Project
 
 
 <!-- BEGIN ARCHITECTURE PENDING REQUESTS -->
-- (none)
+- [ ] 2026-07-21T21:39:15+0800 [high] `scripts/ensure-task-workflow.sh` -> [root](requests/root.md)
+- [ ] 2026-07-21T21:39:22+0800 [high] `src/cli/hook/prompt-intents.ts` -> [runtime-harness-hook-adapters](requests/runtime-harness-hook-adapters.md)
 <!-- END ARCHITECTURE PENDING REQUESTS -->
 
 

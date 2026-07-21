@@ -42,6 +42,7 @@ import {
   isTriggerQuestionPrompt,
   shouldEmitBddFeatureAdvice,
   shouldEmitTddBugFixAdvice,
+  shouldEmitUxFeatureGuardAdvice,
 } from './prompt-intents';
 import {
   classifyPromptGuardIntent,
@@ -572,7 +573,8 @@ function writePendingOrchestration(repoRoot: string, fsApi: PromptHandlerFs, kin
 
 function appendTddBddAdvice(context: ReturnType<typeof buildPromptIntentContext>, out: string[]): void {
   if (shouldEmitTddBugFixAdvice(context)) out.push('[TDD] Bug-fix intent detected. Reproduce with a failing test first.\n  检测到修复请求：先写失败测试复现问题，再重写实现。\n');
-  if (shouldEmitBddFeatureAdvice(context)) out.push('[BDD] Feature intent detected. Define Given-When-Then acceptance scenarios first.\n  检测到新功能请求：先定义 Given-When-Then 验收场景。\n[UXFeatureGuard] For user-visible behavior, first freeze rules/non-goals, separate instruction from payload, and inventory existing UI/domain reuse targets.\n  Read: repo-harness docs show ux-feature-guard (fail loudly; no parallel authority or compatibility fallback).\n');
+  if (shouldEmitBddFeatureAdvice(context)) out.push('[BDD] Feature intent detected. Define Given-When-Then acceptance scenarios first.\n  检测到新功能请求：先定义 Given-When-Then 验收场景。\n');
+  if (shouldEmitUxFeatureGuardAdvice(context)) out.push('[UXFeatureGuard] For user-visible behavior, first freeze rules/non-goals, separate instruction from payload, and inventory existing UI/domain reuse targets.\n  Read: repo-harness docs show ux-feature-guard (fail loudly; no parallel authority or compatibility fallback).\n');
 }
 
 function checkStructuredEvidence(repoRoot: string, state: PromptGuardRuntimeState, fsApi: HookInputFs): string | null {

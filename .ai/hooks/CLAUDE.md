@@ -43,27 +43,27 @@ Owns the runtime-harness-hook-adapters capability boundary declared in .ai/conte
 <!-- BEGIN ARCHITECTURE CONTRACT -->
 ## Architecture Contract
 
-- Functional block: `assets/hooks`
+- Functional block: `src/cli/hook`
 - Capability ID: `runtime-harness-hook-adapters`
-- Matched prefix: `assets/hooks`
+- Matched prefix: `src/cli/hook`
 - Architecture domain: `runtime-harness`
 - Architecture capability: `hook-adapters`
 - Architecture module: `docs/architecture/modules/runtime-harness/hook-adapters.md`
-- Last architecture event: 2026-07-14T13:43:09+0800
-- Last changed path: `assets/hooks/codex-delegation-advisor.sh`
+- Last architecture event: 2026-07-21T21:39:22+0800
+- Last changed path: `src/cli/hook/prompt-intents.ts`
 - Severity: high
 - Change type: workflow-surface
 - Module responsibility: Keep this block aligned with the local boundary described by surrounding human-owned context.
-- Entrypoints: `assets/hooks`
+- Entrypoints: `src/cli/hook`
 - Allowed dependencies: Follow root `AGENTS.md` / `CLAUDE.md` and this local contract.
 - Forbidden dependencies: Do not cross sibling app/service/package boundaries without an architecture snapshot or explicit plan.
-- Runtime path: `assets/hooks`
+- Runtime path: `src/cli/hook`
 - LSP/tooling profile: `typescript-lsp`
 - Verification: Use root required checks plus local commands recorded in this capability contract.
 - Latest snapshot: `(none yet)`
 - Semantic diagram source: `docs/architecture/modules/runtime-harness/hook-adapters.md`
 - Latest human diagram: `(none yet)`
-- Pending architecture request: `(none)`
+- Pending architecture request: `docs/architecture/requests/runtime-harness-hook-adapters.md`
 
 ## Active Workstreams
 
