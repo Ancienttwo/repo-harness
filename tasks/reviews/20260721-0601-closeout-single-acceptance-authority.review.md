@@ -51,17 +51,17 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
-> **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Disposition**: user_waiver
+> **Reviewer**: User
+> **Source**: user-waiver
+> **Actor**: kito
+> **Reviewed Subject SHA256**: sha256:facb965a77994c3684becec5a18cc181367f3c9230c85e449255be1de654cbdb
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: d61d153e76234de94c9082236405125bbe83dd88
+> **Verification Evidence SHA256**: sha256:3381442f01f7358223d3acbae782bec2939f8edfbebfdc5008fecf3f36870f5d
+> **Issued At**: 2026-07-21T06:43:20.881Z
 
-- Summary: No AcceptanceReceipt has been recorded.
+- Summary: Owner kito accepts the remaining risk after the bounded Claude attempt timed out; recovered findings and the receipt projection defect are fixed, and the final frozen verification evidence passes.
 - Findings: none
 
 ## Behavior Diff Notes
