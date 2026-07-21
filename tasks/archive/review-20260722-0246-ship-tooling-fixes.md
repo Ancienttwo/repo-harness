@@ -1,3 +1,9 @@
+> **Archived**: 2026-07-22 02:46
+> **Related Plan**: plans/archive/plan-20260721-2256-ship-tooling-fixes.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260722-0246
+
 # Task Review: ship-tooling-fixes
 
 > **Status**: Pending

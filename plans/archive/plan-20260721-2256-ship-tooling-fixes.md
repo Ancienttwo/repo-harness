@@ -1,6 +1,6 @@
 # Plan: Ship-tooling environment fixes: predict-manifest cp-nest, protected-PATH node, archive contract binding, diet-report hermeticity
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260721-2256
 > **Slug**: ship-tooling-fixes
 > **Planning Source**: waza-think

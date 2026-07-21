@@ -1,6 +1,12 @@
+> **Archived**: 2026-07-22 02:46
+> **Related Plan**: plans/archive/plan-20260721-2256-ship-tooling-fixes.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260722-0246
+
 # Task Contract: ship-tooling-fixes
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260721-2256-ship-tooling-fixes.md
 > **Task Profile**: bugfix
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
