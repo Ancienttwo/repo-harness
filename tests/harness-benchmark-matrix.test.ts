@@ -1,14 +1,18 @@
 import { describe, expect, test } from 'bun:test';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'fs';
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { join, relative, resolve } from 'path';
 import {
   BENCHMARK_MAX_CONCURRENCY,
   BENCHMARK_PROFILES,
   BENCHMARK_WALL_TIME_BUDGET_MS,
   addLinkedArmWorkspace,
+  assertBenchmarkRuntimeArtifactUnchanged,
+  assertBenchmarkSubjectUnchanged,
+  benchmarkSubject,
   benchmarkChangedFiles,
   benchmarkRunLayout,
+  captureBenchmarkSourceAuthority,
   claudeBenchmarkCommand,
   cloneImmutableWorkspaceBase,
   cleanupArmHostRoot,
@@ -22,6 +26,7 @@ import {
   mapWithConcurrency,
   noHarnessIsolation,
   parsePorcelainPaths,
+  prepareBenchmarkRuntimeArtifact,
   prepareBenchmarkProfiles,
   rebaseAbsoluteSymlinks,
   readHookMetrics,
@@ -277,6 +282,210 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
     expect(env.REPO_HARNESS_BRAIN_ROOT).toBe('/tmp/benchmark-host/brain');
     expect(env.BUN_INSTALL).toBe('/tmp/benchmark-host/.bun');
     expect(env.PATH?.split(':')[0]).toBe('/tmp/benchmark-host/.bun/bin');
+  });
+
+  test('packs exactly one external immutable runtime artifact and rejects mutation', () => {
+    const runRoot = mkdtempSync(join(tmpdir(), 'harness-runtime-artifact-'));
+    try {
+      const artifact = prepareBenchmarkRuntimeArtifact(ROOT, runRoot);
+      const packageRoot = join(runRoot, 'runtime-package');
+      const tarballs = readdirSync(packageRoot).filter((entry) => entry.endsWith('.tgz'));
+
+      expect(tarballs).toEqual([relative(packageRoot, artifact.path)]);
+      expect(artifact.path).toMatch(/\.tgz$/);
+      expect(artifact.sha256).toMatch(/^sha256:[a-f0-9]{64}$/);
+      const artifactOutsideRoot = relative(ROOT, realpathSync(artifact.path));
+      expect(artifactOutsideRoot === '..' || artifactOutsideRoot.startsWith('../')).toBe(true);
+      expect(() => assertBenchmarkRuntimeArtifactUnchanged(artifact)).not.toThrow();
+
+      writeFileSync(artifact.path, Buffer.concat([
+        readFileSync(artifact.path),
+        Buffer.from('mutation'),
+      ]));
+      expect(() => assertBenchmarkRuntimeArtifactUnchanged(artifact))
+        .toThrow('benchmark runtime artifact changed');
+    } finally {
+      rmSync(runRoot, { recursive: true, force: true });
+    }
+  });
+
+  test('reuses one packed artifact across isolated installs without mutating source authority', () => {
+    const runRoot = mkdtempSync(join(tmpdir(), 'harness-runtime-install-'));
+    const manifest = join(ROOT, 'evals/harness/scenarios.json');
+    const seed = resolve(ROOT, 'evals/fixtures/harness-matrix');
+    try {
+      const authority = captureBenchmarkSourceAuthority(ROOT, manifest, seed);
+      const artifact = prepareBenchmarkRuntimeArtifact(ROOT, runRoot);
+      assertBenchmarkSubjectUnchanged(authority, 'runtime artifact preparation');
+
+      for (const suffix of ['one', 'two']) {
+        const home = join(runRoot, `home-${suffix}`);
+        mkdirSync(home, { recursive: true });
+        const env = isolatedHarnessEnvironment(home);
+        const install = Bun.spawnSync([process.execPath, 'add', '-g', artifact.path], {
+          cwd: ROOT,
+          env,
+          stdout: 'pipe',
+          stderr: 'pipe',
+        });
+        expect(install.exitCode).toBe(0);
+
+        const installedCli = join(env.BUN_INSTALL ?? join(home, '.bun'), 'bin', 'repo-harness');
+        expect(existsSync(installedCli)).toBe(true);
+        const installedTargetOutsideRoot = relative(ROOT, realpathSync(installedCli));
+        expect(installedTargetOutsideRoot === '..' || installedTargetOutsideRoot.startsWith('../')).toBe(true);
+        const version = Bun.spawnSync([installedCli, '--version'], {
+          cwd: ROOT,
+          env,
+          stdout: 'pipe',
+          stderr: 'pipe',
+        });
+        expect(version.exitCode).toBe(0);
+        expect(version.stdout.toString().trim()).toMatch(/^\d+\.\d+\.\d+/);
+        expect(() => assertBenchmarkRuntimeArtifactUnchanged(artifact)).not.toThrow();
+        expect(() => assertBenchmarkSubjectUnchanged(authority, `isolated install ${suffix}`))
+          .not.toThrow();
+      }
+    } finally {
+      rmSync(runRoot, { recursive: true, force: true });
+    }
+  });
+
+  test('profile preparation skips no-harness installation and uses the packed absolute CLI for both harness profiles', () => {
+    const source = readFileSync(join(ROOT, 'scripts/run-harness-profile-benchmark.ts'), 'utf8');
+    const start = source.indexOf('function projectHarnessBase(');
+    const end = source.indexOf('\nfunction prepareProfileBase(', start);
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+
+    const block = source.slice(start, end);
+    const noHarness = block.indexOf("if (profile === 'no-harness') return;");
+    const artifactInstall = block.indexOf(
+      "run(process.execPath, ['add', '-g', runtimeArtifact.path], workspace, env);",
+    );
+    const installedCli = block.indexOf(
+      "const installedCli = join(env.BUN_INSTALL ?? join(hostRoot, '.bun'), 'bin', 'repo-harness');",
+    );
+    const installProfile = block.indexOf(
+      "const installProfile = profile === 'adaptive-lite' ? 'standard' : 'strict';",
+    );
+
+    expect(noHarness).toBeGreaterThanOrEqual(0);
+    expect(artifactInstall).toBeGreaterThan(noHarness);
+    expect(installedCli).toBeGreaterThan(artifactInstall);
+    expect(installProfile).toBeGreaterThan(installedCli);
+    expect(block).toContain("assertPathOutsideRoot(installedCli, ROOT, 'installed benchmark CLI')");
+    expect(block).toContain("run(installedCli, ['adopt'");
+    expect(block).toContain("'install', '--profile', installProfile");
+    expect(block).toContain("'--no-cli'");
+    expect(block).not.toContain("join(ROOT, 'src/cli/index.ts')");
+  });
+
+  test('report construction follows the provider-execution guard and uses captured source authority', () => {
+    const source = readFileSync(join(ROOT, 'scripts/run-harness-profile-benchmark.ts'), 'utf8');
+    const artifactGuard = 'if (runtimeArtifact) assertBenchmarkRuntimeArtifactUnchanged(runtimeArtifact);';
+    const preparedBases = source.indexOf('const preparedBases = options.execute');
+    const profileSubjectGuard = source.indexOf(
+      "assertBenchmarkSubjectUnchanged(sourceAuthority, 'profile preparation');",
+      preparedBases,
+    );
+    const profileArtifactGuard = source.lastIndexOf(artifactGuard, profileSubjectGuard);
+    const providerGuard = source.indexOf(
+      "assertBenchmarkSubjectUnchanged(sourceAuthority, 'provider execution');",
+    );
+    const providerArtifactGuard = source.lastIndexOf(artifactGuard, providerGuard);
+    const reportStart = source.indexOf('const report: HarnessBenchmarkReport = {', providerGuard);
+    const reportWrite = source.indexOf('writeHarnessBenchmarkReport(report, options.report);', reportStart);
+
+    expect(preparedBases).toBeGreaterThanOrEqual(0);
+    expect(profileArtifactGuard).toBeGreaterThan(preparedBases);
+    expect(profileArtifactGuard).toBeLessThan(profileSubjectGuard);
+    expect(providerArtifactGuard).toBeGreaterThan(profileSubjectGuard);
+    expect(providerArtifactGuard).toBeLessThan(providerGuard);
+    expect(providerGuard).toBeGreaterThanOrEqual(0);
+    expect(reportStart).toBeGreaterThan(providerGuard);
+    expect(reportWrite).toBeGreaterThan(reportStart);
+    expect(source.slice(providerGuard, reportStart)).not.toContain('benchmarkSubject(');
+    const reportBlock = source.slice(reportStart, reportWrite);
+    expect(reportBlock).toContain('source_commit: sourceAuthority.sourceCommit');
+    expect(reportBlock).toContain('...sourceAuthority.subject');
+    expect(reportBlock).not.toContain('benchmarkSubject(');
+  });
+
+  test('rejects Git-clean install-profile mode drift against the initial benchmark subject', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'harness-subject-mode-drift-'));
+    const source = join(dir, 'source');
+    const host = join(dir, 'host');
+    const manifest = join(source, 'manifest.json');
+    const seed = join(source, 'seed');
+    const executablePaths = [
+      join(source, 'src/cli/index.ts'),
+      join(source, 'src/cli/hook-entry.ts'),
+    ];
+    const git = (...args: string[]) => {
+      const result = Bun.spawnSync(['git', ...args], { cwd: source, stdout: 'pipe', stderr: 'pipe' });
+      expect(result.exitCode).toBe(0);
+      return result.stdout.toString().trim();
+    };
+    type BenchmarkAuthority = {
+      root: string;
+      manifestPath: string;
+      seed: string;
+      sourceCommit: string;
+      subject: ReturnType<typeof benchmarkSubject>;
+    };
+    const runner = await import('../scripts/run-harness-profile-benchmark') as unknown as {
+      captureBenchmarkSourceAuthority?: (root: string, manifestPath: string, seed: string) => BenchmarkAuthority;
+      assertBenchmarkSubjectUnchanged?: (authority: BenchmarkAuthority, phase: string) => void;
+    };
+    try {
+      mkdirSync(join(source, 'src/cli'), { recursive: true });
+      mkdirSync(join(source, 'assets'));
+      mkdirSync(seed);
+      writeFileSync(join(source, 'package.json'), JSON.stringify({
+        name: 'benchmark-mode-drift-fixture',
+        version: '1.0.0',
+        bin: {
+          'benchmark-mode-drift-fixture': 'src/cli/index.ts',
+          'benchmark-mode-drift-hook': 'src/cli/hook-entry.ts',
+        },
+      }));
+      writeFileSync(executablePaths[0], '#!/usr/bin/env bun\n');
+      writeFileSync(executablePaths[1], '#!/usr/bin/env bun\n');
+      executablePaths.forEach((path) => chmodSync(path, 0o755));
+      writeFileSync(manifest, '{}\n');
+      writeFileSync(join(seed, 'fixture.txt'), 'seed\n');
+      git('init', '-q', '--initial-branch=main');
+      git('config', 'user.name', 'Benchmark Test');
+      git('config', 'user.email', 'benchmark@example.com');
+      git('config', 'core.filemode', 'false');
+      git('add', '.');
+      git('commit', '-qm', 'seed');
+
+      const authority = runner.captureBenchmarkSourceAuthority?.(source, manifest, seed);
+      const initialSubject = benchmarkSubject(source, manifest, seed);
+      expect(executablePaths.map((path) => statSync(path).mode & 0o777)).toEqual([0o755, 0o755]);
+
+      const install = Bun.spawnSync([process.execPath, 'add', '-g', source], {
+        cwd: source,
+        env: { ...process.env, HOME: host, BUN_INSTALL: join(host, '.bun') },
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+      expect(install.exitCode).toBe(0);
+      expect(git('status', '--porcelain')).toBe('');
+      expect(executablePaths.map((path) => statSync(path).mode & 0o777)).toEqual([0o777, 0o777]);
+      const driftedSubject = benchmarkSubject(source, manifest, seed);
+      expect(driftedSubject.install_profile_inputs_sha256).not.toBe(initialSubject.install_profile_inputs_sha256);
+      expect(driftedSubject.benchmark_subject_sha256).not.toBe(initialSubject.benchmark_subject_sha256);
+
+      expect(typeof runner.captureBenchmarkSourceAuthority).toBe('function');
+      expect(typeof runner.assertBenchmarkSubjectUnchanged).toBe('function');
+      expect(() => runner.assertBenchmarkSubjectUnchanged!(authority!, 'profile-preparation'))
+        .toThrow(/profile-preparation.*install_profile_inputs_sha256|install_profile_inputs_sha256.*profile-preparation/);
+      expect(() => runner.assertBenchmarkSubjectUnchanged!(authority!, 'provider execution'))
+        .toThrow(/provider execution.*install_profile_inputs_sha256|install_profile_inputs_sha256.*provider execution/);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
   test('parses NUL-delimited porcelain entries, stripping the leading XY status columns', () => {
