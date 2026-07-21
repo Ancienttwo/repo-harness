@@ -73,6 +73,35 @@ it:
   it not-established and route the question to the user instead of
   asserting it.
 
+## Product Boundary Prerequisite (Before Step 2)
+
+Before any preview variant is generated, freeze the product boundary this
+decision must stay inside. This gate runs once, after Step 1 evidence and
+before Step 2 variants; it is not itself a design decision, and image
+generation must never be used to explore or discover a missing piece of it.
+
+Freeze all of the following:
+
+- Audience / role: who sees this surface, and under what role or permission
+  level.
+- Requested user-visible outcome: what the user accomplishes, in one line.
+- Product rules that must not change: existing behavior, semantics, and
+  constraints this decision may not alter.
+- Non-goals / forbidden extras: what this decision explicitly does not
+  include.
+- Allowed visible concepts: the concrete set of UI concepts, states, and
+  controls this direction may show.
+- Backstage-only concepts: concepts that exist in the product (admin views,
+  debug panels, internal roles, unshipped states) that must never appear as
+  if user-visible in a preview or in an implementation drawn from one.
+- Required failure/recovery/accessibility behavior: the error, retry,
+  empty, and accessibility behavior that must be present regardless of
+  which direction is chosen.
+
+If any of these is missing or undecided, stop here and resolve it with the
+user (or the owning PRD/design brief) before Step 2. A gap in this boundary
+is a question for the user, not a prompt for the model.
+
 ## Step 2: Variant Generation
 
 Render preview variants with the host's image generation as a plain host
@@ -120,6 +149,29 @@ If nobody is present to choose after Step 3, present the options and stop.
 Never auto-pick, never default to one option, never treat silence or a
 timeout as approval, and never proceed to implementation until a human
 closes the choice.
+
+## Taste Refinement Authority Ceiling
+
+Once a direction is chosen (Step 4), a taste-class skill (for example
+`design-taste-frontend`, `gpt-taste`) may refine its presentation. This
+ceiling governs what that refinement pass may apply directly versus what it
+may only propose back to the human:
+
+| Refinement scope | Authority |
+|---|---|
+| Visual hierarchy, spacing, typography, color/token application | Apply directly |
+| Component selection for an already-frozen interaction | Apply directly |
+| Presentation of already-frozen interactions and copy | Apply directly |
+| Features, states, or roles not in the frozen boundary | Proposal-only |
+| Routes, fields, or settings | Proposal-only |
+| Product policy or persistence semantics | Proposal-only |
+| Retry rules or diagnostic modes | Proposal-only |
+
+A refinement pass that would touch a proposal-only row returns it labelled
+`PROPOSED_PRODUCT_CHANGE` instead of applying it directly — the chosen
+direction's frozen scope does not expand by taste judgment. This ceiling
+applies to any refinement-provider skill invoked after Step 4, including but
+not limited to the two named above.
 
 ## Design-Brief Hand-off
 

@@ -15,6 +15,7 @@ import {
   isThinkPlanStartIntent,
   shouldEmitBddFeatureAdvice,
   shouldEmitTddBugFixAdvice,
+  shouldEmitUxFeatureGuardAdvice,
   stripPromptContextBlocks,
 } from '../../src/cli/hook/prompt-intents';
 import { runPromptGuardVerdictFromPrompt } from '../../src/cli/commands/prompt-guard-decision';
@@ -160,6 +161,38 @@ describe('prompt intent classifiers', () => {
   test('BDD advice is suppressed for diagnostic and review prompts', () => {
     expect(shouldEmitBddFeatureAdvice(ctx('实现一个新功能页面'))).toBe(true);
     expect(shouldEmitBddFeatureAdvice(ctx('为什么 hook 没开 worktree 去执行？'))).toBe(false);
+  });
+
+  test('UX feature guard advisory requires BDD intent plus a frontend/UI noun in the stripped text', () => {
+    // Frontend noun present (ZH) -> both fire.
+    expect(shouldEmitBddFeatureAdvice(ctx('实现一个新功能页面'))).toBe(true);
+    expect(shouldEmitUxFeatureGuardAdvice(ctx('实现一个新功能页面'))).toBe(true);
+
+    // Feature intent without a UI noun (ZH) -> BDD only.
+    expect(shouldEmitBddFeatureAdvice(ctx('实现一个 CLI 子命令'))).toBe(true);
+    expect(shouldEmitUxFeatureGuardAdvice(ctx('实现一个 CLI 子命令'))).toBe(false);
+
+    // Frontend noun present (EN) -> both fire.
+    expect(shouldEmitBddFeatureAdvice(ctx('build a dashboard'))).toBe(true);
+    expect(shouldEmitUxFeatureGuardAdvice(ctx('build a dashboard'))).toBe(true);
+
+    // "build"/"suite" must never match via the "ui" substring.
+    expect(shouldEmitBddFeatureAdvice(ctx('build a CLI command'))).toBe(true);
+    expect(shouldEmitUxFeatureGuardAdvice(ctx('build a CLI command'))).toBe(false);
+
+    expect(shouldEmitBddFeatureAdvice(ctx('build a test suite'))).toBe(true);
+    expect(shouldEmitUxFeatureGuardAdvice(ctx('build a test suite'))).toBe(false);
+
+    // A host-injected context block naming frontend/UI nouns must never
+    // create UX intent; only the stripped user text (ctx.text) counts.
+    const hostInjectedFrontendContext = [
+      '<system>',
+      'Active project context: a frontend dashboard with buttons, forms, and modals.',
+      '</system>',
+      '实现一个 CLI 子命令',
+    ].join('\n');
+    expect(shouldEmitBddFeatureAdvice(ctx(hostInjectedFrontendContext))).toBe(true);
+    expect(shouldEmitUxFeatureGuardAdvice(ctx(hostInjectedFrontendContext))).toBe(false);
   });
 
   test('plan-start derivations produce usable slug, kind, and outcome', () => {

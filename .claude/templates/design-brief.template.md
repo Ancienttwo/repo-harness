@@ -33,6 +33,20 @@ do not create a parallel guard artifact.
 - Exact payload acted on (資料內容; if none, write `N/A`):
 - Forbidden extras / non-goals (禁止新增):
 
+### Role-aware User-visible Concept Boundary (角色可見概念邊界)
+
+- Audience / role for this surface (可見角色):
+- Allowed visible concepts (允許可見的概念範圍):
+- Required outcome/recovery concepts that must stay visible (必須保留的結果與復原概念):
+- Backstage-only concepts that must never appear as user-visible (僅限後台，不得對使用者可見):
+- Role-gated exceptions, or `none` (角色限定例外，無則填 `none`):
+- Authority for each exception, or `N/A` (每個例外的核准依據，無則填 `N/A`):
+
+`UX-{{SLUG}}-N1` (the negative/non-goal scenario below) derives from the
+backstage-only and non-goal fields above: it asserts that a backstage-only
+concept or forbidden extra must NOT surface, not merely that some unrelated
+input is invalid.
+
 ### Authority & Reuse Map (權威與復用)
 
 Name exact repo paths. A new surface needs a concrete mismatch or cross-module
@@ -111,9 +125,10 @@ Every item must be checked before this brief unblocks sprint/contract execution.
 - [ ] Product rules/non-goals are frozen; instruction and payload are separate (玩法不變，指令與內容分離)
 - [ ] Existing component/domain authorities have exact reuse paths; every new surface is justified (優先復用現有權威)
 - [ ] Positive, negative, and authority-failure Given/When/Then scenarios are explicit and fail loudly (BDD 場景完整且錯誤可見)
+- [ ] Role-aware visible/backstage-only concept boundary is explicit; `UX-{{SLUG}}-N1` matches a backstage-only or non-goal concept (角色可見/僅限後台概念邊界明確，N1 對應非目標或僅限後台概念)
 
 ## Preview Attachment (可選)
 
-Optional. Reference an imagegen-generated preview or screenshot here; imagegen-type skills are enhancers for this brief, never a substitute for the checklist above.
+Optional. Reference an imagegen-generated preview or screenshot here; imagegen-type skills are enhancers for this brief, never a substitute for the checklist above. `design-proposal` can run the peer-research -> boundary-freeze -> STIMULUS-preview -> taste-refinement pipeline ahead of this section; it is an optional enhancer too, never a substitute for this brief or the Confirmation Checklist.
 
 - Preview path/link:

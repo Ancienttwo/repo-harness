@@ -85,6 +85,9 @@ describe("UX feature pre-implementation guard", () => {
     expect(promptHandler).toContain("[UXFeatureGuard]");
     expect(promptHandler).toContain("separate instruction from payload");
     expect(promptHandler).toContain("no parallel authority or compatibility fallback");
+    // Frontend-scoped gate (BDD² follow-through): [UXFeatureGuard] is pushed
+    // under its own frontend/UI-noun classifier, not the generic BDD gate.
+    expect(promptHandler).toContain("if (shouldEmitUxFeatureGuardAdvice(context))");
   });
 
   test("includes the convention in minimal-agentic adoption without a second product surface", () => {
