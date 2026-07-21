@@ -109,11 +109,19 @@ afterEach(() => {
 });
 
 describe('closeout runner guardrails', () => {
+  test('one candidate commit has one PR CI lane with cancellation', () => {
+    const workflow = readFileSync(join(ROOT, '.github', 'workflows', 'ci.yml'), 'utf-8');
+    expect(workflow).toContain('pull_request:');
+    expect(workflow).not.toMatch(/push:[\s\S]*codex\/\*\*/);
+    expect(workflow).toContain('cancel-in-progress: true');
+  });
+
   test('helper identity selects immutable ordinary, verifier, and closeout budgets', () => {
     expect(helperTimeoutMs('check-task-workflow')).toBe(120_000);
     expect(helperTimeoutMs('verify-contract')).toBe(720_000);
     expect(helperTimeoutMs('verify-sprint')).toBe(720_000);
     expect(helperTimeoutMs('contract-worktree')).toBe(900_000);
+    expect(helperTimeoutMs('merge-gate')).toBe(900_000);
     expect(helperTimeoutMs('ship-worktrees')).toBe(900_000);
   });
 

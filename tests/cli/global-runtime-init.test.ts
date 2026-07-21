@@ -19,13 +19,9 @@ function setupFakeSource(root: string): void {
   mkdirSync(join(root, 'scripts'), { recursive: true });
   mkdirSync(join(root, 'assets', 'skills', 'codex-review'), { recursive: true });
   mkdirSync(join(root, 'assets', 'skills', 'claude-review'), { recursive: true });
-  mkdirSync(join(root, 'assets', 'skills', 'merge-gate'), { recursive: true });
   writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'repo-harness', version: '9.9.9' }, null, 2));
   writeFileSync(join(root, 'assets', 'skills', 'codex-review', 'SKILL.md'), 'codex-review\n');
   writeFileSync(join(root, 'assets', 'skills', 'claude-review', 'SKILL.md'), 'claude-review\n');
-  writeFileSync(join(root, 'assets', 'skills', 'merge-gate', 'SKILL.md'), 'merge-gate\n');
-  mkdirSync(join(root, 'assets', 'skills', 'merge-gate', 'agents'), { recursive: true });
-  writeFileSync(join(root, 'assets', 'skills', 'merge-gate', 'agents', 'claude.md'), 'merge-gatekeeper\n');
   writeExecutable(
     join(root, 'scripts', 'sync-codex-installed-copies.sh'),
     '#!/bin/bash\nset -euo pipefail\necho "sync runtime link=${AGENTIC_DEV_LINK_INSTALLED_COPIES:-unset}"\n',
@@ -384,10 +380,8 @@ describe('init command global runtime bootstrap', () => {
       expect(result.exitCode).toBe(0);
       expect(result.steps.find((step) => step.step === 'configure Waza skills')?.status).toBe('skipped');
       expect(result.steps.find((step) => step.step === 'cross-review skill codex-review')?.status).toBe('ok');
-      expect(result.steps.find((step) => step.step === 'merge-gate skill')?.status).toBe('ok');
       expect(existsSync(join(home, '.claude', 'skills', 'codex-review', 'SKILL.md'))).toBe(true);
-      expect(existsSync(join(home, '.claude', 'skills', 'merge-gate', 'SKILL.md'))).toBe(true);
-      expect(existsSync(join(home, '.claude', 'agents', 'merge-gatekeeper.md'))).toBe(true);
+      expect(existsSync(join(home, '.claude', 'skills', 'merge-gate', 'SKILL.md'))).toBe(false);
       expect(existsSync(join(home, '.agents', 'skills', 'think'))).toBe(false);
     } finally {
       rmSync(tmp, { recursive: true, force: true });

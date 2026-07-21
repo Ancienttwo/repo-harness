@@ -12,7 +12,6 @@ import {
   firstOpenTask,
   markdownBullet,
   markdownHeader,
-  markdownSectionHeader,
   parseAllowedPaths,
   parseIsoOrLocalTimestamp,
 } from './artifact-parsers';
@@ -105,15 +104,6 @@ export function projectEffectiveState(input: EffectiveStateInputs): EffectiveSta
   const recordedTarget = input.reviewText
     ? markdownHeader(input.reviewText, 'Reviewed Target Revision')
     : null;
-  const externalStatus = input.reviewText
-    ? markdownHeader(input.reviewText, 'External Acceptance')
-    : null;
-  const externalSubject = input.reviewText
-    ? markdownSectionHeader(input.reviewText, 'External Acceptance Advice', 'Reviewed Subject SHA256')
-    : null;
-  const externalTarget = input.reviewText
-    ? markdownSectionHeader(input.reviewText, 'External Acceptance Advice', 'Reviewed Target Revision')
-    : null;
 
   let reviewFreshness: FreshnessState = input.reviewPath ? 'missing' : 'not_applicable';
   if (input.reviewText) {
@@ -135,34 +125,30 @@ export function projectEffectiveState(input: EffectiveStateInputs): EffectiveSta
     }
   }
   if (reviewFreshness === 'stale') staleSources.push('review');
-  if (input.reviewText && externalStatus !== 'pass') staleSources.push('external_acceptance');
-
-  const externalFreshness: FreshnessState = !input.reviewText
-    ? reviewFreshness
-    : externalStatus === 'pass' &&
-        input.reviewSubject.available &&
-        externalSubject === input.reviewSubject.reviewSubjectSha256 &&
-        (externalTarget === input.reviewSubject.targetRevision || input.reviewSubject.targetOverlapCount === 0)
-      ? 'fresh'
-      : 'stale';
-  if (externalFreshness === 'stale' && !staleSources.includes('external_acceptance')) {
-    staleSources.push('external_acceptance');
-  }
 
   let checksStatus: string | null = null;
   let checksPlan: string | null = null;
   let checksFingerprint: string | null = null;
+  let acceptanceStatus: string | null = null;
+  let acceptanceDisposition: string | null = null;
   if (input.checksText) {
     try {
       const checks = JSON.parse(input.checksText) as {
         status?: unknown;
         active_plan?: unknown;
         review_subject_sha256?: unknown;
+        acceptance_receipt?: { status?: unknown; disposition?: unknown };
       };
       checksStatus = typeof checks.status === 'string' ? checks.status : null;
       checksPlan = typeof checks.active_plan === 'string' ? checks.active_plan : null;
       checksFingerprint = typeof checks.review_subject_sha256 === 'string'
         ? checks.review_subject_sha256
+        : null;
+      acceptanceStatus = typeof checks.acceptance_receipt?.status === 'string'
+        ? checks.acceptance_receipt.status
+        : null;
+      acceptanceDisposition = typeof checks.acceptance_receipt?.disposition === 'string'
+        ? checks.acceptance_receipt.disposition
         : null;
     } catch {
       staleSources.push('checks');
@@ -177,6 +163,17 @@ export function projectEffectiveState(input: EffectiveStateInputs): EffectiveSta
         checksFingerprint === input.reviewSubject.reviewSubjectSha256
       ? 'fresh'
       : 'stale';
+
+  const acceptanceApplicable = Boolean(input.planPath && input.contractText);
+  const externalFreshness: FreshnessState = !acceptanceApplicable
+    ? 'not_applicable'
+    : !input.checksText
+      ? 'missing'
+    : checksFreshness === 'fresh' && acceptanceStatus === 'pass' &&
+        (acceptanceDisposition === 'external_pass' || acceptanceDisposition === 'user_waiver')
+      ? 'fresh'
+      : 'stale';
+  if (externalFreshness === 'stale') staleSources.push('external_acceptance');
   if (checksFreshness === 'stale' && !staleSources.includes('checks')) staleSources.push('checks');
 
   const sprintFreshness: FreshnessState = !input.sprintPath
@@ -383,9 +380,9 @@ export function projectEffectiveState(input: EffectiveStateInputs): EffectiveSta
       recorded_target_revision: recordedTarget,
     },
     external_acceptance: {
-      path: input.reviewPath,
+      path: acceptanceApplicable ? input.checksPath : null,
       freshness: externalFreshness,
-      status: externalStatus,
+      status: acceptanceDisposition,
     },
     checks: { path: input.checksPath, freshness: checksFreshness, status: checksStatus },
     active_sprint: { path: input.sprintPath, freshness: sprintFreshness },

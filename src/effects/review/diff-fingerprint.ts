@@ -366,7 +366,10 @@ export function isImplementationSurfacePath(path: string): boolean {
 
 function isOperationalReviewPath(path: string): boolean {
   return (
-    /^tasks\/reviews\/[^/]+\.review\.md$/.test(path) ||
+    path.startsWith('plans/') ||
+    /^tasks\/(?:contracts|reviews|notes|archive)\//.test(path) ||
+    path === 'tasks/current.md' ||
+    path === 'tasks/todos.md' ||
     path === '.ai/harness/active-plan' ||
     path === '.ai/harness/active-worktree' ||
     path === '.ai/harness/events.jsonl' ||

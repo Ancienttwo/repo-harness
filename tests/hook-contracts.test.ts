@@ -163,7 +163,7 @@ describe("Hook contracts", () => {
     expect(script).toContain("has_changes_glob");
     expect(script).toContain("emit_external_acceptance_prompt");
     expect(script).toContain("[ExternalAcceptance]");
-    expect(script).toContain("## External Acceptance Advice");
+    expect(script).toContain("AcceptanceReceipt");
     expect(script).toContain("[CrossReview]");
     expect(script).toContain("prompt_strict_workflow && review_profile=\"strict\"");
     expect(script).toContain("if prompt_strict_workflow; then");

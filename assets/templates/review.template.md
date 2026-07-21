@@ -47,25 +47,20 @@ screenshot/artifact path, or reviewer observation.
 - [ ] Exact manual_checks requirement
   - Evidence: concrete observation, command output, screenshot path, or reviewer note
 
-## External Acceptance Advice
+## Acceptance Receipt Projection
 
-> **External Acceptance**: unavailable
-> **External Reviewer**:
-> **External Source**:
-> **External Started**:
-> **External Completed**:
-> **Review Rubric Version**: 2
+> **Disposition**: unavailable
+> **Reviewer**: unavailable
+> **Source**: unavailable
+> **Actor**: not-applicable
 > **Reviewed Subject SHA256**: pending
 > **Reviewed Subject Scope**: normalized-final-content
 > **Reviewed Target Revision**: pending
-> **Benchmark Evidence SHA256**: pending
-> **Solo Operator Acknowledgement**: <!-- only under policy external_acceptance.solo_operator=true; omit otherwise -->
-> **Reviewer Session Identity**: <!-- only under solo_operator=true; self-attested, must differ from Implementer Session Identity -->
-> **Implementer Session Identity**: <!-- only under solo_operator=true; self-attested, must differ from Reviewer Session Identity -->
+> **Verification Evidence SHA256**: pending
+> **Issued At**: pending
 
-- P1 blockers:
-- P2 advisories:
-- Acceptance checklist:
+- Summary: No AcceptanceReceipt has been recorded.
+- Findings: none
 
 ## Behavior Diff Notes
 

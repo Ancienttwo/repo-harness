@@ -37,7 +37,7 @@ Add a `--json` flag to `scripts/check-task-sync.sh` that, when passed, prints a 
 - Checks file: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
-- Completion gate: `repo-harness run verify-sprint` must see this contract pass, the review recommend pass, and `## External Acceptance Advice` pass or record a manual override.
+- Completion gate: `repo-harness run verify-sprint --prepare-acceptance` freezes passing contract evidence; one typed `AcceptanceReceipt` then records `external_pass` or a contract-allowed `user_waiver`, and final `verify-sprint` consumes it without rerunning tests.
 
 ## Allowed Paths
 
@@ -102,11 +102,6 @@ exit_criteria:
   commands_succeed:
     - diff -q scripts/check-task-sync.sh assets/templates/helpers/check-task-sync.sh
     - bash scripts/check-task-sync.sh --json | grep -q '"status"'
-  qa_scores:
-    - dimension: functionality
-      min: 7
-  manual_checks:
-    - "Evaluator review file recommends pass"
 ```
 
 ## Acceptance Notes (Human Review)

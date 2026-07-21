@@ -33,8 +33,8 @@
     {"name": "review", "status": "pass"}
   ],
   "handoffs": [],
-  "external_acceptance": {
-    "status": "not_required"
+  "acceptance_receipt": {
+    "status": "pass", "disposition": "external_pass", "reviewer": "Claude", "source": "claude-review"
   },
   "files_changed": ["docs/design/DESIGN-fixture-frontend.md"],
   "allowed_paths_check": {

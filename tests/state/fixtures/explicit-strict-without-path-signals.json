@@ -16,10 +16,10 @@
     "state_version": 1,
     "state_revision": "sha256:<dynamic:state_revision>",
     "authority_revision": "sha256:<dynamic:authority_revision>",
-    "subject_revision": "sha256:3e07a153089d6ccd3c8e383dd3d958b120c12d6ca7c3dd06584a4d7a90546afd",
-    "evidence_revision": "sha256:7d48fddc4362a26f5e97057e52068e355acbbf4e54f7235df4f153195a2cad0f",
+    "subject_revision": "sha256:f5a3c1f0fe5500cdd78614cc9d6067db2f97c9be62ac2c4eaa757a343c259ad5",
+    "evidence_revision": "sha256:3feddb9cf5c00c8e56cb1adbd277b2f4512f0317a87283c6434edc89ab072b55",
     "projection_revision": "sha256:<dynamic:projection_revision>",
-    "progress_token": "sha256:183a43a9e7deb9858a43d029d9a77958a3a14344ed6a0c08cc65b71d1fbc098c",
+    "progress_token": "sha256:0be84930df67e7d3dc300b679afe02330bb3e43eea7db2b7b88065f403bf9dda",
     "authoritative_plan": {
       "path": "plans/plan-20260712-2327-effective-fixture.md",
       "status": "executing"
@@ -72,7 +72,7 @@
       "tasks/contracts/20260712-2327-effective-fixture.contract.md": "sha256:d554120ad688a43dbf777edc40b47144d1b9a9e8f9bfcba3fc4a24c259ca84c1",
       "tasks/current.md": "sha256:7a5529548a9931f32c343c2012933992a1655c0e89a23affd1f5fb3d68331668",
       "tasks/reviews/20260712-2327-effective-fixture.review.md": "sha256:f41ca543703e6ccb56ee06570274a16eb33ae10d06ff0f52f5d05f492512ed7e",
-      "review_subject": "sha256:49d9bb61bf2979439ea0e6a66fa4e94dfc27ae5bd8050391a11d6790f1c8e043",
+      "review_subject": "sha256:b6728423245c1f39a952e3d5e3f39227ce00a658be92d51253eadf167eced6fc",
       "authority_revision": "sha256:<dynamic:authority_revision>"
     },
     "review": {
@@ -83,9 +83,9 @@
       "recorded_target_revision": null
     },
     "external_acceptance": {
-      "path": "tasks/reviews/20260712-2327-effective-fixture.review.md",
+      "path": ".ai/harness/checks/latest.json",
       "freshness": "stale",
-      "status": "unavailable"
+      "status": null
     },
     "checks": {
       "path": ".ai/harness/checks/latest.json",

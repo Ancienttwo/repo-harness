@@ -86,9 +86,9 @@
       "recorded_target_revision": null
     },
     "external_acceptance": {
-      "path": "tasks/reviews/20260712-2327-effective-fixture.review.md",
+      "path": ".ai/harness/checks/latest.json",
       "freshness": "stale",
-      "status": "unavailable"
+      "status": null
     },
     "checks": {
       "path": ".ai/harness/checks/latest.json",

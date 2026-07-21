@@ -71,9 +71,10 @@ trace_get() {
 schema="$(trace_get '.schema')"
 active_plan="$(trace_get '.active_plan')"
 task_profile="$(trace_get '.task_profile')"
-review_card_verdict="$(trace_get '.review.card.verdict')"
-review_card_change_type="$(trace_get '.review.card.change_type')"
-review_card_rollback="$(trace_get '.review.card.rollback')"
+acceptance_status="$(trace_get '.acceptance_receipt.status')"
+acceptance_disposition="$(trace_get '.acceptance_receipt.disposition')"
+acceptance_reviewer="$(trace_get '.acceptance_receipt.reviewer')"
+acceptance_source="$(trace_get '.acceptance_receipt.source')"
 commands_count="$(jq '.commands | if type == "array" then length else 0 end' "$run_file")"
 outside_count="$(jq '.allowed_paths_check.outside | if type == "array" then length else 0 end' "$run_file")"
 allowed_status="$(trace_get '.allowed_paths_check.status')"
@@ -99,27 +100,29 @@ case "$task_profile" in
     ;;
 esac
 
-if [[ "$review_card_verdict" == "pass" ]]; then
-  record "review_card.pass" true "Human Review Card verdict is pass"
+if [[ "$acceptance_status" == "pass" ]]; then
+  record "acceptance_receipt.pass" true "AcceptanceReceipt status is pass"
 else
-  record "review_card.pass" false "Human Review Card verdict is ${review_card_verdict:-missing}"
+  record "acceptance_receipt.pass" false "AcceptanceReceipt status is ${acceptance_status:-missing}"
 fi
 
-if [[ -n "$review_card_change_type" && "$review_card_change_type" == "$task_profile" ]]; then
-  record "review_card.change_type" true "Human Review Card change type matches task profile"
+if [[ "$acceptance_disposition" == "external_pass" || "$acceptance_disposition" == "user_waiver" ]]; then
+  record "acceptance_receipt.disposition" true "AcceptanceReceipt disposition is terminal: $acceptance_disposition"
 else
-  record "review_card.change_type" false "Human Review Card change type ${review_card_change_type:-missing} does not match task profile ${task_profile:-missing}"
+  record "acceptance_receipt.disposition" false "AcceptanceReceipt disposition is ${acceptance_disposition:-missing}"
 fi
 
-rollback_token="$(printf '%s' "$review_card_rollback" | sed -E 's/[;,].*$//; s/[[:space:]].*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' | tr '[:upper:]' '[:lower:]')"
-case "$rollback_token" in
-  ""|tbd|todo|n/a|na|none|unknown|unavailable|pending|...)
-    record "review_card.rollback" false "Human Review Card rollback is missing or not concrete"
-    ;;
-  *)
-    record "review_card.rollback" true "Human Review Card rollback is concrete"
-    ;;
-esac
+if [[ "$acceptance_disposition" == "user_waiver" ]]; then
+  if [[ "$acceptance_reviewer" == "User" && "$acceptance_source" == "user-waiver" ]]; then
+    record "acceptance_receipt.identity" true "typed user waiver identity is valid"
+  else
+    record "acceptance_receipt.identity" false "typed user waiver identity is invalid"
+  fi
+elif [[ ( "$acceptance_reviewer" == "Claude" && "$acceptance_source" == "claude-review" ) || ( "$acceptance_reviewer" == "Codex" && "$acceptance_source" == "codex-review" ) ]]; then
+  record "acceptance_receipt.identity" true "external acceptance identity is valid"
+else
+  record "acceptance_receipt.identity" false "external acceptance identity is invalid"
+fi
 
 if [[ "$commands_count" -gt 0 ]] && jq -e '.commands[]? | select((.command // "") | length > 0)' "$run_file" >/dev/null; then
   record "commands.present" true "commands evidence is present"

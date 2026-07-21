@@ -9,7 +9,7 @@ const PACKAGE_ROOT = resolve(SCRIPT_DIR, '..', '..', '..');
 const PACKAGE_HELPERS_ROOT = join(PACKAGE_ROOT, 'assets', 'templates', 'helpers');
 const PACKAGE_CONTRACT = join(PACKAGE_ROOT, 'assets', 'workflow-contract.v1.json');
 const PACKAGE_WORKFLOW_STATE = join(PACKAGE_ROOT, 'assets', 'hooks', 'lib', 'workflow-state.sh');
-const PROTECTED_HELPERS = new Set(['contract-worktree', 'ship-worktrees', 'merge-gate']);
+const PROTECTED_HELPERS = new Set(['acceptance-receipt', 'contract-worktree', 'ship-worktrees', 'merge-gate']);
 const VERIFIER_HELPER_TIMEOUT_MS = 720_000;
 const CLOSEOUT_HELPER_TIMEOUT_MS = 900_000;
 const ORDINARY_HELPER_TIMEOUT_MS = 120_000;
@@ -132,6 +132,7 @@ export function helperTimeoutMs(helper: string): number {
     case 'verify-sprint':
       return VERIFIER_HELPER_TIMEOUT_MS;
     case 'contract-worktree':
+    case 'merge-gate':
     case 'ship-worktrees':
       return CLOSEOUT_HELPER_TIMEOUT_MS;
     default:

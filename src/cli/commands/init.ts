@@ -57,8 +57,7 @@ export interface GlobalContextOptions {
 /**
  * Host-scoped skills bundled under `assets/skills/<skill>`. Cross-model skills
  * (review second opinions plus the claude-plan external-brain plan consult)
- * install on the opposite host; the merge gate installs only on the configured
- * local gatekeeper host (Claude) so there is one runtime authority.
+ * install on the opposite host.
  */
 type BundledHostSkill = { skill: string; host: "claude" | "codex"; step: string };
 type BundledHostAgent = { source: string; agent: string; host: "claude" | "codex"; step: string };
@@ -68,14 +67,6 @@ const CROSS_REVIEW_SKILLS: ReadonlyArray<BundledHostSkill> = [
   { skill: "claude-review", host: "codex", step: "cross-review skill claude-review" },
   { skill: "claude-plan", host: "codex", step: "external-brain skill claude-plan" },
 ];
-const MERGE_GATE_SKILLS: ReadonlyArray<BundledHostSkill> = [
-  { skill: "merge-gate", host: "claude", step: "merge-gate skill" },
-];
-
-const MERGE_GATE_AGENTS: ReadonlyArray<BundledHostAgent> = [
-  { source: "assets/skills/merge-gate/agents/claude.md", agent: "merge-gatekeeper.md", host: "claude", step: "merge-gate agent" },
-];
-
 export interface InitCommandOptions {
   repo?: string;
   sourceRoot?: string;
@@ -429,22 +420,6 @@ export function syncCrossReviewSkills(
   return syncBundledItemsAtHome(sourceRoot, target, homeDir(env), CROSS_REVIEW_SKILLS, []);
 }
 
-export function syncMergeGateRuntimeAtHome(
-  sourceRoot: string,
-  target: InstallTargetSpec,
-  authorityHome: string | null,
-): InitStep[] {
-  return syncBundledItemsAtHome(sourceRoot, target, authorityHome, MERGE_GATE_SKILLS, MERGE_GATE_AGENTS);
-}
-
-export function syncMergeGateRuntime(
-  sourceRoot: string,
-  target: InstallTargetSpec,
-  dependencies: InitRuntimeDependencies = DEFAULT_INIT_RUNTIME_DEPENDENCIES,
-): InitStep[] {
-  return syncMergeGateRuntimeAtHome(sourceRoot, target, dependencies.authorityHome());
-}
-
 function syncWazaSharedRules(target: InstallTargetSpec, env?: NodeJS.ProcessEnv): InitStep {
   const home = homeDir(env);
   if (!home) {
@@ -644,16 +619,6 @@ export function runInit(
         : apply
           ? "repo harness did not apply cleanly"
           : "dry-run",
-    });
-  }
-
-  if (apply && migrate.status === "ok") {
-    steps.push(...syncMergeGateRuntime(sourceRoot, target, dependencies));
-  } else {
-    steps.push({
-      step: "merge-gate runtime",
-      status: "skipped",
-      detail: apply ? "repo harness did not apply cleanly" : "dry-run",
     });
   }
 

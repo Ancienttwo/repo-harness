@@ -5,7 +5,6 @@ import { fileURLToPath } from "url";
 import { configureBrainRoot, defaultBrainRootChoice, expandHomePath } from "./brain-root";
 import {
   syncCrossReviewSkills,
-  syncMergeGateRuntime,
   type InitRuntimeDependencies,
 } from "./init";
 import { runInstall, type InstallTargetSpec } from "./install";
@@ -658,7 +657,6 @@ export function runGlobalRuntimeSetup(
 
   if (profile === 'strict') {
     steps.push(...syncCrossReviewSkills(sourceRoot, target, env));
-    steps.push(...syncMergeGateRuntime(sourceRoot, target, dependencies));
   } else {
     steps.push({ step: "cross-review skills", status: "skipped", detail: "disabled by install profile" });
   }

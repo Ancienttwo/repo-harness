@@ -1,4 +1,0 @@
-interface:
-  display_name: "Merge Gate"
-  short_description: "Read-only merge verdict for the current Git candidate"
-  default_prompt: "Use $merge-gate to review the exact base-to-head candidate and return a strict PASS, FAIL, or BLOCKED verdict without modifying the repository."

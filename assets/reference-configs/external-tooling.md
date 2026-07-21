@@ -54,7 +54,7 @@ into `~/.codex/skills` (a Codex session asking Claude for a review or, via
 Claude's headless plan mode, for a plan consult on a mid-execution design
 fork). The harness skills are the self-contained
 baseline that always ships with `init` and the peer acceptance gate surface for
-`## External Acceptance Advice`.
+the typed `AcceptanceReceipt`; its review section is projection only.
 
 The review scope is the current reviewable diff, not just committed branch
 history: branch diff against the default base, staged changes, unstaged tracked
@@ -468,55 +468,34 @@ behind a real subagent canary.
 
 ### Local merge gate
 
-The host-only `merge-gatekeeper` agent is the enforcement runtime identity;
-the host-scoped `merge-gate` skill is the semantic protocol. They are
-deliberately separate from the cross-host fleet's general `gatekeeper` role:
-the enforcement agent selects a tool-free Claude runtime, while the skill
-defines the exact candidate inputs and strict PASS/FAIL/BLOCKED output.
-The ship orchestrator, not either prompt, writes and verifies the receipt.
+The local merge gate is provider-free. Semantic authority lives only in the
+host-owned AcceptanceReceipt created from the reviewer frozen in the task
+contract, or from a typed user waiver when that contract allows it.
+`merge-gate.ts` verifies the receipt and seals the exact base SHA, head SHA,
+full binary diff, receipt bytes, and installed helper bytes. It never owns
+provider credentials or starts a reviewer.
 
 The exact target base commit enables the local gate in
 `.ai/harness/policy.json#merge_gate`; the candidate cannot disable that base
-requirement. Runtime setup installs the bundled merge-gate source only to the
-Claude host skill directory; it is not projected to Codex and there is no
-provider fallback. Local runner identity is host-owned:
-
-```json
-{
-  "merge_gate": {
-    "enabled": true,
-    "runner": "claude-agent",
-    "agent": "merge-gatekeeper",
-    "skill": "merge-gate",
-    "claude_bin": "/absolute/path/to/claude"
-  }
-}
-```
-
-Store that object in the OS account home at `~/.repo-harness/config.json`.
-Caller `HOME`, helper-source, and runner environment overrides are ignored for
+requirement. Runtime setup installs no merge-gate skill, agent, or provider
+runtime. Caller `HOME`, helper-source, and runner environment overrides are ignored for
 the protected ship/gate helpers. The official runner also pins Bash, Git, Bun,
 and `gh` to installed host executables and replaces caller `PATH` with the
-minimal host runtime path. The config, agent, skill, state directories, and
-executable must be owned by the OS account and not group/world writable; the
-binary path must resolve to an absolute executable file.
-After
-`contract-worktree finish` creates the candidate commit,
-the installed `merge-gate.ts` runs Claude with no tools from an empty temporary
-directory and supplies the complete goal/diff/evidence bytes over stdin. It
-binds the verdict to repository root, target
-base ref/SHA, candidate head SHA, binary diff fingerprint, host config
-runtime fingerprint (config, resolved binary identity, agent prompt, and skill),
-and installed helper fingerprint. `contract-worktree` and
+minimal host runtime path. The host state directories, AcceptanceReceipt, and
+seal must be owned by the OS account and not group/world writable. After
+`contract-worktree finish` creates the candidate commit, the installed helper
+binds the seal to repository root, target base ref/SHA, candidate head SHA,
+binary diff fingerprint, AcceptanceReceipt fingerprint, and installed helper
+fingerprint. `contract-worktree` and
 `ship-worktrees` revalidate the exact SHA immediately before merge or push;
 PR mode fetches the remote base first and pushes an explicit SHA refspec.
 
-The receipt lives outside the candidate workspace at
-`~/.repo-harness/gates/<repo-id>/merge-gate.latest.json`. A missing runner or
-skill, direct candidate-helper execution, malformed structured output,
-FAIL/BLOCKED verdict, dirty worktree, moved target, moved HEAD, or mismatched
-fingerprint blocks the side effect. FAIL/BLOCKED during finish restores the
-pre-finish branch commit and live workflow artifacts for correction and retry.
+The receipt and seal live outside the candidate workspace at
+`~/.repo-harness/gates/<repo-id>/acceptance.latest.json` and
+`merge-seal.latest.json`. A missing/rejected/stale receipt, direct
+candidate-helper execution, dirty worktree, semantic subject change,
+overlapping target movement, moved HEAD, or mismatched seal blocks the side
+effect. Non-overlapping target movement recomputes only the local seal.
 
 This is a same-user local control for bounded agents, not a defense against the
 machine owner or an unrestricted same-user process. Hosted branch protection

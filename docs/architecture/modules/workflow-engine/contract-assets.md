@@ -52,7 +52,7 @@ Error paths:
 - Contract/runtime parity drift is caught by `tests/workflow-contract.test.ts`.
 - Capability orphan modules are caught by `capability-resolver.ts validate`.
 - Missing, malformed, or non-existent capability prefixes fail closed; the resolver does not synthesize authority from legacy context blocks or directory scans.
-- When the exact target base commit has `merge_gate.enabled=true`, missing host runner/skill evidence, untrusted helper execution, malformed structured output, FAIL/BLOCKED verdicts, dirty candidates, moved HEAD, moved base, or fingerprint drift fail before push or merge.
+- When the exact target base commit has `merge_gate.enabled=true`, a missing/rejected/stale AcceptanceReceipt, untrusted helper execution, dirty candidate, semantic subject drift, overlapping target movement, moved HEAD, or local-seal fingerprint drift fails before push or merge.
 - Brain-manifest validation and repo-to-brain export are explicit operator actions. Contract checks and hooks do not inspect external vault state.
 - Missing concrete risk targets for active execution fail closed. Checks,
   review, handoff, and resume freshness bind exact content fingerprints.
@@ -288,6 +288,24 @@ authority.
   production. Nested raw helper calls stay inside the already-held outer lane;
   invoking packaged Bash files directly is an internal/test surface and does
   not create a second lock or verification authority.
+
+## 2026-07-21 Single Acceptance Authority
+
+- The contract's strict `## Acceptance Policy` block freezes reviewer identity
+  and whether the named owner may issue `user_waiver`. The host-owned
+  AcceptanceReceipt is the only semantic closeout authority; its closed
+  dispositions are `external_pass`, `user_waiver`, and `reject`.
+- `verify-sprint --prepare-acceptance` freezes canonical verification evidence.
+  Receipt verification binds that evidence, normalized implementation content,
+  goal, contract, benchmark evidence, reviewed paths, and target revision.
+  Review Markdown is a generated projection and cannot authorize closeout.
+- `merge-gate.ts` is now a deterministic local seal. The former host-only
+  merge-gate skill/agent and internal Claude call are removed. Lifecycle-only
+  head movement is checked against the declared archive manifest; a later
+  non-overlapping target advance only reseals the exact base/head/full diff,
+  while overlap invalidates semantic acceptance.
+- PR CI is the sole candidate-branch lane. `codex/**` push CI is removed and
+  workflow concurrency cancels superseded runs for the same PR/ref.
 
 ## Workstream Ledger
 

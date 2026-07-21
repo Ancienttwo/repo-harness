@@ -16,10 +16,10 @@
     "state_version": 1,
     "state_revision": "sha256:<dynamic:state_revision>",
     "authority_revision": "sha256:<dynamic:authority_revision>",
-    "subject_revision": "sha256:93d99f728f9e02799fbcf9ba80ce0d65d00b17a1b04b80fcdb6989c1e0ba6751",
-    "evidence_revision": "sha256:becfbe0252a55144014f37a193e86c8d34b96bdf5189fbfdfaaa050eceb44245",
+    "subject_revision": "sha256:f5a3c1f0fe5500cdd78614cc9d6067db2f97c9be62ac2c4eaa757a343c259ad5",
+    "evidence_revision": "sha256:3feddb9cf5c00c8e56cb1adbd277b2f4512f0317a87283c6434edc89ab072b55",
     "projection_revision": "sha256:<dynamic:projection_revision>",
-    "progress_token": "sha256:ad6b8b4229e0924fe74fcd9ae8e8d50ab4463c4200411628c13d36198079ec07",
+    "progress_token": "sha256:0002285960c77ed0c327a256b20bf6018b17c6eda78646257ec3ad1406d0ae9a",
     "authoritative_plan": {
       "path": "plans/plan-20260712-2327-effective-fixture.md",
       "status": "executing"
@@ -47,7 +47,6 @@
     "blockers": [],
     "stale_sources": [
       "checks",
-      "external_acceptance",
       "review"
     ],
     "conflicting_sources": [],
@@ -64,7 +63,7 @@
       "tasks/contracts/20260712-2327-effective-fixture.contract.md": "sha256:5c8b800e79ed20f6bb87011468e4eef170912dfff586ee2a0b0f80a77072fe73",
       "tasks/current.md": "sha256:7a5529548a9931f32c343c2012933992a1655c0e89a23affd1f5fb3d68331668",
       "tasks/reviews/20260712-2327-effective-fixture.review.md": "sha256:f41ca543703e6ccb56ee06570274a16eb33ae10d06ff0f52f5d05f492512ed7e",
-      "review_subject": "sha256:32b3a80921be95952ce49adb02de4e773e70b92bd594edf357122e2f7c5513a6",
+      "review_subject": "sha256:b6728423245c1f39a952e3d5e3f39227ce00a658be92d51253eadf167eced6fc",
       "authority_revision": "sha256:<dynamic:authority_revision>"
     },
     "review": {
@@ -75,9 +74,9 @@
       "recorded_target_revision": null
     },
     "external_acceptance": {
-      "path": "tasks/reviews/20260712-2327-effective-fixture.review.md",
-      "freshness": "stale",
-      "status": "unavailable"
+      "path": null,
+      "freshness": "not_applicable",
+      "status": null
     },
     "checks": {
       "path": ".ai/harness/checks/latest.json",

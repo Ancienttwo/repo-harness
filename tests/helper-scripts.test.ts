@@ -487,18 +487,21 @@ describe("Workflow helper scripts", () => {
     );
   });
 
-  test("merge gate runs after the candidate commit and is reverified before merge or push", () => {
+  test("provider-free merge seal runs after the candidate commit and is reverified before merge or push", () => {
     const contract = readFileSync(join(ROOT, "scripts/contract-worktree.sh"), "utf-8");
     const ship = readFileSync(join(ROOT, "scripts/ship-worktrees.sh"), "utf-8");
     expect(contract.indexOf('git commit -m "$commit_message"')).toBeLessThan(
-      contract.indexOf('run_merge_gate "$gate_base_ref" "$active_plan"'),
+      contract.indexOf('run_merge_gate "$gate_base_ref" "$post_freeze_manifest"'),
     );
-    expect(contract.indexOf('verify_merge_gate_receipt "$gate_base_ref"')).toBeLessThan(
+    expect(contract.indexOf('verify_merge_gate_seal "$gate_base_ref"')).toBeLessThan(
       contract.indexOf('git -C "$target_worktree" merge --ff-only "$verified_sha"'),
     );
     expect(contract).toContain('local merge gate base must equal target branch $target_branch');
     expect(ship.indexOf('verified_sha="$(verify_merge_gate_before_ship "$gate_base_ref")"')).toBeLessThan(
       ship.indexOf('push_branch "$branch" "$verified_sha"'),
+    );
+    expect(ship.indexOf('verified_sha="$(seal_merge_gate_before_ship "$gate_base_ref")"')).toBeLessThan(
+      ship.indexOf('verified_sha="$(verify_merge_gate_before_ship "$gate_base_ref")"'),
     );
     expect(ship.indexOf("\n  ship_transaction_begin\n")).toBeLessThan(
       ship.indexOf('finish_contract_worktree "pr" "$gate_base_ref"'),
@@ -1565,713 +1568,6 @@ describe("Workflow helper scripts", () => {
     }
   });
 
-  test("contract-worktree finish should require external acceptance, then verify, commit, and fast-forward merge", () => {
-    const cwd = tmpWorkspace("helper-contract-finish");
-    const worktreePath = `${cwd}-wt-demo`;
-    const fakeClaude = `${cwd}-fake-claude`;
-    const fakeVerdict = `${cwd}-fake-verdict`;
-    const home = `${cwd}-home`;
-    const trustedHelpers = `${cwd}-trusted-helpers`;
-    const goalExistsMarker = `${cwd}-goal-exists-marker`;
-    try {
-      mkdirSync(join(cwd, "plans"), { recursive: true });
-      mkdirSync(join(cwd, "tasks"), { recursive: true });
-      mkdirSync(join(cwd, "docs"), { recursive: true });
-      copyHelpers(cwd);
-      mkdirSync(join(cwd, ".claude/templates"), { recursive: true });
-      for (const file of readdirSync(TEMPLATE_DIR).filter((name) => name.endsWith(".md"))) {
-        copyFileSync(join(TEMPLATE_DIR, file), join(cwd, ".claude/templates", file));
-      }
-      mkdirSync(join(cwd, ".ai/hooks/lib"), { recursive: true });
-      copyFileSync(
-        join(ROOT, "assets/hooks/lib/workflow-state.sh"),
-        join(cwd, ".ai/hooks/lib/workflow-state.sh")
-      );
-      writeFileSync(
-        join(cwd, ".ai/harness/policy.json"),
-        JSON.stringify(
-          {
-            architecture: {
-              freshness_gate: "strict",
-              gate_min_severity: "medium",
-            },
-            worktree_strategy: {
-              auto_for_contract_tasks: true,
-              branch_prefix: "codex/",
-              base_branch: "main",
-              merge_back: { target: "main" },
-            },
-            merge_gate: { enabled: true, rule: "fixture" },
-          },
-          null,
-          2
-        ) + "\n"
-      );
-      writeFileSync(
-        join(cwd, ".gitignore"),
-        [
-          ".claude/.task-state.json",
-          ".ai/harness/checks/latest.json",
-          ".ai/harness/runs/",
-          ".ai/harness/worktrees/",
-        ].join("\n") + "\n"
-      );
-      writeFileSync(
-        join(cwd, "package.json"),
-        JSON.stringify({ scripts: { "check:type": "test -z \"${GH_TOKEN:-}\" && test -z \"${GITHUB_TOKEN:-}\" && test -z \"${ANTHROPIC_API_KEY:-}\" && test -z \"${CLAUDE_CODE_OAUTH_TOKEN:-}\" && test -f src/modules/demo/index.ts" } }, null, 2) + "\n"
-      );
-      writeFixtureCapabilityRegistry(cwd);
-      writeFileSync(join(cwd, "docs/spec.md"), "# Spec\n");
-      initGitRepo(cwd);
-      commitAll(cwd, "init workflow");
-      writeFileSync(
-        fakeClaude,
-        [
-          "#!/bin/sh",
-          // Regression guard: record, at merge-gate invocation time, whether the
-          // request's goal_file is the plan's exact live (pre-archive) path and that
-          // path exists on disk. Checking existence alone is not enough: the old
-          // resolveGoal silently substituted the plans/archive/ copy once the goal
-          // was already archived, so a naive existence check stays "exists" either
-          // way. Requiring goal_file to equal the live path catches that substitution.
-          "prompt=\"$(cat)\"",
-          "goal_file=\"$(printf '%s' \"$prompt\" | grep -o '\"goal_file\": *\"[^\"]*\"' | head -1 | sed -E 's/.*\"goal_file\": *\"([^\"]*)\".*/\\1/')\"",
-          `if [ \"$goal_file\" = \"plans/plan-20260304-1450-demo.md\" ] && [ -f ${JSON.stringify(worktreePath)}"/$goal_file" ]; then`,
-          `  printf 'exists' > ${JSON.stringify(goalExistsMarker)}`,
-          "else",
-          `  printf 'missing' > ${JSON.stringify(goalExistsMarker)}`,
-          "fi",
-          `if [ \"$(cat ${JSON.stringify(fakeVerdict)})\" = FAIL ]; then`,
-          "  printf '%s\\n' '{\"type\":\"result\",\"structured_output\":{\"protocol\":1,\"verdict\":\"FAIL\",\"summary\":\"fixture rejected\",\"findings\":[{\"severity\":\"HIGH\",\"file\":\"src/modules/demo/index.ts\",\"line\":1,\"message\":\"fixture defect\",\"fix\":\"repair fixture\"}],\"checks\":[{\"command\":\"fixture check\",\"status\":\"fail\",\"summary\":\"failed\"}]}}'",
-          "else",
-          "  printf '%s\\n' '{\"type\":\"result\",\"structured_output\":{\"protocol\":1,\"verdict\":\"PASS\",\"summary\":\"fixture accepted\",\"findings\":[],\"checks\":[{\"command\":\"fixture check\",\"status\":\"pass\",\"summary\":\"passed\"}]}}'",
-          "fi",
-        ].join("\n") + "\n",
-      );
-      chmodSync(fakeClaude, 0o755);
-      writeFileSync(fakeVerdict, "PASS\n");
-      mkdirSync(join(home, ".repo-harness"), { recursive: true });
-      mkdirSync(join(home, ".claude", "agents"), { recursive: true });
-      mkdirSync(join(home, ".claude", "skills", "merge-gate"), { recursive: true });
-      writeFileSync(join(home, ".claude", "agents", "gatekeeper.md"), "fixture gatekeeper\n");
-      writeFileSync(join(home, ".claude", "skills", "merge-gate", "SKILL.md"), "fixture merge gate\n");
-      writeFileSync(
-        join(home, ".repo-harness", "config.json"),
-        JSON.stringify({
-          merge_gate: {
-            enabled: true,
-            runner: "claude-agent",
-            agent: "gatekeeper",
-            skill: "merge-gate",
-            claude_bin: fakeClaude,
-          },
-        }, null, 2) + "\n",
-      );
-      createTrustedMergeGateRuntime(trustedHelpers, home);
-
-      writeFileSync(
-        join(cwd, "plans/plan-20260304-1450-demo.md"),
-        [
-          "# Plan: demo",
-          "",
-          "> **Status**: Approved",
-          "",
-          evidenceContract(),
-          "",
-          promotionGate(),
-          "",
-          "## Task Breakdown",
-          "- [ ] Build demo",
-        ].join("\n")
-      );
-
-      const start = run("bash", ["scripts/plan-to-todo.sh", "--plan", "plans/plan-20260304-1450-demo.md"], cwd);
-      expect(start.status).toBe(0);
-      expect(existsSync(worktreePath)).toBe(true);
-
-      mkdirSync(join(worktreePath, "src/modules/demo"), { recursive: true });
-      mkdirSync(join(worktreePath, "tests/unit"), { recursive: true });
-      writeFileSync(join(worktreePath, "src/modules/demo/index.ts"), "export const demo = true;\n");
-      writeFileSync(
-        join(worktreePath, "tests/unit/demo.test.ts"),
-        'import { test, expect } from "bun:test";\n' +
-          'test("demo", () => { expect(true).toBe(true); });\n'
-      );
-      writeFileSync(
-        join(worktreePath, "tasks/reviews/20260304-1450-demo.review.md"),
-        [
-          "# Task Review: demo",
-          "",
-          "> **Recommendation**: pass",
-          "",
-          reviewSubjectMetadata(worktreePath),
-          "",
-          humanReviewCard("pass", "unavailable"),
-          "",
-          "## Scorecard",
-          "",
-          "| Dimension | Score | Notes |",
-          "|-----------|-------|-------|",
-          "| Functionality | 8/10 | verified |",
-          "",
-          "## Verification Evidence",
-          "- Unit test and typecheck covered by verify-sprint.",
-          "",
-        ].join("\n")
-      );
-
-      const missingExternal = run("bash", ["scripts/contract-worktree.sh", "finish"], worktreePath, {
-        HOOK_HOST: "claude",
-        REPO_HARNESS_HOOK_CLI: join(ROOT, "src/cli/hook-entry.ts"),
-      });
-      expect(missingExternal.status).toBe(1);
-      expect(missingExternal.stderr).toContain("external acceptance gate failed");
-      expect(missingExternal.stderr).toContain("External acceptance section is missing");
-
-      writeFileSync(
-        join(worktreePath, "tasks/reviews/20260304-1450-demo.review.md"),
-        [
-          "# Task Review: demo",
-          "",
-          "> **Recommendation**: pass",
-          "",
-          reviewSubjectMetadata(worktreePath),
-          "",
-          humanReviewCard("pass", "unavailable"),
-          "",
-          "## Scorecard",
-          "",
-          "| Dimension | Score | Notes |",
-          "|-----------|-------|-------|",
-          "| Functionality | 8/10 | verified |",
-          "",
-          "## Verification Evidence",
-          "- Unit test and typecheck covered by verify-sprint.",
-          "",
-          externalAcceptanceAdvice("Codex", "codex-review", worktreePath),
-          "",
-        ].join("\n")
-      );
-
-      const gateEnv = {
-        HOOK_HOST: "claude",
-        REPO_HARNESS_HOOK_CLI: join(ROOT, "src/cli/hook-entry.ts"),
-        HOME: home,
-        REPO_HARNESS_HELPER_SOURCE_PATH: join(trustedHelpers, "contract-worktree.sh"),
-        REPO_HARNESS_BASH_BIN: "/bin/bash",
-        REPO_HARNESS_BUN_BIN: process.execPath,
-        REPO_HARNESS_GIT_BIN: "/usr/bin/git",
-        REPO_HARNESS_WORKFLOW_STATE_LIB: join(ROOT, "assets/hooks/lib/workflow-state.sh"),
-        GH_TOKEN: "must-not-reach-candidate",
-        GITHUB_TOKEN: "must-not-reach-candidate",
-        ANTHROPIC_API_KEY: "must-not-reach-candidate",
-        CLAUDE_CODE_OAUTH_TOKEN: "must-not-reach-candidate",
-      };
-      const candidateSourceMarker = `${cwd}-candidate-workflow-state-executed`;
-      writeFileSync(
-        join(worktreePath, ".ai/hooks/lib/workflow-state.sh"),
-        `touch ${JSON.stringify(candidateSourceMarker)}\nrun_merge_gate() { git rev-parse HEAD; }\nverify_merge_gate_receipt() { git rev-parse HEAD; }\n`,
-      );
-      const maliciousLibrary = run("bash", ["scripts/contract-worktree.sh", "finish"], worktreePath, gateEnv);
-      expect(maliciousLibrary.status).toBe(1);
-      expect(existsSync(candidateSourceMarker)).toBe(false);
-      expect(run("git", ["checkout", "--", ".ai/hooks/lib/workflow-state.sh"], worktreePath).status).toBe(0);
-
-      mkdirSync(join(cwd, "src/modules/demo"), { recursive: true });
-      writeFileSync(join(cwd, "src/modules/demo/index.ts"), "export const demo = true;\n");
-      const dirtyTarget = run("bash", ["scripts/contract-worktree.sh", "finish"], worktreePath, {
-        ...gateEnv,
-      });
-      expect(dirtyTarget.status).toBe(1);
-      expect(dirtyTarget.stderr).toContain("target worktree is dirty, refusing merge");
-      expect(readFileSync(join(cwd, "src/modules/demo/index.ts"), "utf-8")).toBe("export const demo = true;\n");
-      rmSync(join(cwd, "src"), { recursive: true, force: true });
-
-      const beforeRejectedFinish = run("git", ["rev-parse", "HEAD"], worktreePath).stdout.trim();
-      writeFileSync(fakeVerdict, "FAIL\n");
-      const rejected = run("bash", ["scripts/contract-worktree.sh", "finish"], worktreePath, gateEnv);
-      expect(rejected.status).toBe(1);
-      expect(rejected.stderr).toContain("[MergeGate] FAIL: fixture rejected");
-      expect(rejected.stderr).toContain("restored live workflow artifacts and the pre-finish branch");
-      expect(run("git", ["rev-parse", "HEAD"], worktreePath).stdout.trim()).toBe(beforeRejectedFinish);
-      expect(existsSync(join(worktreePath, "plans/plan-20260304-1450-demo.md"))).toBe(true);
-      expect(existsSync(join(worktreePath, "plans/archive/plan-20260304-1450-demo.md"))).toBe(false);
-      expect(existsSync(join(worktreePath, "src/modules/demo/index.ts"))).toBe(true);
-
-      writeFileSync(fakeVerdict, "PASS\n");
-      const finish = run("bash", ["scripts/contract-worktree.sh", "finish"], worktreePath, gateEnv);
-      expect(finish.status, `${finish.stdout}\n${finish.stderr}`).toBe(0);
-      // R4: the merge gate reviewed the frozen candidate F while the goal plan still
-      // existed at its live plans/ path -- archiving happens only after the gate runs.
-      expect(readFileSync(goalExistsMarker, "utf-8")).toBe("exists");
-      expect(finish.stdout).toContain("[ArchitectureSync] mode=strict");
-      expect(finish.stdout).toContain("Sprint verification passed");
-      // R7: the freeze-then-archive reorder must not introduce a second verify-sprint
-      // invocation inside finish itself.
-      expect(finish.stdout.match(/Sprint verification passed/g)?.length).toBe(1);
-      expect(finish.stdout).toContain("Archiving completed workflow before merge");
-      expect(finish.stdout).toContain("Merged codex/demo into main");
-      expect(existsSync(join(cwd, "src/modules/demo/index.ts"))).toBe(true);
-      expect(existsSync(join(cwd, "plans/plan-20260304-1450-demo.md"))).toBe(false);
-      expect(existsSync(join(cwd, "plans/archive/plan-20260304-1450-demo.md"))).toBe(true);
-      expect(existsSync(join(cwd, "tasks/notes/demo.notes.md"))).toBe(false);
-      expect(readdirSync(join(cwd, "tasks/archive")).some((name) => name.includes("demo"))).toBe(true);
-
-      // Freeze-before-archive lands as two commits: the frozen implementation
-      // candidate F, then a separate deterministic lifecycle commit L.
-      const log = run("git", ["log", "--oneline", "-2"], cwd);
-      expect(log.stdout).toContain("feat(contract): complete demo");
-      expect(log.stdout).toContain("chore(workflow): archive demo closeout");
-
-      const cleanup = run("bash", ["scripts/contract-worktree.sh", "cleanup", "--slug", "demo"], cwd);
-      expect(cleanup.status).toBe(0);
-      expect(cleanup.stdout).toContain("Removed worktree");
-      expect(cleanup.stdout).toContain("Deleted branch: codex/demo");
-      expect(existsSync(worktreePath)).toBe(false);
-      expect(run("git", ["show-ref", "--verify", "--quiet", "refs/heads/codex/demo"], cwd).status).not.toBe(0);
-    } finally {
-      run("git", ["worktree", "remove", "--force", worktreePath], cwd);
-      rmSync(worktreePath, { recursive: true, force: true });
-      rmSync(fakeClaude, { force: true });
-      rmSync(fakeVerdict, { force: true });
-      rmSync(goalExistsMarker, { force: true });
-      rmSync(home, { recursive: true, force: true });
-      rmSync(trustedHelpers, { recursive: true, force: true });
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  }, 60000);
-
-  // R-A (fix 1): finish's --no-merge + gate path must verify the merge-gate
-  // receipt against post-lifecycle HEAD (L) BEFORE committing the transaction.
-  // Simulates an unexpected file landing during the lifecycle step (Step 4,
-  // between the gate reviewing frozen candidate F and the deterministic
-  // lifecycle commit L that follows it) via a wrapped archive-workflow helper,
-  // and asserts finish fails closed and rolls back instead of returning
-  // success with an unverified L.
-  test("contract-worktree finish --no-merge --gate-base rolls back when an out-of-allowlist file lands between the gate and the lifecycle commit", () => {
-    const cwd = tmpWorkspace("helper-contract-finish-rogue");
-    const worktreePath = `${cwd}-wt-demo`;
-    const fakeClaude = `${cwd}-fake-claude`;
-    const home = `${cwd}-home`;
-    const trustedHelpers = `${cwd}-trusted-helpers`;
-    try {
-      mkdirSync(join(cwd, "plans"), { recursive: true });
-      mkdirSync(join(cwd, "tasks"), { recursive: true });
-      mkdirSync(join(cwd, "docs"), { recursive: true });
-      copyHelpers(cwd);
-      mkdirSync(join(cwd, ".claude/templates"), { recursive: true });
-      for (const file of readdirSync(TEMPLATE_DIR).filter((name) => name.endsWith(".md"))) {
-        copyFileSync(join(TEMPLATE_DIR, file), join(cwd, ".claude/templates", file));
-      }
-      mkdirSync(join(cwd, ".ai/hooks/lib"), { recursive: true });
-      copyFileSync(
-        join(ROOT, "assets/hooks/lib/workflow-state.sh"),
-        join(cwd, ".ai/hooks/lib/workflow-state.sh")
-      );
-      writeFileSync(
-        join(cwd, ".ai/harness/policy.json"),
-        JSON.stringify(
-          {
-            architecture: {
-              freshness_gate: "strict",
-              gate_min_severity: "medium",
-            },
-            worktree_strategy: {
-              auto_for_contract_tasks: true,
-              branch_prefix: "codex/",
-              base_branch: "main",
-              merge_back: { target: "main" },
-            },
-            merge_gate: { enabled: true, rule: "fixture" },
-          },
-          null,
-          2
-        ) + "\n"
-      );
-      writeFileSync(
-        join(cwd, ".gitignore"),
-        [
-          ".claude/.task-state.json",
-          ".ai/harness/checks/latest.json",
-          ".ai/harness/runs/",
-          ".ai/harness/worktrees/",
-        ].join("\n") + "\n"
-      );
-      writeFileSync(
-        join(cwd, "package.json"),
-        JSON.stringify({ scripts: { "check:type": "test -f src/modules/demo/index.ts" } }, null, 2) + "\n"
-      );
-      writeFixtureCapabilityRegistry(cwd);
-      writeFileSync(join(cwd, "docs/spec.md"), "# Spec\n");
-      initGitRepo(cwd);
-      commitAll(cwd, "init workflow");
-
-      writeFileSync(
-        fakeClaude,
-        [
-          "#!/bin/sh",
-          "cat >/dev/null",
-          "printf '%s\\n' '{\"type\":\"result\",\"structured_output\":{\"protocol\":1,\"verdict\":\"PASS\",\"summary\":\"fixture accepted\",\"findings\":[],\"checks\":[{\"command\":\"fixture check\",\"status\":\"pass\",\"summary\":\"passed\"}]}}'",
-        ].join("\n") + "\n",
-      );
-      chmodSync(fakeClaude, 0o755);
-      mkdirSync(join(home, ".repo-harness"), { recursive: true });
-      mkdirSync(join(home, ".claude", "agents"), { recursive: true });
-      mkdirSync(join(home, ".claude", "skills", "merge-gate"), { recursive: true });
-      writeFileSync(join(home, ".claude", "agents", "gatekeeper.md"), "fixture gatekeeper\n");
-      writeFileSync(join(home, ".claude", "skills", "merge-gate", "SKILL.md"), "fixture merge gate\n");
-      writeFileSync(
-        join(home, ".repo-harness", "config.json"),
-        JSON.stringify({
-          merge_gate: {
-            enabled: true,
-            runner: "claude-agent",
-            agent: "gatekeeper",
-            skill: "merge-gate",
-            claude_bin: fakeClaude,
-          },
-        }, null, 2) + "\n",
-      );
-      createTrustedMergeGateRuntime(trustedHelpers, home);
-
-      // Wrap the trusted archive-workflow helper so it performs the real
-      // archive and then also writes one file that compute_post_freeze_allowlist
-      // never predicted -- simulating an unexpected side effect landing during
-      // the lifecycle step.
-      const realArchiveWorkflow = join(trustedHelpers, "archive-workflow.sh.real");
-      copyFileSync(join(trustedHelpers, "archive-workflow.sh"), realArchiveWorkflow);
-      chmodSync(realArchiveWorkflow, 0o755);
-      writeFileSync(
-        join(trustedHelpers, "archive-workflow.sh"),
-        [
-          "#!/bin/bash",
-          "set -euo pipefail",
-          'cd "${REPO_HARNESS_TARGET_REPO_ROOT:-$PWD}"',
-          '"$(dirname "$0")/archive-workflow.sh.real" "$@"',
-          'case " $* " in *" --predict-manifest "*) exit 0 ;; esac',
-          "printf '# Rogue\\n' > tasks/rogue-injected.md",
-          "",
-        ].join("\n"),
-      );
-      chmodSync(join(trustedHelpers, "archive-workflow.sh"), 0o755);
-
-      writeFileSync(
-        join(cwd, "plans/plan-20260304-1450-demo.md"),
-        [
-          "# Plan: demo",
-          "",
-          "> **Status**: Approved",
-          "",
-          evidenceContract(),
-          "",
-          promotionGate(),
-          "",
-          "## Task Breakdown",
-          "- [ ] Build demo",
-        ].join("\n")
-      );
-
-      const start = run("bash", ["scripts/plan-to-todo.sh", "--plan", "plans/plan-20260304-1450-demo.md"], cwd);
-      expect(start.status).toBe(0);
-      expect(existsSync(worktreePath)).toBe(true);
-
-      mkdirSync(join(worktreePath, "src/modules/demo"), { recursive: true });
-      mkdirSync(join(worktreePath, "tests/unit"), { recursive: true });
-      writeFileSync(join(worktreePath, "src/modules/demo/index.ts"), "export const demo = true;\n");
-      writeFileSync(
-        join(worktreePath, "tests/unit/demo.test.ts"),
-        'import { test, expect } from "bun:test";\n' +
-          'test("demo", () => { expect(true).toBe(true); });\n'
-      );
-      writeFileSync(
-        join(worktreePath, "tasks/reviews/20260304-1450-demo.review.md"),
-        [
-          "# Task Review: demo",
-          "",
-          "> **Recommendation**: pass",
-          "",
-          reviewSubjectMetadata(worktreePath),
-          "",
-          humanReviewCard("pass", "unavailable"),
-          "",
-          "## Scorecard",
-          "",
-          "| Dimension | Score | Notes |",
-          "|-----------|-------|-------|",
-          "| Functionality | 8/10 | verified |",
-          "",
-          "## Verification Evidence",
-          "- Unit test and typecheck covered by verify-sprint.",
-          "",
-          externalAcceptanceAdvice("Codex", "codex-review", worktreePath),
-          "",
-        ].join("\n")
-      );
-
-      const gateEnv = {
-        HOOK_HOST: "claude",
-        REPO_HARNESS_HOOK_CLI: join(ROOT, "src/cli/hook-entry.ts"),
-        HOME: home,
-        REPO_HARNESS_HELPER_SOURCE_PATH: join(trustedHelpers, "contract-worktree.sh"),
-        REPO_HARNESS_BASH_BIN: "/bin/bash",
-        REPO_HARNESS_BUN_BIN: process.execPath,
-        REPO_HARNESS_GIT_BIN: "/usr/bin/git",
-        REPO_HARNESS_WORKFLOW_STATE_LIB: join(ROOT, "assets/hooks/lib/workflow-state.sh"),
-      };
-
-      const beforeFinish = run("git", ["rev-parse", "HEAD"], worktreePath).stdout.trim();
-      const finish = run(
-        "bash",
-        ["scripts/contract-worktree.sh", "finish", "--no-merge", "--gate-base", "main"],
-        worktreePath,
-        gateEnv
-      );
-      expect(finish.status, `${finish.stdout}\n${finish.stderr}`).not.toBe(0);
-      expect(finish.stderr).toContain("post-freeze change outside allowlist");
-      expect(finish.stderr).toContain("tasks/rogue-injected.md");
-      expect(finish.stderr).toContain("restored live workflow artifacts and the pre-finish branch");
-      expect(run("git", ["rev-parse", "HEAD"], worktreePath).stdout.trim()).toBe(beforeFinish);
-      expect(existsSync(join(worktreePath, "tasks/rogue-injected.md"))).toBe(false);
-      expect(existsSync(join(worktreePath, "plans/plan-20260304-1450-demo.md"))).toBe(true);
-      expect(existsSync(join(worktreePath, "plans/archive/plan-20260304-1450-demo.md"))).toBe(false);
-    } finally {
-      run("git", ["worktree", "remove", "--force", worktreePath], cwd);
-      rmSync(worktreePath, { recursive: true, force: true });
-      rmSync(fakeClaude, { force: true });
-      rmSync(home, { recursive: true, force: true });
-      rmSync(trustedHelpers, { recursive: true, force: true });
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  }, 60000);
-
-  test("ship-worktrees default mode should finish without merging, push branch, and create draft PR", () => {
-    const cwd = tmpWorkspace("helper-ship-pr");
-    const worktreePath = `${cwd}-wt-demo`;
-    const remotePath = `${cwd}-remote.git`;
-    const fakeBin = `${cwd}-fake-bin`;
-    const home = `${cwd}-home`;
-    const trustedHelpers = `${cwd}-trusted-helpers`;
-    const ghLog = `${cwd}-gh.log`;
-    try {
-      mkdirSync(join(cwd, "plans"), { recursive: true });
-      mkdirSync(join(cwd, "tasks"), { recursive: true });
-      mkdirSync(join(cwd, "docs"), { recursive: true });
-      copyHelpers(cwd);
-      mkdirSync(join(cwd, ".claude/templates"), { recursive: true });
-      for (const file of readdirSync(TEMPLATE_DIR).filter((name) => name.endsWith(".md"))) {
-        copyFileSync(join(TEMPLATE_DIR, file), join(cwd, ".claude/templates", file));
-      }
-      mkdirSync(join(cwd, ".ai/hooks/lib"), { recursive: true });
-      copyFileSync(
-        join(ROOT, "assets/hooks/lib/workflow-state.sh"),
-        join(cwd, ".ai/hooks/lib/workflow-state.sh")
-      );
-      writeFileSync(
-        join(cwd, ".ai/harness/policy.json"),
-        JSON.stringify(
-          {
-            worktree_strategy: {
-              auto_for_contract_tasks: true,
-              branch_prefix: "codex/",
-              base_branch: "main",
-              merge_back: { target: "main" },
-            },
-            merge_gate: {
-              enabled: true,
-              rule: "fixture",
-            },
-          },
-          null,
-          2
-        ) + "\n"
-      );
-      writeFileSync(
-        join(cwd, ".gitignore"),
-        [
-          ".claude/.task-state.json",
-          ".ai/harness/checks/latest.json",
-          ".ai/harness/runs/",
-          ".ai/harness/worktrees/",
-        ].join("\n") + "\n"
-      );
-      writeFileSync(
-        join(cwd, "package.json"),
-        JSON.stringify({ scripts: { "check:type": "test -f src/modules/demo/index.ts" } }, null, 2) + "\n"
-      );
-      writeFixtureCapabilityRegistry(cwd);
-      writeFileSync(join(cwd, "docs/spec.md"), "# Spec\n");
-      initGitRepo(cwd);
-      commitAll(cwd, "init workflow");
-      expect(run("git", ["init", "--bare", remotePath], cwd).status).toBe(0);
-      expect(run("git", ["remote", "add", "origin", remotePath], cwd).status).toBe(0);
-      expect(run("git", ["push", "-u", "origin", "main"], cwd).status).toBe(0);
-
-      mkdirSync(fakeBin, { recursive: true });
-      writeFileSync(
-        join(fakeBin, "gh"),
-        [
-          "#!/bin/sh",
-          "echo \"$@\" >> \"$GH_LOG\"",
-          "state=\"${GH_LOG}.state\"",
-          "if [ \"$1\" = \"pr\" ] && [ \"$2\" = \"list\" ]; then [ -f \"$state\" ] && echo \"https://example.test/pr/1\"; exit 0; fi",
-          "if [ \"$1\" = \"pr\" ] && [ \"$2\" = \"create\" ]; then touch \"$state\"; echo \"race: already created\" >&2; exit 1; fi",
-          "exit 1",
-        ].join("\n") + "\n"
-      );
-      expect(run("chmod", ["+x", join(fakeBin, "gh")], cwd).status).toBe(0);
-      writeFileSync(
-        join(fakeBin, "claude"),
-        [
-          "#!/bin/sh",
-          "set -eu",
-          `advance_state=${JSON.stringify(join(fakeBin, "advanced-main.state"))}`,
-          `advance_clone=${JSON.stringify(`${cwd}-advance-main`)}`,
-          `remote_path=${JSON.stringify(remotePath)}`,
-          "if [ ! -f \"$advance_state\" ]; then",
-          "  touch \"$advance_state\"",
-          "  rm -rf \"$advance_clone\"",
-          "  /usr/bin/git clone --branch main \"$remote_path\" \"$advance_clone\" >/dev/null 2>&1",
-          "  /usr/bin/git -C \"$advance_clone\" config user.name 'Remote Advance'",
-          "  /usr/bin/git -C \"$advance_clone\" config user.email 'remote-advance@test.local'",
-          "  printf 'remote main advanced\\n' > \"$advance_clone/upstream.txt\"",
-          "  /usr/bin/git -C \"$advance_clone\" add upstream.txt",
-          "  /usr/bin/git -C \"$advance_clone\" commit -m 'advance remote main' >/dev/null 2>&1",
-          "  /usr/bin/git -C \"$advance_clone\" push origin main >/dev/null 2>&1",
-          "fi",
-          "printf '%s\\n' '{\"type\":\"result\",\"structured_output\":{\"protocol\":1,\"verdict\":\"PASS\",\"summary\":\"fixture accepted\",\"findings\":[],\"checks\":[{\"command\":\"fixture check\",\"status\":\"pass\",\"summary\":\"passed\"}]}}'",
-        ].join("\n") + "\n",
-      );
-      expect(run("chmod", ["+x", join(fakeBin, "claude")], cwd).status).toBe(0);
-      mkdirSync(join(home, ".repo-harness"), { recursive: true });
-      mkdirSync(join(home, ".claude", "agents"), { recursive: true });
-      mkdirSync(join(home, ".claude", "skills", "merge-gate"), { recursive: true });
-      writeFileSync(join(home, ".claude", "agents", "gatekeeper.md"), "fixture gatekeeper\n");
-      writeFileSync(join(home, ".claude", "skills", "merge-gate", "SKILL.md"), "fixture merge gate\n");
-      writeFileSync(
-        join(home, ".repo-harness", "config.json"),
-        JSON.stringify({
-          merge_gate: {
-            enabled: true,
-            runner: "claude-agent",
-            agent: "gatekeeper",
-            skill: "merge-gate",
-            claude_bin: join(fakeBin, "claude"),
-          },
-        }, null, 2) + "\n",
-      );
-      createTrustedMergeGateRuntime(trustedHelpers, home);
-
-      writeFileSync(
-        join(cwd, "plans/plan-20260304-1450-demo.md"),
-        [
-          "# Plan: demo",
-          "",
-          "> **Status**: Approved",
-          "",
-          evidenceContract(),
-          "",
-          promotionGate(),
-          "",
-          "## Task Breakdown",
-          "- [ ] Build demo",
-        ].join("\n")
-      );
-
-      const start = run("bash", ["scripts/plan-to-todo.sh", "--plan", "plans/plan-20260304-1450-demo.md"], cwd);
-      expect(start.status).toBe(0);
-      expect(existsSync(worktreePath)).toBe(true);
-
-      mkdirSync(join(worktreePath, "src/modules/demo"), { recursive: true });
-      mkdirSync(join(worktreePath, "tests/unit"), { recursive: true });
-      writeFileSync(join(worktreePath, "src/modules/demo/index.ts"), "export const demo = true;\n");
-      writeFileSync(
-        join(worktreePath, "tests/unit/demo.test.ts"),
-        'import { test, expect } from "bun:test";\n' +
-          'test("demo", () => { expect(true).toBe(true); });\n'
-      );
-      writeFileSync(
-        join(worktreePath, "tasks/reviews/20260304-1450-demo.review.md"),
-        [
-          "# Task Review: demo",
-          "",
-          "> **Recommendation**: pass",
-          "",
-          reviewSubjectMetadata(worktreePath),
-          "",
-          humanReviewCard("pass", "unavailable"),
-          "",
-          "## Scorecard",
-          "",
-          "| Dimension | Score | Notes |",
-          "|-----------|-------|-------|",
-          "| Functionality | 8/10 | verified |",
-          "",
-          "## Verification Evidence",
-          "- Unit test and typecheck covered by verify-sprint.",
-          "",
-          externalAcceptanceAdvice("Codex", "codex-review", worktreePath),
-          "",
-        ].join("\n")
-      );
-
-      const shipEnv = {
-        HOOK_HOST: "claude",
-        REPO_HARNESS_HOOK_CLI: join(ROOT, "src/cli/hook-entry.ts"),
-        GH_LOG: ghLog,
-        HOME: home,
-        PATH: `${fakeBin}:${process.env.PATH}`,
-        REPO_HARNESS_HELPER_SOURCE_PATH: join(trustedHelpers, "ship-worktrees.sh"),
-        REPO_HARNESS_BASH_BIN: "/bin/bash",
-        REPO_HARNESS_BUN_BIN: process.execPath,
-        REPO_HARNESS_GIT_BIN: "/usr/bin/git",
-        REPO_HARNESS_GH_BIN: join(fakeBin, "gh"),
-        REPO_HARNESS_WORKFLOW_STATE_LIB: join(ROOT, "assets/hooks/lib/workflow-state.sh"),
-      };
-      const beforeRejectedShip = run("git", ["rev-parse", "HEAD"], worktreePath).stdout.trim();
-      const originalRemoteMain = run("git", ["rev-parse", "main"], cwd).stdout.trim();
-      const rejectedShip = run("bash", ["scripts/ship-worktrees.sh"], worktreePath, shipEnv);
-      const rejectedOutput = `${rejectedShip.stdout}\n${rejectedShip.stderr}`;
-      expect(rejectedShip.status, rejectedOutput).not.toBe(0);
-      expect(rejectedOutput).toContain("ship failed; restored live workflow artifacts and the pre-ship branch");
-      expect(run("git", ["rev-parse", "HEAD"], worktreePath).stdout.trim()).toBe(beforeRejectedShip);
-      expect(existsSync(join(worktreePath, "plans/plan-20260304-1450-demo.md"))).toBe(true);
-      expect(existsSync(join(worktreePath, "plans/archive/plan-20260304-1450-demo.md"))).toBe(false);
-      expect(existsSync(join(worktreePath, "tasks/contracts/20260304-1450-demo.contract.md"))).toBe(true);
-      expect(existsSync(join(worktreePath, "tasks/reviews/20260304-1450-demo.review.md"))).toBe(true);
-      expect(run("git", ["ls-remote", "--heads", "origin", "codex/demo"], cwd).stdout.trim()).toBe("");
-      expect(run("git", ["--git-dir", remotePath, "update-ref", "refs/heads/main", originalRemoteMain], cwd).status).toBe(0);
-
-      const ship = run("bash", ["scripts/ship-worktrees.sh"], worktreePath, shipEnv);
-      const shipOutput = `${ship.stdout}\n${ship.stderr}`;
-      expect(ship.status, shipOutput).toBe(0);
-      expect(ship.stdout).toContain("contract-worktree.sh finish --no-merge");
-      expect(ship.stdout.match(/Sprint verification passed/g) ?? []).toHaveLength(1);
-      expect(shipOutput).toContain("[MergeGate] PASS: fixture accepted");
-      // Three, not two: run's own post-write self-check, finish's new fix-1
-      // verify-before-commit on the --no-merge + gate path (before this
-      // change, finish returned success here without ever re-verifying L),
-      // and ship-worktrees' own pre-push reverify.
-      expect(shipOutput.match(/\[MergeGate\] verified PASS/g)?.length).toBe(3);
-      expect(ship.stdout).toContain("[ArchitectureSync] mode=advisory");
-      expect(ship.stdout).toContain("PR already exists for codex/demo after create failure");
-      expect(ship.stdout).toContain("https://example.test/pr/1");
-      expect(ship.stdout).not.toContain("Merged codex/demo into main");
-      expect(existsSync(join(cwd, "src/modules/demo/index.ts"))).toBe(false);
-      expect(run("git", ["ls-remote", "--heads", "origin", "codex/demo"], cwd).stdout).toContain("refs/heads/codex/demo");
-      expect(readFileSync(ghLog, "utf-8")).toContain("pr create --base main --head codex/demo");
-      expect(readFileSync(ghLog, "utf-8")).toContain("--draft");
-    } finally {
-      run("git", ["worktree", "remove", "--force", worktreePath], cwd);
-      rmSync(worktreePath, { recursive: true, force: true });
-      rmSync(remotePath, { recursive: true, force: true });
-      rmSync(fakeBin, { recursive: true, force: true });
-      rmSync(home, { recursive: true, force: true });
-      rmSync(trustedHelpers, { recursive: true, force: true });
-      rmSync(`${cwd}-advance-main`, { recursive: true, force: true });
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  }, 120000);
-
   test("ship-worktrees should put dirty main closeout on a PR branch", () => {
     const cwd = tmpWorkspace("helper-ship-main-closeout");
     const remotePath = `${cwd}-remote.git`;
@@ -2350,78 +1646,6 @@ describe("Workflow helper scripts", () => {
       expect(run("git", ["show-ref", "--verify", "--quiet", "refs/heads/codex/demo-main-closeout"], cwd).status).not.toBe(0);
     } finally {
       rmSync(remotePath, { recursive: true, force: true });
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  }, 15000);
-
-  test("prompt-guard done intent in a contract worktree emits finish next action without archiving", () => {
-    const cwd = tmpWorkspace("helper-contract-done-next-action");
-    const worktreePath = `${cwd}-wt-demo`;
-    try {
-      installHooks(cwd);
-      mkdirSync(join(cwd, "docs"), { recursive: true });
-      writeFileSync(join(cwd, "docs/spec.md"), "# Spec\n");
-      initGitRepo(cwd);
-      commitAll(cwd, "init hooks");
-
-      expect(run("git", ["worktree", "add", worktreePath, "-b", "codex/demo"], cwd).status).toBe(0);
-
-      mkdirSync(join(worktreePath, "plans"), { recursive: true });
-      mkdirSync(join(worktreePath, "tasks/contracts"), { recursive: true });
-      mkdirSync(join(worktreePath, "tasks/reviews"), { recursive: true });
-      writeFileSync(
-        join(worktreePath, "plans/plan-20260304-1450-demo.md"),
-        ["# Plan: demo", "", "> **Status**: Executing", "", evidenceContract(), "", promotionGate(), ""].join("\n")
-      );
-      writeActivePlan(worktreePath, "plans/plan-20260304-1450-demo.md");
-      writeFileSync(
-        join(worktreePath, "tasks/todos.md"),
-        "# Deferred Goal Ledger\n\n> **Status**: Backlog\n"
-      );
-      writeFileSync(
-        join(worktreePath, "tasks/contracts/demo.contract.md"),
-        [
-          "# Task Contract: demo",
-          "",
-          "> **Status**: Pending",
-          "> **Review File**: `tasks/reviews/demo.review.md`",
-          "",
-          "```yaml",
-          "exit_criteria:",
-          "  files_exist:",
-          "    - docs/spec.md",
-          "```",
-          "",
-          "## Evidence Requirements",
-          "",
-          "```yaml",
-          "evidence_requirements:",
-          "  benchmark: not_applicable",
-          "```",
-          "",
-        ].join("\n")
-      );
-      writeFileSync(
-        join(worktreePath, "tasks/reviews/demo.review.md"),
-        ["# Task Review: demo", "", "> **Recommendation**: pass", "", reviewSubjectMetadata(worktreePath), "", humanReviewCard(), "", externalAcceptanceAdvice("Codex", "codex-review", worktreePath), ""].join("\n")
-      );
-      writeValidSprintChecks(worktreePath);
-      const res = runHook(
-        "prompt-guard.sh",
-        worktreePath,
-        JSON.stringify({ user_message: "任务完成了，结束吧" }),
-        { HOOK_HOST: "claude" }
-      );
-
-      expect(res.status).toBe(0);
-      expect(res.stdout).toContain("[WorkflowNextAction] Review/checks pass; finish and fast-forward merge this contract worktree.");
-      expect(res.stdout).toContain("repo-harness run contract-worktree finish");
-      expect(res.stdout).not.toContain("[AutoArchive]");
-      expect(existsSync(join(worktreePath, "plans/plan-20260304-1450-demo.md"))).toBe(true);
-      expect(existsSync(join(worktreePath, "plans/archive/plan-20260304-1450-demo.md"))).toBe(false);
-    } finally {
-      run("git", ["worktree", "remove", "--force", worktreePath], cwd);
-      rmSync(worktreePath, { recursive: true, force: true });
       rmSync(cwd, { recursive: true, force: true });
     }
   }, 15000);
@@ -4161,7 +3385,7 @@ describe("Workflow helper scripts", () => {
         ["# Task Review: demo", "", "> **Recommendation**: pass", reviewSubjectMetadata(cwd), "", humanReviewCard(), "", externalAcceptanceAdvice("Codex", "codex-review", cwd), ""].join("\n")
       );
 
-      const res = run("bash", ["scripts/verify-sprint.sh"], cwd, {
+      const res = run("bash", ["scripts/verify-sprint.sh", "--prepare-acceptance"], cwd, {
         HOOK_HOST: "claude",
         REPO_HARNESS_HOOK_CLI: join(ROOT, "src/cli/hook-entry.ts"),
       });
@@ -4184,18 +3408,78 @@ describe("Workflow helper scripts", () => {
       expect(checks.contract.task_profile).toBe("code-change");
       expect(checks.review.file).toBe("tasks/reviews/demo.review.md");
       expect(checks.review.status).toBe("pass");
-      expect(checks.review.card.verdict).toBe("pass");
-      expect(checks.review.card.change_type).toBe("code-change");
-      expect(checks.review.card.rollback).toBe("revert fixture branch");
-      expect(checks.external_acceptance.status).toBe("pass");
-      expect(checks.external_acceptance.reviewer).toBe("Codex");
-      expect(checks.external_acceptance.source).toBe("codex-review");
+      expect(checks.review.message).toContain("deterministic AcceptanceReceipt projection");
+      expect(checks.review.card).toBeUndefined();
+      expect(checks.acceptance_receipt.status).toBe("pending");
+      expect(checks.acceptance_receipt.reviewer).toBe("");
+      expect(checks.acceptance_receipt.source).toBe("");
       expect(checks.benchmark_evidence).toEqual({ status: "not_applicable", report_sha256: "", benchmark_subject_sha256: "" });
       expect(checks.allowed_paths_check.status).toBe("pass");
       expect(checks.run_file).toMatch(/^\.ai\/harness\/runs\/.+-demo\.json$/);
       expect(existsSync(join(cwd, checks.run_file))).toBe(true);
       const snapshot = JSON.parse(readFileSync(join(cwd, checks.run_file), "utf-8"));
       expect(snapshot.lifecycle.evidence_tier).toBe("harness-trace-v1");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("verify-sprint finalizes one AcceptanceReceipt without rerunning contract tests", () => {
+    const cwd = tmpWorkspace("helper-verify-sprint-finalize");
+    const rerunMarker = join(cwd, "verify-contract-reran");
+    const projectionMarker = join(cwd, "receipt-projected");
+    try {
+      mkdirSync(join(cwd, ".ai/harness/checks"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/contracts"), { recursive: true });
+      mkdirSync(join(cwd, "tasks/reviews"), { recursive: true });
+      copyHelpers(cwd);
+      writeFileSync(join(cwd, "tasks/contracts/demo.contract.md"), "# Task Contract: demo\n");
+      writeFileSync(join(cwd, "tasks/reviews/demo.review.md"), "# Task Review: demo\n");
+      writeFileSync(
+        join(cwd, ".ai/harness/checks/latest.json"),
+        `${JSON.stringify({
+          schema: "repo-harness-run-trace.v1",
+          status: "pass",
+          source: "verify-sprint",
+          exit_code: 0,
+          guards: [
+            { name: "contract", status: "pass" },
+            { name: "review", status: "pass" },
+            { name: "acceptance_receipt", status: "pending" },
+            { name: "allowed_paths", status: "pass" },
+          ],
+          acceptance_receipt: { status: "pending" },
+        }, null, 2)}\n`,
+      );
+      writeFileSync(
+        join(cwd, "scripts/verify-contract.sh"),
+        `#!/bin/bash\ntouch ${JSON.stringify(rerunMarker)}\nexit 97\n`,
+      );
+      chmodSync(join(cwd, "scripts/verify-contract.sh"), 0o755);
+      writeFileSync(
+        join(cwd, "scripts/acceptance-receipt.ts"),
+        [
+          `const mode = process.argv[2];`,
+          `if (mode === "verify") console.log("pass\\tClaude\\tclaude-review\\texternal_pass\\taccepted once");`,
+          `else if (mode === "project") await Bun.write(${JSON.stringify(projectionMarker)}, "projected\\n");`,
+          `else process.exit(2);`,
+          "",
+        ].join("\n"),
+      );
+
+      const res = run("bash", ["scripts/verify-sprint.sh"], cwd);
+      expect(res.status, `${res.stdout}\n${res.stderr}`).toBe(0);
+      expect(res.stdout).toContain("without rerunning verification");
+      expect(existsSync(rerunMarker)).toBe(false);
+      expect(existsSync(projectionMarker)).toBe(true);
+      const checks = JSON.parse(readFileSync(join(cwd, ".ai/harness/checks/latest.json"), "utf-8"));
+      expect(checks.acceptance_receipt).toMatchObject({
+        status: "pass",
+        disposition: "external_pass",
+        reviewer: "Claude",
+        source: "claude-review",
+      });
+      expect(checks.guards.find((guard: { name: string }) => guard.name === "acceptance_receipt")?.status).toBe("pass");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -4280,11 +3564,11 @@ describe("Workflow helper scripts", () => {
       setup(baseline, boilerplateNotes);
       setup(withCandidate, notesWithCandidate);
 
-      const baselineRes = run("bash", ["scripts/verify-sprint.sh"], baseline, {
+      const baselineRes = run("bash", ["scripts/verify-sprint.sh", "--prepare-acceptance"], baseline, {
         HOOK_HOST: "claude",
         REPO_HARNESS_HOOK_CLI: join(ROOT, "src/cli/hook-entry.ts"),
       });
-      const candidateRes = run("bash", ["scripts/verify-sprint.sh"], withCandidate, {
+      const candidateRes = run("bash", ["scripts/verify-sprint.sh", "--prepare-acceptance"], withCandidate, {
         HOOK_HOST: "claude",
         REPO_HARNESS_HOOK_CLI: join(ROOT, "src/cli/hook-entry.ts"),
       });
@@ -4364,7 +3648,7 @@ describe("Workflow helper scripts", () => {
         ["# Task Review: demo", "", "> **Recommendation**: pass", reviewSubjectMetadata(cwd), "", humanReviewCard("pass", "pass").replace("- Change type: code-change", "- Change type: docs-only"), "", externalAcceptanceAdvice("Codex", "codex-review", cwd), ""].join("\n")
       );
 
-      const res = run("bash", ["scripts/verify-sprint.sh"], cwd, {
+      const res = run("bash", ["scripts/verify-sprint.sh", "--prepare-acceptance"], cwd, {
         REPO_HARNESS_DIFF_BASE: "main",
         HOOK_HOST: "claude",
         REPO_HARNESS_HOOK_CLI: join(ROOT, "src/cli/hook-entry.ts"),
@@ -4495,7 +3779,7 @@ describe("Workflow helper scripts", () => {
         REPO_HARNESS_DIFF_BASE: undefined,
         HARNESS_DIFF_BASE: undefined,
       };
-      const baselineRes = run("bash", ["scripts/verify-sprint.sh"], cwd, metadataFallbackEnv);
+      const baselineRes = run("bash", ["scripts/verify-sprint.sh", "--prepare-acceptance"], cwd, metadataFallbackEnv);
       expect(
         baselineRes.status,
         `${baselineRes.stdout}\n${baselineRes.stderr}\n${readFileSync(join(cwd, ".ai/harness/checks/latest.json"), "utf-8")}`,
@@ -4521,7 +3805,7 @@ describe("Workflow helper scripts", () => {
           2
         ) + "\n"
       );
-      const legacyMetadataRes = run("bash", ["scripts/verify-sprint.sh"], cwd, metadataFallbackEnv);
+      const legacyMetadataRes = run("bash", ["scripts/verify-sprint.sh", "--prepare-acceptance"], cwd, metadataFallbackEnv);
       expect(legacyMetadataRes.status).toBe(0);
       const legacyMetadataChecks = JSON.parse(
         readFileSync(join(cwd, ".ai/harness/checks/latest.json"), "utf-8")
@@ -4529,7 +3813,7 @@ describe("Workflow helper scripts", () => {
       expect(legacyMetadataChecks.diff_base.ref).toBe(taskBase);
       expect(legacyMetadataChecks.allowed_paths_check.status).toBe("pass");
 
-      const overrideRes = run("bash", ["scripts/verify-sprint.sh"], cwd, {
+      const overrideRes = run("bash", ["scripts/verify-sprint.sh", "--prepare-acceptance"], cwd, {
         HOOK_HOST: "claude",
         REPO_HARNESS_DIFF_BASE: "origin/main",
       });
@@ -4542,7 +3826,7 @@ describe("Workflow helper scripts", () => {
     }
   });
 
-  test("verify-sprint should fail when Human Review Card change type mismatches task_profile", () => {
+  test("verify-sprint ignores Human Review Card semantics because Markdown is projection only", () => {
     const cwd = tmpWorkspace("helper-verify-sprint-card-profile");
     try {
       mkdirSync(join(cwd, ".ai/hooks/lib"), { recursive: true });
@@ -4576,6 +3860,13 @@ describe("Workflow helper scripts", () => {
           "    - docs/spec.md",
           "```",
           "",
+          "## Evidence Requirements",
+          "",
+          "```yaml",
+          "evidence_requirements:",
+          "  benchmark: not_applicable",
+          "```",
+          "",
         ].join("\n")
       );
       writeFileSync(
@@ -4583,12 +3874,11 @@ describe("Workflow helper scripts", () => {
         ["# Task Review: demo", "", "> **Recommendation**: pass", "", humanReviewCard(), "", externalAcceptanceAdvice(), ""].join("\n")
       );
 
-      const res = run("bash", ["scripts/verify-sprint.sh"], cwd);
-      expect(res.status).toBe(1);
-      expect(res.stderr).toContain("change type does not match task_profile");
+      const res = run("bash", ["scripts/verify-sprint.sh", "--prepare-acceptance"], cwd);
+      expect(res.status).toBe(0);
       const checks = JSON.parse(readFileSync(join(cwd, ".ai/harness/checks/latest.json"), "utf-8"));
-      expect(checks.review.status).toBe("fail");
-      expect(checks.review.card.change_type).toBe("code-change");
+      expect(checks.review.status).toBe("pass");
+      expect(checks.review.card).toBeUndefined();
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -4643,7 +3933,7 @@ describe("Workflow helper scripts", () => {
     }
   });
 
-  test("verify-sprint should fail when review recommends pass but Human Review Card is missing", () => {
+  test("verify-sprint does not require a Human Review Card authoring path", () => {
     const cwd = tmpWorkspace("helper-verify-sprint-missing-card");
     try {
       mkdirSync(join(cwd, ".ai/hooks/lib"), { recursive: true });
@@ -4668,9 +3958,19 @@ describe("Workflow helper scripts", () => {
           "> **Status**: Active",
           "",
           "```yaml",
+          "allowed_paths:",
+          "  - docs",
+          "  - tasks",
           "exit_criteria:",
           "  files_exist:",
           "    - docs/spec.md",
+          "```",
+          "",
+          "## Evidence Requirements",
+          "",
+          "```yaml",
+          "evidence_requirements:",
+          "  benchmark: not_applicable",
           "```",
           "",
         ].join("\n")
@@ -4680,12 +3980,11 @@ describe("Workflow helper scripts", () => {
         ["# Task Review: demo", "", "> **Recommendation**: pass", "", externalAcceptanceAdvice(), ""].join("\n")
       );
 
-      const res = run("bash", ["scripts/verify-sprint.sh"], cwd);
-      expect(res.status).toBe(1);
-      expect(res.stderr).toContain("missing Human Review Card verdict");
+      const res = run("bash", ["scripts/verify-sprint.sh", "--prepare-acceptance"], cwd);
+      expect(res.status).toBe(0);
       const checks = JSON.parse(readFileSync(join(cwd, ".ai/harness/checks/latest.json"), "utf-8"));
-      expect(checks.review.status).toBe("fail");
-      expect(checks.review.card.verdict).toBe("");
+      expect(checks.review.status).toBe("pass");
+      expect(checks.review.card).toBeUndefined();
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -4729,14 +4028,14 @@ describe("Workflow helper scripts", () => {
         ["# Task Review: demo", "", "> **Recommendation**: pass", "", humanReviewCard("pass", "unavailable"), ""].join("\n")
       );
 
-      const res = run("bash", ["scripts/verify-sprint.sh"], cwd);
+      const res = run("bash", ["scripts/verify-sprint.sh", "--prepare-acceptance"], cwd);
       expect(res.status).toBe(1);
       const checks = JSON.parse(readFileSync(join(cwd, ".ai/harness/checks/latest.json"), "utf-8"));
       expect(checks.status).toBe("fail");
       expect(checks.source).toBe("verify-sprint");
       expect(checks.contract.file).toBe("tasks/contracts/demo.contract.md");
       expect(checks.contract.status).toBe("fail");
-      expect(checks.external_acceptance.status).toBe("missing");
+      expect(checks.acceptance_receipt.status).toBe("pending");
       expect(checks.run_file).toMatch(/^\.ai\/harness\/runs\/.+-demo\.json$/);
       expect(existsSync(join(cwd, checks.run_file))).toBe(true);
     } finally {

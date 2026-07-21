@@ -436,7 +436,13 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 - Checks file: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
-- Completion gate: `repo-harness run verify-sprint` must see this contract pass, the review recommend pass, and `## External Acceptance Advice` pass or record a manual override.
+- Completion gate: run `verify-sprint --prepare-acceptance`, record one typed AcceptanceReceipt under the frozen policy below, then run `verify-sprint`; review Markdown is projection only.
+
+## Acceptance Policy
+
+```json
+{"protocol":1,"reviewer":"Claude","user_waiver":"allowed"}
+```
 
 ## Allowed Paths
 
@@ -509,11 +515,6 @@ exit_criteria:
     - path: tests/unit/{{TASK_SLUG}}.test.ts
   commands_succeed:
     - bun run check:type
-  qa_scores:
-    - dimension: functionality
-      min: 7
-  manual_checks:
-    - "Evaluator review file recommends pass"
 ```
 
 ## Acceptance Notes (Human Review)
@@ -572,22 +573,20 @@ screenshot/artifact path, or reviewer observation.
 - [ ] Exact manual_checks requirement
   - Evidence: concrete observation, command output, screenshot path, or reviewer note
 
-## External Acceptance Advice
+## Acceptance Receipt Projection
 
-> **External Acceptance**: unavailable
-> **External Reviewer**:
-> **External Source**:
-> **External Started**:
-> **External Completed**:
-> **Review Rubric Version**: 2
+> **Disposition**: unavailable
+> **Reviewer**: unavailable
+> **Source**: unavailable
+> **Actor**: not-applicable
 > **Reviewed Subject SHA256**: pending
 > **Reviewed Subject Scope**: normalized-final-content
 > **Reviewed Target Revision**: pending
-> **Benchmark Evidence SHA256**: pending
+> **Verification Evidence SHA256**: pending
+> **Issued At**: pending
 
-- P1 blockers:
-- P2 advisories:
-- Acceptance checklist:
+- Summary: No AcceptanceReceipt has been recorded.
+- Findings: none
 
 ## Scorecard
 

@@ -868,16 +868,10 @@ emit_review_rubric_prompt() {
 }
 
 emit_review_subject_prompt() {
-  local subject target_rev review_file
+  local subject target_rev
   subject="$(workflow_current_review_subject_value || true)"
   target_rev="$(workflow_current_review_target_revision || true)"
-  review_file="$(workflow_active_review || true)"
-  echo "[ReviewFreshness] Current review subject: ${subject:-unknown}"
-  echo "[ReviewFreshness] Record these review metadata lines in ${review_file:-tasks/reviews/<slug>.review.md}:"
-  echo "> **Review Rubric Version**: 2"
-  echo "> **Reviewed Subject SHA256**: ${subject:-unknown}"
-  echo "> **Reviewed Subject Scope**: normalized-final-content"
-  echo "> **Reviewed Target Revision**: ${target_rev:-unknown}"
+  echo "[AcceptanceSubject] The typed AcceptanceReceipt will bind normalized subject ${subject:-unknown} at target ${target_rev:-unknown}."
 }
 
 # Cross-review advisory: nudge the agent to consider an independent second
@@ -912,8 +906,12 @@ emit_external_acceptance_prompt() {
   local mode="${1:-review}"
   local expected_reviewer expected_source command active_plan_local contract_file_local review_file checks_file rubric subject target_rev benchmark_evidence
 
-  expected_reviewer="$(workflow_external_acceptance_expected_reviewer)"
-  expected_source="$(workflow_external_acceptance_expected_source "$expected_reviewer")"
+  expected_reviewer="$(workflow_acceptance_expected_reviewer 2>/dev/null || true)"
+  if [ -z "$expected_reviewer" ]; then
+    echo "[ExternalAcceptance] Active contract has no valid Acceptance Policy; fix the contract before acceptance."
+    return 0
+  fi
+  expected_source="$(workflow_acceptance_expected_source "$expected_reviewer")"
   if [ "$expected_source" = "claude-review" ]; then
     command="/claude-review"
   else
@@ -941,27 +939,13 @@ emit_external_acceptance_prompt() {
   echo "[ExternalAcceptance] Subject scope for peer: normalized final content for implementation paths; target revision is overlap metadata."
   cat <<EOF_EXTERNAL_ACCEPTANCE
 [ExternalAcceptance] Prompt to send with $command:
-Review the current sprint for acceptance only. Do not run /check. Do not edit files. Do not write files. Inspect the diff scope, contract, review evidence, checks evidence, and Review Rubric v2, then return only a Markdown block that can be pasted into ${review_file:-tasks/reviews/<slug>.review.md}.
+Review the current sprint for acceptance only. Do not run /check. Do not edit files. Do not write files. Inspect the diff scope, contract, review evidence, checks evidence, and Review Rubric v2, then return only one JSON object for the orchestrator to record as the typed AcceptanceReceipt.
 
 ${rubric:-[ReviewRubric] Deep Diff Review Rubric v2 unavailable; use severity order P0/P1/P2/P3 and report no style-only nits.}
 
-## External Acceptance Advice
-> **External Acceptance**: pass
-> **External Reviewer**: $expected_reviewer
-> **External Source**: $expected_source
-> **External Started**: YYYY-MM-DDTHH:MM:SS+0800
-> **External Completed**: YYYY-MM-DDTHH:MM:SS+0800
-> **Review Rubric Version**: 2
-> **Reviewed Subject SHA256**: ${subject:-unknown}
-> **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: ${target_rev:-unknown}
-> **Benchmark Evidence SHA256**: $benchmark_evidence
+{"disposition":"external_pass","reviewer":"$expected_reviewer","source":"$expected_source","actor":null,"summary":"<concise acceptance conclusion>","findings":[]}
 
-- P1 blockers: none
-- P2 advisories:
-- Acceptance checklist: pass
-
-If the peer CLI is unavailable, record **External Acceptance**: unavailable and include the failure reason. That does not satisfy the completion gate unless a canonical pass is recorded.
+Use disposition "reject" with at least one P0/P1/P2/P3 finding when acceptance fails. Provider unavailability produces no receipt and fails closed. After receiving the JSON, record it with acceptance-receipt.ts; the Markdown review section is generated projection only.
 EOF_EXTERNAL_ACCEPTANCE
 }
 
@@ -1239,59 +1223,6 @@ if [ "$done_intent" -eq 1 ]; then
   fi
 
   review_file="$(workflow_active_review || true)"
-  if [ -z "$review_file" ] || [ ! -f "$review_file" ]; then
-    echo "[ReviewGuard] Missing sprint review: ${review_file:-tasks/reviews/<slug>.review.md}"
-    hook_structured_error \
-      "ReviewGuard" \
-      "Done intent detected without a sprint review artifact." \
-      "Run Waza /check after verification and record its evaluator recommendation in tasks/reviews/<slug>.review.md before marking work done." \
-      "quality_gate"
-    exit 2
-  fi
-
-  if ! workflow_review_recommends_pass "$review_file"; then
-    echo "[ReviewGuard] Sprint review does not recommend pass: $review_file"
-    hook_structured_error \
-      "ReviewGuard" \
-      "Sprint review is missing a passing recommendation." \
-      "Run Waza /check with fresh verification evidence and record a pass recommendation before marking work done." \
-      "quality_gate"
-    exit 2
-  fi
-
-  review_freshness="$(workflow_review_freshness_status "$review_file")"
-  IFS=$'\t' read -r review_freshness_state review_subject review_freshness_message <<< "$review_freshness"
-  case "$review_freshness_state" in
-    pass)
-      ;;
-    legacy_missing)
-      # Advisory only: an absent rubric is blocked downstream by the external
-      # acceptance gate, which requires a supported rubric.
-      echo "[ReviewFreshness] WARN: $review_freshness_message"
-      ;;
-    *)
-      echo "[ReviewFreshnessGuard] $review_freshness_message"
-      hook_structured_error \
-        "ReviewFreshnessGuard" \
-        "$review_freshness_message" \
-        "Rerun Waza /check and peer acceptance so $review_file records the current Reviewed Subject SHA256." \
-        "quality_gate"
-      exit 2
-      ;;
-  esac
-
-  external_status="$(workflow_external_acceptance_status "$review_file")"
-  IFS=$'\t' read -r external_state external_reviewer external_source external_message <<< "$external_status"
-  if [ "$external_state" != "pass" ]; then
-    echo "[ExternalAcceptanceGuard] ${external_message:-External acceptance is missing.}"
-    hook_structured_error \
-      "ExternalAcceptanceGuard" \
-      "${external_message:-External acceptance is missing from $review_file.}" \
-      "Run peer acceptance via $(workflow_external_acceptance_expected_source) and record ## External Acceptance Advice in $review_file before marking work done." \
-      "quality_gate"
-    exit 2
-  fi
-
   checks_file="$(workflow_checks_file)"
   if [ ! -f "$checks_file" ]; then
     echo "[EvidenceGuard] Missing structured checks file: $checks_file"
@@ -1309,6 +1240,21 @@ if [ "$done_intent" -eq 1 ]; then
       "EvidenceGuard" \
       "$checks_error" \
       "Run repo-harness run verify-sprint so .ai/harness/checks/latest.json records a passing current sprint verification." \
+      "quality_gate"
+    exit 2
+  fi
+
+  set +e
+  external_status="$(run_repo_harness_helper acceptance-receipt verify --contract "$contract_file" --verification "$checks_file" --format row 2>&1)"
+  external_exit=$?
+  set -e
+  IFS=$'\t' read -r external_state external_reviewer external_source external_disposition external_message <<< "$external_status"
+  if [ "$external_exit" -ne 0 ] || [ "$external_state" != "pass" ]; then
+    echo "[AcceptanceReceiptGuard] ${external_message:-AcceptanceReceipt is missing.}"
+    hook_structured_error \
+      "AcceptanceReceiptGuard" \
+      "${external_message:-A valid AcceptanceReceipt is missing.}" \
+      "Run verify-sprint --prepare-acceptance, obtain acceptance via $(workflow_acceptance_expected_source 2>/dev/null || printf 'the contract reviewer'), record the typed AcceptanceReceipt, and run verify-sprint before marking work done." \
       "quality_gate"
     exit 2
   fi

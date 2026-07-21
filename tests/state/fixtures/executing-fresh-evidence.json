@@ -17,9 +17,9 @@
     "state_revision": "sha256:<dynamic:state_revision>",
     "authority_revision": "sha256:<dynamic:authority_revision>",
     "subject_revision": "sha256:f5a3c1f0fe5500cdd78614cc9d6067db2f97c9be62ac2c4eaa757a343c259ad5",
-    "evidence_revision": "sha256:5a23e7046d703d08e1a6b33d29ac296576aef20414a0a3af87d7536ef48cc705",
+    "evidence_revision": "sha256:1fcf9638f8d5cda3d19c84d9944cf63f834a3f6153f4ff025fabef53d7995ff2",
     "projection_revision": "sha256:<dynamic:projection_revision>",
-    "progress_token": "sha256:cf47bc4dda13ebb4e170f5af75e89c239da643561f821fc48250d8be3e92aac5",
+    "progress_token": "sha256:f25b7c56e6d7ba0e5f7ebcd639d6e9859063d6430985da9b894914756c70c59a",
     "authoritative_plan": {
       "path": "plans/plan-20260712-2327-effective-fixture.md",
       "status": "executing"
@@ -59,7 +59,7 @@
       ".ai/context/capabilities.json": "sha256:becde17b6600ee6ea2f65fe3320f11bc1efbb103d81bb7dda3788623ca293441",
       ".ai/harness/active-plan": "sha256:4c599629e7ec8436620001fc47b764de7b6c553404034c82ff7890ad6bd42af7",
       ".ai/harness/active-worktree": "sha256:<dynamic:.ai/harness/active-worktree>",
-      ".ai/harness/checks/latest.json": "sha256:d9b003cf628370985b39a830d7652a5467f6bdada624e150fdc165d6d9ce2e3e",
+      ".ai/harness/checks/latest.json": "sha256:993a2a3c1e8de4f8e8af21e842bbc35a0c0debc0f6db18552cc0271a7c35c655",
       ".ai/harness/handoff/current.md": "sha256:<dynamic:.ai/harness/handoff/current.md>",
       ".ai/harness/handoff/resume.md": "sha256:<dynamic:.ai/harness/handoff/resume.md>",
       ".ai/harness/policy.json": "sha256:001e056f4ac35ace2e89e20bef71f492ac9a0ac7373cacaeaf1e0fa36ea130b8",
@@ -79,9 +79,9 @@
       "recorded_target_revision": "4484dd5a7eab085e1c7619f3369e9de800cdadc4"
     },
     "external_acceptance": {
-      "path": "tasks/reviews/20260712-2327-effective-fixture.review.md",
+      "path": ".ai/harness/checks/latest.json",
       "freshness": "fresh",
-      "status": "pass"
+      "status": "external_pass"
     },
     "checks": {
       "path": ".ai/harness/checks/latest.json",

@@ -140,7 +140,8 @@ describe("create-project-dirs scaffold parity", () => {
 
       const contractTemplate = readFileSync(join(cwd, ".claude/templates/contract.template.md"), "utf-8");
       expect(contractTemplate).toContain("## Workflow Inventory");
-      expect(contractTemplate).toContain("Completion gate: `repo-harness run verify-sprint` must see this contract pass");
+      expect(contractTemplate).toContain("Completion gate: run `verify-sprint --prepare-acceptance`");
+      expect(contractTemplate).toContain("## Acceptance Policy");
       expect(contractTemplate).toContain("## Delegation Contract");
       expect(contractTemplate).toContain("permission_scope:");
       expect(contractTemplate).toContain("roles:");

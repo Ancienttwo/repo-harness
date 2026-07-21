@@ -337,17 +337,6 @@ active_slug_or_empty() {
   plan_slug_from_path "$active_plan"
 }
 
-review_recommends_pass_fallback() {
-  local review_file="$1"
-  grep -Eq '^> \*\*Recommendation\*\*:[[:space:]]*pass([[:space:]]*)$' "$review_file"
-}
-
-external_acceptance_pass_fallback() {
-  local review_file="$1"
-  grep -Eq '^> \*\*External Acceptance\*\*:[[:space:]]*pass([[:space:]]*)$' "$review_file" \
-    && grep -Eq '^-?[[:space:]]*P1 blockers:[[:space:]]*none([[:space:]]*)$' "$review_file"
-}
-
 require_finish_ready() {
   local contract_file="" review_file=""
 
@@ -363,17 +352,11 @@ require_finish_ready() {
   [[ -n "$contract_file" && -f "$contract_file" ]] || fail "active sprint contract is missing"
   [[ -n "$review_file" && -f "$review_file" ]] || fail "active sprint review is missing"
 
-  if declare -F workflow_review_recommends_pass >/dev/null 2>&1; then
-    workflow_review_recommends_pass "$review_file" || fail "$review_file does not recommend pass"
-  else
-    review_recommends_pass_fallback "$review_file" || fail "$review_file does not recommend pass"
-  fi
-
-  if declare -F workflow_external_acceptance_pass >/dev/null 2>&1; then
-    workflow_external_acceptance_pass "$review_file" || fail "$review_file has no passing external acceptance"
-  else
-    external_acceptance_pass_fallback "$review_file" || fail "$review_file has no passing external acceptance"
-  fi
+  [[ -f "$helper_dir/acceptance-receipt.ts" ]] || fail "AcceptanceReceipt helper is missing: $helper_dir/acceptance-receipt.ts"
+  [[ "$BUN_BIN" == /* && -x "$BUN_BIN" ]] || fail "AcceptanceReceipt requires the trusted Bun runtime injected by repo-harness run"
+  REPO_HARNESS_TARGET_REPO_ROOT="$(pwd -P)" "$BUN_BIN" "$helper_dir/acceptance-receipt.ts" verify \
+    --contract "$contract_file" --verification ".ai/harness/checks/latest.json" >/dev/null \
+    || fail "active AcceptanceReceipt is missing, rejected, or stale"
 
 }
 
@@ -396,6 +379,17 @@ verify_merge_gate_before_ship() {
     return 0
   fi
   "$BUN_BIN" "$helper_dir/merge-gate.ts" verify --base "$base_ref" --format sha
+}
+
+seal_merge_gate_before_ship() {
+  local base_ref="$1"
+  [[ -f "$helper_dir/merge-gate.ts" ]] || fail "merge-gate helper is missing: $helper_dir/merge-gate.ts"
+  [[ "$BUN_BIN" == /* && -x "$BUN_BIN" ]] || fail "merge gate requires the trusted Bun runtime injected by repo-harness run"
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    git rev-parse HEAD
+    return 0
+  fi
+  "$BUN_BIN" "$helper_dir/merge-gate.ts" run --base "$base_ref" --format sha
 }
 
 merge_gate_required() {
@@ -429,8 +423,9 @@ Automated repo-harness ship for \`${branch}\`.
 
 Checks:
 - Waza /check review artifact recommends pass.
-- External acceptance is recorded in the sprint review.
+- A typed AcceptanceReceipt records external pass or the contract-authorized user waiver.
 - \`contract-worktree finish --no-merge\` ran the sole sprint verification.
+- \`merge-gate\` sealed the exact base/head/full diff locally without another provider call.
 
 This PR intentionally does not merge \`${TARGET_BRANCH}\` locally.
 EOF_BODY
@@ -440,7 +435,7 @@ push_branch() {
   local branch="$1" verified_sha="$2" current_sha
   git remote get-url "$REMOTE_NAME" >/dev/null 2>&1 || fail "remote not found: $REMOTE_NAME"
   current_sha="$(git rev-parse "$branch^{commit}")"
-  [[ "$current_sha" == "$verified_sha" ]] || fail "branch $branch moved after merge-gate review"
+  [[ "$current_sha" == "$verified_sha" ]] || fail "branch $branch moved after the local merge seal"
   run_cmd git push "$REMOTE_NAME" "$verified_sha:refs/heads/$branch"
   if [[ "$DRY_RUN" -eq 0 ]]; then
     git branch --set-upstream-to="$REMOTE_NAME/$branch" "$branch" >/dev/null
@@ -503,6 +498,7 @@ ship_linked_pr() {
   ship_transaction_begin
   finish_contract_worktree "pr" "$gate_base_ref"
   refresh_target_base
+  verified_sha="$(seal_merge_gate_before_ship "$gate_base_ref")"
   verified_sha="$(verify_merge_gate_before_ship "$gate_base_ref")"
   push_branch "$branch" "$verified_sha"
   ship_transaction_commit
@@ -519,7 +515,6 @@ ship_linked_local_merge() {
 
 ship_primary_dirty_pr() {
   local status active_slug active_plan base_slug branch message gate_base_ref verified_sha
-  local gate_args=()
   status="$(git status --porcelain=v1 --untracked-files=all)"
   [[ -n "$status" ]] || return 0
 
@@ -547,13 +542,8 @@ ship_primary_dirty_pr() {
   if [[ "$DRY_RUN" -eq 1 ]]; then
     verified_sha="$(git rev-parse HEAD)"
   else
-    gate_args=(run --base "$gate_base_ref" --format sha)
-    if [[ -n "$active_plan" && -f "$active_plan" ]]; then
-      gate_args+=(--goal "$active_plan")
-    fi
-    [[ "$BUN_BIN" == /* && -x "$BUN_BIN" ]] || fail "merge gate requires the trusted Bun runtime injected by repo-harness run"
-    verified_sha="$("$BUN_BIN" "$helper_dir/merge-gate.ts" "${gate_args[@]}")"
     refresh_target_base
+    verified_sha="$(seal_merge_gate_before_ship "$gate_base_ref")"
     verified_sha="$(verify_merge_gate_before_ship "$gate_base_ref")"
   fi
   push_branch "$branch" "$verified_sha"

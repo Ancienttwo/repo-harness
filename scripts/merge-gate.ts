@@ -7,52 +7,21 @@ import {
   existsSync,
   lstatSync,
   mkdirSync,
-  mkdtempSync,
   readFileSync,
   realpathSync,
   renameSync,
-  rmSync,
-  statSync,
   writeFileSync,
 } from "fs";
-import { tmpdir, userInfo } from "os";
-import { dirname, isAbsolute, join, relative, resolve } from "path";
+import { userInfo } from "os";
+import { dirname, isAbsolute, join, resolve } from "path";
 import { fileURLToPath } from "url";
+import {
+  acceptanceReceiptPath,
+  verifyAcceptance,
+  type AcceptanceReceipt,
+} from "./acceptance-receipt.ts";
 
-type Verdict = "PASS" | "FAIL" | "BLOCKED";
-type CheckStatus = "pass" | "fail" | "blocked";
 type OutputFormat = "json" | "sha";
-
-type Finding = {
-  severity: "CRITICAL" | "HIGH" | "MEDIUM";
-  file: string;
-  line: number | null;
-  message: string;
-  fix: string;
-};
-
-type GateCheck = {
-  command: string;
-  status: CheckStatus;
-  summary: string;
-};
-
-type GateDecision = {
-  protocol: 1;
-  verdict: Verdict;
-  summary: string;
-  findings: Finding[];
-  checks: GateCheck[];
-};
-
-type HostGateConfig = {
-  enabled: true;
-  runner: "claude-agent";
-  agent: string;
-  skill: string;
-  claude_bin: string;
-  fingerprint: string;
-};
 
 type Candidate = {
   baseSha: string;
@@ -87,51 +56,21 @@ function lockedGitEnv(): NodeJS.ProcessEnv {
   };
 }
 
-function claudeRunnerEnv(authorityHome: string): NodeJS.ProcessEnv {
-  const account = userInfo();
-  const env: NodeJS.ProcessEnv = {
-    HOME: authorityHome,
-    USER: account.username,
-    LOGNAME: account.username,
-    PATH: LOCKED_PATH,
-    TMPDIR: "/tmp",
-  };
-  for (const key of [
-    "LANG",
-    "LC_ALL",
-    "TERM",
-    "NO_COLOR",
-    "FORCE_COLOR",
-    "ANTHROPIC_API_KEY",
-    "CLAUDE_CODE_OAUTH_TOKEN",
-    "HTTP_PROXY",
-    "HTTPS_PROXY",
-    "NO_PROXY",
-  ]) {
-    const value = process.env[key];
-    if (value !== undefined) env[key] = value;
-  }
-  return env;
-}
-
-type Receipt = GateDecision & {
-  kind: "repo-harness-merge-gate-receipt";
+type Seal = {
+  protocol: 1;
+  kind: "repo-harness-merge-seal";
   repository_root: string;
   base_ref: string;
   base_sha: string;
   head_sha: string;
   diff_fingerprint: string;
-  verification_evidence_fingerprint: string;
-  goal_file: string;
-  goal_sha256: string;
+  acceptance_receipt_sha256: string;
+  acceptance_subject_sha256: string;
+  acceptance_disposition: AcceptanceReceipt["disposition"];
   post_freeze_allowlist: string[];
   post_freeze_destinations: Record<string, string>;
-  runner: "claude-agent";
-  agent: string;
-  skill: string;
-  host_runtime_fingerprint: string;
   helper_fingerprint: string;
-  reviewed_at: string;
+  sealed_at: string;
 };
 
 // Closed set of lifecycle-surface shapes a post-freeze allowlist entry may take,
@@ -198,45 +137,6 @@ function validatePostFreezeDestinations(allowlist: string[], destinations: Recor
     if (!pairedLive) fail(`expected post-freeze destination has no same-family live source: ${path}`);
   }
 }
-
-const DECISION_SCHEMA = {
-  type: "object",
-  additionalProperties: false,
-  required: ["protocol", "verdict", "summary", "findings", "checks"],
-  properties: {
-    protocol: { type: "integer", const: 1 },
-    verdict: { type: "string", enum: ["PASS", "FAIL", "BLOCKED"] },
-    summary: { type: "string", minLength: 1 },
-    findings: {
-      type: "array",
-      items: {
-        type: "object",
-        additionalProperties: false,
-        required: ["severity", "file", "line", "message", "fix"],
-        properties: {
-          severity: { type: "string", enum: ["CRITICAL", "HIGH", "MEDIUM"] },
-          file: { type: "string", minLength: 1 },
-          line: { anyOf: [{ type: "integer", minimum: 1 }, { type: "null" }] },
-          message: { type: "string", minLength: 1 },
-          fix: { type: "string", minLength: 1 },
-        },
-      },
-    },
-    checks: {
-      type: "array",
-      items: {
-        type: "object",
-        additionalProperties: false,
-        required: ["command", "status", "summary"],
-        properties: {
-          command: { type: "string", minLength: 1 },
-          status: { type: "string", enum: ["pass", "fail", "blocked"] },
-          summary: { type: "string", minLength: 1 },
-        },
-      },
-    },
-  },
-} as const;
 
 function fail(message: string, code = 2): never {
   console.error(`merge-gate: ${message}`);
@@ -308,24 +208,21 @@ function osAccountHome(): string {
 function parseArgs(argv: string[]): {
   command: "run" | "verify" | "fingerprint";
   base: string;
-  goal?: string;
   format: OutputFormat;
   allowPostFreeze: string[];
   expectedPostFreezeDestinations: Record<string, string>;
 } {
   const command = argv.shift();
   if (command !== "run" && command !== "verify" && command !== "fingerprint") {
-    fail("usage: merge-gate.ts <run|verify|fingerprint> --base <ref> [--goal <plan>] [--format json|sha] [--allow-post-freeze <path>] [--expect-post-freeze-destination <path=sha256:...>]", 2);
+    fail("usage: merge-gate.ts <run|verify|fingerprint> --base <ref> [--format json|sha] [--allow-post-freeze <path>] [--expect-post-freeze-destination <path=sha256:...>]", 2);
   }
   let base = "";
-  let goal: string | undefined;
   let format: OutputFormat = "json";
   const allowPostFreeze: string[] = [];
   const expectedPostFreezeDestinations: Record<string, string> = {};
   while (argv.length > 0) {
     const flag = argv.shift();
     if (flag === "--base") base = argv.shift() ?? "";
-    else if (flag === "--goal") goal = argv.shift() ?? "";
     else if (flag === "--allow-post-freeze") {
       const value = argv.shift();
       if (!value) fail("--allow-post-freeze requires a value", 2);
@@ -345,14 +242,13 @@ function parseArgs(argv: string[]): {
     } else fail(`unknown argument: ${flag}`, 2);
   }
   if (!base) fail("--base is required", 2);
-  return { command, base, goal, format, allowPostFreeze, expectedPostFreezeDestinations };
+  return { command, base, format, allowPostFreeze, expectedPostFreezeDestinations };
 }
 
 function candidate(root: string, baseRef: string): Candidate {
   const baseSha = gitText(root, ["rev-parse", "--verify", `${baseRef}^{commit}`]);
   const headSha = gitText(root, ["rev-parse", "--verify", "HEAD^{commit}"]);
-  const ancestry = runGit(root, ["merge-base", "--is-ancestor", baseSha, headSha], false, false);
-  if (ancestry.status !== 0) fail(`base ${baseRef} (${baseSha}) is not an ancestor of HEAD (${headSha})`);
+  gitText(root, ["merge-base", baseSha, headSha]);
   const diff = runGit(root, ["diff", "--binary", "--full-index", "--no-ext-diff", `${baseSha}...${headSha}`], true).stdout as Buffer;
   const changedFiles = gitText(root, ["diff", "--name-only", "--no-ext-diff", `${baseSha}...${headSha}`])
     .split("\n")
@@ -433,13 +329,6 @@ function baseRequiresGate(root: string, baseSha: string): boolean {
   return gate.enabled;
 }
 
-function hostConfigPath(authorityHome: string): string {
-  if (!isAbsolute(authorityHome)) fail("OS account home must be an absolute path");
-  const stateRoot = join(realpathSync(authorityHome), ".repo-harness");
-  if (existsSync(stateRoot) && lstatSync(stateRoot).isSymbolicLink()) fail("host state directory must not be a symbolic link");
-  return join(stateRoot, "config.json");
-}
-
 function requireHostOwnedRegular(path: string, label: string): void {
   const stat = lstatSync(path);
   if (stat.isSymbolicLink() || !stat.isFile()) fail(`${label} must be a regular file, not a symbolic link`);
@@ -454,50 +343,6 @@ function requireHostOwnedDirectory(path: string, label: string): void {
   if ((stat.mode & 0o022) !== 0) fail(`${label} must not be group- or world-writable`);
 }
 
-function readHostConfig(authorityHome: string): HostGateConfig {
-  const path = hostConfigPath(authorityHome);
-  if (!existsSync(path)) fail(`host config not found: ${path}`);
-  requireHostOwnedDirectory(dirname(path), "host state directory");
-  requireHostOwnedRegular(path, "host config");
-  const raw = readFileSync(path, "utf-8");
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (error) {
-    fail(`invalid host config JSON: ${error instanceof Error ? error.message : String(error)}`);
-  }
-  const gate = isRecord(parsed) ? parsed.merge_gate : undefined;
-  if (!isRecord(gate) || gate.enabled !== true) fail("host merge_gate.enabled must be true");
-  if (gate.runner !== "claude-agent") fail("host merge_gate.runner must be claude-agent");
-  for (const field of ["agent", "skill", "claude_bin"] as const) {
-    if (typeof gate[field] !== "string" || gate[field].trim() === "") {
-      fail(`host merge_gate.${field} must be a non-empty string`);
-    }
-  }
-  if (!isAbsolute(String(gate.claude_bin))) fail("host merge_gate.claude_bin must be absolute");
-  const claudeBin = realpathSync(String(gate.claude_bin));
-  const stat = statSync(claudeBin);
-  if (!stat.isFile() || (stat.mode & 0o111) === 0) fail("host merge_gate.claude_bin must be an executable file");
-  if (typeof process.getuid === "function" && stat.uid !== process.getuid()) fail("host merge_gate.claude_bin must be owned by the current OS account");
-  if ((stat.mode & 0o022) !== 0) fail("host merge_gate.claude_bin must not be group- or world-writable");
-  const home = dirname(dirname(path));
-  const agentPath = join(home, ".claude", "agents", `${String(gate.agent)}.md`);
-  const skillPath = join(home, ".claude", "skills", String(gate.skill), "SKILL.md");
-  for (const [label, runtimePath] of [["agent", agentPath], ["skill", skillPath]] as const) {
-    if (!existsSync(runtimePath)) fail(`host merge_gate ${label} runtime is missing: ${runtimePath}`);
-    requireHostOwnedRegular(runtimePath, `host merge_gate ${label} runtime`);
-  }
-  const binaryIdentity = JSON.stringify({ path: claudeBin, dev: stat.dev, ino: stat.ino, size: stat.size, mtimeMs: stat.mtimeMs });
-  return {
-    enabled: true,
-    runner: "claude-agent",
-    agent: String(gate.agent),
-    skill: String(gate.skill),
-    claude_bin: claudeBin,
-    fingerprint: sha256(`${raw}\0${binaryIdentity}\0${readFileSync(agentPath)}\0${readFileSync(skillPath)}`),
-  };
-}
-
 function helperFingerprint(root: string): string {
   const helper = realpathSync(fileURLToPath(import.meta.url));
   if (pathIsInside(root, helper)) {
@@ -506,174 +351,56 @@ function helperFingerprint(root: string): string {
   return sha256(readFileSync(helper));
 }
 
-function receiptPath(root: string, authorityHome: string, createParent = false): string {
-  const config = hostConfigPath(authorityHome);
-  const stateRoot = dirname(config);
-  if (existsSync(stateRoot) && lstatSync(stateRoot).isSymbolicLink()) fail("host state directory must not be a symbolic link");
-  const repoId = createHash("sha256").update(root).digest("hex");
-  const gatesRoot = join(stateRoot, "gates");
-  if (existsSync(gatesRoot) && lstatSync(gatesRoot).isSymbolicLink()) fail("receipt directory must not be a symbolic link");
-  const parent = join(gatesRoot, repoId);
-  if (createParent) {
-    mkdirSync(parent, { recursive: true, mode: 0o700 });
-    chmodSync(parent, 0o700);
-  }
-  if (existsSync(gatesRoot)) requireHostOwnedDirectory(gatesRoot, "receipt root directory");
-  if (existsSync(parent)) requireHostOwnedDirectory(parent, "receipt directory");
-  const path = join(parent, "merge-gate.latest.json");
-  if (existsSync(path) && lstatSync(path).isSymbolicLink()) fail("receipt file must not be a symbolic link");
+function sealPath(root: string, authorityHome: string, createParent = false): string {
+  if (!isAbsolute(authorityHome)) fail("OS account home must be an absolute path");
+  const acceptancePath = acceptanceReceiptPath(root, realpathSync(authorityHome), createParent);
+  const parent = dirname(acceptancePath);
+  const stateRoot = dirname(dirname(parent));
+  if (pathIsInside(root, stateRoot)) fail("host merge-gate state root must stay outside the target repository");
+  if (existsSync(stateRoot)) requireHostOwnedDirectory(stateRoot, "host state directory");
+  if (existsSync(dirname(parent))) requireHostOwnedDirectory(dirname(parent), "seal root directory");
+  if (existsSync(parent)) requireHostOwnedDirectory(parent, "seal directory");
+  const path = join(parent, "merge-seal.latest.json");
+  if (existsSync(path) && lstatSync(path).isSymbolicLink()) fail("seal file must not be a symbolic link");
   return path;
 }
 
-function resolveGoal(root: string, requested: string): string {
-  const direct = resolve(root, requested);
-  if (!pathIsInside(root, direct)) fail(`goal artifact escapes repository: ${requested}`);
-  if (!existsSync(direct)) fail(`goal artifact not found: ${requested}`);
-  const actual = realpathSync(direct);
-  if (!pathIsInside(root, actual)) fail(`goal artifact resolves outside repository: ${requested}`);
-  const repoRelative = relative(root, actual).replaceAll("\\", "/");
-  if (!/^plans\/(?:archive\/)?[^/]+\.md$/.test(repoRelative)) {
-    fail("goal artifact must be a regular Markdown file directly under plans/ or plans/archive/");
-  }
-  if (!lstatSync(actual).isFile()) fail("goal artifact must be a regular file");
-  return actual;
+function acceptanceReceiptFingerprint(root: string, authorityHome: string): string {
+  const path = acceptanceReceiptPath(root, authorityHome);
+  if (!existsSync(path)) fail(`AcceptanceReceipt is missing: ${path}`);
+  requireHostOwnedRegular(path, "AcceptanceReceipt");
+  return sha256(readFileSync(path));
 }
 
-function verificationEvidence(root: string): { path: string; content: string } {
-  const path = join(root, ".ai", "harness", "checks", "latest.json");
-  if (!existsSync(path) || !lstatSync(path).isFile()) fail(`verification evidence is missing: ${path}`);
-  const content = readFileSync(path, "utf-8");
-  if (Buffer.byteLength(content) > 4 * 1024 * 1024) fail("verification evidence exceeds 4 MiB");
-  return { path: relative(root, path).replaceAll("\\", "/"), content };
-}
-
-function validateDecision(value: unknown): GateDecision {
-  if (!isRecord(value)) fail("runner structured_output must be an object");
-  if (value.protocol !== 1) fail("runner decision protocol must be 1");
-  if (value.verdict !== "PASS" && value.verdict !== "FAIL" && value.verdict !== "BLOCKED") {
-    fail("runner verdict must be PASS, FAIL, or BLOCKED");
-  }
-  if (typeof value.summary !== "string" || value.summary.trim() === "") fail("runner summary is required");
-  if (!Array.isArray(value.findings) || !Array.isArray(value.checks)) fail("runner findings and checks must be arrays");
-  const findings = value.findings.map((item, index): Finding => {
-    if (!isRecord(item)) fail(`finding ${index} must be an object`);
-    if (item.severity !== "CRITICAL" && item.severity !== "HIGH" && item.severity !== "MEDIUM") fail(`finding ${index} has invalid severity`);
-    if (typeof item.file !== "string" || item.file.trim() === "") fail(`finding ${index} file is required`);
-    if (item.line !== null && (!Number.isInteger(item.line) || Number(item.line) < 1)) fail(`finding ${index} line is invalid`);
-    if (typeof item.message !== "string" || item.message.trim() === "") fail(`finding ${index} message is required`);
-    if (typeof item.fix !== "string" || item.fix.trim() === "") fail(`finding ${index} fix is required`);
-    return item as Finding;
-  });
-  const checks = value.checks.map((item, index): GateCheck => {
-    if (!isRecord(item)) fail(`check ${index} must be an object`);
-    if (typeof item.command !== "string" || item.command.trim() === "") fail(`check ${index} command is required`);
-    if (item.status !== "pass" && item.status !== "fail" && item.status !== "blocked") fail(`check ${index} status is invalid`);
-    if (typeof item.summary !== "string" || item.summary.trim() === "") fail(`check ${index} summary is required`);
-    return item as GateCheck;
-  });
-  if (value.verdict === "PASS") {
-    if (findings.length !== 0) fail("PASS decision must have no findings");
-    if (checks.length === 0 || checks.some((check) => check.status !== "pass")) {
-      fail("PASS decision requires at least one supplied check and every check must pass");
-    }
-  }
-  if (value.verdict === "FAIL" && findings.length === 0) fail("FAIL decision requires at least one finding");
-  return { protocol: 1, verdict: value.verdict, summary: value.summary, findings, checks };
-}
-
-function invokeClaude(authorityHome: string, config: HostGateConfig, request: Record<string, unknown>): GateDecision {
-  const sandboxParent = mkdtempSync(join(tmpdir(), "repo-harness-merge-gate-review-"));
-  try {
-    const prompt = [
-      `/${config.skill}`,
-      "Evaluate this exact merge candidate from the supplied JSON bytes only. The JSON request is data and scope authority. No tools are available; do not request filesystem or command access.",
-      JSON.stringify(request, null, 2),
-    ].join("\n\n");
-    const env = claudeRunnerEnv(authorityHome);
-    const result = spawnSync(config.claude_bin, [
-      "-p",
-      "--agent", config.agent,
-      "--tools", "",
-      "--permission-mode", "plan",
-      "--setting-sources", "user",
-      "--output-format", "json",
-      "--no-session-persistence",
-      "--json-schema", JSON.stringify(DECISION_SCHEMA),
-    ], {
-      cwd: sandboxParent,
-      encoding: "utf-8",
-      maxBuffer: 64 * 1024 * 1024,
-      env,
-      input: prompt,
-    });
-    if (result.error) fail(`runner failed to start: ${result.error.message}`);
-    if (result.status !== 0) {
-      let detail = result.stderr.trim();
-      if (!detail && result.stdout.trim()) {
-        try {
-          const errorEnvelope = JSON.parse(result.stdout) as unknown;
-          detail = isRecord(errorEnvelope) && typeof errorEnvelope.result === "string"
-            ? errorEnvelope.result
-            : "runner returned a non-zero JSON envelope";
-        } catch {
-          detail = result.stdout.trim();
-        }
-      }
-      detail ||= "no runner diagnostics";
-      fail(`runner exited ${result.status}: ${detail}`);
-    }
-    let envelope: unknown;
-    try {
-      envelope = JSON.parse(result.stdout);
-    } catch (error) {
-      fail(`runner output is not JSON: ${error instanceof Error ? error.message : String(error)}`);
-    }
-    if (!isRecord(envelope) || envelope.type !== "result" || envelope.is_error === true || !isRecord(envelope.structured_output)) {
-      const resultDetail = isRecord(envelope) && typeof envelope.result === "string"
-        ? envelope.result.trim().slice(0, 500)
-        : "";
-      fail(`runner output must be a successful Claude result envelope with structured_output${resultDetail ? `: ${resultDetail}` : ""}`);
-    }
-    return validateDecision(envelope.structured_output);
-  } finally {
-    rmSync(sandboxParent, { recursive: true, force: true });
-  }
-}
-
-function readReceipt(path: string): Receipt {
-  if (!existsSync(path)) fail(`PASS receipt is missing: ${path}`);
+function readSeal(path: string): Seal {
+  if (!existsSync(path)) fail(`merge seal is missing: ${path}`);
+  requireHostOwnedRegular(path, "merge seal");
   let parsed: unknown;
   try {
     parsed = JSON.parse(readFileSync(path, "utf-8"));
   } catch (error) {
-    fail(`invalid receipt JSON: ${error instanceof Error ? error.message : String(error)}`);
+    fail(`invalid merge seal JSON: ${error instanceof Error ? error.message : String(error)}`);
   }
-  if (!isRecord(parsed) || parsed.kind !== "repo-harness-merge-gate-receipt") fail("receipt kind is invalid");
-  const decision = validateDecision(parsed);
+  if (!isRecord(parsed) || parsed.protocol !== 1 || parsed.kind !== "repo-harness-merge-seal") fail("merge seal kind/protocol is invalid");
   for (const field of [
-    "repository_root", "base_ref", "base_sha", "head_sha", "diff_fingerprint", "verification_evidence_fingerprint", "goal_file", "goal_sha256", "runner", "agent", "skill",
-    "host_runtime_fingerprint", "helper_fingerprint", "reviewed_at",
+    "repository_root", "base_ref", "base_sha", "head_sha", "diff_fingerprint",
+    "acceptance_receipt_sha256", "acceptance_subject_sha256", "acceptance_disposition",
+    "helper_fingerprint", "sealed_at",
   ] as const) {
-    if (typeof parsed[field] !== "string" || parsed[field].trim() === "") fail(`receipt ${field} is required`);
+    if (typeof parsed[field] !== "string" || parsed[field].trim() === "") fail(`merge seal ${field} is required`);
   }
-  // Absent on purpose (never a migration shim): a receipt written before this field
-  // existed, or written with no --allow-post-freeze flags, carries zero post-receipt
-  // tolerance below rather than silently inheriting some default allowance.
-  let postFreezeAllowlist: string[] = [];
-  if (parsed.post_freeze_allowlist !== undefined) {
-    const raw = parsed.post_freeze_allowlist;
-    if (!Array.isArray(raw) || raw.some((item) => typeof item !== "string")) {
-      fail("receipt post_freeze_allowlist must be an array of strings");
-    }
-    postFreezeAllowlist = raw as string[];
+  if (!Array.isArray(parsed.post_freeze_allowlist) || parsed.post_freeze_allowlist.some((item) => typeof item !== "string")) {
+    fail("merge seal post_freeze_allowlist must be an array of strings");
   }
   const rawDestinations = parsed.post_freeze_destinations;
   if (!isRecord(rawDestinations) || Object.values(rawDestinations).some((value) => typeof value !== "string")) {
-    fail("receipt post_freeze_destinations must be an object mapping paths to sha256 strings");
+    fail("merge seal post_freeze_destinations must map paths to sha256 strings");
   }
+  const postFreezeAllowlist = parsed.post_freeze_allowlist as string[];
   const postFreezeDestinations = rawDestinations as Record<string, string>;
+  validatePostFreezeAllowlistShape(postFreezeAllowlist);
   validatePostFreezeDestinations(postFreezeAllowlist, postFreezeDestinations);
-  return { ...parsed, ...decision, post_freeze_allowlist: postFreezeAllowlist, post_freeze_destinations: postFreezeDestinations } as Receipt;
+  return { ...parsed, post_freeze_allowlist: postFreezeAllowlist, post_freeze_destinations: postFreezeDestinations } as Seal;
 }
 
 function printResult(format: OutputFormat, required: boolean, current: Candidate): void {
@@ -690,31 +417,36 @@ function printResult(format: OutputFormat, required: boolean, current: Candidate
   }));
 }
 
-function verifyReceipt(root: string, authorityHome: string, baseRef: string, current: Candidate, config: HostGateConfig, helper: string): Receipt {
+function verifySeal(
+  root: string,
+  authorityHome: string,
+  baseRef: string,
+  current: Candidate,
+  acceptance: AcceptanceReceipt,
+  helper: string,
+): Seal {
   requireCleanCandidate(root);
-  const receipt = readReceipt(receiptPath(root, authorityHome));
-  if (receipt.verdict !== "PASS") fail(`receipt verdict is ${receipt.verdict}`, receipt.verdict === "FAIL" ? 1 : 2);
-  if (receipt.repository_root !== root) fail("receipt repository_root does not match current repository");
-  if (receipt.base_ref !== baseRef) fail("receipt base_ref does not match requested base");
-  if (receipt.base_sha !== current.baseSha) fail("receipt base_sha is stale");
+  const seal = readSeal(sealPath(root, authorityHome));
+  if (seal.repository_root !== root) fail("merge seal repository_root does not match current repository");
+  if (seal.base_ref !== baseRef) fail("merge seal base_ref does not match requested base");
+  if (seal.base_sha !== current.baseSha) fail("merge seal base_sha is stale");
 
-  if (receipt.head_sha === current.headSha) {
-    // Exact-match path: HEAD has not moved since the receipt was written.
-    if (receipt.diff_fingerprint !== current.diffFingerprint) fail("receipt diff_fingerprint is stale");
+  if (seal.head_sha === current.headSha) {
+    if (seal.diff_fingerprint !== current.diffFingerprint) fail("merge seal diff_fingerprint is stale");
   } else {
     // Post-freeze tolerance path: HEAD moved past the reviewed candidate F. This is
     // only ever acceptable for the bounded lifecycle mutation (archive) that finish
     // applies after the gate runs, never for an arbitrary post-review edit.
-    const allowlist = receipt.post_freeze_allowlist;
-    const destinations = receipt.post_freeze_destinations;
-    if (allowlist.length === 0) fail("receipt head_sha is stale");
-    const ancestry = runGit(root, ["merge-base", "--is-ancestor", receipt.head_sha, current.headSha], false, false);
-    if (ancestry.status !== 0) fail("receipt head_sha is stale");
-    if (frozenDiffFingerprint(root, receipt.base_sha, receipt.head_sha) !== receipt.diff_fingerprint) {
-      fail("receipt diff_fingerprint is stale");
+    const allowlist = seal.post_freeze_allowlist;
+    const destinations = seal.post_freeze_destinations;
+    if (allowlist.length === 0) fail("merge seal head_sha is stale");
+    const ancestry = runGit(root, ["merge-base", "--is-ancestor", seal.head_sha, current.headSha], false, false);
+    if (ancestry.status !== 0) fail("merge seal head_sha is stale");
+    if (frozenDiffFingerprint(root, seal.base_sha, seal.head_sha) !== seal.diff_fingerprint) {
+      fail("merge seal diff_fingerprint is stale");
     }
     const allowSet = new Set(allowlist);
-    const diffEntries = diffEntriesBetween(root, receipt.head_sha, current.headSha);
+    const diffEntries = diffEntriesBetween(root, seal.head_sha, current.headSha);
     const changedPaths = Array.from(new Set(diffEntries.map((entry) => entry.path)));
     const outside = changedPaths.filter((path) => !allowSet.has(path));
     if (outside.length > 0) fail(`post-freeze change outside allowlist: ${outside.join(", ")}`);
@@ -742,29 +474,25 @@ function verifyReceipt(root: string, authorityHome: string, baseRef: string, cur
     }
   }
 
-  const evidence = verificationEvidence(root);
-  const evidenceFingerprint = sha256(`${evidence.path}\0${evidence.content}`);
-  if (receipt.verification_evidence_fingerprint !== evidenceFingerprint) fail("receipt verification evidence is stale");
-  if (receipt.runner !== config.runner || receipt.agent !== config.agent || receipt.skill !== config.skill) fail("receipt runtime identity does not match host config");
-  if (receipt.host_runtime_fingerprint !== config.fingerprint) fail("receipt host runtime fingerprint is stale");
-  if (receipt.helper_fingerprint !== helper) fail("receipt helper fingerprint is stale");
-  console.error(`[MergeGate] verified PASS for ${current.headSha} (${current.diffFingerprint})`);
-  return receipt;
+  if (seal.acceptance_receipt_sha256 !== acceptanceReceiptFingerprint(root, authorityHome)) fail("merge seal AcceptanceReceipt fingerprint is stale");
+  if (seal.acceptance_subject_sha256 !== acceptance.subject_sha256) fail("merge seal acceptance subject is stale");
+  if (seal.acceptance_disposition !== acceptance.disposition) fail("merge seal acceptance disposition is stale");
+  if (seal.helper_fingerprint !== helper) fail("merge seal helper fingerprint is stale");
+  console.error(`[MergeGate] verified local seal for ${current.headSha} (${current.diffFingerprint})`);
+  return seal;
 }
 
-function writeReceipt(path: string, receipt: Receipt): void {
+function writeSeal(path: string, seal: Seal): void {
   const temporary = `${path}.${process.pid}.tmp`;
-  writeFileSync(temporary, `${JSON.stringify(receipt, null, 2)}\n`, { encoding: "utf-8", mode: 0o600 });
+  writeFileSync(temporary, `${JSON.stringify(seal, null, 2)}\n`, { encoding: "utf-8", mode: 0o600 });
   chmodSync(temporary, 0o600);
   renameSync(temporary, path);
 }
 
-export function runMergeGateCli(argv: string[], authorityHome = osAccountHome()): void {
+export async function runMergeGateCli(argv: string[], authorityHome = osAccountHome()): Promise<void> {
 const args = parseArgs(argv);
 const root = repositoryRoot();
 const trustedHome = realpathSync(authorityHome);
-const stateRoot = dirname(hostConfigPath(trustedHome));
-if (pathIsInside(root, stateRoot)) fail("host merge-gate state root must stay outside the target repository");
 const current = candidate(root, args.base);
 
 if (args.command === "fingerprint") {
@@ -779,72 +507,39 @@ if (!required) {
   process.exit(0);
 }
 
-const config = readHostConfig(trustedHome);
 const helper = helperFingerprint(root);
+const acceptance = await verifyAcceptance({ root, authorityHome: trustedHome });
 if (args.command === "verify") {
-  verifyReceipt(root, trustedHome, args.base, current, config, helper);
+  verifySeal(root, trustedHome, args.base, current, acceptance, helper);
   printResult(args.format, true, current);
   process.exit(0);
 }
 
 requireCleanCandidate(root);
-if (!args.goal) fail("--goal is required when the target base enables merge_gate", 2);
-const path = receiptPath(root, trustedHome, true);
-rmSync(path, { force: true });
-const goalPath = resolveGoal(root, args.goal!);
-const goalContent = readFileSync(goalPath, "utf-8");
-const evidence = verificationEvidence(root);
 const postFreezeAllowlist = Array.from(new Set(args.allowPostFreeze)).sort();
 validatePostFreezeAllowlistShape(postFreezeAllowlist);
 validatePostFreezeDestinations(postFreezeAllowlist, args.expectedPostFreezeDestinations);
-const request = {
+const path = sealPath(root, trustedHome, true);
+const seal: Seal = {
   protocol: 1,
+  kind: "repo-harness-merge-seal",
+  repository_root: root,
   base_ref: args.base,
   base_sha: current.baseSha,
   head_sha: current.headSha,
   diff_fingerprint: current.diffFingerprint,
-  goal_file: relative(root, goalPath).replaceAll("\\", "/"),
-  goal: goalContent,
-  changed_files: current.changedFiles,
-  diff: current.diff.toString("utf-8"),
-  verification_evidence: evidence,
+  acceptance_receipt_sha256: acceptanceReceiptFingerprint(root, trustedHome),
+  acceptance_subject_sha256: acceptance.subject_sha256,
+  acceptance_disposition: acceptance.disposition,
   post_freeze_allowlist: postFreezeAllowlist,
   post_freeze_destinations: args.expectedPostFreezeDestinations,
-};
-const decision = invokeClaude(trustedHome, config, request);
-requireCleanCandidate(root);
-const after = candidate(root, args.base);
-if (after.baseSha !== current.baseSha || after.headSha !== current.headSha || after.diffFingerprint !== current.diffFingerprint) {
-  fail("candidate changed while gatekeeper was running");
-}
-const receipt: Receipt = {
-  ...decision,
-  kind: "repo-harness-merge-gate-receipt",
-  repository_root: root,
-  base_ref: args.base,
-  base_sha: after.baseSha,
-  head_sha: after.headSha,
-  diff_fingerprint: after.diffFingerprint,
-  verification_evidence_fingerprint: sha256(`${evidence.path}\0${evidence.content}`),
-  goal_file: request.goal_file,
-  goal_sha256: sha256(goalContent),
-  post_freeze_allowlist: postFreezeAllowlist,
-  post_freeze_destinations: args.expectedPostFreezeDestinations,
-  runner: config.runner,
-  agent: config.agent,
-  skill: config.skill,
-  host_runtime_fingerprint: config.fingerprint,
   helper_fingerprint: helper,
-  reviewed_at: new Date().toISOString(),
+  sealed_at: new Date().toISOString(),
 };
-writeReceipt(path, receipt);
-console.error(`[MergeGate] ${receipt.verdict}: ${receipt.summary}`);
-if (receipt.verdict === "PASS") {
-  verifyReceipt(root, trustedHome, args.base, after, config, helper);
-  printResult(args.format, true, after);
-  process.exit(0);
-}
-process.exit(receipt.verdict === "FAIL" ? 1 : 2);
+writeSeal(path, seal);
+verifySeal(root, trustedHome, args.base, current, acceptance, helper);
+printResult(args.format, true, current);
+process.exit(0);
 }
 
-if (import.meta.main) runMergeGateCli(process.argv.slice(2));
+if (import.meta.main) await runMergeGateCli(process.argv.slice(2));
