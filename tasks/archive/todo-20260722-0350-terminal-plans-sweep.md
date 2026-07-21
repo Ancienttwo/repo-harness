@@ -1,3 +1,8 @@
+> **Archived**: 2026-07-22 03:58
+> **Related Plan**: plans/archive/ (terminal-plans-sweep, 33 plans)
+> **Outcome**: Archived (fail-closed one-shot sweep)
+> **Parent Run ID**: terminal-plans-sweep
+
 # Deferred Goal Ledger
 
 > **Status**: Backlog
