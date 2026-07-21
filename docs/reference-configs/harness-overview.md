@@ -100,18 +100,29 @@ Required v1 fields:
 
 Harness cost reports separate measured values from unavailable telemetry. A
 metric is authoritative only when its named source exposes that value directly;
-missing values stay `null` with an unavailable authority marker. Reports must
-not derive model calls from turns, subagents from tool-name text, billing tokens
-from byte counts, or live hook latency from host tool duration.
+missing or incomplete event metrics keep `runtime_evidence.available: false`.
+Reports must not derive model calls from turns, subagents from tool-name text,
+billing tokens from byte counts, or hidden legacy-script I/O from local
+heuristics.
 
 The two current evidence owners are:
 
-- `scripts/hook-dispatch-diet-report.ts` for static route topology and
-  synthetic subprocess probes. Probe distributions include sample count, total,
-  p50, p95, p99, and max latency. The SessionStart probe also records UTF-8
-  output/context bytes. Its context token value is an estimate labeled
-  `utf8_bytes_div_4`; it is a context-budget indicator, not provider billing
-  usage.
+- `.ai/harness/runs/hook-events.jsonl` is the sole hook runtime telemetry
+  authority. `src/cli/hook/runtime.ts` appends exactly one
+  `loop-engine-hook-event/v1` record per eligible handled host event. Each
+  record carries ordered steps, elapsed time, direct runtime-dispatch child
+  processes, Effective State resolutions, logical observed file/write counts,
+  durable writes, and write transactions. Legacy Bash steps name their opaque
+  metrics instead of fabricating hidden process or filesystem counts. The
+  telemetry append itself is excluded from write amplification metrics and is
+  non-authoritative: append failure never changes hook safety.
+- `scripts/hook-dispatch-diet-report.ts` combines that event authority with
+  static route topology and synthetic subprocess probes. Runtime distributions
+  and route coverage include sample count, p50, and p95; missing, malformed,
+  mixed-protocol, duplicate, or target-incomplete records fail closed. Synthetic
+  probe distributions retain total, p50, p95, p99, and max latency. The
+  SessionStart token estimate remains labeled `utf8_bytes_div_4`; it is a
+  context-budget indicator, not provider billing usage.
 - `scripts/run-skill-evals.ts` for end-to-end benchmark duration, changed-file
   evidence, graders, and provider-structured usage. Claude single-result JSON
   and Codex JSONL are parsed independently. Raw output remains an artifact, and
@@ -120,6 +131,15 @@ The two current evidence owners are:
 
 Current SLOs:
 
+- Runtime entry: exactly one per eligible host event.
+- Direct runtime-dispatch child processes: at most one per event. This does not
+  claim to count internal `git`/`bun` plumbing or OS process syscalls.
+- Effective State resolution: exactly one for the measured PreEdit and Stop
+  target routes.
+- PreEdit event p95: target at most 150 ms, initial hard budget 250 ms.
+- PostEdit: zero full recovery-projection writes and at most one journal event
+  write.
+- Stop: at most one recovery-projection write transaction.
 - Synthetic hook phase p95: at most 250 ms per probe.
 - Estimated actionable SessionStart context: at most 1,500 tokens using the
   explicitly labeled byte heuristic.

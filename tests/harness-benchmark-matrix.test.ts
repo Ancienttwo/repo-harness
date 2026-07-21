@@ -24,6 +24,7 @@ import {
   parsePorcelainPaths,
   prepareBenchmarkProfiles,
   rebaseAbsoluteSymlinks,
+  readHookMetrics,
   writeResumeProjection,
   reportByteBindingPath,
   runBoundedProviderProcess,
@@ -338,6 +339,29 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
       expect(report.records.every((record) => record.baseline_revision === null)).toBe(true);
       expect(JSON.parse(readFileSync(reportPath, 'utf-8')).records).toHaveLength(27);
       expect(readFileSync(reportPath.replace(/\.json$/, '.md'), 'utf-8')).toContain('non-authoritative');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  test('benchmark runtime evidence reads only the event-level telemetry authority', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'harness-event-telemetry-reader-'));
+    try {
+      const runs = join(dir, '.ai/harness/runs');
+      mkdirSync(runs, { recursive: true });
+      writeFileSync(join(runs, 'hook-invocations.jsonl'), '{"protocol":1,"duration_ms":999}\n');
+      writeFileSync(join(runs, 'hook-events.jsonl'), `${JSON.stringify({
+        protocol: 'loop-engine-hook-event/v1', kind: 'hook_event', event_id: 'event-1',
+        started_at: '2026-07-21T00:00:00.000Z', completed_at: '2026-07-21T00:00:00.100Z',
+        host: null, session_id: null, run_id: null, turn_id: null,
+        event: 'PreToolUse', route_id: 'edit', exit_code: 0, blocked: false, result_reason: 'ok', runtime_entries: 1,
+        steps: [{ name: 'handler', execution: 'in_process', started_at: '2026-07-21T00:00:00.000Z', elapsed_ms: 100, exit_code: 0, output_bytes: 0 }],
+        metrics: { state_resolutions: 1, child_processes: 0, files_read: 1, files_written: 0, durable_writes: 0, write_transactions: 0, full_projection_writes: 0, event_writes: 0, elapsed_ms: 100 },
+        measurement: { complete: true, complete_metrics: ['runtime_entries', 'state_resolutions', 'child_processes', 'files_read', 'files_written', 'durable_writes', 'write_transactions', 'full_projection_writes', 'event_writes', 'elapsed_ms'], incomplete_metrics: [], opaque_steps: [] },
+        fingerprint: `sha256:${'0'.repeat(64)}`,
+      })}\n`);
+      expect(readHookMetrics(dir)).toHaveLength(1);
+      expect(readHookMetrics(dir)[0]?.event_id).toBe('event-1');
+      writeFileSync(join(runs, 'hook-events.jsonl'), 'not-json\n');
+      expect(() => readHookMetrics(dir)).toThrow('invalid hook event telemetry');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 

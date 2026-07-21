@@ -107,6 +107,73 @@ export interface LoopEventResult {
   };
 }
 
+/** Runtime measurement names carried by one host-event telemetry record. */
+export type HookEventTelemetryMetric =
+  | 'runtime_entries'
+  | 'state_resolutions'
+  | 'child_processes'
+  | 'files_read'
+  | 'files_written'
+  | 'durable_writes'
+  | 'write_transactions'
+  | 'full_projection_writes'
+  | 'event_writes'
+  | 'elapsed_ms';
+
+/** One ordered unit of work performed while handling a host event. */
+export interface HookEventTelemetryStep {
+  readonly name: string;
+  readonly execution: 'in_process' | 'subprocess';
+  readonly started_at: string;
+  readonly elapsed_ms: number;
+  readonly exit_code: number;
+  readonly output_bytes: number | null;
+}
+
+/**
+ * One event-level runtime authority record. The JSON projection intentionally
+ * uses snake_case because it is consumed by shell-adjacent reports and
+ * committed evidence. `measurement.complete` means every declared metric is
+ * complete; subset consumers inspect `complete_metrics` instead of treating
+ * an opaque legacy step as all-or-none.
+ */
+export interface HookEventTelemetryRecord {
+  readonly protocol: 'loop-engine-hook-event/v1';
+  readonly kind: 'hook_event';
+  readonly event_id: string;
+  readonly started_at: string;
+  readonly completed_at: string;
+  readonly host: RouteHost | null;
+  readonly session_id: string | null;
+  readonly run_id: string | null;
+  readonly turn_id: string | null;
+  readonly event: HookEvent;
+  readonly route_id: RouteId;
+  readonly exit_code: number;
+  readonly blocked: boolean;
+  readonly result_reason: string;
+  readonly runtime_entries: 1;
+  readonly steps: readonly HookEventTelemetryStep[];
+  readonly metrics: {
+    readonly state_resolutions: number;
+    readonly child_processes: number;
+    readonly files_read: number;
+    readonly files_written: number;
+    readonly durable_writes: number;
+    readonly write_transactions: number;
+    readonly full_projection_writes: number;
+    readonly event_writes: number;
+    readonly elapsed_ms: number;
+  };
+  readonly measurement: {
+    readonly complete: boolean;
+    readonly complete_metrics: readonly HookEventTelemetryMetric[];
+    readonly incomplete_metrics: readonly HookEventTelemetryMetric[];
+    readonly opaque_steps: readonly string[];
+  };
+  readonly fingerprint: `sha256:${string}`;
+}
+
 /** One (event, routeId) route tuple mapped onto the `LoopEvent` kind that models it. */
 export interface LoopRouteTuple {
   readonly event: HookEvent;

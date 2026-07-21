@@ -9,6 +9,11 @@ import { spawnSync } from 'child_process';
 import { createHash, randomUUID } from 'crypto';
 import { acquireExpensiveRunLock } from '../src/effects/expensive-run-lock';
 import type { ExclusiveDirectoryLockHandle } from '../src/effects/locking/exclusive-directory-lock';
+import {
+  HOOK_EVENT_TELEMETRY_PATH,
+  isHookEventTelemetryRecord,
+} from '../src/cli/hook/event-telemetry';
+import type { HookEventTelemetryRecord } from '../src/core/loop/loop-event-protocol';
 
 const ROOT = resolve(import.meta.dir, '..');
 const DEFAULT_MANIFEST = join(ROOT, 'evals/harness/scenarios.json');
@@ -786,10 +791,24 @@ export function benchmarkChangedFiles(workspace: string, baselineRevision?: stri
   return [...paths].sort();
 }
 
-function readHookMetrics(workspace: string) {
-  const path = join(workspace, '.ai/harness/runs/hook-invocations.jsonl');
-  if (!existsSync(path)) return [] as Array<{ duration_ms: number; output_bytes: number | null; blocked: boolean; fingerprint: string }>;
-  return readFileSync(path, 'utf-8').trim().split('\n').filter(Boolean).map((line) => JSON.parse(line));
+export function readHookMetrics(workspace: string): HookEventTelemetryRecord[] {
+  const path = join(workspace, HOOK_EVENT_TELEMETRY_PATH);
+  if (!existsSync(path)) return [];
+  const lines = readFileSync(path, 'utf-8').split(/\r?\n/).filter((line) => line.trim().length > 0);
+  const records: HookEventTelemetryRecord[] = [];
+  for (const line of lines) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      throw new Error(`invalid hook event telemetry JSON in ${path}`);
+    }
+    if (!isHookEventTelemetryRecord(parsed)) {
+      throw new Error(`invalid or mixed hook event telemetry protocol in ${path}`);
+    }
+    records.push(parsed);
+  }
+  return records;
 }
 
 function providerUsage(jsonl: string): Pick<BenchmarkRunRecord, 'usage_authority' | 'provider_unavailable_reason' | 'input_tokens' | 'cached_input_tokens' | 'output_tokens' | 'model_call_count' | 'subagent_call_count'> {
@@ -908,9 +927,9 @@ async function executeRun(
     ? changed.length === 0
     : scenario.expected_paths.every((path) => changed.includes(path));
   const hooks = readHookMetrics(workspace);
-  const hookDurations = hooks.map((entry) => entry.duration_ms);
-  const knownOutputBytes = hooks.every((entry) => entry.output_bytes !== null)
-    ? hooks.reduce((sum, entry) => sum + (entry.output_bytes ?? 0), 0)
+  const hookDurations = hooks.map((entry) => entry.metrics.elapsed_ms);
+  const knownOutputBytes = hooks.every((entry) => entry.steps.every((step) => step.output_bytes !== null))
+    ? hooks.reduce((sum, entry) => sum + entry.steps.reduce((stepSum, step) => stepSum + (step.output_bytes ?? 0), 0), 0)
     : null;
   const fingerprints = new Set<string>();
   let repeated = 0;

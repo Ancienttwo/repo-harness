@@ -6,7 +6,6 @@ import { getRoute, type HookEvent, type RouteId } from './route-registry';
 import { budgetSessionContext, type SessionContextSection } from './session-context-budget';
 import { writeAllSync } from '../runtime/write-all-sync';
 import { createStateInputCollector } from '../../effects/loop/state-input-collector';
-import { createHash } from 'crypto';
 import { runMutationGuard } from './mutation-guard';
 import { buildSessionStartSections } from './session-context';
 import {
@@ -14,6 +13,7 @@ import {
   runMutationObserved,
 } from './mutation-observed';
 import { runStopHandler } from './stop-handler';
+import { createHookEventTelemetry } from './event-telemetry';
 import { resolveEffectiveState } from '../../effects/state/resolve-effective-state';
 import type { EffectiveState } from '../../core/state/types';
 import type { WorkflowProfile } from '../../core/workflow/profile';
@@ -53,32 +53,6 @@ export interface RunHookResult {
   failedScript?: string;
 }
 
-function recordHookInvocation(
-  repoRoot: string,
-  input: { event: HookEvent; routeId: RouteId; script: string; startedAt: number; durationMs: number; exitCode: number; stdout: Buffer | string | null | undefined },
-): void {
-  try {
-    const output = input.stdout == null ? null : input.stdout.toString();
-    const record = {
-      protocol: 1,
-      ts: new Date(input.startedAt).toISOString(),
-      event: input.event,
-      route_id: input.routeId,
-      script: input.script,
-      duration_ms: input.durationMs,
-      exit_code: input.exitCode,
-      output_bytes: output === null ? null : Buffer.byteLength(output, 'utf-8'),
-      blocked: input.exitCode !== 0 || looksLikeHookDecisionJson(input.stdout) && output?.includes('"decision":"block"') === true,
-      fingerprint: `sha256:${createHash('sha256').update(`${input.event}\0${input.routeId}\0${input.script}\0${input.exitCode}\0${output ?? 'unavailable'}`).digest('hex')}`,
-    };
-    const metricsPath = path.join(repoRoot, '.ai/harness/runs/hook-invocations.jsonl');
-    fs.mkdirSync(path.join(repoRoot, '.ai/harness/runs'), { recursive: true });
-    fs.appendFileSync(metricsPath, `${JSON.stringify(record)}\n`, { mode: 0o600 });
-  } catch {
-    // Telemetry evidence is non-authoritative and must never alter hook safety.
-  }
-}
-
 function looksLikeHookDecisionJson(output: Buffer | string | null | undefined): boolean {
   if (!output) return false;
   const text = output.toString().trim();
@@ -89,6 +63,22 @@ function looksLikeHookDecisionJson(output: Buffer | string | null | undefined): 
   } catch {
     return false;
   }
+}
+
+function hookDecisionIsBlock(output: Buffer | string | null | undefined): boolean {
+  if (!output) return false;
+  const text = output.toString().trim();
+  if (!text.startsWith('{')) return false;
+  try {
+    return (JSON.parse(text) as { decision?: unknown }).decision === 'block';
+  } catch {
+    return false;
+  }
+}
+
+function outputBytes(output: Buffer | string | null | undefined): number | null {
+  if (output == null) return null;
+  return Buffer.byteLength(output.toString(), 'utf-8');
 }
 
 function looksLikeHookAdditionalContextJson(
@@ -361,19 +351,6 @@ export function runHook(opts: RunHookOptions): RunHookResult {
     return { exitCode: 0, reason: 'non-opt-in', repoRoot, scriptsRun, skippedScripts };
   }
 
-  // One lazy, memoizing collector per event (HRD-02), threaded to the call
-  // sites HRD-03..06 will add. Today only the SessionStart branch below
-  // reads from it; effectiveStateSessionSection is injected (not imported)
-  // because state-input-collector.ts lives in the effects layer, which
-  // cannot depend on this CLI module.
-  const collector = createStateInputCollector({
-    event: opts.event,
-    repoRoot,
-    resolveSessionEffectiveState: () => effectiveStateSessionSection(repoRoot),
-    resolvePreEditEffectiveState: (targetPaths) => resolvePreEditEffectiveState(repoRoot, targetPaths),
-    resolveStopEffectiveState: () => resolveStopEffectiveState(repoRoot),
-  });
-
   const route = getRoute(opts.event, opts.routeId);
   if (!route) {
     writeAllSync(2,
@@ -381,6 +358,48 @@ export function runHook(opts: RunHookOptions): RunHookResult {
     );
     return { exitCode: 2, reason: 'unknown-route', repoRoot, scriptsRun, skippedScripts };
   }
+
+  // HRD-08: this is the sole event-level runtime telemetry authority. It is
+  // created only after repo opt-in and route validation, and every handled
+  // return below passes through finalize exactly once.
+  const telemetry = createHookEventTelemetry({
+    repoRoot,
+    event: opts.event,
+    routeId: opts.routeId,
+    input: opts.input,
+    env: process.env,
+  });
+  const finalize = (result: RunHookResult): RunHookResult => {
+    telemetry.finalize({
+      exitCode: result.exitCode,
+      reason: result.reason,
+      blocked: result.exitCode !== 0,
+    });
+    return result;
+  };
+
+  // One lazy, memoizing collector per event (HRD-02). The resolution
+  // observers wrap the existing thunks; they do not create a second state
+  // read or change the collector's once-only semantics.
+  const collector = createStateInputCollector({
+    event: opts.event,
+    repoRoot,
+    resolveSessionEffectiveState: () => {
+      telemetry.recordStateResolution();
+      telemetry.markMetricsComplete(['state_resolutions']);
+      return effectiveStateSessionSection(repoRoot);
+    },
+    resolvePreEditEffectiveState: (targetPaths) => {
+      telemetry.recordStateResolution();
+      telemetry.markMetricsComplete(['state_resolutions']);
+      return resolvePreEditEffectiveState(repoRoot, targetPaths);
+    },
+    resolveStopEffectiveState: () => {
+      telemetry.recordStateResolution();
+      telemetry.markMetricsComplete(['state_resolutions']);
+      return resolveStopEffectiveState(repoRoot);
+    },
+  });
 
   const resolved: ResolvedHooksDir = opts.hooksDir
     ? { dir: opts.hooksDir, source: 'env' }
@@ -420,17 +439,17 @@ export function runHook(opts: RunHookOptions): RunHookResult {
   if (isSessionStartBuilderRoute) {
     const builderScript = 'session-context';
     scriptsRun.push(builderScript);
-    const startedAt = Date.now();
-    const builtSections = buildSessionStartSections(collector, process.env, startedAt);
+    const startedAt = new Date();
+    const builtSections = buildSessionStartSections(collector, process.env, startedAt.getTime());
     if (sessionStartCollectStdout) sessionStartContexts.push(...builtSections);
-    recordHookInvocation(repoRoot, {
-      event: opts.event,
-      routeId: opts.routeId,
-      script: builderScript,
+    const output = builtSections.map((section) => section.content).join('\n');
+    telemetry.recordStep({
+      name: builderScript,
+      execution: 'in_process',
       startedAt,
-      durationMs: Date.now() - startedAt,
+      elapsedMs: Date.now() - startedAt.getTime(),
       exitCode: 0,
-      stdout: Buffer.from(builtSections.map((section) => section.content).join('\n'), 'utf-8'),
+      outputBytes: Buffer.byteLength(output, 'utf-8'),
     });
   }
 
@@ -506,7 +525,7 @@ export function runHook(opts: RunHookOptions): RunHookResult {
   for (const script of steps) {
     if (isStopHandlerRoute && script === 'stop-handler') {
       scriptsRun.push(script);
-      const startedAt = Date.now();
+      const startedAt = new Date();
       // Full `repo-harness hook` historically left opts.input undefined and
       // let the Stop script inherit fd0. Preserve that host contract when the
       // implementation moves in-process by reading the same fd exactly once.
@@ -519,9 +538,19 @@ export function runHook(opts: RunHookOptions): RunHookResult {
         }
       }
       let handlerResult;
+      let handlerThrew = false;
       try {
-        handlerResult = runStopHandler({ collector, input: stopInput, env: process.env });
+        handlerResult = runStopHandler({
+          collector,
+          input: stopInput,
+          env: process.env,
+          dependencies: {
+            observeProjectionWrite: (target) => telemetry.recordDurableWrite(target.path),
+            observeProjectionTransaction: () => telemetry.recordWriteTransaction(),
+          },
+        });
       } catch (error) {
+        handlerThrew = true;
         const detail = error instanceof Error ? error.message : String(error);
         handlerResult = {
           exitCode: 1,
@@ -534,15 +563,22 @@ export function runHook(opts: RunHookOptions): RunHookResult {
         stdout: Buffer.from(handlerResult.stdout, 'utf-8'),
         stderr: Buffer.from(handlerResult.stderr, 'utf-8'),
       };
-      recordHookInvocation(repoRoot, {
-        event: opts.event,
-        routeId: opts.routeId,
-        script,
+      telemetry.recordStep({
+        name: script,
+        execution: 'in_process',
         startedAt,
-        durationMs: Date.now() - startedAt,
+        elapsedMs: Date.now() - startedAt.getTime(),
         exitCode: child.status ?? 0,
-        stdout: child.stdout,
+        outputBytes: outputBytes(child.stdout),
+        blocked: hookDecisionIsBlock(child.stdout),
       });
+      if (!handlerThrew) {
+        telemetry.markMetricsComplete([
+          'files_written',
+          'durable_writes',
+          'write_transactions',
+        ]);
+      }
       if (captureAndReplayHostOutput || opts.stdio === 'inherit') {
         if (child.stdout.length > 0) writeAllSync(1, child.stdout);
         if (child.stderr.length > 0) writeAllSync(2, child.stderr);
@@ -552,37 +588,54 @@ export function runHook(opts: RunHookOptions): RunHookResult {
         if (child.stdout.length > 0) writeAllSync(2, child.stdout);
       }
       if (child.status !== 0) {
-        return {
+        return finalize({
           exitCode: child.status ?? 1,
           reason: 'script-failed',
           repoRoot,
           scriptsRun,
           skippedScripts,
           failedScript: script,
-        };
+        });
       }
       continue;
     }
 
     if (isMutationObservedRoute && script === 'mutation-observed') {
       scriptsRun.push(script);
-      const startedAt = Date.now();
-      const handlerResult = runMutationObserved({ collector, input: opts.input, hooksDir, env: process.env });
+      const startedAt = new Date();
+      const handlerResult = runMutationObserved({
+        collector,
+        input: opts.input,
+        hooksDir,
+        env: process.env,
+        observeJournalWrite: (path) => {
+          telemetry.recordEventWrite(path);
+          telemetry.recordWriteTransaction();
+        },
+      });
       const child = {
         status: handlerResult.exitCode as number | null,
         stdout: Buffer.from(handlerResult.stdout, 'utf-8') as Buffer | null,
         stderr: Buffer.from(handlerResult.stderr, 'utf-8') as Buffer | null,
         error: undefined as Error | undefined,
       };
-      recordHookInvocation(repoRoot, {
-        event: opts.event,
-        routeId: opts.routeId,
-        script,
+      telemetry.recordStep({
+        name: script,
+        execution: 'in_process',
         startedAt,
-        durationMs: Date.now() - startedAt,
+        elapsedMs: Date.now() - startedAt.getTime(),
         exitCode: child.status ?? 0,
-        stdout: child.stdout,
+        outputBytes: outputBytes(child.stdout),
+        blocked: hookDecisionIsBlock(child.stdout),
       });
+      telemetry.markMetricsComplete([
+        'state_resolutions',
+        'files_written',
+        'durable_writes',
+        'write_transactions',
+        'full_projection_writes',
+        'event_writes',
+      ]);
       if (captureAndReplayHostOutput) {
         if (child.stdout) writeAllSync(1, child.stdout);
         if (child.stderr) writeAllSync(2, child.stderr);
@@ -593,21 +646,21 @@ export function runHook(opts: RunHookOptions): RunHookResult {
         writeAllSync(2, child.stdout);
       }
       if (child.status !== 0) {
-        return {
+        return finalize({
           exitCode: child.status ?? 1,
           reason: 'script-failed',
           repoRoot,
           scriptsRun,
           skippedScripts,
           failedScript: script,
-        };
+        });
       }
       continue;
     }
 
     if (isMutationGuardRoute && script === 'mutation-guard') {
       scriptsRun.push(script);
-      const startedAt = Date.now();
+      const startedAt = new Date();
       const handlerResult = runMutationGuard({ collector, input: opts.input });
       const child = {
         status: handlerResult.exitCode as number | null,
@@ -615,14 +668,14 @@ export function runHook(opts: RunHookOptions): RunHookResult {
         stderr: Buffer.from(handlerResult.stderr, 'utf-8') as Buffer | null,
         error: undefined as Error | undefined,
       };
-      recordHookInvocation(repoRoot, {
-        event: opts.event,
-        routeId: opts.routeId,
-        script,
+      telemetry.recordStep({
+        name: script,
+        execution: 'in_process',
         startedAt,
-        durationMs: Date.now() - startedAt,
+        elapsedMs: Date.now() - startedAt.getTime(),
         exitCode: child.status ?? 0,
-        stdout: child.stdout,
+        outputBytes: outputBytes(child.stdout),
+        blocked: hookDecisionIsBlock(child.stdout),
       });
       if (captureAndReplayHostOutput) {
         if (child.stdout) writeAllSync(1, child.stdout);
@@ -634,14 +687,14 @@ export function runHook(opts: RunHookOptions): RunHookResult {
         writeAllSync(2, child.stdout);
       }
       if (child.status !== 0) {
-        return {
+        return finalize({
           exitCode: child.status ?? 1,
           reason: 'script-failed',
           repoRoot,
           scriptsRun,
           skippedScripts,
           failedScript: script,
-        };
+        });
       }
       continue;
     }
@@ -659,18 +712,19 @@ export function runHook(opts: RunHookOptions): RunHookResult {
       writeAllSync(2,
         `${commandName}: script not found at ${scriptPath} (route ${opts.event}.${opts.routeId})\n`,
       );
-      return {
+      return finalize({
         exitCode: 3,
         reason: 'missing-script',
         repoRoot,
         scriptsRun,
         skippedScripts,
         failedScript: script,
-      };
+      });
     }
 
     scriptsRun.push(script);
-    const startedAt = Date.now();
+    const startedAt = new Date();
+    telemetry.recordDirectChildProcess();
     const child = spawnSync('bash', [scriptPath, ...(opts.args ?? [])], {
       cwd: repoRoot,
       stdio,
@@ -682,15 +736,16 @@ export function runHook(opts: RunHookOptions): RunHookResult {
           ?? path.join(PACKAGE_ROOT, 'src', 'cli', 'hook-entry.ts'),
       },
     });
-    recordHookInvocation(repoRoot, {
-      event: opts.event,
-      routeId: opts.routeId,
-      script,
+    telemetry.recordStep({
+      name: script,
+      execution: 'subprocess',
       startedAt,
-      durationMs: Date.now() - startedAt,
+      elapsedMs: Date.now() - startedAt.getTime(),
       exitCode: child.status ?? (child.error ? 1 : 0),
-      stdout: child.stdout,
+      outputBytes: outputBytes(child.stdout),
+      blocked: hookDecisionIsBlock(child.stdout),
     });
+    telemetry.markOpaqueStep(script);
     if (captureAndReplayHostOutput) {
       if (child.stdout) writeAllSync(1, child.stdout);
       if (child.stderr) writeAllSync(2, child.stderr);
@@ -700,14 +755,14 @@ export function runHook(opts: RunHookOptions): RunHookResult {
       writeAllSync(2,
         `${commandName}: failed to run ${scriptPath}: ${child.error.message}\n`,
       );
-      return {
+      return finalize({
         exitCode: 1,
         reason: 'script-failed',
         repoRoot,
         scriptsRun,
         skippedScripts,
         failedScript: script,
-      };
+      });
     }
 
     if (
@@ -756,14 +811,14 @@ export function runHook(opts: RunHookOptions): RunHookResult {
     }
 
     if (child.status !== 0) {
-      return {
+      return finalize({
         exitCode: child.status ?? 1,
         reason: 'script-failed',
         repoRoot,
         scriptsRun,
         skippedScripts,
         failedScript: script,
-      };
+      });
     }
   }
 
@@ -780,7 +835,7 @@ export function runHook(opts: RunHookOptions): RunHookResult {
       ?? null;
     const budgeted = budgetSessionContext(repoRoot, sessionStartContexts, sessionId);
     if (!budgeted.context) {
-      return { exitCode: 0, reason: 'ok', repoRoot, scriptsRun, skippedScripts };
+      return finalize({ exitCode: 0, reason: 'ok', repoRoot, scriptsRun, skippedScripts });
     }
     writeAllSync(1, `${JSON.stringify({
       hookSpecificOutput: {
@@ -790,5 +845,5 @@ export function runHook(opts: RunHookOptions): RunHookResult {
     })}\n`);
   }
 
-  return { exitCode: 0, reason: 'ok', repoRoot, scriptsRun, skippedScripts };
+  return finalize({ exitCode: 0, reason: 'ok', repoRoot, scriptsRun, skippedScripts });
 }

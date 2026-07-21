@@ -40,6 +40,8 @@ export interface StopProjectionTarget {
 export interface StopHandlerDependencies {
   readonly now?: () => Date;
   readonly observeProjectionWrite?: (target: StopProjectionTarget) => void;
+  /** Invoked once after the complete Stop projection batch commits. */
+  readonly observeProjectionTransaction?: () => void;
   readonly beforeDelegationLock?: () => void;
 }
 
@@ -731,6 +733,7 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
     projected.content,
     dependencies.observeProjectionWrite,
   ).commit();
+  dependencies.observeProjectionTransaction?.();
 
   const stderr: string[] = [`[FinalizeHandoff] Refreshed ${projected.paths.handoff}.\n`];
   let state: EffectiveState | null = null;

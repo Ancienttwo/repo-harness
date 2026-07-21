@@ -1,5 +1,6 @@
 import { describe, expect, setDefaultTimeout, test } from 'bun:test';
 import {
+  appendFileSync,
   cpSync,
   copyFileSync,
   existsSync,
@@ -13,7 +14,7 @@ import {
 } from 'fs';
 import { createHash } from 'crypto';
 import { tmpdir } from 'os';
-import { join, relative } from 'path';
+import { dirname, isAbsolute, join, relative } from 'path';
 import { pathToFileURL } from 'url';
 import { spawnSync } from 'child_process';
 import { ROUTES, type HookEvent, type Route, type RouteHost, type RouteId } from '../src/cli/hook/route-registry';
@@ -23,7 +24,19 @@ import { ROUTES, type HookEvent, type Route, type RouteHost, type RouteId } from
 // wrapper subprocess; on multi-invocation parallel test load this can exceed
 // the 5s bun default. See tests/hook-runtime.test.ts for the same rationale.
 const CHARACTERIZATION_TIMEOUT_MS = 60000;
-setDefaultTimeout(CHARACTERIZATION_TIMEOUT_MS);
+
+function characterizationCycles(): number {
+  const raw = process.env.HRD08_CHARACTERIZATION_CYCLES?.trim();
+  if (!raw) return 1;
+  const cycles = Number.parseInt(raw, 10);
+  if (!Number.isInteger(cycles) || cycles < 1 || cycles > 100 || String(cycles) !== raw) {
+    throw new Error('HRD08_CHARACTERIZATION_CYCLES must be an integer from 1 through 100');
+  }
+  return cycles;
+}
+
+const CHARACTERIZATION_CYCLES = characterizationCycles();
+setDefaultTimeout(CHARACTERIZATION_TIMEOUT_MS * CHARACTERIZATION_CYCLES);
 
 const ROOT = join(import.meta.dir, '..');
 const ASSETS_HOOKS_DIR = join(ROOT, 'assets/hooks');
@@ -301,6 +314,23 @@ function writtenPaths(before: ReadonlyMap<string, string>, after: ReadonlyMap<st
   return changed.sort();
 }
 
+/**
+ * Optional operator evidence sink for HRD-08. Normal characterization runs
+ * remain hermetic; when an absolute sink is supplied, each real route's one
+ * event record is appended before its fixture repo is deleted. Repeating the
+ * existing characterization command therefore produces measured samples
+ * without inventing a second benchmark harness.
+ */
+function appendEventEvidenceIfRequested(fixtureRoot: string): void {
+  const out = process.env.HRD08_HOOK_EVENT_EVIDENCE_OUT?.trim();
+  if (!out) return;
+  if (!isAbsolute(out)) throw new Error('HRD08_HOOK_EVENT_EVIDENCE_OUT must be an absolute path');
+  const source = join(fixtureRoot, '.ai/harness/runs/hook-events.jsonl');
+  if (!existsSync(source)) throw new Error(`missing HRD-08 event evidence: ${source}`);
+  mkdirSync(dirname(out), { recursive: true });
+  appendFileSync(out, readFileSync(source, 'utf8'));
+}
+
 const ISO_TIMESTAMP = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})/g;
 const COMPACT_TIMESTAMP_PID = /\b\d{8}T\d{6}-\d+\b/g;
 const DURATION_FIELD = /("(?:duration|elapsed)_ms")\s*:\s*\d+/g;
@@ -336,6 +366,7 @@ function captureRoute(route: Route): Record<string, unknown> {
     const before = repositorySnapshot(fixture.root);
     const invocation = invokeRoute(fixture.root, fakeBin, config, route.event, route.routeId, resultFile);
     const after = repositorySnapshot(fixture.root);
+    appendEventEvidenceIfRequested(fixture.root);
 
     const result = JSON.parse(readFileSync(resultFile, 'utf-8')) as {
       exitCode: number;
@@ -388,7 +419,8 @@ function captureMatrix(): Record<string, unknown> {
 
 describe('HRD-01 loop runtime characterization', () => {
   test('freezes the current per-route baseline for all 11 public routes', () => {
-    const actual = captureMatrix();
+    const matrices = Array.from({ length: CHARACTERIZATION_CYCLES }, () => captureMatrix());
+    const actual = matrices[0];
     const routes = actual.routes as ReadonlyArray<Record<string, unknown>>;
 
     expect(routes).toHaveLength(11);
@@ -399,6 +431,6 @@ describe('HRD-01 loop runtime characterization', () => {
       writeFileSync(FIXTURE_PATH, `${JSON.stringify(actual, null, 2)}\n`);
     }
     const expected = JSON.parse(readFileSync(FIXTURE_PATH, 'utf-8'));
-    expect(actual).toEqual(expected);
+    for (const matrix of matrices) expect(matrix).toEqual(expected);
   });
 });
