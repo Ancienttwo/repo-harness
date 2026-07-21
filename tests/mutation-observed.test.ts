@@ -429,7 +429,7 @@ describe('mutation-observed: crash-replay', () => {
 });
 
 describe('mutation-observed: advisory stdout parity', () => {
-  test('DocDrift/DeployAsset echoes fire without any hooksDir (no first-principles dispatch attempted)', () => {
+  test('DocDrift/DeployAsset echoes fire without any hooksDir', () => {
     const cwd = tmpWorkspace('mo-advisories-no-hooksdir');
     try {
       initRepo(cwd);
@@ -437,6 +437,27 @@ describe('mutation-observed: advisory stdout parity', () => {
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('[DeployAsset] Deployment operations asset changed: deploy/sql/0001.sql');
       expect(result.stdout).toContain('operations.deploy_sql');
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test('first-principles guidance is rendered in-process from the current diff', () => {
+    const cwd = tmpWorkspace('mo-first-principles');
+    try {
+      initRepo(cwd);
+      mkdirSync(join(cwd, 'src'), { recursive: true });
+      writeFileSync(join(cwd, 'src/compat.ts'), 'export const stable = true;\n');
+      git(cwd, ['add', 'src/compat.ts']);
+      git(cwd, ['commit', '-m', 'add tracked source']);
+      writeFileSync(join(cwd, 'src/compat.ts'), 'export const stable = true;\n// legacy-shim must be removed\n');
+
+      const result = runMutationObserved({ collector: collectorFor(cwd), input: editPayload('src/compat.ts') });
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toContain('[FirstPrinciples] Compatibility debt additions detected in src/compat.ts');
+      expect(result.stdout).toContain('1 compatibility-like line(s)');
+      expect(result.stdout).toContain('Boundary: keep trust-boundary validation');
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

@@ -11,13 +11,13 @@ fail-open.
   (`src/cli/hook/session-context.ts`, HRD-04) emits the minimal-change section
   after the normal session context. It prints a short reminder of the active
   policy, protected concerns, and report path.
-- `UserPromptSubmit.default` still routes only through `prompt-guard.sh`. When
-  the prompt is allowed and looks execution-oriented, prompt guard appends the
-  same advisory context.
-- `PostToolUse.edit` keeps `post-edit-guard.sh` first and then runs
-  `minimal-change-observer.sh`. The observer is silent unless policy explicitly
-  sets `post_edit_observer: true`; when enabled it writes a deterministic report
-  to `.ai/harness/checks/minimal-change.latest.json`.
+- `UserPromptSubmit.default` invokes the typed `prompt` handler. When the prompt
+  is allowed and looks execution-oriented, that handler appends the same
+  advisory context.
+- `PostToolUse.edit` invokes the typed `mutation-observed` handler, which then
+  runs the minimal-change observer. The observer is silent unless policy
+  explicitly sets `post_edit_observer: true`; when enabled it writes a
+  deterministic report to `.ai/harness/checks/minimal-change.latest.json`.
 - `Stop.default` runs the in-process `src/cli/hook/stop-handler.ts`. Stop
   review reads the canonical latest report for diagnostics and block-reason
   suffixes without rewriting the recovery handoff. It does not block the
@@ -57,8 +57,8 @@ The policy lives at `.ai/harness/policy.json` under `minimal_change`:
 Missing or malformed policy disables the layer. `mode: "off"` also disables it.
 `mode: "advice"` enables advisory context and Stop review; the post-edit
 observer stays opt-in through `post_edit_observer: true`. `mode: "enforce"` is
-accepted for compatibility but normalized to advisory behavior so
-minimal-change findings never become a host-level block.
+treated as advisory behavior in this layer, so minimal-change findings never
+become a host-level block.
 
 ## Report Contract
 

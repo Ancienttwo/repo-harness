@@ -16,9 +16,8 @@ import { pathToFileURL } from 'url';
 //
 // Migrated from a direct `bash assets/hooks/pre-edit-guard.sh` spawn to
 // exercising the handler through `runHook()` (HRD-03 test migration):
-// `PreToolUse.edit`'s route carries an empty `scripts` list and `runHook()`
-// dispatches it to the in-process mutation-guard handler unconditionally
-// (see `isMutationGuardRoute` in `src/cli/hook/runtime.ts`), so the fixture
+// `PreToolUse.edit` binds directly to the typed mutation-guard handler and
+// `runHook()` dispatches that handler unconditionally, so the fixture
 // repo below never needs `.ai/hooks` at all. `preEdit()` still spawns
 // exactly one subprocess per call -- a `bun -e` wrapper importing and
 // calling `runHook()` in-process -- purely so this test can observe real
@@ -70,7 +69,6 @@ function initRepo(cwd: string, options: { withStatusesArray?: boolean } = {}): v
     join(cwd, '.ai/harness/policy.json'),
     JSON.stringify(
       {
-        hook_source: 'repo',
         worktree_strategy: { review_base: 'main', base_branch: 'main' },
         ...(withStatusesArray ? { active_plan: { statuses: KNOWN_STATUSES } } : {}),
       },
@@ -111,14 +109,6 @@ function preEdit(cwd: string, path: string, extraEnv: NodeJS.ProcessEnv = {}) {
       ...process.env,
       HOOK_REPO_ROOT: cwd,
       REPO_HARNESS_WORKFLOW_PROFILE: 'standard',
-      // Forces hooksDir resolution to the fixture's own (nonexistent)
-      // .ai/hooks regardless of policy.json's hook_source pin -- several
-      // fixtures below deliberately delete policy.json to exercise the
-      // plan-status authority-unavailable branch, which would otherwise
-      // ALSO strip the repo-pin signal `resolveHooksDir()` reads from the
-      // same file and silently fall back to this checkout's own real
-      // assets/hooks/ scripts instead of the in-process handler under test.
-      REPO_HARNESS_HOOK_SOURCE: 'repo',
       ...extraEnv,
     },
   });

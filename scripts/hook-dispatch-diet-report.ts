@@ -15,7 +15,7 @@ import type { HookEventTelemetryMetric, HookEventTelemetryRecord } from "../src/
 export const DEFAULT_OUT = ".ai/harness/runs/loop-engine-08-hook-diet-report.json";
 export const DEFAULT_EVENT_LOG = HOOK_EVENT_TELEMETRY_PATH;
 export const EVENT_TELEMETRY_PROTOCOL = HOOK_EVENT_TELEMETRY_PROTOCOL;
-export const DIET_REPORT_PROTOCOL = "loop-engine-hook-diet-report/v2" as const;
+export const DIET_REPORT_PROTOCOL = "loop-engine-hook-diet-report/v3" as const;
 export const PREVIOUS_DISPATCH_COUNT = 13;
 export const CORE_DISPATCH_TARGET_MAX = 8;
 export const CODEX_SUBAGENT_LIFECYCLE_ROUTE_ALLOWANCE = 3;
@@ -100,7 +100,8 @@ export interface HookDietReport {
     current_count: number;
     within_target: boolean;
     script_invocation_count: number;
-    routes: Array<{ event: string; route_id: string; matcher: string | null; scripts: string[] }>;
+    typed_handler_count: number;
+    routes: Array<{ event: string; route_id: string; matcher: string | null; handler: string }>;
   };
   phase_probe: {
     iterations: number;
@@ -373,7 +374,7 @@ export function buildHookDietReport(options: BuildHookDietReportOptions): HookDi
     };
   });
   const currentCount = ROUTES.length;
-  const routes = ROUTES.map((route) => ({ event: route.event, route_id: route.routeId, matcher: route.matcher ?? null, scripts: [...route.scripts] }));
+  const routes = ROUTES.map((route) => ({ event: route.event, route_id: route.routeId, matcher: route.matcher ?? null, handler: route.handler }));
   const sessionStartSpec: ProbeSpec = { name: "session-start-context", command: ["src/cli/hook-entry.ts", "SessionStart", "--route", "default"] };
   const sessionStartRun = runner(sessionStartSpec);
   const sessionStartStdout = sessionStartRun.stdout ?? "";
@@ -384,7 +385,7 @@ export function buildHookDietReport(options: BuildHookDietReportOptions): HookDi
   const sessionStartWithinSlo = estimatedTokens !== null && estimatedTokens <= SESSION_START_CONTEXT_TOKEN_SLO;
   return {
     protocol: DIET_REPORT_PROTOCOL, generated_at: (options.now ?? new Date()).toISOString(),
-    dispatch: { previous_count: PREVIOUS_DISPATCH_COUNT, target_max: TARGET_DISPATCH_MAX, current_count: currentCount, within_target: currentCount <= TARGET_DISPATCH_MAX, script_invocation_count: ROUTES.reduce((sum, route) => sum + route.scripts.length, 0), routes },
+    dispatch: { previous_count: PREVIOUS_DISPATCH_COUNT, target_max: TARGET_DISPATCH_MAX, current_count: currentCount, within_target: currentCount <= TARGET_DISPATCH_MAX, script_invocation_count: 0, typed_handler_count: new Set(ROUTES.map((route) => route.handler)).size, routes },
     phase_probe: { iterations: options.iterations, baseline_ms: options.baselineMs, within_baseline: phaseWithinSlo, probes },
     session_start_context: { authority: "synthetic_session_start_subprocess", command: ["bun", ...sessionStartSpec.command].join(" "), exit_code: sessionStartRun.exitCode, output_bytes: Buffer.byteLength(sessionStartStdout, "utf8"), context_bytes: contextBytes, token_estimate: { method: "utf8_bytes_div_4", estimated_tokens: estimatedTokens }, slo: { max_estimated_tokens: SESSION_START_CONTEXT_TOKEN_SLO, within_slo: estimatedTokens === null ? null : estimatedTokens <= SESSION_START_CONTEXT_TOKEN_SLO } },
     slo: { within_slo: phaseWithinSlo && sessionStartWithinSlo, phase_p95_within_slo: phaseWithinSlo, session_start_context_within_slo: sessionStartWithinSlo },

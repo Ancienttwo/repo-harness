@@ -11,7 +11,6 @@ import {
   registerCheck,
   runDoctor,
 } from '../../src/cli/commands/doctor';
-import { ROUTES } from '../../src/cli/hook/route-registry';
 
 const DOCTOR_CHECK_TIMEOUT_MS = 15000;
 
@@ -51,7 +50,7 @@ function writeExecutable(filePath: string, content: string): void {
 }
 
 function withTempRepo(
-  opts: { optIn: boolean; scripts?: readonly string[]; pinRepoHooks?: boolean },
+  opts: { optIn: boolean; scripts?: readonly string[] },
   fn: (repoRoot: string) => void,
 ): void {
   const repoRoot = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'repo-harness-doctor-repo-')));
@@ -61,9 +60,6 @@ function withTempRepo(
     fs.mkdirSync(path.join(repoRoot, '.ai/harness'), { recursive: true });
     if (opts.optIn) {
       fs.writeFileSync(path.join(repoRoot, '.ai/harness/workflow-contract.json'), '{}\n');
-    }
-    if (opts.pinRepoHooks) {
-      fs.writeFileSync(path.join(repoRoot, '.ai/harness/policy.json'), '{ "hook_source": "repo" }\n');
     }
     for (const script of opts.scripts ?? []) {
       writeExecutable(path.join(repoRoot, '.ai/hooks', script), '#!/bin/bash\nexit 0\n');
@@ -135,7 +131,7 @@ describe('doctor command (Phase 1C)', () => {
       expect(ids).toContain('claude-codegraph-mcp');
       expect(ids).toContain('codegraph-index');
       expect(ids).toContain('security-config');
-      expect(ids).toContain('repo-hook-scripts');
+      expect(ids).toContain('typed-hook-routes');
     });
   }, DOCTOR_CHECK_TIMEOUT_MS);
 
@@ -202,48 +198,22 @@ describe('doctor command (Phase 1C)', () => {
     }, DOCTOR_CHECK_TIMEOUT_MS);
   }
 
-  test('repo-hook-scripts reports n/a for non-opt-in repos', () => {
+  test('typed-hook-routes reports n/a for non-opt-in repos', () => {
     withTempRepo({ optIn: false }, (repoRoot) => {
       const r = runDoctor(repoRoot);
-      const hooks = r.checks.find((c) => c.id === 'repo-hook-scripts')!;
+      const hooks = r.checks.find((c) => c.id === 'typed-hook-routes')!;
       expect(hooks.status).toBe('na');
       expect(hooks.detail).toContain('not opted in');
     });
   }, DOCTOR_CHECK_TIMEOUT_MS);
 
-  test('repo-hook-scripts warns when pinned repo route scripts are missing', () => {
-    withTempRepo({ optIn: true, pinRepoHooks: true }, (repoRoot) => {
-      const r = runDoctor(repoRoot);
-      const hooks = r.checks.find((c) => c.id === 'repo-hook-scripts')!;
-      expect(hooks.status).toBe('warn');
-      expect(hooks.detail).toContain('source=repo-pin');
-      // HRD-04 retired security-sentinel.sh from SessionStart.default's
-      // route.scripts entirely (in-process builder now); prompt-guard.sh is
-      // an equally-representative still-registered script for this
-      // no-scripts-written fixture.
-      expect(hooks.detail).toContain('prompt-guard.sh');
-      expect(hooks.detail).toContain(`repo-harness adopt --repo ${repoRoot}`);
-    });
-  }, DOCTOR_CHECK_TIMEOUT_MS);
-
-  test('repo-hook-scripts passes when all pinned route scripts are present', () => {
-    const scripts = [...new Set(ROUTES.flatMap((route) => [...route.scripts]))];
-    withTempRepo({ optIn: true, scripts, pinRepoHooks: true }, (repoRoot) => {
-      const r = runDoctor(repoRoot);
-      const hooks = r.checks.find((c) => c.id === 'repo-hook-scripts')!;
-      expect(hooks.status).toBe('ok');
-      expect(hooks.detail).toContain('route scripts present');
-      expect(hooks.detail).toContain('source=repo-pin');
-    });
-  }, DOCTOR_CHECK_TIMEOUT_MS);
-
-  test('repo-hook-scripts resolves the packaged runtime when the repo is not pinned', () => {
+  test('typed-hook-routes verifies the exhaustive in-process binding', () => {
     withTempRepo({ optIn: true }, (repoRoot) => {
       const r = runDoctor(repoRoot);
-      const hooks = r.checks.find((c) => c.id === 'repo-hook-scripts')!;
+      const hooks = r.checks.find((c) => c.id === 'typed-hook-routes')!;
       expect(hooks.status).toBe('ok');
-      expect(hooks.detail).toContain('source=packaged');
-      expect(hooks.detail).toContain(path.join('assets', 'hooks'));
+      expect(hooks.detail).toContain('all 11 public routes');
+      expect(hooks.detail).toContain('typed in-process handler');
     });
   }, DOCTOR_CHECK_TIMEOUT_MS);
 

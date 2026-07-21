@@ -117,19 +117,19 @@ function writeLegacyRequest(
 describe("architecture queue", () => {
   test("record merges repeated events into one derived queue card and index line", () => {
     tmpRepo((cwd) => {
-      const first = queue(cwd, ["record", "--file", ".ai/hooks/pre-edit-guard.sh"]);
+      const first = queue(cwd, ["record", "--file", "src/cli/hook/mutation-guard.ts"]);
       expect(first.status).toBe(0);
       expect(first.stdout).toContain("[ArchitectureDrift] Request: docs/architecture/requests/root.md");
 
-      const second = queue(cwd, ["record", "--file", ".ai/hooks/prompt-guard.sh"]);
+      const second = queue(cwd, ["record", "--file", "src/cli/hook/prompt-handler.ts"]);
       expect(second.status).toBe(0);
 
       const requests = readdirSync(join(cwd, "docs/architecture/requests")).filter((name) => name.endsWith(".md"));
       expect(requests).toEqual(["root.md"]);
       const card = readFileSync(join(cwd, "docs/architecture/requests/root.md"), "utf-8");
       expect(card).toContain("> **Open Edits**: 2");
-      expect(card).toContain("`.ai/hooks/pre-edit-guard.sh`");
-      expect(card).toContain("`.ai/hooks/prompt-guard.sh`");
+      expect(card).toContain("`src/cli/hook/mutation-guard.ts`");
+      expect(card).toContain("`src/cli/hook/prompt-handler.ts`");
 
       const index = readFileSync(join(cwd, "docs/architecture/index.md"), "utf-8");
       expect(index).toContain("<!-- BEGIN ARCHITECTURE PENDING REQUESTS -->");
@@ -141,7 +141,7 @@ describe("architecture queue", () => {
 
   test("reindex self-heals stale loose pending lines and is idempotent", () => {
     tmpRepo((cwd) => {
-      expect(queue(cwd, ["record", "--file", ".ai/hooks/pre-edit-guard.sh"]).status).toBe(0);
+      expect(queue(cwd, ["record", "--file", "src/cli/hook/mutation-guard.ts"]).status).toBe(0);
       const indexPath = join(cwd, "docs/architecture/index.md");
       writeFileSync(
         indexPath,
@@ -177,7 +177,7 @@ describe("architecture queue", () => {
 
   test("gate modes are advisory by default and strict blocks pending requests", () => {
     tmpRepo((cwd) => {
-      expect(queue(cwd, ["record", "--file", ".ai/hooks/pre-edit-guard.sh"]).status).toBe(0);
+      expect(queue(cwd, ["record", "--file", "src/cli/hook/mutation-guard.ts"]).status).toBe(0);
       mkdirSync(join(cwd, ".ai/harness"), { recursive: true });
       writeFileSync(
         join(cwd, ".ai/harness/policy.json"),

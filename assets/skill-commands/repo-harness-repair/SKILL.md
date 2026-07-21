@@ -12,7 +12,7 @@ Use this command when the repo has a harness but a specific workflow surface is 
 
 1. Reproduce the failure and name the failing surface.
 2. Run `bun scripts/inspect-project-state.ts --repo <repo> --format text`.
-3. Trace the failing path, such as `settings.json -> .ai/hooks/run-hook.sh -> .ai/hooks/*` or `plans/ -> tasks/todos.md -> tasks/contracts/`.
+3. Trace the failing path, such as `settings.json -> repo-harness-hook -> route registry -> typed handler` or `plans/ -> tasks/todos.md -> tasks/contracts/`.
 4. Apply the smallest targeted fix.
 5. Re-run the failing check and the relevant workflow gate.
 

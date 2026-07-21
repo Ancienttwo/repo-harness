@@ -40,7 +40,6 @@ command_exists() {
 }
 
 install_hook_settings_template() {
-    pi_install_hook_adapters "$PWD" "$ASSETS_HOOKS_DIR" "apply"
     pi_print_codex_hook_trust_notice
 }
 

@@ -209,8 +209,8 @@ export const PROMPT_GUARD_EXECUTION_TABLE: Readonly<
   // string outside the known lifecycle values) gets the same conservative
   // advisory treatment as 'draft'/'annotating': steer the session toward
   // repairing plan authority instead of silently allowing execution. This
-  // layer stays advisory only (see render_prompt_guard_action in
-  // prompt-guard.sh, which exits 0 for every branch) — the hard fail-closed
+  // layer stays advisory only (see renderPromptGuardAction in the typed
+  // prompt handler) — the hard fail-closed
   // block for unrecognized plan status lives at the edit boundary
   // (pre-edit-guard.sh), not here.
   unknown: Object.freeze({

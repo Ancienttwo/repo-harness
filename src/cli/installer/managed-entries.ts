@@ -17,10 +17,12 @@
 
 import { routesForHost, type Route, type RouteHost } from '../hook/route-registry';
 import type { InstallProfile } from './install-profile';
+import {
+  isRepoHarnessManagedHookCommand,
+  stripRepoHarnessManagedHooks,
+} from '../../core/adoption/managed-hook-config';
 
 export const MANAGED_TAG = 'repo-harness-managed-hook-v1';
-const LEGACY_MANAGED_PREFIX = 'repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; export HOOK_REPO_ROOT="$repo";';
-const LEGACY_DIRECT_MANAGED = /^HOOK_HOST=(?:codex|claude) repo-harness hook (?:SessionStart|PreToolUse|PostToolUse|UserPromptSubmit|SubagentStart|SubagentStop|Stop) --route (?:default|edit|subagent|bash|always|delegation|context|quality)$/;
 
 export interface HookCommand {
   type: 'command';
@@ -50,14 +52,7 @@ export function buildHookEntry(route: Route, host: HookHost): HookEntry {
 
 export function isManagedEntry(entry: HookEntry): boolean {
   if (!entry || !Array.isArray(entry.hooks)) return false;
-  return entry.hooks.some((h) => {
-    if (typeof h?.command !== 'string') return false;
-    if (h.command.startsWith(`: ${MANAGED_TAG}; `)) return true;
-    if (LEGACY_DIRECT_MANAGED.test(h.command)) return true;
-    return h.command.startsWith(LEGACY_MANAGED_PREFIX)
-      && h.command.includes('repo-harness-hook ')
-      && h.command.includes('exec repo-harness hook ');
-  });
+  return entry.hooks.some((hook) => isRepoHarnessManagedHookCommand(hook?.command));
 }
 
 function routeInProfile(route: Route, profile: InstallProfile): boolean {
@@ -83,13 +78,7 @@ export function buildManagedHooks(host: HookHost, profile: InstallProfile = 'str
 }
 
 export function stripManagedEntries(existing: HooksByEvent | undefined): HooksByEvent {
-  if (!existing) return {};
-  const out: HooksByEvent = {};
-  for (const [event, entries] of Object.entries(existing)) {
-    const kept = (entries ?? []).filter((e) => !isManagedEntry(e));
-    if (kept.length > 0) out[event] = kept;
-  }
-  return out;
+  return stripRepoHarnessManagedHooks(existing).hooks as HooksByEvent;
 }
 
 export function mergeHooks(existing: HooksByEvent, managed: HooksByEvent): HooksByEvent {

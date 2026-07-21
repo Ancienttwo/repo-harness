@@ -3,7 +3,7 @@
 > **Status**: Approved
 > **Slug**: hook-runtime-diet
 > **Created**: 2026-07-19 15:31
-> **Updated**: 2026-07-21 17:46
+> **Updated**: 2026-07-21 20:35
 > **Source PRD**: (none; source authority is the Harness Loop audit)
 > **Source Audit**: `plans/sprints/20260715-harness-loop-audit-and-optimization.md`
 > **Source Spec**: `docs/spec.md`
@@ -255,7 +255,7 @@ flow and lands through an independent PR.
 | 6 | [x] | hrd-06-stop-handler-slim | contract | In an independent PR, port the Stop orchestrator to an in-process handler that consumes the HRD-02 collected input and the LSC-07 shared readiness verbatim, flushes the pending journal, and performs exactly one batched projection-write transaction per Stop; minimal-change and delegation checks consume already-collected facts with no second Effective State resolution and no readiness recomputation, the stale pre-cutover docstring in `operation-readiness.ts` is corrected, and `stop-orchestrator.sh` is deleted with the projection re-synced in the same package | `plans/plan-20260720-2256-hrd-06-stop-handler-slim.md` |
 | 7 | [x] | hrd-07-circuit-oscillation-and-shared-lock | contract | In an independent PR, extend `recordCircuitAttempt()` beyond exact-key attempt counting with exact no-progress repeat, A-B-A oscillation, and superficial-churn detection plus a real-progress reset, each with positive/negative fixtures (progress-token keying already landed in LSC-04 and is not re-implemented); move the breaker's bespoke `openSync`/`Atomics.wait` lock onto `withExclusiveDirectoryLock` pinning `reclaimStaleOwner: false` with a semantics-preservation fixture; no new global lock is introduced | `plans/plan-20260721-0218-hrd-07-circuit-oscillation-and-shared-lock.md` |
 | 8 | [x] | hrd-08-event-telemetry-and-benchmark | contract | In an independent PR, aggregate per-script records into one event-level telemetry record per host event (child processes, Effective State resolutions, files read/written, durable writes, elapsed ms) and upgrade `hook-dispatch-diet-report` to `runtime_evidence.available: true` with measured p50/p95 against the LOOP-12 targets (runtime entry 1/event, nested subprocess ≤1, resolution exactly 1, PreEdit p95 ≤150ms target / ≤250ms budget, PostEdit full-projection writes 0 and event writes ≤1, Stop write transaction ≤1); a committed baseline-vs-target measured report exists | `plans/archive/plan-20260721-1621-hrd-08-event-telemetry-and-benchmark.md` |
-| 9 | [ ] | hrd-09-legacy-retirement-and-adopted-migration | contract | In an independent PR, prove via a one-shot adopted-fixture migration that a downstream adopted repo runs the new runtime with no dual dispatch, prove via telemetry that zero legacy script or `run-hook.sh` invocations remain, delete every remaining replaced script and the second-level dispatcher from `assets/hooks/` with the projection re-synced and `route-registry.ts` script references dropped, keep `bun run check:hooks` green, and leave no compatibility shim or release-line window | (pending) |
+| 9 | [x] | hrd-09-legacy-retirement-and-adopted-migration | contract | In an independent PR, prove via a one-shot adopted-fixture migration that a downstream adopted repo runs the new runtime with no dual dispatch, prove via telemetry that zero legacy script or `run-hook.sh` invocations remain, delete every remaining replaced script and the second-level dispatcher from `assets/hooks/` with the projection re-synced and `route-registry.ts` script references dropped, keep `bun run check:hooks` green, and leave no compatibility shim or release-line window | `plans/archive/plan-20260721-1801-hrd-09-legacy-retirement-and-adopted-migration.md` |
 
 ## Definition of Done
 
@@ -297,3 +297,4 @@ flow and lands through an independent PR.
 | 2026-07-21 02:13 | hrd-06-stop-handler-slim | `plans/plan-20260720-2256-hrd-06-stop-handler-slim.md` | done |
 | 2026-07-21 05:33 | hrd-07-circuit-oscillation-and-shared-lock | `plans/plan-20260721-0218-hrd-07-circuit-oscillation-and-shared-lock.md` | done |
 | 2026-07-21 17:46 | hrd-08-event-telemetry-and-benchmark | `plans/archive/plan-20260721-1621-hrd-08-event-telemetry-and-benchmark.md` | done |
+| 2026-07-21 20:35 | hrd-09-legacy-retirement-and-adopted-migration | `plans/archive/plan-20260721-1801-hrd-09-legacy-retirement-and-adopted-migration.md` | done |

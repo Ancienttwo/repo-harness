@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-21T17:46:37+0800 -->
+<!-- updated_at: 2026-07-21T20:35:17+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-07-21T17:46:37+0800
-> **Source Branch**: codex/hrd-08-event-telemetry-and-benchmark
-> **Source Commit**: a8180413
+> **Updated At**: 2026-07-21T20:35:17+0800
+> **Source Branch**: codex/hrd-09-legacy-retirement-and-adopted-migration
+> **Source Commit**: 804c198f
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -31,6 +31,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
+- /Users/kito/Projects/repo-harness: plans/plan-20260721-1907-bdd2-followthrough.md
+- /Users/kito/Projects/repo-harness: active-worktree owner -> /Users/kito/Projects/repo-harness
 - /Users/kito/Projects/repo-harness-wt-acceptance-waiver-grant: plans/plan-20260721-1531-acceptance-waiver-grant.md
 - /Users/kito/Projects/repo-harness-wt-acceptance-waiver-grant: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-acceptance-waiver-grant
 - /Users/kito/Projects/repo-harness-wt-closeout-single-acceptance-authority: plans/plan-20260721-0601-closeout-single-acceptance-authority.md
@@ -49,7 +51,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`: status=completed, current_slice=completed-20260713-policy-seed, source_plan=plans/plan-20260712-2215-agent-fleet-specialists.md
 ## Handoff
 
-- Exact Next Step: (none)
+- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Record exactly one semantic acceptance or contract-authorized typed owner waiver, seal, PR, CI, merge, and cleanup.
 
 ## Checks
 
@@ -60,16 +62,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260721-1621-hrd-08-event-telemetry-and-benchmark.md
- D tasks/contracts/20260721-1621-hrd-08-event-telemetry-and-benchmark.contract.md
- D tasks/notes/20260721-1621-hrd-08-event-telemetry-and-benchmark.notes.md
- D tasks/reviews/20260721-1621-hrd-08-event-telemetry-and-benchmark.review.md
+ D plans/plan-20260721-1801-hrd-09-legacy-retirement-and-adopted-migration.md
+ D tasks/contracts/20260721-1801-hrd-09-legacy-retirement-and-adopted-migration.contract.md
+ D tasks/notes/20260721-1801-hrd-09-legacy-retirement-and-adopted-migration.notes.md
+ D tasks/reviews/20260721-1801-hrd-09-legacy-retirement-and-adopted-migration.review.md
  M tasks/todos.md
-?? plans/archive/plan-20260721-1621-hrd-08-event-telemetry-and-benchmark.md
-?? tasks/archive/contract-20260721-1746-hrd-08-event-telemetry-and-benchmark.md
-?? tasks/archive/notes-20260721-1746-hrd-08-event-telemetry-and-benchmark.md
-?? tasks/archive/review-20260721-1746-hrd-08-event-telemetry-and-benchmark.md
-?? tasks/archive/todo-20260721-1746-hrd-08-event-telemetry-and-benchmark.md
+?? plans/archive/plan-20260721-1801-hrd-09-legacy-retirement-and-adopted-migration.md
+?? tasks/archive/contract-20260721-2035-hrd-09-legacy-retirement-and-adopted-migration.md
+?? tasks/archive/notes-20260721-2035-hrd-09-legacy-retirement-and-adopted-migration.md
+?? tasks/archive/review-20260721-2035-hrd-09-legacy-retirement-and-adopted-migration.md
+?? tasks/archive/todo-20260721-2035-hrd-09-legacy-retirement-and-adopted-migration.md
 ```
 
 ## Source Artifacts

@@ -289,6 +289,8 @@ classify_change() {
   esac
 
   if [[ "$rel_path" =~ ^(\.ai/hooks/|assets/hooks/) ]] ||
+     [[ "$rel_path" =~ ^src/cli/hook/ ]] ||
+     [[ "$rel_path" == "src/cli/hook-entry.ts" ]] ||
      [[ "$rel_path" == ".ai/harness/policy.json" ]] ||
      [[ "$rel_path" == ".ai/harness/workflow-contract.json" ]] ||
      [[ "$rel_path" == "assets/workflow-contract.v1.json" ]] ||

@@ -176,7 +176,6 @@ fi
 ensure_task_sync_package_script
 write_runtime_gitignore_block
 
-pi_install_hook_adapters "$PWD" "$ASSETS_HOOKS_DIR" "apply"
 pi_print_codex_hook_trust_notice
 
 cat > docs/spec.md << 'DOCS_SPEC_EOF'

@@ -4,6 +4,39 @@ import { join } from "path";
 
 const ROOT = join(import.meta.dir, "..");
 
+const RETIRED_HOOK_RUNTIME_FILES = [
+  "assets/hooks/anti-simplification.sh",
+  "assets/hooks/changelog-guard.sh",
+  "assets/hooks/codex-delegation-advisor.sh",
+  "assets/hooks/first-principles-guard.sh",
+  "assets/hooks/hook-input.sh",
+  "assets/hooks/post-bash.sh",
+  "assets/hooks/post-tool-observer.sh",
+  "assets/hooks/prompt-guard.sh",
+  "assets/hooks/run-hook.sh",
+  "assets/hooks/subagent-return-channel-guard.sh",
+  "assets/hooks/subagent-start-context.sh",
+  "assets/hooks/subagent-stop-quality.sh",
+  "assets/hooks/lib/minimal-change.sh",
+  "assets/hooks/lib/session-state.sh",
+  ".ai/hooks/anti-simplification.sh",
+  ".ai/hooks/changelog-guard.sh",
+  ".ai/hooks/codex-delegation-advisor.sh",
+  ".ai/hooks/first-principles-guard.sh",
+  ".ai/hooks/hook-input.sh",
+  ".ai/hooks/post-bash.sh",
+  ".ai/hooks/post-tool-observer.sh",
+  ".ai/hooks/prompt-guard.sh",
+  ".ai/hooks/run-hook.sh",
+  ".ai/hooks/subagent-return-channel-guard.sh",
+  ".ai/hooks/subagent-start-context.sh",
+  ".ai/hooks/subagent-stop-quality.sh",
+  ".ai/hooks/lib/minimal-change.sh",
+  ".ai/hooks/lib/session-state.sh",
+  "scripts/hook-shim.sh",
+  "scripts/repo-harness.sh",
+];
+
 function read(relPath: string): string {
   return readFileSync(join(ROOT, relPath), "utf-8");
 }
@@ -91,12 +124,18 @@ describe("Bootstrap Script Contracts", () => {
     expect(routing).toContain("prompt inheritance");
   });
 
-  test("repo root should include routing docs and self-host hook implementation", () => {
+  test("repo root should include routing docs and one typed hook implementation", () => {
     expect(existsSync(join(ROOT, "CLAUDE.md"))).toBe(true);
     expect(existsSync(join(ROOT, "AGENTS.md"))).toBe(true);
     expect(existsSync(join(ROOT, ".claude/settings.json"))).toBe(false);
     expect(existsSync(join(ROOT, ".codex/hooks.json"))).toBe(false);
-    expect(existsSync(join(ROOT, ".ai/hooks/run-hook.sh"))).toBe(true);
+    expect(existsSync(join(ROOT, "src/cli/hook-entry.ts"))).toBe(true);
+    expect(existsSync(join(ROOT, "src/cli/hook/runtime.ts"))).toBe(true);
+    expect(existsSync(join(ROOT, "src/cli/hook/hook-input.ts"))).toBe(true);
+    expect(existsSync(join(ROOT, "assets/hooks/lib/workflow-state.sh"))).toBe(true);
+    for (const retired of RETIRED_HOOK_RUNTIME_FILES) {
+      expect(existsSync(join(ROOT, retired))).toBe(false);
+    }
 
     const claude = read("CLAUDE.md");
     const agents = read("AGENTS.md");
@@ -258,13 +297,12 @@ describe("Bootstrap Script Contracts", () => {
     expect(contract.artifacts.requiredFiles).toContain(".claude/templates/implementation-notes.template.md");
     expect(content).toContain("install_workflow_contract");
     expect(content).toContain("pi_install_hook_assets");
-    expect(content).toContain('pi_install_hook_adapters "$PWD" "$ASSETS_HOOKS_DIR" "apply"');
+    expect(content).not.toContain("pi_install_hook_adapters");
     expect(content).toContain("pi_print_codex_hook_trust_notice");
     expect(sharedLib).toContain('local hooks_dir="$target_dir/.ai/hooks"');
     expect(content).not.toContain("mkdir -p .codex");
-    expect(sharedLib).toContain("pi_retire_project_hook_adapter");
-    expect(sharedLib).toContain(".claude/settings.json");
-    expect(sharedLib).toContain(".codex/hooks.json");
+    expect(sharedLib).not.toContain("pi_retire_project_hook_adapter");
+    expect(sharedLib).not.toContain("pi_prune_repo_local_hook_runtime");
     expect(contract.helpers.scripts).toContain("switch-plan.sh");
     expect(contract.helpers.scripts).toContain("capability-resolver.ts");
     expect(contract.helpers.scripts).toContain("architecture-event.ts");
@@ -398,15 +436,14 @@ describe("Bootstrap Script Contracts", () => {
     expect(contract.artifacts.requiredFiles).toContain("docs/reference-configs/document-generation.md");
     expect(contract.artifacts.requiredFiles).toContain("docs/reference-configs/global-working-rules.md");
     expect(contract.artifacts.requiredFiles).toContain("docs/reference-configs/heartbeat-triage.md");
-    expect(content).toContain('pi_install_hook_adapters "$PWD" "$ASSETS_HOOKS_DIR" "apply"');
+    expect(content).not.toContain("pi_install_hook_adapters");
     expect(content).toContain("pi_print_codex_hook_trust_notice");
     expect(content).toContain("pi_install_hook_assets");
-    expect(sharedLib).toContain("pi_retire_project_hook_adapter");
-    expect(sharedLib).toContain("pi_repo_pins_hook_source");
+    expect(sharedLib).not.toContain("pi_retire_project_hook_adapter");
+    expect(sharedLib).not.toContain("pi_prune_repo_local_hook_runtime");
+    expect(sharedLib).not.toContain("pi_repo_pins_hook_source");
     expect(sharedLib).toContain("pi_write_hook_runtime_readme");
     expect(sharedLib).toContain("pi_install_hook_assets");
-    expect(sharedLib).toContain(".claude/settings.json");
-    expect(sharedLib).toContain(".codex/hooks.json");
     expect(sharedLib).toContain('local hooks_dir="$target_dir/.ai/hooks"');
     expect(content).not.toContain("mkdir -p .codex");
     expect(sharedLib).not.toContain(".skill-factory-state.json");
@@ -427,21 +464,19 @@ describe("Bootstrap Script Contracts", () => {
     expect(content).toContain("pi_print_external_tooling_report");
   });
 
-  test("prompt-guard should monitor tasks-first files", () => {
-    const content = read("assets/hooks/prompt-guard.sh");
+  test("typed hook runtime owns host events while workflow-state remains an operator helper", () => {
+    const runtime = read("src/cli/hook/runtime.ts");
+    const hookInput = read("src/cli/hook/hook-input.ts");
     const workflowState = read("assets/hooks/lib/workflow-state.sh");
 
-    expect(content).toContain("tasks/todos.md");
-    expect(content).toContain("tasks/lessons.md");
-    expect(content).toContain("docs/researches/");
+    expect(runtime).toContain("getHandlerForRoute");
+    expect(runtime).toContain("runHook");
+    expect(runtime).not.toContain("route.scripts");
+    expect(hookInput).toContain("export function parseHookInput");
+    expect(hookInput).toContain("getApplyPatchPaths");
     expect(workflowState).toContain("git status --porcelain=v1");
-    expect(content).toContain("has_changes_glob");
-    expect(content).toContain("PlanStatusGuard");
-    expect(content).toContain("repo-harness run ensure-task-workflow");
-    // Block-path guards must use exit 2 so Claude Code's hook protocol treats
-    // them as blocking and surfaces stderr to the model (exit 1 is reported as
-    // "non-blocking status code: No stderr output").
-    expect(content).toContain("exit 2");
+    expect(workflowState).toContain("tasks/todos.md");
+    expect(workflowState).toContain("workflow_hook_cli_json");
   });
 
   test("cross-review skills should include dirty working tree scope", () => {

@@ -95,7 +95,8 @@ is `0.10.1`.
 The design has three layers:
 
 1. **Source package**: this repository owns the CLI, CLI-backed command facades,
-   templates, hook assets, workflow contract, tests, and release gate.
+   templates, typed hook handlers, the operator-helper asset, workflow contract,
+   tests, and release gate.
 2. **Target repo contract**: `repo-harness adopt` or migration writes repo-local
    files such as `docs/spec.md`, `plans/`, `tasks/`, `.ai/context/`,
    `.ai/harness/`, helper scripts, and `.ai/hooks/`.
@@ -107,9 +108,9 @@ The design has three layers:
 </p>
 
 The hook entrypoint exits silently for non-opt-in repos. For opted-in repos,
-it resolves hooks central-first through the packaged install or
-`~/.repo-harness/hooks/`, with repo policy able to pin self-host development
-back to `.ai/hooks/*`.
+the route registry binds the public event tuple to exactly one packaged typed
+handler. `.ai/hooks/` contains operator-helper projection only; it is never a
+host-event dispatcher.
 
 Minimal-change hooks sit inside that same route surface without adding a public
 adapter route. `SessionStart` and allowed execution prompts print advisory
@@ -122,15 +123,11 @@ human review stay the enforcement boundary.
 
 For `UserPromptSubmit`, the public adapter contract stays
 `repo-harness-hook UserPromptSubmit --route default`. The CLI route registry
-dispatches that route to `.ai/hooks/prompt-guard.sh`. The shell hook remains the
-repo-local adapter for host JSON parsing, workflow file reads, capture side
-effects, and host-safe stdout/stderr. It pipes the prompt text into
-`repo-harness-hook prompt-guard-decide`, where every prompt-text intent
-classifier (Unicode-aware, `src/cli/hook/prompt-intents.ts`) and the
-`intent x plan state` decision table live; the engine returns one verdict JSON
-line with the action, the classified intent facts, and derived strings. The
-shell keeps no duplicate classifier or fallback decision table — when the
-engine is unreachable the prompt layer degrades to a one-shot advisory.
+dispatches that route to `src/cli/hook/prompt-handler.ts`. That handler parses
+host JSON once, reads workflow files, performs capture side effects, verifies
+the typed `AcceptanceReceipt`, and returns host-neutral output. Unicode-aware
+intent classification lives in `src/cli/hook/prompt-intents.ts`; there is no
+shell classifier, secondary dispatcher, or fallback decision table.
 
 Prompt-layer plan/spec/contract gates are advisory routing. Hard enforcement
 lives at the edit boundary: the in-process mutation-guard handler
@@ -338,7 +335,7 @@ written to `delegation.mode` in `~/.repo-harness/config.json`, merged with
 existing keys such as `brainRoot`; this global value takes precedence over a
 repo's `.ai/harness/policy.json` `delegation.mode`. At runtime, `auto` injects
 one standing bounded-delegation authorization block per session at
-`SessionStart`; `codex-delegation-advisor.sh` itself injects on
+`SessionStart`; the typed `subagent` handler injects on
 `UserPromptSubmit` only for explicit triggers (`/delegate`, `/parallel`, ...)
 in both `auto` and `explicit` modes. The step never fires for
 `--target claude`, and with no flag and no TTY it leaves the file untouched —
@@ -547,28 +544,28 @@ and not arbitrary shell.
 
 ## Hook Authority Map
 
-- `assets/hooks/` is the only human-authored shared hook implementation. This self-host repo keeps `.ai/hooks/` as a checked-in generated projection for `"hook_source": "repo"` dogfood.
+- `repo-harness-hook` and its typed handler registry are the host-event runtime. `assets/hooks/lib/workflow-state.sh` is retained only for operator helpers; `.ai/hooks/` is a checked-in helper projection, not a dispatcher.
 - `~/.claude/settings.json` is the user-level Claude adapter that dispatches into opted-in repos.
 - `~/.codex/hooks.json` is the user-level Codex adapter that dispatches into the same runner.
 - Repo-local `.claude/settings.json` and `.codex/hooks.json` hook adapters are legacy project-level config and should be retired during migration.
 - Codex must mark `~/.codex/hooks.json` as trusted in Codex Settings before those hooks run.
-- Debug in this order: user-level adapter config -> `repo-harness-hook` (or fallback `repo-harness hook`) -> route registry -> active hook source.
-- For hook product changes, edit `assets/hooks/<path>`, run `bun run sync:hooks`, then verify with `bun run check:hooks`. Package-only templates are classified in `assets/hooks/projection.json` and are not projected into `.ai/hooks/`.
+- Debug in this order: user-level adapter config -> `repo-harness-hook` -> route registry -> typed handler.
+- For host-event behavior, edit `src/cli/hook/` and its focused tests. `assets/hooks/lib/workflow-state.sh` is an operator-helper source; `bun run sync:hooks` verifies its helper projection.
 
 The installed adapter owns eight shared managed hook routes. Codex also installs
 three Codex-only bounded-delegation routes. The route tuple
-`event + routeId + matcher` is the stable contract; script names are the current
-implementation under `assets/hooks/` or a repo-pinned `.ai/hooks/` copy.
+`event + routeId + matcher` is the stable contract; each tuple binds exactly
+one typed in-process handler.
 
-| Route | Matcher | Scripts | Function |
+| Route | Matcher | Handler | Function |
 | --- | --- | --- | --- |
 | `SessionStart.default` | all sessions | `src/cli/hook/session-context.ts` (in-process builder) | Injects prior handoff, sprint status, minimal-change guidance, and read-only config-security findings before work starts. |
 | `PreToolUse.edit` | `Edit|Write` | `src/cli/hook/mutation-guard.ts` (in-process handler) | Enforces worktree policy and plan/contract readiness before implementation edits. |
-| `PreToolUse.subagent` | `Task|Agent|SendUserMessage` | `subagent-return-channel-guard.sh` | Keeps delegated work returning through the parent session instead of leaking completion claims. |
+| `PreToolUse.subagent` | `Task|Agent|SendUserMessage` | `src/cli/hook/subagent-handler.ts` | Keeps delegated work returning through the parent session instead of leaking completion claims. |
 | `PostToolUse.edit` | `Edit|Write` | `src/cli/hook/mutation-observed.ts` (in-process handler) | Writes at most one small journal event with dirty bits per qualifying edit; contract verification, architecture/context/capability sync, and minimal-change evidence are deferred to Stop instead of run per edit. |
-| `PostToolUse.bash` | `Bash` | `post-bash.sh` | Observes command results and captures verification evidence without replacing the command runner. |
-| `PostToolUse.always` | all tools | `post-tool-observer.sh` | Provides low-noise always-on trace and runtime observation; stale pinned copies soft-skip with a refresh hint. |
-| `UserPromptSubmit.default` | all prompts | `prompt-guard.sh` | Classifies prompt intent, routes planning/check/hunt hints, and renders host-safe workflow guidance. |
+| `PostToolUse.bash` | `Bash` | `src/cli/hook/command-observed.ts` | Observes command results and captures verification evidence without replacing the command runner. |
+| `PostToolUse.always` | all tools | `src/cli/hook/trace-observer.ts` | Provides low-noise always-on trace and runtime observation. |
+| `UserPromptSubmit.default` | all prompts | `src/cli/hook/prompt-handler.ts` | Classifies prompt intent, routes planning/check hints, and renders host-safe workflow guidance. |
 | `Stop.default` | session stop | `src/cli/hook/stop-handler.ts` (in-process handler) | Finalizes handoff and guards against ending with unresolved draft-plan or completion evidence gaps. |
 
 Codex-only routes are `UserPromptSubmit.delegation`,
@@ -593,12 +590,8 @@ flowchart LR
   Sec --> SSOut
 ```
 
-`Stop` hooks are advisory for missing repo-local scripts: stale repos get a
-drift warning instead of a startup failure. `SessionStart` no longer spawns
-any repo-local scripts at all (the in-process builder reads repo facts
-directly), so that drift class does not apply to it any more. Required guard
-routes, including edit and prompt gates, still fail closed when their
-scripts are missing.
+No host route resolves repo-local scripts. A missing typed handler binding is a
+runtime contract failure; guard routes remain fail closed.
 
 Prompt guard has one extra internal step:
 
@@ -607,16 +600,16 @@ flowchart LR
   Host["Claude/Codex UserPromptSubmit"] --> Adapter["user-level adapter"]
   Adapter --> CLI["repo-harness-hook UserPromptSubmit --route default"]
   CLI --> Route["route registry"]
-  Route --> Shell[".ai/hooks/prompt-guard.sh"]
-  Shell -->|"stdin {prompt}"| Decision["repo-harness-hook prompt-guard-decide<br/>TypeScript classifiers + decision table"]
-  Decision -->|"verdict JSON<br/>action + intent facts + derived"| Shell
-  Shell --> RouteHint["Waza route hint<br/>explicit think/planning matched first → /think"]
-  Shell --> HostOutput["host-safe advice, done gate, or capture output"]
+  Route --> Handler["prompt-handler.ts<br/>single typed authority"]
+  Handler --> Decision["Unicode intent classifiers<br/>+ state decision table"]
+  Decision --> RouteHint["Waza route hint<br/>explicit think/planning matched first → /think"]
+  Handler --> Receipt["contract + checks + AcceptanceReceipt"]
+  Handler --> HostOutput["host-safe advice, done gate, or capture output"]
 ```
 
-The shell layer owns filesystem authority and side effects. TypeScript owns all
-prompt-text classification plus the `intent x plan state` decision table.
-Plan-state blocks render at the PreToolUse edit layer, not here.
+The typed handler owns filesystem authority, side effects, classification, and
+the `intent x plan state` decision table. Plan-state hard blocks still render at
+the PreToolUse edit layer.
 
 ## Hook Failure Playbook
 

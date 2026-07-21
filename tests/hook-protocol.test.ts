@@ -1,10 +1,7 @@
 import { describe, test, expect, setDefaultTimeout } from "bun:test";
 import {
-  cpSync,
-  copyFileSync,
   mkdirSync,
   mkdtempSync,
-  readdirSync,
   realpathSync,
   rmSync,
   writeFileSync,
@@ -13,25 +10,22 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
 import { runMutationGuard, type MutationGuardCollector } from "../src/cli/hook/mutation-guard";
+import { runPromptHandler } from "../src/cli/hook/prompt-handler";
 import { createStateInputCollector } from "../src/effects/loop/state-input-collector";
 import { resolveEffectiveState } from "../src/effects/state/resolve-effective-state";
 import type { EffectiveState } from "../src/core/state/types";
 import type { WorkflowProfile } from "../src/core/workflow/profile";
 
-// Every test here spawns bash hook scripts (each forking git/jq/bun
-// subprocesses) several times; one invocation can exceed 2s under parallel
-// session load, so the 5s bun default flakes on multi-invocation tests.
+// Some fixtures resolve full effective state and can exceed the default under
+// parallel session load.
 setDefaultTimeout(20000);
 
 // HRD-03: worktree-guard.sh + pre-edit-guard.sh are retired; the tests below
 // that used to spawn them directly (via the local `runHook` bash-script
 // helper) are retargeted to call the in-process mutation-guard handler
 // directly -- the same "no subprocess, real resolveEffectiveState authority"
-// pattern tests/mutation-guard.test.ts uses. Returning the same
-// `{status, stdout, stderr}` shape the old spawnSync-based `runHook` helper
-// returned keeps every migrated test's own assertions byte-identical; only
-// how `res`/`result` gets computed changes. prompt-guard.sh-only tests
-// (a different, still-live script) are untouched.
+// pattern tests/mutation-guard.test.ts uses. Prompt protocol checks likewise
+// call the typed prompt handler directly.
 function mutationGuardCollector(repoRoot: string, explicitOverride?: WorkflowProfile): MutationGuardCollector {
   return createStateInputCollector({
     event: "PreToolUse",
@@ -64,47 +58,8 @@ function runEditHandler(
   return { status: result.exitCode, stdout: result.stdout, stderr: result.stderr };
 }
 
-const ROOT = join(import.meta.dir, "..");
-const ASSETS_HOOKS_DIR = join(ROOT, "assets/hooks");
-
 function tmpWorkspace(prefix: string): string {
   return realpathSync(mkdtempSync(join(tmpdir(), `${prefix}-`)));
-}
-
-function installHooks(cwd: string): string {
-  const aiHooksDir = join(cwd, ".ai", "hooks");
-  mkdirSync(aiHooksDir, { recursive: true });
-  for (const f of readdirSync(ASSETS_HOOKS_DIR, { withFileTypes: true })) {
-    const src = join(ASSETS_HOOKS_DIR, f.name);
-    if (f.isDirectory()) {
-      cpSync(src, join(aiHooksDir, f.name), { recursive: true });
-    } else {
-      copyFileSync(src, join(aiHooksDir, f.name));
-    }
-  }
-  spawnSync("sh", ["-c", `find "${aiHooksDir}" -type f -name '*.sh' -exec chmod +x {} +`], {
-    encoding: "utf-8",
-  });
-  return aiHooksDir;
-}
-
-function runHook(
-  script: string,
-  cwd: string,
-  options?: { stdin?: string; env?: Record<string, string>; args?: string[] }
-) {
-  const hooksDir = join(cwd, ".ai", "hooks");
-  return spawnSync("bash", [join(hooksDir, script), ...(options?.args ?? [])], {
-    cwd,
-    input: options?.stdin ?? "",
-    encoding: "utf-8",
-    env: {
-      ...process.env,
-      REPO_HARNESS_CLI: join(ROOT, "src/cli/index.ts"),
-      REPO_HARNESS_HOOK_CLI: join(ROOT, "src/cli/hook-entry.ts"),
-      ...(options?.env ?? {}),
-    },
-  });
 }
 
 function initGitRepo(cwd: string) {
@@ -244,7 +199,6 @@ describe("Claude Code hook protocol compliance", () => {
     const cwd = tmpWorkspace("hook-proto-plan-status");
     try {
       initGitRepo(cwd);
-      installHooks(cwd);
       mkdirSync(join(cwd, "docs"), { recursive: true });
       mkdirSync(join(cwd, "plans"), { recursive: true });
       writeFileSync(join(cwd, "docs/spec.md"), "# Product Spec\n");
@@ -255,12 +209,9 @@ describe("Claude Code hook protocol compliance", () => {
       writeActivePlan(cwd, "plans/plan-20260528-1300-demo.md");
 
       // Prompt layer is advisory for plan status; the edit-layer plan gate is
-      // the blocking enforcement point. prompt-guard.sh is untouched by the
-      // HRD-03 retirement, so this half stays on the real script + installHooks.
-      const promptRes = runHook("prompt-guard.sh", cwd, {
-        stdin: JSON.stringify({ user_message: "/execute" }),
-      });
-      expect(promptRes.status).toBe(0);
+      // the blocking enforcement point.
+      const promptRes = runPromptHandler({ repoRoot: cwd, input: JSON.stringify({ user_message: "/execute" }) });
+      expect(promptRes.exitCode).toBe(0);
       expect(promptRes.stdout).toContain("[PlanStatusGuard]");
 
       // HRD-03: the old failing-resolver-subprocess-substitution mechanism
@@ -292,19 +243,28 @@ describe("Claude Code hook protocol compliance", () => {
     const cwd = tmpWorkspace("hook-proto-contract-missing");
     try {
       initGitRepo(cwd);
-      installHooks(cwd);
       mkdirSync(join(cwd, "plans"), { recursive: true });
 
       writeFileSync(
         join(cwd, "plans/plan-20260528-1400-demo.md"),
-        "# Plan: demo\n\n> **Status**: Approved\n"
+        [
+          "# Plan: demo",
+          "",
+          "> **Status**: Approved",
+          "",
+          "## Evidence Contract",
+          "- State/progress path: tasks/current.md",
+          "- Verification evidence: verify-sprint",
+          "- Evaluator rubric: prompt protocol",
+          "- Stop condition: stop on missing contract",
+          "- Rollback surface: revert fixture",
+          "",
+        ].join("\n")
       );
       writeActivePlan(cwd, "plans/plan-20260528-1400-demo.md");
 
-      const res = runHook("prompt-guard.sh", cwd, {
-        stdin: JSON.stringify({ user_message: "done" }),
-      });
-      expect(res.status).toBe(2);
+      const res = runPromptHandler({ repoRoot: cwd, input: JSON.stringify({ user_message: "done" }) });
+      expect(res.exitCode).toBe(2);
       expect(res.stderr).toContain("[ContractGuard]");
       expect(res.stderr).toContain("Missing task contract");
     } finally {

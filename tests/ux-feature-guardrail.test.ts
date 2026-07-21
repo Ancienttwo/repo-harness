@@ -78,15 +78,13 @@ describe("UX feature pre-implementation guard", () => {
 
   test("keeps PRD and prompt guidance short and points both at the canonical guard", () => {
     const prd = read("assets/skill-commands/repo-harness-prd/SKILL.md");
-    const assetHook = read("assets/hooks/prompt-guard.sh");
-    const repoHook = read(".ai/hooks/prompt-guard.sh");
+    const promptHandler = read("src/cli/hook/prompt-handler.ts");
 
-    expect(repoHook).toBe(assetHook);
     expect(prd).toContain("first read `repo-harness docs show ux-feature-guard`");
     expect(prd).toContain("do not restate or replace that field schema in the PRD");
-    expect(assetHook).toContain("[UXFeatureGuard]");
-    expect(assetHook).toContain("separate instruction from payload");
-    expect(assetHook).toContain("no parallel authority or compatibility fallback");
+    expect(promptHandler).toContain("[UXFeatureGuard]");
+    expect(promptHandler).toContain("separate instruction from payload");
+    expect(promptHandler).toContain("no parallel authority or compatibility fallback");
   });
 
   test("includes the convention in minimal-agentic adoption without a second product surface", () => {
