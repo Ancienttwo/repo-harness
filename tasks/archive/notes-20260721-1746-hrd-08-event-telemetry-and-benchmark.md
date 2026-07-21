@@ -1,3 +1,9 @@
+> **Archived**: 2026-07-21 17:46
+> **Related Plan**: plans/archive/plan-20260721-1621-hrd-08-event-telemetry-and-benchmark.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260721-1746
+
 # Implementation Notes: hrd-08-event-telemetry-and-benchmark
 
 > **Status**: Active

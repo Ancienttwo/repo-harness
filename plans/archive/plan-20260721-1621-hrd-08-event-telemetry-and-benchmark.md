@@ -1,6 +1,6 @@
 # Plan: HRD-08 event telemetry and benchmark
 
-> **Status**: Review
+> **Status**: Archived
 > **Created**: 20260721-1621
 > **Slug**: hrd-08-event-telemetry-and-benchmark
 > **Planning Source**: waza-think
