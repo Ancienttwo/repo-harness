@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
@@ -15,6 +15,14 @@ import { HOOK_EVENT_TELEMETRY_PROTOCOL } from "../src/cli/hook/event-telemetry";
 
 const ROOT = join(import.meta.dir, "..");
 const SCRIPT = join(ROOT, "scripts/hook-dispatch-diet-report.ts");
+
+// Isolated empty telemetry fixture: without an explicit eventsPath the report
+// builder reads the live .ai/harness/runs/hook-events.jsonl, which interactive
+// sessions populate - assertions here must not depend on real session state.
+const EMPTY_EVENTS_DIR = mkdtempSync(join(tmpdir(), "hook-diet-empty-"));
+const EMPTY_EVENTS_FIXTURE = join(EMPTY_EVENTS_DIR, "hook-events.jsonl");
+writeFileSync(EMPTY_EVENTS_FIXTURE, "");
+afterAll(() => rmSync(EMPTY_EVENTS_DIR, { recursive: true, force: true }));
 
 const ALL_METRICS = [
   "runtime_entries", "state_resolutions", "child_processes", "files_read", "files_written",
@@ -83,7 +91,7 @@ function reportFor(eventsPath?: string, runProbe?: (spec: { name: string }) => {
     iterations: 2,
     baselineMs: 250,
     now: new Date("2026-06-12T00:00:00Z"),
-    eventsPath,
+    eventsPath: eventsPath ?? EMPTY_EVENTS_FIXTURE,
     runProbe: runProbe ?? ((spec) => ({
       exitCode: 0,
       durationMs: 20,

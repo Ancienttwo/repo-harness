@@ -280,14 +280,20 @@ if [[ -z "$changed_files" ]]; then
 fi
 
 matches_json="$(printf '%s\n' "$changed_files" | run_capability_resolver match --paths-from - --format json)"
-capabilities="$(
-  MATCHES_JSON="$matches_json" node -e '
+if command -v jq >/dev/null 2>&1; then
+  capabilities="$(printf '%s' "$matches_json" | jq -r '[.[] | (.capability_id // "root")] | unique | .[]')"
+elif command -v node >/dev/null 2>&1; then
+  capabilities="$(
+    MATCHES_JSON="$matches_json" node -e '
 const matches = JSON.parse(process.env.MATCHES_JSON || "[]");
 const ids = new Set();
 for (const item of matches) ids.add(item.capability_id || "root");
 for (const id of [...ids].sort()) console.log(id);
 '
-)"
+  )"
+else
+  capabilities=""
+fi
 changed_count="$(printf '%s\n' "$capabilities" | sed '/^$/d' | wc -l | tr -d ' ')"
 blocking_lines="$(pending_requests_for_capabilities "$threshold" "$capabilities")"
 blocking_count="$(printf '%s\n' "$blocking_lines" | sed '/^$/d' | wc -l | tr -d ' ')"

@@ -2,11 +2,24 @@
 set -euo pipefail
 
 prepare_acceptance=0
-if [[ "${1:-}" == "--prepare-acceptance" ]]; then
-  prepare_acceptance=1
-  shift
-fi
-[[ $# -eq 0 ]] || { echo "verify-sprint: unknown argument: $1" >&2; exit 2; }
+contract_override=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --prepare-acceptance)
+      prepare_acceptance=1
+      shift
+      ;;
+    --contract)
+      [[ -n "${2:-}" ]] || { echo "verify-sprint: --contract requires a value" >&2; exit 2; }
+      contract_override="$2"
+      shift 2
+      ;;
+    *)
+      echo "verify-sprint: unknown argument: $1" >&2
+      exit 2
+      ;;
+  esac
+done
 
 WORKFLOW_STATE_LIB="${REPO_HARNESS_WORKFLOW_STATE_LIB:-.ai/hooks/lib/workflow-state.sh}"
 if [[ -n "${REPO_HARNESS_BUN_BIN:-}" ]] && [[ "$WORKFLOW_STATE_LIB" != /* || ! -f "$WORKFLOW_STATE_LIB" || -L "$WORKFLOW_STATE_LIB" ]]; then
@@ -170,6 +183,26 @@ active_plan_declared_path() {
       exit
     }
   ' "$active_plan" | xargs
+}
+
+# Same field-declaration parser as active_plan_declared_path, but reads an
+# explicit file instead of the active-plan marker. Used by the --contract
+# override so a historical/non-active contract's own Review File / Notes
+# File header fields resolve without touching active-plan state.
+contract_declared_path() {
+  local file="$1"
+  local label="$2"
+  [[ -n "$file" && -f "$file" ]] || return 1
+  awk -v label="$label" '
+    BEGIN { pattern = "^> \\*\\*" label "\\*\\*:" }
+    $0 ~ pattern {
+      sub(pattern "[[:space:]]*", "")
+      gsub(/`/, "")
+      gsub(/\r/, "")
+      print
+      exit
+    }
+  ' "$file" | xargs
 }
 
 git_changed_files_json() {
@@ -376,10 +409,26 @@ allowed_paths_check_json() {
 if [[ -f "$WORKFLOW_STATE_LIB" ]]; then
   # shellcheck source=/dev/null
   . "$WORKFLOW_STATE_LIB"
+  checks_file="$(workflow_checks_file)"
+else
+  checks_file=".ai/harness/checks/latest.json"
+fi
+
+if [[ -n "$contract_override" ]]; then
+  # Explicit binding consulted before the active-marker/fallback chain below:
+  # lets verify-sprint (and the completed_archive_gate evidence it produces)
+  # bind to a historical/non-active contract without touching active-plan
+  # state. Every downstream evidence/receipt/gate check still runs against
+  # whatever contract_file resolves to here — no gate is relaxed.
+  [[ -f "$contract_override" ]] || { echo "verify-sprint: --contract path does not exist: $contract_override" >&2; exit 1; }
+  grep -q '^# Task Contract:' "$contract_override" || { echo "verify-sprint: --contract path is not a task contract file: $contract_override" >&2; exit 1; }
+  contract_file="$contract_override"
+  review_file="$(contract_declared_path "$contract_file" "Review File" || true)"
+  notes_file="$(contract_declared_path "$contract_file" "Notes File" || true)"
+elif [[ -f "$WORKFLOW_STATE_LIB" ]]; then
   contract_file="$(workflow_active_contract || true)"
   review_file="$(workflow_active_review || true)"
   notes_file="$(workflow_active_notes || true)"
-  checks_file="$(workflow_checks_file)"
 else
   contract_file="$(find tasks/contracts -maxdepth 1 -name '*.contract.md' -type f 2>/dev/null | sort | head -n 1)"
   if [[ -n "$contract_file" ]]; then
@@ -390,16 +439,17 @@ else
     review_file=""
     notes_file=""
   fi
-  checks_file=".ai/harness/checks/latest.json"
 fi
-if [[ -z "$contract_file" || ! -f "$contract_file" ]]; then
-  contract_file="$(active_plan_declared_path "Task Contract" || active_plan_declared_path "Sprint Contract" || true)"
-fi
-if [[ -z "$review_file" || ! -f "$review_file" ]]; then
-  review_file="$(active_plan_declared_path "Task Review" || active_plan_declared_path "Sprint Review" || true)"
-fi
-if [[ -z "$notes_file" || ! -f "$notes_file" ]]; then
-  notes_file="$(active_plan_declared_path "Implementation Notes" || active_plan_declared_path "Notes File" || true)"
+if [[ -z "$contract_override" ]]; then
+  if [[ -z "$contract_file" || ! -f "$contract_file" ]]; then
+    contract_file="$(active_plan_declared_path "Task Contract" || active_plan_declared_path "Sprint Contract" || true)"
+  fi
+  if [[ -z "$review_file" || ! -f "$review_file" ]]; then
+    review_file="$(active_plan_declared_path "Task Review" || active_plan_declared_path "Sprint Review" || true)"
+  fi
+  if [[ -z "$notes_file" || ! -f "$notes_file" ]]; then
+    notes_file="$(active_plan_declared_path "Implementation Notes" || active_plan_declared_path "Notes File" || true)"
+  fi
 fi
 
 [[ -n "$contract_file" && -f "$contract_file" ]] || { echo "No active sprint contract found" >&2; exit 1; }
