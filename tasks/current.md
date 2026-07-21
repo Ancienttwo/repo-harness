@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-22T02:46:59+0800 -->
+<!-- updated_at: 2026-07-22T03:02:30+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-07-22T02:46:59+0800
-> **Source Branch**: codex/ship-tooling-fixes
-> **Source Commit**: 6d5633d2
+> **Updated At**: 2026-07-22T03:02:30+0800
+> **Source Branch**: main
+> **Source Commit**: aa8575ee
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -18,9 +18,9 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 ## Current Focus
 
 - Status: ManualClearedWithActiveWork
-- Active Plan: (none)
-- Plan Status: (none)
-- Next Task: inspect active worktree marker(s)
+- Active Plan: plans/plan-20260722-0020-vgbr-post-hrd-baseline-recovery.md
+- Plan Status: Approved
+- Next Task: Fresh-fetch `origin/main` and verify it equals `VGBR_BASELINE_SHA` (`0852e9ab72f19b3794d5b8f9463a172e498686c7`); stop and report if not.
 - Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
 
 ## Mainline Snapshot Reading
@@ -31,12 +31,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- /Users/kito/Projects/repo-harness: plans/plan-20260722-0020-vgbr-post-hrd-baseline-recovery.md
-- /Users/kito/Projects/repo-harness: active-worktree owner -> /Users/kito/Projects/repo-harness
-- /Users/kito/Projects/repo-harness-wt-acceptance-waiver-grant: plans/plan-20260721-1531-acceptance-waiver-grant.md
-- /Users/kito/Projects/repo-harness-wt-acceptance-waiver-grant: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-acceptance-waiver-grant
-- /Users/kito/Projects/repo-harness-wt-closeout-single-acceptance-authority: plans/plan-20260721-0601-closeout-single-acceptance-authority.md
-- /Users/kito/Projects/repo-harness-wt-closeout-single-acceptance-authority: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-closeout-single-acceptance-authority
+- .: plans/plan-20260722-0020-vgbr-post-hrd-baseline-recovery.md
+- .: active-worktree owner -> /Users/kito/Projects/repo-harness
 ## Active Sprint
 
 - Sprint: (none)
@@ -51,27 +47,28 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`: status=completed, current_slice=completed-20260713-policy-seed, source_plan=plans/plan-20260712-2215-agent-fleet-specialists.md
 ## Handoff
 
-- Exact Next Step: Stage the completed module diff first; then run /check and let canonical workflow gates determine whether review, external acceptance, verification, or worktree finish is next. Command: /check
+- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Fresh-fetch `origin/main` and verify it equals `VGBR_BASELINE_SHA` (`0852e9ab72f19b3794d5b8f9463a172e498686c7`); stop and report if not.
 
 ## Checks
 
-- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
+- status=(none), source=(none), exit_code=(none), file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 10 changed/untracked path(s)
+- Summary: 11 changed/untracked path(s)
 
 ```
- D plans/plan-20260721-2256-ship-tooling-fixes.md
- D tasks/contracts/20260721-2256-ship-tooling-fixes.contract.md
- D tasks/notes/20260721-2256-ship-tooling-fixes.notes.md
- D tasks/reviews/20260721-2256-ship-tooling-fixes.review.md
- M tasks/todos.md
-?? plans/archive/plan-20260721-2256-ship-tooling-fixes.md
-?? tasks/archive/contract-20260722-0246-ship-tooling-fixes.md
-?? tasks/archive/notes-20260722-0246-ship-tooling-fixes.md
-?? tasks/archive/review-20260722-0246-ship-tooling-fixes.md
-?? tasks/archive/todo-20260722-0246-ship-tooling-fixes.md
+ D HANDOFF.md
+ D plans/plan-20260714-1353-design-options-proactive-choice.md
+ D tasks/contracts/20260714-1353-design-options-proactive-choice.contract.md
+ D tasks/notes/20260714-1353-design-options-proactive-choice.notes.md
+ D tasks/reviews/20260714-1353-design-options-proactive-choice.review.md
+?? plans/archive/plan-20260714-1353-design-options-proactive-choice.md
+?? plans/plan-20260722-0020-vgbr-post-hrd-baseline-recovery.md
+?? tasks/archive/contract-20260722-0302-design-options-proactive-choice.md
+?? tasks/archive/notes-20260722-0302-design-options-proactive-choice.md
+?? tasks/archive/review-20260722-0302-design-options-proactive-choice.md
+?? tasks/archive/todo-20260722-0302-design-options-proactive-choice.md
 ```
 
 ## Source Artifacts

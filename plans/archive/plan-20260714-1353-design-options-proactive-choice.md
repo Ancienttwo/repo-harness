@@ -1,6 +1,6 @@
 # Plan: Proactive Design-Options: visual directions for the user to choose
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260714-1353
 > **Slug**: design-options-proactive-choice
 > **Planning Source**: codex-plan-or-waza-think

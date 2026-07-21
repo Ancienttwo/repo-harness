@@ -63,7 +63,7 @@ Owns the runtime-harness-hook-adapters capability boundary declared in .ai/conte
 - Latest snapshot: `(none yet)`
 - Semantic diagram source: `docs/architecture/modules/runtime-harness/hook-adapters.md`
 - Latest human diagram: `(none yet)`
-- Pending architecture request: `docs/architecture/requests/runtime-harness-hook-adapters.md`
+- Pending architecture request: `(none)`
 
 ## Active Workstreams
 

@@ -131,6 +131,19 @@ measurement is the first expected failure. Telemetry is therefore
 non-authoritative for safety, but evidence consumers fail closed when required
 fields are missing, malformed, duplicated, or mixed-protocol.
 
+## Frontend-scoped UX advisory (2026-07-21, PR #109)
+
+The UserPromptSubmit advisory pair is split by scope: `bdd_feature_advice`
+stays generic (any feature/implement intent → the `[BDD]` Given-When-Then
+reminder), while `ux_feature_guard_advice` additionally requires a frontend/UI
+noun — split ZH/EN sets with explicit English word boundaries so `build` and
+`suite` can never match via the `ui` substring — evaluated against the
+stripped prompt (`ctx.text`), so host-injected context cannot create UX
+intent. The fact is echo-only by invariant: it gates the `[UXFeatureGuard]`
+push in `prompt-handler.ts` and never enters routing or blocking decisions.
+The noun sets expand only with a real missed-case fixture first
+(`tests/cli/prompt-intents.test.ts` pins the positive/negative matrix).
+
 ## Verification surfaces
 
 - `bun test tests/cli/route-registry.test.ts tests/cli/hook.test.ts`

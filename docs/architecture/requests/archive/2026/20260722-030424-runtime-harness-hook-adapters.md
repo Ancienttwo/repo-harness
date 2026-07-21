@@ -1,6 +1,6 @@
 # Architecture Queue Card: runtime-harness-hook-adapters
 
-> **Status**: Pending
+> **Status**: Resolved
 > **Detected**: 2026-07-21T21:39:18+0800
 > **Updated**: 2026-07-21T21:39:22+0800
 > **Severity**: high
@@ -59,3 +59,11 @@
   "contract_sync_required": true
 }
 ```
+
+## Archive Resolution
+
+- Status: Resolved
+- Archived: 2026-07-22T03:04:25+0800
+- Artifacts:
+- `docs/architecture/modules/runtime-harness/hook-adapters.md`
+- Note: Advisory split absorbed into the module doc (Frontend-scoped UX advisory section); shipped and gatekeeper-reviewed in PR #109

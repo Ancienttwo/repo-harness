@@ -67,6 +67,7 @@ repos.
 | `.ai/harness/checks/latest.json` | Verifier | Current structured gate result |
 | `.ai/harness/runs/*.json` | Verifier | Immutable run/trace snapshots |
 | `.ai/harness/handoff/` | Session owner | Resume packets and exact next step |
+| `docs/reference-configs/ux-feature-guard.md`, `docs/reference-configs/design-options.md`, `.claude/templates/design-brief.template.md` | Conventions | Frontend behavior discipline: freeze rules and non-goals before implementation, product boundary before imagegen variants, taste-class refinement ceiling, role-aware visible-concept declaration; `frontend` task_profile contracts must cite a design brief, and the runtime `[UXFeatureGuard]` advisory fires only on frontend-scoped feature intent |
 
 ## Safety Boundaries
 
