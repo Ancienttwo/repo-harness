@@ -49,17 +49,17 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
+> **Disposition**: external_pass
+> **Reviewer**: Claude
+> **Source**: claude-review
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:867bf7c3c79291d7de5a91f4406ffb5375b2f1fa64a7f2c26588605b640b945f
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: 61b5ec5960bd5bd763a0c02ebadbe37cba5a2c5f
+> **Verification Evidence SHA256**: sha256:677bf5e5d69f94ba9ec23aea36080c0823364be23759a38e4677be3fe33cc445
+> **Issued At**: 2026-07-21T21:28:56.893Z
 
-- Summary: No AcceptanceReceipt has been recorded.
+- Summary: Gatekeeper review PASS: structural immutability fix (ROOT never an install source; packed artifact with hash pin; fail-closed subject re-assertion at four phases); mode-sensitivity proven via hashTree mode bits and fixture reproducing the 0755-to-0777 drift; red-then-green pre-fix log; 28/28 exit criteria including full suite under verify harness; diff exactly within allowed_paths.
 - Findings: none
 
 ## Behavior Diff Notes
