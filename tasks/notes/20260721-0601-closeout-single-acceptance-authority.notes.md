@@ -61,6 +61,11 @@
   owns `scripts/merge-gate.ts` and the `assets/templates` runtime, so the
   nonexistent prefix was removed rather than replaced with a duplicate alias;
   the capability registry and CLI export now validate again.
+- The next CI pass exposed a stale `contract-run` fixture whose manual check was
+  the retired semantic phrase `Evaluator review file recommends pass`. The
+  fixture now uses an ordinary exact observation about the worker artifact and
+  records it under `Manual Check Evidence`, preserving generic manual-check
+  coverage without recreating prose acceptance authority.
 
 ## Tradeoffs Considered
 
