@@ -1,3 +1,9 @@
+> **Archived**: 2026-07-21 22:41
+> **Related Plan**: plans/archive/plan-20260721-1907-bdd2-followthrough.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260721-2241
+
 # Task Contract: bdd2-followthrough
 
 > **Status**: Fulfilled

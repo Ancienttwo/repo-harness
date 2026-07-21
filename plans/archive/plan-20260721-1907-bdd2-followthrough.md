@@ -1,6 +1,6 @@
 # Plan: BDD2 review follow-through: frontend-scoped UX guard advisory, design-proposal skill, ledger closeout
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260721-1907
 > **Slug**: bdd2-followthrough
 > **Planning Source**: waza-think
