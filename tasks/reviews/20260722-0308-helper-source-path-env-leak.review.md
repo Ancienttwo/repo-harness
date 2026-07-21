@@ -40,17 +40,17 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
+> **Disposition**: external_pass
+> **Reviewer**: Claude
+> **Source**: claude-review
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:702e8e3589f8d329585dfe468a8beb2f9da6d2a7d389453329a8a032fd62eff7
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: 38395599764e1927db0f2216715978101f6f5d6b
+> **Verification Evidence SHA256**: sha256:b9b5a6a20e67570d5522bdac5a8e78cb3820daf4f32036843f69648714dde8fb
+> **Issued At**: 2026-07-21T21:08:09.341Z
 
-- Summary: No AcceptanceReceipt has been recorded.
+- Summary: Deterministic red-then-green for the REPO_HARNESS_HELPER_SOURCE_PATH cross-helper leak: decoy regression test failed pre-fix (PRE_FIX_EXIT=1) and passes post-fix; 14 sites guarded with basename-match fallback; twins byte-parity via sync:helpers; verify-sprint acid test fully green; same-basename forwarding tests unaffected.
 - Findings: none
 
 ## Behavior Diff Notes
