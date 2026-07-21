@@ -68,6 +68,8 @@ export interface MutationObservedInput {
   readonly env?: NodeJS.ProcessEnv;
   /** Resolved hooks directory, for locating the sibling first-principles-guard.sh/anti-simplification.sh advisory scripts. */
   readonly hooksDir?: string;
+  /** HRD-08 event telemetry observer, invoked only after one journal transaction commits. */
+  readonly observeJournalWrite?: (path: string) => void;
 }
 
 export interface MutationObservedResult {
@@ -112,7 +114,7 @@ export function runMutationObserved(opts: MutationObservedInput): MutationObserv
     checkpoint: isCheckpointPath(filePath),
   };
 
-  writeOrCoalesceJournalEvent(repoRoot, {
+  const journalPath = writeOrCoalesceJournalEvent(repoRoot, {
     sessionId: sessionIdFor(payload, env),
     filePath,
     subjectRevision: currentGitRevision(repoRoot),
@@ -120,6 +122,7 @@ export function runMutationObserved(opts: MutationObservedInput): MutationObserv
     contractTarget,
     minimalChangeInfo: minimalChangeEnabled ? { path: filePath, baseRef: 'HEAD' } : null,
   });
+  if (journalPath) opts.observeJournalWrite?.(journalPath);
 
   return { exitCode: 0, stdout: out.join(''), stderr: errOut.join('') };
 }
@@ -542,9 +545,10 @@ interface WriteJournalEventInput {
   readonly minimalChangeInfo: { readonly path: string; readonly baseRef: string } | null;
 }
 
-function writeOrCoalesceJournalEvent(repoRoot: string, input: WriteJournalEventInput): void {
+function writeOrCoalesceJournalEvent(repoRoot: string, input: WriteJournalEventInput): string | null {
   const key = journalEventKey(input.sessionId, [input.filePath]);
-  const absPath = join(repoRoot, JOURNAL_PENDING_DIR, `${key}.json`);
+  const relativePath = `${JOURNAL_PENDING_DIR}/${key}.json`;
+  const absPath = join(repoRoot, relativePath);
   const nowIso = new Date().toISOString();
   const existing = readJournalEventFile(absPath);
 
@@ -585,8 +589,10 @@ function writeOrCoalesceJournalEvent(repoRoot: string, input: WriteJournalEventI
 
   try {
     writeJournalEventAtomic(absPath, event);
+    return relativePath;
   } catch {
     // Best-effort: a journal write failure must never fail the hot path.
+    return null;
   }
 }
 

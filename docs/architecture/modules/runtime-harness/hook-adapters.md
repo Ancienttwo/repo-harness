@@ -28,6 +28,9 @@ Authoritative split:
 - Repo-local `.codex/*`: ignored Codex runtime residue.
 - `.ai/harness/delegation/`: ignored per-turn delegation state used by Codex
   delegation hooks.
+- `.ai/harness/runs/hook-events.jsonl`: ignored, event-level runtime telemetry
+  authority. One valid handled host event produces one record; reports consume
+  no per-script compatibility log.
 - Codex Settings trust state: user-controlled runtime approval required before Codex executes `~/.codex/hooks.json`.
 - `scripts/run-skill-hook.ts`: skill lifecycle hook runner for pre/post migration events.
 
@@ -39,9 +42,11 @@ files. It is not a product deliverable.
 Concrete route: Claude or Codex `PreToolUse` for edit/write -> host adapter
 runs `repo-harness-hook` from user-level config -> hook entry checks the current repo's
 `.ai/harness/workflow-contract.json` opt-in marker -> route registry selects
-the ordered scripts -> invokes `worktree-guard.sh` and `pre-edit-guard.sh`
--> guards inspect policy, active plan state, protected paths, and task workflow
-expectations -> warning or block is returned to the agent.
+the `PreToolUse.edit` route -> `runtime.ts` invokes the in-process
+`mutation-guard.ts` handler with the event-scoped `StateInputCollector` -> one
+Effective State resolution supplies policy, worktree, protected-path, and task
+workflow facts -> warning or block is returned -> the runtime seals one event
+telemetry record.
 After adapter configuration, Codex still requires the user to trust
 `~/.codex/hooks.json` in Codex Settings before that route executes.
 
@@ -89,26 +94,54 @@ consume the direct in-process decision JSON path. These Codex
 delegation routes are host-scoped in `route-registry.ts` and are not installed
 into Claude adapters.
 
-Post-edit route: edit/write -> `post-edit-guard.sh` -> architecture-sensitive
-paths call `architecture-queue.sh` -> capability resolver binds the changed file
-to a capability -> pending request is written under `docs/architecture/requests`
-and an event is appended under `.ai/harness/architecture/events.jsonl`.
+Post-edit route: edit/write -> the in-process `mutation-observed.ts` handler ->
+at most one coalesced journal event under
+`.ai/harness/journal/post-edit/pending/`; deferred architecture, context,
+capability, contract-verification, and minimal-change work is replayed at the
+explicit Stop/verification boundary. HRD-08 observes that logical journal
+commit as one event write and one transaction without counting its own
+telemetry append.
 
-Session-start security route: `SessionStart.default` runs
-`session-start-context.sh` and then `security-sentinel.sh` under the same
-adapter entry. The runtime aggregates SessionStart stdout from ordered scripts
-into one `additionalContext` JSON payload, so adding the sentinel does not
-create a new Codex trust entry or emit invalid multiple JSON documents.
+Session-start route: `SessionStart.default` runs the in-process context builder
+and budget pass under one adapter entry, producing one `additionalContext` JSON
+payload without a second trust entry or multiple JSON documents.
 
 Error paths:
 
 - Hook input parsing falls back across stdin JSON, env, and argv compatibility.
 - Worktree guard warns by default and blocks only when marker policy is enabled.
 - Runtime write failures should produce structured warnings or failure logs without corrupting the repo contract.
+- Event telemetry append failure preserves the hook result; report consumers
+  independently fail closed when required samples or metric coverage are
+  missing, malformed, duplicated, or mixed-protocol.
 - `repo-harness update` resolves command environment -> persisted install state
   -> exact profile component projection before runtime mutation. Missing state
   alone selects `minimal`; malformed, conflicting, or non-canonical ownership
   state fails closed before any host path is changed.
+
+## 2026-07-21 Event Telemetry Authority Cutover
+
+- `src/cli/hook/event-telemetry.ts` owns one event-scoped accumulator and the
+  sole `hook-events.jsonl` writer. `runtime.ts` finalizes it once for every
+  eligible handled route result, including blocked and handled error results.
+- Ordered steps distinguish in-process work from the runtime's direct Bash
+  child. `child_processes` is deliberately the direct dispatch count; existing
+  characterization fixtures retain separate internal `git`/`bun` diagnostics.
+- Effective State counts wrap the existing collector thunks and preserve their
+  one-shot memoization. PostEdit journal and Stop projection observers report
+  only successfully committed logical writes/transactions.
+- File counts are unique logical, repo-relative accesses observed at explicit
+  boundaries, not OS syscall claims. Opaque legacy steps leave named metrics
+  incomplete. The report publishes runtime evidence only when every metric
+  required by a target route has complete samples.
+- `scripts/hook-dispatch-diet-report.ts` and
+  `scripts/run-harness-profile-benchmark.ts` read only the event protocol. The
+  retired per-script path has no production reader, writer, or compatibility
+  parser.
+- At 10x volume, synchronous append contention or missing telemetry is the
+  first expected failure. Hook safety remains fail-open because telemetry is
+  non-authoritative; evidence availability remains fail-closed, so a missing
+  sample cannot become an implicit zero or pass.
 
 ## 2026-07-14 Review Subject and Acceptance Authority Cutover
 
@@ -161,8 +194,9 @@ flowchart TD
     OptIn -->|no| Exit0B["exit 0 non-opt-in"]
     OptIn -->|yes| Route{"getRoute(event, route)"}
     Route -->|unknown| Exit2["exit 2 unknown route"]
-    Route -->|ok| Spawn["spawn bash .ai/hooks/SCRIPT<br/>set HOOK_REPO_ROOT"]
-    Spawn --> Quiet{"HOOK_HOST=codex and event != SessionStart?"}
+    Route -->|ok| Handler{"in-process handler<br/>or one bash child"}
+    Handler --> Telemetry["event accumulator<br/>one hook-events.jsonl record"]
+    Telemetry --> Quiet{"HOOK_HOST=codex and event != SessionStart?"}
     Quiet -->|Stop success output| StopDecision["suppress stdout/stderr<br/>avoid unsupported content type"]
     Quiet -->|other success stdout| QuietStdout["stdout piped/emptied on success<br/>failure stdout moved to stderr"]
     Quiet -->|no| Inherit["stdio inherited"]
@@ -170,18 +204,16 @@ flowchart TD
 
   subgraph Routes["Public Route Registry"]
     Route --> SS["SessionStart.default"]
-    SS --> SSC["session-start-context.sh"]
-    SSC --> SecuritySentinel["security-sentinel.sh<br/>changed-only config scan"]
+    SS --> SSC["session-context.ts<br/>in-process assembly + budget"]
 
     Route --> PreEdit["PreToolUse.edit<br/>matcher: Edit|Write"]
-    PreEdit --> Worktree["worktree-guard.sh"]
-    Worktree --> PreGuard["pre-edit-guard.sh"]
+    PreEdit --> PreGuard["mutation-guard.ts<br/>one in-process decision"]
 
     Route --> PreSubagent["PreToolUse.subagent<br/>matcher: Task|Agent|SendUserMessage"]
     PreSubagent --> SubagentGuard["subagent-return-channel-guard.sh<br/>final-text return-channel guard"]
 
     Route --> PostEdit["PostToolUse.edit<br/>matcher: Edit|Write"]
-    PostEdit --> PostGuard["post-edit-guard.sh"]
+    PostEdit --> PostGuard["mutation-observed.ts<br/>at most one journal event"]
 
     Route --> PostBashRoute["PostToolUse.bash<br/>matcher: Bash"]
     PostBashRoute --> PostBash["post-bash.sh"]

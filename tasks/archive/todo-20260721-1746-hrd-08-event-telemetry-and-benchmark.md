@@ -1,7 +1,13 @@
+> **Archived**: 2026-07-21 17:46
+> **Related Plan**: plans/archive/plan-20260721-1621-hrd-08-event-telemetry-and-benchmark.md
+> **Outcome**: Completed
+> **Source Plan**: (none)
+> **Parent Run ID**: run-20260721-1746
+
 # Deferred Goal Ledger
 
 > **Status**: Backlog
-> **Updated**: (archive-workflow)
+> **Updated**: 2026-07-21 16:21
 > **Scope**: Medium/long-term goals deferred from active plan execution
 
 Current plan tasks live in the active plan's `## Task Breakdown`.

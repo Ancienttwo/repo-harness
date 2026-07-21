@@ -180,6 +180,16 @@ function readPendingPostEditJournalEvents(cwd: string): unknown[] {
     .map((name) => JSON.parse(readFileSync(join(dir, name), "utf-8")));
 }
 
+function readHookEventTelemetry(cwd: string): Array<Record<string, any>> {
+  const path = join(cwd, ".ai/harness/runs/hook-events.jsonl");
+  if (!existsSync(path)) return [];
+  return readFileSync(path, "utf-8")
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+}
+
 // Gate round-1 blocking fix: the crash-replay fixture must prove the pending
 // journal section survives PRODUCTION `runHook()`'s own `budgetSessionContext`
 // pass, not just call the unit-level `pendingPostEditJournalSection()`
@@ -627,6 +637,120 @@ function gitCommitCount(cwd: string): number {
 }
 
 describe("Hook runtime behavior", () => {
+  test("HRD-08: production PostEdit writes exactly one event record with one logical journal transaction", () => {
+    const cwd = tmpWorkspace("hrd08-post-edit-event");
+    try {
+      initGitRepo(cwd);
+      installHooks(cwd);
+      ensureOptIn(cwd);
+
+      const result = runMutationObservedHook(cwd, {
+        session_id: "session-hrd08",
+        run_id: "run-hrd08",
+        tool_input: { file_path: "tracked.txt" },
+      }, { HOOK_HOST: "codex" });
+      expect(result.status).toBe(0);
+
+      const events = readHookEventTelemetry(cwd);
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({
+        protocol: "loop-engine-hook-event/v1",
+        event: "PostToolUse",
+        route_id: "edit",
+        runtime_entries: 1,
+        host: "codex",
+        session_id: "session-hrd08",
+        metrics: {
+          state_resolutions: 0,
+          child_processes: 0,
+          full_projection_writes: 0,
+          event_writes: 1,
+          durable_writes: 1,
+          write_transactions: 1,
+        },
+      });
+      expect(events[0].measurement.complete_metrics).toEqual(expect.arrayContaining([
+        "full_projection_writes",
+        "event_writes",
+        "write_transactions",
+      ]));
+      expect(events[0].steps).toHaveLength(1);
+      expect(existsSync(join(cwd, ".ai/harness/runs/hook-invocations.jsonl"))).toBe(false);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("HRD-08: production PreEdit resolves Effective State once without a dispatch child", () => {
+    const cwd = tmpWorkspace("hrd08-pre-edit-event");
+    try {
+      initGitRepo(cwd);
+      installHooks(cwd);
+      ensureOptIn(cwd);
+
+      const result = runMutationGuardHook(cwd, {
+        session_id: "session-hrd08",
+        tool_name: "Edit",
+        tool_input: { file_path: "tracked.txt" },
+      });
+      expect(result.status).toBe(2);
+
+      const events = readHookEventTelemetry(cwd);
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({
+        event: "PreToolUse",
+        route_id: "edit",
+        runtime_entries: 1,
+        blocked: true,
+        metrics: { state_resolutions: 1, child_processes: 0 },
+      });
+      expect(events[0].measurement.complete_metrics).toContain("state_resolutions");
+      expect(events[0].steps).toEqual([
+        expect.objectContaining({ name: "mutation-guard", execution: "in_process" }),
+      ]);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test("HRD-08: production Stop observes four logical projection writes in one transaction", () => {
+    const cwd = tmpWorkspace("hrd08-stop-event");
+    try {
+      initGitRepo(cwd);
+      installHooks(cwd);
+      ensureOptIn(cwd);
+
+      const result = runStopHook(cwd, {
+        session_id: "session-hrd08",
+        run_id: "run-hrd08",
+        hook_event_name: "Stop",
+        stop_hook_active: false,
+      });
+      expect(result.status).toBe(0);
+
+      const events = readHookEventTelemetry(cwd);
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({
+        event: "Stop",
+        route_id: "default",
+        runtime_entries: 1,
+        metrics: {
+          state_resolutions: 1,
+          files_written: 4,
+          durable_writes: 4,
+          write_transactions: 1,
+        },
+      });
+      expect(events[0].measurement.complete_metrics).toEqual(expect.arrayContaining([
+        "state_resolutions",
+        "files_written",
+        "write_transactions",
+      ]));
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   test("prompt-guard documents one contract-bound waiver grant without subject-hash repetition", () => {
     const promptGuard = readFileSync(join(ROOT, "assets/hooks/prompt-guard.sh"), "utf-8");
     expect(promptGuard).toContain("acceptance-receipt grant-waiver");

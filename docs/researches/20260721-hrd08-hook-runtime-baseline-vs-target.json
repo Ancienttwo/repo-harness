@@ -1,0 +1,1252 @@
+{
+  "protocol": "loop-engine-hook-diet-report/v2",
+  "generated_at": "2026-07-21T09:05:32.215Z",
+  "dispatch": {
+    "previous_count": 13,
+    "target_max": 11,
+    "current_count": 11,
+    "within_target": true,
+    "script_invocation_count": 7,
+    "routes": [
+      {
+        "event": "SessionStart",
+        "route_id": "default",
+        "matcher": null,
+        "scripts": []
+      },
+      {
+        "event": "PreToolUse",
+        "route_id": "edit",
+        "matcher": "Edit|Write",
+        "scripts": []
+      },
+      {
+        "event": "PreToolUse",
+        "route_id": "subagent",
+        "matcher": "Task|Agent|SendUserMessage",
+        "scripts": [
+          "subagent-return-channel-guard.sh"
+        ]
+      },
+      {
+        "event": "PostToolUse",
+        "route_id": "edit",
+        "matcher": "Edit|Write",
+        "scripts": []
+      },
+      {
+        "event": "PostToolUse",
+        "route_id": "bash",
+        "matcher": "Bash",
+        "scripts": [
+          "post-bash.sh"
+        ]
+      },
+      {
+        "event": "PostToolUse",
+        "route_id": "always",
+        "matcher": null,
+        "scripts": [
+          "post-tool-observer.sh"
+        ]
+      },
+      {
+        "event": "UserPromptSubmit",
+        "route_id": "default",
+        "matcher": null,
+        "scripts": [
+          "prompt-guard.sh"
+        ]
+      },
+      {
+        "event": "UserPromptSubmit",
+        "route_id": "delegation",
+        "matcher": null,
+        "scripts": [
+          "codex-delegation-advisor.sh"
+        ]
+      },
+      {
+        "event": "SubagentStart",
+        "route_id": "context",
+        "matcher": null,
+        "scripts": [
+          "subagent-start-context.sh"
+        ]
+      },
+      {
+        "event": "SubagentStop",
+        "route_id": "quality",
+        "matcher": null,
+        "scripts": [
+          "subagent-stop-quality.sh"
+        ]
+      },
+      {
+        "event": "Stop",
+        "route_id": "default",
+        "matcher": null,
+        "scripts": []
+      }
+    ]
+  },
+  "phase_probe": {
+    "iterations": 20,
+    "baseline_ms": 250,
+    "within_baseline": false,
+    "probes": [
+      {
+        "name": "state-snapshot",
+        "command": "bun src/cli/hook-entry.ts state-snapshot --json",
+        "sample_count": 20,
+        "total_ms": 6615.31,
+        "avg_ms": 330.77,
+        "p50_ms": 326.85,
+        "p95_ms": 356.54,
+        "p99_ms": 431.88,
+        "max_ms": 431.88,
+        "exit_codes": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "within_baseline": false
+      },
+      {
+        "name": "prompt-guard-decision",
+        "command": "bun src/cli/hook-entry.ts prompt-guard-decide",
+        "sample_count": 20,
+        "total_ms": 751,
+        "avg_ms": 37.55,
+        "p50_ms": 37.09,
+        "p95_ms": 39.19,
+        "p99_ms": 39.74,
+        "max_ms": 39.74,
+        "exit_codes": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "within_baseline": true
+      }
+    ]
+  },
+  "session_start_context": {
+    "authority": "synthetic_session_start_subprocess",
+    "command": "bun src/cli/hook-entry.ts SessionStart --route default",
+    "exit_code": 0,
+    "output_bytes": 4163,
+    "context_bytes": 3951,
+    "token_estimate": {
+      "method": "utf8_bytes_div_4",
+      "estimated_tokens": 988
+    },
+    "slo": {
+      "max_estimated_tokens": 1500,
+      "within_slo": true
+    }
+  },
+  "slo": {
+    "within_slo": false,
+    "phase_p95_within_slo": false,
+    "session_start_context_within_slo": true
+  },
+  "runtime_evidence": {
+    "available": true,
+    "authority": "hook-events.jsonl",
+    "protocol": "loop-engine-hook-event/v1",
+    "path": ".ai/harness/runs/hrd08-hook-event-samples.jsonl",
+    "sample_count": 220,
+    "valid_sample_count": 220,
+    "invalid_record_count": 0,
+    "malformed_record_count": 0,
+    "mixed_protocol": false,
+    "duplicate_event_id_count": 0,
+    "coverage": {
+      "routes": [
+        {
+          "event": "SessionStart",
+          "route_id": "default",
+          "sample_count": 20,
+          "complete_sample_count": 0,
+          "coverage": 0,
+          "metrics": {
+            "runtime_entries": {
+              "sample_count": 20,
+              "complete_sample_count": 20,
+              "coverage": 1,
+              "p50": 1,
+              "p95": 1
+            },
+            "state_resolutions": {
+              "sample_count": 20,
+              "complete_sample_count": 20,
+              "coverage": 1,
+              "p50": 1,
+              "p95": 1
+            },
+            "child_processes": {
+              "sample_count": 20,
+              "complete_sample_count": 20,
+              "coverage": 1,
+              "p50": 0,
+              "p95": 0
+            },
+            "files_read": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "files_written": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "durable_writes": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "write_transactions": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "full_projection_writes": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "event_writes": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "elapsed_ms": {
+              "sample_count": 20,
+              "complete_sample_count": 20,
+              "coverage": 1,
+              "p50": 600.55,
+              "p95": 828.96
+            }
+          }
+        },
+        {
+          "event": "PreToolUse",
+          "route_id": "edit",
+          "sample_count": 20,
+          "complete_sample_count": 0,
+          "coverage": 0,
+          "metrics": {
+            "runtime_entries": {
+              "sample_count": 20,
+              "complete_sample_count": 20,
+              "coverage": 1,
+              "p50": 1,
+              "p95": 1
+            },
+            "state_resolutions": {
+              "sample_count": 20,
+              "complete_sample_count": 20,
+              "coverage": 1,
+              "p50": 1,
+              "p95": 1
+            },
+            "child_processes": {
+              "sample_count": 20,
+              "complete_sample_count": 20,
+              "coverage": 1,
+              "p50": 0,
+              "p95": 0
+            },
+            "files_read": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "files_written": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "durable_writes": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "write_transactions": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "full_projection_writes": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "event_writes": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "elapsed_ms": {
+              "sample_count": 20,
+              "complete_sample_count": 20,
+              "coverage": 1,
+              "p50": 381.68,
+              "p95": 429.05
+            }
+          }
+        },
+        {
+          "event": "PreToolUse",
+          "route_id": "subagent",
+          "sample_count": 20,
+          "complete_sample_count": 0,
+          "coverage": 0,
+          "metrics": {
+            "runtime_entries": {
+              "sample_count": 20,
+              "complete_sample_count": 20,
+              "coverage": 1,
+              "p50": 1,
+              "p95": 1
+            },
+            "state_resolutions": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "child_processes": {
+              "sample_count": 20,
+              "complete_sample_count": 20,
+              "coverage": 1,
+              "p50": 1,
+              "p95": 1
+            },
+            "files_read": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "files_written": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "durable_writes": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "write_transactions": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "full_projection_writes": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "event_writes": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "elapsed_ms": {
+              "sample_count": 20,
+              "complete_sample_count": 20,
+              "coverage": 1,
+              "p50": 393.87,
+              "p95": 462.77
+            }
+          }
+        },
+        {
+          "event": "PostToolUse",
+          "route_id": "edit",
+          "sample_count": 20,
+          "complete_sample_count": 0,
+          "coverage": 0,
+          "metrics": {
+            "runtime_entries": {
+              "sample_count": 20,
+              "complete_sample_count": 20,
+              "coverage": 1,
+              "p50": 1,
+              "p95": 1
+            },
+            "state_resolutions": {
+              "sample_count": 20,
+              "complete_sample_count": 20,
+              "coverage": 1,
+              "p50": 0,
+              "p95": 0
+            },
+            "child_processes": {
+              "sample_count": 20,
+              "complete_sample_count": 20,
+              "coverage": 1,
+              "p50": 0,
+              "p95": 0
+            },
+            "files_read": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "files_written": {
+              "sample_count": 20,
+              "complete_sample_count": 20,
+              "coverage": 1,
+              "p50": 1,
+              "p95": 1
+            },
+            "durable_writes": {
+              "sample_count": 20,
+              "complete_sample_count": 20,
+              "coverage": 1,
+              "p50": 1,
+              "p95": 1
+            },
+            "write_transactions": {
+              "sample_count": 20,
+              "complete_sample_count": 20,
+              "coverage": 1,
+              "p50": 1,
+              "p95": 1
+            },
+            "full_projection_writes": {
+              "sample_count": 20,
+              "complete_sample_count": 20,
+              "coverage": 1,
+              "p50": 0,
+              "p95": 0
+            },
+            "event_writes": {
+              "sample_count": 20,
+              "complete_sample_count": 20,
+              "coverage": 1,
+              "p50": 1,
+              "p95": 1
+            },
+            "elapsed_ms": {
+              "sample_count": 20,
+              "complete_sample_count": 20,
+              "coverage": 1,
+              "p50": 558.88,
+              "p95": 649.38
+            }
+          }
+        },
+        {
+          "event": "PostToolUse",
+          "route_id": "bash",
+          "sample_count": 20,
+          "complete_sample_count": 0,
+          "coverage": 0,
+          "metrics": {
+            "runtime_entries": {
+              "sample_count": 20,
+              "complete_sample_count": 20,
+              "coverage": 1,
+              "p50": 1,
+              "p95": 1
+            },
+            "state_resolutions": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "child_processes": {
+              "sample_count": 20,
+              "complete_sample_count": 20,
+              "coverage": 1,
+              "p50": 1,
+              "p95": 1
+            },
+            "files_read": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "files_written": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "durable_writes": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "write_transactions": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "full_projection_writes": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "event_writes": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "elapsed_ms": {
+              "sample_count": 20,
+              "complete_sample_count": 20,
+              "coverage": 1,
+              "p50": 110.8,
+              "p95": 131.18
+            }
+          }
+        },
+        {
+          "event": "PostToolUse",
+          "route_id": "always",
+          "sample_count": 20,
+          "complete_sample_count": 0,
+          "coverage": 0,
+          "metrics": {
+            "runtime_entries": {
+              "sample_count": 20,
+              "complete_sample_count": 20,
+              "coverage": 1,
+              "p50": 1,
+              "p95": 1
+            },
+            "state_resolutions": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "child_processes": {
+              "sample_count": 20,
+              "complete_sample_count": 20,
+              "coverage": 1,
+              "p50": 1,
+              "p95": 1
+            },
+            "files_read": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "files_written": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "durable_writes": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "write_transactions": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "full_projection_writes": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "event_writes": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "elapsed_ms": {
+              "sample_count": 20,
+              "complete_sample_count": 20,
+              "coverage": 1,
+              "p50": 739.98,
+              "p95": 863.88
+            }
+          }
+        },
+        {
+          "event": "UserPromptSubmit",
+          "route_id": "default",
+          "sample_count": 20,
+          "complete_sample_count": 0,
+          "coverage": 0,
+          "metrics": {
+            "runtime_entries": {
+              "sample_count": 20,
+              "complete_sample_count": 20,
+              "coverage": 1,
+              "p50": 1,
+              "p95": 1
+            },
+            "state_resolutions": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "child_processes": {
+              "sample_count": 20,
+              "complete_sample_count": 20,
+              "coverage": 1,
+              "p50": 1,
+              "p95": 1
+            },
+            "files_read": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "files_written": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "durable_writes": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "write_transactions": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "full_projection_writes": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "event_writes": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "elapsed_ms": {
+              "sample_count": 20,
+              "complete_sample_count": 20,
+              "coverage": 1,
+              "p50": 553.31,
+              "p95": 609.54
+            }
+          }
+        },
+        {
+          "event": "UserPromptSubmit",
+          "route_id": "delegation",
+          "sample_count": 20,
+          "complete_sample_count": 0,
+          "coverage": 0,
+          "metrics": {
+            "runtime_entries": {
+              "sample_count": 20,
+              "complete_sample_count": 20,
+              "coverage": 1,
+              "p50": 1,
+              "p95": 1
+            },
+            "state_resolutions": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "child_processes": {
+              "sample_count": 20,
+              "complete_sample_count": 20,
+              "coverage": 1,
+              "p50": 1,
+              "p95": 1
+            },
+            "files_read": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "files_written": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "durable_writes": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "write_transactions": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "full_projection_writes": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "event_writes": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "elapsed_ms": {
+              "sample_count": 20,
+              "complete_sample_count": 20,
+              "coverage": 1,
+              "p50": 393.34,
+              "p95": 474.66
+            }
+          }
+        },
+        {
+          "event": "SubagentStart",
+          "route_id": "context",
+          "sample_count": 20,
+          "complete_sample_count": 0,
+          "coverage": 0,
+          "metrics": {
+            "runtime_entries": {
+              "sample_count": 20,
+              "complete_sample_count": 20,
+              "coverage": 1,
+              "p50": 1,
+              "p95": 1
+            },
+            "state_resolutions": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "child_processes": {
+              "sample_count": 20,
+              "complete_sample_count": 20,
+              "coverage": 1,
+              "p50": 1,
+              "p95": 1
+            },
+            "files_read": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "files_written": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "durable_writes": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "write_transactions": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "full_projection_writes": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "event_writes": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "elapsed_ms": {
+              "sample_count": 20,
+              "complete_sample_count": 20,
+              "coverage": 1,
+              "p50": 457.88,
+              "p95": 583.28
+            }
+          }
+        },
+        {
+          "event": "SubagentStop",
+          "route_id": "quality",
+          "sample_count": 20,
+          "complete_sample_count": 0,
+          "coverage": 0,
+          "metrics": {
+            "runtime_entries": {
+              "sample_count": 20,
+              "complete_sample_count": 20,
+              "coverage": 1,
+              "p50": 1,
+              "p95": 1
+            },
+            "state_resolutions": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "child_processes": {
+              "sample_count": 20,
+              "complete_sample_count": 20,
+              "coverage": 1,
+              "p50": 1,
+              "p95": 1
+            },
+            "files_read": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "files_written": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "durable_writes": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "write_transactions": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "full_projection_writes": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "event_writes": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "elapsed_ms": {
+              "sample_count": 20,
+              "complete_sample_count": 20,
+              "coverage": 1,
+              "p50": 387.27,
+              "p95": 469.03
+            }
+          }
+        },
+        {
+          "event": "Stop",
+          "route_id": "default",
+          "sample_count": 20,
+          "complete_sample_count": 0,
+          "coverage": 0,
+          "metrics": {
+            "runtime_entries": {
+              "sample_count": 20,
+              "complete_sample_count": 20,
+              "coverage": 1,
+              "p50": 1,
+              "p95": 1
+            },
+            "state_resolutions": {
+              "sample_count": 20,
+              "complete_sample_count": 20,
+              "coverage": 1,
+              "p50": 1,
+              "p95": 1
+            },
+            "child_processes": {
+              "sample_count": 20,
+              "complete_sample_count": 20,
+              "coverage": 1,
+              "p50": 0,
+              "p95": 0
+            },
+            "files_read": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "files_written": {
+              "sample_count": 20,
+              "complete_sample_count": 20,
+              "coverage": 1,
+              "p50": 4,
+              "p95": 4
+            },
+            "durable_writes": {
+              "sample_count": 20,
+              "complete_sample_count": 20,
+              "coverage": 1,
+              "p50": 4,
+              "p95": 4
+            },
+            "write_transactions": {
+              "sample_count": 20,
+              "complete_sample_count": 20,
+              "coverage": 1,
+              "p50": 1,
+              "p95": 1
+            },
+            "full_projection_writes": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "event_writes": {
+              "sample_count": 20,
+              "complete_sample_count": 0,
+              "coverage": 0,
+              "p50": 0,
+              "p95": 0
+            },
+            "elapsed_ms": {
+              "sample_count": 20,
+              "complete_sample_count": 20,
+              "coverage": 1,
+              "p50": 400.17,
+              "p95": 588.96
+            }
+          }
+        }
+      ],
+      "metrics": {
+        "runtime_entries": {
+          "sample_count": 220,
+          "complete_sample_count": 220,
+          "coverage": 1,
+          "p50": 1,
+          "p95": 1
+        },
+        "state_resolutions": {
+          "sample_count": 220,
+          "complete_sample_count": 80,
+          "coverage": 0.36,
+          "p50": 0,
+          "p95": 1
+        },
+        "child_processes": {
+          "sample_count": 220,
+          "complete_sample_count": 220,
+          "coverage": 1,
+          "p50": 1,
+          "p95": 1
+        },
+        "files_read": {
+          "sample_count": 220,
+          "complete_sample_count": 0,
+          "coverage": 0,
+          "p50": 0,
+          "p95": 0
+        },
+        "files_written": {
+          "sample_count": 220,
+          "complete_sample_count": 40,
+          "coverage": 0.18,
+          "p50": 0,
+          "p95": 4
+        },
+        "durable_writes": {
+          "sample_count": 220,
+          "complete_sample_count": 40,
+          "coverage": 0.18,
+          "p50": 0,
+          "p95": 4
+        },
+        "write_transactions": {
+          "sample_count": 220,
+          "complete_sample_count": 40,
+          "coverage": 0.18,
+          "p50": 0,
+          "p95": 1
+        },
+        "full_projection_writes": {
+          "sample_count": 220,
+          "complete_sample_count": 20,
+          "coverage": 0.09,
+          "p50": 0,
+          "p95": 0
+        },
+        "event_writes": {
+          "sample_count": 220,
+          "complete_sample_count": 20,
+          "coverage": 0.09,
+          "p50": 0,
+          "p95": 1
+        },
+        "elapsed_ms": {
+          "sample_count": 220,
+          "complete_sample_count": 220,
+          "coverage": 1,
+          "p50": 456.46,
+          "p95": 761.06
+        }
+      }
+    },
+    "targets": {
+      "runtime_entries": {
+        "metric": "runtime_entries",
+        "route": "all routes",
+        "operator": "exactly",
+        "target": 1,
+        "budget": null,
+        "sample_count": 220,
+        "complete_sample_count": 220,
+        "coverage": 1,
+        "p50": 1,
+        "p95": 1,
+        "pass": true,
+        "budget_pass": null
+      },
+      "child_processes": {
+        "metric": "child_processes",
+        "route": "all routes",
+        "operator": "at_most",
+        "target": 1,
+        "budget": null,
+        "sample_count": 220,
+        "complete_sample_count": 220,
+        "coverage": 1,
+        "p50": 1,
+        "p95": 1,
+        "pass": true,
+        "budget_pass": null
+      },
+      "state_resolutions": {
+        "metric": "state_resolutions",
+        "route": [
+          "PreToolUse/edit",
+          "Stop/default"
+        ],
+        "operator": "exactly",
+        "target": 1,
+        "budget": null,
+        "sample_count": 40,
+        "complete_sample_count": 40,
+        "coverage": 1,
+        "p50": 1,
+        "p95": 1,
+        "pass": true,
+        "budget_pass": null
+      },
+      "pre_edit_p95_ms": {
+        "metric": "elapsed_ms",
+        "route": "PreToolUse/edit",
+        "operator": "p95_at_most",
+        "target": 150,
+        "budget": 250,
+        "sample_count": 20,
+        "complete_sample_count": 20,
+        "coverage": 1,
+        "p50": 381.68,
+        "p95": 429.05,
+        "pass": false,
+        "budget_pass": false
+      },
+      "post_edit_full_projection_writes": {
+        "metric": "full_projection_writes",
+        "route": "PostToolUse/edit",
+        "operator": "exactly",
+        "target": 0,
+        "budget": null,
+        "sample_count": 20,
+        "complete_sample_count": 20,
+        "coverage": 1,
+        "p50": 0,
+        "p95": 0,
+        "pass": true,
+        "budget_pass": null
+      },
+      "post_edit_event_writes": {
+        "metric": "event_writes",
+        "route": "PostToolUse/edit",
+        "operator": "at_most",
+        "target": 1,
+        "budget": null,
+        "sample_count": 20,
+        "complete_sample_count": 20,
+        "coverage": 1,
+        "p50": 1,
+        "p95": 1,
+        "pass": true,
+        "budget_pass": null
+      },
+      "stop_write_transactions": {
+        "metric": "write_transactions",
+        "route": "Stop/default",
+        "operator": "at_most",
+        "target": 1,
+        "budget": null,
+        "sample_count": 20,
+        "complete_sample_count": 20,
+        "coverage": 1,
+        "p50": 1,
+        "p95": 1,
+        "pass": true,
+        "budget_pass": null
+      }
+    }
+  },
+  "guard_regression": {
+    "required_command": "bun test tests/hook-runtime.test.ts",
+    "status": "external_required"
+  }
+}

@@ -68,7 +68,7 @@
           "strict_worktree"
         ],
         "side_effects": [
-          ".ai/harness/runs/hook-invocations.jsonl",
+          ".ai/harness/runs/hook-events.jsonl",
           ".ai/harness/state/effective.json"
         ],
         "missing_semantic_fields": []
@@ -124,7 +124,7 @@
           "strict_worktree"
         ],
         "side_effects": [
-          ".ai/harness/runs/hook-invocations.jsonl",
+          ".ai/harness/runs/hook-events.jsonl",
           ".ai/harness/state/effective.json"
         ],
         "missing_semantic_fields": []
@@ -179,7 +179,7 @@
         ],
         "side_effects": [
           ".ai/harness/failures/latest.jsonl",
-          ".ai/harness/runs/hook-invocations.jsonl",
+          ".ai/harness/runs/hook-events.jsonl",
           ".ai/harness/state/circuit-breaker.json",
           ".ai/harness/state/effective.json"
         ],
@@ -230,7 +230,7 @@
           ".ai/harness/events.jsonl",
           ".ai/harness/handoff/current.md",
           ".ai/harness/handoff/resume.md",
-          ".ai/harness/runs/hook-invocations.jsonl",
+          ".ai/harness/runs/hook-events.jsonl",
           ".ai/harness/runs/loop-semantics-lite-stop.json",
           ".ai/harness/state/effective.json"
         ],
@@ -278,7 +278,7 @@
           ".ai/harness/events.jsonl",
           ".ai/harness/handoff/current.md",
           ".ai/harness/handoff/resume.md",
-          ".ai/harness/runs/hook-invocations.jsonl",
+          ".ai/harness/runs/hook-events.jsonl",
           ".ai/harness/runs/loop-semantics-standard-stop.json",
           ".ai/harness/state/effective.json"
         ],
@@ -328,7 +328,7 @@
           ".ai/harness/events.jsonl",
           ".ai/harness/handoff/current.md",
           ".ai/harness/handoff/resume.md",
-          ".ai/harness/runs/hook-invocations.jsonl",
+          ".ai/harness/runs/hook-events.jsonl",
           ".ai/harness/runs/loop-semantics-strict-stop.json",
           ".ai/harness/state/effective.json"
         ],

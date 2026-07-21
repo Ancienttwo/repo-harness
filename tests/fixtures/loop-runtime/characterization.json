@@ -21,7 +21,7 @@
       "stdout": "",
       "stderr": "",
       "write_set": [
-        ".ai/harness/runs/hook-invocations.jsonl",
+        ".ai/harness/runs/hook-events.jsonl",
         ".ai/harness/security/latest.json",
         ".ai/harness/security/state.sha256",
         ".ai/harness/state/effective.json"
@@ -47,7 +47,7 @@
       "stderr": "[SpecGuard] Implementation edit to src/example.ts without docs/spec.md.\n  Fix: Run repo-harness run new-spec and capture stable product intent before implementing.\n",
       "write_set": [
         ".ai/harness/failures/latest.jsonl",
-        ".ai/harness/runs/hook-invocations.jsonl",
+        ".ai/harness/runs/hook-events.jsonl",
         ".ai/harness/state/circuit-breaker.json",
         ".ai/harness/state/effective.json"
       ]
@@ -71,7 +71,7 @@
       "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"allow\",\"permissionDecisionReason\":\"subagent-return-channel-guard: delivery contract appended to spawn prompt\",\"updatedInput\":{\"description\":\"Explore repo\",\"prompt\":\"Investigate the codebase and report findings.\\n\\n[repo-harness:return-channel] Your final text message is the only channel returned to your caller. Put the complete findings/report in final text. Do not call SendUserMessage for report delivery; content sent through SendUserMessage is delivered outside the Agent tool result.\"}}}\n",
       "stderr": "",
       "write_set": [
-        ".ai/harness/runs/hook-invocations.jsonl"
+        ".ai/harness/runs/hook-events.jsonl"
       ]
     },
     {
@@ -94,7 +94,7 @@
       "stderr": "",
       "write_set": [
         ".ai/harness/journal/post-edit/pending/ec3c6c9f5f027d340359.json",
-        ".ai/harness/runs/hook-invocations.jsonl"
+        ".ai/harness/runs/hook-events.jsonl"
       ]
     },
     {
@@ -117,7 +117,7 @@
       "stderr": "",
       "write_set": [
         ".ai/harness/checks/post-bash-latest.json",
-        ".ai/harness/runs/hook-invocations.jsonl"
+        ".ai/harness/runs/hook-events.jsonl"
       ]
     },
     {
@@ -139,7 +139,7 @@
       "stdout": "",
       "stderr": "",
       "write_set": [
-        ".ai/harness/runs/hook-invocations.jsonl",
+        ".ai/harness/runs/hook-events.jsonl",
         ".claude/.session-id",
         ".claude/.trace.jsonl"
       ]
@@ -163,7 +163,7 @@
       "stdout": "",
       "stderr": "",
       "write_set": [
-        ".ai/harness/runs/hook-invocations.jsonl"
+        ".ai/harness/runs/hook-events.jsonl"
       ]
     },
     {
@@ -185,7 +185,7 @@
       "stdout": "",
       "stderr": "",
       "write_set": [
-        ".ai/harness/runs/hook-invocations.jsonl"
+        ".ai/harness/runs/hook-events.jsonl"
       ]
     },
     {
@@ -207,7 +207,7 @@
       "stdout": "{\"hookSpecificOutput\":{\"hookEventName\":\"SubagentStart\",\"additionalContext\":\"[repo-harness:subagent-context]\\n\\nRead the active repo-harness contract before working.\\nStay within the assigned role and permission scope.\\nDo not broaden the task.\\nExplorer and reviewer roles are read-only unless the parent prompt explicitly assigns a writable worker scope.\\n\\nReturn complete findings in your final response, including:\\n- files and symbols inspected\\n- evidence\\n- risks or uncertainty\\n- tests or commands run when relevant\\n- recommended parent action\\n\\nDo not claim overall task completion.\\n\\nExecution boundary: implement exactly the Goal, In scope items, Allowed Paths, and Exit Criteria in this brief. Treat absent requirements as forbidden design space, not as permission to improve.\\n\\nDo not add optional features, alternate UX, extra integrations, migration paths, compatibility behavior, fallback behavior, telemetry, broad cleanup, refactors, new abstractions, extra docs, or polish unless that work is explicitly listed under In scope or required by Exit Criteria.\\n\\nIf you discover useful additional work, record it under Out of scope / Future work in the notes or review artifact. Do not implement it. Do not end with unsolicited offers to do more work.\\n\\nIf the requested outcome cannot be completed without expanding scope, fail closed: stop, name the missing decision, and cite the exact file/section that blocks execution.\"}}\n",
       "stderr": "",
       "write_set": [
-        ".ai/harness/runs/hook-invocations.jsonl",
+        ".ai/harness/runs/hook-events.jsonl",
         ".ai/harness/state/circuit-breaker.json"
       ]
     },
@@ -230,7 +230,7 @@
       "stdout": "",
       "stderr": "",
       "write_set": [
-        ".ai/harness/runs/hook-invocations.jsonl"
+        ".ai/harness/runs/hook-events.jsonl"
       ]
     },
     {
@@ -256,7 +256,7 @@
         ".ai/harness/handoff/current.md",
         ".ai/harness/handoff/resume.md",
         ".ai/harness/runs/characterization-run.json",
-        ".ai/harness/runs/hook-invocations.jsonl",
+        ".ai/harness/runs/hook-events.jsonl",
         ".ai/harness/state/effective.json"
       ]
     }
