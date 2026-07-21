@@ -292,13 +292,18 @@ authority.
 ## 2026-07-21 Single Acceptance Authority
 
 - The contract's strict `## Acceptance Policy` block freezes reviewer identity
-  and whether the named owner may issue `user_waiver`. The host-owned
-  AcceptanceReceipt is the only semantic closeout authority; its closed
-  dispositions are `external_pass`, `user_waiver`, and `reject`.
+  and whether the named owner may issue `user_waiver`. One host-owned
+  UserWaiverGrant records that owner decision against stable contract/goal
+  authority. The host-owned AcceptanceReceipt is the exact closeout authority;
+  its closed dispositions are `external_pass`, `user_waiver`, and `reject`.
 - `verify-sprint --prepare-acceptance` freezes canonical verification evidence.
   Receipt verification binds that evidence, normalized implementation content,
   goal, contract, benchmark evidence, reviewed paths, and target revision.
-  Review Markdown is a generated projection and cannot authorize closeout.
+  Semantic changes invalidate the receipt and require fresh evidence, while an
+  unchanged valid waiver grant may rematerialize the new exact receipt without
+  repeating the owner's decision. Contract/goal authority changes or explicit
+  revocation invalidate the grant. Review Markdown is a generated projection
+  and cannot authorize closeout.
 - `merge-gate.ts` is now a deterministic local seal. The former host-only
   merge-gate skill/agent and internal Claude call are removed. Lifecycle-only
   head movement is checked against the declared archive manifest; a later
