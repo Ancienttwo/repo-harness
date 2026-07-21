@@ -947,6 +947,17 @@ ${rubric:-[ReviewRubric] Deep Diff Review Rubric v2 unavailable; use severity or
 
 Use disposition "reject" with at least one P0/P1/P2/P3 finding when acceptance fails. Provider unavailability produces no receipt and fails closed. After receiving the JSON, record it with acceptance-receipt.ts; the Markdown review section is generated projection only.
 EOF_EXTERNAL_ACCEPTANCE
+
+  cat <<EOF_USER_WAIVER
+[ExternalAcceptance] If the contract owner chooses the allowed user-waiver path:
+1. Obtain one explicit owner decision for this contract/goal authority. Do not ask the owner to quote or track a subject hash; the helper binds the verified subject.
+2. Record that decision once:
+   repo-harness run acceptance-receipt grant-waiver --contract "$contract_file_local" --actor "<contract owner>" --summary "<accepted bounded risk>"
+3. After each fresh passing verify-sprint evidence bundle, materialize the exact receipt:
+   repo-harness run acceptance-receipt record --contract "$contract_file_local" --verification "$checks_file" --review "$review_file" --disposition user_waiver
+
+A semantic correction still invalidates the old receipt and requires fresh verification. The same grant may rematerialize the new exact receipt while contract/goal authority is unchanged, without asking the owner again. This grant never authorizes provider disclosure or merge.
+EOF_USER_WAIVER
 }
 
 # --- Action rendering ---
@@ -1254,7 +1265,7 @@ if [ "$done_intent" -eq 1 ]; then
     hook_structured_error \
       "AcceptanceReceiptGuard" \
       "${external_message:-A valid AcceptanceReceipt is missing.}" \
-      "Run verify-sprint --prepare-acceptance, obtain acceptance via $(workflow_acceptance_expected_source 2>/dev/null || printf 'the contract reviewer'), record the typed AcceptanceReceipt, and run verify-sprint before marking work done." \
+      "Run verify-sprint --prepare-acceptance, then record external acceptance or materialize user_waiver from one valid contract-bound UserWaiverGrant; do not ask the owner to repeat a subject hash." \
       "quality_gate"
     exit 2
   fi

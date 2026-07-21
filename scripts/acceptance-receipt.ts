@@ -9,6 +9,7 @@ import {
   readFileSync,
   realpathSync,
   renameSync,
+  unlinkSync,
   writeFileSync,
 } from 'fs';
 import { userInfo } from 'os';
@@ -30,7 +31,7 @@ export type AcceptanceFinding = {
 };
 
 export type AcceptanceReceipt = {
-  protocol: 1;
+  protocol: 2;
   kind: 'repo-harness-acceptance-receipt';
   repository_root: string;
   contract_file: string;
@@ -52,6 +53,21 @@ export type AcceptanceReceipt = {
   actor: string | null;
   summary: string;
   findings: AcceptanceFinding[];
+  waiver_grant_sha256: string | null;
+  issued_at: string;
+};
+
+export type UserWaiverGrant = {
+  protocol: 1;
+  kind: 'repo-harness-user-waiver-grant';
+  repository_root: string;
+  contract_file: string;
+  contract_sha256: string;
+  goal_file: string;
+  goal_sha256: string;
+  actor: string;
+  scope: 'contract-authority';
+  summary: string;
   issued_at: string;
 };
 
@@ -84,6 +100,13 @@ function fail(message: string, code = 1): never {
 
 function sha256(value: string | Buffer): string {
   return `sha256:${createHash('sha256').update(value).digest('hex')}`;
+}
+
+function stableJson(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`).join(',')}}`;
 }
 
 function authorityFingerprint(content: string): string {
@@ -237,6 +260,20 @@ export function acceptanceReceiptPath(root: string, authorityHome: string, creat
   return join(parent, 'acceptance.latest.json');
 }
 
+export function userWaiverGrantPath(root: string, authorityHome: string, createParent = false): string {
+  const repoId = createHash('sha256').update(realpathSync(root)).digest('hex');
+  const parent = join(stateRoot(authorityHome), 'gates', repoId);
+  if (createParent) {
+    mkdirSync(parent, { recursive: true, mode: 0o700 });
+    chmodSync(parent, 0o700);
+  }
+  return join(parent, 'user-waiver-grant.latest.json');
+}
+
+function waiverGrantFingerprint(grant: UserWaiverGrant): string {
+  return sha256(stableJson(grant));
+}
+
 function validateFindings(value: unknown): AcceptanceFinding[] {
   if (!Array.isArray(value)) fail('findings must be an array');
   return value.map((entry, index) => {
@@ -287,7 +324,7 @@ function readReceipt(path: string): AcceptanceReceipt {
   } catch (error) {
     fail(`AcceptanceReceipt is invalid JSON: ${(error as Error).message}`);
   }
-  if (!isRecord(value) || value.protocol !== 1 || value.kind !== 'repo-harness-acceptance-receipt') {
+  if (!isRecord(value) || value.protocol !== 2 || value.kind !== 'repo-harness-acceptance-receipt') {
     fail('AcceptanceReceipt kind/protocol is invalid');
   }
   const requiredStrings = [
@@ -304,11 +341,17 @@ function readReceipt(path: string): AcceptanceReceipt {
   if (!['Claude', 'Codex', 'User'].includes(String(value.reviewer))) fail('AcceptanceReceipt reviewer is invalid');
   if (!['claude-review', 'codex-review', 'user-waiver'].includes(String(value.source))) fail('AcceptanceReceipt source is invalid');
   if (value.actor !== null && (typeof value.actor !== 'string' || value.actor.trim() === '')) fail('AcceptanceReceipt actor is invalid');
+  if (value.waiver_grant_sha256 !== null && !/^sha256:[0-9a-f]{64}$/.test(String(value.waiver_grant_sha256))) {
+    fail('AcceptanceReceipt waiver_grant_sha256 is invalid');
+  }
   for (const field of ['contract_sha256', 'goal_sha256', 'verification_evidence_sha256', 'subject_sha256']) {
     if (!/^sha256:[0-9a-f]{64}$/.test(String(value[field]))) fail(`AcceptanceReceipt ${field} is invalid`);
   }
   if (!Array.isArray(value.reviewed_paths) || value.reviewed_paths.some((entry) => typeof entry !== 'string')) {
     fail('AcceptanceReceipt reviewed_paths must be strings');
+  }
+  if ((value.disposition === 'user_waiver') !== (value.waiver_grant_sha256 !== null)) {
+    fail('AcceptanceReceipt waiver grant binding does not match disposition');
   }
   return { ...value, findings: validateFindings(value.findings) } as AcceptanceReceipt;
 }
@@ -316,6 +359,37 @@ function readReceipt(path: string): AcceptanceReceipt {
 function writeReceipt(path: string, receipt: AcceptanceReceipt): void {
   const temporary = `${path}.${process.pid}.tmp`;
   writeFileSync(temporary, `${JSON.stringify(receipt, null, 2)}\n`, { mode: 0o600 });
+  chmodSync(temporary, 0o600);
+  renameSync(temporary, path);
+}
+
+function readUserWaiverGrant(path: string): UserWaiverGrant {
+  if (!existsSync(path)) fail(`UserWaiverGrant is missing: ${path}`);
+  let value: unknown;
+  try {
+    value = JSON.parse(readFileSync(path, 'utf-8'));
+  } catch (error) {
+    fail(`UserWaiverGrant is invalid JSON: ${(error as Error).message}`);
+  }
+  if (!isRecord(value) || value.protocol !== 1 || value.kind !== 'repo-harness-user-waiver-grant') {
+    fail('UserWaiverGrant kind/protocol is invalid');
+  }
+  for (const field of [
+    'repository_root', 'contract_file', 'contract_sha256', 'goal_file', 'goal_sha256',
+    'actor', 'scope', 'summary', 'issued_at',
+  ]) {
+    if (typeof value[field] !== 'string' || String(value[field]).trim() === '') fail(`UserWaiverGrant ${field} is required`);
+  }
+  if (value.scope !== 'contract-authority') fail('UserWaiverGrant scope is invalid');
+  for (const field of ['contract_sha256', 'goal_sha256']) {
+    if (!/^sha256:[0-9a-f]{64}$/.test(String(value[field]))) fail(`UserWaiverGrant ${field} is invalid`);
+  }
+  return value as UserWaiverGrant;
+}
+
+function writeUserWaiverGrant(path: string, grant: UserWaiverGrant): void {
+  const temporary = `${path}.${process.pid}.tmp`;
+  writeFileSync(temporary, `${JSON.stringify(grant, null, 2)}\n`, { mode: 0o600 });
   chmodSync(temporary, 0o600);
   renameSync(temporary, path);
 }
@@ -335,6 +409,129 @@ function resolveArchived(root: string, path: string, family: 'plans' | 'tasks', 
   return matches[0];
 }
 
+export function recordUserWaiverGrant(args: {
+  root: string;
+  authorityHome: string;
+  contract: string;
+  actor: string;
+  summary: string;
+  now?: () => Date;
+}): UserWaiverGrant {
+  if (args.summary.trim() === '') fail('waiver grant summary is required');
+  const root = realpathSync(args.root);
+  const contract = readRegular(root, args.contract, 'contract');
+  const policy = parseAcceptancePolicy(contract.content);
+  if (policy.user_waiver !== 'allowed') fail('contract forbids user waiver');
+  const owner = markdownHeader(contract.content, 'Owner');
+  const goalPath = markdownHeader(contract.content, 'Plan');
+  if (!owner || !goalPath) fail('contract Owner and Plan headers are required');
+  if (args.actor !== owner) fail('UserWaiverGrant actor must equal the contract owner');
+  const goal = readRegular(root, goalPath, 'goal');
+  const grant: UserWaiverGrant = {
+    protocol: 1,
+    kind: 'repo-harness-user-waiver-grant',
+    repository_root: root,
+    contract_file: contract.path,
+    contract_sha256: authorityFingerprint(contract.content),
+    goal_file: goal.path,
+    goal_sha256: authorityFingerprint(goal.content),
+    actor: args.actor,
+    scope: 'contract-authority',
+    summary: args.summary,
+    issued_at: (args.now ?? (() => new Date()))().toISOString(),
+  };
+  writeUserWaiverGrant(userWaiverGrantPath(root, args.authorityHome, true), grant);
+  return grant;
+}
+
+export function verifyUserWaiverGrant(args: {
+  root: string;
+  authorityHome: string;
+  contract?: string;
+}): UserWaiverGrant {
+  const root = realpathSync(args.root);
+  const grant = readUserWaiverGrant(userWaiverGrantPath(root, args.authorityHome));
+  if (grant.repository_root !== root) fail('UserWaiverGrant repository root is stale');
+  const contractPath = args.contract ?? resolveArchived(root, grant.contract_file, 'tasks', grant.contract_sha256);
+  const contract = readRegular(root, contractPath, 'contract');
+  if (contract.path !== grant.contract_file) {
+    const originalStillExists = existsSync(resolve(root, grant.contract_file));
+    if (originalStillExists || !contract.path.startsWith('tasks/archive/')) {
+      fail('UserWaiverGrant contract file is stale');
+    }
+  }
+  if (authorityFingerprint(contract.content) !== grant.contract_sha256) fail('UserWaiverGrant contract authority is stale');
+  const policy = parseAcceptancePolicy(contract.content);
+  if (policy.user_waiver !== 'allowed') fail('contract forbids user waiver');
+  if (markdownHeader(contract.content, 'Owner') !== grant.actor) fail('UserWaiverGrant owner is stale');
+  const goalPath = resolveArchived(root, grant.goal_file, 'plans', grant.goal_sha256);
+  const goal = readRegular(root, goalPath, 'goal');
+  if (authorityFingerprint(goal.content) !== grant.goal_sha256) fail('UserWaiverGrant goal authority is stale');
+  return grant;
+}
+
+export function revokeUserWaiverGrant(args: { root: string; authorityHome: string }): void {
+  const path = userWaiverGrantPath(realpathSync(args.root), args.authorityHome);
+  if (existsSync(path)) unlinkSync(path);
+}
+
+async function acceptanceContext(args: {
+  root: string;
+  contract: string;
+  verification: string;
+}) {
+  const root = realpathSync(args.root);
+  const contract = readRegular(root, args.contract, 'contract');
+  const policy = parseAcceptancePolicy(contract.content);
+  const owner = markdownHeader(contract.content, 'Owner');
+  const goalPath = markdownHeader(contract.content, 'Plan');
+  if (!owner || !goalPath) fail('contract Owner and Plan headers are required');
+  const goal = readRegular(root, goalPath, 'goal');
+  const verification = readRegular(root, args.verification, 'verification evidence');
+  const subject = await currentSubject(root);
+  const evidence = normalizedVerificationEvidence(verification.content, subject.review_subject_sha256);
+  return { root, contract, policy, owner, goal, verification, subject, evidence };
+}
+
+function buildReceipt(
+  context: Awaited<ReturnType<typeof acceptanceContext>>,
+  disposition: AcceptanceDisposition,
+  reviewer: AcceptanceReceipt['reviewer'],
+  source: AcceptanceReceipt['source'],
+  actor: string | null,
+  summary: string,
+  findings: AcceptanceFinding[],
+  waiverGrantSha256: string | null,
+  now: () => Date,
+): AcceptanceReceipt {
+  return {
+    protocol: 2,
+    kind: 'repo-harness-acceptance-receipt',
+    repository_root: context.root,
+    contract_file: context.contract.path,
+    contract_sha256: authorityFingerprint(context.contract.content),
+    goal_file: context.goal.path,
+    goal_sha256: authorityFingerprint(context.goal.content),
+    verification_file: context.verification.path,
+    verification_evidence_sha256: context.evidence.fingerprint,
+    benchmark_evidence_sha256: context.evidence.benchmark,
+    subject_sha256: context.subject.review_subject_sha256,
+    subject_scope: context.subject.scope,
+    target_ref: context.subject.target_ref,
+    target_revision: context.subject.target_rev,
+    reviewed_paths: [...context.subject.paths],
+    disposition,
+    expected_reviewer: context.policy.reviewer,
+    reviewer,
+    source,
+    actor,
+    summary,
+    findings,
+    waiver_grant_sha256: waiverGrantSha256,
+    issued_at: now().toISOString(),
+  };
+}
+
 export async function recordAcceptance(args: {
   root: string;
   authorityHome: string;
@@ -349,43 +546,53 @@ export async function recordAcceptance(args: {
   now?: () => Date;
 }): Promise<AcceptanceReceipt> {
   if (args.summary.trim() === '') fail('acceptance summary is required');
-  const root = realpathSync(args.root);
-  const contract = readRegular(root, args.contract, 'contract');
-  const policy = parseAcceptancePolicy(contract.content);
-  const owner = markdownHeader(contract.content, 'Owner');
-  const goalPath = markdownHeader(contract.content, 'Plan');
-  if (!owner || !goalPath) fail('contract Owner and Plan headers are required');
-  const goal = readRegular(root, goalPath, 'goal');
-  const verification = readRegular(root, args.verification, 'verification evidence');
-  const subject = await currentSubject(root);
-  const evidence = normalizedVerificationEvidence(verification.content, subject.review_subject_sha256);
-  validateDisposition(policy, owner, args.disposition, args.reviewer, args.source, args.actor, args.findings);
-  const receipt: AcceptanceReceipt = {
-    protocol: 1,
-    kind: 'repo-harness-acceptance-receipt',
-    repository_root: root,
-    contract_file: contract.path,
-    contract_sha256: authorityFingerprint(contract.content),
-    goal_file: goal.path,
-    goal_sha256: authorityFingerprint(goal.content),
-    verification_file: verification.path,
-    verification_evidence_sha256: evidence.fingerprint,
-    benchmark_evidence_sha256: evidence.benchmark,
-    subject_sha256: subject.review_subject_sha256,
-    subject_scope: subject.scope,
-    target_ref: subject.target_ref,
-    target_revision: subject.target_rev,
-    reviewed_paths: [...subject.paths],
-    disposition: args.disposition,
-    expected_reviewer: policy.reviewer,
-    reviewer: args.reviewer as AcceptanceReceipt['reviewer'],
-    source: args.source as AcceptanceReceipt['source'],
-    actor: args.actor,
-    summary: args.summary,
-    findings: args.findings,
-    issued_at: (args.now ?? (() => new Date()))().toISOString(),
-  };
-  writeReceipt(acceptanceReceiptPath(root, args.authorityHome, true), receipt);
+  if (args.disposition === 'user_waiver') {
+    fail('user_waiver must be materialized from a valid UserWaiverGrant');
+  }
+  const context = await acceptanceContext(args);
+  validateDisposition(context.policy, context.owner, args.disposition, args.reviewer, args.source, args.actor, args.findings);
+  const receipt = buildReceipt(
+    context,
+    args.disposition,
+    args.reviewer as AcceptanceReceipt['reviewer'],
+    args.source as AcceptanceReceipt['source'],
+    args.actor,
+    args.summary,
+    args.findings,
+    null,
+    args.now ?? (() => new Date()),
+  );
+  writeReceipt(acceptanceReceiptPath(context.root, args.authorityHome, true), receipt);
+  return receipt;
+}
+
+export async function recordUserWaiverAcceptance(args: {
+  root: string;
+  authorityHome: string;
+  contract: string;
+  verification: string;
+  now?: () => Date;
+}): Promise<AcceptanceReceipt> {
+  const context = await acceptanceContext(args);
+  const grant = verifyUserWaiverGrant({
+    root: context.root,
+    authorityHome: args.authorityHome,
+    contract: context.contract.path,
+  });
+  const findings: AcceptanceFinding[] = [];
+  validateDisposition(context.policy, context.owner, 'user_waiver', 'User', 'user-waiver', grant.actor, findings);
+  const receipt = buildReceipt(
+    context,
+    'user_waiver',
+    'User',
+    'user-waiver',
+    grant.actor,
+    grant.summary,
+    findings,
+    waiverGrantFingerprint(grant),
+    args.now ?? (() => new Date()),
+  );
+  writeReceipt(acceptanceReceiptPath(context.root, args.authorityHome, true), receipt);
   return receipt;
 }
 
@@ -416,6 +623,10 @@ export async function verifyAcceptance(args: {
   const evidence = normalizedVerificationEvidence(verification.content, subject.review_subject_sha256);
   if (evidence.fingerprint !== receipt.verification_evidence_sha256) fail('AcceptanceReceipt verification evidence is stale');
   if (receipt.disposition === 'reject') fail('AcceptanceReceipt disposition is reject');
+  if (receipt.disposition === 'user_waiver') {
+    const grant = verifyUserWaiverGrant({ root, authorityHome: args.authorityHome, contract: contract.path });
+    if (waiverGrantFingerprint(grant) !== receipt.waiver_grant_sha256) fail('AcceptanceReceipt waiver grant is stale');
+  }
   validateDisposition(policy, markdownHeader(contract.content, 'Owner'), receipt.disposition, receipt.reviewer, receipt.source, receipt.actor, receipt.findings);
   return receipt;
 }
@@ -469,9 +680,46 @@ export async function runAcceptanceReceiptCli(argv: string[], opts: Options = {}
     console.log(JSON.stringify(parseAcceptancePolicy(contract.content)));
     return 0;
   }
+  if (command === 'grant-waiver') {
+    const grant = recordUserWaiverGrant({
+      root,
+      authorityHome,
+      contract: option(argv, '--contract')!,
+      actor: option(argv, '--actor')!,
+      summary: option(argv, '--summary')!,
+      now: opts.now,
+    });
+    console.log(JSON.stringify(grant));
+    return 0;
+  }
+  if (command === 'verify-waiver-grant') {
+    console.log(JSON.stringify(verifyUserWaiverGrant({
+      root,
+      authorityHome,
+      contract: option(argv, '--contract', false),
+    })));
+    return 0;
+  }
+  if (command === 'revoke-waiver') {
+    revokeUserWaiverGrant({ root, authorityHome });
+    return 0;
+  }
   if (command === 'record') {
     const disposition = option(argv, '--disposition') as AcceptanceDisposition;
     if (!['external_pass', 'user_waiver', 'reject'].includes(disposition)) fail('--disposition is invalid', 2);
+    if (disposition === 'user_waiver') {
+      const receipt = await recordUserWaiverAcceptance({
+        root,
+        authorityHome,
+        contract: option(argv, '--contract')!,
+        verification: option(argv, '--verification')!,
+        now: opts.now,
+      });
+      const review = option(argv, '--review', false);
+      if (review) projectAcceptance(resolve(root, review), receipt);
+      console.log(JSON.stringify(receipt));
+      return 0;
+    }
     const findingsRaw = option(argv, '--findings-json', false) ?? '[]';
     const receipt = await recordAcceptance({
       root,
@@ -516,7 +764,7 @@ export async function runAcceptanceReceiptCli(argv: string[], opts: Options = {}
     projectAcceptance(resolve(root, option(argv, '--review')!), receipt);
     return 0;
   }
-  fail('usage: acceptance-receipt.ts <policy|record|verify|project|path> ...', 2);
+  fail('usage: acceptance-receipt.ts <policy|grant-waiver|verify-waiver-grant|revoke-waiver|record|verify|project|path> ...', 2);
 }
 
 if (import.meta.main) {

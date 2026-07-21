@@ -627,6 +627,14 @@ function gitCommitCount(cwd: string): number {
 }
 
 describe("Hook runtime behavior", () => {
+  test("prompt-guard documents one contract-bound waiver grant without subject-hash repetition", () => {
+    const promptGuard = readFileSync(join(ROOT, "assets/hooks/prompt-guard.sh"), "utf-8");
+    expect(promptGuard).toContain("acceptance-receipt grant-waiver");
+    expect(promptGuard).toContain("Do not ask the owner to quote or track a subject hash");
+    expect(promptGuard).toContain("without asking the owner again");
+    expect(promptGuard).toContain("never authorizes provider disclosure or merge");
+  });
+
   test("prompt-guard: ordinary, review, debug, workflow-discussion, and quoted prompts bypass the classifier", () => {
     const cwd = tmpWorkspace("explicit-first-bypass");
     try {
