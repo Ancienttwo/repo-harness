@@ -75,7 +75,8 @@ event_file=".ai/harness/architecture/events.jsonl"
 helper_sibling() {
   local helper_name="$1"
   local helper_dir="$SCRIPT_DIR"
-  if [[ -n "${REPO_HARNESS_HELPER_SOURCE_PATH:-}" ]]; then
+  if [[ -n "${REPO_HARNESS_HELPER_SOURCE_PATH:-}" && -f "$REPO_HARNESS_HELPER_SOURCE_PATH" \
+        && "$(basename "$REPO_HARNESS_HELPER_SOURCE_PATH")" == "$(basename "${BASH_SOURCE[0]}")" ]]; then
     helper_dir="$(dirname "$REPO_HARNESS_HELPER_SOURCE_PATH")"
   fi
   if [[ -n "$helper_dir" && -f "$helper_dir/$helper_name" ]]; then

@@ -17,7 +17,12 @@ inbox_path=".ai/harness/triage/inbox.md"
 run_id=""
 run_source="manual"
 json_output=0
-SCRIPT_DIR="$(cd "$(dirname "${REPO_HARNESS_HELPER_SOURCE_PATH:-$0}")" && pwd)"
+helper_source="$0"
+if [[ -n "${REPO_HARNESS_HELPER_SOURCE_PATH:-}" && -f "$REPO_HARNESS_HELPER_SOURCE_PATH" \
+      && "$(basename "$REPO_HARNESS_HELPER_SOURCE_PATH")" == "$(basename "$0")" ]]; then
+  helper_source="$REPO_HARNESS_HELPER_SOURCE_PATH"
+fi
+SCRIPT_DIR="$(cd "$(dirname "$helper_source")" && pwd)"
 
 if [[ "${1:-}" == "run" ]]; then
   shift

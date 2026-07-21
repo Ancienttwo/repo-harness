@@ -91,7 +91,12 @@ function prepareInstallerRuntime(home: string, sourceDir: string) {
   return { packageRoot, runtimeScript };
 }
 
-function runInstaller(home: string, sourceDir: string, args: string[] = []) {
+function runInstaller(
+  home: string,
+  sourceDir: string,
+  args: string[] = [],
+  extraEnv: Record<string, string> = {},
+) {
   const runtime = prepareInstallerRuntime(home, sourceDir);
   return spawnSync("bash", [runtime.runtimeScript, ...args], {
     cwd: ROOT,
@@ -99,6 +104,7 @@ function runInstaller(home: string, sourceDir: string, args: string[] = []) {
     env: {
       ...process.env,
       HOME: home,
+      ...extraEnv,
     },
   });
 }
@@ -412,6 +418,37 @@ describe("install-agent-fleet", () => {
       expect(res.stdout).toContain("[fleet] codex/fast-worker.toml: source-missing");
       expect(existsSync(join(home, ".claude/agents/fast-worker.md"))).toBe(false);
       expect(existsSync(join(home, ".claude/agents/deep-reasoner.md"))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("a decoy REPO_HARNESS_HELPER_SOURCE_PATH pointing at a different real helper still fails closed on a bad packaged fixture", () => {
+    const { root, home } = setupFakeHome("install-agent-fleet-decoy-helper-source-path");
+    const partialSourceDir = join(root, "partial-source");
+    try {
+      mkdirSync(partialSourceDir, { recursive: true });
+      cpSync(join(FLEET_SOURCE_DIR, "explorer.md"), join(partialSourceDir, "explorer.md"));
+      cpSync(join(FLEET_SOURCE_DIR, "deep-reasoner.md"), join(partialSourceDir, "deep-reasoner.md"));
+      cpSync(join(FLEET_SOURCE_DIR, "gatekeeper.md"), join(partialSourceDir, "gatekeeper.md"));
+      // fast-worker.md deliberately absent from partialSourceDir, matching the
+      // "missing packaged source" fixture shape above.
+
+      // Simulates the real leak: repo-harness run verify-sprint exports its own
+      // resolved helper path (a different, real, unrelated packaged helper) into
+      // the environment; a nested bun test child then inherits it verbatim. The
+      // installer must reject this decoy (its basename does not match the
+      // runtime script's own $0) and keep resolving package_root from $0.
+      const decoyHelperSourcePath = join(ROOT, "assets/templates/helpers/verify-sprint.sh");
+      expect(existsSync(decoyHelperSourcePath)).toBe(true);
+
+      const res = runInstaller(home, partialSourceDir, [], {
+        REPO_HARNESS_HELPER_SOURCE_PATH: decoyHelperSourcePath,
+      });
+      expect(res.status).not.toBe(0);
+      expect(res.stdout).toContain("[fleet] claude/fast-worker.md: source-missing");
+      expect(res.stdout).toContain("[fleet] codex/fast-worker.toml: source-missing");
+      expect(existsSync(join(home, ".claude/agents/fast-worker.md"))).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

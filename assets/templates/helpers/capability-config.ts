@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { existsSync, mkdirSync, writeFileSync } from "fs";
-import { dirname, resolve } from "path";
+import { basename, dirname, resolve } from "path";
 import { spawnSync } from "child_process";
 import { fileURLToPath } from "url";
 import { readRegistry as readCapabilityRegistry, type Capability, type CapabilityRegistry } from "./capability-resolver";
@@ -31,10 +31,13 @@ type Args = {
 };
 
 const REGISTRY_PATH = ".ai/context/capabilities.json";
-const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
-const HELPER_DIR = process.env.REPO_HARNESS_HELPER_SOURCE_PATH
-  ? dirname(process.env.REPO_HARNESS_HELPER_SOURCE_PATH)
-  : SCRIPT_DIR;
+const OWN_PATH = fileURLToPath(import.meta.url);
+const SCRIPT_DIR = dirname(OWN_PATH);
+const HELPER_SOURCE_PATH = process.env.REPO_HARNESS_HELPER_SOURCE_PATH;
+const HELPER_DIR =
+  HELPER_SOURCE_PATH && existsSync(HELPER_SOURCE_PATH) && basename(HELPER_SOURCE_PATH) === basename(OWN_PATH)
+    ? dirname(HELPER_SOURCE_PATH)
+    : SCRIPT_DIR;
 
 function usage(): never {
   console.error(
