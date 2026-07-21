@@ -31,8 +31,9 @@ records its own merge SHA. The first dependent successor fetches
 `origin/main` after the predecessor merges, pins that exact SHA in its own
 contract, and records it as `POST_<PREDECESSOR>_SHA`. Concretely:
 
-- `VGBR_BASELINE_SHA` — pinned by the VGBR-R contract at fresh fetch time
-  (expected `9e9dce6e...` unless main moves again; re-audit if it has).
+- `VGBR_BASELINE_SHA` — pinned by the VGBR-R contract at fresh fetch time.
+  First pinned `0852e9ab` (2026-07-22); superseded before any invocation
+  consumed it — re-pinned after `vgbr-rf` merges (see Attempt ledger).
 - `POST_VGBR_SHA` — pinned by the EPC-00 contract after VGBR-R merges.
 - `POST_EPC_SHA` — pinned by the SSD activation contract after EPC-09 merges.
 
@@ -109,19 +110,20 @@ machine-checkable acceptance line.
 | # | Status | Task | Mode | Acceptance | Plan |
 |---:|:---:|---|---|---|---|
 | 1 | [x] | `hrd-sprint-closeout` — HRD lifecycle ledger closeout | contract | Done via PR #108 (`dbcfbe75`); HRD sprint header `Done`, lifecycle projections reconciled, docs-only | `plans/plan-20260721-2104-hrd-sprint-closeout.md` |
-| 2 | [ ] | `vgbr-r` — authoritative baseline recovery (eval-only) | contract | One authoritative 3×9 (27-arm) benchmark invocation at pinned `VGBR_BASELINE_SHA` in a detached clean subject checkout; validator + matrix test pass; attempt record shows exactly one invocation; report merged with parallel-change annotation | (create at execution) |
-| 3 | [ ] | `epc-00` — Program reconciliation and design freeze (docs-only) | contract | All nine design decisions (D1–D9 below) frozen with explicit choices; `POST_VGBR_SHA` pinned; sprint rows 4–12 confirmed machine-operable; no production code, `tasks/current.md`, or LSC/HRD semantics touched | (create at execution) |
-| 4 | [ ] | `epc-01` — EvidenceEvent protocol and event store | contract | Single `EvidenceEvent` schema with frozen identity/trust/subject fields; atomic append-only per-worktree store with replay determinism and corrupt-tail recovery tests; no consumer cutover in this package | (create at execution) |
-| 5 | [ ] | `epc-02` — authoritative verify producer | contract | Verify runner emits subject-bound `authoritative_machine` events only; non-subject-bound emission is impossible by construction; fixtures prove subject mismatch fails closed | (create at execution) |
-| 6 | [ ] | `epc-03` — PostBash observed importer | contract | PostBash imports are `observed` trust class only and can never satisfy a machine gate; fixtures prove an observed-only ledger leaves gates unsatisfied | (create at execution) |
-| 7 | [ ] | `epc-04` — manual/external attested import | contract | Manual and external evidence require trust, actor, reason, and subject fields; `external_attested` satisfies gates only where a contract explicitly allows; malformed imports fail closed | (create at execution) |
-| 8 | [ ] | `epc-05` — checks/latest materializer | contract | `checks/latest` is materialized only from the ledger via exact-subject selection (D7); every direct authoring path deleted in this package; no-independent-authoring test passes | (create at execution) |
-| 9 | [ ] | `epc-06` — checkpoint materialization | contract | One checkpoint materialization transaction: accepted events → canonical machine projection → deterministically derived human view; staged install with last-published marker; partial generation detected and rejected; Markdown never becomes writable authority | (create at execution) |
-| 10 | [ ] | `epc-07` — recovery-view inventory and minimal cutover | contract | Consumer inventory for handoff/resume/current/task-handoff complete with keep/merge/retire verdicts; surviving views get one materializer each; retired writers deleted same-package; projection-drift and no-independent-authoring tests pass | (create at execution) |
-| 11 | [ ] | `epc-08` — Context Packet cutover | contract | SessionStart Context Packet served from canonical projections; token budget and p95 measured against the audit's targets with evidence in the report; old assembly path deleted same-package | (create at execution) |
-| 12 | [ ] | `epc-09` — drift check, matched post-eval, release closeout | contract | Cross-package projection-drift check green; deprecation residue scan clean; one matched post-EPC benchmark (same runner/manifest/profiles/rubric, one invocation, descriptive comparison); release notes and Program closeout merged | (create at execution) |
+| 2 | [ ] | `vgbr-rf` — benchmark runner subject immutability fix | contract | Runner setup provably mutates nothing in the frozen subject (observed defect: local-source install flips `src/cli/index.ts` and `src/cli/hook-entry.ts` from mode 0755 to 0777 mid-run); subject hash identical before/after a full runner setup, regression-guarded; in-flight branch `codex/vgbr-benchmark-runner-subject-immutability` is the candidate implementation, ownership adjudication pending | (in flight) |
+| 3 | [ ] | `vgbr-r` — authoritative baseline recovery (eval-only) | contract | One authoritative 3×9 (27-arm) benchmark invocation at the re-pinned post-`vgbr-rf` `VGBR_BASELINE_SHA` in a detached clean subject checkout; validator + matrix test pass; attempt record shows exactly one invocation; report merged with parallel-change annotation | `plans/plan-20260722-0020-vgbr-post-hrd-baseline-recovery.md` |
+| 4 | [ ] | `epc-00` — Program reconciliation and design freeze (docs-only) | contract | All nine design decisions (D1–D9 below) frozen with explicit choices; `POST_VGBR_SHA` pinned; sprint rows 5–13 confirmed machine-operable; no production code, `tasks/current.md`, or LSC/HRD semantics touched | (create at execution) |
+| 5 | [ ] | `epc-01` — EvidenceEvent protocol and event store | contract | Single `EvidenceEvent` schema with frozen identity/trust/subject fields; atomic append-only per-worktree store with replay determinism and corrupt-tail recovery tests; no consumer cutover in this package | (create at execution) |
+| 6 | [ ] | `epc-02` — authoritative verify producer | contract | Verify runner emits subject-bound `authoritative_machine` events only; non-subject-bound emission is impossible by construction; fixtures prove subject mismatch fails closed | (create at execution) |
+| 7 | [ ] | `epc-03` — PostBash observed importer | contract | PostBash imports are `observed` trust class only and can never satisfy a machine gate; fixtures prove an observed-only ledger leaves gates unsatisfied | (create at execution) |
+| 8 | [ ] | `epc-04` — manual/external attested import | contract | Manual and external evidence require trust, actor, reason, and subject fields; `external_attested` satisfies gates only where a contract explicitly allows; malformed imports fail closed | (create at execution) |
+| 9 | [ ] | `epc-05` — checks/latest materializer | contract | `checks/latest` is materialized only from the ledger via exact-subject selection (D7); every direct authoring path deleted in this package; no-independent-authoring test passes | (create at execution) |
+| 10 | [ ] | `epc-06` — checkpoint materialization | contract | One checkpoint materialization transaction: accepted events → canonical machine projection → deterministically derived human view; staged install with last-published marker; partial generation detected and rejected; Markdown never becomes writable authority | (create at execution) |
+| 11 | [ ] | `epc-07` — recovery-view inventory and minimal cutover | contract | Consumer inventory for handoff/resume/current/task-handoff complete with keep/merge/retire verdicts; surviving views get one materializer each; retired writers deleted same-package; projection-drift and no-independent-authoring tests pass | (create at execution) |
+| 12 | [ ] | `epc-08` — Context Packet cutover | contract | SessionStart Context Packet served from canonical projections; token budget and p95 measured against the audit's targets with evidence in the report; old assembly path deleted same-package | (create at execution) |
+| 13 | [ ] | `epc-09` — drift check, matched post-eval, release closeout | contract | Cross-package projection-drift check green; deprecation residue scan clean; one matched post-EPC benchmark (same runner/manifest/profiles/rubric, one invocation, descriptive comparison); release notes and Program closeout merged | (create at execution) |
 
-## Row 2 — VGBR-R protocol
+## Row 3 — VGBR-R protocol
 
 `Task Profile: eval-only`. Purpose: recover a precise, current, verifiable
 authoritative baseline before EPC. Not a re-litigation of history; the
@@ -213,7 +215,22 @@ annotation, the attempt record, and the three canonical report files.
 Forbidden: runner, manifest, tests, production `src/`, LSC/HRD/SSD
 artifacts, any compatibility or fallback surface.
 
-## Row 3 — EPC-00 design freeze (D1–D9)
+### Attempt ledger
+
+- `vgbr-dbcfbe75-20260721-a01` (2026-07-21 21:41–22:18, base `dbcfbe75`,
+  preserved at `origin/codex/vgbr-post-hrd-baseline-recovery` @ `40a33be4`):
+  27/27 producer arms passed and the validator/matrix test passed, but the
+  runner's local-source install step mutated the frozen subject mid-run
+  (file modes `0755` → `0777` on `src/cli/index.ts`, `src/cli/hook-entry.ts`).
+  Correctly self-classified `invalid_report`; no canonical report bytes were
+  copied. Consumed; never rerun. Its recorded conclusion — a separately
+  approved runner-fix package plus a new approved attempt contract — is what
+  backlog row 2 (`vgbr-rf`) implements.
+- The next attempt starts only after `vgbr-rf` merges: fresh fetch, re-pin
+  `VGBR_BASELINE_SHA`, new contract, new attempt record, and a fresh branch
+  name — the original slug's branch is attempt evidence, never revived.
+
+## Row 4 — EPC-00 design freeze (D1–D9)
 
 EPC-00 is the activation authorization for EPC-01: implementation may not
 begin until each decision below is frozen in the EPC-00 deliverable.
@@ -255,11 +272,11 @@ rationale.
 
 EPC-00 also: pins `POST_VGBR_SHA` (R1); records the original VGBR ordering
 gap, the post-HRD recovery decision, and the acknowledged BDD2 parallel
-change in the Program annotation; confirms rows 4–12 acceptance lines;
+change in the Program annotation; confirms rows 5–13 acceptance lines;
 defines the Context Packet token/p95 acceptance numbers for EPC-08 from the
 audit's targets; and confirms the EPC-09 matched post-eval decision below.
 
-## Row 12 — EPC-09 matched post-eval decision
+## Row 13 — EPC-09 matched post-eval decision
 
 Decision (confirmed here, re-affirmed in EPC-00): EPC-09 runs **one matched
 post-EPC benchmark** — same runner, same manifest, same three profile bases,
@@ -287,7 +304,9 @@ SSD keeps its own contract, worktree, branch, and PR
 ## Worktree and branch naming
 
 ```text
-codex/vgbr-post-hrd-baseline-recovery
+codex/vgbr-benchmark-runner-subject-immutability   (vgbr-rf, in flight)
+codex/vgbr-r2-baseline-recovery                    (vgbr-r; fresh name — the
+  original slug branch is voided-attempt evidence and is not revived)
 codex/epc-00-program-canonicalization
 codex/epc-01-evidence-event-store
 codex/epc-02-authoritative-verify-producer
