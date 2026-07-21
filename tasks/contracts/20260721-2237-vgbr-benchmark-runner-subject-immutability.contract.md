@@ -8,10 +8,10 @@
 > **Owner**: kito
 > **Capability ID**: root
 > **Program**: Sprint C (Evidence & Projection Convergence) backlog row 2 `vgbr-rf` — `plans/sprints/20260722-0001-evidence-projection-convergence.sprint.md`
-> **Base SHA**: `e4f649536097e29e3c686666567c0f9f2d133b7b` (`origin/main`, fetched and rebased onto 2026-07-22)
+> **Base SHA**: `61b5ec5960bd5bd763a0c02ebadbe37cba5a2c5f` (`origin/main`, fetched and rebased onto 2026-07-22)
 > **Target Branch**: `main`
 > **PR Unit**: `codex/vgbr-benchmark-runner-subject-immutability` (this branch; not yet opened as a PR)
-> **Last Updated**: 2026-07-22 01:18
+> **Last Updated**: 2026-07-22 05:15
 > **Review File**: `tasks/reviews/20260721-2237-vgbr-benchmark-runner-subject-immutability.review.md`
 > **Notes File**: `tasks/notes/20260721-2237-vgbr-benchmark-runner-subject-immutability.notes.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
@@ -197,9 +197,9 @@ exit_criteria:
     - path: scripts/run-harness-profile-benchmark.ts
       pattern: "assertBenchmarkSubjectUnchanged"
     - path: scripts/run-harness-profile-benchmark.ts
-      pattern: "--ignore-scripts"
+      pattern: "ignore-scripts"
     - path: scripts/run-harness-profile-benchmark.ts
-      pattern: "--no-cli"
+      pattern: "no-cli"
   tests_pass:
     - path: tests/harness-benchmark-matrix.test.ts
   commands_succeed:
@@ -236,6 +236,6 @@ exit_criteria:
 
 ## Rollback Point
 
-- Commit / checkpoint: `e4f649536097e29e3c686666567c0f9f2d133b7b`
+- Commit / checkpoint: `61b5ec5960bd5bd763a0c02ebadbe37cba5a2c5f`
 - Revert strategy: revert the runner/test commit; no schema, report, or data
   migration exists.
