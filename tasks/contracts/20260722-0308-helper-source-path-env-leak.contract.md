@@ -99,6 +99,8 @@ allowed_paths:
   - tasks/todos.md
   - .ai/harness/runs/helper-source-path-env-leak-pre-fix.log
   - .ai/harness/checks/latest.json
+  - .ai/harness/worktrees/helper-source-path-env-leak.json
+  - .ai/hooks/.projection.json
 ```
 
 ## Evidence Requirements

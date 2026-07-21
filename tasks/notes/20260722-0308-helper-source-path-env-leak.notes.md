@@ -4,8 +4,14 @@
 > **Plan**: plans/plan-20260722-0308-helper-source-path-env-leak.md
 > **Contract**: tasks/contracts/20260722-0308-helper-source-path-env-leak.contract.md
 > **Review**: tasks/reviews/20260722-0308-helper-source-path-env-leak.review.md
-> **Last Updated**: 2026-07-22 03:40
+> **Last Updated**: 2026-07-22 03:56
 > **Lifecycle**: notes
+
+## Rebase Log
+
+- 2026-07-22: rebased `codex/helper-source-path-env-leak` from base `aa8575ee68f36e45dc16e580d6b9c8729187c081` onto `origin/main` at `00f6dd56552daa7f1e767565f1f1d5daeb7c6c2d` (two commits: `41eb7536` archive design-options plan / resolve architecture requests / register frontend conventions, `00f6dd56` complete design-options archive moves / drop recovered HANDOFF.md / track vgbr plan). `git rebase origin/main` completed with **zero conflicts** — confirmed via diff-stat that neither upstream commit touches any of the 13 files this package's sweep fixed (including `assets/templates/helpers/verify-sprint.sh` and `check-architecture-sync.sh`, the two files flagged as a possible overlap risk before the rebase); PR #110 (ship-tooling-fixes), which did touch those two files, was already an ancestor of this branch's original fork point (`aa8575ee` is that PR's own merge commit), so its changes were already incorporated, not part of the new range. The only textual overlap was `tasks/todos.md`, auto-merged cleanly by git (my change was a timestamp line; upstream's was a different table row).
+- Updated `.ai/harness/worktrees/helper-source-path-env-leak.json`'s `base_commit` to the new base (`00f6dd56...`) so `verify-sprint`'s `contract_worktree_base_commit()` resolves the correct diff base for allowed_paths/contract scope checks; added that metadata file to this contract's `allowed_paths` since editing it makes it a changed file under scope checking.
+- Notable cross-reference: the rebased-in `tasks/todos.md` row ("Verify-context test isolation heisenbug") describes `tests/install-agent-fleet.test.ts` failing its fail-closed assertions specifically when run through `verify-contract`'s bounded-runner sequence, while every standalone combination passes — discovered during `ship-tooling-fixes` and left as an open, unsolved heisenbug after seven investigation rounds. This is very likely the same defect class this package fixes (or a closely related manifestation of it), since the bounded-runner wrapper (`env -u BASH_ENV bash --noprofile --norc -c "$cmd"` in `scripts/verify-contract.sh:969`) is exactly the leak vector this package's root cause describes. Not delisted here — that row names a heisenbug investigation, not a checklist item this package's contract owns, and confirming full resolution needs another live `verify-sprint` pass under load before claiming it fixed.
 
 ## Design Decisions
 
