@@ -2,7 +2,7 @@
 
 > **Status**: Active
 > **Plan**: plans/plan-20260722-0350-terminal-plans-sweep.md
-> **Task Profile**: ledger-closeout
+> **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: kito
 > **Capability ID**: root
@@ -72,6 +72,7 @@ allowed_paths:
   - plans/
   - tasks/
   - tests/
+  - .ai/hooks/
 ```
 
 ## Evidence Requirements
@@ -127,8 +128,8 @@ exit_criteria:
   commands_succeed:
     - repo-harness run check-task-workflow --strict
     - bash scripts/check-task-sync.sh
-    - bun test
-    - bun src/cli/index.ts adopt --repo . --dry-run
+    - bun test tests/helper-scripts.test.ts
+    - bun test tests/unit/verifier-evidence-lifecycle-cutover.test.ts
 ```
 
 ## Acceptance Notes (Human Review)
