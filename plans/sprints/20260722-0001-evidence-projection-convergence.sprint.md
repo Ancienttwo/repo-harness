@@ -22,6 +22,53 @@ current writers) in the same packages that replace them. No alias, dual
 read/write, semantic fallback, or steady-state migration shim is permitted
 anywhere in this sprint.
 
+## PRD
+
+### Problem
+
+Verification evidence and recovery projections have no single authority.
+`checks/latest` files are authored directly by whichever writer runs last;
+handoff, resume, `tasks/current`, and task-handoff are written by independent
+scripts; and gates read these mutable surfaces as if they were truth. Trust
+levels are implicit, so an observed PostBash side effect is indistinguishable
+from authoritative verification, and a hand-edited Markdown projection can
+silently satisfy an acceptance gate. The Program also lost its ordered
+benchmark baseline: the only authoritative report predates ESA-era `src/cli`
+and `assets` changes, and the first recovery attempt was voided by the runner
+itself mutating the frozen subject mid-run.
+
+### Users
+
+- Agents whose edit/stop/ship gates must consume evidence that is provably
+  authoritative, subject-bound, and current.
+- Maintainers who need recovery surfaces (handoff/resume/current) to be
+  reproducible projections of one ledger instead of divergent hand-written
+  files.
+- Operators who need a trustworthy pre-EPC benchmark baseline and a matched
+  post-EPC comparison to judge what the convergence cost or bought.
+
+### Success Criteria
+
+- One `EvidenceEvent` ledger with typed trust classes is the sole evidence
+  authority; every gate decision traces to accepted event IDs.
+- `checks/latest`, checkpoints, and every surviving recovery view are
+  deterministic materializations with provenance, and their legacy writers
+  are deleted in the same packages that replace them.
+- The Context Packet is served from canonical projections within the audit's
+  token and p95 targets, with measured evidence.
+- An authoritative 27-arm benchmark baseline exists for the exact pre-EPC
+  subject, produced by a runner that provably cannot mutate that subject, and
+  a matched post-EPC run reports the descriptive delta.
+
+### Non-goals
+
+- Re-implementing or re-verifying frozen ESA, LSC, or HRD semantics.
+- Any SSD skill-surface or discovery work before `POST_EPC_SHA` is pinned.
+- Benchmark redesign (four-arm split, provider pinning) — separate approved
+  packages if ever wanted.
+- Steady-state compatibility: no alias, dual read/write, fallback, or
+  long-lived migration shim anywhere in this Program.
+
 ## Program Rules (normative for every row)
 
 ### R1 — Successor-pinned SHA rule
