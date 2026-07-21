@@ -220,8 +220,12 @@ predict_archive_manifest() {
     git -C "$scratch_repo" update-ref "refs/heads/$target_branch" "refs/remotes/origin/$target_branch"
   fi
   if [[ -d .ai/harness/checks ]]; then
-    mkdir -p "$scratch_repo/.ai/harness"
-    cp -Rp .ai/harness/checks "$scratch_repo/.ai/harness/checks"
+    # The scratch clone materializes tracked files such as
+    # .ai/harness/checks/.gitkeep, so the destination directory may already
+    # exist; copy directory contents (src/.) so cp cannot nest a second
+    # checks/ level and hide the evidence from the replay.
+    mkdir -p "$scratch_repo/.ai/harness/checks"
+    cp -Rp .ai/harness/checks/. "$scratch_repo/.ai/harness/checks"
   fi
   for path in .ai/harness/active-plan .ai/harness/active-worktree; do
     if [[ -f "$path" ]]; then
