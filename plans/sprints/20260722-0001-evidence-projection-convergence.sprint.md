@@ -218,7 +218,9 @@ artifacts, any compatibility or fallback surface.
 ### Attempt ledger
 
 - `vgbr-dbcfbe75-20260721-a01` (2026-07-21 21:41–22:18, base `dbcfbe75`,
-  preserved at `origin/codex/vgbr-post-hrd-baseline-recovery` @ `40a33be4`):
+  branch `codex/vgbr-post-hrd-baseline-recovery` @ `40a33be4` — deleted with
+  its worktree after this ledger captured the conclusions, user decision
+  2026-07-22):
   27/27 producer arms passed and the validator/matrix test passed, but the
   runner's local-source install step mutated the frozen subject mid-run
   (file modes `0755` → `0777` on `src/cli/index.ts`, `src/cli/hook-entry.ts`).
