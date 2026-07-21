@@ -40,17 +40,17 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
+> **Disposition**: external_pass
+> **Reviewer**: Claude
+> **Source**: claude-review
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:3a09d8b17395047d341b461a4d5fdba5f2af103b76b17c4d35e8d45ed7b46048
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: 61b5ec5960bd5bd763a0c02ebadbe37cba5a2c5f
+> **Verification Evidence SHA256**: sha256:f0476340034abbeff1537a4a429b81788c61e8d75abe9b0b58a60318218933a1
+> **Issued At**: 2026-07-21T21:53:15.453Z
 
-- Summary: No AcceptanceReceipt has been recorded. Implementation, regression guards, and full verification are complete from the executor's side; external acceptance review is the orchestrator's next step.
+- Summary: Recorder now resolves the same review_base policy key the validator diffs against, fail-closed with no fallback; full callsite sweep keeps genuine merge-back mechanics on merge_back.target; red-then-green fixture with local main one commit behind origin/main proves recorder==validator; 22/22 exit criteria Fulfilled.
 - Findings: none
 
 ## Behavior Diff Notes
