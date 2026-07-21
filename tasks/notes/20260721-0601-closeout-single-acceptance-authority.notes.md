@@ -51,6 +51,11 @@
   `src/effects/state/resolve-effective-state.ts` so the superseded
   `external_acceptance.solo_operator` validator is removed with its retired
   prose authority instead of surviving as a dead compatibility surface.
+- The first real receipt projection exposed a section-replacement bug that the
+  fixture had not covered: projecting twice duplicated the receipt and left the
+  template's `unavailable` body in place. The matcher now replaces exactly one
+  complete Markdown section through the next level-two heading or EOF, and the
+  regression test projects twice to prove idempotence and sibling preservation.
 
 ## Tradeoffs Considered
 

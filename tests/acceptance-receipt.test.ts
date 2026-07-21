@@ -116,7 +116,25 @@ describe('AcceptanceReceipt', () => {
   test('review projection changes do not invalidate acceptance, semantic changes do', async () => {
     const { root, home } = makeFixture();
     const receipt = await externalPass(root, home);
-    projectAcceptance(join(root, 'tasks', 'reviews', 'demo.review.md'), receipt);
+    const reviewPath = join(root, 'tasks', 'reviews', 'demo.review.md');
+    writeFileSync(reviewPath, [
+      '# Review',
+      '',
+      '## Acceptance Receipt Projection',
+      '',
+      '> **Disposition**: unavailable',
+      '',
+      '## Summary',
+      '',
+      '- pending',
+      '',
+    ].join('\n'));
+    projectAcceptance(reviewPath, receipt);
+    projectAcceptance(reviewPath, receipt);
+    const projection = readFileSync(reviewPath, 'utf-8');
+    expect(projection.match(/^## Acceptance Receipt Projection$/gm)).toHaveLength(1);
+    expect(projection).not.toContain('> **Disposition**: unavailable');
+    expect(projection).toContain('## Summary\n\n- pending');
     expect((await verifyAcceptance({ root, authorityHome: home })).disposition).toBe('external_pass');
 
     writeFileSync(join(root, 'feature.txt'), 'semantic change\n');

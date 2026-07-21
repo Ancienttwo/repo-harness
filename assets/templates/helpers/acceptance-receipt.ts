@@ -442,7 +442,7 @@ export function renderAcceptanceProjection(receipt: AcceptanceReceipt): string {
 export function projectAcceptance(reviewPath: string, receipt: AcceptanceReceipt): void {
   const source = readFileSync(reviewPath, 'utf-8');
   const projection = renderAcceptanceProjection(receipt);
-  const pattern = /^## Acceptance Receipt Projection[ \t]*\r?\n[\s\S]*?(?=^## |\s*$)/m;
+  const pattern = /^## Acceptance Receipt Projection[ \t]*(?:\r?\n|$)[\s\S]*?(?=^##[ \t]+|(?![\s\S]))/m;
   const next = pattern.test(source)
     ? source.replace(pattern, `${projection}\n\n`)
     : `${source.trimEnd()}\n\n${projection}\n`;
