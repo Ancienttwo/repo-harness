@@ -524,6 +524,47 @@ describe("archive evidence gates", () => {
     });
   });
 
+  test("predict-manifest merges live checks evidence into the scratch clone instead of nesting it", () => {
+    withTempRepo("archive-workflow-predict-manifest", (cwd) => {
+      installWorkflowArchiveFixture(cwd);
+      // The real repo gitignores the structured checks payload and tracks only
+      // a .gitkeep placeholder (see .gitignore:36 and `git ls-files
+      // .ai/harness/checks/`). A predicted scratch clone therefore always
+      // starts with a pre-existing `.ai/harness/checks/` directory from the
+      // tracked .gitkeep, before the live evidence is compensated in.
+      writeFileSync(join(cwd, ".gitignore"), ".ai/harness/checks/latest.json\n");
+      writeFileSync(join(cwd, ".ai/harness/checks/.gitkeep"), "");
+      writeWorkflowContract(cwd, "Fulfilled");
+      writeWorkflowReview(cwd, "pass", "pass");
+      expect(runProcess("git", ["add", "."], cwd).status).toBe(0);
+      expect(runProcess("git", ["commit", "-m", "commit tracked workflow evidence"], cwd).status).toBe(0);
+      // Written after the commit and matched by .gitignore above: untracked,
+      // valid, passing evidence — exactly what a live interactive worktree
+      // has sitting in .ai/harness/checks/latest.json when finish predicts.
+      writeWorkflowChecks(cwd);
+
+      const output = join(cwd, "predicted-manifest.txt");
+      const result = run(
+        "scripts/archive-workflow.sh",
+        [
+          "--plan", "plans/plan-20260711-1200-demo.md",
+          "--outcome", "Completed",
+          "--timestamp", "20260721-2256",
+          "--timestamp-human", "2026-07-21 22:56",
+          "--parent-run-id", "predict-manifest-test",
+          "--predict-manifest", output,
+        ],
+        cwd,
+      );
+      expect(result.status).toBe(0);
+      expect(existsSync(output)).toBe(true);
+      const manifest = readFileSync(output, "utf-8");
+      expect(manifest).toContain("plans/archive/plan-20260711-1200-demo.md");
+      expect(manifest).toContain("tasks/archive/contract-20260721-2256-demo.md");
+      expect(manifest).toContain("tasks/archive/review-20260721-2256-demo.md");
+    });
+  });
+
   test("current-status refresh failures are returned instead of being ignored", () => {
     withTempRepo("archive-workflow-refresh", (cwd) => {
       installWorkflowArchiveFixture(cwd);
