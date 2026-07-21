@@ -1,6 +1,6 @@
 # Plan: HRD-09 legacy retirement and adopted migration
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260721-1801
 > **Slug**: hrd-09-legacy-retirement-and-adopted-migration
 > **Planning Source**: waza-think

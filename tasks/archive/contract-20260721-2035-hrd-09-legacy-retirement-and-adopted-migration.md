@@ -1,6 +1,12 @@
+> **Archived**: 2026-07-21 20:35
+> **Related Plan**: plans/archive/plan-20260721-1801-hrd-09-legacy-retirement-and-adopted-migration.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260721-2035
+
 # Task Contract: hrd-09-legacy-retirement-and-adopted-migration
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260721-1801-hrd-09-legacy-retirement-and-adopted-migration.md
 > **Task Profile**: migration
 > **Owner**: kito

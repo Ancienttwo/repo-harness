@@ -1,3 +1,9 @@
+> **Archived**: 2026-07-21 20:35
+> **Related Plan**: plans/archive/plan-20260721-1801-hrd-09-legacy-retirement-and-adopted-migration.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260721-2035
+
 # Implementation Notes: hrd-09-legacy-retirement-and-adopted-migration
 
 > **Status**: Active
