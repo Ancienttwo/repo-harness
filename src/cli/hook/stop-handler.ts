@@ -18,10 +18,15 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'fs';
-import { createHash, randomBytes } from 'crypto';
+import { randomBytes } from 'crypto';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'path';
 import { execFileSync } from 'child_process';
 import type { EffectiveState } from '../../core/state/types';
+import {
+  delegationScope,
+  type DelegationScope,
+  withDelegationStateTransaction,
+} from './delegation-state';
 import { consumePendingPostEditEvents } from './mutation-observed';
 import { runMinimalChangeCli } from './minimal-change-cli';
 
@@ -83,11 +88,6 @@ interface NextAction {
   readonly stage: string;
   readonly command: string;
   readonly message: string;
-}
-
-interface DelegationPaths {
-  readonly latestPath: string;
-  readonly statePath: string;
 }
 
 function parsePayload(input: string | Buffer | undefined): StopPayload {
@@ -335,6 +335,12 @@ function atomicWrite(repoRoot: string, path: string, content: string): void {
   }
 }
 
+function sleepMs(milliseconds: number): void {
+  if (milliseconds <= 0) return;
+  const view = new Int32Array(new SharedArrayBuffer(4));
+  Atomics.wait(view, 0, 0, milliseconds);
+}
+
 /** Cross-process parity with workflow-state.sh/session-context.ts event locks. */
 function withEventsLock(repoRoot: string, eventsPath: string, fn: () => void): void {
   const lockRoot = join(dirname(eventsPath), '.locks');
@@ -420,6 +426,51 @@ class StopProjectionBatch {
     this.observer?.(event);
     atomicWrite(this.repoRoot, join(this.repoRoot, runSummary.path), this.content.runSummary);
     this.observer?.(runSummary);
+  }
+}
+
+function claimDelegationFallback(
+  repoRoot: string,
+  payload: StopPayload,
+  env: NodeJS.ProcessEnv,
+  now: Date,
+  beforeLock?: () => void,
+): boolean {
+  const scope = delegationScope(
+    payload as unknown as Record<string, unknown>,
+    env,
+  );
+  const scopes: readonly DelegationScope[] = scope ? [scope] : [];
+  // Keep the rendezvous seam immediately before lock acquisition. The
+  // transaction itself rereads latest and scoped state after acquisition.
+  beforeLock?.();
+  try {
+    return withDelegationStateTransaction(repoRoot, scopes, (transaction) => {
+      const state = transaction.snapshot.state;
+      if (!state) return false;
+      const created = Number(state.created_at_epoch);
+      const age = Number.isFinite(created) ? Math.floor(now.getTime() / 1000) - created : 0;
+      const eligible = state.eligible === true
+        && state.explicit === true
+        && state.spawned !== true
+        && state.fallback_used !== true
+        && state.stop_fallback !== false
+        && age >= 0
+        && age <= 24 * 60 * 60;
+      if (!eligible) return false;
+      const timestamp = now.toISOString();
+      const committed = transaction.commit({
+        ...state,
+        fallback_used: true,
+        fallback_used_at: timestamp,
+        updated_at: timestamp,
+      });
+      return committed !== null;
+    });
+  } catch {
+    // Hook availability is intentionally fail-open when the shared lock is
+    // unavailable or a state projection is malformed.
+    return false;
   }
 }
 
@@ -580,133 +631,6 @@ function planCompletenessBlock(
   return block(`[PlanCompletenessGate] A first planning answer was produced while pending orchestration is still open: ${summary}\n${guidance}${minimalSuffix}`);
 }
 
-function sanitizeScope(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').replace(/-{2,}/g, '-').slice(0, 120);
-}
-
-function firstString(payload: StopPayload, keys: readonly (keyof StopPayload)[]): string {
-  for (const key of keys) {
-    const value = payload[key];
-    if (typeof value === 'string' && value.trim()) return value.trim();
-  }
-  return '';
-}
-
-function delegationScope(payload: StopPayload, env: NodeJS.ProcessEnv): string | null {
-  const turn = firstString(payload, ['turn_id']);
-  if (turn) return `turn-${sanitizeScope(turn)}`;
-  const run = firstString(payload, ['run_id']);
-  if (run) return `run-${sanitizeScope(run)}`;
-  const session = firstString(payload, ['session_id']);
-  if (session) return `session-${sanitizeScope(session)}`;
-  const transcript = firstString(payload, ['transcript_path']);
-  if (transcript) return `transcript-${createHash('sha1').update(transcript).digest('hex').slice(0, 16)}`;
-  const envSession = env.CODEX_SESSION_ID || env.CLAUDE_SESSION_ID || '';
-  return envSession ? `session-${sanitizeScope(envSession)}` : null;
-}
-
-function delegationPaths(repoRoot: string, payload: StopPayload, env: NodeJS.ProcessEnv): DelegationPaths | null {
-  const stateDir = join(repoRoot, '.ai/harness/delegation');
-  const latestPath = join(stateDir, 'latest.json');
-  const latest = readJson(latestPath);
-  if (!latest) return null;
-  if (typeof latest.scope_id === 'string' && latest.scope_id) {
-    const scope = delegationScope(payload, env);
-    if (!scope || scope !== latest.scope_id) return null;
-    const stateFile = typeof latest.state_file === 'string' && latest.state_file
-      ? latest.state_file
-      : join('turns', `${latest.scope_id}.json`);
-    const statePath = resolve(stateDir, stateFile);
-    if (!statePath.startsWith(`${resolve(stateDir)}${sep}`)) return null;
-    try {
-      assertSafeRepoWritePath(repoRoot, latestPath);
-      assertSafeRepoWritePath(repoRoot, statePath);
-    } catch {
-      return null;
-    }
-    return { latestPath, statePath };
-  }
-  try {
-    assertSafeRepoWritePath(repoRoot, latestPath);
-  } catch {
-    return null;
-  }
-  return { latestPath, statePath: latestPath };
-}
-
-function delegationShouldBlock(paths: DelegationPaths | null, now: Date): boolean {
-  if (!paths) return false;
-  const state = readJson(paths.statePath);
-  if (!state) return false;
-  const created = Number(state.created_at_epoch);
-  const age = Number.isFinite(created) ? Math.floor(now.getTime() / 1000) - created : 0;
-  return state.eligible === true
-    && state.explicit === true
-    && state.spawned !== true
-    && state.fallback_used !== true
-    && state.stop_fallback !== false
-    && age >= 0
-    && age <= 24 * 60 * 60;
-}
-
-function sleepMs(milliseconds: number): void {
-  if (milliseconds <= 0) return;
-  const view = new Int32Array(new SharedArrayBuffer(4));
-  Atomics.wait(view, 0, 0, milliseconds);
-}
-
-function acquireLock(path: string): string | null {
-  const deadline = Date.now() + 2_000;
-  for (;;) {
-    const token = randomBytes(8).toString('hex');
-    try {
-      // Keep byte/protocol parity with both surviving bash writers: one
-      // writeFileSync call creates the fixed lock path with O_EXCL and writes
-      // the complete owner marker. There is no empty-marker interval.
-      writeFileSync(
-        path,
-        JSON.stringify({ pid: process.pid, token, acquired_at: new Date().toISOString() }),
-        { flag: 'wx' },
-      );
-      return token;
-    } catch (error) {
-      if (!(error && typeof error === 'object' && 'code' in error && error.code === 'EEXIST')) return null;
-    }
-    if (Date.now() >= deadline) return null;
-    sleepMs(25);
-  }
-}
-
-function releaseLock(path: string, token: string): void {
-  const owner = readJson(path);
-  if (owner?.token !== token) return;
-  try {
-    unlinkSync(path);
-  } catch {
-    // A lock that disappeared after the ownership read is already released.
-  }
-}
-
-function markDelegationFallback(repoRoot: string, paths: DelegationPaths, now: Date, beforeLock?: () => void): void {
-  const state = readJson(paths.statePath);
-  if (!state) return;
-  const timestamp = now.toISOString();
-  const updated = { ...state, fallback_used: true, fallback_used_at: timestamp, updated_at: timestamp };
-  beforeLock?.();
-  if (paths.latestPath !== paths.statePath) atomicWrite(repoRoot, paths.statePath, `${JSON.stringify(updated, null, 2)}\n`);
-  const lockPath = `${paths.latestPath}.lock`;
-  const token = acquireLock(lockPath);
-  if (!token) return;
-  try {
-    const currentLatest = readJson(paths.latestPath);
-    if (currentLatest?.scope_id === state.scope_id) {
-      atomicWrite(repoRoot, paths.latestPath, `${JSON.stringify(updated, null, 2)}\n`);
-    }
-  } finally {
-    releaseLock(lockPath, token);
-  }
-}
-
 export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
   const repoRoot = opts.collector.getRepoRoot();
   const env = opts.env ?? process.env;
@@ -777,9 +701,7 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
   );
   if (planGate) return { ...planGate, stderr: stderr.join('') };
 
-  const paths = delegationPaths(repoRoot, payload, env);
-  if (delegationShouldBlock(paths, now) && paths) {
-    markDelegationFallback(repoRoot, paths, now, dependencies.beforeDelegationLock);
+  if (claimDelegationFallback(repoRoot, payload, env, now, dependencies.beforeDelegationLock)) {
     const result = block(`[DelegationFallback] This turn explicitly requested bounded delegation, but no SubagentStart event was observed. Continue the task now by spawning the independent explorer/reviewer or isolated worker workstreams first when at least two independent workstreams exist, wait for them, reconcile their findings in the parent, then complete the response. Do not spawn for a trivial or strictly sequential task.${minimal.suffix}`);
     return { ...result, stderr: stderr.join('') };
   }

@@ -11,12 +11,16 @@ const CLI = path.join(ROOT, 'src/cli/index.ts');
 function withTempHome(fn: (home: string) => void): void {
   const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'repo-harness-install-')));
   const prev = process.env.HOME;
+  const prevBunInstall = process.env.BUN_INSTALL;
   process.env.HOME = tmp;
+  process.env.BUN_INSTALL = path.join(tmp, '.bun');
   try {
     fn(tmp);
   } finally {
     if (prev === undefined) delete process.env.HOME;
     else process.env.HOME = prev;
+    if (prevBunInstall === undefined) delete process.env.BUN_INSTALL;
+    else process.env.BUN_INSTALL = prevBunInstall;
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 }

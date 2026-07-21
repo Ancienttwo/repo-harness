@@ -336,15 +336,15 @@ function getActivePlan(collector: SessionContextCollector): string | null {
 // top-of-file housekeeping --
 //   workflow_rotate_events_file "$(workflow_events_file)" 2>/dev/null || true
 //   workflow_rotate_events_file ".ai/harness/architecture/events.jsonl" 2>/dev/null || true
-// -- was dropped in the first pass. `workflow_append_event` (still bash,
-// still live: prompt-guard.sh, post-tool-observer.sh, etc.) keeps writing to
-// both files every event; without rotation they grow unbounded. Ported
+// -- was dropped in the first pass. Operator helpers still append lifecycle
+// events, while typed host handlers may write trace/runtime evidence; without
+// rotation those durable files grow unbounded. Ported
 // verbatim from `assets/hooks/lib/workflow-state.sh`'s
 // `workflow_rotate_events_file` / `_locked` / `workflow_with_lock`
 // (thresholds: 2000 lines / 524288 bytes / keep 500), including the mkdir-based
-// mutual-exclusion lock (protects against a concurrent bash hook -- e.g.
-// PostToolUse.always's post-tool-observer.sh -- appending mid-rotation; this
-// is a genuine cross-process race the new architecture still needs to guard
+// mutual-exclusion lock (protects against a concurrent operator helper or
+// typed host process appending mid-rotation; this is a genuine cross-process
+// race the architecture still needs to guard
 // against, not merely an old bash implementation detail). Produces no
 // session content -- pure housekeeping, called before any of the 8
 // sub-blocks below, matching the base script's own call order.

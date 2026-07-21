@@ -15,17 +15,14 @@ import { spawn, spawnSync } from 'child_process';
 import { circuitLimit, recordCircuitAttempt, type CircuitAttempt } from '../src/cli/hook/circuit-breaker';
 import { withExclusiveDirectoryLock } from '../src/effects/locking/exclusive-directory-lock';
 import { runMutationGuard, type MutationGuardCollector } from '../src/cli/hook/mutation-guard';
+import { runSubagentHandler } from '../src/cli/hook/subagent-handler';
+import { runCommandObserved } from '../src/cli/hook/command-observed';
+import { runPromptHandler } from '../src/cli/hook/prompt-handler';
 import { createStateInputCollector } from '../src/effects/loop/state-input-collector';
 import { resolveEffectiveState } from '../src/effects/state/resolve-effective-state';
 import type { EffectiveState } from '../src/core/state/types';
 
-// HRD-03: pre-edit-guard.sh is retired; the OpsPrivateGuard phase below
-// (the only phase of this test that used it -- subagent-start-context.sh
-// and post-bash.sh, the other three phases' scripts, are untouched by this
-// cutover) is retargeted to call the in-process mutation-guard handler
-// directly. OpsPrivateGuard fires on a pure `_ops/*` path-prefix match
-// before any Effective State resolution, so this needs no git repo --
-// matching withRepo's own bare (non-git-initialized) fixture.
+// All real-caller phases invoke the single typed handler authority directly.
 function editHandlerResult(cwd: string, filePath: string): { status: number | null; stdout: string; stderr: string } {
   const collector: MutationGuardCollector = createStateInputCollector({
     event: 'PreToolUse',
@@ -375,34 +372,18 @@ describe('workflow circuit breakers', () => {
   }));
 
   test('real hook callers block guard, subagent, and repair attempts over their limits', () => withRepo((cwd) => {
-    const root = join(import.meta.dir, '..');
-    const hookCli = join(root, 'src/cli/hook-entry.ts');
     const env = {
       ...process.env,
       HOOK_REPO_ROOT: cwd,
-      REPO_HARNESS_HOOK_CLI: hookCli,
       HOOK_HOST: 'codex',
     };
 
-    const runner = join(root, 'assets/hooks/run-hook.sh');
     for (let index = 1; index <= 3; index += 1) {
       const result = editHandlerResult(cwd, '_ops/secret.env');
       expect(result.status).toBe(2);
       if (index < 3) {
-        // Non-tripped blocks: structuredError() writes "[Guard] reason" +
-        // "  Fix: ..." to stderr exactly like the retired script did.
         expect(result.stderr).toContain('Fix:');
       } else {
-        // Tripped: structuredError() returns before ever reaching the
-        // stderr-writing branch (mirrors hook_structured_error's own early
-        // return), so the terminal circuit JSON lands on stdout here. The
-        // ORIGINAL script-based test saw it on stderr only because
-        // run-hook.sh's Codex-host wrapper moves non-`{"guard":`-prefixed
-        // stdout lines to stderr on failure -- a run-hook.sh concern with
-        // its own dedicated coverage (tests/hook-runtime.test.ts's
-        // "run-hook preserves Codex failure status..."), not
-        // mutation-guard.ts's. The decision content asserted below is
-        // unchanged.
         expect(result.stdout).toContain('"tripped":true');
         expect(result.stdout).toContain('terminal:');
         expect(result.stderr).not.toContain('Fix:');
@@ -417,8 +398,8 @@ describe('workflow circuit breakers', () => {
       workflow_profile: 'standard',
     }));
     for (let index = 1; index <= 3; index += 1) {
-      const result = spawnSync('bash', [runner, 'subagent-start-context.sh'], { cwd, env, input: '{}', encoding: 'utf-8' });
-      expect(result.status).toBe(index < 3 ? 0 : 2);
+      const result = runSubagentHandler({ event: 'SubagentStart', repoRoot: cwd, env, input: '{}' });
+      expect(result.exitCode).toBe(index < 3 ? 0 : 2);
       if (index === 3) expect(result.stderr).toContain('"limit":2');
     }
 
@@ -431,20 +412,19 @@ describe('workflow circuit breakers', () => {
     mkdirSync(join(cwd, 'tasks/contracts'), { recursive: true });
     writeFileSync(join(cwd, 'tasks/contracts/20260713-0100-risk.contract.md'), '> **Risk**: high\n');
     for (let index = 1; index <= 4; index += 1) {
-      const result = spawnSync('bash', [runner, 'subagent-start-context.sh'], { cwd, env, input: '{}', encoding: 'utf-8' });
-      expect(result.status).toBe(index < 4 ? 0 : 2);
+      const result = runSubagentHandler({ event: 'SubagentStart', repoRoot: cwd, env, input: '{}' });
+      expect(result.exitCode).toBe(index < 4 ? 0 : 2);
       if (index === 4) expect(result.stderr).toContain('"limit":3');
     }
 
     rmSync(join(cwd, '.ai/harness/state/circuit-breaker.json'));
     for (let index = 1; index <= 3; index += 1) {
-      const result = spawnSync('bash', [runner, 'post-bash.sh'], {
-        cwd,
-        env,
+      const result = runCommandObserved({
+        repoRoot: cwd,
+        env: { ...env, REPO_HARNESS_WORKFLOW_PROFILE: 'standard' },
         input: JSON.stringify({ tool_input: { command: 'bun test' }, tool_output: 'FAIL test', exit_code: 1 }),
-        encoding: 'utf-8',
       });
-      expect(result.status).toBe(index < 3 ? 0 : 2);
+      expect(result.exitCode).toBe(index < 3 ? 0 : 2);
       if (index === 3) expect(result.stderr).toContain('"limit":2');
     }
   }), 30_000);
@@ -463,22 +443,19 @@ describe('workflow circuit breakers', () => {
     expect(spawnSync('git', ['config', 'user.name', 'Test'], { cwd }).status).toBe(0);
     expect(spawnSync('git', ['add', '.'], { cwd }).status).toBe(0);
     expect(spawnSync('git', ['commit', '-m', 'fixture'], { cwd }).status).toBe(0);
-    const prompt = join(root, 'assets/hooks/prompt-guard.sh');
     const env = {
       ...process.env,
       HOOK_REPO_ROOT: cwd,
-      REPO_HARNESS_CLI: join(root, 'src/cli/index.ts'),
-      REPO_HARNESS_HOOK_CLI: join(root, 'src/cli/hook-entry.ts'),
     };
-    const first = spawnSync('bash', [prompt], { cwd, env, input: '{"prompt":"/check"}', encoding: 'utf-8' });
-    expect(first.status).toBe(0);
+    const first = runPromptHandler({ repoRoot: cwd, env, input: '{"prompt":"/check"}' });
+    expect(first.exitCode).toBe(0);
     expect(first.stdout).toContain('[WazaRoute] Review/release intent detected.');
     expect(first.stderr).toContain('"guard":"CrossModelLimit"');
     expect(first.stderr).toContain('"limit":0');
     expect(first.stderr).not.toContain('claude-review');
 
-    const second = spawnSync('bash', [prompt], { cwd, env, input: '{"prompt":"/check"}', encoding: 'utf-8' });
-    expect(second.status).toBe(0);
+    const second = runPromptHandler({ repoRoot: cwd, env, input: '{"prompt":"/check"}' });
+    expect(second.exitCode).toBe(0);
     expect(second.stdout).not.toContain('[WazaRoute] Review/release intent detected.');
     expect(second.stderr).toContain('"guard":"ReviewLimit"');
     expect(second.stderr).toContain('"limit":1');
@@ -498,15 +475,15 @@ describe('workflow circuit breakers', () => {
       '> **Risk**: high',
       '',
     ].join('\n'));
-    const strictFirst = spawnSync('bash', [prompt], { cwd, env, input: '{"prompt":"/check"}', encoding: 'utf-8' });
-    expect(strictFirst.status).toBe(0);
+    const strictFirst = runPromptHandler({ repoRoot: cwd, env, input: '{"prompt":"/check"}' });
+    expect(strictFirst.exitCode).toBe(0);
     expect(strictFirst.stdout).toContain('[WazaRoute] Review/release intent detected.');
     expect(strictFirst.stdout).toContain('[CrossReview]');
-    const strictSecond = spawnSync('bash', [prompt], { cwd, env, input: '{"prompt":"/check"}', encoding: 'utf-8' });
+    const strictSecond = runPromptHandler({ repoRoot: cwd, env, input: '{"prompt":"/check"}' });
     expect(strictSecond.stdout).toContain('[WazaRoute] Review/release intent detected.');
     expect(strictSecond.stderr).toContain('"guard":"CrossModelLimit"');
     expect(strictSecond.stderr).toContain('"limit":1');
-    const strictThird = spawnSync('bash', [prompt], { cwd, env, input: '{"prompt":"/check"}', encoding: 'utf-8' });
+    const strictThird = runPromptHandler({ repoRoot: cwd, env, input: '{"prompt":"/check"}' });
     expect(strictThird.stdout).not.toContain('[WazaRoute] Review/release intent detected.');
     expect(strictThird.stderr).toContain('"guard":"ReviewLimit"');
     expect(strictThird.stderr).toContain('"limit":2');

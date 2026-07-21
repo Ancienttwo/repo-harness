@@ -28,20 +28,32 @@ const pack = await Bun.file(path).json();
 const entry = Array.isArray(pack) ? pack[0] : pack;
 const files = new Set((entry.files ?? []).map((file) => file.path));
 const required = [
-  "assets/hooks/prompt-guard.sh",
-  "assets/hooks/run-hook.sh",
   "assets/hooks/lib/workflow-state.sh",
   "assets/hooks/projection.json",
+  "src/cli/hook/handler-registry.ts",
+  "src/cli/hook/route-registry.ts",
+  "src/cli/hook/runtime.ts",
+  "src/cli/hook/prompt-handler.ts",
   "assets/templates/helpers/capability-resolver.ts",
   "assets/templates/helpers/capability-config.ts",
   "interfaces/effective-state-v1.ts",
   "interfaces/types.ts",
 ];
+const retired = [
+  "assets/hooks/prompt-guard.sh",
+  "assets/hooks/run-hook.sh",
+  "scripts/hook-shim.sh",
+  "scripts/repo-harness.sh",
+];
 const missing = required.filter((file) => !files.has(file));
+const leaked = retired.filter((file) => files.has(file));
 const aiHooks = [...files].filter((file) => file.startsWith(".ai/hooks/"));
-if (missing.length > 0 || aiHooks.length > 0) {
+if (missing.length > 0 || leaked.length > 0 || aiHooks.length > 0) {
   if (missing.length > 0) {
     console.error(`[tarball-smoke] ERROR: package is missing hook assets: ${missing.join(", ")}`);
+  }
+  if (leaked.length > 0) {
+    console.error(`[tarball-smoke] ERROR: package still contains retired hook runtime: ${leaked.join(", ")}`);
   }
   if (aiHooks.length > 0) {
     console.error(`[tarball-smoke] ERROR: package should not depend on .ai/hooks assets: ${aiHooks.join(", ")}`);
@@ -164,6 +176,8 @@ if (plan.protocol !== 1 || plan.command !== "adopt" || plan.apply !== false) {
 }
 JS_EOF
 
+"$CLI" adopt --repo "$TARGET_REPO" --no-verify --no-codegraph --json >"$TMP_DIR/adopt-apply.json"
+
 if ! "$CLI" run check-task-workflow --help >/dev/null; then
   echo "[tarball-smoke] ERROR: packaged 'repo-harness run check-task-workflow --help' failed (run dispatcher / helper lookup / bin startup broken)" >&2
   exit 1
@@ -197,70 +211,10 @@ fi
 
 printf '{"prompt":"review release readiness"}\n' | "$HOOK" prompt-guard-decide >/dev/null
 
-FAKE_HOME="$TMP_DIR/home"
-HARNESS_HOME="$TMP_DIR/repo-harness-home"
-mkdir -p "$FAKE_HOME" "$HARNESS_HOME"
-(cd "$TARGET_REPO" && REPO_HARNESS_HOME="$HARNESS_HOME" HOME="$FAKE_HOME" bash "$APP_DIR/node_modules/repo-harness/scripts/repo-harness.sh" install --target claude >/dev/null)
-
 (cd "$TARGET_REPO" && printf '{"prompt":"inspect repository state"}\n' | \
   HOOK_REPO_ROOT="$TARGET_REPO" \
-  REPO_HARNESS_CLI="$APP_DIR/node_modules/repo-harness/src/cli/index.ts" \
-  bash "$HARNESS_HOME/hooks/run-hook.sh" prompt-guard.sh >/dev/null)
-
-bun - "$APP_DIR/node_modules/repo-harness/assets/hooks" "$HARNESS_HOME/hooks" <<'JS_EOF'
-import { createHash } from "crypto";
-import { readdirSync, readFileSync, statSync } from "fs";
-import { join, relative } from "path";
-
-const [, , assetsRoot, centralRoot] = process.argv;
-
-function rel(path, root) {
-  return relative(root, path).replaceAll("\\", "/");
-}
-
-function collectFiles(root, current = root) {
-  return readdirSync(current, { withFileTypes: true })
-    .sort((a, b) => a.name.localeCompare(b.name))
-    .flatMap((entry) => {
-      const fullPath = join(current, entry.name);
-      if (entry.isDirectory()) return collectFiles(root, fullPath);
-      if (entry.isFile()) return [rel(fullPath, root)];
-      return [];
-    });
-}
-
-function normalizedMode(path) {
-  return (statSync(path).mode & 0o111) === 0 ? "100644" : "100755";
-}
-
-function digest(root, files) {
-  const hash = createHash("sha256");
-  for (const file of files) {
-    const fullPath = join(root, file);
-    hash.update(file);
-    hash.update("\0");
-    hash.update(normalizedMode(fullPath));
-    hash.update("\0");
-    hash.update(readFileSync(fullPath));
-    hash.update("\0");
-  }
-  return `sha256:${hash.digest("hex")}`;
-}
-
-const manifest = JSON.parse(readFileSync(join(assetsRoot, "projection.json"), "utf-8"));
-const packageOnly = new Set(manifest.package_only ?? []);
-const managedAssets = collectFiles(assetsRoot).filter((file) => !packageOnly.has(file));
-const centralFiles = collectFiles(centralRoot).filter((file) => file !== ".version");
-
-if (JSON.stringify(centralFiles) !== JSON.stringify(managedAssets)) {
-  console.error("[tarball-smoke] ERROR: installed central hook file list differs from packaged canonical assets.");
-  process.exit(1);
-}
-if (digest(centralRoot, centralFiles) !== digest(assetsRoot, managedAssets)) {
-  console.error("[tarball-smoke] ERROR: installed central hook digest differs from packaged canonical assets.");
-  process.exit(1);
-}
-JS_EOF
+  HOOK_HOST="claude" \
+  "$HOOK" UserPromptSubmit --route default >/dev/null)
 
 STANDALONE_REPO="$TMP_DIR/standalone-capability-repo"
 mkdir -p "$STANDALONE_REPO/scripts" "$STANDALONE_REPO/.ai/context" "$STANDALONE_REPO/apps/web"

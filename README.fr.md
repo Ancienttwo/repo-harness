@@ -34,7 +34,7 @@ Adresse du dépôt : `https://github.com/Ancienttwo/repo-harness`
   (`src/cli/hook/session-context.ts`) injecte le resume
   packet de la session précédente (`.ai/harness/handoff/resume.md`,
   `tasks/current.md`) ; à la fin de la session et après chaque édition,
-  `finalize-handoff.sh` et `post-edit-guard.sh` réécrivent le handoff suivant. Une
+  les typed handlers `session-context`, `stop` et `mutation-observed` réécrivent le handoff suivant. Une
   tâche peut s'interrompre en cours de route, et la session suivante reprend
   directement avec l'étape suivante exacte, les points de blocage et les fichiers
   modifiés, sans avoir à les redéduire.
@@ -90,34 +90,26 @@ ligne actuelle est `0.10.1`.
 
 ## Comment ça marche
 
-L'ensemble se découpe en trois couches :
+L'ensemble se découpe en trois couches, avec un seul runtime typed pour les host events :
 
 1. **Couche package source** : ce dépôt maintient le CLI, les command skill
    facades, les templates, les hook assets, le workflow contract, les tests et le
    release gate.
 2. **Couche contrat du dépôt cible** : `repo-harness adopt` ou une migration écrit
-   `docs/spec.md`, `plans/`, `tasks/`, `.ai/context/`, `.ai/harness/`, les helper
-   scripts et `.ai/hooks/`.
+   `docs/spec.md`, `plans/`, `tasks/`, `.ai/context/`, `.ai/harness/` et les helper
+   scripts. `.ai/hooks/lib/workflow-state.sh` n'est qu'une projection d'operator helper.
 3. **Couche host adapter** : les `~/.claude/settings.json` et `~/.codex/hooks.json`
    de niveau utilisateur routent les events Claude/Codex vers `repo-harness-hook`.
-   Le hook entrypoint vérifie d'abord si le dépôt courant possède un
-   `.ai/harness/workflow-contract.json` ; sans opt in, il sort silencieusement, et
-   ce n'est qu'avec opt in qu'il entre dans les `.ai/hooks/*` du dépôt courant.
+   Après validation de `.ai/harness/workflow-contract.json`, le route registry
+   appelle exactement un typed handler pour le tuple `event + routeId + matcher`.
 
-Pour `UserPromptSubmit`, l'adapter contract public reste
-`repo-harness-hook UserPromptSubmit --route default`. La route registry du CLI
-dispatche cette route vers `.ai/hooks/prompt-guard.sh`. Le shell hook continue
-d'assurer le parsing du host JSON, la lecture des fichiers de workflow, les
-effets de bord de plan capture, le rendu du quality gate, ainsi qu'un
-stdout/stderr host-safe. La décision sur le prompt intent et le workflow state
-est confiée au TypeScript decision engine derrière
-`repo-harness-hook prompt-guard-decide` ; il renvoie un action enum depuis une
-decision table explicite. Ainsi, la configuration du host reste inchangée, mais
-la couche classifier/state-machine, la plus sujette aux erreurs, n'est plus
-éparpillée dans des branches conditionnelles de shell.
+Tous les events suivent `host adapter -> repo-harness-hook -> route registry ->
+typed handler`. `UserPromptSubmit.default` utilise `prompt`; edit/bash/stop utilisent
+`mutation-observed`, `command-observed` et `stop`. Il n'existe ni second dispatcher
+shell ni runtime différent selon le provider.
 
 Invariant central : les faits persistants vivent dans le dépôt, pas dans la
-fenêtre de chat. Les hooks ne sont que des accélérateurs et des guardrails ;
+fenêtre de chat. Les typed handlers ne sont que des accélérateurs et des guardrails ;
 l'authority réelle, ce sont les fichiers de plan, contract, review, checks et
 handoff.
 
@@ -345,27 +337,28 @@ audité, et ce n'est pas un shell arbitraire.
 
 ## Hook Authority Map
 
-- `.ai/hooks/` est l'unique shared hook implementation qu'il faut éditer en priorité.
-- `~/.claude/settings.json` est l'adapter Claude de niveau utilisateur, chargé de dispatcher vers les opted-in repos.
-- `~/.codex/hooks.json` est l'adapter Codex de niveau utilisateur, qui dispatche vers le même runner.
-- Les hook adapters repo-local `.claude/settings.json` et `.codex/hooks.json` sont une legacy project-level config et doivent être retirés lors de la migration.
-- Codex doit faire confiance à `~/.codex/hooks.json` dans Settings pour que les hooks s'exécutent.
-- Ordre de débogage : user-level adapter config -> `repo-harness-hook` ou fallback `repo-harness hook` -> route registry -> `.ai/hooks/*`.
+`repo-harness-hook` est l'unique host-event runtime. L'adapter de niveau utilisateur
+transmet l'event, puis le route registry utilise le tuple stable `event + routeId + matcher`
+pour appeler exactement un typed handler. `assets/hooks/lib/workflow-state.sh` et
+`.ai/hooks/lib/workflow-state.sh` sont des projections d'operator helper, pas des dispatchers.
 
+- `~/.claude/settings.json` : adapter Claude de niveau utilisateur.
+- `~/.codex/hooks.json` : adapter Codex de niveau utilisateur ; confiance requise dans Settings.
+- `.claude/settings.json` / `.codex/hooks.json` repo-locales : inputs legacy à retirer pendant la migration.
+- Les changements de handler vivent dans `src/cli/hook/` ; synchronisez la projection avec `bun run sync:hooks`.
 
-The installed adapter owns eight managed hook routes. The route tuple
-`event + routeId + matcher` is the stable contract; script names are the current
-implementation under `assets/hooks/` or a repo-pinned `.ai/hooks/` copy.
+The installed adapter owns the managed hook routes. Each route invokes one typed
+handler ; il n'existe ni second runtime shell ni runtime propre à un provider.
 
-| Route | Matcher | Scripts | Function |
+| Route | Matcher | Typed handler | Function |
 | --- | --- | --- | --- |
 | `SessionStart.default` | all sessions | `src/cli/hook/session-context.ts` (in-process builder) | Injects prior handoff, sprint status, and read-only config-security findings before work starts. |
 | `PreToolUse.edit` | `Edit|Write` | `src/cli/hook/mutation-guard.ts` (in-process handler) | Enforces worktree policy and plan/contract readiness before implementation edits. |
-| `PreToolUse.subagent` | `Task|Agent|SendUserMessage` | `subagent-return-channel-guard.sh` | Keeps delegated work returning through the parent session instead of leaking completion claims. |
-| `PostToolUse.edit` | `Edit|Write` | `post-edit-guard.sh` | Records edit traces, refreshes handoff/task status, and queues architecture drift when controlled files change. |
-| `PostToolUse.bash` | `Bash` | `post-bash.sh` | Observes command results and captures verification evidence without replacing the command runner. |
-| `PostToolUse.always` | all tools | `post-tool-observer.sh` | Provides low-noise always-on trace and runtime observation; stale pinned copies soft-skip with a refresh hint. |
-| `UserPromptSubmit.default` | all prompts | `prompt-guard.sh` | Classifies prompt intent, routes planning/check/hunt hints, and renders host-safe workflow guidance. |
+| `PreToolUse.subagent` | `Task|Agent|SendUserMessage` | `subagent` | Keeps delegated work returning through the parent session instead of leaking completion claims. |
+| `PostToolUse.edit` | `Edit|Write` | `mutation-observed` | Records the edit journal and controlled-file observations. |
+| `PostToolUse.bash` | `Bash` | `command-observed` | Observes command results and captures verification evidence without replacing the command runner. |
+| `PostToolUse.always` | all tools | `trace-observer` | Provides low-noise always-on trace and runtime observation. |
+| `UserPromptSubmit.default` | all prompts | `prompt` | Classifies prompt intent, routes planning/check/hunt hints, and renders host-safe workflow guidance. |
 | `Stop.default` | session stop | `src/cli/hook/stop-handler.ts` (in-process handler) | Finalizes handoff and guards against ending with unresolved draft-plan or completion evidence gaps. |
 
 `SessionStart` exécute le session-context builder in-process, qui assemble le contexte avant le début du travail :
@@ -386,17 +379,14 @@ flowchart LR
   Host["Claude/Codex UserPromptSubmit"] --> Adapter["user-level adapter"]
   Adapter --> CLI["repo-harness-hook UserPromptSubmit --route default"]
   CLI --> Route["route registry"]
-  Route --> Shell[".ai/hooks/prompt-guard.sh"]
-  Shell --> Decision["repo-harness-hook prompt-guard-decide<br/>TypeScript decision table"]
-  Decision --> Action["single action enum"]
-  Action --> Shell
-  Shell --> RouteHint["Waza route hint<br/>explicit think/planning matched first → /think"]
-  Shell --> HostOutput["host-safe allow, advice, block, or done gate output"]
+  Route --> Handler["prompt handler<br/>typed decision table"]
+  Handler --> RouteHint["Waza route hint<br/>explicit think/planning matched first → /think"]
+  Handler --> HostOutput["host-safe allow, advice, block, or done gate output"]
 ```
 
-La couche shell conserve l'authority sur le filesystem et les effets de bord. Le
-TypeScript ne possède que le classifier plus la decision table
-`intent x plan state`.
+Le typed handler possède le parsing d'entrée, l'état des fichiers et les effets de bord
+déclarés ; le runtime uniformise uniquement la sortie host. AcceptanceReceipt est l'authority
+de closeout et le review Markdown n'est qu'une projection.
 
 ## Hook Failure Playbook
 
@@ -418,7 +408,8 @@ Guards courants :
 ## Repo Workflow
 
 - Root routing docs : `CLAUDE.md`, `AGENTS.md`
-- Shared hook layer : `.ai/hooks/`
+- Typed hook runtime : `src/cli/hook/` (via `repo-harness-hook`)
+- Projection d'operator helper : `.ai/hooks/lib/workflow-state.sh`
 - User-level adapter layer : `~/.claude/settings.json`, `~/.codex/hooks.json`
 - Active execution surface : `tasks/`
 - Plan source of truth : `plans/`

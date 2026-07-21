@@ -27,7 +27,7 @@ handoff、检查结果和 review evidence 写回项目文件，让下一个 agen
 - **会话状态落在文件里，不在聊天记录里。** 不同 agent 会话——Claude、Codex、现在或之后——
   靠仓库而不是聊天线程保持同步。新会话启动时进程内的 session-context builder（`src/cli/hook/session-context.ts`）注入上一会话的
   resume packet（`.ai/harness/handoff/resume.md`、`tasks/current.md`）；会话结束和每次编辑后，
-  `finalize-handoff.sh`、`post-edit-guard.sh` 把下一份 handoff 写回。任务可以中途断开，下一个会话
+  `session-context`、`stop` 和 `mutation-observed` typed handlers 把下一份 handoff 写回。任务可以中途断开，下一个会话
   直接接上准确的下一步、阻塞点和改动文件，不用重新推断。
 - **天生省 token。** 不靠每个会话重扫一遍仓库的 grep+read 循环，harness 用预建的 CodeGraph 索引做
   结构化查询（谁调用、调用谁、定义在哪），再用 `.ai/context/context-map.json` 和 `capabilities.json`
@@ -79,18 +79,17 @@ Release notes 见 [`docs/CHANGELOG.md`](docs/CHANGELOG.md)，当前版本线是 
 
 ## 工作原理
 
-整体分三层：
+整体分三层，host-event 只有一条 typed runtime 路径：
 
 1. **源码包层**：本仓库维护 CLI、CLI-backed command facades、templates、hook assets、
    workflow contract、tests 和 release gate。
 2. **目标仓库合约层**：`repo-harness adopt` 或 migration 会写入 `docs/spec.md`、
-   `plans/`、`tasks/`、`.ai/context/`、`.ai/harness/`、helper scripts 和
-   `.ai/hooks/`。
+   `plans/`、`tasks/`、`.ai/context/`、`.ai/harness/` 和 helper scripts；
+   `.ai/hooks/lib/workflow-state.sh` 只作为 operator helper projection。
 3. **Host adapter 层**：user-level `~/.claude/settings.json` 和 `~/.codex/hooks.json`
-   把 Claude/Codex events 路由到 `repo-harness-hook`。hook entrypoint 会先检查当前
-   repo 是否存在 `.ai/harness/workflow-contract.json`；没有 opt in 就静默退出。有 opt in
-   时按 central-first 解析 packaged install 或 `~/.repo-harness/hooks/`，repo policy
-   也可以把自托管开发钉回 `.ai/hooks/*`。
+   把 Claude/Codex events 路由到 `repo-harness-hook`。runtime 先检查当前 repo 是否存在
+   `.ai/harness/workflow-contract.json`；opt in 后由 route registry 按
+   `event + routeId + matcher` 调用 exactly one typed handler。
 
 minimal-change hooks 复用同一套路由 surface，不新增公开 adapter route。`SessionStart`
 和允许执行的 prompt 只在 policy opt in 时打印 advisory context；只有显式启用
@@ -99,16 +98,13 @@ minimal-change hooks 复用同一套路由 surface，不新增公开 adapter rou
 缺失或损坏的 policy 默认 off；即使配置 `mode: "enforce"` 也会归一化为 advisory 行为，
 真正的 enforcement boundary 仍然是 tests、contracts 和 human review。
 
-对 `UserPromptSubmit` 来说，公开 adapter contract 仍然是
-`repo-harness-hook UserPromptSubmit --route default`。CLI route registry 会把这个
-route dispatch 到 `.ai/hooks/prompt-guard.sh`。Shell hook 继续负责 host JSON 解析、
-workflow 文件读取、plan capture 副作用、quality gate 渲染，以及 host-safe
-stdout/stderr。Prompt intent 和 workflow state 的决策交给
-`repo-harness-hook prompt-guard-decide` 背后的 TypeScript decision engine；它从显式
-decision table 里返回一个 action enum。这样 host 配置不变，但最容易出错的
-classifier/state-machine 层不再散落在 shell 条件分支里。
+所有事件都通过同一条 `host adapter -> repo-harness-hook -> route registry ->
+typed handler` 路径。`UserPromptSubmit.default` 由 `prompt` handler 负责 intent、
+workflow state、quality gate 和 host-safe 输出；`PostToolUse.edit`、`PostToolUse.bash`
+和 `Stop` 分别由 `mutation-observed`、`command-observed` 和 `stop` 处理。没有第二个
+shell dispatcher，也不根据 host provider 选择另一套语义实现。
 
-核心不变量：持久事实在仓库里，不在聊天窗口里。Hooks 只是加速器和 guardrail；
+核心不变量：持久事实在仓库里，不在聊天窗口里。Typed handlers 只是加速器和 guardrail；
 真正的 authority 是 plan、contract、review、checks 和 handoff 这些文件。
 
 ## 任务 Workflow：从 Plan 到 Closeout
@@ -376,28 +372,28 @@ repo-harness mcp serve --repo . --transport http --profile orchestrator --enable
 
 ## Hook Authority Map
 
-- `assets/hooks/` 是唯一人工维护的 shared hook implementation。本仓库的 `.ai/hooks/` 是给 `"hook_source": "repo"` dogfood 使用的 checked-in generated projection。
-- `~/.claude/settings.json` 是 user-level Claude adapter，负责 dispatch 到 opted-in repos。
-- `~/.codex/hooks.json` 是 user-level Codex adapter，dispatch 到同一个 runner。
-- Repo-local `.claude/settings.json` 和 `.codex/hooks.json` hook adapters 是 legacy project-level config，迁移时应退休。
-- Codex 必须在 Settings 里信任 `~/.codex/hooks.json`，hooks 才会执行。
-- 调试顺序：user-level adapter config -> `repo-harness-hook` 或 fallback `repo-harness hook` -> route registry -> active hook source。
-- Hook 产品变更只改 `assets/hooks/<path>`，然后运行 `bun run sync:hooks` 和 `bun run check:hooks`。Package-only templates 在 `assets/hooks/projection.json` 分类，不投影到 `.ai/hooks/`。
+`repo-harness-hook` 是唯一 host-event runtime。user-level adapter 只负责送入事件，
+route registry 按稳定的 `event + routeId + matcher` tuple 调用 exactly one typed handler。
+`assets/hooks/lib/workflow-state.sh` 与 `.ai/hooks/lib/workflow-state.sh` 仅供 operator
+helpers 检查 workflow state，不是 dispatcher。
 
+- `~/.claude/settings.json`：user-level Claude adapter。
+- `~/.codex/hooks.json`：user-level Codex adapter；必须在 Codex Settings 中信任。
+- Repo-local `.claude/settings.json` / `.codex/hooks.json`：迁移时退休的 legacy 输入。
+- 产品 handler 变更在 `src/cli/hook/`；asset projection 用 `bun run sync:hooks` 同步。
 
-The installed adapter owns eight managed hook routes. The route tuple
-`event + routeId + matcher` is the stable contract; script names are the current
-implementation under `assets/hooks/` or a repo-pinned `.ai/hooks/` copy.
+The installed adapter owns the managed hook routes. Each route invokes one typed
+handler; 不存在第二套 shell runtime，也不存在 provider-specific runtime。
 
-| Route | Matcher | Scripts | Function |
+| Route | Matcher | Typed handler | Function |
 | --- | --- | --- | --- |
 | `SessionStart.default` | all sessions | `src/cli/hook/session-context.ts` (in-process builder) | Injects prior handoff, sprint status, and read-only config-security findings before work starts. |
 | `PreToolUse.edit` | `Edit|Write` | `src/cli/hook/mutation-guard.ts` (in-process handler) | Enforces worktree policy and plan/contract readiness before implementation edits. |
-| `PreToolUse.subagent` | `Task|Agent|SendUserMessage` | `subagent-return-channel-guard.sh` | Keeps delegated work returning through the parent session instead of leaking completion claims. |
-| `PostToolUse.edit` | `Edit|Write` | `post-edit-guard.sh` | Records edit traces, refreshes handoff/task status, and queues architecture drift when controlled files change. |
-| `PostToolUse.bash` | `Bash` | `post-bash.sh` | Observes command results and captures verification evidence without replacing the command runner. |
-| `PostToolUse.always` | all tools | `post-tool-observer.sh` | Provides low-noise always-on trace and runtime observation; stale pinned copies soft-skip with a refresh hint. |
-| `UserPromptSubmit.default` | all prompts | `prompt-guard.sh` | Classifies prompt intent, routes planning/check/hunt hints, and renders host-safe workflow guidance. |
+| `PreToolUse.subagent` | `Task|Agent|SendUserMessage` | `subagent` | Keeps delegated work returning through the parent session instead of leaking completion claims. |
+| `PostToolUse.edit` | `Edit|Write` | `mutation-observed` | Records the edit journal and controlled-file observations. |
+| `PostToolUse.bash` | `Bash` | `command-observed` | Observes command results and captures verification evidence without replacing the command runner. |
+| `PostToolUse.always` | all tools | `trace-observer` | Provides low-noise always-on trace and runtime observation. |
+| `UserPromptSubmit.default` | all prompts | `prompt` | Classifies prompt intent, routes planning/check/hunt hints, and renders host-safe workflow guidance. |
 | `Stop.default` | session stop | `src/cli/hook/stop-handler.ts` (in-process handler) | Finalizes handoff and guards against ending with unresolved draft-plan or completion evidence gaps. |
 
 `SessionStart` 运行进程内的 session-context builder，一次性组装出上下文：
@@ -420,16 +416,13 @@ flowchart LR
   Host["Claude/Codex UserPromptSubmit"] --> Adapter["user-level adapter"]
   Adapter --> CLI["repo-harness-hook UserPromptSubmit --route default"]
   CLI --> Route["route registry"]
-  Route --> Shell[".ai/hooks/prompt-guard.sh"]
-  Shell --> Decision["repo-harness-hook prompt-guard-decide<br/>TypeScript decision table"]
-  Decision --> Action["single action enum"]
-  Action --> Shell
-  Shell --> RouteHint["Waza 路由提示<br/>显式 think/规划优先匹配 → /think"]
-  Shell --> HostOutput["host-safe allow, advice, block, or done gate output"]
+  Route --> Handler["prompt handler<br/>typed decision table"]
+  Handler --> RouteHint["Waza 路由提示<br/>显式 think/规划优先匹配 → /think"]
+  Handler --> HostOutput["host-safe allow, advice, block, or done gate output"]
 ```
 
-Shell 层仍然拥有文件系统 authority 和副作用。TypeScript 只拥有 classifier 加
-`intent x plan state` decision table。
+Typed handler 拥有该 route 的输入解析、文件状态读取和声明的副作用；runtime 只负责
+统一 host 输出 shaping。AcceptanceReceipt 是 closeout authority，review Markdown 只是投影。
 
 ## Hook Failure Playbook
 
@@ -450,7 +443,8 @@ hook block 工作时，先看 terminal 里的结构化输出。核心字段是
 ## Repo Workflow
 
 - Root routing docs：`CLAUDE.md`、`AGENTS.md`
-- Shared hook layer：`.ai/hooks/`
+- Typed hook runtime：`src/cli/hook/`（通过 `repo-harness-hook` 运行）
+- Operator helper projection：`.ai/hooks/lib/workflow-state.sh`
 - User-level adapter layer：`~/.claude/settings.json`、`~/.codex/hooks.json`
 - Active execution surface：`tasks/`
 - Plan source of truth：`plans/`

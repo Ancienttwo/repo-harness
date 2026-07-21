@@ -15,7 +15,8 @@ import { ALL_TARGETS } from '../installer/targets/registry';
 import { checkCodegraph, type CodegraphCheckResult } from '../tools/codegraph';
 import { CLI_VERSION } from './status';
 import { runSecurityScan, type SecurityScanReport } from './security';
-import { isOptIn, resolveHooksDir, resolveRepoRoot } from '../hook/runtime';
+import { isOptIn, resolveRepoRoot } from '../hook/runtime';
+import { getHandlerForRoute } from '../hook/handler-registry';
 import { ROUTES } from '../hook/route-registry';
 
 const TRUST_STATE_LINE = /^\[hooks\.state\."[^"]+\/\.codex\/hooks\.json:/;
@@ -443,9 +444,9 @@ function checkSecurityConfig(report: SecurityScanReport): DoctorCheckResult {
   };
 }
 
-function checkHookScriptDrift(cwd: string): DoctorCheckResult {
-  const id = 'repo-hook-scripts';
-  const describe = 'Active hook runtime scripts match the route registry';
+function checkTypedHookRoutes(cwd: string): DoctorCheckResult {
+  const id = 'typed-hook-routes';
+  const describe = 'Every public hook route has exactly one typed handler';
   const repoRoot = resolveRepoRoot(cwd);
   if (!repoRoot) {
     return { id, describe, status: 'na', detail: 'not in a git repository' };
@@ -459,36 +460,24 @@ function checkHookScriptDrift(cwd: string): DoctorCheckResult {
     };
   }
 
-  const resolved = resolveHooksDir(repoRoot);
-  const expected = new Set<string>();
-  const missing: string[] = [];
-  for (const route of ROUTES) {
-    for (const script of route.scripts) {
-      expected.add(script);
-      if (!fs.existsSync(path.join(resolved.dir, script)) && !missing.includes(script)) {
-        missing.push(script);
-      }
-    }
-  }
+  const missing = ROUTES
+    .filter((route) => getHandlerForRoute(route) === undefined)
+    .map((route) => `${route.event}.${route.routeId}`);
 
   if (missing.length === 0) {
     return {
       id,
       describe,
       status: 'ok',
-      detail: `all ${expected.size} route scripts present (source=${resolved.source}, dir=${resolved.dir})`,
+      detail: `all ${ROUTES.length} public routes bind one typed in-process handler`,
     };
   }
 
-  const remediation =
-    resolved.source === 'packaged'
-      ? 'bun add -g repo-harness@latest'
-      : `repo-harness adopt --repo ${repoRoot}`;
   return {
     id,
     describe,
-    status: 'warn',
-    detail: `missing from ${resolved.dir} (source=${resolved.source}): ${missing.join(', ')}; remediation=${remediation}`,
+    status: 'fail',
+    detail: `unbound typed routes: ${missing.join(', ')}`,
   };
 }
 
@@ -511,7 +500,7 @@ export function runDoctor(cwd: string = process.cwd()): DoctorReport {
   checks.push(checkCodegraphMcpHost(codegraphProbe, 'claude'));
   checks.push(checkCodegraphIndex(codegraphProbe));
   checks.push(checkSecurityConfig(securityReport));
-  checks.push(checkHookScriptDrift(cwd));
+  checks.push(checkTypedHookRoutes(cwd));
   for (const plugin of REGISTERED_CHECKS) {
     const r = plugin.run();
     checks.push({ id: plugin.id, describe: plugin.describe, ...r });

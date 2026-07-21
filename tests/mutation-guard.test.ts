@@ -39,7 +39,6 @@ function writePolicy(cwd: string, extra: Record<string, unknown> = {}): void {
     join(cwd, '.ai/harness/policy.json'),
     `${JSON.stringify(
       {
-        hook_source: 'repo',
         worktree_strategy: { review_base: 'main', base_branch: 'main' },
         active_plan: {
           statuses: [

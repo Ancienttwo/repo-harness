@@ -1,21 +1,19 @@
 /**
  * `repo-harness hook <event> --route <route-id>` dispatcher.
  *
- * Replaces the per-script scripts/hook-shim.sh by routing through a single
- * registry-defined contract (event, route-id, matcher) → ordered scripts.
+ * Routes one registry-defined (event, route-id, matcher) tuple to exactly one
+ * typed in-process handler.
  *
  * Behavior contract (verified by tests/cli/hook.test.ts):
  *   - not in a git repo                    → exit 0 silently
  *   - in repo but no opt-in marker         → exit 0 silently
  *   - opt-in + unknown (event, route)      → exit 2 with error
- *   - opt-in + missing advisory script     → skip with warning
- *   - opt-in + missing required script     → exit 3 with error
- *   - opt-in + script fails                → propagate script exit code
- *   - opt-in + all scripts succeed         → exit 0
+ *   - opt-in + missing handler binding     → exit 3 with error
+ *   - opt-in + handler fails               → propagate handler exit code
+ *   - opt-in + handler succeeds            → exit 0
  *
- * Sets HOOK_REPO_ROOT in the child environment so .ai/hooks/<script>.sh
- * scripts see the right repo context (matches scripts/hook-shim.sh +
- * .ai/hooks/run-hook.sh behavior — kept for Phase 1G self-migration).
+ * The runtime resolves HOOK_REPO_ROOT once and owns host output shaping plus
+ * event telemetry; there is no secondary script dispatcher.
  */
 
 import {

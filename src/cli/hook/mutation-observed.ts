@@ -18,9 +18,9 @@
  * record.
  *
  * Host-visible advisory stdout (DocDrift/DeployAsset echoes, and the
- * first-principles-guard.sh/anti-simplification.sh aggregated advisory
- * dispatch) is ported verbatim — those never wrote anything durable, so they
- * stay on the hot path with byte-identical output.
+ * former first-principles advisory) is ported in-process — those never wrote
+ * anything durable, so they stay on the hot path without a second route
+ * runtime.
  */
 
 import { execFileSync, spawnSync } from 'child_process';
@@ -66,8 +66,6 @@ export interface MutationObservedInput {
   /** Raw host event payload (the same bytes `runHook()` would replay to a script's stdin). */
   readonly input?: string | Buffer;
   readonly env?: NodeJS.ProcessEnv;
-  /** Resolved hooks directory, for locating the sibling first-principles-guard.sh/anti-simplification.sh advisory scripts. */
-  readonly hooksDir?: string;
   /** HRD-08 event telemetry observer, invoked only after one journal transaction commits. */
   readonly observeJournalWrite?: (path: string) => void;
 }
@@ -95,11 +93,8 @@ export function runMutationObserved(opts: MutationObservedInput): MutationObserv
 
   emitAdvisories(out, filePath, basename(filePath), dirname(filePath));
 
-  if (opts.hooksDir) {
-    const advisory = runAggregatedAdvisory(repoRoot, opts.hooksDir, filePath, env);
-    if (advisory.stdout) out.push(advisory.stdout);
-    if (advisory.stderr) errOut.push(advisory.stderr);
-  }
+  const advisory = renderFirstPrinciplesAdvisory(repoRoot, filePath);
+  if (advisory) out.push(advisory);
 
   const contractTarget = resolveContractVerificationTarget(opts.collector, repoRoot, filePath);
   const policy = loadMinimalChangePolicy(repoRoot);
@@ -262,36 +257,50 @@ function emitAdvisories(out: string[], filePath: string, base: string, dir: stri
 }
 
 // ---------------------------------------------------------------------------
-// Aggregated first-principles-guard.sh / anti-simplification.sh advisory
-// dispatch (post-edit-guard.sh:150-156, ported verbatim). Neither script is
-// edited (only invoked, exactly like the retired script did), so neither
-// needs to be in this package's Allowed Paths.
+// First-principles advisory. This is the typed port of the route-only shell
+// state machine; anti-simplification.sh was only an alias to the same logic.
 // ---------------------------------------------------------------------------
 
-function runAggregatedAdvisory(
-  repoRoot: string,
-  hooksDir: string,
-  filePath: string,
-  env: NodeJS.ProcessEnv,
-): { stdout: string; stderr: string } {
-  const firstPrinciples = join(hooksDir, 'first-principles-guard.sh');
-  const antiSimplification = join(hooksDir, 'anti-simplification.sh');
-  let scriptPath: string | null = null;
-  if (existsSync(firstPrinciples)) scriptPath = firstPrinciples;
-  else if (existsSync(antiSimplification)) scriptPath = antiSimplification;
-  if (!scriptPath) return { stdout: '', stderr: '' };
-
+function renderFirstPrinciplesAdvisory(repoRoot: string, filePath: string): string {
+  let diff = '';
   try {
-    const res = spawnSync('bash', [scriptPath, filePath], {
+    diff = execFileSync('git', ['diff', '--', filePath], {
       cwd: repoRoot,
       encoding: 'utf-8',
-      input: '',
-      env,
+      stdio: ['ignore', 'pipe', 'ignore'],
     });
-    return { stdout: res.stdout ?? '', stderr: res.stderr ?? '' };
   } catch {
-    return { stdout: '', stderr: '' };
+    return '';
   }
+  const added = diff.split('\n')
+    .filter((line) => line.startsWith('+') && !line.startsWith('++'))
+    .map((line) => line.slice(1));
+  if (added.length === 0) return '';
+
+  const count = (pattern: RegExp): number => added.filter((line) => pattern.test(line)).length;
+  const warnings: Array<{ category: string; detail: string }> = [];
+  const compatibility = count(/(?:^|[^\p{L}\p{N}_])(?:legacy|compat|backward|polyfill|shim)(?:[^\p{L}\p{N}_]|$)/iu);
+  if (compatibility > 0) warnings.push({ category: 'Compatibility debt additions detected', detail: `${compatibility} compatibility-like line(s)` });
+  const branches = count(/(?:^|[^\p{L}\p{N}_])(?:if|else\s+if|switch|case)(?:[^\p{L}\p{N}_]|$)/iu);
+  if (branches >= 4) warnings.push({ category: 'Branch-heavy additions detected', detail: `${branches} new branch/control-flow line(s)` });
+  const abstractions = count(/(?:^|[^\p{L}\p{N}_])(?:interface|abstract\s+class|factory|adapter|provider|strategy|manager|orchestrator|dispatcher|registry)(?:[^\p{L}\p{N}_]|$)/iu);
+  if (abstractions > 0) warnings.push({ category: 'Abstraction-heavy additions detected', detail: `${abstractions} abstraction-like line(s)` });
+  const dependencies = count(/(?:^|\s)(?:import\s+.*from\s*["'][^./]|import\s*["'][^./]|require\(["'][^./]|"(?:dependencies|devDependencies|peerDependencies|optionalDependencies)"\s*:|"[@A-Za-z0-9._/-]+"\s*:\s*"[~^0-9])/iu);
+  if (dependencies > 0) warnings.push({ category: 'Dependency-surface additions detected', detail: `${dependencies} dependency/import line(s)` });
+  const configs = count(/(?:^|[^\p{L}\p{N}_])(?:process\.env|import\.meta\.env|feature[-_ ]?flag|FEATURE_|Config|config|Settings|settings)(?:[^\p{L}\p{N}_]|$)/iu);
+  if (configs > 1) warnings.push({ category: 'Config-surface additions detected', detail: `${configs} config/env/flag line(s)` });
+  const orchestration = count(/(?:^|[^\p{L}\p{N}_])(?:state[\s_-]?machine|lifecycle|workflow|route|routing|registry|orchestrator)(?:[^\p{L}\p{N}_]|$)/iu);
+  if (orchestration > 1) warnings.push({ category: 'Local orchestration additions detected', detail: `${orchestration} orchestration-like line(s)` });
+  if (warnings.length === 0) return '';
+
+  const lines: string[] = [];
+  for (const warning of warnings) {
+    lines.push(`[FirstPrinciples] ${warning.category} in ${filePath}`);
+    lines.push('  Re-check: must this exist, does platform/stdlib/current dependency already cover it, can the diff collapse?');
+    lines.push(`  Trigger: ${warning.detail}`);
+  }
+  lines.push('  Boundary: keep trust-boundary validation, data-loss prevention, security, accessibility, and explicit user-requested behavior.');
+  return `${lines.join('\n')}\n`;
 }
 
 // ---------------------------------------------------------------------------
@@ -787,11 +796,9 @@ export interface PostEditConsumeSummary {
   readonly warnings: readonly string[];
 }
 
-/** Writes one warning line to the real process stderr -- host-visible,
- * independent of the RunHookResult/scriptsRun contract (this function is
- * called from `runtime.ts`'s Stop dispatch, which deliberately does not
- * route consumption through scriptsRun/child-process stdio capture, so this
- * is the only channel a corrupt-file warning has). Never throws. */
+/** Writes one warning line to the real process stderr -- host-visible and
+ * independent of the typed handler result because Stop-time deferred
+ * consumption runs before the final host output is shaped. Never throws. */
 function warnStderr(line: string): void {
   try {
     process.stderr.write(`${line}\n`);

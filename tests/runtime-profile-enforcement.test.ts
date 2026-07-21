@@ -29,7 +29,7 @@ function initRepo(cwd: string): void {
   mkdirSync(join(cwd, '.ai/harness'), { recursive: true });
   writeFileSync(join(cwd, '.ai/harness/workflow-contract.json'), '{}\n');
   writeFileSync(join(cwd, '.ai/harness/policy.json'), JSON.stringify({
-    hook_source: 'repo', worktree_strategy: { review_base: 'main', base_branch: 'main' },
+    worktree_strategy: { review_base: 'main', base_branch: 'main' },
     // Single known-status authority the plan-status fail-closed default
     // branch reads (pre-edit-guard.sh's plan_status_known_values()); must
     // be present so fixtures below can use a real, non-Draft/Annotating/
@@ -61,7 +61,7 @@ function preEdit(cwd: string, path: string, extraEnv: NodeJS.ProcessEnv = {}) {
     cwd,
     input: JSON.stringify({ tool_input: { file_path: path } }),
     encoding: 'utf-8',
-    env: { ...process.env, HOOK_REPO_ROOT: cwd, REPO_HARNESS_HOOK_SOURCE: 'repo', ...extraEnv },
+    env: { ...process.env, HOOK_REPO_ROOT: cwd, ...extraEnv },
   });
 }
 
@@ -70,7 +70,7 @@ function preApplyPatch(cwd: string, patch: string, extraEnv: NodeJS.ProcessEnv =
     cwd,
     input: JSON.stringify({ tool_name: 'apply_patch', tool_input: { command: patch } }),
     encoding: 'utf-8',
-    env: { ...process.env, HOOK_REPO_ROOT: cwd, REPO_HARNESS_HOOK_SOURCE: 'repo', ...extraEnv },
+    env: { ...process.env, HOOK_REPO_ROOT: cwd, ...extraEnv },
   });
 }
 
@@ -465,7 +465,6 @@ describe('pre-edit-guard.sh fails closed on any state-resolve blocker (guard gap
     try {
       initRepo(cwd);
       writeFileSync(join(cwd, '.ai/harness/policy.json'), JSON.stringify({
-        hook_source: 'repo',
         worktree_strategy: { review_base: 'main', base_branch: 'main' },
         context: { capability_registry_file: '.ai/context/capabilities.json' },
       }, null, 2));

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "fs";
+import { cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "fs";
 import { spawnSync } from "child_process";
+import { createHash } from "crypto";
 import { tmpdir } from "os";
 import { join } from "path";
 import { planAdoption } from "../../src/core/adoption/plan";
@@ -9,6 +10,7 @@ import { applyAdoptionPlan, rollbackAdoptionTransaction } from "../../src/effect
 
 const ROOT = join(import.meta.dir, "..", "..");
 const CLI = join(ROOT, "src/cli/index.ts");
+const HRD09_LEGACY_FIXTURE = join(ROOT, "tests/fixtures/hrd09-legacy-hook-runtime");
 
 function tempRepo(): string {
   return mkdtempSync(join(tmpdir(), "repo-harness-adoption-plan-"));
@@ -82,6 +84,81 @@ describe("canonical adoption plan", () => {
         "repo-harness run check-task-workflow --strict",
       );
       expect(readFileSync(join(repo, apply.transactionManifestPath!), "utf-8")).toContain('"command": "adopt"');
+    } finally {
+      cleanup(repo);
+    }
+  });
+
+  test("one transaction retires exact legacy runtime and managed adapters, preserves mismatches, and rolls back", () => {
+    const repo = tempRepo();
+    try {
+      cpSync(join(HRD09_LEGACY_FIXTURE, ".ai"), join(repo, ".ai"), { recursive: true });
+      cpSync(join(HRD09_LEGACY_FIXTURE, "scripts"), join(repo, "scripts"), { recursive: true });
+      const modifiedPath = ".ai/hooks/prompt-guard.sh";
+      writeFileSync(join(repo, modifiedPath), `${readFileSync(join(repo, modifiedPath), "utf8")}# owner modification\n`);
+      mkdirSync(join(repo, ".codex"), { recursive: true });
+      mkdirSync(join(repo, ".claude"), { recursive: true });
+      const codexBefore = {
+        hooks: {
+          PostToolUse: [{
+            matcher: "Bash",
+            hooks: [
+              { type: "command", command: "repo-harness hook post-bash" },
+              { type: "command", command: "bash scripts/custom-hook.sh" },
+            ],
+          }],
+        },
+        ownerField: true,
+      };
+      const claudeBefore = {
+        hooks: {
+          UserPromptSubmit: [{ hooks: [{ type: "command", command: ".ai/hooks/run-hook.sh prompt-guard.sh" }] }],
+        },
+        permissions: { allow: ["Bash(git status:*)"] },
+      };
+      writeFileSync(join(repo, ".codex/hooks.json"), `${JSON.stringify(codexBefore, null, 2)}\n`);
+      writeFileSync(join(repo, ".claude/settings.json"), `${JSON.stringify(claudeBefore, null, 2)}\n`);
+
+      const contract = JSON.parse(readFileSync(join(ROOT, "assets/workflow-contract.v1.json"), "utf8")) as {
+        migrations: { upgrade: { actions: Array<{ id: string; paths: string[]; fingerprints: Record<string, string> }> } };
+      };
+      const retirement = contract.migrations.upgrade.actions.find((action) => action.id === "legacy-hook-runtime-retirement");
+      if (!retirement) throw new Error("missing HRD-09 retirement action");
+      for (const path of retirement.paths) {
+        const fixtureBytes = readFileSync(join(HRD09_LEGACY_FIXTURE, path), "utf8");
+        const digest = `sha256:${createHash("sha256").update(fixtureBytes).digest("hex")}`;
+        expect(retirement.fingerprints[path]).toBe(digest);
+      }
+
+      expect(spawnSync("git", ["init", "-q"], { cwd: repo }).status).toBe(0);
+      expect(spawnSync("git", ["add", ".ai/hooks", "scripts", ".codex", ".claude"], { cwd: repo }).status).toBe(0);
+      const plan = planAdoption({ repoRoot: repo, mode: "standard", apply: true });
+      const scheduledRetirements = plan.operations
+        .filter((operation) => operation.kind === "remove" && retirement.paths.includes(operation.path))
+        .map((operation) => operation.path);
+      expect(scheduledRetirements).toHaveLength(retirement.paths.length - 1);
+      expect(scheduledRetirements).not.toContain(modifiedPath);
+      expect(plan.warnings.some((warning) => warning.code === "known-generated-fingerprint-mismatch" && warning.message.includes(modifiedPath))).toBe(true);
+
+      const apply = applyAdoptionPlan(plan);
+      expect(apply.ok).toBe(true);
+      expect(apply.transactionManifestPath).toBeDefined();
+      for (const path of retirement.paths) {
+        expect(existsSync(join(repo, path))).toBe(path === modifiedPath);
+      }
+      const codexAfter = readFileSync(join(repo, ".codex/hooks.json"), "utf8");
+      expect(codexAfter).not.toContain("repo-harness hook");
+      expect(codexAfter).toContain("custom-hook.sh");
+      expect(codexAfter).toContain("ownerField");
+      const claudeAfter = readFileSync(join(repo, ".claude/settings.json"), "utf8");
+      expect(claudeAfter).not.toContain("run-hook.sh");
+      expect(claudeAfter).toContain("permissions");
+
+      const rollback = rollbackAdoptionTransaction({ repoRoot: repo, transaction: apply.transactionManifestPath! });
+      expect(rollback.ok).toBe(true);
+      for (const path of retirement.paths) expect(existsSync(join(repo, path))).toBe(true);
+      expect(JSON.parse(readFileSync(join(repo, ".codex/hooks.json"), "utf8"))).toEqual(codexBefore);
+      expect(JSON.parse(readFileSync(join(repo, ".claude/settings.json"), "utf8"))).toEqual(claudeBefore);
     } finally {
       cleanup(repo);
     }
@@ -440,12 +517,15 @@ describe("adopt command cutover", () => {
     }
   });
 
-  test("reclaim and compact are rejected before the canonical adoption transaction starts", () => {
+  test("retired reclaim and compact flags have no compatibility CLI surface", () => {
     const repo = tempRepo();
     try {
       const result = spawnSync("bun", [CLI, "adopt", "--repo", repo, "--reclaim-runtime"], { cwd: ROOT, encoding: "utf-8" });
-      expect(result.status).toBe(2);
-      expect(result.stderr).toContain("canonical adoption transaction");
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain("unknown option '--reclaim-runtime'");
+      const compact = spawnSync("bun", [CLI, "adopt", "--repo", repo, "--compact"], { cwd: ROOT, encoding: "utf-8" });
+      expect(compact.status).toBe(1);
+      expect(compact.stderr).toContain("unknown option '--compact'");
       expect(existsSync(join(repo, ".ai"))).toBe(false);
     } finally {
       cleanup(repo);

@@ -1,96 +1,108 @@
 # Hooks Configuration Guide
 
-Use this guide for hook configuration details and legacy migration context.
+This guide describes the typed host-event runtime and the operator-helper
+projection installed by `repo-harness adopt`.
 
-## Project Hook Source of Truth
+## Runtime Source of Truth
 
 - Repo-local `tasks/` files are the primary cross-agent contract.
-- Repo-local `plans/` files are the plan catalog. `.ai/harness/active-plan` selects the active plan, with `.claude/.active-plan` as a legacy fallback during transition.
-- Shared hook product source: `assets/hooks/`.
-- Active hook runtime resolves central-first through `repo-harness-hook`; `.ai/hooks/` carries a full vendored runtime only when the repo pins `"hook_source": "repo"`.
-- User-level Claude adapter: `~/.claude/settings.json`.
-- User-level Codex adapter: `~/.codex/hooks.json`.
-- Repo-local `.claude/settings.json` and `.codex/hooks.json` are legacy project-level adapters and should be retired during migration.
-- Personal overrides only: `.claude/settings.local.json` (optional).
-- Claude and Codex adapters dispatch into `repo-harness-hook` or the compatibility `repo-harness hook` route.
-- Codex requires the user-level hook config to be trusted in Codex Settings before it runs.
+- Repo-local `plans/` files are the plan catalog; `.ai/harness/active-plan`
+  selects the active plan.
+- `src/cli/hook/route-registry.ts` is the route authority. Each
+  `(event, routeId, matcher)` invokes exactly one typed handler in
+  `src/cli/hook/handler-registry.ts`.
+- User-level Claude and Codex adapters live in `~/.claude/settings.json` and
+  `~/.codex/hooks.json`. Codex requires the latter to be trusted in Settings.
+- `.ai/hooks/lib/workflow-state.sh` is an operator helper projection only. It
+  is not an adapter, dispatcher, or alternate route implementation.
+- Repo-local `.claude/settings.json` and `.codex/hooks.json` are user-owned
+  legacy inputs and should be retired during migration.
 
-Use hooks as advisory accelerators and deterministic guards, not as the only source of workflow enforcement.
+The runtime is deterministic and fail-closed. Use hooks as advisory accelerators
+and guards, not as a second source of workflow truth.
 
-## Hook Presets
+## Managed Routes
+
+| Event and route | Typed handler | Purpose |
+| --- | --- | --- |
+| `SessionStart.default` | `session-context` | Bounded resume, sprint, and security context. |
+| `PreToolUse.edit` | `mutation-guard` | Worktree and plan/contract readiness before edits. |
+| `PreToolUse.subagent` | `subagent` | Delegated return-channel enforcement. |
+| `PostToolUse.edit` | `mutation-observed` | Edit journal and controlled-file observations. |
+| `PostToolUse.bash` | `command-observed` | Command result and verification evidence. |
+| `PostToolUse.always` | `trace-observer` | Low-noise tool trace. |
+| `UserPromptSubmit.default` | `prompt` | Prompt intent and file-backed workflow guidance. |
+| `UserPromptSubmit.delegation` | `subagent` | Explicit Codex delegation authorization. |
+| `SubagentStart.context` / `SubagentStop.quality` | `subagent` | Delegation context and report quality. |
+| `Stop.default` | `stop` | Flush observations and finalize the handoff projection. |
+
+## Presets
 
 ### A) Balanced Shared Guardrails (recommended)
-- Runtime profile: Plan-only (recommended), configurable to Permissionless/Standard.
-- `PreToolUse (Edit|Write)`: worktree guard (warn by default, opt-in hard block), pre-edit guard (TDD/BDD + asset-layer reminders).
-- `PostToolUse (Edit|Write)`: post-edit guard (doc drift + task handoff summary).
-- `PostToolUse (Bash)`: post-bash advisory reminders.
-- `PostToolUse (all tools)`: `post-tool-observer.sh` structured JSONL trace + lightweight advisories.
-- `UserPromptSubmit`: prompt guard (plan sync + TDD/BDD reminders).
-- `Stop`: finalize-handoff summary refresh.
-- Automatic checkpoint commits are disabled in the shared default.
+
+- `PreToolUse.edit`: `mutation-guard` with worktree and plan/contract checks.
+- `PostToolUse.edit`: `mutation-observed` with the optional minimal-change
+  observer.
+- `PostToolUse.bash`: `command-observed` for command evidence.
+- `PostToolUse.always`: `trace-observer` for the structured tool trace.
+- `UserPromptSubmit.default`: `prompt` for plan sync and workflow guidance.
+- `Stop.default`: `stop` for handoff and completion readiness.
 
 ### B) Balanced + Release Guard
-- Same as A, plus `changelog-guard.sh` for repos that want release reminders.
+
+Use preset A and the explicit release command for changelog checks. Release
+checks are not implemented as a second hook runtime.
 
 ### C) Balanced + Advisory Extras
-- Same as A, plus optional advisory hooks like `anti-simplification.sh` when teams explicitly want more reminders beyond the default trace and bash observers.
+
+Use preset A and enable the declared policy observers. Additional advisory work
+must run from explicit CLI commands and must not add another route authority.
 
 ### D) Minimal
-- `UserPromptSubmit` only.
+
+Install `UserPromptSubmit.default` only.
 
 ### E) No Hooks
-- Skip project-level hook config.
+
+Skip host adapter configuration.
 
 ### F) Custom
-- Define explicit matcher + command sets.
 
-## Hook Files to Copy
+Define explicit matcher and command sets in the user-level adapter while keeping
+the route tuple and typed handler registry unchanged.
 
-| Asset File | Target Path |
-|---|---|
-| `assets/hooks/lib/` | `.ai/hooks/lib/` |
-| generated fallback README | `.ai/hooks/README.md` |
-| `assets/hooks/*.sh` | `.ai/hooks/*.sh` only when `"hook_source": "repo"` is pinned |
+## Operator Helpers and Migration
 
-Bundled hook assets include:
-- `assets/hooks/tdd-guard-hook.sh`
-- `assets/hooks/pre-code-change.sh`
-- `assets/hooks/anti-simplification.sh`
-- `assets/hooks/post-bash.sh`
-- `assets/hooks/changelog-guard.sh`
-- `assets/hooks/session-start-context.sh`
-- `assets/hooks/finalize-handoff.sh`
-- `assets/hooks/worktree-guard.sh`
-- `assets/hooks/atomic-pending.sh`
-- `assets/hooks/atomic-commit.sh`
-- `assets/hooks/trace-event.sh`
+`repo-harness adopt` projects the declared helper library into
+`.ai/hooks/lib/`, including `workflow-state.sh`, and removes retired generated
+entry scripts by manifest ownership. It does not install a repo-local dispatcher.
+Run `repo-harness adopt --repo <repo> --dry-run` before applying a migration.
 
-Retired hooks:
-
-- `autoresearch-advisory.sh` is retired. It must not exist in `.ai/hooks`, be
-  referenced by default adapter templates, or be installed into user-level
-  Codex/Claude hook configs. Run autoresearch explicitly when evidence is
-  needed.
-
-Generated `.claude/hooks/` shims are legacy artifacts. Current migration removes
-known generated shims and preserves only user-authored `.claude/hooks/custom-*.sh`
-files.
+Generated `.claude/hooks/` shims are legacy cleanup targets. Custom
+`.claude/hooks/custom-*.sh` files are user-owned and remain outside the typed
+runtime contract.
 
 ## Customization Notes
 
-- Non-monorepo projects can remove package-related doc drift triggers.
-- Non-Expo projects can remove Metro config drift checks.
-- Non-Turborepo projects can remove `turbo.json` drift checks.
-- Keep durable shared policy in `CLAUDE.md`, repo-local workflow files, and reference configs rather than hidden runtime caches.
-- Use `tasks/lessons.md` for repeated corrections and `docs/researches/*.md` for deep findings instead of hook-managed auto-memory.
+- Keep durable shared policy in `CLAUDE.md`, workflow files, and reference
+  configs rather than hidden runtime caches.
+- Use `tasks/lessons.md` for repeated corrections and `docs/researches/*.md`
+  for deep findings.
+- Handler changes belong in `src/cli/hook/` with focused tests; update the
+  declared asset projection with `bun run sync:hooks`.
 
 ## Failure Logging
 
-- Blocking hooks emit structured JSON with: `guard`, `action`, `reason`, `fix`, `failure_class`, `run_id`.
-- Failure classes are intentionally limited to:
-  - `missing_artifact`
-  - `state_violation`
-  - `contract_failure`
-  - `quality_gate`
-- Hook failures append JSONL records to `.ai/harness/failures/latest.jsonl`.
-- Use `bash scripts/summarize-failures.sh` to aggregate the latest failure log, or `--run-id <id>` to inspect a single run.
+Blocking handlers emit structured JSON with `guard`, `action`, `reason`, `fix`,
+`failure_class`, and `run_id`.
+
+Failure classes are intentionally limited to:
+
+- `missing_artifact`
+- `state_violation`
+- `contract_failure`
+- `quality_gate`
+
+Failures append JSONL records to `.ai/harness/failures/latest.jsonl`. Use
+`bash scripts/summarize-failures.sh` to aggregate the latest log, or add
+`--run-id <id>` to inspect one run.

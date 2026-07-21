@@ -697,7 +697,7 @@ function captureStop(profile: Profile): Record<string, unknown> {
         { name: 'minimal_change_review', marker: 'const minimal = minimalChangeReview(repoRoot);' },
         { name: 'review_freshness_warning', marker: "if (state?.review.path && ['stale'" },
         { name: 'plan_completeness_gate', marker: 'const planGate = planCompletenessBlock(' },
-        { name: 'delegation_fallback', marker: 'if (delegationShouldBlock(paths, now) && paths)' },
+        { name: 'delegation_fallback', marker: 'if (claimDelegationFallback(repoRoot, payload, env, now' },
       ]),
       side_effects: writtenPaths(before, after),
       missing_semantic_fields: missingSemanticFields(

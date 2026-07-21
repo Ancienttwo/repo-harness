@@ -172,7 +172,7 @@ describe("create-project-dirs runtime smoke", () => {
       expect(existsSync(join(cwd, "scripts/skill-factory-check.sh"))).toBe(false);
       expect(existsSync(join(cwd, ".ai/hooks/README.md"))).toBe(true);
       expect(existsSync(join(cwd, ".ai/hooks/lib/workflow-state.sh"))).toBe(true);
-      expect(existsSync(join(cwd, ".ai/hooks/lib/session-state.sh"))).toBe(true);
+      expect(existsSync(join(cwd, ".ai/hooks/lib/session-state.sh"))).toBe(false);
       expect(existsSync(join(cwd, ".ai/hooks/run-hook.sh"))).toBe(false);
       expect(existsSync(join(cwd, ".codex/hooks.json"))).toBe(false);
       expect(existsSync(join(cwd, ".claude/settings.json"))).toBe(false);
@@ -196,6 +196,27 @@ describe("create-project-dirs runtime smoke", () => {
       expect(existsSync(join(cwd, ".ai/hooks/post-tool-observer.sh"))).toBe(false);
       expect(existsSync(join(cwd, ".ai/hooks/session-start-context.sh"))).toBe(false);
       expect(existsSync(join(cwd, ".ai/hooks/post-edit-guard.sh"))).toBe(false);
+      for (const retired of [
+        ".ai/hooks/anti-simplification.sh",
+        ".ai/hooks/changelog-guard.sh",
+        ".ai/hooks/codex-delegation-advisor.sh",
+        ".ai/hooks/first-principles-guard.sh",
+        ".ai/hooks/hook-input.sh",
+        ".ai/hooks/post-bash.sh",
+        ".ai/hooks/post-tool-observer.sh",
+        ".ai/hooks/prompt-guard.sh",
+        ".ai/hooks/run-hook.sh",
+        ".ai/hooks/subagent-return-channel-guard.sh",
+        ".ai/hooks/subagent-start-context.sh",
+        ".ai/hooks/subagent-stop-quality.sh",
+        ".ai/hooks/lib/minimal-change.sh",
+        ".ai/hooks/lib/session-state.sh",
+        "scripts/hook-shim.sh",
+        "scripts/repo-harness.sh",
+      ]) {
+        expect(existsSync(join(cwd, retired))).toBe(false);
+      }
+      expect(readFileSync(join(cwd, ".ai/hooks/README.md"), "utf-8")).toContain("repo-harness-hook");
 
       const architectureIndex = readFileSync(join(cwd, "docs/architecture/index.md"), "utf-8");
       expect(architectureIndex).toContain("<!-- BEGIN ARCHITECTURE PENDING REQUESTS -->");
@@ -633,7 +654,7 @@ describe("create-project-dirs runtime smoke", () => {
     }
   }, RUNTIME_SMOKE_TIMEOUT_MS);
 
-  test("should scaffold full hook runtime when hook_source repo is pinned", () => {
+  test("should ignore retired hook_source and install operator helper libraries only", () => {
     const cwd = mkdtempSync(join(tmpdir(), "create-project-dirs-hook-pin-"));
     try {
       mkdirSync(join(cwd, ".ai/harness"), { recursive: true });
@@ -645,17 +666,12 @@ describe("create-project-dirs runtime smoke", () => {
       });
 
       expect(res.status).toBe(0);
-      expect(existsSync(join(cwd, ".ai/hooks/run-hook.sh"))).toBe(true);
-      // HRD-05 retired post-edit-guard.sh; post-tool-observer.sh (already
-      // checked below) is an equally-representative still-vendored script
-      // for this assertion.
-      expect(existsSync(join(cwd, ".ai/hooks/post-tool-observer.sh"))).toBe(true);
-      // HRD-04 retired session-start-context.sh; post-bash.sh is an
-      // equally-representative still-vendored script for this assertion.
-      expect(existsSync(join(cwd, ".ai/hooks/post-bash.sh"))).toBe(true);
+      expect(existsSync(join(cwd, ".ai/hooks/run-hook.sh"))).toBe(false);
+      expect(existsSync(join(cwd, ".ai/hooks/post-tool-observer.sh"))).toBe(false);
+      expect(existsSync(join(cwd, ".ai/hooks/post-bash.sh"))).toBe(false);
       expect(existsSync(join(cwd, ".ai/hooks/lib/workflow-state.sh"))).toBe(true);
-      expect(existsSync(join(cwd, ".ai/hooks/lib/session-state.sh"))).toBe(true);
-      expect(existsSync(join(cwd, ".ai/hooks/AGENTS.md"))).toBe(true);
+      expect(existsSync(join(cwd, ".ai/hooks/lib/session-state.sh"))).toBe(false);
+      expect(existsSync(join(cwd, ".ai/hooks/AGENTS.md"))).toBe(false);
       expect(existsSync(join(cwd, ".ai/hooks/projection.json"))).toBe(false);
       expect(existsSync(join(cwd, ".ai/hooks/codex.hooks.template.json"))).toBe(false);
     } finally {
@@ -663,14 +679,23 @@ describe("create-project-dirs runtime smoke", () => {
     }
   }, RUNTIME_SMOKE_TIMEOUT_MS);
 
-  test("should prune stale repo-local hook runtime when hook_source repo is not pinned", () => {
+  test("should preserve existing repo-local hooks and host adapter config outside canonical adoption", () => {
     const cwd = mkdtempSync(join(tmpdir(), "create-project-dirs-hook-prune-"));
     try {
       mkdirSync(join(cwd, ".ai/hooks/lib"), { recursive: true });
-      writeFileSync(join(cwd, ".ai/hooks/run-hook.sh"), "#!/bin/bash\necho stale\n");
-      writeFileSync(join(cwd, ".ai/hooks/prompt-guard.sh"), "#!/bin/bash\necho stale\n");
+      mkdirSync(join(cwd, ".claude"), { recursive: true });
+      mkdirSync(join(cwd, ".codex"), { recursive: true });
+      const staleRuntime = "#!/bin/bash\necho user-modified-stale\n";
+      const customHook = "#!/bin/bash\necho custom-owner\n";
+      const claudeConfig = '{"hooks":{"UserPromptSubmit":[{"hooks":[{"type":"command","command":"custom-claude-hook"}]}]},"ownerField":true}\n';
+      const codexConfig = '{"hooks":{"UserPromptSubmit":[{"command":"custom-codex-hook"}]},"ownerField":true}\n';
+      writeFileSync(join(cwd, ".ai/hooks/run-hook.sh"), staleRuntime);
+      writeFileSync(join(cwd, ".ai/hooks/prompt-guard.sh"), staleRuntime);
+      writeFileSync(join(cwd, ".ai/hooks/custom-owner-hook.sh"), customHook);
       writeFileSync(join(cwd, ".ai/hooks/AGENTS.md"), "# Stale hook docs\n");
       writeFileSync(join(cwd, ".ai/hooks/settings.template.json"), "{}\n");
+      writeFileSync(join(cwd, ".claude/settings.json"), claudeConfig);
+      writeFileSync(join(cwd, ".codex/hooks.json"), codexConfig);
 
       const res = spawnSync("bash", [join(ROOT, "scripts/create-project-dirs.sh")], {
         cwd,
@@ -680,11 +705,14 @@ describe("create-project-dirs runtime smoke", () => {
       expect(res.status).toBe(0);
       expect(existsSync(join(cwd, ".ai/hooks/README.md"))).toBe(true);
       expect(existsSync(join(cwd, ".ai/hooks/lib/workflow-state.sh"))).toBe(true);
-      expect(existsSync(join(cwd, ".ai/hooks/lib/session-state.sh"))).toBe(true);
-      expect(existsSync(join(cwd, ".ai/hooks/run-hook.sh"))).toBe(false);
-      expect(existsSync(join(cwd, ".ai/hooks/prompt-guard.sh"))).toBe(false);
-      expect(existsSync(join(cwd, ".ai/hooks/AGENTS.md"))).toBe(false);
-      expect(existsSync(join(cwd, ".ai/hooks/settings.template.json"))).toBe(false);
+      expect(existsSync(join(cwd, ".ai/hooks/lib/session-state.sh"))).toBe(false);
+      expect(readFileSync(join(cwd, ".ai/hooks/run-hook.sh"), "utf-8")).toBe(staleRuntime);
+      expect(readFileSync(join(cwd, ".ai/hooks/prompt-guard.sh"), "utf-8")).toBe(staleRuntime);
+      expect(readFileSync(join(cwd, ".ai/hooks/custom-owner-hook.sh"), "utf-8")).toBe(customHook);
+      expect(readFileSync(join(cwd, ".ai/hooks/AGENTS.md"), "utf-8")).toBe("# Stale hook docs\n");
+      expect(readFileSync(join(cwd, ".ai/hooks/settings.template.json"), "utf-8")).toBe("{}\n");
+      expect(readFileSync(join(cwd, ".claude/settings.json"), "utf-8")).toBe(claudeConfig);
+      expect(readFileSync(join(cwd, ".codex/hooks.json"), "utf-8")).toBe(codexConfig);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

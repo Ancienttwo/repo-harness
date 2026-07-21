@@ -9,6 +9,7 @@ import { gitignoreManagedBlockOperation } from "./gitignore-plan";
 import { managedBlockNeedsUpdate } from "./managed-block";
 import { loadWorkflowContractAsset, readWorkflowContractAsset } from "./workflow-contract-asset";
 import { isRepoHarnessSourceCheckout } from "./source-checkout";
+import { stripRepoHarnessManagedHooks } from "./managed-hook-config";
 
 const ASSET_ROOT = join(import.meta.dir, "..", "..", "..", "assets");
 const TEMPLATE_ROOT = join(ASSET_ROOT, "templates");
@@ -110,9 +111,12 @@ interface WorkflowContractAsset {
   readonly migrations?: {
     readonly upgrade?: {
       readonly actions?: ReadonlyArray<{
+        readonly id?: string;
         readonly action?: string;
         readonly ownership?: string;
+        readonly cleanupMode?: string;
         readonly paths?: readonly string[];
+        readonly fingerprints?: Readonly<Record<string, string>>;
       }>;
     };
   };
@@ -265,7 +269,6 @@ function jsonContent(value: unknown): string {
 export function defaultPolicy(documentationProfile: string): JsonObject {
   return {
     version: 1,
-    hook_source: "central",
     active_plan: {
       marker_file: ".ai/harness/active-plan",
       directory: "plans",
@@ -411,10 +414,14 @@ Use \`repo-harness docs show ${docId}\` for the full generic runtime guide.
 `;
 }
 
-function knownGeneratedFile(repoRoot: string, path: string): boolean {
+function knownGeneratedFile(repoRoot: string, path: string, declaredFingerprint?: string): boolean {
+  if (declaredFingerprint !== undefined && !/^sha256:[0-9a-f]{64}$/.test(declaredFingerprint)) {
+    throw new Error(`invalid known-generated fingerprint for ${path}`);
+  }
   const target = safePath(repoRoot, path);
   if (!existsSync(target) || !lstatSync(target).isFile()) return false;
   const content = readFileSync(target, "utf-8");
+  if (declaredFingerprint !== undefined) return contentHash(content) === declaredFingerprint;
   const helperAsset = join(TEMPLATE_ROOT, "helpers", path.replace(/^scripts\//, ""));
   if (path.startsWith("scripts/") && existsSync(helperAsset) && readFileSync(helperAsset, "utf-8") === content) return true;
   if (path.startsWith(".ai/hooks/") && existsSync(join(HOOK_ROOT, path.slice(".ai/hooks/".length)))) {
@@ -530,18 +537,48 @@ function addLegacySprintMoves(repoRoot: string, operations: AdoptionOperation[])
   }
 }
 
-function addKnownGeneratedCleanup(repoRoot: string, operations: AdoptionOperation[]): void {
+function addKnownGeneratedCleanup(repoRoot: string, operations: AdoptionOperation[]): AdoptionWarning[] {
+  const warnings: AdoptionWarning[] = [];
   // The source package owns its canonical scripts. They may be byte-identical
   // to package helpers, but that is not evidence that this source repo is a
   // downstream generated runtime copy.
-  if (isRepoHarnessSourceCheckout(repoRoot)) return;
+  if (isRepoHarnessSourceCheckout(repoRoot)) return warnings;
   const contract = loadWorkflowContractAsset<WorkflowContractAsset>();
   const actions = contract.migrations?.upgrade?.actions ?? [];
   for (const action of actions) {
     if (action.action !== "remove" || action.ownership !== "known_generated") continue;
-    for (const path of action.paths ?? []) {
+    const paths = action.paths ?? [];
+    if (action.cleanupMode === "exact_fingerprint") {
+      if (new Set(paths).size !== paths.length) {
+        throw new Error(`duplicate path in exact-fingerprint migration action ${action.id ?? "<unnamed>"}`);
+      }
+      const fingerprints = action.fingerprints ?? {};
+      for (const path of paths) {
+        if (path.includes("*")) {
+          throw new Error(`wildcard is not allowed in exact-fingerprint migration action: ${path}`);
+        }
+        if (fingerprints[path] === undefined) {
+          throw new Error(`missing exact fingerprint for ${path} in migration action ${action.id ?? "<unnamed>"}`);
+        }
+      }
+      for (const path of Object.keys(fingerprints)) {
+        if (!paths.includes(path)) {
+          throw new Error(`fingerprint declared for undeclared migration path ${path}`);
+        }
+      }
+    }
+    for (const path of paths) {
       if (path.includes("*")) continue;
-      if (!knownGeneratedFile(repoRoot, path)) continue;
+      if (!knownGeneratedFile(repoRoot, path, action.fingerprints?.[path])) {
+        if (action.fingerprints?.[path] && existsSync(safePath(repoRoot, path))) {
+          warnings.push({
+            code: "known-generated-fingerprint-mismatch",
+            message: `Preserving ${path}: current bytes do not match the declared retired generated asset`,
+            risk: "medium",
+          });
+        }
+        continue;
+      }
       const remove = removeOperation(repoRoot, path, "Remove known-generated retired workflow asset");
       if (remove) operations.push(remove);
       const untrack: AdoptionOperation = {
@@ -554,6 +591,27 @@ function addKnownGeneratedCleanup(repoRoot: string, operations: AdoptionOperatio
       };
       operations.push(untrack);
     }
+  }
+  return warnings;
+}
+
+function addLegacyHostAdapterCleanup(repoRoot: string, operations: AdoptionOperation[]): void {
+  for (const path of [".codex/hooks.json", ".claude/settings.json"] as const) {
+    const current = jsonFile(repoRoot, path);
+    if (!current || current.hooks === undefined) continue;
+    const stripped = stripRepoHarnessManagedHooks(current.hooks);
+    if (stripped.removed.length === 0) continue;
+
+    const next: JsonObject = { ...current };
+    if (Object.keys(stripped.hooks).length === 0) delete next.hooks;
+    else next.hooks = stripped.hooks;
+    operations.push(writeOperation(
+      repoRoot,
+      path,
+      jsonContent(next),
+      "Remove repo-local repo-harness host adapters after the user-level typed adapter cutover",
+      { risk: "medium" },
+    ));
   }
 }
 
@@ -576,26 +634,12 @@ function addTemplateOperations(repoRoot: string, operations: AdoptionOperation[]
   }
 }
 
-function addHookOperations(repoRoot: string, policy: JsonObject, operations: AdoptionOperation[]): void {
-  const repoPinned = policy.hook_source === "repo";
-  if (repoPinned) {
-    const visit = (dir: string, prefix = "") => {
-      for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-        const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
-        if (entry.isDirectory()) visit(join(dir, entry.name), rel);
-        if (!entry.isFile() || ["projection.json", "codex.hooks.template.json", "settings.template.json"].includes(rel)) continue;
-        operations.push(writeOperation(repoRoot, `.ai/hooks/${rel}`, readFileSync(join(dir, entry.name), "utf-8"), "Install repo-pinned hook runtime", { mode: (lstatSync(join(dir, entry.name)).mode & 0o111) ? 0o755 : 0o644, risk: "medium" }));
-      }
-    };
-    visit(HOOK_ROOT);
-    return;
-  }
-
+function addHookOperations(repoRoot: string, operations: AdoptionOperation[]): void {
   const hookFiles = readdirSync(HOOK_ROOT).filter((name) => name.endsWith(".sh"));
   for (const name of hookFiles) {
     const target = `.ai/hooks/${name}`;
     if (knownGeneratedFile(repoRoot, target)) {
-      const remove = removeOperation(repoRoot, target, "Remove stale repo-local hook runtime for central hook authority");
+      const remove = removeOperation(repoRoot, target, "Remove stale repo-local hook runtime after typed handler cutover");
       if (remove) operations.push(remove);
     }
   }
@@ -606,8 +650,8 @@ function addHookOperations(repoRoot: string, policy: JsonObject, operations: Ado
   operations.push(writeOperation(
     repoRoot,
     ".ai/hooks/README.md",
-    "# Repo-Local Hook Fallback\n\nActive hook execution is user-level and central-first. Files under `.ai/hooks/lib/` support repo workflow helpers; full hook runtime scripts are not vendored unless `.ai/harness/policy.json` explicitly sets `hook_source` to `repo`.\n",
-    "Document central-first hook authority",
+    "# Repo-Local Workflow Helpers\n\nHost events execute through the user-level `repo-harness-hook` typed runtime. Files under `.ai/hooks/lib/` are operator helper libraries only; no repo-local host-event dispatcher or route script is supported.\n",
+    "Document typed hook authority and operator-only helper boundary",
     { risk: "medium" },
   ));
 }
@@ -670,6 +714,7 @@ export function planStandardAdoption(opts: StandardPlanOptions): { operations: A
   const documentationProfile = opts.env?.REPO_HARNESS_DOCUMENTATION_PROFILE ?? "minimal-agentic";
   const policyCurrent = jsonFile(opts.repoRoot, ".ai/harness/policy.json");
   const policy = deepMergeDefaults(defaultPolicy(documentationProfile), policyCurrent);
+  delete policy.hook_source;
   const externalTooling = isObject(policy.external_tooling) ? policy.external_tooling : {};
   const externalRouting = isObject(externalTooling.routing) ? externalTooling.routing : {};
   const retiredComplexProvider = typeof externalRouting.complex === "string" ? externalRouting.complex : null;
@@ -756,16 +801,20 @@ export function planStandardAdoption(opts: StandardPlanOptions): { operations: A
 
   addActivePlanMigration(opts.repoRoot, operations);
   addTemplateOperations(opts.repoRoot, operations);
-  addHookOperations(opts.repoRoot, policy, operations);
+  addLegacyHostAdapterCleanup(opts.repoRoot, operations);
+  addHookOperations(opts.repoRoot, operations);
   addReferenceOperations(opts.repoRoot, documentationProfile, operations);
   addLegacyDocumentMigrations(opts.repoRoot, operations);
   addLegacySprintMoves(opts.repoRoot, operations);
   addPackageOperation(opts.repoRoot, operations);
-  addKnownGeneratedCleanup(opts.repoRoot, operations);
+  const cleanupWarnings = addKnownGeneratedCleanup(opts.repoRoot, operations);
 
-  const warnings: AdoptionWarning[] = opts.mode === "self-host"
-    ? [{ code: "self-host-review", message: "Self-host adoption requires an explicit hook/runtime review and is intentionally not applied by the public command.", risk: "high" }]
-    : [];
+  const warnings: AdoptionWarning[] = [
+    ...cleanupWarnings,
+    ...(opts.mode === "self-host"
+      ? [{ code: "self-host-review", message: "Self-host adoption requires an explicit hook/runtime review and is intentionally not applied by the public command.", risk: "high" } as const]
+      : []),
+  ];
   if (opts.mode === "self-host") {
     operations.push({
       id: makeOperationId("runCheck", "self-host-adoption-boundary-review"),

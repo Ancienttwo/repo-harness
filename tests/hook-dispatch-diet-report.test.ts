@@ -97,7 +97,10 @@ function reportFor(eventsPath?: string, runProbe?: (spec: { name: string }) => {
 describe("hook dispatch diet report", () => {
   test("reports protocol v2 and preserves static/synthetic sections", () => {
     const report = reportFor();
-    expect(report.protocol).toBe("loop-engine-hook-diet-report/v2");
+    expect(report.protocol).toBe("loop-engine-hook-diet-report/v3");
+    expect(report.dispatch.script_invocation_count).toBe(0);
+    expect(report.dispatch.typed_handler_count).toBe(8);
+    expect(report.dispatch.routes.every((route) => typeof route.handler === "string")).toBe(true);
     expect(report.dispatch.previous_count).toBe(13);
     expect(report.dispatch.current_count).toBeLessThanOrEqual(TARGET_DISPATCH_MAX);
     expect(report.dispatch.within_target).toBe(true);
@@ -183,7 +186,7 @@ describe("hook dispatch diet report", () => {
       const report = JSON.parse(jsonRun.stdout) as HookDietReport;
       expect(jsonRun.status).toBe(hookDietReportPasses(report) ? 0 : 1);
       expect(existsSync(out)).toBe(true);
-      expect(report.protocol).toBe("loop-engine-hook-diet-report/v2");
+      expect(report.protocol).toBe("loop-engine-hook-diet-report/v3");
       const eventsPath = writeRequiredEvents(cwd);
       const eventsOut = join(cwd, "diet-with-events.json");
       const eventsRun = spawnSync(process.execPath, [SCRIPT, "--repo", ROOT, "--events", eventsPath, "--out", eventsOut, "--iterations", "1", "--baseline-ms", "5000", "--json"], { encoding: "utf-8" });

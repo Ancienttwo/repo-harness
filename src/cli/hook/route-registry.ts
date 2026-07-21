@@ -1,10 +1,9 @@
 /**
- * Route registry — single source of truth for hook events × routes × scripts.
+ * Route registry — single source of truth for hook events × routes × handlers.
  *
  * The (event, route-id, matcher) tuple is the **public contract** that host
- * adapters (`~/.codex/hooks.json`, `~/.claude/settings.json`) bind to. Script
- * names are an internal implementation detail — Phase 2 sealed hooks will
- * replace them with bundled implementations without changing the tuple.
+ * adapters (`~/.codex/hooks.json`, `~/.claude/settings.json`) bind to. Handler
+ * identities are stable internal authority names and do not alter the tuple.
  *
  * Derived from `.codex/hooks.json` reality verified Phase 0 canary
  * 2026-05-28 (see docs/architecture/global-hook-runtime.md and Codex consult
@@ -39,6 +38,17 @@ export type RouteId =
   | 'context'
   | 'quality';
 
+/** The in-process authority bound to a public route. */
+export type HookHandlerId =
+  | 'session-context'
+  | 'mutation-guard'
+  | 'subagent'
+  | 'mutation-observed'
+  | 'command-observed'
+  | 'trace-observer'
+  | 'prompt'
+  | 'stop';
+
 export interface Route {
   readonly event: HookEvent;
   readonly routeId: RouteId;
@@ -49,99 +59,77 @@ export interface Route {
   readonly matcher?: string;
   /** Host adapters this route is installed into. Undefined means all supported hosts. */
   readonly hosts?: readonly RouteHost[];
-  /** Repo-local `.ai/hooks/<script>` names, in execution order. */
-  readonly scripts: readonly string[];
+  /** Exactly one typed in-process handler owns this route. */
+  readonly handler: HookHandlerId;
 }
 
 export const ROUTES: readonly Route[] = Object.freeze([
   Object.freeze({
     event: 'SessionStart' as const,
     routeId: 'default' as const,
-    // HRD-04: session-start-context.sh, minimal-change-context.sh, and
-    // security-sentinel.sh are retired; this route's context assembly is now
-    // the in-process session-context builder (src/cli/hook/session-context.ts),
-    // invoked directly by runHook() -- there is no script left to name here.
-    // An empty list (rather than a stale 3-name array) is what keeps
-    // consumers that treat `scripts` as "files that must exist on disk"
-    // (doctor's repo-hook-scripts check, the adopt/sync tooling) reporting
-    // truthfully instead of a permanent false "missing script" drift signal
-    // (same reasoning as HRD-03's PreToolUse.edit precedent below).
-    scripts: Object.freeze([]),
+    // HRD-04: context assembly is owned by the in-process session-context
+    // handler and is invoked directly by the runtime.
+    handler: 'session-context',
   }),
   Object.freeze({
     event: 'PreToolUse' as const,
     routeId: 'edit' as const,
     matcher: 'Edit|Write',
-    // HRD-03: worktree-guard.sh and pre-edit-guard.sh are retired; this
-    // route's decision surface is now the in-process mutation-guard handler
-    // (src/cli/hook/mutation-guard.ts), invoked directly by runHook() --
-    // there is no script left to name here. An empty list (rather than a
-    // stale ['worktree-guard.sh', 'pre-edit-guard.sh']) is what keeps
-    // consumers that treat `scripts` as "files that must exist on disk"
-    // (doctor's repo-hook-scripts check, the adopt/sync tooling) reporting
-    // truthfully instead of a permanent false "missing script" drift signal.
-    scripts: Object.freeze([]),
+    // HRD-03: mutation decisions are owned by the in-process guard handler.
+    handler: 'mutation-guard',
   }),
   Object.freeze({
     event: 'PreToolUse' as const,
     routeId: 'subagent' as const,
     matcher: 'Task|Agent|SendUserMessage',
-    scripts: Object.freeze(['subagent-return-channel-guard.sh']),
+    handler: 'subagent',
   }),
   Object.freeze({
     event: 'PostToolUse' as const,
     routeId: 'edit' as const,
     matcher: 'Edit|Write',
-    // HRD-05: post-edit-guard.sh and minimal-change-observer.sh are retired;
-    // this route's write-amplification hot path is now the in-process
-    // mutation-observed journal handler (src/cli/hook/mutation-observed.ts),
-    // invoked directly by runHook() -- there is no script left to name here.
-    // An empty list (rather than a stale two-name array) is what keeps
-    // consumers that treat `scripts` as "files that must exist on disk"
-    // (doctor's repo-hook-scripts check, the adopt/sync tooling) reporting
-    // truthfully instead of a permanent false "missing script" drift signal
-    // (same reasoning as HRD-03/HRD-04's precedents above).
-    scripts: Object.freeze([]),
+    // HRD-05: the post-edit journal is owned by the in-process observer.
+    handler: 'mutation-observed',
   }),
   Object.freeze({
     event: 'PostToolUse' as const,
     routeId: 'bash' as const,
     matcher: 'Bash',
-    scripts: Object.freeze(['post-bash.sh']),
+    handler: 'command-observed',
   }),
   Object.freeze({
     event: 'PostToolUse' as const,
     routeId: 'always' as const,
-    scripts: Object.freeze(['post-tool-observer.sh']),
+    handler: 'trace-observer',
   }),
   Object.freeze({
     event: 'UserPromptSubmit' as const,
     routeId: 'default' as const,
-    scripts: Object.freeze(['prompt-guard.sh']),
+    handler: 'prompt',
   }),
   Object.freeze({
     event: 'UserPromptSubmit' as const,
     routeId: 'delegation' as const,
     hosts: Object.freeze(['codex'] as const),
-    scripts: Object.freeze(['codex-delegation-advisor.sh']),
+    handler: 'subagent',
   }),
   Object.freeze({
     event: 'SubagentStart' as const,
     routeId: 'context' as const,
     hosts: Object.freeze(['codex'] as const),
-    scripts: Object.freeze(['subagent-start-context.sh']),
+    handler: 'subagent',
   }),
   Object.freeze({
     event: 'SubagentStop' as const,
     routeId: 'quality' as const,
     hosts: Object.freeze(['codex'] as const),
-    scripts: Object.freeze(['subagent-stop-quality.sh']),
+    handler: 'subagent',
   }),
   Object.freeze({
     event: 'Stop' as const,
     routeId: 'default' as const,
     // HRD-06: Stop orchestration is owned by the in-process stop-handler.
-    scripts: Object.freeze([]),
+    handler: 'stop',
   }),
 ]);
 

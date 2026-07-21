@@ -1,14 +1,14 @@
 /**
- * `repo-harness migrate` — convert legacy project-level hook adapters to the
- * global CLI pattern (dry-run default; --apply commits).
+ * `repo-harness migrate` — remove repo-harness-owned project-level hook
+ * adapters after the user-level typed adapter cutover (dry-run default;
+ * --apply commits).
  *
  * Targets two legacy file shapes:
  *   - <repo>/.codex/hooks.json       (Phase 0 / pre-CLI Codex adapter)
  *   - <repo>/.claude/settings.json   (Phase 0 / pre-CLI Claude adapter, hooks segment)
  *
- * Identification: any hook command containing `run-hook.sh` substring is treated
- * as a legacy project-level entry. Phase 0 prototype + canary observations
- * confirmed this is the stable signature. User-authored sibling hooks (e.g.
+ * Identification is owned by core/adoption/managed-hook-config.ts and shared
+ * with install and adopt. User-authored sibling hooks (for example
  * `rtk hook claude`) do not match and survive migration.
  *
  * Safety:
@@ -21,9 +21,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { atomicWriteFileSync, formatJson, readJsonOrEmpty } from '../installer/shared';
-import type { HookEntry, HooksByEvent } from '../installer/managed-entries';
-
-const LEGACY_TAG = 'run-hook.sh';
+import { stripRepoHarnessManagedHooks } from '../../core/adoption/managed-hook-config';
 
 export interface MigrateOptions {
   cwd?: string;
@@ -33,7 +31,7 @@ export interface MigrateOptions {
 export interface MigratePlanFile {
   path: string;
   legacyEntriesFound: number;
-  legacyEntries: Array<{ event: string; command: string }>;
+  legacyEntries: readonly { event: string; command: string }[];
   action: 'no-op' | 'remove' | 'remove-and-clean-hooks-segment';
 }
 
@@ -43,42 +41,14 @@ export interface MigratePlan {
 }
 
 interface SettingsOrHooksFile {
-  hooks?: HooksByEvent;
+  hooks?: unknown;
   [key: string]: unknown;
-}
-
-function isLegacyEntry(entry: HookEntry): boolean {
-  if (!entry || !Array.isArray(entry.hooks)) return false;
-  return entry.hooks.some(
-    (h) => typeof h?.command === 'string' && h.command.includes(LEGACY_TAG),
-  );
-}
-
-function stripLegacyEntries(existing: HooksByEvent | undefined): {
-  cleaned: HooksByEvent;
-  removed: Array<{ event: string; command: string }>;
-} {
-  const cleaned: HooksByEvent = {};
-  const removed: Array<{ event: string; command: string }> = [];
-  if (!existing) return { cleaned, removed };
-  for (const [event, entries] of Object.entries(existing)) {
-    const kept: HookEntry[] = [];
-    for (const entry of entries ?? []) {
-      if (isLegacyEntry(entry)) {
-        removed.push({ event, command: entry.hooks?.[0]?.command ?? '(unknown)' });
-      } else {
-        kept.push(entry);
-      }
-    }
-    if (kept.length > 0) cleaned[event] = kept;
-  }
-  return { cleaned, removed };
 }
 
 function planForFile(filePath: string): MigratePlanFile | null {
   if (!fs.existsSync(filePath)) return null;
   const data = readJsonOrEmpty<SettingsOrHooksFile>(filePath);
-  const { cleaned, removed } = stripLegacyEntries(data.hooks);
+  const { hooks: cleaned, removed } = stripRepoHarnessManagedHooks(data.hooks);
   if (removed.length === 0) {
     return { path: filePath, legacyEntriesFound: 0, legacyEntries: [], action: 'no-op' };
   }
@@ -98,7 +68,7 @@ function applyForFile(filePath: string): void {
     fs.copyFileSync(filePath, backupPath);
   }
   const data = readJsonOrEmpty<SettingsOrHooksFile>(filePath);
-  const { cleaned } = stripLegacyEntries(data.hooks);
+  const { hooks: cleaned } = stripRepoHarnessManagedHooks(data.hooks);
   const next: SettingsOrHooksFile = { ...data, hooks: cleaned };
   if (Object.keys(cleaned).length === 0) {
     delete (next as Record<string, unknown>).hooks;

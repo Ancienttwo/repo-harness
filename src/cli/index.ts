@@ -53,7 +53,6 @@ import { runMinimalChangeCli } from './hook/minimal-change-cli';
 import { runReviewRubricCli } from './hook/review-rubric';
 import { runReviewSubjectCli } from './hook/review-subject';
 import { runAdoptionPlan } from './commands/adopt-plan';
-import { runRuntimeRollback } from './repo-adoption/reclaim-runtime';
 import { rollbackAdoptionTransaction } from '../effects/fs-transaction';
 import {
   assertTarget,
@@ -419,14 +418,11 @@ export function buildProgram(): Command {
     .description('Install or refresh the repo-local harness workflow in an existing repo')
     .argument('[action]', 'Optional action: rollback')
     .option('--repo <path>', 'Target repository path (defaults to cwd)')
-    .option('--archive <path>', 'Runtime reclaim archive to restore when action is rollback')
     .option('--transaction <path>', 'Adoption transaction manifest to restore when action is rollback')
     .option('--dry-run', 'Plan repo harness changes without applying them')
     .option('--target <target>', `Host target for readiness checks and optional global bootstrap: ${TARGET_HELP}`, 'both')
     .option('--no-verify', 'Skip repo workflow verification after apply')
     .option('--no-codegraph', 'Skip building the CodeGraph index and MCP readiness check')
-    .option('--reclaim-runtime', 'Rejected until reclaim operations are part of the canonical adoption transaction')
-    .option('--compact', 'Rejected until compact operations are part of the canonical adoption transaction')
     .option('--mode <mode>', 'Adoption mode: minimal|standard|self-host', 'standard')
     .option('--configure-codegraph', 'Deprecated: user-level MCP config belongs to repo-harness update/setup')
     .option('--sync-codegraph', 'Sync the CodeGraph index after ensure')
@@ -436,14 +432,11 @@ export function buildProgram(): Command {
     .option('--json', 'Output JSON instead of human-readable text')
     .action(async (action: string | undefined, rawOpts: {
       repo?: string;
-      archive?: string;
       transaction?: string;
       dryRun?: boolean;
       target: string;
       verify?: boolean;
       codegraph?: boolean;
-      reclaimRuntime?: boolean;
-      compact?: boolean;
       mode?: string;
       configureCodegraph?: boolean;
       syncCodegraph?: boolean;
@@ -471,19 +464,8 @@ export function buildProgram(): Command {
           }
           process.exit(rollback.ok ? 0 : 1);
         }
-        if (!rawOpts.archive) {
-          console.error('repo-harness adopt rollback: --archive or --transaction is required');
-          process.exit(2);
-        }
-        const rollback = runRuntimeRollback({ repo: rawOpts.repo, archive: rawOpts.archive });
-        if (rawOpts.json === true) {
-          console.log(JSON.stringify(rollback, null, 2));
-        } else {
-          console.log(`[adopt] ${rollback.status}: rollback runtime archive ${rollback.archive}`);
-          for (const restored of rollback.restored) console.log(`[adopt] restored: ${restored}`);
-          for (const missing of rollback.missing) console.log(`[adopt] missing: ${missing}`);
-        }
-        process.exit(rollback.status === 'ok' ? 0 : 1);
+        console.error('repo-harness adopt rollback: --transaction is required');
+        process.exit(2);
       }
       const target = assertTarget(rawOpts.target, 'adopt');
       assertBrainMode(rawOpts.brainMode ?? 'skip', 'adopt');
@@ -498,10 +480,6 @@ export function buildProgram(): Command {
       }
       if (rawOpts.interactive === true) {
         console.error('repo-harness adopt: --interactive can configure user-level runtime state; use repo-harness install or setup instead');
-        process.exit(2);
-      }
-      if (rawOpts.reclaimRuntime === true || rawOpts.compact === true) {
-        console.error('repo-harness adopt: --reclaim-runtime and --compact are unavailable until their mutations join the canonical adoption transaction');
         process.exit(2);
       }
       if (rawOpts.dryRun === true) {

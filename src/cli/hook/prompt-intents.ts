@@ -1,14 +1,12 @@
 /**
- * Prompt intent classifiers — TypeScript port of the prompt-guard.sh shell
- * regex layer.
+ * Prompt intent classifiers for the typed UserPromptSubmit handler.
  *
  * The shell hook used byte-oriented `grep -Ei` classifiers, which made
  * Chinese-language boundaries locale-dependent (UTF-8 continuation bytes can
  * fall inside `[[:punct:]]` under LC_ALL=C, so e.g. "里完成。" misclassified
  * as a done declaration on GNU grep but not BSD grep). This module owns the
- * full prompt-text classification with real Unicode semantics; the shell
- * layer keeps filesystem authority (plan/contract/worktree state) and side
- * effects, and consumes the JSON verdict from `prompt-guard-decide`.
+ * full prompt-text classification with real Unicode semantics. The typed
+ * prompt handler owns filesystem state, side effects, and verdict rendering.
  *
  * Porting conventions:
  * - `grep -qEi "<pat>"` over multi-line text → RegExp with `imu` flags so
