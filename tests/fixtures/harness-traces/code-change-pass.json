@@ -33,8 +33,8 @@
     {"name": "allowed_paths", "status": "pass"}
   ],
   "handoffs": [],
-  "external_acceptance": {
-    "status": "not_required"
+  "acceptance_receipt": {
+    "status": "pass", "disposition": "external_pass", "reviewer": "Claude", "source": "claude-review"
   },
   "files_changed": ["scripts/verify-sprint.sh", "tests/helper-scripts.test.ts"],
   "allowed_paths_check": {

@@ -1,4 +1,4 @@
-import { describe, test, expect, setDefaultTimeout } from "bun:test";
+import { afterEach, describe, test, expect, setDefaultTimeout } from "bun:test";
 import {
   appendFileSync,
   cpSync,
@@ -33,6 +33,12 @@ setDefaultTimeout(HOOK_RUNTIME_TIMEOUT_MS);
 
 const ROOT = join(import.meta.dir, "..");
 const ASSETS_HOOKS_DIR = join(ROOT, "assets/hooks");
+const FIXTURE_ACCEPTANCE_DIRS = new Set<string>();
+
+afterEach(() => {
+  for (const path of FIXTURE_ACCEPTANCE_DIRS) rmSync(path, { recursive: true, force: true });
+  FIXTURE_ACCEPTANCE_DIRS.clear();
+});
 const TEST_NODE_PATH = resolveTestNodePath();
 const THINK_SKILL_BODY = [
   "---",
@@ -200,7 +206,7 @@ function runSessionStartHook(cwd: string, env: Record<string, string> = {}) {
   });
 }
 
-function writeValidSprintChecks(cwd: string) {
+function writeValidSprintChecks(cwd: string, subject = "") {
   writeFileSync(
     join(cwd, ".ai/harness/checks/latest.json"),
     JSON.stringify(
@@ -212,7 +218,24 @@ function writeValidSprintChecks(cwd: string) {
         generated_at: "2026-03-04T14:10:00+0000",
         contract: { file: "tasks/contracts/demo.contract.md", status: "pass", exit_code: 0 },
         review: { file: "tasks/reviews/demo.review.md", status: "pass" },
+        acceptance_receipt: {
+          status: "pass",
+          disposition: "external_pass",
+          reviewer: "Claude",
+          source: "claude-review",
+          message: "AcceptanceReceipt external_pass is valid.",
+        },
         benchmark_evidence: { status: "not_applicable", report_sha256: "", benchmark_subject_sha256: "" },
+        review_subject_sha256: subject,
+        commands: [
+          { name: "verify-sprint", command: "repo-harness run verify-sprint", status: "pass", exit_code: 0 },
+          { name: "verify-contract", command: "repo-harness run verify-contract", status: "pass", exit_code: 0 },
+        ],
+        guards: [
+          { name: "contract", status: "pass" },
+          { name: "review", status: "pass" },
+          { name: "allowed_paths", status: "pass" },
+        ],
       },
       null,
       2
@@ -252,6 +275,14 @@ function passingContractFixture(status = "Pending"): string {
     "# Task Contract: demo",
     "",
     `> **Status**: ${status}`,
+    "> **Plan**: plans/plan-20260304-1410-demo.md",
+    "> **Owner**: fixture-owner",
+    "",
+    "## Acceptance Policy",
+    "",
+    "```json",
+    '{"protocol":1,"reviewer":"Claude","user_waiver":"allowed"}',
+    "```",
     "",
     "## Evidence Requirements",
     "",
@@ -267,6 +298,52 @@ function passingContractFixture(status = "Pending"): string {
     "```",
     "",
   ].join("\n");
+}
+
+function recordFixtureAcceptance(cwd: string): void {
+  mkdirSync(join(cwd, ".ai", "harness"), { recursive: true });
+  writeFileSync(
+    join(cwd, ".ai", "harness", "policy.json"),
+    JSON.stringify({ worktree_strategy: { review_base: "main" } }) + "\n",
+  );
+  writeValidSprintChecks(cwd, currentReviewFingerprint(cwd).split('|')[0]);
+  const result = spawnSync(
+    process.execPath,
+    [
+      join(ROOT, "scripts/acceptance-receipt.ts"),
+      "record",
+      "--contract", "tasks/contracts/demo.contract.md",
+      "--verification", ".ai/harness/checks/latest.json",
+      "--disposition", "external_pass",
+      "--reviewer", "Claude",
+      "--source", "claude-review",
+      "--summary", "fixture semantic acceptance",
+    ],
+    {
+      cwd,
+      encoding: "utf-8",
+      env: process.env,
+    },
+  );
+  if (result.status !== 0) throw new Error(`fixture acceptance failed: ${result.stderr || result.stdout}`);
+  const pathResult = spawnSync(process.execPath, [join(ROOT, "scripts/acceptance-receipt.ts"), "path"], {
+    cwd,
+    encoding: "utf-8",
+    env: process.env,
+  });
+  if (pathResult.status !== 0) throw new Error(`fixture receipt path failed: ${pathResult.stderr}`);
+  FIXTURE_ACCEPTANCE_DIRS.add(dirname(pathResult.stdout.trim()));
+  const verifyResult = spawnSync(
+    process.execPath,
+    [
+      join(ROOT, "src/cli/index.ts"), "run", "acceptance-receipt", "verify",
+      "--contract", "tasks/contracts/demo.contract.md",
+      "--verification", ".ai/harness/checks/latest.json",
+      "--format", "row",
+    ],
+    { cwd, encoding: "utf-8", env: process.env },
+  );
+  if (verifyResult.status !== 0) throw new Error(`fixture protected receipt verify failed: ${verifyResult.stderr || verifyResult.stdout}`);
 }
 
 function writeAccountCapabilityRegistry(cwd: string): void {
@@ -323,29 +400,26 @@ function writeDoneCapabilityRegistry(cwd: string): void {
   ].join("\n"));
 }
 
-function externalAcceptanceAdvice(reviewer = "Codex", source = "codex-review", fingerprint?: string): string {
+function acceptanceReceiptProjection(reviewer = "Codex", source = "codex-review", fingerprint?: string): string {
   const [subject, targetRevision] = fingerprint?.split('|') ?? [];
   return [
-    "## External Acceptance Advice",
+    "## Acceptance Receipt Projection",
     "",
-    "> **External Acceptance**: pass",
-    `> **External Reviewer**: ${reviewer}`,
-    `> **External Source**: ${source}`,
-    "> **External Started**: 2026-03-04T14:05:00+0800",
-    "> **External Completed**: 2026-03-04T14:06:00+0800",
+    "> **Disposition**: external_pass",
+    `> **Reviewer**: ${reviewer}`,
+    `> **Source**: ${source}`,
+    "> **Actor**: not-applicable",
     ...(fingerprint
       ? [
-          "> **Review Rubric Version**: 2",
           `> **Reviewed Subject SHA256**: ${subject}`,
           "> **Reviewed Subject Scope**: normalized-final-content",
           `> **Reviewed Target Revision**: ${targetRevision}`,
-          "> **Benchmark Evidence SHA256**: not-applicable",
+          "> **Verification Evidence SHA256**: sha256:0000000000000000000000000000000000000000000000000000000000000000",
         ]
       : []),
     "",
-    "- P1 blockers: none",
-    "- P2 advisories: none",
-    "- Acceptance checklist: pass",
+    "- Summary: fixture acceptance",
+    "- Findings: none",
   ].join("\n");
 }
 
@@ -524,7 +598,7 @@ function writePassingReview(cwd: string, fingerprint?: string) {
       "",
       // Bind the External Acceptance section to the same fingerprint so the
       // peer's acceptance is for the current diff, not a stale earlier one.
-      externalAcceptanceAdvice("Codex", "codex-review", fingerprint),
+      acceptanceReceiptProjection("Codex", "codex-review", fingerprint),
       "",
     ].join("\n")
   );
@@ -2184,7 +2258,7 @@ describe("Hook runtime behavior", () => {
     try {
       initGitRepo(cwd);
       installHooks(cwd);
-      writeDoneGateBase(cwd);
+      writeDoneGateBase(cwd, { archive: true });
       // No review is ever written for this fixture: fresh_review/
       // external_acceptance/fresh_checks stay unsatisfied under Strict, so
       // readyToShip resolves to block while durable_recovery_state (the only
@@ -2416,13 +2490,14 @@ describe("Hook runtime behavior", () => {
       // warn-only path for a rubric-less review was removed.)
       const fingerprint = currentReviewFingerprint(cwd);
       writePassingReview(cwd, fingerprint);
+      recordFixtureAcceptance(cwd);
 
       const res = runHook("prompt-guard.sh", cwd, {
         stdin: JSON.stringify({ user_message: "任务完成了，结束吧" }),
         env: { HOOK_HOST: "claude" },
       });
 
-      expect(res.status).toBe(0);
+      if (res.status !== 0) throw new Error(`done hook failed: ${res.stdout}\n${res.stderr}`);
       expect(res.stdout).toContain("[ContractVerify]");
       expect(res.stdout).not.toContain("[ReviewFreshness] WARN");
       expect(res.stdout).not.toContain("[ReviewFreshnessGuard]");
@@ -2441,6 +2516,7 @@ describe("Hook runtime behavior", () => {
       writeFileSync(join(cwd, "tracked.txt"), "base\nreviewed change\n");
       const fingerprint = currentReviewFingerprint(cwd);
       writePassingReview(cwd, fingerprint);
+      recordFixtureAcceptance(cwd);
 
       const res = runHook("prompt-guard.sh", cwd, {
         stdin: JSON.stringify({ user_message: "任务完成了，结束吧" }),
@@ -2457,15 +2533,16 @@ describe("Hook runtime behavior", () => {
     }
   });
 
-  test("prompt-guard: blocks done intent when review subject is stale", () => {
+  test("prompt-guard: blocks semantic changes after the AcceptanceReceipt was recorded", () => {
     const cwd = tmpWorkspace("prompt-guard-review-stale");
     try {
       initGitRepo(cwd);
       installHooks(cwd);
-      writeDoneGateBase(cwd);
+      writeDoneGateBase(cwd, { archive: true });
       writeFileSync(join(cwd, "tracked.txt"), "base\nreviewed change\n");
       const fingerprint = currentReviewFingerprint(cwd);
       writePassingReview(cwd, fingerprint);
+      recordFixtureAcceptance(cwd);
       writeFileSync(join(cwd, "tracked.txt"), "base\nreviewed change\nchanged after review\n");
 
       const res = runHook("prompt-guard.sh", cwd, {
@@ -2474,44 +2551,41 @@ describe("Hook runtime behavior", () => {
       });
 
       expect(res.status).toBe(2);
-      expect(res.stdout).toContain("[ReviewFreshnessGuard]");
-      expect(res.stdout).toContain("Review is stale for current review subject");
-      expect(res.stdout).toContain('"guard":"ReviewFreshnessGuard"');
-      expect(res.stdout).not.toContain("[ExternalAcceptanceGuard]");
+      expect(res.stdout).not.toContain("[ReviewFreshnessGuard]");
+      expect(res.stdout).toContain("[AcceptanceReceiptGuard]");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
   });
 
-  test("prompt-guard: blocks done intent when review subject is malformed", () => {
+  test("prompt-guard: ignores malformed review prose when the AcceptanceReceipt projection passes", () => {
     const cwd = tmpWorkspace("prompt-guard-review-malformed");
     try {
       initGitRepo(cwd);
       installHooks(cwd);
-      writeDoneGateBase(cwd);
+      writeDoneGateBase(cwd, { archive: true });
       writePassingReview(cwd, "sha256:not-a-valid-fingerprint");
+      recordFixtureAcceptance(cwd);
 
       const res = runHook("prompt-guard.sh", cwd, {
         stdin: JSON.stringify({ user_message: "任务完成了，结束吧" }),
         env: { HOOK_HOST: "claude" },
       });
 
-      expect(res.status).toBe(2);
-      expect(res.stdout).toContain("[ReviewFreshnessGuard]");
-      expect(res.stdout).toContain("Review subject is malformed");
-      expect(res.stdout).toContain('"guard":"ReviewFreshnessGuard"');
-      expect(res.stdout).not.toContain("[ExternalAcceptanceGuard]");
+      expect(res.status).toBe(0);
+      expect(res.stdout).not.toContain("[ReviewFreshnessGuard]");
+      expect(res.stdout).not.toContain("[AcceptanceReceiptGuard]");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
   });
 
-  test("prompt-guard: blocks done intent when a rubric v2 review subject is still pending", () => {
+  test("prompt-guard: ignores pending review prose when the AcceptanceReceipt projection passes", () => {
     const cwd = tmpWorkspace("prompt-guard-review-pending");
     try {
       initGitRepo(cwd);
       installHooks(cwd);
-      writeDoneGateBase(cwd);
+      writeDoneGateBase(cwd, { archive: true });
       // Rubric v2 metadata that was never filled in: fail closed.
       writeFileSync(
         join(cwd, "tasks/reviews/demo.review.md"),
@@ -2527,32 +2601,31 @@ describe("Hook runtime behavior", () => {
           "",
           humanReviewCard(),
           "",
-          externalAcceptanceAdvice(),
+          acceptanceReceiptProjection(),
           "",
         ].join("\n")
       );
+      recordFixtureAcceptance(cwd);
 
       const res = runHook("prompt-guard.sh", cwd, {
         stdin: JSON.stringify({ user_message: "任务完成了，结束吧" }),
         env: { HOOK_HOST: "claude" },
       });
 
-      expect(res.status).toBe(2);
-      expect(res.stdout).not.toContain("[ReviewFreshness] WARN");
-      expect(res.stdout).toContain("[ReviewFreshnessGuard]");
-      expect(res.stdout).toContain("Review subject is missing for rubric v2");
-      expect(res.stdout).toContain('"guard":"ReviewFreshnessGuard"');
+      expect(res.status).toBe(0);
+      expect(res.stdout).not.toContain("[ReviewFreshnessGuard]");
+      expect(res.stdout).not.toContain("[AcceptanceReceiptGuard]");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
   });
 
-  test("prompt-guard: blocks done intent when the review rubric version is malformed or unsupported", () => {
+  test("prompt-guard: ignores malformed rubric prose when the AcceptanceReceipt projection passes", () => {
     const cwd = tmpWorkspace("prompt-guard-review-rubric-malformed");
     try {
       initGitRepo(cwd);
       installHooks(cwd);
-      writeDoneGateBase(cwd);
+      writeDoneGateBase(cwd, { archive: true });
       writeFileSync(join(cwd, "tracked.txt"), "base\nreviewed change\n");
       const fp = currentReviewFingerprint(cwd);
       const [subject, targetRevision] = fp.split('|');
@@ -2574,32 +2647,31 @@ describe("Hook runtime behavior", () => {
           "",
           humanReviewCard(),
           "",
-          externalAcceptanceAdvice("Codex", "codex-review", fp),
+          acceptanceReceiptProjection("Codex", "codex-review", fp),
           "",
         ].join("\n")
       );
+      recordFixtureAcceptance(cwd);
 
       const res = runHook("prompt-guard.sh", cwd, {
         stdin: JSON.stringify({ user_message: "任务完成了，结束吧" }),
         env: { HOOK_HOST: "claude" },
       });
 
-      expect(res.status).toBe(2);
-      expect(res.stdout).not.toContain("[ReviewFreshness] WARN");
-      expect(res.stdout).toContain("[ReviewFreshnessGuard]");
-      expect(res.stdout).toContain("malformed or unsupported");
-      expect(res.stdout).toContain('"guard":"ReviewFreshnessGuard"');
+      expect(res.status).toBe(0);
+      expect(res.stdout).not.toContain("[ReviewFreshnessGuard]");
+      expect(res.stdout).not.toContain("[AcceptanceReceiptGuard]");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
   });
 
-  test("prompt-guard: blocks done intent when the top-of-file review rubric version is absent", () => {
+  test("prompt-guard: ignores absent rubric prose when the AcceptanceReceipt projection passes", () => {
     const cwd = tmpWorkspace("prompt-guard-review-rubric-absent");
     try {
       initGitRepo(cwd);
       installHooks(cwd);
-      writeDoneGateBase(cwd);
+      writeDoneGateBase(cwd, { archive: true });
       writeFileSync(join(cwd, "tracked.txt"), "base\nreviewed change\n");
       const fp = currentReviewFingerprint(cwd);
       const [subject, targetRevision] = fp.split('|');
@@ -2619,36 +2691,35 @@ describe("Hook runtime behavior", () => {
           "",
           humanReviewCard(),
           "",
-          externalAcceptanceAdvice("Codex", "codex-review", fp),
+          acceptanceReceiptProjection("Codex", "codex-review", fp),
           "",
         ].join("\n")
       );
+      recordFixtureAcceptance(cwd);
 
       const res = runHook("prompt-guard.sh", cwd, {
         stdin: JSON.stringify({ user_message: "任务完成了，结束吧" }),
         env: { HOOK_HOST: "claude" },
       });
 
-      expect(res.status).toBe(2);
-      // The top fingerprint is fresh, so freshness passes; external acceptance is
-      // the authority that requires a supported rubric and rejects the absent one.
+      expect(res.status).toBe(0);
       expect(res.stdout).not.toContain("[ReviewFreshnessGuard]");
-      expect(res.stdout).toContain("[ExternalAcceptanceGuard]");
-      expect(res.stdout).toContain("Review Rubric Version is missing");
-      expect(res.stdout).toContain('"guard":"ExternalAcceptanceGuard"');
+      expect(res.stdout).not.toContain("[AcceptanceReceiptGuard]");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
   });
 
-  test("prompt-guard: blocks done intent when external acceptance fingerprint is stale even though the top fingerprint is fresh", () => {
+  test("prompt-guard: ignores stale legacy acceptance prose when the AcceptanceReceipt projection passes", () => {
     const cwd = tmpWorkspace("prompt-guard-external-stale-fp");
     try {
       initGitRepo(cwd);
       installHooks(cwd);
-      writeDoneGateBase(cwd);
+      writeDoneGateBase(cwd, { archive: true });
       writeFileSync(join(cwd, "tracked.txt"), "base\nfirst reviewed change\n");
       const f1 = currentReviewFingerprint(cwd);
+      writePassingReview(cwd, f1);
+      recordFixtureAcceptance(cwd);
       // Implementation moves on to F2; the peer only ever reviewed F1.
       writeFileSync(join(cwd, "tracked.txt"), "base\nfirst reviewed change\nsecond change\n");
       const f2 = currentReviewFingerprint(cwd);
@@ -2666,32 +2737,31 @@ describe("Hook runtime behavior", () => {
           "",
           humanReviewCard(),
           "",
-          externalAcceptanceAdvice("Codex", "codex-review", f1),
+          acceptanceReceiptProjection("Codex", "codex-review", f1),
           "",
         ].join("\n")
       );
+      recordFixtureAcceptance(cwd);
 
       const res = runHook("prompt-guard.sh", cwd, {
         stdin: JSON.stringify({ user_message: "任务完成了，结束吧" }),
         env: { HOOK_HOST: "claude" },
       });
 
-      expect(res.status).toBe(2);
+      expect(res.status).toBe(0);
       expect(res.stdout).not.toContain("[ReviewFreshnessGuard]");
-      expect(res.stdout).toContain("[ExternalAcceptanceGuard]");
-      expect(res.stdout).toContain("External acceptance subject");
-      expect(res.stdout).toContain("is stale for current review subject");
+      expect(res.stdout).not.toContain("[AcceptanceReceiptGuard]");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
   });
 
-  test("prompt-guard: blocks done intent when a rubric v2 external acceptance omits its subject", () => {
+  test("prompt-guard: ignores unbound legacy acceptance prose when the AcceptanceReceipt projection passes", () => {
     const cwd = tmpWorkspace("prompt-guard-external-missing-fp");
     try {
       initGitRepo(cwd);
       installHooks(cwd);
-      writeDoneGateBase(cwd);
+      writeDoneGateBase(cwd, { archive: true });
       writeFileSync(join(cwd, "tracked.txt"), "base\nreviewed change\n");
       const fp = currentReviewFingerprint(cwd);
       // Top fingerprint is fresh, but the peer section omits the binding — the
@@ -2707,26 +2777,26 @@ describe("Hook runtime behavior", () => {
           "",
           humanReviewCard(),
           "",
-          externalAcceptanceAdvice(),
+          acceptanceReceiptProjection(),
           "",
         ].join("\n")
       );
+      recordFixtureAcceptance(cwd);
 
       const res = runHook("prompt-guard.sh", cwd, {
         stdin: JSON.stringify({ user_message: "任务完成了，结束吧" }),
         env: { HOOK_HOST: "claude" },
       });
 
-      expect(res.status).toBe(2);
+      expect(res.status).toBe(0);
       expect(res.stdout).not.toContain("[ReviewFreshnessGuard]");
-      expect(res.stdout).toContain("[ExternalAcceptanceGuard]");
-      expect(res.stdout).toContain("missing a valid Reviewed Subject SHA256");
+      expect(res.stdout).not.toContain("[AcceptanceReceiptGuard]");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
   });
 
-  test("prompt-guard: blocks done intent when external acceptance advice is missing", () => {
+  test("prompt-guard: does not require legacy acceptance prose when the AcceptanceReceipt projection passes", () => {
     const cwd = tmpWorkspace("prompt-guard-external-acceptance-missing");
     try {
       initGitRepo(cwd);
@@ -2746,7 +2816,8 @@ describe("Hook runtime behavior", () => {
         join(cwd, "tasks/todos.md"),
           "# Task Execution Checklist (Primary)\n\n> **Source Plan**: plans/plan-20260304-1410-demo.md\n"
       );
-      writeFileSync(join(cwd, "tasks/contracts/demo.contract.md"), passingContractFixture());
+      writeFileSync(join(cwd, "tasks/contracts/demo.contract.md"), passingContractFixture("Fulfilled"));
+      writeDoneCapabilityRegistry(cwd);
       writeValidSprintChecks(cwd);
       // Valid rubric-v1 header bound to the current fingerprint (freshness passes)
       // but NO External Acceptance section, so the gate reaches and trips the
@@ -2756,14 +2827,14 @@ describe("Hook runtime behavior", () => {
         join(cwd, "tasks/reviews/demo.review.md"),
         ["# Task Review: demo", "", "> **Recommendation**: pass", "", reviewFingerprintMetadata(fingerprint), "", humanReviewCard("pass", "unavailable"), ""].join("\n")
       );
+      recordFixtureAcceptance(cwd);
 
       const res = runHook("prompt-guard.sh", cwd, {
         stdin: JSON.stringify({ user_message: "任务完成了，结束吧" }),
       });
 
-      expect(res.status).toBe(2);
-      expect(res.stdout).toContain("[ExternalAcceptanceGuard]");
-      expect(res.stdout).toContain("External acceptance section is missing");
+      if (res.status !== 0) throw new Error(`legacy-prose-free done hook failed: ${res.stdout}\n${res.stderr}`);
+      expect(res.stdout).not.toContain("[AcceptanceReceiptGuard]");
       expect(res.stdout).not.toContain("[EvidenceGuard]");
     } finally {
       rmSync(cwd, { recursive: true, force: true });

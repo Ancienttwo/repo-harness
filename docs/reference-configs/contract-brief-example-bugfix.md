@@ -52,7 +52,7 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 - Checks file: `.ai/harness/checks/latest.json`
 - Run snapshots: `.ai/harness/runs/`
 - Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
-- Completion gate: `repo-harness run verify-sprint` must see this contract pass, the review recommend pass, and `## External Acceptance Advice` pass or record a manual override.
+- Completion gate: `repo-harness run verify-sprint --prepare-acceptance` freezes passing contract evidence; one typed `AcceptanceReceipt` then records `external_pass` or a contract-allowed `user_waiver`, and final `verify-sprint` consumes it without rerunning tests.
 
 ## Allowed Paths
 
@@ -109,11 +109,6 @@ delegation:
 exit_criteria:
   tests_pass:
     - path: tests/fixtures/root-cause/regression-guard.test.ts
-  qa_scores:
-    - dimension: functionality
-      min: 7
-  manual_checks:
-    - "Evaluator review file recommends pass"
 ```
 
 ## Acceptance Notes (Human Review)

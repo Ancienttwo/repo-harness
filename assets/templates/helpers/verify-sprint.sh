@@ -1,6 +1,13 @@
 #!/bin/bash
 set -euo pipefail
 
+prepare_acceptance=0
+if [[ "${1:-}" == "--prepare-acceptance" ]]; then
+  prepare_acceptance=1
+  shift
+fi
+[[ $# -eq 0 ]] || { echo "verify-sprint: unknown argument: $1" >&2; exit 2; }
+
 WORKFLOW_STATE_LIB="${REPO_HARNESS_WORKFLOW_STATE_LIB:-.ai/hooks/lib/workflow-state.sh}"
 if [[ -n "${REPO_HARNESS_BUN_BIN:-}" ]] && [[ "$WORKFLOW_STATE_LIB" != /* || ! -f "$WORKFLOW_STATE_LIB" || -L "$WORKFLOW_STATE_LIB" ]]; then
   echo "verify-sprint: trusted workflow-state library is unavailable" >&2
@@ -16,6 +23,7 @@ else
   cd "$SCRIPT_DIR/.."
 fi
 helper_dir="$SCRIPT_DIR"
+BUN_BIN="${REPO_HARNESS_BUN_BIN:-$(command -v bun || true)}"
 
 json_escape() {
   local value="$1"
@@ -25,54 +33,6 @@ json_escape() {
   value="${value//$'\r'/\\r}"
   value="${value//$'\t'/\\t}"
   printf '%s' "$value"
-}
-
-review_card_field() {
-  local file="$1"
-  local label="$2"
-  [[ -n "$file" && -f "$file" ]] || return 1
-  awk -v wanted="$label" '
-    function trim(s) {
-      gsub(/^[[:space:]]+/, "", s)
-      gsub(/[[:space:]]+$/, "", s)
-      return s
-    }
-    BEGIN { wanted = tolower(wanted) }
-    /^##[[:space:]]+Human Review Card[[:space:]]*$/ { in_section = 1; next }
-    in_section && /^##[[:space:]]+/ { exit }
-    !in_section { next }
-    /^[[:space:]]*-[[:space:]]*/ {
-      line = $0
-      sub(/^[[:space:]]*-[[:space:]]*/, "", line)
-      key = line
-      sub(/:.*/, "", key)
-      key = tolower(trim(key))
-      if (key == wanted) {
-        sub(/^[^:]*:[[:space:]]*/, "", line)
-        print trim(line)
-        exit
-      }
-    }
-  ' "$file"
-}
-
-normalize_status_token() {
-  local value="$1"
-  value="$(printf '%s' "$value" | sed -E 's/[;,].*$//; s/[[:space:]].*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' | tr '[:upper:]' '[:lower:]')"
-  printf '%s' "$value"
-}
-
-field_has_concrete_value() {
-  local value="$1"
-  local token
-  token="$(normalize_status_token "$value")"
-  [[ -n "$token" ]] || return 1
-  case "$token" in
-    tbd|todo|n/a|na|none|unknown|unavailable|pending|...)
-      return 1
-      ;;
-  esac
-  return 0
 }
 
 # Advisory only (Phase 3 C1): true when the notes file's "## Promotion
@@ -444,6 +404,64 @@ fi
 
 [[ -n "$contract_file" && -f "$contract_file" ]] || { echo "No active sprint contract found" >&2; exit 1; }
 
+finalize_prepared_acceptance() {
+  local acceptance_row acceptance_exit acceptance_status acceptance_reviewer acceptance_source acceptance_disposition acceptance_message
+  local finalized_checks
+
+  [[ -n "$BUN_BIN" && -x "$BUN_BIN" ]] || { echo "verify-sprint: trusted Bun runtime is unavailable" >&2; return 1; }
+  [[ -f "$helper_dir/acceptance-receipt.ts" ]] || { echo "verify-sprint: AcceptanceReceipt helper is missing: $helper_dir/acceptance-receipt.ts" >&2; return 1; }
+  [[ -n "$review_file" && -f "$review_file" ]] || { echo "verify-sprint: task review projection file is missing" >&2; return 1; }
+  [[ -s "$checks_file" ]] || { echo "verify-sprint: prepared verification evidence is missing; run with --prepare-acceptance first" >&2; return 1; }
+  command -v jq >/dev/null 2>&1 || { echo "verify-sprint: jq is required to finalize AcceptanceReceipt evidence" >&2; return 1; }
+  jq -e '.source == "verify-sprint" and .status == "pass" and .exit_code == 0' "$checks_file" >/dev/null 2>&1 || {
+    echo "verify-sprint: prepared verification evidence is not passing; run with --prepare-acceptance first" >&2
+    return 1
+  }
+
+  set +e
+  acceptance_row="$(REPO_HARNESS_TARGET_REPO_ROOT="$(pwd -P)" "$BUN_BIN" "$helper_dir/acceptance-receipt.ts" verify \
+    --contract "$contract_file" --verification "$checks_file" --format row 2>&1)"
+  acceptance_exit=$?
+  set -e
+  [[ "$acceptance_exit" -eq 0 ]] || { printf '%s\n' "$acceptance_row" >&2; return 1; }
+  IFS=$'\t' read -r acceptance_status acceptance_reviewer acceptance_source acceptance_disposition acceptance_message <<< "$acceptance_row"
+  [[ "$acceptance_status" == "pass" ]] || { echo "verify-sprint: AcceptanceReceipt did not verify: $acceptance_message" >&2; return 1; }
+  case "$acceptance_disposition" in
+    external_pass|user_waiver) ;;
+    *) echo "verify-sprint: AcceptanceReceipt disposition is not a closeout state: $acceptance_disposition" >&2; return 1 ;;
+  esac
+
+  REPO_HARNESS_TARGET_REPO_ROOT="$(pwd -P)" "$BUN_BIN" "$helper_dir/acceptance-receipt.ts" project \
+    --contract "$contract_file" --verification "$checks_file" --review "$review_file" >/dev/null
+
+  finalized_checks="$(mktemp)"
+  jq \
+    --arg reviewer "$acceptance_reviewer" \
+    --arg source "$acceptance_source" \
+    --arg disposition "$acceptance_disposition" \
+    --arg message "$acceptance_message" \
+    '
+      .acceptance_receipt = {
+        status: "pass",
+        disposition: $disposition,
+        reviewer: $reviewer,
+        source: $source,
+        message: $message
+      }
+      | .guards = [.guards[] | if .name == "acceptance_receipt" then .status = "pass" else . end]
+      | .next_step = "finish contract worktree or archive completed task"
+    ' "$checks_file" > "$finalized_checks"
+  cp "$finalized_checks" "$checks_file"
+  rm -f "$finalized_checks"
+  echo "Sprint acceptance finalized without rerunning verification"
+  echo "Prepared evidence: $checks_file"
+}
+
+if [[ "$prepare_acceptance" -eq 0 ]]; then
+  finalize_prepared_acceptance
+  exit $?
+fi
+
 generated_at="$(date '+%Y-%m-%dT%H:%M:%S%z')"
 run_stamp="$(date '+%Y%m%dT%H%M%S')"
 run_id="${HOOK_RUN_ID:-${CLAUDE_RUN_ID:-${CODEX_RUN_ID:-run-${run_stamp}-$$}}}"
@@ -536,60 +554,60 @@ case "$benchmark_evidence_requirement" in
     ;;
 esac
 
-review_status="fail"
-review_message="Task review recommends pass and Human Review Card verdict is pass."
-review_card_verdict=""
-review_card_change_type=""
-review_card_rollback=""
+review_status="pass"
+review_message="Review artifact is available for deterministic AcceptanceReceipt projection."
 if [[ -z "$review_file" || ! -f "$review_file" ]]; then
+  review_status="fail"
   review_message="Missing task review file."
   echo "Missing task review file" >&2
+fi
+
+acceptance_status="missing"
+acceptance_reviewer=""
+acceptance_source=""
+acceptance_disposition=""
+acceptance_message="AcceptanceReceipt is unavailable."
+if [[ "$prepare_acceptance" -eq 1 ]]; then
+  acceptance_status="pending"
+  acceptance_message="Verification evidence is frozen and ready for semantic acceptance."
+elif [[ -z "$BUN_BIN" || ! -x "$BUN_BIN" ]]; then
+  acceptance_message="Trusted Bun runtime is unavailable for AcceptanceReceipt verification."
+elif [[ ! -f "$helper_dir/acceptance-receipt.ts" ]]; then
+  acceptance_message="AcceptanceReceipt helper is missing: $helper_dir/acceptance-receipt.ts"
+elif [[ ! -s "$checks_file" ]]; then
+  acceptance_message="Prepared verification evidence is missing: $checks_file"
 else
-  review_card_verdict="$(normalize_status_token "$(review_card_field "$review_file" "Verdict" || true)")"
-  review_card_change_type="$(normalize_status_token "$(review_card_field "$review_file" "Change type" || true)")"
-  review_card_rollback="$(review_card_field "$review_file" "Rollback" || true)"
-fi
-
-if [[ -n "$review_file" && -f "$review_file" ]]; then
-  if ! grep -Eq '^> \*\*Recommendation\*\*:[[:space:]]*pass([[:space:]]*)$' "$review_file"; then
-    review_message="Task review does not recommend pass."
-    echo "Task review does not recommend pass" >&2
-  elif [[ -z "$review_card_verdict" ]]; then
-    review_message="Task review is missing Human Review Card verdict."
-    echo "Task review is missing Human Review Card verdict" >&2
-  elif [[ "$review_card_verdict" != "pass" ]]; then
-    review_message="Human Review Card verdict is not pass: $review_card_verdict"
-    echo "Human Review Card verdict is not pass: $review_card_verdict" >&2
-  elif [[ -n "$task_profile" && "$review_card_change_type" != "$task_profile" ]]; then
-    review_message="Human Review Card change type does not match task_profile: ${review_card_change_type:-missing} != $task_profile"
-    echo "$review_message" >&2
-  elif ! field_has_concrete_value "$review_card_rollback"; then
-    review_message="Human Review Card rollback is missing or not concrete."
-    echo "$review_message" >&2
+  set +e
+  acceptance_row="$(REPO_HARNESS_TARGET_REPO_ROOT="$(pwd -P)" "$BUN_BIN" "$helper_dir/acceptance-receipt.ts" verify --contract "$contract_file" --verification "$checks_file" --format row 2>&1)"
+  acceptance_exit=$?
+  set -e
+  if [[ "$acceptance_exit" -eq 0 ]]; then
+    IFS=$'\t' read -r acceptance_status acceptance_reviewer acceptance_source acceptance_disposition acceptance_message <<< "$acceptance_row"
+    set +e
+    REPO_HARNESS_TARGET_REPO_ROOT="$(pwd -P)" "$BUN_BIN" "$helper_dir/acceptance-receipt.ts" project \
+      --contract "$contract_file" --verification "$checks_file" --review "$review_file" >/dev/null 2>&1
+    projection_exit=$?
+    set -e
+    if [[ "$projection_exit" -ne 0 ]]; then
+      acceptance_status="fail"
+      acceptance_message="AcceptanceReceipt is valid but its review projection could not be written."
+    fi
   else
-    review_status="pass"
+    acceptance_status="fail"
+    acceptance_message="$acceptance_row"
   fi
-fi
-
-external_status="missing"
-external_reviewer=""
-external_source=""
-external_message="External acceptance status is unavailable."
-if declare -F workflow_external_acceptance_status >/dev/null 2>&1; then
-  external_row="$(workflow_source_authority_call workflow_external_acceptance_status "$review_file")"
-  IFS=$'\t' read -r external_status external_reviewer external_source external_message <<< "$external_row"
 fi
 status="fail"
 exit_code=1
-case "$external_status" in
-  pass)
-    external_gate="pass"
+case "$acceptance_status" in
+  pass|pending)
+    acceptance_gate="pass"
     ;;
   *)
-    external_gate="fail"
+    acceptance_gate="fail"
     ;;
 esac
-if [[ "$contract_exit" -eq 0 && "$review_status" == "pass" && "$external_gate" == "pass" && "$allowed_paths_status" == "pass" ]]; then
+if [[ "$contract_exit" -eq 0 && "$review_status" == "pass" && "$acceptance_gate" == "pass" && "$allowed_paths_status" == "pass" ]]; then
   status="pass"
   exit_code=0
 fi
@@ -602,8 +620,8 @@ if [[ -z "$failure_class" && "$status" != "pass" ]]; then
     failure_class="contract"
   elif [[ "$review_status" != "pass" ]]; then
     failure_class="review"
-  elif [[ "$external_gate" != "pass" ]]; then
-    failure_class="external_acceptance"
+  elif [[ "$acceptance_gate" != "pass" ]]; then
+    failure_class="acceptance_receipt"
   elif [[ "$allowed_paths_status" != "pass" ]]; then
     failure_class="allowed_paths"
   else
@@ -613,7 +631,7 @@ fi
 if [[ "$status" == "pass" ]]; then
   next_step="finish contract worktree or archive completed task"
 else
-  next_step="resolve failing contract, review, external acceptance, or allowed_paths gate"
+  next_step="resolve failing contract, review, AcceptanceReceipt, or allowed_paths gate"
 fi
 handoff_current_exists=false
 handoff_resume_exists=false
@@ -639,13 +657,11 @@ if command -v jq >/dev/null 2>&1 && jq -e . "$contract_report" >/dev/null 2>&1; 
     --arg review_file "${review_file:-}" \
     --arg review_status "$review_status" \
     --arg review_message "$review_message" \
-    --arg review_card_verdict "$review_card_verdict" \
-    --arg review_card_change_type "$review_card_change_type" \
-    --arg review_card_rollback "$review_card_rollback" \
-    --arg external_status "$external_status" \
-    --arg external_reviewer "$external_reviewer" \
-    --arg external_source "$external_source" \
-    --arg external_message "$external_message" \
+    --arg acceptance_status "$acceptance_status" \
+    --arg acceptance_reviewer "$acceptance_reviewer" \
+    --arg acceptance_source "$acceptance_source" \
+    --arg acceptance_disposition "$acceptance_disposition" \
+    --arg acceptance_message "$acceptance_message" \
     --arg worktree "$worktree_path" \
     --arg branch "$branch_name" \
     --arg diff_base_ref "$diff_base_ref" \
@@ -692,7 +708,7 @@ if command -v jq >/dev/null 2>&1 && jq -e . "$contract_report" >/dev/null 2>&1; 
       guards: [
         {name: "contract", status: $contract_status},
         {name: "review", status: $review_status},
-        {name: "external_acceptance", status: $external_status},
+        {name: "acceptance_receipt", status: $acceptance_status},
         {name: "allowed_paths", status: ($allowed_paths_check.status // "unavailable")}
       ],
       handoffs: [
@@ -720,18 +736,14 @@ if command -v jq >/dev/null 2>&1 && jq -e . "$contract_report" >/dev/null 2>&1; 
       review: {
         file: $review_file,
         status: $review_status,
-        message: $review_message,
-        card: {
-          verdict: $review_card_verdict,
-          change_type: $review_card_change_type,
-          rollback: $review_card_rollback
-        }
+        message: $review_message
       },
-      external_acceptance: {
-        status: $external_status,
-        reviewer: $external_reviewer,
-        source: $external_source,
-        message: $external_message
+      acceptance_receipt: {
+        status: $acceptance_status,
+        disposition: $acceptance_disposition,
+        reviewer: $acceptance_reviewer,
+        source: $acceptance_source,
+        message: $acceptance_message
       }
     }' > "$checks_report"
 else
@@ -776,7 +788,7 @@ else
   "guards": [
     {"name": "contract", "status": "$([[ "$contract_exit" -eq 0 ]] && printf pass || printf fail)"},
     {"name": "review", "status": "$(json_escape "$review_status")"},
-    {"name": "external_acceptance", "status": "$(json_escape "$external_status")"},
+    {"name": "acceptance_receipt", "status": "$(json_escape "$acceptance_status")"},
     {"name": "allowed_paths", "status": "$(json_escape "$allowed_paths_status")"}
   ],
   "handoffs": [
@@ -806,18 +818,14 @@ else
   "review": {
     "file": "$(json_escape "${review_file:-}")",
     "status": "$(json_escape "$review_status")",
-    "message": "$(json_escape "$review_message")",
-    "card": {
-      "verdict": "$(json_escape "$review_card_verdict")",
-      "change_type": "$(json_escape "$review_card_change_type")",
-      "rollback": "$(json_escape "$review_card_rollback")"
-    }
+    "message": "$(json_escape "$review_message")"
   },
-  "external_acceptance": {
-    "status": "$(json_escape "$external_status")",
-    "reviewer": "$(json_escape "$external_reviewer")",
-    "source": "$(json_escape "$external_source")",
-    "message": "$(json_escape "$external_message")"
+  "acceptance_receipt": {
+    "status": "$(json_escape "$acceptance_status")",
+    "disposition": "$(json_escape "$acceptance_disposition")",
+    "reviewer": "$(json_escape "$acceptance_reviewer")",
+    "source": "$(json_escape "$acceptance_source")",
+    "message": "$(json_escape "$acceptance_message")"
   }
 }
 EOF_CHECKS

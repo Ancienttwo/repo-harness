@@ -14,7 +14,7 @@
     },
     {
       "scenario": "missing-contract",
-      "source_sha256": "4180c15b81becb9b75d3e8c1625f70edb34d16a31d00f514fbbfe6ea3d97dc06",
+      "source_sha256": "eb632f07283d0577e184520ff237670a8295eff9c592718753cd9b811ceacab8",
       "baseline": "82550779cdccf0575d674ae53bbc95ba63e44743",
       "cli_exit": 0,
       "workflow_profile": "standard",
@@ -22,7 +22,7 @@
     },
     {
       "scenario": "executing-fresh-evidence",
-      "source_sha256": "bd8a700d806dcfb8a810371e070a86c335b639481ba1af52c36a3c5ff3b28b02",
+      "source_sha256": "878fabb76d6f9d994654d7449cbf7ca83d7ebd884dbc1c33a4b64b1adac689a7",
       "baseline": "82550779cdccf0575d674ae53bbc95ba63e44743",
       "cli_exit": 0,
       "workflow_profile": "standard",
@@ -30,7 +30,7 @@
     },
     {
       "scenario": "explicit-strict-without-path-signals",
-      "source_sha256": "101781333974abbc80bed3878d57027defc5f018cbf15da14aad44a3b845eeb7",
+      "source_sha256": "a4079d7fdcf96ac970909b5bd47cb752ae4ed418a24c03f3735e171458a86ca0",
       "baseline": "82550779cdccf0575d674ae53bbc95ba63e44743",
       "cli_exit": 0,
       "workflow_profile": "strict",
@@ -376,7 +376,7 @@
         "envelope_ordering": [
           "contract",
           "review",
-          "external_acceptance",
+          "acceptance_receipt",
           "contract_worktree_finish"
         ],
         "envelope_ordering_source": "static_source_inventory_ship_worktrees_sh",
@@ -442,23 +442,13 @@
         "profile_source_matches": [],
         "exit_code": 1,
         "verdict": "block",
-        "reason": "missing_artifact",
-        "gate_requirements": [
-          "contract",
-          "review",
-          "external_acceptance",
-          "allowed_paths"
-        ],
-        "ordering": [
-          "contract",
-          "review",
-          "external_acceptance",
-          "allowed_paths"
-        ],
+        "reason": "verify_sprint_failed",
+        "gate_requirements": [],
+        "ordering": [],
         "envelope_ordering": [
           "contract",
           "review",
-          "external_acceptance",
+          "acceptance_receipt",
           "contract_worktree_finish"
         ],
         "envelope_ordering_source": "static_source_inventory_ship_worktrees_sh",
@@ -482,10 +472,7 @@
           "worktree_side_effects": [],
           "primary_side_effects": []
         },
-        "side_effects": [
-          ".ai/harness/checks/latest.json",
-          ".ai/harness/runs/loop-semantics-standard-ship-20260712-2327-effective-fixture.json"
-        ],
+        "side_effects": [],
         "missing_semantic_fields": [
           "readyToShip",
           "workflowProfile",
@@ -530,23 +517,13 @@
         "profile_source_matches": [],
         "exit_code": 1,
         "verdict": "block",
-        "reason": "missing_artifact",
-        "gate_requirements": [
-          "contract",
-          "review",
-          "external_acceptance",
-          "allowed_paths"
-        ],
-        "ordering": [
-          "contract",
-          "review",
-          "external_acceptance",
-          "allowed_paths"
-        ],
+        "reason": "verify_sprint_failed",
+        "gate_requirements": [],
+        "ordering": [],
         "envelope_ordering": [
           "contract",
           "review",
-          "external_acceptance",
+          "acceptance_receipt",
           "contract_worktree_finish"
         ],
         "envelope_ordering_source": "static_source_inventory_ship_worktrees_sh",
@@ -570,10 +547,7 @@
           "worktree_side_effects": [],
           "primary_side_effects": []
         },
-        "side_effects": [
-          ".ai/harness/checks/latest.json",
-          ".ai/harness/runs/loop-semantics-strict-ship-20260712-2327-effective-fixture.json"
-        ],
+        "side_effects": [],
         "missing_semantic_fields": [
           "readyToShip",
           "workflowProfile",

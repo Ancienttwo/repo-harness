@@ -88,7 +88,11 @@ evidence_requirements:
   benchmark: not_applicable
 ```
 
-`benchmark` is a reviewed contract declaration, not an inference from `evals/harness/reports/profile-comparison.*` presence, changed filenames, or `Task Profile`. It accepts exactly two values, `required` or `not_applicable`. A missing `## Evidence Requirements` block, more than one such block in the contract, a missing `benchmark:` key, or any other value fails closed wherever the declaration is consulted: `workflow_external_acceptance_status`, `workflow_benchmark_evidence_checks_match`, and `verify-sprint.sh`'s `benchmark_evidence.status` derivation. Unlike `Task Profile`, there is no legacy-passthrough exemption for an absent block.
+`benchmark` is a reviewed contract declaration, not an inference from `evals/harness/reports/profile-comparison.*` presence, changed filenames, or `Task Profile`. It accepts exactly two values, `required` or `not_applicable`. A missing `## Evidence Requirements` block, more than one such block in the contract, a missing `benchmark:` key, or any other value fails closed in AcceptanceReceipt evidence normalization, `workflow_benchmark_evidence_checks_match`, and `verify-sprint.sh`'s `benchmark_evidence.status` derivation. Unlike `Task Profile`, there is no legacy-passthrough exemption for an absent block.
+
+## Acceptance Policy and Receipt
+
+Every new contract freezes one reviewer and the waiver rule in a strict `## Acceptance Policy` JSON block. `verify-sprint --prepare-acceptance` produces the final local evidence bundle; one semantic reviewer then returns `external_pass` or `reject`, or the named contract owner records `user_waiver` only when the policy allows it. The host-owned AcceptanceReceipt binds the normalized implementation subject, contract, goal, verification and benchmark evidence, reviewer identity, target revision, and reviewed paths. Review Markdown is a deterministic projection, never authoring authority. A semantic change or overlapping target movement invalidates the receipt; review/lifecycle-only changes and non-overlapping target movement preserve it.
 
 - `not_applicable` preserves any existing benchmark report on disk and excludes it from this contract's acceptance and checks binding: the coupled review's `Benchmark Evidence SHA256` must read literally `not-applicable`, `.ai/harness/checks/latest.json`'s `benchmark_evidence.status` must read `not_applicable`, and report presence no longer fails the checks match.
 - `required` keeps byte-exact strictness: the current authoritative report's fingerprint and benchmark subject hash must resolve, and both the review's `Benchmark Evidence SHA256` and the recorded checks fingerprint/subject must match that current evidence exactly; a missing or drifted report fails.
@@ -143,17 +147,17 @@ authority.
 
 ## Review Coupling
 
-- A contract is not truly done until the matching review file records a passing recommendation.
-- `tasks/reviews/<plan-stem>.review.md` should be filled from Waza `/check` after verification and cite the contract, implementation notes, checks file, run snapshot, canonical `## External Acceptance Advice`, and any manual observations. Rubric v2 binds both sections to `Reviewed Subject SHA256` with scope `normalized-final-content`; target revision is metadata and invalidates acceptance only when target movement overlaps reviewed paths.
+- A contract is not truly done until its typed `AcceptanceReceipt` records a contract-allowed final disposition.
+- `tasks/reviews/<plan-stem>.review.md` is a human-readable projection of the typed `AcceptanceReceipt` plus any manual observations. It is not an authoring authority. The receipt binds `Reviewed Subject SHA256` with scope `normalized-final-content`; target revision invalidates acceptance only when target movement overlaps reviewed paths.
 - `tasks/notes/<plan-stem>.notes.md` captures task-local decisions and should be archived or promoted deliberately, not left as hidden long-term memory.
 - Closeout is promote-then-archive: durable truths move into `docs/architecture/`, `docs/researches/`, `docs/spec.md`, or `tasks/lessons.md` before `archive-workflow.sh` moves fulfilled plan/contract/review/notes/todo artifacts into `plans/archive/` and `tasks/archive/`.
 
 ### Manual Check Evidence
 
-`exit_criteria.manual_checks` remains a scalar list of exact requirements. The built-in
-`Evaluator review file recommends pass` criterion continues to read the review
-recommendation directly. Every other manual criterion must have one exact matching item
-under the coupled review's `## Manual Check Evidence` section:
+`exit_criteria.manual_checks` remains a scalar list of exact requirements. Every manual
+criterion must have one exact matching item under the coupled review's
+`## Manual Check Evidence` section. Semantic acceptance is never represented as a
+manual-check string; it lives only in the typed `AcceptanceReceipt`:
 
 ```markdown
 - [x] Paid tenant can reopen the saved view after refresh
@@ -178,4 +182,4 @@ evaluator never guesses semantic equivalence.
   recorded `started_at`, then falls back to the recorded `base_branch`; the next fresh
   worktree start records immutable provenance.
 - Execute the sprint in that linked worktree. The primary worktree remains a merge target and must stay clean before merge-back.
-- After implementation, run Waza `/check` so the review file recommends pass, record canonical passing `## External Acceptance Advice` from the peer reviewer for the current review subject and benchmark evidence, then run `repo-harness run contract-worktree finish`. Human Review Card remains the reading summary but is not an acceptance authority. The finish command gates on canonical acceptance before `repo-harness run verify-sprint`, commits the branch, and fast-forwards the target branch only when the target worktree is clean.
+- After implementation, run `repo-harness run verify-sprint --prepare-acceptance`, obtain exactly one semantic disposition from the contract-frozen reviewer (or an explicitly allowed typed user waiver), record the `AcceptanceReceipt`, then run `repo-harness run verify-sprint`. The final verification projects the receipt into the review file. The finish command consumes that same receipt, creates a provider-free exact local seal, and fast-forwards the target branch only when the target worktree is clean.

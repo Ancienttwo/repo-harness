@@ -103,10 +103,6 @@ describe('pure Effective State projection', () => {
       '> **Recommendation**: pass',
       `> **Reviewed Subject SHA256**: ${SUBJECT}`,
       `> **Reviewed Target Revision**: ${TARGET}`,
-      '> **External Acceptance**: pass',
-      '## External Acceptance Advice',
-      `> **Reviewed Subject SHA256**: ${SUBJECT}`,
-      `> **Reviewed Target Revision**: ${TARGET}`,
     ].join('\n');
     const handoff = [
       '> **Task ID**: 20260715-1200-fixture',
@@ -123,7 +119,12 @@ describe('pure Effective State projection', () => {
         targetRevision: TARGET,
         targetOverlapCount: 1,
       },
-      checksText: JSON.stringify({ status: 'pass', active_plan: PLAN, review_subject_sha256: SUBJECT }),
+      checksText: JSON.stringify({
+        status: 'pass',
+        active_plan: PLAN,
+        review_subject_sha256: SUBJECT,
+        acceptance_receipt: { status: 'pass', disposition: 'external_pass' },
+      }),
       sprintPath: 'plans/sprints/fixture.sprint.md',
       sprintExists: true,
       handoffText: handoff,
@@ -260,11 +261,10 @@ describe('pure Effective State projection', () => {
         '> **Recommendation**: pass',
         `> **Reviewed Subject SHA256**: ${SUBJECT}`,
         `> **Reviewed Target Revision**: ${TARGET}`,
-        '> **External Acceptance**: unavailable',
       ].join('\n'),
     }));
     expect(unavailable.review.freshness).toBe('unavailable');
-    expect(unavailable.external_acceptance.freshness).toBe('stale');
+    expect(unavailable.external_acceptance.freshness).toBe('missing');
 
     const stale = projectEffectiveState(input({
       reviewPath: 'tasks/reviews/stale.review.md',
@@ -288,7 +288,7 @@ describe('pure Effective State projection', () => {
 
     const notApplicable = projectEffectiveState(input({ reviewPath: null, reviewText: null }));
     expect(notApplicable.review.freshness).toBe('not_applicable');
-    expect(notApplicable.external_acceptance.freshness).toBe('not_applicable');
+    expect(notApplicable.external_acceptance.freshness).toBe('missing');
     expect(projectEffectiveState(input({ worktreeOwner: null })).worktree.freshness).toBe('missing');
   });
 

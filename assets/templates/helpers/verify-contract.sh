@@ -324,12 +324,6 @@ check_evidence_requirements() {
   esac
 }
 
-review_recommends_pass() {
-  local review_file="$1"
-  [[ -n "$review_file" && -f "$review_file" ]] || return 1
-  grep -Eq '^> \*\*Recommendation\*\*:[[:space:]]*pass[[:space:]]*$' "$review_file"
-}
-
 review_manual_check_evidence() {
   local review_file="$1"
   local manual_check="$2"
@@ -1010,39 +1004,28 @@ fi
 
 if ((${#manual_checks[@]})); then
   for check in "${manual_checks[@]}"; do
-    case "$check" in
-      "Evaluator review file recommends pass")
-        if review_recommends_pass "$review_file"; then
-          pass "manual_checks" "$check" "manual_checks: $check"
+    evidence_row="$(review_manual_check_evidence "$review_file" "$check")"
+    evidence_status="${evidence_row%%$'\t'*}"
+    evidence=""
+    if [[ "$evidence_row" == *$'\t'* ]]; then
+      evidence="${evidence_row#*$'\t'}"
+    fi
+    case "$evidence_status" in
+      checked)
+        if is_concrete_manual_evidence "$evidence"; then
+          pass "manual_checks" "$check" "manual_checks: exact checked evidence recorded for $check"
         else
-          fail "manual_checks" "$check" "manual_checks: $check"
+          fail "manual_checks" "$check" "manual_checks evidence is placeholder-only: $check"
         fi
         ;;
+      unchecked)
+        fail "manual_checks" "$check" "manual_checks evidence is unchecked: $check"
+        ;;
+      missing_evidence)
+        fail "manual_checks" "$check" "manual_checks checked item has no evidence: $check"
+        ;;
       *)
-        evidence_row="$(review_manual_check_evidence "$review_file" "$check")"
-        evidence_status="${evidence_row%%$'\t'*}"
-        evidence=""
-        if [[ "$evidence_row" == *$'\t'* ]]; then
-          evidence="${evidence_row#*$'\t'}"
-        fi
-        case "$evidence_status" in
-          checked)
-            if is_concrete_manual_evidence "$evidence"; then
-              pass "manual_checks" "$check" "manual_checks: exact checked evidence recorded for $check"
-            else
-              fail "manual_checks" "$check" "manual_checks evidence is placeholder-only: $check"
-            fi
-            ;;
-          unchecked)
-            fail "manual_checks" "$check" "manual_checks evidence is unchecked: $check"
-            ;;
-          missing_evidence)
-            fail "manual_checks" "$check" "manual_checks checked item has no evidence: $check"
-            ;;
-          *)
-            fail "manual_checks" "$check" "manual_checks exact evidence item is missing: $check"
-            ;;
-        esac
+        fail "manual_checks" "$check" "manual_checks exact evidence item is missing: $check"
         ;;
     esac
   done

@@ -769,7 +769,7 @@ for key in ["run_id", "task_profile", "active_plan", "worktree", "branch", "fail
 for key in ["commands", "guards", "handoffs", "files_changed"]:
     if not isinstance(data.get(key), list):
         errors.append(f"field must be an array: {key}")
-for key in ["external_acceptance", "allowed_paths_check"]:
+for key in ["acceptance_receipt", "allowed_paths_check"]:
     if not isinstance(data.get(key), dict):
         errors.append(f"field must be an object: {key}")
 if data.get("status") not in ["pass", "fail"]:
@@ -804,7 +804,7 @@ for (const key of ["run_id", "task_profile", "active_plan", "worktree", "branch"
 for (const key of ["commands", "guards", "handoffs", "files_changed"]) {
   if (!Array.isArray(data[key])) errors.push(`field must be an array: ${key}`);
 }
-for (const key of ["external_acceptance", "allowed_paths_check"]) {
+for (const key of ["acceptance_receipt", "allowed_paths_check"]) {
   if (!data[key] || typeof data[key] !== "object" || Array.isArray(data[key])) {
     errors.push(`field must be an object: ${key}`);
   }

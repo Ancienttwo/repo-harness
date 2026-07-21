@@ -38,7 +38,11 @@ function run(script: string, args: string[], cwd: string, env: NodeJS.ProcessEnv
   return spawnSync("bash", [script, ...args], {
     cwd,
     encoding: "utf-8",
-    env: fixtureEnv(env),
+    env: fixtureEnv({
+      REPO_HARNESS_BUN_BIN: process.execPath,
+      REPO_HARNESS_WORKFLOW_STATE_LIB: join(cwd, ".ai/hooks/lib/workflow-state.sh"),
+      ...env,
+    }),
   });
 }
 
@@ -67,6 +71,10 @@ function installWorkflowArchiveFixture(cwd: string): void {
   mkdirSync(join(cwd, "tasks/contracts"), { recursive: true });
   mkdirSync(join(cwd, "tasks/reviews"), { recursive: true });
   copyFileSync(join(ROOT, "scripts/archive-workflow.sh"), join(cwd, "scripts/archive-workflow.sh"));
+  writeFileSync(
+    join(cwd, "scripts/acceptance-receipt.ts"),
+    "import { existsSync } from 'fs'; process.exit(existsSync('.acceptance-pass') ? 0 : 1);\n",
+  );
   copyFileSync(
     join(ROOT, "assets/hooks/lib/workflow-state.sh"),
     join(cwd, ".ai/hooks/lib/workflow-state.sh"),
@@ -187,6 +195,7 @@ function writeWorkflowReview(cwd: string, recommendation: string, external = "un
       "",
     ].join("\n"),
   );
+  if (external === "pass") writeFileSync(join(cwd, ".acceptance-pass"), "fixture typed receipt\n");
 }
 
 function writeWorkflowChecks(cwd: string): void {
@@ -323,6 +332,7 @@ describe("archive evidence gates", () => {
         copyFileSync(join(ROOT, "scripts", helper), join(primary, "scripts", helper));
         chmodSync(join(primary, "scripts", helper), 0o755);
       }
+      writeFileSync(join(primary, "scripts/acceptance-receipt.ts"), "process.exit(0);\n");
       copyFileSync(
         join(ROOT, "assets/hooks/lib/workflow-state.sh"),
         join(primary, ".ai/hooks/lib/workflow-state.sh"),
@@ -445,7 +455,7 @@ describe("archive evidence gates", () => {
       expect(runProcess("git", ["add", "."], primary).status).toBe(0);
       expect(runProcess("git", ["commit", "-m", "fixture"], primary).status).toBe(0);
       writeWorkflowReview(primary, "pass", "pass");
-      expect(runProcess("git", ["add", review], primary).status).toBe(0);
+      expect(runProcess("git", ["add", review, ".acceptance-pass"], primary).status).toBe(0);
       expect(runProcess("git", ["commit", "-m", "record canonical acceptance"], primary).status).toBe(0);
       expect(runProcess("git", ["worktree", "add", "-b", "codex/demo", linked], primary).status).toBe(0);
 
@@ -488,7 +498,7 @@ describe("archive evidence gates", () => {
       writeWorkflowContract(cwd, "Fulfilled");
       result = archiveWorkflow(cwd);
       expect(result.status).toBe(1);
-      expect(result.stderr).toContain("Recommendation: pass");
+      expect(result.stderr).toContain("current passing verify-sprint evidence");
 
       writeWorkflowReview(cwd, "pass");
       result = archiveWorkflow(cwd);
@@ -498,7 +508,7 @@ describe("archive evidence gates", () => {
       writeWorkflowChecks(cwd);
       result = archiveWorkflow(cwd);
       expect(result.status).toBe(1);
-      expect(result.stderr).toContain("external acceptance gate failed");
+      expect(result.stderr).toContain("AcceptanceReceipt gate failed");
 
       writeWorkflowReview(cwd, "pass", "pass");
       result = archiveWorkflow(cwd, "Completed", { ARCH_FRESHNESS_FAIL: "1" });

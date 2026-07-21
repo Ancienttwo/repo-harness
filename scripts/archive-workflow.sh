@@ -16,6 +16,7 @@ else
   cd "$SCRIPT_DIR/.."
 fi
 helper_dir="$SCRIPT_DIR"
+BUN_BIN="${REPO_HARNESS_BUN_BIN:-$(command -v bun || true)}"
 
 archive_transaction_dir=""
 archive_transaction_active=0
@@ -85,7 +86,6 @@ completed_archive_gate() {
   local review_file="$2"
   local workflow_state_file="$WORKFLOW_STATE_LIB"
   local contract_status checks_file checks_message
-  local external_row external_state external_reviewer external_source external_message
 
   [[ -f "$contract_file" ]] || {
     echo "archive-workflow: Completed requires an active contract: $contract_file" >&2
@@ -102,7 +102,7 @@ completed_archive_gate() {
 
   # shellcheck source=/dev/null
   . "$workflow_state_file"
-  for gate_function in workflow_review_recommends_pass workflow_external_acceptance_status workflow_checks_file workflow_checks_pass; do
+  for gate_function in workflow_checks_file workflow_checks_pass; do
     if ! declare -F "$gate_function" >/dev/null 2>&1; then
       echo "archive-workflow: workflow gate authority is missing $gate_function" >&2
       return 1
@@ -115,21 +115,19 @@ completed_archive_gate() {
     return 1
   fi
 
-  if ! workflow_review_recommends_pass "$review_file"; then
-    echo "archive-workflow: Completed requires review Recommendation: pass: $review_file" >&2
-    return 1
-  fi
-
   checks_file="$(workflow_checks_file)"
   if ! checks_message="$(workflow_checks_pass "$checks_file" "$contract_file" "$review_file")"; then
     echo "archive-workflow: Completed requires current passing verify-sprint evidence: ${checks_message:-$checks_file}" >&2
     return 1
   fi
 
-  external_row="$(workflow_external_acceptance_status "$review_file")"
-  IFS=$'\t' read -r external_state external_reviewer external_source external_message <<< "$external_row"
-  if [[ "$external_state" != "pass" ]]; then
-    echo "archive-workflow: Completed external acceptance gate failed: ${external_message:-missing external acceptance}" >&2
+  if [[ -z "$BUN_BIN" || ! -x "$BUN_BIN" || ! -f "$helper_dir/acceptance-receipt.ts" ]]; then
+    echo "archive-workflow: Completed requires the AcceptanceReceipt helper and trusted Bun runtime" >&2
+    return 1
+  fi
+  if ! REPO_HARNESS_TARGET_REPO_ROOT="$PWD" "$BUN_BIN" "$helper_dir/acceptance-receipt.ts" verify \
+    --contract "$contract_file" --verification "$checks_file" >/dev/null; then
+    echo "archive-workflow: Completed AcceptanceReceipt gate failed" >&2
     return 1
   fi
 

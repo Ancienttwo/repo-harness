@@ -595,8 +595,8 @@ compute_post_freeze_allowlist() {
 }
 
 run_merge_gate() {
-  local base_ref="$1" goal_file="$2" manifest_file="$3"
-  shift 3
+  local base_ref="$1" manifest_file="$2"
+  shift 2
   local -a allow_args=() destination_args=()
   local allow_path destination_path destination_sha extra
   for allow_path in "$@"; do
@@ -617,18 +617,54 @@ run_merge_gate() {
     echo "contract-worktree: merge gate requires the trusted Bun runtime injected by repo-harness run" >&2
     exit 1
   }
-  echo "[ContractWorktree] Running read-only merge gate for HEAD against $base_ref" >&2
-  REPO_HARNESS_TARGET_REPO_ROOT="$REPO_ROOT" "$BUN_BIN" "$helper_dir/merge-gate.ts" run --base "$base_ref" --goal "$goal_file" "${allow_args[@]}" "${destination_args[@]}" --format sha
+  echo "[ContractWorktree] Sealing the exact local candidate against $base_ref" >&2
+  REPO_HARNESS_TARGET_REPO_ROOT="$REPO_ROOT" "$BUN_BIN" "$helper_dir/merge-gate.ts" run --base "$base_ref" "${allow_args[@]}" "${destination_args[@]}" --format sha
 }
 
-verify_merge_gate_receipt() {
+verify_merge_gate_seal() {
   local base_ref="$1"
-  echo "[ContractWorktree] Revalidating merge-gate receipt against $base_ref" >&2
+  echo "[ContractWorktree] Revalidating local merge seal against $base_ref" >&2
   [[ "$BUN_BIN" == /* && -x "$BUN_BIN" ]] || {
     echo "contract-worktree: merge gate requires the trusted Bun runtime injected by repo-harness run" >&2
     exit 1
   }
   REPO_HARNESS_TARGET_REPO_ROOT="$REPO_ROOT" "$BUN_BIN" "$helper_dir/merge-gate.ts" verify --base "$base_ref" --format sha
+}
+
+verify_acceptance_receipt() {
+  local contract_file="$1"
+  [[ -f "$helper_dir/acceptance-receipt.ts" ]] || {
+    echo "contract-worktree: AcceptanceReceipt helper is missing: $helper_dir/acceptance-receipt.ts" >&2
+    exit 1
+  }
+  [[ "$BUN_BIN" == /* && -x "$BUN_BIN" ]] || {
+    echo "contract-worktree: AcceptanceReceipt requires the trusted Bun runtime injected by repo-harness run" >&2
+    exit 1
+  }
+  REPO_HARNESS_TARGET_REPO_ROOT="$REPO_ROOT" "$BUN_BIN" "$helper_dir/acceptance-receipt.ts" verify \
+    --contract "$contract_file" --verification ".ai/harness/checks/latest.json" >/dev/null
+}
+
+refresh_and_freeze_base() {
+  local base_ref="$1" target_branch="$2" remote="" branch=""
+  case "$base_ref" in
+    refs/remotes/*/*)
+      remote="${base_ref#refs/remotes/}"
+      branch="${remote#*/}"
+      remote="${remote%%/*}"
+      git fetch --no-tags "$remote" "+refs/heads/$branch:$base_ref" >/dev/null
+      ;;
+    "$target_branch")
+      if git remote get-url origin >/dev/null 2>&1; then
+        git fetch --no-tags origin "+refs/heads/$target_branch:refs/remotes/origin/$target_branch" >/dev/null
+        if [[ "$(git rev-parse "$target_branch^{commit}")" != "$(git rev-parse "refs/remotes/origin/$target_branch^{commit}")" ]]; then
+          echo "contract-worktree: local $target_branch is not synchronized with origin/$target_branch" >&2
+          return 1
+        fi
+      fi
+      ;;
+  esac
+  git rev-parse "$base_ref^{commit}"
 }
 
 finish_worktree() {
@@ -690,7 +726,7 @@ finish_worktree() {
   fi
 
   local current_branch slug active_plan contract_file review_file target_worktree artifact_stem
-  local external_status external_state external_reviewer external_source external_message
+  local frozen_base_sha
   current_branch="$(git branch --show-current)"
   [[ -n "$current_branch" ]] || { echo "contract-worktree: detached HEAD is not supported" >&2; exit 1; }
   [[ "$current_branch" != "$target_branch" ]] || { echo "contract-worktree: already on target branch $target_branch" >&2; exit 1; }
@@ -728,18 +764,14 @@ finish_worktree() {
   [[ -n "$contract_file" && -f "$contract_file" ]] || { echo "contract-worktree: no active sprint contract found" >&2; exit 1; }
   [[ -n "$review_file" && -f "$review_file" ]] || { echo "contract-worktree: no active sprint review found" >&2; exit 1; }
 
-  if declare -F workflow_external_acceptance_status >/dev/null 2>&1; then
-    external_status="$(workflow_external_acceptance_status "$review_file")"
-    IFS=$'\t' read -r external_state external_reviewer external_source external_message <<< "$external_status"
-    if [[ "$external_state" != "pass" ]]; then
-      echo "contract-worktree: external acceptance gate failed: ${external_message:-missing external acceptance}" >&2
-      echo "contract-worktree: record ## External Acceptance Advice in $review_file via $(workflow_external_acceptance_expected_source) before finish" >&2
-      exit 1
-    fi
-  fi
-
+  frozen_base_sha="$(refresh_and_freeze_base "$gate_base_ref" "$target_branch")"
+  verify_acceptance_receipt "$contract_file"
   check_architecture_freshness "$target_branch"
   REPO_HARNESS_TARGET_REPO_ROOT="$REPO_ROOT" bash "$helper_dir/verify-sprint.sh"
+  [[ "$(git rev-parse "$gate_base_ref^{commit}")" == "$frozen_base_sha" ]] || {
+    echo "contract-worktree: target base moved during final verification; restart closeout from the refreshed base" >&2
+    exit 1
+  }
   check_scope_against_contract "$contract_file"
   if [[ "$merge_back" -eq 1 ]]; then
     target_worktree="$(find_worktree_for_branch "$target_branch" || true)"
@@ -792,7 +824,7 @@ finish_worktree() {
       finish_transaction_abort
       return 1
     fi
-    if ! verified_sha="$(run_merge_gate "$gate_base_ref" "$active_plan" "$post_freeze_manifest" "${post_freeze_allowlist[@]}")"; then
+    if ! verified_sha="$(run_merge_gate "$gate_base_ref" "$post_freeze_manifest" "${post_freeze_allowlist[@]}")"; then
       rm -f "$post_freeze_manifest"
       finish_transaction_abort
       return 1
@@ -842,7 +874,7 @@ finish_worktree() {
     # out-of-allowlist lifecycle mutation (or any other post-freeze drift) is
     # caught and rolled back here instead of being handed to the caller as a
     # silently-unverified success.
-    if ! verified_sha="$(verify_merge_gate_receipt "$gate_base_ref")"; then
+    if ! verified_sha="$(verify_merge_gate_seal "$gate_base_ref")"; then
       finish_transaction_abort
       return 1
     fi
@@ -864,7 +896,7 @@ finish_worktree() {
     exit 1
   fi
 
-  verified_sha="$(verify_merge_gate_receipt "$gate_base_ref")"
+  verified_sha="$(verify_merge_gate_seal "$gate_base_ref")"
   current_head="$(git rev-parse "$current_branch^{commit}")"
   [[ "$verified_sha" == "$current_head" ]] || { echo "contract-worktree: branch moved after merge-gate review" >&2; exit 1; }
   git -C "$target_worktree" merge --ff-only "$verified_sha"

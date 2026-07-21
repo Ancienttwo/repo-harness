@@ -242,6 +242,10 @@ function makeFreshEvidence(cwd: string, nowMs: number): void {
     status: 'pass',
     active_plan: PLAN,
     review_subject_sha256: subject,
+    acceptance_receipt: {
+      status: 'pass',
+      disposition: 'external_pass',
+    },
   }));
   writeFixture(cwd, '.ai/harness/handoff/current.md', handoff);
   writeFixture(cwd, '.ai/harness/handoff/resume.md', [

@@ -174,8 +174,8 @@ const CURRENT_SHIP_EXPECTATIONS: Readonly<Record<Profile, {
   readonly reason: string;
 }>> = {
   lite: { exit_code: 1, reason: 'no_active_contract' },
-  standard: { exit_code: 1, reason: 'missing_artifact' },
-  strict: { exit_code: 1, reason: 'missing_artifact' },
+  standard: { exit_code: 1, reason: 'verify_sprint_failed' },
+  strict: { exit_code: 1, reason: 'verify_sprint_failed' },
 };
 
 function isolatedEnv(cwd: string, extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
@@ -792,6 +792,7 @@ function captureShip(profile: Profile): Record<string, unknown> {
         HOOK_RUN_ID: `loop-semantics-${profile}-ship`,
         REPO_HARNESS_TARGET_REPO_ROOT: fixture.cwd,
         REPO_HARNESS_SOURCE_ROOT: ROOT,
+        REPO_HARNESS_HOOK_CLI: join(ROOT, 'src/cli/hook-entry.ts'),
         REPO_HARNESS_WORKFLOW_PROFILE: profile,
       },
     });
@@ -820,6 +821,7 @@ function captureShip(profile: Profile): Record<string, unknown> {
           HOOK_RUN_ID: `loop-semantics-${profile}-ship-finish-probe`,
           REPO_HARNESS_TARGET_REPO_ROOT: fixture.cwd,
           REPO_HARNESS_SOURCE_ROOT: ROOT,
+          REPO_HARNESS_HOOK_CLI: join(ROOT, 'src/cli/hook-entry.ts'),
         },
       },
     );
@@ -880,7 +882,7 @@ function captureShip(profile: Profile): Record<string, unknown> {
       // CRG-01 (merged, PR #83) made contract-worktree finish the sole
       // sprint-verification owner: require_finish_ready() in
       // scripts/ship-worktrees.sh now checks only contract existence,
-      // review existence, review-recommends-pass, and external acceptance,
+      // review projection existence and typed AcceptanceReceipt validity,
       // then dispatches once to contract-worktree.sh finish -- the
       // verify-sprint.sh and checks-freshness steps that used to run
       // directly inside ship-worktrees.sh moved entirely inside that single
@@ -888,14 +890,14 @@ function captureShip(profile: Profile): Record<string, unknown> {
       // above), so 'verify_sprint' and 'fresh_checks' markers searched
       // against ship-worktrees.sh's own source no longer exist there.
       // Removing them here characterizes the real, current,
-      // already-reviewed post-CRG-01 four-step ordering rather than source
+      // current provider-free closeout ordering rather than source
       // strings that were deleted (re-verified by reading
       // require_finish_ready()/finish_contract_worktree() directly, not
       // assumed).
       envelope_ordering: observedSourceOrder(SHIP_WORKTREES, [
         { name: 'contract', marker: '[[ -n "$contract_file" && -f "$contract_file" ]]' },
         { name: 'review', marker: '[[ -n "$review_file" && -f "$review_file" ]]' },
-        { name: 'external_acceptance', marker: 'workflow_external_acceptance_pass "$review_file"' },
+        { name: 'acceptance_receipt', marker: '"$helper_dir/acceptance-receipt.ts" verify' },
         { name: 'contract_worktree_finish', marker: 'run_cmd bash "$helper_dir/contract-worktree.sh" finish' },
       ]),
       envelope_ordering_source: 'static_source_inventory_ship_worktrees_sh',
@@ -1051,8 +1053,8 @@ describe('LSC-01 profile × operation current-behavior characterization', () => 
     expect(cells.find((cell) => cell.name.startsWith('standard.stop'))?.current.review_freshness_warning).toBe(true);
     expect(cells.find((cell) => cell.name.startsWith('strict.stop'))?.current.review_freshness_warning).toBe(true);
     expect(cells.find((cell) => cell.name.startsWith('standard.ship'))?.current).toMatchObject({
-      gate_requirements: ['contract', 'review', 'external_acceptance', 'allowed_paths'],
-      ordering: ['contract', 'review', 'external_acceptance', 'allowed_paths'],
+      gate_requirements: [],
+      ordering: [],
     });
 
     expect(shipProfileObservation()).toEqual({ profileAware: false, matchedSources: [] });

@@ -46,28 +46,6 @@ workflow_policy_get() {
   printf '%s' "$default_value"
 }
 
-# Type-aware boolean read: unlike workflow_policy_get (which reads via
-# `jq -r "$path // empty"` and so cannot distinguish a JSON string "true"
-# from a JSON boolean true -- jq -r unquotes both to the bare word `true`),
-# this uses jq's own type-aware `== true` comparison so only a genuine JSON
-# boolean true activates; any other value (string, number, absent, null)
-# resolves to `false`.
-workflow_policy_get_strict_boolean() {
-  local jq_path="$1"
-  local policy_file value
-
-  policy_file="$(workflow_policy_file)"
-  if [[ -f "$policy_file" ]] && command -v jq >/dev/null 2>&1; then
-    value="$(jq -r "if (${jq_path} == true) then \"true\" else \"false\" end" "$policy_file" 2>/dev/null || true)"
-    if [[ "$value" == "true" ]]; then
-      printf 'true'
-      return 0
-    fi
-  fi
-
-  printf 'false'
-}
-
 workflow_repo_relative_path() {
   local value="$1"
   local default_value="$2"
@@ -603,7 +581,7 @@ workflow_cleanup_candidate() {
 
 workflow_next_action() {
   local active_plan task_state total done next_pending contract_file review_file checks_file checks_error
-  local external_status external_state external_reviewer external_source external_message expected_source
+  local acceptance_status acceptance_state acceptance_reviewer acceptance_source acceptance_message expected_source
   local target current_branch slug candidate branch worktree command message
 
   active_plan="$(get_active_plan || true)"
@@ -624,31 +602,22 @@ workflow_next_action() {
     review_file="$(workflow_active_review || true)"
     checks_file="$(workflow_checks_file)"
 
-    if [[ -z "$review_file" || ! -f "$review_file" ]]; then
-      printf 'check\t/check\tStage the completed module diff first; then run /check and record a sprint review before finishing this worktree.\n'
-      return 0
-    fi
-
-    if ! workflow_review_recommends_pass "$review_file"; then
-      printf 'check\t/check\tStage the completed module diff first; then run /check until %s records Recommendation: pass.\n' "$review_file"
-      return 0
-    fi
-
     if [[ -z "$contract_file" || ! -f "$contract_file" ]]; then
       printf 'check\t/check\tStage the completed module diff first; then regenerate the active sprint contract and run /check.\n'
       return 0
     fi
 
-    external_status="$(workflow_external_acceptance_status "$review_file")"
-    IFS=$'\t' read -r external_state external_reviewer external_source external_message <<< "$external_status"
-    if [[ "$external_state" != "pass" ]]; then
-      expected_source="$(workflow_external_acceptance_expected_source)"
-      printf 'check\t/check\tStage the completed module diff first; then %s Run external acceptance via %s and record ## External Acceptance Advice in %s.\n' "${external_message:-External acceptance is missing.}" "$expected_source" "$review_file"
+    if [[ ! -f "$checks_file" ]]; then
+      expected_source="$(workflow_acceptance_expected_source 2>/dev/null || printf 'the contract reviewer')"
+      printf 'check\t/check\tStage the completed module diff first; run verify-sprint --prepare-acceptance, obtain semantic acceptance via %s, and record the typed AcceptanceReceipt.\n' "$expected_source"
       return 0
     fi
 
-    if [[ ! -f "$checks_file" ]]; then
-      printf 'check\t/check\tStage the completed module diff first; then run /check and verify-sprint so %s exists.\n' "$checks_file"
+    acceptance_status="$(workflow_acceptance_receipt_status "$checks_file")"
+    IFS=$'\t' read -r acceptance_state acceptance_reviewer acceptance_source acceptance_message <<< "$acceptance_status"
+    if [[ "$acceptance_state" != "pass" ]]; then
+      expected_source="$(workflow_acceptance_expected_source 2>/dev/null || printf 'the contract reviewer')"
+      printf 'check\t/check\t%s Record a typed AcceptanceReceipt via %s, then run verify-sprint.\n' "${acceptance_message:-AcceptanceReceipt is missing.}" "$expected_source"
       return 0
     fi
 
@@ -1301,67 +1270,6 @@ workflow_write_run_summary() {
 EOF_RUN
 }
 
-workflow_review_recommends_pass() {
-  local review_file="${1:-}"
-  [[ -n "$review_file" && -f "$review_file" ]] || return 1
-  grep -Eq '^> \*\*Recommendation\*\*:[[:space:]]*pass[[:space:]]*$' "$review_file"
-}
-
-workflow_review_metadata_field() {
-  local review_file="${1:-}"
-  local field="${2:-}"
-  [[ -n "$review_file" && -f "$review_file" && -n "$field" ]] || return 1
-  awk -v field="$field" '
-    # Top-of-file metadata only: stop at the first section heading so a
-    # section-level "> **<field>**:" line (e.g. the External Acceptance section
-    # carries its own Reviewed Subject SHA256) can never be read as a top-level
-    # value when the real header omits it.
-    /^## / { exit }
-    index($0, "> **" field "**:") == 1 {
-      sub("^> \\*\\*" field "\\*\\*:[[:space:]]*", "");
-      gsub(/\r/, "");
-      print;
-      exit;
-    }
-  ' "$review_file"
-}
-
-workflow_review_subject() {
-  workflow_review_metadata_field "${1:-}" "Reviewed Subject SHA256"
-}
-
-workflow_review_target_revision() {
-  workflow_review_metadata_field "${1:-}" "Reviewed Target Revision"
-}
-
-workflow_review_rubric_version() {
-  workflow_review_metadata_field "${1:-}" "Review Rubric Version"
-}
-
-# Classify the top-of-file Review Rubric Version. Echoes one of:
-#   absent     - no rubric line at all (a genuine pre-rubric legacy artifact)
-#   2          - the current supported rubric version
-#   malformed  - a rubric line is present but is not a supported version
-#                (non-numeric, 0, an unsupported number, or quote/space garbage)
-# A present-but-unsupported rubric means the artifact claims a schema this gate
-# cannot evaluate, so callers must fail closed rather than fall through to the
-# lenient legacy path. Only a genuinely absent rubric stays lenient.
-workflow_review_rubric_class() {
-  local raw trimmed
-  raw="$(workflow_review_rubric_version "${1:-}")"
-  # Trim surrounding whitespace WITHOUT xargs: an unbalanced quote in the value
-  # makes xargs fail and emit nothing, which would silently downgrade a malformed
-  # rubric to "absent" (legacy lenient) — exactly the fail-open this prevents.
-  trimmed="${raw#"${raw%%[![:space:]]*}"}"
-  trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
-  if [[ -z "$trimmed" ]]; then
-    printf 'absent'
-  elif [[ "$trimmed" == "2" ]]; then
-    printf '%s' "$trimmed"
-  else
-    printf 'malformed'
-  fi
-}
 
 workflow_hook_cli_json() {
   if [[ -n "${REPO_HARNESS_HOOK_CLI:-}" && -f "${REPO_HARNESS_HOOK_CLI:-}" ]] && command -v bun >/dev/null 2>&1; then
@@ -1435,76 +1343,31 @@ workflow_current_review_target_revision() {
   printf '%s' "$target_rev"
 }
 
-workflow_review_freshness_status() {
-  local review_file="${1:-}"
-  local reviewed reviewed_target rubric_class current_json current_status current_fingerprint current_scope current_target overlap_count
-
-  reviewed="$(workflow_review_subject "$review_file" | xargs || true)"
-  reviewed_target="$(workflow_review_target_revision "$review_file" | xargs || true)"
-  rubric_class="$(workflow_review_rubric_class "$review_file")"
-  if [[ "$rubric_class" == "malformed" ]]; then
-    # A malformed/unsupported rubric claims a schema this gate cannot evaluate;
-    # fail closed at the freshness stage instead of treating it as legacy.
-    printf 'malformed_schema\t-\tReview Rubric Version is malformed or unsupported; rerun /check under rubric v2.\n'
-    return 0
+workflow_acceptance_expected_reviewer() {
+  local contract_file="${1:-}" policy_json
+  contract_file="${contract_file:-$(workflow_active_contract 2>/dev/null || true)}"
+  [[ -n "$contract_file" && -f "$contract_file" ]] || return 1
+  policy_json="$(awk '
+    /^##[[:space:]]+Acceptance Policy[[:space:]]*$/ { section=1; next }
+    section && /^```json[[:space:]]*$/ { block=1; next }
+    block && /^```[[:space:]]*$/ { exit }
+    block { print }
+  ' "$contract_file")"
+  [[ -n "$policy_json" ]] || return 1
+  if command -v jq >/dev/null 2>&1; then
+    printf '%s' "$policy_json" | jq -er '
+      select(.protocol == 1)
+      | select((keys | sort) == ["protocol", "reviewer", "user_waiver"])
+      | select(.reviewer == "Claude" or .reviewer == "Codex")
+      | select(.user_waiver == "allowed" or .user_waiver == "forbidden")
+      | .reviewer
+    ' 2>/dev/null
+    return $?
   fi
-  if [[ -z "$reviewed" || "$reviewed" == "pending" || "$reviewed" == "unknown" ]]; then
-    printf 'missing\t-\tReview subject is missing for rubric v%s; rerun /check and peer acceptance to record the current Reviewed Subject SHA256.\n' "$rubric_class"
-    return 0
-  fi
-  if ! [[ "$reviewed" =~ ^sha256:[0-9a-f]{64}$ ]]; then
-    printf 'malformed\t%s\tReview subject is malformed; rerun /check and peer acceptance.\n' "$reviewed"
-    return 0
-  fi
-  if ! [[ "$reviewed_target" =~ ^[0-9a-f]{40,64}$ ]]; then
-    printf 'malformed\t%s\tReviewed Target Revision is missing or malformed; rerun /check and peer acceptance.\n' "${reviewed_target:--}"
-    return 0
-  fi
-
-  current_json="$(workflow_current_review_subject_json)"
-  current_status="$(workflow_json_field "$current_json" "status")"
-  current_fingerprint="$(workflow_json_field "$current_json" "review_subject_sha256")"
-  current_scope="$(workflow_json_field "$current_json" "scope")"
-  current_target="$(workflow_json_field "$current_json" "target_rev")"
-  overlap_count="$(workflow_json_field "$current_json" "target_overlap_count")"
-  if [[ "$current_status" != "ok" || -z "$current_fingerprint" ]]; then
-    printf 'unknown\t-\tCurrent review subject is unknown; rerun /check after repository content is readable.\n'
-    return 0
-  fi
-  if [[ "$reviewed" != "$current_fingerprint" ]]; then
-    printf 'stale\t%s\tReview is stale for current review subject %s; rerun /check and peer acceptance.\n' "$reviewed" "$current_fingerprint"
-    return 0
-  fi
-
-  if [[ "$reviewed_target" != "$current_target" && "${overlap_count:-0}" -gt 0 ]]; then
-    printf 'stale\t%s\tTarget revision advanced across %s reviewed path(s); rerun /check and peer acceptance.\n' "$reviewed" "$overlap_count"
-    return 0
-  fi
-
-  printf 'pass\t%s\tReview subject is fresh for %s.\n' "$reviewed" "${current_scope:-normalized-final-content}"
+  return 1
 }
 
-workflow_external_acceptance_expected_reviewer() {
-  local host="${HOOK_HOST:-}"
-
-  if [[ -z "$host" ]]; then
-    if [[ -n "${CODEX_RUN_ID:-}${CODEX_SESSION_ID:-}${CODEX_THREAD_ID:-}${CODEX_SHELL:-}${CODEX_INTERNAL_ORIGINATOR_OVERRIDE:-}" ]]; then
-      host="codex"
-    elif [[ -n "${CLAUDE_RUN_ID:-}${CLAUDE_SESSION_ID:-}" ]]; then
-      host="claude"
-    else
-      host="claude"
-    fi
-  fi
-
-  if [[ "$host" == "codex" ]]; then
-    printf 'Claude'
-  else
-    printf 'Codex'
-  fi
-}
-
-workflow_external_acceptance_source_for_reviewer() {
+workflow_acceptance_source_for_reviewer() {
   local reviewer="${1:-}"
   case "$(printf '%s' "$reviewer" | tr '[:upper:]' '[:lower:]')" in
     claude) printf 'claude-review' ;;
@@ -1512,29 +1375,10 @@ workflow_external_acceptance_source_for_reviewer() {
   esac
 }
 
-workflow_external_acceptance_expected_source() {
+workflow_acceptance_expected_source() {
   local reviewer="${1:-}"
-  reviewer="${reviewer:-$(workflow_external_acceptance_expected_reviewer)}"
-  workflow_external_acceptance_source_for_reviewer "$reviewer"
-}
-
-workflow_external_acceptance_section() {
-  local review_file="${1:-}"
-  [[ -n "$review_file" && -f "$review_file" ]] || return 1
-  awk '
-    /^##[[:space:]]+External Acceptance Advice[[:space:]]*$/ { in_section = 1; next }
-    /^##[[:space:]]+/ && in_section { exit }
-    in_section { print }
-  ' "$review_file"
-}
-
-workflow_external_acceptance_field() {
-  local section="${1:-}"
-  local label="${2:-}"
-  printf '%s\n' "$section" |
-    sed -nE "s/^> \\*\\*${label}\\*\\*:[[:space:]]*([^[:space:]].*)[[:space:]]*$/\\1/p" |
-    head -n 1 |
-    sed -E 's/[[:space:]]+$//'
+  reviewer="${reviewer:-$(workflow_acceptance_expected_reviewer)}"
+  workflow_acceptance_source_for_reviewer "$reviewer"
 }
 
 # Parses the contract's fenced yaml block that declares `evidence_requirements:`
@@ -1682,210 +1526,23 @@ workflow_contract_evidence_requirement() {
   esac
 }
 
-workflow_external_acceptance_status() {
-  local review_file="${1:-}"
-  local expected_reviewer="${2:-}"
-  local expected_source section acceptance reviewer source p1_blockers
-  local acceptance_lc reviewer_lc source_lc expected_reviewer_lc expected_source_lc p1_lc
-
-  expected_reviewer="${expected_reviewer:-$(workflow_external_acceptance_expected_reviewer)}"
-  expected_source="$(workflow_external_acceptance_expected_source "$expected_reviewer")"
-
-  if [[ -z "$review_file" || ! -f "$review_file" ]]; then
-    printf 'missing\t-\t-\tExternal acceptance review file is missing: %s\n' "${review_file:-tasks/reviews/<slug>.review.md}"
+workflow_acceptance_receipt_status() {
+  local checks_file="${1:-$(workflow_checks_file)}"
+  local status reviewer source message
+  if [[ -z "$checks_file" || ! -s "$checks_file" || ! -x "$(command -v jq 2>/dev/null || true)" ]]; then
+    printf 'missing\t-\t-\tVerified AcceptanceReceipt evidence is missing.\n'
     return 0
   fi
-
-  section="$(workflow_external_acceptance_section "$review_file" || true)"
-  if [[ -z "$section" ]]; then
-    printf 'missing\t-\t-\tExternal acceptance section is missing from %s.\n' "$review_file"
-    return 0
-  fi
-
-  acceptance="$(workflow_external_acceptance_field "$section" "External Acceptance")"
-  reviewer="$(workflow_external_acceptance_field "$section" "External Reviewer")"
-  source="$(workflow_external_acceptance_field "$section" "External Source")"
-  p1_blockers="$(
-    printf '%s\n' "$section" |
-      sed -nE 's/^- P1 blockers:[[:space:]]*([^[:space:]].*)[[:space:]]*$/\1/p' |
-      head -n 1 |
-      sed -E 's/[[:space:]]+$//'
-  )"
-  acceptance_lc="$(printf '%s' "$acceptance" | tr '[:upper:]' '[:lower:]')"
-  reviewer_lc="$(printf '%s' "$reviewer" | tr '[:upper:]' '[:lower:]')"
-  source_lc="$(printf '%s' "$source" | tr '[:upper:]' '[:lower:]')"
-  expected_reviewer_lc="$(printf '%s' "$expected_reviewer" | tr '[:upper:]' '[:lower:]')"
-  expected_source_lc="$(printf '%s' "$expected_source" | tr '[:upper:]' '[:lower:]')"
-  p1_lc="$(printf '%s' "$p1_blockers" | tr '[:upper:]' '[:lower:]')"
-
-  if [[ "$acceptance_lc" != "pass" ]]; then
-    printf 'fail\t%s\t%s\tExternal acceptance is %s; expected pass from %s via %s.\n' "${reviewer:--}" "${source:--}" "${acceptance:-missing}" "$expected_reviewer" "$expected_source"
-    return 0
-  fi
-
-  # solo_operator (default false, fail-closed): lets a same-vendor
-  # fresh-context adversarial review satisfy acceptance for an operator
-  # holding only one vendor's CLI, WITHOUT touching the cross-vendor path
-  # below (absent/false/malformed value takes the untouched else branch).
-  # Gated behind a distinct External Source literal
-  # (`workflow_external_acceptance_source_for_reviewer` never emits it, so
-  # an ordinary claude-review/codex-review template cannot satisfy this
-  # path) plus a fixed acknowledgement literal and two non-empty, distinct
-  # session-identity fields. The identity fields are self-attested
-  # procedural evidence, not cryptographic proof -- see
-  # tasks/notes/20260721-0540-solo-operator-acceptance-policy.notes.md for
-  # why a machine-verifiable binding was investigated and rejected as out
-  # of scope. Every check after this block (P1, rubric, subject-hash
-  # freshness, target, benchmark) is unconditional in both modes.
-  local solo_operator
-  solo_operator="$(workflow_policy_get_strict_boolean '.external_acceptance.solo_operator')"
-
-  if [[ "$solo_operator" == "true" ]]; then
-    local solo_source solo_ack solo_ack_field rev_identity imp_identity
-    solo_source='solo-operator-adversarial-review'
-    solo_ack='single-vendor-adversarial-review; cross-vendor unavailable'
-
-    case "$reviewer_lc" in
-      claude|codex) : ;;
-      *)
-        printf 'fail\t%s\t%s\tExternal reviewer is %s; expected claude or codex under solo_operator mode.\n' "${reviewer:--}" "${source:--}" "${reviewer:-missing}"
-        return 0
-        ;;
-    esac
-
-    if [[ "$source_lc" != "$solo_source" ]]; then
-      printf 'fail\t%s\t%s\tExternal source is %s; expected %s under solo_operator mode.\n' "${reviewer:--}" "${source:--}" "${source:-missing}" "$solo_source"
-      return 0
-    fi
-
-    solo_ack_field="$(workflow_external_acceptance_field "$section" "Solo Operator Acknowledgement")"
-    if [[ "$solo_ack_field" != "$solo_ack" ]]; then
-      printf 'fail\t%s\t%s\tSolo Operator Acknowledgement is missing or does not match the required text.\n' "${reviewer:--}" "${source:--}"
-      return 0
-    fi
-
-    rev_identity="$(workflow_external_acceptance_field "$section" "Reviewer Session Identity" | xargs || true)"
-    imp_identity="$(workflow_external_acceptance_field "$section" "Implementer Session Identity" | xargs || true)"
-    if [[ -z "$rev_identity" || -z "$imp_identity" || "$rev_identity" == "$imp_identity" ]]; then
-      printf 'fail\t%s\t%s\tReviewer/Implementer Session Identity is missing or identical; solo_operator mode requires two distinct, non-empty session identities.\n' "${reviewer:--}" "${source:--}"
-      return 0
-    fi
-  else
-    if [[ "$reviewer_lc" != "$expected_reviewer_lc" ]]; then
-      printf 'fail\t%s\t%s\tExternal reviewer is %s; expected %s.\n' "${reviewer:--}" "${source:--}" "${reviewer:-missing}" "$expected_reviewer"
-      return 0
-    fi
-
-    if [[ "$source_lc" != "$expected_source_lc" ]]; then
-      printf 'fail\t%s\t%s\tExternal source is %s; expected %s.\n' "${reviewer:--}" "${source:--}" "${source:-missing}" "$expected_source"
-      return 0
-    fi
-  fi
-
-  if [[ "$p1_lc" != "none" ]]; then
-    printf 'fail\t%s\t%s\tExternal acceptance has P1 blockers: %s\n' "${reviewer:--}" "${source:--}" "${p1_blockers:-missing}"
-    return 0
-  fi
-
-  # Bind the peer's acceptance to the exact diff they reviewed. A supported rubric
-  # (v1+) requires the External Acceptance section to carry its own current Reviewed
-  # Diff Fingerprint and scope; otherwise a stale F1 acceptance keeps satisfying the
-  # gate after the implementation moves to F2, because the top-of-file fingerprint
-  # is agent-editable. An absent or malformed rubric fails closed here — external
-  # acceptance is the authority that requires the current rubric.
-  local rubric_class section_fp section_scope section_target section_benchmark current_json current_fp current_target current_benchmark overlap_count
-  local contract_path evidence_requirement
-  rubric_class="$(workflow_review_rubric_class "$review_file")"
-  case "$rubric_class" in
-    absent)
-      printf 'fail\t%s\t%s\tReview Rubric Version is missing; rerun peer acceptance under rubric v2.\n' "${reviewer:--}" "${source:--}"
-      return 0
-      ;;
-    malformed)
-      # An unsupported rubric must not silently disable the binding check.
-      printf 'fail\t%s\t%s\tReview Rubric Version is malformed or unsupported; rerun peer acceptance under rubric v2.\n' "${reviewer:--}" "${source:--}"
-      return 0
-      ;;
-    *)
-      section_fp="$(workflow_external_acceptance_field "$section" "Reviewed Subject SHA256" | xargs || true)"
-      section_scope="$(workflow_external_acceptance_field "$section" "Reviewed Subject Scope" | xargs || true)"
-      section_target="$(workflow_external_acceptance_field "$section" "Reviewed Target Revision" | xargs || true)"
-      section_benchmark="$(workflow_external_acceptance_field "$section" "Benchmark Evidence SHA256" | xargs || true)"
-      current_json="$(workflow_current_review_subject_json)"
-      current_fp="$(workflow_json_field "$current_json" "review_subject_sha256")"
-      current_target="$(workflow_json_field "$current_json" "target_rev")"
-      overlap_count="$(workflow_json_field "$current_json" "target_overlap_count")"
-      if [[ -z "$current_fp" ]]; then
-        printf 'fail\t%s\t%s\tCurrent review subject is unknown; rerun peer acceptance after repository content is readable.\n' "${reviewer:--}" "${source:--}"
-        return 0
-      fi
-      if ! [[ "$section_fp" =~ ^sha256:[0-9a-f]{64}$ ]]; then
-        printf 'fail\t%s\t%s\tExternal acceptance is missing a valid Reviewed Subject SHA256 for rubric v%s; rerun peer acceptance for the current subject.\n' "${reviewer:--}" "${source:--}" "$rubric_class"
-        return 0
-      fi
-      if [[ "$section_fp" != "$current_fp" ]]; then
-        printf 'fail\t%s\t%s\tExternal acceptance subject %s is stale for current review subject %s; rerun peer acceptance.\n' "${reviewer:--}" "${source:--}" "$section_fp" "$current_fp"
-        return 0
-      fi
-      if [[ "$section_scope" != "normalized-final-content" ]]; then
-        printf 'fail\t%s\t%s\tExternal acceptance scope is %s; expected normalized-final-content.\n' "${reviewer:--}" "${source:--}" "${section_scope:-missing}"
-        return 0
-      fi
-      if ! [[ "$section_target" =~ ^[0-9a-f]{40,64}$ ]]; then
-        printf 'fail\t%s\t%s\tExternal acceptance is missing a valid Reviewed Target Revision.\n' "${reviewer:--}" "${source:--}"
-        return 0
-      fi
-      if [[ "$section_target" != "$current_target" && "${overlap_count:-0}" -gt 0 ]]; then
-        printf 'fail\t%s\t%s\tTarget revision advanced across %s reviewed path(s); rerun peer acceptance.\n' "${reviewer:--}" "${source:--}" "$overlap_count"
-        return 0
-      fi
-      # Applicability is a reviewed contract declaration, not an inference from
-      # report-file presence: resolve the contract deterministically from the
-      # review path stem and consult its evidence_requirements declaration.
-      if [[ "$review_file" =~ ^(.*)tasks/reviews/([^/]+)\.review\.md$ ]]; then
-        contract_path="${BASH_REMATCH[1]}tasks/contracts/${BASH_REMATCH[2]}.contract.md"
-      else
-        contract_path=""
-      fi
-      evidence_requirement=""
-      if [[ -n "$contract_path" ]]; then
-        evidence_requirement="$(workflow_contract_evidence_requirement "$contract_path" 2>/dev/null || true)"
-      fi
-      case "$evidence_requirement" in
-        required)
-          current_benchmark="$(workflow_benchmark_evidence_fingerprint 2>/dev/null || true)"
-          if [[ -z "$current_benchmark" ]]; then
-            printf 'fail\t%s\t%s\tBenchmark evidence is required by %s but current evidence is missing or invalid.\n' "${reviewer:--}" "${source:--}" "${contract_path:-$review_file}"
-            return 0
-          fi
-          if [[ "$section_benchmark" != "$current_benchmark" ]]; then
-            printf 'fail\t%s\t%s\tExternal acceptance benchmark evidence is stale: %s != %s.\n' "${reviewer:--}" "${source:--}" "${section_benchmark:-missing}" "$current_benchmark"
-            return 0
-          fi
-          ;;
-        not_applicable)
-          if [[ "$section_benchmark" != "not-applicable" ]]; then
-            printf 'fail\t%s\t%s\tExternal acceptance benchmark evidence must be not-applicable per %s, got %s.\n' "${reviewer:--}" "${source:--}" "${contract_path:-$review_file}" "${section_benchmark:-missing}"
-            return 0
-          fi
-          ;;
-        *)
-          printf 'fail\t%s\t%s\tContract evidence requirement is missing or invalid: %s.\n' "${reviewer:--}" "${source:--}" "${contract_path:-$review_file}"
-          return 0
-          ;;
-      esac
-      ;;
-  esac
-
-  printf 'pass\t%s\t%s\tExternal acceptance passed.\n' "$reviewer" "$source"
+  status="$(jq -r '.acceptance_receipt.status // "missing"' "$checks_file" 2>/dev/null || printf missing)"
+  reviewer="$(jq -r '.acceptance_receipt.reviewer // "-"' "$checks_file" 2>/dev/null || printf -)"
+  source="$(jq -r '.acceptance_receipt.source // "-"' "$checks_file" 2>/dev/null || printf -)"
+  message="$(jq -r '.acceptance_receipt.message // "AcceptanceReceipt is unavailable."' "$checks_file" 2>/dev/null || printf 'AcceptanceReceipt is unavailable.')"
+  printf '%s\t%s\t%s\t%s\n' "$status" "$reviewer" "$source" "$message"
 }
 
-workflow_external_acceptance_pass() {
-  local review_file="${1:-}"
-  local expected_reviewer="${2:-}"
+workflow_acceptance_receipt_pass() {
   local row status
-
-  row="$(workflow_external_acceptance_status "$review_file" "$expected_reviewer")"
+  row="$(workflow_acceptance_receipt_status "${1:-}")"
   status="${row%%$'\t'*}"
   [[ "$status" == "pass" ]]
 }
