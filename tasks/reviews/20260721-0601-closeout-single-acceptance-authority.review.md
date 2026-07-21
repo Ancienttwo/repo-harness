@@ -55,13 +55,13 @@
 > **Reviewer**: User
 > **Source**: user-waiver
 > **Actor**: kito
-> **Reviewed Subject SHA256**: sha256:ad3d86fdc1740ad2a81f8f0b252f56ac8e1e704f803e5ed882b77e7de6634182
+> **Reviewed Subject SHA256**: sha256:c4643a58da40f780684288c04f96400a28ba5acd6c32c45f938458de11e21694
 > **Reviewed Subject Scope**: normalized-final-content
 > **Reviewed Target Revision**: d61d153e76234de94c9082236405125bbe83dd88
-> **Verification Evidence SHA256**: sha256:c2c6646ceb808847e82ede28d10632783404d5df81a1650632393e9412aaf7c0
-> **Issued At**: 2026-07-21T07:00:03.585Z
+> **Verification Evidence SHA256**: sha256:d9dbc6b47b0be0387c27d32ef95fb26f0d4e4bde042512b626bfbf5043481e7b
+> **Issued At**: 2026-07-21T07:10:14.522Z
 
-- Summary: Owner kito reaffirms the previously granted waiver for the final frozen subject after CI-discovered closeout fixture defects were fixed, and accepts the remaining risk.
+- Summary: Owner kito reaffirms the previously granted waiver for the final source-isolated frozen subject and accepts the remaining risk.
 - Findings: none
 
 ## Behavior Diff Notes
