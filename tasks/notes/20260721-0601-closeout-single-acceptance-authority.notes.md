@@ -56,6 +56,11 @@
   template's `unavailable` body in place. The matcher now replaces exactly one
   complete Markdown section through the next level-two heading or EOF, and the
   regression test projects twice to prove idempotence and sibling preservation.
+- PR CI exposed one stale capability prefix left by deleting the retired
+  `assets/skills/merge-gate` surface. `workflow-engine-contract-assets` already
+  owns `scripts/merge-gate.ts` and the `assets/templates` runtime, so the
+  nonexistent prefix was removed rather than replaced with a duplicate alias;
+  the capability registry and CLI export now validate again.
 
 ## Tradeoffs Considered
 

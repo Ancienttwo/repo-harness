@@ -110,7 +110,6 @@
         "src/cli/commands/global-runtime.ts",
         "src/cli/commands/capability-context.ts",
         "src/cli/runtime/helper-runner.ts",
-        "assets/skills/merge-gate",
         "assets/templates",
         "assets/reference-configs",
         "docs/reference-configs"

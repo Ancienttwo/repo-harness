@@ -91,6 +91,7 @@ Required when Task Profile is `bugfix`; leave as-is otherwise.
 ```yaml
 allowed_paths:
   - .github/workflows/ci.yml
+  - .ai/context/capabilities.json
   - .ai/harness/policy.json
   - .ai/harness/workflow-contract.json
   - .ai/hooks/.projection.json
