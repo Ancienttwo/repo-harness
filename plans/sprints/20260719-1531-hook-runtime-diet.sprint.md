@@ -1,9 +1,9 @@
 # Sprint: Hook Runtime Diet
 
-> **Status**: Approved
+> **Status**: Done
 > **Slug**: hook-runtime-diet
 > **Created**: 2026-07-19 15:31
-> **Updated**: 2026-07-21 20:35
+> **Updated**: 2026-07-21 21:07
 > **Source PRD**: (none; source authority is the Harness Loop audit)
 > **Source Audit**: `plans/sprints/20260715-harness-loop-audit-and-optimization.md`
 > **Source Spec**: `docs/spec.md`
@@ -13,6 +13,9 @@
 > **Sprint Planning Base**: `origin/main@2c39c4a46c83c604fc9ce2fe2752a79d93edbddc` (live at drafting time; includes post-LSC mainline packages #91-#93 and 0.10.1 release prep, which HRD builds on)
 > **HRD-01 Execution Base**: `origin/main@4f4666efd3810ed50dd1d5da17e44fd721d84689` (post-sprint-planning push)
 > **HRD-02 Execution Base**: origin/main@b57d6323fb8ba6a0edb55117abaf9953913d9ddf (post-HRD-01 merge plus backfill)
+> **HRD_RUNTIME_SHA**: `origin/main@b5a98c903d3728002d2f663ba7a1b421913e368f` (PR #106; HRD-01 through HRD-09 merged)
+> **Closeout Package**: `plans/plan-20260721-2104-hrd-sprint-closeout.md`
+> **POST_HRD_SHA Owner**: the VGBR successor fresh-fetches after HRD-CLOSEOUT merges and pins that exact `origin/main`; this package never predicts its own merge SHA
 > **Predecessor**: Loop Semantics Convergence (Sprint A). Its semantic modules — `ArtifactRequirementPolicy`, `evaluateReadiness`, the authority/subject/evidence/projection revision partition, the progress token, stable state-version allocation, and the Stop readiness cutover — are fixed inputs to this sprint, not change surfaces
 > **Successor Order**: Evidence & Projection Convergence -> Skill Surface & Discovery Convergence
 > **Goal Mode**: incremental
@@ -298,3 +301,16 @@ flow and lands through an independent PR.
 | 2026-07-21 05:33 | hrd-07-circuit-oscillation-and-shared-lock | `plans/plan-20260721-0218-hrd-07-circuit-oscillation-and-shared-lock.md` | done |
 | 2026-07-21 17:46 | hrd-08-event-telemetry-and-benchmark | `plans/archive/plan-20260721-1621-hrd-08-event-telemetry-and-benchmark.md` | done |
 | 2026-07-21 20:35 | hrd-09-legacy-retirement-and-adopted-migration | `plans/archive/plan-20260721-1801-hrd-09-legacy-retirement-and-adopted-migration.md` | done |
+
+## Sprint Closeout
+
+- lifecycle_status: Done
+- hrd_runtime_sha: `b5a98c903d3728002d2f663ba7a1b421913e368f`
+- implementation_merge_pr: `#106`
+- backlog_result: `9/9`
+- historical_review_supersession_annotation: `tasks/notes/20260721-2104-hrd-sprint-closeout.notes.md#historical-closeout-annotation`
+- historical_review_text_mutation: none
+- successor_pinned_sha_rule: package records the base it consumes and never predicts its own merge SHA
+- post_hrd_sha_owner: VGBR successor after fresh fetch of merged `origin/main`
+- serial_successor: `POST_HRD_SHA pin and main freeze -> VGBR-R -> EPC-00 -> EPC-01`
+- freeze_rule: no merge, including docs-only, from HRD-CLOSEOUT merge through VGBR benchmark acceptance
