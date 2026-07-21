@@ -34,7 +34,11 @@ if [[ -z "$RUNTIME_BIN" ]]; then
   exit 1
 fi
 
-helper_source="${REPO_HARNESS_HELPER_SOURCE_PATH:-$0}"
+helper_source="$0"
+if [[ -n "${REPO_HARNESS_HELPER_SOURCE_PATH:-}" && -f "$REPO_HARNESS_HELPER_SOURCE_PATH" \
+      && "$(basename "$REPO_HARNESS_HELPER_SOURCE_PATH")" == "$(basename "$0")" ]]; then
+  helper_source="$REPO_HARNESS_HELPER_SOURCE_PATH"
+fi
 helper_dir="$(cd "$(dirname "$helper_source")" && pwd)"
 case "$helper_dir" in
   */assets/templates/helpers)

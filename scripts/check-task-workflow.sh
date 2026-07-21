@@ -613,7 +613,7 @@ check_required_file() {
 
 package_helper_dir() {
   local source_path="${REPO_HARNESS_HELPER_SOURCE_PATH:-}"
-  if [[ -n "$source_path" ]]; then
+  if [[ -n "$source_path" && -f "$source_path" && "$(basename "$source_path")" == "$(basename "$0")" ]]; then
     dirname "$source_path"
     return 0
   fi

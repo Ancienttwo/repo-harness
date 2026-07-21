@@ -13,7 +13,12 @@ USAGE_EOF
 repo="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 repo="$(cd "$repo" && pwd)"
 cd "$repo"
-helper_dir="$(cd "$(dirname "${REPO_HARNESS_HELPER_SOURCE_PATH:-$0}")" && pwd)"
+helper_source="$0"
+if [[ -n "${REPO_HARNESS_HELPER_SOURCE_PATH:-}" && -f "$REPO_HARNESS_HELPER_SOURCE_PATH" \
+      && "$(basename "$REPO_HARNESS_HELPER_SOURCE_PATH")" == "$(basename "$0")" ]]; then
+  helper_source="$REPO_HARNESS_HELPER_SOURCE_PATH"
+fi
+helper_dir="$(cd "$(dirname "$helper_source")" && pwd)"
 
 command_name="${1:-ensure}"
 shift || true
@@ -86,7 +91,8 @@ validate_block() {
 helper_sibling() {
   local helper_name="$1"
   local helper_dir=""
-  if [[ -n "${REPO_HARNESS_HELPER_SOURCE_PATH:-}" ]]; then
+  if [[ -n "${REPO_HARNESS_HELPER_SOURCE_PATH:-}" && -f "$REPO_HARNESS_HELPER_SOURCE_PATH" \
+        && "$(basename "$REPO_HARNESS_HELPER_SOURCE_PATH")" == "$(basename "$0")" ]]; then
     helper_dir="$(dirname "$REPO_HARNESS_HELPER_SOURCE_PATH")"
   fi
   if [[ -n "$helper_dir" && -f "$helper_dir/$helper_name" ]]; then
