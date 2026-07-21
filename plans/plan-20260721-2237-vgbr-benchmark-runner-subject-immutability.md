@@ -134,6 +134,17 @@ byte-identical in shape to the diff-stat vs the old base, confirming the
 rebase carried no semantic change. All evidence in the Acceptance section and
 the contract/notes/review was regenerated fresh on this rebased base.
 
+That closeout run surfaced one external blocker: `repo-harness run
+check-task-workflow --strict` failed because Sprint C's own `## PRD` section
+was empty — proven pre-existing on plain `origin/main` and outside this
+package's scope. The orchestrator confirmed the Program fixed it directly on
+`main` (commit `e4f64953`, "add PRD section to Sprint C for execution
+readiness"). This package fetched and rebased a third time onto
+`e4f649536097e29e3c686666567c0f9f2d133b7b` (the only new commit, docs-only);
+`check-task-workflow --strict` and `contract-run preflight` both re-verified
+green, and the focused suite was re-run as a sanity check (31 pass, 0 fail).
+The full repository suite was not re-run a third time since no code changed.
+
 ## Acceptance
 
 - Root Cause Evidence records the mode drift, isolated bun global-install reproduction, regression guard, and pre-fix failure artifact.
@@ -155,10 +166,8 @@ the contract/notes/review was regenerated fresh on this rebased base.
   - Deliberately unchecked at the end of the 2026-07-22 takeover phase: that
     phase's own scope was rebase + re-verification + lifecycle-doc closeout,
     committed locally only (no merge seal, push, PR, or merge — see the
-    contract's `Program`/`Base SHA` fields and Closeout Blocker). This row
-    also cannot close cleanly yet regardless: `repo-harness run
-    check-task-workflow --strict` currently fails for a proven pre-existing,
-    out-of-package reason (Sprint C's own `## PRD` section is empty; see the
-    contract's Closeout Blocker section). Remaining before this row can check:
-    a Program-level fix or waiver for that gate, a typed AcceptanceReceipt,
-    then merge seal / PR / merge / successor-SHA pin.
+    contract's `Program`/`Base SHA` fields). All machine checks are now green,
+    including `check-task-workflow --strict` (the Sprint C PRD-section gap
+    that previously blocked it was fixed on `main` at `e4f64953` and this
+    package rebased onto it). Remaining before this row can check: a typed
+    AcceptanceReceipt, then merge seal / PR / merge / successor-SHA pin.

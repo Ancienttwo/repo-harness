@@ -1,6 +1,6 @@
 # Task Contract: vgbr-benchmark-runner-subject-immutability
 
-> **Status**: Blocked
+> **Status**: Verified
 > **Plan**: plans/plan-20260721-2237-vgbr-benchmark-runner-subject-immutability.md
 > **Task Profile**: bugfix
 > **Workflow Profile**: strict
@@ -8,10 +8,10 @@
 > **Owner**: kito
 > **Capability ID**: root
 > **Program**: Sprint C (Evidence & Projection Convergence) backlog row 2 `vgbr-rf` — `plans/sprints/20260722-0001-evidence-projection-convergence.sprint.md`
-> **Base SHA**: `4bd4133d142a06494510d09650ea5417fd6866d6` (`origin/main`, fetched and rebased onto 2026-07-22)
+> **Base SHA**: `e4f649536097e29e3c686666567c0f9f2d133b7b` (`origin/main`, fetched and rebased onto 2026-07-22)
 > **Target Branch**: `main`
 > **PR Unit**: `codex/vgbr-benchmark-runner-subject-immutability` (this branch; not yet opened as a PR)
-> **Last Updated**: 2026-07-22 00:59
+> **Last Updated**: 2026-07-22 01:18
 > **Review File**: `tasks/reviews/20260721-2237-vgbr-benchmark-runner-subject-immutability.review.md`
 > **Notes File**: `tasks/notes/20260721-2237-vgbr-benchmark-runner-subject-immutability.notes.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
@@ -224,24 +224,18 @@ exit_criteria:
 - Regression risks: installed-bin path resolution and package lifecycle
   behavior; focused smoke must prove both before full verification.
 
-## Closeout Blocker
+## Closeout Blocker (Resolved)
 
-- `repo-harness run check-task-workflow --strict` (root required check and
-  this contract's own `exit_criteria.commands_succeed` entry) currently fails:
-  `Sprint plans/sprints/20260722-0001-evidence-projection-convergence.sprint.md
-  is not execution-ready: PRD section is empty or placeholder-only`.
-- Verified pre-existing and out of this package's scope: a temporary detached
-  worktree at plain `origin/main` (zero commits from this branch) reproduces
-  the identical failure. This package's diff never touches any
-  `plans/sprints/*` file (confirmed via `git diff --stat origin/main..HEAD --
-  'plans/sprints/*'`, empty).
-- Resolution is a Program-governance edit to that sprint file's own `## PRD`
-  section — outside this contract's `allowed_paths` — not a change to this
-  package. Every other exit-criteria command, the focused regression suite,
-  and the full repository test suite pass (see review).
+- `repo-harness run check-task-workflow --strict` previously failed on this
+  package's diff for a proven pre-existing, out-of-scope reason: Sprint C
+  (`plans/sprints/20260722-0001-evidence-projection-convergence.sprint.md`)
+  had no `## PRD` section. Resolved on `main` by commit `e4f64953` (`docs
+  (program): add PRD section to Sprint C for execution readiness`), which
+  this package rebased onto. Re-run in this worktree post-rebase: `[workflow]
+  OK`, exit 0. No change to this package's own files was required.
 
 ## Rollback Point
 
-- Commit / checkpoint: `4bd4133d142a06494510d09650ea5417fd6866d6`
+- Commit / checkpoint: `e4f649536097e29e3c686666567c0f9f2d133b7b`
 - Revert strategy: revert the runner/test commit; no schema, report, or data
   migration exists.

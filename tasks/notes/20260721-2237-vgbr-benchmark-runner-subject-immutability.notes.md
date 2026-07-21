@@ -4,7 +4,7 @@
 > **Plan**: plans/plan-20260721-2237-vgbr-benchmark-runner-subject-immutability.md
 > **Contract**: tasks/contracts/20260721-2237-vgbr-benchmark-runner-subject-immutability.contract.md
 > **Review**: tasks/reviews/20260721-2237-vgbr-benchmark-runner-subject-immutability.review.md
-> **Last Updated**: 2026-07-22 00:59
+> **Last Updated**: 2026-07-22 01:18
 > **Lifecycle**: notes
 
 ## Takeover Record
@@ -72,9 +72,30 @@
   worktree at plain `origin/main` (no commits from this branch), and this
   branch's diff touches no `plans/sprints/*` file — so the defect is
   pre-existing on `origin/main` and out of this package's scope/allowed_paths
-  to fix.  Recorded as a Closeout Blocker in the contract rather than worked
-  around; contract Status set to `Blocked` rather than `Verified` because of
-  it.
+  to fix.  Recorded as a Closeout Blocker in the contract; contract Status set
+  to `Blocked`.
+- Blocker resolved, third rebase: the orchestrator confirmed commit `e4f64953`
+  (`docs(program): add PRD section to Sprint C for execution readiness`)
+  landed on `main`, resolving the gap above without any change to this
+  package.  Fetched and rebased cleanly onto
+  `e4f649536097e29e3c686666567c0f9f2d133b7b` (only new commit since the prior
+  base; docs-only, touches only the Sprint C sprint file); diff-stat vs the
+  new base again identical in shape (1026 insertions / 14 deletions across the
+  same 6 files).  Re-ran `repo-harness run check-task-workflow --strict`
+  (`[workflow] OK`, exit 0), `contract-run preflight` (`preflight_pass`), and
+  the focused suite (`31 pass`, `0 fail`, `204 expect()`, 32.49s) as a sanity
+  check; did not re-run the full suite per explicit instruction, since no code
+  changed and the only new commit was docs-only.  Contract Status moved from
+  `Blocked` to `Verified` (all machine checks now pass; no `AcceptanceReceipt`
+  exists yet, so `Fulfilled`/`Completed` would overclaim) and the Closeout
+  Blocker section rewritten as resolved, citing `e4f64953`.  Considered
+  matching the archived bdd2/hrd-09 contracts' `Fulfilled` value instead, but
+  checked their git history first: both were authored in a single retroactive
+  commit that already included a filled `AcceptanceReceipt`, so there is no
+  clean historical example of `Fulfilled` used *before* a receipt existed —
+  `Verified` is the documented value (`docs/reference-configs/sprint-
+  contracts.md` Status Rules: "all machine checks passed; awaiting or holding
+  review") that matches this package's actual state without fabricating one.
 
 ## Tradeoffs Considered
 
@@ -97,11 +118,15 @@
   `40a33be4`, run id `19aadbf4-ac7f-434f-8ed0-60d1433c311d`.
 - Pre-fix regression artifact:
   `.ai/harness/runs/vgbr-benchmark-runner-subject-immutability-pre-fix.log`.
-- Implementation commits, rebased onto `4bd4133d`: `d1645dd8` (runner/test
-  fix, formerly `208661dd`) and `4453b6b5` (explicit smoke-test timeout,
-  formerly `a0082486`); workflow capture is `da82b156` (formerly `964d4a2b`).
-- Focused benchmark runner suite (re-run after the second rebase):
-  `31 pass`, `0 fail`, `204 expect()`, 33.42s.
+- Implementation commits, rebased onto `e4f64953` (third rebase; SHAs change
+  on every rebase, so cite by message, not by hash, when referring across
+  rebases): "fix benchmark source authority immutability" (`41512743` as of
+  this rebase) and "stabilize benchmark artifact install test timeout"
+  (`bc3426a2`); workflow capture is "plan VGBR benchmark runner subject fix"
+  (`6cc25040`).
+- Focused benchmark runner suite: `31 pass`, `0 fail`, `204 expect()` (33.42s
+  after the second rebase; 32.49s again after the third rebase onto
+  `e4f64953`).
 - Invariant proof for "runner setup mutates nothing in the frozen subject":
   `tests/harness-benchmark-matrix.test.ts` test "reuses one packed artifact
   across isolated installs without mutating source authority" packs the real
