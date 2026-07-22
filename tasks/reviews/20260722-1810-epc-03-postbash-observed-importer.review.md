@@ -49,17 +49,17 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
+> **Disposition**: external_pass
+> **Reviewer**: Claude
+> **Source**: claude-review
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:602a91853e4df979a8d59632210a119eb3559b1adb9f82101143ebe8e4192a33
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: 8861b40dd85c0f7faabe8eecd217baf5528a7f3c
+> **Verification Evidence SHA256**: sha256:d769df85e918e16fd02eebfb06ac4794769604851643061a0e49c1ff13c966e1
+> **Issued At**: 2026-07-22T11:01:44.641Z
 
-- Summary: No AcceptanceReceipt has been recorded.
+- Summary: EPC-03 accepted: PostBash observed importer, trust boundary proven (observed-only ledger leaves authoritative filter empty), failure semantics matched, wave disjointness held; gatekeeper PASS
 - Findings: none
 
 ## Behavior Diff Notes
