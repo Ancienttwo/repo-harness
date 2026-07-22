@@ -30,6 +30,12 @@ import {
 import { consumePendingPostEditEvents } from './mutation-observed';
 import { runMinimalChangeCli } from './minimal-change-cli';
 import { publishCheckpointFromLedger } from '../../effects/evidence/checkpoint-store';
+import {
+  buildRecoveryContext,
+  renderRecoveryHandoff,
+  renderRecoveryResume,
+  resolveRecoveryEvidence,
+} from '../../effects/evidence/recovery-materializer';
 
 export interface StopCollector {
   getRepoRoot(): string;
@@ -85,12 +91,6 @@ interface ProjectionPaths {
   readonly runSummary: string;
 }
 
-interface NextAction {
-  readonly stage: string;
-  readonly command: string;
-  readonly message: string;
-}
-
 function parsePayload(input: string | Buffer | undefined): StopPayload {
   if (input === undefined) return {};
   const text = input.toString().trim();
@@ -128,23 +128,13 @@ function safeHarnessPath(value: string, fallback: string): string {
   return value;
 }
 
-function runId(env: NodeJS.ProcessEnv, now: Date): string {
-  return env.HOOK_RUN_ID
-    ?? env.CLAUDE_RUN_ID
-    ?? env.CODEX_RUN_ID
-    ?? `run-${formatCompact(now)}-${process.pid}`;
-}
-
-function formatCompact(date: Date): string {
-  const pad = (value: number) => String(value).padStart(2, '0');
-  return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}T${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
-}
-
-function formatDisplay(date: Date): string {
-  const pad = (value: number) => String(value).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
-}
-
+// EPC-07: runId/formatCompact/formatDisplay moved to
+// src/effects/evidence/recovery-materializer.ts's buildRecoveryContext (run
+// id + display timestamp are now part of the shared recovery context every
+// caller of this module reads from `context.runId`/`context.generatedAtDisplay`).
+// formatOffset stays here -- it is only used by this file's own
+// event/run-summary JSON content, which is not one of EPC-07's four named
+// recovery views.
 function formatOffset(date: Date): string {
   const pad = (value: number) => String(value).padStart(2, '0');
   const offset = -date.getTimezoneOffset();
@@ -153,150 +143,15 @@ function formatOffset(date: Date): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}${sign}${pad(Math.floor(absolute / 60))}${pad(absolute % 60)}`;
 }
 
-function declaredPath(repoRoot: string, plan: string, label: string): string {
-  if (!plan || !existsSync(join(repoRoot, plan))) return '';
-  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const match = readFileSync(join(repoRoot, plan), 'utf8').match(new RegExp(`^> \\*\\*${escaped}\\*\\*:\\s*(.+)$`, 'm'));
-  return match?.[1]?.replace(/`/g, '').trim() ?? '';
-}
-
-function activeArtifacts(repoRoot: string, activePlan: string | null): {
-  plan: string;
-  contract: string;
-  review: string;
-  notes: string;
-} {
-  const plan = activePlan && existsSync(join(repoRoot, activePlan)) ? activePlan : '';
-  const stem = plan ? basename(plan).replace(/^plan-/, '').replace(/\.md$/, '') : '';
-  const derived = (directory: string, suffix: string): string => {
-    if (!stem) return '';
-    const candidate = `${directory}/${stem}${suffix}`;
-    return existsSync(join(repoRoot, candidate)) ? candidate : '';
-  };
-  return {
-    plan,
-    contract: declaredPath(repoRoot, plan, 'Task Contract') || declaredPath(repoRoot, plan, 'Sprint Contract') || derived('tasks/contracts', '.contract.md'),
-    review: declaredPath(repoRoot, plan, 'Task Review') || declaredPath(repoRoot, plan, 'Sprint Review') || derived('tasks/reviews', '.review.md'),
-    notes: declaredPath(repoRoot, plan, 'Implementation Notes') || declaredPath(repoRoot, plan, 'Notes File') || derived('tasks/notes', '.notes.md'),
-  };
-}
-
-function metadataValue(path: string, label: string): string {
-  try {
-    const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const match = readFileSync(path, 'utf8').match(new RegExp(`^> \\*\\*${escaped}\\*\\*:\\s*(.+)$`, 'm'));
-    return match?.[1]?.replace(/`/g, '').trim() ?? '';
-  } catch {
-    return '';
-  }
-}
-
-function todoSourcePlan(repoRoot: string): string {
-  const value = metadataValue(join(repoRoot, 'tasks/todos.md'), 'Source Plan');
-  return value === '(none)' ? '' : value;
-}
-
-function activeSprintRow(repoRoot: string, activePlan: string): string {
-  let sprint = '';
-  try {
-    sprint = readFileSync(join(repoRoot, '.ai/harness/sprint/active-sprint'), 'utf8').trim();
-  } catch {
-    return '(none)';
-  }
-  if (!sprint || sprint.startsWith('/') || sprint === '..' || sprint.startsWith('../') || sprint.includes('/../')) return '(none)';
-  try {
-    const row = readFileSync(join(repoRoot, sprint), 'utf8')
-      .split('\n')
-      .find((line) => /^\|\s*\d+\s*\|/.test(line) && activePlan && line.includes(activePlan));
-    return row || `Active sprint: ${sprint}`;
-  } catch {
-    return '(none)';
-  }
-}
-
-function firstTaskBreakdown(planText: string): { total: number; done: number; next: string } {
-  const lines = planText.split('\n');
-  let inSection = false;
-  let total = 0;
-  let done = 0;
-  let next = '';
-  for (const line of lines) {
-    if (!inSection && /^## Task Breakdown\s*$/.test(line)) {
-      inSection = true;
-      continue;
-    }
-    if (inSection && /^## /.test(line)) break;
-    const match = inSection ? line.match(/^\s*-\s*\[([ xX])\]\s+(.+)$/) : null;
-    if (!match) continue;
-    total += 1;
-    if (match[1].toLowerCase() === 'x') done += 1;
-    else if (!next) next = match[2].replace(/\r/g, '');
-  }
-  return { total, done, next };
-}
-
-function nextAction(repoRoot: string, artifacts: ReturnType<typeof activeArtifacts>): NextAction {
-  if (!artifacts.plan) return { stage: 'none', command: '', message: '(none)' };
-  let taskState = { total: 0, done: 0, next: '' };
-  try {
-    taskState = firstTaskBreakdown(readFileSync(join(repoRoot, artifacts.plan), 'utf8'));
-  } catch {
-    // Missing/unreadable plan is treated as no active execution checklist.
-  }
-  if (taskState.total > taskState.done) {
-    const pending = taskState.next || 'continue active plan Task Breakdown';
-    return {
-      stage: 'task',
-      command: '',
-      message: `If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: ${pending}`,
-    };
-  }
-  return {
-    stage: 'check',
-    command: '/check',
-    message: 'Stage the completed module diff first; then run /check and let canonical workflow gates determine whether review, external acceptance, verification, or worktree finish is next.',
-  };
-}
-
-function recentCommands(repoRoot: string): string {
-  try {
-    const lines = readFileSync(join(repoRoot, '.claude/.trace.jsonl'), 'utf8').trimEnd().split('\n').slice(-5);
-    return lines.length > 0 && lines.some(Boolean) ? lines.map((line) => `- ${line}`).join('\n') : '- (none captured)';
-  } catch {
-    return '- (none captured)';
-  }
-}
-
-function latestTrace(repoRoot: string, checksRel: string): string {
-  const checks = readJson(join(repoRoot, checksRel));
-  return typeof checks?.run_file === 'string' && checks.run_file ? checks.run_file : checksRel;
-}
-
-function supersededPlan(repoRoot: string): string {
-  const state = readJson(join(repoRoot, '.claude/.task-state.json'));
-  return typeof state?.source_plan === 'string' && state.source_plan ? state.source_plan : '(none)';
-}
-
-function changedFiles(repoRoot: string): { files: string; summary: string } {
-  try {
-    const tracked = execFileSync('git', ['-C', repoRoot, 'diff', '--name-only', 'HEAD'], {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    });
-    const untracked = execFileSync('git', ['-C', repoRoot, 'ls-files', '--others', '--exclude-standard'], {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    });
-    const files = [...new Set(`${tracked}\n${untracked}`.split('\n').map((line) => line.trim()).filter(Boolean))].sort();
-    const visible = files.length > 80 ? [...files.slice(0, 80), `... (${files.length} total changed/untracked paths; inspect git status --short)`] : files;
-    return {
-      files: visible.length > 0 ? visible.join('\n') : '(none)',
-      summary: files.length > 0 ? `${files.length} changed/untracked paths` : 'no uncommitted diff against HEAD',
-    };
-  } catch {
-    return { files: '(none)', summary: 'git repository not detected' };
-  }
-}
+// EPC-07: activeArtifacts/changedFiles/nextAction/recentCommands/
+// activeSprintRow/supersededPlan/todoSourcePlan/firstTaskBreakdown/
+// metadataValue/declaredPath/latestTrace moved to
+// src/effects/evidence/recovery-materializer.ts's buildRecoveryContext --
+// single source of truth for the workflow context every recovery view
+// needs. `latestTrace` (checks/latest.json's `run_file` field folded
+// directly into a handoff line) is retired outright: it was a single-hop
+// violation (re-deriving an evidence claim from checks/* instead of the
+// checkpoint); the materializer's Evidence/Provenance sections replace it.
 
 function assertSafeRepoWritePath(repoRoot: string, path: string): void {
   const root = resolve(repoRoot);
@@ -479,58 +334,42 @@ function projection(repoRoot: string, activePlan: string | null, env: NodeJS.Pro
   paths: ProjectionPaths;
   content: { handoff: string; resume: string; event: string; runSummary: string };
 } {
-  const config = policy(repoRoot);
-  const checks = safeHarnessPath(nestedString(config, ['harness', 'checks_file']), '.ai/harness/checks/latest.json');
-  const handoff = safeHarnessPath(nestedString(config, ['harness', 'handoff_file']), '.ai/harness/handoff/current.md');
-  const resume = safeHarnessPath(nestedString(config, ['handoff_resume', 'resume_packet_file']), '.ai/harness/handoff/resume.md');
-  const events = safeHarnessPath(nestedString(config, ['harness', 'events_file']), '.ai/harness/events.jsonl');
-  const runsDir = safeHarnessPath(nestedString(config, ['harness', 'runs_dir']), '.ai/harness/runs');
-  const policyFile = '.ai/harness/policy.json';
-  const contextMap = safeHarnessPath(nestedString(config, ['context', 'map_file']), '.ai/context/context-map.json');
-  const researchDir = nestedString(config, ['tasks', 'research_dir']) || 'docs/researches';
-  const id = runId(env, now);
-  const runSummary = `${runsDir}/${id}.json`;
-  const artifacts = activeArtifacts(repoRoot, activePlan);
-  const changed = changedFiles(repoRoot);
-  const sourcePlan = todoSourcePlan(repoRoot);
-  const action = nextAction(repoRoot, artifacts);
-  const nextTask = action.command ? `${action.message} Command: ${action.command}` : action.message;
-  const goal = sourcePlan
-    ? `Continue task checklist sourced from ${sourcePlan}.`
-    : artifacts.plan
-      ? `Continue active plan ${artifacts.plan}.`
-      : nextTask !== '(none)'
-        ? nextTask
-        : 'No active plan. Continue from the latest user request and filesystem state.';
-  const commands = recentCommands(repoRoot);
-  const trace = latestTrace(repoRoot, checks);
-  const sprintRow = activeSprintRow(repoRoot, artifacts.plan);
-  const supersedes = supersededPlan(repoRoot);
-  const displayed = formatDisplay(now);
-  const handoffContent = `# Harness Handoff\n\n> **Generated**: ${displayed}\n> **Reason**: session-stop\n\n## Goal\n\n${goal}\n\n## Decisions\n\n- Use filesystem artifacts as source of truth; treat SQLite/thread state as a rebuildable read model only.\n\n## Files Touched\n\n\`\`\`\n${changed.files}\n\`\`\`\n\n## Commands Run\n\n${commands}\n\n## Checks\n\n- Checks file: ${checks}\n- Latest trace: ${trace}\n\n## Blockers\n\n- (none recorded)\n\n## Active Artifacts\n\n- Active plan: ${artifacts.plan || '(none)'}\n- Active contract: ${artifacts.contract || '(none)'}\n- Active sprint row: ${sprintRow}\n- Review file: ${artifacts.review || '(none)'}\n- Latest trace/checks file: ${trace}\n- Resume packet: ${resume}\n\n## Exact Next Step\n\n- ${nextTask}\n\n## Resume Prompt\n\n- Resume packet: ${resume}\n- Start a fresh Codex session and read source artifacts first, then this handoff, before continuing; do not rely on auto-compact.\n\n## Source Artifacts\n\n- Spec: docs/spec.md\n- Plan: ${artifacts.plan || '(none)'}\n- Todo Source Plan: ${sourcePlan || '(none)'}\n- Contract: ${artifacts.contract || '(none)'}\n- Review: ${artifacts.review || '(none)'}\n- Notes: ${artifacts.notes || '(none)'}\n- Checks: ${checks}\n- Resume Packet: ${resume}\n- Policy: ${policyFile}\n- Context Map: ${contextMap}\n\n## Current Status\n\n- Next action stage: ${action.stage}\n- Next recommended action: ${nextTask}\n- Working tree: ${changed.summary}\n- Parent Run ID: ${id}\n- Supersedes: ${supersedes}\n\n## Changed Files\n\n\`\`\`\n${changed.files}\n\`\`\`\n`;
-  const resumeContent = `# Codex Resume Packet\n<!-- generated-by: workflow_write_handoff v1 -->\n\n> **Generated**: ${displayed}\n> **Reason**: session-stop\n\n## Resume Prompt\n\nStart a fresh session for this task; do not rely on auto-compact or prior chat history. Read the source artifacts below, then the handoff, before continuing from Exact Next Step.\n\n- ${nextTask}\n\n## Source Artifacts\n\n- Handoff: ${handoff}\n- Spec: docs/spec.md\n- Active plan: ${artifacts.plan || '(none)'}\n- Active contract: ${artifacts.contract || '(none)'}\n- Review: ${artifacts.review || '(none)'}\n- Notes: ${artifacts.notes || '(none)'}\n- Research: ${researchDir}/\n- Checks: ${checks}\n`;
+  // EPC-07: handoff/resume content now comes from the single recovery
+  // materializer (src/effects/evidence/recovery-materializer.ts) instead of
+  // this function's own independent Markdown assembly. External shape is
+  // unchanged: same four projection targets, same paths resolution
+  // (buildRecoveryContext resolves the identical policy-driven paths this
+  // function used to resolve itself), same event/run-summary content this
+  // function still owns directly (those two targets are not among EPC-07's
+  // four named recovery views).
+  const context = buildRecoveryContext(repoRoot, activePlan, env, { reason: 'session-stop', now: () => now });
+  const evidence = resolveRecoveryEvidence(repoRoot);
+  const contractPath = context.artifacts.contract;
+  const handoffContent = renderRecoveryHandoff(context, evidence, contractPath);
+  const resumeContent = renderRecoveryResume(context, evidence, contractPath);
+  const runSummary = `${context.paths.runsDir}/${context.runId}.json`;
   const eventContent = `${JSON.stringify({
     ts: formatOffset(now),
     event_type: 'handoff_refresh',
     reason: 'session-stop',
-    run_id: id,
-    extra: { source_plan: sourcePlan, parent_run_id: id },
+    run_id: context.runId,
+    extra: { source_plan: context.sourcePlan, parent_run_id: context.runId },
   })}\n`;
   const runSummaryContent = `${JSON.stringify({
     generated_at: formatOffset(now),
-    run_id: id,
+    run_id: context.runId,
     reason: 'session-stop',
-    active_plan: artifacts.plan,
-    active_contract: artifacts.contract,
-    active_review: artifacts.review,
-    active_notes: artifacts.notes,
-    checks_file: checks,
-    handoff_file: handoff,
-    policy_file: policyFile,
-    context_map_file: contextMap,
+    active_plan: context.artifacts.plan,
+    active_contract: context.artifacts.contract,
+    active_review: context.artifacts.review,
+    active_notes: context.artifacts.notes,
+    checks_file: context.paths.checks,
+    handoff_file: context.paths.handoff,
+    policy_file: context.paths.policyFile,
+    context_map_file: context.paths.contextMap,
   }, null, 2)}\n`;
   return {
-    paths: { handoff, resume, events, runSummary },
+    paths: { handoff: context.paths.handoff, resume: context.paths.resume, events: context.paths.events, runSummary },
     content: { handoff: handoffContent, resume: resumeContent, event: eventContent, runSummary: runSummaryContent },
   };
 }
@@ -651,6 +490,26 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
     // Deferred journal housekeeping never blocks Stop.
   }
 
+  // EPC-07 (reordered from EPC-06's additive placement, documented in
+  // tasks/contracts/20260722-2246-epc-07-recovery-view-cutover.contract.md):
+  // publish the checkpoint BEFORE building the projection batch below, so
+  // the recovery materializer's evidence read reflects the freshest
+  // possible checkpoint for this Stop (including any ledger events the
+  // PostEdit flush above just accepted), not the previous Stop's stale
+  // snapshot. Still a quiet, expected skip inside
+  // `publishCheckpointFromLedger` itself when a worktree has no ledger yet
+  // (no exception), and any unexpected storage fault here is caught and
+  // discarded the same way, so this best-effort publish still can never
+  // block, reorder, or change Stop's existing
+  // handoff/resume/event/run-summary projection outputs below -- only their
+  // relative ordering to this publish call changed, not their own shape,
+  // count, or the single downstream state resolution.
+  try {
+    publishCheckpointFromLedger(repoRoot, () => now);
+  } catch {
+    // Checkpoint publication never blocks Stop.
+  }
+
   const projected = projection(repoRoot, activePlan, env, now);
   new StopProjectionBatch(
     repoRoot,
@@ -659,20 +518,6 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
     dependencies.observeProjectionWrite,
   ).commit();
   dependencies.observeProjectionTransaction?.();
-
-  // EPC-06 (additive): publish a checkpoint of the current accepted evidence
-  // set at this same Stop transaction point. Mirrors the PostEdit-flush
-  // try/catch above -- a worktree with no ledger yet (the common case today)
-  // is a quiet, expected skip inside `publishCheckpointFromLedger` itself
-  // (no exception), and any unexpected storage fault here is caught and
-  // discarded the same way, so this best-effort publish can never block,
-  // reorder, or change Stop's existing handoff/resume/event/run-summary
-  // projection outputs above.
-  try {
-    publishCheckpointFromLedger(repoRoot, () => now);
-  } catch {
-    // Checkpoint publication never blocks Stop.
-  }
 
   const stderr: string[] = [`[FinalizeHandoff] Refreshed ${projected.paths.handoff}.\n`];
   let state: EffectiveState | null = null;

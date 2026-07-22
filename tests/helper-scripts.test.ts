@@ -4168,7 +4168,12 @@ describe("Workflow helper scripts", () => {
       expect(handoff).toContain("Plan: plans/plan-20260327-2200-alpha.md");
       expect(handoff).toContain("Contract: tasks/contracts/alpha.contract.md");
       expect(handoff).toContain("Checks: .ai/harness/checks/latest.json");
-      expect(handoff).toContain("Latest trace/checks file:");
+      // EPC-07: the old "Latest trace/checks file:" line re-derived evidence
+      // directly from checks/latest.json content (a single-hop violation this
+      // package fixes); the recovery materializer's "## Evidence" section now
+      // sources only from the checkpoint, rendering a typed minimal state when
+      // none is published yet (this fixture seeds no ledger/checkpoint).
+      expect(handoff).toContain("- Checkpoint: (none published yet -- no ledger evidence recorded in this worktree)");
       expect(handoff).toContain("## Active Artifacts");
       expect(handoff).toContain("Active sprint row:");
       expect(handoff).toContain("Alpha handoff");
