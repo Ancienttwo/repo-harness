@@ -49,17 +49,17 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
+> **Disposition**: external_pass
+> **Reviewer**: Claude
+> **Source**: claude-review
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:6703dd6bc3cf25672a44cb2be2ea02354eb409bac77a6adad824149cff202a4d
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: 9ea195b99db26895821e9ee3e29ad2f460895649
+> **Verification Evidence SHA256**: sha256:7e228aa05757f59355eb7796cb92fccb43814cf1d09994112219cb51a0ce5cb7
+> **Issued At**: 2026-07-22T17:40:59.376Z
 
-- Summary: No AcceptanceReceipt has been recorded.
+- Summary: EPC-08 accepted: Context Packet served from canonical projections (last primary-source re-derivation deleted), 27-state panel passes both frozen token gates (max 324, p95 324, utf8_bytes_div_4) with committed per-sample table; gatekeeper PASS with independent panel re-run
 - Findings: none
 
 ## Behavior Diff Notes
