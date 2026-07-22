@@ -13,6 +13,7 @@ import {
   readAcceptedEvents,
   type EvidenceEventInput,
 } from "../src/effects/evidence/event-log";
+import { redactPayloadStrings } from "../src/core/evidence/redaction";
 
 function withTempRepo(prefix: string, fn: (repoRoot: string) => void): void {
   const repoRoot = mkdtempSync(join(tmpdir(), `${prefix}-`));
@@ -307,6 +308,125 @@ describe("D6 construction-invariant safety", () => {
       const blobPath = join(repoRoot, ".ai/harness/evidence/blobs", record.blob_sha256!);
       expect(existsSync(blobPath)).toBe(true);
       expect(readFileSync(blobPath)).toEqual(content);
+    });
+  });
+});
+
+describe("D6 redaction: typed-field exemption (EPC-05 gatekeeper CRITICAL fix)", () => {
+  // Live repro that motivated this fix: evt-01KY4YMNNF0BFAPHV968AX04J6 in the
+  // EPC-05 worktree's own ledger -- a real verify-sprint run against this
+  // package's own realistic-length contract slug mangled review_subject_sha256
+  // (double-prefixed) and every long-slug path in the run_trace.
+  const LONG_SLUG_CONTRACT_PATH = "tasks/contracts/20260722-1929-epc-05-checks-latest-materializer.contract.md";
+  const LONG_SLUG_RUN_FILE = ".ai/harness/runs/run-20260722T210100-99999-20260722-1929-epc-05-checks-latest-materializer.json";
+  const LONG_SLUG_ACTIVE_PLAN = "plans/plan-20260722-1929-epc-05-checks-latest-materializer.md";
+
+  test("a declared hash value (bare 40-char git SHA, bare 64-char hex, or sha256:-prefixed) is exempt from entropy redaction", () => {
+    const bareSha40 = "5228d4ea0d7987cf6fb73be216d5b9cc638817c3";
+    const prefixedSha256 = "sha256:" + "a".repeat(64);
+    const bareSha256 = "b".repeat(64);
+    const result = redactPayloadStrings({ a: bareSha40, b: prefixedSha256, c: bareSha256 }, []) as Record<string, string>;
+    expect(result).toEqual({ a: bareSha40, b: prefixedSha256, c: bareSha256 });
+  });
+
+  test("double-prefix regression: an already sha256:-prefixed hash value is never re-hashed to sha256:sha256:...", () => {
+    const subjectHash = "sha256:" + "d".repeat(64);
+    const result = redactPayloadStrings({ review_subject_sha256: subjectHash }, []) as { review_subject_sha256: string };
+    expect(result.review_subject_sha256).toBe(subjectHash);
+    expect(result.review_subject_sha256).not.toMatch(/^sha256:sha256:/);
+  });
+
+  test("a hash embedded inside a longer free-text string is NOT exempt -- whole-value match only", () => {
+    const embedded = `contract sha256:${"c".repeat(64)} failed`;
+    const result = redactPayloadStrings({ message: embedded }, []) as { message: string };
+    expect(result.message).not.toBe(embedded);
+    expect(result.message.startsWith("contract ")).toBe(true);
+    expect(result.message.endsWith(" failed")).toBe(true);
+  });
+
+  test("a path-key-convention field (path/_path/Path suffix) is exempt from entropy redaction regardless of value shape", () => {
+    const result = redactPayloadStrings(
+      { contract_path: LONG_SLUG_CONTRACT_PATH, filePath: LONG_SLUG_CONTRACT_PATH, path: LONG_SLUG_CONTRACT_PATH },
+      [],
+    ) as Record<string, string>;
+    expect(result.contract_path).toBe(LONG_SLUG_CONTRACT_PATH);
+    expect(result.filePath).toBe(LONG_SLUG_CONTRACT_PATH);
+    expect(result.path).toBe(LONG_SLUG_CONTRACT_PATH);
+  });
+
+  test("a whole-value safe repo-relative path is exempt even when the key does not follow the path-key convention (run_file, lifecycle.snapshot, contract.file, active_plan)", () => {
+    const result = redactPayloadStrings(
+      {
+        run_file: LONG_SLUG_RUN_FILE,
+        lifecycle: { snapshot: LONG_SLUG_RUN_FILE },
+        contract: { file: LONG_SLUG_CONTRACT_PATH },
+        active_plan: LONG_SLUG_ACTIVE_PLAN,
+      },
+      [],
+    ) as { run_file: string; lifecycle: { snapshot: string }; contract: { file: string }; active_plan: string };
+    expect(result.run_file).toBe(LONG_SLUG_RUN_FILE);
+    expect(result.lifecycle.snapshot).toBe(LONG_SLUG_RUN_FILE);
+    expect(result.contract.file).toBe(LONG_SLUG_CONTRACT_PATH);
+    expect(result.active_plan).toBe(LONG_SLUG_ACTIVE_PLAN);
+  });
+
+  test("array entries that are whole-value safe repo-relative paths are exempt too (allowed_paths/files_changed)", () => {
+    const result = redactPayloadStrings(
+      { allowed_paths: [LONG_SLUG_CONTRACT_PATH, "scripts/verify-sprint.sh"] },
+      [],
+    ) as { allowed_paths: string[] };
+    expect(result.allowed_paths).toEqual([LONG_SLUG_CONTRACT_PATH, "scripts/verify-sprint.sh"]);
+  });
+
+  test("a path-shaped value with a .. traversal segment is NOT exempt and still gets entropy-redacted", () => {
+    const withTraversal = "../" + "a".repeat(40) + "/nested.txt";
+    const result = redactPayloadStrings({ note: withTraversal }, []) as { note: string };
+    expect(result.note).not.toBe(withTraversal);
+  });
+
+  test("the secret-value denylist still fires inside an exempted (path-shaped) field", () => {
+    const secret = "ghp_abcdefghijklmnopqrstuvwxyz0123456789AB";
+    const pathWithSecret = `tasks/contracts/${secret}.contract.md`;
+    const result = redactPayloadStrings({ contract_path: pathWithSecret }, [secret]) as { contract_path: string };
+    expect(result.contract_path).not.toContain(secret);
+    expect(result.contract_path).toContain("sha256:");
+  });
+
+  test("the secret-value denylist still fires inside an exempted (declared-hash-shaped) field", () => {
+    const secret = "ghp_abcdefghijklmnopqrstuvwxyz0123456789AB";
+    // Not hash-shaped once the secret is embedded (fails the whole-value hash
+    // pattern), but proves the denylist pass is unconditional regardless.
+    const result = redactPayloadStrings({ token_ref: secret }, [secret]) as { token_ref: string };
+    expect(result.token_ref).not.toContain(secret);
+    expect(result.token_ref).toContain("sha256:");
+  });
+
+  test("free-text fields keep entropy redaction unchanged (no exemption applies)", () => {
+    const token = "Zx9Qk3mP7vRt2Nw8Ly5Ju1Hb6Fg4Ds0Ac";
+    expect(token.length).toBeGreaterThanOrEqual(32);
+    const result = redactPayloadStrings({ detail: `secret=${token}` }, []) as { detail: string };
+    expect(result.detail).not.toContain(token);
+    expect(result.detail).toContain("sha256:");
+  });
+
+  test("end-to-end: a realistic run_trace payload with a long contract slug survives appendEvidenceEvent byte-intact for its consumer-facing fields", () => {
+    withTempRepo("evidence-redaction-run-trace-e2e", (repoRoot) => {
+      freshGenesisRepo(repoRoot);
+      const runTrace = {
+        schema: "repo-harness-run-trace.v1",
+        status: "pass",
+        review_subject_sha256: "sha256:" + "e".repeat(64),
+        run_file: LONG_SLUG_RUN_FILE,
+        lifecycle: { snapshot: LONG_SLUG_RUN_FILE },
+        contract: { file: LONG_SLUG_CONTRACT_PATH },
+        active_plan: LONG_SLUG_ACTIVE_PLAN,
+      };
+      const record = appendEvidenceEvent(
+        repoRoot,
+        baseInput({ payload: { kind: "json", value: { run_trace: runTrace } } }),
+      );
+      const stored = (record.payload as { run_trace: unknown }).run_trace;
+      expect(stored).toEqual(runTrace);
     });
   });
 });
