@@ -746,4 +746,83 @@ describe('mcp setup', () => {
       expect(installed).not.toContain('完成阶段性任务，要staging再继续');
     });
   });
+
+  // SSD-05: setup.ts no longer owns ChatGPT Skill prose inline; install-skill
+  // now projects the file-backed canonical package at
+  // assets/skills/repo-harness-chatgpt/references/bridge.md. These tests
+  // cover the new projection source directly (byte parity, and fail-closed
+  // behavior when the canonical package is missing/malformed), replacing the
+  // old assumption that SKILL_MD could never be absent.
+  const CHATGPT_CANONICAL_BRIDGE_REFERENCE = join(
+    import.meta.dir,
+    '../..',
+    'assets/skills/repo-harness-chatgpt/references/bridge.md',
+  );
+
+  function withReplacedSourceRoot<T>(sourceRoot: string, fn: () => T): T {
+    const previous = process.env.REPO_HARNESS_SOURCE_ROOT;
+    try {
+      process.env.REPO_HARNESS_SOURCE_ROOT = sourceRoot;
+      return fn();
+    } finally {
+      if (previous === undefined) delete process.env.REPO_HARNESS_SOURCE_ROOT;
+      else process.env.REPO_HARNESS_SOURCE_ROOT = previous;
+    }
+  }
+
+  test('install-skill projects the exact canonical bridge.md bytes into SKILL.md and references/workflow.md', () => {
+    withTmpRepo((repoRoot) => {
+      const canonical = readFileSync(CHATGPT_CANONICAL_BRIDGE_REFERENCE, 'utf-8');
+      expect(canonical).toContain('name: repo-harness-chatgpt-bridge');
+      const result = runMcpInstallSkill({ repo: repoRoot });
+      expect(result.changed.length).toBeGreaterThan(0);
+      const skill = join(repoRoot, '.agents/skills/repo-harness-chatgpt-bridge/SKILL.md');
+      const workflow = join(repoRoot, '.agents/skills/repo-harness-chatgpt-bridge/references/workflow.md');
+      expect(readFileSync(skill, 'utf-8')).toBe(canonical);
+      expect(readFileSync(workflow, 'utf-8')).toBe(canonical);
+    });
+  });
+
+  test('install-skill fails closed and writes nothing when the canonical ChatGPT Skill source is missing', () => {
+    withTmpRepo((repoRoot) => {
+      const fakeSourceRoot = mkdtempSync(join(tmpdir(), 'repo-harness-chatgpt-missing-canonical-'));
+      try {
+        withReplacedSourceRoot(fakeSourceRoot, () => {
+          expect(() => runMcpInstallSkill({ repo: repoRoot })).toThrow('canonical ChatGPT Skill source');
+          expect(existsSync(join(repoRoot, '.agents/skills/repo-harness-chatgpt-bridge'))).toBe(false);
+          // Dry run validates the canonical source too, so it never reports a
+          // false "would install" when the source is actually broken.
+          expect(() => runMcpInstallSkill({ repo: repoRoot, dryRun: true })).toThrow('canonical ChatGPT Skill source');
+          expect(existsSync(join(repoRoot, '.agents/skills/repo-harness-chatgpt-bridge'))).toBe(false);
+        });
+      } finally {
+        rmSync(fakeSourceRoot, { recursive: true, force: true });
+      }
+    });
+  });
+
+  test('install-skill fails closed and writes nothing when the canonical ChatGPT Skill source is malformed', () => {
+    withTmpRepo((repoRoot) => {
+      const fakeSourceRoot = mkdtempSync(join(tmpdir(), 'repo-harness-chatgpt-malformed-canonical-'));
+      try {
+        const referencesDir = join(fakeSourceRoot, 'assets/skills/repo-harness-chatgpt/references');
+        mkdirSync(referencesDir, { recursive: true });
+        writeFileSync(join(referencesDir, 'bridge.md'), '# not a skill file, no frontmatter\n');
+        withReplacedSourceRoot(fakeSourceRoot, () => {
+          expect(() => runMcpInstallSkill({ repo: repoRoot })).toThrow('canonical ChatGPT Skill source is malformed');
+          expect(existsSync(join(repoRoot, '.agents/skills/repo-harness-chatgpt-bridge'))).toBe(false);
+        });
+      } finally {
+        rmSync(fakeSourceRoot, { recursive: true, force: true });
+      }
+    });
+  });
+
+  test('install-skill rejects a non-absolute REPO_HARNESS_SOURCE_ROOT override', () => {
+    withTmpRepo((repoRoot) => {
+      withReplacedSourceRoot('relative/path', () => {
+        expect(() => runMcpInstallSkill({ repo: repoRoot })).toThrow('REPO_HARNESS_SOURCE_ROOT must be an absolute path');
+      });
+    });
+  });
 });
