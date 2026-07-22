@@ -4,7 +4,7 @@ import {
   rmSync, statSync, symlinkSync, unlinkSync, writeFileSync,
 } from 'fs';
 import { tmpdir } from 'os';
-import { basename, dirname, join, relative, resolve } from 'path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'path';
 import { spawnSync } from 'child_process';
 import { createHash, randomUUID } from 'crypto';
 import { acquireExpensiveRunLock } from '../src/effects/expensive-run-lock';
@@ -453,6 +453,111 @@ export function benchmarkSubject(root: string, manifestPath: string, seed: strin
   };
 }
 
+export interface BenchmarkSourceAuthority {
+  root: string;
+  manifestPath: string;
+  seed: string;
+  sourceCommit: string;
+  subject: ReturnType<typeof benchmarkSubject>;
+}
+
+/** Capture source authority before profile preparation or provider work. */
+export function captureBenchmarkSourceAuthority(
+  root: string,
+  manifestPath: string,
+  seed: string,
+): BenchmarkSourceAuthority {
+  const authorityRoot = resolve(root);
+  const authorityManifestPath = resolve(manifestPath);
+  const authoritySeed = resolve(seed);
+  return {
+    root: authorityRoot,
+    manifestPath: authorityManifestPath,
+    seed: authoritySeed,
+    sourceCommit: run('git', ['rev-parse', 'HEAD'], authorityRoot),
+    subject: benchmarkSubject(authorityRoot, authorityManifestPath, authoritySeed),
+  };
+}
+
+/** Fail closed if the captured source commit or benchmark subject changes. */
+export function assertBenchmarkSubjectUnchanged(
+  authority: BenchmarkSourceAuthority,
+  phase: string,
+): void {
+  const currentCommit = run('git', ['rev-parse', 'HEAD'], authority.root);
+  if (currentCommit !== authority.sourceCommit) {
+    throw new Error(
+      `benchmark source commit changed after ${phase}: expected=${authority.sourceCommit}; actual=${currentCommit}`,
+    );
+  }
+  const currentSubject = benchmarkSubject(authority.root, authority.manifestPath, authority.seed);
+  const componentFields = [
+    'runner_sha256',
+    'scenario_manifest_sha256',
+    'fixture_set_sha256',
+    'install_profile_inputs_sha256',
+    'provider_invocation_schema_sha256',
+  ] as const;
+  for (const field of componentFields) {
+    if (currentSubject[field] !== authority.subject[field]) {
+      throw new Error(
+        `benchmark subject changed after ${phase}: ${field}; expected=${authority.subject[field]}; actual=${currentSubject[field]}`,
+      );
+    }
+  }
+  if (currentSubject.benchmark_subject_sha256 !== authority.subject.benchmark_subject_sha256) {
+    throw new Error(
+      `benchmark subject changed after ${phase}: benchmark_subject_sha256; expected=${authority.subject.benchmark_subject_sha256}; actual=${currentSubject.benchmark_subject_sha256}`,
+    );
+  }
+}
+
+export interface BenchmarkRuntimeArtifact {
+  path: string;
+  sha256: string;
+}
+
+function assertPathOutsideRoot(path: string, root: string, label: string): void {
+  const candidate = resolve(path);
+  const authorityRoot = resolve(root);
+  const pathRelativeToRoot = relative(authorityRoot, candidate);
+  if (pathRelativeToRoot === '' || (!isAbsolute(pathRelativeToRoot)
+    && pathRelativeToRoot !== '..'
+    && !pathRelativeToRoot.startsWith(`..${sep}`))) {
+    throw new Error(`${label} must be outside authoritative ROOT: ${candidate}`);
+  }
+}
+
+export function prepareBenchmarkRuntimeArtifact(sourceRoot: string, runRoot: string): BenchmarkRuntimeArtifact {
+  const packageRoot = join(runRoot, 'runtime-package');
+  mkdirSync(packageRoot, { recursive: true });
+  const packed = JSON.parse(run(
+    'npm',
+    ['pack', '--ignore-scripts', '--json', '--pack-destination', packageRoot],
+    sourceRoot,
+  )) as Array<{ filename?: unknown }>;
+  if (!Array.isArray(packed) || packed.length !== 1 || typeof packed[0]?.filename !== 'string') {
+    throw new Error('npm pack did not produce exactly one runtime tarball');
+  }
+  const artifactPath = resolve(packageRoot, packed[0].filename);
+  const artifactRelativePath = relative(packageRoot, artifactPath);
+  if (artifactRelativePath === '' || isAbsolute(artifactRelativePath)
+    || artifactRelativePath === '..' || artifactRelativePath.startsWith(`..${sep}`)) {
+    throw new Error(`benchmark runtime artifact escaped runner root: ${artifactPath}`);
+  }
+  assertPathOutsideRoot(artifactPath, sourceRoot, 'benchmark runtime artifact');
+  if (!existsSync(artifactPath) || !statSync(artifactPath).isFile()) {
+    throw new Error(`benchmark runtime artifact missing: ${artifactPath}`);
+  }
+  return { path: artifactPath, sha256: hashFile(artifactPath) };
+}
+
+export function assertBenchmarkRuntimeArtifactUnchanged(artifact: BenchmarkRuntimeArtifact): void {
+  if (!existsSync(artifact.path) || hashFile(artifact.path) !== artifact.sha256) {
+    throw new Error(`benchmark runtime artifact changed: ${artifact.path}`);
+  }
+}
+
 function workspaceEvidenceHash(workspace: string, baselineRevision?: string): string {
   const paths = benchmarkChangedFiles(workspace, baselineRevision);
   const entries = paths.map((path) => {
@@ -609,15 +714,26 @@ function projectHarnessBase(
   provider: BenchmarkProvider,
   workspace: string,
   hostRoot: string,
+  runtimeArtifact: BenchmarkRuntimeArtifact | undefined,
 ): void {
   if (profile === 'no-harness') return;
+  if (!runtimeArtifact) throw new Error(`benchmark runtime artifact missing for profile: ${profile}`);
   const env = isolatedHarnessEnvironment(hostRoot);
-  run(process.execPath, [join(ROOT, 'src/cli/index.ts'), 'adopt', '--repo', workspace, '--no-codegraph', '--mode', 'standard'], ROOT, env);
+  assertBenchmarkRuntimeArtifactUnchanged(runtimeArtifact);
+  run(process.execPath, ['add', '-g', runtimeArtifact.path], workspace, env);
+  assertBenchmarkRuntimeArtifactUnchanged(runtimeArtifact);
+  const installedCli = join(env.BUN_INSTALL ?? join(hostRoot, '.bun'), 'bin', 'repo-harness');
+  assertPathOutsideRoot(installedCli, ROOT, 'installed benchmark CLI');
+  if (!existsSync(installedCli)) throw new Error(`installed benchmark CLI missing: ${installedCli}`);
+  assertPathOutsideRoot(realpathSync(installedCli), ROOT, 'installed benchmark CLI target');
+  assertBenchmarkRuntimeArtifactUnchanged(runtimeArtifact);
+  run(installedCli, ['adopt', '--repo', workspace, '--no-codegraph', '--mode', 'standard'], workspace, env);
   const installProfile = profile === 'adaptive-lite' ? 'standard' : 'strict';
-  run(process.execPath, [
-    join(ROOT, 'src/cli/index.ts'), 'install', '--profile', installProfile, '--target', provider,
-    '--no-external-skills', '--no-codegraph', '--json',
-  ], ROOT, env);
+  assertBenchmarkRuntimeArtifactUnchanged(runtimeArtifact);
+  run(installedCli, [
+    'install', '--profile', installProfile, '--target', provider,
+    '--no-cli', '--no-external-skills', '--no-codegraph', '--json',
+  ], workspace, env);
   run('git', ['add', '.'], workspace, env);
   run('git', ['commit', '--allow-empty', '-m', `benchmark ${profile} base`], workspace, env);
 }
@@ -628,6 +744,7 @@ function prepareProfileBase(
   seed: string,
   root: string,
   reportRunId: string,
+  runtimeArtifact: BenchmarkRuntimeArtifact | undefined,
 ): PreparedProfileBase {
   const baseRoot = join(root, profile, 'profile-base');
   const workspace = join(baseRoot, 'workspace');
@@ -635,7 +752,7 @@ function prepareProfileBase(
   initializeBenchmarkWorkspace(seed, workspace);
   mkdirSync(home, { recursive: true });
   if (provider === 'codex') copyCodexAuthOnly(home);
-  projectHarnessBase(profile, provider, workspace, home);
+  projectHarnessBase(profile, provider, workspace, home, runtimeArtifact);
   return {
     id: `${reportRunId}:${profile}:base`,
     profile,
@@ -1182,10 +1299,19 @@ async function runHarnessProfileBenchmarkUnlocked(options: CliOptions) {
   )) {
     throw new Error('authoritative benchmark requires the complete 3x9 matrix');
   }
+  const sourceAuthority = captureBenchmarkSourceAuthority(ROOT, options.manifest, seed);
+  const runtimeArtifact = options.execute && profiles.some((profile) => profile !== 'no-harness')
+    ? prepareBenchmarkRuntimeArtifact(ROOT, runRoot)
+    : undefined;
+  if (runtimeArtifact) assertBenchmarkSubjectUnchanged(sourceAuthority, 'runtime artifact preparation');
   const layout = benchmarkRunLayout(runRoot, profiles, selected, reportRunId);
   const preparedBases = options.execute
-    ? prepareBenchmarkProfiles(profiles, (profile) => prepareProfileBase(profile, provider, seed, runRoot, reportRunId))
+    ? prepareBenchmarkProfiles(profiles, (profile) => prepareProfileBase(
+      profile, provider, seed, runRoot, reportRunId, runtimeArtifact,
+    ))
     : new Map<BenchmarkProfile, PreparedProfileBase>();
+  if (runtimeArtifact) assertBenchmarkRuntimeArtifactUnchanged(runtimeArtifact);
+  assertBenchmarkSubjectUnchanged(sourceAuthority, 'profile preparation');
   const scenarios = new Map(selected.map((scenario) => [scenario.id, scenario]));
   const executeArm = async (arm: BenchmarkRunLayout, index: number): Promise<BenchmarkRunRecord> => {
     try {
@@ -1213,18 +1339,21 @@ async function runHarnessProfileBenchmarkUnlocked(options: CliOptions) {
     options.execute ? BENCHMARK_MAX_CONCURRENCY : 1,
     executeArm,
   ));
+  if (runtimeArtifact) assertBenchmarkRuntimeArtifactUnchanged(runtimeArtifact);
   if (Date.now() > deadlineMs) throw new Error('benchmark wall-clock budget exhausted after provider execution');
+  assertBenchmarkSubjectUnchanged(sourceAuthority, 'provider execution');
   const completeMatrix = JSON.stringify(profiles) === JSON.stringify(BENCHMARK_PROFILES)
     && isCompleteBenchmarkMatrix(records, selected);
   const authoritative = options.execute && completeMatrix && records.every(isAuthoritativeCompletedRecord);
-  const subject = benchmarkSubject(ROOT, options.manifest, seed);
+  const providerVersion = options.execute ? run(provider, ['--version'], ROOT) : 'unavailable';
+  assertBenchmarkSubjectUnchanged(sourceAuthority, 'provider version');
   const report: HarnessBenchmarkReport = {
     protocol: 'repo-harness-profile-benchmark/report/v2', generated_at: new Date().toISOString(),
     run_id: reportRunId, authoritative, provider, manifest: relative(ROOT, options.manifest).replaceAll('\\', '/'),
-    source_commit: run('git', ['rev-parse', 'HEAD'], ROOT),
-    ...subject,
+    source_commit: sourceAuthority.sourceCommit,
+    ...sourceAuthority.subject,
     report_byte_binding: basename(reportByteBindingPath(options.report)),
-    provider_version: options.execute ? run(provider, ['--version'], ROOT) : 'unavailable',
+    provider_version: providerVersion,
     profiles,
     scenario_count: selected.length,
     records,

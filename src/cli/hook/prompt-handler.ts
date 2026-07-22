@@ -406,16 +406,27 @@ function strictWorkflow(repoRoot: string, state: PromptGuardRuntimeState, fsApi:
   return /^> \*\*Workflow Profile\*\*:\s*strict\s*$/mu.test(contract);
 }
 
-function currentTargetBranch(repoRoot: string, fsApi: HookInputFs): string {
+// Resolves worktree_strategy.review_base -- the same key
+// scripts/acceptance-receipt.ts's reviewBase() diffs against -- never
+// merge_back.target (where finished work lands after merge). This is the
+// only caller (the [AcceptanceSubject] advisory hint), so it must name the
+// exact ref the real acceptance-receipt validator will require; showing a
+// hint computed against merge_back.target would silently disagree with the
+// receipt the user is about to record. Mirrors reviewBase()'s fail-closed
+// behavior: missing/empty review_base throws (the caller is advisory-only
+// and already wraps this in try/catch), never falls back to base_branch or
+// 'main'.
+function currentReviewBaseRef(repoRoot: string, fsApi: HookInputFs): string {
   const raw = text(fsApi, repoRoot, '.ai/harness/policy.json');
   if (raw) {
     try {
-      const parsed = JSON.parse(raw) as { worktree_strategy?: { merge_back?: { target?: unknown }; base_branch?: unknown } };
-      if (typeof parsed.worktree_strategy?.merge_back?.target === 'string' && parsed.worktree_strategy.merge_back.target) return parsed.worktree_strategy.merge_back.target;
-      if (typeof parsed.worktree_strategy?.base_branch === 'string' && parsed.worktree_strategy.base_branch) return parsed.worktree_strategy.base_branch;
-    } catch { /* default */ }
+      const parsed = JSON.parse(raw) as { worktree_strategy?: { review_base?: unknown } };
+      if (typeof parsed.worktree_strategy?.review_base === 'string' && parsed.worktree_strategy.review_base.trim()) {
+        return parsed.worktree_strategy.review_base;
+      }
+    } catch { /* fall through to the hard error below */ }
   }
-  return 'main';
+  throw new Error('worktree_strategy.review_base is missing');
 }
 
 function promptCircuitState(repoRoot: string, state: PromptGuardRuntimeState, fsApi: HookInputFs): {
@@ -477,7 +488,7 @@ function emitReviewHints(
   let subject = 'unknown';
   let target = 'unknown';
   try {
-    const result = buildReviewSubject(repoRoot, { targetRef: currentTargetBranch(repoRoot, fsApi) });
+    const result = buildReviewSubject(repoRoot, { targetRef: currentReviewBaseRef(repoRoot, fsApi) });
     if (result.status === 'ok') {
       subject = result.review_subject_sha256;
       target = result.target_rev;

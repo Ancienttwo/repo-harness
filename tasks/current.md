@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-22T04:07:57+0800 -->
+<!-- updated_at: 2026-07-22T15:29:54+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-07-22T04:07:57+0800
-> **Source Branch**: codex/terminal-plans-sweep
-> **Source Commit**: 00f6dd56
+> **Updated At**: 2026-07-22T15:29:54+0800
+> **Source Branch**: codex/terminal-plans-sweep-integration
+> **Source Commit**: cbeee53e
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: manual
@@ -18,9 +18,9 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 ## Current Focus
 
 - Status: Active
-- Active Plan: plans/plan-20260722-0350-terminal-plans-sweep.md
-- Plan Status: Executing
-- Next Task: S1 classify all `plans/*.md` root files (dry-run table: status, contract status, review verdict → AUTO/HOLD/EXCLUDE)
+- Active Plan: (none)
+- Plan Status: (none)
+- Next Task: inspect active worktree marker(s)
 - Clear Note: (none)
 
 ## Mainline Snapshot Reading
@@ -31,8 +31,10 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- .: plans/plan-20260722-0350-terminal-plans-sweep.md
-- .: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-terminal-plans-sweep
+- /Users/kito/Projects/repo-harness-wt-epc-01-evidence-event-store: plans/plan-20260722-1151-epc-01-evidence-event-store.md
+- /Users/kito/Projects/repo-harness-wt-epc-01-evidence-event-store: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-epc-01-evidence-event-store
+- /Users/kito/Projects/repo-harness-wt-terminal-plans-sweep: plans/plan-20260722-0350-terminal-plans-sweep.md
+- /Users/kito/Projects/repo-harness-wt-terminal-plans-sweep: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-terminal-plans-sweep
 ## Active Sprint
 
 - Sprint: (none)
@@ -51,53 +53,43 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Checks
 
-- status=(none), source=(none), exit_code=(none), file=.ai/harness/checks/latest.json
+- status=(none), source=(none), file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 135 changed/untracked path(s)
+- Summary: 30 changed/untracked path(s)
 
 ```
-RM plans/plan-20260528-1906-init-cli-external-skills.md -> plans/archive/plan-20260528-1906-init-cli-external-skills.md
-RM plans/plan-20260602-0034-think-hook-routing.md -> plans/archive/plan-20260602-0034-think-hook-routing.md
-RM plans/plan-20260610-1040-hook-framework-audit-fixes.md -> plans/archive/plan-20260610-1040-hook-framework-audit-fixes.md
-RM plans/plan-20260612-0338-loop-engine-01-workflow-closeout.md -> plans/archive/plan-20260612-0338-loop-engine-01-workflow-closeout.md
-RM plans/plan-20260613-0236-runtime-docs-user-level.md -> plans/archive/plan-20260613-0236-runtime-docs-user-level.md
-RM plans/plan-20260613-0328-think-scan-init-hook.md -> plans/archive/plan-20260613-0328-think-scan-init-hook.md
-RM plans/plan-20260616-HE-05-trace-eval-schema.md -> plans/archive/plan-20260616-HE-05-trace-eval-schema.md
-RM plans/plan-20260706-0024-intake-trigger-rules.md -> plans/archive/plan-20260706-0024-intake-trigger-rules.md
-RM plans/plan-20260706-0140-frontend-task-profile.md -> plans/archive/plan-20260706-0140-frontend-task-profile.md
-RM plans/plan-20260711-1343-chatgpt-coding-mcp-authorization-runtime.md -> plans/archive/plan-20260711-1343-chatgpt-coding-mcp-authorization-runtime.md
-RM plans/plan-20260712-0219-native-role-capability-gate.md -> plans/archive/plan-20260712-0219-native-role-capability-gate.md
-RM plans/plan-20260712-1811-bdd2-e-03-run-experiment-a-audit-hypothesis.md -> plans/archive/plan-20260712-1811-bdd2-e-03-run-experiment-a-audit-hypothesis.md
-RM plans/plan-20260712-2053-repo-owned-agent-fleet.md -> plans/archive/plan-20260712-2053-repo-owned-agent-fleet.md
-RM plans/plan-20260712-2215-agent-fleet-specialists.md -> plans/archive/plan-20260712-2215-agent-fleet-specialists.md
-RM plans/plan-20260712-2319-bdd2-phase-e2-shape-adapter-evaluation.md -> plans/archive/plan-20260712-2319-bdd2-phase-e2-shape-adapter-evaluation.md
-RM plans/plan-20260712-2327-harness-kernel-reduction.md -> plans/archive/plan-20260712-2327-harness-kernel-reduction.md
-RM plans/plan-20260713-0314-bdd2-phase-e3-scoring-authority.md -> plans/archive/plan-20260713-0314-bdd2-phase-e3-scoring-authority.md
-RM plans/plan-20260713-1336-bdd3-ea1-typed-browser-evidence-authority.md -> plans/archive/plan-20260713-1336-bdd3-ea1-typed-browser-evidence-authority.md
-RM plans/plan-20260714-0512-bdd3-ps1-protected-shape-ledger.md -> plans/archive/plan-20260714-0512-bdd3-ps1-protected-shape-ledger.md
-RM plans/plan-20260714-1713-merge-gate-enforcement.md -> plans/archive/plan-20260714-1713-merge-gate-enforcement.md
-RM plans/plan-20260714-2026-codex-delegation-auto-boundary.md -> plans/archive/plan-20260714-2026-codex-delegation-auto-boundary.md
-RM plans/plan-20260714-2052-codex-delegation-session-auth.md -> plans/archive/plan-20260714-2052-codex-delegation-session-auth.md
-RM plans/plan-20260715-0401-self-host-adopt-boundary.md -> plans/archive/plan-20260715-0401-self-host-adopt-boundary.md
-RM plans/plan-20260719-1540-hrd-01-loop-event-protocol-and-runtime-characterization.md -> plans/archive/plan-20260719-1540-hrd-01-loop-event-protocol-and-runtime-characterization.md
-RM plans/plan-20260720-0020-hrd-02-state-input-collector.md -> plans/archive/plan-20260720-0020-hrd-02-state-input-collector.md
-RM plans/plan-20260720-0033-plan-status-fail-closed-and-runner-truth.md -> plans/archive/plan-20260720-0033-plan-status-fail-closed-and-runner-truth.md
-RM plans/plan-20260720-0419-hrd-03-pre-edit-one-decision-cutover.md -> plans/archive/plan-20260720-0419-hrd-03-pre-edit-one-decision-cutover.md
-RM plans/plan-20260720-0829-hrd-04-session-start-consolidation.md -> plans/archive/plan-20260720-0829-hrd-04-session-start-consolidation.md
-RM plans/plan-20260720-1146-hrd-05-post-edit-event-journal.md -> plans/archive/plan-20260720-1146-hrd-05-post-edit-event-journal.md
-RM plans/plan-20260720-2256-hrd-06-stop-handler-slim.md -> plans/archive/plan-20260720-2256-hrd-06-stop-handler-slim.md
-RM plans/plan-20260721-0218-hrd-07-circuit-oscillation-and-shared-lock.md -> plans/archive/plan-20260721-0218-hrd-07-circuit-oscillation-and-shared-lock.md
-RM plans/plan-20260721-0540-solo-operator-acceptance-policy.md -> plans/archive/plan-20260721-0540-solo-operator-acceptance-policy.md
-RM plans/plan-20260721-2104-hrd-sprint-closeout.md -> plans/archive/plan-20260721-2104-hrd-sprint-closeout.md
-R  tasks/contracts/20260602-0034-think-hook-routing.contract.md -> tasks/archive/contract-20260722-0350-20260602-0034-think-hook-routing.md
-R  tasks/contracts/20260610-1040-hook-framework-audit-fixes.contract.md -> tasks/archive/contract-20260722-0350-20260610-1040-hook-framework-audit-fixes.md
-R  tasks/contracts/20260612-0338-loop-engine-01-workflow-closeout.contract.md -> tasks/archive/contract-20260722-0350-20260612-0338-loop-engine-01-workflow-closeout.md
-R  tasks/contracts/20260613-0236-runtime-docs-user-level.contract.md -> tasks/archive/contract-20260722-0350-20260613-0236-runtime-docs-user-level.md
-R  tasks/contracts/20260613-0328-think-scan-init-hook.contract.md -> tasks/archive/contract-20260722-0350-20260613-0328-think-scan-init-hook.md
-R  tasks/contracts/20260616-HE-05-trace-eval-schema.contract.md -> tasks/archive/contract-20260722-0350-20260616-HE-05-trace-eval-schema.md
-R  tasks/contracts/20260706-0024-intake-trigger-rules.contract.md -> tasks/archive/contract-20260722-0350-20260706-0024-intake-trigger-rules.md
+M  .ai/hooks/.projection.json
+M  .ai/hooks/lib/workflow-state.sh
+M  assets/hooks/lib/workflow-state.sh
+M  evals/harness/reports/profile-comparison.json
+M  evals/harness/reports/profile-comparison.md
+M  evals/harness/reports/profile-comparison.sha256.json
+A  plans/plan-20260721-2237-vgbr-benchmark-runner-subject-immutability.md
+M  plans/plan-20260722-0020-vgbr-post-hrd-baseline-recovery.md
+A  plans/plan-20260722-0538-receipt-subject-target-split.md
+A  plans/plan-20260722-1107-epc-00-program-canonicalization.md
+M  plans/sprints/20260722-0001-evidence-projection-convergence.sprint.md
+M  scripts/run-harness-profile-benchmark.ts
+M  src/cli/hook/prompt-handler.ts
+A  tasks/contracts/20260721-2237-vgbr-benchmark-runner-subject-immutability.contract.md
+A  tasks/contracts/20260722-0020-vgbr-post-hrd-baseline-recovery.contract.md
+A  tasks/contracts/20260722-0538-receipt-subject-target-split.contract.md
+A  tasks/contracts/20260722-1107-epc-00-program-canonicalization.contract.md
+M  tasks/current.md
+A  tasks/notes/20260721-2237-vgbr-benchmark-runner-subject-immutability.notes.md
+A  tasks/notes/20260722-0020-vgbr-post-hrd-baseline-recovery.notes.md
+A  tasks/notes/20260722-0538-receipt-subject-target-split.notes.md
+A  tasks/notes/20260722-1107-epc-00-program-canonicalization.notes.md
+A  tasks/reviews/20260721-2237-vgbr-benchmark-runner-subject-immutability.review.md
+A  tasks/reviews/20260722-0020-vgbr-post-hrd-baseline-recovery.review.md
+A  tasks/reviews/20260722-0538-receipt-subject-target-split.review.md
+A  tasks/reviews/20260722-1107-epc-00-program-canonicalization.review.md
+M  tasks/todos.md
+M  tests/harness-benchmark-matrix.test.ts
+M  tests/prompt-handler.test.ts
+M  tests/workflow-state-lib.test.ts
 ```
 
 ## Source Artifacts

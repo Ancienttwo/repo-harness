@@ -5,6 +5,7 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import { parseHookInput } from '../src/cli/hook/hook-input';
 import { runPromptHandler, type PromptCommandResult } from '../src/cli/hook/prompt-handler';
+import { buildReviewSubject } from '../src/effects/review/diff-fingerprint';
 
 const PLAN = 'plans/plan-20260721-0000-demo.md';
 const CONTRACT = 'tasks/contracts/20260721-0000-demo.contract.md';
@@ -357,6 +358,87 @@ describe('typed UserPromptSubmit.default handler', () => {
       expect(result.stderr).toContain('[HookInput] WARN');
     } finally {
       repo.cleanup();
+    }
+  });
+
+  // Sibling of the workflow-state.sh recorder/validator policy-key split
+  // (tests/workflow-state-lib.test.ts): emitReviewHints's [AcceptanceSubject]
+  // advisory called buildReviewSubject with a targetRef resolved from
+  // worktree_strategy.merge_back.target instead of review_base, so the hint
+  // shown to the user could name a different subject hash than what the real
+  // acceptance-receipt validator (which always reads review_base) requires.
+  test('the [AcceptanceSubject] hint binds to worktree_strategy.review_base, not merge_back.target, when the two refs diverge', () => {
+    const root = mkdtempSync(join(tmpdir(), 'repo-harness-prompt-handler-subject-split-'));
+    const git = (...args: string[]) => execFileSync('git', args, { cwd: root, stdio: 'ignore' });
+    try {
+      for (const dir of ['.ai/harness/checks', 'plans', 'docs', 'tasks/contracts', 'tasks/reviews']) {
+        mkdirSync(join(root, dir), { recursive: true });
+      }
+      writeFileSync(join(root, 'docs/spec.md'), '# Spec\n');
+      writeFileSync(join(root, PLAN), [
+        '# Plan: demo',
+        '',
+        '> **Status**: Approved',
+        `> **Task Contract**: ${CONTRACT}`,
+        '',
+      ].join('\n'));
+      writeFileSync(join(root, '.ai/harness/active-plan'), `${PLAN}\n`);
+      writeFileSync(join(root, '.ai/harness/active-worktree'), `${root}\n`);
+      writeFileSync(join(root, CONTRACT), [
+        '# Task Contract: demo',
+        '',
+        '> **Status**: Pending',
+        `> **Plan**: ${PLAN}`,
+        '> **Owner**: kito',
+        '',
+        '## Acceptance Policy',
+        '',
+        '```json',
+        '{"protocol":1,"reviewer":"Claude","user_waiver":"allowed"}',
+        '```',
+        '',
+      ].join('\n'));
+      // merge-target and review-base resolve to genuinely different refs:
+      // merge-target sits one commit BEHIND review-base, mirroring the
+      // local-main-lags-origin/main shape this package fixes.
+      writeFileSync(join(root, '.ai/harness/policy.json'), `${JSON.stringify({
+        worktree_strategy: { review_base: 'review-base', merge_back: { target: 'merge-target' } },
+      }, null, 2)}\n`);
+
+      git('init', '-q', '-b', 'merge-target');
+      git('config', 'user.name', 'Prompt Handler Fixture');
+      git('config', 'user.email', 'prompt-handler-fixture@example.test');
+      git('add', '.');
+      git('commit', '-q', '-m', 'base');
+
+      // review-base advances beyond merge-target with its own change (the
+      // "other work landed upstream" commit).
+      git('checkout', '-q', '-b', 'review-base');
+      writeFileSync(join(root, 'upstream-change.txt'), 'landed after merge-target\n');
+      git('add', '.');
+      git('commit', '-q', '-m', 'upstream change');
+
+      // The actual task branch off review-base with the real new work; this
+      // is HEAD when the hint is computed.
+      git('checkout', '-q', '-b', 'work');
+      writeFileSync(join(root, 'feature.txt'), 'new work\n');
+      git('add', '.');
+      git('commit', '-q', '-m', 'feature work');
+
+      const { result } = invoke(root, '/check');
+      expect(result.exitCode).toBe(0);
+
+      const correct = buildReviewSubject(root, { targetRef: 'review-base' });
+      const wrong = buildReviewSubject(root, { targetRef: 'merge-target' });
+      expect(correct.status).toBe('ok');
+      expect(wrong.status).toBe('ok');
+      expect(correct.review_subject_sha256).not.toBe(wrong.review_subject_sha256);
+      expect(result.stdout).toContain(
+        `[AcceptanceSubject] The typed AcceptanceReceipt will bind normalized subject ${correct.review_subject_sha256} at target ${correct.target_rev}.`,
+      );
+      expect(result.stdout).not.toContain(wrong.review_subject_sha256);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 });

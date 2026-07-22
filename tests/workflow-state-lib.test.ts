@@ -32,6 +32,12 @@ function fixtureEnv(): NodeJS.ProcessEnv {
   return env;
 }
 
+function git(cwd: string, ...args: string[]): string {
+  const result = spawnSync("git", args, { cwd, encoding: "utf-8" });
+  expect(result.status, result.stderr).toBe(0);
+  return result.stdout.trim();
+}
+
 // Minimal git fixture so workflow_current_review_subject_json (via the real
 // review-subject CLI) can resolve a genuine "ok" subject/target pair. Only the
 // contract-scoped benchmark-evidence regressions need a real subject binding;
@@ -526,6 +532,93 @@ describe("workflow-state shared library", () => {
       expect(checksMatch.status).toBe(0);
       expect(existsSync(invokedMarker)).toBe(false);
     } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  // Regression guard for the recorder/validator policy-key split: the
+  // recorder (workflow_current_review_subject_json, via
+  // workflow_current_review_subject_value -- what scripts/verify-sprint.sh
+  // embeds as review_subject_sha256 into verification evidence) must resolve
+  // its diff target from worktree_strategy.review_base, exactly like the
+  // acceptance-receipt.ts validator's reviewBase(). Before the fix the
+  // recorder read worktree_strategy.merge_back.target instead, so the two
+  // sides silently diffed against different refs and every receipt failed
+  // "verification evidence is stale for the current subject" whenever local
+  // main lagged origin/main -- the standard control-clone worktree pattern.
+  test("recorder path resolves the review target from worktree_strategy.review_base, matching the acceptance-receipt validator, even when local main lags origin/main", () => {
+    const upstream = realpathSync(mkdtempSync(join(tmpdir(), "workflow-subject-split-upstream-")));
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), "workflow-subject-split-work-")));
+    try {
+      // Upstream C0: the commit both the clone's local main and origin/main
+      // start at.
+      git(upstream, "init", "-q");
+      git(upstream, "config", "user.name", "Workflow Test");
+      git(upstream, "config", "user.email", "workflow-test@example.com");
+      writeFileSync(join(upstream, "base.txt"), "base\n");
+      git(upstream, "add", "-A");
+      git(upstream, "commit", "-q", "-m", "init");
+      git(upstream, "branch", "-M", "main");
+
+      // Clone: local main and origin/main both start at C0.
+      git(tmpdir(), "clone", "-q", upstream, cwd);
+      git(cwd, "config", "user.name", "Workflow Test");
+      git(cwd, "config", "user.email", "workflow-test@example.com");
+
+      // Upstream advances by C1 -- simulates another PR merging after the
+      // clone was made, before this task branched off origin/main.
+      writeFileSync(join(upstream, "upstream-change.txt"), "upstream only\n");
+      git(upstream, "add", "-A");
+      git(upstream, "commit", "-q", "-m", "upstream catches up");
+
+      // Fetch updates origin/main to C1, but the clone's local main branch
+      // pointer is intentionally left behind at C0 -- the standard
+      // control-clone worktree pattern this bug report describes.
+      git(cwd, "fetch", "-q", "origin");
+      expect(git(cwd, "rev-parse", "origin/main")).not.toBe(git(cwd, "rev-parse", "main"));
+
+      // The task branch is cut from origin/main (fresh), exactly like this
+      // repo's own codex/<slug> worktree-start convention -- NOT from the
+      // clone's stale local main. Diffing against stale main would sweep in
+      // C1's unrelated upstream-only file; diffing against origin/main
+      // correctly scopes to just this commit's own new work.
+      git(cwd, "checkout", "-q", "-b", "codex/demo", "origin/main");
+      writeFileSync(join(cwd, "feature.txt"), "new work\n");
+      mkdirSync(join(cwd, ".ai", "harness"), { recursive: true });
+      writeFileSync(
+        join(cwd, ".ai", "harness", "policy.json"),
+        `${JSON.stringify({
+          worktree_strategy: { review_base: "origin/main", merge_back: { target: "main" } },
+        }, null, 2)}\n`,
+      );
+      git(cwd, "add", "-A");
+      git(cwd, "commit", "-q", "-m", "feature work");
+
+      const recorded = spawnSync(
+        "bash",
+        ["-lc", 'source "$WORKFLOW_STATE"; workflow_current_review_subject_value'],
+        { cwd, encoding: "utf-8", env: evidenceAcceptanceEnv() },
+      );
+      expect(recorded.status).toBe(0);
+
+      const validator = spawnSync(
+        "bun",
+        [join(ROOT, "src/cli/hook-entry.ts"), "review-subject", "--target", "origin/main", "--format", "json"],
+        { cwd, encoding: "utf-8" },
+      );
+      expect(validator.status).toBe(0);
+      const validatorParsed = JSON.parse(validator.stdout);
+      expect(validatorParsed.status).toBe("ok");
+      expect(validatorParsed.review_subject_sha256).toMatch(/^sha256:[0-9a-f]{64}$/);
+
+      // The recorder must bind to the SAME ref the acceptance-receipt
+      // validator diffs against (review_base = origin/main here), never
+      // merge_back.target (main, stale by one commit here) -- otherwise the
+      // receipt fails purely because the two sides scoped their diff against
+      // different refs.
+      expect(recorded.stdout.trim()).toBe(validatorParsed.review_subject_sha256);
+    } finally {
+      rmSync(upstream, { recursive: true, force: true });
       rmSync(cwd, { recursive: true, force: true });
     }
   });

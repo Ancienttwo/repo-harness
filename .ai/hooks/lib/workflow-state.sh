@@ -1318,8 +1318,21 @@ workflow_current_review_subject_json() {
   # The target ref selects the implementation path set and supplies overlap
   # metadata. The subject hash itself is normalized final content and therefore
   # does not churn when the target advances on unrelated paths.
+  #
+  # Must resolve worktree_strategy.review_base -- the same key
+  # scripts/acceptance-receipt.ts's reviewBase() diffs against -- never
+  # worktree_strategy.merge_back.target (where finished work lands after
+  # merge). Those are different refs; recording the subject against the
+  # merge-back target instead of the review base is exactly why every
+  # AcceptanceReceipt failed "verification evidence is stale for the current
+  # subject" whenever local main lagged origin/main (the standard
+  # control-clone worktree pattern). Fail closed with no output when
+  # review_base is unset or empty: never fall back to base_branch/main, so a
+  # misconfigured policy can never silently record a subject against a ref
+  # the validator was never going to check.
   local target
-  target="$(workflow_target_branch)"
+  target="$(workflow_policy_get '.worktree_strategy.review_base' '')"
+  [[ -n "$target" ]] || return 0
   workflow_hook_cli_json review-subject --target "$target" --format json 2>/dev/null || true
 }
 
