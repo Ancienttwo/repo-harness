@@ -1,0 +1,507 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "pos-root-general-zh",
+      "lang": "zh",
+      "kind": "positive",
+      "prompt": "帮我把 repo-harness 的完整流程走一遍，从头开始规划到收尾。",
+      "expected_route": "repo-harness"
+    },
+    {
+      "id": "pos-root-handoff-zh",
+      "lang": "zh",
+      "kind": "positive",
+      "prompt": "这个任务今天做不完了，麻烦帮我准备一份交接包，方便下次接着弄。",
+      "expected_route": "repo-harness"
+    },
+    {
+      "id": "pos-root-general-en",
+      "lang": "en",
+      "kind": "positive",
+      "prompt": "Kick off the full repo-harness workflow for this feature, start to finish.",
+      "expected_route": "repo-harness"
+    },
+    {
+      "id": "pos-root-handoff-en",
+      "lang": "en",
+      "kind": "positive",
+      "prompt": "I need to hand this off before I sign off for the day — can you prepare a handoff packet for the next session?",
+      "expected_route": "repo-harness"
+    },
+    {
+      "id": "pos-setup-init-zh",
+      "lang": "zh",
+      "kind": "positive",
+      "prompt": "这个仓库还没接入 repo-harness，能帮我初始化一下吗？",
+      "expected_route": "repo-harness-setup"
+    },
+    {
+      "id": "pos-setup-migrate-en",
+      "lang": "en",
+      "kind": "positive",
+      "prompt": "We're moving this old Claude-only repo over to repo-harness — can you handle the migration?",
+      "expected_route": "repo-harness-setup"
+    },
+    {
+      "id": "pos-setup-upgrade-zh",
+      "lang": "zh",
+      "kind": "positive",
+      "prompt": "harness 版本有点旧了，能升级到最新的吗？",
+      "expected_route": "repo-harness-setup"
+    },
+    {
+      "id": "pos-setup-repair-en",
+      "lang": "en",
+      "kind": "positive",
+      "prompt": "Something's off with the task-sync hook routing in this repo, can repo-harness repair itself?",
+      "expected_route": "repo-harness-setup"
+    },
+    {
+      "id": "pos-setup-scaffold-zh",
+      "lang": "zh",
+      "kind": "positive",
+      "prompt": "帮我用 A-K 目录的模板起一个全新的项目脚手架。",
+      "expected_route": "repo-harness-setup"
+    },
+    {
+      "id": "pos-setup-capability-en",
+      "lang": "en",
+      "kind": "positive",
+      "prompt": "I just want to add the deploy-sql capability boundary here, no need for a full reinstall.",
+      "expected_route": "repo-harness-setup"
+    },
+    {
+      "id": "pos-plan-create-zh",
+      "lang": "zh",
+      "kind": "positive",
+      "prompt": "这个新功能想法有点复杂，先帮我出一份靠谱的执行方案吧。",
+      "expected_route": "repo-harness-plan"
+    },
+    {
+      "id": "pos-plan-review-zh",
+      "lang": "zh",
+      "kind": "positive",
+      "prompt": "帮我把这份草稿方案过一遍，看看设计上有没有漏洞。",
+      "expected_route": "repo-harness-plan"
+    },
+    {
+      "id": "pos-plan-create-en",
+      "lang": "en",
+      "kind": "positive",
+      "prompt": "Turn this rough idea into a proper, decision-complete plan before anyone touches code.",
+      "expected_route": "repo-harness-plan"
+    },
+    {
+      "id": "pos-plan-review-en",
+      "lang": "en",
+      "kind": "positive",
+      "prompt": "Take a pass over this draft plan and flag anything that isn't decision-complete yet.",
+      "expected_route": "repo-harness-plan"
+    },
+    {
+      "id": "pos-product-prd-zh",
+      "lang": "zh",
+      "kind": "positive",
+      "prompt": "这个产品想法能不能先帮我写成一份正式的 PRD？",
+      "expected_route": "repo-harness-product"
+    },
+    {
+      "id": "pos-product-sprint-zh",
+      "lang": "zh",
+      "kind": "positive",
+      "prompt": "PRD 已经定稿了，麻烦帮我拆成一份 sprint backlog。",
+      "expected_route": "repo-harness-product"
+    },
+    {
+      "id": "pos-product-prd-en",
+      "lang": "en",
+      "kind": "positive",
+      "prompt": "Draft a PRD for this feature idea before we start planning any sprints.",
+      "expected_route": "repo-harness-product"
+    },
+    {
+      "id": "pos-product-goal-en",
+      "lang": "en",
+      "kind": "positive",
+      "prompt": "Prep a bounded goal session from the sprint doc we just approved.",
+      "expected_route": "repo-harness-product"
+    },
+    {
+      "id": "pos-check-workflow-zh",
+      "lang": "zh",
+      "kind": "positive",
+      "prompt": "代码改完了，帮我跑一下工作流检查，看能不能合并。",
+      "expected_route": "repo-harness-check"
+    },
+    {
+      "id": "pos-check-deploy-zh",
+      "lang": "zh",
+      "kind": "positive",
+      "prompt": "上线前想确认一下部署相关的配置有没有问题。",
+      "expected_route": "repo-harness-check"
+    },
+    {
+      "id": "pos-check-workflow-en",
+      "lang": "en",
+      "kind": "positive",
+      "prompt": "Run the release-readiness gate on this branch before I merge it.",
+      "expected_route": "repo-harness-check"
+    },
+    {
+      "id": "pos-check-deploy-en",
+      "lang": "en",
+      "kind": "positive",
+      "prompt": "Can you check whether the deploy SQL ordering is still clean before we ship this migration?",
+      "expected_route": "repo-harness-check"
+    },
+    {
+      "id": "pos-ship-pr-zh",
+      "lang": "zh",
+      "kind": "positive",
+      "prompt": "这个分支测试都过了，帮我收尾一下，发个 PR 出去吧。",
+      "expected_route": "repo-harness-ship"
+    },
+    {
+      "id": "pos-ship-worktree-zh",
+      "lang": "zh",
+      "kind": "positive",
+      "prompt": "把当前这个 worktree 的改动提交一下，推上去开 PR。",
+      "expected_route": "repo-harness-ship"
+    },
+    {
+      "id": "pos-ship-pr-en",
+      "lang": "en",
+      "kind": "positive",
+      "prompt": "Everything's green here — go ahead and push this branch and open the PR.",
+      "expected_route": "repo-harness-ship"
+    },
+    {
+      "id": "pos-ship-worktree-en",
+      "lang": "en",
+      "kind": "positive",
+      "prompt": "Finish up this worktree and open the pull request against main.",
+      "expected_route": "repo-harness-ship"
+    },
+    {
+      "id": "pos-architecture-drift-zh",
+      "lang": "zh",
+      "kind": "positive",
+      "prompt": "这次改动跨了模块边界，帮我记一条架构漂移请求。",
+      "expected_route": "repo-harness-architecture"
+    },
+    {
+      "id": "pos-architecture-diagram-zh",
+      "lang": "zh",
+      "kind": "positive",
+      "prompt": "麻烦把这个能力对应的架构图更新一下。",
+      "expected_route": "repo-harness-architecture"
+    },
+    {
+      "id": "pos-architecture-drift-en",
+      "lang": "en",
+      "kind": "positive",
+      "prompt": "This change crosses a module boundary — can you file an architecture drift request for it?",
+      "expected_route": "repo-harness-architecture"
+    },
+    {
+      "id": "pos-architecture-diagram-en",
+      "lang": "en",
+      "kind": "positive",
+      "prompt": "Update the architecture diagram for this capability now that the boundary moved.",
+      "expected_route": "repo-harness-architecture"
+    },
+    {
+      "id": "pos-crossreview-codex-zh",
+      "lang": "zh",
+      "kind": "positive",
+      "prompt": "找 codex 帮忙给我这个 diff 做个独立审查呗。",
+      "expected_route": "repo-harness-cross-review"
+    },
+    {
+      "id": "pos-crossreview-claude-zh",
+      "lang": "zh",
+      "kind": "positive",
+      "prompt": "让 claude 那边对这份代码给个二审意见。",
+      "expected_route": "repo-harness-cross-review"
+    },
+    {
+      "id": "pos-crossreview-codex-en",
+      "lang": "en",
+      "kind": "positive",
+      "prompt": "Get Codex to do an independent pass on this diff before I merge it.",
+      "expected_route": "repo-harness-cross-review"
+    },
+    {
+      "id": "pos-crossreview-claude-en",
+      "lang": "en",
+      "kind": "positive",
+      "prompt": "Ask Claude for a second opinion on the change I just made over in Codex.",
+      "expected_route": "repo-harness-cross-review"
+    },
+    {
+      "id": "pos-mergegate-candidate-zh",
+      "lang": "zh",
+      "kind": "positive",
+      "prompt": "这是这次要合并的确切 diff，还有 base 和 head 的 SHA，帮我跑最终的 merge-gate 判决。",
+      "expected_route": "merge-gate"
+    },
+    {
+      "id": "pos-mergegate-verify-zh",
+      "lang": "zh",
+      "kind": "positive",
+      "prompt": "verification 证据都齐了，麻烦对这个精确候选跑一下 merge-gate。",
+      "expected_route": "merge-gate"
+    },
+    {
+      "id": "pos-mergegate-candidate-en",
+      "lang": "en",
+      "kind": "positive",
+      "prompt": "Here's the exact candidate diff, base SHA, and head SHA — run the final merge-gate verdict on it.",
+      "expected_route": "merge-gate"
+    },
+    {
+      "id": "pos-mergegate-verify-en",
+      "lang": "en",
+      "kind": "positive",
+      "prompt": "Run merge-gate against this frozen candidate now that the verification evidence is attached.",
+      "expected_route": "merge-gate"
+    },
+    {
+      "id": "pos-chatgpt-setup-zh",
+      "lang": "zh",
+      "kind": "positive",
+      "prompt": "我想把 ChatGPT Web 浏览器登录配置好，方便本地会话调用。",
+      "expected_route": "repo-harness-chatgpt"
+    },
+    {
+      "id": "pos-chatgpt-consult-zh",
+      "lang": "zh",
+      "kind": "positive",
+      "prompt": "拿这个设计问题去问一下 GPT Pro，看它怎么说。",
+      "expected_route": "repo-harness-chatgpt"
+    },
+    {
+      "id": "pos-chatgpt-bridge-en",
+      "lang": "en",
+      "kind": "positive",
+      "prompt": "Set up the MCP bridge so ChatGPT can connect back into this repo.",
+      "expected_route": "repo-harness-chatgpt"
+    },
+    {
+      "id": "pos-chatgpt-consult-en",
+      "lang": "en",
+      "kind": "positive",
+      "prompt": "Consult GPT Pro on this design question through the browser session.",
+      "expected_route": "repo-harness-chatgpt"
+    },
+    {
+      "id": "amb-check-casual-zh",
+      "lang": "zh",
+      "kind": "ambiguous",
+      "prompt": "帮我检查一下这段文字有没有病句。",
+      "expected_route": "none",
+      "overlap_terms": [
+        "check"
+      ]
+    },
+    {
+      "id": "amb-review-prose-en",
+      "lang": "en",
+      "kind": "ambiguous",
+      "prompt": "Can you review this paragraph for clarity before I send it?",
+      "expected_route": "none",
+      "overlap_terms": [
+        "review"
+      ]
+    },
+    {
+      "id": "amb-plan-discussion-zh",
+      "lang": "zh",
+      "kind": "ambiguous",
+      "prompt": "我们先聊聊这个功能大概的规划思路，还不用真的写方案。",
+      "expected_route": "none",
+      "overlap_terms": [
+        "plan"
+      ]
+    },
+    {
+      "id": "amb-ship-industry-en",
+      "lang": "en",
+      "kind": "ambiguous",
+      "prompt": "We usually ship a new build every Friday, that's just how the team operates.",
+      "expected_route": "none",
+      "overlap_terms": [
+        "ship"
+      ]
+    },
+    {
+      "id": "amb-mergegate-vs-crossreview-zh",
+      "lang": "zh",
+      "kind": "ambiguous",
+      "prompt": "这次要不要额外找外部模型把把关，还是走 merge-gate 就够了？",
+      "expected_route": "none",
+      "overlap_terms": [
+        "merge-gate",
+        "cross-review"
+      ],
+      "notes": "A discussion/question about which mechanism to use, not an invocation of either; both remain candidates until the user actually asks for one."
+    },
+    {
+      "id": "amb-architecture-topic-en",
+      "lang": "en",
+      "kind": "ambiguous",
+      "prompt": "What's our general philosophy on module boundaries and architecture around here?",
+      "expected_route": "none",
+      "overlap_terms": [
+        "architecture"
+      ]
+    },
+    {
+      "id": "quoted-ship-name-zh",
+      "lang": "zh",
+      "kind": "quoted-name",
+      "prompt": "文档里提到一个叫 repo-harness-ship 的 skill，它具体是干什么用的？",
+      "expected_route": "none"
+    },
+    {
+      "id": "quoted-check-name-zh",
+      "lang": "zh",
+      "kind": "quoted-name",
+      "prompt": "'repo-harness-check' 这个命名倒是挺直白的。",
+      "expected_route": "none"
+    },
+    {
+      "id": "quoted-crossreview-name-en",
+      "lang": "en",
+      "kind": "quoted-name",
+      "prompt": "I saw something called `repo-harness-cross-review` mentioned in the README — what's that for?",
+      "expected_route": "none"
+    },
+    {
+      "id": "quoted-mergegate-name-en",
+      "lang": "en",
+      "kind": "quoted-name",
+      "prompt": "The helper is literally named 'merge-gate', which is a pretty clear name for what it does.",
+      "expected_route": "none"
+    },
+    {
+      "id": "neg-check-notyet-zh",
+      "lang": "zh",
+      "kind": "negated",
+      "prompt": "先别跑 check，我这边代码还没写完呢。",
+      "expected_route": "none"
+    },
+    {
+      "id": "neg-ship-notyet-zh",
+      "lang": "zh",
+      "kind": "negated",
+      "prompt": "这次先不要走 ship 流程，别提交。",
+      "expected_route": "none"
+    },
+    {
+      "id": "neg-review-notyet-en",
+      "lang": "en",
+      "kind": "negated",
+      "prompt": "Don't kick off the review yet, I'm still mid-edit on this file.",
+      "expected_route": "none"
+    },
+    {
+      "id": "neg-migrate-holdoff-en",
+      "lang": "en",
+      "kind": "negated",
+      "prompt": "Hold off on the migrate step for now, we're not ready to touch that repo.",
+      "expected_route": "none"
+    },
+    {
+      "id": "hyp-ship-whatif-zh",
+      "lang": "zh",
+      "kind": "hypothetical",
+      "prompt": "如果我现在跑 ship，会不会把还没测完的东西也一起推上去？",
+      "expected_route": "none"
+    },
+    {
+      "id": "hyp-chatgpt-steps-zh",
+      "lang": "zh",
+      "kind": "hypothetical",
+      "prompt": "假设我们要接入 ChatGPT 的 MCP 连接，大概要经过哪些步骤？",
+      "expected_route": "none"
+    },
+    {
+      "id": "hyp-mergegate-oldcommit-en",
+      "lang": "en",
+      "kind": "hypothetical",
+      "prompt": "What would happen if I accidentally ran the merge-gate check against an old commit?",
+      "expected_route": "none"
+    },
+    {
+      "id": "hyp-migrate-later-en",
+      "lang": "en",
+      "kind": "hypothetical",
+      "prompt": "Suppose we wanted to migrate this repo later on — what would that actually involve?",
+      "expected_route": "none"
+    },
+    {
+      "id": "status-check-last-zh",
+      "lang": "zh",
+      "kind": "status-only",
+      "prompt": "上次跑 check 的结果到底怎么样，你还记得吗？",
+      "expected_route": "none"
+    },
+    {
+      "id": "status-architecture-request-zh",
+      "lang": "zh",
+      "kind": "status-only",
+      "prompt": "我们之前提的那个架构漂移请求，后来处理完了没？",
+      "expected_route": "none"
+    },
+    {
+      "id": "status-mergegate-last-en",
+      "lang": "en",
+      "kind": "status-only",
+      "prompt": "What did the last merge-gate verdict actually say again?",
+      "expected_route": "none"
+    },
+    {
+      "id": "status-crossreview-last-en",
+      "lang": "en",
+      "kind": "status-only",
+      "prompt": "Did the cross-review from Codex ever finish last time?",
+      "expected_route": "none"
+    },
+    {
+      "id": "qa-ts-interface-zh",
+      "lang": "zh",
+      "kind": "ordinary-qa",
+      "prompt": "TypeScript 里 interface 和 type 到底有什么区别？",
+      "expected_route": "none"
+    },
+    {
+      "id": "qa-gptpro-model-zh",
+      "lang": "zh",
+      "kind": "ordinary-qa",
+      "prompt": "GPT Pro 好像最近更新了底层模型，你听说了吗？",
+      "expected_route": "none",
+      "overlap_terms": [
+        "gptpro"
+      ]
+    },
+    {
+      "id": "qa-jscopy-en",
+      "lang": "en",
+      "kind": "ordinary-qa",
+      "prompt": "What's the actual difference between a shallow copy and a deep copy in JavaScript?",
+      "expected_route": "none"
+    },
+    {
+      "id": "qa-gptpro-tier-en",
+      "lang": "en",
+      "kind": "ordinary-qa",
+      "prompt": "I heard OpenAI shipped a new GPT Pro tier recently, any idea what changed?",
+      "expected_route": "none",
+      "overlap_terms": [
+        "gptpro"
+      ]
+    }
+  ]
+}

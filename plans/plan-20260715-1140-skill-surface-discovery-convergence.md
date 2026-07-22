@@ -329,12 +329,12 @@ Historical/archive files are not rewritten. Any retired-name scan uses an explic
 
 ### SSD-01 — Freeze inventory, classification and routing baseline
 
-- [ ] Re-audit from the exact post-EPC `origin/main` SHA; record both the post-ESA Program pin and the post-EPC SSD execution pin plus the current 25-source inventory.
-- [ ] Add a schema-validated bilingual Skill-routing corpus covering setup, plan/review, product, check/deploy readiness, ship, handoff, architecture, cross-review, exact-candidate merge-gate, ChatGPT, capability-as-reference, and ordinary discussion.
-- [ ] Include positive, ambiguous, quoted-name, negated, hypothetical, status-only, and ordinary-QA cases.
-- [ ] Record exact current and target discovered sets for four profiles, two hosts, copy/link projection, and gatekeeper-host exceptions.
-- [ ] Add deterministic corpus validation and dry-run selection tests; do not run the full provider matrix yet.
-- [ ] Treat the existing six-file result (110 pass, 0 fail, 25.91 seconds) as historical cached evidence; validate its subject and affected surfaces before deciding whether any portion remains reusable.
+- [x] Re-audit from the exact post-EPC `origin/main` SHA; record both the post-ESA Program pin and the post-EPC SSD execution pin plus the current 25-source inventory.
+- [x] Add a schema-validated bilingual Skill-routing corpus covering setup, plan/review, product, check/deploy readiness, ship, handoff, architecture, cross-review, exact-candidate merge-gate, ChatGPT, capability-as-reference, and ordinary discussion.
+- [x] Include positive, ambiguous, quoted-name, negated, hypothetical, status-only, and ordinary-QA cases.
+- [x] Record exact current and target discovered sets for four profiles, two hosts, copy/link projection, and gatekeeper-host exceptions.
+- [x] Add deterministic corpus validation and dry-run selection tests; do not run the full provider matrix yet.
+- [x] Treat the existing six-file result (110 pass, 0 fail, 25.91 seconds) as historical cached evidence; validate its subject and affected surfaces before deciding whether any portion remains reusable.
 
 Acceptance:
 
