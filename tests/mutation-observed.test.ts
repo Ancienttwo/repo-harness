@@ -171,9 +171,15 @@ describe('mutation-observed: dirty-bit derivation', () => {
       const targetEvent = events.find((e) => e.changed_paths.includes('src/target.ts'))!;
       const otherEvent = events.find((e) => e.changed_paths.includes('src/other.ts'))!;
       expect(targetEvent.dirty['contract-verification']).toBe(true);
+      // EPC-05 orchestrator ruling (residual 2b): the continuous-verification
+      // report target is now a dedicated file, deliberately distinct from
+      // the acceptance-evidence path the checks-materializer exclusively
+      // authors -- see mutation-observed.ts's CONTRACT_VERIFICATION_REPORT_RELATIVE
+      // doc comment for the full rationale (last-writer-wins shadow
+      // authority this closes).
       expect(targetEvent.payload.contract_verification).toEqual({
         contract_file: contractPath,
-        checks_file: '.ai/harness/checks/latest.json',
+        checks_file: '.ai/harness/checks/contract-verify.latest.json',
       });
       expect(otherEvent.dirty['contract-verification']).toBe(false);
       expect(otherEvent.payload.contract_verification).toBeUndefined();

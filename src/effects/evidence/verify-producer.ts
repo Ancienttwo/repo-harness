@@ -35,7 +35,7 @@ import { existsSync, readFileSync, statSync } from "fs";
 import { basename, dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
 
-import type { EvidenceEventRecord, GenesisRecord, SubjectIdentity } from "../../core/evidence/types";
+import type { EvidenceEventRecord, GenesisRecord, JsonValue, SubjectIdentity } from "../../core/evidence/types";
 import { appendEvidenceEvent, appendGenesisRecord } from "./event-log";
 import { buildReviewSubject, uniqueSorted } from "../review/diff-fingerprint";
 import { LEDGER_EPOCH_START_SHA } from "./epoch";
@@ -87,6 +87,19 @@ export interface VerifyProducerInput {
    * omitted.
    */
   readonly contractPath?: string;
+  /**
+   * EPC-05 payload upgrade: the full finalized run-trace object (everything
+   * `scripts/verify-sprint.sh`'s own `checks_report` already computed), so
+   * the checks/latest.json materializer can reconstruct the consumer-facing
+   * projection from the ledger alone. Optional and purely additive -- when
+   * omitted, the emitted payload is byte-identical to the pre-EPC-05 shape
+   * (this keeps every existing direct caller of this function, including
+   * tests/evidence-verify-producer.test.ts, unaffected). D6's existing
+   * "json" payload construction (path-safety + redaction, then inline-or-blob
+   * by size) applies to this field exactly as it does to every other
+   * payload value -- no new bypass of that construction invariant.
+   */
+  readonly runTrace?: JsonValue;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -177,7 +190,17 @@ function workspaceId(repoRoot: string): string {
   return `ws-${sha256Hex(real).slice(0, 12)}`;
 }
 
-function worktreeIdFor(contractRelative: string): string {
+/**
+ * `worktree_id` (the ledger's own field) is populated with the active
+ * contract's own slug -- this system's actual reduction of D7's
+ * "worktree_id == current AND contract_id == active contract" into one
+ * filterable field. Exported so `checks-materializer.ts` (owned by this
+ * same package) derives the identical value rather than re-implementing it;
+ * this is not a re-opening of the EPC-02/03/04 "no shared private helper"
+ * wave qualification, which concerned proving independence across DIFFERENT
+ * parallel packages, not sharing within one serial package's own two files.
+ */
+export function worktreeIdFor(contractRelative: string): string {
   const base = contractRelative.split("/").pop() ?? contractRelative;
   return base.replace(/\.contract\.md$/, "");
 }
@@ -325,6 +348,10 @@ export function emitAuthoritativeVerifyEvidence(input: VerifyProducerInput): Ver
         // Short id, not the full path -- see shortRunSnapshotId's doc comment.
         // Reconstruct with: `.ai/harness/runs/${run_snapshot_id}-${worktree_id}.json`.
         run_snapshot_id: shortRunSnapshotId(input.runSnapshotPath, worktreeId),
+        // EPC-05: additive only -- omitted entirely (not even as an explicit
+        // `undefined`) when the caller supplies no runTrace, so this object's
+        // own shape is byte-identical to the pre-EPC-05 payload in that case.
+        ...(input.runTrace !== undefined ? { run_trace: input.runTrace } : {}),
       },
     },
   });

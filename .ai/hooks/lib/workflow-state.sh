@@ -110,7 +110,15 @@ workflow_ensure_harness_surface() {
     "$(dirname "$(workflow_pending_orchestration_file)")" \
     "$(workflow_runs_dir)"
 
-  [[ -f "$(workflow_checks_file)" ]] || printf "{}\n" > "$(workflow_checks_file)"
+  # EPC-05: no {} bootstrap for checks/latest.json here anymore -- it is now
+  # materialized exclusively from the evidence ledger
+  # (src/effects/evidence/checks-materializer.ts); a missing file is genuine
+  # absence, not a placeholder this library should paper over. Every existing
+  # consumer of workflow_checks_file's content already treats "missing or
+  # empty" as its own fail-closed branch (workflow_checks_pass,
+  # workflow_acceptance_receipt_status, workflow_next_action's `[[ ! -f
+  # "$checks_file" ]]` check above), so removing this bootstrap changes no
+  # consumer's observable pass/fail outcome -- only which message they print.
   [[ -f "$(workflow_handoff_file)" ]] || printf "# Harness Handoff\n\n> **Reason**: bootstrap\n" > "$(workflow_handoff_file)"
   [[ -f "$(workflow_resume_packet_file)" ]] || printf "# Codex Resume Packet\n\n> **Reason**: bootstrap\n" > "$(workflow_resume_packet_file)"
   [[ -f "$(workflow_failure_log_file)" ]] || : > "$(workflow_failure_log_file)"
