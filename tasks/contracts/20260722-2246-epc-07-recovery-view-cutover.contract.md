@@ -1,6 +1,6 @@
 # Task Contract: epc-07-recovery-view-cutover
 
-> **Status**: Active
+> **Status**: Done
 > **Plan**: plans/plan-20260722-2246-epc-07-recovery-view-cutover.md
 > **Task Profile**: code-change
 > **Owner**: kito
