@@ -55,11 +55,11 @@
 > **Actor**: not-applicable
 > **Reviewed Subject SHA256**: sha256:8af24eea61ed5c5a583e35b83c3caf0b533f1a28eddb2e771c625787412505f4
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: 691930c003f31a6d44c9ba8b5549c9e80d6cc9a0
+> **Reviewed Target Revision**: 8b797c5fec31b57e7c51cb16e3bc08b7aaff4097
 > **Verification Evidence SHA256**: sha256:c5bec0d7e7c28d2bd3cc99bf608c713940e8ce352436f250b433144432d9a4d4
-> **Issued At**: 2026-07-22T11:02:31.405Z
+> **Issued At**: 2026-07-22T11:27:14.276Z
 
-- Summary: EPC-04 accepted: manual/external attested import via closed D4 trust mapping (external_pass->external_attested, user_waiver->human_acceptance), fail-closed required fields, CLI-level wiring keeps characterization suites green, live dogfood ledger evidence recorded.
+- Summary: EPC-04 accepted: attested import with closed trust mapping and fail-closed required fields; CLI-layer wiring adjudicated unskippable (sole production entry); default-deny proven at fold level; gatekeeper PASS
 - Findings: none
 
 ## Behavior Diff Notes
