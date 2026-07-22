@@ -1,6 +1,6 @@
 # Plan: Skill Surface & Discovery Convergence
 
-> **Status**: Approved
+> **Status**: Executing
 > **Direction Approval**: Approved
 > **Activation Gate**: Promote machine status to `Approved` only after LSC, HRD, and EPC are independently merged/pushed and the exact post-EPC `origin/main` SHA is pinned — satisfied 2026-07-23: EPC closed 13/13 (PR #125), fresh fetch verified `origin/main == main == 555524c1`, no active EPC writer anywhere, cross-package projection-drift closeout re-verified green (21/21)
 > **Created**: 20260715-1140
