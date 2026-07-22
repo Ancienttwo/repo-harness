@@ -49,17 +49,17 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
+> **Disposition**: external_pass
+> **Reviewer**: Claude
+> **Source**: claude-review
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:8a48a87d4183098e73ae4f89c74fed8f1767410bd1f5272e245d4ec977b74183
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: ba0e3970e733b34306a2c16cec31547483a2c648
+> **Verification Evidence SHA256**: sha256:ce67fb2f00ff9302579e83cdccb5244d91f264969c0881e1097cd8fbf8106d9b
+> **Issued At**: 2026-07-22T03:46:40.219Z
 
-- Summary: No AcceptanceReceipt has been recorded.
+- Summary: EPC-00 design freeze accepted: D1-D9 frozen with closed sub-decisions, POST_VGBR_SHA pinned at ba0e3970, rows 5-13 confirmed machine-operable, rows 12/13 amended; gatekeeper PASS; diff confined to allowed_paths
 - Findings: none
 
 ## Behavior Diff Notes
