@@ -29,6 +29,7 @@ import {
 } from './delegation-state';
 import { consumePendingPostEditEvents } from './mutation-observed';
 import { runMinimalChangeCli } from './minimal-change-cli';
+import { publishCheckpointFromLedger } from '../../effects/evidence/checkpoint-store';
 
 export interface StopCollector {
   getRepoRoot(): string;
@@ -658,6 +659,20 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
     dependencies.observeProjectionWrite,
   ).commit();
   dependencies.observeProjectionTransaction?.();
+
+  // EPC-06 (additive): publish a checkpoint of the current accepted evidence
+  // set at this same Stop transaction point. Mirrors the PostEdit-flush
+  // try/catch above -- a worktree with no ledger yet (the common case today)
+  // is a quiet, expected skip inside `publishCheckpointFromLedger` itself
+  // (no exception), and any unexpected storage fault here is caught and
+  // discarded the same way, so this best-effort publish can never block,
+  // reorder, or change Stop's existing handoff/resume/event/run-summary
+  // projection outputs above.
+  try {
+    publishCheckpointFromLedger(repoRoot, () => now);
+  } catch {
+    // Checkpoint publication never blocks Stop.
+  }
 
   const stderr: string[] = [`[FinalizeHandoff] Refreshed ${projected.paths.handoff}.\n`];
   let state: EffectiveState | null = null;
