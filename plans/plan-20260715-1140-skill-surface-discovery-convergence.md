@@ -1,8 +1,8 @@
 # Plan: Skill Surface & Discovery Convergence
 
-> **Status**: Draft
+> **Status**: Approved
 > **Direction Approval**: Approved
-> **Activation Gate**: Promote machine status to `Approved` only after LSC, HRD, and EPC are independently merged/pushed and the exact post-EPC `origin/main` SHA is pinned
+> **Activation Gate**: Promote machine status to `Approved` only after LSC, HRD, and EPC are independently merged/pushed and the exact post-EPC `origin/main` SHA is pinned — satisfied 2026-07-23: EPC closed 13/13 (PR #125), fresh fetch verified `origin/main == main == 555524c1`, no active EPC writer anywhere, cross-package projection-drift closeout re-verified green (21/21)
 > **Created**: 20260715-1140
 > **Slug**: skill-surface-discovery-convergence
 > **Planning Source**: repo-harness-plan
@@ -10,8 +10,8 @@
 > **Source Ref**: `/Users/kito/.codex/attachments/c8cac0f2-0f2f-44c9-b640-fdb5923aa041/pasted-text.txt`
 > **Discovery Audit Baseline**: `main@af6d5216c2cd5adf2f672636a8308a309f0f5adb`
 > **Post-ESA Program Baseline**: `origin/main@3b33cea2422b1aa1e5be9080be54f731c4f2015d` (PR #79)
-> **SSD Execution Baseline**: Pending the exact post-EPC `origin/main` SHA
-> **Upstream Dependency**: `ESA@3b33cea2422b1aa1e5be9080be54f731c4f2015d -> LSC -> HRD -> EPC -> SSD`
+> **SSD Execution Baseline**: `POST_EPC_SHA = origin/main@555524c1aff9ff8195dd744ea209fb8cc673d817` (pinned 2026-07-23 at fresh fetch per R1, after EPC-09 merged via PR #125; the SSD contract records this pin and its own worktree base SHA)
+> **Upstream Dependency**: `ESA@3b33cea2 (Done, PR #79) -> LSC (Done 8/8) -> HRD (Done, closeout PR #108) -> EPC (Done 13/13, PR #125) -> SSD (this package)`
 > **Artifact Level**: work-package
 > **Promotion Reason**: rollback_boundary
 > **Verification Boundary**: Manifest/profile projection parity, bilingual Skill-routing evidence, disposable-HOME host retirement, package smoke, and full repo gates must agree on one frozen subject.
@@ -36,8 +36,8 @@ This work-package converges Skill classification, rule ownership, profile discov
 
 ## Workflow Inventory
 
-- Active plan in this worktree: (none; SSD remains dependency-blocked)
-- Proposed plan: `plans/plan-20260715-1140-skill-surface-discovery-convergence.md`
+- Active plan in this worktree: this plan (activated 2026-07-23 after EPC closeout)
+- Plan file: `plans/plan-20260715-1140-skill-surface-discovery-convergence.md`
 - Future contract: `tasks/contracts/20260715-1140-skill-surface-discovery-convergence.contract.md`
 - Future review: `tasks/reviews/20260715-1140-skill-surface-discovery-convergence.review.md`
 - Future implementation notes: `tasks/notes/20260715-1140-skill-surface-discovery-convergence.notes.md`
@@ -50,9 +50,9 @@ This work-package converges Skill classification, rule ownership, profile discov
 
 ### Current no-touch boundary
 
-ESA completed through PR #79 at `origin/main@3b33cea2422b1aa1e5be9080be54f731c4f2015d`; the former ESA worktree path is no longer an execution lock.
+ESA completed through PR #79; LSC, HRD, and EPC all closed in independent work-packages (EPC 13/13 via PR #125, `POST_EPC_SHA = 555524c1` pinned above). No upstream writer remains; SSD is the active package.
 
-SSD remains no-touch while any LSC, HRD, or EPC writer is active. After EPC is independently merged and pushed, fetch and pin the exact live `origin/main` SHA before creating the SSD contract/worktree. Never absorb unrelated dirty or untracked WIP from the root checkout.
+SSD absorbs no EPC runtime, compatibility, or migration work. Never absorb unrelated dirty or untracked WIP from the root checkout; the user's `repo-harness-wt-terminal-plans-sweep` worktree is out-of-scope WIP and must not be touched.
 
 ## Goal
 
@@ -541,7 +541,7 @@ Do not rerun the full provider routing matrix after a documentation-only edit un
 - Notes file after SSD activation: `tasks/notes/20260715-1140-skill-surface-discovery-convergence.notes.md`
 - Template: `.claude/templates/contract.template.md`
 - Verification command after projection: `repo-harness run verify-contract --contract tasks/contracts/20260715-1140-skill-surface-discovery-convergence.contract.md --strict`
-- Approval rule: the direction is human-approved, but machine status remains `Draft` so `plan-to-todo` fails closed. Promote it to `Approved` only after EPC is independently merged/pushed and the exact post-EPC `origin/main` SHA is pinned; before then, do not create SSD active markers, contracts, reviews, notes, or worktrees.
+- Approval rule: the direction is human-approved; machine status stayed `Draft` (so `plan-to-todo` failed closed) until the activation gate was satisfied on 2026-07-23 — EPC merged/pushed and `POST_EPC_SHA = 555524c1` pinned at fresh fetch — at which point this plan was promoted through the Draft -> Annotating -> Approved flow.
 
 The future contract must narrow `allowed_paths` to the file families above and keep this anti-extras clause:
 
@@ -568,11 +568,13 @@ The future contract must narrow `allowed_paths` to the file families above and k
 
 - Checks file: `.ai/harness/checks/latest.json`
 - Session handoff: `.ai/harness/handoff/current.md`
-- Exact next step now: start the independent LSC-01 characterization package from the pinned post-ESA baseline; SSD remains dependency-blocked.
-- First SSD step after EPC closeout: fetch and pin the exact post-EPC `origin/main` SHA, run the SSD-01 re-audit, update `tasks/todos.md` serially, then project the independent SSD contract/worktree.
+- Exact next step now: project the SSD contract/worktree and execute SSD-01 (inventory, classification, and routing baseline) from the pinned `POST_EPC_SHA` execution baseline.
+- Activation record (2026-07-23): post-EPC `origin/main` SHA pinned at fresh fetch, SSD-01 re-audit pending in the worktree, `tasks/todos.md` SSD row retired serially with this promotion.
 
 ## Annotations
 
-<!-- [NOTE]: This plan intentionally rejects the attachment's generated compatibility aliases. Current repo policy permits no steady-state compatibility surface, and the work-package has a clean next-minor migration boundary. -->
-<!-- [NOTE]: The manifest does not own riskFloor. Effective State and PreToolUse remain the risk/security authority. -->
-<!-- [NOTE]: ESA completed through PR #79. Live workflow markers and worktrees are the concurrency authority; SSD waits for independent LSC, HRD, and EPC closeout. -->
+All planning-phase annotations were resolved into the plan body before approval (2026-07-23):
+
+- The rejection of the attachment's generated compatibility aliases is normative in Non-goals, the Trade-offs table, and P3 decision 3.
+- The manifest's exclusion of `riskFloor` (Effective State and PreToolUse remain the risk/security authority) is normative in the target ownership model and P3 decision 2.
+- The concurrency-authority rule (live workflow markers and worktrees, not plan filenames) is normative in Workflow Inventory; the LSC/HRD/EPC dependency wait it described completed with EPC closeout (PR #125).
