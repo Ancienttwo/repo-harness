@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-23T03:30:51+0800 -->
+<!-- updated_at: 2026-07-23T03:33:54+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-07-23T03:30:51+0800
-> **Source Branch**: main
-> **Source Commit**: 314ee1a7
+> **Updated At**: 2026-07-23T03:33:54+0800
+> **Source Branch**: codex/terminal-plans-sweep
+> **Source Commit**: f38c21b6
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: manual
@@ -33,8 +33,6 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 - /Users/kito/Projects/repo-harness-wt-skill-surface-discovery-convergence: plans/plan-20260715-1140-skill-surface-discovery-convergence.md
 - /Users/kito/Projects/repo-harness-wt-skill-surface-discovery-convergence: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-skill-surface-discovery-convergence
-- /Users/kito/Projects/repo-harness-wt-terminal-plans-sweep: plans/plan-20260722-0350-terminal-plans-sweep.md
-- /Users/kito/Projects/repo-harness-wt-terminal-plans-sweep: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-terminal-plans-sweep
 ## Active Sprint
 
 - Sprint: (none)
@@ -53,7 +51,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Checks
 
-- status=(none), source=(none), exit_code=(none), file=.ai/harness/checks/latest.json
+- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
 
 ## Git Status
 

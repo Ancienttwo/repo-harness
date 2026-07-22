@@ -8,7 +8,7 @@
   "run_id": "fixture-docs-only",
   "run_file": ".ai/harness/runs/fixture-docs-only.json",
   "task_profile": "docs-only",
-  "active_plan": "plans/plan-20260616-HE-05-trace-eval-schema.md",
+  "active_plan": "plans/archive/plan-20260616-HE-05-trace-eval-schema.md",
   "contract": {
     "file": "tasks/contracts/fixture-docs-only.contract.md",
     "task_profile": "docs-only",
