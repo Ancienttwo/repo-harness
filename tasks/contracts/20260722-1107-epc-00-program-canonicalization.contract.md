@@ -238,7 +238,7 @@ forbidden:
 ```yaml
 evidence_requirements:
   # Docs-only design freeze; consumes no benchmark subject.
-  benchmark: not_required
+  benchmark: not_applicable
 ```
 
 ## Delegation Contract
