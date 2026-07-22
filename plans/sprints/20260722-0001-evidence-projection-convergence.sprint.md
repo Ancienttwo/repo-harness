@@ -1,6 +1,6 @@
 # Sprint: Evidence & Projection Convergence
 
-> **Status**: Approved
+> **Status**: Done
 > **Direction Approval**: Approved — Codex execution draft reviewed by Fable (2026-07-21) and by external GPT review (`docs/researches/20270721-EPC.research.md`), joint verdict: approve with required amendments. All required amendments are incorporated below as normative rules. Execution approved by the user on 2026-07-22.
 > **Slug**: evidence-projection-convergence
 > **Created**: 2026-07-22 00:01
@@ -171,6 +171,56 @@ baseline after HRD and acknowledged parallel changes**, and no artifact
 in this Program may describe it as a pure post-HRD baseline.
 `POST_VGBR_SHA = ba0e3970...` (VGBR-R PR #115 merged; subject
 quiescence lifted) is the EPC-00-pinned base for the EPC arc.
+
+## Program annotation — EPC-09 matched post-eval attempt (recorded by EPC-09)
+
+`POST_EPC_SUBJECT_SHA = 196e787a0ffe15eea4da0a2e50b4f0e04f99a666` (pinned by
+EPC-09 per R1 at fresh fetch, equal to its own base — EPC-09 touches no R2
+benchmark-subject input, so the post-EPC subject is exactly the
+post-EPC-01..08 state; subject hash
+`sha256:3bef21e9f809a6acd47f0dc22ea3416ef1fc0ddef26ba15f9150e82943cbb310`,
+computed via the git-blob-identity hash over the R2 input list from a
+detached, clean checkout, re-verified unchanged after the attempt below).
+
+One matched post-EPC benchmark invocation was attempted under this Row's
+own VGBR-R protocol, reused verbatim: attempt `post-epc-196e787a-20260723-a01`
+self-classified **`failed_during_run`**: 13 arms passed (9 `no-harness` +
+4 `adaptive-lite` — `single-file-small-bug`, `ordinary-feature`,
+`database-migration`, `chinese-prompt`), 2 `adaptive-lite` arms failed
+(`negation`, `cross-capability-feature`), 15/27 reached a terminal outcome
+and 12 never ran before the runner stopped fail-closed — both failures
+inside the runner's own isolated per-arm sandboxes (a provider tool-exec
+router fault on `adaptive-lite/negation`; a harness-guard-blocked agent turn
+on `adaptive-lite/cross-capability-feature` — full evidence in
+`docs/researches/20260723-epc-program-closeout.research.md`). No report was
+produced or promoted; the pre-EPC baseline triplet
+(`VGBR_BASELINE_SHA = b32b3282`, 27/27 arms,
+`evals/harness/reports/profile-comparison.*`) is untouched and remains the
+Program's only authoritative benchmark evidence. Per the frozen attempt
+discipline, this attempt was not rerun; a new run needs a new approved
+run-decision. **This condition of row 13's acceptance line is therefore not
+yet satisfied** — recorded here as history, not as Program closure.
+
+`POST_EPC_SHA` itself is **not** pinned by this annotation: per R1, it is
+pinned by the SSD activation contract after EPC-09 merges, at that
+contract's own fresh fetch — this note only records the post-EPC subject
+facts EPC-09 observed during its own execution, consumed by SSD later, not
+in EPC-09's own scope to pin.
+
+### Frozen fallback executed (orchestrator ruling, 2026-07-23)
+
+One protocol-clean matched-benchmark attempt failed during the run (above);
+per the Program's own retry-until-green prohibition, that single attempt is
+sufficient to trigger row 13's frozen cannot-execute fallback (`## Row 13 —
+EPC-09 matched post-eval decision`, above) — no second attempt was made.
+The orchestrator ruled: take the fallback branch. Accordingly,
+`evals/harness/reports/profile-comparison.{json,md,sha256.json}` (the
+authoritative VGBR pre-EPC baseline, `VGBR_BASELINE_SHA = b32b3282`, 27/27
+arms — bytes byte-bound and untouched by this relabeling) is now designated
+**"descriptive pre-EPC baseline only"**. Per the frozen fallback, the
+release closeout claims no benchmark improvement over the pre-EPC baseline.
+With the fallback branch executed, row 13's amended acceptance line is
+satisfied — the fallback IS the completion, not a deferral of it.
 
 ## Backlog
 

@@ -1,0 +1,117 @@
+{
+  "schema": "repo-harness-epc-retired-surfaces.v1",
+  "generated_by": "EPC-09 Program closeout (drift + residue deliverable)",
+  "description": "Checked-in enumeration of every writer/placeholder retired by EPC-05/07/08's authority cutovers (R5: same-package cutover). tests/evidence-residue-scan.test.ts consumes this file directly -- the enumerated surface and the scan that checks it cannot drift apart. scan_roots/scan_extensions bound the sweep; each surface's own patterns must return zero hits outside its documented allowed_exceptions.",
+  "scan_roots": ["src", "scripts", ".ai/hooks", "assets"],
+  "scan_extensions": [".ts", ".sh"],
+  "surfaces": [
+    {
+      "id": "verify-sprint-direct-cp",
+      "surface": "scripts/verify-sprint.sh direct checks/latest.json authoring via cp",
+      "retiring_package": "EPC-05",
+      "retired_at_pr": "#121",
+      "description": "verify-sprint.sh used to cp its computed checks report straight onto checks/latest.json (both the normal-path report and the finalize-acceptance path). checks/latest.json is now materialized exclusively from the evidence ledger by src/effects/evidence/checks-materializer.ts via its single call site scripts/emit-verify-evidence.ts.",
+      "patterns": [
+        "cp\\s+\"\\$checks_report\"\\s+\"\\$checks_file\"",
+        "cp\\s+\"\\$finalized_checks\"\\s+\"\\$checks_file\""
+      ],
+      "allowed_exceptions": []
+    },
+    {
+      "id": "workflow-state-checks-bootstrap",
+      "surface": "workflow_ensure_harness_surface's {} placeholder bootstrap for checks/latest.json",
+      "retiring_package": "EPC-05",
+      "retired_at_pr": "#121",
+      "description": "workflow_ensure_harness_surface (.ai/hooks/lib/workflow-state.sh, canonical mirror assets/hooks/lib/workflow-state.sh) used to seed checks/latest.json with a literal {} placeholder whenever the file did not already exist. A missing file is now genuine absence, never a placeholder this library papers over -- see the EPC-05 code comment left in place directly above the deletion site.",
+      "patterns": [
+        "printf \"\\{\\}\\\\\\\\n\" > \"\\$\\(workflow_checks_file\\)\""
+      ],
+      "allowed_exceptions": [
+        "scripts/plan-to-todo.sh",
+        "scripts/ensure-task-workflow.sh",
+        "scripts/lib/project-init-lib.sh",
+        "assets/templates/helpers/plan-to-todo.sh",
+        "assets/templates/helpers/ensure-task-workflow.sh"
+      ]
+    },
+    {
+      "id": "mutation-observed-checks-target",
+      "surface": "mutation-observed.ts continuous contract-verification report defaulting to the acceptance checks_file",
+      "retiring_package": "EPC-05",
+      "retired_at_pr": "#121",
+      "description": "resolveContractVerificationTarget used to return checksFile: resolveChecksFile(repoRoot) -- the SAME path acceptance evidence materializes to -- letting Stop-time continuous verification silently clobber a frozen --prepare-acceptance bundle. It now always returns the dedicated CONTRACT_VERIFICATION_REPORT_RELATIVE ('.ai/harness/checks/contract-verify.latest.json'); resolveChecksFile itself is unchanged and kept for its own unrelated general-purpose role.",
+      "patterns": [
+        "checksFile:\\s*resolveChecksFile\\(repoRoot\\)"
+      ],
+      "allowed_exceptions": []
+    },
+    {
+      "id": "workflow-write-handoff-heredoc",
+      "surface": "bash workflow_write_handoff's independent handoff/resume Markdown assembly",
+      "retiring_package": "EPC-07",
+      "retired_at_pr": "#123",
+      "description": "workflow_write_handoff (.ai/hooks/lib/workflow-state.sh, canonical mirror assets/hooks/lib/workflow-state.sh) used to assemble both handoff/current.md and handoff/resume.md content directly via heredoc. It is now a thin invoker of the single standalone materializer, scripts/recovery-view-cli.ts. scripts/prepare-handoff.sh's own no-library fallback (fires only when workflow-state.sh is entirely absent, e.g. a repo not yet through adoption) legitimately shares the EOF_HANDOFF marker name and is an explicitly classified out-of-scope bootstrap, not this retired writer.",
+      "patterns": [
+        "<<EOF_HANDOFF",
+        "<<EOF_RESUME",
+        "generated-by: workflow_write_handoff v1"
+      ],
+      "allowed_exceptions": [
+        "scripts/prepare-handoff.sh",
+        "assets/templates/helpers/prepare-handoff.sh"
+      ]
+    },
+    {
+      "id": "codex-handoff-resume-assembly",
+      "surface": "scripts/codex-handoff-resume.sh independent resume content assembly",
+      "retiring_package": "EPC-07",
+      "retired_at_pr": "#123",
+      "description": "codex-handoff-resume.sh used to define its own local policy_get/safe_repo_file/active_plan helpers and assemble the elaborate resume view directly via heredoc. It is now a thin invoker of scripts/recovery-view-cli.ts with --print-prompt passthrough; zero independent content assembly remains. policy_get() is intentionally NOT used as a residue signal -- it is a common local-helper name legitimately defined by several unrelated scripts (ship-worktrees.sh, sprint-backlog.sh, contract-worktree.sh, plan-to-todo.sh, check-task-workflow.sh, heartbeat-triage.sh); active_plan()/safe_repo_file() as bash function DEFINITIONS are unique to the retired body.",
+      "patterns": [
+        "^active_plan\\(\\)\\s*\\{",
+        "^safe_repo_file\\(\\)\\s*\\{"
+      ],
+      "allowed_exceptions": []
+    },
+    {
+      "id": "prepare-codex-handoff-assembly",
+      "surface": "scripts/prepare-codex-handoff.sh independent Codex-global packet splice assembly",
+      "retiring_package": "EPC-07",
+      "retired_at_pr": "#123",
+      "description": "prepare-codex-handoff.sh used to splice a per-repo <!-- repo:<key> start/end --> section into the Codex-global handoff packet via an inline Node primary / Python3 fallback heredoc, with zero separate tracked file. That splice logic is now an additional output of the single materializer (renderGlobalHandoffSection / updateGlobalHandoffFile in src/effects/evidence/recovery-materializer.ts); prepare-codex-handoff.sh is now a thin invoker with --with-global-packet. The authoritative materializer and its standalone CLI duplicate (scripts/recovery-view-cli.ts, kept consistent by inspection, plus its byte-identical asset mirror) legitimately render this same marker shape and are the allowed exceptions.",
+      "patterns": [
+        "<!--\\s*repo:.*start\\s*-->"
+      ],
+      "allowed_exceptions": [
+        "src/effects/evidence/recovery-materializer.ts",
+        "scripts/recovery-view-cli.ts",
+        "assets/templates/helpers/recovery-view-cli.ts"
+      ]
+    },
+    {
+      "id": "workflow-ensure-harness-surface-handoff-bootstrap",
+      "surface": "workflow_ensure_harness_surface's handoff/resume placeholder bootstrap",
+      "retiring_package": "EPC-07",
+      "retired_at_pr": "#123",
+      "description": "workflow_ensure_harness_surface (.ai/hooks/lib/workflow-state.sh, canonical mirror assets/hooks/lib/workflow-state.sh) was an undeclared fifth writer: it seeded handoff/current.md and handoff/resume.md with a one-line bootstrap placeholder whenever those files did not already exist, reachable from unrelated event-logging call paths. Retired same-package under D9 revision authority, matching the EPC-05 precedent already recorded in the adjacent code comment. scripts/lib/project-init-lib.sh's own $target_dir-prefixed bootstrap lines (adoption-time scaffolding for a brand-new downstream repo, a textually distinct literal-path form) are the documented, unrelated exception.",
+      "patterns": [
+        "printf \"# Harness Handoff\\\\n\\\\n> \\*\\*Reason\\*\\*: bootstrap\\\\n\" > \"\\$\\(workflow_handoff_file\\)\"",
+        "printf \"# Codex Resume Packet\\\\n\\\\n> \\*\\*Reason\\*\\*: bootstrap\\\\n\" > \"\\$\\(workflow_resume_packet_file\\)\""
+      ],
+      "allowed_exceptions": [
+        "scripts/lib/project-init-lib.sh"
+      ]
+    },
+    {
+      "id": "resume-available-marker-scan",
+      "surface": "session-context.ts resumeAvailable() marker/header string-scan re-derivation",
+      "retiring_package": "EPC-08",
+      "retired_at_pr": "#124",
+      "description": "resumeAvailable() used to read resume.md's raw text and re-derive availability by scanning for the legacy marker plus a '## Resume Prompt' header. It now delegates to resolveRecoveryEvidence(repoRoot).available (src/effects/evidence/recovery-materializer.ts, EPC-06/07 checkpoint-backed evidence reader, read-only import). The marker literal itself is NOT retired -- recovery-materializer.ts's LEGACY_RESUME_MARKER constant and its standalone duplicate in scripts/recovery-view-cli.ts still render it verbatim as a stable external-observable-contract string; only the act of re-deriving availability by scanning for it is retired, so the pattern below matches the exact retired call shape, not the marker string alone.",
+      "patterns": [
+        "text\\.includes\\(['\"]<!-- generated-by: repo-harness codex-handoff-resume v1 -->['\"]\\)"
+      ],
+      "allowed_exceptions": []
+    }
+  ]
+}
