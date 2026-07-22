@@ -358,7 +358,7 @@ exit_criteria:
     - bash scripts/check-task-workflow.sh --strict
   manual_checks:
     - "Detached subject checkout git status --porcelain is empty and git rev-parse HEAD equals b32b328208da5b07418c4fd815491bcc3913ff9f"
-    - "REPORT_STAGE_DIR exists and is empty"
+    - "REPORT_STAGE_DIR held the produced report triplet after the sole invocation, byte-identical to the promoted evals/harness/reports/ copies"
     - "Mandatory annotation wording is present verbatim in the plan and never says 'pure post-HRD'"
 ```
 

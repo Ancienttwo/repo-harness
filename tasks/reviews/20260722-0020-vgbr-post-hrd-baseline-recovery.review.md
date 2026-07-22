@@ -38,6 +38,15 @@
 - Implementation notes reviewed: tasks/notes/20260722-0020-vgbr-post-hrd-baseline-recovery.notes.md
 - Run snapshot: `.ai/harness/runs/`
 
+## Manual Check Evidence
+
+- [x] Detached subject checkout git status --porcelain is empty and git rev-parse HEAD equals b32b328208da5b07418c4fd815491bcc3913ff9f
+  - Evidence: verified pre-invocation (2026-07-22 06:13) and post-invocation (2026-07-22 06:38): `git -C /Users/kito/Projects/repo-harness-vgbr-r2-subject status --porcelain` empty both times; `git rev-parse HEAD` = `b32b328208da5b07418c4fd815491bcc3913ff9f` both times.
+- [x] REPORT_STAGE_DIR held the produced report triplet after the sole invocation, byte-identical to the promoted evals/harness/reports/ copies
+  - Evidence: `/Users/kito/Projects/repo-harness-vgbr-r2-stage/{profile-comparison.json,profile-comparison.md,profile-comparison.sha256.json}` produced by the invocation; `cmp` against the promoted `evals/harness/reports/` copies reported no differences for all three files.
+- [x] Mandatory annotation wording is present verbatim in the plan and never says 'pure post-HRD'
+  - Evidence: `plans/plan-20260722-0020-vgbr-post-hrd-baseline-recovery.md` `## Why` section contains "current pre-EPC baseline after HRD and acknowledged parallel changes (BDD2 PR #109, ship-tooling PR #110, harness fixes PRs #111/#113/#114)"; `grep -n "pure post-HRD"` in the plan matches only negation contexts ("must never be described as a pure post-HRD baseline" / "it must never be described as a pure post-HRD baseline"), never an assertion.
+
 ## Acceptance Receipt Projection
 
 > **Disposition**: unavailable
