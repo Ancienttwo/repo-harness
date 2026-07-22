@@ -4,7 +4,7 @@
 > **Plan**: plans/plan-20260715-1140-skill-surface-discovery-convergence.md
 > **Contract**: tasks/contracts/20260715-1140-skill-surface-discovery-convergence.contract.md
 > **Review**: tasks/reviews/20260715-1140-skill-surface-discovery-convergence.review.md
-> **Last Updated**: 2026-07-23 03:24
+> **Last Updated**: 2026-07-23 06:44
 > **Lifecycle**: notes
 
 ## Design Decisions
@@ -430,3 +430,161 @@ SSD-06 changes discovered sets deliberately:
   literal name matches).
 - `src/cli/installer/install-profile.ts:812-816` — `handoffEvidence`'s literal
   `repo-harness-handoff` path segments.
+
+## SSD-03
+
+**Status**: Complete (D1-D6 below; all verification commands green). Pure
+content staging: zero activation, zero deletion, zero manifest/installer/live
+SKILL.md edits (`git status --short` shows only new files under
+`assets/skills/**`, one new test file under `tests/skill-surface/`, and this
+notes file).
+
+### Staging-location rationale (orchestrator-ruled, recorded here as instructed)
+
+All new canonical packages and reference bundles live under
+`assets/skills/<name>/` — permanently, not as a temporary holding pen. After
+SSD-02, `assets/skill-commands/manifest.json` v2 is the sole discovery
+authority (`src/core/skill-surface/catalog.ts` selectors operate only over
+`packages[]`; nothing in `src/`, `scripts/`, or the sync shell script walks
+either `assets/skills/` or `assets/skill-commands/` looking for undeclared
+directories — confirmed by grep before writing anything). A package's
+filesystem location is therefore just a `source` path the manifest may point
+at; it carries no discovery authority of its own. At SSD-06, activating one
+of these packages means adding/editing its manifest entry (`source` already
+correct, `kind`/`discoverability`/`profiles` flip from absent to live) and
+deleting the retired facade directory it replaces — no file move is needed
+for D1-D3. `tests/skill-surface/canonical-packages.test.ts`'s "inertness
+proof" describe block is the executable evidence for this ruling: it loads
+the real manifest through `parseSkillSurfaceCatalog` and asserts none of the
+five staged directory names appears in `packages[]` (by name or by `source`
+substring) or in any of `facadesForProfile` / `hostSkillPlacements` /
+`externalSkillsForProfile` / `mutationPathSkillNames` /
+`profileOwnedSkillNames` / `probeExpectations`'s output, across every profile
+plus the unconditional (`undefined`-profile) bundle.
+
+### Rule-ownership map (facade -> canonical owner)
+
+Every rule paragraph from the fourteen source facades touched by this slice
+now has exactly one intended home. Cross-facade duplicate rules (the same
+paragraph repeated near-verbatim across sibling facades within one target
+package) were hoisted to that package's router `SKILL.md` and removed from
+the individual references; genuinely mode-specific rules stayed in their one
+reference file. Concretely:
+
+| Rule group | Old owner(s) | New canonical owner |
+|---|---|---|
+| Confirm repo path + run `inspect-project-state.ts` (setup group) | init, migrate, upgrade, repair, scaffold, capability (each repeated it) | `repo-harness-setup/SKILL.md` "Shared Preflight" (once); each `references/*.md` starts from its own delta step |
+| Setup cross-mode routing ("if legacy -> migrate", "if broken -> repair", etc.) | Failure Modes / Boundaries scattered across all six setup facades | `repo-harness-setup/SKILL.md` "Mode Selection" table (once) |
+| Adopt/init protocol detail | `repo-harness-init` | `repo-harness-setup/references/adopt-init.md` |
+| Migrate protocol detail | `repo-harness-migrate` (fresh rewrite, not `references/migration-guide.md` — see below) | `repo-harness-setup/references/migrate.md` |
+| Upgrade protocol detail | `repo-harness-upgrade` | `repo-harness-setup/references/upgrade.md` |
+| Repair protocol detail | `repo-harness-repair` | `repo-harness-setup/references/repair.md` |
+| Scaffold + AI-native overlay detail | `repo-harness-scaffold` | `repo-harness-setup/references/scaffold.md` |
+| Capability configuration detail | `repo-harness-capability` | `repo-harness-setup/references/capability.md` |
+| Confirm repo + read `docs/spec.md`/`policy.json` (product group) | prd, sprint, goal (each repeated a variant) | `repo-harness-product/SKILL.md` "Shared Preflight" (once) |
+| Approval gating ("never sets Status: Approved", never bypasses `$think`/capture-plan/contracts/`/check`) | prd, sprint, goal (each repeated a variant) | `repo-harness-product/SKILL.md` "Boundaries" (once); each reference keeps only a one-line pointer, no restatement |
+| `tasks/todos.md` is the deferred-goal ledger only, never an active backlog | sprint, goal (literal near-duplicate sentence in both) | `repo-harness-product/SKILL.md` "Boundaries" (once) |
+| PRD protocol/evidence/geju/design-brief-gate detail | `repo-harness-prd` | `repo-harness-product/references/prd.md` |
+| Sprint plan/from-prd/run/status detail | `repo-harness-sprint` | `repo-harness-product/references/sprint.md` |
+| Goal protocol + prompt shape detail | `repo-harness-goal` | `repo-harness-product/references/goal.md` |
+| Confirm repo + run inspector (plan group) | `repo-harness-plan`, `repo-harness-review` (both had it) | `repo-harness-plan-canonical/SKILL.md` "Shared Preflight" (once) |
+| Plan-create protocol/delegation-brief detail | `repo-harness-plan` | `repo-harness-plan-canonical/references/create.md` |
+| Plan-review protocol/delegation-brief-evidence detail | `repo-harness-review` | `repo-harness-plan-canonical/references/review.md` |
+| Handoff protocol detail | `repo-harness-handoff` | `repo-harness-root-references/handoff.md` (staged; SSD-06 links it from root `SKILL.md`) |
+| Reusable-workflow packaging rubric | `repo-harness-autoplan` ("Reusable Workflow Packaging Rubric" section only — the rest of that facade retires with no new home, per plan P3 decision 4) | `repo-harness-root-references/workflow-packaging-rubric.md` (staged; SSD-06 links it from root `SKILL.md`) |
+| Deploy-readiness protocol detail | `repo-harness-deploy` | `repo-harness-check-references/deploy-readiness.md` (staged; SSD-06 links it from `repo-harness-check/SKILL.md`) |
+
+Where a facade's own text pointed at a sibling facade now folded into the
+*same* package (e.g. PRD's "suggest `repo-harness-sprint plan from-prd`",
+plan's "route to `repo-harness-review`" via the old name, review's "route to
+`repo-harness-plan`"), the pointer was removed from the reference and is
+covered exactly once by that package's own router "Mode Selection" table
+instead — this is the literal mechanism behind "one canonical owner per rule
+paragraph" for cross-references, not just for prose duplicates.
+
+### plan-canonical naming decision
+
+Directory `repo-harness-plan-canonical`, frontmatter `name:
+repo-harness-plan`. The live facade `assets/skill-commands/repo-harness-plan`
+still owns the routable name `repo-harness-plan` today (hard constraint 2:
+byte-unchanged), so a staged directory literally named `repo-harness-plan`
+under `assets/skills/` would read as if it were already competing with that
+facade for the same public identity, even though the manifest is the only
+real discovery authority and nothing currently reads either path as
+authoritative. The `-canonical` suffix disambiguates the staging directory
+for anyone browsing the tree by eye, while the frontmatter `name:` field
+already carries the eventual public name so SSD-06's rename is a pure `git
+mv` plus manifest `source`/name edit, not a content rewrite. No other staged
+package needed this treatment: `repo-harness-setup` and `repo-harness-product`
+are brand-new public names with no existing live facade of the same name to
+collide with.
+
+### What was deliberately not imported
+
+- **Stale `agentic-dev-*` naming**: none of the fourteen source facades
+  actually contains this pattern (grepped before writing; the pre-rename name
+  is fully retired from live facade content already). The concrete risk
+  named by the plan is `references/migration-guide.md` (a root-level packaged
+  doc, unrelated to the `assets/skill-commands/repo-harness-migrate` facade)
+  — read in full and confirmed clean of `agentic-dev-*`/fallback/shim
+  language today, but `repo-harness-setup/references/migrate.md` was written
+  directly from the `repo-harness-migrate` facade's own protocol text only,
+  never from that root doc, per the plan's explicit instruction. This is
+  recorded in `migrate.md`'s own opening paragraph and proven by
+  `tests/skill-surface/canonical-packages.test.ts`'s stale-pattern scan.
+- **`fallback`/`compatibility-shim` wording**: not present in any of the six
+  setup-group facades (grepped; zero hits) — nothing stale to exclude there.
+  The word "fallback" does appear, legitimately, in the carried-over PRD/goal
+  content (Claude-then-Codex operational retry fallback) — that is real
+  behavior being preserved, not compatibility-shim guidance, and is unrelated
+  to the plan's exclusion clause.
+- **Retired-vocabulary terms** (`gstack`, `plan-eng-review`, `plan-design-review`,
+  `compatibility shim`, `compatibility-shim`, `delegate_to`): none of the
+  fourteen source facades contains these either; added to the new test's
+  `STALE_PATTERNS` defensively, since `tests/retired-planning-provider.test.ts`
+  already bans `gstack`/`plan-eng-review`/`plan-design-review` from the whole
+  `assets/` tree (which now includes these new files) and this repo's
+  standing no-compatibility vocabulary bans `delegate_to` elsewhere.
+
+### D5 mechanical proxies (as required, documented here too)
+
+- Router byte cap: `statSync(...).size <= 2048` on each of the three staged
+  `SKILL.md` files (actual sizes: setup 2020 B, product 1591 B, plan-canonical
+  1595 B).
+- Reference reachability: each package's router body must contain the
+  literal relative path string `references/<file>.md` for every file
+  actually present under its `references/` directory (checked both
+  directions — declared references exist, and the directory has no
+  undeclared extra file).
+- Retired-guidance absence: case-insensitive substring scan of every staged
+  file against the `STALE_PATTERNS` list above.
+- No reimplemented CLI/Core state transition: no fenced `` ```bash ``/`sh`/
+  `shell`/`zsh` block longer than 5 lines anywhere in the staged tree
+  (documented threshold: a single illustrative command is normal throughout
+  these packages; a fenced block long enough to look like an embedded
+  multi-step script is not). Current actual count: one fenced block total
+  across all staged files, and it is `` ```text `` (the Goal Prompt Shape
+  template), not shell — the check currently passes on an empty violation
+  set, not a near-miss.
+- Inertness: see the staging-location rationale above.
+
+### Deviations from this brief
+
+None. Scope, deliverable shape, and the five hard constraints (facade-dir
+listing untouched, no live `SKILL.md` byte changed anywhere, manifest.json
+untouched, no `src/`/`scripts`/installer edits, all named suites green) all
+hold as instructed.
+
+### Verification (all green)
+
+```text
+bun test tests/skill-surface/                                    54 pass, 0 fail
+bun test tests/skill-routing-eval.test.ts tests/action-command-skills.test.ts \
+  tests/evals-contract.test.ts tests/install-profiles.test.ts \
+  tests/installed-copy-sync.test.ts                               80 pass, 0 fail
+bun test tests/cli/                                       378 pass, 1 skip, 0 fail
+bun run check:type                                                  clean, no errors
+git status --short                    only new files under assets/skills/**,
+                                       tests/skill-surface/canonical-packages.test.ts,
+                                       and this notes file
+```

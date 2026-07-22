@@ -361,13 +361,13 @@ Acceptance:
 
 ### SSD-03 — Build canonical setup, product and plan rule owners
 
-- [ ] Create `repo-harness-setup` with progressive references for adopt/init, migrate, upgrade, repair, scaffold, and capability configuration.
-- [ ] Create `repo-harness-product` with PRD, Sprint, and Goal references.
-- [ ] Fold plan review into `repo-harness-plan` as a mode reference.
-- [ ] Move handoff guidance into a root reference and deploy readiness into a check reference.
-- [ ] Move the reusable-workflow packaging rubric out of autoplan into one reference document.
-- [ ] Rewrite the relevant migration reference; do not copy stale `agentic-dev-*`, fallback, or compatibility-shim guidance from `references/migration-guide.md`.
-- [ ] Add focused content/progressive-loading tests. These new packages stay inactive until SSD-06.
+- [x] Create `repo-harness-setup` with progressive references for adopt/init, migrate, upgrade, repair, scaffold, and capability configuration.
+- [x] Create `repo-harness-product` with PRD, Sprint, and Goal references.
+- [x] Fold plan review into `repo-harness-plan` as a mode reference.
+- [x] Move handoff guidance into a root reference and deploy readiness into a check reference.
+- [x] Move the reusable-workflow packaging rubric out of autoplan into one reference document.
+- [x] Rewrite the relevant migration reference; do not copy stale `agentic-dev-*`, fallback, or compatibility-shim guidance from `references/migration-guide.md`.
+- [x] Add focused content/progressive-loading tests. These new packages stay inactive until SSD-06.
 
 Acceptance:
 
