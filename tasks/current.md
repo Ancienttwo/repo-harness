@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-23T03:07:22+0800 -->
+<!-- updated_at: 2026-07-23T03:09:27+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-07-23T03:07:22+0800
-> **Source Branch**: main
-> **Source Commit**: c9b69dbe
+> **Updated At**: 2026-07-23T03:09:27+0800
+> **Source Branch**: codex/terminal-plans-sweep
+> **Source Commit**: 90463934
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: manual
@@ -18,9 +18,9 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 ## Current Focus
 
 - Status: Active
-- Active Plan: (none)
-- Plan Status: (none)
-- Next Task: inspect active worktree marker(s)
+- Active Plan: plans/plan-20260722-0350-terminal-plans-sweep.md
+- Plan Status: Executing
+- Next Task: S1 classify all `plans/*.md` root files (dry-run table: status, contract status, review verdict → AUTO/HOLD/EXCLUDE)
 - Clear Note: (none)
 
 ## Mainline Snapshot Reading
@@ -31,10 +31,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- /Users/kito/Projects/repo-harness-wt-epc-09-drift-eval-release: plans/plan-20260723-0144-epc-09-drift-eval-release.md
-- /Users/kito/Projects/repo-harness-wt-epc-09-drift-eval-release: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-epc-09-drift-eval-release
-- /Users/kito/Projects/repo-harness-wt-terminal-plans-sweep: plans/plan-20260722-0350-terminal-plans-sweep.md
-- /Users/kito/Projects/repo-harness-wt-terminal-plans-sweep: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-terminal-plans-sweep
+- .: plans/plan-20260722-0350-terminal-plans-sweep.md
+- .: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-terminal-plans-sweep
 ## Active Sprint
 
 - Sprint: (none)
@@ -53,15 +51,14 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Checks
 
-- status=(none), source=(none), exit_code=(none), file=.ai/harness/checks/latest.json
+- status=pass, source=verify-sprint, exit_code=0, file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 2 changed/untracked path(s)
+- Summary: clean
 
 ```
- M plans/sprints/20260722-0001-evidence-projection-convergence.sprint.md
- M tasks/contracts/20260723-0144-epc-09-drift-eval-release.contract.md
+(none)
 ```
 
 ## Source Artifacts
