@@ -12,6 +12,12 @@
 
 ## Active Lessons
 
+- Date: 2026-07-23
+- Triggered by correction: EPC-07 added a private `planSlugFromPath` after Effective State had already declared `src/core/state/artifact-parsers.ts` as that symbol's canonical owner, so the merged `main` failed `check-state-boundaries` even though the EPC slice's focused tests passed.
+- Mistake pattern: treating a small parser as a harmless local helper without checking the canonical-symbol registry and the latest target branch before final verification.
+- Prevention rule: before adding or retaining a named parser/resolver helper under `src/`, check `scripts/check-state-boundaries.ts` and import the registered owner when one exists; after rebasing or merging the latest target, run `bun scripts/check-state-boundaries.ts` before push so concurrent authority changes cannot land a duplicate implementation.
+- Where to apply next time: new `src/` materializers, hook handlers, state/evidence projections, and any branch that ports private helpers from an older implementation.
+
 - Date: 2026-07-20
 - Triggered by correction: HRD-03's script retirement needed four separate contract amendment rounds because live consumers (installer evidence lists, sync-tool checks, generated-rule emitters, five locale READMEs, nine test files) were discovered one gate round at a time; HRD-04/05 then landed the same class of cutover with a single amendment round each by enumerating first.
 - Mistake pattern: starting a retirement/cutover implementation before enumerating every live consumer of the retired surface, so the allowlist grows reactively through repeated fail-fix-regate rounds.
