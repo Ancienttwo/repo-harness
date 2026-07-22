@@ -13,6 +13,12 @@
 ## Active Lessons
 
 - Date: 2026-07-23
+- Triggered by correction: the `verify-sprint` metadata test launched three runs inside one second, then selected the "latest" snapshot using only second-resolution `generated_at`; GitHub CI intermittently read an earlier run and failed even though the behavior under test was correct.
+- Mistake pattern: generating multiple uniquely named evidence artifacts but asserting through a timestamp scan instead of binding each assertion to the producer's explicit run ID.
+- Prevention rule: tests that create more than one run/evidence artifact must assign deterministic run IDs and read the exact named artifact; do not use timestamp ordering as evidence authority.
+- Where to apply next time: workflow helper fixtures, run-trace tests, evidence materializer tests, and any test that emits multiple artifacts into one directory.
+
+- Date: 2026-07-23
 - Triggered by correction: EPC-07 added a private `planSlugFromPath` after Effective State had already declared `src/core/state/artifact-parsers.ts` as that symbol's canonical owner, so the merged `main` failed `check-state-boundaries` even though the EPC slice's focused tests passed.
 - Mistake pattern: treating a small parser as a harmless local helper without checking the canonical-symbol registry and the latest target branch before final verification.
 - Prevention rule: before adding or retaining a named parser/resolver helper under `src/`, check `scripts/check-state-boundaries.ts` and import the registered owner when one exists; after rebasing or merging the latest target, run `bun scripts/check-state-boundaries.ts` before push so concurrent authority changes cannot land a duplicate implementation.
