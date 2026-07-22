@@ -49,17 +49,17 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
+> **Disposition**: external_pass
+> **Reviewer**: Claude
+> **Source**: claude-review
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:9f5180fce50fa3b8a6937d9172c06f0ae6a9d8817fd64fcd409d6b5ea4dff4cf
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: e5fb55e11863fa51a6945f411327be3cb5bd4c50
+> **Verification Evidence SHA256**: sha256:ba47b3820f528ee1b441ca234ab5c640da9f7d2fe76ed2bb27044073f89dcbfd
+> **Issued At**: 2026-07-22T16:20:14.798Z
 
-- Summary: No AcceptanceReceipt has been recorded.
+- Summary: EPC-07 accepted: recovery-view cutover — evidence-cited inventory incl. fifth-writer retirement, single materializer per surviving view single-hop from checkpoint, retired writers deleted with mirrors in lockstep, Stop semantics untouched, bare-Stop resume gap closed; gatekeeper PASS
 - Findings: none
 
 ## Behavior Diff Notes
