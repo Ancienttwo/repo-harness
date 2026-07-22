@@ -1,6 +1,6 @@
 # Task Contract: epc-01-evidence-event-store
 
-> **Status**: Active
+> **Status**: Done
 > **Plan**: plans/plan-20260722-1151-epc-01-evidence-event-store.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
