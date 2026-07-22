@@ -377,12 +377,12 @@ Acceptance:
 
 ### SSD-04 — Extract deterministic cross-review and preserve merge-gate isolation
 
-- [ ] Reuse/extract normalized review-subject and diff-fingerprint logic instead of adding a third Git scope parser.
-- [ ] Add deterministic branch/staged/unstaged/untracked scope capture bound to one base revision.
-- [ ] Move timeout, provider process invocation, transcript recovery, output normalization, and error codes into Core/Effects/CLI.
-- [ ] Create one host-aware `repo-harness-cross-review` package with explicit Claude and Codex provider modes.
-- [ ] Cover clean, staged, unstaged, untracked, timeout, empty, malformed, auth/nonzero, degraded scope, and exact-base cases.
-- [ ] Leave `merge-gate` source, output schema, no-tool execution, receipt binding, and ship enforcement unchanged.
+- [x] Reuse/extract normalized review-subject and diff-fingerprint logic instead of adding a third Git scope parser.
+- [x] Add deterministic branch/staged/unstaged/untracked scope capture bound to one base revision.
+- [x] Move timeout, provider process invocation, transcript recovery, output normalization, and error codes into Core/Effects/CLI.
+- [x] Create one host-aware `repo-harness-cross-review` package with explicit Claude and Codex provider modes.
+- [x] Cover clean, staged, unstaged, untracked, timeout, empty, malformed, auth/nonzero, degraded scope, and exact-base cases.
+- [x] Leave `merge-gate` source, output schema, no-tool execution, receipt binding, and ship enforcement unchanged.
 
 Acceptance:
 
@@ -392,12 +392,12 @@ Acceptance:
 
 ### SSD-05 — Establish one ChatGPT package source
 
-- [ ] Create one file-backed `repo-harness-chatgpt` package with setup, consult, continue, read-back, and bridge references.
-- [ ] Remove the inline `SKILL_MD` prose owner from `src/cli/mcp/setup.ts`; project canonical files instead.
-- [ ] Reconcile browser, GPT Pro, MCP Connector, coding-profile, PTY, session, login, cookie/token, and remote-control boundaries.
-- [ ] Make product planning independent from ChatGPT. ChatGPT discovery occurs only after explicit ChatGPT setup.
-- [ ] Add byte-parity tests between canonical source and installed/generated bridge/browser projections.
-- [ ] Keep browser/MCP CLI behavior and public tool names unchanged.
+- [x] Create one file-backed `repo-harness-chatgpt` package with setup, consult, continue, read-back, and bridge references.
+- [x] Remove the inline `SKILL_MD` prose owner from `src/cli/mcp/setup.ts`; project canonical files instead.
+- [x] Reconcile browser, GPT Pro, MCP Connector, coding-profile, PTY, session, login, cookie/token, and remote-control boundaries.
+- [x] Make product planning independent from ChatGPT. ChatGPT discovery occurs only after explicit ChatGPT setup.
+- [x] Add byte-parity tests between canonical source and installed/generated bridge/browser projections.
+- [x] Keep browser/MCP CLI behavior and public tool names unchanged.
 
 Acceptance:
 

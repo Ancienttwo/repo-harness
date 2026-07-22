@@ -588,3 +588,421 @@ git status --short                    only new files under assets/skills/**,
                                        tests/skill-surface/canonical-packages.test.ts,
                                        and this notes file
 ```
+
+## SSD-05: Establish one ChatGPT package source
+
+### Deliverables landed
+
+- `assets/skills/repo-harness-chatgpt/` (new, staged INERT per the SSD-03
+  convention: content only, not wired into the manifest or any selector —
+  see the inertness proof below): router `SKILL.md` (1883 bytes, under the
+  2048 cap) + `references/{setup.md,consult.md,continue.md,read-back.md,bridge.md}`.
+- `src/cli/mcp/setup.ts`: removed the inline `SKILL_MD` constant (262 lines)
+  and the inline `references/workflow.md` template literal it fed;
+  `runMcpInstallSkill` now reads `assets/skills/repo-harness-chatgpt/references/bridge.md`
+  from disk and projects those exact bytes.
+- `tests/cli/mcp-setup.test.ts`: added byte-parity and fail-closed coverage
+  for the new projection source; zero existing assertions changed.
+- `tests/cli/chatgpt-browser.test.ts`: zero changes (see below).
+- `tests/skill-surface/chatgpt-package.test.ts` (new): inertness proof, router
+  byte cap, reference reachability, and the reconciliation-complete proxy.
+
+### Drift reconciliation: who won each divergent line, and why
+
+Before this slice, "bridge mode" prose had two independently-maintained
+copies that had already drifted: the inline `SKILL_MD` constant in
+`src/cli/mcp/setup.ts` (what actually got installed) and the checked-in,
+self-hosted `.agents/skills/repo-harness-chatgpt-bridge/SKILL.md` (read-only
+source material per the dispatch; left byte-unchanged). A line-by-line diff
+of the two found exactly two substantive contradictions, both resolved
+against ground truth in code/tests/docs rather than by picking one file as a
+blanket winner:
+
+1. **Coding-profile tool count.** Inline `SKILL_MD` said the coding profile
+   "exposes only `open_workspace`, `read`, `apply_patch`, `exec_command`, and
+   `write_stdin` for direct coding" (implying 5 tools total). The checked-in
+   copy said it "retains the 19 workflow/status tools and adds exactly five
+   direct coding tools" (24 total). Verified against
+   `docs/reference-configs/chatgpt-coding-mcp.md:122-123` ("The profile
+   retains 19 workflow/status tools and adds exactly five direct coding
+   tools, for 24 tools total") — the checked-in wording was correct, the
+   installed wording was wrong. Canonical `bridge.md` now uses the correct
+   24-tools-total phrasing in both the mode-4 summary line and the "Coding
+   exception" paragraph.
+2. **PTY vs. pipe-only.** The checked-in copy's Troubleshooting said "PTY
+   returns `PTY_UNAVAILABLE`: keep the failure explicit; do not silently
+   downgrade a requested PTY to pipe execution" — describing a PTY-with-explicit-fallback
+   design. Inline `SKILL_MD` said "Coding process sessions are pipe-only
+   under Bun; stdin, polling, Ctrl-C/SIGINT, and process-tree cleanup remain
+   supported." Verified against the actual shipped contract: `buildCodingToolDefinitions()`
+   in `src/cli/mcp/coding-tools.ts` (the `write_stdin`/`exec_command` tool
+   descriptions say "pipe process session" / "pipe-only Bash sessions", no
+   PTY concept at all), the explicit contract test
+   `tests/cli/mcp-coding-tools.test.ts:118` (`'process tool contract is
+   pipe-only'`, asserting `exec_command`/`write_stdin` schemas have no
+   `tty`/`columns`/`rows` properties), and
+   `docs/reference-configs/chatgpt-coding-mcp.md:131` / `docs/architecture/modules/runtime-harness/mcp-sidecar.md:33`
+   (both say pipe-only). `PTY_UNAVAILABLE` does not exist as a string
+   anywhere in `src/`; the checked-in bridge Skill's Troubleshooting line was
+   stale, describing a design that was never shipped (it echoes an earlier
+   comparison to a reference implementation's PTY approach recorded in
+   `docs/researches/20260711-devspace-chatgpt-local-control.md:93`, not this
+   repo's actual `process-sessions.ts`). Canonical `bridge.md` keeps the
+   inline version's pipe-only wording verbatim.
+
+Every other paragraph in the two SKILL.md bodies (When To Use, First Reads,
+Agent Responsibilities, Required Planning Chain, the six-item Safety
+Boundaries list, the orchestrator dev-runner exception, Setup Commands,
+Execution Checklist, and the rest of Troubleshooting) was byte-identical
+between the two sources, so those sections carried over unchanged.
+
+The formerly-separate `references/workflow.md` (installed alongside
+`SKILL.md` but never linked from it, and not covered by any existing test)
+carried the same tool-count drift plus a near-duplicate restatement of the
+Planning Chain and Safety Boundary already in `SKILL.md`. Its one genuinely
+additive piece — the Sprint Format task-card template — is now folded into
+canonical `bridge.md` as its own `## Sprint Format` section. `runMcpInstallSkill`
+now projects the same canonical bytes to both `references/workflow.md` and
+`SKILL.md` (an explicit byte-identical mirror rather than an independently-maintained
+near-duplicate), which is what "one canonical byte source produces every
+ChatGPT Skill projection" means concretely for this destination pair.
+
+The `assets/skill-commands/repo-harness-gptpro` and `repo-harness-gptpro-setup`
+facades (read fully, left byte-unchanged per the dispatch's forbidden-files
+list) were a third drift source: their "MCP Read-Back Acceptance"/"Pro
+Surface Fallback" sections and `chatgptGuideMarkdown()`'s "Connector
+Invocation Evidence" section (in `setup.ts`, *not* part of the removed
+`SKILL_MD`) both independently implement the same
+`invocation_verified`/`approval_pending`/`surface_blocked`/`bundle_fallback`
+contract — confirmed shared by `tests/helpers/chatgpt-mcp-contract.ts`'s
+`assertChatGptMcpContract()`, which both `chatgptGuideMarkdown()` output and
+the gptpro Skill text must satisfy today. Their content is reconciled into
+canonical `references/read-back.md` (all four outcome labels, the four
+readiness checks, the Pro-sandbox process-pane guidance, and the fallback
+bundle provenance header). The gptpro facades' browser/setup protocol content
+is likewise reconciled into `references/consult.md` and `references/setup.md`,
+and the checked-in `repo-harness-chatgpt-browser` Skill's session/continuation
+rules into `references/continue.md`. `chatgptGuideMarkdown()` itself was
+deliberately left unmodified in `setup.ts` (see Deviations below) — it is
+parameterized (runtime `endpoint` substitution), used at three call sites
+with different behavior, and is operational HOWTO documentation
+(`docs/repo-harness-chatgpt-mcp-setup.md`), not Skill-prose in the sense the
+plan's "no inline Skill prose" targets (the plan names `setup.ts#SKILL_MD`
+specifically as the current owner to remove).
+
+### Projection-source resolution mechanics
+
+Followed the existing repo convention rather than inventing a new one:
+`src/cli/commands/docs.ts` and `src/cli/runtime/helper-runner.ts` both
+resolve `PACKAGE_ROOT`/`SOURCE_ROOT` as
+`resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')`
+(`src/cli/mcp/setup.ts` sits at the same depth, so the same relative walk
+lands on the repo root). `chatgptCanonicalSkillRoot()` reuses that pattern
+and additionally honors `REPO_HARNESS_SOURCE_ROOT` (the same override
+`helper-runner.ts#resolveHelperRuntime` already supports for pointing at a
+dev source checkout), rejecting a non-absolute value. This gave a real,
+precedented test-injection point for the fail-closed tests (point
+`REPO_HARNESS_SOURCE_ROOT` at a temp directory that omits or malforms
+`assets/skills/repo-harness-chatgpt/references/bridge.md`) without ever
+touching the real canonical file on disk. `readCanonicalChatgptBridgeSkill()`
+fails closed on: missing file (`existsSync` check with a named remediation
+path in the error), unreadable file (try/catch around `readFileSync`), and
+malformed frontmatter (regex-extracted frontmatter block must contain an
+exact `name: repo-harness-chatgpt-bridge` line and a non-empty
+`description:` line). All three failure modes are checked *before* the
+dry-run branch too, so a broken canonical source never reports a false
+"would install" — this was a deliberate, in-scope strengthening (impossible
+to observe before this slice, since the old `SKILL_MD` constant could never
+be "missing"), not a change to any previously-reachable behavior.
+
+### Every existing-test assertion changed, with justification
+
+- `tests/cli/mcp-setup.test.ts`: **zero existing assertions changed.** The
+  pre-existing "installs bridge skill template with overwrite protection"
+  test passes unmodified against the new canonical-read implementation
+  (verified: `bun test tests/cli/mcp-setup.test.ts` — 30 pass including the
+  4 new tests added, 0 fail). Four new tests were *added*, not adjusted:
+  byte-parity between the installed `SKILL.md`/`references/workflow.md` and
+  the real canonical `bridge.md`; missing-canonical fails closed (install and
+  dry-run) with nothing written; malformed-canonical fails closed with
+  nothing written; non-absolute `REPO_HARNESS_SOURCE_ROOT` is rejected.
+- `tests/cli/chatgpt-browser.test.ts`: **zero changes, in code or
+  assertions.** This file only reads the checked-in
+  `.agents/skills/repo-harness-chatgpt-browser/SKILL.md` and the untouched
+  `assets/skill-commands/repo-harness-gptpro/SKILL.md` directly off disk;
+  neither file was touched by this slice, and neither is produced by any
+  function in `setup.ts`. Confirmed by running the file unmodified against
+  the refactor before writing any new tests (49 pass, 0 fail) and again after
+  (still 49 pass, 0 fail, unchanged file).
+
+### Deviations from this brief
+
+None against the deliverables or acceptance criteria. One scope clarification
+worth recording explicitly: `chatgptGuideMarkdown()` in `setup.ts` (the
+`docs/repo-harness-chatgpt-mcp-setup.md` / `references/chatgpt-connector-manual.md`
+generator) was intentionally left in place and still called by
+`runMcpInstallSkill` for the third projected file. D2 names the inline
+`SKILL_MD` prose owner specifically for removal; `chatgptGuideMarkdown()` is a
+different, already-parameterized, already-tested function that also serves
+two non-Skill call sites (`runMcpSetupChatgpt`'s repo-scope guide doc and
+`runMcpPrintGuide`), and folding its runtime `endpoint` substitution into a
+static canonical byte file was not asked for and would have risked the
+heavily-asserted dynamic-endpoint behavior in `chatgptGuideMarkdown()`'s own
+existing test. Its "Connector Invocation Evidence" content was still
+reconciled *into* `references/read-back.md` at the content level (per the
+task's instruction to reconcile gptpro's overlapping prose into the canonical
+package even though gptpro's own files stay untouched); only the runtime call
+site in `setup.ts` was left pointed at the existing function.
+
+### Verification (tails)
+
+```text
+bun test tests/cli/mcp-setup.test.ts tests/cli/chatgpt-browser.test.ts
+  -> 62 pass, 0 fail, 563 expect() calls (21.46s)
+
+bun test tests/skill-surface/
+  -> 63 pass, 0 fail, 181 expect() calls (108ms)
+  (includes SSD-04's tests/skill-surface/cross-review-inertness.test.ts,
+  untouched, concurrently added by the other worker in this worktree)
+
+bun run check:type
+  -> clean, no errors
+
+git status --short --branch -uall
+  -> mine: M src/cli/mcp/setup.ts; M tests/cli/mcp-setup.test.ts;
+     ?? assets/skills/repo-harness-chatgpt/** (6 files);
+     ?? tests/skill-surface/chatgpt-package.test.ts
+  -> SSD-04's (untouched by this slice): ?? assets/skills/repo-harness-cross-review/**;
+     ?? src/cli/commands/cross-review.ts; ?? src/core/review/cross-review.ts;
+     ?? src/effects/review/cross-review-runner.ts; ?? tests/cli/cross-review.test.ts;
+     ?? tests/skill-surface/cross-review-inertness.test.ts
+```
+
+## SSD-04 -- Extract deterministic cross-review and preserve merge-gate isolation
+
+### Scope delivered
+
+- `src/core/review/cross-review.ts` (D1, pure): provider-mode/error-code
+  vocabularies, scope/result/finding types, `classifyCrossReviewOutcome`
+  (the single decision table for all six error codes + success), finding
+  parsing, recommendation building, auth-signal detection, and the pure
+  JSONL-assistant-line parser + transcript-candidate selector used by claude
+  mode's recovery path. No fs, no process execution, no throw-on-data-problem
+  -- matches `src/core/capabilities/registry.ts`'s house style.
+- `src/effects/review/cross-review-runner.ts` (D2): scope capture
+  (`captureCrossReviewScope`), default-base resolution, diff-text fetch for
+  the claude-mode prompt, jsonl transcript recovery (fs reads), and
+  `runCrossReview` -- the full orchestration entry point.
+- `src/cli/commands/cross-review.ts` (D3): `runCrossReviewCommand` +
+  `formatCrossReviewResult`, unregistered (see below).
+- `assets/skills/repo-harness-cross-review/` (D4): router `SKILL.md` (1955
+  bytes) + `references/claude-mode.md` + `references/codex-mode.md`.
+- `tests/cli/cross-review.test.ts` (D5): 30 tests -- scope capture (clean,
+  staged, unstaged, untracked, degraded, exact-base-binding), full-runner
+  outcomes via a fixture provider script (empty_output, timeout, auth_failure,
+  provider_nonzero, success, success-p1 with CLI exit code, json output),
+  claude-mode transcript recovery (malformed_transcript, empty_output with no
+  session file, a populated-scope success smoke), pure classification-table
+  unit tests for all six codes plus success, and the no-merge-gate
+  reachability static-import-scan assertion.
+- `tests/skill-surface/cross-review-inertness.test.ts`: sibling to
+  `canonical-packages.test.ts` (out of this slice's scope, so a dedicated
+  file instead of an edit there), scoped to just this one package --
+  frontmatter/router-size, reference reachability, no-undeclared-reference,
+  no-stale-pattern, shell-block-line-limit, and manifest/selector inertness.
+
+### Reuse vs. new (the plan's core requirement)
+
+- **Scope capture: reused, not re-derived.** `captureCrossReviewScope` calls
+  `buildReviewSubject` from `diff-fingerprint.ts` directly (zero edits to that
+  file) for the branch+staged+unstaged+untracked path union and the
+  base/head SHA resolution. This is the plan's explicit requirement ("Reuse/
+  extract normalized review-subject and diff-fingerprint logic instead of
+  adding a third Git scope parser") and is why "exact-base binding" holds for
+  free: `buildReviewSubject` already resolves `targetRef` to a concrete SHA
+  once per call.
+- **Provider process invocation: reused, not a fourth wrapper.** Both claude
+  and codex modes go through `runProcess` from `src/effects/process-runner.ts`
+  unmodified -- same bounded timeout, output capping, and redaction any other
+  effect gets. `runProcess` has no stdin-content parameter, so both providers'
+  prompts are delivered via argv rather than claude-review's original
+  stdin-pipe convention (see Deviations).
+- **Diff-text fetch and jsonl recovery: new, but not scope re-derivation.**
+  `fetchScopeDiffText` and `recoverClaudeTranscript` do their own small git/fs
+  calls (git diff text for prompt embedding; jsonl session-file reads), but
+  always operate on the path list `buildReviewSubject` already produced --
+  they format/recover text for an already-determined scope, they never decide
+  which paths are in scope.
+
+### Error-code vocabulary (closed union, six codes)
+
+`timeout | empty_output | malformed_transcript | auth_failure |
+provider_nonzero | degraded_scope` -- exhaustively defined in
+`classifyCrossReviewOutcome` (src/core/review/cross-review.ts):
+
+1. `degraded_scope` -- checked before any provider is spawned; fires when
+   `buildReviewSubject` returns `status: 'unknown'` (unresolvable base/HEAD,
+   or any git observation failure). Proven in tests by pointing
+   `providerCommand` at a nonexistent path alongside a bad base revision --
+   if the runner ever tried to invoke the provider, that would surface as a
+   different code, so `degraded_scope` also proves the short-circuit.
+2. `timeout` -- `runProcess`'s own `timedOut` flag. Always wins over any
+   recovered transcript (see Deviations: this is deliberately stricter than
+   the source shell).
+3. `auth_failure` vs. `provider_nonzero` -- both are a nonzero, non-timeout
+   exit; the split is a documented, mechanical substring match
+   (`matchesAuthFailureSignal`) against combined stdout+stderr+error text
+   (patterns: not authenticated, unauthorized, 401, please log/sign in, run
+   claude/codex login, invalid api key, authentication failed, no
+   credentials found). A CLI-binary-not-found spawn error (ENOENT) also
+   lands in `provider_nonzero` by this same path -- the closed union has no
+   seventh "not installed" code, and this is a deliberate, documented fold.
+4. `empty_output` -- clean exit (`ok: true`), empty stdout, and either no
+   recovery was attempted (codex mode, always) or recovery was attempted
+   (claude mode) and found nothing at all.
+5. `malformed_transcript` -- claude-mode-only: clean exit, empty stdout,
+   recovery attempted, found candidate `.jsonl` file(s), but extracted no
+   usable assistant text from any of them (JSON parse failure or no
+   `type: "assistant"` entries). Distinct from `empty_output`'s "found
+   nothing" case by construction in `selectRecoveredTranscript`.
+
+### Deliberate deviations from the two source shell skills
+
+- **Prompt delivery: argv, not stdin.** claude-review's original shell piped
+  the prompt via stdin; `runProcess` has no stdin-content option and adding
+  one would mean editing `src/effects/process-runner.ts`, which is outside
+  this slice's declared write scope. Both provider modes now pass the prompt
+  as a positional argv element instead (codex already worked this way).
+  Known limitation, not covered by the required test matrix: a very large
+  diff could theoretically hit an OS argv-length limit; that surfaces as an
+  explicit spawn failure (`provider_nonzero`), not a silent truncation or a
+  hang.
+- **Codex-mode prompt pins the resolved SHA, not a floating ref name.** The
+  original codex-review skill told Codex to `git diff $BASE...HEAD` where
+  `$BASE` was a branch/remote-tracking name that could move between prompt
+  construction and Codex's own (later) `git diff` invocation. The new prompt
+  substitutes `scope.baseRev` (the concrete SHA `buildReviewSubject` already
+  resolved), which strengthens "exact-base binding" for codex mode instead of
+  just preserving it.
+- **A recovered transcript never promotes a failed run to a pass.** The
+  original claude-review shell would `cat` a recovered transcript and
+  annotate it with a caveat regardless of whether the run had timed out or
+  exited nonzero -- reasonable for an interactive, human-facing shell
+  script. The new deterministic layer is stricter: `timeout` and
+  nonzero-exit failures stay failures (`status: 'failed'`) even when
+  `recoveredTranscript` is populated for human inspection; recovery can only
+  turn a *clean exit with empty stdout* into a success. This directly serves
+  the acceptance criterion "provider failure is explicit and never falls
+  back semantically" and is covered by a dedicated unit test
+  (`classifyCrossReviewOutcome: timeout wins even if a transcript was
+  recoverable`).
+- **SKILL.md description is one line, not the two old skills' YAML `>-`
+  folded block.** Matches the SSD-03 canonical packages' established
+  convention (`repo-harness-setup/SKILL.md` etc.) rather than literally
+  copying claude-review/codex-review's frontmatter shape; also what
+  `canonical-packages.test.ts`'s regex-based description-length check
+  assumes, which this slice's own sibling test mirrors.
+
+### Staging rationale (D4)
+
+`assets/skills/repo-harness-cross-review/` is staged directly under that
+final name (no disambiguating suffix like SSD-03's
+`repo-harness-plan-canonical` needed) -- the manifest has no existing
+`repo-harness-cross-review` entry to collide with, only a `note` on both
+`codex-review` and `claude-review` naming it as a "planned facade, not yet
+created in this slice" consolidation target. This slice's own inertness
+test asserts that note's `replacement` field stays `null` (i.e. SSD-06, not
+this slice, repoints it).
+
+### No-registration decision
+
+`src/cli/commands/cross-review.ts` exports `runCrossReviewCommand` and
+`formatCrossReviewResult` following the existing `migrate.ts`/`install.ts`
+convention (a pure `run<X>(opts)` over already-resolved options, argv
+parsing left to `index.ts`/commander) but is **not** imported by
+`src/cli/index.ts`. Per the plan's "File ownership by slice" table, SSD-06
+is the sole integration writer that performs the atomic public cutover
+registration; this slice proves the command works via direct import in
+tests only.
+
+### Acceptance reading recorded per the dispatch
+
+"Provider Skills no longer contain large executable shell workflows" is read,
+for this slice, as: the replacement code (D1/D2/D3) and package (D4) exist
+and are proven by the test suite above; the two *live* `claude-review`/
+`codex-review` skills are confirmed byte-unchanged (`git status --short
+assets/skills/claude-review assets/skills/codex-review` -> empty) and their
+own shell-embedded mechanics are deleted only at SSD-06, alongside the
+manifest repoint and old-source removal. "Cross-review cannot produce or
+verify a merge-gate receipt" is proven mechanically: a static scan of all
+three new module files' import lines rejects any reference to
+`merge-gate`, `acceptance-receipt`, `helper-runner`, or the
+`evidence/{verify-producer,checks-materializer,attested-import}` surfaces,
+plus a belt-and-suspenders check that none of the three files contain the
+literal word "receipt" at all.
+
+### Deviations from the task dispatch itself
+
+None. Hard constraints 1-5 all hold: `diff-fingerprint.ts` has zero edits
+(git diff confirms); `cross-review.ts` (D3) is exported but unregistered;
+no import of merge-gate/receipt surfaces (test-enforced); the two live
+skills are byte-unchanged; the new package is absent from the manifest and
+every selector output (test-enforced).
+
+### Verification (tails)
+
+```text
+bun test tests/cli/cross-review.test.ts
+  -> 30 pass, 0 fail, 69 expect() calls (8.00s)
+
+bun test tests/skill-surface/
+  -> 72 pass, 0 fail, 201 expect() calls (112ms)
+  (includes this slice's cross-review-inertness.test.ts plus
+  canonical-packages.test.ts, catalog.test.ts, mutation-path-coverage.test.ts,
+  and the other worker's chatgpt-package.test.ts, all green together)
+
+bun run check:type
+  -> clean, exit 0, no errors
+
+git status --short (assets/skills/claude-review assets/skills/codex-review)
+  -> empty (byte-unchanged, hard constraint 5 confirmed)
+
+git status --short (full)
+  -> mine: ?? assets/skills/repo-harness-cross-review/;
+     ?? src/cli/commands/cross-review.ts; ?? src/core/review/ ;
+     ?? src/effects/review/cross-review-runner.ts;
+     ?? tests/cli/cross-review.test.ts;
+     ?? tests/skill-surface/cross-review-inertness.test.ts
+  -> SSD-05's (untouched by this slice): M src/cli/mcp/setup.ts;
+     M tests/cli/mcp-setup.test.ts; ?? assets/skills/repo-harness-chatgpt/;
+     ?? tests/skill-surface/chatgpt-package.test.ts
+```
+
+### SSD-04/05 wave acceptance (gatekeeper PASS x2, wave CLEAN, 2026-07-23)
+
+Combined wave review passed both slices; disjoint ownership held exactly;
+diff-fingerprint.ts, src/cli/index.ts, manifest, installer files, and all
+frozen oracles untouched. Full suite 1973 pass / 1 skip / 0 fail.
+
+SSD-06 intake (carried findings, not fixed in the wave):
+
+- [MEDIUM, safe_auto] `assets/skills/repo-harness-chatgpt/references/read-back.md`
+  is the declared single source of the Connector Invocation Evidence
+  contract but is not bound to `assertChatGptMcpContract`; add one binding
+  assertion (natural home: tests/skill-surface/chatgpt-package.test.ts)
+  so the canonical owner cannot silently drift from the code/test
+  contract after gptpro retires.
+- [MEDIUM, manual] `src/cli/mcp/setup.ts:908` still copies an
+  inline-generated `references/chatgpt-connector-manual.md` into the
+  installed Skill tree (pre-existing, unlinked from the canonical
+  package) — dispose at SSD-06: drop it from install-skill (duplicates
+  `docs/repo-harness-chatgpt-mcp-setup.md`, already pointed to by
+  canonical bridge.md) or source it canonically with an endpoint
+  placeholder. Left as-is it reads as a Trace D violation at the final
+  gate.
+- [LOW, post-package] claude-mode argv prompt delivery can hit OS argv
+  limits on very large diffs (fails explicit `provider_nonzero`);
+  consider stdin support in process-runner only if observed in practice.
+- Gatekeeper ruling of record (wave review, adjudication f): the
+  parameterized `chatgptGuideMarkdown()` is operator setup documentation,
+  not Skill prose under Trace D; its two non-Skill call sites stay.
