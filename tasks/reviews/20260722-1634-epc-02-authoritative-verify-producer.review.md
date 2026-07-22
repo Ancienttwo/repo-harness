@@ -49,17 +49,17 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
+> **Disposition**: external_pass
+> **Reviewer**: Claude
+> **Source**: claude-review
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:76d38600a04e40d9fe09ddc20f0816c1ae17a0dd60cd226ec6a6fdb6a02a2158
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: a8cae4d78f1a4451f3a5335b9fc345740c3c61db
+> **Verification Evidence SHA256**: sha256:fe973d76838891ed8a05a957f6fdd59e7feff811628ee747583419dd4e127cee
+> **Issued At**: 2026-07-22T10:09:15.808Z
 
-- Summary: No AcceptanceReceipt has been recorded.
+- Summary: EPC-02 accepted: authoritative verify producer with construction-bound D3 subject identity, epoch constant single-sourced, cannot-bind skip semantics, mismatch fail-closed; live ledger readback evidence; gatekeeper gates clean after remediation
 - Findings: none
 
 ## Behavior Diff Notes
