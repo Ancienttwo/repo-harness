@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-23T01:42:13+0800 -->
+<!-- updated_at: 2026-07-23T03:07:22+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-07-23T01:42:13+0800
+> **Updated At**: 2026-07-23T03:07:22+0800
 > **Source Branch**: main
-> **Source Commit**: 92fef5e5
+> **Source Commit**: c9b69dbe
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: manual
@@ -31,8 +31,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- /Users/kito/Projects/repo-harness-wt-epc-08-context-packet-cutover: plans/plan-20260723-0024-epc-08-context-packet-cutover.md
-- /Users/kito/Projects/repo-harness-wt-epc-08-context-packet-cutover: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-epc-08-context-packet-cutover
+- /Users/kito/Projects/repo-harness-wt-epc-09-drift-eval-release: plans/plan-20260723-0144-epc-09-drift-eval-release.md
+- /Users/kito/Projects/repo-harness-wt-epc-09-drift-eval-release: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-epc-09-drift-eval-release
 - /Users/kito/Projects/repo-harness-wt-terminal-plans-sweep: plans/plan-20260722-0350-terminal-plans-sweep.md
 - /Users/kito/Projects/repo-harness-wt-terminal-plans-sweep: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-terminal-plans-sweep
 ## Active Sprint
@@ -61,7 +61,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ```
  M plans/sprints/20260722-0001-evidence-projection-convergence.sprint.md
- M tasks/contracts/20260723-0024-epc-08-context-packet-cutover.contract.md
+ M tasks/contracts/20260723-0144-epc-09-drift-eval-release.contract.md
 ```
 
 ## Source Artifacts

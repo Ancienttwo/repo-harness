@@ -1,6 +1,6 @@
 # Task Contract: epc-09-drift-eval-release
 
-> **Status**: Active
+> **Status**: Done
 > **Plan**: plans/plan-20260723-0144-epc-09-drift-eval-release.md
 > **Task Profile**: code-change
 > **Owner**: kito
