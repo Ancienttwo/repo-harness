@@ -1,6 +1,6 @@
 # Task Contract: epc-02-authoritative-verify-producer
 
-> **Status**: Active
+> **Status**: Done
 > **Plan**: plans/plan-20260722-1634-epc-02-authoritative-verify-producer.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
