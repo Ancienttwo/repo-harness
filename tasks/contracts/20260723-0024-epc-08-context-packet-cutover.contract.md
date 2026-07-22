@@ -1,6 +1,6 @@
 # Task Contract: epc-08-context-packet-cutover
 
-> **Status**: Active
+> **Status**: Done
 > **Plan**: plans/plan-20260723-0024-epc-08-context-packet-cutover.md
 > **Task Profile**: code-change
 > **Owner**: kito
