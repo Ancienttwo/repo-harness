@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-22T19:02:52+0800 -->
+<!-- updated_at: 2026-07-22T19:28:06+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-07-22T19:02:52+0800
+> **Updated At**: 2026-07-22T19:28:06+0800
 > **Source Branch**: main
-> **Source Commit**: 691930c0
+> **Source Commit**: 79f1190a
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: manual
@@ -31,8 +31,6 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- /Users/kito/Projects/repo-harness-wt-epc-03-postbash-observed-importer: plans/plan-20260722-1810-epc-03-postbash-observed-importer.md
-- /Users/kito/Projects/repo-harness-wt-epc-03-postbash-observed-importer: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-epc-03-postbash-observed-importer
 - /Users/kito/Projects/repo-harness-wt-epc-04-manual-external-attested-import: plans/plan-20260722-1810-epc-04-manual-external-attested-import.md
 - /Users/kito/Projects/repo-harness-wt-epc-04-manual-external-attested-import: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-epc-04-manual-external-attested-import
 - /Users/kito/Projects/repo-harness-wt-terminal-plans-sweep: plans/plan-20260722-0350-terminal-plans-sweep.md
@@ -63,7 +61,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ```
  M plans/sprints/20260722-0001-evidence-projection-convergence.sprint.md
- M tasks/contracts/20260722-1810-epc-03-postbash-observed-importer.contract.md
+ M tasks/contracts/20260722-1810-epc-04-manual-external-attested-import.contract.md
 ```
 
 ## Source Artifacts
