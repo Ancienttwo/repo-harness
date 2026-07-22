@@ -49,17 +49,17 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
+> **Disposition**: external_pass
+> **Reviewer**: Claude
+> **Source**: claude-review
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:3f84199781b62a17c0307a2e35ad03d56e8a9075038022a624a5eca572af3069
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: 822153362d008dc2f4418903711f85e9e8266207
+> **Verification Evidence SHA256**: sha256:ca18ffa0c3cca08270e97d3cbc3a2ed4e746b9c6b909309a09d1afb90a4a2bc7
+> **Issued At**: 2026-07-22T13:54:15.708Z
 
-- Summary: No AcceptanceReceipt has been recorded.
+- Summary: EPC-05 accepted: first authority cutover — checks/latest materialized only from the ledger (D7/D8), three direct authoring paths deleted, redaction typed-field exemption per ruling; round-2 gatekeeper PASS with live dogfood readback
 - Findings: none
 
 ## Behavior Diff Notes
