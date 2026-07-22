@@ -660,6 +660,86 @@ export function projectAcceptance(reviewPath: string, receipt: AcceptanceReceipt
   writeFileSync(reviewPath, next, 'utf-8');
 }
 
+/**
+ * EPC-04: at the end of a successful `record` (CLI level only -- this is
+ * never invoked from the exported `recordAcceptance`/`recordUserWaiverAcceptance`
+ * functions themselves, so direct library callers, including
+ * tests/acceptance-receipt.test.ts, are unaffected), import the
+ * just-recorded receipt into the EPC-01 ledger as one attested EvidenceEvent
+ * (D4). `reject` has no attested trust mapping (D4's closed table has only
+ * two entries) and is not itself a claim of acceptance, so it is skipped
+ * here rather than routed into `importAttestedEvidence` only to fail closed
+ * on `unsupported_disposition` -- that would turn an intentional, already
+ * exit-code-1 rejection into a hard crash of the record command, which is
+ * not this package's scope.
+ *
+ * Deployed-helper context (this same file running from an adopted repo's
+ * own `scripts/acceptance-receipt.ts`, where `src/effects/evidence` does
+ * not exist -- see tests/helper-scripts.test.ts): the dynamic import below
+ * resolves relative to `PACKAGE_ROOT`, which in that context is the
+ * deployed target repo's own root, not this tool's. A module-resolution
+ * failure there is indistinguishable from "no ledger to import into" and is
+ * treated as a cannot-bind skip (record still succeeds) -- never a crash.
+ * Any OTHER failure (the module resolves but the import itself reports a
+ * real fail-closed reason) still fails the record command: an acceptance
+ * that cannot enter the evidence authority must not report success.
+ */
+async function importAttestedReceiptIfApplicable(root: string, receipt: AcceptanceReceipt): Promise<void> {
+  if (receipt.disposition !== 'external_pass' && receipt.disposition !== 'user_waiver') return;
+
+  const modulePath = join(PACKAGE_ROOT, 'src', 'effects', 'evidence', 'attested-import.ts');
+  type AttestedImportModule = {
+    importAttestedEvidence: (input: {
+      repoRoot: string;
+      receipt: {
+        disposition: string;
+        reviewer: string;
+        source: string;
+        actor: string | null;
+        summary: string;
+        findings: AcceptanceFinding[];
+        subject_sha256: string;
+        target_revision: string;
+        contract_file: string;
+        issued_at: string;
+      };
+    }) => { ok: boolean; reason?: string; message?: string };
+  };
+  let attestedImport: AttestedImportModule;
+  try {
+    attestedImport = (await import(pathToFileURL(modulePath).href)) as AttestedImportModule;
+  } catch (error) {
+    if (isModuleUnresolvedError(error)) {
+      console.error('acceptance-receipt: attested-import module unavailable in this deployed-helper context; skipping ledger import (record unaffected)');
+      return;
+    }
+    throw error;
+  }
+
+  const result = attestedImport.importAttestedEvidence({
+    repoRoot: root,
+    receipt: {
+      disposition: receipt.disposition,
+      reviewer: receipt.reviewer,
+      source: receipt.source,
+      actor: receipt.actor,
+      summary: receipt.summary,
+      findings: receipt.findings,
+      subject_sha256: receipt.subject_sha256,
+      target_revision: receipt.target_revision,
+      contract_file: receipt.contract_file,
+      issued_at: receipt.issued_at,
+    },
+  });
+  if (!result.ok) {
+    fail(`AcceptanceReceipt recorded but ledger import failed closed: ${result.message ?? result.reason}`);
+  }
+}
+
+function isModuleUnresolvedError(error: unknown): boolean {
+  return (error as { code?: string } | null | undefined)?.code === 'ERR_MODULE_NOT_FOUND';
+}
+
 function option(argv: string[], name: string, required = true): string | undefined {
   const index = argv.indexOf(name);
   const value = index >= 0 ? argv[index + 1] : undefined;
@@ -715,6 +795,7 @@ export async function runAcceptanceReceiptCli(argv: string[], opts: Options = {}
         verification: option(argv, '--verification')!,
         now: opts.now,
       });
+      await importAttestedReceiptIfApplicable(root, receipt);
       const review = option(argv, '--review', false);
       if (review) projectAcceptance(resolve(root, review), receipt);
       console.log(JSON.stringify(receipt));
@@ -734,6 +815,7 @@ export async function runAcceptanceReceiptCli(argv: string[], opts: Options = {}
       findings: validateFindings(JSON.parse(findingsRaw)),
       now: opts.now,
     });
+    await importAttestedReceiptIfApplicable(root, receipt);
     const review = option(argv, '--review', false);
     if (review) projectAcceptance(resolve(root, review), receipt);
     console.log(JSON.stringify(receipt));
