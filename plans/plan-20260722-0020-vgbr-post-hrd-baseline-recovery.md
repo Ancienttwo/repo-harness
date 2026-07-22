@@ -368,24 +368,28 @@ Phase 1 and requires no rollback action.
       (`git clone --local` + repoint origin + fetch + fast-forward,
       `git worktree add` from that clone's `origin/main`) rather than the
       root checkout directly.
-- [ ] Create the detached subject checkout at exactly `VGBR_BASELINE_SHA`
+- [x] Create the detached subject checkout at exactly `VGBR_BASELINE_SHA`
       outside both checkouts; verify clean and pinned. `EXPECTED_SUBJECT_HASH`
-      stays `null` until Phase 2 preflight computes it.
-- [ ] Create the empty `REPORT_STAGE_DIR` outside the subject checkout.
-- [ ] Author the task contract in the orchestration worktree with the full
+      computed pre-invocation and reconfirmed identical post-invocation
+      (no drift).
+- [x] Create the empty `REPORT_STAGE_DIR` outside the subject checkout.
+- [x] Author the task contract in the orchestration worktree with the full
       Program Rule R6 field set, embedding the frozen machine acceptance
       rubric verbatim.
-- [ ] Write the attempt record (`outcome: null`, `started_at: null`,
-      `EXPECTED_SUBJECT_HASH: null`) in the orchestration worktree's
-      run-evidence location.
-- [ ] Run contract preflight and `check-task-workflow --strict`; fix only
-      contract/plan formalities (at most three rounds) or report blocked.
-- [ ] Commit plan/contract/notes/attempt-record locally in the orchestration
-      worktree; do not push.
-- [ ] (Phase 2, separate authorization) Run the exactly-once authoritative
-      invocation in the detached subject checkout, validate it, promote the
-      artifacts, record the outcome, and open the report PR carrying the
-      mandatory pre-EPC-after-HRD-and-BDD2 annotation.
+- [x] Write the attempt record (`outcome: accepted`, `started_at`/
+      `completed_at`/`EXPECTED_SUBJECT_HASH` all populated) in the
+      orchestration worktree's run-evidence location.
+- [x] Run contract preflight and `check-task-workflow --strict`; both passed
+      clean on first run.
+- [x] Commit plan/contract/notes/attempt-record locally in the orchestration
+      worktree; not pushed.
+- [x] (Phase 2, separately authorized) Run the exactly-once authoritative
+      invocation in the detached subject checkout (exit 0, 27/27 arms),
+      validate it (stage and canonical, both pass, byte binding held),
+      promote the artifacts to `evals/harness/reports/`, and record the
+      outcome (`accepted`). Opening the report PR carrying the mandatory
+      annotation is explicitly reserved for the orchestrator (no push, PR,
+      or receipt by this run) and remains the one outstanding action.
 
 ## Annotations
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
@@ -407,10 +411,11 @@ tracked backlog-row-3 plan artifact on `origin/main`.
 - [x] Fresh-fetch `origin/main` and verify it equals `VGBR_BASELINE_SHA` (`b32b328208da5b07418c4fd815491bcc3913ff9f`, re-pinned after `vgbr-rf` merged); stop and report if not.
 - [x] Capture this work-package plan (`Artifact Level: work-package`, `Promotion Reason: verification_boundary`); keep it current across the re-pin.
 - [x] Open the orchestration worktree on the fresh branch `codex/vgbr-r2-baseline-recovery` (never the voided attempt's slug) from the pinned SHA via a disposable control clone, not the root checkout.
-- [ ] Create the detached subject checkout at exactly `VGBR_BASELINE_SHA` outside both checkouts; verify clean and pinned; `EXPECTED_SUBJECT_HASH` stays null until Phase 2 preflight.
-- [ ] Create the empty `REPORT_STAGE_DIR` outside the subject checkout.
-- [ ] Author the task contract in the orchestration worktree with the full Program Rule R6 field set, embedding the frozen machine acceptance rubric verbatim.
-- [ ] Write the attempt record (`outcome: null`, `started_at: null`, `EXPECTED_SUBJECT_HASH: null`) in the orchestration worktree's run-evidence location.
-- [ ] Run contract preflight and `check-task-workflow --strict`; fix only contract/plan formalities (at most three rounds) or report blocked.
-- [ ] Commit plan/contract/notes/attempt-record locally in the orchestration worktree; do not push.
-- [ ] (Phase 2, separate authorization) Run the exactly-once authoritative invocation in the detached subject checkout, validate it, promote the artifacts, record the outcome, and open the report PR carrying the mandatory pre-EPC-after-HRD-and-BDD2 annotation.
+- [x] Create the detached subject checkout at exactly `VGBR_BASELINE_SHA` outside both checkouts; verify clean and pinned; `EXPECTED_SUBJECT_HASH` computed and reconfirmed identical post-invocation.
+- [x] Create the empty `REPORT_STAGE_DIR` outside the subject checkout.
+- [x] Author the task contract in the orchestration worktree with the full Program Rule R6 field set, embedding the frozen machine acceptance rubric verbatim.
+- [x] Write the attempt record (`outcome: accepted`, `started_at`/`completed_at` populated) in the orchestration worktree's run-evidence location.
+- [x] Run contract preflight and `check-task-workflow --strict`; both passed clean.
+- [x] Commit plan/contract/notes/attempt-record locally in the orchestration worktree; not pushed.
+- [x] Run the exactly-once authoritative invocation (exit 0, 27/27 arms), validate it (stage + canonical), and promote the artifacts to `evals/harness/reports/`.
+- [ ] Open the report PR carrying the mandatory pre-EPC-after-HRD-and-BDD2 annotation — reserved for the orchestrator (no push/PR/receipt by this run).

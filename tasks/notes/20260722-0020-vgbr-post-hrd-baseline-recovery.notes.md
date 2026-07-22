@@ -4,7 +4,7 @@
 > **Plan**: plans/plan-20260722-0020-vgbr-post-hrd-baseline-recovery.md
 > **Contract**: tasks/contracts/20260722-0020-vgbr-post-hrd-baseline-recovery.contract.md
 > **Review**: tasks/reviews/20260722-0020-vgbr-post-hrd-baseline-recovery.review.md
-> **Last Updated**: 2026-07-22 06:02
+> **Last Updated**: 2026-07-22 06:37
 > **Lifecycle**: notes
 
 ## Design Decisions
@@ -68,8 +68,46 @@
 
 ## Open Questions
 
-- None blocking Phase 1. Phase 2 needs to confirm `origin/main` has not moved
-  past `b32b328208da5b07418c4fd815491bcc3913ff9f` before invocation.
+- None. Phase 2 confirmed `origin/main` unmoved and the subject checkout
+  frozen before invocation.
+
+## Phase 2 Execution (2026-07-22)
+
+- Pre-invocation: subject checkout re-verified clean at
+  `b32b328208da5b07418c4fd815491bcc3913ff9f`; `EXPECTED_SUBJECT_HASH`
+  computed as `sha256:e5cc36efd0e5f27a55abf6747172f81ba24985baa869e5065a0c7e2eabb64feb`
+  and written to the attempt record along with `started_at` and
+  `invocation_count: 1`.
+- Invocation ran once via Bash `run_in_background`, exactly the recorded
+  `command_argv`, from the subject checkout, `--report` pointing at the
+  stage dir. Exit 0, 27/27 producer arms passed, ~15 minutes wall clock
+  (well under the 25-40 min advisory and the 50 min hard wall).
+- The background-completion notification did not re-invoke the agent this
+  session; the orchestrator independently verified completion (log tail,
+  report fields) and directed a foreground resume from validation onward.
+  The invocation itself, being a single untouched background process, was
+  unaffected by that notification gap — only the agent's own follow-up
+  timing was delayed. `completed_at` in the attempt record is sourced from
+  the log file's mtime (`06:28:42+0800`) with this delay noted inline.
+- Post-invocation: subject checkout re-verified porcelain-clean and
+  `EXPECTED_SUBJECT_HASH` recomputed identical — confirms `vgbr-rf`'s fix
+  held; no repeat of the first attempt's `0755`->`0777` mode-drift bug.
+- Validator passed against the stage report (`authoritative: true,
+  profile_base_count: 3, arm_count: 27`); `tests/harness-benchmark-matrix.test.ts`
+  passed 31/0. Rubric fields independently inspected from the JSON report
+  itself (not just the validator's summary): `authoritative=true`,
+  `source_commit=b32b3282...`, profiles exactly
+  `[no-harness, adaptive-lite, strict-harness]`, `scenario_count=9`,
+  `record_count=27`, all 27 `(profile, scenario_id)` pairs unique, 27 unique
+  workspaces, 27 unique homes, all 27 `status`/`grader_acceptance` = `passed`.
+- Promoted the triplet into `evals/harness/reports/` (byte-identical `cmp`
+  against the stage copies), overwriting the historical `606b02c1...`
+  report. Re-ran the validator against the canonical copy: same
+  `report_evidence_sha256` as the stage validation, confirming byte binding
+  held through the copy.
+- Attempt record finalized: `outcome: accepted`, `completed_at` set, full
+  rubric/validation evidence embedded. No AcceptanceReceipt recorded (out of
+  this run's scope per the resume authorization's step 8).
 
 ## Evidence Links
 
