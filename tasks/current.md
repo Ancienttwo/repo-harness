@@ -1,27 +1,27 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-22T03:02:30+0800 -->
+<!-- updated_at: 2026-07-22T11:49:18+0800 -->
 <!-- stale_after: 24h -->
 
-> **Status**: ManualClearedWithActiveWork
-> **Updated At**: 2026-07-22T03:02:30+0800
+> **Status**: Active
+> **Updated At**: 2026-07-22T11:49:18+0800
 > **Source Branch**: main
-> **Source Commit**: aa8575ee
+> **Source Commit**: 7871f174
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: archive-workflow
+> **Reason**: manual
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 
 ## Current Focus
 
-- Status: ManualClearedWithActiveWork
-- Active Plan: plans/plan-20260722-0020-vgbr-post-hrd-baseline-recovery.md
-- Plan Status: Approved
-- Next Task: Fresh-fetch `origin/main` and verify it equals `VGBR_BASELINE_SHA` (`0852e9ab72f19b3794d5b8f9463a172e498686c7`); stop and report if not.
-- Clear Note: Manual clear requested, but active work markers still exist. Idle was not written.
+- Status: Active
+- Active Plan: (none)
+- Plan Status: (none)
+- Next Task: inspect active worktree marker(s)
+- Clear Note: (none)
 
 ## Mainline Snapshot Reading
 
@@ -31,8 +31,10 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- .: plans/plan-20260722-0020-vgbr-post-hrd-baseline-recovery.md
-- .: active-worktree owner -> /Users/kito/Projects/repo-harness
+- /Users/kito/Projects/repo-harness-wt-epc-00-program-canonicalization: plans/plan-20260722-1107-epc-00-program-canonicalization.md
+- /Users/kito/Projects/repo-harness-wt-epc-00-program-canonicalization: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-epc-00-program-canonicalization
+- /Users/kito/Projects/repo-harness-wt-terminal-plans-sweep: plans/plan-20260722-0350-terminal-plans-sweep.md
+- /Users/kito/Projects/repo-harness-wt-terminal-plans-sweep: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-terminal-plans-sweep
 ## Active Sprint
 
 - Sprint: (none)
@@ -47,7 +49,7 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - `tasks/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`: status=completed, current_slice=completed-20260713-policy-seed, source_plan=plans/plan-20260712-2215-agent-fleet-specialists.md
 ## Handoff
 
-- Exact Next Step: If a major module was just completed, stage its coherent diff first; then continue the next Task Breakdown item: Fresh-fetch `origin/main` and verify it equals `VGBR_BASELINE_SHA` (`0852e9ab72f19b3794d5b8f9463a172e498686c7`); stop and report if not.
+- Exact Next Step: (none)
 
 ## Checks
 
@@ -55,20 +57,11 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 11 changed/untracked path(s)
+- Summary: 2 changed/untracked path(s)
 
 ```
- D HANDOFF.md
- D plans/plan-20260714-1353-design-options-proactive-choice.md
- D tasks/contracts/20260714-1353-design-options-proactive-choice.contract.md
- D tasks/notes/20260714-1353-design-options-proactive-choice.notes.md
- D tasks/reviews/20260714-1353-design-options-proactive-choice.review.md
-?? plans/archive/plan-20260714-1353-design-options-proactive-choice.md
-?? plans/plan-20260722-0020-vgbr-post-hrd-baseline-recovery.md
-?? tasks/archive/contract-20260722-0302-design-options-proactive-choice.md
-?? tasks/archive/notes-20260722-0302-design-options-proactive-choice.md
-?? tasks/archive/review-20260722-0302-design-options-proactive-choice.md
-?? tasks/archive/todo-20260722-0302-design-options-proactive-choice.md
+ M plans/sprints/20260722-0001-evidence-projection-convergence.sprint.md
+ M tasks/contracts/20260722-1107-epc-00-program-canonicalization.contract.md
 ```
 
 ## Source Artifacts

@@ -1,6 +1,6 @@
 # Task Contract: epc-00-program-canonicalization
 
-> **Status**: Active
+> **Status**: Done
 > **Plan**: plans/plan-20260722-1107-epc-00-program-canonicalization.md
 > **Task Profile**: docs-only
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
