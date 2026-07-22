@@ -49,17 +49,17 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
+> **Disposition**: external_pass
+> **Reviewer**: Claude
+> **Source**: claude-review
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:8a48a87d4183098e73ae4f89c74fed8f1767410bd1f5272e245d4ec977b74183
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: b32b328208da5b07418c4fd815491bcc3913ff9f
+> **Verification Evidence SHA256**: sha256:973af62c8692f15f258d8d329c93390d187f0b52f99a8c9eaef789306e6de6a4
+> **Issued At**: 2026-07-22T02:46:23.811Z
 
-- Summary: No AcceptanceReceipt has been recorded. The authoritative invocation, validator (stage and canonical), and matrix test have all completed and passed against the frozen rubric; this run does not record a receipt per its explicit boundary (`orchestrator ships`).
+- Summary: One-shot authoritative 3x9 baseline recovered at b32b3282: 27/27 arms passed in 15m37s, attempt record shows exactly one invocation, subject hash recomputed identical post-run (vgbr-rf guard held), validator passed at stage and canonical with identical report_evidence_sha256, rubric fields verified against the promoted report, 12/12 exit criteria Fulfilled; baseline annotated as current pre-EPC after HRD and acknowledged parallel changes.
 - Findings: none
 
 ## Behavior Diff Notes
