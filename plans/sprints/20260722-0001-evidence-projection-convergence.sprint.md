@@ -82,6 +82,9 @@ contract, and records it as `POST_<PREDECESSOR>_SHA`. Concretely:
   First pinned `0852e9ab` (2026-07-22); superseded before any invocation
   consumed it — re-pinned after `vgbr-rf` merges (see Attempt ledger).
 - `POST_VGBR_SHA` — pinned by the EPC-00 contract after VGBR-R merges.
+  Pinned: `ba0e3970e733b34306a2c16cec31547483a2c648` (2026-07-22, fresh
+  fetch verified equal to `origin/main` and local `main` at pin time; the
+  VGBR-R row-flip commit).
 - `POST_EPC_SHA` — pinned by the SSD activation contract after EPC-09 merges.
 
 ### R2 — Two-layer concurrency gate
@@ -149,6 +152,26 @@ repo-harness run contract-run preflight --contract <contract> --repo <wt> --json
 repo-harness run check-task-workflow --strict
 ```
 
+## Program annotation — VGBR baseline provenance (finalized by EPC-00)
+
+The Program originally lost its ordered benchmark baseline: the only
+prior authoritative report (`606b02c1...`) predates ESA-era `src/cli`
+and `assets` changes and the runner's subject-immutability fix, so it
+satisfies nothing under the current subject definition. VGBR-R was
+therefore run *after* HRD closeout as a deliberate recovery — not a
+re-litigation of history and never a claim that LSC or any earlier
+package consumed this baseline at the time. The authoritative baseline
+is `VGBR_BASELINE_SHA = b32b3282`, attempt
+`vgbr-b32b3282-20260722-a01`, 27/27 arms, canonical reports at
+`evals/harness/reports/profile-comparison.{json,md,sha256.json}`.
+Because BDD2 follow-through (PR #109, merge `9e9dce6e...`) landed after
+HRD closeout and touched `src/cli` and `assets` — both benchmark
+subject inputs — this baseline is annotated as the **current pre-EPC
+baseline after HRD and acknowledged parallel changes**, and no artifact
+in this Program may describe it as a pure post-HRD baseline.
+`POST_VGBR_SHA = ba0e3970...` (VGBR-R PR #115 merged; subject
+quiescence lifted) is the EPC-00-pinned base for the EPC arc.
+
 ## Backlog
 
 Ordered execution queue. Every row is an independent PR with a
@@ -167,8 +190,8 @@ machine-checkable acceptance line.
 | 9 | [ ] | `epc-05` — checks/latest materializer | contract | `checks/latest` is materialized only from the ledger via exact-subject selection (D7); every direct authoring path deleted in this package; no-independent-authoring test passes | (create at execution) |
 | 10 | [ ] | `epc-06` — checkpoint materialization | contract | One checkpoint materialization transaction: accepted events → canonical machine projection → deterministically derived human view; staged install with last-published marker; partial generation detected and rejected; Markdown never becomes writable authority | (create at execution) |
 | 11 | [ ] | `epc-07` — recovery-view inventory and minimal cutover | contract | Consumer inventory for handoff/resume/current/task-handoff complete with keep/merge/retire verdicts; surviving views get one materializer each; retired writers deleted same-package; projection-drift and no-independent-authoring tests pass | (create at execution) |
-| 12 | [ ] | `epc-08` — Context Packet cutover | contract | SessionStart Context Packet served from canonical projections; token budget and p95 measured against the audit's targets with evidence in the report; old assembly path deleted same-package | (create at execution) |
-| 13 | [ ] | `epc-09` — drift check, matched post-eval, release closeout | contract | Cross-package projection-drift check green; deprecation residue scan clean; one matched post-EPC benchmark (same runner/manifest/profiles/rubric, one invocation, descriptive comparison); release notes and Program closeout merged | (create at execution) |
+| 12 | [ ] | `epc-08` — Context Packet cutover | contract | SessionStart Context Packet served from canonical projections; across the 27-state Authority×Profile panel every sample has estimated_tokens <= 1500 and within_budget == true, and panel p95(estimated_tokens) <= 700 (method utf8_bytes_div_4), with the per-sample table in the report; old assembly path deleted same-package | (create at execution) |
+| 13 | [ ] | `epc-09` — drift check, matched post-eval, release closeout | contract | Cross-package projection-drift check green; deprecation residue scan clean against a checked-in retired-paths/symbols list (union of EPC-05/07/08 deletions, zero hits); one matched post-EPC benchmark (same runner/manifest/profiles/rubric, one invocation, descriptive comparison) or, if not executed, the VGBR report relabeled "descriptive pre-EPC baseline only" with no benchmark-improvement claim as a checked closeout assertion; release notes and Program closeout merged | (create at execution) |
 
 ## Row 3 — VGBR-R protocol
 
@@ -324,6 +347,195 @@ gap, the post-HRD recovery decision, and the acknowledged BDD2 parallel
 change in the Program annotation; confirms rows 5–13 acceptance lines;
 defines the Context Packet token/p95 acceptance numbers for EPC-08 from the
 audit's targets; and confirms the EPC-09 matched post-eval decision below.
+
+### Frozen decisions (EPC-00, 2026-07-22)
+
+Frozen by EPC-00 at `POST_VGBR_SHA = ba0e3970`. Each decision below is
+the Program's design authority for rows 5–13; later contracts cite
+these decisions and do not re-decide them. Current-state anchors:
+`verify-sprint` writes `.ai/harness/checks/latest.json`
+(`scripts/verify-sprint.sh:504`); the PostBash importer writes
+`checks/post-bash-latest.json` with `source: "post-bash"`
+(`src/cli/hook/command-observed.ts:220`); four independent
+recovery-view writers exist (`workflow_write_handoff`,
+`codex-handoff-resume.sh`, `refresh-current-status.sh`,
+`prepare-codex-handoff.sh`); the Context Packet budget is
+`SESSION_CONTEXT_TOKEN_BUDGET = 1500` with estimator
+`ceil(utf8_bytes/4)` (`src/cli/hook/session-context-budget.ts:5,52`);
+the repo's uniform hash algorithm is sha256.
+
+**D1 — Ledger topology (CONFIRMED, sub-decisions closed).**
+`.ai/harness/evidence/events/` per-worktree and gitignored;
+`.ai/harness/evidence/blobs/` content-addressed and gitignored; tracked
+reviews/receipts reference accepted event IDs and hashes only; no
+shared mutable store across worktrees. Retention: append-only within
+the worktree lifetime; monthly rotation to
+`.ai/harness/evidence/archive/events-YYYYMM.jsonl` (gitignored),
+mirroring the existing `.ai/harness/archive/` precedent; never prune an
+event while it is the newest accepted evidence for the active subject.
+Compaction: checkpoint-driven only (EPC-06), never mtime; once a newer
+checkpoint supersedes older events for the same `subject_hash`, the
+superseded events may move to archive; the live log is never rewritten
+in place. Branch/reset behavior: the store is untracked and
+per-worktree, so `checkout`/`branch`/`reset --hard`/`merge` never add,
+drop, or reorder events; evidence outlives a working-tree reset; a
+fresh worktree starts with an empty store and writes a genesis record
+on first evidence. Cleanup ownership: the worktree owns its store;
+`contract-worktree finish` is the cleanup point — durable conclusions
+are already promoted into tracked reviews/receipts at finish, so the
+per-worktree `events/` + `blobs/` are archived or discarded with the
+worktree. No global GC daemon, no cross-worktree sweep.
+
+**D2 — Cutover epoch (REPLACED with a successor-pinned rule).**
+`ledger_epoch_start_sha` is not knowable at EPC-00 time; the rule is
+frozen instead: the EvidenceEvent store's genesis record captures
+`ledger_epoch_start_sha` = the exact base SHA the EPC-01 contract pins
+at its own fresh fetch (R1). Writing the genesis record is a hard
+precondition of the first append. Pre-epoch artifacts — today's
+`events.jsonl`, `checks/latest.json`, `checks/post-bash-latest.json`,
+`journal/post-edit/`, `runs/*.json` — are legacy evidence:
+human/tool-readable, never parsed as `EvidenceEvent`s, never
+backfilled, and can never satisfy an EPC gate. Any consumer that tries
+to read a pre-epoch file as an `EvidenceEvent` fails closed.
+
+**D3 — Subject identity (CONFIRMED, exact field list frozen).**
+Envelope: `schema_version`, `worktree_id`. Identity fields:
+`authority_commit` (plan/contract-authorizing commit) · `base_commit`
+(worktree base = the R1-pinned SHA) · `target_commit` (HEAD candidate
+under evaluation) · `scope_hash` (sha256 of the ordered
+`allowed_paths` set) · `subject_hash` (content hash over the frozen
+subject inputs, same construction the benchmark runner uses) ·
+`contract_hash` (sha256 of the active contract file) · `command_hash`
+(sha256 of the exact verification command; equals the attempt-record
+field `command_sha256`) · `env_provider_id` (provider +
+`provider_cli_version` + isolated workspace/home id). This generalizes
+the existing `subject_sha256`/`verification_evidence_sha256` binding so
+a gate can distinguish "same content, different authority/target".
+
+**D4 — Trust matrix (CONFIRMED; external_attested placement pinned).**
+Four classes: `authoritative_machine` (exact-subject machine
+verification only) | `observed` (never satisfies a machine gate) |
+`human_acceptance` (manual gates only) | `external_attested`
+(contract-gated). `external_attested` satisfies a machine gate only
+where the active contract's Acceptance Policy explicitly enumerates it
+(grounded in the existing `acceptance_receipt.disposition:
+"external_pass"` + contract Acceptance Policy block). Default is deny:
+absent an explicit allow, `external_attested` is treated as `observed`
+for that gate. Projections (`checks/latest`, handoff, resume,
+`tasks/current`, any Markdown) carry no independent trust and can
+never be re-promoted to authority.
+
+**D5 — Event identity and replay (REPLACED with concrete mechanics).**
+`event_id`: lexicographically sortable time-embedding ULID,
+`evt-<ULID>`; the existing `run-...` value is recorded as
+`correlation_run_id`, not the primary key. Idempotency key:
+`sha256(canonical(subject_identity ‖ event_type ‖ trust_class ‖
+payload_hash ‖ producer))`; identical key ⇒ no-op dedup (re-importing
+the same external attestation twice yields exactly one accepted
+event). Ordering: total order by append position in the per-worktree
+log — never `ts`, never mtime; `ts` and ULID are descriptive/tie-break
+only. Supersedes: an event may carry `supersedes: [event_id...]`;
+superseded events remain in the immutable log but are excluded from
+the accepted projection; supersession is monotonic and acyclic.
+Replay determinism: folding the log from genesis with the D7 selection
+is a pure function — identical accepted set and identical
+`checks/latest` bytes on every replay. Corrupt-tail recovery: records
+append atomically (whole-line append + fsync; checkpoints use
+temp-file + rename); on read, the first unparseable/truncated record
+truncates the accepted log at the last valid offset (fail-closed —
+never skip a corrupt middle record and continue); the discarded tail
+is quarantined to `events.corrupt-<ts>` for audit.
+
+**D6 — Blob and safety policy (CONFIRMED, numbers/rules closed).**
+Max inline payload: 200 lines or 8 KiB, whichever first (reusing the
+PostBash offload precedent); overflow goes to a content-addressed
+blob; the event keeps only `blob_sha256` + `blob_bytes`. Redaction:
+deny-by-construction — events store structured fields and hashes only;
+raw environment is never captured; a fixed secret denylist (the
+existing `GH_TOKEN`/`ANTHROPIC_API_KEY`/`CLAUDE_CODE_OAUTH_TOKEN`/
+`SSH_AUTH_SOCK` family) plus a high-entropy-token pattern replaces any
+match with `sha256:<hash>` before write; this must be a construction
+invariant of the event writer, not a post-hoc scrubber. Path rules:
+absolute paths prohibited in payloads — repo-relative only; fail
+closed on any path escaping the repo root. Symlinks: never
+dereferenced when hashing/reading subject or blob inputs; recorded as
+metadata (link + target hash). Binary evidence: always offloaded to
+`blobs/`, never inline (`blob_sha256`, `blob_bytes`, `content_type`).
+Hash algorithm: sha256, hex, `sha256:`-prefixed — the single algorithm
+already used repo-wide. Blob ownership: write-once, immutable, name =
+content hash, per-worktree, no cross-worktree dedup; orphan blobs
+swept at worktree finish.
+
+**D7 — `checks/latest` selection rule (CONFIRMED, predicate frozen).**
+
+```text
+accepted := events WHERE
+     worktree_id   == current worktree
+ AND contract_id   == active contract
+ AND subject_hash  == frozen-subject hash        (exact equality)
+ AND trust_class ∈ {authoritative_machine}       (human_acceptance /
+                    external_attested admitted only where the contract's
+                    Acceptance Policy enumerates them — D4)
+ AND event_id NOT ∈ (union of supersedes[])
+winner := last(accepted ORDER BY append_position ASC)
+          -- never mtime / filename recency / last-writer-wins
+materialize := deterministic projection -> checks/latest.json
+               carrying D8 provenance
+```
+
+No exact `subject_hash` match ⇒ `checks/latest` reports
+`status: "unsatisfied"` (fail-closed); it never falls back to a stale
+or different-subject event.
+
+**D8 — Projection provenance (CONFIRMED, exact field list frozen).**
+Every projection carries: `schema_version` · `generated_at` ·
+`materializer_version` · `source_event_ids` (ordered accepted IDs
+folded) · `source_checkpoint_id` (null when materialized directly from
+the log) · `subject_hash` · `content_hash` (sha256 of the projection
+payload itself) · `worktree_id` · `contract_id`. The EPC-09 drift
+check recomputes a projection from `source_event_ids` and compares
+`content_hash`; zero drift is green.
+
+**D9 — Recovery-view minimization (framework + preliminary verdicts
+frozen; EPC-07 completes the inventory).**
+Framework: exactly one materializer per surviving view, sourced from
+the checkpoint/ledger; every retired independent writer deleted
+same-package (R5). Preliminary verdicts over the four known writers:
+handoff (`handoff/current.md`, `workflow_write_handoff`) — KEEP as the
+primary per-worktree recovery projection; retire the bash writer,
+regenerate from checkpoint. resume (`handoff/resume.md`,
+`codex-handoff-resume.sh`) — MERGE into the handoff materializer: one
+materializer emits both views deterministically; the separate resume
+writer retires. tasks-current (`tasks/current.md`,
+`refresh-current-status.sh`) — KEEP as a deterministic tracked
+projection; materializer rewiring deferred to EPC-07. task-handoff
+(Codex-global packet, `prepare-codex-handoff.sh`) — MERGE payload /
+RETIRE independent writer: its unique payload becomes an additional
+output target of the single handoff/resume materializer. If EPC-07's
+inventory finds an undeclared fifth consumer, the merge/retire map is
+revised in EPC-07's contract, not ad hoc.
+
+### Rows 5–13 machine-operability confirmation (EPC-00)
+
+Rows 5–11 (`epc-01`..`epc-07`) are confirmed machine-operable as
+written; their design terms resolve to frozen decisions D1–D9 (row 9's
+"every direct authoring path" is exactly `scripts/verify-sprint.sh:504`
+and the `{}` bootstrap in `.ai/hooks/lib/workflow-state.sh`; row 11's
+inventory enumerates the four writers named in D9). Row 12's
+acceptance line is replaced and row 13's is amended by EPC-00 (see the
+backlog table); both are clarifications, not scope changes. The EPC-08
+token gate derives from the audit LOOP-12 targets (`max 1500`, `p95 ≤
+700 tokens`) with the measurement method fixed to the existing
+estimator (`utf8_bytes_div_4`) over a 27-state Authority×Profile panel
+(9 authority states × 3 profiles, one deterministic sample per state).
+SessionStart latency is reported descriptively (≥20 iterations per
+state, matching HRD-08); the audit sets no SessionStart-latency gate,
+so EPC-08 gates only on the two token numbers. The Row 13 matched
+post-eval decision is re-affirmed as written, with its rubric frozen
+before invocation exactly as VGBR-R's was, and its cannot-execute
+fallback (relabel `descriptive pre-EPC baseline only`; no
+benchmark-improvement claim) is a checked closeout assertion, not
+prose.
 
 ## Row 13 — EPC-09 matched post-eval decision
 
