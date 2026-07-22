@@ -110,9 +110,27 @@ workflow_ensure_harness_surface() {
     "$(dirname "$(workflow_pending_orchestration_file)")" \
     "$(workflow_runs_dir)"
 
-  [[ -f "$(workflow_checks_file)" ]] || printf "{}\n" > "$(workflow_checks_file)"
-  [[ -f "$(workflow_handoff_file)" ]] || printf "# Harness Handoff\n\n> **Reason**: bootstrap\n" > "$(workflow_handoff_file)"
-  [[ -f "$(workflow_resume_packet_file)" ]] || printf "# Codex Resume Packet\n\n> **Reason**: bootstrap\n" > "$(workflow_resume_packet_file)"
+  # EPC-05: no {} bootstrap for checks/latest.json here anymore -- it is now
+  # materialized exclusively from the evidence ledger
+  # (src/effects/evidence/checks-materializer.ts); a missing file is genuine
+  # absence, not a placeholder this library should paper over. Every existing
+  # consumer of workflow_checks_file's content already treats "missing or
+  # empty" as its own fail-closed branch (workflow_checks_pass,
+  # workflow_acceptance_receipt_status, workflow_next_action's `[[ ! -f
+  # "$checks_file" ]]` check above), so removing this bootstrap changes no
+  # consumer's observable pass/fail outcome -- only which message they print.
+  #
+  # EPC-07: the same reasoning now applies to handoff/resume -- this was an
+  # undeclared fifth writer (Phase A inventory finding: any
+  # workflow_append_event/workflow_write_run_summary call, reachable from
+  # unrelated event-logging paths, silently planted a one-line placeholder
+  # here before the real materializer ever ran). Recovery views now render a
+  # typed minimal state even with no checkpoint published yet (see
+  # scripts/recovery-view-cli.ts / src/effects/evidence/recovery-materializer.ts),
+  # so the placeholder is redundant and reintroduces exactly the
+  # silently-satisfied-expectation risk EPC-05 already closed for
+  # checks/latest.json. A missing handoff/resume file is genuine absence
+  # until the single materializer runs.
   [[ -f "$(workflow_failure_log_file)" ]] || : > "$(workflow_failure_log_file)"
   [[ -f "$(workflow_events_file)" ]] || : > "$(workflow_events_file)"
 }
@@ -1770,222 +1788,27 @@ workflow_contract_allows_path() {
 }
 workflow_write_handoff() {
   local reason="${1:-session-stop}"
-  local handoff_file active_plan active_contract active_review active_notes checks_file next_task changed_files diff_stat spec_file source_plan parent_run_id supersedes
-  local next_action next_stage next_command next_message
-  local resume_file trace_file recent_commands blockers decisions goal latest_trace_file
-  local active_sprint active_sprint_row
-  local changed_count untracked_count
+  local source_plan parent_run_id bun_bin
 
+  # EPC-07: independent handoff/resume content assembly retired same-package
+  # (Phase A/B: tasks/contracts/20260722-2246-epc-07-recovery-view-cutover.contract.md).
+  # Rendering now lives in the single standalone materializer,
+  # scripts/recovery-view-cli.ts (mirrored byte-identically to
+  # assets/templates/helpers/recovery-view-cli.ts), kept consistent by
+  # inspection with src/effects/evidence/recovery-materializer.ts -- the
+  # authoritative in-process implementation the TS Stop handler imports
+  # directly at real Stop time. This function still owns the
+  # event-journal/run-summary bookkeeping below: those are not among
+  # EPC-07's four named recovery views.
   workflow_ensure_harness_surface
-  handoff_file="$(workflow_handoff_file)"
-  checks_file="$(workflow_checks_file)"
-  resume_file="$(workflow_resume_packet_file)"
-  spec_file="docs/spec.md"
-  active_plan="$(get_active_plan || true)"
-  active_contract="$(workflow_active_contract || true)"
-  active_review="$(workflow_active_review || true)"
-  active_notes="$(workflow_active_notes || true)"
-  active_sprint=""
-  if [[ -f ".ai/harness/sprint/active-sprint" ]]; then
-    active_sprint="$(cat ".ai/harness/sprint/active-sprint" 2>/dev/null | xargs)"
-  fi
-  active_sprint_row="(none)"
-  if [[ -n "$active_sprint" && -f "$active_sprint" ]]; then
-    active_sprint_row="$(
-      awk -v plan="$active_plan" '
-        /^\|[[:space:]]*[0-9]+[[:space:]]*\|/ {
-          if (plan != "" && index($0, plan) > 0) {
-            print
-            found = 1
-            exit
-          }
-        }
-        END { if (!found) exit 1 }
-      ' "$active_sprint" 2>/dev/null || true
-    )"
-    active_sprint_row="${active_sprint_row:-Active sprint: ${active_sprint}}"
-  fi
+  bun_bin="${REPO_HARNESS_BUN_BIN:-bun}"
+  "$bun_bin" "scripts/recovery-view-cli.ts" --reason "$reason" --quiet
+
   source_plan="$(get_todo_source_plan || true)"
   if [[ "$source_plan" == "(none)" ]]; then
     source_plan=""
   fi
   parent_run_id="${HOOK_RUN_ID:-${CLAUDE_RUN_ID:-${CODEX_RUN_ID:-run-$(date '+%Y%m%dT%H%M%S')-$$}}}"
-  supersedes="$(workflow_read_state_field "$(workflow_task_state_file)" 'source_plan' || true)"
-
-  next_action="$(workflow_next_action)"
-  next_stage="$(printf '%s\n' "$next_action" | cut -f1)"
-  next_command="$(printf '%s\n' "$next_action" | cut -f2)"
-  next_message="$(printf '%s\n' "$next_action" | cut -f3-)"
-  [[ "${next_command:-}" == "-" ]] && next_command=""
-  next_stage="${next_stage:-none}"
-  next_message="${next_message:-(none)}"
-  if [[ -n "${next_command:-}" ]]; then
-    next_task="${next_message} Command: ${next_command}"
-  else
-    next_task="$next_message"
-  fi
-
-  if is_git_repo; then
-    changed_files="$(
-      {
-        git diff --name-only HEAD 2>/dev/null || true
-        git ls-files --others --exclude-standard 2>/dev/null || true
-      } | sed '/^[[:space:]]*$/d' | sort -u
-    )"
-    changed_files="${changed_files:-(none)}"
-    changed_count="$(printf '%s\n' "$changed_files" | sed '/^(none)$/d; /^[[:space:]]*$/d' | wc -l | tr -d ' ')"
-    if [[ "$changed_count" -gt 80 ]]; then
-      changed_files="$(
-        {
-          printf '%s\n' "$changed_files" | head -80
-          printf '... (%s total changed/untracked paths; inspect git status --short)\n' "$changed_count"
-        }
-      )"
-    fi
-
-    diff_stat="$( (git diff --shortstat HEAD 2>/dev/null || true) | tr -d '\n' )"
-    untracked_count="$(git ls-files --others --exclude-standard 2>/dev/null | wc -l | tr -d ' ')"
-    if [[ "$untracked_count" -gt 0 ]]; then
-      diff_stat="${diff_stat:-no tracked diff}; ${untracked_count} untracked files"
-    fi
-    diff_stat="${diff_stat:-no uncommitted diff against HEAD}"
-  else
-    changed_files="(none)"
-    diff_stat="git repository not detected"
-  fi
-
-  trace_file="$(workflow_trace_file)"
-  if [[ -f "$trace_file" ]]; then
-    recent_commands="$(
-      tail -5 "$trace_file" 2>/dev/null \
-        | sed -E 's/^/- /'
-    )"
-  fi
-  recent_commands="${recent_commands:-- (none captured)}"
-
-  if [[ -n "$source_plan" ]]; then
-    goal="Continue task checklist sourced from ${source_plan}."
-  elif [[ -n "$active_plan" ]]; then
-    goal="Continue active plan ${active_plan}."
-  elif [[ "$next_stage" == "cleanup" ]]; then
-    goal="Clean up completed contract worktree."
-  elif [[ "$next_task" != "(none)" && "$next_task" != "No active execution checklist" ]]; then
-    goal="$next_task"
-  else
-    goal="No active plan. Continue from the latest user request and filesystem state."
-  fi
-  decisions="Use filesystem artifacts as source of truth; treat SQLite/thread state as a rebuildable read model only."
-  blockers="(none recorded)"
-  if [[ -f "$checks_file" ]] && command -v jq >/dev/null 2>&1; then
-    latest_trace_file="$(jq -r '.run_file // empty' "$checks_file" 2>/dev/null || true)"
-  else
-    latest_trace_file=""
-  fi
-  latest_trace_file="${latest_trace_file:-$checks_file}"
-
-  cat > "$handoff_file" <<EOF_HANDOFF
-# Harness Handoff
-
-> **Generated**: $(date '+%Y-%m-%d %H:%M:%S')
-> **Reason**: ${reason}
-
-## Goal
-
-${goal}
-
-## Decisions
-
-- ${decisions}
-
-## Files Touched
-
-\`\`\`
-${changed_files}
-\`\`\`
-
-## Commands Run
-
-${recent_commands}
-
-## Checks
-
-- Checks file: ${checks_file}
-- Latest trace: ${latest_trace_file}
-
-## Blockers
-
-- ${blockers}
-
-## Active Artifacts
-
-- Active plan: ${active_plan:-(none)}
-- Active contract: ${active_contract:-(none)}
-- Active sprint row: ${active_sprint_row}
-- Review file: ${active_review:-(none)}
-- Latest trace/checks file: ${latest_trace_file}
-- Resume packet: ${resume_file}
-
-## Exact Next Step
-
-- ${next_task}
-
-## Resume Prompt
-
-- Resume packet: ${resume_file}
-- Start a fresh Codex session and read source artifacts first, then this handoff, before continuing; do not rely on auto-compact.
-
-## Source Artifacts
-
-- Spec: ${spec_file}
-- Plan: ${active_plan:-(none)}
-- Todo Source Plan: ${source_plan:-(none)}
-- Contract: ${active_contract:-(none)}
-- Review: ${active_review:-(none)}
-- Notes: ${active_notes:-(none)}
-- Checks: ${checks_file}
-- Resume Packet: ${resume_file}
-- Policy: $(workflow_policy_file)
-- Context Map: $(workflow_context_map_file)
-
-## Current Status
-
-- Next action stage: ${next_stage}
-- Next recommended action: ${next_task}
-- Working tree: ${diff_stat}
-- Parent Run ID: ${parent_run_id}
-- Supersedes: ${supersedes:-(none)}
-
-## Changed Files
-
-\`\`\`
-${changed_files}
-\`\`\`
-EOF_HANDOFF
-
-  cat > "$resume_file" <<EOF_RESUME
-# Codex Resume Packet
-<!-- generated-by: workflow_write_handoff v1 -->
-
-> **Generated**: $(date '+%Y-%m-%d %H:%M:%S')
-> **Reason**: ${reason}
-
-## Resume Prompt
-
-Start a fresh session for this task; do not rely on auto-compact or prior chat history. Read the source artifacts below, then the handoff, before continuing from Exact Next Step.
-
-- ${next_task}
-
-## Source Artifacts
-
-- Handoff: ${handoff_file}
-- Spec: ${spec_file}
-- Active plan: ${active_plan:-(none)}
-- Active contract: ${active_contract:-(none)}
-- Review: ${active_review:-(none)}
-- Notes: ${active_notes:-(none)}
-- Research: $(workflow_policy_get '.tasks.research_dir' 'docs/researches')/
-- Checks: ${checks_file}
-EOF_RESUME
 
   workflow_append_event "handoff_refresh" "$reason" "{\"source_plan\":\"$(workflow_json_escape "${source_plan:-}")\",\"parent_run_id\":\"$(workflow_json_escape "$parent_run_id")\"}"
   workflow_write_run_summary "$reason"

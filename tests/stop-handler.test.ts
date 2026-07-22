@@ -108,7 +108,7 @@ describe('runStopHandler', () => {
     expect(readFileSync(join(cwd, '.ai/harness/handoff/current.md'), 'utf8')).not.toContain('Minimal Change Review');
   });
 
-  test('preserves the recovery projection fields owned by workflow_write_handoff', () => {
+  test('preserves the recovery projection workflow-context fields (EPC-07: content source moved to the recovery materializer; two evidence-shaped assertions below updated -- see contract Phase A)', () => {
     const cwd = fixture();
     const plan = 'plans/plan-20260720-0000-projection.md';
     const contract = 'tasks/contracts/20260720-0000-projection.contract.md';
@@ -146,13 +146,23 @@ describe('runStopHandler', () => {
     expect(handoff).toContain('Continue task checklist sourced from plans/source-plan.md.');
     expect(handoff).toContain(`- Active sprint row: | 6 | hrd-06 | ${plan} |`);
     expect(handoff).toContain('- {"command":"one"}\n- {"command":"two"}');
-    expect(handoff).toContain('- Latest trace: .ai/harness/runs/verified.json');
+    // EPC-07: the old "Latest trace" line re-derived evidence directly from
+    // checks/latest.json content (a single-hop violation this package fixes);
+    // the recovery materializer's "## Evidence" section now sources only from
+    // the checkpoint, rendering a typed minimal state when none is published
+    // yet (this fixture seeds no ledger/checkpoint).
+    expect(handoff).toContain('- Checkpoint: (none published yet -- no ledger evidence recorded in this worktree)');
     expect(handoff).toContain('continue the next Task Breakdown item: preserve the real next action');
     expect(handoff).toContain('- Next action stage: task');
     expect(handoff).toContain('- Supersedes: plans/superseded.md');
     expect(handoff).toContain('- Todo Source Plan: plans/source-plan.md');
     const resume = readFileSync(join(cwd, '.ai/harness/handoff/resume.md'), 'utf8');
-    expect(resume).toContain('<!-- generated-by: workflow_write_handoff v1 -->');
+    // EPC-07: resume.md is now the single merged materializer output (the
+    // two-tier minimal/elaborate split is retired); the legacy elaborate-resume
+    // marker is preserved verbatim as the stable external-observable contract
+    // session-context.ts's resumeAvailable() already depends on (see contract).
+    expect(resume).toContain('<!-- generated-by: repo-harness codex-handoff-resume v1 -->');
+    expect(resume).toContain('## Provenance');
     const event = JSON.parse(readFileSync(join(cwd, '.ai/harness/events.jsonl'), 'utf8'));
     expect(event.extra.source_plan).toBe('plans/source-plan.md');
   });

@@ -2,6 +2,96 @@
 
 All notable changes to this skill are documented here.
 
+## [Unreleased]
+
+### Changed
+
+- `checks/latest.json` is now materialized exclusively from the
+  `EvidenceEvent` ledger (D7 selection predicate: exact worktree + subject +
+  admitted trust class, last accepted event wins). Every prior direct
+  authoring path is deleted in the same package that replaced it:
+  `verify-sprint.sh`'s `cp` onto `checks/latest.json`, the
+  `workflow_ensure_harness_surface` `{}` bootstrap, and
+  `mutation-observed.ts`'s continuous contract-verification cascade (now
+  redirected to a dedicated `.ai/harness/checks/contract-verify.latest.json`,
+  never the acceptance-evidence path).
+- Recovery views (`handoff/current.md`, `handoff/resume.md`) render from one
+  standalone materializer, single-hop from the EPC-06 checkpoint plus
+  minimal live workflow context. The independent bash `workflow_write_handoff`
+  content assembly, `codex-handoff-resume.sh`'s elaborate-resume assembly,
+  `prepare-codex-handoff.sh`'s Node/Python global-packet splice, and
+  `workflow_ensure_harness_surface`'s handoff/resume placeholder bootstrap
+  are all retired same-package; the three bash entrypoints are now thin
+  invokers of one standalone CLI (`scripts/recovery-view-cli.ts`).
+- The SessionStart Context Packet's resume-availability check
+  (`resumeAvailable()`) now resolves from the canonical checkpoint-backed
+  evidence reader (`resolveRecoveryEvidence`) instead of re-deriving
+  availability by string-scanning `resume.md` for a legacy marker/header.
+- Evidence-ledger redaction gained a typed-field exemption: a whole-value
+  declared hash (`sha256:`-prefixed or bare 40/64-hex) or a declared/inferred
+  safe repo-relative path is exempt from high-entropy redaction, so a
+  realistic long contract slug or a `sha256:`-prefixed field now survives
+  materialization byte-identical instead of being partially hash-mangled.
+  The secret-value denylist still runs unconditionally over every field,
+  exempted or not.
+- PostBash-observed command results and manual/external attested acceptance
+  receipts now import into the same `EvidenceEvent` ledger (`observed` and
+  `external_attested`/`human_acceptance` trust classes respectively),
+  feeding the materializers above under the frozen D4 trust matrix.
+
+### Notes (accepted intermediate states -- operator guidance)
+
+- Downstream adopters that installed via the packaged CLI (not this source
+  checkout) do not yet receive the ledger/materializer tooling
+  (`emit-verify-evidence.ts` and friends are source-repo-only, never
+  registered in the distributed helper manifest); `checks/latest.json` stays
+  structurally absent in those repos until the next release ships this
+  cutover. This is a pre-existing condition, not a regression introduced
+  here.
+- A globally installed `repo-harness` CLI published before this cutover is a
+  live legacy writer until refreshed. Operator guidance: refresh with the
+  standard install profile (`repo-harness update --profile standard`, or
+  `install --profile standard` for a fresh install) to pick up the
+  materializer-only behavior; until then, invoke `bash scripts/verify-sprint.sh`
+  directly in a self-hosted worktree rather than `repo-harness run
+  verify-sprint`, so the stale global binary's own retired `cp` path cannot
+  silently re-clobber `checks/latest.json` with old-schema content.
+- The guarded, only-if-absent `{}` seeds in `scripts/plan-to-todo.sh` and
+  `scripts/ensure-task-workflow.sh` (project-genesis scaffolding for a
+  brand-new adopted repo, gated `if [[ ! -f ... ]]`) remain non-ledger
+  first-writers by design -- fail-closed, never overwriting real
+  materialized content, and out of scope for this cutover.
+
+### Verification
+
+- Added a cross-package projection-drift suite
+  (`tests/evidence-projection-drift.test.ts`): the checkpoint machine/human
+  views, the recovery views, materialized `checks/latest`, and tracked
+  `tasks/current.md` all recompute byte/hash-identically from their declared
+  sources, both on a fixture ledger and (where live state exists) against
+  this worktree's own published evidence.
+- Added a deprecation-residue scan (`tests/evidence-residue-scan.test.ts`)
+  consuming a checked-in retired-surfaces list
+  (`evals/harness/epc-retired-surfaces.json`, the union of every EPC-05/07/08
+  deletion) -- zero unexcepted hits across `src/`, `scripts/`, `.ai/hooks/`,
+  `assets/`.
+- A matched post-EPC benchmark run was attempted at the post-EPC-08 subject
+  under the frozen VGBR-R protocol (one authoritative invocation, no
+  `--profile`/`--scenario`/`--regrade-existing`). The attempt
+  (`post-epc-196e787a-20260723-a01`) self-classified `failed_during_run`:
+  two `adaptive-lite` arms failed inside the runner's own isolated per-arm
+  sandboxes (a provider tool-exec fault and a harness-guard-blocked agent
+  turn -- see `docs/researches/20260723-epc-program-closeout.research.md`
+  for the full evidence). No report was produced and none was promoted. Per
+  the sprint's own frozen attempt discipline, one protocol-clean failed
+  attempt is sufficient to trigger row 13's cannot-execute fallback -- no
+  second attempt was made, and no automatic rerun or `--regrade-existing`
+  backfill occurred. **Fallback applied**: the pre-EPC baseline triplet
+  (27/27 arms, `evals/harness/reports/profile-comparison.*`, bytes
+  untouched) is now designated **"descriptive pre-EPC baseline only"**.
+  This release closeout claims no benchmark improvement over the pre-EPC
+  baseline.
+
 ## [0.10.1] - 2026-07-15
 
 ### Changed

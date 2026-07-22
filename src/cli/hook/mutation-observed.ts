@@ -397,6 +397,27 @@ interface ContractVerificationTarget {
   readonly checksFile: string;
 }
 
+/**
+ * EPC-05 orchestrator ruling (residual finding 2b, closed in this same
+ * package): continuous contract verification (this Stop-time cascade) is
+ * telemetry about "is the active contract still passing", not acceptance
+ * evidence -- it must never write to the policy's `harness.checks_file`
+ * (`.ai/harness/checks/latest.json`), the file
+ * `src/effects/evidence/checks-materializer.ts` now exclusively authors
+ * from the evidence ledger. Writing continuous-verification telemetry to
+ * that same path was exactly the last-writer-wins shadow authority the
+ * audit called out: a Stop-time run could silently clobber a frozen
+ * `--prepare-acceptance` evidence bundle, and the two schemas are not even
+ * compatible (`verify-contract.sh`'s own `write_report()` has no
+ * `source`/`status`/`exit_code` fields at all -- nothing downstream could
+ * even tell the two apart by content). This report gets its own,
+ * deliberately-namespaced file instead; already covered by the existing
+ * `.ai/harness/checks/*.latest.json` gitignore pattern. The policy default
+ * itself (`resolveChecksFile` below, `harness.checks_file`) is unchanged --
+ * every OTHER consumer of the acceptance-evidence checks file is unaffected.
+ */
+const CONTRACT_VERIFICATION_REPORT_RELATIVE = '.ai/harness/checks/contract-verify.latest.json';
+
 /** `run_continuous_contract_verification()`'s guard (post-edit-guard.sh:31-47), ported condition-for-condition. */
 function resolveContractVerificationTarget(
   collector: MutationObservedCollector,
@@ -409,7 +430,7 @@ function resolveContractVerificationTarget(
   if (!contractFile || !fileExists(repoRoot, contractFile)) return null;
   const contractText = readText(repoRoot, contractFile);
   if (!contractText || !contractReferencesPath(contractText, contractFile, filePath)) return null;
-  return { contractFile, checksFile: resolveChecksFile(repoRoot) };
+  return { contractFile, checksFile: CONTRACT_VERIFICATION_REPORT_RELATIVE };
 }
 
 // ---------------------------------------------------------------------------
@@ -417,6 +438,17 @@ function resolveContractVerificationTarget(
 // gate for the (retired) task-handoff regeneration.
 // ---------------------------------------------------------------------------
 
+/**
+ * EPC-05 note: deliberately NOT extended to
+ * `CONTRACT_VERIFICATION_REPORT_RELATIVE` (`.ai/harness/checks/contract-verify.latest.json`).
+ * This guard flags a hand-EDIT of a checkpoint-relevant file (the file was
+ * the subject of a tracked Write/Edit tool call); the continuous-verification
+ * report is machine-written telemetry from a Stop-time subprocess spawn, never
+ * itself the target of an edit tool call in normal operation, so adding it
+ * here would be unreachable. The existing `.ai/harness/checks/latest.json`
+ * check is unchanged: hand-editing the acceptance-evidence file is still
+ * checkpoint-worthy.
+ */
 function isCheckpointPath(filePath: string): boolean {
   if (filePath === 'tasks/todos.md') return true;
   if (/^plans\/.*\.md$/.test(filePath)) return true;

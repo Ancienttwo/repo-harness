@@ -1,6 +1,6 @@
 # Sprint: Evidence & Projection Convergence
 
-> **Status**: Approved
+> **Status**: Done
 > **Direction Approval**: Approved — Codex execution draft reviewed by Fable (2026-07-21) and by external GPT review (`docs/researches/20270721-EPC.research.md`), joint verdict: approve with required amendments. All required amendments are incorporated below as normative rules. Execution approved by the user on 2026-07-22.
 > **Slug**: evidence-projection-convergence
 > **Created**: 2026-07-22 00:01
@@ -172,6 +172,56 @@ in this Program may describe it as a pure post-HRD baseline.
 `POST_VGBR_SHA = ba0e3970...` (VGBR-R PR #115 merged; subject
 quiescence lifted) is the EPC-00-pinned base for the EPC arc.
 
+## Program annotation — EPC-09 matched post-eval attempt (recorded by EPC-09)
+
+`POST_EPC_SUBJECT_SHA = 196e787a0ffe15eea4da0a2e50b4f0e04f99a666` (pinned by
+EPC-09 per R1 at fresh fetch, equal to its own base — EPC-09 touches no R2
+benchmark-subject input, so the post-EPC subject is exactly the
+post-EPC-01..08 state; subject hash
+`sha256:3bef21e9f809a6acd47f0dc22ea3416ef1fc0ddef26ba15f9150e82943cbb310`,
+computed via the git-blob-identity hash over the R2 input list from a
+detached, clean checkout, re-verified unchanged after the attempt below).
+
+One matched post-EPC benchmark invocation was attempted under this Row's
+own VGBR-R protocol, reused verbatim: attempt `post-epc-196e787a-20260723-a01`
+self-classified **`failed_during_run`**: 13 arms passed (9 `no-harness` +
+4 `adaptive-lite` — `single-file-small-bug`, `ordinary-feature`,
+`database-migration`, `chinese-prompt`), 2 `adaptive-lite` arms failed
+(`negation`, `cross-capability-feature`), 15/27 reached a terminal outcome
+and 12 never ran before the runner stopped fail-closed — both failures
+inside the runner's own isolated per-arm sandboxes (a provider tool-exec
+router fault on `adaptive-lite/negation`; a harness-guard-blocked agent turn
+on `adaptive-lite/cross-capability-feature` — full evidence in
+`docs/researches/20260723-epc-program-closeout.research.md`). No report was
+produced or promoted; the pre-EPC baseline triplet
+(`VGBR_BASELINE_SHA = b32b3282`, 27/27 arms,
+`evals/harness/reports/profile-comparison.*`) is untouched and remains the
+Program's only authoritative benchmark evidence. Per the frozen attempt
+discipline, this attempt was not rerun; a new run needs a new approved
+run-decision. **This condition of row 13's acceptance line is therefore not
+yet satisfied** — recorded here as history, not as Program closure.
+
+`POST_EPC_SHA` itself is **not** pinned by this annotation: per R1, it is
+pinned by the SSD activation contract after EPC-09 merges, at that
+contract's own fresh fetch — this note only records the post-EPC subject
+facts EPC-09 observed during its own execution, consumed by SSD later, not
+in EPC-09's own scope to pin.
+
+### Frozen fallback executed (orchestrator ruling, 2026-07-23)
+
+One protocol-clean matched-benchmark attempt failed during the run (above);
+per the Program's own retry-until-green prohibition, that single attempt is
+sufficient to trigger row 13's frozen cannot-execute fallback (`## Row 13 —
+EPC-09 matched post-eval decision`, above) — no second attempt was made.
+The orchestrator ruled: take the fallback branch. Accordingly,
+`evals/harness/reports/profile-comparison.{json,md,sha256.json}` (the
+authoritative VGBR pre-EPC baseline, `VGBR_BASELINE_SHA = b32b3282`, 27/27
+arms — bytes byte-bound and untouched by this relabeling) is now designated
+**"descriptive pre-EPC baseline only"**. Per the frozen fallback, the
+release closeout claims no benchmark improvement over the pre-EPC baseline.
+With the fallback branch executed, row 13's amended acceptance line is
+satisfied — the fallback IS the completion, not a deferral of it.
+
 ## Backlog
 
 Ordered execution queue. Every row is an independent PR with a
@@ -183,15 +233,15 @@ machine-checkable acceptance line.
 | 2 | [x] | `vgbr-rf` — benchmark runner subject immutability fix | contract | Done via PR #113 (`51a2ee7d`): ROOT is no longer an install source (external hash-pinned pack artifact, isolated `BUN_INSTALL`), subject re-asserted fail-closed at four phases, mode-drift regression guard red-then-green; 28/28 exit criteria + external_pass receipt at base `61b5ec59` | `plans/plan-20260721-2237-vgbr-benchmark-runner-subject-immutability.md` |
 | 3 | [x] | `vgbr-r` — authoritative baseline recovery (eval-only) | contract | Done via PR #115 (`904cd024`): one authoritative invocation at `VGBR_BASELINE_SHA = b32b3282` (attempt `vgbr-b32b3282-20260722-a01`, 27/27 arms, 15m37s), subject frozen and recomputed identical, validator byte-binding held at stage and canonical, 12/12 criteria + external_pass receipt; baseline annotated as current pre-EPC after HRD and acknowledged parallel changes | `plans/plan-20260722-0020-vgbr-post-hrd-baseline-recovery.md` |
 | 4 | [x] | `epc-00` — Program reconciliation and design freeze (docs-only) | contract | Done via PR #116 (`7871f174`): `POST_VGBR_SHA` pinned at `ba0e3970`, D1–D9 frozen with closed sub-decisions, Program annotation finalized, rows 5–11 confirmed machine-operable as written, rows 12/13 amended machine-checkable; docs-only, external_pass receipt at base `ba0e3970` | `plans/plan-20260722-1107-epc-00-program-canonicalization.md` |
-| 5 | [ ] | `epc-01` — EvidenceEvent protocol and event store | contract | Single `EvidenceEvent` schema with frozen identity/trust/subject fields; atomic append-only per-worktree store with replay determinism and corrupt-tail recovery tests; no consumer cutover in this package | (create at execution) |
-| 6 | [ ] | `epc-02` — authoritative verify producer | contract | Verify runner emits subject-bound `authoritative_machine` events only; non-subject-bound emission is impossible by construction; fixtures prove subject mismatch fails closed | (create at execution) |
-| 7 | [ ] | `epc-03` — PostBash observed importer | contract | PostBash imports are `observed` trust class only and can never satisfy a machine gate; fixtures prove an observed-only ledger leaves gates unsatisfied | (create at execution) |
-| 8 | [ ] | `epc-04` — manual/external attested import | contract | Manual and external evidence require trust, actor, reason, and subject fields; `external_attested` satisfies gates only where a contract explicitly allows; malformed imports fail closed | (create at execution) |
-| 9 | [ ] | `epc-05` — checks/latest materializer | contract | `checks/latest` is materialized only from the ledger via exact-subject selection (D7); every direct authoring path deleted in this package; no-independent-authoring test passes | (create at execution) |
-| 10 | [ ] | `epc-06` — checkpoint materialization | contract | One checkpoint materialization transaction: accepted events → canonical machine projection → deterministically derived human view; staged install with last-published marker; partial generation detected and rejected; Markdown never becomes writable authority | (create at execution) |
-| 11 | [ ] | `epc-07` — recovery-view inventory and minimal cutover | contract | Consumer inventory for handoff/resume/current/task-handoff complete with keep/merge/retire verdicts; surviving views get one materializer each; retired writers deleted same-package; projection-drift and no-independent-authoring tests pass | (create at execution) |
-| 12 | [ ] | `epc-08` — Context Packet cutover | contract | SessionStart Context Packet served from canonical projections; across the 27-state Authority×Profile panel every sample has estimated_tokens <= 1500 and within_budget == true, and panel p95(estimated_tokens) <= 700 (method utf8_bytes_div_4), with the per-sample table in the report; old assembly path deleted same-package | (create at execution) |
-| 13 | [ ] | `epc-09` — drift check, matched post-eval, release closeout | contract | Cross-package projection-drift check green; deprecation residue scan clean against a checked-in retired-paths/symbols list (union of EPC-05/07/08 deletions, zero hits); one matched post-EPC benchmark (same runner/manifest/profiles/rubric, one invocation, descriptive comparison) or, if not executed, the VGBR report relabeled "descriptive pre-EPC baseline only" with no benchmark-improvement claim as a checked closeout assertion; release notes and Program closeout merged | (create at execution) |
+| 5 | [x] | `epc-01` — EvidenceEvent protocol and event store | contract | Done via PR #117 (`d94d1364`): EvidenceEvent schema per frozen D3/D4/D5, atomic append-only store with genesis/epoch fail-closed (D2), blob store with D6 construction invariants, deterministic replay + corrupt-tail quarantine; 31 red-first tests, full suite 1711 pass; zero consumer cutover; external_pass receipt at base `5228d4ea` | `plans/plan-20260722-1151-epc-01-evidence-event-store.md` |
+| 6 | [x] | `epc-02` — authoritative verify producer | contract | Done via PR #118 (`61657769`): verify runner emits subject-bound `authoritative_machine` events with construction-computed D3 identity; epoch constant `LEDGER_EPOCH_START_SHA` single-sourced; cannot-bind refusals skip (exit 3, no fabrication), subject mismatch fails closed; live ledger dogfood readback; 11 red-first tests, full suite 1722 pass; external_pass receipt at base `a8cae4d7` | `plans/plan-20260722-1634-epc-02-authoritative-verify-producer.md` |
+| 7 | [x] | `epc-03` — PostBash observed importer | contract | Done via PR #119 (`691930c0`): PostBash observations import as `observed`-only events with unbound-sentinel identity degradation; observed-only ledger provably leaves the authoritative filter empty; failure semantics match the existing write path; 12 red-first tests, full suite 1734 pass; wave disjointness with EPC-04 held; external_pass receipt at base `8861b40d` | `plans/plan-20260722-1810-epc-03-postbash-observed-importer.md` |
+| 8 | [x] | `epc-04` — manual/external attested import | contract | Done via PR #120 (`79f1190a`): receipt record imports as attested events via closed trust mapping with required actor/reason/subject fields fail-closed; CLI wiring adjudicated unskippable (sole production entry); default-deny proven at fold level; 16 red-first tests, full suite 1738 pass; wave disjointness with EPC-03 held; external_pass receipt recorded through the new wiring itself | `plans/plan-20260722-1810-epc-04-manual-external-attested-import.md` |
+| 9 | [x] | `epc-05` — checks/latest materializer | contract | Done via PR #121 (`f07a11c9`): checks/latest materialized only from the ledger (frozen D7 predicate + 9-field D8 provenance); three direct authoring paths deleted/closed same-package (verify-sprint cp, workflow-state bootstrap, mutation-observed continuous-verification redirect); D6 redaction typed-field exemption fixed the round-1 CRITICAL; no-independent-authoring + behavioral tests green; full suite 1779 pass; own receipt recorded against materialized evidence; round-2 gatekeeper PASS; external_pass receipt at base `82215336` | `plans/plan-20260722-1929-epc-05-checks-latest-materializer.md` |
+| 10 | [x] | `epc-06` — checkpoint materialization | contract | Done via PR #122 (`50d3a29e`): atomic checkpoint transaction (deterministic content-addressed machine projection, byte-derived human view, staged install + last-published marker, partial generation rejected, Markdown structurally never authority); additive Stop wiring with HRD semantics untouched; 20 red-first tests, full suite 1799 pass; gatekeeper PASS; external_pass receipt at base `321248e4`. D8 ratification: checkpoints self-reference `source_checkpoint_id`; consumers discriminate on schema, not nullness | `plans/plan-20260722-2156-epc-06-checkpoint-materialization.md` |
+| 11 | [x] | `epc-07` — recovery-view inventory and minimal cutover | contract | Done via PR #123 (`8274c649`): evidence-cited inventory (incl. undeclared fifth writer `workflow_ensure_harness_surface`, retired under D9 revision authority); one materializer per surviving view single-hop from the EPC-06 checkpoint; retired writers deleted same-package with mirrors in lockstep; Stop external semantics untouched; pre-existing bare-Stop `resumeAvailable()` gap closed by construction; projection-drift + no-independent-authoring tests green; full suite 1813 pass; gatekeeper PASS; external_pass receipt at base `e5fb55e1` | `plans/plan-20260722-2246-epc-07-recovery-view-cutover.md` |
+| 12 | [x] | `epc-08` — Context Packet cutover | contract | Done via PR #124 (`92fef5e5`): last primary-source re-derivation (`resumeAvailable` string-scan) replaced by the checkpoint-backed recovery resolver and deleted same-package; 27-state panel passes both frozen gates with wide margin (max 324, p95 324, utf8_bytes_div_4), per-sample table committed at `tasks/reviews/20260723-0024-epc-08-context-packet-cutover.panel.md`; behavior-flip + structural tests green; full suite 1827 pass; gatekeeper PASS with independent panel re-run; external_pass receipt at base `9ea195b9` | `plans/plan-20260723-0024-epc-08-context-packet-cutover.md` |
+| 13 | [x] | `epc-09` — drift check, matched post-eval, release closeout | contract | Done via PR #125 (`c9b69dbe`): drift check green; residue scan zero hits over the checked-in 8-surface retired list; one protocol-clean matched attempt (`post-epc-196e787a-20260723-a01`) self-classified `failed_during_run` (13/2/15/12, subject immutable, no rerun) — frozen fallback branch executed with machine-checked assertions (VGBR report designated "descriptive pre-EPC baseline only", no benchmark-improvement claim); release notes + Program closeout merged; sprint header Done; round-2 gatekeeper PASS; external_pass receipt at base `196e787a` | `plans/plan-20260723-0144-epc-09-drift-eval-release.md` |
 
 ## Row 3 — VGBR-R protocol
 

@@ -159,7 +159,11 @@ describe("workflow-state shared library", () => {
     expect(content).toContain("has_research_for_new_plan()");
     expect(content).toContain("validate_plan_transition()");
     expect(content).toContain("contract_references_path()");
-    expect(content).toContain("next_action=\"$(workflow_next_action)\"");
+    // EPC-07: workflow_write_handoff's own `next_action="$(workflow_next_action)"`
+    // call site was retired along with the rest of its independent
+    // handoff/resume content assembly (now scripts/recovery-view-cli.ts's
+    // job); workflow_next_action() the function definition is still
+    // asserted two lines above and remains a callable library export.
     expect(content).toContain("## Task Breakdown");
   });
 

@@ -406,6 +406,66 @@ allowed_paths_check_json() {
   fi
 }
 
+# EPC-02: after a successful verification (both the --prepare-acceptance
+# freeze path and the finalize path), append one authoritative_machine
+# EvidenceEvent bound to the frozen review subject (D3/D4). Reads the subject,
+# run snapshot, and guard counts back out of $checks_file rather than any
+# in-scope bash variable, so the emitted evidence is always bound to exactly
+# what that file already asserts passed -- never a second, possibly-stale
+# notion of "the subject" computed independently in this script. Additive
+# only.
+#
+# Exit code contract (matches emit-verify-evidence.ts): 0 = emitted; 3 =
+# cannot-bind refusal (no active contract, dirty/untracked contract, or --
+# the case handled here -- the TS entry itself unresolvable in this
+# deployed-helper context); any other non-zero = a real failure (subject
+# mismatch, store/genesis error) and must fail the caller's verify run. A
+# cannot-bind refusal is refusal-to-fabricate, not a fallback: no gate reads
+# the ledger yet, so skipping emission here satisfies nothing and changes no
+# verify-run semantics.
+#
+# Companion-script resolution mirrors the existing $helper_dir/acceptance-receipt.ts
+# sibling lookup (both are deployed side-by-side by the same helper-sync
+# mechanism); REPO_HARNESS_SOURCE_ROOT is the same source-authority fallback
+# workflow_source_authority_call already uses below for hook-CLI resolution,
+# reused here rather than inventing a second mechanism. A deployed-helper
+# context (e.g. an adopted repo, or these fixture-based helper tests) has no
+# src/ tree at all, so when neither resolves this is indistinguishable from
+# "cannot bind" -- treated the same way (skip, do not fail).
+emit_verify_evidence() {
+  local command_line="$1"
+  local run_trace_file="$2"
+  local status="${3:-pass}"
+  local emit_script="$helper_dir/emit-verify-evidence.ts"
+  if [[ ! -f "$emit_script" ]]; then
+    if [[ -n "${REPO_HARNESS_SOURCE_ROOT:-}" && -f "${REPO_HARNESS_SOURCE_ROOT}/scripts/emit-verify-evidence.ts" ]]; then
+      emit_script="${REPO_HARNESS_SOURCE_ROOT}/scripts/emit-verify-evidence.ts"
+    else
+      echo "verify-sprint: evidence emission cannot bind: no $helper_dir/emit-verify-evidence.ts and no usable REPO_HARNESS_SOURCE_ROOT fallback in this deployed-helper context; skipping emission, verify result unchanged" >&2
+      return 3
+    fi
+  fi
+  [[ -n "$BUN_BIN" && -x "$BUN_BIN" ]] || { echo "verify-sprint: trusted Bun runtime is unavailable for evidence emission" >&2; return 1; }
+  command -v jq >/dev/null 2>&1 || { echo "verify-sprint: jq is required for evidence emission" >&2; return 1; }
+  [[ -n "$run_trace_file" && -s "$run_trace_file" ]] || { echo "verify-sprint: run-trace file is missing for evidence emission: $run_trace_file" >&2; return 1; }
+  local subject_sha256 run_snapshot counts_json
+  subject_sha256="$(jq -r '.review_subject_sha256 // empty' "$run_trace_file" 2>/dev/null)"
+  run_snapshot="$(jq -r '.lifecycle.snapshot // empty' "$run_trace_file" 2>/dev/null)"
+  counts_json="$(jq -c '{guards_total: (.guards | length), guards_passed: ([.guards[] | select(.status=="pass")] | length)}' "$run_trace_file" 2>/dev/null)"
+  [[ -n "$subject_sha256" && -n "$run_snapshot" ]] || { echo "verify-sprint: prepared evidence is missing subject or run snapshot; evidence emission needs a frozen --prepare-acceptance run" >&2; return 1; }
+  "$BUN_BIN" "$emit_script" \
+    --repo-root "$(pwd -P)" \
+    --contract "$contract_file" \
+    --subject-sha256 "$subject_sha256" \
+    --command "$command_line" \
+    --status "$status" \
+    --run-snapshot "$run_snapshot" \
+    --counts-json "$counts_json" \
+    --run-trace-file "$run_trace_file" \
+    --checks-file "$checks_file"
+  return $?
+}
+
 if [[ -f "$WORKFLOW_STATE_LIB" ]]; then
   # shellcheck source=/dev/null
   . "$WORKFLOW_STATE_LIB"
@@ -501,10 +561,18 @@ finalize_prepared_acceptance() {
       | .guards = [.guards[] | if .name == "acceptance_receipt" then .status = "pass" else . end]
       | .next_step = "finish contract worktree or archive completed task"
     ' "$checks_file" > "$finalized_checks"
-  cp "$finalized_checks" "$checks_file"
-  rm -f "$finalized_checks"
   echo "Sprint acceptance finalized without rerunning verification"
   echo "Prepared evidence: $checks_file"
+  set +e
+  emit_verify_evidence "repo-harness run verify-sprint" "$finalized_checks" "pass"
+  local emit_exit=$?
+  set -e
+  rm -f "$finalized_checks"
+  case "$emit_exit" in
+    0) : ;;
+    3) : ;;
+    *) echo "verify-sprint: evidence emission failed" >&2; return 1 ;;
+  esac
 }
 
 if [[ "$prepare_acceptance" -eq 0 ]]; then
@@ -881,7 +949,6 @@ else
 EOF_CHECKS
 fi
 
-cp "$checks_report" "$checks_file"
 cp "$checks_report" "$run_file"
 
 print_maintenance_advisories "$notes_file" || true
@@ -893,5 +960,31 @@ else
   echo "Sprint verification failed" >&2
   echo "Run snapshot: $run_file" >&2
 fi
+
+# EPC-05: checks/latest.json is materialized FROM the ledger by
+# emit-verify-evidence.ts's --checks-file handling (see that script's single
+# call into the checks-materializer). Emission (and, on success, this
+# materialization) is attempted for both a passing AND a failing verify
+# result -- a failing verify-sprint run is still a real, subject-bound,
+# authoritative_machine fact ("verification did not pass"), and consumers
+# read the payload's own status field, not the event's trust class, to tell
+# pass from fail (workflow_checks_pass already works this way). Cannot-bind
+# (exit 3) means checks/latest.json is simply not (re)written this run --
+# never a fabricated or stale-content fallback.
+verify_status="$([[ "$exit_code" -eq 0 ]] && printf pass || printf fail)"
+set +e
+emit_verify_evidence "repo-harness run verify-sprint --prepare-acceptance" "$checks_report" "$verify_status"
+emit_exit=$?
+set -e
+case "$emit_exit" in
+  0) : ;;
+  3) : ;;
+  *)
+    echo "verify-sprint: evidence emission failed" >&2
+    if [[ "$exit_code" -eq 0 ]]; then
+      exit 1
+    fi
+    ;;
+esac
 
 exit "$exit_code"

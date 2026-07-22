@@ -133,7 +133,8 @@
       "context-contract-sync.sh",
       "workstream-sync.sh",
       "prepare-codex-handoff.sh",
-      "codex-handoff-resume.sh"
+      "codex-handoff-resume.sh",
+      "recovery-view-cli.ts"
     ],
     "descriptions": {
       "new-spec": "Create docs/spec.md from the product spec template",
@@ -185,7 +186,8 @@
       "context-contract-sync": "Sync the latest or a given architecture event into local CLAUDE.md/AGENTS.md blocks",
       "workstream-sync": "Ensure a durable capability workstream ledger exists for a plan slice",
       "prepare-codex-handoff": "Refresh the handoff snapshot, resume packet, and global Codex handoff pointer",
-      "codex-handoff-resume": "Rebuild the repo's resume packet, optionally printing the resume prompt"
+      "codex-handoff-resume": "Rebuild the repo's resume packet, optionally printing the resume prompt",
+      "recovery-view-cli": "Materialize the handoff/resume recovery views (and optionally the Codex-global packet) from the last-published checkpoint plus live workflow context"
     },
     "dir": "package:assets/templates/helpers",
     "runtimeSource": "package"

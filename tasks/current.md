@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-22T15:29:54+0800 -->
+<!-- updated_at: 2026-07-23T03:07:22+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-07-22T15:29:54+0800
-> **Source Branch**: codex/terminal-plans-sweep-integration
-> **Source Commit**: cbeee53e
+> **Updated At**: 2026-07-23T03:07:22+0800
+> **Source Branch**: main
+> **Source Commit**: c9b69dbe
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: manual
@@ -31,8 +31,8 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Active Work
 
-- /Users/kito/Projects/repo-harness-wt-epc-01-evidence-event-store: plans/plan-20260722-1151-epc-01-evidence-event-store.md
-- /Users/kito/Projects/repo-harness-wt-epc-01-evidence-event-store: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-epc-01-evidence-event-store
+- /Users/kito/Projects/repo-harness-wt-epc-09-drift-eval-release: plans/plan-20260723-0144-epc-09-drift-eval-release.md
+- /Users/kito/Projects/repo-harness-wt-epc-09-drift-eval-release: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-epc-09-drift-eval-release
 - /Users/kito/Projects/repo-harness-wt-terminal-plans-sweep: plans/plan-20260722-0350-terminal-plans-sweep.md
 - /Users/kito/Projects/repo-harness-wt-terminal-plans-sweep: active-worktree owner -> /Users/kito/Projects/repo-harness-wt-terminal-plans-sweep
 ## Active Sprint
@@ -53,43 +53,15 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Checks
 
-- status=(none), source=(none), file=.ai/harness/checks/latest.json
+- status=(none), source=(none), exit_code=(none), file=.ai/harness/checks/latest.json
 
 ## Git Status
 
-- Summary: 30 changed/untracked path(s)
+- Summary: 2 changed/untracked path(s)
 
 ```
-M  .ai/hooks/.projection.json
-M  .ai/hooks/lib/workflow-state.sh
-M  assets/hooks/lib/workflow-state.sh
-M  evals/harness/reports/profile-comparison.json
-M  evals/harness/reports/profile-comparison.md
-M  evals/harness/reports/profile-comparison.sha256.json
-A  plans/plan-20260721-2237-vgbr-benchmark-runner-subject-immutability.md
-M  plans/plan-20260722-0020-vgbr-post-hrd-baseline-recovery.md
-A  plans/plan-20260722-0538-receipt-subject-target-split.md
-A  plans/plan-20260722-1107-epc-00-program-canonicalization.md
-M  plans/sprints/20260722-0001-evidence-projection-convergence.sprint.md
-M  scripts/run-harness-profile-benchmark.ts
-M  src/cli/hook/prompt-handler.ts
-A  tasks/contracts/20260721-2237-vgbr-benchmark-runner-subject-immutability.contract.md
-A  tasks/contracts/20260722-0020-vgbr-post-hrd-baseline-recovery.contract.md
-A  tasks/contracts/20260722-0538-receipt-subject-target-split.contract.md
-A  tasks/contracts/20260722-1107-epc-00-program-canonicalization.contract.md
-M  tasks/current.md
-A  tasks/notes/20260721-2237-vgbr-benchmark-runner-subject-immutability.notes.md
-A  tasks/notes/20260722-0020-vgbr-post-hrd-baseline-recovery.notes.md
-A  tasks/notes/20260722-0538-receipt-subject-target-split.notes.md
-A  tasks/notes/20260722-1107-epc-00-program-canonicalization.notes.md
-A  tasks/reviews/20260721-2237-vgbr-benchmark-runner-subject-immutability.review.md
-A  tasks/reviews/20260722-0020-vgbr-post-hrd-baseline-recovery.review.md
-A  tasks/reviews/20260722-0538-receipt-subject-target-split.review.md
-A  tasks/reviews/20260722-1107-epc-00-program-canonicalization.review.md
-M  tasks/todos.md
-M  tests/harness-benchmark-matrix.test.ts
-M  tests/prompt-handler.test.ts
-M  tests/workflow-state-lib.test.ts
+ M plans/sprints/20260722-0001-evidence-projection-convergence.sprint.md
+ M tasks/contracts/20260723-0144-epc-09-drift-eval-release.contract.md
 ```
 
 ## Source Artifacts

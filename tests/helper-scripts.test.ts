@@ -164,6 +164,36 @@ function writeValidSprintChecks(cwd: string) {
   );
 }
 
+// EPC-05: checks/latest.json is now materialized from the evidence ledger
+// (src/effects/evidence/checks-materializer.ts) rather than cp'd directly by
+// verify-sprint.sh. These deployed-helper fixtures never reach that ledger
+// (no git repo, no REPO_HARNESS_SOURCE_ROOT, and the ledger/materializer
+// tooling is source-repo-only -- never copied into
+// assets/templates/helpers/), so emission always cannot-binds (exit 3) and
+// checks/latest.json is genuinely absent after these runs. The exact same
+// rich content it used to receive via the deleted direct `cp` still lands,
+// byte-for-byte, in the run snapshot file (`.ai/harness/runs/*.json`,
+// unchanged by this package's cutover) -- these helpers read from there.
+function latestRunSnapshot(cwd: string): { path: string; content: any } {
+  const runsDir = join(cwd, ".ai/harness/runs");
+  const names = readdirSync(runsDir).filter((name) => name.endsWith(".json"));
+  let best: { path: string; content: any; generatedAt: string } | null = null;
+  for (const name of names) {
+    const candidatePath = join(runsDir, name);
+    const parsed = JSON.parse(readFileSync(candidatePath, "utf-8"));
+    const generatedAt = String(parsed.generated_at ?? "");
+    if (!best || generatedAt > best.generatedAt) {
+      best = { path: candidatePath, content: parsed, generatedAt };
+    }
+  }
+  if (!best) throw new Error(`no run snapshot found in ${runsDir}`);
+  return { path: best.path, content: best.content };
+}
+
+function expectChecksLatestAbsent(cwd: string): void {
+  expect(existsSync(join(cwd, ".ai/harness/checks/latest.json"))).toBe(false);
+}
+
 function writeFixtureCapabilityRegistry(cwd: string): void {
   mkdirSync(join(cwd, ".ai/context"), { recursive: true });
   writeFileSync(join(cwd, ".ai/context/capabilities.json"), JSON.stringify({
@@ -3391,12 +3421,13 @@ describe("Workflow helper scripts", () => {
         HOOK_HOST: "claude",
         REPO_HARNESS_HOOK_CLI: join(ROOT, "src/cli/hook-entry.ts"),
       });
-      expect(
-        res.status,
-        `${res.stdout}\n${res.stderr}\n${readFileSync(join(cwd, ".ai/harness/checks/latest.json"), "utf-8")}`,
-      ).toBe(0);
+      expect(res.status, `${res.stdout}\n${res.stderr}`).toBe(0);
       expect(res.stdout).toContain("Sprint verification passed");
-      const checks = JSON.parse(readFileSync(join(cwd, ".ai/harness/checks/latest.json"), "utf-8"));
+      // EPC-05: emission cannot-binds in this non-git, no-source-root
+      // fixture (see latestRunSnapshot's doc comment), so checks/latest.json
+      // is never (re)written by the materializer -- genuinely absent.
+      expectChecksLatestAbsent(cwd);
+      const { path: runFilePath, content: checks } = latestRunSnapshot(cwd);
       expect(checks.schema).toBe("repo-harness-run-trace.v1");
       expect(checks.status).toBe("pass");
       expect(checks.source).toBe("verify-sprint");
@@ -3418,9 +3449,8 @@ describe("Workflow helper scripts", () => {
       expect(checks.benchmark_evidence).toEqual({ status: "not_applicable", report_sha256: "", benchmark_subject_sha256: "" });
       expect(checks.allowed_paths_check.status).toBe("pass");
       expect(checks.run_file).toMatch(/^\.ai\/harness\/runs\/.+-demo\.json$/);
-      expect(existsSync(join(cwd, checks.run_file))).toBe(true);
-      const snapshot = JSON.parse(readFileSync(join(cwd, checks.run_file), "utf-8"));
-      expect(snapshot.lifecycle.evidence_tier).toBe("harness-trace-v1");
+      expect(join(cwd, checks.run_file)).toBe(runFilePath);
+      expect(checks.lifecycle.evidence_tier).toBe("harness-trace-v1");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -3474,14 +3504,20 @@ describe("Workflow helper scripts", () => {
       expect(res.stdout).toContain("without rerunning verification");
       expect(existsSync(rerunMarker)).toBe(false);
       expect(existsSync(projectionMarker)).toBe(true);
+      // EPC-05: finalize's own evidence emission also cannot-binds in this
+      // non-git, no-source-root fixture (no scripts/emit-verify-evidence.ts
+      // is deployed here, mirroring every real downstream adopter), so the
+      // pending -> pass patch that used to reach checks/latest.json via the
+      // deleted direct `cp` is never applied to that file: it stays exactly
+      // as this test pre-seeded it. This is the documented residual finding
+      // for this row: the acceptance_receipt pending -> pass transition on
+      // checks/latest.json only becomes observable where the ledger is
+      // reachable (a real, git-backed, source-rooted worktree -- see
+      // tests/evidence-checks-materializer.test.ts's own end-to-end
+      // pass/fail producer+materializer tests for that path).
       const checks = JSON.parse(readFileSync(join(cwd, ".ai/harness/checks/latest.json"), "utf-8"));
-      expect(checks.acceptance_receipt).toMatchObject({
-        status: "pass",
-        disposition: "external_pass",
-        reviewer: "Claude",
-        source: "claude-review",
-      });
-      expect(checks.guards.find((guard: { name: string }) => guard.name === "acceptance_receipt")?.status).toBe("pass");
+      expect(checks.acceptance_receipt).toEqual({ status: "pending" });
+      expect(checks.guards.find((guard: { name: string }) => guard.name === "acceptance_receipt")?.status).toBe("pending");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -3575,15 +3611,14 @@ describe("Workflow helper scripts", () => {
         REPO_HARNESS_HOOK_CLI: join(ROOT, "src/cli/hook-entry.ts"),
       });
 
-      expect(
-        baselineRes.status,
-        `${baselineRes.stdout}\n${baselineRes.stderr}\n${readFileSync(join(baseline, ".ai/harness/checks/latest.json"), "utf-8")}`,
-      ).toBe(0);
-      expect(
-        candidateRes.status,
-        `${candidateRes.stdout}\n${candidateRes.stderr}\n${readFileSync(join(withCandidate, ".ai/harness/checks/latest.json"), "utf-8")}`,
-      ).toBe(0);
+      expect(baselineRes.status, `${baselineRes.stdout}\n${baselineRes.stderr}`).toBe(0);
+      expect(candidateRes.status, `${candidateRes.stdout}\n${candidateRes.stderr}`).toBe(0);
       expect(candidateRes.status).toBe(baselineRes.status);
+      // EPC-05: emission cannot-binds in this non-git, no-source-root
+      // fixture, so checks/latest.json is never (re)written -- see
+      // latestRunSnapshot's doc comment.
+      expectChecksLatestAbsent(baseline);
+      expectChecksLatestAbsent(withCandidate);
       expect(baselineRes.stdout).toContain("Sprint verification passed");
       expect(candidateRes.stdout).toContain("Sprint verification passed");
       expect(baselineRes.stderr).not.toContain("[Maintenance] Notes list promotion candidates");
@@ -3656,7 +3691,13 @@ describe("Workflow helper scripts", () => {
         REPO_HARNESS_HOOK_CLI: join(ROOT, "src/cli/hook-entry.ts"),
       });
       expect(res.status).toBe(1);
-      const checks = JSON.parse(readFileSync(join(cwd, ".ai/harness/checks/latest.json"), "utf-8"));
+      // EPC-05: emission cannot-binds in this fixture (no
+      // scripts/emit-verify-evidence.ts is deployed here, mirroring every
+      // real downstream adopter), so checks/latest.json is never (re)written
+      // -- see latestRunSnapshot's doc comment. The exact same content still
+      // lands in the run snapshot, unaffected by this row's cutover.
+      expectChecksLatestAbsent(cwd);
+      const { content: checks } = latestRunSnapshot(cwd);
       expect(checks.status).toBe("fail");
       expect(checks.failure_class).toBe("allowed_paths");
       expect(checks.diff_base.ref).toBe("main");
@@ -3782,11 +3823,14 @@ describe("Workflow helper scripts", () => {
         HARNESS_DIFF_BASE: undefined,
       };
       const baselineRes = run("bash", ["scripts/verify-sprint.sh", "--prepare-acceptance"], cwd, metadataFallbackEnv);
-      expect(
-        baselineRes.status,
-        `${baselineRes.stdout}\n${baselineRes.stderr}\n${readFileSync(join(cwd, ".ai/harness/checks/latest.json"), "utf-8")}`,
-      ).toBe(0);
-      const baselineChecks = JSON.parse(readFileSync(join(cwd, ".ai/harness/checks/latest.json"), "utf-8"));
+      expect(baselineRes.status, `${baselineRes.stdout}\n${baselineRes.stderr}`).toBe(0);
+      // EPC-05: emission cannot-binds in this fixture (no
+      // scripts/emit-verify-evidence.ts is deployed here), so
+      // checks/latest.json is never (re)written across any of these three
+      // runs -- the identical content still lands in each run's own
+      // snapshot file, unaffected by this row's cutover.
+      expectChecksLatestAbsent(cwd);
+      const baselineChecks = latestRunSnapshot(cwd).content;
       expect(baselineChecks.diff_base.ref).toBe(taskBase);
       expect(baselineChecks.diff_base.merge_base).toBe(taskBase);
       expect(baselineChecks.files_changed).toContain("docs/task-change.md");
@@ -3809,9 +3853,7 @@ describe("Workflow helper scripts", () => {
       );
       const legacyMetadataRes = run("bash", ["scripts/verify-sprint.sh", "--prepare-acceptance"], cwd, metadataFallbackEnv);
       expect(legacyMetadataRes.status).toBe(0);
-      const legacyMetadataChecks = JSON.parse(
-        readFileSync(join(cwd, ".ai/harness/checks/latest.json"), "utf-8")
-      );
+      const legacyMetadataChecks = latestRunSnapshot(cwd).content;
       expect(legacyMetadataChecks.diff_base.ref).toBe(taskBase);
       expect(legacyMetadataChecks.allowed_paths_check.status).toBe("pass");
 
@@ -3820,7 +3862,7 @@ describe("Workflow helper scripts", () => {
         REPO_HARNESS_DIFF_BASE: "origin/main",
       });
       expect(overrideRes.status).toBe(1);
-      const overrideChecks = JSON.parse(readFileSync(join(cwd, ".ai/harness/checks/latest.json"), "utf-8"));
+      const overrideChecks = latestRunSnapshot(cwd).content;
       expect(overrideChecks.diff_base.ref).toBe("origin/main");
       expect(overrideChecks.allowed_paths_check.outside).toContain("plans/preexisting-on-local-main.md");
     } finally {
@@ -3878,7 +3920,12 @@ describe("Workflow helper scripts", () => {
 
       const res = run("bash", ["scripts/verify-sprint.sh", "--prepare-acceptance"], cwd);
       expect(res.status).toBe(0);
-      const checks = JSON.parse(readFileSync(join(cwd, ".ai/harness/checks/latest.json"), "utf-8"));
+      // EPC-05: emission cannot-binds in this fixture (no
+      // scripts/emit-verify-evidence.ts is deployed here), so
+      // checks/latest.json is never (re)written -- the identical content
+      // still lands in the run snapshot.
+      expectChecksLatestAbsent(cwd);
+      const checks = latestRunSnapshot(cwd).content;
       expect(checks.review.status).toBe("pass");
       expect(checks.review.card).toBeUndefined();
     } finally {
@@ -3984,7 +4031,12 @@ describe("Workflow helper scripts", () => {
 
       const res = run("bash", ["scripts/verify-sprint.sh", "--prepare-acceptance"], cwd);
       expect(res.status).toBe(0);
-      const checks = JSON.parse(readFileSync(join(cwd, ".ai/harness/checks/latest.json"), "utf-8"));
+      // EPC-05: emission cannot-binds in this fixture (no
+      // scripts/emit-verify-evidence.ts is deployed here), so
+      // checks/latest.json is never (re)written -- the identical content
+      // still lands in the run snapshot.
+      expectChecksLatestAbsent(cwd);
+      const checks = latestRunSnapshot(cwd).content;
       expect(checks.review.status).toBe("pass");
       expect(checks.review.card).toBeUndefined();
     } finally {
@@ -4032,14 +4084,22 @@ describe("Workflow helper scripts", () => {
 
       const res = run("bash", ["scripts/verify-sprint.sh", "--prepare-acceptance"], cwd);
       expect(res.status).toBe(1);
-      const checks = JSON.parse(readFileSync(join(cwd, ".ai/harness/checks/latest.json"), "utf-8"));
+      // EPC-05: emission cannot-binds in this fixture (no
+      // scripts/emit-verify-evidence.ts is deployed here), so
+      // checks/latest.json is never (re)written -- the identical content
+      // (including the "fail" status: this row extends emission to the
+      // fail path too, in the real ledger-reachable case, but this fixture
+      // never reaches the ledger regardless of that) still lands in the
+      // run snapshot.
+      expectChecksLatestAbsent(cwd);
+      const { path: runFilePath, content: checks } = latestRunSnapshot(cwd);
       expect(checks.status).toBe("fail");
       expect(checks.source).toBe("verify-sprint");
       expect(checks.contract.file).toBe("tasks/contracts/demo.contract.md");
       expect(checks.contract.status).toBe("fail");
       expect(checks.acceptance_receipt.status).toBe("pending");
       expect(checks.run_file).toMatch(/^\.ai\/harness\/runs\/.+-demo\.json$/);
-      expect(existsSync(join(cwd, checks.run_file))).toBe(true);
+      expect(join(cwd, checks.run_file)).toBe(runFilePath);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -4108,7 +4168,12 @@ describe("Workflow helper scripts", () => {
       expect(handoff).toContain("Plan: plans/plan-20260327-2200-alpha.md");
       expect(handoff).toContain("Contract: tasks/contracts/alpha.contract.md");
       expect(handoff).toContain("Checks: .ai/harness/checks/latest.json");
-      expect(handoff).toContain("Latest trace/checks file:");
+      // EPC-07: the old "Latest trace/checks file:" line re-derived evidence
+      // directly from checks/latest.json content (a single-hop violation this
+      // package fixes); the recovery materializer's "## Evidence" section now
+      // sources only from the checkpoint, rendering a typed minimal state when
+      // none is published yet (this fixture seeds no ledger/checkpoint).
+      expect(handoff).toContain("- Checkpoint: (none published yet -- no ledger evidence recorded in this worktree)");
       expect(handoff).toContain("## Active Artifacts");
       expect(handoff).toContain("Active sprint row:");
       expect(handoff).toContain("Alpha handoff");
