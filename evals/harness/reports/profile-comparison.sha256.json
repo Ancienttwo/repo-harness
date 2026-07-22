@@ -1,16 +1,16 @@
 {
   "protocol": "repo-harness-profile-benchmark/report-bytes/v1",
-  "benchmark_subject_sha256": "sha256:c2c55a74bcb67448451f57fa10a8c6f2fe8f195992d2969b153781ce89e0d640",
+  "benchmark_subject_sha256": "sha256:32c6e96e2e2e1880b587d5f1073819c7ec7f00acf957c4368edd1d2d6eea01da",
   "files": {
     "json": {
       "path": "profile-comparison.json",
-      "bytes": 73475,
-      "sha256": "sha256:efb9fc6d96114dba32918ae67df8af3631303ff2f2fd1030f1105cfbd10f3925"
+      "bytes": 73519,
+      "sha256": "sha256:a9e3c87538bee5ffab90a8e697596f2cc7e61a1fe573685b159f7371129692c4"
     },
     "markdown": {
       "path": "profile-comparison.md",
-      "bytes": 2950,
-      "sha256": "sha256:b6066e3cde27b863c73d3399d2fe2a7d50466c34a5a86326535d6c133bbb9d63"
+      "bytes": 2769,
+      "sha256": "sha256:8becda39cd9145d5cfa8944bc20c90e1ff9d73cd04b0d415ac939269b73c06e6"
     }
   }
 }

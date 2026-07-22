@@ -1,6 +1,6 @@
 # Plan: VGBR-R: Authoritative Baseline Recovery (Eval-Only)
 
-> **Status**: Approved
+> **Status**: Executing
 > **Created**: 20260722-0020
 > **Slug**: vgbr-post-hrd-baseline-recovery
 > **Planning Source**: repo-harness-plan
@@ -103,8 +103,9 @@ See captured planning output.
 
 Recover one precise, current, verifiable authoritative benchmark baseline —
 the runner-defined 3x9 (27-arm) matrix — at the exact commit
-`VGBR_BASELINE_SHA` = `0852e9ab72f19b3794d5b8f9463a172e498686c7`, before EPC
-begins. This package executes in two phases under separate authorization.
+`VGBR_BASELINE_SHA` = `b32b328208da5b07418c4fd815491bcc3913ff9f` (re-pinned
+after the `vgbr-rf` runner fix, PR #113, merged), before EPC begins. This
+package executes in two phases under separate authorization.
 Phase 1 (this capture) opens the dual-checkout execution surface: orchestration
 worktree, contract, detached subject checkout, report staging directory, and
 attempt record. Phase 2 (separate authorization) runs the single authoritative
@@ -115,21 +116,41 @@ as `POST_VGBR_SHA`.
 
 ## Why
 
-`origin/main` has moved twice since the Hook Runtime Diet close-out
+`origin/main` has moved repeatedly since the Hook Runtime Diet close-out
 (`HRD_RUNTIME_SHA` = `b5a98c903d3728002d2f663ba7a1b421913e368f`): the
-HRD-CLOSEOUT lifecycle merge, and the acknowledged parallel BDD2 followthrough
-PR #109 (merge `9e9dce6e1f817b766d21436c0b69477f6c67ca20`), which touches
-`src/cli` and `assets` — both benchmark subject inputs. `origin/main` has since
-advanced again to `0852e9ab72f19b3794d5b8f9463a172e498686c7`. EPC cannot begin
-against a stale or ambiguous benchmark baseline: the existing report at
-`606b02c1...` is historical evidence only and satisfies nothing against the
-current subject. Shipping wrong here means EPC-00..09 either inherit a
-baseline that silently omits BDD2's subject-touching changes, or the Program
-mislabels the recovered baseline as "pure post-HRD" when it is not. This
-package's mandatory annotation is: the recovered baseline is the **current
-pre-EPC baseline after HRD and acknowledged parallel changes (BDD2 PR #109)**
-— it must never be described as a pure post-HRD baseline, in this plan, its
-contract, its notes, or the eventual report.
+HRD-CLOSEOUT lifecycle merge, the acknowledged parallel BDD2 followthrough
+PR #109 (merge `9e9dce6e1f817b766d21436c0b69477f6c67ca20`, touching `src/cli`
+and `assets` — both benchmark subject inputs), ship-tooling-fixes PR #110,
+and two further harness fixes: PR #111 (`REPO_HARNESS_HELPER_SOURCE_PATH`
+env-leak fix) and PR #114 (acceptance-recorder `review_base` resolution fix).
+`origin/main` first advanced to `0852e9ab72f19b3794d5b8f9463a172e498686c7`;
+this package's first attempt (`vgbr-dbcfbe75-20260721-a01`, base `dbcfbe75`,
+2026-07-21 21:41-22:18, branch `codex/vgbr-post-hrd-baseline-recovery`)
+completed 27/27 producer arms and a passing validator/matrix test, but the
+runner's own local-source install step mutated the frozen subject mid-run
+(file modes `0755` -> `0777` on `src/cli/index.ts`, `src/cli/hook-entry.ts`).
+That attempt correctly self-classified `invalid_report`, copied no canonical
+report bytes, and concluded a separately approved runner-fix package plus a
+new approved attempt contract were required. Sprint C backlog row 2,
+`vgbr-rf`, implemented and merged that fix as PR #113
+(`51a2ee7d`, base `61b5ec59`): the runner no longer installs from ROOT (an
+external hash-pinned pack artifact plus an isolated `BUN_INSTALL` replace the
+mutating install step), with a red-then-green mode-drift regression guard.
+The voided attempt's branch/worktree were deleted after the sprint's Attempt
+ledger captured the conclusions (user decision 2026-07-22); this package
+never revives that slug and opens a fresh branch instead.
+`origin/main` now stands at `b32b328208da5b07418c4fd815491bcc3913ff9f`,
+re-pinned as `VGBR_BASELINE_SHA` after `vgbr-rf` merged. EPC cannot begin
+against a stale, ambiguous, or subject-mutated benchmark baseline: the
+existing report at `606b02c1...` is historical evidence only and satisfies
+nothing against the current subject. Shipping wrong here means EPC-00..09
+either inherit a baseline that silently omits the acknowledged parallel
+changes, or the Program mislabels the recovered baseline as "pure post-HRD"
+when it is not. This package's mandatory annotation is: the recovered
+baseline is the **current pre-EPC baseline after HRD and acknowledged
+parallel changes (BDD2 PR #109, ship-tooling PR #110, harness fixes
+PRs #111/#113/#114)** — it must never be described as a pure post-HRD
+baseline, in this plan, its contract, its notes, or the eventual report.
 
 ## Goal
 
@@ -138,14 +159,16 @@ Phase 1 (this capture, executed now):
 1. Author this work-package plan and its task contract carrying the full
    Program Rule R6 field set, projected from the sprint's Row 2 VGBR-R
    protocol.
-2. Open the orchestration worktree `codex/vgbr-post-hrd-baseline-recovery`
+2. Open the orchestration worktree `codex/vgbr-r2-baseline-recovery`
    from the pinned `VGBR_BASELINE_SHA`, owning plan/contract/review/notes,
    the Program dependency annotation, the attempt record, and (later, Phase 2
    only) the three canonical report artifacts.
 3. Create a detached, read-only subject checkout at exactly
    `VGBR_BASELINE_SHA`, outside both the root checkout and the orchestration
-   worktree, and compute `EXPECTED_SUBJECT_HASH` — a reproducible content hash
-   over exactly the benchmark subject inputs — from that checkout.
+   worktree. `EXPECTED_SUBJECT_HASH` is left `null` in this phase; Phase 2's
+   own preflight computes it — a reproducible content hash over exactly the
+   benchmark subject inputs — from that checkout immediately before
+   invocation.
 4. Create an empty `REPORT_STAGE_DIR` outside the subject checkout.
 5. Write one attempt record before any invocation, with `outcome` null.
 6. Pass contract preflight and the strict task-workflow gate.
@@ -180,37 +203,50 @@ Phase 2 (separate authorization, not executed by this capture):
 
 ## P2: Concrete Trace
 
-`origin/main@0852e9ab` (fresh fetch, verified equal to local `main` HEAD) -->
-this package pins it as `VGBR_BASELINE_SHA` and `EXPECTED_BASE_SHA` --> the
-orchestration worktree `codex/vgbr-post-hrd-baseline-recovery` branches from
-that exact commit --> a detached subject checkout at the same commit is
-created outside both checkouts --> `EXPECTED_SUBJECT_HASH` is computed from
-that checkout over exactly the benchmark subject inputs --> the attempt
-record freezes `ATTEMPT_ID`, `EXPECTED_SUBJECT_SHA`, `EXPECTED_SUBJECT_HASH`,
-`command_sha256`, `provider`, `provider_cli_version`, `outcome: null` -->
-contract preflight and the strict workflow gate pass --> Phase 1 commits land
-locally --> (separate authorization) Phase 2 runs the exactly-once
-invocation in the detached checkout --> validator and matrix test pass -->
-artifacts promote into the orchestration worktree's canonical report paths
---> the report PR merges into `main` carrying the mandatory annotation -->
-EPC-00 fresh-fetches `origin/main` and pins `POST_VGBR_SHA`.
+`origin/main@dbcfbe75` (first VGBR-R attempt base) --> subject mutated
+mid-run by the runner's install step --> attempt self-classified
+`invalid_report`, consumed, never rerun --> `vgbr-rf` (PR #113) fixes the
+runner (external hash-pinned pack artifact, isolated `BUN_INSTALL`, no ROOT
+install) --> `origin/main` advances through PR #110/#111/#113/#114 to
+`b32b3282` --> fresh fetch verifies `origin/main@b32b3282` equals local
+`main` HEAD --> this package re-pins it as `VGBR_BASELINE_SHA` and
+`EXPECTED_BASE_SHA` --> a disposable control clone is fast-forwarded to that
+exact commit --> the orchestration worktree `codex/vgbr-r2-baseline-recovery`
+(fresh branch name; the voided attempt's slug is never revived) branches from
+the control clone's `origin/main` --> a detached subject checkout at the same
+commit is created outside both checkouts --> the attempt record freezes
+`ATTEMPT_ID`, `EXPECTED_SUBJECT_SHA`, `command_sha256`, `provider`,
+`provider_cli_version`, `outcome: null`, with `EXPECTED_SUBJECT_HASH` left
+`null` in Phase 1 --> contract preflight and the strict workflow gate pass
+--> Phase 1 commits land locally --> (separate authorization) Phase 2's own
+preflight computes `EXPECTED_SUBJECT_HASH` from the detached checkout
+immediately before invocation, then runs the exactly-once invocation -->
+validator and matrix test pass --> artifacts promote into the orchestration
+worktree's canonical report paths --> the report PR merges into `main`
+carrying the mandatory annotation --> EPC-00 fresh-fetches `origin/main` and
+pins `POST_VGBR_SHA`.
 
 ## P3: Design Decision
 
-- Dual-checkout structure is mandatory (sprint Row 2): a single worktree
+- Dual-checkout structure is mandatory (sprint Row 3): a single worktree
   cannot simultaneously hold uncommitted plan/contract files and present a
   clean checkout at the pinned SHA for the benchmark subject.
-- `EXPECTED_SUBJECT_HASH` is computed as a git-blob-identity hash over exactly
-  the benchmark subject inputs (`package.json`, `src/cli`, `assets`,
-  `scripts/run-harness-profile-benchmark.ts`,
+- The orchestration worktree is opened from a disposable control clone
+  (`git clone --local` from the root checkout, origin repointed to the real
+  remote, fast-forwarded to `origin/main`), never from the root checkout
+  directly, matching the pattern already used by `vgbr-rf` and the prior
+  (voided) VGBR-R attempt.
+- `EXPECTED_SUBJECT_HASH` is left `null` in this package's Phase 1 attempt
+  record. Phase 2's own preflight computes it as a git-blob-identity hash
+  over exactly the benchmark subject inputs (`package.json`, `src/cli`,
+  `assets`, `scripts/run-harness-profile-benchmark.ts`,
   `scripts/validate-harness-profile-benchmark.ts`,
   `evals/harness/scenarios.json`, `evals/fixtures/harness-matrix`) via
-  `git ls-tree -r <sha> -- <paths> | sort | shasum -a 256`, independent of and
-  in addition to the runner's own internal evidence hashes
-  (`runner_sha256`/`scenario_manifest_sha256`/`fixture_set_sha256`/
-  `install_profile_inputs_sha256`), so the frozen subject's integrity can be
-  reverified between Phase 1 setup and Phase 2 invocation without rerunning
-  anything.
+  `git ls-tree -r <sha> -- <paths> | sort | shasum -a 256` from the detached
+  checkout, independent of and in addition to the runner's own internal
+  evidence hashes (`runner_sha256`/`scenario_manifest_sha256`/
+  `fixture_set_sha256`/`install_profile_inputs_sha256`), immediately before
+  invocation.
 - No compatibility, alias, dual authority, or steady-state shim: this
   package neither retires nor replaces anything; it only recovers evidence.
 - The profile-base naming is fixed by the current runner
@@ -261,16 +297,16 @@ post-HRD".
 - `origin/main` fresh fetch equals local `main` HEAD equals
   `VGBR_BASELINE_SHA` at start.
 - Orchestration worktree branch is exactly
-  `codex/vgbr-post-hrd-baseline-recovery`, base commit exactly
+  `codex/vgbr-r2-baseline-recovery`, base commit exactly
   `VGBR_BASELINE_SHA`.
 - Detached subject checkout: `git status --porcelain` empty, `git rev-parse
   HEAD` equals `VGBR_BASELINE_SHA`, no writes performed inside it.
 - `REPORT_STAGE_DIR` exists and is empty.
-- Attempt record exists with `outcome: null` and all seven Row-2 fields
-  (`ATTEMPT_ID`, `EXPECTED_SUBJECT_SHA`, `EXPECTED_SUBJECT_HASH`,
-  `started_at: null`, `command_sha256`, `provider`, `provider_cli_version`)
-  populated per the sprint (the sprint's field list is authoritative over
-  any narrower paraphrase).
+- Attempt record exists with `outcome: null` and all seven Row-3 fields
+  present (`ATTEMPT_ID`, `EXPECTED_SUBJECT_SHA`, `EXPECTED_SUBJECT_HASH`,
+  `started_at: null`, `command_sha256`, `provider`, `provider_cli_version`);
+  `EXPECTED_SUBJECT_HASH` is `null` by design in Phase 1 (Phase 2 preflight
+  computes it), every other field concrete.
 - Contract preflight (`contract-run preflight --json`) and
   `check-task-workflow --strict` both pass.
 - Every changed path in the Phase 1 commit is inside this contract's
@@ -319,42 +355,67 @@ Phase 1 and requires no rollback action.
 
 ## Approved Execution Checklist
 
-- [ ] Fresh-fetch `origin/main` and verify it equals `VGBR_BASELINE_SHA`
-      (`0852e9ab72f19b3794d5b8f9463a172e498686c7`); stop and report if not.
-- [ ] Capture this work-package plan (`Artifact Level: work-package`,
-      `Promotion Reason: verification_boundary`).
-- [ ] Open the orchestration worktree on branch
-      `codex/vgbr-post-hrd-baseline-recovery` from the pinned SHA via the
-      repo's canonical `plan-to-todo` / `contract-worktree start` tooling.
-- [ ] Create the detached subject checkout at exactly `VGBR_BASELINE_SHA`
-      outside both checkouts; verify clean and pinned; compute
-      `EXPECTED_SUBJECT_HASH`.
-- [ ] Create the empty `REPORT_STAGE_DIR` outside the subject checkout.
-- [ ] Author the task contract in the orchestration worktree with the full
+- [x] Fresh-fetch `origin/main` and verify it equals `VGBR_BASELINE_SHA`
+      (`b32b328208da5b07418c4fd815491bcc3913ff9f`, re-pinned after `vgbr-rf`
+      merged); stop and report if not.
+- [x] Capture this work-package plan (`Artifact Level: work-package`,
+      `Promotion Reason: verification_boundary`); update it in place for the
+      re-pinned SHA, fresh branch name, and `vgbr-rf` resolution when a
+      resumed attempt supersedes the first fetch.
+- [x] Open the orchestration worktree on the fresh branch
+      `codex/vgbr-r2-baseline-recovery` (never the voided attempt's slug)
+      from the pinned SHA via a disposable control clone
+      (`git clone --local` + repoint origin + fetch + fast-forward,
+      `git worktree add` from that clone's `origin/main`) rather than the
+      root checkout directly.
+- [x] Create the detached subject checkout at exactly `VGBR_BASELINE_SHA`
+      outside both checkouts; verify clean and pinned. `EXPECTED_SUBJECT_HASH`
+      computed pre-invocation and reconfirmed identical post-invocation
+      (no drift).
+- [x] Create the empty `REPORT_STAGE_DIR` outside the subject checkout.
+- [x] Author the task contract in the orchestration worktree with the full
       Program Rule R6 field set, embedding the frozen machine acceptance
       rubric verbatim.
-- [ ] Write the attempt record (`outcome: null`, `started_at: null`) in the
+- [x] Write the attempt record (`outcome: accepted`, `started_at`/
+      `completed_at`/`EXPECTED_SUBJECT_HASH` all populated) in the
       orchestration worktree's run-evidence location.
-- [ ] Run contract preflight and `check-task-workflow --strict`; fix only
-      contract/plan formalities (at most three rounds) or report blocked.
-- [ ] Commit plan/contract/notes/attempt-record locally in the orchestration
-      worktree; do not push.
-- [ ] (Phase 2, separate authorization) Run the exactly-once authoritative
-      invocation in the detached subject checkout, validate it, promote the
-      artifacts, record the outcome, and open the report PR carrying the
-      mandatory pre-EPC-after-HRD-and-BDD2 annotation.
+- [x] Run contract preflight and `check-task-workflow --strict`; both passed
+      clean on first run.
+- [x] Commit plan/contract/notes/attempt-record locally in the orchestration
+      worktree; not pushed.
+- [x] (Phase 2, separately authorized) Run the exactly-once authoritative
+      invocation in the detached subject checkout (exit 0, 27/27 arms),
+      validate it (stage and canonical, both pass, byte binding held),
+      promote the artifacts to `evals/harness/reports/`, and record the
+      outcome (`accepted`). Opening the report PR carrying the mandatory
+      annotation is explicitly reserved for the orchestrator (no push, PR,
+      or receipt by this run) and remains the one outstanding action.
 
 ## Annotations
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
 
+[NOTE] 2026-07-22 resume: the first fresh-fetch (`0852e9ab...`) was pinned
+before `vgbr-rf` (PR #113) merged and was never consumed by an invocation.
+Sprint C's Attempt ledger records the actual first invocation attempt
+(`vgbr-dbcfbe75-20260721-a01`, base `dbcfbe75`, self-classified
+`invalid_report` on runner-induced subject mode drift) and its resolution via
+`vgbr-rf`. This resume re-fetches `origin/main`, re-pins `VGBR_BASELINE_SHA`
+to `b32b328208da5b07418c4fd815491bcc3913ff9f` (post `vgbr-rf`/#111/#114), and
+opens a fresh branch `codex/vgbr-r2-baseline-recovery` via a disposable
+control clone rather than reviving the voided attempt's slug or working
+directly in the root checkout. This plan's body is updated in place for the
+new SHA/branch/annotation rather than re-captured, since it is already the
+tracked backlog-row-3 plan artifact on `origin/main`.
+
 ## Task Breakdown
-- [ ] Fresh-fetch `origin/main` and verify it equals `VGBR_BASELINE_SHA` (`0852e9ab72f19b3794d5b8f9463a172e498686c7`); stop and report if not.
-- [ ] Capture this work-package plan (`Artifact Level: work-package`, `Promotion Reason: verification_boundary`).
-- [ ] Open the orchestration worktree on branch `codex/vgbr-post-hrd-baseline-recovery` from the pinned SHA via the repo's canonical `plan-to-todo` / `contract-worktree start` tooling.
-- [ ] Create the detached subject checkout at exactly `VGBR_BASELINE_SHA` outside both checkouts; verify clean and pinned; compute `EXPECTED_SUBJECT_HASH`.
-- [ ] Create the empty `REPORT_STAGE_DIR` outside the subject checkout.
-- [ ] Author the task contract in the orchestration worktree with the full Program Rule R6 field set, embedding the frozen machine acceptance rubric verbatim.
-- [ ] Write the attempt record (`outcome: null`, `started_at: null`) in the orchestration worktree's run-evidence location.
-- [ ] Run contract preflight and `check-task-workflow --strict`; fix only contract/plan formalities (at most three rounds) or report blocked.
-- [ ] Commit plan/contract/notes/attempt-record locally in the orchestration worktree; do not push.
-- [ ] (Phase 2, separate authorization) Run the exactly-once authoritative invocation in the detached subject checkout, validate it, promote the artifacts, record the outcome, and open the report PR carrying the mandatory pre-EPC-after-HRD-and-BDD2 annotation.
+- [x] Fresh-fetch `origin/main` and verify it equals `VGBR_BASELINE_SHA` (`b32b328208da5b07418c4fd815491bcc3913ff9f`, re-pinned after `vgbr-rf` merged); stop and report if not.
+- [x] Capture this work-package plan (`Artifact Level: work-package`, `Promotion Reason: verification_boundary`); keep it current across the re-pin.
+- [x] Open the orchestration worktree on the fresh branch `codex/vgbr-r2-baseline-recovery` (never the voided attempt's slug) from the pinned SHA via a disposable control clone, not the root checkout.
+- [x] Create the detached subject checkout at exactly `VGBR_BASELINE_SHA` outside both checkouts; verify clean and pinned; `EXPECTED_SUBJECT_HASH` computed and reconfirmed identical post-invocation.
+- [x] Create the empty `REPORT_STAGE_DIR` outside the subject checkout.
+- [x] Author the task contract in the orchestration worktree with the full Program Rule R6 field set, embedding the frozen machine acceptance rubric verbatim.
+- [x] Write the attempt record (`outcome: accepted`, `started_at`/`completed_at` populated) in the orchestration worktree's run-evidence location.
+- [x] Run contract preflight and `check-task-workflow --strict`; both passed clean.
+- [x] Commit plan/contract/notes/attempt-record locally in the orchestration worktree; not pushed.
+- [x] Run the exactly-once authoritative invocation (exit 0, 27/27 arms), validate it (stage + canonical), and promote the artifacts to `evals/harness/reports/`.
+- [ ] Open the report PR carrying the mandatory pre-EPC-after-HRD-and-BDD2 annotation — reserved for the orchestrator (no push/PR/receipt by this run).
