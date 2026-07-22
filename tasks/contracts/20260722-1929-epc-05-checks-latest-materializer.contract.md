@@ -1,6 +1,6 @@
 # Task Contract: epc-05-checks-latest-materializer
 
-> **Status**: Active
+> **Status**: Done
 > **Plan**: plans/plan-20260722-1929-epc-05-checks-latest-materializer.md
 > **Task Profile**: code-change
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
