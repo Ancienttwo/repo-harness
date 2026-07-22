@@ -15,6 +15,7 @@ const REPO_ROOT = join(SCRIPT_DIR, "..");
 const SKILL_ROUTING_DIR = join(REPO_ROOT, "evals", "skill-routing");
 export const CORPUS_PATH = join(SKILL_ROUTING_DIR, "routing-corpus.json");
 export const BASELINE_PATH = join(SKILL_ROUTING_DIR, "discovery-baseline.json");
+export const SCHEMA_PATH = join(SKILL_ROUTING_DIR, "routing-corpus.schema.json");
 
 export const CASE_KINDS = [
   "positive", "ambiguous", "quoted-name", "negated", "hypothetical", "status-only", "ordinary-qa",
@@ -26,8 +27,8 @@ export type CaseKind = (typeof CASE_KINDS)[number];
 export const REQUIRED_OVERLAP_TERMS: readonly string[] =
   ["review", "check", "plan", "ship", "merge-gate", "gptpro", "architecture"];
 
-const ID_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
-const LANGS = ["zh", "en"];
+export const ID_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+export const LANGS = ["zh", "en"];
 const CASE_FIELDS = ["id", "lang", "kind", "prompt", "expected_route", "overlap_terms", "notes"];
 
 export interface RoutingCase {
@@ -145,6 +146,54 @@ export function validateCoverage(corpus: RoutingCorpus, canonicalRoutes: readonl
   return issues;
 }
 
+/**
+ * SSD-01 carried advisory: routing-corpus.schema.json existed but nothing
+ * ever loaded or cross-checked it against this runner's own constants, so it
+ * could silently drift. This binds the schema's case-shape enums/pattern to
+ * the runner's own CASE_KINDS/LANGS/ID_PATTERN/canonical-routes constants.
+ */
+export function schemaDriftIssues(canonicalRoutes: readonly string[]): string[] {
+  const issues: string[] = [];
+  let schema: unknown;
+  try {
+    schema = loadJson(SCHEMA_PATH);
+  } catch (error) {
+    return [`routing-corpus.schema.json: unreadable or invalid JSON: ${(error as Error).message}`];
+  }
+  const props = (schema as {
+    definitions?: { case?: { properties?: Record<string, { enum?: unknown[]; pattern?: string }> } };
+  }).definitions?.case?.properties;
+  if (!props) {
+    return ["routing-corpus.schema.json: definitions.case.properties is missing"];
+  }
+
+  const sameSet = (left: readonly unknown[], right: readonly string[]): boolean => {
+    if (left.length !== right.length) return false;
+    const a = [...left].map(String).sort();
+    const b = [...right].sort();
+    return a.every((value, index) => value === b[index]);
+  };
+
+  const kindEnum = props.kind?.enum;
+  if (!Array.isArray(kindEnum) || !sameSet(kindEnum, CASE_KINDS)) {
+    issues.push(`schema kind enum ${JSON.stringify(kindEnum)} drifted from runner CASE_KINDS ${JSON.stringify(CASE_KINDS)}`);
+  }
+  const langEnum = props.lang?.enum;
+  if (!Array.isArray(langEnum) || !sameSet(langEnum, LANGS)) {
+    issues.push(`schema lang enum ${JSON.stringify(langEnum)} drifted from runner LANGS ${JSON.stringify(LANGS)}`);
+  }
+  const expectedRouteEnum = props.expected_route?.enum;
+  const runnerRoutes = [...canonicalRoutes, "none"];
+  if (!Array.isArray(expectedRouteEnum) || !sameSet(expectedRouteEnum, runnerRoutes)) {
+    issues.push(`schema expected_route enum ${JSON.stringify(expectedRouteEnum)} drifted from discovery-baseline canonical routes ${JSON.stringify(runnerRoutes)}`);
+  }
+  const idPattern = props.id?.pattern;
+  if (idPattern !== ID_PATTERN.source) {
+    issues.push(`schema id pattern ${JSON.stringify(idPattern)} drifted from runner ID_PATTERN ${JSON.stringify(ID_PATTERN.source)}`);
+  }
+  return issues;
+}
+
 function usage(): string {
   return [
     "Usage:",
@@ -192,9 +241,15 @@ function runValidate(): number {
     return 1;
   }
   const corpus = corpusRaw as RoutingCorpus;
-  const coverageIssues = validateCoverage(corpus, canonicalRoutesFromBaseline(loadBaseline()));
+  const canonicalRoutes = canonicalRoutesFromBaseline(loadBaseline());
+  const coverageIssues = validateCoverage(corpus, canonicalRoutes);
   if (coverageIssues.length > 0) {
     for (const issue of coverageIssues) console.error(`run-skill-routing-eval: validate: ${issue}`);
+    return 1;
+  }
+  const driftIssues = schemaDriftIssues(canonicalRoutes);
+  if (driftIssues.length > 0) {
+    for (const issue of driftIssues) console.error(`run-skill-routing-eval: validate: ${issue}`);
     return 1;
   }
   console.log(`run-skill-routing-eval: validate OK: ${corpus.cases.length} cases`);

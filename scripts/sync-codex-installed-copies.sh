@@ -48,6 +48,15 @@ if [[ ! -d "$SOURCE_ROOT" ]]; then
   exit 1
 fi
 
+# Resolved once, eagerly, here in the main shell process (never inside a function
+# invoked as a pipeline's non-last stage -- bash forks a subshell for those, which
+# would silently swallow a failure here as "selects nothing" instead of aborting).
+# profile_facades() below just emits this precomputed value.
+if ! SELECTED_FACADES="$(bun "$SOURCE_ROOT/scripts/skill-surface-select.ts" facades --profile "$INSTALL_PROFILE")"; then
+  echo "[sync-installed] skill-surface-select facades failed for profile: $INSTALL_PROFILE" >&2
+  exit 1
+fi
+
 common_excludes=(
   --exclude='.git/'
   --exclude='_ops/'
@@ -251,15 +260,7 @@ sync_claude_alias_copies() {
 }
 
 profile_facades() {
-  case "$INSTALL_PROFILE" in
-    minimal) return 0 ;;
-    standard)
-      printf '%s\n' repo-harness-plan repo-harness-check repo-harness-handoff
-      ;;
-    product-planning|strict)
-      printf '%s\n' repo-harness-plan repo-harness-check repo-harness-handoff repo-harness-gptpro
-      ;;
-  esac
+  [[ -n "$SELECTED_FACADES" ]] && printf '%s\n' "$SELECTED_FACADES"
 }
 
 facade_selected() {

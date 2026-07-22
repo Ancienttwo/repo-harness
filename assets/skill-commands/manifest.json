@@ -1,143 +1,678 @@
 {
-  "version": 1,
+  "version": 2,
   "surface": "repo-harness-cli-hooks-command-facades",
   "source": "assets/skill-commands",
   "router": "repo-harness",
-  "commands": [
+  "packages": [
+    {
+      "name": "repo-harness",
+      "kind": "router",
+      "source": ".",
+      "provider": null,
+      "hosts": [
+        "claude",
+        "codex"
+      ],
+      "profiles": [
+        "minimal",
+        "standard",
+        "product-planning",
+        "strict"
+      ],
+      "discoverability": "always",
+      "component": "cli",
+      "requires": [],
+      "mutatesRepoByDefault": false,
+      "summary": "Root router Skill; canonical entrypoint synced unconditionally to both hosts regardless of install profile.",
+      "retirementCandidate": null
+    },
     {
       "name": "repo-harness-plan",
-      "class": "planning",
+      "kind": "facade",
+      "source": "assets/skill-commands/repo-harness-plan",
+      "provider": null,
+      "hosts": [
+        "claude",
+        "codex"
+      ],
+      "profiles": [
+        "standard",
+        "product-planning",
+        "strict"
+      ],
+      "discoverability": "profile-facade",
+      "component": "adaptive-workflow",
+      "requires": [],
       "mutatesRepoByDefault": false,
-      "engine": "inspect-project-state plus repo-local plan artifacts",
-      "summary": "Interactive planning entrypoint for repo-local agentic development work."
-    },
-    {
-      "name": "repo-harness-review",
-      "class": "planning-review",
-      "mutatesRepoByDefault": false,
-      "engine": "inspect-project-state plus plan and review artifacts",
-      "summary": "Reviews an existing plan across product, engineering, design, and DevEx dimensions."
-    },
-    {
-      "name": "repo-harness-autoplan",
-      "class": "automated-workflow",
-      "mutatesRepoByDefault": true,
-      "engine": "plan, two self-review passes, execution, check, then repo-harness-ship",
-      "summary": "Runs the full repo-harness workflow automatically and delegates final PR closeout to repo-harness-ship."
-    },
-    {
-      "name": "repo-harness-ship",
-      "class": "ship-closeout",
-      "mutatesRepoByDefault": true,
-      "engine": "ship-worktrees default PR mode",
-      "summary": "Validates finished worktrees, commits through finish --no-merge, pushes branches, and creates GitHub PRs by default."
-    },
-    {
-      "name": "repo-harness-init",
-      "class": "repo-initialization",
-      "mutatesRepoByDefault": true,
-      "engine": "inspect-project-state then canonical adoption transaction",
-      "summary": "Installs or refreshes the agentic workflow in an existing repository without creating an app stack."
-    },
-    {
-      "name": "repo-harness-scaffold",
-      "class": "branch-project-scaffolding",
-      "mutatesRepoByDefault": true,
-      "engine": "init-project.sh plus workflow install",
-      "summary": "Branch command that creates a new project or module scaffold from plan catalog A-K and attaches the harness."
-    },
-    {
-      "name": "repo-harness-migrate",
-      "class": "legacy-migration",
-      "mutatesRepoByDefault": true,
-      "engine": "inspect-project-state then canonical adoption transaction",
-      "summary": "Migrates legacy Claude/Codex workflow surfaces while preserving or archiving user-authored content."
-    },
-    {
-      "name": "repo-harness-upgrade",
-      "class": "harness-upgrade",
-      "mutatesRepoByDefault": true,
-      "engine": "workflow-contract.v1.json migrations.upgrade.actions",
-      "summary": "Refreshes an already-installed harness using manifest-owned upgrade actions."
-    },
-    {
-      "name": "repo-harness-capability",
-      "class": "capability-configuration",
-      "mutatesRepoByDefault": true,
-      "engine": "capability-config add plus capability-resolver validate",
-      "summary": "Adds selected capability boundaries without running full init, migrate, or upgrade."
-    },
-    {
-      "name": "repo-harness-architecture",
-      "class": "architecture-maintenance",
-      "mutatesRepoByDefault": true,
-      "engine": "architecture index, drift requests, capability resolver, archive helper, mermaid",
-      "summary": "Resolves architecture drift requests and updates architecture docs or diagrams without refreshing the harness."
-    },
-    {
-      "name": "repo-harness-handoff",
-      "class": "handoff-rollover",
-      "mutatesRepoByDefault": true,
-      "engine": "prepare-codex-handoff and codex-handoff-resume",
-      "summary": "Prepares or resumes Codex handoff packets for long-task rollover."
-    },
-    {
-      "name": "repo-harness-deploy",
-      "class": "deploy-ops-readiness",
-      "mutatesRepoByDefault": false,
-      "engine": "operations policy plus check-deploy-sql-order",
-      "summary": "Checks deploy and private operations configuration without publishing or deploying."
-    },
-    {
-      "name": "repo-harness-repair",
-      "class": "harness-repair",
-      "mutatesRepoByDefault": true,
-      "engine": "inspect-project-state plus targeted workflow helpers",
-      "summary": "Repairs broken task sync, hook routing, handoff, context-map, policy, or helper drift."
+      "summary": "Interactive planning entrypoint for repo-local agentic development work.",
+      "retirementCandidate": null
     },
     {
       "name": "repo-harness-check",
-      "class": "verification",
+      "kind": "facade",
+      "source": "assets/skill-commands/repo-harness-check",
+      "provider": null,
+      "hosts": [
+        "claude",
+        "codex"
+      ],
+      "profiles": [
+        "standard",
+        "product-planning",
+        "strict"
+      ],
+      "discoverability": "profile-facade",
+      "component": "scope-worktree-check-guards",
+      "requires": [],
       "mutatesRepoByDefault": false,
-      "engine": "workflow gates, task sync, inspector, migration dry-run",
-      "summary": "Runs the repo-local harness verification gate and reports pre-merge or release readiness."
+      "summary": "Runs the repo-local harness verification gate and reports pre-merge or release readiness.",
+      "retirementCandidate": null
     },
     {
-      "name": "repo-harness-prd",
-      "class": "product-planning",
+      "name": "repo-harness-handoff",
+      "kind": "facade",
+      "source": "assets/skill-commands/repo-harness-handoff",
+      "provider": null,
+      "hosts": [
+        "claude",
+        "codex"
+      ],
+      "profiles": [
+        "standard",
+        "product-planning",
+        "strict"
+      ],
+      "discoverability": "profile-facade",
+      "component": "handoff",
+      "requires": [],
       "mutatesRepoByDefault": true,
-      "engine": "$geju direction pass, Claude-first claude -p --model opus drafting, PRD template, evidence rules, and task-workflow checks",
-      "summary": "Generates an AI-implementation-friendly PRD from a product idea into plans/prds/ after a geju framing pass, using Claude first and Codex only as fallback; the geju thesis and falsifier are pre-contract exploration and must be frozen into a delegated contract's ## Why / ## Falsifier."
-    },
-    {
-      "name": "repo-harness-sprint",
-      "class": "sprint-orchestration",
-      "mutatesRepoByDefault": true,
-      "engine": "sprint-backlog helper plus $think expansion, capture-plan, and contract worktree flow",
-      "summary": "Plans a long-task sprint backlog from an upper-layer PRD and expands each row with $think before the task-contract flow."
-    },
-    {
-      "name": "repo-harness-goal",
-      "class": "goal-session",
-      "mutatesRepoByDefault": false,
-      "engine": "Codex or Claude native /goal plus repo-harness PRD/Sprint contract",
-      "summary": "Prepares a bounded host-native /goal prompt from detailed PRD or Sprint artifacts and requires those documents before continuation."
-    },
-    {
-      "name": "repo-harness-gptpro-setup",
-      "class": "gptpro-local-setup",
-      "mutatesRepoByDefault": true,
-      "engine": "repo-harness chatgpt browser/session commands plus repo-harness MCP Connector setup",
-      "summary": "Guides gptpro_browser and gptpro_mcp setup so local repo-harness can use ChatGPT Web sessions and ChatGPT can connect back through MCP."
+      "summary": "Prepares or resumes Codex handoff packets for long-task rollover.",
+      "retirementCandidate": {
+        "replacement": "repo-harness",
+        "note": "Folds into the root router's own reference surface rather than surviving as an independently grouped facade."
+      }
     },
     {
       "name": "repo-harness-gptpro",
-      "class": "gptpro-browser-consult",
+      "kind": "facade",
+      "source": "assets/skill-commands/repo-harness-gptpro",
+      "provider": null,
+      "hosts": [
+        "claude",
+        "codex"
+      ],
+      "profiles": [
+        "product-planning",
+        "strict"
+      ],
+      "discoverability": "profile-facade",
+      "component": "adaptive-workflow",
+      "requires": [],
       "mutatesRepoByDefault": true,
-      "engine": "repo-harness chatgpt browser-consult/session/followup/open using GPT Pro wording",
-      "summary": "Consults or continues GPT Pro through the local ChatGPT Web browser/session provider while mapping user-facing gptpro language to browser engine commands."
+      "summary": "Consults or continues GPT Pro through the local ChatGPT Web browser/session provider while mapping user-facing gptpro language to browser engine commands.",
+      "retirementCandidate": {
+        "replacement": null,
+        "note": "Consolidation target: repo-harness-chatgpt (planned facade, not yet created in this slice)."
+      }
+    },
+    {
+      "name": "repo-harness-review",
+      "kind": "facade",
+      "source": "assets/skill-commands/repo-harness-review",
+      "provider": null,
+      "hosts": [
+        "claude",
+        "codex"
+      ],
+      "profiles": [],
+      "discoverability": "cli-reference",
+      "component": "adaptive-workflow",
+      "requires": [],
+      "mutatesRepoByDefault": false,
+      "summary": "Reviews an existing plan across product, engineering, design, and DevEx dimensions.",
+      "retirementCandidate": {
+        "replacement": "repo-harness-plan",
+        "note": "Consolidates into repo-harness-plan; plan and review share the same non-mutating planning surface."
+      }
+    },
+    {
+      "name": "repo-harness-autoplan",
+      "kind": "facade",
+      "source": "assets/skill-commands/repo-harness-autoplan",
+      "provider": null,
+      "hosts": [
+        "claude",
+        "codex"
+      ],
+      "profiles": [],
+      "discoverability": "cli-reference",
+      "component": "adaptive-workflow",
+      "requires": [],
+      "mutatesRepoByDefault": true,
+      "summary": "Runs the full repo-harness workflow automatically and delegates final PR closeout to repo-harness-ship.",
+      "retirementCandidate": {
+        "replacement": null,
+        "note": "Retired; no successor facade in the target canonical set."
+      }
+    },
+    {
+      "name": "repo-harness-ship",
+      "kind": "facade",
+      "source": "assets/skill-commands/repo-harness-ship",
+      "provider": null,
+      "hosts": [
+        "claude",
+        "codex"
+      ],
+      "profiles": [],
+      "discoverability": "cli-reference",
+      "component": "release-deployment-gates",
+      "requires": [],
+      "mutatesRepoByDefault": true,
+      "summary": "Validates finished worktrees, commits through finish --no-merge, pushes branches, and creates GitHub PRs by default.",
+      "retirementCandidate": null
+    },
+    {
+      "name": "repo-harness-init",
+      "kind": "facade",
+      "source": "assets/skill-commands/repo-harness-init",
+      "provider": null,
+      "hosts": [
+        "claude",
+        "codex"
+      ],
+      "profiles": [],
+      "discoverability": "cli-reference",
+      "component": "cli",
+      "requires": [],
+      "mutatesRepoByDefault": true,
+      "summary": "Installs or refreshes the agentic workflow in an existing repository without creating an app stack.",
+      "retirementCandidate": {
+        "replacement": null,
+        "note": "Consolidation target: repo-harness-setup (planned facade, not yet created in this slice)."
+      }
+    },
+    {
+      "name": "repo-harness-scaffold",
+      "kind": "facade",
+      "source": "assets/skill-commands/repo-harness-scaffold",
+      "provider": null,
+      "hosts": [
+        "claude",
+        "codex"
+      ],
+      "profiles": [],
+      "discoverability": "cli-reference",
+      "component": "cli",
+      "requires": [],
+      "mutatesRepoByDefault": true,
+      "summary": "Branch command that creates a new project or module scaffold from plan catalog A-K and attaches the harness.",
+      "retirementCandidate": {
+        "replacement": null,
+        "note": "Consolidation target: repo-harness-setup (planned facade, not yet created in this slice)."
+      }
+    },
+    {
+      "name": "repo-harness-migrate",
+      "kind": "facade",
+      "source": "assets/skill-commands/repo-harness-migrate",
+      "provider": null,
+      "hosts": [
+        "claude",
+        "codex"
+      ],
+      "profiles": [],
+      "discoverability": "cli-reference",
+      "component": "cli",
+      "requires": [],
+      "mutatesRepoByDefault": true,
+      "summary": "Migrates legacy Claude/Codex workflow surfaces while preserving or archiving user-authored content.",
+      "retirementCandidate": {
+        "replacement": null,
+        "note": "Consolidation target: repo-harness-setup (planned facade, not yet created in this slice)."
+      }
+    },
+    {
+      "name": "repo-harness-upgrade",
+      "kind": "facade",
+      "source": "assets/skill-commands/repo-harness-upgrade",
+      "provider": null,
+      "hosts": [
+        "claude",
+        "codex"
+      ],
+      "profiles": [],
+      "discoverability": "cli-reference",
+      "component": "cli",
+      "requires": [],
+      "mutatesRepoByDefault": true,
+      "summary": "Refreshes an already-installed harness using manifest-owned upgrade actions.",
+      "retirementCandidate": {
+        "replacement": null,
+        "note": "Consolidation target: repo-harness-setup (planned facade, not yet created in this slice)."
+      }
+    },
+    {
+      "name": "repo-harness-capability",
+      "kind": "facade",
+      "source": "assets/skill-commands/repo-harness-capability",
+      "provider": null,
+      "hosts": [
+        "claude",
+        "codex"
+      ],
+      "profiles": [],
+      "discoverability": "cli-reference",
+      "component": "cli",
+      "requires": [],
+      "mutatesRepoByDefault": true,
+      "summary": "Adds selected capability boundaries without running full init, migrate, or upgrade.",
+      "retirementCandidate": {
+        "replacement": null,
+        "note": "Consolidation target: repo-harness-setup (planned facade, not yet created in this slice)."
+      }
+    },
+    {
+      "name": "repo-harness-architecture",
+      "kind": "facade",
+      "source": "assets/skill-commands/repo-harness-architecture",
+      "provider": null,
+      "hosts": [
+        "claude",
+        "codex"
+      ],
+      "profiles": [],
+      "discoverability": "cli-reference",
+      "component": "adaptive-workflow",
+      "requires": [],
+      "mutatesRepoByDefault": true,
+      "summary": "Resolves architecture drift requests and updates architecture docs or diagrams without refreshing the harness.",
+      "retirementCandidate": null
+    },
+    {
+      "name": "repo-harness-deploy",
+      "kind": "facade",
+      "source": "assets/skill-commands/repo-harness-deploy",
+      "provider": null,
+      "hosts": [
+        "claude",
+        "codex"
+      ],
+      "profiles": [],
+      "discoverability": "cli-reference",
+      "component": "release-deployment-gates",
+      "requires": [],
+      "mutatesRepoByDefault": false,
+      "summary": "Checks deploy and private operations configuration without publishing or deploying.",
+      "retirementCandidate": {
+        "replacement": "repo-harness-check",
+        "note": "Consolidates into repo-harness-check; deploy-ops readiness folds into the verification-gate surface."
+      }
+    },
+    {
+      "name": "repo-harness-repair",
+      "kind": "facade",
+      "source": "assets/skill-commands/repo-harness-repair",
+      "provider": null,
+      "hosts": [
+        "claude",
+        "codex"
+      ],
+      "profiles": [],
+      "discoverability": "cli-reference",
+      "component": "cli",
+      "requires": [],
+      "mutatesRepoByDefault": true,
+      "summary": "Repairs broken task sync, hook routing, handoff, context-map, policy, or helper drift.",
+      "retirementCandidate": {
+        "replacement": null,
+        "note": "Consolidation target: repo-harness-setup (planned facade, not yet created in this slice)."
+      }
+    },
+    {
+      "name": "repo-harness-prd",
+      "kind": "facade",
+      "source": "assets/skill-commands/repo-harness-prd",
+      "provider": null,
+      "hosts": [
+        "claude",
+        "codex"
+      ],
+      "profiles": [],
+      "discoverability": "cli-reference",
+      "component": "planning-integrations",
+      "requires": [],
+      "mutatesRepoByDefault": true,
+      "summary": "Generates an AI-implementation-friendly PRD from a product idea into plans/prds/ after a geju framing pass, using Claude first and Codex only as fallback; the geju thesis and falsifier are pre-contract exploration and must be frozen into a delegated contract's ## Why / ## Falsifier.",
+      "retirementCandidate": {
+        "replacement": null,
+        "note": "Consolidation target: repo-harness-product (planned facade, not yet created in this slice)."
+      }
+    },
+    {
+      "name": "repo-harness-sprint",
+      "kind": "facade",
+      "source": "assets/skill-commands/repo-harness-sprint",
+      "provider": null,
+      "hosts": [
+        "claude",
+        "codex"
+      ],
+      "profiles": [],
+      "discoverability": "cli-reference",
+      "component": "planning-integrations",
+      "requires": [],
+      "mutatesRepoByDefault": true,
+      "summary": "Plans a long-task sprint backlog from an upper-layer PRD and expands each row with $think before the task-contract flow.",
+      "retirementCandidate": {
+        "replacement": null,
+        "note": "Consolidation target: repo-harness-product (planned facade, not yet created in this slice)."
+      }
+    },
+    {
+      "name": "repo-harness-goal",
+      "kind": "facade",
+      "source": "assets/skill-commands/repo-harness-goal",
+      "provider": null,
+      "hosts": [
+        "claude",
+        "codex"
+      ],
+      "profiles": [],
+      "discoverability": "cli-reference",
+      "component": "planning-integrations",
+      "requires": [],
+      "mutatesRepoByDefault": false,
+      "summary": "Prepares a bounded host-native /goal prompt from detailed PRD or Sprint artifacts and requires those documents before continuation.",
+      "retirementCandidate": {
+        "replacement": null,
+        "note": "Consolidation target: repo-harness-product (planned facade, not yet created in this slice)."
+      }
+    },
+    {
+      "name": "repo-harness-gptpro-setup",
+      "kind": "facade",
+      "source": "assets/skill-commands/repo-harness-gptpro-setup",
+      "provider": null,
+      "hosts": [
+        "claude",
+        "codex"
+      ],
+      "profiles": [],
+      "discoverability": "cli-reference",
+      "component": "host-adapters",
+      "requires": [],
+      "mutatesRepoByDefault": true,
+      "summary": "Guides gptpro_browser and gptpro_mcp setup so local repo-harness can use ChatGPT Web sessions and ChatGPT can connect back through MCP.",
+      "retirementCandidate": {
+        "replacement": null,
+        "note": "Consolidation target: repo-harness-chatgpt (planned facade, not yet created in this slice)."
+      }
+    },
+    {
+      "name": "think",
+      "kind": "external",
+      "source": null,
+      "provider": "tw93/Waza",
+      "hosts": [
+        "claude",
+        "codex"
+      ],
+      "profiles": [
+        "product-planning",
+        "strict"
+      ],
+      "discoverability": "external-marketplace",
+      "component": "adaptive-workflow",
+      "requires": [],
+      "mutatesRepoByDefault": false,
+      "summary": "Waza planning skill: turns rough ideas into approved, decision-complete plans. Fetched from tw93/Waza via bunx skills add.",
+      "retirementCandidate": null
+    },
+    {
+      "name": "hunt",
+      "kind": "external",
+      "source": null,
+      "provider": "tw93/Waza",
+      "hosts": [
+        "claude",
+        "codex"
+      ],
+      "profiles": [
+        "product-planning",
+        "strict"
+      ],
+      "discoverability": "external-marketplace",
+      "component": "adaptive-workflow",
+      "requires": [],
+      "mutatesRepoByDefault": false,
+      "summary": "Waza root-cause debugging skill. Fetched from tw93/Waza via bunx skills add.",
+      "retirementCandidate": null
+    },
+    {
+      "name": "check",
+      "kind": "external",
+      "source": null,
+      "provider": "tw93/Waza",
+      "hosts": [
+        "claude",
+        "codex"
+      ],
+      "profiles": [
+        "product-planning",
+        "strict"
+      ],
+      "discoverability": "external-marketplace",
+      "component": "adaptive-workflow",
+      "requires": [],
+      "mutatesRepoByDefault": false,
+      "summary": "Waza review/audit skill for diffs, PRs, and release readiness. Fetched from tw93/Waza via bunx skills add.",
+      "retirementCandidate": null
+    },
+    {
+      "name": "health",
+      "kind": "external",
+      "source": null,
+      "provider": "tw93/Waza",
+      "hosts": [
+        "claude",
+        "codex"
+      ],
+      "profiles": [
+        "product-planning",
+        "strict"
+      ],
+      "discoverability": "external-marketplace",
+      "component": "adaptive-workflow",
+      "requires": [],
+      "mutatesRepoByDefault": false,
+      "summary": "Waza project-audit skill. Fetched from tw93/Waza via bunx skills add.",
+      "retirementCandidate": null
+    },
+    {
+      "name": "mermaid",
+      "kind": "external",
+      "source": null,
+      "provider": "BfdCampos/dotfiles",
+      "hosts": [
+        "claude",
+        "codex"
+      ],
+      "profiles": [
+        "product-planning",
+        "strict"
+      ],
+      "discoverability": "external-marketplace",
+      "component": "adaptive-workflow",
+      "requires": [],
+      "mutatesRepoByDefault": false,
+      "summary": "Diagram-design skill. Fetched from BfdCampos/dotfiles via bunx skills add.",
+      "retirementCandidate": null
+    },
+    {
+      "name": "codex-review",
+      "kind": "provider-skill",
+      "source": "assets/skills/codex-review",
+      "provider": null,
+      "hosts": [
+        "claude"
+      ],
+      "profiles": [
+        "strict"
+      ],
+      "discoverability": "cross-model",
+      "component": "cross-model-acceptance",
+      "requires": [],
+      "mutatesRepoByDefault": false,
+      "summary": "Cross-model review skill: OpenAI Codex reviews the current Claude-authored diff. Installed on the Claude host.",
+      "retirementCandidate": {
+        "replacement": null,
+        "note": "Consolidation target: repo-harness-cross-review (planned facade, not yet created in this slice)."
+      }
+    },
+    {
+      "name": "claude-review",
+      "kind": "provider-skill",
+      "source": "assets/skills/claude-review",
+      "provider": null,
+      "hosts": [
+        "codex"
+      ],
+      "profiles": [
+        "strict"
+      ],
+      "discoverability": "cross-model",
+      "component": "cross-model-acceptance",
+      "requires": [],
+      "mutatesRepoByDefault": false,
+      "summary": "Cross-model review skill: Claude reviews the current Codex-authored diff. Installed on the Codex host.",
+      "retirementCandidate": {
+        "replacement": null,
+        "note": "Consolidation target: repo-harness-cross-review (planned facade, not yet created in this slice)."
+      }
+    },
+    {
+      "name": "claude-plan",
+      "kind": "provider-skill",
+      "source": "assets/skills/claude-plan",
+      "provider": null,
+      "hosts": [
+        "codex"
+      ],
+      "profiles": [
+        "strict"
+      ],
+      "discoverability": "cross-model",
+      "component": "adaptive-workflow",
+      "requires": [],
+      "mutatesRepoByDefault": false,
+      "summary": "External-brain plan consult skill: headless Claude plan mode reviews a Codex plan/decision brief. Installed on the Codex host.",
+      "retirementCandidate": null
+    },
+    {
+      "name": "repo-harness-chatgpt-bridge",
+      "kind": "integration",
+      "source": ".agents/skills/repo-harness-chatgpt-bridge",
+      "provider": null,
+      "hosts": [
+        "claude",
+        "codex"
+      ],
+      "profiles": [],
+      "discoverability": "explicit-setup",
+      "component": "host-adapters",
+      "requires": [],
+      "mutatesRepoByDefault": true,
+      "summary": "ChatGPT MCP connector bridge package; additive only after an explicit ChatGPT setup action, never implied by any install profile.",
+      "retirementCandidate": {
+        "replacement": null,
+        "note": "Consolidation target: repo-harness-chatgpt (planned facade, not yet created in this slice)."
+      }
+    },
+    {
+      "name": "repo-harness-chatgpt-browser",
+      "kind": "integration",
+      "source": ".agents/skills/repo-harness-chatgpt-browser",
+      "provider": null,
+      "hosts": [
+        "claude",
+        "codex"
+      ],
+      "profiles": [],
+      "discoverability": "explicit-setup",
+      "component": "host-adapters",
+      "requires": [],
+      "mutatesRepoByDefault": true,
+      "summary": "ChatGPT Web browser/session engine package; additive only after an explicit ChatGPT setup action, never implied by any install profile.",
+      "retirementCandidate": {
+        "replacement": null,
+        "note": "Consolidation target: repo-harness-chatgpt (planned facade, not yet created in this slice)."
+      }
     }
   ],
+  "expectedProjections": {
+    "facadesByProfile": {
+      "minimal": [],
+      "standard": [
+        "repo-harness-plan",
+        "repo-harness-check",
+        "repo-harness-handoff"
+      ],
+      "product-planning": [
+        "repo-harness-plan",
+        "repo-harness-check",
+        "repo-harness-handoff",
+        "repo-harness-gptpro"
+      ],
+      "strict": [
+        "repo-harness-plan",
+        "repo-harness-check",
+        "repo-harness-handoff",
+        "repo-harness-gptpro"
+      ]
+    },
+    "externalSkillsByProfile": {
+      "minimal": [],
+      "standard": [],
+      "product-planning": [
+        "think",
+        "hunt",
+        "check",
+        "health",
+        "mermaid"
+      ],
+      "strict": [
+        "think",
+        "hunt",
+        "check",
+        "health",
+        "mermaid"
+      ]
+    },
+    "hostSkillPlacementsByProfile": {
+      "minimal": {
+        "claude": [],
+        "codex": []
+      },
+      "standard": {
+        "claude": [],
+        "codex": []
+      },
+      "product-planning": {
+        "claude": [],
+        "codex": []
+      },
+      "strict": {
+        "claude": [
+          "codex-review"
+        ],
+        "codex": [
+          "claude-review",
+          "claude-plan"
+        ]
+      }
+    }
+  },
   "nonPublicInternalSteps": [
     "hooks-init",
     "docs-init",

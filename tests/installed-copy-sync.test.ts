@@ -1,10 +1,39 @@
 import { describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
-import { join } from "path";
+import { dirname, join } from "path";
 import { spawnSync } from "child_process";
 
 const ROOT = join(import.meta.dir, "..");
+/**
+ * profile_facades() now unconditionally needs a real `bun` on PATH (to run
+ * the adapter) before it can reach any of this script's own capability
+ * probes (rsync, symlink). The three tests below deliberately restrict PATH
+ * to a minimal fakeBin to test those probes in isolation; this appends the
+ * real bun's own directory (never rsync/ln) so the eager facade-selection
+ * step succeeds and execution reaches the capability probe under test.
+ */
+const BUN_BIN_DIR = dirname(process.execPath);
+
+/**
+ * profile_facades() now resolves `$SOURCE_ROOT/scripts/skill-surface-select.ts`
+ * eagerly (see scripts/sync-codex-installed-copies.sh), which imports
+ * src/core/skill-surface/catalog.ts and reads
+ * assets/skill-commands/manifest.json, all resolved relative to SOURCE_ROOT.
+ * Every fixture `source` tree in this file is a synthetic, sparse package
+ * layout (by design, to exercise sync mechanics in isolation), so each one
+ * needs a real copy of these three so the adapter can actually run. The real
+ * manifest.json is used as-is: it is a static declarative file decoupled
+ * from which facade directories a given fixture happens to physically ship,
+ * so copying it does not change what any test asserts.
+ */
+function seedSkillSurfaceRuntime(source: string): void {
+  mkdirSync(join(source, "scripts"), { recursive: true });
+  cpSync(join(ROOT, "scripts", "skill-surface-select.ts"), join(source, "scripts", "skill-surface-select.ts"));
+  cpSync(join(ROOT, "src", "core", "skill-surface"), join(source, "src", "core", "skill-surface"), { recursive: true });
+  mkdirSync(join(source, "assets", "skill-commands"), { recursive: true });
+  cpSync(join(ROOT, "assets", "skill-commands", "manifest.json"), join(source, "assets", "skill-commands", "manifest.json"));
+}
 
 function writeExecutable(filePath: string, content: string) {
   writeFileSync(filePath, content);
@@ -19,6 +48,7 @@ describe("Codex installed copy sync", () => {
     const claudeSkills = join(tmp, "claude-skills");
 
     try {
+      seedSkillSurfaceRuntime(source);
       mkdirSync(join(source, "assets", "skill-commands", "repo-harness-plan"), { recursive: true });
       mkdirSync(join(source, "evals"), { recursive: true });
       mkdirSync(codexSkills, { recursive: true });
@@ -81,6 +111,7 @@ describe("Codex installed copy sync", () => {
     const claudeSkills = join(tmp, "claude-skills");
 
     try {
+      seedSkillSurfaceRuntime(source);
       mkdirSync(join(source, "assets", "skill-commands", "repo-harness-plan"), { recursive: true });
       mkdirSync(codexSkills, { recursive: true });
       mkdirSync(claudeSkills, { recursive: true });
@@ -123,6 +154,7 @@ describe("Codex installed copy sync", () => {
     const source = join(tmp, "source");
     const codexSkills = join(tmp, "codex-skills");
     try {
+      seedSkillSurfaceRuntime(source);
       mkdirSync(join(source, "assets", "skill-commands", "repo-harness-plan"), { recursive: true });
       mkdirSync(codexSkills, { recursive: true });
       writeFileSync(join(source, "SKILL.md"), "---\nname: repo-harness\n---\n");
@@ -158,6 +190,7 @@ describe("Codex installed copy sync", () => {
     const canonical = join(codexSkills, "repo-harness");
     const custom = join(codexSkills, "repo-harness-custom");
     try {
+      seedSkillSurfaceRuntime(source);
       mkdirSync(join(source, "assets", "skill-commands", "repo-harness-plan"), { recursive: true });
       mkdirSync(custom, { recursive: true });
       writeFileSync(join(source, "SKILL.md"), "source\n");
@@ -196,6 +229,7 @@ describe("Codex installed copy sync", () => {
     const codexSkills = join(tmp, "codex-skills");
     const canonical = join(codexSkills, "repo-harness");
     try {
+      seedSkillSurfaceRuntime(source);
       mkdirSync(source, { recursive: true });
       mkdirSync(codexSkills, { recursive: true });
       writeFileSync(join(source, "SKILL.md"), "source\n");
@@ -230,6 +264,7 @@ describe("Codex installed copy sync", () => {
     const tmp = join(tmpdir(), `repo-harness-installed-gptpro-profile-${Date.now()}`);
     const source = join(tmp, "source");
     try {
+      seedSkillSurfaceRuntime(source);
       for (const name of ["repo-harness-plan", "repo-harness-check", "repo-harness-handoff", "repo-harness-gptpro"]) {
         mkdirSync(join(source, "assets", "skill-commands", name), { recursive: true });
         writeFileSync(join(source, "assets", "skill-commands", name, "SKILL.md"), `---\nname: ${name}\n---\n`);
@@ -271,6 +306,7 @@ describe("Codex installed copy sync", () => {
     const claudeSkills = join(tmp, "claude-skills");
     const gptproSource = join(source, "assets", "skill-commands", "repo-harness-gptpro");
     try {
+      seedSkillSurfaceRuntime(source);
       for (const name of ["repo-harness-plan", "repo-harness-check", "repo-harness-handoff"]) {
         mkdirSync(join(source, "assets", "skill-commands", name), { recursive: true });
         writeFileSync(join(source, "assets", "skill-commands", name, "SKILL.md"), `---\nname: ${name}\n---\n`);
@@ -322,6 +358,7 @@ describe("Codex installed copy sync", () => {
     const claudeSkills = join(tmp, "claude-skills");
     const gptproSource = join(source, "assets", "skill-commands", "repo-harness-gptpro");
     try {
+      seedSkillSurfaceRuntime(source);
       for (const name of ["repo-harness-plan", "repo-harness-check", "repo-harness-handoff"]) {
         mkdirSync(join(source, "assets", "skill-commands", name), { recursive: true });
         writeFileSync(join(source, "assets", "skill-commands", name, "SKILL.md"), `---\nname: ${name}\n---\n`);
@@ -368,6 +405,7 @@ describe("Codex installed copy sync", () => {
     const codexSkills = join(tmp, "codex-skills");
     const canonical = join(codexSkills, "repo-harness");
     try {
+      seedSkillSurfaceRuntime(source);
       mkdirSync(source, { recursive: true });
       mkdirSync(canonical, { recursive: true });
       writeFileSync(join(source, "SKILL.md"), "package\n");
@@ -401,6 +439,7 @@ describe("Codex installed copy sync", () => {
     const fakeBin = join(tmp, "fake-bin");
 
     try {
+      seedSkillSurfaceRuntime(source);
       mkdirSync(source, { recursive: true });
       mkdirSync(codexSkills, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
@@ -411,7 +450,7 @@ describe("Codex installed copy sync", () => {
         encoding: "utf-8",
         env: {
           ...process.env,
-          PATH: fakeBin,
+          PATH: `${fakeBin}:${BUN_BIN_DIR}`,
           AGENTIC_DEV_SOURCE_ROOT: source,
           AGENTIC_DEV_LINK_INSTALLED_COPIES: "0",
           CODEX_SKILLS_ROOT: codexSkills,
@@ -435,6 +474,7 @@ describe("Codex installed copy sync", () => {
     const fakeBin = join(tmp, "fake-bin");
 
     try {
+      seedSkillSurfaceRuntime(source);
       mkdirSync(source, { recursive: true });
       mkdirSync(codexSkills, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
@@ -447,7 +487,7 @@ describe("Codex installed copy sync", () => {
         encoding: "utf-8",
         env: {
           ...process.env,
-          PATH: fakeBin,
+          PATH: `${fakeBin}:${BUN_BIN_DIR}`,
           AGENTIC_DEV_SOURCE_ROOT: source,
           AGENTIC_DEV_LINK_INSTALLED_COPIES: "1",
           CODEX_SKILLS_ROOT: codexSkills,
@@ -470,6 +510,7 @@ describe("Codex installed copy sync", () => {
     const fakeBin = join(tmp, "fake-bin");
 
     try {
+      seedSkillSurfaceRuntime(source);
       mkdirSync(source, { recursive: true });
       mkdirSync(codexSkills, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
@@ -482,7 +523,7 @@ describe("Codex installed copy sync", () => {
         encoding: "utf-8",
         env: {
           ...process.env,
-          PATH: fakeBin,
+          PATH: `${fakeBin}:${BUN_BIN_DIR}`,
           AGENTIC_DEV_SOURCE_ROOT: source,
           AGENTIC_DEV_LINK_INSTALLED_COPIES: "1",
           CODEX_SKILLS_ROOT: codexSkills,

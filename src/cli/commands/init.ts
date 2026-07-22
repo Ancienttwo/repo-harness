@@ -26,6 +26,13 @@ import { fileURLToPath } from "url";
 import { runInstall, type InstallTargetSpec } from "./install";
 import { runBrain } from "./brain";
 import {
+  hostSkillPlacements as catalogHostSkillPlacements,
+  parseSkillSurfaceCatalog,
+  probeExpectations as catalogProbeExpectations,
+  type SkillSurfaceCatalog,
+} from "../../core/skill-surface/catalog";
+import { PROFILE_COMPONENTS } from "../installer/install-profile";
+import {
   defaultBrainRootChoice,
   discoverBrainRootChoices,
   expandHomePath,
@@ -40,7 +47,6 @@ import type { AdoptionMode } from "../../core/adoption/modes";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(SCRIPT_DIR, "..", "..", "..");
-const WAZA_SKILLS = ["think", "hunt", "check", "health"];
 const WAZA_SHARED_RULES = ["anti-patterns.md", "chinese.md", "durable-context.md", "english.md"];
 const GLOBAL_RULES_BEGIN = "<!-- BEGIN: repo-harness global-working-rules -->";
 const GLOBAL_RULES_END = "<!-- END: repo-harness global-working-rules -->";
@@ -62,11 +68,60 @@ export interface GlobalContextOptions {
 type BundledHostSkill = { skill: string; host: "claude" | "codex"; step: string };
 type BundledHostAgent = { source: string; agent: string; host: "claude" | "codex"; step: string };
 
-const CROSS_REVIEW_SKILLS: ReadonlyArray<BundledHostSkill> = [
-  { skill: "codex-review", host: "claude", step: "cross-review skill codex-review" },
-  { skill: "claude-review", host: "codex", step: "cross-review skill claude-review" },
-  { skill: "claude-plan", host: "codex", step: "external-brain skill claude-plan" },
-];
+/**
+ * Reads and parses sourceRoot's skill-surface manifest. Parameterized by
+ * sourceRoot (not a fixed path) because this command backs `repo-harness
+ * adopt`, which can target a package tree other than the currently-running
+ * code (npx cache extraction, a different installed copy); tests routinely
+ * override sourceRoot to a synthetic fixture tree for hermetic runs. Does
+ * not pass an `exists` callback (pre-catalog behavior here never checked
+ * package source paths on disk either), so behavior stays byte-identical to
+ * the literals it replaces.
+ */
+function loadSkillSurfaceCatalog(sourceRoot: string): SkillSurfaceCatalog {
+  const manifestPath = join(sourceRoot, "assets", "skill-commands", "manifest.json");
+  const source = existsSync(manifestPath) ? readFileSync(manifestPath, "utf-8") : null;
+  const resolution = parseSkillSurfaceCatalog(source, { declared: true, profileComponents: PROFILE_COMPONENTS });
+  if (resolution.status !== "valid") {
+    const detail = resolution.diagnostics.map((d) => `${d.code} ${d.path}: ${d.message}`).join("; ");
+    throw new Error(`invalid skill-surface catalog at ${manifestPath}: ${detail}`);
+  }
+  return resolution.catalog;
+}
+
+/**
+ * The unconditional (no installed-profile concept in this adopt flow)
+ * cross-review/external-brain bundle: codex-review on claude, claude-review
+ * and claude-plan on codex. Step-name prefix mirrors the catalog's
+ * cross-model-acceptance vs. adaptive-workflow component split (the same
+ * split that separates "cross-review skill" from "external-brain skill"
+ * naming below).
+ */
+function crossReviewSkillsFromCatalog(catalog: SkillSurfaceCatalog): ReadonlyArray<BundledHostSkill> {
+  const crossModel = new Set(catalogProbeExpectations(catalog).crossModel);
+  const placements = catalogHostSkillPlacements(catalog);
+  const entries: BundledHostSkill[] = [];
+  for (const host of ["claude", "codex"] as const) {
+    for (const skill of placements[host]) {
+      const step = crossModel.has(skill) ? `cross-review skill ${skill}` : `external-brain skill ${skill}`;
+      entries.push({ skill, host, step });
+    }
+  }
+  return entries;
+}
+
+/** Groups kind:"external" catalog packages by upstream provider, preserving manifest declaration order. */
+function externalSkillGroupsFromCatalog(catalog: SkillSurfaceCatalog): ReadonlyMap<string, readonly string[]> {
+  const groups = new Map<string, string[]>();
+  for (const pkg of catalog.packages) {
+    if (pkg.kind !== "external" || pkg.provider === null) continue;
+    const list = groups.get(pkg.provider) ?? [];
+    list.push(pkg.name);
+    groups.set(pkg.provider, list);
+  }
+  return groups;
+}
+
 export interface InitCommandOptions {
   repo?: string;
   sourceRoot?: string;
@@ -417,7 +472,8 @@ export function syncCrossReviewSkills(
   target: InstallTargetSpec,
   env?: NodeJS.ProcessEnv,
 ): InitStep[] {
-  return syncBundledItemsAtHome(sourceRoot, target, homeDir(env), CROSS_REVIEW_SKILLS, []);
+  const catalog = loadSkillSurfaceCatalog(sourceRoot);
+  return syncBundledItemsAtHome(sourceRoot, target, homeDir(env), crossReviewSkillsFromCatalog(catalog), []);
 }
 
 function syncWazaSharedRules(target: InstallTargetSpec, env?: NodeJS.ProcessEnv): InitStep {
@@ -461,6 +517,10 @@ function syncWazaSharedRules(target: InstallTargetSpec, env?: NodeJS.ProcessEnv)
 function installExternalSkills(sourceRoot: string, target: InstallTargetSpec, env?: NodeJS.ProcessEnv): InitStep[] {
   const steps: InitStep[] = [];
   const agents = hostAgents(target);
+  const catalog = loadSkillSurfaceCatalog(sourceRoot);
+  const externalGroups = externalSkillGroupsFromCatalog(catalog);
+  const wazaSkills = externalGroups.get("tw93/Waza") ?? [];
+  const mermaidSkills = externalGroups.get("BfdCampos/dotfiles") ?? [];
   const waza = runProcess(
     "bunx",
     [
@@ -471,7 +531,7 @@ function installExternalSkills(sourceRoot: string, target: InstallTargetSpec, en
       "-a",
       ...agents,
       "-s",
-      ...WAZA_SKILLS,
+      ...wazaSkills,
       "-y",
     ],
     sourceRoot,
@@ -491,7 +551,7 @@ function installExternalSkills(sourceRoot: string, target: InstallTargetSpec, en
       "-a",
       ...agents,
       "-s",
-      "mermaid",
+      ...mermaidSkills,
       "-y",
     ],
     sourceRoot,

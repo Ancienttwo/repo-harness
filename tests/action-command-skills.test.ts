@@ -47,7 +47,16 @@ describe("repo-harness action command skills", () => {
     const manifest = JSON.parse(readFileSync(join(COMMAND_ROOT, "manifest.json"), "utf-8"));
     expect(manifest.surface).toBe("repo-harness-cli-hooks-command-facades");
     expect(manifest.router).toBe("repo-harness");
-    expect(manifest.commands.map((entry: { name: string }) => entry.name)).toEqual(COMMANDS);
+    // manifest v2's packages[] covers the full skill-surface inventory (router,
+    // facades, provider-skills, integrations, external); the public action
+    // command surface is exactly its kind:"facade" entries. Order is not part
+    // of the contract here (packages[] is ordered for profile-selection
+    // filtering, not enumeration), so this compares the 19-name set, sorted.
+    const facadeNames = manifest.packages
+      .filter((entry: { kind: string }) => entry.kind === "facade")
+      .map((entry: { name: string }) => entry.name)
+      .sort();
+    expect(facadeNames).toEqual([...COMMANDS].sort());
     expect(manifest.nonPublicInternalSteps).toEqual([
       "hooks-init",
       "docs-init",

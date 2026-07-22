@@ -200,6 +200,7 @@ allowed_paths:
   - src/cli/mcp/setup.ts
   - src/cli/index.ts
   - scripts/sync-codex-installed-copies.sh
+  - scripts/skill-surface-select.ts
   - scripts/run-skill-routing-eval.ts
   - scripts/run-skill-evals.ts
   - evals/skill-routing/

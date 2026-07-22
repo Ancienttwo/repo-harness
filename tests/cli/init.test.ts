@@ -36,6 +36,14 @@ function setupFakeSource(root: string): void {
   mkdirSync(join(root, "scripts"), { recursive: true });
   mkdirSync(join(root, "assets"), { recursive: true });
   mkdirSync(join(root, "assets", "reference-configs"), { recursive: true });
+  // installExternalSkills()/syncCrossReviewSkills() read this manifest via
+  // sourceRoot (see loadSkillSurfaceCatalog in init.ts); a real copy keeps
+  // this synthetic package tree loadable exactly like the real repo.
+  mkdirSync(join(root, "assets", "skill-commands"), { recursive: true });
+  copyFileSync(
+    join(ROOT, "assets", "skill-commands", "manifest.json"),
+    join(root, "assets", "skill-commands", "manifest.json"),
+  );
   cpSync(join(ROOT, "assets", "templates", "helpers"), join(root, "scripts"), { recursive: true });
   copyFileSync(join(ROOT, "assets", "workflow-contract.v1.json"), join(root, "assets", "workflow-contract.v1.json"));
   writeFileSync(
@@ -803,6 +811,14 @@ describe("init command", () => {
 
 describe("bundled host runtimes", () => {
   function makeSource(root: string): void {
+    // syncCrossReviewSkills() now reads sourceRoot's skill-surface manifest
+    // (see loadSkillSurfaceCatalog in init.ts) before touching bundled skill
+    // content; seed it so this synthetic tree parses like the real repo.
+    mkdirSync(join(root, "assets", "skill-commands"), { recursive: true });
+    copyFileSync(
+      join(ROOT, "assets", "skill-commands", "manifest.json"),
+      join(root, "assets", "skill-commands", "manifest.json"),
+    );
     mkdirSync(join(root, "assets", "skills", "codex-review"), { recursive: true });
     writeFileSync(
       join(root, "assets", "skills", "codex-review", "SKILL.md"),
@@ -893,6 +909,15 @@ describe("bundled host runtimes", () => {
     try {
       mkdirSync(source, { recursive: true });
       mkdirSync(home, { recursive: true });
+      // Manifest present (so the catalog itself loads), but deliberately no
+      // assets/skills/* content: this is what "bundled source is missing"
+      // actually exercises now that syncCrossReviewSkills() reads the
+      // catalog before checking per-skill content.
+      mkdirSync(join(source, "assets", "skill-commands"), { recursive: true });
+      copyFileSync(
+        join(ROOT, "assets", "skill-commands", "manifest.json"),
+        join(source, "assets", "skill-commands", "manifest.json"),
+      );
 
       const steps = syncCrossReviewSkills(source, "both", { ...process.env, HOME: home });
       expect(steps.every((s) => s.status !== "failed")).toBe(true);

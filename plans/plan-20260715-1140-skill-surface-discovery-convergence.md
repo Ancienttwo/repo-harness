@@ -345,12 +345,12 @@ Acceptance:
 
 ### SSD-02 — Make manifest v2 the runtime discovery authority without behavior change
 
-- [ ] Add the pure typed catalog loader/validator/selector.
-- [ ] Upgrade the manifest to classify every current source, host, profile, component, discoverability mode, and retirement candidate.
-- [ ] Derive shell-selected facades, host provider/judge sets, install probes, managed surfaces, transaction mutation paths, and static test inventory from the catalog.
-- [ ] Keep the pre-cutover four-profile/two-host discovered sets byte-for-byte equivalent.
-- [ ] Fail before mutation on malformed catalog, missing source, invalid component/profile relation, or uncovered transaction path.
-- [ ] Add failure injection proving every actual Skill mutation path is snapshotted and compensatable.
+- [x] Add the pure typed catalog loader/validator/selector.
+- [x] Upgrade the manifest to classify every current source, host, profile, component, discoverability mode, and retirement candidate.
+- [x] Derive shell-selected facades, host provider/judge sets, install probes, managed surfaces, transaction mutation paths, and static test inventory from the catalog.
+- [x] Keep the pre-cutover four-profile/two-host discovered sets byte-for-byte equivalent.
+- [x] Fail before mutation on malformed catalog, missing source, invalid component/profile relation, or uncovered transaction path.
+- [x] Add failure injection proving every actual Skill mutation path is snapshotted and compensatable.
 
 Acceptance:
 
