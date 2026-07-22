@@ -49,17 +49,17 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
+> **Disposition**: external_pass
+> **Reviewer**: Claude
+> **Source**: claude-review
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:7a6f16c776720bdb924b2580e0e9eeaca0f2d632a2de4c2de48ced80479f01c3
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: 5228d4ea0d7987cf6fb73be216d5b9cc638817c3
+> **Verification Evidence SHA256**: sha256:d54894cac4d3f9e5838beb7681a9fd16c1bdc33f813e214c181851d18156563f
+> **Issued At**: 2026-07-22T08:30:15.688Z
 
-- Summary: No AcceptanceReceipt has been recorded.
+- Summary: EPC-01 accepted: EvidenceEvent protocol + append-only store per frozen D1-D6; 31 red-first tests green, full suite 1711 pass; no consumer cutover; gatekeeper PASS; diff confined to allowed_paths
 - Findings: none
 
 ## Behavior Diff Notes
