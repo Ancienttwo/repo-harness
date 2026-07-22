@@ -18,9 +18,9 @@
 > **Rollback Surface**: Revert this work-package and reinstall the prior package/profile; never remove unowned or modified host Skill content.
 > **Spec**: `docs/spec.md`
 > **Research**: `docs/researches/20260715-archi-research.md`, `docs/researches/20260715-skill-surface-discovery-audit.md`, plus the Source Ref above
-> **Task Contract**: `tasks/contracts/20260715-1140-skill-surface-discovery-convergence.contract.md` (reserved; create only after EPC is merged/pushed and SSD activates)
-> **Task Review**: `tasks/reviews/20260715-1140-skill-surface-discovery-convergence.review.md` (reserved; create only after EPC is merged/pushed and SSD activates)
-> **Implementation Notes**: `tasks/notes/20260715-1140-skill-surface-discovery-convergence.notes.md` (reserved; create only after EPC is merged/pushed and SSD activates)
+> **Task Contract**: `tasks/contracts/20260715-1140-skill-surface-discovery-convergence.contract.md`
+> **Task Review**: `tasks/reviews/20260715-1140-skill-surface-discovery-convergence.review.md`
+> **Implementation Notes**: `tasks/notes/20260715-1140-skill-surface-discovery-convergence.notes.md`
 > **Release Boundary**: The next minor release after independent LSC, HRD, and EPC closeout. Do not present public Skill-name removal as a `0.10.x` patch.
 
 This work-package converges Skill classification, rule ownership, profile discovery, provider adapters, and retirement safety. It does not optimize for the smallest possible directory count. It optimizes for one rule owner per workflow and a bounded, testable host discovery surface.
