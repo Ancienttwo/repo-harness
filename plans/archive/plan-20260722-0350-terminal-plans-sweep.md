@@ -1,6 +1,6 @@
 # Plan: Fail-closed bulk archive of terminal plans in plans/ root
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260722-0350
 > **Slug**: terminal-plans-sweep
 > **Planning Source**: waza-think

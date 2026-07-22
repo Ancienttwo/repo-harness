@@ -1,3 +1,9 @@
+> **Archived**: 2026-07-23 03:31
+> **Related Plan**: plans/archive/plan-20260722-0350-terminal-plans-sweep.md
+> **Outcome**: Completed
+> **Lifecycle**: notes
+> **Parent Run ID**: run-20260723-0331
+
 # Implementation Notes: terminal-plans-sweep
 
 > **Status**: Active
