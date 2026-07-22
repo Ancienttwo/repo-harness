@@ -51,17 +51,17 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
+> **Disposition**: external_pass
+> **Reviewer**: Claude
+> **Source**: claude-review
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:e906d03541f90f4fb188883f03e6a6979db7b567aea157272e663f7ce1132835
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: 196e787a0ffe15eea4da0a2e50b4f0e04f99a666
+> **Verification Evidence SHA256**: sha256:a323d4a9e12c0104f12a2464b118d070a4de67ac9d0d89a002fc775feda80d27
+> **Issued At**: 2026-07-22T19:06:22.608Z
 
-- Summary: No AcceptanceReceipt has been recorded.
+- Summary: EPC-09 accepted: Program closeout — drift green, residue zero hits over the 8-surface retired list, one protocol-clean matched attempt (failed_during_run, subject immutable, no rerun) resolved via the frozen fallback branch with machine-checked assertions, release notes + closeout merged; round-2 gatekeeper PASS
 - Findings: none
 
 ## Behavior Diff Notes
