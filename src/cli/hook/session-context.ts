@@ -32,6 +32,7 @@ import { renderMinimalChangeSessionContext } from './minimal-change-context';
 import { runSecurityScan, type SecurityScanReport } from '../commands/security';
 import { fileExists, readText } from '../../effects/state/collect-state-inputs';
 import type { WorktreeOwnership } from '../../effects/loop/state-input-collector';
+import { resolveRecoveryEvidence } from '../../effects/evidence/recovery-materializer';
 
 // ---------------------------------------------------------------------------
 // minimal-change-context.sh port (16 lines)
@@ -574,17 +575,24 @@ function handoffSectionHasSignal(repoRoot: string, handoffFile: string, header: 
   return found;
 }
 
-function resumeAvailable(repoRoot: string, resumeFile: string): boolean {
-  const text = readText(repoRoot, resumeFile);
-  if (text === null) return false;
-  return (
-    text.includes('<!-- generated-by: repo-harness codex-handoff-resume v1 -->') &&
-    text.includes('## Resume Prompt')
-  );
+/**
+ * EPC-08 cutover: availability is resolved from the canonical
+ * checkpoint-backed evidence reader (`resolveRecoveryEvidence`, EPC-06/07,
+ * read-only import) instead of re-deriving it by scanning the rendered
+ * resume.md for a legacy marker/header string. `resolveRecoveryEvidence`
+ * already degrades to `available: false` for both "no checkpoint yet" and
+ * "dangling/invalid marker" and never throws for those cases, so this stays
+ * exactly as safe as the string-scan it replaces; `resumeFile`'s own text is
+ * still read separately below (`capResumeContent`) to quote the projection's
+ * rendered body verbatim -- only the availability PREDICATE moves off the
+ * Markdown scan.
+ */
+function resumeAvailable(repoRoot: string): boolean {
+  return resolveRecoveryEvidence(repoRoot).available;
 }
 
 function resumeCurrentForHandoff(repoRoot: string, resumeFile: string, handoffFile: string): boolean {
-  if (!resumeAvailable(repoRoot, resumeFile)) return false;
+  if (!resumeAvailable(repoRoot)) return false;
   if (!fileExists(repoRoot, handoffFile)) return true;
   const resumeMtime = fileMtimeSec(repoRoot, resumeFile);
   const handoffMtime = fileMtimeSec(repoRoot, handoffFile);

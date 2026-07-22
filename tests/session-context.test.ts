@@ -24,6 +24,44 @@ import {
 } from "../src/cli/hook/session-context";
 import { budgetSessionContext } from "../src/cli/hook/session-context-budget";
 import { createStateInputCollector } from "../src/effects/loop/state-input-collector";
+import { appendEvidenceEvent, appendGenesisRecord } from "../src/effects/evidence/event-log";
+import { LEDGER_EPOCH_START_SHA } from "../src/effects/evidence/epoch";
+import { publishCheckpointFromLedger } from "../src/effects/evidence/checkpoint-store";
+
+// EPC-08: resume availability is now resolved from the canonical
+// checkpoint-backed evidence reader (`resolveRecoveryEvidence`, consumed
+// internally by `resumeAvailable()`), not from a marker/header string-scan
+// of the rendered resume.md. Publishing a real checkpoint here is what
+// `resumeAvailable()` now requires before it will surface a resume block --
+// mirrors `tests/evidence-recovery-materializer.test.ts`'s own
+// seedGenesis/seedEvent/publishCheckpointFromLedger pattern (duplicated, not
+// imported -- same tiny-fixture-helper convention this repo already uses
+// across evidence test files).
+function publishFixtureCheckpoint(repoRoot: string): void {
+  appendGenesisRecord(repoRoot, LEDGER_EPOCH_START_SHA, { worktreeId: "fixture" });
+  appendEvidenceEvent(repoRoot, {
+    worktreeId: "fixture",
+    eventType: "verify_sprint.result",
+    trustClass: "authoritative_machine",
+    producer: "verify-sprint",
+    correlationRunId: `run-${Math.random().toString(36).slice(2)}`,
+    subjectIdentity: {
+      authority_commit: "a".repeat(40),
+      base_commit: "b".repeat(40),
+      target_commit: "c".repeat(40),
+      scope_hash: `sha256:${"d".repeat(64)}`,
+      subject_hash: `sha256:${"e".repeat(64)}`,
+      contract_hash: `sha256:${"f".repeat(64)}`,
+      command_hash: `sha256:${"0".repeat(64)}`,
+      env_provider_id: "repo-harness/0.0.0/ws-test",
+    },
+    payload: { kind: "json", value: { marker: "fixture" } },
+  });
+  const published = publishCheckpointFromLedger(repoRoot, () => new Date("2026-07-23T00:00:00.000Z"));
+  if (published.status !== "published") {
+    throw new Error(`fixture checkpoint publish failed: ${JSON.stringify(published)}`);
+  }
+}
 
 function tmpRepo(prefix: string): string {
   const dir = mkdtempSync(join(tmpdir(), `${prefix}-`));
@@ -206,16 +244,50 @@ describe("sessionStartMainContent (session-start-context.sh port) — empty/gati
     });
   });
 
-  test("resume packet without the generated-by marker is not injected", () => {
-    withTmpRepo("main-resume-no-marker", (repoRoot) => {
+  test("EPC-08: no checkpoint published -> resume block absent even with a well-formed, correctly-marked resume.md", () => {
+    // Supersedes the pre-cutover "without the generated-by marker" premise:
+    // availability is no longer a marker/header string-scan of resume.md
+    // (`resumeAvailable()` now calls `resolveRecoveryEvidence` directly), so
+    // a perfectly well-formed resume.md is still withheld when no
+    // checkpoint has ever been published in this worktree.
+    withTmpRepo("main-resume-no-checkpoint", (repoRoot) => {
       mkdirSync(join(repoRoot, ".ai/harness/handoff"), { recursive: true });
-      writeFileSync(join(repoRoot, ".ai/harness/handoff/resume.md"), "# Codex Resume Packet\n\n> **Reason**: bootstrap\n");
+      writeFileSync(
+        join(repoRoot, ".ai/harness/handoff/resume.md"),
+        [
+          "<!-- generated-by: repo-harness codex-handoff-resume v1 -->",
+          "# Codex Resume Packet",
+          "",
+          "## Resume Prompt",
+          "",
+          "Continue the widget work.",
+        ].join("\n"),
+      );
       expect(sessionStartMainContent(freshCollector(repoRoot), process.env, Date.now())).toBeNull();
+    });
+  });
+
+  test("EPC-08: a published checkpoint makes resume available even when resume.md is missing the legacy marker/header", () => {
+    // Proves the cutover in the OTHER direction: the old marker/header text
+    // is no longer load-bearing for availability -- only checkpoint
+    // existence is. A checkpoint-backed evidence claim plus a todo signal
+    // still surfaces the resume blob verbatim.
+    withTmpRepo("main-resume-checkpoint-no-marker", (repoRoot) => {
+      publishFixtureCheckpoint(repoRoot);
+      mkdirSync(join(repoRoot, ".ai/harness/handoff"), { recursive: true });
+      writeFileSync(join(repoRoot, ".ai/harness/handoff/resume.md"), "# Codex Resume Packet\n\nContinue the widget work.\n");
+      mkdirSync(join(repoRoot, "tasks"), { recursive: true });
+      writeFileSync(join(repoRoot, "tasks/todos.md"), "# Deferred Goal Ledger\n\n- [ ] revisit caching\n");
+
+      const content = sessionStartMainContent(freshCollector(repoRoot), process.env, Date.now());
+      expect(content).not.toBeNull();
+      expect(content).toContain("Continue the widget work.");
     });
   });
 
   test("resume packet current for handoff + a todo signal -> injected, capped, prefixed with Input Priority", () => {
     withTmpRepo("main-resume-signal", (repoRoot) => {
+      publishFixtureCheckpoint(repoRoot);
       mkdirSync(join(repoRoot, ".ai/harness/handoff"), { recursive: true });
       writeFileSync(
         join(repoRoot, ".ai/harness/handoff/resume.md"),
@@ -246,6 +318,7 @@ describe("sessionStartMainContent (session-start-context.sh port) — empty/gati
   // output below is the parity fixture.
   test("S5 parity: resume packet + a later section (active sprint) join with no blank line between them", () => {
     withTmpRepo("main-resume-plus-sprint", (repoRoot) => {
+      publishFixtureCheckpoint(repoRoot);
       mkdirSync(join(repoRoot, ".ai/harness/handoff"), { recursive: true });
       const resumeBlob = [
         "<!-- generated-by: repo-harness codex-handoff-resume v1 -->",
@@ -764,4 +837,19 @@ describe("tooling-advisory detached populate (gatekeeper MEDIUM finding)", () =>
       expect(reportWritten).toBe(true);
     });
   }, 10000);
+});
+
+describe("no-independent-assembly: resumeAvailable no longer re-derives evidence from rendered Markdown", () => {
+  const SOURCE_PATH = join(import.meta.dir, "..", "src/cli/hook/session-context.ts");
+
+  test("the retired marker/header string-scan literal is gone from the source", () => {
+    const text = readFileSync(SOURCE_PATH, "utf-8");
+    expect(text.includes("generated-by: repo-harness codex-handoff-resume v1")).toBe(false);
+  });
+
+  test("resumeAvailable delegates to the canonical checkpoint-backed evidence reader (read-only import)", () => {
+    const text = readFileSync(SOURCE_PATH, "utf-8");
+    expect(text).toContain("resolveRecoveryEvidence");
+    expect(text).toContain("effects/evidence/recovery-materializer");
+  });
 });
