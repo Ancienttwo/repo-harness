@@ -27,6 +27,7 @@ import { createHash } from 'crypto';
 import { execFileSync } from 'child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { basename, join } from 'path';
+import { planSlugFromPath } from '../../core/state/artifact-parsers';
 import {
   CheckpointResolutionError,
   resolveLastPublishedCheckpoint,
@@ -152,16 +153,10 @@ export interface RecoveryArtifactPaths {
   readonly notes: string;
 }
 
-function planSlugFromPath(planFile: string): string {
-  const base = basename(planFile);
-  const slug = base.replace(/^plan-\d{8}-\d{4}-/, '').replace(/\.md$/, '');
-  return slug.length > 0 && slug !== base ? slug : '';
-}
-
 function planStemFromPath(planFile: string): string {
   const base = basename(planFile);
   const stem = base.replace(/^plan-/, '').replace(/\.md$/, '');
-  return /^\d{8}-\d{4}-.+/.test(stem) ? stem : planSlugFromPath(planFile);
+  return /^\d{8}-\d{4}-.+/.test(stem) ? stem : (planSlugFromPath(planFile) ?? '');
 }
 
 /** `workflow_preferred_or_legacy_path` port: preferred (stamped-stem)
