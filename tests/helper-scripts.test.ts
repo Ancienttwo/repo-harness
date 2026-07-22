@@ -190,6 +190,11 @@ function latestRunSnapshot(cwd: string): { path: string; content: any } {
   return { path: best.path, content: best.content };
 }
 
+function runSnapshotById(cwd: string, runId: string, contractSlug: string): { path: string; content: any } {
+  const path = join(cwd, ".ai/harness/runs", `${runId}-${contractSlug}.json`);
+  return { path, content: JSON.parse(readFileSync(path, "utf-8")) };
+}
+
 function expectChecksLatestAbsent(cwd: string): void {
   expect(existsSync(join(cwd, ".ai/harness/checks/latest.json"))).toBe(false);
 }
@@ -3822,7 +3827,11 @@ describe("Workflow helper scripts", () => {
         REPO_HARNESS_DIFF_BASE: undefined,
         HARNESS_DIFF_BASE: undefined,
       };
-      const baselineRes = run("bash", ["scripts/verify-sprint.sh", "--prepare-acceptance"], cwd, metadataFallbackEnv);
+      const baselineRunId = "fixture-task-baseline";
+      const baselineRes = run("bash", ["scripts/verify-sprint.sh", "--prepare-acceptance"], cwd, {
+        ...metadataFallbackEnv,
+        HOOK_RUN_ID: baselineRunId,
+      });
       expect(baselineRes.status, `${baselineRes.stdout}\n${baselineRes.stderr}`).toBe(0);
       // EPC-05: emission cannot-binds in this fixture (no
       // scripts/emit-verify-evidence.ts is deployed here), so
@@ -3830,7 +3839,7 @@ describe("Workflow helper scripts", () => {
       // runs -- the identical content still lands in each run's own
       // snapshot file, unaffected by this row's cutover.
       expectChecksLatestAbsent(cwd);
-      const baselineChecks = latestRunSnapshot(cwd).content;
+      const baselineChecks = runSnapshotById(cwd, baselineRunId, "demo").content;
       expect(baselineChecks.diff_base.ref).toBe(taskBase);
       expect(baselineChecks.diff_base.merge_base).toBe(taskBase);
       expect(baselineChecks.files_changed).toContain("docs/task-change.md");
@@ -3851,18 +3860,24 @@ describe("Workflow helper scripts", () => {
           2
         ) + "\n"
       );
-      const legacyMetadataRes = run("bash", ["scripts/verify-sprint.sh", "--prepare-acceptance"], cwd, metadataFallbackEnv);
+      const legacyMetadataRunId = "fixture-legacy-metadata";
+      const legacyMetadataRes = run("bash", ["scripts/verify-sprint.sh", "--prepare-acceptance"], cwd, {
+        ...metadataFallbackEnv,
+        HOOK_RUN_ID: legacyMetadataRunId,
+      });
       expect(legacyMetadataRes.status).toBe(0);
-      const legacyMetadataChecks = latestRunSnapshot(cwd).content;
+      const legacyMetadataChecks = runSnapshotById(cwd, legacyMetadataRunId, "demo").content;
       expect(legacyMetadataChecks.diff_base.ref).toBe(taskBase);
       expect(legacyMetadataChecks.allowed_paths_check.status).toBe("pass");
 
+      const overrideRunId = "fixture-explicit-override";
       const overrideRes = run("bash", ["scripts/verify-sprint.sh", "--prepare-acceptance"], cwd, {
         HOOK_HOST: "claude",
+        HOOK_RUN_ID: overrideRunId,
         REPO_HARNESS_DIFF_BASE: "origin/main",
       });
       expect(overrideRes.status).toBe(1);
-      const overrideChecks = latestRunSnapshot(cwd).content;
+      const overrideChecks = runSnapshotById(cwd, overrideRunId, "demo").content;
       expect(overrideChecks.diff_base.ref).toBe("origin/main");
       expect(overrideChecks.allowed_paths_check.outside).toContain("plans/preexisting-on-local-main.md");
     } finally {
