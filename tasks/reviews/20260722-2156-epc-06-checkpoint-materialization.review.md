@@ -49,17 +49,17 @@
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: unavailable
-> **Reviewer**: unavailable
-> **Source**: unavailable
+> **Disposition**: external_pass
+> **Reviewer**: Claude
+> **Source**: claude-review
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:4590f9bd762694f5d2b98db49b7daf691f58dbc04e0da6b43683631456c94b45
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: 321248e4bddb7dbe830c2f2ea0fa4cb928da9134
+> **Verification Evidence SHA256**: sha256:ed236d18cf71b4316ace80b61a731fe9b821e96fec91e4a02c013965fa424921
+> **Issued At**: 2026-07-22T14:43:50.583Z
 
-- Summary: No AcceptanceReceipt has been recorded.
+- Summary: EPC-06 accepted: atomic checkpoint materialization (deterministic machine projection, byte-derived human view, staged install with marker, partial rejection); Stop semantics untouched; gatekeeper PASS with independent scratch-fixture readback
 - Findings: none
 
 ## Behavior Diff Notes
