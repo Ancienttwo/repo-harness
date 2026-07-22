@@ -11,6 +11,7 @@ import { createHash } from 'crypto';
 import { join, dirname } from 'path';
 import { recordCircuitAttempt, type CircuitDecision } from './circuit-breaker';
 import { parseHookInput, type HookInputFs } from './hook-input';
+import { importPostBashObservation } from '../../effects/evidence/post-bash-importer';
 
 export interface CommandObservedFs extends HookInputFs {
   mkdirSync(path: string, options?: { readonly recursive?: boolean }): void;
@@ -231,6 +232,25 @@ export function runCommandObserved(opts: CommandObservedInput): CommandObservedR
     } else {
       stdout += `[ChecksFile] Updated ${postBashRelative}; ${checksRelative} remains reserved for repo-harness-run-trace.v1.\n`;
     }
+
+    // Additive ledger import (EPC-03): one `observed` EvidenceEvent per
+    // observation, after the post-bash-latest.json write above. Failure
+    // semantics match this function's existing catch-all exactly -- a
+    // thrown message is caught by the same `catch` below and produces the
+    // same exitCode 1 / reason 'write-failed' envelope as any other
+    // failure in this try block; no new fallback, no new severity.
+    const durationMs = numberValue(parsed.get('.duration_ms', parsed.get('.tool_response.duration_ms', env.HOOK_DURATION_MS ?? '0')), 0);
+    const importResult = importPostBashObservation({
+      repoRoot: opts.repoRoot,
+      command,
+      exitCode,
+      durationMs,
+      rawOutputPath: rawPath,
+    });
+    if (!importResult.ok) {
+      throw new Error(`ledger import failed (${importResult.reason}): ${importResult.message}`);
+    }
+
     return { exitCode: 0, stdout, stderr: warnings(), reason: 'ok' };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
