@@ -61,14 +61,14 @@
 > **Reviewer**: Claude
 > **Source**: claude-review
 > **Actor**: not-applicable
-> **Reviewed Subject SHA256**: pending
+> **Reviewed Subject SHA256**: sha256:12f7e030401558e1b624dbfabfd463bd02a9cc3d9134171ccbee871ccfc26083
 > **Reviewed Subject Scope**: normalized-final-content
-> **Reviewed Target Revision**: pending
-> **Verification Evidence SHA256**: pending
-> **Issued At**: pending
+> **Reviewed Target Revision**: 3d76af3ce0a1e414967c7c43173502128891b3ef
+> **Verification Evidence SHA256**: sha256:e370526a9469f8260f36bf58817030ed42a192ad10fd122c3ee1cea8aec902c5
+> **Issued At**: 2026-07-23T07:16:46.943Z
 
-- Summary: Seven-slice atomic Skill-surface cutover, every slice independently gatekeeper-reviewed (PASS after fix rounds where findings surfaced), full repo gates green, live projection matches the target matrix exactly. SSD-07 Phase B's real-provider routing-quality measurement is contaminated by an eval-harness injection defect (not a product regression) and is recorded via frozen fallback per this Program's no-rerun discipline, with a deferred-goal follow-up. Package is fit to ship.
-- Findings: none blocking; three LOW/MEDIUM intake items and the Phase B harness defect carried forward per the notes.
+- Summary: Seven-slice atomic Skill-surface cutover: manifest v2 sole discovery authority, 25 sources converge to 10 canonical packages, zero compatibility aliases. Every slice independently gatekeeper-reviewed (PASS after fix rounds where real findings surfaced: SSD-02 3 findings, SSD-06 1 acceptance-line finding, SSD-07 phase A 1 HIGH finding). SSD-07 Phase B real-provider routing-quality measurement contaminated by an eval-harness Skill-injection defect (not an SSD-06 product regression, confirmed by independently-verified disposable-HOME installer probes) -- frozen fallback applied per Program discipline, deferred-goal follow-up recorded. Residual findings (duplicated boundary rule, aggregate case-sourcing tie-break, missing references/ in allowed_paths) fixed before ship at the user's request. A separate pre-existing evidence-ledger worktree_id bootstrap race (unrelated to SSD-06/07, out of allowed_paths) was found and worked around by clearing this worktree's disposable evidence store; deferred-goal recorded.
+- Findings: none
 
 ## Behavior Diff Notes
 
