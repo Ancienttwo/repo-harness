@@ -335,6 +335,27 @@ delegation:
 
 ## Exit Criteria (Machine Verifiable)
 
+> **Amendment (2026-07-23, orchestrator ruling)**: two entries below are
+> amended from the original contract, both rewritten in place (not left as
+> unsatisfiable text for a machine scan to trip over):
+>
+> 1. `bun src/cli/index.ts adopt --repo . --dry-run` moved from
+>    `commands_succeed` to `manual_checks`. `scripts/verify-contract.sh`'s
+>    `is_evidence_producer_command` blanket-bans any command containing the
+>    word `adopt` from its bounded runner regardless of `--dry-run` (unlike
+>    its own `install` special-case) — a pre-existing tooling gap shared
+>    identically by at least fifteen other historical contracts in this
+>    repo (`lsc-01` through `lsc-07`, `bdd2-phase-e2/e3`,
+>    `agent-fleet-specialists`, `repo-owned-agent-fleet`,
+>    `bun-1-3-14-runtime-upgrade`, `native-role-capability-gate`, etc.), not
+>    a defect introduced by this package and out of this contract's
+>    `allowed_paths` to fix. Manually verified directly this session: `0
+>    total, 0 planned, 0 skipped`, `warning(low): The repo-harness source
+>    checkout owns its workflow surfaces; downstream adopt is not
+>    applicable` — the expected self-host result.
+> 2. The fifth `manual_checks` entry (routing-quality per-route floors)
+>    replaced per the SSD-07 Phase B frozen-fallback ruling below.
+
 ```yaml
 exit_criteria:
   files_exist:
@@ -352,20 +373,20 @@ exit_criteria:
     - path: tests/installed-copy-sync.test.ts
   commands_succeed:
     - bun run check:type
-    - bun src/cli/index.ts adopt --repo . --dry-run
     - bash scripts/check-tarball-install-smoke.sh
   manual_checks:
     - "Minimal/standard/product-planning/strict discovered sets match the target matrix exactly on both hosts; product planning does not install ChatGPT; strict does not silently add product planning"
     - "No live executable reference targets a retired Skill name; retired names appear only in migration metadata, changelog/history, or archived artifacts"
     - "Host retirement transaction preserves modified and unowned copies, and injected failures restore original bytes at every mutation stage"
     - "Root SKILL.md is at or below 2,048 bytes with mode detail progressively loaded"
-    - "Frozen-subject routing evidence meets per-route floors: canonical top-1 >= 95%, per-route recall >= 90%, double-trigger/ambiguous <= 2%, ordinary-QA false activation <= 1% (or zero false activations reported as small-sample when negatives < 100)"
+    - "bun src/cli/index.ts adopt --repo . --dry-run reports 0 operations with the expected self-host warning (verify-contract.sh cannot run this command through its bounded evidence-producer gate; verified manually)"
+    - "The Phase B attempt outcome record exists, is immutable, and correctly diagnoses contaminated_invalid_evidence with root cause and a deferred follow-up; the two real-provider reports and aggregate are preserved byte-exact; every other SSD-07 checklist item and manual check is independently satisfied without relying on the routing-quality measurement"
     - "merge-gate source, output schema, tool-free execution, receipt binding, and ship enforcement are byte-unchanged"
 ```
 
-> **Amendment (2026-07-23, orchestrator ruling, SSD-07 Phase B)**: the fifth
-> manual check above ("Frozen-subject routing evidence meets per-route
-> floors...") could not be satisfied as written. One authoritative
+> **SSD-07 Phase B frozen-fallback ruling (2026-07-23)**: the original fifth
+> manual check ("Frozen-subject routing evidence meets per-route floors...")
+> could not be satisfied as written. One authoritative
 > 136-invocation attempt (`evals/skill-routing/phase-b-attempt-outcome.json`)
 > proved the real-provider matrix measured the operator's ambient/cached
 > global Claude Code skill registry, not the per-case isolated post-cutover
@@ -374,8 +395,8 @@ exit_criteria:
 > independently verified via disposable-`HOME` disk probes, gatekeeper PASS
 > x2 in SSD-06). Per this Program's no-rerun discipline, the attempt is not
 > repeated; the routing-quality dimension is recorded as unmeasured, with a
-> deferred-goal follow-up in `tasks/todos.md`. This amended manual check
-> replaces it for closeout purposes:
+> deferred-goal follow-up in `tasks/todos.md`. The replacement check above
+> asserts instead:
 >
 > - "The Phase B attempt outcome record exists, is immutable, and correctly
 >   diagnoses `contaminated_invalid_evidence` with root cause and a deferred
