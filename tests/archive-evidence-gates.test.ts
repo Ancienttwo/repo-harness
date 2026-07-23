@@ -72,8 +72,23 @@ function installWorkflowArchiveFixture(cwd: string): void {
   mkdirSync(join(cwd, "tasks/reviews"), { recursive: true });
   copyFileSync(join(ROOT, "scripts/archive-workflow.sh"), join(cwd, "scripts/archive-workflow.sh"));
   writeFileSync(
+    join(cwd, ".ai/harness/policy.json"),
+    `${JSON.stringify({
+      worktree_strategy: {
+        review_base: "main",
+        merge_back: { target: "main" },
+      },
+    }, null, 2)}\n`,
+  );
+  writeFileSync(
     join(cwd, "scripts/acceptance-receipt.ts"),
-    "import { existsSync } from 'fs'; process.exit(existsSync('.acceptance-pass') ? 0 : 1);\n",
+    [
+      "import { existsSync, realpathSync } from 'fs';",
+      "const expected = process.env.EXPECT_ACCEPTANCE_CWD;",
+      "const cwdMatches = !expected || realpathSync(process.cwd()) === realpathSync(expected);",
+      "process.exit(existsSync('.acceptance-pass') && cwdMatches ? 0 : 1);",
+      "",
+    ].join("\n"),
   );
   copyFileSync(
     join(ROOT, "assets/hooks/lib/workflow-state.sh"),
@@ -555,6 +570,7 @@ describe("archive evidence gates", () => {
           "--predict-manifest", output,
         ],
         cwd,
+        { EXPECT_ACCEPTANCE_CWD: cwd },
       );
       expect(result.status).toBe(0);
       expect(existsSync(output)).toBe(true);
@@ -562,6 +578,47 @@ describe("archive evidence gates", () => {
       expect(manifest).toContain("plans/archive/plan-20260711-1200-demo.md");
       expect(manifest).toContain("tasks/archive/contract-20260721-2256-demo.md");
       expect(manifest).toContain("tasks/archive/review-20260721-2256-demo.md");
+    });
+  });
+
+  test("ordinary Completed archive cannot reuse a same-HEAD local origin receipt", () => {
+    withTempRepo("archive-workflow-root-bound-receipt", (container) => {
+      const source = join(container, "source");
+      const clone = join(container, "clone");
+      mkdirSync(source, { recursive: true });
+      installWorkflowArchiveFixture(source);
+      writeFileSync(
+        join(source, ".gitignore"),
+        [".acceptance-pass", ".ai/harness/checks/latest.json", ""].join("\n"),
+      );
+      writeWorkflowContract(source, "Fulfilled");
+      writeWorkflowReview(source, "pass", "pass");
+      writeWorkflowChecks(source);
+      expect(runProcess("git", ["add", "."], source).status).toBe(0);
+      expect(runProcess("git", ["commit", "-m", "root-bound receipt fixture"], source).status).toBe(0);
+      expect(runProcess("git", ["clone", "--quiet", source, clone], container).status).toBe(0);
+      mkdirSync(join(clone, ".ai/harness/checks"), { recursive: true });
+      copyFileSync(
+        join(source, ".ai/harness/checks/latest.json"),
+        join(clone, ".ai/harness/checks/latest.json"),
+      );
+      writeFileSync(
+        join(clone, ".git/repo-harness-prediction-source"),
+        `${source}\n`,
+      );
+
+      const result = run(
+        "scripts/archive-workflow.sh",
+        [
+          "--plan", "plans/plan-20260711-1200-demo.md",
+          "--outcome", "Completed",
+        ],
+        clone,
+        { REPO_HARNESS_PREDICTION_SOURCE_ROOT: source },
+      );
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain("AcceptanceReceipt gate failed");
+      expect(existsSync(join(clone, "plans/plan-20260711-1200-demo.md"))).toBe(true);
     });
   });
 

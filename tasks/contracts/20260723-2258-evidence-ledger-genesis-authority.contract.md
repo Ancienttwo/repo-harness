@@ -29,12 +29,15 @@ through the existing `subject_identity.contract_hash` and
 ## Scope
 
 - In scope: checks materializer identity selection, exact contract byte-and-path
-  filtering, deterministic regression tests, and workflow evidence for this
-  package.
+  filtering, deterministic regression tests, workflow evidence for this
+  package, and the directly blocking archive prediction bug discovered during
+  `contract-worktree finish`.
 - Out of scope: evidence schema changes, producer identity changes, ledger
   rewriting or deletion, recovery views, and unrelated evidence consumers.
 - Taste constraints: one identity authority per datum; fail closed without
-  genesis; no fallback identities, dual-format matching, or compatibility shim.
+  genesis; archive prediction may validate only against its exact source
+  repository; no fallback identities, dual-format matching, or compatibility
+  shim.
 
 ## Stop Conditions
 
@@ -85,8 +88,11 @@ allowed_paths:
   - tasks/reviews/20260723-2258-evidence-ledger-genesis-authority.review.md
   - tasks/notes/20260723-2258-evidence-ledger-genesis-authority.notes.md
   - src/effects/evidence/checks-materializer.ts
+  - scripts/archive-workflow.sh
+  - assets/templates/helpers/archive-workflow.sh
   - tests/evidence-checks-materializer.test.ts
   - tests/evidence-projection-drift.test.ts
+  - tests/archive-evidence-gates.test.ts
 ```
 
 ## Evidence Requirements
@@ -145,6 +151,7 @@ exit_criteria:
     - path: tests/evidence-checks-materializer.test.ts
   commands_succeed:
     - bun test tests/evidence-checks-materializer.test.ts
+    - bun test tests/archive-evidence-gates.test.ts
     - bun run check:type
 ```
 
@@ -155,6 +162,9 @@ exit_criteria:
   genesis fails closed before any checks projection is written.
 - Regression risks: identity filtering affects the sole checks projection
   writer, so focused producer-materializer end-to-end coverage is mandatory.
+- Closeout regression: manifest prediction must validate the receipt in the
+  exact source repository while applying lifecycle mutation only in its
+  scratch clone.
 
 ## Rollback Point
 

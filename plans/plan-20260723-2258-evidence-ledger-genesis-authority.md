@@ -52,7 +52,12 @@ Use the captured planning output below as the execution source of truth.
 ### File Changes
 | File | Action | Description |
 |------|--------|-------------|
-| See captured planning output | Follow | Implement only the approved scope named below |
+| `src/effects/evidence/checks-materializer.ts` | Modify | Use immutable genesis as worktree identity authority |
+| `tests/evidence-checks-materializer.test.ts` | Modify | Cover PostBash-first genesis and exact contract identity |
+| `tests/evidence-projection-drift.test.ts` | Modify | Supply explicit genesis identity to the direct caller |
+| `scripts/archive-workflow.sh` | Modify | Keep prediction receipt validation bound to the exact source repository |
+| `assets/templates/helpers/archive-workflow.sh` | Modify | Preserve source/template helper parity |
+| `tests/archive-evidence-gates.test.ts` | Modify | Assert prediction validates acceptance from source, not scratch |
 
 ### Code Snippets
 See captured planning output.
@@ -126,6 +131,39 @@ See captured planning output.
 - Do not change event schemas, rewrite ledgers, add dual-format reads, or synthesize fallback identities.
 - At 10x scale the first pressure point remains full accepted-event replay; this bounded correctness fix does not introduce another scan or authority.
 
+## Closeout Blocker Addendum
+
+### P1 Architecture Map
+- `contract-worktree finish` verifies the candidate receipt in the linked
+  worktree, then asks `archive-workflow --predict-manifest` to simulate the
+  deterministic lifecycle diff in an isolated scratch clone.
+- AcceptanceReceipt authority is intentionally keyed by the canonical absolute
+  repository root under `~/.repo-harness/gates/`.
+- The scratch clone owns predicted mutations only; it is not a new review or
+  acceptance subject.
+
+### P2 Concrete Trace
+1. `finish` verifies the valid source-worktree receipt.
+2. `predict_archive_manifest` clones the candidate to a random temp path.
+3. The recursive Completed archive gate runs with scratch as `PWD`.
+4. `acceptance-receipt.ts` hashes that scratch root and looks for a receipt
+   which cannot exist, so every real path-bound prediction fails closed.
+5. The fixture missed this because its `.acceptance-pass` stub is tracked and
+   therefore copied into the scratch clone.
+
+### P3 Design Decision
+- Verify checks, AcceptanceReceipt, and architecture freshness in the predictor
+  parent while `PWD` is the exact source repository.
+- Require a clean source and scratch with identical candidate HEAD, review
+  target, local origin binding, and runtime evidence bytes before mutation.
+- Run the shared lifecycle mutation directly in the same process through a
+  private `preverified` branch that cannot be selected by CLI, environment
+  variable, or scratch marker; keep the ordinary CLI fixed to `required`.
+- Project Active to Fulfilled through the same helper in both real and predicted
+  archives so manifest bytes remain deterministic.
+- Do not mint, copy, rewrite, or relax AcceptanceReceipt data, and do not add a
+  fallback root.
+
 ## Acceptance Criteria
 - A RED regression reproduces PostBash-first genesis plus a valid authoritative verify event and demonstrates the pre-fix unsatisfied projection.
 - The same fixture passes after the fix and reports the genesis `worktree_id` in provenance.
@@ -140,7 +178,9 @@ See captured planning output.
 - [x] Make genesis the sole worktree identity authority in checks materialization.
 - [x] Enforce active-contract isolation with the existing exact contract hash
   and contract-path pair.
-- [x] Verify focused and workflow gates, record review and receipt, then close the worktree.
+- [x] Verify focused and workflow gates and record review and receipt.
+- [x] Repair the path-bound AcceptanceReceipt authority used by archive
+  manifest prediction, then close the worktree.
 
 ## Annotations
 <!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
@@ -150,4 +190,6 @@ See captured planning output.
 - [x] Make genesis the sole worktree identity authority in checks materialization.
 - [x] Enforce active-contract isolation with the existing exact contract hash
   and contract-path pair.
-- [x] Verify focused and workflow gates, record review and receipt, then close the worktree.
+- [x] Verify focused and workflow gates and record review and receipt.
+- [x] Repair the path-bound AcceptanceReceipt authority used by archive
+  manifest prediction, then close the worktree.

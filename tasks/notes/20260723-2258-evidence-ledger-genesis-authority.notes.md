@@ -29,6 +29,15 @@
   is an existing direct typed caller of `buildChecksLatestProjection` and must
   provide the now-explicit genesis identity. This is a mechanically required
   call-site update, not a scope expansion into recovery behavior.
+- `contract-worktree finish --merge` exposed one direct closeout blocker:
+  `archive-workflow --predict-manifest` clones the candidate into a random
+  scratch repository, then re-runs the Completed gate there. AcceptanceReceipt
+  is intentionally bound to the source repository's canonical absolute root,
+  so the scratch clone can never own a valid receipt. This package widens once
+  to repair that blocker. The predictor now verifies the source receipt in its
+  parent process, proves an exact clean source/scratch binding, and invokes one
+  private in-process mutation path for scratch only. Ordinary CLI execution,
+  environment variables, and a forged `.git` marker cannot select that path.
 
 ## Tradeoffs Considered
 
@@ -38,6 +47,9 @@
 | Accept both workspace hashes and contract slugs | Reject | Creates a steady-state compatibility path and still conflates worktree and contract identities. |
 | Add a new `contract_id` event field | Reject | Unnecessary schema change; exact `contract_hash` already exists on every subject identity. |
 | Genesis worktree ID + existing contract hash-and-path pair | Use | Restores the actual authorities and distinguishes byte-identical contracts without a schema change. |
+| Mint or copy a receipt for each prediction scratch clone | Reject | Would forge a new path-bound authority for disposable simulation state. |
+| Pass source authority through an environment variable or scratch marker | Reject | Both are caller-forgeable and would let an ordinary clone reuse another root's receipt. |
+| Parent source gate + exact scratch binding + private in-process mutation | Use | Preserves root-bound receipt authority, keeps mutation in scratch, and exposes no alternate CLI authority. |
 
 ## Open Questions
 
@@ -49,9 +61,13 @@
 - Run snapshots: `.ai/harness/runs/`
 - Pre-fix regression: `.ai/harness/runs/evidence-ledger-genesis-authority.pre-fix.log`
 - Focused tests: `bun test tests/evidence-checks-materializer.test.ts tests/evidence-projection-drift.test.ts` — 28 pass.
-- Full suite: `bun test` — 2044 pass, 1 skip, 0 fail across 161 files.
+- Archive gate tests: `bun test tests/archive-evidence-gates.test.ts` — 10 pass.
+- Full suite: `bun test` — 2045 pass, 1 skip, 0 fail across 161 files.
 - Typecheck: `bun run check:type` — pass after linking the worktree to the
   primary checkout's existing ignored `node_modules`.
+- Waza `/check`: Deep. Security and architecture reviewers rejected two
+  caller-forgeable intermediate designs; both final targeted re-reviews passed
+  with no findings.
 
 ## Promotion Filter
 

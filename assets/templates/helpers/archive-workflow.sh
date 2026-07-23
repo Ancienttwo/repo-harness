@@ -81,9 +81,126 @@ archive_transaction_commit() {
   archive_transaction_dir=""
 }
 
+verify_prediction_scratch_binding() {
+  local source_root="$1"
+  local scratch_root="$2"
+  local checks_file="$3"
+  local canonical_source canonical_scratch origin_url canonical_origin source_head scratch_head
+  local review_base source_target scratch_target path source_path scratch_path
+
+  [[ "$source_root" == /* && -d "$source_root" ]] || {
+    echo "archive-workflow: prediction acceptance source must be an existing absolute directory" >&2
+    return 1
+  }
+  [[ "$scratch_root" == /* && -d "$scratch_root" && -d "$scratch_root/.git" && ! -L "$scratch_root/.git" ]] || {
+    echo "archive-workflow: prediction scratch must be an existing standalone clone" >&2
+    return 1
+  }
+  canonical_source="$(cd "$source_root" && pwd -P)"
+  canonical_scratch="$(cd "$scratch_root" && pwd -P)"
+  [[ "$(git -C "$canonical_source" rev-parse --show-toplevel 2>/dev/null)" == "$canonical_source" ]] || {
+    echo "archive-workflow: prediction acceptance source must be a canonical git root" >&2
+    return 1
+  }
+  origin_url="$(git -C "$canonical_scratch" remote get-url origin 2>/dev/null || true)"
+  [[ "$origin_url" == /* && -d "$origin_url" ]] || {
+    echo "archive-workflow: prediction scratch origin must be an existing absolute local path" >&2
+    return 1
+  }
+  canonical_origin="$(cd "$origin_url" && pwd -P)"
+  [[ "$canonical_origin" == "$canonical_source" ]] || {
+    echo "archive-workflow: prediction acceptance source does not match scratch origin" >&2
+    return 1
+  }
+  [[ "$canonical_source" != "$canonical_scratch" ]] || {
+    echo "archive-workflow: prediction acceptance source must be distinct from scratch" >&2
+    return 1
+  }
+  source_head="$(git -C "$canonical_source" rev-parse HEAD 2>/dev/null || true)"
+  scratch_head="$(git -C "$canonical_scratch" rev-parse HEAD 2>/dev/null || true)"
+  [[ -n "$source_head" && "$source_head" == "$scratch_head" ]] || {
+    echo "archive-workflow: prediction acceptance source and scratch must share the exact candidate HEAD" >&2
+    return 1
+  }
+  [[ -z "$(git -C "$canonical_source" status --porcelain=v1 --untracked-files=all)" ]] || {
+    echo "archive-workflow: prediction acceptance source must be clean" >&2
+    return 1
+  }
+  [[ -z "$(git -C "$canonical_scratch" status --porcelain=v1 --untracked-files=all)" ]] || {
+    echo "archive-workflow: prediction scratch must be clean" >&2
+    return 1
+  }
+  review_base="$(
+    REPO_HARNESS_POLICY_FILE="$canonical_source/.ai/harness/policy.json" "$BUN_BIN" -e '
+      const file = process.env.REPO_HARNESS_POLICY_FILE;
+      if (!file) process.exit(2);
+      const policy = JSON.parse(await Bun.file(file).text());
+      const value = policy?.worktree_strategy?.review_base;
+      if (typeof value !== "string" || value.trim() === "") process.exit(2);
+      process.stdout.write(value);
+    '
+  )" || {
+    echo "archive-workflow: prediction acceptance source review base is unavailable" >&2
+    return 1
+  }
+  source_target="$(git -C "$canonical_source" rev-parse "$review_base^{commit}" 2>/dev/null || true)"
+  scratch_target="$(git -C "$canonical_scratch" rev-parse "$review_base^{commit}" 2>/dev/null || true)"
+  [[ -n "$source_target" && "$source_target" == "$scratch_target" ]] || {
+    echo "archive-workflow: prediction acceptance source and scratch must share the exact review target" >&2
+    return 1
+  }
+  [[ "$checks_file" != /* && "$checks_file" != ../* && "$checks_file" != */../* ]] || {
+    echo "archive-workflow: prediction checks path must stay repository-relative" >&2
+    return 1
+  }
+  for path in "$checks_file" .ai/harness/active-plan .ai/harness/active-worktree; do
+    source_path="$canonical_source/$path"
+    scratch_path="$canonical_scratch/$path"
+    if [[ -e "$source_path" || -L "$source_path" || -e "$scratch_path" || -L "$scratch_path" ]]; then
+      [[ -f "$source_path" && ! -L "$source_path" && -f "$scratch_path" && ! -L "$scratch_path" ]] || {
+        echo "archive-workflow: prediction runtime input shape differs from source: $path" >&2
+        return 1
+      }
+      cmp -s "$source_path" "$scratch_path" || {
+        echo "archive-workflow: prediction runtime input bytes differ from source: $path" >&2
+        return 1
+      }
+    fi
+  done
+}
+
+promote_contract_to_fulfilled() {
+  local contract_file="$1"
+  local contract_status status_tmp
+
+  contract_status="$(awk '/^> \*\*Status\*\*:/ {sub(/^.*> \*\*Status\*\*:[[:space:]]*/, ""); gsub(/\r/, ""); print; exit}' "$contract_file" | xargs)"
+  if [[ "$contract_status" == "Fulfilled" ]]; then
+    return 0
+  fi
+  [[ "$contract_status" == "Active" ]] || {
+    echo "archive-workflow: cannot promote contract with status ${contract_status:-missing}: $contract_file" >&2
+    return 1
+  }
+  status_tmp="$(mktemp)"
+  awk '
+    BEGIN { updated = 0 }
+    {
+      if (!updated && $0 ~ /^> \*\*Status\*\*:/) {
+        print "> **Status**: Fulfilled"
+        updated = 1
+        next
+      }
+      print
+    }
+  ' "$contract_file" > "$status_tmp"
+  cat "$status_tmp" > "$contract_file"
+  rm -f "$status_tmp"
+}
+
 completed_archive_gate() {
   local contract_file="$1"
   local review_file="$2"
+  local update_contract_status="${3:-1}"
   local workflow_state_file="$WORKFLOW_STATE_LIB"
   local contract_status checks_file checks_message
 
@@ -137,22 +254,8 @@ completed_archive_gate() {
   fi
   REPO_HARNESS_TARGET_REPO_ROOT="$PWD" bash "$helper_dir/check-architecture-sync.sh"
 
-  if [[ "$contract_status" == "Active" ]]; then
-    local status_tmp
-    status_tmp="$(mktemp)"
-    awk '
-      BEGIN { updated = 0 }
-      {
-        if (!updated && $0 ~ /^> \*\*Status\*\*:/) {
-          print "> **Status**: Fulfilled"
-          updated = 1
-          next
-        }
-        print
-      }
-    ' "$contract_file" > "$status_tmp"
-    cat "$status_tmp" > "$contract_file"
-    rm -f "$status_tmp"
+  if [[ "$update_contract_status" -eq 1 ]]; then
+    promote_contract_to_fulfilled "$contract_file"
   fi
 }
 
@@ -187,11 +290,21 @@ sha256_file() {
 
 predict_archive_manifest() {
   local output="$1" fixed_timestamp="$2" fixed_timestamp_human="$3" fixed_parent_run_id="$4"
-  local scratch scratch_repo manifest_tmp path digest target_branch
+  local scratch scratch_repo manifest_tmp path digest target_branch source_repo checks_file
   [[ "$output" == /* ]] || { echo "archive-workflow: --predict-manifest output must be absolute" >&2; return 1; }
   [[ "${REPO_HARNESS_BUN_BIN:-}" == /* && -x "${REPO_HARNESS_BUN_BIN:-}" ]] || { echo "archive-workflow: --predict-manifest requires the trusted Bun runtime" >&2; return 1; }
   [[ ! -L "$output" ]] || { echo "archive-workflow: --predict-manifest output must not be a symlink" >&2; return 1; }
   [[ -d "$(dirname "$output")" ]] || { echo "archive-workflow: manifest output parent is missing" >&2; return 1; }
+  source_repo="$(pwd -P)"
+  [[ -z "$(git status --porcelain=v1 --untracked-files=all)" ]] || {
+    echo "archive-workflow: manifest prediction requires a clean source worktree" >&2
+    return 1
+  }
+  if [[ "$outcome" == "Completed" ]]; then
+    resolve_archive_artifacts
+    completed_archive_gate "$contract_file" "$review_file" 0
+    checks_file="$(workflow_checks_file)"
+  fi
   scratch="$(mktemp -d)"
   scratch_repo="$scratch/repo"
   manifest_tmp="$scratch/manifest"
@@ -229,11 +342,14 @@ predict_archive_manifest() {
       cp -p "$path" "$scratch_repo/$path"
     fi
   done
-  if ! REPO_HARNESS_TARGET_REPO_ROOT="$scratch_repo" \
-    bash "$SCRIPT_DIR/archive-workflow.sh" \
-      --plan "$plan_file" --outcome "$outcome" \
-      --timestamp "$fixed_timestamp" --timestamp-human "$fixed_timestamp_human" \
-      --parent-run-id "$fixed_parent_run_id" >/dev/null; then
+  if [[ "$outcome" == "Completed" ]]; then
+    verify_prediction_scratch_binding "$source_repo" "$scratch_repo" "$checks_file"
+  fi
+  if ! (
+    cd "$scratch_repo"
+    export REPO_HARNESS_TARGET_REPO_ROOT="$scratch_repo"
+    apply_archive_workflow preverified >/dev/null
+  ); then
     rm -rf "$scratch"
     return 1
   fi
@@ -385,6 +501,146 @@ Do not duplicate that execution checklist here. Record only work intentionally d
 TODO_EOF
 }
 
+resolve_archive_artifacts() {
+  contract_file="tasks/contracts/${artifact_stem}.contract.md"
+  if [[ ! -f "$contract_file" && -f "tasks/contracts/${slug}.contract.md" ]]; then
+    contract_file="tasks/contracts/${slug}.contract.md"
+  fi
+  review_file="tasks/reviews/${artifact_stem}.review.md"
+  if [[ ! -f "$review_file" && -f "tasks/reviews/${slug}.review.md" ]]; then
+    review_file="tasks/reviews/${slug}.review.md"
+  fi
+}
+
+apply_archive_workflow() {
+  local completed_gate_mode="$1"
+  local plan_status archive_plan_path archive_todo notes_file archive_notes
+  local archive_contract archive_review cleared_active marker_file marker_value plan_key
+
+  resolve_archive_artifacts
+  if [[ "$outcome" == "Completed" && "$completed_gate_mode" == "required" ]]; then
+    completed_archive_gate "$contract_file" "$review_file"
+  elif [[ "$outcome" == "Completed" && "$completed_gate_mode" == "preverified" ]]; then
+    promote_contract_to_fulfilled "$contract_file"
+  fi
+
+  if [[ ! -f "$helper_dir/refresh-current-status.sh" ]]; then
+    echo "archive-workflow: required current-status refresh helper is missing: $helper_dir/refresh-current-status.sh" >&2
+    return 1
+  fi
+
+  archive_transaction_begin
+  mkdir -p plans/archive tasks/archive tasks/notes
+
+  plan_status="Archived"
+  if [[ "$outcome" == "Abandoned" ]]; then
+    plan_status="Abandoned"
+  fi
+  set_plan_status "$plan_file" "$plan_status"
+
+  archive_plan_path="plans/archive/${plan_base}"
+  archive_plan_path="$(unique_archive_path "$archive_plan_path")"
+
+  if [[ "$plan_file" != "$archive_plan_path" ]]; then
+    mv "$plan_file" "$archive_plan_path"
+  fi
+
+  if [[ -f tasks/todos.md ]] && grep -q '[^[:space:]]' tasks/todos.md; then
+    archive_todo="$(unique_archive_path "tasks/archive/todo-${timestamp}-${slug}.md")"
+    {
+      echo "> **Archived**: ${timestamp_human}"
+      echo "> **Related Plan**: ${archive_plan_path}"
+      echo "> **Outcome**: ${outcome}"
+      echo "> **Source Plan**: ${todo_source_plan:-"(none)"}"
+      echo "> **Parent Run ID**: ${parent_run_id}"
+      echo
+      cat tasks/todos.md
+    } > "$archive_todo"
+  fi
+
+  notes_file="tasks/notes/${artifact_stem}.notes.md"
+  if [[ ! -f "$notes_file" && -f "tasks/notes/${slug}.notes.md" ]]; then
+    notes_file="tasks/notes/${slug}.notes.md"
+  fi
+  if [[ -f "$notes_file" ]]; then
+    archive_notes="$(unique_archive_path "tasks/archive/notes-${timestamp}-${slug}.md")"
+    {
+      echo "> **Archived**: ${timestamp_human}"
+      echo "> **Related Plan**: ${archive_plan_path}"
+      echo "> **Outcome**: ${outcome}"
+      echo "> **Lifecycle**: notes"
+      echo "> **Parent Run ID**: ${parent_run_id}"
+      echo
+      cat "$notes_file"
+    } > "$archive_notes"
+    rm -f "$notes_file"
+  fi
+
+  if [[ -f "$contract_file" ]]; then
+    archive_contract="$(unique_archive_path "tasks/archive/contract-${timestamp}-${slug}.md")"
+    {
+      echo "> **Archived**: ${timestamp_human}"
+      echo "> **Related Plan**: ${archive_plan_path}"
+      echo "> **Outcome**: ${outcome}"
+      echo "> **Lifecycle**: contract"
+      echo "> **Parent Run ID**: ${parent_run_id}"
+      echo
+      cat "$contract_file"
+    } > "$archive_contract"
+    rm -f "$contract_file"
+  fi
+
+  if [[ -f "$review_file" ]]; then
+    archive_review="$(unique_archive_path "tasks/archive/review-${timestamp}-${slug}.md")"
+    {
+      echo "> **Archived**: ${timestamp_human}"
+      echo "> **Related Plan**: ${archive_plan_path}"
+      echo "> **Outcome**: ${outcome}"
+      echo "> **Lifecycle**: review"
+      echo "> **Parent Run ID**: ${parent_run_id}"
+      echo
+      cat "$review_file"
+    } > "$archive_review"
+    rm -f "$review_file"
+  fi
+
+  if todo_is_deferred_ledger tasks/todos.md; then
+    touch_deferred_ledger_update_marker tasks/todos.md
+  else
+    write_empty_deferred_ledger
+  fi
+
+  cleared_active=0
+  for marker_file in ".ai/harness/active-plan"; do
+    if [[ ! -f "$marker_file" ]]; then
+      continue
+    fi
+    marker_value="$(cat "$marker_file" 2>/dev/null | xargs)"
+    if [[ "$marker_value" == "$plan_file" || "$marker_value" == "./$plan_file" ]]; then
+      rm -f "$marker_file"
+      cleared_active=1
+      echo "Cleared $marker_file (archived plan was active)"
+    fi
+  done
+  if [[ "$cleared_active" -eq 1 ]]; then
+    rm -f ".ai/harness/active-worktree"
+  fi
+
+  plan_key="$(basename "$plan_file" .md)"
+  rm -f ".claude/.plan-state/${plan_key}.todo.md.bak"
+  rm -f ".claude/.plan-state/${plan_key}.task-state.json.bak"
+  rm -f ".claude/.plan-state/${plan_key}.task-handoff.md.bak"
+
+  bash "$helper_dir/refresh-current-status.sh" --clear --write --reason "archive-workflow"
+
+  archive_transaction_commit
+
+  echo "Archived plan to: $archive_plan_path"
+  if [[ -f "docs/reference-configs/handoff-protocol.md" ]]; then
+    echo "Next: refresh or prune long-running workflow rules using docs/reference-configs/handoff-protocol.md"
+  fi
+}
+
 plan_file=""
 outcome=""
 timestamp_override=""
@@ -481,133 +737,5 @@ if [[ -n "$predict_manifest_output" ]]; then
   exit 0
 fi
 
-contract_file="tasks/contracts/${artifact_stem}.contract.md"
-if [[ ! -f "$contract_file" && -f "tasks/contracts/${slug}.contract.md" ]]; then
-  contract_file="tasks/contracts/${slug}.contract.md"
-fi
-review_file="tasks/reviews/${artifact_stem}.review.md"
-if [[ ! -f "$review_file" && -f "tasks/reviews/${slug}.review.md" ]]; then
-  review_file="tasks/reviews/${slug}.review.md"
-fi
-
-if [[ "$outcome" == "Completed" ]]; then
-  completed_archive_gate "$contract_file" "$review_file"
-fi
-
-if [[ ! -f "$helper_dir/refresh-current-status.sh" ]]; then
-  echo "archive-workflow: required current-status refresh helper is missing: $helper_dir/refresh-current-status.sh" >&2
-  exit 1
-fi
-
-archive_transaction_begin
-mkdir -p plans/archive tasks/archive tasks/notes
-
-plan_status="Archived"
-if [[ "$outcome" == "Abandoned" ]]; then
-  plan_status="Abandoned"
-fi
-set_plan_status "$plan_file" "$plan_status"
-
-archive_plan_path="plans/archive/${plan_base}"
-archive_plan_path="$(unique_archive_path "$archive_plan_path")"
-
-if [[ "$plan_file" != "$archive_plan_path" ]]; then
-  mv "$plan_file" "$archive_plan_path"
-fi
-
-if [[ -f tasks/todos.md ]] && grep -q '[^[:space:]]' tasks/todos.md; then
-  archive_todo="$(unique_archive_path "tasks/archive/todo-${timestamp}-${slug}.md")"
-  {
-    echo "> **Archived**: ${timestamp_human}"
-    echo "> **Related Plan**: ${archive_plan_path}"
-    echo "> **Outcome**: ${outcome}"
-    echo "> **Source Plan**: ${todo_source_plan:-"(none)"}"
-    echo "> **Parent Run ID**: ${parent_run_id}"
-    echo
-    cat tasks/todos.md
-  } > "$archive_todo"
-fi
-
-notes_file="tasks/notes/${artifact_stem}.notes.md"
-if [[ ! -f "$notes_file" && -f "tasks/notes/${slug}.notes.md" ]]; then
-  notes_file="tasks/notes/${slug}.notes.md"
-fi
-if [[ -f "$notes_file" ]]; then
-  archive_notes="$(unique_archive_path "tasks/archive/notes-${timestamp}-${slug}.md")"
-  {
-    echo "> **Archived**: ${timestamp_human}"
-    echo "> **Related Plan**: ${archive_plan_path}"
-    echo "> **Outcome**: ${outcome}"
-    echo "> **Lifecycle**: notes"
-    echo "> **Parent Run ID**: ${parent_run_id}"
-    echo
-    cat "$notes_file"
-  } > "$archive_notes"
-  rm -f "$notes_file"
-fi
-
-if [[ -f "$contract_file" ]]; then
-  archive_contract="$(unique_archive_path "tasks/archive/contract-${timestamp}-${slug}.md")"
-  {
-    echo "> **Archived**: ${timestamp_human}"
-    echo "> **Related Plan**: ${archive_plan_path}"
-    echo "> **Outcome**: ${outcome}"
-    echo "> **Lifecycle**: contract"
-    echo "> **Parent Run ID**: ${parent_run_id}"
-    echo
-    cat "$contract_file"
-  } > "$archive_contract"
-  rm -f "$contract_file"
-fi
-
-if [[ -f "$review_file" ]]; then
-  archive_review="$(unique_archive_path "tasks/archive/review-${timestamp}-${slug}.md")"
-  {
-    echo "> **Archived**: ${timestamp_human}"
-    echo "> **Related Plan**: ${archive_plan_path}"
-    echo "> **Outcome**: ${outcome}"
-    echo "> **Lifecycle**: review"
-    echo "> **Parent Run ID**: ${parent_run_id}"
-    echo
-    cat "$review_file"
-  } > "$archive_review"
-  rm -f "$review_file"
-fi
-
-if todo_is_deferred_ledger tasks/todos.md; then
-  touch_deferred_ledger_update_marker tasks/todos.md
-else
-  write_empty_deferred_ledger
-fi
-
-# Clear the active-plan marker if it pointed to the archived plan
-cleared_active=0
-for marker_file in ".ai/harness/active-plan"; do
-  if [[ ! -f "$marker_file" ]]; then
-    continue
-  fi
-  marker_value="$(cat "$marker_file" 2>/dev/null | xargs)"
-  if [[ "$marker_value" == "$plan_file" || "$marker_value" == "./$plan_file" ]]; then
-    rm -f "$marker_file"
-    cleared_active=1
-    echo "Cleared $marker_file (archived plan was active)"
-  fi
-done
-if [[ "$cleared_active" -eq 1 ]]; then
-  rm -f ".ai/harness/active-worktree"
-fi
-
-# Clean up saved plan state backups
-plan_key="$(basename "$plan_file" .md)"
-rm -f ".claude/.plan-state/${plan_key}.todo.md.bak"
-rm -f ".claude/.plan-state/${plan_key}.task-state.json.bak"
-rm -f ".claude/.plan-state/${plan_key}.task-handoff.md.bak"
-
-bash "$helper_dir/refresh-current-status.sh" --clear --write --reason "archive-workflow"
-
-archive_transaction_commit
-
-echo "Archived plan to: $archive_plan_path"
-if [[ -f "docs/reference-configs/handoff-protocol.md" ]]; then
-  echo "Next: refresh or prune long-running workflow rules using docs/reference-configs/handoff-protocol.md"
-fi
+apply_archive_workflow required
+exit $?
