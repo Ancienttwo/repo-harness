@@ -186,6 +186,7 @@ blocks the transaction.
 ```yaml
 allowed_paths:
   - SKILL.md
+  - references/
   - assets/skill-commands/
   - assets/skills/
   - .agents/skills/
@@ -355,6 +356,18 @@ delegation:
 >    applicable` — the expected self-host result.
 > 2. The fifth `manual_checks` entry (routing-quality per-route floors)
 >    replaced per the SSD-07 Phase B frozen-fallback ruling below.
+> 3. `references/` (root-level; not to be confused with any nested
+>    `references/` under `assets/skills/*` or `assets/skill-commands/*`,
+>    already covered by their own parent-directory entries) added to
+>    `allowed_paths`. SSD-06's C1 cutover moved `handoff.md` and
+>    `workflow-packaging-rubric.md` out of the staged
+>    `assets/skills/repo-harness-root-references/` bundle into a new
+>    top-level `references/` directory sibling to root `SKILL.md` — a
+>    real, mandated file-family this contract's `allowed_paths` never
+>    listed. Found via `verify-sprint.sh --prepare-acceptance`'s own
+>    `allowed_paths_status` gate (independently reproduced by simulating
+>    `path_under_allowed_prefix` over the full changed-file list), not a
+>    tooling bug.
 
 ```yaml
 exit_criteria:
