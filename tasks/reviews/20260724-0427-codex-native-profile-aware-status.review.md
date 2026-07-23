@@ -5,10 +5,10 @@
 > **Contract**: tasks/contracts/20260724-0427-codex-native-profile-aware-status.contract.md
 > **Notes File**: tasks/notes/20260724-0427-codex-native-profile-aware-status.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-07-24 06:08
+> **Last Updated**: 2026-07-24 06:21
 > **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Subject SHA256**: sha256:4e0b7b062cb57f8b7c794b4b29032b967194ce67fcff55da5d69c68ff8b66234
+> **Reviewed Subject SHA256**: sha256:e475f44aef03cd1c441ce1d4fec7f092c1384fb7cef99154a6f9abd2cdb16b48
 > **Reviewed Subject Scope**: normalized-final-content
 > **Reviewed Target Revision**: 71a52dde5e8476308bf74f8ada8bdf752b7cbe7b
 
@@ -24,11 +24,11 @@
 - Commands passed: focused 118-test final regression; typecheck; strict
   workflow and root checks; 28/28 strict contract verification; disposable
   HOME characterization; retired-name scan 5/5 after its timeout budget fix.
-- Residual risks: main overlaps the timeout-test file with two independent
-  allowlist additions; preserve both at Git closeout. No operator HOME was
-  migrated, so actual host cutover remains an explicit operator action.
-- Reviewer action required: resolve the one target-overlap path before merge
-  and let branch CI read back the combined file.
+- Residual risks: No operator HOME was migrated, so actual host cutover
+  remains an explicit operator action.
+- Reviewer action required: none. The anticipated target overlap was resolved
+  by preserving both main's provenance allowlist additions and this slice's
+  timeout budget; the combined test passes 5/5.
 - Rollback: revert protocol 2, migration command, both profile projections,
   tests, and docs together.
 
@@ -52,7 +52,7 @@
   `verify-contract --strict` 28/28.
 - Manual checks: exact profile vocabulary `minimal|full`, Codex counts 7/11,
   default full, adapter legacy gate before mutation, valid-legacy versus
-  corrupt-state setup actions, and target-overlap diff.
+  corrupt-state setup actions, and the resolved target-overlap diff.
 - Supporting artifacts:
   `.ai/harness/runs/20260724-0427-codex-native-profile-aware-status/profile-migration-red.txt`
   and `profile-migration-characterization.txt`.
@@ -89,8 +89,8 @@
 
 ## Residual Risks / Follow-ups
 
-- Target overlap is one mechanically mergeable test file; it is a Git
-  closeout concern, not a semantic review failure.
+- Target overlap was mechanically merged and its combined
+  `retired-names-scan.test.ts` result is 5/5.
 - Operator HOME remains intentionally unchanged.
 
 ## Scorecard
@@ -108,14 +108,16 @@
 
 ## Retest Steps
 
-- Re-run: branch CI after target overlap resolution.
-- Re-check: combined `retired-names-scan.test.ts` contains main's two
-  `classify-historical-plans.ts` allowlist entries and this slice's 10-second
-  scan budget.
+- Re-run: branch CI after mainline merge.
+- Re-check completed: combined `retired-names-scan.test.ts` contains main's
+  two `classify-historical-plans.ts` allowlist entries and this slice's
+  10-second scan budget; 5/5 tests pass.
 
 ## Summary
 
-- Sol Max final gate: PASS, no blocking source/diff findings.
+- Sol Max final implementation gate: PASS, no blocking source/diff findings.
+- Post-gate mainline reconciliation: PASS; only the anticipated mechanical
+  overlap changed the reviewed subject, and its combined test passes 5/5.
 - Contract: Fulfilled, 28/28.
 - Recommendation: pass for Git closeout after preserving the one overlapping
   target-file change.
