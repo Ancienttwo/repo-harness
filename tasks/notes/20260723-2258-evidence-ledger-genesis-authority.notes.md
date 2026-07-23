@@ -38,6 +38,12 @@
   parent process, proves an exact clean source/scratch binding, and invokes one
   private in-process mutation path for scratch only. Ordinary CLI execution,
   environment variables, and a forged `.git` marker cannot select that path.
+- The first real `finish` retry then exposed a fixture/integration difference:
+  a `node_modules` symlink in a standalone clone does not match the directory
+  ignore rule `node_modules/`, so the scratch cleanliness gate rejected the
+  predictor's own dependency attachment. Binding now completes before that
+  read-only symlink is attached, and the prediction fixture creates an ignored
+  `node_modules` directory to lock the ordering regression.
 
 ## Tradeoffs Considered
 
@@ -62,12 +68,16 @@
 - Pre-fix regression: `.ai/harness/runs/evidence-ledger-genesis-authority.pre-fix.log`
 - Focused tests: `bun test tests/evidence-checks-materializer.test.ts tests/evidence-projection-drift.test.ts` — 28 pass.
 - Archive gate tests: `bun test tests/archive-evidence-gates.test.ts` — 10 pass.
-- Full suite: `bun test` — 2045 pass, 1 skip, 0 fail across 161 files.
+- Pre-ordering full suite: `bun test` — 2045 pass, 1 skip, 0 fail across 161
+  files.
+- Final-subject full suite: 2044 pass, 1 skip, 1 unrelated 5-second timeout in
+  `tests/skill-surface/retired-names-scan.test.ts`; isolated rerun of that file
+  passed 5/5 in 5.21 seconds. No out-of-scope source was changed.
 - Typecheck: `bun run check:type` — pass after linking the worktree to the
   primary checkout's existing ignored `node_modules`.
 - Waza `/check`: Deep. Security and architecture reviewers rejected two
-  caller-forgeable intermediate designs; both final targeted re-reviews passed
-  with no findings.
+  caller-forgeable intermediate designs; targeted re-reviews passed with no
+  findings.
 
 ## Promotion Filter
 

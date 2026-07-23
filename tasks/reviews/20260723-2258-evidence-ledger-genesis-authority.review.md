@@ -5,10 +5,10 @@
 > **Contract**: tasks/contracts/20260723-2258-evidence-ledger-genesis-authority.contract.md
 > **Notes File**: tasks/notes/20260723-2258-evidence-ledger-genesis-authority.notes.md
 > **Checks File**: .ai/harness/checks/latest.json
-> **Last Updated**: 2026-07-23 23:58
+> **Last Updated**: 2026-07-24 00:22
 > **Recommendation**: pass
 > **Review Rubric Version**: 2
-> **Reviewed Subject SHA256**: sha256:b3f3463dd2f84b0759a15ab730d467d076e304abfce68d7032fbef76084c328f
+> **Reviewed Subject SHA256**: sha256:8ae47f7964d1d1102d32d48c32409af0c9b0bc03d7474c6a9523431f4ebb25d6
 > **Reviewed Subject Scope**: normalized-final-content
 > **Reviewed Target Revision**: 7c5b3554062fd98f897ae2433ca60b8697b14e65
 
@@ -22,8 +22,10 @@
 - Actual files changed: exactly six normalized review-subject paths plus
   plan/contract/review/notes and the generated deferred-ledger timestamp.
 - Commands passed: evidence suites 28 pass / 0 fail; archive gate suite 10 pass
-  / 0 fail; `bun run check:type`; full `bun test` 2045 pass / 1 skip / 0 fail
-  across 161 files; strict ContractVerify 18/18; repository required checks.
+  / 0 fail; `bun run check:type`; pre-ordering full `bun test` 2045 pass / 1
+  skip / 0 fail across 161 files; final-subject full run 2044 pass / 1 skip /
+  1 unrelated 5-second timeout, whose isolated file rerun passed 5/5; strict
+  ContractVerify 18/18; repository required checks.
 - Residual risks: accepted-event replay remains linear in ledger length. The
   archive predictor's `preverified` mode must remain internal and unavailable
   to CLI/env callers; current code has exactly one private call site.
@@ -63,24 +65,24 @@
   packaged archive helpers are byte-identical.
 - Supporting artifacts:
   `.ai/harness/runs/evidence-ledger-genesis-authority.pre-fix.log` and
-  `.ai/harness/runs/evidence-ledger-genesis-authority.full-test.log`.
+  `.ai/harness/runs/evidence-ledger-genesis-authority.full-test-final2.log`.
 - Implementation notes reviewed: yes.
 - Run snapshot: `.ai/harness/runs/`.
 
 ## Acceptance Receipt Projection
 
-> **Disposition**: external_pass
-> **Reviewer**: Codex
-> **Source**: codex-review
-> **Actor**: not-applicable
-> **Reviewed Subject SHA256**: sha256:b3f3463dd2f84b0759a15ab730d467d076e304abfce68d7032fbef76084c328f
+> **Disposition**: pending
+> **Reviewer**: pending
+> **Source**: pending
+> **Actor**: pending
+> **Reviewed Subject SHA256**: sha256:8ae47f7964d1d1102d32d48c32409af0c9b0bc03d7474c6a9523431f4ebb25d6
 > **Reviewed Subject Scope**: normalized-final-content
 > **Reviewed Target Revision**: 7c5b3554062fd98f897ae2433ca60b8697b14e65
-> **Verification Evidence SHA256**: sha256:a4df9ac8ac1062e458a93156b486b569d7ad97cb73bd2789e42a9ca60423123f
-> **Issued At**: 2026-07-23T16:13:31.610Z
+> **Verification Evidence SHA256**: pending
+> **Issued At**: pending
 
-- Summary: PostBash-first genesis and root-bound archive prediction regressions fixed; Deep security and architecture reviews plus focused, type, full-suite, and workflow gates passed.
-- Findings: none
+- Summary: pending final AcceptanceReceipt record.
+- Findings: pending
 
 ## Behavior Diff Notes
 

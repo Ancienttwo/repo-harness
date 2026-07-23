@@ -547,7 +547,11 @@ describe("archive evidence gates", () => {
       // .ai/harness/checks/`). A predicted scratch clone therefore always
       // starts with a pre-existing `.ai/harness/checks/` directory from the
       // tracked .gitkeep, before the live evidence is compensated in.
-      writeFileSync(join(cwd, ".gitignore"), ".ai/harness/checks/latest.json\n");
+      writeFileSync(
+        join(cwd, ".gitignore"),
+        ["node_modules/", ".ai/harness/checks/latest.json", ""].join("\n"),
+      );
+      mkdirSync(join(cwd, "node_modules"), { recursive: true });
       writeFileSync(join(cwd, ".ai/harness/checks/.gitkeep"), "");
       writeWorkflowContract(cwd, "Fulfilled");
       writeWorkflowReview(cwd, "pass", "pass");

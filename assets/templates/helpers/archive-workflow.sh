@@ -312,12 +312,6 @@ predict_archive_manifest() {
     rm -rf "$scratch"
     return 1
   fi
-  # The scratch clone intentionally contains only tracked candidate bytes.
-  # Reuse the caller's installed dependency tree for read-only workflow checks;
-  # node_modules remains ignored and is never part of the predicted manifest.
-  if [[ -d "$PWD/node_modules" ]]; then
-    ln -s "$PWD/node_modules" "$scratch_repo/node_modules"
-  fi
   target_branch="$("$REPO_HARNESS_BUN_BIN" -e '
     try {
       const policy = JSON.parse(await Bun.file(".ai/harness/policy.json").text());
@@ -344,6 +338,12 @@ predict_archive_manifest() {
   done
   if [[ "$outcome" == "Completed" ]]; then
     verify_prediction_scratch_binding "$source_repo" "$scratch_repo" "$checks_file"
+  fi
+  # Bind the clean tracked/runtime inputs before attaching the caller's
+  # dependency tree. A node_modules symlink does not match a directory-only
+  # ignore rule in a standalone clone and must not weaken the cleanliness gate.
+  if [[ -d "$PWD/node_modules" ]]; then
+    ln -s "$PWD/node_modules" "$scratch_repo/node_modules"
   fi
   if ! (
     cd "$scratch_repo"
