@@ -426,20 +426,28 @@ Acceptance:
 
 ### SSD-07 — Freeze the subject and produce final evidence once
 
-- [ ] Freeze head SHA, manifest/projection hash, corpus hash, package bytes, and changed-file list before expensive evidence.
-- [ ] Run deterministic focused suites during development; run the real host/provider routing matrix exactly once after freeze.
-- [ ] Before a >10-minute provider run, report case count, provider calls, expected wall time, and why cached evidence is invalid or insufficient.
-- [ ] Measure canonical top-1 accuracy >=95%, double-trigger/ambiguous activation <=2%, ordinary-QA false activation <=1%, and per-route recall >=90%.
-- [ ] If the negative sample is below 100, require zero false activations and report it as a small-sample result rather than claiming statistical <=1% confidence.
-- [ ] Exercise disposable `HOME`/`BUN_INSTALL` across all profiles, both hosts, copy/link, fresh/reinstall/upgrade/downgrade/rollback, pristine/modified/unowned ownership, and injected failures.
-- [ ] Run packed-tarball install smoke, all required repo checks, independent review, exact-subject merge gate, and workflow closeout.
+- [x] Freeze head SHA, manifest/projection hash, corpus hash, package bytes, and changed-file list before expensive evidence.
+- [x] Run deterministic focused suites during development; run the real host/provider routing matrix exactly once after freeze — attempted; see Phase B below, frozen fallback applied.
+- [x] Before a >10-minute provider run, report case count, provider calls, expected wall time, and why cached evidence is invalid or insufficient.
+- [ ] Measure canonical top-1 accuracy >=95%, double-trigger/ambiguous activation <=2%, ordinary-QA false activation <=1%, and per-route recall >=90% — NOT satisfied; see Phase B, frozen fallback ruling.
+- [ ] If the negative sample is below 100, require zero false activations and report it as a small-sample result rather than claiming statistical <=1% confidence — moot: see Phase B, the underlying measurement never validly ran.
+- [x] Exercise disposable `HOME`/`BUN_INSTALL` across all profiles, both hosts, copy/link, fresh/reinstall/upgrade/downgrade/rollback, pristine/modified/unowned ownership, and injected failures.
+- [x] Run packed-tarball install smoke, all required repo checks, independent review, exact-subject merge gate, and workflow closeout.
 
 Acceptance:
 
-- Evidence is bound to the frozen head and exact manifest/corpus hashes.
-- Every canonical route meets its floor; aggregate accuracy cannot hide a zero-recall route.
-- Rollback restores original bytes at every injected failure point.
-- Review recommends pass and all required checks are current.
+- Evidence is bound to the frozen head and exact manifest/corpus hashes. **Met** for every dimension except routing quality (below).
+- Every canonical route meets its floor; aggregate accuracy cannot hide a zero-recall route. **Not measured as designed** — see Phase B frozen fallback; the routing-quality dimension is recorded as an open methodology defect, not a passing or failing product measurement.
+- Rollback restores original bytes at every injected failure point. **Met.**
+- Review recommends pass and all required checks are current. **Met** (package-level review, below).
+
+### SSD-07 Phase B — routing-quality measurement: methodology failure and frozen fallback (2026-07-23)
+
+One authoritative matched-provider run was attempted per the Phase A pre-report: 136 real Claude invocations (`--profile strict --host claude --provider claude` and `--profile product-planning --host claude --provider claude`, 68 cases each), followed by `aggregate` over both reports. Reports are preserved byte-exact and immutable at `evals/skill-routing/routing-report-{strict,product-planning}-claude.json` and `evals/skill-routing/routing-aggregate.json` (+ `.sha256` sidecars); the attempt's outcome ruling is recorded separately at `evals/skill-routing/phase-b-attempt-outcome.json` so the raw reports are never mutated.
+
+**Outcome: `contaminated_invalid_evidence`, not `accepted`.** Post-hoc diagnosis (manual single-case reproductions using the exact `mkdtemp` + `materializeDiscoveredSurface` mechanism the runner uses) proved the measurement apparatus never exercised its intended subject: `claude -p`'s non-interactive invocation does not scan a per-case isolated workspace's `.claude/skills/` symlinks for available Skills at all. Every case's `system.init` transcript event instead reports the invoking **operator's own ambient, cached, user-level** Claude Code skill registry (`~/.claude/skills/`) — confirmed decisively two ways: (1) the reported skill list contains the operator's unrelated personal skills (e.g. `asc-ppp-pricing`, `cloudbase`, `threejs-shaders`) that this eval never materialized; (2) the operator's own `~/.claude/skills/repo-harness-plan` is a symlink to a **stale pre-SSD-06-cutover** globally-installed package path, not this eval's per-case symlink to the post-cutover canonical package — so even a correctly-named `Skill` tool call would have resolved against unrelated stale content. A secondary, independent implementation defect was found along the way in `scripts/run-skill-routing-eval.ts`'s `aggregate` case-sourcing tie-break (first-by-lexicographic-report-path, no correctness preference), which silently discarded at least two correct `strict`-run records in favor of incorrect `product-planning`-run records for the same case ids — recorded for the same follow-up but not the deciding factor, since both single-run reports independently show near-zero recall on package-specific routes regardless of aggregation.
+
+**Ruling (orchestrator, 2026-07-23):** per this Program's own frozen-attempt discipline (no automatic rerun, no `--regrade-existing`, no narrowed `--profile` backfill), this attempt is not rerun. The routing-quality acceptance line is recorded as **not independently measured by a real-provider run in this Program** — a harness/methodology gap, not a proven SSD-06 product regression, since the actual production discovery mechanism (`sync-codex-installed-copies.sh`, the real installer) was already independently verified against the target matrix by disposable-`HOME` disk probes across all four profiles and both hosts, gatekeeper-reviewed twice (SSD-06 rounds 1-2). SSD-07's other eight checklist items are unaffected and independently passed. A new approved run-decision is required before any re-attempt, contingent on fixing the Skill-injection mechanism (deferred to `tasks/todos.md`).
 
 ## Dependency Order
 

@@ -1,0 +1,1167 @@
+{
+  "protocol": 1,
+  "evidence_scope": "single_run_partial",
+  "evidence_note": "PARTIAL evidence only: no single profile/host run discovers all 10 canonical routes, so this run's overall_pass reflects floors met over ITS OWN reachable route subset only, not full package acceptance. Package acceptance requires the `aggregate` subcommand over 2+ runs whose union covers every canonical route.",
+  "generated_at": "2026-07-23T06:20:09.099Z",
+  "profile": "product-planning",
+  "host": "claude",
+  "provider": "claude",
+  "dry_run": false,
+  "corpus_sha256": "17a8a2feba0d1dd309f318eab9eb3b95c6ed1d3acf4da75df136c6eedff051f9",
+  "manifest_sha256": "d762d41d0136f3c12188ed3c7057521329c11725fe159ab838ccdae03e73c325",
+  "discovered_surface": [
+    {
+      "name": "repo-harness",
+      "reason": "always"
+    },
+    {
+      "name": "repo-harness-plan",
+      "reason": "profile-facade"
+    },
+    {
+      "name": "repo-harness-check",
+      "reason": "profile-facade"
+    },
+    {
+      "name": "repo-harness-product",
+      "reason": "profile-facade"
+    },
+    {
+      "name": "repo-harness-chatgpt",
+      "reason": "explicit-setup"
+    }
+  ],
+  "reference_only_surface": [
+    {
+      "name": "repo-harness-setup",
+      "reason": "cli-reference"
+    },
+    {
+      "name": "repo-harness-architecture",
+      "reason": "cli-reference"
+    }
+  ],
+  "records": [
+    {
+      "id": "pos-root-general-zh",
+      "lang": "zh",
+      "kind": "positive",
+      "expected_route": "repo-harness",
+      "outcome": "routed",
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": false,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 3349
+    },
+    {
+      "id": "pos-root-handoff-zh",
+      "lang": "zh",
+      "kind": "positive",
+      "expected_route": "repo-harness",
+      "outcome": "routed",
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": false,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 3232
+    },
+    {
+      "id": "pos-root-general-en",
+      "lang": "en",
+      "kind": "positive",
+      "expected_route": "repo-harness",
+      "outcome": "routed",
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": false,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 3454
+    },
+    {
+      "id": "pos-root-handoff-en",
+      "lang": "en",
+      "kind": "positive",
+      "expected_route": "repo-harness",
+      "outcome": "routed",
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": false,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 3593
+    },
+    {
+      "id": "pos-setup-init-zh",
+      "lang": "zh",
+      "kind": "positive",
+      "expected_route": "repo-harness-setup",
+      "outcome": "routed",
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": false,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 3200
+    },
+    {
+      "id": "pos-setup-migrate-en",
+      "lang": "en",
+      "kind": "positive",
+      "expected_route": "repo-harness-setup",
+      "outcome": "routed",
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": false,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 3570
+    },
+    {
+      "id": "pos-setup-upgrade-zh",
+      "lang": "zh",
+      "kind": "positive",
+      "expected_route": "repo-harness-setup",
+      "outcome": "routed",
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": false,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 3205
+    },
+    {
+      "id": "pos-setup-repair-en",
+      "lang": "en",
+      "kind": "positive",
+      "expected_route": "repo-harness-setup",
+      "outcome": "routed",
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": false,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 3663
+    },
+    {
+      "id": "pos-setup-scaffold-zh",
+      "lang": "zh",
+      "kind": "positive",
+      "expected_route": "repo-harness-setup",
+      "outcome": "routed",
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": false,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 3404
+    },
+    {
+      "id": "pos-setup-capability-en",
+      "lang": "en",
+      "kind": "positive",
+      "expected_route": "repo-harness-setup",
+      "outcome": "routed",
+      "selected_routes": [
+        "repo-harness",
+        "repo-harness-setup"
+      ],
+      "primary_route": "repo-harness",
+      "correct_top1": false,
+      "double_trigger": true,
+      "excluded_unreachable": false,
+      "duration_ms": 163398
+    },
+    {
+      "id": "pos-plan-create-zh",
+      "lang": "zh",
+      "kind": "positive",
+      "expected_route": "repo-harness-plan",
+      "outcome": "routed",
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": false,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 18077
+    },
+    {
+      "id": "pos-plan-review-zh",
+      "lang": "zh",
+      "kind": "positive",
+      "expected_route": "repo-harness-plan",
+      "outcome": "routed",
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": false,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 20017
+    },
+    {
+      "id": "pos-plan-create-en",
+      "lang": "en",
+      "kind": "positive",
+      "expected_route": "repo-harness-plan",
+      "outcome": "routed",
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": false,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 12233
+    },
+    {
+      "id": "pos-plan-review-en",
+      "lang": "en",
+      "kind": "positive",
+      "expected_route": "repo-harness-plan",
+      "outcome": "routed",
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": false,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 12651
+    },
+    {
+      "id": "pos-product-prd-zh",
+      "lang": "zh",
+      "kind": "positive",
+      "expected_route": "repo-harness-product",
+      "outcome": "routed",
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": false,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 10603
+    },
+    {
+      "id": "pos-product-sprint-zh",
+      "lang": "zh",
+      "kind": "positive",
+      "expected_route": "repo-harness-product",
+      "outcome": "routed",
+      "selected_routes": [
+        "repo-harness-product"
+      ],
+      "primary_route": "repo-harness-product",
+      "correct_top1": true,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 60975
+    },
+    {
+      "id": "pos-product-prd-en",
+      "lang": "en",
+      "kind": "positive",
+      "expected_route": "repo-harness-product",
+      "outcome": "routed",
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": false,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 20630
+    },
+    {
+      "id": "pos-product-goal-en",
+      "lang": "en",
+      "kind": "positive",
+      "expected_route": "repo-harness-product",
+      "outcome": "routed",
+      "selected_routes": [
+        "repo-harness-product"
+      ],
+      "primary_route": "repo-harness-product",
+      "correct_top1": true,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 41778
+    },
+    {
+      "id": "pos-check-workflow-zh",
+      "lang": "zh",
+      "kind": "positive",
+      "expected_route": "repo-harness-check",
+      "outcome": "routed",
+      "selected_routes": [
+        "repo-harness"
+      ],
+      "primary_route": "repo-harness",
+      "correct_top1": false,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 74965
+    },
+    {
+      "id": "pos-check-deploy-zh",
+      "lang": "zh",
+      "kind": "positive",
+      "expected_route": "repo-harness-check",
+      "outcome": "routed",
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": false,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 28417
+    },
+    {
+      "id": "pos-check-workflow-en",
+      "lang": "en",
+      "kind": "positive",
+      "expected_route": "repo-harness-check",
+      "outcome": "routed",
+      "selected_routes": [
+        "merge-gate"
+      ],
+      "primary_route": "merge-gate",
+      "correct_top1": false,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 16363
+    },
+    {
+      "id": "pos-check-deploy-en",
+      "lang": "en",
+      "kind": "positive",
+      "expected_route": "repo-harness-check",
+      "outcome": "routed",
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": false,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 49466
+    },
+    {
+      "id": "pos-ship-pr-zh",
+      "lang": "zh",
+      "kind": "positive",
+      "expected_route": "repo-harness-ship",
+      "outcome": "routed",
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": false,
+      "double_trigger": false,
+      "excluded_unreachable": true,
+      "duration_ms": 16666
+    },
+    {
+      "id": "pos-ship-worktree-zh",
+      "lang": "zh",
+      "kind": "positive",
+      "expected_route": "repo-harness-ship",
+      "outcome": "routed",
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": false,
+      "double_trigger": false,
+      "excluded_unreachable": true,
+      "duration_ms": 23080
+    },
+    {
+      "id": "pos-ship-pr-en",
+      "lang": "en",
+      "kind": "positive",
+      "expected_route": "repo-harness-ship",
+      "outcome": "routed",
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": false,
+      "double_trigger": false,
+      "excluded_unreachable": true,
+      "duration_ms": 14644
+    },
+    {
+      "id": "pos-ship-worktree-en",
+      "lang": "en",
+      "kind": "positive",
+      "expected_route": "repo-harness-ship",
+      "outcome": "routed",
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": false,
+      "double_trigger": false,
+      "excluded_unreachable": true,
+      "duration_ms": 34784
+    },
+    {
+      "id": "pos-architecture-drift-zh",
+      "lang": "zh",
+      "kind": "positive",
+      "expected_route": "repo-harness-architecture",
+      "outcome": "routed",
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": false,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 82020
+    },
+    {
+      "id": "pos-architecture-diagram-zh",
+      "lang": "zh",
+      "kind": "positive",
+      "expected_route": "repo-harness-architecture",
+      "outcome": "routed",
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": false,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 28149
+    },
+    {
+      "id": "pos-architecture-drift-en",
+      "lang": "en",
+      "kind": "positive",
+      "expected_route": "repo-harness-architecture",
+      "outcome": "routed",
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": false,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 103006
+    },
+    {
+      "id": "pos-architecture-diagram-en",
+      "lang": "en",
+      "kind": "positive",
+      "expected_route": "repo-harness-architecture",
+      "outcome": "routed",
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": false,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 29236
+    },
+    {
+      "id": "pos-crossreview-codex-zh",
+      "lang": "zh",
+      "kind": "positive",
+      "expected_route": "repo-harness-cross-review",
+      "outcome": "routed",
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": false,
+      "double_trigger": false,
+      "excluded_unreachable": true,
+      "duration_ms": 11337
+    },
+    {
+      "id": "pos-crossreview-claude-zh",
+      "lang": "zh",
+      "kind": "positive",
+      "expected_route": "repo-harness-cross-review",
+      "outcome": "routed",
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": false,
+      "double_trigger": false,
+      "excluded_unreachable": true,
+      "duration_ms": 43900
+    },
+    {
+      "id": "pos-crossreview-codex-en",
+      "lang": "en",
+      "kind": "positive",
+      "expected_route": "repo-harness-cross-review",
+      "outcome": "routed",
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": false,
+      "double_trigger": false,
+      "excluded_unreachable": true,
+      "duration_ms": 21286
+    },
+    {
+      "id": "pos-crossreview-claude-en",
+      "lang": "en",
+      "kind": "positive",
+      "expected_route": "repo-harness-cross-review",
+      "outcome": "routed",
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": false,
+      "double_trigger": false,
+      "excluded_unreachable": true,
+      "duration_ms": 14170
+    },
+    {
+      "id": "pos-mergegate-candidate-zh",
+      "lang": "zh",
+      "kind": "positive",
+      "expected_route": "merge-gate",
+      "outcome": "routed",
+      "selected_routes": [
+        "merge-gate"
+      ],
+      "primary_route": "merge-gate",
+      "correct_top1": true,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 23151
+    },
+    {
+      "id": "pos-mergegate-verify-zh",
+      "lang": "zh",
+      "kind": "positive",
+      "expected_route": "merge-gate",
+      "outcome": "routed",
+      "selected_routes": [
+        "merge-gate"
+      ],
+      "primary_route": "merge-gate",
+      "correct_top1": true,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 30584
+    },
+    {
+      "id": "pos-mergegate-candidate-en",
+      "lang": "en",
+      "kind": "positive",
+      "expected_route": "merge-gate",
+      "outcome": "routed",
+      "selected_routes": [
+        "merge-gate"
+      ],
+      "primary_route": "merge-gate",
+      "correct_top1": true,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 21043
+    },
+    {
+      "id": "pos-mergegate-verify-en",
+      "lang": "en",
+      "kind": "positive",
+      "expected_route": "merge-gate",
+      "outcome": "routed",
+      "selected_routes": [
+        "merge-gate"
+      ],
+      "primary_route": "merge-gate",
+      "correct_top1": true,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 36882
+    },
+    {
+      "id": "pos-chatgpt-setup-zh",
+      "lang": "zh",
+      "kind": "positive",
+      "expected_route": "repo-harness-chatgpt",
+      "outcome": "routed",
+      "selected_routes": [
+        "repo-harness-chatgpt"
+      ],
+      "primary_route": "repo-harness-chatgpt",
+      "correct_top1": true,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 89892
+    },
+    {
+      "id": "pos-chatgpt-consult-zh",
+      "lang": "zh",
+      "kind": "positive",
+      "expected_route": "repo-harness-chatgpt",
+      "outcome": "routed",
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": false,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 31265
+    },
+    {
+      "id": "pos-chatgpt-bridge-en",
+      "lang": "en",
+      "kind": "positive",
+      "expected_route": "repo-harness-chatgpt",
+      "outcome": "routed",
+      "selected_routes": [
+        "repo-harness-chatgpt"
+      ],
+      "primary_route": "repo-harness-chatgpt",
+      "correct_top1": true,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 111765
+    },
+    {
+      "id": "pos-chatgpt-consult-en",
+      "lang": "en",
+      "kind": "positive",
+      "expected_route": "repo-harness-chatgpt",
+      "outcome": "routed",
+      "selected_routes": [
+        "repo-harness-chatgpt"
+      ],
+      "primary_route": "repo-harness-chatgpt",
+      "correct_top1": true,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 19066
+    },
+    {
+      "id": "amb-check-casual-zh",
+      "lang": "zh",
+      "kind": "ambiguous",
+      "expected_route": "none",
+      "outcome": "routed",
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": true,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 6498
+    },
+    {
+      "id": "amb-review-prose-en",
+      "lang": "en",
+      "kind": "ambiguous",
+      "expected_route": "none",
+      "outcome": "routed",
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": true,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 8924
+    },
+    {
+      "id": "amb-plan-discussion-zh",
+      "lang": "zh",
+      "kind": "ambiguous",
+      "expected_route": "none",
+      "outcome": "routed",
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": true,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 13736
+    },
+    {
+      "id": "amb-ship-industry-en",
+      "lang": "en",
+      "kind": "ambiguous",
+      "expected_route": "none",
+      "outcome": "routed",
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": true,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 5686
+    },
+    {
+      "id": "amb-mergegate-vs-crossreview-zh",
+      "lang": "zh",
+      "kind": "ambiguous",
+      "expected_route": "none",
+      "outcome": "routed",
+      "selected_routes": [
+        "merge-gate"
+      ],
+      "primary_route": "merge-gate",
+      "correct_top1": false,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 29761
+    },
+    {
+      "id": "amb-architecture-topic-en",
+      "lang": "en",
+      "kind": "ambiguous",
+      "expected_route": "none",
+      "outcome": "routed",
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": true,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 19923
+    },
+    {
+      "id": "quoted-ship-name-zh",
+      "lang": "zh",
+      "kind": "quoted-name",
+      "expected_route": "none",
+      "outcome": "routed",
+      "selected_routes": [
+        "merge-gate"
+      ],
+      "primary_route": "merge-gate",
+      "correct_top1": false,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 23624
+    },
+    {
+      "id": "quoted-check-name-zh",
+      "lang": "zh",
+      "kind": "quoted-name",
+      "expected_route": "none",
+      "outcome": "routed",
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": true,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 25849
+    },
+    {
+      "id": "quoted-crossreview-name-en",
+      "lang": "en",
+      "kind": "quoted-name",
+      "expected_route": "none",
+      "outcome": "routed",
+      "selected_routes": [
+        "merge-gate"
+      ],
+      "primary_route": "merge-gate",
+      "correct_top1": false,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 35076
+    },
+    {
+      "id": "quoted-mergegate-name-en",
+      "lang": "en",
+      "kind": "quoted-name",
+      "expected_route": "none",
+      "outcome": "routed",
+      "selected_routes": [
+        "merge-gate"
+      ],
+      "primary_route": "merge-gate",
+      "correct_top1": false,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 5822
+    },
+    {
+      "id": "neg-check-notyet-zh",
+      "lang": "zh",
+      "kind": "negated",
+      "expected_route": "none",
+      "outcome": "routed",
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": true,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 11861
+    },
+    {
+      "id": "neg-ship-notyet-zh",
+      "lang": "zh",
+      "kind": "negated",
+      "expected_route": "none",
+      "outcome": "routed",
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": true,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 5876
+    },
+    {
+      "id": "neg-review-notyet-en",
+      "lang": "en",
+      "kind": "negated",
+      "expected_route": "none",
+      "outcome": "routed",
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": true,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 6981
+    },
+    {
+      "id": "neg-migrate-holdoff-en",
+      "lang": "en",
+      "kind": "negated",
+      "expected_route": "none",
+      "outcome": "routed",
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": true,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 6187
+    },
+    {
+      "id": "hyp-ship-whatif-zh",
+      "lang": "zh",
+      "kind": "hypothetical",
+      "expected_route": "none",
+      "outcome": "routed",
+      "selected_routes": [
+        "merge-gate"
+      ],
+      "primary_route": "merge-gate",
+      "correct_top1": false,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 45570
+    },
+    {
+      "id": "hyp-chatgpt-steps-zh",
+      "lang": "zh",
+      "kind": "hypothetical",
+      "expected_route": "none",
+      "outcome": "routed",
+      "selected_routes": [
+        "repo-harness-chatgpt"
+      ],
+      "primary_route": "repo-harness-chatgpt",
+      "correct_top1": false,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 36821
+    },
+    {
+      "id": "hyp-mergegate-oldcommit-en",
+      "lang": "en",
+      "kind": "hypothetical",
+      "expected_route": "none",
+      "outcome": "routed",
+      "selected_routes": [
+        "merge-gate"
+      ],
+      "primary_route": "merge-gate",
+      "correct_top1": false,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 50370
+    },
+    {
+      "id": "hyp-migrate-later-en",
+      "lang": "en",
+      "kind": "hypothetical",
+      "expected_route": "none",
+      "outcome": "routed",
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": true,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 24671
+    },
+    {
+      "id": "status-check-last-zh",
+      "lang": "zh",
+      "kind": "status-only",
+      "expected_route": "none",
+      "outcome": "routed",
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": true,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 19015
+    },
+    {
+      "id": "status-architecture-request-zh",
+      "lang": "zh",
+      "kind": "status-only",
+      "expected_route": "none",
+      "outcome": "routed",
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": true,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 22421
+    },
+    {
+      "id": "status-mergegate-last-en",
+      "lang": "en",
+      "kind": "status-only",
+      "expected_route": "none",
+      "outcome": "routed",
+      "selected_routes": [
+        "merge-gate"
+      ],
+      "primary_route": "merge-gate",
+      "correct_top1": false,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 24514
+    },
+    {
+      "id": "status-crossreview-last-en",
+      "lang": "en",
+      "kind": "status-only",
+      "expected_route": "none",
+      "outcome": "routed",
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": true,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 23710
+    },
+    {
+      "id": "qa-ts-interface-zh",
+      "lang": "zh",
+      "kind": "ordinary-qa",
+      "expected_route": "none",
+      "outcome": "routed",
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": true,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 16455
+    },
+    {
+      "id": "qa-gptpro-model-zh",
+      "lang": "zh",
+      "kind": "ordinary-qa",
+      "expected_route": "none",
+      "outcome": "routed",
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": true,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 48821
+    },
+    {
+      "id": "qa-jscopy-en",
+      "lang": "en",
+      "kind": "ordinary-qa",
+      "expected_route": "none",
+      "outcome": "routed",
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": true,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 12105
+    },
+    {
+      "id": "qa-gptpro-tier-en",
+      "lang": "en",
+      "kind": "ordinary-qa",
+      "expected_route": "none",
+      "outcome": "routed",
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": true,
+      "double_trigger": false,
+      "excluded_unreachable": false,
+      "duration_ms": 29434
+    }
+  ],
+  "metrics": {
+    "evaluated_cases": 68,
+    "provider_error_count": 0,
+    "excluded_unreachable_count": 8,
+    "top1_accuracy": {
+      "numerator": 9,
+      "denominator": 34,
+      "rate": 0.2647058823529412
+    },
+    "per_route_recall": {
+      "repo-harness": {
+        "numerator": 0,
+        "denominator": 4,
+        "rate": 0,
+        "reachable": true
+      },
+      "repo-harness-setup": {
+        "numerator": 0,
+        "denominator": 6,
+        "rate": 0,
+        "reachable": true
+      },
+      "repo-harness-plan": {
+        "numerator": 0,
+        "denominator": 4,
+        "rate": 0,
+        "reachable": true
+      },
+      "repo-harness-product": {
+        "numerator": 2,
+        "denominator": 4,
+        "rate": 0.5,
+        "reachable": true
+      },
+      "repo-harness-check": {
+        "numerator": 0,
+        "denominator": 4,
+        "rate": 0,
+        "reachable": true
+      },
+      "repo-harness-ship": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "reachable": false
+      },
+      "repo-harness-architecture": {
+        "numerator": 0,
+        "denominator": 4,
+        "rate": 0,
+        "reachable": true
+      },
+      "repo-harness-cross-review": {
+        "numerator": 0,
+        "denominator": 0,
+        "rate": null,
+        "reachable": false
+      },
+      "merge-gate": {
+        "numerator": 4,
+        "denominator": 4,
+        "rate": 1,
+        "reachable": true
+      },
+      "repo-harness-chatgpt": {
+        "numerator": 3,
+        "denominator": 4,
+        "rate": 0.75,
+        "reachable": true
+      }
+    },
+    "double_trigger": {
+      "count": 1,
+      "denominator": 68,
+      "rate": 0.014705882352941176
+    },
+    "ordinary_qa_false_activation": {
+      "numerator": 0,
+      "denominator": 4,
+      "rate": 0,
+      "small_sample": true
+    },
+    "non_positive_false_activation_by_kind": {
+      "ambiguous": {
+        "numerator": 1,
+        "denominator": 6,
+        "rate": 0.16666666666666666
+      },
+      "quoted-name": {
+        "numerator": 3,
+        "denominator": 4,
+        "rate": 0.75
+      },
+      "negated": {
+        "numerator": 0,
+        "denominator": 4,
+        "rate": 0
+      },
+      "hypothetical": {
+        "numerator": 3,
+        "denominator": 4,
+        "rate": 0.75
+      },
+      "status-only": {
+        "numerator": 1,
+        "denominator": 4,
+        "rate": 0.25
+      },
+      "ordinary-qa": {
+        "numerator": 0,
+        "denominator": 4,
+        "rate": 0
+      }
+    }
+  },
+  "thresholds": {
+    "top1_accuracy": {
+      "floor": 0.95,
+      "actual": 0.2647058823529412,
+      "pass": false
+    },
+    "per_route_recall": {
+      "repo-harness": {
+        "floor": 0.9,
+        "actual": 0,
+        "pass": false,
+        "reachable": true
+      },
+      "repo-harness-setup": {
+        "floor": 0.9,
+        "actual": 0,
+        "pass": false,
+        "reachable": true
+      },
+      "repo-harness-plan": {
+        "floor": 0.9,
+        "actual": 0,
+        "pass": false,
+        "reachable": true
+      },
+      "repo-harness-product": {
+        "floor": 0.9,
+        "actual": 0.5,
+        "pass": false,
+        "reachable": true
+      },
+      "repo-harness-check": {
+        "floor": 0.9,
+        "actual": 0,
+        "pass": false,
+        "reachable": true
+      },
+      "repo-harness-ship": {
+        "floor": 0.9,
+        "actual": null,
+        "pass": true,
+        "reachable": false
+      },
+      "repo-harness-architecture": {
+        "floor": 0.9,
+        "actual": 0,
+        "pass": false,
+        "reachable": true
+      },
+      "repo-harness-cross-review": {
+        "floor": 0.9,
+        "actual": null,
+        "pass": true,
+        "reachable": false
+      },
+      "merge-gate": {
+        "floor": 0.9,
+        "actual": 1,
+        "pass": true,
+        "reachable": true
+      },
+      "repo-harness-chatgpt": {
+        "floor": 0.9,
+        "actual": 0.75,
+        "pass": false,
+        "reachable": true
+      }
+    },
+    "double_trigger": {
+      "ceiling": 0.02,
+      "actual": 0.014705882352941176,
+      "pass": true
+    },
+    "ordinary_qa_false_activation": {
+      "ceiling": 0.01,
+      "actual": 0,
+      "small_sample": true,
+      "pass": true
+    },
+    "overall_pass": false
+  }
+}

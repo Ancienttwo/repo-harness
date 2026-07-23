@@ -1,0 +1,24 @@
+{
+  "protocol": 1,
+  "kind": "repo-harness-routing-eval-attempt-outcome",
+  "attempt_id": "ssd07-phaseb-20260723-a01",
+  "started_at": "2026-07-23T05:48:23.108Z",
+  "finished_at": "2026-07-23T06:20:12.000Z",
+  "profiles_run": ["strict", "product-planning"],
+  "host": "claude",
+  "provider": "claude",
+  "invocations": 136,
+  "invocation_command_pattern": "bun scripts/run-skill-routing-eval.ts run --profile <p> --host claude --provider claude --report <path>",
+  "reports": [
+    "evals/skill-routing/routing-report-strict-claude.json",
+    "evals/skill-routing/routing-report-product-planning-claude.json",
+    "evals/skill-routing/routing-aggregate.json"
+  ],
+  "outcome": "contaminated_invalid_evidence",
+  "root_cause": "Claude Code's `claude -p` non-interactive invocation does not scan the per-case isolated workspace's `.claude/skills/` directory (populated by materializeDiscoveredSurface via symlinks) for available Skills. The `system.init` event's `skills` array in every case's transcript instead reflects the invoking user's ambient, cached, user-level Claude Code skill registry -- confirmed decisively by two independent facts observed during post-hoc diagnosis: (1) the init event's skills list contains the operator's personal unrelated skills (asc-ppp-pricing, cloudbase, threejs-shaders, etc.) never materialized by this eval; (2) the operator's ~/.claude/skills/repo-harness-plan entry is a symlink to a STALE PRE-SSD-06-CUTOVER global package install path (.../node_modules/repo-harness/assets/skill-commands/repo-harness-plan), not the eval's per-case symlink to the post-cutover canonical package -- so even a Skill(skill:\"repo-harness-plan\") tool call, had one occurred, would have resolved against stale content unrelated to this Program's subject.",
+  "secondary_defect_found": "routing-aggregate.json's case-sourcing tie-break (first-by-lexicographic-report-path among reports where a case is reachable) discarded at least two CORRECT strict-run records (pos-root-general-zh, pos-root-general-en) in favor of incorrect product-planning-run records for the same case ids, because 'routing-report-product-planning-claude.json' sorts before 'routing-report-strict-claude.json'. This does not change the outcome ruling (the underlying single-run data independently shows near-zero recall on most package-specific routes regardless of aggregation), but is recorded as a real implementation defect in scripts/run-skill-routing-eval.ts's aggregate case-sourcing policy, for the same follow-up package that fixes the injection mechanism.",
+  "acceptance_line_affected": "SSD-07 acceptance: \"Every canonical route meets its floor; aggregate accuracy cannot hide a zero-recall route.\" This line cannot be validated as measured -- the measurement apparatus did not exercise the intended subject.",
+  "frozen_fallback": "No automatic rerun, no --regrade-existing, no narrowed --profile backfill. The routing-quality acceptance dimension is recorded as NOT independently measured by a real-provider run in this Program. SSD-07's other eight checklist items (subject freeze, deterministic corpus/coverage validation, retirement/projection-matrix disposable-HOME coverage, ten final repo gates, packed-tarball smoke) are unaffected and independently passed -- see plans/plan-20260715-1140-skill-surface-discovery-convergence.md's SSD-07 Phase B section. A new approved run-decision is required before any re-attempt, contingent on a fix to the Skill-injection mechanism (see tasks/todos.md).",
+  "immutable": true,
+  "attempt_files_untouched": "The three report/aggregate files above are preserved byte-exact as originally produced; this outcome record is a separate sibling file, never a mutation of them."
+}

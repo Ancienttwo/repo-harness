@@ -1993,3 +1993,73 @@ coverage map plus two new probes, D3's freeze record, and D4's full gate
 list are all exactly as specified. Nothing in the plan checklist was
 flipped -- SSD-07's remaining checklist items and acceptance lines stay open
 for phase B.
+
+## SSD-07 Phase B — routing-quality measurement outcome (2026-07-23)
+
+**Attempt**: 136 real Claude invocations across strict (68) and product-planning
+(68) profiles at `POST_EPC_SHA`-derived subject; `aggregate` computed over
+both. Reports + aggregate preserved byte-exact and immutable:
+`evals/skill-routing/routing-report-{strict,product-planning}-claude.json`,
+`evals/skill-routing/routing-aggregate.json` (+ `.sha256` sidecars). Outcome
+ruling recorded separately (never mutating the reports) at
+`evals/skill-routing/phase-b-attempt-outcome.json`.
+
+**Outcome: contaminated_invalid_evidence.** Root cause, proven by two manual
+single-case reproductions using the runner's own exact mechanism
+(`mkdtemp` + `materializeDiscoveredSurface`, then a direct `claude -p
+--output-format stream-json --verbose --no-session-persistence
+--permission-mode bypassPermissions` invocation with `cwd` set to the
+isolated case directory):
+
+1. The first reproduction (wrong cwd, my own mistake) showed the model
+   correctly noticing the actual live self-hosting repo state contradicted
+   the case's premise — a confound I introduced, not present in the real
+   automated run (which does use per-case `mkdtemp` workspaces correctly).
+2. The second reproduction, with the CORRECT isolated-workspace mechanism,
+   proved the real defect: the `system.init` transcript event's `skills`
+   array is NOT the per-case materialized surface at all — it is the
+   invoking operator's ambient, cached, user-level Claude Code skill
+   registry (`~/.claude/skills/`). Confirmed decisively: the reported list
+   contained unrelated personal skills (`asc-ppp-pricing`, `cloudbase`,
+   `threejs-shaders`, etc.) this eval never materialized, and
+   `~/.claude/skills/repo-harness-plan` on the operator's machine is a
+   symlink to a **stale pre-SSD-06-cutover** globally-installed package
+   path (`.../node_modules/repo-harness/assets/skill-commands/
+   repo-harness-plan`), not this eval's per-case symlink to the
+   post-cutover canonical package at `assets/skills/repo-harness-plan`.
+   `claude -p` simply does not scan `cwd/.claude/skills/` for a
+   non-interactive single-turn invocation; `materializeDiscoveredSurface`'s
+   symlinks were therefore inert for the entire 136-invocation run.
+
+**Secondary defect found (recorded, not the deciding factor):**
+`buildAggregateReport`'s case-sourcing tie-break (first-by-lexicographic-
+report-path among reports where a case is reachable) silently discarded at
+least 2 correct `strict`-run records (`pos-root-general-zh`,
+`pos-root-general-en`, both `correct_top1: true` in `strict`'s own report)
+in favor of incorrect `product-planning`-run records for the identical case
+ids — purely because `"routing-report-product-planning-claude.json"` sorts
+before `"routing-report-strict-claude.json"` lexicographically, a policy
+that is correctness-blind. This does not change the outcome ruling: each
+single run's own internally-consistent metrics (immune to any cross-report
+interference) independently show near-zero recall on every package-specific
+route (`repo-harness-setup`, `-plan`, `-check`, `-ship`, `-architecture`,
+`-cross-review`) in BOTH runs, confirming the contamination is the root
+cause, not an aggregation artifact. Fix direction for a future package:
+either forbid a case from being reachable-and-scored in more than one input
+report (assign each canonical route a single "owning" run), or make the
+tie-break correctness-aware in a way that doesn't silently cherry-pick
+(e.g. flag the ambiguity rather than resolve it silently).
+
+**Ruling**: frozen fallback per this Program's own no-rerun discipline. The
+routing-quality acceptance line is recorded as not independently measured;
+the actual production discovery mechanism was already independently proven
+correct by disposable-`HOME` disk probes (SSD-06 rounds 1-2, gatekeeper
+PASS both times) — this is an eval-harness defect, not a demonstrated
+SSD-06 product regression. Deferred-goal entry added to `tasks/todos.md`
+for a future package: fix the Skill-injection mechanism (candidates: an
+isolated `CLAUDE_CONFIG_DIR`/`HOME` per case mirroring the disposable-HOME
+pattern already used by `tests/install-profiles.test.ts`, or validate
+whether the Codex provider path — which reads `SKILL.md` directly per its
+own documented mechanism rather than relying on a cached skill registry —
+avoids this defect entirely, cheaply, with a single sample before any
+future full-matrix re-attempt) plus the aggregate tie-break fix above.
