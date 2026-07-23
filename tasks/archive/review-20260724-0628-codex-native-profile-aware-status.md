@@ -1,3 +1,9 @@
+> **Archived**: 2026-07-24 06:28
+> **Related Plan**: plans/archive/plan-20260724-0427-codex-native-profile-aware-status.md
+> **Outcome**: Completed
+> **Lifecycle**: review
+> **Parent Run ID**: run-20260724-0628
+
 # Task Review: codex-native-profile-aware-status
 
 > **Status**: Pass

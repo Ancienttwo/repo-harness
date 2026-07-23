@@ -1,6 +1,6 @@
 # Plan: Collapse install profiles to minimal/full
 
-> **Status**: Review
+> **Status**: Archived
 > **Created**: 20260724-0427
 > **Slug**: codex-native-profile-aware-status
 > **Planning Source**: repo-harness-plan
