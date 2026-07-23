@@ -2700,6 +2700,86 @@ describe("Workflow helper scripts", () => {
     }
   });
 
+  test("verify-contract should enforce snake_case QA dimensions against human-readable Scorecard labels", () => {
+    const cwd = tmpWorkspace("helper-verify-contract-qa-dimension");
+    try {
+      mkdirSync(join(cwd, "tasks/reviews"), { recursive: true });
+      copyHelpers(cwd);
+      installHooks(cwd);
+      writeFileSync(
+        join(cwd, "task.contract.md"),
+        [
+          "# Task Contract: QA dimension normalization",
+          "",
+          "> **Status**: Pending",
+          "> **Review File**: `tasks/reviews/qa-dimension.review.md`",
+          "",
+          "```yaml",
+          "exit_criteria:",
+          "  qa_scores:",
+          "    - dimension: code_quality",
+          "      min: 8",
+          "```",
+          "",
+          "## Evidence Requirements",
+          "",
+          "```yaml",
+          "evidence_requirements:",
+          "  benchmark: not_applicable",
+          "```",
+          "",
+        ].join("\n")
+      );
+      writeFileSync(
+        join(cwd, "tasks/reviews/qa-dimension.review.md"),
+        [
+          "# Task Review: QA dimension normalization",
+          "",
+          "> **Recommendation**: pass",
+          "",
+          "## Scorecard",
+          "",
+          "| Dimension | Score | Notes |",
+          "|-----------|-------|-------|",
+          "| Code quality | 9/10 | Focused fixture |",
+          "",
+        ].join("\n")
+      );
+
+      const res = run("bash", ["scripts/verify-contract.sh", "--contract", "task.contract.md", "--strict"], cwd);
+      expect(res.status).toBe(0);
+      expect(res.stdout).toContain("qa_scores: code_quality 9/8");
+      expect(readFileSync(join(cwd, "task.contract.md"), "utf-8")).toContain("> **Status**: Fulfilled");
+
+      writeFileSync(
+        join(cwd, "tasks/reviews/qa-dimension.review.md"),
+        [
+          "# Task Review: QA dimension normalization",
+          "",
+          "> **Recommendation**: fail",
+          "",
+          "## Scorecard",
+          "",
+          "| Dimension | Score | Notes |",
+          "|-----------|-------|-------|",
+          "| Code quality | 7/10 | Below threshold fixture |",
+          "",
+        ].join("\n")
+      );
+
+      const belowThreshold = run(
+        "bash",
+        ["scripts/verify-contract.sh", "--contract", "task.contract.md", "--strict"],
+        cwd
+      );
+      expect(belowThreshold.status).toBe(1);
+      expect(belowThreshold.stdout).toContain("qa_scores: code_quality score 7 < 8");
+      expect(readFileSync(join(cwd, "task.contract.md"), "utf-8")).toContain("> **Status**: Partial");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   for (const fixture of [
     {
       name: "unchecked",

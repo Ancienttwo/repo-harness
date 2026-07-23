@@ -407,9 +407,15 @@ review_score() {
       gsub(/[[:space:]]+$/, "", s)
       return s
     }
-    BEGIN { wanted = tolower(wanted) }
+    function normalize_dimension(s) {
+      s = tolower(trim(s))
+      gsub(/_/, " ", s)
+      gsub(/[[:space:]]+/, " ", s)
+      return s
+    }
+    BEGIN { wanted = normalize_dimension(wanted) }
     /^\|/ {
-      dim = tolower(trim($2))
+      dim = normalize_dimension($2)
       score = trim($3)
       if (dim == wanted && match(score, /[0-9]+/)) {
         print substr(score, RSTART, RLENGTH)
