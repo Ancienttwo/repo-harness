@@ -35,6 +35,7 @@ function initRepo(cwd: string): void {
     // be present so fixtures below can use a real, non-Draft/Annotating/
     // Approved/Executing status without tripping "authority unavailable".
     active_plan: {
+      lifecycle: { annotation_end: 'Annotating', approved: 'Approved', executing: 'Executing', terminal_start: 'Complete' },
       statuses: [
         'Draft', 'Annotating', 'Approved', 'Executing', 'Blocked', 'Review',
         'Complete', 'Completed', 'Done', 'Fulfilled', 'Archived', 'Abandoned', 'Superseded',

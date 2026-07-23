@@ -158,6 +158,8 @@ describe("workflow-state shared library", () => {
     expect(content).toContain("workflow_sync_task_state_from_todo()");
     expect(content).toContain("has_research_for_new_plan()");
     expect(content).toContain("validate_plan_transition()");
+    expect(content).toContain("workflow_plan_status_projection()");
+    expect(content).toContain("workflow_plan_status_is_terminal()");
     expect(content).toContain("contract_references_path()");
     // EPC-07: workflow_write_handoff's own `next_action="$(workflow_next_action)"`
     // call site was retired along with the rest of its independent
@@ -165,6 +167,34 @@ describe("workflow-state shared library", () => {
     // job); workflow_next_action() the function definition is still
     // asserted two lines above and remains a callable library export.
     expect(content).toContain("## Task Breakdown");
+  });
+
+  test("projects plan lifecycle roles from policy and fails closed when the projection is malformed", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "workflow-plan-status-policy-"));
+    try {
+      mkdirSync(join(cwd, ".ai/harness"), { recursive: true });
+      writeFileSync(join(cwd, ".ai/harness/policy.json"), JSON.stringify({
+        active_plan: {
+          statuses: ["Idea", "Annotate", "Go", "Run", "Paused", "Review", "Closed", "Archived"],
+          lifecycle: { annotation_end: "Annotate", approved: "Go", executing: "Run", terminal_start: "Closed" },
+        },
+      }));
+      const env = { ...fixtureEnv(), WORKFLOW_STATE: join(ROOT, "assets/hooks/lib/workflow-state.sh") };
+      const terminal = spawnSync("bash", ["-lc", 'source "$WORKFLOW_STATE"; workflow_plan_status_projection terminal'], { cwd, encoding: "utf8", env });
+      expect(terminal.status, terminal.stderr).toBe(0);
+      expect(terminal.stdout.trim().split("\n")).toEqual(["Closed", "Archived"]);
+
+      const missingNote = spawnSync("bash", ["-lc", 'source "$WORKFLOW_STATE"; validate_plan_transition Idea Annotate 0'], { cwd, encoding: "utf8", env });
+      expect(missingNote.status).toBe(1);
+      expect(missingNote.stdout).toContain("Idea -> Annotate requires at least one [NOTE]: annotation.");
+
+      writeFileSync(join(cwd, ".ai/harness/policy.json"), JSON.stringify({ active_plan: { statuses: ["Idea", "Run"] } }));
+      const malformed = spawnSync("bash", ["-lc", 'source "$WORKFLOW_STATE"; validate_plan_transition Idea Run 0'], { cwd, encoding: "utf8", env });
+      expect(malformed.status).toBe(1);
+      expect(malformed.stdout).toContain("Plan-status authority is unavailable or malformed.");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
   });
 
   test("reads only the verified AcceptanceReceipt projection from structured checks", () => {

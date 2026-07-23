@@ -1697,6 +1697,12 @@ pi_write_harness_policy() {
     "glob": "plan-*.md",
     "active_worktree_marker_file": ".ai/harness/active-worktree",
     "source_of_truth": "per-worktree explicit marker with active-worktree owner",
+    "lifecycle": {
+      "annotation_end": "Annotating",
+      "approved": "Approved",
+      "executing": "Executing",
+      "terminal_start": "Complete"
+    },
     "statuses": ["Draft", "Annotating", "Approved", "Executing", "Blocked", "Review", "Complete", "Completed", "Done", "Fulfilled", "Archived", "Abandoned", "Superseded"]
   },
   "tasks": {

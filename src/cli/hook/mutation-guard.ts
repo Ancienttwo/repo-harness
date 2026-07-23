@@ -358,7 +358,7 @@ function runPerPathGuards(
         ? countOccurrences(writePayload, '[NOTE]:')
         : (fileExists(ctx.repoRoot, filePath) ? countOccurrences(readText(ctx.repoRoot, filePath) ?? '', '[NOTE]:') : 0);
 
-      const transitionError = validatePlanTransition(currentStatus, nextStatus, noteCount);
+      const transitionError = validatePlanTransition(ctx.repoRoot, currentStatus, nextStatus, noteCount);
       if (transitionError) {
         out(ctx, `[PlanTransitionGuard] ${transitionError}`);
         structuredError(
@@ -474,8 +474,43 @@ function runEditPlanGate(ctx: Ctx, filePath: string, workflowProfile: WorkflowPr
   }
 
   const gateStatus = extractStatusFromText(readText(ctx.repoRoot, gatePlan) ?? '');
+  const statusPolicy = loadPlanStatusPolicy(ctx.repoRoot);
 
-  if (gateStatus === 'Draft' || gateStatus === 'Annotating') {
+  if (!statusPolicy) {
+    out(ctx, `[PlanStatusGuard] Plan-status authority unavailable (.ai/harness/policy.json active_plan lifecycle is missing, malformed, or unreadable); implementation edit: ${filePath}`);
+    if (mode === 'advice') {
+      out(ctx, '[PlanStatusGuard] Advisory: restore active_plan.statuses and active_plan.lifecycle in .ai/harness/policy.json before implementation.');
+    } else {
+      structuredError(
+        ctx,
+        'PlanStatusGuard',
+        `Implementation edit to ${filePath} could not be checked against plan-status authority: .ai/harness/policy.json has no valid active_plan lifecycle projection.`,
+        'Restore active_plan.statuses and active_plan.lifecycle in .ai/harness/policy.json before implementation.',
+        'missing_artifact',
+      );
+      exit(2);
+    }
+    return;
+  }
+
+  if (!statusPolicy.statuses.includes(gateStatus)) {
+    out(ctx, `[PlanStatusGuard] Plan status '${gateStatus}' in ${gatePlan} is not in the known-status authority; implementation edit: ${filePath}`);
+    if (mode === 'advice') {
+      out(ctx, `[PlanStatusGuard] Advisory: fix the plan Status header in ${gatePlan}, or add '${gateStatus}' to active_plan.statuses and its lifecycle projection if it is legitimate.`);
+    } else {
+      structuredError(
+        ctx,
+        'PlanStatusGuard',
+        `Implementation edit to ${filePath} while plan status '${gateStatus}' in ${gatePlan} is not in the known-status authority (.ai/harness/policy.json active_plan.statuses).`,
+        `Fix the plan Status header in ${gatePlan}, or update the policy-owned lifecycle if '${gateStatus}' is legitimate.`,
+        'state_violation',
+      );
+      exit(2);
+    }
+    return;
+  }
+
+  if (statusPolicy.preApprovalStatuses.includes(gateStatus)) {
     out(ctx, `[PlanStatusGuard] Plan status is '${gateStatus}' in ${gatePlan}; implementation edit: ${filePath}`);
     if (mode === 'advice') {
       out(ctx, '[PlanStatusGuard] Advisory: complete the annotation cycle and move the plan to Approved before implementation.');
@@ -492,53 +527,65 @@ function runEditPlanGate(ctx: Ctx, filePath: string, workflowProfile: WorkflowPr
     return;
   }
 
-  // Fail-closed default branch (2026-07-20 falsifier resolution): single
-  // known-status authority is `.ai/harness/policy.json`'s `active_plan.statuses`
-  // array -- read here, not hardcoded as a second list. Empty output (missing
-  // file, unreadable, or missing/empty array) is itself an
-  // authority-unavailable condition and must fail closed, not "nothing to
-  // check against".
-  const knownStatuses = planStatusKnownValues(ctx.repoRoot);
-  if (knownStatuses.length === 0) {
-    out(ctx, `[PlanStatusGuard] Plan-status authority unavailable (.ai/harness/policy.json active_plan.statuses is missing, empty, or unreadable); implementation edit: ${filePath}`);
-    if (mode === 'advice') {
-      out(ctx, '[PlanStatusGuard] Advisory: restore active_plan.statuses in .ai/harness/policy.json (the single known-status authority) before implementation.');
-    } else {
-      structuredError(
-        ctx,
-        'PlanStatusGuard',
-        `Implementation edit to ${filePath} could not be checked against plan-status authority: .ai/harness/policy.json is missing, unreadable, or has no active_plan.statuses array.`,
-        'Restore active_plan.statuses in .ai/harness/policy.json (the single known-status authority) before implementation.',
-        'missing_artifact',
-      );
-      exit(2);
-    }
-  } else if (!knownStatuses.includes(gateStatus)) {
-    out(ctx, `[PlanStatusGuard] Plan status '${gateStatus}' in ${gatePlan} is not in the known-status authority; implementation edit: ${filePath}`);
-    if (mode === 'advice') {
-      out(ctx, `[PlanStatusGuard] Advisory: fix the plan Status header in ${gatePlan} to a known value, or add '${gateStatus}' to active_plan.statuses in .ai/harness/policy.json if it is a legitimate new status.`);
-    } else {
-      structuredError(
-        ctx,
-        'PlanStatusGuard',
-        `Implementation edit to ${filePath} while plan status '${gateStatus}' in ${gatePlan} is not in the known-status authority (.ai/harness/policy.json active_plan.statuses).`,
-        `Fix the plan Status header in ${gatePlan} to a known value, or add '${gateStatus}' to active_plan.statuses in .ai/harness/policy.json if it is a legitimate new status.`,
-        'state_violation',
-      );
-      exit(2);
-    }
-  }
 }
 
-function planStatusKnownValues(repoRoot: string): readonly string[] {
+interface PlanStatusPolicy {
+  readonly statuses: readonly string[];
+  readonly preApprovalStatuses: readonly string[];
+  readonly draft: string;
+  readonly annotationEnd: string;
+  readonly approved: string;
+  readonly executing: string;
+  readonly terminalStatuses: readonly string[];
+}
+
+function loadPlanStatusPolicy(repoRoot: string): PlanStatusPolicy | null {
   const raw = readText(repoRoot, '.ai/harness/policy.json');
-  if (!raw) return [];
+  if (!raw) return null;
   try {
-    const policy = JSON.parse(raw) as { active_plan?: { statuses?: unknown } };
-    const statuses = policy.active_plan?.statuses;
-    return Array.isArray(statuses) ? statuses.filter((value): value is string => typeof value === 'string') : [];
+    const policy = JSON.parse(raw) as {
+      active_plan?: {
+        statuses?: unknown;
+        lifecycle?: {
+          annotation_end?: unknown;
+          approved?: unknown;
+          executing?: unknown;
+          terminal_start?: unknown;
+        };
+      };
+    };
+    const values = policy.active_plan?.statuses;
+    const lifecycle = policy.active_plan?.lifecycle;
+    if (!Array.isArray(values) || values.length === 0 || !lifecycle) return null;
+    if (!values.every((value): value is string => typeof value === 'string' && value.trim().length > 0)) return null;
+    const statuses = [...values];
+    if (new Set(statuses).size !== statuses.length) return null;
+    const annotationEnd = lifecycle.annotation_end;
+    const approved = lifecycle.approved;
+    const executing = lifecycle.executing;
+    const terminalStart = lifecycle.terminal_start;
+    if (![annotationEnd, approved, executing, terminalStart].every((value) => typeof value === 'string')) return null;
+    const annotationIndex = statuses.indexOf(annotationEnd as string);
+    const approvedIndex = statuses.indexOf(approved as string);
+    const executingIndex = statuses.indexOf(executing as string);
+    const terminalIndex = statuses.indexOf(terminalStart as string);
+    if (
+      annotationIndex < 1
+      || approvedIndex !== annotationIndex + 1
+      || executingIndex !== approvedIndex + 1
+      || terminalIndex <= executingIndex
+    ) return null;
+    return {
+      statuses,
+      preApprovalStatuses: statuses.slice(0, approvedIndex),
+      draft: statuses[0]!,
+      annotationEnd: annotationEnd as string,
+      approved: approved as string,
+      executing: executing as string,
+      terminalStatuses: statuses.slice(terminalIndex),
+    };
   } catch {
-    return [];
+    return null;
   }
 }
 
@@ -610,28 +657,29 @@ function isLinkedWorktree(repoRoot: string): boolean {
 // validate_plan_transition() port
 // ---------------------------------------------------------------------------
 
-function validatePlanTransition(currentStatus: string, nextStatus: string, noteCount: number): string | null {
+function validatePlanTransition(repoRoot: string, currentStatus: string, nextStatus: string, noteCount: number): string | null {
+  const policy = loadPlanStatusPolicy(repoRoot);
+  if (!policy) return 'Plan-status authority is unavailable or malformed.';
+  if (!policy.statuses.includes(currentStatus) || !policy.statuses.includes(nextStatus)) {
+    return `Unknown plan status transition ${currentStatus} -> ${nextStatus}.`;
+  }
+  const { draft, annotationEnd, approved, executing } = policy;
   const key = `${currentStatus}:${nextStatus}`;
   switch (key) {
-    case 'Draft:Annotating':
-      return noteCount < 1 ? 'Draft -> Annotating requires at least one [NOTE]: annotation.' : null;
-    case 'Annotating:Approved':
-      return noteCount > 0 ? 'Annotating -> Approved requires all [NOTE]: annotations to be resolved.' : null;
-    case 'Annotating:Draft':
-      return null;
-    case 'Draft:Approved':
-    case 'Draft:Executing':
-    case 'Annotating:Executing':
-      return `Status jump ${currentStatus} -> ${nextStatus} skips required workflow gates.`;
-    case 'Approved:Draft':
-    case 'Approved:Annotating':
-    case 'Executing:Draft':
-    case 'Executing:Annotating':
-    case 'Executing:Approved':
-      return `Backward transition ${currentStatus} -> ${nextStatus} is not allowed.`;
-    default:
-      return null;
+    case `${draft}:${annotationEnd}`:
+      return noteCount < 1 ? `${draft} -> ${annotationEnd} requires at least one [NOTE]: annotation.` : null;
+    case `${annotationEnd}:${approved}`:
+      return noteCount > 0 ? `${annotationEnd} -> ${approved} requires all [NOTE]: annotations to be resolved.` : null;
   }
+  if (currentStatus === annotationEnd && nextStatus === draft) return null;
+  if (policy.preApprovalStatuses.includes(currentStatus) && (nextStatus === approved || nextStatus === executing)) {
+    return `Status jump ${currentStatus} -> ${nextStatus} skips required workflow gates.`;
+  }
+  if ((currentStatus === approved || currentStatus === executing)
+    && (policy.preApprovalStatuses.includes(nextStatus) || (currentStatus === executing && nextStatus === approved))) {
+    return `Backward transition ${currentStatus} -> ${nextStatus} is not allowed.`;
+  }
+  return null;
 }
 
 function extractStatusFromText(text: string): string {

@@ -259,9 +259,33 @@ completed_archive_gate() {
   fi
 }
 
+sealed_terminal_archive_gate() {
+  local contract_file="$1"
+  local review_file="$2"
+  local verifier="$helper_dir/classify-historical-plans.ts"
+  local result
+
+  [[ -f "$contract_file" ]] || {
+    echo "archive-workflow: sealed-terminal Completed requires a contract: $contract_file" >&2
+    return 1
+  }
+  [[ -f "$review_file" ]] || {
+    echo "archive-workflow: sealed-terminal Completed requires a review: $review_file" >&2
+    return 1
+  }
+  if [[ -z "$BUN_BIN" || ! -x "$BUN_BIN" || ! -f "$verifier" ]]; then
+    echo "archive-workflow: sealed-terminal Completed requires the historical-plan evidence verifier and trusted Bun runtime" >&2
+    return 1
+  fi
+  if ! result="$($BUN_BIN "$verifier" --verify-sealed-contract "$contract_file" --verify-sealed-review "$review_file")"; then
+    echo "archive-workflow: sealed-terminal Completed gate failed: ${result:-evidence verifier rejected the artifact family}" >&2
+    return 1
+  fi
+}
+
 usage() {
   cat <<'USAGE_EOF'
-Usage: scripts/archive-workflow.sh --plan <plan-file> --outcome <Completed|Abandoned|Superseded> [--timestamp <YYYYMMDD-HHMM>] [--timestamp-human <YYYY-MM-DD HH:MM>] [--parent-run-id <id>] [--predict-manifest <absolute-output>]
+Usage: scripts/archive-workflow.sh --plan <plan-file> --outcome <Completed|Abandoned|Superseded> [--evidence-mode <current|sealed-terminal>] [--timestamp <YYYYMMDD-HHMM>] [--timestamp-human <YYYY-MM-DD HH:MM>] [--parent-run-id <id>] [--predict-manifest <absolute-output>]
 
   --timestamp  Use this exact value as the archive-family filename timestamp
                instead of calling `date` here. Callers that predict archive
@@ -300,10 +324,14 @@ predict_archive_manifest() {
     echo "archive-workflow: manifest prediction requires a clean source worktree" >&2
     return 1
   }
-  if [[ "$outcome" == "Completed" ]]; then
+  if [[ "$outcome" == "Completed" && "$evidence_mode" == "current" ]]; then
     resolve_archive_artifacts
     completed_archive_gate "$contract_file" "$review_file" 0
     checks_file="$(workflow_checks_file)"
+  elif [[ "$outcome" == "Completed" ]]; then
+    resolve_archive_artifacts
+    sealed_terminal_archive_gate "$contract_file" "$review_file"
+    checks_file=""
   fi
   scratch="$(mktemp -d)"
   scratch_repo="$scratch/repo"
@@ -336,7 +364,7 @@ predict_archive_manifest() {
       cp -p "$path" "$scratch_repo/$path"
     fi
   done
-  if [[ "$outcome" == "Completed" ]]; then
+  if [[ "$outcome" == "Completed" && "$evidence_mode" == "current" ]]; then
     verify_prediction_scratch_binding "$source_repo" "$scratch_repo" "$checks_file"
   fi
   # Bind the clean tracked/runtime inputs before attaching the caller's
@@ -348,7 +376,7 @@ predict_archive_manifest() {
   if ! (
     cd "$scratch_repo"
     export REPO_HARNESS_TARGET_REPO_ROOT="$scratch_repo"
-    apply_archive_workflow preverified >/dev/null
+    apply_archive_workflow "${evidence_mode}-preverified" >/dev/null
   ); then
     rm -rf "$scratch"
     return 1
@@ -501,14 +529,52 @@ Do not duplicate that execution checklist here. Record only work intentionally d
 TODO_EOF
 }
 
+declared_artifact_value() {
+  local source_file="$1" label="$2"
+  awk -v label="$label" '
+    index($0, "> **" label "**:") == 1 {
+      sub("^> \\*\\*" label "\\*\\*:[[:space:]]*", "")
+      gsub(/\r/, "")
+      print
+      exit
+    }
+  ' "$source_file" | sed -E 's/^[[:space:]]*`?//; s/`?[[:space:]]*$//'
+}
+
+validate_declared_artifact() {
+  local value="$1" label="$2" prefix="$3"
+  [[ "$value" != /* && "$value" != .. && "$value" != ../* && "$value" != */../* && "$value" == "$prefix"* && -f "$value" && ! -L "$value" ]] || {
+    echo "archive-workflow: declared $label path is invalid or missing: ${value:-missing}" >&2
+    return 1
+  }
+}
+
 resolve_archive_artifacts() {
-  contract_file="tasks/contracts/${artifact_stem}.contract.md"
-  if [[ ! -f "$contract_file" && -f "tasks/contracts/${slug}.contract.md" ]]; then
-    contract_file="tasks/contracts/${slug}.contract.md"
+  local declared
+  declared="$(declared_artifact_value "$plan_file" "Task Contract")"
+  [[ -n "$declared" ]] || declared="$(declared_artifact_value "$plan_file" "Sprint Contract")"
+  if [[ -n "$declared" ]]; then
+    validate_declared_artifact "$declared" "Task Contract" "tasks/contracts/" || return 1
+    contract_file="$declared"
+  else
+    contract_file="tasks/contracts/${artifact_stem}.contract.md"
+    if [[ ! -f "$contract_file" && -f "tasks/contracts/${slug}.contract.md" ]]; then
+      contract_file="tasks/contracts/${slug}.contract.md"
+    fi
   fi
-  review_file="tasks/reviews/${artifact_stem}.review.md"
-  if [[ ! -f "$review_file" && -f "tasks/reviews/${slug}.review.md" ]]; then
-    review_file="tasks/reviews/${slug}.review.md"
+
+  declared=""
+  if [[ -f "$contract_file" ]]; then
+    declared="$(declared_artifact_value "$contract_file" "Review File")"
+  fi
+  if [[ -n "$declared" ]]; then
+    validate_declared_artifact "$declared" "Review File" "tasks/reviews/" || return 1
+    review_file="$declared"
+  else
+    review_file="tasks/reviews/${artifact_stem}.review.md"
+    if [[ ! -f "$review_file" && -f "tasks/reviews/${slug}.review.md" ]]; then
+      review_file="tasks/reviews/${slug}.review.md"
+    fi
   fi
 }
 
@@ -518,10 +584,12 @@ apply_archive_workflow() {
   local archive_contract archive_review cleared_active marker_file marker_value plan_key
 
   resolve_archive_artifacts
-  if [[ "$outcome" == "Completed" && "$completed_gate_mode" == "required" ]]; then
+  if [[ "$outcome" == "Completed" && "$completed_gate_mode" == "current-required" ]]; then
     completed_archive_gate "$contract_file" "$review_file"
-  elif [[ "$outcome" == "Completed" && "$completed_gate_mode" == "preverified" ]]; then
+  elif [[ "$outcome" == "Completed" && "$completed_gate_mode" == "current-preverified" ]]; then
     promote_contract_to_fulfilled "$contract_file"
+  elif [[ "$outcome" == "Completed" && "$completed_gate_mode" == "sealed-terminal-required" ]]; then
+    sealed_terminal_archive_gate "$contract_file" "$review_file"
   fi
 
   if [[ ! -f "$helper_dir/refresh-current-status.sh" ]]; then
@@ -647,6 +715,7 @@ timestamp_override=""
 timestamp_human_override=""
 parent_run_id_override=""
 predict_manifest_output=""
+evidence_mode="current"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -658,6 +727,11 @@ while [[ $# -gt 0 ]]; do
     --outcome)
       [[ -n "${2:-}" ]] || { echo "Error: --outcome requires a value" >&2; usage; exit 1; }
       outcome="$2"
+      shift 2
+      ;;
+    --evidence-mode)
+      [[ "${2:-}" == "current" || "${2:-}" == "sealed-terminal" ]] || { echo "Error: --evidence-mode must be current or sealed-terminal" >&2; usage; exit 1; }
+      evidence_mode="$2"
       shift 2
       ;;
     --timestamp)
@@ -737,5 +811,5 @@ if [[ -n "$predict_manifest_output" ]]; then
   exit 0
 fi
 
-apply_archive_workflow required
+apply_archive_workflow "${evidence_mode}-required"
 exit $?
