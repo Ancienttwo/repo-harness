@@ -112,8 +112,8 @@ Fix Claude routing-eval case isolation by restricting setting sources to the cas
 
 ## Task Breakdown
 - [x] Add the Claude project-only setting-source flag and deterministic regression guard.
-- [ ] Run the focused routing test once and typecheck once.
-- [ ] Remove both resolved Todo rows and prepare the review/acceptance artifacts for lifecycle closeout.
+- [x] Run the focused routing test once and typecheck once.
+- [x] Remove both resolved Todo rows and prepare the review/acceptance artifacts for lifecycle closeout.
 
 ## Evidence Contract
 - State/progress path: this plan, its contract/review/notes, and `tasks/todos.md`.
@@ -127,5 +127,5 @@ Fix Claude routing-eval case isolation by restricting setting sources to the cas
 
 ## Task Breakdown
 - [x] Add the Claude project-only setting-source flag and deterministic regression guard.
-- [ ] Run the focused routing test once and typecheck once.
-- [ ] Remove both resolved Todo rows and prepare the review/acceptance artifacts for lifecycle closeout.
+- [x] Run the focused routing test once and typecheck once.
+- [x] Remove both resolved Todo rows and prepare the review/acceptance artifacts for lifecycle closeout.

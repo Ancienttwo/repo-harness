@@ -1,12 +1,12 @@
 # Task Contract: provider-subprocess-isolation
 
-> **Status**: Active
+> **Status**: Fulfilled
 > **Plan**: plans/plan-20260724-0300-provider-subprocess-isolation.md
 > **Task Profile**: bugfix
 > <!-- legal values: code-change | docs-only | ledger-closeout | migration | eval-only | delegated-run | bugfix (omit for legacy passthrough); see docs/reference-configs/sprint-contracts.md -->
 > **Owner**: kito
 > **Capability ID**: root
-> **Last Updated**: 2026-07-24 03:00
+> **Last Updated**: 2026-07-24 03:06
 > **Review File**: `tasks/reviews/20260724-0300-provider-subprocess-isolation.review.md`
 > **Notes File**: `tasks/notes/20260724-0300-provider-subprocess-isolation.notes.md`
 > **Exemplar**: `docs/reference-configs/contract-brief-example.md`
