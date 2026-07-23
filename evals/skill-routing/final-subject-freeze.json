@@ -1,0 +1,304 @@
+{
+  "protocol": 1,
+  "generated_at": "2026-07-23T04:24:07.149Z",
+  "slice": "SSD-07 phase A",
+  "work_package_base_sha": "314ee1a7b630e9016b4e184030129fbc9e00a9ef",
+  "head_sha": null,
+  "head_sha_note": "Null by design: the commit that will carry this phase's own changes does not exist yet (Phase A does not commit). Every other field in this freeze is commit-independent (file/tree bytes on disk right now); the orchestrator stamps head_sha with `git rev-parse HEAD` immediately after committing this phase's work, and should re-run `bun scripts/run-skill-routing-eval.ts freeze --write` at that point so changed_files_since_base also picks up the new commit.",
+  "manifest_sha256": "d762d41d0136f3c12188ed3c7057521329c11725fe159ab838ccdae03e73c325",
+  "corpus_sha256": "17a8a2feba0d1dd309f318eab9eb3b95c6ed1d3acf4da75df136c6eedff051f9",
+  "package_tree_hashes": {
+    "repo-harness-setup": "sha256:da175b22971374f0ca2624c175cdaefe154fa83aa587e874affdf46ed3743133",
+    "repo-harness-plan": "sha256:3b298bc33172ee48de136130603e1e09b7312be159179df9711edaf01ed5b9ff",
+    "repo-harness-check": "sha256:c4a92fe0d6f8e3a392c9e564c23fe3f19b69f544751318e754b1f841dcc79a90",
+    "repo-harness-product": "sha256:14a6e68d5dd2ac66903dc46d8aeb95e373b748dc9fc46ce35264c988474fd791",
+    "repo-harness-ship": "sha256:e2678f31459ee46fcdeec908b7f696de5c1ea9fd99634c5d03e6dd6c510a237c",
+    "repo-harness-architecture": "sha256:2e3076baa3d956480e751ccc86a4a6d1c65a78b6181e3e05ff0ec1e77232e0ff",
+    "repo-harness-cross-review": "sha256:ba31016fb654436b161694f6e9c72841a6b8148bb8c1f54d16c33c70ad0f66a3",
+    "repo-harness-chatgpt": "sha256:5db6b941e914136fc699b2711415393d403e197b0fbf1e5b6b1c4d45299824c5",
+    "claude-plan": "sha256:14e3682057e39b4510f3e4878d639d45aefde2af7c79846d1de6daa1a2baa378"
+  },
+  "discovered_set_projections": {
+    "minimal/claude": [
+      {
+        "name": "repo-harness",
+        "reason": "always"
+      },
+      {
+        "name": "repo-harness-chatgpt",
+        "reason": "explicit-setup"
+      }
+    ],
+    "minimal/codex": [
+      {
+        "name": "repo-harness",
+        "reason": "always"
+      },
+      {
+        "name": "repo-harness-chatgpt",
+        "reason": "explicit-setup"
+      }
+    ],
+    "standard/claude": [
+      {
+        "name": "repo-harness",
+        "reason": "always"
+      },
+      {
+        "name": "repo-harness-plan",
+        "reason": "profile-facade"
+      },
+      {
+        "name": "repo-harness-check",
+        "reason": "profile-facade"
+      },
+      {
+        "name": "repo-harness-chatgpt",
+        "reason": "explicit-setup"
+      }
+    ],
+    "standard/codex": [
+      {
+        "name": "repo-harness",
+        "reason": "always"
+      },
+      {
+        "name": "repo-harness-plan",
+        "reason": "profile-facade"
+      },
+      {
+        "name": "repo-harness-check",
+        "reason": "profile-facade"
+      },
+      {
+        "name": "repo-harness-chatgpt",
+        "reason": "explicit-setup"
+      }
+    ],
+    "product-planning/claude": [
+      {
+        "name": "repo-harness",
+        "reason": "always"
+      },
+      {
+        "name": "repo-harness-plan",
+        "reason": "profile-facade"
+      },
+      {
+        "name": "repo-harness-check",
+        "reason": "profile-facade"
+      },
+      {
+        "name": "repo-harness-product",
+        "reason": "profile-facade"
+      },
+      {
+        "name": "repo-harness-chatgpt",
+        "reason": "explicit-setup"
+      }
+    ],
+    "product-planning/codex": [
+      {
+        "name": "repo-harness",
+        "reason": "always"
+      },
+      {
+        "name": "repo-harness-plan",
+        "reason": "profile-facade"
+      },
+      {
+        "name": "repo-harness-check",
+        "reason": "profile-facade"
+      },
+      {
+        "name": "repo-harness-product",
+        "reason": "profile-facade"
+      },
+      {
+        "name": "repo-harness-chatgpt",
+        "reason": "explicit-setup"
+      }
+    ],
+    "strict/claude": [
+      {
+        "name": "repo-harness",
+        "reason": "always"
+      },
+      {
+        "name": "repo-harness-plan",
+        "reason": "profile-facade"
+      },
+      {
+        "name": "repo-harness-check",
+        "reason": "profile-facade"
+      },
+      {
+        "name": "repo-harness-ship",
+        "reason": "profile-facade"
+      },
+      {
+        "name": "repo-harness-cross-review",
+        "reason": "cross-model"
+      },
+      {
+        "name": "repo-harness-chatgpt",
+        "reason": "explicit-setup"
+      }
+    ],
+    "strict/codex": [
+      {
+        "name": "repo-harness",
+        "reason": "always"
+      },
+      {
+        "name": "repo-harness-plan",
+        "reason": "profile-facade"
+      },
+      {
+        "name": "repo-harness-check",
+        "reason": "profile-facade"
+      },
+      {
+        "name": "repo-harness-ship",
+        "reason": "profile-facade"
+      },
+      {
+        "name": "repo-harness-cross-review",
+        "reason": "cross-model"
+      },
+      {
+        "name": "claude-plan",
+        "reason": "cross-model"
+      },
+      {
+        "name": "repo-harness-chatgpt",
+        "reason": "explicit-setup"
+      }
+    ]
+  },
+  "changed_files_since_base": [
+    ".agents/skills/repo-harness-chatgpt-bridge/references/chatgpt-connector-manual.md",
+    ".agents/skills/repo-harness-chatgpt-bridge/references/workflow.md",
+    ".agents/skills/repo-harness-chatgpt-browser/SKILL.md",
+    ".ai/context/capabilities.json",
+    ".claude/templates/prd.template.md",
+    "README.es.md",
+    "README.fr.md",
+    "README.ja.md",
+    "README.md",
+    "README.zh-CN.md",
+    "SKILL.md",
+    "assets/reference-configs/agentic-development-flow.md",
+    "assets/reference-configs/document-generation.md",
+    "assets/reference-configs/external-tooling.md",
+    "assets/reference-configs/global-working-rules.md",
+    "assets/reference-configs/harness-overview.md",
+    "assets/reference-configs/sprint-contracts.md",
+    "assets/skill-commands/AGENTS.md",
+    "assets/skill-commands/CLAUDE.md",
+    "assets/skill-commands/manifest.json",
+    "assets/skill-commands/repo-harness-autoplan/SKILL.md",
+    "assets/skill-commands/repo-harness-capability/SKILL.md",
+    "assets/skill-commands/repo-harness-check/references/deploy-readiness.md",
+    "assets/skill-commands/repo-harness-gptpro-setup/SKILL.md",
+    "assets/skill-commands/repo-harness-gptpro/SKILL.md",
+    "assets/skill-commands/repo-harness-handoff/SKILL.md",
+    "assets/skill-commands/repo-harness-init/SKILL.md",
+    "assets/skill-commands/repo-harness-migrate/SKILL.md",
+    "assets/skill-commands/repo-harness-repair/SKILL.md",
+    "assets/skill-commands/repo-harness-upgrade/SKILL.md",
+    "assets/skills/claude-review/SKILL.md",
+    "assets/skills/codex-review/SKILL.md",
+    "assets/skills/repo-harness-chatgpt/SKILL.md",
+    "assets/skills/repo-harness-chatgpt/references/bridge.md",
+    "assets/skills/repo-harness-chatgpt/references/consult.md",
+    "assets/skills/repo-harness-chatgpt/references/continue.md",
+    "assets/skills/repo-harness-chatgpt/references/read-back.md",
+    "assets/skills/repo-harness-chatgpt/references/setup.md",
+    "assets/skills/repo-harness-cross-review/SKILL.md",
+    "assets/skills/repo-harness-cross-review/references/claude-mode.md",
+    "assets/skills/repo-harness-cross-review/references/codex-mode.md",
+    "assets/skills/repo-harness-plan/SKILL.md",
+    "assets/skills/repo-harness-plan/references/create.md",
+    "assets/skills/repo-harness-plan/references/review.md",
+    "assets/skills/repo-harness-product/SKILL.md",
+    "assets/skills/repo-harness-product/references/goal.md",
+    "assets/skills/repo-harness-product/references/prd.md",
+    "assets/skills/repo-harness-product/references/sprint.md",
+    "assets/skills/repo-harness-setup/SKILL.md",
+    "assets/skills/repo-harness-setup/references/adopt-init.md",
+    "assets/skills/repo-harness-setup/references/capability.md",
+    "assets/skills/repo-harness-setup/references/migrate.md",
+    "assets/skills/repo-harness-setup/references/repair.md",
+    "assets/skills/repo-harness-setup/references/scaffold.md",
+    "assets/skills/repo-harness-setup/references/upgrade.md",
+    "assets/templates/helpers/ensure-task-workflow.sh",
+    "assets/templates/prd.template.md",
+    "docs/CHANGELOG.md",
+    "docs/architecture/modules/public-surface/action-commands.md",
+    "docs/architecture/modules/public-surface/root-router.md",
+    "docs/reference-configs/agentic-development-flow.md",
+    "docs/reference-configs/document-generation.md",
+    "docs/reference-configs/external-tooling.md",
+    "docs/reference-configs/global-working-rules.md",
+    "docs/reference-configs/harness-overview.md",
+    "docs/reference-configs/sprint-contracts.md",
+    "evals/evals.json",
+    "evals/fixtures/prd-from-idea/README.md",
+    "evals/fixtures/prd-to-sprint/README.md",
+    "evals/skill-routing/discovery-baseline.json",
+    "evals/skill-routing/final-subject-freeze.json",
+    "evals/skill-routing/packed-profile-discovery-probe.sh",
+    "evals/skill-routing/retirement-matrix-coverage.md",
+    "evals/skill-routing/routing-corpus.json",
+    "evals/skill-routing/routing-corpus.schema.json",
+    "package.json",
+    "plans/plan-20260715-1140-skill-surface-discovery-convergence.md",
+    "references/handoff.md",
+    "references/workflow-packaging-rubric.md",
+    "scripts/ensure-task-workflow.sh",
+    "scripts/run-skill-routing-eval.ts",
+    "scripts/skill-surface-select.ts",
+    "scripts/sync-codex-installed-copies.sh",
+    "src/cli/commands/cross-review.ts",
+    "src/cli/commands/global-runtime.ts",
+    "src/cli/commands/init.ts",
+    "src/cli/hook/prompt-handler.ts",
+    "src/cli/index.ts",
+    "src/cli/installer/install-profile.ts",
+    "src/cli/mcp/setup.ts",
+    "src/core/review/cross-review.ts",
+    "src/core/skill-surface/catalog.ts",
+    "src/core/skill-surface/profile-components.ts",
+    "src/effects/review/cross-review-runner.ts",
+    "tasks/contracts/20260715-1140-skill-surface-discovery-convergence.contract.md",
+    "tasks/notes/20260715-1140-skill-surface-discovery-convergence.notes.md",
+    "tasks/reviews/20260715-1140-skill-surface-discovery-convergence.review.md",
+    "tasks/todos.md",
+    "tests/action-command-skills.test.ts",
+    "tests/bootstrap-files.test.ts",
+    "tests/cli/chatgpt-browser.test.ts",
+    "tests/cli/cross-review.test.ts",
+    "tests/cli/global-runtime-init.test.ts",
+    "tests/cli/init.test.ts",
+    "tests/cli/mcp-setup.test.ts",
+    "tests/evals-contract.test.ts",
+    "tests/hook-contracts.test.ts",
+    "tests/install-profiles.test.ts",
+    "tests/installed-copy-sync.test.ts",
+    "tests/readme-dx.test.ts",
+    "tests/skill-routing-eval.test.ts",
+    "tests/skill-surface/canonical-packages.test.ts",
+    "tests/skill-surface/catalog.test.ts",
+    "tests/skill-surface/chatgpt-package.test.ts",
+    "tests/skill-surface/cross-review-package.test.ts",
+    "tests/skill-surface/mutation-path-coverage.test.ts",
+    "tests/skill-surface/retired-names-scan.test.ts",
+    "tests/ux-feature-guardrail.test.ts"
+  ],
+  "changed_files_note": "git diff --name-only 314ee1a7b630e9016b4e184030129fbc9e00a9ef..HEAD at freeze-generation time: reflects committed history only (SSD-01 through SSD-06's own merged commits on this branch), NOT this phase's own still-uncommitted changes (see uncommitted_changes_at_freeze_time below for those). Re-running the identical command after the orchestrator commits phase A will include this phase's files too.",
+  "uncommitted_changes_at_freeze_time": {
+    "modified": [],
+    "added_or_untracked": []
+  }
+}

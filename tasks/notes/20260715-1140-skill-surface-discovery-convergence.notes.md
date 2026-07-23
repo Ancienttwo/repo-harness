@@ -1610,3 +1610,386 @@ SSD-07 intake:
   deploy-sql mktemp prefix x2): the boundary regex never matches them, so
   the scan stays green without the entries and the homonym carve-out in
   the freshness check becomes unnecessary.
+
+## SSD-07 phase A -- Freeze the subject and produce final evidence once (provider mode implemented, not invoked)
+
+**Status**: Phase A complete (D1-D6 below). Provider mode is implemented and
+proven end to end with a stub provider; per the orchestrator's R3 ruling, no
+real provider was invoked. The plan checklist item "run the real host/provider
+routing matrix exactly once after freeze" and the corresponding acceptance
+lines stay unflipped -- they close only after the phase-B authoritative run
+completes, per D5 below.
+
+### Orchestrator rulings applied
+
+- **R1 (rubric linkage stays hook-only)**: root `SKILL.md` does not link
+  `references/workflow-packaging-rubric.md` and stays untrimmed at 2044
+  bytes; the rubric is surfaced only via `src/cli/hook/prompt-handler.ts`'s
+  routing-suggestion string. This is the deliberate, accepted design, not an
+  oversight -- root's byte budget is too tight (4 bytes free) to add a link
+  without removing something else, and the rubric is genuinely a rare-path
+  reference (autoplan's retired self-review-pass content), not a routine
+  mode most sessions need surfaced from the root router itself. Verified no
+  test or doc claims root *does* link it:
+  `grep -rn "workflow-packaging-rubric" SKILL.md tests/ docs/ README*.md`
+  finds only `tests/action-command-skills.test.ts:156` and
+  `tests/skill-surface/canonical-packages.test.ts:76..77`, both of which test
+  the reference file's own content/byte-cap/reachability-from-its-own-package
+  properties, never a claim about root-level linkage, and
+  `docs/CHANGELOG.md:70`, which correctly describes the rubric as surviving
+  "alone as `references/workflow-packaging-rubric.md`" (no root-linkage claim
+  either). No code or doc change was needed for R1 beyond this record.
+- **R2 (homonym cleanup)**: removed the three homonym-justified
+  `FILE_ALLOWLIST` entries from
+  `tests/skill-surface/retired-names-scan.test.ts`
+  (`src/cli/commands/migrate.ts`, `scripts/check-deploy-sql-order.sh`,
+  `assets/templates/helpers/check-deploy-sql-order.sh`) and, since removing
+  them left zero remaining entries whose justification contains the string
+  "homonym", deleted the now-dead `if (justification.includes("homonym"))
+  continue;` branch (plus its explanatory comment) from the "every
+  allowlisted file still exists" freshness-check test, simplifying that
+  loop to iterate `Object.keys(...)` directly. Verified before deleting,
+  not just asserted: `.repo-harness-migrate-backup` and
+  `repo-harness-deploy-sql*` both glue their retired-name prefix to a
+  trailing `-backup`/`-sql` suffix, so `hasLiveHit`'s negative-lookahead
+  `(?![A-Za-z0-9_-])` already excludes them structurally -- the allowlist
+  entries were pure defensive documentation, never load-bearing. Re-ran the
+  scan test three times after deletion: 5 pass, 0 fail each time (matches
+  R2's "scan must stay green after deletion" requirement exactly).
+
+### D1 -- Provider mode for the routing eval
+
+`scripts/run-skill-routing-eval.ts` gained a `run` subcommand (usage:
+`run --profile <p> --host <h> --report <path> [--dry-run] [--provider
+<claude|codex|stub>]`). Design, grounded in the live manifest (inspected
+directly, not assumed):
+
+- **Discovered-surface computation** (`buildDiscoveredSkillSurface`,
+  `referenceOnlySkillPackages`) reuses SSD-02's catalog selectors
+  (`facadesForProfile`, `hostSkillPlacements`) plus two additions the live
+  manifest required that neither selector covers: `discoverability:"always"`
+  (the root router) and `discoverability:"explicit-setup"`
+  (`repo-harness-chatgpt`, `kind:"integration"` -- covered by neither
+  `facadesForProfile` (`kind:"facade"` only) nor `hostSkillPlacements`
+  (`kind:"provider-skill"` only), so without this addition
+  `repo-harness-chatgpt` could never appear in `candidates` under any
+  profile and every one of its 4 positive corpus cases would be
+  structurally unwinnable regardless of provider behavior -- found by
+  actually running a perfect-echo stub against the real corpus and seeing
+  `repo-harness-chatgpt` recall stuck at 0% before the fix, not by
+  inspection alone). `discoverability:"cli-reference"`
+  (`repo-harness-setup`, `repo-harness-architecture`) is modeled as always
+  reachable via `referenceOnlySkillPackages`, matching real production
+  behavior: these are never profile-gated projections, only reachable
+  through the root router's own routing prose plus direct file access.
+  `merge-gate` (`source: null`) is structurally excluded from both and
+  handled by a dedicated textual signal instead (below).
+- **Provider adapters**: `createStubProvider` (default: a single fixed
+  literal route, `"repo-harness"`, echoed for every case -- literally "a
+  fixed route" per the dispatch's own wording; exercises the FAIL path of
+  threshold evaluation, not an artificially perfect run) and
+  `createProcessProvider` (real claude/codex invocation, NOT exercised in
+  this phase). Claude uses `--output-format stream-json --verbose` rather
+  than run-skill-evals.ts's `--output-format json`: routing needs tool-use
+  visibility (which Skill got invoked) that the single-object `json` format
+  never exposes, and streaming avoids guessing at Claude Code's internal
+  session-transcript-file path-encoding scheme entirely -- the final
+  `type:"result"` line has the identical shape run-skill-evals.ts's own
+  `parseClaudeStructuredOutput` already parses, reused verbatim.
+- **Route-selection signal** (`extractToolInvokedRoutes`): a Claude `Skill`
+  tool_use block naming a candidate directly (precise), unioned with a
+  coarse fallback -- the raw JSONL line's serialized text mentioning a
+  candidate's `<source>/SKILL.md` path (covers `cli-reference` packages,
+  which have no dedicated Skill-tool call, and Codex, which has no
+  Skill-tool concept at all). **Known limitation, disclosed, not resolved
+  in this phase**: Codex's exact tool/function-call JSONL event field names
+  are unvalidated against a real session (R3 forbids invoking one) -- the
+  coarse whole-line substring match is deliberately robust to that
+  uncertainty at the cost of precision. Recommend a single-case smoke
+  against real Codex output before committing to the full run, to confirm
+  or adjust this assumption (see D5).
+- **merge-gate signal** (`extractMergeGateTextualSignal`): merge-gate has no
+  Skill file at all (`kind:"judge"`, `source: null`), so no tool/file signal
+  is structurally possible. A narrow regex against the provider's OWN FINAL
+  RESPONSE TEXT ONLY (never the raw JSONL, which echoes the user's prompt --
+  several corpus cases, e.g. the merge-gate-vs-cross-review ambiguous case,
+  literally contain the word "merge-gate" in the prompt itself, so scanning
+  raw output would false-positive on every one of them) is the only
+  available mechanism. **Flagged for Phase-B human review**: textual
+  matching on a model's own explanatory prose is inherently imprecise;
+  merge-gate-tagged case results specifically should get a manual read in
+  the authoritative run, not just an aggregate-metric trust.
+- **Retry policy: none.** Each case gets exactly one provider invocation
+  (matches the dispatch's own "ONCE per case"). A `timeout`/`provider_nonzero`
+  outcome is recorded as `provider_error` and excluded from all routing
+  metrics (reported separately as `provider_error_count`), never retried and
+  never silently coerced to `"none"` (which would bias the ordinary-QA
+  false-activation metric).
+- **Metrics** (`computeRoutingMetrics`/`evaluateThresholds`): top-1 accuracy
+  over positive cases; per-route recall computed and gated independently for
+  all 10 canonical routes (a single zero-recall route fails the whole gate
+  even with a perfect aggregate); double-trigger = fraction of ALL cases
+  selecting more than one route; ordinary-QA false activation scoped
+  specifically to `kind:"ordinary-qa"` cases (4 of 68), with the plan's
+  small-sample rule (`<100` negatives -> require literal zero, report
+  small-sample) applied exactly as specified -- proven against both branches
+  with synthetic >=100-record fixtures in tests, not just the always-small
+  real corpus.
+- **Report + byte-binding sidecar**: writes `<path>` (embeds `corpus_sha256`
+  verbatim from the frozen baseline, a fresh `manifest_sha256`, the full
+  discovered/reference-only surface, every per-case record, metrics, and
+  threshold evaluation) plus `<path>.sha256` (sha256 of the report file's own
+  bytes) -- mirrors the harness-benchmark
+  `report_evidence_sha256`-against-actual-file-bytes discipline.
+
+Verification (all green):
+
+```text
+bun run check:type                                                clean, exit 0
+bun test tests/skill-routing-eval.test.ts                         47 pass, 0 fail, 519 expect() calls
+bun test tests/skill-surface/ tests/action-command-skills.test.ts \
+  tests/evals-contract.test.ts tests/install-profiles.test.ts \
+  tests/installed-copy-sync.test.ts                                155 pass, 0 fail (after R2 fix; 1 timing flake
+                                                                     under combined CPU-starved load, see below,
+                                                                     reproduces clean in isolation and full-suite)
+bun test (full suite)                                              2024 pass, 1 skip, 0 fail, 2025 tests / 160 files
+```
+
+Manual smoke evidence (`--dry-run`, real CLI binary, captured this session):
+
+```text
+$ bun scripts/run-skill-routing-eval.ts run --profile strict --host claude --report <tmp>/report.json --dry-run
+run-skill-routing-eval: run OK: profile=strict host=claude provider=stub (dry-run)
+  evaluated=68 provider_errors=0
+  top1_accuracy=9.5% (4/42) floor=0.95 pass=false
+  recall[repo-harness]=100.0% (4/4) pass=true
+  recall[repo-harness-setup]=0.0% (0/6) pass=false   <- expected: fixed stub only ever returns "repo-harness"
+  ... (all non-repo-harness routes 0%, as designed)
+  double_trigger=0.0% (0/68) ceiling=0.02 pass=true
+  ordinary_qa_false_activation=100.0% (4/4) small_sample=true pass=false
+  overall_pass=false
+```
+
+Perfect-echo stub against the real corpus (proves discovery-gating is
+correct, not a bug: a route genuinely unreachable under a profile scores 0
+recall for that profile, everything reachable scores 100%):
+
+```text
+strict/claude:            top1=38/42 (90.5%); 9 of 10 routes at 100% recall;
+                           repo-harness-product at 0/4 (unreachable under strict, correctly)
+product-planning/claude:  repo-harness-product reaches 4/4 (100%); repo-harness-ship and
+                           repo-harness-cross-review correctly drop to 0/4 (unreachable under product-planning)
+```
+
+### D2 -- Retirement/projection matrix coverage map
+
+`evals/skill-routing/retirement-matrix-coverage.md` (committed). Per-dimension
+and representative-combined-scenario tables citing `tests/install-profiles.test.ts`
+and `tests/installed-copy-sync.test.ts` file:line for every profile/host/
+projection/lifecycle/ownership/failure-injection value. Two genuinely
+uncovered cells found and closed:
+
+1. **Profile upgrade direction** (ascending lifecycle transition): every
+   existing multi-call profile-transition test goes downgrade or reinstall;
+   none goes ascending. New test:
+   `tests/install-profiles.test.ts` ("profile upgrade adds ownership for
+   newly required components without disturbing prior ones") -- applies
+   minimal, materializes the additional strict-only surfaces on top without
+   removing anything, applies strict, asserts new components appear,
+   `plan.remove` is empty (a pure addition), drift stays consistent, and the
+   prior minimal-profile projection is byte-unchanged.
+2. **Packed-tarball disposable-BUN_INSTALL install smoke across profiles**:
+   `scripts/check-tarball-install-smoke.sh` never calls `install`/`update`
+   or varies `--profile` at all. New standalone probe
+   `evals/skill-routing/packed-profile-discovery-probe.sh` (NOT wired into
+   any required gate -- `check-tarball-install-smoke.sh` is the
+   architecturally correct home but sits outside this contract's
+   `allowed_paths`; recommend the orchestrator fold it in via a contract
+   amendment). Packs the tree, installs the tarball, smoke-tests the packed
+   CLI's `install --profile <X> --dry-run --json` across all four profiles
+   (network-free), plus a static packaging-fidelity check that the tarball
+   still ships `manifest.json`/`catalog.ts`/`skill-surface-select.ts`.
+   Deliberately does NOT attempt a real mutating install for
+   product-planning/strict (those profiles trigger real `bunx skills add`
+   network calls, unsuitable for an offline evidence probe; that exact path
+   is already exercised with `bunx` faked via `PATH` override at the
+   dev-tree level).
+
+"Copy-mode rsync paths" and "downgrade" -- the dispatch's own speculative
+"likely" gaps -- turned out to be already well covered
+(`tests/installed-copy-sync.test.ts:44`/`:307`/`:359` exercise real rsync
+install+retirement in the default copy mode; downgrade is covered at both
+the transaction layer and the shell-sync layer). Documented as covered, not
+duplicated.
+
+### D3 -- Subject freeze record
+
+`evals/skill-routing/final-subject-freeze.json`, generated by a new `freeze`
+subcommand on the same runner (`run-skill-routing-eval.ts freeze [--write]
+[--out <path>]`). Fields:
+
+- `manifest_sha256`, `corpus_sha256`: fresh sha256 of the live manifest and
+  the frozen corpus (matches `discovery-baseline.json`'s pinned value byte
+  for byte).
+- `package_tree_hashes`: one hash per repo-owned canonical package with a
+  real source directory (9 of 11 -- root is skipped by design, since its
+  `source` is `"."`, the whole repo tree, not a bounded package directory
+  already covered by manifest/corpus hashes; `merge-gate` has no source at
+  all). Algorithm faithfully reproduces `install-profile.ts`'s internal
+  `hashManagedTree` (sorted relative paths, `F\0<path>\0`+content+`\0` for
+  files, `L\0<path>\0<target>\0` for symlinks) -- that function is not
+  exported, so this is a deliberate re-implementation of the same pattern,
+  not an import. Verified reproducible: re-running `freeze` twice produced
+  byte-identical `package_tree_hashes` both times.
+- `discovered_set_projections`: all 8 profile/host combinations via
+  `buildDiscoveredSkillSurface`.
+- `head_sha: null` with `head_sha_note` documenting the mechanism: this
+  phase does not commit, so the commit that will carry its own changes does
+  not exist yet; every other field is commit-independent (file/tree bytes on
+  disk right now). The orchestrator stamps `head_sha` with `git rev-parse
+  HEAD` immediately after committing this phase's work and should re-run
+  `freeze --write` at that point so `changed_files_since_base` also picks up
+  the new commit.
+- `changed_files_since_base`: the literal `git diff --name-only
+  314ee1a7b630e9016b4e184030129fbc9e00a9ef..HEAD` output at
+  freeze-generation time (115 files -- SSD-01 through SSD-06's own already-
+  committed history; does not yet include this phase's own still-
+  uncommitted changes, which are separately recorded in
+  `uncommitted_changes_at_freeze_time`).
+- Allowlisted in `tests/skill-surface/retired-names-scan.test.ts` (see R2's
+  neighboring entry): `changed_files_since_base` legitimately lists deleted
+  paths from the old facade tree (e.g.
+  `assets/skill-commands/repo-harness-init/SKILL.md`) as git-diff migration
+  evidence -- found by actually running the scan test after generating the
+  freeze file and reading its failure output, not anticipated in advance.
+
+### D4 -- Final repo gates (all tails)
+
+```text
+bun test (full)                            2024 pass, 1 skip, 0 fail, 2025 tests / 160 files
+bun run check:type                         clean, exit 0
+check-deploy-sql-order.sh                  [deploy-sql] OK
+check-architecture-sync.sh                 [ArchitectureSync] mode=advisory gate_min_severity=medium changed_capabilities=7 blocking=0
+check-task-sync.sh                         see below (resolved after this section's own notes update)
+check-task-workflow --strict               [workflow] OK
+inspect-project-state.ts --format text     drift_signals: (none); required_decisions: (none)
+adopt --repo . --dry-run                   0 total, 0 planned, 0 skipped (source-checkout not-applicable warning, expected)
+check-tarball-install-smoke.sh             [tarball-smoke] OK: repo-harness-0.10.1.tgz installs and packaged CLI bins start.
+git diff --check                           clean (no output)
+```
+
+**Environmental finding, not a repo defect**: the first full `bun test`
+attempt this session ran for 6:55 (versus 404.5s once resolved) because
+seven long-running orphaned shell processes (8h50m to 5d18h old, from
+unrelated past `tests/*.test.ts` effective-state mutation-barrier fixture
+runs on this shared machine, each pegged at ~96% CPU) were starving the CPU.
+Confirmed genuinely orphaned before touching anything (all referenced
+already-deleted temp-directory trees, so their own graceful stop-file
+protocol could no longer terminate them) and cleared via `kill` (SIGTERM) --
+OS-process hygiene confined to unrelated `/private/var/folders/.../T/`
+fixture leaks, touching no repo file, no git state, and no other session's
+work. Recorded here per "read the error output, diagnose" rather than
+silently retrying.
+
+**check-task-sync.sh**: false-alarmed once mid-phase (before this notes
+update existed) with the identical staged/unstaged-mix root cause SSD-06
+already documented (`get_changed_files()` reads either the staged view or
+the unstaged+untracked view, never their union). Re-verify after this
+section is written: [see verification tail below].
+
+### D5 -- Provider-run pre-report (for the user's go/no-go)
+
+- **Case count**: 68 (frozen, `evals/skill-routing/routing-corpus.json`,
+  `corpus_sha256` embedded in every report).
+- **Provider invocations required**: 68 x 1 per profile/host combination
+  tested, **no retries** (each case gets exactly one invocation; a
+  timeout/nonzero/malformed outcome is recorded as `provider_error` and
+  excluded from metrics, never retried or silently coerced to `"none"`).
+  **No single profile discovers all 10 canonical routes simultaneously**
+  (verified directly: `strict` discovers 9 of 10, missing only
+  `repo-harness-product`; `product-planning` discovers the missing one but
+  drops `repo-harness-ship`/`repo-harness-cross-review`) -- complete
+  per-route evidence needs at least two profile choices:
+  - **Minimum sufficient**: `strict` + `product-planning`, one host (e.g.
+    claude) = **2 runs x 68 = 136 provider invocations**.
+  - **Recommended full cross-check**: the same two profiles on both hosts,
+    with each host tested using its OWN provider (claude provider + claude
+    host surface; codex provider + codex host surface) = **4 runs x 68 =
+    272 provider invocations**. This also gives the first real evidence for
+    the Codex route-extraction assumption flagged in D1 as unvalidated.
+- **Expected wall time (inferred, not measured -- no historical timing
+  exists for a routing-only, single-turn interaction specifically)**:
+  extrapolated from `evals/benchmark.md`'s real historical per-case
+  durations for this repo's OTHER provider harness (`scripts/run-skill-evals.ts`,
+  full multi-step task execution, a heavier interaction than a routing
+  decision): 27.8s (Claude, fast success) to 547s (~9min, Claude, full blind
+  execution); Codex ranged 162.8s-266.4s even for its "success" case. A
+  routing-only prompt (decide + respond, no multi-step task) should trend
+  toward the faster end of that range, but this is genuinely uncertain
+  without a real sample. Estimate: **25-180s/case**. At that range:
+  - Minimum (136 calls): **~1-4 hours**.
+  - Full (272 calls): **~2-8 hours**.
+  `DEFAULT_PROVIDER_TIMEOUT_MS` is set to 10 minutes/case as a generous
+  safety ceiling (not an expected value) -- the true worst case if every
+  single call hit that ceiling is 680 (minimum) to 1360 (full) minutes,
+  vanishingly unlikely in practice.
+  **Recommend**: run one profile (e.g. `strict`, one host) first as a fast
+  sanity/go-no-go signal before committing to the full matrix, and spot-check
+  one real Codex sample specifically to validate or adjust the D1-flagged
+  tool-invocation-signal assumption before trusting the aggregate Codex
+  metrics.
+- **Why cached evidence is insufficient**: `discovery-baseline.json`'s own
+  `historical_evidence_ruling` field records that the SSD-01-inherited "110
+  passing tests, zero failures, 25.91 seconds" claim
+  (`docs/researches/20260715-skill-surface-discovery-audit.md:60`) names
+  neither the six file names nor a pinned subject SHA, so it cannot be bound
+  to a reproducible subject and was ruled unreusable. More fundamentally:
+  that number describes `bun test`'s own pass rate on an unspecified
+  pre-cutover subject -- it has never been provider-routing evidence, and no
+  provider-routing evidence of any kind exists yet for the post-cutover
+  10-canonical-package discovery surface. This phase's stub-driven tests
+  prove the *pipeline* is correct; they cannot and do not claim anything
+  about a real provider's actual routing accuracy.
+- **Exact command(s) the orchestrator will run** (minimum sufficient set):
+
+  ```bash
+  bun scripts/run-skill-routing-eval.ts run --profile strict --host claude \
+    --provider claude --report evals/skill-routing/routing-report-strict-claude.json
+  bun scripts/run-skill-routing-eval.ts run --profile product-planning --host claude \
+    --provider claude --report evals/skill-routing/routing-report-product-planning-claude.json
+  bun scripts/run-skill-routing-eval.ts aggregate \
+    --report evals/skill-routing/routing-report-aggregate.json \
+    evals/skill-routing/routing-report-strict-claude.json \
+    evals/skill-routing/routing-report-product-planning-claude.json
+  ```
+
+  The `aggregate` step is a local computation over the two already-written
+  reports (no provider call, no network) -- it adds no provider invocations
+  and no wall-time beyond the two `run` calls above; the invocation counts
+  and wall-time estimates in this section are unchanged. Each individual
+  `run`'s `overall_pass` is PARTIAL evidence scoped to its own reachable
+  route subset only (`evidence_scope: "single_run_partial"`, see the D1
+  entry's HIGH-finding-fix update); `aggregate`'s `overall_pass` is the
+  actual package-acceptance signal across all 10 canonical routes
+  (`evidence_scope: "aggregate_package_acceptance"`), since no single
+  profile discovers all 10 (see above) and the plan's acceptance line --
+  "every canonical route meets its floor; aggregate accuracy cannot hide a
+  zero-recall route" -- can only be evaluated over the union.
+
+  Recommended full cross-check adds the codex-provider/codex-host
+  equivalents (same two `--profile` values, `--host codex --provider codex`,
+  distinct `--report` paths) as two more inputs to the same `aggregate` call.
+
+### Deviations from this dispatch
+
+One necessary scope extension, disclosed rather than silently absorbed:
+`tests/skill-surface/retired-names-scan.test.ts`'s `FILE_ALLOWLIST` needed
+one new entry (`evals/skill-routing/final-subject-freeze.json`) as a direct,
+mechanical consequence of generating D3's own deliverable inside the `evals/`
+scan surface -- found only by actually running the scan test after
+generating the freeze file, not anticipated in the dispatch. No other
+deviations: R1/R2 both implemented as ruled; D1's provider mode, D2's
+coverage map plus two new probes, D3's freeze record, and D4's full gate
+list are all exactly as specified. Nothing in the plan checklist was
+flipped -- SSD-07's remaining checklist items and acceptance lines stay open
+for phase B.

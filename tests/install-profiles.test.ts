@@ -487,6 +487,52 @@ describe('install profiles', () => {
     });
   }));
 
+  // SSD-07 phase A (D2 coverage map): every other multi-call profile-transition
+  // test in this file goes strict/product-planning -> minimal (downgrade) or
+  // reapplies the same profile (reinstall); none goes ascending. This closes
+  // that genuinely uncovered lifecycle cell (minimal -> strict upgrade).
+  test('profile upgrade adds ownership for newly required components without disturbing prior ones', () => withHome((env) => {
+    const { source } = writeManagedHostSurfaces(env, 'minimal');
+    const minimal = applyInstallProfile('minimal', env, new Date('2026-01-01T00:00:00Z'));
+    expect(minimal.state.components).not.toContain('agent-fleet');
+    expect(minimal.state.components).not.toContain('cross-model-acceptance');
+    expect(installedProfileStatus(minimal.state, env).drift.status).toBe('consistent');
+    const canonicalSkillBefore = readFileSync(join(env.HOME!, '.codex', 'skills', 'repo-harness', 'src/cli/commands/state.ts'), 'utf-8');
+
+    // Materialize the additional strict-only host surfaces on top of the
+    // still-present minimal ones (writeManagedHostSurfaces itself is not
+    // re-callable on the same env -- it always (re)creates the canonical
+    // symlink -- so the strict-only delta is added directly here, mirroring
+    // exactly the profile==='strict'/profile!=='minimal' branches of that
+    // fixture helper), then upgrade in place without a prior removal step.
+    writePath(join(source, 'src/core/workflow/profile.ts'), '// managed\n');
+    writePath(join(source, 'src/cli/tools/codegraph.ts'), '// managed\n');
+    writePath(join(source, 'scripts/contract-run.ts'), '// managed\n');
+    writePath(join(source, 'scripts/verify-sprint.sh'), '# managed\n');
+    writePath(join(source, 'scripts/ship-worktrees.sh'), '# managed\n');
+    writePath(join(env.HOME!, '.bun', 'bin', 'codegraph'), '#!/bin/sh\n');
+    for (const agent of ['explorer', 'deep-reasoner', 'fast-worker', 'gatekeeper', 'root-cause-prover', 'harness-evaluator']) {
+      writePath(join(env.HOME!, '.codex', 'agents', `${agent}.toml`), '# managed\n');
+    }
+    writePath(join(env.HOME!, '.codex', 'skills', 'repo-harness-cross-review', 'SKILL.md'), '# external\n');
+    writeFileSync(join(env.HOME!, '.codex', 'hooks.json'), JSON.stringify({
+      theme: 'user-owned',
+      hooks: buildManagedHooks('codex', 'strict'),
+    }));
+
+    const strict = applyInstallProfile('strict', env, new Date('2026-01-02T00:00:00Z'));
+    expect(strict.state.components).toContain('agent-fleet');
+    expect(strict.state.components).toContain('cross-model-acceptance');
+    expect(strict.state.components).toContain('effective-state');
+    expect(strict.plan.current_profile).toBe('minimal');
+    expect(strict.plan.remove).toEqual([]);
+    expect(installedProfileStatus(strict.state, env).drift.status).toBe('consistent');
+    expect(existsSync(join(env.HOME!, '.codex', 'agents', 'explorer.toml'))).toBe(true);
+    // The prior minimal-profile projection is untouched by the upgrade.
+    expect(readFileSync(join(env.HOME!, '.codex', 'skills', 'repo-harness', 'src/cli/commands/state.ts'), 'utf-8')).toBe(canonicalSkillBefore);
+    expect(rollbackInstallProfile(env).profile).toBe('minimal');
+  }));
+
   test('Standard CodeGraph stays conditional while Strict enables it', () => withHome((env) => {
     const cwd = env.HOME!;
     expect(profileEnablesCodegraph('standard', cwd)).toBe(false);
