@@ -89,10 +89,10 @@ function spawnContinuousMutator(opts: {
     '-c',
     [
       'i=0',
-      'printf "started\\n" > "$2"',
       'printf " " >> "$1"',
       'i=$((i + 1))',
       'printf "%s\\n" "$i" > "$5"',
+      'printf "started\\n" > "$2"',
       'rm -f "$3"',
       'rmdir "$4"',
       'while [ ! -f "$6" ]; do',
