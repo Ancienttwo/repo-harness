@@ -1,13 +1,13 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-24T01:52:16+0800 -->
+<!-- updated_at: 2026-07-24T02:48:05+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Idle
-> **Updated At**: 2026-07-24T01:52:16+0800
-> **Source Branch**: codex/verify-contract-qa-score-normalization
-> **Source Commit**: c2c1cd20
+> **Updated At**: 2026-07-24T02:48:05+0800
+> **Source Branch**: codex/state-concurrency-counter-barrier
+> **Source Commit**: 43fdeede
 > **Target Branch**: main
 > **Stale After**: 24h
 > **Reason**: archive-workflow
@@ -57,16 +57,16 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Summary: 10 changed/untracked path(s)
 
 ```
- D plans/plan-20260724-0129-verify-contract-qa-score-normalization.md
- D tasks/contracts/20260724-0129-verify-contract-qa-score-normalization.contract.md
- D tasks/notes/20260724-0129-verify-contract-qa-score-normalization.notes.md
- D tasks/reviews/20260724-0129-verify-contract-qa-score-normalization.review.md
+ D plans/plan-20260724-0232-state-concurrency-counter-barrier.md
+ D tasks/contracts/20260724-0232-state-concurrency-counter-barrier.contract.md
+ D tasks/notes/20260724-0232-state-concurrency-counter-barrier.notes.md
+ D tasks/reviews/20260724-0232-state-concurrency-counter-barrier.review.md
  M tasks/todos.md
-?? plans/archive/plan-20260724-0129-verify-contract-qa-score-normalization.md
-?? tasks/archive/contract-20260724-0152-verify-contract-qa-score-normalization.md
-?? tasks/archive/notes-20260724-0152-verify-contract-qa-score-normalization.md
-?? tasks/archive/review-20260724-0152-verify-contract-qa-score-normalization.md
-?? tasks/archive/todo-20260724-0152-verify-contract-qa-score-normalization.md
+?? plans/archive/plan-20260724-0232-state-concurrency-counter-barrier.md
+?? tasks/archive/contract-20260724-0247-state-concurrency-counter-barrier.md
+?? tasks/archive/notes-20260724-0247-state-concurrency-counter-barrier.md
+?? tasks/archive/review-20260724-0247-state-concurrency-counter-barrier.md
+?? tasks/archive/todo-20260724-0247-state-concurrency-counter-barrier.md
 ```
 
 ## Source Artifacts

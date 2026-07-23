@@ -1,6 +1,6 @@
 # Plan: Make Effective State concurrency barriers counter-safe
 
-> **Status**: Executing
+> **Status**: Archived
 > **Created**: 20260724-0232
 > **Slug**: state-concurrency-counter-barrier
 > **Planning Source**: codex-plan

@@ -1,3 +1,9 @@
+> **Archived**: 2026-07-24 02:47
+> **Related Plan**: plans/archive/plan-20260724-0232-state-concurrency-counter-barrier.md
+> **Outcome**: Completed
+> **Lifecycle**: contract
+> **Parent Run ID**: run-20260724-0247
+
 # Task Contract: state-concurrency-counter-barrier
 
 > **Status**: Fulfilled
