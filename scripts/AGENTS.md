@@ -37,7 +37,7 @@ Owns the workflow-engine-inspection-migration capability boundary declared in .a
 - Architecture domain: `workflow-engine`
 - Architecture capability: `inspection-migration`
 - Architecture module: `docs/architecture/modules/workflow-engine/inspection-migration.md`
-- Last architecture event: 2026-07-12T22:27:21+0800
+- Last architecture event: 2026-07-12T19:41:33+0800
 - Last changed path: `scripts/lib/project-init-lib.sh`
 - Severity: high
 - Change type: workflow-surface
@@ -56,17 +56,17 @@ Owns the workflow-engine-inspection-migration capability boundary declared in .a
 ## Active Workstreams
 
 - `tasks/workstreams/workflow-engine/inspection-migration/20260703-inspection-migration.md`
-  - status: active
+  - status: completed
   - current_slice: completed-20260703-architecture-closeout
   - source_plan: (none)
 - `tasks/workstreams/workflow-engine/inspection-migration/20260712-inspection-migration.md`
-  - status: active
-  - current_slice: todo-01
-  - source_plan: (none)
+  - status: completed
+  - current_slice: completed-20260712-repo-owned-agent-fleet
+  - source_plan: `plans/archive/plan-20260712-2053-repo-owned-agent-fleet.md`
 - `tasks/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`
-  - status: active
-  - current_slice: policy-seed
-  - source_plan: plans/plan-20260712-2215-agent-fleet-specialists.md
+  - status: completed
+  - current_slice: completed-20260713-policy-seed
+  - source_plan: `plans/archive/plan-20260712-2215-agent-fleet-specialists.md`
 
 ## Current Session Projection
 

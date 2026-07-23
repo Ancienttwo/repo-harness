@@ -7,10 +7,10 @@
 > **Architecture Domain**: `workflow-engine`
 > **Architecture Capability**: `contract-assets`
 > **Architecture Module**: `docs/architecture/modules/workflow-engine/contract-assets.md`
-> **Source Plan**: plans/plan-20260712-2215-agent-fleet-specialists.md
+> **Source Plan**: `plans/archive/plan-20260712-2215-agent-fleet-specialists.md`
 > **Current Slice**: completed-20260713-specialist-roles
 > **Last Handoff**: `.ai/harness/handoff/current.md`
-> **Architecture Request**: docs/architecture/requests/workflow-engine-contract-assets.md
+> **Architecture Request**: `docs/architecture/requests/archive/2026/20260712-211019-workflow-engine-contract-assets.md`
 
 ## Purpose
 

@@ -7,10 +7,10 @@
 > **Architecture Domain**: `workflow-engine`
 > **Architecture Capability**: `inspection-migration`
 > **Architecture Module**: `docs/architecture/modules/workflow-engine/inspection-migration.md`
-> **Source Plan**: plans/plan-20260712-2215-agent-fleet-specialists.md
+> **Source Plan**: `plans/archive/plan-20260712-2215-agent-fleet-specialists.md`
 > **Current Slice**: completed-20260713-policy-seed
 > **Last Handoff**: `.ai/harness/handoff/current.md`
-> **Architecture Request**: docs/architecture/requests/workflow-engine-inspection-migration.md
+> **Architecture Request**: `docs/architecture/requests/archive/2026/20260712-211020-workflow-engine-inspection-migration.md`
 
 ## Purpose
 

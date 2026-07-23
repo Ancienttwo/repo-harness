@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-23T19:42:27+0800 -->
+<!-- updated_at: 2026-07-23T22:52:58+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Idle
-> **Updated At**: 2026-07-23T19:42:27+0800
-> **Source Branch**: codex/user-managed-agent-fleet
-> **Source Commit**: 8ab74bd0
+> **Updated At**: 2026-07-23T22:52:58+0800
+> **Source Branch**: main
+> **Source Commit**: d913cbba
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: user-managed-agent-fleet-fix
+> **Reason**: workflow-ledger-truth-sync
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -37,13 +37,13 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 - Sprint: (none)
 ## Workstreams
 
-- `tasks/workstreams/workflow-engine/contract-assets/20260712-contract-assets.md`: status=active, current_slice=todo-01, source_plan=(none)
-- `tasks/workstreams/workflow-engine/contract-assets/20260714-merge-gate-enforcement.md`: status=active, current_slice=owner-directed-claude-skip-awaiting-github-ci-merge, source_plan=`plans/plan-20260714-1713-merge-gate-enforcement.md`
-- `tasks/workstreams/workflow-engine/contract-assets/agent-fleet-specialists.md`: status=completed, current_slice=completed-20260713-specialist-roles, source_plan=plans/plan-20260712-2215-agent-fleet-specialists.md
-- `tasks/workstreams/workflow-engine/contract-assets/cleanup-script-policy.md`: status=completed, current_slice=todo-01, source_plan=(none)
-- `tasks/workstreams/workflow-engine/inspection-migration/20260703-inspection-migration.md`: status=active, current_slice=completed-20260703-architecture-closeout, source_plan=(none)
-- `tasks/workstreams/workflow-engine/inspection-migration/20260712-inspection-migration.md`: status=active, current_slice=todo-01, source_plan=(none)
-- `tasks/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`: status=completed, current_slice=completed-20260713-policy-seed, source_plan=plans/plan-20260712-2215-agent-fleet-specialists.md
+- `tasks/workstreams/workflow-engine/contract-assets/20260712-contract-assets.md`: status=completed, current_slice=completed-20260712-repo-owned-agent-fleet, source_plan=`plans/archive/plan-20260712-2053-repo-owned-agent-fleet.md`
+- `tasks/workstreams/workflow-engine/contract-assets/20260714-merge-gate-enforcement.md`: status=completed, current_slice=completed-20260715-merge-gate-enforcement, source_plan=`plans/archive/plan-20260714-1713-merge-gate-enforcement.md`
+- `tasks/workstreams/workflow-engine/contract-assets/agent-fleet-specialists.md`: status=completed, current_slice=completed-20260713-specialist-roles, source_plan=`plans/archive/plan-20260712-2215-agent-fleet-specialists.md`
+- `tasks/workstreams/workflow-engine/contract-assets/cleanup-script-policy.md`: status=completed, current_slice=completed-20260529-cleanup-script-policy, source_plan=(none)
+- `tasks/workstreams/workflow-engine/inspection-migration/20260703-inspection-migration.md`: status=completed, current_slice=completed-20260703-architecture-closeout, source_plan=(none)
+- `tasks/workstreams/workflow-engine/inspection-migration/20260712-inspection-migration.md`: status=completed, current_slice=completed-20260712-repo-owned-agent-fleet, source_plan=`plans/archive/plan-20260712-2053-repo-owned-agent-fleet.md`
+- `tasks/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md`: status=completed, current_slice=completed-20260713-policy-seed, source_plan=`plans/archive/plan-20260712-2215-agent-fleet-specialists.md`
 ## Handoff
 
 - Exact Next Step: (none)
@@ -54,18 +54,24 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 9 changed/untracked path(s)
+- Summary: 15 changed/untracked path(s)
 
 ```
- M assets/reference-configs/external-tooling.md
- M assets/templates/helpers/install-agent-fleet.sh
- M docs/reference-configs/external-tooling.md
- M scripts/install-agent-fleet.sh
- M scripts/skill-surface-select.ts
- M scripts/sync-codex-installed-copies.sh
+ M AGENTS.md
+ M CLAUDE.md
+ M assets/AGENTS.md
+ M assets/CLAUDE.md
+ M scripts/AGENTS.md
+ M scripts/CLAUDE.md
  M tasks/current.md
- M tests/install-agent-fleet.test.ts
- M tests/installed-copy-sync.test.ts
+ M tasks/todos.md
+ M tasks/workstreams/workflow-engine/contract-assets/20260712-contract-assets.md
+ M tasks/workstreams/workflow-engine/contract-assets/20260714-merge-gate-enforcement.md
+ M tasks/workstreams/workflow-engine/contract-assets/agent-fleet-specialists.md
+ M tasks/workstreams/workflow-engine/contract-assets/cleanup-script-policy.md
+ M tasks/workstreams/workflow-engine/inspection-migration/20260703-inspection-migration.md
+ M tasks/workstreams/workflow-engine/inspection-migration/20260712-inspection-migration.md
+ M tasks/workstreams/workflow-engine/inspection-migration/agent-fleet-specialists.md
 ```
 
 ## Source Artifacts

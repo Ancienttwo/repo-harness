@@ -56,16 +56,20 @@ Owns the workflow-engine-contract-assets capability boundary declared in .ai/con
 ## Active Workstreams
 
 - `tasks/workstreams/workflow-engine/contract-assets/20260712-contract-assets.md`
-  - status: active
-  - current_slice: todo-01
-  - source_plan: (none)
+  - status: completed
+  - current_slice: completed-20260712-repo-owned-agent-fleet
+  - source_plan: `plans/archive/plan-20260712-2053-repo-owned-agent-fleet.md`
+- `tasks/workstreams/workflow-engine/contract-assets/20260714-merge-gate-enforcement.md`
+  - status: completed
+  - current_slice: completed-20260715-merge-gate-enforcement
+  - source_plan: `plans/archive/plan-20260714-1713-merge-gate-enforcement.md`
 - `tasks/workstreams/workflow-engine/contract-assets/agent-fleet-specialists.md`
   - status: completed
   - current_slice: completed-20260713-specialist-roles
-  - source_plan: plans/plan-20260712-2215-agent-fleet-specialists.md
+  - source_plan: `plans/archive/plan-20260712-2215-agent-fleet-specialists.md`
 - `tasks/workstreams/workflow-engine/contract-assets/cleanup-script-policy.md`
   - status: completed
-  - current_slice: todo-01
+  - current_slice: completed-20260529-cleanup-script-policy
   - source_plan: (none)
 
 ## Current Session Projection

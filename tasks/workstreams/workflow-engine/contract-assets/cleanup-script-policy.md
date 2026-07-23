@@ -8,7 +8,7 @@
 > **Architecture Capability**: `contract-assets`
 > **Architecture Module**: `docs/architecture/modules/workflow-engine/contract-assets.md`
 > **Source Plan**: (none)
-> **Current Slice**: todo-01
+> **Current Slice**: completed-20260529-cleanup-script-policy
 > **Last Handoff**: `.ai/harness/handoff/current.md`
 > **Architecture Request**: docs/architecture/requests/archive/2026/20260529-020654-ai-harness-policy-json-ai-harness-policy-json.md
 
@@ -18,7 +18,7 @@ Track durable multi-session progress for `workflow-engine-contract-assets` witho
 
 ## TODOs
 
-- [x] todo-01: Close the `.ai/harness/policy.json` cleanup-script architecture request for `workflow-engine-contract-assets`.
+- [x] completed-20260529-cleanup-script-policy: Close the `.ai/harness/policy.json` cleanup-script architecture request for `workflow-engine-contract-assets`.
 
 ## Notes
 

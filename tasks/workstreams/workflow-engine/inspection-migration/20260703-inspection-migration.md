@@ -1,6 +1,6 @@
 # Workstream: 20260703-inspection-migration
 
-> **Status**: active
+> **Status**: completed
 > **Capability ID**: `workflow-engine-inspection-migration`
 > **Functional Block**: `scripts/inspect-project-state.ts`
 > **Matched Prefix**: `scripts/inspect-project-state.ts`
