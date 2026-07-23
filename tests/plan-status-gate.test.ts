@@ -50,14 +50,18 @@ const KNOWN_STATUSES = [
   'Abandoned',
   'Superseded',
 ];
+const PLAN_LIFECYCLE = {
+  annotation_end: 'Annotating', approved: 'Approved', executing: 'Executing', terminal_start: 'Complete',
+};
 
 function git(cwd: string, args: string[]): void {
   const result = spawnSync('git', args, { cwd, encoding: 'utf-8' });
   if (result.status !== 0) throw new Error(result.stderr);
 }
 
-function initRepo(cwd: string, options: { withStatusesArray?: boolean } = {}): void {
+function initRepo(cwd: string, options: { withStatusesArray?: boolean; withLifecycle?: boolean } = {}): void {
   const withStatusesArray = options.withStatusesArray ?? true;
+  const withLifecycle = options.withLifecycle ?? true;
   git(cwd, ['init', '-b', 'main']);
   git(cwd, ['config', 'user.email', 'plan-status-gate@example.com']);
   git(cwd, ['config', 'user.name', 'Plan Status Gate Test']);
@@ -70,7 +74,7 @@ function initRepo(cwd: string, options: { withStatusesArray?: boolean } = {}): v
     JSON.stringify(
       {
         worktree_strategy: { review_base: 'main', base_branch: 'main' },
-        ...(withStatusesArray ? { active_plan: { statuses: KNOWN_STATUSES } } : {}),
+        ...(withStatusesArray ? { active_plan: { statuses: KNOWN_STATUSES, ...(withLifecycle ? { lifecycle: PLAN_LIFECYCLE } : {}) } } : {}),
       },
       null,
       2,
@@ -241,6 +245,21 @@ describe('pre-edit-guard plan-status fail-closed default (falsifier-resolved aut
       expect(result.stderr).toContain('active_plan.statuses');
       expect(result.stderr).not.toContain('not in the known-status authority');
       expect(result.stderr).not.toContain(plan);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  test('missing active_plan.lifecycle projection is fail-closed even when the known-status array exists', () => {
+    const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'plan-status-no-lifecycle-')));
+    try {
+      initRepo(cwd, { withLifecycle: false });
+      writeActivePlan(cwd, 'Executing');
+      const result = preEdit(cwd, 'src/feature.ts');
+      expect(result.status).toBe(2);
+      expect(result.stderr).toContain('PlanStatusGuard');
+      expect(result.stderr).toContain('lifecycle');
+      expect(result.stderr).toContain('policy.json');
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

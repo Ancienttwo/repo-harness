@@ -119,12 +119,14 @@ const FILE_ALLOWLIST: Record<string, string> = {
 // sync:helpers/check:helpers), exempted for the same reason.
 const R1_PROVENANCE_ENUM_FILES = [
   "scripts/acceptance-receipt.ts",
+  "scripts/classify-historical-plans.ts",
   "scripts/harness-trace-grade.sh",
   "scripts/sprint-backlog.sh",
   "scripts/plan-to-todo.sh",
   "scripts/capture-plan.sh",
   "scripts/lib/project-init-lib.sh",
   "assets/templates/helpers/acceptance-receipt.ts",
+  "assets/templates/helpers/classify-historical-plans.ts",
   "assets/templates/helpers/harness-trace-grade.sh",
   "assets/templates/helpers/sprint-backlog.sh",
   "assets/templates/helpers/plan-to-todo.sh",

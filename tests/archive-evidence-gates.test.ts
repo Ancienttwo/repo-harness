@@ -71,6 +71,7 @@ function installWorkflowArchiveFixture(cwd: string): void {
   mkdirSync(join(cwd, "tasks/contracts"), { recursive: true });
   mkdirSync(join(cwd, "tasks/reviews"), { recursive: true });
   copyFileSync(join(ROOT, "scripts/archive-workflow.sh"), join(cwd, "scripts/archive-workflow.sh"));
+  copyFileSync(join(ROOT, "scripts/classify-historical-plans.ts"), join(cwd, "scripts/classify-historical-plans.ts"));
   writeFileSync(
     join(cwd, ".ai/harness/policy.json"),
     `${JSON.stringify({
@@ -217,6 +218,33 @@ function writeWorkflowChecks(cwd: string): void {
   writeFileSync(
     join(cwd, ".ai/harness/checks/latest.json"),
     '{"status":"pass","source":"verify-sprint","exit_code":0,"contract":{"file":"tasks/contracts/20260711-1200-demo.contract.md"},"review":{"file":"tasks/reviews/20260711-1200-demo.review.md"},"benchmark_evidence":{"status":"not_applicable","report_sha256":"","benchmark_subject_sha256":""}}\n',
+  );
+}
+
+function writeSealedWorkflowReview(cwd: string): void {
+  writeFileSync(
+    join(cwd, "tasks/reviews/20260711-1200-demo.review.md"),
+    [
+      "# Task Review: demo",
+      "",
+      "> **Recommendation**: pass",
+      "",
+      "## Acceptance Receipt Projection",
+      "",
+      "> **Disposition**: external_pass",
+      "> **Reviewer**: Codex",
+      "> **Source**: codex-review",
+      "> **Actor**: not-applicable",
+      `> **Reviewed Subject SHA256**: sha256:${"a".repeat(64)}`,
+      "> **Reviewed Subject Scope**: normalized-final-content",
+      `> **Reviewed Target Revision**: ${"b".repeat(40)}`,
+      `> **Verification Evidence SHA256**: sha256:${"c".repeat(64)}`,
+      "> **Issued At**: 2026-07-24T00:00:00.000Z",
+      "",
+      "- Summary: accepted",
+      "- Findings: none",
+      "",
+    ].join("\n"),
   );
 }
 
@@ -537,6 +565,51 @@ describe("archive evidence gates", () => {
       expect(existsSync(join(cwd, "tasks/contracts/20260711-1200-demo.contract.md"))).toBe(false);
       expect(existsSync(join(cwd, "tasks/reviews/20260711-1200-demo.review.md"))).toBe(false);
     });
+  });
+
+  test("sealed-terminal mode accepts only a Fulfilled contract, pass review, and typed receipt projection", () => {
+    withTempRepo("sealed-terminal-archive", (cwd) => {
+      installWorkflowArchiveFixture(cwd);
+      writeWorkflowContract(cwd, "Fulfilled");
+      writeSealedWorkflowReview(cwd);
+
+      const archived = run(
+        "scripts/archive-workflow.sh",
+        ["--plan", "plans/plan-20260711-1200-demo.md", "--outcome", "Completed", "--evidence-mode", "sealed-terminal"],
+        cwd,
+      );
+      expect(archived.status, archived.stderr).toBe(0);
+      expect(existsSync(join(cwd, "plans/archive/plan-20260711-1200-demo.md"))).toBe(true);
+      expect(readdirSync(join(cwd, "tasks/archive")).some((name) => name.startsWith("contract-") && name.endsWith("-demo.md"))).toBe(true);
+    });
+
+    for (const [name, contractStatus, reviewText, expected] of [
+      ["active-contract", "Active", null, "contract status is Active, not Fulfilled"],
+      ["missing-receipt", "Fulfilled", "# Review\n\n> **Recommendation**: pass\n", "typed Acceptance Receipt Projection missing or incomplete"],
+      ["failed-review", "Fulfilled", writeSealedWorkflowReview, "review recommendation is fail, not pass"],
+    ] as const) {
+      withTempRepo(`sealed-terminal-${name}`, (cwd) => {
+        installWorkflowArchiveFixture(cwd);
+        writeWorkflowContract(cwd, contractStatus);
+        if (typeof reviewText === "function") {
+          reviewText(cwd);
+          const file = join(cwd, "tasks/reviews/20260711-1200-demo.review.md");
+          writeFileSync(file, readFileSync(file, "utf8").replace("> **Recommendation**: pass", "> **Recommendation**: fail"));
+        } else if (reviewText === null) {
+          writeSealedWorkflowReview(cwd);
+        } else {
+          writeFileSync(join(cwd, "tasks/reviews/20260711-1200-demo.review.md"), reviewText);
+        }
+        const rejected = run(
+          "scripts/archive-workflow.sh",
+          ["--plan", "plans/plan-20260711-1200-demo.md", "--outcome", "Completed", "--evidence-mode", "sealed-terminal"],
+          cwd,
+        );
+        expect(rejected.status).toBe(1);
+        expect(rejected.stderr).toContain(expected);
+        expect(existsSync(join(cwd, "plans/plan-20260711-1200-demo.md"))).toBe(true);
+      });
+    }
   });
 
   test("predict-manifest merges live checks evidence into the scratch clone instead of nesting it", () => {

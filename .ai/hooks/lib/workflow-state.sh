@@ -46,6 +46,62 @@ workflow_policy_get() {
   printf '%s' "$default_value"
 }
 
+# Projects lifecycle roles from the single policy-owned ordered status array.
+# The anchors carry semantics; every projected value must be a member of the
+# same array and the lifecycle order must remain coherent or the projection
+# fails closed.
+workflow_plan_status_projection() {
+  local projection="$1"
+  local policy_file
+
+  policy_file="$(workflow_policy_file)"
+  [[ -f "$policy_file" ]] || return 1
+  command -v jq >/dev/null 2>&1 || return 1
+  jq -er --arg projection "$projection" '
+    .active_plan as $active
+    | $active.statuses as $statuses
+    | $active.lifecycle as $lifecycle
+    | select(($statuses | type) == "array" and ($statuses | length) > 0)
+    | select(all($statuses[]; type == "string" and length > 0))
+    | select(($statuses | unique | length) == ($statuses | length))
+    | select(($lifecycle | type) == "object")
+    | $lifecycle.annotation_end as $annotation_end
+    | $lifecycle.approved as $approved
+    | $lifecycle.executing as $executing
+    | $lifecycle.terminal_start as $terminal_start
+    | select([$annotation_end, $approved, $executing, $terminal_start] | all(.[]; type == "string"))
+    | ($statuses | index($annotation_end)) as $annotation_index
+    | ($statuses | index($approved)) as $approved_index
+    | ($statuses | index($executing)) as $executing_index
+    | ($statuses | index($terminal_start)) as $terminal_index
+    | select(
+        $annotation_index != null and $annotation_index >= 1
+        and $approved_index == ($annotation_index + 1)
+        and $executing_index == ($approved_index + 1)
+        and $terminal_index > $executing_index
+      )
+    | if $projection == "known" then $statuses[]
+      elif $projection == "pre_approval" then $statuses[0:$approved_index][]
+      elif $projection == "terminal" then $statuses[$terminal_index:][]
+      elif $projection == "draft" then $statuses[0]
+      elif $projection == "annotation_end" then $annotation_end
+      elif $projection == "approved" then $approved
+      elif $projection == "executing" then $executing
+      else empty
+      end
+  ' "$policy_file" 2>/dev/null
+}
+
+workflow_plan_status_is_known() {
+  local status="$1"
+  workflow_plan_status_projection known | grep -Fqx -- "$status"
+}
+
+workflow_plan_status_is_terminal() {
+  local status="$1"
+  workflow_plan_status_projection terminal | grep -Fqx -- "$status"
+}
+
 workflow_repo_relative_path() {
   local value="$1"
   local default_value="$2"
@@ -973,29 +1029,42 @@ validate_plan_transition() {
   local current_status="$1"
   local next_status="$2"
   local note_count="$3"
+  local draft annotation_end approved executing
+
+  draft="$(workflow_plan_status_projection draft)" \
+    && annotation_end="$(workflow_plan_status_projection annotation_end)" \
+    && approved="$(workflow_plan_status_projection approved)" \
+    && executing="$(workflow_plan_status_projection executing)" || {
+      echo "Plan-status authority is unavailable or malformed."
+      return 1
+    }
+  if ! workflow_plan_status_is_known "$current_status" || ! workflow_plan_status_is_known "$next_status"; then
+    echo "Unknown plan status transition ${current_status} -> ${next_status}."
+    return 1
+  fi
 
   case "${current_status}:${next_status}" in
-    Draft:Annotating)
+    "${draft}:${annotation_end}")
       if [[ "$note_count" -lt 1 ]]; then
-        echo "Draft -> Annotating requires at least one [NOTE]: annotation."
+        echo "${draft} -> ${annotation_end} requires at least one [NOTE]: annotation."
         return 1
       fi
       ;;
-    Annotating:Approved)
+    "${annotation_end}:${approved}")
       if [[ "$note_count" -gt 0 ]]; then
-        echo "Annotating -> Approved requires all [NOTE]: annotations to be resolved."
+        echo "${annotation_end} -> ${approved} requires all [NOTE]: annotations to be resolved."
         return 1
       fi
       ;;
-    Annotating:Draft)
-      echo "[PlanState] Rollback: Annotating -> Draft (plan direction rethink)."
+    "${annotation_end}:${draft}")
+      echo "[PlanState] Rollback: ${annotation_end} -> ${draft} (plan direction rethink)."
       return 0
       ;;
-    Draft:Approved|Draft:Executing|Annotating:Executing)
+    "${draft}:${approved}"|"${draft}:${executing}"|"${annotation_end}:${executing}")
       echo "Status jump ${current_status} -> ${next_status} skips required workflow gates."
       return 1
       ;;
-    Approved:Draft|Approved:Annotating|Executing:Draft|Executing:Annotating|Executing:Approved)
+    "${approved}:${draft}"|"${approved}:${annotation_end}"|"${executing}:${draft}"|"${executing}:${annotation_end}"|"${executing}:${approved}")
       echo "Backward transition ${current_status} -> ${next_status} is not allowed."
       return 1
       ;;

@@ -5237,6 +5237,40 @@ describe("Workflow helper scripts", () => {
     }
   });
 
+  test("check-task-workflow projects terminal statuses from the policy lifecycle anchor", () => {
+    const cwd = tmpWorkspace("helper-check-workflow-terminal-policy");
+    try {
+      copyHelpers(cwd);
+      expect(
+        run("bash", ["scripts/ensure-task-workflow.sh", "--slug", "terminal-policy", "--title", "Terminal Policy"], cwd)
+          .status
+      ).toBe(0);
+      writeWorkflowRequiredSurface(cwd);
+
+      const policyPath = join(cwd, ".ai/harness/policy.json");
+      const policy = JSON.parse(readFileSync(policyPath, "utf8"));
+      policy.active_plan.lifecycle.terminal_start = "Archived";
+      writeFileSync(policyPath, `${JSON.stringify(policy, null, 2)}\n`);
+
+      const activePlanName = readdirSync(join(cwd, "plans")).find((name) => name.endsWith("-terminal-policy.md"));
+      expect(activePlanName).toBeDefined();
+      const activePlan = `plans/${activePlanName}`;
+      writeActivePlan(cwd, activePlan);
+      const activePlanPath = join(cwd, activePlan);
+      writeFileSync(
+        activePlanPath,
+        readFileSync(activePlanPath, "utf-8").replace("> **Status**: Draft", "> **Status**: Completed")
+      );
+
+      const res = run("bash", ["scripts/check-task-workflow.sh", "--strict"], cwd);
+
+      expect(res.status, res.stdout + res.stderr).toBe(0);
+      expect(res.stdout).not.toContain("Active plan has terminal status 'Completed'");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   test("check-task-workflow should fail strict mode when ignored runtime cache remains tracked", () => {
     const cwd = tmpWorkspace("helper-check-workflow-tracked-runtime-cache");
     try {

@@ -319,6 +319,7 @@ function prepare(profile: Profile): ReturnType<typeof createEffectiveStateFixtur
     `${JSON.stringify(
       {
         active_plan: {
+          lifecycle: { annotation_end: 'Annotating', approved: 'Approved', executing: 'Executing', terminal_start: 'Complete' },
           statuses: [
             'Draft', 'Annotating', 'Approved', 'Executing', 'Blocked',
             'Review', 'Complete', 'Completed', 'Done', 'Fulfilled',

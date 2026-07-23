@@ -41,6 +41,7 @@ function writePolicy(cwd: string, extra: Record<string, unknown> = {}): void {
       {
         worktree_strategy: { review_base: 'main', base_branch: 'main' },
         active_plan: {
+          lifecycle: { annotation_end: 'Annotating', approved: 'Approved', executing: 'Executing', terminal_start: 'Complete' },
           statuses: [
             'Draft', 'Annotating', 'Approved', 'Executing', 'Blocked', 'Review',
             'Complete', 'Completed', 'Done', 'Fulfilled', 'Archived', 'Abandoned', 'Superseded',

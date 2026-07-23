@@ -1,16 +1,16 @@
 # Current Status Snapshot
 
 <!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: 2026-07-24T06:11:55+0800 -->
+<!-- updated_at: 2026-07-24T06:20:56+0800 -->
 <!-- stale_after: 24h -->
 
 > **Status**: Active
-> **Updated At**: 2026-07-24T06:11:55+0800
+> **Updated At**: 2026-07-24T06:20:56+0800
 > **Source Branch**: codex/codex-native-profile-aware-status
-> **Source Commit**: 96c908f7
+> **Source Commit**: ebdc94a0
 > **Target Branch**: main
 > **Stale After**: 24h
-> **Reason**: review-ready
+> **Reason**: merge-main
 > **Derived From**: active-plan, active-sprint, workstreams, handoff, checks, git status
 
 This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
@@ -55,49 +55,42 @@ This file is a tracked mainline snapshot derived from repo artifacts. It is not 
 
 ## Git Status
 
-- Summary: 43 changed/untracked path(s)
+- Summary: 33 changed/untracked path(s)
 
 ```
- M README.md
- M assets/reference-configs/agentic-development-flow.md
- M assets/reference-configs/external-tooling.md
- M assets/skill-commands/manifest.json
- M assets/skills/repo-harness-chatgpt/SKILL.md
- M docs/CHANGELOG.md
- M docs/architecture/modules/public-surface/action-commands.md
- M docs/architecture/modules/public-surface/root-router.md
- M docs/reference-configs/agentic-development-flow.md
- M docs/reference-configs/external-tooling.md
- M docs/reference-configs/install-profiles.md
- M docs/researches/20260715-skill-surface-discovery-audit.md
- M docs/researches/20260716-gpt-5-6-prompt-guidance-harness-audit.md
- M scripts/run-harness-profile-benchmark.ts
- M scripts/run-skill-routing-eval.ts
- M scripts/sync-codex-installed-copies.sh
- M src/cli/commands/global-runtime.ts
- M src/cli/commands/init-hook.ts
- M src/cli/commands/status.ts
- M src/cli/index.ts
- M src/cli/installer/install-profile.ts
- M src/cli/installer/managed-entries.ts
- M src/core/skill-surface/catalog.ts
- M src/core/skill-surface/profile-components.ts
- M tasks/current.md
- M tests/cli/global-runtime-init.test.ts
- M tests/cli/init-hook.test.ts
- M tests/cli/install.test.ts
- M tests/cli/status.test.ts
- M tests/harness-benchmark-matrix.test.ts
- M tests/install-profiles.test.ts
- M tests/installed-copy-sync.test.ts
- M tests/skill-routing-eval.test.ts
- M tests/skill-surface/canonical-packages.test.ts
- M tests/skill-surface/catalog.test.ts
- M tests/skill-surface/chatgpt-package.test.ts
- M tests/skill-surface/cross-review-package.test.ts
- M tests/skill-surface/mutation-path-coverage.test.ts
- M tests/skill-surface/retired-names-scan.test.ts
-?? plans/plan-20260724-0427-codex-native-profile-aware-status.md
+M  .ai/harness/policy.json
+M  .ai/harness/workflow-contract.json
+M  .ai/hooks/.projection.json
+M  .ai/hooks/lib/workflow-state.sh
+M  assets/hooks/lib/workflow-state.sh
+M  assets/templates/helpers/archive-workflow.sh
+M  assets/templates/helpers/check-task-workflow.sh
+A  assets/templates/helpers/classify-historical-plans.ts
+M  assets/templates/helpers/ensure-task-workflow.sh
+M  assets/workflow-contract.v1.json
+A  plans/archive/plan-20260724-0324-workflow-status-archive-authority.md
+M  scripts/archive-workflow.sh
+M  scripts/check-task-workflow.sh
+A  scripts/classify-historical-plans.ts
+M  scripts/ensure-task-workflow.sh
+M  scripts/lib/project-init-lib.sh
+M  src/cli/hook/mutation-guard.ts
+M  src/core/adoption/standard-plan.ts
+A  tasks/archive/contract-20260724-0433-workflow-status-archive-authority.md
+A  tasks/archive/notes-20260724-0433-workflow-status-archive-authority.md
+A  tasks/archive/review-20260724-0433-workflow-status-archive-authority.md
+A  tasks/archive/todo-20260724-0433-workflow-status-archive-authority.md
+M  tasks/current.md
+M  tasks/todos.md
+M  tests/archive-evidence-gates.test.ts
+M  tests/helper-scripts.test.ts
+A  tests/historical-plan-classifier.test.ts
+M  tests/mutation-guard.test.ts
+M  tests/plan-status-gate.test.ts
+M  tests/runtime-profile-enforcement.test.ts
+M  tests/skill-surface/retired-names-scan.test.ts
+M  tests/state/loop-semantics-characterization.test.ts
+M  tests/workflow-state-lib.test.ts
 ```
 
 ## Source Artifacts
