@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { execFileSync } from "child_process";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { dirname, join } from "path";
 
@@ -53,9 +53,13 @@ function contractWithPolicy(policyJson: string | null): string {
   return lines.join("\n");
 }
 
-function seedGenesis(repoRoot: string): void {
+function contractHashOf(contractText: string): string {
+  return `sha256:${createHash("sha256").update(contractText).digest("hex")}`;
+}
+
+function seedGenesis(repoRoot: string, worktreeId = "fixture"): void {
   mkdirSync(join(repoRoot, "tasks", "contracts"), { recursive: true });
-  appendGenesisRecord(repoRoot, LEDGER_EPOCH_START_SHA, { worktreeId: "fixture" });
+  appendGenesisRecord(repoRoot, LEDGER_EPOCH_START_SHA, { worktreeId });
 }
 
 function baseIdentity(overrides: Partial<SubjectIdentity> = {}): SubjectIdentity {
@@ -83,8 +87,10 @@ function seedEvent(
   repoRoot: string,
   opts: {
     readonly worktreeId?: string;
+    readonly contractPath?: string;
     readonly trustClass?: TrustClass;
     readonly subjectHash?: string;
+    readonly contractHash?: string;
     readonly supersedes?: readonly string[];
     readonly runTraceMarker?: string;
     readonly correlationRunId?: string;
@@ -96,7 +102,10 @@ function seedEvent(
     trustClass: opts.trustClass ?? "authoritative_machine",
     producer: "verify-sprint",
     correlationRunId: opts.correlationRunId ?? `run-${Math.random().toString(36).slice(2)}`,
-    subjectIdentity: baseIdentity({ subject_hash: opts.subjectHash ?? SUBJECT_A }),
+    subjectIdentity: baseIdentity({
+      subject_hash: opts.subjectHash ?? SUBJECT_A,
+      contract_hash: opts.contractHash ?? contractHashOf(contractWithPolicy(null)),
+    }),
     supersedes: opts.supersedes,
     payload: {
       kind: "json",
@@ -107,6 +116,7 @@ function seedEvent(
         run_trace: {
           schema: "repo-harness-run-trace.v1",
           status: "pass",
+          contract: { file: opts.contractPath ?? CONTRACT_RELATIVE, status: "pass" },
           marker: opts.runTraceMarker ?? "default",
         },
       },
@@ -115,6 +125,31 @@ function seedEvent(
 }
 
 describe("checks-materializer: D7 selection predicate", () => {
+  test("uses PostBash-first genesis identity for a valid authoritative verify event", () => {
+    withTempRepo("materializer-postbash-first-genesis", (repoRoot) => {
+      const contractText = contractWithPolicy(null);
+      const worktreeId = "ws-0123456789ab";
+      seedGenesis(repoRoot, worktreeId);
+      seedEvent(repoRoot, {
+        worktreeId,
+        subjectHash: SUBJECT_A,
+        contractHash: contractHashOf(contractText),
+        runTraceMarker: "postbash-first",
+      });
+      const { accepted } = readAcceptedEvents(repoRoot);
+
+      const projection = buildChecksLatestProjection(
+        { repoRoot, contractPath: CONTRACT_RELATIVE, worktreeId, subjectHash: SUBJECT_A },
+        accepted,
+        contractText,
+      );
+
+      expect(projection.status).toBe("pass");
+      expect((projection as Record<string, unknown>).marker).toBe("postbash-first");
+      expect(projection.provenance.worktree_id).toBe(worktreeId);
+    });
+  });
+
   test("exact subject match only -- a stale/different subject never satisfies", () => {
     withTempRepo("materializer-stale-subject", (repoRoot) => {
       seedGenesis(repoRoot);
@@ -122,7 +157,7 @@ describe("checks-materializer: D7 selection predicate", () => {
       const { accepted } = readAcceptedEvents(repoRoot);
 
       const projection = buildChecksLatestProjection(
-        { repoRoot, contractPath: "tasks/contracts/fixture.contract.md", subjectHash: SUBJECT_B },
+        { repoRoot, contractPath: "tasks/contracts/fixture.contract.md", worktreeId: "fixture", subjectHash: SUBJECT_B },
         accepted,
         contractWithPolicy(null),
       );
@@ -142,7 +177,7 @@ describe("checks-materializer: D7 selection predicate", () => {
 
       const { accepted } = readAcceptedEvents(repoRoot);
       const projection = buildChecksLatestProjection(
-        { repoRoot, contractPath: "tasks/contracts/fixture.contract.md", subjectHash: SUBJECT_A },
+        { repoRoot, contractPath: "tasks/contracts/fixture.contract.md", worktreeId: "fixture", subjectHash: SUBJECT_A },
         accepted,
         contractWithPolicy(null),
       );
@@ -168,7 +203,7 @@ describe("checks-materializer: D7 selection predicate", () => {
       expect(accepted.find((event) => event.event_id === superseded.event_id)).toBeUndefined();
 
       const projection = buildChecksLatestProjection(
-        { repoRoot, contractPath: "tasks/contracts/fixture.contract.md", subjectHash: SUBJECT_A },
+        { repoRoot, contractPath: "tasks/contracts/fixture.contract.md", worktreeId: "fixture", subjectHash: SUBJECT_A },
         accepted,
         contractWithPolicy(null),
       );
@@ -181,14 +216,20 @@ describe("checks-materializer: D7 selection predicate", () => {
 
   test("observed trust class never satisfies the gate, policy or not", () => {
     withTempRepo("materializer-observed-excluded", (repoRoot) => {
+      const contractText = contractWithPolicy('{"protocol":1,"reviewer":"Claude","user_waiver":"allowed"}');
       seedGenesis(repoRoot);
-      seedEvent(repoRoot, { subjectHash: SUBJECT_A, trustClass: "observed", runTraceMarker: "observed-only" });
+      seedEvent(repoRoot, {
+        subjectHash: SUBJECT_A,
+        contractHash: contractHashOf(contractText),
+        trustClass: "observed",
+        runTraceMarker: "observed-only",
+      });
       const { accepted } = readAcceptedEvents(repoRoot);
 
       const projection = buildChecksLatestProjection(
-        { repoRoot, contractPath: "tasks/contracts/fixture.contract.md", subjectHash: SUBJECT_A },
+        { repoRoot, contractPath: "tasks/contracts/fixture.contract.md", worktreeId: "fixture", subjectHash: SUBJECT_A },
         accepted,
-        contractWithPolicy('{"protocol":1,"reviewer":"Claude","user_waiver":"allowed"}'),
+        contractText,
       );
 
       expect(projection.status).toBe("unsatisfied");
@@ -198,14 +239,20 @@ describe("checks-materializer: D7 selection predicate", () => {
 
   test("external_attested is admitted when the contract carries a valid Acceptance Policy block", () => {
     withTempRepo("materializer-external-attested-admitted", (repoRoot) => {
+      const contractText = contractWithPolicy('{"protocol":1,"reviewer":"Claude","user_waiver":"allowed"}');
       seedGenesis(repoRoot);
-      seedEvent(repoRoot, { subjectHash: SUBJECT_A, trustClass: "external_attested", runTraceMarker: "attested" });
+      seedEvent(repoRoot, {
+        subjectHash: SUBJECT_A,
+        contractHash: contractHashOf(contractText),
+        trustClass: "external_attested",
+        runTraceMarker: "attested",
+      });
       const { accepted } = readAcceptedEvents(repoRoot);
 
       const projection = buildChecksLatestProjection(
-        { repoRoot, contractPath: "tasks/contracts/fixture.contract.md", subjectHash: SUBJECT_A },
+        { repoRoot, contractPath: "tasks/contracts/fixture.contract.md", worktreeId: "fixture", subjectHash: SUBJECT_A },
         accepted,
-        contractWithPolicy('{"protocol":1,"reviewer":"Claude","user_waiver":"allowed"}'),
+        contractText,
       );
 
       expect(projection.status).toBe("pass");
@@ -220,7 +267,7 @@ describe("checks-materializer: D7 selection predicate", () => {
       const { accepted } = readAcceptedEvents(repoRoot);
 
       const projection = buildChecksLatestProjection(
-        { repoRoot, contractPath: "tasks/contracts/fixture.contract.md", subjectHash: SUBJECT_A },
+        { repoRoot, contractPath: "tasks/contracts/fixture.contract.md", worktreeId: "fixture", subjectHash: SUBJECT_A },
         accepted,
         contractWithPolicy(null),
       );
@@ -231,40 +278,77 @@ describe("checks-materializer: D7 selection predicate", () => {
 
   test("human_acceptance is admitted only when the policy's user_waiver is allowed, excluded when forbidden", () => {
     withTempRepo("materializer-human-acceptance-policy-gated", (repoRoot) => {
+      const allowedContractText = contractWithPolicy('{"protocol":1,"reviewer":"Claude","user_waiver":"allowed"}');
+      const forbiddenContractText = contractWithPolicy('{"protocol":1,"reviewer":"Claude","user_waiver":"forbidden"}');
       seedGenesis(repoRoot);
-      seedEvent(repoRoot, { subjectHash: SUBJECT_A, trustClass: "human_acceptance", runTraceMarker: "waived" });
+      seedEvent(repoRoot, {
+        subjectHash: SUBJECT_A,
+        contractHash: contractHashOf(allowedContractText),
+        trustClass: "human_acceptance",
+        runTraceMarker: "waived",
+      });
+      seedEvent(repoRoot, {
+        subjectHash: SUBJECT_A,
+        contractHash: contractHashOf(forbiddenContractText),
+        trustClass: "human_acceptance",
+        runTraceMarker: "forbidden",
+      });
       const { accepted } = readAcceptedEvents(repoRoot);
 
       const allowed = buildChecksLatestProjection(
-        { repoRoot, contractPath: "tasks/contracts/fixture.contract.md", subjectHash: SUBJECT_A },
+        { repoRoot, contractPath: "tasks/contracts/fixture.contract.md", worktreeId: "fixture", subjectHash: SUBJECT_A },
         accepted,
-        contractWithPolicy('{"protocol":1,"reviewer":"Claude","user_waiver":"allowed"}'),
+        allowedContractText,
       );
       expect(allowed.status).toBe("pass");
       expect((allowed as Record<string, unknown>).marker).toBe("waived");
 
       const forbidden = buildChecksLatestProjection(
-        { repoRoot, contractPath: "tasks/contracts/fixture.contract.md", subjectHash: SUBJECT_A },
+        { repoRoot, contractPath: "tasks/contracts/fixture.contract.md", worktreeId: "fixture", subjectHash: SUBJECT_A },
         accepted,
-        contractWithPolicy('{"protocol":1,"reviewer":"Claude","user_waiver":"forbidden"}'),
+        forbiddenContractText,
       );
       expect(forbidden.status).toBe("unsatisfied");
     });
   });
 
-  test("a different worktree_id (a different contract slug) never matches, even with an identical subject_hash", () => {
+  test("a different genesis worktree_id never matches, even with an identical subject_hash", () => {
     withTempRepo("materializer-worktree-mismatch", (repoRoot) => {
       seedGenesis(repoRoot);
       seedEvent(repoRoot, { worktreeId: "other-contract-slug", subjectHash: SUBJECT_A, runTraceMarker: "other" });
       const { accepted } = readAcceptedEvents(repoRoot);
 
       const projection = buildChecksLatestProjection(
-        { repoRoot, contractPath: "tasks/contracts/fixture.contract.md", subjectHash: SUBJECT_A },
+        { repoRoot, contractPath: "tasks/contracts/fixture.contract.md", worktreeId: "fixture", subjectHash: SUBJECT_A },
         accepted,
         contractWithPolicy(null),
       );
 
       expect(projection.status).toBe("unsatisfied");
+    });
+  });
+
+  test("a different contract in the same worktree never matches, even with an identical subject_hash", () => {
+    withTempRepo("materializer-contract-mismatch", (repoRoot) => {
+      const activeContractText = contractWithPolicy(null);
+      seedGenesis(repoRoot);
+      seedEvent(repoRoot, {
+        worktreeId: "fixture",
+        contractPath: "tasks/contracts/sibling.contract.md",
+        subjectHash: SUBJECT_A,
+        contractHash: contractHashOf(activeContractText),
+        runTraceMarker: "sibling",
+      });
+      const { accepted } = readAcceptedEvents(repoRoot);
+
+      const projection = buildChecksLatestProjection(
+        { repoRoot, contractPath: CONTRACT_RELATIVE, worktreeId: "fixture", subjectHash: SUBJECT_A },
+        accepted,
+        activeContractText,
+      );
+
+      expect(projection.status).toBe("unsatisfied");
+      expect(projection.provenance.source_event_ids).toEqual([]);
     });
   });
 });
@@ -277,7 +361,13 @@ describe("checks-materializer: D8 provenance", () => {
       const { accepted } = readAcceptedEvents(repoRoot);
 
       const projection = buildChecksLatestProjection(
-        { repoRoot, contractPath: CONTRACT_RELATIVE, subjectHash: SUBJECT_A, now: () => new Date("2026-07-22T12:00:00.000Z") },
+        {
+          repoRoot,
+          contractPath: CONTRACT_RELATIVE,
+          worktreeId: "fixture",
+          subjectHash: SUBJECT_A,
+          now: () => new Date("2026-07-22T12:00:00.000Z"),
+        },
         accepted,
         contractWithPolicy(null),
       );
@@ -304,7 +394,7 @@ describe("checks-materializer: D8 provenance", () => {
       seedGenesis(repoRoot);
       seedEvent(repoRoot, { subjectHash: SUBJECT_A, runTraceMarker: "replay" });
       const { accepted } = readAcceptedEvents(repoRoot);
-      const input = { repoRoot, contractPath: CONTRACT_RELATIVE, subjectHash: SUBJECT_A };
+      const input = { repoRoot, contractPath: CONTRACT_RELATIVE, worktreeId: "fixture", subjectHash: SUBJECT_A };
 
       const first = buildChecksLatestProjection(input, accepted, contractWithPolicy(null));
       const second = buildChecksLatestProjection(input, accepted, contractWithPolicy(null));
@@ -321,13 +411,16 @@ describe("checks-materializer: D8 provenance", () => {
         trustClass: "authoritative_machine",
         producer: "verify-sprint",
         correlationRunId: "run-no-trace",
-        subjectIdentity: baseIdentity({ subject_hash: SUBJECT_A }),
+        subjectIdentity: baseIdentity({
+          subject_hash: SUBJECT_A,
+          contract_hash: contractHashOf(contractWithPolicy(null)),
+        }),
         payload: { kind: "json", value: { status: "pass", counts: {}, run_snapshot_id: "run-x" } },
       });
       const { accepted } = readAcceptedEvents(repoRoot);
 
       const projection = buildChecksLatestProjection(
-        { repoRoot, contractPath: CONTRACT_RELATIVE, subjectHash: SUBJECT_A },
+        { repoRoot, contractPath: CONTRACT_RELATIVE, worktreeId: "fixture", subjectHash: SUBJECT_A },
         accepted,
         contractWithPolicy(null),
       );
@@ -337,6 +430,24 @@ describe("checks-materializer: D8 provenance", () => {
 });
 
 describe("checks-materializer: writeChecksLatest overwrite semantics", () => {
+  test("fails closed without an accepted genesis record and does not write checks/latest.json", () => {
+    withTempRepo("materializer-missing-genesis", (repoRoot) => {
+      mkdirSync(join(repoRoot, "tasks", "contracts"), { recursive: true });
+      writeFileSync(join(repoRoot, CONTRACT_RELATIVE), contractWithPolicy(null));
+      const checksFilePath = ".ai/harness/checks/latest.json";
+
+      expect(() =>
+        writeChecksLatest({
+          repoRoot,
+          contractPath: CONTRACT_RELATIVE,
+          subjectHash: SUBJECT_A,
+          checksFilePath,
+        }),
+      ).toThrow("cannot materialize checks/latest: evidence ledger has no accepted genesis record");
+      expect(existsSync(join(repoRoot, checksFilePath))).toBe(false);
+    });
+  });
+
   test("a hand-edited checks/latest.json is fully overwritten by the next materialization and carries provenance", () => {
     withTempRepo("materializer-hand-edit-overwrite", (repoRoot) => {
       seedGenesis(repoRoot);

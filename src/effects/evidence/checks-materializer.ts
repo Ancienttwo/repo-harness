@@ -22,20 +22,19 @@
  *   winner := last(accepted ORDER BY append_position ASC)
  *             -- never mtime / filename recency / last-writer-wins
  *
- * `contract_id == active contract` and `worktree_id == current` collapse to
- * one filter in this system's actual schema: `EvidenceEventRecord.worktree_id`
- * is already populated with the active contract's own slug at emission time
- * (`worktreeIdFor()` in `verify-producer.ts`, exported and reused here rather
- * than re-implemented -- both this module and `verify-producer.ts` are owned
- * by this SAME package, so sharing this one small pure helper does not
- * revisit the EPC-02/03/04 wave's "no shared private helper" qualification,
- * which was specifically about proving independence across DIFFERENT
- * parallel packages).
+ * The two identity filters have separate existing authorities:
+ * `worktree_id` comes from the ledger's immutable genesis record, while the
+ * active contract is identified by exact equality with both
+ * `subject_identity.contract_hash` (the active contract bytes) and
+ * `run_trace.contract.file` (the active repo-relative contract path).
+ * This matters when PostBash initializes genesis before a contract-aware
+ * producer: that valid genesis uses the workspace-root hash rather than a
+ * contract slug, and later producers correctly preserve it.
  *
  * `readAcceptedEvents` (EPC-01, read-only) already applies D5's fold: total
  * order by append position, idempotency-key dedup, and supersedes exclusion.
  * This module applies exactly one more filter on top of that already-accepted
- * set: worktree_id + subject_hash + trust-class-admission.
+ * set: worktree_id + contract_hash + subject_hash + trust-class-admission.
  *
  * No exact subject_hash match -> `status: "unsatisfied"` (fail-closed; never
  * a stale or different-subject event, per D7's closing sentence).
@@ -48,7 +47,6 @@ import { createHash } from "crypto";
 import { readAcceptedEvents } from "./event-log";
 import { resolveBlobsDir } from "./paths";
 import { writeFileDurably } from "./atomic-append";
-import { worktreeIdFor } from "./verify-producer";
 
 /** Bumped only when this module's own rendering logic changes shape. */
 export const MATERIALIZER_VERSION = "1";
@@ -109,6 +107,8 @@ export interface MaterializeChecksLatestInput {
   readonly repoRoot: string;
   /** Repo-relative path to the active contract, e.g. `tasks/contracts/<slug>.contract.md`. */
   readonly contractPath: string;
+  /** Exact worktree identity from the accepted ledger genesis record. */
+  readonly worktreeId: string;
   /** Exact-equality target for D7's `subject_hash` filter. */
   readonly subjectHash: string;
   /** Injectable for deterministic tests; defaults to the real clock. */
@@ -173,6 +173,13 @@ function extractRunTrace(repoRoot: string, event: EvidenceEventRecord): Record<s
   return runTrace as Record<string, JsonValue>;
 }
 
+function runTraceContractPath(runTrace: Readonly<Record<string, JsonValue>>): string | undefined {
+  const contract = runTrace.contract;
+  if (typeof contract !== "object" || contract === null || Array.isArray(contract)) return undefined;
+  const file = (contract as Readonly<Record<string, JsonValue>>).file;
+  return typeof file === "string" ? file : undefined;
+}
+
 function isoNow(now: () => Date): string {
   return now().toISOString();
 }
@@ -188,17 +195,26 @@ export function buildChecksLatestProjection(
   contractText: string,
 ): ChecksLatestProjection {
   const now = input.now ?? (() => new Date());
-  const worktreeId = worktreeIdFor(input.contractPath);
+  const worktreeId = input.worktreeId;
+  const contractHash = `sha256:${sha256Hex(contractText)}`;
   const policy = parseAcceptancePolicySummary(contractText);
 
-  const matching = accepted.filter(
-    (event) =>
-      event.worktree_id === worktreeId &&
-      event.subject_identity.subject_hash === input.subjectHash &&
-      isTrustClassAdmitted(event.trust_class, policy),
-  );
+  const matching: Array<{ readonly event: EvidenceEventRecord; readonly runTrace: Record<string, JsonValue> }> = [];
+  for (const event of accepted) {
+    if (
+      event.worktree_id !== worktreeId ||
+      event.subject_identity.contract_hash !== contractHash ||
+      event.subject_identity.subject_hash !== input.subjectHash ||
+      !isTrustClassAdmitted(event.trust_class, policy)
+    ) {
+      continue;
+    }
+    const runTrace = extractRunTrace(input.repoRoot, event);
+    if (runTrace === undefined || runTraceContractPath(runTrace) !== input.contractPath) continue;
+    matching.push({ event, runTrace });
+  }
 
-  const sourceEventIds = matching.map((event) => event.event_id);
+  const sourceEventIds = matching.map(({ event }) => event.event_id);
 
   if (matching.length === 0) {
     const consumerFacing: Record<string, JsonValue> = { schema: "repo-harness-run-trace.v1", status: "unsatisfied" };
@@ -220,26 +236,7 @@ export function buildChecksLatestProjection(
 
   // D7 winner: last accepted event matching the predicate, in append order
   // (never mtime/filename recency).
-  const winner = matching[matching.length - 1]!;
-  const runTrace = extractRunTrace(input.repoRoot, winner);
-
-  if (runTrace === undefined) {
-    const consumerFacing: Record<string, JsonValue> = { schema: "repo-harness-run-trace.v1", status: "unsatisfied" };
-    return {
-      ...consumerFacing,
-      provenance: {
-        schema_version: CHECKS_SCHEMA_VERSION,
-        generated_at: isoNow(now),
-        materializer_version: MATERIALIZER_VERSION,
-        source_event_ids: sourceEventIds,
-        source_checkpoint_id: null,
-        subject_hash: input.subjectHash,
-        content_hash: contentHashOf(consumerFacing),
-        worktree_id: worktreeId,
-        contract_id: input.contractPath,
-      },
-    };
-  }
+  const { runTrace } = matching[matching.length - 1]!;
 
   return {
     ...runTrace,
@@ -257,7 +254,7 @@ export function buildChecksLatestProjection(
   };
 }
 
-export interface WriteChecksLatestInput extends MaterializeChecksLatestInput {
+export interface WriteChecksLatestInput extends Omit<MaterializeChecksLatestInput, "worktreeId"> {
   /** Repo-relative path to write to, e.g. `.ai/harness/checks/latest.json`. */
   readonly checksFilePath: string;
 }
@@ -269,8 +266,15 @@ export interface WriteChecksLatestInput extends MaterializeChecksLatestInput {
  */
 export function writeChecksLatest(input: WriteChecksLatestInput): ChecksLatestProjection {
   const contractText = readFileSync(join(input.repoRoot, input.contractPath), "utf-8");
-  const { accepted } = readAcceptedEvents(input.repoRoot);
-  const projection = buildChecksLatestProjection(input, accepted, contractText);
+  const { genesis, accepted } = readAcceptedEvents(input.repoRoot);
+  if (genesis === null) {
+    throw new Error("cannot materialize checks/latest: evidence ledger has no accepted genesis record");
+  }
+  const projection = buildChecksLatestProjection(
+    { ...input, worktreeId: genesis.worktree_id },
+    accepted,
+    contractText,
+  );
   const absolutePath = join(input.repoRoot, input.checksFilePath);
   writeFileDurably(absolutePath, `${JSON.stringify(projection, null, 2)}\n`);
   return projection;

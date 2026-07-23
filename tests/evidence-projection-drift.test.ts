@@ -68,9 +68,11 @@ function seedEvent(
   repoRoot: string,
   opts: {
     readonly worktreeId?: string;
+    readonly contractPath?: string;
     readonly eventType?: string;
     readonly trustClass?: TrustClass;
     readonly subjectHash?: string;
+    readonly contractHash?: string;
     readonly runTraceMarker?: string;
     readonly marker?: string;
   } = {},
@@ -81,7 +83,10 @@ function seedEvent(
     trustClass: opts.trustClass ?? "authoritative_machine",
     producer: "verify-sprint",
     correlationRunId: `run-${Math.random().toString(36).slice(2)}`,
-    subjectIdentity: baseIdentity({ subject_hash: opts.subjectHash ?? SUBJECT_A }),
+    subjectIdentity: baseIdentity({
+      subject_hash: opts.subjectHash ?? SUBJECT_A,
+      contract_hash: opts.contractHash ?? `sha256:${"f".repeat(64)}`,
+    }),
     payload: {
       kind: "json",
       value: {
@@ -91,6 +96,7 @@ function seedEvent(
         run_trace: {
           schema: "repo-harness-run-trace.v1",
           status: "pass",
+          contract: { file: opts.contractPath ?? "tasks/contracts/drift-fixture.contract.md", status: "pass" },
           marker: opts.runTraceMarker ?? opts.marker ?? "default",
         },
       },
@@ -228,12 +234,21 @@ describe("projection drift: materialized checks/latest", () => {
     withTempRepo("drift-checks-latest-fixture", (repoRoot) => {
       mkdirSync(join(repoRoot, "tasks/contracts"), { recursive: true });
       const contractPath = "tasks/contracts/drift-fixture.contract.md";
-      writeFileSync(join(repoRoot, contractPath), "# Task Contract: fixture\n");
+      const contractText = "# Task Contract: fixture\n";
+      writeFileSync(join(repoRoot, contractPath), contractText);
       seedGenesis(repoRoot);
-      seedEvent(repoRoot, { runTraceMarker: "checks-latest-drift" });
+      seedEvent(repoRoot, {
+        contractHash: `sha256:${createHash("sha256").update(contractText).digest("hex")}`,
+        runTraceMarker: "checks-latest-drift",
+      });
 
-      const input: MaterializeChecksLatestInput = { repoRoot, contractPath, subjectHash: SUBJECT_A, now: FIXED_NOW };
-      const contractText = readFileSync(join(repoRoot, contractPath), "utf-8");
+      const input: MaterializeChecksLatestInput = {
+        repoRoot,
+        contractPath,
+        worktreeId: "drift-fixture",
+        subjectHash: SUBJECT_A,
+        now: FIXED_NOW,
+      };
 
       const { accepted: acceptedA } = readAcceptedEvents(repoRoot);
       const projectionA = buildChecksLatestProjection(input, acceptedA, contractText);
