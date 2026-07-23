@@ -3,8 +3,8 @@
   "generated_at": "2026-07-23T04:24:07.149Z",
   "slice": "SSD-07 phase A",
   "work_package_base_sha": "314ee1a7b630e9016b4e184030129fbc9e00a9ef",
-  "head_sha": null,
-  "head_sha_note": "Null by design: the commit that will carry this phase's own changes does not exist yet (Phase A does not commit). Every other field in this freeze is commit-independent (file/tree bytes on disk right now); the orchestrator stamps head_sha with `git rev-parse HEAD` immediately after committing this phase's work, and should re-run `bun scripts/run-skill-routing-eval.ts freeze --write` at that point so changed_files_since_base also picks up the new commit.",
+  "head_sha": "aefe8dbed1bf72d0d223c484cadd264929d6e15b",
+  "head_sha_note": "Stamped by the orchestrator post-commit: the commit whose tree this freeze describes; the package tree hashes are the subject authority.",
   "manifest_sha256": "d762d41d0136f3c12188ed3c7057521329c11725fe159ab838ccdae03e73c325",
   "corpus_sha256": "17a8a2feba0d1dd309f318eab9eb3b95c6ed1d3acf4da75df136c6eedff051f9",
   "package_tree_hashes": {
